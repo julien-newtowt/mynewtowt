@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>{% block title %}NEWTOWT — Document{% endblock %}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 24mm 18mm 22mm 18mm;
+      @bottom-left {
+        content: "{{ brand.raison_sociale }} — {{ brand.adresse }}";
+        font-size: 8pt;
+        color: #6E6E6E;
+        font-family: "Manrope", "Helvetica", sans-serif;
+      }
+      @bottom-right {
+        content: "Page " counter(page) " / " counter(pages);
+        font-size: 8pt;
+        color: #6E6E6E;
+        font-family: "Manrope", "Helvetica", sans-serif;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Manrope", "Helvetica", "Arial", sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.45;
+      color: #2A2A2A;
+      margin: 0;
+    }
+
+    /* Brand colors from charte */
+    .c-teal { color: #0D5966; }
+    .c-vert { color: #87BD29; }
+    .c-cuivre { color: #B47148; }
+    .c-gris { color: #6E6E6E; }
+    .bg-sable { background: #F8F2E6; }
+    .bg-teal { background: #0D5966; color: white; }
+
+    h1 {
+      font-family: "DM Serif Display", "Georgia", serif;
+      font-size: 22pt;
+      color: #0D5966;
+      margin: 0 0 4pt 0;
+      line-height: 1.1;
+    }
+    h2 {
+      font-size: 11pt;
+      color: #0D5966;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid #D9D9D9;
+      padding-bottom: 4pt;
+      margin: 14pt 0 8pt 0;
+    }
+    h3 {
+      font-size: 10pt;
+      color: #0D5966;
+      margin: 8pt 0 4pt 0;
+    }
+
+    .kicker {
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #B47148;
+      font-weight: 600;
+      margin-bottom: 4pt;
+    }
+
+    .baseline {
+      font-family: "DM Serif Display", "Georgia", serif;
+      font-style: italic;
+      color: #B47148;
+      font-size: 10pt;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 12pt;
+      border-bottom: 2px solid #0D5966;
+      margin-bottom: 16pt;
+    }
+    .header .brand img {
+      height: 36pt;
+      width: auto;
+    }
+    .header .ref {
+      text-align: right;
+      font-size: 9pt;
+    }
+    .header .ref .num {
+      font-family: "JetBrains Mono", "Consolas", monospace;
+      font-size: 14pt;
+      color: #0D5966;
+      font-weight: 600;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12pt;
+      margin-bottom: 12pt;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10pt;
+    }
+
+    .box {
+      border: 1px solid #D9D9D9;
+      border-left: 3px solid #0D5966;
+      padding: 8pt 10pt;
+      background: #FAF7F2;
+    }
+    .box .label {
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #6E6E6E;
+    }
+    .box .value {
+      font-size: 10pt;
+      color: #2A2A2A;
+      margin-top: 2pt;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8pt 0;
+    }
+    th {
+      background: #F8F2E6;
+      color: #0D5966;
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 6pt 8pt;
+      text-align: left;
+      border-bottom: 2px solid #0D5966;
+    }
+    td {
+      padding: 6pt 8pt;
+      border-bottom: 1px solid #E1E5EC;
+      font-size: 9pt;
+    }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .mono { font-family: "JetBrains Mono", "Consolas", monospace; }
+    .small { font-size: 8pt; color: #6E6E6E; }
+    .total-row td {
+      background: #F8F2E6;
+      border-bottom: 2px solid #0D5966;
+      font-weight: 600;
+      color: #0D5966;
+    }
+
+    .stamp {
+      margin-top: 24pt;
+      padding-top: 12pt;
+      border-top: 1px solid #D9D9D9;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      font-size: 9pt;
+    }
+    .stamp .sig-area {
+      width: 200pt;
+      height: 60pt;
+      border: 1px dashed #D9D9D9;
+      padding: 6pt;
+      color: #6E6E6E;
+      font-size: 8pt;
+    }
+
+    .badge-co2 {
+      display: inline-block;
+      background: #87BD29;
+      color: white;
+      padding: 4pt 10pt;
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 600;
+      border-radius: 3pt;
+    }
+    .badge-imdg {
+      display: inline-block;
+      background: #C44536;
+      color: white;
+      padding: 2pt 6pt;
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-radius: 2pt;
+    }
+
+    .footer-mention {
+      margin-top: 18pt;
+      padding: 8pt;
+      background: #F8F2E6;
+      border-left: 3px solid #B47148;
+      font-size: 8pt;
+      color: #6E6E6E;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <img src="{{ site_url }}/static/img/logo_NEWTOWT_web.png" alt="{{ brand.nom_court }}" />
+      <div class="small c-cuivre" style="margin-top:4pt;">{{ brand.mention }}</div>
+    </div>
+    <div class="ref">
+      <div class="kicker">{% block doc_kind %}Document{% endblock %}</div>
+      <div class="num">{% block doc_ref %}—{% endblock %}</div>
+      <div class="small">Émis le {{ issued_at.strftime("%d/%m/%Y") }}</div>
+    </div>
+  </div>
+
+  {% block content %}{% endblock %}
+
+  <div class="footer-mention">
+    {{ brand.raison_sociale }} — {{ brand.adresse }} —
+    Tél : {{ brand.telephone }} — Email : {{ brand.email }} —
+    Site : {{ brand.site_public }}
+  </div>
+</body>
+</html>

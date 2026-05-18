@@ -18,6 +18,7 @@ from app.middlewares import MaintenanceMiddleware, SecurityHeadersMiddleware
 from app.routers import (
     api_v1_router,
     booking_router,
+    cargo_router,
     client_auth_router,
     client_dashboard_router,
     planning_router,
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(staff_dashboard_router.router)
     app.include_router(staff_booking_router.router)
     app.include_router(planning_router.router)
+    app.include_router(cargo_router.router)
     app.include_router(client_auth_router.router)
     app.include_router(client_dashboard_router.router)
     app.include_router(booking_router.router)

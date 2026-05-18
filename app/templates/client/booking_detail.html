@@ -63,6 +63,21 @@
   </table>
 </section>
 
+{% if booking.status in ('confirmed','loaded','at_sea','discharged','delivered') %}
+<section class="card mt-4">
+  <h2>Documents</h2>
+  <p class="text-muted text-sm">Téléchargez vos documents officiels en PDF.</p>
+  <div class="flex gap-3 mt-3" style="flex-wrap:wrap;">
+    <a href="/me/bookings/{{ booking.reference }}/bl.pdf" target="_blank" class="btn btn-primary">📄 Bill of Lading</a>
+    <a href="/me/bookings/{{ booking.reference }}/packing-list.pdf" target="_blank" class="btn btn-secondary">📦 Packing List</a>
+    <a href="/me/bookings/{{ booking.reference }}/invoice.pdf" target="_blank" class="btn btn-secondary">💶 Facture</a>
+    {% if booking.status in ('discharged','delivered') %}
+      <a href="/me/bookings/{{ booking.reference }}/co2-certificate.pdf" target="_blank" class="btn btn-accent">🌱 Certificat CO₂</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 <section class="card">
   <h2>Adresses</h2>
   <div class="grid grid-2 gap-4">
