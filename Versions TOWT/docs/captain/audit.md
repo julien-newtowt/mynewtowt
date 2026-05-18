@@ -6,7 +6,7 @@
 
 1. **Où en suis-je dans la traversée ?** (position, vitesse, vent, ETA)
 2. **Quel est le manifest cargo de cette traversée ?**
-3. **Qui est à bord ?** (équipage actif, passagers — désactivé V2)
+3. **Qui est à bord ?** (équipage actif)
 4. **Quels sont les documents portuaires en attente / signés ?**
 5. **Quelle est la météo prévue ?**
 6. **Quels incidents ouverts (claims, tickets) ?**
@@ -55,7 +55,7 @@
 
 **Cible** : 4 espaces distincts (cf. [`onboard-v2-spec.md`](onboard-v2-spec.md)) avec landing synthétique 4 tuiles.
 
-## Sujets non traités à intégrer en V2
+## Sujets non traités à intégrer
 
 | Sujet | Modèle proposé | Espace |
 |-------|----------------|--------|

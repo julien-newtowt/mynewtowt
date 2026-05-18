@@ -1,10 +1,10 @@
 # NOTE TECHNIQUE DE CONTINUITÉ OPÉRATIONNELLE
-## Plan de reconstruction intégral de l'application `my_newtowt`
+## Plan de reconstruction intégral de l'application `mynewtowt`
 
 > **Statut** : document de référence — Plan de Continuité d'Activité (PCA)
 > **Objet** : permettre la reconstruction complète de l'application en cas de perte majeure (perte du code source, perte du serveur, perte des sauvegardes applicatives, départ de l'équipe, etc.).
 > **Public visé** : équipe technique de reprise (développeurs, DBA, DevOps), équipe projet (chef de projet, product owner), direction NEWTOWT.
-> **Version applicative documentée** : `my_newtowt v3.0.0` (post-restructuration).
+> **Version applicative documentée** : `mynewtowt v3.0.0` (post-restructuration).
 > **Date de rédaction** : mai 2026.
 
 Le présent document est structuré en deux grandes parties :
@@ -22,33 +22,35 @@ L'objectif est qu'à partir de ce seul document, une équipe nouvelle puisse rec
 
 ## 1. Contexte d'utilisation
 
-### 1.1 L'entreprise — NEWTOWT (TransOceanic Wind Transport)
+### 1.1 L'entreprise — NEWTOWT
 
-NEWTOWT est une compagnie française de transport maritime cargo à la voile (cargo vélique), pionnière du transport décarboné depuis 2011. Elle exploite, dans la configuration documentée par cette note (post-restructuration de 2026), une flotte de **quatre voiliers cargos** :
+NEWTOWT est une compagnie française de transport maritime cargo à la voile (cargo vélique), pionnière du transport décarboné depuis 2011. Elle exploite, dans la configuration documentée par cette note (post-restructuration de 2026), une flotte de **six voiliers cargos** :
 
 | Code | Nom | Capacité indicative | Notes |
 |------|-----|---------------------|-------|
-| 1 | Anemos | 850 palettes EPAL | navire historique |
+| 1 | Anemos | 850 palettes EPAL | |
 | 2 | Artemis | 850 palettes EPAL | |
-| 3 | Atlantis | 850 palettes EPAL | |
-| 4 | Atlas | 850 palettes EPAL | |
+| 3 | Atlantis | 850 palettes EPAL | Livraison 2026 |
+| 4 | Atlas | 850 palettes EPAL | Livraison 2026|
+| 5 | Archimedes | 850 palettes EPAL | Livraison 2026 |
+| 6 | Asterias | 850 palettes EPAL | Livraison 2026 |
 
-L'activité passagers, exploitée par TOWT avant la restructuration, **n'existe plus en v3.0.0**. Toute reconstruction de l'application doit veiller à **ne pas réintroduire** de module passagers.
-
+L'entreprise utilise une infrastructure Microsoft O365 et Sharepoint.
 ### 1.2 Activité métier couverte
 
 L'application supporte l'ensemble du cycle d'exploitation d'un navire de cargo vélique :
 
 1. **Planification commerciale** des voyages (legs) : qui part d'où, vers où, quand, sur quel navire.
-2. **Vente et contractualisation** : commandes clients, grilles tarifaires, offres commerciales, intégration CRM.
+2. **Vente et contractualisation** : commandes clients, grilles tarifaires, offres commerciales, intégration CRM, documentation douanière.
 3. **Préparation cargo** : packing lists, plan d'arrimage (stowage), Bill of Lading, Arrival Notice.
-4. **Escale (port call)** : opérations portuaires, équipes de manutention (dockers), Statement of Facts.
+4. **Escale (port call)** : opérations portuaires, équipes de manutention (dockers), opérations médiatiques, approvisionnements, interventions techniques, embarquements/débarquements.
 5. **Vie à bord** : SOF, documents cargo, messagerie équipage / armateur, ETA shift, clôture de voyage.
 6. **Équipage** : membres, embarquements / débarquements, calendrier annuel, compliance Schengen, billets.
 7. **Finance** : OPEX, frais portuaires, revenus, marge prévisionnel / réalisé.
 8. **KPI** : tonnage transporté, émissions CO₂ évitées, certificats d'évitement carbone par client.
 9. **MRV** : reporting fuel/émission au format réglementaire européen (DNV CSV, Carbon Report).
 10. **Claims** : sinistres cargo, équipage, coque (P&I, Hull/DIV, War Risk).
+11. **Gestion des ressources humaines** : congés payés, absences, gestion d'équipe.
 
 ### 1.3 Cible utilisateur
 
@@ -61,9 +63,9 @@ Aucun client n'a de compte authentifié dans l'application.
 ### 1.4 Environnement de déploiement
 
 L'application est déployée :
-- En **production** sur un VPS OVH (Linux), accessible via `http://51.178.59.174` (et un futur domaine `https://my.newtowt.eu`), derrière un reverse proxy nginx.
+- En **production** sur un VPS OVH (Linux), accessible via `http://193.70.75.213` (et un futur domaine `https://my.newtowt.eu`), derrière un reverse proxy nginx.
 - En conteneurs Docker (`docker-compose`) : un service `app` (FastAPI/Uvicorn) et un service `db` (PostgreSQL 16-alpine).
-- Le conteneur applicatif s'appelle `towt-app-v2`, le conteneur base `towt-db`.
+- Le conteneur applicatif s'appelle `towt-app`, le conteneur base `towt-db`.
 - Base de données non publiée sur l'hôte : accès via `docker exec` ou tunnel SSH.
 
 ---
@@ -127,7 +129,6 @@ mytowt/
 ├── nginx/                       # config reverse proxy
 ├── docker-compose.yml           # 2 services : app, db
 ├── Dockerfile                   # image Python 3.12-slim
-├── .env.example                 # template de configuration
 ├── requirements.txt             # gel des dépendances Python
 ├── alembic.ini                  # config Alembic
 ├── backup.sh / restore.sh / deploy.sh / update.sh  # outillage VPS
@@ -138,8 +139,8 @@ mytowt/
 
 | Variable | Obligatoire | Description |
 |---|---|---|
-| `APP_NAME` | non (défaut `my_newtowt`) | Nom applicatif affiché. |
-| `APP_VERSION` | non (défaut `3.0.0`) | Version applicative. |
+| `APP_NAME` | non (défaut `mynewtowt`) | Nom applicatif affiché. |
+| `APP_VERSION` | non (défaut `0.0.0`) | Version applicative. |
 | `APP_ENV` | non (défaut `production`) | `production` ou `development`. |
 | `DEBUG` | non (défaut `false`) | Active `echo` SQLAlchemy et logs verbeux. |
 | `DATABASE_URL` | **oui** | URL async `postgresql+asyncpg://user:pass@host/db`. Doit pointer sur Postgres 16. **Refus de démarrer si mot de passe par défaut `towt_secure_2025`**. |
@@ -155,7 +156,7 @@ mytowt/
 
 ### 2.4 Middlewares actifs (`app/main.py`, dans l'ordre d'exécution)
 
-1. **CORSMiddleware** — origines autorisées : `https://my.towt.eu`, `http://51.178.59.174`. Méthodes : GET, POST, PUT, DELETE, PATCH, OPTIONS. En-têtes HTMX (`HX-*`) autorisés.
+1. **CORSMiddleware** — origines autorisées : `https://my.newtowt.eu`, `http://193.70.75.213`. Méthodes : GET, POST, PUT, DELETE, PATCH, OPTIONS. En-têtes HTMX (`HX-*`) autorisés.
 2. **SecurityHeadersMiddleware** — applique sur toute réponse :
    - `Content-Security-Policy` avec `default-src 'self'`, scripts limités à `unpkg.com`, fonts à `fonts.gstatic.com`, tiles à `*.tile.openstreetmap.org`, AJAX à `nominatim.openstreetmap.org`.
    - `X-Content-Type-Options: nosniff`
@@ -236,7 +237,7 @@ La création du schéma se fait au démarrage via `Base.metadata.create_all` (`i
 | **MDO** | Marine Diesel Oil. |
 | **ROB** | Remaining On Board (quantité de fuel à bord). |
 | **DWT** | Deadweight Tonnage. |
-| **Élongation (coeff.)** | Coefficient multiplicatif pour passer de la distance orthodromique théorique à la distance réelle parcourue (vent, courants). Défaut 1.25. |
+| **Élongation (coeff.)** | Coefficient multiplicatif pour passer de la distance orthodromique théorique à la distance réelle parcourue (vent, courants). Défaut 1.15. |
 | **Palette EPAL** | Europalette 120×80 cm, coefficient d'occupation 1.0. |
 | **Palette USPAL / PORTPAL** | Palette US / portuaire 120×100, coefficient 1.2. |
 | **IBC** | Conteneur intermédiaire pour vrac, +6 cm, coeff 1.3. |
@@ -276,16 +277,16 @@ La création du schéma se fait au démarrage via `Base.metadata.create_all` (`i
 
 Source de vérité : `app/permissions.py` — `_MATRIX`.
 
-| Rôle | planning | commercial | escale | finance | kpi | captain | crew | cargo | claims | mrv |
+| Rôle | planning | commercial | escale | finance | kpi | captain | crew | cargo | claims | mrv | rh |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **administrateur** | CMS | CMS | CMS | CMS | CMS | CMS | CMS | CMS | CMS | CMS |
-| **operation** | CM | CM | CMS | — | C | CM | CM | CMS | CMS | CM |
-| **armement** | C | — | C | — | C | C | CMS | — | — | C |
-| **technique** | C | C | CMS | — | C | CM | C | C | C | CM |
-| **data_analyst** | C | C | C | CMS | C | C | C | C | C | CM |
-| **marins** | C | — | C | — | C | C | C | C | — | C |
-| **commercial** | C | CMS | C | — | C | C | — | CM | — | — |
-| **manager_maritime** | CM | CM | CM | — | C | CMS | CM | CM | CM | CM |
+| **administrateur** | CMS | CMS | CMS | CMS | CMS | CMS | CMS | CMS | CMS | CMS | CMS |
+| **operation** | CM | CM | CMS | — | C | CM | CM | CMS | CMS | CM | C |
+| **armement** | C | — | C | — | C | C | CMS | — | — | C | C |
+| **technique** | C | C | CMS | — | C | CM | C | C | C | CM | C |
+| **data_analyst** | C | C | C | CMS | C | C | C | C | C | CM | C |
+| **marins** | C | — | C | — | C | C | C | C | — | C | C |
+| **commercial** | C | CMS | C | — | C | C | — | CM | — | — | C |
+| **manager_maritime** | CM | CM | CM | — | C | CMS | CM | CM | CM | CM | C |
 
 Mapping de compatibilité (`_LEGACY_MAP`) : `admin → administrateur`, `manager → operation`, `operator → operation`, `viewer → data_analyst`, `gestionnaire_passagers → commercial`.
 
