@@ -30,6 +30,62 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__, "env": settings.app_env}
 
 
+@router.get("/ports/nearby")
+async def ports_nearby(
+    lat: float,
+    lon: float,
+    radius_km: float = 50,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Return ports near a (lat, lon) within radius_km, sorted by distance."""
+    from app.services.ports import nearby_ports
+
+    results = await nearby_ports(db, lat=lat, lon=lon, radius_km=radius_km, limit=limit)
+    return [
+        {
+            "id": p.id,
+            "locode": p.locode,
+            "name": p.name,
+            "country": p.country,
+            "latitude": p.latitude,
+            "longitude": p.longitude,
+            "distance_km": round(d, 2),
+        }
+        for p, d in results
+    ]
+
+
+@router.get("/ports/search")
+async def ports_search(
+    q: str | None = None,
+    country: str | None = None,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Search ports by name or locode prefix (case-insensitive)."""
+    from app.models.port import Port
+
+    stmt = select(Port).where(Port.latitude.is_not(None))
+    if q:
+        like = f"%{q.lower()}%"
+        from sqlalchemy import func
+        stmt = stmt.where(
+            (func.lower(Port.name).like(like)) | (func.lower(Port.locode).like(like))
+        )
+    if country:
+        stmt = stmt.where(Port.country == country.upper())
+    stmt = stmt.order_by(Port.country, Port.locode).limit(limit)
+    rows = list((await db.execute(stmt)).scalars().all())
+    return [
+        {
+            "id": p.id, "locode": p.locode, "name": p.name,
+            "country": p.country,
+            "latitude": p.latitude, "longitude": p.longitude,
+        } for p in rows
+    ]
+
+
 @router.get("/spec")
 async def spec_link() -> dict[str, str]:
     return {"openapi": f"{settings.site_url}/openapi.json", "docs": f"{settings.site_url}/docs"}

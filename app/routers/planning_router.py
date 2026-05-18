@@ -133,6 +133,29 @@ async def new_leg_form(
     )
 
 
+@router.get("/legs/new-from-map", response_class=HTMLResponse)
+async def new_leg_from_map(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("planning", "M")),
+) -> HTMLResponse:
+    """Interactive map: click 2 points → snap to closest port → prefill form."""
+    from app.config import settings
+
+    vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    return templates.TemplateResponse(
+        "staff/planning/leg_from_map.html",
+        {
+            "request": request,
+            "user": user,
+            "vessels": vessels,
+            # We accept the MapTiler token either via MAPBOX_TOKEN (legacy)
+            # or via a new MAPTILER_TOKEN env var read by config.
+            "maptiler_token": settings.mapbox_token or "",
+        },
+    )
+
+
 @router.post("/legs/new", response_class=HTMLResponse)
 async def create_leg_action(
     request: Request,

@@ -17,6 +17,11 @@ class Port(Base):
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
     timezone: Mapped[str | None] = mapped_column(String(50))
+    # Provenance: 'manual' (seeded), 'datagouv' (FR open data),
+    # 'unlocode' (UN/LOCODE dataset), 'user' (operator-added).
+    source: Mapped[str] = mapped_column(String(40), default="manual", nullable=False)
+    function_code: Mapped[str | None] = mapped_column(String(8))
+    subdivision: Mapped[str | None] = mapped_column(String(8))
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Port {self.locode} {self.name}>"

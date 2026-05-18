@@ -1,0 +1,112 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Nouveau leg sur carte — Planning · {{ brand.nom_court }}{% endblock %}
+{% block head %}
+{{ super() }}
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
+<script src="/static/js/leg-map.js" defer></script>
+{% endblock %}
+{% block content %}
+
+<a href="/planning" class="btn btn-ghost mb-3">← Planning</a>
+
+<header class="mb-4">
+  <span class="kicker">Planning</span>
+  <h1 class="display">Créer un leg sur la carte</h1>
+  <p class="text-muted">
+    Clique sur la carte pour positionner d'abord le <strong>port de départ</strong>, puis le <strong>port d'arrivée</strong>.
+    {{ brand.nom_court }} cherche le port le plus proche dans un rayon de 50 km.
+    Le formulaire en bas est rempli automatiquement (distance orthodromique + durée estimée à 8 nœuds).
+  </p>
+</header>
+
+{% if not maptiler_token %}
+  <div class="alert alert-warn" role="alert">
+    <strong>MAPTILER_TOKEN absent du <code>.env</code>.</strong>
+    La carte utilise un fallback OSM raster (lent, sans vector tiles).
+    Pour activer MapLibre vector tiles, configure
+    <code>MAPBOX_TOKEN=&lt;ta-clé-maptiler&gt;</code> côté serveur puis redéploie.
+  </div>
+{% endif %}
+
+<div class="card" style="padding:0; overflow:hidden;">
+  <div id="leg-map"
+       data-maptiler-token="{{ maptiler_token }}"
+       style="width:100%; height:480px; background:var(--sable-light);"></div>
+
+  <div style="padding:var(--space-4); border-top:1px solid var(--gris-clair);">
+    <div class="grid grid-2 gap-4">
+      <div>
+        <span class="kicker">Port de départ</span>
+        <div id="pol-display" class="text-muted">— cliquer sur la carte —</div>
+      </div>
+      <div>
+        <span class="kicker">Port d'arrivée</span>
+        <div id="pod-display" class="text-muted">— cliquer sur la carte —</div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-3" style="flex-wrap:wrap;">
+      <button id="reset-map" type="button" class="btn btn-ghost">Réinitialiser</button>
+      <button id="swap-points" type="button" class="btn btn-secondary">↔ Inverser POL / POD</button>
+    </div>
+  </div>
+</div>
+
+<form method="post" action="/planning/legs/new" class="card mt-4" id="leg-form">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+  <input type="hidden" id="pol-id" name="departure_port_id" />
+  <input type="hidden" id="pod-id" name="arrival_port_id" />
+
+  <h2>Détails du leg</h2>
+
+  <div class="grid grid-2 gap-4">
+    <div class="field">
+      <label for="vessel_id">Navire</label>
+      <select id="vessel_id" name="vessel_id" required>
+        {% for v in vessels %}
+          <option value="{{ v.id }}">{{ v.code }} — {{ v.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Distance estimée</label>
+      <div id="distance-display" class="text-muted mono">—</div>
+    </div>
+
+    <div class="field">
+      <label for="etd">ETD</label>
+      <input id="etd" type="datetime-local" name="etd" required />
+    </div>
+    <div class="field">
+      <label for="eta">ETA</label>
+      <input id="eta" type="datetime-local" name="eta" required />
+      <small class="text-muted">Pré-rempli à ETD + distance/8 kn.</small>
+    </div>
+
+    <div class="field">
+      <label>&nbsp;</label>
+      <label style="margin-bottom:0;"><input type="checkbox" name="is_bookable" /> Ouvrir aux réservations clients</label>
+    </div>
+    <div class="field">
+      <label for="public_capacity_palettes">Capacité publique (palettes)</label>
+      <input id="public_capacity_palettes" type="number" name="public_capacity_palettes" min="1" max="2000" placeholder="850" />
+    </div>
+
+    <div class="field">
+      <label for="public_price_per_palette_eur">Tarif public (EUR / palette)</label>
+      <input id="public_price_per_palette_eur" type="number" step="0.01" name="public_price_per_palette_eur" placeholder="38.00" />
+    </div>
+    <div class="field">
+      <label for="booking_close_at">Clôture des réservations</label>
+      <input id="booking_close_at" type="datetime-local" name="booking_close_at" />
+    </div>
+  </div>
+
+  <div class="flex gap-3 mt-4">
+    <button id="submit-btn" type="submit" class="btn btn-primary btn-lg" disabled>Créer le leg</button>
+    <a href="/planning" class="btn btn-ghost">Annuler</a>
+  </div>
+</form>
+
+{% endblock %}
