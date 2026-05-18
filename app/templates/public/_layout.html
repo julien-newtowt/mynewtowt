@@ -1,17 +1,34 @@
 {% extends "base.html" %}
 
+{% block head %}
+<script src="/static/js/clock.js" defer></script>
+{% endblock %}
+
 {% block body %}
 <header class="public-header" role="banner">
   <div class="container">
     <a href="/" class="brand" aria-label="{{ brand.nom_court }} — accueil">
       <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
     </a>
-    <nav aria-label="Navigation principale">
-      <a href="/routes" class="btn btn-ghost">Routes & plannings</a>
-      <a href="/about" class="btn btn-ghost">À propos</a>
-      <a href="/me" class="btn btn-secondary">Espace client</a>
-      <a href="/booking/new" class="btn btn-primary">Réserver</a>
-    </nav>
+    <div class="header-extras">
+      <div class="clock-widget" aria-live="off">
+        <div class="clock-item">
+          <span class="clock-time" data-clock="local">--:--</span>
+          <span class="clock-label" data-tz="local-label">Local</span>
+        </div>
+        <span class="clock-sep" aria-hidden="true"></span>
+        <div class="clock-item">
+          <span class="clock-time" data-clock="paris">--:--</span>
+          <span class="clock-label">Paris</span>
+        </div>
+      </div>
+      <nav aria-label="Navigation principale">
+        <a href="/routes" class="btn btn-ghost">Routes & plannings</a>
+        <a href="/about" class="btn btn-ghost">À propos</a>
+        <a href="/me" class="btn btn-secondary">Espace client</a>
+        <a href="/booking/new" class="btn btn-primary">Réserver</a>
+      </nav>
+    </div>
   </div>
 </header>
 

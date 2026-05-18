@@ -595,3 +595,190 @@ tr:hover { background: var(--sable-light); }
 @media (max-width: 720px) {
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
 }
+
+/* ────────────────── Sidebar v2 : icons + collapsible ─────────────── */
+.sidebar nav .nav-group { margin-bottom: var(--space-2); }
+.sidebar nav .nav-group-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--cuivre-light);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-wider);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+.sidebar nav .nav-group-toggle:hover { color: var(--blanc); background: var(--teal); }
+.sidebar nav .nav-group-title { display: flex; align-items: center; gap: var(--space-2); }
+.sidebar nav .nav-group-caret {
+  width: 12px; height: 12px;
+  transition: transform var(--duration-fast) var(--easing-out);
+}
+.sidebar nav .nav-group.open .nav-group-caret { transform: rotate(90deg); }
+
+.sidebar nav .nav-group-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height var(--duration-medium) var(--easing-out);
+}
+.sidebar nav .nav-group.open .nav-group-list { max-height: 600px; }
+
+.sidebar nav .nav-group-list a {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-2) calc(var(--space-3) + 20px);
+  border-radius: var(--radius-sm);
+  color: var(--bleu-horizon);
+  font-size: var(--text-sm);
+  border-bottom: none;
+  white-space: nowrap;
+}
+.sidebar nav .nav-group-list a:hover { background: var(--teal); color: var(--blanc); }
+.sidebar nav .nav-group-list a[aria-current="page"] {
+  background: var(--teal); color: var(--vert); font-weight: var(--fw-semibold);
+}
+.sidebar nav .nav-icon {
+  width: 16px; height: 16px;
+  stroke: currentColor; stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+.sidebar-footer .btn-logout {
+  display: block; width: 100%; text-align: center;
+  padding: var(--space-2);
+  color: var(--bleu-horizon);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+.sidebar-footer .btn-logout:hover { background: var(--teal); color: var(--blanc); }
+
+/* ──────────────────────── International clock ───────────────────── */
+.clock-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+.clock-widget .clock-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1;
+}
+.clock-widget .clock-time {
+  font-weight: var(--fw-semibold);
+  color: var(--teal);
+  font-size: var(--text-sm);
+  letter-spacing: 0;
+}
+.clock-widget .clock-label {
+  font-size: 9px;
+  color: var(--gris);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-wider);
+  margin-top: 1px;
+}
+.clock-widget .clock-sep {
+  width: 1px; height: 24px;
+  background: var(--gris-clair);
+}
+
+/* Variante sombre — pour la sidebar */
+.sidebar .clock-widget .clock-time { color: var(--vert); }
+.sidebar .clock-widget .clock-label { color: var(--bleu-horizon); }
+.sidebar .clock-widget .clock-sep { background: rgba(255,255,255,0.15); }
+
+/* ────────────────── Public header — horloge à droite ─────────────── */
+.public-header .header-extras {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+@media (max-width: 720px) {
+  .public-header .header-extras .clock-widget { display: none; }
+}
+
+
+/* ───── Contrast hardening — bannir le blanc/blanc et low-contrast ──── */
+/* Default text colors must always be readable on the surface they live on */
+
+/* Inputs : forcer texte foncé et placeholder lisible */
+form input::placeholder,
+form textarea::placeholder {
+  color: var(--gris);
+  opacity: 1;
+}
+form input[type="text"],
+form input[type="email"],
+form input[type="password"],
+form input[type="number"],
+form input[type="date"],
+form input[type="datetime-local"],
+form select,
+form textarea {
+  color: var(--anthracite);
+}
+
+/* Cards on light surfaces — paragraphs must be dark */
+.card p,
+.card td,
+.card li,
+.card span:not(.kicker):not(.baseline):not(.pill):not(.leg-code):not([class*="text-"]) {
+  color: var(--anthracite);
+}
+
+/* "text-muted" et "text-2" — gris foncé suffisant pour contraste */
+.text-muted { color: var(--gris); }   /* #6E6E6E > 4.5:1 sur blanc */
+.text-sm.text-muted { color: var(--gris); }
+
+/* On dark surfaces (sidebar, footer, cta-band, gradient-night) — texte clair forcé */
+.sidebar p, .sidebar span, .sidebar td, .sidebar li { color: var(--blanc-casse); }
+.sidebar .text-muted { color: var(--bleu-horizon); }
+
+.public-footer p, .public-footer span, .public-footer td, .public-footer li {
+  color: var(--blanc-casse);
+}
+
+.cta-band p, .cta-band span, .cta-band td {
+  color: var(--blanc-casse);
+}
+
+/* Empêcher le hover de "blanchir" le texte des liens internes aux cards */
+.card a:hover { color: var(--teal-light); border-bottom-color: var(--cuivre); }
+
+/* feature-card : description en gris foncé */
+.feature-card p { color: var(--anthracite); }
+.feature-card p.text-muted { color: var(--gris); }
+
+/* booking-card : description et meta lisibles */
+.booking-card .meta { color: var(--gris); }
+
+/* Hero — texte sur fond clair sable-light, doit rester anthracite */
+.hero .lead { color: var(--anthracite); }
+.hero h1 { color: var(--teal); }
+
+/* Auth-card — toutes les helper-text en gris */
+.auth-card .text-muted { color: var(--gris); }
+.auth-card a { color: var(--teal); }
+
+/* Pills sur fond très clair — augmenter leur opacité de fond pour rester visibles */
+.pill { font-weight: var(--fw-semibold); }
