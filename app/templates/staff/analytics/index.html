@@ -1,0 +1,24 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Analytics{% endblock %}
+{% block content %}
+<header class="mb-4"><span class="kicker">Performance</span><h1 class="display">Analytics</h1>
+  <p class="text-muted">Vue agrégée multi-modules.</p>
+</header>
+
+<section class="kpi-strip">
+  <div class="kpi-card"><div class="label">Bookings totaux</div><div class="value">{{ bookings_total }}</div></div>
+  <div class="kpi-card"><div class="label">Bookings confirmés</div><div class="value text-success">{{ bookings_confirmed }}</div></div>
+  <div class="kpi-card"><div class="label">Clients inscrits</div><div class="value">{{ clients_total }}</div></div>
+  <div class="kpi-card"><div class="label">Tickets actifs</div><div class="value">{{ tickets_active }}</div></div>
+  <div class="kpi-card"><div class="label">Legs réservables</div><div class="value">{{ legs_bookable }}</div></div>
+</section>
+
+<article class="card mt-4">
+  <h2>Dashboards à venir (V3.1)</h2>
+  <div class="grid grid-3 gap-3">
+    <div class="feature-card accent-teal"><h3>Exécutif</h3><p class="text-muted">Vue flotte + variance N-1</p></div>
+    <div class="feature-card accent-cuivre"><h3>Commercial</h3><p class="text-muted">Funnel booking + LTV</p></div>
+    <div class="feature-card"><h3>Opérations</h3><p class="text-muted">SLA tickets + escales</p></div>
+  </div>
+</article>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Finance{% endblock %}
+{% block content %}
+<header class="mb-4"><span class="kicker">Performance</span><h1 class="display">Finance flotte</h1></header>
+
+<article class="card mb-4">
+  <h2>Marge par leg ({{ finances|length }})</h2>
+  {% if finances %}
+    <table>
+      <thead><tr><th>Leg</th><th class="text-right">Revenu</th><th class="text-right">Port fees</th><th class="text-right">Dockers</th><th class="text-right">OPEX</th><th class="text-right">Marge</th></tr></thead>
+      <tbody>
+      {% for f in finances %}
+        <tr>
+          <td>#{{ f.leg_id }}</td>
+          <td class="text-right mono">{{ f.revenue_eur|money }}</td>
+          <td class="text-right mono">{{ f.port_fees_eur|money }}</td>
+          <td class="text-right mono">{{ f.docker_costs_eur|money }}</td>
+          <td class="text-right mono">{{ f.opex_share_eur|money }}</td>
+          <td class="text-right mono {% if f.margin_eur < 0 %}text-error{% else %}text-success{% endif %}"><strong>{{ f.margin_eur|money }}</strong></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}<p class="text-muted">Aucune donnée financière par leg encore.</p>{% endif %}
+</article>
+
+<article class="card">
+  <h2>Paramètres OPEX ({{ opex|length }})</h2>
+  {% if opex %}
+    <table>
+      <thead><tr><th>Nom</th><th class="text-right">Valeur</th><th>Unité</th><th>Catégorie</th></tr></thead>
+      <tbody>{% for p in opex %}<tr><td>{{ p.parameter_name }}</td><td class="text-right mono">{{ p.parameter_value }}</td><td>{{ p.unit or '—' }}</td><td>{{ p.category or '—' }}</td></tr>{% endfor %}</tbody>
+    </table>
+  {% else %}<p class="text-muted">Aucun paramètre OPEX configuré.</p>{% endif %}
+</article>
+{% endblock %}

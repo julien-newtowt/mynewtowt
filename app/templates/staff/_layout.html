@@ -65,15 +65,37 @@
       </div>
 
       <div class="nav-group" data-group="operations">
-        <button class="nav-group-toggle" aria-expanded="false">
+        <button class="nav-group-toggle" aria-expanded="true">
           <span class="nav-group-title">{{ icon("anchor") }}<span>Opérations</span></span>
           {{ icon("chevron-right") }}
         </button>
         <ul class="nav-group-list">
-          <li><a href="/escale">{{ icon("anchor") }}Escale</a></li>
-          <li><a href="/onboard">{{ icon("ship") }}Onboard</a></li>
-          <li><a href="/tickets">{{ icon("ticket") }}Tickets</a></li>
-          <li><a href="/crew">{{ icon("users") }}Crew</a></li>
+          <li><a href="/escale">{{ icon("anchor") }}Escale (Import/Export)</a></li>
+          <li><a href="/onboard">{{ icon("ship") }}Onboard 4 espaces</a></li>
+          <li><a href="/tickets">{{ icon("ticket") }}Tickets escale</a></li>
+          <li><a href="/cashbox">{{ icon("euro") }}Caisse de bord</a></li>
+          <li><a href="/tracking">{{ icon("map") }}Tracking flotte</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="humain">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title">{{ icon("users") }}<span>Humain</span></span>
+          {{ icon("chevron-right") }}
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/crew">{{ icon("users") }}Équipage</a></li>
+          <li><a href="/rh">{{ icon("users") }}RH (congés, Schengen)</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="ai">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title">{{ icon("globe") }}<span>Assistant</span></span>
+          {{ icon("chevron-right") }}
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/chat">{{ icon("globe") }}Kairos AI</a></li>
         </ul>
       </div>
 

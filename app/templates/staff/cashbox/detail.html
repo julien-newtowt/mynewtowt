@@ -1,0 +1,89 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Caisse — {{ vessel.name }}{% endblock %}
+{% block content %}
+<a href="/cashbox" class="btn btn-ghost mb-3">← Caisses</a>
+<header class="mb-4">
+  <span class="kicker">Caisse de bord</span>
+  <h1 class="display"><span class="mono text-muted">{{ vessel.code }}</span> {{ vessel.name }}</h1>
+</header>
+
+<section class="kpi-strip">
+  {% for b in balances %}
+    <a href="?currency={{ b.currency }}" class="kpi-card" style="text-decoration:none;border-bottom:none;{% if currency_filter == b.currency %}border:2px solid var(--cuivre);{% endif %}">
+      <div class="label">{{ currency_labels[b.currency] }}</div>
+      <div class="value mono">{{ "%.2f"|format(b.balance|float) }}</div>
+      <div class="delta text-muted">
+        <span class="text-success">+{{ "%.2f"|format(b.income_total|float) }}</span>
+        / <span class="text-error">{{ "%.2f"|format(b.expense_total|float) }}</span>
+      </div>
+    </a>
+  {% else %}
+    <div class="kpi-card"><div class="label">Aucun mouvement</div><div class="value">—</div></div>
+  {% endfor %}
+</section>
+
+<article class="card mb-4">
+  <h2>Nouveau mouvement</h2>
+  <form method="post" action="/cashbox/{{ vessel.id }}/movement">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-3 gap-3">
+      <div class="field">
+        <label for="movement_kind">Type</label>
+        <select id="movement_kind" name="movement_kind">
+          <option value="expense">Dépense</option>
+          <option value="income">Entrée (recharge)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="amount">Montant (positif)</label>
+        <input id="amount" name="amount" type="text" inputmode="decimal" placeholder="125.00" required />
+      </div>
+      <div class="field">
+        <label for="currency">Devise</label>
+        <select id="currency" name="currency" required>
+          {% for c in currencies %}<option value="{{ c }}">{{ currency_labels[c] }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="category">Catégorie</label>
+        <select id="category" name="category" required>
+          {% for c in categories %}<option value="{{ c }}">{{ category_labels[c] }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field" style="grid-column: span 2;">
+        <label for="description">Description</label>
+        <input id="description" name="description" required />
+      </div>
+      <div class="field">
+        <label for="occurred_at">Date/heure</label>
+        <input id="occurred_at" name="occurred_at" type="datetime-local" />
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Enregistrer</button>
+  </form>
+</article>
+
+<article class="card">
+  <h2>Mouvements récents {% if currency_filter %}({{ currency_filter }}){% endif %}</h2>
+  {% if movements %}
+    <table>
+      <thead><tr><th>Date</th><th>Devise</th><th class="text-right">Montant</th><th>Catégorie</th><th>Description</th></tr></thead>
+      <tbody>
+        {% for m in movements %}
+          <tr>
+            <td class="mono text-sm">{{ m.occurred_at|datetime }}</td>
+            <td class="mono">{{ m.currency }}</td>
+            <td class="text-right mono {% if m.amount < 0 %}text-error{% else %}text-success{% endif %}">
+              {{ "%+.2f"|format(m.amount|float) }}
+            </td>
+            <td><span class="pill pill-neutral">{{ category_labels.get(m.category, m.category) }}</span></td>
+            <td>{{ m.description }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted">Aucun mouvement.</p>
+  {% endif %}
+</article>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Admin — Configuration{% endblock %}
+{% block content %}
+<header class="mb-4"><span class="kicker">Gouvernance</span><h1 class="display">Configuration</h1></header>
+
+<section class="kpi-strip">
+  <div class="kpi-card"><div class="label">Utilisateurs actifs</div><div class="value">{{ users|selectattr("is_active")|list|length }}</div></div>
+  <div class="kpi-card"><div class="label">Navires</div><div class="value">{{ vessels|length }}</div></div>
+  <div class="kpi-card"><div class="label">Feature flags</div><div class="value">{{ flags|length }}</div></div>
+  <div class="kpi-card"><div class="label">Flags ON</div><div class="value text-success">{{ flags|selectattr("enabled")|list|length }}</div></div>
+</section>
+
+<div class="grid grid-2 gap-4 mt-4">
+  <article class="card">
+    <h2>Feature flags</h2>
+    <table>
+      <thead><tr><th>Clé</th><th>État</th><th>Rollout</th></tr></thead>
+      <tbody>{% for f in flags %}<tr>
+        <td class="mono text-sm">{{ f.key }}</td>
+        <td>{% if f.enabled %}<span class="pill pill-ok">ON</span>{% else %}<span class="pill pill-neutral">OFF</span>{% endif %}</td>
+        <td>{{ f.rollout_pct }} %</td>
+      </tr>{% endfor %}</tbody>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Navires</h2>
+    <table>
+      <thead><tr><th>Code</th><th>Nom</th><th>IMO</th><th>Capacité</th><th>Statut</th></tr></thead>
+      <tbody>{% for v in vessels %}<tr>
+        <td class="mono">{{ v.code }}</td><td>{{ v.name }}</td>
+        <td class="mono text-sm">{{ v.imo_number or '—' }}</td>
+        <td>{{ v.capacity_palettes }}</td>
+        <td>{% if v.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Inactif</span>{% endif %}</td>
+      </tr>{% endfor %}</tbody>
+    </table>
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Utilisateurs récents ({{ users|length }})</h2>
+  <table>
+    <thead><tr><th>Username</th><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th></tr></thead>
+    <tbody>{% for u in users %}<tr>
+      <td class="mono">{{ u.username }}</td>
+      <td>{{ u.full_name or '—' }}</td>
+      <td>{{ u.email }}</td>
+      <td><span class="pill pill-neutral">{{ u.role }}</span></td>
+      <td>{% if u.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Désactivé</span>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+</article>
+{% endblock %}

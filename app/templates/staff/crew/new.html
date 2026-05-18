@@ -1,0 +1,32 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Nouveau marin{% endblock %}
+{% block content %}
+<a href="/crew" class="btn btn-ghost mb-3">← Crew</a>
+<header class="mb-4"><span class="kicker">Équipage</span><h1 class="display">Nouveau membre</h1></header>
+
+<form method="post" action="/crew/new" class="card">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+  <div class="grid grid-2 gap-3">
+    <div class="field"><label>Nom complet</label><input name="full_name" required /></div>
+    <div class="field">
+      <label>Rôle</label>
+      <select name="role" required>
+        <option value="captain">Commandant</option>
+        <option value="chief_mate">Second</option>
+        <option value="ab">Matelot (AB)</option>
+        <option value="cook">Cuisinier</option>
+        <option value="engineer">Mécanicien</option>
+        <option value="other">Autre</option>
+      </select>
+    </div>
+    <div class="field"><label>Nationalité (ISO 2)</label><input name="nationality" maxlength="2" placeholder="FR" /></div>
+    <div class="field"><label>Date de naissance</label><input name="date_of_birth" type="date" /></div>
+    <div class="field"><label>N° passeport</label><input name="passport_number" /></div>
+    <div class="field"><label>Expiration passeport</label><input name="passport_expires_at" type="date" /></div>
+    <div class="field"><label>Email</label><input name="email" type="email" /></div>
+    <div class="field"><label>Téléphone</label><input name="phone" /></div>
+    <div class="field" style="grid-column:span 2;"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+  </div>
+  <button class="btn btn-primary mt-3" type="submit">Enregistrer</button>
+</form>
+{% endblock %}
