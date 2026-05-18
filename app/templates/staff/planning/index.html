@@ -1,0 +1,131 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Planning — {{ brand.nom_court }} ERP{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Pilotage</span>
+    <h1 class="display">Planning flotte</h1>
+  </div>
+  <div class="flex gap-2">
+    <a href="/planning/shares" class="btn btn-ghost">Partages publics</a>
+    <a href="/planning/legs/new" class="btn btn-primary">+ Nouveau leg</a>
+  </div>
+</header>
+
+<form class="card mb-4" method="get" action="/planning" style="display:flex; gap:var(--space-3); align-items:end;">
+  <div class="field" style="flex:1; margin:0;">
+    <label for="vessel_id">Navire</label>
+    <select id="vessel_id" name="vessel_id">
+      <option value="">Tous</option>
+      {% for v in vessels %}
+        <option value="{{ v.id }}" {% if filter_vessel_id == v.id %}selected{% endif %}>
+          {{ v.code }} — {{ v.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="btn btn-secondary">Filtrer</button>
+  {% if conflict_count %}
+    <span class="pill pill-warn">⚠ {{ conflict_count }} conflit(s) port détecté(s)</span>
+  {% endif %}
+</form>
+
+<section class="card" style="overflow-x:auto;">
+  <h2 class="mb-3">Vue Gantt — fenêtre {{ window_start|date }} → {{ window_end|date }}</h2>
+
+  <div class="gantt-wrapper" style="min-width:900px;">
+    <div class="gantt-timeline" style="display:grid; grid-template-columns:200px 1fr; gap:var(--space-2); margin-bottom:var(--space-2);">
+      <div></div>
+      <div class="gantt-axis" style="position:relative; height:28px; border-bottom:1px solid var(--gris-clair);">
+        {% set months = ['M', 'M+1', 'M+2', 'M+3'] %}
+        {% for i in range(4) %}
+          <span style="position:absolute; left:{{ (i * 25) }}%; top:0; font-size:var(--text-xs); color:var(--gris); padding-left:4px;">
+            {{ months[i] }}
+          </span>
+        {% endfor %}
+        {# Vertical "today" marker #}
+        <span style="position:absolute; left:7%; top:0; bottom:0; width:1px; background:var(--cuivre);" title="Aujourd'hui"></span>
+      </div>
+    </div>
+
+    {% for row in gantt_rows %}
+      <div class="gantt-row" style="display:grid; grid-template-columns:200px 1fr; gap:var(--space-2); margin-bottom:var(--space-2); align-items:center;">
+        <div class="gantt-vessel" style="font-weight:var(--fw-semibold); color:var(--teal);">
+          <span class="mono text-muted">{{ row.vessel.code }}</span>
+          {{ row.vessel.name }}
+        </div>
+        <div class="gantt-lane" style="position:relative; height:32px; background:var(--sable-light); border-radius:var(--radius-sm);">
+          {% for bar in row.bars %}
+            <a href="/planning/legs/{{ bar.leg_id }}"
+               class="gantt-bar"
+               style="position:absolute; left:{{ bar.left_pct }}%; width:{{ bar.width_pct }}%; top:4px; bottom:4px;
+                      background: {% if bar.status == 'completed' %}var(--vert){% elif bar.status == 'inprogress' %}var(--cuivre){% elif bar.status == 'cancelled' %}var(--gris){% else %}var(--teal){% endif %};
+                      color:var(--blanc); border-radius:var(--radius-sm);
+                      padding:2px 6px; font-size:var(--text-xs); font-family:var(--font-mono); font-weight:var(--fw-semibold);
+                      display:flex; align-items:center; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+                      border:1px solid {% if bar.in_conflict %}var(--danger){% else %}transparent{% endif %};"
+               title="{{ bar.leg_code }} · {{ bar.pol_locode }}→{{ bar.pod_locode }} · {{ bar.etd|date }}→{{ bar.eta|date }}{% if bar.in_conflict %} · ⚠ Conflit port{% endif %}">
+              {{ bar.leg_code }} {{ bar.pol_locode }}→{{ bar.pod_locode }}
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-4 flex gap-4" style="font-size:var(--text-xs); color:var(--gris); flex-wrap:wrap;">
+    <span><span style="display:inline-block; width:12px; height:12px; background:var(--teal); border-radius:2px;"></span> Planifié</span>
+    <span><span style="display:inline-block; width:12px; height:12px; background:var(--cuivre); border-radius:2px;"></span> En cours</span>
+    <span><span style="display:inline-block; width:12px; height:12px; background:var(--vert); border-radius:2px;"></span> Terminé</span>
+    <span><span style="display:inline-block; width:12px; height:12px; background:var(--gris); border-radius:2px;"></span> Annulé</span>
+    <span><span style="display:inline-block; width:12px; height:12px; border:1px solid var(--danger); border-radius:2px;"></span> Conflit port</span>
+  </div>
+</section>
+
+<section class="card mt-4">
+  <h2>Liste des legs ({{ legs|length }})</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Leg</th>
+        <th>Navire</th>
+        <th>Itinéraire</th>
+        <th>ETD</th>
+        <th>ETA</th>
+        <th>Statut</th>
+        <th>Réservable</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for leg in legs %}
+        {% set v = (vessels | selectattr("id", "equalto", leg.vessel_id) | list | first) %}
+        <tr>
+          <td><span class="mono">{{ leg.leg_code }}</span></td>
+          <td>{{ v.name if v else '—' }}</td>
+          <td>
+            <span class="mono">{{ ports[leg.departure_port_id].locode if ports[leg.departure_port_id] else '?' }}</span>
+            →
+            <span class="mono">{{ ports[leg.arrival_port_id].locode if ports[leg.arrival_port_id] else '?' }}</span>
+          </td>
+          <td>{{ leg.etd|date }}</td>
+          <td>{{ leg.eta|date }}</td>
+          <td>
+            {% if leg.status == 'planned' %}<span class="pill pill-info">Planifié</span>
+            {% elif leg.status == 'inprogress' %}<span class="pill pill-warn">En cours</span>
+            {% elif leg.status == 'completed' %}<span class="pill pill-ok">Terminé</span>
+            {% elif leg.status == 'cancelled' %}<span class="pill pill-neutral">Annulé</span>
+            {% else %}<span class="pill pill-neutral">{{ leg.status }}</span>{% endif %}
+          </td>
+          <td>{% if leg.is_bookable %}<span class="pill pill-ok">Oui</span>{% else %}<span class="pill pill-neutral">Non</span>{% endif %}</td>
+          <td>
+            <a href="/planning/legs/{{ leg.id }}" class="btn btn-ghost text-sm">Détail</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% endblock %}

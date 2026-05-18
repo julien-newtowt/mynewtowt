@@ -10,6 +10,7 @@ from app.models.client_invoice import ClientInvoice
 from app.models.co2_certificate import CO2Certificate
 from app.models.feature_flag import FeatureFlag
 from app.models.leg import Leg
+from app.models.planning_share import PlanningShare
 from app.models.port import Port
 from app.models.rate_limit import RateLimitAttempt
 from app.models.user import User
@@ -24,6 +25,7 @@ __all__ = [
     "CO2Certificate",
     "FeatureFlag",
     "Leg",
+    "PlanningShare",
     "Port",
     "RateLimitAttempt",
     "User",

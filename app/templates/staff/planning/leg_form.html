@@ -1,0 +1,105 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{% if leg %}Éditer {{ leg.leg_code }}{% else %}Nouveau leg{% endif %} — Planning{% endblock %}
+{% block content %}
+
+<a href="/planning" class="btn btn-ghost mb-3">← Planning</a>
+
+<header class="mb-4">
+  <span class="kicker">Planning</span>
+  {% if leg %}
+    <h1 class="display">Éditer leg <span class="mono text-accent">{{ leg.leg_code }}</span></h1>
+  {% else %}
+    <h1 class="display">Nouveau leg</h1>
+  {% endif %}
+</header>
+
+{% if error %}
+  <div class="alert alert-error" role="alert">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="{% if leg %}/planning/legs/{{ leg.id }}/edit{% else %}/planning/legs/new{% endif %}" class="card">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <div class="grid grid-2 gap-4">
+    <div class="field">
+      <label for="vessel_id">Navire</label>
+      <select id="vessel_id" name="vessel_id" required>
+        {% for v in vessels %}
+          <option value="{{ v.id }}" {% if (leg and leg.vessel_id == v.id) or (form and form.get('vessel_id')|int == v.id) %}selected{% endif %}>
+            {{ v.code }} — {{ v.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <label style="margin-bottom:0;"><input type="checkbox" name="is_bookable" {% if leg and leg.is_bookable %}checked{% endif %} /> Ouvrir aux réservations clients</label>
+    </div>
+
+    <div class="field">
+      <label for="departure_port_id">Port de départ</label>
+      <select id="departure_port_id" name="departure_port_id" required>
+        {% for p in ports %}
+          <option value="{{ p.id }}" {% if leg and leg.departure_port_id == p.id %}selected{% endif %}>
+            {{ p.locode }} — {{ p.name }} ({{ p.country }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="arrival_port_id">Port d'arrivée</label>
+      <select id="arrival_port_id" name="arrival_port_id" required>
+        {% for p in ports %}
+          <option value="{{ p.id }}" {% if leg and leg.arrival_port_id == p.id %}selected{% endif %}>
+            {{ p.locode }} — {{ p.name }} ({{ p.country }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="etd">ETD (départ prévu)</label>
+      <input id="etd" type="datetime-local" name="etd" required
+             value="{% if leg %}{{ leg.etd.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+    </div>
+    <div class="field">
+      <label for="eta">ETA (arrivée prévue)</label>
+      <input id="eta" type="datetime-local" name="eta" required
+             value="{% if leg %}{{ leg.eta.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+    </div>
+
+    <div class="field">
+      <label for="public_capacity_palettes">Capacité publique (palettes EPAL)</label>
+      <input id="public_capacity_palettes" type="number" name="public_capacity_palettes" min="1" max="2000"
+             value="{% if leg %}{{ leg.public_capacity_palettes or '' }}{% endif %}" placeholder="850" />
+    </div>
+    <div class="field">
+      <label for="public_price_per_palette_eur">Tarif public (EUR / palette)</label>
+      <input id="public_price_per_palette_eur" type="number" step="0.01" name="public_price_per_palette_eur"
+             value="{% if leg %}{{ leg.public_price_per_palette_eur or '' }}{% endif %}" placeholder="38.00" />
+    </div>
+
+    <div class="field">
+      <label for="booking_close_at">Clôture des réservations</label>
+      <input id="booking_close_at" type="datetime-local" name="booking_close_at"
+             value="{% if leg and leg.booking_close_at %}{{ leg.booking_close_at.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+    </div>
+  </div>
+
+  {% if leg %}
+    <div class="field" style="background:var(--sable-light); padding:var(--space-3); border-radius:var(--radius-sm); margin-top:var(--space-4);">
+      <label><input type="checkbox" name="cascade" checked /> <strong>Cascade automatique</strong></label>
+      <p class="text-muted text-sm" style="margin:var(--space-1) 0 0 0;">
+        Si tu décales l'ETD, les legs en aval du même navire (qui n'ont pas encore appareillé)
+        seront décalés du même delta. Les bookings impactés liront automatiquement la nouvelle ETA.
+      </p>
+    </div>
+  {% endif %}
+
+  <div class="flex gap-3 mt-4">
+    <button type="submit" class="btn btn-primary btn-lg">{% if leg %}Enregistrer{% else %}Créer le leg{% endif %}</button>
+    <a href="{% if leg %}/planning/legs/{{ leg.id }}{% else %}/planning{% endif %}" class="btn btn-ghost">Annuler</a>
+  </div>
+</form>
+
+{% endblock %}
