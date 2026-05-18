@@ -1,8 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Connexion client — NEWTOWT{% endblock %}
+{% block title %}Connexion client — {{ brand.nom_court }}{% endblock %}
 {% block body %}
 <div class="auth-shell">
   <div class="auth-card">
+    <div class="auth-brand">
+      <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
+    </div>
+    <span class="kicker text-center" style="display:block;">Espace client</span>
     <h2>Connexion</h2>
     {% if error %}
       <div class="alert alert-error" role="alert">{{ error }}</div>
@@ -19,7 +23,7 @@
       </div>
       <button class="btn btn-primary btn-block btn-lg" type="submit">Se connecter</button>
     </form>
-    <p class="text-center text-muted mt-4">
+    <p class="text-center text-muted mt-4 text-sm">
       Pas encore de compte ?
       <a href="/me/register">Créer un compte</a>
     </p>

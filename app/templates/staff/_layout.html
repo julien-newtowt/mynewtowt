@@ -3,43 +3,47 @@
 {% block body %}
 <div class="app-shell">
   <aside class="sidebar" aria-label="Menu staff">
-    <h1 class="display">NEWTOWT</h1>
-    <small class="text-muted">ERP — {{ user.role }}</small>
-    <nav class="mt-4">
+    <div class="brand-mark">
+      <a href="/dashboard" style="border:none;">
+        <img src="{{ brand.logo_white }}" alt="{{ brand.nom_court }}" />
+      </a>
+    </div>
+    <small class="role-label">ERP — {{ user.role }}</small>
+    <nav>
       <div class="group-title">Pilotage</div>
       <ul>
-        <li><a href="/dashboard">📊 Tableau de bord</a></li>
-        <li><a href="/planning">🗓️ Planning</a></li>
-        <li><a href="/tracking">🛰️ Tracking</a></li>
+        <li><a href="/dashboard">Tableau de bord</a></li>
+        <li><a href="/planning">Planning</a></li>
+        <li><a href="/tracking">Tracking</a></li>
       </ul>
       <div class="group-title">Cargo</div>
       <ul>
-        <li><a href="/commercial">💼 Commercial</a></li>
-        <li><a href="/staff/bookings">📦 Bookings</a></li>
-        <li><a href="/cargo">🧾 Commandes & BL</a></li>
-        <li><a href="/stowage">⚓ Plan d'arrimage</a></li>
+        <li><a href="/commercial">Commercial</a></li>
+        <li><a href="/staff/bookings">Bookings</a></li>
+        <li><a href="/cargo">Commandes &amp; BL</a></li>
+        <li><a href="/stowage">Plan d'arrimage</a></li>
       </ul>
       <div class="group-title">Opérations</div>
       <ul>
-        <li><a href="/escale">⚓ Escale</a></li>
-        <li><a href="/onboard">⛵ Onboard</a></li>
-        <li><a href="/tickets">🎫 Tickets</a></li>
-        <li><a href="/crew">👥 Crew</a></li>
+        <li><a href="/escale">Escale</a></li>
+        <li><a href="/onboard">Onboard</a></li>
+        <li><a href="/tickets">Tickets</a></li>
+        <li><a href="/crew">Crew</a></li>
       </ul>
       <div class="group-title">Performance</div>
       <ul>
-        <li><a href="/finance">💶 Finance</a></li>
-        <li><a href="/kpi">📈 KPI</a></li>
-        <li><a href="/mrv">🌍 MRV / CO₂</a></li>
-        <li><a href="/claims">🛡️ Claims</a></li>
-        <li><a href="/dashboard/analytics">📊 Analytics</a></li>
+        <li><a href="/finance">Finance</a></li>
+        <li><a href="/kpi">KPI</a></li>
+        <li><a href="/mrv">MRV / CO₂</a></li>
+        <li><a href="/claims">Claims</a></li>
+        <li><a href="/dashboard/analytics">Analytics</a></li>
       </ul>
       <div class="group-title">Admin</div>
       <ul>
-        <li><a href="/admin">⚙️ Configuration</a></li>
+        <li><a href="/admin">Configuration</a></li>
       </ul>
       <div class="mt-5">
-        <a href="/logout" class="btn btn-ghost btn-block">Déconnexion</a>
+        <a href="/logout" class="btn btn-ghost btn-block" style="color:var(--bleu-horizon);">Déconnexion</a>
       </div>
     </nav>
   </aside>

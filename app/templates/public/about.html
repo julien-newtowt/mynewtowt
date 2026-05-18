@@ -1,44 +1,59 @@
 {% extends "public/_layout.html" %}
-{% block title %}À propos — NEWTOWT{% endblock %}
+{% block title %}À propos — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
-<div class="container" style="padding-top: var(--space-6); padding-bottom: var(--space-8); max-width: 800px;">
-  <h1 class="display">NEWTOWT en bref</h1>
+<section class="hero">
+  <div class="container">
+    <span class="kicker">{{ brand.raison_sociale }}</span>
+    <h1 class="display">{{ brand.tagline_1 }}</h1>
+    <span class="baseline">{{ brand.tagline_2 }}</span>
+  </div>
+</section>
 
-  <p class="lead">
-    Compagnie maritime française pionnière du <strong>transport décarboné par voilier cargo</strong>
-    depuis 2011. Six voiliers en service ou en construction, capacité unitaire de 850 palettes EPAL,
-    flotte 100 % vélique avec moteur d'appoint.
-  </p>
+<section class="section">
+  <div class="container" style="max-width:840px;">
+    <h2 class="section-title">{{ brand.nom_court }} en bref</h2>
 
-  <h2>Notre flotte</h2>
-  <ul>
-    <li><strong>Anemos</strong> — en service.</li>
-    <li><strong>Artemis</strong> — en service.</li>
-    <li><strong>Atlantis, Atlas, Archimedes, Asterias</strong> — livraisons 2026.</li>
-  </ul>
+    <p class="lead">
+      <strong>{{ brand.raison_sociale }}</strong> — compagnie maritime française
+      pionnière du transport décarboné par voilier cargo depuis {{ brand.year_founded }}.
+    </p>
 
-  <h2>Routes principales</h2>
-  <ul>
-    <li>Fécamp ↔ New York</li>
-    <li>Fécamp ↔ São Sebastião (Brésil)</li>
-    <li>Le Havre ↔ Açores ↔ Antilles</li>
-  </ul>
+    <h3>Notre flotte</h3>
+    <p>
+      Six voiliers cargos en service ou en construction, capacité unitaire de
+      <strong>850 palettes EPAL</strong>, propulsion 100 % vélique avec moteur d'appoint.
+    </p>
+    <ul>
+      <li><strong>Anemos</strong> — en service.</li>
+      <li><strong>Artemis</strong> — en service.</li>
+      <li><strong>Atlantis, Atlas, Archimedes, Asterias</strong> — livraisons 2026.</li>
+    </ul>
 
-  <h2>Promesses</h2>
-  <ol>
-    <li>Capacités fermes, plannings publics.</li>
-    <li>-90 % de CO₂ vs cargo conventionnel.</li>
-    <li>Suivi temps réel, documentation numérique.</li>
-    <li>Certificat CO₂ téléchargeable, valorisable dans votre bilan RSE / Bilan Carbone®.</li>
-  </ol>
+    <h3>Routes principales</h3>
+    <ul>
+      <li>Le Havre / Fécamp ↔ New York / Boston</li>
+      <li>Le Havre ↔ São Sebastião (Brésil)</li>
+      <li>Le Havre ↔ Açores ↔ Antilles</li>
+    </ul>
 
-  <h2>Contact</h2>
-  <p>
-    Commercial : <a href="mailto:commercial@newtowt.eu">commercial@newtowt.eu</a><br />
-    Sécurité : <a href="mailto:security@newtowt.eu">security@newtowt.eu</a><br />
-    DPO : <a href="mailto:dpo@newtowt.eu">dpo@newtowt.eu</a>
-  </p>
-</div>
+    <h3>Nos engagements</h3>
+    <ol>
+      <li>Capacités fermes, plannings annoncés 6 mois à l'avance.</li>
+      <li>Émissions divisées par dix vs cargo conventionnel — certificat à chaque livraison.</li>
+      <li>Suivi temps réel, documentation 100 % numérique.</li>
+      <li>Données client protégées (RGPD, MFA, audit complet).</li>
+    </ol>
+
+    <h3>Coordonnées</h3>
+    <p>
+      <strong>{{ brand.raison_sociale }}</strong><br/>
+      {{ brand.adresse }}<br/>
+      Tél : <a href="tel:{{ brand.telephone|replace(' ','') }}">{{ brand.telephone }}</a><br/>
+      Email : <a href="mailto:{{ brand.email }}">{{ brand.email }}</a><br/>
+      Site corporate : <a href="{{ brand.site_public }}" rel="noopener">{{ brand.site_public }}</a>
+    </p>
+  </div>
+</section>
 
 {% endblock %}

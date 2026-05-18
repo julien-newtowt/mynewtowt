@@ -1,70 +1,83 @@
 {% extends "public/_layout.html" %}
-{% block title %}CGV — NEWTOWT{% endblock %}
+{% block title %}CGV — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
-<div class="container" style="padding-top: var(--space-6); padding-bottom: var(--space-8); max-width: 800px;">
-  <h1>Conditions Générales de Vente — v2026.1</h1>
+<section class="hero">
+  <div class="container">
+    <span class="kicker">Version v2026.1</span>
+    <h1 class="display">Conditions Générales de Vente</h1>
+  </div>
+</section>
 
-  <p class="lead">
-    Les présentes CGV régissent les contrats de transport conclus via la plateforme
-    `my.newtowt.eu` entre NEWTOWT et ses clients.
-  </p>
+<section class="section">
+  <div class="container" style="max-width:840px;">
+    <p class="lead">
+      Les présentes CGV régissent les contrats de transport conclus via la
+      plateforme entre {{ brand.raison_sociale }} et ses clients.
+    </p>
 
-  <h2>1. Objet</h2>
-  <p>
-    Transport maritime de marchandises palettisées par voilier cargo entre les ports
-    desservis par NEWTOWT.
-  </p>
+    <h2 class="section-title">1. Objet</h2>
+    <p>
+      Transport maritime de marchandises palettisées par voilier cargo entre
+      les ports desservis par {{ brand.nom_court }}.
+    </p>
 
-  <h2>2. Réservation</h2>
-  <p>
-    La réservation est ferme après confirmation par NEWTOWT (statut « confirmed »).
-    Une cotation indicative est fournie lors de la soumission ; elle peut être ajustée
-    par NEWTOWT en cas de marchandise dangereuse, hors-format, ou contrainte logistique.
-  </p>
+    <h2 class="section-title">2. Réservation</h2>
+    <p>
+      La réservation est ferme après confirmation par {{ brand.nom_court }}
+      (statut « confirmed »). Une cotation indicative est fournie lors de la
+      soumission ; elle peut être ajustée en cas de marchandise dangereuse,
+      hors-format ou contrainte logistique particulière.
+    </p>
 
-  <h2>3. Annulation</h2>
-  <table>
-    <thead><tr><th>Fenêtre avant ETD</th><th>Frais d'annulation</th></tr></thead>
-    <tbody>
-      <tr><td>&gt; 30 jours</td><td>0 %</td></tr>
-      <tr><td>30 à 7 jours</td><td>25 %</td></tr>
-      <tr><td>7 à 2 jours</td><td>50 %</td></tr>
-      <tr><td>&lt; 2 jours</td><td>100 %</td></tr>
-    </tbody>
-  </table>
+    <h2 class="section-title">3. Annulation</h2>
+    <table>
+      <thead><tr><th>Fenêtre avant ETD</th><th>Frais d'annulation</th></tr></thead>
+      <tbody>
+        <tr><td>&gt; 30 jours</td><td>0 %</td></tr>
+        <tr><td>30 à 7 jours</td><td>25 %</td></tr>
+        <tr><td>7 à 2 jours</td><td>50 %</td></tr>
+        <tr><td>&lt; 2 jours</td><td>100 %</td></tr>
+      </tbody>
+    </table>
 
-  <h2>4. Marchandises dangereuses</h2>
-  <p>
-    Toute marchandise relevant du Code IMDG doit être déclarée à la réservation.
-    Une fiche de données de sécurité (FDS) PDF doit être jointe. NEWTOWT se réserve le
-    droit de refuser une marchandise dont la classification est incompatible avec ses
-    capacités d'arrimage.
-  </p>
+    <h2 class="section-title">4. Marchandises dangereuses</h2>
+    <p>
+      Toute marchandise relevant du Code IMDG doit être déclarée à la
+      réservation. Une fiche de données de sécurité (FDS) PDF doit être jointe.
+      {{ brand.nom_court }} se réserve le droit de refuser une marchandise dont
+      la classification est incompatible avec ses capacités d'arrimage.
+    </p>
 
-  <h2>5. Responsabilité</h2>
-  <p>
-    Conformément à la Convention de Bruxelles (Hague-Visby Rules), la responsabilité
-    de NEWTOWT en tant que transporteur maritime est plafonnée selon les barèmes en
-    vigueur. Une assurance Cargo All-Risks est recommandée et peut être souscrite via
-    nos partenaires.
-  </p>
+    <h2 class="section-title">5. Responsabilité</h2>
+    <p>
+      Conformément à la Convention de Bruxelles (Hague-Visby Rules), la
+      responsabilité de {{ brand.nom_court }} en tant que transporteur maritime
+      est plafonnée selon les barèmes en vigueur. Une assurance Cargo All-Risks
+      est recommandée et peut être souscrite via nos partenaires.
+    </p>
 
-  <h2>6. Force majeure</h2>
-  <p>
-    Tempêtes, embargos, conflits armés, pandémies, blocages portuaires constituent des
-    cas de force majeure suspendant les obligations contractuelles sans indemnité.
-  </p>
+    <h2 class="section-title">6. Force majeure</h2>
+    <p>
+      Tempêtes, embargos, conflits armés, pandémies, blocages portuaires
+      constituent des cas de force majeure suspendant les obligations
+      contractuelles sans indemnité.
+    </p>
 
-  <h2>7. Données personnelles</h2>
-  <p>
-    Voir <a href="/about/privacy">politique de confidentialité</a>.
-  </p>
+    <h2 class="section-title">7. Données personnelles</h2>
+    <p>
+      Voir <a href="/about/privacy">politique de confidentialité</a>.
+    </p>
 
-  <h2>8. Droit applicable</h2>
-  <p>
-    Droit français. Tribunal de commerce du Havre compétent.
-  </p>
-</div>
+    <h2 class="section-title">8. Droit applicable</h2>
+    <p>
+      Droit français. Tribunal de commerce du Havre compétent.
+    </p>
+
+    <p class="text-muted text-sm mt-5">
+      Contact : <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>
+    </p>
+  </div>
+</section>
 
 {% endblock %}

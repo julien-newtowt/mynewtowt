@@ -1,8 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Créer un compte — NEWTOWT{% endblock %}
+{% block title %}Créer un compte — {{ brand.nom_court }}{% endblock %}
 {% block body %}
 <div class="auth-shell">
   <div class="auth-card">
+    <div class="auth-brand">
+      <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
+    </div>
+    <span class="kicker text-center" style="display:block;">Inscription client</span>
     <h2>Créer un compte</h2>
     {% if error %}
       <div class="alert alert-error" role="alert">{{ error }}</div>
@@ -31,7 +35,7 @@
       </div>
       <button class="btn btn-primary btn-block btn-lg" type="submit">Créer le compte</button>
     </form>
-    <p class="text-center text-muted mt-4">
+    <p class="text-center text-muted mt-4 text-sm">
       Déjà un compte ?
       <a href="/me/login">Se connecter</a>
     </p>

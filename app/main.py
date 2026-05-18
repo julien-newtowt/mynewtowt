@@ -77,7 +77,7 @@ def create_app() -> FastAPI:
     @app.get("/.well-known/security.txt", response_class=PlainTextResponse)
     async def security_txt() -> str:
         return (
-            "Contact: mailto:security@newtowt.eu\n"
+            "Contact: mailto:communication@towt.eu\n"
             "Expires: 2026-12-31T23:59:59.000Z\n"
             "Preferred-Languages: fr, en\n"
             f"Canonical: {settings.site_url}/.well-known/security.txt\n"

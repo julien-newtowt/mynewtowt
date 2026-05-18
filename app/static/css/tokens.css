@@ -1,117 +1,180 @@
 /*
- * NEWTOWT — Kairos design tokens.
+ * NEWTOWT design tokens — charte "Nouvelle Étoile" (v1.0.0, 2026-04-07)
+ * Source de vérité : Versions TOWT/newtowt-design-tokens.json
  *
- * Single source of truth for color, typography, spacing, radius, shadows.
- * Consumed by kairos.css for component rules. Reference:
- * docs/design/01-design-handoff.md §2.1
+ * Ratio chromatique cible : 60% teal · 20% vert · 10% cuivre · 10% neutres
  */
 :root {
-  /* --- Brand anchor (charte historique) --- */
-  --brand-teal: #0D5966;
-  --brand-vert: #87BD29;
-  --brand-cuivre: #B47148;
-  --brand-sable: #EFE6D6;
-  --brand-marine: #0A2540;
+  /* ────────────────────────────── Couleurs ──────────────────────────── */
+  /* Teal — dominante (60%) — titres, structures, liens */
+  --teal:        #0D5966;
+  --teal-dark:   #093F48;
+  --teal-light:  #1A7C8C;
 
-  /* --- Surfaces (dark-first) --- */
-  --bg-0: #08121A;
-  --bg-1: #0F1E27;
-  --bg-2: #1A2D38;
-  --bg-3: #28404E;
+  /* Vert — accent secondaire (20%) — baseline, success */
+  --vert:        #87BD29;
+  --vert-light:  #BEDB92;
 
-  /* --- Text --- */
-  --text-0: #F4F7F9;
-  --text-1: #B8C5CE;
-  --text-2: #7C8B95;
+  /* Bleu — usage logo strict */
+  --bleu-marine: #0051A0;
+  --bleu-horizon:#9EC6D2;
 
-  /* --- Accent & semantic --- */
-  --accent: var(--brand-vert);
-  --accent-hover: #9AD13B;
-  --accent-alt: #4FA6B5;
-  --warn: #E89132;
-  --error: #E14B5A;
-  --ok: var(--brand-vert);
+  /* Cuivre — transition (10%) — préfixe NEW, focus halo */
+  --cuivre:      #B47148;
+  --cuivre-light:#D49975;
 
-  /* --- Status leg --- */
-  --status-planned: #4FA6B5;
-  --status-inprogress: #E89132;
-  --status-completed: var(--brand-vert);
-  --status-cancelled: #7C8B95;
+  /* Sable — fond éditorial */
+  --sable:       #EFE6D6;
+  --sable-light: #F8F2E6;
 
-  /* --- Cargo direction --- */
-  --cargo-import: #4FA6B5;
-  --cargo-export: #E89132;
+  /* Neutres (10%) */
+  --anthracite:  #2A2A2A;
+  --gris:        #6E6E6E;
+  --gris-clair:  #D9D9D9;
+  --blanc:       #FFFFFF;
+  --blanc-casse: #FAF7F2;
+  --nuit:        #0B2A33;
 
-  /* --- Gradients --- */
-  --gradient-ocean: linear-gradient(135deg, var(--brand-vert) 0%, var(--brand-teal) 100%);
-  --gradient-night: linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
+  /* Sémantique */
+  --success:     var(--vert);
+  --warning:     var(--cuivre);
+  --danger:      #C44536;
+  --info:        var(--bleu-horizon);
 
-  /* --- Typography --- */
-  --font-display: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-body: "Manrope", system-ui, sans-serif;
-  --font-accent: "DM Serif Display", Georgia, serif;
-  --font-mono: "JetBrains Mono", "Fira Mono", monospace;
+  /* ────────────────────────── Aliases applicatifs ───────────────────── */
+  /* Surfaces (light-first) */
+  --bg-0: var(--blanc-casse);   /* canvas */
+  --bg-1: var(--blanc);         /* cards */
+  --bg-2: var(--sable-light);   /* hover */
+  --bg-3: var(--gris-clair);    /* borders */
 
-  --text-xs: 0.75rem;     /* 12 */
-  --text-sm: 0.875rem;    /* 14 */
-  --text-base: 1rem;      /* 16 */
-  --text-lg: 1.25rem;     /* 20 */
-  --text-xl: 1.5rem;      /* 24 */
-  --text-2xl: 2rem;       /* 32 */
-  --text-3xl: 2.5rem;     /* 40 */
-  --text-4xl: 3rem;       /* 48 */
+  /* Texte */
+  --text-0: var(--anthracite);  /* primaire */
+  --text-1: var(--teal);        /* labels, headings */
+  --text-2: var(--gris);        /* secondaire */
 
-  /* --- Spacing 4px base --- */
+  /* Actions / sémantique */
+  --accent:      var(--cuivre);        /* action transition */
+  --accent-alt:  var(--teal-light);    /* focus rings */
+  --primary:     var(--teal);          /* CTA principal */
+  --primary-hover:var(--teal-light);
+  --secondary:   var(--vert);          /* CTA validation/eco */
+  --secondary-hover:var(--vert-light);
+  --warn:        var(--warning);
+  --error:       var(--danger);
+  --ok:          var(--success);
+
+  /* Status leg */
+  --status-planned:    var(--bleu-horizon);
+  --status-inprogress: var(--cuivre);
+  --status-completed:  var(--vert);
+  --status-cancelled:  var(--gris);
+
+  /* Direction cargo */
+  --cargo-import: var(--bleu-horizon);
+  --cargo-export: var(--cuivre);
+
+  /* Gradients (subtils — charte minimaliste) */
+  --gradient-hero: linear-gradient(135deg, var(--sable-light) 0%, var(--blanc) 100%);
+  --gradient-night: linear-gradient(180deg, var(--nuit) 0%, var(--teal-dark) 100%);
+
+  /* ───────────────────────── Typographie ───────────────────────────── */
+  --font-titre: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-corps: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-serif: "DM Serif Display", Georgia, "Times New Roman", serif;
+  --font-mono:  "JetBrains Mono", "SF Mono", Consolas, "Courier New", monospace;
+
+  /* Aliases legacy (compat templates V3) */
+  --font-display: var(--font-titre);
+  --font-body:    var(--font-corps);
+  --font-accent:  var(--font-serif);
+
+  --text-xs:   0.75rem;   /* 12 — légendes */
+  --text-sm:   0.875rem;  /* 14 — interfaces compactes */
+  --text-base: 1rem;      /* 16 — corps */
+  --text-md:   1.125rem;  /* 18 — sous-titres */
+  --text-lg:   1.5rem;    /* 24 — h3 */
+  --text-xl:   2rem;      /* 32 — h2 */
+  --text-2xl:  2.75rem;   /* 44 — h1 */
+  --text-3xl:  clamp(3rem, 7vw, 5rem);  /* hero responsif 48-80px */
+  --text-4xl:  var(--text-3xl);          /* alias legacy */
+
+  /* Graisses */
+  --fw-light:     300;
+  --fw-regular:   400;
+  --fw-medium:    500;
+  --fw-semibold:  600;
+  --fw-bold:      700;
+  --fw-extrabold: 800;
+
+  /* Hauteurs de ligne */
+  --lh-tight:   1.15;
+  --lh-snug:    1.35;
+  --lh-normal:  1.6;
+  --lh-relaxed: 1.75;
+
+  /* Letter spacing */
+  --ls-tight:  -0.01em;
+  --ls-normal: 0;
+  --ls-wide:   0.04em;
+  --ls-wider:  0.12em;   /* kickers MAJUSCULES */
+  --ls-widest: 0.18em;   /* baselines */
+
+  /* ────────────────────────── Espacement ───────────────────────────── */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
-  --space-8: 3rem;
-  --space-10: 4rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+  --space-10: 8rem;
 
-  /* --- Radius --- */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  /* ─────────────────────────── Layout ──────────────────────────────── */
+  --max-width: 1240px;
+  --pad-x: clamp(1.25rem, 5vw, 3.75rem);  /* 20-60px responsive */
+
+  --bp-xs: 480px;
+  --bp-sm: 768px;
+  --bp-md: 1024px;
+  --bp-lg: 1240px;
+
+  /* ────────────────────────── Border radius ────────────────────────── */
+  /* Charte minimaliste : très subtil, jamais arrondi */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;        /* alias legacy */
   --radius-pill: 999px;
 
-  /* --- Shadows --- */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 24px rgba(135, 189, 41, 0.25);
+  /* ────────────────────────── Élévations ───────────────────────────── */
+  --shadow-sm: 0 1px 2px rgba(13, 89, 102, 0.05);
+  --shadow-md: 0 4px 12px rgba(13, 89, 102, 0.08);
+  --shadow-lg: 0 10px 30px rgba(13, 89, 102, 0.12);
+  --shadow-glow: 0 0 0 4px rgba(180, 113, 72, 0.2);  /* halo cuivre focus */
 
-  /* --- Timing --- */
-  --duration-fast: 150ms;
-  --duration-medium: 250ms;
+  /* ────────────────────────── Animations ───────────────────────────── */
+  --duration-fast: 200ms;
+  --duration-medium: 200ms;
   --duration-slow: 400ms;
   --easing-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ────────────────────────── Logo ratios ──────────────────────────── */
+  --logo-ratio: 4.33;        /* 1450/335 */
+  --logo-min-height: 44px;   /* web */
 }
 
-/* Light mode override — opt-in via [data-theme="light"] */
-[data-theme="light"] {
-  --bg-0: #FAFBFC;
-  --bg-1: #FFFFFF;
-  --bg-2: #F0F2F5;
-  --bg-3: #E1E5EC;
-  --text-0: #0B0E14;
-  --text-1: #3F4659;
-  --text-2: #7B8395;
-}
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg-0: #FAFBFC;
-    --bg-1: #FFFFFF;
-    --bg-2: #F0F2F5;
-    --bg-3: #E1E5EC;
-    --text-0: #0B0E14;
-    --text-1: #3F4659;
-    --text-2: #7B8395;
-  }
+/* Dark mode — fonds premium nuit + teal-dark */
+[data-theme="dark"] {
+  --bg-0: var(--nuit);
+  --bg-1: var(--teal-dark);
+  --bg-2: var(--teal);
+  --bg-3: var(--teal-light);
+  --text-0: var(--blanc-casse);
+  --text-1: var(--bleu-horizon);
+  --text-2: var(--gris-clair);
 }
 
 @media (prefers-reduced-motion: reduce) {

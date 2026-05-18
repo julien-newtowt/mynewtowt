@@ -1,9 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Connexion staff — NEWTOWT{% endblock %}
+{% block title %}Connexion staff — {{ brand.nom_court }}{% endblock %}
 {% block body %}
 <div class="auth-shell">
   <div class="auth-card">
-    <h2>NEWTOWT — Espace collaborateurs</h2>
+    <div class="auth-brand">
+      <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
+    </div>
+    <span class="kicker text-center" style="display:block;">Espace collaborateurs</span>
+    <h2>Connexion</h2>
     {% if error %}
       <div class="alert alert-error" role="alert">{{ error }}</div>
     {% endif %}

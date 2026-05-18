@@ -62,3 +62,23 @@ templates.env.globals["app_name"] = settings.app_name
 templates.env.globals["app_version"] = settings.app_version
 templates.env.globals["app_env"] = settings.app_env
 templates.env.globals["site_url"] = settings.site_url
+
+# ──────────────────────── Corporate identity ─────────────────────────────
+# Source de vérité : Versions TOWT/newtowt-design-tokens.json
+templates.env.globals["brand"] = {
+    "raison_sociale": "TransOceanic Wind Transport — NEWTOWT",
+    "nom_court": "NEWTOWT",
+    "mention": "Pionnier du transport maritime décarboné depuis 2011",
+    "adresse": "52 Quai Frissard - 76600 Le Havre",
+    "telephone": "+33 9 84 33 89 62",
+    "email": "communication@towt.eu",
+    "site_public": "https://towt.eu",
+    "tagline_1": "On garde le cap.",
+    "tagline_2": "Une nouvelle traversée commence.",
+    "year_founded": 2011,
+    # Logos
+    "logo_light": "/static/img/logo_NEWTOWT_web.png",
+    "logo_dark": "/static/img/logo_NEWTOWT_web_dark.png",
+    "logo_white": "/static/img/logo_NEWTOWT_web_white.png",
+    "logo_email": "/static/img/logo_NEWTOWT_email.png",
+}
