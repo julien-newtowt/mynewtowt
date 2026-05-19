@@ -140,6 +140,17 @@ async def upload_positions(
     if not raw.strip():
         raise HTTPException(status_code=400, detail="body vide")
 
+    # Debug log temporaire — montre les 800 premiers chars du body reçu et les
+    # en-têtes utiles. Permet de diagnostiquer ce que Power Automate envoie.
+    import logging as _logging
+    _log = _logging.getLogger("tracking")
+    _log.warning(
+        "Received tracking upload: content-type=%r, body_len=%d, body[:800]=%r",
+        request.headers.get("content-type"),
+        len(raw),
+        raw[:800],
+    )
+
     # Détection du début utile (saute les éventuelles lignes vides ou de boundary
     # multipart résiduelles si le parser FastAPI n'a pas tout nettoyé).
     lines = [ln for ln in raw.splitlines() if ln.strip()]
