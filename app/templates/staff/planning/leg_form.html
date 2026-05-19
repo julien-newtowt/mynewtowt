@@ -10,6 +10,10 @@
     <h1 class="display">Éditer leg <span class="mono text-accent">{{ leg.leg_code }}</span></h1>
   {% else %}
     <h1 class="display">Nouveau leg</h1>
+    <p class="text-muted">
+      Choisis les ports via le <strong>filtre dynamique</strong> ci-dessous ou
+      <a href="/planning/legs/new-from-map">en cliquant sur la carte</a>.
+    </p>
   {% endif %}
 </header>
 
@@ -17,44 +21,92 @@
   <div class="alert alert-error" role="alert">{{ error }}</div>
 {% endif %}
 
-<form method="post" action="{% if leg %}/planning/legs/{{ leg.id }}/edit{% else %}/planning/legs/new{% endif %}" class="card">
+<form method="post" action="{% if leg %}/planning/legs/{{ leg.id }}/edit{% else %}/planning/legs/new{% endif %}" class="card" id="leg-form">
   <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
 
+  <h2>Itinéraire</h2>
+
+  {# Raccourcis ports principaux NEWTOWT — visibles en permanence. #}
+  <div class="flex gap-2 mb-3" style="flex-wrap:wrap;">
+    <span class="text-muted text-sm" style="align-self:center;">Raccourcis :</span>
+    <button type="button" class="btn btn-secondary text-sm" data-shortcut="pol" data-locode="FRFEC">POL → Fécamp (FRFEC)</button>
+    <button type="button" class="btn btn-secondary text-sm" data-shortcut="pod" data-locode="BRSSO">POD → São Sebastião (BRSSO)</button>
+    <button type="button" class="btn btn-secondary text-sm" data-shortcut="pol" data-locode="BRSSO">POL → São Sebastião (BRSSO)</button>
+    <button type="button" class="btn btn-secondary text-sm" data-shortcut="pod" data-locode="FRFEC">POD → Fécamp (FRFEC)</button>
+  </div>
+
   <div class="grid grid-2 gap-4">
+    {# POL filter cascade #}
+    <fieldset style="border:1px solid var(--gris-clair); padding:var(--space-3); border-radius:var(--radius-md);">
+      <legend class="kicker">Port de départ (POL)</legend>
+      <div class="grid grid-2 gap-2 mb-2">
+        <div class="field" style="margin:0;">
+          <label>Zone</label>
+          <select id="pol-zone" data-cascade-zone="pol"></select>
+        </div>
+        <div class="field" style="margin:0;">
+          <label>Pays</label>
+          <select id="pol-country" data-cascade-country="pol"></select>
+        </div>
+      </div>
+      <div class="field" style="margin:0;">
+        <label>Port</label>
+        <select id="departure_port_id" name="departure_port_id" required data-cascade-port="pol">
+          {% if leg %}<option value="{{ leg.departure_port_id }}" selected>(actuel #{{ leg.departure_port_id }})</option>{% endif %}
+        </select>
+      </div>
+    </fieldset>
+
+    {# POD filter cascade #}
+    <fieldset style="border:1px solid var(--gris-clair); padding:var(--space-3); border-radius:var(--radius-md);">
+      <legend class="kicker">Port d'arrivée (POD)</legend>
+      <div class="grid grid-2 gap-2 mb-2">
+        <div class="field" style="margin:0;">
+          <label>Zone</label>
+          <select id="pod-zone" data-cascade-zone="pod"></select>
+        </div>
+        <div class="field" style="margin:0;">
+          <label>Pays</label>
+          <select id="pod-country" data-cascade-country="pod"></select>
+        </div>
+      </div>
+      <div class="field" style="margin:0;">
+        <label>Port</label>
+        <select id="arrival_port_id" name="arrival_port_id" required data-cascade-port="pod">
+          {% if leg %}<option value="{{ leg.arrival_port_id }}" selected>(actuel #{{ leg.arrival_port_id }})</option>{% endif %}
+        </select>
+      </div>
+    </fieldset>
+  </div>
+
+  <h2 class="mt-4">Navigation</h2>
+  <div class="grid grid-3 gap-3">
     <div class="field">
       <label for="vessel_id">Navire</label>
       <select id="vessel_id" name="vessel_id" required>
         {% for v in vessels %}
-          <option value="{{ v.id }}" {% if (leg and leg.vessel_id == v.id) or (form and form.get('vessel_id')|int == v.id) %}selected{% endif %}>
-            {{ v.code }} — {{ v.name }}
+          <option value="{{ v.id }}"
+                  data-default-speed="{{ v.default_speed_kn }}"
+                  data-default-elongation="{{ v.default_elongation }}"
+                  {% if leg and leg.vessel_id == v.id %}selected{% endif %}>
+            {{ v.code }} — {{ v.name }} ({{ v.default_speed_kn }} kn, ×{{ v.default_elongation }})
           </option>
         {% endfor %}
       </select>
     </div>
     <div class="field">
-      <label>&nbsp;</label>
-      <label style="margin-bottom:0;"><input type="checkbox" name="is_bookable" {% if leg and leg.is_bookable %}checked{% endif %} /> Ouvrir aux réservations clients</label>
-    </div>
-
-    <div class="field">
-      <label for="departure_port_id">Port de départ</label>
-      <select id="departure_port_id" name="departure_port_id" required>
-        {% for p in ports %}
-          <option value="{{ p.id }}" {% if leg and leg.departure_port_id == p.id %}selected{% endif %}>
-            {{ p.locode }} — {{ p.name }} ({{ p.country }})
-          </option>
-        {% endfor %}
-      </select>
+      <label for="transit_speed_kn">Vitesse traversée (kn)</label>
+      <input id="transit_speed_kn" type="number" step="0.1" min="0" max="30" name="transit_speed_kn"
+             value="{{ leg.transit_speed_kn if leg and leg.transit_speed_kn is not none else '' }}"
+             placeholder="défaut navire" />
+      <small class="text-muted">Laisser vide pour utiliser la vitesse par défaut du navire.</small>
     </div>
     <div class="field">
-      <label for="arrival_port_id">Port d'arrivée</label>
-      <select id="arrival_port_id" name="arrival_port_id" required>
-        {% for p in ports %}
-          <option value="{{ p.id }}" {% if leg and leg.arrival_port_id == p.id %}selected{% endif %}>
-            {{ p.locode }} — {{ p.name }} ({{ p.country }})
-          </option>
-        {% endfor %}
-      </select>
+      <label for="elongation_coef">Coefficient d'élongation</label>
+      <input id="elongation_coef" type="number" step="0.01" min="1" max="3" name="elongation_coef"
+             value="{{ leg.elongation_coef if leg and leg.elongation_coef is not none else '' }}"
+             placeholder="défaut navire (1.15)" />
+      <small class="text-muted">Multiplicateur sur la distance orthodromique (vent, courants).</small>
     </div>
 
     <div class="field">
@@ -67,19 +119,28 @@
       <input id="eta" type="datetime-local" name="eta" required
              value="{% if leg %}{{ leg.eta.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
     </div>
-
     <div class="field">
-      <label for="public_capacity_palettes">Capacité publique (palettes EPAL)</label>
+      <label>Distance · durée estimées</label>
+      <div id="eta-hint" class="mono text-muted">—</div>
+    </div>
+  </div>
+
+  <h2 class="mt-4">Réservation publique</h2>
+  <div class="grid grid-3 gap-3">
+    <div class="field">
+      <label><input type="checkbox" name="is_bookable" {% if leg and leg.is_bookable %}checked{% endif %} /> Ouvrir aux réservations clients</label>
+    </div>
+    <div class="field">
+      <label for="public_capacity_palettes">Capacité publique (palettes)</label>
       <input id="public_capacity_palettes" type="number" name="public_capacity_palettes" min="1" max="2000"
              value="{% if leg %}{{ leg.public_capacity_palettes or '' }}{% endif %}" placeholder="850" />
     </div>
     <div class="field">
-      <label for="public_price_per_palette_eur">Tarif public (EUR / palette)</label>
+      <label for="public_price_per_palette_eur">Tarif public (EUR/palette)</label>
       <input id="public_price_per_palette_eur" type="number" step="0.01" name="public_price_per_palette_eur"
              value="{% if leg %}{{ leg.public_price_per_palette_eur or '' }}{% endif %}" placeholder="38.00" />
     </div>
-
-    <div class="field">
+    <div class="field" style="grid-column:span 3;">
       <label for="booking_close_at">Clôture des réservations</label>
       <input id="booking_close_at" type="datetime-local" name="booking_close_at"
              value="{% if leg and leg.booking_close_at %}{{ leg.booking_close_at.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
@@ -90,8 +151,8 @@
     <div class="field" style="background:var(--sable-light); padding:var(--space-3); border-radius:var(--radius-sm); margin-top:var(--space-4);">
       <label><input type="checkbox" name="cascade" checked /> <strong>Cascade automatique</strong></label>
       <p class="text-muted text-sm" style="margin:var(--space-1) 0 0 0;">
-        Si tu décales l'ETD, les legs en aval du même navire (qui n'ont pas encore appareillé)
-        seront décalés du même delta. Les bookings impactés liront automatiquement la nouvelle ETA.
+        Décaler l'ETD propage le delta à tous les legs en aval du même navire
+        qui ne sont pas encore appareillés.
       </p>
     </div>
   {% endif %}
@@ -102,4 +163,5 @@
   </div>
 </form>
 
+<script src="/static/js/leg-cascade.js" defer></script>
 {% endblock %}

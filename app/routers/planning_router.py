@@ -173,6 +173,8 @@ async def create_leg_action(
             public_capacity_palettes=_maybe_int(form.get("public_capacity_palettes")),
             public_price_per_palette_eur=_maybe_decimal(form.get("public_price_per_palette_eur")),
             booking_close_at=_parse_dt(form.get("booking_close_at"), allow_empty=True),
+            transit_speed_kn=_maybe_float(form.get("transit_speed_kn")),
+            elongation_coef=_maybe_float(form.get("elongation_coef")),
         )
     except (InvalidLegDates, PlanningError, KeyError, ValueError) as e:
         vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
@@ -280,6 +282,8 @@ async def update_leg_action(
             public_capacity_palettes=_maybe_int(form.get("public_capacity_palettes")),
             public_price_per_palette_eur=_maybe_decimal(form.get("public_price_per_palette_eur")),
             booking_close_at=_parse_dt(form.get("booking_close_at"), allow_empty=True),
+            transit_speed_kn=_maybe_float(form.get("transit_speed_kn")),
+            elongation_coef=_maybe_float(form.get("elongation_coef")),
             cascade=cascade,
         )
     except (InvalidLegDates, PlanningError) as e:
@@ -536,6 +540,15 @@ def _maybe_int(value) -> int | None:
         return None
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _maybe_float(value) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(str(value).replace(",", "."))
     except (TypeError, ValueError):
         return None
 

@@ -1,12 +1,15 @@
 {% extends "staff/_layout.html" %}
 {% block title %}Tableau de bord — NEWTOWT ERP{% endblock %}
+{% block head %}{{ super() }}
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
+{% endblock %}
 {% block content %}
 
-<header class="flex justify-between items-center mb-5">
-  <div>
-    <h1>Tableau de bord</h1>
-    <p class="text-muted">{{ user.full_name or user.username }} · <span class="mono">{{ user.role }}</span></p>
-  </div>
+<header class="mb-4">
+  <span class="kicker">Pilotage</span>
+  <h1 class="display">Tableau de bord</h1>
+  <p class="text-muted">{{ user.full_name or user.username }} · <span class="mono">{{ user.role }}</span></p>
 </header>
 
 <section class="kpi-strip">
@@ -22,36 +25,91 @@
   </div>
   <div class="kpi-card">
     <div class="label">Tickets P1 ouverts</div>
-    <div class="value">—</div>
-    <div class="delta text-muted">module à venir</div>
+    <div class="value {% if tickets_p1 > 0 %}text-error{% endif %}">{{ tickets_p1 }}</div>
+    <div class="delta text-muted">SLA 2 h</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Flotte</div>
+    <div class="value">{{ vessels|length }}</div>
+    <div class="delta text-muted">navires en activité</div>
   </div>
 </section>
 
-<section class="card mb-4">
-  <h2>Actions rapides</h2>
-  <div class="flex gap-3" style="flex-wrap:wrap">
-    <a href="/staff/bookings" class="btn btn-primary">📦 Voir les bookings</a>
-    <a href="/planning" class="btn btn-secondary">🗓️ Ouvrir le planning</a>
-    <a href="/escale" class="btn btn-secondary">⚓ Escales du jour</a>
-    <a href="/onboard" class="btn btn-secondary">⛵ Onboard</a>
+<article class="card mb-4" style="padding:0; overflow:hidden;">
+  <div style="padding:var(--space-3); border-bottom:1px solid var(--gris-clair); display:flex; justify-content:space-between; align-items:center;">
+    <h2 style="margin:0;">Position flotte</h2>
+    <a href="/tracking" class="btn btn-ghost text-sm">Détail tracking →</a>
   </div>
-</section>
+  <div id="dashboard-map" style="width:100%; height:380px; background:var(--sable-light); position:relative;"
+       data-maptiler-token="{{ maptiler_token }}"
+       data-vessels='[{% for v in vessels %}{% set p = last_positions.get(v.id) %}{"name": {{ v.name|tojson }}, "code": {{ v.code|tojson }}{% if p %}, "lat": {{ p.latitude }}, "lon": {{ p.longitude }}, "sog": {{ p.sog_kn or 0 }}, "recorded_at": {{ p.recorded_at.isoformat()|tojson }}{% endif %}}{% if not loop.last %},{% endif %}{% endfor %}]'></div>
+</article>
 
-<section class="card">
-  <h2>Bienvenue dans NEWTOWT V3</h2>
-  <p>
-    Cette plateforme couvre désormais :
-  </p>
-  <ul>
-    <li>L'ERP interne complet (planning, cargo, escale, onboard, RH, finance, KPI, MRV, claims).</li>
-    <li>Le portail client (réservations, factures, certificats CO₂, suivi).</li>
-    <li>Une API publique pour les intégrations B2B.</li>
-    <li>Un chatbot Kairos AI pour vous assister au quotidien.</li>
-  </ul>
-  <p>
-    Consultez la <a href="/about">documentation utilisateur</a> ou contactez l'administrateur
-    pour toute question.
-  </p>
-</section>
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Actions rapides</h2>
+    <div class="flex gap-2 mt-3" style="flex-wrap:wrap;">
+      <a href="/staff/bookings?status_filter=submitted" class="btn btn-primary">Bookings à confirmer</a>
+      <a href="/planning/legs/new" class="btn btn-secondary">Nouveau leg</a>
+      <a href="/tickets/new" class="btn btn-secondary">Nouveau ticket P1</a>
+      <a href="/onboard" class="btn btn-secondary">Vue commandant</a>
+      <a href="/chat" class="btn btn-accent">💬 Kairos AI</a>
+    </div>
+  </article>
+
+  <article class="card">
+    <h2>Modules disponibles</h2>
+    <div class="grid grid-2 gap-2" style="font-size:var(--text-sm);">
+      <a href="/planning">📅 Planning</a>
+      <a href="/cargo">📦 Cargo (BL, PL)</a>
+      <a href="/escale">⚓ Escale Import/Export</a>
+      <a href="/onboard">⛵ Onboard 4 espaces</a>
+      <a href="/tickets">🎫 Tickets escale</a>
+      <a href="/cashbox">💰 Caisse de bord</a>
+      <a href="/crew">👥 Équipage</a>
+      <a href="/rh">🧑‍💼 RH</a>
+      <a href="/finance">💶 Finance</a>
+      <a href="/kpi">📈 KPI</a>
+      <a href="/mrv">🌍 MRV</a>
+      <a href="/claims">🛡 Claims</a>
+      <a href="/tracking">🛰 Tracking</a>
+      <a href="/dashboard/analytics">📊 Analytics</a>
+    </div>
+  </article>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  if (typeof maplibregl === "undefined") return;
+  var el = document.getElementById("dashboard-map");
+  var token = el.dataset.maptilerToken;
+  var vessels = JSON.parse(el.dataset.vessels || "[]");
+  var style = token
+    ? "https://api.maptiler.com/maps/streets-v2/style.json?key=" + encodeURIComponent(token)
+    : "https://demotiles.maplibre.org/style.json";
+  var map = new maplibregl.Map({container:"dashboard-map", style:style, center:[-30,40], zoom:2, attributionControl:{compact:true}});
+  map.addControl(new maplibregl.NavigationControl({visualizePitch:false}));
+  map.on("load", function () {
+    var withPos = vessels.filter(function (v) { return typeof v.lat === "number"; });
+    withPos.forEach(function (v) {
+      var marker = document.createElement("div");
+      marker.style.cssText = "width:34px;height:34px;border-radius:50%;background:#0D5966;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:11px;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4);";
+      marker.textContent = v.code;
+      new maplibregl.Marker({element:marker})
+        .setLngLat([v.lon, v.lat])
+        .setPopup(new maplibregl.Popup({offset:18}).setHTML(
+          "<strong>"+v.name+"</strong><br><span style='font-family:monospace'>"+v.code+"</span><br>SOG "+v.sog+" kn<br><small>"+new Date(v.recorded_at).toLocaleString("fr-FR")+"</small>"
+        ))
+        .addTo(map);
+    });
+    if (!withPos.length) {
+      var note = document.createElement("div");
+      note.style.cssText = "position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,255,255,.92);padding:12px 20px;border-radius:6px;font-size:14px;color:#6E6E6E;text-align:center;z-index:5;";
+      note.innerHTML = "Aucune position enregistrée.<br/><small>Alimente <code>vessel_positions</code> via le module Tracking.</small>";
+      el.appendChild(note);
+    }
+  });
+});
+</script>
 
 {% endblock %}

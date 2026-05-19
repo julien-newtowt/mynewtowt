@@ -46,6 +46,11 @@ class Leg(Base):
     booking_open_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     booking_close_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Optional per-leg overrides for ETA computation. NULL => use the
+    # vessel default (vessel.default_speed_kn / vessel.default_elongation).
+    transit_speed_kn: Mapped[float | None] = mapped_column()
+    elongation_coef: Mapped[float | None] = mapped_column()
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

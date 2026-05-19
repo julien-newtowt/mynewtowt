@@ -18,7 +18,7 @@
 {% endblock %}
 
 {% block body %}
-<div class="app-shell">
+<div class="app-shell-v2">
   <aside class="sidebar" aria-label="Menu client">
     <div class="brand-mark">
       <a href="/me" style="border:none;">
@@ -43,20 +43,13 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div class="clock-widget" aria-live="off">
-        <div class="clock-item">
-          <span class="clock-time" data-clock="local">--:--</span>
-          <span class="clock-label" data-tz="local-label">Local</span>
-        </div>
-        <span class="clock-sep" aria-hidden="true"></span>
-        <div class="clock-item">
-          <span class="clock-time" data-clock="paris">--:--</span>
-          <span class="clock-label">Paris</span>
-        </div>
-      </div>
-      <a href="/me/logout" class="btn-logout">{{ icon("log-out") }}&nbsp;Déconnexion</a>
+      <a href="/me/logout" class="btn-icon-only" title="Déconnexion" aria-label="Déconnexion">
+        {{ icon("log-out") }}
+      </a>
     </div>
   </aside>
+
+  {% include "client/_topbar.html" %}
 
   <main id="main" class="main">
     {% block content %}{% endblock %}

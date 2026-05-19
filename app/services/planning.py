@@ -93,6 +93,8 @@ async def create_leg(
     public_price_per_palette_eur: Decimal | None = None,
     booking_close_at: datetime | None = None,
     leg_code: str | None = None,
+    transit_speed_kn: float | None = None,
+    elongation_coef: float | None = None,
 ) -> Leg:
     validate_dates(etd, eta)
     if departure_port_id == arrival_port_id:
@@ -134,6 +136,8 @@ async def create_leg(
         public_capacity_palettes=public_capacity_palettes,
         public_price_per_palette_eur=public_price_per_palette_eur,
         booking_close_at=booking_close_at,
+        transit_speed_kn=transit_speed_kn,
+        elongation_coef=elongation_coef,
     )
     db.add(leg)
     await db.flush()
@@ -152,6 +156,8 @@ async def update_leg(
     public_capacity_palettes: int | None = None,
     public_price_per_palette_eur: Decimal | None = None,
     booking_close_at: datetime | None = None,
+    transit_speed_kn: float | None = None,
+    elongation_coef: float | None = None,
     cascade: bool = True,
 ) -> CascadeReport | None:
     """Update a leg in place. If etd shifts and cascade=True, propagate the
@@ -182,6 +188,10 @@ async def update_leg(
         leg.public_price_per_palette_eur = public_price_per_palette_eur
     if booking_close_at is not None:
         leg.booking_close_at = booking_close_at
+    if transit_speed_kn is not None:
+        leg.transit_speed_kn = transit_speed_kn
+    if elongation_coef is not None:
+        leg.elongation_coef = elongation_coef
 
     if not cascade or delta == timedelta(0):
         await db.flush()
