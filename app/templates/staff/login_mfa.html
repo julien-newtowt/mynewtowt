@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Vérification 2FA — {{ brand.nom_court }}{% endblock %}
+{% block body %}
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
+    </div>
+    <span class="kicker text-center" style="display:block;">Authentification staff</span>
+    <h2>Code 2FA</h2>
+    <p class="text-muted text-sm">
+      Ouvrez votre application d'authentification et saisissez le code en cours,
+      ou utilisez un code de récupération.
+    </p>
+    {% if error %}
+      <div class="alert alert-error" role="alert">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/login/mfa" autocomplete="off">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="code">Code TOTP ou code de récupération</label>
+        <input id="code" name="code" type="text"
+               inputmode="text" autocomplete="one-time-code" required autofocus
+               minlength="6" maxlength="20"
+               style="font-size:1.25rem; letter-spacing:0.2em; text-align:center;" />
+      </div>
+      <button class="btn btn-primary btn-block btn-lg" type="submit">Vérifier</button>
+    </form>
+    <p class="text-center text-muted mt-4 text-sm">
+      <a href="/login">← Retour</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

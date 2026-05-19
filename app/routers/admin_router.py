@@ -384,5 +384,144 @@ async def change_password(
     return RedirectResponse(url="/dashboard", status_code=303)
 
 
+# ─────────────────────────────────────────────────────────────────────
+#                    MFA TOTP staff — setup / verify / disable
+# ─────────────────────────────────────────────────────────────────────
+
+
+@router.get("/my-account/mfa", response_class=HTMLResponse)
+async def staff_mfa_setup_form(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_staff),
+) -> HTMLResponse:
+    from app.services import mfa
+    qr = None
+    uri = None
+    secret = None
+    if not user.mfa_enabled:
+        if not user.mfa_secret:
+            user.mfa_secret = mfa.generate_secret()
+            await db.flush()
+        secret = user.mfa_secret
+        uri = mfa.provisioning_uri(secret, user.email or user.username)
+        qr = mfa.qr_data_uri(uri)
+    return templates.TemplateResponse(
+        "staff/admin/mfa_setup.html",
+        {"request": request, "user": user,
+         "qr_data_uri": qr, "otpauth_uri": uri, "secret": secret,
+         "error": None},
+    )
+
+
+@router.post("/my-account/mfa/verify", response_class=HTMLResponse)
+async def staff_mfa_verify(
+    request: Request,
+    code: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_staff),
+):
+    from app.services import mfa
+    if user.mfa_enabled or not user.mfa_secret:
+        return RedirectResponse(url="/admin/my-account/mfa", status_code=303)
+    if not mfa.verify_totp(user.mfa_secret, code):
+        uri = mfa.provisioning_uri(user.mfa_secret, user.email or user.username)
+        return templates.TemplateResponse(
+            "staff/admin/mfa_setup.html",
+            {"request": request, "user": user,
+             "qr_data_uri": mfa.qr_data_uri(uri),
+             "otpauth_uri": uri, "secret": user.mfa_secret,
+             "error": "Code incorrect — réessayez."},
+            status_code=400,
+        )
+    user.mfa_enabled = True
+    await db.flush()
+    recovery_codes = await mfa.generate_recovery_codes(
+        db, owner_type="staff", owner_id=user.id,
+    )
+    await activity_record(
+        db, action="staff_mfa_enabled", user_id=user.id,
+        user_name=user.username, user_role=user.role,
+        module="admin", entity_type="user", entity_id=user.id,
+        ip_address=_client_ip(request),
+    )
+    return templates.TemplateResponse(
+        "staff/admin/mfa_recovery_codes.html",
+        {"request": request, "user": user, "codes": recovery_codes,
+         "is_regeneration": False},
+    )
+
+
+@router.post("/my-account/mfa/regenerate", response_class=HTMLResponse)
+async def staff_mfa_regenerate(
+    request: Request,
+    code: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_staff),
+):
+    from app.services import mfa
+    if not user.mfa_enabled or not user.mfa_secret:
+        return RedirectResponse(url="/admin/my-account/mfa", status_code=303)
+    if not mfa.verify_totp(user.mfa_secret, code):
+        return templates.TemplateResponse(
+            "staff/admin/mfa_setup.html",
+            {"request": request, "user": user,
+             "qr_data_uri": None, "otpauth_uri": None, "secret": None,
+             "error": "Code TOTP incorrect — codes non régénérés."},
+            status_code=400,
+        )
+    new_codes = await mfa.generate_recovery_codes(
+        db, owner_type="staff", owner_id=user.id,
+    )
+    await activity_record(
+        db, action="staff_mfa_codes_regen", user_id=user.id,
+        user_name=user.username, user_role=user.role,
+        module="admin", entity_type="user", entity_id=user.id,
+        ip_address=_client_ip(request),
+    )
+    return templates.TemplateResponse(
+        "staff/admin/mfa_recovery_codes.html",
+        {"request": request, "user": user, "codes": new_codes,
+         "is_regeneration": True},
+    )
+
+
+@router.post("/my-account/mfa/disable", response_class=HTMLResponse)
+async def staff_mfa_disable(
+    request: Request,
+    code: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_staff),
+):
+    from sqlalchemy import delete
+    from app.models.mfa_recovery_code import MfaRecoveryCode
+    from app.services import mfa
+    if not user.mfa_enabled or not user.mfa_secret:
+        return RedirectResponse(url="/admin/my-account/mfa", status_code=303)
+    if not mfa.verify_totp(user.mfa_secret, code):
+        return templates.TemplateResponse(
+            "staff/admin/mfa_setup.html",
+            {"request": request, "user": user,
+             "qr_data_uri": None, "otpauth_uri": None, "secret": None,
+             "error": "Code TOTP incorrect — MFA non désactivée."},
+            status_code=400,
+        )
+    user.mfa_enabled = False
+    user.mfa_secret = None
+    await db.flush()
+    await db.execute(
+        delete(MfaRecoveryCode)
+        .where(MfaRecoveryCode.owner_type == "staff")
+        .where(MfaRecoveryCode.owner_id == user.id)
+    )
+    await activity_record(
+        db, action="staff_mfa_disabled", user_id=user.id,
+        user_name=user.username, user_role=user.role,
+        module="admin", entity_type="user", entity_id=user.id,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/admin/my-account?mfa=disabled", status_code=303)
+
+
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)

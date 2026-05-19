@@ -27,6 +27,8 @@ CLIENT_COOKIE = "towt_client_session"
 # a MFA activé : courte durée (5 min), redirigé vers /me/login/mfa.
 CLIENT_MFA_PENDING_COOKIE = "towt_client_mfa_pending"
 CLIENT_MFA_PENDING_TTL_SECONDS = 5 * 60
+STAFF_MFA_PENDING_COOKIE = "towt_staff_mfa_pending"
+STAFF_MFA_PENDING_TTL_SECONDS = 5 * 60
 
 # Durée de session staff par rôle (en minutes). Les marins / commandants
 # embarquent pour 15+ jours sans satcom fiable → leur fenêtre par défaut
@@ -56,6 +58,7 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 _staff_serializer = URLSafeTimedSerializer(settings.secret_key, salt="staff-session")
 _client_serializer = URLSafeTimedSerializer(settings.secret_key, salt="client-session")
 _client_mfa_serializer = URLSafeTimedSerializer(settings.secret_key, salt="client-mfa-pending")
+_staff_mfa_serializer = URLSafeTimedSerializer(settings.secret_key, salt="staff-mfa-pending")
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +116,35 @@ def cookie_kwargs_for_client_mfa_pending(request: "Request | None" = None) -> di
     return {
         "key": CLIENT_MFA_PENDING_COOKIE,
         "max_age": CLIENT_MFA_PENDING_TTL_SECONDS,
+        "httponly": True,
+        "secure": _is_https(request),
+        "samesite": "lax",
+        "path": "/",
+    }
+
+
+def create_staff_mfa_pending(user_id: int) -> str:
+    """Token court (5min) signé pour la phase challenge MFA d'un login staff."""
+    payload = {"uid": user_id, "iat": datetime.now(timezone.utc).timestamp()}
+    return _staff_mfa_serializer.dumps(payload)
+
+
+def decode_staff_mfa_pending(token: str) -> int | None:
+    if not token:
+        return None
+    try:
+        payload = _staff_mfa_serializer.loads(
+            token, max_age=STAFF_MFA_PENDING_TTL_SECONDS,
+        )
+    except (BadSignature, SignatureExpired):
+        return None
+    return payload.get("uid")
+
+
+def cookie_kwargs_for_staff_mfa_pending(request: "Request | None" = None) -> dict:
+    return {
+        "key": STAFF_MFA_PENDING_COOKIE,
+        "max_age": STAFF_MFA_PENDING_TTL_SECONDS,
         "httponly": True,
         "secure": _is_https(request),
         "samesite": "lax",

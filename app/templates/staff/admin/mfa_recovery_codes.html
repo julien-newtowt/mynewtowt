@@ -1,0 +1,41 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Codes de récupération — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Sécurité</span>
+  <h1 class="display">
+    {% if is_regeneration %}Nouveaux codes de récupération{% else %}2FA activée — codes de récupération{% endif %}
+  </h1>
+</header>
+
+<article class="card" style="background:var(--sable); border-left:4px solid var(--cuivre);">
+  <h2>⚠ Sauvegardez ces codes immédiatement</h2>
+  <p>
+    Ces 10 codes à usage unique vous permettent de vous connecter si vous
+    perdez votre application d'authentification.
+    <strong>Ils ne sont affichés qu'une seule fois</strong> — imprimez-les,
+    stockez-les dans un gestionnaire de mots de passe, ou notez-les sur
+    papier dans un endroit sûr.
+  </p>
+</article>
+
+<article class="card mt-4">
+  <div class="grid grid-2 gap-2" style="max-width:520px; margin:0 auto;">
+    {% for c in codes %}
+      <code class="mono"
+            style="display:block; padding:var(--space-3); background:var(--sable);
+                   text-align:center; font-size:1.1rem; letter-spacing:0.1em;
+                   border-radius:6px; user-select:all;">{{ c }}</code>
+    {% endfor %}
+  </div>
+
+  <div class="text-center mt-4">
+    <p class="text-muted text-sm" style="margin-bottom:var(--space-3);">
+      Astuce : utilisez ⌘P / Ctrl+P pour imprimer cette page.
+    </p>
+    <a href="/admin/my-account/mfa" class="btn btn-primary">J'ai sauvegardé mes codes →</a>
+  </div>
+</article>
+
+{% endblock %}
