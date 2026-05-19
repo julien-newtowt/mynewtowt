@@ -58,6 +58,17 @@ templates.env.filters["date"] = _format_date
 templates.env.filters["datetime"] = _format_datetime
 templates.env.filters["flag"] = _flag_emoji
 
+# i18n helper exposed to all templates : {{ t('nav_dashboard', lang|default('fr')) }}
+from app.i18n import DEFAULT as _i18n_default, get_lang_from_request, t as _i18n_t
+
+
+def _t(key: str, lang: str = _i18n_default, **fmt) -> str:
+    return _i18n_t(key, lang, **fmt)
+
+
+templates.env.globals["t"] = _t
+templates.env.globals["i18n_default"] = _i18n_default
+
 templates.env.globals["app_name"] = settings.app_name
 templates.env.globals["app_version"] = settings.app_version
 templates.env.globals["app_env"] = settings.app_env

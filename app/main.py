@@ -14,8 +14,11 @@ from app.auth import AuthError, AuthExpired, AuthInvalid, AuthRequired
 from app.config import settings
 from app.csrf import CSRFMiddleware
 from app.database import init_db
-from app.middlewares import MaintenanceMiddleware, SecurityHeadersMiddleware
+from app.middlewares import (
+    ForcePasswordChangeMiddleware, MaintenanceMiddleware, SecurityHeadersMiddleware,
+)
 from app.routers import (
+    admin_router,
     api_v1_router,
     booking_router,
     captain_router,
@@ -74,6 +77,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(MaintenanceMiddleware)
     app.add_middleware(CSRFMiddleware)
+    app.add_middleware(ForcePasswordChangeMiddleware)
 
     # --------------------------------------------------------------- Routers
     app.include_router(public_router.router)
@@ -96,6 +100,8 @@ def create_app() -> FastAPI:
     # ─── Public/API (no auth, token-protected) ───
     app.include_router(cargo_portal_router.router)
     app.include_router(tracking_router.router)
+    # ─── Phase 4 Admin enriched (users/opex/insurance/maintenance/activity) ─
+    app.include_router(admin_router.router)
     # ─── Existing routers ───
     app.include_router(tickets_router.router)
     app.include_router(cashbox_router.router)

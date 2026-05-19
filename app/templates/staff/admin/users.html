@@ -1,0 +1,68 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Utilisateurs — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Admin</span>
+    <h1 class="display">Utilisateurs</h1>
+  </div>
+  <a href="#new-user" class="btn btn-primary">+ Nouvel utilisateur</a>
+</header>
+
+<article class="card mb-4">
+  <table class="data-table">
+    <thead><tr><th>Username</th><th>Nom</th><th>Email</th><th>Rôle</th><th>MFA</th><th>Force MdP</th><th>Statut</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td class="mono">{{ u.username }}</td>
+        <td>{{ u.full_name or '—' }}</td>
+        <td>{{ u.email }}</td>
+        <td><span class="badge">{{ u.role }}</span></td>
+        <td>{% if u.mfa_enabled %}<span class="pill pill-ok">ON</span>{% else %}<span class="pill pill-neutral">OFF</span>{% endif %}</td>
+        <td>{% if u.must_change_password %}<span class="pill pill-warn">À changer</span>{% else %}<span class="pill pill-ok">OK</span>{% endif %}</td>
+        <td>{% if u.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-error">Désactivé</span>{% endif %}</td>
+        <td>
+          <div class="flex gap-1">
+            <form method="post" action="/admin/users/{{ u.id }}/toggle" style="display:inline;">
+              <button type="submit" class="btn btn-ghost btn-sm">{{ 'Désactiver' if u.is_active else 'Activer' }}</button>
+            </form>
+            <details>
+              <summary class="btn btn-ghost btn-sm">Reset MdP</summary>
+              <form method="post" action="/admin/users/{{ u.id }}/reset-password" style="margin-top:8px;">
+                <input name="new_password" type="password" placeholder="Nouveau MdP" required />
+                <button type="submit" class="btn btn-secondary btn-sm">Reset</button>
+              </form>
+            </details>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+<article class="card" id="new-user">
+  <h2>Nouvel utilisateur</h2>
+  <form method="post" action="/admin/users">
+    <div class="grid grid-2 gap-3">
+      <div class="field"><label>Username</label><input name="username" type="text" required /></div>
+      <div class="field"><label>Email</label><input name="email" type="email" required /></div>
+      <div class="field"><label>Nom complet</label><input name="full_name" type="text" /></div>
+      <div class="field"><label>Rôle</label>
+        <select name="role">
+          {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label>Mot de passe initial</label><input name="password" type="password" required minlength="12" /></div>
+      <div class="field" style="display:flex; align-items:center; gap:8px;">
+        <input id="must_change_password" name="must_change_password" type="checkbox" value="1" checked />
+        <label for="must_change_password">Forcer le changement de mot de passe à la 1re connexion</label>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Créer l'utilisateur</button>
+  </form>
+</article>
+
+{% endblock %}
