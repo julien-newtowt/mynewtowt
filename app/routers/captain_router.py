@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.models.finance import PortConfig
 from app.models.leg import Leg
 from app.models.noon_report import NoonReport
 from app.models.port import Port
@@ -278,12 +279,17 @@ async def next_port(
         leg = (await db.execute(stmt_planned)).scalar_one_or_none()
 
     pod = None
+    pod_config: PortConfig | None = None
     vessel = None
     weather_point = None
     sof_recent: list[SofEvent] = []
     if leg is not None:
         pod = await db.get(Port, leg.arrival_port_id)
         vessel = await db.get(Vessel, leg.vessel_id)
+        if pod:
+            pod_config = (await db.execute(
+                select(PortConfig).where(PortConfig.port_id == pod.id)
+            )).scalar_one_or_none()
         if pod and pod.latitude is not None and pod.longitude is not None and leg.eta:
             try:
                 weather_point = await wx.fetch_at(pod.latitude, pod.longitude, leg.eta)
@@ -298,7 +304,7 @@ async def next_port(
         "staff/captain/next_port.html",
         {
             "request": request, "user": user,
-            "leg": leg, "vessel": vessel, "pod": pod,
+            "leg": leg, "vessel": vessel, "pod": pod, "pod_config": pod_config,
             "weather_point": weather_point,
             "weather_summary": wx.summarize(weather_point),
             "sof_recent": sof_recent,

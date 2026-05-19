@@ -60,10 +60,6 @@
         <dt class="text-muted">Longitude</dt><dd class="mono">{{ "%.4f"|format(pod.longitude) if pod.longitude else '—' }}</dd>
         {% if pod.timezone %}<dt class="text-muted">Timezone</dt><dd class="mono">{{ pod.timezone }}</dd>{% endif %}
       </dl>
-      <p class="text-muted text-sm mt-3">
-        TODO V3.2 — agent portuaire, contacts pilote, restrictions douanières
-        à charger depuis ``port_configs``.
-      </p>
     {% else %}
       <p class="text-muted">Port d'arrivée non renseigné sur ce leg.</p>
     {% endif %}
@@ -91,6 +87,72 @@
     {% endif %}
   </article>
 </div>
+
+{# Contacts portuaires + pilote + docs (PortConfig) #}
+{% if pod_config %}
+<article class="card mt-4">
+  <h3 class="mb-3">Contacts & docs portuaires</h3>
+  <div class="grid grid-3 gap-4">
+    <div>
+      <div class="kicker">⚓ Agent maritime</div>
+      {% if pod_config.agent_name %}
+        <p style="margin:var(--space-2) 0;"><strong>{{ pod_config.agent_name }}</strong></p>
+        {% if pod_config.agent_phone %}<p class="mono text-sm"><a href="tel:{{ pod_config.agent_phone }}">{{ pod_config.agent_phone }}</a></p>{% endif %}
+        {% if pod_config.agent_email %}<p class="text-sm"><a href="mailto:{{ pod_config.agent_email }}">{{ pod_config.agent_email }}</a></p>{% endif %}
+      {% else %}<p class="text-muted">—</p>{% endif %}
+    </div>
+    <div>
+      <div class="kicker">📻 VHF</div>
+      <table class="data-table" style="background:transparent;">
+        {% if pod_config.port_control_vhf_channel %}
+          <tr><td class="text-muted text-sm">Port control</td><td class="mono">CH {{ pod_config.port_control_vhf_channel }}</td></tr>
+        {% endif %}
+        {% if pod_config.pilot_vhf_channel %}
+          <tr><td class="text-muted text-sm">Pilote</td><td class="mono">CH {{ pod_config.pilot_vhf_channel }}</td></tr>
+        {% endif %}
+        {% if pod_config.pilot_phone %}
+          <tr><td class="text-muted text-sm">Pilote ☎</td><td class="mono"><a href="tel:{{ pod_config.pilot_phone }}">{{ pod_config.pilot_phone }}</a></td></tr>
+        {% endif %}
+        {% if not (pod_config.port_control_vhf_channel or pod_config.pilot_vhf_channel or pod_config.pilot_phone) %}
+          <tr><td class="text-muted">—</td><td></td></tr>
+        {% endif %}
+      </table>
+    </div>
+    <div>
+      <div class="kicker">📄 Documents requis</div>
+      {% if pod_config.documents_required %}
+        <ul style="margin:var(--space-2) 0; padding-left:var(--space-3);">
+          {% for line in pod_config.documents_required.split('\n') %}
+            {% if line.strip() %}<li class="text-sm">{{ line.strip() }}</li>{% endif %}
+          {% endfor %}
+        </ul>
+      {% else %}<p class="text-muted">—</p>{% endif %}
+    </div>
+  </div>
+  {% if pod_config.restrictions or pod_config.notes_for_captain %}
+    <div class="grid grid-2 gap-3 mt-3">
+      {% if pod_config.restrictions %}
+        <div style="background:var(--sable); padding:var(--space-3); border-left:3px solid var(--cuivre); border-radius:4px;">
+          <strong>⚠ Restrictions</strong>
+          <p style="white-space:pre-wrap; margin:var(--space-1) 0 0;" class="text-sm">{{ pod_config.restrictions }}</p>
+        </div>
+      {% endif %}
+      {% if pod_config.notes_for_captain %}
+        <div style="background:var(--sable); padding:var(--space-3); border-left:3px solid var(--teal); border-radius:4px;">
+          <strong>📝 Notes commandant</strong>
+          <p style="white-space:pre-wrap; margin:var(--space-1) 0 0;" class="text-sm">{{ pod_config.notes_for_captain }}</p>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+</article>
+{% else %}
+<article class="card mt-4" style="background:var(--sable); border-left:3px solid var(--cuivre);">
+  <p class="text-muted" style="margin:0;">
+    📋 Aucune configuration portuaire enregistrée pour ce port — ajoutez les contacts agent / pilote / docs via <a href="/admin/ports">Admin → Ports</a>.
+  </p>
+</article>
+{% endif %}
 
 {# SOF récents #}
 <article class="card mt-4">
