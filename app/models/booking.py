@@ -75,7 +75,13 @@ class Booking(Base):
     )
 
     items: Mapped[list["BookingItem"]] = relationship(
-        back_populates="booking", cascade="all, delete-orphan"
+        back_populates="booking",
+        cascade="all, delete-orphan",
+        # ``selectin`` : eager-load une seule query supplémentaire pour
+        # tous les items du booking dès qu'on charge le booking. Évite
+        # le MissingGreenlet typique d'un lazy-load implicite dans un
+        # template async (cf. /me/bookings/{ref} 500 — V3.5).
+        lazy="selectin",
     )
 
     __table_args__ = (
