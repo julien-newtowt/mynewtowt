@@ -1,0 +1,91 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Tickets escale — {{ brand.nom_court }} ERP{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Opérations</span>
+    <h1 class="display">Tickets escale</h1>
+  </div>
+  <a href="/tickets/new" class="btn btn-primary">+ Nouveau ticket</a>
+</header>
+
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">P1 ouverts</div>
+    <div class="value text-error">{{ stats.p1_open }}</div>
+    <div class="delta text-muted">à traiter sous 2 h</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">SLA dépassés</div>
+    <div class="value">{{ stats.sla_breached }}</div>
+    <div class="delta {% if stats.sla_breached %}down{% endif %}">action requise</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Total ouverts</div>
+    <div class="value">{{ (columns.open|length) + (columns.in_progress|length) + (columns.pending_external|length) }}</div>
+    <div class="delta text-muted">en colonnes actives</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Résolus en attente clôture</div>
+    <div class="value">{{ columns.resolved|length }}</div>
+    <div class="delta text-muted">à valider</div>
+  </div>
+</section>
+
+<form class="card mb-4" method="get" action="/tickets" style="display:flex; gap:var(--space-3); flex-wrap:wrap; align-items:end;">
+  <div class="field" style="margin:0;">
+    <label for="priority">Priorité</label>
+    <select id="priority" name="priority">
+      <option value="">Toutes</option>
+      {% for p in priorities %}
+        <option value="{{ p }}" {% if filter_priority == p %}selected{% endif %}>{{ priority_labels[p] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field" style="margin:0;">
+    <label for="category">Catégorie</label>
+    <select id="category" name="category">
+      <option value="">Toutes</option>
+      {% for c in categories %}
+        <option value="{{ c }}" {% if filter_category == c %}selected{% endif %}>{{ category_labels[c] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="btn btn-secondary">Filtrer</button>
+  {% if filter_priority or filter_category %}<a href="/tickets" class="btn btn-ghost">Réinitialiser</a>{% endif %}
+</form>
+
+<div class="kanban" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--space-4); align-items:start;">
+  {% for col in kanban_cols %}
+    <div class="kanban-col" style="background:var(--sable-light); border-radius:var(--radius-md); padding:var(--space-3); min-height:200px;">
+      <header class="flex justify-between items-center mb-3">
+        <strong style="color:var(--teal);">{{ status_labels[col] }}</strong>
+        <span class="pill pill-neutral">{{ columns[col]|length }}</span>
+      </header>
+      {% for t in columns[col] %}
+        <a href="/tickets/{{ t.reference }}" class="card mb-2"
+           style="display:block; padding:var(--space-3); border-left:3px solid {% if t.priority == 'P1' %}var(--danger){% elif t.priority == 'P2' %}var(--cuivre){% else %}var(--bleu-horizon){% endif %}; text-decoration:none; color:inherit; border-bottom:none;">
+          <div class="flex justify-between items-center mb-2">
+            <span class="pill {% if t.priority == 'P1' %}pill-error{% elif t.priority == 'P2' %}pill-warn{% else %}pill-info{% endif %}">{{ t.priority }}</span>
+            <span class="mono text-xs text-muted">{{ t.reference }}</span>
+          </div>
+          <div style="color:var(--anthracite); font-weight:var(--fw-semibold); margin-bottom:4px;">{{ t.title }}</div>
+          <div class="text-xs text-muted">{{ category_labels.get(t.category, t.category) }}</div>
+          {% if is_breached(t) %}
+            <div class="text-xs" style="color:var(--danger); margin-top:4px;">⚠ SLA dépassé</div>
+          {% endif %}
+        </a>
+      {% endfor %}
+      {% if not columns[col] %}
+        <p class="text-xs text-muted text-center">—</p>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+@media (max-width: 1024px) {
+  .kanban { grid-template-columns: 1fr 1fr !important; }
+}
+
+{% endblock %}

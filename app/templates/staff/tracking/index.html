@@ -1,0 +1,54 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Tracking flotte{% endblock %}
+{% block head %}{{ super() }}
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
+{% endblock %}
+{% block content %}
+<header class="mb-4"><span class="kicker">Pilotage</span><h1 class="display">Tracking flotte</h1></header>
+
+<article class="card mb-4" style="padding:0; overflow:hidden;">
+  <div id="fleet-map" style="width:100%; height:500px; background:var(--sable-light);"
+       data-maptiler-token="{{ maptiler_token }}"
+       data-vessels='[{% for v in vessels %}{% set p = last_positions.get(v.id) %}{% if p %}{"name": {{ v.name|tojson }}, "code": {{ v.code|tojson }}, "lat": {{ p.latitude }}, "lon": {{ p.longitude }}, "sog": {{ p.sog_kn or 0 }}}{% if not loop.last %},{% endif %}{% endif %}{% endfor %}]'></div>
+</article>
+
+<article class="card">
+  <h2>Dernières positions</h2>
+  <table>
+    <thead><tr><th>Navire</th><th>Position</th><th>SOG</th><th>COG</th><th>Recordée</th></tr></thead>
+    <tbody>{% for v in vessels %}{% set p = last_positions.get(v.id) %}<tr>
+      <td><strong>{{ v.name }}</strong> <span class="mono text-muted">({{ v.code }})</span></td>
+      {% if p %}
+        <td class="mono">{{ "%.4f"|format(p.latitude) }}, {{ "%.4f"|format(p.longitude) }}</td>
+        <td>{{ p.sog_kn or '—' }} kn</td>
+        <td>{{ p.cog_deg or '—' }}°</td>
+        <td class="mono text-sm">{{ p.recorded_at|datetime }}</td>
+      {% else %}<td colspan="4" class="text-muted">Aucune position enregistrée</td>{% endif %}
+    </tr>{% endfor %}</tbody>
+  </table>
+</article>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  if (typeof maplibregl === "undefined") return;
+  var el = document.getElementById("fleet-map");
+  var token = el.dataset.maptilerToken;
+  var vessels = JSON.parse(el.dataset.vessels || "[]");
+  var style = token
+    ? "https://api.maptiler.com/maps/streets-v2/style.json?key=" + encodeURIComponent(token)
+    : "https://demotiles.maplibre.org/style.json";
+  var map = new maplibregl.Map({container:"fleet-map", style:style, center:[-30,40], zoom:2});
+  map.addControl(new maplibregl.NavigationControl());
+  vessels.forEach(function(v) {
+    var marker = document.createElement("div");
+    marker.style.cssText = "width:32px;height:32px;border-radius:50%;background:#0D5966;color:#fff;display:flex;align-items:center;justify-content:center;font-family:monospace;font-weight:700;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)";
+    marker.textContent = v.code;
+    new maplibregl.Marker({element:marker})
+      .setLngLat([v.lon, v.lat])
+      .setPopup(new maplibregl.Popup().setHTML("<strong>"+v.name+"</strong><br>SOG "+v.sog+" kn"))
+      .addTo(map);
+  });
+});
+</script>
+{% endblock %}

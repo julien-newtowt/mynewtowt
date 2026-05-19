@@ -1,0 +1,19 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Cargo onboard{% endblock %}
+{% block content %}
+<a href="/onboard" class="btn btn-ghost mb-3">← Onboard</a>
+<header class="mb-4"><span class="kicker">À bord</span><h1 class="display">Cargo & documents</h1></header>
+<p class="text-muted">Manifeste cargo, BL signature, mate's receipt. Module Cargo complet : <a href="/cargo">/cargo</a>.</p>
+
+<article class="card mt-4">
+  <h2>Voyages récents</h2>
+  <table>
+    <thead><tr><th>Leg</th><th>ETD</th><th>ETA</th><th>Doc</th></tr></thead>
+    <tbody>
+      {% for leg in legs %}
+        <tr><td class="mono">{{ leg.leg_code }}</td><td>{{ leg.etd|date }}</td><td>{{ leg.eta|date }}</td><td><a href="/cargo">→</a></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endblock %}

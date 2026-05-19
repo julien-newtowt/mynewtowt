@@ -1,0 +1,78 @@
+{% extends "client/_layout.html" %}
+{% block title %}Tableau de bord — NEWTOWT{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-5">
+  <div>
+    <h1>Bonjour, {{ client.contact_name or client.company_name }}</h1>
+    <p class="text-muted">{{ client.company_name }} · {{ client.email }}</p>
+  </div>
+  <a href="/booking/new" class="btn btn-primary btn-lg">+ Nouvelle réservation</a>
+</header>
+
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">Expéditions en cours</div>
+    <div class="value">{{ active_count }}</div>
+    <div class="delta text-muted">en transit ou à venir</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">CO₂ évité cumulé</div>
+    <div class="value text-accent">{{ "%.0f"|format(co2_avoided_kg) }} kg</div>
+    <div class="delta up">vs cargo conventionnel</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Segment client</div>
+    <div class="value mono">{{ client.segment }}</div>
+    <div class="delta text-muted">
+      {% if client.segment == "key_account" %}grand compte
+      {% elif client.segment == "recurring" %}récurrent
+      {% else %}occasionnel{% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="flex justify-between items-center mb-3">
+    <h2>Mes réservations récentes</h2>
+    <a href="/me/bookings" class="btn btn-ghost">Voir tout →</a>
+  </div>
+
+  {% if bookings %}
+    <table>
+      <thead>
+        <tr>
+          <th>Référence</th>
+          <th>Statut</th>
+          <th>Palettes</th>
+          <th>Créée</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bookings[:8] %}
+          <tr>
+            <td><span class="mono">{{ b.reference }}</span></td>
+            <td>
+              {% if b.status == 'submitted' %}<span class="pill pill-info">Soumise</span>
+              {% elif b.status == 'confirmed' %}<span class="pill pill-ok">Confirmée</span>
+              {% elif b.status == 'loaded' %}<span class="pill pill-info">Chargée</span>
+              {% elif b.status == 'at_sea' %}<span class="pill pill-info">En mer</span>
+              {% elif b.status == 'discharged' %}<span class="pill pill-info">Débarquée</span>
+              {% elif b.status == 'delivered' %}<span class="pill pill-ok">Livrée</span>
+              {% elif b.status == 'cancelled' %}<span class="pill pill-error">Annulée</span>
+              {% else %}<span class="pill pill-neutral">{{ b.status }}</span>{% endif %}
+            </td>
+            <td>{{ b.total_palettes }}</td>
+            <td>{{ b.created_at|date }}</td>
+            <td><a href="/me/bookings/{{ b.reference }}" class="btn btn-ghost">Détails →</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted">Aucune réservation pour l'instant. <a href="/booking/new">Réservez votre première traversée →</a></p>
+  {% endif %}
+</section>
+
+{% endblock %}

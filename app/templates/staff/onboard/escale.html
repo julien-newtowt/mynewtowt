@@ -1,0 +1,20 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Escale — Onboard{% endblock %}
+{% block content %}
+<a href="/onboard" class="btn btn-ghost mb-3">← Onboard</a>
+<header class="mb-4"><span class="kicker">À bord</span><h1 class="display">Escale en cours</h1></header>
+{% if at_quay %}
+  <div class="grid grid-2 gap-4">
+    {% for leg in at_quay %}
+      <article class="card">
+        <h2><span class="mono text-accent">{{ leg.leg_code }}</span></h2>
+        <p>ATA <span class="mono">{{ leg.ata|datetime }}</span></p>
+        <p>ETD <span class="mono">{{ leg.etd|datetime }}</span></p>
+        <a href="/escale/{{ leg.id }}" class="btn btn-primary">Détail import/export →</a>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="text-muted">Aucun navire à quai actuellement.</p>
+{% endif %}
+{% endblock %}

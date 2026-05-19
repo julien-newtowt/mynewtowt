@@ -1,0 +1,86 @@
+{% extends "public/_layout.html" %}
+{% block title %}Routes & plannings — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<section class="hero">
+  <div class="container">
+    <span class="kicker">Plannings ouverts</span>
+    <h1 class="display">Routes disponibles</h1>
+    <span class="baseline">Trouvez votre prochaine traversée vélique</span>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+
+    <form class="card mb-4" method="get" action="/routes">
+      <div class="grid grid-4 gap-3">
+        <div class="field">
+          <label for="from">Pays départ</label>
+          <input id="from" name="from" type="text" placeholder="FR" maxlength="2" value="{{ filters.from }}" />
+        </div>
+        <div class="field">
+          <label for="to">Pays arrivée</label>
+          <input id="to" name="to" type="text" placeholder="US" maxlength="2" value="{{ filters.to }}" />
+        </div>
+        <div class="field">
+          <label for="from_date">À partir du</label>
+          <input id="from_date" name="from_date" type="date" value="{{ filters.from_date }}" />
+        </div>
+        <div class="field">
+          <label for="to_date">Jusqu'au</label>
+          <input id="to_date" name="to_date" type="date" value="{{ filters.to_date }}" />
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">Filtrer</button>
+    </form>
+
+    {% if legs %}
+      <p class="text-muted">{{ legs|length }} route(s) disponible(s).</p>
+      <div class="grid grid-2 gap-4">
+        {% for item in legs %}
+          <article class="booking-card">
+            <div class="header">
+              <span class="leg-code">{{ item.leg_code }}</span>
+              <span class="text-muted text-sm">{{ item.vessel_name }}</span>
+            </div>
+            <div class="route">
+              <strong>{{ item.pol.locode if item.pol }}</strong>
+              <span>{{ item.pol.country|flag if item.pol }}</span>
+              <span class="arrow">→</span>
+              <strong>{{ item.pod.locode if item.pod }}</strong>
+              <span>{{ item.pod.country|flag if item.pod }}</span>
+            </div>
+            <div class="meta">
+              <span>ETD <span class="mono">{{ item.etd|date }}</span></span>
+              <span>ETA <span class="mono">{{ item.eta|date }}</span></span>
+            </div>
+            {% set occ = ((item.capacity_palettes - item.available_palettes) * 100 / item.capacity_palettes) if item.capacity_palettes > 0 else 0 %}
+            <div>
+              <small class="text-muted">
+                {{ item.available_palettes }} / {{ item.capacity_palettes }} palettes
+              </small>
+              <div class="capacity-gauge {% if occ > 85 %}full{% elif occ > 60 %}warn{% endif %}">
+                <div class="fill" style="width: {{ occ }}%"></div>
+              </div>
+            </div>
+            <div class="flex justify-between items-center mt-2">
+              <a href="/routes/{{ item.leg_code }}" class="btn btn-ghost">Détails →</a>
+              <a href="/booking/new/{{ item.leg_code }}" class="btn btn-primary">Réserver</a>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card text-center">
+        <p>Aucune route ne correspond à vos critères.</p>
+        <p class="text-muted text-sm">
+          Modifiez les filtres ou contactez-nous pour étudier un trajet sur-mesure :
+          <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>
+        </p>
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+{% endblock %}

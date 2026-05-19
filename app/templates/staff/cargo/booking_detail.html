@@ -1,0 +1,83 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ booking.reference }} — Cargo · {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<a href="/cargo" class="btn btn-ghost mb-3">← Cargo</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Booking</span>
+    <h1 class="display mono" style="color:var(--cuivre);">{{ booking.reference }}</h1>
+  </div>
+  <div>
+    <span class="pill pill-info">{{ booking.status }}</span>
+  </div>
+</header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Voyage</h2>
+    <table>
+      <tr><th>Navire</th><td>{{ vessel.name }} <span class="mono text-muted">({{ vessel.code }})</span></td></tr>
+      <tr><th>Leg</th><td><span class="mono">{{ leg.leg_code }}</span></td></tr>
+      <tr><th>POL</th><td>{{ pol.name }} <span class="mono text-muted">({{ pol.locode }})</span></td></tr>
+      <tr><th>POD</th><td>{{ pod.name }} <span class="mono text-muted">({{ pod.locode }})</span></td></tr>
+      <tr><th>ETD</th><td class="mono">{{ leg.etd|datetime }}</td></tr>
+      <tr><th>ETA</th><td class="mono">{{ leg.eta|datetime }}</td></tr>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Client</h2>
+    <p><strong>{{ client.company_name }}</strong></p>
+    <p class="text-muted">{{ client.contact_name or '—' }} — {{ client.email }}</p>
+    <p class="text-muted text-sm">Segment : <span class="mono">{{ client.segment }}</span></p>
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Cargo</h2>
+  <table>
+    <thead>
+      <tr><th>Format</th><th>Nb</th><th>Description</th><th>Poids/u (kg)</th><th>Empilable</th><th>IMDG</th></tr>
+    </thead>
+    <tbody>
+      {% for item in booking.items %}
+        <tr>
+          <td class="mono">{{ item.pallet_format }}</td>
+          <td>{{ item.pallet_count }}</td>
+          <td>{{ item.cargo_description }}</td>
+          <td>{{ item.unit_weight_kg or '—' }}</td>
+          <td>{{ 'Oui' if item.stackable else 'Non' }}</td>
+          <td>{% if item.hazardous %}<span class="pill pill-error">{{ item.imdg_class or 'IMDG' }}</span>{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="text-muted">Total : <strong>{{ booking.total_palettes }} palettes</strong> · {{ booking.total_weight_kg }} kg</p>
+</article>
+
+<article class="card mt-4">
+  <h2>Documents générables</h2>
+  <p class="text-muted">Cliquer pour générer/télécharger en PDF (rendu serveur WeasyPrint, charte NEWTOWT).</p>
+  <div class="flex gap-3 mt-3" style="flex-wrap:wrap;">
+    <a href="/cargo/booking/{{ booking.reference }}/bl.pdf" target="_blank" class="btn btn-primary">
+      Bill of Lading
+    </a>
+    <a href="/cargo/booking/{{ booking.reference }}/packing-list.pdf" target="_blank" class="btn btn-secondary">
+      Packing List
+    </a>
+    <a href="/cargo/booking/{{ booking.reference }}/invoice.pdf" target="_blank" class="btn btn-secondary">
+      {% if booking.status == 'confirmed' %}Facture{% else %}Devis{% endif %}
+    </a>
+    {% if booking.status in ('discharged','delivered') %}
+      <a href="/cargo/booking/{{ booking.reference }}/co2-certificate.pdf" target="_blank" class="btn btn-accent">
+        Certificat CO₂
+      </a>
+    {% else %}
+      <button class="btn btn-ghost" disabled title="Disponible après débarquement">Certificat CO₂ (après débarq.)</button>
+    {% endif %}
+  </div>
+</article>
+
+{% endblock %}

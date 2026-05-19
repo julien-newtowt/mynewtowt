@@ -1,0 +1,56 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Bookings — NEWTOWT ERP{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <h1>Bookings</h1>
+  <div class="flex gap-2">
+    <a href="?status_filter=submitted" class="btn btn-ghost">À confirmer</a>
+    <a href="?status_filter=confirmed" class="btn btn-ghost">Confirmées</a>
+    <a href="?" class="btn btn-secondary">Toutes</a>
+  </div>
+</header>
+
+{% if bookings %}
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Référence</th>
+          <th>Client</th>
+          <th>Leg</th>
+          <th>Palettes</th>
+          <th>Prix estimé</th>
+          <th>Statut</th>
+          <th>Créée</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bookings %}
+          <tr>
+            <td><span class="mono">{{ b.reference }}</span></td>
+            <td>#{{ b.client_account_id }}</td>
+            <td>{{ b.leg_id }}</td>
+            <td>{{ b.total_palettes }}</td>
+            <td>{{ b.estimated_price_eur|money if b.estimated_price_eur else '—' }}</td>
+            <td><span class="pill pill-info">{{ b.status }}</span></td>
+            <td>{{ b.created_at|date }}</td>
+            <td>
+              {% if b.status == 'submitted' %}
+                <form method="post" action="/staff/bookings/{{ b.reference }}/confirm" style="display:inline">
+                  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                  <button class="btn btn-primary text-sm" type="submit">Confirmer</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="text-muted">Aucune réservation pour ce filtre.</p>
+{% endif %}
+
+{% endblock %}

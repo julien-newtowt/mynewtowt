@@ -1,0 +1,67 @@
+{% extends "public/_layout.html" %}
+{% block title %}Politique de confidentialité — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<section class="hero">
+  <div class="container">
+    <span class="kicker">RGPD — UE 2016/679</span>
+    <h1 class="display">Protection des données personnelles</h1>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container" style="max-width:840px;">
+    <p class="lead">
+      {{ brand.raison_sociale }} attache la plus grande importance à la protection
+      de vos données. La présente politique décrit les traitements opérés via
+      cette plateforme et vos droits.
+    </p>
+
+    <h2 class="section-title">Responsable du traitement</h2>
+    <p>
+      {{ brand.raison_sociale }} — {{ brand.adresse }}<br/>
+      Délégué à la Protection des Données :
+      <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>
+    </p>
+
+    <h2 class="section-title">Données collectées</h2>
+    <ul>
+      <li><strong>Compte client</strong> : email, nom de société, contact, pays, langue.</li>
+      <li><strong>Réservations</strong> : route, palettes, poids, IMDG, adresses d'enlèvement et livraison.</li>
+      <li><strong>Facturation</strong> : adresse de facturation, numéro TVA, historiques.</li>
+      <li><strong>Connexion</strong> : adresse IP, horodatage, parcours technique (cookies techniques uniquement).</li>
+    </ul>
+
+    <h2 class="section-title">Finalités</h2>
+    <ul>
+      <li>Exécution du contrat de transport.</li>
+      <li>Émission documentaire (BL, facture, certificat CO₂).</li>
+      <li>Reporting réglementaire (EU MRV).</li>
+      <li>Amélioration produit (mesure d'usage anonymisée).</li>
+    </ul>
+
+    <h2 class="section-title">Durées de conservation</h2>
+    <ul>
+      <li>Comptes inactifs : 5 ans après dernier login, puis purge.</li>
+      <li>Factures et BL : 10 ans (obligation légale française).</li>
+      <li>Logs applicatifs : 90 jours actifs, archive 7 ans.</li>
+    </ul>
+
+    <h2 class="section-title">Vos droits</h2>
+    <p>Vous disposez d'un droit d'accès, de rectification, de portabilité et de suppression.</p>
+    <ul>
+      <li>En self-service depuis <a href="/me/account">Mon compte → Confidentialité</a></li>
+      <li>Par email au DPO : <a href="mailto:{{ brand.email }}">{{ brand.email }}</a></li>
+      <li>Réclamation auprès de la CNIL : <a href="https://www.cnil.fr" rel="noopener">cnil.fr</a></li>
+    </ul>
+
+    <h2 class="section-title">Sécurité</h2>
+    <p>
+      Chiffrement TLS 1.3 en transit, chiffrement at-rest des colonnes sensibles
+      (salaires, données médicales équipage, paiement), MFA obligatoire pour les
+      comptes administrateurs, audit complet append-only.
+    </p>
+  </div>
+</section>
+
+{% endblock %}

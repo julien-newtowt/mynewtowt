@@ -1,0 +1,74 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ leg.leg_code }} — Planning{% endblock %}
+{% block content %}
+
+<a href="/planning" class="btn btn-ghost mb-3">← Planning</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Voyage</span>
+    <h1 class="display mono" style="color:var(--cuivre);">{{ leg.leg_code }}</h1>
+  </div>
+  <div class="flex gap-2">
+    <a href="/planning/legs/{{ leg.id }}/edit" class="btn btn-primary">Éditer</a>
+    <form method="post" action="/planning/legs/{{ leg.id }}/delete" style="display:inline;" onsubmit="return confirm('Supprimer définitivement le leg {{ leg.leg_code }} ?');">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-danger">Supprimer</button>
+    </form>
+  </div>
+</header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Navigation</h2>
+    <table>
+      <tbody>
+        <tr><th>Navire</th><td><strong>{{ vessel.name }}</strong> <span class="mono text-muted">({{ vessel.code }})</span></td></tr>
+        <tr><th>Départ</th><td>{{ pol.name }} <span class="mono text-muted">({{ pol.locode }} {{ pol.country|flag }})</span></td></tr>
+        <tr><th>Arrivée</th><td>{{ pod.name }} <span class="mono text-muted">({{ pod.locode }} {{ pod.country|flag }})</span></td></tr>
+        <tr><th>ETD</th><td><span class="mono">{{ leg.etd|datetime }}</span></td></tr>
+        <tr><th>ETA</th><td><span class="mono">{{ leg.eta|datetime }}</span></td></tr>
+        <tr><th>ATD</th><td>{% if leg.atd %}<span class="mono">{{ leg.atd|datetime }}</span>{% else %}<span class="text-muted">non parti</span>{% endif %}</td></tr>
+        <tr><th>ATA</th><td>{% if leg.ata %}<span class="mono">{{ leg.ata|datetime }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
+        <tr><th>Statut</th><td>
+          {% if leg.status == 'planned' %}<span class="pill pill-info">Planifié</span>
+          {% elif leg.status == 'inprogress' %}<span class="pill pill-warn">En cours</span>
+          {% elif leg.status == 'completed' %}<span class="pill pill-ok">Terminé</span>
+          {% elif leg.status == 'cancelled' %}<span class="pill pill-neutral">Annulé</span>
+          {% else %}<span class="pill pill-neutral">{{ leg.status }}</span>{% endif %}
+        </td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Réservation publique</h2>
+    {% if leg.is_bookable %}
+      <p><span class="pill pill-ok">Réservable</span></p>
+      <table>
+        <tbody>
+          <tr><th>Capacité publique</th><td>{{ leg.public_capacity_palettes or vessel.capacity_palettes }} palettes EPAL</td></tr>
+          <tr><th>Tarif public</th><td>{{ leg.public_price_per_palette_eur|money if leg.public_price_per_palette_eur else 'Non défini' }} / palette</td></tr>
+          <tr><th>Clôture booking</th><td>{% if leg.booking_close_at %}<span class="mono">{{ leg.booking_close_at|datetime }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
+        </tbody>
+      </table>
+      <p class="mt-3">
+        <a href="/routes/{{ leg.leg_code }}" target="_blank" class="btn btn-ghost">Voir la page publique →</a>
+      </p>
+    {% else %}
+      <p class="text-muted">Ce leg n'est pas ouvert aux réservations clients.</p>
+      <p>
+        <a href="/planning/legs/{{ leg.id }}/edit" class="btn btn-primary">Ouvrir aux réservations</a>
+      </p>
+    {% endif %}
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Bookings sur ce leg</h2>
+  <p class="text-muted">
+    <a href="/staff/bookings?status_filter=submitted">Voir les bookings à confirmer</a>
+  </p>
+</article>
+
+{% endblock %}

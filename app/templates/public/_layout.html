@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block head %}
+<script src="/static/js/clock.js" defer></script>
+{% endblock %}
+
+{% block body %}
+<header class="public-header" role="banner">
+  <div class="container">
+    <a href="/" class="brand" aria-label="{{ brand.nom_court }} — accueil">
+      <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
+    </a>
+    <div class="header-extras">
+      <div class="clock-widget" aria-live="off">
+        <div class="clock-item">
+          <span class="clock-time" data-clock="local">--:--</span>
+          <span class="clock-label" data-tz="local-label">Local</span>
+        </div>
+        <span class="clock-sep" aria-hidden="true"></span>
+        <div class="clock-item">
+          <span class="clock-time" data-clock="paris">--:--</span>
+          <span class="clock-label">Paris</span>
+        </div>
+      </div>
+      <nav aria-label="Navigation principale">
+        <a href="/routes" class="btn btn-ghost">Routes & plannings</a>
+        <a href="/about" class="btn btn-ghost">À propos</a>
+        <a href="/me" class="btn btn-secondary">Espace client</a>
+        <a href="/booking/new" class="btn btn-primary">Réserver</a>
+      </nav>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="public-footer" role="contentinfo">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-brand">
+          <img src="{{ brand.logo_white }}" alt="{{ brand.nom_court }}" />
+        </div>
+        <p class="footer-tagline">{{ brand.tagline_1 }}<br/>{{ brand.tagline_2 }}</p>
+        <p>{{ brand.mention }}</p>
+      </div>
+
+      <div>
+        <h4>Compagnie</h4>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li><a href="/about">À propos</a></li>
+          <li><a href="/about/co2">Méthodologie CO₂</a></li>
+          <li><a href="{{ brand.site_public }}" rel="noopener">Site corporate</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>Réservation</h4>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li><a href="/routes">Routes & plannings</a></li>
+          <li><a href="/booking/new">Réserver une cale</a></li>
+          <li><a href="/me">Espace client</a></li>
+          <li><a href="/api/v1/spec">API B2B</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>Contact</h4>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li>{{ brand.adresse }}</li>
+          <li><a href="tel:{{ brand.telephone|replace(' ','') }}">{{ brand.telephone }}</a></li>
+          <li><a href="mailto:{{ brand.email }}">{{ brand.email }}</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div>
+        &copy; 2011–{{ "now"|date if false else "2026" }} {{ brand.raison_sociale }} —
+        Tous droits réservés.
+      </div>
+      <nav class="flex gap-3" aria-label="Mentions légales">
+        <a href="/about/legal">Mentions légales</a>
+        <a href="/about/privacy">Vie privée</a>
+        <a href="/about/terms">CGV</a>
+        <a href="/.well-known/security.txt">Sécurité</a>
+      </nav>
+    </div>
+  </div>
+</footer>
+{% endblock %}

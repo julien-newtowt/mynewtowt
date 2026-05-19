@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <meta name="description" content="{% block description %}NEWTOWT — Transport maritime cargo à la voile. ERP & plateforme client.{% endblock %}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=DM+Serif+Display&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="/static/css/kairos.css" />
+  <link rel="icon" type="image/png" href="/static/img/favicon.png" />
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+  <script>
+    // HTMX CSRF header injection
+    document.addEventListener('DOMContentLoaded', () => {
+      const csrf = document.cookie.split('; ').find(r => r.startsWith('towt_csrf='));
+      if (csrf && window.htmx) {
+        document.body.addEventListener('htmx:configRequest', (evt) => {
+          evt.detail.headers['x-csrf-token'] = csrf.split('=')[1];
+        });
+      }
+    });
+  </script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a href="#main" class="skip-link">Aller au contenu principal</a>
+  {% block body %}{% endblock %}
+</body>
+</html>

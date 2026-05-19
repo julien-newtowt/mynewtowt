@@ -1,0 +1,47 @@
+{% extends "client/_layout.html" %}
+{% block title %}Mes factures — NEWTOWT{% endblock %}
+{% block content %}
+
+<h1>Mes factures</h1>
+
+{% if invoices %}
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Référence</th>
+          <th>Émise le</th>
+          <th>Échéance</th>
+          <th>HT</th>
+          <th>TVA</th>
+          <th>TTC</th>
+          <th>Statut</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in invoices %}
+          <tr>
+            <td><span class="mono">{{ inv.reference }}</span></td>
+            <td>{{ inv.issued_at|date }}</td>
+            <td>{{ inv.due_at|date if inv.due_at else '—' }}</td>
+            <td>{{ inv.amount_excl_vat_eur|money }}</td>
+            <td>{{ inv.vat_amount_eur|money }}</td>
+            <td><strong>{{ inv.amount_incl_vat_eur|money }}</strong></td>
+            <td>
+              {% if inv.status == 'paid' %}<span class="pill pill-ok">Payée</span>
+              {% elif inv.status == 'overdue' %}<span class="pill pill-error">En retard</span>
+              {% elif inv.status == 'issued' %}<span class="pill pill-warn">À payer</span>
+              {% else %}<span class="pill pill-neutral">{{ inv.status }}</span>{% endif %}
+            </td>
+            <td>{% if inv.pdf_url %}<a href="{{ inv.pdf_url }}" class="btn btn-ghost">PDF →</a>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="text-muted">Aucune facture émise pour l'instant.</p>
+{% endif %}
+
+{% endblock %}

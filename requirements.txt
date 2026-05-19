@@ -1,0 +1,57 @@
+# NEWTOWT mynewtowt — production dependencies
+# Stack : FastAPI 0.115 + SQLAlchemy 2 async + Postgres 16
+
+# --- Core ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-multipart==0.0.20
+
+# --- Database ---
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+pgvector==0.3.6
+
+# --- Security ---
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+itsdangerous==2.2.0
+pyotp==2.9.0           # TOTP MFA
+webauthn==2.5.0        # WebAuthn / Passkey
+cryptography==44.0.0
+
+# --- Templating ---
+jinja2==3.1.5
+babel==2.16.0          # i18n
+
+# --- HTTP / external ---
+httpx==0.28.1
+stripe==11.4.1
+
+# --- Documents ---
+openpyxl==3.1.5        # Excel
+python-docx==1.1.2     # Word
+reportlab==4.2.5
+weasyprint==63.1       # PDF
+
+# --- Anthropic SDK (chatbot Kairos AI) ---
+anthropic==0.49.0
+
+# --- Observability ---
+sentry-sdk[fastapi]==2.20.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-sqlalchemy==0.50b0
+opentelemetry-exporter-otlp==1.29.0
+prometheus-fastapi-instrumentator==7.0.0
+loguru==0.7.3
+
+# --- Utilities ---
+python-magic==0.4.27   # file MIME detection
+bleach==6.2.0          # XSS sanitizer
+phonenumbers==8.13.50
+email-validator==2.2.0
+
+# --- Dev/test (séparé) ---
+# voir requirements-dev.txt

@@ -1,0 +1,33 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Crew — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div><span class="kicker">Équipage</span><h1 class="display">Membres d'équipage</h1></div>
+  <a href="/crew/new" class="btn btn-primary">+ Nouveau membre</a>
+</header>
+
+{% if schengen_warning %}
+  <div class="alert alert-warn"><strong>⚠ {{ schengen_warning|length }} marin(s)</strong> en alerte Schengen.</div>
+{% endif %}
+
+<article class="card">
+  <table>
+    <thead><tr><th>Nom</th><th>Rôle</th><th>Nationalité</th><th>Passeport</th><th>Statut Schengen</th></tr></thead>
+    <tbody>
+      {% for m in members %}
+        <tr>
+          <td>{{ m.full_name }}</td>
+          <td><span class="pill pill-neutral">{{ m.role }}</span></td>
+          <td>{{ m.nationality or '—' }}</td>
+          <td class="mono text-sm">{{ m.passport_number or '—' }}<br/><small class="text-muted">exp. {{ m.passport_expires_at or '—' }}</small></td>
+          <td>
+            {% if m.schengen_status == 'compliant' %}<span class="pill pill-ok">OK</span>
+            {% elif m.schengen_status == 'warning' %}<span class="pill pill-warn">Warning</span>
+            {% else %}<span class="pill pill-error">Non-compliant</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endblock %}

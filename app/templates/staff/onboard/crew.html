@@ -1,0 +1,58 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Équipage onboard{% endblock %}
+{% block content %}
+<a href="/onboard" class="btn btn-ghost mb-3">← Onboard</a>
+<header class="mb-4"><span class="kicker">À bord</span><h1 class="display">Équipage</h1></header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Registre visiteurs (ISPS)</h2>
+    <form method="post" action="/onboard/crew/visitor">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="grid grid-2 gap-3">
+        <div class="field"><label>Leg</label><select name="leg_id" required>{% for l in legs %}<option value="{{ l.id }}">{{ l.leg_code }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Nom complet</label><input name="full_name" required /></div>
+        <div class="field"><label>Société</label><input name="company" /></div>
+        <div class="field"><label>Motif</label><input name="purpose" /></div>
+        <div class="field"><label>Pièce d'identité</label><input name="id_document" /></div>
+        <div class="field"><label>Escorté par</label><input name="escorted_by" /></div>
+      </div>
+      <button type="submit" class="btn btn-primary mt-3">Enregistrer la visite</button>
+    </form>
+  </article>
+
+  <article class="card">
+    <h2>Check-lists ISM/ISPS</h2>
+    {% if checklists %}
+      <table>
+        <thead><tr><th>Type</th><th>Titre</th><th>Statut</th></tr></thead>
+        <tbody>
+          {% for c in checklists %}
+            <tr><td class="mono">{{ c.kind }}</td><td>{{ c.title }}</td><td>{% if c.completed_at %}<span class="pill pill-ok">Signée</span>{% else %}<span class="pill pill-warn">En cours</span>{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}<p class="text-muted">Aucune check-list enregistrée.</p>{% endif %}
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Visiteurs récents</h2>
+  {% if visitors %}
+    <table>
+      <thead><tr><th>Date</th><th>Visiteur</th><th>Société</th><th>Motif</th><th>Sortie</th></tr></thead>
+      <tbody>
+        {% for v in visitors %}
+          <tr>
+            <td class="mono text-sm">{{ v.time_in|datetime }}</td>
+            <td>{{ v.full_name }}</td>
+            <td>{{ v.company or '—' }}</td>
+            <td>{{ v.purpose or '—' }}</td>
+            <td>{% if v.time_out %}<span class="mono text-sm">{{ v.time_out|datetime }}</span>{% else %}<span class="pill pill-warn">À bord</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}<p class="text-muted">Pas de visiteurs enregistrés.</p>{% endif %}
+</article>
+{% endblock %}

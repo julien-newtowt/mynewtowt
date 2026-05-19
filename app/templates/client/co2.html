@@ -1,0 +1,46 @@
+{% extends "client/_layout.html" %}
+{% block title %}Mes certificats CO₂ — NEWTOWT{% endblock %}
+{% block content %}
+
+<h1>Mes certificats CO₂</h1>
+<p class="text-muted">
+  Chaque expédition livrée donne droit à un certificat d'émissions évitées,
+  valorisable dans votre <strong>Bilan Carbone®</strong> scope 3 catégorie 4.
+</p>
+
+{% if certificates %}
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Référence</th>
+          <th>Émis le</th>
+          <th>Tonnage (t)</th>
+          <th>Distance (NM)</th>
+          <th>CO₂ vélique (kg)</th>
+          <th>CO₂ conv. (kg)</th>
+          <th>CO₂ évité</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in certificates %}
+          <tr>
+            <td><span class="mono">{{ c.reference }}</span></td>
+            <td>{{ c.issued_at|date }}</td>
+            <td>{{ c.tonnage_transported_t }}</td>
+            <td>{{ c.distance_nm }}</td>
+            <td>{{ c.co2_emitted_kg }}</td>
+            <td>{{ c.co2_conventional_kg }}</td>
+            <td><strong class="text-accent">-{{ c.co2_avoided_kg }} kg</strong></td>
+            <td>{% if c.pdf_url %}<a href="{{ c.pdf_url }}" class="btn btn-ghost">PDF →</a>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="text-muted">Aucun certificat émis pour l'instant. Ils sont générés à la livraison.</p>
+{% endif %}
+
+{% endblock %}

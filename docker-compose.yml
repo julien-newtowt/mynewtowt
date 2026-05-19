@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: mynewtowt-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-towt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_local}
+      POSTGRES_DB: ${POSTGRES_DB:-towt}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-towt}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: mynewtowt-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-towt}:${POSTGRES_PASSWORD:-change_me_local}@db:5432/${POSTGRES_DB:-towt}
+      # Trust X-Forwarded-* from the Caddy reverse proxy (internal network only).
+      FORWARDED_ALLOW_IPS: "*"
+    # No public port mapping: only reachable via the caddy service on the
+    # internal docker network. Caddy handles 80/443 → app:8000 internally.
+    expose:
+      - "8000"
+    volumes:
+      - uploads:/app/uploads
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: mynewtowt-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:-my.newtowt.eu}
+      CADDY_EMAIL: ${CADDY_EMAIL:-communication@towt.eu}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data         # certs + LE state (persistant)
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:

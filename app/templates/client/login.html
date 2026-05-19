@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Connexion client — {{ brand.nom_court }}{% endblock %}
+{% block body %}
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
+    </div>
+    <span class="kicker text-center" style="display:block;">Espace client</span>
+    <h2>Connexion</h2>
+    {% if error %}
+      <div class="alert alert-error" role="alert">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/me/login">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" name="email" autocomplete="email" required autofocus />
+      </div>
+      <div class="field">
+        <label for="password">Mot de passe</label>
+        <input id="password" type="password" name="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn btn-primary btn-block btn-lg" type="submit">Se connecter</button>
+    </form>
+    <p class="text-center text-muted mt-4 text-sm">
+      Pas encore de compte ?
+      <a href="/me/register">Créer un compte</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

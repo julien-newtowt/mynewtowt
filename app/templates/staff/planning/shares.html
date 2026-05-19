@@ -1,0 +1,89 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Partages planning — {{ brand.nom_court }} ERP{% endblock %}
+{% block content %}
+
+<a href="/planning" class="btn btn-ghost mb-3">← Planning</a>
+
+<header class="mb-4">
+  <span class="kicker">Planning</span>
+  <h1 class="display">Partages publics</h1>
+  <p class="text-muted">Liens en lecture seule, envoyés à des partenaires sans compte.</p>
+</header>
+
+<form method="post" action="/planning/shares" class="card mb-4">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+  <h2>Nouveau partage</h2>
+  <div class="grid grid-2 gap-3">
+    <div class="field">
+      <label for="label">Libellé (interne)</label>
+      <input id="label" name="label" maxlength="200" placeholder="Acme Logistics S22-S24" />
+    </div>
+    <div class="field">
+      <label for="vessel_id">Filtrer un navire (optionnel)</label>
+      <select id="vessel_id" name="vessel_id">
+        <option value="">Tous les navires</option>
+        {% for v in vessels %}
+          <option value="{{ v.id }}">{{ v.code }} — {{ v.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" name="only_bookable" /> Afficher uniquement les legs réservables</label>
+    </div>
+    <div class="field">
+      <label for="description">Description (visible côté client)</label>
+      <input id="description" name="description" maxlength="500" />
+    </div>
+  </div>
+  <button type="submit" class="btn btn-primary">Créer le lien</button>
+</form>
+
+<article class="card">
+  <h2>Partages actifs</h2>
+  {% if shares %}
+    <table>
+      <thead>
+        <tr>
+          <th>Libellé</th>
+          <th>Navire</th>
+          <th>Filtres</th>
+          <th>URL publique</th>
+          <th>Accès</th>
+          <th>Créé</th>
+          <th>Statut</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in shares %}
+          {% set v = (vessels | selectattr("id", "equalto", s.vessel_id) | list | first) if s.vessel_id else none %}
+          <tr style="{% if not s.is_active %}opacity:0.5;{% endif %}">
+            <td>{{ s.label or '—' }}</td>
+            <td>{{ v.name if v else 'Tous' }}</td>
+            <td>{% if s.only_bookable %}<span class="pill pill-info">Bookables</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>
+              <code style="font-size:var(--text-xs);">{{ site_url }}/planning/share/{{ s.token }}</code>
+            </td>
+            <td>{{ s.access_count }}</td>
+            <td>{{ s.created_at|date }}</td>
+            <td>
+              {% if s.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Révoqué</span>{% endif %}
+            </td>
+            <td>
+              {% if s.is_active %}
+                <form method="post" action="/planning/shares/{{ s.id }}/revoke" style="display:inline;" onsubmit="return confirm('Révoquer ce partage ?');">
+                  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                  <button type="submit" class="btn btn-danger text-sm">Révoquer</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted">Aucun partage encore créé.</p>
+  {% endif %}
+</article>
+
+{% endblock %}

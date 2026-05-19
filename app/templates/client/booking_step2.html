@@ -1,0 +1,80 @@
+{% extends "client/_layout.html" %}
+{% block title %}Réservation — Cargo{% endblock %}
+{% block content %}
+
+<h1>Nouvelle réservation</h1>
+<p class="text-muted">Étape 2 / 3 — Détails du cargo pour <span class="mono text-accent">{{ leg.leg_code }}</span></p>
+
+<div class="kpi-strip">
+  <div class="kpi-card"><div class="label">Étape</div><div class="value text-muted">1 / 3 ✓</div><div class="delta text-muted">Route</div></div>
+  <div class="kpi-card"><div class="label">Étape</div><div class="value">2 / 3</div><div class="delta">Cargo</div></div>
+  <div class="kpi-card"><div class="label">Étape</div><div class="value text-muted">3 / 3</div><div class="delta text-muted">Confirmation</div></div>
+</div>
+
+{% if error %}
+  <div class="alert alert-error" role="alert">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/booking/new/{{ leg.leg_code }}" class="card">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <h2>Vos palettes</h2>
+  <p class="text-muted text-sm">Ajoutez chaque type de palette à embarquer. Vous pourrez préciser des détails par la suite.</p>
+
+  <div id="items-area">
+    <div class="grid grid-4 gap-3 mb-3" data-item-row="0">
+      <div class="field">
+        <label>Format</label>
+        <select name="items-0-format" required>
+          <option value="EPAL">EPAL — Europalette</option>
+          <option value="USPAL">USPAL — US Pallet</option>
+          <option value="PORTPAL">PORTPAL — Portuaire</option>
+          <option value="IBC">IBC</option>
+          <option value="BIGBAG">BIGBAG</option>
+          <option value="BARRIQUE120">Barrique 120</option>
+          <option value="BARRIQUE140">Barrique 140</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Nombre</label>
+        <input type="number" name="items-0-count" min="1" max="1000" value="1" required />
+      </div>
+      <div class="field" style="grid-column: span 2">
+        <label>Description marchandise</label>
+        <input type="text" name="items-0-description" required placeholder="Vin rouge bouteilles" />
+      </div>
+      <div class="field">
+        <label>Poids unitaire (kg)</label>
+        <input type="number" name="items-0-unit_weight_kg" step="0.1" min="0" />
+      </div>
+      <div class="field">
+        <label><input type="checkbox" name="items-0-stackable" checked /> Empilable</label>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" name="items-0-hazardous" /> Dangereux (IMDG)</label>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="mt-4">Logistique</h2>
+  <div class="field">
+    <label for="pickup_address">Adresse d'enlèvement (optionnel)</label>
+    <textarea id="pickup_address" name="pickup_address" rows="2"></textarea>
+  </div>
+  <div class="field">
+    <label for="delivery_address">Adresse de livraison (optionnel)</label>
+    <textarea id="delivery_address" name="delivery_address" rows="2"></textarea>
+  </div>
+  <div class="field">
+    <label for="shipper_reference">Votre référence chargeur (optionnel)</label>
+    <input id="shipper_reference" name="shipper_reference" maxlength="100" />
+  </div>
+  <div class="field">
+    <label for="notes">Notes / contraintes (optionnel)</label>
+    <textarea id="notes" name="notes" rows="3"></textarea>
+  </div>
+
+  <button class="btn btn-primary btn-lg mt-3" type="submit">Continuer →</button>
+</form>
+
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "public/_layout.html" %}
+{% block title %}Mentions légales — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<section class="hero">
+  <div class="container">
+    <span class="kicker">Information légale</span>
+    <h1 class="display">Mentions légales</h1>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container" style="max-width:840px;">
+    <h2 class="section-title">Éditeur du site</h2>
+    <p>
+      <strong>{{ brand.raison_sociale }}</strong><br/>
+      {{ brand.adresse }}<br/>
+      Téléphone : <a href="tel:{{ brand.telephone|replace(' ','') }}">{{ brand.telephone }}</a><br/>
+      Email : <a href="mailto:{{ brand.email }}">{{ brand.email }}</a><br/>
+      Directeur de la publication : (à compléter)<br/>
+      RCS / SIREN : (à compléter)
+    </p>
+
+    <h2 class="section-title">Hébergement</h2>
+    <p>OVH SAS — 2 rue Kellermann, 59100 Roubaix, France.</p>
+
+    <h2 class="section-title">Propriété intellectuelle</h2>
+    <p>
+      L'ensemble du contenu de ce site (textes, illustrations, logos, design)
+      est la propriété de {{ brand.raison_sociale }} et protégé par le Code de
+      la propriété intellectuelle. Toute reproduction sans autorisation préalable
+      écrite est interdite.
+    </p>
+
+    <h2 class="section-title">Cookies</h2>
+    <p>
+      Ce site utilise uniquement des cookies techniques nécessaires (session,
+      CSRF, préférences linguistiques). Aucun cookie publicitaire ou de mesure
+      d'audience tiers.
+    </p>
+
+    <h2 class="section-title">Signalement de vulnérabilité</h2>
+    <p>
+      Pour signaler une vulnérabilité de sécurité, contactez-nous à
+      <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>.
+      Notre fichier <a href="/.well-known/security.txt">/.well-known/security.txt</a>
+      rappelle nos engagements.
+    </p>
+  </div>
+</section>
+
+{% endblock %}

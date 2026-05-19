@@ -1,0 +1,21 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Escale — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<header class="mb-4"><span class="kicker">Opérations</span><h1 class="display">Escales à venir</h1></header>
+<article class="card">
+  <table>
+    <thead><tr><th>Leg</th><th>ETD</th><th>ETA</th><th>Statut</th><th></th></tr></thead>
+    <tbody>
+      {% for leg in legs %}
+        <tr>
+          <td class="mono">{{ leg.leg_code }}</td>
+          <td>{{ leg.etd|date }}</td>
+          <td>{{ leg.eta|date }}</td>
+          <td><span class="pill pill-info">{{ leg.status }}</span></td>
+          <td><a href="/escale/{{ leg.id }}" class="btn btn-ghost text-sm">Import/Export →</a></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endblock %}

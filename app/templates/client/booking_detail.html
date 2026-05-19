@@ -1,0 +1,99 @@
+{% extends "client/_layout.html" %}
+{% block title %}{{ booking.reference }} — NEWTOWT{% endblock %}
+{% block content %}
+
+<a href="/me/bookings" class="btn btn-ghost mb-3">← Mes réservations</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <h1 class="mono text-accent">{{ booking.reference }}</h1>
+    <span class="pill pill-info">{{ booking.status }}</span>
+  </div>
+  <div class="text-right">
+    {% if booking.confirmed_price_eur %}
+      <div class="text-muted">Prix confirmé</div>
+      <div class="display" style="font-size: var(--text-2xl)">{{ booking.confirmed_price_eur|money }}</div>
+    {% elif booking.estimated_price_eur %}
+      <div class="text-muted">Prix estimé</div>
+      <div class="display" style="font-size: var(--text-2xl)">{{ booking.estimated_price_eur|money }}</div>
+    {% endif %}
+  </div>
+</header>
+
+<section class="card mb-4">
+  <h2>Récapitulatif</h2>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <div class="text-muted">Palettes</div>
+      <div class="display" style="font-size: var(--text-xl)">{{ booking.total_palettes }}</div>
+    </div>
+    <div>
+      <div class="text-muted">Poids total</div>
+      <div class="display" style="font-size: var(--text-xl)">{{ booking.total_weight_kg|round(1) }} kg</div>
+    </div>
+    {% if booking.hazardous %}
+      <div><span class="pill pill-warn">⚠ IMDG</span> Marchandise dangereuse déclarée.</div>
+    {% endif %}
+    {% if booking.oversize %}
+      <div><span class="pill pill-warn">↔ Hors-format</span> Co-chargement à coordonner.</div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card mb-4">
+  <h2>Détail des palettes</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Format</th><th>Nb</th><th>Description</th>
+        <th>Poids unitaire</th><th>IMDG</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in booking.items %}
+        <tr>
+          <td><span class="mono">{{ item.pallet_format }}</span></td>
+          <td>{{ item.pallet_count }}</td>
+          <td>{{ item.cargo_description }}</td>
+          <td>{{ item.unit_weight_kg or '—' }}</td>
+          <td>{% if item.hazardous %}{{ item.imdg_class or 'oui' }}{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if booking.status in ('confirmed','loaded','at_sea','discharged','delivered') %}
+<section class="card mt-4">
+  <h2>Documents</h2>
+  <p class="text-muted text-sm">Téléchargez vos documents officiels en PDF.</p>
+  <div class="flex gap-3 mt-3" style="flex-wrap:wrap;">
+    <a href="/me/bookings/{{ booking.reference }}/bl.pdf" target="_blank" class="btn btn-primary">📄 Bill of Lading</a>
+    <a href="/me/bookings/{{ booking.reference }}/packing-list.pdf" target="_blank" class="btn btn-secondary">📦 Packing List</a>
+    <a href="/me/bookings/{{ booking.reference }}/invoice.pdf" target="_blank" class="btn btn-secondary">💶 Facture</a>
+    {% if booking.status in ('discharged','delivered') %}
+      <a href="/me/bookings/{{ booking.reference }}/co2-certificate.pdf" target="_blank" class="btn btn-accent">🌱 Certificat CO₂</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Adresses</h2>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <strong>Enlèvement</strong><br />
+      <small class="text-muted">{{ booking.pickup_address or '— (à compléter)' }}</small>
+    </div>
+    <div>
+      <strong>Livraison</strong><br />
+      <small class="text-muted">{{ booking.delivery_address or '— (à compléter)' }}</small>
+    </div>
+  </div>
+  {% if booking.notes %}
+    <h3 class="mt-4">Notes</h3>
+    <p class="text-muted">{{ booking.notes }}</p>
+  {% endif %}
+</section>
+
+{% endblock %}

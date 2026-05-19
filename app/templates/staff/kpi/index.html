@@ -1,0 +1,28 @@
+{% extends "staff/_layout.html" %}
+{% block title %}KPI{% endblock %}
+{% block content %}
+<header class="mb-4"><span class="kicker">Performance</span><h1 class="display">KPI flotte</h1></header>
+
+<section class="kpi-strip">
+  <div class="kpi-card"><div class="label">Tonnage cumulé</div><div class="value">{{ "%.0f"|format(total_tonnage_t) }} t</div><div class="delta text-muted">total des legs trackés</div></div>
+  <div class="kpi-card"><div class="label">CO₂ évité cumulé</div><div class="value text-success">{{ "%.0f"|format(total_co2_avoided_kg) }} kg</div><div class="delta up">vs cargo conventionnel</div></div>
+  <div class="kpi-card"><div class="label">On-time performance</div><div class="value">{{ "%.0f"|format(on_time_pct) }} %</div><div class="delta text-muted">legs livrés à l'heure</div></div>
+  <div class="kpi-card"><div class="label">Legs trackés</div><div class="value">{{ kpis|length }}</div><div class="delta text-muted">KPI persistés</div></div>
+</section>
+
+<article class="card mt-4">
+  <h2>KPI par leg</h2>
+  {% if kpis %}
+    <table>
+      <thead><tr><th>Leg</th><th>Palettes</th><th>Tonnage</th><th>Distance</th><th>Vitesse moy.</th><th>Occupation</th><th>CO₂ évité</th><th>On-time</th></tr></thead>
+      <tbody>{% for k in kpis %}<tr>
+        <td>#{{ k.leg_id }}</td><td>{{ k.palettes_carried }}</td>
+        <td>{{ k.tonnage_kg }} kg</td><td>{{ k.distance_nm or '—' }} NM</td>
+        <td>{{ k.avg_speed_kn or '—' }} kn</td><td>{{ k.occupancy_pct or '—' }} %</td>
+        <td class="mono">{{ k.co2_avoided_kg or '—' }}</td>
+        <td>{% if k.on_time %}<span class="pill pill-ok">OK</span>{% else %}<span class="pill pill-warn">Retard</span>{% endif %}</td>
+      </tr>{% endfor %}</tbody>
+    </table>
+  {% else %}<p class="text-muted">Aucun KPI persisté. Ils seront calculés à la clôture des legs.</p>{% endif %}
+</article>
+{% endblock %}

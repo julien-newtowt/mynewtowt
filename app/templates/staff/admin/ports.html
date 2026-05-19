@@ -1,0 +1,118 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Ports — Admin{% endblock %}
+{% block content %}
+
+<a href="/admin" class="btn btn-ghost mb-3">← Admin</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Gouvernance</span>
+    <h1 class="display">Référentiel des ports</h1>
+    <p class="text-muted">{{ total }} port(s) trouvé(s). Page {{ page }}.</p>
+  </div>
+</header>
+
+<article class="card mb-4">
+  <h2>Mettre à jour le fichier des ports</h2>
+  <p class="text-muted text-sm">
+    Format CSV avec colonnes <code>locode, name, country, latitude, longitude</code>
+    (séparateurs <code>, ; tab |</code> auto-détectés). Lignes invalides ignorées.
+    L'upsert est idempotent : un port existant garde son <code>is_active</code>.
+  </p>
+  <form method="post" action="/admin/ports/upload" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-2 gap-3">
+      <div class="field">
+        <label>Fichier CSV</label>
+        <input type="file" name="file" accept=".csv,text/csv" required />
+      </div>
+      <div class="field">
+        <label>Source (libellé)</label>
+        <input name="source" value="user" maxlength="40" />
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Téléverser</button>
+  </form>
+</article>
+
+<form method="get" action="/admin/ports" class="card mb-4">
+  <div class="grid grid-4 gap-3">
+    <div class="field">
+      <label>Recherche (nom/locode)</label>
+      <input name="q" value="{{ filters.q }}" />
+    </div>
+    <div class="field">
+      <label>Pays (ISO 2)</label>
+      <input name="country" value="{{ filters.country }}" maxlength="2" />
+    </div>
+    <div class="field">
+      <label>Source</label>
+      <select name="source">
+        <option value="">Toutes</option>
+        <option value="manual" {% if filters.source == 'manual' %}selected{% endif %}>manual</option>
+        <option value="datagouv" {% if filters.source == 'datagouv' %}selected{% endif %}>datagouv</option>
+        <option value="unlocode" {% if filters.source == 'unlocode' %}selected{% endif %}>unlocode</option>
+        <option value="user" {% if filters.source == 'user' %}selected{% endif %}>user</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Affichage</label>
+      <select name="show">
+        <option value="all" {% if filters.show == 'all' %}selected{% endif %}>Tous</option>
+        <option value="active" {% if filters.show == 'active' %}selected{% endif %}>Actifs</option>
+        <option value="inactive" {% if filters.show == 'inactive' %}selected{% endif %}>Inactifs</option>
+      </select>
+    </div>
+  </div>
+  <button type="submit" class="btn btn-secondary">Filtrer</button>
+</form>
+
+<article class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>LOCODE</th>
+        <th>Nom</th>
+        <th>Pays</th>
+        <th>Coordonnées</th>
+        <th>Source</th>
+        <th>Statut</th>
+        <th class="text-right">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in ports %}
+        <tr style="{% if not p.is_active %}opacity:0.55;{% endif %}">
+          <td class="mono">{{ p.locode }}</td>
+          <td>{{ p.name }}</td>
+          <td>{{ p.country }}</td>
+          <td class="mono text-sm">{{ "%.4f"|format(p.latitude) if p.latitude is not none else '—' }}, {{ "%.4f"|format(p.longitude) if p.longitude is not none else '—' }}</td>
+          <td><span class="pill pill-neutral">{{ p.source }}</span></td>
+          <td>
+            {% if p.is_active %}<span class="pill pill-ok">Actif</span>
+            {% else %}<span class="pill pill-error">Inactif</span>{% endif %}
+          </td>
+          <td class="text-right">
+            <form method="post" action="/admin/ports/{{ p.id }}/toggle" style="display:inline;">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button type="submit" class="btn btn-ghost text-sm">
+                {% if p.is_active %}Désactiver{% else %}Réactiver{% endif %}
+              </button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% set total_pages = (total / per_page)|round(0, 'ceil')|int %}
+  {% if total_pages > 1 %}
+    <div class="flex gap-2 mt-3 justify-center">
+      {% if page > 1 %}<a href="?page={{ page - 1 }}&q={{ filters.q }}&country={{ filters.country }}&source={{ filters.source }}&show={{ filters.show }}" class="btn btn-ghost">← Préc.</a>{% endif %}
+      <span class="text-muted mono">page {{ page }} / {{ total_pages }}</span>
+      {% if page < total_pages %}<a href="?page={{ page + 1 }}&q={{ filters.q }}&country={{ filters.country }}&source={{ filters.source }}&show={{ filters.show }}" class="btn btn-ghost">Suiv. →</a>{% endif %}
+    </div>
+  {% endif %}
+</article>
+
+{% endblock %}

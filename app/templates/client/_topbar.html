@@ -1,0 +1,45 @@
+{# Topbar — client variant. #}
+<header class="topbar" role="banner">
+  <div class="topbar-title">{% block topbar_title %}Espace client{% endblock %}</div>
+  <div class="topbar-actions">
+    <div class="clock-widget" aria-live="off">
+      <div class="clock-item">
+        <span class="clock-time" data-clock="local">--:--</span>
+        <span class="clock-label" data-tz="local-label">Local</span>
+      </div>
+      <span class="clock-sep" aria-hidden="true"></span>
+      <div class="clock-item">
+        <span class="clock-time" data-clock="paris">--:--</span>
+        <span class="clock-label">Paris</span>
+      </div>
+    </div>
+
+    <a href="/booking/new" class="topbar-action" title="Nouvelle réservation">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </a>
+
+    <button type="button" class="topbar-action" id="topbar-user-btn" title="Mon compte">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
+    </button>
+    <div class="topbar-menu" id="topbar-user-menu" role="menu">
+      <div class="menu-header">{% if client is defined and client %}{{ client.company_name }}{% else %}Compte{% endif %}</div>
+      <a href="/me/account">⚙ Mon compte</a>
+      <a href="/me/bookings">📦 Mes réservations</a>
+      <a href="/me/invoices">💶 Mes factures</a>
+      <div class="menu-divider"></div>
+      <a href="/me/logout" style="color: var(--danger);">↪ Déconnexion</a>
+    </div>
+  </div>
+</header>
+<script>
+(function(){
+  document.getElementById("topbar-user-btn")?.addEventListener("click", function(){
+    document.getElementById("topbar-user-menu")?.classList.toggle("open");
+  });
+  document.addEventListener("click", function(e){
+    if (!e.target.closest(".topbar-action") && !e.target.closest(".topbar-menu")) {
+      document.querySelectorAll(".topbar-menu").forEach(function(m){ m.classList.remove("open"); });
+    }
+  });
+})();
+</script>

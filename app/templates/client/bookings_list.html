@@ -1,0 +1,45 @@
+{% extends "client/_layout.html" %}
+{% block title %}Mes réservations — NEWTOWT{% endblock %}
+{% block content %}
+
+<h1>Mes réservations</h1>
+<p class="text-muted">{{ bookings|length }} réservation(s) trouvée(s).</p>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Référence</th>
+        <th>Statut</th>
+        <th>Palettes</th>
+        <th>Poids</th>
+        <th>Créée</th>
+        <th>Prix</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in bookings %}
+        <tr>
+          <td><span class="mono">{{ b.reference }}</span></td>
+          <td><span class="pill pill-info">{{ b.status }}</span></td>
+          <td>{{ b.total_palettes }}</td>
+          <td>{{ b.total_weight_kg|round(1) }} kg</td>
+          <td>{{ b.created_at|date }}</td>
+          <td>
+            {% if b.confirmed_price_eur %}
+              {{ b.confirmed_price_eur|money }}
+            {% elif b.estimated_price_eur %}
+              <span class="text-muted">{{ b.estimated_price_eur|money }} (estim.)</span>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td><a href="/me/bookings/{{ b.reference }}" class="btn btn-ghost">Détails →</a></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

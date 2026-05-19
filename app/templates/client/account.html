@@ -1,0 +1,56 @@
+{% extends "client/_layout.html" %}
+{% block title %}Mon compte — NEWTOWT{% endblock %}
+{% block content %}
+
+<h1>Mon compte</h1>
+
+<section class="card mb-4">
+  <h2>Informations</h2>
+  <table>
+    <tbody>
+      <tr><th>Société</th><td>{{ client.company_name }}</td></tr>
+      <tr><th>Contact</th><td>{{ client.contact_name or '—' }}</td></tr>
+      <tr><th>Email</th><td>{{ client.email }}</td></tr>
+      <tr><th>Pays</th><td>{{ client.country or '—' }}</td></tr>
+      <tr><th>Segment</th><td><span class="mono">{{ client.segment }}</span></td></tr>
+      <tr><th>Inscrit le</th><td>{{ client.created_at|date }}</td></tr>
+      <tr><th>Dernière connexion</th><td>{{ client.last_login_at|datetime if client.last_login_at else '—' }}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="card mb-4">
+  <h2>Sécurité</h2>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <p><strong>Mot de passe</strong> — Modifiez-le régulièrement.</p>
+      <a href="#" class="btn btn-secondary">Changer mon mot de passe</a>
+    </div>
+    <div>
+      <p><strong>Double authentification (TOTP)</strong>
+        {% if client.mfa_enabled %}
+          <span class="pill pill-ok">Activée</span>
+        {% else %}
+          <span class="pill pill-warn">Non activée</span>
+        {% endif %}
+      </p>
+      <a href="#" class="btn btn-secondary">Configurer 2FA</a>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>RGPD — Mes données</h2>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <p>Téléchargez l'ensemble de vos données au format ZIP.</p>
+      <a href="#" class="btn btn-ghost">Exporter mes données</a>
+    </div>
+    <div>
+      <p class="text-error">Suppression définitive (30 j de réversibilité).</p>
+      <a href="#" class="btn btn-danger">Supprimer mon compte</a>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

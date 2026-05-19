@@ -1,0 +1,51 @@
+{% extends "client/_layout.html" %}
+{% block title %}Nouvelle réservation — étape 1{% endblock %}
+{% block content %}
+
+<h1>Nouvelle réservation</h1>
+<p class="text-muted">Étape 1 / 3 — Choisir une route</p>
+
+<div class="kpi-strip">
+  <div class="kpi-card"><div class="label">Étape</div><div class="value">1 / 3</div><div class="delta text-muted">Route</div></div>
+  <div class="kpi-card"><div class="label">Étape</div><div class="value text-muted">2 / 3</div><div class="delta text-muted">Cargo</div></div>
+  <div class="kpi-card"><div class="label">Étape</div><div class="value text-muted">3 / 3</div><div class="delta text-muted">Confirmation</div></div>
+</div>
+
+{% if legs %}
+  <div class="grid grid-2 gap-4">
+    {% for item in legs %}
+      <article class="booking-card">
+        <div class="header">
+          <span class="leg-code mono">{{ item.leg.leg_code }}</span>
+          <span class="text-muted text-sm">{{ item.vessel.name }}</span>
+        </div>
+        <div class="route">
+          <strong>{{ item.pol.locode }}</strong>
+          <span>{{ item.pol.country|flag }}</span>
+          <span class="arrow">→</span>
+          <strong>{{ item.pod.locode }}</strong>
+          <span>{{ item.pod.country|flag }}</span>
+        </div>
+        <div class="meta">
+          <span>ETD <span class="mono">{{ item.leg.etd|date }}</span></span>
+          <span>ETA <span class="mono">{{ item.leg.eta|date }}</span></span>
+        </div>
+        {% set occ = item.capacity.occupancy_pct %}
+        <div>
+          <small class="text-muted">{{ item.capacity.available_palettes }} / {{ item.capacity.capacity_palettes }} palettes</small>
+          <div class="capacity-gauge {% if occ > 85 %}full{% elif occ > 60 %}warn{% endif %}">
+            <div class="fill" style="width: {{ occ }}%"></div>
+          </div>
+        </div>
+        <a href="/booking/new/{{ item.leg.leg_code }}" class="btn btn-primary">Choisir cette route →</a>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="card text-center">
+    <p>Aucune route disponible actuellement.</p>
+    <p class="text-muted text-sm">Contactez-nous pour un trajet sur-mesure : <a href="mailto:commercial@newtowt.eu">commercial@newtowt.eu</a></p>
+  </div>
+{% endif %}
+
+{% endblock %}

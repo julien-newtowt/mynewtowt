@@ -1,0 +1,25 @@
+{% extends "client/_layout.html" %}
+{% block title %}Réservation soumise — NEWTOWT{% endblock %}
+{% block content %}
+
+<div class="card text-center" style="background: var(--gradient-ocean); color: var(--bg-0)">
+  <h1 style="color: var(--bg-0)" class="display">Merci !</h1>
+  <p style="font-size: var(--text-lg)">Votre demande de réservation est enregistrée.</p>
+  <p>Référence : <strong class="mono">{{ booking.reference }}</strong></p>
+</div>
+
+<div class="card mt-4">
+  <h2>Et maintenant ?</h2>
+  <ol>
+    <li>Notre équipe commerciale confirme votre réservation sous <strong>4 heures ouvrées</strong>.</li>
+    <li>Vous recevez par email la confirmation, le prix final et un lien vers votre facture.</li>
+    <li>Au chargement, nous vous transmettons le <strong>Bill of Lading</strong> et le mate's receipt.</li>
+    <li>À la livraison, nous émettons votre <strong>certificat CO₂ évité</strong>.</li>
+  </ol>
+  <div class="flex gap-3 mt-4">
+    <a href="/me/bookings/{{ booking.reference }}" class="btn btn-primary">Voir le détail</a>
+    <a href="/me" class="btn btn-ghost">Retour au tableau de bord</a>
+  </div>
+</div>
+
+{% endblock %}

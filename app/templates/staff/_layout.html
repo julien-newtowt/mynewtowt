@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{# Lucide-style icons inline (no external dep). Used as named macros. #}
+{%- macro icon(name) -%}
+  <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+    {%- if name == "dashboard" -%}<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>
+    {%- elif name == "calendar" -%}<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+    {%- elif name == "map" -%}<polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>
+    {%- elif name == "package" -%}<line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+    {%- elif name == "briefcase" -%}<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+    {%- elif name == "file-text" -%}<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+    {%- elif name == "anchor" -%}<circle cx="12" cy="5" r="3"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/>
+    {%- elif name == "ship" -%}<path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2c1.3 0 1.9.5 2.5 1"/><path d="M19 8 V5 a2 2 0 0 0 -2 -2 H7 a2 2 0 0 0 -2 2 v3"/><path d="M12 10v4"/><path d="M3 14L2 18 22 18 21 14z"/>
+    {%- elif name == "ticket" -%}<path d="M3 7v3a2 2 0 1 1 0 4v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3a2 2 0 1 1 0-4V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><line x1="13" y1="5" x2="13" y2="19"/>
+    {%- elif name == "users" -%}<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    {%- elif name == "euro" -%}<path d="M14 21c-4.97 0-9-4.03-9-9s4.03-9 9-9c1.93 0 3.71.6 5.16 1.62"/><path d="M3 10h13"/><path d="M3 14h13"/>
+    {%- elif name == "trending-up" -%}<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+    {%- elif name == "globe" -%}<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+    {%- elif name == "shield" -%}<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    {%- elif name == "bar-chart" -%}<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>
+    {%- elif name == "settings" -%}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    {%- elif name == "chevron-right" -%}<polyline points="9 18 15 12 9 6"/>
+    {%- elif name == "log-out" -%}<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+    {%- endif -%}
+  </svg>
+{%- endmacro -%}
+
+{% block head %}
+<script src="/static/js/sidebar.js" defer></script>
+<script src="/static/js/clock.js" defer></script>
+{% endblock %}
+
+{% block body %}
+<div class="app-shell-v2">
+  <aside class="sidebar" aria-label="Menu staff">
+    <div class="brand-mark">
+      <a href="/dashboard" style="border:none;">
+        <img src="{{ brand.logo_white }}" alt="{{ brand.nom_court }}" />
+      </a>
+    </div>
+    <small class="role-label">ERP{% if user is defined and user %} — {{ user.role }}{% endif %}</small>
+
+    <nav>
+      <div class="nav-group" data-group="pilotage">
+        <button class="nav-group-toggle" aria-expanded="true">
+          <span class="nav-group-title">{{ icon("dashboard") }}<span>Pilotage</span></span>
+          {{ icon("chevron-right") }}
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/dashboard">{{ icon("dashboard") }}Tableau de bord</a></li>
+          <li><a href="/planning">{{ icon("calendar") }}Planning</a></li>
+          <li><a href="/planning/shares">{{ icon("globe") }}Partages publics</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="cargo">
+        <button class="nav-group-toggle" aria-expanded="true">
+          <span class="nav-group-title">{{ icon("package") }}<span>Cargo</span></span>
+          {{ icon("chevron-right") }}
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/staff/bookings">{{ icon("briefcase") }}Bookings</a></li>
+          <li><a href="/cargo">{{ icon("file-text") }}Documents (BL, PL, factures)</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="operations">
+        <button class="nav-group-toggle" aria-expanded="true">
+          <span class="nav-group-title">{{ icon("anchor") }}<span>Opérations</span></span>
+          {{ icon("chevron-right") }}
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/escale">{{ icon("anchor") }}Escale (Import/Export)</a></li>
+          <li><a href="/onboard">{{ icon("ship") }}Onboard 4 espaces</a></li>
+          <li><a href="/tickets">{{ icon("ticket") }}Tickets escale</a></li>
+          <li><a href="/cashbox">{{ icon("euro") }}Caisse de bord</a></li>
+          <li><a href="/tracking">{{ icon("map") }}Tracking flotte</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="humain">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title">{{ icon("users") }}<span>Humain</span></span>
+          {{ icon("chevron-right") }}
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/crew">{{ icon("users") }}Équipage</a></li>
+          <li><a href="/rh">{{ icon("users") }}RH (congés, Schengen)</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="ai">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title">{{ icon("globe") }}<span>Assistant</span></span>
+          {{ icon("chevron-right") }}
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/chat">{{ icon("globe") }}Kairos AI</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="performance">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title">{{ icon("trending-up") }}<span>Performance</span></span>
+          {{ icon("chevron-right") }}
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/finance">{{ icon("euro") }}Finance</a></li>
+          <li><a href="/kpi">{{ icon("bar-chart") }}KPI</a></li>
+          <li><a href="/mrv">{{ icon("globe") }}MRV / CO₂</a></li>
+          <li><a href="/claims">{{ icon("shield") }}Claims</a></li>
+          <li><a href="/dashboard/analytics">{{ icon("bar-chart") }}Analytics</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="admin">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title">{{ icon("settings") }}<span>Admin</span></span>
+          {{ icon("chevron-right") }}
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/admin">{{ icon("settings") }}Configuration</a></li>
+          <li><a href="/admin/ports">{{ icon("map") }}Référentiel ports</a></li>
+        </ul>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="/logout" class="btn-icon-only" title="Déconnexion" aria-label="Déconnexion">
+        {{ icon("log-out") }}
+      </a>
+    </div>
+  </aside>
+
+  {% include "staff/_topbar.html" %}
+
+  <main id="main" class="main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}

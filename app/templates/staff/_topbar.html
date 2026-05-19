@@ -1,0 +1,65 @@
+{# Topbar — included once at the top of any logged-in layout. #}
+<header class="topbar" role="banner">
+  <div class="topbar-title">
+    {% block topbar_title %}{{ self.title()|striptags }}{% endblock %}
+  </div>
+
+  <div class="topbar-actions">
+    <div class="clock-widget" aria-live="off">
+      <div class="clock-item">
+        <span class="clock-time" data-clock="local">--:--</span>
+        <span class="clock-label" data-tz="local-label">Local</span>
+      </div>
+      <span class="clock-sep" aria-hidden="true"></span>
+      <div class="clock-item">
+        <span class="clock-time" data-clock="paris">--:--</span>
+        <span class="clock-label">Paris</span>
+      </div>
+    </div>
+
+    <a href="/chat" class="topbar-action" title="Chatbot Kairos AI">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </a>
+
+    <button type="button" class="topbar-action" id="topbar-notif-btn" title="Notifications" aria-haspopup="menu">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      {% if notif_count and notif_count > 0 %}<span class="badge">{{ notif_count }}</span>{% endif %}
+    </button>
+    <div class="topbar-menu" id="topbar-notif-menu" role="menu">
+      <div class="menu-header">Notifications</div>
+      <div style="padding: var(--space-3) var(--space-2); color: var(--gris); font-size: var(--text-sm);">
+        Aucune notification.
+      </div>
+    </div>
+
+    <button type="button" class="topbar-action" id="topbar-user-btn" title="Mon compte" aria-haspopup="menu">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
+    </button>
+    <div class="topbar-menu" id="topbar-user-menu" role="menu">
+      <div class="menu-header">{% if user is defined and user %}{{ user.full_name or user.username }} · {{ user.role }}{% else %}Compte{% endif %}</div>
+      <a href="/admin">⚙ Configuration</a>
+      <a href="/chat">💬 Chatbot Kairos AI</a>
+      <div class="menu-divider"></div>
+      <a href="/logout" style="color: var(--danger);">↪ Déconnexion</a>
+    </div>
+  </div>
+</header>
+
+<script>
+(function(){
+  function toggle(id) {
+    document.querySelectorAll(".topbar-menu").forEach(function(m){
+      if (m.id !== id) m.classList.remove("open");
+    });
+    var menu = document.getElementById(id);
+    if (menu) menu.classList.toggle("open");
+  }
+  document.getElementById("topbar-notif-btn")?.addEventListener("click", function(){ toggle("topbar-notif-menu"); });
+  document.getElementById("topbar-user-btn")?.addEventListener("click", function(){ toggle("topbar-user-menu"); });
+  document.addEventListener("click", function(e){
+    if (!e.target.closest(".topbar-action") && !e.target.closest(".topbar-menu")) {
+      document.querySelectorAll(".topbar-menu").forEach(function(m){ m.classList.remove("open"); });
+    }
+  });
+})();
+</script>
