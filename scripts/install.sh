@@ -416,14 +416,22 @@ wait_for_health() {
   local deadline=$(( SECONDS + HEALTH_TIMEOUT_SECONDS ))
 
   while (( SECONDS < deadline )); do
-    # On interroge via le container app (pas via Caddy) pour fiabiliser
-    if docker exec "${APP_CONTAINER}" sh -c 'wget -qO- http://127.0.0.1:8000/health' 2>/dev/null | grep -q '"status":"ok"'; then
+    # On interroge via le container app (pas via Caddy) pour fiabiliser.
+    # L'image python:3.12-slim contient `curl` mais pas `wget`.
+    if docker exec "${APP_CONTAINER}" curl -fsS -m 3 http://127.0.0.1:8000/health 2>/dev/null | grep -q '"status":"ok"'; then
       success "Health OK"
+      return 0
+    fi
+    # Si curl n'est pas trouvé, on tente avec python comme fallback universel
+    if docker exec "${APP_CONTAINER}" python -c "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=3).read().decode(); sys.exit(0 if '\"status\":\"ok\"' in r else 1)" 2>/dev/null; then
+      success "Health OK (via python)"
       return 0
     fi
     sleep 2
   done
-  fatal 5 "L'application n'a pas répondu /health dans le délai imparti"
+  err "L'application n'a pas répondu /health dans le délai imparti"
+  warn "Diagnostic : docker compose ps && docker compose logs --tail=80 app"
+  exit 5
 }
 
 smoke_tests() {
@@ -433,7 +441,7 @@ smoke_tests() {
   _check() {
     local path="$1"; local expected="$2"
     local code
-    code="$(docker exec "${APP_CONTAINER}" sh -c "wget -q -O /dev/null --server-response 'http://127.0.0.1:8000${path}' 2>&1 | awk '/HTTP\\/1.1/ {print \$2; exit}'" || echo "000")"
+    code="$(docker exec "${APP_CONTAINER}" curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:8000${path}" 2>/dev/null || echo '000')"
     if [[ "${code}" == "${expected}" ]]; then
       success "  ${path} → ${code}"
     else
