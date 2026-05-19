@@ -190,7 +190,16 @@ async def mfa_challenge_submit(
         # Edge case : MFA désactivé entre le password OK et le challenge.
         return RedirectResponse(url="/me/login", status_code=303)
 
-    if not mfa.verify_totp(user.mfa_secret, code):
+    # 1. Tente d'abord un code TOTP standard 6 chiffres
+    totp_ok = mfa.verify_totp(user.mfa_secret, code)
+    # 2. Sinon tente un code de récupération (format xxxx-xxxx-xxxx)
+    recovery_ok = False
+    if not totp_ok:
+        recovery_ok = await mfa.consume_recovery_code(
+            db, owner_type="client", owner_id=user.id, code=code,
+        )
+
+    if not totp_ok and not recovery_ok:
         await rate_limit.record(db, scope="client_mfa_ip", identifier=ip)
         await activity_record(
             db, action="client_mfa_fail", user_name=user.email,
@@ -208,7 +217,9 @@ async def mfa_challenge_submit(
     await activity_record(
         db, action="client_login", user_name=user.email,
         module="booking", entity_type="client_account",
-        entity_id=user.id, detail="mfa_ok", ip_address=ip,
+        entity_id=user.id,
+        detail="mfa_ok" if totp_ok else "mfa_recovery_code_used",
+        ip_address=ip,
     )
     token = create_client_session(user.id)
     redirect = RedirectResponse(url="/me", status_code=303)

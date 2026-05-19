@@ -190,6 +190,10 @@ async def mfa_verify(
         )
     client.mfa_enabled = True
     await db.flush()
+    # Génère 10 codes de récupération à afficher UNE seule fois
+    recovery_codes = await mfa.generate_recovery_codes(
+        db, owner_type="client", owner_id=client.id,
+    )
     await activity_record(
         db, action="client_mfa_enabled", user_name=client.email,
         module="booking", entity_type="client_account",
@@ -197,7 +201,49 @@ async def mfa_verify(
         ip_address=request.headers.get("x-forwarded-for")
                    or (request.client.host if request.client else None),
     )
-    return RedirectResponse(url="/me/account?mfa=enabled", status_code=303)
+    # On affiche les codes inline plutôt que par redirect (les redirect
+    # 303 ne laissent pas passer de state — et on veut absolument que
+    # l'utilisateur voie ces codes une fois).
+    return templates.TemplateResponse(
+        "client/mfa_recovery_codes.html",
+        {"request": request, "client": client, "codes": recovery_codes,
+         "is_regeneration": False},
+    )
+
+
+@router.post("/me/account/mfa/regenerate", response_class=HTMLResponse)
+async def mfa_regenerate_codes(
+    request: Request,
+    code: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    client=Depends(get_current_client),
+):
+    """Régénère les 10 codes de récupération — exige un TOTP valide."""
+    if not client.mfa_enabled or not client.mfa_secret:
+        return RedirectResponse(url="/me/account/mfa", status_code=303)
+    if not mfa.verify_totp(client.mfa_secret, code):
+        return templates.TemplateResponse(
+            "client/mfa_setup.html",
+            {"request": request, "client": client,
+             "qr_data_uri": None, "otpauth_uri": None, "secret": None,
+             "error": "Code TOTP incorrect — codes non régénérés."},
+            status_code=400,
+        )
+    new_codes = await mfa.generate_recovery_codes(
+        db, owner_type="client", owner_id=client.id,
+    )
+    await activity_record(
+        db, action="client_mfa_codes_regen", user_name=client.email,
+        module="booking", entity_type="client_account",
+        entity_id=client.id,
+        ip_address=request.headers.get("x-forwarded-for")
+                   or (request.client.host if request.client else None),
+    )
+    return templates.TemplateResponse(
+        "client/mfa_recovery_codes.html",
+        {"request": request, "client": client, "codes": new_codes,
+         "is_regeneration": True},
+    )
 
 
 @router.post("/me/account/mfa/disable", response_class=HTMLResponse)
@@ -221,6 +267,14 @@ async def mfa_disable(
     client.mfa_enabled = False
     client.mfa_secret = None
     await db.flush()
+    # Purge les codes de récupération restants (ils sont liés à ce secret)
+    from sqlalchemy import delete
+    from app.models.mfa_recovery_code import MfaRecoveryCode
+    await db.execute(
+        delete(MfaRecoveryCode)
+        .where(MfaRecoveryCode.owner_type == "client")
+        .where(MfaRecoveryCode.owner_id == client.id)
+    )
     await activity_record(
         db, action="client_mfa_disabled", user_name=client.email,
         module="booking", entity_type="client_account",
