@@ -537,6 +537,89 @@ def request_ports_back_url() -> str:
     return "/admin/ports"
 
 
+# ───────────────────────── PortConfig (contacts agent / pilote / docs) ─────────
+
+
+@router.get("/admin/ports/{port_id}/config", response_class=HTMLResponse)
+async def admin_port_config_form(
+    port_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> HTMLResponse:
+    """Form d'édition des contacts portuaires + docs requis + restrictions."""
+    from app.models.finance import PortConfig
+    port = await db.get(Port, port_id)
+    if not port:
+        raise HTTPException(status_code=404, detail="Port not found")
+    config = (await db.execute(
+        select(PortConfig).where(PortConfig.port_id == port_id)
+    )).scalar_one_or_none()
+    return templates.TemplateResponse(
+        "staff/admin/port_config.html",
+        {"request": request, "user": user, "port": port, "config": config},
+    )
+
+
+@router.post("/admin/ports/{port_id}/config")
+async def admin_port_config_save(
+    port_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+) -> RedirectResponse:
+    from app.models.finance import PortConfig
+    port = await db.get(Port, port_id)
+    if not port:
+        raise HTTPException(status_code=404, detail="Port not found")
+    form = await request.form()
+    config = (await db.execute(
+        select(PortConfig).where(PortConfig.port_id == port_id)
+    )).scalar_one_or_none()
+    is_create = config is None
+    if config is None:
+        config = PortConfig(port_id=port_id)
+        db.add(config)
+
+    def _opt(field: str) -> str | None:
+        v = (form.get(field) or "").strip()
+        return v or None
+
+    def _dec(field: str):
+        v = (form.get(field) or "").strip()
+        if not v:
+            return None
+        try:
+            return Decimal(v.replace(",", "."))
+        except (ValueError, ArithmeticError):
+            return None
+
+    config.agent_name = _opt("agent_name")
+    config.agent_phone = _opt("agent_phone")
+    config.agent_email = _opt("agent_email")
+    config.pilot_vhf_channel = _opt("pilot_vhf_channel")
+    config.pilot_phone = _opt("pilot_phone")
+    config.port_control_vhf_channel = _opt("port_control_vhf_channel")
+    config.documents_required = _opt("documents_required")
+    config.restrictions = _opt("restrictions")
+    config.notes_for_captain = _opt("notes_for_captain")
+    # Fees
+    config.agency_fee_eur = _dec("agency_fee_eur")
+    config.pilot_fee_eur = _dec("pilot_fee_eur")
+    config.berth_fee_per_day_eur = _dec("berth_fee_per_day_eur")
+    config.docker_fee_per_palette_eur = _dec("docker_fee_per_palette_eur")
+    config.notes = _opt("notes")
+
+    await db.flush()
+    await activity_record(
+        db, action="create" if is_create else "update",
+        user_id=user.id, user_name=user.username, user_role=user.role,
+        module="admin", entity_type="port_config",
+        entity_id=config.id, entity_label=port.locode,
+    )
+    return RedirectResponse(url=f"/admin/ports/{port_id}/config", status_code=303)
+
+
 @router.post("/admin/ports/upload")
 async def admin_ports_upload(
     request: Request,

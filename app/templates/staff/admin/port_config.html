@@ -1,0 +1,122 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ port.locode }} — config — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<a href="/admin/ports" class="btn btn-ghost mb-3">← Tous les ports</a>
+
+<header class="mb-4">
+  <span class="kicker">Configuration portuaire</span>
+  <h1 class="display">
+    {{ port.country|flag }} {{ port.name }}
+    <span class="mono text-muted" style="font-size:1rem;">({{ port.locode }})</span>
+  </h1>
+  <p class="text-muted">
+    {% if config %}Configuration enregistrée — éditable ci-dessous.
+    {% else %}Aucune configuration pour ce port — remplissez les champs ci-dessous pour la créer.{% endif %}
+  </p>
+</header>
+
+<form method="post" action="/admin/ports/{{ port.id }}/config">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <article class="card mb-4">
+    <h2>⚓ Agent maritime</h2>
+    <div class="grid grid-2 gap-3">
+      <div class="field">
+        <label for="agent_name">Nom de l'agent / société</label>
+        <input id="agent_name" name="agent_name" type="text"
+               value="{{ config.agent_name if config and config.agent_name else '' }}" />
+      </div>
+      <div class="field">
+        <label for="agent_phone">Téléphone</label>
+        <input id="agent_phone" name="agent_phone" type="tel"
+               placeholder="+33 9 84 33 89 62"
+               value="{{ config.agent_phone if config and config.agent_phone else '' }}" />
+      </div>
+      <div class="field" style="grid-column:span 2;">
+        <label for="agent_email">Email</label>
+        <input id="agent_email" name="agent_email" type="email"
+               value="{{ config.agent_email if config and config.agent_email else '' }}" />
+      </div>
+    </div>
+  </article>
+
+  <article class="card mb-4">
+    <h2>📻 Communications VHF & téléphone pilote</h2>
+    <div class="grid grid-3 gap-3">
+      <div class="field">
+        <label for="port_control_vhf_channel">Port control (CH)</label>
+        <input id="port_control_vhf_channel" name="port_control_vhf_channel" type="text"
+               placeholder="12"
+               value="{{ config.port_control_vhf_channel if config and config.port_control_vhf_channel else '' }}" />
+      </div>
+      <div class="field">
+        <label for="pilot_vhf_channel">Pilote (CH)</label>
+        <input id="pilot_vhf_channel" name="pilot_vhf_channel" type="text"
+               placeholder="14"
+               value="{{ config.pilot_vhf_channel if config and config.pilot_vhf_channel else '' }}" />
+      </div>
+      <div class="field">
+        <label for="pilot_phone">Pilote (téléphone)</label>
+        <input id="pilot_phone" name="pilot_phone" type="tel"
+               value="{{ config.pilot_phone if config and config.pilot_phone else '' }}" />
+      </div>
+    </div>
+  </article>
+
+  <article class="card mb-4">
+    <h2>📄 Documents & restrictions</h2>
+    <div class="field">
+      <label for="documents_required">Documents requis (1 par ligne)</label>
+      <textarea id="documents_required" name="documents_required" rows="5"
+                placeholder="Crew list&#10;Cargo manifest&#10;Maritime declaration of health&#10;Last 10 ports clearance">{{ config.documents_required if config and config.documents_required else '' }}</textarea>
+    </div>
+    <div class="field">
+      <label for="restrictions">Restrictions (douane, quarantaine, ISPS…)</label>
+      <textarea id="restrictions" name="restrictions" rows="3">{{ config.restrictions if config and config.restrictions else '' }}</textarea>
+    </div>
+    <div class="field">
+      <label for="notes_for_captain">Notes commandant</label>
+      <textarea id="notes_for_captain" name="notes_for_captain" rows="3"
+                placeholder="Approche, mouillage, jetées, particularités locales…">{{ config.notes_for_captain if config and config.notes_for_captain else '' }}</textarea>
+    </div>
+  </article>
+
+  <article class="card mb-4">
+    <h2>💰 Tarifs portuaires (optionnel)</h2>
+    <p class="text-muted text-sm">Utilisés par les modules Finance / Cargo pour les estimations.</p>
+    <div class="grid grid-2 gap-3">
+      <div class="field">
+        <label for="agency_fee_eur">Agency fee (EUR)</label>
+        <input id="agency_fee_eur" name="agency_fee_eur" type="number" step="0.01"
+               value="{{ config.agency_fee_eur if config and config.agency_fee_eur is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label for="pilot_fee_eur">Pilot fee (EUR)</label>
+        <input id="pilot_fee_eur" name="pilot_fee_eur" type="number" step="0.01"
+               value="{{ config.pilot_fee_eur if config and config.pilot_fee_eur is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label for="berth_fee_per_day_eur">Berth fee / jour (EUR)</label>
+        <input id="berth_fee_per_day_eur" name="berth_fee_per_day_eur" type="number" step="0.01"
+               value="{{ config.berth_fee_per_day_eur if config and config.berth_fee_per_day_eur is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label for="docker_fee_per_palette_eur">Docker fee / palette (EUR)</label>
+        <input id="docker_fee_per_palette_eur" name="docker_fee_per_palette_eur" type="number" step="0.01"
+               value="{{ config.docker_fee_per_palette_eur if config and config.docker_fee_per_palette_eur is not none else '' }}" />
+      </div>
+    </div>
+    <div class="field mt-3">
+      <label for="notes">Notes finance</label>
+      <textarea id="notes" name="notes" rows="2">{{ config.notes if config and config.notes else '' }}</textarea>
+    </div>
+  </article>
+
+  <div class="flex gap-3">
+    <button type="submit" class="btn btn-primary btn-lg">Enregistrer</button>
+    <a href="/admin/ports" class="btn btn-ghost">Annuler</a>
+  </div>
+</form>
+
+{% endblock %}
