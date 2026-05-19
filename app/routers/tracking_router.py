@@ -353,22 +353,70 @@ async def upload_positions(
     if not payload:
         raise HTTPException(status_code=400, detail="body vide")
 
-    # Détection du format
-    rows: Iterable[dict]
+    # Header X-Filename : permet à Power Automate de passer le nom du
+    # fichier original quand le multipart est inconfortable. Sinon on prend
+    # le filename extrait du multipart.
+    if not filename:
+        filename = request.headers.get("x-filename") or ""
+
+    # Détection du format — robuste aux binaires corrompus par PA
+    rows: Iterable[dict] = []
     inner_name = filename
-    if payload[:4] == b"PK\x03\x04":  # ZIP magic
-        rows, inner_name = _rows_from_zip(payload)
-        logger.warning("Tracking upload: ZIP file '%s' → inner '%s'", filename, inner_name)
-    else:
-        # Essai XLSX (signature alternative PK\x05/\x07)
-        if payload[:2] == b"PK" or filename.lower().endswith(".xlsx"):
-            rows = _rows_from_xlsx(payload)
-            logger.warning("Tracking upload: XLSX file '%s'", filename)
-        else:
-            # CSV / texte
+    fmt_tried: list[str] = []
+
+    def _try_csv_fallback() -> list[dict]:
+        try:
             text = payload.decode("utf-8", errors="replace")
-            rows = _rows_from_csv(text)
-            logger.warning("Tracking upload: CSV text len=%d, file='%s'", len(text), filename)
+            return list(_rows_from_csv(text))
+        except Exception:
+            return []
+
+    if payload[:4] == b"PK\x03\x04":  # signature ZIP/XLSX
+        # Try ZIP first
+        try:
+            rows, inner_name = _rows_from_zip(payload)
+            fmt_tried.append("zip")
+            logger.warning("Tracking upload: ZIP '%s' → inner '%s'", filename, inner_name)
+        except HTTPException as e:
+            fmt_tried.append(f"zip-failed({e.detail})")
+            # Try XLSX directly
+            try:
+                rows = list(_rows_from_xlsx(payload))
+                fmt_tried.append("xlsx")
+            except HTTPException as e2:
+                fmt_tried.append(f"xlsx-failed({e2.detail})")
+                # Last-resort: CSV fallback (peut-être le binaire est en fait du
+                # texte CSV corrompu par PA — laissons le parser tenter)
+                rows = _try_csv_fallback()
+                fmt_tried.append(f"csv-fallback({len(rows)} rows)")
+                inner_name = filename
+                # Si vraiment rien ne marche, on renvoie une 400 explicite
+                if not rows:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "Body looks like ZIP/XLSX but is corrupted (likely "
+                            "base64ToString() encoding loss in Power Automate). "
+                            f"Tried: {', '.join(fmt_tried)}. Send the CSV as raw "
+                            "text/csv body instead of wrapping it in multipart."
+                        ),
+                    )
+                logger.warning(
+                    "Tracking upload: ZIP/XLSX failed, CSV fallback got %d rows",
+                    len(rows),
+                )
+    elif filename.lower().endswith(".xlsx"):
+        rows = list(_rows_from_xlsx(payload))
+        fmt_tried.append("xlsx")
+        logger.warning("Tracking upload: XLSX '%s'", filename)
+    else:
+        # CSV / text
+        text = payload.decode("utf-8", errors="replace")
+        rows = _rows_from_csv(text)
+        fmt_tried.append("csv")
+        logger.warning(
+            "Tracking upload: CSV text len=%d, file='%s'", len(text), filename,
+        )
 
     rows = list(rows)
     if not rows:
