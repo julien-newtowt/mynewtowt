@@ -296,32 +296,49 @@ smoke_tests() {
     warn "Skipping smoke tests (--skip-tests flag set)"
     return
   fi
-  log "Running smoke tests against ${HEALTH_URL%/health}"
 
+  # Même logique que wait_for_health() : si HEALTH_URL reste à la default
+  # (127.0.0.1:8000 inaccessible depuis le host quand l'app utilise
+  # ``expose:`` au lieu de ``ports:``), on probe via docker exec à l'URL
+  # interne. Sinon on garde curl depuis le host (Caddy / loadbalancer).
+  local probe_mode="curl"
   local base="${HEALTH_URL%/health}"
+  if [[ "${HEALTH_URL}" == "http://127.0.0.1:8000/health" ]]; then
+    probe_mode="exec"
+    base="http://localhost:8000"
+  fi
+  log "Running smoke tests against ${base} (mode=${probe_mode})"
+
   local failed=0
 
   check_endpoint() {
-    local url="$1"; local expected="${2:-200}"
+    local path="$1"; local expected="${2:-200}"
     local code
-    code="$(curl -s -o /dev/null -w '%{http_code}' -m 10 "${url}" || echo 000)"
-    if [[ "${code}" == "${expected}" ]]; then
-      success "  ${url} → ${code}"
+    if [[ "${probe_mode}" == "exec" ]]; then
+      code="$(docker compose -f "${COMPOSE_FILE}" exec -T app \
+              curl -s -o /dev/null -w '%{http_code}' -m 10 \
+              "http://localhost:8000${path}" 2>/dev/null || echo 000)"
     else
-      err "  ${url} → ${code} (expected ${expected})"
+      code="$(curl -s -o /dev/null -w '%{http_code}' -m 10 \
+              "${base}${path}" 2>/dev/null || echo 000)"
+    fi
+    if [[ "${code}" == "${expected}" ]]; then
+      success "  ${path} → ${code}"
+    else
+      err "  ${path} → ${code} (expected ${expected})"
       failed=1
     fi
   }
 
-  check_endpoint "${base}/health" 200
-  check_endpoint "${base}/api/v1/health" 200
-  check_endpoint "${base}/" 200
-  check_endpoint "${base}/routes" 200
-  check_endpoint "${base}/about" 200
-  check_endpoint "${base}/login" 200
-  check_endpoint "${base}/me" 303    # redirects unauth → /me/login
-  check_endpoint "${base}/me/login" 200
-  check_endpoint "${base}/.well-known/security.txt" 200
+  check_endpoint "/health" 200
+  check_endpoint "/api/v1/health" 200
+  check_endpoint "/" 200
+  check_endpoint "/routes" 200
+  check_endpoint "/about" 200
+  check_endpoint "/login" 200
+  check_endpoint "/me" 303    # redirects unauth → /me/login
+  check_endpoint "/me/login" 200
+  check_endpoint "/.well-known/security.txt" 200
 
   if (( failed != 0 )); then
     err "Smoke tests failed"
