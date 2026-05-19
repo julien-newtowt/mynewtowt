@@ -102,10 +102,15 @@ def parse_unlocode_csv(content: bytes) -> list[PortRow]:
     Columns expected (datasets/un-locode/code-list.csv) :
         Change, Country, Location, Name, NameWoDiacritics, Subdivision,
         Status, Function, Date, IATA, Coordinates, Remarks
+
+    Le CSV UN/LOCODE contient régulièrement des **doublons** pour un même
+    locode (variantes orthographiques, ex. BEZUN "Zuen (Zuun)" et
+    "Zuun (Zuen)"). On garde la **première occurrence** de chaque locode.
     """
     import csv
     import io
 
+    seen: set[str] = set()
     out: list[PortRow] = []
     text = content.decode("utf-8", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
@@ -117,11 +122,14 @@ def parse_unlocode_csv(content: bytes) -> list[PortRow]:
         if not country or not loc:
             continue
         locode = (country + loc).replace(" ", "")[:5]
+        if locode in seen:
+            continue
         name = (row.get("Name") or row.get("NameWoDiacritics") or "").strip()
         function = (row.get("Function") or "").strip()
         coords = _parse_unlocode_coords((row.get("Coordinates") or "").strip())
         if not coords or not name:
             continue
+        seen.add(locode)
         out.append(PortRow(
             locode=locode,
             name=name[:100],

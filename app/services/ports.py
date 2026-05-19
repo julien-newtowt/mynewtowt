@@ -112,13 +112,27 @@ async def closest_port(
 async def upsert_ports(db: AsyncSession, rows: Iterable[PortRow]) -> tuple[int, int]:
     """Insert new ports, update existing ones (matched on locode).
 
+    Robuste aux doublons en batch : on déduplique par locode (premier
+    gagnant), et on flushe par paquets de 500 pour matérialiser les
+    INSERT avant de retomber sur un éventuel locode déjà présent dans la
+    session (cas du UN/LOCODE CSV qui contient des variantes orthographiques
+    sur le même locode, ex. BEZUN "Zuen (Zuun)" / "Zuun (Zuen)").
+
     Returns (inserted_count, updated_count).
     """
     inserted = 0
     updated = 0
+    seen_in_batch: set[str] = set()
+    BATCH = 500
+    pending = 0
+
     for row in rows:
         if not row.locode or not row.country or row.latitude is None or row.longitude is None:
             continue
+        if row.locode in seen_in_batch:
+            continue
+        seen_in_batch.add(row.locode)
+
         existing = (
             await db.execute(select(Port).where(Port.locode == row.locode))
         ).scalar_one_or_none()
@@ -135,6 +149,7 @@ async def upsert_ports(db: AsyncSession, rows: Iterable[PortRow]) -> tuple[int, 
                 timezone=row.timezone,
             ))
             inserted += 1
+            pending += 1
         else:
             # Don't overwrite manual entries with automatic data unless
             # explicitly re-imported by the same source.
@@ -152,7 +167,14 @@ async def upsert_ports(db: AsyncSession, rows: Iterable[PortRow]) -> tuple[int, 
             if row.timezone:
                 existing.timezone = row.timezone
             updated += 1
-    await db.flush()
+            pending += 1
+
+        if pending >= BATCH:
+            await db.flush()
+            pending = 0
+
+    if pending:
+        await db.flush()
     return inserted, updated
 
 
