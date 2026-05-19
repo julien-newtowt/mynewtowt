@@ -126,11 +126,11 @@ def render_invoice(*, booking, leg, vessel, pol, pod, client, invoice=None) -> D
 
 
 # ---------------------------------------------------------------------------
-# CO2 Certificate
+# Label Anemos (anciennement "Certificat CO₂") — PDF
 # ---------------------------------------------------------------------------
 
 
-def render_co2_certificate(
+def render_anemos_certificate(
     *,
     booking,
     leg,
@@ -141,16 +141,26 @@ def render_co2_certificate(
     distance_nm: Decimal,
     certificate=None,
 ) -> DocumentBytes:
+    """Génère un PDF Label Anemos.
+
+    Le PDF atteste du tonnage transporté, distance, CO₂ évité par rapport
+    au shipping conventionnel. Référence : ``ANEMOS-<booking.reference>``
+    si pas de certificate.reference fournie.
+    """
     tonnage = (booking.total_weight_kg or Decimal("0")) / Decimal("1000")
     emission = estimate_co2(distance_nm=distance_nm, tonnage_t=tonnage)
     ctx = _common_ctx(booking, leg, vessel, pol, pod, client)
     ctx["emission"] = emission
     ctx["certificate"] = certificate
     ctx["cert_ref"] = (
-        certificate.reference if certificate else f"CO2-{booking.reference}"
+        certificate.reference if certificate else f"ANEMOS-{booking.reference}"
     )
     ctx["tonnage_t"] = tonnage
-    html, pdf = _render_pdf("pdf/co2_certificate.html", ctx)
+    html, pdf = _render_pdf("pdf/anemos_certificate.html", ctx)
     return DocumentBytes(
-        html=html, pdf=pdf, filename=f"CO2Certificate_{ctx['cert_ref']}.pdf"
+        html=html, pdf=pdf, filename=f"LabelAnemos_{ctx['cert_ref']}.pdf"
     )
+
+
+# Alias backward-compat — peut disparaître en V3.7
+render_co2_certificate = render_anemos_certificate

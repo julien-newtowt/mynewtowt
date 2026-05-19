@@ -88,8 +88,8 @@
       💶 {% if lang == 'en' %}Invoice{% else %}Facture{% endif %}
     </a>
     {% if booking.status in ('discharged','delivered') %}
-      <a href="/me/bookings/{{ booking.reference }}/co2-certificate.pdf" target="_blank" class="btn btn-accent">
-        🌱 {% if lang == 'en' %}CO₂ certificate{% else %}Certificat CO₂{% endif %}
+      <a href="/me/bookings/{{ booking.reference }}/anemos.pdf" target="_blank" class="btn btn-accent">
+        🌱 {% if lang == 'en' %}Anemos label{% else %}Label Anemos{% endif %}
       </a>
     {% endif %}
   </div>

@@ -9,7 +9,7 @@ from app.models.chat import ChatConversation, ChatMessage
 from app.models.claim import Claim, ClaimTimelineEntry, VesselPosition
 from app.models.client_account import ClientAccount
 from app.models.client_invoice import ClientInvoice
-from app.models.co2_certificate import CO2Certificate
+from app.models.anemos_certificate import AnemosCertificate
 from app.models.commercial import (
     Client, Order, OrderAssignment, RateGrid, RateGridLine, RateOffer,
 )
@@ -56,7 +56,7 @@ __all__ = [
     "Claim", "ClaimTimelineEntry",
     "Client",
     "ClientAccount", "ClientInvoice",
-    "CO2Certificate",
+    "AnemosCertificate",
     "CrewAssignment", "CrewCertification", "CrewLeave", "CrewMember", "CrewTicket",
     "DockerShift", "EscaleOperation",
     "EtaShift",

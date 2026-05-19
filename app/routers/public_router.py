@@ -164,9 +164,17 @@ async def about(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("public/about.html", {"request": request})
 
 
-@router.get("/about/co2", response_class=HTMLResponse)
-async def about_co2(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("public/about_co2.html", {"request": request})
+@router.get("/about/anemos", response_class=HTMLResponse)
+async def about_anemos(request: Request) -> HTMLResponse:
+    """Méthodologie Label Anemos (anciennement /about/co2)."""
+    return templates.TemplateResponse("public/about_anemos.html", {"request": request})
+
+
+@router.get("/about/co2")
+async def about_co2_redirect_legacy():
+    """Backward-compat : anciens liens /about/co2 → 301 /about/anemos."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/about/anemos", status_code=301)
 
 
 @router.get("/about/legal", response_class=HTMLResponse)

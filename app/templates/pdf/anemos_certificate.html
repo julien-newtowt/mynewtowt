@@ -1,5 +1,5 @@
 {% extends "pdf/_base.html" %}
-{% block title %}Certificat CO₂ {{ cert_ref }}{% endblock %}
+{% block title %}Label Anemos {{ cert_ref }}{% endblock %}
 {% block doc_kind %}Certificat · CO₂ avoidance certificate{% endblock %}
 {% block doc_ref %}{{ cert_ref }}{% endblock %}
 {% block content %}
@@ -96,7 +96,7 @@
   Émissions {{ brand.nom_court }} : mesures embarquées + audit vérificateur tiers accrédité.
   Émissions de référence : IMO Fourth GHG Study + IFP Energies Nouvelles.
   Distance orthodromique × coefficient d'élongation 1,15.
-  Détail : {{ brand.site_public }}/about/co2.
+  Détail : {{ brand.site_public }}/about/anemos.
 </div>
 
 <div class="stamp">

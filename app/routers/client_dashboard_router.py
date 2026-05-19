@@ -21,7 +21,7 @@ from app.auth import AuthRequired, get_current_client
 from app.database import get_db
 from app.models.booking import Booking
 from app.models.client_invoice import ClientInvoice
-from app.models.co2_certificate import CO2Certificate
+from app.models.anemos_certificate import AnemosCertificate
 from app.services import mfa, security_alerts
 from app.services.activity import record as activity_record
 from app.services.booking import find_by_reference, list_for_client
@@ -43,8 +43,8 @@ async def dashboard(
         if b.status in ("submitted", "confirmed", "loaded", "at_sea", "discharged")
     )
     co2_avoided = await db.scalar(
-        select(func.coalesce(func.sum(CO2Certificate.co2_avoided_kg), 0))
-        .where(CO2Certificate.client_account_id == client.id)
+        select(func.coalesce(func.sum(AnemosCertificate.co2_avoided_kg), 0))
+        .where(AnemosCertificate.client_account_id == client.id)
     )
     return templates.TemplateResponse(
         "client/dashboard.html",
@@ -104,21 +104,28 @@ async def invoices(
     )
 
 
-@router.get("/me/co2", response_class=HTMLResponse)
-async def co2(
+@router.get("/me/anemos", response_class=HTMLResponse)
+async def anemos(
     request: Request,
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
+    """Page des Labels Anemos (anciennement "Certificats CO₂")."""
     res = await db.execute(
-        select(CO2Certificate)
-        .where(CO2Certificate.client_account_id == client.id)
-        .order_by(CO2Certificate.issued_at.desc())
+        select(AnemosCertificate)
+        .where(AnemosCertificate.client_account_id == client.id)
+        .order_by(AnemosCertificate.issued_at.desc())
     )
     return templates.TemplateResponse(
-        "client/co2.html",
+        "client/anemos.html",
         {"request": request, "client": client, "certificates": list(res.scalars().all())},
     )
+
+
+@router.get("/me/co2")
+async def co2_redirect_legacy() -> RedirectResponse:
+    """Backward-compat : anciens bookmarks /me/co2 → 301 /me/anemos."""
+    return RedirectResponse(url="/me/anemos", status_code=301)
 
 
 @router.get("/me/account", response_class=HTMLResponse)

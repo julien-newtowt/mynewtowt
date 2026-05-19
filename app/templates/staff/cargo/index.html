@@ -5,7 +5,7 @@
 <header class="mb-4">
   <span class="kicker">Cargo</span>
   <h1 class="display">Documents transport</h1>
-  <p class="text-muted">Génération BL · Packing List · Facture · Certificat CO₂.</p>
+  <p class="text-muted">Génération BL · Packing List · Facture · Label Anemos.</p>
 </header>
 
 {% if bookings %}
@@ -36,7 +36,7 @@
               <a href="/cargo/booking/{{ b.reference }}/packing-list.pdf" target="_blank" class="btn btn-ghost text-xs">PL</a>
               <a href="/cargo/booking/{{ b.reference }}/invoice.pdf" target="_blank" class="btn btn-ghost text-xs">Facture</a>
               {% if b.status in ('discharged','delivered') %}
-                <a href="/cargo/booking/{{ b.reference }}/co2-certificate.pdf" target="_blank" class="btn btn-ghost text-xs">CO₂</a>
+                <a href="/cargo/booking/{{ b.reference }}/anemos.pdf" target="_blank" class="btn btn-ghost text-xs">CO₂</a>
               {% endif %}
             </td>
           </tr>

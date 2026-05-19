@@ -30,7 +30,7 @@ from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.pdf_generator import (
     render_bill_of_lading,
-    render_co2_certificate,
+    render_anemos_certificate,
     render_invoice,
     render_packing_list,
 )
@@ -165,13 +165,20 @@ async def staff_invoice_pdf(
     return await _invoice_response(db, ref)
 
 
-@router.get("/cargo/booking/{ref}/co2-certificate.pdf")
-async def staff_co2_pdf(
+@router.get("/cargo/booking/{ref}/anemos.pdf")
+async def staff_anemos_pdf(
     ref: str,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "C")),
 ) -> Response:
     return await _co2_response(db, ref)
+
+
+@router.get("/cargo/booking/{ref}/co2-certificate.pdf")
+async def staff_co2_pdf_legacy(ref: str):
+    """Backward-compat : ancien chemin → 301 vers anemos.pdf."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/cargo/booking/{ref}/anemos.pdf", status_code=301)
 
 
 # ---------------------------------------------------------------------------
@@ -206,13 +213,23 @@ async def client_invoice_pdf(
     return await _invoice_response(db, ref, owner_client_id=client.id)
 
 
-@router.get("/me/bookings/{ref}/co2-certificate.pdf")
-async def client_co2_pdf(
+@router.get("/me/bookings/{ref}/anemos.pdf")
+async def client_anemos_pdf(
     ref: str,
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
+    """Label Anemos (anciennement certificat CO₂) — PDF téléchargeable."""
     return await _co2_response(db, ref, owner_client_id=client.id)
+
+
+@router.get("/me/bookings/{ref}/co2-certificate.pdf")
+async def client_co2_pdf_legacy(ref: str):
+    """Backward-compat : redirects 301 vers anemos.pdf."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(
+        url=f"/me/bookings/{ref}/anemos.pdf", status_code=301,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -292,14 +309,14 @@ async def _co2_response(db, ref, owner_client_id=None) -> Response:
             detail="CO2 certificate is issued once the cargo is discharged",
         )
     distance = _distance_nm(pol.locode, pod.locode)
-    from app.models.co2_certificate import CO2Certificate
+    from app.models.anemos_certificate import AnemosCertificate
 
     cert = (
         await db.execute(
-            select(CO2Certificate).where(CO2Certificate.booking_id == booking.id)
+            select(AnemosCertificate).where(AnemosCertificate.booking_id == booking.id)
         )
     ).scalar_one_or_none()
-    doc = render_co2_certificate(
+    doc = render_anemos_certificate(
         booking=booking, leg=leg, vessel=vessel, pol=pol, pod=pod,
         client=client, distance_nm=distance, certificate=cert,
     )

@@ -1,4 +1,14 @@
-"""CO2 avoidance certificate — emitted per booking on delivery."""
+"""Label Anemos — certificat de transport décarboné par voilier cargo.
+
+Émis par booking à l'arrivée (status ∈ discharged|delivered). Atteste du
+tonnage transporté, de la distance, et du CO₂ évité par rapport au
+shipping conventionnel équivalent.
+
+Note V3.6 : ce certificat a été renommé en "Label Anemos" (anciennement
+"Certificat CO₂"). Les colonnes co2_* restent — ce sont des métriques
+physiques, pas du branding. La table s'appelle désormais
+``anemos_certificates`` (cf. migration 20260519_0012).
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -10,8 +20,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 
-class CO2Certificate(Base):
-    __tablename__ = "co2_certificates"
+class AnemosCertificate(Base):
+    __tablename__ = "anemos_certificates"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     reference: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)

@@ -356,7 +356,7 @@ async def _nullify_optional_fks(db: AsyncSession, leg_id: int) -> None:
     from sqlalchemy import update
 
     from app.models.claim import Claim
-    from app.models.co2_certificate import CO2Certificate
+    from app.models.anemos_certificate import AnemosCertificate
     from app.models.commercial import Order
     from app.models.crew_ticket import CrewTicket
     from app.models.onboard_cashbox import CashboxMovement
@@ -364,7 +364,7 @@ async def _nullify_optional_fks(db: AsyncSession, leg_id: int) -> None:
 
     # CashboxMovement (pas OnboardCashbox) porte le leg_id : un mouvement
     # cash est rattaché à un leg, le coffre lui-même non.
-    for model in (Claim, Ticket, CashboxMovement, CrewTicket, CO2Certificate, Order):
+    for model in (Claim, Ticket, CashboxMovement, CrewTicket, AnemosCertificate, Order):
         await db.execute(
             update(model).where(model.leg_id == leg_id).values(leg_id=None)
         )
