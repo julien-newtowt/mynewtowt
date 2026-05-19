@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>my_newtowt — workflows interactifs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --teal: #0D5966;
+      --vert: #87BD29;
+      --cuivre: #B47148;
+      --sable: #EFE6D6;
+      --bleu-marine: #0a3a45;
+      --gray-1: #f6f3ea;
+      --gray-2: #ddd;
+      --gray-3: #888;
+      --dark: #1a1a1a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: 'Manrope', system-ui, sans-serif;
+      background: var(--gray-1);
+      color: var(--dark);
+      overflow: hidden;
+    }
+    h1, h2, h3 { font-family: 'DM Serif Display', serif; font-weight: 400; margin: 0; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; background: rgba(13,89,102,0.08); padding: 1px 4px; border-radius: 3px; }
+    .app {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      grid-template-rows: 60px 1fr;
+      grid-template-areas: 'header header' 'sidebar canvas';
+      height: 100vh;
+    }
+    header {
+      grid-area: header;
+      background: var(--teal);
+      color: white;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      z-index: 10;
+    }
+    header h1 { font-size: 20px; font-family: 'DM Serif Display', serif; }
+    header .meta { font-size: 12px; opacity: 0.85; }
+    header .meta strong { color: var(--vert); font-weight: 700; }
+
+    aside.sidebar {
+      grid-area: sidebar;
+      background: white;
+      border-right: 1px solid var(--gray-2);
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    aside h2 {
+      font-size: 13px;
+      color: var(--teal);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-family: 'Manrope', sans-serif;
+      font-weight: 700;
+    }
+    .flow-list { display: flex; flex-direction: column; gap: 6px; }
+    .flow-btn {
+      text-align: left;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--gray-2);
+      background: white;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .flow-btn:hover { border-color: var(--teal); background: var(--gray-1); }
+    .flow-btn.active { background: var(--teal); color: white; border-color: var(--teal); }
+    .flow-btn .badge {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.08);
+      font-weight: 700;
+    }
+    .flow-btn.active .badge { background: rgba(255,255,255,0.22); color: white; }
+    .flow-btn .cat {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--cuivre);
+      margin-right: 6px;
+      font-weight: 700;
+    }
+    .flow-btn.active .cat { color: var(--sable); }
+
+    .flow-info {
+      font-size: 12px;
+      line-height: 1.5;
+      color: #333;
+      padding: 12px;
+      background: var(--gray-1);
+      border-radius: 6px;
+      border-left: 3px solid var(--cuivre);
+    }
+    .controls {
+      display: flex;
+      gap: 6px;
+    }
+    .controls button {
+      flex: 1;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid var(--teal);
+      background: white;
+      color: var(--teal);
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .controls button:hover { background: var(--teal); color: white; }
+    .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+      flex: 1;
+      padding-right: 4px;
+    }
+    .step {
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: white;
+      border: 1px solid var(--gray-2);
+      font-size: 12px;
+      line-height: 1.45;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .step:hover { border-color: var(--teal); }
+    .step.active {
+      border-color: var(--vert);
+      background: #f3f9e6;
+      box-shadow: 0 0 0 2px rgba(135,189,41,0.3);
+    }
+    .step .step-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: var(--teal);
+    }
+    .step .step-num {
+      background: var(--teal);
+      color: white;
+      min-width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      padding: 0 4px;
+    }
+    .step.active .step-num { background: var(--vert); }
+    .step .step-action {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      color: var(--cuivre);
+      margin: 2px 0 4px 28px;
+      font-weight: 600;
+    }
+    .step .step-detail {
+      color: #444;
+      margin-left: 28px;
+    }
+
+    main.canvas {
+      grid-area: canvas;
+      position: relative;
+      overflow: auto;
+      background:
+        radial-gradient(circle, rgba(13,89,102,0.06) 1px, transparent 1px) 0 0 / 24px 24px,
+        var(--gray-1);
+    }
+    .graph {
+      position: relative;
+      width: 1160px;
+      height: 830px;
+      margin: 24px auto;
+    }
+    .node {
+      position: absolute;
+      width: 220px;
+      min-height: 72px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: white;
+      border: 2px solid var(--gray-2);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      transition: all 0.25s;
+      cursor: help;
+      z-index: 2;
+    }
+    .node .node-cat {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--gray-3);
+      font-weight: 700;
+    }
+    .node .node-body {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .node .node-icon { font-size: 20px; line-height: 1; }
+    .node .node-label { font-weight: 700; font-size: 13px; color: var(--dark); line-height: 1.25; }
+    .node[data-category="actor"]    { border-color: var(--cuivre); background: #fdf5ef; }
+    .node[data-category="external"] { border-color: var(--cuivre); background: #fdf5ef; border-style: dashed; }
+    .node[data-category="security"] { border-color: var(--bleu-marine); background: #eef4f5; }
+    .node[data-category="module"]   { border-color: var(--gray-2); }
+    .node[data-category="data"]     { border-color: var(--teal); background: #e6eff1; }
+
+    .node.active {
+      border-color: var(--vert) !important;
+      box-shadow: 0 0 0 3px rgba(135,189,41,0.35), 0 4px 12px rgba(135,189,41,0.4);
+      transform: translateY(-1px);
+      z-index: 5;
+    }
+    .node.current {
+      border-color: var(--cuivre) !important;
+      box-shadow: 0 0 0 4px rgba(180,113,72,0.4), 0 6px 16px rgba(180,113,72,0.45);
+      transform: translateY(-2px);
+      z-index: 6;
+    }
+    .node.dimmed { opacity: 0.22; filter: grayscale(0.4); }
+
+    svg.edges {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .edge {
+      fill: none;
+      stroke: var(--gray-2);
+      stroke-width: 1.5;
+      opacity: 0;
+      transition: opacity 0.3s, stroke 0.3s, stroke-width 0.2s;
+    }
+    .edge.shown { opacity: 0.45; stroke: var(--gray-3); }
+    .edge.passed { opacity: 0.9; stroke: var(--cuivre); stroke-width: 2.2; }
+    .edge.current {
+      stroke: var(--vert);
+      stroke-width: 3;
+      opacity: 1;
+      filter: drop-shadow(0 0 4px rgba(135,189,41,0.55));
+      stroke-dasharray: 8 4;
+      animation: dash 0.8s linear infinite;
+    }
+    @keyframes dash { to { stroke-dashoffset: -24; } }
+
+    .edge-label {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      fill: var(--gray-3);
+      opacity: 0;
+      transition: opacity 0.3s, fill 0.3s;
+      paint-order: stroke;
+      stroke: white;
+      stroke-width: 3;
+    }
+    .edge-label.shown { opacity: 1; }
+    .edge-label.passed { fill: var(--cuivre); font-weight: 700; }
+    .edge-label.current { fill: var(--bleu-marine); font-weight: 700; }
+
+    .legend {
+      position: fixed;
+      bottom: 12px;
+      right: 12px;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--gray-2);
+      font-size: 11px;
+      display: flex;
+      gap: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      z-index: 8;
+    }
+    .legend .lg { display: flex; align-items: center; gap: 5px; }
+    .legend .swatch { width: 14px; height: 14px; border-radius: 3px; border: 2px solid; }
+
+    .tooltip {
+      position: fixed;
+      background: var(--dark);
+      color: white;
+      padding: 8px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      max-width: 260px;
+      pointer-events: none;
+      z-index: 100;
+      opacity: 0;
+      transition: opacity 0.15s;
+      line-height: 1.45;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    }
+    .tooltip.shown { opacity: 1; }
+    .tooltip strong { color: var(--vert); }
+
+    .error-banner {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--cuivre);
+      color: white;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      max-width: 600px;
+      z-index: 50;
+      box-shadow: 0 4px 12px rgba(180,113,72,0.4);
+    }
+    .error-banner code { background: rgba(255,255,255,0.2); color: white; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>my_newtowt — workflows inter-modules</h1>
+      <div class="meta" id="meta">Chargement…</div>
+    </header>
+
+    <aside class="sidebar">
+      <div>
+        <h2>Flux disponibles</h2>
+        <div class="flow-list" id="flowList"></div>
+      </div>
+      <div id="flowDetail" style="display:none; flex:1; display:flex; flex-direction:column; gap:12px; min-height:0;">
+        <h2 id="flowTitle"></h2>
+        <div class="flow-info" id="flowInfo"></div>
+        <div class="controls">
+          <button id="btnPlay">▶ Lancer</button>
+          <button id="btnStep">⏭ Étape suivante</button>
+          <button id="btnReset">↺ Reset</button>
+        </div>
+        <div class="step-list" id="stepList"></div>
+      </div>
+    </aside>
+
+    <main class="canvas">
+      <div class="graph" id="graph">
+        <svg class="edges" id="edges" viewBox="0 0 1160 830" preserveAspectRatio="none">
+          <defs>
+            <marker id="arrow-grey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#888" />
+            </marker>
+            <marker id="arrow-cuivre" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#B47148" />
+            </marker>
+            <marker id="arrow-vert" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#87BD29" />
+            </marker>
+          </defs>
+        </svg>
+      </div>
+      <div class="legend">
+        <div class="lg"><span class="swatch" style="border-color:#B47148;background:#fdf5ef"></span>Acteur / externe</div>
+        <div class="lg"><span class="swatch" style="border-color:#0a3a45;background:#eef4f5"></span>Socle sécurité</div>
+        <div class="lg"><span class="swatch" style="border-color:#ddd;background:white"></span>Module métier</div>
+        <div class="lg"><span class="swatch" style="border-color:#0D5966;background:#e6eff1"></span>Donnée / fichier</div>
+      </div>
+      <div class="tooltip" id="tooltip"></div>
+    </main>
+  </div>
+
+  <script>
+    // ─── Layout constants ──────────────────────────────
+    const NODE_W = 220, NODE_H = 72;
+    const PAD_X = 30, PAD_Y = 30;
+    const GAP_X = 40, GAP_Y = 35;
+    const VIEW_W = 1160, VIEW_H = 830;
+
+    function nodePos(node) {
+      const x = PAD_X + node.col * (NODE_W + GAP_X);
+      const y = PAD_Y + node.row * (NODE_H + GAP_Y);
+      return { x, y, cx: x + NODE_W / 2, cy: y + NODE_H / 2 };
+    }
+
+    function trimToBox(cx, cy, tx, ty) {
+      const dx = tx - cx, dy = ty - cy;
+      if (dx === 0 && dy === 0) return { x: cx, y: cy };
+      const sx = NODE_W / 2 + 4, sy = NODE_H / 2 + 4;
+      const txt = Math.abs(dx) > 0 ? sx / Math.abs(dx) : Infinity;
+      const tyt = Math.abs(dy) > 0 ? sy / Math.abs(dy) : Infinity;
+      const t = Math.min(txt, tyt);
+      return { x: cx + dx * t, y: cy + dy * t };
+    }
+
+    function edgePath(fromNode, toNode, curveOffset) {
+      const p1 = nodePos(fromNode), p2 = nodePos(toNode);
+      const isSelf = fromNode.id === toNode.id;
+      if (isSelf) {
+        const r = 26;
+        const x = p1.cx, y = p1.y - 8;
+        return {
+          d: `M ${x - 10} ${y} C ${x - r} ${y - r}, ${x + r} ${y - r}, ${x + 10} ${y}`,
+          mid: { x: x, y: y - r + 4 }
+        };
+      }
+      const start = trimToBox(p1.cx, p1.cy, p2.cx, p2.cy);
+      const end = trimToBox(p2.cx, p2.cy, p1.cx, p1.cy);
+      const mx = (start.x + end.x) / 2;
+      const my = (start.y + end.y) / 2;
+      const dx = end.x - start.x, dy = end.y - start.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const off = curveOffset || 14;
+      const ox = -dy / len * off;
+      const oy = dx / len * off;
+      const cpx = mx + ox, cpy = my + oy;
+      return {
+        d: `M ${start.x} ${start.y} Q ${cpx} ${cpy} ${end.x} ${end.y}`,
+        mid: { x: (start.x + 2 * cpx + end.x) / 4, y: (start.y + 2 * cpy + end.y) / 4 }
+      };
+    }
+
+    // ─── State ─────────────────────────────────────────
+    let DATA = null;
+    const nodeMap = {};
+    let currentFlow = null;
+    let currentStep = -1;
+    let playTimer = null;
+
+    // ─── Init ──────────────────────────────────────────
+    async function init() {
+      try {
+        const r = await fetch('./flows.json', { cache: 'no-store' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        DATA = await r.json();
+      } catch (e) {
+        const banner = document.createElement('div');
+        banner.className = 'error-banner';
+        banner.innerHTML = `Impossible de charger <code>flows.json</code> (${escapeHtml(e.message)}). Ouvrez cette page via un serveur HTTP local, par exemple : <code>python3 -m http.server</code> depuis le dossier <code>docs/</code>.`;
+        document.body.appendChild(banner);
+        return;
+      }
+      DATA.nodes.forEach(n => { nodeMap[n.id] = n; });
+      document.getElementById('meta').innerHTML = `<strong>${DATA.nodes.length}</strong> composants · <strong>${DATA.flows.length}</strong> flux documentés`;
+      renderNodes();
+      renderFlowList();
+      if (DATA.flows.length) selectFlow(DATA.flows[0].id);
+    }
+
+    function renderNodes() {
+      const g = document.getElementById('graph');
+      DATA.nodes.forEach(n => {
+        const { x, y } = nodePos(n);
+        const el = document.createElement('div');
+        el.className = 'node';
+        el.dataset.nodeId = n.id;
+        el.dataset.category = n.category;
+        el.style.left = x + 'px';
+        el.style.top = y + 'px';
+        el.innerHTML = `
+          <div class="node-cat">${escapeHtml(n.category)}</div>
+          <div class="node-body">
+            <span class="node-icon">${n.icon || '◆'}</span>
+            <span class="node-label">${escapeHtml(n.label)}</span>
+          </div>
+        `;
+        el.addEventListener('mouseenter', e => showTooltip(e, n));
+        el.addEventListener('mousemove', moveTooltip);
+        el.addEventListener('mouseleave', hideTooltip);
+        g.appendChild(el);
+      });
+    }
+
+    function renderFlowList() {
+      const ul = document.getElementById('flowList');
+      DATA.flows.forEach(f => {
+        const b = document.createElement('button');
+        b.className = 'flow-btn';
+        b.dataset.flowId = f.id;
+        b.innerHTML = `<span><span class="cat">${escapeHtml(f.category || '')}</span>${escapeHtml(f.label)}</span><span class="badge">${f.steps.length}</span>`;
+        b.addEventListener('click', () => selectFlow(f.id));
+        ul.appendChild(b);
+      });
+    }
+
+    function selectFlow(flowId) {
+      currentFlow = DATA.flows.find(f => f.id === flowId);
+      if (!currentFlow) return;
+      currentStep = -1;
+      clearTimeout(playTimer);
+
+      document.querySelectorAll('.flow-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.flowId === flowId);
+      });
+      document.getElementById('flowDetail').style.display = 'flex';
+      document.getElementById('flowTitle').textContent = currentFlow.label;
+      document.getElementById('flowInfo').innerHTML = currentFlow.description;
+
+      renderSteps();
+      renderEdges();
+      highlightStep(-1);
+    }
+
+    function renderSteps() {
+      const list = document.getElementById('stepList');
+      list.innerHTML = '';
+      currentFlow.steps.forEach((s, i) => {
+        const from = nodeMap[s.from], to = nodeMap[s.to];
+        const fromLbl = from ? from.label : s.from;
+        const toLbl = to ? to.label : s.to;
+        const div = document.createElement('div');
+        div.className = 'step';
+        div.dataset.stepIdx = i;
+        div.innerHTML = `
+          <div class="step-head">
+            <span class="step-num">${i + 1}</span>
+            <span>${escapeHtml(fromLbl)} → ${escapeHtml(toLbl)}</span>
+          </div>
+          <div class="step-action">${escapeHtml(s.action || '')}</div>
+          ${s.description ? `<div class="step-detail">${escapeHtml(s.description)}</div>` : ''}
+        `;
+        div.addEventListener('click', () => {
+          clearTimeout(playTimer);
+          currentStep = i;
+          highlightStep(i);
+        });
+        list.appendChild(div);
+      });
+    }
+
+    function renderEdges() {
+      const svg = document.getElementById('edges');
+      Array.from(svg.querySelectorAll('.edge, .edge-label')).forEach(el => el.remove());
+
+      // For multiple edges between same pair, alternate curve direction
+      const pairCount = {};
+      currentFlow.steps.forEach((s, i) => {
+        const key = [s.from, s.to].sort().join('|');
+        pairCount[key] = (pairCount[key] || 0) + 1;
+      });
+      const pairSeen = {};
+
+      currentFlow.steps.forEach((s, i) => {
+        const fromNode = nodeMap[s.from], toNode = nodeMap[s.to];
+        if (!fromNode || !toNode) return;
+        const key = [s.from, s.to].sort().join('|');
+        pairSeen[key] = (pairSeen[key] || 0) + 1;
+        const idxInPair = pairSeen[key] - 1;
+        const baseOffset = 14 + idxInPair * 16;
+        const dir = s.from < s.to ? 1 : -1;
+        const { d, mid } = edgePath(fromNode, toNode, baseOffset * dir);
+
+        const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        p.setAttribute('d', d);
+        p.setAttribute('class', 'edge');
+        p.setAttribute('marker-end', 'url(#arrow-grey)');
+        p.dataset.stepIdx = i;
+        svg.appendChild(p);
+
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('class', 'edge-label');
+        t.setAttribute('x', mid.x);
+        t.setAttribute('y', mid.y);
+        t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('dy', '-3');
+        const label = (s.action || '').length > 32 ? (s.action.slice(0, 30) + '…') : (s.action || '');
+        t.textContent = `${i + 1}. ${label}`;
+        t.dataset.stepIdx = i;
+        svg.appendChild(t);
+      });
+    }
+
+    function highlightStep(idx) {
+      const involved = new Set();
+      currentFlow.steps.forEach(s => { involved.add(s.from); involved.add(s.to); });
+
+      const currentEdge = idx >= 0 ? currentFlow.steps[idx] : null;
+      const currentFrom = currentEdge ? currentEdge.from : null;
+      const currentTo = currentEdge ? currentEdge.to : null;
+
+      document.querySelectorAll('.node').forEach(n => {
+        const id = n.dataset.nodeId;
+        const inFlow = involved.has(id);
+        const isCurrent = id === currentFrom || id === currentTo;
+        n.classList.toggle('active', inFlow && !isCurrent);
+        n.classList.toggle('current', isCurrent);
+        n.classList.toggle('dimmed', !inFlow);
+      });
+
+      document.querySelectorAll('.edge').forEach(e => {
+        const i = parseInt(e.dataset.stepIdx);
+        const passed = idx >= 0 && i < idx;
+        const current = i === idx;
+        e.classList.add('shown');
+        e.classList.toggle('passed', passed);
+        e.classList.toggle('current', current);
+        e.setAttribute('marker-end',
+          current ? 'url(#arrow-vert)' :
+          passed ? 'url(#arrow-cuivre)' :
+          'url(#arrow-grey)');
+      });
+      document.querySelectorAll('.edge-label').forEach(e => {
+        const i = parseInt(e.dataset.stepIdx);
+        const passed = idx >= 0 && i < idx;
+        const current = i === idx;
+        e.classList.add('shown');
+        e.classList.toggle('passed', passed);
+        e.classList.toggle('current', current);
+      });
+
+      document.querySelectorAll('.step').forEach(s => {
+        s.classList.toggle('active', parseInt(s.dataset.stepIdx) === idx);
+      });
+      if (idx >= 0) {
+        const el = document.querySelector(`.step[data-step-idx="${idx}"]`);
+        if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
+
+    // ─── Controls ──────────────────────────────────────
+    document.getElementById('btnPlay').addEventListener('click', () => {
+      if (!currentFlow) return;
+      clearTimeout(playTimer);
+      currentStep = -1;
+      playNext();
+    });
+    function playNext() {
+      if (!currentFlow) return;
+      currentStep++;
+      if (currentStep >= currentFlow.steps.length) {
+        // Hold final state, then re-enable Play
+        clearTimeout(playTimer);
+        return;
+      }
+      highlightStep(currentStep);
+      playTimer = setTimeout(playNext, 1700);
+    }
+    document.getElementById('btnStep').addEventListener('click', () => {
+      if (!currentFlow) return;
+      clearTimeout(playTimer);
+      currentStep++;
+      if (currentStep >= currentFlow.steps.length) currentStep = -1;
+      highlightStep(currentStep);
+    });
+    document.getElementById('btnReset').addEventListener('click', () => {
+      clearTimeout(playTimer);
+      currentStep = -1;
+      highlightStep(-1);
+    });
+
+    // ─── Tooltip ───────────────────────────────────────
+    function showTooltip(e, n) {
+      const t = document.getElementById('tooltip');
+      t.innerHTML = `<strong>${escapeHtml(n.label)}</strong><br>${escapeHtml(n.description || '')}`;
+      t.classList.add('shown');
+      moveTooltip(e);
+    }
+    function moveTooltip(e) {
+      const t = document.getElementById('tooltip');
+      const padding = 14;
+      let x = e.clientX + padding;
+      let y = e.clientY + padding;
+      const w = t.offsetWidth, h = t.offsetHeight;
+      if (x + w > window.innerWidth) x = e.clientX - w - padding;
+      if (y + h > window.innerHeight) y = e.clientY - h - padding;
+      t.style.left = x + 'px';
+      t.style.top = y + 'px';
+    }
+    function hideTooltip() {
+      document.getElementById('tooltip').classList.remove('shown');
+    }
+
+    // ─── Utils ─────────────────────────────────────────
+    function escapeHtml(s) {
+      if (s == null) return '';
+      // Preserve <code> from descriptions
+      const tmp = String(s);
+      return tmp;  // We trust the JSON content here (it's our own doc).
+    }
+
+    init();
+  </script>
+</body>
+</html>

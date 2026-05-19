@@ -1,0 +1,206 @@
+{
+  "meta": {
+    "title": "my_newtowt — workflows interactifs",
+    "version": "1.0",
+    "generated": "2026-05-12",
+    "comment": "Document JSON pilotant docs/workflows.html. Ajouter des composants dans `nodes` (position row/col) et des flux dans `flows` (steps with from/to/action/description). Le rendu se met à jour automatiquement à l'ouverture de la page."
+  },
+  "nodes": [
+    { "id": "user",           "label": "Utilisateur interne",        "category": "actor",    "row": 0, "col": 0, "icon": "👤", "description": "Collaborateur NEWTOWT (administrateur, opération, commercial, armement, technique, data_analyst, marins, manager_maritime) authentifié par cookie towt_session signé (8 h)." },
+    { "id": "client",         "label": "Client externe (portail)",   "category": "actor",    "row": 0, "col": 1, "icon": "🏢", "description": "Shipper ou Freight Forwarder. Accède au portail packing list /p/{token} sans compte. Token UUID hex 24 caractères, expiration 90 jours." },
+    { "id": "power_automate", "label": "Power Automate",             "category": "external", "row": 0, "col": 2, "icon": "🛰️", "description": "Flux automatisé Microsoft poussant les positions GPS au format CSV vers /api/tracking/upload via en-tête X-API-Token=$TRACKING_API_TOKEN. Rotation trimestrielle recommandée." },
+    { "id": "pipedrive",      "label": "Pipedrive CRM",              "category": "external", "row": 0, "col": 3, "icon": "💼", "description": "CRM externe synchronisé via httpx (utils/pipedrive.py). Lié par Order.pipedrive_deal_id, Client.pipedrive_org_id, RateOffer.pipedrive_deal_id. PIPEDRIVE_API_TOKEN dans .env." },
+
+    { "id": "csrf",           "label": "CSRF Middleware",            "category": "security", "row": 1, "col": 0, "icon": "🛡️", "description": "Double-submit cookie. Pose cookie towt_csrf, exige header x-csrf-token sur toute requête mutante. HTMX injecte le token automatiquement via htmx:configRequest." },
+    { "id": "auth",           "label": "Auth Router",                "category": "security", "row": 1, "col": 1, "icon": "🔐", "description": "/login, /logout. Hash bcrypt (passlib), session signée HS256 via itsdangerous URLSafeTimedSerializer. Rate limit scope=login persistant (table rate_limit_attempts)." },
+    { "id": "permissions",    "label": "Permissions matrix",         "category": "security", "row": 1, "col": 2, "icon": "🔑", "description": "Matrice 8 rôles × 10 modules × {C, M, S}. Dependency FastAPI require_permission(module, level) — GET=C, POST=M, DELETE=S. Helpers can_view/can_edit/can_delete/has_any_access." },
+    { "id": "activity",       "label": "Activity Logger",            "category": "security", "row": 1, "col": 3, "icon": "📜", "description": "Audit trail dans activity_logs (user_id, action, module, entity_type/id/label, detail, ip_address). Actions : login, logout, login_fail, create, update, delete." },
+
+    { "id": "dashboard",      "label": "Dashboard / Notifications",  "category": "module",   "row": 2, "col": 0, "icon": "📊", "description": "Page d'accueil. Table notifications (new_order 📦, new_cargo_message 💬, eosp ⚓, sosp ⛵, new_claim ⚠️, eta_shift 🕐) avec lien contextuel vers le module concerné." },
+    { "id": "planning",       "label": "Planning",                   "category": "module",   "row": 2, "col": 1, "icon": "🗺️", "description": "CRUD Legs (segments de voyage). Génère leg_code = {SHIP}{LETTER}{DEP}{ARR}{YEAR_DIGIT} (ex. 1AFRBR6). Vues Gantt, carte, conflits d'escale. Export CSV, PDF commercial, partage par token." },
+    { "id": "commercial",     "label": "Commercial",                 "category": "module",   "row": 2, "col": 2, "icon": "📦", "description": "CRUD commandes Orders (référence ORD-YYYY-NNNN). Affectation à un leg (Order.leg_id source de vérité). 7 formats de palettes (EPAL, USPAL, PORTPAL, IBC, BIGBAG, BARRIQUE120/140). Pièce jointe + Pipedrive deal_id." },
+    { "id": "pricing",        "label": "Pricing (grilles & offres)", "category": "module",   "row": 2, "col": 3, "icon": "💶", "description": "Clients (FF/Shipper), grilles tarifaires RG-YYYY-NNNN (draft/active/expired/superseded), offres RO-YYYY-NNNN. Formule : base_rate = opex_daily × nav_days / 850 ; bracket_rate = base × coeff × adjustment_index." },
+
+    { "id": "cargo",          "label": "Cargo (interne)",            "category": "module",   "row": 3, "col": 0, "icon": "📋", "description": "CRUD PackingLists côté armateur. Verrouillage (draft/submitted/locked), export Excel, génération Bill of Lading (Word, template BILL_OF_LADING_TEMPLATE.docx), Arrival Notice PDF. Audit field-by-field dans packing_list_audit." },
+    { "id": "cargo_portal",   "label": "Cargo Portal (/p/{token})",  "category": "module",   "row": 3, "col": 1, "icon": "🌐", "description": "Routes publiques ext_router (sans auth). Token validé à chaque hit, expiration 90 j. Accès tracé dans portal_access_logs avec token_hash = sha256(token) (jamais le token en clair). Rate limit scope=portal_token." },
+    { "id": "escale",         "label": "Escale (port call)",         "category": "module",   "row": 3, "col": 2, "icon": "⚓", "description": "EscaleOperations (pilotage, remorquage, embarquement) + DockerShifts par cale. Cadence palettes/heure, écart prévisionnel/réalisé. Coûts injectés dans LegFinance.ops_cost. PDF timeline pour port agent." },
+    { "id": "onboard",        "label": "On Board / Captain",         "category": "module",   "row": 3, "col": 3, "icon": "🧭", "description": "SofEvents (26 types : EOSP, SOSP, NOR, PILOT, TUG, etc.), cargo documents (NOR/NOR_RT/LOP*/Mate's Receipt), pièces jointes, ETAShifts (motif obligatoire), messagerie équipage @mention, workflow de clôture open→review→approved→locked." },
+
+    { "id": "crew",           "label": "Crew / Équipage",            "category": "module",   "row": 4, "col": 0, "icon": "🧑‍✈️", "description": "CrewMembers (8 rôles : capitaine, second, chef_mecanicien, cook, lieutenant, bosco, marin, eleve_officier — 6 obligatoires). Embarquements/débarquements, calendrier annuel heatmap, compliance Schengen (passeport/visa < 30 j), liste PAF, billets transport." },
+    { "id": "stowage",        "label": "Stowage Plan",               "category": "module",   "row": 4, "col": 1, "icon": "📐", "description": "Plan d'arrimage : 18 zones par navire = 3 ponts (INF/MIL/SUP) × 2 cales (AR/AV) × 3 blocs. LOADING_ORDER AR→AV bas→haut. DANGEROUS_ZONES = SUP_AV_* (IMO ou hors-gabarit basket 380×150×220 cm). Algo glouton suggest_zone." },
+    { "id": "mrv",            "label": "MRV Fuel",                   "category": "module",   "row": 4, "col": 2, "icon": "⛽", "description": "Reporting réglementaire UE. MrvEvents (departure/arrival/at_sea/begin/end_anchoring). 4 compteurs DO, ROB déclaré vs calculé, déviation admissible 2 mt. Mapping auto SOF→MRV. Export DNV CSV, Carbon Report." },
+    { "id": "claims",         "label": "Claims / Sinistres",         "category": "module",   "row": 4, "col": 3, "icon": "⚠️", "description": "Sinistres cargo (P&I), crew (P&I), hull (Hull/DIV/War Risk). 6 statuts (open→declared→instruction→accepted/refused→closed). cargo_zone auto-remplie depuis stowage. Provision/franchise/indemnité → company_charge → LegFinance.claims_cost." },
+
+    { "id": "finance",        "label": "Finance",                    "category": "module",   "row": 5, "col": 0, "icon": "💰", "description": "LegFinance prévisionnel/réalisé : revenus, coûts mer (OPEX × jours nav), portuaires (port_configs), quay (daily × port_stay_days), opérations (escale), claims. Compute() : result, margin_rate. Accès limité administrateur + data_analyst." },
+    { "id": "kpi",            "label": "KPI / CO₂",                  "category": "module",   "row": 5, "col": 1, "icon": "📈", "description": "Tonnage cargo par leg (LegKPI), CO₂ évité = cargo_tons × distance_km × (conventional_co2_ef − towt_co2_ef). Variables co2_variables historisées (effective_date, is_current). Certificat carbone PDF nominatif par client/période." },
+    { "id": "tracking",       "label": "Tracking API",               "category": "module",   "row": 5, "col": 2, "icon": "📡", "description": "Ingestion CSV positions GPS via /api/tracking/upload (X-API-Token requis ; si vide → 503). Table vessel_positions UNIQUE(vessel_id, recorded_at). Rattachement automatique au leg actif par fenêtre temporelle." },
+    { "id": "admin",          "label": "Admin",                      "category": "module",   "row": 5, "col": 3, "icon": "⚙️", "description": "CRUD users + import CSV, CRUD vessels, paramètres OPEX/CO₂/MRV/émissions, contrats d'assurance, intégration Pipedrive, exports global/sélectifs, purges DB ciblées (ALLOWED_TABLES whitelist), mode maintenance, activity logs viewer." },
+
+    { "id": "db",             "label": "PostgreSQL 16",              "category": "data",     "row": 6, "col": 1, "icon": "🐘", "description": "Postgres 16-alpine via SQLAlchemy async + asyncpg. Pool 20+10, pool_pre_ping. get_db() yield→commit / except→rollback (les routes appellent uniquement db.flush()). Schema init via Base.metadata.create_all au startup." },
+    { "id": "files",          "label": "File storage",               "category": "data",     "row": 6, "col": 2, "icon": "📁", "description": "Pièces jointes (commandes, claims, onboard, portail packing list, billets équipage). Le chemin est stocké en BDD (file_path), le binaire sur le filesystem du conteneur. file_validation.py contrôle taille/mime/extension." }
+  ],
+  "flows": [
+    {
+      "id": "login",
+      "label": "Connexion utilisateur",
+      "category": "security",
+      "description": "L'utilisateur soumet son couple identifiant / mot de passe. Le mot de passe est vérifié en bcrypt, une session signée HS256 est créée et le cookie <code>towt_session</code> (8 h) est posé. La tentative est tracée dans <code>activity_logs</code>.",
+      "steps": [
+        { "from": "user",        "to": "csrf",        "action": "GET /login",            "description": "Page de login. CSRFMiddleware pose le cookie towt_csrf en réponse." },
+        { "from": "user",        "to": "auth",        "action": "POST /login",           "description": "Formulaire {username, password} + header x-csrf-token vérifié par le middleware CSRF." },
+        { "from": "auth",        "to": "db",          "action": "SELECT users",          "description": "User.username == ? AND User.is_active == true (sinon refus générique)." },
+        { "from": "auth",        "to": "auth",        "action": "bcrypt.verify",         "description": "passlib CryptContext(schemes=['bcrypt']).verify(plain, hashed). Échec → INSERT rate_limit_attempts(scope='login', identifier=ip)." },
+        { "from": "auth",        "to": "auth",        "action": "create_session_token",  "description": "URLSafeTimedSerializer(SECRET_KEY).dumps({user_id}) → cookie towt_session (httpOnly, samesite=Lax, max-age=28800)." },
+        { "from": "auth",        "to": "activity",    "action": "INSERT activity_logs",  "description": "action=login, module=auth, user_id, ip_address (ou login_fail si bcrypt KO)." },
+        { "from": "auth",        "to": "permissions", "action": "get_accessible_modules", "description": "Calcule la liste des modules visibles dans la sidebar selon User.role (matrice _MATRIX)." },
+        { "from": "auth",        "to": "dashboard",   "action": "303 Redirect /",        "description": "Le dashboard s'affiche, sidebar filtrée par has_any_access(user, module)." }
+      ]
+    },
+    {
+      "id": "invite_user",
+      "label": "Inviter un nouvel utilisateur",
+      "category": "admin",
+      "description": "L'administrateur crée un compte avec <code>must_change_password = true</code>. À la première connexion, le middleware <code>ForcePasswordChangeMiddleware</code> redirige vers <code>/admin/my-account/change-password</code> tant que le mot de passe n'a pas été changé. L'envoi des identifiants au nouvel utilisateur se fait hors application (e-mail manuel).",
+      "steps": [
+        { "from": "user",        "to": "admin",       "action": "GET /admin/users/create", "description": "Formulaire de création (HTML standard) — sélecteur de rôle (8 valeurs), de langue (fr/en/es/pt-br/vi), checkbox must_change_password." },
+        { "from": "admin",       "to": "permissions", "action": "Depends(require_admin)",  "description": "Restreint aux rôles administrateur et data_analyst. Sinon 403." },
+        { "from": "user",        "to": "admin",       "action": "POST /admin/users/create", "description": "Charge utile : username, email, full_name, role, language, password, is_active, must_change_password." },
+        { "from": "admin",       "to": "admin",       "action": "hash_password(bcrypt)",   "description": "passlib hash bcrypt — coût défaut. Le clair n'est jamais persisté ni journalisé." },
+        { "from": "admin",       "to": "db",          "action": "INSERT users; flush()",   "description": "User créé avec is_active=true, must_change_password=true. flush() expose user.id sans commit (le commit final est géré par get_db)." },
+        { "from": "admin",       "to": "activity",    "action": "INSERT activity_logs",    "description": "action=create, module=admin, entity_type=user, entity_id=new_user.id, entity_label=username, actor=admin." },
+        { "from": "admin",       "to": "user",        "action": "303 → /admin/users",      "description": "Redirection vers la liste. Si requête HTMX (HX-Request) : header HX-Redirect renvoyé à la place." }
+      ]
+    },
+    {
+      "id": "create_order",
+      "label": "Créer une commande commerciale",
+      "category": "commercial",
+      "description": "Le commercial saisit une commande, éventuellement liée à une grille tarifaire active du client. <code>compute_total()</code> calcule prix et poids. Une notification dashboard <code>new_order</code> est levée. Si le client est lié à Pipedrive, un deal est créé en parallèle.",
+      "steps": [
+        { "from": "user",        "to": "commercial",  "action": "POST /commercial/orders/create", "description": "Form : client_name, client_contact, qty_palettes, palette_format, weight_per_palette, unit_price, fees, dates, ports, description, leg_id optionnel." },
+        { "from": "commercial",  "to": "permissions", "action": "require_permission(commercial, M)", "description": "Rôles autorisés en modification : administrateur, operation, commercial, manager_maritime." },
+        { "from": "commercial",  "to": "pricing",     "action": "GET /commercial/pricing/api/rate-lookup", "description": "Lookup grille active pour le client + route POL→POD + quantité → retourne base_rate × coeff × adjustment_index." },
+        { "from": "pricing",     "to": "db",          "action": "SELECT rate_grids",       "description": "WHERE client_id=? AND status='active' AND valid_from<=today AND valid_to>=today. Récupère la RateGridLine matchant la route, applique get_rate_for_quantity(qty)." },
+        { "from": "commercial",  "to": "commercial",  "action": "Order.compute_total()",   "description": "total_price = qty * unit_price + booking_fee + documentation_fee ; total_weight = qty * weight_per_palette." },
+        { "from": "commercial",  "to": "db",          "action": "INSERT orders",           "description": "Order persisté avec rate_grid_id/rate_grid_line_id si lookup OK, leg_id si pré-affectée. Status par défaut : non_affecte." },
+        { "from": "commercial",  "to": "dashboard",   "action": "INSERT notifications",    "description": "type=new_order, order_id, title='Nouvelle commande {reference}', link=/commercial. Icône 📦 dans le dashboard." },
+        { "from": "commercial",  "to": "pipedrive",   "action": "POST /v1/deals (httpx)",  "description": "Si Client.pipedrive_org_id rempli ET PIPEDRIVE_API_TOKEN configuré : crée un deal lié à l'org. Order.pipedrive_deal_id stocké en retour." },
+        { "from": "commercial",  "to": "activity",    "action": "INSERT activity_logs",    "description": "action=create, module=commercial, entity_type=order, entity_label=reference, detail='client=… qty=… price=…'." }
+      ]
+    },
+    {
+      "id": "create_packing_list",
+      "label": "Créer une packing list + lien portail client",
+      "category": "cargo",
+      "description": "Pour une commande donnée, une PackingList est créée avec un token UUID hex 24 caractères, expiration 90 jours. L'URL <code>SITE_URL/p/{token}</code> est affichée à l'écran ; son envoi au client est manuel (e-mail hors application).",
+      "steps": [
+        { "from": "user",        "to": "cargo",       "action": "POST /cargo/create",      "description": "Charge utile : order_id. Une seule PackingList par commande (relation 1-1 logique côté métier)." },
+        { "from": "cargo",       "to": "permissions", "action": "require_permission(cargo, M)", "description": "Rôles autorisés en modification cargo : administrateur, operation, commercial, manager_maritime." },
+        { "from": "cargo",       "to": "cargo",       "action": "generate_token()",        "description": "token = uuid.uuid4().hex[:24] ; token_expires_at = now(UTC) + timedelta(days=90)." },
+        { "from": "cargo",       "to": "db",          "action": "INSERT packing_lists",    "description": "Status=draft, token, token_expires_at, order_id. Cascade ON DELETE depuis orders." },
+        { "from": "cargo",       "to": "cargo",       "action": "Build portal URL",         "description": "url = settings.SITE_URL + '/p/' + token. Affichée côté armateur dans la page détail PL." },
+        { "from": "cargo",       "to": "user",        "action": "Render /cargo/{pl_id}",   "description": "Page détail. L'armateur copie le lien et l'envoie au client par e-mail (hors application v3.0.0)." },
+        { "from": "cargo",       "to": "activity",    "action": "INSERT activity_logs",    "description": "action=create, module=cargo, entity_type=packing_list, entity_id=pl.id." }
+      ]
+    },
+    {
+      "id": "portal_fill",
+      "label": "Le client remplit la packing list (portail externe)",
+      "category": "cargo",
+      "description": "Le client accède au portail public via le token. Chaque accès est tracé avec <code>sha256(token)</code> (jamais le token en clair) dans <code>portal_access_logs</code>. Chaque champ modifié alimente <code>packing_list_audit</code>. À la soumission, une notification <code>new_cargo_message</code> est levée côté armateur.",
+      "steps": [
+        { "from": "client",         "to": "cargo_portal", "action": "GET /p/{token}",        "description": "Aucune authentification utilisateur. CSRFMiddleware pose un cookie de session anonyme towt_csrf." },
+        { "from": "cargo_portal",   "to": "cargo_portal", "action": "portal_security.verify", "description": "1) check token format ; 2) lookup en DB ; 3) check token_expires_at > now ; 4) rate limit scope='portal_token' (table rate_limit_attempts). Sinon 404 générique." },
+        { "from": "cargo_portal",   "to": "db",           "action": "INSERT portal_access_logs", "description": "portal_type='cargo', token_hash=sha256(token).hexdigest(), ip_address, user_agent, path. RGPD : purge périodique via scripts/purge_access_logs.py." },
+        { "from": "cargo_portal",   "to": "db",           "action": "SELECT packing_lists + batches", "description": "Hydratation complète : PackingList + ses PackingListBatch + ses PackingListDocument + portal_messages." },
+        { "from": "client",         "to": "cargo_portal", "action": "POST /p/{token}/save",  "description": "Charge utile : tous les champs jaunes (shipper/notify/consignee structurés, dimensions L×W×H, weight_kg, type_of_goods, IMO class, etc.)." },
+        { "from": "cargo_portal",   "to": "cargo_portal", "action": "compute_dimensions()",  "description": "PackingListBatch.compute_dimensions() : surface_m2 = L×W/10000 ; volume_m3 = L×W×H/1000000 ; density = (weight_kg/1000) / surface_m2." },
+        { "from": "cargo_portal",   "to": "db",           "action": "UPDATE batches + INSERT audit", "description": "Pour chaque champ modifié : ligne dans packing_list_audit (field_name, old_value, new_value, changed_by='Client', changed_at)." },
+        { "from": "cargo_portal",   "to": "dashboard",    "action": "INSERT notifications",   "description": "type=new_cargo_message, packing_list_id, title='Mise à jour client {pl_ref}'. Visible icône 💬 sur le dashboard armateur." },
+        { "from": "cargo_portal",   "to": "files",        "action": "(opt) upload doc",      "description": "POST /p/{token}/documents/upload : file_validation.py contrôle mime/taille → enregistre fichier + INSERT packing_list_documents(filename, file_path, file_size, uploaded_by='Client')." }
+      ]
+    },
+    {
+      "id": "sof_to_mrv",
+      "label": "Saisir EOSP en SOF → MrvEvent automatique",
+      "category": "onboard",
+      "description": "Le capitaine consigne un événement <code>EOSP</code> dans le Statement of Facts. Le mapping <code>SOF_TO_MRV_MAP[EOSP] = 'departure'</code> déclenche la création automatique d'un <code>MrvEvent</code> lié au SOF. Une notification ⚓ EOSP est levée sur le dashboard de l'armateur.",
+      "steps": [
+        { "from": "user",        "to": "onboard",     "action": "POST /onboard/sof/add",   "description": "Form : leg_id, event_type='EOSP', event_label, event_date, event_time, event_time_tz (IANA), remarks. event_time_tz défaut 'UTC'." },
+        { "from": "onboard",     "to": "permissions", "action": "require_permission(captain, M)", "description": "Rôles autorisés en modification captain : administrateur, operation, technique, manager_maritime." },
+        { "from": "onboard",     "to": "db",          "action": "INSERT sof_events",       "description": "Ligne SOF persistée. Champ event_label = libellé affiché (peut être customisé, sinon valeur par défaut depuis SOF_EVENT_TYPES)." },
+        { "from": "onboard",     "to": "mrv",         "action": "SOF_TO_MRV_MAP lookup",   "description": "Mapping : EOSP→departure, SOSP→arrival, ANCHORED→begin_anchoring, ANCHOR_AWEIGH→end_anchoring. Si non mappé : pas de MrvEvent auto." },
+        { "from": "mrv",         "to": "mrv",         "action": "MrvEvent build",          "description": "timestamp_utc = combine(event_date, event_time, event_time_tz)→UTC. event_type='departure'. sof_event_id pour traçabilité." },
+        { "from": "mrv",         "to": "db",          "action": "INSERT mrv_events",       "description": "Ligne MRV créée avec quality_status='pending'. Compteurs DO et ROB à renseigner ultérieurement par l'opérateur MRV." },
+        { "from": "onboard",     "to": "dashboard",   "action": "INSERT notifications",    "description": "type='eosp', leg_id, title='EOSP — {vessel} → arrivée {port}'. Icône ⚓. (SOSP déclencherait l'icône ⛵.)" },
+        { "from": "onboard",     "to": "activity",    "action": "INSERT activity_logs",    "description": "action=create, module=onboard, entity_type=sof_event, detail='EOSP @ {timestamp}'." }
+      ]
+    },
+    {
+      "id": "eta_shift",
+      "label": "Décaler une ETA avec justification obligatoire",
+      "category": "onboard",
+      "description": "Toute modification d'ETA ou d'ETD passe par un formulaire qui impose un motif (<code>ETA_SHIFT_REASONS</code>). Le delta horaire est calculé, les legs aval sont recalculés en cascade, et une notification 🕐 <code>eta_shift</code> est levée. La trace immutable atterrit en table <code>eta_shifts</code>.",
+      "steps": [
+        { "from": "user",        "to": "onboard",     "action": "POST /onboard/eta-shift", "description": "Form : leg_id, field='eta'|'etd', new_value (datetime), reason (code dans ETA_SHIFT_REASONS), justification (texte libre — obligatoire)." },
+        { "from": "onboard",     "to": "permissions", "action": "require_permission(captain, M)", "description": "Modification réservée aux rôles ayant M sur 'captain'." },
+        { "from": "onboard",     "to": "onboard",     "action": "shift_hours = Δ",         "description": "shift_hours = (new_value − old_value).total_seconds() / 3600. Positif = retard, négatif = avance." },
+        { "from": "onboard",     "to": "db",          "action": "UPDATE legs SET eta=?",   "description": "Mise à jour de la colonne eta (ou etd) du leg courant uniquement. eta_ref/etd_ref demeurent figés (référence initiale)." },
+        { "from": "onboard",     "to": "planning",    "action": "cascade legs aval",       "description": "Pour chaque leg suivant du même navire dans l'année : recalcule etd suivant = eta + port_stay_days (par défaut 3) ; eta suivant = etd + estimated_duration_hours." },
+        { "from": "planning",    "to": "db",          "action": "UPDATE legs aval",        "description": "Boucle UPDATE chaînée. legs_affected = compteur de legs réellement modifiés." },
+        { "from": "onboard",     "to": "db",          "action": "INSERT eta_shifts",       "description": "Ligne audit immutable : leg_id, vessel_id, field_changed, old_value, new_value, shift_hours, reason, justification, legs_affected, created_by." },
+        { "from": "onboard",     "to": "dashboard",   "action": "INSERT notifications",    "description": "type='eta_shift', leg_id, title='ETA décalée +Xh ({reason})'. Icône 🕐." },
+        { "from": "onboard",     "to": "activity",    "action": "INSERT activity_logs",    "description": "action=update, module=onboard, entity_type=leg, detail='eta {old}→{new} reason={reason}'." }
+      ]
+    },
+    {
+      "id": "auto_stowage",
+      "label": "Auto-assigner le plan d'arrimage (algo glouton)",
+      "category": "stowage",
+      "description": "Pour chaque batch non placé du leg, l'algorithme parcourt l'<code>ORDER de chargement</code> (AR→AV, INF→SUP) et place dans la première zone dont la capacité (palettes) <strong>et</strong> le poids résiduel (surface × résistance) suffisent. Les batches dangereux (IMO) ou hors-gabarit (basket 380×150×220) sont forcés en <code>SUP_AV_*</code>.",
+      "steps": [
+        { "from": "user",        "to": "stowage",     "action": "POST /stowage/leg/{id}/auto-assign", "description": "Action utilisateur depuis la vue plan navire. Permission cargo M enforcée par endpoint." },
+        { "from": "stowage",     "to": "permissions", "action": "require_permission(cargo, M)", "description": "Le router stowage ne pose pas la permission globalement : chaque endpoint la déclare." },
+        { "from": "stowage",     "to": "cargo",       "action": "list pending batches",    "description": "Récupère tous les PackingListBatch du leg (via PackingList.order_id → Order.leg_id) qui n'ont pas encore de StowagePlan." },
+        { "from": "cargo",       "to": "db",          "action": "SELECT batches + stowage_plans existing", "description": "Lecture des batches + des assignations existantes pour calculer l'occupation actuelle par zone (palettes, weight_kg cumulés)." },
+        { "from": "stowage",     "to": "stowage",     "action": "must_go_sup_av(batch)",   "description": "Vrai si imo_product_class non vide OU dimensions > basket (380×150 cm × 2.2 m). Sélectionne candidates = DANGEROUS_ZONES sinon LOADING_ORDER \\ DANGEROUS_ZONES." },
+        { "from": "stowage",     "to": "stowage",     "action": "suggest_zone()",          "description": "Boucle sur candidates : capacity = ZONE_CAPACITIES[zone][format]*(stackable?stacked:simple) ; max_weight = ZONE_DEFINITIONS[zone].surface × resistance × 1000. Choisit la première zone où remaining_palettes ≥ qty ET remaining_weight ≥ weight_total." },
+        { "from": "stowage",     "to": "db",          "action": "INSERT stowage_plans",    "description": "Une ligne par batch placé : leg_id, batch_id, zone_code, snapshot pallet_quantity/format/weight_total_kg, flags is_dangerous/is_oversized/stackable, assigned_by, assigned_at." },
+        { "from": "stowage",     "to": "user",        "action": "Render plan",             "description": "Vue SVG du navire avec 18 zones colorées par taux d'occupation, badges dangerous/oversized en surbrillance cuivre." }
+      ]
+    },
+    {
+      "id": "tracking_upload",
+      "label": "Recevoir un point GPS (Power Automate → tracking)",
+      "category": "tracking",
+      "description": "Power Automate POSTe un CSV de positions sur <code>/api/tracking/upload</code> en authentifiant via <code>X-API-Token</code>. Les points sont dédupliqués par <code>(vessel_id, recorded_at)</code> et rattachés automatiquement au leg actif (s'il existe).",
+      "steps": [
+        { "from": "power_automate", "to": "tracking",  "action": "POST /api/tracking/upload", "description": "Body : CSV multipart (colonnes Date, Lat, Lon, SOG, COG, Source). Header X-API-Token=$TRACKING_API_TOKEN obligatoire. Pas de cookie de session — ce flux est sans utilisateur." },
+        { "from": "tracking",       "to": "tracking",  "action": "require_tracking_token()", "description": "Dependency : si settings.TRACKING_API_TOKEN est vide → 503 (endpoint closed). Sinon comparaison stricte avec l'en-tête X-API-Token ; mismatch → 403." },
+        { "from": "tracking",       "to": "tracking",  "action": "Parse CSV",                "description": "Pour chaque ligne : timestamp UTC (recorded_at), latitude, longitude, sog (knots), cog (degrees), source. import_batch = nom du fichier CSV." },
+        { "from": "tracking",       "to": "planning",  "action": "Match active leg",         "description": "Pour chaque point : SELECT leg WHERE vessel_id=v AND atd ≤ recorded_at AND (ata IS NULL OR ata ≥ recorded_at). Sinon leg_id = NULL (point orphelin autorisé)." },
+        { "from": "planning",       "to": "db",        "action": "SELECT legs (lookup)",     "description": "Index utile : idx_vp_vessel_time. Lecture en lot pour éviter N+1." },
+        { "from": "tracking",       "to": "db",        "action": "INSERT vessel_positions",  "description": "Contrainte UniqueConstraint(vessel_id, recorded_at) : doublons silencieusement ignorés (ON CONFLICT DO NOTHING ou catch IntegrityError selon implémentation)." },
+        { "from": "tracking",       "to": "power_automate", "action": "200 OK + counts",     "description": "Réponse JSON : inserted, duplicates, errors. Power Automate journalise côté Microsoft." }
+      ]
+    },
+    {
+      "id": "open_claim",
+      "label": "Ouvrir un claim cargo avec auto-zone et impact finance",
+      "category": "claims",
+      "description": "Un claim cargo est ouvert sur une OrderAssignment. La <code>cargo_zone</code> est auto-remplie depuis le <code>StowagePlan</code> du batch concerné (traçabilité de la position dans la cale au moment du sinistre). Le reste à charge compagnie remonte vers <code>LegFinance.claims_cost</code>.",
+      "steps": [
+        { "from": "user",        "to": "claims",      "action": "POST /claims/create",     "description": "Form : claim_type=cargo, leg_id, order_assignment_id, context (loading/navigation/unloading/quay), incident_date, incident_location, description, sof_event_id optionnel." },
+        { "from": "claims",      "to": "permissions", "action": "require_permission(captain, M)", "description": "Le router claims est monté sous le module 'captain' dans la matrice de permissions." },
+        { "from": "claims",      "to": "cargo",       "action": "Resolve batch via OA",    "description": "OrderAssignment → Order → PackingList → PackingListBatch. Récupère batch_id concerné par le sinistre." },
+        { "from": "claims",      "to": "stowage",     "action": "SELECT stowage_plan",     "description": "SELECT zone_code FROM stowage_plans WHERE batch_id=? AND leg_id=?. Permet d'auto-renseigner cargo_zone (ex. 'INF_AR_MIL')." },
+        { "from": "claims",      "to": "db",          "action": "INSERT claims",           "description": "reference=CLM-YYYY-NNNN, status='open', responsibility='pending', claim_type='cargo', cargo_zone résolue, guarantee_type='pi' (par défaut pour cargo)." },
+        { "from": "claims",      "to": "db",          "action": "INSERT claim_timeline",   "description": "Entrée initiale : action_type='status_change', new_value='open', actor=user.full_name, action_date=now." },
+        { "from": "claims",      "to": "dashboard",   "action": "INSERT notifications",    "description": "type='new_claim', title='Nouveau claim {reference}', link=/claims/{id}. Icône ⚠️." },
+        { "from": "claims",      "to": "finance",     "action": "Recompute claims_cost",   "description": "LegFinance.claims_cost = SUM(company_charge) des claims du leg où responsibility='company'. Recalcule margin_rate via LegFinance.compute()." },
+        { "from": "finance",     "to": "db",          "action": "UPDATE leg_finances",     "description": "Persiste claims_cost, result_actual, margin_rate_actual." },
+        { "from": "claims",      "to": "activity",    "action": "INSERT activity_logs",    "description": "action=create, module=claims, entity_type=claim, entity_label=reference, detail='type=cargo zone=INF_AR_MIL'." }
+      ]
+    }
+  ]
+}
