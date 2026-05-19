@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -42,3 +42,10 @@ class NoonReport(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    # Signature commandant — rend le noon report immuable
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    signed_by_name: Mapped[str | None] = mapped_column(String(200))
+    signature_hash: Mapped[str | None] = mapped_column(String(64))
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

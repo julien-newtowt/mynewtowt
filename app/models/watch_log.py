@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date as _date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -27,9 +27,14 @@ class WatchLog(Base):
     entry: Mapped[str] = mapped_column(Text, nullable=False)
     weather_summary: Mapped[str | None] = mapped_column(String(300))
 
+    # Signature de l'officier de quart (verrouille le log à la signature)
     signed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    signed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    signed_by_name: Mapped[str | None] = mapped_column(String(200))
+    signature_hash: Mapped[str | None] = mapped_column(String(64))
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class OnboardChecklist(Base):

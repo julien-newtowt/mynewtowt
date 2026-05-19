@@ -19,14 +19,19 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.leg import Leg
+from app.models.noon_report import NoonReport
 from app.models.sof_event import (
     CargoDocument, ETA_SHIFT_REASONS, EtaShift,
     OnboardMessage, OnboardMessageMention, SOF_EVENT_TYPES, SofEvent,
 )
 from app.models.user import User
 from app.models.vessel import Vessel
+from app.models.watch_log import WatchLog
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
+from app.services.signature import (
+    compute_noon_hash, compute_sof_hash, compute_watch_hash, sign_record,
+)
 from app.templating import templates
 
 router = APIRouter(prefix="/captain", tags=["captain"])
@@ -225,6 +230,78 @@ async def create_cargo_document(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+# ─────────────────────────────────────────────────────────────────────
+#                  Signature / lock — SOF / noon / watch
+# ─────────────────────────────────────────────────────────────────────
+
+
+@router.post("/sof-events/{event_id}/sign")
+async def sign_sof_event(
+    event_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """Signe un SOF event → ``is_locked = True``, plus de modification possible."""
+    e = await db.get(SofEvent, event_id)
+    if e is None:
+        raise HTTPException(status_code=404)
+    sign_record(e, user, hash_fn=compute_sof_hash)
+    await db.flush()
+    await activity_record(
+        db, action="sign", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="captain", entity_type="sof_event",
+        entity_id=e.id, entity_label=f"{e.event_type}@{e.occurred_at.isoformat()}",
+        detail=e.signature_hash[:12] if e.signature_hash else None,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={e.leg_id}", status_code=303)
+
+
+@router.post("/noon-reports/{report_id}/sign")
+async def sign_noon_report(
+    report_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    n = await db.get(NoonReport, report_id)
+    if n is None:
+        raise HTTPException(status_code=404)
+    sign_record(n, user, hash_fn=compute_noon_hash)
+    await db.flush()
+    await activity_record(
+        db, action="sign", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="captain", entity_type="noon_report",
+        entity_id=n.id, entity_label=f"leg={n.leg_id}@{n.recorded_at.isoformat()}",
+        detail=n.signature_hash[:12] if n.signature_hash else None,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/onboard/navigation?leg_id={n.leg_id}", status_code=303)
+
+
+@router.post("/watch-logs/{log_id}/sign")
+async def sign_watch_log(
+    log_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    w = await db.get(WatchLog, log_id)
+    if w is None:
+        raise HTTPException(status_code=404)
+    sign_record(w, user, hash_fn=compute_watch_hash)
+    await db.flush()
+    await activity_record(
+        db, action="sign", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="captain", entity_type="watch_log",
+        entity_id=w.id, entity_label=f"leg={w.leg_id} {w.watch_date} {w.watch_period}",
+        detail=w.signature_hash[:12] if w.signature_hash else None,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/onboard/navigation?leg_id={w.leg_id}", status_code=303)
 
 
 def _client_ip(request: Request) -> str | None:
