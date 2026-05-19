@@ -1,50 +1,71 @@
 {% extends "public/_layout.html" %}
-{% block title %}Mentions légales — {{ brand.nom_court }}{% endblock %}
+{% block title %}{% if lang == 'en' %}Legal notice{% else %}Mentions légales{% endif %} — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
 <section class="hero">
   <div class="container">
-    <span class="kicker">Information légale</span>
-    <h1 class="display">Mentions légales</h1>
+    <span class="kicker">{% if lang == 'en' %}Legal information{% else %}Information légale{% endif %}</span>
+    <h1 class="display">{% if lang == 'en' %}Legal notice{% else %}Mentions légales{% endif %}</h1>
   </div>
 </section>
 
 <section class="section">
   <div class="container" style="max-width:840px;">
-    <h2 class="section-title">Éditeur du site</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Site publisher{% else %}Éditeur du site{% endif %}</h2>
     <p>
       <strong>{{ brand.raison_sociale }}</strong><br/>
       {{ brand.adresse }}<br/>
-      Téléphone : <a href="tel:{{ brand.telephone|replace(' ','') }}">{{ brand.telephone }}</a><br/>
+      {% if lang == 'en' %}Phone{% else %}Téléphone{% endif %} : <a href="tel:{{ brand.telephone|replace(' ','') }}">{{ brand.telephone }}</a><br/>
       Email : <a href="mailto:{{ brand.email }}">{{ brand.email }}</a><br/>
-      Directeur de la publication : (à compléter)<br/>
-      RCS / SIREN : (à compléter)
+      {% if lang == 'en' %}Publication director{% else %}Directeur de la publication{% endif %} : (à compléter)<br/>
+      {% if lang == 'en' %}Company registration{% else %}RCS / SIREN{% endif %} : (à compléter)
     </p>
 
-    <h2 class="section-title">Hébergement</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Hosting{% else %}Hébergement{% endif %}</h2>
     <p>OVH SAS — 2 rue Kellermann, 59100 Roubaix, France.</p>
 
-    <h2 class="section-title">Propriété intellectuelle</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Intellectual property{% else %}Propriété intellectuelle{% endif %}</h2>
     <p>
-      L'ensemble du contenu de ce site (textes, illustrations, logos, design)
-      est la propriété de {{ brand.raison_sociale }} et protégé par le Code de
-      la propriété intellectuelle. Toute reproduction sans autorisation préalable
-      écrite est interdite.
+      {% if lang == 'en' %}
+        All content on this site (text, illustrations, logos, design) is the
+        property of {{ brand.raison_sociale }} and protected by the French
+        Intellectual Property Code. Reproduction without prior written
+        authorization is prohibited.
+      {% else %}
+        L'ensemble du contenu de ce site (textes, illustrations, logos, design)
+        est la propriété de {{ brand.raison_sociale }} et protégé par le Code de
+        la propriété intellectuelle. Toute reproduction sans autorisation préalable
+        écrite est interdite.
+      {% endif %}
     </p>
 
-    <h2 class="section-title">Cookies</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Cookies{% else %}Cookies{% endif %}</h2>
     <p>
-      Ce site utilise uniquement des cookies techniques nécessaires (session,
-      CSRF, préférences linguistiques). Aucun cookie publicitaire ou de mesure
-      d'audience tiers.
+      {% if lang == 'en' %}
+        This site uses only necessary technical cookies (session, CSRF, language
+        preferences). No third-party advertising or audience-measurement cookies.
+      {% else %}
+        Ce site utilise uniquement des cookies techniques nécessaires (session,
+        CSRF, préférences linguistiques). Aucun cookie publicitaire ou de mesure
+        d'audience tiers.
+      {% endif %}
     </p>
 
-    <h2 class="section-title">Signalement de vulnérabilité</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Vulnerability reporting{% else %}Signalement de vulnérabilité{% endif %}</h2>
     <p>
-      Pour signaler une vulnérabilité de sécurité, contactez-nous à
+      {% if lang == 'en' %}
+        To report a security vulnerability, contact us at
+      {% else %}
+        Pour signaler une vulnérabilité de sécurité, contactez-nous à
+      {% endif %}
       <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>.
-      Notre fichier <a href="/.well-known/security.txt">/.well-known/security.txt</a>
-      rappelle nos engagements.
+      {% if lang == 'en' %}
+        Our <a href="/.well-known/security.txt">/.well-known/security.txt</a>
+        file summarises our commitments.
+      {% else %}
+        Notre fichier <a href="/.well-known/security.txt">/.well-known/security.txt</a>
+        rappelle nos engagements.
+      {% endif %}
     </p>
   </div>
 </section>

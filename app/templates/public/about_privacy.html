@@ -1,65 +1,105 @@
 {% extends "public/_layout.html" %}
-{% block title %}Politique de confidentialité — {{ brand.nom_court }}{% endblock %}
+{% block title %}{% if lang == 'en' %}Privacy policy{% else %}Politique de confidentialité{% endif %} — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
 <section class="hero">
   <div class="container">
-    <span class="kicker">RGPD — UE 2016/679</span>
-    <h1 class="display">Protection des données personnelles</h1>
+    <span class="kicker">{% if lang == 'en' %}GDPR — EU 2016/679{% else %}RGPD — UE 2016/679{% endif %}</span>
+    <h1 class="display">{% if lang == 'en' %}Personal data protection{% else %}Protection des données personnelles{% endif %}</h1>
   </div>
 </section>
 
 <section class="section">
   <div class="container" style="max-width:840px;">
     <p class="lead">
-      {{ brand.raison_sociale }} attache la plus grande importance à la protection
-      de vos données. La présente politique décrit les traitements opérés via
-      cette plateforme et vos droits.
+      {% if lang == 'en' %}
+        {{ brand.raison_sociale }} attaches the greatest importance to the
+        protection of your data. This policy describes the processing carried
+        out through this platform and your rights.
+      {% else %}
+        {{ brand.raison_sociale }} attache la plus grande importance à la protection
+        de vos données. La présente politique décrit les traitements opérés via
+        cette plateforme et vos droits.
+      {% endif %}
     </p>
 
-    <h2 class="section-title">Responsable du traitement</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Data controller{% else %}Responsable du traitement{% endif %}</h2>
     <p>
       {{ brand.raison_sociale }} — {{ brand.adresse }}<br/>
-      Délégué à la Protection des Données :
+      {% if lang == 'en' %}Data Protection Officer{% else %}Délégué à la Protection des Données{% endif %} :
       <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>
     </p>
 
-    <h2 class="section-title">Données collectées</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Data collected{% else %}Données collectées{% endif %}</h2>
     <ul>
+      {% if lang == 'en' %}
+      <li><strong>Customer account</strong>: email, company name, contact, country, language.</li>
+      <li><strong>Bookings</strong>: route, pallets, weight, IMDG, pickup and delivery addresses.</li>
+      <li><strong>Billing</strong>: billing address, VAT number, history.</li>
+      <li><strong>Connection</strong>: IP address, timestamp, technical journey (technical cookies only).</li>
+      {% else %}
       <li><strong>Compte client</strong> : email, nom de société, contact, pays, langue.</li>
       <li><strong>Réservations</strong> : route, palettes, poids, IMDG, adresses d'enlèvement et livraison.</li>
       <li><strong>Facturation</strong> : adresse de facturation, numéro TVA, historiques.</li>
       <li><strong>Connexion</strong> : adresse IP, horodatage, parcours technique (cookies techniques uniquement).</li>
+      {% endif %}
     </ul>
 
-    <h2 class="section-title">Finalités</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Purposes{% else %}Finalités{% endif %}</h2>
     <ul>
+      {% if lang == 'en' %}
+      <li>Execution of the transport contract.</li>
+      <li>Document issuance (BL, invoice, CO₂ certificate).</li>
+      <li>Regulatory reporting (EU MRV).</li>
+      <li>Product improvement (anonymised usage measurement).</li>
+      {% else %}
       <li>Exécution du contrat de transport.</li>
       <li>Émission documentaire (BL, facture, certificat CO₂).</li>
       <li>Reporting réglementaire (EU MRV).</li>
       <li>Amélioration produit (mesure d'usage anonymisée).</li>
+      {% endif %}
     </ul>
 
-    <h2 class="section-title">Durées de conservation</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Retention periods{% else %}Durées de conservation{% endif %}</h2>
     <ul>
+      {% if lang == 'en' %}
+      <li>Inactive accounts: 5 years after last login, then purge.</li>
+      <li>Invoices and BLs: 10 years (French legal obligation).</li>
+      <li>Application logs: 90 days active, 7-year archive.</li>
+      {% else %}
       <li>Comptes inactifs : 5 ans après dernier login, puis purge.</li>
       <li>Factures et BL : 10 ans (obligation légale française).</li>
       <li>Logs applicatifs : 90 jours actifs, archive 7 ans.</li>
+      {% endif %}
     </ul>
 
-    <h2 class="section-title">Vos droits</h2>
-    <p>Vous disposez d'un droit d'accès, de rectification, de portabilité et de suppression.</p>
+    <h2 class="section-title">{% if lang == 'en' %}Your rights{% else %}Vos droits{% endif %}</h2>
+    <p>
+      {% if lang == 'en' %}You have a right of access, rectification, portability and deletion.{% else %}Vous disposez d'un droit d'accès, de rectification, de portabilité et de suppression.{% endif %}
+    </p>
     <ul>
+      {% if lang == 'en' %}
+      <li>Self-service from <a href="/me/account">My account → Privacy</a></li>
+      <li>By email to the DPO: <a href="mailto:{{ brand.email }}">{{ brand.email }}</a></li>
+      <li>Complaint to the CNIL: <a href="https://www.cnil.fr" rel="noopener">cnil.fr</a></li>
+      {% else %}
       <li>En self-service depuis <a href="/me/account">Mon compte → Confidentialité</a></li>
       <li>Par email au DPO : <a href="mailto:{{ brand.email }}">{{ brand.email }}</a></li>
       <li>Réclamation auprès de la CNIL : <a href="https://www.cnil.fr" rel="noopener">cnil.fr</a></li>
+      {% endif %}
     </ul>
 
-    <h2 class="section-title">Sécurité</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Security{% else %}Sécurité{% endif %}</h2>
     <p>
-      Chiffrement TLS 1.3 en transit, chiffrement at-rest des colonnes sensibles
-      (salaires, données médicales équipage, paiement), MFA obligatoire pour les
-      comptes administrateurs, audit complet append-only.
+      {% if lang == 'en' %}
+        TLS 1.3 encryption in transit, at-rest encryption of sensitive columns
+        (salaries, crew medical data, payment), mandatory MFA for administrator
+        accounts, complete append-only audit trail.
+      {% else %}
+        Chiffrement TLS 1.3 en transit, chiffrement at-rest des colonnes sensibles
+        (salaires, données médicales équipage, paiement), MFA obligatoire pour les
+        comptes administrateurs, audit complet append-only.
+      {% endif %}
     </p>
   </div>
 </section>

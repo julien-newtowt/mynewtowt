@@ -4,15 +4,19 @@
 
 <section class="hero">
   <div class="container">
-    <span class="kicker">Voyage {{ leg.leg_code }}</span>
+    <span class="kicker">{% if lang == 'en' %}Voyage{% else %}Voyage{% endif %} {{ leg.leg_code }}</span>
     <h1 class="display">{{ pol.name }} → {{ pod.name }}</h1>
-    <span class="baseline">Navigation prévue {{ leg.etd|date }}</span>
+    <span class="baseline">
+      {% if lang == 'en' %}Departure scheduled{% else %}Navigation prévue{% endif %} {{ leg.etd|date }}
+    </span>
   </div>
 </section>
 
 <section class="section">
   <div class="container" style="max-width:960px;">
-    <a href="/routes" class="btn btn-ghost mb-4">← Toutes les routes</a>
+    <a href="/routes" class="btn btn-ghost mb-4">
+      {% if lang == 'en' %}← All routes{% else %}← Toutes les routes{% endif %}
+    </a>
 
     <article class="card card-elevated">
       <div class="flex justify-between items-center mb-4">
@@ -22,7 +26,7 @@
 
       <div class="grid grid-2 gap-4">
         <div>
-          <span class="kicker">Itinéraire</span>
+          <span class="kicker">{% if lang == 'en' %}Itinerary{% else %}Itinéraire{% endif %}</span>
           <p style="margin-top:var(--space-2);">
             <strong>{{ pol.name }}</strong> <small class="text-muted">({{ pol.locode }} {{ pol.country|flag }})</small><br/>
             <span class="text-muted">↓</span><br/>
@@ -34,54 +38,77 @@
           </p>
         </div>
         <div>
-          <span class="kicker">Capacité</span>
+          <span class="kicker">{% if lang == 'en' %}Capacity{% else %}Capacité{% endif %}</span>
           {% if capacity %}
             {% set occ = capacity.occupancy_pct %}
             <p style="margin-top:var(--space-2);">
-              <strong style="font-size:var(--text-md);">{{ capacity.available_palettes }}</strong> palettes disponibles
-              <small class="text-muted">/ {{ capacity.capacity_palettes }} total</small>
+              <strong style="font-size:var(--text-md);">{{ capacity.available_palettes }}</strong>
+              {% if lang == 'en' %}pallets available{% else %}palettes disponibles{% endif %}
+              <small class="text-muted">/ {{ capacity.capacity_palettes }} {% if lang == 'en' %}total{% else %}total{% endif %}</small>
             </p>
             <div class="capacity-gauge {% if occ > 85 %}full{% elif occ > 60 %}warn{% endif %}">
               <div class="fill" style="width: {{ occ }}%"></div>
             </div>
             {% if leg.public_price_per_palette_eur %}
-              <p class="mt-3">Tarif indicatif :
-                <strong>{{ leg.public_price_per_palette_eur|money }} / palette EPAL</strong>
+              <p class="mt-3">
+                {% if lang == 'en' %}Indicative price:{% else %}Tarif indicatif :{% endif %}
+                <strong>{{ leg.public_price_per_palette_eur|money }} {% if lang == 'en' %}/ EPAL pallet{% else %}/ palette EPAL{% endif %}</strong>
               </p>
             {% endif %}
           {% else %}
-            <p class="text-muted">Capacité non publique.</p>
+            <p class="text-muted">
+              {% if lang == 'en' %}Capacity not public.{% else %}Capacité non publique.{% endif %}
+            </p>
           {% endif %}
         </div>
       </div>
 
       <div class="flex gap-3 mt-5">
-        <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-primary btn-lg">Réserver cette traversée</a>
-        <a href="/about/co2" class="btn btn-ghost">Méthodologie CO₂</a>
+        <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-primary btn-lg">
+          {% if lang == 'en' %}Book this crossing{% else %}Réserver cette traversée{% endif %}
+        </a>
+        <a href="/about/co2" class="btn btn-ghost">
+          {% if lang == 'en' %}CO₂ methodology{% else %}Méthodologie CO₂{% endif %}
+        </a>
       </div>
     </article>
 
     <section class="mt-5">
-      <span class="kicker section-kicker">Conditions de transport</span>
-      <h2 class="section-title">Bon à savoir</h2>
+      <span class="kicker section-kicker">
+        {% if lang == 'en' %}Transport terms{% else %}Conditions de transport{% endif %}
+      </span>
+      <h2 class="section-title">{% if lang == 'en' %}Good to know{% else %}Bon à savoir{% endif %}</h2>
       <div class="grid grid-3 gap-3">
         <div class="feature-card">
-          <h4>Marchandises acceptées</h4>
+          <h4>{% if lang == 'en' %}Accepted goods{% else %}Marchandises acceptées{% endif %}</h4>
           <p class="text-muted text-sm">
-            Palettes EPAL / USPAL / PORTPAL, IBC, big bags, barriques.
-            Marchandises dangereuses (IMDG) sur déclaration.
+            {% if lang == 'en' %}
+              EPAL / USPAL / PORTPAL pallets, IBC, big bags, barrels.
+              Hazardous goods (IMDG) on declaration.
+            {% else %}
+              Palettes EPAL / USPAL / PORTPAL, IBC, big bags, barriques.
+              Marchandises dangereuses (IMDG) sur déclaration.
+            {% endif %}
           </p>
         </div>
         <div class="feature-card accent-cuivre">
-          <h4>Annulation</h4>
+          <h4>{% if lang == 'en' %}Cancellation{% else %}Annulation{% endif %}</h4>
           <p class="text-muted text-sm">
-            Gratuite jusqu'à J-30. Voir <a href="/about/terms">CGV</a>.
+            {% if lang == 'en' %}
+              Free up to D-30. See <a href="/about/terms">terms</a>.
+            {% else %}
+              Gratuite jusqu'à J-30. Voir <a href="/about/terms">CGV</a>.
+            {% endif %}
           </p>
         </div>
         <div class="feature-card accent-teal">
-          <h4>Documents fournis</h4>
+          <h4>{% if lang == 'en' %}Documents provided{% else %}Documents fournis{% endif %}</h4>
           <p class="text-muted text-sm">
-            BL · Mate's receipt · Facture · Certificat CO₂.
+            {% if lang == 'en' %}
+              BL · Mate's receipt · Invoice · CO₂ certificate.
+            {% else %}
+              BL · Mate's receipt · Facture · Certificat CO₂.
+            {% endif %}
           </p>
         </div>
       </div>

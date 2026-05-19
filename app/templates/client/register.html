@@ -1,43 +1,56 @@
 {% extends "base.html" %}
-{% block title %}Créer un compte — {{ brand.nom_court }}{% endblock %}
+{% block title %}{% if lang == 'en' %}Create an account{% else %}Créer un compte{% endif %} — {{ brand.nom_court }}{% endblock %}
 {% block body %}
 <div class="auth-shell">
   <div class="auth-card">
     <div class="auth-brand">
       <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
     </div>
-    <span class="kicker text-center" style="display:block;">Inscription client</span>
-    <h2>Créer un compte</h2>
+    <span class="kicker text-center" style="display:block;">
+      {% if lang == 'en' %}Customer sign-up{% else %}Inscription client{% endif %}
+    </span>
+    <h2>{% if lang == 'en' %}Create an account{% else %}Créer un compte{% endif %}</h2>
     {% if error %}
       <div class="alert alert-error" role="alert">{{ error }}</div>
     {% endif %}
     <form method="post" action="/me/register">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <div class="field">
-        <label for="company_name">Société</label>
-        <input id="company_name" name="company_name" required />
+        <label for="company_name">{% if lang == 'en' %}Company{% else %}Société{% endif %}</label>
+        <input id="company_name" type="text" name="company_name" required />
       </div>
       <div class="field">
-        <label for="contact_name">Nom du contact</label>
-        <input id="contact_name" name="contact_name" />
+        <label for="contact_name">{% if lang == 'en' %}Contact name{% else %}Nom du contact{% endif %}</label>
+        <input id="contact_name" type="text" name="contact_name" />
       </div>
       <div class="field">
         <label for="email">Email</label>
         <input id="email" type="email" name="email" autocomplete="email" required />
       </div>
       <div class="field">
-        <label for="country">Pays (code 2 lettres)</label>
-        <input id="country" name="country" maxlength="2" placeholder="FR" />
+        <label for="country">{% if lang == 'en' %}Country (2-letter code){% else %}Pays (code 2 lettres){% endif %}</label>
+        <input id="country" type="text" name="country" maxlength="2" placeholder="FR" />
       </div>
       <div class="field">
-        <label for="password">Mot de passe (≥ 12 caractères)</label>
+        <label for="password">
+          {% if lang == 'en' %}Password (≥ 12 chars){% else %}Mot de passe (≥ 12 caractères){% endif %}
+        </label>
         <input id="password" type="password" name="password" minlength="12" required autocomplete="new-password" />
       </div>
-      <button class="btn btn-primary btn-block btn-lg" type="submit">Créer le compte</button>
+      <button class="btn btn-primary btn-block btn-lg" type="submit">
+        {% if lang == 'en' %}Create account{% else %}Créer le compte{% endif %}
+      </button>
     </form>
     <p class="text-center text-muted mt-4 text-sm">
-      Déjà un compte ?
-      <a href="/me/login">Se connecter</a>
+      {% if lang == 'en' %}Already have an account?{% else %}Déjà un compte ?{% endif %}
+      <a href="/me/login">
+        {% if lang == 'en' %}Sign in{% else %}Se connecter{% endif %}
+      </a>
+    </p>
+    <p class="text-center mt-3 text-sm">
+      <a href="/lang/{{ 'en' if lang == 'fr' else 'fr' }}" class="text-muted">
+        {{ 'EN' if lang == 'fr' else 'FR' }}
+      </a>
     </p>
   </div>
 </div>

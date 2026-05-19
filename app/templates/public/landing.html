@@ -1,6 +1,6 @@
 {% extends "public/_layout.html" %}
-{% block title %}{{ brand.nom_court }} — Transport maritime cargo vélique{% endblock %}
-{% block description %}{{ brand.mention }}. Réservez votre espace en cale sur les voiliers cargos NEWTOWT.{% endblock %}
+{% block title %}{% if lang == 'en' %}{{ brand.nom_court }} — Wind-powered cargo shipping{% else %}{{ brand.nom_court }} — Transport maritime cargo vélique{% endif %}{% endblock %}
+{% block description %}{% if lang == 'en' %}{{ brand.mention }}. Book hold capacity on the NEWTOWT sailing cargos.{% else %}{{ brand.mention }}. Réservez votre espace en cale sur les voiliers cargos NEWTOWT.{% endif %}{% endblock %}
 {% block content %}
 
 <section class="hero">
@@ -9,59 +9,86 @@
     <h1 class="display">{{ brand.tagline_1 }}</h1>
     <span class="baseline">{{ brand.tagline_2 }}</span>
     <p class="lead">
-      Réservez votre espace en cale sur les voiliers cargos NEWTOWT.
-      Transport maritime décarboné, capacités fermes, suivi documentaire
-      de bout en bout, certificat CO₂ pour votre bilan carbone.
+      {% if lang == 'en' %}
+        Book your hold capacity on the NEWTOWT sailing cargos.
+        Decarbonised maritime transport, firm capacities, end-to-end document
+        tracking, CO₂ certificate for your carbon report.
+      {% else %}
+        Réservez votre espace en cale sur les voiliers cargos NEWTOWT.
+        Transport maritime décarboné, capacités fermes, suivi documentaire
+        de bout en bout, certificat CO₂ pour votre bilan carbone.
+      {% endif %}
     </p>
 
     <form class="hero-search" method="get" action="/routes" role="search">
       <div class="field">
-        <label for="from">Départ (pays)</label>
+        <label for="from">{% if lang == 'en' %}From (country){% else %}Départ (pays){% endif %}</label>
         <input id="from" name="from" type="text" placeholder="FR" maxlength="2" autocomplete="off" />
       </div>
       <div class="field">
-        <label for="to">Arrivée (pays)</label>
+        <label for="to">{% if lang == 'en' %}To (country){% else %}Arrivée (pays){% endif %}</label>
         <input id="to" name="to" type="text" placeholder="US" maxlength="2" autocomplete="off" />
       </div>
       <div class="field">
-        <label for="from_date">À partir du</label>
+        <label for="from_date">{% if lang == 'en' %}From date{% else %}À partir du{% endif %}</label>
         <input id="from_date" name="from_date" type="date" />
       </div>
-      <button type="submit" class="btn btn-primary btn-lg">Rechercher</button>
+      <button type="submit" class="btn btn-primary btn-lg">{% if lang == 'en' %}Search{% else %}Rechercher{% endif %}</button>
     </form>
   </div>
 </section>
 
 <section class="section">
   <div class="container">
-    <span class="kicker section-kicker">Pourquoi NEWTOWT</span>
-    <h2 class="section-title">Naviguer autrement, sans compromis</h2>
+    <span class="kicker section-kicker">{% if lang == 'en' %}Why NEWTOWT{% else %}Pourquoi NEWTOWT{% endif %}</span>
+    <h2 class="section-title">{% if lang == 'en' %}Sail differently, without compromise{% else %}Naviguer autrement, sans compromis{% endif %}</h2>
     <p class="section-lead">
-      Pionnière du transport vélique depuis 2011, NEWTOWT exploite une flotte
-      de cargos à voile qui relient l'Europe à l'Atlantique avec des plannings
-      prévisibles et un impact carbone divisé par dix.
+      {% if lang == 'en' %}
+        Pioneering sailing cargo since 2011, NEWTOWT operates a fleet of
+        wind-powered cargo ships connecting Europe with the Atlantic with
+        predictable schedules and a tenfold-reduced carbon footprint.
+      {% else %}
+        Pionnière du transport vélique depuis 2011, NEWTOWT exploite une flotte
+        de cargos à voile qui relient l'Europe à l'Atlantique avec des plannings
+        prévisibles et un impact carbone divisé par dix.
+      {% endif %}
     </p>
 
     <div class="grid grid-3 gap-4 mt-4">
       <article class="feature-card accent-cuivre">
-        <h3>Décarboné -90 %</h3>
+        <h3>{% if lang == 'en' %}Decarbonised -90 %{% else %}Décarboné -90 %{% endif %}</h3>
         <p class="text-muted">
-          1,5 g CO₂/t.km vs 13,7 en cargo conventionnel — méthodologie auditée,
-          certificat délivré à chaque expédition livrée.
+          {% if lang == 'en' %}
+            1.5 g CO₂/t·km vs 13.7 for conventional cargo — audited methodology,
+            certificate issued for every delivered shipment.
+          {% else %}
+            1,5 g CO₂/t.km vs 13,7 en cargo conventionnel — méthodologie auditée,
+            certificat délivré à chaque expédition livrée.
+          {% endif %}
         </p>
       </article>
       <article class="feature-card">
-        <h3>Capacité prévisible</h3>
+        <h3>{% if lang == 'en' %}Predictable capacity{% else %}Capacité prévisible{% endif %}</h3>
         <p class="text-muted">
-          Une flotte de voiliers cargos en rotation, jusqu'à 850 palettes EPAL
-          par navire, plannings annoncés sur 6 mois.
+          {% if lang == 'en' %}
+            A fleet of sailing cargos in rotation, up to 850 EPAL pallets per
+            vessel, schedules announced 6 months in advance.
+          {% else %}
+            Une flotte de voiliers cargos en rotation, jusqu'à 850 palettes EPAL
+            par navire, plannings annoncés sur 6 mois.
+          {% endif %}
         </p>
       </article>
       <article class="feature-card accent-teal">
-        <h3>Suivi bout en bout</h3>
+        <h3>{% if lang == 'en' %}End-to-end tracking{% else %}Suivi bout en bout{% endif %}</h3>
         <p class="text-muted">
-          Position GPS du navire, statut palette, BL signé, facture et certificat
-          CO₂ téléchargeables depuis votre espace client.
+          {% if lang == 'en' %}
+            Vessel GPS position, pallet status, signed Bill of Lading, invoice
+            and CO₂ certificate downloadable from your customer area.
+          {% else %}
+            Position GPS du navire, statut palette, BL signé, facture et certificat
+            CO₂ téléchargeables depuis votre espace client.
+          {% endif %}
         </p>
       </article>
     </div>
@@ -70,8 +97,8 @@
 
 <section class="section" style="background:var(--sable-light);">
   <div class="container">
-    <span class="kicker section-kicker">Plannings ouverts</span>
-    <h2 class="section-title">Prochains départs disponibles</h2>
+    <span class="kicker section-kicker">{% if lang == 'en' %}Open schedules{% else %}Plannings ouverts{% endif %}</span>
+    <h2 class="section-title">{% if lang == 'en' %}Next available departures{% else %}Prochains départs disponibles{% endif %}</h2>
 
     {% if upcoming_legs %}
       <div class="grid grid-2 gap-4 mt-4">
@@ -95,24 +122,29 @@
             {% set occ = ((item.capacity_palettes - item.available_palettes) * 100 / item.capacity_palettes) if item.capacity_palettes > 0 else 0 %}
             <div>
               <small class="text-muted">
-                {{ item.available_palettes }} / {{ item.capacity_palettes }} palettes disponibles
+                {{ item.available_palettes }} / {{ item.capacity_palettes }}
+                {% if lang == 'en' %}pallets available{% else %}palettes disponibles{% endif %}
               </small>
               <div class="capacity-gauge {% if occ > 85 %}full{% elif occ > 60 %}warn{% endif %}">
                 <div class="fill" style="width: {{ occ }}%"></div>
               </div>
             </div>
             {% if item.price_per_palette %}
-              <div class="text-muted text-sm">À partir de {{ item.price_per_palette|money }} / palette EPAL</div>
+              <div class="text-muted text-sm">
+                {% if lang == 'en' %}From{% else %}À partir de{% endif %}
+                {{ item.price_per_palette|money }}
+                {% if lang == 'en' %}/ EPAL pallet{% else %}/ palette EPAL{% endif %}
+              </div>
             {% endif %}
             <div class="flex justify-between items-center mt-2">
-              <a href="/routes/{{ item.leg_code }}" class="btn btn-ghost">Détails</a>
-              <a href="/booking/new/{{ item.leg_code }}" class="btn btn-primary">Réserver</a>
+              <a href="/routes/{{ item.leg_code }}" class="btn btn-ghost">{% if lang == 'en' %}Details{% else %}Détails{% endif %}</a>
+              <a href="/booking/new/{{ item.leg_code }}" class="btn btn-primary">{% if lang == 'en' %}Book{% else %}Réserver{% endif %}</a>
             </div>
           </article>
         {% endfor %}
       </div>
     {% else %}
-      <p class="text-muted">Aucun départ ouvert à la réservation actuellement. Revenez bientôt.</p>
+      <p class="text-muted">{% if lang == 'en' %}No departures open for booking at the moment. Check back soon.{% else %}Aucun départ ouvert à la réservation actuellement. Revenez bientôt.{% endif %}</p>
     {% endif %}
   </div>
 </section>
@@ -120,13 +152,18 @@
 <section class="section">
   <div class="container">
     <div class="cta-band">
-      <span class="kicker section-kicker" style="color:var(--cuivre-light)">B2B & grands comptes</span>
-      <h2 class="display">Intégrez NEWTOWT à votre chaîne logistique</h2>
+      <span class="kicker section-kicker" style="color:var(--cuivre-light)">{% if lang == 'en' %}B2B & key accounts{% else %}B2B & grands comptes{% endif %}</span>
+      <h2 class="display">{% if lang == 'en' %}Integrate NEWTOWT into your supply chain{% else %}Intégrez NEWTOWT à votre chaîne logistique{% endif %}</h2>
       <p>
-        API REST, webhooks signés, reporting CO₂ annuel automatisé, contrats
-        cadres pour volumes récurrents.
+        {% if lang == 'en' %}
+          REST API, signed webhooks, automated annual CO₂ reporting,
+          framework contracts for recurring volumes.
+        {% else %}
+          API REST, webhooks signés, reporting CO₂ annuel automatisé, contrats
+          cadres pour volumes récurrents.
+        {% endif %}
       </p>
-      <a href="/api/v1/spec" class="btn btn-primary btn-lg">Voir la documentation API</a>
+      <a href="/api/v1/spec" class="btn btn-primary btn-lg">{% if lang == 'en' %}See API documentation{% else %}Voir la documentation API{% endif %}</a>
     </div>
   </div>
 </section>

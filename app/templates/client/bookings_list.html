@@ -1,20 +1,22 @@
 {% extends "client/_layout.html" %}
-{% block title %}Mes réservations — NEWTOWT{% endblock %}
+{% block title %}{% if lang == 'en' %}My bookings{% else %}Mes réservations{% endif %} — NEWTOWT{% endblock %}
 {% block content %}
 
-<h1>Mes réservations</h1>
-<p class="text-muted">{{ bookings|length }} réservation(s) trouvée(s).</p>
+<h1>{% if lang == 'en' %}My bookings{% else %}Mes réservations{% endif %}</h1>
+<p class="text-muted">
+  {{ bookings|length }} {% if lang == 'en' %}booking(s) found.{% else %}réservation(s) trouvée(s).{% endif %}
+</p>
 
 <div class="card">
   <table>
     <thead>
       <tr>
-        <th>Référence</th>
-        <th>Statut</th>
-        <th>Palettes</th>
-        <th>Poids</th>
-        <th>Créée</th>
-        <th>Prix</th>
+        <th>{% if lang == 'en' %}Reference{% else %}Référence{% endif %}</th>
+        <th>{% if lang == 'en' %}Status{% else %}Statut{% endif %}</th>
+        <th>{% if lang == 'en' %}Pallets{% else %}Palettes{% endif %}</th>
+        <th>{% if lang == 'en' %}Weight{% else %}Poids{% endif %}</th>
+        <th>{% if lang == 'en' %}Created{% else %}Créée{% endif %}</th>
+        <th>{% if lang == 'en' %}Price{% else %}Prix{% endif %}</th>
         <th></th>
       </tr>
     </thead>
@@ -30,12 +32,15 @@
             {% if b.confirmed_price_eur %}
               {{ b.confirmed_price_eur|money }}
             {% elif b.estimated_price_eur %}
-              <span class="text-muted">{{ b.estimated_price_eur|money }} (estim.)</span>
+              <span class="text-muted">{{ b.estimated_price_eur|money }}
+                ({% if lang == 'en' %}est.{% else %}estim.{% endif %})</span>
             {% else %}
               —
             {% endif %}
           </td>
-          <td><a href="/me/bookings/{{ b.reference }}" class="btn btn-ghost">Détails →</a></td>
+          <td><a href="/me/bookings/{{ b.reference }}" class="btn btn-ghost">
+            {% if lang == 'en' %}Details →{% else %}Détails →{% endif %}
+          </a></td>
         </tr>
       {% endfor %}
     </tbody>

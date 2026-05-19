@@ -1,64 +1,98 @@
 {% extends "public/_layout.html" %}
-{% block title %}Méthodologie CO₂ — {{ brand.nom_court }}{% endblock %}
+{% block title %}{% if lang == 'en' %}CO₂ methodology{% else %}Méthodologie CO₂{% endif %} — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
 <section class="hero">
   <div class="container">
-    <span class="kicker">Bilan carbone</span>
-    <h1 class="display">Comment {{ brand.nom_court }} calcule les émissions évitées</h1>
+    <span class="kicker">{% if lang == 'en' %}Carbon footprint{% else %}Bilan carbone{% endif %}</span>
+    <h1 class="display">
+      {% if lang == 'en' %}
+        How {{ brand.nom_court }} calculates avoided emissions
+      {% else %}
+        Comment {{ brand.nom_court }} calcule les émissions évitées
+      {% endif %}
+    </h1>
   </div>
 </section>
 
 <section class="section">
   <div class="container" style="max-width:840px;">
     <p class="lead">
-      Méthode transparente, alignée avec le règlement européen
-      <strong>EU MRV</strong> (UE 2015/757) et le <strong>GHG Protocol Scope 3</strong>
-      catégorie 4 (Upstream Transportation).
+      {% if lang == 'en' %}
+        Transparent methodology, aligned with the European regulation
+        <strong>EU MRV</strong> (EU 2015/757) and the <strong>GHG Protocol
+        Scope 3</strong> category 4 (Upstream Transportation).
+      {% else %}
+        Méthode transparente, alignée avec le règlement européen
+        <strong>EU MRV</strong> (UE 2015/757) et le <strong>GHG Protocol Scope 3</strong>
+        catégorie 4 (Upstream Transportation).
+      {% endif %}
     </p>
 
-    <h2 class="section-title">Facteurs d'émission retenus</h2>
+    <h2 class="section-title">{% if lang == 'en' %}Emission factors used{% else %}Facteurs d'émission retenus{% endif %}</h2>
     <table>
       <thead>
-        <tr><th>Mode de transport</th><th>g CO₂ / t.km</th><th>Source</th></tr>
+        <tr>
+          <th>{% if lang == 'en' %}Transport mode{% else %}Mode de transport{% endif %}</th>
+          <th>g CO₂ / t·km</th>
+          <th>{% if lang == 'en' %}Source{% else %}Source{% endif %}</th>
+        </tr>
       </thead>
       <tbody>
         <tr>
-          <td>Cargo vélique {{ brand.nom_court }}</td>
-          <td><strong class="text-success">1,5</strong></td>
-          <td>Mesures embarquées + audit vérificateur tiers</td>
+          <td>{% if lang == 'en' %}{{ brand.nom_court }} sailing cargo{% else %}Cargo vélique {{ brand.nom_court }}{% endif %}</td>
+          <td><strong class="text-success">{% if lang == 'en' %}1.5{% else %}1,5{% endif %}</strong></td>
+          <td>{% if lang == 'en' %}On-board measurements + third-party verifier audit{% else %}Mesures embarquées + audit vérificateur tiers{% endif %}</td>
         </tr>
         <tr>
-          <td>Cargo conventionnel</td>
-          <td>13,7</td>
+          <td>{% if lang == 'en' %}Conventional cargo{% else %}Cargo conventionnel{% endif %}</td>
+          <td>{% if lang == 'en' %}13.7{% else %}13,7{% endif %}</td>
           <td>IFP Energies nouvelles / IMO Fourth GHG Study</td>
         </tr>
       </tbody>
     </table>
 
-    <h2 class="section-title mt-5">Formule appliquée</h2>
-    <pre class="card mono" style="font-size: var(--text-sm); padding: var(--space-4);">CO₂ évité (kg) = (13,7 - 1,5) x tonnage (t) x distance (km) / 1000
+    <h2 class="section-title mt-5">{% if lang == 'en' %}Formula applied{% else %}Formule appliquée{% endif %}</h2>
+    <pre class="card mono" style="font-size: var(--text-sm); padding: var(--space-4);">{% if lang == 'en' %}avoided CO₂ (kg) = (13.7 - 1.5) x tonnage (t) x distance (km) / 1000
 
-distance (km) = distance (NM) x 1,852</pre>
+distance (km) = distance (NM) x 1.852{% else %}CO₂ évité (kg) = (13,7 - 1,5) x tonnage (t) x distance (km) / 1000
 
-    <h2 class="section-title mt-5">Exemple</h2>
+distance (km) = distance (NM) x 1,852{% endif %}</pre>
+
+    <h2 class="section-title mt-5">{% if lang == 'en' %}Example{% else %}Exemple{% endif %}</h2>
     <p>
-      12 palettes de vin (1,2 t) sur Le Havre → New York (3 200 NM ≈ 5 926 km) :
+      {% if lang == 'en' %}
+        12 pallets of wine (1.2 t) on Le Havre → New York (3 200 NM ≈ 5 926 km):
+      {% else %}
+        12 palettes de vin (1,2 t) sur Le Havre → New York (3 200 NM ≈ 5 926 km) :
+      {% endif %}
     </p>
     <p class="text-accent" style="font-size: var(--text-md);">
-      (13,7 - 1,5) x 1,2 x 5 926 / 1000 = <strong>86,7 kg CO₂</strong> évités vs porte-conteneur.
+      (13.7 - 1.5) x 1.2 x 5 926 / 1000 = <strong>86.7 kg CO₂</strong>
+      {% if lang == 'en' %}avoided vs container ship.{% else %}évités vs porte-conteneur.{% endif %}
     </p>
 
-    <h2 class="section-title mt-5">Vérification annuelle</h2>
+    <h2 class="section-title mt-5">{% if lang == 'en' %}Annual verification{% else %}Vérification annuelle{% endif %}</h2>
     <p>
-      Nos émissions effectives sont vérifiées chaque année par un organisme tiers
-      accrédité dans le cadre du règlement EU MRV. Les rapports vérifiés sont
-      publiés ici dès leur émission.
+      {% if lang == 'en' %}
+        Our actual emissions are verified annually by an accredited third-party
+        body under the EU MRV regulation. Verified reports are published here
+        as soon as they are issued.
+      {% else %}
+        Nos émissions effectives sont vérifiées chaque année par un organisme tiers
+        accrédité dans le cadre du règlement EU MRV. Les rapports vérifiés sont
+        publiés ici dès leur émission.
+      {% endif %}
     </p>
 
     <p class="text-muted text-sm mt-5">
-      Pour télécharger un certificat lié à une expédition,
-      <a href="/me/login">connectez-vous à votre espace client</a>.
+      {% if lang == 'en' %}
+        To download a certificate tied to a shipment,
+        <a href="/me/login">sign in to your customer area</a>.
+      {% else %}
+        Pour télécharger un certificat lié à une expédition,
+        <a href="/me/login">connectez-vous à votre espace client</a>.
+      {% endif %}
     </p>
   </div>
 </section>

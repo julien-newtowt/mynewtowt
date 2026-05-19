@@ -55,26 +55,27 @@
       </div>
 
       <div>
-        <h4>Compagnie</h4>
+        <h4>{% if lang == 'en' %}Company{% else %}Compagnie{% endif %}</h4>
         <ul style="list-style:none;padding:0;margin:0;">
-          <li><a href="/about">À propos</a></li>
-          <li><a href="/about/co2">Méthodologie CO₂</a></li>
-          <li><a href="{{ brand.site_public }}" rel="noopener">Site corporate</a></li>
+          <li><a href="/about">{% if lang == 'en' %}About{% else %}À propos{% endif %}</a></li>
+          <li><a href="/about/co2">{% if lang == 'en' %}CO₂ methodology{% else %}Méthodologie CO₂{% endif %}</a></li>
+          <li><a href="{{ brand.site_public }}" rel="noopener">{% if lang == 'en' %}Corporate site{% else %}Site corporate{% endif %}</a></li>
         </ul>
       </div>
 
       <div>
-        <h4>Réservation</h4>
+        <h4>{% if lang == 'en' %}Booking{% else %}Réservation{% endif %}</h4>
         <ul style="list-style:none;padding:0;margin:0;">
-          <li><a href="/routes">Routes & plannings</a></li>
-          <li><a href="/booking/new">Réserver une cale</a></li>
-          <li><a href="/me">Espace client</a></li>
+          <li><a href="/routes">{{ t('nav_routes', lang) }}</a></li>
+          <li><a href="/fleet">{{ t('nav_fleet', lang) }}</a></li>
+          <li><a href="/booking/new">{% if lang == 'en' %}Book hold capacity{% else %}Réserver une cale{% endif %}</a></li>
+          <li><a href="/me">{% if lang == 'en' %}Customer area{% else %}Espace client{% endif %}</a></li>
           <li><a href="/api/v1/spec">API B2B</a></li>
         </ul>
       </div>
 
       <div>
-        <h4>Contact</h4>
+        <h4>{% if lang == 'en' %}Contact{% else %}Contact{% endif %}</h4>
         <ul style="list-style:none;padding:0;margin:0;">
           <li>{{ brand.adresse }}</li>
           <li><a href="tel:{{ brand.telephone|replace(' ','') }}">{{ brand.telephone }}</a></li>
@@ -86,13 +87,13 @@
     <div class="footer-bottom">
       <div>
         &copy; 2011–{{ "now"|date if false else "2026" }} {{ brand.raison_sociale }} —
-        Tous droits réservés.
+        {% if lang == 'en' %}All rights reserved.{% else %}Tous droits réservés.{% endif %}
       </div>
-      <nav class="flex gap-3" aria-label="Mentions légales">
-        <a href="/about/legal">Mentions légales</a>
-        <a href="/about/privacy">Vie privée</a>
-        <a href="/about/terms">CGV</a>
-        <a href="/.well-known/security.txt">Sécurité</a>
+      <nav class="flex gap-3" aria-label="{% if lang == 'en' %}Legal links{% else %}Mentions légales{% endif %}">
+        <a href="/about/legal">{% if lang == 'en' %}Legal{% else %}Mentions légales{% endif %}</a>
+        <a href="/about/privacy">{% if lang == 'en' %}Privacy{% else %}Vie privée{% endif %}</a>
+        <a href="/about/terms">{% if lang == 'en' %}Terms{% else %}CGV{% endif %}</a>
+        <a href="/.well-known/security.txt">{% if lang == 'en' %}Security{% else %}Sécurité{% endif %}</a>
       </nav>
     </div>
   </div>

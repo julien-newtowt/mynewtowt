@@ -1,81 +1,131 @@
 {% extends "public/_layout.html" %}
-{% block title %}CGV — {{ brand.nom_court }}{% endblock %}
+{% block title %}{% if lang == 'en' %}Terms{% else %}CGV{% endif %} — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
 <section class="hero">
   <div class="container">
-    <span class="kicker">Version v2026.1</span>
-    <h1 class="display">Conditions Générales de Vente</h1>
+    <span class="kicker">{% if lang == 'en' %}Version v2026.1{% else %}Version v2026.1{% endif %}</span>
+    <h1 class="display">
+      {% if lang == 'en' %}General Terms and Conditions{% else %}Conditions Générales de Vente{% endif %}
+    </h1>
   </div>
 </section>
 
 <section class="section">
   <div class="container" style="max-width:840px;">
     <p class="lead">
-      Les présentes CGV régissent les contrats de transport conclus via la
-      plateforme entre {{ brand.raison_sociale }} et ses clients.
+      {% if lang == 'en' %}
+        These terms govern the carriage contracts entered into via the platform
+        between {{ brand.raison_sociale }} and its customers.
+      {% else %}
+        Les présentes CGV régissent les contrats de transport conclus via la
+        plateforme entre {{ brand.raison_sociale }} et ses clients.
+      {% endif %}
     </p>
 
-    <h2 class="section-title">1. Objet</h2>
+    <h2 class="section-title">1. {% if lang == 'en' %}Subject{% else %}Objet{% endif %}</h2>
     <p>
-      Transport maritime de marchandises palettisées par voilier cargo entre
-      les ports desservis par {{ brand.nom_court }}.
+      {% if lang == 'en' %}
+        Maritime transport of palletised goods by sailing cargo between the
+        ports served by {{ brand.nom_court }}.
+      {% else %}
+        Transport maritime de marchandises palettisées par voilier cargo entre
+        les ports desservis par {{ brand.nom_court }}.
+      {% endif %}
     </p>
 
-    <h2 class="section-title">2. Réservation</h2>
+    <h2 class="section-title">2. {% if lang == 'en' %}Booking{% else %}Réservation{% endif %}</h2>
     <p>
-      La réservation est ferme après confirmation par {{ brand.nom_court }}
-      (statut « confirmed »). Une cotation indicative est fournie lors de la
-      soumission ; elle peut être ajustée en cas de marchandise dangereuse,
-      hors-format ou contrainte logistique particulière.
+      {% if lang == 'en' %}
+        Booking is firm after confirmation by {{ brand.nom_court }}
+        (status "confirmed"). An indicative quote is provided at submission; it
+        may be adjusted for hazardous, oversized goods or specific logistics
+        constraints.
+      {% else %}
+        La réservation est ferme après confirmation par {{ brand.nom_court }}
+        (statut « confirmed »). Une cotation indicative est fournie lors de la
+        soumission ; elle peut être ajustée en cas de marchandise dangereuse,
+        hors-format ou contrainte logistique particulière.
+      {% endif %}
     </p>
 
-    <h2 class="section-title">3. Annulation</h2>
+    <h2 class="section-title">3. {% if lang == 'en' %}Cancellation{% else %}Annulation{% endif %}</h2>
     <table>
-      <thead><tr><th>Fenêtre avant ETD</th><th>Frais d'annulation</th></tr></thead>
+      <thead><tr>
+        <th>{% if lang == 'en' %}Window before ETD{% else %}Fenêtre avant ETD{% endif %}</th>
+        <th>{% if lang == 'en' %}Cancellation fee{% else %}Frais d'annulation{% endif %}</th>
+      </tr></thead>
       <tbody>
-        <tr><td>&gt; 30 jours</td><td>0 %</td></tr>
-        <tr><td>30 à 7 jours</td><td>25 %</td></tr>
-        <tr><td>7 à 2 jours</td><td>50 %</td></tr>
-        <tr><td>&lt; 2 jours</td><td>100 %</td></tr>
+        <tr><td>&gt; 30 {% if lang == 'en' %}days{% else %}jours{% endif %}</td><td>0 %</td></tr>
+        <tr><td>30 → 7 {% if lang == 'en' %}days{% else %}jours{% endif %}</td><td>25 %</td></tr>
+        <tr><td>7 → 2 {% if lang == 'en' %}days{% else %}jours{% endif %}</td><td>50 %</td></tr>
+        <tr><td>&lt; 2 {% if lang == 'en' %}days{% else %}jours{% endif %}</td><td>100 %</td></tr>
       </tbody>
     </table>
 
-    <h2 class="section-title">4. Marchandises dangereuses</h2>
+    <h2 class="section-title">4. {% if lang == 'en' %}Hazardous goods{% else %}Marchandises dangereuses{% endif %}</h2>
     <p>
-      Toute marchandise relevant du Code IMDG doit être déclarée à la
-      réservation. Une fiche de données de sécurité (FDS) PDF doit être jointe.
-      {{ brand.nom_court }} se réserve le droit de refuser une marchandise dont
-      la classification est incompatible avec ses capacités d'arrimage.
+      {% if lang == 'en' %}
+        Any cargo falling under the IMDG Code must be declared at booking time.
+        A Safety Data Sheet (SDS) PDF must be attached. {{ brand.nom_court }}
+        reserves the right to refuse cargo whose classification is incompatible
+        with its stowage capabilities.
+      {% else %}
+        Toute marchandise relevant du Code IMDG doit être déclarée à la
+        réservation. Une fiche de données de sécurité (FDS) PDF doit être jointe.
+        {{ brand.nom_court }} se réserve le droit de refuser une marchandise dont
+        la classification est incompatible avec ses capacités d'arrimage.
+      {% endif %}
     </p>
 
-    <h2 class="section-title">5. Responsabilité</h2>
+    <h2 class="section-title">5. {% if lang == 'en' %}Liability{% else %}Responsabilité{% endif %}</h2>
     <p>
-      Conformément à la Convention de Bruxelles (Hague-Visby Rules), la
-      responsabilité de {{ brand.nom_court }} en tant que transporteur maritime
-      est plafonnée selon les barèmes en vigueur. Une assurance Cargo All-Risks
-      est recommandée et peut être souscrite via nos partenaires.
+      {% if lang == 'en' %}
+        In accordance with the Brussels Convention (Hague-Visby Rules),
+        {{ brand.nom_court }}'s liability as a maritime carrier is capped at
+        the applicable schedule. Cargo All-Risks insurance is recommended and
+        can be subscribed via our partners.
+      {% else %}
+        Conformément à la Convention de Bruxelles (Hague-Visby Rules), la
+        responsabilité de {{ brand.nom_court }} en tant que transporteur maritime
+        est plafonnée selon les barèmes en vigueur. Une assurance Cargo All-Risks
+        est recommandée et peut être souscrite via nos partenaires.
+      {% endif %}
     </p>
 
-    <h2 class="section-title">6. Force majeure</h2>
+    <h2 class="section-title">6. {% if lang == 'en' %}Force majeure{% else %}Force majeure{% endif %}</h2>
     <p>
-      Tempêtes, embargos, conflits armés, pandémies, blocages portuaires
-      constituent des cas de force majeure suspendant les obligations
-      contractuelles sans indemnité.
+      {% if lang == 'en' %}
+        Storms, embargoes, armed conflicts, pandemics, port blockades
+        constitute force majeure events that suspend contractual obligations
+        without indemnity.
+      {% else %}
+        Tempêtes, embargos, conflits armés, pandémies, blocages portuaires
+        constituent des cas de force majeure suspendant les obligations
+        contractuelles sans indemnité.
+      {% endif %}
     </p>
 
-    <h2 class="section-title">7. Données personnelles</h2>
+    <h2 class="section-title">7. {% if lang == 'en' %}Personal data{% else %}Données personnelles{% endif %}</h2>
     <p>
-      Voir <a href="/about/privacy">politique de confidentialité</a>.
+      {% if lang == 'en' %}See{% else %}Voir{% endif %}
+      <a href="/about/privacy">
+        {% if lang == 'en' %}privacy policy{% else %}politique de confidentialité{% endif %}
+      </a>.
     </p>
 
-    <h2 class="section-title">8. Droit applicable</h2>
+    <h2 class="section-title">8. {% if lang == 'en' %}Governing law{% else %}Droit applicable{% endif %}</h2>
     <p>
-      Droit français. Tribunal de commerce du Havre compétent.
+      {% if lang == 'en' %}
+        French law. Le Havre commercial court has jurisdiction.
+      {% else %}
+        Droit français. Tribunal de commerce du Havre compétent.
+      {% endif %}
     </p>
 
     <p class="text-muted text-sm mt-5">
-      Contact : <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>
+      {% if lang == 'en' %}Contact{% else %}Contact{% endif %} :
+      <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>
     </p>
   </div>
 </section>

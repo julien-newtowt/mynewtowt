@@ -1,9 +1,13 @@
 {% extends "public/_layout.html" %}
-{% block title %}Page introuvable — NEWTOWT{% endblock %}
+{% block title %}{% if lang == 'en' %}Page not found{% else %}Page introuvable{% endif %} — NEWTOWT{% endblock %}
 {% block content %}
 <div class="container text-center" style="padding: var(--space-10) 0">
   <h1 class="display">404</h1>
-  <p class="lead">Cette route n'existe pas (encore).</p>
-  <a href="/" class="btn btn-primary">Retour à l'accueil</a>
+  <p class="lead">
+    {% if lang == 'en' %}This route doesn't exist (yet).{% else %}Cette route n'existe pas (encore).{% endif %}
+  </p>
+  <a href="/" class="btn btn-primary">
+    {% if lang == 'en' %}Back to home{% else %}Retour à l'accueil{% endif %}
+  </a>
 </div>
 {% endblock %}
