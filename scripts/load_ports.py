@@ -1,20 +1,24 @@
 """Bulk-load ports into the directory.
 
-Usage:
-  python -m scripts.load_ports                       # embedded catalogue + datagouv FR
-  python -m scripts.load_ports --with-unlocode       # + UN/LOCODE github mirror
-  python -m scripts.load_ports --skip-datagouv
-  python -m scripts.load_ports --skip-embedded
+Usage :
+  python -m scripts.load_ports                                   # embedded + datagouv FR
+  python -m scripts.load_ports --with-unlocode                   # + UN/LOCODE mondial
+  python -m scripts.load_ports --datagouv-slug seaports-locations-data
+                                                                 # par slug
+  python -m scripts.load_ports --from-file /tmp/seaports.csv     # depuis un fichier local
+  python -m scripts.load_ports --skip-datagouv --skip-embedded   # ne charge que --from-file
 
 Sources :
 - **Embedded catalogue** (`scripts/data/world_ports.py`) — ~250 ports
-  commerciaux majeurs mondiaux maintenus à la main avec lat/lon décimal
-  (default ON, sans dépendance réseau).
-- **data.gouv.fr** — Dataset officiel des ports français (ressource
-  ac2c8109-8db3-40ff-af88-9e68ddafe66d). Default ON.
-- **UN/LOCODE community mirror** (github datasets/un-locode) — ~110 000
-  entrées, parseur de coordonnées packed "DDMM[N/S] DDDMM[E/W]" via
-  `parse_unlocode_coords`. Default OFF (--with-unlocode pour activer).
+  commerciaux majeurs mondiaux maintenus à la main (default ON).
+- **data.gouv.fr** — par défaut le dataset Ports de France
+  (ressource ac2c8109-...). Avec ``--datagouv-slug``, le script
+  appelle l'API ``/api/1/datasets/{slug}/`` pour récupérer la première
+  ressource CSV. Avec ``--datagouv-url``, on passe directement
+  l'URL de la ressource.
+- **UN/LOCODE community mirror** — ~110 000 entrées (--with-unlocode).
+- **--from-file** — lit n'importe quel CSV local (utile quand l'host
+  d'exécution n'a pas d'accès réseau vers data.gouv.fr).
 
 Idempotent : upsert sur le locode, ne remplace jamais une entrée
 manuelle par une entrée automatique.
@@ -50,12 +54,40 @@ logger = logging.getLogger("load_ports")
 async def _download(url: str) -> bytes | None:
     try:
         async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-            r = await client.get(url)
+            r = await client.get(url, headers={"User-Agent": "mynewtowt-ports-loader/1.0"})
             r.raise_for_status()
             return r.content
     except httpx.HTTPError as e:
         logger.warning("Download failed for %s: %s", url, e)
         return None
+
+
+async def _resolve_datagouv_slug(slug: str) -> str | None:
+    """Résout un slug data.gouv.fr → URL de la 1re ressource CSV.
+
+    Appelle ``https://www.data.gouv.fr/api/1/datasets/{slug}/`` puis pioche
+    la première ressource dont le format CSV ou xlsx est disponible.
+    """
+    api = f"https://www.data.gouv.fr/api/1/datasets/{slug}/"
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            r = await client.get(api, headers={"User-Agent": "mynewtowt-ports-loader/1.0"})
+            r.raise_for_status()
+            data = r.json()
+    except httpx.HTTPError as e:
+        logger.warning("data.gouv slug resolution failed for %r: %s", slug, e)
+        return None
+    for res in data.get("resources", []):
+        fmt = (res.get("format") or "").lower()
+        url = res.get("url") or ""
+        if fmt in ("csv", "xlsx") and url:
+            logger.info(
+                "Resolved slug %r → %s (%s, %s)",
+                slug, res.get("title") or res.get("id"), fmt, url,
+            )
+            return url
+    logger.warning("No CSV/XLSX resource found in dataset %r", slug)
+    return None
 
 
 def _parse_unlocode_coords(packed: str) -> tuple[float, float] | None:
@@ -149,7 +181,10 @@ async def load(
     skip_datagouv: bool,
     with_unlocode: bool,
     datagouv_url: str,
+    datagouv_slug: str | None,
+    datagouv_country_filter: str | None,
     unlocode_url: str,
+    from_file: str | None,
 ) -> None:
     async with SessionLocal() as db:
         # ─── Catalogue embarqué ──────────────────────────────────────
@@ -162,18 +197,51 @@ async def load(
                 len(rows), ins, upd,
             )
 
-        # ─── data.gouv FR ────────────────────────────────────────────
+        # ─── data.gouv (URL fixe OU slug auto-résolu) ─────────────────
         if not skip_datagouv:
-            logger.info("Fetching data.gouv FR ports from %s", datagouv_url)
-            payload = await _download(datagouv_url)
+            url = datagouv_url
+            if datagouv_slug:
+                resolved = await _resolve_datagouv_slug(datagouv_slug)
+                if resolved:
+                    url = resolved
+                else:
+                    logger.warning(
+                        "Slug %r non résolu — fallback URL %s", datagouv_slug, url,
+                    )
+            logger.info("Fetching data.gouv from %s", url)
+            payload = await _download(url)
             if payload:
-                rows = parse_csv(payload, source="datagouv")
-                rows = [r for r in rows if r.country == "FR"]
+                rows = parse_csv(payload, source=f"datagouv:{datagouv_slug or 'default'}")
+                if datagouv_country_filter:
+                    rows = [
+                        r for r in rows
+                        if r.country.upper() == datagouv_country_filter.upper()
+                    ]
                 ins, upd = await upsert_ports(db, rows)
                 await db.commit()
-                logger.info("data.gouv FR : %d inserted, %d updated", ins, upd)
+                logger.info(
+                    "data.gouv : %d parsed, %d inserted, %d updated",
+                    len(rows), ins, upd,
+                )
             else:
                 logger.warning("Skipping data.gouv (download failed)")
+
+        # ─── Fichier local (--from-file) ─────────────────────────────
+        if from_file:
+            from pathlib import Path
+            path = Path(from_file)
+            if not path.exists():
+                logger.error("File not found: %s", path)
+            else:
+                logger.info("Loading from local file %s", path)
+                payload = path.read_bytes()
+                rows = parse_csv(payload, source=f"file:{path.name}")
+                ins, upd = await upsert_ports(db, rows)
+                await db.commit()
+                logger.info(
+                    "Local file : %d parsed, %d inserted, %d updated",
+                    len(rows), ins, upd,
+                )
 
         # ─── UN/LOCODE (option) ──────────────────────────────────────
         if with_unlocode:
@@ -203,8 +271,17 @@ def main() -> int:
                         help="Ne charge pas les ports data.gouv.fr")
     parser.add_argument("--with-unlocode", action="store_true",
                         help="Charge en plus le mirror UN/LOCODE github (long tail mondiale)")
-    parser.add_argument("--datagouv-url", default=DATAGOUV_DEFAULT_URL)
+    parser.add_argument("--datagouv-url", default=DATAGOUV_DEFAULT_URL,
+                        help="URL directe d'une ressource data.gouv (CSV)")
+    parser.add_argument("--datagouv-slug", default=None,
+                        help="Slug data.gouv.fr (ex. seaports-locations-data) — "
+                             "résolu automatiquement vers la 1re ressource CSV")
+    parser.add_argument("--datagouv-country", default=None,
+                        help="Filtre les rows data.gouv par code pays ISO-2 "
+                             "(ex. FR). Par défaut: pas de filtre.")
     parser.add_argument("--unlocode-url", default=UNLOCODE_DEFAULT_URL)
+    parser.add_argument("--from-file", default=None,
+                        help="Charge un CSV local (utile sans accès réseau)")
     args = parser.parse_args()
 
     asyncio.run(load(
@@ -212,7 +289,10 @@ def main() -> int:
         skip_datagouv=args.skip_datagouv,
         with_unlocode=args.with_unlocode,
         datagouv_url=args.datagouv_url,
+        datagouv_slug=args.datagouv_slug,
+        datagouv_country_filter=args.datagouv_country,
         unlocode_url=args.unlocode_url,
+        from_file=args.from_file,
     ))
     return 0
 
