@@ -330,10 +330,15 @@ async def rh_decide_leave(
     l = await db.get(CrewLeave, leave_id)
     if not l:
         raise HTTPException(status_code=404, detail="Not found")
-    if decision in ("approved", "rejected"):
-        l.status = decision
-        l.decided_by_id = user.id
-        l.decided_at = datetime.now(timezone.utc)
+    if decision not in ("approved", "rejected"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"decision must be 'approved' or 'rejected', got {decision!r}",
+        )
+    l.status = decision
+    l.decided_by_id = user.id
+    l.decided_at = datetime.now(timezone.utc)
+    await db.flush()
     return RedirectResponse(url="/rh", status_code=303)
 
 

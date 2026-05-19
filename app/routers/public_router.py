@@ -20,7 +20,7 @@ from app.models.claim import VesselPosition
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.vessel import Vessel
-from app.services.capacity import get_available_capacity, NotBookable
+from app.services.capacity import BookingClosed, get_available_capacity, NotBookable
 from app.templating import templates
 
 router = APIRouter(tags=["public"])
@@ -197,9 +197,10 @@ async def _next_bookable_legs(db: AsyncSession, *, limit: int = 6) -> list[dict[
             capacity = await get_available_capacity(db, leg.id)
             available = capacity.available_palettes
             capacity_total = capacity.capacity_palettes
-        except Exception:
+        except (NotBookable, BookingClosed):
+            # leg ouvert à la liste publique mais non bookable / window fermée
             available = 0
-            capacity_total = 0
+            capacity_total = leg.public_capacity_palettes or 0
         out.append(
             {
                 "leg_id": leg.id,
@@ -251,9 +252,9 @@ async def _search_legs(
             cap = await get_available_capacity(db, leg.id)
             available = cap.available_palettes
             capacity_total = cap.capacity_palettes
-        except Exception:
+        except (NotBookable, BookingClosed):
             available = 0
-            capacity_total = 0
+            capacity_total = leg.public_capacity_palettes or 0
         legs.append(
             {
                 "leg_id": leg.id,

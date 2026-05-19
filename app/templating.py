@@ -69,6 +69,10 @@ def _i18n_context_processor(request: Request) -> dict[str, Any]:
       3. user.language (si staff loggué)
       4. Accept-Language
       5. DEFAULT
+
+    Expose aussi ``notif_count`` lu sur ``request.state`` (pré-chargé par
+    ``require_permission()``) → le badge cloche du topbar fonctionne sur
+    toutes les pages staff sans répéter la query dans chaque vue.
     """
     cookie_lang = request.cookies.get("towt_lang")
     if cookie_lang and cookie_lang.lower() in _i18n_supported:
@@ -79,6 +83,7 @@ def _i18n_context_processor(request: Request) -> dict[str, Any]:
         "lang": lang,
         "lang_options": list(_i18n_supported),
         "brand": _BRAND_BY_LANG.get(lang, _BRAND_BY_LANG[_i18n_default]),
+        "notif_count": getattr(request.state, "notif_count", 0),
     }
 
 

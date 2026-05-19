@@ -13,15 +13,15 @@
  *   </div>
  *   <small class="tz-utc-hint"></small>
  *
- * `port_local` resolves to the value found on a #sidebar-clock element's
- * data-port-tz attribute, if present (set by the staff layout when the
- * sidebar fetches its next-port clocks).
+ * `port_local` resolves to the value found on any element carrying a
+ * `data-port-tz` attribute (typically the sidebar clock when the staff
+ * layout exposes the next port). Falls back to UTC silently.
  */
 (function () {
   "use strict";
 
   function getPortTz() {
-    var el = document.getElementById("sidebar-clock");
+    var el = document.querySelector("[data-port-tz]");
     if (el && el.dataset && el.dataset.portTz) return el.dataset.portTz;
     return "UTC";
   }

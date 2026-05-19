@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthRequired, get_current_staff
+from app.database import get_db
 
 Level = Literal["C", "M", "S"]  # Consult / Modify / Suppress
 
@@ -182,14 +184,32 @@ def has_any_access(role: str, module: str) -> bool:
 
 
 def require_permission(module: str, level: Level):
-    """FastAPI dependency factory."""
+    """FastAPI dependency factory.
 
-    async def _checker(user=Depends(get_current_staff)):
+    En plus du check RBAC, attache ``request.state.notif_count`` (compteur
+    de notifications non lues pour ce user/rôle) — exploité par le context
+    processor Jinja ``_staff_layout_context`` pour alimenter le badge cloche
+    du topbar sur toutes les pages staff.
+    """
+
+    async def _checker(
+        request: Request,
+        user=Depends(get_current_staff),
+        db: AsyncSession = Depends(get_db),
+    ):
         if not has_permission(user.role, module, level):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Permission denied: {module}/{level}",
             )
+        # Pré-charge le compteur notif pour le topbar (read-only, ~1ms).
+        try:
+            from app.services.notifications import count_unread
+            request.state.notif_count = await count_unread(
+                db, user_id=user.id, user_role=user.role,
+            )
+        except Exception:
+            request.state.notif_count = 0
         return user
 
     return _checker

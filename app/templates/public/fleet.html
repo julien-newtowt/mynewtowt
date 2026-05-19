@@ -26,13 +26,25 @@
 </section>
 
 <section class="container mb-5">
+  {%- set ns = namespace(items=[]) -%}
+  {%- for v in vessels -%}
+    {%- set p = last_positions.get(v.id) -%}
+    {%- if p -%}
+      {%- set _ = ns.items.append({
+            "name": v.name, "code": v.code,
+            "lat": p.latitude, "lon": p.longitude,
+            "sog": (p.sog_kn or 0)|float,
+            "recorded_at": p.recorded_at.isoformat(),
+          }) -%}
+    {%- endif -%}
+  {%- endfor -%}
   <article class="card" style="padding:0; overflow:hidden;">
     <div id="public-fleet-map" class="js-fleet-map"
          style="width:100%; height:520px; background:var(--sable-light); position:relative;"
          data-maptiler-token="{{ maptiler_token }}"
          data-no-position-text="{% if lang == 'en' %}No position recorded yet.{% else %}Aucune position enregistrée.{% endif %}"
          data-no-position-detail="{% if lang == 'en' %}Vessel positions arrive via satellite (Power Automate / X-API-Token).{% else %}Les positions navires arrivent par satellite (Power Automate / X-API-Token).{% endif %}"
-         data-vessels='[{% for v in vessels %}{% set p = last_positions.get(v.id) %}{% if p %}{"name": {{ v.name|tojson }}, "code": {{ v.code|tojson }}, "lat": {{ p.latitude }}, "lon": {{ p.longitude }}, "sog": {{ p.sog_kn or 0 }}, "recorded_at": {{ p.recorded_at.isoformat()|tojson }}}{% if not loop.last %},{% endif %}{% endif %}{% endfor %}]'></div>
+         data-vessels='{{ ns.items|tojson }}'></div>
   </article>
 </section>
 

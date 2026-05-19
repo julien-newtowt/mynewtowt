@@ -154,9 +154,33 @@ def _get_col(row: dict, *candidates: str) -> object:
 
 # ────────────────────── Body extraction (multi-format) ───────────────────
 
+# Hard cap : un rapport satcom quotidien fait < 5 MB. 20 MB couvre largement
+# les ZIP avec plusieurs sheets ou plusieurs jours. Au-delà, on rejette.
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
+
+def _enforce_size(data: bytes, label: str = "body") -> bytes:
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"{label} too large ({len(data)} bytes > {MAX_UPLOAD_BYTES} max)",
+        )
+    return data
+
 
 async def _extract_payload(request: Request) -> tuple[bytes, str]:
-    """Renvoie (bytes_body, filename) — bytes utiles pour la détection ZIP/CSV/XLSX."""
+    """Renvoie (bytes_body, filename) — bytes utiles pour la détection ZIP/CSV/XLSX.
+
+    Refuse tout payload > MAX_UPLOAD_BYTES (20 MB) pour éviter OOM.
+    """
+    # Préfilrage via Content-Length si présent (avant de lire le body)
+    cl = request.headers.get("content-length")
+    if cl and cl.isdigit() and int(cl) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Content-Length {cl} exceeds max {MAX_UPLOAD_BYTES}",
+        )
+
     content_type = (request.headers.get("content-type") or "").lower()
 
     if "multipart/form-data" in content_type:
@@ -169,26 +193,26 @@ async def _extract_payload(request: Request) -> tuple[bytes, str]:
             if key in form:
                 value = form[key]
                 if hasattr(value, "read"):  # UploadFile
-                    return await value.read(), getattr(value, "filename", "") or ""
-                return str(value).encode("utf-8"), ""
+                    return _enforce_size(await value.read(), key), getattr(value, "filename", "") or ""
+                return _enforce_size(str(value).encode("utf-8"), key), ""
         # Fallback : 1er field qui est un UploadFile
         for _, v in form.items():
             if hasattr(v, "read"):
-                return await v.read(), getattr(v, "filename", "") or ""
+                return _enforce_size(await v.read(), "upload"), getattr(v, "filename", "") or ""
         for _, v in form.items():
             if isinstance(v, str) and v.strip():
-                return v.encode("utf-8"), ""
+                return _enforce_size(v.encode("utf-8"), "field"), ""
         raise HTTPException(status_code=400, detail="multipart without a file field")
 
     if "application/x-www-form-urlencoded" in content_type:
         form = await request.form()
         for key in ("csv", "data", "body", "file"):
             if key in form:
-                return str(form[key]).encode("utf-8"), ""
+                return _enforce_size(str(form[key]).encode("utf-8"), key), ""
         raise HTTPException(status_code=400, detail="form body without 'csv' or 'data'")
 
     body = await request.body()
-    return body, ""
+    return _enforce_size(body, "body"), ""
 
 
 # ────────────────────── Parsers (CSV / XLSX / ZIP) ─────────────────────
