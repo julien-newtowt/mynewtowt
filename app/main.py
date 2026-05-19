@@ -44,6 +44,7 @@ from app.routers import (
     stowage_router,
     tickets_router,
     tracking_router,
+    webauthn_router,
 )
 from app.templating import templates
 
@@ -112,6 +113,7 @@ def create_app() -> FastAPI:
     app.include_router(client_auth_router.router)
     app.include_router(client_dashboard_router.router)
     app.include_router(booking_router.router)
+    app.include_router(webauthn_router.router)
 
     # ------------------------------------------------------------ Health/meta
     @app.get("/health")
