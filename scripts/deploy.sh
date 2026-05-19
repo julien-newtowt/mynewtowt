@@ -250,13 +250,35 @@ wait_for_health() {
   log "Waiting for /health (timeout=${HEALTH_TIMEOUT_SECONDS}s)"
   local deadline=$(( SECONDS + HEALTH_TIMEOUT_SECONDS ))
   local last_status=""
+  local probe_mode="exec"
+  # ``HEALTH_URL`` peut être surchargée via .env pour pointer vers l'URL
+  # publique (Caddy). Si elle reste sur la valeur par défaut 127.0.0.1:8000
+  # et que l'app expose seulement le port sur le réseau Docker interne, on
+  # bypass via ``docker compose exec`` — fonctionne dans tous les setups.
+  if [[ "${HEALTH_URL}" != "http://127.0.0.1:8000/health" ]]; then
+    probe_mode="curl"
+  fi
+
   while (( SECONDS < deadline )); do
-    if curl -fsS -m 5 "${HEALTH_URL}" > /tmp/.health.out 2>/dev/null; then
-      last_status="$(cat /tmp/.health.out)"
-      if grep -q '"status":"ok"' /tmp/.health.out; then
-        success "Health OK: ${last_status}"
-        rm -f /tmp/.health.out
-        return 0
+    if [[ "${probe_mode}" == "curl" ]]; then
+      if curl -fsS -m 5 "${HEALTH_URL}" > /tmp/.health.out 2>/dev/null; then
+        last_status="$(cat /tmp/.health.out)"
+        if grep -q '"status":"ok"' /tmp/.health.out; then
+          success "Health OK (via curl): ${last_status}"
+          rm -f /tmp/.health.out
+          return 0
+        fi
+      fi
+    else
+      if docker compose -f "${COMPOSE_FILE}" exec -T app \
+           curl -fsS -m 5 http://localhost:8000/health > /tmp/.health.out 2>/dev/null
+      then
+        last_status="$(cat /tmp/.health.out)"
+        if grep -q '"status":"ok"' /tmp/.health.out; then
+          success "Health OK (via docker exec): ${last_status}"
+          rm -f /tmp/.health.out
+          return 0
+        fi
       fi
     fi
     sleep 2
