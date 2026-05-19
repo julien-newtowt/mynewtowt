@@ -353,11 +353,17 @@ async def upload_positions(
     if not payload:
         raise HTTPException(status_code=400, detail="body vide")
 
-    # Header X-Filename : permet à Power Automate de passer le nom du
-    # fichier original quand le multipart est inconfortable. Sinon on prend
-    # le filename extrait du multipart.
+    # Filename — 3 sources possibles dans l'ordre :
+    # 1. multipart Content-Disposition (extrait par _extract_payload)
+    # 2. header X-Filename
+    # 3. query string ?filename=... (le plus simple pour Power Automate qui
+    #    refuse parfois les expressions dynamiques dans les headers JSON)
     if not filename:
-        filename = request.headers.get("x-filename") or ""
+        filename = (
+            request.headers.get("x-filename")
+            or request.query_params.get("filename")
+            or ""
+        )
 
     # Détection du format — robuste aux binaires corrompus par PA
     rows: Iterable[dict] = []
