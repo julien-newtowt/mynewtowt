@@ -51,6 +51,10 @@ class Leg(Base):
     transit_speed_kn: Mapped[float | None] = mapped_column()
     elongation_coef: Mapped[float | None] = mapped_column()
 
+    # Durée d'escale planifiée à l'arrivée (heures). Sert au planning :
+    # le leg suivant du même navire commence après ETA + port_stay_planned_hours.
+    port_stay_planned_hours: Mapped[int | None] = mapped_column(Integer)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

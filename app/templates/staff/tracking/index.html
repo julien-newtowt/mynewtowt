@@ -8,12 +8,25 @@
 {% block content %}
 <header class="mb-4"><span class="kicker">Pilotage</span><h1 class="display">Tracking flotte</h1></header>
 
+{%- set ns = namespace(items=[]) -%}
+{%- for v in vessels -%}
+  {%- set p = last_positions.get(v.id) -%}
+  {%- if p -%}
+    {%- set _ = ns.items.append({
+          "name": v.name, "code": v.code,
+          "lat": p.latitude, "lon": p.longitude,
+          "sog": (p.sog_kn or 0)|float,
+          "cog": (p.cog_deg or 0)|float,
+          "recorded_at": p.recorded_at.isoformat(),
+        }) -%}
+  {%- endif -%}
+{%- endfor -%}
 <article class="card mb-4" style="padding:0; overflow:hidden;">
   <div id="fleet-map" class="js-fleet-map" style="width:100%; height:500px; background:var(--sable-light); position:relative;"
        data-maptiler-token="{{ maptiler_token }}"
        data-no-position-text="Aucune position enregistrée."
        data-no-position-detail="Alimente <code>vessel_positions</code> via le module Tracking (POST /api/tracking/upload avec X-API-Token)."
-       data-vessels='[{% for v in vessels %}{% set p = last_positions.get(v.id) %}{% if p %}{"name": {{ v.name|tojson }}, "code": {{ v.code|tojson }}, "lat": {{ p.latitude }}, "lon": {{ p.longitude }}, "sog": {{ p.sog_kn or 0 }}, "cog": {{ p.cog_deg or 0 }}, "recorded_at": {{ p.recorded_at.isoformat()|tojson }}}{% if not loop.last %},{% endif %}{% endif %}{% endfor %}]'></div>
+       data-vessels='{{ ns.items|tojson }}'></div>
 </article>
 
 <article class="card">

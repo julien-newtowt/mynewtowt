@@ -97,13 +97,23 @@
     </div>
 
     <div class="field">
-      <label for="public_price_per_palette_eur">Tarif public (EUR / palette)</label>
-      <input id="public_price_per_palette_eur" type="number" step="0.01" name="public_price_per_palette_eur" placeholder="38.00" />
+      <label for="port_stay_planned_hours">Durée d'escale prévue (heures)</label>
+      <input id="port_stay_planned_hours" type="number" name="port_stay_planned_hours"
+             min="0" max="720" step="1" placeholder="48" />
+      <small class="text-muted">Temps de quai prévu à l'arrivée.</small>
     </div>
     <div class="field">
       <label for="booking_close_at">Clôture des réservations</label>
       <input id="booking_close_at" type="datetime-local" name="booking_close_at" />
+      <small class="text-muted">Vide ⇒ auto ETD − 48 h.</small>
     </div>
+  </div>
+
+  <div class="alert alert-info" style="margin-top:var(--space-3);">
+    <strong>Tarification :</strong>
+    le tarif par palette se gère dans
+    <a href="/commercial/grids"><strong>Commercial → Grilles tarifaires</strong></a>,
+    puis attaché au leg via une offre ou commande.
   </div>
 
   <div class="flex gap-3 mt-4">

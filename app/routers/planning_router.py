@@ -5,7 +5,6 @@ Auth: staff with `planning` permission (C/M/S per matrix).
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -171,10 +170,11 @@ async def create_leg_action(
             eta=_parse_dt(form.get("eta")),
             is_bookable=form.get("is_bookable") == "on",
             public_capacity_palettes=_maybe_int(form.get("public_capacity_palettes")),
-            public_price_per_palette_eur=_maybe_decimal(form.get("public_price_per_palette_eur")),
+            # public_price_per_palette_eur géré par /commercial (grilles tarifaires)
             booking_close_at=_parse_dt(form.get("booking_close_at"), allow_empty=True),
             transit_speed_kn=_maybe_float(form.get("transit_speed_kn")),
             elongation_coef=_maybe_float(form.get("elongation_coef")),
+            port_stay_planned_hours=_maybe_int(form.get("port_stay_planned_hours")),
         )
     except (InvalidLegDates, PlanningError, KeyError, ValueError) as e:
         vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
@@ -281,10 +281,11 @@ async def update_leg_action(
             arrival_port_id=_maybe_int(form.get("arrival_port_id")),
             is_bookable=(form.get("is_bookable") == "on"),
             public_capacity_palettes=_maybe_int(form.get("public_capacity_palettes")),
-            public_price_per_palette_eur=_maybe_decimal(form.get("public_price_per_palette_eur")),
+            # public_price_per_palette_eur géré par /commercial (grilles tarifaires)
             booking_close_at=_parse_dt(form.get("booking_close_at"), allow_empty=True),
             transit_speed_kn=_maybe_float(form.get("transit_speed_kn")),
             elongation_coef=_maybe_float(form.get("elongation_coef")),
+            port_stay_planned_hours=_maybe_int(form.get("port_stay_planned_hours")),
             cascade=cascade,
         )
     except (InvalidLegDates, PlanningError) as e:
@@ -554,10 +555,3 @@ def _maybe_float(value) -> float | None:
         return None
 
 
-def _maybe_decimal(value) -> Decimal | None:
-    if value is None or value == "":
-        return None
-    try:
-        return Decimal(str(value))
-    except Exception:
-        return None

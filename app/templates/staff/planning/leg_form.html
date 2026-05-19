@@ -11,8 +11,8 @@
   {% else %}
     <h1 class="display">Nouveau leg</h1>
     <p class="text-muted">
-      Choisis les ports via le <strong>filtre dynamique</strong> ci-dessous ou
-      <a href="/planning/legs/new-from-map">en cliquant sur la carte</a>.
+      Choisis les ports via les <strong>raccourcis pays</strong>, le filtre dynamique
+      ci-dessous, ou <a href="/planning/legs/new-from-map">en cliquant sur la carte</a>.
     </p>
   {% endif %}
 </header>
@@ -26,17 +26,46 @@
 
   <h2>Itinéraire</h2>
 
-  {# Raccourcis ports principaux NEWTOWT — visibles en permanence. #}
-  <div class="flex gap-2 mb-3" style="flex-wrap:wrap;">
-    <span class="text-muted text-sm" style="align-self:center;">Raccourcis :</span>
-    <button type="button" class="btn btn-secondary text-sm" data-shortcut="pol" data-locode="FRFEC">POL → Fécamp (FRFEC)</button>
-    <button type="button" class="btn btn-secondary text-sm" data-shortcut="pod" data-locode="BRSSO">POD → São Sebastião (BRSSO)</button>
-    <button type="button" class="btn btn-secondary text-sm" data-shortcut="pol" data-locode="BRSSO">POL → São Sebastião (BRSSO)</button>
-    <button type="button" class="btn btn-secondary text-sm" data-shortcut="pod" data-locode="FRFEC">POD → Fécamp (FRFEC)</button>
+  {# Raccourcis ports principaux — POL à gauche, POD à droite, avec drapeaux. #}
+  <div class="leg-shortcuts grid grid-2 gap-4 mb-3">
+    <div>
+      <span class="kicker">Raccourcis POL (départ)</span>
+      <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="FRFEC">
+          🇫🇷 Fécamp <span class="mono text-muted">FRFEC</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="BRSSO">
+          🇧🇷 São Sebastião <span class="mono text-muted">BRSSO</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="USNYC">
+          🇺🇸 New York <span class="mono text-muted">USNYC</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="FRLEH">
+          🇫🇷 Le Havre <span class="mono text-muted">FRLEH</span>
+        </button>
+      </div>
+    </div>
+    <div>
+      <span class="kicker">Raccourcis POD (arrivée)</span>
+      <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="BRSSO">
+          🇧🇷 São Sebastião <span class="mono text-muted">BRSSO</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="FRFEC">
+          🇫🇷 Fécamp <span class="mono text-muted">FRFEC</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="USNYC">
+          🇺🇸 New York <span class="mono text-muted">USNYC</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="FRLEH">
+          🇫🇷 Le Havre <span class="mono text-muted">FRLEH</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <div class="grid grid-2 gap-4">
-    {# POL filter cascade #}
+    {# POL filter cascade — gauche #}
     <fieldset style="border:1px solid var(--gris-clair); padding:var(--space-3); border-radius:var(--radius-md);">
       <legend class="kicker">Port de départ (POL)</legend>
       <div class="grid grid-2 gap-2 mb-2">
@@ -57,7 +86,7 @@
       </div>
     </fieldset>
 
-    {# POD filter cascade #}
+    {# POD filter cascade — droite #}
     <fieldset style="border:1px solid var(--gris-clair); padding:var(--space-3); border-radius:var(--radius-md);">
       <legend class="kicker">Port d'arrivée (POD)</legend>
       <div class="grid grid-2 gap-2 mb-2">
@@ -125,6 +154,21 @@
     </div>
   </div>
 
+  <h2 class="mt-4">Escale à programmer</h2>
+  <div class="grid grid-3 gap-3">
+    <div class="field">
+      <label for="port_stay_planned_hours">Durée d'escale prévue (heures)</label>
+      <input id="port_stay_planned_hours" type="number" name="port_stay_planned_hours"
+             min="0" max="720" step="1"
+             value="{% if leg and leg.port_stay_planned_hours is not none %}{{ leg.port_stay_planned_hours }}{% endif %}"
+             placeholder="48" />
+      <small class="text-muted">
+        Temps de quai prévu à l'arrivée (déchargement + chargement suivant).
+        Sert au planning du leg aval du même navire.
+      </small>
+    </div>
+  </div>
+
   <h2 class="mt-4">Réservation publique</h2>
   <div class="grid grid-3 gap-3">
     <div class="field field-check">
@@ -137,15 +181,22 @@
              value="{% if leg %}{{ leg.public_capacity_palettes or '' }}{% endif %}" placeholder="850" />
     </div>
     <div class="field">
-      <label for="public_price_per_palette_eur">Tarif public (EUR/palette)</label>
-      <input id="public_price_per_palette_eur" type="number" step="0.01" name="public_price_per_palette_eur"
-             value="{% if leg %}{{ leg.public_price_per_palette_eur or '' }}{% endif %}" placeholder="38.00" />
-    </div>
-    <div class="field" style="grid-column:span 3;">
       <label for="booking_close_at">Clôture des réservations</label>
       <input id="booking_close_at" type="datetime-local" name="booking_close_at"
              value="{% if leg and leg.booking_close_at %}{{ leg.booking_close_at.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+      <small class="text-muted">
+        Laisser vide ⇒ <strong>auto ETD − 48 h</strong>. Surcharge possible.
+      </small>
     </div>
+  </div>
+
+  <div class="alert alert-info" style="margin-top:var(--space-3);">
+    <strong>Tarification :</strong>
+    le tarif par palette n'est plus saisi ici. Il se gère dans
+    <a href="/commercial/grids"><strong>Commercial → Grilles tarifaires</strong></a>
+    (brackets dégressifs par volume) puis attaché au leg via une
+    <a href="/commercial/offers/new">offre</a> ou une
+    <a href="/commercial/orders/new">commande</a>.
   </div>
 
   {% if leg %}

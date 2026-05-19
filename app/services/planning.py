@@ -80,6 +80,10 @@ def _leg_code_for(
 # ---------------------------------------------------------------------------
 
 
+BOOKING_CLOSE_LEAD_HOURS = 48
+"""Auto-cloture des réservations : ETD - 48h si le staff ne précise rien."""
+
+
 async def create_leg(
     db: AsyncSession,
     *,
@@ -95,10 +99,15 @@ async def create_leg(
     leg_code: str | None = None,
     transit_speed_kn: float | None = None,
     elongation_coef: float | None = None,
+    port_stay_planned_hours: int | None = None,
 ) -> Leg:
     validate_dates(etd, eta)
     if departure_port_id == arrival_port_id:
         raise InvalidLegDates("Departure and arrival ports must differ")
+
+    # Auto-cloture des réservations à ETD - 48h si non précisé par le staff.
+    if booking_close_at is None:
+        booking_close_at = etd - timedelta(hours=BOOKING_CLOSE_LEAD_HOURS)
 
     # If leg_code not supplied, derive one (best-effort; admin can edit).
     if leg_code is None:
@@ -138,6 +147,7 @@ async def create_leg(
         booking_close_at=booking_close_at,
         transit_speed_kn=transit_speed_kn,
         elongation_coef=elongation_coef,
+        port_stay_planned_hours=port_stay_planned_hours,
     )
     db.add(leg)
     await db.flush()
@@ -159,6 +169,7 @@ async def update_leg(
     booking_close_at: datetime | None = None,
     transit_speed_kn: float | None = None,
     elongation_coef: float | None = None,
+    port_stay_planned_hours: int | None = None,
     cascade: bool = True,
 ) -> CascadeReport | None:
     """Update a leg in place. If etd shifts and cascade=True, propagate the
@@ -203,10 +214,15 @@ async def update_leg(
         leg.public_price_per_palette_eur = public_price_per_palette_eur
     if booking_close_at is not None:
         leg.booking_close_at = booking_close_at
+    elif etd is not None and leg.booking_close_at is None:
+        # ETD modifiée + pas de clôture définie -> auto ETD-48h
+        leg.booking_close_at = new_etd - timedelta(hours=BOOKING_CLOSE_LEAD_HOURS)
     if transit_speed_kn is not None:
         leg.transit_speed_kn = transit_speed_kn
     if elongation_coef is not None:
         leg.elongation_coef = elongation_coef
+    if port_stay_planned_hours is not None:
+        leg.port_stay_planned_hours = port_stay_planned_hours
 
     # Recompute leg_code si l'une de ses entrées a changé
     if (

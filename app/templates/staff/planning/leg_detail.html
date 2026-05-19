@@ -30,6 +30,12 @@
         <tr><th>ETA</th><td><span class="mono">{{ leg.eta|datetime }}</span></td></tr>
         <tr><th>ATD</th><td>{% if leg.atd %}<span class="mono">{{ leg.atd|datetime }}</span>{% else %}<span class="text-muted">non parti</span>{% endif %}</td></tr>
         <tr><th>ATA</th><td>{% if leg.ata %}<span class="mono">{{ leg.ata|datetime }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
+        <tr><th>Escale prévue</th><td>
+          {% if leg.port_stay_planned_hours is not none %}
+            <span class="mono">{{ leg.port_stay_planned_hours }} h</span>
+            <span class="text-muted text-sm">(~ {{ (leg.port_stay_planned_hours / 24)|round(1) }} j)</span>
+          {% else %}<span class="text-muted">non programmée</span>{% endif %}
+        </td></tr>
         <tr><th>Statut</th><td>
           {% if leg.status == 'planned' %}<span class="pill pill-info">Planifié</span>
           {% elif leg.status == 'inprogress' %}<span class="pill pill-warn">En cours</span>
@@ -48,8 +54,19 @@
       <table>
         <tbody>
           <tr><th>Capacité publique</th><td>{{ leg.public_capacity_palettes or vessel.capacity_palettes }} palettes EPAL</td></tr>
-          <tr><th>Tarif public</th><td>{{ leg.public_price_per_palette_eur|money if leg.public_price_per_palette_eur else 'Non défini' }} / palette</td></tr>
-          <tr><th>Clôture booking</th><td>{% if leg.booking_close_at %}<span class="mono">{{ leg.booking_close_at|datetime }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
+          <tr><th>Tarif</th><td>
+            {% if leg.public_price_per_palette_eur %}
+              <span class="mono">{{ leg.public_price_per_palette_eur|money }} / palette</span>
+              <span class="text-muted text-sm">(legacy)</span>
+            {% else %}
+              <a href="/commercial/grids">Voir Commercial → Grilles tarifaires</a>
+            {% endif %}
+          </td></tr>
+          <tr><th>Clôture booking</th><td>
+            {% if leg.booking_close_at %}<span class="mono">{{ leg.booking_close_at|datetime }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+            <span class="text-muted text-sm">(défaut ETD − 48 h)</span>
+          </td></tr>
         </tbody>
       </table>
       <p class="mt-3">
