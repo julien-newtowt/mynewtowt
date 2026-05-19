@@ -131,6 +131,49 @@ async def ports_bbox(
     }
 
 
+@router.get("/ports/next-clocks")
+async def ports_next_clocks(
+    limit: int = 3,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Next arrival ports of the fleet — used by the sidebar clock widget.
+
+    Returns, for each vessel currently at sea or about to sail, the next
+    arrival port with its IANA timezone (when known). Falls back to the
+    immediate upcoming arrivals if no vessel is currently in transit.
+    """
+    now = datetime.now(timezone.utc)
+    # Upcoming arrivals: legs whose ETA is in the future, ordered ASAP first.
+    stmt = (
+        select(Leg, Port, Vessel)
+        .join(Port, Port.id == Leg.arrival_port_id)
+        .join(Vessel, Vessel.id == Leg.vessel_id)
+        .where(Leg.eta > now)
+        .where(Leg.status.in_(("planned", "inprogress")))
+        .order_by(Leg.eta.asc())
+        .limit(max(1, min(limit, 5)))
+    )
+    rows = list((await db.execute(stmt)).all())
+    out: list[dict] = []
+    seen: set[str] = set()
+    for leg, port, vessel in rows:
+        if not port or not port.timezone:
+            continue
+        if port.locode in seen:
+            continue
+        seen.add(port.locode)
+        out.append({
+            "locode": port.locode,
+            "port_name": port.name,
+            "country": port.country,
+            "timezone": port.timezone,
+            "label": port.locode,
+            "vessel_code": vessel.code,
+            "eta": leg.eta.isoformat(),
+        })
+    return out
+
+
 @router.get("/spec")
 async def spec_link() -> dict[str, str]:
     return {"openapi": f"{settings.site_url}/openapi.json", "docs": f"{settings.site_url}/docs"}

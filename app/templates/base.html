@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr" data-theme="dark">
+<html lang="fr">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,21 +11,19 @@
   <link rel="stylesheet" href="/static/css/kairos.css" />
   <link rel="icon" type="image/png" href="/static/img/favicon.png" />
   <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
-  <script>
-    // HTMX CSRF header injection
-    document.addEventListener('DOMContentLoaded', () => {
-      const csrf = document.cookie.split('; ').find(r => r.startsWith('towt_csrf='));
-      if (csrf && window.htmx) {
-        document.body.addEventListener('htmx:configRequest', (evt) => {
-          evt.detail.headers['x-csrf-token'] = csrf.split('=')[1];
-        });
-      }
-    });
-  </script>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
+  <script src="/static/js/csrf-htmx.js" defer></script>
+  <script src="/static/js/lucide-init.js" defer></script>
+  <script src="/static/js/toast.js" defer></script>
+  <script src="/static/js/modal.js" defer></script>
+  <script src="/static/js/forms.js" defer></script>
+  <script src="/static/js/towt-tz.js" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body>
   <a href="#main" class="skip-link">Aller au contenu principal</a>
   {% block body %}{% endblock %}
+  <div id="modal-container" class="modal-container" aria-hidden="true"></div>
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>

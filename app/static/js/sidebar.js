@@ -1,37 +1,86 @@
 /*
- * Sidebar — collapsible groups with localStorage persistence.
- * Each .nav-group has a <button class="nav-group-toggle"> that toggles
- * the .open class on its parent. State persists across pages.
+ * Sidebar behaviour — three concerns:
+ *
+ * 1. Collapsible nav groups (.nav-group / .nav-group-toggle) with
+ *    per-group open state persisted in localStorage so each user keeps
+ *    their preferred layout across reloads.
+ *
+ * 2. Three-mode sidebar collapse:
+ *      desktop (≥1025px) — sidebar wide; `.collapsed` shrinks it to 64px.
+ *      tablet  (769-1024px) — sidebar collapsed by default; `.expanded`
+ *        shows the wide variant temporarily.
+ *      phone   (≤768px) — sidebar hidden; the `.expanded` class brings it
+ *        in as an overlay.
+ *    Persisted per-mode (towt_sidebar_desktop, towt_sidebar_tablet).
+ *
+ * 3. Active link highlight by exact path match. Opens the parent group
+ *    of the active link so the active item stays visible after reload.
  */
 (function () {
   "use strict";
 
-  var STORAGE_KEY = "newtowt.sidebar.groups";
+  var GROUPS_KEY = "newtowt.sidebar.groups";
+  var DESKTOP_KEY = "towt_sidebar_desktop";
+  var TABLET_KEY = "towt_sidebar_tablet";
 
-  function readState() {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    } catch (e) {
-      return {};
+  function readJson(key) {
+    try { return JSON.parse(localStorage.getItem(key) || "{}"); }
+    catch (e) { return {}; }
+  }
+  function writeJson(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); }
+    catch (e) { /* quota / private mode */ }
+  }
+
+  function mode() {
+    if (window.matchMedia("(max-width: 768px)").matches) return "phone";
+    if (window.matchMedia("(max-width: 1024px)").matches) return "tablet";
+    return "desktop";
+  }
+
+  function applySidebarMode() {
+    var sb = document.querySelector(".sidebar");
+    if (!sb) return;
+    sb.classList.remove("expanded", "collapsed");
+    var m = mode();
+    if (m === "desktop") {
+      if (localStorage.getItem(DESKTOP_KEY) === "collapsed") sb.classList.add("collapsed");
+    } else if (m === "tablet") {
+      if (localStorage.getItem(TABLET_KEY) === "expanded") sb.classList.add("expanded");
+    }
+    // phone: always start hidden; user opens via hamburger
+  }
+
+  function toggleSidebar() {
+    var sb = document.querySelector(".sidebar");
+    if (!sb) return;
+    var m = mode();
+    if (m === "desktop") {
+      sb.classList.toggle("collapsed");
+      localStorage.setItem(DESKTOP_KEY, sb.classList.contains("collapsed") ? "collapsed" : "expanded");
+    } else {
+      // tablet + phone: use .expanded as overlay/show
+      sb.classList.toggle("expanded");
+      if (m === "tablet") {
+        localStorage.setItem(TABLET_KEY, sb.classList.contains("expanded") ? "expanded" : "collapsed");
+      }
     }
   }
-  function writeState(state) {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
-  }
 
-  function init() {
-    var state = readState();
-
+  function bindGroups() {
+    var state = readJson(GROUPS_KEY);
     document.querySelectorAll(".nav-group").forEach(function (group) {
-      var key = group.dataset.group || group.querySelector(".nav-group-title")?.textContent?.trim();
+      var key = group.dataset.group
+        || (group.querySelector(".nav-group-title")
+            && group.querySelector(".nav-group-title").textContent.trim());
       if (!key) return;
 
-      // Default: open on first render unless explicitly closed.
       var isOpen = state[key] === undefined ? true : !!state[key];
       group.classList.toggle("open", isOpen);
 
       var toggle = group.querySelector(".nav-group-toggle");
-      if (!toggle) return;
+      if (!toggle || toggle.dataset.bound === "1") return;
+      toggle.dataset.bound = "1";
       toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
 
       toggle.addEventListener("click", function (e) {
@@ -40,16 +89,18 @@
         group.classList.toggle("open", nowOpen);
         toggle.setAttribute("aria-expanded", nowOpen ? "true" : "false");
         state[key] = nowOpen;
-        writeState(state);
+        writeJson(GROUPS_KEY, state);
       });
     });
+  }
 
-    // Highlight the active link by exact path
+  function highlightActive() {
     var here = window.location.pathname;
     document.querySelectorAll(".sidebar nav a[href]").forEach(function (a) {
-      if (a.getAttribute("href") === here) {
+      var href = a.getAttribute("href");
+      // Exact match or path prefix (so /planning/legs/42 highlights /planning)
+      if (href === here || (href !== "/" && here.indexOf(href) === 0)) {
         a.setAttribute("aria-current", "page");
-        // Open the parent group too if collapsed
         var group = a.closest(".nav-group");
         if (group && !group.classList.contains("open")) {
           group.classList.add("open");
@@ -60,9 +111,30 @@
     });
   }
 
+  function bindHamburger() {
+    document.querySelectorAll("[data-sidebar-toggle]").forEach(function (btn) {
+      if (btn.dataset.bound === "1") return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        toggleSidebar();
+      });
+    });
+  }
+
+  function init() {
+    applySidebarMode();
+    bindGroups();
+    highlightActive();
+    bindHamburger();
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {
     init();
   }
+  window.addEventListener("resize", applySidebarMode);
+
+  window.toggleSidebar = toggleSidebar;
 })();

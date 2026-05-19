@@ -1,6 +1,11 @@
 {# Topbar — client variant. #}
 <header class="topbar" role="banner">
+  <button type="button" class="sidebar-toggle" data-sidebar-toggle aria-label="Basculer la barre latérale">
+    <i data-lucide="menu" class="nav-icon"></i>
+  </button>
+
   <div class="topbar-title">{% block topbar_title %}Espace client{% endblock %}</div>
+
   <div class="topbar-actions">
     <div class="clock-widget" aria-live="off">
       <div class="clock-item">
@@ -15,31 +20,19 @@
     </div>
 
     <a href="/booking/new" class="topbar-action" title="Nouvelle réservation">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <i data-lucide="plus"></i>
     </a>
 
-    <button type="button" class="topbar-action" id="topbar-user-btn" title="Mon compte">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
+    <button type="button" class="topbar-action" id="topbar-user-btn" data-menu-toggle="topbar-user-menu" title="Mon compte" aria-haspopup="menu">
+      <i data-lucide="user"></i>
     </button>
     <div class="topbar-menu" id="topbar-user-menu" role="menu">
       <div class="menu-header">{% if client is defined and client %}{{ client.company_name }}{% else %}Compte{% endif %}</div>
-      <a href="/me/account">⚙ Mon compte</a>
-      <a href="/me/bookings">📦 Mes réservations</a>
-      <a href="/me/invoices">💶 Mes factures</a>
+      <a href="/me/account"><i data-lucide="settings"></i><span>Mon compte</span></a>
+      <a href="/me/bookings"><i data-lucide="package"></i><span>Mes réservations</span></a>
+      <a href="/me/invoices"><i data-lucide="euro"></i><span>Mes factures</span></a>
       <div class="menu-divider"></div>
-      <a href="/me/logout" style="color: var(--danger);">↪ Déconnexion</a>
+      <a href="/me/logout" style="color: var(--danger);"><i data-lucide="log-out"></i><span>Déconnexion</span></a>
     </div>
   </div>
 </header>
-<script>
-(function(){
-  document.getElementById("topbar-user-btn")?.addEventListener("click", function(){
-    document.getElementById("topbar-user-menu")?.classList.toggle("open");
-  });
-  document.addEventListener("click", function(e){
-    if (!e.target.closest(".topbar-action") && !e.target.closest(".topbar-menu")) {
-      document.querySelectorAll(".topbar-menu").forEach(function(m){ m.classList.remove("open"); });
-    }
-  });
-})();
-</script>
