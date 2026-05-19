@@ -30,6 +30,7 @@ CSRF_FORM_FIELD = "_csrf"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 EXEMPT_PATHS_PREFIXES = (
     "/api/v1/",        # API expects its own auth (API key / bearer)
+    "/api/tracking/",  # Power Automate satcom ingest — auth via X-API-Token
     "/webhooks/",      # external webhooks sign their payloads
     "/health",
     "/metrics",
