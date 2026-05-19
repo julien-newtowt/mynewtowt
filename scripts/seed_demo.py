@@ -126,7 +126,6 @@ async def seed() -> None:
             ("escale_import_export_split", "Escale import/export split"),
             ("analytics_v2_dashboards", "Analytics V2 dashboards"),
             ("mfa_required_admin", "Force MFA for admin role"),
-            ("stripe_payments", "Stripe Checkout for invoices"),
         ]:
             row = (
                 await db.execute(select(FeatureFlag).where(FeatureFlag.key == key))

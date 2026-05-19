@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -23,6 +23,12 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mfa_secret: Mapped[str | None] = mapped_column(String(64))
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Pour les rôles 'marins' / 'manager_maritime' : navire de rattachement.
+    # Utilisé par captain_router pour filtrer les legs (RBAC row-level)
+    # et par /captain/next-port pour défaut-sélectionner le prochain leg.
+    assigned_vessel_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vessels.id"), nullable=True
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -51,7 +51,17 @@ ETA_SHIFT_REASONS = (
 
 
 class SofEvent(Base):
-    """Statement Of Facts — événement chronologique d'un leg."""
+    """Statement Of Facts — événement chronologique d'un leg.
+
+    Document réglementaire IMO (Statement of Facts). Une fois signé par le
+    commandant, l'événement devient **immuable** :
+    - ``signed_at`` / ``signed_by_id`` / ``signed_by_name`` : qui & quand.
+    - ``signature_hash`` : SHA-256 du tuple (event_type, occurred_at, label,
+      lat, lon, notes, signed_by_id, signed_at) — détecte toute altération
+      post-signature.
+    - ``is_locked = True`` après signature → backend rejette tout UPDATE/
+      DELETE (cf. captain_router.sign_sof_event / require_unlocked).
+    """
 
     __tablename__ = "sof_events"
 
@@ -73,6 +83,13 @@ class SofEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    # Signature commandant (réglementaire IMO)
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    signed_by_name: Mapped[str | None] = mapped_column(String(200))
+    signature_hash: Mapped[str | None] = mapped_column(String(64))
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class EtaShift(Base):

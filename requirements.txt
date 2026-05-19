@@ -19,6 +19,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 itsdangerous==2.2.0
 pyotp==2.9.0           # TOTP MFA
+segno==1.6.1           # QR code rendering (pure-Python, SVG/PNG, no Pillow)
 webauthn==2.5.0        # WebAuthn / Passkey
 cryptography==44.0.0
 

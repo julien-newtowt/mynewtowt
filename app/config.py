@@ -58,14 +58,15 @@ class Settings(BaseSettings):
 
     # External
     pipedrive_api_token: str | None = None
-    stripe_publishable_key: str | None = None
-    stripe_secret_key: str | None = None
-    stripe_webhook_secret: str | None = None
     anthropic_api_key: str | None = None
     windy_api_key: str | None = None
     mapbox_token: str | None = None
     maptiler_token: str | None = None
     tracking_api_token: str | None = None
+
+    # Note V3.1 — Stripe retiré : NEWTOWT facture par virement bancaire
+    # uniquement (cf. pdf/invoice.html). L'équipe commerciale confirme les
+    # bookings sous 4h, aucun paiement n'est traité par l'app.
 
     @property
     def map_token(self) -> str:
@@ -93,6 +94,23 @@ class Settings(BaseSettings):
 
     domain: str = "my.newtowt.eu"
     certbot_email: str = "ops@newtowt.eu"
+
+    # WebAuthn — Relying Party. ``rp_id`` doit matcher exactement le domain
+    # (sans port, sans schéma). Pour dev local, mettre "localhost" en .env.
+    # ``rp_name`` est affiché par le navigateur dans le prompt OS.
+    webauthn_rp_id: str | None = None       # None → settings.domain
+    webauthn_rp_name: str = "NEWTOWT"
+
+    # Force MFA pour le rôle administrateur — middleware
+    # ForceMfaForAdminMiddleware redirige vers /admin/my-account/mfa
+    # tant que l'admin n'a pas activé MFA. À mettre False en dev local.
+    require_mfa_for_admin: bool = True
+    # ``site_url`` = origin attendu pour les attestations. En .env :
+    # SITE_URL=https://my.newtowt.eu (sans trailing slash).
+
+    @property
+    def effective_rp_id(self) -> str:
+        return self.webauthn_rp_id or self.domain
 
     @field_validator("secret_key")
     @classmethod
@@ -126,10 +144,6 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 f"Production refusing to start: DATABASE_URL password is in the "
                 f"weak list ({password!r}). Generate a random one."
-            )
-        if self.stripe_secret_key and self.stripe_secret_key.startswith("sk_test_"):
-            raise RuntimeError(
-                "Production refusing to start: STRIPE_SECRET_KEY is a test key (sk_test_)."
             )
 
 

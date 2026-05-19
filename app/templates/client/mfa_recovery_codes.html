@@ -1,0 +1,69 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}Recovery codes{% else %}Codes de récupération{% endif %} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">{% if lang == 'en' %}Security{% else %}Sécurité{% endif %}</span>
+  <h1 class="display">
+    {% if is_regeneration %}
+      {% if lang == 'en' %}New recovery codes{% else %}Nouveaux codes de récupération{% endif %}
+    {% else %}
+      {% if lang == 'en' %}2FA enabled — recovery codes{% else %}2FA activée — codes de récupération{% endif %}
+    {% endif %}
+  </h1>
+</header>
+
+<article class="card" style="background:var(--sable); border-left:4px solid var(--cuivre);">
+  <h2>
+    {% if lang == 'en' %}⚠ Save these codes now{% else %}⚠ Sauvegardez ces codes immédiatement{% endif %}
+  </h2>
+  <p>
+    {% if lang == 'en' %}
+      These 10 single-use codes let you sign in if you lose your authenticator
+      device. <strong>They are shown only once</strong> — print them, store them
+      in a password manager, or write them on paper kept somewhere safe.
+      Each code works once and is then discarded.
+    {% else %}
+      Ces 10 codes à usage unique vous permettent de vous connecter si vous
+      perdez votre application d'authentification.
+      <strong>Ils ne sont affichés qu'une seule fois</strong> — imprimez-les,
+      stockez-les dans un gestionnaire de mots de passe, ou notez-les sur
+      papier dans un endroit sûr. Chaque code fonctionne une fois puis est
+      consommé.
+    {% endif %}
+  </p>
+</article>
+
+<article class="card mt-4">
+  <div class="grid grid-2 gap-2" style="max-width:520px; margin:0 auto;">
+    {% for c in codes %}
+      <code class="mono"
+            style="display:block; padding:var(--space-3); background:var(--sable);
+                   text-align:center; font-size:1.1rem; letter-spacing:0.1em;
+                   border-radius:6px; user-select:all;">{{ c }}</code>
+    {% endfor %}
+  </div>
+
+  <div class="text-center mt-4">
+    <p class="text-muted text-sm" style="margin-bottom:var(--space-3);">
+      {% if lang == 'en' %}
+        Tip: use ⌘P / Ctrl+P to print this page.
+      {% else %}
+        Astuce : utilisez ⌘P / Ctrl+P pour imprimer cette page.
+      {% endif %}
+    </p>
+    <a href="/me/account/mfa" class="btn btn-primary">
+      {% if lang == 'en' %}I have saved my codes →{% else %}J'ai sauvegardé mes codes →{% endif %}
+    </a>
+  </div>
+</article>
+
+<p class="text-muted text-sm text-center mt-4">
+  {% if lang == 'en' %}
+    Lost a code? Generate a fresh batch from your account — older codes become invalid.
+  {% else %}
+    Code perdu ? Régénérez un nouveau lot depuis votre compte — les anciens codes deviennent invalides.
+  {% endif %}
+</p>
+
+{% endblock %}

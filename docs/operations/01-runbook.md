@@ -111,9 +111,17 @@ Cron sur le host :
 
 ```
 0 3 * * * /opt/mynewtowt/scripts/backup.sh
+15 3 * * * docker compose -f /opt/mynewtowt/docker-compose.yml exec -T app \
+           python -m scripts.verify_signatures --json \
+           >> /var/log/mynewtowt/signature-audit.log 2>&1 \
+           || /usr/local/bin/alert-ops "signature violation detected"
 ```
 
-Workflow :
+Le 2e job (verify_signatures) scanne tous les SOF / noon report / watch log
+signés et compare le hash stocké au recalcul. Exit code 1 = au moins une
+violation → alerte ops. Exit code 2 = erreur DB.
+
+Workflow backup :
 
 1. `pg_dump -Fc` du conteneur `db`.
 2. Chiffrement GPG (clé publique opérations).

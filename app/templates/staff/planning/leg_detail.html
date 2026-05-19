@@ -82,6 +82,27 @@
 </div>
 
 <article class="card mt-4">
+  <h2>Météo prévisionnelle</h2>
+  <div class="grid grid-2 gap-3">
+    <div>
+      <div class="kicker">POL @ ETD</div>
+      <p class="mono" style="font-size:1.1rem;">{{ weather_pol_summary }}</p>
+      {% if weather_pol and weather_pol.wave_period_s %}
+        <p class="text-muted text-sm">Période houle {{ "%.1f"|format(weather_pol.wave_period_s) }} s</p>
+      {% endif %}
+    </div>
+    <div>
+      <div class="kicker">POD @ ETA</div>
+      <p class="mono" style="font-size:1.1rem;">{{ weather_pod_summary }}</p>
+      {% if weather_pod and weather_pod.wave_period_s %}
+        <p class="text-muted text-sm">Période houle {{ "%.1f"|format(weather_pod.wave_period_s) }} s</p>
+      {% endif %}
+    </div>
+  </div>
+  <p class="text-muted text-sm mt-2">Forecast Open-Meteo (gratuit) — best-effort, jamais bloquant.</p>
+</article>
+
+<article class="card mt-4">
   <h2>Bookings sur ce leg</h2>
   <p class="text-muted">
     <a href="/staff/bookings?status_filter=submitted">Voir les bookings à confirmer</a>

@@ -1,10 +1,13 @@
-"""Booking wizard for clients — 4-step flow.
+"""Booking wizard for clients — 3-step flow.
 
 Steps:
 1. /booking/new                  - choose a leg (form & search)
 2. /booking/new/{leg_code}       - cargo details
 3. /booking/new/{leg_code}/confirm  - review + accept terms
-4. /booking/new/{leg_code}/pay   - payment (or invoice)
+   → submit() crée la draft (status=submitted) et redirige vers
+     /booking/{ref}/done. L'équipe commerciale confirme sous 4h et
+     émet la facture par virement bancaire (cf. pdf/invoice.html).
+     Pas de paiement en ligne — Stripe a été retiré en V3.1.
 """
 from __future__ import annotations
 

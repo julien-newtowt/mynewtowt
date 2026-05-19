@@ -63,6 +63,20 @@
         </div>
       </div>
 
+      {% if weather_pod %}
+      <div class="mt-4" style="background:var(--sable); padding:var(--space-3); border-radius:8px;">
+        <span class="kicker">
+          {% if lang == 'en' %}Weather forecast on arrival{% else %}Météo prévue à l'arrivée{% endif %}
+        </span>
+        <p style="margin-top:var(--space-1); margin-bottom:0;" class="mono">
+          {{ weather_pod_summary }}
+        </p>
+        <p class="text-muted text-sm" style="margin-top:var(--space-1); margin-bottom:0;">
+          {% if lang == 'en' %}Source: Open-Meteo · indicative only{% else %}Source : Open-Meteo · indicatif{% endif %}
+        </p>
+      </div>
+      {% endif %}
+
       <div class="flex gap-3 mt-5">
         <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-primary btn-lg">
           {% if lang == 'en' %}Book this crossing{% else %}Réserver cette traversée{% endif %}

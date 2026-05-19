@@ -23,6 +23,8 @@ from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
 from app.models.insurance import InsuranceContract
 from app.models.leg import Leg
 from app.models.mrv import MRVEvent, MRVParameter
+from app.models.known_device import KnownDevice
+from app.models.mfa_recovery_code import MfaRecoveryCode
 from app.models.noon_report import NoonReport
 from app.models.notification import Notification
 from app.models.onboard_cashbox import (
@@ -43,6 +45,7 @@ from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
+from app.models.webauthn_credential import WebAuthnCredential
 
 __all__ = [
     "ActivityLog",
@@ -60,6 +63,8 @@ __all__ = [
     "FeatureFlag",
     "InsuranceContract",
     "Leg", "LegFinance", "LegKPI",
+    "KnownDevice",
+    "MfaRecoveryCode",
     "MRVEvent", "MRVParameter",
     "NoonReport",
     "Notification",
@@ -77,4 +82,5 @@ __all__ = [
     "User",
     "Vessel", "VesselPosition",
     "VisitorLog", "WatchLog",
+    "WebAuthnCredential",
 ]

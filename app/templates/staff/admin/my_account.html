@@ -24,7 +24,24 @@
 
   <article class="card">
     <h2>Sécurité</h2>
-    <a href="/admin/my-account/change-password" class="btn btn-primary">Changer mon mot de passe</a>
+    <p><a href="/admin/my-account/change-password" class="btn btn-primary">Changer mon mot de passe</a></p>
+    <p style="margin-top:var(--space-3);">
+      <strong>Double authentification (TOTP)</strong>
+      {% if user.mfa_enabled %}
+        <span class="pill pill-ok">Activée</span>
+      {% else %}
+        <span class="pill pill-warn">Non activée</span>
+      {% endif %}
+      <br>
+      <a href="/admin/my-account/mfa" class="btn btn-secondary mt-2">
+        {% if user.mfa_enabled %}Gérer la 2FA{% else %}Configurer 2FA{% endif %}
+      </a>
+    </p>
+    <p style="margin-top:var(--space-3);">
+      <strong>Passkeys (WebAuthn / FIDO2)</strong>
+      <br>
+      <a href="/admin/my-account/webauthn" class="btn btn-secondary mt-2">Gérer mes passkeys</a>
+    </p>
     {% if user.must_change_password %}
     <div class="alert alert-warn mt-3">
       <strong>Vous devez changer votre mot de passe.</strong>

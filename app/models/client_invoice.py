@@ -50,7 +50,6 @@ class ClientInvoice(Base):
         String(20), default="draft", nullable=False
     )  # draft / issued / paid / overdue / cancelled / refunded
 
-    stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(100))
     pdf_url: Mapped[str | None] = mapped_column(String(500))
 
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

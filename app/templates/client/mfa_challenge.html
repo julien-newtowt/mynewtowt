@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{% if lang == 'en' %}Two-factor verification{% else %}Vérification 2FA{% endif %} — {{ brand.nom_court }}{% endblock %}
+{% block body %}
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
+    </div>
+    <span class="kicker text-center" style="display:block;">
+      {% if lang == 'en' %}Two-factor authentication{% else %}Authentification 2FA{% endif %}
+    </span>
+    <h2>{% if lang == 'en' %}Enter the 6-digit code{% else %}Entrez le code à 6 chiffres{% endif %}</h2>
+    <p class="text-muted text-sm">
+      {% if lang == 'en' %}
+        Open your authenticator app (Google Authenticator, Authy, 1Password…) and enter the current code.
+      {% else %}
+        Ouvrez votre application d'authentification (Google Authenticator, Authy, 1Password…) et saisissez le code en cours.
+      {% endif %}
+    </p>
+    {% if error %}
+      <div class="alert alert-error" role="alert">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/me/login/mfa" autocomplete="off">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="code">{% if lang == 'en' %}TOTP code{% else %}Code TOTP{% endif %}</label>
+        <input id="code" name="code" type="text"
+               inputmode="numeric" pattern="[0-9 ]*"
+               minlength="6" maxlength="9"
+               autocomplete="one-time-code" required autofocus
+               style="font-size:1.5rem; letter-spacing:0.3em; text-align:center;" />
+      </div>
+      <button class="btn btn-primary btn-block btn-lg" type="submit">
+        {% if lang == 'en' %}Verify{% else %}Vérifier{% endif %}
+      </button>
+    </form>
+    <p class="text-center text-muted mt-4 text-sm">
+      <a href="/me/login">{% if lang == 'en' %}← Back to sign-in{% else %}← Retour à la connexion{% endif %}</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

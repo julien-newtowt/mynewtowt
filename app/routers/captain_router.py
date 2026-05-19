@@ -18,15 +18,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.models.finance import PortConfig
 from app.models.leg import Leg
+from app.models.noon_report import NoonReport
+from app.models.port import Port
 from app.models.sof_event import (
     CargoDocument, ETA_SHIFT_REASONS, EtaShift,
     OnboardMessage, OnboardMessageMention, SOF_EVENT_TYPES, SofEvent,
 )
 from app.models.user import User
 from app.models.vessel import Vessel
+from app.models.watch_log import WatchLog
 from app.permissions import require_permission
+from app.services import weather as wx
 from app.services.activity import record as activity_record
+from app.services.signature import (
+    compute_noon_hash, compute_sof_hash, compute_watch_hash, sign_record,
+)
 from app.templating import templates
 
 router = APIRouter(prefix="/captain", tags=["captain"])
@@ -225,6 +233,156 @@ async def create_cargo_document(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+# ─────────────────────────────────────────────────────────────────────
+#                  Prochaine escale — vue commandant
+# ─────────────────────────────────────────────────────────────────────
+
+
+@router.get("/next-port", response_class=HTMLResponse)
+async def next_port(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> HTMLResponse:
+    """Synthèse "prochaine escale" — port d'arrivée du prochain leg actif.
+
+    Affiche : nom port, ETA, distance restante, contacts (PortConfig),
+    météo forecast au moment ETA, événements SOF récents. Filtré par
+    ``user.assigned_vessel_id`` si renseigné.
+    """
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    # Prochain leg actif (ATD posé, pas encore arrivé) ou prochain ETD.
+    stmt_active = (
+        select(Leg)
+        .where(Leg.atd.is_not(None))
+        .where(Leg.ata.is_(None))
+        .order_by(Leg.etd.asc())
+        .limit(1)
+    )
+    stmt_planned = (
+        select(Leg)
+        .where(Leg.etd > now)
+        .where(Leg.ata.is_(None))
+        .order_by(Leg.etd.asc())
+        .limit(1)
+    )
+    if getattr(user, "assigned_vessel_id", None):
+        stmt_active = stmt_active.where(Leg.vessel_id == user.assigned_vessel_id)
+        stmt_planned = stmt_planned.where(Leg.vessel_id == user.assigned_vessel_id)
+
+    leg = (await db.execute(stmt_active)).scalar_one_or_none()
+    if leg is None:
+        leg = (await db.execute(stmt_planned)).scalar_one_or_none()
+
+    pod = None
+    pod_config: PortConfig | None = None
+    vessel = None
+    weather_point = None
+    sof_recent: list[SofEvent] = []
+    if leg is not None:
+        pod = await db.get(Port, leg.arrival_port_id)
+        vessel = await db.get(Vessel, leg.vessel_id)
+        if pod:
+            pod_config = (await db.execute(
+                select(PortConfig).where(PortConfig.port_id == pod.id)
+            )).scalar_one_or_none()
+        if pod and pod.latitude is not None and pod.longitude is not None and leg.eta:
+            try:
+                weather_point = await wx.fetch_at(pod.latitude, pod.longitude, leg.eta)
+            except Exception:
+                weather_point = None
+        sof_recent = list((await db.execute(
+            select(SofEvent).where(SofEvent.leg_id == leg.id)
+            .order_by(SofEvent.occurred_at.desc()).limit(8)
+        )).scalars().all())
+
+    return templates.TemplateResponse(
+        "staff/captain/next_port.html",
+        {
+            "request": request, "user": user,
+            "leg": leg, "vessel": vessel, "pod": pod, "pod_config": pod_config,
+            "weather_point": weather_point,
+            "weather_summary": wx.summarize(weather_point),
+            "sof_recent": sof_recent,
+            "now": now,
+        },
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+#                  Signature / lock — SOF / noon / watch
+# ─────────────────────────────────────────────────────────────────────
+
+
+@router.post("/sof-events/{event_id}/sign")
+async def sign_sof_event(
+    event_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """Signe un SOF event → ``is_locked = True``, plus de modification possible."""
+    e = await db.get(SofEvent, event_id)
+    if e is None:
+        raise HTTPException(status_code=404)
+    sign_record(e, user, hash_fn=compute_sof_hash)
+    await db.flush()
+    await activity_record(
+        db, action="sign", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="captain", entity_type="sof_event",
+        entity_id=e.id, entity_label=f"{e.event_type}@{e.occurred_at.isoformat()}",
+        detail=e.signature_hash[:12] if e.signature_hash else None,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={e.leg_id}", status_code=303)
+
+
+@router.post("/noon-reports/{report_id}/sign")
+async def sign_noon_report(
+    report_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    n = await db.get(NoonReport, report_id)
+    if n is None:
+        raise HTTPException(status_code=404)
+    sign_record(n, user, hash_fn=compute_noon_hash)
+    await db.flush()
+    await activity_record(
+        db, action="sign", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="captain", entity_type="noon_report",
+        entity_id=n.id, entity_label=f"leg={n.leg_id}@{n.recorded_at.isoformat()}",
+        detail=n.signature_hash[:12] if n.signature_hash else None,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/onboard/navigation?leg_id={n.leg_id}", status_code=303)
+
+
+@router.post("/watch-logs/{log_id}/sign")
+async def sign_watch_log(
+    log_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    w = await db.get(WatchLog, log_id)
+    if w is None:
+        raise HTTPException(status_code=404)
+    sign_record(w, user, hash_fn=compute_watch_hash)
+    await db.flush()
+    await activity_record(
+        db, action="sign", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="captain", entity_type="watch_log",
+        entity_id=w.id, entity_label=f"leg={w.leg_id} {w.watch_date} {w.watch_period}",
+        detail=w.signature_hash[:12] if w.signature_hash else None,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/onboard/navigation?leg_id={w.leg_id}", status_code=303)
 
 
 def _client_ip(request: Request) -> str | None:

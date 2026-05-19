@@ -25,13 +25,24 @@
     <div class="section-header"><h3><i data-lucide="list"></i> Statement of Facts ({{ events|length }})</h3></div>
     <div style="max-height:380px; overflow-y:auto;">
       <table class="data-table">
-        <thead><tr><th>Type</th><th>Quand</th><th>Notes</th></tr></thead>
+        <thead><tr><th>Type</th><th>Quand</th><th>Notes</th><th>Statut</th></tr></thead>
         <tbody>
           {% for e in events %}
           <tr>
             <td><span class="badge">{{ e.event_type }}</span><br/><small class="text-muted">{{ e.recorded_by_name or '' }}</small></td>
             <td class="mono text-xs">{{ e.occurred_at|datetime }}</td>
             <td>{{ e.label or e.notes or '—' }}</td>
+            <td>
+              {% if e.is_locked %}
+                <span class="badge badge-success" title="Signé le {{ e.signed_at|datetime }} par {{ e.signed_by_name }} · hash {{ e.signature_hash[:8] if e.signature_hash }}">🔒 {{ e.signed_by_name or '' }}</span>
+              {% else %}
+                <form method="post" action="/captain/sof-events/{{ e.id }}/sign" style="display:inline;"
+                      onsubmit="return confirm('Signer & figer définitivement cet événement SOF ?');">
+                  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                  <button class="btn btn-xs btn-cuivre" type="submit">Signer</button>
+                </form>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>

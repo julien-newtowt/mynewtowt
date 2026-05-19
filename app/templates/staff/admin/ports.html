@@ -93,6 +93,7 @@
             {% else %}<span class="pill pill-error">Inactif</span>{% endif %}
           </td>
           <td class="text-right">
+            <a href="/admin/ports/{{ p.id }}/config" class="btn btn-ghost text-sm">Config</a>
             <form method="post" action="/admin/ports/{{ p.id }}/toggle" style="display:inline;">
               <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
               <button type="submit" class="btn btn-ghost text-sm">

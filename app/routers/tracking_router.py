@@ -34,6 +34,7 @@ import io
 import logging
 import os
 import re
+import secrets as _secrets
 import zipfile
 from datetime import datetime, timezone
 from typing import Iterable
@@ -369,7 +370,7 @@ async def upload_positions(
             detail="TRACKING_API_TOKEN non configuré dans .env",
         )
     received = request.headers.get("x-api-token") or ""
-    if received != expected:
+    if not _secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
 
     # Extraction du body (renvoie bytes + filename éventuel)

@@ -15,7 +15,10 @@ from app.config import settings
 from app.csrf import CSRFMiddleware
 from app.database import init_db
 from app.middlewares import (
-    ForcePasswordChangeMiddleware, MaintenanceMiddleware, SecurityHeadersMiddleware,
+    ForceMfaForAdminMiddleware,
+    ForcePasswordChangeMiddleware,
+    MaintenanceMiddleware,
+    SecurityHeadersMiddleware,
 )
 from app.routers import (
     admin_router,
@@ -44,6 +47,7 @@ from app.routers import (
     stowage_router,
     tickets_router,
     tracking_router,
+    webauthn_router,
 )
 from app.templating import templates
 
@@ -79,6 +83,7 @@ def create_app() -> FastAPI:
     app.add_middleware(MaintenanceMiddleware)
     app.add_middleware(CSRFMiddleware)
     app.add_middleware(ForcePasswordChangeMiddleware)
+    app.add_middleware(ForceMfaForAdminMiddleware)
 
     # --------------------------------------------------------------- Routers
     app.include_router(public_router.router)
@@ -112,6 +117,7 @@ def create_app() -> FastAPI:
     app.include_router(client_auth_router.router)
     app.include_router(client_dashboard_router.router)
     app.include_router(booking_router.router)
+    app.include_router(webauthn_router.router)
 
     # ------------------------------------------------------------ Health/meta
     @app.get("/health")

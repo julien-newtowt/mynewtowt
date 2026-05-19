@@ -1,0 +1,171 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Sécurité — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Administration</span>
+  <h1 class="display">Sécurité — adoption MFA &amp; passkeys</h1>
+  <p class="text-muted">
+    Vue d'ensemble du déploiement de l'authentification forte sur les
+    comptes actifs (staff et client). Aucune donnée sensible n'est
+    affichée : juste les drapeaux ON/OFF par compte.
+  </p>
+</header>
+
+<div class="grid grid-2 gap-4 mb-4">
+  {# ── Stats staff ── #}
+  <article class="card">
+    <h2>👥 Staff ({{ stats_staff.total }})</h2>
+    {% set s = stats_staff %}
+    {% set any2fa_pct = (s.any_2fa * 100 / s.total)|round(0)|int if s.total else 0 %}
+    <div class="kpi-strip">
+      <div class="kpi-card">
+        <span class="kpi-label">MFA</span>
+        <span class="kpi-value">{{ s.mfa_on }}</span>
+        <span class="kpi-sub">/ {{ s.total }}</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Passkey</span>
+        <span class="kpi-value">{{ s.pk_on }}</span>
+        <span class="kpi-sub">/ {{ s.total }}</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">≥ 1 méthode 2FA</span>
+        <span class="kpi-value">{{ s.any_2fa }}</span>
+        <span class="kpi-sub">({{ any2fa_pct }} %)</span>
+      </div>
+      <div class="kpi-card {% if s.none_on > 0 %}kpi-warn{% endif %}">
+        <span class="kpi-label">Aucune</span>
+        <span class="kpi-value">{{ s.none_on }}</span>
+        <span class="kpi-sub">à risque</span>
+      </div>
+    </div>
+  </article>
+
+  {# ── Stats clients ── #}
+  <article class="card">
+    <h2>🧍 Clients vérifiés ({{ stats_client.total }})</h2>
+    {% set s = stats_client %}
+    {% set any2fa_pct = (s.any_2fa * 100 / s.total)|round(0)|int if s.total else 0 %}
+    <div class="kpi-strip">
+      <div class="kpi-card">
+        <span class="kpi-label">MFA</span>
+        <span class="kpi-value">{{ s.mfa_on }}</span>
+        <span class="kpi-sub">/ {{ s.total }}</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Passkey</span>
+        <span class="kpi-value">{{ s.pk_on }}</span>
+        <span class="kpi-sub">/ {{ s.total }}</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">≥ 1 méthode 2FA</span>
+        <span class="kpi-value">{{ s.any_2fa }}</span>
+        <span class="kpi-sub">({{ any2fa_pct }} %)</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Password seul</span>
+        <span class="kpi-value">{{ s.none_on }}</span>
+        <span class="kpi-sub"></span>
+      </div>
+    </div>
+  </article>
+</div>
+
+{# ── Tableau staff ── #}
+<article class="card mb-4">
+  <h2>Staff — détail par compte</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Email</th>
+        <th>Rôle</th>
+        <th>MFA</th>
+        <th>Passkeys</th>
+        <th>Dernier login</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in staff_users %}
+        {% set pkn = pk_count.get(('staff', u.id), 0) %}
+        {% set risky = (u.role == 'administrateur' and not u.mfa_enabled and pkn == 0) %}
+        <tr {% if risky %}style="background:rgba(180, 113, 72, 0.08);"{% endif %}>
+          <td><span class="mono">{{ u.username }}</span></td>
+          <td>{{ u.email }}</td>
+          <td><span class="badge">{{ u.role }}</span></td>
+          <td>
+            {% if u.mfa_enabled %}<span class="pill pill-ok">TOTP</span>
+            {% else %}<span class="pill pill-neutral">—</span>{% endif %}
+          </td>
+          <td>
+            {% if pkn > 0 %}<span class="pill pill-ok">{{ pkn }} ×</span>
+            {% else %}<span class="pill pill-neutral">—</span>{% endif %}
+          </td>
+          <td class="text-sm">{{ u.last_login_at|datetime if u.last_login_at else '—' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{# ── Tableau clients (top 50 + pagination simple) ── #}
+<article class="card">
+  <h2>Clients — détail par compte (limite 50)</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Société</th>
+        <th>Email</th>
+        <th>Pays</th>
+        <th>MFA</th>
+        <th>Passkeys</th>
+        <th>Dernier login</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in clients[:50] %}
+        {% set pkn = pk_count.get(('client', c.id), 0) %}
+        <tr>
+          <td>{{ c.company_name }}</td>
+          <td>{{ c.email }}</td>
+          <td>{{ c.country|flag if c.country else '—' }} {{ c.country or '' }}</td>
+          <td>
+            {% if c.mfa_enabled %}<span class="pill pill-ok">TOTP</span>
+            {% else %}<span class="pill pill-neutral">—</span>{% endif %}
+          </td>
+          <td>
+            {% if pkn > 0 %}<span class="pill pill-ok">{{ pkn }} ×</span>
+            {% else %}<span class="pill pill-neutral">—</span>{% endif %}
+          </td>
+          <td class="text-sm">{{ c.last_login_at|datetime if c.last_login_at else '—' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if clients|length > 50 %}
+    <p class="text-muted text-sm mt-2">… {{ clients|length - 50 }} comptes supplémentaires masqués.</p>
+  {% endif %}
+</article>
+
+<article class="card mt-4" style="background:var(--sable); border-left:3px solid var(--teal);">
+  <h3>ℹ Politique en vigueur</h3>
+  <ul>
+    <li>
+      <strong>Rôle administrateur</strong> : MFA TOTP obligatoire
+      (<code class="mono">REQUIRE_MFA_FOR_ADMIN={% if request.app and true %}true{% else %}false{% endif %}</code>
+      dans .env). Tout admin connecté sans MFA est redirigé vers la
+      configuration jusqu'à activation.
+    </li>
+    <li>
+      <strong>Autres rôles staff</strong> : MFA & passkey optionnels mais
+      <em>fortement</em> recommandés.
+    </li>
+    <li>
+      <strong>Clients</strong> : MFA & passkey optionnels, gérables depuis
+      <code class="mono">/me/account</code>.
+    </li>
+  </ul>
+</article>
+
+{% endblock %}

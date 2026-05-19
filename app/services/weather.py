@@ -151,3 +151,72 @@ def _safe(arr, i):
         return arr[i] if arr else None
     except (IndexError, TypeError):
         return None
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Helpers haut niveau pour les écrans (point unique, summary)
+# ─────────────────────────────────────────────────────────────────────
+
+
+async def fetch_current(lat: float, lon: float) -> WeatherPoint | None:
+    """Renvoie la météo au plus proche du moment présent (1er point H+0).
+
+    Utilisé par le pré-remplissage noon report (vent au point GPS courant).
+    """
+    fc = await fetch_forecast(lat, lon, hours=6)
+    if fc and fc.points:
+        return fc.points[0]
+    return None
+
+
+async def fetch_at(
+    lat: float, lon: float, when, *, window_hours: int = 72,
+) -> WeatherPoint | None:
+    """Renvoie le point forecast le plus proche d'une datetime cible.
+
+    ``when`` est aware UTC. On charge un forecast couvrant ``window_hours``
+    et on pioche l'index dont le timestamp est le plus proche. Utilisé par
+    leg_detail (POL @ ETD, POD @ ETA) et next-port (ETA arrivée).
+    """
+    import datetime as _dt
+
+    fc = await fetch_forecast(lat, lon, hours=window_hours)
+    if not fc or not fc.points:
+        return None
+    target = when.replace(tzinfo=_dt.timezone.utc) if when.tzinfo is None else when
+    best: WeatherPoint | None = None
+    best_delta = float("inf")
+    for p in fc.points:
+        try:
+            t = _dt.datetime.fromisoformat(p.time.replace("Z", "+00:00"))
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=_dt.timezone.utc)
+        except (ValueError, AttributeError):
+            continue
+        delta = abs((t - target).total_seconds())
+        if delta < best_delta:
+            best_delta = delta
+            best = p
+    return best
+
+
+def summarize(point: WeatherPoint | None) -> str:
+    """Phrase courte type 'NW 18 kn · houle 2.1 m'. None si pas de données."""
+    if point is None:
+        return "—"
+    parts: list[str] = []
+    if point.wind_speed_kn is not None and point.wind_direction_deg is not None:
+        parts.append(f"{_compass(point.wind_direction_deg)} {point.wind_speed_kn:.0f} kn")
+    elif point.wind_speed_kn is not None:
+        parts.append(f"{point.wind_speed_kn:.0f} kn")
+    if point.wave_height_m is not None:
+        parts.append(f"houle {point.wave_height_m:.1f} m")
+    return " · ".join(parts) if parts else "—"
+
+
+def _compass(deg: float) -> str:
+    """Convertit un cap décimal en rose 16 directions (N/NNE/NE/...)."""
+    dirs = ("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")
+    idx = int(((deg % 360) + 11.25) // 22.5) % 16
+    return dirs[idx]

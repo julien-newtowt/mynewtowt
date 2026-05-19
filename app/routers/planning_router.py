@@ -221,6 +221,22 @@ async def leg_detail(
     vessel = await db.get(Vessel, leg.vessel_id)
     pol = await db.get(Port, leg.departure_port_id)
     pod = await db.get(Port, leg.arrival_port_id)
+
+    # Météo POL @ ETD + POD @ ETA (best-effort, jamais bloquant)
+    from app.services import weather as wx
+    weather_pol = None
+    weather_pod = None
+    if pol and pol.latitude is not None and pol.longitude is not None and leg.etd:
+        try:
+            weather_pol = await wx.fetch_at(pol.latitude, pol.longitude, leg.etd)
+        except Exception:
+            pass
+    if pod and pod.latitude is not None and pod.longitude is not None and leg.eta:
+        try:
+            weather_pod = await wx.fetch_at(pod.latitude, pod.longitude, leg.eta)
+        except Exception:
+            pass
+
     return templates.TemplateResponse(
         "staff/planning/leg_detail.html",
         {
@@ -230,6 +246,10 @@ async def leg_detail(
             "vessel": vessel,
             "pol": pol,
             "pod": pod,
+            "weather_pol": weather_pol,
+            "weather_pol_summary": wx.summarize(weather_pol),
+            "weather_pod": weather_pod,
+            "weather_pod_summary": wx.summarize(weather_pod),
         },
     )
 

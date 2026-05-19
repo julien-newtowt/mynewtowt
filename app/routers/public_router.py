@@ -135,6 +135,15 @@ async def route_detail(
     except NotBookable:
         capacity = None
 
+    # Météo POD @ ETA — valeur commerciale ("on saura à ~quoi s'attendre")
+    from app.services import weather as wx
+    weather_pod = None
+    if pod and pod.latitude is not None and pod.longitude is not None and leg.eta:
+        try:
+            weather_pod = await wx.fetch_at(pod.latitude, pod.longitude, leg.eta)
+        except Exception:
+            pass
+
     return templates.TemplateResponse(
         "public/route_detail.html",
         {
@@ -144,6 +153,8 @@ async def route_detail(
             "pol": pol,
             "pod": pod,
             "capacity": capacity,
+            "weather_pod": weather_pod,
+            "weather_pod_summary": wx.summarize(weather_pod),
         },
     )
 

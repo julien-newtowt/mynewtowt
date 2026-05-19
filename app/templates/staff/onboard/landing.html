@@ -6,6 +6,16 @@
   <h1 class="display">À bord</h1>
 </header>
 
+<a href="/captain/next-port"
+   class="card mb-4"
+   style="background:var(--sable); border-left:4px solid var(--teal); display:block; color:inherit; text-decoration:none;">
+  <span class="kicker">⛵ Prochaine escale</span>
+  <h2 style="margin:var(--space-2) 0;">
+    {% if next_etd %}{{ next_etd.leg_code }} — ETD {{ next_etd.etd|datetime }}{% else %}Aucune escale programmée{% endif %}
+  </h2>
+  <p class="text-muted" style="margin:0;">Synthèse port d'arrivée, ETA, météo, SOF récents →</p>
+</a>
+
 <div class="grid grid-2 gap-4">
   <a href="/onboard/escale" class="card card-interactive" style="border-left:4px solid var(--cuivre); border-bottom:none; color:inherit; text-decoration:none;">
     <span class="kicker">⚓ Escale</span>

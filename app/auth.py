@@ -23,10 +23,42 @@ from app.database import get_db
 
 STAFF_COOKIE = "towt_session"
 CLIENT_COOKIE = "towt_client_session"
+# Cookie intermédiaire pose au moment du POST /me/login quand l'utilisateur
+# a MFA activé : courte durée (5 min), redirigé vers /me/login/mfa.
+CLIENT_MFA_PENDING_COOKIE = "towt_client_mfa_pending"
+CLIENT_MFA_PENDING_TTL_SECONDS = 5 * 60
+STAFF_MFA_PENDING_COOKIE = "towt_staff_mfa_pending"
+STAFF_MFA_PENDING_TTL_SECONDS = 5 * 60
+
+# Durée de session staff par rôle (en minutes). Les marins / commandants
+# embarquent pour 15+ jours sans satcom fiable → leur fenêtre par défaut
+# (480 min = 8h) est trop courte. On donne 14 jours pour ces rôles, en
+# gardant 8h pour les rôles bureau (qui doivent être ré-auth régulièrement).
+STAFF_SESSION_MINUTES_BY_ROLE: dict[str, int] = {
+    "marins": 14 * 24 * 60,
+    "manager_maritime": 14 * 24 * 60,
+}
+
+
+def _session_minutes_for(role: str | None) -> int:
+    if role and role in STAFF_SESSION_MINUTES_BY_ROLE:
+        return STAFF_SESSION_MINUTES_BY_ROLE[role]
+    return settings.access_token_expire_minutes
+
+
+# Pour le décodage, on autorise jusqu'à la valeur max possible (sinon le
+# cookie de 14j serait rejeté car serializer.loads valide max_age en dur).
+_MAX_STAFF_SESSION_MINUTES = max(
+    settings.access_token_expire_minutes,
+    *STAFF_SESSION_MINUTES_BY_ROLE.values(),
+)
+
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 _staff_serializer = URLSafeTimedSerializer(settings.secret_key, salt="staff-session")
 _client_serializer = URLSafeTimedSerializer(settings.secret_key, salt="client-session")
+_client_mfa_serializer = URLSafeTimedSerializer(settings.secret_key, salt="client-mfa-pending")
+_staff_mfa_serializer = URLSafeTimedSerializer(settings.secret_key, salt="staff-mfa-pending")
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +91,65 @@ def create_staff_session(user_id: int) -> str:
 def create_client_session(client_id: int) -> str:
     payload = {"cid": client_id, "iat": datetime.now(timezone.utc).timestamp()}
     return _client_serializer.dumps(payload)
+
+
+def create_client_mfa_pending(client_id: int) -> str:
+    """Token court (5min) signé pour la phase challenge MFA d'un login client."""
+    payload = {"cid": client_id, "iat": datetime.now(timezone.utc).timestamp()}
+    return _client_mfa_serializer.dumps(payload)
+
+
+def decode_client_mfa_pending(token: str) -> int | None:
+    """Renvoie le client_id si le token est valide & non-expiré, sinon None."""
+    if not token:
+        return None
+    try:
+        payload = _client_mfa_serializer.loads(
+            token, max_age=CLIENT_MFA_PENDING_TTL_SECONDS,
+        )
+    except (BadSignature, SignatureExpired):
+        return None
+    return payload.get("cid")
+
+
+def cookie_kwargs_for_client_mfa_pending(request: "Request | None" = None) -> dict:
+    return {
+        "key": CLIENT_MFA_PENDING_COOKIE,
+        "max_age": CLIENT_MFA_PENDING_TTL_SECONDS,
+        "httponly": True,
+        "secure": _is_https(request),
+        "samesite": "lax",
+        "path": "/",
+    }
+
+
+def create_staff_mfa_pending(user_id: int) -> str:
+    """Token court (5min) signé pour la phase challenge MFA d'un login staff."""
+    payload = {"uid": user_id, "iat": datetime.now(timezone.utc).timestamp()}
+    return _staff_mfa_serializer.dumps(payload)
+
+
+def decode_staff_mfa_pending(token: str) -> int | None:
+    if not token:
+        return None
+    try:
+        payload = _staff_mfa_serializer.loads(
+            token, max_age=STAFF_MFA_PENDING_TTL_SECONDS,
+        )
+    except (BadSignature, SignatureExpired):
+        return None
+    return payload.get("uid")
+
+
+def cookie_kwargs_for_staff_mfa_pending(request: "Request | None" = None) -> dict:
+    return {
+        "key": STAFF_MFA_PENDING_COOKIE,
+        "max_age": STAFF_MFA_PENDING_TTL_SECONDS,
+        "httponly": True,
+        "secure": _is_https(request),
+        "samesite": "lax",
+        "path": "/",
+    }
 
 
 def _decode(token: str, serializer: URLSafeTimedSerializer, max_age: int) -> dict:
@@ -100,7 +191,13 @@ async def get_current_staff(
     session_cookie: Annotated[str | None, Cookie(alias=STAFF_COOKIE)] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Return the authenticated staff User, or raise AuthRequired."""
+    """Return the authenticated staff User, or raise AuthRequired.
+
+    Décode le cookie avec la durée *maximale* admise (14j marins), puis
+    applique en post-check la limite par rôle de l'utilisateur. Si le
+    cookie a été émis trop tôt pour son rôle actuel (ex. rôle dégradé
+    après émission), on lève AuthExpired.
+    """
     from app.models.user import User  # local import to avoid cycles
 
     if not session_cookie:
@@ -108,7 +205,7 @@ async def get_current_staff(
     payload = _decode(
         session_cookie,
         _staff_serializer,
-        max_age=settings.access_token_expire_minutes * 60,
+        max_age=_MAX_STAFF_SESSION_MINUTES * 60,
     )
     user_id = payload.get("uid")
     if not user_id:
@@ -118,6 +215,12 @@ async def get_current_staff(
     ).scalar_one_or_none()
     if not user:
         raise AuthInvalid()
+    # Vérif fenêtre par rôle (post-decode)
+    iat = payload.get("iat")
+    if iat:
+        age_s = datetime.now(timezone.utc).timestamp() - float(iat)
+        if age_s > _session_minutes_for(user.role) * 60:
+            raise AuthExpired()
     return user
 
 
@@ -191,10 +294,19 @@ def _is_https(request: "Request | None") -> bool:
     return request.url.scheme == "https"
 
 
-def cookie_kwargs_for_staff(request: "Request | None" = None) -> dict:
+def cookie_kwargs_for_staff(
+    request: "Request | None" = None,
+    *,
+    role: str | None = None,
+) -> dict:
+    """Cookie staff — ``max_age`` ajusté selon le rôle (14j pour marins).
+
+    Si ``role`` n'est pas fourni on prend la durée par défaut (8h)
+    — applicable au moment du login où on peut passer ``role=user.role``.
+    """
     return {
         "key": STAFF_COOKIE,
-        "max_age": settings.access_token_expire_minutes * 60,
+        "max_age": _session_minutes_for(role) * 60,
         "httponly": True,
         "secure": _is_https(request),
         "samesite": "lax",
