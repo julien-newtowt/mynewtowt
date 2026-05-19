@@ -1,0 +1,34 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Grilles tarifaires — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial</span>
+    <h1 class="display">Grilles tarifaires</h1>
+  </div>
+  <a href="/commercial/grids/new" class="btn btn-primary">+ Nouvelle grille</a>
+</header>
+
+<article class="card">
+  <table class="data-table">
+    <thead><tr><th>Référence</th><th>Client</th><th>Statut</th><th>Validité</th><th>Tarif base</th><th>Index</th><th>Brackets</th></tr></thead>
+    <tbody>
+      {% for g in grids %}
+      <tr>
+        <td><a href="/commercial/grids/{{ g.id }}" class="mono">{{ g.reference }}</a></td>
+        <td>{{ g.client.name if g.client else '—' }}</td>
+        <td><span class="badge badge-{{ g.status }}">{{ g.status }}</span></td>
+        <td>{{ g.valid_from|date }} → {{ g.valid_to|date if g.valid_to else '∞' }}</td>
+        <td class="mono">{{ g.base_rate_per_palette|money }}</td>
+        <td class="mono">× {{ g.adjustment_index }}</td>
+        <td>{{ g.lines|length }} brackets</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-muted text-center">Aucune grille tarifaire.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

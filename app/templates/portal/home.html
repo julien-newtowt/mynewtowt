@@ -1,0 +1,65 @@
+{% extends "portal/_layout.html" %}
+{% block title %}Portail expéditeur — {{ order.reference if order else '' }}{% endblock %}
+{% block portal_content %}
+
+<header class="mb-4">
+  <span class="kicker">Portail expéditeur</span>
+  <h1 class="display">Bienvenue {{ order.shipper_name if order and order.shipper_name else '' }}</h1>
+  <p class="lead">Suivez votre expédition <strong class="mono">{{ order.reference if order else '' }}</strong> et complétez les informations attendues.</p>
+</header>
+
+<section class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-card-icon teal"><i data-lucide="package"></i></div>
+    <div class="stat-card-body">
+      <span class="stat-card-value">{{ order.booked_palettes if order else 0 }}</span>
+      <span class="stat-card-label">Palettes réservées</span>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon green"><i data-lucide="ship"></i></div>
+    <div class="stat-card-body">
+      <span class="stat-card-value">{{ vessel.name if vessel else '—' }}</span>
+      <span class="stat-card-label">Navire</span>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon sky"><i data-lucide="anchor"></i></div>
+    <div class="stat-card-body">
+      <span class="stat-card-value">{{ pol.locode if pol else '?' }} → {{ pod.locode if pod else '?' }}</span>
+      <span class="stat-card-label">Itinéraire</span>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon cuivre"><i data-lucide="calendar"></i></div>
+    <div class="stat-card-body">
+      <span class="stat-card-value">{{ leg.etd|date if leg else '—' }}</span>
+      <span class="stat-card-label">ETD</span>
+    </div>
+  </div>
+</section>
+
+<article class="card">
+  <h2>Prochaines étapes</h2>
+  <ol style="line-height:1.8;">
+    <li>Remplir la <a href="/p/{{ token }}/packing"><strong>packing list</strong></a> détaillée (poids, dimensions, HS code, IMO).</li>
+    <li>Échanger avec l'armateur via la <a href="/p/{{ token }}/messages"><strong>messagerie sécurisée</strong></a>.</li>
+    <li>Attendre la confirmation du verrouillage côté armateur.</li>
+    <li>Recevoir le Bill of Lading après chargement à bord.</li>
+  </ol>
+</article>
+
+<article class="card mt-4">
+  <h2>Voyage & navire</h2>
+  <table class="data-table">
+    <tr><td>Navire</td><td>{{ vessel.name if vessel else '—' }} <span class="mono text-xs">({{ vessel.code if vessel else '' }})</span></td></tr>
+    <tr><td>Itinéraire</td><td>
+      {% if pol %}{{ pol.country|flag }} {{ pol.name }} ({{ pol.locode }}){% endif %}
+      → {% if pod %}{{ pod.country|flag }} {{ pod.name }} ({{ pod.locode }}){% endif %}
+    </td></tr>
+    <tr><td>ETD</td><td>{{ leg.etd|datetime if leg else '—' }}</td></tr>
+    <tr><td>ETA</td><td>{{ leg.eta|datetime if leg else '—' }}</td></tr>
+  </table>
+</article>
+
+{% endblock %}

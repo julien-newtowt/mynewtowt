@@ -3,7 +3,7 @@
 {% block content %}
 <a href="/claims" class="btn btn-ghost mb-3">← Claims</a>
 <header class="mb-4"><span class="kicker">Risque</span><h1 class="display">Nouveau claim</h1></header>
-<form method="post" action="/claims/new" class="card">
+<form method="post" action="/claims" class="card">
   <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
   <div class="grid grid-2 gap-3">
     <div class="field"><label>Type</label><select name="claim_type" required><option value="cargo">Cargo</option><option value="crew">Équipage</option><option value="hull">Hull/DIV</option><option value="war_risk">War risk</option><option value="third_party">Tiers</option><option value="other">Autre</option></select></div>

@@ -1,39 +1,78 @@
 {% extends "staff/_layout.html" %}
-{% block title %}MRV — CO₂{% endblock %}
+{% block title %}MRV — {{ brand.nom_court }}{% endblock %}
 {% block content %}
-<header class="mb-4"><span class="kicker">Conformité</span><h1 class="display">MRV — Reporting CO₂</h1>
-  <p class="text-muted">Règlement UE 2015/757 — collecte fuel/distance/cargo pour reporting annuel vérifié.</p>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Conformité</span>
+    <h1 class="display">MRV — Reporting CO₂</h1>
+    <p class="text-muted">Règlement UE 2015/757 — collecte fuel/distance/cargo pour reporting annuel vérifié.</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="/mrv/export/dnv.csv" class="btn btn-secondary" hx-boost="false">↓ DNV CSV</a>
+    <a href="/mrv/export/carbon-report.txt" class="btn btn-ghost" hx-boost="false">↓ Carbon Report</a>
+  </div>
 </header>
 
-<article class="card mb-4">
+<section class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-card-icon teal"><i data-lucide="fuel"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ summary.total_fuel_t }}</span><span class="stat-card-label">Fuel total (t)</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon green"><i data-lucide="leaf"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ summary.total_co2_t }}</span><span class="stat-card-label">CO₂ total (t)</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon sky"><i data-lucide="bar-chart-3"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ summary.event_count }}</span><span class="stat-card-label">Événements MRV</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon cuivre"><i data-lucide="info"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ co2_factor }}</span><span class="stat-card-label">t CO₂ / t fuel</span></div>
+  </div>
+</section>
+
+<article class="card">
   <h2>Événements MRV récents ({{ events|length }})</h2>
   {% if events %}
-    <table>
-      <thead><tr><th>Date</th><th>Type</th><th>Leg</th><th>Fuel (t)</th><th>Distance (NM)</th><th>Temps en mer (h)</th><th>Cargo (t)</th></tr></thead>
-      <tbody>{% for e in events %}<tr>
+  <table class="data-table">
+    <thead><tr><th>Date</th><th>Type</th><th>Leg</th><th>Fuel (t)</th><th>ROB (L)</th><th>Distance (NM)</th><th>Cargo (t)</th></tr></thead>
+    <tbody>
+      {% for e in events %}
+      {% set l = leg_map.get(e.leg_id) %}
+      <tr>
         <td class="mono text-sm">{{ e.recorded_at|datetime }}</td>
-        <td>{{ e.event_kind }}</td><td>#{{ e.leg_id }}</td>
-        <td>{{ e.fuel_mass_t or '—' }}</td><td>{{ e.distance_nm or '—' }}</td>
-        <td>{{ e.time_at_sea_h or '—' }}</td><td>{{ e.cargo_carried_t or '—' }}</td>
-      </tr>{% endfor %}</tbody>
-    </table>
+        <td><span class="badge">{{ e.event_kind }}</span></td>
+        <td class="mono">{{ l.leg_code if l else e.leg_id }}</td>
+        <td class="mono">{{ e.fuel_mass_t or '—' }}</td>
+        <td class="mono">{{ e.rob_l or '—' }}</td>
+        <td class="mono">{{ e.distance_nm or '—' }}</td>
+        <td class="mono">{{ e.cargo_carried_t or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   {% else %}<p class="text-muted">Aucun événement MRV. Les noon reports alimentent ce module.</p>{% endif %}
 </article>
 
-<article class="card">
-  <h2>Paramètres MRV</h2>
-  {% if params %}
-    <table>
-      <thead><tr><th>Paramètre</th><th>Valeur</th><th>Unité</th></tr></thead>
-      <tbody>{% for p in params %}<tr><td>{{ p.name }}</td><td class="mono">{{ p.value }}</td><td>{{ p.unit or '—' }}</td></tr>{% endfor %}</tbody>
-    </table>
-  {% else %}
-    <p class="text-muted">Paramètres par défaut applicables :</p>
-    <ul>
-      <li><strong>avg_mdo_density</strong> : 0,845 t/m³</li>
-      <li><strong>mdo_admissible_deviation</strong> : 2,0 mt</li>
-      <li><strong>co2_emission_factor</strong> : 3,206 t CO₂/t fuel</li>
-    </ul>
-  {% endif %}
+<article class="card mt-4">
+  <h2>Ajouter un événement</h2>
+  <form method="post" action="/mrv/legs/{{ legs[0].id if legs else 0 }}/events">
+    <div class="grid grid-3 gap-2">
+      <div class="field"><label>Leg</label><select name="leg_id_select" onchange="this.form.action='/mrv/legs/'+this.value+'/events'">{% for l in legs %}<option value="{{ l.id }}">{{ l.leg_code }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Type</label><select name="event_kind"><option>bunkering</option><option>noon_consumption</option><option>arrival_rob</option><option>departure_rob</option></select></div>
+      <div class="field"><label>Date</label><input name="recorded_at" type="datetime-local" required /></div>
+      <div class="field"><label>Fuel type</label><select name="fuel_type"><option>MDO</option><option>MGO</option></select></div>
+      <div class="field"><label>Fuel (t)</label><input name="fuel_mass_t" type="number" step="0.001" /></div>
+      <div class="field"><label>Volume (L)</label><input name="fuel_volume_l" type="number" step="0.01" /></div>
+      <div class="field"><label>ROB (L)</label><input name="rob_l" type="number" step="0.01" /></div>
+      <div class="field"><label>Distance (NM)</label><input name="distance_nm" type="number" step="0.01" /></div>
+      <div class="field"><label>Cargo (t)</label><input name="cargo_carried_t" type="number" step="0.01" /></div>
+    </div>
+    <div class="field"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+    <button type="submit" class="btn btn-primary btn-sm">+ Événement</button>
+  </form>
 </article>
+
 {% endblock %}

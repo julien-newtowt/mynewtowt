@@ -18,18 +18,28 @@ from app.middlewares import MaintenanceMiddleware, SecurityHeadersMiddleware
 from app.routers import (
     api_v1_router,
     booking_router,
+    captain_router,
+    cargo_packing_router,
+    cargo_portal_router,
     cargo_router,
     cashbox_router,
     chat_router,
+    claims_router,
     client_auth_router,
     client_dashboard_router,
+    commercial_router,
+    crew_router,
+    escale_router,
     modules_router,
+    mrv_router,
     planning_router,
     public_router,
     staff_auth_router,
     staff_booking_router,
     staff_dashboard_router,
+    stowage_router,
     tickets_router,
+    tracking_router,
 )
 from app.templating import templates
 
@@ -73,6 +83,20 @@ def create_app() -> FastAPI:
     app.include_router(staff_booking_router.router)
     app.include_router(planning_router.router)
     app.include_router(cargo_router.router)
+    # ─── Phase 2 ERP : full modules promoted from modules_router stubs ───
+    app.include_router(commercial_router.router)
+    app.include_router(cargo_packing_router.router)
+    app.include_router(crew_router.router)
+    app.include_router(escale_router.router)
+    # ─── Phase 3 ERP : captain / stowage / claims / mrv ───
+    app.include_router(captain_router.router)
+    app.include_router(stowage_router.router)
+    app.include_router(claims_router.router)
+    app.include_router(mrv_router.router)
+    # ─── Public/API (no auth, token-protected) ───
+    app.include_router(cargo_portal_router.router)
+    app.include_router(tracking_router.router)
+    # ─── Existing routers ───
     app.include_router(tickets_router.router)
     app.include_router(cashbox_router.router)
     app.include_router(modules_router.router)

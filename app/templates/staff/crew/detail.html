@@ -1,0 +1,84 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ member.full_name }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Équipage · {{ member.role }}</span>
+    <h1 class="display">{{ member.full_name }}</h1>
+    <p class="text-muted">
+      {% if member.nationality %}<span class="port-badge">{{ member.nationality|flag }} {{ member.nationality }}</span> · {% endif %}
+      {{ member.email or '' }} · {{ member.phone or '' }}
+    </p>
+  </div>
+  <div class="flex gap-2">
+    {% if member.schengen_status == 'compliant' %}<span class="pill pill-ok">Schengen OK</span>
+    {% elif member.schengen_status == 'warning' %}<span class="pill pill-warn">Schengen Warning</span>
+    {% else %}<span class="pill pill-error">Non-compliant</span>{% endif %}
+    <a href="/crew" class="btn btn-ghost">← Retour</a>
+  </div>
+</header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Documents & visas</h2>
+    <table class="data-table">
+      <tr><td>Passeport</td><td class="mono">{{ member.passport_number or '—' }}<br/><small>exp. {{ member.passport_expires_at or '—' }}</small></td></tr>
+      <tr><td>Visa US</td><td class="mono">{{ member.visa_us_expires_at or '—' }}</td></tr>
+      <tr><td>Visa BR</td><td class="mono">{{ member.visa_br_expires_at or '—' }}</td></tr>
+      <tr><td>Seaman book</td><td class="mono">{{ member.seaman_book_number or '—' }}<br/><small>exp. {{ member.seaman_book_expires_at or '—' }}</small></td></tr>
+      <tr><td>Schengen window</td><td class="mono">{{ member.schengen_days_in_window or 0 }} j / 90 (fenêtre fin {{ member.schengen_window_end or '—' }})</td></tr>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Certifications</h2>
+    {% if certifications %}
+    <table class="data-table">
+      <thead><tr><th>Type</th><th>Réf.</th><th>Délivrée</th><th>Expire</th></tr></thead>
+      <tbody>
+        {% for c in certifications %}
+        <tr><td>{{ c.kind }}</td><td class="mono">{{ c.reference or '—' }}</td><td>{{ c.issued_at or '—' }}</td><td>{{ c.expires_at or '—' }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="text-muted">Aucune certification renseignée.</p>{% endif %}
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Embarquements / débarquements ({{ assignments|length }})</h2>
+  {% if assignments %}
+  <table class="data-table">
+    <thead><tr><th>Leg</th><th>Rôle</th><th>Embarquement</th><th>Débarquement</th></tr></thead>
+    <tbody>
+      {% for a in assignments %}
+      <tr><td class="mono">{{ a.leg_id }}</td><td>{{ a.role_on_board or '—' }}</td><td>{{ a.embark_at|datetime if a.embark_at else '—' }}</td><td>{{ a.disembark_at|datetime if a.disembark_at else '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="text-muted">Aucun embarquement enregistré.</p>{% endif %}
+</article>
+
+<article class="card mt-4">
+  <h2>Billets transport ({{ tickets|length }})</h2>
+  {% if tickets %}
+  <table class="data-table">
+    <thead><tr><th>Mode</th><th>Réf.</th><th>Compagnie</th><th>Départ</th><th>Arrivée</th><th>Coût</th></tr></thead>
+    <tbody>
+      {% for t in tickets %}
+      <tr>
+        <td>{{ t.mode }}</td>
+        <td class="mono">{{ t.reference or '—' }}</td>
+        <td>{{ t.carrier or '—' }}</td>
+        <td>{{ t.departure_at|datetime if t.departure_at else '—' }}<br/><small>{{ t.departure_location or '' }}</small></td>
+        <td>{{ t.arrival_at|datetime if t.arrival_at else '—' }}<br/><small>{{ t.arrival_location or '' }}</small></td>
+        <td class="mono">{{ t.cost_eur|money if t.cost_eur else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="text-muted">Aucun billet enregistré.</p>{% endif %}
+</article>
+
+{% endblock %}

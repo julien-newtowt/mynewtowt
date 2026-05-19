@@ -1,0 +1,46 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Calendrier équipage {{ year }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Équipage</span>
+    <h1 class="display">Calendrier {{ year }}</h1>
+    <p class="text-muted">Heatmap des jours embarqués par marin.</p>
+  </div>
+  <div class="year-selector">
+    <a href="/crew/calendar?year={{ year - 1 }}" class="year-btn">← {{ year - 1 }}</a>
+    <a href="/crew/calendar?year={{ year }}" class="year-btn active">{{ year }}</a>
+    <a href="/crew/calendar?year={{ year + 1 }}" class="year-btn">{{ year + 1 }} →</a>
+  </div>
+</header>
+
+<article class="card" style="overflow-x:auto;">
+  <table class="data-table" style="min-width:1200px;">
+    <thead>
+      <tr>
+        <th>Marin</th>
+        <th>Jours embarqués</th>
+        <th>Période</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in members %}
+      {% set days = days_by_member[m.id] %}
+      <tr>
+        <td><a href="/crew/members/{{ m.id }}">{{ m.full_name }}</a> <span class="text-muted text-xs">({{ m.role }})</span></td>
+        <td><strong>{{ days|length }}</strong> j</td>
+        <td>
+          {% if days %}
+          <span class="mono text-xs">{{ days[0] }} → {{ days[-1] }}</span>
+          {% else %}
+          <span class="text-muted">aucun</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

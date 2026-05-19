@@ -1,0 +1,33 @@
+{% extends "portal/_layout.html" %}
+{% block title %}Confidentialité — {{ brand.nom_court }}{% endblock %}
+{% block portal_content %}
+
+<header class="mb-4">
+  <span class="kicker">Portail expéditeur</span>
+  <h1 class="display">Confidentialité & sécurité du lien</h1>
+</header>
+
+<article class="card">
+  <h2>Comment ce portail est-il sécurisé ?</h2>
+  <ul style="line-height:1.8;">
+    <li>Le lien <code class="mono">/p/{token}</code> contient un identifiant unique (24 caractères hexadécimaux) valide <strong>90 jours</strong>.</li>
+    <li>Tous les accès sont audités : IP, navigateur, horodatage. Le token n'est <strong>jamais</strong> stocké en clair dans nos logs (empreinte SHA-256 uniquement).</li>
+    <li>Aucun mot de passe — l'accès au portail est strictement attaché au lien que NEWTOWT vous a envoyé. Ne le partagez qu'avec les personnes autorisées de votre organisation.</li>
+    <li>Le contenu est chiffré en transit (HTTPS). Les pièces jointes restent sur nos serveurs européens et ne sont jamais transmises à des tiers.</li>
+    <li>Une fois la packing list verrouillée par l'armateur, vos saisies sont figées (audit trail field-by-field).</li>
+  </ul>
+
+  <h2>Données personnelles</h2>
+  <p>Conformément au RGPD, vous pouvez exercer vos droits d'accès, rectification, suppression en écrivant à
+    <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    {{ brand.raison_sociale }}<br/>
+    {{ brand.adresse }}<br/>
+    {{ brand.telephone }} · <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>
+  </p>
+</article>
+
+{% endblock %}

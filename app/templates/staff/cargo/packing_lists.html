@@ -1,0 +1,37 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Packing lists — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Cargo</span>
+    <h1 class="display">Packing lists</h1>
+  </div>
+  <a href="/commercial/orders" class="btn btn-ghost">Voir commandes →</a>
+</header>
+
+<article class="card">
+  <table class="data-table">
+    <thead><tr><th>PL #</th><th>Order</th><th>Statut</th><th>Batches</th><th>Complétion</th><th>Token</th><th>Expire</th></tr></thead>
+    <tbody>
+      {% for pl in packing_lists %}
+      <tr>
+        <td><a href="/cargo/packing-lists/{{ pl.id }}" class="mono">PL-{{ pl.id }}</a></td>
+        <td class="mono">{{ pl.order_id }}</td>
+        <td><span class="badge badge-{{ pl.status }}">{{ pl.status }}</span></td>
+        <td>{{ pl.batch_count }}</td>
+        <td>
+          <div class="progress-bar"><div class="progress-bar-fill" style="width:{{ pl.completion_pct }}%"></div></div>
+          <small class="text-muted">{{ pl.completion_pct }}%</small>
+        </td>
+        <td class="mono text-xs"><code>/p/{{ pl.token[:8] }}…</code></td>
+        <td class="text-muted text-sm">{{ pl.token_expires_at|datetime("%d/%m/%Y") if pl.token_expires_at else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-muted text-center">Aucune packing list pour l'instant. Créez-en une depuis une commande.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

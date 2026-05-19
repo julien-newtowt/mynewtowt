@@ -1,0 +1,132 @@
+{% extends "staff/_layout.html" %}
+{% block title %}On Board — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Captain · {{ vessel.name if vessel else '' }}</span>
+    <h1 class="display">On Board</h1>
+    <p class="text-muted">SOF events · ETA shifts · messagerie de bord · cargo documents</p>
+  </div>
+</header>
+
+<div class="leg-selector">
+  {% for l in legs %}
+  <a href="/captain?leg_id={{ l.id }}" class="leg-chip {% if leg and leg.id == l.id %}active{% endif %}">
+    <strong>{{ l.leg_code }}</strong>
+    <span class="text-muted text-xs">{{ l.etd|date }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+{% if leg %}
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <div class="section-header"><h3><i data-lucide="list"></i> Statement of Facts ({{ events|length }})</h3></div>
+    <div style="max-height:380px; overflow-y:auto;">
+      <table class="data-table">
+        <thead><tr><th>Type</th><th>Quand</th><th>Notes</th></tr></thead>
+        <tbody>
+          {% for e in events %}
+          <tr>
+            <td><span class="badge">{{ e.event_type }}</span><br/><small class="text-muted">{{ e.recorded_by_name or '' }}</small></td>
+            <td class="mono text-xs">{{ e.occurred_at|datetime }}</td>
+            <td>{{ e.label or e.notes or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <h4 class="mt-3">Saisir un événement</h4>
+    <form method="post" action="/captain/legs/{{ leg.id }}/sof">
+      <div class="grid grid-2 gap-2">
+        <div class="field"><label>Type</label><select name="event_type">{% for t in event_types %}<option>{{ t }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Quand</label><input name="occurred_at" type="datetime-local" required /></div>
+        <div class="field"><label>Libellé</label><input name="label" type="text" /></div>
+        <div class="field"><label>Latitude</label><input name="latitude" type="number" step="0.0001" /></div>
+        <div class="field"><label>Longitude</label><input name="longitude" type="number" step="0.0001" /></div>
+      </div>
+      <div class="field"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <button type="submit" class="btn btn-primary btn-sm">+ SOF event</button>
+    </form>
+  </article>
+
+  <article class="card">
+    <div class="section-header"><h3><i data-lucide="clock"></i> ETA shifts ({{ eta_shifts|length }})</h3></div>
+    {% if eta_shifts %}
+    <table class="data-table">
+      <thead><tr><th>De</th><th>Vers</th><th>Motif</th><th>Détail</th></tr></thead>
+      <tbody>
+        {% for s in eta_shifts %}
+        <tr>
+          <td class="mono text-xs">{{ s.previous_eta|datetime("%d/%m %H:%M") }}</td>
+          <td class="mono text-xs">{{ s.new_eta|datetime("%d/%m %H:%M") }}</td>
+          <td><span class="badge badge-{{ 'planned' if s.reason in ('weather','port_congestion') else 'inprogress' }}">{{ s.reason }}</span></td>
+          <td>{{ s.detail or '—' }}<br/><small class="text-muted">{{ s.declared_by_name or '' }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="text-muted">Aucun décalage déclaré.</p>{% endif %}
+
+    <h4 class="mt-3">Déclarer un décalage</h4>
+    <form method="post" action="/captain/legs/{{ leg.id }}/eta-shift">
+      <div class="grid grid-2 gap-2">
+        <div class="field"><label>Nouveau ETA</label><input name="new_eta" type="datetime-local" required /></div>
+        <div class="field"><label>Motif</label><select name="reason">{% for r in eta_reasons %}<option>{{ r }}</option>{% endfor %}</select></div>
+      </div>
+      <div class="field"><label>Détail</label><textarea name="detail" rows="2"></textarea></div>
+      <button type="submit" class="btn btn-primary btn-sm">Déclarer le décalage</button>
+    </form>
+  </article>
+</div>
+
+<article class="card mt-4">
+  <div class="section-header"><h3><i data-lucide="message-square"></i> Messagerie de bord ({{ messages|length }})</h3></div>
+  <div style="max-height:300px; overflow-y:auto;">
+    {% for m in messages|reverse %}
+    <div class="dash-notif-card {% if m.is_bot %}notif-read{% endif %}">
+      <span class="dash-notif-icon">{{ '🤖' if m.is_bot else '⛵' }}</span>
+      <div class="dash-notif-body">
+        <div class="dash-notif-title"><strong>{{ m.author_name }}</strong><span class="dash-notif-time">{{ m.created_at|datetime }}</span></div>
+        <div class="dash-notif-text">{{ m.body }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <form method="post" action="/captain/legs/{{ leg.id }}/messages" class="mt-3">
+    <div class="field"><label>Nouveau message <small class="text-muted">(utilisez @username pour mentionner, @MYTOWT_BOT pour interroger le bot)</small></label><textarea name="body" rows="2" required></textarea></div>
+    <button type="submit" class="btn btn-primary btn-sm">Envoyer</button>
+  </form>
+</article>
+
+<article class="card mt-4">
+  <div class="section-header"><h3><i data-lucide="file-text"></i> Cargo documents ({{ docs|length }})</h3></div>
+  {% if docs %}
+  <table class="data-table">
+    <thead><tr><th>Kind</th><th>Référence</th><th>Émis</th><th>Partie</th></tr></thead>
+    <tbody>
+      {% for d in docs %}
+      <tr><td><span class="badge">{{ d.kind }}</span></td><td class="mono">{{ d.reference or '—' }}</td><td>{{ d.issued_at|datetime }}</td><td>{{ d.party_name or '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="text-muted">Aucun document généré.</p>{% endif %}
+
+  <h4 class="mt-3">Nouveau document</h4>
+  <form method="post" action="/captain/legs/{{ leg.id }}/docs">
+    <div class="grid grid-3 gap-2">
+      <div class="field"><label>Type</label><select name="kind"><option>NOR</option><option>NOR_RT</option><option>LOP_GENERAL</option><option>LOP_DRAFT</option><option>MATES_RECEIPT</option><option>OTHER</option></select></div>
+      <div class="field"><label>Référence</label><input name="reference" type="text" /></div>
+      <div class="field"><label>Émis le</label><input name="issued_at" type="datetime-local" required /></div>
+      <div class="field"><label>Partie</label><input name="party_name" type="text" /></div>
+    </div>
+    <div class="field"><label>Corps</label><textarea name="body" rows="3"></textarea></div>
+    <button type="submit" class="btn btn-primary btn-sm">Émettre</button>
+  </form>
+</article>
+{% else %}
+<article class="card text-center"><p class="text-muted">Sélectionnez un leg ci-dessus.</p></article>
+{% endif %}
+
+{% endblock %}

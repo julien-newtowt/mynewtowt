@@ -1,0 +1,43 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ grid.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial · {{ grid.client.name if grid.client else '' }}</span>
+    <h1 class="display">{{ grid.reference }}</h1>
+    <p class="text-muted">Valide {{ grid.valid_from|date }} → {{ grid.valid_to|date if grid.valid_to else '∞' }} · base {{ grid.base_rate_per_palette|money }} · × {{ grid.adjustment_index }}</p>
+  </div>
+  <div class="flex gap-2">
+    <span class="badge badge-{{ grid.status }}">{{ grid.status }}</span>
+    {% if grid.status == 'draft' %}
+    <form method="post" action="/commercial/grids/{{ grid.id }}/activate" style="display:inline;">
+      <button type="submit" class="btn btn-primary btn-sm">Activer</button>
+    </form>
+    {% endif %}
+    <a href="/commercial/grids" class="btn btn-ghost">← Retour</a>
+  </div>
+</header>
+
+<article class="card">
+  <h2>Brackets dégressifs</h2>
+  <table class="data-table">
+    <thead><tr><th>Bracket</th><th>Libellé</th><th>Max qty</th><th>Coefficient</th><th>Tarif effectif</th></tr></thead>
+    <tbody>
+      {% for l in grid.lines %}
+      <tr>
+        <td class="mono">{{ l.bracket_key }}</td>
+        <td>{{ l.bracket_label }}</td>
+        <td class="mono">{{ l.max_qty }}</td>
+        <td class="mono">× {{ l.coeff }}</td>
+        <td class="mono">{{ ((grid.base_rate_per_palette * l.coeff * grid.adjustment_index))|money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if grid.notes %}
+  <div class="alert alert-info mt-3">{{ grid.notes }}</div>
+  {% endif %}
+</article>
+
+{% endblock %}
