@@ -25,10 +25,12 @@ from app.auth import (
     get_current_staff, hash_password, verify_password,
 )
 from app.database import get_db
+from app.i18n import SUPPORTED as SUPPORTED_LANGS
 from app.models.activity_log import ActivityLog
 from app.models.finance import OpexParameter
 from app.models.insurance import INSURANCE_KINDS, InsuranceContract
 from app.models.user import User
+from app.models.vessel import Vessel
 from app.permissions import ROLES, require_permission
 from app.services.activity import record as activity_record
 from app.templating import templates
@@ -39,6 +41,10 @@ MAINTENANCE_MARKER = Path("/tmp/.maintenance")
 
 
 # ────────────────────────────────────────────── Users CRUD
+async def _vessels_for_form(db: AsyncSession) -> list[Vessel]:
+    return list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+
+
 @router.get("/users", response_class=HTMLResponse)
 async def users_list(
     request: Request,
@@ -48,9 +54,17 @@ async def users_list(
     users = list((await db.execute(
         select(User).order_by(User.username)
     )).scalars().all())
+    vessels = await _vessels_for_form(db)
+    # Map vessel_id → code pour afficher le navire de rattachement en liste
+    vessel_codes = {v.id: v.code for v in vessels}
     return templates.TemplateResponse(
         "staff/admin/users.html",
-        {"request": request, "user": user, "users": users, "roles": ROLES},
+        {
+            "request": request, "user": user, "users": users,
+            "roles": ROLES, "vessels": vessels, "vessel_codes": vessel_codes,
+            "languages": list(SUPPORTED_LANGS),
+            "edit_user": None,
+        },
     )
 
 
@@ -62,22 +76,37 @@ async def users_create(
     full_name: str | None = Form(None),
     role: str = Form(...),
     password: str = Form(...),
+    language: str = Form("fr"),
+    assigned_vessel_id: str = Form(""),
     must_change_password: bool = Form(False),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "M")),
 ):
     if role not in ROLES:
         raise HTTPException(status_code=400, detail="invalid role")
+    if language not in SUPPORTED_LANGS:
+        language = "fr"
+    if len(password) < 12:
+        raise HTTPException(status_code=400, detail="mot de passe trop court (12 caractères min)")
+    username_clean = username.strip()
+    email_clean = email.strip().lower()
     existing = (await db.execute(
-        select(User).where((User.username == username) | (User.email == email))
+        select(User).where((User.username == username_clean) | (User.email == email_clean))
     )).scalar_one_or_none()
     if existing is not None:
-        raise HTTPException(status_code=409, detail="utilisateur déjà existant")
+        raise HTTPException(status_code=409, detail="utilisateur déjà existant (username ou email)")
+
+    vessel_id = int(assigned_vessel_id) if assigned_vessel_id.strip() else None
+    if vessel_id is not None and (await db.get(Vessel, vessel_id)) is None:
+        raise HTTPException(status_code=400, detail="navire de rattachement inconnu")
+
     new_user = User(
-        username=username.strip(), email=email.strip(),
+        username=username_clean, email=email_clean,
         full_name=(full_name or "").strip() or None,
         hashed_password=hash_password(password),
         role=role,
+        language=language,
+        assigned_vessel_id=vessel_id,
         must_change_password=must_change_password,
     )
     db.add(new_user)
@@ -86,6 +115,78 @@ async def users_create(
         db, action="create", user_id=user.id, user_name=user.full_name or user.username,
         user_role=user.role, module="admin", entity_type="user",
         entity_id=new_user.id, entity_label=new_user.username,
+        detail=f"role={role} lang={language}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@router.get("/users/{user_id}/edit", response_class=HTMLResponse)
+async def users_edit_form(
+    user_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> HTMLResponse:
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404)
+    users = list((await db.execute(select(User).order_by(User.username))).scalars().all())
+    vessels = await _vessels_for_form(db)
+    return templates.TemplateResponse(
+        "staff/admin/users.html",
+        {
+            "request": request, "user": user, "users": users,
+            "roles": ROLES, "vessels": vessels,
+            "vessel_codes": {v.id: v.code for v in vessels},
+            "languages": list(SUPPORTED_LANGS),
+            "edit_user": target,
+        },
+    )
+
+
+@router.post("/users/{user_id}/edit")
+async def users_edit_submit(
+    user_id: int,
+    request: Request,
+    email: str = Form(...),
+    full_name: str | None = Form(None),
+    role: str = Form(...),
+    language: str = Form("fr"),
+    assigned_vessel_id: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404)
+    if role not in ROLES:
+        raise HTTPException(status_code=400, detail="invalid role")
+    if language not in SUPPORTED_LANGS:
+        language = "fr"
+    email_clean = email.strip().lower()
+    # Unicité email (hors lui-même)
+    clash = (await db.execute(
+        select(User).where(User.email == email_clean, User.id != user_id)
+    )).scalar_one_or_none()
+    if clash is not None:
+        raise HTTPException(status_code=409, detail="email déjà utilisé par un autre compte")
+
+    vessel_id = int(assigned_vessel_id) if assigned_vessel_id.strip() else None
+    if vessel_id is not None and (await db.get(Vessel, vessel_id)) is None:
+        raise HTTPException(status_code=400, detail="navire de rattachement inconnu")
+
+    target.email = email_clean
+    target.full_name = (full_name or "").strip() or None
+    target.role = role
+    target.language = language
+    target.assigned_vessel_id = vessel_id
+    await db.flush()
+    await activity_record(
+        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="admin", entity_type="user",
+        entity_id=target.id, entity_label=target.username,
+        detail=f"role={role} lang={language} vessel={vessel_id}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/users", status_code=303)
