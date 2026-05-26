@@ -34,8 +34,13 @@
     try { if (el.dataset.center) center = JSON.parse(el.dataset.center); } catch (e) {}
     try { if (el.dataset.zoom) zoom = parseFloat(el.dataset.zoom); } catch (e) {}
 
+    // Style de fond : par défaut "ocean" (carte nautique MapTiler avec
+    // bathymétrie — adapté à une flotte transatlantique). Surchargeable
+    // via data-map-style="streets-v2 | basic-v2 | dataviz-dark | ...".
+    var mapStyle = el.dataset.mapStyle || "ocean";
     var style = token
-      ? "https://api.maptiler.com/maps/streets-v2/style.json?key=" + encodeURIComponent(token)
+      ? "https://api.maptiler.com/maps/" + encodeURIComponent(mapStyle) +
+        "/style.json?key=" + encodeURIComponent(token)
       : "https://demotiles.maplibre.org/style.json";
 
     var map = new window.maplibregl.Map({
