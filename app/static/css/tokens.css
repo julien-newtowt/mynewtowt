@@ -150,10 +150,12 @@
   --radius-pill: 999px;
 
   /* ────────────────────────── Élévations ───────────────────────────── */
-  --shadow-sm: 0 1px 2px rgba(13, 89, 102, 0.05);
-  --shadow-md: 0 4px 12px rgba(13, 89, 102, 0.08);
-  --shadow-lg: 0 10px 30px rgba(13, 89, 102, 0.12);
-  --shadow-glow: 0 0 0 4px rgba(180, 113, 72, 0.2);  /* halo cuivre focus */
+  /* Ombres en 2 couches (signature refonte "Nouvelle Étoile") — alignées
+     sur colors_and_type.css (--sh-hair / --sh-card / --sh-lift). */
+  --shadow-sm: 0 1px 0 rgba(13, 89, 102, 0.08);
+  --shadow-md: 0 2px 4px rgba(13, 89, 102, 0.06), 0 12px 28px -16px rgba(13, 89, 102, 0.18);
+  --shadow-lg: 0 4px 8px rgba(13, 89, 102, 0.08), 0 24px 48px -20px rgba(13, 89, 102, 0.24);
+  --shadow-glow: 0 0 0 3px rgba(180, 113, 72, 0.35);  /* halo cuivre focus */
 
   /* ────────────────────────── Animations ───────────────────────────── */
   --duration-fast: 200ms;

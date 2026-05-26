@@ -246,7 +246,7 @@ a:focus-visible {
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-sm);
-  border: 1px solid transparent;
+  border: 2px solid transparent;
   font-family: inherit;
   font-size: var(--text-sm);
   font-weight: var(--fw-semibold);
@@ -258,11 +258,13 @@ a:focus-visible {
 .btn-primary {
   background: var(--teal);
   color: var(--blanc);
+  border-color: var(--teal);
 }
 .btn-primary:hover {
-  background: var(--teal-light);
+  /* Refonte "Nouvelle Étoile" : assombrir vers teal-deep, sans ombre. */
+  background: var(--teal-dark);
+  border-color: var(--teal-dark);
   color: var(--blanc);
-  box-shadow: var(--shadow-md);
 }
 .btn-secondary {
   background: var(--blanc);
