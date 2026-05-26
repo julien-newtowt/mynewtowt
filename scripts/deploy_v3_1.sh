@@ -294,7 +294,7 @@ check "/login/mfa"       303   # redirige si pas de cookie MFA pending
 # Parcours client (Sprint 1)
 check "/me"              303   # redirige → /me/login si non-auth
 check "/me/login"        200
-check "/booking"         200
+check "/booking/new"     200
 
 # Finance + KPI (Sprint 2)
 check "/finance"         303   # redirige → /login si non-auth
