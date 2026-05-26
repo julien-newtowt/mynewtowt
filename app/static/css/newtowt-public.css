@@ -44,6 +44,9 @@
 .header-nav .btn { border-bottom: none; padding-bottom: var(--sp-3); }
 .header-nav .btn:hover { border-bottom: none; }
 
+/* Global utility classes missing from kairos.css (public layout only) */
+.mono { font-family: var(--font-mono); }
+
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-block;

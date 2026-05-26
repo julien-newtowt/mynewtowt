@@ -132,7 +132,7 @@ async def route_detail(
 
     try:
         capacity = await get_available_capacity(db, leg.id)
-    except NotBookable:
+    except (NotBookable, BookingClosed):
         capacity = None
 
     # Config portuaire (agent, docs, restrictions) pour les blocs port.

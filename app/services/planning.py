@@ -180,17 +180,17 @@ def _leg_code_for(
     etd: datetime,
     sequence: int = 1,
 ) -> str:
-    """Génère le leg_code : ``{lettre}{vessel_code}{dep_country}{arr_country}{year_digit}``
+    """Génère le leg_code : ``{vessel_code}{lettre}{dep_country}{arr_country}{year_digit}``
 
     La lettre est la position du leg dans l'année pour ce navire :
     A = 1er, B = 2ème, … Z = 26ème.
-    Ex. ``ACFRBR6`` (1er leg de l'année 2026, navire C, FR→BR).
+    Ex. ``1AFRBR6`` (navire 1, 1er leg de l'année 2026, FR→BR).
     """
     seq_letter = chr(ord("A") + min(sequence - 1, 25))
     year_last_digit = str(etd.year)[-1]
     return (
-        f"{seq_letter}"
         f"{vessel_code}"
+        f"{seq_letter}"
         f"{pol_country.upper()[:2]}"
         f"{pod_country.upper()[:2]}"
         f"{year_last_digit}"

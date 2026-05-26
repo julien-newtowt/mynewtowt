@@ -106,7 +106,7 @@
       {% if leg.public_price_per_palette_eur %}
         <div style="text-align:center; font-size:var(--fs-13); opacity:.9;">
           À partir de
-          <strong style="font-size:var(--fs-22); display:block; color:#fff;">{{ leg.public_price_per_palette_eur|money }}</strong>
+          <strong style="font-size:var(--fs-20); display:block; color:#fff;">{{ leg.public_price_per_palette_eur|money }}</strong>
           <span style="opacity:.8;">/ palette</span>
         </div>
       {% endif %}
@@ -166,7 +166,7 @@
                   {{ pol.country|flag if pol else '' }} {{ pol.name if pol else '—' }}
                   {% if pol %}<span class="rd-code" style="margin-left:var(--sp-2);">{{ pol.locode }}</span>{% endif %}
                 </div>
-                <div style="font-size:var(--fs-15); color:var(--c-anthracite); margin-top:var(--sp-1);">
+                <div style="font-size:var(--fs-16); color:var(--c-anthracite); margin-top:var(--sp-1);">
                   <strong>ETD :</strong> {{ leg.etd|datetime }} UTC
                 </div>
                 {% if cut_off_at %}
@@ -200,7 +200,7 @@
                   {{ pod.country|flag if pod else '' }} {{ pod.name if pod else '—' }}
                   {% if pod %}<span class="rd-code" style="margin-left:var(--sp-2);">{{ pod.locode }}</span>{% endif %}
                 </div>
-                <div style="font-size:var(--fs-15); color:var(--c-anthracite); margin-top:var(--sp-1);">
+                <div style="font-size:var(--fs-16); color:var(--c-anthracite); margin-top:var(--sp-1);">
                   <strong>ETA :</strong> {{ leg.eta|datetime }} UTC
                 </div>
               </div>
@@ -331,6 +331,11 @@
       </p>
 
       {% if co2_est %}
+      {% set eco_dist    = co2_est.distance_km | float %}
+      {% set eco_towt    = co2_est.towt_co2_kg | float %}
+      {% set eco_conv    = co2_est.conventional_co2_kg | float %}
+      {% set eco_avoided = co2_est.avoided_co2_kg | float %}
+      {% set eco_pct     = co2_est.avoidance_pct | round(0) | int %}
       <div style="overflow-x:auto;">
         <table class="rd-eco-table">
           <thead>
@@ -345,30 +350,16 @@
           <tbody>
             <tr class="rd-eco-row--towt">
               <td><strong style="color:var(--c-teal);">⛵ NEWTOWT</strong></td>
-              <td>
-                {{ pol.name if pol else '—' }}
-                → {{ pod.name if pod else '—' }}
-              </td>
-              <td class="td-num">{{ "{:,.0f}".format(co2_est.distance_km|float).replace(",", " ") }}</td>
-              <td class="td-num" style="color:var(--c-green);">
-                {{ "%.1f"|format(co2_est.towt_co2_kg|float) }} kg
-              </td>
-              <td>
-                <span class="rd-eco-avoided">
-                  −{{ co2_est.avoidance_pct }} %
-                </span>
-              </td>
+              <td>{{ pol.name if pol else '—' }} → {{ pod.name if pod else '—' }}</td>
+              <td class="td-num">{{ "{:,.0f}".format(eco_dist).replace(",", " ") }}</td>
+              <td class="td-num" style="color:var(--c-green);">{{ "%.1f"|format(eco_towt) }} kg</td>
+              <td><span class="rd-eco-avoided">−{{ eco_pct }} %</span></td>
             </tr>
             <tr class="rd-eco-row--conv">
               <td><span style="color:var(--c-grey);">🛢 Cargo conventionnel</span></td>
-              <td>
-                {{ pol.name if pol else '—' }}
-                → {{ pod.name if pod else '—' }}
-              </td>
-              <td class="td-num">{{ "{:,.0f}".format(co2_est.distance_km|float).replace(",", " ") }}</td>
-              <td class="td-num">
-                {{ "%.1f"|format(co2_est.conventional_co2_kg|float) }} kg
-              </td>
+              <td>{{ pol.name if pol else '—' }} → {{ pod.name if pod else '—' }}</td>
+              <td class="td-num">{{ "{:,.0f}".format(eco_dist).replace(",", " ") }}</td>
+              <td class="td-num">{{ "%.1f"|format(eco_conv) }} kg</td>
               <td>référence</td>
             </tr>
           </tbody>
@@ -376,10 +367,10 @@
             <tr>
               <td colspan="3" style="font-weight:var(--fw-bold); padding-top:var(--sp-4);">CO₂ évité par tonne</td>
               <td class="td-num" style="font-weight:var(--fw-bold); color:var(--c-green); padding-top:var(--sp-4);">
-                {{ "%.1f"|format(co2_est.avoided_co2_kg|float) }} kg
+                {{ "%.1f"|format(eco_avoided) }} kg
               </td>
               <td style="padding-top:var(--sp-4);">
-                <span class="rd-eco-avoided">−{{ co2_est.avoidance_pct }} %</span>
+                <span class="rd-eco-avoided">−{{ eco_pct }} %</span>
               </td>
             </tr>
           </tfoot>
