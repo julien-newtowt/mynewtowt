@@ -581,12 +581,9 @@ async def attach_cargo_doc(
     leg_id: int,
     doc_id: int,
     request: Request,
-    file: "UploadFile" = "File(...)",
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ):
-    from fastapi import UploadFile as _UploadFile
-    from fastapi import File as _File
     from app.services.safe_files import UploadRejected, save_upload
 
     doc = (await db.execute(
