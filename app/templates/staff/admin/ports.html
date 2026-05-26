@@ -85,7 +85,7 @@
         <tr style="{% if not p.is_active %}opacity:0.55;{% endif %}">
           <td class="mono">{{ p.locode }}</td>
           <td>{{ p.name }}</td>
-          <td>{{ p.country }}</td>
+          <td>{{ p.country|flag }} <span class="mono">{{ p.country }}</span></td>
           <td class="mono text-sm">{{ "%.4f"|format(p.latitude) if p.latitude is not none else '—' }}, {{ "%.4f"|format(p.longitude) if p.longitude is not none else '—' }}</td>
           <td><span class="pill pill-neutral">{{ p.source }}</span></td>
           <td>

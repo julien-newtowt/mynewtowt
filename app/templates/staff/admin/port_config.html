@@ -42,29 +42,6 @@
   </article>
 
   <article class="card mb-4">
-    <h2>📻 Communications VHF & téléphone pilote</h2>
-    <div class="grid grid-3 gap-3">
-      <div class="field">
-        <label for="port_control_vhf_channel">Port control (CH)</label>
-        <input id="port_control_vhf_channel" name="port_control_vhf_channel" type="text"
-               placeholder="12"
-               value="{{ config.port_control_vhf_channel if config and config.port_control_vhf_channel else '' }}" />
-      </div>
-      <div class="field">
-        <label for="pilot_vhf_channel">Pilote (CH)</label>
-        <input id="pilot_vhf_channel" name="pilot_vhf_channel" type="text"
-               placeholder="14"
-               value="{{ config.pilot_vhf_channel if config and config.pilot_vhf_channel else '' }}" />
-      </div>
-      <div class="field">
-        <label for="pilot_phone">Pilote (téléphone)</label>
-        <input id="pilot_phone" name="pilot_phone" type="tel"
-               value="{{ config.pilot_phone if config and config.pilot_phone else '' }}" />
-      </div>
-    </div>
-  </article>
-
-  <article class="card mb-4">
     <h2>📄 Documents & restrictions</h2>
     <div class="field">
       <label for="documents_required">Documents requis (1 par ligne)</label>

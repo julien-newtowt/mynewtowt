@@ -452,15 +452,13 @@ async def admin_index(
 ) -> HTMLResponse:
     users = list((await db.execute(select(User).order_by(User.created_at.desc()).limit(50))).scalars().all())
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
-    from app.models.feature_flag import FeatureFlag
-    flags = list((await db.execute(select(FeatureFlag).order_by(FeatureFlag.key))).scalars().all())
     # Aggregate port counts for the admin overview block
     total_ports = await db.scalar(select(func.count(Port.id)))
     active_ports = await db.scalar(select(func.count(Port.id)).where(Port.is_active.is_(True)))
     return templates.TemplateResponse(
         "staff/admin/index.html",
         {"request": request, "user": user, "users": users,
-         "vessels": vessels, "flags": flags,
+         "vessels": vessels,
          "total_ports": total_ports or 0, "active_ports": active_ports or 0},
     )
 
@@ -597,9 +595,8 @@ async def admin_port_config_save(
     config.agent_name = _opt("agent_name")
     config.agent_phone = _opt("agent_phone")
     config.agent_email = _opt("agent_email")
-    config.pilot_vhf_channel = _opt("pilot_vhf_channel")
-    config.pilot_phone = _opt("pilot_phone")
-    config.port_control_vhf_channel = _opt("port_control_vhf_channel")
+    # Communications VHF / téléphone pilote retirées du form (V3.6) —
+    # on ne touche plus ces colonnes (données existantes préservées).
     config.documents_required = _opt("documents_required")
     config.restrictions = _opt("restrictions")
     config.notes_for_captain = _opt("notes_for_captain")

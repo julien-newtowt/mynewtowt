@@ -92,7 +92,7 @@
 {% if pod_config %}
 <article class="card mt-4">
   <h3 class="mb-3">Contacts & docs portuaires</h3>
-  <div class="grid grid-3 gap-4">
+  <div class="grid grid-2 gap-4">
     <div>
       <div class="kicker">⚓ Agent maritime</div>
       {% if pod_config.agent_name %}
@@ -100,23 +100,6 @@
         {% if pod_config.agent_phone %}<p class="mono text-sm"><a href="tel:{{ pod_config.agent_phone }}">{{ pod_config.agent_phone }}</a></p>{% endif %}
         {% if pod_config.agent_email %}<p class="text-sm"><a href="mailto:{{ pod_config.agent_email }}">{{ pod_config.agent_email }}</a></p>{% endif %}
       {% else %}<p class="text-muted">—</p>{% endif %}
-    </div>
-    <div>
-      <div class="kicker">📻 VHF</div>
-      <table class="data-table" style="background:transparent;">
-        {% if pod_config.port_control_vhf_channel %}
-          <tr><td class="text-muted text-sm">Port control</td><td class="mono">CH {{ pod_config.port_control_vhf_channel }}</td></tr>
-        {% endif %}
-        {% if pod_config.pilot_vhf_channel %}
-          <tr><td class="text-muted text-sm">Pilote</td><td class="mono">CH {{ pod_config.pilot_vhf_channel }}</td></tr>
-        {% endif %}
-        {% if pod_config.pilot_phone %}
-          <tr><td class="text-muted text-sm">Pilote ☎</td><td class="mono"><a href="tel:{{ pod_config.pilot_phone }}">{{ pod_config.pilot_phone }}</a></td></tr>
-        {% endif %}
-        {% if not (pod_config.port_control_vhf_channel or pod_config.pilot_vhf_channel or pod_config.pilot_phone) %}
-          <tr><td class="text-muted">—</td><td></td></tr>
-        {% endif %}
-      </table>
     </div>
     <div>
       <div class="kicker">📄 Documents requis</div>
