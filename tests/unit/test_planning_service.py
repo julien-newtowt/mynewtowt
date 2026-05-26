@@ -37,50 +37,60 @@ def test_validate_dates_refuses_overlong_window() -> None:
 
 def test_leg_code_format() -> None:
     etd = datetime(2026, 6, 4, tzinfo=timezone.utc)
-    code = _leg_code_for("1", "FR", "US", etd)
-    # SHIP + LETTER + POL_COUNTRY + POD_COUNTRY + YEAR_LAST_DIGIT
-    assert code == "1AFRUS6"
+    # Format spec NEWTOWT : {seq}{vessel_code}{POL}{POD}{year_digit}
+    code = _leg_code_for("C", "FR", "BR", etd)
+    assert code == "1CFRBR6"
 
 
-def test_leg_code_letter_bump() -> None:
+def test_leg_code_sequence_bump() -> None:
     etd = datetime(2026, 6, 4, tzinfo=timezone.utc)
-    code_b = _leg_code_for("1", "FR", "US", etd, "B")
-    assert code_b == "1BFRUS6"
+    code_2 = _leg_code_for("C", "FR", "US", etd, 2)
+    assert code_2 == "2CFRUS6"
+
+
+def _leg_ns(id, vessel_id, arrival_port_id, eta, stay=24):
+    return SimpleNamespace(
+        id=id, vessel_id=vessel_id, arrival_port_id=arrival_port_id,
+        eta=eta, port_stay_planned_hours=stay,
+    )
 
 
 def test_detect_port_conflicts_finds_concurrent_arrivals() -> None:
-    """Two different vessels arriving at the same port within 12h = conflict."""
+    """Two different vessels whose escale windows overlap = conflict."""
     base_eta = datetime(2026, 6, 12, 10, 0, tzinfo=timezone.utc)
-    leg_a = SimpleNamespace(id=1, vessel_id=10, arrival_port_id=42, eta=base_eta)
-    leg_b = SimpleNamespace(
-        id=2, vessel_id=11, arrival_port_id=42, eta=base_eta + timedelta(hours=4)
-    )
-    conflicts = detect_port_conflicts([leg_a, leg_b])
-    assert conflicts == [(1, 2)]
+    leg_a = _leg_ns(1, 10, 42, base_eta, stay=24)
+    leg_b = _leg_ns(2, 11, 42, base_eta + timedelta(hours=4), stay=24)
+    assert detect_port_conflicts([leg_a, leg_b]) == [(1, 2)]
 
 
 def test_detect_port_conflicts_ignores_same_vessel() -> None:
-    """Same vessel = back-to-back legs at same port, not a conflict."""
     base_eta = datetime(2026, 6, 12, tzinfo=timezone.utc)
-    leg_a = SimpleNamespace(id=1, vessel_id=10, arrival_port_id=42, eta=base_eta)
-    leg_b = SimpleNamespace(
-        id=2, vessel_id=10, arrival_port_id=42, eta=base_eta + timedelta(hours=2)
-    )
+    leg_a = _leg_ns(1, 10, 42, base_eta, stay=24)
+    leg_b = _leg_ns(2, 10, 42, base_eta + timedelta(hours=2), stay=24)
     assert detect_port_conflicts([leg_a, leg_b]) == []
 
 
-def test_detect_port_conflicts_ignores_distant_arrivals() -> None:
-    """Same port but > 12h apart = OK, two different windows."""
+def test_detect_port_conflicts_non_overlapping_stays_ok() -> None:
+    """Same port, ETA 20h apart but SHORT stays → no overlap → OK."""
     base_eta = datetime(2026, 6, 12, tzinfo=timezone.utc)
-    leg_a = SimpleNamespace(id=1, vessel_id=10, arrival_port_id=42, eta=base_eta)
-    leg_b = SimpleNamespace(
-        id=2, vessel_id=11, arrival_port_id=42, eta=base_eta + timedelta(hours=20)
-    )
+    leg_a = _leg_ns(1, 10, 42, base_eta, stay=4)               # [0h, 4h]
+    leg_b = _leg_ns(2, 11, 42, base_eta + timedelta(hours=20), stay=4)  # [20h, 24h]
     assert detect_port_conflicts([leg_a, leg_b]) == []
+
+
+def test_detect_port_conflicts_overlapping_long_stays() -> None:
+    """REGRESSION fix: ETA 20h apart but long stays overlap → conflict.
+
+    L'ancienne heuristique ETA±12h ratait ce cas réel.
+    """
+    base_eta = datetime(2026, 6, 12, tzinfo=timezone.utc)
+    leg_a = _leg_ns(1, 10, 42, base_eta, stay=48)              # [0h, 48h]
+    leg_b = _leg_ns(2, 11, 42, base_eta + timedelta(hours=20), stay=24)  # [20h, 44h]
+    assert detect_port_conflicts([leg_a, leg_b]) == [(1, 2)]
 
 
 def test_detect_port_conflicts_ignores_different_ports() -> None:
     base_eta = datetime(2026, 6, 12, tzinfo=timezone.utc)
-    leg_a = SimpleNamespace(id=1, vessel_id=10, arrival_port_id=42, eta=base_eta)
-    leg_b = SimpleNamespace(id=2, vessel_id=11, arrival_port_id=43, eta=base_eta)
+    leg_a = _leg_ns(1, 10, 42, base_eta, stay=24)
+    leg_b = _leg_ns(2, 11, 43, base_eta, stay=24)
     assert detect_port_conflicts([leg_a, leg_b]) == []

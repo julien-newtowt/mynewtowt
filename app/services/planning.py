@@ -32,6 +32,23 @@ class InvalidLegDates(PlanningError):
     pass
 
 
+class LegOverlap(PlanningError):
+    """Le navire a déjà un leg qui chevauche cette plage horaire."""
+
+
+class LegContinuityError(PlanningError):
+    """Rupture de continuité géographique (POD du leg précédent ≠ POL)."""
+
+
+class LegSpeedIncoherent(PlanningError):
+    """Durée incohérente avec la distance et la vitesse plausible."""
+
+
+# Vitesse max physiquement plausible pour un voilier-cargo NEWTOWT (kn).
+# Au-delà, la durée saisie est forcément une erreur (typo de date).
+MAX_PLAUSIBLE_SPEED_KN = 18.0
+
+
 @dataclass(frozen=True)
 class CascadeReport:
     leg_id: int
@@ -55,20 +72,125 @@ def validate_dates(etd: datetime, eta: datetime) -> None:
         raise InvalidLegDates("Leg duration cannot exceed 180 days")
 
 
+async def validate_leg_schedule(
+    db: AsyncSession,
+    *,
+    vessel_id: int,
+    departure_port_id: int,
+    arrival_port_id: int,
+    etd: datetime,
+    eta: datetime,
+    transit_speed_kn: float | None = None,
+    elongation_coef: float | None = None,
+    exclude_leg_id: int | None = None,
+) -> list[str]:
+    """Contrôles d'intégrité d'un leg avant create/update.
+
+    Lève PlanningError (sous-classe) sur violation dure :
+      - **Chevauchement navire** : deux legs du même navire ne peuvent
+        pas se chevaucher dans le temps (un navire = un seul leg à la fois).
+      - **Continuité géographique** : le POD du leg précédent (même navire)
+        doit être le POL de ce leg, et le POL du leg suivant doit être ce POD.
+      - **Cohérence vitesse/distance** : la durée ne peut impliquer une
+        vitesse > MAX_PLAUSIBLE_SPEED_KN, ni > 1.5× la vitesse planifiée.
+
+    Renvoie une liste d'**avertissements** non bloquants (ex. continuité
+    douteuse mais tolérée). Les violations dures lèvent.
+    """
+    from app.models.port import Port
+    from app.services.ports import haversine_nm
+
+    warnings: list[str] = []
+
+    # ── 1. Chevauchement temporel sur le même navire ──────────────────
+    overlap_stmt = (
+        select(Leg)
+        .where(Leg.vessel_id == vessel_id)
+        .where(Leg.etd < eta)
+        .where(Leg.eta > etd)
+    )
+    if exclude_leg_id is not None:
+        overlap_stmt = overlap_stmt.where(Leg.id != exclude_leg_id)
+    clash = (await db.execute(overlap_stmt.limit(1))).scalar_one_or_none()
+    if clash is not None:
+        raise LegOverlap(
+            f"Chevauchement : le navire a déjà le leg {clash.leg_code} "
+            f"({clash.etd:%Y-%m-%d %H:%M} → {clash.eta:%Y-%m-%d %H:%M}). "
+            f"Un navire ne peut pas effectuer deux legs simultanément."
+        )
+
+    # ── 2. Continuité géographique (leg précédent / suivant) ──────────
+    prev_stmt = (
+        select(Leg).where(Leg.vessel_id == vessel_id).where(Leg.etd < etd)
+        .order_by(Leg.etd.desc()).limit(1)
+    )
+    if exclude_leg_id is not None:
+        prev_stmt = prev_stmt.where(Leg.id != exclude_leg_id)
+    prev = (await db.execute(prev_stmt)).scalar_one_or_none()
+    if prev is not None and prev.arrival_port_id != departure_port_id:
+        raise LegContinuityError(
+            f"Rupture de continuité : le leg précédent {prev.leg_code} arrive "
+            f"à un autre port que le port de départ de ce leg. Le navire doit "
+            f"partir d'où il est arrivé."
+        )
+
+    next_stmt = (
+        select(Leg).where(Leg.vessel_id == vessel_id).where(Leg.etd > etd)
+        .order_by(Leg.etd.asc()).limit(1)
+    )
+    if exclude_leg_id is not None:
+        next_stmt = next_stmt.where(Leg.id != exclude_leg_id)
+    nxt = (await db.execute(next_stmt)).scalar_one_or_none()
+    if nxt is not None and nxt.departure_port_id != arrival_port_id:
+        raise LegContinuityError(
+            f"Rupture de continuité : le leg suivant {nxt.leg_code} part d'un "
+            f"autre port que le port d'arrivée de ce leg."
+        )
+
+    # ── 3. Cohérence durée / distance / vitesse ───────────────────────
+    pol = await db.get(Port, departure_port_id)
+    pod = await db.get(Port, arrival_port_id)
+    duration_h = (eta - etd).total_seconds() / 3600.0
+    if (
+        pol and pod and duration_h > 0
+        and pol.latitude is not None and pol.longitude is not None
+        and pod.latitude is not None and pod.longitude is not None
+    ):
+        gc_nm = haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude)
+        distance_nm = gc_nm * (elongation_coef or 1.0)
+        implied_kn = distance_nm / duration_h
+        if implied_kn > MAX_PLAUSIBLE_SPEED_KN:
+            raise LegSpeedIncoherent(
+                f"Durée incohérente : {distance_nm:.0f} NM en {duration_h:.0f} h "
+                f"implique {implied_kn:.1f} kn (> {MAX_PLAUSIBLE_SPEED_KN:.0f} kn "
+                f"physiquement impossible). Vérifiez l'ETD/ETA."
+            )
+        if transit_speed_kn and implied_kn > transit_speed_kn * 1.5:
+            warnings.append(
+                f"La durée implique {implied_kn:.1f} kn, soit bien plus que la "
+                f"vitesse planifiée ({transit_speed_kn:.1f} kn)."
+            )
+    return warnings
+
+
 def _leg_code_for(
     vessel_code: str,
     pol_country: str,
     pod_country: str,
     etd: datetime,
-    sequence_letter: str = "A",
+    sequence: int = 1,
 ) -> str:
-    """Generate leg_code per V2 convention: {SHIP}{LETTER}{POL}{POD}{YR}.
+    """Génère le leg_code selon la convention NEWTOWT (cf. CLAUDE.md) :
+    ``{seq}{vessel_code}{dep_country}{arr_country}{year_digit}`` — ex.
+    ``1CFRBR6`` (séquence 1, navire C, FR→BR, année 2026).
 
-    Caller may pass sequence_letter='B','C',... for repeated trips in a year.
+    ``sequence`` est le numéro d'ordre du leg pour ce navire (1, 2, 3…),
+    incrémenté par le caller en cas de collision sur l'année.
     """
     year_last_digit = str(etd.year)[-1]
     return (
-        f"{vessel_code}{sequence_letter}"
+        f"{sequence}"
+        f"{vessel_code}"
         f"{pol_country.upper()[:2]}"
         f"{pod_country.upper()[:2]}"
         f"{year_last_digit}"
@@ -105,9 +227,29 @@ async def create_leg(
     if departure_port_id == arrival_port_id:
         raise InvalidLegDates("Departure and arrival ports must differ")
 
+    # Contrôles d'intégrité : chevauchement navire, continuité ports,
+    # cohérence vitesse/distance (lève PlanningError si violation dure).
+    await validate_leg_schedule(
+        db,
+        vessel_id=vessel_id,
+        departure_port_id=departure_port_id,
+        arrival_port_id=arrival_port_id,
+        etd=etd, eta=eta,
+        transit_speed_kn=transit_speed_kn,
+        elongation_coef=elongation_coef,
+    )
+
     # Auto-cloture des réservations à ETD - 48h si non précisé par le staff.
     if booking_close_at is None:
         booking_close_at = etd - timedelta(hours=BOOKING_CLOSE_LEAD_HOURS)
+
+    # Garde : un leg réservable dont la clôture est déjà passée n'est
+    # jamais réservable → on refuse plutôt que de créer un leg trompeur.
+    if is_bookable and booking_close_at <= datetime.now(timezone.utc):
+        raise InvalidLegDates(
+            "ETD trop proche : la clôture des réservations (ETD − 48 h) est "
+            "déjà passée. Décalez l'ETD ou désactivez l'ouverture à la réservation."
+        )
 
     # If leg_code not supplied, derive one (best-effort; admin can edit).
     if leg_code is None:
@@ -121,9 +263,9 @@ async def create_leg(
         if not (vessel and pol and pod):
             raise PlanningError("Invalid vessel/port references")
         leg_code = _leg_code_for(vessel.code, pol.country, pod.country, etd)
-        # Bump letter A/B/C if code already exists.
-        for letter in "ABCDEFGHIJ":
-            candidate = _leg_code_for(vessel.code, pol.country, pod.country, etd, letter)
+        # Incrémente la séquence 1,2,3… tant que le code existe déjà.
+        for seq in range(1, 100):
+            candidate = _leg_code_for(vessel.code, pol.country, pod.country, etd, seq)
             existing = (
                 await db.execute(select(Leg).where(Leg.leg_code == candidate))
             ).scalar_one_or_none()
@@ -190,6 +332,7 @@ async def update_leg(
 
     delta = new_etd - leg.etd
     # Capture old reference points BEFORE applying changes
+    old_etd = leg.etd                 # ETD courant pré-édition (frontière cascade)
     old_vessel_id = leg.vessel_id
     old_pol_id = leg.departure_port_id
     old_pod_id = leg.arrival_port_id
@@ -206,6 +349,20 @@ async def update_leg(
         leg.arrival_port_id = arrival_port_id
     if leg.departure_port_id == leg.arrival_port_id:
         raise InvalidLegDates("Departure and arrival ports must differ")
+
+    # Contrôles d'intégrité sur la nouvelle planification (exclut le leg
+    # courant des comparaisons chevauchement/continuité).
+    await validate_leg_schedule(
+        db,
+        vessel_id=leg.vessel_id,
+        departure_port_id=leg.departure_port_id,
+        arrival_port_id=leg.arrival_port_id,
+        etd=new_etd, eta=new_eta,
+        transit_speed_kn=(transit_speed_kn if transit_speed_kn is not None else leg.transit_speed_kn),
+        elongation_coef=(elongation_coef if elongation_coef is not None else leg.elongation_coef),
+        exclude_leg_id=leg.id,
+    )
+
     if is_bookable is not None:
         leg.is_bookable = is_bookable
     if public_capacity_palettes is not None:
@@ -235,12 +392,12 @@ async def update_leg(
         pol = await db.get(Port, leg.departure_port_id)
         pod = await db.get(Port, leg.arrival_port_id)
         if vessel and pol and pod:
-            for letter in "ABCDEFGHIJ":
+            for seq in range(1, 100):
                 candidate = _leg_code_for(
-                    vessel.code, pol.country, pod.country, leg.etd, letter,
+                    vessel.code, pol.country, pod.country, leg.etd, seq,
                 )
                 if candidate == leg.leg_code:
-                    break  # Déjà unique avec cette lettre — on garde
+                    break  # Déjà unique avec cette séquence — on garde
                 existing = (
                     await db.execute(
                         select(Leg)
@@ -256,12 +413,15 @@ async def update_leg(
         await db.flush()
         return None
 
-    # Cascade : all later legs of the same vessel that haven't sailed yet
+    # Cascade : tous les legs aval du même navire, non encore partis.
+    # Frontière = ETD courant pré-édition (old_etd), PAS etd_ref (figé à
+    # la création) — sinon un leg déjà cascadé re-sélectionne mal sa
+    # descendance et les décalages arrière ratent les legs intermédiaires.
     stmt = (
         select(Leg)
         .where(Leg.vessel_id == leg.vessel_id)
         .where(Leg.id != leg.id)
-        .where(Leg.etd > leg.etd_ref)        # downstream relative to original ETD
+        .where(Leg.etd > old_etd)            # downstream relative to pre-edit ETD
         .where(Leg.atd.is_(None))            # hasn't actually sailed
         .order_by(Leg.etd.asc())
     )
@@ -395,25 +555,43 @@ async def list_legs_in_window(
     return list((await db.execute(stmt)).scalars().all())
 
 
-def detect_port_conflicts(legs: Sequence[Leg]) -> list[tuple[int, int]]:
-    """Return pairs (leg_id_a, leg_id_b) where two vessels overlap at the same port.
+DEFAULT_PORT_STAY_HOURS = 24
+"""Durée d'escale supposée si ``port_stay_planned_hours`` n'est pas renseigné."""
 
-    Conflict criterion: same arrival_port_id, time windows overlap by ≥ 12h.
+
+def detect_port_conflicts(
+    legs: Sequence[Leg], *, default_stay_hours: int = DEFAULT_PORT_STAY_HOURS,
+) -> list[tuple[int, int]]:
+    """Paires (leg_id_a, leg_id_b) de navires DIFFÉRENTS présents au MÊME
+    port en MÊME temps.
+
+    On modélise l'occupation réelle d'un port par un navire comme
+    l'intervalle ``[ETA, ETA + durée_escale]`` au port d'arrivée (la
+    présence au port de départ est, par continuité, l'intervalle
+    d'arrivée du leg précédent). Deux intervalles qui se chevauchent au
+    même port pour deux navires distincts = conflit — y compris quand
+    les ETA sont distantes de plus de 12h mais que les escales se
+    recouvrent (cas que l'ancienne heuristique ETA±12h ratait).
     """
+    intervals: list[tuple[int, int, datetime, datetime, int]] = []
+    for leg in legs:
+        eta = getattr(leg, "eta", None)
+        if eta is None:
+            continue
+        stay = getattr(leg, "port_stay_planned_hours", None) or default_stay_hours
+        end = eta + timedelta(hours=stay)
+        intervals.append((leg.arrival_port_id, leg.vessel_id, eta, end, leg.id))
+
     conflicts: list[tuple[int, int]] = []
-    items = list(legs)
-    for i in range(len(items)):
-        a = items[i]
-        for j in range(i + 1, len(items)):
-            b = items[j]
-            if a.arrival_port_id != b.arrival_port_id:
+    for i in range(len(intervals)):
+        port_a, ves_a, start_a, end_a, id_a = intervals[i]
+        for j in range(i + 1, len(intervals)):
+            port_b, ves_b, start_b, end_b, id_b = intervals[j]
+            if port_a != port_b or ves_a == ves_b:
                 continue
-            if a.vessel_id == b.vessel_id:
-                continue
-            # overlap on arrival window (eta ± 24h)
-            window = timedelta(hours=12)
-            if abs((a.eta - b.eta).total_seconds()) < window.total_seconds():
-                conflicts.append((a.id, b.id))
+            # Chevauchement d'intervalles : start_a < end_b ET start_b < end_a
+            if start_a < end_b and start_b < end_a:
+                conflicts.append((id_a, id_b))
     return conflicts
 
 
