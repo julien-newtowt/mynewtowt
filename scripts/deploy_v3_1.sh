@@ -115,7 +115,7 @@ if [[ "${CURRENT_BRANCH}" != "${TARGET_BRANCH}" ]]; then
   git checkout "${TARGET_BRANCH}"
 fi
 
-git pull origin "${TARGET_BRANCH}"
+git pull --rebase origin "${TARGET_BRANCH}"
 VERSION="$(git rev-parse --short HEAD)"
 ok "HEAD = ${VERSION} sur ${TARGET_BRANCH}"
 
