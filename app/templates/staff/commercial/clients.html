@@ -32,6 +32,7 @@
 <article class="card" id="new-client">
   <h2>Nouveau client</h2>
   <form method="post" action="/commercial/clients">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     <div class="grid grid-2 gap-4">
       <div class="field">
         <label for="name">Nom commercial</label>

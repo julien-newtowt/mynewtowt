@@ -84,8 +84,11 @@
   {% endfor %}
 </div>
 
+{% endblock %}
+{% block head %}{{ super() }}
+<style>
 @media (max-width: 1024px) {
   .kanban { grid-template-columns: 1fr 1fr !important; }
 }
-
+</style>
 {% endblock %}

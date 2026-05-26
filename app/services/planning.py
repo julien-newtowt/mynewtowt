@@ -180,16 +180,16 @@ def _leg_code_for(
     etd: datetime,
     sequence: int = 1,
 ) -> str:
-    """Génère le leg_code selon la convention NEWTOWT (cf. CLAUDE.md) :
-    ``{seq}{vessel_code}{dep_country}{arr_country}{year_digit}`` — ex.
-    ``1CFRBR6`` (séquence 1, navire C, FR→BR, année 2026).
+    """Génère le leg_code : ``{lettre}{vessel_code}{dep_country}{arr_country}{year_digit}``
 
-    ``sequence`` est le numéro d'ordre du leg pour ce navire (1, 2, 3…),
-    incrémenté par le caller en cas de collision sur l'année.
+    La lettre est la position du leg dans l'année pour ce navire :
+    A = 1er, B = 2ème, … Z = 26ème.
+    Ex. ``ACFRBR6`` (1er leg de l'année 2026, navire C, FR→BR).
     """
+    seq_letter = chr(ord("A") + min(sequence - 1, 25))
     year_last_digit = str(etd.year)[-1]
     return (
-        f"{sequence}"
+        f"{seq_letter}"
         f"{vessel_code}"
         f"{pol_country.upper()[:2]}"
         f"{pod_country.upper()[:2]}"
@@ -253,18 +253,31 @@ async def create_leg(
 
     # If leg_code not supplied, derive one (best-effort; admin can edit).
     if leg_code is None:
-        # Need vessel.code + port countries — do a small load.
         from app.models.port import Port
         from app.models.vessel import Vessel
+        from sqlalchemy import func
 
         vessel = await db.get(Vessel, vessel_id)
         pol = await db.get(Port, departure_port_id)
         pod = await db.get(Port, arrival_port_id)
         if not (vessel and pol and pod):
             raise PlanningError("Invalid vessel/port references")
-        leg_code = _leg_code_for(vessel.code, pol.country, pod.country, etd)
-        # Incrémente la séquence 1,2,3… tant que le code existe déjà.
-        for seq in range(1, 100):
+
+        # Séquence = nombre de legs déjà planifiés pour ce navire dans l'année + 1.
+        year_start = datetime(etd.year, 1, 1, tzinfo=timezone.utc)
+        year_end = datetime(etd.year, 12, 31, 23, 59, tzinfo=timezone.utc)
+        existing_count = await db.scalar(
+            select(func.count(Leg.id)).where(
+                Leg.vessel_id == vessel_id,
+                Leg.etd >= year_start,
+                Leg.etd <= year_end,
+            )
+        ) or 0
+        start_seq = existing_count + 1
+
+        # Cherche un code libre à partir de la séquence calculée.
+        leg_code = _leg_code_for(vessel.code, pol.country, pod.country, etd, start_seq)
+        for seq in range(start_seq, start_seq + 26):
             candidate = _leg_code_for(vessel.code, pol.country, pod.country, etd, seq)
             existing = (
                 await db.execute(select(Leg).where(Leg.leg_code == candidate))

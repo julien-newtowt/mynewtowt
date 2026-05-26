@@ -14,31 +14,28 @@
   </div>
 </header>
 
-<form class="card mb-4" method="get" action="/planning" style="display:flex; gap:var(--space-3); align-items:end; flex-wrap:wrap;">
-  <div class="field" style="margin:0;">
-    <label for="year">Année</label>
-    <select id="year" name="year" onchange="this.form.submit()">
-      {% for y in years %}
-        <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-      {% endfor %}
-    </select>
+<div class="planning-filters mb-3">
+  <div class="vessel-tabs">
+    <a href="/planning?year={{ selected_year }}" class="vessel-tab {% if not filter_vessel_id %}active{% endif %}">
+      <i data-lucide="layers"></i> Tous les navires
+    </a>
+    {% for v in vessels %}
+    <a href="/planning?year={{ selected_year }}&vessel_id={{ v.id }}"
+       class="vessel-tab {% if filter_vessel_id == v.id %}active{% endif %}">
+      <i data-lucide="ship"></i> {{ v.name }}
+    </a>
+    {% endfor %}
   </div>
-  <div class="field" style="flex:1; min-width:220px; margin:0;">
-    <label for="vessel_id">Navire (compagnie = tous)</label>
-    <select id="vessel_id" name="vessel_id" onchange="this.form.submit()">
-      <option value="">Tous les navires</option>
-      {% for v in vessels %}
-        <option value="{{ v.id }}" {% if filter_vessel_id == v.id %}selected{% endif %}>
-          {{ v.code }} — {{ v.name }}
-        </option>
-      {% endfor %}
-    </select>
+  <div class="year-selector">
+    {% for y in years|sort %}
+    <a href="/planning?year={{ y }}{% if filter_vessel_id %}&vessel_id={{ filter_vessel_id }}{% endif %}"
+       class="year-btn {% if y == selected_year %}active{% endif %}">{{ y }}</a>
+    {% endfor %}
   </div>
-  <button type="submit" class="btn btn-secondary">Filtrer</button>
   {% if conflict_count %}
-    <span class="pill pill-warn">⚠ {{ conflict_count }} conflit(s) port détecté(s)</span>
+    <span class="pill pill-warn" style="align-self:center;">⚠ {{ conflict_count }} conflit(s) port</span>
   {% endif %}
-</form>
+</div>
 
 <section class="card" style="overflow-x:auto;">
   <h2 class="mb-3">Vue Gantt {{ selected_year }} — année entière</h2>
