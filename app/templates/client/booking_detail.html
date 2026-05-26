@@ -22,6 +22,14 @@
   </div>
 </header>
 
+{% if booking.status in ('confirmed','loaded','at_sea','discharged','delivered') %}
+<div class="mb-4">
+  <a href="/me/track/{{ booking.reference }}" class="btn btn-accent">
+    <i data-lucide="navigation"></i>&nbsp;{% if lang == 'en' %}Track the voyage{% else %}Suivre la traversée{% endif %}
+  </a>
+</div>
+{% endif %}
+
 <section class="card mb-4">
   <h2>{% if lang == 'en' %}Summary{% else %}Récapitulatif{% endif %}</h2>
   <div class="grid grid-2 gap-4">

@@ -18,15 +18,23 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthRequired, get_current_client
+from app.config import settings
 from app.database import get_db
 from app.models.booking import Booking
 from app.models.client_invoice import ClientInvoice
 from app.models.anemos_certificate import AnemosCertificate
+from app.models.leg import Leg
 from app.models.notification import Notification
+from app.models.port import Port
+from app.models.vessel import Vessel
 from app.services import mfa, notifications, security_alerts
 from app.services.activity import record as activity_record
 from app.services.booking import find_by_reference, list_for_client
+from app.services.vessel_position import get_latest_position
 from app.templating import templates
+
+# Ordre des étapes de voyage pour la timeline de suivi.
+_VOYAGE_STEPS = ("submitted", "confirmed", "loaded", "at_sea", "discharged", "delivered")
 
 router = APIRouter(tags=["client-dashboard"])
 
@@ -112,6 +120,75 @@ async def booking_detail(
     return templates.TemplateResponse(
         "client/booking_detail.html",
         {"request": request, "client": client, "booking": booking},
+    )
+
+
+@router.get("/me/track/{ref}", response_class=HTMLResponse)
+async def track(
+    request: Request,
+    ref: str,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Suivi de traversée — position live du navire + timeline de statut."""
+    booking = await find_by_reference(db, ref)
+    if not booking or booking.client_account_id != client.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    leg = await db.get(Leg, booking.leg_id)
+    vessel = await db.get(Vessel, leg.vessel_id) if leg else None
+    pol = await db.get(Port, leg.departure_port_id) if leg else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg else None
+    position = await get_latest_position(db, vessel.id) if vessel else None
+
+    # Timeline : chaque étape avec son horodatage, état done/current.
+    current_idx = _VOYAGE_STEPS.index(booking.status) if booking.status in _VOYAGE_STEPS else -1
+    timeline = [
+        {
+            "key": key,
+            "at": getattr(booking, f"{key}_at", None),
+            "done": current_idx >= idx >= 0,
+            "current": key == booking.status,
+        }
+        for idx, key in enumerate(_VOYAGE_STEPS)
+    ]
+
+    # Données carte (réutilise le même format que fleet-map.js).
+    vessels_json: list[dict] = []
+    if position is not None and vessel is not None:
+        vessels_json.append({
+            "name": vessel.name,
+            "code": vessel.code,
+            "lat": position.latitude,
+            "lon": position.longitude,
+            "sog": float(position.sog_kn or 0),
+            "cog": float(position.cog_deg or 0),
+            "recorded_at": position.recorded_at.isoformat(),
+        })
+
+    # Centre la carte sur le milieu de la route si coords connues.
+    map_center = [-30, 40]
+    if pol and pod and pol.latitude is not None and pod.latitude is not None:
+        map_center = [
+            round((pol.longitude + pod.longitude) / 2, 3),
+            round((pol.latitude + pod.latitude) / 2, 3),
+        ]
+
+    return templates.TemplateResponse(
+        "client/track.html",
+        {
+            "request": request,
+            "client": client,
+            "booking": booking,
+            "leg": leg,
+            "vessel": vessel,
+            "pol": pol,
+            "pod": pod,
+            "position": position,
+            "timeline": timeline,
+            "vessels_json": vessels_json,
+            "map_center": map_center,
+            "maptiler_token": settings.map_token,
+        },
     )
 
 
