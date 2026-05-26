@@ -1,9 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{% if lang == 'en' %}Customer sign in{% else %}Connexion client{% endif %} — {{ brand.nom_court }}{% endblock %}
-{% block head %}{{ super() }}
-<script src="/static/js/webauthn.js" defer></script>
-<script src="/static/js/webauthn-login.js" defer></script>
-{% endblock %}
+{% block head %}{{ super() }}{% endblock %}
 {% block body %}
 <div class="auth-shell">
   <div class="auth-card">
@@ -31,20 +28,6 @@
         {% if lang == 'en' %}Sign in{% else %}Se connecter{% endif %}
       </button>
     </form>
-
-    <div class="text-center" style="margin:var(--space-4) 0;">
-      <span class="text-muted text-sm">
-        {% if lang == 'en' %}— or —{% else %}— ou —{% endif %}
-      </span>
-    </div>
-
-    <button id="wa-login-btn" type="button"
-            class="btn btn-secondary btn-block"
-            data-begin-url="/me/login/webauthn/options"
-            data-verify-url="/me/login/webauthn/verify">
-      🔐 {% if lang == 'en' %}Sign in with a passkey{% else %}Se connecter avec une passkey{% endif %}
-    </button>
-    <p id="wa-login-status" class="text-muted text-sm text-center mt-2" style="min-height:1.4em;"></p>
 
     <p class="text-center text-muted mt-4 text-sm">
       {% if lang == 'en' %}No account yet?{% else %}Pas encore de compte ?{% endif %}

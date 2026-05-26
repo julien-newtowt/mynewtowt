@@ -4,19 +4,18 @@
 
 <header class="mb-4">
   <span class="kicker">Administration</span>
-  <h1 class="display">Sécurité — adoption MFA &amp; passkeys</h1>
+  <h1 class="display">Sécurité — adoption MFA</h1>
   <p class="text-muted">
-    Déploiement de l'authentification forte sur les comptes actifs.
-    Aucune donnée sensible affichée : juste les drapeaux ON/OFF par compte.
+    Déploiement de l'authentification forte (TOTP) sur les comptes actifs.
   </p>
 </header>
 
 {# ── Comptes à risque — priorité d'action ── #}
 {% if risky_staff %}
 <article class="card mb-4" style="border-left:4px solid var(--cuivre); background:rgba(180,113,72,0.06);">
-  <h2 style="margin-top:0;">⚠ Comptes sensibles sans 2FA ({{ risky_staff|length }})</h2>
+  <h2 style="margin-top:0;">⚠ Comptes sensibles sans MFA ({{ risky_staff|length }})</h2>
   <p class="text-muted text-sm">
-    Rôles administrateur / manager_maritime sans MFA ni passkey. À traiter
+    Rôles administrateur / manager_maritime sans MFA TOTP. À traiter
     en priorité — ces comptes peuvent piloter la flotte et la facturation.
   </p>
   <table class="data-table">
@@ -37,20 +36,17 @@
 <article class="card mb-4" style="border-left:4px solid var(--vert); background:rgba(135,189,41,0.06);">
   <h2 style="margin-top:0;">✓ Aucun compte sensible à risque</h2>
   <p class="text-muted text-sm" style="margin-bottom:0;">
-    Tous les comptes administrateur / manager_maritime ont au moins une
-    méthode 2FA active (MFA TOTP ou passkey).
+    Tous les comptes administrateur / manager_maritime ont MFA TOTP actif.
   </p>
 </article>
 {% endif %}
 
-{# ── Synthèse compacte (1 ligne, sans cartes KPI) ── #}
+{# ── Synthèse ── #}
 <article class="card mb-4">
   <div class="flex gap-4" style="flex-wrap:wrap;">
-    <span><strong>Staff</strong> : {{ stats_staff.any_2fa }}/{{ stats_staff.total }} avec 2FA
-      <span class="text-muted">({{ stats_staff.mfa_on }} MFA · {{ stats_staff.pk_on }} passkey)</span></span>
+    <span><strong>Staff</strong> : {{ stats_staff.mfa_on }}/{{ stats_staff.total }} avec MFA</span>
     <span style="border-left:1px solid var(--border); padding-left:var(--space-4);">
-      <strong>Clients</strong> : {{ stats_client.any_2fa }}/{{ stats_client.total }} avec 2FA
-      <span class="text-muted">({{ stats_client.mfa_on }} MFA · {{ stats_client.pk_on }} passkey)</span></span>
+      <strong>Clients</strong> : {{ stats_client.mfa_on }}/{{ stats_client.total }} avec MFA</span>
   </div>
 </article>
 
@@ -60,20 +56,13 @@
   <table class="data-table">
     <thead>
       <tr>
-        <th>Username</th>
-        <th>Email</th>
-        <th>Rôle</th>
-        <th>MFA</th>
-        <th>Passkeys</th>
-        <th>Dernier login</th>
-        <th>Actions</th>
+        <th>Username</th><th>Email</th><th>Rôle</th><th>MFA</th><th>Dernier login</th><th>Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for u in staff_users %}
-        {% set pkn = pk_count.get(('staff', u.id), 0) %}
-        {% set risky = (u.role == 'administrateur' and not u.mfa_enabled and pkn == 0) %}
-        <tr {% if risky %}style="background:rgba(180, 113, 72, 0.08);"{% endif %}>
+        {% set risky = (u.role == 'administrateur' and not u.mfa_enabled) %}
+        <tr {% if risky %}style="background:rgba(180,113,72,0.08);"{% endif %}>
           <td><span class="mono">{{ u.username }}</span></td>
           <td>{{ u.email }}</td>
           <td><span class="badge">{{ u.role }}</span></td>
@@ -81,15 +70,11 @@
             {% if u.mfa_enabled %}<span class="pill pill-ok">TOTP</span>
             {% else %}<span class="pill pill-neutral">—</span>{% endif %}
           </td>
-          <td>
-            {% if pkn > 0 %}<span class="pill pill-ok">{{ pkn }} ×</span>
-            {% else %}<span class="pill pill-neutral">—</span>{% endif %}
-          </td>
           <td class="text-sm">{{ u.last_login_at|datetime if u.last_login_at else '—' }}</td>
           <td>
             {% if u.mfa_enabled %}
               <form method="post" action="/admin/users/{{ u.id }}/reset-mfa" style="display:inline;"
-                    onsubmit="return confirm('Réinitialiser la MFA de {{ u.username }} ? (perte téléphone, etc.) Il devra la reconfigurer.');">
+                    onsubmit="return confirm('Réinitialiser la MFA de {{ u.username }} ?');">
                 <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
                 <button type="submit" class="btn btn-ghost btn-sm">Reset MFA</button>
               </form>
@@ -101,33 +86,21 @@
   </table>
 </article>
 
-{# ── Tableau clients (top 50 + pagination simple) ── #}
+{# ── Tableau clients ── #}
 <article class="card">
   <h2>Clients — détail par compte (limite 50)</h2>
   <table class="data-table">
     <thead>
-      <tr>
-        <th>Société</th>
-        <th>Email</th>
-        <th>Pays</th>
-        <th>MFA</th>
-        <th>Passkeys</th>
-        <th>Dernier login</th>
-      </tr>
+      <tr><th>Société</th><th>Email</th><th>Pays</th><th>MFA</th><th>Dernier login</th></tr>
     </thead>
     <tbody>
       {% for c in clients[:50] %}
-        {% set pkn = pk_count.get(('client', c.id), 0) %}
         <tr>
           <td>{{ c.company_name }}</td>
           <td>{{ c.email }}</td>
           <td>{{ c.country|flag if c.country else '—' }} {{ c.country or '' }}</td>
           <td>
             {% if c.mfa_enabled %}<span class="pill pill-ok">TOTP</span>
-            {% else %}<span class="pill pill-neutral">—</span>{% endif %}
-          </td>
-          <td>
-            {% if pkn > 0 %}<span class="pill pill-ok">{{ pkn }} ×</span>
             {% else %}<span class="pill pill-neutral">—</span>{% endif %}
           </td>
           <td class="text-sm">{{ c.last_login_at|datetime if c.last_login_at else '—' }}</td>
@@ -149,17 +122,10 @@
       dans .env).
       {% if require_mfa_for_admin %}Tout admin connecté sans MFA est
       redirigé vers la configuration jusqu'à activation.{% else %}
-      <span class="text-cuivre">Actuellement désactivé — les admins ne
-      sont pas forcés.</span>{% endif %}
+      <span class="text-cuivre">Actuellement désactivé.</span>{% endif %}
     </li>
-    <li>
-      <strong>Autres rôles staff</strong> : MFA & passkey optionnels mais
-      <em>fortement</em> recommandés.
-    </li>
-    <li>
-      <strong>Clients</strong> : MFA & passkey optionnels, gérables depuis
-      <code class="mono">/me/account</code>.
-    </li>
+    <li><strong>Autres rôles staff</strong> : MFA optionnel mais fortement recommandé.</li>
+    <li><strong>Clients</strong> : MFA optionnel, gérable depuis <code class="mono">/me/account</code>.</li>
   </ul>
 </article>
 

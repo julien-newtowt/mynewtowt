@@ -1,9 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Connexion staff — {{ brand.nom_court }}{% endblock %}
-{% block head %}{{ super() }}
-<script src="/static/js/webauthn.js" defer></script>
-<script src="/static/js/webauthn-login.js" defer></script>
-{% endblock %}
+{% block head %}{{ super() }}{% endblock %}
 {% block body %}
 <div class="auth-shell">
   <div class="auth-card">
@@ -27,18 +24,6 @@
       </div>
       <button class="btn btn-primary btn-block btn-lg" type="submit">Se connecter</button>
     </form>
-
-    <div class="text-center" style="margin:var(--space-4) 0;">
-      <span class="text-muted text-sm">— ou —</span>
-    </div>
-
-    <button id="wa-login-btn" type="button"
-            class="btn btn-secondary btn-block"
-            data-begin-url="/login/webauthn/options"
-            data-verify-url="/login/webauthn/verify">
-      🔐 Se connecter avec une passkey
-    </button>
-    <p id="wa-login-status" class="text-muted text-sm text-center mt-2" style="min-height:1.4em;"></p>
 
     <p class="text-center text-muted mt-4 text-sm">
       Pour la création de compte, contactez l'administrateur.

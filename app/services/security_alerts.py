@@ -66,40 +66,6 @@ async def notify_mfa_disabled(
     )
 
 
-async def notify_passkey_added(
-    *, to_email: str, recipient_name: str, passkey_label: str | None,
-    ip: str | None = None, ua: str | None = None,
-) -> None:
-    detail_parts = []
-    if passkey_label:
-        detail_parts.append(f"« {passkey_label} »")
-    iu = _format_ip_ua(ip, ua)
-    if iu:
-        detail_parts.append(iu)
-    await notify_security_event(
-        to_email=to_email, recipient_name=recipient_name,
-        event_kind="Nouvelle passkey enregistrée",
-        event_detail=" · ".join(detail_parts) if detail_parts else None,
-    )
-
-
-async def notify_passkey_deleted(
-    *, to_email: str, recipient_name: str, passkey_label: str | None,
-    ip: str | None = None, ua: str | None = None,
-) -> None:
-    detail_parts = []
-    if passkey_label:
-        detail_parts.append(f"« {passkey_label} »")
-    iu = _format_ip_ua(ip, ua)
-    if iu:
-        detail_parts.append(iu)
-    await notify_security_event(
-        to_email=to_email, recipient_name=recipient_name,
-        event_kind="Passkey supprimée",
-        event_detail=" · ".join(detail_parts) if detail_parts else None,
-    )
-
-
 async def notify_password_changed(
     *, to_email: str, recipient_name: str,
     ip: str | None = None, ua: str | None = None,

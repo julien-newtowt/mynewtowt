@@ -99,22 +99,12 @@ class Settings(BaseSettings):
     domain: str = "my.newtowt.eu"
     certbot_email: str = "ops@newtowt.eu"
 
-    # WebAuthn — Relying Party. ``rp_id`` doit matcher exactement le domain
-    # (sans port, sans schéma). Pour dev local, mettre "localhost" en .env.
-    # ``rp_name`` est affiché par le navigateur dans le prompt OS.
-    webauthn_rp_id: str | None = None       # None → settings.domain
-    webauthn_rp_name: str = "NEWTOWT"
-
     # Force MFA pour le rôle administrateur — middleware
     # ForceMfaForAdminMiddleware redirige vers /admin/my-account/mfa
     # tant que l'admin n'a pas activé MFA. À mettre False en dev local.
     require_mfa_for_admin: bool = True
     # ``site_url`` = origin attendu pour les attestations. En .env :
     # SITE_URL=https://my.newtowt.eu (sans trailing slash).
-
-    @property
-    def effective_rp_id(self) -> str:
-        return self.webauthn_rp_id or self.domain
 
     @field_validator("secret_key")
     @classmethod

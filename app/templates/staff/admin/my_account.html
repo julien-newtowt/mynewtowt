@@ -37,11 +37,6 @@
         {% if user.mfa_enabled %}Gérer la 2FA{% else %}Configurer 2FA{% endif %}
       </a>
     </p>
-    <p style="margin-top:var(--space-3);">
-      <strong>Passkeys (WebAuthn / FIDO2)</strong>
-      <br>
-      <a href="/admin/my-account/webauthn" class="btn btn-secondary mt-2">Gérer mes passkeys</a>
-    </p>
     {% if user.must_change_password %}
     <div class="alert alert-warn mt-3">
       <strong>Vous devez changer votre mot de passe.</strong>
