@@ -135,6 +135,27 @@ async def route_detail(
     except NotBookable:
         capacity = None
 
+    # Config portuaire (agent, docs, restrictions) pour les blocs port.
+    from app.models.finance import PortConfig
+    pol_config = (await db.execute(
+        select(PortConfig).where(PortConfig.port_id == leg.departure_port_id)
+    )).scalar_one_or_none()
+    pod_config = (await db.execute(
+        select(PortConfig).where(PortConfig.port_id == leg.arrival_port_id)
+    )).scalar_one_or_none()
+
+    # Distance orthodromique (NM) + durée — affichées dans le hero.
+    from app.services.ports import haversine_nm
+    distance_nm = None
+    if pol and pod and pol.latitude is not None and pod.latitude is not None:
+        distance_nm = round(
+            haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude)
+            * float(leg.elongation_coef or 1.0)
+        )
+    duration_days = None
+    if leg.etd and leg.eta:
+        duration_days = round((leg.eta - leg.etd).total_seconds() / 86400.0, 1)
+
     # Météo POD @ ETA — valeur commerciale ("on saura à ~quoi s'attendre")
     from app.services import weather as wx
     weather_pod = None
@@ -152,6 +173,10 @@ async def route_detail(
             "vessel": vessel,
             "pol": pol,
             "pod": pod,
+            "pol_config": pol_config,
+            "pod_config": pod_config,
+            "distance_nm": distance_nm,
+            "duration_days": duration_days,
             "capacity": capacity,
             "weather_pod": weather_pod,
             "weather_pod_summary": wx.summarize(weather_pod),

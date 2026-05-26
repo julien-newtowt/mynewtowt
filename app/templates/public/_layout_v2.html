@@ -1,0 +1,79 @@
+{# Layout public refonte "Nouvelle Étoile" (handoff Claude Design).
+   Standalone : ne charge PAS kairos.css (évite les collisions .btn/.card).
+   Tokens : colors_and_type.css + composants : newtowt-public.css.
+   Utilisé par : landing, route_detail. #}
+<!DOCTYPE html>
+<html lang="{{ lang|default('fr') }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}NEWTOWT — Transport maritime cargo vélique{% endblock %}</title>
+  <meta name="description" content="{% block description %}NEWTOWT — Pionnier du transport maritime décarboné à la voile depuis 2011.{% endblock %}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/static/css/colors_and_type.css" />
+  <link rel="stylesheet" href="/static/css/newtowt-public.css" />
+  <link rel="icon" type="image/png" href="/static/img/favicon.png" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a href="#main" class="skip-link" style="position:absolute;left:-9999px;">Aller au contenu</a>
+
+  <header class="header" role="banner">
+    <div class="header-inner">
+      <a class="header-logo" href="/" aria-label="NEWTOWT — accueil">
+        <img src="/static/img/logo_NEWTOWT_email.png" alt="NEWTOWT" />
+      </a>
+      <nav class="header-nav" aria-label="Navigation principale">
+        <a href="/routes">Routes</a>
+        <a href="/fleet">Flotte</a>
+        <a href="/about/anemos">Label Anemos</a>
+        <a href="/me/login" class="btn btn-secondary">Connexion</a>
+        <a href="/lang/{{ 'en' if lang == 'fr' else 'fr' }}" class="lang-switch" title="Switch language">{{ 'EN' if lang == 'fr' else 'FR' }}</a>
+      </nav>
+    </div>
+  </header>
+
+  {% block content %}{% endblock %}
+
+  <footer class="footer" role="contentinfo">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand">
+            <img src="/static/img/logo_NEWTOWT_email_white.png" alt="NEWTOWT" />
+          </div>
+          <p class="footer-tagline">Pionnier du transport maritime décarboné depuis 2011</p>
+          <p class="footer-addr">52 Quai Frissard<br/>76600 Le Havre<br/>France</p>
+        </div>
+        <div>
+          <h4>Navigation</h4>
+          <ul class="footer-links">
+            <li><a href="/routes">Routes</a></li>
+            <li><a href="/fleet">Flotte</a></li>
+            <li><a href="/about">À propos</a></li>
+            <li><a href="/about/anemos">Label Anemos</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Client</h4>
+          <ul class="footer-links">
+            <li><a href="/me/login">Connexion</a></li>
+            <li><a href="/me/register">Créer un compte</a></li>
+            <li><a href="/booking/new">Réserver</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Légal</h4>
+          <ul class="footer-links">
+            <li><a href="/about/legal">Mentions légales</a></li>
+            <li><a href="/about/privacy">Confidentialité</a></li>
+            <li><a href="/about/terms">CGV</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">© 2026 NEWTOWT</div>
+    </div>
+  </footer>
+</body>
+</html>

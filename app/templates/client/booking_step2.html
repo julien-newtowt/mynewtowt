@@ -1,158 +1,179 @@
-{% extends "client/_layout.html" %}
-{% block title %}{% if lang == 'en' %}Booking — Cargo{% else %}Réservation — Cargo{% endif %}{% endblock %}
-{% block head %}{{ super() }}<script src="/static/js/booking-co2.js" defer></script>{% endblock %}
-{% block content %}
+{# Booking wizard — étape 2 (Cargo). Refonte "Nouvelle Étoile" standalone
+   (header = progress steps, pas la sidebar client). Charge colors_and_type
+   + newtowt-public, PAS kairos (évite collisions). Champs/action/CSRF du
+   backend préservés (items-0-*, /booking/new/{leg_code}). #}
+<!DOCTYPE html>
+<html lang="{{ lang|default('fr') }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Réservation — Cargo · {{ leg.leg_code }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/static/css/colors_and_type.css" />
+  <link rel="stylesheet" href="/static/css/newtowt-public.css" />
+  <link rel="icon" type="image/png" href="/static/img/favicon.png" />
+  <script src="/static/js/csrf-htmx.js" defer></script>
+  <script src="/static/js/forms.js" defer></script>
+  <script src="/static/js/booking-co2.js" defer></script>
+</head>
+<body>
 
-<h1>{% if lang == 'en' %}New booking{% else %}Nouvelle réservation{% endif %}</h1>
-<p class="text-muted">
-  {% if lang == 'en' %}Step 2 / 3 — Cargo details for{% else %}Étape 2 / 3 — Détails du cargo pour{% endif %}
-  <span class="mono text-accent">{{ leg.leg_code }}</span>
-</p>
+  <header class="header" role="banner">
+    <div class="header-inner">
+      <a class="header-logo" href="/"><img src="/static/img/logo_NEWTOWT_email.png" alt="NEWTOWT" /></a>
+      <div class="progress-steps">
+        <div class="progress-step completed">
+          <div class="step-number">1</div><span class="step-label">Route</span>
+        </div>
+        <span class="step-arrow">→</span>
+        <div class="progress-step active">
+          <div class="step-number">2</div><span class="step-label">Cargo</span>
+        </div>
+        <span class="step-arrow">→</span>
+        <div class="progress-step">
+          <div class="step-number">3</div><span class="step-label">Confirmation</span>
+        </div>
+      </div>
+    </div>
+  </header>
 
-<div class="kpi-strip">
-  <div class="kpi-card">
-    <div class="label">{% if lang == 'en' %}Step{% else %}Étape{% endif %}</div>
-    <div class="value text-muted">1 / 3 ✓</div>
-    <div class="delta text-muted">{% if lang == 'en' %}Route{% else %}Route{% endif %}</div>
-  </div>
-  <div class="kpi-card">
-    <div class="label">{% if lang == 'en' %}Step{% else %}Étape{% endif %}</div>
-    <div class="value">2 / 3</div>
-    <div class="delta">{% if lang == 'en' %}Cargo{% else %}Cargo{% endif %}</div>
-  </div>
-  <div class="kpi-card">
-    <div class="label">{% if lang == 'en' %}Step{% else %}Étape{% endif %}</div>
-    <div class="value text-muted">3 / 3</div>
-    <div class="delta text-muted">{% if lang == 'en' %}Confirmation{% else %}Confirmation{% endif %}</div>
-  </div>
-</div>
+  <main class="main main--wizard" id="main">
+    <h1 class="page-title">Détails du cargo</h1>
+    <p class="page-subtitle">Décrivez votre marchandise et les quantités à expédier.</p>
 
-{% if error %}
-  <div class="alert alert-error" role="alert">{{ error }}</div>
-{% endif %}
+    <aside class="summary-card">
+      <div class="summary-title">Route sélectionnée</div>
+      <div class="summary-route">
+        {{ pol.country|flag if pol else '' }} {{ pol.name if pol else '—' }} →
+        {{ pod.name if pod else '—' }} {{ pod.country|flag if pod else '' }}
+      </div>
+      <div class="summary-details">
+        <div class="summary-detail"><span>Leg code</span><span style="font-family:var(--font-mono);font-weight:var(--fw-bold);">{{ leg.leg_code }}</span></div>
+        <div class="summary-detail"><span>ETD</span><span>{{ leg.etd|datetime }} UTC</span></div>
+        <div class="summary-detail"><span>ETA</span><span>{{ leg.eta|datetime }} UTC</span></div>
+      </div>
+    </aside>
 
-<form method="post" action="/booking/new/{{ leg.leg_code }}" class="card">
-  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-
-  <h2>{% if lang == 'en' %}Your pallets{% else %}Vos palettes{% endif %}</h2>
-  <p class="text-muted text-sm">
-    {% if lang == 'en' %}
-      Add each type of pallet to ship. You'll be able to refine details later.
-    {% else %}
-      Ajoutez chaque type de palette à embarquer. Vous pourrez préciser des détails par la suite.
+    {% if error %}
+      <div class="alert alert--error" role="alert"><strong>Erreur :</strong> {{ error }}</div>
     {% endif %}
-  </p>
 
-  <div id="items-area">
-    <div class="grid grid-4 gap-3 mb-3" data-item-row="0">
-      <div class="field">
-        <label>{% if lang == 'en' %}Format{% else %}Format{% endif %}</label>
-        <select name="items-0-format" required>
-          <option value="EPAL">EPAL — {% if lang == 'en' %}Europallet{% else %}Europalette{% endif %}</option>
-          <option value="USPAL">USPAL — US Pallet</option>
-          <option value="PORTPAL">PORTPAL — {% if lang == 'en' %}Port{% else %}Portuaire{% endif %}</option>
-          <option value="IBC">IBC</option>
-          <option value="BIGBAG">BIGBAG</option>
-          <option value="BARRIQUE120">{% if lang == 'en' %}Barrel 120{% else %}Barrique 120{% endif %}</option>
-          <option value="BARRIQUE140">{% if lang == 'en' %}Barrel 140{% else %}Barrique 140{% endif %}</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>{% if lang == 'en' %}Count{% else %}Nombre{% endif %}</label>
-        <input type="number" name="items-0-count" min="1" max="1000" value="1" required />
-      </div>
-      <div class="field" style="grid-column: span 2">
-        <label>{% if lang == 'en' %}Cargo description{% else %}Description marchandise{% endif %}</label>
-        <input type="text" name="items-0-description" required placeholder="{% if lang == 'en' %}Red wine bottles{% else %}Vin rouge bouteilles{% endif %}" />
-      </div>
-      <div class="field">
-        <label>{% if lang == 'en' %}Unit weight (kg){% else %}Poids unitaire (kg){% endif %}</label>
-        <input type="number" name="items-0-unit_weight_kg" step="0.1" min="0" />
-      </div>
-      <div class="field field-check">
-        <input id="items-0-stackable" type="checkbox" name="items-0-stackable" checked />
-        <label for="items-0-stackable">{% if lang == 'en' %}Stackable{% else %}Empilable{% endif %}</label>
-      </div>
-      <div class="field field-check">
-        <input id="items-0-hazardous" type="checkbox" name="items-0-hazardous" />
-        <label for="items-0-hazardous">{% if lang == 'en' %}Hazardous (IMDG){% else %}Dangereux (IMDG){% endif %}</label>
-      </div>
-    </div>
-  </div>
+    <form method="post" action="/booking/new/{{ leg.leg_code }}">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
 
-  <h2 class="mt-4">{% if lang == 'en' %}Logistics{% else %}Logistique{% endif %}</h2>
-  <div class="field">
-    <label for="pickup_address">{% if lang == 'en' %}Pickup address (optional){% else %}Adresse d'enlèvement (optionnel){% endif %}</label>
-    <textarea id="pickup_address" name="pickup_address" rows="2"></textarea>
-  </div>
-  <div class="field">
-    <label for="delivery_address">{% if lang == 'en' %}Delivery address (optional){% else %}Adresse de livraison (optionnel){% endif %}</label>
-    <textarea id="delivery_address" name="delivery_address" rows="2"></textarea>
-  </div>
-  <div class="field">
-    <label for="shipper_reference">{% if lang == 'en' %}Your shipper reference (optional){% else %}Votre référence chargeur (optionnel){% endif %}</label>
-    <input id="shipper_reference" type="text" name="shipper_reference" maxlength="100" />
-  </div>
-  <div class="field">
-    <label for="notes">{% if lang == 'en' %}Notes / constraints (optional){% else %}Notes / contraintes (optionnel){% endif %}</label>
-    <textarea id="notes" name="notes" rows="3"></textarea>
-  </div>
+      <section class="form-section">
+        <h2 class="form-section-title">Vos palettes</h2>
+        <p class="form-hint" style="margin-bottom:var(--sp-5);">Décrivez le type de palette à embarquer. Vous pourrez préciser des détails par la suite.</p>
 
-  {# Estimateur CO₂ live — recalculé via /static/js/booking-co2.js #}
-  <div id="co2-estimator" class="card mt-4"
-       style="background:linear-gradient(90deg, rgba(135,189,41,0.06), rgba(13,89,102,0.04)); border-left:4px solid var(--vert);"
-       data-distance-nm="{{ distance_nm }}"
-       data-towt-ef-g-tkm="1.5"
-       data-conv-ef-g-tkm="13.7"
-       data-default-weight-kg="500">
-    <h3 style="margin:0 0 var(--space-2) 0;">
-      🌿 {% if lang == 'en' %}Estimated CO₂ impact of your crossing{% else %}Impact CO₂ estimé de votre traversée{% endif %}
-    </h3>
-    <p class="text-muted text-sm">
-      {% if lang == 'en' %}
-        NEWTOWT methodology (1.5 g CO₂/t·km) — vs conventional cargo (13.7 g CO₂/t·km). Updated in real time as you fill in the pallets above.
-      {% else %}
-        Méthodologie NEWTOWT (1,5 g CO₂/t·km) — vs cargo conventionnel (13,7 g CO₂/t·km). Sera mis à jour en temps réel selon les palettes ci-dessus.
-      {% endif %}
-    </p>
-    <div class="grid grid-3 gap-3 mt-3">
-      <div class="kpi-card">
-        <div class="label">{% if lang == 'en' %}Distance · tonnage{% else %}Distance · tonnage{% endif %}</div>
-        <div class="value" style="font-size:var(--text-md); color:var(--teal);">
-          <span class="co2-distance">—</span> · <span class="co2-tonnage">—</span>
+        <div id="items-area" data-item-row="0">
+          <div class="form-group">
+            <label class="form-label required">Format</label>
+            <select class="form-control" name="items-0-format" required>
+              <option value="EPAL">EPAL — Europalette</option>
+              <option value="USPAL">USPAL — US Pallet</option>
+              <option value="PORTPAL">PORTPAL — Portuaire</option>
+              <option value="IBC">IBC</option>
+              <option value="BIGBAG">BIGBAG</option>
+              <option value="BARRIQUE120">Barrique 120 L</option>
+              <option value="BARRIQUE140">Barrique 140 L</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label required">Nombre</label>
+              <input class="form-control" type="number" name="items-0-count" min="1" max="1000" value="1" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Poids unitaire (kg)</label>
+              <input class="form-control" type="number" name="items-0-unit_weight_kg" step="0.1" min="0" />
+              <span class="form-hint">Poids brut par unité (emballage inclus).</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label required">Description marchandise</label>
+            <input class="form-control" type="text" name="items-0-description" required placeholder="Ex : caisses de vin rouge Bordeaux AOC, cartons de 6" />
+          </div>
+
+          <div class="radio-group">
+            <label class="radio-option">
+              <input type="checkbox" name="items-0-stackable" checked />
+              <div class="radio-content"><div class="radio-label">Empilable</div><div class="radio-description">Les palettes peuvent être gerbées en cale.</div></div>
+            </label>
+            <label class="radio-option">
+              <input type="checkbox" name="items-0-hazardous" />
+              <div class="radio-content"><div class="radio-label">Marchandise dangereuse (IMDG)</div><div class="radio-description">Matière réglementée — déclaration préalable obligatoire.</div></div>
+            </label>
+          </div>
         </div>
-        <div class="delta text-muted">{{ pol.locode if pol else '?' }} → {{ pod.locode if pod else '?' }}</div>
-      </div>
-      <div class="kpi-card">
-        <div class="label">CO₂ NEWTOWT</div>
-        <div class="value" style="color:var(--vert);"><span class="co2-towt">—</span></div>
-        <div class="delta text-muted">
-          {% if lang == 'en' %}vs conventional cargo{% else %}vs cargo conventionnel{% endif %}
-          <span class="co2-conv">—</span>
-        </div>
-      </div>
-      <div class="kpi-card">
-        <div class="label">{% if lang == 'en' %}CO₂ avoided{% else %}CO₂ évité{% endif %}</div>
-        <div class="value" style="color:var(--cuivre);"><span class="co2-avoided">—</span></div>
-        <div class="delta" style="color:var(--vert); font-weight:var(--fw-semibold);">
-          <span class="co2-pct">—</span>
-        </div>
-      </div>
-    </div>
-    <p class="text-muted text-xs mt-3" style="margin-bottom:0;">
-      {% if lang == 'en' %}
-        Indicative estimate — the final calculation will be delivered with the
-        <strong>named Anemos label</strong> at delivery.
-      {% else %}
-        Estimation indicative — le bilan définitif vous sera remis avec le
-        <strong>label Anemos nominatif</strong> à la livraison.
-      {% endif %}
-    </p>
-  </div>
+      </section>
 
-  <button class="btn btn-primary btn-lg mt-3" type="submit">
-    {% if lang == 'en' %}Continue →{% else %}Continuer →{% endif %}
-  </button>
-</form>
+      <section class="form-section">
+        <h2 class="form-section-title">Conditionnement</h2>
+        <div class="alert">
+          <span class="alert-icon">ℹ️</span><strong>Conseil :</strong> pour une route océanique, privilégiez un emballage maritime renforcé (film étirable + sangles).
+        </div>
+      </section>
 
-{% endblock %}
+      <section class="form-section">
+        <h2 class="form-section-title">Logistique</h2>
+        <div class="form-group">
+          <label class="form-label">Adresse d'enlèvement (optionnel)</label>
+          <textarea class="form-control" name="pickup_address" rows="2"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Adresse de livraison (optionnel)</label>
+          <textarea class="form-control" name="delivery_address" rows="2"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Votre référence chargeur (optionnel)</label>
+            <input class="form-control" type="text" name="shipper_reference" maxlength="100" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes / contraintes (optionnel)</label>
+          <textarea class="form-control" name="notes" rows="3" placeholder="Ex : fragile, haut de pile, orientation à respecter…"></textarea>
+        </div>
+      </section>
+
+      {# Estimateur Label Anemos (CO₂) live — booking-co2.js cible les spans .co2-* #}
+      <section class="form-section" id="co2-estimator"
+               data-distance-nm="{{ distance_nm }}"
+               data-towt-ef-g-tkm="1.5" data-conv-ef-g-tkm="13.7" data-default-weight-kg="500">
+        <h2 class="form-section-title">🌿 Impact CO₂ estimé — Label Anemos</h2>
+        <p class="form-hint" style="margin-bottom:var(--sp-5);">
+          Méthodologie NEWTOWT (1,5 g CO₂/t·km) vs cargo conventionnel (13,7 g CO₂/t·km).
+          Mis à jour en temps réel selon les palettes ci-dessus.
+        </p>
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Distance · tonnage ({{ pol.locode if pol else '?' }} → {{ pod.locode if pod else '?' }})</div>
+            <div class="info-value"><span class="co2-distance">—</span> · <span class="co2-tonnage">—</span></div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">CO₂ NEWTOWT (vs conv. <span class="co2-conv">—</span>)</div>
+            <div class="info-value" style="color:var(--c-green);"><span class="co2-towt">—</span></div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">CO₂ évité (<span class="co2-pct">—</span>)</div>
+            <div class="info-value" style="color:var(--c-copper);"><span class="co2-avoided">—</span></div>
+          </div>
+        </div>
+        <p class="form-hint" style="margin-top:var(--sp-4);">
+          Estimation indicative — le bilan définitif vous sera remis avec le
+          <strong>label Anemos nominatif</strong> à la livraison.
+        </p>
+      </section>
+
+      <div class="form-actions">
+        <a href="/booking/new" class="btn btn-secondary btn-lg">← Retour</a>
+        <button type="submit" class="btn btn-primary btn-lg">Continuer vers confirmation →</button>
+      </div>
+    </form>
+  </main>
+
+</body>
+</html>

@@ -1,133 +1,168 @@
-{% extends "public/_layout.html" %}
-{% block title %}{{ leg.leg_code }} — {{ brand.nom_court }}{% endblock %}
+{% extends "public/_layout_v2.html" %}
+{% block title %}{{ leg.leg_code }} — {{ pol.name if pol }} → {{ pod.name if pod }} — NEWTOWT{% endblock %}
 {% block content %}
 
-<section class="hero">
-  <div class="container">
-    <span class="kicker">{% if lang == 'en' %}Voyage{% else %}Voyage{% endif %} {{ leg.leg_code }}</span>
-    <h1 class="display">{{ pol.name }} → {{ pod.name }}</h1>
-    <span class="baseline">
-      {% if lang == 'en' %}Departure scheduled{% else %}Navigation prévue{% endif %} {{ leg.etd|date }}
-    </span>
-  </div>
-</section>
+<main class="main" id="main">
+  <nav class="breadcrumb">
+    <a href="/">Accueil</a>
+    <span class="breadcrumb-separator">→</span>
+    <a href="/routes">Routes</a>
+    <span class="breadcrumb-separator">→</span>
+    <span>{{ leg.leg_code }}</span>
+  </nav>
 
-<section class="section">
-  <div class="container" style="max-width:960px;">
-    <a href="/routes" class="btn btn-ghost mb-4">
-      {% if lang == 'en' %}← All routes{% else %}← Toutes les routes{% endif %}
-    </a>
-
-    <article class="card card-elevated">
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="mono text-accent" style="margin:0">{{ leg.leg_code }}</h2>
-        <span class="pill pill-info">{{ vessel.name }}</span>
-      </div>
-
-      <div class="grid grid-2 gap-4">
-        <div>
-          <span class="kicker">{% if lang == 'en' %}Itinerary{% else %}Itinéraire{% endif %}</span>
-          <p style="margin-top:var(--space-2);">
-            <strong>{{ pol.name }}</strong> <small class="text-muted">({{ pol.locode }} {{ pol.country|flag }})</small><br/>
-            <span class="text-muted">↓</span><br/>
-            <strong>{{ pod.name }}</strong> <small class="text-muted">({{ pod.locode }} {{ pod.country|flag }})</small>
-          </p>
-          <p class="text-muted">
-            ETD <span class="mono">{{ leg.etd|datetime }}</span><br/>
-            ETA <span class="mono">{{ leg.eta|datetime }}</span>
-          </p>
+  <div class="route-hero">
+    <div class="route-main">
+      <div class="leg-code">{{ leg.leg_code }}</div>
+      <h1 class="route-title">
+        <span class="flag">{{ pol.country|flag if pol else '' }}</span>
+        {{ pol.name if pol else '—' }} → {{ pod.name if pod else '—' }}
+        <span class="flag">{{ pod.country|flag if pod else '' }}</span>
+      </h1>
+      <div class="route-meta">
+        <div class="route-meta-item">
+          <div class="route-meta-label">Navire</div>
+          <div class="route-meta-value">{{ vessel.name }}</div>
         </div>
-        <div>
-          <span class="kicker">{% if lang == 'en' %}Capacity{% else %}Capacité{% endif %}</span>
-          {% if capacity %}
-            {% set occ = capacity.occupancy_pct %}
-            <p style="margin-top:var(--space-2);">
-              <strong style="font-size:var(--text-md);">{{ capacity.available_palettes }}</strong>
-              {% if lang == 'en' %}pallets available{% else %}palettes disponibles{% endif %}
-              <small class="text-muted">/ {{ capacity.capacity_palettes }} {% if lang == 'en' %}total{% else %}total{% endif %}</small>
-            </p>
-            <div class="capacity-gauge {% if occ > 85 %}full{% elif occ > 60 %}warn{% endif %}">
-              <div class="fill" style="width: {{ occ }}%"></div>
-            </div>
-            {% if leg.public_price_per_palette_eur %}
-              <p class="mt-3">
-                {% if lang == 'en' %}Indicative price:{% else %}Tarif indicatif :{% endif %}
-                <strong>{{ leg.public_price_per_palette_eur|money }} {% if lang == 'en' %}/ EPAL pallet{% else %}/ palette EPAL{% endif %}</strong>
-              </p>
-            {% endif %}
-          {% else %}
-            <p class="text-muted">
-              {% if lang == 'en' %}Capacity not public.{% else %}Capacité non publique.{% endif %}
-            </p>
-          {% endif %}
+        <div class="route-meta-item">
+          <div class="route-meta-label">ETD</div>
+          <div class="route-meta-value mono">{{ leg.etd|datetime }} UTC</div>
         </div>
+        <div class="route-meta-item">
+          <div class="route-meta-label">ETA</div>
+          <div class="route-meta-value mono">{{ leg.eta|datetime }} UTC</div>
+        </div>
+        {% if duration_days is not none %}
+        <div class="route-meta-item">
+          <div class="route-meta-label">Durée</div>
+          <div class="route-meta-value">{{ duration_days }} jours</div>
+        </div>
+        {% endif %}
+        {% if distance_nm %}
+        <div class="route-meta-item">
+          <div class="route-meta-label">Distance</div>
+          <div class="route-meta-value">{{ "{:,}".format(distance_nm).replace(",", " ") }} NM</div>
+        </div>
+        {% endif %}
       </div>
+    </div>
 
-      {% if weather_pod %}
-      <div class="mt-4" style="background:var(--sable); padding:var(--space-3); border-radius:8px;">
-        <span class="kicker">
-          {% if lang == 'en' %}Weather forecast on arrival{% else %}Météo prévue à l'arrivée{% endif %}
-        </span>
-        <p style="margin-top:var(--space-1); margin-bottom:0;" class="mono">
-          {{ weather_pod_summary }}
-        </p>
-        <p class="text-muted text-sm" style="margin-top:var(--space-1); margin-bottom:0;">
-          {% if lang == 'en' %}Source: Open-Meteo · indicative only{% else %}Source : Open-Meteo · indicatif{% endif %}
-        </p>
+    <aside class="booking-cta">
+      {% if capacity %}
+      <div class="booking-cta-capacity">
+        <div class="booking-cta-available">{{ capacity.available_palettes }}</div>
+        <div class="booking-cta-total">palettes disponibles / {{ capacity.capacity_palettes }}</div>
+      </div>
+      <div class="capacity-gauge capacity-gauge--on-dark">
+        <div class="capacity-fill {% if capacity.occupancy_pct > 85 %}warn{% endif %}" style="width: {{ capacity.occupancy_pct|round(0) }}%;"></div>
+      </div>
+      {% else %}
+      <div class="booking-cta-capacity">
+        <div class="booking-cta-total">Capacité sur demande</div>
       </div>
       {% endif %}
 
-      <div class="flex gap-3 mt-5">
-        <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-primary btn-lg">
-          {% if lang == 'en' %}Book this crossing{% else %}Réserver cette traversée{% endif %}
-        </a>
-        <a href="/about/anemos" class="btn btn-ghost">
-          {% if lang == 'en' %}Anemos methodology{% else %}Méthodologie Anemos{% endif %}
-        </a>
+      <div class="co2-badge">
+        🌿 <span class="co2-value">−90 % CO₂</span><br>
+        <span style="opacity:.9;">vs cargo conventionnel</span>
       </div>
-    </article>
 
-    <section class="mt-5">
-      <span class="kicker section-kicker">
-        {% if lang == 'en' %}Transport terms{% else %}Conditions de transport{% endif %}
-      </span>
-      <h2 class="section-title">{% if lang == 'en' %}Good to know{% else %}Bon à savoir{% endif %}</h2>
-      <div class="grid grid-3 gap-3">
-        <div class="feature-card">
-          <h4>{% if lang == 'en' %}Accepted goods{% else %}Marchandises acceptées{% endif %}</h4>
-          <p class="text-muted text-sm">
-            {% if lang == 'en' %}
-              EPAL / USPAL / PORTPAL pallets, IBC, big bags, barrels.
-              Hazardous goods (IMDG) on declaration.
-            {% else %}
-              Palettes EPAL / USPAL / PORTPAL, IBC, big bags, barriques.
-              Marchandises dangereuses (IMDG) sur déclaration.
-            {% endif %}
-          </p>
-        </div>
-        <div class="feature-card accent-cuivre">
-          <h4>{% if lang == 'en' %}Cancellation{% else %}Annulation{% endif %}</h4>
-          <p class="text-muted text-sm">
-            {% if lang == 'en' %}
-              Free up to D-30. See <a href="/about/terms">terms</a>.
-            {% else %}
-              Gratuite jusqu'à J-30. Voir <a href="/about/terms">CGV</a>.
-            {% endif %}
-          </p>
-        </div>
-        <div class="feature-card accent-teal">
-          <h4>{% if lang == 'en' %}Documents provided{% else %}Documents fournis{% endif %}</h4>
-          <p class="text-muted text-sm">
-            {% if lang == 'en' %}
-              BL · Mate's receipt · Invoice · Anemos label.
-            {% else %}
-              BL · Mate's receipt · Facture · Label Anemos.
-            {% endif %}
-          </p>
-        </div>
-      </div>
-    </section>
+      {% if capacity and capacity.available_palettes > 0 %}
+        <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">Réserver cette traversée</a>
+      {% else %}
+        <span class="btn btn-white btn-block btn-lg" style="opacity:.6;cursor:default;">Complet</span>
+      {% endif %}
+    </aside>
   </div>
-</section>
+
+  {# Port de départ #}
+  <article class="card">
+    <h2 class="card-title">Port de départ — {{ pol.name if pol else '—' }} ({{ pol.locode if pol else '' }})</h2>
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="info-label">Pays</div>
+        <div class="info-value">{{ pol.country|flag if pol else '' }} {{ pol.country if pol else '—' }}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">LOCODE</div>
+        <div class="info-value" style="font-family:var(--font-mono);">{{ pol.locode if pol else '—' }}</div>
+      </div>
+      {% if pol and pol.timezone %}
+      <div class="info-item"><div class="info-label">Timezone</div><div class="info-value">{{ pol.timezone }}</div></div>
+      {% endif %}
+      {% if pol_config and pol_config.agent_name %}
+      <div class="info-item">
+        <div class="info-label">Agent</div>
+        <div class="info-value">{{ pol_config.agent_name }}{% if pol_config.agent_phone %}<br><span style="font-size:var(--fs-14);color:var(--c-grey);">{{ pol_config.agent_phone }}</span>{% endif %}</div>
+      </div>
+      {% endif %}
+    </div>
+    {% if pol_config and pol_config.documents_required %}
+      <div class="alert" style="margin-top:var(--sp-5);"><strong>Documents requis :</strong> {{ pol_config.documents_required|replace('\n', ' · ') }}</div>
+    {% endif %}
+  </article>
+
+  {# Port d'arrivée #}
+  <article class="card">
+    <h2 class="card-title">Port d'arrivée — {{ pod.name if pod else '—' }} ({{ pod.locode if pod else '' }})</h2>
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="info-label">Pays</div>
+        <div class="info-value">{{ pod.country|flag if pod else '' }} {{ pod.country if pod else '—' }}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">LOCODE</div>
+        <div class="info-value" style="font-family:var(--font-mono);">{{ pod.locode if pod else '—' }}</div>
+      </div>
+      {% if pod and pod.timezone %}
+      <div class="info-item"><div class="info-label">Timezone</div><div class="info-value">{{ pod.timezone }}</div></div>
+      {% endif %}
+      {% if pod_config and pod_config.agent_name %}
+      <div class="info-item">
+        <div class="info-label">Agent maritime</div>
+        <div class="info-value">{{ pod_config.agent_name }}{% if pod_config.agent_phone %}<br><span style="font-size:var(--fs-14);color:var(--c-grey);">{{ pod_config.agent_phone }}</span>{% endif %}</div>
+      </div>
+      {% endif %}
+    </div>
+    {% if pod_config and pod_config.restrictions %}
+      <div class="alert" style="margin-top:var(--sp-5);"><strong>Restrictions :</strong> {{ pod_config.restrictions }}</div>
+    {% endif %}
+  </article>
+
+  {# Météo @ ETA #}
+  <article class="card">
+    <h2 class="card-title">Météo @ ETA ({{ pod.name if pod else '' }})</h2>
+    {% if weather_pod %}
+    <div class="info-grid">
+      <div class="info-item"><div class="info-label">Vent</div><div class="info-value">{{ "%.0f"|format(weather_pod.wind_speed_kn) if weather_pod.wind_speed_kn is not none else '—' }} kn</div></div>
+      <div class="info-item"><div class="info-label">Houle</div><div class="info-value">{{ "%.1f"|format(weather_pod.wave_height_m) if weather_pod.wave_height_m is not none else '—' }} m</div></div>
+      {% if weather_pod.wave_period_s %}
+      <div class="info-item"><div class="info-label">Période houle</div><div class="info-value">{{ "%.0f"|format(weather_pod.wave_period_s) }} s</div></div>
+      {% endif %}
+      <div class="info-item"><div class="info-label">Synthèse</div><div class="info-value">{{ weather_pod_summary }}</div></div>
+    </div>
+    <p class="caption" style="margin-top:var(--sp-4);color:var(--c-grey);">Prévision Open-Meteo · indicatif.</p>
+    {% else %}
+    <p style="color:var(--c-grey);margin:0;">Prévision indisponible pour ce port.</p>
+    {% endif %}
+  </article>
+
+  {# Conditions de transport #}
+  <article class="card">
+    <h2 class="card-title">Conditions de transport</h2>
+    <ul class="conditions-list">
+      <li>Marchandises non dangereuses (ADR/IMDG) acceptées avec déclaration préalable</li>
+      <li>Cale ventilée, température ambiante (pas de température contrôlée)</li>
+      <li>Réservation possible jusqu'à 48 h avant l'ETD</li>
+      <li>Confirmation de booking sous 4 h après soumission</li>
+      <li>Paiement par virement bancaire uniquement (facture HT/TTC)</li>
+      <li>Label Anemos délivré automatiquement après livraison</li>
+    </ul>
+    <div class="alert" style="margin-top:var(--sp-5);">
+      <strong>Important :</strong> cette traversée est océanique. Prévoyez un emballage
+      maritime renforcé pour les marchandises sensibles aux mouvements.
+    </div>
+  </article>
+</main>
 
 {% endblock %}
