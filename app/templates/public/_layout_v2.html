@@ -19,6 +19,7 @@
   <script src="/static/js/csrf-htmx.js" defer></script>
   <script src="/static/js/lucide-init.js" defer></script>
   <script src="/static/js/toast.js" defer></script>
+  <script src="/static/js/lang-switch.js" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -34,7 +35,10 @@
         <a href="/fleet">Flotte</a>
         <a href="/about/anemos">Label Anemos</a>
         <a href="/me/login" class="btn btn-secondary">Connexion</a>
-        <a href="/lang/{{ 'en' if lang == 'fr' else 'fr' }}" class="lang-switch" title="Switch language">{{ 'EN' if lang == 'fr' else 'FR' }}</a>
+        <a href="/lang/{{ 'en' if lang == 'fr' else 'fr' }}"
+           class="lang-switch"
+           data-lang="{{ 'en' if lang == 'fr' else 'fr' }}"
+           title="Switch language">{{ 'EN' if lang == 'fr' else 'FR' }}</a>
       </nav>
     </div>
   </header>
