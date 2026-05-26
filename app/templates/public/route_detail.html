@@ -1,5 +1,12 @@
 {% extends "public/_layout_v2.html" %}
 {% block title %}{{ leg.leg_code }} — {{ pol.name if pol }} → {{ pod.name if pod }} — NEWTOWT{% endblock %}
+{% block description %}Traversée à la voile {{ pol.name if pol }} → {{ pod.name if pod }} par {{ vessel.name }} — {{ duration_days }} jours — −89 % CO₂ vs cargo conventionnel.{% endblock %}
+{% block head %}{{ super() }}
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
+<script src="/static/js/route-map.js" defer></script>
+<script src="/static/js/route-tabs.js" defer></script>
+{% endblock %}
 {% block content %}
 
 <main class="main" id="main">
@@ -8,161 +15,391 @@
     <span class="breadcrumb-separator">→</span>
     <a href="/routes">Routes</a>
     <span class="breadcrumb-separator">→</span>
-    <span>{{ leg.leg_code }}</span>
+    <span class="mono">{{ leg.leg_code }}</span>
   </nav>
 
-  <div class="route-hero">
-    <div class="route-main">
-      <div class="leg-code">{{ leg.leg_code }}</div>
-      <h1 class="route-title">
-        <span class="flag">{{ pol.country|flag if pol else '' }}</span>
-        {{ pol.name if pol else '—' }} → {{ pod.name if pod else '—' }}
-        <span class="flag">{{ pod.country|flag if pod else '' }}</span>
-      </h1>
-      <div class="route-meta">
-        <div class="route-meta-item">
-          <div class="route-meta-label">Navire</div>
-          <div class="route-meta-value">{{ vessel.name }}</div>
-        </div>
-        <div class="route-meta-item">
-          <div class="route-meta-label">ETD</div>
-          <div class="route-meta-value mono">{{ leg.etd|datetime }} UTC</div>
-        </div>
-        <div class="route-meta-item">
-          <div class="route-meta-label">ETA</div>
-          <div class="route-meta-value mono">{{ leg.eta|datetime }} UTC</div>
-        </div>
-        {% if duration_days is not none %}
-        <div class="route-meta-item">
-          <div class="route-meta-label">Durée</div>
-          <div class="route-meta-value">{{ duration_days }} jours</div>
-        </div>
-        {% endif %}
-        {% if distance_nm %}
-        <div class="route-meta-item">
-          <div class="route-meta-label">Distance</div>
-          <div class="route-meta-value">{{ "{:,}".format(distance_nm).replace(",", " ") }} NM</div>
-        </div>
-        {% endif %}
-      </div>
-    </div>
+  {# ── HERO ── #}
+  <div class="rd-hero">
 
+    {# Journey timeline #}
+    <div class="rd-journey">
+
+      {# Departure #}
+      <div class="rd-journey-point">
+        <div class="rd-dot"></div>
+        <div class="rd-journey-body">
+          <div class="rd-label">Départ · POL</div>
+          <div class="rd-place">
+            {{ pol.country|flag if pol else '' }} {{ pol.name if pol else '—' }}
+          </div>
+          <div class="rd-date">{{ leg.etd|datetime }} UTC</div>
+          <div class="rd-place-meta">
+            {% if pol %}<span class="rd-code">{{ pol.locode }}</span>{% endif %}
+            {% if pol and pol.country %}<span>{{ pol.country }}</span>{% endif %}
+            {% if pol_config and pol_config.agent_name %}
+              <span>Agent : {{ pol_config.agent_name }}</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {# Mid-track: vessel + summary chips #}
+      <div class="rd-track">
+        <span class="rd-vessel-chip">
+          ⛵ {{ vessel.name }}
+        </span>
+        <div class="rd-chips">
+          {% if duration_days is not none %}
+            <span class="rd-chip">{{ duration_days }} jours</span>
+          {% endif %}
+          {% if distance_nm %}
+            <span class="rd-chip">{{ "{:,}".format(distance_nm).replace(",", " ") }} NM</span>
+          {% endif %}
+          {% if co2_est %}
+            <span class="rd-chip rd-chip--green">−{{ co2_est.avoidance_pct }} % CO₂</span>
+          {% else %}
+            <span class="rd-chip rd-chip--green">−89 % CO₂</span>
+          {% endif %}
+          {% if leg.public_price_per_palette_eur %}
+            <span class="rd-chip rd-chip--price">À partir de {{ leg.public_price_per_palette_eur|money }} / palette</span>
+          {% endif %}
+        </div>
+      </div>
+
+      {# Arrival #}
+      <div class="rd-journey-point">
+        <div class="rd-dot rd-dot--pod"></div>
+        <div class="rd-journey-body">
+          <div class="rd-label">Arrivée · POD</div>
+          <div class="rd-place">
+            {{ pod.country|flag if pod else '' }} {{ pod.name if pod else '—' }}
+          </div>
+          <div class="rd-date">{{ leg.eta|datetime }} UTC</div>
+          <div class="rd-place-meta">
+            {% if pod %}<span class="rd-code">{{ pod.locode }}</span>{% endif %}
+            {% if pod and pod.country %}<span>{{ pod.country }}</span>{% endif %}
+            {% if pod_config and pod_config.agent_name %}
+              <span>Agent : {{ pod_config.agent_name }}</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+    </div>{# /rd-journey #}
+
+    {# Booking CTA #}
     <aside class="booking-cta">
       {% if capacity %}
-      <div class="booking-cta-capacity">
-        <div class="booking-cta-available">{{ capacity.available_palettes }}</div>
-        <div class="booking-cta-total">palettes disponibles / {{ capacity.capacity_palettes }}</div>
-      </div>
-      <div class="capacity-gauge capacity-gauge--on-dark">
-        <div class="capacity-fill {% if capacity.occupancy_pct > 85 %}warn{% endif %}" style="width: {{ capacity.occupancy_pct|round(0) }}%;"></div>
-      </div>
+        <div class="booking-cta-capacity">
+          <div class="booking-cta-available">{{ capacity.available_palettes }}</div>
+          <div class="booking-cta-total">palettes disponibles / {{ capacity.capacity_palettes }}</div>
+        </div>
+        <div class="capacity-gauge capacity-gauge--on-dark">
+          <div class="capacity-fill {% if capacity.occupancy_pct > 85 %}warn{% endif %}" style="width:{{ capacity.occupancy_pct|round(0) }}%;"></div>
+        </div>
       {% else %}
-      <div class="booking-cta-capacity">
-        <div class="booking-cta-total">Capacité sur demande</div>
-      </div>
+        <div class="booking-cta-capacity">
+          <div class="booking-cta-total">Capacité sur demande</div>
+        </div>
+      {% endif %}
+
+      {% if leg.public_price_per_palette_eur %}
+        <div style="text-align:center; font-size:var(--fs-13); opacity:.9;">
+          À partir de
+          <strong style="font-size:var(--fs-22); display:block; color:#fff;">{{ leg.public_price_per_palette_eur|money }}</strong>
+          <span style="opacity:.8;">/ palette</span>
+        </div>
       {% endif %}
 
       <div class="co2-badge">
-        🌿 <span class="co2-value">−90 % CO₂</span><br>
+        🌿 <span class="co2-value">−{{ co2_est.avoidance_pct if co2_est else '89' }} % CO₂</span><br>
         <span style="opacity:.9;">vs cargo conventionnel</span>
       </div>
 
       {% if capacity and capacity.available_palettes > 0 %}
         <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">Réserver cette traversée</a>
-      {% else %}
+      {% elif capacity %}
         <span class="btn btn-white btn-block btn-lg" style="opacity:.6;cursor:default;">Complet</span>
+      {% else %}
+        <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">Réserver</a>
       {% endif %}
     </aside>
+
+  </div>{# /rd-hero #}
+
+  {# ── MAP ── #}
+  {% if pol and pod and pol.latitude is not none and pod.latitude is not none %}
+  <div class="rd-map-section">
+    <div class="js-route-map"
+         data-maptiler-token="{{ map_token }}"
+         data-pol-lat="{{ pol.latitude }}"
+         data-pol-lng="{{ pol.longitude }}"
+         data-pod-lat="{{ pod.latitude }}"
+         data-pod-lng="{{ pod.longitude }}"
+         data-pol-name="{{ pol.name }}"
+         data-pod-name="{{ pod.name }}">
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── TABS ── #}
+  <div class="rd-tab-bar">
+    <button class="js-tab-btn is-active" data-target="tab-schedule">Traversée</button>
+    <button class="js-tab-btn" data-target="tab-eco">Éco-calculateur</button>
   </div>
 
-  {# Port de départ #}
-  <article class="card">
-    <h2 class="card-title">Port de départ — {{ pol.name if pol else '—' }} ({{ pol.locode if pol else '' }})</h2>
-    <div class="info-grid">
-      <div class="info-item">
-        <div class="info-label">Pays</div>
-        <div class="info-value">{{ pol.country|flag if pol else '' }} {{ pol.country if pol else '—' }}</div>
-      </div>
-      <div class="info-item">
-        <div class="info-label">LOCODE</div>
-        <div class="info-value" style="font-family:var(--font-mono);">{{ pol.locode if pol else '—' }}</div>
-      </div>
-      {% if pol and pol.timezone %}
-      <div class="info-item"><div class="info-label">Timezone</div><div class="info-value">{{ pol.timezone }}</div></div>
-      {% endif %}
-      {% if pol_config and pol_config.agent_name %}
-      <div class="info-item">
-        <div class="info-label">Agent</div>
-        <div class="info-value">{{ pol_config.agent_name }}{% if pol_config.agent_phone %}<br><span style="font-size:var(--fs-14);color:var(--c-grey);">{{ pol_config.agent_phone }}</span>{% endif %}</div>
-      </div>
-      {% endif %}
-    </div>
-    {% if pol_config and pol_config.documents_required %}
-      <div class="alert" style="margin-top:var(--sp-5);"><strong>Documents requis :</strong> {{ pol_config.documents_required|replace('\n', ' · ') }}</div>
-    {% endif %}
-  </article>
+  {# TAB 1 — Traversée #}
+  <section id="tab-schedule" class="js-tab-pane">
+    <div class="rd-schedule-grid">
 
-  {# Port d'arrivée #}
-  <article class="card">
-    <h2 class="card-title">Port d'arrivée — {{ pod.name if pod else '—' }} ({{ pod.locode if pod else '' }})</h2>
-    <div class="info-grid">
-      <div class="info-item">
-        <div class="info-label">Pays</div>
-        <div class="info-value">{{ pod.country|flag if pod else '' }} {{ pod.country if pod else '—' }}</div>
-      </div>
-      <div class="info-item">
-        <div class="info-label">LOCODE</div>
-        <div class="info-value" style="font-family:var(--font-mono);">{{ pod.locode if pod else '—' }}</div>
-      </div>
-      {% if pod and pod.timezone %}
-      <div class="info-item"><div class="info-label">Timezone</div><div class="info-value">{{ pod.timezone }}</div></div>
-      {% endif %}
-      {% if pod_config and pod_config.agent_name %}
-      <div class="info-item">
-        <div class="info-label">Agent maritime</div>
-        <div class="info-value">{{ pod_config.agent_name }}{% if pod_config.agent_phone %}<br><span style="font-size:var(--fs-14);color:var(--c-grey);">{{ pod_config.agent_phone }}</span>{% endif %}</div>
-      </div>
-      {% endif %}
-    </div>
-    {% if pod_config and pod_config.restrictions %}
-      <div class="alert" style="margin-top:var(--sp-5);"><strong>Restrictions :</strong> {{ pod_config.restrictions }}</div>
-    {% endif %}
-  </article>
+      {# Left: full schedule timeline #}
+      <div>
+        <div class="card" style="margin-bottom:var(--sp-5);">
+          <div class="card-title">Horaire de traversée</div>
+          <div style="display:flex; flex-direction:column; gap:var(--sp-4);">
 
-  {# Météo @ ETA #}
-  <article class="card">
-    <h2 class="card-title">Météo @ ETA ({{ pod.name if pod else '' }})</h2>
-    {% if weather_pod %}
-    <div class="info-grid">
-      <div class="info-item"><div class="info-label">Vent</div><div class="info-value">{{ "%.0f"|format(weather_pod.wind_speed_kn) if weather_pod.wind_speed_kn is not none else '—' }} kn</div></div>
-      <div class="info-item"><div class="info-label">Houle</div><div class="info-value">{{ "%.1f"|format(weather_pod.wave_height_m) if weather_pod.wave_height_m is not none else '—' }} m</div></div>
-      {% if weather_pod.wave_period_s %}
-      <div class="info-item"><div class="info-label">Période houle</div><div class="info-value">{{ "%.0f"|format(weather_pod.wave_period_s) }} s</div></div>
-      {% endif %}
-      <div class="info-item"><div class="info-label">Synthèse</div><div class="info-value">{{ weather_pod_summary }}</div></div>
-    </div>
-    <p class="caption" style="margin-top:var(--sp-4);color:var(--c-grey);">Prévision Open-Meteo · indicatif.</p>
-    {% else %}
-    <p style="color:var(--c-grey);margin:0;">Prévision indisponible pour ce port.</p>
-    {% endif %}
-  </article>
+            <div style="display:flex; gap:var(--sp-4); align-items:flex-start;">
+              <div style="width:10px; height:10px; background:var(--c-teal); border-radius:50%; margin-top:6px; flex-shrink:0;"></div>
+              <div>
+                <div class="rd-label">Port de chargement (POL)</div>
+                <div style="font-size:var(--fs-18); font-weight:var(--fw-bold); color:var(--c-teal);">
+                  {{ pol.country|flag if pol else '' }} {{ pol.name if pol else '—' }}
+                  {% if pol %}<span class="rd-code" style="margin-left:var(--sp-2);">{{ pol.locode }}</span>{% endif %}
+                </div>
+                <div style="font-size:var(--fs-15); color:var(--c-anthracite); margin-top:var(--sp-1);">
+                  <strong>ETD :</strong> {{ leg.etd|datetime }} UTC
+                </div>
+                {% if cut_off_at %}
+                <div style="font-size:var(--fs-14); color:var(--c-grey); margin-top:var(--sp-1);">
+                  Clôture réservations : <strong>{{ cut_off_at|datetime }} UTC</strong>
+                </div>
+                {% endif %}
+              </div>
+            </div>
 
-  {# Conditions de transport #}
-  <article class="card">
-    <h2 class="card-title">Conditions de transport</h2>
-    <ul class="conditions-list">
-      <li>Marchandises non dangereuses (ADR/IMDG) acceptées avec déclaration préalable</li>
-      <li>Cale ventilée, température ambiante (pas de température contrôlée)</li>
-      <li>Réservation possible jusqu'à 48 h avant l'ETD</li>
-      <li>Confirmation de booking sous 4 h après soumission</li>
-      <li>Paiement par virement bancaire uniquement (facture HT/TTC)</li>
-      <li>Label Anemos délivré automatiquement après livraison</li>
-    </ul>
-    <div class="alert" style="margin-top:var(--sp-5);">
-      <strong>Important :</strong> cette traversée est océanique. Prévoyez un emballage
-      maritime renforcé pour les marchandises sensibles aux mouvements.
+            <div style="margin-left:5px; padding-left:var(--sp-5); border-left:2px dashed var(--c-grey-soft); padding-top:var(--sp-2); padding-bottom:var(--sp-2);">
+              <div style="display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap;">
+                <span style="font-size:var(--fs-24);">⛵</span>
+                <div>
+                  <div style="font-weight:var(--fw-bold);">{{ vessel.name }}</div>
+                  <div style="font-size:var(--fs-13); color:var(--c-grey);">
+                    Pavillon {{ vessel.flag|flag if vessel.flag else '—' }}{{ vessel.flag or '' }}
+                    {% if vessel.dwt %} · DWT {{ "{:,.0f}".format(vessel.dwt).replace(",", " ") }} t{% endif %}
+                    · {{ vessel.capacity_palettes }} palettes
+                    · {{ vessel.default_speed_kn|round(1) }} kn
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:var(--sp-4); align-items:flex-start;">
+              <div style="width:10px; height:10px; background:var(--c-copper); border-radius:50%; margin-top:6px; flex-shrink:0;"></div>
+              <div>
+                <div class="rd-label">Port de déchargement (POD)</div>
+                <div style="font-size:var(--fs-18); font-weight:var(--fw-bold); color:var(--c-copper);">
+                  {{ pod.country|flag if pod else '' }} {{ pod.name if pod else '—' }}
+                  {% if pod %}<span class="rd-code" style="margin-left:var(--sp-2);">{{ pod.locode }}</span>{% endif %}
+                </div>
+                <div style="font-size:var(--fs-15); color:var(--c-anthracite); margin-top:var(--sp-1);">
+                  <strong>ETA :</strong> {{ leg.eta|datetime }} UTC
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Conditions de transport #}
+        <div class="card">
+          <div class="card-title">Conditions de transport</div>
+          <ul class="conditions-list">
+            <li>Marchandises non dangereuses (ADR/IMDG) acceptées avec déclaration préalable</li>
+            <li>Cale ventilée, température ambiante (pas de température contrôlée)</li>
+            <li>Paiement par virement bancaire — facturation HT/TTC à la confirmation</li>
+            <li>Label Anemos délivré automatiquement après livraison</li>
+          </ul>
+          <div class="alert" style="margin-top:var(--sp-4);">
+            <strong>Emballage maritime :</strong> cette traversée est océanique.
+            Prévoyez un conditionnement adapté aux mouvements de houle.
+          </div>
+        </div>
+      </div>
+
+      {# Right sidebar #}
+      <div>
+
+        {# Informations clés #}
+        <div class="rd-sidebar-block">
+          <p class="rd-sidebar-title">📅 Informations clés</p>
+          <dl>
+            {% if duration_days is not none %}
+            <div class="rd-sidebar-row">
+              <dt>Transit time</dt><dd>{{ duration_days }} jours</dd>
+            </div>
+            {% endif %}
+            {% if distance_nm %}
+            <div class="rd-sidebar-row">
+              <dt>Distance</dt><dd>{{ "{:,}".format(distance_nm).replace(",", " ") }} NM</dd>
+            </div>
+            {% endif %}
+            {% if cut_off_at %}
+            <div class="rd-sidebar-row">
+              <dt>Cut-off</dt><dd>{{ cut_off_at.strftime('%d %b %Y %H:%M') }} UTC</dd>
+            </div>
+            {% endif %}
+            {% if leg.public_price_per_palette_eur %}
+            <div class="rd-sidebar-row">
+              <dt>Tarif</dt><dd>{{ leg.public_price_per_palette_eur|money }} / palette</dd>
+            </div>
+            {% endif %}
+          </dl>
+        </div>
+
+        {# Navire #}
+        <div class="rd-sidebar-block">
+          <p class="rd-sidebar-title">🚢 Navire</p>
+          <dl>
+            <div class="rd-sidebar-row">
+              <dt>Nom</dt><dd>{{ vessel.name }}</dd>
+            </div>
+            {% if vessel.flag %}
+            <div class="rd-sidebar-row">
+              <dt>Pavillon</dt><dd>{{ vessel.flag|flag }} {{ vessel.flag }}</dd>
+            </div>
+            {% endif %}
+            {% if vessel.imo_number %}
+            <div class="rd-sidebar-row">
+              <dt>IMO</dt><dd class="mono" style="font-size:var(--fs-13);">{{ vessel.imo_number }}</dd>
+            </div>
+            {% endif %}
+            {% if vessel.dwt %}
+            <div class="rd-sidebar-row">
+              <dt>DWT</dt><dd>{{ "{:,.0f}".format(vessel.dwt).replace(",", " ") }} t</dd>
+            </div>
+            {% endif %}
+            <div class="rd-sidebar-row">
+              <dt>Capacité</dt><dd>{{ vessel.capacity_palettes }} palettes</dd>
+            </div>
+            <div class="rd-sidebar-row">
+              <dt>Vitesse</dt><dd>{{ vessel.default_speed_kn|round(1) }} kn</dd>
+            </div>
+          </dl>
+        </div>
+
+        {% if pol_config and (pol_config.agent_name or pol_config.documents_required) %}
+        <div class="rd-sidebar-block">
+          <p class="rd-sidebar-title">📋 Départ — {{ pol.name if pol else 'POL' }}</p>
+          {% if pol_config.agent_name %}
+          <div class="rd-sidebar-row">
+            <dt>Agent</dt><dd>{{ pol_config.agent_name }}</dd>
+          </div>
+          {% endif %}
+          {% if pol_config.documents_required %}
+          <div style="font-size:var(--fs-13); color:var(--c-grey); margin-top:var(--sp-2);">
+            Docs requis : {{ pol_config.documents_required }}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if pod_config and (pod_config.agent_name or pod_config.restrictions) %}
+        <div class="rd-sidebar-block">
+          <p class="rd-sidebar-title">📋 Arrivée — {{ pod.name if pod else 'POD' }}</p>
+          {% if pod_config.agent_name %}
+          <div class="rd-sidebar-row">
+            <dt>Agent</dt><dd>{{ pod_config.agent_name }}</dd>
+          </div>
+          {% endif %}
+          {% if pod_config.restrictions %}
+          <div style="font-size:var(--fs-13); color:var(--c-grey); margin-top:var(--sp-2);">
+            {{ pod_config.restrictions }}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+      </div>{# /sidebar #}
+    </div>{# /rd-schedule-grid #}
+  </section>
+
+  {# TAB 2 — Éco-calculateur #}
+  <section id="tab-eco" class="js-tab-pane" hidden>
+    <div class="card">
+      <div class="card-title">Éco-calculateur</div>
+      <p class="rd-eco-intro">
+        Comparaison des émissions de CO₂ pour cette traversée entre le transport à la voile
+        NEWTOWT et le cargo conventionnel à moteur, exprimées par tonne de marchandise transportée.
+      </p>
+
+      {% if co2_est %}
+      <div style="overflow-x:auto;">
+        <table class="rd-eco-table">
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th>Segment</th>
+              <th style="text-align:right;">Distance (km)</th>
+              <th style="text-align:right;">CO₂ / tonne</th>
+              <th>Indice</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="rd-eco-row--towt">
+              <td><strong style="color:var(--c-teal);">⛵ NEWTOWT</strong></td>
+              <td>
+                {{ pol.name if pol else '—' }}
+                → {{ pod.name if pod else '—' }}
+              </td>
+              <td class="td-num">{{ "{:,.0f}".format(co2_est.distance_km|float).replace(",", " ") }}</td>
+              <td class="td-num" style="color:var(--c-green);">
+                {{ "%.1f"|format(co2_est.towt_co2_kg|float) }} kg
+              </td>
+              <td>
+                <span class="rd-eco-avoided">
+                  −{{ co2_est.avoidance_pct }} %
+                </span>
+              </td>
+            </tr>
+            <tr class="rd-eco-row--conv">
+              <td><span style="color:var(--c-grey);">🛢 Cargo conventionnel</span></td>
+              <td>
+                {{ pol.name if pol else '—' }}
+                → {{ pod.name if pod else '—' }}
+              </td>
+              <td class="td-num">{{ "{:,.0f}".format(co2_est.distance_km|float).replace(",", " ") }}</td>
+              <td class="td-num">
+                {{ "%.1f"|format(co2_est.conventional_co2_kg|float) }} kg
+              </td>
+              <td>référence</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3" style="font-weight:var(--fw-bold); padding-top:var(--sp-4);">CO₂ évité par tonne</td>
+              <td class="td-num" style="font-weight:var(--fw-bold); color:var(--c-green); padding-top:var(--sp-4);">
+                {{ "%.1f"|format(co2_est.avoided_co2_kg|float) }} kg
+              </td>
+              <td style="padding-top:var(--sp-4);">
+                <span class="rd-eco-avoided">−{{ co2_est.avoidance_pct }} %</span>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {% else %}
+      <div class="alert">Les coordonnées des ports sont nécessaires pour calculer les émissions.</div>
+      {% endif %}
+
+      <p class="rd-eco-note">
+        Les émissions sont exprimées en kg de CO₂ par tonne de marchandise pour la traversée complète.
+        Facteurs NEWTOWT : <strong>1,5 g CO₂/t.km</strong> (propulsion vélique).
+        Référence conventionnelle : <strong>13,7 g CO₂/t.km</strong> (GLEC Framework v3).
+        Ces valeurs sont indicatives — le certificat Anemos nominatif est émis automatiquement
+        après livraison sur la base du tonnage réel.
+        <a href="/about/anemos" style="color:var(--c-teal);">En savoir plus sur le Label Anemos →</a>
+      </p>
     </div>
-  </article>
+  </section>
+
 </main>
 
 {% endblock %}

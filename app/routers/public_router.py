@@ -156,12 +156,20 @@ async def route_detail(
     if leg.etd and leg.eta:
         duration_days = round((leg.eta - leg.etd).total_seconds() / 86400.0, 1)
 
-    # Météo POD @ ETA — valeur commerciale ("on saura à ~quoi s'attendre")
-    from app.services import weather as wx
-    weather_pod = None
-    if pod and pod.latitude is not None and pod.longitude is not None and leg.eta:
+    # Date de clôture des réservations : explicite ou ETD − 48 h.
+    from datetime import timedelta
+    cut_off_at = leg.booking_close_at or (leg.etd - timedelta(hours=48))
+
+    # Estimation CO₂ per tonne pour l'éco-calculateur.
+    from decimal import Decimal
+    from app.services import co2 as co2_svc
+    co2_est = None
+    if distance_nm:
         try:
-            weather_pod = await wx.fetch_at(pod.latitude, pod.longitude, leg.eta)
+            co2_est = co2_svc.estimate(
+                distance_nm=Decimal(str(distance_nm)),
+                tonnage_t=Decimal("1"),
+            )
         except Exception:
             pass
 
@@ -178,8 +186,9 @@ async def route_detail(
             "distance_nm": distance_nm,
             "duration_days": duration_days,
             "capacity": capacity,
-            "weather_pod": weather_pod,
-            "weather_pod_summary": wx.summarize(weather_pod),
+            "cut_off_at": cut_off_at,
+            "co2_est": co2_est,
+            "map_token": settings.map_token,
         },
     )
 
