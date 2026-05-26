@@ -14,11 +14,19 @@
   </div>
 </header>
 
-<form class="card mb-4" method="get" action="/planning" style="display:flex; gap:var(--space-3); align-items:end;">
-  <div class="field" style="flex:1; margin:0;">
-    <label for="vessel_id">Navire</label>
-    <select id="vessel_id" name="vessel_id">
-      <option value="">Tous</option>
+<form class="card mb-4" method="get" action="/planning" style="display:flex; gap:var(--space-3); align-items:end; flex-wrap:wrap;">
+  <div class="field" style="margin:0;">
+    <label for="year">Année</label>
+    <select id="year" name="year" onchange="this.form.submit()">
+      {% for y in years %}
+        <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field" style="flex:1; min-width:220px; margin:0;">
+    <label for="vessel_id">Navire (compagnie = tous)</label>
+    <select id="vessel_id" name="vessel_id" onchange="this.form.submit()">
+      <option value="">Tous les navires</option>
       {% for v in vessels %}
         <option value="{{ v.id }}" {% if filter_vessel_id == v.id %}selected{% endif %}>
           {{ v.code }} — {{ v.name }}
@@ -33,20 +41,21 @@
 </form>
 
 <section class="card" style="overflow-x:auto;">
-  <h2 class="mb-3">Vue Gantt — fenêtre {{ window_start|date }} → {{ window_end|date }}</h2>
+  <h2 class="mb-3">Vue Gantt {{ selected_year }} — année entière</h2>
 
-  <div class="gantt-wrapper" style="min-width:900px;">
+  <div class="gantt-wrapper" style="min-width:1100px;">
     <div class="gantt-timeline" style="display:grid; grid-template-columns:200px 1fr; gap:var(--space-2); margin-bottom:var(--space-2);">
       <div></div>
       <div class="gantt-axis" style="position:relative; height:28px; border-bottom:1px solid var(--gris-clair);">
-        {% set months = ['M', 'M+1', 'M+2', 'M+3'] %}
-        {% for i in range(4) %}
-          <span style="position:absolute; left:{{ (i * 25) }}%; top:0; font-size:var(--text-xs); color:var(--gris); padding-left:4px;">
-            {{ months[i] }}
+        {% for mk in month_marks %}
+          <span style="position:absolute; left:{{ mk.left_pct }}%; top:0; font-size:var(--text-xs); color:var(--gris); padding-left:2px; border-left:1px solid var(--gris-clair); height:28px;">
+            {{ mk.label }}
           </span>
         {% endfor %}
-        {# Vertical "today" marker #}
-        <span style="position:absolute; left:7%; top:0; bottom:0; width:1px; background:var(--cuivre);" title="Aujourd'hui"></span>
+        {# Repère "aujourd'hui" si l'année affichée est l'année courante #}
+        {% if today_pct is not none %}
+          <span style="position:absolute; left:{{ today_pct }}%; top:0; bottom:0; width:2px; background:var(--cuivre);" title="Aujourd'hui"></span>
+        {% endif %}
       </div>
     </div>
 

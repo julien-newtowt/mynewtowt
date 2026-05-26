@@ -49,12 +49,15 @@ GANTT_WINDOW_DAYS = 90
 async def gantt_index(
     request: Request,
     vessel_id: int | None = None,
+    year: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("planning", "C")),
 ) -> HTMLResponse:
     now = datetime.now(timezone.utc)
-    window_start = now - timedelta(days=7)
-    window_end = now + timedelta(days=GANTT_WINDOW_DAYS)
+    # Vue ANNÉE ENTIÈRE (req #5) — sélecteur d'année + filtre navire en tête.
+    selected_year = year or now.year
+    window_start = datetime(selected_year, 1, 1, tzinfo=timezone.utc)
+    window_end = datetime(selected_year, 12, 31, 23, 59, tzinfo=timezone.utc)
 
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     legs = await list_legs_in_window(
@@ -64,11 +67,18 @@ async def gantt_index(
         vessel_id=vessel_id,
     )
 
+    # Années disponibles (min/max ETD en base + année courante + sélectionnée).
+    yr_row = (await db.execute(select(func.min(Leg.etd), func.max(Leg.etd)))).first()
+    years: set[int] = {now.year, selected_year}
+    if yr_row and yr_row[0] and yr_row[1]:
+        years |= set(range(yr_row[0].year, yr_row[1].year + 1))
+    years_sorted = sorted(years)
+
     # Pre-load port labels (avoid N+1)
     port_ids = {leg.departure_port_id for leg in legs} | {leg.arrival_port_id for leg in legs}
     ports = {
         p.id: p
-        for p in (await db.execute(select(Port).where(Port.id.in_(port_ids) if port_ids else select(Port.id)))).scalars().all()
+        for p in (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()
     } if port_ids else {}
 
     conflicts = detect_port_conflicts(legs)
@@ -86,6 +96,19 @@ async def gantt_index(
         conflict_ids=conflict_ids,
     )
 
+    # Repères mensuels pour l'axe du Gantt (12 mois de l'année).
+    total_s = (window_end - window_start).total_seconds()
+    month_marks = []
+    for m in range(1, 13):
+        ms = datetime(selected_year, m, 1, tzinfo=timezone.utc)
+        left = ((ms - window_start).total_seconds() / total_s) * 100
+        month_marks.append({"label": ms.strftime("%b"), "left_pct": round(left, 3)})
+
+    # Position du repère "aujourd'hui" (None si l'année affichée ≠ courante).
+    today_pct = None
+    if window_start <= now <= window_end:
+        today_pct = round(((now - window_start).total_seconds() / total_s) * 100, 3)
+
     return templates.TemplateResponse(
         "staff/planning/index.html",
         {
@@ -96,6 +119,10 @@ async def gantt_index(
             "ports": ports,
             "gantt_rows": gantt_rows,
             "filter_vessel_id": vessel_id,
+            "selected_year": selected_year,
+            "years": years_sorted,
+            "month_marks": month_marks,
+            "today_pct": today_pct,
             "window_start": window_start,
             "window_end": window_end,
             "conflict_count": len(conflicts),
