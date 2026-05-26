@@ -517,5 +517,256 @@ async def captain_sof_xlsx(
     )
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# A — Cargo document PDF generation
+# ──────────────────────────────────────────────────────────────────────────────
+
+_DOC_TEMPLATES: dict[str, str] = {
+    "NOR": "pdf/cargo_doc_nor.html",
+    "NOR_RT": "pdf/cargo_doc_nor.html",
+    "LOP_GENERAL": "pdf/cargo_doc_lop.html",
+    "LOP_DRAFT": "pdf/cargo_doc_lop.html",
+    "MATES_RECEIPT": "pdf/cargo_doc_mates_receipt.html",
+    "OTHER": "pdf/cargo_doc_nor.html",  # fallback layout
+}
+
+
+@router.get("/legs/{leg_id}/docs/{doc_id}.pdf")
+async def captain_cargo_doc_pdf(
+    leg_id: int,
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+):
+    from fastapi.responses import Response
+    from weasyprint import HTML
+
+    from app.config import settings
+
+    doc = (await db.execute(
+        select(CargoDocument).where(
+            CargoDocument.id == doc_id, CargoDocument.leg_id == leg_id
+        )
+    )).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=404)
+
+    leg = await db.get(Leg, leg_id)
+    vessel = await db.get(Vessel, leg.vessel_id) if leg and leg.vessel_id else None
+    pol = await db.get(Port, leg.departure_port_id) if leg and leg.departure_port_id else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg and leg.arrival_port_id else None
+
+    tpl_name = _DOC_TEMPLATES.get(doc.kind, "pdf/cargo_doc_nor.html")
+    tpl = templates.get_template(tpl_name)
+    html = tpl.render(
+        doc=doc, leg=leg, vessel=vessel, pol=pol, pod=pod,
+        issued_at=doc.issued_at,
+        site_url=settings.site_url,
+    )
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    safe_ref = (doc.reference or str(doc.id)).replace("/", "-")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{doc.kind}_{safe_ref}.pdf"'},
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# D — Pièces jointes aux cargo documents
+# ──────────────────────────────────────────────────────────────────────────────
+
+@router.post("/legs/{leg_id}/docs/{doc_id}/attach")
+async def attach_cargo_doc(
+    leg_id: int,
+    doc_id: int,
+    request: Request,
+    file: "UploadFile" = "File(...)",
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    from fastapi import UploadFile as _UploadFile
+    from fastapi import File as _File
+    from app.services.safe_files import UploadRejected, save_upload
+
+    doc = (await db.execute(
+        select(CargoDocument).where(
+            CargoDocument.id == doc_id, CargoDocument.leg_id == leg_id
+        )
+    )).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=404)
+
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(status_code=422, detail="Fichier manquant")
+
+    content = await upload.read()
+    try:
+        rel_path, _ = save_upload(content, upload.filename or "attachment", subdir="captain_docs")
+    except UploadRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    doc.file_path = rel_path
+    await db.flush()
+    await activity_record(
+        db, action="cargo_doc_attach",
+        user_id=user.id, user_name=user.username, user_role=user.role,
+        module="captain", entity_type="cargo_document", entity_id=doc.id,
+        detail=upload.filename, ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+@router.get("/legs/{leg_id}/docs/{doc_id}/attachment")
+async def download_cargo_doc_attachment(
+    leg_id: int,
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+):
+    from fastapi.responses import FileResponse
+    from app.services.safe_files import UploadRejected, resolve_path
+
+    doc = (await db.execute(
+        select(CargoDocument).where(
+            CargoDocument.id == doc_id, CargoDocument.leg_id == leg_id
+        )
+    )).scalar_one_or_none()
+    if doc is None or not doc.file_path:
+        raise HTTPException(status_code=404)
+
+    try:
+        path = resolve_path(doc.file_path)
+    except UploadRejected:
+        raise HTTPException(status_code=400)
+
+    return FileResponse(path=str(path), filename=path.name)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# B — Workflow de clôture de voyage
+# ──────────────────────────────────────────────────────────────────────────────
+
+@router.post("/legs/{leg_id}/closure/submit")
+async def closure_submit(
+    leg_id: int,
+    request: Request,
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    if leg.closure_submitted_at:
+        raise HTTPException(status_code=400, detail="Clôture déjà soumise")
+
+    leg.closure_submitted_at = datetime.now(timezone.utc)
+    leg.closure_submitted_by = user.username
+    if notes:
+        leg.closure_notes = notes
+    await db.flush()
+
+    try:
+        from app.services.notifications import create as notif_create
+        await notif_create(
+            db, type="info",
+            title=f"Clôture soumise — {leg.leg_code}",
+            link=f"/captain?leg_id={leg_id}",
+            target_role="operation",
+        )
+    except Exception:
+        pass
+
+    await activity_record(
+        db, action="voyage_closure_submit",
+        user_id=user.id, user_name=user.username, user_role=user.role,
+        module="captain", entity_type="leg", entity_id=leg.id,
+        entity_label=leg.leg_code, ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+@router.post("/legs/{leg_id}/closure/review")
+async def closure_review(
+    leg_id: int,
+    request: Request,
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    if not leg.closure_submitted_at:
+        raise HTTPException(status_code=400, detail="Clôture non encore soumise")
+    if leg.closure_reviewed_at:
+        raise HTTPException(status_code=400, detail="Déjà validée")
+
+    leg.closure_reviewed_at = datetime.now(timezone.utc)
+    leg.closure_reviewed_by = user.username
+    if notes:
+        leg.closure_notes = (leg.closure_notes or "") + f"\n[Validation opérations] {notes}"
+    await db.flush()
+
+    try:
+        from app.services.notifications import create as notif_create
+        await notif_create(
+            db, type="info",
+            title=f"Clôture validée opérations — {leg.leg_code}",
+            link=f"/captain?leg_id={leg_id}",
+            target_role="manager_maritime",
+        )
+    except Exception:
+        pass
+
+    await activity_record(
+        db, action="voyage_closure_review",
+        user_id=user.id, user_name=user.username, user_role=user.role,
+        module="captain", entity_type="leg", entity_id=leg.id,
+        entity_label=leg.leg_code, ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+@router.post("/legs/{leg_id}/closure/approve")
+async def closure_approve(
+    leg_id: int,
+    request: Request,
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "S")),
+):
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    if not leg.closure_reviewed_at:
+        raise HTTPException(status_code=400, detail="Validation opérations requise d'abord")
+    if leg.closure_approved_at:
+        raise HTTPException(status_code=400, detail="Déjà approuvée")
+
+    leg.closure_approved_at = datetime.now(timezone.utc)
+    if notes:
+        leg.closure_notes = (leg.closure_notes or "") + f"\n[Approbation] {notes}"
+    leg.status = "completed"
+    await db.flush()
+
+    try:
+        from app.services.kpi import compute_for_leg
+        await compute_for_leg(db, leg)
+    except Exception:
+        pass
+
+    await activity_record(
+        db, action="voyage_closure_approve",
+        user_id=user.id, user_name=user.username, user_role=user.role,
+        module="captain", entity_type="leg", entity_id=leg.id,
+        entity_label=leg.leg_code, ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)

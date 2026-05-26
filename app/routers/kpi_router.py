@@ -130,6 +130,30 @@ async def kpi_export_csv(
     )
 
 
+@router.post("/legs/{leg_id}/sync")
+async def kpi_sync(
+    leg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("kpi", "M")),
+) -> RedirectResponse:
+    """Recalcule automatiquement le LegKPI depuis les données réelles (bookings + SOF)."""
+    from app.models.leg import Leg as LegModel
+    from app.services.kpi import compute_for_leg
+
+    leg = await db.get(LegModel, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404, detail="Leg not found")
+
+    await compute_for_leg(db, leg)
+    await activity_record(
+        db, action="kpi_sync", user_id=user.id, user_name=user.username,
+        user_role=user.role, module="kpi", entity_type="leg_kpi", entity_id=leg_id,
+        detail=f"auto-sync leg {leg_id}",
+    )
+    return RedirectResponse(url="/kpi", status_code=303)
+
+
 @router.post("/legs/{leg_id}")
 async def kpi_upsert(
     leg_id: int,

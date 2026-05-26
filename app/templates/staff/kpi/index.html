@@ -33,7 +33,13 @@
         <td class="mono">{{ k.co2_avoided_kg or '—' }}</td>
         <td>{% if k.on_time %}<span class="pill pill-ok">OK</span>{% else %}<span class="pill pill-warn">Retard</span>{% endif %}</td>
         {% if user.role == 'administrateur' %}
-        <td><a href="/kpi/legs/{{ k.leg_id }}/edit" class="btn btn-xs">Modifier</a></td>
+        <td class="flex gap-1">
+          <a href="/kpi/legs/{{ k.leg_id }}/edit" class="btn btn-xs">Modifier</a>
+          <form method="post" action="/kpi/legs/{{ k.leg_id }}/sync" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+            <button type="submit" class="btn btn-xs btn-secondary" title="Recalculer depuis les données réelles">↺</button>
+          </form>
+        </td>
         {% endif %}
       </tr>{% endfor %}</tbody>
     </table>

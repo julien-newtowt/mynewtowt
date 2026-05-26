@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -58,6 +59,14 @@ class Leg(Base):
     # Distance orthodromique POL→POD (milles nautiques). Calculée par
     # haversine et persistée pour alimenter le label Anemos (CO₂ évité).
     distance_nm: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+
+    # Voyage closure workflow (submitted by captain → reviewed by ops → approved by manager)
+    closure_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closure_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closure_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closure_submitted_by: Mapped[str | None] = mapped_column(String(100))
+    closure_reviewed_by: Mapped[str | None] = mapped_column(String(100))
+    closure_notes: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

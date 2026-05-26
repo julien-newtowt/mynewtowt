@@ -115,10 +115,27 @@
   <div class="section-header"><h3><i data-lucide="file-text"></i> Cargo documents ({{ docs|length }})</h3></div>
   {% if docs %}
   <table class="data-table">
-    <thead><tr><th>Kind</th><th>Référence</th><th>Émis</th><th>Partie</th></tr></thead>
+    <thead><tr><th>Kind</th><th>Référence</th><th>Émis</th><th>Partie</th><th>PJ</th><th></th></tr></thead>
     <tbody>
       {% for d in docs %}
-      <tr><td><span class="badge">{{ d.kind }}</span></td><td class="mono">{{ d.reference or '—' }}</td><td>{{ d.issued_at|datetime }}</td><td>{{ d.party_name or '—' }}</td></tr>
+      <tr>
+        <td><span class="badge">{{ d.kind }}</span></td>
+        <td class="mono">{{ d.reference or '—' }}</td>
+        <td>{{ d.issued_at|datetime }}</td>
+        <td>{{ d.party_name or '—' }}</td>
+        <td>
+          {% if d.file_path %}
+            <a href="/captain/legs/{{ leg.id }}/docs/{{ d.id }}/attachment" class="btn btn-xs">📎</a>
+          {% else %}
+            <form method="post" action="/captain/legs/{{ leg.id }}/docs/{{ d.id }}/attach" enctype="multipart/form-data" class="flex gap-1 items-center">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+              <input type="file" name="file" class="form-input" style="font-size:0.75rem;width:160px;">
+              <button type="submit" class="btn btn-xs">Joindre</button>
+            </form>
+          {% endif %}
+        </td>
+        <td><a href="/captain/legs/{{ leg.id }}/docs/{{ d.id }}.pdf" class="btn btn-xs btn-secondary">PDF</a></td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
@@ -126,6 +143,7 @@
 
   <h4 class="mt-3">Nouveau document</h4>
   <form method="post" action="/captain/legs/{{ leg.id }}/docs">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
     <div class="grid grid-3 gap-2">
       <div class="field"><label>Type</label><select name="kind"><option>NOR</option><option>NOR_RT</option><option>LOP_GENERAL</option><option>LOP_DRAFT</option><option>MATES_RECEIPT</option><option>OTHER</option></select></div>
       <div class="field"><label>Référence</label><input name="reference" type="text" /></div>
@@ -135,6 +153,57 @@
     <div class="field"><label>Corps</label><textarea name="body" rows="3"></textarea></div>
     <button type="submit" class="btn btn-primary btn-sm">Émettre</button>
   </form>
+</article>
+
+{# ── Clôture de voyage ─────────────────────────────────────────────────── #}
+<article class="card mt-4">
+  <div class="section-header"><h3><i data-lucide="flag"></i> Clôture de voyage</h3></div>
+  {% set closure_step = 0 %}
+  {% if leg.closure_approved_at %}{% set closure_step = 3 %}
+  {% elif leg.closure_reviewed_at %}{% set closure_step = 2 %}
+  {% elif leg.closure_submitted_at %}{% set closure_step = 1 %}
+  {% endif %}
+
+  <div class="flex gap-4 mb-4">
+    <div class="flex-1 text-center">
+      <div class="badge {% if closure_step >= 1 %}badge-success{% else %}badge-muted{% endif %}">1. Soumise</div>
+      {% if leg.closure_submitted_at %}<div class="text-xs text-muted mt-1">{{ leg.closure_submitted_at|datetime }} · {{ leg.closure_submitted_by }}</div>{% endif %}
+    </div>
+    <div class="flex-1 text-center">
+      <div class="badge {% if closure_step >= 2 %}badge-success{% else %}badge-muted{% endif %}">2. Validée Opérations</div>
+      {% if leg.closure_reviewed_at %}<div class="text-xs text-muted mt-1">{{ leg.closure_reviewed_at|datetime }} · {{ leg.closure_reviewed_by }}</div>{% endif %}
+    </div>
+    <div class="flex-1 text-center">
+      <div class="badge {% if closure_step >= 3 %}badge-success{% else %}badge-muted{% endif %}">3. Approuvée</div>
+      {% if leg.closure_approved_at %}<div class="text-xs text-muted mt-1">{{ leg.closure_approved_at|datetime }}</div>{% endif %}
+    </div>
+  </div>
+
+  {% if leg.closure_notes %}
+  <p class="text-muted text-sm mb-3"><strong>Notes :</strong> {{ leg.closure_notes }}</p>
+  {% endif %}
+
+  {% if closure_step == 0 %}
+  <form method="post" action="/captain/legs/{{ leg.id }}/closure/submit">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+    <div class="field"><label>Notes (optionnel)</label><textarea name="notes" rows="2"></textarea></div>
+    <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Soumettre la clôture du voyage ?')">Soumettre la clôture</button>
+  </form>
+  {% elif closure_step == 1 %}
+  <form method="post" action="/captain/legs/{{ leg.id }}/closure/review">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+    <div class="field"><label>Notes validation</label><textarea name="notes" rows="2"></textarea></div>
+    <button type="submit" class="btn btn-primary btn-sm">Valider (Opérations)</button>
+  </form>
+  {% elif closure_step == 2 %}
+  <form method="post" action="/captain/legs/{{ leg.id }}/closure/approve">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+    <div class="field"><label>Notes approbation</label><textarea name="notes" rows="2"></textarea></div>
+    <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Approuver définitivement la clôture ? Cette action déclenche le calcul automatique des KPI.')">Approuver (Manager)</button>
+  </form>
+  {% else %}
+  <p class="text-success"><i data-lucide="check-circle"></i> Voyage clôturé — KPI calculés automatiquement.</p>
+  {% endif %}
 </article>
 {% else %}
 <article class="card text-center"><p class="text-muted">Sélectionnez un leg ci-dessus.</p></article>
