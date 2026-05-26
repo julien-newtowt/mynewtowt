@@ -1,7 +1,15 @@
 {% extends "staff/_layout.html" %}
 {% block title %}KPI{% endblock %}
 {% block content %}
-<header class="mb-4"><span class="kicker">Performance</span><h1 class="display">KPI flotte</h1></header>
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Performance</span>
+    <h1 class="display">KPI flotte</h1>
+  </div>
+  <a href="/kpi/export.csv" class="btn btn-secondary">
+    <i data-lucide="download"></i> Export CSV
+  </a>
+</header>
 
 <section class="kpi-strip">
   <div class="kpi-card"><div class="label">Tonnage cumulé</div><div class="value">{{ "%.0f"|format(total_tonnage_t) }} t</div><div class="delta text-muted">total des legs trackés</div></div>
@@ -14,15 +22,51 @@
   <h2>KPI par leg</h2>
   {% if kpis %}
     <table>
-      <thead><tr><th>Leg</th><th>Palettes</th><th>Tonnage</th><th>Distance</th><th>Vitesse moy.</th><th>Occupation</th><th>CO₂ évité</th><th>On-time</th></tr></thead>
+      <thead><tr><th>Leg</th><th>Palettes</th><th>Tonnage</th><th>Distance</th><th>Vitesse moy.</th><th>Occupation</th><th>CO₂ évité</th><th>On-time</th>{% if user.role == 'administrateur' %}<th></th>{% endif %}</tr></thead>
       <tbody>{% for k in kpis %}<tr>
-        <td>#{{ k.leg_id }}</td><td>{{ k.palettes_carried }}</td>
-        <td>{{ k.tonnage_kg }} kg</td><td>{{ k.distance_nm or '—' }} NM</td>
-        <td>{{ k.avg_speed_kn or '—' }} kn</td><td>{{ k.occupancy_pct or '—' }} %</td>
+        <td class="mono">{% if k.leg_id %}{{ k.leg_id }}{% else %}—{% endif %}</td>
+        <td>{{ k.palettes_carried }}</td>
+        <td>{{ k.tonnage_kg }} kg</td>
+        <td>{{ k.distance_nm or '—' }} {% if k.distance_nm %}NM{% endif %}</td>
+        <td>{{ k.avg_speed_kn or '—' }} {% if k.avg_speed_kn %}kn{% endif %}</td>
+        <td>{{ k.occupancy_pct or '—' }} {% if k.occupancy_pct %}%{% endif %}</td>
         <td class="mono">{{ k.co2_avoided_kg or '—' }}</td>
         <td>{% if k.on_time %}<span class="pill pill-ok">OK</span>{% else %}<span class="pill pill-warn">Retard</span>{% endif %}</td>
+        {% if user.role == 'administrateur' %}
+        <td><a href="/kpi/legs/{{ k.leg_id }}/edit" class="btn btn-xs">Modifier</a></td>
+        {% endif %}
       </tr>{% endfor %}</tbody>
     </table>
   {% else %}<p class="text-muted">Aucun KPI persisté. Ils seront calculés à la clôture des legs.</p>{% endif %}
 </article>
+
+{% if user.role == 'administrateur' and legs %}
+<article class="card mt-4">
+  <h2>Saisir / mettre à jour un KPI</h2>
+  <form method="POST" action="" id="kpi-new-form">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+    <div class="form-row">
+      <label>Leg<select name="_leg_id_redirect" id="kpi-leg-select" required class="form-input">
+        <option value="">— choisir —</option>
+        {% for l in legs %}<option value="{{ l.id }}">{{ l.leg_code }}</option>{% endfor %}
+      </select></label>
+      <label>Palettes<input type="number" name="palettes_carried" value="0" min="0" class="form-input"></label>
+      <label>Tonnage (kg)<input type="number" name="tonnage_kg" value="0" step="0.01" class="form-input"></label>
+      <label>Distance (NM)<input type="number" name="distance_nm" step="0.01" class="form-input"></label>
+    </div>
+    <div class="form-row mt-2">
+      <label>Durée (h)<input type="number" name="duration_hours" step="0.01" class="form-input"></label>
+      <label>Vitesse moy. (kn)<input type="number" name="avg_speed_kn" step="0.01" class="form-input"></label>
+      <label>Taux d'occupation (%)<input type="number" name="occupancy_pct" step="0.01" class="form-input"></label>
+      <label>CO₂ évité (kg)<input type="number" name="co2_avoided_kg" step="0.01" class="form-input"></label>
+    </div>
+    <div class="form-row mt-2">
+      <label class="flex items-center gap-2"><input type="checkbox" name="on_time_raw" value="on" checked> On-time</label>
+    </div>
+    <div class="mt-3">
+      <button type="submit" class="btn btn-primary" onclick="this.form.action='/kpi/legs/'+document.getElementById('kpi-leg-select').value">Enregistrer</button>
+    </div>
+  </form>
+</article>
+{% endif %}
 {% endblock %}

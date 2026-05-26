@@ -1,27 +1,57 @@
 {% extends "staff/_layout.html" %}
 {% block title %}Finance{% endblock %}
 {% block content %}
-<header class="mb-4"><span class="kicker">Performance</span><h1 class="display">Finance flotte</h1></header>
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Performance</span>
+    <h1 class="display">Finance flotte</h1>
+  </div>
+  <div class="flex gap-2">
+    <a href="/finance/ports" class="btn btn-secondary"><i data-lucide="anchor"></i> Ports</a>
+    <a href="/finance/opex" class="btn btn-secondary"><i data-lucide="settings"></i> OPEX</a>
+  </div>
+</header>
+
+<section class="kpi-strip mb-4">
+  <div class="kpi-card"><div class="label">Revenu total</div><div class="value">{{ total_revenue_eur|money }}</div></div>
+  <div class="kpi-card"><div class="label">Coûts totaux</div><div class="value">{{ total_costs_eur|money }}</div></div>
+  <div class="kpi-card"><div class="label">Marge totale</div><div class="value {% if total_margin_eur < 0 %}text-error{% else %}text-success{% endif %}"><strong>{{ total_margin_eur|money }}</strong></div></div>
+  <div class="kpi-card"><div class="label">Legs avec données</div><div class="value">{{ finances|length }}</div></div>
+</section>
 
 <article class="card mb-4">
   <h2>Marge par leg ({{ finances|length }})</h2>
   {% if finances %}
     <table>
-      <thead><tr><th>Leg</th><th class="text-right">Revenu</th><th class="text-right">Port fees</th><th class="text-right">Dockers</th><th class="text-right">OPEX</th><th class="text-right">Marge</th></tr></thead>
+      <thead><tr><th>Leg</th><th class="text-right">Revenu</th><th class="text-right">Port fees</th><th class="text-right">Dockers</th><th class="text-right">OPEX</th><th class="text-right">Autres</th><th class="text-right">Marge</th><th></th></tr></thead>
       <tbody>
       {% for f in finances %}
+        {% set leg = leg_map.get(f.leg_id) %}
         <tr>
-          <td>#{{ f.leg_id }}</td>
+          <td class="mono">{{ leg.leg_code if leg else f.leg_id }}</td>
           <td class="text-right mono">{{ f.revenue_eur|money }}</td>
           <td class="text-right mono">{{ f.port_fees_eur|money }}</td>
           <td class="text-right mono">{{ f.docker_costs_eur|money }}</td>
           <td class="text-right mono">{{ f.opex_share_eur|money }}</td>
+          <td class="text-right mono">{{ f.other_costs_eur|money }}</td>
           <td class="text-right mono {% if f.margin_eur < 0 %}text-error{% else %}text-success{% endif %}"><strong>{{ f.margin_eur|money }}</strong></td>
+          <td><a href="/finance/legs/{{ f.leg_id }}/edit" class="btn btn-xs">Modifier</a></td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
   {% else %}<p class="text-muted">Aucune donnée financière par leg encore.</p>{% endif %}
+
+  {% if legs %}
+  <div class="mt-4 border-top pt-3">
+    <h3 class="mb-2">Ajouter un leg</h3>
+    <div class="flex gap-2 flex-wrap">
+      {% for l in legs %}
+      <a href="/finance/legs/{{ l.id }}/edit" class="btn btn-sm btn-secondary mono">{{ l.leg_code }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
 </article>
 
 <article class="card">
@@ -29,8 +59,11 @@
   {% if opex %}
     <table>
       <thead><tr><th>Nom</th><th class="text-right">Valeur</th><th>Unité</th><th>Catégorie</th></tr></thead>
-      <tbody>{% for p in opex %}<tr><td>{{ p.parameter_name }}</td><td class="text-right mono">{{ p.parameter_value }}</td><td>{{ p.unit or '—' }}</td><td>{{ p.category or '—' }}</td></tr>{% endfor %}</tbody>
+      <tbody>{% for p in opex %}<tr><td class="mono">{{ p.parameter_name }}</td><td class="text-right mono">{{ p.parameter_value }}</td><td>{{ p.unit or '—' }}</td><td>{{ p.category or '—' }}</td></tr>{% endfor %}</tbody>
     </table>
   {% else %}<p class="text-muted">Aucun paramètre OPEX configuré.</p>{% endif %}
+  <div class="mt-3">
+    <a href="/finance/opex" class="btn btn-secondary btn-sm">Gérer les paramètres OPEX</a>
+  </div>
 </article>
 {% endblock %}

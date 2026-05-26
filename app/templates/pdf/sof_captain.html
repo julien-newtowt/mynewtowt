@@ -1,0 +1,159 @@
+{% extends "pdf/_base.html" %}
+{% block title %}SOF Commandant — {{ leg.leg_code }}{% endblock %}
+{% block doc_kind %}Statement of Facts · Bord / Captain{% endblock %}
+{% block doc_ref %}{{ leg.leg_code }}{% endblock %}
+{% block content %}
+
+<style>
+  .signed-row td { background: #F0F8E8; }
+  .unsigned-row td { background: #FAFAFA; }
+  .check-icon {
+    color: #87BD29;
+    font-weight: 700;
+    font-size: 11pt;
+  }
+  .dash-icon {
+    color: #BDBDBD;
+    font-size: 11pt;
+  }
+  .event-type-pill {
+    display: inline-block;
+    padding: 2pt 7pt;
+    border-radius: 3pt;
+    font-size: 7.5pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: #EFE6D6;
+    color: #0D5966;
+  }
+  .sig-note {
+    font-size: 8pt;
+    color: #6E6E6E;
+    font-style: italic;
+  }
+  td.mono { font-family: "JetBrains Mono", "Consolas", monospace; font-size: 8pt; }
+  .section-title {
+    font-size: 9pt;
+    font-weight: 700;
+    color: #0D5966;
+    background: #EFE6D6;
+    padding: 5pt 8pt;
+    margin: 0;
+    border-left: 3px solid #0D5966;
+  }
+  .empty-note { color: #6E6E6E; font-style: italic; font-size: 8.5pt; padding: 10pt 0; }
+</style>
+
+{# ── Voyage summary ────────────────────────────────────────────── #}
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Navire · Vessel</div>
+    <div class="value">
+      {% if vessel %}
+        <strong>{{ vessel.name }}</strong>
+        {% if vessel.imo_number %}<br/><span class="small mono">IMO {{ vessel.imo_number }}</span>{% endif %}
+        {% if vessel.flag %}<span class="small"> · {{ vessel.flag }}</span>{% endif %}
+      {% else %}
+        <span class="small c-gris">—</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Voyage</div>
+    <div class="value">
+      <span class="mono">{{ pol.locode if pol else '—' }}</span>
+      &rarr;
+      <span class="mono">{{ pod.locode if pod else '—' }}</span><br/>
+      <span class="small">{{ pol.name if pol else '' }}{% if pol and pod %} → {{ pod.name }}{% endif %}</span>
+    </div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">ETD</div>
+    <div class="value mono">
+      {{ leg.etd.strftime("%d/%m/%Y %H:%M UTC") if leg.etd else '—' }}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">ETA</div>
+    <div class="value mono">
+      {{ leg.eta.strftime("%d/%m/%Y %H:%M UTC") if leg.eta else '—' }}
+    </div>
+  </div>
+</div>
+
+{# ── SOF Events table ──────────────────────────────────────────── #}
+<h2>Événements SOF</h2>
+
+{% if events %}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Date / Heure (UTC)</th>
+      <th>Type</th>
+      <th>Libellé</th>
+      <th>Notes</th>
+      <th class="text-center">Signé</th>
+      <th>Signé par</th>
+      <th>Signé le</th>
+    </tr>
+  </thead>
+  <tbody>
+    {# Signed events first, then unsigned #}
+    {% set signed_events = events | selectattr("is_locked") | list %}
+    {% set unsigned_events = events | rejectattr("is_locked") | list %}
+
+    {% if signed_events %}
+    <tr>
+      <td colspan="8" class="section-title">Événements validés ({{ signed_events | length }})</td>
+    </tr>
+    {% for ev in signed_events %}
+    <tr class="signed-row">
+      <td class="text-center mono">{{ loop.index }}</td>
+      <td class="mono">{{ ev.occurred_at.strftime("%d/%m/%Y %H:%M") if ev.occurred_at else '—' }}</td>
+      <td><span class="event-type-pill">{{ ev.event_type }}</span></td>
+      <td>{{ ev.label or '—' }}</td>
+      <td class="small c-gris">{{ ev.notes or '' }}</td>
+      <td class="text-center"><span class="check-icon">✓</span></td>
+      <td>{{ ev.signed_by_name or '—' }}</td>
+      <td class="mono">{{ ev.signed_at.strftime("%d/%m %H:%M") if ev.signed_at else '—' }}</td>
+    </tr>
+    {% endfor %}
+    {% endif %}
+
+    {% if unsigned_events %}
+    <tr>
+      <td colspan="8" class="section-title">Événements non validés ({{ unsigned_events | length }})</td>
+    </tr>
+    {% for ev in unsigned_events %}
+    <tr class="unsigned-row">
+      <td class="text-center mono">{{ signed_events | length + loop.index }}</td>
+      <td class="mono">{{ ev.occurred_at.strftime("%d/%m/%Y %H:%M") if ev.occurred_at else '—' }}</td>
+      <td><span class="event-type-pill">{{ ev.event_type }}</span></td>
+      <td>{{ ev.label or '—' }}</td>
+      <td class="small c-gris">{{ ev.notes or '' }}</td>
+      <td class="text-center"><span class="dash-icon">—</span></td>
+      <td>—</td>
+      <td>—</td>
+    </tr>
+    {% endfor %}
+    {% endif %}
+  </tbody>
+</table>
+
+<p class="sig-note" style="margin-top:8pt;">
+  Les événements signés ont fait l'objet d'une validation cryptographique par le commandant.
+</p>
+{% else %}
+<p class="empty-note">Aucun événement SOF enregistré pour ce leg.</p>
+{% endif %}
+
+<div class="footer-mention" style="margin-top:24pt;">
+  Document généré automatiquement le {{ issued_at.strftime("%d/%m/%Y à %H:%M UTC") }} — confidentiel
+</div>
+
+{% endblock %}

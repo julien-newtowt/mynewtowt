@@ -385,5 +385,137 @@ async def sign_watch_log(
     return RedirectResponse(url=f"/onboard/navigation?leg_id={w.leg_id}", status_code=303)
 
 
+@router.get("/legs/{leg_id}/sof.pdf")
+async def captain_sof_pdf(
+    leg_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+):
+    """Génère le SOF commandant (SofEvent) en PDF WeasyPrint."""
+    from datetime import timezone
+
+    from fastapi.responses import Response
+    from weasyprint import HTML  # local import — heavy native deps
+
+    from app.config import settings
+
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
+    pol = await db.get(Port, leg.departure_port_id) if leg.departure_port_id else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
+
+    events = list((await db.execute(
+        select(SofEvent)
+        .where(SofEvent.leg_id == leg_id)
+        .order_by(SofEvent.occurred_at.asc())
+    )).scalars().all())
+
+    tpl = templates.get_template("pdf/sof_captain.html")
+    html = tpl.render(
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        events=events,
+        issued_at=datetime.now(timezone.utc),
+        site_url=settings.site_url,
+    )
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="SOF_{leg.leg_code}.pdf"'
+        },
+    )
+
+
+@router.get("/legs/{leg_id}/sof.xlsx")
+async def captain_sof_xlsx(
+    leg_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+):
+    """Exporte le SOF commandant (SofEvent + ETA shifts) en classeur Excel."""
+    import io
+    from datetime import timezone
+
+    import openpyxl
+    from fastapi.responses import Response
+
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+
+    events = list((await db.execute(
+        select(SofEvent)
+        .where(SofEvent.leg_id == leg_id)
+        .order_by(SofEvent.occurred_at.asc())
+    )).scalars().all())
+
+    eta_shifts = list((await db.execute(
+        select(EtaShift)
+        .where(EtaShift.leg_id == leg_id)
+        .order_by(EtaShift.declared_at.asc())
+    )).scalars().all())
+
+    wb = openpyxl.Workbook()
+
+    # ── Sheet 1: SOF Events ──────────────────────────────────────────
+    ws_sof = wb.active
+    ws_sof.title = "SOF Events"
+    ws_sof.append([
+        "#", "Type", "Label",
+        "Occurred At (UTC)", "Port", "Lat", "Lon",
+        "Notes", "Signed", "Signed By", "Signed At",
+    ])
+    for ev in events:
+        ws_sof.append([
+            ev.id,
+            ev.event_type,
+            ev.label or "",
+            ev.occurred_at.strftime("%Y-%m-%d %H:%M") if ev.occurred_at else "",
+            "",  # port_id — no eager-loaded name available without extra query
+            ev.latitude if ev.latitude is not None else "",
+            ev.longitude if ev.longitude is not None else "",
+            ev.notes or "",
+            "Oui" if ev.is_locked else "Non",
+            ev.signed_by_name or "",
+            ev.signed_at.strftime("%Y-%m-%d %H:%M") if ev.signed_at else "",
+        ])
+
+    # ── Sheet 2: ETA Shifts ──────────────────────────────────────────
+    ws_eta = wb.create_sheet(title="ETA Shifts")
+    ws_eta.append([
+        "Declared At", "Reason", "New ETA", "Delta Hours", "Notes",
+    ])
+    for shift in eta_shifts:
+        delta_h = ""
+        if shift.previous_eta and shift.new_eta:
+            delta_td = shift.new_eta - shift.previous_eta
+            delta_h = round(delta_td.total_seconds() / 3600, 2)
+        ws_eta.append([
+            shift.declared_at.strftime("%Y-%m-%d %H:%M") if shift.declared_at else "",
+            shift.reason,
+            shift.new_eta.strftime("%Y-%m-%d %H:%M") if shift.new_eta else "",
+            delta_h,
+            shift.detail or "",
+        ])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="SOF_{leg.leg_code}.xlsx"'
+        },
+    )
+
+
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)

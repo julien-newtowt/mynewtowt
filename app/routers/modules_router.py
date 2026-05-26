@@ -26,7 +26,7 @@ from app.models.crew import (
     CrewAssignment, CrewCertification, CrewLeave, CrewMember,
 )
 from app.models.escale import DockerShift, EscaleOperation
-from app.models.finance import LegFinance, LegKPI, OpexParameter
+from app.models.finance import LegFinance, OpexParameter
 from app.models.leg import Leg
 from app.models.mrv import MRVEvent, MRVParameter
 from app.models.noon_report import NoonReport
@@ -323,54 +323,9 @@ async def rh_decide_leave(
 # ont été retirées : le routeur dédié ``escale_router`` les sert.
 
 
-# ────────────────────────────────────────────────────────────────────
-#                              FINANCE
-# ────────────────────────────────────────────────────────────────────
+# NOTE V3.2 — Routes /finance/* retirées : ``finance_router`` les sert désormais.
 
-
-@router.get("/finance", response_class=HTMLResponse)
-async def finance_index(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("finance", "C")),
-) -> HTMLResponse:
-    finances = list((await db.execute(
-        select(LegFinance).order_by(LegFinance.updated_at.desc()).limit(20)
-    )).scalars().all())
-    opex = list((await db.execute(
-        select(OpexParameter).order_by(OpexParameter.parameter_name)
-    )).scalars().all())
-    return templates.TemplateResponse(
-        "staff/finance/index.html",
-        {"request": request, "user": user, "finances": finances, "opex": opex},
-    )
-
-
-# ────────────────────────────────────────────────────────────────────
-#                                  KPI
-# ────────────────────────────────────────────────────────────────────
-
-
-@router.get("/kpi", response_class=HTMLResponse)
-async def kpi_index(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("kpi", "C")),
-) -> HTMLResponse:
-    kpis = list((await db.execute(select(LegKPI).order_by(LegKPI.updated_at.desc()).limit(30))).scalars().all())
-    total_tonnage = sum(float(k.tonnage_kg or 0) for k in kpis) / 1000
-    total_co2_avoided = sum(float(k.co2_avoided_kg or 0) for k in kpis)
-    on_time_count = sum(1 for k in kpis if k.on_time)
-    on_time_pct = (on_time_count / len(kpis) * 100) if kpis else 0
-    return templates.TemplateResponse(
-        "staff/kpi/index.html",
-        {"request": request, "user": user, "kpis": kpis,
-         "total_tonnage_t": total_tonnage, "total_co2_avoided_kg": total_co2_avoided,
-         "on_time_pct": on_time_pct},
-    )
-
-
-# NOTE V3.1 — Routes /mrv et /claims, /claims/new (GET+POST) retirées :
+# NOTE V3.1 — Routes /kpi, /mrv et /claims, /claims/new (GET+POST) retirées :
 # ``mrv_router`` et ``claims_router`` les servent désormais.
 
 

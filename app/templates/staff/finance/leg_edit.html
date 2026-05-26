@@ -1,0 +1,49 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Finance — Leg {{ leg.leg_code }}{% endblock %}
+{% block content %}
+<header class="mb-4">
+  <span class="kicker">Finance</span>
+  <h1 class="display">Données financières — <span class="mono">{{ leg.leg_code }}</span></h1>
+</header>
+
+<article class="card">
+  <form method="POST" action="/finance/legs/{{ leg.id }}">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+
+    <div class="form-grid-2">
+      <label>Revenu (EUR)
+        <input type="number" name="revenue_eur" value="{{ finance.revenue_eur if finance else 0 }}" step="0.01" class="form-input" required>
+      </label>
+      <label>Frais portuaires (EUR)
+        <input type="number" name="port_fees_eur" value="{{ finance.port_fees_eur if finance else 0 }}" step="0.01" class="form-input">
+      </label>
+      <label>Coûts dockers (EUR)
+        <input type="number" name="docker_costs_eur" value="{{ finance.docker_costs_eur if finance else 0 }}" step="0.01" class="form-input">
+      </label>
+      <label>Quote-part OPEX (EUR)
+        <input type="number" name="opex_share_eur" value="{{ finance.opex_share_eur if finance else 0 }}" step="0.01" class="form-input">
+      </label>
+      <label>Autres coûts (EUR)
+        <input type="number" name="other_costs_eur" value="{{ finance.other_costs_eur if finance else 0 }}" step="0.01" class="form-input">
+      </label>
+    </div>
+
+    <div class="mt-3">
+      <label>Notes
+        <textarea name="notes" rows="3" class="form-input">{{ finance.notes or '' }}</textarea>
+      </label>
+    </div>
+
+    {% if finance %}
+    <p class="text-muted mt-2">
+      Marge calculée actuelle : <strong class="mono {% if finance.margin_eur < 0 %}text-error{% else %}text-success{% endif %}">{{ finance.margin_eur|money }}</strong>
+    </p>
+    {% endif %}
+
+    <div class="flex gap-2 mt-4">
+      <button type="submit" class="btn btn-primary">Enregistrer</button>
+      <a href="/finance" class="btn btn-secondary">Annuler</a>
+    </div>
+  </form>
+</article>
+{% endblock %}

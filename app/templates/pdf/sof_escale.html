@@ -1,0 +1,217 @@
+{% extends "pdf/_base.html" %}
+{% block title %}SOF Escale — {{ leg.leg_code }}{% endblock %}
+{% block doc_kind %}Statement of Facts · Escale portuaire{% endblock %}
+{% block doc_ref %}{{ leg.leg_code }}{% endblock %}
+{% block content %}
+
+<style>
+  .status-pill {
+    display: inline-block;
+    padding: 2pt 7pt;
+    border-radius: 3pt;
+    font-size: 7.5pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .status-planned   { background: #E1E5EC; color: #6E6E6E; }
+  .status-in_progress { background: #FFF3CD; color: #856404; }
+  .status-completed { background: #D6EFBC; color: #3A6B00; }
+  .status-cancelled { background: #F8D7DA; color: #842029; }
+  .dir-badge {
+    display: inline-block;
+    padding: 1pt 5pt;
+    border-radius: 2pt;
+    font-size: 7.5pt;
+    font-weight: 600;
+    background: #EFE6D6;
+    color: #0D5966;
+  }
+  .section-title {
+    font-size: 9pt;
+    font-weight: 700;
+    color: #0D5966;
+    background: #EFE6D6;
+    padding: 5pt 8pt;
+    margin: 0;
+    border-left: 3px solid #0D5966;
+  }
+  td.mono { font-family: "JetBrains Mono", "Consolas", monospace; font-size: 8pt; }
+  .empty-note { color: #6E6E6E; font-style: italic; font-size: 8.5pt; padding: 10pt 0; }
+</style>
+
+{# ── Voyage summary ────────────────────────────────────────────── #}
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Navire · Vessel</div>
+    <div class="value">
+      {% if vessel %}
+        <strong>{{ vessel.name }}</strong>
+        {% if vessel.imo_number %}<br/><span class="small mono">IMO {{ vessel.imo_number }}</span>{% endif %}
+        {% if vessel.flag %}<span class="small"> · {{ vessel.flag }}</span>{% endif %}
+      {% else %}
+        <span class="small c-gris">—</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Voyage</div>
+    <div class="value">
+      <span class="mono">{{ pol.locode if pol else '—' }}</span>
+      &rarr;
+      <span class="mono">{{ pod.locode if pod else '—' }}</span><br/>
+      <span class="small">{{ pol.name if pol else '' }}{% if pol and pod %} → {{ pod.name }}{% endif %}</span>
+    </div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">ETD</div>
+    <div class="value mono">
+      {{ leg.etd.strftime("%d/%m/%Y %H:%M UTC") if leg.etd else '—' }}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">ETA</div>
+    <div class="value mono">
+      {{ leg.eta.strftime("%d/%m/%Y %H:%M UTC") if leg.eta else '—' }}
+    </div>
+  </div>
+</div>
+
+{# ── Operations table ──────────────────────────────────────────── #}
+<h2>Opérations portuaires</h2>
+
+{% if operations %}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Direction</th>
+      <th>Type</th>
+      <th>Action</th>
+      <th>Libellé</th>
+      <th>Début planifié</th>
+      <th>Fin planifiée</th>
+      <th>Début réel</th>
+      <th>Fin réelle</th>
+      <th>Statut</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for op in operations %}
+    <tr>
+      <td class="text-center mono">{{ loop.index }}</td>
+      <td><span class="dir-badge">{{ op.direction }}</span></td>
+      <td>{{ op.operation_type }}</td>
+      <td>{{ op.action }}</td>
+      <td>{{ op.label or '—' }}</td>
+      <td class="mono">{{ op.planned_start.strftime("%d/%m %H:%M") if op.planned_start else '—' }}</td>
+      <td class="mono">{{ op.planned_end.strftime("%d/%m %H:%M") if op.planned_end else '—' }}</td>
+      <td class="mono">{{ op.actual_start.strftime("%d/%m %H:%M") if op.actual_start else '—' }}</td>
+      <td class="mono">{{ op.actual_end.strftime("%d/%m %H:%M") if op.actual_end else '—' }}</td>
+      <td>
+        <span class="status-pill status-{{ op.status or 'planned' }}">
+          {{ op.status or 'planned' }}
+        </span>
+      </td>
+    </tr>
+    {% if op.notes %}
+    <tr>
+      <td></td>
+      <td colspan="9" class="small c-gris" style="padding-top:2pt;padding-bottom:6pt;">
+        <em>{{ op.notes }}</em>
+      </td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty-note">Aucune opération enregistrée pour ce leg.</p>
+{% endif %}
+
+{# ── Docker shifts table ───────────────────────────────────────── #}
+<h2>Shifts dockers</h2>
+
+{% if shifts %}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Direction</th>
+      <th>Entreprise</th>
+      <th>Dockers</th>
+      <th>Palettes cible</th>
+      <th>Palettes réalisées</th>
+      <th>Début planifié</th>
+      <th>Fin planifiée</th>
+      <th>Début réel</th>
+      <th>Fin réelle</th>
+      <th class="text-right">Coût (EUR)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in shifts %}
+    <tr>
+      <td class="text-center mono">{{ loop.index }}</td>
+      <td><span class="dir-badge">{{ s.direction }}</span></td>
+      <td>{{ s.company or '—' }}</td>
+      <td class="text-center">{{ s.nb_dockers }}</td>
+      <td class="text-center">{{ s.palettes_target or '—' }}</td>
+      <td class="text-center">
+        {% if s.palettes_done is not none and s.palettes_target %}
+          {{ s.palettes_done }}
+          <span class="small c-gris">({{ ((s.palettes_done / s.palettes_target) * 100) | round(0) | int }}%)</span>
+        {% elif s.palettes_done is not none %}
+          {{ s.palettes_done }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td class="mono">{{ s.planned_start.strftime("%d/%m %H:%M") if s.planned_start else '—' }}</td>
+      <td class="mono">{{ s.planned_end.strftime("%d/%m %H:%M") if s.planned_end else '—' }}</td>
+      <td class="mono">{{ s.actual_start.strftime("%d/%m %H:%M") if s.actual_start else '—' }}</td>
+      <td class="mono">{{ s.actual_end.strftime("%d/%m %H:%M") if s.actual_end else '—' }}</td>
+      <td class="text-right mono">
+        {% if s.cost_eur is not none %}{{ "%.2f"|format(s.cost_eur) }}{% else %}—{% endif %}
+      </td>
+    </tr>
+    {% if s.notes %}
+    <tr>
+      <td></td>
+      <td colspan="10" class="small c-gris" style="padding-top:2pt;padding-bottom:6pt;">
+        <em>{{ s.notes }}</em>
+      </td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+    {# Totals row #}
+    <tr class="total-row">
+      <td colspan="3" class="text-right">TOTAL</td>
+      <td class="text-center">{{ shifts | sum(attribute='nb_dockers') }}</td>
+      <td class="text-center">
+        {{ shifts | selectattr('palettes_target') | sum(attribute='palettes_target') or '—' }}
+      </td>
+      <td class="text-center">
+        {{ shifts | selectattr('palettes_done') | sum(attribute='palettes_done') or '—' }}
+      </td>
+      <td colspan="4"></td>
+      <td class="text-right mono">
+        {% set total_cost = namespace(v=0) %}
+        {% for s in shifts %}{% if s.cost_eur is not none %}{% set total_cost.v = total_cost.v + s.cost_eur %}{% endif %}{% endfor %}
+        {% if total_cost.v %}{{ "%.2f"|format(total_cost.v) }} EUR{% else %}—{% endif %}
+      </td>
+    </tr>
+  </tbody>
+</table>
+{% else %}
+<p class="empty-note">Aucun shift docker enregistré pour ce leg.</p>
+{% endif %}
+
+<div class="footer-mention" style="margin-top:24pt;">
+  Document généré automatiquement le {{ issued_at.strftime("%d/%m/%Y à %H:%M UTC") }} — confidentiel
+</div>
+
+{% endblock %}

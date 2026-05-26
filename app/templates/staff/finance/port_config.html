@@ -1,0 +1,79 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Finance — Configuration ports{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Finance</span>
+    <h1 class="display">Configuration des ports</h1>
+  </div>
+  <a href="/finance" class="btn btn-secondary"><i data-lucide="arrow-left"></i> Retour Finance</a>
+</header>
+
+{% for port in ports %}
+{% set cfg = configs.get(port.id) %}
+<article class="card mb-3">
+  <div class="flex justify-between items-start mb-3">
+    <div>
+      <h3 class="mb-0">{{ port.name }} <span class="port-badge">{{ port.locode }}</span></h3>
+    </div>
+    <button class="btn btn-sm" onclick="document.getElementById('cfg-{{ port.id }}').classList.toggle('hidden')">
+      {% if cfg %}Modifier{% else %}Configurer{% endif %}
+    </button>
+  </div>
+
+  {% if cfg %}
+  <div class="grid-3 text-sm text-muted mb-2">
+    <span>Agency : {{ cfg.agency_fee_eur|money if cfg.agency_fee_eur else '—' }}</span>
+    <span>Pilote : {{ cfg.pilot_fee_eur|money if cfg.pilot_fee_eur else '—' }}</span>
+    <span>Poste/j : {{ cfg.berth_fee_per_day_eur|money if cfg.berth_fee_per_day_eur else '—' }}</span>
+    <span>Docker/pal : {{ cfg.docker_fee_per_palette_eur|money if cfg.docker_fee_per_palette_eur else '—' }}</span>
+    <span>Agent : {{ cfg.agent_name or '—' }}</span>
+    <span>VHF pilote : {{ cfg.pilot_vhf_channel or '—' }}</span>
+  </div>
+  {% endif %}
+
+  <div id="cfg-{{ port.id }}" class="{% if not cfg %}{% else %}hidden{% endif %}">
+    <form method="POST" action="/finance/ports/{{ port.id }}">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+      <div class="form-grid-2">
+        <label>Frais d'agence (EUR)<input type="number" name="agency_fee_eur" value="{{ cfg.agency_fee_eur if cfg else '' }}" step="0.01" class="form-input"></label>
+        <label>Frais pilote (EUR)<input type="number" name="pilot_fee_eur" value="{{ cfg.pilot_fee_eur if cfg else '' }}" step="0.01" class="form-input"></label>
+        <label>Frais poste/jour (EUR)<input type="number" name="berth_fee_per_day_eur" value="{{ cfg.berth_fee_per_day_eur if cfg else '' }}" step="0.01" class="form-input"></label>
+        <label>Frais docker/palette (EUR)<input type="number" name="docker_fee_per_palette_eur" value="{{ cfg.docker_fee_per_palette_eur if cfg else '' }}" step="0.01" class="form-input"></label>
+        <label>Agent portuaire<input type="text" name="agent_name" value="{{ cfg.agent_name or '' if cfg else '' }}" class="form-input"></label>
+        <label>Tél. agent<input type="text" name="agent_phone" value="{{ cfg.agent_phone or '' if cfg else '' }}" class="form-input"></label>
+        <label>Email agent<input type="email" name="agent_email" value="{{ cfg.agent_email or '' if cfg else '' }}" class="form-input"></label>
+        <label>VHF pilote<input type="text" name="pilot_vhf_channel" value="{{ cfg.pilot_vhf_channel or '' if cfg else '' }}" placeholder="12" class="form-input"></label>
+        <label>Tél. pilote<input type="text" name="pilot_phone" value="{{ cfg.pilot_phone or '' if cfg else '' }}" class="form-input"></label>
+        <label>VHF port control<input type="text" name="port_control_vhf_channel" value="{{ cfg.port_control_vhf_channel or '' if cfg else '' }}" placeholder="16" class="form-input"></label>
+      </div>
+      <div class="mt-2">
+        <label>Documents requis (un par ligne)
+          <textarea name="documents_required" rows="3" class="form-input">{{ cfg.documents_required or '' if cfg else '' }}</textarea>
+        </label>
+      </div>
+      <div class="mt-2">
+        <label>Restrictions (douane, quarantaine, ISPS)
+          <textarea name="restrictions" rows="2" class="form-input">{{ cfg.restrictions or '' if cfg else '' }}</textarea>
+        </label>
+      </div>
+      <div class="mt-2">
+        <label>Notes commandant
+          <textarea name="notes_for_captain" rows="2" class="form-input">{{ cfg.notes_for_captain or '' if cfg else '' }}</textarea>
+        </label>
+      </div>
+      <div class="mt-2">
+        <label>Notes internes
+          <textarea name="notes" rows="2" class="form-input">{{ cfg.notes or '' if cfg else '' }}</textarea>
+        </label>
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</article>
+{% else %}
+<p class="text-muted">Aucun port en base. Créez d'abord des ports via /admin/ports.</p>
+{% endfor %}
+{% endblock %}

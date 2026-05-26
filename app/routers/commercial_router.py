@@ -8,11 +8,16 @@ Reprises de la V3.0.0 :
 """
 from __future__ import annotations
 
+import io
 from datetime import date as _date, datetime, timezone
 from decimal import Decimal
 
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches, Pt, RGBColor
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -542,6 +547,164 @@ async def order_cancel(
         detail=f"cancelled: {reason}", ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/commercial/orders", status_code=303)
+
+
+# ────────────────────────────────────────────── Offer DOCX export
+@router.get("/offers/{offer_id}/export.docx")
+async def offer_export_docx(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> Response:
+    """Exporte une offre commerciale en fichier Word (.docx)."""
+    offer = await db.get(RateOffer, offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404, detail="offre introuvable")
+
+    client = await db.get(Client, offer.client_id)
+    leg = await db.get(Leg, offer.leg_id) if offer.leg_id else None
+
+    # ── Build document ──────────────────────────────────────────────────────
+    doc = Document()
+
+    # ── Header: OFFRE COMMERCIALE + reference
+    heading = doc.add_heading("", level=0)
+    run = heading.add_run("OFFRE COMMERCIALE NEWTOWT")
+    run.font.color.rgb = RGBColor(0x0D, 0x59, 0x66)
+    run.font.size = Pt(20)
+    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    ref_para = doc.add_paragraph()
+    ref_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    ref_run = ref_para.add_run(f"Référence : {offer.reference}")
+    ref_run.bold = True
+    ref_run.font.size = Pt(12)
+
+    doc.add_paragraph()  # spacer
+
+    # ── Section Client ──────────────────────────────────────────────────────
+    client_heading = doc.add_heading("Client", level=2)
+    client_heading.runs[0].font.color.rgb = RGBColor(0x0D, 0x59, 0x66)
+
+    client_table = doc.add_table(rows=0, cols=2)
+    client_table.style = "Table Grid"
+
+    def _add_kv_row(table, label: str, value: str) -> None:
+        row = table.add_row()
+        row.cells[0].text = label
+        row.cells[0].paragraphs[0].runs[0].bold = True
+        row.cells[1].text = value
+
+    _add_kv_row(client_table, "Nom", client.name if client else "—")
+    if client and client.company_name:
+        _add_kv_row(client_table, "Société", client.company_name)
+    _add_kv_row(client_table, "E-mail", client.email if client else "—")
+    _add_kv_row(client_table, "Téléphone", client.phone if client else "—")
+
+    doc.add_paragraph()  # spacer
+
+    # ── Section Objet ───────────────────────────────────────────────────────
+    objet_heading = doc.add_heading("Objet", level=2)
+    objet_heading.runs[0].font.color.rgb = RGBColor(0x0D, 0x59, 0x66)
+    doc.add_paragraph(offer.title or "—")
+
+    doc.add_paragraph()  # spacer
+
+    # ── Section Itinéraire ──────────────────────────────────────────────────
+    itin_heading = doc.add_heading("Itinéraire", level=2)
+    itin_heading.runs[0].font.color.rgb = RGBColor(0x0D, 0x59, 0x66)
+
+    if leg:
+        etd_str = leg.etd.strftime("%d/%m/%Y") if leg.etd else "—"
+        eta_str = leg.eta.strftime("%d/%m/%Y") if leg.eta else "—"
+        doc.add_paragraph(
+            f"Leg : {leg.leg_code}\n"
+            f"ETD : {etd_str}     ETA : {eta_str}"
+        )
+    else:
+        doc.add_paragraph("À confirmer")
+
+    doc.add_paragraph()  # spacer
+
+    # ── Table Tarification ──────────────────────────────────────────────────
+    tarif_heading = doc.add_heading("Tarification", level=2)
+    tarif_heading.runs[0].font.color.rgb = RGBColor(0x0D, 0x59, 0x66)
+
+    tarif_table = doc.add_table(rows=1, cols=4)
+    tarif_table.style = "Table Grid"
+    hdr_cells = tarif_table.rows[0].cells
+    for idx, label in enumerate(["Description", "Quantité", "Tarif unitaire", "Total"]):
+        hdr_cells[idx].text = label
+        hdr_cells[idx].paragraphs[0].runs[0].bold = True
+
+    row_cells = tarif_table.add_row().cells
+    qty = offer.estimated_palettes or 0
+    rate = offer.proposed_rate_eur
+    total = offer.total_eur
+    rate_str = f"{rate:,.2f} EUR/palette".replace(",", " ") if rate is not None else "—"
+    total_str = f"{total:,.2f} EUR".replace(",", " ") if total is not None else "—"
+    row_cells[0].text = "Fret aérien palettes"
+    row_cells[1].text = str(qty)
+    row_cells[2].text = rate_str
+    row_cells[3].text = total_str
+
+    doc.add_paragraph()  # spacer
+
+    # ── Section Conditions ──────────────────────────────────────────────────
+    cond_heading = doc.add_heading("Conditions", level=2)
+    cond_heading.runs[0].font.color.rgb = RGBColor(0x0D, 0x59, 0x66)
+
+    validity_str = (
+        offer.valid_until.strftime("%d/%m/%Y") if offer.valid_until else "—"
+    )
+    cond_para = doc.add_paragraph()
+    cond_para.add_run(f"Validité : {validity_str}\n").bold = False
+    cond_para.add_run(
+        "Ce prix inclut le transport par voilier cargo à propulsion vélique "
+        "(zéro émission directe)."
+    )
+
+    # ── Section Notes (optionnelle) ─────────────────────────────────────────
+    if offer.notes:
+        doc.add_paragraph()  # spacer
+        notes_heading = doc.add_heading("Notes", level=2)
+        notes_heading.runs[0].font.color.rgb = RGBColor(0x0D, 0x59, 0x66)
+        doc.add_paragraph(offer.notes)
+
+    doc.add_paragraph()  # spacer
+
+    # ── Footer ──────────────────────────────────────────────────────────────
+    footer_para = doc.add_paragraph(
+        "NEWTOWT — Pioneer of wind-powered cargo since 2011 — www.newtowt.eu"
+    )
+    footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in footer_para.runs:
+        run.font.color.rgb = RGBColor(0x0D, 0x59, 0x66)
+        run.font.size = Pt(9)
+        run.italic = True
+
+    # ── Serialize ───────────────────────────────────────────────────────────
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    await activity_record(
+        db, action="offer_export_docx",
+        user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="commercial", entity_type="rate_offer",
+        entity_id=offer.id, entity_label=offer.reference,
+        detail=offer.reference,
+        ip_address=_client_ip(request),
+    )
+
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="Offre_{offer.reference}.docx"'
+        },
+    )
 
 
 def _client_ip(request: Request) -> str | None:

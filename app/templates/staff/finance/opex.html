@@ -1,0 +1,64 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Finance — Paramètres OPEX{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Finance</span>
+    <h1 class="display">Paramètres OPEX</h1>
+  </div>
+  <a href="/finance" class="btn btn-secondary"><i data-lucide="arrow-left"></i> Retour Finance</a>
+</header>
+
+<article class="card mb-4">
+  <h2>Paramètres existants ({{ opex_params|length }})</h2>
+  {% if opex_params %}
+  <table>
+    <thead><tr><th>Nom</th><th class="text-right">Valeur</th><th>Unité</th><th>Catégorie</th><th>Description</th><th></th></tr></thead>
+    <tbody>
+    {% for p in opex_params %}
+    <tr>
+      <td class="mono">{{ p.parameter_name }}</td>
+      <td class="text-right mono">{{ p.parameter_value }}</td>
+      <td>{{ p.unit or '—' }}</td>
+      <td>{{ p.category or '—' }}</td>
+      <td class="text-muted">{{ p.description or '—' }}</td>
+      <td>
+        <div class="flex gap-1">
+          <button class="btn btn-xs" onclick="document.getElementById('edit-{{ p.id }}').classList.toggle('hidden')">Modifier</button>
+          <form method="POST" action="/finance/opex/{{ p.id }}/delete" onsubmit="return confirm('Supprimer {{ p.parameter_name }} ?')">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+            <button type="submit" class="btn btn-xs btn-danger">Supprimer</button>
+          </form>
+        </div>
+        <div id="edit-{{ p.id }}" class="hidden mt-2">
+          <form method="POST" action="/finance/opex/{{ p.id }}/edit" class="form-row">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+            <input type="text" name="parameter_name" value="{{ p.parameter_name }}" class="form-input" required>
+            <input type="number" name="parameter_value" value="{{ p.parameter_value }}" step="0.0001" class="form-input" required>
+            <input type="text" name="unit" value="{{ p.unit or '' }}" placeholder="unité" class="form-input">
+            <input type="text" name="category" value="{{ p.category or '' }}" placeholder="catégorie" class="form-input">
+            <input type="text" name="description" value="{{ p.description or '' }}" placeholder="description" class="form-input">
+            <button type="submit" class="btn btn-primary btn-sm">Sauver</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="text-muted">Aucun paramètre OPEX configuré.</p>{% endif %}
+</article>
+
+<article class="card">
+  <h2>Ajouter un paramètre</h2>
+  <form method="POST" action="/finance/opex" class="form-row">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+    <input type="text" name="parameter_name" placeholder="Nom (ex. fuel_mdo_eur_per_t)" class="form-input" required>
+    <input type="number" name="parameter_value" placeholder="Valeur" step="0.0001" class="form-input" required>
+    <input type="text" name="unit" placeholder="Unité (ex. EUR/t)" class="form-input">
+    <input type="text" name="category" placeholder="Catégorie" class="form-input">
+    <input type="text" name="description" placeholder="Description" class="form-input">
+    <button type="submit" class="btn btn-primary">Ajouter</button>
+  </form>
+</article>
+{% endblock %}

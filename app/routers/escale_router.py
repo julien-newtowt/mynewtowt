@@ -238,5 +238,60 @@ async def lock_leg(
     return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
 
 
+@router.get("/legs/{leg_id}/sof.pdf")
+async def escale_sof_pdf(
+    leg_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "C")),
+):
+    """Génère le SOF escale (opérations + shifts dockers) en PDF WeasyPrint."""
+    from datetime import timezone
+
+    from fastapi.responses import Response
+    from weasyprint import HTML  # local import — heavy native deps
+
+    from app.config import settings
+
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+
+    pol = await db.get(Port, leg.departure_port_id) if leg.departure_port_id else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
+
+    operations = list((await db.execute(
+        select(EscaleOperation)
+        .where(EscaleOperation.leg_id == leg_id)
+        .order_by(EscaleOperation.planned_start.asc())
+    )).scalars().all())
+
+    shifts = list((await db.execute(
+        select(DockerShift)
+        .where(DockerShift.leg_id == leg_id)
+        .order_by(DockerShift.planned_start.asc())
+    )).scalars().all())
+
+    tpl = templates.get_template("pdf/sof_escale.html")
+    html = tpl.render(
+        leg=leg,
+        pol=pol,
+        pod=pod,
+        vessel=vessel,
+        operations=operations,
+        shifts=shifts,
+        issued_at=datetime.now(timezone.utc),
+        site_url=settings.site_url,
+    )
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="SOF_{leg.leg_code}.pdf"'
+        },
+    )
+
+
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
