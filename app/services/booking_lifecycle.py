@@ -9,6 +9,7 @@ débarquement). Appelé depuis ``services/booking.advance`` (voyage),
 Les envois d'email sont best-effort (try/except) : un échec SMTP ne doit
 jamais bloquer la mutation métier.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,7 +41,7 @@ _EVENTS: dict[str, dict[str, str]] = {
         "subject": "Réservation reçue",
         "heading": "Votre réservation est bien reçue",
         "message": "Nous avons bien reçu votre réservation {ref}. "
-                   "Notre équipe la confirme sous 4 heures ouvrées.",
+        "Notre équipe la confirme sous 4 heures ouvrées.",
         "cta": "Voir ma réservation",
     },
     "confirmed": {
@@ -48,7 +49,7 @@ _EVENTS: dict[str, dict[str, str]] = {
         "subject": "Réservation confirmée",
         "heading": "Votre réservation est confirmée",
         "message": "Votre réservation {ref} est confirmée. Une facture vous a été "
-                   "émise (règlement par virement, échéance à 30 jours).",
+        "émise (règlement par virement, échéance à 30 jours).",
         "cta": "Voir ma réservation",
     },
     "loaded": {
@@ -63,7 +64,7 @@ _EVENTS: dict[str, dict[str, str]] = {
         "subject": "Navire en mer",
         "heading": "Votre cargaison a pris la mer",
         "message": "Le navire transportant la réservation {ref} a appareillé. "
-                   "Suivez sa position en direct.",
+        "Suivez sa position en direct.",
         "cta": "Suivre la traversée",
     },
     "discharged": {
@@ -71,7 +72,7 @@ _EVENTS: dict[str, dict[str, str]] = {
         "subject": "Cargaison débarquée",
         "heading": "Votre cargaison est débarquée",
         "message": "La cargaison de la réservation {ref} a été débarquée à destination. "
-                   "Votre label Anemos est disponible.",
+        "Votre label Anemos est disponible.",
         "cta": "Suivre la traversée",
     },
     "delivered": {
@@ -79,22 +80,28 @@ _EVENTS: dict[str, dict[str, str]] = {
         "subject": "Livraison effectuée",
         "heading": "Votre cargaison est livrée",
         "message": "La réservation {ref} est livrée. Merci d'avoir choisi le "
-                   "transport vélique décarboné.",
+        "transport vélique décarboné.",
         "cta": "Voir ma réservation",
     },
     "cancelled": {
         "type": "booking_cancelled",
         "subject": "Réservation annulée",
         "heading": "Votre réservation a été annulée",
-        "message": "La réservation {ref} a été annulée. "
-                   "Contactez-nous pour toute question.",
+        "message": "La réservation {ref} a été annulée. " "Contactez-nous pour toute question.",
         "cta": "Voir mes réservations",
     },
 }
 
 
-async def _send_email(client: ClientAccount, *, subject_line: str, heading: str,
-                      message: str, cta_label: str, cta_url: str) -> None:
+async def _send_email(
+    client: ClientAccount,
+    *,
+    subject_line: str,
+    heading: str,
+    message: str,
+    cta_label: str,
+    cta_url: str,
+) -> None:
     try:
         await email.send_template(
             "booking_event",
@@ -107,7 +114,7 @@ async def _send_email(client: ClientAccount, *, subject_line: str, heading: str,
             cta_url=cta_url,
             site_url=settings.site_url,
         )
-    except Exception:  # noqa: BLE001 — best-effort, ne jamais bloquer
+    except Exception:
         logger.warning("booking_event email failed for %s", client.email, exc_info=True)
 
 
@@ -122,7 +129,9 @@ async def on_status_change(db: AsyncSession, booking: Booking, new_status: str) 
 
     ref = booking.reference
     message = spec["message"].format(ref=ref)
-    cta_url = _track_link(ref) if new_status in ("loaded", "at_sea", "discharged") else _booking_link(ref)
+    cta_url = (
+        _track_link(ref) if new_status in ("loaded", "at_sea", "discharged") else _booking_link(ref)
+    )
     if new_status == "cancelled":
         cta_url = "/me/bookings"
 
@@ -130,41 +139,53 @@ async def on_status_change(db: AsyncSession, booking: Booking, new_status: str) 
     if new_status in ("discharged", "delivered"):
         try:
             await anemos.issue_for_booking(db, booking)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("anemos issuance failed for %s", ref, exc_info=True)
 
     # Notification in-app client.
     await notifications.notify_client(
-        db, client_id=client.id, type=spec["type"],
-        title=f"{spec['subject']} — {ref}", link=cta_url,
+        db,
+        client_id=client.id,
+        type=spec["type"],
+        title=f"{spec['subject']} — {ref}",
+        link=cta_url,
     )
 
     # Email best-effort.
     await _send_email(
-        client, subject_line=f"{spec['subject']} — {ref}",
-        heading=spec["heading"], message=message,
-        cta_label=spec["cta"], cta_url=cta_url,
+        client,
+        subject_line=f"{spec['subject']} — {ref}",
+        heading=spec["heading"],
+        message=message,
+        cta_label=spec["cta"],
+        cta_url=cta_url,
     )
 
     # À la confirmation, signaler aussi la facture émise.
     if new_status == "confirmed":
         invoice = (
             await db.execute(
-                select(ClientInvoice).where(ClientInvoice.booking_id == booking.id)
-                .order_by(ClientInvoice.issued_at.desc()).limit(1)
+                select(ClientInvoice)
+                .where(ClientInvoice.booking_id == booking.id)
+                .order_by(ClientInvoice.issued_at.desc())
+                .limit(1)
             )
         ).scalar_one_or_none()
         if invoice is not None:
             await notifications.notify_client(
-                db, client_id=client.id, type="invoice_issued",
+                db,
+                client_id=client.id,
+                type="invoice_issued",
                 title=f"Facture émise — {invoice.reference}",
                 link="/me/invoices",
             )
             await _send_email(
-                client, subject_line=f"Facture {invoice.reference}",
+                client,
+                subject_line=f"Facture {invoice.reference}",
                 heading="Votre facture est disponible",
                 message=f"La facture {invoice.reference} d'un montant de "
-                        f"{invoice.amount_incl_vat_eur} EUR TTC est disponible "
-                        f"dans votre espace client (règlement par virement).",
-                cta_label="Voir mes factures", cta_url="/me/invoices",
+                f"{invoice.amount_incl_vat_eur} EUR TTC est disponible "
+                f"dans votre espace client (règlement par virement).",
+                cta_label="Voir mes factures",
+                cta_url="/me/invoices",
             )

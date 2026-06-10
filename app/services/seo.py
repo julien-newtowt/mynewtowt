@@ -7,6 +7,7 @@ les exposer ; les tests ciblent ces fonctions.
 Décision (dossier Phase 4) : les robots d'IA sont explicitement autorisés ;
 un ``llms.txt`` guide vers les contenus clés. Faits : section 2 du dossier.
 """
+
 from __future__ import annotations
 
 from xml.sax.saxutils import escape
@@ -20,12 +21,22 @@ _HREFLANG = {"fr": "fr", "en": "en", "es": "es", "pt-br": "pt-BR"}
 
 # Robots d'IA explicitement autorisés (génératifs + récupération/citation).
 AI_BOTS: tuple[str, ...] = (
-    "GPTBot", "OAI-SearchBot", "ChatGPT-User",
-    "ClaudeBot", "Claude-Web", "anthropic-ai",
-    "PerplexityBot", "Perplexity-User",
-    "Google-Extended", "Applebot-Extended",
-    "CCBot", "Amazonbot", "Meta-ExternalAgent",
-    "cohere-ai", "YouBot", "DuckAssistBot",
+    "GPTBot",
+    "OAI-SearchBot",
+    "ChatGPT-User",
+    "ClaudeBot",
+    "Claude-Web",
+    "anthropic-ai",
+    "PerplexityBot",
+    "Perplexity-User",
+    "Google-Extended",
+    "Applebot-Extended",
+    "CCBot",
+    "Amazonbot",
+    "Meta-ExternalAgent",
+    "cohere-ai",
+    "YouBot",
+    "DuckAssistBot",
 )
 
 # Pages publiques indexables : (chemin, changefreq, priorité).
@@ -50,8 +61,14 @@ PUBLIC_PAGES: tuple[tuple[str, str, str], ...] = (
 
 # Zones réservées à l'extranet / l'ERP — hors indexation.
 DISALLOW = (
-    "/admin/", "/me/", "/booking/", "/p/", "/chat", "/api/",
-    "/staff/", "/planning/share",
+    "/admin/",
+    "/me/",
+    "/booking/",
+    "/p/",
+    "/chat",
+    "/api/",
+    "/staff/",
+    "/planning/share",
 )
 
 
@@ -130,8 +147,7 @@ def build_sitemap_xml(base_url: str, *, lastmod: str | None = None) -> str:
                 f'href="{escape(href)}"/>'
             )
         out.append(
-            f'    <xhtml:link rel="alternate" hreflang="x-default" '
-            f'href="{escape(loc)}"/>'
+            f'    <xhtml:link rel="alternate" hreflang="x-default" ' f'href="{escape(loc)}"/>'
         )
         if lastmod:
             out.append(f"    <lastmod>{escape(lastmod)}</lastmod>")

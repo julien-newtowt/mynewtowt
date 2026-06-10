@@ -1,4 +1,5 @@
 """Cargo sailing vessel — referenced by Leg, Booking and capacity rules."""
+
 from __future__ import annotations
 
 from datetime import datetime

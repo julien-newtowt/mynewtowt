@@ -3,6 +3,7 @@
 The bug we're guarding against: setting Secure=True over plain HTTP
 makes browsers silently drop the cookie, breaking sessions.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -45,9 +46,7 @@ def test_forwarded_proto_https_yields_secure_true() -> None:
 
 def test_forwarded_proto_http_overrides_https_scheme() -> None:
     """If a (mis)configured proxy forwards http, trust the forwarded header."""
-    kwargs = cookie_kwargs_for_staff(
-        _fake_request("https", forwarded_proto="http")
-    )
+    kwargs = cookie_kwargs_for_staff(_fake_request("https", forwarded_proto="http"))
     assert kwargs["secure"] is False
 
 

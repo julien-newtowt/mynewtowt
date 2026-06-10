@@ -1,10 +1,11 @@
 """Staff authentication — login (incl. MFA challenge), logout."""
+
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,9 +31,7 @@ router = APIRouter(tags=["staff-auth"])
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_form(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        "staff/login.html", {"request": request, "error": None}
-    )
+    return templates.TemplateResponse("staff/login.html", {"request": request, "error": None})
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -63,8 +62,11 @@ async def login(
     # MFA challenge si activé sur ce compte staff
     if getattr(user, "mfa_enabled", False) and user.mfa_secret:
         await activity_record(
-            db, action="login_password_ok_mfa_required",
-            user_id=user.id, user_name=user.username, user_role=user.role,
+            db,
+            action="login_password_ok_mfa_required",
+            user_id=user.id,
+            user_name=user.username,
+            user_role=user.role,
             ip_address=_client_ip(request),
         )
         pending = create_staff_mfa_pending(user.id)
@@ -72,7 +74,7 @@ async def login(
         redirect.set_cookie(value=pending, **cookie_kwargs_for_staff_mfa_pending(request))
         return redirect
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     ip = _client_ip(request)
     ua = request.headers.get("user-agent")
     await activity_record(
@@ -84,13 +86,18 @@ async def login(
         ip_address=ip,
     )
     _, is_new = await device_detection.see_device(
-        db, owner_type="staff", owner_id=user.id, ua=ua, ip=ip,
+        db,
+        owner_type="staff",
+        owner_id=user.id,
+        ua=ua,
+        ip=ip,
     )
     if is_new and user.email:
         await security_alerts.notify_new_device_login(
             to_email=user.email,
             recipient_name=user.full_name or user.username,
-            ip=ip, ua=ua,
+            ip=ip,
+            ua=ua,
         )
 
     token = create_staff_session(user.id)
@@ -113,7 +120,8 @@ async def staff_mfa_challenge_form(request: Request) -> HTMLResponse:
     if not pending or decode_staff_mfa_pending(pending) is None:
         return RedirectResponse(url="/login", status_code=303)
     return templates.TemplateResponse(
-        "staff/login_mfa.html", {"request": request, "error": None},
+        "staff/login_mfa.html",
+        {"request": request, "error": None},
     )
 
 
@@ -130,8 +138,11 @@ async def staff_mfa_challenge_submit(
         return RedirectResponse(url="/login", status_code=303)
 
     if await rate_limit.exceeded(
-        db, scope="staff_mfa_ip", identifier=ip,
-        max_attempts=5, window_minutes=5,
+        db,
+        scope="staff_mfa_ip",
+        identifier=ip,
+        max_attempts=5,
+        window_minutes=5,
     ):
         return templates.TemplateResponse(
             "staff/login_mfa.html",
@@ -147,14 +158,21 @@ async def staff_mfa_challenge_submit(
     recovery_ok = False
     if not totp_ok:
         recovery_ok = await mfa.consume_recovery_code(
-            db, owner_type="staff", owner_id=user.id, code=code,
+            db,
+            owner_type="staff",
+            owner_id=user.id,
+            code=code,
         )
 
     if not totp_ok and not recovery_ok:
         await rate_limit.record(db, scope="staff_mfa_ip", identifier=ip)
         await activity_record(
-            db, action="staff_mfa_fail", user_id=user.id,
-            user_name=user.username, user_role=user.role, ip_address=ip,
+            db,
+            action="staff_mfa_fail",
+            user_id=user.id,
+            user_name=user.username,
+            user_role=user.role,
+            ip_address=ip,
         )
         await asyncio.sleep(0.05)
         return templates.TemplateResponse(
@@ -163,22 +181,30 @@ async def staff_mfa_challenge_submit(
             status_code=400,
         )
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     ua = request.headers.get("user-agent")
     await activity_record(
-        db, action="login", user_id=user.id, user_name=user.username,
+        db,
+        action="login",
+        user_id=user.id,
+        user_name=user.username,
         user_role=user.role,
         detail="mfa_ok" if totp_ok else "mfa_recovery_code_used",
         ip_address=ip,
     )
     _, is_new = await device_detection.see_device(
-        db, owner_type="staff", owner_id=user.id, ua=ua, ip=ip,
+        db,
+        owner_type="staff",
+        owner_id=user.id,
+        ua=ua,
+        ip=ip,
     )
     if is_new and user.email:
         await security_alerts.notify_new_device_login(
             to_email=user.email,
             recipient_name=user.full_name or user.username,
-            ip=ip, ua=ua,
+            ip=ip,
+            ua=ua,
         )
     token = create_staff_session(user.id)
     redirect_to = "/admin/my-account/change-password" if user.must_change_password else "/dashboard"

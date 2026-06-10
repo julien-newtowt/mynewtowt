@@ -19,6 +19,7 @@ pas de queue persistante (v3.5 = best-effort alertes). Une vraie file
 durable arrivera quand on aura un module de notifications email
 massives (newsletter, factures…).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -47,7 +48,7 @@ def render_email(template_stem: str, **ctx: Any) -> tuple[str, str, str | None]:
         subj_tpl = templates.env.get_template(f"emails/{template_stem}.subject.txt")
         body_tpl = templates.env.get_template(f"emails/{template_stem}.body.txt")
     except TemplateNotFound as e:
-        raise ValueError(f"Email template manquant: {e}")
+        raise ValueError(f"Email template manquant: {e}") from e
 
     subject = subj_tpl.render(**ctx).strip()
     body = body_tpl.render(**ctx).strip()
@@ -122,15 +123,21 @@ async def send_email(
     return await loop.run_in_executor(
         None,
         lambda: _send_sync(
-            to=to, subject=subject,
-            body_text=body_text, body_html=body_html,
+            to=to,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
             reply_to=reply_to,
         ),
     )
 
 
 async def send_template(
-    template_stem: str, *, to: str, reply_to: str | None = None, **ctx: Any,
+    template_stem: str,
+    *,
+    to: str,
+    reply_to: str | None = None,
+    **ctx: Any,
 ) -> bool:
     """Render + send. Renvoie False si SMTP HS ou template introuvable."""
     try:
@@ -139,5 +146,9 @@ async def send_template(
         logger.warning("Render failed for %s: %s", template_stem, e)
         return False
     return await send_email(
-        to=to, subject=subject, body_text=body, body_html=html, reply_to=reply_to,
+        to=to,
+        subject=subject,
+        body_text=body,
+        body_html=html,
+        reply_to=reply_to,
     )

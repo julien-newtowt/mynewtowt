@@ -1,10 +1,11 @@
 """Onboard cashbox routes — one cashbox per vessel, multi-currency."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,8 +47,10 @@ async def cashbox_index(
     return templates.TemplateResponse(
         "staff/cashbox/index.html",
         {
-            "request": request, "user": user,
-            "summary": summary, "currency_labels": CURRENCY_LABELS,
+            "request": request,
+            "user": user,
+            "summary": summary,
+            "currency_labels": CURRENCY_LABELS,
         },
     )
 
@@ -69,9 +72,12 @@ async def cashbox_detail(
     return templates.TemplateResponse(
         "staff/cashbox/detail.html",
         {
-            "request": request, "user": user,
-            "vessel": vessel, "cashbox": cb,
-            "balances": bal, "movements": mvts,
+            "request": request,
+            "user": user,
+            "vessel": vessel,
+            "cashbox": cb,
+            "balances": bal,
+            "movements": mvts,
             "currency_filter": currency,
             "currencies": SUPPORTED_CURRENCIES,
             "currency_labels": CURRENCY_LABELS,
@@ -98,7 +104,7 @@ async def add_mov(
     try:
         amt = Decimal(amount.replace(",", "."))
     except (InvalidOperation, AttributeError):
-        raise HTTPException(status_code=400, detail="Invalid amount")
+        raise HTTPException(status_code=400, detail="Invalid amount") from None
     # Negative for expenses
     if movement_kind == "expense" and amt > 0:
         amt = -amt
@@ -107,22 +113,31 @@ async def add_mov(
         try:
             occ = datetime.fromisoformat(occurred_at.replace("T", " "))
             if occ.tzinfo is None:
-                occ = occ.replace(tzinfo=timezone.utc)
+                occ = occ.replace(tzinfo=UTC)
         except ValueError:
             pass
     try:
         mov = await add_movement(
-            db, cb,
-            amount=amt, currency=currency, category=category,
-            description=description, occurred_at=occ,
+            db,
+            cb,
+            amount=amt,
+            currency=currency,
+            category=category,
+            description=description,
+            occurred_at=occ,
             recorded_by_id=user.id,
         )
     except CashboxError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     await activity_record(
-        db, action="cashbox_movement",
-        user_id=user.id, user_name=user.username, user_role=user.role,
-        module="captain", entity_type="cashbox_movement", entity_id=mov.id,
+        db,
+        action="cashbox_movement",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="cashbox_movement",
+        entity_id=mov.id,
         detail=f"vessel={vessel_id} {amt} {currency} {category}",
     )
     return RedirectResponse(url=f"/cashbox/{vessel_id}", status_code=303)

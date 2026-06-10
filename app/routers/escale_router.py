@@ -7,20 +7,23 @@ Reprises de la V3.0.0 :
 - Création/édition de shifts dockers (cadence palettes/h).
 - Lock de leg (clôture administrative).
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.escale import (
-    DIRECTIONS, OPERATION_ACTIONS, OPERATION_TYPES,
-    DockerShift, EscaleOperation,
+    DIRECTIONS,
+    OPERATION_ACTIONS,
+    OPERATION_TYPES,
+    DockerShift,
+    EscaleOperation,
 )
 from app.models.leg import Leg
 from app.models.port import Port
@@ -44,7 +47,7 @@ async def escale_index(
 ) -> HTMLResponse:
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     selected_vessel = vessel or (vessels[0].code if vessels else None)
-    current_year = year or datetime.now(timezone.utc).year
+    current_year = year or datetime.now(UTC).year
     years = list(range(current_year - 1, current_year + 3))
 
     stmt_legs = select(Leg).order_by(Leg.etd.asc())
@@ -53,7 +56,7 @@ async def escale_index(
         if v:
             stmt_legs = stmt_legs.where(Leg.vessel_id == v.id)
     legs = list((await db.execute(stmt_legs)).scalars().all())
-    legs = [l for l in legs if l.etd and l.etd.year == current_year]
+    legs = [lg for lg in legs if lg.etd and lg.etd.year == current_year]
 
     selected_leg = None
     operations: list[EscaleOperation] = []
@@ -63,32 +66,55 @@ async def escale_index(
     if leg_id:
         selected_leg = await db.get(Leg, leg_id)
         if selected_leg:
-            operations = list((await db.execute(
-                select(EscaleOperation).where(EscaleOperation.leg_id == leg_id)
-                .order_by(EscaleOperation.planned_start.asc())
-            )).scalars().all())
-            shifts = list((await db.execute(
-                select(DockerShift).where(DockerShift.leg_id == leg_id)
-                .order_by(DockerShift.planned_start.asc())
-            )).scalars().all())
+            operations = list(
+                (
+                    await db.execute(
+                        select(EscaleOperation)
+                        .where(EscaleOperation.leg_id == leg_id)
+                        .order_by(EscaleOperation.planned_start.asc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            shifts = list(
+                (
+                    await db.execute(
+                        select(DockerShift)
+                        .where(DockerShift.leg_id == leg_id)
+                        .order_by(DockerShift.planned_start.asc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
             pol = await db.get(Port, selected_leg.departure_port_id)
             pod = await db.get(Port, selected_leg.arrival_port_id)
-            vessel_status = (
-                "en_mer" if (selected_leg.atd and not selected_leg.ata)
-                else "a_quai"
-            )
+            vessel_status = "en_mer" if (selected_leg.atd and not selected_leg.ata) else "a_quai"
 
     return templates.TemplateResponse(
         "staff/escale/index.html",
         {
-            "request": request, "user": user,
-            "vessels": vessels, "selected_vessel": selected_vessel,
-            "years": years, "current_year": current_year,
-            "legs": legs, "selected_leg": selected_leg, "leg_id": leg_id,
-            "operations": operations, "shifts": shifts,
-            "pol": pol, "pod": pod, "vessel_status": vessel_status,
+            "request": request,
+            "user": user,
+            "vessels": vessels,
+            "selected_vessel": selected_vessel,
+            "years": years,
+            "current_year": current_year,
+            "legs": legs,
+            "selected_leg": selected_leg,
+            "leg_id": leg_id,
+            "operations": operations,
+            "shifts": shifts,
+            "pol": pol,
+            "pod": pod,
+            "vessel_status": vessel_status,
             "leg_locked": selected_leg.status == "completed" if selected_leg else False,
-            "leg_terminated": bool(selected_leg and selected_leg.atd and selected_leg.ata) if selected_leg else False,
+            "leg_terminated": (
+                bool(selected_leg and selected_leg.atd and selected_leg.ata)
+                if selected_leg
+                else False
+            ),
             "operation_types": OPERATION_TYPES,
             "operation_actions": OPERATION_ACTIONS,
             "directions": DIRECTIONS,
@@ -125,9 +151,15 @@ async def create_operation(
     db.add(op)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="escale", entity_type="escale_operation",
-        entity_id=op.id, entity_label=f"{operation_type}/{action} leg={leg_id}",
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="escale_operation",
+        entity_id=op.id,
+        entity_label=f"{operation_type}/{action} leg={leg_id}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
@@ -143,7 +175,7 @@ async def start_operation(
     op = await db.get(EscaleOperation, op_id)
     if op is None:
         raise HTTPException(status_code=404)
-    op.actual_start = datetime.now(timezone.utc)
+    op.actual_start = datetime.now(UTC)
     op.status = "in_progress"
     await db.flush()
     return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
@@ -159,7 +191,7 @@ async def end_operation(
     op = await db.get(EscaleOperation, op_id)
     if op is None:
         raise HTTPException(status_code=404)
-    op.actual_end = datetime.now(timezone.utc)
+    op.actual_end = datetime.now(UTC)
     op.status = "completed"
     await db.flush()
     return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
@@ -183,19 +215,28 @@ async def create_docker_shift(
     if not await db.get(Leg, leg_id):
         raise HTTPException(status_code=404)
     s = DockerShift(
-        leg_id=leg_id, direction=direction,
-        company=company, nb_dockers=nb_dockers,
+        leg_id=leg_id,
+        direction=direction,
+        company=company,
+        nb_dockers=nb_dockers,
         palettes_target=palettes_target,
         planned_start=datetime.fromisoformat(planned_start) if planned_start else None,
         planned_end=datetime.fromisoformat(planned_end) if planned_end else None,
-        cost_eur=cost_eur, notes=notes,
+        cost_eur=cost_eur,
+        notes=notes,
     )
     db.add(s)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="escale", entity_type="docker_shift",
-        entity_id=s.id, entity_label=f"shift {company} leg={leg_id}",
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="docker_shift",
+        entity_id=s.id,
+        entity_label=f"shift {company} leg={leg_id}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
@@ -230,9 +271,16 @@ async def lock_leg(
     leg.status = "completed"
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="escale", entity_type="leg",
-        entity_id=leg.id, entity_label=leg.leg_code, detail="locked",
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="leg",
+        entity_id=leg.id,
+        entity_label=leg.leg_code,
+        detail="locked",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
@@ -245,7 +293,6 @@ async def escale_sof_pdf(
     user=Depends(require_permission("escale", "C")),
 ):
     """Génère le SOF escale (opérations + shifts dockers) en PDF WeasyPrint."""
-    from datetime import timezone
 
     from fastapi.responses import Response
     from weasyprint import HTML  # local import — heavy native deps
@@ -260,17 +307,29 @@ async def escale_sof_pdf(
     pod = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
     vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
 
-    operations = list((await db.execute(
-        select(EscaleOperation)
-        .where(EscaleOperation.leg_id == leg_id)
-        .order_by(EscaleOperation.planned_start.asc())
-    )).scalars().all())
+    operations = list(
+        (
+            await db.execute(
+                select(EscaleOperation)
+                .where(EscaleOperation.leg_id == leg_id)
+                .order_by(EscaleOperation.planned_start.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
-    shifts = list((await db.execute(
-        select(DockerShift)
-        .where(DockerShift.leg_id == leg_id)
-        .order_by(DockerShift.planned_start.asc())
-    )).scalars().all())
+    shifts = list(
+        (
+            await db.execute(
+                select(DockerShift)
+                .where(DockerShift.leg_id == leg_id)
+                .order_by(DockerShift.planned_start.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     tpl = templates.get_template("pdf/sof_escale.html")
     html = tpl.render(
@@ -280,18 +339,18 @@ async def escale_sof_pdf(
         vessel=vessel,
         operations=operations,
         shifts=shifts,
-        issued_at=datetime.now(timezone.utc),
+        issued_at=datetime.now(UTC),
         site_url=settings.site_url,
     )
     pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="SOF_{leg.leg_code}.pdf"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="SOF_{leg.leg_code}.pdf"'},
     )
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
+    )

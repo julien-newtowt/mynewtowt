@@ -11,18 +11,20 @@ Reprises de la V3.0.0 :
 - Viewer activity_logs (filtre + pagination simple).
 - Mon compte + change password.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
-    get_current_staff, hash_password, verify_password,
+    get_current_staff,
+    hash_password,
+    verify_password,
 )
 from app.config import settings
 from app.database import get_db
@@ -38,7 +40,8 @@ from app.templating import templates
 
 router = APIRouter(prefix="/admin", tags=["admin-enriched"])
 
-MAINTENANCE_MARKER = Path("/tmp/.maintenance")
+# Suppression B108 justifiée : cf. app/middlewares/maintenance.py.
+MAINTENANCE_MARKER = Path("/tmp/.maintenance")  # nosec B108
 
 
 # ────────────────────────────────────────────── Users CRUD
@@ -52,17 +55,19 @@ async def users_list(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "C")),
 ) -> HTMLResponse:
-    users = list((await db.execute(
-        select(User).order_by(User.username)
-    )).scalars().all())
+    users = list((await db.execute(select(User).order_by(User.username))).scalars().all())
     vessels = await _vessels_for_form(db)
     # Map vessel_id → code pour afficher le navire de rattachement en liste
     vessel_codes = {v.id: v.code for v in vessels}
     return templates.TemplateResponse(
         "staff/admin/users.html",
         {
-            "request": request, "user": user, "users": users,
-            "roles": ROLES, "vessels": vessels, "vessel_codes": vessel_codes,
+            "request": request,
+            "user": user,
+            "users": users,
+            "roles": ROLES,
+            "vessels": vessels,
+            "vessel_codes": vessel_codes,
             "languages": list(SUPPORTED_LANGS),
             "edit_user": None,
         },
@@ -91,9 +96,11 @@ async def users_create(
         raise HTTPException(status_code=400, detail="mot de passe trop court (12 caractères min)")
     username_clean = username.strip()
     email_clean = email.strip().lower()
-    existing = (await db.execute(
-        select(User).where((User.username == username_clean) | (User.email == email_clean))
-    )).scalar_one_or_none()
+    existing = (
+        await db.execute(
+            select(User).where((User.username == username_clean) | (User.email == email_clean))
+        )
+    ).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="utilisateur déjà existant (username ou email)")
 
@@ -102,7 +109,8 @@ async def users_create(
         raise HTTPException(status_code=400, detail="navire de rattachement inconnu")
 
     new_user = User(
-        username=username_clean, email=email_clean,
+        username=username_clean,
+        email=email_clean,
         full_name=(full_name or "").strip() or None,
         hashed_password=hash_password(password),
         role=role,
@@ -113,9 +121,15 @@ async def users_create(
     db.add(new_user)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="user",
-        entity_id=new_user.id, entity_label=new_user.username,
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="user",
+        entity_id=new_user.id,
+        entity_label=new_user.username,
         detail=f"role={role} lang={language}",
         ip_address=_client_ip(request),
     )
@@ -137,8 +151,11 @@ async def users_edit_form(
     return templates.TemplateResponse(
         "staff/admin/users.html",
         {
-            "request": request, "user": user, "users": users,
-            "roles": ROLES, "vessels": vessels,
+            "request": request,
+            "user": user,
+            "users": users,
+            "roles": ROLES,
+            "vessels": vessels,
             "vessel_codes": {v.id: v.code for v in vessels},
             "languages": list(SUPPORTED_LANGS),
             "edit_user": target,
@@ -167,9 +184,9 @@ async def users_edit_submit(
         language = "fr"
     email_clean = email.strip().lower()
     # Unicité email (hors lui-même)
-    clash = (await db.execute(
-        select(User).where(User.email == email_clean, User.id != user_id)
-    )).scalar_one_or_none()
+    clash = (
+        await db.execute(select(User).where(User.email == email_clean, User.id != user_id))
+    ).scalar_one_or_none()
     if clash is not None:
         raise HTTPException(status_code=409, detail="email déjà utilisé par un autre compte")
 
@@ -184,9 +201,15 @@ async def users_edit_submit(
     target.assigned_vessel_id = vessel_id
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="user",
-        entity_id=target.id, entity_label=target.username,
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="user",
+        entity_id=target.id,
+        entity_label=target.username,
         detail=f"role={role} lang={language} vessel={vessel_id}",
         ip_address=_client_ip(request),
     )
@@ -208,9 +231,15 @@ async def users_toggle_active(
     target.is_active = not target.is_active
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="user",
-        entity_id=target.id, entity_label=target.username,
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="user",
+        entity_id=target.id,
+        entity_label=target.username,
         detail=("activated" if target.is_active else "deactivated"),
         ip_address=_client_ip(request),
     )
@@ -232,9 +261,15 @@ async def users_reset_password(
     target.must_change_password = True
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="user",
-        entity_id=target.id, entity_label=target.username,
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="user",
+        entity_id=target.id,
+        entity_label=target.username,
         detail="password reset",
         ip_address=_client_ip(request),
     )
@@ -248,9 +283,15 @@ async def opex_list(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "C")),
 ) -> HTMLResponse:
-    params = list((await db.execute(
-        select(OpexParameter).order_by(OpexParameter.category, OpexParameter.parameter_name)
-    )).scalars().all())
+    params = list(
+        (
+            await db.execute(
+                select(OpexParameter).order_by(OpexParameter.category, OpexParameter.parameter_name)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/admin/opex.html",
         {"request": request, "user": user, "params": params},
@@ -268,13 +309,18 @@ async def opex_upsert(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "M")),
 ):
-    existing = (await db.execute(
-        select(OpexParameter).where(OpexParameter.parameter_name == parameter_name)
-    )).scalar_one_or_none()
+    existing = (
+        await db.execute(
+            select(OpexParameter).where(OpexParameter.parameter_name == parameter_name)
+        )
+    ).scalar_one_or_none()
     if existing is None:
         p = OpexParameter(
-            parameter_name=parameter_name, parameter_value=parameter_value,
-            unit=unit, category=category, description=description,
+            parameter_name=parameter_name,
+            parameter_value=parameter_value,
+            unit=unit,
+            category=category,
+            description=description,
         )
         db.add(p)
     else:
@@ -284,10 +330,17 @@ async def opex_upsert(
         existing.description = description
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="opex_parameter",
-        entity_id=None, entity_label=parameter_name,
-        detail=f"value={parameter_value}", ip_address=_client_ip(request),
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="opex_parameter",
+        entity_id=None,
+        entity_label=parameter_name,
+        detail=f"value={parameter_value}",
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/opex", status_code=303)
 
@@ -299,9 +352,11 @@ async def insurance_list(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "C")),
 ) -> HTMLResponse:
-    contracts = list((await db.execute(
-        select(InsuranceContract).order_by(InsuranceContract.valid_to.desc())
-    )).scalars().all())
+    contracts = list(
+        (await db.execute(select(InsuranceContract).order_by(InsuranceContract.valid_to.desc())))
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/admin/insurance.html",
         {"request": request, "user": user, "contracts": contracts, "kinds": INSURANCE_KINDS},
@@ -327,19 +382,31 @@ async def insurance_create(
     if kind not in INSURANCE_KINDS:
         raise HTTPException(status_code=400, detail="invalid kind")
     from datetime import date as _date
+
     c = InsuranceContract(
-        kind=kind, reference=reference, insurer=insurer, broker=broker,
+        kind=kind,
+        reference=reference,
+        insurer=insurer,
+        broker=broker,
         valid_from=_date.fromisoformat(valid_from),
         valid_to=_date.fromisoformat(valid_to),
-        premium_eur=premium_eur, deductible_eur=deductible_eur,
-        coverage_amount_eur=coverage_amount_eur, notes=notes,
+        premium_eur=premium_eur,
+        deductible_eur=deductible_eur,
+        coverage_amount_eur=coverage_amount_eur,
+        notes=notes,
     )
     db.add(c)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="insurance_contract",
-        entity_id=c.id, entity_label=reference,
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="insurance_contract",
+        entity_id=c.id,
+        entity_label=reference,
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/insurance", status_code=303)
@@ -365,9 +432,15 @@ async def maintenance_enable(
 ):
     MAINTENANCE_MARKER.touch()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="maintenance",
-        entity_label="enabled", ip_address=_client_ip(request),
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="maintenance",
+        entity_label="enabled",
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/maintenance", status_code=303)
 
@@ -381,9 +454,15 @@ async def maintenance_disable(
     if MAINTENANCE_MARKER.exists():
         MAINTENANCE_MARKER.unlink()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="maintenance",
-        entity_label="disabled", ip_address=_client_ip(request),
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="maintenance",
+        entity_label="disabled",
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/maintenance", status_code=303)
 
@@ -408,15 +487,18 @@ async def activity_logs_view(
 
     # Aggregate counts for filter chips
     modules_count: dict[str, int] = {}
-    for l in logs:
-        modules_count[l.module or "—"] = modules_count.get(l.module or "—", 0) + 1
+    for log in logs:
+        modules_count[log.module or "—"] = modules_count.get(log.module or "—", 0) + 1
 
     return templates.TemplateResponse(
         "staff/admin/activity_logs.html",
         {
-            "request": request, "user": user, "logs": logs,
+            "request": request,
+            "user": user,
+            "logs": logs,
             "modules_count": modules_count,
-            "filter_module": module, "filter_action": action,
+            "filter_module": module,
+            "filter_action": action,
         },
     )
 
@@ -432,13 +514,26 @@ async def security_dashboard(
     from app.models.client_account import ClientAccount
     from app.models.user import User
 
-    staff_users = list((await db.execute(
-        select(User).where(User.is_active.is_(True)).order_by(User.role, User.username)
-    )).scalars().all())
-    clients = list((await db.execute(
-        select(ClientAccount).where(ClientAccount.is_verified.is_(True))
-        .order_by(ClientAccount.company_name)
-    )).scalars().all())
+    staff_users = list(
+        (
+            await db.execute(
+                select(User).where(User.is_active.is_(True)).order_by(User.role, User.username)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    clients = list(
+        (
+            await db.execute(
+                select(ClientAccount)
+                .where(ClientAccount.is_verified.is_(True))
+                .order_by(ClientAccount.company_name)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     def _bucket(items, get_mfa):
         total = len(items)
@@ -449,17 +544,17 @@ async def security_dashboard(
     stats_client = _bucket(clients, lambda c: c.mfa_enabled)
 
     SENSITIVE_ROLES = ("administrateur", "manager_maritime")
-    risky_staff = [
-        u for u in staff_users
-        if u.role in SENSITIVE_ROLES and not u.mfa_enabled
-    ]
+    risky_staff = [u for u in staff_users if u.role in SENSITIVE_ROLES and not u.mfa_enabled]
 
     return templates.TemplateResponse(
         "staff/admin/security_dashboard.html",
         {
-            "request": request, "user": user,
-            "staff_users": staff_users, "clients": clients,
-            "stats_staff": stats_staff, "stats_client": stats_client,
+            "request": request,
+            "user": user,
+            "staff_users": staff_users,
+            "clients": clients,
+            "stats_staff": stats_staff,
+            "stats_client": stats_client,
             "risky_staff": risky_staff,
             "require_mfa_for_admin": settings.require_mfa_for_admin,
         },
@@ -481,6 +576,7 @@ async def users_reset_mfa(
     sera redirigée vers la reconfiguration MFA à sa prochaine requête.
     """
     from sqlalchemy import delete
+
     from app.models.mfa_recovery_code import MfaRecoveryCode
 
     target = await db.get(User, user_id)
@@ -495,10 +591,15 @@ async def users_reset_mfa(
         .where(MfaRecoveryCode.owner_id == target.id)
     )
     await activity_record(
-        db, action="staff_mfa_reset_by_admin",
-        user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="user",
-        entity_id=target.id, entity_label=target.username,
+        db,
+        action="staff_mfa_reset_by_admin",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="user",
+        entity_id=target.id,
+        entity_label=target.username,
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/security", status_code=303)
@@ -539,39 +640,53 @@ async def change_password(
     if not verify_password(current_password, user.hashed_password):
         return templates.TemplateResponse(
             "staff/admin/change_password.html",
-            {"request": request, "user": user,
-             "error": "Mot de passe actuel incorrect."},
+            {"request": request, "user": user, "error": "Mot de passe actuel incorrect."},
             status_code=400,
         )
     if new_password != confirm_password:
         return templates.TemplateResponse(
             "staff/admin/change_password.html",
-            {"request": request, "user": user,
-             "error": "Les deux nouveaux mots de passe diffèrent."},
+            {
+                "request": request,
+                "user": user,
+                "error": "Les deux nouveaux mots de passe diffèrent.",
+            },
             status_code=400,
         )
     if len(new_password) < 12:
         return templates.TemplateResponse(
             "staff/admin/change_password.html",
-            {"request": request, "user": user,
-             "error": "Mot de passe trop court (12 caractères minimum)."},
+            {
+                "request": request,
+                "user": user,
+                "error": "Mot de passe trop court (12 caractères minimum).",
+            },
             status_code=400,
         )
     user.hashed_password = hash_password(new_password)
     user.must_change_password = False
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="user",
-        entity_id=user.id, entity_label=user.username,
-        detail="password changed", ip_address=_client_ip(request),
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="user",
+        entity_id=user.id,
+        entity_label=user.username,
+        detail="password changed",
+        ip_address=_client_ip(request),
     )
     if user.email:
         from app.services import security_alerts
+
         await security_alerts.notify_password_changed(
             to_email=user.email,
             recipient_name=user.full_name or user.username,
-            ip=_client_ip(request), ua=request.headers.get("user-agent"),
+            ip=_client_ip(request),
+            ua=request.headers.get("user-agent"),
         )
     return RedirectResponse(url="/dashboard", status_code=303)
 
@@ -588,6 +703,7 @@ async def staff_mfa_setup_form(
     user=Depends(get_current_staff),
 ) -> HTMLResponse:
     from app.services import mfa
+
     qr = None
     uri = None
     secret = None
@@ -600,9 +716,14 @@ async def staff_mfa_setup_form(
         qr = mfa.qr_data_uri(uri)
     return templates.TemplateResponse(
         "staff/admin/mfa_setup.html",
-        {"request": request, "user": user,
-         "qr_data_uri": qr, "otpauth_uri": uri, "secret": secret,
-         "error": None},
+        {
+            "request": request,
+            "user": user,
+            "qr_data_uri": qr,
+            "otpauth_uri": uri,
+            "secret": secret,
+            "error": None,
+        },
     )
 
 
@@ -614,33 +735,44 @@ async def staff_mfa_verify(
     user=Depends(get_current_staff),
 ):
     from app.services import mfa
+
     if user.mfa_enabled or not user.mfa_secret:
         return RedirectResponse(url="/admin/my-account/mfa", status_code=303)
     if not mfa.verify_totp(user.mfa_secret, code):
         uri = mfa.provisioning_uri(user.mfa_secret, user.email or user.username)
         return templates.TemplateResponse(
             "staff/admin/mfa_setup.html",
-            {"request": request, "user": user,
-             "qr_data_uri": mfa.qr_data_uri(uri),
-             "otpauth_uri": uri, "secret": user.mfa_secret,
-             "error": "Code incorrect — réessayez."},
+            {
+                "request": request,
+                "user": user,
+                "qr_data_uri": mfa.qr_data_uri(uri),
+                "otpauth_uri": uri,
+                "secret": user.mfa_secret,
+                "error": "Code incorrect — réessayez.",
+            },
             status_code=400,
         )
     user.mfa_enabled = True
     await db.flush()
     recovery_codes = await mfa.generate_recovery_codes(
-        db, owner_type="staff", owner_id=user.id,
+        db,
+        owner_type="staff",
+        owner_id=user.id,
     )
     await activity_record(
-        db, action="staff_mfa_enabled", user_id=user.id,
-        user_name=user.username, user_role=user.role,
-        module="admin", entity_type="user", entity_id=user.id,
+        db,
+        action="staff_mfa_enabled",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="user",
+        entity_id=user.id,
         ip_address=_client_ip(request),
     )
     return templates.TemplateResponse(
         "staff/admin/mfa_recovery_codes.html",
-        {"request": request, "user": user, "codes": recovery_codes,
-         "is_regeneration": False},
+        {"request": request, "user": user, "codes": recovery_codes, "is_regeneration": False},
     )
 
 
@@ -652,29 +784,41 @@ async def staff_mfa_regenerate(
     user=Depends(get_current_staff),
 ):
     from app.services import mfa
+
     if not user.mfa_enabled or not user.mfa_secret:
         return RedirectResponse(url="/admin/my-account/mfa", status_code=303)
     if not mfa.verify_totp(user.mfa_secret, code):
         return templates.TemplateResponse(
             "staff/admin/mfa_setup.html",
-            {"request": request, "user": user,
-             "qr_data_uri": None, "otpauth_uri": None, "secret": None,
-             "error": "Code TOTP incorrect — codes non régénérés."},
+            {
+                "request": request,
+                "user": user,
+                "qr_data_uri": None,
+                "otpauth_uri": None,
+                "secret": None,
+                "error": "Code TOTP incorrect — codes non régénérés.",
+            },
             status_code=400,
         )
     new_codes = await mfa.generate_recovery_codes(
-        db, owner_type="staff", owner_id=user.id,
+        db,
+        owner_type="staff",
+        owner_id=user.id,
     )
     await activity_record(
-        db, action="staff_mfa_codes_regen", user_id=user.id,
-        user_name=user.username, user_role=user.role,
-        module="admin", entity_type="user", entity_id=user.id,
+        db,
+        action="staff_mfa_codes_regen",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="user",
+        entity_id=user.id,
         ip_address=_client_ip(request),
     )
     return templates.TemplateResponse(
         "staff/admin/mfa_recovery_codes.html",
-        {"request": request, "user": user, "codes": new_codes,
-         "is_regeneration": True},
+        {"request": request, "user": user, "codes": new_codes, "is_regeneration": True},
     )
 
 
@@ -686,16 +830,23 @@ async def staff_mfa_disable(
     user=Depends(get_current_staff),
 ):
     from sqlalchemy import delete
+
     from app.models.mfa_recovery_code import MfaRecoveryCode
     from app.services import mfa
+
     if not user.mfa_enabled or not user.mfa_secret:
         return RedirectResponse(url="/admin/my-account/mfa", status_code=303)
     if not mfa.verify_totp(user.mfa_secret, code):
         return templates.TemplateResponse(
             "staff/admin/mfa_setup.html",
-            {"request": request, "user": user,
-             "qr_data_uri": None, "otpauth_uri": None, "secret": None,
-             "error": "Code TOTP incorrect — MFA non désactivée."},
+            {
+                "request": request,
+                "user": user,
+                "qr_data_uri": None,
+                "otpauth_uri": None,
+                "secret": None,
+                "error": "Code TOTP incorrect — MFA non désactivée.",
+            },
             status_code=400,
         )
     user.mfa_enabled = False
@@ -707,20 +858,29 @@ async def staff_mfa_disable(
         .where(MfaRecoveryCode.owner_id == user.id)
     )
     await activity_record(
-        db, action="staff_mfa_disabled", user_id=user.id,
-        user_name=user.username, user_role=user.role,
-        module="admin", entity_type="user", entity_id=user.id,
+        db,
+        action="staff_mfa_disabled",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="user",
+        entity_id=user.id,
         ip_address=_client_ip(request),
     )
     if user.email:
         from app.services import security_alerts
+
         await security_alerts.notify_mfa_disabled(
             to_email=user.email,
             recipient_name=user.full_name or user.username,
-            ip=_client_ip(request), ua=request.headers.get("user-agent"),
+            ip=_client_ip(request),
+            ua=request.headers.get("user-agent"),
         )
     return RedirectResponse(url="/admin/my-account?mfa=disabled", status_code=303)
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
+    )

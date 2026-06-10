@@ -5,19 +5,18 @@ automatiquement un MRVEvent côté carburant.
 
 CO₂ factor MDO/MGO standard : 3.206 t CO₂ / t fuel (réglementation UE).
 """
+
 from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime
-from typing import Iterable
+from collections.abc import Iterable
 
 from app.models.mrv import MRVEvent
 
-
 SOF_TO_MRV_MAP: dict[str, str] = {
-    "SOSP": "departure",      # Start of Sea Passage → MRV departure
-    "EOSP": "arrival",        # End of Sea Passage → arrival
+    "SOSP": "departure",  # Start of Sea Passage → MRV departure
+    "EOSP": "arrival",  # End of Sea Passage → arrival
     "ANCHORED": "begin_anchoring",
     "WEIGH_ANCHOR": "end_anchoring",
     "BUNKER_START": "bunkering_start",
@@ -40,23 +39,34 @@ def to_dnv_csv(events: Iterable[MRVEvent]) -> str:
     """
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";")
-    writer.writerow([
-        "vessel_imo", "leg_code", "event_type", "occurred_at_utc",
-        "fuel_type", "rob_t", "consumed_t", "co2_t", "notes",
-    ])
+    writer.writerow(
+        [
+            "vessel_imo",
+            "leg_code",
+            "event_type",
+            "occurred_at_utc",
+            "fuel_type",
+            "rob_t",
+            "consumed_t",
+            "co2_t",
+            "notes",
+        ]
+    )
     for ev in events:
         co2 = (ev.consumed_t or 0) * CO2_EMISSION_FACTOR_MDO
-        writer.writerow([
-            getattr(ev, "vessel_imo", "") or "",
-            getattr(ev, "leg_code", "") or "",
-            getattr(ev, "event_type", "") or "",
-            (ev.occurred_at.isoformat() if getattr(ev, "occurred_at", None) else ""),
-            getattr(ev, "fuel_type", "MDO") or "MDO",
-            f"{ev.rob_t:.3f}" if getattr(ev, "rob_t", None) is not None else "",
-            f"{ev.consumed_t:.3f}" if getattr(ev, "consumed_t", None) is not None else "",
-            f"{co2:.3f}",
-            (getattr(ev, "notes", "") or "").replace("\n", " ").replace(";", ","),
-        ])
+        writer.writerow(
+            [
+                getattr(ev, "vessel_imo", "") or "",
+                getattr(ev, "leg_code", "") or "",
+                getattr(ev, "event_type", "") or "",
+                (ev.occurred_at.isoformat() if getattr(ev, "occurred_at", None) else ""),
+                getattr(ev, "fuel_type", "MDO") or "MDO",
+                f"{ev.rob_t:.3f}" if getattr(ev, "rob_t", None) is not None else "",
+                f"{ev.consumed_t:.3f}" if getattr(ev, "consumed_t", None) is not None else "",
+                f"{co2:.3f}",
+                (getattr(ev, "notes", "") or "").replace("\n", " ").replace(";", ","),
+            ]
+        )
     return buf.getvalue()
 
 

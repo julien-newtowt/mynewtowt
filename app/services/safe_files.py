@@ -5,6 +5,7 @@ génère un nom de fichier aléatoire (pas de nom client en clair sur le
 disque) et écrit sous ``settings.upload_dir/<subdir>/``. La lecture passe
 par ``resolve_path`` qui garantit l'absence de path-traversal.
 """
+
 from __future__ import annotations
 
 import os

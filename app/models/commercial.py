@@ -15,18 +15,27 @@ Brackets dégressifs (DEFAULT_BRACKETS_SHIPPER) :
   lt50 (×1.10), 100 (×1.00), 200 (×0.80), 300 (×0.80), 400 (×0.80),
   500 (×0.70), full ship 850 (×0.60).
 """
+
 from __future__ import annotations
 
-from datetime import date as _date, datetime
+from datetime import date as _date
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-
 
 CLIENT_TYPES = ("freight_forwarder", "shipper")
 RATE_GRID_STATUSES = ("draft", "active", "expired", "superseded")
@@ -36,25 +45,25 @@ ORDER_STATUSES = ("draft", "confirmed", "loaded", "delivered", "cancelled")
 
 # Brackets dégressifs (volume → coefficient)
 DEFAULT_BRACKETS_SHIPPER: list[dict] = [
-    {"key": "lt50",  "label": "< 50 palettes",       "max_qty": 49,  "coeff": 1.10},
-    {"key": "100",   "label": "100 palettes",        "max_qty": 100, "coeff": 1.00},
-    {"key": "200",   "label": "200 palettes",        "max_qty": 200, "coeff": 0.80},
-    {"key": "300",   "label": "300 palettes",        "max_qty": 300, "coeff": 0.80},
-    {"key": "400",   "label": "400 palettes",        "max_qty": 400, "coeff": 0.80},
-    {"key": "500",   "label": "500 palettes",        "max_qty": 500, "coeff": 0.70},
-    {"key": "full",  "label": "Full ship (850 pal.)", "max_qty": 850, "coeff": 0.60},
+    {"key": "lt50", "label": "< 50 palettes", "max_qty": 49, "coeff": 1.10},
+    {"key": "100", "label": "100 palettes", "max_qty": 100, "coeff": 1.00},
+    {"key": "200", "label": "200 palettes", "max_qty": 200, "coeff": 0.80},
+    {"key": "300", "label": "300 palettes", "max_qty": 300, "coeff": 0.80},
+    {"key": "400", "label": "400 palettes", "max_qty": 400, "coeff": 0.80},
+    {"key": "500", "label": "500 palettes", "max_qty": 500, "coeff": 0.70},
+    {"key": "full", "label": "Full ship (850 pal.)", "max_qty": 850, "coeff": 0.60},
 ]
 
 DEFAULT_BRACKETS_FF: list[dict] = [
-    {"key": "flat",  "label": "Tarif unique",        "max_qty": 850, "coeff": 1.00},
+    {"key": "flat", "label": "Tarif unique", "max_qty": 850, "coeff": 1.00},
 ]
 
 PALETTE_COEFFICIENTS: dict[str, float] = {
-    "EPAL":      1.00,
-    "USPAL":     1.20,
-    "PORTPAL":   1.20,
-    "IBC":       1.30,
-    "BIGBAG":    1.25,
+    "EPAL": 1.00,
+    "USPAL": 1.20,
+    "PORTPAL": 1.20,
+    "IBC": 1.30,
+    "BIGBAG": 1.25,
     "BARRIQUE120": 1.50,
     "BARRIQUE140": 2.00,
 }
@@ -81,17 +90,19 @@ class Client(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
-        onupdate=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
-    rate_grids: Mapped[list["RateGrid"]] = relationship(
+    rate_grids: Mapped[list[RateGrid]] = relationship(
         back_populates="client", cascade="all, delete-orphan"
     )
-    rate_offers: Mapped[list["RateOffer"]] = relationship(
+    rate_offers: Mapped[list[RateOffer]] = relationship(
         back_populates="client", cascade="all, delete-orphan"
     )
-    orders: Mapped[list["Order"]] = relationship(back_populates="client")
+    orders: Mapped[list[Order]] = relationship(back_populates="client")
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Client {self.name} ({self.client_type})>"
@@ -121,7 +132,7 @@ class RateGrid(Base):
     )
 
     client: Mapped[Client] = relationship(back_populates="rate_grids")
-    lines: Mapped[list["RateGridLine"]] = relationship(
+    lines: Mapped[list[RateGridLine]] = relationship(
         back_populates="grid", cascade="all, delete-orphan", order_by="RateGridLine.max_qty"
     )
 
@@ -206,12 +217,14 @@ class Order(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
-        onupdate=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     client: Mapped[Client] = relationship(back_populates="orders")
-    assignments: Mapped[list["OrderAssignment"]] = relationship(
+    assignments: Mapped[list[OrderAssignment]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
 

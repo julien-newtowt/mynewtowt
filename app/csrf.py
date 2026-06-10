@@ -15,6 +15,7 @@ Body caching: for ``application/x-www-form-urlencoded`` requests we read
 FastAPI ``Form(...)`` dependencies re-parse the cached body and see the
 other fields normally.
 """
+
 from __future__ import annotations
 
 import re
@@ -37,12 +38,14 @@ def _extract_multipart_field(body: bytes, field: str) -> str | None:
     pattern = rb'name="' + re.escape(field.encode()) + rb'"\r\n\r\n(.*?)\r\n--'
     m = re.search(pattern, body, re.DOTALL)
     return m.group(1).decode("utf-8", errors="replace") if m else None
+
+
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 EXEMPT_PATHS_PREFIXES = (
-    "/api/v1/",        # API expects its own auth (API key / bearer)
+    "/api/v1/",  # API expects its own auth (API key / bearer)
     "/api/tracking/",  # Power Automate satcom ingest — auth via X-API-Token
-    "/webhooks/",      # external webhooks sign their payloads
-    "/api/veille/",    # Power Automate veille refresh — auth via X-API-Token
+    "/webhooks/",  # external webhooks sign their payloads
+    "/api/veille/",  # Power Automate veille refresh — auth via X-API-Token
     "/health",
     "/metrics",
 )
@@ -53,16 +56,13 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         cookie_value = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(32)
         request.state.csrf_token = cookie_value
 
-        if (
-            request.method not in SAFE_METHODS
-            and not any(request.url.path.startswith(p) for p in EXEMPT_PATHS_PREFIXES)
+        if request.method not in SAFE_METHODS and not any(
+            request.url.path.startswith(p) for p in EXEMPT_PATHS_PREFIXES
         ):
             header_token = request.headers.get(CSRF_HEADER)
             form_token: str | None = None
             content_type = request.headers.get("content-type", "")
-            if not header_token and content_type.startswith(
-                "application/x-www-form-urlencoded"
-            ):
+            if not header_token and content_type.startswith("application/x-www-form-urlencoded"):
                 # Cache body so downstream Form(...) parsing still works.
                 body_bytes = await request.body()
                 parsed = parse_qs(body_bytes.decode("utf-8", errors="replace"))
@@ -77,9 +77,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
             submitted = header_token or form_token
             if not submitted or submitted != cookie_value:
-                return Response(
-                    "CSRF validation failed", status_code=403, media_type="text/plain"
-                )
+                return Response("CSRF validation failed", status_code=403, media_type="text/plain")
 
         response = await call_next(request)
         response.set_cookie(

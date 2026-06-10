@@ -7,6 +7,7 @@ Configuration via env :
 Si le token n'est pas configuré, les fonctions sont des no-ops. Cela
 permet à l'ERP de tourner en local sans dépendance externe.
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,7 +27,9 @@ def _enabled() -> bool:
     return PIPEDRIVE_API_TOKEN is not None
 
 
-async def _request(method: str, path: str, *, json: dict | None = None, params: dict | None = None) -> dict | None:
+async def _request(
+    method: str, path: str, *, json: dict | None = None, params: dict | None = None
+) -> dict | None:
     if not _enabled():
         return None
     p = dict(params or {})
@@ -48,7 +51,9 @@ async def find_organization(name: str) -> dict | None:
     """Search Pipedrive for an org by exact-name. Returns dict or None."""
     if not name:
         return None
-    data = await _request("GET", "/organizations/search", params={"term": name, "exact_match": "true"})
+    data = await _request(
+        "GET", "/organizations/search", params={"term": name, "exact_match": "true"}
+    )
     if not data or not data.get("success"):
         return None
     items = (data.get("data") or {}).get("items") or []
@@ -69,7 +74,9 @@ async def find_or_create_organization(name: str, **extra: Any) -> dict | None:
     return await create_organization(name, **extra)
 
 
-async def create_deal(title: str, *, org_id: int | None = None, value: float | None = None, currency: str = "EUR") -> dict | None:
+async def create_deal(
+    title: str, *, org_id: int | None = None, value: float | None = None, currency: str = "EUR"
+) -> dict | None:
     payload: dict[str, Any] = {"title": title, "currency": currency}
     if org_id:
         payload["org_id"] = org_id

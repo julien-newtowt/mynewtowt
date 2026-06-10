@@ -3,10 +3,11 @@
 Pure CRUD + aggregations. Movements are signed amounts:
 positive = income/recharge, negative = expense.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -34,9 +35,7 @@ class CashboxError(Exception):
 
 async def get_or_create(db: AsyncSession, vessel_id: int) -> OnboardCashbox:
     cb = (
-        await db.execute(
-            select(OnboardCashbox).where(OnboardCashbox.vessel_id == vessel_id)
-        )
+        await db.execute(select(OnboardCashbox).where(OnboardCashbox.vessel_id == vessel_id))
     ).scalar_one_or_none()
     if cb:
         return cb
@@ -74,7 +73,7 @@ async def add_movement(
         description=description.strip()[:300],
         leg_id=leg_id,
         port_id=port_id,
-        occurred_at=occurred_at or datetime.now(timezone.utc),
+        occurred_at=occurred_at or datetime.now(UTC),
         recorded_by_id=recorded_by_id,
         receipt_url=receipt_url,
     )
@@ -90,15 +89,11 @@ async def balances(db: AsyncSession, cashbox: OnboardCashbox) -> list[CurrencyBa
             CashboxMovement.currency,
             func.coalesce(func.sum(CashboxMovement.amount), 0).label("balance"),
             func.coalesce(
-                func.sum(
-                    func.greatest(CashboxMovement.amount, 0)
-                ),
+                func.sum(func.greatest(CashboxMovement.amount, 0)),
                 0,
             ).label("income"),
             func.coalesce(
-                func.sum(
-                    func.least(CashboxMovement.amount, 0)
-                ),
+                func.sum(func.least(CashboxMovement.amount, 0)),
                 0,
             ).label("expense"),
             func.count(CashboxMovement.id).label("cnt"),

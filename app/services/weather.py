@@ -4,6 +4,7 @@ Default provider: Open-Meteo (no API key, free for non-commercial).
 If WINDY_API_KEY is configured, the caller can request Windy via the
 ``provider="windy"`` argument; falls back to Open-Meteo on Windy failure.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -61,17 +62,17 @@ async def fetch_forecast(
 fetch_marine_forecast = fetch_forecast
 
 
-async def _fetch_open_meteo(
-    lat: float, lon: float, hours: int
-) -> WeatherForecast | None:
+async def _fetch_open_meteo(lat: float, lon: float, hours: int) -> WeatherForecast | None:
     params_wind = {
-        "latitude": lat, "longitude": lon,
+        "latitude": lat,
+        "longitude": lon,
         "hourly": "wind_speed_10m,wind_direction_10m",
         "wind_speed_unit": "kn",
         "forecast_hours": hours,
     }
     params_marine = {
-        "latitude": lat, "longitude": lon,
+        "latitude": lat,
+        "longitude": lon,
         "hourly": "wave_height,wave_direction,wave_period",
         "forecast_hours": hours,
     }
@@ -106,7 +107,8 @@ async def _fetch_windy(lat: float, lon: float, hours: int) -> WeatherForecast | 
     if not settings.windy_api_key:
         return None
     payload = {
-        "lat": lat, "lon": lon,
+        "lat": lat,
+        "lon": lon,
         "model": "gfs",
         "parameters": ["wind", "waves"],
         "levels": ["surface"],
@@ -135,14 +137,16 @@ async def _fetch_windy(lat: float, lon: float, hours: int) -> WeatherForecast | 
         speed_kn = speed_ms * 1.9438
         dir_deg = (math.degrees(math.atan2(-u, -v)) + 360) % 360
         iso = _dt.datetime.utcfromtimestamp(t / 1000).isoformat() + "Z"
-        points.append(WeatherPoint(
-            time=iso,
-            wind_speed_kn=round(speed_kn, 1),
-            wind_direction_deg=round(dir_deg, 1),
-            wave_height_m=_safe(waves_h, i),
-            wave_direction_deg=_safe(waves_d, i),
-            wave_period_s=_safe(waves_p, i),
-        ))
+        points.append(
+            WeatherPoint(
+                time=iso,
+                wind_speed_kn=round(speed_kn, 1),
+                wind_direction_deg=round(dir_deg, 1),
+                wave_height_m=_safe(waves_h, i),
+                wave_direction_deg=_safe(waves_d, i),
+                wave_period_s=_safe(waves_p, i),
+            )
+        )
     return WeatherForecast(latitude=lat, longitude=lon, provider="windy", points=points)
 
 
@@ -170,7 +174,11 @@ async def fetch_current(lat: float, lon: float) -> WeatherPoint | None:
 
 
 async def fetch_at(
-    lat: float, lon: float, when, *, window_hours: int = 72,
+    lat: float,
+    lon: float,
+    when,
+    *,
+    window_hours: int = 72,
 ) -> WeatherPoint | None:
     """Renvoie le point forecast le plus proche d'une datetime cible.
 
@@ -183,14 +191,14 @@ async def fetch_at(
     fc = await fetch_forecast(lat, lon, hours=window_hours)
     if not fc or not fc.points:
         return None
-    target = when.replace(tzinfo=_dt.timezone.utc) if when.tzinfo is None else when
+    target = when.replace(tzinfo=_dt.UTC) if when.tzinfo is None else when
     best: WeatherPoint | None = None
     best_delta = float("inf")
     for p in fc.points:
         try:
             t = _dt.datetime.fromisoformat(p.time.replace("Z", "+00:00"))
             if t.tzinfo is None:
-                t = t.replace(tzinfo=_dt.timezone.utc)
+                t = t.replace(tzinfo=_dt.UTC)
         except (ValueError, AttributeError):
             continue
         delta = abs((t - target).total_seconds())
@@ -216,7 +224,23 @@ def summarize(point: WeatherPoint | None) -> str:
 
 def _compass(deg: float) -> str:
     """Convertit un cap décimal en rose 16 directions (N/NNE/NE/...)."""
-    dirs = ("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")
+    dirs = (
+        "N",
+        "NNE",
+        "NE",
+        "ENE",
+        "E",
+        "ESE",
+        "SE",
+        "SSE",
+        "S",
+        "SSW",
+        "SW",
+        "WSW",
+        "W",
+        "WNW",
+        "NW",
+        "NNW",
+    )
     idx = int(((deg % 360) + 11.25) // 22.5) % 16
     return dirs[idx]

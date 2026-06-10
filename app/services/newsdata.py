@@ -9,11 +9,12 @@ La clé d'API est lue depuis ``settings.newsdata_api_key`` (env
 ``NewsDataNotConfigured`` — l'appelant renvoie alors 503 (même politique que
 l'API tracking).
 """
+
 from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -46,7 +47,7 @@ def _parse_pub_date(value: Any) -> datetime | None:
     iso = s.replace(" ", "T").replace("Z", "+00:00")
     try:
         dt = datetime.fromisoformat(iso)
-        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -55,7 +56,7 @@ def _first(value: Any) -> str | None:
     """NewsData renvoie country/category/language tantôt en liste, tantôt en str."""
     if value is None:
         return None
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return str(value[0]) if value else None
     return str(value)
 
@@ -76,8 +77,7 @@ def normalize(article: dict) -> dict[str, Any]:
         "title": (article.get("title") or "(sans titre)")[:500],
         "link": (article.get("link") or "")[:1000],
         "description": article.get("description"),
-        "publisher": (article.get("source_id") or article.get("source_name") or "")[:200]
-        or None,
+        "publisher": (article.get("source_id") or article.get("source_name") or "")[:200] or None,
         "image_url": (article.get("image_url") or None),
         "language": _first(article.get("language")),
         "country": _first(article.get("country")),
@@ -120,18 +120,14 @@ async def fetch_latest(
         raise NewsDataError(f"appel NewsData échoué : {exc}") from exc
 
     if resp.status_code != 200:
-        raise NewsDataError(
-            f"NewsData HTTP {resp.status_code} : {resp.text[:200]}"
-        )
+        raise NewsDataError(f"NewsData HTTP {resp.status_code} : {resp.text[:200]}")
     try:
         payload = resp.json()
     except ValueError as exc:
         raise NewsDataError("réponse NewsData non-JSON") from exc
 
     if payload.get("status") != "success":
-        raise NewsDataError(
-            f"NewsData status={payload.get('status')} : {payload.get('results')}"
-        )
+        raise NewsDataError(f"NewsData status={payload.get('status')} : {payload.get('results')}")
 
     results = payload.get("results") or []
     return [normalize(a) for a in results if isinstance(a, dict)]

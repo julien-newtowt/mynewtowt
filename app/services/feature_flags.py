@@ -8,6 +8,7 @@ Resolution rules (in order):
 5. If `rollout_pct > 0` → hash(user_id, flag_key) % 100 < rollout_pct.
 6. Otherwise → True (flag is enabled globally).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -19,7 +20,7 @@ from app.models.feature_flag import FeatureFlag
 
 
 def _bucket(identifier: str, flag_key: str) -> int:
-    h = hashlib.sha256(f"{flag_key}:{identifier}".encode("utf-8")).hexdigest()
+    h = hashlib.sha256(f"{flag_key}:{identifier}".encode()).hexdigest()
     return int(h[:8], 16) % 100
 
 

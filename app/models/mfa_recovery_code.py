@@ -8,6 +8,7 @@ est consommable une fois (``used_at`` posé après usage).
 Modèle polymorphe : ``owner_type`` ∈ {"client", "staff"} + ``owner_id``
 pointe vers la table correspondante (``client_accounts`` ou ``users``).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -31,6 +32,4 @@ class MfaRecoveryCode(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (
-        Index("ix_mfa_recovery_owner", "owner_type", "owner_id"),
-    )
+    __table_args__ = (Index("ix_mfa_recovery_owner", "owner_type", "owner_id"),)

@@ -1,4 +1,5 @@
 """Staff booking backoffice — list, confirm, reject submitted bookings."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -82,11 +83,16 @@ async def post_staff_message(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     if body.strip():
         await messaging.post(
-            db, booking_id=booking.id, sender="staff",
-            sender_name=user.username, body=body,
+            db,
+            booking_id=booking.id,
+            sender="staff",
+            sender_name=user.username,
+            body=body,
         )
         await notifications.notify_client(
-            db, client_id=booking.client_account_id, type="new_booking_message",
+            db,
+            client_id=booking.client_account_id,
+            type="new_booking_message",
             title=f"Nouveau message NEWTOWT — {booking.reference}",
             link=f"/me/bookings/{booking.reference}#messages",
         )
@@ -184,7 +190,7 @@ async def advance_booking(
     try:
         await advance(db, booking, target)
     except InvalidStatusTransition as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     await activity_record(
         db,
         action="booking_advance",

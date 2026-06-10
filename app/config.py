@@ -3,6 +3,7 @@
 Refuse to start in production with weak secrets or default DB credentials,
 mirroring the safety policy established in V2 and reinforced for V3.
 """
+
 from functools import lru_cache
 from typing import Literal
 
@@ -46,7 +47,7 @@ class Settings(BaseSettings):
     # Security
     secret_key: str
     access_token_expire_minutes: int = 480  # staff 8h
-    client_session_days: int = 30           # client persistent
+    client_session_days: int = 30  # client persistent
     algorithm: str = "HS256"
 
     # Database
@@ -118,18 +119,14 @@ class Settings(BaseSettings):
         if len(v) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters")
         if v in WEAK_SECRETS:
-            raise ValueError(
-                "SECRET_KEY is in the weak secrets list — choose a real random value"
-            )
+            raise ValueError("SECRET_KEY is in the weak secrets list — choose a real random value")
         return v
 
     @field_validator("database_url")
     @classmethod
     def _db_url_safe(cls, v: str) -> str:
         if v.startswith("postgresql://") and "+asyncpg" not in v:
-            raise ValueError(
-                "DATABASE_URL must use the async driver: postgresql+asyncpg://"
-            )
+            raise ValueError("DATABASE_URL must use the async driver: postgresql+asyncpg://")
         return v
 
     def _enforce_prod_safety(self) -> None:

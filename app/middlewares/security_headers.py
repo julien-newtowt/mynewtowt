@@ -7,6 +7,7 @@ des attributs d'événement). Styles inline tolérés (CSS runtime Mapbox).
 V3.1 : Stripe retiré — NEWTOWT ne traite plus de paiement dans l'app
 (facturation par virement bancaire post-confirmation commerciale).
 """
+
 from __future__ import annotations
 
 from starlette.middleware.base import BaseHTTPMiddleware

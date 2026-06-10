@@ -3,6 +3,7 @@
 Servis à la racine du domaine. Contenu généré par ``app.services.seo``
 (fonctions pures, testées). Base d'URL : ``settings.site_url``.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter

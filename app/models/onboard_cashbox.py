@@ -9,6 +9,7 @@ is computed live from the movements ledger; we also persist a
 ``CashboxClosure`` row when the captain closes a period to freeze the
 balance there.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -76,9 +77,7 @@ class OnboardCashbox(Base):
     __tablename__ = "onboard_cashboxes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    vessel_id: Mapped[int] = mapped_column(
-        ForeignKey("vessels.id"), nullable=False, unique=True
-    )
+    vessel_id: Mapped[int] = mapped_column(ForeignKey("vessels.id"), nullable=False, unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
 
@@ -86,7 +85,7 @@ class OnboardCashbox(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    movements: Mapped[list["CashboxMovement"]] = relationship(
+    movements: Mapped[list[CashboxMovement]] = relationship(
         back_populates="cashbox",
         cascade="all, delete-orphan",
         order_by="CashboxMovement.occurred_at.desc()",
@@ -102,7 +101,8 @@ class CashboxMovement(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     cashbox_id: Mapped[int] = mapped_column(
         ForeignKey("onboard_cashboxes.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
 
     # Signed amount: positive = income (recharge), negative = expense.
@@ -117,9 +117,7 @@ class CashboxMovement(Base):
     leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"))
     port_id: Mapped[int | None] = mapped_column(ForeignKey("ports.id"))
 
-    occurred_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

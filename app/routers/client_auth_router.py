@@ -9,12 +9,13 @@ Hardenings V3.1 :
     inexistant pour égaliser le temps de réponse.
   - Pas de PII en clair dans les logs (email hashé côté ``activity.record``).
 """
+
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,7 +37,6 @@ from app.services import device_detection, mfa, rate_limit, security_alerts
 from app.services.activity import record as activity_record
 from app.templating import templates
 
-
 # Hash bcrypt fictif (vrai bcrypt cost=12) utilisé pour égaliser le temps
 # quand l'email n'existe pas — précalculé pour le password aléatoire
 # "newtowt_decoy_password_2026" (valeur jamais utilisée en clair).
@@ -52,9 +52,7 @@ router = APIRouter(tags=["client-auth"])
 
 @router.get("/me/login", response_class=HTMLResponse)
 async def login_form(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        "client/login.html", {"request": request, "error": None}
-    )
+    return templates.TemplateResponse("client/login.html", {"request": request, "error": None})
 
 
 @router.post("/me/login", response_class=HTMLResponse)
@@ -70,8 +68,11 @@ async def login(
     # Rate-limit par IP (10/10 min). On vérifie AVANT le lookup DB pour ne
     # pas exposer un canal de timing par cache miss.
     if await rate_limit.exceeded(
-        db, scope="client_login_ip", identifier=ip,
-        max_attempts=10, window_minutes=10,
+        db,
+        scope="client_login_ip",
+        identifier=ip,
+        max_attempts=10,
+        window_minutes=10,
     ):
         return templates.TemplateResponse(
             "client/login.html",
@@ -80,9 +81,7 @@ async def login(
         )
 
     user = (
-        await db.execute(
-            select(ClientAccount).where(ClientAccount.email == email_clean)
-        )
+        await db.execute(select(ClientAccount).where(ClientAccount.email == email_clean))
     ).scalar_one_or_none()
 
     # Anti-énum : on calcule TOUJOURS un verify_password, même si l'email
@@ -118,16 +117,20 @@ async def login(
     # redirige vers /me/login/mfa pour la phase challenge.
     if getattr(user, "mfa_enabled", False) and user.mfa_secret:
         await activity_record(
-            db, action="client_login_password_ok_mfa_required",
-            user_name=user.email, module="booking",
-            entity_type="client_account", entity_id=user.id, ip_address=ip,
+            db,
+            action="client_login_password_ok_mfa_required",
+            user_name=user.email,
+            module="booking",
+            entity_type="client_account",
+            entity_id=user.id,
+            ip_address=ip,
         )
         pending = create_client_mfa_pending(user.id)
         redirect = RedirectResponse(url="/me/login/mfa", status_code=303)
         redirect.set_cookie(value=pending, **cookie_kwargs_for_client_mfa_pending(request))
         return redirect
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await activity_record(
         db,
         action="client_login",
@@ -140,13 +143,18 @@ async def login(
     # Détection nouveau device — alerte email si jamais vu
     ua = request.headers.get("user-agent")
     _, is_new = await device_detection.see_device(
-        db, owner_type="client", owner_id=user.id, ua=ua, ip=ip,
+        db,
+        owner_type="client",
+        owner_id=user.id,
+        ua=ua,
+        ip=ip,
     )
     if is_new:
         await security_alerts.notify_new_device_login(
             to_email=user.email,
             recipient_name=user.contact_name or user.company_name or user.email,
-            ip=ip, ua=ua,
+            ip=ip,
+            ua=ua,
         )
 
     token = create_client_session(user.id)
@@ -169,7 +177,8 @@ async def mfa_challenge_form(
     if not pending_cookie or decode_client_mfa_pending(pending_cookie) is None:
         return RedirectResponse(url="/me/login", status_code=303)
     return templates.TemplateResponse(
-        "client/mfa_challenge.html", {"request": request, "error": None},
+        "client/mfa_challenge.html",
+        {"request": request, "error": None},
     )
 
 
@@ -187,8 +196,11 @@ async def mfa_challenge_submit(
 
     # Rate-limit dédié pour le challenge MFA (5/5min — anti-bruteforce).
     if await rate_limit.exceeded(
-        db, scope="client_mfa_ip", identifier=ip,
-        max_attempts=5, window_minutes=5,
+        db,
+        scope="client_mfa_ip",
+        identifier=ip,
+        max_attempts=5,
+        window_minutes=5,
     ):
         return templates.TemplateResponse(
             "client/mfa_challenge.html",
@@ -207,15 +219,22 @@ async def mfa_challenge_submit(
     recovery_ok = False
     if not totp_ok:
         recovery_ok = await mfa.consume_recovery_code(
-            db, owner_type="client", owner_id=user.id, code=code,
+            db,
+            owner_type="client",
+            owner_id=user.id,
+            code=code,
         )
 
     if not totp_ok and not recovery_ok:
         await rate_limit.record(db, scope="client_mfa_ip", identifier=ip)
         await activity_record(
-            db, action="client_mfa_fail", user_name=user.email,
-            module="booking", entity_type="client_account",
-            entity_id=user.id, ip_address=ip,
+            db,
+            action="client_mfa_fail",
+            user_name=user.email,
+            module="booking",
+            entity_type="client_account",
+            entity_id=user.id,
+            ip_address=ip,
         )
         await asyncio.sleep(0.05)
         return templates.TemplateResponse(
@@ -224,23 +243,31 @@ async def mfa_challenge_submit(
             status_code=400,
         )
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await activity_record(
-        db, action="client_login", user_name=user.email,
-        module="booking", entity_type="client_account",
+        db,
+        action="client_login",
+        user_name=user.email,
+        module="booking",
+        entity_type="client_account",
         entity_id=user.id,
         detail="mfa_ok" if totp_ok else "mfa_recovery_code_used",
         ip_address=ip,
     )
     ua = request.headers.get("user-agent")
     _, is_new = await device_detection.see_device(
-        db, owner_type="client", owner_id=user.id, ua=ua, ip=ip,
+        db,
+        owner_type="client",
+        owner_id=user.id,
+        ua=ua,
+        ip=ip,
     )
     if is_new:
         await security_alerts.notify_new_device_login(
             to_email=user.email,
             recipient_name=user.contact_name or user.company_name or user.email,
-            ip=ip, ua=ua,
+            ip=ip,
+            ua=ua,
         )
     token = create_client_session(user.id)
     redirect = RedirectResponse(url="/me", status_code=303)
@@ -251,9 +278,7 @@ async def mfa_challenge_submit(
 
 @router.get("/me/register", response_class=HTMLResponse)
 async def register_form(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        "client/register.html", {"request": request, "error": None}
-    )
+    return templates.TemplateResponse("client/register.html", {"request": request, "error": None})
 
 
 @router.post("/me/register", response_class=HTMLResponse)
@@ -277,9 +302,7 @@ async def register(
             status_code=400,
         )
     existing = (
-        await db.execute(
-            select(ClientAccount).where(ClientAccount.email == email_clean)
-        )
+        await db.execute(select(ClientAccount).where(ClientAccount.email == email_clean))
     ).scalar_one_or_none()
     if existing:
         return templates.TemplateResponse(

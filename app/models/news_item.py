@@ -4,12 +4,20 @@ Chaque ``NewsItem`` est un article normalisé rattaché à une ``NewsSource``.
 La déduplication s'appuie sur ``external_id`` (``article_id`` NewsData, ou à
 défaut un SHA-256 du lien) avec contrainte d'unicité.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,9 +26,7 @@ from app.database import Base
 
 class NewsItem(Base):
     __tablename__ = "news_items"
-    __table_args__ = (
-        UniqueConstraint("external_id", name="uq_news_items_external_id"),
-    )
+    __table_args__ = (UniqueConstraint("external_id", name="uq_news_items_external_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_id: Mapped[int] = mapped_column(
@@ -39,9 +45,7 @@ class NewsItem(Base):
     country: Mapped[str | None] = mapped_column(String(60))
     category: Mapped[str | None] = mapped_column(String(60))
 
-    pub_date: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), index=True
-    )
+    pub_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

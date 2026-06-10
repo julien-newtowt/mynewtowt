@@ -9,8 +9,10 @@ Steps:
      émet la facture par virement bancaire (cf. pdf/invoice.html).
      Pas de paiement en ligne — Stripe a été retiré en V3.1.
 """
+
 from __future__ import annotations
 
+from datetime import UTC
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -56,8 +58,10 @@ async def step_1_search(
         .limit(20)
     )
     from decimal import Decimal
+
     from app.services.co2 import estimate as co2_estimate
     from app.services.ports import haversine_nm
+
     AVG_WEIGHT_PER_PALLET_T = Decimal("0.5")  # 500 kg/palette (hypothèse marketing)
 
     items = []
@@ -72,9 +76,15 @@ async def step_1_search(
         co2_per_pallet = None
         distance_nm = None
         if pol and pod and pol.latitude is not None and pod.latitude is not None:
-            distance_nm = round(haversine_nm(
-                pol.latitude, pol.longitude, pod.latitude, pod.longitude,
-            ), 1)
+            distance_nm = round(
+                haversine_nm(
+                    pol.latitude,
+                    pol.longitude,
+                    pod.latitude,
+                    pod.longitude,
+                ),
+                1,
+            )
             co2_per_pallet = co2_estimate(
                 distance_nm=Decimal(str(distance_nm)),
                 tonnage_t=AVG_WEIGHT_PER_PALLET_T,
@@ -109,9 +119,16 @@ async def step_2_cargo_form(
     distance_nm = 0.0
     if pol and pod and pol.latitude is not None and pod.latitude is not None:
         from app.services.ports import haversine_nm
-        distance_nm = round(haversine_nm(
-            pol.latitude, pol.longitude, pod.latitude, pod.longitude,
-        ), 1)
+
+        distance_nm = round(
+            haversine_nm(
+                pol.latitude,
+                pol.longitude,
+                pod.latitude,
+                pod.longitude,
+            ),
+            1,
+        )
     return templates.TemplateResponse(
         "client/booking_step2.html",
         {
@@ -176,7 +193,7 @@ async def step_2_cargo_submit(
         )
 
     try:
-        booking, quote = await create_draft(
+        booking, _quote = await create_draft(
             db,
             client=client,
             leg=leg,
@@ -209,9 +226,7 @@ async def step_2_cargo_submit(
             status_code=400,
         )
 
-    return RedirectResponse(
-        url=f"/booking/{booking.reference}/confirm", status_code=303
-    )
+    return RedirectResponse(url=f"/booking/{booking.reference}/confirm", status_code=303)
 
 
 @router.get("/{ref}/confirm", response_class=HTMLResponse)
@@ -252,10 +267,10 @@ async def step_3_confirm_submit(
             status_code=400,
         )
 
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     booking.signed_terms_version = "v2026.1"
-    booking.signed_terms_at = datetime.now(timezone.utc)
+    booking.signed_terms_at = datetime.now(UTC)
     await submit(db, booking)
 
     from app.services.booking_lifecycle import on_status_change
@@ -273,9 +288,7 @@ async def step_3_confirm_submit(
         ip_address=_client_ip(request),
     )
 
-    return RedirectResponse(
-        url=f"/booking/{booking.reference}/done", status_code=303
-    )
+    return RedirectResponse(url=f"/booking/{booking.reference}/done", status_code=303)
 
 
 @router.get("/{ref}/done", response_class=HTMLResponse)
@@ -298,9 +311,7 @@ async def step_4_done(
 
 
 async def _get_bookable_leg(db: AsyncSession, leg_code: str) -> Leg:
-    leg = (
-        await db.execute(select(Leg).where(Leg.leg_code == leg_code))
-    ).scalar_one_or_none()
+    leg = (await db.execute(select(Leg).where(Leg.leg_code == leg_code))).scalar_one_or_none()
     if not leg or not leg.is_bookable:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Leg not found")
     return leg

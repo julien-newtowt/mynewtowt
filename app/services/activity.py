@@ -5,6 +5,7 @@ PII scrubbing : si ``entity_label`` ressemble à un email, on le réduit en
 limitant la fuite RGPD). Les hashes pour rate-limit sont gérés ailleurs
 (``services.rate_limit``).
 """
+
 from __future__ import annotations
 
 import re
@@ -13,7 +14,6 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity_log import ActivityLog
-
 
 _EMAIL_RE = re.compile(r"^([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@[A-Za-z0-9.-]+\.[A-Za-z]{2,})$")
 

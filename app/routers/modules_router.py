@@ -9,10 +9,10 @@ Each module is kept in a single route block here to land them all at
 once. They can be promoted to dedicated routers (own service + tests)
 in V3.1 sprints.
 """
+
 from __future__ import annotations
 
-import secrets
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -21,14 +21,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.claim import Claim, ClaimTimelineEntry, VesselPosition
+from app.models.claim import VesselPosition
 from app.models.crew import (
-    CrewAssignment, CrewCertification, CrewLeave, CrewMember,
+    CrewLeave,
+    CrewMember,
 )
-from app.models.escale import DockerShift, EscaleOperation
-from app.models.finance import LegFinance, OpexParameter
 from app.models.leg import Leg
-from app.models.mrv import MRVEvent, MRVParameter
 from app.models.noon_report import NoonReport
 from app.models.port import Port
 from app.models.user import User
@@ -54,14 +52,22 @@ async def onboard_landing(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
-    now = datetime.now(timezone.utc)
-    active_legs = list((await db.execute(
-        select(Leg).where(Leg.atd.is_not(None)).where(Leg.ata.is_(None))
-        .order_by(Leg.etd.desc())
-    )).scalars().all())
-    next_etd = (await db.execute(
-        select(Leg).where(Leg.etd > now).order_by(Leg.etd.asc()).limit(1)
-    )).scalar_one_or_none()
+    now = datetime.now(UTC)
+    active_legs = list(
+        (
+            await db.execute(
+                select(Leg)
+                .where(Leg.atd.is_not(None))
+                .where(Leg.ata.is_(None))
+                .order_by(Leg.etd.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    next_etd = (
+        await db.execute(select(Leg).where(Leg.etd > now).order_by(Leg.etd.asc()).limit(1))
+    ).scalar_one_or_none()
     return templates.TemplateResponse(
         "staff/onboard/landing.html",
         {"request": request, "user": user, "active_legs": active_legs, "next_etd": next_etd},
@@ -80,8 +86,10 @@ async def onboard_navigation(
     legs_stmt = select(Leg).order_by(Leg.etd.desc()).limit(30)
     if getattr(user, "assigned_vessel_id", None):
         legs_stmt = (
-            select(Leg).where(Leg.vessel_id == user.assigned_vessel_id)
-            .order_by(Leg.etd.desc()).limit(30)
+            select(Leg)
+            .where(Leg.vessel_id == user.assigned_vessel_id)
+            .order_by(Leg.etd.desc())
+            .limit(30)
         )
     legs = list((await db.execute(legs_stmt)).scalars().all())
     selected = (await db.get(Leg, leg_id)) if leg_id else (legs[0] if legs else None)
@@ -90,30 +98,53 @@ async def onboard_navigation(
     latest_position = None
     weather_now = None
     if selected:
-        noon_reports = list((await db.execute(
-            select(NoonReport).where(NoonReport.leg_id == selected.id)
-            .order_by(NoonReport.recorded_at.desc()).limit(30)
-        )).scalars().all())
-        watch_logs = list((await db.execute(
-            select(WatchLog).where(WatchLog.leg_id == selected.id)
-            .order_by(WatchLog.watch_date.desc(), WatchLog.watch_period.desc()).limit(30)
-        )).scalars().all())
+        noon_reports = list(
+            (
+                await db.execute(
+                    select(NoonReport)
+                    .where(NoonReport.leg_id == selected.id)
+                    .order_by(NoonReport.recorded_at.desc())
+                    .limit(30)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        watch_logs = list(
+            (
+                await db.execute(
+                    select(WatchLog)
+                    .where(WatchLog.leg_id == selected.id)
+                    .order_by(WatchLog.watch_date.desc(), WatchLog.watch_period.desc())
+                    .limit(30)
+                )
+            )
+            .scalars()
+            .all()
+        )
         # Pré-remplissage GPS — dernière position satcom < 6h
         latest_position = await get_latest_position(db, selected.vessel_id)
         # Pré-remplissage météo au point GPS courant (vent + houle)
         if latest_position:
             try:
                 weather_now = await wx.fetch_current(
-                    latest_position.latitude, latest_position.longitude,
+                    latest_position.latitude,
+                    latest_position.longitude,
                 )
             except Exception:
                 weather_now = None
     return templates.TemplateResponse(
         "staff/onboard/navigation.html",
-        {"request": request, "user": user, "legs": legs, "leg": selected,
-         "noon_reports": noon_reports, "watch_logs": watch_logs,
-         "latest_position": latest_position,
-         "weather_now": weather_now},
+        {
+            "request": request,
+            "user": user,
+            "legs": legs,
+            "leg": selected,
+            "noon_reports": noon_reports,
+            "watch_logs": watch_logs,
+            "latest_position": latest_position,
+            "weather_now": weather_now,
+        },
     )
 
 
@@ -126,7 +157,7 @@ async def post_noon_report(
     f = await request.form()
     nr = NoonReport(
         leg_id=int(f["leg_id"]),
-        recorded_at=datetime.now(timezone.utc),
+        recorded_at=datetime.now(UTC),
         latitude=float(f["latitude"]),
         longitude=float(f["longitude"]),
         sog_avg=_maybe_float(f.get("sog_avg")),
@@ -144,8 +175,15 @@ async def post_noon_report(
     )
     db.add(nr)
     await db.flush()
-    await activity_record(db, action="noon_report_create", user_id=user.id, user_name=user.username,
-                          module="captain", entity_type="noon_report", entity_id=nr.id)
+    await activity_record(
+        db,
+        action="noon_report_create",
+        user_id=user.id,
+        user_name=user.username,
+        module="captain",
+        entity_type="noon_report",
+        entity_id=nr.id,
+    )
     return RedirectResponse(url=f"/onboard/navigation?leg_id={nr.leg_id}", status_code=303)
 
 
@@ -176,10 +214,11 @@ async def onboard_escale(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
-    now = datetime.now(timezone.utc)
-    at_quay = list((await db.execute(
-        select(Leg).where(Leg.ata.is_not(None)).where(Leg.atd.is_(None))
-    )).scalars().all())
+    at_quay = list(
+        (await db.execute(select(Leg).where(Leg.ata.is_not(None)).where(Leg.atd.is_(None))))
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/onboard/escale.html",
         {"request": request, "user": user, "at_quay": at_quay},
@@ -206,16 +245,29 @@ async def onboard_crew(
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(20))).scalars().all())
-    visitors_today = list((await db.execute(
-        select(VisitorLog).order_by(VisitorLog.time_in.desc()).limit(20)
-    )).scalars().all())
-    checklists = list((await db.execute(
-        select(OnboardChecklist).order_by(OnboardChecklist.created_at.desc()).limit(20)
-    )).scalars().all())
+    visitors_today = list(
+        (await db.execute(select(VisitorLog).order_by(VisitorLog.time_in.desc()).limit(20)))
+        .scalars()
+        .all()
+    )
+    checklists = list(
+        (
+            await db.execute(
+                select(OnboardChecklist).order_by(OnboardChecklist.created_at.desc()).limit(20)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/onboard/crew.html",
-        {"request": request, "user": user, "legs": legs,
-         "visitors": visitors_today, "checklists": checklists},
+        {
+            "request": request,
+            "user": user,
+            "legs": legs,
+            "visitors": visitors_today,
+            "checklists": checklists,
+        },
     )
 
 
@@ -232,7 +284,7 @@ async def post_visitor(
         company=f.get("company") or None,
         purpose=f.get("purpose") or None,
         id_document=f.get("id_document") or None,
-        time_in=datetime.now(timezone.utc),
+        time_in=datetime.now(UTC),
         escorted_by=f.get("escorted_by") or None,
         notes=f.get("notes") or None,
     )
@@ -263,17 +315,24 @@ async def rh_index(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("rh", "C")),
 ) -> HTMLResponse:
-    members = list((await db.execute(
-        select(CrewMember).where(CrewMember.is_active.is_(True))
-    )).scalars().all())
-    leaves = list((await db.execute(
-        select(CrewLeave).order_by(CrewLeave.created_at.desc()).limit(50)
-    )).scalars().all())
-    pending = [l for l in leaves if l.status == "requested"]
+    members = list(
+        (await db.execute(select(CrewMember).where(CrewMember.is_active.is_(True)))).scalars().all()
+    )
+    leaves = list(
+        (await db.execute(select(CrewLeave).order_by(CrewLeave.created_at.desc()).limit(50)))
+        .scalars()
+        .all()
+    )
+    pending = [lv for lv in leaves if lv.status == "requested"]
     return templates.TemplateResponse(
         "staff/rh/index.html",
-        {"request": request, "user": user, "members": members,
-         "leaves": leaves, "pending": pending},
+        {
+            "request": request,
+            "user": user,
+            "members": members,
+            "leaves": leaves,
+            "pending": pending,
+        },
     )
 
 
@@ -284,7 +343,7 @@ async def rh_create_leave(
     user=Depends(require_permission("rh", "M")),
 ) -> RedirectResponse:
     f = await request.form()
-    l = CrewLeave(
+    leave = CrewLeave(
         crew_member_id=int(f["crew_member_id"]),
         kind=f["kind"],
         start_date=date.fromisoformat(f["start_date"]),
@@ -292,7 +351,7 @@ async def rh_create_leave(
         status="requested",
         reason=f.get("reason") or None,
     )
-    db.add(l)
+    db.add(leave)
     await db.flush()
     return RedirectResponse(url="/rh", status_code=303)
 
@@ -304,17 +363,17 @@ async def rh_decide_leave(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("rh", "M")),
 ) -> RedirectResponse:
-    l = await db.get(CrewLeave, leave_id)
-    if not l:
+    leave = await db.get(CrewLeave, leave_id)
+    if not leave:
         raise HTTPException(status_code=404, detail="Not found")
     if decision not in ("approved", "rejected"):
         raise HTTPException(
             status_code=400,
             detail=f"decision must be 'approved' or 'rejected', got {decision!r}",
         )
-    l.status = decision
-    l.decided_by_id = user.id
-    l.decided_at = datetime.now(timezone.utc)
+    leave.status = decision
+    leave.decided_by_id = user.id
+    leave.decided_at = datetime.now(UTC)
     await db.flush()
     return RedirectResponse(url="/rh", status_code=303)
 
@@ -343,17 +402,26 @@ async def tracking_index(
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     last_positions = {}
     for v in vessels:
-        p = (await db.execute(
-            select(VesselPosition).where(VesselPosition.vessel_id == v.id)
-            .order_by(VesselPosition.recorded_at.desc()).limit(1)
-        )).scalar_one_or_none()
+        p = (
+            await db.execute(
+                select(VesselPosition)
+                .where(VesselPosition.vessel_id == v.id)
+                .order_by(VesselPosition.recorded_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
         last_positions[v.id] = p
     from app.config import settings as _settings
+
     return templates.TemplateResponse(
         "staff/tracking/index.html",
-        {"request": request, "user": user,
-         "vessels": vessels, "last_positions": last_positions,
-         "maptiler_token": _settings.map_token},
+        {
+            "request": request,
+            "user": user,
+            "vessels": vessels,
+            "last_positions": last_positions,
+            "maptiler_token": _settings.map_token,
+        },
     )
 
 
@@ -374,17 +442,22 @@ async def analytics_index(
     from app.models.ticket import Ticket
 
     bookings_total = await db.scalar(select(func.count(Booking.id)))
-    bookings_confirmed = await db.scalar(select(func.count(Booking.id)).where(Booking.status == "confirmed"))
+    bookings_confirmed = await db.scalar(
+        select(func.count(Booking.id)).where(Booking.status == "confirmed")
+    )
     clients_total = await db.scalar(select(func.count(ClientAccount.id)))
     tickets_active = await db.scalar(
-        select(func.count(Ticket.id)).where(Ticket.status.in_(("open", "in_progress", "pending_external")))
+        select(func.count(Ticket.id)).where(
+            Ticket.status.in_(("open", "in_progress", "pending_external"))
+        )
     )
     legs_bookable = await db.scalar(select(func.count(Leg.id)).where(Leg.is_bookable.is_(True)))
 
     return templates.TemplateResponse(
         "staff/analytics/index.html",
         {
-            "request": request, "user": user,
+            "request": request,
+            "user": user,
             "bookings_total": bookings_total or 0,
             "bookings_confirmed": bookings_confirmed or 0,
             "clients_total": clients_total or 0,
@@ -405,58 +478,78 @@ async def analytics_executive(
     from app.models.client_invoice import ClientInvoice
     from app.models.finance import LegKPI
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     year = now.year
-    year_start = datetime(year, 1, 1, tzinfo=timezone.utc)
-    prev_year_start = datetime(year - 1, 1, 1, tzinfo=timezone.utc)
-    prev_year_end = datetime(year - 1, 12, 31, 23, 59, tzinfo=timezone.utc)
+    year_start = datetime(year, 1, 1, tzinfo=UTC)
+    prev_year_start = datetime(year - 1, 1, 1, tzinfo=UTC)
+    prev_year_end = datetime(year - 1, 12, 31, 23, 59, tzinfo=UTC)
 
     # Legs by status (current year)
-    legs_all = list((await db.execute(
-        select(Leg).where(Leg.etd >= year_start)
-    )).scalars().all())
+    legs_all = list((await db.execute(select(Leg).where(Leg.etd >= year_start))).scalars().all())
     legs_by_status: dict[str, int] = {}
     for leg in legs_all:
         legs_by_status[leg.status] = legs_by_status.get(leg.status, 0) + 1
 
     # KPI totals (current year)
-    kpis = list((await db.execute(
-        select(LegKPI).join(Leg, Leg.id == LegKPI.leg_id).where(Leg.etd >= year_start)
-    )).scalars().all())
+    kpis = list(
+        (
+            await db.execute(
+                select(LegKPI).join(Leg, Leg.id == LegKPI.leg_id).where(Leg.etd >= year_start)
+            )
+        )
+        .scalars()
+        .all()
+    )
     total_tonnage_t = sum(float(k.tonnage_kg) / 1000 for k in kpis)
     total_co2_avoided_kg = sum(float(k.co2_avoided_kg or 0) for k in kpis)
     on_time_count = sum(1 for k in kpis if k.on_time)
     on_time_pct = round(on_time_count / len(kpis) * 100) if kpis else 0
 
     # KPI totals (previous year for N-1 comparison)
-    kpis_prev = list((await db.execute(
-        select(LegKPI).join(Leg, Leg.id == LegKPI.leg_id).where(
-            Leg.etd >= prev_year_start, Leg.etd <= prev_year_end
+    kpis_prev = list(
+        (
+            await db.execute(
+                select(LegKPI)
+                .join(Leg, Leg.id == LegKPI.leg_id)
+                .where(Leg.etd >= prev_year_start, Leg.etd <= prev_year_end)
+            )
         )
-    )).scalars().all())
+        .scalars()
+        .all()
+    )
     prev_tonnage_t = sum(float(k.tonnage_kg) / 1000 for k in kpis_prev)
     prev_co2_kg = sum(float(k.co2_avoided_kg or 0) for k in kpis_prev)
 
     # Revenue (invoices issued this year)
-    revenue = await db.scalar(
-        select(func.sum(ClientInvoice.amount_incl_vat_eur)).where(
-            ClientInvoice.issued_at >= year_start
+    revenue = (
+        await db.scalar(
+            select(func.sum(ClientInvoice.amount_incl_vat_eur)).where(
+                ClientInvoice.issued_at >= year_start
+            )
         )
-    ) or 0
-    prev_revenue = await db.scalar(
-        select(func.sum(ClientInvoice.amount_incl_vat_eur)).where(
-            ClientInvoice.issued_at >= prev_year_start,
-            ClientInvoice.issued_at <= prev_year_end,
+        or 0
+    )
+    prev_revenue = (
+        await db.scalar(
+            select(func.sum(ClientInvoice.amount_incl_vat_eur)).where(
+                ClientInvoice.issued_at >= prev_year_start,
+                ClientInvoice.issued_at <= prev_year_end,
+            )
         )
-    ) or 0
+        or 0
+    )
 
     clients_total = await db.scalar(select(func.count(ClientAccount.id))) or 0
-    bookings_total = await db.scalar(select(func.count(Booking.id)).where(Booking.created_at >= year_start)) or 0
+    bookings_total = (
+        await db.scalar(select(func.count(Booking.id)).where(Booking.created_at >= year_start)) or 0
+    )
 
     return templates.TemplateResponse(
         "staff/analytics/executive.html",
         {
-            "request": request, "user": user, "year": year,
+            "request": request,
+            "user": user,
+            "year": year,
             "legs_by_status": legs_by_status,
             "legs_total": len(legs_all),
             "total_tonnage_t": round(total_tonnage_t, 1),
@@ -483,52 +576,73 @@ async def analytics_commercial(
     from app.models.client_account import ClientAccount
     from app.models.client_invoice import ClientInvoice
 
-    now = datetime.now(timezone.utc)
-    year_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    year_start = datetime(now.year, 1, 1, tzinfo=UTC)
 
     # Funnel: bookings par statut
-    funnel_statuses = ["draft", "submitted", "confirmed", "loaded", "at_sea", "discharged", "delivered", "cancelled"]
-    funnel_rows = (await db.execute(
-        select(Booking.status, func.count(Booking.id).label("n"))
-        .where(Booking.created_at >= year_start)
-        .group_by(Booking.status)
-    )).all()
-    funnel: dict[str, int] = {s: 0 for s in funnel_statuses}
+    funnel_statuses = [
+        "draft",
+        "submitted",
+        "confirmed",
+        "loaded",
+        "at_sea",
+        "discharged",
+        "delivered",
+        "cancelled",
+    ]
+    funnel_rows = (
+        await db.execute(
+            select(Booking.status, func.count(Booking.id).label("n"))
+            .where(Booking.created_at >= year_start)
+            .group_by(Booking.status)
+        )
+    ).all()
+    funnel: dict[str, int] = dict.fromkeys(funnel_statuses, 0)
     for row in funnel_rows:
         if row.status in funnel:
             funnel[row.status] = row.n
     funnel_max = max(funnel.values()) or 1
 
     # Top clients by booking count
-    top_clients_rows = (await db.execute(
-        select(ClientAccount.company_name, func.count(Booking.id).label("n"))
-        .join(Booking, Booking.client_account_id == ClientAccount.id)
-        .where(Booking.created_at >= year_start)
-        .group_by(ClientAccount.id, ClientAccount.company_name)
-        .order_by(func.count(Booking.id).desc())
-        .limit(8)
-    )).all()
+    top_clients_rows = (
+        await db.execute(
+            select(ClientAccount.company_name, func.count(Booking.id).label("n"))
+            .join(Booking, Booking.client_account_id == ClientAccount.id)
+            .where(Booking.created_at >= year_start)
+            .group_by(ClientAccount.id, ClientAccount.company_name)
+            .order_by(func.count(Booking.id).desc())
+            .limit(8)
+        )
+    ).all()
 
     # Invoices by status
-    inv_rows = (await db.execute(
-        select(ClientInvoice.status, func.count(ClientInvoice.id).label("n"),
-               func.sum(ClientInvoice.amount_incl_vat_eur).label("total"))
-        .where(ClientInvoice.issued_at >= year_start)
-        .group_by(ClientInvoice.status)
-    )).all()
+    inv_rows = (
+        await db.execute(
+            select(
+                ClientInvoice.status,
+                func.count(ClientInvoice.id).label("n"),
+                func.sum(ClientInvoice.amount_incl_vat_eur).label("total"),
+            )
+            .where(ClientInvoice.issued_at >= year_start)
+            .group_by(ClientInvoice.status)
+        )
+    ).all()
     inv_by_status = {r.status: {"count": r.n, "total": float(r.total or 0)} for r in inv_rows}
 
     total_revenue = sum(v["total"] for v in inv_by_status.values())
     conversion_pct = (
-        round(funnel["confirmed"] / funnel["submitted"] * 100)
-        if funnel["submitted"] else 0
+        round(funnel["confirmed"] / funnel["submitted"] * 100) if funnel["submitted"] else 0
     )
 
     return templates.TemplateResponse(
         "staff/analytics/commercial.html",
         {
-            "request": request, "user": user, "year": now.year,
-            "funnel": funnel, "funnel_statuses": funnel_statuses, "funnel_max": funnel_max,
+            "request": request,
+            "user": user,
+            "year": now.year,
+            "funnel": funnel,
+            "funnel_statuses": funnel_statuses,
+            "funnel_max": funnel_max,
             "top_clients": top_clients_rows,
             "inv_by_status": inv_by_status,
             "total_revenue": total_revenue,
@@ -545,13 +659,21 @@ async def analytics_operations(
 ) -> HTMLResponse:
     from app.models.ticket import Ticket
 
-    now = datetime.now(timezone.utc)
-    year_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    year_start = datetime(now.year, 1, 1, tzinfo=UTC)
 
     # Tickets: totals + SLA
-    all_tickets = list((await db.execute(
-        select(Ticket).where(Ticket.created_at >= year_start).order_by(Ticket.created_at.desc())
-    )).scalars().all())
+    all_tickets = list(
+        (
+            await db.execute(
+                select(Ticket)
+                .where(Ticket.created_at >= year_start)
+                .order_by(Ticket.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     by_priority: dict[str, dict] = {
         "P1": {"total": 0, "breached": 0, "open": 0},
@@ -569,11 +691,16 @@ async def analytics_operations(
                 by_priority[p]["open"] += 1
 
     # Active legs (inprogress)
-    active_legs = list((await db.execute(
-        select(Leg, Vessel).join(Vessel, Vessel.id == Leg.vessel_id)
-        .where(Leg.status == "inprogress")
-        .order_by(Leg.etd.asc())
-    )).all())
+    active_legs = list(
+        (
+            await db.execute(
+                select(Leg, Vessel)
+                .join(Vessel, Vessel.id == Leg.vessel_id)
+                .where(Leg.status == "inprogress")
+                .order_by(Leg.etd.asc())
+            )
+        ).all()
+    )
 
     # Recent tickets (last 10 open)
     recent_tickets = [t for t in all_tickets if t.status not in closed_statuses][:10]
@@ -584,7 +711,9 @@ async def analytics_operations(
     return templates.TemplateResponse(
         "staff/analytics/operations.html",
         {
-            "request": request, "user": user, "year": now.year,
+            "request": request,
+            "user": user,
+            "year": now.year,
             "by_priority": by_priority,
             "total_breached": total_breached,
             "total_open": total_open,
@@ -605,16 +734,23 @@ async def admin_index(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "C")),
 ) -> HTMLResponse:
-    users = list((await db.execute(select(User).order_by(User.created_at.desc()).limit(50))).scalars().all())
+    users = list(
+        (await db.execute(select(User).order_by(User.created_at.desc()).limit(50))).scalars().all()
+    )
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     # Aggregate port counts for the admin overview block
     total_ports = await db.scalar(select(func.count(Port.id)))
     active_ports = await db.scalar(select(func.count(Port.id)).where(Port.is_active.is_(True)))
     return templates.TemplateResponse(
         "staff/admin/index.html",
-        {"request": request, "user": user, "users": users,
-         "vessels": vessels,
-         "total_ports": total_ports or 0, "active_ports": active_ports or 0},
+        {
+            "request": request,
+            "user": user,
+            "users": users,
+            "vessels": vessels,
+            "total_ports": total_ports or 0,
+            "active_ports": active_ports or 0,
+        },
     )
 
 
@@ -629,7 +765,7 @@ async def admin_ports(
     q: str | None = None,
     country: str | None = None,
     source: str | None = None,
-    show: str = "all",      # 'all' | 'active' | 'inactive'
+    show: str = "all",  # 'all' | 'active' | 'inactive'
     page: int = 1,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "C")),
@@ -638,9 +774,7 @@ async def admin_ports(
     stmt = select(Port)
     if q:
         like = f"%{q.lower()}%"
-        stmt = stmt.where(
-            (func.lower(Port.name).like(like)) | (func.lower(Port.locode).like(like))
-        )
+        stmt = stmt.where((func.lower(Port.name).like(like)) | (func.lower(Port.locode).like(like)))
     if country:
         stmt = stmt.where(Port.country == country.upper())
     if source:
@@ -649,19 +783,25 @@ async def admin_ports(
         stmt = stmt.where(Port.is_active.is_(True))
     elif show == "inactive":
         stmt = stmt.where(Port.is_active.is_(False))
-    total = (await db.execute(
-        select(func.count()).select_from(stmt.subquery())
-    )).scalar_one()
+    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     stmt = stmt.order_by(Port.country, Port.locode).limit(per_page).offset((page - 1) * per_page)
     ports = list((await db.execute(stmt)).scalars().all())
 
     return templates.TemplateResponse(
         "staff/admin/ports.html",
         {
-            "request": request, "user": user,
-            "ports": ports, "page": page, "per_page": per_page,
+            "request": request,
+            "user": user,
+            "ports": ports,
+            "page": page,
+            "per_page": per_page,
             "total": total,
-            "filters": {"q": q or "", "country": country or "", "source": source or "", "show": show},
+            "filters": {
+                "q": q or "",
+                "country": country or "",
+                "source": source or "",
+                "show": show,
+            },
         },
     )
 
@@ -677,9 +817,14 @@ async def admin_port_toggle(
         raise HTTPException(status_code=404, detail="Port not found")
     port.is_active = not port.is_active
     await activity_record(
-        db, action="port_toggle",
-        user_id=user.id, user_name=user.username, user_role=user.role,
-        module="admin", entity_type="port", entity_id=port.id,
+        db,
+        action="port_toggle",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="port",
+        entity_id=port.id,
         entity_label=port.locode,
         detail=f"is_active={port.is_active}",
     )
@@ -702,12 +847,13 @@ async def admin_port_config_form(
 ) -> HTMLResponse:
     """Form d'édition des contacts portuaires + docs requis + restrictions."""
     from app.models.finance import PortConfig
+
     port = await db.get(Port, port_id)
     if not port:
         raise HTTPException(status_code=404, detail="Port not found")
-    config = (await db.execute(
-        select(PortConfig).where(PortConfig.port_id == port_id)
-    )).scalar_one_or_none()
+    config = (
+        await db.execute(select(PortConfig).where(PortConfig.port_id == port_id))
+    ).scalar_one_or_none()
     return templates.TemplateResponse(
         "staff/admin/port_config.html",
         {"request": request, "user": user, "port": port, "config": config},
@@ -722,13 +868,14 @@ async def admin_port_config_save(
     user=Depends(require_permission("admin", "M")),
 ) -> RedirectResponse:
     from app.models.finance import PortConfig
+
     port = await db.get(Port, port_id)
     if not port:
         raise HTTPException(status_code=404, detail="Port not found")
     form = await request.form()
-    config = (await db.execute(
-        select(PortConfig).where(PortConfig.port_id == port_id)
-    )).scalar_one_or_none()
+    config = (
+        await db.execute(select(PortConfig).where(PortConfig.port_id == port_id))
+    ).scalar_one_or_none()
     is_create = config is None
     if config is None:
         config = PortConfig(port_id=port_id)
@@ -764,10 +911,15 @@ async def admin_port_config_save(
 
     await db.flush()
     await activity_record(
-        db, action="create" if is_create else "update",
-        user_id=user.id, user_name=user.username, user_role=user.role,
-        module="admin", entity_type="port_config",
-        entity_id=config.id, entity_label=port.locode,
+        db,
+        action="create" if is_create else "update",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="port_config",
+        entity_id=config.id,
+        entity_label=port.locode,
     )
     return RedirectResponse(url=f"/admin/ports/{port_id}/config", status_code=303)
 
@@ -794,12 +946,16 @@ async def admin_ports_upload(
     rows = parse_csv(content, source=source)
     ins, upd = await upsert_ports(db, rows)
     await activity_record(
-        db, action="ports_upload",
-        user_id=user.id, user_name=user.username, user_role=user.role,
-        module="admin", entity_type="port_batch",
+        db,
+        action="ports_upload",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="port_batch",
         detail=f"source={source} parsed={len(rows)} inserted={ins} updated={upd}",
     )
-    return RedirectResponse(url=f"/admin/ports?show=all", status_code=303)
+    return RedirectResponse(url="/admin/ports?show=all", status_code=303)
 
 
 # ────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 """French catalog (reference)."""
+
 CATALOG: dict[str, str] = {
     # Public navigation
     "nav_routes": "Routes & plannings",

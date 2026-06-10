@@ -3,24 +3,34 @@
 Reprise V3.0.0. Approche : whitelist d'extensions + sniffing du magic
 number sur les premiers octets (sans dépendre de `python-magic`).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 MAX_FILE_SIZE_MB = 20
 ALLOWED_EXTENSIONS: tuple[str, ...] = (
-    ".pdf", ".docx", ".xlsx", ".xls", ".doc",
-    ".png", ".jpg", ".jpeg", ".webp",
-    ".csv", ".txt", ".zip",
+    ".pdf",
+    ".docx",
+    ".xlsx",
+    ".xls",
+    ".doc",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".csv",
+    ".txt",
+    ".zip",
 )
 
 # Magic numbers (premier octets) — détection rapide sans python-magic
 _MAGIC_SIGNATURES: dict[bytes, str] = {
-    b"%PDF-":       "application/pdf",
-    b"PK\x03\x04":  "application/zip",  # also docx/xlsx/pptx
+    b"%PDF-": "application/pdf",
+    b"PK\x03\x04": "application/zip",  # also docx/xlsx/pptx
     b"\x89PNG\r\n": "image/png",
     b"\xff\xd8\xff": "image/jpeg",
-    b"RIFF":        "image/webp",
+    b"RIFF": "image/webp",
     b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1": "application/msword",  # DOC/XLS old
 }
 

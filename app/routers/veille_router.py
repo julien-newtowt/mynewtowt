@@ -14,6 +14,7 @@ Phase 1 (flux brut, sans IA) :
 Endpoint machine (Power Automate, cron externe) :
 - ``POST /api/veille/refresh``     header ``X-API-Token: <VEILLE_API_TOKEN>``
 """
+
 from __future__ import annotations
 
 import logging
@@ -60,13 +61,17 @@ async def veille_index(
     user=Depends(require_permission("veille", "C")),
 ) -> HTMLResponse:
     # Sources visibles par ce rôle (ciblage NULL/"" = tout le staff).
-    src_stmt = select(NewsSource).where(
-        or_(
-            NewsSource.target_roles.is_(None),
-            NewsSource.target_roles == "",
-            NewsSource.target_roles.like(f"%{user.role}%"),
+    src_stmt = (
+        select(NewsSource)
+        .where(
+            or_(
+                NewsSource.target_roles.is_(None),
+                NewsSource.target_roles == "",
+                NewsSource.target_roles.like(f"%{user.role}%"),
+            )
         )
-    ).order_by(NewsSource.name)
+        .order_by(NewsSource.name)
+    )
     sources = list((await db.execute(src_stmt)).scalars().all())
     visible_ids = [s.id for s in sources]
 
@@ -81,9 +86,7 @@ async def veille_index(
             stmt = stmt.where(NewsItem.source_id == source_id)
         if q:
             like = f"%{q.strip()}%"
-            stmt = stmt.where(
-                or_(NewsItem.title.ilike(like), NewsItem.description.ilike(like))
-            )
+            stmt = stmt.where(or_(NewsItem.title.ilike(like), NewsItem.description.ilike(like)))
         stmt = stmt.order_by(
             NewsItem.is_pinned.desc(), NewsItem.pub_date.desc().nulls_last()
         ).limit(120)
@@ -115,11 +118,7 @@ async def veille_sources(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("veille", "M")),
 ) -> HTMLResponse:
-    sources = list(
-        (await db.execute(select(NewsSource).order_by(NewsSource.name)))
-        .scalars()
-        .all()
-    )
+    sources = list((await db.execute(select(NewsSource).order_by(NewsSource.name))).scalars().all())
     return templates.TemplateResponse(
         "staff/veille/sources.html",
         {
@@ -156,9 +155,14 @@ async def veille_source_create(
     db.add(src)
     await db.flush()
     await activity_record(
-        db, action="veille_source_create", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="veille", entity_type="news_source", entity_id=src.id,
+        db,
+        action="veille_source_create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="veille",
+        entity_type="news_source",
+        entity_id=src.id,
         entity_label=src.name,
     )
     return _hx_or_redirect(request, "/veille/sources")
@@ -171,18 +175,22 @@ async def veille_source_toggle(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("veille", "M")),
 ):
-    src = (
-        await db.execute(select(NewsSource).where(NewsSource.id == src_id))
-    ).scalar_one_or_none()
+    src = (await db.execute(select(NewsSource).where(NewsSource.id == src_id))).scalar_one_or_none()
     if not src:
         raise HTTPException(status_code=404, detail="Source introuvable")
     src.enabled = not src.enabled
     await db.flush()
     await activity_record(
-        db, action="veille_source_toggle", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="veille", entity_type="news_source", entity_id=src.id,
-        entity_label=src.name, detail=f"enabled={src.enabled}",
+        db,
+        action="veille_source_toggle",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="veille",
+        entity_type="news_source",
+        entity_id=src.id,
+        entity_label=src.name,
+        detail=f"enabled={src.enabled}",
     )
     return _hx_or_redirect(request, "/veille/sources")
 
@@ -194,18 +202,21 @@ async def veille_source_delete(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("veille", "S")),
 ):
-    src = (
-        await db.execute(select(NewsSource).where(NewsSource.id == src_id))
-    ).scalar_one_or_none()
+    src = (await db.execute(select(NewsSource).where(NewsSource.id == src_id))).scalar_one_or_none()
     if not src:
         raise HTTPException(status_code=404, detail="Source introuvable")
     label = src.name
     await db.delete(src)
     await db.flush()
     await activity_record(
-        db, action="veille_source_delete", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="veille", entity_type="news_source", entity_id=src_id,
+        db,
+        action="veille_source_delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="veille",
+        entity_type="news_source",
+        entity_id=src_id,
         entity_label=label,
     )
     return _hx_or_redirect(request, "/veille/sources")
@@ -221,9 +232,7 @@ async def veille_item_pin(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("veille", "M")),
 ):
-    item = (
-        await db.execute(select(NewsItem).where(NewsItem.id == item_id))
-    ).scalar_one_or_none()
+    item = (await db.execute(select(NewsItem).where(NewsItem.id == item_id))).scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Article introuvable")
     item.is_pinned = not item.is_pinned
@@ -238,9 +247,7 @@ async def veille_item_archive(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("veille", "M")),
 ):
-    item = (
-        await db.execute(select(NewsItem).where(NewsItem.id == item_id))
-    ).scalar_one_or_none()
+    item = (await db.execute(select(NewsItem).where(NewsItem.id == item_id))).scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Article introuvable")
     item.is_archived = True
@@ -264,9 +271,14 @@ async def veille_refresh_manual(
         )
     result = await news_ingest.ingest_all(db)
     await activity_record(
-        db, action="veille_refresh", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="veille", entity_type="news", detail=result,
+        db,
+        action="veille_refresh",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="veille",
+        entity_type="news",
+        detail=result,
     )
     return _hx_or_redirect(request, "/veille")
 
@@ -291,9 +303,7 @@ async def veille_refresh_api(
             detail="VEILLE_API_TOKEN non configuré dans .env",
         )
     received = request.headers.get("x-api-token") or ""
-    if not _secrets.compare_digest(
-        received.encode("utf-8"), expected.encode("utf-8")
-    ):
+    if not _secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
 
     if not newsdata.is_configured():

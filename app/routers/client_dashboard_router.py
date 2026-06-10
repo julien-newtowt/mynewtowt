@@ -8,10 +8,18 @@ Routes :
 - /me/co2          CO2 certificates
 - /me/account      profile + security (incl. MFA setup/verify/disable)
 """
+
 from __future__ import annotations
 
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status,
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
@@ -20,9 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_client
 from app.config import settings
 from app.database import get_db
+from app.models.anemos_certificate import AnemosCertificate
 from app.models.booking import Booking
 from app.models.client_invoice import ClientInvoice
-from app.models.anemos_certificate import AnemosCertificate
 from app.models.leg import Leg
 from app.models.notification import Notification
 from app.models.packing_list import PackingListDocument
@@ -54,8 +62,9 @@ async def dashboard(
         if b.status in ("submitted", "confirmed", "loaded", "at_sea", "discharged")
     )
     co2_avoided = await db.scalar(
-        select(func.coalesce(func.sum(AnemosCertificate.co2_avoided_kg), 0))
-        .where(AnemosCertificate.client_account_id == client.id)
+        select(func.coalesce(func.sum(AnemosCertificate.co2_avoided_kg), 0)).where(
+            AnemosCertificate.client_account_id == client.id
+        )
     )
     notif_unread = await notifications.count_unread(db, client_id=client.id)
     return templates.TemplateResponse(
@@ -139,11 +148,16 @@ async def post_message(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     if body.strip():
         await messaging.post(
-            db, booking_id=booking.id, sender="client",
-            sender_name=client.company_name or client.email, body=body,
+            db,
+            booking_id=booking.id,
+            sender="client",
+            sender_name=client.company_name or client.email,
+            body=body,
         )
         await notifications.notify_new_booking_message(
-            db, booking_reference=booking.reference, booking_id=booking.id,
+            db,
+            booking_reference=booking.reference,
+            booking_id=booking.id,
         )
     return RedirectResponse(url=f"/me/bookings/{ref}#messages", status_code=303)
 
@@ -199,15 +213,17 @@ async def track(
     # Données carte (réutilise le même format que fleet-map.js).
     vessels_json: list[dict] = []
     if position is not None and vessel is not None:
-        vessels_json.append({
-            "name": vessel.name,
-            "code": vessel.code,
-            "lat": position.latitude,
-            "lon": position.longitude,
-            "sog": float(position.sog_kn or 0),
-            "cog": float(position.cog_deg or 0),
-            "recorded_at": position.recorded_at.isoformat(),
-        })
+        vessels_json.append(
+            {
+                "name": vessel.name,
+                "code": vessel.code,
+                "lat": position.latitude,
+                "lon": position.longitude,
+                "sog": float(position.sog_kn or 0),
+                "cog": float(position.cog_deg or 0),
+                "recorded_at": position.recorded_at.isoformat(),
+            }
+        )
 
     # Centre la carte sur le milieu de la route si coords connues.
     map_center = [-30, 40]
@@ -285,19 +301,32 @@ async def upload_document(
     content = await file.read()
     try:
         rel_path, mime = safe_files.save_upload(
-            content, file.filename or "document", subdir=f"bookings/{booking.id}",
+            content,
+            file.filename or "document",
+            subdir=f"bookings/{booking.id}",
         )
     except safe_files.UploadRejected as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    db.add(PackingListDocument(
-        booking_id=booking.id, kind=kind, label=file.filename,
-        file_path=rel_path, file_mime=mime, uploaded_by=client.email,
-    ))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    db.add(
+        PackingListDocument(
+            booking_id=booking.id,
+            kind=kind,
+            label=file.filename,
+            file_path=rel_path,
+            file_mime=mime,
+            uploaded_by=client.email,
+        )
+    )
     await db.flush()
     await activity_record(
-        db, action="client_doc_upload", user_name=client.email,
-        module="cargo", entity_type="booking", entity_id=booking.id,
-        entity_label=booking.reference, detail=kind,
+        db,
+        action="client_doc_upload",
+        user_name=client.email,
+        module="cargo",
+        entity_type="booking",
+        entity_id=booking.id,
+        entity_label=booking.reference,
+        detail=kind,
     )
     return RedirectResponse(url="/me/documents", status_code=303)
 
@@ -318,7 +347,7 @@ async def download_document(
     try:
         path = safe_files.resolve_path(doc.file_path)
     except (safe_files.UploadRejected, FileNotFoundError):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File missing")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File missing") from None
     return Response(
         content=path.read_bytes(),
         media_type=doc.file_mime or "application/octet-stream",
@@ -393,9 +422,14 @@ async def mfa_setup_form(
         qr = mfa.qr_data_uri(uri)
     return templates.TemplateResponse(
         "client/mfa_setup.html",
-        {"request": request, "client": client,
-         "qr_data_uri": qr, "otpauth_uri": uri, "secret": secret,
-         "error": None},
+        {
+            "request": request,
+            "client": client,
+            "qr_data_uri": qr,
+            "otpauth_uri": uri,
+            "secret": secret,
+            "error": None,
+        },
     )
 
 
@@ -416,32 +450,40 @@ async def mfa_verify(
         uri = mfa.provisioning_uri(client.mfa_secret, client.email)
         return templates.TemplateResponse(
             "client/mfa_setup.html",
-            {"request": request, "client": client,
-             "qr_data_uri": mfa.qr_data_uri(uri),
-             "otpauth_uri": uri, "secret": client.mfa_secret,
-             "error": "Code incorrect — réessayez."},
+            {
+                "request": request,
+                "client": client,
+                "qr_data_uri": mfa.qr_data_uri(uri),
+                "otpauth_uri": uri,
+                "secret": client.mfa_secret,
+                "error": "Code incorrect — réessayez.",
+            },
             status_code=400,
         )
     client.mfa_enabled = True
     await db.flush()
     # Génère 10 codes de récupération à afficher UNE seule fois
     recovery_codes = await mfa.generate_recovery_codes(
-        db, owner_type="client", owner_id=client.id,
+        db,
+        owner_type="client",
+        owner_id=client.id,
     )
     await activity_record(
-        db, action="client_mfa_enabled", user_name=client.email,
-        module="booking", entity_type="client_account",
+        db,
+        action="client_mfa_enabled",
+        user_name=client.email,
+        module="booking",
+        entity_type="client_account",
         entity_id=client.id,
         ip_address=request.headers.get("x-forwarded-for")
-                   or (request.client.host if request.client else None),
+        or (request.client.host if request.client else None),
     )
     # On affiche les codes inline plutôt que par redirect (les redirect
     # 303 ne laissent pas passer de state — et on veut absolument que
     # l'utilisateur voie ces codes une fois).
     return templates.TemplateResponse(
         "client/mfa_recovery_codes.html",
-        {"request": request, "client": client, "codes": recovery_codes,
-         "is_regeneration": False},
+        {"request": request, "client": client, "codes": recovery_codes, "is_regeneration": False},
     )
 
 
@@ -458,25 +500,34 @@ async def mfa_regenerate_codes(
     if not mfa.verify_totp(client.mfa_secret, code):
         return templates.TemplateResponse(
             "client/mfa_setup.html",
-            {"request": request, "client": client,
-             "qr_data_uri": None, "otpauth_uri": None, "secret": None,
-             "error": "Code TOTP incorrect — codes non régénérés."},
+            {
+                "request": request,
+                "client": client,
+                "qr_data_uri": None,
+                "otpauth_uri": None,
+                "secret": None,
+                "error": "Code TOTP incorrect — codes non régénérés.",
+            },
             status_code=400,
         )
     new_codes = await mfa.generate_recovery_codes(
-        db, owner_type="client", owner_id=client.id,
+        db,
+        owner_type="client",
+        owner_id=client.id,
     )
     await activity_record(
-        db, action="client_mfa_codes_regen", user_name=client.email,
-        module="booking", entity_type="client_account",
+        db,
+        action="client_mfa_codes_regen",
+        user_name=client.email,
+        module="booking",
+        entity_type="client_account",
         entity_id=client.id,
         ip_address=request.headers.get("x-forwarded-for")
-                   or (request.client.host if request.client else None),
+        or (request.client.host if request.client else None),
     )
     return templates.TemplateResponse(
         "client/mfa_recovery_codes.html",
-        {"request": request, "client": client, "codes": new_codes,
-         "is_regeneration": True},
+        {"request": request, "client": client, "codes": new_codes, "is_regeneration": True},
     )
 
 
@@ -493,9 +544,14 @@ async def mfa_disable(
     if not mfa.verify_totp(client.mfa_secret, code):
         return templates.TemplateResponse(
             "client/mfa_setup.html",
-            {"request": request, "client": client,
-             "qr_data_uri": None, "otpauth_uri": None, "secret": None,
-             "error": "Code TOTP incorrect — MFA non désactivé."},
+            {
+                "request": request,
+                "client": client,
+                "qr_data_uri": None,
+                "otpauth_uri": None,
+                "secret": None,
+                "error": "Code TOTP incorrect — MFA non désactivé.",
+            },
             status_code=400,
         )
     client.mfa_enabled = False
@@ -503,7 +559,9 @@ async def mfa_disable(
     await db.flush()
     # Purge les codes de récupération restants (ils sont liés à ce secret)
     from sqlalchemy import delete
+
     from app.models.mfa_recovery_code import MfaRecoveryCode
+
     await db.execute(
         delete(MfaRecoveryCode)
         .where(MfaRecoveryCode.owner_type == "client")
@@ -512,13 +570,18 @@ async def mfa_disable(
     ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
     ua = request.headers.get("user-agent")
     await activity_record(
-        db, action="client_mfa_disabled", user_name=client.email,
-        module="booking", entity_type="client_account",
-        entity_id=client.id, ip_address=ip,
+        db,
+        action="client_mfa_disabled",
+        user_name=client.email,
+        module="booking",
+        entity_type="client_account",
+        entity_id=client.id,
+        ip_address=ip,
     )
     await security_alerts.notify_mfa_disabled(
         to_email=client.email,
         recipient_name=client.contact_name or client.company_name or client.email,
-        ip=ip, ua=ua,
+        ip=ip,
+        ua=ua,
     )
     return RedirectResponse(url="/me/account?mfa=disabled", status_code=303)

@@ -5,6 +5,7 @@ If the marker file `/tmp/.maintenance` exists, all requests other than
 
 The marker is toggled by `scripts/deploy.sh` and `scripts/maintenance.sh`.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,7 +14,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 
-MARKER = Path("/tmp/.maintenance")
+# Marqueur délibérément en /tmp (cf. CLAUDE.md, scripts/deploy.sh,
+# scripts/maintenance.sh) : portée limitée au conteneur app, où /tmp
+# n'est accessible qu'à l'utilisateur non-root du service.
+MARKER = Path("/tmp/.maintenance")  # nosec B108
 
 EXEMPT_PREFIXES = ("/health", "/static/", "/.well-known/")
 
@@ -37,8 +41,6 @@ p{color:#B8C5CE}
 
 class MaintenanceMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if MARKER.exists() and not any(
-            request.url.path.startswith(p) for p in EXEMPT_PREFIXES
-        ):
+        if MARKER.exists() and not any(request.url.path.startswith(p) for p in EXEMPT_PREFIXES):
             return HTMLResponse(MAINTENANCE_HTML, status_code=503)
         return await call_next(request)

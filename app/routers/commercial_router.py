@@ -6,16 +6,17 @@ Reprises de la V3.0.0 :
 - Conversion offre → commande.
 - Audit trail activity_logs sur toutes les actions.
 """
+
 from __future__ import annotations
 
 import io
-from datetime import date as _date, datetime, timezone
+from datetime import UTC, datetime
+from datetime import date as _date
 from decimal import Decimal
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Inches, Pt, RGBColor
-
+from docx.shared import Pt, RGBColor
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
@@ -24,15 +25,22 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.commercial import (
-    CLIENT_TYPES, Client, Order, OrderAssignment,
-    RateGrid, RateGridLine, RateOffer,
+    CLIENT_TYPES,
+    Client,
+    Order,
+    RateGrid,
+    RateGridLine,
+    RateOffer,
 )
 from app.models.leg import Leg
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.commercial import (
-    bracket_rate, compute_offer_total, default_brackets_for,
-    next_grid_reference, next_offer_reference, next_order_reference,
+    bracket_rate,
+    default_brackets_for,
+    next_grid_reference,
+    next_offer_reference,
+    next_order_reference,
     pick_bracket,
 )
 from app.templating import templates
@@ -49,23 +57,44 @@ async def commercial_index(
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
     clients_count = (await db.scalar(select(__import__("sqlalchemy").func.count(Client.id)))) or 0
-    grids_active = (await db.scalar(
-        select(__import__("sqlalchemy").func.count(RateGrid.id)).where(RateGrid.status == "active")
-    )) or 0
-    offers_open = (await db.scalar(
-        select(__import__("sqlalchemy").func.count(RateOffer.id)).where(RateOffer.status.in_(("draft", "sent")))
-    )) or 0
-    orders_open = (await db.scalar(
-        select(__import__("sqlalchemy").func.count(Order.id)).where(Order.status.in_(("draft", "confirmed", "loaded")))
-    )) or 0
-    last_orders = list((await db.execute(
-        select(Order).options(selectinload(Order.client))
-        .order_by(Order.created_at.desc()).limit(10)
-    )).scalars().all())
+    grids_active = (
+        await db.scalar(
+            select(__import__("sqlalchemy").func.count(RateGrid.id)).where(
+                RateGrid.status == "active"
+            )
+        )
+    ) or 0
+    offers_open = (
+        await db.scalar(
+            select(__import__("sqlalchemy").func.count(RateOffer.id)).where(
+                RateOffer.status.in_(("draft", "sent"))
+            )
+        )
+    ) or 0
+    orders_open = (
+        await db.scalar(
+            select(__import__("sqlalchemy").func.count(Order.id)).where(
+                Order.status.in_(("draft", "confirmed", "loaded"))
+            )
+        )
+    ) or 0
+    last_orders = list(
+        (
+            await db.execute(
+                select(Order)
+                .options(selectinload(Order.client))
+                .order_by(Order.created_at.desc())
+                .limit(10)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/commercial/index.html",
         {
-            "request": request, "user": user,
+            "request": request,
+            "user": user,
             "clients_count": clients_count,
             "grids_active": grids_active,
             "offers_open": offers_open,
@@ -82,9 +111,7 @@ async def clients_list(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    clients = list((await db.execute(
-        select(Client).order_by(Client.name.asc())
-    )).scalars().all())
+    clients = list((await db.execute(select(Client).order_by(Client.name.asc()))).scalars().all())
     return templates.TemplateResponse(
         "staff/commercial/clients.html",
         {"request": request, "user": user, "clients": clients, "types": CLIENT_TYPES},
@@ -120,9 +147,15 @@ async def client_create(
     db.add(c)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="client",
-        entity_id=c.id, entity_label=c.name,
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="client",
+        entity_id=c.id,
+        entity_label=c.name,
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/commercial/clients", status_code=303)
@@ -135,10 +168,17 @@ async def grids_list(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    grids = list((await db.execute(
-        select(RateGrid).options(selectinload(RateGrid.client), selectinload(RateGrid.lines))
-        .order_by(RateGrid.created_at.desc())
-    )).scalars().all())
+    grids = list(
+        (
+            await db.execute(
+                select(RateGrid)
+                .options(selectinload(RateGrid.client), selectinload(RateGrid.lines))
+                .order_by(RateGrid.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/commercial/grids.html",
         {"request": request, "user": user, "grids": grids},
@@ -151,9 +191,11 @@ async def grid_new_form(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ) -> HTMLResponse:
-    clients = list((await db.execute(
-        select(Client).where(Client.is_active.is_(True)).order_by(Client.name)
-    )).scalars().all())
+    clients = list(
+        (await db.execute(select(Client).where(Client.is_active.is_(True)).order_by(Client.name)))
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/commercial/grid_form.html",
         {"request": request, "user": user, "clients": clients, "grid": None},
@@ -189,18 +231,27 @@ async def grid_create(
     await db.flush()
     # Auto-create default brackets based on client_type
     for b in default_brackets_for(client.client_type):
-        db.add(RateGridLine(
-            grid_id=grid.id,
-            bracket_key=b["key"],
-            bracket_label=b["label"],
-            max_qty=int(b["max_qty"]),
-            coeff=Decimal(str(b["coeff"])),
-        ))
+        db.add(
+            RateGridLine(
+                grid_id=grid.id,
+                bracket_key=b["key"],
+                bracket_label=b["label"],
+                max_qty=int(b["max_qty"]),
+                coeff=Decimal(str(b["coeff"])),
+            )
+        )
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="rate_grid",
-        entity_id=grid.id, entity_label=ref, ip_address=_client_ip(request),
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid.id,
+        entity_label=ref,
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/commercial/grids/{grid.id}", status_code=303)
 
@@ -212,10 +263,13 @@ async def grid_detail(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    grid = (await db.execute(
-        select(RateGrid).options(selectinload(RateGrid.client), selectinload(RateGrid.lines))
-        .where(RateGrid.id == grid_id)
-    )).scalar_one_or_none()
+    grid = (
+        await db.execute(
+            select(RateGrid)
+            .options(selectinload(RateGrid.client), selectinload(RateGrid.lines))
+            .where(RateGrid.id == grid_id)
+        )
+    ).scalar_one_or_none()
     if grid is None:
         raise HTTPException(status_code=404)
     return templates.TemplateResponse(
@@ -237,9 +291,16 @@ async def grid_activate(
     grid.status = "active"
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="rate_grid",
-        entity_id=grid.id, entity_label=grid.reference, detail="activated",
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid.id,
+        entity_label=grid.reference,
+        detail="activated",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/commercial/grids/{grid_id}", status_code=303)
@@ -252,9 +313,9 @@ async def offers_list(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    offers = list((await db.execute(
-        select(RateOffer).order_by(RateOffer.created_at.desc())
-    )).scalars().all())
+    offers = list(
+        (await db.execute(select(RateOffer).order_by(RateOffer.created_at.desc()))).scalars().all()
+    )
     return templates.TemplateResponse(
         "staff/commercial/offers.html",
         {"request": request, "user": user, "offers": offers},
@@ -267,19 +328,25 @@ async def offer_new_form(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ) -> HTMLResponse:
-    clients = list((await db.execute(
-        select(Client).where(Client.is_active.is_(True)).order_by(Client.name)
-    )).scalars().all())
-    legs = list((await db.execute(
-        select(Leg).order_by(Leg.etd.desc()).limit(50)
-    )).scalars().all())
-    grids = list((await db.execute(
-        select(RateGrid).where(RateGrid.status == "active")
-    )).scalars().all())
+    clients = list(
+        (await db.execute(select(Client).where(Client.is_active.is_(True)).order_by(Client.name)))
+        .scalars()
+        .all()
+    )
+    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
+    grids = list(
+        (await db.execute(select(RateGrid).where(RateGrid.status == "active"))).scalars().all()
+    )
     return templates.TemplateResponse(
         "staff/commercial/offer_form.html",
-        {"request": request, "user": user, "clients": clients,
-         "legs": legs, "grids": grids, "offer": None},
+        {
+            "request": request,
+            "user": user,
+            "clients": clients,
+            "legs": legs,
+            "grids": grids,
+            "offer": None,
+        },
     )
 
 
@@ -303,13 +370,20 @@ async def offer_create(
     total = Decimal("0")
     if grid is not None and estimated_palettes > 0:
         # Build bracket lookup from lines
-        lines = list((await db.execute(
-            select(RateGridLine).where(RateGridLine.grid_id == grid.id)
-            .order_by(RateGridLine.max_qty)
-        )).scalars().all())
+        lines = list(
+            (
+                await db.execute(
+                    select(RateGridLine)
+                    .where(RateGridLine.grid_id == grid.id)
+                    .order_by(RateGridLine.max_qty)
+                )
+            )
+            .scalars()
+            .all()
+        )
         if lines:
             picked = pick_bracket(
-                [{"max_qty": l.max_qty, "coeff": float(l.coeff)} for l in lines],
+                [{"max_qty": ln.max_qty, "coeff": float(ln.coeff)} for ln in lines],
                 estimated_palettes,
             )
             if picked:
@@ -337,9 +411,16 @@ async def offer_create(
     db.add(offer)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="rate_offer",
-        entity_id=offer.id, entity_label=ref, ip_address=_client_ip(request),
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=offer.id,
+        entity_label=ref,
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/commercial/offers", status_code=303)
 
@@ -355,12 +436,19 @@ async def offer_send(
     if o is None:
         raise HTTPException(status_code=404)
     o.status = "sent"
-    o.sent_at = datetime.now(timezone.utc)
+    o.sent_at = datetime.now(UTC)
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="rate_offer",
-        entity_id=o.id, entity_label=o.reference, detail="sent",
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=o.id,
+        entity_label=o.reference,
+        detail="sent",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/commercial/offers", status_code=303)
@@ -380,7 +468,7 @@ async def offer_convert_to_order(
     if offer.status not in ("draft", "sent", "accepted"):
         raise HTTPException(status_code=400, detail="offre non convertible")
     offer.status = "accepted"
-    offer.accepted_at = datetime.now(timezone.utc)
+    offer.accepted_at = datetime.now(UTC)
     ref = await next_order_reference(db)
     order = Order(
         reference=ref,
@@ -396,9 +484,15 @@ async def offer_convert_to_order(
     db.add(order)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="order",
-        entity_id=order.id, entity_label=ref,
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="order",
+        entity_id=order.id,
+        entity_label=ref,
         detail=f"from offer {offer.reference}",
         ip_address=_client_ip(request),
     )
@@ -430,16 +524,15 @@ async def order_new_form(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ) -> HTMLResponse:
-    clients = list((await db.execute(
-        select(Client).where(Client.is_active.is_(True)).order_by(Client.name)
-    )).scalars().all())
-    legs = list((await db.execute(
-        select(Leg).order_by(Leg.etd.desc()).limit(50)
-    )).scalars().all())
+    clients = list(
+        (await db.execute(select(Client).where(Client.is_active.is_(True)).order_by(Client.name)))
+        .scalars()
+        .all()
+    )
+    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
     return templates.TemplateResponse(
         "staff/commercial/order_form.html",
-        {"request": request, "user": user, "clients": clients,
-         "legs": legs, "order": None},
+        {"request": request, "user": user, "clients": clients, "legs": legs, "order": None},
     )
 
 
@@ -476,9 +569,16 @@ async def order_create(
     db.add(order)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="order",
-        entity_id=order.id, entity_label=ref, ip_address=_client_ip(request),
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="order",
+        entity_id=order.id,
+        entity_label=ref,
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/commercial/orders/{order.id}", status_code=303)
 
@@ -490,10 +590,13 @@ async def order_detail(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    order = (await db.execute(
-        select(Order).options(selectinload(Order.client), selectinload(Order.assignments))
-        .where(Order.id == order_id)
-    )).scalar_one_or_none()
+    order = (
+        await db.execute(
+            select(Order)
+            .options(selectinload(Order.client), selectinload(Order.assignments))
+            .where(Order.id == order_id)
+        )
+    ).scalar_one_or_none()
     if order is None:
         raise HTTPException(status_code=404)
     leg = await db.get(Leg, order.leg_id) if order.leg_id else None
@@ -514,12 +617,19 @@ async def order_confirm(
     if order is None:
         raise HTTPException(status_code=404)
     order.status = "confirmed"
-    order.confirmed_at = datetime.now(timezone.utc)
+    order.confirmed_at = datetime.now(UTC)
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="order",
-        entity_id=order.id, entity_label=order.reference, detail="confirmed",
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="order",
+        entity_id=order.id,
+        entity_label=order.reference,
+        detail="confirmed",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/commercial/orders/{order_id}", status_code=303)
@@ -537,14 +647,21 @@ async def order_cancel(
     if order is None:
         raise HTTPException(status_code=404)
     order.status = "cancelled"
-    order.cancelled_at = datetime.now(timezone.utc)
+    order.cancelled_at = datetime.now(UTC)
     order.cancelled_reason = reason or None
     await db.flush()
     await activity_record(
-        db, action="delete", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="order",
-        entity_id=order.id, entity_label=order.reference,
-        detail=f"cancelled: {reason}", ip_address=_client_ip(request),
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="order",
+        entity_id=order.id,
+        entity_label=order.reference,
+        detail=f"cancelled: {reason}",
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/commercial/orders", status_code=303)
 
@@ -618,10 +735,7 @@ async def offer_export_docx(
     if leg:
         etd_str = leg.etd.strftime("%d/%m/%Y") if leg.etd else "—"
         eta_str = leg.eta.strftime("%d/%m/%Y") if leg.eta else "—"
-        doc.add_paragraph(
-            f"Leg : {leg.leg_code}\n"
-            f"ETD : {etd_str}     ETA : {eta_str}"
-        )
+        doc.add_paragraph(f"Leg : {leg.leg_code}\n" f"ETD : {etd_str}     ETA : {eta_str}")
     else:
         doc.add_paragraph("À confirmer")
 
@@ -655,9 +769,7 @@ async def offer_export_docx(
     cond_heading = doc.add_heading("Conditions", level=2)
     cond_heading.runs[0].font.color.rgb = RGBColor(0x0D, 0x59, 0x66)
 
-    validity_str = (
-        offer.valid_until.strftime("%d/%m/%Y") if offer.valid_until else "—"
-    )
+    validity_str = offer.valid_until.strftime("%d/%m/%Y") if offer.valid_until else "—"
     cond_para = doc.add_paragraph()
     cond_para.add_run(f"Validité : {validity_str}\n").bold = False
     cond_para.add_run(
@@ -690,10 +802,15 @@ async def offer_export_docx(
     buf.seek(0)
 
     await activity_record(
-        db, action="offer_export_docx",
-        user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="rate_offer",
-        entity_id=offer.id, entity_label=offer.reference,
+        db,
+        action="offer_export_docx",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=offer.id,
+        entity_label=offer.reference,
         detail=offer.reference,
         ip_address=_client_ip(request),
     )
@@ -701,11 +818,11 @@ async def offer_export_docx(
     return Response(
         content=buf.read(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={
-            "Content-Disposition": f'attachment; filename="Offre_{offer.reference}.docx"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="Offre_{offer.reference}.docx"'},
     )
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
+    )

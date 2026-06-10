@@ -3,6 +3,7 @@
 `get_db()` is the FastAPI dependency that yields a session, commits on
 success, rolls back on exception, and closes deterministically.
 """
+
 from collections.abc import AsyncGenerator
 from typing import Any
 

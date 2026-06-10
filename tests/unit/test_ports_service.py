@@ -2,9 +2,8 @@
 
 Pure-function tests; DB-backed upsert/nearby are in tests/integration.
 """
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from app.services.ports import (
     PortRow,
@@ -43,10 +42,7 @@ def test_csv_parser_french_columns() -> None:
 
 
 def test_csv_parser_english_columns_comma() -> None:
-    csv_text = (
-        "LOCODE,Name,Country,Latitude,Longitude\n"
-        "USNYC,New York,US,40.6759,-74.0173\n"
-    )
+    csv_text = "LOCODE,Name,Country,Latitude,Longitude\n" "USNYC,New York,US,40.6759,-74.0173\n"
     rows = parse_csv(csv_text, source="unlocode")
     assert len(rows) == 1
     assert rows[0].locode == "USNYC"

@@ -1,4 +1,5 @@
 """Feature flag — database-backed gating for progressive rollouts."""
+
 from __future__ import annotations
 
 from datetime import datetime

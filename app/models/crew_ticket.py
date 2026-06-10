@@ -1,15 +1,20 @@
 """Billets transport équipage (avion, train, taxi…)."""
+
 from __future__ import annotations
 
 from datetime import datetime
 
 from sqlalchemy import (
-    DateTime, ForeignKey, Integer, Numeric, String, Text, func,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
-
 
 TRANSPORT_MODES = ("flight", "train", "bus", "taxi", "ferry", "car", "other")
 
@@ -20,7 +25,8 @@ class CrewTicket(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     crew_member_id: Mapped[int] = mapped_column(
         ForeignKey("crew_members.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     assignment_id: Mapped[int | None] = mapped_column(ForeignKey("crew_assignments.id"))
     leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"))

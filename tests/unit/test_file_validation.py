@@ -1,9 +1,14 @@
 """Tests for app.utils.file_validation."""
+
 from __future__ import annotations
 
 from app.utils.file_validation import (
-    ALLOWED_EXTENSIONS, MAX_FILE_SIZE_MB,
-    sniff_mime, validate_filename, validate_size, validate_upload,
+    ALLOWED_EXTENSIONS,
+    MAX_FILE_SIZE_MB,
+    sniff_mime,
+    validate_filename,
+    validate_size,
+    validate_upload,
 )
 
 

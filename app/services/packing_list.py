@@ -6,16 +6,19 @@ Convention :
 - 90 jours de validité (`default_token_expiry`). Le router public renvoie
   410 GONE quand l'expiration est dépassée.
 """
+
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.packing_list import (
-    PackingList, PackingListAudit, PackingListBatch, PortalAccessLog,
+    PackingList,
+    PackingListAudit,
+    PortalAccessLog,
 )
 
 
@@ -26,12 +29,12 @@ def hash_token(token: str) -> str:
 async def get_by_token(db: AsyncSession, token: str) -> PackingList | None:
     if not token:
         return None
-    pl = (await db.execute(
-        select(PackingList).where(PackingList.token == token)
-    )).scalar_one_or_none()
+    pl = (
+        await db.execute(select(PackingList).where(PackingList.token == token))
+    ).scalar_one_or_none()
     if pl is None:
         return None
-    if pl.token_expires_at is not None and pl.token_expires_at < datetime.now(timezone.utc):
+    if pl.token_expires_at is not None and pl.token_expires_at < datetime.now(UTC):
         return None
     return pl
 
@@ -45,14 +48,16 @@ async def log_portal_access(
     user_agent: str | None,
     path: str | None,
 ) -> None:
-    db.add(PortalAccessLog(
-        portal_type="cargo",
-        token_hash=hash_token(token),
-        packing_list_id=packing_list_id,
-        ip_address=ip_address,
-        user_agent=(user_agent or "")[:400],
-        path=(path or "")[:200],
-    ))
+    db.add(
+        PortalAccessLog(
+            portal_type="cargo",
+            token_hash=hash_token(token),
+            packing_list_id=packing_list_id,
+            ip_address=ip_address,
+            user_agent=(user_agent or "")[:400],
+            path=(path or "")[:200],
+        )
+    )
     await db.flush()
 
 
@@ -69,15 +74,17 @@ async def record_audit(
 ) -> None:
     if old_value == new_value:
         return
-    db.add(PackingListAudit(
-        packing_list_id=packing_list_id,
-        batch_id=batch_id,
-        actor=actor,
-        actor_name=actor_name,
-        field=field,
-        old_value=str(old_value) if old_value is not None else None,
-        new_value=str(new_value) if new_value is not None else None,
-    ))
+    db.add(
+        PackingListAudit(
+            packing_list_id=packing_list_id,
+            batch_id=batch_id,
+            actor=actor,
+            actor_name=actor_name,
+            field=field,
+            old_value=str(old_value) if old_value is not None else None,
+            new_value=str(new_value) if new_value is not None else None,
+        )
+    )
     await db.flush()
 
 
@@ -87,7 +94,7 @@ def can_modify(pl: PackingList) -> bool:
 
 async def lock(db: AsyncSession, pl: PackingList, *, locked_by: str) -> PackingList:
     pl.status = "locked"
-    pl.locked_at = datetime.now(timezone.utc)
+    pl.locked_at = datetime.now(UTC)
     pl.locked_by = locked_by
     await db.flush()
     return pl

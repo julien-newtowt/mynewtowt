@@ -6,13 +6,14 @@ Two independent contexts share the same hashing + signing primitives:
 
 Each context has its own dependency (`get_current_staff`, `get_current_client`).
 """
+
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import Cookie, Depends, HTTPException, Request, status
+from fastapi import Cookie, Depends, Request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from passlib.context import CryptContext
 from sqlalchemy import select
@@ -84,18 +85,18 @@ def random_secret(length: int = 32) -> str:
 
 
 def create_staff_session(user_id: int) -> str:
-    payload = {"uid": user_id, "iat": datetime.now(timezone.utc).timestamp()}
+    payload = {"uid": user_id, "iat": datetime.now(UTC).timestamp()}
     return _staff_serializer.dumps(payload)
 
 
 def create_client_session(client_id: int) -> str:
-    payload = {"cid": client_id, "iat": datetime.now(timezone.utc).timestamp()}
+    payload = {"cid": client_id, "iat": datetime.now(UTC).timestamp()}
     return _client_serializer.dumps(payload)
 
 
 def create_client_mfa_pending(client_id: int) -> str:
     """Token court (5min) signé pour la phase challenge MFA d'un login client."""
-    payload = {"cid": client_id, "iat": datetime.now(timezone.utc).timestamp()}
+    payload = {"cid": client_id, "iat": datetime.now(UTC).timestamp()}
     return _client_mfa_serializer.dumps(payload)
 
 
@@ -105,14 +106,15 @@ def decode_client_mfa_pending(token: str) -> int | None:
         return None
     try:
         payload = _client_mfa_serializer.loads(
-            token, max_age=CLIENT_MFA_PENDING_TTL_SECONDS,
+            token,
+            max_age=CLIENT_MFA_PENDING_TTL_SECONDS,
         )
     except (BadSignature, SignatureExpired):
         return None
     return payload.get("cid")
 
 
-def cookie_kwargs_for_client_mfa_pending(request: "Request | None" = None) -> dict:
+def cookie_kwargs_for_client_mfa_pending(request: Request | None = None) -> dict:
     return {
         "key": CLIENT_MFA_PENDING_COOKIE,
         "max_age": CLIENT_MFA_PENDING_TTL_SECONDS,
@@ -125,7 +127,7 @@ def cookie_kwargs_for_client_mfa_pending(request: "Request | None" = None) -> di
 
 def create_staff_mfa_pending(user_id: int) -> str:
     """Token court (5min) signé pour la phase challenge MFA d'un login staff."""
-    payload = {"uid": user_id, "iat": datetime.now(timezone.utc).timestamp()}
+    payload = {"uid": user_id, "iat": datetime.now(UTC).timestamp()}
     return _staff_mfa_serializer.dumps(payload)
 
 
@@ -134,14 +136,15 @@ def decode_staff_mfa_pending(token: str) -> int | None:
         return None
     try:
         payload = _staff_mfa_serializer.loads(
-            token, max_age=STAFF_MFA_PENDING_TTL_SECONDS,
+            token,
+            max_age=STAFF_MFA_PENDING_TTL_SECONDS,
         )
     except (BadSignature, SignatureExpired):
         return None
     return payload.get("uid")
 
 
-def cookie_kwargs_for_staff_mfa_pending(request: "Request | None" = None) -> dict:
+def cookie_kwargs_for_staff_mfa_pending(request: Request | None = None) -> dict:
     return {
         "key": STAFF_MFA_PENDING_COOKIE,
         "max_age": STAFF_MFA_PENDING_TTL_SECONDS,
@@ -218,7 +221,7 @@ async def get_current_staff(
     # Vérif fenêtre par rôle (post-decode)
     iat = payload.get("iat")
     if iat:
-        age_s = datetime.now(timezone.utc).timestamp() - float(iat)
+        age_s = datetime.now(UTC).timestamp() - float(iat)
         if age_s > _session_minutes_for(user.role) * 60:
             raise AuthExpired()
     return user
@@ -279,7 +282,7 @@ async def get_optional_client(
         return None
 
 
-def _is_https(request: "Request | None") -> bool:
+def _is_https(request: Request | None) -> bool:
     """Return True iff the effective scheme is HTTPS.
 
     Honors X-Forwarded-Proto when set by the reverse proxy (nginx).
@@ -295,7 +298,7 @@ def _is_https(request: "Request | None") -> bool:
 
 
 def cookie_kwargs_for_staff(
-    request: "Request | None" = None,
+    request: Request | None = None,
     *,
     role: str | None = None,
 ) -> dict:
@@ -314,7 +317,7 @@ def cookie_kwargs_for_staff(
     }
 
 
-def cookie_kwargs_for_client(request: "Request | None" = None) -> dict:
+def cookie_kwargs_for_client(request: Request | None = None) -> dict:
     return {
         "key": CLIENT_COOKIE,
         "max_age": settings.client_session_days * 86400,

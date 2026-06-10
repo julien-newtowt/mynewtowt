@@ -20,10 +20,10 @@ bcrypt==4.0.1
 itsdangerous==2.2.0
 pyotp==2.9.0           # TOTP MFA
 segno==1.6.1           # QR code rendering (pure-Python, SVG/PNG, no Pillow)
-cryptography==44.0.0
+cryptography==44.0.1
 
 # --- Templating ---
-jinja2==3.1.5
+jinja2==3.1.6
 babel==2.16.0          # i18n
 
 # --- HTTP / external ---

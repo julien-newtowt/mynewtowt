@@ -1,4 +1,5 @@
 """Persistent rate-limit attempts."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -19,6 +20,4 @@ class RateLimitAttempt(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (
-        Index("ix_rate_limit_scope_id_at", "scope", "identifier", "attempted_at"),
-    )
+    __table_args__ = (Index("ix_rate_limit_scope_id_at", "scope", "identifier", "attempted_at"),)

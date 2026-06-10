@@ -1,10 +1,10 @@
 """Auth primitives — hashing and session token signing."""
+
 from __future__ import annotations
 
 import time
 
 import pytest
-from itsdangerous import BadSignature
 
 from app.auth import (
     AuthExpired,

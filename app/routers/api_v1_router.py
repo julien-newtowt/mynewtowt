@@ -4,9 +4,10 @@ Authentication is API-key based (header `X-API-Key`). For V3.0 we expose
 read-only routes; write endpoints will land in V3.1 with HMAC-signed
 webhooks back to the client.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -20,7 +21,7 @@ from app.models.port import Port
 from app.models.vessel import Vessel
 from app.schemas.booking import CapacityOut
 from app.schemas.leg import LegPublic
-from app.services.capacity import get_available_capacity, NotBookable
+from app.services.capacity import NotBookable, get_available_capacity
 
 router = APIRouter(prefix="/api/v1", tags=["api-v1"])
 
@@ -39,7 +40,6 @@ async def ports_nearby(
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
     """Return active ports near a (lat, lon) within radius_km, sorted by distance."""
-    from app.models.port import Port
     from app.services.ports import nearby_ports
 
     results = await nearby_ports(db, lat=lat, lon=lon, radius_km=radius_km, limit=limit)
@@ -69,33 +69,35 @@ async def ports_search(
     """Search active ports by name or locode prefix (case-insensitive)."""
     from app.models.port import Port
 
-    stmt = (
-        select(Port)
-        .where(Port.latitude.is_not(None))
-        .where(Port.is_active.is_(True))
-    )
+    stmt = select(Port).where(Port.latitude.is_not(None)).where(Port.is_active.is_(True))
     if q:
         like = f"%{q.lower()}%"
         from sqlalchemy import func
-        stmt = stmt.where(
-            (func.lower(Port.name).like(like)) | (func.lower(Port.locode).like(like))
-        )
+
+        stmt = stmt.where((func.lower(Port.name).like(like)) | (func.lower(Port.locode).like(like)))
     if country:
         stmt = stmt.where(Port.country == country.upper())
     stmt = stmt.order_by(Port.country, Port.locode).limit(limit)
     rows = list((await db.execute(stmt)).scalars().all())
     return [
         {
-            "id": p.id, "locode": p.locode, "name": p.name,
+            "id": p.id,
+            "locode": p.locode,
+            "name": p.name,
             "country": p.country,
-            "latitude": p.latitude, "longitude": p.longitude,
-        } for p in rows
+            "latitude": p.latitude,
+            "longitude": p.longitude,
+        }
+        for p in rows
     ]
 
 
 @router.get("/ports/bbox")
 async def ports_bbox(
-    min_lat: float, min_lon: float, max_lat: float, max_lon: float,
+    min_lat: float,
+    min_lon: float,
+    max_lat: float,
+    max_lon: float,
     limit: int = 2000,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -123,7 +125,10 @@ async def ports_bbox(
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [p.longitude, p.latitude]},
                 "properties": {
-                    "id": p.id, "locode": p.locode, "name": p.name, "country": p.country,
+                    "id": p.id,
+                    "locode": p.locode,
+                    "name": p.name,
+                    "country": p.country,
                 },
             }
             for p in ports
@@ -142,7 +147,7 @@ async def ports_next_clocks(
     arrival port with its IANA timezone (when known). Falls back to the
     immediate upcoming arrivals if no vessel is currently in transit.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # Upcoming arrivals: legs whose ETA is in the future, ordered ASAP first.
     stmt = (
         select(Leg, Port, Vessel)
@@ -162,15 +167,17 @@ async def ports_next_clocks(
         if port.locode in seen:
             continue
         seen.add(port.locode)
-        out.append({
-            "locode": port.locode,
-            "port_name": port.name,
-            "country": port.country,
-            "timezone": port.timezone,
-            "label": port.locode,
-            "vessel_code": vessel.code,
-            "eta": leg.eta.isoformat(),
-        })
+        out.append(
+            {
+                "locode": port.locode,
+                "port_name": port.name,
+                "country": port.country,
+                "timezone": port.timezone,
+                "label": port.locode,
+                "vessel_code": vessel.code,
+                "eta": leg.eta.isoformat(),
+            }
+        )
     return out
 
 
@@ -220,9 +227,7 @@ async def get_capacity(leg_id: int, db: AsyncSession = Depends(get_db)) -> Capac
     try:
         info = await get_available_capacity(db, leg_id)
     except NotBookable as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Leg not bookable"
-        ) from e
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Leg not bookable") from e
     return CapacityOut(
         leg_id=info.leg_id,
         capacity_palettes=info.capacity_palettes,
@@ -238,7 +243,7 @@ async def list_routes(
     to_country: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> list[LegPublic]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stmt = (
         select(Leg, Vessel)
         .join(Vessel, Vessel.id == Leg.vessel_id)

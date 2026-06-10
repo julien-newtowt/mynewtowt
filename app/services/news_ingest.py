@@ -5,6 +5,7 @@ upsert les articles neufs (dédup sur ``external_id``). Appelé soit par le
 bouton « Rafraîchir » de l'admin (permission M), soit par l'endpoint
 ``POST /api/veille/refresh`` (déclenché en cron par Power Automate).
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,11 +33,7 @@ async def ingest_source(db: AsyncSession, source: NewsSource) -> dict:
 
     ext_ids = [a["external_id"] for a in articles]
     existing = set(
-        (
-            await db.execute(
-                select(NewsItem.external_id).where(NewsItem.external_id.in_(ext_ids))
-            )
-        )
+        (await db.execute(select(NewsItem.external_id).where(NewsItem.external_id.in_(ext_ids))))
         .scalars()
         .all()
     )
@@ -69,13 +66,7 @@ async def ingest_all(db: AsyncSession) -> dict:
     """Ingère toutes les sources actives. Tolérant : une source en échec
     n'interrompt pas les autres (l'erreur est consignée et remontée)."""
     sources = list(
-        (
-            await db.execute(
-                select(NewsSource).where(NewsSource.enabled.is_(True))
-            )
-        )
-        .scalars()
-        .all()
+        (await db.execute(select(NewsSource).where(NewsSource.enabled.is_(True)))).scalars().all()
     )
 
     per_source: list[dict] = []

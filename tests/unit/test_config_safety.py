@@ -4,9 +4,11 @@ Make sure prod refuses to start with weak DB password but accepts a strong
 one — even though the URL scheme starts with `postgresql+asyncpg://`,
 which contains the substring "postgres".
 """
+
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from app.config import WEAK_DB_PASSWORDS, Settings
 
@@ -50,7 +52,7 @@ def test_dev_skips_all_checks() -> None:
 
 
 def test_weak_secret_key_rejected() -> None:
-    with pytest.raises(Exception):  # pydantic ValidationError
+    with pytest.raises(ValidationError):
         Settings(  # type: ignore[call-arg]
             secret_key="secret",
             database_url="postgresql+asyncpg://towt:strong@db:5432/towt",
@@ -58,7 +60,7 @@ def test_weak_secret_key_rejected() -> None:
 
 
 def test_short_secret_key_rejected() -> None:
-    with pytest.raises(Exception):  # pydantic ValidationError
+    with pytest.raises(ValidationError):
         Settings(  # type: ignore[call-arg]
             secret_key="too_short",
             database_url="postgresql+asyncpg://towt:strong@db:5432/towt",

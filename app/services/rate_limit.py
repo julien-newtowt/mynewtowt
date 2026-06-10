@@ -13,10 +13,11 @@ Usage :
 pas stocker de PII en clair, ``identifier`` est hashé SHA-256 avant
 d'être inséré (on garde quand même un index sur le hash).
 """
+
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,7 +40,7 @@ async def exceeded(
     """Renvoie True si ``identifier`` a dépassé ``max_attempts`` dans la fenêtre."""
     if not identifier:
         return False
-    since = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+    since = datetime.now(UTC) - timedelta(minutes=window_minutes)
     h = _hash(identifier)
     stmt = (
         select(func.count(RateLimitAttempt.id))
@@ -65,11 +66,11 @@ async def record(
 
 
 async def purge_older_than(
-    db: AsyncSession, *, days: int = 30,
+    db: AsyncSession,
+    *,
+    days: int = 30,
 ) -> int:
     """Tâche de maintenance — supprime les attempts anciens."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    res = await db.execute(
-        delete(RateLimitAttempt).where(RateLimitAttempt.attempted_at < cutoff)
-    )
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    res = await db.execute(delete(RateLimitAttempt).where(RateLimitAttempt.attempted_at < cutoff))
     return res.rowcount or 0

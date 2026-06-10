@@ -1,4 +1,5 @@
 """CO2 calculation tests."""
+
 from __future__ import annotations
 
 from decimal import Decimal

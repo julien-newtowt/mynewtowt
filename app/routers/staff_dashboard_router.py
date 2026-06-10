@@ -1,7 +1,8 @@
 """Staff dashboard — landing for collaborators."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -28,14 +29,12 @@ async def dashboard(
     user=Depends(get_current_staff),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     bookings_to_confirm = await db.scalar(
         select(func.count(Booking.id)).where(Booking.status == "submitted")
     )
-    legs_upcoming = await db.scalar(
-        select(func.count(Leg.id)).where(Leg.etd > now)
-    )
+    legs_upcoming = await db.scalar(select(func.count(Leg.id)).where(Leg.etd > now))
     tickets_p1 = await db.scalar(
         select(func.count(Ticket.id))
         .where(Ticket.priority == "P1")
@@ -46,15 +45,23 @@ async def dashboard(
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     last_positions: dict[int, VesselPosition | None] = {}
     for v in vessels:
-        p = (await db.execute(
-            select(VesselPosition).where(VesselPosition.vessel_id == v.id)
-            .order_by(VesselPosition.recorded_at.desc()).limit(1)
-        )).scalar_one_or_none()
+        p = (
+            await db.execute(
+                select(VesselPosition)
+                .where(VesselPosition.vessel_id == v.id)
+                .order_by(VesselPosition.recorded_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
         last_positions[v.id] = p
 
     # Notifications dashboard
     notifications = await list_notifications(
-        db, user_id=user.id, user_role=user.role, include_archived=False, limit=20,
+        db,
+        user_id=user.id,
+        user_role=user.role,
+        include_archived=False,
+        limit=20,
     )
 
     return templates.TemplateResponse(

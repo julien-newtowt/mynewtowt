@@ -9,13 +9,14 @@ Bookings of impacted legs do not need date updates themselves — they FK to
 the leg, so reading ``booking.leg.etd`` reflects the new value. Notifications
 to impacted clients are emitted by NotificationService (V3.1).
 """
+
 from __future__ import annotations
 
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -104,10 +105,7 @@ async def validate_leg_schedule(
 
     # ── 1. Chevauchement temporel sur le même navire ──────────────────
     overlap_stmt = (
-        select(Leg)
-        .where(Leg.vessel_id == vessel_id)
-        .where(Leg.etd < eta)
-        .where(Leg.eta > etd)
+        select(Leg).where(Leg.vessel_id == vessel_id).where(Leg.etd < eta).where(Leg.eta > etd)
     )
     if exclude_leg_id is not None:
         overlap_stmt = overlap_stmt.where(Leg.id != exclude_leg_id)
@@ -121,8 +119,11 @@ async def validate_leg_schedule(
 
     # ── 2. Continuité géographique (leg précédent / suivant) ──────────
     prev_stmt = (
-        select(Leg).where(Leg.vessel_id == vessel_id).where(Leg.etd < etd)
-        .order_by(Leg.etd.desc()).limit(1)
+        select(Leg)
+        .where(Leg.vessel_id == vessel_id)
+        .where(Leg.etd < etd)
+        .order_by(Leg.etd.desc())
+        .limit(1)
     )
     if exclude_leg_id is not None:
         prev_stmt = prev_stmt.where(Leg.id != exclude_leg_id)
@@ -135,8 +136,11 @@ async def validate_leg_schedule(
         )
 
     next_stmt = (
-        select(Leg).where(Leg.vessel_id == vessel_id).where(Leg.etd > etd)
-        .order_by(Leg.etd.asc()).limit(1)
+        select(Leg)
+        .where(Leg.vessel_id == vessel_id)
+        .where(Leg.etd > etd)
+        .order_by(Leg.etd.asc())
+        .limit(1)
     )
     if exclude_leg_id is not None:
         next_stmt = next_stmt.where(Leg.id != exclude_leg_id)
@@ -152,9 +156,13 @@ async def validate_leg_schedule(
     pod = await db.get(Port, arrival_port_id)
     duration_h = (eta - etd).total_seconds() / 3600.0
     if (
-        pol and pod and duration_h > 0
-        and pol.latitude is not None and pol.longitude is not None
-        and pod.latitude is not None and pod.longitude is not None
+        pol
+        and pod
+        and duration_h > 0
+        and pol.latitude is not None
+        and pol.longitude is not None
+        and pod.latitude is not None
+        and pod.longitude is not None
     ):
         gc_nm = haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude)
         distance_nm = gc_nm * (elongation_coef or 1.0)
@@ -234,7 +242,8 @@ async def create_leg(
         vessel_id=vessel_id,
         departure_port_id=departure_port_id,
         arrival_port_id=arrival_port_id,
-        etd=etd, eta=eta,
+        etd=etd,
+        eta=eta,
         transit_speed_kn=transit_speed_kn,
         elongation_coef=elongation_coef,
     )
@@ -245,7 +254,7 @@ async def create_leg(
 
     # Garde : un leg réservable dont la clôture est déjà passée n'est
     # jamais réservable → on refuse plutôt que de créer un leg trompeur.
-    if is_bookable and booking_close_at <= datetime.now(timezone.utc):
+    if is_bookable and booking_close_at <= datetime.now(UTC):
         raise InvalidLegDates(
             "ETD trop proche : la clôture des réservations (ETD − 48 h) est "
             "déjà passée. Décalez l'ETD ou désactivez l'ouverture à la réservation."
@@ -253,9 +262,10 @@ async def create_leg(
 
     # If leg_code not supplied, derive one (best-effort; admin can edit).
     if leg_code is None:
+        from sqlalchemy import func
+
         from app.models.port import Port
         from app.models.vessel import Vessel
-        from sqlalchemy import func
 
         vessel = await db.get(Vessel, vessel_id)
         pol = await db.get(Port, departure_port_id)
@@ -264,15 +274,18 @@ async def create_leg(
             raise PlanningError("Invalid vessel/port references")
 
         # Séquence = nombre de legs déjà planifiés pour ce navire dans l'année + 1.
-        year_start = datetime(etd.year, 1, 1, tzinfo=timezone.utc)
-        year_end = datetime(etd.year, 12, 31, 23, 59, tzinfo=timezone.utc)
-        existing_count = await db.scalar(
-            select(func.count(Leg.id)).where(
-                Leg.vessel_id == vessel_id,
-                Leg.etd >= year_start,
-                Leg.etd <= year_end,
+        year_start = datetime(etd.year, 1, 1, tzinfo=UTC)
+        year_end = datetime(etd.year, 12, 31, 23, 59, tzinfo=UTC)
+        existing_count = (
+            await db.scalar(
+                select(func.count(Leg.id)).where(
+                    Leg.vessel_id == vessel_id,
+                    Leg.etd >= year_start,
+                    Leg.etd <= year_end,
+                )
             )
-        ) or 0
+            or 0
+        )
         start_seq = existing_count + 1
 
         # Cherche un code libre à partir de la séquence calculée.
@@ -345,7 +358,7 @@ async def update_leg(
 
     delta = new_etd - leg.etd
     # Capture old reference points BEFORE applying changes
-    old_etd = leg.etd                 # ETD courant pré-édition (frontière cascade)
+    old_etd = leg.etd  # ETD courant pré-édition (frontière cascade)
     old_vessel_id = leg.vessel_id
     old_pol_id = leg.departure_port_id
     old_pod_id = leg.arrival_port_id
@@ -370,8 +383,11 @@ async def update_leg(
         vessel_id=leg.vessel_id,
         departure_port_id=leg.departure_port_id,
         arrival_port_id=leg.arrival_port_id,
-        etd=new_etd, eta=new_eta,
-        transit_speed_kn=(transit_speed_kn if transit_speed_kn is not None else leg.transit_speed_kn),
+        etd=new_etd,
+        eta=new_eta,
+        transit_speed_kn=(
+            transit_speed_kn if transit_speed_kn is not None else leg.transit_speed_kn
+        ),
         elongation_coef=(elongation_coef if elongation_coef is not None else leg.elongation_coef),
         exclude_leg_id=leg.id,
     )
@@ -407,15 +423,17 @@ async def update_leg(
         if vessel and pol and pod:
             for seq in range(1, 100):
                 candidate = _leg_code_for(
-                    vessel.code, pol.country, pod.country, leg.etd, seq,
+                    vessel.code,
+                    pol.country,
+                    pod.country,
+                    leg.etd,
+                    seq,
                 )
                 if candidate == leg.leg_code:
                     break  # Déjà unique avec cette séquence — on garde
                 existing = (
                     await db.execute(
-                        select(Leg)
-                        .where(Leg.leg_code == candidate)
-                        .where(Leg.id != leg.id)
+                        select(Leg).where(Leg.leg_code == candidate).where(Leg.id != leg.id)
                     )
                 ).scalar_one_or_none()
                 if not existing:
@@ -434,8 +452,8 @@ async def update_leg(
         select(Leg)
         .where(Leg.vessel_id == leg.vessel_id)
         .where(Leg.id != leg.id)
-        .where(Leg.etd > old_etd)            # downstream relative to pre-edit ETD
-        .where(Leg.atd.is_(None))            # hasn't actually sailed
+        .where(Leg.etd > old_etd)  # downstream relative to pre-edit ETD
+        .where(Leg.atd.is_(None))  # hasn't actually sailed
         .order_by(Leg.etd.asc())
     )
     downstream = list((await db.execute(stmt)).scalars().all())
@@ -528,8 +546,8 @@ async def _nullify_optional_fks(db: AsyncSession, leg_id: int) -> None:
     """
     from sqlalchemy import update
 
-    from app.models.claim import Claim
     from app.models.anemos_certificate import AnemosCertificate
+    from app.models.claim import Claim
     from app.models.commercial import Order
     from app.models.crew_ticket import CrewTicket
     from app.models.onboard_cashbox import CashboxMovement
@@ -538,9 +556,7 @@ async def _nullify_optional_fks(db: AsyncSession, leg_id: int) -> None:
     # CashboxMovement (pas OnboardCashbox) porte le leg_id : un mouvement
     # cash est rattaché à un leg, le coffre lui-même non.
     for model in (Claim, Ticket, CashboxMovement, CrewTicket, AnemosCertificate, Order):
-        await db.execute(
-            update(model).where(model.leg_id == leg_id).values(leg_id=None)
-        )
+        await db.execute(update(model).where(model.leg_id == leg_id).values(leg_id=None))
 
 
 # ---------------------------------------------------------------------------
@@ -573,7 +589,9 @@ DEFAULT_PORT_STAY_HOURS = 24
 
 
 def detect_port_conflicts(
-    legs: Sequence[Leg], *, default_stay_hours: int = DEFAULT_PORT_STAY_HOURS,
+    legs: Sequence[Leg],
+    *,
+    default_stay_hours: int = DEFAULT_PORT_STAY_HOURS,
 ) -> list[tuple[int, int]]:
     """Paires (leg_id_a, leg_id_b) de navires DIFFÉRENTS présents au MÊME
     port en MÊME temps.
@@ -648,7 +666,7 @@ async def lookup_share(db: AsyncSession, token: str) -> PlanningShare | None:
     ).scalar_one_or_none()
     if not share or not share.is_active:
         return None
-    if share.expires_at and share.expires_at < datetime.now(timezone.utc):
+    if share.expires_at and share.expires_at < datetime.now(UTC):
         return None
     return share
 

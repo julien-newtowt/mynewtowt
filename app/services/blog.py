@@ -3,6 +3,7 @@
 ``slugify`` est pur (testable). Les accès en base ne renvoient que les
 billets publiés, triés du plus récent au plus ancien.
 """
+
 from __future__ import annotations
 
 import re
@@ -32,16 +33,10 @@ async def list_published(
     stmt = select(BlogPost).where(BlogPost.is_published.is_(True))
     if category:
         stmt = stmt.where(BlogPost.category == category)
-    stmt = stmt.order_by(
-        BlogPost.published_at.desc().nullslast(), BlogPost.id.desc()
-    ).limit(limit)
+    stmt = stmt.order_by(BlogPost.published_at.desc().nullslast(), BlogPost.id.desc()).limit(limit)
     return list((await db.execute(stmt)).scalars().all())
 
 
 async def get_published_by_slug(db: AsyncSession, slug: str) -> BlogPost | None:
-    stmt = (
-        select(BlogPost)
-        .where(BlogPost.slug == slug)
-        .where(BlogPost.is_published.is_(True))
-    )
+    stmt = select(BlogPost).where(BlogPost.slug == slug).where(BlogPost.is_published.is_(True))
     return (await db.execute(stmt)).scalar_one_or_none()

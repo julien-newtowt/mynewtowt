@@ -6,6 +6,7 @@ Workflow status:
   submitted → cancelled (free until X days)
   confirmed → cancelled (with cancellation fee)
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -36,9 +37,7 @@ class Booking(Base):
     client_account_id: Mapped[int] = mapped_column(
         ForeignKey("client_accounts.id"), nullable=False, index=True
     )
-    leg_id: Mapped[int] = mapped_column(
-        ForeignKey("legs.id"), nullable=False, index=True
-    )
+    leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id"), nullable=False, index=True)
 
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
 
@@ -78,7 +77,7 @@ class Booking(Base):
         nullable=False,
     )
 
-    items: Mapped[list["BookingItem"]] = relationship(
+    items: Mapped[list[BookingItem]] = relationship(
         back_populates="booking",
         cascade="all, delete-orphan",
         # ``selectin`` : eager-load une seule query supplémentaire pour

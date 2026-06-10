@@ -6,16 +6,16 @@ Reprises de la V3.0.0 :
 - Messagerie de bord avec @mentions et bot MYTOWT_BOT.
 - Génération de cargo documents (NOR, NOR_RT, LOP, Mate's Receipt).
 """
+
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.finance import PortConfig
@@ -23,8 +23,13 @@ from app.models.leg import Leg
 from app.models.noon_report import NoonReport
 from app.models.port import Port
 from app.models.sof_event import (
-    CargoDocument, ETA_SHIFT_REASONS, EtaShift,
-    OnboardMessage, OnboardMessageMention, SOF_EVENT_TYPES, SofEvent,
+    ETA_SHIFT_REASONS,
+    SOF_EVENT_TYPES,
+    CargoDocument,
+    EtaShift,
+    OnboardMessage,
+    OnboardMessageMention,
+    SofEvent,
 )
 from app.models.user import User
 from app.models.vessel import Vessel
@@ -33,7 +38,10 @@ from app.permissions import require_permission
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.signature import (
-    compute_noon_hash, compute_sof_hash, compute_watch_hash, sign_record,
+    compute_noon_hash,
+    compute_sof_hash,
+    compute_watch_hash,
+    sign_record,
 )
 from app.templating import templates
 
@@ -51,9 +59,7 @@ async def captain_index(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
-    legs = list((await db.execute(
-        select(Leg).order_by(Leg.etd.desc()).limit(20)
-    )).scalars().all())
+    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(20))).scalars().all())
     selected = (await db.get(Leg, leg_id)) if leg_id else (legs[0] if legs else None)
     events: list[SofEvent] = []
     eta_shifts: list[EtaShift] = []
@@ -61,30 +67,65 @@ async def captain_index(
     docs: list[CargoDocument] = []
     vessel = None
     if selected:
-        events = list((await db.execute(
-            select(SofEvent).where(SofEvent.leg_id == selected.id)
-            .order_by(SofEvent.occurred_at.desc()).limit(100)
-        )).scalars().all())
-        eta_shifts = list((await db.execute(
-            select(EtaShift).where(EtaShift.leg_id == selected.id)
-            .order_by(EtaShift.declared_at.desc())
-        )).scalars().all())
-        messages = list((await db.execute(
-            select(OnboardMessage).where(OnboardMessage.leg_id == selected.id)
-            .order_by(OnboardMessage.created_at.desc()).limit(50)
-        )).scalars().all())
-        docs = list((await db.execute(
-            select(CargoDocument).where(CargoDocument.leg_id == selected.id)
-            .order_by(CargoDocument.issued_at.desc())
-        )).scalars().all())
+        events = list(
+            (
+                await db.execute(
+                    select(SofEvent)
+                    .where(SofEvent.leg_id == selected.id)
+                    .order_by(SofEvent.occurred_at.desc())
+                    .limit(100)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        eta_shifts = list(
+            (
+                await db.execute(
+                    select(EtaShift)
+                    .where(EtaShift.leg_id == selected.id)
+                    .order_by(EtaShift.declared_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        messages = list(
+            (
+                await db.execute(
+                    select(OnboardMessage)
+                    .where(OnboardMessage.leg_id == selected.id)
+                    .order_by(OnboardMessage.created_at.desc())
+                    .limit(50)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        docs = list(
+            (
+                await db.execute(
+                    select(CargoDocument)
+                    .where(CargoDocument.leg_id == selected.id)
+                    .order_by(CargoDocument.issued_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
         vessel = await db.get(Vessel, selected.vessel_id)
     return templates.TemplateResponse(
         "staff/captain/index.html",
         {
-            "request": request, "user": user,
-            "legs": legs, "leg": selected, "vessel": vessel,
-            "events": events, "eta_shifts": eta_shifts,
-            "messages": messages, "docs": docs,
+            "request": request,
+            "user": user,
+            "legs": legs,
+            "leg": selected,
+            "vessel": vessel,
+            "events": events,
+            "eta_shifts": eta_shifts,
+            "messages": messages,
+            "docs": docs,
             "event_types": SOF_EVENT_TYPES,
             "eta_reasons": ETA_SHIFT_REASONS,
         },
@@ -113,7 +154,8 @@ async def add_sof_event(
         event_type=event_type,
         label=label,
         occurred_at=datetime.fromisoformat(occurred_at),
-        latitude=latitude, longitude=longitude,
+        latitude=latitude,
+        longitude=longitude,
         notes=notes,
         recorded_by_id=user.id,
         recorded_by_name=user.full_name or user.username,
@@ -121,9 +163,15 @@ async def add_sof_event(
     db.add(e)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="captain", entity_type="sof_event",
-        entity_id=e.id, entity_label=f"{event_type}@{occurred_at}",
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="sof_event",
+        entity_id=e.id,
+        entity_label=f"{event_type}@{occurred_at}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
@@ -148,7 +196,8 @@ async def declare_eta_shift(
         leg_id=leg_id,
         previous_eta=leg.eta,
         new_eta=datetime.fromisoformat(new_eta),
-        reason=reason, detail=detail,
+        reason=reason,
+        detail=detail,
         declared_by_id=user.id,
         declared_by_name=user.full_name or user.username,
     )
@@ -156,9 +205,15 @@ async def declare_eta_shift(
     leg.eta = shift.new_eta
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="captain", entity_type="eta_shift",
-        entity_id=shift.id, entity_label=f"leg={leg_id} reason={reason}",
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="eta_shift",
+        entity_id=shift.id,
+        entity_label=f"leg={leg_id} reason={reason}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
@@ -176,31 +231,39 @@ async def post_onboard_message(
     if leg is None:
         raise HTTPException(status_code=404)
     msg = OnboardMessage(
-        leg_id=leg_id, vessel_id=leg.vessel_id,
+        leg_id=leg_id,
+        vessel_id=leg.vessel_id,
         author_id=user.id,
         author_name=user.full_name or user.username,
-        is_bot=False, body=body.strip(),
+        is_bot=False,
+        body=body.strip(),
     )
     db.add(msg)
     await db.flush()
     # Detect @mentions
     for tag in MENTION_RE.findall(body):
-        target_user = (await db.execute(
-            select(User).where(User.username == tag)
-        )).scalar_one_or_none()
-        db.add(OnboardMessageMention(
-            message_id=msg.id,
-            mentioned_user_id=target_user.id if target_user else None,
-            mentioned_text=tag,
-        ))
+        target_user = (
+            await db.execute(select(User).where(User.username == tag))
+        ).scalar_one_or_none()
+        db.add(
+            OnboardMessageMention(
+                message_id=msg.id,
+                mentioned_user_id=target_user.id if target_user else None,
+                mentioned_text=tag,
+            )
+        )
     # Bot reply (placeholder — extended by chat service in Phase 5)
     if any(t.lower() in body.lower() for t in BOT_TRIGGERS):
-        db.add(OnboardMessage(
-            leg_id=leg_id, vessel_id=leg.vessel_id,
-            author_id=None, author_name="MYTOWT_BOT",
-            is_bot=True,
-            body=f"Bonjour {user.full_name or user.username}, le bot Kairos est en cours d'intégration.",
-        ))
+        db.add(
+            OnboardMessage(
+                leg_id=leg_id,
+                vessel_id=leg.vessel_id,
+                author_id=None,
+                author_name="MYTOWT_BOT",
+                is_bot=True,
+                body=f"Bonjour {user.full_name or user.username}, le bot Kairos est en cours d'intégration.",
+            )
+        )
     await db.flush()
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
@@ -220,16 +283,25 @@ async def create_cargo_document(
     if not await db.get(Leg, leg_id):
         raise HTTPException(status_code=404)
     d = CargoDocument(
-        leg_id=leg_id, kind=kind, reference=reference,
+        leg_id=leg_id,
+        kind=kind,
+        reference=reference,
         issued_at=datetime.fromisoformat(issued_at),
-        party_name=party_name, body=body,
+        party_name=party_name,
+        body=body,
     )
     db.add(d)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="captain", entity_type="cargo_document",
-        entity_id=d.id, entity_label=f"{kind} {reference or ''}".strip(),
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="cargo_document",
+        entity_id=d.id,
+        entity_label=f"{kind} {reference or ''}".strip(),
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
@@ -252,8 +324,9 @@ async def next_port(
     météo forecast au moment ETA, événements SOF récents. Filtré par
     ``user.assigned_vessel_id`` si renseigné.
     """
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
+    from datetime import datetime
+
+    now = datetime.now(UTC)
 
     # Prochain leg actif (ATD posé, pas encore arrivé) ou prochain ETD.
     stmt_active = (
@@ -264,11 +337,7 @@ async def next_port(
         .limit(1)
     )
     stmt_planned = (
-        select(Leg)
-        .where(Leg.etd > now)
-        .where(Leg.ata.is_(None))
-        .order_by(Leg.etd.asc())
-        .limit(1)
+        select(Leg).where(Leg.etd > now).where(Leg.ata.is_(None)).order_by(Leg.etd.asc()).limit(1)
     )
     if getattr(user, "assigned_vessel_id", None):
         stmt_active = stmt_active.where(Leg.vessel_id == user.assigned_vessel_id)
@@ -287,24 +356,36 @@ async def next_port(
         pod = await db.get(Port, leg.arrival_port_id)
         vessel = await db.get(Vessel, leg.vessel_id)
         if pod:
-            pod_config = (await db.execute(
-                select(PortConfig).where(PortConfig.port_id == pod.id)
-            )).scalar_one_or_none()
+            pod_config = (
+                await db.execute(select(PortConfig).where(PortConfig.port_id == pod.id))
+            ).scalar_one_or_none()
         if pod and pod.latitude is not None and pod.longitude is not None and leg.eta:
             try:
                 weather_point = await wx.fetch_at(pod.latitude, pod.longitude, leg.eta)
             except Exception:
                 weather_point = None
-        sof_recent = list((await db.execute(
-            select(SofEvent).where(SofEvent.leg_id == leg.id)
-            .order_by(SofEvent.occurred_at.desc()).limit(8)
-        )).scalars().all())
+        sof_recent = list(
+            (
+                await db.execute(
+                    select(SofEvent)
+                    .where(SofEvent.leg_id == leg.id)
+                    .order_by(SofEvent.occurred_at.desc())
+                    .limit(8)
+                )
+            )
+            .scalars()
+            .all()
+        )
 
     return templates.TemplateResponse(
         "staff/captain/next_port.html",
         {
-            "request": request, "user": user,
-            "leg": leg, "vessel": vessel, "pod": pod, "pod_config": pod_config,
+            "request": request,
+            "user": user,
+            "leg": leg,
+            "vessel": vessel,
+            "pod": pod,
+            "pod_config": pod_config,
             "weather_point": weather_point,
             "weather_summary": wx.summarize(weather_point),
             "sof_recent": sof_recent,
@@ -332,9 +413,15 @@ async def sign_sof_event(
     sign_record(e, user, hash_fn=compute_sof_hash)
     await db.flush()
     await activity_record(
-        db, action="sign", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="captain", entity_type="sof_event",
-        entity_id=e.id, entity_label=f"{e.event_type}@{e.occurred_at.isoformat()}",
+        db,
+        action="sign",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="sof_event",
+        entity_id=e.id,
+        entity_label=f"{e.event_type}@{e.occurred_at.isoformat()}",
         detail=e.signature_hash[:12] if e.signature_hash else None,
         ip_address=_client_ip(request),
     )
@@ -354,9 +441,15 @@ async def sign_noon_report(
     sign_record(n, user, hash_fn=compute_noon_hash)
     await db.flush()
     await activity_record(
-        db, action="sign", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="captain", entity_type="noon_report",
-        entity_id=n.id, entity_label=f"leg={n.leg_id}@{n.recorded_at.isoformat()}",
+        db,
+        action="sign",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="noon_report",
+        entity_id=n.id,
+        entity_label=f"leg={n.leg_id}@{n.recorded_at.isoformat()}",
         detail=n.signature_hash[:12] if n.signature_hash else None,
         ip_address=_client_ip(request),
     )
@@ -376,9 +469,15 @@ async def sign_watch_log(
     sign_record(w, user, hash_fn=compute_watch_hash)
     await db.flush()
     await activity_record(
-        db, action="sign", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="captain", entity_type="watch_log",
-        entity_id=w.id, entity_label=f"leg={w.leg_id} {w.watch_date} {w.watch_period}",
+        db,
+        action="sign",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="watch_log",
+        entity_id=w.id,
+        entity_label=f"leg={w.leg_id} {w.watch_date} {w.watch_period}",
         detail=w.signature_hash[:12] if w.signature_hash else None,
         ip_address=_client_ip(request),
     )
@@ -392,7 +491,6 @@ async def captain_sof_pdf(
     user=Depends(require_permission("captain", "C")),
 ):
     """Génère le SOF commandant (SofEvent) en PDF WeasyPrint."""
-    from datetime import timezone
 
     from fastapi.responses import Response
     from weasyprint import HTML  # local import — heavy native deps
@@ -407,11 +505,17 @@ async def captain_sof_pdf(
     pol = await db.get(Port, leg.departure_port_id) if leg.departure_port_id else None
     pod = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
 
-    events = list((await db.execute(
-        select(SofEvent)
-        .where(SofEvent.leg_id == leg_id)
-        .order_by(SofEvent.occurred_at.asc())
-    )).scalars().all())
+    events = list(
+        (
+            await db.execute(
+                select(SofEvent)
+                .where(SofEvent.leg_id == leg_id)
+                .order_by(SofEvent.occurred_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     tpl = templates.get_template("pdf/sof_captain.html")
     html = tpl.render(
@@ -420,16 +524,14 @@ async def captain_sof_pdf(
         pol=pol,
         pod=pod,
         events=events,
-        issued_at=datetime.now(timezone.utc),
+        issued_at=datetime.now(UTC),
         site_url=settings.site_url,
     )
     pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="SOF_{leg.leg_code}.pdf"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="SOF_{leg.leg_code}.pdf"'},
     )
 
 
@@ -441,7 +543,6 @@ async def captain_sof_xlsx(
 ):
     """Exporte le SOF commandant (SofEvent + ETA shifts) en classeur Excel."""
     import io
-    from datetime import timezone
 
     import openpyxl
     from fastapi.responses import Response
@@ -450,60 +551,92 @@ async def captain_sof_xlsx(
     if leg is None:
         raise HTTPException(status_code=404)
 
-    events = list((await db.execute(
-        select(SofEvent)
-        .where(SofEvent.leg_id == leg_id)
-        .order_by(SofEvent.occurred_at.asc())
-    )).scalars().all())
+    events = list(
+        (
+            await db.execute(
+                select(SofEvent)
+                .where(SofEvent.leg_id == leg_id)
+                .order_by(SofEvent.occurred_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
-    eta_shifts = list((await db.execute(
-        select(EtaShift)
-        .where(EtaShift.leg_id == leg_id)
-        .order_by(EtaShift.declared_at.asc())
-    )).scalars().all())
+    eta_shifts = list(
+        (
+            await db.execute(
+                select(EtaShift)
+                .where(EtaShift.leg_id == leg_id)
+                .order_by(EtaShift.declared_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     wb = openpyxl.Workbook()
 
     # ── Sheet 1: SOF Events ──────────────────────────────────────────
     ws_sof = wb.active
     ws_sof.title = "SOF Events"
-    ws_sof.append([
-        "#", "Type", "Label",
-        "Occurred At (UTC)", "Port", "Lat", "Lon",
-        "Notes", "Signed", "Signed By", "Signed At",
-    ])
+    ws_sof.append(
+        [
+            "#",
+            "Type",
+            "Label",
+            "Occurred At (UTC)",
+            "Port",
+            "Lat",
+            "Lon",
+            "Notes",
+            "Signed",
+            "Signed By",
+            "Signed At",
+        ]
+    )
     for ev in events:
-        ws_sof.append([
-            ev.id,
-            ev.event_type,
-            ev.label or "",
-            ev.occurred_at.strftime("%Y-%m-%d %H:%M") if ev.occurred_at else "",
-            "",  # port_id — no eager-loaded name available without extra query
-            ev.latitude if ev.latitude is not None else "",
-            ev.longitude if ev.longitude is not None else "",
-            ev.notes or "",
-            "Oui" if ev.is_locked else "Non",
-            ev.signed_by_name or "",
-            ev.signed_at.strftime("%Y-%m-%d %H:%M") if ev.signed_at else "",
-        ])
+        ws_sof.append(
+            [
+                ev.id,
+                ev.event_type,
+                ev.label or "",
+                ev.occurred_at.strftime("%Y-%m-%d %H:%M") if ev.occurred_at else "",
+                "",  # port_id — no eager-loaded name available without extra query
+                ev.latitude if ev.latitude is not None else "",
+                ev.longitude if ev.longitude is not None else "",
+                ev.notes or "",
+                "Oui" if ev.is_locked else "Non",
+                ev.signed_by_name or "",
+                ev.signed_at.strftime("%Y-%m-%d %H:%M") if ev.signed_at else "",
+            ]
+        )
 
     # ── Sheet 2: ETA Shifts ──────────────────────────────────────────
     ws_eta = wb.create_sheet(title="ETA Shifts")
-    ws_eta.append([
-        "Declared At", "Reason", "New ETA", "Delta Hours", "Notes",
-    ])
+    ws_eta.append(
+        [
+            "Declared At",
+            "Reason",
+            "New ETA",
+            "Delta Hours",
+            "Notes",
+        ]
+    )
     for shift in eta_shifts:
         delta_h = ""
         if shift.previous_eta and shift.new_eta:
             delta_td = shift.new_eta - shift.previous_eta
             delta_h = round(delta_td.total_seconds() / 3600, 2)
-        ws_eta.append([
-            shift.declared_at.strftime("%Y-%m-%d %H:%M") if shift.declared_at else "",
-            shift.reason,
-            shift.new_eta.strftime("%Y-%m-%d %H:%M") if shift.new_eta else "",
-            delta_h,
-            shift.detail or "",
-        ])
+        ws_eta.append(
+            [
+                shift.declared_at.strftime("%Y-%m-%d %H:%M") if shift.declared_at else "",
+                shift.reason,
+                shift.new_eta.strftime("%Y-%m-%d %H:%M") if shift.new_eta else "",
+                delta_h,
+                shift.detail or "",
+            ]
+        )
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -511,9 +644,7 @@ async def captain_sof_xlsx(
     return Response(
         content=buf.read(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": f'attachment; filename="SOF_{leg.leg_code}.xlsx"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="SOF_{leg.leg_code}.xlsx"'},
     )
 
 
@@ -543,11 +674,11 @@ async def captain_cargo_doc_pdf(
 
     from app.config import settings
 
-    doc = (await db.execute(
-        select(CargoDocument).where(
-            CargoDocument.id == doc_id, CargoDocument.leg_id == leg_id
+    doc = (
+        await db.execute(
+            select(CargoDocument).where(CargoDocument.id == doc_id, CargoDocument.leg_id == leg_id)
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if doc is None:
         raise HTTPException(status_code=404)
 
@@ -559,7 +690,11 @@ async def captain_cargo_doc_pdf(
     tpl_name = _DOC_TEMPLATES.get(doc.kind, "pdf/cargo_doc_nor.html")
     tpl = templates.get_template(tpl_name)
     html = tpl.render(
-        doc=doc, leg=leg, vessel=vessel, pol=pol, pod=pod,
+        doc=doc,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
         issued_at=doc.issued_at,
         site_url=settings.site_url,
     )
@@ -576,6 +711,7 @@ async def captain_cargo_doc_pdf(
 # D — Pièces jointes aux cargo documents
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @router.post("/legs/{leg_id}/docs/{doc_id}/attach")
 async def attach_cargo_doc(
     leg_id: int,
@@ -586,11 +722,11 @@ async def attach_cargo_doc(
 ):
     from app.services.safe_files import UploadRejected, save_upload
 
-    doc = (await db.execute(
-        select(CargoDocument).where(
-            CargoDocument.id == doc_id, CargoDocument.leg_id == leg_id
+    doc = (
+        await db.execute(
+            select(CargoDocument).where(CargoDocument.id == doc_id, CargoDocument.leg_id == leg_id)
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if doc is None:
         raise HTTPException(status_code=404)
 
@@ -603,15 +739,21 @@ async def attach_cargo_doc(
     try:
         rel_path, _ = save_upload(content, upload.filename or "attachment", subdir="captain_docs")
     except UploadRejected as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     doc.file_path = rel_path
     await db.flush()
     await activity_record(
-        db, action="cargo_doc_attach",
-        user_id=user.id, user_name=user.username, user_role=user.role,
-        module="captain", entity_type="cargo_document", entity_id=doc.id,
-        detail=upload.filename, ip_address=_client_ip(request),
+        db,
+        action="cargo_doc_attach",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="cargo_document",
+        entity_id=doc.id,
+        detail=upload.filename,
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
@@ -624,20 +766,21 @@ async def download_cargo_doc_attachment(
     user=Depends(require_permission("captain", "C")),
 ):
     from fastapi.responses import FileResponse
+
     from app.services.safe_files import UploadRejected, resolve_path
 
-    doc = (await db.execute(
-        select(CargoDocument).where(
-            CargoDocument.id == doc_id, CargoDocument.leg_id == leg_id
+    doc = (
+        await db.execute(
+            select(CargoDocument).where(CargoDocument.id == doc_id, CargoDocument.leg_id == leg_id)
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if doc is None or not doc.file_path:
         raise HTTPException(status_code=404)
 
     try:
         path = resolve_path(doc.file_path)
     except UploadRejected:
-        raise HTTPException(status_code=400)
+        raise HTTPException(status_code=400) from None
 
     return FileResponse(path=str(path), filename=path.name)
 
@@ -645,6 +788,7 @@ async def download_cargo_doc_attachment(
 # ──────────────────────────────────────────────────────────────────────────────
 # B — Workflow de clôture de voyage
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @router.post("/legs/{leg_id}/closure/submit")
 async def closure_submit(
@@ -660,7 +804,7 @@ async def closure_submit(
     if leg.closure_submitted_at:
         raise HTTPException(status_code=400, detail="Clôture déjà soumise")
 
-    leg.closure_submitted_at = datetime.now(timezone.utc)
+    leg.closure_submitted_at = datetime.now(UTC)
     leg.closure_submitted_by = user.username
     if notes:
         leg.closure_notes = notes
@@ -668,8 +812,10 @@ async def closure_submit(
 
     try:
         from app.services.notifications import create as notif_create
+
         await notif_create(
-            db, type="info",
+            db,
+            type="info",
             title=f"Clôture soumise — {leg.leg_code}",
             link=f"/captain?leg_id={leg_id}",
             target_role="operation",
@@ -678,10 +824,16 @@ async def closure_submit(
         pass
 
     await activity_record(
-        db, action="voyage_closure_submit",
-        user_id=user.id, user_name=user.username, user_role=user.role,
-        module="captain", entity_type="leg", entity_id=leg.id,
-        entity_label=leg.leg_code, ip_address=_client_ip(request),
+        db,
+        action="voyage_closure_submit",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="leg",
+        entity_id=leg.id,
+        entity_label=leg.leg_code,
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
@@ -702,7 +854,7 @@ async def closure_review(
     if leg.closure_reviewed_at:
         raise HTTPException(status_code=400, detail="Déjà validée")
 
-    leg.closure_reviewed_at = datetime.now(timezone.utc)
+    leg.closure_reviewed_at = datetime.now(UTC)
     leg.closure_reviewed_by = user.username
     if notes:
         leg.closure_notes = (leg.closure_notes or "") + f"\n[Validation opérations] {notes}"
@@ -710,8 +862,10 @@ async def closure_review(
 
     try:
         from app.services.notifications import create as notif_create
+
         await notif_create(
-            db, type="info",
+            db,
+            type="info",
             title=f"Clôture validée opérations — {leg.leg_code}",
             link=f"/captain?leg_id={leg_id}",
             target_role="manager_maritime",
@@ -720,10 +874,16 @@ async def closure_review(
         pass
 
     await activity_record(
-        db, action="voyage_closure_review",
-        user_id=user.id, user_name=user.username, user_role=user.role,
-        module="captain", entity_type="leg", entity_id=leg.id,
-        entity_label=leg.leg_code, ip_address=_client_ip(request),
+        db,
+        action="voyage_closure_review",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="leg",
+        entity_id=leg.id,
+        entity_label=leg.leg_code,
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
@@ -744,7 +904,7 @@ async def closure_approve(
     if leg.closure_approved_at:
         raise HTTPException(status_code=400, detail="Déjà approuvée")
 
-    leg.closure_approved_at = datetime.now(timezone.utc)
+    leg.closure_approved_at = datetime.now(UTC)
     if notes:
         leg.closure_notes = (leg.closure_notes or "") + f"\n[Approbation] {notes}"
     leg.status = "completed"
@@ -752,18 +912,27 @@ async def closure_approve(
 
     try:
         from app.services.kpi import compute_for_leg
+
         await compute_for_leg(db, leg)
     except Exception:
         pass
 
     await activity_record(
-        db, action="voyage_closure_approve",
-        user_id=user.id, user_name=user.username, user_role=user.role,
-        module="captain", entity_type="leg", entity_id=leg.id,
-        entity_label=leg.leg_code, ip_address=_client_ip(request),
+        db,
+        action="voyage_closure_approve",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="leg",
+        entity_id=leg.id,
+        entity_label=leg.leg_code,
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
+    )

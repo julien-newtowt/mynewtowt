@@ -1,4 +1,5 @@
 """Vietnamese catalog (partial — falls back to FR for missing keys)."""
+
 CATALOG: dict[str, str] = {
     "nav_dashboard": "Bảng điều khiển",
     "nav_planning": "Lập kế hoạch",

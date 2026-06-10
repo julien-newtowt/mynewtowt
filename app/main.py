@@ -1,4 +1,5 @@
 """FastAPI entrypoint — assembles middlewares, routers, exception handlers."""
+
 from __future__ import annotations
 
 import logging
@@ -10,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 from app import __version__
-from app.auth import AuthError, AuthExpired, AuthInvalid, AuthRequired
+from app.auth import AuthExpired, AuthInvalid, AuthRequired
 from app.config import settings
 from app.csrf import CSRFMiddleware
 from app.database import init_db
@@ -71,7 +72,7 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ Static
     app.mount(
         "/static",
-        StaticFiles(directory=str((__import__("pathlib").Path(__file__).parent / "static"))),
+        StaticFiles(directory=str(__import__("pathlib").Path(__file__).parent / "static")),
         name="static",
     )
 
@@ -190,6 +191,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def _on_startup() -> None:
         from app.config import enforce_production_safety
+
         enforce_production_safety()
         await init_db()
         logger.info("mynewtowt %s started (env=%s)", __version__, settings.app_env)

@@ -10,6 +10,7 @@ Routes publiques (aucune authentification) :
 Le formulaire ne réalise **aucun paiement** : il valide, journalise et
 prépare le relais vers l'équipe commerciale (extranet de réservation).
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -57,9 +58,7 @@ async def passagers(request: Request) -> HTMLResponse:
 
 
 @router.get("/actualites", response_class=HTMLResponse)
-async def actualites(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> HTMLResponse:
+async def actualites(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Actualités — billets de catégorie ``actualite`` (pont depuis LinkedIn)."""
     posts = await blog_svc.list_published(db, category="actualite")
     return templates.TemplateResponse(
@@ -68,14 +67,10 @@ async def actualites(
 
 
 @router.get("/carnet", response_class=HTMLResponse)
-async def carnet_index(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> HTMLResponse:
+async def carnet_index(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Carnet de construction — liste des jalons (du plus récent au plus ancien)."""
     posts = await blog_svc.list_published(db, category="carnet")
-    return templates.TemplateResponse(
-        "public/carnet.html", {"request": request, "posts": posts}
-    )
+    return templates.TemplateResponse("public/carnet.html", {"request": request, "posts": posts})
 
 
 @router.get("/carnet/{slug}", response_class=HTMLResponse)
@@ -84,12 +79,8 @@ async def carnet_post(
 ) -> HTMLResponse:
     post = await blog_svc.get_published_by_slug(db, slug)
     if post is None:
-        return templates.TemplateResponse(
-            "public/404.html", {"request": request}, status_code=404
-        )
-    return templates.TemplateResponse(
-        "public/carnet_post.html", {"request": request, "post": post}
-    )
+        return templates.TemplateResponse("public/404.html", {"request": request}, status_code=404)
+    return templates.TemplateResponse("public/carnet_post.html", {"request": request, "post": post})
 
 
 @router.get("/contact", response_class=HTMLResponse)
@@ -134,10 +125,18 @@ async def contact_submit(
 
     try:
         payload = contact_svc.validate_contact_payload(
-            name=name, email=email, consent=bool(consent),
-            company=company, phone=phone, pol=pol, pod=pod,
-            cargo_nature=cargo_nature, volume_weight=volume_weight,
-            desired_dates=desired_dates, message=message, lang=lang,
+            name=name,
+            email=email,
+            consent=bool(consent),
+            company=company,
+            phone=phone,
+            pol=pol,
+            pod=pod,
+            cargo_nature=cargo_nature,
+            volume_weight=volume_weight,
+            desired_dates=desired_dates,
+            message=message,
+            lang=lang,
         )
     except contact_svc.ContactValidationError as exc:
         return templates.TemplateResponse(
@@ -145,10 +144,16 @@ async def contact_submit(
             {
                 "request": request,
                 "values": {
-                    "name": name, "email": email, "company": company,
-                    "phone": phone, "pol": pol, "pod": pod,
-                    "cargo_nature": cargo_nature, "volume_weight": volume_weight,
-                    "desired_dates": desired_dates, "message": message,
+                    "name": name,
+                    "email": email,
+                    "company": company,
+                    "phone": phone,
+                    "pol": pol,
+                    "pod": pod,
+                    "cargo_nature": cargo_nature,
+                    "volume_weight": volume_weight,
+                    "desired_dates": desired_dates,
+                    "message": message,
                 },
                 "errors": exc.errors,
             },

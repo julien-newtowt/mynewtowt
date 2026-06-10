@@ -9,6 +9,7 @@ Note V3.6 : ce certificat a été renommé en "Label Anemos" (anciennement
 physiques, pas du branding. La table s'appelle désormais
 ``anemos_certificates`` (cf. migration 20260519_0012).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -26,9 +27,7 @@ class AnemosCertificate(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     reference: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
 
-    booking_id: Mapped[int | None] = mapped_column(
-        ForeignKey("bookings.id"), index=True
-    )
+    booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"), index=True)
     client_account_id: Mapped[int] = mapped_column(
         ForeignKey("client_accounts.id"), nullable=False, index=True
     )

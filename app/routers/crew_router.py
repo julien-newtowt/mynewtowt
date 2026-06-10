@@ -7,18 +7,24 @@ Reprise des écrans riches de la V3.0.0 :
 - Assignments embarquement/débarquement.
 - Billets transport (uploads).
 """
+
 from __future__ import annotations
 
-from datetime import date as _date, datetime, timedelta, timezone
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
+from datetime import date as _date
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_db
 from app.models.crew import (
-    CrewAssignment, CrewCertification, CrewLeave, CrewMember,
+    CrewAssignment,
+    CrewCertification,
+    CrewLeave,
+    CrewMember,
 )
 from app.models.crew_ticket import TRANSPORT_MODES, CrewTicket
 from app.models.leg import Leg
@@ -31,8 +37,14 @@ router = APIRouter(prefix="/crew", tags=["crew"])
 
 
 CREW_ROLES = (
-    "capitaine", "second", "chef_mecanicien", "cook",
-    "lieutenant", "bosco", "marin", "eleve_officier",
+    "capitaine",
+    "second",
+    "chef_mecanicien",
+    "cook",
+    "lieutenant",
+    "bosco",
+    "marin",
+    "eleve_officier",
 )
 REQUIRED_ROLES = ("capitaine", "second", "chef_mecanicien", "cook", "bosco", "marin")
 
@@ -54,12 +66,20 @@ async def crew_index(
     total = len(members)
 
     # Bordée par navire (assignments actifs)
-    now = datetime.now(timezone.utc)
-    active_assigns = list((await db.execute(
-        select(CrewAssignment)
-        .where(CrewAssignment.embark_at.is_not(None))
-        .where((CrewAssignment.disembark_at.is_(None)) | (CrewAssignment.disembark_at > now))
-    )).scalars().all())
+    now = datetime.now(UTC)
+    active_assigns = list(
+        (
+            await db.execute(
+                select(CrewAssignment)
+                .where(CrewAssignment.embark_at.is_not(None))
+                .where(
+                    (CrewAssignment.disembark_at.is_(None)) | (CrewAssignment.disembark_at > now)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     legs_index = {}
     for a in active_assigns:
         leg = await db.get(Leg, a.leg_id)
@@ -78,14 +98,15 @@ async def crew_index(
         if m is None:
             continue
         bordees[vname]["crew"].append(m)
-    for vname, info in bordees.items():
+    for info in bordees.values():
         roles_present = {m.role for m in info["crew"]}
         info["missing"] = [r for r in REQUIRED_ROLES if r not in roles_present]
 
     # Compliance alerts (passport / visa within 30 days)
     soon = _date.today() + timedelta(days=30)
     compliance_alerts = [
-        m for m in members
+        m
+        for m in members
         if (m.passport_expires_at and m.passport_expires_at <= soon)
         or (m.visa_us_expires_at and m.visa_us_expires_at <= soon)
         or (m.visa_br_expires_at and m.visa_br_expires_at <= soon)
@@ -101,8 +122,10 @@ async def crew_index(
     return templates.TemplateResponse(
         "staff/crew/index.html",
         {
-            "request": request, "user": user,
-            "members": members, "roles": CREW_ROLES,
+            "request": request,
+            "user": user,
+            "members": members,
+            "roles": CREW_ROLES,
             "selected_role": role,
             "bordees": dict(bordees),
             "compliance_alerts": compliance_alerts,
@@ -117,9 +140,17 @@ async def crew_compliance(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("crew", "C")),
 ) -> HTMLResponse:
-    members = list((await db.execute(
-        select(CrewMember).where(CrewMember.is_active.is_(True)).order_by(CrewMember.full_name)
-    )).scalars().all())
+    members = list(
+        (
+            await db.execute(
+                select(CrewMember)
+                .where(CrewMember.is_active.is_(True))
+                .order_by(CrewMember.full_name)
+            )
+        )
+        .scalars()
+        .all()
+    )
     today = _date.today()
     rows = []
     for m in members:
@@ -141,8 +172,10 @@ async def crew_compliance(
             if days <= 30:
                 warnings.append(f"Seaman book expire dans {days} j")
         if m.schengen_status != "compliant":
-            warnings.append(f"Schengen {m.schengen_status}"
-                            + (f" ({m.schengen_days_in_window} j)" if m.schengen_days_in_window else ""))
+            warnings.append(
+                f"Schengen {m.schengen_status}"
+                + (f" ({m.schengen_days_in_window} j)" if m.schengen_days_in_window else "")
+            )
         rows.append({"member": m, "warnings": warnings})
     return templates.TemplateResponse(
         "staff/crew/compliance.html",
@@ -161,19 +194,25 @@ async def crew_calendar(
     y = year or _date.today().year
     start = _date(y, 1, 1)
     end = _date(y, 12, 31)
-    members = list((await db.execute(
-        select(CrewMember).where(CrewMember.is_active.is_(True)).order_by(CrewMember.full_name)
-    )).scalars().all())
-    assigns = list((await db.execute(
-        select(CrewAssignment)
-    )).scalars().all())
+    members = list(
+        (
+            await db.execute(
+                select(CrewMember)
+                .where(CrewMember.is_active.is_(True))
+                .order_by(CrewMember.full_name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assigns = list((await db.execute(select(CrewAssignment))).scalars().all())
     # Build per-member day map
     days_by_member: dict[int, set[_date]] = defaultdict(set)
     for a in assigns:
         if not a.embark_at:
             continue
         d0 = a.embark_at.date()
-        d1 = (a.disembark_at or datetime.now(timezone.utc)).date()
+        d1 = (a.disembark_at or datetime.now(UTC)).date()
         cur = max(d0, start)
         last = min(d1, end)
         while cur <= last:
@@ -182,8 +221,10 @@ async def crew_calendar(
     return templates.TemplateResponse(
         "staff/crew/calendar.html",
         {
-            "request": request, "user": user,
-            "year": y, "members": members,
+            "request": request,
+            "user": user,
+            "year": y,
+            "members": members,
             "days_by_member": {m.id: sorted(days_by_member.get(m.id, ())) for m in members},
         },
     )
@@ -220,16 +261,24 @@ async def crew_create(
         role=role,
         nationality=(nationality or "").strip().upper()[:2] or None,
         passport_number=(passport_number or "").strip() or None,
-        passport_expires_at=_date.fromisoformat(passport_expires_at) if passport_expires_at else None,
+        passport_expires_at=(
+            _date.fromisoformat(passport_expires_at) if passport_expires_at else None
+        ),
         email=(email or "").strip() or None,
         phone=(phone or "").strip() or None,
     )
     db.add(m)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="crew", entity_type="crew_member",
-        entity_id=m.id, entity_label=m.full_name,
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="crew",
+        entity_type="crew_member",
+        entity_id=m.id,
+        entity_label=m.full_name,
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/crew", status_code=303)
@@ -245,27 +294,57 @@ async def crew_detail(
     m = await db.get(CrewMember, member_id)
     if m is None:
         raise HTTPException(status_code=404)
-    assigns = list((await db.execute(
-        select(CrewAssignment).where(CrewAssignment.crew_member_id == member_id)
-        .order_by(CrewAssignment.embark_at.desc())
-    )).scalars().all())
-    certs = list((await db.execute(
-        select(CrewCertification).where(CrewCertification.crew_member_id == member_id)
-    )).scalars().all())
-    leaves = list((await db.execute(
-        select(CrewLeave).where(CrewLeave.crew_member_id == member_id)
-        .order_by(CrewLeave.start_date.desc())
-    )).scalars().all())
-    tickets = list((await db.execute(
-        select(CrewTicket).where(CrewTicket.crew_member_id == member_id)
-        .order_by(CrewTicket.departure_at.desc())
-    )).scalars().all())
+    assigns = list(
+        (
+            await db.execute(
+                select(CrewAssignment)
+                .where(CrewAssignment.crew_member_id == member_id)
+                .order_by(CrewAssignment.embark_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    certs = list(
+        (
+            await db.execute(
+                select(CrewCertification).where(CrewCertification.crew_member_id == member_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    leaves = list(
+        (
+            await db.execute(
+                select(CrewLeave)
+                .where(CrewLeave.crew_member_id == member_id)
+                .order_by(CrewLeave.start_date.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    tickets = list(
+        (
+            await db.execute(
+                select(CrewTicket)
+                .where(CrewTicket.crew_member_id == member_id)
+                .order_by(CrewTicket.departure_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/crew/detail.html",
         {
-            "request": request, "user": user,
-            "member": m, "assignments": assigns,
-            "certifications": certs, "leaves": leaves,
+            "request": request,
+            "user": user,
+            "member": m,
+            "assignments": assigns,
+            "certifications": certs,
+            "leaves": leaves,
             "tickets": tickets,
         },
     )
@@ -294,9 +373,15 @@ async def crew_assign(
     db.add(a)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="crew", entity_type="crew_assignment",
-        entity_id=a.id, entity_label=f"member={member_id} leg={leg_id}",
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="crew",
+        entity_type="crew_assignment",
+        entity_id=a.id,
+        entity_label=f"member={member_id} leg={leg_id}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)
@@ -323,7 +408,9 @@ async def crew_ticket_create(
         raise HTTPException(status_code=404)
     t = CrewTicket(
         crew_member_id=member_id,
-        mode=mode, reference=reference, carrier=carrier,
+        mode=mode,
+        reference=reference,
+        carrier=carrier,
         departure_at=datetime.fromisoformat(departure_at) if departure_at else None,
         arrival_at=datetime.fromisoformat(arrival_at) if arrival_at else None,
         departure_location=departure_location,
@@ -336,4 +423,6 @@ async def crew_ticket_create(
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
+    )

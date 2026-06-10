@@ -19,8 +19,11 @@ types-passlib==1.7.7.20241221
 types-bleach==6.2.0.20241123
 
 # Security scanners
+# NB: `safety` retiré — il épingle pydantic<2.10 et rendait l'install CI
+# impossible (ResolutionImpossible) face à pydantic==2.10.4 de l'app.
+# L'audit de vulnérabilités passe par pip-audit, installé dans son propre
+# step CI (cf. .github/workflows/ci.yml) pour ne pas contraindre ce venv.
 bandit==1.8.2
-safety==3.5.0
 
 # Coverage
 coverage[toml]==7.6.10

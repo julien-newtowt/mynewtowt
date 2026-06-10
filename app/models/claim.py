@@ -1,11 +1,18 @@
 """Claims (cargo / crew / hull / war risk)."""
+
 from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,8 +50,9 @@ class Claim(Base):
     cargo_position: Mapped[str | None] = mapped_column(String(40))  # if cargo claim
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
-    timeline: Mapped[list["ClaimTimelineEntry"]] = relationship(
-        back_populates="claim", cascade="all, delete-orphan",
+    timeline: Mapped[list[ClaimTimelineEntry]] = relationship(
+        back_populates="claim",
+        cascade="all, delete-orphan",
         order_by="ClaimTimelineEntry.at",
     )
 
@@ -72,7 +80,9 @@ class VesselPosition(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     vessel_id: Mapped[int] = mapped_column(ForeignKey("vessels.id"), nullable=False, index=True)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     latitude: Mapped[float] = mapped_column()
     longitude: Mapped[float] = mapped_column()
     sog_kn: Mapped[float | None] = mapped_column()

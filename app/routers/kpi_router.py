@@ -5,6 +5,7 @@ Expose :
   GET  /kpi/export.csv — export CSV de tous les LegKPI
   POST /kpi/legs/{leg_id} — création ou mise à jour d'un LegKPI
 """
+
 from __future__ import annotations
 
 import csv
@@ -30,6 +31,7 @@ router = APIRouter(prefix="/kpi", tags=["kpi"])
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _to_decimal(v: str | None) -> Decimal | None:
     """Convert a form string value to Decimal, returning None for blank/missing."""
     if v and v.strip():
@@ -41,6 +43,7 @@ def _to_decimal(v: str | None) -> Decimal | None:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 async def kpi_index(
@@ -48,12 +51,8 @@ async def kpi_index(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("kpi", "C")),
 ) -> HTMLResponse:
-    kpis = list(
-        (await db.execute(select(LegKPI).order_by(LegKPI.id.desc()))).scalars().all()
-    )
-    legs = list(
-        (await db.execute(select(Leg).order_by(Leg.etd.desc()))).scalars().all()
-    )
+    kpis = list((await db.execute(select(LegKPI).order_by(LegKPI.id.desc()))).scalars().all())
+    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()))).scalars().all())
 
     # Aggregates
     total_tonnage_t = sum((k.tonnage_kg or Decimal(0)) for k in kpis) / Decimal(1000)
@@ -84,9 +83,7 @@ async def kpi_export_csv(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("kpi", "C")),
 ) -> StreamingResponse:
-    kpis = list(
-        (await db.execute(select(LegKPI).order_by(LegKPI.id.asc()))).scalars().all()
-    )
+    kpis = list((await db.execute(select(LegKPI).order_by(LegKPI.id.asc()))).scalars().all())
 
     # Build leg_id → leg_code mapping
     leg_ids = {k.leg_id for k in kpis}
@@ -98,29 +95,33 @@ async def kpi_export_csv(
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow([
-        "leg_code",
-        "palettes_carried",
-        "tonnage_kg",
-        "distance_nm",
-        "duration_hours",
-        "avg_speed_kn",
-        "on_time",
-        "occupancy_pct",
-        "co2_avoided_kg",
-    ])
+    writer.writerow(
+        [
+            "leg_code",
+            "palettes_carried",
+            "tonnage_kg",
+            "distance_nm",
+            "duration_hours",
+            "avg_speed_kn",
+            "on_time",
+            "occupancy_pct",
+            "co2_avoided_kg",
+        ]
+    )
     for k in kpis:
-        writer.writerow([
-            leg_map.get(k.leg_id, ""),
-            k.palettes_carried,
-            k.tonnage_kg,
-            k.distance_nm,
-            k.duration_hours,
-            k.avg_speed_kn,
-            "1" if k.on_time else "0",
-            k.occupancy_pct,
-            k.co2_avoided_kg,
-        ])
+        writer.writerow(
+            [
+                leg_map.get(k.leg_id, ""),
+                k.palettes_carried,
+                k.tonnage_kg,
+                k.distance_nm,
+                k.duration_hours,
+                k.avg_speed_kn,
+                "1" if k.on_time else "0",
+                k.occupancy_pct,
+                k.co2_avoided_kg,
+            ]
+        )
 
     output.seek(0)
     return StreamingResponse(
@@ -147,8 +148,14 @@ async def kpi_sync(
 
     await compute_for_leg(db, leg)
     await activity_record(
-        db, action="kpi_sync", user_id=user.id, user_name=user.username,
-        user_role=user.role, module="kpi", entity_type="leg_kpi", entity_id=leg_id,
+        db,
+        action="kpi_sync",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="kpi",
+        entity_type="leg_kpi",
+        entity_id=leg_id,
         detail=f"auto-sync leg {leg_id}",
     )
     return RedirectResponse(url="/kpi", status_code=303)
@@ -193,7 +200,9 @@ async def kpi_upsert(
         db.add(kpi)
     else:
         existing.palettes_carried = palettes_carried
-        existing.tonnage_kg = Decimal(tonnage_kg) if tonnage_kg and tonnage_kg.strip() else Decimal(0)
+        existing.tonnage_kg = (
+            Decimal(tonnage_kg) if tonnage_kg and tonnage_kg.strip() else Decimal(0)
+        )
         existing.distance_nm = _to_decimal(distance_nm)
         existing.duration_hours = _to_decimal(duration_hours)
         existing.avg_speed_kn = _to_decimal(avg_speed_kn)

@@ -1,11 +1,19 @@
 """Finance: LegFinance, OPEX parameters, port configs, KPI."""
+
 from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    CHAR, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 

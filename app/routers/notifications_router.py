@@ -1,4 +1,5 @@
 """Notifications dashboard — list / toggle-read / archive endpoints."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_staff
 from app.database import get_db
 from app.models.notification import Notification
-from app.services.notifications import archive, mark_read
+from app.services.notifications import archive
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -49,7 +50,11 @@ async def archive_all_read(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_staff),
 ):
-    stmt = select(Notification).where(Notification.is_read.is_(True)).where(Notification.is_archived.is_(False))
+    stmt = (
+        select(Notification)
+        .where(Notification.is_read.is_(True))
+        .where(Notification.is_archived.is_(False))
+    )
     for n in (await db.execute(stmt)).scalars().all():
         await archive(db, n)
     return RedirectResponse(url="/dashboard", status_code=303)

@@ -1,8 +1,10 @@
 """Tests for app.i18n — translation dispatch and language detection."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import ClassVar
 
 from app.i18n import DEFAULT, SUPPORTED, get_lang_from_request, t
 
@@ -44,36 +46,42 @@ def test_t_falls_back_to_key_for_unknown():
 def test_t_handles_format_placeholders():
     # Custom catalog: simulate via direct call
     from app.i18n import _CATALOGS
+
     _CATALOGS.setdefault("fr", {})["hello_named"] = "Bonjour {name}"
     assert t("hello_named", "fr", name="Alice") == "Bonjour Alice"
 
 
 def test_get_lang_from_request_uses_query_param():
     req = FakeRequest(query_params={"lang": "en"}, headers={"accept-language": ""})
+
     # Convert to attribute access for compat with caller using .get
     class R:
         query_params = req.query_params
         headers = req.headers
+
     assert get_lang_from_request(R) == "en"
 
 
 def test_get_lang_from_request_uses_user_language():
     class R:
-        query_params: dict = {}
-        headers: dict = {}
+        query_params: ClassVar[dict] = {}
+        headers: ClassVar[dict] = {}
+
     user = SimpleNamespace(language="en")
     assert get_lang_from_request(R, user=user) == "en"
 
 
 def test_get_lang_from_request_uses_accept_language():
     class R:
-        query_params: dict = {}
-        headers = {"accept-language": "en-US,en;q=0.9,fr;q=0.8"}
+        query_params: ClassVar[dict] = {}
+        headers: ClassVar[dict] = {"accept-language": "en-US,en;q=0.9,fr;q=0.8"}
+
     assert get_lang_from_request(R) == "en"
 
 
 def test_get_lang_from_request_falls_back_to_default():
     class R:
-        query_params: dict = {}
-        headers = {"accept-language": "ja-JP"}
+        query_params: ClassVar[dict] = {}
+        headers: ClassVar[dict] = {"accept-language": "ja-JP"}
+
     assert get_lang_from_request(R) == DEFAULT

@@ -5,6 +5,7 @@ Bug-pattern récurrent : copier-coller une classe voisine qui n'a pas le
 même schéma. Une AttributeError à l'exécution = 500 utilisateur visible.
 Ces tests cassent au build si on régresse.
 """
+
 from __future__ import annotations
 
 import inspect

@@ -1,6 +1,8 @@
 """Jinja2 setup + global filters/context."""
+
 from __future__ import annotations
 
+import json as _json
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +10,19 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from app.config import settings
+from app.i18n import (
+    DEFAULT as _i18n_default,
+)
+from app.i18n import (
+    SUPPORTED as _i18n_supported,
+)
+from app.i18n import (
+    get_lang_from_request as _i18n_get_lang,
+)
+from app.i18n import (
+    t as _i18n_t,
+)
+from app.services.seo import organization_jsonld as _org_jsonld
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -44,20 +59,9 @@ def _flag_emoji(country_code: str | None) -> str:
         return ""
     base = ord("🇦") - ord("A")
     try:
-        return chr(ord(country_code[0].upper()) + base) + chr(
-            ord(country_code[1].upper()) + base
-        )
+        return chr(ord(country_code[0].upper()) + base) + chr(ord(country_code[1].upper()) + base)
     except (TypeError, ValueError):
         return ""
-
-
-# ─────────── i18n helpers ──────────────
-from app.i18n import (
-    DEFAULT as _i18n_default,
-    SUPPORTED as _i18n_supported,
-    get_lang_from_request as _i18n_get_lang,
-    t as _i18n_t,
-)
 
 
 def _i18n_context_processor(request: Request) -> dict[str, Any]:
@@ -91,7 +95,7 @@ def _i18n_context_processor(request: Request) -> dict[str, Any]:
 # Source de vérité : docs/design/newtowt-design-tokens.json
 _BRAND_LOGOS = {
     "logo_light": "/static/img/logo_NEWTOWT_web.png",
-    "logo_dark":  "/static/img/logo_NEWTOWT_web_dark.png",
+    "logo_dark": "/static/img/logo_NEWTOWT_web_dark.png",
     "logo_white": "/static/img/logo_NEWTOWT_web_white.png",
     "logo_email": "/static/img/logo_NEWTOWT_email.png",
 }
@@ -189,9 +193,6 @@ templates.env.globals["app_env"] = settings.app_env
 templates.env.globals["site_url"] = settings.site_url
 
 # ─────────── SEO / lisibilité IA (Schema.org + hreflang) ──────────────────
-import json as _json
-from app.services.seo import organization_jsonld as _org_jsonld
-
 # Fiche Organisation injectée dans le <head> de la vitrine (bloc de données
 # `application/ld+json` — non exécuté, compatible CSP stricte).
 templates.env.globals["organization_jsonld"] = _json.dumps(
@@ -199,12 +200,21 @@ templates.env.globals["organization_jsonld"] = _json.dumps(
 )
 templates.env.globals["public_langs"] = ["fr", "en", "es", "pt-br"]
 templates.env.globals["hreflang_map"] = {
-    "fr": "fr", "en": "en", "es": "es", "pt-br": "pt-BR",
+    "fr": "fr",
+    "en": "en",
+    "es": "es",
+    "pt-br": "pt-BR",
 }
 # Drapeau (code pays ISO-2 pour le filtre |flag) + libellé natif par langue.
 templates.env.globals["lang_country"] = {
-    "fr": "FR", "en": "GB", "es": "ES", "pt-br": "BR",
+    "fr": "FR",
+    "en": "GB",
+    "es": "ES",
+    "pt-br": "BR",
 }
 templates.env.globals["lang_name"] = {
-    "fr": "Français", "en": "English", "es": "Español", "pt-br": "Português",
+    "fr": "Français",
+    "en": "English",
+    "es": "Español",
+    "pt-br": "Português",
 }

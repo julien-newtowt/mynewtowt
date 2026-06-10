@@ -11,11 +11,12 @@ V3.0 minimal implementation:
 V3.1 backlog: RAG pgvector over docs/, streaming SSE, conversation
 history UI, multi-conversation per user.
 """
+
 from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 1024
-PRICE_INPUT_PER_M = Decimal("3.00")   # USD per 1M input tokens (Sonnet 4.6 tier)
+PRICE_INPUT_PER_M = Decimal("3.00")  # USD per 1M input tokens (Sonnet 4.6 tier)
 PRICE_OUTPUT_PER_M = Decimal("15.00")  # USD per 1M output tokens
 
 INJECTION_PATTERNS = [
@@ -79,10 +80,7 @@ Ton compagnon Manrope et DM Serif sont des polices, pas des personnages.
 
 
 def detect_injection(text: str) -> bool:
-    for p in INJECTION_PATTERNS:
-        if p.search(text):
-            return True
-    return False
+    return any(p.search(text) for p in INJECTION_PATTERNS)
 
 
 # ---------------------------------------------------------------------------
@@ -166,8 +164,10 @@ async def _tool_search_booking(db: AsyncSession, query: str, user_role: str) -> 
     return {
         "results": [
             {
-                "reference": b.reference, "status": b.status,
-                "palettes": b.total_palettes, "weight_kg": float(b.total_weight_kg or 0),
+                "reference": b.reference,
+                "status": b.status,
+                "palettes": b.total_palettes,
+                "weight_kg": float(b.total_weight_kg or 0),
                 "created_at": b.created_at.isoformat(),
             }
             for b in rows
@@ -178,22 +178,29 @@ async def _tool_search_booking(db: AsyncSession, query: str, user_role: str) -> 
 async def _tool_vessel_position(db: AsyncSession, vessel: str, user_role: str) -> dict:
     if not has_permission(user_role, "planning", "C"):
         return {"error": "permission_denied"}
-    stmt_v = select(Vessel).where(
-        (Vessel.name.ilike(f"%{vessel}%")) | (Vessel.code == vessel)
-    ).limit(1)
+    stmt_v = (
+        select(Vessel).where((Vessel.name.ilike(f"%{vessel}%")) | (Vessel.code == vessel)).limit(1)
+    )
     v = (await db.execute(stmt_v)).scalar_one_or_none()
     if not v:
         return {"error": "vessel_not_found"}
-    pos = (await db.execute(
-        select(VesselPosition).where(VesselPosition.vessel_id == v.id)
-        .order_by(VesselPosition.recorded_at.desc()).limit(1)
-    )).scalar_one_or_none()
+    pos = (
+        await db.execute(
+            select(VesselPosition)
+            .where(VesselPosition.vessel_id == v.id)
+            .order_by(VesselPosition.recorded_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
     if not pos:
         return {"vessel": v.name, "position": None}
     return {
-        "vessel": v.name, "code": v.code,
-        "latitude": pos.latitude, "longitude": pos.longitude,
-        "sog_kn": pos.sog_kn, "cog_deg": pos.cog_deg,
+        "vessel": v.name,
+        "code": v.code,
+        "latitude": pos.latitude,
+        "longitude": pos.longitude,
+        "sog_kn": pos.sog_kn,
+        "cog_deg": pos.cog_deg,
         "recorded_at": pos.recorded_at.isoformat(),
     }
 
@@ -201,17 +208,24 @@ async def _tool_vessel_position(db: AsyncSession, vessel: str, user_role: str) -
 async def _tool_list_active(db: AsyncSession, user_role: str) -> dict:
     if not has_permission(user_role, "planning", "C"):
         return {"error": "permission_denied"}
-    rows = (await db.execute(
-        select(Leg, Vessel).join(Vessel, Vessel.id == Leg.vessel_id)
-        .where(Leg.atd.is_not(None)).where(Leg.ata.is_(None))
-        .order_by(Leg.atd.desc())
-    )).all()
+    rows = (
+        await db.execute(
+            select(Leg, Vessel)
+            .join(Vessel, Vessel.id == Leg.vessel_id)
+            .where(Leg.atd.is_not(None))
+            .where(Leg.ata.is_(None))
+            .order_by(Leg.atd.desc())
+        )
+    ).all()
     return {
         "active_legs": [
-            {"leg_code": l.leg_code, "vessel": v.name,
-             "atd": l.atd.isoformat() if l.atd else None,
-             "eta": l.eta.isoformat()}
-            for l, v in rows
+            {
+                "leg_code": leg.leg_code,
+                "vessel": v.name,
+                "atd": leg.atd.isoformat() if leg.atd else None,
+                "eta": leg.eta.isoformat(),
+            }
+            for leg, v in rows
         ]
     }
 
@@ -229,15 +243,17 @@ _TOOL_DISPATCH = {
 # ---------------------------------------------------------------------------
 
 
-async def get_or_create_conversation(
-    db: AsyncSession, user_id: int | None
-) -> ChatConversation:
+async def get_or_create_conversation(db: AsyncSession, user_id: int | None) -> ChatConversation:
     if user_id:
-        recent = (await db.execute(
-            select(ChatConversation).where(ChatConversation.user_id == user_id)
-            .order_by(ChatConversation.started_at.desc()).limit(1)
-        )).scalar_one_or_none()
-        if recent and (datetime.now(timezone.utc) - recent.started_at) < timedelta(hours=4):
+        recent = (
+            await db.execute(
+                select(ChatConversation)
+                .where(ChatConversation.user_id == user_id)
+                .order_by(ChatConversation.started_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if recent and (datetime.now(UTC) - recent.started_at) < timedelta(hours=4):
             return recent
     conv = ChatConversation(user_id=user_id, title=None)
     db.add(conv)
@@ -258,24 +274,35 @@ async def respond(
     response so the widget still works in dev.
     """
     if detect_injection(user_text):
-        db.add(ChatMessage(
-            conversation_id=conversation.id, role="user", content=user_text,
-            flagged_injection=True,
-        ))
+        db.add(
+            ChatMessage(
+                conversation_id=conversation.id,
+                role="user",
+                content=user_text,
+                flagged_injection=True,
+            )
+        )
         await db.flush()
         reply = ChatMessage(
-            conversation_id=conversation.id, role="assistant",
-            content=("Je détecte une tentative d'injection d'instructions. "
-                     "Je ne peux pas traiter cette requête."),
+            conversation_id=conversation.id,
+            role="assistant",
+            content=(
+                "Je détecte une tentative d'injection d'instructions. "
+                "Je ne peux pas traiter cette requête."
+            ),
         )
         db.add(reply)
         await db.flush()
         return reply
 
     # Persist user message
-    db.add(ChatMessage(
-        conversation_id=conversation.id, role="user", content=user_text,
-    ))
+    db.add(
+        ChatMessage(
+            conversation_id=conversation.id,
+            role="user",
+            content=user_text,
+        )
+    )
     await db.flush()
 
     # If no API key — canned response, but still log.
@@ -286,14 +313,17 @@ async def respond(
             "ANTHROPIC_API_KEY dans le .env, puis redéployer."
         )
         msg = ChatMessage(
-            conversation_id=conversation.id, role="assistant", content=canned,
+            conversation_id=conversation.id,
+            role="assistant",
+            content=canned,
         )
         db.add(msg)
         await db.flush()
         return msg
 
-    return await _call_anthropic(db, conversation=conversation,
-                                 user_text=user_text, user_role=user_role)
+    return await _call_anthropic(
+        db, conversation=conversation, user_text=user_text, user_role=user_role
+    )
 
 
 async def _call_anthropic(
@@ -312,7 +342,8 @@ async def _call_anthropic(
     except ImportError:
         logger.warning("anthropic SDK not installed; returning canned reply")
         msg = ChatMessage(
-            conversation_id=conversation.id, role="assistant",
+            conversation_id=conversation.id,
+            role="assistant",
             content="SDK Anthropic absent du conteneur. Réinstalle l'image.",
         )
         db.add(msg)
@@ -329,8 +360,7 @@ async def _call_anthropic(
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=[
-                {"type": "text", "text": SYSTEM_PROMPT,
-                 "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
             ],
             tools=TOOLS_SPEC,
             messages=messages,
@@ -339,13 +369,20 @@ async def _call_anthropic(
         total_out += resp.usage.output_tokens
 
         if resp.stop_reason != "tool_use":
-            text = "".join(
-                block.text for block in resp.content if getattr(block, "type", "") == "text"
-            ) or "(réponse vide)"
+            text = (
+                "".join(
+                    block.text for block in resp.content if getattr(block, "type", "") == "text"
+                )
+                or "(réponse vide)"
+            )
             cost = _cost_for(total_in, total_out)
             msg = ChatMessage(
-                conversation_id=conversation.id, role="assistant", content=text,
-                tokens_in=total_in, tokens_out=total_out, cost_usd=cost,
+                conversation_id=conversation.id,
+                role="assistant",
+                content=text,
+                tokens_in=total_in,
+                tokens_out=total_out,
+                cost_usd=cost,
             )
             db.add(msg)
             await db.flush()
@@ -373,19 +410,24 @@ async def _call_anthropic(
                 except Exception as e:  # tool failure shouldn't kill the conversation
                     logger.exception("Tool %s failed", tool_name)
                     result = {"error": "tool_failed", "detail": str(e)[:200]}
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": str(result),
-            })
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": str(result),
+                }
+            )
 
         messages.append({"role": "user", "content": tool_results})
 
     # Loop exhausted — bail
     msg = ChatMessage(
-        conversation_id=conversation.id, role="assistant",
+        conversation_id=conversation.id,
+        role="assistant",
         content="Désolé, je n'ai pas pu finaliser la réponse (boucle d'outils trop longue).",
-        tokens_in=total_in, tokens_out=total_out, cost_usd=_cost_for(total_in, total_out),
+        tokens_in=total_in,
+        tokens_out=total_out,
+        cost_usd=_cost_for(total_in, total_out),
     )
     db.add(msg)
     await db.flush()

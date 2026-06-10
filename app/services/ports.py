@@ -9,14 +9,15 @@ Why haversine in Python instead of PostGIS? V3 keeps Postgres lean
 (no extension required); for our scale (~15k rows) the SQL prefilter
 on a lat/lon bounding box + Python distance refinement is plenty fast.
 """
+
 from __future__ import annotations
 
 import csv
 import io
 import logging
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -137,17 +138,19 @@ async def upsert_ports(db: AsyncSession, rows: Iterable[PortRow]) -> tuple[int, 
             await db.execute(select(Port).where(Port.locode == row.locode))
         ).scalar_one_or_none()
         if existing is None:
-            db.add(Port(
-                locode=row.locode,
-                name=row.name,
-                country=row.country,
-                latitude=row.latitude,
-                longitude=row.longitude,
-                source=row.source,
-                function_code=row.function_code,
-                subdivision=row.subdivision,
-                timezone=row.timezone,
-            ))
+            db.add(
+                Port(
+                    locode=row.locode,
+                    name=row.name,
+                    country=row.country,
+                    latitude=row.latitude,
+                    longitude=row.longitude,
+                    source=row.source,
+                    function_code=row.function_code,
+                    subdivision=row.subdivision,
+                    timezone=row.timezone,
+                )
+            )
             inserted += 1
             pending += 1
         else:
@@ -230,17 +233,19 @@ def parse_csv(content: bytes | str, *, source: str = "csv") -> list[PortRow]:
         lon = _maybe_float(_pick(raw, _LON_COLS))
         if not (locode and name and country and lat is not None and lon is not None):
             continue
-        rows.append(PortRow(
-            locode=locode.replace(" ", "").upper()[:5],
-            name=name[:100],
-            country=country.upper()[:2],
-            latitude=lat,
-            longitude=lon,
-            source=source,
-            function_code=_pick(raw, _FUNC_COLS),
-            subdivision=_pick(raw, _SUBDIV_COLS),
-            timezone=_pick(raw, _TZ_COLS),
-        ))
+        rows.append(
+            PortRow(
+                locode=locode.replace(" ", "").upper()[:5],
+                name=name[:100],
+                country=country.upper()[:2],
+                latitude=lat,
+                longitude=lon,
+                source=source,
+                function_code=_pick(raw, _FUNC_COLS),
+                subdivision=_pick(raw, _SUBDIV_COLS),
+                timezone=_pick(raw, _TZ_COLS),
+            )
+        )
     return rows
 
 

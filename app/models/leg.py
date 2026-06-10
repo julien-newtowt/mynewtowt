@@ -1,4 +1,5 @@
 """Voyage segment (leg) — backbone of the planning and booking system."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -25,9 +26,7 @@ class Leg(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     leg_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
-    vessel_id: Mapped[int] = mapped_column(
-        ForeignKey("vessels.id"), nullable=False, index=True
-    )
+    vessel_id: Mapped[int] = mapped_column(ForeignKey("vessels.id"), nullable=False, index=True)
     departure_port_id: Mapped[int] = mapped_column(ForeignKey("ports.id"), nullable=False)
     arrival_port_id: Mapped[int] = mapped_column(ForeignKey("ports.id"), nullable=False)
 
@@ -72,7 +71,9 @@ class Leg(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
         nullable=False,
     )
 
