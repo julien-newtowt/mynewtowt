@@ -5,6 +5,7 @@ une demande entrante (chargeur, négociant, transitaire) qui est journalisée
 puis reprise par l'équipe commerciale — préparant le relais vers la
 plateforme de réservation de l'extranet. Aucun paiement n'a lieu ici.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

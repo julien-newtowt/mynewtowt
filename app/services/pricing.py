@@ -12,6 +12,7 @@ The full negotiated grid path is exercised through the optional
 dynamic adjustments because they have a contractual fixed rate that
 overrides public pricing.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -60,7 +61,7 @@ class PriceQuote:
 def compute_quote(
     *,
     base_price_per_palette_eur: Decimal | None,
-    items: list[tuple[str, int]],          # [(format, count), ...]
+    items: list[tuple[str, int]],  # [(format, count), ...]
     hazardous: bool,
     oversize: bool,
     etd: datetime,
@@ -118,9 +119,7 @@ def compute_quote(
     )
 
 
-def _apply_dynamic(
-    base: Decimal, *, etd: datetime, capacity: CapacityInfo
-) -> Decimal:
+def _apply_dynamic(base: Decimal, *, etd: datetime, capacity: CapacityInfo) -> Decimal:
     days_to_etd = (etd - datetime.now(UTC)).days
     occupancy = capacity.occupancy_pct
 

@@ -3,6 +3,7 @@
 Routers should call into this service instead of manipulating ORM objects
 directly. Keeps business invariants in one place.
 """
+
 from __future__ import annotations
 
 import secrets
@@ -57,9 +58,7 @@ def generate_reference(year: int | None = None) -> str:
 
 def _aggregate_totals(items: Sequence[BookingItemInput]) -> tuple[int, Decimal, bool]:
     total_palettes = sum(i.pallet_count for i in items)
-    total_weight = sum(
-        (i.unit_weight_kg or Decimal("0")) * Decimal(i.pallet_count) for i in items
-    )
+    total_weight = sum((i.unit_weight_kg or Decimal("0")) * Decimal(i.pallet_count) for i in items)
     hazardous = any(i.hazardous for i in items)
     return total_palettes, total_weight, hazardous
 
@@ -123,8 +122,7 @@ async def create_draft(
                 pallet_count=i.pallet_count,
                 cargo_description=i.cargo_description,
                 unit_weight_kg=i.unit_weight_kg,
-                total_weight_kg=(i.unit_weight_kg or Decimal("0"))
-                * Decimal(i.pallet_count),
+                total_weight_kg=(i.unit_weight_kg or Decimal("0")) * Decimal(i.pallet_count),
                 stackable=i.stackable,
                 hazardous=i.hazardous,
                 imdg_class=i.imdg_class,
@@ -217,9 +215,7 @@ async def advance(db: AsyncSession, booking: Booking, target: str) -> Booking:
     return booking
 
 
-async def list_for_client(
-    db: AsyncSession, client_id: int, limit: int = 50
-) -> list[Booking]:
+async def list_for_client(db: AsyncSession, client_id: int, limit: int = 50) -> list[Booking]:
     stmt = (
         select(Booking)
         .where(Booking.client_account_id == client_id)

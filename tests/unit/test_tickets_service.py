@@ -1,4 +1,5 @@
 """Tickets service — workflow transitions, SLA, reference generation."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -43,28 +44,34 @@ def test_sla_target_unknown_priority_defaults_to_72h() -> None:
     assert sla_target("PX", now) == now + timedelta(hours=72)
 
 
-@pytest.mark.parametrize("current,target", [
-    ("open", "in_progress"),
-    ("open", "cancelled"),
-    ("in_progress", "pending_external"),
-    ("in_progress", "resolved"),
-    ("in_progress", "cancelled"),
-    ("pending_external", "in_progress"),
-    ("pending_external", "resolved"),
-    ("resolved", "closed"),
-    ("resolved", "in_progress"),
-])
+@pytest.mark.parametrize(
+    "current,target",
+    [
+        ("open", "in_progress"),
+        ("open", "cancelled"),
+        ("in_progress", "pending_external"),
+        ("in_progress", "resolved"),
+        ("in_progress", "cancelled"),
+        ("pending_external", "in_progress"),
+        ("pending_external", "resolved"),
+        ("resolved", "closed"),
+        ("resolved", "in_progress"),
+    ],
+)
 def test_valid_transitions(current: str, target: str) -> None:
     assert_transition(current, target)
 
 
-@pytest.mark.parametrize("current,target", [
-    ("open", "resolved"),
-    ("open", "closed"),
-    ("closed", "in_progress"),
-    ("cancelled", "open"),
-    ("resolved", "open"),
-])
+@pytest.mark.parametrize(
+    "current,target",
+    [
+        ("open", "resolved"),
+        ("open", "closed"),
+        ("closed", "in_progress"),
+        ("cancelled", "open"),
+        ("resolved", "open"),
+    ],
+)
 def test_invalid_transitions(current: str, target: str) -> None:
     with pytest.raises(InvalidTicketTransition):
         assert_transition(current, target)

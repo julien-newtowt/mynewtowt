@@ -1,4 +1,5 @@
 """Tests du fingerprinting device."""
+
 from __future__ import annotations
 
 from app.services.device_detection import (

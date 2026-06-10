@@ -6,6 +6,7 @@ le <form> n'incluait pas <input name="_csrf">. Le middleware CSRF exige
 soit le header x-csrf-token, soit ce champ. Ce test re-rend le template
 et vérifie la présence du token dans les 3 forms (create, toggle, reset).
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -37,9 +38,16 @@ def _render(edit_user=None) -> str:
     tpl = templates.get_template("staff/admin/users.html")
     fake_vessel = SimpleNamespace(id=1, code="ANE", name="Anemos")
     fake_user = SimpleNamespace(
-        id=1, username="admin", full_name="Admin", email="a@x.com",
-        role="administrateur", language="fr", is_active=True,
-        mfa_enabled=False, must_change_password=False, assigned_vessel_id=None,
+        id=1,
+        username="admin",
+        full_name="Admin",
+        email="a@x.com",
+        role="administrateur",
+        language="fr",
+        is_active=True,
+        mfa_enabled=False,
+        must_change_password=False,
+        assigned_vessel_id=None,
     )
     return tpl.render(
         request=_fake_request(),
@@ -76,9 +84,15 @@ def test_toggle_and_reset_forms_have_csrf():
 
 def test_edit_form_prefills_and_has_csrf():
     target = SimpleNamespace(
-        id=2, username="capt_dupont", full_name="Capt. Dupont",
-        email="capt@x.com", role="marins", language="en",
-        is_active=True, mfa_enabled=True, must_change_password=False,
+        id=2,
+        username="capt_dupont",
+        full_name="Capt. Dupont",
+        email="capt@x.com",
+        role="marins",
+        language="en",
+        is_active=True,
+        mfa_enabled=True,
+        must_change_password=False,
         assigned_vessel_id=1,
     )
     html = _render(edit_user=target)

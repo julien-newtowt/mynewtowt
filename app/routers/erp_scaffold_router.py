@@ -9,6 +9,7 @@ Each module enforces the proper permission scope from app.permissions.
 Replacing a scaffold with a real implementation is a one-file-per-module
 operation.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

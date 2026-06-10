@@ -1,4 +1,5 @@
 """Port — UN LOCODE referenced by Legs and Bookings."""
+
 from __future__ import annotations
 
 from sqlalchemy import Boolean, Float, Integer, String

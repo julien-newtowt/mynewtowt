@@ -15,6 +15,7 @@ On NE stocke ni l'IP ni l'UA en clair (RGPD light — seul le hash sert
 au lookup). L'audit log peut toujours afficher l'IP (cf. activity_logs)
 mais cette table-ci est purement fingerprint.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

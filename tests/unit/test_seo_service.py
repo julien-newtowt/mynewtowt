@@ -1,4 +1,5 @@
 """Unit tests — artefacts SEO / lisibilité IA (fonctions pures)."""
+
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET

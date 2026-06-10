@@ -4,6 +4,7 @@ Source of truth for the RBAC matrix. `require_permission` is the
 FastAPI dependency that protects router groups. Per-route reinforcement
 is encouraged for M/S levels.
 """
+
 from __future__ import annotations
 
 from typing import Literal
@@ -215,8 +216,11 @@ def require_permission(module: str, level: Level):
         # Pré-charge le compteur notif pour le topbar (read-only, ~1ms).
         try:
             from app.services.notifications import count_unread
+
             request.state.notif_count = await count_unread(
-                db, user_id=user.id, user_role=user.role,
+                db,
+                user_id=user.id,
+                user_role=user.role,
             )
         except Exception:
             request.state.notif_count = 0

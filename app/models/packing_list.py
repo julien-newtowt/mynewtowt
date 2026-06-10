@@ -10,6 +10,7 @@ Workflow status :
 
 Lien public : `/p/{token}` — UUID hex tronqué à 24 caractères.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -46,7 +47,8 @@ class PackingList(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(
         ForeignKey("commercial_orders.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     token: Mapped[str] = mapped_column(
         String(32), unique=True, nullable=False, default=generate_token, index=True
@@ -62,12 +64,15 @@ class PackingList(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
-        onupdate=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     batches: Mapped[list[PackingListBatch]] = relationship(
-        back_populates="packing_list", cascade="all, delete-orphan",
+        back_populates="packing_list",
+        cascade="all, delete-orphan",
         order_by="PackingListBatch.id",
     )
 
@@ -93,7 +98,8 @@ class PackingListBatch(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     packing_list_id: Mapped[int] = mapped_column(
         ForeignKey("packing_lists.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     batch_number: Mapped[int | None] = mapped_column(Integer)
     pallet_format: Mapped[str] = mapped_column(String(20), default="EPAL", nullable=False)
@@ -125,7 +131,8 @@ class PackingListAudit(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     packing_list_id: Mapped[int] = mapped_column(
         ForeignKey("packing_lists.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     batch_id: Mapped[int | None] = mapped_column(Integer)
     actor: Mapped[str] = mapped_column(String(40), nullable=False)  # 'client' | 'staff'
@@ -148,10 +155,13 @@ class PackingListDocument(Base):
     # OU directement à un booking (upload client depuis l'espace /me).
     packing_list_id: Mapped[int | None] = mapped_column(
         ForeignKey("packing_lists.id", ondelete="CASCADE"),
-        nullable=True, index=True,
+        nullable=True,
+        index=True,
     )
     booking_id: Mapped[int | None] = mapped_column(
-        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=True, index=True,
+        ForeignKey("bookings.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     kind: Mapped[str] = mapped_column(String(40), nullable=False)
     # 'bl' | 'arrival_notice' | 'invoice' | 'customs' | 'msds' | 'other'
@@ -189,7 +199,8 @@ class PortalMessage(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     packing_list_id: Mapped[int] = mapped_column(
         ForeignKey("packing_lists.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     sender: Mapped[str] = mapped_column(String(20), nullable=False)  # 'client' | 'staff'
     sender_name: Mapped[str | None] = mapped_column(String(200))

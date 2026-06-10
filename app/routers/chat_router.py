@@ -1,4 +1,5 @@
 """Chatbot routes — staff widget endpoint."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -22,10 +23,17 @@ async def chat_page(
     user=Depends(require_permission("chat", "C")),
 ) -> HTMLResponse:
     conv = await get_or_create_conversation(db, user.id)
-    msgs = list((await db.execute(
-        select(ChatMessage).where(ChatMessage.conversation_id == conv.id)
-        .order_by(ChatMessage.created_at)
-    )).scalars().all())
+    msgs = list(
+        (
+            await db.execute(
+                select(ChatMessage)
+                .where(ChatMessage.conversation_id == conv.id)
+                .order_by(ChatMessage.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/chat/index.html",
         {"request": request, "user": user, "conversation": conv, "messages": msgs},
@@ -42,12 +50,13 @@ async def chat_send(
     if not text.strip():
         raise HTTPException(status_code=400, detail="Empty message")
     conv = await get_or_create_conversation(db, user.id)
-    msg = await respond(db, conversation=conv, user_text=text.strip(),
-                        user_role=user.role)
-    return JSONResponse({
-        "role": msg.role,
-        "content": msg.content,
-        "tokens_in": msg.tokens_in,
-        "tokens_out": msg.tokens_out,
-        "cost_usd": float(msg.cost_usd) if msg.cost_usd else None,
-    })
+    msg = await respond(db, conversation=conv, user_text=text.strip(), user_role=user.role)
+    return JSONResponse(
+        {
+            "role": msg.role,
+            "content": msg.content,
+            "tokens_in": msg.tokens_in,
+            "tokens_out": msg.tokens_out,
+            "cost_usd": float(msg.cost_usd) if msg.cost_usd else None,
+        }
+    )

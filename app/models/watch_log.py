@@ -1,4 +1,5 @@
 """Watch log — officer-on-watch journal entries (4h periods)."""
+
 from __future__ import annotations
 
 from datetime import date as _date
@@ -16,9 +17,7 @@ class WatchLog(Base):
     __tablename__ = "watch_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    leg_id: Mapped[int] = mapped_column(
-        ForeignKey("legs.id"), nullable=False, index=True
-    )
+    leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id"), nullable=False, index=True)
     watch_date: Mapped[_date] = mapped_column(Date, nullable=False)
     watch_period: Mapped[str] = mapped_column(String(5), nullable=False)
 
@@ -46,7 +45,7 @@ class OnboardChecklist(Base):
     kind: Mapped[str] = mapped_column(String(40), nullable=False)
     # 'fire_drill', 'abandon_drill', 'isps_audit', 'fsc_inspection', 'man_overboard'
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    items_json: Mapped[str | None] = mapped_column(Text)   # JSON-serialized items
+    items_json: Mapped[str | None] = mapped_column(Text)  # JSON-serialized items
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     signed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     signed_by_name: Mapped[str | None] = mapped_column(String(200))

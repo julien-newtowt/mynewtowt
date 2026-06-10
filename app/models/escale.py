@@ -1,4 +1,5 @@
 """Escale operations + docker shifts (Import / Export direction)."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -18,9 +19,19 @@ from app.database import Base
 DIRECTIONS = ("IMPORT", "EXPORT", "BOTH")
 OPERATION_TYPES = ("technique", "armement", "relations_externes", "documentaire", "commercial")
 OPERATION_ACTIONS = (
-    "nor", "eosp", "sosp", "pilot_on", "pilot_off",
-    "gangway_up", "gangway_down", "embarquement", "debarquement",
-    "soutage", "avitaillement", "relation_presse", "inspection",
+    "nor",
+    "eosp",
+    "sosp",
+    "pilot_on",
+    "pilot_off",
+    "gangway_up",
+    "gangway_down",
+    "embarquement",
+    "debarquement",
+    "soutage",
+    "avitaillement",
+    "relation_presse",
+    "inspection",
     "autre",
 )
 
@@ -30,7 +41,7 @@ class EscaleOperation(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id"), nullable=False, index=True)
-    direction: Mapped[str | None] = mapped_column(String(10))   # IMPORT/EXPORT/BOTH
+    direction: Mapped[str | None] = mapped_column(String(10))  # IMPORT/EXPORT/BOTH
     operation_type: Mapped[str] = mapped_column(String(40), nullable=False)
     action: Mapped[str] = mapped_column(String(40), nullable=False)
     label: Mapped[str | None] = mapped_column(String(200))
@@ -48,7 +59,7 @@ class DockerShift(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id"), nullable=False, index=True)
-    direction: Mapped[str | None] = mapped_column(String(10))   # IMPORT/EXPORT
+    direction: Mapped[str | None] = mapped_column(String(10))  # IMPORT/EXPORT
     company: Mapped[str | None] = mapped_column(String(200))
     nb_dockers: Mapped[int] = mapped_column(Integer, default=0)
     palettes_target: Mapped[int | None] = mapped_column(Integer)

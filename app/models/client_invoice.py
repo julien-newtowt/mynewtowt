@@ -1,4 +1,5 @@
 """Client-facing invoice — emitted on booking confirmation."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -37,13 +38,9 @@ class ClientInvoice(Base):
     )
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    amount_excl_vat_eur: Mapped[Decimal] = mapped_column(
-        Numeric(10, 2), nullable=False
-    )
+    amount_excl_vat_eur: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     vat_amount_eur: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    amount_incl_vat_eur: Mapped[Decimal] = mapped_column(
-        Numeric(10, 2), nullable=False
-    )
+    amount_incl_vat_eur: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     currency: Mapped[str] = mapped_column(CHAR(3), default="EUR", nullable=False)
 
     status: Mapped[str] = mapped_column(

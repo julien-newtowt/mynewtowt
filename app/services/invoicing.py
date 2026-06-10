@@ -4,6 +4,7 @@ Idempotent : une seule facture par booking. Montants en TVA française 20 %.
 Pas de paiement en ligne (Stripe retiré en V3.1) — règlement par virement,
 échéance à 30 jours.
 """
+
 from __future__ import annotations
 
 import secrets
@@ -41,9 +42,7 @@ async def issue_for_booking(
 ) -> ClientInvoice:
     """Crée (ou retourne) la facture d'un booking. Idempotent."""
     existing = (
-        await db.execute(
-            select(ClientInvoice).where(ClientInvoice.booking_id == booking.id)
-        )
+        await db.execute(select(ClientInvoice).where(ClientInvoice.booking_id == booking.id))
     ).scalar_one_or_none()
     if existing is not None:
         return existing

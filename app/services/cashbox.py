@@ -3,6 +3,7 @@
 Pure CRUD + aggregations. Movements are signed amounts:
 positive = income/recharge, negative = expense.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -34,9 +35,7 @@ class CashboxError(Exception):
 
 async def get_or_create(db: AsyncSession, vessel_id: int) -> OnboardCashbox:
     cb = (
-        await db.execute(
-            select(OnboardCashbox).where(OnboardCashbox.vessel_id == vessel_id)
-        )
+        await db.execute(select(OnboardCashbox).where(OnboardCashbox.vessel_id == vessel_id))
     ).scalar_one_or_none()
     if cb:
         return cb
@@ -90,15 +89,11 @@ async def balances(db: AsyncSession, cashbox: OnboardCashbox) -> list[CurrencyBa
             CashboxMovement.currency,
             func.coalesce(func.sum(CashboxMovement.amount), 0).label("balance"),
             func.coalesce(
-                func.sum(
-                    func.greatest(CashboxMovement.amount, 0)
-                ),
+                func.sum(func.greatest(CashboxMovement.amount, 0)),
                 0,
             ).label("income"),
             func.coalesce(
-                func.sum(
-                    func.least(CashboxMovement.amount, 0)
-                ),
+                func.sum(func.least(CashboxMovement.amount, 0)),
                 0,
             ).label("expense"),
             func.count(CashboxMovement.id).label("cnt"),

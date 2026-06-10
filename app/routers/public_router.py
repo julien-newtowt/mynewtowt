@@ -3,6 +3,7 @@
 No authentication required. The router is designed for prospects /
 unauthenticated clients and exposes only data flagged `is_bookable=True`.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -28,16 +29,21 @@ router = APIRouter(tags=["public"])
 
 @router.get("/fleet", response_class=HTMLResponse)
 async def fleet_tracker(
-    request: Request, db: AsyncSession = Depends(get_db),
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     """Carte publique de la flotte — dernières positions de chaque navire."""
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     last_positions: dict[int, VesselPosition | None] = {}
     for v in vessels:
-        p = (await db.execute(
-            select(VesselPosition).where(VesselPosition.vessel_id == v.id)
-            .order_by(VesselPosition.recorded_at.desc()).limit(1)
-        )).scalar_one_or_none()
+        p = (
+            await db.execute(
+                select(VesselPosition)
+                .where(VesselPosition.vessel_id == v.id)
+                .order_by(VesselPosition.recorded_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
         last_positions[v.id] = p
     return templates.TemplateResponse(
         "public/fleet.html",
@@ -67,6 +73,7 @@ async def set_language(lang: str, request: Request):
     # (path + query) pour rester sur le même serveur quel que soit SITE_URL.
     if target.startswith(("http://", "https://")):
         from urllib.parse import urlparse as _urlparse
+
         _p = _urlparse(target)
         target = (_p.path or "/") + (("?" + _p.query) if _p.query else "")
 
@@ -74,7 +81,12 @@ async def set_language(lang: str, request: Request):
         lang = DEFAULT
     resp = RedirectResponse(url=target, status_code=303)
     resp.set_cookie(
-        "towt_lang", lang, max_age=365 * 86400, httponly=False, samesite="lax", path="/",
+        "towt_lang",
+        lang,
+        max_age=365 * 86400,
+        httponly=False,
+        samesite="lax",
+        path="/",
     )
     return resp
 
@@ -97,8 +109,9 @@ async def routes_search(
     to_date: datetime | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    results = await _search_legs(db, from_country=from_, to_country=to,
-                                 from_date=from_date, to_date=to_date)
+    results = await _search_legs(
+        db, from_country=from_, to_country=to, from_date=from_date, to_date=to_date
+    )
     return templates.TemplateResponse(
         "public/routes.html",
         {
@@ -126,9 +139,7 @@ async def route_detail(
     )
     row = (await db.execute(stmt)).first()
     if not row:
-        return templates.TemplateResponse(
-            "public/404.html", {"request": request}, status_code=404
-        )
+        return templates.TemplateResponse("public/404.html", {"request": request}, status_code=404)
     leg, vessel = row
     pol = await db.get(Port, leg.departure_port_id)
     pod = await db.get(Port, leg.arrival_port_id)
@@ -140,15 +151,17 @@ async def route_detail(
 
     # Config portuaire (agent, docs, restrictions) pour les blocs port.
     from app.models.finance import PortConfig
-    pol_config = (await db.execute(
-        select(PortConfig).where(PortConfig.port_id == leg.departure_port_id)
-    )).scalar_one_or_none()
-    pod_config = (await db.execute(
-        select(PortConfig).where(PortConfig.port_id == leg.arrival_port_id)
-    )).scalar_one_or_none()
+
+    pol_config = (
+        await db.execute(select(PortConfig).where(PortConfig.port_id == leg.departure_port_id))
+    ).scalar_one_or_none()
+    pod_config = (
+        await db.execute(select(PortConfig).where(PortConfig.port_id == leg.arrival_port_id))
+    ).scalar_one_or_none()
 
     # Distance orthodromique (NM) + durée — affichées dans le hero.
     from app.services.ports import haversine_nm
+
     distance_nm = None
     if pol and pod and pol.latitude is not None and pod.latitude is not None:
         distance_nm = round(
@@ -166,6 +179,7 @@ async def route_detail(
     from decimal import Decimal
 
     from app.services import co2 as co2_svc
+
     co2_est = None
     if distance_nm:
         with contextlib.suppress(Exception):
@@ -209,6 +223,7 @@ async def about_anemos(request: Request) -> HTMLResponse:
 async def about_co2_redirect_legacy():
     """Backward-compat : anciens liens /about/co2 → 301 /about/anemos."""
     from fastapi.responses import RedirectResponse
+
     return RedirectResponse(url="/about/anemos", status_code=301)
 
 

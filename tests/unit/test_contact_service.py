@@ -1,4 +1,5 @@
 """Unit tests — service de demande de cotation/contact (validation pure)."""
+
 from __future__ import annotations
 
 import pytest
@@ -74,9 +75,15 @@ def test_lang_is_carried() -> None:
     assert _valid(lang="pt-br").lang == "pt-br"
 
 
-@pytest.mark.parametrize("value,expected", [
-    (None, False), ("", False), ("   ", False),
-    ("http://spam", True), ("x", True),
-])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (None, False),
+        ("", False),
+        ("   ", False),
+        ("http://spam", True),
+        ("x", True),
+    ],
+)
 def test_is_spam_honeypot(value, expected) -> None:
     assert is_spam(value) is expected

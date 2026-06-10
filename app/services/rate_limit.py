@@ -13,6 +13,7 @@ Usage :
 pas stocker de PII en clair, ``identifier`` est hashé SHA-256 avant
 d'être inséré (on garde quand même un index sur le hash).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -65,11 +66,11 @@ async def record(
 
 
 async def purge_older_than(
-    db: AsyncSession, *, days: int = 30,
+    db: AsyncSession,
+    *,
+    days: int = 30,
 ) -> int:
     """Tâche de maintenance — supprime les attempts anciens."""
     cutoff = datetime.now(UTC) - timedelta(days=days)
-    res = await db.execute(
-        delete(RateLimitAttempt).where(RateLimitAttempt.attempted_at < cutoff)
-    )
+    res = await db.execute(delete(RateLimitAttempt).where(RateLimitAttempt.attempted_at < cutoff))
     return res.rowcount or 0

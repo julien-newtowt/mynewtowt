@@ -5,6 +5,7 @@ In production, the table should be configured with:
 - A trigger preventing UPDATE/DELETE
 - Optional hash-chaining for tamper detection (added in Sec-S6 sprint)
 """
+
 from __future__ import annotations
 
 from datetime import datetime

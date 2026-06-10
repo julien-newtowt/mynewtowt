@@ -4,6 +4,7 @@ Types codifiés :
     new_order, new_cargo_message, eosp, sosp,
     new_claim, eta_shift, packing_to_review, leg_locked
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -22,36 +23,48 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 NOTIFICATION_TYPES = (
-    "new_order", "new_cargo_message", "eosp", "sosp",
-    "new_claim", "eta_shift", "packing_to_review", "leg_locked",
+    "new_order",
+    "new_cargo_message",
+    "eosp",
+    "sosp",
+    "new_claim",
+    "eta_shift",
+    "packing_to_review",
+    "leg_locked",
     "info",
     # Cycle de vie booking — côté client
-    "booking_submitted", "booking_confirmed", "booking_loaded",
-    "booking_at_sea", "booking_discharged", "booking_delivered",
-    "booking_cancelled", "invoice_issued", "anemos_issued",
+    "booking_submitted",
+    "booking_confirmed",
+    "booking_loaded",
+    "booking_at_sea",
+    "booking_discharged",
+    "booking_delivered",
+    "booking_cancelled",
+    "invoice_issued",
+    "anemos_issued",
     "new_booking_message",
 )
 
 # Icônes par type (emoji)
 NOTIFICATION_ICONS: dict[str, str] = {
-    "new_order":         "📦",
+    "new_order": "📦",
     "new_cargo_message": "💬",
-    "eosp":              "⚓",
-    "sosp":              "⛵",
-    "new_claim":         "⚠️",
-    "eta_shift":         "🕐",
+    "eosp": "⚓",
+    "sosp": "⛵",
+    "new_claim": "⚠️",
+    "eta_shift": "🕐",
     "packing_to_review": "📋",
-    "leg_locked":        "🔒",
-    "info":              "ℹ️",
+    "leg_locked": "🔒",
+    "info": "ℹ️",
     "booking_submitted": "📝",
     "booking_confirmed": "✅",
-    "booking_loaded":    "📦",
-    "booking_at_sea":    "⛵",
+    "booking_loaded": "📦",
+    "booking_at_sea": "⛵",
     "booking_discharged": "⚓",
     "booking_delivered": "🎉",
     "booking_cancelled": "❌",
-    "invoice_issued":    "🧾",
-    "anemos_issued":     "🌿",
+    "invoice_issued": "🧾",
+    "anemos_issued": "🌿",
     "new_booking_message": "💬",
 }
 

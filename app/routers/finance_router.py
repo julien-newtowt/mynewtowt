@@ -17,6 +17,7 @@ Permissions:
   M = data_analyst + administrateur
   S = data_analyst + administrateur
 """
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -41,6 +42,7 @@ router = APIRouter(prefix="/finance", tags=["finance"])
 # Helpers
 # ──────────────────────────────────────────────────────────────
 
+
 def _to_decimal(v: str | None, default: Decimal = Decimal("0")) -> Decimal:
     """Convert a form string to Decimal; return *default* when blank or invalid."""
     if v and v.strip():
@@ -62,15 +64,15 @@ def _to_decimal_or_none(v: str | None) -> Decimal | None:
 
 
 def _client_ip(request: Request) -> str | None:
-    return (
-        request.headers.get("x-forwarded-for")
-        or (request.client.host if request.client else None)
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
     )
 
 
 # ──────────────────────────────────────────────────────────────
 # 1. Index — overview of all LegFinance + OpexParameter
 # ──────────────────────────────────────────────────────────────
+
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
@@ -80,9 +82,7 @@ async def finance_index(
     user=Depends(require_permission("finance", "C")),
 ) -> HTMLResponse:
     # All LegFinance rows (used in the table)
-    finances: list[LegFinance] = list(
-        (await db.execute(select(LegFinance))).scalars().all()
-    )
+    finances: list[LegFinance] = list((await db.execute(select(LegFinance))).scalars().all())
 
     # Build a leg_code map so the template can label each row
     leg_ids = {f.leg_id for f in finances}
@@ -96,9 +96,7 @@ async def finance_index(
     opex: list[OpexParameter] = list(
         (
             await db.execute(
-                select(OpexParameter).order_by(
-                    OpexParameter.category, OpexParameter.parameter_name
-                )
+                select(OpexParameter).order_by(OpexParameter.category, OpexParameter.parameter_name)
             )
         )
         .scalars()
@@ -107,11 +105,7 @@ async def finance_index(
 
     # All legs (for the "add LegFinance" dropdown — exclude already-linked ones)
     all_legs: list[Leg] = list(
-        (
-            await db.execute(select(Leg).order_by(Leg.etd.desc()))
-        )
-        .scalars()
-        .all()
+        (await db.execute(select(Leg).order_by(Leg.etd.desc()))).scalars().all()
     )
     linked_leg_ids = {f.leg_id for f in finances}
     legs = [leg for leg in all_legs if leg.id not in linked_leg_ids]
@@ -147,6 +141,7 @@ async def finance_index(
 # 2. LegFinance edit form
 # ──────────────────────────────────────────────────────────────
 
+
 @router.get("/legs/{leg_id}/edit", response_class=HTMLResponse)
 async def finance_leg_edit_form(
     leg_id: int,
@@ -158,9 +153,7 @@ async def finance_leg_edit_form(
     if leg is None:
         raise HTTPException(status_code=404, detail="Leg not found")
 
-    result = await db.execute(
-        select(LegFinance).where(LegFinance.leg_id == leg_id)
-    )
+    result = await db.execute(select(LegFinance).where(LegFinance.leg_id == leg_id))
     finance: LegFinance | None = result.scalar_one_or_none()
 
     return templates.TemplateResponse(
@@ -177,6 +170,7 @@ async def finance_leg_edit_form(
 # ──────────────────────────────────────────────────────────────
 # 3. LegFinance upsert
 # ──────────────────────────────────────────────────────────────
+
 
 @router.post("/legs/{leg_id}")
 async def finance_leg_upsert(
@@ -202,9 +196,7 @@ async def finance_leg_upsert(
     other = _to_decimal(other_costs_eur)
     margin = rev - port - docker - opex_s - other
 
-    result = await db.execute(
-        select(LegFinance).where(LegFinance.leg_id == leg_id)
-    )
+    result = await db.execute(select(LegFinance).where(LegFinance.leg_id == leg_id))
     finance: LegFinance | None = result.scalar_one_or_none()
 
     if finance is None:
@@ -242,6 +234,7 @@ async def finance_leg_upsert(
 # 4. OPEX list
 # ──────────────────────────────────────────────────────────────
 
+
 @router.get("/opex", response_class=HTMLResponse)
 async def finance_opex_list(
     request: Request,
@@ -251,9 +244,7 @@ async def finance_opex_list(
     opex_params: list[OpexParameter] = list(
         (
             await db.execute(
-                select(OpexParameter).order_by(
-                    OpexParameter.category, OpexParameter.parameter_name
-                )
+                select(OpexParameter).order_by(OpexParameter.category, OpexParameter.parameter_name)
             )
         )
         .scalars()
@@ -272,6 +263,7 @@ async def finance_opex_list(
 # ──────────────────────────────────────────────────────────────
 # 5. OPEX create
 # ──────────────────────────────────────────────────────────────
+
 
 @router.post("/opex")
 async def finance_opex_create(
@@ -315,6 +307,7 @@ async def finance_opex_create(
 # ──────────────────────────────────────────────────────────────
 # 6. OPEX edit
 # ──────────────────────────────────────────────────────────────
+
 
 @router.post("/opex/{param_id}/edit")
 async def finance_opex_edit(
@@ -361,6 +354,7 @@ async def finance_opex_edit(
 # 7. OPEX delete
 # ──────────────────────────────────────────────────────────────
 
+
 @router.post("/opex/{param_id}/delete")
 async def finance_opex_delete(
     param_id: int,
@@ -396,23 +390,16 @@ async def finance_opex_delete(
 # 8. Port configs list
 # ──────────────────────────────────────────────────────────────
 
+
 @router.get("/ports", response_class=HTMLResponse)
 async def finance_ports_list(
     request: Request,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("finance", "C")),
 ) -> HTMLResponse:
-    ports: list[Port] = list(
-        (
-            await db.execute(select(Port).order_by(Port.name))
-        )
-        .scalars()
-        .all()
-    )
+    ports: list[Port] = list((await db.execute(select(Port).order_by(Port.name))).scalars().all())
 
-    all_configs: list[PortConfig] = list(
-        (await db.execute(select(PortConfig))).scalars().all()
-    )
+    all_configs: list[PortConfig] = list((await db.execute(select(PortConfig))).scalars().all())
     configs: dict[int, PortConfig] = {pc.port_id: pc for pc in all_configs}
 
     return templates.TemplateResponse(
@@ -429,6 +416,7 @@ async def finance_ports_list(
 # ──────────────────────────────────────────────────────────────
 # 9. Port config upsert
 # ──────────────────────────────────────────────────────────────
+
 
 @router.post("/ports/{port_id}")
 async def finance_port_config_upsert(
@@ -455,9 +443,7 @@ async def finance_port_config_upsert(
     if port is None:
         raise HTTPException(status_code=404, detail="Port not found")
 
-    result = await db.execute(
-        select(PortConfig).where(PortConfig.port_id == port_id)
-    )
+    result = await db.execute(select(PortConfig).where(PortConfig.port_id == port_id))
     config: PortConfig | None = result.scalar_one_or_none()
 
     if config is None:
@@ -472,12 +458,22 @@ async def finance_port_config_upsert(
     config.agent_name = agent_name.strip() if agent_name and agent_name.strip() else None
     config.agent_phone = agent_phone.strip() if agent_phone and agent_phone.strip() else None
     config.agent_email = agent_email.strip() if agent_email and agent_email.strip() else None
-    config.pilot_vhf_channel = pilot_vhf_channel.strip() if pilot_vhf_channel and pilot_vhf_channel.strip() else None
+    config.pilot_vhf_channel = (
+        pilot_vhf_channel.strip() if pilot_vhf_channel and pilot_vhf_channel.strip() else None
+    )
     config.pilot_phone = pilot_phone.strip() if pilot_phone and pilot_phone.strip() else None
-    config.port_control_vhf_channel = port_control_vhf_channel.strip() if port_control_vhf_channel and port_control_vhf_channel.strip() else None
-    config.documents_required = documents_required.strip() if documents_required and documents_required.strip() else None
+    config.port_control_vhf_channel = (
+        port_control_vhf_channel.strip()
+        if port_control_vhf_channel and port_control_vhf_channel.strip()
+        else None
+    )
+    config.documents_required = (
+        documents_required.strip() if documents_required and documents_required.strip() else None
+    )
     config.restrictions = restrictions.strip() if restrictions and restrictions.strip() else None
-    config.notes_for_captain = notes_for_captain.strip() if notes_for_captain and notes_for_captain.strip() else None
+    config.notes_for_captain = (
+        notes_for_captain.strip() if notes_for_captain and notes_for_captain.strip() else None
+    )
 
     await db.flush()
 

@@ -3,6 +3,7 @@
 Vue principale : grille 3 ponts × 2 cales × 3 blocs avec affectations.
 Algorithme de suggestion : services.stowage.suggest_assignments.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -38,9 +39,11 @@ async def stowage_index(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "C")),
 ) -> HTMLResponse:
-    plans = list((await db.execute(
-        select(StowagePlan).order_by(StowagePlan.updated_at.desc()).limit(50)
-    )).scalars().all())
+    plans = list(
+        (await db.execute(select(StowagePlan).order_by(StowagePlan.updated_at.desc()).limit(50)))
+        .scalars()
+        .all()
+    )
     legs_by_id: dict[int, Leg] = {}
     for p in plans:
         leg = await db.get(Leg, p.leg_id)
@@ -62,25 +65,34 @@ async def stowage_plan_view(
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
-    plan = (await db.execute(
-        select(StowagePlan).options(selectinload(StowagePlan.items))
-        .where(StowagePlan.leg_id == leg_id)
-    )).scalar_one_or_none()
+    plan = (
+        await db.execute(
+            select(StowagePlan)
+            .options(selectinload(StowagePlan.items))
+            .where(StowagePlan.leg_id == leg_id)
+        )
+    ).scalar_one_or_none()
     if plan is None:
         plan = StowagePlan(leg_id=leg_id, status="draft")
         db.add(plan)
         await db.flush()
     items = plan.items if plan.items is not None else []
-    usage = zone_usage_summary([
-        {"zone": it.zone, "pallet_format": it.pallet_format, "pallet_count": it.pallet_count}
-        for it in items
-    ])
+    usage = zone_usage_summary(
+        [
+            {"zone": it.zone, "pallet_format": it.pallet_format, "pallet_count": it.pallet_count}
+            for it in items
+        ]
+    )
     return templates.TemplateResponse(
         "staff/stowage/plan.html",
         {
-            "request": request, "user": user,
-            "leg": leg, "plan": plan, "items": items,
-            "zones": ZONE_LOADING_ORDER, "dangerous_zones": DANGEROUS_ZONES,
+            "request": request,
+            "user": user,
+            "leg": leg,
+            "plan": plan,
+            "items": items,
+            "zones": ZONE_LOADING_ORDER,
+            "dangerous_zones": DANGEROUS_ZONES,
             "usage": usage,
         },
     )
@@ -108,18 +120,29 @@ async def add_item(
     if zone not in ZONE_LOADING_ORDER:
         raise HTTPException(status_code=400, detail="zone invalide")
     item = StowageItem(
-        plan_id=plan_id, order_id=order_id, batch_id=batch_id,
-        zone=zone, pallet_format=pallet_format, pallet_count=pallet_count,
+        plan_id=plan_id,
+        order_id=order_id,
+        batch_id=batch_id,
+        zone=zone,
+        pallet_format=pallet_format,
+        pallet_count=pallet_count,
         weight_kg=weight_kg,
-        is_dangerous=is_dangerous, is_oversized=is_oversized,
+        is_dangerous=is_dangerous,
+        is_oversized=is_oversized,
         notes=notes,
     )
     db.add(item)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="cargo", entity_type="stowage_item",
-        entity_id=item.id, entity_label=f"plan={plan_id} zone={zone}",
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="cargo",
+        entity_type="stowage_item",
+        entity_id=item.id,
+        entity_label=f"plan={plan_id} zone={zone}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/stowage/legs/{plan.leg_id}", status_code=303)
@@ -137,45 +160,69 @@ async def suggest_plan(
     if plan is None:
         raise HTTPException(status_code=404)
     # Trouve les orders du leg
-    orders = list((await db.execute(
-        select(Order).where(Order.leg_id == plan.leg_id)
-    )).scalars().all())
+    orders = list(
+        (await db.execute(select(Order).where(Order.leg_id == plan.leg_id))).scalars().all()
+    )
     items_in: list[dict] = []
     for o in orders:
-        pls = list((await db.execute(
-            select(PackingList).where(PackingList.order_id == o.id)
-        )).scalars().all())
+        pls = list(
+            (await db.execute(select(PackingList).where(PackingList.order_id == o.id)))
+            .scalars()
+            .all()
+        )
         for pl in pls:
-            batches = list((await db.execute(
-                select(PackingListBatch).where(PackingListBatch.packing_list_id == pl.id)
-            )).scalars().all())
+            batches = list(
+                (
+                    await db.execute(
+                        select(PackingListBatch).where(PackingListBatch.packing_list_id == pl.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
             for b in batches:
-                items_in.append({
-                    "batch_id": b.id, "order_id": o.id,
-                    "pallet_format": b.pallet_format,
-                    "pallet_count": b.pallet_count,
-                    "is_dangerous": b.hazardous,
-                    "is_oversized": _is_oversized(b),
-                })
+                items_in.append(
+                    {
+                        "batch_id": b.id,
+                        "order_id": o.id,
+                        "pallet_format": b.pallet_format,
+                        "pallet_count": b.pallet_count,
+                        "is_dangerous": b.hazardous,
+                        "is_oversized": _is_oversized(b),
+                    }
+                )
     placed = suggest_assignments(items_in)
     # Clear previous suggestions and re-add
-    for it in (plan.items or []):
+    for it in plan.items or []:
         await db.delete(it)
     await db.flush()
     for p in placed:
         if p.get("zone") in ("OVERFLOW", None):
             continue
-        db.add(StowageItem(
-            plan_id=plan.id, order_id=p.get("order_id"), batch_id=p.get("batch_id"),
-            zone=p["zone"], pallet_format=p["pallet_format"], pallet_count=p["pallet_count"],
-            is_dangerous=p.get("is_dangerous", False),
-            is_oversized=p.get("is_oversized", False),
-        ))
+        db.add(
+            StowageItem(
+                plan_id=plan.id,
+                order_id=p.get("order_id"),
+                batch_id=p.get("batch_id"),
+                zone=p["zone"],
+                pallet_format=p["pallet_format"],
+                pallet_count=p["pallet_count"],
+                is_dangerous=p.get("is_dangerous", False),
+                is_oversized=p.get("is_oversized", False),
+            )
+        )
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="cargo", entity_type="stowage_plan",
-        entity_id=plan.id, entity_label=f"leg={plan.leg_id}", detail="auto-suggest",
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="cargo",
+        entity_type="stowage_plan",
+        entity_id=plan.id,
+        entity_label=f"leg={plan.leg_id}",
+        detail="auto-suggest",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/stowage/legs/{plan.leg_id}", status_code=303)
@@ -196,9 +243,16 @@ async def approve_plan(
     plan.approved_by = user.full_name or user.username
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="cargo", entity_type="stowage_plan",
-        entity_id=plan.id, entity_label=f"leg={plan.leg_id}", detail="approved",
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="cargo",
+        entity_type="stowage_plan",
+        entity_id=plan.id,
+        entity_label=f"leg={plan.leg_id}",
+        detail="approved",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/stowage/legs/{plan.leg_id}", status_code=303)
@@ -216,4 +270,6 @@ def _is_oversized(batch: PackingListBatch) -> bool:
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
+    )

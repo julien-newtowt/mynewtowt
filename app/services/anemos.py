@@ -11,6 +11,7 @@ La distance est résolue dans cet ordre :
    sur le leg pour les fois suivantes) ;
 3. table de paires de ports en dur (fallback historique V3.0).
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -54,15 +55,16 @@ def resolve_distance_nm(leg: Leg | None, pol: Port | None, pod: Port | None) -> 
     if leg is not None and leg.distance_nm is not None:
         return Decimal(leg.distance_nm)
     if (
-        pol is not None and pod is not None
-        and pol.latitude is not None and pol.longitude is not None
-        and pod.latitude is not None and pod.longitude is not None
+        pol is not None
+        and pod is not None
+        and pol.latitude is not None
+        and pol.longitude is not None
+        and pod.latitude is not None
+        and pod.longitude is not None
     ):
         nm = haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude)
         return Decimal(str(round(nm, 2)))
-    return _table_distance(
-        getattr(pol, "locode", None), getattr(pod, "locode", None)
-    )
+    return _table_distance(getattr(pol, "locode", None), getattr(pod, "locode", None))
 
 
 async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertificate:

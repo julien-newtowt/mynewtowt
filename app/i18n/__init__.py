@@ -11,6 +11,7 @@ as `<lang>.py` modules with a `CATALOG: dict[str, str]`.
 Selection order : ?lang= query → user.language (when authenticated) →
 Accept-Language header → default "fr".
 """
+
 from __future__ import annotations
 
 import contextlib

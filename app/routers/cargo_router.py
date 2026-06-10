@@ -11,6 +11,7 @@ Distance estimation: V3.0 uses a simple lookup table (orthodromic NM
 between known port pairs). Beyond V3.0 we'll persist the actual leg
 distance after the noon-report data is collected.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -155,6 +156,7 @@ async def staff_anemos_pdf(
 async def staff_co2_pdf_legacy(ref: str):
     """Backward-compat : ancien chemin → 301 vers anemos.pdf."""
     from fastapi.responses import RedirectResponse
+
     return RedirectResponse(url=f"/cargo/booking/{ref}/anemos.pdf", status_code=301)
 
 
@@ -204,8 +206,10 @@ async def client_anemos_pdf(
 async def client_co2_pdf_legacy(ref: str):
     """Backward-compat : redirects 301 vers anemos.pdf."""
     from fastapi.responses import RedirectResponse
+
     return RedirectResponse(
-        url=f"/me/bookings/{ref}/anemos.pdf", status_code=301,
+        url=f"/me/bookings/{ref}/anemos.pdf",
+        status_code=301,
     )
 
 
@@ -214,9 +218,7 @@ async def client_co2_pdf_legacy(ref: str):
 # ---------------------------------------------------------------------------
 
 
-async def _get_booking(
-    db: AsyncSession, ref: str, owner_client_id: int | None = None
-) -> Booking:
+async def _get_booking(db: AsyncSession, ref: str, owner_client_id: int | None = None) -> Booking:
     booking = (
         await db.execute(select(Booking).where(Booking.reference == ref))
     ).scalar_one_or_none()
@@ -266,13 +268,20 @@ async def _invoice_response(db, ref, owner_client_id=None) -> Response:
 
     invoice = (
         await db.execute(
-            select(ClientInvoice).where(ClientInvoice.booking_id == booking.id)
-            .order_by(ClientInvoice.issued_at.desc()).limit(1)
+            select(ClientInvoice)
+            .where(ClientInvoice.booking_id == booking.id)
+            .order_by(ClientInvoice.issued_at.desc())
+            .limit(1)
         )
     ).scalar_one_or_none()
     doc = render_invoice(
-        booking=booking, leg=leg, vessel=vessel, pol=pol, pod=pod,
-        client=client, invoice=invoice,
+        booking=booking,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        client=client,
+        invoice=invoice,
     )
     return _pdf_response(doc)
 
@@ -294,7 +303,13 @@ async def _co2_response(db, ref, owner_client_id=None) -> Response:
         )
     ).scalar_one_or_none()
     doc = render_anemos_certificate(
-        booking=booking, leg=leg, vessel=vessel, pol=pol, pod=pod,
-        client=client, distance_nm=distance, certificate=cert,
+        booking=booking,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        client=client,
+        distance_nm=distance,
+        certificate=cert,
     )
     return _pdf_response(doc)

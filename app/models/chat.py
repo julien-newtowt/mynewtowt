@@ -1,4 +1,5 @@
 """Chatbot Kairos AI — conversations and messages."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -45,7 +46,8 @@ class ChatMessage(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     conversation_id: Mapped[int] = mapped_column(
         ForeignKey("chat_conversations.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     # 'user' | 'assistant' | 'tool' | 'system'

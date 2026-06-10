@@ -1,4 +1,5 @@
 """Tests for app.services.commercial — pricing brackets logic."""
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -50,7 +51,8 @@ def test_pick_bracket_above_max_picks_full():
 
 def test_bracket_rate_applies_base_coeff_and_index():
     rate = bracket_rate(
-        base_rate=Decimal("100.00"), coeff=Decimal("0.80"),
+        base_rate=Decimal("100.00"),
+        coeff=Decimal("0.80"),
         adjustment_index=Decimal("1.05"),
     )
     assert rate == Decimal("84.00")
@@ -58,8 +60,10 @@ def test_bracket_rate_applies_base_coeff_and_index():
 
 def test_compute_offer_total_quantizes_to_cents():
     total = compute_offer_total(
-        base_rate=Decimal("38.50"), coeff=Decimal("0.70"),
-        adjustment_index=Decimal("1.0"), qty=500,
+        base_rate=Decimal("38.50"),
+        coeff=Decimal("0.70"),
+        adjustment_index=Decimal("1.0"),
+        qty=500,
     )
     # 38.50 * 0.70 = 26.95 * 500 = 13475.00
     assert total == Decimal("13475.00")

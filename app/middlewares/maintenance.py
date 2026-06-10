@@ -5,6 +5,7 @@ If the marker file `/tmp/.maintenance` exists, all requests other than
 
 The marker is toggled by `scripts/deploy.sh` and `scripts/maintenance.sh`.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,8 +38,6 @@ p{color:#B8C5CE}
 
 class MaintenanceMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if MARKER.exists() and not any(
-            request.url.path.startswith(p) for p in EXEMPT_PREFIXES
-        ):
+        if MARKER.exists() and not any(request.url.path.startswith(p) for p in EXEMPT_PREFIXES):
             return HTMLResponse(MAINTENANCE_HTML, status_code=503)
         return await call_next(request)

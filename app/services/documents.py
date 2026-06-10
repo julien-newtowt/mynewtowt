@@ -5,6 +5,7 @@ liens vers les endpoints PDF owner-only existants de ``cargo_router``) et
 les pièces *uploadées* par le client (``PackingListDocument`` rattachées au
 booking). Les règles de disponibilité reflètent celles de ``cargo_router``.
 """
+
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -20,14 +21,30 @@ def generated_docs_for(booking: Booking) -> list[dict]:
     not_draft = booking.status != "draft"
     discharged = booking.status in ("discharged", "delivered")
     return [
-        {"kind": "bl", "label": "Bill of Lading",
-         "url": f"/me/bookings/{ref}/bl.pdf", "available": not_draft},
-        {"kind": "packing", "label": "Packing List",
-         "url": f"/me/bookings/{ref}/packing-list.pdf", "available": True},
-        {"kind": "invoice", "label": "Facture / Devis",
-         "url": f"/me/bookings/{ref}/invoice.pdf", "available": True},
-        {"kind": "anemos", "label": "Label Anemos",
-         "url": f"/me/bookings/{ref}/anemos.pdf", "available": discharged},
+        {
+            "kind": "bl",
+            "label": "Bill of Lading",
+            "url": f"/me/bookings/{ref}/bl.pdf",
+            "available": not_draft,
+        },
+        {
+            "kind": "packing",
+            "label": "Packing List",
+            "url": f"/me/bookings/{ref}/packing-list.pdf",
+            "available": True,
+        },
+        {
+            "kind": "invoice",
+            "label": "Facture / Devis",
+            "url": f"/me/bookings/{ref}/invoice.pdf",
+            "available": True,
+        },
+        {
+            "kind": "anemos",
+            "label": "Label Anemos",
+            "url": f"/me/bookings/{ref}/anemos.pdf",
+            "available": discharged,
+        },
     ]
 
 
@@ -37,15 +54,21 @@ async def list_for_client(db: AsyncSession, client_id: int) -> list[dict]:
     out: list[dict] = []
     for b in bookings:
         uploaded = (
-            await db.execute(
-                select(PackingListDocument)
-                .where(PackingListDocument.booking_id == b.id)
-                .order_by(PackingListDocument.uploaded_at.desc())
+            (
+                await db.execute(
+                    select(PackingListDocument)
+                    .where(PackingListDocument.booking_id == b.id)
+                    .order_by(PackingListDocument.uploaded_at.desc())
+                )
             )
-        ).scalars().all()
-        out.append({
-            "booking": b,
-            "generated": generated_docs_for(b),
-            "uploaded": list(uploaded),
-        })
+            .scalars()
+            .all()
+        )
+        out.append(
+            {
+                "booking": b,
+                "generated": generated_docs_for(b),
+                "uploaded": list(uploaded),
+            }
+        )
     return out

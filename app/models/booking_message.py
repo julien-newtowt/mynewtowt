@@ -4,6 +4,7 @@ Distincte de ``PortalMessage`` (liée à une packing list du portail token)
 et de ``OnboardMessage`` (équipage). Ici le fil est rattaché au
 ``Booking`` de l'espace client authentifié.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

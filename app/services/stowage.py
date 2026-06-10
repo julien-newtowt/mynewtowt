@@ -9,6 +9,7 @@ La capacité par zone dépend du format de palette (PALETTE_COEFFICIENTS dans
 app.models.commercial). À défaut on prend une capacité indicative de ~50
 palettes par zone (3 ponts × 6 blocs × ~50 = ~900 palettes pour un 850).
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -33,10 +34,7 @@ def suggest_assignments(items: Iterable[dict]) -> list[dict]:
     out: list[dict] = []
 
     # 1. Dangerous / oversized → SUP_AV
-    danger_queue = [
-        it for it in items
-        if it.get("is_dangerous") or it.get("is_oversized")
-    ]
+    danger_queue = [it for it in items if it.get("is_dangerous") or it.get("is_oversized")]
     normal_queue = [it for it in items if it not in danger_queue]
 
     def _place(it: dict, candidate_zones: list[str]) -> str | None:

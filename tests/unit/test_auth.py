@@ -1,4 +1,5 @@
 """Auth primitives — hashing and session token signing."""
+
 from __future__ import annotations
 
 import time

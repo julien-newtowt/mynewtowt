@@ -1,4 +1,5 @@
 """Tests for app.utils.timezones."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

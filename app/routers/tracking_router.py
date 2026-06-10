@@ -27,6 +27,7 @@ le code existe en base).
 
 Si TRACKING_API_TOKEN n'est pas défini en .env, retour 503.
 """
+
 from __future__ import annotations
 
 import csv
@@ -114,11 +115,16 @@ def _parse_dt(v) -> datetime | None:
         return dt
     except ValueError:
         for fmt in (
-            "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
-            "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ",
-            "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
-            "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M",
-            "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%SZ",
+            "%d/%m/%Y %H:%M:%S",
+            "%d/%m/%Y %H:%M",
+            "%d-%m-%Y %H:%M:%S",
+            "%d-%m-%Y %H:%M",
+            "%m/%d/%Y %H:%M:%S",
+            "%m/%d/%Y %H:%M",
         ):
             try:
                 return datetime.strptime(s, fmt).replace(tzinfo=UTC)
@@ -140,11 +146,13 @@ def _get_col(row: dict, *candidates: str) -> object:
     for c in candidates:
         if c in row and row[c] not in (None, ""):
             return row[c]
+
     # 2. normalize : lower-case + strip parens + strip non-alnum
     def _norm(s: str) -> str:
         s = re.sub(r"\([^)]*\)", "", str(s))  # drop "(knots)" etc.
         s = re.sub(r"[^a-z0-9]+", "", s.lower())
         return s
+
     norm_row = {_norm(k): v for k, v in row.items() if k}
     for c in candidates:
         nc = _norm(c)
@@ -194,7 +202,10 @@ async def _extract_payload(request: Request) -> tuple[bytes, str]:
             if key in form:
                 value = form[key]
                 if hasattr(value, "read"):  # UploadFile
-                    return _enforce_size(await value.read(), key), getattr(value, "filename", "") or ""
+                    return (
+                        _enforce_size(await value.read(), key),
+                        getattr(value, "filename", "") or "",
+                    )
                 return _enforce_size(str(value).encode("utf-8"), key), ""
         # Fallback : 1er field qui est un UploadFile
         for _, v in form.items():
@@ -294,7 +305,11 @@ _FILENAME_VESSEL_RE = re.compile(r"(\d{4,})")
 
 
 def _resolve_vessel(
-    row: dict, filename: str, *, vessels: dict[str, Vessel], vmap: dict[str, str],
+    row: dict,
+    filename: str,
+    *,
+    vessels: dict[str, Vessel],
+    vmap: dict[str, str],
 ) -> Vessel | None:
     """Tente plusieurs stratégies pour identifier le navire.
 
@@ -306,10 +321,17 @@ def _resolve_vessel(
     """
     # 1. Colonnes explicites
     candidates = [
-        row.get("vessel_code"), row.get("vessel"), row.get("code"),
-        row.get("Vessel"), row.get("Code"), row.get("VESSEL"),
-        row.get("MMSI"), row.get("IMO"), row.get("imo_number"),
-        row.get("vessel_name"), row.get("Name"),
+        row.get("vessel_code"),
+        row.get("vessel"),
+        row.get("code"),
+        row.get("Vessel"),
+        row.get("Code"),
+        row.get("VESSEL"),
+        row.get("MMSI"),
+        row.get("IMO"),
+        row.get("imo_number"),
+        row.get("vessel_name"),
+        row.get("Name"),
     ]
     for c in candidates:
         if c is None or str(c).strip() == "":
@@ -384,11 +406,7 @@ async def upload_positions(
     # 3. query string ?filename=... (le plus simple pour Power Automate qui
     #    refuse parfois les expressions dynamiques dans les headers JSON)
     if not filename:
-        filename = (
-            request.headers.get("x-filename")
-            or request.query_params.get("filename")
-            or ""
-        )
+        filename = request.headers.get("x-filename") or request.query_params.get("filename") or ""
 
     # Détection du format — robuste aux binaires corrompus par PA
     rows: Iterable[dict] = []
@@ -446,7 +464,9 @@ async def upload_positions(
         rows = _rows_from_csv(text)
         fmt_tried.append("csv")
         logger.warning(
-            "Tracking upload: CSV text len=%d, file='%s'", len(text), filename,
+            "Tracking upload: CSV text len=%d, file='%s'",
+            len(text),
+            filename,
         )
 
     rows = list(rows)
@@ -457,9 +477,7 @@ async def upload_positions(
     skipped = 0
     errors: list[str] = []
 
-    vessels_by_code = {
-        v.code: v for v in (await db.execute(select(Vessel))).scalars().all()
-    }
+    vessels_by_code = {v.code: v for v in (await db.execute(select(Vessel))).scalars().all()}
     vmap = _vessel_map()
 
     for idx, row in enumerate(rows, start=1):
@@ -478,17 +496,26 @@ async def upload_positions(
 
         # Date — préfère ISO 8601 (Date / DateTime), fallback Unix Timestamp
         date_val = _get_col(
-            row, "date", "Date", "DateTime", "datetime", "Datetime",
-            "recorded_at", "Recorded_At", "Time UTC", "UTC", "ReportTime",
+            row,
+            "date",
+            "Date",
+            "DateTime",
+            "datetime",
+            "Datetime",
+            "recorded_at",
+            "Recorded_At",
+            "Time UTC",
+            "UTC",
+            "ReportTime",
         )
         if not date_val:
             date_val = _get_col(row, "Timestamp", "timestamp")
         dt = _parse_dt(date_val)
 
         lat = _parse_float(_get_col(row, "lat", "Lat", "Latitude", "latitude", "LAT"))
-        lon = _parse_float(_get_col(
-            row, "lon", "Lon", "Longitude", "longitude", "lng", "Long", "LON", "LONG"
-        ))
+        lon = _parse_float(
+            _get_col(row, "lon", "Lon", "Longitude", "longitude", "lng", "Long", "LON", "LONG")
+        )
 
         if dt is None or lat is None or lon is None:
             skipped += 1
@@ -501,39 +528,71 @@ async def upload_positions(
             continue
 
         # Idempotent : skip duplicates (same vessel + same recorded_at)
-        existing = (await db.execute(
-            select(VesselPosition).where(VesselPosition.vessel_id == v.id)
-            .where(VesselPosition.recorded_at == dt)
-        )).scalar_one_or_none()
+        existing = (
+            await db.execute(
+                select(VesselPosition)
+                .where(VesselPosition.vessel_id == v.id)
+                .where(VesselPosition.recorded_at == dt)
+            )
+        ).scalar_one_or_none()
         if existing is not None:
             skipped += 1
             continue
 
         # source : prend "Active interface" (Starlink_xxx) si dispo, sinon "satcom"
-        source_val = _get_col(
-            row, "source", "Source", "Active interface", "ActiveInterface", "interface",
-        ) or "satcom"
+        source_val = (
+            _get_col(
+                row,
+                "source",
+                "Source",
+                "Active interface",
+                "ActiveInterface",
+                "interface",
+            )
+            or "satcom"
+        )
 
-        db.add(VesselPosition(
-            vessel_id=v.id,
-            recorded_at=dt,
-            latitude=lat,
-            longitude=lon,
-            sog_kn=_parse_float(_get_col(
-                row, "sog", "SOG", "SOG (knots)", "speed", "Speed", "speed_knots",
-            )),
-            cog_deg=_parse_float(_get_col(
-                row, "cog", "COG", "COG (degree)", "COG (degrees)", "heading", "Heading", "course",
-            )),
-            source=str(source_val)[:40],
-        ))
+        db.add(
+            VesselPosition(
+                vessel_id=v.id,
+                recorded_at=dt,
+                latitude=lat,
+                longitude=lon,
+                sog_kn=_parse_float(
+                    _get_col(
+                        row,
+                        "sog",
+                        "SOG",
+                        "SOG (knots)",
+                        "speed",
+                        "Speed",
+                        "speed_knots",
+                    )
+                ),
+                cog_deg=_parse_float(
+                    _get_col(
+                        row,
+                        "cog",
+                        "COG",
+                        "COG (degree)",
+                        "COG (degrees)",
+                        "heading",
+                        "Heading",
+                        "course",
+                    )
+                ),
+                source=str(source_val)[:40],
+            )
+        )
         inserted += 1
 
     await db.flush()
-    return JSONResponse({
-        "inserted": inserted,
-        "skipped": skipped,
-        "errors": errors[:10],
-        "rows_detected": len(rows),
-        "file": inner_name,
-    })
+    return JSONResponse(
+        {
+            "inserted": inserted,
+            "skipped": skipped,
+            "errors": errors[:10],
+            "rows_detected": len(rows),
+            "file": inner_name,
+        }
+    )

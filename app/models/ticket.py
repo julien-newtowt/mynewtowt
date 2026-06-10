@@ -6,6 +6,7 @@ Workflow : open → in_progress → pending_external | resolved → closed
 SLA target_at is computed at creation from the priority and never changes
 after that. sla_breached is recomputed on every read (no cron needed for V3.0).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -39,7 +40,9 @@ class Ticket(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
         nullable=False,
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -51,7 +54,8 @@ class Ticket(Base):
     sla_breached: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     comments: Mapped[list[TicketComment]] = relationship(
-        back_populates="ticket", cascade="all, delete-orphan",
+        back_populates="ticket",
+        cascade="all, delete-orphan",
         order_by="TicketComment.created_at",
     )
 

@@ -1,4 +1,5 @@
 """Escale ticketing routes."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -73,7 +74,11 @@ async def new_form(
     user=Depends(require_permission("tickets", "M")),
 ) -> HTMLResponse:
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
-    users = list((await db.execute(select(User).where(User.is_active.is_(True)).order_by(User.full_name))).scalars().all())
+    users = list(
+        (await db.execute(select(User).where(User.is_active.is_(True)).order_by(User.full_name)))
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/tickets/new.html",
         {
@@ -111,8 +116,12 @@ async def create_action(
             created_by_id=user.id,
         )
     except TicketError as e:
-        legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
-        users = list((await db.execute(select(User).where(User.is_active.is_(True)))).scalars().all())
+        legs = list(
+            (await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all()
+        )
+        users = list(
+            (await db.execute(select(User).where(User.is_active.is_(True)))).scalars().all()
+        )
         return templates.TemplateResponse(
             "staff/tickets/new.html",
             {
@@ -234,8 +243,11 @@ async def comment_action(
         raise HTTPException(status_code=404, detail="Not found")
     try:
         await add_comment(
-            db, ticket,
-            body=body, author_id=user.id, author_name=user.username,
+            db,
+            ticket,
+            body=body,
+            author_id=user.id,
+            author_name=user.username,
             is_internal=(is_internal == "on"),
         )
     except TicketError as e:

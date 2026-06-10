@@ -12,6 +12,7 @@ Catégories (V3.0)            Priorités (V3.0)
 - documentation
 - autre
 """
+
 from __future__ import annotations
 
 import secrets
@@ -68,7 +69,7 @@ _TRANSITIONS: dict[str, set[str]] = {
     "open": {"in_progress", "cancelled"},
     "in_progress": {"pending_external", "resolved", "cancelled"},
     "pending_external": {"in_progress", "resolved", "cancelled"},
-    "resolved": {"closed", "in_progress"},     # can be re-opened
+    "resolved": {"closed", "in_progress"},  # can be re-opened
     "closed": set(),
     "cancelled": set(),
 }
@@ -200,9 +201,7 @@ async def change_status(
     return ticket
 
 
-async def assign_ticket(
-    db: AsyncSession, ticket: Ticket, user_id: int | None
-) -> Ticket:
+async def assign_ticket(db: AsyncSession, ticket: Ticket, user_id: int | None) -> Ticket:
     ticket.assigned_to_id = user_id
     if ticket.status == "open" and user_id is not None:
         ticket.status = "in_progress"
@@ -279,6 +278,4 @@ async def stats(db: AsyncSession) -> TicketStats:
 
 
 async def get_by_reference(db: AsyncSession, ref: str) -> Ticket | None:
-    return (
-        await db.execute(select(Ticket).where(Ticket.reference == ref))
-    ).scalar_one_or_none()
+    return (await db.execute(select(Ticket).where(Ticket.reference == ref))).scalar_one_or_none()

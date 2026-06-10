@@ -5,6 +5,7 @@ Un ``BlogPost`` est un billet multilingue (FR canonique) rattaché à une
 Le carnet suit l'avancée des quatre navires en construction — jalons positifs
 uniquement (aucune critique du constructeur, aucun défaut, cf. garde-fous §2).
 """
+
 from __future__ import annotations
 
 from datetime import datetime

@@ -3,6 +3,7 @@
 Reprise de la V3.0.0. Workflow draft → submitted → locked. Audit trail
 field-by-field. Verrouillage par un staff après validation côté armateur.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -38,10 +39,18 @@ async def packing_lists_index(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "C")),
 ) -> HTMLResponse:
-    pls = list((await db.execute(
-        select(PackingList).options(selectinload(PackingList.batches))
-        .order_by(PackingList.updated_at.desc()).limit(100)
-    )).scalars().all())
+    pls = list(
+        (
+            await db.execute(
+                select(PackingList)
+                .options(selectinload(PackingList.batches))
+                .order_by(PackingList.updated_at.desc())
+                .limit(100)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/cargo/packing_lists.html",
         {"request": request, "user": user, "packing_lists": pls},
@@ -58,18 +67,24 @@ async def create_for_order(
     order = await db.get(Order, order_id)
     if order is None:
         raise HTTPException(status_code=404)
-    existing = (await db.execute(
-        select(PackingList).where(PackingList.order_id == order_id)
-    )).scalar_one_or_none()
+    existing = (
+        await db.execute(select(PackingList).where(PackingList.order_id == order_id))
+    ).scalar_one_or_none()
     if existing is not None:
         return RedirectResponse(url=f"/cargo/packing-lists/{existing.id}", status_code=303)
     pl = PackingList(order_id=order_id, status="draft")
     db.add(pl)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="cargo", entity_type="packing_list",
-        entity_id=pl.id, entity_label=f"PL for {order.reference}",
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="cargo",
+        entity_type="packing_list",
+        entity_id=pl.id,
+        entity_label=f"PL for {order.reference}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/cargo/packing-lists/{pl.id}", status_code=303)
@@ -82,17 +97,28 @@ async def packing_list_detail(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "C")),
 ) -> HTMLResponse:
-    pl = (await db.execute(
-        select(PackingList).options(selectinload(PackingList.batches))
-        .where(PackingList.id == pl_id)
-    )).scalar_one_or_none()
+    pl = (
+        await db.execute(
+            select(PackingList)
+            .options(selectinload(PackingList.batches))
+            .where(PackingList.id == pl_id)
+        )
+    ).scalar_one_or_none()
     if pl is None:
         raise HTTPException(status_code=404)
     order = await db.get(Order, pl.order_id)
-    messages = list((await db.execute(
-        select(PortalMessage).where(PortalMessage.packing_list_id == pl_id)
-        .order_by(PortalMessage.created_at.desc()).limit(50)
-    )).scalars().all())
+    messages = list(
+        (
+            await db.execute(
+                select(PortalMessage)
+                .where(PortalMessage.packing_list_id == pl_id)
+                .order_by(PortalMessage.created_at.desc())
+                .limit(50)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/cargo/packing_list_detail.html",
         {"request": request, "user": user, "pl": pl, "order": order, "messages": messages},
@@ -129,9 +155,13 @@ async def add_batch(
     db.add(b)
     await db.flush()
     await record_audit(
-        db, packing_list_id=pl.id, batch_id=b.id, actor="staff",
+        db,
+        packing_list_id=pl.id,
+        batch_id=b.id,
+        actor="staff",
         actor_name=user.full_name or user.username,
-        field="_create_batch", old_value=None,
+        field="_create_batch",
+        old_value=None,
         new_value=f"{pallet_count}×{pallet_format}",
     )
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
@@ -149,9 +179,16 @@ async def lock_pl(
         raise HTTPException(status_code=404)
     await lock(db, pl, locked_by=user.full_name or user.username)
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="cargo", entity_type="packing_list",
-        entity_id=pl.id, entity_label=str(pl.id), detail="locked",
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="cargo",
+        entity_type="packing_list",
+        entity_id=pl.id,
+        entity_label=str(pl.id),
+        detail="locked",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
@@ -169,9 +206,16 @@ async def unlock_pl(
         raise HTTPException(status_code=404)
     await unlock(db, pl)
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="cargo", entity_type="packing_list",
-        entity_id=pl.id, entity_label=str(pl.id), detail="unlocked",
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="cargo",
+        entity_type="packing_list",
+        entity_id=pl.id,
+        entity_label=str(pl.id),
+        detail="unlocked",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
@@ -188,14 +232,19 @@ async def post_message_staff(
     pl = await db.get(PackingList, pl_id)
     if pl is None:
         raise HTTPException(status_code=404)
-    db.add(PortalMessage(
-        packing_list_id=pl.id, sender="staff",
-        sender_name=user.full_name or user.username,
-        body=body.strip(),
-    ))
+    db.add(
+        PortalMessage(
+            packing_list_id=pl.id,
+            sender="staff",
+            sender_name=user.full_name or user.username,
+            body=body.strip(),
+        )
+    )
     await db.flush()
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
+    )

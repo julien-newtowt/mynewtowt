@@ -8,6 +8,7 @@ WeasyPrint is imported lazily at call time because it has heavy native
 dependencies (Pango/Cairo); we don't want test imports to hard-fail when
 WeasyPrint isn't installed in dev.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -68,9 +69,7 @@ def render_bill_of_lading(*, booking, leg, vessel, pol, pod, client) -> Document
     ctx = _common_ctx(booking, leg, vessel, pol, pod, client)
     ctx["bl_number"] = _bl_number(booking)
     html, pdf = _render_pdf("pdf/bill_of_lading.html", ctx)
-    return DocumentBytes(
-        html=html, pdf=pdf, filename=f"BL_{booking.reference}.pdf"
-    )
+    return DocumentBytes(html=html, pdf=pdf, filename=f"BL_{booking.reference}.pdf")
 
 
 def _bl_number(booking) -> str:
@@ -86,9 +85,7 @@ def _bl_number(booking) -> str:
 def render_packing_list(*, booking, leg, vessel, pol, pod, client) -> DocumentBytes:
     ctx = _common_ctx(booking, leg, vessel, pol, pod, client)
     html, pdf = _render_pdf("pdf/packing_list.html", ctx)
-    return DocumentBytes(
-        html=html, pdf=pdf, filename=f"PackingList_{booking.reference}.pdf"
-    )
+    return DocumentBytes(html=html, pdf=pdf, filename=f"PackingList_{booking.reference}.pdf")
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +97,8 @@ def render_invoice(*, booking, leg, vessel, pol, pod, client, invoice=None) -> D
     ctx = _common_ctx(booking, leg, vessel, pol, pod, client)
     ctx["invoice"] = invoice
     ctx["amount_excl_vat"] = (
-        invoice.amount_excl_vat_eur if invoice
+        invoice.amount_excl_vat_eur
+        if invoice
         else (booking.confirmed_price_eur or booking.estimated_price_eur or Decimal("0"))
     )
     # Default French VAT 20% if no invoice row yet (V3.0 simplification).
@@ -108,7 +106,8 @@ def render_invoice(*, booking, leg, vessel, pol, pod, client, invoice=None) -> D
     if invoice:
         ctx["vat_rate"] = (
             (invoice.vat_amount_eur / invoice.amount_excl_vat_eur)
-            if invoice.amount_excl_vat_eur else Decimal("0")
+            if invoice.amount_excl_vat_eur
+            else Decimal("0")
         )
         ctx["amount_incl_vat"] = invoice.amount_incl_vat_eur
         ctx["vat_amount"] = invoice.vat_amount_eur
@@ -120,9 +119,7 @@ def render_invoice(*, booking, leg, vessel, pol, pod, client, invoice=None) -> D
         )
     ctx["invoice_ref"] = invoice.reference if invoice else f"DEVIS-{booking.reference}"
     html, pdf = _render_pdf("pdf/invoice.html", ctx)
-    return DocumentBytes(
-        html=html, pdf=pdf, filename=f"Invoice_{ctx['invoice_ref']}.pdf"
-    )
+    return DocumentBytes(html=html, pdf=pdf, filename=f"Invoice_{ctx['invoice_ref']}.pdf")
 
 
 # ---------------------------------------------------------------------------
@@ -152,14 +149,10 @@ def render_anemos_certificate(
     ctx = _common_ctx(booking, leg, vessel, pol, pod, client)
     ctx["emission"] = emission
     ctx["certificate"] = certificate
-    ctx["cert_ref"] = (
-        certificate.reference if certificate else f"ANEMOS-{booking.reference}"
-    )
+    ctx["cert_ref"] = certificate.reference if certificate else f"ANEMOS-{booking.reference}"
     ctx["tonnage_t"] = tonnage
     html, pdf = _render_pdf("pdf/anemos_certificate.html", ctx)
-    return DocumentBytes(
-        html=html, pdf=pdf, filename=f"LabelAnemos_{ctx['cert_ref']}.pdf"
-    )
+    return DocumentBytes(html=html, pdf=pdf, filename=f"LabelAnemos_{ctx['cert_ref']}.pdf")
 
 
 # Alias backward-compat — peut disparaître en V3.7

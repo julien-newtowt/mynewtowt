@@ -6,6 +6,7 @@ Two independent contexts share the same hashing + signing primitives:
 
 Each context has its own dependency (`get_current_staff`, `get_current_client`).
 """
+
 from __future__ import annotations
 
 import secrets
@@ -105,7 +106,8 @@ def decode_client_mfa_pending(token: str) -> int | None:
         return None
     try:
         payload = _client_mfa_serializer.loads(
-            token, max_age=CLIENT_MFA_PENDING_TTL_SECONDS,
+            token,
+            max_age=CLIENT_MFA_PENDING_TTL_SECONDS,
         )
     except (BadSignature, SignatureExpired):
         return None
@@ -134,7 +136,8 @@ def decode_staff_mfa_pending(token: str) -> int | None:
         return None
     try:
         payload = _staff_mfa_serializer.loads(
-            token, max_age=STAFF_MFA_PENDING_TTL_SECONDS,
+            token,
+            max_age=STAFF_MFA_PENDING_TTL_SECONDS,
         )
     except (BadSignature, SignatureExpired):
         return None

@@ -16,6 +16,7 @@ Politique de fingerprint :
 Skip silencieux si UA ou IP manquante (n'arrive normalement pas, mais
 au worst-case on log un anonyme — pas pire que rien).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -55,8 +56,12 @@ def _human_label(ua: str | None) -> str:
     # Détection navigateur
     browser = "Navigateur"
     for needle, name in (
-        ("edg/", "Edge"), ("chrome/", "Chrome"), ("firefox/", "Firefox"),
-        ("safari/", "Safari"), ("postman", "Postman"), ("curl", "curl"),
+        ("edg/", "Edge"),
+        ("chrome/", "Chrome"),
+        ("firefox/", "Firefox"),
+        ("safari/", "Safari"),
+        ("postman", "Postman"),
+        ("curl", "curl"),
     ):
         if needle in s:
             browser = name
@@ -64,8 +69,12 @@ def _human_label(ua: str | None) -> str:
     # Détection OS
     osname = "OS inconnu"
     for needle, name in (
-        ("windows", "Windows"), ("macintosh", "macOS"), ("iphone", "iOS"),
-        ("ipad", "iPadOS"), ("android", "Android"), ("linux", "Linux"),
+        ("windows", "Windows"),
+        ("macintosh", "macOS"),
+        ("iphone", "iOS"),
+        ("ipad", "iPadOS"),
+        ("android", "Android"),
+        ("linux", "Linux"),
     ):
         if needle in s:
             osname = name
@@ -109,9 +118,12 @@ async def see_device(
         return existing, False
     label = _human_label(ua)
     dev = KnownDevice(
-        owner_type=owner_type, owner_id=owner_id,
-        fingerprint_hash=fp, label=label,
-        first_seen_at=now, last_seen_at=now,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        fingerprint_hash=fp,
+        label=label,
+        first_seen_at=now,
+        last_seen_at=now,
     )
     db.add(dev)
     await db.flush()

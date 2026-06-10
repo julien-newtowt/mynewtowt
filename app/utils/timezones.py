@@ -4,21 +4,22 @@ Resolve port timezone (IANA), conversion HH:MM entre fuseaux, formatage
 offset (+02:00 par ex.). Évite la dépendance à `pytz` en utilisant
 `zoneinfo` (stdlib).
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 TIMEZONE_CHOICES: tuple[tuple[str, str], ...] = (
-    ("UTC",             "UTC"),
-    ("Europe/Paris",    "Paris"),
-    ("Europe/London",   "Londres"),
-    ("Europe/Lisbon",   "Lisbonne"),
-    ("America/New_York","New York"),
-    ("America/Sao_Paulo","São Paulo"),
-    ("America/Recife",  "Recife"),
-    ("Asia/Ho_Chi_Minh","Hô Chi Minh-Ville"),
-    ("port_local",      "Port local"),
+    ("UTC", "UTC"),
+    ("Europe/Paris", "Paris"),
+    ("Europe/London", "Londres"),
+    ("Europe/Lisbon", "Lisbonne"),
+    ("America/New_York", "New York"),
+    ("America/Sao_Paulo", "São Paulo"),
+    ("America/Recife", "Recife"),
+    ("Asia/Ho_Chi_Minh", "Hô Chi Minh-Ville"),
+    ("port_local", "Port local"),
 )
 
 
@@ -59,4 +60,5 @@ def from_utc(value: datetime, target_tz: str) -> datetime:
 
 def _zero():
     from datetime import timedelta
+
     return timedelta(0)

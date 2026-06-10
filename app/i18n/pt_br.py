@@ -1,4 +1,5 @@
 """Portuguese (Brazil) catalog (partial — falls back to FR for missing keys)."""
+
 CATALOG: dict[str, str] = {
     # Public navigation
     "nav_routes": "Rotas e horários",

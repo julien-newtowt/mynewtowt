@@ -8,6 +8,7 @@ Resolution rules (in order):
 5. If `rollout_pct > 0` → hash(user_id, flag_key) % 100 < rollout_pct.
 6. Otherwise → True (flag is enabled globally).
 """
+
 from __future__ import annotations
 
 import hashlib

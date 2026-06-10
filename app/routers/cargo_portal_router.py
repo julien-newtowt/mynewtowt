@@ -11,6 +11,7 @@ Sécurité :
 - Token jamais loggé en clair : sha256 dans `portal_access_logs.token_hash`.
 - Rate-limit per-token (scope='portal_token', service rate_limit existant).
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -45,14 +46,18 @@ async def _load_or_410(db: AsyncSession, token: str, request: Request) -> Packin
     if pl is None:
         # Always log access attempts, even invalid (hashed)
         await log_portal_access(
-            db, token=token, packing_list_id=None,
+            db,
+            token=token,
+            packing_list_id=None,
             ip_address=_client_ip(request),
             user_agent=request.headers.get("user-agent"),
             path=request.url.path,
         )
         raise HTTPException(status_code=410, detail="Lien expiré ou invalide")
     await log_portal_access(
-        db, token=token, packing_list_id=pl.id,
+        db,
+        token=token,
+        packing_list_id=pl.id,
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
         path=request.url.path,
@@ -70,18 +75,29 @@ async def portal_home(token: str, request: Request, db: AsyncSession = Depends(g
     pod = await db.get(Port, leg.arrival_port_id) if leg else None
     return templates.TemplateResponse(
         "portal/home.html",
-        {"request": request, "pl": pl, "order": order,
-         "leg": leg, "vessel": vessel, "pol": pol, "pod": pod, "token": token},
+        {
+            "request": request,
+            "pl": pl,
+            "order": order,
+            "leg": leg,
+            "vessel": vessel,
+            "pol": pol,
+            "pod": pod,
+            "token": token,
+        },
     )
 
 
 @router.get("/{token}/packing", response_class=HTMLResponse)
 async def portal_packing(token: str, request: Request, db: AsyncSession = Depends(get_db)):
     pl = await _load_or_410(db, token, request)
-    pl_full = (await db.execute(
-        select(PackingList).options(selectinload(PackingList.batches))
-        .where(PackingList.id == pl.id)
-    )).scalar_one()
+    pl_full = (
+        await db.execute(
+            select(PackingList)
+            .options(selectinload(PackingList.batches))
+            .where(PackingList.id == pl.id)
+        )
+    ).scalar_one()
     return templates.TemplateResponse(
         "portal/packing.html",
         {"request": request, "pl": pl_full, "token": token},
@@ -90,7 +106,8 @@ async def portal_packing(token: str, request: Request, db: AsyncSession = Depend
 
 @router.post("/{token}/packing/batches")
 async def portal_packing_add(
-    token: str, request: Request,
+    token: str,
+    request: Request,
     pallet_format: str = Form("EPAL"),
     pallet_count: int = Form(1),
     description: str | None = Form(None),
@@ -103,9 +120,15 @@ async def portal_packing_add(
     if not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     # Compute next batch number
-    existing = list((await db.execute(
-        select(PackingListBatch).where(PackingListBatch.packing_list_id == pl.id)
-    )).scalars().all())
+    existing = list(
+        (
+            await db.execute(
+                select(PackingListBatch).where(PackingListBatch.packing_list_id == pl.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     b = PackingListBatch(
         packing_list_id=pl.id,
         batch_number=len(existing) + 1,
@@ -119,9 +142,13 @@ async def portal_packing_add(
     db.add(b)
     await db.flush()
     await record_audit(
-        db, packing_list_id=pl.id, batch_id=b.id,
-        actor="client", actor_name=None,
-        field="_create_batch", old_value=None,
+        db,
+        packing_list_id=pl.id,
+        batch_id=b.id,
+        actor="client",
+        actor_name=None,
+        field="_create_batch",
+        old_value=None,
         new_value=f"{pallet_count}×{pallet_format}",
     )
     return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
@@ -140,10 +167,17 @@ async def portal_packing_submit(token: str, request: Request, db: AsyncSession =
 @router.get("/{token}/messages", response_class=HTMLResponse)
 async def portal_messages(token: str, request: Request, db: AsyncSession = Depends(get_db)):
     pl = await _load_or_410(db, token, request)
-    messages = list((await db.execute(
-        select(PortalMessage).where(PortalMessage.packing_list_id == pl.id)
-        .order_by(PortalMessage.created_at.asc())
-    )).scalars().all())
+    messages = list(
+        (
+            await db.execute(
+                select(PortalMessage)
+                .where(PortalMessage.packing_list_id == pl.id)
+                .order_by(PortalMessage.created_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "portal/messages.html",
         {"request": request, "pl": pl, "messages": messages, "token": token},
@@ -152,17 +186,21 @@ async def portal_messages(token: str, request: Request, db: AsyncSession = Depen
 
 @router.post("/{token}/messages")
 async def portal_message_post(
-    token: str, request: Request,
+    token: str,
+    request: Request,
     body: str = Form(...),
     sender_name: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
     pl = await _load_or_410(db, token, request)
-    db.add(PortalMessage(
-        packing_list_id=pl.id, sender="client",
-        sender_name=sender_name.strip()[:200],
-        body=body.strip(),
-    ))
+    db.add(
+        PortalMessage(
+            packing_list_id=pl.id,
+            sender="client",
+            sender_name=sender_name.strip()[:200],
+            body=body.strip(),
+        )
+    )
     await db.flush()
     return RedirectResponse(url=f"/p/{token}/messages", status_code=303)
 
@@ -177,4 +215,6 @@ async def portal_privacy(token: str, request: Request, db: AsyncSession = Depend
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
+    )

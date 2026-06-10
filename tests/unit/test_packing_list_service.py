@@ -1,4 +1,5 @@
 """Tests for app.services.packing_list — token hashing & access control."""
+
 from __future__ import annotations
 
 from app.models.packing_list import PackingList

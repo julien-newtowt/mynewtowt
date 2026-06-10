@@ -13,6 +13,7 @@ Modèle de données :
 Le secret TOTP est posé dès la phase *setup* mais ``mfa_enabled`` ne
 passe à True qu'après la 1re vérification réussie (anti-lock-out).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -30,12 +31,14 @@ from app.models.mfa_recovery_code import MfaRecoveryCode
 def generate_secret() -> str:
     """Renvoie un nouveau secret base32 pour TOTP."""
     import pyotp
+
     return pyotp.random_base32()
 
 
 def provisioning_uri(secret: str, account_email: str, *, issuer: str = "NEWTOWT") -> str:
     """URL otpauth:// pour scan par Google Authenticator / Authy / 1Password / ..."""
     import pyotp
+
     return pyotp.totp.TOTP(secret).provisioning_uri(account_email, issuer_name=issuer)
 
 
@@ -48,8 +51,11 @@ def verify_totp(secret: str, code: str, *, valid_window: int = 1) -> bool:
     if not secret or not code:
         return False
     import pyotp
+
     try:
-        return pyotp.totp.TOTP(secret).verify(code.strip().replace(" ", ""), valid_window=valid_window)
+        return pyotp.totp.TOTP(secret).verify(
+            code.strip().replace(" ", ""), valid_window=valid_window
+        )
     except Exception:
         return False
 
@@ -75,7 +81,10 @@ def _format_code(raw_hex: str) -> str:
 
 
 async def generate_recovery_codes(
-    db: AsyncSession, *, owner_type: str, owner_id: int,
+    db: AsyncSession,
+    *,
+    owner_type: str,
+    owner_id: int,
 ) -> list[str]:
     """Régénère 10 codes : purge les anciens, insère les nouveaux.
 
@@ -84,6 +93,7 @@ async def generate_recovery_codes(
     """
     # Purge anciens codes
     from sqlalchemy import delete
+
     await db.execute(
         delete(MfaRecoveryCode)
         .where(MfaRecoveryCode.owner_type == owner_type)
@@ -94,16 +104,23 @@ async def generate_recovery_codes(
         raw = secrets.token_hex(RECOVERY_CODE_BYTES)
         code = _format_code(raw)
         plain.append(code)
-        db.add(MfaRecoveryCode(
-            owner_type=owner_type, owner_id=owner_id,
-            code_hash=_hash_code(code),
-        ))
+        db.add(
+            MfaRecoveryCode(
+                owner_type=owner_type,
+                owner_id=owner_id,
+                code_hash=_hash_code(code),
+            )
+        )
     await db.flush()
     return plain
 
 
 async def consume_recovery_code(
-    db: AsyncSession, *, owner_type: str, owner_id: int, code: str,
+    db: AsyncSession,
+    *,
+    owner_type: str,
+    owner_id: int,
+    code: str,
 ) -> bool:
     """Tente de consommer un code de récupération. Renvoie True si valide.
 
@@ -131,9 +148,13 @@ async def consume_recovery_code(
 
 
 async def count_unused_recovery_codes(
-    db: AsyncSession, *, owner_type: str, owner_id: int,
+    db: AsyncSession,
+    *,
+    owner_type: str,
+    owner_id: int,
 ) -> int:
     from sqlalchemy import func as sqlfunc
+
     stmt = (
         select(sqlfunc.count(MfaRecoveryCode.id))
         .where(MfaRecoveryCode.owner_type == owner_type)

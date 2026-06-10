@@ -17,6 +17,7 @@ BASKET (panier de manutention standard) :
     Surface libre 380×150 cm, hauteur 2.2 m, CMU 5.1 t, tare 2.2 t.
     Toute palette hors-gabarit va automatiquement en SUP_AV.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -42,9 +43,9 @@ BLOCKS = ("AR", "MIL", "AV")
 
 ZONE_LOADING_ORDER: list[str] = [
     f"{deck}_{hold}_{block}"
-    for hold in HOLDS                # arrière → avant (cale)
-    for deck in DECKS                # bas → haut (pont)
-    for block in BLOCKS              # arrière → avant (bloc)
+    for hold in HOLDS  # arrière → avant (cale)
+    for deck in DECKS  # bas → haut (pont)
+    for block in BLOCKS  # arrière → avant (bloc)
 ]
 
 # Zones dédiées hors-gabarit / IMO
@@ -74,12 +75,15 @@ class StowagePlan(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
-        onupdate=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     items: Mapped[list[StowageItem]] = relationship(
-        back_populates="plan", cascade="all, delete-orphan",
+        back_populates="plan",
+        cascade="all, delete-orphan",
         order_by="StowageItem.zone",
     )
 

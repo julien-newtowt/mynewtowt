@@ -9,6 +9,7 @@ La clé d'API est lue depuis ``settings.newsdata_api_key`` (env
 ``NewsDataNotConfigured`` — l'appelant renvoie alors 503 (même politique que
 l'API tracking).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -76,8 +77,7 @@ def normalize(article: dict) -> dict[str, Any]:
         "title": (article.get("title") or "(sans titre)")[:500],
         "link": (article.get("link") or "")[:1000],
         "description": article.get("description"),
-        "publisher": (article.get("source_id") or article.get("source_name") or "")[:200]
-        or None,
+        "publisher": (article.get("source_id") or article.get("source_name") or "")[:200] or None,
         "image_url": (article.get("image_url") or None),
         "language": _first(article.get("language")),
         "country": _first(article.get("country")),
@@ -120,18 +120,14 @@ async def fetch_latest(
         raise NewsDataError(f"appel NewsData échoué : {exc}") from exc
 
     if resp.status_code != 200:
-        raise NewsDataError(
-            f"NewsData HTTP {resp.status_code} : {resp.text[:200]}"
-        )
+        raise NewsDataError(f"NewsData HTTP {resp.status_code} : {resp.text[:200]}")
     try:
         payload = resp.json()
     except ValueError as exc:
         raise NewsDataError("réponse NewsData non-JSON") from exc
 
     if payload.get("status") != "success":
-        raise NewsDataError(
-            f"NewsData status={payload.get('status')} : {payload.get('results')}"
-        )
+        raise NewsDataError(f"NewsData status={payload.get('status')} : {payload.get('results')}")
 
     results = payload.get("results") or []
     return [normalize(a) for a in results if isinstance(a, dict)]

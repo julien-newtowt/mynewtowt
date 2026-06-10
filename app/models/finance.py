@@ -1,4 +1,5 @@
 """Finance: LegFinance, OPEX parameters, port configs, KPI."""
+
 from __future__ import annotations
 
 from datetime import datetime

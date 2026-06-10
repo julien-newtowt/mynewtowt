@@ -1,4 +1,5 @@
 """Service messagerie booking — fil client ↔ équipe."""
+
 from __future__ import annotations
 
 from sqlalchemy import select, update
@@ -8,10 +9,18 @@ from app.models.booking_message import BookingMessage
 
 
 async def post(
-    db: AsyncSession, *, booking_id: int, sender: str, sender_name: str | None, body: str,
+    db: AsyncSession,
+    *,
+    booking_id: int,
+    sender: str,
+    sender_name: str | None,
+    body: str,
 ) -> BookingMessage:
     msg = BookingMessage(
-        booking_id=booking_id, sender=sender, sender_name=sender_name, body=body.strip(),
+        booking_id=booking_id,
+        sender=sender,
+        sender_name=sender_name,
+        body=body.strip(),
     )
     db.add(msg)
     await db.flush()

@@ -4,6 +4,7 @@ Make sure prod refuses to start with weak DB password but accepts a strong
 one — even though the URL scheme starts with `postgresql+asyncpg://`,
 which contains the substring "postgres".
 """
+
 from __future__ import annotations
 
 import pytest

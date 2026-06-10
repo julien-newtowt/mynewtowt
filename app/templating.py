@@ -1,4 +1,5 @@
 """Jinja2 setup + global filters/context."""
+
 from __future__ import annotations
 
 import json as _json
@@ -58,9 +59,7 @@ def _flag_emoji(country_code: str | None) -> str:
         return ""
     base = ord("🇦") - ord("A")
     try:
-        return chr(ord(country_code[0].upper()) + base) + chr(
-            ord(country_code[1].upper()) + base
-        )
+        return chr(ord(country_code[0].upper()) + base) + chr(ord(country_code[1].upper()) + base)
     except (TypeError, ValueError):
         return ""
 
@@ -96,7 +95,7 @@ def _i18n_context_processor(request: Request) -> dict[str, Any]:
 # Source de vérité : docs/design/newtowt-design-tokens.json
 _BRAND_LOGOS = {
     "logo_light": "/static/img/logo_NEWTOWT_web.png",
-    "logo_dark":  "/static/img/logo_NEWTOWT_web_dark.png",
+    "logo_dark": "/static/img/logo_NEWTOWT_web_dark.png",
     "logo_white": "/static/img/logo_NEWTOWT_web_white.png",
     "logo_email": "/static/img/logo_NEWTOWT_email.png",
 }
@@ -201,12 +200,21 @@ templates.env.globals["organization_jsonld"] = _json.dumps(
 )
 templates.env.globals["public_langs"] = ["fr", "en", "es", "pt-br"]
 templates.env.globals["hreflang_map"] = {
-    "fr": "fr", "en": "en", "es": "es", "pt-br": "pt-BR",
+    "fr": "fr",
+    "en": "en",
+    "es": "es",
+    "pt-br": "pt-BR",
 }
 # Drapeau (code pays ISO-2 pour le filtre |flag) + libellé natif par langue.
 templates.env.globals["lang_country"] = {
-    "fr": "FR", "en": "GB", "es": "ES", "pt-br": "BR",
+    "fr": "FR",
+    "en": "GB",
+    "es": "ES",
+    "pt-br": "BR",
 }
 templates.env.globals["lang_name"] = {
-    "fr": "Français", "en": "English", "es": "Español", "pt-br": "Português",
+    "fr": "Français",
+    "en": "English",
+    "es": "Español",
+    "pt-br": "Português",
 }

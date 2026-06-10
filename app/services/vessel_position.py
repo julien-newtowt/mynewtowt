@@ -5,6 +5,7 @@ Power Automate alimente ``vessel_positions`` ~ toutes les heures via
 commandant (noon report, prochaine escale) de pré-remplir les saisies
 manuelles avec la position la plus récente.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -16,7 +17,10 @@ from app.models.claim import VesselPosition
 
 
 async def get_latest_position(
-    db: AsyncSession, vessel_id: int, *, max_age_hours: int = 6,
+    db: AsyncSession,
+    vessel_id: int,
+    *,
+    max_age_hours: int = 6,
 ) -> VesselPosition | None:
     """Renvoie la dernière position connue d'un navire, ``None`` si trop vieille.
 

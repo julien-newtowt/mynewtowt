@@ -7,6 +7,7 @@ NOR_RT, PILOT_ON, PILOT_OFF, TUG_ON, TUG_OFF, FREE_PRATIQUE…).
 Une partie est mappée automatiquement vers les MRVEvent (carburant)
 quand applicable via `SOF_TO_MRV_MAP` (cf. services.mrv_export).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -25,19 +26,31 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 SOF_EVENT_TYPES = (
-    "EOSP", "SOSP",           # End / Start Of Sea Passage
-    "NOR", "NOR_RT",          # Notice of Readiness (Re-Tendered)
+    "EOSP",
+    "SOSP",  # End / Start Of Sea Passage
+    "NOR",
+    "NOR_RT",  # Notice of Readiness (Re-Tendered)
     "FREE_PRATIQUE",
-    "PILOT_ON", "PILOT_OFF",
-    "TUG_ON", "TUG_OFF",
-    "FIRST_LINE", "ALL_FAST",
-    "GANGWAY_UP", "GANGWAY_DOWN",
-    "ARRIVE_PILOT_STATION", "DEPART_PILOT_STATION",
-    "ANCHORED", "WEIGH_ANCHOR",
-    "BERTHED", "UNBERTHED",
-    "BUNKER_START", "BUNKER_END",
-    "LOADING_START", "LOADING_END",
-    "DISCHARGING_START", "DISCHARGING_END",
+    "PILOT_ON",
+    "PILOT_OFF",
+    "TUG_ON",
+    "TUG_OFF",
+    "FIRST_LINE",
+    "ALL_FAST",
+    "GANGWAY_UP",
+    "GANGWAY_DOWN",
+    "ARRIVE_PILOT_STATION",
+    "DEPART_PILOT_STATION",
+    "ANCHORED",
+    "WEIGH_ANCHOR",
+    "BERTHED",
+    "UNBERTHED",
+    "BUNKER_START",
+    "BUNKER_END",
+    "LOADING_START",
+    "LOADING_END",
+    "DISCHARGING_START",
+    "DISCHARGING_END",
     "DRAFT_SURVEY",
     "OTHER",
 )

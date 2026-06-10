@@ -3,6 +3,7 @@
 Cascade behaviour is validated through pure logic on the data classes;
 DB-backed cascade test belongs in tests/integration.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -50,8 +51,11 @@ def test_leg_code_sequence_bump() -> None:
 
 def _leg_ns(id, vessel_id, arrival_port_id, eta, stay=24):
     return SimpleNamespace(
-        id=id, vessel_id=vessel_id, arrival_port_id=arrival_port_id,
-        eta=eta, port_stay_planned_hours=stay,
+        id=id,
+        vessel_id=vessel_id,
+        arrival_port_id=arrival_port_id,
+        eta=eta,
+        port_stay_planned_hours=stay,
     )
 
 
@@ -73,7 +77,7 @@ def test_detect_port_conflicts_ignores_same_vessel() -> None:
 def test_detect_port_conflicts_non_overlapping_stays_ok() -> None:
     """Same port, ETA 20h apart but SHORT stays → no overlap → OK."""
     base_eta = datetime(2026, 6, 12, tzinfo=UTC)
-    leg_a = _leg_ns(1, 10, 42, base_eta, stay=4)               # [0h, 4h]
+    leg_a = _leg_ns(1, 10, 42, base_eta, stay=4)  # [0h, 4h]
     leg_b = _leg_ns(2, 11, 42, base_eta + timedelta(hours=20), stay=4)  # [20h, 24h]
     assert detect_port_conflicts([leg_a, leg_b]) == []
 
@@ -84,7 +88,7 @@ def test_detect_port_conflicts_overlapping_long_stays() -> None:
     L'ancienne heuristique ETA±12h ratait ce cas réel.
     """
     base_eta = datetime(2026, 6, 12, tzinfo=UTC)
-    leg_a = _leg_ns(1, 10, 42, base_eta, stay=48)              # [0h, 48h]
+    leg_a = _leg_ns(1, 10, 42, base_eta, stay=48)  # [0h, 48h]
     leg_b = _leg_ns(2, 11, 42, base_eta + timedelta(hours=20), stay=24)  # [20h, 44h]
     assert detect_port_conflicts([leg_a, leg_b]) == [(1, 2)]
 

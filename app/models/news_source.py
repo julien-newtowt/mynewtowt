@@ -6,6 +6,7 @@ voile / wind propulsion, Brésil, réglementation UE…) avec ses mots-clés,
 pays, langues et catégorie. Chaque source peut être ciblée sur certains
 rôles staff (sinon visible par tout le staff).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -25,9 +26,9 @@ class NewsSource(Base):
     # Mots-clés envoyés à NewsData (`q`) — supporte OR/AND et guillemets.
     query: Mapped[str] = mapped_column(String(500), nullable=False)
     # Filtres NewsData optionnels (codes ISO séparés par virgule).
-    countries: Mapped[str | None] = mapped_column(String(120))   # ex. "br,fr"
-    languages: Mapped[str | None] = mapped_column(String(120))   # ex. "fr,en,pt"
-    category: Mapped[str | None] = mapped_column(String(60))     # ex. "business"
+    countries: Mapped[str | None] = mapped_column(String(120))  # ex. "br,fr"
+    languages: Mapped[str | None] = mapped_column(String(120))  # ex. "fr,en,pt"
+    category: Mapped[str | None] = mapped_column(String(60))  # ex. "business"
     # Ciblage RBAC : rôles séparés par virgule. NULL/"" = tout le staff.
     target_roles: Mapped[str | None] = mapped_column(String(200))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

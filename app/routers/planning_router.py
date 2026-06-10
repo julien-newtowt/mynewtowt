@@ -2,6 +2,7 @@
 
 Auth: staff with `planning` permission (C/M/S per matrix).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -77,10 +78,14 @@ async def gantt_index(
 
     # Pre-load port labels (avoid N+1)
     port_ids = {leg.departure_port_id for leg in legs} | {leg.arrival_port_id for leg in legs}
-    ports = {
-        p.id: p
-        for p in (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()
-    } if port_ids else {}
+    ports = (
+        {
+            p.id: p
+            for p in (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()
+        }
+        if port_ids
+        else {}
+    )
 
     conflicts = detect_port_conflicts(legs)
     conflict_ids: set[int] = set()
@@ -155,10 +160,11 @@ async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
     suggestions: dict[int, dict] = {}
     vessels_q = await db.execute(select(Vessel))
     for v in vessels_q.scalars().all():
-        last = (await db.execute(
-            select(Leg).where(Leg.vessel_id == v.id)
-            .order_by(desc(Leg.etd)).limit(1)
-        )).scalar_one_or_none()
+        last = (
+            await db.execute(
+                select(Leg).where(Leg.vessel_id == v.id).order_by(desc(Leg.etd)).limit(1)
+            )
+        ).scalar_one_or_none()
         if last is None:
             continue
         base = last.ata or last.eta
@@ -297,6 +303,7 @@ async def leg_detail(
 
     # Météo POL @ ETD + POD @ ETA (best-effort, jamais bloquant)
     from app.services import weather as wx
+
     weather_pol = None
     weather_pod = None
     if pol and pol.latitude is not None and pol.longitude is not None and leg.etd:
@@ -403,8 +410,9 @@ async def update_leg_action(
         entity_id=leg.id,
         entity_label=leg.leg_code,
         detail=(
-            f"cascade delta={report.delta_hours:.1f}h "
-            f"impacted={len(report.impacted_leg_ids)}" if report else None
+            f"cascade delta={report.delta_hours:.1f}h " f"impacted={len(report.impacted_leg_ids)}"
+            if report
+            else None
         ),
     )
     return RedirectResponse(url=f"/planning/legs/{leg.id}", status_code=303)
@@ -429,10 +437,16 @@ async def delete_leg_action(
         return templates.TemplateResponse(
             "staff/planning/leg_detail.html",
             {
-                "request": request, "user": user, "leg": leg,
-                "vessel": vessel, "pol": pol, "pod": pod,
-                "weather_pol": None, "weather_pol_summary": "—",
-                "weather_pod": None, "weather_pod_summary": "—",
+                "request": request,
+                "user": user,
+                "leg": leg,
+                "vessel": vessel,
+                "pol": pol,
+                "pod": pod,
+                "weather_pol": None,
+                "weather_pol_summary": "—",
+                "weather_pod": None,
+                "weather_pod_summary": "—",
                 "delete_error": str(e),
             },
             status_code=400,
@@ -546,8 +560,12 @@ async def public_share(
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     port_ids = {leg.departure_port_id for leg in legs} | {leg.arrival_port_id for leg in legs}
     ports = (
-        {p.id: p for p in (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()}
-        if port_ids else {}
+        {
+            p.id: p
+            for p in (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()
+        }
+        if port_ids
+        else {}
     )
     gantt_rows = _build_gantt_rows(
         vessels=vessels,
@@ -602,19 +620,21 @@ def _build_gantt_rows(
             width_pct = ((end - start).total_seconds() / total_seconds) * 100
             pol = ports.get(leg.departure_port_id)
             pod = ports.get(leg.arrival_port_id)
-            bars.append({
-                "leg_id": leg.id,
-                "leg_code": leg.leg_code,
-                "status": leg.status,
-                "left_pct": round(left_pct, 3),
-                "width_pct": round(max(width_pct, 1.0), 3),
-                "pol_locode": pol.locode if pol else "",
-                "pod_locode": pod.locode if pod else "",
-                "etd": leg.etd,
-                "eta": leg.eta,
-                "in_conflict": leg.id in conflict_ids,
-                "is_bookable": leg.is_bookable,
-            })
+            bars.append(
+                {
+                    "leg_id": leg.id,
+                    "leg_code": leg.leg_code,
+                    "status": leg.status,
+                    "left_pct": round(left_pct, 3),
+                    "width_pct": round(max(width_pct, 1.0), 3),
+                    "pol_locode": pol.locode if pol else "",
+                    "pod_locode": pod.locode if pod else "",
+                    "etd": leg.etd,
+                    "eta": leg.eta,
+                    "in_conflict": leg.id in conflict_ids,
+                    "is_bookable": leg.is_bookable,
+                }
+            )
         rows.append({"vessel": vessel, "bars": bars})
     return rows
 
@@ -658,5 +678,3 @@ def _maybe_float(value) -> float | None:
         return float(str(value).replace(",", "."))
     except (TypeError, ValueError):
         return None
-
-

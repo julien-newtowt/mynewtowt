@@ -1,4 +1,5 @@
 """Booking status transition tests — pure logic."""
+
 from __future__ import annotations
 
 import pytest
@@ -26,12 +27,12 @@ def test_valid_transitions(current: str, target: str) -> None:
 @pytest.mark.parametrize(
     "current,target",
     [
-        ("draft", "confirmed"),         # must go through submitted
+        ("draft", "confirmed"),  # must go through submitted
         ("draft", "loaded"),
         ("submitted", "delivered"),
         ("delivered", "submitted"),
         ("cancelled", "submitted"),
-        ("at_sea", "loaded"),           # cannot rewind
+        ("at_sea", "loaded"),  # cannot rewind
     ],
 )
 def test_invalid_transitions(current: str, target: str) -> None:

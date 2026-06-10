@@ -3,6 +3,7 @@
 Appelé automatiquement depuis closure_approve, et disponible en recalcul
 manuel depuis POST /kpi/legs/{leg_id}/sync.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -21,22 +22,37 @@ async def compute_for_leg(db: AsyncSession, leg: Leg) -> LegKPI:
     from app.services.co2 import estimate as co2_estimate
 
     # ── Tonnage et palettes depuis les bookings confirmés ──────────────────
-    bookings = list((await db.execute(
-        select(Booking).where(
-            Booking.leg_id == leg.id,
-            Booking.status.in_(("confirmed", "loaded", "at_sea", "discharged", "delivered")),
+    bookings = list(
+        (
+            await db.execute(
+                select(Booking).where(
+                    Booking.leg_id == leg.id,
+                    Booking.status.in_(
+                        ("confirmed", "loaded", "at_sea", "discharged", "delivered")
+                    ),
+                )
+            )
         )
-    )).scalars().all())
+        .scalars()
+        .all()
+    )
 
     total_palettes = sum(b.total_palettes or 0 for b in bookings)
     total_weight_kg = sum(b.total_weight_kg or Decimal(0) for b in bookings)
     tonnage_t = (total_weight_kg / Decimal(1000)).quantize(Decimal("0.01"))
 
     # ── Durée de mer depuis EOSP → SOSP (ou fallback atd/etd) ─────────────
-    sof_events = list((await db.execute(
-        select(SofEvent).where(SofEvent.leg_id == leg.id)
-        .order_by(SofEvent.occurred_at.asc())
-    )).scalars().all())
+    sof_events = list(
+        (
+            await db.execute(
+                select(SofEvent)
+                .where(SofEvent.leg_id == leg.id)
+                .order_by(SofEvent.occurred_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     eosp = next((e for e in sof_events if e.event_type == "EOSP"), None)
     sosp = next((e for e in sof_events if e.event_type == "SOSP"), None)
@@ -77,9 +93,9 @@ async def compute_for_leg(db: AsyncSession, leg: Leg) -> LegKPI:
         ).quantize(Decimal("0.01"))
 
     # ── Upsert LegKPI ──────────────────────────────────────────────────────
-    existing: LegKPI | None = (await db.execute(
-        select(LegKPI).where(LegKPI.leg_id == leg.id)
-    )).scalar_one_or_none()
+    existing: LegKPI | None = (
+        await db.execute(select(LegKPI).where(LegKPI.leg_id == leg.id))
+    ).scalar_one_or_none()
 
     if existing is None:
         kpi = LegKPI(

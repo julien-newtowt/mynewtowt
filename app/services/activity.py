@@ -5,6 +5,7 @@ PII scrubbing : si ``entity_label`` ressemble à un email, on le réduit en
 limitant la fuite RGPD). Les hashes pour rate-limit sont gérés ailleurs
 (``services.rate_limit``).
 """
+
 from __future__ import annotations
 
 import re

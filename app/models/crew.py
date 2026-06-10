@@ -1,4 +1,5 @@
 """Crew members, assignments, certifications, leaves."""
+
 from __future__ import annotations
 
 from datetime import date as _date
@@ -25,7 +26,9 @@ class CrewMember(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    role: Mapped[str] = mapped_column(String(60), nullable=False)  # captain, chief_mate, ab, cook, ...
+    role: Mapped[str] = mapped_column(
+        String(60), nullable=False
+    )  # captain, chief_mate, ab, cook, ...
     nationality: Mapped[str | None] = mapped_column(CHAR(2))
     date_of_birth: Mapped[_date | None] = mapped_column(Date)
     passport_number: Mapped[str | None] = mapped_column(String(60))
@@ -49,7 +52,9 @@ class CrewAssignment(Base):
     __tablename__ = "crew_assignments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    crew_member_id: Mapped[int] = mapped_column(ForeignKey("crew_members.id"), nullable=False, index=True)
+    crew_member_id: Mapped[int] = mapped_column(
+        ForeignKey("crew_members.id"), nullable=False, index=True
+    )
     leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id"), nullable=False, index=True)
     role_on_board: Mapped[str | None] = mapped_column(String(60))
     embark_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -63,7 +68,9 @@ class CrewCertification(Base):
     __tablename__ = "crew_certifications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    crew_member_id: Mapped[int] = mapped_column(ForeignKey("crew_members.id"), nullable=False, index=True)
+    crew_member_id: Mapped[int] = mapped_column(
+        ForeignKey("crew_members.id"), nullable=False, index=True
+    )
     kind: Mapped[str] = mapped_column(String(60), nullable=False)
     # 'stcw_basic', 'stcw_advanced', 'medical', 'gmdss', 'visa_us', 'visa_br', ...
     reference: Mapped[str | None] = mapped_column(String(100))
@@ -78,7 +85,9 @@ class CrewLeave(Base):
     __tablename__ = "crew_leaves"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    crew_member_id: Mapped[int] = mapped_column(ForeignKey("crew_members.id"), nullable=False, index=True)
+    crew_member_id: Mapped[int] = mapped_column(
+        ForeignKey("crew_members.id"), nullable=False, index=True
+    )
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
     # 'cp' | 'rtt' | 'maladie' | 'maternite' | 'paternite' | 'sans_solde'
     start_date: Mapped[_date] = mapped_column(Date, nullable=False)

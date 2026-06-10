@@ -7,6 +7,7 @@ la persistance + le journal d'audit.
 Aucun paiement ni transaction : la demande est journalisée puis reprise par
 l'équipe commerciale (relais vers la plateforme de réservation de l'extranet).
 """
+
 from __future__ import annotations
 
 import re
@@ -22,9 +23,16 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 # Longueurs alignées sur le modèle (évite une erreur DB sur saisie abusive).
 _MAX = {
-    "name": 160, "company": 200, "email": 254, "phone": 40,
-    "pol": 120, "pod": 120, "cargo_nature": 200,
-    "volume_weight": 120, "desired_dates": 120, "message": 5000,
+    "name": 160,
+    "company": 200,
+    "email": 254,
+    "phone": 40,
+    "pol": 120,
+    "pod": 120,
+    "cargo_nature": 200,
+    "volume_weight": 120,
+    "desired_dates": 120,
+    "message": 5000,
 }
 
 
@@ -128,9 +136,7 @@ def validate_contact_payload(
     )
 
 
-async def create_contact_request(
-    db: AsyncSession, payload: ContactPayload
-) -> ContactRequest:
+async def create_contact_request(db: AsyncSession, payload: ContactPayload) -> ContactRequest:
     """Persiste la demande validée. Le journal d'audit est posé par la route."""
     entry = ContactRequest(
         name=payload.name,

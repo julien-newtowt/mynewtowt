@@ -3,6 +3,7 @@
 The check_and_lock variant takes a pessimistic row lock to prevent
 double-booking under concurrent confirmation.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -52,12 +53,10 @@ _RESERVED_STATUSES: tuple[str, ...] = (
 )
 
 
-async def _leg_with_vessel(db: AsyncSession, leg_id: int, *, lock: bool = False) -> tuple[Leg, Vessel]:
-    stmt = (
-        select(Leg, Vessel)
-        .join(Vessel, Vessel.id == Leg.vessel_id)
-        .where(Leg.id == leg_id)
-    )
+async def _leg_with_vessel(
+    db: AsyncSession, leg_id: int, *, lock: bool = False
+) -> tuple[Leg, Vessel]:
+    stmt = select(Leg, Vessel).join(Vessel, Vessel.id == Leg.vessel_id).where(Leg.id == leg_id)
     if lock:
         stmt = stmt.with_for_update(of=Leg)
     row = (await db.execute(stmt)).first()

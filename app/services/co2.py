@@ -5,6 +5,7 @@ Uses NEWTOWT default emission factors from the V2 admin parameters:
 - conventional_co2_ef = 13.7 gCO2/t.km
 - nm_to_km = 1.852
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,4 +1,5 @@
 """Staff user (collaborateurs NEWTOWT)."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -26,9 +27,7 @@ class User(Base):
     # Pour les rôles 'marins' / 'manager_maritime' : navire de rattachement.
     # Utilisé par captain_router pour filtrer les legs (RBAC row-level)
     # et par /captain/next-port pour défaut-sélectionner le prochain leg.
-    assigned_vessel_id: Mapped[int | None] = mapped_column(
-        ForeignKey("vessels.id"), nullable=True
-    )
+    assigned_vessel_id: Mapped[int | None] = mapped_column(ForeignKey("vessels.id"), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

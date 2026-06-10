@@ -1,4 +1,5 @@
 """CSRF middleware behaviour."""
+
 from __future__ import annotations
 
 from fastapi import FastAPI, Form, Request

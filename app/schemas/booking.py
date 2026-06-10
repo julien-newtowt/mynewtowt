@@ -1,4 +1,5 @@
 """Booking DTOs — for API + internal use."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -6,9 +7,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
-PALLET_FORMATS = {
-    "EPAL", "USPAL", "PORTPAL", "IBC", "BIGBAG", "BARRIQUE120", "BARRIQUE140"
-}
+PALLET_FORMATS = {"EPAL", "USPAL", "PORTPAL", "IBC", "BIGBAG", "BARRIQUE120", "BARRIQUE140"}
 
 
 class BookingItemIn(BaseModel):

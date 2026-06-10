@@ -4,6 +4,7 @@ Reprise de la V3.0.0. Le mapping SOF→MRV est porté par
 services.mrv_export.SOF_TO_MRV_MAP, appelé en hook quand un nouvel SOF
 event est créé (à brancher en Phase 5 si besoin).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -39,12 +40,12 @@ async def mrv_index(
     user=Depends(require_permission("mrv", "C")),
 ) -> HTMLResponse:
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
-    legs = list((await db.execute(
-        select(Leg).order_by(Leg.etd.desc()).limit(30)
-    )).scalars().all())
-    events = list((await db.execute(
-        select(MRVEvent).order_by(MRVEvent.recorded_at.desc()).limit(50)
-    )).scalars().all())
+    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(30))).scalars().all())
+    events = list(
+        (await db.execute(select(MRVEvent).order_by(MRVEvent.recorded_at.desc()).limit(50)))
+        .scalars()
+        .all()
+    )
     # Decorate events with vessel/leg info
     leg_ids = {e.leg_id for e in events}
     leg_map = {}
@@ -56,9 +57,13 @@ async def mrv_index(
     return templates.TemplateResponse(
         "staff/mrv/index.html",
         {
-            "request": request, "user": user,
-            "vessels": vessels, "legs": legs, "events": events,
-            "leg_map": leg_map, "summary": summary,
+            "request": request,
+            "user": user,
+            "vessels": vessels,
+            "legs": legs,
+            "events": events,
+            "leg_map": leg_map,
+            "summary": summary,
             "co2_factor": CO2_EMISSION_FACTOR_MDO,
         },
     )
@@ -97,9 +102,15 @@ async def add_event(
     db.add(ev)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="mrv", entity_type="mrv_event",
-        entity_id=ev.id, entity_label=f"{event_kind} leg={leg_id}",
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="mrv_event",
+        entity_id=ev.id,
+        entity_label=f"{event_kind} leg={leg_id}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/mrv", status_code=303)
@@ -110,9 +121,9 @@ async def export_dnv_csv(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("mrv", "C")),
 ):
-    events = list((await db.execute(
-        select(MRVEvent).order_by(MRVEvent.recorded_at.asc())
-    )).scalars().all())
+    events = list(
+        (await db.execute(select(MRVEvent).order_by(MRVEvent.recorded_at.asc()))).scalars().all()
+    )
     leg_ids = {e.leg_id for e in events}
     leg_map = {}
     for lid in leg_ids:
@@ -133,9 +144,9 @@ async def export_carbon_report(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("mrv", "C")),
 ):
-    events = list((await db.execute(
-        select(MRVEvent).order_by(MRVEvent.recorded_at.asc())
-    )).scalars().all())
+    events = list(
+        (await db.execute(select(MRVEvent).order_by(MRVEvent.recorded_at.asc()))).scalars().all()
+    )
     summary = carbon_report_summary([_AdapterMRV(e) for e in events])
     body = (
         "NEWTOWT — MRV Carbon Report\n"
@@ -154,6 +165,7 @@ async def export_carbon_report(
 
 class _AdapterMRV:
     """Adapt MRVEvent to mrv_export.to_dnv_csv expectations."""
+
     def __init__(self, ev: MRVEvent, leg: Leg | None = None, vessel_imo: str = ""):
         self._ev = ev
         self.vessel_imo = vessel_imo
@@ -171,4 +183,6 @@ def _decor(ev: MRVEvent, leg_map: dict[int, Leg]) -> _AdapterMRV:
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
+    )

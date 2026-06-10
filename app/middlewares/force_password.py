@@ -10,6 +10,7 @@ d'exécution Starlette) :
 Pages exemptées : la cible elle-même, /logout, /static/*, /login.
 Posées APRÈS le CSRF middleware pour bénéficier d'un cookie déjà géré.
 """
+
 from __future__ import annotations
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -27,7 +28,7 @@ EXEMPT_PREFIXES_PWD = (
 )
 
 EXEMPT_PREFIXES_MFA = (
-    "/admin/my-account",          # MFA setup + verify + change-password
+    "/admin/my-account",  # MFA setup + verify + change-password
     "/logout",
     "/static/",
     "/health",
@@ -48,8 +49,10 @@ async def _decode_staff_user_id(request: Request) -> int | None:
         return None
     try:
         from app.auth import _MAX_STAFF_SESSION_MINUTES, _staff_serializer
+
         payload = _staff_serializer.loads(
-            token, max_age=_MAX_STAFF_SESSION_MINUTES * 60,
+            token,
+            max_age=_MAX_STAFF_SESSION_MINUTES * 60,
         )
         return payload.get("uid") if isinstance(payload, dict) else None
     except Exception:
@@ -75,6 +78,7 @@ class ForcePasswordChangeMiddleware(BaseHTTPMiddleware):
 
         from app.database import SessionLocal
         from app.models.user import User
+
         async with SessionLocal() as db:
             user = await db.get(User, user_id)
             if user and user.must_change_password:
@@ -95,6 +99,7 @@ class ForceMfaForAdminMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         from app.config import settings
+
         if not settings.require_mfa_for_admin:
             return await call_next(request)
 
@@ -110,10 +115,12 @@ class ForceMfaForAdminMiddleware(BaseHTTPMiddleware):
 
         from app.database import SessionLocal
         from app.models.user import User
+
         async with SessionLocal() as db:
             user = await db.get(User, user_id)
             if user and user.role == "administrateur" and not user.mfa_enabled:
                 return RedirectResponse(
-                    url="/admin/my-account/mfa", status_code=303,
+                    url="/admin/my-account/mfa",
+                    status_code=303,
                 )
         return await call_next(request)

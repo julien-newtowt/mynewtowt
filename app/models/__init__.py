@@ -3,6 +3,7 @@
 Importing this package registers all models against `Base.metadata`,
 which is required for `init_db()` (dev) and Alembic auto-generate.
 """
+
 from app.models.activity_log import ActivityLog
 from app.models.anemos_certificate import AnemosCertificate
 from app.models.blog_post import BlogPost

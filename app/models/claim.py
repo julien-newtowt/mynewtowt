@@ -1,4 +1,5 @@
 """Claims (cargo / crew / hull / war risk)."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -50,7 +51,8 @@ class Claim(Base):
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
     timeline: Mapped[list[ClaimTimelineEntry]] = relationship(
-        back_populates="claim", cascade="all, delete-orphan",
+        back_populates="claim",
+        cascade="all, delete-orphan",
         order_by="ClaimTimelineEntry.at",
     )
 
@@ -78,7 +80,9 @@ class VesselPosition(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     vessel_id: Mapped[int] = mapped_column(ForeignKey("vessels.id"), nullable=False, index=True)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     latitude: Mapped[float] = mapped_column()
     longitude: Mapped[float] = mapped_column()
     sog_kn: Mapped[float | None] = mapped_column()

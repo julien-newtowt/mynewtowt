@@ -7,6 +7,7 @@ Logique reprise de la V3.0.0 :
 - Bracket lookup : retourne la 1re bracket dont max_qty >= qty.
 - Bracket rate : base_rate × coeff × adjustment_index.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -57,8 +58,9 @@ async def next_offer_reference(db: AsyncSession, year: int | None = None) -> str
 
 
 def default_brackets_for(client_type: str) -> list[dict]:
-    return list(DEFAULT_BRACKETS_FF if client_type == "freight_forwarder"
-                else DEFAULT_BRACKETS_SHIPPER)
+    return list(
+        DEFAULT_BRACKETS_FF if client_type == "freight_forwarder" else DEFAULT_BRACKETS_SHIPPER
+    )
 
 
 def pick_bracket(brackets: Iterable[dict], qty: int) -> dict | None:
@@ -76,7 +78,9 @@ def bracket_rate(
     coeff: Decimal | float,
     adjustment_index: Decimal | float = Decimal("1.0"),
 ) -> Decimal:
-    return (Decimal(base_rate) * Decimal(coeff) * Decimal(adjustment_index)).quantize(Decimal("0.01"))
+    return (Decimal(base_rate) * Decimal(coeff) * Decimal(adjustment_index)).quantize(
+        Decimal("0.01")
+    )
 
 
 def compute_offer_total(
@@ -86,6 +90,6 @@ def compute_offer_total(
     adjustment_index: Decimal | float,
     qty: int,
 ) -> Decimal:
-    return (bracket_rate(
-        base_rate=base_rate, coeff=coeff, adjustment_index=adjustment_index
-    ) * qty).quantize(Decimal("0.01"))
+    return (
+        bracket_rate(base_rate=base_rate, coeff=coeff, adjustment_index=adjustment_index) * qty
+    ).quantize(Decimal("0.01"))

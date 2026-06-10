@@ -1,4 +1,5 @@
 """Pure-logic tests for the client-journey services (no DB)."""
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 from app.services import anemos, invoicing
 
 # --- invoicing ---------------------------------------------------------------
+
 
 def test_compute_amounts_french_vat() -> None:
     excl, vat, incl = invoicing.compute_amounts(Decimal("100"))
@@ -28,6 +30,7 @@ def test_invoice_reference_format() -> None:
 
 
 # --- anemos distance resolver ------------------------------------------------
+
 
 def test_resolve_distance_prefers_persisted_leg_value() -> None:
     leg = SimpleNamespace(distance_nm=Decimal("2750"))

@@ -1,4 +1,5 @@
 """Contrats d'assurance — P&I, Hull/DIV, War Risk, cargo."""
+
 from __future__ import annotations
 
 from datetime import date as _date

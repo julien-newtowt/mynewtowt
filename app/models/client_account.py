@@ -4,6 +4,7 @@ Distinct from staff users (different table, different cookie, different
 permission space). A ClientAccount belongs to a company; future
 `client_users` table will support multiple users per company (V3.1).
 """
+
 from __future__ import annotations
 
 from datetime import datetime

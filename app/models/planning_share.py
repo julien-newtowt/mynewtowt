@@ -1,4 +1,5 @@
 """Public planning share — token-based access to a filtered planning view."""
+
 from __future__ import annotations
 
 from datetime import datetime
