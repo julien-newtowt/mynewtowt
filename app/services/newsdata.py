@@ -56,7 +56,7 @@ def _first(value: Any) -> str | None:
     """NewsData renvoie country/category/language tantôt en liste, tantôt en str."""
     if value is None:
         return None
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return str(value[0]) if value else None
     return str(value)
 
