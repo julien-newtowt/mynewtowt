@@ -1,0 +1,52 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Escale {{ leg.leg_code }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/escale" class="btn btn-ghost mb-3">← Escale</a>
+<header class="mb-4"><span class="kicker">Escale</span><h1 class="display mono">{{ leg.leg_code }}</h1></header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card" style="border-left:4px solid var(--bleu-horizon);">
+    <h2>🔵 IMPORT</h2>
+    <p class="text-muted text-sm">Débarquements, opérations à l'arrivée.</p>
+    {% if ops_import %}
+      <ul>{% for op in ops_import %}<li>{{ op.action }} — {{ op.label or '—' }} <span class="pill pill-neutral">{{ op.status }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="text-muted">Aucune opération import.</p>{% endif %}
+  </article>
+  <article class="card" style="border-left:4px solid var(--cuivre);">
+    <h2>🟠 EXPORT</h2>
+    <p class="text-muted text-sm">Embarquements, opérations au départ.</p>
+    {% if ops_export %}
+      <ul>{% for op in ops_export %}<li>{{ op.action }} — {{ op.label or '—' }} <span class="pill pill-neutral">{{ op.status }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="text-muted">Aucune opération export.</p>{% endif %}
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Ajouter une opération</h2>
+  <form method="post" action="/escale/{{ leg.id }}/operation">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-4 gap-3">
+      <div class="field"><label>Direction</label><select name="direction"><option value="">Commun</option><option value="IMPORT">Import</option><option value="EXPORT">Export</option></select></div>
+      <div class="field"><label>Type</label><select name="operation_type" required><option>technique</option><option>armement</option><option>relations_externes</option><option>documentaire</option><option>commercial</option></select></div>
+      <div class="field"><label>Action</label><select name="action" required><option>nor</option><option>eosp</option><option>sosp</option><option>pilot_on</option><option>pilot_off</option><option>gangway_up</option><option>gangway_down</option><option>embarquement</option><option>debarquement</option><option>soutage</option><option>avitaillement</option><option>relation_presse</option><option>inspection</option><option>autre</option></select></div>
+      <div class="field"><label>Label</label><input name="label" /></div>
+    </div>
+    <button class="btn btn-primary mt-3" type="submit">Ajouter</button>
+  </form>
+</article>
+
+<article class="card mt-4">
+  <h2>Opérations communes ({{ ops_common|length }})</h2>
+  {% if ops_common %}<ul>{% for op in ops_common %}<li><span class="mono">{{ op.action }}</span> · {{ op.operation_type }} · {{ op.label or '—' }}</li>{% endfor %}</ul>
+  {% else %}<p class="text-muted">Aucune opération commune.</p>{% endif %}
+</article>
+
+<article class="card mt-4">
+  <h2>Docker shifts ({{ dockers|length }})</h2>
+  {% if dockers %}
+    <table><thead><tr><th>Direction</th><th>Société</th><th>Nb dockers</th><th>Palettes</th></tr></thead><tbody>
+    {% for d in dockers %}<tr><td>{{ d.direction or '—' }}</td><td>{{ d.company or '—' }}</td><td>{{ d.nb_dockers }}</td><td>{{ d.palettes_done }}/{{ d.palettes_target or '?' }}</td></tr>{% endfor %}
+    </tbody></table>
+  {% else %}<p class="text-muted">Aucun docker shift configuré.</p>{% endif %}
+</article>
+{% endblock %}

@@ -1,0 +1,138 @@
+{# Layout public refonte "Nouvelle Étoile" (handoff Claude Design).
+   Standalone : ne charge PAS kairos.css (évite les collisions .btn/.card).
+   Tokens : colors_and_type.css + composants : newtowt-public.css.
+   Utilisé par : landing, flotte, impact, navigation, contact, routes, about. #}
+<!DOCTYPE html>
+<html lang="{{ hreflang_map.get(lang, 'fr') }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}NEWTOWT — Transport maritime cargo vélique{% endblock %}</title>
+  <meta name="description" content="{% block description %}NewTowt — compagnie maritime française de fret à la voile vers le Brésil et l'Amérique latine. Café, cacao, fret industriel. CO₂ réduit jusqu'à 95 %, label ANEMOS.{% endblock %}" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+
+  {# Canonical + alternates hreflang (i18n via ?lang=, x-default = FR) #}
+  <link rel="canonical" href="{{ site_url }}{{ request.url.path }}" />
+  {% for l in public_langs %}
+  <link rel="alternate" hreflang="{{ hreflang_map[l] }}" href="{{ site_url }}{{ request.url.path }}?lang={{ l }}" />
+  {% endfor %}
+  <link rel="alternate" hreflang="x-default" href="{{ site_url }}{{ request.url.path }}" />
+
+  {# Open Graph (partage social) #}
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="NewTowt" />
+  <meta property="og:title" content="{{ self.title() }}" />
+  <meta property="og:url" content="{{ site_url }}{{ request.url.path }}" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/static/css/colors_and_type.css" />
+  <link rel="stylesheet" href="/static/css/newtowt-public.css" />
+  <link rel="icon" type="image/png" href="/static/img/favicon.png" />
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
+  <script src="/static/js/csrf-htmx.js" defer></script>
+  <script src="/static/js/lucide-init.js" defer></script>
+  <script src="/static/js/toast.js" defer></script>
+  <script src="/static/js/lang-switch.js" defer></script>
+
+  {# Données structurées Schema.org — fiche Organisation (source de vérité §2).
+     Bloc de données application/ld+json : non exécuté → compatible CSP stricte. #}
+  <script type="application/ld+json">{{ organization_jsonld|safe }}</script>
+  {% block structured_data %}{% endblock %}
+
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a href="#main" class="skip-link" style="position:absolute;left:-9999px;">Aller au contenu</a>
+
+  <header class="header" role="banner">
+    <div class="header-inner">
+      <a class="header-logo" href="/" aria-label="NEWTOWT — accueil">
+        <img src="/static/img/logo_NEWTOWT_email.png" alt="NEWTOWT" />
+      </a>
+      <nav class="header-nav" aria-label="Navigation principale">
+        <a href="/flotte">{{ t('nav_our_fleet', lang) }}</a>
+        <a href="/impact">{{ t('nav_impact', lang) }}</a>
+        <a href="/navigation">{{ t('nav_navigation', lang) }}</a>
+        <a href="/routes">{{ t('nav_routes', lang) }}</a>
+        <a href="/contact" class="btn btn-secondary">{{ t('nav_contact', lang) }}</a>
+        <a href="/me/login">{{ t('nav_client', lang) }}</a>
+      </nav>
+      <div class="lang-switch-group" role="group" aria-label="Choix de la langue / Language">
+        {% for l in public_langs %}
+          {% if l == lang %}
+            <span class="lang-switch is-current" aria-current="true"
+                  title="{{ lang_name[l] }}">
+              <span class="lang-flag" aria-hidden="true">{{ lang_country[l]|flag }}</span>
+              <span class="lang-code">{{ l.split('-')[0]|upper }}</span>
+            </span>
+          {% else %}
+            <a href="/lang/{{ l }}" class="lang-switch" data-lang="{{ l }}"
+               hreflang="{{ hreflang_map[l] }}"
+               title="{{ lang_name[l] }}" aria-label="{{ lang_name[l] }}">
+              <span class="lang-flag" aria-hidden="true">{{ lang_country[l]|flag }}</span>
+              <span class="lang-code">{{ l.split('-')[0]|upper }}</span>
+            </a>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </header>
+
+  {% block content %}{% endblock %}
+
+  <footer class="footer" role="contentinfo">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand">
+            <img src="/static/img/logo_NEWTOWT_email_white.png" alt="NEWTOWT" />
+          </div>
+          <p class="footer-tagline">{{ brand.mention }}</p>
+          <p class="footer-addr">52 quai Frissard<br/>76600 Le Havre<br/>France</p>
+        </div>
+        <div>
+          <h4>{{ t('footer_navigation', lang) }}</h4>
+          <ul class="footer-links">
+            <li><a href="/flotte">{{ t('nav_our_fleet', lang) }}</a></li>
+            <li><a href="/impact">{{ t('nav_impact', lang) }}</a></li>
+            <li><a href="/navigation">{{ t('nav_navigation', lang) }}</a></li>
+            <li><a href="/routes">{{ t('nav_routes', lang) }}</a></li>
+            <li><a href="/about/anemos">Label ANEMOS</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>{{ t('footer_explore', lang) }}</h4>
+          <ul class="footer-links">
+            <li><a href="/carnet">{{ t('nav_carnet', lang) }}</a></li>
+            <li><a href="/actualites">{{ t('nav_actualites', lang) }}</a></li>
+            <li><a href="/recrutement">{{ t('nav_recrutement', lang) }}</a></li>
+            <li><a href="/presse">{{ t('nav_presse', lang) }}</a></li>
+            <li><a href="/passagers">{{ t('nav_passagers', lang) }}</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>{{ t('footer_client', lang) }}</h4>
+          <ul class="footer-links">
+            <li><a href="/contact">{{ t('nav_quote', lang) }}</a></li>
+            <li><a href="/me/login">{{ t('nav_client', lang) }}</a></li>
+            <li><a href="/fleet">{{ t('nav_fleet', lang) }}</a></li>
+            <li><a href="/about">{{ t('nav_about', lang) }}</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>{{ t('footer_legal', lang) }}</h4>
+          <ul class="footer-links">
+            <li><a href="/about/legal">{% if lang == 'en' %}Legal notice{% else %}Mentions légales{% endif %}</a></li>
+            <li><a href="/about/privacy">{% if lang == 'en' %}Privacy{% else %}Confidentialité{% endif %}</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">© {{ brand.year_founded }}–2026 NewTowt — SAS · RCS Paris 994&nbsp;529&nbsp;873</div>
+    </div>
+  </footer>
+  <div id="modal-container" class="modal-container" aria-hidden="true"></div>
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

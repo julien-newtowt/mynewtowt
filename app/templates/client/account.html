@@ -1,0 +1,75 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}My account{% else %}Mon compte{% endif %} — NEWTOWT{% endblock %}
+{% block content %}
+
+<h1>{% if lang == 'en' %}My account{% else %}Mon compte{% endif %}</h1>
+
+<section class="card mb-4">
+  <h2>{% if lang == 'en' %}Information{% else %}Informations{% endif %}</h2>
+  <table>
+    <tbody>
+      <tr><th>{% if lang == 'en' %}Company{% else %}Société{% endif %}</th><td>{{ client.company_name }}</td></tr>
+      <tr><th>{% if lang == 'en' %}Contact{% else %}Contact{% endif %}</th><td>{{ client.contact_name or '—' }}</td></tr>
+      <tr><th>Email</th><td>{{ client.email }}</td></tr>
+      <tr><th>{% if lang == 'en' %}Country{% else %}Pays{% endif %}</th><td>{{ client.country or '—' }}</td></tr>
+      <tr><th>{% if lang == 'en' %}Segment{% else %}Segment{% endif %}</th><td><span class="mono">{{ client.segment }}</span></td></tr>
+      <tr><th>{% if lang == 'en' %}Signed up{% else %}Inscrit le{% endif %}</th><td>{{ client.created_at|date }}</td></tr>
+      <tr><th>{% if lang == 'en' %}Last login{% else %}Dernière connexion{% endif %}</th><td>{{ client.last_login_at|datetime if client.last_login_at else '—' }}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="card mb-4">
+  <h2>{% if lang == 'en' %}Security{% else %}Sécurité{% endif %}</h2>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <p>
+        <strong>{% if lang == 'en' %}Password{% else %}Mot de passe{% endif %}</strong> —
+        {% if lang == 'en' %}Change it regularly.{% else %}Modifiez-le régulièrement.{% endif %}
+      </p>
+      <a href="#" class="btn btn-secondary">
+        {% if lang == 'en' %}Change my password{% else %}Changer mon mot de passe{% endif %}
+      </a>
+    </div>
+    <div>
+      <p><strong>{% if lang == 'en' %}Two-factor authentication (TOTP){% else %}Double authentification (TOTP){% endif %}</strong>
+        {% if client.mfa_enabled %}
+          <span class="pill pill-ok">{% if lang == 'en' %}Enabled{% else %}Activée{% endif %}</span>
+        {% else %}
+          <span class="pill pill-warn">{% if lang == 'en' %}Not enabled{% else %}Non activée{% endif %}</span>
+        {% endif %}
+      </p>
+      <a href="/me/account/mfa" class="btn btn-secondary">
+        {% if client.mfa_enabled %}
+          {% if lang == 'en' %}Manage 2FA{% else %}Gérer la 2FA{% endif %}
+        {% else %}
+          {% if lang == 'en' %}Configure 2FA{% else %}Configurer 2FA{% endif %}
+        {% endif %}
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>{% if lang == 'en' %}GDPR — My data{% else %}RGPD — Mes données{% endif %}</h2>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <p>
+        {% if lang == 'en' %}Download all your data as a ZIP file.{% else %}Téléchargez l'ensemble de vos données au format ZIP.{% endif %}
+      </p>
+      <a href="#" class="btn btn-ghost">
+        {% if lang == 'en' %}Export my data{% else %}Exporter mes données{% endif %}
+      </a>
+    </div>
+    <div>
+      <p class="text-error">
+        {% if lang == 'en' %}Permanent deletion (30-day reversibility).{% else %}Suppression définitive (30 j de réversibilité).{% endif %}
+      </p>
+      <a href="#" class="btn btn-danger">
+        {% if lang == 'en' %}Delete my account{% else %}Supprimer mon compte{% endif %}
+      </a>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Nouveau ticket — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<a href="/tickets" class="btn btn-ghost mb-3">← Tickets</a>
+
+<header class="mb-4">
+  <span class="kicker">Opérations</span>
+  <h1 class="display">Nouveau ticket escale</h1>
+</header>
+
+{% if error %}
+  <div class="alert alert-error" role="alert">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/tickets/new" class="card">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <div class="grid grid-2 gap-4">
+    <div class="field">
+      <label for="priority">Priorité</label>
+      <select id="priority" name="priority" required>
+        {% for p in priorities %}
+          <option value="{{ p }}" {% if p == 'P2' %}selected{% endif %}>
+            {{ priority_labels[p] }} — SLA {{ sla_hours[p] }} h
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="category">Catégorie</label>
+      <select id="category" name="category" required>
+        {% for c in categories %}
+          <option value="{{ c }}">{{ category_labels[c] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field" style="grid-column: span 2;">
+      <label for="title">Titre</label>
+      <input id="title" name="title" maxlength="200" required placeholder="Ex: Avarie palette 12 - signalement à Atlantic Express" />
+    </div>
+
+    <div class="field" style="grid-column: span 2;">
+      <label for="description">Description détaillée</label>
+      <textarea id="description" name="description" rows="5" required></textarea>
+    </div>
+
+    <div class="field">
+      <label for="leg_id">Lié à un leg (optionnel)</label>
+      <select id="leg_id" name="leg_id">
+        <option value="">—</option>
+        {% for leg in legs %}
+          <option value="{{ leg.id }}">{{ leg.leg_code }} — {{ leg.etd|date }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="assigned_to_id">Assigné à</label>
+      <select id="assigned_to_id" name="assigned_to_id">
+        <option value="">— Personne —</option>
+        {% for u in users %}
+          <option value="{{ u.id }}">{{ u.full_name or u.username }} ({{ u.role }})</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field" style="grid-column: span 2;">
+      <label for="external_contact">Contact externe (port agent, fournisseur...)</label>
+      <input id="external_contact" name="external_contact" maxlength="200" />
+    </div>
+  </div>
+
+  <div class="flex gap-3 mt-4">
+    <button type="submit" class="btn btn-primary btn-lg">Créer le ticket</button>
+    <a href="/tickets" class="btn btn-ghost">Annuler</a>
+  </div>
+</form>
+
+{% endblock %}

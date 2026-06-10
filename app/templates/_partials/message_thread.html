@@ -1,0 +1,30 @@
+{# Reusable message thread. Expects in context:
+   - messages : list of objects (sender, sender_name, body, created_at)
+   - post_url : URL to POST a new message (form field "body" + "_csrf")
+   - viewer   : "client" | "staff" (for bubble alignment)
+#}
+<div class="msg-thread" style="display:flex;flex-direction:column;gap:10px;">
+  {% for m in messages %}
+    {% set mine = (m.sender == viewer) %}
+    <div style="max-width:78%; align-self:{{ 'flex-end' if mine else 'flex-start' }};
+                background:{{ 'var(--teal,#0D5966)' if mine else 'var(--sable,#EFE6D6)' }};
+                color:{{ '#fff' if mine else 'inherit' }};
+                padding:10px 14px; border-radius:12px;">
+      <div class="text-sm" style="opacity:.75;margin-bottom:2px;">
+        {{ m.sender_name or m.sender }} · {{ m.created_at|datetime }}
+      </div>
+      <div style="white-space:pre-wrap;">{{ m.body }}</div>
+    </div>
+  {% else %}
+    <p class="text-muted">{% if lang == 'en' %}No message yet.{% else %}Aucun message pour l'instant.{% endif %}</p>
+  {% endfor %}
+</div>
+
+<form method="post" action="{{ post_url }}" class="mt-3">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+  <textarea name="body" required rows="3" class="input" style="width:100%;"
+            placeholder="{% if lang == 'en' %}Write a message…{% else %}Écrire un message…{% endif %}"></textarea>
+  <button class="btn btn-primary mt-2" type="submit">
+    {% if lang == 'en' %}Send{% else %}Envoyer{% endif %}
+  </button>
+</form>

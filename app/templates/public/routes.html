@@ -1,0 +1,101 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}{% if lang == 'en' %}Routes & schedules{% else %}Routes & plannings{% endif %} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<section class="hero">
+  <div class="container">
+    <span class="kicker">{% if lang == 'en' %}Open schedules{% else %}Plannings ouverts{% endif %}</span>
+    <h1 class="display">{% if lang == 'en' %}Available routes{% else %}Routes disponibles{% endif %}</h1>
+    <span class="baseline">
+      {% if lang == 'en' %}Find your next wind-powered crossing{% else %}Trouvez votre prochaine traversée vélique{% endif %}
+    </span>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+
+    <form class="card mb-4" method="get" action="/routes">
+      <div class="grid grid-4 gap-3">
+        <div class="field">
+          <label for="from">{% if lang == 'en' %}From country{% else %}Pays départ{% endif %}</label>
+          <input id="from" name="from" type="text" placeholder="FR" maxlength="2" value="{{ filters.from }}" />
+        </div>
+        <div class="field">
+          <label for="to">{% if lang == 'en' %}To country{% else %}Pays arrivée{% endif %}</label>
+          <input id="to" name="to" type="text" placeholder="US" maxlength="2" value="{{ filters.to }}" />
+        </div>
+        <div class="field">
+          <label for="from_date">{% if lang == 'en' %}From date{% else %}À partir du{% endif %}</label>
+          <input id="from_date" name="from_date" type="date" value="{{ filters.from_date }}" />
+        </div>
+        <div class="field">
+          <label for="to_date">{% if lang == 'en' %}To date{% else %}Jusqu'au{% endif %}</label>
+          <input id="to_date" name="to_date" type="date" value="{{ filters.to_date }}" />
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">{% if lang == 'en' %}Filter{% else %}Filtrer{% endif %}</button>
+    </form>
+
+    {% if legs %}
+      <p class="text-muted">
+        {{ legs|length }} {% if lang == 'en' %}route(s) available.{% else %}route(s) disponible(s).{% endif %}
+      </p>
+      <div class="grid grid-2 gap-4">
+        {% for item in legs %}
+          <article class="booking-card">
+            <div class="header">
+              <span class="leg-code">{{ item.leg_code }}</span>
+              <span class="text-muted text-sm">{{ item.vessel_name }}</span>
+            </div>
+            <div class="route">
+              <strong>{{ item.pol.locode if item.pol }}</strong>
+              <span>{{ item.pol.country|flag if item.pol }}</span>
+              <span class="arrow">→</span>
+              <strong>{{ item.pod.locode if item.pod }}</strong>
+              <span>{{ item.pod.country|flag if item.pod }}</span>
+            </div>
+            <div class="meta">
+              <span>ETD <span class="mono">{{ item.etd|date }}</span></span>
+              <span>ETA <span class="mono">{{ item.eta|date }}</span></span>
+            </div>
+            {% set occ = ((item.capacity_palettes - item.available_palettes) * 100 / item.capacity_palettes) if item.capacity_palettes > 0 else 0 %}
+            <div>
+              <small class="text-muted">
+                {{ item.available_palettes }} / {{ item.capacity_palettes }}
+                {% if lang == 'en' %}pallets{% else %}palettes{% endif %}
+              </small>
+              <div class="capacity-gauge {% if occ > 85 %}full{% elif occ > 60 %}warn{% endif %}">
+                <div class="fill" style="width: {{ occ }}%"></div>
+              </div>
+            </div>
+            <div class="flex justify-between items-center mt-2">
+              <a href="/routes/{{ item.leg_code }}" class="btn btn-ghost">
+                {% if lang == 'en' %}Details →{% else %}Détails →{% endif %}
+              </a>
+              <a href="/booking/new/{{ item.leg_code }}" class="btn btn-primary">
+                {% if lang == 'en' %}Book{% else %}Réserver{% endif %}
+              </a>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card text-center">
+        <p>
+          {% if lang == 'en' %}No route matches your criteria.{% else %}Aucune route ne correspond à vos critères.{% endif %}
+        </p>
+        <p class="text-muted text-sm">
+          {% if lang == 'en' %}
+            Edit the filters or contact us for a custom trip:
+          {% else %}
+            Modifiez les filtres ou contactez-nous pour étudier un trajet sur-mesure :
+          {% endif %}
+          <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>
+        </p>
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+{% endblock %}

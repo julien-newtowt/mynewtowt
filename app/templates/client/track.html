@@ -1,0 +1,92 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}Track{% else %}Suivi{% endif %} {{ booking.reference }} — NEWTOWT{% endblock %}
+
+{% block head %}{{ super() }}
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
+<script src="/static/js/fleet-map.js" defer></script>
+{% endblock %}
+
+{% block content %}
+{% set step_labels = {
+  "submitted": ("Soumise", "Submitted"),
+  "confirmed": ("Confirmée", "Confirmed"),
+  "loaded": ("Chargée", "Loaded"),
+  "at_sea": ("En mer", "At sea"),
+  "discharged": ("Débarquée", "Discharged"),
+  "delivered": ("Livrée", "Delivered"),
+} %}
+
+<a href="/me/bookings/{{ booking.reference }}" class="btn btn-ghost mb-3">
+  {% if lang == 'en' %}← Booking{% else %}← Réservation{% endif %}
+</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <h1 class="mono text-accent">{{ booking.reference }}</h1>
+    <span class="pill pill-info">{{ booking.status }}</span>
+  </div>
+</header>
+
+<section class="card mb-4" style="padding:0; overflow:hidden;">
+  <div style="padding:var(--space-3); border-bottom:1px solid var(--gris-clair, #e5e0d4);">
+    <h2 style="margin:0;">{% if lang == 'en' %}Live position{% else %}Position en direct{% endif %}</h2>
+  </div>
+  <div class="js-fleet-map"
+       style="width:100%; height:420px; background:var(--sable, #EFE6D6); position:relative;"
+       data-maptiler-token="{{ maptiler_token }}"
+       data-center='{{ map_center|tojson }}'
+       data-zoom="4"
+       data-map-style="ocean"
+       data-no-position-text="{% if lang == 'en' %}No live position yet.{% else %}Position en direct indisponible.{% endif %}"
+       data-no-position-detail="{% if lang == 'en' %}Position updates appear once the vessel is at sea.{% else %}La position s'affiche dès que le navire est en mer.{% endif %}"
+       data-vessels='{{ vessels_json|tojson }}'></div>
+</section>
+
+<div class="grid grid-2 gap-4 mb-4">
+  <article class="card">
+    <h2>{% if lang == 'en' %}Voyage{% else %}Voyage{% endif %}</h2>
+    <table>
+      {% if vessel %}<tr><th>{% if lang == 'en' %}Vessel{% else %}Navire{% endif %}</th>
+        <td>{{ vessel.name }} <span class="mono text-muted">({{ vessel.code }})</span></td></tr>{% endif %}
+      {% if leg %}<tr><th>Leg</th><td><span class="mono">{{ leg.leg_code }}</span></td></tr>{% endif %}
+      {% if pol %}<tr><th>{% if lang == 'en' %}From{% else %}Départ{% endif %}</th>
+        <td>{{ pol.name }} <span class="mono text-muted">({{ pol.locode }})</span></td></tr>{% endif %}
+      {% if pod %}<tr><th>{% if lang == 'en' %}To{% else %}Arrivée{% endif %}</th>
+        <td>{{ pod.name }} <span class="mono text-muted">({{ pod.locode }})</span></td></tr>{% endif %}
+      {% if leg %}<tr><th>ETD</th><td class="mono">{{ leg.atd|datetime if leg.atd else leg.etd|datetime }}</td></tr>
+      <tr><th>ETA</th><td class="mono">{{ leg.ata|datetime if leg.ata else leg.eta|datetime }}</td></tr>{% endif %}
+    </table>
+    {% if position %}
+      <p class="text-muted text-sm mt-3">
+        {% if lang == 'en' %}Last position{% else %}Dernière position{% endif %} :
+        {{ position.latitude|round(3) }}, {{ position.longitude|round(3) }}
+        {% if position.sog_kn %} · SOG {{ position.sog_kn }} kn{% endif %}
+        <br>{{ position.recorded_at|datetime }}
+      </p>
+    {% endif %}
+  </article>
+
+  <article class="card">
+    <h2>{% if lang == 'en' %}Status timeline{% else %}Suivi du statut{% endif %}</h2>
+    {% if booking.status == 'cancelled' %}
+      <p><span class="pill pill-error">{% if lang == 'en' %}Cancelled{% else %}Annulée{% endif %}</span></p>
+    {% else %}
+      <ul style="list-style:none; margin:0; padding:0;">
+        {% for step in timeline %}
+          <li style="display:flex; align-items:center; gap:12px; padding:8px 0;">
+            <span style="width:14px; height:14px; border-radius:50%; flex:none;
+                         background:{% if step.current %}var(--cuivre, #B47148){% elif step.done %}var(--vert, #87BD29){% else %}var(--gris-clair, #d8d2c4){% endif %};
+                         border:2px solid {% if step.done or step.current %}var(--teal, #0D5966){% else %}#ccc{% endif %};"></span>
+            <span style="flex:1; {% if step.current %}font-weight:700;{% elif not step.done %}color:var(--gris, #999);{% endif %}">
+              {{ step_labels[step.key][1] if lang == 'en' else step_labels[step.key][0] }}
+            </span>
+            {% if step.at %}<span class="text-muted text-sm mono">{{ step.at|datetime }}</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </article>
+</div>
+
+{% endblock %}

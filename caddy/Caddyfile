@@ -1,0 +1,58 @@
+# NEWTOWT — Caddy reverse proxy (TLS via Let's Encrypt)
+#
+# - Auto HTTPS : Caddy demande/renouvelle les certs LE seul, par HTTP-01.
+# - Redirect http://* → https://* automatique (Caddy fait ça de base).
+# - Proxy → service app:8000 (réseau interne docker-compose, jamais exposé public).
+# - HSTS, X-Forwarded-* injectés pour que FastAPI voie scheme=https.
+# - Health check non-TLS sur /health pour les sondes internes.
+# - Email Let's Encrypt à adapter dans docker-compose (env CADDY_EMAIL).
+
+{
+	# Email pour les notifs Let's Encrypt (expiration). Set via env CADDY_EMAIL.
+	email {$CADDY_EMAIL}
+
+	# Logs JSON pour parsing centralisé futur.
+	log {
+		format json
+		level INFO
+	}
+}
+
+# ────────────────────────────── Domaine public ────────────────────────────
+{$CADDY_DOMAIN} {
+	encode zstd gzip
+
+	# En-têtes de sécurité au niveau du proxy (CSP reste géré côté app).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Pas de X-Frame-Options ici (l'app le pose déjà via SecurityHeadersMiddleware).
+		-Server
+	}
+
+	# Reverse proxy → uvicorn workers
+	reverse_proxy app:8000 {
+		# X-Forwarded-Proto / Host / For pour que Starlette les honore (cf. uvicorn --proxy-headers).
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+
+		# Erreurs upstream → 502 propre
+		fail_duration 30s
+		max_fails 3
+
+		# Timeouts pour HTMX long-polling éventuel
+		transport http {
+			read_timeout 60s
+			write_timeout 60s
+		}
+	}
+
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}

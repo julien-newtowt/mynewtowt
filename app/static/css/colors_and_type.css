@@ -1,0 +1,200 @@
+/* ============================================================
+   NEWTOWT — Design tokens
+   Transition charter v1.0 · "Variante B — Nouvelle Étoile"
+   Sourced from: 09_TOWT_Guide_Charte_Graphique.docx
+   ============================================================ */
+
+/* ---------- Web fonts ---------- */
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* ============ BRAND COLORS ============ */
+  /* Primary - anchor of the system. 60% dominance. */
+  --c-teal:           #0D5966;
+  --c-teal-deep:      #094550;
+  --c-teal-soft:      #1E7280;
+
+  /* Accents */
+  --c-green:          #87BD29;
+  --c-copper:         #B47148;
+  --c-copper-deep:    #985E3A;
+
+  /* Secondary maritime */
+  --c-horizon:        #9EC6D2;
+  --c-marine:         #0051A0;
+
+  /* Editorial neutrals - warm, paper-toned */
+  --c-sand:           #EFE6D6;
+  --c-bone:           #F8F2E6;
+  --c-paper:          #FFFFFF;
+
+  /* Text neutrals */
+  --c-anthracite:     #2A2A2A;
+  --c-grey:           #6E6E6E;
+  --c-grey-soft:      #B5B0A6;
+  --c-night:          #0B2A33;
+
+  /* Semantic colors */
+  --c-danger:         #C44536;
+
+  /* ============ SEMANTIC TOKENS ============ */
+  --bg-page:          var(--c-bone);
+  --bg-surface:       var(--c-paper);
+  --bg-editorial:     var(--c-sand);
+  --bg-inverse:       var(--c-night);
+
+  --fg-1:             var(--c-anthracite);
+  --fg-2:             var(--c-grey);
+  --fg-brand:         var(--c-teal);
+  --fg-accent:        var(--c-copper);
+  --fg-on-dark:       var(--c-bone);
+  --fg-on-brand:      #FFFFFF;
+
+  --border-hair:      rgba(13, 89, 102, 0.12);
+  --border-rule:      rgba(13, 89, 102, 0.24);
+  --border-copper:    var(--c-copper);
+  --border-strong:    var(--c-teal);
+
+  --link:             var(--c-teal);
+  --link-hover:       var(--c-copper);
+
+  --focus-ring:       0 0 0 3px rgba(180, 113, 72, 0.35);
+
+  /* ============ TYPOGRAPHY ============ */
+  --font-sans:    'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif:   'DM Serif Display', 'Cambria', Georgia, serif;
+  --font-office:  Calibri, 'Segoe UI', Tahoma, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, Consolas, monospace;
+
+  --fs-12: 0.75rem;
+  --fs-13: 0.8125rem;
+  --fs-14: 0.875rem;
+  --fs-16: 1rem;
+  --fs-18: 1.125rem;
+  --fs-20: 1.25rem;
+  --fs-24: 1.5rem;
+  --fs-32: 2rem;
+  --fs-40: 2.5rem;
+  --fs-56: 3.5rem;
+  --fs-72: 4.5rem;
+
+  --lh-tight:  1.1;
+  --lh-snug:   1.25;
+  --lh-normal: 1.55;
+  --lh-loose:  1.7;
+
+  --tr-loose:  0.04em;
+  --tr-normal: 0;
+  --tr-tight:  -0.015em;
+
+  /* ============ FONT WEIGHTS ============ */
+  --fw-light:     300;
+  --fw-regular:   400;
+  --fw-medium:    500;
+  --fw-semibold:  600;
+  --fw-bold:      700;
+  --fw-extrabold: 800;
+
+  /* ============ SPACING ============ */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+  --sp-9: 96px;
+
+  /* ============ RADII ============ */
+  --r-0:  0;
+  --r-1:  2px;
+  --r-2:  4px;
+  --r-3:  8px;
+  --r-pill: 999px;
+
+  /* ============ SHADOWS ============ */
+  --sh-hair:   0 1px 0 rgba(13, 89, 102, 0.08);
+  --sh-card:   0 2px 4px rgba(13, 89, 102, 0.06), 0 12px 28px -16px rgba(13, 89, 102, 0.18);
+  --sh-lift:   0 4px 8px rgba(13, 89, 102, 0.08), 0 24px 48px -20px rgba(13, 89, 102, 0.24);
+
+  /* ============ MOTION ============ */
+  --ease-out:  cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-in:   cubic-bezier(0.5, 0, 0.75, 0);
+  --dur-fast:  120ms;
+  --dur-base:  200ms;
+  --dur-slow:  360ms;
+
+  /* ============ LAYOUT ============ */
+  --container:    1180px;
+  --container-w:  1280px;
+  --gutter:       clamp(16px, 4vw, 48px);
+}
+
+/* SEMANTIC TYPE */
+html { font-family: var(--font-sans); color: var(--fg-1); }
+body {
+  margin: 0;
+  background: var(--bg-page);
+  font-family: var(--font-sans);
+  font-size: var(--fs-16);
+  line-height: var(--lh-normal);
+  color: var(--fg-1);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.h-display {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: clamp(2.5rem, 5vw, var(--fs-72));
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tr-tight);
+  color: var(--fg-brand);
+}
+
+.h-serif {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(1.75rem, 3.4vw, var(--fs-40));
+  line-height: var(--lh-snug);
+  color: var(--c-copper);
+}
+
+h1, .h1 { font-family: var(--font-sans); font-weight: 700; font-size: var(--fs-56); line-height: var(--lh-tight); letter-spacing: var(--tr-tight); color: var(--fg-brand); margin: 0 0 var(--sp-4); }
+h2, .h2 { font-family: var(--font-sans); font-weight: 700; font-size: var(--fs-40); line-height: var(--lh-snug); letter-spacing: -0.01em; color: var(--fg-brand); margin: 0 0 var(--sp-3); }
+h3, .h3 { font-family: var(--font-sans); font-weight: 600; font-size: var(--fs-24); line-height: var(--lh-snug); color: var(--fg-brand); margin: 0 0 var(--sp-3); }
+h4, .h4 { font-family: var(--font-sans); font-weight: 600; font-size: var(--fs-18); line-height: var(--lh-snug); color: var(--fg-1); margin: 0 0 var(--sp-2); }
+
+.eyebrow {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: var(--fs-12);
+  letter-spacing: var(--tr-loose);
+  text-transform: uppercase;
+  color: var(--c-copper);
+}
+
+p, .body { font-size: var(--fs-16); line-height: var(--lh-normal); color: var(--fg-1); text-wrap: pretty; }
+.lede { font-size: var(--fs-20); line-height: var(--lh-normal); color: var(--fg-1); }
+.caption { font-size: var(--fs-13); line-height: var(--lh-snug); color: var(--fg-2); }
+.legal { font-size: var(--fs-12); line-height: var(--lh-snug); color: var(--fg-2); }
+
+code, .mono { font-family: var(--font-mono); font-size: 0.92em; color: var(--fg-brand); }
+
+a, .link { color: var(--link); text-decoration: none; border-bottom: 1px solid transparent; transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+a:hover, .link:hover { color: var(--link-hover); border-bottom-color: var(--link-hover); }
+
+.rule-copper { border: 0; height: 2px; background: var(--c-copper); width: 100%; }
+.rule-green  { border: 0; height: 2px; background: var(--c-green); }
+.rule-hair   { border: 0; height: 1px; background: var(--border-rule); }
+
+.callout {
+  background: var(--c-sand);
+  border-left: 6px solid var(--c-copper);
+  padding: var(--sp-5);
+  color: var(--fg-1);
+}
+.callout--teal  { border-left-color: var(--c-teal); }
+.callout--green { border-left-color: var(--c-green); }

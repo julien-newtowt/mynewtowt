@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#EFE6D6;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EFE6D6;padding:24px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:600px;">
+        <tr><td style="background:#0D5966;padding:20px 28px;">
+          <span style="color:#ffffff;font-size:20px;font-weight:bold;letter-spacing:0.5px;">NEWTOWT</span>
+          <span style="color:#87BD29;font-size:13px;"> · transport vélique décarboné</span>
+        </td></tr>
+        <tr><td style="padding:28px;">
+          <h1 style="margin:0 0 16px;font-size:20px;color:#0D5966;">{{ heading }}</h1>
+          <p style="margin:0 0 12px;font-size:15px;line-height:1.5;">Bonjour {{ recipient_name }},</p>
+          <p style="margin:0 0 20px;font-size:15px;line-height:1.5;">{{ message }}</p>
+          {% if cta_url %}
+          <p style="margin:0 0 8px;">
+            <a href="{{ site_url }}{{ cta_url }}" style="display:inline-block;background:#87BD29;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;font-size:15px;">{{ cta_label }}</a>
+          </p>
+          {% endif %}
+        </td></tr>
+        <tr><td style="background:#f5f1e8;padding:18px 28px;font-size:12px;color:#666;">
+          TransOceanic Wind Transport · <a href="mailto:communication@towt.eu" style="color:#0D5966;">communication@towt.eu</a><br>
+          Vous recevez cet email car vous avez une réservation chez NEWTOWT.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

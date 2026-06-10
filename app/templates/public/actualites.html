@@ -1,0 +1,39 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}Actualités — NewTowt{% endblock %}
+{% block description %}Les actualités de NewTowt : vie de la compagnie, de la flotte et de la ligne vers le Brésil et l'Amérique latine.{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-inner">
+    <span class="hero-kicker">Actualités</span>
+    <h1 class="hero-title">Les nouvelles de la compagnie</h1>
+    <p class="hero-lead">
+      L'essentiel de la vie de NewTowt — la flotte, la ligne, les escales — repris et
+      reformulé depuis nos publications.
+    </p>
+  </div>
+</section>
+
+{% include "public/_translation_notice.html" %}
+
+<section class="section">
+  <div class="section-inner">
+    {% if posts %}
+    <div class="feature-grid">
+      {% for post in posts %}
+      <article class="feature-card">
+        {% if post.published_at %}<p class="caption mono">{{ post.published_at|date }}</p>{% endif %}
+        <h3><a href="/carnet/{{ post.slug }}">{{ post.title }}</a></h3>
+        {% if post.lead %}<p>{{ post.lead }}</p>{% endif %}
+        <p><a href="/carnet/{{ post.slug }}">Lire la suite →</a></p>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card" style="text-align:center;">
+      <p style="margin:0;color:var(--c-grey);">Pas encore d'actualité publiée. Revenez bientôt — ou suivez-nous sur LinkedIn.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

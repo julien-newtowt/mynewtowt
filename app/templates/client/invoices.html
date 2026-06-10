@@ -1,0 +1,49 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}My invoices{% else %}Mes factures{% endif %} — NEWTOWT{% endblock %}
+{% block content %}
+
+<h1>{% if lang == 'en' %}My invoices{% else %}Mes factures{% endif %}</h1>
+
+{% if invoices %}
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>{% if lang == 'en' %}Reference{% else %}Référence{% endif %}</th>
+          <th>{% if lang == 'en' %}Issued{% else %}Émise le{% endif %}</th>
+          <th>{% if lang == 'en' %}Due{% else %}Échéance{% endif %}</th>
+          <th>{% if lang == 'en' %}Net{% else %}HT{% endif %}</th>
+          <th>{% if lang == 'en' %}VAT{% else %}TVA{% endif %}</th>
+          <th>{% if lang == 'en' %}Gross{% else %}TTC{% endif %}</th>
+          <th>{% if lang == 'en' %}Status{% else %}Statut{% endif %}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in invoices %}
+          <tr>
+            <td><span class="mono">{{ inv.reference }}</span></td>
+            <td>{{ inv.issued_at|date }}</td>
+            <td>{{ inv.due_at|date if inv.due_at else '—' }}</td>
+            <td>{{ inv.amount_excl_vat_eur|money }}</td>
+            <td>{{ inv.vat_amount_eur|money }}</td>
+            <td><strong>{{ inv.amount_incl_vat_eur|money }}</strong></td>
+            <td>
+              {% if inv.status == 'paid' %}<span class="pill pill-ok">{% if lang == 'en' %}Paid{% else %}Payée{% endif %}</span>
+              {% elif inv.status == 'overdue' %}<span class="pill pill-error">{% if lang == 'en' %}Overdue{% else %}En retard{% endif %}</span>
+              {% elif inv.status == 'issued' %}<span class="pill pill-warn">{% if lang == 'en' %}To pay{% else %}À payer{% endif %}</span>
+              {% else %}<span class="pill pill-neutral">{{ inv.status }}</span>{% endif %}
+            </td>
+            <td>{% if inv.pdf_url %}<a href="{{ inv.pdf_url }}" class="btn btn-ghost">PDF →</a>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="text-muted">
+    {% if lang == 'en' %}No invoice issued yet.{% else %}Aucune facture émise pour l'instant.{% endif %}
+  </p>
+{% endif %}
+
+{% endblock %}

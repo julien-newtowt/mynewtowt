@@ -1,0 +1,116 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}NewTowt — fret maritime à la voile vers le Brésil & l'Amérique latine{% endblock %}
+{% block description %}NewTowt transporte du fret palettisé (café, cacao, fret industriel) à la voile vers le Brésil et l'Amérique latine. CO₂ réduit jusqu'à 95 %, label ANEMOS. Une flotte qui navigue depuis 2011.{% endblock %}
+{% block content %}
+
+<section class="hero">
+  <div class="hero-inner">
+    <span class="hero-kicker">Pionnier du transport maritime décarboné depuis 2011</span>
+    <h1 class="hero-title">Le fret à la voile vers le Brésil & l'Amérique latine</h1>
+    <p class="hero-baseline">Bienvenue à bord. Une flotte qui navigue, pas un projet.</p>
+    <p class="hero-lead">
+      NewTowt opère déjà une ligne régulière pour le café, le cacao et le fret
+      industriel — marchandises dangereuses comprises — avec une réduction de CO₂
+      jusqu'à 95 %, mesurée et certifiée par le label ANEMOS.
+    </p>
+
+    <form class="hero-search" method="get" action="/routes" role="search">
+      <div class="field">
+        <label for="from">Départ (pays)</label>
+        <input id="from" name="from" type="text" placeholder="FR" maxlength="2" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="to">Arrivée (pays)</label>
+        <input id="to" name="to" type="text" placeholder="BR" maxlength="2" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="from_date">À partir du</label>
+        <input id="from_date" name="from_date" type="date" />
+      </div>
+      <button type="submit" class="btn btn-primary btn-lg">Rechercher</button>
+    </form>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-inner">
+    <span class="section-kicker">Pourquoi NewTowt</span>
+    <h2 class="section-title">Naviguer autrement, sans compromis</h2>
+    <p class="section-lead">
+      Pionnière du transport vélique depuis 2011, NewTowt exploite une flotte de
+      voiliers-cargos qui relient l'Europe au Brésil et à l'Amérique latine, avec
+      des plannings prévisibles et un impact carbone réduit jusqu'à 95 %.
+    </p>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <h3>Décarboné jusqu'à −95 %</h3>
+        <p>Réduction de CO₂ jusqu'à 95 % vs cargo conventionnel — transport par lot
+           certifié par le label <strong>ANEMOS</strong>, traçabilité de port à port.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Une flotte qui navigue</h3>
+        <p>Six sisterships de la classe TSC 80, deux déjà en opération. Charge utile
+           &gt; 1 200 t sur 1 050 m² en six cales. <a href="/flotte">Notre flotte →</a></p>
+      </div>
+      <div class="feature-card">
+        <h3>Qualité préservée à bord</h3>
+        <p>Cales à la température de la mer, ventilation segmentée et mesure continue
+           (LACOE©) : le café et le cacao arrivent intacts. <a href="/impact">Impact →</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section--sand">
+  <div class="section-inner">
+    <span class="section-kicker">Plannings ouverts</span>
+    <h2 class="section-title">Prochains départs disponibles</h2>
+
+    {% if upcoming %}
+    <div class="booking-grid">
+      {% for leg in upcoming %}
+        {% set occ = ((leg.capacity_palettes - leg.available_palettes) / leg.capacity_palettes * 100) if leg.capacity_palettes else 0 %}
+        <article class="booking-card">
+          <div class="booking-header">
+            <span class="leg-code">{{ leg.leg_code }}</span>
+            <span class="vessel-name">{{ leg.vessel_name }}</span>
+          </div>
+          <div class="booking-route">
+            <strong>{{ leg.pol.locode if leg.pol else '—' }}</strong>
+            <span class="flag">{{ leg.pol.country|flag if leg.pol else '' }}</span>
+            <span class="arrow">→</span>
+            <strong>{{ leg.pod.locode if leg.pod else '—' }}</strong>
+            <span class="flag">{{ leg.pod.country|flag if leg.pod else '' }}</span>
+          </div>
+          <div class="booking-meta">
+            <span>ETD <span class="mono">{{ leg.etd|date }}</span></span>
+            <span>ETA <span class="mono">{{ leg.eta|date }}</span></span>
+          </div>
+          <div>
+            <div class="capacity-gauge">
+              <div class="capacity-fill {% if occ > 85 %}warn{% endif %}{% if leg.available_palettes <= 0 %} full{% endif %}"
+                   style="width: {{ occ|round(0) }}%;"></div>
+            </div>
+            <div class="capacity-label">{{ leg.available_palettes }} / {{ leg.capacity_palettes }} palettes disponibles</div>
+          </div>
+          <div class="booking-actions">
+            <a href="/routes/{{ leg.leg_code }}" class="btn btn-secondary">Détails</a>
+            {% if leg.available_palettes > 0 %}
+              <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-primary">Réserver</a>
+            {% else %}
+              <span class="btn btn-secondary" style="opacity:.5;cursor:default;">Complet</span>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card" style="text-align:center;">
+      <p style="margin:0;color:var(--c-grey);">Aucun départ ouvert à la réservation pour le moment. Revenez bientôt.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Mode maintenance — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Admin</span>
+  <h1 class="display">Mode maintenance</h1>
+  <p class="text-muted">Affiche un bandeau 503 à tous les utilisateurs (sauf <code>/health</code> et <code>/static/*</code>).</p>
+</header>
+
+<article class="card">
+  <h2>État actuel</h2>
+  {% if enabled %}
+  <div class="alert alert-warn"><strong>Activé.</strong> L'application est en mode maintenance.</div>
+  <form method="post" action="/admin/maintenance/disable">
+    <button type="submit" class="btn btn-primary">Désactiver la maintenance</button>
+  </form>
+  {% else %}
+  <div class="alert alert-success"><strong>Opérationnel.</strong> Aucun mode maintenance actif.</div>
+  <form method="post" action="/admin/maintenance/enable">
+    <button type="submit" class="btn btn-danger" data-confirm>Activer la maintenance</button>
+  </form>
+  {% endif %}
+</article>
+
+{% endblock %}

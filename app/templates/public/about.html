@@ -1,0 +1,71 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}{% if lang == 'en' %}About{% else %}À propos{% endif %} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<section class="hero">
+  <div class="container">
+    <span class="kicker">{{ brand.raison_sociale }}</span>
+    <h1 class="display">{{ brand.tagline_1 }}</h1>
+    <span class="baseline">{{ brand.tagline_2 }}</span>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container" style="max-width:840px;">
+    <h2 class="section-title">{% if lang == 'en' %}{{ brand.nom_court }} in brief{% else %}{{ brand.nom_court }} en bref{% endif %}</h2>
+
+    <p class="lead">
+      <strong>{{ brand.raison_sociale }}</strong> —
+      {% if lang == 'en' %}
+        French maritime company, pioneer of decarbonised transport by sailing
+        cargo since {{ brand.year_founded }}.
+      {% else %}
+        compagnie maritime française pionnière du transport décarboné par
+        voilier cargo depuis {{ brand.year_founded }}.
+      {% endif %}
+    </p>
+
+    <h3>{% if lang == 'en' %}Our fleet{% else %}Notre flotte{% endif %}</h3>
+    <p>
+      {% if lang == 'en' %}
+        Six identical sailing cargos, sisterships of the <strong>TSC 80</strong>
+        class: payload of over <strong>1,200 tonnes</strong> across 1,050 m² in six
+        holds, mainly wind propulsion under French flag.
+      {% else %}
+        Six voiliers-cargos identiques, sisterships de la classe <strong>TSC 80</strong> :
+        charge utile de plus de <strong>1 200 tonnes</strong> sur 1 050 m² en six cales,
+        propulsion principalement vélique sous pavillon français.
+      {% endif %}
+    </p>
+    <ul>
+      <li><strong>Anemos</strong> — {% if lang == 'en' %}in service{% else %}en opération{% endif %}.</li>
+      <li><strong>Artemis</strong> — {% if lang == 'en' %}in service{% else %}en opération{% endif %}.</li>
+      <li><strong>Atlantis, Astérias, Archimedes, Atlas</strong> — {% if lang == 'en' %}under construction{% else %}en construction{% endif %}.</li>
+    </ul>
+
+    <h3>{% if lang == 'en' %}Main routes{% else %}Routes principales{% endif %}</h3>
+    <ul>
+      <li>Fécamp ↔ São Sebastião ({% if lang == 'en' %}Brazil{% else %}Brésil{% endif %})</li>
+      <li>{% if lang == 'en' %}Europe ↔ Latin America: Colombia, Mexico, Guatemala{% else %}Europe ↔ Amérique latine : Colombie, Mexique, Guatemala{% endif %}</li>
+    </ul>
+
+    <h3>{% if lang == 'en' %}Our commitments{% else %}Nos engagements{% endif %}</h3>
+    <ol>
+      <li>{% if lang == 'en' %}Firm capacities, schedules announced 6 months in advance.{% else %}Capacités fermes, plannings annoncés 6 mois à l'avance.{% endif %}</li>
+      <li>{% if lang == 'en' %}Emissions divided by ten vs conventional cargo — certificate issued at every delivery.{% else %}Émissions divisées par dix vs cargo conventionnel — certificat à chaque livraison.{% endif %}</li>
+      <li>{% if lang == 'en' %}Real-time tracking, 100 % digital documentation.{% else %}Suivi temps réel, documentation 100 % numérique.{% endif %}</li>
+      <li>{% if lang == 'en' %}Protected customer data (GDPR, MFA, complete audit trail).{% else %}Données client protégées (RGPD, MFA, audit complet).{% endif %}</li>
+    </ol>
+
+    <h3>{% if lang == 'en' %}Contact{% else %}Coordonnées{% endif %}</h3>
+    <p>
+      <strong>{{ brand.raison_sociale }}</strong><br/>
+      {{ brand.adresse }}<br/>
+      {% if lang == 'en' %}Phone{% else %}Tél{% endif %} : <a href="tel:{{ brand.telephone|replace(' ','') }}">{{ brand.telephone }}</a><br/>
+      Email : <a href="mailto:{{ brand.email }}">{{ brand.email }}</a><br/>
+      {% if lang == 'en' %}Corporate site{% else %}Site corporate{% endif %} : <a href="{{ brand.site_public }}" rel="noopener">{{ brand.site_public }}</a>
+    </p>
+  </div>
+</section>
+
+{% endblock %}

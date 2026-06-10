@@ -1,0 +1,45 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}Carnet de construction — NewTowt{% endblock %}
+{% block description %}Du premier acier à la première voile : suivez la construction des quatre nouveaux voiliers-cargos NewTowt (classe TSC 80) chez Piriou, chantiers de Song Thu et Ba Son.{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-inner">
+    <span class="hero-kicker">Carnet de construction</span>
+    <h1 class="hero-title">La flotte grandit, jalon après jalon</h1>
+    <p class="hero-lead">
+      Non pas un suivi de chantier exhaustif, mais les jalons marquants — du premier
+      acier à la première voile — pour chacun des quatre nouveaux voiliers-cargos,
+      construits par Piriou sur les chantiers de Song Thu et de Ba Son.
+    </p>
+  </div>
+</section>
+
+{% include "public/_translation_notice.html" %}
+
+<section class="section">
+  <div class="section-inner">
+    {% if posts %}
+    <div class="feature-grid">
+      {% for post in posts %}
+      <article class="feature-card">
+        <div class="map-placeholder" role="img"
+             aria-label="Photographie du chantier — visuel à venir"
+             style="height:auto;min-height:160px;margin-bottom:var(--sp-4);">
+          <span>Photo — <em>visuel à venir</em></span>
+        </div>
+        {% if post.published_at %}<p class="caption mono">{{ post.published_at|date }}</p>{% endif %}
+        <h3><a href="/carnet/{{ post.slug }}">{{ post.title }}</a></h3>
+        {% if post.lead %}<p>{{ post.lead }}</p>{% endif %}
+        <p><a href="/carnet/{{ post.slug }}">Lire la suite →</a></p>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card" style="text-align:center;">
+      <p style="margin:0;color:var(--c-grey);">Le carnet s'ouvrira bientôt. Revenez prochainement.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

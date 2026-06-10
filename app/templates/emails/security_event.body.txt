@@ -1,0 +1,17 @@
+Bonjour {{ recipient_name }},
+
+Un événement de sécurité vient d'être enregistré sur votre compte {{ brand_name }} :
+
+  {{ event_kind }}
+  {% if event_detail %}{{ event_detail }}{% endif %}
+  {{ occurred_at }}
+
+Si c'est bien vous, vous pouvez ignorer ce message.
+
+Si vous ne reconnaissez pas cet événement :
+  1. Connectez-vous à votre compte
+  2. Changez immédiatement votre mot de passe
+  3. Vérifiez la liste de vos passkeys
+  4. Contactez l'équipe NEWTOWT à communication@towt.eu
+
+— L'équipe NEWTOWT

@@ -1,0 +1,50 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Onboard — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<header class="mb-4">
+  <span class="kicker">Vue commandant</span>
+  <h1 class="display">À bord</h1>
+</header>
+
+<a href="/captain/next-port"
+   class="card mb-4"
+   style="background:var(--sable); border-left:4px solid var(--teal); display:block; color:inherit; text-decoration:none;">
+  <span class="kicker">⛵ Prochaine escale</span>
+  <h2 style="margin:var(--space-2) 0;">
+    {% if next_etd %}{{ next_etd.leg_code }} — ETD {{ next_etd.etd|datetime }}{% else %}Aucune escale programmée{% endif %}
+  </h2>
+  <p class="text-muted" style="margin:0;">Synthèse port d'arrivée, ETA, météo, SOF récents →</p>
+</a>
+
+<div class="grid grid-2 gap-4">
+  <a href="/onboard/escale" class="card card-interactive" style="border-left:4px solid var(--cuivre); border-bottom:none; color:inherit; text-decoration:none;">
+    <span class="kicker">⚓ Escale</span>
+    <h2 style="margin:var(--space-2) 0;">Quai & opérations</h2>
+    <p class="text-muted">{% if active_legs %}En escale{% else %}Aucun navire à quai{% endif %}</p>
+  </a>
+  <a href="/onboard/navigation" class="card card-interactive" style="border-left:4px solid var(--teal); border-bottom:none; color:inherit; text-decoration:none;">
+    <span class="kicker">🌊 Navigation</span>
+    <h2 style="margin:var(--space-2) 0;">Position, noon report, journal de quart</h2>
+    <p class="text-muted">{% if next_etd %}Prochain départ {{ next_etd.leg_code }} le {{ next_etd.etd|date }}{% else %}—{% endif %}</p>
+  </a>
+  <a href="/onboard/cargo" class="card card-interactive" style="border-left:4px solid var(--vert); border-bottom:none; color:inherit; text-decoration:none;">
+    <span class="kicker">📦 Cargo & doc</span>
+    <h2 style="margin:var(--space-2) 0;">Manifeste, BL, mate's receipt</h2>
+    <p class="text-muted">Cf. module Cargo pour la doc complète</p>
+  </a>
+  <a href="/onboard/crew" class="card card-interactive" style="border-left:4px solid var(--bleu-horizon); border-bottom:none; color:inherit; text-decoration:none;">
+    <span class="kicker">👥 Équipage</span>
+    <h2 style="margin:var(--space-2) 0;">Rotation, check-lists ISM/ISPS, visiteurs</h2>
+    <p class="text-muted">Registre visiteurs ISPS, drills</p>
+  </a>
+</div>
+
+<section class="card mt-4">
+  <h2>Outils annexes</h2>
+  <div class="flex gap-3" style="flex-wrap:wrap;">
+    <a href="/cashbox" class="btn btn-secondary">💰 Caisse de bord</a>
+    <a href="/tickets/new" class="btn btn-secondary">🎫 Lever un ticket P1</a>
+    <a href="/planning" class="btn btn-secondary">🗓️ Planning</a>
+  </div>
+</section>
+{% endblock %}

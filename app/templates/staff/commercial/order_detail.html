@@ -1,0 +1,78 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ order.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial · {{ order.client.name if order.client else '' }}</span>
+    <h1 class="display">{{ order.reference }}</h1>
+    <p class="text-muted">{{ order.booked_palettes }} palettes · {{ order.total_eur|money if order.total_eur else 'tarif non défini' }}</p>
+  </div>
+  <div class="flex gap-2">
+    <span class="badge badge-{{ order.status }}">{{ order.status }}</span>
+    {% if order.status == 'draft' %}
+    <form method="post" action="/commercial/orders/{{ order.id }}/confirm" style="display:inline;">
+      <button type="submit" class="btn btn-primary btn-sm">Confirmer</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/cargo/packing-lists/from-order/{{ order.id }}" style="display:inline;">
+      <button type="submit" class="btn btn-secondary btn-sm">+ Packing list</button>
+    </form>
+    <a href="/commercial/orders" class="btn btn-ghost">← Retour</a>
+  </div>
+</header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Caractéristiques</h2>
+    <table class="data-table">
+      <tr><td>Client</td><td><strong>{{ order.client.name if order.client else '—' }}</strong></td></tr>
+      <tr><td>Leg</td><td class="mono">{{ leg.leg_code if leg else '—' }}</td></tr>
+      <tr><td>Palettes</td><td>{{ order.booked_palettes }}</td></tr>
+      <tr><td>Tarif</td><td class="mono">{{ order.rate_per_palette_eur|money if order.rate_per_palette_eur else '—' }}</td></tr>
+      <tr><td>Total</td><td class="mono">{{ order.total_eur|money if order.total_eur else '—' }}</td></tr>
+      <tr><td>Confirmée le</td><td>{{ order.confirmed_at|datetime if order.confirmed_at else '—' }}</td></tr>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Adresses BL</h2>
+    <table class="data-table">
+      <tr><td>Shipper</td><td>{{ order.shipper_name or '—' }}</td></tr>
+      <tr><td>Consignee</td><td>{{ order.consignee_name or '—' }}</td></tr>
+      <tr><td>Notify</td><td>{{ order.notify_name or '—' }}</td></tr>
+    </table>
+    {% if order.cargo_description %}
+    <div class="alert alert-info mt-3"><strong>Description :</strong> {{ order.cargo_description }}</div>
+    {% endif %}
+  </article>
+</div>
+
+{% if order.assignments %}
+<article class="card mt-4">
+  <h2>Affectations leg</h2>
+  <table class="data-table">
+    <thead><tr><th>Leg</th><th>Palettes</th><th>Format</th></tr></thead>
+    <tbody>
+      {% for a in order.assignments %}
+      <tr><td class="mono">{{ a.leg_id }}</td><td>{{ a.palettes_count }}</td><td>{{ a.pallet_format }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endif %}
+
+{% if order.status != 'cancelled' %}
+<article class="card mt-4">
+  <h2>Annuler la commande</h2>
+  <form method="post" action="/commercial/orders/{{ order.id }}/cancel">
+    <div class="field">
+      <label for="reason">Motif</label>
+      <input id="reason" name="reason" type="text" />
+    </div>
+    <button type="submit" class="btn btn-danger" data-confirm>Annuler la commande</button>
+  </form>
+</article>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,109 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Facture {{ invoice_ref }}{% endblock %}
+{% block doc_kind %}{% if invoice %}Facture{% else %}Devis{% endif %} · Invoice{% endblock %}
+{% block doc_ref %}{{ invoice_ref }}{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Facturé à · Bill to</div>
+    <div class="value">
+      <strong>{{ client.company_name }}</strong><br/>
+      {% if client.contact_name %}{{ client.contact_name }}<br/>{% endif %}
+      {% if client.billing_address %}{{ client.billing_address }}<br/>{% endif %}
+      {% if client.country %}{{ client.country }}{% endif %}<br/>
+      {% if client.vat_number %}<span class="small">TVA : <span class="mono">{{ client.vat_number }}</span></span>{% endif %}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Émetteur</div>
+    <div class="value">
+      <strong>{{ brand.raison_sociale }}</strong><br/>
+      {{ brand.adresse }}<br/>
+      {{ brand.telephone }}<br/>
+      {{ brand.email }}
+    </div>
+  </div>
+</div>
+
+<table>
+  <tr>
+    <td style="width:30%;"><strong>Référence booking</strong></td>
+    <td class="mono">{{ booking.reference }}</td>
+    <td style="width:30%;"><strong>Voyage</strong></td>
+    <td class="mono">{{ leg.leg_code }} · {{ pol.locode }} → {{ pod.locode }}</td>
+  </tr>
+  <tr>
+    <td><strong>Date d'émission</strong></td>
+    <td class="mono">{{ issued_at.strftime("%d/%m/%Y") }}</td>
+    <td><strong>ETD</strong></td>
+    <td class="mono">{{ leg.etd.strftime("%d/%m/%Y") }}</td>
+  </tr>
+  {% if invoice and invoice.due_at %}
+    <tr>
+      <td><strong>Échéance</strong></td>
+      <td class="mono">{{ invoice.due_at.strftime("%d/%m/%Y") }}</td>
+      <td></td>
+      <td></td>
+    </tr>
+  {% endif %}
+</table>
+
+<h2>Prestations</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Désignation</th>
+      <th class="text-right">Quantité</th>
+      <th class="text-right">PU HT (EUR)</th>
+      <th class="text-right">Total HT (EUR)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        Transport maritime vélique<br/>
+        <span class="small">{{ pol.name }} → {{ pod.name }} · Navire {{ vessel.name }}</span>
+      </td>
+      <td class="text-right">{{ booking.total_palettes }} palettes</td>
+      <td class="text-right">—</td>
+      <td class="text-right mono">{{ "%.2f"|format(amount_excl_vat|float) }}</td>
+    </tr>
+    {% if booking.hazardous %}
+      <tr>
+        <td><span class="small c-cuivre">Inclus : majoration marchandise dangereuse (IMDG)</span></td>
+        <td></td><td></td><td></td>
+      </tr>
+    {% endif %}
+    <tr>
+      <td class="text-right" colspan="3"><strong>Total HT</strong></td>
+      <td class="text-right mono">{{ "%.2f"|format(amount_excl_vat|float) }}</td>
+    </tr>
+    <tr>
+      <td class="text-right" colspan="3">TVA ({{ "%.0f"|format((vat_rate|float) * 100) }} %)</td>
+      <td class="text-right mono">{{ "%.2f"|format(vat_amount|float) }}</td>
+    </tr>
+    <tr class="total-row">
+      <td class="text-right" colspan="3">TOTAL TTC</td>
+      <td class="text-right mono" style="font-size:12pt;">{{ "%.2f"|format(amount_incl_vat|float) }} EUR</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="footer-mention" style="margin-top:14pt;">
+  <strong>Conditions de paiement</strong> · Règlement par virement bancaire à
+  l'ordre de {{ brand.raison_sociale }}. Référence à indiquer :
+  <span class="mono">{{ invoice_ref }}</span>.
+  En cas de retard de paiement, pénalités de 3 fois le taux d'intérêt légal +
+  indemnité forfaitaire de 40 EUR (Loi LME).
+</div>
+
+{% if not invoice %}
+  <p class="small c-cuivre" style="margin-top:8pt;">
+    ⚠ Ce document est un <strong>devis</strong> indicatif. La facture finale
+    sera émise après confirmation par {{ brand.nom_court }} et peut différer
+    en cas de marchandise non conforme à la déclaration.
+  </p>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "staff/_layout.html" %}
+{% block title %}RH — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<header class="mb-4"><span class="kicker">Humain</span><h1 class="display">Ressources humaines</h1></header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Saisir un congé</h2>
+    <form method="post" action="/rh/leave">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="grid grid-2 gap-3">
+        <div class="field" style="grid-column:span 2;"><label>Marin</label><select name="crew_member_id" required>{% for m in members %}<option value="{{ m.id }}">{{ m.full_name }} ({{ m.role }})</option>{% endfor %}</select></div>
+        <div class="field"><label>Type</label><select name="kind" required><option value="cp">CP</option><option value="rtt">RTT</option><option value="maladie">Maladie</option><option value="maternite">Maternité</option><option value="paternite">Paternité</option><option value="sans_solde">Sans solde</option></select></div>
+        <div class="field"><label>Du</label><input name="start_date" type="date" required /></div>
+        <div class="field"><label>Au</label><input name="end_date" type="date" required /></div>
+        <div class="field"><label>Motif</label><input name="reason" /></div>
+      </div>
+      <button class="btn btn-primary mt-3" type="submit">Soumettre</button>
+    </form>
+  </article>
+
+  <article class="card">
+    <h2>Demandes en attente ({{ pending|length }})</h2>
+    {% if pending %}
+      <table>
+        <thead><tr><th>Marin</th><th>Type</th><th>Période</th><th>Action</th></tr></thead>
+        <tbody>
+          {% for l in pending %}
+            <tr>
+              <td>#{{ l.crew_member_id }}</td>
+              <td><span class="pill pill-neutral">{{ l.kind }}</span></td>
+              <td class="mono text-sm">{{ l.start_date }} → {{ l.end_date }}</td>
+              <td class="flex gap-2">
+                <form method="post" action="/rh/leave/{{ l.id }}/decide" style="display:inline"><input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" /><input type="hidden" name="decision" value="approved" /><button class="btn btn-primary text-sm">Approuver</button></form>
+                <form method="post" action="/rh/leave/{{ l.id }}/decide" style="display:inline"><input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" /><input type="hidden" name="decision" value="rejected" /><button class="btn btn-danger text-sm">Refuser</button></form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}<p class="text-muted">Aucune demande en attente.</p>{% endif %}
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Historique ({{ leaves|length }})</h2>
+  <table>
+    <thead><tr><th>Marin</th><th>Type</th><th>Période</th><th>Statut</th></tr></thead>
+    <tbody>
+      {% for l in leaves %}
+        <tr>
+          <td>#{{ l.crew_member_id }}</td>
+          <td>{{ l.kind }}</td>
+          <td class="mono text-sm">{{ l.start_date }} → {{ l.end_date }}</td>
+          <td>
+            {% if l.status == 'approved' %}<span class="pill pill-ok">Approuvé</span>
+            {% elif l.status == 'rejected' %}<span class="pill pill-error">Refusé</span>
+            {% elif l.status == 'requested' %}<span class="pill pill-warn">En attente</span>
+            {% else %}<span class="pill pill-neutral">{{ l.status }}</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endblock %}

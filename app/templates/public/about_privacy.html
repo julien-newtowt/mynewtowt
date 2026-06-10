@@ -1,0 +1,82 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}{% if lang == 'en' %}Privacy policy{% else %}Politique de confidentialité{% endif %} — NewTowt{% endblock %}
+{% block head %}<meta name="robots" content="index, follow" />{% endblock %}
+{% block content %}
+
+<section class="hero">
+  <div class="container">
+    <span class="kicker">{% if lang == 'en' %}GDPR — EU 2016/679{% else %}RGPD — UE 2016/679{% endif %}</span>
+    <h1 class="display">{% if lang == 'en' %}Privacy policy{% else %}Politique de confidentialité{% endif %}</h1>
+  </div>
+</section>
+
+{% include "public/_translation_notice.html" %}
+
+<section class="section">
+  <div class="container" style="max-width:840px;">
+    <h2 class="section-title">{% if lang == 'en' %}Data controller{% else %}Responsable du traitement{% endif %}</h2>
+    <p>
+      Le responsable du traitement des données collectées sur newtowt.eu est
+      <strong>NewTowt</strong>, société par actions simplifiée dont le siège est situé
+      128 boulevard Raspail, 75006 Paris, immatriculée au RCS de Paris sous le numéro
+      994 529 873. Les demandes relatives aux données s'exercent auprès de
+      <strong>Karl Sement</strong>, président, référent à la protection des données, à
+      l'adresse <a href="mailto:dpo@newtowt.eu">dpo@newtowt.eu</a>.
+    </p>
+
+    <h2 class="section-title">{% if lang == 'en' %}Data collected & purposes{% else %}Données collectées & finalités{% endif %}</h2>
+    <p>Le site collecte des données dans deux cas :</p>
+    <ul>
+      <li>
+        <strong>Demande de cotation / contact.</strong> Nous recueillons vos
+        coordonnées (nom, société, adresse électronique, téléphone) ainsi que les
+        éléments de votre demande (ports d'origine et de destination, nature de la
+        marchandise, volume ou poids, dates envisagées). Ces données servent
+        uniquement à traiter votre demande et à y répondre, et le cas échéant à la
+        transmettre à notre plateforme de réservation pour la suite de la relation
+        commerciale. Fondement juridique : exécution de mesures précontractuelles
+        prises à votre demande et notre intérêt légitime à répondre à nos prospects.
+      </li>
+      <li>
+        <strong>Mesure d'audience.</strong> Lorsque vous consultez le site, nous
+        mesurons son audience à l'aide de cookies soumis à votre consentement, dans le
+        seul but d'établir des statistiques de fréquentation.
+      </li>
+    </ul>
+
+    <h2 class="section-title">{% if lang == 'en' %}Recipients{% else %}Destinataires{% endif %}</h2>
+    <p>
+      Les destinataires sont l'équipe commerciale de NewTowt et nos prestataires
+      techniques, notamment notre hébergeur et notre outil de mesure d'audience.
+      Lorsqu'un transfert de données hors de l'Union européenne a lieu, il est encadré
+      par des garanties appropriées.
+    </p>
+
+    <h2 class="section-title">{% if lang == 'en' %}Retention periods{% else %}Durées de conservation{% endif %}</h2>
+    <p>
+      Vos données sont conservées <em>[durées à préciser — par exemple trois ans à
+      compter du dernier contact pour les coordonnées de prospects, et treize mois au
+      maximum pour les cookies]</em>, puis supprimées.
+    </p>
+
+    <h2 class="section-title">{% if lang == 'en' %}Your rights{% else %}Vos droits{% endif %}</h2>
+    <p>
+      Conformément à la réglementation, vous disposez d'un droit d'accès, de
+      rectification, d'effacement, d'opposition, de limitation et de portabilité de vos
+      données, que vous pouvez exercer à l'adresse
+      <a href="mailto:dpo@newtowt.eu">dpo@newtowt.eu</a>. Vous pouvez introduire une
+      réclamation auprès de la <a href="https://www.cnil.fr" rel="noopener">CNIL</a>.
+    </p>
+
+    <h2 class="section-title">{% if lang == 'en' %}Cookies{% else %}Cookies{% endif %}</h2>
+    <p>
+      Lors de votre première visite, un bandeau vous permet d'accepter ou de refuser
+      les cookies non essentiels. Seuls les cookies strictement nécessaires au
+      fonctionnement du site (session, CSRF, préférence de langue) sont déposés sans
+      votre accord. Vous pouvez modifier votre choix à tout moment depuis le lien de
+      gestion des cookies présent en pied de page.
+    </p>
+  </div>
+</section>
+
+{% endblock %}

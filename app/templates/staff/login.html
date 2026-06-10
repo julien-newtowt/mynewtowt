@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Connexion staff — {{ brand.nom_court }}{% endblock %}
+{% block head %}{{ super() }}{% endblock %}
+{% block body %}
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
+    </div>
+    <span class="kicker text-center" style="display:block;">Espace collaborateurs</span>
+    <h2>Connexion</h2>
+    {% if error %}
+      <div class="alert alert-error" role="alert">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/login">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="username">Identifiant</label>
+        <input id="username" type="text" name="username" autocomplete="username" required autofocus />
+      </div>
+      <div class="field">
+        <label for="password">Mot de passe</label>
+        <input id="password" type="password" name="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn btn-primary btn-block btn-lg" type="submit">Se connecter</button>
+    </form>
+
+    <p class="text-center text-muted mt-4 text-sm">
+      Pour la création de compte, contactez l'administrateur.
+    </p>
+  </div>
+</div>
+{% endblock %}

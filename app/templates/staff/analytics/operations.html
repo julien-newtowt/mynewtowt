@@ -1,0 +1,109 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Dashboard Opérations {{ year }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Analytics · <a href="/dashboard/analytics">← Vue globale</a></span>
+    <h1 class="display">Dashboard Opérations {{ year }}</h1>
+  </div>
+</header>
+
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">Tickets ouverts</div>
+    <div class="value">{{ total_open }}</div>
+    <div class="delta text-muted">tous niveaux</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">SLA dépassés</div>
+    <div class="value {% if total_breached %}text-error{% else %}text-success{% endif %}">{{ total_breached }}</div>
+    <div class="delta {% if total_breached %}down{% endif %}">
+      {% if total_breached %}action requise{% else %}aucun dépassement{% endif %}
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">P1 ouverts</div>
+    <div class="value {% if by_priority.P1.open %}text-error{% endif %}">{{ by_priority.P1.open }}</div>
+    <div class="delta text-muted">cible 2 h</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Legs en cours</div>
+    <div class="value">{{ active_legs|length }}</div>
+    <div class="delta text-muted">statut inprogress</div>
+  </div>
+</section>
+
+<div class="grid grid-2 gap-4 mt-4">
+  {# Tableau SLA par priorité #}
+  <article class="card">
+    <h2>SLA par priorité — {{ year }}</h2>
+    <table class="data-table">
+      <thead><tr><th>Priorité</th><th>Total</th><th>Ouverts</th><th>SLA dépassés</th></tr></thead>
+      <tbody>
+        {% for p in ["P1", "P2", "P3"] %}
+        {% set row = by_priority[p] %}
+        <tr>
+          <td><span class="pill {% if p == 'P1' %}pill-error{% elif p == 'P2' %}pill-warn{% else %}pill-info{% endif %}">{{ p }}</span></td>
+          <td>{{ row.total }}</td>
+          <td>{{ row.open }}</td>
+          <td>
+            {% if row.breached %}
+              <span class="pill pill-error">{{ row.breached }}</span>
+            {% else %}
+              <span class="pill pill-ok">0</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="mt-3"><a href="/tickets" class="btn btn-secondary btn-sm">Voir le kanban tickets</a></div>
+  </article>
+
+  {# Legs en cours #}
+  <article class="card">
+    <h2>Legs en cours</h2>
+    {% if active_legs %}
+    <table class="data-table">
+      <thead><tr><th>Leg</th><th>Navire</th><th>ETA</th></tr></thead>
+      <tbody>
+        {% for leg, vessel in active_legs %}
+        <tr>
+          <td><a href="/planning/legs/{{ leg.id }}" class="mono">{{ leg.leg_code }}</a></td>
+          <td>{{ vessel.name }}</td>
+          <td class="text-xs mono">{{ leg.eta|datetime if leg.eta else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">Aucun leg en cours.</p>
+    {% endif %}
+  </article>
+</div>
+
+{# Tickets ouverts récents #}
+<article class="card mt-4">
+  <h2>Tickets ouverts — les plus récents</h2>
+  {% if recent_tickets %}
+  <table class="data-table">
+    <thead><tr><th>Réf.</th><th>Titre</th><th>Priorité</th><th>Statut</th><th>SLA</th><th>Créé le</th></tr></thead>
+    <tbody>
+      {% for t in recent_tickets %}
+      <tr>
+        <td><a href="/tickets/{{ t.reference }}" class="mono text-xs">{{ t.reference }}</a></td>
+        <td>{{ t.title }}</td>
+        <td><span class="pill {% if t.priority == 'P1' %}pill-error{% elif t.priority == 'P2' %}pill-warn{% else %}pill-info{% endif %}">{{ t.priority }}</span></td>
+        <td><span class="pill pill-neutral">{{ t.status }}</span></td>
+        <td>{% if t.sla_breached %}<span class="pill pill-error">⚠ Dépassé</span>{% else %}<span class="pill pill-ok">OK</span>{% endif %}</td>
+        <td class="mono text-xs">{{ t.created_at|datetime }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucun ticket ouvert.</p>
+  {% endif %}
+</article>
+{% endblock %}

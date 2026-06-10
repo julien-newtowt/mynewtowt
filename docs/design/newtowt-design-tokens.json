@@ -1,0 +1,183 @@
+{
+  "$metadata": {
+    "name": "NEWTOWT Design Tokens",
+    "version": "1.0.0",
+    "date": "2026-04-07",
+    "description": "Design tokens NEWTOWT — charte de transition variante B 'Nouvelle Étoile'",
+    "format": "Design Tokens W3C draft",
+    "contact": "communication@towt.eu"
+  },
+
+  "color": {
+    "teal": {
+      "default":   { "value": "#0D5966", "description": "Couleur dominante. Lettrage du logo, titres, structures, liens." },
+      "dark":      { "value": "#093F48", "description": "Variante foncée pour fonds premium" },
+      "light":     { "value": "#1A7C8C", "description": "Hover et états actifs" }
+    },
+    "vert": {
+      "default":   { "value": "#87BD29", "description": "Accent secondaire. Branches rose des vents, baseline, soulignements" },
+      "light":     { "value": "#BEDB92", "description": "Statistiques, chiffres clés sur fond foncé" }
+    },
+    "bleu": {
+      "marine":    { "value": "#0051A0", "description": "Branches Est-Ouest de la rose des vents. Usage strict logo et signalétique" },
+      "horizon":   { "value": "#9EC6D2", "description": "Cercle derrière la rose. Textes secondaires sur fond foncé" }
+    },
+    "cuivre": {
+      "default":   { "value": "#B47148", "description": "Accent de transition. Préfixe NEW, filets, points cuivre" },
+      "light":     { "value": "#D49975", "description": "Hover et états actifs sur fond foncé" }
+    },
+    "sable": {
+      "default":   { "value": "#EFE6D6", "description": "Fond éditorial. Encadrés, citations, sections aérantes" },
+      "light":     { "value": "#F8F2E6", "description": "Variante claire pour fond de page" }
+    },
+    "neutre": {
+      "anthracite":{ "value": "#2A2A2A", "description": "Texte courant sur fond clair" },
+      "gris":      { "value": "#6E6E6E", "description": "Textes secondaires, légendes, mentions" },
+      "gris-clair":{ "value": "#D9D9D9", "description": "Filets, séparateurs discrets" },
+      "blanc":     { "value": "#FFFFFF" },
+      "blanc-casse":{ "value": "#FAF7F2" },
+      "nuit":      { "value": "#0B2A33", "description": "Fond pour supports premium" }
+    },
+    "semantique": {
+      "success":   { "value": "{color.vert.default}" },
+      "warning":   { "value": "{color.cuivre.default}" },
+      "danger":    { "value": "#C44536" },
+      "info":      { "value": "{color.bleu.horizon}" }
+    }
+  },
+
+  "fontFamily": {
+    "titre":  { "value": "Manrope, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", "description": "Sans-serif principale. Titres web et présentations" },
+    "corps":  { "value": "Manrope, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", "description": "Corps de texte web" },
+    "serif":  { "value": "'DM Serif Display', Georgia, 'Times New Roman', serif", "description": "Serif d'accent. Citations, mises en exergue" },
+    "mono":   { "value": "'JetBrains Mono', 'SF Mono', Consolas, 'Courier New', monospace" },
+    "office": { "value": "Calibri, 'Calibri Light', sans-serif", "description": "Word, PowerPoint, signatures email" }
+  },
+
+  "fontWeight": {
+    "light":     { "value": 300 },
+    "regular":   { "value": 400 },
+    "medium":    { "value": 500 },
+    "semibold":  { "value": 600 },
+    "bold":      { "value": 700 },
+    "extrabold": { "value": 800 }
+  },
+
+  "fontSize": {
+    "xs":   { "value": "0.75rem",  "px": "12px", "description": "Légendes, mentions" },
+    "sm":   { "value": "0.875rem", "px": "14px", "description": "Interfaces compactes" },
+    "base": { "value": "1rem",     "px": "16px", "description": "Corps de texte" },
+    "md":   { "value": "1.125rem", "px": "18px", "description": "Sous-titres" },
+    "lg":   { "value": "1.5rem",   "px": "24px", "description": "h3" },
+    "xl":   { "value": "2rem",     "px": "32px", "description": "h2" },
+    "2xl":  { "value": "2.75rem",  "px": "44px", "description": "h1" },
+    "3xl":  { "value": "clamp(3rem, 7vw, 5rem)", "px": "48-80px", "description": "Hero responsif" }
+  },
+
+  "lineHeight": {
+    "tight":   { "value": 1.15 },
+    "snug":    { "value": 1.35 },
+    "normal":  { "value": 1.6 },
+    "relaxed": { "value": 1.75 }
+  },
+
+  "letterSpacing": {
+    "tight":   { "value": "-0.01em" },
+    "normal":  { "value": "0" },
+    "wide":    { "value": "0.04em" },
+    "wider":   { "value": "0.12em", "description": "Pour kickers en MAJUSCULES" },
+    "widest":  { "value": "0.18em", "description": "Pour baselines" }
+  },
+
+  "spacing": {
+    "1":  { "value": "0.25rem", "px": "4px" },
+    "2":  { "value": "0.5rem",  "px": "8px" },
+    "3":  { "value": "0.75rem", "px": "12px" },
+    "4":  { "value": "1rem",    "px": "16px" },
+    "5":  { "value": "1.5rem",  "px": "24px" },
+    "6":  { "value": "2rem",    "px": "32px" },
+    "7":  { "value": "3rem",    "px": "48px" },
+    "8":  { "value": "4rem",    "px": "64px" },
+    "9":  { "value": "6rem",    "px": "96px" },
+    "10": { "value": "8rem",    "px": "128px" }
+  },
+
+  "layout": {
+    "maxWidth":       { "value": "1240px",                              "description": "Largeur max contenu" },
+    "padXResponsive": { "value": "clamp(1.25rem, 5vw, 3.75rem)",        "description": "Padding horizontal responsif (20-60px)" },
+    "breakpoint": {
+      "xs":  { "value": "480px",  "description": "mobile portrait" },
+      "sm":  { "value": "768px",  "description": "mobile paysage / tablette portrait" },
+      "md":  { "value": "1024px", "description": "tablette paysage" },
+      "lg":  { "value": "1240px", "description": "desktop" }
+    }
+  },
+
+  "borderRadius": {
+    "sm": { "value": "2px", "description": "Boutons, champs de formulaire" },
+    "md": { "value": "4px", "description": "Cartes, encadrés" },
+    "lg": { "value": "8px", "description": "Conteneurs majeurs (rare)" }
+  },
+
+  "shadow": {
+    "sm":    { "value": "0 1px 2px rgba(13, 89, 102, 0.05)" },
+    "md":    { "value": "0 4px 12px rgba(13, 89, 102, 0.08)" },
+    "lg":    { "value": "0 10px 30px rgba(13, 89, 102, 0.12)" },
+    "glow":  { "value": "0 0 0 4px rgba(180, 113, 72, 0.2)", "description": "Halo cuivre pour focus accessible" }
+  },
+
+  "transition": {
+    "default": { "value": "200ms ease" },
+    "slow":    { "value": "400ms cubic-bezier(0.16, 1, 0.3, 1)" }
+  },
+
+  "logo": {
+    "ratio":         { "value": "4.33", "description": "Ratio largeur/hauteur du PNG NEWTOWT composé (1450/335)" },
+    "minSize": {
+      "web":   { "value": "44px",  "description": "Hauteur minimum sur écran (préfixe NEW lisible)" },
+      "print": { "value": "16mm",  "description": "Hauteur minimum impression" }
+    },
+    "files": {
+      "compose": {
+        "default":      { "value": "logo_NEWTOWT_web.png",        "size": "1450x335", "description": "Logo NEWTOWT complet sur fond clair (NEW cuivre + TOWT teal)" },
+        "dark":         { "value": "logo_NEWTOWT_web_dark.png",   "size": "1450x335", "description": "Logo NEWTOWT pour fond foncé (lettrage TOWT bleu horizon)" },
+        "white":        { "value": "logo_NEWTOWT_web_white.png",  "size": "1450x335", "description": "Logo NEWTOWT pour fond foncé (lettrage TOWT blanc)" },
+        "email":        { "value": "logo_NEWTOWT_email.png",      "size": "540x125",  "description": "Logo NEWTOWT compact pour signatures email" }
+      },
+      "towt_sans_prefixe": {
+        "web":          { "value": "logo_TOWT_web.png",                "size": "800x335",   "description": "Logo TOWT seul (sans préfixe NEW) — usages internes / contextes où NEW non pertinent" },
+        "webDark":      { "value": "logo_TOWT_web_dark.png",           "size": "800x335",   "description": "Lettrage bleu horizon pour fond foncé" },
+        "webWhite":     { "value": "logo_TOWT_web_white.png",          "size": "800x335",   "description": "Lettrage blanc pour fond foncé" },
+        "email":        { "value": "logo_TOWT_email.png",              "size": "300x125",   "description": "Version compacte" },
+        "transparent":  { "value": "logo_TOWT_quadri_transparent.png", "size": "1860x779",  "description": "Haute définition fond transparent" },
+        "vector":       { "value": "logo_TOWT_quadri.ai",              "description": "Fichier vectoriel maître Adobe Illustrator" },
+        "vectorPdf":    { "value": "logo_TOWT_quadri.pdf",             "description": "Vectoriel PDF" },
+        "blackwhite":   { "value": "logo_TOWT_n_b_noir.jpg",           "description": "Noir & blanc pour photocopies" }
+      }
+    }
+  },
+
+  "tagline": {
+    "couple": {
+      "ligne1": { "value": "On garde le cap.",                    "description": "Tagline 1 — toujours en premier" },
+      "ligne2": { "value": "Une nouvelle traversée commence.",    "description": "Tagline 2 — toujours en italique cuivre, sous la ligne 1" }
+    }
+  },
+
+  "corporate": {
+    "raisonSociale":   { "value": "TransOceanic Wind Transport — NEWTOWT" },
+    "nomCourt":        { "value": "NEWTOWT" },
+    "mention":         { "value": "Pionnier du transport maritime décarboné depuis 2011" },
+    "adresse":         { "value": "52 Quai Frissard - 76600 Le Havre" },
+    "telephone":       { "value": "+33 9 84 33 89 62" },
+    "email":           { "value": "communication@towt.eu" },
+    "site":            { "value": "https://towt.eu" }
+  },
+
+  "ratio": {
+    "60": { "value": "teal",   "description": "Couleur dominante — 60% des supports" },
+    "20": { "value": "vert",   "description": "Accent secondaire — 20%" },
+    "10": { "value": "cuivre", "description": "Signal de transition — 10%" },
+    "10b": { "value": "neutres", "description": "Sable, gris, anthracite — 10%" }
+  }
+}

@@ -1,0 +1,40 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Commandes — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial</span>
+    <h1 class="display">Commandes</h1>
+  </div>
+  <div class="flex gap-2">
+    {% set status_filter = filter_status or '' %}
+    <a href="/commercial/orders" class="btn btn-{{ 'primary' if not status_filter else 'ghost' }} btn-sm">Toutes</a>
+    <a href="/commercial/orders?status=draft" class="btn btn-{{ 'primary' if status_filter == 'draft' else 'ghost' }} btn-sm">Draft</a>
+    <a href="/commercial/orders?status=confirmed" class="btn btn-{{ 'primary' if status_filter == 'confirmed' else 'ghost' }} btn-sm">Confirmed</a>
+    <a href="/commercial/orders?status=cancelled" class="btn btn-{{ 'primary' if status_filter == 'cancelled' else 'ghost' }} btn-sm">Cancelled</a>
+    <a href="/commercial/orders/new" class="btn btn-primary">+ Nouvelle commande</a>
+  </div>
+</header>
+
+<article class="card">
+  <table class="data-table">
+    <thead><tr><th>Référence</th><th>Client</th><th>Leg</th><th>Palettes</th><th>Total</th><th>Statut</th></tr></thead>
+    <tbody>
+      {% for o in orders %}
+      <tr>
+        <td><a href="/commercial/orders/{{ o.id }}" class="mono">{{ o.reference }}</a></td>
+        <td>{{ o.client.name if o.client else '—' }}</td>
+        <td class="mono">{{ o.leg_id or '—' }}</td>
+        <td>{{ o.booked_palettes }}</td>
+        <td class="mono">{{ o.total_eur|money if o.total_eur else '—' }}</td>
+        <td><span class="badge badge-{{ o.status }}">{{ o.status }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted text-center">Aucune commande.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

@@ -1,0 +1,87 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Packing List {{ booking.reference }}{% endblock %}
+{% block doc_kind %}Packing List · Liste de colisage{% endblock %}
+{% block doc_ref %}{{ booking.reference }}{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Expéditeur</div>
+    <div class="value">
+      <strong>{{ client.company_name }}</strong><br/>
+      {% if client.contact_name %}{{ client.contact_name }}<br/>{% endif %}
+      {{ client.email }}<br/>
+      {% if client.country %}{{ client.country }}{% endif %}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Voyage</div>
+    <div class="value">
+      <strong>{{ vessel.name }}</strong> — <span class="mono">{{ leg.leg_code }}</span><br/>
+      {{ pol.locode }} → {{ pod.locode }}<br/>
+      ETD <span class="mono">{{ leg.etd.strftime("%d/%m/%Y") }}</span>
+    </div>
+  </div>
+</div>
+
+<h2>Détail des colis</h2>
+<table>
+  <thead>
+    <tr>
+      <th>N°</th>
+      <th>Format</th>
+      <th class="text-right">Nb palettes</th>
+      <th>Description marchandise</th>
+      <th class="text-right">Poids unit. (kg)</th>
+      <th class="text-right">Poids total (kg)</th>
+      <th>Empilable</th>
+      <th>Dangereux</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in booking.items %}
+      <tr>
+        <td class="text-center mono">{{ loop.index }}</td>
+        <td class="mono">{{ item.pallet_format }}</td>
+        <td class="text-right">{{ item.pallet_count }}</td>
+        <td>
+          {{ item.cargo_description }}
+          {% if item.hs_code %}<br/><span class="small">HS {{ item.hs_code }}</span>{% endif %}
+        </td>
+        <td class="text-right">{{ item.unit_weight_kg or '—' }}</td>
+        <td class="text-right">{{ item.total_weight_kg or '—' }}</td>
+        <td>{% if item.stackable %}Oui{% else %}Non{% endif %}</td>
+        <td>{% if item.hazardous %}<span class="badge-imdg">{{ item.imdg_class or 'IMDG' }}</span>{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    <tr class="total-row">
+      <td colspan="2" class="text-right">TOTAL</td>
+      <td class="text-right">{{ booking.total_palettes }}</td>
+      <td colspan="2"></td>
+      <td class="text-right">{{ booking.total_weight_kg }}</td>
+      <td colspan="2"></td>
+    </tr>
+  </tbody>
+</table>
+
+{% if booking.notes %}
+  <h2>Instructions particulières</h2>
+  <p>{{ booking.notes }}</p>
+{% endif %}
+
+<div class="grid-2" style="margin-top:14pt;">
+  <div class="box">
+    <div class="label">Enlèvement</div>
+    <div class="value">{{ booking.pickup_address or '—' }}</div>
+  </div>
+  <div class="box">
+    <div class="label">Livraison</div>
+    <div class="value">{{ booking.delivery_address or '—' }}</div>
+  </div>
+</div>
+
+<p class="small" style="margin-top:14pt;">
+  Référence interne expéditeur : <span class="mono">{{ booking.shipper_reference or '—' }}</span>
+</p>
+
+{% endblock %}

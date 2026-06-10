@@ -1,0 +1,58 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Claims — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Risque</span>
+    <h1 class="display">Claims & sinistres</h1>
+  </div>
+  <a href="/claims/new" class="btn btn-primary">+ Nouveau claim</a>
+</header>
+
+<section class="stats-grid">
+  {% for status in statuses %}
+  <div class="stat-card">
+    <div class="stat-card-icon {{ 'danger' if status == 'open' else ('cuivre' if status == 'in_review' else ('green' if status == 'settled' else 'sky')) }}"><i data-lucide="shield"></i></div>
+    <div class="stat-card-body">
+      <span class="stat-card-value">{{ counts.get(status, 0) }}</span>
+      <span class="stat-card-label">{{ status }}</span>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+<div class="flex gap-2 mb-3">
+  <a href="/claims" class="btn btn-{{ 'primary' if not filter_status else 'ghost' }} btn-sm">Tous</a>
+  {% for s in statuses %}
+  <a href="/claims?status={{ s }}" class="btn btn-{{ 'primary' if filter_status == s else 'ghost' }} btn-sm">{{ s }}</a>
+  {% endfor %}
+</div>
+
+<article class="card">
+  {% if claims %}
+  <table class="data-table">
+    <thead><tr><th>Référence</th><th>Type</th><th>Titre</th><th>Provision</th><th>Réglé</th><th>Statut</th><th>Déclaré</th></tr></thead>
+    <tbody>
+      {% for c in claims %}
+      <tr>
+        <td><a href="/claims/{{ c.id }}" class="mono">{{ c.reference }}</a></td>
+        <td><span class="badge">{{ c.claim_type }}</span></td>
+        <td>{{ c.title }}</td>
+        <td class="mono">{{ c.provision_eur|money if c.provision_eur else '—' }}</td>
+        <td class="mono">{{ c.settled_eur|money if c.settled_eur else '—' }}</td>
+        <td>
+          {% if c.status == 'open' %}<span class="badge badge-overdue">{{ c.status }}</span>
+          {% elif c.status == 'settled' %}<span class="badge badge-completed">{{ c.status }}</span>
+          {% elif c.status == 'rejected' %}<span class="badge badge-error">{{ c.status }}</span>
+          {% else %}<span class="badge badge-inprogress">{{ c.status }}</span>{% endif %}
+        </td>
+        <td class="mono text-sm">{{ c.declared_at|date }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="text-muted">Aucun claim enregistré.</p>{% endif %}
+</article>
+
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Compliance équipage — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Équipage</span>
+    <h1 class="display">Compliance & immigration</h1>
+    <p class="text-muted">Passeports, visas, Schengen 90/180 jours, seaman book.</p>
+  </div>
+  <a href="/crew" class="btn btn-ghost">← Retour</a>
+</header>
+
+<article class="card">
+  <table class="data-table">
+    <thead><tr><th>Marin</th><th>Schengen</th><th>Passeport</th><th>Visa US</th><th>Visa BR</th><th>Seaman book</th><th>Alertes</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      {% set m = row.member %}
+      <tr class="{% if row.warnings %}leg-current{% endif %}">
+        <td><a href="/crew/members/{{ m.id }}">{{ m.full_name }}</a> <span class="text-muted text-xs">({{ m.role }})</span></td>
+        <td>
+          {% if m.schengen_status == 'compliant' %}<span class="pill pill-ok">OK</span>
+          {% elif m.schengen_status == 'warning' %}<span class="pill pill-warn">Warning</span>
+          {% else %}<span class="pill pill-error">Non-compliant</span>{% endif %}
+          {% if m.schengen_days_in_window %}<small class="text-muted">{{ m.schengen_days_in_window }} j</small>{% endif %}
+        </td>
+        <td class="mono text-xs">{{ m.passport_expires_at|date if m.passport_expires_at else '—' }}</td>
+        <td class="mono text-xs">{{ m.visa_us_expires_at|date if m.visa_us_expires_at else '—' }}</td>
+        <td class="mono text-xs">{{ m.visa_br_expires_at|date if m.visa_br_expires_at else '—' }}</td>
+        <td class="mono text-xs">{{ m.seaman_book_expires_at|date if m.seaman_book_expires_at else '—' }}</td>
+        <td>
+          {% for w in row.warnings %}<span class="pill pill-warn">{{ w }}</span><br/>{% endfor %}
+          {% if not row.warnings %}<span class="pill pill-ok">RAS</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

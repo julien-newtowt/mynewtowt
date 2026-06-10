@@ -1,0 +1,22 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}Demande envoyée — NewTowt{% endblock %}
+{% block description %}Votre demande de cotation a bien été transmise à l'équipe NewTowt.{% endblock %}
+{% block head %}<meta name="robots" content="noindex, follow" />{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-inner" style="text-align:center;">
+    <span class="hero-kicker">Merci</span>
+    <h1 class="hero-title">Votre demande est partie</h1>
+    <p class="hero-lead">
+      Nous avons bien reçu votre demande de cotation. Notre équipe commerciale vous
+      recontacte au plus vite pour préparer votre traversée et, le cas échéant, le
+      relais vers votre espace de réservation.
+    </p>
+    <p style="margin-top:var(--sp-6);">
+      <a href="/" class="btn btn-secondary btn-lg">Retour à l'accueil</a>
+      <a href="/routes" class="btn btn-primary btn-lg">Voir les routes</a>
+    </p>
+  </div>
+</section>
+{% endblock %}

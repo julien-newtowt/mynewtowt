@@ -1,0 +1,136 @@
+{% extends "client/_layout.html" %}
+{% block title %}{{ booking.reference }} — NEWTOWT{% endblock %}
+{% block content %}
+
+<a href="/me/bookings" class="btn btn-ghost mb-3">
+  {% if lang == 'en' %}← My bookings{% else %}← Mes réservations{% endif %}
+</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <h1 class="mono text-accent">{{ booking.reference }}</h1>
+    <span class="pill pill-info">{{ booking.status }}</span>
+  </div>
+  <div class="text-right">
+    {% if booking.confirmed_price_eur %}
+      <div class="text-muted">{% if lang == 'en' %}Confirmed price{% else %}Prix confirmé{% endif %}</div>
+      <div class="display" style="font-size: var(--text-2xl)">{{ booking.confirmed_price_eur|money }}</div>
+    {% elif booking.estimated_price_eur %}
+      <div class="text-muted">{% if lang == 'en' %}Estimated price{% else %}Prix estimé{% endif %}</div>
+      <div class="display" style="font-size: var(--text-2xl)">{{ booking.estimated_price_eur|money }}</div>
+    {% endif %}
+  </div>
+</header>
+
+{% if booking.status in ('confirmed','loaded','at_sea','discharged','delivered') %}
+<div class="mb-4">
+  <a href="/me/track/{{ booking.reference }}" class="btn btn-accent">
+    <i data-lucide="navigation"></i>&nbsp;{% if lang == 'en' %}Track the voyage{% else %}Suivre la traversée{% endif %}
+  </a>
+</div>
+{% endif %}
+
+<section class="card mb-4">
+  <h2>{% if lang == 'en' %}Summary{% else %}Récapitulatif{% endif %}</h2>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <div class="text-muted">{% if lang == 'en' %}Pallets{% else %}Palettes{% endif %}</div>
+      <div class="display" style="font-size: var(--text-xl)">{{ booking.total_palettes }}</div>
+    </div>
+    <div>
+      <div class="text-muted">{% if lang == 'en' %}Total weight{% else %}Poids total{% endif %}</div>
+      <div class="display" style="font-size: var(--text-xl)">{{ booking.total_weight_kg|round(1) }} kg</div>
+    </div>
+    {% if booking.hazardous %}
+      <div><span class="pill pill-warn">⚠ IMDG</span>
+        {% if lang == 'en' %}Hazardous cargo declared.{% else %}Marchandise dangereuse déclarée.{% endif %}
+      </div>
+    {% endif %}
+    {% if booking.oversize %}
+      <div><span class="pill pill-warn">↔ {% if lang == 'en' %}Oversize{% else %}Hors-format{% endif %}</span>
+        {% if lang == 'en' %}Co-loading to coordinate.{% else %}Co-chargement à coordonner.{% endif %}
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card mb-4">
+  <h2>{% if lang == 'en' %}Pallet details{% else %}Détail des palettes{% endif %}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>{% if lang == 'en' %}Format{% else %}Format{% endif %}</th>
+        <th>{% if lang == 'en' %}Qty{% else %}Nb{% endif %}</th>
+        <th>{% if lang == 'en' %}Description{% else %}Description{% endif %}</th>
+        <th>{% if lang == 'en' %}Unit weight{% else %}Poids unitaire{% endif %}</th>
+        <th>IMDG</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in booking.items %}
+        <tr>
+          <td><span class="mono">{{ item.pallet_format }}</span></td>
+          <td>{{ item.pallet_count }}</td>
+          <td>{{ item.cargo_description }}</td>
+          <td>{{ item.unit_weight_kg or '—' }}</td>
+          <td>
+            {% if item.hazardous %}{{ item.imdg_class or ('yes' if lang == 'en' else 'oui') }}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if booking.status in ('confirmed','loaded','at_sea','discharged','delivered') %}
+<section class="card mt-4">
+  <h2>{% if lang == 'en' %}Documents{% else %}Documents{% endif %}</h2>
+  <p class="text-muted text-sm">
+    {% if lang == 'en' %}Download your official documents as PDF.{% else %}Téléchargez vos documents officiels en PDF.{% endif %}
+  </p>
+  <div class="flex gap-3 mt-3" style="flex-wrap:wrap;">
+    <a href="/me/bookings/{{ booking.reference }}/bl.pdf" target="_blank" class="btn btn-primary">📄 Bill of Lading</a>
+    <a href="/me/bookings/{{ booking.reference }}/packing-list.pdf" target="_blank" class="btn btn-secondary">📦 Packing List</a>
+    <a href="/me/bookings/{{ booking.reference }}/invoice.pdf" target="_blank" class="btn btn-secondary">
+      💶 {% if lang == 'en' %}Invoice{% else %}Facture{% endif %}
+    </a>
+    {% if booking.status in ('discharged','delivered') %}
+      <a href="/me/bookings/{{ booking.reference }}/anemos.pdf" target="_blank" class="btn btn-accent">
+        🌱 {% if lang == 'en' %}Anemos label{% else %}Label Anemos{% endif %}
+      </a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>{% if lang == 'en' %}Addresses{% else %}Adresses{% endif %}</h2>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <strong>{% if lang == 'en' %}Pickup{% else %}Enlèvement{% endif %}</strong><br />
+      <small class="text-muted">
+        {{ booking.pickup_address or ('— (to complete)' if lang == 'en' else '— (à compléter)') }}
+      </small>
+    </div>
+    <div>
+      <strong>{% if lang == 'en' %}Delivery{% else %}Livraison{% endif %}</strong><br />
+      <small class="text-muted">
+        {{ booking.delivery_address or ('— (to complete)' if lang == 'en' else '— (à compléter)') }}
+      </small>
+    </div>
+  </div>
+  {% if booking.notes %}
+    <h3 class="mt-4">{% if lang == 'en' %}Notes{% else %}Notes{% endif %}</h3>
+    <p class="text-muted">{{ booking.notes }}</p>
+  {% endif %}
+</section>
+
+<section class="card mt-4" id="messages">
+  <h2>{% if lang == 'en' %}Messages with our team{% else %}Échanger avec notre équipe{% endif %}</h2>
+  {% set post_url = "/me/bookings/" ~ booking.reference ~ "/messages" %}
+  {% set viewer = "client" %}
+  {% include "_partials/message_thread.html" %}
+</section>
+
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{% if lang == 'en' %}Customer sign in{% else %}Connexion client{% endif %} — {{ brand.nom_court }}{% endblock %}
+{% block head %}{{ super() }}{% endblock %}
+{% block body %}
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
+    </div>
+    <span class="kicker text-center" style="display:block;">
+      {% if lang == 'en' %}Customer area{% else %}Espace client{% endif %}
+    </span>
+    <h2>{% if lang == 'en' %}Sign in{% else %}Connexion{% endif %}</h2>
+    {% if error %}
+      <div class="alert alert-error" role="alert">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/me/login">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" name="email" autocomplete="email" required autofocus />
+      </div>
+      <div class="field">
+        <label for="password">{% if lang == 'en' %}Password{% else %}Mot de passe{% endif %}</label>
+        <input id="password" type="password" name="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn btn-primary btn-block btn-lg" type="submit">
+        {% if lang == 'en' %}Sign in{% else %}Se connecter{% endif %}
+      </button>
+    </form>
+
+    <p class="text-center text-muted mt-4 text-sm">
+      {% if lang == 'en' %}No account yet?{% else %}Pas encore de compte ?{% endif %}
+      <a href="/me/register">
+        {% if lang == 'en' %}Create an account{% else %}Créer un compte{% endif %}
+      </a>
+    </p>
+    <p class="text-center mt-3 text-sm">
+      <a href="/lang/{{ 'en' if lang == 'fr' else 'fr' }}" class="text-muted">
+        {{ 'EN' if lang == 'fr' else 'FR' }}
+      </a>
+    </p>
+  </div>
+</div>
+{% endblock %}

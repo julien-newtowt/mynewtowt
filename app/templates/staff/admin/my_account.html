@@ -1,0 +1,49 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Mon compte — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Mon compte</span>
+  <h1 class="display">{{ user.full_name or user.username }}</h1>
+  <p class="text-muted">{{ user.email }} · <span class="mono">{{ user.role }}</span></p>
+</header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Informations</h2>
+    <table class="data-table">
+      <tr><td>Username</td><td class="mono">{{ user.username }}</td></tr>
+      <tr><td>Email</td><td>{{ user.email }}</td></tr>
+      <tr><td>Nom complet</td><td>{{ user.full_name or '—' }}</td></tr>
+      <tr><td>Rôle</td><td><span class="badge">{{ user.role }}</span></td></tr>
+      <tr><td>Langue</td><td>{{ user.language }}</td></tr>
+      <tr><td>MFA</td><td>{% if user.mfa_enabled %}<span class="pill pill-ok">Activé</span>{% else %}<span class="pill pill-warn">Désactivé</span>{% endif %}</td></tr>
+      <tr><td>Dernier login</td><td>{{ user.last_login_at|datetime if user.last_login_at else '—' }}</td></tr>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Sécurité</h2>
+    <p><a href="/admin/my-account/change-password" class="btn btn-primary">Changer mon mot de passe</a></p>
+    <p style="margin-top:var(--space-3);">
+      <strong>Double authentification (TOTP)</strong>
+      {% if user.mfa_enabled %}
+        <span class="pill pill-ok">Activée</span>
+      {% else %}
+        <span class="pill pill-warn">Non activée</span>
+      {% endif %}
+      <br>
+      <a href="/admin/my-account/mfa" class="btn btn-secondary mt-2">
+        {% if user.mfa_enabled %}Gérer la 2FA{% else %}Configurer 2FA{% endif %}
+      </a>
+    </p>
+    {% if user.must_change_password %}
+    <div class="alert alert-warn mt-3">
+      <strong>Vous devez changer votre mot de passe.</strong>
+      Toutes vos requêtes sont redirigées vers le changement obligatoire jusqu'à ce que ce soit fait.
+    </div>
+    {% endif %}
+  </article>
+</div>
+
+{% endblock %}

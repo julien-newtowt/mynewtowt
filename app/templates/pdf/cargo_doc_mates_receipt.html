@@ -1,0 +1,49 @@
+{% extends "pdf/_base.html" %}
+{% block doc_kind %}Mate's Receipt{% endblock %}
+{% block doc_ref %}{{ doc.reference or '—' }}{% endblock %}
+{% block content %}
+
+<section>
+  <div class="grid-2">
+    <div class="box"><div class="label">Navire</div><div class="value mono">{{ vessel.name if vessel else '—' }}</div></div>
+    <div class="box"><div class="label">Voyage</div><div class="value mono">{{ leg.leg_code }}</div></div>
+    <div class="box"><div class="label">Port de chargement (POL)</div><div class="value">{{ pol.name if pol else '—' }} <span class="small">{{ pol.locode if pol else '' }}</span></div></div>
+    <div class="box"><div class="label">Port de déchargement (POD)</div><div class="value">{{ pod.name if pod else '—' }} <span class="small">{{ pod.locode if pod else '' }}</span></div></div>
+    <div class="box"><div class="label">Expéditeur / Shipper</div><div class="value">{{ doc.party_name or '—' }}</div></div>
+    <div class="box"><div class="label">Date de réception à bord</div><div class="value">{{ doc.issued_at.strftime("%d/%m/%Y") }}</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Mate's Receipt — Reçu de bord</h2>
+  <p>
+    Received in apparent good order and condition on board the vessel
+    <strong>{{ vessel.name if vessel else '—' }}</strong>
+    for carriage from <strong>{{ pol.name if pol else '—' }}</strong>
+    to <strong>{{ pod.name if pod else '—' }}</strong>,
+    the following goods:
+  </p>
+
+  {% if doc.body %}
+  <div class="box" style="margin:10pt 0;">
+    <pre style="white-space:pre-wrap;font-family:inherit;font-size:9.5pt;margin:0;border:none;background:none;">{{ doc.body }}</pre>
+  </div>
+  {% else %}
+  <p class="c-gris">(Description du cargo non renseignée)</p>
+  {% endif %}
+
+  <p class="small" style="margin-top:12pt;">
+    This receipt is subject to all the terms and conditions of the Bill of Lading to be issued.
+    NEWTOWT — pioneer of wind-powered cargo since 2011.
+  </p>
+</section>
+
+<div class="stamp">
+  <div>
+    <div class="small">Reçu le</div>
+    <div>{{ doc.issued_at.strftime("%d/%m/%Y") }}</div>
+  </div>
+  <div class="sig-area">Signature officier de pont<br/>(Mate's signature)</div>
+</div>
+
+{% endblock %}

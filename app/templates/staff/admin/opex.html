@@ -1,0 +1,46 @@
+{% extends "staff/_layout.html" %}
+{% block title %}OPEX — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Admin</span>
+  <h1 class="display">Paramètres OPEX</h1>
+  <p class="text-muted">Coûts d'exploitation paramétrables — utilisés par finance/KPI.</p>
+</header>
+
+<article class="card mb-4">
+  <h2>Paramètres en vigueur</h2>
+  <table class="data-table">
+    <thead><tr><th>Catégorie</th><th>Paramètre</th><th>Valeur</th><th>Unité</th><th>Description</th><th>MAJ</th></tr></thead>
+    <tbody>
+      {% for p in params %}
+      <tr>
+        <td><span class="badge">{{ p.category or '—' }}</span></td>
+        <td class="mono">{{ p.parameter_name }}</td>
+        <td class="mono">{{ p.parameter_value }}</td>
+        <td>{{ p.unit or '—' }}</td>
+        <td>{{ p.description or '—' }}</td>
+        <td class="text-muted text-xs">{{ p.updated_at|datetime("%d/%m/%Y") }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted text-center">Aucun paramètre OPEX. Utilisez le formulaire ci-dessous.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+<article class="card">
+  <h2>Ajouter / mettre à jour un paramètre</h2>
+  <form method="post" action="/admin/opex">
+    <div class="grid grid-3 gap-3">
+      <div class="field"><label>Nom (clé unique)</label><input name="parameter_name" type="text" required placeholder="ex: opex_daily_sea_eur" /></div>
+      <div class="field"><label>Valeur</label><input name="parameter_value" type="number" step="0.0001" required /></div>
+      <div class="field"><label>Unité</label><input name="unit" type="text" placeholder="EUR/jour" /></div>
+      <div class="field"><label>Catégorie</label><input name="category" type="text" placeholder="navigation, escale, etc." /></div>
+    </div>
+    <div class="field"><label>Description</label><textarea name="description" rows="2"></textarea></div>
+    <button type="submit" class="btn btn-primary">Enregistrer</button>
+  </form>
+</article>
+
+{% endblock %}

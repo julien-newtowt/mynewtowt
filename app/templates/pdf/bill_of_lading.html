@@ -1,0 +1,128 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Bill of Lading {{ bl_number }}{% endblock %}
+{% block doc_kind %}Bill of Lading · Connaissement{% endblock %}
+{% block doc_ref %}{{ bl_number }}{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Shipper · Expéditeur</div>
+    <div class="value">
+      <strong>{{ client.company_name }}</strong><br/>
+      {% if client.contact_name %}{{ client.contact_name }}<br/>{% endif %}
+      {{ client.email }}<br/>
+      {% if client.billing_address %}{{ client.billing_address }}<br/>{% endif %}
+      {% if client.country %}{{ client.country }}{% endif %}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Carrier · Transporteur</div>
+    <div class="value">
+      <strong>{{ brand.raison_sociale }}</strong><br/>
+      {{ brand.adresse }}<br/>
+      {{ brand.telephone }}<br/>
+      {{ brand.email }}
+    </div>
+  </div>
+</div>
+
+<h2>Voyage</h2>
+<table>
+  <tr>
+    <td style="width:25%;"><strong>Navire / Vessel</strong></td>
+    <td>{{ vessel.name }} <span class="small mono">({{ vessel.code }}{% if vessel.imo_number %} · IMO {{ vessel.imo_number }}{% endif %}{% if vessel.flag %} · {{ vessel.flag }}{% endif %})</span></td>
+  </tr>
+  <tr>
+    <td><strong>Voyage · Leg code</strong></td>
+    <td class="mono">{{ leg.leg_code }}</td>
+  </tr>
+  <tr>
+    <td><strong>Port of Loading (POL)</strong></td>
+    <td>{{ pol.name }} <span class="small">({{ pol.locode }} · {{ pol.country }})</span></td>
+  </tr>
+  <tr>
+    <td><strong>Port of Discharge (POD)</strong></td>
+    <td>{{ pod.name }} <span class="small">({{ pod.locode }} · {{ pod.country }})</span></td>
+  </tr>
+  <tr>
+    <td><strong>ETD</strong></td>
+    <td class="mono">{{ leg.etd.strftime("%d/%m/%Y %H:%M UTC") }}</td>
+  </tr>
+  <tr>
+    <td><strong>ETA</strong></td>
+    <td class="mono">{{ leg.eta.strftime("%d/%m/%Y %H:%M UTC") }}</td>
+  </tr>
+</table>
+
+<h2>Goods · Marchandises</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Format</th>
+      <th class="text-right">Qté</th>
+      <th>Description</th>
+      <th class="text-right">Poids unitaire (kg)</th>
+      <th class="text-right">Poids total (kg)</th>
+      <th>IMDG</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in booking.items %}
+      <tr>
+        <td class="mono">{{ item.pallet_format }}</td>
+        <td class="text-right">{{ item.pallet_count }}</td>
+        <td>{{ item.cargo_description }}</td>
+        <td class="text-right">{{ item.unit_weight_kg or '—' }}</td>
+        <td class="text-right">{{ item.total_weight_kg or '—' }}</td>
+        <td>
+          {% if item.hazardous %}
+            <span class="badge-imdg">{{ item.imdg_class or 'IMDG' }}</span>
+            {% if item.un_number %}<br/><span class="small">UN {{ item.un_number }}</span>{% endif %}
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    <tr class="total-row">
+      <td colspan="4" class="text-right">TOTAL</td>
+      <td class="text-right">{{ booking.total_weight_kg }}</td>
+      <td>{{ booking.total_palettes }} palettes</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Conditions</h2>
+<p class="small">
+  Transport assuré conformément aux Règles de La Haye-Visby. La responsabilité
+  du transporteur est plafonnée selon les conventions internationales en vigueur.
+  Conditions générales applicables : <span class="mono">{{ booking.signed_terms_version or 'v2026.1' }}</span>
+  {% if booking.signed_terms_at %}signées le {{ booking.signed_terms_at.strftime("%d/%m/%Y") }}{% endif %}.
+</p>
+
+{% if booking.pickup_address or booking.delivery_address %}
+  <div class="grid-2">
+    {% if booking.pickup_address %}
+      <div class="box">
+        <div class="label">Place of receipt</div>
+        <div class="value">{{ booking.pickup_address }}</div>
+      </div>
+    {% endif %}
+    {% if booking.delivery_address %}
+      <div class="box">
+        <div class="label">Place of delivery</div>
+        <div class="value">{{ booking.delivery_address }}</div>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+
+<div class="stamp">
+  <div>
+    <div class="kicker">Émis à {{ pol.name }} le {{ issued_at.strftime("%d/%m/%Y") }}</div>
+    <div class="small c-gris">Trois originaux signés (3 OBL)</div>
+  </div>
+  <div class="sig-area">
+    Cachet et signature<br/>du transporteur
+  </div>
+</div>
+
+{% endblock %}

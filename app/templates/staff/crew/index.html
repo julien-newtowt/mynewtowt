@@ -1,0 +1,90 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Équipage — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Humain</span>
+    <h1 class="display">Gestion d'équipage</h1>
+  </div>
+  <div class="flex gap-2">
+    <a href="/crew/compliance" class="btn btn-ghost"><i data-lucide="shield-check"></i> Compliance</a>
+    <a href="/crew/calendar" class="btn btn-ghost"><i data-lucide="calendar"></i> Calendrier</a>
+    <a href="/crew/new" class="btn btn-primary">+ Nouveau marin</a>
+  </div>
+</header>
+
+{% if compliance_alerts %}
+<div class="alert alert-warn mb-4">
+  <strong>⚠ {{ compliance_alerts|length }} alerte(s) compliance</strong> —
+  {% for m in compliance_alerts %}{{ m.full_name }}{% if not loop.last %}, {% endif %}{% endfor %}
+  <a href="/crew/compliance" class="btn btn-ghost btn-sm" style="float:right;">Voir détails →</a>
+</div>
+{% endif %}
+
+<section class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-card-icon teal"><i data-lucide="users"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ stats.total }}</span><span class="stat-card-label">Équipage total</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon green"><i data-lucide="ship"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ stats.active }}</span><span class="stat-card-label">En activité</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon sky"><i data-lucide="coffee"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ stats.repos }}</span><span class="stat-card-label">En repos</span></div>
+  </div>
+</section>
+
+<section class="mb-4">
+  <div class="section-header"><h3><i data-lucide="ship"></i> Bordées actuelles</h3></div>
+  <div class="bordee-grid">
+    {% for vname, b in bordees.items() %}
+    <div class="bordee-card">
+      <div class="bordee-header">
+        <i data-lucide="ship"></i>
+        <strong>{{ vname }}</strong>
+        <span class="bordee-count">{{ b.crew|length }} embarqués</span>
+      </div>
+      {% if b.missing %}
+      <div class="bordee-missing">⚠️ Postes vacants : {{ b.missing|map('capitalize')|join(', ') }}</div>
+      {% endif %}
+      <div class="bordee-list">
+        {% for md in b.crew %}
+        <a href="/crew/members/{{ md.id }}" class="flex justify-between" style="border-bottom:none;">
+          <span>{{ md.full_name }}</span>
+          <span class="text-muted text-xs">{{ md.role }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <p class="text-muted">Aucun marin embarqué actuellement.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<article class="card">
+  <h2>Tous les marins ({{ members|length }})</h2>
+  <table class="data-table">
+    <thead><tr><th>Nom</th><th>Rôle</th><th>Nationalité</th><th>Passeport</th><th>Schengen</th></tr></thead>
+    <tbody>
+      {% for m in members %}
+      <tr>
+        <td><a href="/crew/members/{{ m.id }}">{{ m.full_name }}</a></td>
+        <td><span class="badge">{{ m.role }}</span></td>
+        <td>{% if m.nationality %}<span class="port-badge">{{ m.nationality|flag }} {{ m.nationality }}</span>{% else %}—{% endif %}</td>
+        <td class="mono text-sm">{{ m.passport_number or '—' }}<br/><small class="text-muted">exp. {{ m.passport_expires_at or '—' }}</small></td>
+        <td>
+          {% if m.schengen_status == 'compliant' %}<span class="pill pill-ok">OK</span>
+          {% elif m.schengen_status == 'warning' %}<span class="pill pill-warn">Warning</span>
+          {% else %}<span class="pill pill-error">Non-compliant</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

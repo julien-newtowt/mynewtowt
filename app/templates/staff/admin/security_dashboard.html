@@ -1,0 +1,132 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Sécurité — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Administration</span>
+  <h1 class="display">Sécurité — adoption MFA</h1>
+  <p class="text-muted">
+    Déploiement de l'authentification forte (TOTP) sur les comptes actifs.
+  </p>
+</header>
+
+{# ── Comptes à risque — priorité d'action ── #}
+{% if risky_staff %}
+<article class="card mb-4" style="border-left:4px solid var(--cuivre); background:rgba(180,113,72,0.06);">
+  <h2 style="margin-top:0;">⚠ Comptes sensibles sans MFA ({{ risky_staff|length }})</h2>
+  <p class="text-muted text-sm">
+    Rôles administrateur / manager_maritime sans MFA TOTP. À traiter
+    en priorité — ces comptes peuvent piloter la flotte et la facturation.
+  </p>
+  <table class="data-table">
+    <thead><tr><th>Username</th><th>Email</th><th>Rôle</th><th>Dernier login</th></tr></thead>
+    <tbody>
+      {% for u in risky_staff %}
+        <tr>
+          <td class="mono">{{ u.username }}</td>
+          <td>{{ u.email }}</td>
+          <td><span class="badge badge-inprogress">{{ u.role }}</span></td>
+          <td class="text-sm">{{ u.last_login_at|datetime if u.last_login_at else 'jamais' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% else %}
+<article class="card mb-4" style="border-left:4px solid var(--vert); background:rgba(135,189,41,0.06);">
+  <h2 style="margin-top:0;">✓ Aucun compte sensible à risque</h2>
+  <p class="text-muted text-sm" style="margin-bottom:0;">
+    Tous les comptes administrateur / manager_maritime ont MFA TOTP actif.
+  </p>
+</article>
+{% endif %}
+
+{# ── Synthèse ── #}
+<article class="card mb-4">
+  <div class="flex gap-4" style="flex-wrap:wrap;">
+    <span><strong>Staff</strong> : {{ stats_staff.mfa_on }}/{{ stats_staff.total }} avec MFA</span>
+    <span style="border-left:1px solid var(--border); padding-left:var(--space-4);">
+      <strong>Clients</strong> : {{ stats_client.mfa_on }}/{{ stats_client.total }} avec MFA</span>
+  </div>
+</article>
+
+{# ── Tableau staff ── #}
+<article class="card mb-4">
+  <h2>Staff — détail par compte</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Username</th><th>Email</th><th>Rôle</th><th>MFA</th><th>Dernier login</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in staff_users %}
+        {% set risky = (u.role == 'administrateur' and not u.mfa_enabled) %}
+        <tr {% if risky %}style="background:rgba(180,113,72,0.08);"{% endif %}>
+          <td><span class="mono">{{ u.username }}</span></td>
+          <td>{{ u.email }}</td>
+          <td><span class="badge">{{ u.role }}</span></td>
+          <td>
+            {% if u.mfa_enabled %}<span class="pill pill-ok">TOTP</span>
+            {% else %}<span class="pill pill-neutral">—</span>{% endif %}
+          </td>
+          <td class="text-sm">{{ u.last_login_at|datetime if u.last_login_at else '—' }}</td>
+          <td>
+            {% if u.mfa_enabled %}
+              <form method="post" action="/admin/users/{{ u.id }}/reset-mfa" style="display:inline;"
+                    onsubmit="return confirm('Réinitialiser la MFA de {{ u.username }} ?');">
+                <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                <button type="submit" class="btn btn-ghost btn-sm">Reset MFA</button>
+              </form>
+            {% else %}<span class="text-muted text-sm">—</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{# ── Tableau clients ── #}
+<article class="card">
+  <h2>Clients — détail par compte (limite 50)</h2>
+  <table class="data-table">
+    <thead>
+      <tr><th>Société</th><th>Email</th><th>Pays</th><th>MFA</th><th>Dernier login</th></tr>
+    </thead>
+    <tbody>
+      {% for c in clients[:50] %}
+        <tr>
+          <td>{{ c.company_name }}</td>
+          <td>{{ c.email }}</td>
+          <td>{{ c.country|flag if c.country else '—' }} {{ c.country or '' }}</td>
+          <td>
+            {% if c.mfa_enabled %}<span class="pill pill-ok">TOTP</span>
+            {% else %}<span class="pill pill-neutral">—</span>{% endif %}
+          </td>
+          <td class="text-sm">{{ c.last_login_at|datetime if c.last_login_at else '—' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if clients|length > 50 %}
+    <p class="text-muted text-sm mt-2">… {{ clients|length - 50 }} comptes supplémentaires masqués.</p>
+  {% endif %}
+</article>
+
+<article class="card mt-4" style="background:var(--sable); border-left:3px solid var(--teal);">
+  <h3>ℹ Politique en vigueur</h3>
+  <ul>
+    <li>
+      <strong>Rôle administrateur</strong> : MFA TOTP obligatoire
+      (<code class="mono">REQUIRE_MFA_FOR_ADMIN={{ 'true' if require_mfa_for_admin else 'false' }}</code>
+      dans .env).
+      {% if require_mfa_for_admin %}Tout admin connecté sans MFA est
+      redirigé vers la configuration jusqu'à activation.{% else %}
+      <span class="text-cuivre">Actuellement désactivé.</span>{% endif %}
+    </li>
+    <li><strong>Autres rôles staff</strong> : MFA optionnel mais fortement recommandé.</li>
+    <li><strong>Clients</strong> : MFA optionnel, gérable depuis <code class="mono">/me/account</code>.</li>
+  </ul>
+</article>
+
+{% endblock %}

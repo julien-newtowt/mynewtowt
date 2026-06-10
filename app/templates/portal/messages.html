@@ -1,0 +1,39 @@
+{% extends "portal/_layout.html" %}
+{% block title %}Messagerie — {{ brand.nom_court }}{% endblock %}
+{% block portal_content %}
+
+<header class="mb-4">
+  <span class="kicker">Portail expéditeur</span>
+  <h1 class="display">Messagerie sécurisée</h1>
+  <p class="text-muted">Échangez avec l'équipe NEWTOWT à propos de votre expédition.</p>
+</header>
+
+<article class="card">
+  {% for m in messages %}
+  <div class="dash-notif-card {% if m.sender == 'staff' %}notif-read{% endif %}">
+    <span class="dash-notif-icon">{{ '⚓' if m.sender == 'staff' else '🏢' }}</span>
+    <div class="dash-notif-body">
+      <div class="dash-notif-title">
+        <strong>{{ m.sender_name or m.sender }}</strong>
+        <span class="dash-notif-time">{{ m.created_at|datetime }}</span>
+      </div>
+      <div class="dash-notif-text">{{ m.body }}</div>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-muted">Aucun message pour l'instant.</p>
+  {% endfor %}
+</article>
+
+<article class="card mt-4">
+  <h2>Nouveau message</h2>
+  <form method="post" action="/p/{{ token }}/messages">
+    <div class="grid grid-2 gap-3">
+      <div class="field"><label>Votre nom</label><input name="sender_name" type="text" required /></div>
+    </div>
+    <div class="field"><label>Message</label><textarea name="body" rows="4" required></textarea></div>
+    <button type="submit" class="btn btn-primary btn-sm">Envoyer</button>
+  </form>
+</article>
+
+{% endblock %}

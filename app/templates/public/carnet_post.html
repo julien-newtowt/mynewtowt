@@ -1,0 +1,51 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}{{ post.title }} — Carnet de construction — NewTowt{% endblock %}
+{% block description %}{{ post.lead or post.title }}{% endblock %}
+
+{% block structured_data %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": {{ post.title|tojson }},
+  "description": {{ (post.lead or post.title)|tojson }},
+  "inLanguage": {{ post.lang|tojson }},
+  {% if post.published_at %}"datePublished": {{ post.published_at.isoformat()|tojson }},{% endif %}
+  "author": {"@type": "Organization", "name": "NewTowt"},
+  "publisher": {"@id": "{{ site_url }}/#organization"},
+  "mainEntityOfPage": "{{ site_url }}/carnet/{{ post.slug }}"
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container" style="max-width:760px;">
+    <nav class="breadcrumb" aria-label="Fil d'Ariane">
+      <a href="/carnet">Carnet de construction</a>
+      <span class="breadcrumb-separator">/</span>
+      <span>{{ post.title }}</span>
+    </nav>
+
+    <span class="eyebrow">Carnet de construction</span>
+    <h1 class="display">{{ post.title }}</h1>
+    <p class="caption mono">
+      {% if post.published_at %}{{ post.published_at|date }}{% endif %}
+      {% if post.author %} · {{ post.author }}{% endif %}
+    </p>
+
+    <div class="map-placeholder" role="img"
+         aria-label="Photographie du chantier — visuel à venir"
+         style="margin:var(--sp-5) 0;min-height:280px;">
+      <span>Photo du chantier — <em>visuel à venir</em></span>
+    </div>
+
+    <div class="article-body">
+      {{ post.body|safe }}
+    </div>
+
+    <hr class="rule-hair" style="margin:var(--sp-7) 0;" />
+    <p><a href="/carnet" class="btn btn-secondary">← Tout le carnet</a></p>
+  </div>
+</section>
+{% endblock %}

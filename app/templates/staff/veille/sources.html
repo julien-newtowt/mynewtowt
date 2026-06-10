@@ -1,0 +1,95 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Sources de veille — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Veille d'actualité</span>
+    <h1 class="display">Sources de veille</h1>
+  </div>
+  <a href="/veille" class="btn btn-ghost"><i data-lucide="arrow-left"></i> Retour au fil</a>
+</header>
+
+{% if not configured %}
+<div class="alert alert-warning mb-3">
+  <i data-lucide="alert-triangle"></i>
+  <code class="mono">NEWSDATA_API_KEY</code> n'est pas configurée — les rafraîchissements renverront une erreur 503 tant que la clé n'est pas renseignée dans le <code class="mono">.env</code>.
+</div>
+{% endif %}
+
+<article class="card mb-4">
+  <h3>Nouvelle source</h3>
+  <p class="text-muted text-sm">Une source = une requête envoyée à l'agrégateur NewsData.io. Les codes pays/langues sont séparés par des virgules (ex. <code class="mono">br,fr</code>).</p>
+  <form method="POST" action="/veille/sources">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+      <label>Nom du thème
+        <input type="text" name="name" required maxlength="120" placeholder="Voile & wind propulsion" class="input" />
+      </label>
+      <label>Mots-clés (q)
+        <input type="text" name="query" required maxlength="500" placeholder="wind propulsion OR sailing cargo" class="input" />
+      </label>
+      <label>Pays (ISO, optionnel)
+        <input type="text" name="countries" maxlength="120" placeholder="br,fr" class="input" />
+      </label>
+      <label>Langues (ISO, optionnel)
+        <input type="text" name="languages" maxlength="120" placeholder="fr,en,pt" class="input" />
+      </label>
+      <label>Catégorie (optionnel)
+        <input type="text" name="category" maxlength="60" placeholder="business" class="input" />
+      </label>
+      <fieldset style="border:none;padding:0;">
+        <legend class="text-sm text-muted">Rôles ciblés (aucun coché = tout le staff)</legend>
+        <div class="flex gap-2" style="flex-wrap:wrap;">
+          {% for r in roles %}
+          <label class="pill" style="cursor:pointer;">
+            <input type="checkbox" name="target_roles" value="{{ r }}" /> {{ r }}
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+    </div>
+    <div class="mt-3">
+      <button type="submit" class="btn btn-primary"><i data-lucide="plus"></i> Créer la source</button>
+    </div>
+  </form>
+</article>
+
+<article class="card">
+  {% if sources %}
+  <table class="data-table">
+    <thead><tr><th>Nom</th><th>Requête</th><th>Pays</th><th>Langues</th><th>Catégorie</th><th>Rôles</th><th>État</th><th></th></tr></thead>
+    <tbody>
+      {% for s in sources %}
+      <tr>
+        <td>{{ s.name }}</td>
+        <td class="mono text-sm">{{ s.query }}</td>
+        <td class="mono text-sm">{{ s.countries or '—' }}</td>
+        <td class="mono text-sm">{{ s.languages or '—' }}</td>
+        <td>{{ s.category or '—' }}</td>
+        <td class="text-sm">{{ s.target_roles or 'tout le staff' }}</td>
+        <td>
+          {% if s.enabled %}<span class="badge badge-completed">actif</span>
+          {% else %}<span class="badge">désactivé</span>{% endif %}
+        </td>
+        <td class="flex gap-2">
+          <form method="POST" action="/veille/sources/{{ s.id }}/toggle" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-ghost btn-sm">{{ 'Désactiver' if s.enabled else 'Activer' }}</button>
+          </form>
+          <form method="POST" action="/veille/sources/{{ s.id }}/delete" style="display:inline;"
+                onsubmit="return confirm('Supprimer cette source ? Les articles associés seront retirés.');">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--cuivre);"><i data-lucide="trash-2"></i></button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucune source configurée. Crée ta première requête de veille ci-dessus.</p>
+  {% endif %}
+</article>
+
+{% endblock %}

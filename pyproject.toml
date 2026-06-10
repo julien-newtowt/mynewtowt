@@ -1,0 +1,50 @@
+[project]
+name = "mynewtowt"
+version = "3.0.0"
+description = "NEWTOWT ERP & customer platform"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:passlib.*",
+    "ignore::DeprecationWarning:itsdangerous.*",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = ["app/__init__.py", "app/templates/*", "app/static/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+fail_under = 80
+show_missing = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+exclude = ["migrations/versions"]

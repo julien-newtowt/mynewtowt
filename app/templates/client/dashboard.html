@@ -1,0 +1,98 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}Dashboard{% else %}Tableau de bord{% endif %} — NEWTOWT{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-5">
+  <div>
+    <h1>
+      {% if lang == 'en' %}Hello,{% else %}Bonjour,{% endif %}
+      {{ client.contact_name or client.company_name }}
+    </h1>
+    <p class="text-muted">{{ client.company_name }} · {{ client.email }}</p>
+  </div>
+  <a href="/booking/new" class="btn btn-primary btn-lg">
+    + {% if lang == 'en' %}New booking{% else %}Nouvelle réservation{% endif %}
+  </a>
+</header>
+
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">{% if lang == 'en' %}Active shipments{% else %}Expéditions en cours{% endif %}</div>
+    <div class="value">{{ active_count }}</div>
+    <div class="delta text-muted">
+      {% if lang == 'en' %}in transit or upcoming{% else %}en transit ou à venir{% endif %}
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{% if lang == 'en' %}Cumulative CO₂ avoided{% else %}CO₂ évité cumulé{% endif %}</div>
+    <div class="value text-accent">{{ "%.0f"|format(co2_avoided_kg) }} kg</div>
+    <div class="delta up">
+      {% if lang == 'en' %}vs conventional cargo{% else %}vs cargo conventionnel{% endif %}
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{% if lang == 'en' %}Customer segment{% else %}Segment client{% endif %}</div>
+    <div class="value mono">{{ client.segment }}</div>
+    <div class="delta text-muted">
+      {% if client.segment == "key_account" %}
+        {% if lang == 'en' %}key account{% else %}grand compte{% endif %}
+      {% elif client.segment == "recurring" %}
+        {% if lang == 'en' %}recurring{% else %}récurrent{% endif %}
+      {% else %}
+        {% if lang == 'en' %}occasional{% else %}occasionnel{% endif %}
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="flex justify-between items-center mb-3">
+    <h2>{% if lang == 'en' %}My recent bookings{% else %}Mes réservations récentes{% endif %}</h2>
+    <a href="/me/bookings" class="btn btn-ghost">
+      {% if lang == 'en' %}See all →{% else %}Voir tout →{% endif %}
+    </a>
+  </div>
+
+  {% if bookings %}
+    <table>
+      <thead>
+        <tr>
+          <th>{% if lang == 'en' %}Reference{% else %}Référence{% endif %}</th>
+          <th>{% if lang == 'en' %}Status{% else %}Statut{% endif %}</th>
+          <th>{% if lang == 'en' %}Pallets{% else %}Palettes{% endif %}</th>
+          <th>{% if lang == 'en' %}Created{% else %}Créée{% endif %}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bookings[:8] %}
+          <tr>
+            <td><span class="mono">{{ b.reference }}</span></td>
+            <td>
+              {% if b.status == 'submitted' %}<span class="pill pill-info">{% if lang == 'en' %}Submitted{% else %}Soumise{% endif %}</span>
+              {% elif b.status == 'confirmed' %}<span class="pill pill-ok">{% if lang == 'en' %}Confirmed{% else %}Confirmée{% endif %}</span>
+              {% elif b.status == 'loaded' %}<span class="pill pill-info">{% if lang == 'en' %}Loaded{% else %}Chargée{% endif %}</span>
+              {% elif b.status == 'at_sea' %}<span class="pill pill-info">{% if lang == 'en' %}At sea{% else %}En mer{% endif %}</span>
+              {% elif b.status == 'discharged' %}<span class="pill pill-info">{% if lang == 'en' %}Discharged{% else %}Débarquée{% endif %}</span>
+              {% elif b.status == 'delivered' %}<span class="pill pill-ok">{% if lang == 'en' %}Delivered{% else %}Livrée{% endif %}</span>
+              {% elif b.status == 'cancelled' %}<span class="pill pill-error">{% if lang == 'en' %}Cancelled{% else %}Annulée{% endif %}</span>
+              {% else %}<span class="pill pill-neutral">{{ b.status }}</span>{% endif %}
+            </td>
+            <td>{{ b.total_palettes }}</td>
+            <td>{{ b.created_at|date }}</td>
+            <td><a href="/me/bookings/{{ b.reference }}" class="btn btn-ghost">{% if lang == 'en' %}Details →{% else %}Détails →{% endif %}</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted">
+      {% if lang == 'en' %}No booking yet.{% else %}Aucune réservation pour l'instant.{% endif %}
+      <a href="/booking/new">
+        {% if lang == 'en' %}Book your first crossing →{% else %}Réservez votre première traversée →{% endif %}
+      </a>
+    </p>
+  {% endif %}
+</section>
+
+{% endblock %}

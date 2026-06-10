@@ -1,0 +1,85 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Veille d'actualité — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Information & intelligence</span>
+    <h1 class="display">Veille d'actualité</h1>
+  </div>
+  {% if can_manage %}
+  <div class="flex gap-2">
+    <form method="POST" action="/veille/refresh" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-ghost"{% if not configured %} disabled title="NEWSDATA_API_KEY non configurée"{% endif %}>
+        <i data-lucide="refresh-cw"></i> Rafraîchir
+      </button>
+    </form>
+    <a href="/veille/sources" class="btn btn-primary"><i data-lucide="sliders-horizontal"></i> Sources</a>
+  </div>
+  {% endif %}
+</header>
+
+{% if not configured %}
+<div class="alert alert-warning mb-3">
+  <i data-lucide="alert-triangle"></i>
+  L'agrégateur n'est pas configuré : renseigne <code class="mono">NEWSDATA_API_KEY</code> dans le <code class="mono">.env</code> pour activer l'ingestion.
+</div>
+{% endif %}
+
+<form method="GET" action="/veille" class="flex gap-2 mb-3 items-center">
+  <input type="search" name="q" value="{{ q }}" placeholder="Rechercher dans les titres…" class="input" style="max-width:280px;" />
+  <button type="submit" class="btn btn-ghost btn-sm"><i data-lucide="search"></i></button>
+</form>
+
+<div class="flex gap-2 mb-3" style="flex-wrap:wrap;">
+  <a href="/veille{% if q %}?q={{ q }}{% endif %}" class="pill {{ 'pill-active' if not filter_source_id else '' }}">Toutes les sources</a>
+  {% for s in sources %}
+  <a href="/veille?source_id={{ s.id }}{% if q %}&q={{ q }}{% endif %}"
+     class="pill {{ 'pill-active' if filter_source_id == s.id else '' }}">{{ s.name }}</a>
+  {% endfor %}
+</div>
+
+{% if items %}
+<div class="news-feed" style="display:flex;flex-direction:column;gap:.75rem;">
+  {% for item in items %}
+  <article class="card {{ 'pinned' if item.is_pinned else '' }}">
+    <div class="flex justify-between items-center mb-2" style="gap:1rem;">
+      <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
+        {% if item.is_pinned %}<span class="badge badge-completed"><i data-lucide="pin"></i> Épinglé</span>{% endif %}
+        <span class="badge">{{ source_names.get(item.source_id, '—') }}</span>
+        {% if item.publisher %}<span class="pill mono text-sm">{{ item.publisher }}</span>{% endif %}
+        {% if item.category %}<span class="pill text-sm">{{ item.category }}</span>{% endif %}
+        {% if item.country %}<span class="text-sm">{{ item.country|upper|flag }}</span>{% endif %}
+      </div>
+      <span class="mono text-sm text-muted">{{ item.pub_date|datetime if item.pub_date else '—' }}</span>
+    </div>
+    <h3 style="margin:.25rem 0;">
+      <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+    </h3>
+    {% if item.description %}<p class="text-muted">{{ item.description|truncate(280) }}</p>{% endif %}
+    {% if can_manage %}
+    <div class="flex gap-2 mt-2">
+      <form method="POST" action="/veille/{{ item.id }}/pin" style="display:inline;">
+        <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+        <button type="submit" class="btn btn-ghost btn-sm"><i data-lucide="pin"></i> {{ 'Désépingler' if item.is_pinned else 'Épingler' }}</button>
+      </form>
+      <form method="POST" action="/veille/{{ item.id }}/archive" style="display:inline;">
+        <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+        <button type="submit" class="btn btn-ghost btn-sm"><i data-lucide="archive"></i> Archiver</button>
+      </form>
+    </div>
+    {% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<article class="card">
+  <p class="text-muted">
+    Aucun article pour l'instant.
+    {% if can_manage %}Configure des <a href="/veille/sources">sources de veille</a> puis lance un rafraîchissement.{% endif %}
+  </p>
+</article>
+{% endif %}
+
+{% endblock %}

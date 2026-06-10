@@ -1,0 +1,22 @@
+{# Emplacement traduction réservé : le contenu canonique est en français.
+   Affiché tant que la traduction EN/ES/PT-BR n'est pas livrée (dossier
+   Phase 2 : « là où une traduction manque, pose un emplacement clairement
+   identifié »). #}
+{% if lang and lang != 'fr' %}
+<div class="container" style="margin-top:var(--sp-5);">
+  <div class="callout callout--teal" role="note">
+    {% if lang == 'en' %}
+      <strong>Translation in progress.</strong> This page is shown in French,
+      the reference language, while the English version is being prepared.
+    {% elif lang == 'es' %}
+      <strong>Traducción en curso.</strong> Esta página se muestra en francés,
+      el idioma de referencia, mientras se prepara la versión en español.
+    {% elif lang == 'pt-br' %}
+      <strong>Tradução em andamento.</strong> Esta página é exibida em francês,
+      o idioma de referência, enquanto a versão em português é preparada.
+    {% else %}
+      <strong>Traduction en cours.</strong>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

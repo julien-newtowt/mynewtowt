@@ -1,0 +1,424 @@
+{% extends "public/_layout_v2.html" %}
+
+{% block title %}
+  {% if lang == 'en' %}Anemos label — Certified wind cargo{% else %}Label Anemos — Cargo vélique certifié{% endif %} — {{ brand.nom_court }}
+{% endblock %}
+
+{% block description %}
+  {% if lang == 'en' %}
+    {{ brand.nom_court }} is certified by the Anemos label: independent third-party verification of CO₂ savings for every sailing cargo shipment.
+  {% else %}
+    {{ brand.nom_court }} est certifié par le label Anemos : vérification tierce indépendante des économies de CO₂ pour chaque expédition en cargo vélique.
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+{# ===== HERO ===== #}
+<section class="an-hero">
+  <div class="an-hero-inner">
+    <div class="an-hero-body">
+      <span class="an-kicker">Label Anemos</span>
+      <h1 class="an-hero-title">
+        {% if lang == 'en' %}
+          Sailing cargo,<br>independently certified
+        {% else %}
+          Le cargo vélique,<br>certifié de façon indépendante
+        {% endif %}
+      </h1>
+      <p class="an-hero-lead">
+        {% if lang == 'en' %}
+          Every tonne shipped with {{ brand.nom_court }} is tracked, calculated and audited
+          by an accredited third party. Your CO₂ savings are real — and proven.
+        {% else %}
+          Chaque tonne expédiée avec {{ brand.nom_court }} est tracée, calculée et auditée
+          par un organisme tiers accrédité. Vos économies de CO₂ sont réelles — et prouvées.
+        {% endif %}
+      </p>
+      <a href="/me/login" class="btn btn-white btn-lg">
+        {% if lang == 'en' %}Download my certificate{% else %}Télécharger mon certificat{% endif %}
+      </a>
+    </div>
+
+    <div class="an-seal-wrap" aria-hidden="true">
+      <div class="an-seal">
+        <div class="an-seal-ring"></div>
+        <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+          {# Stylised anchor/mast motif #}
+          <line x1="40" y1="12" x2="40" y2="70" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+          <path d="M20 26 Q40 16 60 26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+          <path d="M26 70 Q40 62 54 70" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+          <circle cx="40" cy="40" r="7" fill="currentColor" opacity="0.25"/>
+          <circle cx="40" cy="40" r="3.5" fill="currentColor"/>
+          <path d="M13 39 Q19 35 25 39" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.55"/>
+          <path d="M55 39 Q61 35 67 39" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.55"/>
+        </svg>
+        <span class="an-seal-name">ANEMOS</span>
+        <span class="an-seal-sub">
+          {% if lang == 'en' %}Certified carbon label{% else %}Label carbone certifié{% endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ===== QU'EST-CE QUE LE LABEL ===== #}
+<section class="section" style="background:var(--c-paper);">
+  <div class="section-inner">
+    <span class="section-kicker">
+      {% if lang == 'en' %}About{% else %}C'est quoi{% endif %}
+    </span>
+    <h2 class="section-title">
+      {% if lang == 'en' %}The Anemos label{% else %}Le label Anemos{% endif %}
+    </h2>
+    <p class="section-lead" style="max-width:700px">
+      {% if lang == 'en' %}
+        Anemos is an independent certification that attaches a verified CO₂ score to each maritime voyage.
+        Created specifically for sailing cargo operators, it gives shippers a reliable,
+        third-party-verified measure of the climate impact of their goods.
+      {% else %}
+        Anemos est une certification indépendante qui attribue un score CO₂ vérifié à chaque voyage maritime.
+        Conçu spécifiquement pour les opérateurs de cargo vélique, il offre aux chargeurs une mesure fiable
+        et vérifiée par un tiers de l'impact climatique de leurs marchandises.
+      {% endif %}
+    </p>
+
+    <div class="an-pillars">
+      <div class="an-pillar">
+        <div class="an-pillar-icon">
+          <i data-lucide="ruler" aria-hidden="true"></i>
+        </div>
+        <h3>{% if lang == 'en' %}Measure{% else %}Mesurer{% endif %}</h3>
+        <p>
+          {% if lang == 'en' %}
+            Actual fuel consumption is monitored continuously on board, voyage by voyage, using instruments
+            certified under EU&nbsp;MRV regulation.
+          {% else %}
+            La consommation réelle est surveillée en continu à bord, voyage par voyage, via des instruments
+            certifiés dans le cadre du règlement EU&nbsp;MRV.
+          {% endif %}
+        </p>
+      </div>
+      <div class="an-pillar">
+        <div class="an-pillar-icon">
+          <i data-lucide="shield-check" aria-hidden="true"></i>
+        </div>
+        <h3>{% if lang == 'en' %}Verify{% else %}Vérifier{% endif %}</h3>
+        <p>
+          {% if lang == 'en' %}
+            An accredited independent auditor reviews the data annually and certifies the emission factor
+            used in all calculations.
+          {% else %}
+            Un organisme indépendant accrédité audite les données chaque année et certifie le facteur
+            d'émission utilisé dans tous les calculs.
+          {% endif %}
+        </p>
+      </div>
+      <div class="an-pillar">
+        <div class="an-pillar-icon">
+          <i data-lucide="award" aria-hidden="true"></i>
+        </div>
+        <h3>{% if lang == 'en' %}Certify{% else %}Certifier{% endif %}</h3>
+        <p>
+          {% if lang == 'en' %}
+            Each shipment receives a named Anemos certificate — a traceable, downloadable PDF
+            ready for your CSR reporting.
+          {% else %}
+            Chaque expédition reçoit un certificat Anemos nominatif — un PDF traçable et téléchargeable,
+            prêt pour vos rapports RSE.
+          {% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ===== PERFORMANCE ÉNERGÉTIQUE ===== #}
+<section class="an-perf">
+  <div class="an-perf-inner">
+    <span class="section-kicker">
+      {% if lang == 'en' %}Certified figures{% else %}Chiffres certifiés{% endif %}
+    </span>
+    <h2 class="section-title">
+      {% if lang == 'en' %}Energy performance{% else %}Performance énergétique{% endif %}
+    </h2>
+
+    <div class="an-stats-row">
+
+      {# Left — CO₂ savings circle #}
+      <div class="an-stat">
+        <div class="an-circle">
+          <span class="an-circle-num">89<span class="an-circle-unit">%</span></span>
+        </div>
+        <span class="an-stat-label">
+          {% if lang == 'en' %}
+            of CO₂ avoided<br>vs conventional container shipping
+          {% else %}
+            de CO₂ évité<br>vs transport par porte-conteneurs
+          {% endif %}
+        </span>
+      </div>
+
+      <div class="an-stats-divider" aria-hidden="true"></div>
+
+      {# Right — g/t·km metric #}
+      <div class="an-stat">
+        <span class="an-km-badge">1&middot;km</span>
+        <div>
+          <span class="an-km-num">1,5</span>
+          <span class="an-km-unit">&thinsp;g CO₂ / t·km</span>
+        </div>
+        <span class="an-stat-label">
+          {% if lang == 'en' %}
+            our certified emission factor<br>
+            <em>vs 13.7&thinsp;g CO₂/t·km for a container ship</em>
+          {% else %}
+            notre facteur d'émission certifié<br>
+            <em>vs 13,7&thinsp;g CO₂/t·km pour un porte-conteneurs</em>
+          {% endif %}
+        </span>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+{# ===== MÉTHODE DE CALCUL ===== #}
+<section class="section" id="methode">
+  <div class="an-method-inner">
+    <span class="section-kicker">
+      {% if lang == 'en' %}Methodology{% else %}Méthodologie{% endif %}
+    </span>
+    <h2 class="section-title">
+      {% if lang == 'en' %}Calculation method{% else %}Méthode de calcul{% endif %}
+    </h2>
+    <p style="font-size:var(--fs-16);line-height:var(--lh-normal);color:var(--c-grey);margin-bottom:var(--sp-6)">
+      {% if lang == 'en' %}
+        Transparent methodology, aligned with <strong>EU&nbsp;MRV</strong> (Regulation EU&nbsp;2015/757)
+        and <strong>GHG Protocol Scope&nbsp;3</strong>, category&nbsp;4 (Upstream Transportation &amp; Distribution).
+      {% else %}
+        Méthode transparente, alignée avec le règlement européen <strong>EU&nbsp;MRV</strong>
+        (UE&nbsp;2015/757) et le <strong>GHG Protocol Scope&nbsp;3</strong>,
+        catégorie&nbsp;4 (Transport &amp; Distribution amont).
+      {% endif %}
+    </p>
+
+    <table class="an-table">
+      <thead>
+        <tr>
+          <th>{% if lang == 'en' %}Transport mode{% else %}Mode de transport{% endif %}</th>
+          <th>g CO₂ / t·km</th>
+          <th>{% if lang == 'en' %}Source{% else %}Source{% endif %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{% if lang == 'en' %}{{ brand.nom_court }} sailing cargo{% else %}Cargo vélique {{ brand.nom_court }}{% endif %}</td>
+          <td><strong class="an-highlight">{% if lang == 'en' %}1.5{% else %}1,5{% endif %}</strong></td>
+          <td>{% if lang == 'en' %}On-board measurements + accredited third-party audit{% else %}Mesures embarquées + audit vérificateur tiers accrédité{% endif %}</td>
+        </tr>
+        <tr>
+          <td>{% if lang == 'en' %}Conventional container ship{% else %}Porte-conteneurs conventionnel{% endif %}</td>
+          <td>{% if lang == 'en' %}13.7{% else %}13,7{% endif %}</td>
+          <td>IFP Energies nouvelles / IMO Fourth GHG Study</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="font-size:var(--fs-18);font-weight:var(--fw-bold);color:var(--c-teal);margin:var(--sp-7) 0 var(--sp-4)">
+      {% if lang == 'en' %}Formula applied{% else %}Formule appliquée{% endif %}
+    </h3>
+    <div class="an-formula">
+      {% if lang == 'en' %}
+        <p><code>CO₂ avoided (kg) = (13.7 − 1.5) × tonnage (t) × distance (km) ÷ 1&thinsp;000</code></p>
+        <p><code>distance (km) = distance (NM) × 1.852</code></p>
+      {% else %}
+        <p><code>CO₂ évité (kg) = (13,7 − 1,5) × tonnage (t) × distance (km) ÷ 1&thinsp;000</code></p>
+        <p><code>distance (km) = distance (NM) × 1,852</code></p>
+      {% endif %}
+    </div>
+
+    <h3 style="font-size:var(--fs-18);font-weight:var(--fw-bold);color:var(--c-teal);margin:var(--sp-7) 0 var(--sp-4)">
+      {% if lang == 'en' %}Concrete example{% else %}Exemple concret{% endif %}
+    </h3>
+    <div class="an-example">
+      <p>
+        {% if lang == 'en' %}
+          12 pallets of wine (1.2&thinsp;t) on the Le Havre → New York route
+          (3&thinsp;200&thinsp;NM ≈ 5&thinsp;926&thinsp;km):
+        {% else %}
+          12 palettes de vin (1,2&thinsp;t) sur la route Le Havre → New York
+          (3&thinsp;200&thinsp;NM ≈ 5&thinsp;926&thinsp;km) :
+        {% endif %}
+      </p>
+      <span class="an-result">
+        (13,7 − 1,5) × 1,2 × 5&thinsp;926 ÷ 1&thinsp;000 = <strong>86,7&thinsp;kg CO₂</strong>
+        {% if lang == 'en' %}avoided vs container ship{% else %}évités vs porte-conteneur{% endif %}
+      </span>
+    </div>
+  </div>
+</section>
+
+{# ===== LE NAVIRE ===== #}
+<section class="an-vessel-section">
+  <div class="an-vessel-inner">
+    <span class="section-kicker">
+      {% if lang == 'en' %}The vessel{% else %}Le navire{% endif %}
+    </span>
+    <h2 class="section-title">
+      {% if lang == 'en' %}Anemos — certified sailing cargo vessel{% else %}Anemos — voilier-cargo certifié{% endif %}
+    </h2>
+
+    <div class="an-vessel-grid">
+
+      {# Visual block — gradient + overlay (no external image dependency) #}
+      <div class="an-vessel-visual">
+        <div class="an-vessel-wave" aria-hidden="true"></div>
+        <div class="an-vessel-overlay">
+          <p class="an-vessel-name">Anemos</p>
+          <p class="an-vessel-type">
+            {% if lang == 'en' %}Sailing cargo vessel · France{% else %}Voilier-cargo · France{% endif %}
+          </p>
+        </div>
+      </div>
+
+      {# Specs + description #}
+      <div>
+        <p style="font-size:var(--fs-16);line-height:var(--lh-normal);color:var(--c-anthracite);margin-bottom:var(--sp-5)">
+          {% if lang == 'en' %}
+            Built in 2024 and based in Le Havre, Anemos is {{ brand.nom_court }}'s purpose-built
+            wind-powered cargo vessel. With 3&thinsp;000&thinsp;m² of sail area and a capacity
+            of around 1&thinsp;000 pallets, she demonstrates that sailing cargo is both commercially
+            viable at scale and radically lower-carbon than conventional shipping.
+          {% else %}
+            Construite en 2024 et basée au Havre, Anemos est le voilier-cargo conçu spécifiquement
+            pour {{ brand.nom_court }}. Avec 3&thinsp;000&thinsp;m² de voilure et une capacité d'environ
+            1&thinsp;000 palettes, elle démontre que le cargo vélique est à la fois viable commercialement
+            à grande échelle et radicalement moins carboné que le transport conventionnel.
+          {% endif %}
+        </p>
+
+        <div class="an-vessel-specs">
+          <div class="an-spec">
+            <span class="an-spec-key">{% if lang == 'en' %}Flag{% else %}Pavillon{% endif %}</span>
+            <span class="an-spec-val">France</span>
+          </div>
+          <div class="an-spec">
+            <span class="an-spec-key">{% if lang == 'en' %}Home port{% else %}Port d'attache{% endif %}</span>
+            <span class="an-spec-val">Le Havre</span>
+          </div>
+          <div class="an-spec">
+            <span class="an-spec-key">{% if lang == 'en' %}Year built{% else %}Mise en service{% endif %}</span>
+            <span class="an-spec-val">2024</span>
+          </div>
+          <div class="an-spec">
+            <span class="an-spec-key">{% if lang == 'en' %}Sail area{% else %}Surface de voilure{% endif %}</span>
+            <span class="an-spec-val">3&thinsp;000&thinsp;m²</span>
+          </div>
+          <div class="an-spec">
+            <span class="an-spec-key">{% if lang == 'en' %}Length overall{% else %}Longueur hors tout{% endif %}</span>
+            <span class="an-spec-val">49,8&thinsp;m</span>
+          </div>
+          <div class="an-spec">
+            <span class="an-spec-key">{% if lang == 'en' %}Capacity{% else %}Capacité{% endif %}</span>
+            <span class="an-spec-val">
+              ~1&thinsp;000 {% if lang == 'en' %}pallets{% else %}palettes{% endif %} · 12&thinsp;PAX
+            </span>
+          </div>
+        </div>
+
+        <div class="an-cert-line">
+          <i data-lucide="check-circle" style="width:14px;height:14px;vertical-align:-2px;margin-right:6px;color:var(--c-vert)" aria-hidden="true"></i>
+          {% if lang == 'en' %}
+            Emissions certified annually by an accredited verifier under EU&nbsp;MRV
+            (Regulation 2015/757).
+          {% else %}
+            Émissions certifiées annuellement par un vérificateur accrédité dans le cadre du règlement
+            EU&nbsp;MRV (règl. 2015/757).
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+{# ===== VÉRIFICATION ANNUELLE ===== #}
+<section class="section" style="background:var(--c-paper);">
+  <div class="an-verif-inner">
+    <span class="section-kicker" style="display:block;text-align:center">
+      {% if lang == 'en' %}Independence{% else %}Indépendance{% endif %}
+    </span>
+    <h2 class="section-title" style="text-align:center">
+      {% if lang == 'en' %}Annual verification{% else %}Vérification annuelle{% endif %}
+    </h2>
+    <p style="font-size:var(--fs-16);line-height:var(--lh-normal);color:var(--c-grey);margin-bottom:var(--sp-6);text-align:center">
+      {% if lang == 'en' %}
+        Our actual emissions are independently audited every year. The verified report
+        is published here as soon as it is issued.
+      {% else %}
+        Nos émissions effectives sont auditées chaque année de façon indépendante. Le rapport
+        vérifié est publié ici dès son émission.
+      {% endif %}
+    </p>
+    <div class="an-verif-grid">
+      <div class="an-verif-card">
+        <h3>EU MRV</h3>
+        <p>
+          {% if lang == 'en' %}
+            Regulation (EU) 2015/757 on the monitoring, reporting and verification of CO₂
+            emissions from maritime transport. {{ brand.nom_court }} reports annually to EMSA's
+            THETIS-MRV system.
+          {% else %}
+            Règlement (UE) 2015/757 sur la surveillance, la déclaration et la vérification des
+            émissions de CO₂ du transport maritime. {{ brand.nom_court }} déclare chaque année
+            dans le système THETIS-MRV de l'EMSA.
+          {% endif %}
+        </p>
+      </div>
+      <div class="an-verif-card">
+        <h3>GHG Protocol Scope&thinsp;3</h3>
+        <p>
+          {% if lang == 'en' %}
+            Category&nbsp;4 — Upstream Transportation &amp; Distribution. Certificate values
+            are compatible with corporate carbon footprint declarations under the GHG Protocol
+            standard.
+          {% else %}
+            Catégorie&nbsp;4 — Transport &amp; Distribution amont. Les valeurs du certificat
+            sont compatibles avec les déclarations d'empreinte carbone d'entreprise au standard
+            GHG Protocol.
+          {% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ===== CTA CERTIFICAT ===== #}
+<section class="an-cta">
+  <div class="an-cta-inner">
+    <h2>
+      {% if lang == 'en' %}Download your Anemos certificate{% else %}Téléchargez votre certificat Anemos{% endif %}
+    </h2>
+    <p>
+      {% if lang == 'en' %}
+        Each booking generates a personalised certificate showing the exact CO₂ avoided
+        for your shipment — ready to include in your CSR report or share with your clients.
+      {% else %}
+        Chaque réservation génère un certificat personnalisé indiquant le CO₂ exact évité
+        pour votre expédition — prêt à intégrer dans votre rapport RSE ou à partager avec
+        vos clients.
+      {% endif %}
+    </p>
+    <div style="display:flex;gap:var(--sp-4);justify-content:center;flex-wrap:wrap">
+      <a href="/me/login" class="btn btn-white btn-lg">
+        {% if lang == 'en' %}Sign in to download{% else %}Se connecter pour télécharger{% endif %}
+      </a>
+      <a href="/booking/new" class="btn btn-lg" style="color:#fff;border:2px solid rgba(255,255,255,0.45);background:transparent;">
+        {% if lang == 'en' %}Book a cargo{% else %}Réserver un cargo{% endif %}
+      </a>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

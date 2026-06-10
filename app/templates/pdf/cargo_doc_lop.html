@@ -1,0 +1,49 @@
+{% extends "pdf/_base.html" %}
+{% block doc_kind %}Letter of Protest{% endblock %}
+{% block doc_ref %}{{ doc.reference or '—' }}{% endblock %}
+{% block content %}
+
+<section>
+  <div class="grid-2">
+    <div class="box"><div class="label">Navire</div><div class="value mono">{{ vessel.name if vessel else '—' }}</div></div>
+    <div class="box"><div class="label">Voyage</div><div class="value mono">{{ leg.leg_code }}</div></div>
+    <div class="box"><div class="label">Type</div><div class="value">{{ 'LOP — Provisoire (Draft)' if doc.kind == 'LOP_DRAFT' else 'LOP — Définitive' }}</div></div>
+    <div class="box"><div class="label">Adressé à</div><div class="value">{{ doc.party_name or '—' }}</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Letter of Protest</h2>
+
+  <p>To: <strong>{{ doc.party_name or '(Destinataire)' }}</strong></p>
+
+  <p>
+    I, the undersigned Master of <strong>{{ vessel.name if vessel else '—' }}</strong>,
+    hereby formally protest against the following {% if doc.kind == 'LOP_DRAFT' %}(DRAFT — Subject to Confirmation){% endif %} :
+  </p>
+
+  {% if doc.body %}
+  <div style="background:#FFF8F0;border-left:3px solid #B47148;padding:10pt 12pt;margin:12pt 0;">
+    <pre style="white-space:pre-wrap;font-family:inherit;font-size:9.5pt;margin:0;">{{ doc.body }}</pre>
+  </div>
+  {% else %}
+  <p class="c-gris">(Corps de la protestation non renseigné)</p>
+  {% endif %}
+
+  <p>
+    This protest is tendered under all reservations and without prejudice.
+  </p>
+</section>
+
+<div class="stamp">
+  <div>
+    <div class="small">Émis le</div>
+    <div>{{ doc.issued_at.strftime("%d/%m/%Y %H:%M UTC") }}</div>
+    {% if doc.kind == 'LOP_DRAFT' %}
+    <div style="margin-top:6pt;background:#B47148;color:white;padding:3pt 8pt;display:inline-block;font-size:8pt;font-weight:600;text-transform:uppercase;">Provisoire — Draft</div>
+    {% endif %}
+  </div>
+  <div class="sig-area">Signature commandant<br/>(Cachet navire)</div>
+</div>
+
+{% endblock %}

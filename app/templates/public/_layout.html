@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block head %}
+<script src="/static/js/clock.js" defer></script>
+{% endblock %}
+
+{% block body %}
+<header class="public-header" role="banner">
+  <div class="container">
+    <a href="/" class="brand" aria-label="{{ brand.nom_court }} — accueil">
+      <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
+    </a>
+    <div class="header-extras">
+      <div class="clock-widget" aria-live="off">
+        <div class="clock-item">
+          <span class="clock-time" data-clock="local">--:--</span>
+          <span class="clock-label" data-tz="local-label">Local</span>
+        </div>
+        <span class="clock-sep" aria-hidden="true"></span>
+        <div class="clock-item">
+          <span class="clock-time" data-clock="paris">--:--</span>
+          <span class="clock-label">Paris</span>
+        </div>
+      </div>
+      <nav aria-label="Navigation principale">
+        <a href="/routes" class="btn btn-ghost">{{ t('nav_routes', lang) }}</a>
+        <a href="/fleet" class="btn btn-ghost">{{ t('nav_fleet', lang) }}</a>
+        <a href="/about" class="btn btn-ghost">{{ t('nav_about', lang) }}</a>
+        <a href="/me" class="btn btn-secondary">{{ t('nav_client', lang) }}</a>
+        <a href="/booking/new" class="btn btn-primary">{{ t('nav_book', lang) }}</a>
+        {# Language switcher (FR ↔ EN) — GET to /lang/{lang} sets cookie #}
+        <a href="/lang/{{ 'en' if lang == 'fr' else 'fr' }}"
+           class="btn btn-ghost btn-sm" style="margin-left:var(--space-2);"
+           title="Switch language">
+          {{ 'EN' if lang == 'fr' else 'FR' }}
+        </a>
+      </nav>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="public-footer" role="contentinfo">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-brand">
+          <img src="{{ brand.logo_white }}" alt="{{ brand.nom_court }}" />
+        </div>
+        <p class="footer-tagline">{{ brand.tagline_1 }}<br/>{{ brand.tagline_2 }}</p>
+        <p>{{ brand.mention }}</p>
+      </div>
+
+      <div>
+        <h4>{% if lang == 'en' %}Company{% else %}Compagnie{% endif %}</h4>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li><a href="/about">{% if lang == 'en' %}About{% else %}À propos{% endif %}</a></li>
+          <li><a href="/about/anemos">{% if lang == 'en' %}Anemos methodology{% else %}Méthodologie Anemos{% endif %}</a></li>
+          <li><a href="{{ brand.site_public }}" rel="noopener">{% if lang == 'en' %}Corporate site{% else %}Site corporate{% endif %}</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>{% if lang == 'en' %}Booking{% else %}Réservation{% endif %}</h4>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li><a href="/routes">{{ t('nav_routes', lang) }}</a></li>
+          <li><a href="/fleet">{{ t('nav_fleet', lang) }}</a></li>
+          <li><a href="/booking/new">{% if lang == 'en' %}Book hold capacity{% else %}Réserver une cale{% endif %}</a></li>
+          <li><a href="/me">{% if lang == 'en' %}Customer area{% else %}Espace client{% endif %}</a></li>
+          <li><a href="/api/v1/spec">API B2B</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>{% if lang == 'en' %}Contact{% else %}Contact{% endif %}</h4>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li>{{ brand.adresse }}</li>
+          <li><a href="tel:{{ brand.telephone|replace(' ','') }}">{{ brand.telephone }}</a></li>
+          <li><a href="mailto:{{ brand.email }}">{{ brand.email }}</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div>
+        &copy; 2011–{{ "now"|date if false else "2026" }} {{ brand.raison_sociale }} —
+        {% if lang == 'en' %}All rights reserved.{% else %}Tous droits réservés.{% endif %}
+      </div>
+      <nav class="flex gap-3" aria-label="{% if lang == 'en' %}Legal links{% else %}Mentions légales{% endif %}">
+        <a href="/about/legal">{% if lang == 'en' %}Legal{% else %}Mentions légales{% endif %}</a>
+        <a href="/about/privacy">{% if lang == 'en' %}Privacy{% else %}Vie privée{% endif %}</a>
+        <a href="/about/terms">{% if lang == 'en' %}Terms{% else %}CGV{% endif %}</a>
+        <a href="/.well-known/security.txt">{% if lang == 'en' %}Security{% else %}Sécurité{% endif %}</a>
+      </nav>
+    </div>
+  </div>
+</footer>
+{% endblock %}

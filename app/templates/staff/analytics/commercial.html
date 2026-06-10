@@ -1,0 +1,112 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Dashboard Commercial {{ year }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Analytics · <a href="/dashboard/analytics">← Vue globale</a></span>
+    <h1 class="display">Dashboard Commercial {{ year }}</h1>
+  </div>
+</header>
+
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">Chiffre d'affaires {{ year }}</div>
+    <div class="value">{{ total_revenue|int|money if total_revenue else '—' }}</div>
+    <div class="delta text-muted">toutes factures</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Taux de conversion</div>
+    <div class="value {% if conversion_pct >= 80 %}text-success{% elif conversion_pct >= 50 %}{% else %}text-error{% endif %}">{{ conversion_pct }} %</div>
+    <div class="delta text-muted">soumis → confirmé</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Bookings soumis</div>
+    <div class="value">{{ funnel.submitted }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Bookings confirmés</div>
+    <div class="value text-success">{{ funnel.confirmed }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Livrés</div>
+    <div class="value">{{ funnel.delivered }}</div>
+  </div>
+</section>
+
+<div class="grid grid-2 gap-4 mt-4">
+  {# Funnel visuel #}
+  <article class="card">
+    <h2>Funnel de réservation {{ year }}</h2>
+    {% set funnel_labels = {
+      "draft": "Brouillon", "submitted": "Soumis", "confirmed": "Confirmé",
+      "loaded": "Chargé", "at_sea": "En mer", "discharged": "Déchargé",
+      "delivered": "Livré", "cancelled": "Annulé"
+    } %}
+    <table class="data-table">
+      <thead><tr><th>Statut</th><th>Bookings</th><th></th></tr></thead>
+      <tbody>
+        {% for status in funnel_statuses %}
+        {% set count = funnel[status] %}
+        <tr>
+          <td>{{ funnel_labels.get(status, status) }}</td>
+          <td><strong>{{ count }}</strong></td>
+          <td style="width:160px;">
+            <div style="background:var(--sable-light); border-radius:var(--radius-sm); overflow:hidden; height:10px;">
+              <div style="background:{% if status == 'cancelled' %}var(--danger){% elif status == 'delivered' %}var(--vert){% else %}var(--teal){% endif %}; height:100%; width:{{ (count / funnel_max * 100)|int }}%;"></div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+
+  {# Top clients #}
+  <article class="card">
+    <h2>Top clients {{ year }}</h2>
+    {% if top_clients %}
+    <table class="data-table">
+      <thead><tr><th>Client</th><th>Bookings</th></tr></thead>
+      <tbody>
+        {% for row in top_clients %}
+        <tr>
+          <td>{{ row.company_name or '—' }}</td>
+          <td><strong>{{ row.n }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">Aucun booking enregistré.</p>
+    {% endif %}
+    <div class="mt-3"><a href="/commercial/clients" class="btn btn-secondary btn-sm">Voir tous les clients</a></div>
+  </article>
+</div>
+
+{# Facturation par statut #}
+<article class="card mt-4">
+  <h2>Facturation {{ year }} — par statut</h2>
+  {% if inv_by_status %}
+  <table class="data-table">
+    <thead><tr><th>Statut</th><th>Factures</th><th>Montant TTC</th></tr></thead>
+    <tbody>
+      {% for status, data in inv_by_status.items() %}
+      <tr>
+        <td>
+          {% if status == "paid" %}<span class="pill pill-ok">Réglée</span>
+          {% elif status == "overdue" %}<span class="pill pill-error">En retard</span>
+          {% elif status == "issued" %}<span class="pill pill-warn">Émise</span>
+          {% else %}<span class="pill pill-neutral">{{ status }}</span>{% endif %}
+        </td>
+        <td>{{ data.count }}</td>
+        <td>{{ data.total|int|money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucune facture émise {{ year }}.</p>
+  {% endif %}
+</article>
+{% endblock %}

@@ -1,0 +1,106 @@
+{# Topbar — included once at the top of any logged-in staff layout. #}
+<header class="topbar" role="banner">
+  <button type="button" class="sidebar-toggle" data-sidebar-toggle aria-label="Basculer la barre latérale">
+    <i data-lucide="menu" class="nav-icon"></i>
+  </button>
+
+  {# Titre dérivé du path courant — table de mapping (override possible
+     via {% block topbar_title %} dans une page enfant). #}
+  {%- set _path = request.url.path -%}
+  {%- set _page_labels = {
+        "/dashboard": "Tableau de bord",
+        "/planning": "Planning flotte",
+        "/planning/shares": "Partages publics",
+        "/planning/legs/new": "Nouveau leg",
+        "/planning/legs/new-from-map": "Leg depuis la carte",
+        "/commercial": "Commercial",
+        "/commercial/clients": "Clients commerciaux",
+        "/commercial/grids": "Grilles tarifaires",
+        "/commercial/grids/new": "Nouvelle grille",
+        "/commercial/offers": "Offres",
+        "/commercial/offers/new": "Nouvelle offre",
+        "/commercial/orders": "Commandes",
+        "/commercial/orders/new": "Nouvelle commande",
+        "/cargo": "Cargo",
+        "/cargo/packing-lists": "Packing lists",
+        "/escale": "Escale (Import/Export)",
+        "/captain": "On Board",
+        "/onboard": "Onboard 4 espaces",
+        "/crew": "Équipage",
+        "/crew/compliance": "Compliance équipage",
+        "/crew/calendar": "Calendrier équipage",
+        "/crew/new": "Nouveau marin",
+        "/stowage": "Plan d'arrimage",
+        "/claims": "Claims",
+        "/claims/new": "Nouveau claim",
+        "/mrv": "MRV — CO₂",
+        "/finance": "Finance",
+        "/kpi": "KPI",
+        "/rh": "RH",
+        "/tickets": "Tickets escale",
+        "/cashbox": "Caisse de bord",
+        "/tracking": "Tracking flotte",
+        "/chat": "Newtowt Agent",
+        "/staff/bookings": "Bookings",
+        "/dashboard/analytics": "Analytics",
+        "/admin": "Configuration",
+        "/admin/users": "Utilisateurs",
+        "/admin/opex": "Paramètres OPEX",
+        "/admin/insurance": "Assurances",
+        "/admin/maintenance": "Mode maintenance",
+        "/admin/activity-logs": "Activity logs",
+        "/admin/ports": "Référentiel ports",
+        "/admin/my-account": "Mon compte",
+        "/admin/my-account/change-password": "Changer mon mot de passe",
+  } -%}
+  {%- set _default_title = brand.nom_court ~ ' — ERP' -%}
+  {%- set _label = _page_labels.get(_path) -%}
+  {%- if not _label -%}
+    {%- set _segments = _path.strip('/').split('/') -%}
+    {%- set _root = '/' ~ _segments[0] if _segments and _segments[0] else '' -%}
+    {%- set _label = _page_labels.get(_root, _default_title) -%}
+  {%- endif -%}
+  <div class="topbar-title">
+    {% block topbar_title %}{{ _label }}{% endblock %}
+  </div>
+
+  <div class="topbar-actions">
+    <div class="clock-widget" aria-live="off">
+      <div class="clock-item">
+        <span class="clock-time" data-clock="local">--:--</span>
+        <span class="clock-label" data-tz="local-label">Local</span>
+      </div>
+      <span class="clock-sep" aria-hidden="true"></span>
+      <div class="clock-item">
+        <span class="clock-time" data-clock="paris">--:--</span>
+        <span class="clock-label">Paris</span>
+      </div>
+    </div>
+
+    <a href="/chat" class="topbar-action" title="Newtowt Agent">
+      <i data-lucide="message-square"></i>
+    </a>
+
+    <button type="button" class="topbar-action" id="topbar-notif-btn" data-menu-toggle="topbar-notif-menu" title="Notifications" aria-haspopup="menu">
+      <i data-lucide="bell"></i>
+      {% if notif_count and notif_count > 0 %}<span class="badge">{{ notif_count }}</span>{% endif %}
+    </button>
+    <div class="topbar-menu" id="topbar-notif-menu" role="menu">
+      <div class="menu-header">Notifications</div>
+      <div style="padding: var(--space-3) var(--space-2); color: var(--gris); font-size: var(--text-sm);">
+        Aucune notification.
+      </div>
+    </div>
+
+    <button type="button" class="topbar-action" id="topbar-user-btn" data-menu-toggle="topbar-user-menu" title="Mon compte" aria-haspopup="menu">
+      <i data-lucide="user"></i>
+    </button>
+    <div class="topbar-menu" id="topbar-user-menu" role="menu">
+      <div class="menu-header">{% if user is defined and user %}{{ user.full_name or user.username }} · {{ user.role }}{% else %}Compte{% endif %}</div>
+      <a href="/admin"><i data-lucide="settings"></i><span>Configuration</span></a>
+      <a href="/chat"><i data-lucide="message-square"></i><span>Newtowt Agent</span></a>
+      <div class="menu-divider"></div>
+      <a href="/logout" style="color: var(--danger);"><i data-lucide="log-out"></i><span>Déconnexion</span></a>
+    </div>
+  </div>
+</header>

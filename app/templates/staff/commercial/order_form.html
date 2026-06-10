@@ -1,0 +1,54 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Nouvelle commande — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Commercial</span>
+  <h1 class="display">Nouvelle commande</h1>
+</header>
+
+<article class="card">
+  <form method="post" action="/commercial/orders">
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="client_id">Client</label>
+        <select id="client_id" name="client_id" required>
+          {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="leg_id">Leg</label>
+        <select id="leg_id" name="leg_id">
+          <option value="">Aucun</option>
+          {% for l in legs %}<option value="{{ l.id }}">{{ l.leg_code }} · {{ l.etd|date }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="booked_palettes">Palettes réservées</label>
+        <input id="booked_palettes" name="booked_palettes" type="number" value="0" min="0" />
+      </div>
+      <div class="field">
+        <label for="rate_per_palette_eur">Tarif (€/palette)</label>
+        <input id="rate_per_palette_eur" name="rate_per_palette_eur" type="number" step="0.01" min="0" />
+      </div>
+      <div class="field">
+        <label for="shipper_name">Shipper</label>
+        <input id="shipper_name" name="shipper_name" type="text" />
+      </div>
+      <div class="field">
+        <label for="consignee_name">Consignee</label>
+        <input id="consignee_name" name="consignee_name" type="text" />
+      </div>
+    </div>
+    <div class="field">
+      <label for="cargo_description">Description marchandise</label>
+      <textarea id="cargo_description" name="cargo_description" rows="3"></textarea>
+    </div>
+    <div class="flex gap-2">
+      <button type="submit" class="btn btn-primary">Créer la commande</button>
+      <a href="/commercial/orders" class="btn btn-ghost">Annuler</a>
+    </div>
+  </form>
+</article>
+
+{% endblock %}

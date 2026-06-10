@@ -1,0 +1,125 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Utilisateurs — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Admin</span>
+    <h1 class="display">Utilisateurs</h1>
+  </div>
+  <a href="#user-form" class="btn btn-primary">+ Nouvel utilisateur</a>
+</header>
+
+<article class="card mb-4">
+  <table class="data-table">
+    <thead><tr>
+      <th>Username</th><th>Nom</th><th>Email</th><th>Rôle</th>
+      <th>Langue</th><th>Navire</th><th>MFA</th><th>Statut</th><th>Actions</th>
+    </tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr {% if edit_user and edit_user.id == u.id %}style="background:var(--sable);"{% endif %}>
+        <td class="mono">{{ u.username }}</td>
+        <td>{{ u.full_name or '—' }}</td>
+        <td>{{ u.email }}</td>
+        <td><span class="badge">{{ u.role }}</span></td>
+        <td class="mono text-sm">{{ u.language }}</td>
+        <td class="mono text-sm">
+          {% if u.assigned_vessel_id %}{{ vessel_codes.get(u.assigned_vessel_id, u.assigned_vessel_id) }}{% else %}—{% endif %}
+        </td>
+        <td>{% if u.mfa_enabled %}<span class="pill pill-ok">ON</span>{% else %}<span class="pill pill-neutral">OFF</span>{% endif %}</td>
+        <td>{% if u.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-error">Désactivé</span>{% endif %}</td>
+        <td>
+          <div class="flex gap-1" style="flex-wrap:wrap;">
+            <a href="/admin/users/{{ u.id }}/edit#user-form" class="btn btn-ghost btn-sm">Éditer</a>
+            <form method="post" action="/admin/users/{{ u.id }}/toggle" style="display:inline;">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button type="submit" class="btn btn-ghost btn-sm">{{ 'Désactiver' if u.is_active else 'Activer' }}</button>
+            </form>
+            <details>
+              <summary class="btn btn-ghost btn-sm">Reset MdP</summary>
+              <form method="post" action="/admin/users/{{ u.id }}/reset-password" style="margin-top:8px;">
+                <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                <input name="new_password" type="password" placeholder="Nouveau MdP (12+ car.)" required minlength="12" />
+                <button type="submit" class="btn btn-secondary btn-sm">Reset</button>
+              </form>
+            </details>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{# Formulaire create OU edit selon edit_user #}
+<article class="card" id="user-form">
+  {% if edit_user %}
+    <h2>Éditer l'utilisateur <span class="mono text-accent">{{ edit_user.username }}</span></h2>
+    <p class="text-muted text-sm">Le username et le mot de passe ne sont pas modifiables ici (cf. « Reset MdP »).</p>
+    <form method="post" action="/admin/users/{{ edit_user.id }}/edit">
+  {% else %}
+    <h2>Nouvel utilisateur</h2>
+    <form method="post" action="/admin/users">
+  {% endif %}
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-2 gap-3">
+      {% if not edit_user %}
+      <div class="field"><label for="username">Username</label>
+        <input id="username" name="username" type="text" required pattern="[A-Za-z0-9_.\-]{2,50}" />
+      </div>
+      {% endif %}
+      <div class="field"><label for="email">Email</label>
+        <input id="email" name="email" type="email" required
+               value="{{ edit_user.email if edit_user else '' }}" />
+      </div>
+      <div class="field"><label for="full_name">Nom complet</label>
+        <input id="full_name" name="full_name" type="text"
+               value="{{ edit_user.full_name if edit_user and edit_user.full_name else '' }}" />
+      </div>
+      <div class="field"><label for="role">Rôle</label>
+        <select id="role" name="role" required>
+          {% for r in roles %}
+            <option value="{{ r }}" {% if edit_user and edit_user.role == r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field"><label for="language">Langue</label>
+        <select id="language" name="language">
+          {% for l in languages %}
+            <option value="{{ l }}" {% if edit_user and edit_user.language == l %}selected{% elif not edit_user and l == 'fr' %}selected{% endif %}>{{ l }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field"><label for="assigned_vessel_id">Navire de rattachement <span class="text-muted text-sm">(marins / commandant)</span></label>
+        <select id="assigned_vessel_id" name="assigned_vessel_id">
+          <option value="">— Aucun (accès tous navires)</option>
+          {% for v in vessels %}
+            <option value="{{ v.id }}" {% if edit_user and edit_user.assigned_vessel_id == v.id %}selected{% endif %}>
+              {{ v.code }} — {{ v.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if not edit_user %}
+      <div class="field"><label for="password">Mot de passe initial</label>
+        <input id="password" name="password" type="password" required minlength="12" />
+      </div>
+      <div class="field" style="display:flex; align-items:center; gap:8px;">
+        <input id="must_change_password" name="must_change_password" type="checkbox" value="1" checked />
+        <label for="must_change_password">Forcer le changement de mot de passe à la 1re connexion</label>
+      </div>
+      {% endif %}
+    </div>
+    <div class="flex gap-2 mt-3">
+      <button type="submit" class="btn btn-primary">
+        {% if edit_user %}Enregistrer les modifications{% else %}Créer l'utilisateur{% endif %}
+      </button>
+      {% if edit_user %}
+        <a href="/admin/users" class="btn btn-ghost">Annuler</a>
+      {% endif %}
+    </div>
+  </form>
+</article>
+
+{% endblock %}

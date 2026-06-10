@@ -1,0 +1,40 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}Notifications{% else %}Notifications{% endif %} — NEWTOWT{% endblock %}
+{% block content %}
+
+<h1>{% if lang == 'en' %}Notifications{% else %}Notifications{% endif %}</h1>
+
+{% if notifications %}
+  <div class="card">
+    <ul class="notif-list" style="list-style:none;margin:0;padding:0;">
+      {% for n in notifications %}
+        <li class="notif-row {% if not n.is_read %}is-unread{% endif %}"
+            style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--border, #e5e0d4);">
+          <span style="font-size:1.4rem;line-height:1;">{{ n.icon }}</span>
+          <div style="flex:1;min-width:0;">
+            <div>
+              {% if n.link %}<a href="{{ n.link }}" style="font-weight:{{ '700' if not n.is_read else '400' }};">{{ n.title }}</a>
+              {% else %}<span style="font-weight:{{ '700' if not n.is_read else '400' }};">{{ n.title }}</span>{% endif %}
+            </div>
+            {% if n.detail %}<div class="text-muted text-sm">{{ n.detail }}</div>{% endif %}
+            <div class="text-muted text-sm">{{ n.created_at|datetime }}</div>
+          </div>
+          {% if not n.is_read %}
+            <form method="post" action="/me/notifications/{{ n.id }}/read" style="margin:0;">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button class="btn btn-ghost btn-sm" type="submit">
+                {% if lang == 'en' %}Mark read{% else %}Marquer lu{% endif %}
+              </button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% else %}
+  <p class="text-muted">
+    {% if lang == 'en' %}No notifications yet.{% else %}Aucune notification pour l'instant.{% endif %}
+  </p>
+{% endif %}
+
+{% endblock %}

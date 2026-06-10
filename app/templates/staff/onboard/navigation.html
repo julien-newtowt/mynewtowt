@@ -1,0 +1,144 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Navigation — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/onboard" class="btn btn-ghost mb-3">← Onboard</a>
+<header class="mb-4">
+  <span class="kicker">À bord</span>
+  <h1 class="display">Navigation</h1>
+</header>
+
+<form method="get" class="card mb-4" style="display:flex; gap:var(--space-3); align-items:end;">
+  <div class="field" style="flex:1; margin:0;">
+    <label for="leg_id">Voyage actif</label>
+    <select id="leg_id" name="leg_id" onchange="this.form.submit()">
+      {% for l in legs %}
+        <option value="{{ l.id }}" {% if leg and leg.id == l.id %}selected{% endif %}>{{ l.leg_code }} — {{ l.etd|date }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+{% if leg %}
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Saisir un noon report</h2>
+    {% if latest_position %}
+      <div class="alert alert-info mb-3" style="background:var(--sable); border-left:3px solid var(--teal);">
+        <strong>Position satcom</strong> ·
+        <span class="mono">{{ "%.4f"|format(latest_position.latitude) }}, {{ "%.4f"|format(latest_position.longitude) }}</span>
+        {% if latest_position.sog_kn %} · SOG {{ "%.1f"|format(latest_position.sog_kn) }} kn{% endif %}
+        {% if latest_position.cog_deg %} · COG {{ "%.0f"|format(latest_position.cog_deg) }}°{% endif %}
+        <span class="text-muted text-sm"> · {{ latest_position.recorded_at|datetime }} UTC</span>
+        <span class="text-muted text-sm"> (source : {{ latest_position.source }})</span>
+        — <em>les champs lat/lon/SOG/COG ci-dessous sont pré-remplis.</em>
+      </div>
+    {% else %}
+      <p class="text-muted text-sm mb-3">Position satcom indisponible (&gt; 6h) — saisie manuelle requise.</p>
+    {% endif %}
+    <form method="post" action="/onboard/navigation/noon-report">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <input type="hidden" name="leg_id" value="{{ leg.id }}" />
+      <div class="grid grid-2 gap-3">
+        <div class="field"><label for="latitude">Latitude</label><input id="latitude" name="latitude" type="number" step="0.0001" required {% if latest_position %}value="{{ "%.4f"|format(latest_position.latitude) }}"{% endif %} /></div>
+        <div class="field"><label for="longitude">Longitude</label><input id="longitude" name="longitude" type="number" step="0.0001" required {% if latest_position %}value="{{ "%.4f"|format(latest_position.longitude) }}"{% endif %} /></div>
+        <div class="field"><label for="sog_avg">SOG moyen (kn)</label><input id="sog_avg" name="sog_avg" type="number" step="0.1" {% if latest_position and latest_position.sog_kn is not none %}value="{{ "%.1f"|format(latest_position.sog_kn) }}"{% endif %} /></div>
+        <div class="field"><label for="cog_avg">COG moyen (°)</label><input id="cog_avg" name="cog_avg" type="number" step="1" {% if latest_position and latest_position.cog_deg is not none %}value="{{ "%.0f"|format(latest_position.cog_deg) }}"{% endif %} /></div>
+        <div class="field"><label for="wind_speed_kn">Vent (kn)</label><input id="wind_speed_kn" name="wind_speed_kn" type="number" step="0.1" {% if weather_now and weather_now.wind_speed_kn is not none %}value="{{ "%.1f"|format(weather_now.wind_speed_kn) }}"{% endif %} /></div>
+        <div class="field"><label for="wind_direction_deg">Vent (°)</label><input id="wind_direction_deg" name="wind_direction_deg" type="number" step="1" {% if weather_now and weather_now.wind_direction_deg is not none %}value="{{ "%.0f"|format(weather_now.wind_direction_deg) }}"{% endif %} /></div>
+        <div class="field"><label for="sea_state_bf">Mer (Beaufort)</label><input id="sea_state_bf" name="sea_state_bf" type="number" min="0" max="12" /></div>
+        <div class="field"><label for="visibility_nm">Visibilité (NM)</label><input id="visibility_nm" name="visibility_nm" type="number" step="0.1" /></div>
+        <div class="field"><label for="distance_24h_nm">Distance 24h (NM)</label><input id="distance_24h_nm" name="distance_24h_nm" type="number" step="0.1" /></div>
+        <div class="field"><label for="fuel_consumed_24h_l">Fuel consommé 24h (L)</label><input id="fuel_consumed_24h_l" name="fuel_consumed_24h_l" type="number" step="1" /></div>
+        <div class="field" style="grid-column:span 2;"><label for="rob_fuel_l">ROB fuel (L)</label><input id="rob_fuel_l" name="rob_fuel_l" type="number" step="1" /></div>
+        <div class="field" style="grid-column:span 2;"><label for="remarks">Remarques</label><textarea id="remarks" name="remarks" rows="2"></textarea></div>
+      </div>
+      <button type="submit" class="btn btn-primary mt-3">Enregistrer</button>
+    </form>
+  </article>
+
+  <article class="card">
+    <h2>Saisir une entrée de quart</h2>
+    <form method="post" action="/onboard/navigation/watch-log">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <input type="hidden" name="leg_id" value="{{ leg.id }}" />
+      <div class="grid grid-2 gap-3">
+        <div class="field"><label for="watch_date">Date</label><input id="watch_date" name="watch_date" type="date" required /></div>
+        <div class="field">
+          <label for="watch_period">Période</label>
+          <select id="watch_period" name="watch_period" required>
+            {% for p in ['00-04', '04-08', '08-12', '12-16', '16-20', '20-24'] %}<option>{{ p }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field" style="grid-column:span 2;"><label for="officer_on_watch">Officier de quart</label><input id="officer_on_watch" name="officer_on_watch" placeholder="{{ user.full_name or user.username }}" /></div>
+        <div class="field" style="grid-column:span 2;"><label for="entry">Entrée journal</label><textarea id="entry" name="entry" rows="4" required></textarea></div>
+        <div class="field" style="grid-column:span 2;"><label for="weather_summary">Météo (résumé)</label><input id="weather_summary" name="weather_summary" /></div>
+      </div>
+      <button type="submit" class="btn btn-primary mt-3">Signer le quart</button>
+    </form>
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Noon reports récents ({{ noon_reports|length }})</h2>
+  {% if noon_reports %}
+    <table>
+      <thead><tr><th>Date</th><th>Position</th><th>SOG</th><th>Vent</th><th>Mer</th><th>Distance 24h</th><th>Fuel 24h</th><th>Statut</th></tr></thead>
+      <tbody>
+        {% for n in noon_reports %}
+          <tr>
+            <td class="mono text-sm">{{ n.recorded_at|datetime }}</td>
+            <td class="mono">{{ "%.4f"|format(n.latitude) }}, {{ "%.4f"|format(n.longitude) }}</td>
+            <td>{{ n.sog_avg or '—' }} kn</td>
+            <td>{{ n.wind_speed_kn or '—' }} kn / {{ n.wind_direction_deg or '—' }}°</td>
+            <td>{{ n.sea_state_bf or '—' }}</td>
+            <td>{{ n.distance_24h_nm or '—' }} NM</td>
+            <td>{{ n.fuel_consumed_24h_l or '—' }} L</td>
+            <td>
+              {% if n.is_locked %}
+                <span class="badge badge-success" title="Signé {{ n.signed_at|datetime }}">🔒</span>
+              {% else %}
+                <form method="post" action="/captain/noon-reports/{{ n.id }}/sign" style="display:inline;"
+                      onsubmit="return confirm('Signer & figer ce noon report ?');">
+                  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                  <button class="btn btn-xs btn-cuivre" type="submit">Signer</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}<p class="text-muted">Aucun noon report sur ce leg.</p>{% endif %}
+</article>
+
+<article class="card mt-4">
+  <h2>Journal de quart ({{ watch_logs|length }})</h2>
+  {% if watch_logs %}
+    {% for w in watch_logs %}
+      <div class="card mb-2" style="border-left:3px solid var(--teal);">
+        <div class="flex justify-between">
+          <strong>{{ w.watch_date }} · {{ w.watch_period }}</strong>
+          <div>
+            <span class="text-muted text-sm">{{ w.officer_on_watch }}</span>
+            {% if w.is_locked %}
+              <span class="badge badge-success" title="Signé {{ w.signed_at|datetime }} par {{ w.signed_by_name }}">🔒</span>
+            {% else %}
+              <form method="post" action="/captain/watch-logs/{{ w.id }}/sign" style="display:inline;"
+                    onsubmit="return confirm('Signer & figer ce quart ?');">
+                <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                <button class="btn btn-xs btn-cuivre" type="submit">Signer</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+        <p style="white-space:pre-wrap;margin-top:var(--space-2);">{{ w.entry }}</p>
+        {% if w.weather_summary %}<p class="text-muted text-sm">Météo : {{ w.weather_summary }}</p>{% endif %}
+      </div>
+    {% endfor %}
+  {% else %}<p class="text-muted">Aucune entrée de quart.</p>{% endif %}
+</article>
+
+{% else %}
+<p class="text-muted">Aucun leg disponible.</p>
+{% endif %}
+{% endblock %}

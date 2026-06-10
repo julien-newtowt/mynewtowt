@@ -1,0 +1,66 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ booking.reference }} — Bookings · {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<a href="/staff/bookings" class="btn btn-ghost mb-3">← Bookings</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Booking</span>
+    <h1 class="display mono" style="color:var(--cuivre);">{{ booking.reference }}</h1>
+  </div>
+  <span class="pill pill-info">{{ booking.status }}</span>
+</header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Réservation</h2>
+    <table>
+      <tr><th>Client</th><td>{% if client %}{{ client.company_name }} <span class="text-muted">({{ client.email }})</span>{% else %}#{{ booking.client_account_id }}{% endif %}</td></tr>
+      <tr><th>Palettes</th><td>{{ booking.total_palettes }}</td></tr>
+      <tr><th>Poids</th><td>{{ booking.total_weight_kg }} kg</td></tr>
+      <tr><th>Prix estimé</th><td>{{ booking.estimated_price_eur|money if booking.estimated_price_eur else '—' }}</td></tr>
+      <tr><th>Prix confirmé</th><td>{{ booking.confirmed_price_eur|money if booking.confirmed_price_eur else '—' }}</td></tr>
+    </table>
+    <div class="flex gap-3 mt-3">
+      <a href="/cargo/booking/{{ booking.reference }}" class="btn btn-ghost">Documents PDF →</a>
+    </div>
+  </article>
+
+  <article class="card">
+    <h2>Cycle de vie</h2>
+    <p class="text-muted">Statut : <span class="pill pill-info">{{ booking.status }}</span></p>
+    <div class="flex gap-3 mt-3" style="flex-wrap:wrap;">
+      {% if booking.status == 'submitted' %}
+        <form method="post" action="/staff/bookings/{{ booking.reference }}/confirm" style="display:inline">
+          <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+          <button class="btn btn-primary" type="submit">Confirmer</button>
+        </form>
+        <form method="post" action="/staff/bookings/{{ booking.reference }}/reject" style="display:inline">
+          <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+          <input type="hidden" name="reason" value="Refusée par l'équipe" />
+          <button class="btn btn-ghost" type="submit">Refuser</button>
+        </form>
+      {% elif booking.status in ('confirmed', 'loaded', 'at_sea', 'discharged') %}
+        {% set next_step = {'confirmed': 'loaded', 'loaded': 'at_sea', 'at_sea': 'discharged', 'discharged': 'delivered'} %}
+        {% set labels = {'loaded': 'Marquer chargé', 'at_sea': 'Marquer en mer', 'discharged': 'Marquer débarqué', 'delivered': 'Marquer livré'} %}
+        <form method="post" action="/staff/bookings/{{ booking.reference }}/advance" style="display:inline">
+          <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+          <input type="hidden" name="target" value="{{ next_step[booking.status] }}" />
+          <button class="btn btn-primary" type="submit">→ {{ labels[next_step[booking.status]] }}</button>
+        </form>
+      {% else %}
+        <p class="text-muted">Aucune transition disponible.</p>
+      {% endif %}
+    </div>
+  </article>
+</div>
+
+<section class="card mt-4" id="messages">
+  <h2>Messages client</h2>
+  {% set post_url = "/staff/bookings/" ~ booking.reference ~ "/messages" %}
+  {% set viewer = "staff" %}
+  {% include "_partials/message_thread.html" %}
+</section>
+
+{% endblock %}

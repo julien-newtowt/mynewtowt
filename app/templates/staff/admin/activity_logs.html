@@ -1,0 +1,41 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Activity logs — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Admin · Audit</span>
+    <h1 class="display">Activity logs</h1>
+    <p class="text-muted">Journal d'audit append-only de toutes les actions create/update/delete des utilisateurs.</p>
+  </div>
+</header>
+
+<div class="flex gap-2 mb-3">
+  <a href="/admin/activity-logs" class="btn btn-{{ 'primary' if not filter_module else 'ghost' }} btn-sm">Tous</a>
+  {% for mod, count in modules_count.items() %}
+  <a href="/admin/activity-logs?module={{ mod }}" class="btn btn-{{ 'primary' if filter_module == mod else 'ghost' }} btn-sm">{{ mod }} <span class="text-muted">({{ count }})</span></a>
+  {% endfor %}
+</div>
+
+<article class="card">
+  <table class="data-table">
+    <thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Module</th><th>Entité</th><th>Détail</th><th>IP</th></tr></thead>
+    <tbody>
+      {% for l in logs %}
+      <tr>
+        <td class="mono text-xs">{{ l.created_at|datetime }}</td>
+        <td>{{ l.user_name or '—' }}<br/><small class="text-muted">{{ l.user_role or '' }}</small></td>
+        <td><span class="badge badge-{{ 'completed' if l.action == 'create' else ('inprogress' if l.action == 'update' else ('error' if l.action in ('delete','login_fail') else 'draft')) }}">{{ l.action }}</span></td>
+        <td>{{ l.module or '—' }}</td>
+        <td>{{ l.entity_type or '—' }}{% if l.entity_label %} · <strong>{{ l.entity_label }}</strong>{% endif %}{% if l.entity_id %} <small class="mono text-muted">#{{ l.entity_id }}</small>{% endif %}</td>
+        <td class="text-xs">{{ l.detail or '—' }}</td>
+        <td class="mono text-xs">{{ l.ip_address or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-muted text-center">Aucune entrée pour ce filtre.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "client/_layout.html" %}
+{% block title %}Messages — NEWTOWT{% endblock %}
+{% block content %}
+
+<h1>Messages</h1>
+<p class="text-muted">
+  {% if lang == 'en' %}Your conversations with the NEWTOWT team, by booking.
+  {% else %}Vos échanges avec l'équipe NEWTOWT, par réservation.{% endif %}
+</p>
+
+{% if threads %}
+  <div class="card">
+    <ul style="list-style:none;margin:0;padding:0;">
+      {% for t in threads %}
+        <li style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--border,#e5e0d4);">
+          <div style="flex:1;min-width:0;">
+            <a href="/me/bookings/{{ t.booking.reference }}#messages" class="mono" style="font-weight:600;">{{ t.booking.reference }}</a>
+            <div class="text-muted text-sm" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              {{ t.last.sender_name or t.last.sender }} : {{ t.last.body }}
+            </div>
+          </div>
+          {% if t.unread %}<span class="pill pill-warn">{{ t.unread }}</span>{% endif %}
+          <span class="text-muted text-sm mono">{{ t.last.created_at|date }}</span>
+          <a href="/me/bookings/{{ t.booking.reference }}#messages" class="btn btn-ghost btn-sm">
+            {% if lang == 'en' %}Open{% else %}Ouvrir{% endif %}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% else %}
+  <p class="text-muted">
+    {% if lang == 'en' %}No conversation yet. Open a booking to message us.{% else %}Aucune conversation. Ouvrez une réservation pour nous écrire.{% endif %}
+  </p>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}Position flotte — {{ brand.nom_court }}{% endblock %}
+{% block head %}{{ super() }}
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
+<script src="/static/js/fleet-map.js" defer></script>
+{% endblock %}
+{% block content %}
+
+<section class="section">
+  <div class="container">
+    <span class="kicker">{% if lang == 'en' %}Live tracking{% else %}Suivi temps réel{% endif %}</span>
+    <h1 class="display">
+      {% if lang == 'en' %}Where is the NEWTOWT fleet?{% else %}Où est la flotte NEWTOWT ?{% endif %}
+    </h1>
+    <p class="lead">
+      {% if lang == 'en' %}
+        Each vessel reports its position via satellite. The map shows the most
+        recent location of every active sailing cargo of our fleet.
+      {% else %}
+        Chaque navire reporte sa position par satellite. La carte affiche la
+        dernière position connue de chaque voilier cargo en activité de notre flotte.
+      {% endif %}
+    </p>
+  </div>
+</section>
+
+<section class="container mb-5">
+  {%- set ns = namespace(items=[]) -%}
+  {%- for v in vessels -%}
+    {%- set p = last_positions.get(v.id) -%}
+    {%- if p -%}
+      {%- set _ = ns.items.append({
+            "name": v.name, "code": v.code,
+            "lat": p.latitude, "lon": p.longitude,
+            "sog": (p.sog_kn or 0)|float,
+            "recorded_at": p.recorded_at.isoformat(),
+          }) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  <article class="card" style="padding:0; overflow:hidden;">
+    <div id="public-fleet-map" class="js-fleet-map"
+         style="width:100%; height:520px; background:var(--sable-light); position:relative;"
+         data-maptiler-token="{{ maptiler_token }}"
+         data-no-position-text="{% if lang == 'en' %}No position recorded yet.{% else %}Aucune position enregistrée.{% endif %}"
+         data-no-position-detail="{% if lang == 'en' %}Vessel positions arrive via satellite (Power Automate / X-API-Token).{% else %}Les positions navires arrivent par satellite (Power Automate / X-API-Token).{% endif %}"
+         data-vessels='{{ ns.items|tojson }}'></div>
+  </article>
+</section>
+
+<section class="container mb-5">
+  <div class="grid grid-3 gap-4">
+    {% for v in vessels %}
+    {% set p = last_positions.get(v.id) %}
+    <article class="card">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="leg-code mono">{{ v.code }}</span>
+        <strong>{{ v.name }}</strong>
+      </div>
+      {% if p %}
+      <table class="data-table" style="background:transparent;">
+        <tr><td>{% if lang == 'en' %}Position{% else %}Position{% endif %}</td>
+            <td class="mono text-sm">{{ "%.4f"|format(p.latitude) }}, {{ "%.4f"|format(p.longitude) }}</td></tr>
+        <tr><td>SOG</td><td>{{ p.sog_kn or '—' }} kn</td></tr>
+        <tr><td>COG</td><td>{{ p.cog_deg or '—' }}°</td></tr>
+        <tr><td>{% if lang == 'en' %}Updated{% else %}Mis à jour{% endif %}</td>
+            <td class="mono text-xs">{{ p.recorded_at|datetime }}</td></tr>
+      </table>
+      {% else %}
+      <p class="text-muted">{% if lang == 'en' %}No position reported yet.{% else %}Aucune position rapportée.{% endif %}</p>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+{% endblock %}

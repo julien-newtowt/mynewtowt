@@ -1,0 +1,57 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Nouvelle offre — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Commercial</span>
+  <h1 class="display">Nouvelle offre tarifaire</h1>
+</header>
+
+<article class="card">
+  <form method="post" action="/commercial/offers">
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="client_id">Client</label>
+        <select id="client_id" name="client_id" required>
+          {% for c in clients %}<option value="{{ c.id }}">{{ c.name }} ({{ c.client_type }})</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="title">Titre</label>
+        <input id="title" name="title" type="text" required />
+      </div>
+      <div class="field">
+        <label for="grid_id">Grille tarifaire</label>
+        <select id="grid_id" name="grid_id">
+          <option value="">Sans grille</option>
+          {% for g in grids %}<option value="{{ g.id }}">{{ g.reference }} · base {{ g.base_rate_per_palette }}€</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="leg_id">Leg ciblé</label>
+        <select id="leg_id" name="leg_id">
+          <option value="">Aucun</option>
+          {% for l in legs %}<option value="{{ l.id }}">{{ l.leg_code }} · {{ l.etd|date }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="estimated_palettes">Palettes estimées</label>
+        <input id="estimated_palettes" name="estimated_palettes" type="number" value="0" min="0" />
+      </div>
+      <div class="field">
+        <label for="valid_until">Validité</label>
+        <input id="valid_until" name="valid_until" type="date" />
+      </div>
+    </div>
+    <div class="field">
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="3"></textarea>
+    </div>
+    <div class="flex gap-2">
+      <button type="submit" class="btn btn-primary">Créer l'offre</button>
+      <a href="/commercial/offers" class="btn btn-ghost">Annuler</a>
+    </div>
+  </form>
+</article>
+
+{% endblock %}

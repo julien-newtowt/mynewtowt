@@ -1,0 +1,75 @@
+{# Topbar — client variant. #}
+<header class="topbar" role="banner">
+  <button type="button" class="sidebar-toggle" data-sidebar-toggle
+          aria-label="{% if lang == 'en' %}Toggle sidebar{% else %}Basculer la barre latérale{% endif %}">
+    <i data-lucide="menu" class="nav-icon"></i>
+  </button>
+
+  {%- set _path = request.url.path -%}
+  {%- if lang == 'en' -%}
+    {%- set _page_labels = {
+          "/me": "Dashboard",
+          "/me/bookings": "My bookings",
+          "/me/invoices": "My invoices",
+          "/me/anemos": "My Anemos labels",
+          "/me/account": "My account",
+          "/booking/new": "New booking",
+    } -%}
+    {%- set _label = _page_labels.get(_path, "Customer area") -%}
+  {%- else -%}
+    {%- set _page_labels = {
+          "/me": "Tableau de bord",
+          "/me/bookings": "Mes réservations",
+          "/me/invoices": "Mes factures",
+          "/me/anemos": "Mes labels Anemos",
+          "/me/account": "Mon compte",
+          "/booking/new": "Nouvelle réservation",
+    } -%}
+    {%- set _label = _page_labels.get(_path, "Espace client") -%}
+  {%- endif -%}
+  <div class="topbar-title">{% block topbar_title %}{{ _label }}{% endblock %}</div>
+
+  <div class="topbar-actions">
+    <div class="clock-widget" aria-live="off">
+      <div class="clock-item">
+        <span class="clock-time" data-clock="local">--:--</span>
+        <span class="clock-label" data-tz="local-label">Local</span>
+      </div>
+      <span class="clock-sep" aria-hidden="true"></span>
+      <div class="clock-item">
+        <span class="clock-time" data-clock="paris">--:--</span>
+        <span class="clock-label">Paris</span>
+      </div>
+    </div>
+
+    <a href="/booking/new" class="topbar-action"
+       title="{% if lang == 'en' %}New booking{% else %}Nouvelle réservation{% endif %}">
+      <i data-lucide="plus"></i>
+    </a>
+
+    <a href="/lang/{{ 'en' if lang == 'fr' else 'fr' }}" class="topbar-action"
+       title="Switch language" style="font-family:var(--font-mono); font-weight:600;">
+      {{ 'EN' if lang == 'fr' else 'FR' }}
+    </a>
+
+    <button type="button" class="topbar-action" id="topbar-user-btn"
+            data-menu-toggle="topbar-user-menu"
+            title="{% if lang == 'en' %}My account{% else %}Mon compte{% endif %}" aria-haspopup="menu">
+      <i data-lucide="user"></i>
+    </button>
+    <div class="topbar-menu" id="topbar-user-menu" role="menu">
+      <div class="menu-header">
+        {% if client is defined and client %}{{ client.company_name }}
+        {% else %}{% if lang == 'en' %}Account{% else %}Compte{% endif %}{% endif %}
+      </div>
+      <a href="/me/account"><i data-lucide="settings"></i><span>{% if lang == 'en' %}My account{% else %}Mon compte{% endif %}</span></a>
+      <a href="/me/bookings"><i data-lucide="package"></i><span>{% if lang == 'en' %}My bookings{% else %}Mes réservations{% endif %}</span></a>
+      <a href="/me/invoices"><i data-lucide="euro"></i><span>{% if lang == 'en' %}My invoices{% else %}Mes factures{% endif %}</span></a>
+      <div class="menu-divider"></div>
+      <a href="/me/logout" style="color: var(--danger);">
+        <i data-lucide="log-out"></i>
+        <span>{% if lang == 'en' %}Sign out{% else %}Déconnexion{% endif %}</span>
+      </a>
+    </div>
+  </div>
+</header>

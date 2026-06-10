@@ -1,0 +1,51 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Cargo — Documents · {{ brand.nom_court }} ERP{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Cargo</span>
+  <h1 class="display">Documents transport</h1>
+  <p class="text-muted">Génération BL · Packing List · Facture · Label Anemos.</p>
+</header>
+
+{% if bookings %}
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Référence</th>
+          <th>Client</th>
+          <th>Leg</th>
+          <th>Palettes</th>
+          <th>Poids</th>
+          <th>Statut</th>
+          <th>Documents</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bookings %}
+          <tr>
+            <td><a href="/cargo/booking/{{ b.reference }}" class="mono">{{ b.reference }}</a></td>
+            <td><span class="text-muted">#{{ b.client_account_id }}</span></td>
+            <td><span class="mono">{{ b.leg_id }}</span></td>
+            <td>{{ b.total_palettes }}</td>
+            <td>{{ b.total_weight_kg }} kg</td>
+            <td><span class="pill pill-info">{{ b.status }}</span></td>
+            <td class="flex gap-2">
+              <a href="/cargo/booking/{{ b.reference }}/bl.pdf" target="_blank" class="btn btn-ghost text-xs">BL</a>
+              <a href="/cargo/booking/{{ b.reference }}/packing-list.pdf" target="_blank" class="btn btn-ghost text-xs">PL</a>
+              <a href="/cargo/booking/{{ b.reference }}/invoice.pdf" target="_blank" class="btn btn-ghost text-xs">Facture</a>
+              {% if b.status in ('discharged','delivered') %}
+                <a href="/cargo/booking/{{ b.reference }}/anemos.pdf" target="_blank" class="btn btn-ghost text-xs">CO₂</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="text-muted">Aucun booking en statut confirmé ou au-delà.</p>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block head %}
+<script src="/static/js/sidebar.js" defer></script>
+<script src="/static/js/clock.js" defer></script>
+<script src="/static/js/topbar-menus.js" defer></script>
+{% endblock %}
+
+{% block body %}
+<div class="app-shell-v2">
+  <aside class="sidebar" aria-label="Menu client">
+    <div class="brand-mark">
+      <a href="/me" style="border:none;">
+        <img src="{{ brand.logo_white }}" alt="{{ brand.nom_court }}" />
+      </a>
+    </div>
+    <small class="role-label">
+      {% if lang == 'en' %}Customer area{% else %}Espace client{% endif %}
+    </small>
+
+    <nav>
+      <ul>
+        <li><a href="/me"><i data-lucide="home"></i><span>{% if lang == 'en' %}Dashboard{% else %}Tableau de bord{% endif %}</span></a></li>
+        <li><a href="/me/bookings"><i data-lucide="package"></i><span>{% if lang == 'en' %}My bookings{% else %}Mes réservations{% endif %}</span></a></li>
+        <li><a href="/me/invoices"><i data-lucide="euro"></i><span>{% if lang == 'en' %}My invoices{% else %}Mes factures{% endif %}</span></a></li>
+        <li><a href="/me/documents"><i data-lucide="file-text"></i><span>{% if lang == 'en' %}My documents{% else %}Mes documents{% endif %}</span></a></li>
+        <li><a href="/me/messages"><i data-lucide="message-square"></i><span>Messages</span></a></li>
+        <li><a href="/me/anemos"><i data-lucide="leaf"></i><span>{% if lang == 'en' %}My Anemos labels{% else %}Mes labels Anemos{% endif %}</span></a></li>
+        <li><a href="/me/notifications"><i data-lucide="bell"></i><span>Notifications</span></a></li>
+        <li><a href="/me/account"><i data-lucide="user"></i><span>{% if lang == 'en' %}My account{% else %}Mon compte{% endif %}</span></a></li>
+      </ul>
+      <div class="mt-5">
+        <a href="/booking/new" class="btn btn-accent btn-block">
+          <i data-lucide="plus"></i>&nbsp;{% if lang == 'en' %}New booking{% else %}Nouvelle réservation{% endif %}
+        </a>
+      </div>
+      <div class="mt-3" style="text-align:center;">
+        <a href="/lang/{{ 'en' if lang == 'fr' else 'fr' }}" class="btn btn-ghost btn-sm" title="Switch language">
+          {{ 'EN' if lang == 'fr' else 'FR' }}
+        </a>
+      </div>
+    </nav>
+
+    {% if client is defined and client %}
+    <div class="sidebar-userbadge">
+      <div class="user-avatar">{{ (client.company_name or client.email or "?")[0]|upper }}</div>
+      <div class="user-info-text">
+        <span class="user-name">{{ client.company_name or client.email }}</span>
+        <span class="user-role">{{ client.segment or 'client' }}</span>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="sidebar-footer">
+      <a href="/me/logout" class="btn-icon-only"
+         title="{% if lang == 'en' %}Sign out{% else %}Déconnexion{% endif %}"
+         aria-label="{% if lang == 'en' %}Sign out{% else %}Déconnexion{% endif %}">
+        <i data-lucide="log-out"></i>
+      </a>
+    </div>
+  </aside>
+
+  {% include "client/_topbar.html" %}
+
+  <main id="main" class="main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}

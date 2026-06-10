@@ -1,0 +1,102 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Dashboard Exécutif {{ year }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Analytics · <a href="/dashboard/analytics">← Vue globale</a></span>
+    <h1 class="display">Dashboard Exécutif {{ year }}</h1>
+  </div>
+</header>
+
+{# ── KPI principaux ── #}
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">Tonnage cumulé</div>
+    <div class="value">{{ "%.1f"|format(total_tonnage_t) }} t</div>
+    {% if prev_tonnage_t %}
+    <div class="delta {% if total_tonnage_t >= prev_tonnage_t %}up{% else %}down{% endif %}">
+      N-1 : {{ "%.1f"|format(prev_tonnage_t) }} t
+    </div>
+    {% endif %}
+  </div>
+  <div class="kpi-card">
+    <div class="label">CO₂ évité cumulé</div>
+    <div class="value text-success">{{ "%.0f"|format(total_co2_avoided_kg) }} kg</div>
+    {% if prev_co2_kg %}
+    <div class="delta {% if total_co2_avoided_kg >= prev_co2_kg %}up{% else %}down{% endif %}">
+      N-1 : {{ "%.0f"|format(prev_co2_kg) }} kg
+    </div>
+    {% endif %}
+  </div>
+  <div class="kpi-card">
+    <div class="label">On-time performance</div>
+    <div class="value">{{ on_time_pct }} %</div>
+    <div class="delta text-muted">legs clôturés avec KPI</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Legs {{ year }}</div>
+    <div class="value">{{ legs_total }}</div>
+    <div class="delta text-muted">tous statuts</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Chiffre d'affaires {{ year }}</div>
+    <div class="value">{{ revenue|int|money if revenue else '—' }}</div>
+    {% if prev_revenue %}
+    <div class="delta {% if revenue >= prev_revenue %}up{% else %}down{% endif %}">
+      N-1 : {{ prev_revenue|int|money }}
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+{# ── Répartition legs par statut ── #}
+<div class="grid grid-2 gap-4 mt-4">
+  <article class="card">
+    <h2>Legs {{ year }} — par statut</h2>
+    <table class="data-table">
+      <thead><tr><th>Statut</th><th>Nombre</th><th>Part</th></tr></thead>
+      <tbody>
+        {% set status_labels = {"planned": "Planifié", "inprogress": "En cours", "completed": "Terminé", "cancelled": "Annulé"} %}
+        {% for status, count in legs_by_status.items()|sort(attribute="1", reverse=true) %}
+        <tr>
+          <td>
+            {% if status == "completed" %}<span class="pill pill-ok">{{ status_labels.get(status, status) }}</span>
+            {% elif status == "inprogress" %}<span class="pill pill-warn">{{ status_labels.get(status, status) }}</span>
+            {% elif status == "cancelled" %}<span class="pill pill-neutral">{{ status_labels.get(status, status) }}</span>
+            {% else %}<span class="pill pill-info">{{ status_labels.get(status, status) }}</span>{% endif %}
+          </td>
+          <td>{{ count }}</td>
+          <td>
+            <div style="background:var(--sable-light); border-radius:var(--radius-sm); overflow:hidden; height:10px; width:120px;">
+              <div style="background:var(--teal); height:100%; width:{{ (count / legs_total * 100)|int if legs_total else 0 }}%;"></div>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="text-muted text-center">Aucun leg {{ year }}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Résumé {{ year }}</h2>
+    <table class="data-table">
+      <tbody>
+        <tr><td>Bookings {{ year }}</td><td><strong>{{ bookings_total }}</strong></td></tr>
+        <tr><td>Clients inscrits</td><td><strong>{{ clients_total }}</strong></td></tr>
+        <tr><td>Tonnage / leg (moy.)</td>
+          <td><strong>{% if legs_total %}{{ "%.1f"|format(total_tonnage_t / legs_total) }} t{% else %}—{% endif %}</strong></td></tr>
+        <tr><td>CO₂ évité / tonne</td>
+          <td><strong>{% if total_tonnage_t %}{{ "%.1f"|format(total_co2_avoided_kg / total_tonnage_t) }} kg/t{% else %}—{% endif %}</strong></td></tr>
+        <tr><td>Année précédente ({{ year_prev }})</td><td class="text-muted">comparaison N-1 dans les KPI ci-dessus</td></tr>
+      </tbody>
+    </table>
+    <div class="mt-3 flex gap-2">
+      <a href="/kpi" class="btn btn-secondary btn-sm">Détail KPI</a>
+      <a href="/finance" class="btn btn-secondary btn-sm">Finance</a>
+    </div>
+  </article>
+</div>
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}Navigation — courants, propulsion vélique & routes — NewTowt{% endblock %}
+{% block description %}Propulsion principalement vélique, courants marins et carte des routes NewTowt : Europe ↔ Brésil (Fécamp ↔ São Sebastião) et Amérique latine.{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-inner">
+    <span class="hero-kicker">Navigation</span>
+    <h1 class="hero-title">Le vent, les courants, nos routes</h1>
+    <p class="hero-lead">
+      Nos voiliers-cargos exploitent la force du vent et la mécanique des courants
+      océaniques pour relier l'Europe au Brésil et à l'Amérique latine.
+    </p>
+  </div>
+</section>
+
+{% include "public/_translation_notice.html" %}
+
+<section class="section">
+  <div class="section-inner">
+    <span class="section-kicker">Propulsion vélique</span>
+    <h2 class="section-title">2 226 m² de voilure, pavillon français</h2>
+    <p class="section-lead">
+      Chaque navire de la classe TSC 80 porte 2 226 m² de voilure et avance en
+      propulsion <strong>principalement vélique</strong>, avec un moteur d'appoint
+      pour les manœuvres portuaires et les calmes. La vitesse de croisière s'établit
+      entre <strong>9 et 11 nœuds</strong>, au rythme de l'océan.
+    </p>
+  </div>
+</section>
+
+<section class="section section--sand">
+  <div class="section-inner">
+    <span class="section-kicker">Courants marins</span>
+    <h2 class="section-title">Naviguer avec l'océan, pas contre lui</h2>
+    <p class="section-lead">
+      Les routes sont tracées pour épouser les grands systèmes de courants et de
+      vents de l'Atlantique. Ce choix réduit la consommation, lisse les écarts
+      thermiques en cale et préserve la marchandise.
+    </p>
+    <div class="map-placeholder" role="img"
+         aria-label="Schéma des courants atlantiques — visuel à venir">
+      <span>Schéma des courants atlantiques — <em>visuel à venir</em></span>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-inner">
+    <span class="section-kicker">Carte des routes</span>
+    <h2 class="section-title">Europe ↔ Brésil & Amérique latine</h2>
+    <p class="section-lead">
+      La ligne dessert l'Europe, le Brésil et l'Amérique latine. Pour 2026, plusieurs
+      rotations entre <strong>Fécamp</strong> et <strong>São Sebastião</strong> sont
+      prévues ; les routes latino-américaines visent la <strong>Colombie</strong>, le
+      <strong>Mexique</strong> et le <strong>Guatemala</strong>, depuis Fécamp.
+    </p>
+    <div class="map-placeholder" role="img"
+         aria-label="Carte interactive des routes — visuel à venir">
+      <span>Carte interactive des routes — <em>visuel à venir</em></span>
+    </div>
+    <p>
+      <a href="/routes" class="btn btn-primary">Voir les prochaines traversées</a>
+    </p>
+  </div>
+</section>
+{% endblock %}

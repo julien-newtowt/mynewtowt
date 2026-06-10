@@ -1,0 +1,64 @@
+# Environments / secrets
+.env
+.env.*
+!.env.example
+.envrc
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Coverage / tests
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker / data
+postgres_data/
+backups/
+uploads/
+*.log
+
+# Frontend
+node_modules/
+playwright-report/
+test-results/
+
+# Build artifacts
+*.pdf
+!docs/**/*.pdf
+*.zip
+!docs/**/*.zip

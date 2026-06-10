@@ -1,0 +1,111 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}Impact — environnement maîtrisé & décarbonation — NewTowt{% endblock %}
+{% block description %}À bord, la qualité de votre marchandise est protégée par la conception du navire puis mesurée par le système LACOE©. Transport à la voile : CO₂ réduit jusqu'à 95 %, label ANEMOS.{% endblock %}
+
+{% block structured_data %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "De combien le transport à la voile réduit-il les émissions de CO₂ ?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Le transport à la voile réduit les émissions de CO₂ jusqu'à 95 %. Le label ANEMOS certifie le transport par lot, avec un calcul de CO₂ équivalent par kilomètre et une traçabilité de port à port."}},
+    {"@type": "Question", "name": "Comment la qualité de la marchandise est-elle préservée à bord ?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Par une protection passive (cales à la température de la mer, faible écart jour-nuit, air marin sec), une ventilation segmentée jusqu'à six renouvellements d'air par heure, et une mesure continue via le système LACOE© (capteurs de température et d'humidité dans chaque cale)."}}
+  ]
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-inner">
+    <span class="hero-kicker">Impact</span>
+    <h1 class="hero-title">Transporter à la voile, c'est aussi mieux transporter</h1>
+    <p class="hero-lead">
+      À bord, la qualité de votre marchandise n'est pas laissée au hasard : elle est
+      d'abord protégée par la conception même du navire, puis surveillée tout au
+      long de la traversée.
+    </p>
+  </div>
+</section>
+
+{% include "public/_translation_notice.html" %}
+
+<section class="section">
+  <div class="section-inner">
+    <span class="section-kicker">Protection passive</span>
+    <h2 class="section-title">La conception du navire fait le premier travail</h2>
+    <p class="section-lead">
+      La protection commence par un principe passif. Les cales sont maintenues à la
+      température de la mer, et comme la route lisse les écarts entre le Nord et le
+      Sud, la marchandise échappe aux à-coups thermiques. Le faible écart entre le
+      jour et la nuit évite la condensation, et l'air marin, sec et sain, complète
+      l'ensemble. C'est la raison physique pour laquelle le café et le cacao voyagent
+      mieux sous la ligne de flottaison que dans un conteneur qui surchauffe à
+      l'approche de l'équateur.
+    </p>
+  </div>
+</section>
+
+<section class="section section--sand">
+  <div class="section-inner">
+    <span class="section-kicker">Ventilation segmentée</span>
+    <h2 class="section-title">Une ventilation pensée cale par cale</h2>
+    <p class="section-lead">
+      Deux prises d'air naturelles par pont et trois ventilateurs indépendants — dont
+      une extraction <strong>ATEX</strong> dans la cale apte aux marchandises
+      dangereuses — permettent jusqu'à <strong>six renouvellements d'air par
+      heure</strong>, cale par cale ou par groupe, selon la nature du chargement.
+    </p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-inner">
+    <span class="section-kicker">LACOE©</span>
+    <h2 class="section-title">Une qualité mesurée, pas seulement promise</h2>
+    <p class="section-lead">
+      Notre système <strong>LACOE©</strong> fixe pour chaque voyage des seuils
+      critiques afin d'éviter la condensation, place des capteurs de température et
+      d'humidité dans chaque cale, enregistre les données pour analyse, et s'appuie
+      sur des équipages formés ; un réseau de capteurs relié à une passerelle suit
+      en continu la température, l'hygrométrie, la pression et la hauteur des vagues.
+    </p>
+    <div class="callout callout--teal">
+      <strong>Preuve concrète.</strong> Un chargement de chocolat de 1 000 tonnes a
+      occupé 73 % du volume de soute, avec une ventilation tournant près de quatre
+      fois plus souvent qu'à vide, soit <strong>vingt-deux renouvellements d'air par
+      heure</strong>. Votre marchandise arrive ainsi dans l'état où elle est partie.
+    </div>
+  </div>
+</section>
+
+<section class="section section--sand">
+  <div class="section-inner">
+    <span class="section-kicker">Décarbonation</span>
+    <h2 class="section-title">Jusqu'à 95 % de CO₂ en moins, mesuré et certifié</h2>
+    <p class="section-lead">
+      Le transport à la voile réduit les émissions de CO₂ <strong>jusqu'à 95 %</strong>.
+      Le label <strong>ANEMOS</strong> certifie le transport par lot, avec un calcul
+      de CO₂ équivalent par kilomètre et une traçabilité de port à port. La
+      crédibilité de cet argument s'appuie sur le reporting CO₂ que votre espace
+      client fournit déjà, lot par lot.
+    </p>
+    <p>
+      <a href="/about/anemos" class="btn btn-secondary">Méthodologie du label ANEMOS</a>
+    </p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-inner">
+    <div class="callout">
+      <strong>À venir.</strong> Le triangle prix–carbone–qualité face à l'aérien et au
+      conteneur, ainsi que la décarbonation chiffrée détaillée (analyse de cycle de
+      vie CSRD), seront publiés ici dès validation des études en cours.
+      <em>[Emplacement réservé — contenu éditorial à compléter.]</em>
+    </div>
+  </div>
+</section>
+{% endblock %}

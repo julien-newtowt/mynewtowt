@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block head %}
+<script src="/static/js/sidebar.js" defer></script>
+<script src="/static/js/clock.js" defer></script>
+<script src="/static/js/topbar-menus.js" defer></script>
+{% endblock %}
+
+{% block body %}
+<div class="app-shell-v2">
+  <aside class="sidebar" aria-label="Menu staff">
+    <div class="brand-mark">
+      <a href="/dashboard" style="border:none;">
+        <img src="{{ brand.logo_white }}" alt="{{ brand.nom_court }}" />
+      </a>
+    </div>
+    <small class="role-label">ERP{% if user is defined and user %} — {{ user.role }}{% endif %}</small>
+
+    <nav>
+      <div class="nav-group" data-group="pilotage">
+        <button class="nav-group-toggle" aria-expanded="true">
+          <span class="nav-group-title"><i data-lucide="layout-dashboard"></i><span>Pilotage</span></span>
+          <i data-lucide="chevron-right" class="nav-group-caret"></i>
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/dashboard"><i data-lucide="layout-dashboard"></i><span>Tableau de bord</span></a></li>
+          <li><a href="/planning"><i data-lucide="calendar"></i><span>Planning</span></a></li>
+          <li><a href="/planning/shares"><i data-lucide="share-2"></i><span>Partages publics</span></a></li>
+          <li><a href="/veille"><i data-lucide="newspaper"></i><span>Veille d'actualité</span></a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="commercial">
+        <button class="nav-group-toggle" aria-expanded="true">
+          <span class="nav-group-title"><i data-lucide="trending-up"></i><span>Commercial</span></span>
+          <i data-lucide="chevron-right" class="nav-group-caret"></i>
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/commercial"><i data-lucide="layout-dashboard"></i><span>Pilotage commercial</span></a></li>
+          <li><a href="/commercial/clients"><i data-lucide="users"></i><span>Clients (FF / Shipper)</span></a></li>
+          <li><a href="/commercial/grids"><i data-lucide="layers"></i><span>Grilles tarifaires</span></a></li>
+          <li><a href="/commercial/offers"><i data-lucide="file-text"></i><span>Offres</span></a></li>
+          <li><a href="/commercial/orders"><i data-lucide="package"></i><span>Commandes</span></a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="cargo">
+        <button class="nav-group-toggle" aria-expanded="true">
+          <span class="nav-group-title"><i data-lucide="package"></i><span>Cargo</span></span>
+          <i data-lucide="chevron-right" class="nav-group-caret"></i>
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/staff/bookings"><i data-lucide="briefcase"></i><span>Bookings</span></a></li>
+          <li><a href="/cargo"><i data-lucide="file-text"></i><span>Documents (BL, PL, factures)</span></a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="operations">
+        <button class="nav-group-toggle" aria-expanded="true">
+          <span class="nav-group-title"><i data-lucide="anchor"></i><span>Opérations</span></span>
+          <i data-lucide="chevron-right" class="nav-group-caret"></i>
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/escale"><i data-lucide="anchor"></i><span>Escale (Import/Export)</span></a></li>
+          <li><a href="/onboard"><i data-lucide="ship"></i><span>Onboard 4 espaces</span></a></li>
+          <li><a href="/tickets"><i data-lucide="ticket"></i><span>Tickets escale</span></a></li>
+          <li><a href="/cashbox"><i data-lucide="euro"></i><span>Caisse de bord</span></a></li>
+          <li><a href="/tracking"><i data-lucide="map"></i><span>Tracking flotte</span></a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="humain">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title"><i data-lucide="users"></i><span>Humain</span></span>
+          <i data-lucide="chevron-right" class="nav-group-caret"></i>
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/crew"><i data-lucide="users"></i><span>Équipage</span></a></li>
+          <li><a href="/rh"><i data-lucide="user-cog"></i><span>RH (congés, Schengen)</span></a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="performance">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title"><i data-lucide="trending-up"></i><span>Performance</span></span>
+          <i data-lucide="chevron-right" class="nav-group-caret"></i>
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/finance"><i data-lucide="euro"></i><span>Finance</span></a></li>
+          <li><a href="/kpi"><i data-lucide="bar-chart-3"></i><span>KPI</span></a></li>
+          <li><a href="/mrv"><i data-lucide="fuel"></i><span>MRV / CO₂</span></a></li>
+          <li><a href="/claims"><i data-lucide="shield-alert"></i><span>Claims</span></a></li>
+          <li><a href="/dashboard/analytics"><i data-lucide="bar-chart"></i><span>Analytics</span></a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group" data-group="admin">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title"><i data-lucide="settings"></i><span>Admin</span></span>
+          <i data-lucide="chevron-right" class="nav-group-caret"></i>
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/admin"><i data-lucide="settings"></i><span>Configuration</span></a></li>
+          <li><a href="/admin/ports"><i data-lucide="map-pin"></i><span>Référentiel ports</span></a></li>
+          <li><a href="/admin/security"><i data-lucide="shield-check"></i><span>Sécurité (MFA)</span></a></li>
+        </ul>
+      </div>
+    </nav>
+
+    {% if user is defined and user %}
+    <div class="sidebar-userbadge">
+      <div class="user-avatar">
+        {%- set name = (user.full_name or user.username or "?") -%}
+        {{- name[0]|upper -}}
+      </div>
+      <div class="user-info-text">
+        <span class="user-name">{{ user.full_name or user.username }}</span>
+        <span class="user-role">{{ user.role }}</span>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="sidebar-footer">
+      <a href="/logout" class="btn-icon-only" title="Déconnexion" aria-label="Déconnexion">
+        <i data-lucide="log-out"></i>
+      </a>
+    </div>
+  </aside>
+
+  {% include "staff/_topbar.html" %}
+
+  <main id="main" class="main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}

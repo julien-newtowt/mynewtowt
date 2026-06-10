@@ -1,0 +1,12 @@
+Bonjour {{ recipient_name }},
+
+{{ heading }}
+
+{{ message }}
+{% if cta_url %}
+{{ cta_label }} : {{ site_url }}{{ cta_url }}
+{% endif %}
+Vous pouvez suivre votre réservation à tout moment depuis votre espace client.
+
+— L'équipe NEWTOWT
+TransOceanic Wind Transport · communication@towt.eu

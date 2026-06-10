@@ -1,0 +1,46 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Offres — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial</span>
+    <h1 class="display">Offres tarifaires</h1>
+  </div>
+  <a href="/commercial/offers/new" class="btn btn-primary">+ Nouvelle offre</a>
+</header>
+
+<article class="card">
+  <table class="data-table">
+    <thead><tr><th>Référence</th><th>Titre</th><th>Statut</th><th>Palettes</th><th>Tarif</th><th>Total</th><th>Valide jusqu'au</th><th></th></tr></thead>
+    <tbody>
+      {% for o in offers %}
+      <tr>
+        <td class="mono">{{ o.reference }}</td>
+        <td>{{ o.title }}</td>
+        <td><span class="badge badge-{{ o.status }}">{{ o.status }}</span></td>
+        <td>{{ o.estimated_palettes or '—' }}</td>
+        <td class="mono">{{ o.proposed_rate_eur|money if o.proposed_rate_eur else '—' }}</td>
+        <td class="mono">{{ o.total_eur|money if o.total_eur else '—' }}</td>
+        <td>{{ o.valid_until|date if o.valid_until else '—' }}</td>
+        <td>
+          {% if o.status == 'draft' %}
+          <form method="post" action="/commercial/offers/{{ o.id }}/send" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-ghost">Envoyer</button>
+          </form>
+          {% endif %}
+          {% if o.status in ('draft','sent','accepted') %}
+          <form method="post" action="/commercial/offers/{{ o.id }}/convert" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-primary">→ Commande</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="text-muted text-center">Aucune offre.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

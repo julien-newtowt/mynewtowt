@@ -1,0 +1,68 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}{% if lang == 'en' %}Legal notice{% else %}Mentions légales{% endif %} — NewTowt{% endblock %}
+{% block head %}<meta name="robots" content="index, follow" />{% endblock %}
+{% block content %}
+
+<section class="hero">
+  <div class="container">
+    <span class="kicker">{% if lang == 'en' %}Legal information{% else %}Information légale{% endif %}</span>
+    <h1 class="display">{% if lang == 'en' %}Legal notice{% else %}Mentions légales{% endif %}</h1>
+  </div>
+</section>
+
+{% include "public/_translation_notice.html" %}
+
+<section class="section">
+  <div class="container" style="max-width:840px;">
+    <h2 class="section-title">{% if lang == 'en' %}Site publisher{% else %}Éditeur du site{% endif %}</h2>
+    <p>
+      Le site <strong>newtowt.eu</strong> est édité par <strong>NewTowt</strong>,
+      société par actions simplifiée au capital de 1 000 euros, dont le siège social
+      est situé 128 boulevard Raspail, 75006 Paris, immatriculée au registre du
+      commerce et des sociétés de Paris sous le numéro <strong>994 529 873</strong>,
+      identifiant européen <strong>FR7501.994529873</strong>, et dont l'activité
+      principale est le transport maritime et côtier de fret.
+    </p>
+    <p>
+      Adresse opérationnelle : 52 quai Frissard, 76600 Le Havre.<br/>
+      Téléphone : <a href="tel:+33984338962">+33 9 84 33 89 62</a>.<br/>
+      Numéro de TVA intracommunautaire : FR 96 994 529 873 <em>(à confirmer)</em>.
+    </p>
+
+    <h2 class="section-title">{% if lang == 'en' %}Publication director{% else %}Directeur de la publication{% endif %}</h2>
+    <p>Karl Sement, en sa qualité de président.</p>
+
+    <h2 class="section-title">{% if lang == 'en' %}Hosting{% else %}Hébergement{% endif %}</h2>
+    <p>
+      Le site est hébergé par <strong>OVH SAS</strong>, société par actions simplifiée
+      au capital de 10 174 560 euros, immatriculée au registre du commerce et des
+      sociétés de Lille Métropole sous le numéro 424 761 419, dont le siège social est
+      situé au 2 rue Kellermann, 59100 Roubaix, France.
+    </p>
+
+    <h2 class="section-title">{% if lang == 'en' %}Intellectual property{% else %}Propriété intellectuelle{% endif %}</h2>
+    <p>
+      L'ensemble des contenus du site — textes, identité visuelle, photographies et
+      éléments graphiques — est protégé par le droit de la propriété intellectuelle et
+      demeure la propriété de NewTowt ou de ses partenaires ; toute reproduction sans
+      autorisation est interdite. NewTowt s'efforce d'assurer l'exactitude des
+      informations publiées, mais ne saurait être tenue responsable des erreurs, des
+      omissions ou d'une indisponibilité du site.
+    </p>
+
+    <h2 class="section-title">{% if lang == 'en' %}Personal data & cookies{% else %}Données personnelles & cookies{% endif %}</h2>
+    <p>
+      Les modalités de traitement des données personnelles et de gestion des cookies
+      sont décrites dans la <a href="/about/privacy">politique de confidentialité</a>,
+      accessible depuis chaque page.
+    </p>
+
+    <h2 class="section-title">{% if lang == 'en' %}Vulnerability reporting{% else %}Signalement de vulnérabilité{% endif %}</h2>
+    <p>
+      Pour signaler une vulnérabilité de sécurité, consultez notre fichier
+      <a href="/.well-known/security.txt">/.well-known/security.txt</a>.
+    </p>
+  </div>
+</section>
+
+{% endblock %}

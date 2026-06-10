@@ -1,0 +1,76 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Clients commerciaux — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial</span>
+    <h1 class="display">Clients</h1>
+  </div>
+  <a href="#new-client" class="btn btn-primary">+ Nouveau client</a>
+</header>
+
+<article class="card mb-4">
+  <table class="data-table">
+    <thead><tr><th>Nom</th><th>Type</th><th>Contact</th><th>Pays</th><th>Actif</th></tr></thead>
+    <tbody>
+      {% for c in clients %}
+      <tr>
+        <td><strong>{{ c.name }}</strong>{% if c.vat_number %}<br/><small class="text-muted mono">{{ c.vat_number }}</small>{% endif %}</td>
+        <td><span class="badge badge-{{ 'active' if c.client_type == 'freight_forwarder' else 'draft' }}">{{ c.client_type }}</span></td>
+        <td>{{ c.contact_name or '—' }}<br/><small class="text-muted">{{ c.contact_email or '' }}</small></td>
+        <td>{% if c.country %}<span class="port-badge">{{ c.country|flag }} {{ c.country }}</span>{% else %}—{% endif %}</td>
+        <td>{% if c.is_active %}<span class="pill pill-ok">Oui</span>{% else %}<span class="pill pill-neutral">Non</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted text-center">Aucun client encore.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+<article class="card" id="new-client">
+  <h2>Nouveau client</h2>
+  <form method="post" action="/commercial/clients">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="name">Nom commercial</label>
+        <input id="name" name="name" type="text" required />
+      </div>
+      <div class="field">
+        <label for="client_type">Type</label>
+        <select id="client_type" name="client_type" required>
+          {% for t in types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="contact_name">Contact (nom)</label>
+        <input id="contact_name" name="contact_name" type="text" />
+      </div>
+      <div class="field">
+        <label for="contact_email">Contact (email)</label>
+        <input id="contact_email" name="contact_email" type="email" />
+      </div>
+      <div class="field">
+        <label for="contact_phone">Téléphone</label>
+        <input id="contact_phone" name="contact_phone" type="tel" />
+      </div>
+      <div class="field">
+        <label for="country">Pays (ISO 2)</label>
+        <input id="country" name="country" type="text" maxlength="2" />
+      </div>
+      <div class="field">
+        <label for="vat_number">TVA intracommunautaire</label>
+        <input id="vat_number" name="vat_number" type="text" />
+      </div>
+    </div>
+    <div class="field">
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="3"></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Créer le client</button>
+  </form>
+</article>
+
+{% endblock %}

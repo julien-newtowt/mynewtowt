@@ -1,0 +1,48 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Admin — Configuration{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div><span class="kicker">Gouvernance</span><h1 class="display">Configuration</h1></div>
+  <a href="/admin/users#user-form" class="btn btn-primary">+ Nouvel utilisateur</a>
+</header>
+
+<section class="kpi-strip">
+  <div class="kpi-card"><div class="label">Utilisateurs actifs</div><div class="value">{{ users|selectattr("is_active")|list|length }}</div></div>
+  <div class="kpi-card"><div class="label">Navires</div><div class="value">{{ vessels|length }}</div></div>
+  <a href="/admin/ports" class="kpi-card" style="text-decoration:none;border-bottom:none;">
+    <div class="label">Ports (actifs / total)</div>
+    <div class="value">{{ active_ports }} <span class="text-muted">/ {{ total_ports }}</span></div>
+    <div class="delta text-muted">→ gérer le référentiel</div>
+  </a>
+</section>
+
+<article class="card mt-4">
+  <h2>Navires</h2>
+  <table>
+    <thead><tr><th>Code</th><th>Nom</th><th>IMO</th><th>Capacité</th><th>Statut</th></tr></thead>
+    <tbody>{% for v in vessels %}<tr>
+      <td class="mono">{{ v.code }}</td><td>{{ v.name }}</td>
+      <td class="mono text-sm">{{ v.imo_number or '—' }}</td>
+      <td>{{ v.capacity_palettes }}</td>
+      <td>{% if v.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Inactif</span>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+</article>
+
+<article class="card mt-4">
+  <div class="flex justify-between items-center mb-2">
+    <h2 style="margin:0;">Utilisateurs récents ({{ users|length }})</h2>
+    <a href="/admin/users" class="btn btn-ghost btn-sm">Gérer les utilisateurs →</a>
+  </div>
+  <table>
+    <thead><tr><th>Username</th><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th></tr></thead>
+    <tbody>{% for u in users %}<tr>
+      <td class="mono">{{ u.username }}</td>
+      <td>{{ u.full_name or '—' }}</td>
+      <td>{{ u.email }}</td>
+      <td><span class="pill pill-neutral">{{ u.role }}</span></td>
+      <td>{% if u.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Désactivé</span>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+</article>
+{% endblock %}

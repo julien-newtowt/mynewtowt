@@ -1,0 +1,133 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}Two-factor authentication{% else %}Authentification 2FA{% endif %} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<a href="/me/account" class="btn btn-ghost mb-3">← {% if lang == 'en' %}Account{% else %}Compte{% endif %}</a>
+
+<header class="mb-4">
+  <span class="kicker">{% if lang == 'en' %}Security{% else %}Sécurité{% endif %}</span>
+  <h1 class="display">{% if lang == 'en' %}Two-factor authentication{% else %}Authentification 2FA (TOTP){% endif %}</h1>
+</header>
+
+{% if error %}
+  <div class="alert alert-error mb-3">{{ error }}</div>
+{% endif %}
+
+{% if client.mfa_enabled %}
+
+<article class="card">
+  <span class="pill pill-ok">{% if lang == 'en' %}MFA enabled{% else %}MFA activée{% endif %}</span>
+  <p class="mt-3">
+    {% if lang == 'en' %}
+      Your account is protected by a 6-digit one-time code in addition to your password.
+    {% else %}
+      Votre compte est protégé par un code à 6 chiffres à usage unique en plus du mot de passe.
+    {% endif %}
+  </p>
+
+  <h2 class="mt-4">{% if lang == 'en' %}Regenerate recovery codes{% else %}Régénérer les codes de récupération{% endif %}</h2>
+  <p class="text-muted text-sm">
+    {% if lang == 'en' %}
+      Use this if you lost your printed codes or used most of them. The
+      previous codes are immediately invalidated.
+    {% else %}
+      À utiliser si vous avez perdu vos codes imprimés ou consommé la
+      plupart d'entre eux. Les anciens codes sont immédiatement invalidés.
+    {% endif %}
+  </p>
+  <form method="post" action="/me/account/mfa/regenerate" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="field" style="max-width:260px;">
+      <label for="code-regen">{% if lang == 'en' %}Current TOTP code{% else %}Code TOTP actuel{% endif %}</label>
+      <input id="code-regen" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*"
+             minlength="6" maxlength="9" autocomplete="one-time-code" required
+             style="font-size:1.25rem; letter-spacing:0.3em; text-align:center;" />
+    </div>
+    <button class="btn btn-secondary" type="submit">
+      {% if lang == 'en' %}Generate new recovery codes{% else %}Générer de nouveaux codes{% endif %}
+    </button>
+  </form>
+
+  <h2 class="mt-4">{% if lang == 'en' %}Disable 2FA{% else %}Désactiver la 2FA{% endif %}</h2>
+  <p class="text-muted text-sm">
+    {% if lang == 'en' %}
+      Enter a valid TOTP code to confirm and disable two-factor authentication.
+    {% else %}
+      Saisissez un code TOTP valide pour confirmer et désactiver la 2FA.
+    {% endif %}
+  </p>
+  <form method="post" action="/me/account/mfa/disable" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="field" style="max-width:260px;">
+      <label for="code">{% if lang == 'en' %}TOTP code{% else %}Code TOTP{% endif %}</label>
+      <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*"
+             minlength="6" maxlength="9" autocomplete="one-time-code" required
+             style="font-size:1.25rem; letter-spacing:0.3em; text-align:center;" />
+    </div>
+    <button class="btn btn-danger" type="submit"
+            onclick="return confirm('{% if lang == "en" %}Confirm disable 2FA?{% else %}Confirmer la désactivation 2FA ?{% endif %}');">
+      {% if lang == 'en' %}Disable 2FA{% else %}Désactiver la 2FA{% endif %}
+    </button>
+  </form>
+</article>
+
+{% else %}
+
+<article class="card">
+  <h2>{% if lang == 'en' %}1 — Scan the QR code{% else %}1 — Scanner le QR code{% endif %}</h2>
+  <p class="text-muted">
+    {% if lang == 'en' %}
+      Use an authenticator app : Google Authenticator, Authy, 1Password, Bitwarden…
+    {% else %}
+      Utilisez une application : Google Authenticator, Authy, 1Password, Bitwarden…
+    {% endif %}
+  </p>
+
+  {% if qr_data_uri %}
+    <div style="text-align:center; padding:var(--space-3);">
+      <img src="{{ qr_data_uri }}" alt="QR code TOTP"
+           style="width:240px; height:240px; background:white; padding:8px; border-radius:8px;" />
+    </div>
+  {% endif %}
+
+  <details class="mt-3">
+    <summary class="text-muted text-sm">
+      {% if lang == 'en' %}Or enter the secret manually{% else %}Ou saisir le secret manuellement{% endif %}
+    </summary>
+    <div class="mt-2">
+      <code class="mono" style="background:var(--sable); padding:var(--space-2); display:inline-block; user-select:all;">{{ secret }}</code>
+      {% if otpauth_uri %}
+        <p class="text-muted text-sm mt-2">
+          <a href="{{ otpauth_uri }}">{% if lang == 'en' %}Open in installed app →{% else %}Ouvrir dans l'app installée →{% endif %}</a>
+        </p>
+      {% endif %}
+    </div>
+  </details>
+</article>
+
+<article class="card mt-4">
+  <h2>{% if lang == 'en' %}2 — Confirm with a code{% else %}2 — Confirmer avec un code{% endif %}</h2>
+  <p class="text-muted">
+    {% if lang == 'en' %}
+      Enter the 6-digit code shown by your authenticator to activate 2FA on this account.
+    {% else %}
+      Entrez le code à 6 chiffres affiché par votre application pour activer la 2FA sur ce compte.
+    {% endif %}
+  </p>
+  <form method="post" action="/me/account/mfa/verify" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="field" style="max-width:260px;">
+      <label for="code">{% if lang == 'en' %}TOTP code{% else %}Code TOTP{% endif %}</label>
+      <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*"
+             minlength="6" maxlength="9" autocomplete="one-time-code" required autofocus
+             style="font-size:1.5rem; letter-spacing:0.3em; text-align:center;" />
+    </div>
+    <button class="btn btn-primary btn-lg" type="submit">
+      {% if lang == 'en' %}Activate 2FA{% else %}Activer la 2FA{% endif %}
+    </button>
+  </form>
+</article>
+
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Commercial — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial</span>
+    <h1 class="display">Pilotage commercial</h1>
+  </div>
+  <div class="flex gap-2">
+    <a href="/commercial/clients" class="btn btn-ghost">Clients</a>
+    <a href="/commercial/grids" class="btn btn-ghost">Grilles tarifaires</a>
+    <a href="/commercial/offers/new" class="btn btn-secondary">+ Nouvelle offre</a>
+    <a href="/commercial/orders/new" class="btn btn-primary">+ Nouvelle commande</a>
+  </div>
+</header>
+
+<section class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-card-icon teal"><i data-lucide="users"></i></div>
+    <div class="stat-card-body">
+      <span class="stat-card-value">{{ clients_count }}</span>
+      <span class="stat-card-label">Clients actifs</span>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon green"><i data-lucide="layers"></i></div>
+    <div class="stat-card-body">
+      <span class="stat-card-value">{{ grids_active }}</span>
+      <span class="stat-card-label">Grilles actives</span>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon cuivre"><i data-lucide="file-text"></i></div>
+    <div class="stat-card-body">
+      <span class="stat-card-value">{{ offers_open }}</span>
+      <span class="stat-card-label">Offres ouvertes</span>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon sky"><i data-lucide="package"></i></div>
+    <div class="stat-card-body">
+      <span class="stat-card-value">{{ orders_open }}</span>
+      <span class="stat-card-label">Commandes ouvertes</span>
+    </div>
+  </div>
+</section>
+
+<article class="card">
+  <div class="section-header">
+    <h3><i data-lucide="package"></i> Dernières commandes</h3>
+    <a href="/commercial/orders" class="btn btn-ghost text-sm">Toutes les commandes →</a>
+  </div>
+  {% if last_orders %}
+  <table class="data-table">
+    <thead><tr><th>Référence</th><th>Client</th><th>Palettes</th><th>Total</th><th>Statut</th><th>Créée</th></tr></thead>
+    <tbody>
+      {% for o in last_orders %}
+      <tr>
+        <td><a href="/commercial/orders/{{ o.id }}" class="mono">{{ o.reference }}</a></td>
+        <td>{{ o.client.name if o.client else '—' }}</td>
+        <td>{{ o.booked_palettes }}</td>
+        <td>{{ o.total_eur|money if o.total_eur else '—' }}</td>
+        <td><span class="badge badge-{{ o.status }}">{{ o.status }}</span></td>
+        <td class="text-muted text-sm">{{ o.created_at|datetime("%d/%m/%Y") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucune commande pour l'instant. <a href="/commercial/orders/new">Créer la première</a></p>
+  {% endif %}
+</article>
+
+{% endblock %}

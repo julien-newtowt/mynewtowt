@@ -1,0 +1,225 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{% if leg %}Éditer {{ leg.leg_code }}{% else %}Nouveau leg{% endif %} — Planning{% endblock %}
+{% block head %}{{ super() }}
+<style>
+  .wizard-progress { display:flex; gap:var(--space-2); list-style:none; padding:0; margin:0 0 var(--space-5); flex-wrap:wrap; }
+  .wizard-progress li { display:flex; align-items:center; gap:var(--space-2); color:var(--gris); font-size:var(--text-sm); cursor:pointer; }
+  .wizard-progress li .dot { width:28px; height:28px; border-radius:999px; background:var(--gris-clair); color:var(--gris); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; transition:all .15s; }
+  .wizard-progress li.is-active .dot { background:var(--teal); color:#fff; box-shadow:0 0 0 4px rgba(13,89,102,.15); }
+  .wizard-progress li.is-active { color:var(--teal); font-weight:600; }
+  .wizard-progress li.is-done .dot { background:var(--vert); color:#fff; }
+  .wizard-nav { display:flex; justify-content:space-between; gap:var(--space-3); margin-top:var(--space-4); }
+  [data-wizard-submit] { display: none; }
+</style>
+{% endblock %}
+{% block content %}
+
+<a href="/planning" class="btn btn-ghost mb-3">← Planning</a>
+
+<header class="mb-4">
+  <span class="kicker">Planning</span>
+  {% if leg %}
+    <h1 class="display">Éditer leg <span class="mono text-accent">{{ leg.leg_code }}</span></h1>
+  {% else %}
+    <h1 class="display">Nouveau leg</h1>
+    <p class="text-muted">Démarche guidée : navire → origine/destination → dates → réservation.
+       Ou <a href="/planning/legs/new-from-map">choisir les ports sur la carte</a>.</p>
+  {% endif %}
+</header>
+
+{% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+
+<ol id="wizard-progress" class="wizard-progress">
+  <li data-step-dot="0" class="is-active"><span class="dot">1</span> Navire</li>
+  <li data-step-dot="1"><span class="dot">2</span> Origine / destination</li>
+  <li data-step-dot="2"><span class="dot">3</span> Dates ETD / ETA</li>
+  <li data-step-dot="3"><span class="dot">4</span> Réservation</li>
+</ol>
+
+<form method="post"
+      action="{% if leg %}/planning/legs/{{ leg.id }}/edit{% else %}/planning/legs/new{% endif %}"
+      class="card" id="leg-form"
+      {% if suggestions is defined and suggestions %}
+      data-suggestions='{{ suggestions|tojson }}'
+      data-preselected-vessel="{{ preselected_vessel_id or '' }}"
+      {% endif %}>
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  {% if suggestions is defined and suggestions and not leg %}
+    <div id="leg-suggestion-banner" class="alert mb-3" style="display:none; background:var(--sable); border-left:3px solid var(--teal);">
+      <span id="leg-suggestion-text"></span>
+      <button type="button" id="leg-suggestion-dismiss" class="btn btn-ghost btn-xs" style="margin-left:var(--space-2);">Effacer la suggestion</button>
+    </div>
+  {% endif %}
+
+  {# ── Étape 1 : Navire ── #}
+  <fieldset class="wizard-step" data-step="1" style="border:none;padding:0;margin:0;">
+    <h2>Navire</h2>
+    <div class="grid grid-3 gap-3">
+      <div class="field">
+        <label for="vessel_id">Navire</label>
+        <select id="vessel_id" name="vessel_id" required>
+          {% for v in vessels %}
+            <option value="{{ v.id }}"
+                    data-default-speed="{{ v.default_speed_kn }}"
+                    data-default-elongation="{{ v.default_elongation }}"
+                    {% if leg and leg.vessel_id == v.id %}selected{% endif %}>
+              {{ v.code }} — {{ v.name }} ({{ v.default_speed_kn }} kn, ×{{ v.default_elongation }})
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="transit_speed_kn">Vitesse traversée (kn)</label>
+        <input id="transit_speed_kn" type="number" step="0.1" min="0" max="30" name="transit_speed_kn"
+               value="{{ leg.transit_speed_kn if leg and leg.transit_speed_kn is not none else '' }}"
+               placeholder="défaut navire" />
+        <small class="text-muted">Vide ⇒ vitesse par défaut du navire.</small>
+      </div>
+      <div class="field">
+        <label for="elongation_coef">Coefficient d'élongation</label>
+        <input id="elongation_coef" type="number" step="0.01" min="1" max="3" name="elongation_coef"
+               value="{{ leg.elongation_coef if leg and leg.elongation_coef is not none else '' }}"
+               placeholder="défaut navire (1.15)" />
+        <small class="text-muted">Multiplicateur distance orthodromique (vent, courants).</small>
+      </div>
+    </div>
+  </fieldset>
+
+  {# ── Étape 2 : Origine / destination ── #}
+  <fieldset class="wizard-step" data-step="2" hidden style="border:none;padding:0;margin:0;">
+    <h2>Origine / destination</h2>
+    <div class="leg-shortcuts grid grid-2 gap-4 mb-3">
+      <div>
+        <span class="kicker">Raccourcis POL (départ)</span>
+        <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="FRFEC">🇫🇷 Fécamp <span class="mono text-muted">FRFEC</span></button>
+          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="BRSSO">🇧🇷 São Sebastião <span class="mono text-muted">BRSSO</span></button>
+          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="USNYC">🇺🇸 New York <span class="mono text-muted">USNYC</span></button>
+          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="FRLEH">🇫🇷 Le Havre <span class="mono text-muted">FRLEH</span></button>
+        </div>
+      </div>
+      <div>
+        <span class="kicker">Raccourcis POD (arrivée)</span>
+        <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="BRSSO">🇧🇷 São Sebastião <span class="mono text-muted">BRSSO</span></button>
+          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="FRFEC">🇫🇷 Fécamp <span class="mono text-muted">FRFEC</span></button>
+          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="USNYC">🇺🇸 New York <span class="mono text-muted">USNYC</span></button>
+          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="FRLEH">🇫🇷 Le Havre <span class="mono text-muted">FRLEH</span></button>
+        </div>
+      </div>
+    </div>
+    <div class="grid grid-2 gap-4">
+      <fieldset style="border:1px solid var(--gris-clair); padding:var(--space-3); border-radius:var(--radius-md);">
+        <legend class="kicker">Port de départ (POL)</legend>
+        <div class="grid grid-2 gap-2 mb-2">
+          <div class="field" style="margin:0;"><label>Zone</label><select id="pol-zone" data-cascade-zone="pol"></select></div>
+          <div class="field" style="margin:0;"><label>Pays</label><select id="pol-country" data-cascade-country="pol"></select></div>
+        </div>
+        <div class="field" style="margin:0;">
+          <label>Port</label>
+          <select id="departure_port_id" name="departure_port_id" required data-cascade-port="pol">
+            {% if leg %}<option value="{{ leg.departure_port_id }}" selected>(actuel #{{ leg.departure_port_id }})</option>{% endif %}
+          </select>
+        </div>
+      </fieldset>
+      <fieldset style="border:1px solid var(--gris-clair); padding:var(--space-3); border-radius:var(--radius-md);">
+        <legend class="kicker">Port d'arrivée (POD)</legend>
+        <div class="grid grid-2 gap-2 mb-2">
+          <div class="field" style="margin:0;"><label>Zone</label><select id="pod-zone" data-cascade-zone="pod"></select></div>
+          <div class="field" style="margin:0;"><label>Pays</label><select id="pod-country" data-cascade-country="pod"></select></div>
+        </div>
+        <div class="field" style="margin:0;">
+          <label>Port</label>
+          <select id="arrival_port_id" name="arrival_port_id" required data-cascade-port="pod">
+            {% if leg %}<option value="{{ leg.arrival_port_id }}" selected>(actuel #{{ leg.arrival_port_id }})</option>{% endif %}
+          </select>
+        </div>
+      </fieldset>
+    </div>
+  </fieldset>
+
+  {# ── Étape 3 : Dates ETD / ETA + escale ── #}
+  <fieldset class="wizard-step" data-step="3" hidden style="border:none;padding:0;margin:0;">
+    <h2>Dates ETD / ETA</h2>
+    <div class="grid grid-3 gap-3">
+      <div class="field">
+        <label for="etd">ETD (départ prévu)</label>
+        <input id="etd" type="datetime-local" name="etd" required value="{% if leg %}{{ leg.etd.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+      </div>
+      <div class="field">
+        <label for="eta">ETA (arrivée prévue)</label>
+        <input id="eta" type="datetime-local" name="eta" required value="{% if leg %}{{ leg.eta.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+      </div>
+      <div class="field">
+        <label>Distance · durée estimées</label>
+        <div id="eta-hint" class="mono text-muted">—</div>
+      </div>
+    </div>
+    <h2 class="mt-4">Escale à programmer</h2>
+    <div class="grid grid-3 gap-3">
+      <div class="field">
+        <label for="port_stay_planned_hours">Durée d'escale prévue (heures)</label>
+        <input id="port_stay_planned_hours" type="number" name="port_stay_planned_hours" min="0" max="720" step="1"
+               value="{% if leg and leg.port_stay_planned_hours is not none %}{{ leg.port_stay_planned_hours }}{% endif %}" placeholder="48" />
+        <small class="text-muted">Temps de quai prévu à l'arrivée. Sert au planning du leg aval du même navire.</small>
+      </div>
+    </div>
+  </fieldset>
+
+  {# ── Étape 4 : Réservation ── #}
+  <fieldset class="wizard-step" data-step="4" hidden style="border:none;padding:0;margin:0;">
+    <h2>Ouverture à la réservation</h2>
+    <div class="grid grid-3 gap-3">
+      <div class="field field-check">
+        <input id="is_bookable" type="checkbox" name="is_bookable" {% if leg and leg.is_bookable %}checked{% endif %} />
+        <label for="is_bookable">Ouvrir aux réservations clients</label>
+      </div>
+      <div class="field">
+        <label for="public_capacity_palettes">Capacité publique (palettes)</label>
+        <input id="public_capacity_palettes" type="number" name="public_capacity_palettes" min="1" max="2000"
+               value="{% if leg %}{{ leg.public_capacity_palettes or '' }}{% endif %}" placeholder="850" />
+      </div>
+      <div class="field">
+        <label for="booking_close_at">Clôture des réservations</label>
+        <input id="booking_close_at" type="datetime-local" name="booking_close_at"
+               value="{% if leg and leg.booking_close_at %}{{ leg.booking_close_at.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+        <small class="text-muted">Vide ⇒ <strong>auto ETD − 48 h</strong>.</small>
+      </div>
+    </div>
+
+    <div class="alert alert-info" style="margin-top:var(--space-3);">
+      <strong>Tarification :</strong> le tarif par palette se gère dans
+      <a href="/commercial/grids"><strong>Commercial → Grilles tarifaires</strong></a>
+      puis attaché au leg via une <a href="/commercial/offers/new">offre</a> ou une
+      <a href="/commercial/orders/new">commande</a>.
+    </div>
+
+    {% if leg %}
+      <div class="alert alert-info" style="margin-top:var(--space-4);">
+        <div class="field field-check" style="background:transparent; border:none; padding:0;">
+          <input id="cascade" type="checkbox" name="cascade" checked />
+          <label for="cascade"><strong>Cascade automatique</strong></label>
+        </div>
+        <p class="text-muted text-sm" style="margin:var(--space-1) 0 0 0;">
+          Décaler l'ETD propage le delta à tous les legs aval du même navire non encore appareillés.
+        </p>
+      </div>
+    {% endif %}
+  </fieldset>
+
+  {# ── Navigation wizard ── #}
+  <div class="wizard-nav">
+    <button type="button" class="btn btn-ghost" data-wizard-prev>← Précédent</button>
+    <div class="flex gap-2">
+      <a href="{% if leg %}/planning/legs/{{ leg.id }}{% else %}/planning{% endif %}" class="btn btn-ghost">Annuler</a>
+      <button type="button" class="btn btn-primary" data-wizard-next>Suivant →</button>
+      <button type="submit" class="btn btn-primary btn-lg" data-wizard-submit hidden>{% if leg %}Enregistrer{% else %}Créer le leg{% endif %}</button>
+    </div>
+  </div>
+</form>
+
+<script src="/static/js/leg-cascade.js" defer></script>
+<script src="/static/js/leg-form-suggest.js" defer></script>
+<script src="/static/js/leg-wizard.js" defer></script>
+{% endblock %}
