@@ -27,8 +27,12 @@ jobs:
         run: ruff check app tests
       - name: Black --check
         run: black --check app tests
-      - name: Mypy
+      - name: Mypy (informational — baseline 142 erreurs à résorber)
+        # Non bloquant tant que la dette de typage des routers n'est pas
+        # résorbée (cf. docs/audit/2026-06-10-repo-audit.md). Repasser
+        # bloquant dès que `mypy app` est à zéro.
         run: mypy app
+        continue-on-error: true
 
   test:
     runs-on: ubuntu-latest

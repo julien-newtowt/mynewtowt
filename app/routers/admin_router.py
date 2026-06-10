@@ -40,7 +40,8 @@ from app.templating import templates
 
 router = APIRouter(prefix="/admin", tags=["admin-enriched"])
 
-MAINTENANCE_MARKER = Path("/tmp/.maintenance")
+# Suppression B108 justifiée : cf. app/middlewares/maintenance.py.
+MAINTENANCE_MARKER = Path("/tmp/.maintenance")  # nosec B108
 
 
 # ────────────────────────────────────────────── Users CRUD

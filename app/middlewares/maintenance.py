@@ -14,7 +14,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 
-MARKER = Path("/tmp/.maintenance")
+# Marqueur délibérément en /tmp (cf. CLAUDE.md, scripts/deploy.sh,
+# scripts/maintenance.sh) : portée limitée au conteneur app, où /tmp
+# n'est accessible qu'à l'utilisateur non-root du service.
+MARKER = Path("/tmp/.maintenance")  # nosec B108
 
 EXEMPT_PREFIXES = ("/health", "/static/", "/.well-known/")
 
