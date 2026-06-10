@@ -1,7 +1,7 @@
 """Staff dashboard — landing for collaborators."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -28,7 +28,7 @@ async def dashboard(
     user=Depends(get_current_staff),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     bookings_to_confirm = await db.scalar(
         select(func.count(Booking.id)).where(Booking.status == "submitted")

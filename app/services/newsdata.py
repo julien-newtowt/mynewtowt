@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -46,7 +46,7 @@ def _parse_pub_date(value: Any) -> datetime | None:
     iso = s.replace(" ", "T").replace("Z", "+00:00")
     try:
         dt = datetime.fromisoformat(iso)
-        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
     except ValueError:
         return None
 

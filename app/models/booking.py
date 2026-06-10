@@ -78,7 +78,7 @@ class Booking(Base):
         nullable=False,
     )
 
-    items: Mapped[list["BookingItem"]] = relationship(
+    items: Mapped[list[BookingItem]] = relationship(
         back_populates="booking",
         cascade="all, delete-orphan",
         # ``selectin`` : eager-load une seule query supplémentaire pour

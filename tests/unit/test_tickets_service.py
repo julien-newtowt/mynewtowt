@@ -1,7 +1,7 @@
 """Tickets service — workflow transitions, SLA, reference generation."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -23,23 +23,23 @@ def test_reference_format() -> None:
 
 
 def test_sla_target_p1_is_two_hours() -> None:
-    now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
     t = sla_target("P1", now)
     assert t == now + timedelta(hours=2)
 
 
 def test_sla_target_p2_is_eight_hours() -> None:
-    now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
     assert sla_target("P2", now) == now + timedelta(hours=8)
 
 
 def test_sla_target_p3_is_seventy_two_hours() -> None:
-    now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
     assert sla_target("P3", now) == now + timedelta(hours=72)
 
 
 def test_sla_target_unknown_priority_defaults_to_72h() -> None:
-    now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
     assert sla_target("PX", now) == now + timedelta(hours=72)
 
 
@@ -71,7 +71,7 @@ def test_invalid_transitions(current: str, target: str) -> None:
 
 
 def test_is_sla_breached_active_ticket() -> None:
-    past = datetime.now(timezone.utc) - timedelta(hours=1)
+    past = datetime.now(UTC) - timedelta(hours=1)
     ticket = SimpleNamespace(
         status="in_progress",
         sla_target_at=past,
@@ -82,7 +82,7 @@ def test_is_sla_breached_active_ticket() -> None:
 
 def test_is_sla_breached_resolved_uses_stored_flag() -> None:
     """Once resolved/closed, breach status is frozen (stored at resolve time)."""
-    past = datetime.now(timezone.utc) - timedelta(hours=1)
+    past = datetime.now(UTC) - timedelta(hours=1)
     ticket = SimpleNamespace(
         status="resolved",
         sla_target_at=past,
@@ -92,7 +92,7 @@ def test_is_sla_breached_resolved_uses_stored_flag() -> None:
 
 
 def test_is_sla_breached_future_target() -> None:
-    future = datetime.now(timezone.utc) + timedelta(hours=2)
+    future = datetime.now(UTC) + timedelta(hours=2)
     ticket = SimpleNamespace(
         status="open",
         sla_target_at=future,

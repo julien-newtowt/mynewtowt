@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime
-from typing import Iterable
+from collections.abc import Iterable
 
 from app.models.mrv import MRVEvent
-
 
 SOF_TO_MRV_MAP: dict[str, str] = {
     "SOSP": "departure",      # Start of Sea Passage → MRV departure

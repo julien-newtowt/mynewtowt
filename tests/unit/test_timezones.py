@@ -1,10 +1,14 @@
 """Tests for app.utils.timezones."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.utils.timezones import (
-    TIMEZONE_CHOICES, from_utc, resolve_tz, to_utc, utc_offset_label,
+    TIMEZONE_CHOICES,
+    from_utc,
+    resolve_tz,
+    to_utc,
+    utc_offset_label,
 )
 
 
@@ -24,19 +28,19 @@ def test_resolve_none_returns_utc():
 
 
 def test_utc_offset_label_for_utc():
-    at = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+    at = datetime(2026, 7, 15, 12, 0, tzinfo=UTC)
     assert utc_offset_label("UTC", at) == "+00:00"
 
 
 def test_utc_offset_label_paris_summer():
     # July → CEST = +02:00
-    at = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+    at = datetime(2026, 7, 15, 12, 0, tzinfo=UTC)
     assert utc_offset_label("Europe/Paris", at) == "+02:00"
 
 
 def test_utc_offset_label_paris_winter():
     # January → CET = +01:00
-    at = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+    at = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
     assert utc_offset_label("Europe/Paris", at) == "+01:00"
 
 
@@ -45,11 +49,11 @@ def test_to_utc_from_paris():
     utc = to_utc(naive, "Europe/Paris")
     # 14:00 Paris in summer (UTC+2) = 12:00 UTC
     assert utc.hour == 12
-    assert utc.tzinfo == timezone.utc
+    assert utc.tzinfo == UTC
 
 
 def test_from_utc_to_paris():
-    utc_dt = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+    utc_dt = datetime(2026, 7, 15, 12, 0, tzinfo=UTC)
     paris = from_utc(utc_dt, "Europe/Paris")
     assert paris.hour == 14  # +02:00 in July
 

@@ -1,14 +1,11 @@
 """Pricing service — pure function tests."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.services.capacity import CapacityInfo
 from app.services.pricing import (
-    DOCS_FEE_EUR,
-    HAZARDOUS_MULTIPLIER,
-    OVERSIZE_MULTIPLIER,
     compute_quote,
 )
 
@@ -28,7 +25,7 @@ def test_simple_epal_quote() -> None:
         items=[("EPAL", 10)],
         hazardous=False,
         oversize=False,
-        etd=datetime.now(timezone.utc) + timedelta(days=14),
+        etd=datetime.now(UTC) + timedelta(days=14),
         capacity=_capacity(used=300),
     )
     assert q.lines[0].subtotal_eur == Decimal("380.00")
@@ -43,7 +40,7 @@ def test_hazardous_surcharge() -> None:
         items=[("EPAL", 10)],
         hazardous=True,
         oversize=False,
-        etd=datetime.now(timezone.utc) + timedelta(days=14),
+        etd=datetime.now(UTC) + timedelta(days=14),
         capacity=_capacity(used=300),
     )
     # subtotal 380, hazardous +25% = 95 surcharge
@@ -59,7 +56,7 @@ def test_early_bird_discount() -> None:
         items=[("EPAL", 10)],
         hazardous=False,
         oversize=False,
-        etd=datetime.now(timezone.utc) + timedelta(days=40),
+        etd=datetime.now(UTC) + timedelta(days=40),
         capacity=_capacity(used=100),  # ~12% occupancy
     )
     assert q.base_price_per_palette_eur == Decimal("36.00")
@@ -73,7 +70,7 @@ def test_last_seat_surcharge() -> None:
         items=[("EPAL", 10)],
         hazardous=False,
         oversize=False,
-        etd=datetime.now(timezone.utc) + timedelta(days=3),
+        etd=datetime.now(UTC) + timedelta(days=3),
         capacity=_capacity(used=800),  # ~94% occupancy
     )
     assert q.base_price_per_palette_eur == Decimal("52.00")
@@ -86,7 +83,7 @@ def test_key_account_skips_dynamic_pricing() -> None:
         items=[("EPAL", 10)],
         hazardous=False,
         oversize=False,
-        etd=datetime.now(timezone.utc) + timedelta(days=3),
+        etd=datetime.now(UTC) + timedelta(days=3),
         capacity=_capacity(used=800),
         client_segment="key_account",
     )
@@ -99,7 +96,7 @@ def test_oversize_multiplier() -> None:
         items=[("BARRIQUE140", 5)],
         hazardous=False,
         oversize=True,
-        etd=datetime.now(timezone.utc) + timedelta(days=14),
+        etd=datetime.now(UTC) + timedelta(days=14),
         capacity=_capacity(used=200),
     )
     # 5 × (38 × 2.0) = 380 subtotal, +40% surcharge = +152

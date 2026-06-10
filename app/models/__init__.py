@@ -4,6 +4,7 @@ Importing this package registers all models against `Base.metadata`,
 which is required for `init_db()` (dev) and Alembic auto-generate.
 """
 from app.models.activity_log import ActivityLog
+from app.models.anemos_certificate import AnemosCertificate
 from app.models.blog_post import BlogPost
 from app.models.booking import Booking, BookingItem
 from app.models.booking_message import BookingMessage
@@ -11,39 +12,56 @@ from app.models.chat import ChatConversation, ChatMessage
 from app.models.claim import Claim, ClaimTimelineEntry, VesselPosition
 from app.models.client_account import ClientAccount
 from app.models.client_invoice import ClientInvoice
-from app.models.contact_request import ContactRequest
-from app.models.anemos_certificate import AnemosCertificate
 from app.models.commercial import (
-    Client, Order, OrderAssignment, RateGrid, RateGridLine, RateOffer,
+    Client,
+    Order,
+    OrderAssignment,
+    RateGrid,
+    RateGridLine,
+    RateOffer,
 )
+from app.models.contact_request import ContactRequest
 from app.models.crew import (
-    CrewAssignment, CrewCertification, CrewLeave, CrewMember,
+    CrewAssignment,
+    CrewCertification,
+    CrewLeave,
+    CrewMember,
 )
 from app.models.crew_ticket import CrewTicket
 from app.models.escale import DockerShift, EscaleOperation
 from app.models.feature_flag import FeatureFlag
 from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
 from app.models.insurance import InsuranceContract
-from app.models.leg import Leg
-from app.models.mrv import MRVEvent, MRVParameter
 from app.models.known_device import KnownDevice
+from app.models.leg import Leg
 from app.models.mfa_recovery_code import MfaRecoveryCode
+from app.models.mrv import MRVEvent, MRVParameter
 from app.models.news_item import NewsItem
 from app.models.news_source import NewsSource
 from app.models.noon_report import NoonReport
 from app.models.notification import Notification
 from app.models.onboard_cashbox import (
-    CashboxClosure, CashboxMovement, OnboardCashbox,
+    CashboxClosure,
+    CashboxMovement,
+    OnboardCashbox,
 )
 from app.models.packing_list import (
-    PackingList, PackingListAudit, PackingListBatch, PackingListDocument,
-    PortalAccessLog, PortalMessage,
+    PackingList,
+    PackingListAudit,
+    PackingListBatch,
+    PackingListDocument,
+    PortalAccessLog,
+    PortalMessage,
 )
 from app.models.planning_share import PlanningShare
 from app.models.port import Port
 from app.models.rate_limit import RateLimitAttempt
 from app.models.sof_event import (
-    CargoDocument, EtaShift, OnboardMessage, OnboardMessageMention, SofEvent,
+    CargoDocument,
+    EtaShift,
+    OnboardMessage,
+    OnboardMessageMention,
+    SofEvent,
 )
 from app.models.stowage import StowageItem, StowagePlan
 from app.models.ticket import Ticket, TicketComment
@@ -53,40 +71,71 @@ from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 
 __all__ = [
     "ActivityLog",
-    "BlogPost",
-    "Booking", "BookingItem", "BookingMessage",
-    "CargoDocument",
-    "CashboxClosure", "CashboxMovement", "OnboardCashbox",
-    "ChatConversation", "ChatMessage",
-    "Claim", "ClaimTimelineEntry",
-    "Client",
-    "ClientAccount", "ClientInvoice",
-    "ContactRequest",
     "AnemosCertificate",
-    "CrewAssignment", "CrewCertification", "CrewLeave", "CrewMember", "CrewTicket",
-    "DockerShift", "EscaleOperation",
+    "BlogPost",
+    "Booking",
+    "BookingItem",
+    "BookingMessage",
+    "CargoDocument",
+    "CashboxClosure",
+    "CashboxMovement",
+    "ChatConversation",
+    "ChatMessage",
+    "Claim",
+    "ClaimTimelineEntry",
+    "Client",
+    "ClientAccount",
+    "ClientInvoice",
+    "ContactRequest",
+    "CrewAssignment",
+    "CrewCertification",
+    "CrewLeave",
+    "CrewMember",
+    "CrewTicket",
+    "DockerShift",
+    "EscaleOperation",
     "EtaShift",
     "FeatureFlag",
     "InsuranceContract",
-    "Leg", "LegFinance", "LegKPI",
     "KnownDevice",
+    "Leg",
+    "LegFinance",
+    "LegKPI",
+    "MRVEvent",
+    "MRVParameter",
     "MfaRecoveryCode",
-    "MRVEvent", "MRVParameter",
-    "NewsItem", "NewsSource",
+    "NewsItem",
+    "NewsSource",
     "NoonReport",
     "Notification",
-    "OnboardChecklist", "OnboardMessage", "OnboardMessageMention",
-    "OpexParameter", "PortConfig",
-    "Order", "OrderAssignment",
-    "PackingList", "PackingListAudit", "PackingListBatch", "PackingListDocument",
-    "PlanningShare", "Port",
-    "PortalAccessLog", "PortalMessage",
-    "RateGrid", "RateGridLine", "RateOffer",
+    "OnboardCashbox",
+    "OnboardChecklist",
+    "OnboardMessage",
+    "OnboardMessageMention",
+    "OpexParameter",
+    "Order",
+    "OrderAssignment",
+    "PackingList",
+    "PackingListAudit",
+    "PackingListBatch",
+    "PackingListDocument",
+    "PlanningShare",
+    "Port",
+    "PortConfig",
+    "PortalAccessLog",
+    "PortalMessage",
+    "RateGrid",
+    "RateGridLine",
     "RateLimitAttempt",
+    "RateOffer",
     "SofEvent",
-    "StowageItem", "StowagePlan",
-    "Ticket", "TicketComment",
+    "StowageItem",
+    "StowagePlan",
+    "Ticket",
+    "TicketComment",
     "User",
-    "Vessel", "VesselPosition",
-    "VisitorLog", "WatchLog",
+    "Vessel",
+    "VesselPosition",
+    "VisitorLog",
+    "WatchLog",
 ]

@@ -28,8 +28,8 @@ from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.anemos import resolve_distance_nm
 from app.services.pdf_generator import (
-    render_bill_of_lading,
     render_anemos_certificate,
+    render_bill_of_lading,
     render_invoice,
     render_packing_list,
 )

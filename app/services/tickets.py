@@ -16,13 +16,12 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ticket import Ticket, TicketComment
-
 
 CATEGORIES: tuple[str, ...] = (
     "avarie",
@@ -108,22 +107,20 @@ class TicketStats:
 
 
 def generate_reference(year: int | None = None) -> str:
-    year = year or datetime.now(timezone.utc).year
+    year = year or datetime.now(UTC).year
     suffix = secrets.token_hex(2).upper()
     return f"TKT-{year}-{suffix}"
 
 
 def sla_target(priority: str, created_at: datetime | None = None) -> datetime:
     hours = PRIORITY_SLA_HOURS.get(priority, 72)
-    return (created_at or datetime.now(timezone.utc)) + timedelta(hours=hours)
+    return (created_at or datetime.now(UTC)) + timedelta(hours=hours)
 
 
 def is_sla_breached(ticket: Ticket) -> bool:
     if ticket.status in ("resolved", "closed", "cancelled"):
         return ticket.sla_breached
-    if ticket.sla_target_at and ticket.sla_target_at < datetime.now(timezone.utc):
-        return True
-    return False
+    return bool(ticket.sla_target_at and ticket.sla_target_at < datetime.now(UTC))
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +148,7 @@ async def create_ticket(
     if not title.strip() or not description.strip():
         raise TicketError("Title and description are required")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ticket = Ticket(
         reference=generate_reference(now.year),
         leg_id=leg_id,
@@ -186,7 +183,7 @@ async def change_status(
     reason: str | None = None,
 ) -> Ticket:
     assert_transition(ticket.status, new_status)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ticket.status = new_status
     if new_status == "resolved":
         ticket.resolved_at = now

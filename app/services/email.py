@@ -47,7 +47,7 @@ def render_email(template_stem: str, **ctx: Any) -> tuple[str, str, str | None]:
         subj_tpl = templates.env.get_template(f"emails/{template_stem}.subject.txt")
         body_tpl = templates.env.get_template(f"emails/{template_stem}.body.txt")
     except TemplateNotFound as e:
-        raise ValueError(f"Email template manquant: {e}")
+        raise ValueError(f"Email template manquant: {e}") from e
 
     subject = subj_tpl.render(**ctx).strip()
     body = body_tpl.render(**ctx).strip()

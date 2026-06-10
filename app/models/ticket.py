@@ -50,7 +50,7 @@ class Ticket(Base):
     sla_target_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sla_breached: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    comments: Mapped[list["TicketComment"]] = relationship(
+    comments: Mapped[list[TicketComment]] = relationship(
         back_populates="ticket", cascade="all, delete-orphan",
         order_by="TicketComment.created_at",
     )

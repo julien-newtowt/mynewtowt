@@ -36,8 +36,8 @@ import os
 import re
 import secrets as _secrets
 import zipfile
-from datetime import datetime, timezone
-from typing import Iterable
+from collections.abc import Iterable
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -92,7 +92,7 @@ def _parse_dt(v) -> datetime | None:
     if v is None:
         return None
     if isinstance(v, datetime):
-        return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+        return v if v.tzinfo else v.replace(tzinfo=UTC)
     s = str(v).strip()
     if not s:
         return None
@@ -103,14 +103,14 @@ def _parse_dt(v) -> datetime | None:
             if ts > 10**12:  # ms
                 ts = ts // 1000
             if 10**9 <= ts <= 4 * 10**9:  # plausible epoch ~ 2001-2096
-                return datetime.fromtimestamp(ts, tz=timezone.utc)
+                return datetime.fromtimestamp(ts, tz=UTC)
         except (ValueError, OverflowError):
             pass
     s_iso = s.replace("Z", "+00:00")
     try:
         dt = datetime.fromisoformat(s_iso)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
     except ValueError:
         for fmt in (
@@ -121,7 +121,7 @@ def _parse_dt(v) -> datetime | None:
             "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M",
         ):
             try:
-                return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+                return datetime.strptime(s, fmt).replace(tzinfo=UTC)
             except ValueError:
                 continue
     return None
@@ -188,7 +188,7 @@ async def _extract_payload(request: Request) -> tuple[bytes, str]:
         try:
             form = await request.form()
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"multipart parsing failed: {e}")
+            raise HTTPException(status_code=400, detail=f"multipart parsing failed: {e}") from e
         # Cherche un champ fichier
         for key in ("file", "files", "csv", "data", "body", "upload", "attachment"):
             if key in form:
@@ -235,11 +235,11 @@ def _rows_from_xlsx(content: bytes) -> Iterable[dict]:
     try:
         import openpyxl
     except ImportError as e:
-        raise HTTPException(status_code=500, detail=f"openpyxl not installed: {e}")
+        raise HTTPException(status_code=500, detail=f"openpyxl not installed: {e}") from e
     try:
         wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"xlsx parsing failed: {e}")
+        raise HTTPException(status_code=400, detail=f"xlsx parsing failed: {e}") from e
     ws = wb.active
     rows_iter = ws.iter_rows(values_only=True)
     try:
@@ -264,7 +264,7 @@ def _rows_from_zip(content: bytes) -> tuple[Iterable[dict], str]:
     try:
         zf = zipfile.ZipFile(io.BytesIO(content))
     except zipfile.BadZipFile as e:
-        raise HTTPException(status_code=400, detail=f"invalid ZIP: {e}")
+        raise HTTPException(status_code=400, detail=f"invalid ZIP: {e}") from e
     # Préférer XLSX → CSV → HTML
     candidates = sorted(zf.namelist())
     xlsx = next((n for n in candidates if n.lower().endswith(".xlsx")), None)
@@ -431,7 +431,7 @@ async def upload_positions(
                             f"Tried: {', '.join(fmt_tried)}. Send the CSV as raw "
                             "text/csv body instead of wrapping it in multipart."
                         ),
-                    )
+                    ) from e2
                 logger.warning(
                     "Tracking upload: ZIP/XLSX failed, CSV fallback got %d rows",
                     len(rows),

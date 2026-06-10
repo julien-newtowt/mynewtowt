@@ -5,7 +5,7 @@ Algorithme de suggestion : services.stowage.suggest_assignments.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -18,8 +18,10 @@ from app.models.commercial import Order
 from app.models.leg import Leg
 from app.models.packing_list import PackingList, PackingListBatch
 from app.models.stowage import (
-    DANGEROUS_ZONES, ZONE_LOADING_ORDER,
-    StowageItem, StowagePlan,
+    DANGEROUS_ZONES,
+    ZONE_LOADING_ORDER,
+    StowageItem,
+    StowagePlan,
 )
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
@@ -41,9 +43,9 @@ async def stowage_index(
     )).scalars().all())
     legs_by_id: dict[int, Leg] = {}
     for p in plans:
-        l = await db.get(Leg, p.leg_id)
-        if l is not None:
-            legs_by_id[p.leg_id] = l
+        leg = await db.get(Leg, p.leg_id)
+        if leg is not None:
+            legs_by_id[p.leg_id] = leg
     return templates.TemplateResponse(
         "staff/stowage/index.html",
         {"request": request, "user": user, "plans": plans, "legs_by_id": legs_by_id},
@@ -190,7 +192,7 @@ async def approve_plan(
     if plan is None:
         raise HTTPException(status_code=404)
     plan.status = "approved"
-    plan.approved_at = datetime.now(timezone.utc)
+    plan.approved_at = datetime.now(UTC)
     plan.approved_by = user.full_name or user.username
     await db.flush()
     await activity_record(
@@ -210,9 +212,7 @@ def _is_oversized(batch: PackingListBatch) -> bool:
         return True
     if batch.height_cm and batch.height_cm > 220:
         return True
-    if batch.weight_kg and batch.weight_kg > 5100:
-        return True
-    return False
+    return bool(batch.weight_kg and batch.weight_kg > 5100)
 
 
 def _client_ip(request: Request) -> str | None:

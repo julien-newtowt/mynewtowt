@@ -9,13 +9,15 @@ Convention :
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.packing_list import (
-    PackingList, PackingListAudit, PackingListBatch, PortalAccessLog,
+    PackingList,
+    PackingListAudit,
+    PortalAccessLog,
 )
 
 
@@ -31,7 +33,7 @@ async def get_by_token(db: AsyncSession, token: str) -> PackingList | None:
     )).scalar_one_or_none()
     if pl is None:
         return None
-    if pl.token_expires_at is not None and pl.token_expires_at < datetime.now(timezone.utc):
+    if pl.token_expires_at is not None and pl.token_expires_at < datetime.now(UTC):
         return None
     return pl
 
@@ -87,7 +89,7 @@ def can_modify(pl: PackingList) -> bool:
 
 async def lock(db: AsyncSession, pl: PackingList, *, locked_by: str) -> PackingList:
     pl.status = "locked"
-    pl.locked_at = datetime.now(timezone.utc)
+    pl.locked_at = datetime.now(UTC)
     pl.locked_by = locked_by
     await db.flush()
     return pl

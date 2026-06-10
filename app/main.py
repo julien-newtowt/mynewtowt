@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 from app import __version__
-from app.auth import AuthError, AuthExpired, AuthInvalid, AuthRequired
+from app.auth import AuthExpired, AuthInvalid, AuthRequired
 from app.config import settings
 from app.csrf import CSRFMiddleware
 from app.database import init_db
@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ Static
     app.mount(
         "/static",
-        StaticFiles(directory=str((__import__("pathlib").Path(__file__).parent / "static"))),
+        StaticFiles(directory=str(__import__("pathlib").Path(__file__).parent / "static")),
         name="static",
     )
 

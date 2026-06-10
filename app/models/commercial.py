@@ -17,16 +17,24 @@ Brackets dégressifs (DEFAULT_BRACKETS_SHIPPER) :
 """
 from __future__ import annotations
 
-from datetime import date as _date, datetime
+from datetime import date as _date
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-
 
 CLIENT_TYPES = ("freight_forwarder", "shipper")
 RATE_GRID_STATUSES = ("draft", "active", "expired", "superseded")
@@ -85,13 +93,13 @@ class Client(Base):
         onupdate=func.now(), nullable=False,
     )
 
-    rate_grids: Mapped[list["RateGrid"]] = relationship(
+    rate_grids: Mapped[list[RateGrid]] = relationship(
         back_populates="client", cascade="all, delete-orphan"
     )
-    rate_offers: Mapped[list["RateOffer"]] = relationship(
+    rate_offers: Mapped[list[RateOffer]] = relationship(
         back_populates="client", cascade="all, delete-orphan"
     )
-    orders: Mapped[list["Order"]] = relationship(back_populates="client")
+    orders: Mapped[list[Order]] = relationship(back_populates="client")
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Client {self.name} ({self.client_type})>"
@@ -121,7 +129,7 @@ class RateGrid(Base):
     )
 
     client: Mapped[Client] = relationship(back_populates="rate_grids")
-    lines: Mapped[list["RateGridLine"]] = relationship(
+    lines: Mapped[list[RateGridLine]] = relationship(
         back_populates="grid", cascade="all, delete-orphan", order_by="RateGridLine.max_qty"
     )
 
@@ -211,7 +219,7 @@ class Order(Base):
     )
 
     client: Mapped[Client] = relationship(back_populates="orders")
-    assignments: Mapped[list["OrderAssignment"]] = relationship(
+    assignments: Mapped[list[OrderAssignment]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
 

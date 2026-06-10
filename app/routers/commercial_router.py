@@ -9,13 +9,13 @@ Reprises de la V3.0.0 :
 from __future__ import annotations
 
 import io
-from datetime import date as _date, datetime, timezone
+from datetime import UTC, datetime
+from datetime import date as _date
 from decimal import Decimal
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Inches, Pt, RGBColor
-
+from docx.shared import Pt, RGBColor
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
@@ -24,15 +24,22 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.commercial import (
-    CLIENT_TYPES, Client, Order, OrderAssignment,
-    RateGrid, RateGridLine, RateOffer,
+    CLIENT_TYPES,
+    Client,
+    Order,
+    RateGrid,
+    RateGridLine,
+    RateOffer,
 )
 from app.models.leg import Leg
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.commercial import (
-    bracket_rate, compute_offer_total, default_brackets_for,
-    next_grid_reference, next_offer_reference, next_order_reference,
+    bracket_rate,
+    default_brackets_for,
+    next_grid_reference,
+    next_offer_reference,
+    next_order_reference,
     pick_bracket,
 )
 from app.templating import templates
@@ -309,7 +316,7 @@ async def offer_create(
         )).scalars().all())
         if lines:
             picked = pick_bracket(
-                [{"max_qty": l.max_qty, "coeff": float(l.coeff)} for l in lines],
+                [{"max_qty": ln.max_qty, "coeff": float(ln.coeff)} for ln in lines],
                 estimated_palettes,
             )
             if picked:
@@ -355,7 +362,7 @@ async def offer_send(
     if o is None:
         raise HTTPException(status_code=404)
     o.status = "sent"
-    o.sent_at = datetime.now(timezone.utc)
+    o.sent_at = datetime.now(UTC)
     await db.flush()
     await activity_record(
         db, action="update", user_id=user.id, user_name=user.full_name or user.username,
@@ -380,7 +387,7 @@ async def offer_convert_to_order(
     if offer.status not in ("draft", "sent", "accepted"):
         raise HTTPException(status_code=400, detail="offre non convertible")
     offer.status = "accepted"
-    offer.accepted_at = datetime.now(timezone.utc)
+    offer.accepted_at = datetime.now(UTC)
     ref = await next_order_reference(db)
     order = Order(
         reference=ref,
@@ -514,7 +521,7 @@ async def order_confirm(
     if order is None:
         raise HTTPException(status_code=404)
     order.status = "confirmed"
-    order.confirmed_at = datetime.now(timezone.utc)
+    order.confirmed_at = datetime.now(UTC)
     await db.flush()
     await activity_record(
         db, action="update", user_id=user.id, user_name=user.full_name or user.username,
@@ -537,7 +544,7 @@ async def order_cancel(
     if order is None:
         raise HTTPException(status_code=404)
     order.status = "cancelled"
-    order.cancelled_at = datetime.now(timezone.utc)
+    order.cancelled_at = datetime.now(UTC)
     order.cancelled_reason = reason or None
     await db.flush()
     await activity_record(

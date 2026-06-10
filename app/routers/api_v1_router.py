@@ -6,7 +6,7 @@ webhooks back to the client.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -20,7 +20,7 @@ from app.models.port import Port
 from app.models.vessel import Vessel
 from app.schemas.booking import CapacityOut
 from app.schemas.leg import LegPublic
-from app.services.capacity import get_available_capacity, NotBookable
+from app.services.capacity import NotBookable, get_available_capacity
 
 router = APIRouter(prefix="/api/v1", tags=["api-v1"])
 
@@ -39,7 +39,6 @@ async def ports_nearby(
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
     """Return active ports near a (lat, lon) within radius_km, sorted by distance."""
-    from app.models.port import Port
     from app.services.ports import nearby_ports
 
     results = await nearby_ports(db, lat=lat, lon=lon, radius_km=radius_km, limit=limit)
@@ -142,7 +141,7 @@ async def ports_next_clocks(
     arrival port with its IANA timezone (when known). Falls back to the
     immediate upcoming arrivals if no vessel is currently in transit.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # Upcoming arrivals: legs whose ETA is in the future, ordered ASAP first.
     stmt = (
         select(Leg, Port, Vessel)
@@ -238,7 +237,7 @@ async def list_routes(
     to_country: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> list[LegPublic]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stmt = (
         select(Leg, Vessel)
         .join(Vessel, Vessel.id == Leg.vessel_id)

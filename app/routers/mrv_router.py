@@ -16,12 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.leg import Leg
-from app.models.mrv import MRVEvent, MRVParameter
+from app.models.mrv import MRVEvent
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.mrv_export import (
-    CO2_EMISSION_FACTOR_MDO, carbon_report_summary, to_dnv_csv,
+    CO2_EMISSION_FACTOR_MDO,
+    carbon_report_summary,
+    to_dnv_csv,
 )
 from app.templating import templates
 
@@ -47,9 +49,9 @@ async def mrv_index(
     leg_ids = {e.leg_id for e in events}
     leg_map = {}
     for lid in leg_ids:
-        l = await db.get(Leg, lid)
-        if l:
-            leg_map[lid] = l
+        leg = await db.get(Leg, lid)
+        if leg:
+            leg_map[lid] = leg
     summary = carbon_report_summary([_decor(e, leg_map) for e in events])
     return templates.TemplateResponse(
         "staff/mrv/index.html",
@@ -114,9 +116,9 @@ async def export_dnv_csv(
     leg_ids = {e.leg_id for e in events}
     leg_map = {}
     for lid in leg_ids:
-        l = await db.get(Leg, lid)
-        if l:
-            leg_map[lid] = l
+        leg = await db.get(Leg, lid)
+        if leg:
+            leg_map[lid] = leg
     rows = [_decor(e, leg_map) for e in events]
     csv = to_dnv_csv(rows)
     return Response(

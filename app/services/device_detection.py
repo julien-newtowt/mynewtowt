@@ -20,14 +20,13 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.known_device import KnownDevice
-
 
 _UA_MAX_LEN = 200
 
@@ -103,7 +102,7 @@ async def see_device(
         .limit(1)
     )
     existing = (await db.execute(stmt)).scalar_one_or_none()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if existing:
         existing.last_seen_at = now
         await db.flush()

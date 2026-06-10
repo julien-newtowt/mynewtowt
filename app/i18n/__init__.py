@@ -13,9 +13,11 @@ Accept-Language header → default "fr".
 """
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
-from app.i18n import en as _en, fr as _fr  # noqa: F401  (other langs lazy-loaded)
+from app.i18n import en as _en
+from app.i18n import fr as _fr
 
 SUPPORTED = ("fr", "en", "es", "pt-br", "vi")
 DEFAULT = "fr"
@@ -42,10 +44,8 @@ def t(key: str, lang: str = DEFAULT, **fmt: Any) -> str:
     lang = (lang or DEFAULT).lower()
     msg = _load(lang).get(key) or _load(DEFAULT).get(key) or key
     if fmt:
-        try:
+        with contextlib.suppress(KeyError, IndexError):
             msg = msg.format(**fmt)
-        except (KeyError, IndexError):
-            pass
     return msg
 
 
@@ -73,4 +73,4 @@ def get_lang_from_request(request, user=None) -> str:
     return DEFAULT
 
 
-__all__ = ["t", "get_lang_from_request", "SUPPORTED", "DEFAULT"]
+__all__ = ["DEFAULT", "SUPPORTED", "get_lang_from_request", "t"]

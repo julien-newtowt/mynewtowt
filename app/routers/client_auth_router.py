@@ -12,9 +12,9 @@ Hardenings V3.1 :
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +35,6 @@ from app.models.client_account import ClientAccount
 from app.services import device_detection, mfa, rate_limit, security_alerts
 from app.services.activity import record as activity_record
 from app.templating import templates
-
 
 # Hash bcrypt fictif (vrai bcrypt cost=12) utilisé pour égaliser le temps
 # quand l'email n'existe pas — précalculé pour le password aléatoire
@@ -127,7 +126,7 @@ async def login(
         redirect.set_cookie(value=pending, **cookie_kwargs_for_client_mfa_pending(request))
         return redirect
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await activity_record(
         db,
         action="client_login",
@@ -224,7 +223,7 @@ async def mfa_challenge_submit(
             status_code=400,
         )
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await activity_record(
         db, action="client_login", user_name=user.email,
         module="booking", entity_type="client_account",

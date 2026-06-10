@@ -34,7 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        # Miroir ECR public : les pulls Docker Hub depuis les runners GitHub
+        # expirent (rate limit / réseau) et faisaient échouer chaque run.
+        image: public.ecr.aws/docker/library/postgres:16-alpine
         env:
           POSTGRES_USER: towt
           POSTGRES_PASSWORD: change_me_local
@@ -74,8 +76,12 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Bandit static analysis
         run: bandit -r app -ll -ii
-      - name: Safety vuln check
-        run: safety check -r requirements.txt || true   # informational
+      - name: pip-audit vuln check
+        # pip-audit installé hors requirements-dev : safety épinglait
+        # pydantic<2.10 et cassait l'install de tous les jobs CI.
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt || true   # informational
       - name: Gitleaks scan
         uses: gitleaks/gitleaks-action@v2
         with:

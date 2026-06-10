@@ -12,7 +12,7 @@ from app.services.contact import (
 
 
 def _valid(**over):
-    base = dict(name="Marie Curie", email="marie@chargeur.fr", consent=True)
+    base = {"name": "Marie Curie", "email": "marie@chargeur.fr", "consent": True}
     base.update(over)
     return validate_contact_payload(**base)
 

@@ -12,12 +12,17 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Integer, String, Text, func,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-
 
 SOF_EVENT_TYPES = (
     "EOSP", "SOSP",           # End / Start Of Sea Passage
@@ -129,7 +134,7 @@ class OnboardMessage(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
 
-    mentions: Mapped[list["OnboardMessageMention"]] = relationship(
+    mentions: Mapped[list[OnboardMessageMention]] = relationship(
         back_populates="message", cascade="all, delete-orphan"
     )
 

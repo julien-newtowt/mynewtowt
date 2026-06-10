@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from app.services.device_detection import (
-    _human_label, _ip_prefix, compute_fingerprint,
+    _human_label,
+    _ip_prefix,
+    compute_fingerprint,
 )
 
 

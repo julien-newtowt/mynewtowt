@@ -4,7 +4,8 @@ Auth: staff with `planning` permission (C/M/S per matrix).
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import contextlib
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -53,11 +54,11 @@ async def gantt_index(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("planning", "C")),
 ) -> HTMLResponse:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # Vue ANNÉE ENTIÈRE (req #5) — sélecteur d'année + filtre navire en tête.
     selected_year = year or now.year
-    window_start = datetime(selected_year, 1, 1, tzinfo=timezone.utc)
-    window_end = datetime(selected_year, 12, 31, 23, 59, tzinfo=timezone.utc)
+    window_start = datetime(selected_year, 1, 1, tzinfo=UTC)
+    window_end = datetime(selected_year, 12, 31, 23, 59, tzinfo=UTC)
 
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     legs = await list_legs_in_window(
@@ -84,7 +85,8 @@ async def gantt_index(
     conflicts = detect_port_conflicts(legs)
     conflict_ids: set[int] = set()
     for a, b in conflicts:
-        conflict_ids.add(a); conflict_ids.add(b)
+        conflict_ids.add(a)
+        conflict_ids.add(b)
 
     # Build Gantt rows (one per vessel) with positioned bars
     gantt_rows = _build_gantt_rows(
@@ -100,7 +102,7 @@ async def gantt_index(
     total_s = (window_end - window_start).total_seconds()
     month_marks = []
     for m in range(1, 13):
-        ms = datetime(selected_year, m, 1, tzinfo=timezone.utc)
+        ms = datetime(selected_year, m, 1, tzinfo=UTC)
         left = ((ms - window_start).total_seconds() / total_s) * 100
         month_marks.append({"label": ms.strftime("%b"), "left_pct": round(left, 3)})
 
@@ -147,6 +149,7 @@ async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
     quand l'utilisateur sélectionne un navire (cf. leg-form-suggest.js).
     """
     from datetime import timedelta
+
     from sqlalchemy import desc
 
     suggestions: dict[int, dict] = {}
@@ -297,15 +300,11 @@ async def leg_detail(
     weather_pol = None
     weather_pod = None
     if pol and pol.latitude is not None and pol.longitude is not None and leg.etd:
-        try:
+        with contextlib.suppress(Exception):
             weather_pol = await wx.fetch_at(pol.latitude, pol.longitude, leg.etd)
-        except Exception:
-            pass
     if pod and pod.latitude is not None and pod.longitude is not None and leg.eta:
-        try:
+        with contextlib.suppress(Exception):
             weather_pod = await wx.fetch_at(pod.latitude, pod.longitude, leg.eta)
-        except Exception:
-            pass
 
     return templates.TemplateResponse(
         "staff/planning/leg_detail.html",
@@ -532,9 +531,9 @@ async def public_share(
 
     # Bump access counter
     share.access_count += 1
-    share.last_access_at = datetime.now(timezone.utc)
+    share.last_access_at = datetime.now(UTC)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     legs = await list_legs_in_window(
         db,
         date_from=now - timedelta(days=7),
@@ -639,7 +638,7 @@ def _parse_dt(value, allow_empty: bool = False) -> datetime:
     except ValueError as e:
         raise InvalidLegDates(f"Invalid date format: {value}") from e
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 

@@ -13,15 +13,21 @@ Lien public : `/p/{token}` — UUID hex tronqué à 24 caractères.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import (
-    Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-
 
 TOKEN_VALIDITY_DAYS = 90
 
@@ -31,7 +37,7 @@ def generate_token() -> str:
 
 
 def default_token_expiry() -> datetime:
-    return datetime.now(timezone.utc) + timedelta(days=TOKEN_VALIDITY_DAYS)
+    return datetime.now(UTC) + timedelta(days=TOKEN_VALIDITY_DAYS)
 
 
 class PackingList(Base):
@@ -60,7 +66,7 @@ class PackingList(Base):
         onupdate=func.now(), nullable=False,
     )
 
-    batches: Mapped[list["PackingListBatch"]] = relationship(
+    batches: Mapped[list[PackingListBatch]] = relationship(
         back_populates="packing_list", cascade="all, delete-orphan",
         order_by="PackingListBatch.id",
     )

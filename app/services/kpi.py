@@ -5,7 +5,6 @@ manuel depuis POST /kpi/legs/{leg_id}/sync.
 """
 from __future__ import annotations
 
-from datetime import timezone
 from decimal import Decimal
 
 from sqlalchemy import select

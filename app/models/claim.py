@@ -5,7 +5,13 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,7 +49,7 @@ class Claim(Base):
     cargo_position: Mapped[str | None] = mapped_column(String(40))  # if cargo claim
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
-    timeline: Mapped[list["ClaimTimelineEntry"]] = relationship(
+    timeline: Mapped[list[ClaimTimelineEntry]] = relationship(
         back_populates="claim", cascade="all, delete-orphan",
         order_by="ClaimTimelineEntry.at",
     )

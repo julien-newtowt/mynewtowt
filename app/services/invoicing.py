@@ -7,7 +7,7 @@ Pas de paiement en ligne (Stripe retiré en V3.1) — règlement par virement,
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -23,7 +23,7 @@ _CENTS = Decimal("0.01")
 
 
 def generate_reference(year: int | None = None) -> str:
-    year = year or datetime.now(timezone.utc).year
+    year = year or datetime.now(UTC).year
     suffix = secrets.token_hex(3).upper()
     return f"INV-{year}-{suffix}"
 
@@ -50,7 +50,7 @@ async def issue_for_booking(
 
     base = booking.confirmed_price_eur or booking.estimated_price_eur or Decimal("0")
     excl, vat, incl = compute_amounts(base)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     invoice = ClientInvoice(
         reference=generate_reference(now.year),

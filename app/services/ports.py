@@ -15,8 +15,8 @@ import csv
 import io
 import logging
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

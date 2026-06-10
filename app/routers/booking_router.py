@@ -11,6 +11,7 @@ Steps:
 """
 from __future__ import annotations
 
+from datetime import UTC
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -56,6 +57,7 @@ async def step_1_search(
         .limit(20)
     )
     from decimal import Decimal
+
     from app.services.co2 import estimate as co2_estimate
     from app.services.ports import haversine_nm
     AVG_WEIGHT_PER_PALLET_T = Decimal("0.5")  # 500 kg/palette (hypothèse marketing)
@@ -176,7 +178,7 @@ async def step_2_cargo_submit(
         )
 
     try:
-        booking, quote = await create_draft(
+        booking, _quote = await create_draft(
             db,
             client=client,
             leg=leg,
@@ -252,10 +254,10 @@ async def step_3_confirm_submit(
             status_code=400,
         )
 
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     booking.signed_terms_version = "v2026.1"
-    booking.signed_terms_at = datetime.now(timezone.utc)
+    booking.signed_terms_at = datetime.now(UTC)
     await submit(db, booking)
 
     from app.services.booking_lifecycle import on_status_change

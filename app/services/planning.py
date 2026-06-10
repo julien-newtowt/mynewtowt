@@ -12,10 +12,10 @@ to impacted clients are emitted by NotificationService (V3.1).
 from __future__ import annotations
 
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -245,7 +245,7 @@ async def create_leg(
 
     # Garde : un leg réservable dont la clôture est déjà passée n'est
     # jamais réservable → on refuse plutôt que de créer un leg trompeur.
-    if is_bookable and booking_close_at <= datetime.now(timezone.utc):
+    if is_bookable and booking_close_at <= datetime.now(UTC):
         raise InvalidLegDates(
             "ETD trop proche : la clôture des réservations (ETD − 48 h) est "
             "déjà passée. Décalez l'ETD ou désactivez l'ouverture à la réservation."
@@ -253,9 +253,10 @@ async def create_leg(
 
     # If leg_code not supplied, derive one (best-effort; admin can edit).
     if leg_code is None:
+        from sqlalchemy import func
+
         from app.models.port import Port
         from app.models.vessel import Vessel
-        from sqlalchemy import func
 
         vessel = await db.get(Vessel, vessel_id)
         pol = await db.get(Port, departure_port_id)
@@ -264,8 +265,8 @@ async def create_leg(
             raise PlanningError("Invalid vessel/port references")
 
         # Séquence = nombre de legs déjà planifiés pour ce navire dans l'année + 1.
-        year_start = datetime(etd.year, 1, 1, tzinfo=timezone.utc)
-        year_end = datetime(etd.year, 12, 31, 23, 59, tzinfo=timezone.utc)
+        year_start = datetime(etd.year, 1, 1, tzinfo=UTC)
+        year_end = datetime(etd.year, 12, 31, 23, 59, tzinfo=UTC)
         existing_count = await db.scalar(
             select(func.count(Leg.id)).where(
                 Leg.vessel_id == vessel_id,
@@ -528,8 +529,8 @@ async def _nullify_optional_fks(db: AsyncSession, leg_id: int) -> None:
     """
     from sqlalchemy import update
 
-    from app.models.claim import Claim
     from app.models.anemos_certificate import AnemosCertificate
+    from app.models.claim import Claim
     from app.models.commercial import Order
     from app.models.crew_ticket import CrewTicket
     from app.models.onboard_cashbox import CashboxMovement
@@ -648,7 +649,7 @@ async def lookup_share(db: AsyncSession, token: str) -> PlanningShare | None:
     ).scalar_one_or_none()
     if not share or not share.is_active:
         return None
-    if share.expires_at and share.expires_at < datetime.now(timezone.utc):
+    if share.expires_at and share.expires_at < datetime.now(UTC):
         return None
     return share
 

@@ -11,8 +11,7 @@ in V3.1 sprints.
 """
 from __future__ import annotations
 
-import secrets
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -21,14 +20,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.claim import Claim, ClaimTimelineEntry, VesselPosition
+from app.models.claim import VesselPosition
 from app.models.crew import (
-    CrewAssignment, CrewCertification, CrewLeave, CrewMember,
+    CrewLeave,
+    CrewMember,
 )
-from app.models.escale import DockerShift, EscaleOperation
-from app.models.finance import LegFinance, OpexParameter
 from app.models.leg import Leg
-from app.models.mrv import MRVEvent, MRVParameter
 from app.models.noon_report import NoonReport
 from app.models.port import Port
 from app.models.user import User
@@ -54,7 +51,7 @@ async def onboard_landing(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     active_legs = list((await db.execute(
         select(Leg).where(Leg.atd.is_not(None)).where(Leg.ata.is_(None))
         .order_by(Leg.etd.desc())
@@ -126,7 +123,7 @@ async def post_noon_report(
     f = await request.form()
     nr = NoonReport(
         leg_id=int(f["leg_id"]),
-        recorded_at=datetime.now(timezone.utc),
+        recorded_at=datetime.now(UTC),
         latitude=float(f["latitude"]),
         longitude=float(f["longitude"]),
         sog_avg=_maybe_float(f.get("sog_avg")),
@@ -176,7 +173,6 @@ async def onboard_escale(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
-    now = datetime.now(timezone.utc)
     at_quay = list((await db.execute(
         select(Leg).where(Leg.ata.is_not(None)).where(Leg.atd.is_(None))
     )).scalars().all())
@@ -232,7 +228,7 @@ async def post_visitor(
         company=f.get("company") or None,
         purpose=f.get("purpose") or None,
         id_document=f.get("id_document") or None,
-        time_in=datetime.now(timezone.utc),
+        time_in=datetime.now(UTC),
         escorted_by=f.get("escorted_by") or None,
         notes=f.get("notes") or None,
     )
@@ -269,7 +265,7 @@ async def rh_index(
     leaves = list((await db.execute(
         select(CrewLeave).order_by(CrewLeave.created_at.desc()).limit(50)
     )).scalars().all())
-    pending = [l for l in leaves if l.status == "requested"]
+    pending = [lv for lv in leaves if lv.status == "requested"]
     return templates.TemplateResponse(
         "staff/rh/index.html",
         {"request": request, "user": user, "members": members,
@@ -284,7 +280,7 @@ async def rh_create_leave(
     user=Depends(require_permission("rh", "M")),
 ) -> RedirectResponse:
     f = await request.form()
-    l = CrewLeave(
+    leave = CrewLeave(
         crew_member_id=int(f["crew_member_id"]),
         kind=f["kind"],
         start_date=date.fromisoformat(f["start_date"]),
@@ -292,7 +288,7 @@ async def rh_create_leave(
         status="requested",
         reason=f.get("reason") or None,
     )
-    db.add(l)
+    db.add(leave)
     await db.flush()
     return RedirectResponse(url="/rh", status_code=303)
 
@@ -304,17 +300,17 @@ async def rh_decide_leave(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("rh", "M")),
 ) -> RedirectResponse:
-    l = await db.get(CrewLeave, leave_id)
-    if not l:
+    leave = await db.get(CrewLeave, leave_id)
+    if not leave:
         raise HTTPException(status_code=404, detail="Not found")
     if decision not in ("approved", "rejected"):
         raise HTTPException(
             status_code=400,
             detail=f"decision must be 'approved' or 'rejected', got {decision!r}",
         )
-    l.status = decision
-    l.decided_by_id = user.id
-    l.decided_at = datetime.now(timezone.utc)
+    leave.status = decision
+    leave.decided_by_id = user.id
+    leave.decided_at = datetime.now(UTC)
     await db.flush()
     return RedirectResponse(url="/rh", status_code=303)
 
@@ -405,11 +401,11 @@ async def analytics_executive(
     from app.models.client_invoice import ClientInvoice
     from app.models.finance import LegKPI
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     year = now.year
-    year_start = datetime(year, 1, 1, tzinfo=timezone.utc)
-    prev_year_start = datetime(year - 1, 1, 1, tzinfo=timezone.utc)
-    prev_year_end = datetime(year - 1, 12, 31, 23, 59, tzinfo=timezone.utc)
+    year_start = datetime(year, 1, 1, tzinfo=UTC)
+    prev_year_start = datetime(year - 1, 1, 1, tzinfo=UTC)
+    prev_year_end = datetime(year - 1, 12, 31, 23, 59, tzinfo=UTC)
 
     # Legs by status (current year)
     legs_all = list((await db.execute(
@@ -483,8 +479,8 @@ async def analytics_commercial(
     from app.models.client_account import ClientAccount
     from app.models.client_invoice import ClientInvoice
 
-    now = datetime.now(timezone.utc)
-    year_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    year_start = datetime(now.year, 1, 1, tzinfo=UTC)
 
     # Funnel: bookings par statut
     funnel_statuses = ["draft", "submitted", "confirmed", "loaded", "at_sea", "discharged", "delivered", "cancelled"]
@@ -493,7 +489,7 @@ async def analytics_commercial(
         .where(Booking.created_at >= year_start)
         .group_by(Booking.status)
     )).all()
-    funnel: dict[str, int] = {s: 0 for s in funnel_statuses}
+    funnel: dict[str, int] = dict.fromkeys(funnel_statuses, 0)
     for row in funnel_rows:
         if row.status in funnel:
             funnel[row.status] = row.n
@@ -545,8 +541,8 @@ async def analytics_operations(
 ) -> HTMLResponse:
     from app.models.ticket import Ticket
 
-    now = datetime.now(timezone.utc)
-    year_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    year_start = datetime(now.year, 1, 1, tzinfo=UTC)
 
     # Tickets: totals + SLA
     all_tickets = list((await db.execute(
@@ -799,7 +795,7 @@ async def admin_ports_upload(
         module="admin", entity_type="port_batch",
         detail=f"source={source} parsed={len(rows)} inserted={ins} updated={upd}",
     )
-    return RedirectResponse(url=f"/admin/ports?show=all", status_code=303)
+    return RedirectResponse(url="/admin/ports?show=all", status_code=303)
 
 
 # ────────────────────────────────────────────────────────────────────

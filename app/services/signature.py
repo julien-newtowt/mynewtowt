@@ -14,7 +14,7 @@ correspondra plus → audit visible.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -24,7 +24,7 @@ def _norm(v: Any) -> str:
     if v is None:
         return ""
     if isinstance(v, datetime):
-        return v.astimezone(timezone.utc).isoformat()
+        return v.astimezone(UTC).isoformat()
     return str(v)
 
 
@@ -64,7 +64,7 @@ def sign_record(record, user, *, hash_fn) -> None:
     """Signe un record : pose signed_at / signed_by_* + signature_hash + lock."""
     if getattr(record, "is_locked", False):
         raise HTTPException(status_code=409, detail="Document déjà signé et verrouillé")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     record.signed_at = now
     record.signed_by_id = user.id
     record.signed_by_name = (

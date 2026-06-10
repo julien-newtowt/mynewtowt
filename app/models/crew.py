@@ -1,10 +1,19 @@
 """Crew members, assignments, certifications, leaves."""
 from __future__ import annotations
 
-from datetime import date as _date, datetime
+from datetime import date as _date
+from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, CHAR, Date, DateTime, ForeignKey, Integer, String, Text, func,
+    CHAR,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 

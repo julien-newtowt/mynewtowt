@@ -19,7 +19,7 @@ from app.models.feature_flag import FeatureFlag
 
 
 def _bucket(identifier: str, flag_key: str) -> int:
-    h = hashlib.sha256(f"{flag_key}:{identifier}".encode("utf-8")).hexdigest()
+    h = hashlib.sha256(f"{flag_key}:{identifier}".encode()).hexdigest()
     return int(h[:8], 16) % 100
 
 

@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,7 +72,7 @@ async def login(
         redirect.set_cookie(value=pending, **cookie_kwargs_for_staff_mfa_pending(request))
         return redirect
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     ip = _client_ip(request)
     ua = request.headers.get("user-agent")
     await activity_record(
@@ -163,7 +163,7 @@ async def staff_mfa_challenge_submit(
             status_code=400,
         )
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     ua = request.headers.get("user-agent")
     await activity_record(
         db, action="login", user_id=user.id, user_name=user.username,

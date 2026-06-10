@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.chat import ChatConversation, ChatMessage
+from app.models.chat import ChatMessage
 from app.permissions import require_permission
 from app.services.chatbot import get_or_create_conversation, respond
 from app.templating import templates

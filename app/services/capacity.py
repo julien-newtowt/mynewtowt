@@ -6,7 +6,7 @@ double-booking under concurrent confirmation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,7 +74,7 @@ async def get_available_capacity(
     if not leg.is_bookable:
         raise NotBookable()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if leg.booking_close_at and leg.booking_close_at < now:
         raise BookingClosed()
     if leg.booking_open_at and leg.booking_open_at > now:

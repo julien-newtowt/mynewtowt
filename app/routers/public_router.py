@@ -5,14 +5,14 @@ unauthenticated clients and exposes only data flagged `is_bookable=True`.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import contextlib
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
@@ -20,7 +20,7 @@ from app.models.claim import VesselPosition
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.vessel import Vessel
-from app.services.capacity import BookingClosed, get_available_capacity, NotBookable
+from app.services.capacity import BookingClosed, NotBookable, get_available_capacity
 from app.templating import templates
 
 router = APIRouter(tags=["public"])
@@ -59,7 +59,8 @@ async def set_language(lang: str, request: Request):
     pas encore posée au premier hit anonyme.
     """
     from fastapi.responses import RedirectResponse
-    from app.i18n import SUPPORTED, DEFAULT
+
+    from app.i18n import DEFAULT, SUPPORTED
 
     target = request.headers.get("referer") or "/"
     # Anti open-redirect : pour toute URL absolue, on ne conserve que le chemin
@@ -159,21 +160,19 @@ async def route_detail(
         duration_days = round((leg.eta - leg.etd).total_seconds() / 86400.0, 1)
 
     # Date de clôture des réservations : explicite ou ETD − 48 h.
-    from datetime import timedelta
     cut_off_at = leg.booking_close_at or (leg.etd - timedelta(hours=48))
 
     # Estimation CO₂ per tonne pour l'éco-calculateur.
     from decimal import Decimal
+
     from app.services import co2 as co2_svc
     co2_est = None
     if distance_nm:
-        try:
+        with contextlib.suppress(Exception):
             co2_est = co2_svc.estimate(
                 distance_nm=Decimal(str(distance_nm)),
                 tonnage_t=Decimal("1"),
             )
-        except Exception:
-            pass
 
     return templates.TemplateResponse(
         "public/route_detail.html",
@@ -234,7 +233,7 @@ async def about_terms(request: Request) -> HTMLResponse:
 
 
 async def _next_bookable_legs(db: AsyncSession, *, limit: int = 6) -> list[dict[str, Any]]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stmt = (
         select(Leg, Vessel)
         .join(Vessel, Vessel.id == Leg.vessel_id)
@@ -281,7 +280,7 @@ async def _search_legs(
     from_date: datetime | None,
     to_date: datetime | None,
 ) -> list[dict[str, Any]]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stmt = (
         select(Leg, Vessel)
         .join(Vessel, Vessel.id == Leg.vessel_id)

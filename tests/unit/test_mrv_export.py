@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.services.mrv_export import (
-    CO2_EMISSION_FACTOR_MDO, SOF_TO_MRV_MAP,
-    carbon_report_summary, map_sof_to_mrv_type, to_dnv_csv,
+    CO2_EMISSION_FACTOR_MDO,
+    carbon_report_summary,
+    map_sof_to_mrv_type,
+    to_dnv_csv,
 )
 
 
@@ -15,7 +17,7 @@ class FakeEvent:
     vessel_imo: str = "9876543"
     leg_code: str = "1CFRBR6"
     event_type: str = "departure"
-    occurred_at: datetime = datetime(2026, 5, 19, 12, 0, tzinfo=timezone.utc)
+    occurred_at: datetime = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
     fuel_type: str = "MDO"
     rob_t: float | None = 12.5
     consumed_t: float | None = 0.8

@@ -1,10 +1,10 @@
 """Onboard cashbox routes — one cashbox per vessel, multi-currency."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,7 +98,7 @@ async def add_mov(
     try:
         amt = Decimal(amount.replace(",", "."))
     except (InvalidOperation, AttributeError):
-        raise HTTPException(status_code=400, detail="Invalid amount")
+        raise HTTPException(status_code=400, detail="Invalid amount") from None
     # Negative for expenses
     if movement_kind == "expense" and amt > 0:
         amt = -amt
@@ -107,7 +107,7 @@ async def add_mov(
         try:
             occ = datetime.fromisoformat(occurred_at.replace("T", " "))
             if occ.tzinfo is None:
-                occ = occ.replace(tzinfo=timezone.utc)
+                occ = occ.replace(tzinfo=UTC)
         except ValueError:
             pass
     try:
@@ -118,7 +118,7 @@ async def add_mov(
             recorded_by_id=user.id,
         )
     except CashboxError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     await activity_record(
         db, action="cashbox_movement",
         user_id=user.id, user_name=user.username, user_role=user.role,

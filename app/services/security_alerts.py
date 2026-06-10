@@ -7,8 +7,7 @@ ne doit JAMAIS bloquer l'action sécurité (désactivation MFA, etc.).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Literal
+from datetime import UTC, datetime
 
 from app.config import settings
 from app.services.email import send_template
@@ -33,7 +32,7 @@ async def notify_security_event(
             recipient_name=recipient_name or to_email,
             event_kind=event_kind,
             event_detail=event_detail or "",
-            occurred_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            occurred_at=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
             brand_name=settings.app_name,
         )
     except Exception as e:

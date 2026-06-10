@@ -6,10 +6,10 @@ directly. Keeps business invariants in one place.
 from __future__ import annotations
 
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +50,7 @@ _REFERENCE_PREFIX = "BK-"
 
 
 def generate_reference(year: int | None = None) -> str:
-    year = year or datetime.now(timezone.utc).year
+    year = year or datetime.now(UTC).year
     suffix = secrets.token_hex(2).upper()
     return f"{_REFERENCE_PREFIX}{year}-{suffix}"
 
@@ -157,7 +157,7 @@ def _assert_transition(current: str, target: str) -> None:
 async def submit(db: AsyncSession, booking: Booking) -> Booking:
     _assert_transition(booking.status, "submitted")
     booking.status = "submitted"
-    booking.submitted_at = datetime.now(timezone.utc)
+    booking.submitted_at = datetime.now(UTC)
     await db.flush()
     return booking
 
@@ -169,7 +169,7 @@ async def confirm(
     # Re-check capacity with row lock
     await check_and_lock(db, booking.leg_id, booking.total_palettes)
     booking.status = "confirmed"
-    booking.confirmed_at = datetime.now(timezone.utc)
+    booking.confirmed_at = datetime.now(UTC)
     booking.confirmed_price_eur = price_eur or booking.estimated_price_eur
     await db.flush()
     return booking
@@ -178,7 +178,7 @@ async def confirm(
 async def cancel(db: AsyncSession, booking: Booking, reason: str) -> Booking:
     _assert_transition(booking.status, "cancelled")
     booking.status = "cancelled"
-    booking.cancelled_at = datetime.now(timezone.utc)
+    booking.cancelled_at = datetime.now(UTC)
     booking.cancelled_reason = reason
     await db.flush()
     return booking
@@ -207,7 +207,7 @@ async def advance(db: AsyncSession, booking: Booking, target: str) -> Booking:
     booking.status = target
     field = _STATUS_TIMESTAMP.get(target)
     if field and getattr(booking, field, None) is None:
-        setattr(booking, field, datetime.now(timezone.utc))
+        setattr(booking, field, datetime.now(UTC))
     await db.flush()
     # Effets de bord (notifications client, email, label Anemos). Import
     # tardif pour éviter tout cycle d'import au chargement du module.

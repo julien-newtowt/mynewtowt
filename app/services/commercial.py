@@ -9,18 +9,20 @@ Logique reprise de la V3.0.0 :
 """
 from __future__ import annotations
 
-from datetime import date as _date, datetime
+from collections.abc import Iterable
+from datetime import date as _date
 from decimal import Decimal
-from typing import Iterable
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commercial import (
-    DEFAULT_BRACKETS_FF, DEFAULT_BRACKETS_SHIPPER,
-    Order, RateGrid, RateGridLine, RateOffer,
+    DEFAULT_BRACKETS_FF,
+    DEFAULT_BRACKETS_SHIPPER,
+    Order,
+    RateGrid,
+    RateOffer,
 )
-
 
 # ─────────────────────────── References ────────────────────────────
 

@@ -107,7 +107,7 @@ async def _send_email(client: ClientAccount, *, subject_line: str, heading: str,
             cta_url=cta_url,
             site_url=settings.site_url,
         )
-    except Exception:  # noqa: BLE001 — best-effort, ne jamais bloquer
+    except Exception:
         logger.warning("booking_event email failed for %s", client.email, exc_info=True)
 
 
@@ -130,7 +130,7 @@ async def on_status_change(db: AsyncSession, booking: Booking, new_status: str) 
     if new_status in ("discharged", "delivered"):
         try:
             await anemos.issue_for_booking(db, booking)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("anemos issuance failed for %s", ref, exc_info=True)
 
     # Notification in-app client.

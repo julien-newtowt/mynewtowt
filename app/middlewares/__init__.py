@@ -1,7 +1,8 @@
 """HTTP middlewares for mynewtowt."""
 
 from app.middlewares.force_password import (
-    ForceMfaForAdminMiddleware, ForcePasswordChangeMiddleware,
+    ForceMfaForAdminMiddleware,
+    ForcePasswordChangeMiddleware,
 )
 from app.middlewares.maintenance import MaintenanceMiddleware
 from app.middlewares.security_headers import SecurityHeadersMiddleware

@@ -1,6 +1,7 @@
 """Jinja2 setup + global filters/context."""
 from __future__ import annotations
 
+import json as _json
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,19 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from app.config import settings
+from app.i18n import (
+    DEFAULT as _i18n_default,
+)
+from app.i18n import (
+    SUPPORTED as _i18n_supported,
+)
+from app.i18n import (
+    get_lang_from_request as _i18n_get_lang,
+)
+from app.i18n import (
+    t as _i18n_t,
+)
+from app.services.seo import organization_jsonld as _org_jsonld
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -49,15 +63,6 @@ def _flag_emoji(country_code: str | None) -> str:
         )
     except (TypeError, ValueError):
         return ""
-
-
-# ─────────── i18n helpers ──────────────
-from app.i18n import (
-    DEFAULT as _i18n_default,
-    SUPPORTED as _i18n_supported,
-    get_lang_from_request as _i18n_get_lang,
-    t as _i18n_t,
-)
 
 
 def _i18n_context_processor(request: Request) -> dict[str, Any]:
@@ -189,9 +194,6 @@ templates.env.globals["app_env"] = settings.app_env
 templates.env.globals["site_url"] = settings.site_url
 
 # ─────────── SEO / lisibilité IA (Schema.org + hreflang) ──────────────────
-import json as _json
-from app.services.seo import organization_jsonld as _org_jsonld
-
 # Fiche Organisation injectée dans le <head> de la vitrine (bloc de données
 # `application/ld+json` — non exécuté, compatible CSP stricte).
 templates.env.globals["organization_jsonld"] = _json.dumps(

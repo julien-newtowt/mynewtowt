@@ -86,7 +86,7 @@ class OnboardCashbox(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    movements: Mapped[list["CashboxMovement"]] = relationship(
+    movements: Mapped[list[CashboxMovement]] = relationship(
         back_populates="cashbox",
         cascade="all, delete-orphan",
         order_by="CashboxMovement.occurred_at.desc()",

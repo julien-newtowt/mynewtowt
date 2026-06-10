@@ -11,7 +11,7 @@ WeasyPrint isn't installed in dev.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -53,7 +53,7 @@ def _common_ctx(booking, leg, vessel, pol, pod, client) -> dict[str, Any]:
         "pol": pol,
         "pod": pod,
         "client": client,
-        "issued_at": datetime.now(timezone.utc),
+        "issued_at": datetime.now(UTC),
         "site_url": settings.site_url,
         # brand globals are already injected via templates.env.globals
     }

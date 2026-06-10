@@ -6,12 +6,12 @@ is encouraged for M/S levels.
 """
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Literal
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthRequired, get_current_staff
+from app.auth import get_current_staff
 from app.database import get_db
 
 Level = Literal["C", "M", "S"]  # Consult / Modify / Suppress

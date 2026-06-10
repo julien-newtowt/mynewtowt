@@ -5,8 +5,6 @@ field-by-field. Verrouillage par un staff après validation côté armateur.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
@@ -16,12 +14,17 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.commercial import Order
 from app.models.packing_list import (
-    PackingList, PackingListBatch, PortalMessage,
+    PackingList,
+    PackingListBatch,
+    PortalMessage,
 )
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.packing_list import (
-    can_modify, lock, record_audit, unlock,
+    can_modify,
+    lock,
+    record_audit,
+    unlock,
 )
 from app.templating import templates
 

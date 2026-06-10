@@ -1,7 +1,7 @@
 """Escale ticketing routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +27,8 @@ from app.services.tickets import (
     get_by_reference,
     is_sla_breached,
     list_for_kanban,
+)
+from app.services.tickets import (
     stats as ticket_stats,
 )
 from app.templating import templates
@@ -188,7 +190,7 @@ async def status_action(
     try:
         await change_status(db, ticket, new_status, reason=reason or None)
     except TicketError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     await activity_record(
         db,
         action="ticket_status",
@@ -237,5 +239,5 @@ async def comment_action(
             is_internal=(is_internal == "on"),
         )
     except TicketError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return RedirectResponse(url=f"/tickets/{ticket.reference}", status_code=303)

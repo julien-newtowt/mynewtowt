@@ -11,7 +11,14 @@ Routes :
 from __future__ import annotations
 
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status,
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
@@ -20,9 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_client
 from app.config import settings
 from app.database import get_db
+from app.models.anemos_certificate import AnemosCertificate
 from app.models.booking import Booking
 from app.models.client_invoice import ClientInvoice
-from app.models.anemos_certificate import AnemosCertificate
 from app.models.leg import Leg
 from app.models.notification import Notification
 from app.models.packing_list import PackingListDocument
@@ -288,7 +295,7 @@ async def upload_document(
             content, file.filename or "document", subdir=f"bookings/{booking.id}",
         )
     except safe_files.UploadRejected as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     db.add(PackingListDocument(
         booking_id=booking.id, kind=kind, label=file.filename,
         file_path=rel_path, file_mime=mime, uploaded_by=client.email,
@@ -318,7 +325,7 @@ async def download_document(
     try:
         path = safe_files.resolve_path(doc.file_path)
     except (safe_files.UploadRejected, FileNotFoundError):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File missing")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File missing") from None
     return Response(
         content=path.read_bytes(),
         media_type=doc.file_mime or "application/octet-stream",
@@ -503,6 +510,7 @@ async def mfa_disable(
     await db.flush()
     # Purge les codes de récupération restants (ils sont liés à ce secret)
     from sqlalchemy import delete
+
     from app.models.mfa_recovery_code import MfaRecoveryCode
     await db.execute(
         delete(MfaRecoveryCode)

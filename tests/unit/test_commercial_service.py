@@ -4,10 +4,14 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.models.commercial import (
-    DEFAULT_BRACKETS_FF, DEFAULT_BRACKETS_SHIPPER, PALETTE_COEFFICIENTS,
+    DEFAULT_BRACKETS_SHIPPER,
+    PALETTE_COEFFICIENTS,
 )
 from app.services.commercial import (
-    bracket_rate, compute_offer_total, default_brackets_for, pick_bracket,
+    bracket_rate,
+    compute_offer_total,
+    default_brackets_for,
+    pick_bracket,
 )
 
 

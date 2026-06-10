@@ -6,7 +6,7 @@ positive = income/recharge, negative = expense.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -74,7 +74,7 @@ async def add_movement(
         description=description.strip()[:300],
         leg_id=leg_id,
         port_id=port_id,
-        occurred_at=occurred_at or datetime.now(timezone.utc),
+        occurred_at=occurred_at or datetime.now(UTC),
         recorded_by_id=recorded_by_id,
         receipt_url=receipt_url,
     )

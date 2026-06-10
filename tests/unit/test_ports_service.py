@@ -4,8 +4,6 @@ Pure-function tests; DB-backed upsert/nearby are in tests/integration.
 """
 from __future__ import annotations
 
-import pytest
-
 from app.services.ports import (
     PortRow,
     _detect_delimiter,

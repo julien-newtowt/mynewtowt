@@ -15,7 +15,7 @@ overrides public pricing.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.services.capacity import CapacityInfo
@@ -121,7 +121,7 @@ def compute_quote(
 def _apply_dynamic(
     base: Decimal, *, etd: datetime, capacity: CapacityInfo
 ) -> Decimal:
-    days_to_etd = (etd - datetime.now(timezone.utc)).days
+    days_to_etd = (etd - datetime.now(UTC)).days
     occupancy = capacity.occupancy_pct
 
     if days_to_etd > 30 and occupancy < 50:

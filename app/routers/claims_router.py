@@ -5,7 +5,7 @@ Workflow status :
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -37,7 +37,7 @@ async def claims_index(
     if status:
         stmt = stmt.where(Claim.status == status)
     claims = list((await db.execute(stmt)).scalars().all())
-    counts = {s: 0 for s in CLAIM_STATUSES}
+    counts = dict.fromkeys(CLAIM_STATUSES, 0)
     for c in claims:
         counts[c.status] = counts.get(c.status, 0) + 1
     return templates.TemplateResponse(
@@ -83,7 +83,7 @@ async def claim_create(
     if claim_type not in CLAIM_TYPES:
         raise HTTPException(status_code=400, detail="invalid claim_type")
     # Sequence reference CLM-YYYY-NNNN
-    year = datetime.now(timezone.utc).year
+    year = datetime.now(UTC).year
     seq = ((await db.scalar(
         select(func.count(Claim.id)).where(Claim.reference.like(f"CLM-{year}-%"))
     )) or 0) + 1
@@ -158,7 +158,7 @@ async def claim_update_status(
     old_status = c.status
     c.status = new_status
     if new_status == "settled":
-        c.settled_at = datetime.now(timezone.utc)
+        c.settled_at = datetime.now(UTC)
         if settled_eur is not None:
             c.settled_eur = Decimal(str(settled_eur))
     db.add(ClaimTimelineEntry(

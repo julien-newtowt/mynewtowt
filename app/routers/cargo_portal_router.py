@@ -23,12 +23,17 @@ from app.database import get_db
 from app.models.commercial import Order
 from app.models.leg import Leg
 from app.models.packing_list import (
-    PackingList, PackingListBatch, PortalMessage,
+    PackingList,
+    PackingListBatch,
+    PortalMessage,
 )
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.services.packing_list import (
-    can_modify, get_by_token, log_portal_access, record_audit,
+    can_modify,
+    get_by_token,
+    log_portal_access,
+    record_audit,
 )
 from app.templating import templates
 

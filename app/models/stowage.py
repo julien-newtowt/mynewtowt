@@ -22,12 +22,18 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-
 
 # Zones standard d'un navire 850 palettes (3 ponts × 2 cales × 3 blocs)
 DECKS = ("INF", "MIL", "SUP")
@@ -72,7 +78,7 @@ class StowagePlan(Base):
         onupdate=func.now(), nullable=False,
     )
 
-    items: Mapped[list["StowageItem"]] = relationship(
+    items: Mapped[list[StowageItem]] = relationship(
         back_populates="plan", cascade="all, delete-orphan",
         order_by="StowageItem.zone",
     )

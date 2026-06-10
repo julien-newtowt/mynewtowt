@@ -14,15 +14,16 @@ Reprises de la V3.0.0 :
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
-    get_current_staff, hash_password, verify_password,
+    get_current_staff,
+    hash_password,
+    verify_password,
 )
 from app.config import settings
 from app.database import get_db
@@ -408,8 +409,8 @@ async def activity_logs_view(
 
     # Aggregate counts for filter chips
     modules_count: dict[str, int] = {}
-    for l in logs:
-        modules_count[l.module or "—"] = modules_count.get(l.module or "—", 0) + 1
+    for log in logs:
+        modules_count[log.module or "—"] = modules_count.get(log.module or "—", 0) + 1
 
     return templates.TemplateResponse(
         "staff/admin/activity_logs.html",
@@ -481,6 +482,7 @@ async def users_reset_mfa(
     sera redirigée vers la reconfiguration MFA à sa prochaine requête.
     """
     from sqlalchemy import delete
+
     from app.models.mfa_recovery_code import MfaRecoveryCode
 
     target = await db.get(User, user_id)
@@ -686,6 +688,7 @@ async def staff_mfa_disable(
     user=Depends(get_current_staff),
 ):
     from sqlalchemy import delete
+
     from app.models.mfa_recovery_code import MfaRecoveryCode
     from app.services import mfa
     if not user.mfa_enabled or not user.mfa_secret:

@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from app.models.stowage import (
-    DANGEROUS_ZONES, ZONE_LOADING_ORDER,
+    DANGEROUS_ZONES,
+    ZONE_LOADING_ORDER,
 )
 from app.services.stowage import suggest_assignments, zone_usage_summary
 

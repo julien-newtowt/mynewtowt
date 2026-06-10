@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import ClassVar
 
 from app.i18n import DEFAULT, SUPPORTED, get_lang_from_request, t
 
@@ -59,21 +60,21 @@ def test_get_lang_from_request_uses_query_param():
 
 def test_get_lang_from_request_uses_user_language():
     class R:
-        query_params: dict = {}
-        headers: dict = {}
+        query_params: ClassVar[dict] = {}
+        headers: ClassVar[dict] = {}
     user = SimpleNamespace(language="en")
     assert get_lang_from_request(R, user=user) == "en"
 
 
 def test_get_lang_from_request_uses_accept_language():
     class R:
-        query_params: dict = {}
-        headers = {"accept-language": "en-US,en;q=0.9,fr;q=0.8"}
+        query_params: ClassVar[dict] = {}
+        headers: ClassVar[dict] = {"accept-language": "en-US,en;q=0.9,fr;q=0.8"}
     assert get_lang_from_request(R) == "en"
 
 
 def test_get_lang_from_request_falls_back_to_default():
     class R:
-        query_params: dict = {}
-        headers = {"accept-language": "ja-JP"}
+        query_params: ClassVar[dict] = {}
+        headers: ClassVar[dict] = {"accept-language": "ja-JP"}
     assert get_lang_from_request(R) == DEFAULT

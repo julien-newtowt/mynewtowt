@@ -1,15 +1,21 @@
 """Contrats d'assurance — P&I, Hull/DIV, War Risk, cargo."""
 from __future__ import annotations
 
-from datetime import date as _date, datetime
+from datetime import date as _date
+from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Integer, Numeric, String, Text, func,
+    Boolean,
+    Date,
+    DateTime,
+    Integer,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
-
 
 INSURANCE_KINDS = ("p_i", "hull", "div", "war_risk", "cargo", "other")
 

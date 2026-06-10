@@ -32,7 +32,7 @@ class ChatConversation(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    messages: Mapped[list["ChatMessage"]] = relationship(
+    messages: Mapped[list[ChatMessage]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
         order_by="ChatMessage.created_at",

@@ -9,13 +9,12 @@ Reprises de la V3.0.0 :
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.finance import PortConfig
@@ -23,8 +22,13 @@ from app.models.leg import Leg
 from app.models.noon_report import NoonReport
 from app.models.port import Port
 from app.models.sof_event import (
-    CargoDocument, ETA_SHIFT_REASONS, EtaShift,
-    OnboardMessage, OnboardMessageMention, SOF_EVENT_TYPES, SofEvent,
+    ETA_SHIFT_REASONS,
+    SOF_EVENT_TYPES,
+    CargoDocument,
+    EtaShift,
+    OnboardMessage,
+    OnboardMessageMention,
+    SofEvent,
 )
 from app.models.user import User
 from app.models.vessel import Vessel
@@ -33,7 +37,10 @@ from app.permissions import require_permission
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.signature import (
-    compute_noon_hash, compute_sof_hash, compute_watch_hash, sign_record,
+    compute_noon_hash,
+    compute_sof_hash,
+    compute_watch_hash,
+    sign_record,
 )
 from app.templating import templates
 
@@ -252,8 +259,8 @@ async def next_port(
     météo forecast au moment ETA, événements SOF récents. Filtré par
     ``user.assigned_vessel_id`` si renseigné.
     """
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
+    from datetime import datetime
+    now = datetime.now(UTC)
 
     # Prochain leg actif (ATD posé, pas encore arrivé) ou prochain ETD.
     stmt_active = (
@@ -392,7 +399,6 @@ async def captain_sof_pdf(
     user=Depends(require_permission("captain", "C")),
 ):
     """Génère le SOF commandant (SofEvent) en PDF WeasyPrint."""
-    from datetime import timezone
 
     from fastapi.responses import Response
     from weasyprint import HTML  # local import — heavy native deps
@@ -420,7 +426,7 @@ async def captain_sof_pdf(
         pol=pol,
         pod=pod,
         events=events,
-        issued_at=datetime.now(timezone.utc),
+        issued_at=datetime.now(UTC),
         site_url=settings.site_url,
     )
     pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
@@ -441,7 +447,6 @@ async def captain_sof_xlsx(
 ):
     """Exporte le SOF commandant (SofEvent + ETA shifts) en classeur Excel."""
     import io
-    from datetime import timezone
 
     import openpyxl
     from fastapi.responses import Response
@@ -603,7 +608,7 @@ async def attach_cargo_doc(
     try:
         rel_path, _ = save_upload(content, upload.filename or "attachment", subdir="captain_docs")
     except UploadRejected as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     doc.file_path = rel_path
     await db.flush()
@@ -624,6 +629,7 @@ async def download_cargo_doc_attachment(
     user=Depends(require_permission("captain", "C")),
 ):
     from fastapi.responses import FileResponse
+
     from app.services.safe_files import UploadRejected, resolve_path
 
     doc = (await db.execute(
@@ -637,7 +643,7 @@ async def download_cargo_doc_attachment(
     try:
         path = resolve_path(doc.file_path)
     except UploadRejected:
-        raise HTTPException(status_code=400)
+        raise HTTPException(status_code=400) from None
 
     return FileResponse(path=str(path), filename=path.name)
 
@@ -660,7 +666,7 @@ async def closure_submit(
     if leg.closure_submitted_at:
         raise HTTPException(status_code=400, detail="Clôture déjà soumise")
 
-    leg.closure_submitted_at = datetime.now(timezone.utc)
+    leg.closure_submitted_at = datetime.now(UTC)
     leg.closure_submitted_by = user.username
     if notes:
         leg.closure_notes = notes
@@ -702,7 +708,7 @@ async def closure_review(
     if leg.closure_reviewed_at:
         raise HTTPException(status_code=400, detail="Déjà validée")
 
-    leg.closure_reviewed_at = datetime.now(timezone.utc)
+    leg.closure_reviewed_at = datetime.now(UTC)
     leg.closure_reviewed_by = user.username
     if notes:
         leg.closure_notes = (leg.closure_notes or "") + f"\n[Validation opérations] {notes}"
@@ -744,7 +750,7 @@ async def closure_approve(
     if leg.closure_approved_at:
         raise HTTPException(status_code=400, detail="Déjà approuvée")
 
-    leg.closure_approved_at = datetime.now(timezone.utc)
+    leg.closure_approved_at = datetime.now(UTC)
     if notes:
         leg.closure_notes = (leg.closure_notes or "") + f"\n[Approbation] {notes}"
     leg.status = "completed"

@@ -26,7 +26,6 @@ from app.services.activity import record as activity_record
 from app.services.co2 import estimate as estimate_co2
 from app.services.ports import haversine_nm
 
-
 # Fallback historique (V3.0) — paires de ports connues, distance orthodromique.
 _DISTANCE_NM: dict[frozenset[str], Decimal] = {
     frozenset({"FRFEC", "USNYC"}): Decimal("3200"),

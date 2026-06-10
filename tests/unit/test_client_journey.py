@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 from app.services import anemos, invoicing
 
-
 # --- invoicing ---------------------------------------------------------------
 
 def test_compute_amounts_french_vat() -> None:

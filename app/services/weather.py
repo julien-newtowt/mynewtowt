@@ -183,14 +183,14 @@ async def fetch_at(
     fc = await fetch_forecast(lat, lon, hours=window_hours)
     if not fc or not fc.points:
         return None
-    target = when.replace(tzinfo=_dt.timezone.utc) if when.tzinfo is None else when
+    target = when.replace(tzinfo=_dt.UTC) if when.tzinfo is None else when
     best: WeatherPoint | None = None
     best_delta = float("inf")
     for p in fc.points:
         try:
             t = _dt.datetime.fromisoformat(p.time.replace("Z", "+00:00"))
             if t.tzinfo is None:
-                t = t.replace(tzinfo=_dt.timezone.utc)
+                t = t.replace(tzinfo=_dt.UTC)
         except (ValueError, AttributeError):
             continue
         delta = abs((t - target).total_seconds())

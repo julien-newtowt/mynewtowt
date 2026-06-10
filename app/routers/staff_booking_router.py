@@ -184,7 +184,7 @@ async def advance_booking(
     try:
         await advance(db, booking, target)
     except InvalidStatusTransition as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     await activity_record(
         db,
         action="booking_advance",

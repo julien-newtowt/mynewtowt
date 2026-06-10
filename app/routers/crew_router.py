@@ -9,16 +9,21 @@ Reprise des écrans riches de la V3.0.0 :
 """
 from __future__ import annotations
 
-from datetime import date as _date, datetime, timedelta, timezone
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
+from datetime import date as _date
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_db
 from app.models.crew import (
-    CrewAssignment, CrewCertification, CrewLeave, CrewMember,
+    CrewAssignment,
+    CrewCertification,
+    CrewLeave,
+    CrewMember,
 )
 from app.models.crew_ticket import TRANSPORT_MODES, CrewTicket
 from app.models.leg import Leg
@@ -54,7 +59,7 @@ async def crew_index(
     total = len(members)
 
     # Bordée par navire (assignments actifs)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     active_assigns = list((await db.execute(
         select(CrewAssignment)
         .where(CrewAssignment.embark_at.is_not(None))
@@ -78,7 +83,7 @@ async def crew_index(
         if m is None:
             continue
         bordees[vname]["crew"].append(m)
-    for vname, info in bordees.items():
+    for info in bordees.values():
         roles_present = {m.role for m in info["crew"]}
         info["missing"] = [r for r in REQUIRED_ROLES if r not in roles_present]
 
@@ -173,7 +178,7 @@ async def crew_calendar(
         if not a.embark_at:
             continue
         d0 = a.embark_at.date()
-        d1 = (a.disembark_at or datetime.now(timezone.utc)).date()
+        d1 = (a.disembark_at or datetime.now(UTC)).date()
         cur = max(d0, start)
         last = min(d1, end)
         while cur <= last:

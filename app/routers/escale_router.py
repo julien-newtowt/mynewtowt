@@ -9,18 +9,20 @@ Reprises de la V3.0.0 :
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.escale import (
-    DIRECTIONS, OPERATION_ACTIONS, OPERATION_TYPES,
-    DockerShift, EscaleOperation,
+    DIRECTIONS,
+    OPERATION_ACTIONS,
+    OPERATION_TYPES,
+    DockerShift,
+    EscaleOperation,
 )
 from app.models.leg import Leg
 from app.models.port import Port
@@ -44,7 +46,7 @@ async def escale_index(
 ) -> HTMLResponse:
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     selected_vessel = vessel or (vessels[0].code if vessels else None)
-    current_year = year or datetime.now(timezone.utc).year
+    current_year = year or datetime.now(UTC).year
     years = list(range(current_year - 1, current_year + 3))
 
     stmt_legs = select(Leg).order_by(Leg.etd.asc())
@@ -53,7 +55,7 @@ async def escale_index(
         if v:
             stmt_legs = stmt_legs.where(Leg.vessel_id == v.id)
     legs = list((await db.execute(stmt_legs)).scalars().all())
-    legs = [l for l in legs if l.etd and l.etd.year == current_year]
+    legs = [lg for lg in legs if lg.etd and lg.etd.year == current_year]
 
     selected_leg = None
     operations: list[EscaleOperation] = []
@@ -143,7 +145,7 @@ async def start_operation(
     op = await db.get(EscaleOperation, op_id)
     if op is None:
         raise HTTPException(status_code=404)
-    op.actual_start = datetime.now(timezone.utc)
+    op.actual_start = datetime.now(UTC)
     op.status = "in_progress"
     await db.flush()
     return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
@@ -159,7 +161,7 @@ async def end_operation(
     op = await db.get(EscaleOperation, op_id)
     if op is None:
         raise HTTPException(status_code=404)
-    op.actual_end = datetime.now(timezone.utc)
+    op.actual_end = datetime.now(UTC)
     op.status = "completed"
     await db.flush()
     return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
@@ -245,7 +247,6 @@ async def escale_sof_pdf(
     user=Depends(require_permission("escale", "C")),
 ):
     """Génère le SOF escale (opérations + shifts dockers) en PDF WeasyPrint."""
-    from datetime import timezone
 
     from fastapi.responses import Response
     from weasyprint import HTML  # local import — heavy native deps
@@ -280,7 +281,7 @@ async def escale_sof_pdf(
         vessel=vessel,
         operations=operations,
         shifts=shifts,
-        issued_at=datetime.now(timezone.utc),
+        issued_at=datetime.now(UTC),
         site_url=settings.site_url,
     )
     pdf = HTML(string=html, base_url=settings.site_url).write_pdf()

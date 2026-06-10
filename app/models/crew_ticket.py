@@ -4,12 +4,16 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    DateTime, ForeignKey, Integer, Numeric, String, Text, func,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
-
 
 TRANSPORT_MODES = ("flight", "train", "bus", "taxi", "ferry", "car", "other")
 

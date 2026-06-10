@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_staff
 from app.database import get_db
 from app.models.notification import Notification
-from app.services.notifications import archive, mark_read
+from app.services.notifications import archive
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 

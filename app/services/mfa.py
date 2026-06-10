@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from base64 import b64encode
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import BytesIO
 
 from sqlalchemy import select
@@ -125,7 +125,7 @@ async def consume_recovery_code(
     rc = (await db.execute(stmt)).scalar_one_or_none()
     if rc is None:
         return False
-    rc.used_at = datetime.now(timezone.utc)
+    rc.used_at = datetime.now(UTC)
     await db.flush()
     return True
 

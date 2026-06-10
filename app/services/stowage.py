@@ -12,11 +12,12 @@ palettes par zone (3 ponts × 6 blocs × ~50 = ~900 palettes pour un 850).
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Iterable
+from collections.abc import Iterable
 
 from app.models.commercial import PALETTE_COEFFICIENTS
 from app.models.stowage import (
-    DANGEROUS_ZONES, ZONE_LOADING_ORDER,
+    DANGEROUS_ZONES,
+    ZONE_LOADING_ORDER,
 )
 
 ZONE_CAPACITY_DEFAULT = 50  # palettes EPAL équivalentes par zone (à affiner)

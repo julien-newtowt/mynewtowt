@@ -16,7 +16,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-
 EXEMPT_PREFIXES_PWD = (
     "/admin/my-account/change-password",
     "/logout",
@@ -48,7 +47,7 @@ async def _decode_staff_user_id(request: Request) -> int | None:
     if not token:
         return None
     try:
-        from app.auth import _staff_serializer, _MAX_STAFF_SESSION_MINUTES
+        from app.auth import _MAX_STAFF_SESSION_MINUTES, _staff_serializer
         payload = _staff_serializer.loads(
             token, max_age=_MAX_STAFF_SESSION_MINUTES * 60,
         )

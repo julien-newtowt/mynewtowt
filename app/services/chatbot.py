@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -79,10 +79,7 @@ Ton compagnon Manrope et DM Serif sont des polices, pas des personnages.
 
 
 def detect_injection(text: str) -> bool:
-    for p in INJECTION_PATTERNS:
-        if p.search(text):
-            return True
-    return False
+    return any(p.search(text) for p in INJECTION_PATTERNS)
 
 
 # ---------------------------------------------------------------------------
@@ -208,10 +205,10 @@ async def _tool_list_active(db: AsyncSession, user_role: str) -> dict:
     )).all()
     return {
         "active_legs": [
-            {"leg_code": l.leg_code, "vessel": v.name,
-             "atd": l.atd.isoformat() if l.atd else None,
-             "eta": l.eta.isoformat()}
-            for l, v in rows
+            {"leg_code": leg.leg_code, "vessel": v.name,
+             "atd": leg.atd.isoformat() if leg.atd else None,
+             "eta": leg.eta.isoformat()}
+            for leg, v in rows
         ]
     }
 
@@ -237,7 +234,7 @@ async def get_or_create_conversation(
             select(ChatConversation).where(ChatConversation.user_id == user_id)
             .order_by(ChatConversation.started_at.desc()).limit(1)
         )).scalar_one_or_none()
-        if recent and (datetime.now(timezone.utc) - recent.started_at) < timedelta(hours=4):
+        if recent and (datetime.now(UTC) - recent.started_at) < timedelta(hours=4):
             return recent
     conv = ChatConversation(user_id=user_id, title=None)
     db.add(conv)
