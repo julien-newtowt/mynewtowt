@@ -9,6 +9,7 @@ Reprises de la V3.0.0 :
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import UTC, datetime
 
@@ -35,6 +36,7 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import WatchLog
 from app.permissions import require_permission
+from app.services import mrv_sync
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.signature import (
@@ -43,7 +45,15 @@ from app.services.signature import (
     compute_watch_hash,
     sign_record,
 )
+from app.services.voyage_events import (
+    ARRIVAL_SOF_TYPES,
+    DEPARTURE_SOF_TYPES,
+    on_vessel_arrived,
+    on_vessel_departed,
+)
 from app.templating import templates
+
+logger = logging.getLogger("captain")
 
 router = APIRouter(prefix="/captain", tags=["captain"])
 
@@ -147,7 +157,8 @@ async def add_sof_event(
 ):
     if event_type not in SOF_EVENT_TYPES:
         raise HTTPException(status_code=400, detail="invalid event_type")
-    if not await db.get(Leg, leg_id):
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
         raise HTTPException(status_code=404)
     e = SofEvent(
         leg_id=leg_id,
@@ -174,6 +185,19 @@ async def add_sof_event(
         entity_label=f"{event_type}@{occurred_at}",
         ip_address=_client_ip(request),
     )
+    # FLX-03 — le SOF mappé génère son événement MRV (best-effort, idempotent).
+    try:
+        await mrv_sync.ensure_from_sof(db, e)
+    except Exception:
+        logger.exception("MRV sync failed for SOF event %s (%s)", e.id, event_type)
+    # FLX-02 — les événements réels du bord pilotent les statuts (ATD/ATA + bookings).
+    try:
+        if event_type in DEPARTURE_SOF_TYPES:
+            await on_vessel_departed(db, leg)
+        elif event_type in ARRIVAL_SOF_TYPES:
+            await on_vessel_arrived(db, leg)
+    except Exception:
+        logger.exception("voyage event hook failed for leg %s (%s)", leg_id, event_type)
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 
@@ -425,6 +449,17 @@ async def sign_sof_event(
         detail=e.signature_hash[:12] if e.signature_hash else None,
         ip_address=_client_ip(request),
     )
+    # FLX-02 — backstop idempotent : la signature confirme le départ/l'arrivée
+    # (déjà déclenché à la création du SOF — sans effet si déjà appliqué).
+    try:
+        leg = await db.get(Leg, e.leg_id)
+        if leg is not None:
+            if e.event_type in DEPARTURE_SOF_TYPES:
+                await on_vessel_departed(db, leg)
+            elif e.event_type in ARRIVAL_SOF_TYPES:
+                await on_vessel_arrived(db, leg)
+    except Exception:
+        logger.exception("voyage event hook failed for SOF event %s", e.id)
     return RedirectResponse(url=f"/captain?leg_id={e.leg_id}", status_code=303)
 
 
@@ -453,6 +488,12 @@ async def sign_noon_report(
         detail=n.signature_hash[:12] if n.signature_hash else None,
         ip_address=_client_ip(request),
     )
+    # FLX-03 — backstop idempotent : le noon report signé est la référence
+    # n°1 du MRV (déjà généré à la saisie — sans effet si déjà présent).
+    try:
+        await mrv_sync.ensure_from_noon(db, n)
+    except Exception:
+        logger.exception("MRV sync failed for noon report %s", n.id)
     return RedirectResponse(url=f"/onboard/navigation?leg_id={n.leg_id}", status_code=303)
 
 
@@ -916,6 +957,14 @@ async def closure_approve(
         await compute_for_leg(db, leg)
     except Exception:
         pass
+
+    # FLX-02 — consolidation financière du voyage à l'approbation de clôture.
+    try:
+        from app.services.finance_rollup import rollup_for_leg
+
+        await rollup_for_leg(db, leg)
+    except Exception:
+        logger.exception("finance rollup failed for leg %s", leg.id)
 
     await activity_record(
         db,

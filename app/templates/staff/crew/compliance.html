@@ -11,6 +11,37 @@
   <a href="/crew" class="btn btn-ghost">← Retour</a>
 </header>
 
+<section class="mb-4">
+  <div class="section-header"><h3><i data-lucide="anchor"></i> Armement réglementaire par navire</h3></div>
+  <div class="grid grid-2 gap-3">
+    {% for r in readiness %}
+    <article class="card">
+      <h2>{{ r.vessel_name }}</h2>
+      {% if r.complete %}
+      <div class="alert alert-success">Armement réglementaire complet</div>
+      {% else %}
+      <div class="alert alert-warn"><strong>Postes manquants :</strong> {{ r.missing_labels|join(', ') }}</div>
+      {% endif %}
+      {% if r.present %}
+      <table class="data-table">
+        <tbody>
+          {% for role in r.required %}
+          {% if role in r.present %}
+          <tr><td>{{ r.labels[role] }}</td><td>{{ r.present[role]|join(', ') }}</td></tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted">Aucun marin embarqué à cette date.</p>
+      {% endif %}
+    </article>
+    {% else %}
+    <p class="text-muted">Aucun navire actif.</p>
+    {% endfor %}
+  </div>
+</section>
+
 <article class="card">
   <table class="data-table">
     <thead><tr><th>Marin</th><th>Schengen</th><th>Passeport</th><th>Visa US</th><th>Visa BR</th><th>Seaman book</th><th>Alertes</th></tr></thead>

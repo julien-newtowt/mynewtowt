@@ -39,6 +39,12 @@ class AnemosCertificate(Base):
     co2_conventional_kg: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
     co2_avoided_kg: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
 
+    # ENV-03 — traçabilité du calcul : 'declared' (consommations réelles
+    # déclarées à bord) ou 'theoretical' (facteur forfaitaire 1,5 g/t·km) ;
+    # distance issue de 'noon_reports' (réel parcouru) ou 'planned'.
+    method: Mapped[str | None] = mapped_column(String(20))
+    distance_source: Mapped[str | None] = mapped_column(String(20))
+
     pdf_url: Mapped[str | None] = mapped_column(String(500))
 
     issued_at: Mapped[datetime] = mapped_column(

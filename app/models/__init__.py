@@ -13,6 +13,7 @@ from app.models.chat import ChatConversation, ChatMessage
 from app.models.claim import Claim, ClaimTimelineEntry, VesselPosition
 from app.models.client_account import ClientAccount
 from app.models.client_invoice import ClientInvoice
+from app.models.co2_variable import Co2Variable
 from app.models.commercial import (
     Client,
     Order,
@@ -59,6 +60,7 @@ from app.models.planning_share import PlanningShare
 from app.models.port import Port
 from app.models.quote import Quote, QuoteLine
 from app.models.rate_limit import RateLimitAttempt
+from app.models.role_permission import RolePermission
 from app.models.sof_event import (
     CargoDocument,
     EtaShift,
@@ -89,6 +91,7 @@ __all__ = [
     "Client",
     "ClientAccount",
     "ClientInvoice",
+    "Co2Variable",
     "ContactRequest",
     "CrewAssignment",
     "CrewCertification",
@@ -134,6 +137,7 @@ __all__ = [
     "RateGridOption",
     "RateLimitAttempt",
     "RateOffer",
+    "RolePermission",
     "SofEvent",
     "StowageItem",
     "StowagePlan",

@@ -11,6 +11,7 @@ file hors-ligne rejoue une soumission déjà reçue.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, Request
@@ -23,10 +24,13 @@ from app.models.leg import Leg
 from app.models.noon_report import NoonReport
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 from app.permissions import require_permission
+from app.services import mrv_sync
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.vessel_position import get_latest_position
 from app.templating import templates
+
+logger = logging.getLogger("onboard")
 
 router = APIRouter(prefix="/onboard", tags=["onboard"])
 
@@ -180,6 +184,14 @@ async def post_noon_report(
         entity_type="noon_report",
         entity_id=nr.id,
     )
+    # FLX-03 — le noon report est la référence n°1 du MRV : génération
+    # best-effort de l'événement MRV lié (idempotent ; le rejeu offline
+    # dédoublonné plus haut ne repasse pas ici). Donnée réglementaire :
+    # on logge fort mais on ne bloque jamais la saisie du bord.
+    try:
+        await mrv_sync.ensure_from_noon(db, nr)
+    except Exception:
+        logger.exception("MRV sync failed for noon report %s", nr.id)
     return RedirectResponse(url=f"/onboard/navigation?leg_id={nr.leg_id}", status_code=303)
 
 

@@ -31,6 +31,15 @@ from app.models.leg import Leg
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
+from app.services.crew_compliance import (
+    REQUIRED_ROLES,
+    ROLE_LABELS,
+    normalize_role,
+    passport_blocking_reason,
+    refresh_member_schengen,
+    refresh_schengen_for_members,
+    vessel_readiness,
+)
 from app.templating import templates
 
 router = APIRouter(prefix="/crew", tags=["crew"])
@@ -46,7 +55,8 @@ CREW_ROLES = (
     "marin",
     "eleve_officier",
 )
-REQUIRED_ROLES = ("capitaine", "second", "chef_mecanicien", "cook", "bosco", "marin")
+# REQUIRED_ROLES (armement réglementaire) : source unique dans
+# services.crew_compliance — importé ci-dessus (FLX-06).
 
 
 @router.get("", response_class=HTMLResponse)
@@ -62,6 +72,11 @@ async def crew_index(
     if role:
         stmt = stmt.where(CrewMember.role == role)
     members = list((await db.execute(stmt.order_by(CrewMember.full_name))).scalars().all())
+
+    # FLX-06 : snapshot persisté — recalcule le statut Schengen et l'écrit
+    # sur les lignes CrewMember (status / days / window_end) + flush, pour
+    # que le statut affiché soit persisté et historisable.
+    await refresh_schengen_for_members(db, members)
 
     total = len(members)
 
@@ -99,8 +114,8 @@ async def crew_index(
             continue
         bordees[vname]["crew"].append(m)
     for info in bordees.values():
-        roles_present = {m.role for m in info["crew"]}
-        info["missing"] = [r for r in REQUIRED_ROLES if r not in roles_present]
+        roles_present = {normalize_role(m.role) for m in info["crew"]}
+        info["missing"] = [ROLE_LABELS.get(r, r) for r in REQUIRED_ROLES if r not in roles_present]
 
     # Compliance alerts (passport / visa within 30 days)
     soon = _date.today() + timedelta(days=30)
@@ -152,6 +167,23 @@ async def crew_compliance(
         .all()
     )
     today = _date.today()
+
+    # FLX-06 : snapshot persisté — recalcule + écrit le statut Schengen
+    # sur les lignes CrewMember avant affichage (flush dans le service).
+    await refresh_schengen_for_members(db, members, today=today)
+
+    # Armement réglementaire par navire (lecture seule, V1).
+    vessels = list(
+        (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.name)))
+        .scalars()
+        .all()
+    )
+    readiness = []
+    for v in vessels:
+        r = await vessel_readiness(db, v.id, today)
+        r["vessel_name"] = v.name
+        readiness.append(r)
+
     rows = []
     for m in members:
         warnings: list[str] = []
@@ -179,7 +211,7 @@ async def crew_compliance(
         rows.append({"member": m, "warnings": warnings})
     return templates.TemplateResponse(
         "staff/crew/compliance.html",
-        {"request": request, "user": user, "rows": rows},
+        {"request": request, "user": user, "rows": rows, "readiness": readiness},
     )
 
 
@@ -284,16 +316,16 @@ async def crew_create(
     return RedirectResponse(url="/crew", status_code=303)
 
 
-@router.get("/members/{member_id}", response_class=HTMLResponse)
-async def crew_detail(
-    member_id: int,
+async def _member_detail_context(
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("crew", "C")),
-) -> HTMLResponse:
-    m = await db.get(CrewMember, member_id)
-    if m is None:
-        raise HTTPException(status_code=404)
+    db: AsyncSession,
+    user,
+    member: CrewMember,
+    *,
+    error: str | None = None,
+) -> dict:
+    """Contexte commun de la fiche marin (GET + re-render erreur POST)."""
+    member_id = member.id
     assigns = list(
         (
             await db.execute(
@@ -336,17 +368,34 @@ async def crew_detail(
         .scalars()
         .all()
     )
+    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()))).scalars().all())
+    return {
+        "request": request,
+        "user": user,
+        "member": member,
+        "assignments": assigns,
+        "certifications": certs,
+        "leaves": leaves,
+        "tickets": tickets,
+        "legs": legs,
+        "roles": CREW_ROLES,
+        "error": error,
+    }
+
+
+@router.get("/members/{member_id}", response_class=HTMLResponse)
+async def crew_detail(
+    member_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "C")),
+) -> HTMLResponse:
+    m = await db.get(CrewMember, member_id)
+    if m is None:
+        raise HTTPException(status_code=404)
     return templates.TemplateResponse(
         "staff/crew/detail.html",
-        {
-            "request": request,
-            "user": user,
-            "member": m,
-            "assignments": assigns,
-            "certifications": certs,
-            "leaves": leaves,
-            "tickets": tickets,
-        },
+        await _member_detail_context(request, db, user, m),
     )
 
 
@@ -358,23 +407,80 @@ async def crew_assign(
     role_on_board: str | None = Form(None),
     embark_at: str | None = Form(None),
     disembark_at: str | None = Form(None),
+    override_compliance: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("crew", "M")),
 ):
-    if not await db.get(CrewMember, member_id) or not await db.get(Leg, leg_id):
+    member = await db.get(CrewMember, member_id)
+    leg = await db.get(Leg, leg_id)
+    if member is None or leg is None:
         raise HTTPException(status_code=404)
+
+    try:
+        embark_dt = datetime.fromisoformat(embark_at) if embark_at else None
+        disembark_dt = datetime.fromisoformat(disembark_at) if disembark_at else None
+    except ValueError:
+        return templates.TemplateResponse(
+            "staff/crew/detail.html",
+            await _member_detail_context(
+                request, db, user, member, error="Dates d'embarquement/débarquement invalides."
+            ),
+            status_code=400,
+        )
+
+    # FLX-06 — garde-fou conformité AVANT création de l'embarquement :
+    # rafraîchit le snapshot Schengen persisté puis vérifie statut +
+    # validité passeport jusqu'à la fin d'embarquement prévue.
+    await refresh_member_schengen(db, member)
+
+    blocking: list[str] = []
+    if member.schengen_status == "non_compliant":
+        days = member.schengen_days_in_window
+        blocking.append(
+            "Statut Schengen non conforme"
+            + (f" ({days} j sur la fenêtre de 180 j, max 90 j)" if days is not None else "")
+            + "."
+        )
+    deadline = (
+        disembark_dt.date() if disembark_dt else embark_dt.date() if embark_dt else _date.today()
+    )
+    passport_reason = passport_blocking_reason(member, deadline)
+    if passport_reason:
+        blocking.append(passport_reason)
+
+    override = override_compliance == "on"
+    if blocking and not override:
+        return templates.TemplateResponse(
+            "staff/crew/detail.html",
+            await _member_detail_context(
+                request,
+                db,
+                user,
+                member,
+                error=(
+                    "Embarquement bloqué : "
+                    + " ".join(blocking)
+                    + " Cochez « Forcer malgré la non-conformité » pour passer outre "
+                    "(action tracée dans le journal d'audit)."
+                ),
+            ),
+            status_code=400,
+        )
+
     a = CrewAssignment(
         crew_member_id=member_id,
         leg_id=leg_id,
-        role_on_board=role_on_board,
-        embark_at=datetime.fromisoformat(embark_at) if embark_at else None,
-        disembark_at=datetime.fromisoformat(disembark_at) if disembark_at else None,
+        role_on_board=(role_on_board or "").strip() or None,
+        embark_at=embark_dt,
+        disembark_at=disembark_dt,
     )
     db.add(a)
     await db.flush()
+
+    overridden = bool(blocking and override)
     await activity_record(
         db,
-        action="create",
+        action="crew_assignment_override" if overridden else "create",
         user_id=user.id,
         user_name=user.full_name or user.username,
         user_role=user.role,
@@ -382,6 +488,9 @@ async def crew_assign(
         entity_type="crew_assignment",
         entity_id=a.id,
         entity_label=f"member={member_id} leg={leg_id}",
+        detail=(
+            f"OVERRIDE compliance — motifs ignorés : {' '.join(blocking)}" if overridden else None
+        ),
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)

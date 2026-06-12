@@ -3,13 +3,24 @@
 Source of truth for the RBAC matrix. `require_permission` is the
 FastAPI dependency that protects router groups. Per-route reinforcement
 is encouraged for M/S levels.
+
+ARC-04 : la matrice codée en dur ``_MATRIX`` reste la valeur PAR DÉFAUT.
+Des overrides par cellule (rôle × module) peuvent être posés en base
+(table ``role_permissions``, écran /admin/permissions). Le chemin requête
+(``require_permission``) consulte la matrice effective (défaut + overrides,
+cache 60 s) ; toute erreur DB retombe — fail closed — sur ``_MATRIX``.
+Les helpers synchrones (``has_permission``/``can_*``) restent sans DB et
+ne voient que ``_MATRIX`` : ils servent à l'affichage (flags UI, chatbot),
+pas au contrôle d'accès, qui est appliqué sur le chemin requête.
 """
 
 from __future__ import annotations
 
+import time
 from typing import Literal
 
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_staff
@@ -165,17 +176,106 @@ _LEGACY_ROLE_MAP: dict[str, str] = {
 
 _LEVEL_ORDER: dict[str, int] = {"C": 1, "M": 2, "S": 3}
 
+# Valeurs autorisées pour une cellule de la grille (overrides inclus).
+VALID_LEVELS: tuple[str, ...] = ("", "C", "CM", "CMS")
+
 
 def _normalize_role(role: str) -> str:
     return _LEGACY_ROLE_MAP.get(role, role)
 
 
-def has_permission(role: str, module: str, level: Level) -> bool:
-    granted = _MATRIX.get((_normalize_role(role), module), "")
+def _level_ok(granted: str, level: Level) -> bool:
     if not granted:
         return False
     required = _LEVEL_ORDER[level]
-    return any(_LEVEL_ORDER[ch] >= required for ch in granted)
+    return any(_LEVEL_ORDER.get(ch, 0) >= required for ch in granted)
+
+
+# ─────────────────────────────────────────── Effective matrix (ARC-04)
+# Cache module-level des overrides DB — TTL 60 s, invalidé par
+# /admin/permissions. ``None`` = pas encore chargé (ou invalidé).
+_PERMISSIONS_TTL_SECONDS = 60.0
+_overrides_cache: dict[tuple[str, str], str] | None = None
+_overrides_loaded_at: float = 0.0
+
+
+def invalidate_permissions_cache() -> None:
+    """Force la relecture des overrides au prochain check (post-update admin)."""
+    global _overrides_cache, _overrides_loaded_at
+    _overrides_cache = None
+    _overrides_loaded_at = 0.0
+
+
+async def _load_overrides(db: AsyncSession) -> dict[tuple[str, str], str]:
+    """Charge les overrides ``role_permissions`` (cache 60 s).
+
+    FAIL CLOSED : toute erreur DB (table absente, connexion HS…) renvoie
+    ``{}`` → la matrice effective redevient exactement ``_MATRIX``. Le
+    résultat (même vide sur erreur) est mis en cache pour ne pas marteler
+    une DB en échec à chaque requête.
+    """
+    global _overrides_cache, _overrides_loaded_at
+    now = time.monotonic()
+    if _overrides_cache is not None and (now - _overrides_loaded_at) < _PERMISSIONS_TTL_SECONDS:
+        return _overrides_cache
+
+    overrides: dict[tuple[str, str], str] = {}
+    try:
+        from app.models.role_permission import RolePermission
+
+        rows = (await db.execute(select(RolePermission))).scalars().all()
+        for r in rows:
+            if r.role in ROLES and r.module in MODULES and r.level in VALID_LEVELS:
+                overrides[(r.role, r.module)] = r.level
+    except Exception:
+        overrides = {}
+
+    _overrides_cache = overrides
+    _overrides_loaded_at = now
+    return overrides
+
+
+async def get_effective_matrix(db: AsyncSession) -> dict[tuple[str, str], str]:
+    """Matrice effective = ``_MATRIX`` + overrides DB (cache 60 s).
+
+    Un override ``""`` retire l'accès ; un override non vide remplace le
+    niveau par défaut. Garde-fou : la cellule (administrateur, admin) est
+    toujours forcée à sa valeur par défaut — l'admin ne peut jamais se
+    verrouiller hors de l'administration.
+    """
+    overrides = await _load_overrides(db)
+    effective = dict(_MATRIX)
+    for key, level in overrides.items():
+        if level:
+            effective[key] = level
+        else:
+            effective.pop(key, None)
+    effective[("administrateur", "admin")] = _MATRIX[("administrateur", "admin")]
+    return effective
+
+
+def get_default_matrix() -> dict[tuple[str, str], str]:
+    """Copie de la matrice codée en dur (référence pour l'écran admin)."""
+    return dict(_MATRIX)
+
+
+async def has_permission_effective(db: AsyncSession, role: str, module: str, level: Level) -> bool:
+    """Check RBAC du chemin requête — matrice effective, fail closed."""
+    try:
+        matrix = await get_effective_matrix(db)
+    except Exception:
+        matrix = _MATRIX  # fail closed : jamais de crash auth
+    return _level_ok(matrix.get((_normalize_role(role), module), ""), level)
+
+
+def has_permission(role: str, module: str, level: Level) -> bool:
+    """Check synchrone, sans DB — matrice par défaut UNIQUEMENT.
+
+    N'inclut pas les overrides admin : utiliser pour l'affichage / les
+    services sans session. Le contrôle d'accès effectif est appliqué par
+    ``require_permission`` (matrice effective).
+    """
+    return _level_ok(_MATRIX.get((_normalize_role(role), module), ""), level)
 
 
 def can_view(role: str, module: str) -> bool:
@@ -208,7 +308,7 @@ def require_permission(module: str, level: Level):
         user=Depends(get_current_staff),
         db: AsyncSession = Depends(get_db),
     ):
-        if not has_permission(user.role, module, level):
+        if not await has_permission_effective(db, user.role, module, level):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Permission denied: {module}/{level}",
