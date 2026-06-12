@@ -144,8 +144,65 @@ module, refonte) :
 5. Conserver la convention : un nouveau constat = nouvel ID séquentiel, jamais de
    réutilisation.
 
+## 7. Cycle 2 — re-audit post-correctifs (2026-06-12, soir)
+
+> Conformément au §5, l'audit a été rejoué après la mise en œuvre des actions
+> correctives décidées par la direction (commits `f568f41` → `e53c717`).
+> Changement de doctrine acté au passage : **ni la capacité disponible ni le
+> prix public ne sont plus exposés** — le prix est restitué par l'outil de
+> devis sur grille tarifaire (grille client si connu, grille par défaut de la
+> route sinon, options tarifaires à la palette / tonne / réservation /
+> booking note).
+
+### 7.1 Statut du registre
+
+| ID | Décision direction | Statut | Mise en œuvre vérifiée |
+|---|---|---|---|
+| COM-01 | Devis sans identification | ✅ Corrigé | Outil public `/devis` (invité, rate-limité, PDF, lead auto) — `app/routers/devis_router.py`, `services/quoting.py`. Le wizard de réservation reste authentifié (choix assumé) |
+| COM-02 | Résolu avec COM-01 | ✅ Corrigé | Idem |
+| COM-03 | (induit) | ✅ Neutralisé | Le défaut 38 €/palette ne participe plus au parcours : pricing par grilles (formule OPEX par route) — `services/booking.py` ne lit plus `public_price_per_palette_eur` |
+| COM-04 | Synchroniser les leads Pipedrive | ✅ Corrigé | `services/leads.py` (best-effort : Pipedrive org+deal, notification rôle commercial, email boîte commerciale) branché sur `/contact` et `/devis` |
+| COM-05 | Facturation hors logiciel | ✅ Acté | Plus d'émission de facture à la confirmation ; **booking note** PDF (`pdf/booking_note.html`, `/me/bookings/{ref}/booking-note.pdf`) ; nav client purgée ; `ClientInvoice` conservé dormant |
+| FLX-01 | Garde-fou + remplissage non public | ✅ Corrigé | `services/capacity.py` : réservé = bookings + commandes (assignments × coef format + directes) ; plus aucune jauge publique ; wizard filtre serveur |
+| FLX-02 | À développer | ✅ Développé | `services/voyage_events.py` : SOF départ/arrivée (création + signature, idempotent) → ATD/ATA posés + bookings avancés `loaded→at_sea→discharged` avec notifications client |
+| FLX-03 | Noon report = référence n°1, génère le MRV | ✅ Développé | `services/mrv_sync.py` : noon report → `MRVEvent` auto (densité MDO paramétrable, idempotence par `noon_report_id`) ; SOF EOSP/SOSP → MRV ; backstop à la signature |
+| FLX-05 | À consolider | ✅ Consolidé | `services/finance_rollup.py` appelé à l'approbation de clôture + bouton « Recalculer depuis l'exploitation » (`/finance/legs/{id}/rollup`) ; « autres coûts » reste manuel |
+| FLX-06 | À consolider | ✅ Consolidé | Statut Schengen **persisté** ; affectation bloquée si non conforme / passeport expiré, override explicite audité ; panneau armement réglementaire (rôles requis) par navire |
+| ARC-01 | À développer | ✅ Développé | PWA bord : `manifest.json`, service worker (`/sw.js`, app shell pré-caché, fallback hors-ligne), **file d'attente locale** des noon reports / journaux de quart, déduplication serveur `client_uuid` (migration 0023) |
+| ARC-03 | À consolider | 🟡 Partiel | `/onboard` extrait de `modules_router` → `onboard_router` dédié (981→ allégé) ; restent RH / tracking / analytics / admin-ports à ventiler selon le plan de domaines du [volet 4](04-proposition-architecture.md) |
+| ARC-04 | Grille de droits ajustable dans l'admin | ✅ Corrigé | `RolePermission` en base + `/admin/permissions` (8 rôles × 17 modules, C/CM/CMS), cache 60 s **fail-closed** sur la matrice codée, cellule administrateur/admin verrouillée |
+| ENV-01 | Retirer les taux de décarbonation | ✅ Corrigé | Tous les « −95 % / −89 % / 89 % » retirés (landing, routes, fiche, impact, about/anemos, presse, recrutement, passagers, meta layout, certificat PDF) ; éco-calculateur en **kg absolus** uniquement |
+| ENV-02 | Variables paramétrables depuis l'admin | ✅ Corrigé | Table `co2_variables` **versionnée** (insert + bascule `is_current`, historique immuable) + `/admin/co2` ; `get_factors(db)` consommé par les KPI **et** les certificats |
+| ENV-03 | Régulariser avec le réel déclaré | ✅ Corrigé | Certificat Anemos : distance = Σ noon reports (sinon plan), émissions NEWTOWT = fuel déclaré × densité × 3,206 au prorata du tonnage (sinon forfait), **méthode et source affichées sur le PDF** (`method`, `distance_source`) |
+
+Vérification : import applicatif OK (310 routes), `ruff` propre sur l'ensemble
+d'`app/`, **270 tests verts** (dont 6 nouveaux sur le moteur de cotation),
+chaîne Alembic linéaire `0022 → 0026`.
+
+### 7.2 Constats restants ouverts (intrants du cycle 3 « en profondeur des métiers »)
+
+| ID | Constat | Note |
+|---|---|---|
+| FLX-04 | Double saisie escale ↔ SOF | Non traité ce cycle — prioritaire pour le métier escale |
+| FLX-07 | Tracking non exploité (geofence, ETA dynamique) | Les jalons sont désormais pilotés par les SOF ; la détection automatique d'arrivée reste à faire |
+| FLX-08/09/10/11/12/13 | Escalade SLA, claims→finance, stowage auto, checklists ISM/ISPS, veille rôles, figement clôture | Ouverts |
+| COM-07/08/12/13 | i18n EN/PT-BR, politique d'annulation, preuve sociale/blog, instrumentation funnel | Ouverts |
+| ENV-04/05/06 | Vérificateur nommé + QR, ISO 14083/CO₂e/WtW, rapport CO₂ annuel client | Ouverts — le certificat « réel déclaré » rend ENV-04 encore plus rentable |
+| ARC-02 | Poids de page / CDN tiers hors `/onboard` | Le bord est traité (PWA) ; vitrine et staff restent sur CDN |
+| Nouveau | `services/pricing.py` (leviers early-bird/late-seat) orphelin depuis la bascule grilles | Supprimer ou réintégrer comme option de grille |
+| Nouveau | Conversion devis → réservation non câblée (pré-remplissage du wizard depuis `DEV-…`) | Quick win conversion |
+| Nouveau | Caches permissions / facteurs CO₂ : TTL 60 s par worker (×2 workers) | Cohérence documentée, à surveiller |
+
+### 7.3 Extension aux personas métiers internes
+
+Le cycle 2 étend la lecture de l'audit aux personas métiers de l'entreprise
+(capitaine, agent d'escale, commerciale, armement/RH, direction/data, acheteur
+RSE) : voir **[05-audit-personas-metiers.md](05-audit-personas-metiers.md)** —
+c'est la grille de départ des évolutions « en profondeur » par métier.
+
 ---
 
 *Documents du dossier : [cadre & synthèse (ce fichier)](README.md) ·
 [01 commercial](01-audit-commercial.md) · [02 environnemental](02-audit-marketing-environnemental.md) ·
-[03 flux fonctionnels](03-audit-fonctionnel-flux.md) · [04 architecture](04-proposition-architecture.md).*
+[03 flux fonctionnels](03-audit-fonctionnel-flux.md) · [04 architecture](04-proposition-architecture.md) ·
+[05 personas métiers (cycle 2)](05-audit-personas-metiers.md).*
