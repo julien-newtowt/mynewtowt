@@ -1013,8 +1013,10 @@ async def co2_variables_update(
         new_value = Decimal(value.strip().replace(",", "."))
     except InvalidOperation:
         raise HTTPException(status_code=400, detail="valeur numérique invalide") from None
-    if new_value <= 0:
+    if not new_value.is_finite() or new_value <= 0:
         raise HTTPException(status_code=400, detail="la valeur doit être strictement positive")
+    if new_value >= Decimal("1000000"):
+        raise HTTPException(status_code=400, detail="valeur hors plage (max 999999.999999)")
     try:
         eff_date = date.fromisoformat(effective_date)
     except ValueError:
