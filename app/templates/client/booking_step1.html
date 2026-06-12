@@ -45,32 +45,14 @@
           <span>ETA <span class="mono">{{ item.leg.eta|date }}</span></span>
           {% if item.distance_nm %}<span>{{ item.distance_nm }} NM</span>{% endif %}
         </div>
-        {% set occ = item.capacity.occupancy_pct %}
-        <div>
-          <small class="text-muted">
-            {{ item.capacity.available_palettes }} / {{ item.capacity.capacity_palettes }}
-            {% if lang == 'en' %}pallets{% else %}palettes{% endif %}
-          </small>
-          <div class="capacity-gauge {% if occ > 85 %}full{% elif occ > 60 %}warn{% endif %}">
-            <div class="fill" style="width: {{ occ }}%"></div>
-          </div>
+        <div class="flex justify-between items-center mt-2">
+          <a href="/routes/{{ item.leg.leg_code }}" class="btn btn-ghost">
+            {% if lang == 'en' %}Details →{% else %}Détails →{% endif %}
+          </a>
+          <a href="/booking/new/{{ item.leg.leg_code }}" class="btn btn-primary">
+            {% if lang == 'en' %}Pick this route →{% else %}Choisir cette route →{% endif %}
+          </a>
         </div>
-        {% if item.co2_per_pallet %}
-        <div class="alert" style="background:rgba(135,189,41,0.08); border-left:3px solid var(--vert); padding:var(--space-2) var(--space-3); border-radius:var(--radius-sm); font-size:var(--text-xs); margin-bottom:0;">
-          🌿 <strong>{{ item.co2_per_pallet.avoidance_pct }}%
-            {% if lang == 'en' %}CO₂ avoided{% else %}CO₂ évité{% endif %}</strong>
-          {% if lang == 'en' %}per pallet (vs conventional cargo){% else %}par palette (vs cargo conventionnel){% endif %}<br/>
-          <span class="text-muted">
-            {{ item.co2_per_pallet.towt_co2_kg }} kg CO₂ NEWTOWT
-            {% if lang == 'en' %}vs{% else %}vs{% endif %}
-            {{ item.co2_per_pallet.conventional_co2_kg }} kg
-            {% if lang == 'en' %}conventional (on ~500 kg/pallet){% else %}conventionnel (sur ~500 kg/palette){% endif %}
-          </span>
-        </div>
-        {% endif %}
-        <a href="/booking/new/{{ item.leg.leg_code }}" class="btn btn-primary">
-          {% if lang == 'en' %}Pick this route →{% else %}Choisir cette route →{% endif %}
-        </a>
       </article>
     {% endfor %}
   </div>

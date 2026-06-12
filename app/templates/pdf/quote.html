@@ -1,0 +1,96 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Devis {{ quote.reference }}{% endblock %}
+{% block doc_kind %}Devis · Quotation{% endblock %}
+{% block doc_ref %}{{ quote.reference }}{% endblock %}
+{% block content %}
+
+<table class="meta" style="width:100%;margin-bottom:10mm;">
+  <tr>
+    <td style="vertical-align:top;width:50%;">
+      <strong>Émetteur</strong><br />
+      NEWTOWT — TransOceanic Wind Transport<br />
+      52 quai Frissard, 76600 Le Havre, France
+    </td>
+    <td style="vertical-align:top;width:50%;">
+      <strong>Demandeur</strong><br />
+      {{ quote.contact_company or '' }}{% if quote.contact_company %}<br />{% endif %}
+      {{ quote.contact_name or '' }}{% if quote.contact_name %}<br />{% endif %}
+      {{ quote.contact_email or '' }}
+      {% if not quote.contact_company and not quote.contact_name and not quote.contact_email %}—{% endif %}
+    </td>
+  </tr>
+</table>
+
+<h3>Route</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:8mm;">
+  <tr>
+    <td><strong>POL</strong></td>
+    <td>{{ pol.name if pol else quote.pol_locode }} ({{ quote.pol_locode }})</td>
+    <td><strong>POD</strong></td>
+    <td>{{ pod.name if pod else quote.pod_locode }} ({{ quote.pod_locode }})</td>
+  </tr>
+  {% if leg %}
+  <tr>
+    <td><strong>Traversée</strong></td>
+    <td class="mono">{{ leg.leg_code }}</td>
+    <td><strong>Navire</strong></td>
+    <td>{{ vessel.name if vessel else '—' }}</td>
+  </tr>
+  {% endif %}
+  {% if quote.etd_snapshot %}
+  <tr>
+    <td><strong>Départ prévu</strong></td>
+    <td colspan="3">{{ quote.etd_snapshot|date }}</td>
+  </tr>
+  {% endif %}
+</table>
+
+<h3>Détail</h3>
+<table style="width:100%;border-collapse:collapse;" class="lines">
+  <thead>
+    <tr style="border-bottom:1.5pt solid #0D5966;text-align:left;">
+      <th style="padding:2mm 1mm;">Désignation</th>
+      <th style="padding:2mm 1mm;text-align:right;">Qté</th>
+      <th style="padding:2mm 1mm;text-align:right;">PU (EUR)</th>
+      <th style="padding:2mm 1mm;text-align:right;">Total (EUR)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for line in quote.lines %}
+    <tr style="border-bottom:0.5pt solid #EFE6D6;">
+      <td style="padding:1.5mm 1mm;">{{ line.label }}</td>
+      <td style="padding:1.5mm 1mm;text-align:right;">{{ line.quantity|round(2) }}</td>
+      <td style="padding:1.5mm 1mm;text-align:right;">{{ line.unit_price_eur|money }}</td>
+      <td style="padding:1.5mm 1mm;text-align:right;">{{ line.total_eur|money }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td colspan="3" style="padding:2mm 1mm;text-align:right;">Fret</td>
+      <td style="padding:2mm 1mm;text-align:right;">{{ quote.freight_subtotal_eur|money }}</td>
+    </tr>
+    <tr>
+      <td colspan="3" style="padding:2mm 1mm;text-align:right;">Options</td>
+      <td style="padding:2mm 1mm;text-align:right;">{{ quote.options_total_eur|money }}</td>
+    </tr>
+    <tr style="border-top:1.5pt solid #0D5966;font-weight:bold;">
+      <td colspan="3" style="padding:2mm 1mm;text-align:right;">Total HT</td>
+      <td style="padding:2mm 1mm;text-align:right;">{{ quote.total_eur|money }}</td>
+    </tr>
+  </tfoot>
+</table>
+
+<p style="margin-top:8mm;font-size:8.5pt;color:#555;">
+  Grille tarifaire appliquée : {{ quote.grid_reference or '—' }} ·
+  {{ quote.palettes_total }} palette(s)
+  {% if quote.tonnage_t %} · {{ quote.tonnage_t|round(2) }} t chargées{% endif %}
+  {% if quote.hazardous %} · marchandises dangereuses (IMDG){% endif %}.<br />
+  Devis indicatif hors taxes, hors droits et frais locaux, valable jusqu'au
+  {{ quote.valid_until|date if quote.valid_until else '—' }}.
+  La capacité est confirmée à la réservation. La facturation est émise par la
+  comptabilité NEWTOWT hors plateforme.<br />
+  Émis le {{ issued_at|date }} — {{ site_url }}/devis/{{ quote.reference }}
+</p>
+
+{% endblock %}

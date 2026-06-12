@@ -1,0 +1,25 @@
+{
+  "name": "NEWTOWT Bord",
+  "short_name": "NEWTOWT",
+  "description": "Espace bord NEWTOWT — navigation, escale, cargo, équipage (utilisable hors ligne).",
+  "start_url": "/onboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#EFE6D6",
+  "theme_color": "#0D5966",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/static/img/logo_NEWTOWT_web.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/img/logo_NEWTOWT_web.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 """Agrégation des documents d'un client (hub /me/documents).
 
-Combine les documents *générés* (BL, packing list, facture, label Anemos —
+Combine les documents *générés* (BL, packing list, booking note, label Anemos —
 liens vers les endpoints PDF owner-only existants de ``cargo_router``) et
 les pièces *uploadées* par le client (``PackingListDocument`` rattachées au
 booking). Les règles de disponibilité reflètent celles de ``cargo_router``.
@@ -34,10 +34,10 @@ def generated_docs_for(booking: Booking) -> list[dict]:
             "available": True,
         },
         {
-            "kind": "invoice",
-            "label": "Facture / Devis",
-            "url": f"/me/bookings/{ref}/invoice.pdf",
-            "available": True,
+            "kind": "booking_note",
+            "label": "Booking note",
+            "url": f"/me/bookings/{ref}/booking-note.pdf",
+            "available": not_draft,
         },
         {
             "kind": "anemos",

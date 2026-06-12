@@ -6,13 +6,16 @@ double-booking under concurrent confirmation.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking
+from app.models.commercial import PALETTE_COEFFICIENTS, Order, OrderAssignment
 from app.models.leg import Leg
 from app.models.vessel import Vessel
 
@@ -52,6 +55,42 @@ _RESERVED_STATUSES: tuple[str, ...] = (
     "discharged",
 )
 
+# FLX-01 — le rail commercial classique (commandes) consomme la même cale
+# que les bookings : ses statuts « engageants » réservent la capacité.
+_ORDER_RESERVED_STATUSES: tuple[str, ...] = ("confirmed", "loaded")
+
+
+async def _reserved_by_orders(db: AsyncSession, leg_id: int) -> int:
+    """Palettes (équivalent EPAL) réservées par les commandes du rail classique.
+
+    Les commandes ventilées comptent via leurs ``order_assignments`` (avec le
+    coefficient du format) ; les commandes affectées directement au leg et
+    jamais ventilées comptent via ``booked_palettes``.
+    """
+    assign_stmt = (
+        select(OrderAssignment.palettes_count, OrderAssignment.pallet_format)
+        .join(Order, Order.id == OrderAssignment.order_id)
+        .where(
+            OrderAssignment.leg_id == leg_id,
+            Order.status.in_(_ORDER_RESERVED_STATUSES),
+        )
+    )
+    total = Decimal("0")
+    for palettes_count, pallet_format in (await db.execute(assign_stmt)).all():
+        coef = Decimal(str(PALETTE_COEFFICIENTS.get(pallet_format, 1.0)))
+        total += Decimal(palettes_count or 0) * coef
+
+    has_assignment = (
+        select(OrderAssignment.id).where(OrderAssignment.order_id == Order.id).exists()
+    )
+    direct_stmt = select(func.coalesce(func.sum(Order.booked_palettes), 0)).where(
+        Order.leg_id == leg_id,
+        Order.status.in_(_ORDER_RESERVED_STATUSES),
+        ~has_assignment,
+    )
+    direct = Decimal(int((await db.scalar(direct_stmt)) or 0))
+    return math.ceil(total + direct)
+
 
 async def _leg_with_vessel(
     db: AsyncSession, leg_id: int, *, lock: bool = False
@@ -88,7 +127,7 @@ async def get_available_capacity(
         .where(Booking.leg_id == leg_id)
         .where(Booking.status.in_(_RESERVED_STATUSES))
     )
-    reserved = int(reserved or 0)
+    reserved = int(reserved or 0) + await _reserved_by_orders(db, leg_id)
 
     available = max(capacity - reserved, 0)
     return CapacityInfo(

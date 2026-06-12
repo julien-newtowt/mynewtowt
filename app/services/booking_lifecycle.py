@@ -14,13 +14,11 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.booking import Booking
 from app.models.client_account import ClientAccount
-from app.models.client_invoice import ClientInvoice
 from app.services import anemos, email, notifications
 
 logger = logging.getLogger("booking_lifecycle")
@@ -48,8 +46,8 @@ _EVENTS: dict[str, dict[str, str]] = {
         "type": "booking_confirmed",
         "subject": "Réservation confirmée",
         "heading": "Votre réservation est confirmée",
-        "message": "Votre réservation {ref} est confirmée. Une facture vous a été "
-        "émise (règlement par virement, échéance à 30 jours).",
+        "message": "Votre réservation {ref} est confirmée. Votre booking note "
+        "est disponible dans votre espace.",
         "cta": "Voir ma réservation",
     },
     "loaded": {
@@ -161,31 +159,6 @@ async def on_status_change(db: AsyncSession, booking: Booking, new_status: str) 
         cta_url=cta_url,
     )
 
-    # À la confirmation, signaler aussi la facture émise.
-    if new_status == "confirmed":
-        invoice = (
-            await db.execute(
-                select(ClientInvoice)
-                .where(ClientInvoice.booking_id == booking.id)
-                .order_by(ClientInvoice.issued_at.desc())
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if invoice is not None:
-            await notifications.notify_client(
-                db,
-                client_id=client.id,
-                type="invoice_issued",
-                title=f"Facture émise — {invoice.reference}",
-                link="/me/invoices",
-            )
-            await _send_email(
-                client,
-                subject_line=f"Facture {invoice.reference}",
-                heading="Votre facture est disponible",
-                message=f"La facture {invoice.reference} d'un montant de "
-                f"{invoice.amount_incl_vat_eur} EUR TTC est disponible "
-                f"dans votre espace client (règlement par virement).",
-                cta_label="Voir mes factures",
-                cta_url="/me/invoices",
-            )
+    # COM-05 — plus de notification "facture émise" à la confirmation : la
+    # facturation est émise par la comptabilité NEWTOWT hors plateforme. Le
+    # client dispose de sa booking note dans son espace documents.

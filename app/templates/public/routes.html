@@ -1,5 +1,6 @@
 {% extends "public/_layout_v2.html" %}
 {% block title %}{% if lang == 'en' %}Routes & schedules{% else %}Routes & plannings{% endif %} — {{ brand.nom_court }}{% endblock %}
+{% block description %}{% if lang == 'en' %}Open schedules — wind-powered cargo crossings to Brazil & Latin America. Decarbonised sail freight, ANEMOS label.{% else %}Plannings ouverts — traversées de fret à la voile vers le Brésil et l'Amérique latine. Transport vélique décarboné, label ANEMOS.{% endif %}{% endblock %}
 {% block content %}
 
 <section class="hero">
@@ -59,16 +60,9 @@
               <span>ETD <span class="mono">{{ item.etd|date }}</span></span>
               <span>ETA <span class="mono">{{ item.eta|date }}</span></span>
             </div>
-            {% set occ = ((item.capacity_palettes - item.available_palettes) * 100 / item.capacity_palettes) if item.capacity_palettes > 0 else 0 %}
-            <div>
-              <small class="text-muted">
-                {{ item.available_palettes }} / {{ item.capacity_palettes }}
-                {% if lang == 'en' %}pallets{% else %}palettes{% endif %}
-              </small>
-              <div class="capacity-gauge {% if occ > 85 %}full{% elif occ > 60 %}warn{% endif %}">
-                <div class="fill" style="width: {{ occ }}%"></div>
-              </div>
-            </div>
+            <a href="/devis?leg={{ item.leg_code }}" class="btn btn-primary btn-block">
+              {% if lang == 'en' %}Request a quote{% else %}Demander un devis{% endif %}
+            </a>
             <div class="flex justify-between items-center mt-2">
               <a href="/routes/{{ item.leg_code }}" class="btn btn-ghost">
                 {% if lang == 'en' %}Details →{% else %}Détails →{% endif %}

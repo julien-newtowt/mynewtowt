@@ -57,49 +57,21 @@ async def step_1_search(
         .order_by(Leg.etd.asc())
         .limit(20)
     )
-    from decimal import Decimal
 
-    from app.services.co2 import estimate as co2_estimate
-    from app.services.ports import haversine_nm
-
-    AVG_WEIGHT_PER_PALLET_T = Decimal("0.5")  # 500 kg/palette (hypothèse marketing)
-
+    # Le suivi du remplissage n'est plus exposé (FLX-01) : la capacité sert
+    # uniquement à filtrer les traversées fermées ou complètes, sans publier
+    # de chiffres. Le prix est restitué par l'outil de devis (grilles).
     items = []
     for leg, vessel in res.all():
-        pol = await db.get(Port, leg.departure_port_id)
-        pod = await db.get(Port, leg.arrival_port_id)
         try:
             capacity = await get_available_capacity(db, leg.id)
         except (NotBookable, BookingClosed):
             continue
-        # Estimation CO₂ par palette (distance orthodromique × poids moyen)
-        co2_per_pallet = None
-        distance_nm = None
-        if pol and pod and pol.latitude is not None and pod.latitude is not None:
-            distance_nm = round(
-                haversine_nm(
-                    pol.latitude,
-                    pol.longitude,
-                    pod.latitude,
-                    pod.longitude,
-                ),
-                1,
-            )
-            co2_per_pallet = co2_estimate(
-                distance_nm=Decimal(str(distance_nm)),
-                tonnage_t=AVG_WEIGHT_PER_PALLET_T,
-            )
-        items.append(
-            {
-                "leg": leg,
-                "vessel": vessel,
-                "pol": pol,
-                "pod": pod,
-                "capacity": capacity,
-                "distance_nm": distance_nm,
-                "co2_per_pallet": co2_per_pallet,
-            }
-        )
+        if capacity.available_palettes <= 0:
+            continue
+        pol = await db.get(Port, leg.departure_port_id)
+        pod = await db.get(Port, leg.arrival_port_id)
+        items.append({"leg": leg, "vessel": vessel, "pol": pol, "pod": pod})
     return templates.TemplateResponse(
         "client/booking_step1.html",
         {"request": request, "client": client, "legs": items},

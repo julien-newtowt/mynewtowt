@@ -42,6 +42,20 @@ RATE_GRID_STATUSES = ("draft", "active", "expired", "superseded")
 RATE_OFFER_STATUSES = ("draft", "sent", "accepted", "declined", "expired")
 ORDER_STATUSES = ("draft", "confirmed", "loaded", "delivered", "cancelled")
 
+# Unités de tarification des options de grille.
+# per_palette      — appliqué × nombre de palettes (ex. manutention)
+# per_tonne        — appliqué × tonnage chargé
+# per_booking      — forfait par réservation
+# per_booking_note — forfait par booking note émise (frais documentaires)
+RATE_OPTION_UNITS = ("per_palette", "per_tonne", "per_booking", "per_booking_note")
+
+RATE_OPTION_UNIT_LABELS: dict[str, str] = {
+    "per_palette": "par palette",
+    "per_tonne": "par tonne chargée",
+    "per_booking": "par réservation",
+    "per_booking_note": "par booking note",
+}
+
 
 # Brackets dégressifs (volume → coefficient)
 DEFAULT_BRACKETS_SHIPPER: list[dict] = [
@@ -109,15 +123,27 @@ class Client(Base):
 
 
 class RateGrid(Base):
-    """Tarif baseline pour un client, valide sur une période."""
+    """Grille tarifaire = 1 route POL/POD + 1 période.
+
+    Deux familles :
+    - grille **client** (`client_id` renseigné) — s'applique au client connu ;
+      une grille client sans route (pol/pod NULL) vaut pour toutes ses routes.
+    - grille **par défaut** (`client_id` NULL, `is_default=True`) — s'applique
+      à tout demandeur inconnu sur la route, et sert de repli.
+    """
 
     __tablename__ = "rate_grids"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     reference: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
-    client_id: Mapped[int] = mapped_column(
-        ForeignKey("commercial_clients.id"), nullable=False, index=True
+    client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("commercial_clients.id"), nullable=True, index=True
     )
+    # Route couverte par la grille (UN/LOCODE 5 car.) — NULL = toutes routes
+    # (uniquement pertinent pour une grille client).
+    pol_locode: Mapped[str | None] = mapped_column(String(5), index=True)
+    pod_locode: Mapped[str | None] = mapped_column(String(5), index=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
     valid_from: Mapped[_date] = mapped_column(Date, nullable=False)
     valid_to: Mapped[_date | None] = mapped_column(Date)
@@ -131,9 +157,12 @@ class RateGrid(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    client: Mapped[Client] = relationship(back_populates="rate_grids")
+    client: Mapped[Client | None] = relationship(back_populates="rate_grids")
     lines: Mapped[list[RateGridLine]] = relationship(
         back_populates="grid", cascade="all, delete-orphan", order_by="RateGridLine.max_qty"
+    )
+    options: Mapped[list[RateGridOption]] = relationship(
+        back_populates="grid", cascade="all, delete-orphan", order_by="RateGridOption.id"
     )
 
 
@@ -152,6 +181,33 @@ class RateGridLine(Base):
     coeff: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
 
     grid: Mapped[RateGrid] = relationship(back_populates="lines")
+
+
+class RateGridOption(Base):
+    """Option tarifaire d'une grille (coûts annexes au fret).
+
+    Exemples : manutention par palette, contribution à la tonne chargée,
+    forfait par réservation, frais de booking note. Les options actives
+    sont reprises dans tout devis généré sur la grille.
+    """
+
+    __tablename__ = "rate_grid_options"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grid_id: Mapped[int] = mapped_column(
+        ForeignKey("rate_grids.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    code: Mapped[str] = mapped_column(String(40), nullable=False)
+    label: Mapped[str] = mapped_column(String(160), nullable=False)
+    unit: Mapped[str] = mapped_column(String(20), nullable=False)  # RATE_OPTION_UNITS
+    amount_eur: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    grid: Mapped[RateGrid] = relationship(back_populates="options")
 
 
 class RateOffer(Base):

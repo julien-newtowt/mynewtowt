@@ -37,6 +37,9 @@ class NoonReport(Base):
 
     remarks: Mapped[str | None] = mapped_column(Text)
 
+    # Dédoublonnage PWA offline — UUID généré côté navigateur (onboard-offline.js)
+    client_uuid: Mapped[str | None] = mapped_column(String(36), unique=True)
+
     recorded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

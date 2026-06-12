@@ -1,0 +1,117 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Booking note {{ note_ref }}{% endblock %}
+{% block doc_kind %}Booking note · Confirmation de réservation{% endblock %}
+{% block doc_ref %}{{ note_ref }}{% endblock %}
+{% block content %}
+
+<h1>Booking note</h1>
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Client · Shipper</div>
+    <div class="value">
+      <strong>{{ client.company_name }}</strong><br/>
+      {% if client.contact_name %}{{ client.contact_name }}<br/>{% endif %}
+      {% if client.billing_address %}{{ client.billing_address }}<br/>{% endif %}
+      {% if client.country %}{{ client.country }}<br/>{% endif %}
+      {{ client.email }}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Transporteur · Carrier</div>
+    <div class="value">
+      <strong>{{ brand.raison_sociale }}</strong><br/>
+      {{ brand.adresse }}<br/>
+      {{ brand.telephone }}<br/>
+      {{ brand.email }}
+    </div>
+  </div>
+</div>
+
+<h2>Voyage</h2>
+<table>
+  <tr>
+    <td style="width:30%;"><strong>Référence booking</strong></td>
+    <td class="mono">{{ booking.reference }}</td>
+    <td style="width:30%;"><strong>Code voyage</strong></td>
+    <td class="mono">{{ leg.leg_code }}</td>
+  </tr>
+  <tr>
+    <td><strong>Navire</strong></td>
+    <td>{{ vessel.name }}</td>
+    <td><strong>Route</strong></td>
+    <td class="mono">{{ pol.locode }} → {{ pod.locode }}</td>
+  </tr>
+  <tr>
+    <td><strong>ETD — {{ pol.name }}</strong></td>
+    <td class="mono">{{ leg.etd.strftime("%d/%m/%Y") }}</td>
+    <td><strong>ETA — {{ pod.name }}</strong></td>
+    <td class="mono">{{ leg.eta.strftime("%d/%m/%Y") }}</td>
+  </tr>
+</table>
+
+<h2>Cargaison</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Format</th>
+      <th class="text-right">Nombre</th>
+      <th>Description</th>
+      <th class="text-right">Poids (kg)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in booking.items %}
+      <tr>
+        <td class="mono">{{ item.pallet_format }}</td>
+        <td class="text-right">{{ item.pallet_count }}</td>
+        <td>
+          {{ item.cargo_description }}
+          {% if item.hazardous %}<span class="badge-imdg">IMDG{% if item.imdg_class %} {{ item.imdg_class }}{% endif %}</span>{% endif %}
+        </td>
+        <td class="text-right mono">{{ item.total_weight_kg or item.unit_weight_kg or "—" }}</td>
+      </tr>
+    {% endfor %}
+    <tr class="total-row">
+      <td><strong>Total</strong></td>
+      <td class="text-right mono">{{ booking.total_palettes }}</td>
+      <td></td>
+      <td class="text-right mono">{{ "%.1f"|format(booking.total_weight_kg|float) }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Conditions tarifaires (estimation)</h2>
+<table>
+  <tr>
+    <td style="width:65%;">
+      Transport maritime vélique<br/>
+      <span class="small">{{ pol.name }} → {{ pod.name }} · Navire {{ vessel.name }} ·
+        {{ booking.total_palettes }} palettes</span><br/>
+      {% if price_is_confirmed %}
+        <span class="small c-vert">Prix confirmé par {{ brand.nom_court }}.</span>
+      {% else %}
+        <span class="small c-cuivre">Estimation indicative — susceptible d'ajustement
+          en cas de marchandise non conforme à la déclaration.</span>
+      {% endif %}
+    </td>
+    <td class="text-right mono" style="font-size:12pt;">
+      {% if price_eur is not none %}{{ "%.2f"|format(price_eur|float) }} EUR{% else %}—{% endif %}
+    </td>
+  </tr>
+</table>
+
+{% if booking.signed_terms_version %}
+  <p class="small">
+    Conditions générales de transport acceptées — version
+    <span class="mono">{{ booking.signed_terms_version }}</span>{% if booking.signed_terms_at %},
+    signées le {{ booking.signed_terms_at.strftime("%d/%m/%Y") }}{% endif %}.
+  </p>
+{% endif %}
+
+<div class="footer-mention" style="margin-top:14pt;">
+  La facturation est émise par la comptabilité NEWTOWT hors plateforme.
+  Ce document confirme la réservation et ses conditions.
+</div>
+
+{% endblock %}

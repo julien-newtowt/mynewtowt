@@ -19,6 +19,7 @@ from app.models.commercial import (
     OrderAssignment,
     RateGrid,
     RateGridLine,
+    RateGridOption,
     RateOffer,
 )
 from app.models.contact_request import ContactRequest
@@ -56,6 +57,7 @@ from app.models.packing_list import (
 )
 from app.models.planning_share import PlanningShare
 from app.models.port import Port
+from app.models.quote import Quote, QuoteLine
 from app.models.rate_limit import RateLimitAttempt
 from app.models.sof_event import (
     CargoDocument,
@@ -125,8 +127,11 @@ __all__ = [
     "PortConfig",
     "PortalAccessLog",
     "PortalMessage",
+    "Quote",
+    "QuoteLine",
     "RateGrid",
     "RateGridLine",
+    "RateGridOption",
     "RateLimitAttempt",
     "RateOffer",
     "SofEvent",

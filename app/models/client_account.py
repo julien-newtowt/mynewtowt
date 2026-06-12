@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -35,6 +35,12 @@ class ClientAccount(Base):
 
     # Segment helps pricing & service rules: occasional / recurring / key_account
     segment: Mapped[str] = mapped_column(String(20), default="occasional", nullable=False)
+
+    # Lien vers le référentiel commercial (grilles tarifaires négociées).
+    # Quand il est posé, la tarification résout d'abord la grille du client.
+    commercial_client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("commercial_clients.id", ondelete="SET NULL"), index=True
+    )
 
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

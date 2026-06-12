@@ -31,6 +31,7 @@ from app.services.anemos import resolve_distance_nm
 from app.services.pdf_generator import (
     render_anemos_certificate,
     render_bill_of_lading,
+    render_booking_note,
     render_invoice,
     render_packing_list,
 )
@@ -192,6 +193,18 @@ async def client_invoice_pdf(
     return await _invoice_response(db, ref, owner_client_id=client.id)
 
 
+@router.get("/me/bookings/{ref}/booking-note.pdf")
+async def client_booking_note_pdf(
+    ref: str,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Booking note (COM-05) — confirme la réservation et ses conditions.
+
+    La facturation est émise par la comptabilité NEWTOWT hors plateforme."""
+    return await _booking_note_response(db, ref, owner_client_id=client.id)
+
+
 @router.get("/me/bookings/{ref}/anemos.pdf")
 async def client_anemos_pdf(
     ref: str,
@@ -282,6 +295,20 @@ async def _invoice_response(db, ref, owner_client_id=None) -> Response:
         pod=pod,
         client=client,
         invoice=invoice,
+    )
+    return _pdf_response(doc)
+
+
+async def _booking_note_response(db, ref, owner_client_id=None) -> Response:
+    booking = await _get_booking(db, ref, owner_client_id)
+    if booking.status in ("draft",):
+        raise HTTPException(
+            status_code=400,
+            detail="Booking note not available until the booking is submitted",
+        )
+    leg, vessel, pol, pod, client = await _load_booking_bundle(db, booking)
+    doc = render_booking_note(
+        booking=booking, leg=leg, vessel=vessel, pol=pol, pod=pod, client=client
     )
     return _pdf_response(doc)
 

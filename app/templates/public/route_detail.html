@@ -1,6 +1,6 @@
 {% extends "public/_layout_v2.html" %}
 {% block title %}{{ leg.leg_code }} — {{ pol.name if pol }} → {{ pod.name if pod }} — NEWTOWT{% endblock %}
-{% block description %}Traversée à la voile {{ pol.name if pol }} → {{ pod.name if pod }} par {{ vessel.name }} — {{ duration_days }} jours — −89 % CO₂ vs cargo conventionnel.{% endblock %}
+{% block description %}Traversée à la voile {{ pol.name if pol }} → {{ pod.name if pod }} par {{ vessel.name }} — {{ duration_days }} jours — transport vélique décarboné, certifié label Anemos.{% endblock %}
 {% block head %}{{ super() }}
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
@@ -55,14 +55,7 @@
           {% if distance_nm %}
             <span class="rd-chip">{{ "{:,}".format(distance_nm).replace(",", " ") }} NM</span>
           {% endif %}
-          {% if co2_est %}
-            <span class="rd-chip rd-chip--green">−{{ co2_est.avoidance_pct }} % CO₂</span>
-          {% else %}
-            <span class="rd-chip rd-chip--green">−89 % CO₂</span>
-          {% endif %}
-          {% if leg.public_price_per_palette_eur %}
-            <span class="rd-chip rd-chip--price">À partir de {{ leg.public_price_per_palette_eur|money }} / palette</span>
-          {% endif %}
+          <span class="rd-chip rd-chip--green">Transport vélique décarboné</span>
         </div>
       </div>
 
@@ -89,40 +82,13 @@
 
     {# Booking CTA #}
     <aside class="booking-cta">
-      {% if capacity %}
-        <div class="booking-cta-capacity">
-          <div class="booking-cta-available">{{ capacity.available_palettes }}</div>
-          <div class="booking-cta-total">palettes disponibles / {{ capacity.capacity_palettes }}</div>
-        </div>
-        <div class="capacity-gauge capacity-gauge--on-dark">
-          <div class="capacity-fill {% if capacity.occupancy_pct > 85 %}warn{% endif %}" style="width:{{ capacity.occupancy_pct|round(0) }}%;"></div>
-        </div>
-      {% else %}
-        <div class="booking-cta-capacity">
-          <div class="booking-cta-total">Capacité sur demande</div>
-        </div>
-      {% endif %}
-
-      {% if leg.public_price_per_palette_eur %}
-        <div style="text-align:center; font-size:var(--fs-13); opacity:.9;">
-          À partir de
-          <strong style="font-size:var(--fs-20); display:block; color:#fff;">{{ leg.public_price_per_palette_eur|money }}</strong>
-          <span style="opacity:.8;">/ palette</span>
-        </div>
-      {% endif %}
-
       <div class="co2-badge">
-        🌿 <span class="co2-value">−{{ co2_est.avoidance_pct if co2_est else '89' }} % CO₂</span><br>
-        <span style="opacity:.9;">vs cargo conventionnel</span>
+        🌿 <span class="co2-value">Transport vélique décarboné</span><br>
+        <span style="opacity:.9;">certifié label Anemos</span>
       </div>
 
-      {% if capacity and capacity.available_palettes > 0 %}
-        <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">Réserver cette traversée</a>
-      {% elif capacity %}
-        <span class="btn btn-white btn-block btn-lg" style="opacity:.6;cursor:default;">Complet</span>
-      {% else %}
-        <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">Réserver</a>
-      {% endif %}
+      <a href="/devis?leg={{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">Demander un devis</a>
+      <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">Réserver cette traversée</a>
     </aside>
 
   </div>{# /rd-hero #}
@@ -185,7 +151,6 @@
                   <div style="font-size:var(--fs-13); color:var(--c-grey);">
                     Pavillon {{ vessel.flag|flag if vessel.flag else '—' }}{{ vessel.flag or '' }}
                     {% if vessel.dwt %} · DWT {{ "{:,.0f}".format(vessel.dwt).replace(",", " ") }} t{% endif %}
-                    · {{ vessel.capacity_palettes }} palettes
                     · {{ vessel.default_speed_kn|round(1) }} kn
                   </div>
                 </div>
@@ -246,11 +211,9 @@
               <dt>Cut-off</dt><dd>{{ cut_off_at.strftime('%d %b %Y %H:%M') }} UTC</dd>
             </div>
             {% endif %}
-            {% if leg.public_price_per_palette_eur %}
             <div class="rd-sidebar-row">
-              <dt>Tarif</dt><dd>{{ leg.public_price_per_palette_eur|money }} / palette</dd>
+              <dt>Tarif</dt><dd><a href="/devis?leg={{ leg.leg_code }}" style="color:var(--c-teal);">Sur devis →</a></dd>
             </div>
-            {% endif %}
           </dl>
         </div>
 
@@ -276,9 +239,6 @@
               <dt>DWT</dt><dd>{{ "{:,.0f}".format(vessel.dwt).replace(",", " ") }} t</dd>
             </div>
             {% endif %}
-            <div class="rd-sidebar-row">
-              <dt>Capacité</dt><dd>{{ vessel.capacity_palettes }} palettes</dd>
-            </div>
             <div class="rd-sidebar-row">
               <dt>Vitesse</dt><dd>{{ vessel.default_speed_kn|round(1) }} kn</dd>
             </div>
@@ -330,12 +290,11 @@
         NEWTOWT et le cargo conventionnel à moteur, exprimées par tonne de marchandise transportée.
       </p>
 
-      {% if co2_est %}
-      {% set eco_dist    = co2_est.distance_km | float %}
-      {% set eco_towt    = co2_est.towt_co2_kg | float %}
-      {% set eco_conv    = co2_est.conventional_co2_kg | float %}
-      {% set eco_avoided = co2_est.avoided_co2_kg | float %}
-      {% set eco_pct     = co2_est.avoidance_pct | round(0) | int %}
+      {% if distance_nm %}
+      {% set eco_dist    = distance_nm * 1.852 %}
+      {% set eco_towt    = eco_dist * 1.5 / 1000 %}
+      {% set eco_conv    = eco_dist * 13.7 / 1000 %}
+      {% set eco_avoided = eco_conv - eco_towt %}
       <div style="overflow-x:auto;">
         <table class="rd-eco-table">
           <thead>
@@ -344,7 +303,6 @@
               <th>Segment</th>
               <th style="text-align:right;">Distance (km)</th>
               <th style="text-align:right;">CO₂ / tonne</th>
-              <th>Indice</th>
             </tr>
           </thead>
           <tbody>
@@ -353,14 +311,12 @@
               <td>{{ pol.name if pol else '—' }} → {{ pod.name if pod else '—' }}</td>
               <td class="td-num">{{ "{:,.0f}".format(eco_dist).replace(",", " ") }}</td>
               <td class="td-num" style="color:var(--c-green);">{{ "%.1f"|format(eco_towt) }} kg</td>
-              <td><span class="rd-eco-avoided">−{{ eco_pct }} %</span></td>
             </tr>
             <tr class="rd-eco-row--conv">
               <td><span style="color:var(--c-grey);">🛢 Cargo conventionnel</span></td>
               <td>{{ pol.name if pol else '—' }} → {{ pod.name if pod else '—' }}</td>
               <td class="td-num">{{ "{:,.0f}".format(eco_dist).replace(",", " ") }}</td>
               <td class="td-num">{{ "%.1f"|format(eco_conv) }} kg</td>
-              <td>référence</td>
             </tr>
           </tbody>
           <tfoot>
@@ -368,9 +324,6 @@
               <td colspan="3" style="font-weight:var(--fw-bold); padding-top:var(--sp-4);">CO₂ évité par tonne</td>
               <td class="td-num" style="font-weight:var(--fw-bold); color:var(--c-green); padding-top:var(--sp-4);">
                 {{ "%.1f"|format(eco_avoided) }} kg
-              </td>
-              <td style="padding-top:var(--sp-4);">
-                <span class="rd-eco-avoided">−{{ eco_pct }} %</span>
               </td>
             </tr>
           </tfoot>

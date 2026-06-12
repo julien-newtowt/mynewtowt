@@ -6,7 +6,6 @@ unauthenticated clients and exposes only data flagged `is_bookable=True`.
 
 from __future__ import annotations
 
-import contextlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -21,7 +20,6 @@ from app.models.claim import VesselPosition
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.vessel import Vessel
-from app.services.capacity import BookingClosed, NotBookable, get_available_capacity
 from app.templating import templates
 
 router = APIRouter(tags=["public"])
@@ -144,11 +142,6 @@ async def route_detail(
     pol = await db.get(Port, leg.departure_port_id)
     pod = await db.get(Port, leg.arrival_port_id)
 
-    try:
-        capacity = await get_available_capacity(db, leg.id)
-    except (NotBookable, BookingClosed):
-        capacity = None
-
     # Config portuaire (agent, docs, restrictions) pour les blocs port.
     from app.models.finance import PortConfig
 
@@ -175,19 +168,6 @@ async def route_detail(
     # Date de clôture des réservations : explicite ou ETD − 48 h.
     cut_off_at = leg.booking_close_at or (leg.etd - timedelta(hours=48))
 
-    # Estimation CO₂ per tonne pour l'éco-calculateur.
-    from decimal import Decimal
-
-    from app.services import co2 as co2_svc
-
-    co2_est = None
-    if distance_nm:
-        with contextlib.suppress(Exception):
-            co2_est = co2_svc.estimate(
-                distance_nm=Decimal(str(distance_nm)),
-                tonnage_t=Decimal("1"),
-            )
-
     return templates.TemplateResponse(
         "public/route_detail.html",
         {
@@ -200,9 +180,7 @@ async def route_detail(
             "pod_config": pod_config,
             "distance_nm": distance_nm,
             "duration_days": duration_days,
-            "capacity": capacity,
             "cut_off_at": cut_off_at,
-            "co2_est": co2_est,
             "map_token": settings.map_token,
         },
     )
@@ -262,14 +240,6 @@ async def _next_bookable_legs(db: AsyncSession, *, limit: int = 6) -> list[dict[
     for leg, vessel in rows:
         pol = await db.get(Port, leg.departure_port_id)
         pod = await db.get(Port, leg.arrival_port_id)
-        try:
-            capacity = await get_available_capacity(db, leg.id)
-            available = capacity.available_palettes
-            capacity_total = capacity.capacity_palettes
-        except Exception:
-            # leg ouvert à la liste publique mais non bookable / window fermée / config incomplète
-            available = 0
-            capacity_total = leg.public_capacity_palettes or 0
         out.append(
             {
                 "leg_id": leg.id,
@@ -279,9 +249,6 @@ async def _next_bookable_legs(db: AsyncSession, *, limit: int = 6) -> list[dict[
                 "pod": pod,
                 "etd": leg.etd,
                 "eta": leg.eta,
-                "available_palettes": available,
-                "capacity_palettes": capacity_total,
-                "price_per_palette": leg.public_price_per_palette_eur,
             }
         )
     return out
@@ -317,13 +284,6 @@ async def _search_legs(
             continue
         if to_country and pod and pod.country.upper() != to_country.upper():
             continue
-        try:
-            cap = await get_available_capacity(db, leg.id)
-            available = cap.available_palettes
-            capacity_total = cap.capacity_palettes
-        except Exception:
-            available = 0
-            capacity_total = leg.public_capacity_palettes or 0
         legs.append(
             {
                 "leg_id": leg.id,
@@ -333,9 +293,6 @@ async def _search_legs(
                 "pod": pod,
                 "etd": leg.etd,
                 "eta": leg.eta,
-                "available_palettes": available,
-                "capacity_palettes": capacity_total,
-                "price_per_palette": leg.public_price_per_palette_eur,
             }
         )
     return legs
