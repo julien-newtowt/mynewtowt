@@ -152,7 +152,11 @@ async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertifi
             leg.distance_nm = distance
 
     tonnage = (booking.total_weight_kg or Decimal("0")) / Decimal("1000")
-    emission = estimate_co2(distance_nm=distance, tonnage_t=tonnage)
+    # Facteurs versionnés en base (ENV-02) — repli silencieux sur les constantes.
+    from app.services.co2 import get_factors
+
+    factors = await get_factors(db)
+    emission = estimate_co2(distance_nm=distance, tonnage_t=tonnage, factors=factors)
 
     # b) Émissions NEWTOWT — réel déclaré à bord si disponible.
     fuel_l = await _noon_total(db, booking.leg_id, NoonReport.fuel_consumed_24h_l)
