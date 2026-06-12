@@ -24,15 +24,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.models.client_account import ClientAccount
 from app.models.commercial import (
     CLIENT_TYPES,
+    RATE_OPTION_UNIT_LABELS,
+    RATE_OPTION_UNITS,
     Client,
     Order,
     RateGrid,
     RateGridLine,
+    RateGridOption,
     RateOffer,
 )
 from app.models.leg import Leg
+from app.models.quote import Quote
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.commercial import (
@@ -43,9 +48,17 @@ from app.services.commercial import (
     next_order_reference,
     pick_bracket,
 )
+from app.services.quoting import backfill_default_grids
 from app.templating import templates
 
 router = APIRouter(prefix="/commercial", tags=["commercial"])
+
+
+def _hx_or_redirect(request: Request, target: str):
+    """303 classique, ou header HX-Redirect si la requête vient d'HTMX."""
+    if request.headers.get("hx-request"):
+        return Response(status_code=200, headers={"HX-Redirect": target})
+    return RedirectResponse(url=target, status_code=303)
 
 
 # ────────────────────────────────────────────── Landing
@@ -161,10 +174,179 @@ async def client_create(
     return RedirectResponse(url="/commercial/clients", status_code=303)
 
 
+@router.get("/clients/{client_id}", response_class=HTMLResponse)
+async def client_detail(
+    client_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    client = await db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404)
+    grids = list(
+        (
+            await db.execute(
+                select(RateGrid)
+                .where(RateGrid.client_id == client.id)
+                .order_by(RateGrid.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    linked_accounts = list(
+        (
+            await db.execute(
+                select(ClientAccount)
+                .where(ClientAccount.commercial_client_id == client.id)
+                .order_by(ClientAccount.email.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    unlinked_accounts = list(
+        (
+            await db.execute(
+                select(ClientAccount)
+                .where(ClientAccount.commercial_client_id.is_(None))
+                .order_by(ClientAccount.email.asc())
+                .limit(200)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return templates.TemplateResponse(
+        "staff/commercial/client_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "grids": grids,
+            "linked_accounts": linked_accounts,
+            "unlinked_accounts": unlinked_accounts,
+        },
+    )
+
+
+@router.post("/clients/{client_id}/accounts/link")
+async def client_account_link(
+    client_id: int,
+    request: Request,
+    account_id: int = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    client = await db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="client introuvable")
+    account = await db.get(ClientAccount, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="compte plateforme introuvable")
+    if account.commercial_client_id is not None and account.commercial_client_id != client.id:
+        raise HTTPException(status_code=400, detail="compte déjà relié à un autre client")
+    account.commercial_client_id = client.id
+    await db.flush()
+    await activity_record(
+        db,
+        action="account_link",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="client",
+        entity_id=client.id,
+        entity_label=client.name,
+        detail=f"compte plateforme #{account.id} relié",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/clients/{client.id}")
+
+
+@router.post("/clients/{client_id}/accounts/{account_id}/unlink")
+async def client_account_unlink(
+    client_id: int,
+    account_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    client = await db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="client introuvable")
+    account = await db.get(ClientAccount, account_id)
+    if account is None or account.commercial_client_id != client.id:
+        raise HTTPException(status_code=404, detail="compte plateforme non relié à ce client")
+    account.commercial_client_id = None
+    await db.flush()
+    await activity_record(
+        db,
+        action="account_unlink",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="client",
+        entity_id=client.id,
+        entity_label=client.name,
+        detail=f"compte plateforme #{account.id} délié",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/clients/{client.id}")
+
+
 # ────────────────────────────────────────────── Rate grids
+def _clean_locode(value: str | None, field: str) -> str | None:
+    """LOCODE UN normalisé (majuscules) ou None ; 400 si format invalide."""
+    code = (value or "").strip().upper()
+    if not code:
+        return None
+    if len(code) != 5 or not code.isalnum():
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field} invalide : LOCODE UN sur 5 caractères (ex. FRLEH)",
+        )
+    return code
+
+
+def _validate_grid_route(
+    *, client_id: int | None, pol: str | None, pod: str | None, is_default: bool
+) -> None:
+    """Règles route/défaut d'une grille.
+
+    - POL et POD vont ensemble (route complète, ou aucune route) ;
+    - grille par défaut : route POL/POD obligatoire, sans client ;
+    - grille non défaut : client obligatoire (route précise ou toutes-routes).
+    """
+    if (pol is None) != (pod is None):
+        raise HTTPException(
+            status_code=400,
+            detail="route incomplète : renseigner POL et POD ensemble, ou aucun des deux",
+        )
+    if is_default:
+        if client_id is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="une grille par défaut ne peut pas être rattachée à un client",
+            )
+        if pol is None or pod is None:
+            raise HTTPException(
+                status_code=400,
+                detail="une grille par défaut requiert une route POL/POD",
+            )
+    elif client_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="une grille doit être rattachée à un client, ou marquée « grille par défaut »",
+        )
+
+
 @router.get("/grids", response_class=HTMLResponse)
 async def grids_list(
     request: Request,
+    created: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
@@ -181,8 +363,31 @@ async def grids_list(
     )
     return templates.TemplateResponse(
         "staff/commercial/grids.html",
-        {"request": request, "user": user, "grids": grids},
+        {"request": request, "user": user, "grids": grids, "created": created},
     )
+
+
+@router.post("/grids/backfill-defaults")
+async def grids_backfill_defaults(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Crée la grille par défaut de chaque route POL/POD du planning."""
+    count = await backfill_default_grids(db)
+    await db.flush()
+    await activity_record(
+        db,
+        action="grids_backfill_defaults",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        detail=f"{count} grilles créées",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids?created={count}")
 
 
 @router.get("/grids/new", response_class=HTMLResponse)
@@ -205,7 +410,10 @@ async def grid_new_form(
 @router.post("/grids")
 async def grid_create(
     request: Request,
-    client_id: int = Form(...),
+    client_id: int | None = Form(None),
+    pol_locode: str | None = Form(None),
+    pod_locode: str | None = Form(None),
+    is_default: bool = Form(False),
     valid_from: str = Form(...),
     valid_to: str | None = Form(None),
     base_rate: float = Form(...),
@@ -213,13 +421,21 @@ async def grid_create(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
-    client = await db.get(Client, client_id)
-    if client is None:
-        raise HTTPException(status_code=404, detail="client introuvable")
+    pol = _clean_locode(pol_locode, "POL")
+    pod = _clean_locode(pod_locode, "POD")
+    _validate_grid_route(client_id=client_id, pol=pol, pod=pod, is_default=is_default)
+    client = None
+    if client_id is not None:
+        client = await db.get(Client, client_id)
+        if client is None:
+            raise HTTPException(status_code=404, detail="client introuvable")
     ref = await next_grid_reference(db)
     grid = RateGrid(
         reference=ref,
-        client_id=client.id,
+        client_id=client.id if client else None,
+        pol_locode=pol,
+        pod_locode=pod,
+        is_default=is_default,
         status="draft",
         valid_from=_date.fromisoformat(valid_from),
         valid_to=_date.fromisoformat(valid_to) if valid_to else None,
@@ -229,8 +445,9 @@ async def grid_create(
     )
     db.add(grid)
     await db.flush()
-    # Auto-create default brackets based on client_type
-    for b in default_brackets_for(client.client_type):
+    # Auto-create default brackets based on client_type (shipper pour une
+    # grille par défaut : brackets dégressifs complets).
+    for b in default_brackets_for(client.client_type if client else "shipper"):
         db.add(
             RateGridLine(
                 grid_id=grid.id,
@@ -256,6 +473,75 @@ async def grid_create(
     return RedirectResponse(url=f"/commercial/grids/{grid.id}", status_code=303)
 
 
+@router.get("/grids/{grid_id}/edit", response_class=HTMLResponse)
+async def grid_edit_form(
+    grid_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+) -> HTMLResponse:
+    grid = await db.get(RateGrid, grid_id)
+    if grid is None:
+        raise HTTPException(status_code=404)
+    clients = list(
+        (await db.execute(select(Client).where(Client.is_active.is_(True)).order_by(Client.name)))
+        .scalars()
+        .all()
+    )
+    return templates.TemplateResponse(
+        "staff/commercial/grid_form.html",
+        {"request": request, "user": user, "clients": clients, "grid": grid},
+    )
+
+
+@router.post("/grids/{grid_id}/edit")
+async def grid_edit(
+    grid_id: int,
+    request: Request,
+    client_id: int | None = Form(None),
+    pol_locode: str | None = Form(None),
+    pod_locode: str | None = Form(None),
+    is_default: bool = Form(False),
+    valid_from: str = Form(...),
+    valid_to: str | None = Form(None),
+    base_rate: float = Form(...),
+    adjustment_index: float = Form(1.0),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    grid = await db.get(RateGrid, grid_id)
+    if grid is None:
+        raise HTTPException(status_code=404)
+    pol = _clean_locode(pol_locode, "POL")
+    pod = _clean_locode(pod_locode, "POD")
+    _validate_grid_route(client_id=client_id, pol=pol, pod=pod, is_default=is_default)
+    if client_id is not None and await db.get(Client, client_id) is None:
+        raise HTTPException(status_code=404, detail="client introuvable")
+    grid.client_id = client_id
+    grid.pol_locode = pol
+    grid.pod_locode = pod
+    grid.is_default = is_default
+    grid.valid_from = _date.fromisoformat(valid_from)
+    grid.valid_to = _date.fromisoformat(valid_to) if valid_to else None
+    grid.base_rate_per_palette = Decimal(str(base_rate))
+    grid.adjustment_index = Decimal(str(adjustment_index))
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid.id,
+        entity_label=grid.reference,
+        detail="edited",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid.id}")
+
+
 @router.get("/grids/{grid_id}", response_class=HTMLResponse)
 async def grid_detail(
     grid_id: int,
@@ -266,7 +552,11 @@ async def grid_detail(
     grid = (
         await db.execute(
             select(RateGrid)
-            .options(selectinload(RateGrid.client), selectinload(RateGrid.lines))
+            .options(
+                selectinload(RateGrid.client),
+                selectinload(RateGrid.lines),
+                selectinload(RateGrid.options),
+            )
             .where(RateGrid.id == grid_id)
         )
     ).scalar_one_or_none()
@@ -274,7 +564,13 @@ async def grid_detail(
         raise HTTPException(status_code=404)
     return templates.TemplateResponse(
         "staff/commercial/grid_detail.html",
-        {"request": request, "user": user, "grid": grid},
+        {
+            "request": request,
+            "user": user,
+            "grid": grid,
+            "option_units": RATE_OPTION_UNITS,
+            "option_unit_labels": RATE_OPTION_UNIT_LABELS,
+        },
     )
 
 
@@ -304,6 +600,143 @@ async def grid_activate(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/commercial/grids/{grid_id}", status_code=303)
+
+
+# ────────────────────────────────────────────── Grid options
+@router.post("/grids/{grid_id}/options")
+async def grid_option_create(
+    grid_id: int,
+    request: Request,
+    code: str = Form(...),
+    label: str = Form(...),
+    unit: str = Form(...),
+    amount_eur: float = Form(...),
+    is_active: bool = Form(False),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    grid = await db.get(RateGrid, grid_id)
+    if grid is None:
+        raise HTTPException(status_code=404)
+    if unit not in RATE_OPTION_UNITS:
+        raise HTTPException(status_code=400, detail="unité de tarification invalide")
+    code_clean = code.strip().upper().replace(" ", "_")[:40]
+    label_clean = label.strip()
+    if not code_clean or not label_clean:
+        raise HTTPException(status_code=400, detail="code et libellé requis")
+    amount = Decimal(str(amount_eur))
+    if amount < 0:
+        raise HTTPException(status_code=400, detail="montant négatif interdit")
+    option = RateGridOption(
+        grid_id=grid.id,
+        code=code_clean,
+        label=label_clean,
+        unit=unit,
+        amount_eur=amount,
+        is_active=is_active,
+    )
+    db.add(option)
+    await db.flush()
+    await activity_record(
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid_option",
+        entity_id=option.id,
+        entity_label=f"{grid.reference} · {option.code}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+@router.post("/grids/{grid_id}/options/{option_id}/toggle")
+async def grid_option_toggle(
+    grid_id: int,
+    option_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    grid = await db.get(RateGrid, grid_id)
+    option = await db.get(RateGridOption, option_id)
+    if grid is None or option is None or option.grid_id != grid.id:
+        raise HTTPException(status_code=404)
+    option.is_active = not option.is_active
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid_option",
+        entity_id=option.id,
+        entity_label=f"{grid.reference} · {option.code}",
+        detail="activated" if option.is_active else "deactivated",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+@router.post("/grids/{grid_id}/options/{option_id}/delete")
+async def grid_option_delete(
+    grid_id: int,
+    option_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "S")),
+):
+    grid = await db.get(RateGrid, grid_id)
+    option = await db.get(RateGridOption, option_id)
+    if grid is None or option is None or option.grid_id != grid.id:
+        raise HTTPException(status_code=404)
+    option_code = option.code
+    option_pk = option.id
+    await db.delete(option)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid_option",
+        entity_id=option_pk,
+        entity_label=f"{grid.reference} · {option_code}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+# ────────────────────────────────────────────── Devis (quotes émis)
+@router.get("/devis", response_class=HTMLResponse)
+async def devis_list(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """100 derniers devis émis par l'outil public /devis et le booking."""
+    rows = (
+        await db.execute(
+            select(Quote, ClientAccount.email, ClientAccount.company_name)
+            .outerjoin(ClientAccount, ClientAccount.id == Quote.client_account_id)
+            .order_by(Quote.created_at.desc())
+            .limit(100)
+        )
+    ).all()
+    quotes = [
+        {"quote": quote, "account_email": email, "account_company": company}
+        for quote, email, company in rows
+    ]
+    return templates.TemplateResponse(
+        "staff/commercial/devis_list.html",
+        {"request": request, "user": user, "quotes": quotes},
+    )
 
 
 # ────────────────────────────────────────────── Offers

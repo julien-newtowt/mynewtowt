@@ -1,42 +1,67 @@
 {% extends "staff/_layout.html" %}
-{% block title %}Nouvelle grille — {{ brand.nom_court }}{% endblock %}
+{% block title %}{{ 'Modifier ' ~ grid.reference if grid else 'Nouvelle grille' }} — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
 <header class="mb-4">
   <span class="kicker">Commercial</span>
-  <h1 class="display">Nouvelle grille tarifaire</h1>
+  <h1 class="display">{{ 'Modifier ' ~ grid.reference if grid else 'Nouvelle grille tarifaire' }}</h1>
+  {% if grid %}
+  <p class="text-muted">Les brackets dégressifs et les options tarifaires se gèrent depuis la fiche de la grille.</p>
+  {% else %}
   <p class="text-muted">Les 7 brackets dégressifs (lt50 → full ship) sont créés automatiquement selon le type de client.</p>
+  {% endif %}
 </header>
 
 <article class="card">
-  <form method="post" action="/commercial/grids">
+  <form method="post" action="{{ '/commercial/grids/' ~ grid.id ~ '/edit' if grid else '/commercial/grids' }}">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     <div class="grid grid-2 gap-4">
       <div class="field">
         <label for="client_id">Client</label>
-        <select id="client_id" name="client_id" required>
-          {% for c in clients %}<option value="{{ c.id }}">{{ c.name }} ({{ c.client_type }})</option>{% endfor %}
+        <select id="client_id" name="client_id">
+          <option value="">— Aucun (grille par défaut de route) —</option>
+          {% for c in clients %}<option value="{{ c.id }}" {% if grid and grid.client_id == c.id %}selected{% endif %}>{{ c.name }} ({{ c.client_type }})</option>{% endfor %}
         </select>
       </div>
       <div class="field">
         <label for="base_rate">Tarif base (€/palette)</label>
-        <input id="base_rate" name="base_rate" type="number" min="0" step="0.01" required />
+        <input id="base_rate" name="base_rate" type="number" min="0" step="0.01" required {% if grid %}value="{{ grid.base_rate_per_palette }}"{% endif %} />
+      </div>
+      <div class="field">
+        <label for="pol_locode">POL (LOCODE)</label>
+        <input id="pol_locode" name="pol_locode" type="text" maxlength="5" placeholder="FRLEH" class="mono" {% if grid and grid.pol_locode %}value="{{ grid.pol_locode }}"{% endif %} />
+      </div>
+      <div class="field">
+        <label for="pod_locode">POD (LOCODE)</label>
+        <input id="pod_locode" name="pod_locode" type="text" maxlength="5" placeholder="FRLEH" class="mono" {% if grid and grid.pod_locode %}value="{{ grid.pod_locode }}"{% endif %} />
       </div>
       <div class="field">
         <label for="valid_from">Valide du</label>
-        <input id="valid_from" name="valid_from" type="date" required />
+        <input id="valid_from" name="valid_from" type="date" required {% if grid %}value="{{ grid.valid_from }}"{% endif %} />
       </div>
       <div class="field">
         <label for="valid_to">Valide jusqu'au</label>
-        <input id="valid_to" name="valid_to" type="date" />
+        <input id="valid_to" name="valid_to" type="date" {% if grid and grid.valid_to %}value="{{ grid.valid_to }}"{% endif %} />
       </div>
       <div class="field">
         <label for="adjustment_index">Index d'ajustement</label>
-        <input id="adjustment_index" name="adjustment_index" type="number" step="0.0001" value="1.0" />
+        <input id="adjustment_index" name="adjustment_index" type="number" step="0.0001" value="{{ grid.adjustment_index if grid else '1.0' }}" />
+      </div>
+      <div class="field">
+        <label for="is_default">Grille par défaut</label>
+        <label style="margin-bottom:0;">
+          <input id="is_default" type="checkbox" name="is_default" {% if grid and grid.is_default %}checked{% endif %} />
+          Grille par défaut de la route (sans client, POL/POD obligatoires)
+        </label>
       </div>
     </div>
+    <div class="alert alert-info mb-3">
+      Une grille <strong>client</strong> peut couvrir une route précise (POL/POD) ou toutes ses routes (POL/POD vides).
+      Une grille <strong>par défaut</strong> s'applique aux demandeurs inconnus : route POL/POD obligatoire et aucun client.
+    </div>
     <div class="flex gap-2">
-      <button type="submit" class="btn btn-primary">Créer la grille</button>
-      <a href="/commercial/grids" class="btn btn-ghost">Annuler</a>
+      <button type="submit" class="btn btn-primary">{{ 'Enregistrer' if grid else 'Créer la grille' }}</button>
+      <a href="{{ '/commercial/grids/' ~ grid.id if grid else '/commercial/grids' }}" class="btn btn-ghost">Annuler</a>
     </div>
   </form>
 </article>
