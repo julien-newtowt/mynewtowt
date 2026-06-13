@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -29,6 +31,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.booking import Booking
 
 TOKEN_VALIDITY_DAYS = 90
 
@@ -45,9 +50,17 @@ class PackingList(Base):
     __tablename__ = "packing_lists"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    order_id: Mapped[int] = mapped_column(
+    # Une packing list provient soit d'une commande (rail A, remplissage
+    # opérateur), soit d'un booking client (rail B, remplissage via portail).
+    # Exactement l'une des deux FK est renseignée (cf. CheckConstraint XOR).
+    order_id: Mapped[int | None] = mapped_column(
         ForeignKey("commercial_orders.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+    booking_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"),
+        nullable=True,
         index=True,
     )
     token: Mapped[str] = mapped_column(
@@ -57,6 +70,9 @@ class PackingList(Base):
         DateTime(timezone=True), default=default_token_expiry
     )
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
+    # Date de chargement prévue (= ETD du leg). Alimente la cascade de dates
+    # (cf. services/date_cascade) quand l'ETD du leg est décalé.
+    loading_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     locked_by: Mapped[str | None] = mapped_column(String(200))
     notes: Mapped[str | None] = mapped_column(Text)
@@ -74,6 +90,19 @@ class PackingList(Base):
         back_populates="packing_list",
         cascade="all, delete-orphan",
         order_by="PackingListBatch.id",
+    )
+    # Rail B : booking source de la packing list. Relation unidirectionnelle
+    # (le modèle Booking n'a pas de back-reference) ; lazy par défaut, à
+    # eager-loader explicitement (selectinload) dans un contexte async.
+    booking: Mapped[Booking | None] = relationship("Booking")
+
+    __table_args__ = (
+        # XOR : exactement une des deux origines est renseignée. Garantit
+        # l'invariant « une PL appartient à une commande OU à un booking ».
+        CheckConstraint(
+            "(order_id IS NULL) <> (booking_id IS NULL)",
+            name="ck_packing_lists_order_xor_booking",
+        ),
     )
 
     @property

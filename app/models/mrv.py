@@ -39,6 +39,10 @@ class MRVEvent(Base):
     # SOF mappé via SOF_TO_MRV_MAP). Uniques → sync idempotente.
     noon_report_id: Mapped[int | None] = mapped_column(ForeignKey("noon_reports.id"), unique=True)
     sof_event_id: Mapped[int | None] = mapped_column(ForeignKey("sof_events.id"), unique=True)
+    # B5 — contrôle qualité ROB déclaré vs calculé (±2 t) lors de la génération
+    # depuis un noon report signé. 'ok' | 'warning'.
+    quality_status: Mapped[str | None] = mapped_column(String(20))
+    quality_notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

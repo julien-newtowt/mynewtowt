@@ -15,11 +15,16 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.booking import Booking
+from app.models.leg import Leg
 from app.models.packing_list import (
     PackingList,
     PackingListAudit,
     PortalAccessLog,
+    default_token_expiry,
+    generate_token,
 )
+from app.services.activity import record as activity_record
 
 
 def hash_token(token: str) -> str:
@@ -36,6 +41,52 @@ async def get_by_token(db: AsyncSession, token: str) -> PackingList | None:
         return None
     if pl.token_expires_at is not None and pl.token_expires_at < datetime.now(UTC):
         return None
+    return pl
+
+
+async def create_for_booking(db: AsyncSession, booking: Booking) -> PackingList:
+    """Crée (ou retourne) la packing list d'un booking client — rail B.
+
+    Jumeau de la création rail A (``cargo_packing_router.create_for_order``),
+    mais rattaché à un ``booking_id`` au lieu d'un ``order_id``. Idempotent :
+    si une PL existe déjà pour ce booking, on la retourne sans rien recréer
+    (sûr à rappeler à chaque passage en ``confirmed``).
+
+    Le client remplit ses batches via le portail ``/p/{token}`` — on ne crée
+    donc que la coquille (token 24 hex / 90 j, statut ``draft``). On préremplit
+    ce qui est cheap : ``loading_date`` = ETD du leg (alimente la cascade de
+    dates). POL/POD/navire/référence vivent sur le leg et le booking, résolus
+    à l'affichage côté portail — pas de colonnes dédiées sur PackingList.
+    """
+    existing = (
+        await db.execute(
+            select(PackingList).where(PackingList.booking_id == booking.id)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    leg = await db.get(Leg, booking.leg_id) if booking.leg_id else None
+
+    pl = PackingList(
+        booking_id=booking.id,
+        order_id=None,
+        token=generate_token(),
+        token_expires_at=default_token_expiry(),
+        status="draft",
+        loading_date=leg.etd if leg is not None else None,
+    )
+    db.add(pl)
+    await db.flush()
+
+    await activity_record(
+        db,
+        action="packing_list_created",
+        module="cargo",
+        entity_type="packing_list",
+        entity_id=pl.id,
+        entity_label=f"PL for {booking.reference}",
+    )
     return pl
 
 

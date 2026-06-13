@@ -52,6 +52,9 @@ class Ticket(Base):
 
     sla_target_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sla_breached: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Horodatage de l'escalade manager (SLA dépassé) — NULL tant que non escaladé.
+    # Sert de dédup : une seule notification par ticket (FLX-08 / Bloc B4).
+    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     comments: Mapped[list[TicketComment]] = relationship(
         back_populates="ticket",

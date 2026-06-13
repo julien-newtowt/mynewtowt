@@ -20,6 +20,7 @@ from app.config import settings
 from app.models.booking import Booking
 from app.models.client_account import ClientAccount
 from app.services import anemos, email, notifications
+from app.services.packing_list import create_for_booking
 
 logger = logging.getLogger("booking_lifecycle")
 
@@ -158,6 +159,26 @@ async def on_status_change(db: AsyncSession, booking: Booking, new_status: str) 
         cta_label=spec["cta"],
         cta_url=cta_url,
     )
+
+    # B1 — Rail B : à la confirmation, on matérialise la packing list du
+    # booking + son token portail (jumeau du rail A commande), puis on invite
+    # le client à la remplir via /p/{token}. Best-effort : un échec ne doit
+    # jamais bloquer la confirmation (la PL pourra être (re)créée plus tard,
+    # create_for_booking étant idempotent).
+    if new_status == "confirmed":
+        try:
+            pl = await create_for_booking(db, booking)
+            await notifications.notify_client(
+                db,
+                client_id=client.id,
+                type="info",
+                title=f"Packing list à compléter — {ref}",
+                detail="Renseignez le détail de vos palettes pour finaliser "
+                "votre expédition.",
+                link=f"/p/{pl.token}",
+            )
+        except Exception:
+            logger.warning("packing list creation failed for %s", ref, exc_info=True)
 
     # COM-05 — plus de notification "facture émise" à la confirmation : la
     # facturation est émise par la comptabilité NEWTOWT hors plateforme. Le
