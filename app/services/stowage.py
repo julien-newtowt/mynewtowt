@@ -158,3 +158,85 @@ async def occupation_by_hold(db: AsyncSession, leg_id: int) -> dict[str, dict]:
         out[hold]["zones"] = len(seen_zones[hold])
         out[hold]["dangerous"] = len(seen_dangerous[hold])
     return out
+
+
+# Libellés des segments du code zone ``{DECK}_{HOLD}_{BLOCK}`` pour un
+# indice humain (cf. app.models.stowage : convention de nommage).
+_DECK_LABELS = {"INF": "pont INF", "MIL": "pont MIL", "SUP": "pont SUP"}
+_HOLD_LABELS = {"AR": "cale AR", "AV": "cale AV"}
+_BLOCK_LABELS = {"AR": "bloc AR", "MIL": "bloc MIL", "AV": "bloc AV"}
+
+
+def zone_label(zone: str | None) -> str:
+    """Indice humain d'une zone ``{DECK}_{HOLD}_{BLOCK}``.
+
+    Ex. ``INF_AR_MIL`` → ``"INF_AR_MIL — cale AR, pont INF, bloc MIL"``.
+    Renvoie le code brut tel quel si la zone est vide ou non conforme à la
+    convention (3 segments) — on reste tolérant pour le texte libre.
+    """
+    if not zone:
+        return ""
+    parts = zone.split("_")
+    if len(parts) != 3:
+        return zone
+    deck, hold, block = parts
+    bits = [
+        _HOLD_LABELS.get(hold),
+        _DECK_LABELS.get(deck),
+        _BLOCK_LABELS.get(block),
+    ]
+    hint = ", ".join(b for b in bits if b)
+    return f"{zone} — {hint}" if hint else zone
+
+
+async def zones_for_leg(db: AsyncSession, leg_id: int) -> list[dict]:
+    """Zones occupées du plan d'arrimage d'un leg, pour le picker claims.
+
+    Relie un claim cargo ↔ stowage : liste les zones effectivement
+    occupées par le plan d'arrimage du leg afin que l'opérateur sélectionne
+    la position cale du lot sinistré (``Claim.cargo_position``).
+
+    Forme de retour, ordonnée par ``ZONE_LOADING_ORDER`` :
+
+        [{"zone": str, "pallet_count": int, "is_dangerous": bool,
+          "label": str}, ...]
+
+    Une zone n'apparaît qu'une fois : ``pallet_count`` somme tous les items
+    de la zone, ``is_dangerous`` est vrai si un item de la zone est dangereux
+    / hors-gabarit ou si la zone est une ``DANGEROUS_ZONES``. ``label`` est
+    l'indice humain (cf. ``zone_label``). Liste vide si aucun plan / aucun
+    item. Lecture seule (une requête, aucune écriture).
+    """
+    plan_id = (
+        await db.execute(select(StowagePlan.id).where(StowagePlan.leg_id == leg_id))
+    ).scalar_one_or_none()
+    if plan_id is None:
+        return []
+
+    items = (
+        (await db.execute(select(StowageItem).where(StowageItem.plan_id == plan_id)))
+        .scalars()
+        .all()
+    )
+
+    agg: dict[str, dict] = {}
+    for it in items:
+        if not it.zone:
+            continue
+        bucket = agg.setdefault(
+            it.zone,
+            {"zone": it.zone, "pallet_count": 0, "is_dangerous": False},
+        )
+        bucket["pallet_count"] += it.pallet_count or 0
+        if it.is_dangerous or it.is_oversized or it.zone in DANGEROUS_ZONES:
+            bucket["is_dangerous"] = True
+
+    order = {zone: i for i, zone in enumerate(ZONE_LOADING_ORDER)}
+    out = [
+        {**bucket, "label": zone_label(bucket["zone"])}
+        for bucket in agg.values()
+    ]
+    # Tri par ordre de chargement ; les zones inconnues (texte libre exotique)
+    # passent en fin de liste.
+    out.sort(key=lambda z: order.get(z["zone"], len(order)))
+    return out

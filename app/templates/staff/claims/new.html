@@ -7,7 +7,22 @@
   <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
   <div class="grid grid-2 gap-3">
     <div class="field"><label>Type</label><select name="claim_type" required><option value="cargo">Cargo</option><option value="crew">Équipage</option><option value="hull">Hull/DIV</option><option value="war_risk">War risk</option><option value="third_party">Tiers</option><option value="other">Autre</option></select></div>
-    <div class="field"><label>Leg lié</label><select name="leg_id"><option value="">—</option>{% for l in legs %}<option value="{{ l.id }}">{{ l.leg_code }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Leg lié</label><select name="leg_id"><option value="">—</option>{% for l in legs %}<option value="{{ l.id }}" {% if selected_leg_id == l.id %}selected{% endif %}>{{ l.leg_code }}</option>{% endfor %}</select></div>
+    <div class="field" style="grid-column:span 2;">
+      <label>Position cale <span class="text-muted text-sm">(claim cargo)</span></label>
+      {% if stowage_zones %}
+      <select name="cargo_position">
+        <option value="">— non renseignée</option>
+        {% for z in stowage_zones %}
+        <option value="{{ z.zone }}">{{ z.label }}{% if z.is_dangerous %} ⚠ dangereux{% endif %} ({{ z.pallet_count }} pal.)</option>
+        {% endfor %}
+      </select>
+      <p class="text-muted text-sm mt-2">Zones occupées du plan d'arrimage du leg sélectionné. Pour une autre valeur, créez le claim puis éditez la position sur sa fiche.</p>
+      {% else %}
+      <input name="cargo_position" placeholder="ex. INF_AR_MIL" />
+      <p class="text-muted text-sm mt-2">Sélectionnez un leg doté d'un plan d'arrimage et ré-ouvrez le formulaire (<span class="mono">?leg_id=…</span>) pour choisir une zone, ou saisissez la position en texte libre.</p>
+      {% endif %}
+    </div>
     <div class="field" style="grid-column:span 2;"><label>Titre</label><input name="title" required /></div>
     <div class="field" style="grid-column:span 2;"><label>Description</label><textarea name="description" rows="4" required></textarea></div>
     <div class="field"><label>Survenu le</label><input name="occurred_at" type="datetime-local" required /></div>

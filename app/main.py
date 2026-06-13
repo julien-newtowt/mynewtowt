@@ -129,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications_router.router)
     # ─── Existing routers ───
     app.include_router(tickets_router.router)
+    app.include_router(tickets_router.api_router)
     app.include_router(cashbox_router.router)
     app.include_router(modules_router.router)
     app.include_router(onboard_router.router)

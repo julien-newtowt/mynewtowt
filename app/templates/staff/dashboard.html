@@ -6,6 +6,7 @@
 <script src="/static/js/fleet-map.js" defer></script>
 {% endblock %}
 {% block content %}
+<div class="dashboard-uniform-font">
 
 <div class="welcome-banner">
   <div>
@@ -145,6 +146,8 @@
     </div>
   </article>
 </div>
+
+</div>{# /dashboard-uniform-font #}
 
 {# Map rendering deferred to /static/js/fleet-map.js (CSP-compliant, no inline script).
    Le conteneur #dashboard-map est picked up automatiquement via la classe .js-fleet-map. #}

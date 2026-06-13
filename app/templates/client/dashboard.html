@@ -1,6 +1,7 @@
 {% extends "client/_layout.html" %}
 {% block title %}{% if lang == 'en' %}Dashboard{% else %}Tableau de bord{% endif %} — NEWTOWT{% endblock %}
 {% block content %}
+<div class="dashboard-uniform-font">
 
 <header class="flex justify-between items-center mb-5">
   <div>
@@ -121,4 +122,5 @@
   {% endif %}
 </section>
 
+</div>{# /dashboard-uniform-font #}
 {% endblock %}

@@ -252,6 +252,13 @@ class Order(Base):
     )
     offer_id: Mapped[int | None] = mapped_column(ForeignKey("rate_offers.id"))
     leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"), index=True)
+    # Back-link de reprise (B2.2) : quand renseigné, la commande héritée du
+    # rail A a été migrée en réservation (rail B). Sert d'idempotence au
+    # script de reprise et de dé-doublonnage capacité (la palette est alors
+    # comptée via le booking, plus via la commande).
+    booking_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bookings.id"), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
     booked_palettes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     rate_per_palette_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))

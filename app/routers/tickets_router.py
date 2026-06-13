@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import secrets as _secrets
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.leg import Leg
 from app.models.user import User
@@ -40,6 +42,7 @@ from app.templating import templates
 logger = logging.getLogger("tickets")
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
+api_router = APIRouter(prefix="/api/tickets", tags=["tickets-api"])
 
 
 @router.get("", response_class=HTMLResponse)
@@ -269,3 +272,35 @@ async def comment_action(
     except TicketError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return RedirectResponse(url=f"/tickets/{ticket.reference}", status_code=303)
+
+
+# ─────────────────── Endpoint machine — Power Automate (cron) ────────────
+
+
+def _expected_sla_token() -> str | None:
+    return (settings.tickets_sla_api_token or "").strip() or None
+
+
+@api_router.post("/escalate-sla")
+async def escalate_sla_api(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Déclencheur cron externe (Power Automate) de l'escalade SLA des tickets.
+
+    Auth par ``X-API-Token`` (comparé en temps constant). Indépendant du
+    déclencheur in-app à l'ouverture du kanban (qui reste le fallback).
+    """
+    expected = _expected_sla_token()
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="TICKETS_SLA_API_TOKEN non configuré dans .env",
+        )
+    received = request.headers.get("x-api-token") or ""
+    if not _secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
+
+    count = await escalate_breached(db)
+    logger.info("SLA escalation (API cron): %d ticket(s) escalated to manager", count)
+    return JSONResponse({"escalated": count})
