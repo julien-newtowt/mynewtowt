@@ -1,4 +1,4 @@
-"""Spanish catalog (partial — falls back to FR for missing keys)."""
+"""Spanish catalog (full parity with fr.py — reference)."""
 
 CATALOG: dict[str, str] = {
     # Public navigation
@@ -15,13 +15,13 @@ CATALOG: dict[str, str] = {
     "nav_actualites": "Noticias",
     "nav_recrutement": "Empleo",
     "nav_presse": "Prensa",
-    "nav_passagers": "Pasajeros",
-    "nav_quote": "Solicitar cotización",
+    "nav_quote": "Solicitar una cotización",
     "footer_navigation": "Navegación",
     "footer_explore": "Descubrir",
     "footer_client": "Cliente",
     "footer_legal": "Legal",
-    "nav_dashboard": "Panel",
+    # ERP navigation
+    "nav_dashboard": "Panel de control",
     "nav_planning": "Planificación",
     "nav_commercial": "Comercial",
     "nav_escale": "Escala",
@@ -33,7 +33,45 @@ CATALOG: dict[str, str] = {
     "nav_claims": "Reclamaciones",
     "nav_mrv": "MRV",
     "nav_admin": "Admin",
-    "btn_login": "Iniciar sesión",
+    "nav_settings": "Ajustes",
+    "nav_logout": "Cerrar sesión",
+    # Common
     "btn_save": "Guardar",
     "btn_cancel": "Cancelar",
+    "btn_create": "Crear",
+    "btn_edit": "Editar",
+    "btn_delete": "Eliminar",
+    "btn_close": "Cerrar",
+    "btn_back": "← Volver",
+    "btn_view": "Ver",
+    "btn_filter": "Filtrar",
+    "btn_export": "Exportar",
+    "btn_login": "Iniciar sesión",
+    "btn_send": "Enviar",
+    # Status
+    "status_draft": "Borrador",
+    "status_active": "Activo",
+    "status_inactive": "Inactivo",
+    "status_planned": "Planificado",
+    "status_inprogress": "En curso",
+    "status_completed": "Finalizado",
+    "status_cancelled": "Cancelado",
+    "status_locked": "Bloqueado",
+    "status_submitted": "Enviado",
+    # Dashboard
+    "dash_welcome": "Bienvenido",
+    "dash_subtitle": "Gestione la flota, las operaciones y los clientes NEWTOWT.",
+    "dash_notifications": "Notificaciones",
+    "dash_archive_read": "Archivar leídas",
+    "dash_view": "Ver",
+    "dash_treated": "Tratado",
+    "dash_packing_to_review": "Listas de carga por validar",
+    # Auth
+    "auth_login": "Conexión",
+    "auth_username": "Usuario",
+    "auth_password": "Contraseña",
+    "auth_remember": "Recordarme",
+    "auth_invalid": "Credenciales no válidas.",
+    "auth_password_too_short": "Contraseña demasiado corta (12 caracteres mínimo).",
+    "auth_password_change_required": "Debe cambiar su contraseña.",
 }

@@ -36,7 +36,7 @@
         {% if latest_position.cog_deg %} · COG {{ "%.0f"|format(latest_position.cog_deg) }}°{% endif %}
         <span class="text-muted text-sm"> · {{ latest_position.recorded_at|datetime }} UTC</span>
         <span class="text-muted text-sm"> (source : {{ latest_position.source }})</span>
-        — <em>les champs lat/lon/SOG/COG ci-dessous sont pré-remplis.</em>
+        — <em>Position satcom du {{ latest_position.recorded_at|datetime }} — lat/lon/SOG/COG pré-remplis, corrigez si besoin.</em>
       </div>
     {% else %}
       <p class="text-muted text-sm mb-3">Position satcom indisponible (&gt; 6h) — saisie manuelle requise.</p>

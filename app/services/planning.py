@@ -357,8 +357,8 @@ async def update_leg(
     validate_dates(new_etd, new_eta)
 
     delta = new_etd - leg.etd
-    # Capture old reference points BEFORE applying changes
-    old_etd = leg.etd  # ETD courant pré-édition (frontière cascade)
+    # Capture old reference points BEFORE applying changes. La frontière de
+    # cascade (ancien ETD) est reconstituée dans date_cascade via leg.etd-delta.
     old_vessel_id = leg.vessel_id
     old_pol_id = leg.departure_port_id
     old_pod_id = leg.arrival_port_id
@@ -444,29 +444,20 @@ async def update_leg(
         await db.flush()
         return None
 
-    # Cascade : tous les legs aval du même navire, non encore partis.
-    # Frontière = ETD courant pré-édition (old_etd), PAS etd_ref (figé à
-    # la création) — sinon un leg déjà cascadé re-sélectionne mal sa
-    # descendance et les décalages arrière ratent les legs intermédiaires.
-    stmt = (
-        select(Leg)
-        .where(Leg.vessel_id == leg.vessel_id)
-        .where(Leg.id != leg.id)
-        .where(Leg.etd > old_etd)  # downstream relative to pre-edit ETD
-        .where(Leg.atd.is_(None))  # hasn't actually sailed
-        .order_by(Leg.etd.asc())
-    )
-    downstream = list((await db.execute(stmt)).scalars().all())
-    impacted_ids: list[int] = []
-    for dn in downstream:
-        dn.etd = dn.etd + delta
-        dn.eta = dn.eta + delta
-        if dn.booking_close_at:
-            dn.booking_close_at = dn.booking_close_at + delta
-        impacted_ids.append(dn.id)
+    # Cascade complète (UC-03) : legs aval du même navire + opérations escale
+    # + shifts dockers + notification des clients impactés. La logique vit
+    # dans date_cascade.cascade_from_leg (best-effort, isolé par bloc) afin
+    # d'être appelable aussi depuis l'ETA-shift capitaine. La frontière des
+    # legs aval (ancien ETD) est reconstituée côté service via leg.etd - delta.
+    from app.services import date_cascade
 
+    summary = await date_cascade.cascade_from_leg(db, leg, delta=delta)
     await db.flush()
-    return CascadeReport(leg_id=leg.id, delta=delta, impacted_leg_ids=impacted_ids)
+    # CascadeReport.impacted_leg_ids = legs AVAL décalés (hors leg source),
+    # pour préserver le contrat historique (le détail audit compte les legs
+    # propagés). summary["impacted_leg_ids"] inclut le leg source en tête.
+    downstream_ids = [lid for lid in summary.get("impacted_leg_ids", []) if lid != leg.id]
+    return CascadeReport(leg_id=leg.id, delta=delta, impacted_leg_ids=downstream_ids)
 
 
 async def delete_leg(db: AsyncSession, leg: Leg) -> None:
@@ -624,6 +615,119 @@ def detect_port_conflicts(
             if start_a < end_b and start_b < end_a:
                 conflicts.append((id_a, id_b))
     return conflicts
+
+
+async def detect_port_conflicts_view(
+    db: AsyncSession,
+    *,
+    window_days: int = 90,
+    default_stay_hours: int = DEFAULT_PORT_STAY_HOURS,
+) -> list[dict]:
+    """Vue enrichie des conflits de port pour l'écran dédié.
+
+    Charge les legs de la fenêtre ``[today, today + window_days]`` (par ETA),
+    réutilise la règle de chevauchement de ``detect_port_conflicts`` (deux
+    navires DIFFÉRENTS présents au MÊME port sur des escales
+    ``[ETA, ETA + durée]`` qui se recouvrent), puis hydrate chaque paire avec
+    le port (locode/nom), les deux navires et la fenêtre de chevauchement
+    exacte ``[max(eta_a, eta_b), min(fin_a, fin_b)]``.
+
+    Renvoie une liste de dicts triée par début de chevauchement ::
+
+        {
+          "port_locode", "port_name",
+          "vessel_a_code", "vessel_a_name", "leg_a_id", "leg_a_code",
+          "vessel_b_code", "vessel_b_name", "leg_b_id", "leg_b_code",
+          "overlap_start", "overlap_end", "overlap_hours",
+        }
+    """
+    from app.models.port import Port
+    from app.models.vessel import Vessel
+
+    now = datetime.now(UTC)
+    window_start = now
+    window_end = now + timedelta(days=window_days)
+
+    legs = list(
+        (
+            await db.execute(
+                select(Leg)
+                .where(Leg.eta >= window_start)
+                .where(Leg.eta <= window_end)
+                .order_by(Leg.eta.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not legs:
+        return []
+
+    legs_by_id = {leg.id: leg for leg in legs}
+    pairs = detect_port_conflicts(legs, default_stay_hours=default_stay_hours)
+    if not pairs:
+        return []
+
+    # Pré-charge ports + navires des legs en conflit (anti N+1).
+    conflict_leg_ids: set[int] = {lid for pair in pairs for lid in pair}
+    conflict_legs = [legs_by_id[lid] for lid in conflict_leg_ids if lid in legs_by_id]
+    port_ids = {leg.arrival_port_id for leg in conflict_legs}
+    vessel_ids = {leg.vessel_id for leg in conflict_legs}
+    ports = (
+        {
+            p.id: p
+            for p in (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()
+        }
+        if port_ids
+        else {}
+    )
+    vessels = (
+        {
+            v.id: v
+            for v in (await db.execute(select(Vessel).where(Vessel.id.in_(vessel_ids))))
+            .scalars()
+            .all()
+        }
+        if vessel_ids
+        else {}
+    )
+
+    rows: list[dict] = []
+    for id_a, id_b in pairs:
+        leg_a = legs_by_id.get(id_a)
+        leg_b = legs_by_id.get(id_b)
+        if leg_a is None or leg_b is None:
+            continue
+        stay_a = leg_a.port_stay_planned_hours or default_stay_hours
+        stay_b = leg_b.port_stay_planned_hours or default_stay_hours
+        end_a = leg_a.eta + timedelta(hours=stay_a)
+        end_b = leg_b.eta + timedelta(hours=stay_b)
+        overlap_start = max(leg_a.eta, leg_b.eta)
+        overlap_end = min(end_a, end_b)
+        overlap_hours = max(0.0, (overlap_end - overlap_start).total_seconds() / 3600.0)
+        port = ports.get(leg_a.arrival_port_id)
+        ves_a = vessels.get(leg_a.vessel_id)
+        ves_b = vessels.get(leg_b.vessel_id)
+        rows.append(
+            {
+                "port_locode": port.locode if port else "?",
+                "port_name": port.name if port else "—",
+                "vessel_a_code": ves_a.code if ves_a else "?",
+                "vessel_a_name": ves_a.name if ves_a else "—",
+                "leg_a_id": leg_a.id,
+                "leg_a_code": leg_a.leg_code,
+                "vessel_b_code": ves_b.code if ves_b else "?",
+                "vessel_b_name": ves_b.name if ves_b else "—",
+                "leg_b_id": leg_b.id,
+                "leg_b_code": leg_b.leg_code,
+                "overlap_start": overlap_start,
+                "overlap_end": overlap_end,
+                "overlap_hours": round(overlap_hours, 1),
+            }
+        )
+
+    rows.sort(key=lambda r: r["overlap_start"])
+    return rows
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ Reprises de la V3.0.0 :
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from datetime import UTC, datetime
@@ -36,7 +37,7 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import WatchLog
 from app.permissions import require_permission
-from app.services import mrv_sync
+from app.services import mrv_sync, notifications
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.signature import (
@@ -240,6 +241,18 @@ async def declare_eta_shift(
         entity_label=f"leg={leg_id} reason={reason}",
         ip_address=_client_ip(request),
     )
+    # Alerte interne (commercial).
+    with contextlib.suppress(Exception):
+        await notifications.notify_eta_shift(db, leg.leg_code, leg_id, reason)
+    # UC-03 — challenge TOUTES les dates dépendantes (legs aval, escales,
+    # dockers, packing lists) ET notifie les clients impactés (source + aval).
+    # La cascade prend en charge la notification client : pas de double envoi.
+    with contextlib.suppress(Exception):
+        from app.services import date_cascade
+
+        await date_cascade.cascade_from_leg(
+            db, leg, delta=shift.new_eta - shift.previous_eta
+        )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 

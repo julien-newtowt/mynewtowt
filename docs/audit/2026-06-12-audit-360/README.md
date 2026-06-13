@@ -205,4 +205,6 @@ c'est la grille de départ des évolutions « en profondeur » par métier.
 *Documents du dossier : [cadre & synthèse (ce fichier)](README.md) ·
 [01 commercial](01-audit-commercial.md) · [02 environnemental](02-audit-marketing-environnemental.md) ·
 [03 flux fonctionnels](03-audit-fonctionnel-flux.md) · [04 architecture](04-proposition-architecture.md) ·
-[05 personas métiers (cycle 2)](05-audit-personas-metiers.md).*
+[05 personas métiers (cycle 2)](05-audit-personas-metiers.md) ·
+[06 mise en œuvre cycle 3](06-cycle3-mise-en-oeuvre.md) — registre d'exécution des
+directions et plan des refontes profondes.*

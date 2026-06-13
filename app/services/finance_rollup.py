@@ -13,10 +13,13 @@ d'exploitation déjà saisies dans les autres modules :
 - ``opex_share_eur``   ← OPEX journalier (paramètre ``opex_daily_sea``,
   repli 12 000 EUR) × jours de mer : ATD→ATA si renseignés, sinon
   ETD→ETA, sinon 0 (Decimal, 2 décimales).
-- ``port_fees_eur``    ← pré-rempli depuis ``PortConfig`` (frais agence +
-  pilote des ports de départ et d'arrivée, + frais de quai journaliers à
-  l'arrivée si une durée d'escale planifiée existe) UNIQUEMENT si le
-  champ est encore vide ou à 0 — sinon la valeur saisie est conservée.
+- ``port_fees_eur``    ← coût prescrit escale, recomposé à chaque rollup
+  (déterministe / idempotent) = frais ``PortConfig`` (agence + pilote des
+  ports de départ et d'arrivée + quai journalier × durée d'escale à
+  l'arrivée) + Σ coût des opérations d'escale (FLX-05 :
+  ``EscaleOperation.cost_actual`` si renseigné sinon ``cost_forecast``).
+  La saisie manuelle n'est pas préservée ici — utiliser ``other_costs_eur``
+  pour les ajustements.
 - ``other_costs_eur``  ← jamais écrasé (champ strictement manuel).
 - ``margin_eur``       ← revenue − (port_fees + dockers + opex + autres).
 
@@ -35,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking
 from app.models.commercial import Order
-from app.models.escale import DockerShift
+from app.models.escale import DockerShift, EscaleOperation
 from app.models.finance import LegFinance, OpexParameter, PortConfig
 from app.models.leg import Leg
 
@@ -112,6 +115,32 @@ async def _port_fees_prefill(db: AsyncSession, leg: Leg) -> Decimal:
     return _q2(total)
 
 
+async def _escale_operations_cost(db: AsyncSession, leg: Leg) -> Decimal:
+    """Σ coût des opérations d'escale du leg.
+
+    Coût prescrit escale = Σ opérations + Σ shifts dockers + quai×jours
+    (cf. audit). Les shifts dockers et le quai×jours sont déjà capturés
+    (``docker_costs_eur`` et ``_port_fees_prefill``) ; cette fonction
+    ajoute la composante « opérations ». Pour chaque opération on retient
+    ``cost_actual`` si renseigné, sinon ``cost_forecast`` (repli 0).
+    """
+    operations = list(
+        (
+            await db.execute(select(EscaleOperation).where(EscaleOperation.leg_id == leg.id))
+        )
+        .scalars()
+        .all()
+    )
+    total = sum(
+        (
+            _dec(op.cost_actual if op.cost_actual is not None else op.cost_forecast)
+            for op in operations
+        ),
+        Decimal("0"),
+    )
+    return _q2(total)
+
+
 async def rollup_for_leg(db: AsyncSession, leg: Leg) -> LegFinance:
     """Get-or-create puis recalcule la ligne ``LegFinance`` du leg.
 
@@ -184,21 +213,56 @@ async def rollup_for_leg(db: AsyncSession, leg: Leg) -> LegFinance:
     opex_daily = _dec(opex_daily_raw) if opex_daily_raw is not None else FALLBACK_OPEX_DAILY_EUR
     opex_share = _q2(opex_daily * _sea_days(leg))
 
-    # 4. Frais portuaires — pré-remplissage uniquement si vide/0
-    #    (saisie manuelle conservée sinon).
-    if not finance.port_fees_eur:
-        prefill = await _port_fees_prefill(db, leg)
-        if prefill > 0:
-            finance.port_fees_eur = prefill
+    # 4. Frais portuaires — pré-remplissage PortConfig (frais agence +
+    #    pilote + quai×jours à l'arrivée) AUGMENTÉ du coût prescrit des
+    #    opérations d'escale (FLX-05 : Σ EscaleOperation.cost_actual|forecast).
+    #    Recomposé de façon déterministe à chaque rollup (idempotent) — la
+    #    saisie manuelle n'est volontairement pas préservée ici, le rollup
+    #    recalcule (les ajustements vont dans ``other_costs_eur``).
+    port_prefill = await _port_fees_prefill(db, leg)
+    operations_cost = await _escale_operations_cost(db, leg)
+    port_fees_total = _q2(port_prefill + operations_cost)
+    if port_fees_total > 0:
+        finance.port_fees_eur = port_fees_total
 
-    # 5. Autres coûts — strictement manuel, jamais écrasé.
+    # 5. Coût des sinistres (FLX-09) — Σ règlement sinon provision des claims
+    #    affectés au leg (statuts provisioned/settled). Recalculé à chaque rollup.
+    claims_cost = await _claims_cost(db, leg)
+    finance.claims_cost_eur = claims_cost
+
+    # 6. Autres coûts — strictement manuel, jamais écrasé.
     port_fees = _dec(finance.port_fees_eur)
     other_costs = _dec(finance.other_costs_eur)
 
     finance.revenue_eur = revenue
     finance.docker_costs_eur = docker_costs
     finance.opex_share_eur = opex_share
-    finance.margin_eur = _q2(revenue - port_fees - docker_costs - opex_share - other_costs)
+    finance.margin_eur = _q2(
+        revenue - port_fees - docker_costs - opex_share - claims_cost - other_costs
+    )
 
     await db.flush()
     return finance
+
+
+async def _claims_cost(db: AsyncSession, leg: Leg) -> Decimal:
+    """Σ coût compagnie des sinistres du leg : règlement si connu, sinon provision."""
+    from app.models.claim import Claim
+
+    claims = list(
+        (
+            await db.execute(
+                select(Claim).where(
+                    Claim.leg_id == leg.id,
+                    Claim.status.in_(("provisioned", "settled")),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    total = Decimal("0")
+    for c in claims:
+        amount = c.settled_eur if c.settled_eur is not None else c.provision_eur
+        total += _dec(amount)
+    return _q2(total)

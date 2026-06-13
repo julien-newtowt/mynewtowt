@@ -8,6 +8,9 @@
     <h1 class="display">Planning flotte</h1>
   </div>
   <div class="flex gap-2">
+    <a href="/planning/conflicts" class="btn btn-ghost">
+      ⚠ Conflits de port{% if conflict_count %} ({{ conflict_count }}){% endif %}
+    </a>
     <a href="/planning/shares" class="btn btn-ghost">Partages publics</a>
     <a href="/planning/legs/new-from-map" class="btn btn-secondary">📍 Sur la carte</a>
     <a href="/planning/legs/new" class="btn btn-primary">+ Nouveau leg</a>
@@ -33,7 +36,7 @@
     {% endfor %}
   </div>
   {% if conflict_count %}
-    <span class="pill pill-warn" style="align-self:center;">⚠ {{ conflict_count }} conflit(s) port</span>
+    <a href="/planning/conflicts" class="pill pill-warn" style="align-self:center;">⚠ {{ conflict_count }} conflit(s) port</a>
   {% endif %}
 </div>
 

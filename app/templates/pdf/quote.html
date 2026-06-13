@@ -86,10 +86,11 @@
   {{ quote.palettes_total }} palette(s)
   {% if quote.tonnage_t %} · {{ quote.tonnage_t|round(2) }} t chargées{% endif %}
   {% if quote.hazardous %} · marchandises dangereuses (IMDG){% endif %}.<br />
-  Devis indicatif hors taxes, hors droits et frais locaux, valable jusqu'au
+  Transport maritime international exonéré de TVA (art. 262 II CGI) — montants nets.
+  Devis indicatif, hors droits et frais locaux, valable jusqu'au
   {{ quote.valid_until|date if quote.valid_until else '—' }}.
-  La capacité est confirmée à la réservation. La facturation est émise par la
-  comptabilité NEWTOWT hors plateforme.<br />
+  La capacité est confirmée à la réservation. La facturation n'est pas gérée par
+  la plateforme : elle est émise par la comptabilité NEWTOWT hors plateforme.<br />
   Émis le {{ issued_at|date }} — {{ site_url }}/devis/{{ quote.reference }}
 </p>
 

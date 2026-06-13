@@ -47,7 +47,6 @@ PUBLIC_PAGES: tuple[tuple[str, str, str], ...] = (
     ("/navigation", "monthly", "0.7"),
     ("/carnet", "weekly", "0.6"),
     ("/actualites", "weekly", "0.5"),
-    ("/passagers", "monthly", "0.6"),
     ("/recrutement", "monthly", "0.5"),
     ("/presse", "monthly", "0.4"),
     ("/routes", "daily", "0.8"),
@@ -108,8 +107,7 @@ def build_llms_txt(base_url: str) -> str:
         "Artemis en opération ; Atlantis, Astérias, Archimedes et Atlas en "
         "construction.\n"
         "- Charge utile > 1 200 t sur 1 050 m² exploitables en six cales, trois "
-        "ponts ; 9 à 11 nœuds ; pavillon français ; équipage 9–10 marins ; "
-        "12 passagers (service 2027).\n"
+        "ponts ; 9 à 11 nœuds ; équipage 9–10 marins ; ""pavillon français.\n"
         "- Routes : Europe ↔ Brésil (Fécamp ↔ São Sebastião) et Amérique latine "
         "(Colombie, Mexique, Guatemala).\n"
         "- Construction par Piriou au Vietnam (chantiers Song Thu et Ba Son).\n\n"

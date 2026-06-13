@@ -101,8 +101,8 @@ def render_invoice(*, booking, leg, vessel, pol, pod, client, invoice=None) -> D
         if invoice
         else (booking.confirmed_price_eur or booking.estimated_price_eur or Decimal("0"))
     )
-    # Default French VAT 20% if no invoice row yet (V3.0 simplification).
-    vat_rate = Decimal("0.20")
+    # Transport maritime international : exonéré de TVA (art. 262 II CGI) → 0 %.
+    vat_rate = Decimal("0")
     if invoice:
         ctx["vat_rate"] = (
             (invoice.vat_amount_eur / invoice.amount_excl_vat_eur)

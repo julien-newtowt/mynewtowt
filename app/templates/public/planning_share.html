@@ -1,63 +1,145 @@
 {% extends "public/_layout_v2.html" %}
-{% block title %}{{ share.label or ('Shared planning' if lang == 'en' else 'Planning partagé') }} — {{ brand.nom_court }}{% endblock %}
-{% block content %}
+{% block title %}{{ share.label or ('Sailing schedule' if lang == 'en' else 'Calendrier de navigation') }} — {{ brand.nom_court }}{% endblock %}
 
+{% block head %}
+<script src="/static/js/print-page.js" defer></script>
+<style>
+  /* Prospectus commercial — mise en page écran + impression A4. */
+  .prospectus { max-width: 960px; margin: 0 auto; }
+  .prospectus-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-4);
+  }
+  .prospectus-brand { display: flex; align-items: center; gap: var(--space-3); }
+  .prospectus-brand img { height: 48px; width: auto; }
+  .schedule-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  .schedule-table thead th {
+    text-align: left; background: var(--teal); color: var(--blanc);
+    padding: 10px 12px; font-weight: var(--fw-semibold); white-space: nowrap;
+  }
+  .schedule-table tbody td { padding: 9px 12px; border-bottom: 1px solid var(--sable); vertical-align: top; }
+  .schedule-table tbody tr:nth-child(even) { background: var(--sable-light); }
+  .route-cell { font-weight: var(--fw-semibold); color: var(--teal); }
+  .route-cell .locodes { font-family: var(--font-mono); }
+  .port-names { color: var(--gris); font-size: var(--text-xs); }
+  .status-pill {
+    display: inline-block; padding: 1px 8px; border-radius: 999px;
+    font-size: var(--text-xs); font-weight: var(--fw-semibold);
+  }
+  .status-planned { background: #e6f0f2; color: var(--teal); }
+  .status-inprogress { background: #f3e9df; color: var(--cuivre); }
+  .status-completed { background: #e9f2e0; color: var(--vert); }
+  .status-cancelled { background: #eee; color: var(--gris); }
+
+  @media print {
+    @page { size: A4; margin: 14mm; }
+    body { background: #fff !important; }
+    .header, .footer, .no-print { display: none !important; }
+    .hero { padding: 0 0 8mm 0 !important; background: #fff !important; color: #000 !important; }
+    .section { padding: 0 !important; }
+    .card { box-shadow: none !important; border: none !important; padding: 0 !important; }
+    .schedule-table thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .schedule-table { font-size: 10pt; }
+    a { color: #000 !important; text-decoration: none !important; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
 <section class="hero">
-  <div class="container">
-    <span class="kicker">{% if lang == 'en' %}Shared planning{% else %}Planning partagé{% endif %}</span>
-    <h1 class="display">
-      {{ share.label or ('Planning view' if lang == 'en' else 'Vue planning') }}
-    </h1>
-    {% if share.description %}
-      <p class="lead">{{ share.description }}</p>
-    {% endif %}
+  <div class="container prospectus">
+    <div class="prospectus-head">
+      <div>
+        <span class="kicker">{% if lang == 'en' %}Sailing schedule{% else %}Calendrier de navigation{% endif %}</span>
+        <h1 class="display">
+          {{ share.label or ('Cargo sailing schedule' if lang == 'en' else 'Calendrier des traversées cargo') }}
+        </h1>
+        {% if share.description %}<p class="lead">{{ share.description }}</p>{% endif %}
+      </div>
+      <button type="button" class="btn btn-primary no-print" data-print>
+        <i data-lucide="printer"></i>
+        {% if lang == 'en' %}Print / PDF (A4){% else %}Imprimer / PDF (A4){% endif %}
+      </button>
+    </div>
   </div>
 </section>
 
 <section class="section">
-  <div class="container">
+  <div class="container prospectus">
     <div class="card" style="overflow-x:auto;">
-      <div class="gantt-wrapper" style="min-width:900px;">
-        {% for row in gantt_rows %}
-          <div class="gantt-row" style="display:grid; grid-template-columns:200px 1fr; gap:var(--space-2); margin-bottom:var(--space-2); align-items:center;">
-            <div class="gantt-vessel" style="font-weight:var(--fw-semibold); color:var(--teal);">
-              <span class="mono text-muted">{{ row.vessel.code }}</span>
-              {{ row.vessel.name }}
-            </div>
-            <div class="gantt-lane" style="position:relative; height:32px; background:var(--sable-light); border-radius:var(--radius-sm);">
-              {% for bar in row.bars %}
-                <span class="gantt-bar"
-                      style="position:absolute; left:{{ bar.left_pct }}%; width:{{ bar.width_pct }}%; top:4px; bottom:4px;
-                             background: {% if bar.status == 'completed' %}var(--vert){% elif bar.status == 'inprogress' %}var(--cuivre){% elif bar.status == 'cancelled' %}var(--gris){% else %}var(--teal){% endif %};
-                             color:var(--blanc); border-radius:var(--radius-sm);
-                             padding:2px 6px; font-size:var(--text-xs); font-family:var(--font-mono); font-weight:var(--fw-semibold);
-                             display:flex; align-items:center; overflow:hidden; white-space:nowrap;"
-                      title="{{ bar.leg_code }} · {{ bar.pol_locode }}→{{ bar.pod_locode }}">
-                  {% if bar.is_bookable %}
-                    <a href="/routes/{{ bar.leg_code }}" style="color:inherit; border:none;">{{ bar.leg_code }} {{ bar.pol_locode }}→{{ bar.pod_locode }}</a>
-                  {% else %}
-                    {{ bar.leg_code }} {{ bar.pol_locode }}→{{ bar.pod_locode }}
-                  {% endif %}
-                </span>
-              {% endfor %}
-            </div>
-          </div>
-        {% endfor %}
-      </div>
+      {% if table_rows %}
+      <table class="schedule-table">
+        <thead>
+          <tr>
+            <th>{% if lang == 'en' %}Vessel{% else %}Navire{% endif %}</th>
+            <th>{% if lang == 'en' %}Route{% else %}Route{% endif %}</th>
+            <th>{% if lang == 'en' %}Departure (ETD){% else %}Départ (ETD){% endif %}</th>
+            <th>{% if lang == 'en' %}Arrival (ETA){% else %}Arrivée (ETA){% endif %}</th>
+            <th>{% if lang == 'en' %}Transit{% else %}Transit{% endif %}</th>
+            <th>{% if lang == 'en' %}Status{% else %}Statut{% endif %}</th>
+            <th class="no-print"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in table_rows %}
+          <tr>
+            <td>
+              <span class="mono text-muted">{{ row.vessel_code }}</span><br />
+              {{ row.vessel_name }}
+            </td>
+            <td class="route-cell">
+              <span class="locodes">{{ row.pol.locode if row.pol else '—' }} → {{ row.pod.locode if row.pod else '—' }}</span>
+              <div class="port-names">
+                {{ row.pol.name if row.pol else '' }}{% if row.pol and row.pol.country %} {{ row.pol.country|flag }}{% endif %}
+                → {{ row.pod.name if row.pod else '' }}{% if row.pod and row.pod.country %} {{ row.pod.country|flag }}{% endif %}
+              </div>
+            </td>
+            <td class="mono">{{ row.etd|date }}</td>
+            <td class="mono">{{ row.eta|date }}</td>
+            <td class="mono">{% if row.transit_days %}{{ row.transit_days }} {% if lang == 'en' %}days{% else %}j{% endif %}{% else %}—{% endif %}</td>
+            <td>
+              <span class="status-pill status-{{ row.status }}">
+                {% if row.status == 'completed' %}{% if lang == 'en' %}Completed{% else %}Réalisée{% endif %}
+                {%- elif row.status == 'inprogress' %}{% if lang == 'en' %}In progress{% else %}En cours{% endif %}
+                {%- elif row.status == 'cancelled' %}{% if lang == 'en' %}Cancelled{% else %}Annulée{% endif %}
+                {%- else %}{% if lang == 'en' %}Scheduled{% else %}Planifiée{% endif %}{% endif %}
+              </span>
+            </td>
+            <td class="no-print">
+              {% if row.is_bookable %}
+                <a href="/devis?leg={{ row.leg_code }}" class="btn btn-sm btn-secondary">
+                  {% if lang == 'en' %}Quote{% else %}Devis{% endif %}
+                </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted">
+        {% if lang == 'en' %}No voyage scheduled in this window.{% else %}Aucune traversée planifiée sur cette période.{% endif %}
+      </p>
+      {% endif %}
     </div>
 
-    <p class="text-muted text-sm mt-4">
-      {% if lang == 'en' %}
-        Read-only sharing link. To book a voyage, go through
-        <a href="/routes">the route search</a> or
-        <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>.
-      {% else %}
-        Lien de partage en lecture seule. Pour réserver un voyage, passez par
-        <a href="/routes">la recherche de routes</a> ou
-        <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>.
-      {% endif %}
-    </p>
+    <div class="prospectus-head" style="margin-top:var(--space-4);">
+      <p class="text-muted text-sm">
+        {% if lang == 'en' %}
+          Indicative schedule, subject to weather and operations.
+          To book, request a quote or contact
+          <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>.
+        {% else %}
+          Calendrier indicatif, sujet aux conditions météo et d'exploitation.
+          Pour réserver, demandez un devis ou écrivez à
+          <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>.
+        {% endif %}
+        <br />{{ brand.raison_sociale }} · {% if lang == 'en' %}generated on{% else %}édité le{% endif %} {{ generated_at|date }}.
+      </p>
+      <a href="/devis" class="btn btn-secondary no-print">
+        {% if lang == 'en' %}Request a quote{% else %}Demander un devis{% endif %}
+      </a>
+    </div>
   </div>
 </section>
-
 {% endblock %}

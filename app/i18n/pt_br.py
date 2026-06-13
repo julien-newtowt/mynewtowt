@@ -1,8 +1,8 @@
-"""Portuguese (Brazil) catalog (partial — falls back to FR for missing keys)."""
+"""Portuguese (Brazil) catalog (full parity with fr.py — reference)."""
 
 CATALOG: dict[str, str] = {
     # Public navigation
-    "nav_routes": "Rotas e horários",
+    "nav_routes": "Rotas e cronogramas",
     "nav_fleet": "Posição da frota",
     "nav_about": "Sobre",
     "nav_client": "Área do cliente",
@@ -15,12 +15,12 @@ CATALOG: dict[str, str] = {
     "nav_actualites": "Notícias",
     "nav_recrutement": "Carreiras",
     "nav_presse": "Imprensa",
-    "nav_passagers": "Passageiros",
     "nav_quote": "Solicitar cotação",
     "footer_navigation": "Navegação",
     "footer_explore": "Descobrir",
     "footer_client": "Cliente",
-    "footer_legal": "Legal",
+    "footer_legal": "Jurídico",
+    # ERP navigation
     "nav_dashboard": "Painel",
     "nav_planning": "Planejamento",
     "nav_commercial": "Comercial",
@@ -33,7 +33,45 @@ CATALOG: dict[str, str] = {
     "nav_claims": "Sinistros",
     "nav_mrv": "MRV",
     "nav_admin": "Admin",
-    "btn_login": "Entrar",
+    "nav_settings": "Configurações",
+    "nav_logout": "Sair",
+    # Common
     "btn_save": "Salvar",
     "btn_cancel": "Cancelar",
+    "btn_create": "Criar",
+    "btn_edit": "Editar",
+    "btn_delete": "Excluir",
+    "btn_close": "Fechar",
+    "btn_back": "← Voltar",
+    "btn_view": "Ver",
+    "btn_filter": "Filtrar",
+    "btn_export": "Exportar",
+    "btn_login": "Entrar",
+    "btn_send": "Enviar",
+    # Status
+    "status_draft": "Rascunho",
+    "status_active": "Ativo",
+    "status_inactive": "Inativo",
+    "status_planned": "Planejado",
+    "status_inprogress": "Em andamento",
+    "status_completed": "Concluído",
+    "status_cancelled": "Cancelado",
+    "status_locked": "Bloqueado",
+    "status_submitted": "Enviado",
+    # Dashboard
+    "dash_welcome": "Bem-vindo",
+    "dash_subtitle": "Gerencie a frota, as operações e os clientes NEWTOWT.",
+    "dash_notifications": "Notificações",
+    "dash_archive_read": "Arquivar lidas",
+    "dash_view": "Ver",
+    "dash_treated": "Tratado",
+    "dash_packing_to_review": "Listas de carga para validar",
+    # Auth
+    "auth_login": "Acesso",
+    "auth_username": "Usuário",
+    "auth_password": "Senha",
+    "auth_remember": "Lembrar de mim",
+    "auth_invalid": "Credenciais inválidas.",
+    "auth_password_too_short": "Senha muito curta (12 caracteres no mínimo).",
+    "auth_password_change_required": "Você precisa alterar sua senha.",
 }

@@ -1,0 +1,89 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Rapport CO₂ {{ report.year }} — {{ client.company_name }}{% endblock %}
+{% block doc_kind %}Rapport CO₂ annuel · Annual CO₂ report{% endblock %}
+{% block doc_ref %}{{ report.year }}{% endblock %}
+{% block content %}
+
+<table class="meta" style="width:100%;margin-bottom:8mm;">
+  <tr>
+    <td style="vertical-align:top;width:55%;">
+      <strong>Bénéficiaire</strong><br />
+      {{ client.company_name }}<br />
+      {% if client.vat_number %}TVA : {{ client.vat_number }}<br />{% endif %}
+      {{ client.country or "" }}
+    </td>
+    <td style="vertical-align:top;width:45%;">
+      <strong>Période</strong><br />
+      1ᵉʳ janvier – 31 décembre {{ report.year }}<br />
+      {{ report.shipment_count }} expédition(s) livrée(s)
+    </td>
+  </tr>
+</table>
+
+<h3>Émissions évitées — synthèse {{ report.year }}</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:8mm;">
+  <tbody>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;">
+      <td style="padding:2mm 1mm;">Tonnage transporté</td>
+      <td style="padding:2mm 1mm;text-align:right;font-weight:bold;">{{ "%.1f"|format(report.total_tonnage_t|float) }} t</td>
+    </tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;">
+      <td style="padding:2mm 1mm;">Distance cumulée</td>
+      <td style="padding:2mm 1mm;text-align:right;">{{ "%.0f"|format(report.total_distance_nm|float) }} NM</td>
+    </tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;">
+      <td style="padding:2mm 1mm;">Émissions NEWTOWT (vélique)</td>
+      <td style="padding:2mm 1mm;text-align:right;">{{ "%.0f"|format(report.total_emitted_kg|float) }} kg CO₂</td>
+    </tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;">
+      <td style="padding:2mm 1mm;">Référence cargo conventionnel</td>
+      <td style="padding:2mm 1mm;text-align:right;">{{ "%.0f"|format(report.total_conventional_kg|float) }} kg CO₂</td>
+    </tr>
+    <tr style="border-top:1.5pt solid #0D5966;">
+      <td style="padding:3mm 1mm;font-weight:bold;font-size:12pt;">CO₂ évité</td>
+      <td style="padding:3mm 1mm;text-align:right;font-weight:bold;font-size:14pt;color:#0D5966;">
+        {{ "%.0f"|format(report.total_avoided_kg|float) }} kg
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Détail des expéditions</h3>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;">
+  <thead>
+    <tr style="border-bottom:1.5pt solid #0D5966;text-align:left;">
+      <th style="padding:2mm 1mm;">Label</th>
+      <th style="padding:2mm 1mm;">Réservation</th>
+      <th style="padding:2mm 1mm;">Date</th>
+      <th style="padding:2mm 1mm;text-align:right;">Tonnage</th>
+      <th style="padding:2mm 1mm;text-align:right;">Distance</th>
+      <th style="padding:2mm 1mm;text-align:right;">CO₂ évité</th>
+      <th style="padding:2mm 1mm;">Méthode</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in report.shipments %}
+    <tr style="border-bottom:0.5pt solid #EFE6D6;">
+      <td style="padding:1.5mm 1mm;">{{ s.reference }}</td>
+      <td style="padding:1.5mm 1mm;">{{ s.booking_ref or "—" }}</td>
+      <td style="padding:1.5mm 1mm;">{{ s.issued_at|date }}</td>
+      <td style="padding:1.5mm 1mm;text-align:right;">{{ "%.1f"|format(s.tonnage_t|float) }} t</td>
+      <td style="padding:1.5mm 1mm;text-align:right;">{{ "%.0f"|format(s.distance_nm|float) }} NM</td>
+      <td style="padding:1.5mm 1mm;text-align:right;">{{ "%.0f"|format(s.co2_avoided_kg|float) }} kg</td>
+      <td style="padding:1.5mm 1mm;">{% if s.method == "declared" %}réel déclaré{% else %}forfait{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p style="margin-top:8mm;font-size:8.5pt;color:#555;">
+  <strong>Méthodologie</strong> — Émissions évitées calculées par différence entre un
+  cargo conventionnel (référence IMO Fourth GHG Study, 13,7 g CO₂/t·km) et le transport
+  vélique NEWTOWT, alignée EU MRV (UE 2015/757) et GHG Protocol Scope 3 catégorie 4
+  (transport amont). {{ report.declared_count }} des {{ report.shipment_count }} expédition(s)
+  reposent sur les consommations réelles déclarées à bord (noon reports signés) ; les
+  autres sur le facteur certifié. Document valorisable dans votre Bilan Carbone® scope 3
+  catégorie 4. Émis le {{ issued_at|date }} — {{ site_url }}/about/anemos
+</p>
+
+{% endblock %}

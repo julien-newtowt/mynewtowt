@@ -1,0 +1,142 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Conformité — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/onboard" class="btn btn-ghost mb-3">← Onboard</a>
+<header class="mb-4">
+  <span class="kicker">À bord · Sûreté / Sécurité</span>
+  <h1 class="display">Conformité ISM / ISPS</h1>
+</header>
+
+<form method="get" class="card mb-4" style="display:flex; gap:var(--space-3); align-items:end;">
+  <div class="field" style="flex:1; margin:0;">
+    <label for="leg_id">Voyage</label>
+    <select id="leg_id" name="leg_id" onchange="this.form.submit()">
+      {% for l in legs %}
+        <option value="{{ l.id }}" {% if leg and leg.id == l.id %}selected{% endif %}>{{ l.leg_code }} — {{ l.etd|date }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+{% if leg %}
+<div class="grid grid-2 gap-4">
+  {# ── Nouvelle check-list ────────────────────────────────────────── #}
+  <article class="card">
+    <h2>Nouvelle check-list</h2>
+    <p class="text-muted text-sm">Instancie une check-list standard pour ce voyage.</p>
+    <form method="post" action="/onboard/compliance/checklist">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <input type="hidden" name="leg_id" value="{{ leg.id }}" />
+      <div class="field">
+        <label for="kind">Modèle</label>
+        <select id="kind" name="kind" required>
+          {% for k, label in templates_choices.items() %}
+            <option value="{{ k }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary mt-2">Créer la check-list</button>
+    </form>
+  </article>
+
+  {# ── Nouveau visiteur (registre ISPS) ───────────────────────────── #}
+  <article class="card">
+    <h2>Registre visiteurs (ISPS)</h2>
+    <form method="post" action="/onboard/compliance/visitor">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <input type="hidden" name="leg_id" value="{{ leg.id }}" />
+      <div class="grid grid-2 gap-3">
+        <div class="field"><label for="full_name">Nom complet</label><input id="full_name" name="full_name" required /></div>
+        <div class="field"><label for="company">Société</label><input id="company" name="company" /></div>
+        <div class="field"><label for="purpose">Motif</label><input id="purpose" name="purpose" /></div>
+        <div class="field"><label for="id_document">Pièce d'identité</label><input id="id_document" name="id_document" /></div>
+        <div class="field" style="grid-column:span 2;"><label for="escorted_by">Escorté par</label><input id="escorted_by" name="escorted_by" placeholder="{{ user.full_name or user.username }}" /></div>
+      </div>
+      <button type="submit" class="btn btn-primary mt-2">Enregistrer la visite</button>
+    </form>
+  </article>
+</div>
+
+{# ── Check-lists du voyage ────────────────────────────────────────── #}
+<section class="mt-4">
+  <h2>Check-lists du voyage ({{ checklists|length }})</h2>
+  {% if checklists %}
+    {% for c in checklists %}
+      {% set items = checklist_items.get(c.id, []) %}
+      {% set done = items|selectattr('checked')|list|length %}
+      <article class="card mb-3" style="border-left:4px solid {% if c.completed_at %}var(--vert){% else %}var(--cuivre){% endif %};">
+        <div class="flex justify-between" style="align-items:center;">
+          <div>
+            <span class="kicker mono">{{ c.kind }}</span>
+            <h3 style="margin:var(--space-1) 0;">{{ c.title }}</h3>
+          </div>
+          <div style="text-align:right;">
+            {% if c.completed_at %}
+              <span class="pill pill-ok">Complète</span>
+              <div class="text-muted text-sm">Signée {{ c.completed_at|datetime }}{% if c.signed_by_name %} · {{ c.signed_by_name }}{% endif %}</div>
+            {% else %}
+              <span class="pill pill-warn">{{ done }}/{{ items|length }} cochés</span>
+            {% endif %}
+          </div>
+        </div>
+        {% if items %}
+          <ul style="list-style:none; padding:0; margin:var(--space-3) 0 0;">
+            {% for it in items %}
+              <li style="padding:var(--space-1) 0;">
+                <form method="post" action="/onboard/compliance/checklist/{{ c.id }}/item" style="display:flex; align-items:center; gap:var(--space-2); margin:0;">
+                  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                  <input type="hidden" name="item_index" value="{{ loop.index0 }}" />
+                  {# Le bouton EST la case à cocher : un clic poste le toggle (pas de JS). #}
+                  <button type="submit" class="btn btn-xs {% if it.checked %}btn-primary{% else %}btn-secondary{% endif %}" aria-label="Basculer l'item" style="min-width:2.2rem;">{% if it.checked %}✓{% else %}☐{% endif %}</button>
+                  <span style="{% if it.checked %}text-decoration:line-through; color:var(--text-2);{% endif %}">{{ it.label }}</span>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-muted text-sm" style="margin-top:var(--space-2);">Aucun item.</p>
+        {% endif %}
+      </article>
+    {% endfor %}
+  {% else %}
+    <article class="card"><p class="text-muted">Aucune check-list pour ce voyage.</p></article>
+  {% endif %}
+</section>
+
+{# ── Registre visiteurs ───────────────────────────────────────────── #}
+<article class="card mt-4">
+  <h2>Visiteurs ({{ visitors|length }})</h2>
+  {% if visitors %}
+    <table>
+      <thead><tr><th>Entrée</th><th>Visiteur</th><th>Société</th><th>Motif</th><th>Escorté par</th><th>Sortie</th></tr></thead>
+      <tbody>
+        {% for v in visitors %}
+          <tr>
+            <td class="mono text-sm">{{ v.time_in|datetime }}</td>
+            <td>{{ v.full_name }}{% if v.id_document %}<br /><span class="text-muted text-sm mono">{{ v.id_document }}</span>{% endif %}</td>
+            <td>{{ v.company or '—' }}</td>
+            <td>{{ v.purpose or '—' }}</td>
+            <td>{{ v.escorted_by or '—' }}</td>
+            <td>
+              {% if v.time_out %}
+                <span class="mono text-sm">{{ v.time_out|datetime }}</span>
+              {% else %}
+                <form method="post" action="/onboard/compliance/visitor/{{ v.id }}/checkout" style="display:inline; margin:0;">
+                  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                  <button type="submit" class="btn btn-xs btn-cuivre">Sortie</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted">Aucun visiteur enregistré pour ce voyage.</p>
+  {% endif %}
+</article>
+
+{% else %}
+<article class="card"><p class="text-muted">Aucun voyage disponible.</p></article>
+{% endif %}
+{% endblock %}

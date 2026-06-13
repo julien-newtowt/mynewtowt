@@ -65,10 +65,18 @@ def _table_distance(pol_locode: str | None, pod_locode: str | None) -> Decimal:
     return _DEFAULT_DISTANCE_NM
 
 
-def resolve_distance_nm(leg: Leg | None, pol: Port | None, pod: Port | None) -> Decimal:
-    """Distance NM pour un leg, selon l'ordre persistée → haversine → table."""
+def resolve_distance_with_source(
+    leg: Leg | None, pol: Port | None, pod: Port | None
+) -> tuple[Decimal, str]:
+    """(distance NM, source) — persistée → haversine → table → forfait.
+
+    ``source`` ∈ {``leg_persisted``, ``haversine``, ``port_table``,
+    ``unverified``}. ``unverified`` signale le repli forfaitaire (ports
+    sans coordonnées et hors table) : il **doit** être mentionné sur tout
+    document client (cf. certificat Anemos) — jamais silencieux.
+    """
     if leg is not None and leg.distance_nm is not None:
-        return Decimal(leg.distance_nm)
+        return Decimal(leg.distance_nm), "leg_persisted"
     if (
         pol is not None
         and pod is not None
@@ -78,8 +86,17 @@ def resolve_distance_nm(leg: Leg | None, pol: Port | None, pod: Port | None) -> 
         and pod.longitude is not None
     ):
         nm = haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude)
-        return Decimal(str(round(nm, 2)))
-    return _table_distance(getattr(pol, "locode", None), getattr(pod, "locode", None))
+        return Decimal(str(round(nm, 2))), "haversine"
+    pol_locode = getattr(pol, "locode", None)
+    pod_locode = getattr(pod, "locode", None)
+    if pol_locode and pod_locode and frozenset({pol_locode, pod_locode}) in _DISTANCE_NM:
+        return _DISTANCE_NM[frozenset({pol_locode, pod_locode})], "port_table"
+    return _DEFAULT_DISTANCE_NM, "unverified"
+
+
+def resolve_distance_nm(leg: Leg | None, pol: Port | None, pod: Port | None) -> Decimal:
+    """Distance NM pour un leg (cf. ``resolve_distance_with_source``)."""
+    return resolve_distance_with_source(leg, pol, pod)[0]
 
 
 async def _noon_total(db: AsyncSession, leg_id: int, column) -> Decimal:
@@ -145,10 +162,10 @@ async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertifi
         distance = noon_distance.quantize(Decimal("0.01"))
         distance_source = "noon_reports"
     else:
-        distance = resolve_distance_nm(leg, pol, pod)
-        distance_source = "planned"
-        # Persiste la distance sur le leg si elle n'y était pas (store-after-crossing).
-        if leg is not None and leg.distance_nm is None:
+        distance, distance_source = resolve_distance_with_source(leg, pol, pod)
+        # Persiste la distance sur le leg seulement si elle est fiable
+        # (jamais le forfait « unverified », qui doit rester signalé).
+        if leg is not None and leg.distance_nm is None and distance_source != "unverified":
             leg.distance_nm = distance
 
     tonnage = (booking.total_weight_kg or Decimal("0")) / Decimal("1000")
@@ -201,3 +218,78 @@ async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertifi
         entity_label=cert.reference,
     )
     return cert
+
+
+# ---------------------------------------------------------------------------
+# Reporting RSE annuel par client (ENV-06)
+# ---------------------------------------------------------------------------
+
+
+async def available_report_years(db: AsyncSession, client_account_id: int) -> list[int]:
+    """Années pour lesquelles le client a au moins un label, plus récentes d'abord."""
+    rows = (
+        await db.execute(
+            select(AnemosCertificate.issued_at).where(
+                AnemosCertificate.client_account_id == client_account_id
+            )
+        )
+    ).all()
+    years = sorted({r[0].year for r in rows if r[0] is not None}, reverse=True)
+    return years
+
+
+async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) -> dict:
+    """Agrège les labels Anemos d'un client sur une année.
+
+    Retourne les totaux (tonnage, distance, CO₂ évité/émis/référence), le
+    nombre d'expéditions, la part calculée sur données réelles déclarées
+    (méthode « declared »), et la liste détaillée des expéditions — base du
+    rapport RSE annuel téléchargeable (Bilan Carbone® scope 3 cat. 4).
+    """
+    res = await db.execute(
+        select(AnemosCertificate, Booking.reference, Leg.leg_code)
+        .join(Booking, Booking.id == AnemosCertificate.booking_id, isouter=True)
+        .join(Leg, Leg.id == AnemosCertificate.leg_id, isouter=True)
+        .where(AnemosCertificate.client_account_id == client_account_id)
+        .order_by(AnemosCertificate.issued_at.asc())
+    )
+    rows = []
+    tot_tonnage = Decimal("0")
+    tot_distance = Decimal("0")
+    tot_avoided = Decimal("0")
+    tot_emitted = Decimal("0")
+    tot_conventional = Decimal("0")
+    declared_count = 0
+    for cert, booking_ref, leg_code in res.all():
+        if cert.issued_at is None or cert.issued_at.year != year:
+            continue
+        if cert.method == "declared":
+            declared_count += 1
+        tot_tonnage += cert.tonnage_transported_t or Decimal("0")
+        tot_distance += cert.distance_nm or Decimal("0")
+        tot_avoided += cert.co2_avoided_kg or Decimal("0")
+        tot_emitted += cert.co2_emitted_kg or Decimal("0")
+        tot_conventional += cert.co2_conventional_kg or Decimal("0")
+        rows.append(
+            {
+                "reference": cert.reference,
+                "booking_ref": booking_ref,
+                "leg_code": leg_code,
+                "issued_at": cert.issued_at,
+                "tonnage_t": cert.tonnage_transported_t,
+                "distance_nm": cert.distance_nm,
+                "co2_avoided_kg": cert.co2_avoided_kg,
+                "method": cert.method,
+            }
+        )
+    return {
+        "year": year,
+        "shipments": rows,
+        "shipment_count": len(rows),
+        "declared_count": declared_count,
+        "total_tonnage_t": tot_tonnage,
+        "total_distance_nm": tot_distance,
+        "total_avoided_kg": tot_avoided,
+        "total_emitted_kg": tot_emitted,
+        "total_conventional_kg": tot_conventional,
+    }

@@ -176,6 +176,78 @@ async def notify_eta_shift(
     )
 
 
+# Motifs ETA shift → libellé client (FR). Les valeurs techniques viennent de
+# ``ETA_SHIFT_REASONS`` (captain). Repli : le code brut.
+_ETA_REASON_FR: dict[str, str] = {
+    "weather": "conditions météo",
+    "mechanical": "aléa technique",
+    "port_congestion": "congestion portuaire",
+    "customs_delay": "formalités douanières",
+    "cargo_readiness": "disponibilité de la marchandise",
+    "crew_change": "relève d'équipage",
+    "bunker_delay": "avitaillement",
+    "anchorage_wait": "attente au mouillage",
+    "other": "ajustement de planning",
+}
+
+
+async def notify_clients_eta_shift(
+    db: AsyncSession,
+    *,
+    leg_id: int,
+    leg_code: str,
+    previous_eta,
+    new_eta,
+    reason: str,
+) -> int:
+    """Alerte proactive : prévient chaque client ayant une réservation active
+    sur le leg d'un décalage d'ETA (retard ou avance). Retourne le nombre de
+    clients notifiés. Best-effort — ne lève jamais.
+    """
+    from app.models.booking import Booking  # import tardif (évite un cycle)
+
+    active = ("submitted", "confirmed", "loaded", "at_sea")
+    rows = (
+        await db.execute(
+            select(Booking.reference, Booking.client_account_id)
+            .where(Booking.leg_id == leg_id, Booking.status.in_(active))
+        )
+    ).all()
+
+    # Sens et ampleur du décalage.
+    delta_label = ""
+    if previous_eta and new_eta:
+        delta_h = (new_eta - previous_eta).total_seconds() / 3600
+        if delta_h >= 1:
+            delta_label = f"retard d'environ {round(delta_h)} h"
+        elif delta_h <= -1:
+            delta_label = f"avance d'environ {abs(round(delta_h))} h"
+        else:
+            delta_label = "léger ajustement"
+    reason_fr = _ETA_REASON_FR.get(reason, reason)
+
+    seen: set[int] = set()
+    count = 0
+    for reference, client_id in rows:
+        if client_id is None or client_id in seen:
+            continue
+        seen.add(client_id)
+        detail = f"Nouvelle arrivée estimée pour {reference}"
+        if delta_label:
+            detail += f" — {delta_label}"
+        detail += f" (motif : {reason_fr})."
+        await notify_client(
+            db,
+            client_id=client_id,
+            type="eta_shift",
+            title=f"Mise à jour d'arrivée — {leg_code}",
+            detail=detail,
+            link=f"/me/track/{reference}",
+        )
+        count += 1
+    return count
+
+
 # ──────────────────────── Notifications côté client (espace /me) ─────────────
 
 

@@ -13,6 +13,36 @@
   {% endif %}
 </p>
 
+{% if report_years %}
+<section class="card" style="border-left:4px solid var(--vert); margin-bottom:var(--space-4);">
+  <h2 style="margin-top:0;">
+    {% if lang == 'en' %}Annual CO₂ report{% else %}Rapport CO₂ annuel{% endif %}
+  </h2>
+  <p class="text-muted">
+    {% if lang == 'en' %}
+      Download a consolidated annual report (all shipments aggregated) for your
+      Carbon Footprint scope 3 category 4 reporting.
+    {% else %}
+      Téléchargez un rapport annuel consolidé (toutes vos expéditions agrégées)
+      pour votre reporting Bilan Carbone® scope 3 catégorie 4.
+    {% endif %}
+  </p>
+  <ul style="list-style:none; padding:0; margin:0;">
+    {% for y in report_years %}
+    <li style="padding:6px 0; display:flex; gap:var(--space-3); align-items:center;">
+      <strong class="mono">{{ y }}</strong>
+      <a href="/me/anemos/report/{{ y }}.pdf" class="btn btn-secondary btn-sm">
+        <i data-lucide="file-down"></i> PDF
+      </a>
+      <a href="/me/anemos/report/{{ y }}.csv" class="btn btn-ghost btn-sm">
+        <i data-lucide="table"></i> CSV
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 {% if certificates %}
   <div class="card">
     <table>

@@ -1,8 +1,13 @@
-"""Facturation client — émission d'une facture à la confirmation booking.
+"""Facturation client — module DORMANT.
 
-Idempotent : une seule facture par booking. Montants en TVA française 20 %.
-Pas de paiement en ligne (Stripe retiré en V3.1) — règlement par virement,
-échéance à 30 jours.
+⚠️ La **facturation n'est pas gérée par cet ERP** : elle est émise hors
+plateforme par la comptabilité NEWTOWT (la plateforme produit une *booking
+note* de confirmation, pas une facture). Ce module est conservé comme
+réceptacle de données pour un futur export comptable et n'est plus appelé
+par le cycle de vie booking.
+
+TVA : le **transport maritime international est exonéré de TVA**
+(art. 262 II CGI / art. 148 directive 2006/112/CE) — taux 0 %.
 """
 
 from __future__ import annotations
@@ -18,7 +23,8 @@ from app.models.booking import Booking
 from app.models.client_invoice import ClientInvoice
 from app.services.activity import record as activity_record
 
-VAT_RATE = Decimal("0.20")
+# Transport maritime international : exonéré de TVA (art. 262 II CGI).
+VAT_RATE = Decimal("0")
 _PAYMENT_TERMS_DAYS = 30
 _CENTS = Decimal("0.01")
 
@@ -30,7 +36,7 @@ def generate_reference(year: int | None = None) -> str:
 
 
 def compute_amounts(amount_excl_vat: Decimal) -> tuple[Decimal, Decimal, Decimal]:
-    """(HT, TVA, TTC) — TVA française 20 %."""
+    """(HT, TVA, TTC) — TVA 0 % (transport maritime international exonéré)."""
     excl = (amount_excl_vat or Decimal("0")).quantize(_CENTS)
     vat = (excl * VAT_RATE).quantize(_CENTS)
     incl = (excl + vat).quantize(_CENTS)

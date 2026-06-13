@@ -30,6 +30,8 @@ class LegFinance(Base):
     port_fees_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     docker_costs_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     opex_share_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+    # FLX-09 — coût des sinistres affectés au leg (Σ règlement sinon provision).
+    claims_cost_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     other_costs_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     margin_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
 
