@@ -104,6 +104,18 @@ tant que la fusion des rails (§4.2) n'a pas ajouté `booking_id`.
 > étapes réversibles. **Prochaine révision Alembic libre : `0029`.**
 > Ordre recommandé : **B1 → B2 → B3** (B4/B5 indépendants, lançables en parallèle).
 
+> **✅ LIVRÉ (2026-06-13)** — les cinq blocs sont implémentés, testés et poussés
+> sur la branche. Migrations `0029 → 0033` (chaîne Alembic linéaire `0021 → 0033`),
+> `ruff` propre, **270 tests verts**, 320 routes.
+
+| Bloc | Livré | Commit | Migration | Suite éventuelle |
+|---|---|---|---|---|
+| B1 — booking → packing list + portail | ✅ | `685cd4a`, `55a6808` | 0029 | — (portail compris) |
+| B2 — fusion des rails (canal client/opérateur) | ✅ | `dd53c26` | 0032 | **B2.2** reprise `orders→bookings` (script idempotent dry-run, hors big-bang) |
+| B3 — stowage ↔ escale (cale) | ✅ | `dcb11d7` | 0033 | auto-zone claims (FLX-10) ; séquencement vacations |
+| B4 — escalade SLA tickets | ✅ | `685cd4a` | 0030 | cron réel (aujourd'hui : déclenché à l'ouverture du kanban) |
+| B5 — contrôle MRV ROB ±2 t | ✅ | `685cd4a` | 0031 | — |
+
 ### Bloc B1 — Booking → packing list + portail `/p/{token}` 🟢 GO
 **Pourquoi** (direction) : « Rail B booking doit emmener vers Packing lists +
 portail /p/token ». Première brique tangible de la fusion des rails.

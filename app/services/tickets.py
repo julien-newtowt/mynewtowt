@@ -23,6 +23,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ticket import Ticket, TicketComment
+from app.services import notifications
+from app.services.activity import record as activity_record
+
+# Rôle destinataire des escalades SLA (cf. app/permissions.py — CMS sur tickets).
+ESCALATION_ROLE = "manager_maritime"
+
+# Statuts considérés "terminés" : aucune escalade SLA ne les concerne.
+_CLOSED_STATUSES: tuple[str, ...] = ("resolved", "closed", "cancelled")
 
 CATEGORIES: tuple[str, ...] = (
     "avarie",
@@ -119,9 +127,84 @@ def sla_target(priority: str, created_at: datetime | None = None) -> datetime:
 
 
 def is_sla_breached(ticket: Ticket) -> bool:
-    if ticket.status in ("resolved", "closed", "cancelled"):
+    if ticket.status in _CLOSED_STATUSES:
         return ticket.sla_breached
     return bool(ticket.sla_target_at and ticket.sla_target_at < datetime.now(UTC))
+
+
+def _overdue_label(target_at: datetime, now: datetime) -> str:
+    """Durée de dépassement humanisée (FR) — ex. « 3 h » ou « 2 j 4 h »."""
+    overdue = now - target_at
+    total_minutes = max(0, int(overdue.total_seconds() // 60))
+    days, rem = divmod(total_minutes, 1440)
+    hours, minutes = divmod(rem, 60)
+    if days:
+        return f"{days} j {hours} h"
+    if hours:
+        return f"{hours} h"
+    return f"{minutes} min"
+
+
+# ---------------------------------------------------------------------------
+# Escalade SLA (FLX-08 / Bloc B4) — notifie le manager une seule fois
+# ---------------------------------------------------------------------------
+
+
+async def escalate_one(db: AsyncSession, ticket: Ticket, *, now: datetime | None = None) -> None:
+    """Escalade un ticket dont le SLA est dépassé : marque ``sla_breached`` +
+    ``escalated_at``, notifie le rôle manager, et journalise l'action.
+
+    Idempotent par dédup ``escalated_at`` (ne ré-escalade jamais). Appelé via
+    :func:`escalate_breached`. ``await db.flush()`` uniquement.
+    """
+    now = now or datetime.now(UTC)
+    ticket.sla_breached = True
+    ticket.escalated_at = now
+
+    overdue = _overdue_label(ticket.sla_target_at, now) if ticket.sla_target_at else "?"
+    detail = (
+        f"Priorité {ticket.priority} — {ticket.title} "
+        f"(dépassement : {overdue}). Assignation manager requise."
+    )
+    await notifications.create(
+        db,
+        type="info",
+        title=f"SLA dépassé — {ticket.reference}",
+        detail=detail,
+        link=f"/tickets/{ticket.reference}",
+        target_role=ESCALATION_ROLE,
+    )
+    await activity_record(
+        db,
+        action="ticket_sla_escalated",
+        module="tickets",
+        entity_type="ticket",
+        entity_id=ticket.id,
+        entity_label=ticket.reference,
+        detail=f"{ticket.priority} — SLA dépassé de {overdue}",
+    )
+    await db.flush()
+
+
+async def escalate_breached(db: AsyncSession) -> int:
+    """Escalade tous les tickets ouverts dont le SLA est dépassé et qui n'ont
+    pas encore été escaladés. Notifie le rôle ``manager_maritime`` (une fois par
+    ticket, dédup via ``escalated_at``). Retourne le nombre d'escalades.
+
+    Conçu pour être déclenché à l'ouverture du kanban (pas de cron en V3.0) :
+    ``await db.flush()`` uniquement — le commit est géré par ``get_db()``.
+    """
+    now = datetime.now(UTC)
+    stmt = select(Ticket).where(
+        Ticket.status.notin_(_CLOSED_STATUSES),
+        Ticket.sla_target_at.isnot(None),
+        Ticket.sla_target_at < now,
+        Ticket.escalated_at.is_(None),
+    )
+    due = list((await db.execute(stmt)).scalars().all())
+    for ticket in due:
+        await escalate_one(db, ticket, now=now)
+    return len(due)
 
 
 # ---------------------------------------------------------------------------

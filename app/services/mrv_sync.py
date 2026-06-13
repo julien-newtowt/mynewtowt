@@ -75,9 +75,64 @@ async def ensure_from_noon(db: AsyncSession, noon: NoonReport) -> MRVEvent | Non
         notes="Généré depuis noon report (référence n°1)",
         noon_report_id=noon.id,
     )
+    # B5 — contrôle qualité ROB déclaré vs calculé (±2 t). Best-effort : ne
+    # s'applique qu'à l'événement nouvellement créé (jamais sur le retour
+    # de l'existant ci-dessus).
+    await _apply_rob_quality(db, noon, ev)
     db.add(ev)
     await db.flush()
     return ev
+
+
+# Seuil d'écart ROB toléré entre valeur déclarée et valeur calculée (tonnes).
+_ROB_DEVIATION_THRESHOLD_T = Decimal("2.0")
+# Densité MDO de référence pour la conversion litres → tonnes (1000 L = 1 m³).
+_MDO_DENSITY_T_M3 = _FALLBACK_MDO_DENSITY
+
+
+async def _apply_rob_quality(db: AsyncSession, noon: NoonReport, ev: MRVEvent) -> None:
+    """Renseigne ``quality_status`` / ``quality_notes`` sur ``ev`` (B5).
+
+    Compare le ROB déclaré au noon report au ROB calculé à partir du dernier
+    point ROB connu sur le même leg, moins la consommation 24h. Écart toléré :
+    ±2 t (densité MDO 0,845 t/m³).
+    """
+    prior = (
+        await db.execute(
+            select(MRVEvent)
+            .where(
+                MRVEvent.leg_id == noon.leg_id,
+                MRVEvent.rob_l.is_not(None),
+                MRVEvent.recorded_at < noon.recorded_at,
+            )
+            .order_by(MRVEvent.recorded_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if prior is None:
+        ev.quality_status = "ok"
+        ev.quality_notes = "Premier point ROB du leg — pas de référence de calcul."
+        return
+
+    consumed_l = _dec(noon.fuel_consumed_24h_l) or Decimal("0")
+    expected_rob_l = Decimal(prior.rob_l) - consumed_l
+    declared_rob_l = _dec(noon.rob_fuel_l)
+
+    if declared_rob_l is None:
+        ev.quality_status = "warning"
+        ev.quality_notes = "ROB déclaré manquant"
+        return
+
+    dev_t = abs(declared_rob_l - expected_rob_l) / Decimal("1000") * _MDO_DENSITY_T_M3
+    if dev_t > _ROB_DEVIATION_THRESHOLD_T:
+        ev.quality_status = "warning"
+        ev.quality_notes = (
+            f"Écart ROB {dev_t:.2f} t > 2 t "
+            f"(déclaré {declared_rob_l} L vs calculé {expected_rob_l} L)."
+        )
+    else:
+        ev.quality_status = "ok"
+        ev.quality_notes = f"Écart ROB {dev_t:.2f} t (≤ 2 t)."
 
 
 async def ensure_from_sof(db: AsyncSession, sof: SofEvent) -> MRVEvent | None:

@@ -41,6 +41,13 @@ class Booking(Base):
 
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
 
+    # Canal de vente (B2) : rail unifié — la réservation est remplie soit par
+    # l'opérateur depuis le back-office ("operator"), soit par le client depuis
+    # le wizard public ("client"). Valeur par défaut "client" (rétrocompatible).
+    channel: Mapped[str] = mapped_column(
+        String(20), default="client", server_default="client", nullable=False
+    )
+
     total_palettes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_weight_kg: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, nullable=False)
     total_cubage_m3: Mapped[Decimal] = mapped_column(Numeric(10, 3), default=0, nullable=False)
@@ -90,6 +97,7 @@ class Booking(Base):
     __table_args__ = (
         Index("ix_bookings_status", "status"),
         Index("ix_bookings_client_status", "client_account_id", "status"),
+        Index("ix_bookings_channel", "channel"),
     )
 
     def __repr__(self) -> str:  # pragma: no cover

@@ -2,14 +2,27 @@
 {% block title %}Bookings — NEWTOWT ERP{% endblock %}
 {% block content %}
 
+{% set ch = '&channel=' ~ channel_filter if channel_filter else '' %}
+{% set st = '&status_filter=' ~ status_filter if status_filter else '' %}
+
 <header class="flex justify-between items-center mb-4">
-  <h1>Bookings</h1>
-  <div class="flex gap-2">
-    <a href="?status_filter=submitted" class="btn btn-ghost">À confirmer</a>
-    <a href="?status_filter=confirmed" class="btn btn-ghost">Confirmées</a>
-    <a href="?" class="btn btn-secondary">Toutes</a>
-  </div>
+  <h1>Réservations</h1>
+  <a href="/staff/bookings/new" class="btn btn-primary">+ Nouvelle réservation (opérateur)</a>
 </header>
+
+<div class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:var(--space-2);">
+  <div class="flex gap-2">
+    <a href="?{{ ch[1:] }}" class="btn {{ 'btn-secondary' if not status_filter else 'btn-ghost' }}">Tous statuts</a>
+    <a href="?status_filter=submitted{{ ch }}" class="btn {{ 'btn-secondary' if status_filter == 'submitted' else 'btn-ghost' }}">À confirmer</a>
+    <a href="?status_filter=confirmed{{ ch }}" class="btn {{ 'btn-secondary' if status_filter == 'confirmed' else 'btn-ghost' }}">Confirmées</a>
+  </div>
+  <div class="flex gap-2">
+    <span class="text-muted text-sm" style="align-self:center;">Canal :</span>
+    <a href="?{{ st[1:] }}" class="pill {{ 'pill-info' if not channel_filter else 'pill-neutral' }}">Tous {% if channel_counts %}({{ channel_counts.all }}){% endif %}</a>
+    <a href="?channel=client{{ st }}" class="pill {{ 'pill-info' if channel_filter == 'client' else 'pill-neutral' }}">Client {% if channel_counts %}({{ channel_counts.client }}){% endif %}</a>
+    <a href="?channel=operator{{ st }}" class="pill {{ 'pill-warn' if channel_filter == 'operator' else 'pill-neutral' }}">Opérateur {% if channel_counts %}({{ channel_counts.operator }}){% endif %}</a>
+  </div>
+</div>
 
 {% if bookings %}
   <div class="card">
@@ -17,6 +30,7 @@
       <thead>
         <tr>
           <th>Référence</th>
+          <th>Canal</th>
           <th>Client</th>
           <th>Leg</th>
           <th>Palettes</th>
@@ -30,6 +44,13 @@
         {% for b in bookings %}
           <tr>
             <td><a href="/staff/bookings/{{ b.reference }}" class="mono">{{ b.reference }}</a></td>
+            <td>
+              {% if b.channel == 'operator' %}
+                <span class="pill pill-warn">Opérateur</span>
+              {% else %}
+                <span class="pill pill-info">Client</span>
+              {% endif %}
+            </td>
             <td>#{{ b.client_account_id }}</td>
             <td>{{ b.leg_id }}</td>
             <td>{{ b.total_palettes }}</td>

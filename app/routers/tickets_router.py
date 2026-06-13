@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
@@ -25,6 +27,7 @@ from app.services.tickets import (
     assign_ticket,
     change_status,
     create_ticket,
+    escalate_breached,
     get_by_reference,
     is_sla_breached,
     list_for_kanban,
@@ -33,6 +36,8 @@ from app.services.tickets import (
     stats as ticket_stats,
 )
 from app.templating import templates
+
+logger = logging.getLogger("tickets")
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -45,6 +50,17 @@ async def kanban(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("tickets", "C")),
 ) -> HTMLResponse:
+    # Déclencheur sans cron (V3.0) : à l'ouverture du board, on escalade les
+    # tickets dont le SLA est dépassé (notif manager unique). Best-effort —
+    # un échec d'escalade ne doit jamais bloquer l'affichage du kanban.
+    try:
+        escalated = await escalate_breached(db)
+        if escalated:
+            logger.info("SLA escalation: %d ticket(s) escalated to manager", escalated)
+    except Exception:
+        # Best-effort : un échec d'escalade ne doit pas bloquer le board.
+        logger.exception("SLA escalation failed during kanban load")
+
     columns = await list_for_kanban(db, priority=priority, category=category)
     s = await ticket_stats(db)
     return templates.TemplateResponse(

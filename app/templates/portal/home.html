@@ -1,18 +1,22 @@
 {% extends "portal/_layout.html" %}
-{% block title %}Portail expéditeur — {{ order.reference if order else '' }}{% endblock %}
+{% block title %}Portail expéditeur — {{ order.reference if order else (booking.reference if booking else '') }}{% endblock %}
 {% block portal_content %}
+{# Référence/volume : commande (rail A) ou booking (rail B). #}
+{% set ref = order.reference if order else (booking.reference if booking else '') %}
+{% set palettes = order.booked_palettes if order else (booking.total_palettes if booking else 0) %}
+{% set shipper = (order.shipper_name if order and order.shipper_name else (booking.shipper_reference if booking and booking.shipper_reference else '')) %}
 
 <header class="mb-4">
   <span class="kicker">Portail expéditeur</span>
-  <h1 class="display">Bienvenue {{ order.shipper_name if order and order.shipper_name else '' }}</h1>
-  <p class="lead">Suivez votre expédition <strong class="mono">{{ order.reference if order else '' }}</strong> et complétez les informations attendues.</p>
+  <h1 class="display">Bienvenue {{ shipper }}</h1>
+  <p class="lead">Suivez votre expédition <strong class="mono">{{ ref }}</strong> et complétez les informations attendues.</p>
 </header>
 
 <section class="stats-grid">
   <div class="stat-card">
     <div class="stat-card-icon teal"><i data-lucide="package"></i></div>
     <div class="stat-card-body">
-      <span class="stat-card-value">{{ order.booked_palettes if order else 0 }}</span>
+      <span class="stat-card-value">{{ palettes }}</span>
       <span class="stat-card-label">Palettes réservées</span>
     </div>
   </div>

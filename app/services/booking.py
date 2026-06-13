@@ -74,12 +74,16 @@ async def create_draft(
     delivery_address: str | None,
     shipper_reference: str | None,
     notes: str | None,
+    channel: str = "client",
 ) -> tuple[Booking, GridQuote]:
     """Create a booking in draft status, with an indicative price.
 
     No capacity lock yet — only at confirm() time. Le prix indicatif est
     calculé sur la grille tarifaire applicable (grille du client connu,
     sinon grille par défaut de la route) — cf. services.quoting.
+
+    ``channel`` (B2) trace le rail de remplissage : "client" (wizard public,
+    défaut) ou "operator" (back-office). Le wizard client n'a pas à le passer.
     """
     capacity = await get_available_capacity(db, leg.id)
     total_palettes, total_weight, hazardous = _aggregate_totals(items)
@@ -113,6 +117,7 @@ async def create_draft(
         client_account_id=client.id,
         leg_id=leg.id,
         status="draft",
+        channel=channel,
         total_palettes=total_palettes,
         total_weight_kg=total_weight,
         hazardous=hazardous,
@@ -143,6 +148,36 @@ async def create_draft(
         )
 
     return booking, quote
+
+
+async def create_operator_draft(
+    db: AsyncSession,
+    *,
+    client_account: ClientAccount,
+    leg: Leg,
+    items: Sequence[BookingItemInput],
+    pickup_address: str | None = None,
+    delivery_address: str | None = None,
+    shipper_reference: str | None = None,
+    notes: str | None = None,
+) -> tuple[Booking, GridQuote]:
+    """Crée une réservation pour le compte d'un client connu (rail opérateur).
+
+    Helper fin au-dessus de :func:`create_draft` : même contrôle de capacité et
+    même tarification grille que le wizard client, mais ``channel="operator"``.
+    L'opérateur réserve au nom d'un :class:`ClientAccount` existant.
+    """
+    return await create_draft(
+        db,
+        client=client_account,
+        leg=leg,
+        items=items,
+        pickup_address=pickup_address,
+        delivery_address=delivery_address,
+        shipper_reference=shipper_reference,
+        notes=notes,
+        channel="operator",
+    )
 
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {

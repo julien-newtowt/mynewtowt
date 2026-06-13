@@ -86,6 +86,10 @@ class DockerShift(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id"), nullable=False, index=True)
     direction: Mapped[str | None] = mapped_column(String(10))  # IMPORT/EXPORT
+    # B3 — cale (hold) sur laquelle travaille la vacation, alignée sur le
+    # plan d'arrimage (cf. ``app.models.stowage.HOLDS`` : "AR"/"AV").
+    # NULL = non spécifiée. Permet de relier planning dockers ↔ stowage.
+    hold: Mapped[str | None] = mapped_column(String(10))  # AR/AV (stowage HOLDS)
     company: Mapped[str | None] = mapped_column(String(200))
     nb_dockers: Mapped[int] = mapped_column(Integer, default=0)
     palettes_target: Mapped[int | None] = mapped_column(Integer)
