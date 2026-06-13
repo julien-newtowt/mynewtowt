@@ -14,11 +14,18 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
+from decimal import Decimal
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commercial import PALETTE_COEFFICIENTS
 from app.models.stowage import (
     DANGEROUS_ZONES,
+    HOLDS,
     ZONE_LOADING_ORDER,
+    StowageItem,
+    StowagePlan,
 )
 
 ZONE_CAPACITY_DEFAULT = 50  # palettes EPAL équivalentes par zone (à affiner)
@@ -74,3 +81,80 @@ def zone_usage_summary(items: Iterable[dict]) -> dict[str, float]:
         coeff = PALETTE_COEFFICIENTS.get(it.get("pallet_format") or "EPAL", 1.0)
         used[zone] += (it.get("pallet_count") or 0) * coeff
     return dict(used)
+
+
+def _hold_of(zone: str | None) -> str | None:
+    """Cale (HOLD) d'une zone ``{DECK}_{HOLD}_{BLOCK}`` — segment du milieu.
+
+    Ex. ``INF_AR_MIL`` → ``AR``. Renvoie ``None`` si la zone est vide ou
+    mal formée (p. ex. ``OVERFLOW``), ou si le hold extrait n'est pas un
+    HOLD connu.
+    """
+    if not zone:
+        return None
+    parts = zone.split("_")
+    if len(parts) < 2:
+        return None
+    hold = parts[1]
+    return hold if hold in HOLDS else None
+
+
+async def occupation_by_hold(db: AsyncSession, leg_id: int) -> dict[str, dict]:
+    """Occupation du plan d'arrimage agrégée par cale (HOLD) pour un leg.
+
+    Relie escale (shifts dockers) ↔ stowage : pour chaque cale connue
+    (``HOLDS`` = "AR"/"AV"), somme les palettes, le poids, le nombre de
+    zones occupées et le nombre de zones dangereuses du plan d'arrimage du
+    leg. Le hold est extrait de ``StowageItem.zone`` (segment du milieu).
+
+    Forme de retour::
+
+        {
+            "AR": {"pallet_count": int, "weight_kg": Decimal,
+                   "zones": int, "dangerous": int},
+            "AV": {...},
+        }
+
+    Défensif : si aucun plan / aucun item, renvoie des zéros pour tous les
+    HOLDS connus. Lecture seule (une requête, aucune écriture).
+    """
+    out: dict[str, dict] = {
+        hold: {
+            "pallet_count": 0,
+            "weight_kg": Decimal("0"),
+            "zones": 0,
+            "dangerous": 0,
+        }
+        for hold in HOLDS
+    }
+    # Zones distinctes (et zones dangereuses) rencontrées par cale.
+    seen_zones: dict[str, set[str]] = {hold: set() for hold in HOLDS}
+    seen_dangerous: dict[str, set[str]] = {hold: set() for hold in HOLDS}
+
+    plan_id = (
+        await db.execute(select(StowagePlan.id).where(StowagePlan.leg_id == leg_id))
+    ).scalar_one_or_none()
+    if plan_id is None:
+        return out
+
+    items = (
+        (await db.execute(select(StowageItem).where(StowageItem.plan_id == plan_id)))
+        .scalars()
+        .all()
+    )
+    for it in items:
+        hold = _hold_of(it.zone)
+        if hold is None:
+            continue
+        bucket = out[hold]
+        bucket["pallet_count"] += it.pallet_count or 0
+        if it.weight_kg is not None:
+            bucket["weight_kg"] += Decimal(str(it.weight_kg))
+        seen_zones[hold].add(it.zone)
+        if it.is_dangerous or it.is_oversized or it.zone in DANGEROUS_ZONES:
+            seen_dangerous[hold].add(it.zone)
+
+    for hold in HOLDS:
+        out[hold]["zones"] = len(seen_zones[hold])
+        out[hold]["dangerous"] = len(seen_dangerous[hold])
+    return out

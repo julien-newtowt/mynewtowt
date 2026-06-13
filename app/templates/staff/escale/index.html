@@ -147,14 +147,47 @@
 
   <article class="card">
     <div class="section-header"><h3><i data-lucide="users"></i> Shifts dockers</h3></div>
+
+    {# B3 — occupation du plan d'arrimage par cale (relie dockers ↔ stowage). #}
+    <div class="mb-3">
+      <h4 class="flex items-center gap-2" style="margin:0 0 8px;">
+        <i data-lucide="package"></i> Occupation par cale
+        <a href="/stowage/legs/{{ selected_leg.id }}" class="btn btn-ghost btn-sm" title="Ouvrir le plan d'arrimage">
+          <i data-lucide="external-link"></i> Plan d'arrimage
+        </a>
+      </h4>
+      {% if stowage_by_hold %}
+      <div class="grid grid-2 gap-2">
+        {% for hold in holds %}
+        {% set occ = stowage_by_hold.get(hold) %}
+        <div class="stat-card">
+          <div class="stat-card-icon teal"><i data-lucide="package"></i></div>
+          <div class="stat-card-body">
+            <span class="stat-card-value">{{ occ.pallet_count if occ else 0 }} pal.</span>
+            <span class="stat-card-label">
+              Cale {{ hold }} ·
+              {{ '%.0f'|format(occ.weight_kg|float) if occ and occ.weight_kg else 0 }} kg ·
+              {{ occ.zones if occ else 0 }} zone(s)
+              {% if occ and occ.dangerous %}· <span class="pill">{{ occ.dangerous }} IMO</span>{% endif %}
+            </span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-muted">Plan d'arrimage non renseigné.</p>
+      {% endif %}
+    </div>
+
     {% if shifts %}
     <table class="data-table">
-      <thead><tr><th>Compagnie</th><th>Direction</th><th>Dockers</th><th>Cible / Réalisé</th><th>Coût</th></tr></thead>
+      <thead><tr><th>Compagnie</th><th>Direction</th><th>Cale</th><th>Dockers</th><th>Cible / Réalisé</th><th>Coût</th></tr></thead>
       <tbody>
         {% for s in shifts %}
         <tr>
           <td>{{ s.company or '—' }}</td>
           <td><span class="badge">{{ s.direction or '—' }}</span></td>
+          <td>{% if s.hold %}<span class="pill">{{ s.hold }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
           <td>{{ s.nb_dockers }}</td>
           <td>
             {% if s.palettes_target %}
@@ -177,6 +210,7 @@
         <div class="field"><label>Compagnie</label><input name="company" type="text" /></div>
         <div class="field"><label>Dockers</label><input name="nb_dockers" type="number" value="0" /></div>
         <div class="field"><label>Direction</label><select name="direction">{% for d in directions %}<option>{{ d }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Cale</label><select name="hold"><option value="">—</option>{% for h in holds %}<option value="{{ h }}">{{ h }}</option>{% endfor %}</select></div>
         <div class="field"><label>Début prévu</label><input name="planned_start" type="datetime-local" /></div>
         <div class="field"><label>Fin prévue</label><input name="planned_end" type="datetime-local" /></div>
         <div class="field"><label>Cible palettes</label><input name="palettes_target" type="number" /></div>

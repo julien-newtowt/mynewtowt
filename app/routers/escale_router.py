@@ -30,9 +30,11 @@ from app.models.escale import (
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.sof_event import SOF_EVENT_TYPES, SofEvent
+from app.models.stowage import HOLDS
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
+from app.services.stowage import occupation_by_hold
 from app.templating import templates
 
 logger = logging.getLogger("escale")
@@ -148,6 +150,7 @@ async def escale_index(
     shifts: list[DockerShift] = []
     pol = pod = None
     vessel_status = None
+    stowage_by_hold: dict[str, dict] = {}
     if leg_id:
         selected_leg = await db.get(Leg, leg_id)
         if selected_leg:
@@ -176,6 +179,14 @@ async def escale_index(
             pol = await db.get(Port, selected_leg.departure_port_id)
             pod = await db.get(Port, selected_leg.arrival_port_id)
             vessel_status = "en_mer" if (selected_leg.atd and not selected_leg.ata) else "a_quai"
+            # B3 — occupation du plan d'arrimage par cale, pour relier le
+            # planning dockers au stowage. Best-effort : ne casse jamais la
+            # page si le plan/les items sont absents ou en erreur.
+            try:
+                stowage_by_hold = await occupation_by_hold(db, selected_leg.id)
+            except Exception:
+                logger.exception("occupation_by_hold failed for leg %s", selected_leg.id)
+                stowage_by_hold = {}
 
     return templates.TemplateResponse(
         "staff/escale/index.html",
@@ -193,6 +204,8 @@ async def escale_index(
             "shifts": shifts,
             "pol": pol,
             "pod": pod,
+            "stowage_by_hold": stowage_by_hold,
+            "holds": HOLDS,
             "vessel_status": vessel_status,
             "leg_locked": _escale_locked(selected_leg) if selected_leg else False,
             "escale_locked_by": selected_leg.escale_locked_by if selected_leg else None,
@@ -300,6 +313,18 @@ async def end_operation(
     return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
 
 
+def _normalize_hold(hold: str | None) -> str | None:
+    """Valide la cale d'un shift docker contre ``stowage.HOLDS``.
+
+    Renvoie le code HOLD ("AR"/"AV") s'il est connu, sinon ``None`` (cale
+    non spécifiée) — y compris pour les sentinelles vides ("", "—").
+    """
+    if not hold:
+        return None
+    hold = hold.strip().upper()
+    return hold if hold in HOLDS else None
+
+
 @router.post("/legs/{leg_id}/dockers")
 async def create_docker_shift(
     leg_id: int,
@@ -308,6 +333,7 @@ async def create_docker_shift(
     company: str | None = Form(None),
     nb_dockers: int = Form(0),
     palettes_target: int | None = Form(None),
+    hold: str | None = Form(None),
     planned_start: str | None = Form(None),
     planned_end: str | None = Form(None),
     cost_eur: float | None = Form(None),
@@ -325,6 +351,7 @@ async def create_docker_shift(
         company=company,
         nb_dockers=nb_dockers,
         palettes_target=palettes_target,
+        hold=_normalize_hold(hold),
         planned_start=datetime.fromisoformat(planned_start) if planned_start else None,
         planned_end=datetime.fromisoformat(planned_end) if planned_end else None,
         cost_eur=cost_eur,
@@ -341,7 +368,7 @@ async def create_docker_shift(
         module="escale",
         entity_type="docker_shift",
         entity_id=s.id,
-        entity_label=f"shift {company} leg={leg_id}",
+        entity_label=f"shift {company} leg={leg_id} cale={s.hold or '—'}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
