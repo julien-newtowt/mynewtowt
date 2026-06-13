@@ -25,6 +25,7 @@ from app.services.planning import (
     create_share,
     delete_leg,
     detect_port_conflicts,
+    detect_port_conflicts_view,
     list_legs_in_window,
     list_shares,
     lookup_share,
@@ -132,6 +133,33 @@ async def gantt_index(
             "window_start": window_start,
             "window_end": window_end,
             "conflict_count": len(conflicts),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Conflits de port (deux navires au même port en même temps)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/conflicts", response_class=HTMLResponse)
+async def port_conflicts(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("planning", "C")),
+) -> HTMLResponse:
+    """Liste les chevauchements d'escale : deux navires distincts présents au
+    même port sur des périodes ``[ETA, ETA + durée d'escale]`` qui se
+    recouvrent, sur la fenêtre des 90 prochains jours.
+    """
+    conflicts = await detect_port_conflicts_view(db, window_days=GANTT_WINDOW_DAYS)
+    return templates.TemplateResponse(
+        "staff/planning/port_conflicts.html",
+        {
+            "request": request,
+            "user": user,
+            "conflicts": conflicts,
+            "window_days": GANTT_WINDOW_DAYS,
         },
     )
 

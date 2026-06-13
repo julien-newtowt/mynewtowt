@@ -1,0 +1,71 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Conflits de port — {{ brand.nom_court }} ERP{% endblock %}
+{% block content %}
+
+<a href="/planning" class="btn btn-ghost mb-3">← Planning</a>
+
+<header class="mb-4">
+  <span class="kicker">Pilotage</span>
+  <h1 class="display">Conflits de port</h1>
+  <p class="text-muted">
+    Deux navires distincts présents au même port sur des escales qui se
+    chevauchent, dans les {{ window_days }} prochains jours.
+  </p>
+</header>
+
+<section class="card">
+  {% if conflicts %}
+    <div class="flex justify-between items-center mb-3">
+      <h2>{{ conflicts|length }} chevauchement(s) détecté(s)</h2>
+      <span class="pill pill-warn">⚠ À arbitrer</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Port</th>
+          <th>Navires concernés</th>
+          <th>Legs</th>
+          <th>Période de chevauchement</th>
+          <th>Durée</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in conflicts %}
+          <tr>
+            <td>
+              <span class="mono">{{ c.port_locode }}</span>
+              <span class="text-muted">{{ c.port_name }}</span>
+            </td>
+            <td>
+              <span class="mono text-muted">{{ c.vessel_a_code }}</span> {{ c.vessel_a_name }}
+              <span class="text-muted">×</span>
+              <span class="mono text-muted">{{ c.vessel_b_code }}</span> {{ c.vessel_b_name }}
+            </td>
+            <td>
+              <a href="/planning/legs/{{ c.leg_a_id }}" class="mono">{{ c.leg_a_code }}</a>
+              <span class="text-muted">/</span>
+              <a href="/planning/legs/{{ c.leg_b_id }}" class="mono">{{ c.leg_b_code }}</a>
+            </td>
+            <td>
+              {{ c.overlap_start|datetime }}
+              <span class="text-muted">→</span>
+              {{ c.overlap_end|datetime }}
+            </td>
+            <td><span class="pill pill-warn">{{ c.overlap_hours }} h</span></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="text-center" style="padding:var(--space-6) 0;">
+      <p style="font-size:2rem; margin-bottom:var(--space-2);">✓</p>
+      <h2>Aucun conflit de port</h2>
+      <p class="text-muted">
+        Sur les {{ window_days }} prochains jours, aucun chevauchement d'escale
+        entre deux navires au même port. La flotte est correctement séquencée.
+      </p>
+    </div>
+  {% endif %}
+</section>
+
+{% endblock %}

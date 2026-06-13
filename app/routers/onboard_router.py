@@ -11,6 +11,7 @@ file hors-ligne rejoue une soumission déjà reçue.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, date, datetime
 
@@ -33,6 +34,77 @@ from app.templating import templates
 logger = logging.getLogger("onboard")
 
 router = APIRouter(prefix="/onboard", tags=["onboard"])
+
+
+# ────────────────────────────────────────────────────────────────────
+#   FLX-11 — Check-lists ISM/ISPS prédéfinies
+# ────────────────────────────────────────────────────────────────────
+# Modèles standard de check-lists sûreté/sécurité. Le commandant en
+# instancie une à partir d'un ``kind`` ; chaque libellé devient un item
+# décochable (items_json = liste de {label, checked}).
+CHECKLIST_TEMPLATES: dict[str, dict[str, object]] = {
+    "ISPS_ARRIVAL": {
+        "title": "Sûreté ISPS — arrivée au port",
+        "items": [
+            "Niveau de sûreté du port confirmé (MARSEC / ISPS niveau 1-2-3)",
+            "Déclaration de sûreté (DoS) échangée si requise",
+            "Coupée gardée / contrôle des accès en place",
+            "Registre visiteurs ouvert et affiché à la coupée",
+            "Éclairage de pont et zones sensibles vérifié",
+            "Communication établie avec le PFSO (agent de sûreté portuaire)",
+            "Ronde de sûreté initiale effectuée",
+        ],
+    },
+    "ISM_DEPARTURE": {
+        "title": "ISM — appareillage",
+        "items": [
+            "Briefing passerelle / machine effectué",
+            "Appareil à gouverner testé (essais barre)",
+            "Feux de navigation et de signalisation testés",
+            "Moyens de communication interne testés",
+            "Saisissage cargaison vérifié et consigné",
+            "Échelles de coupée / passerelles rentrées et arrimées",
+            "Tirant d'eau et stabilité relevés et consignés",
+            "Plan de passage (passage plan) validé par le commandant",
+        ],
+    },
+    "SAFETY_DRILL": {
+        "title": "Exercice sécurité",
+        "items": [
+            "Alarme générale déclenchée et reconnue",
+            "Rassemblement de l'équipage aux postes (muster)",
+            "Appel nominal effectué",
+            "Équipements de lutte (incendie / survie) mis en œuvre",
+            "Mise à l'eau / parage d'une embarcation de sauvetage",
+            "Débriefing et points d'amélioration consignés",
+        ],
+    },
+}
+
+
+def _checklist_items_for(kind: str) -> list[dict[str, object]]:
+    """Construit la liste d'items (tous décochés) pour un ``kind`` connu."""
+    tpl = CHECKLIST_TEMPLATES.get(kind)
+    if not tpl:
+        return []
+    return [{"label": str(label), "checked": False} for label in tpl["items"]]
+
+
+def _load_items(raw: str | None) -> list[dict[str, object]]:
+    """Désérialise ``items_json`` de manière défensive (liste de dicts)."""
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    items: list[dict[str, object]] = []
+    for it in data:
+        if isinstance(it, dict) and "label" in it:
+            items.append({"label": str(it["label"]), "checked": bool(it.get("checked"))})
+    return items
 
 
 @router.get("", response_class=HTMLResponse)
@@ -296,6 +368,12 @@ async def post_visitor(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
+    """Registre visiteurs ISPS (FLX-11).
+
+    Endpoint partagé : l'écran « Équipage » et l'espace « Conformité »
+    postent ici. Le champ optionnel ``next`` permet de revenir sur la
+    page d'origine (whitelist ``/onboard/...`` uniquement).
+    """
     f = await request.form()
     v = VisitorLog(
         leg_id=int(f["leg_id"]),
@@ -309,12 +387,245 @@ async def post_visitor(
     )
     db.add(v)
     await db.flush()
-    return RedirectResponse(url="/onboard/crew", status_code=303)
+    await activity_record(
+        db,
+        action="visitor_log_create",
+        user_id=user.id,
+        user_name=user.username,
+        module="captain",
+        entity_type="visitor_log",
+        entity_id=v.id,
+        entity_label=v.full_name,
+    )
+    return RedirectResponse(url=_safe_onboard_redirect(f.get("next"), "/onboard/crew"), status_code=303)
+
+
+# ────────────────────────────────────────────────────────────────────
+#   FLX-11 — Espace « Sécurité / Conformité » (check-lists + visiteurs)
+# ────────────────────────────────────────────────────────────────────
+
+
+@router.get("/compliance", response_class=HTMLResponse)
+async def onboard_compliance(
+    request: Request,
+    leg_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> HTMLResponse:
+    legs_stmt = select(Leg).order_by(Leg.etd.desc()).limit(30)
+    if getattr(user, "assigned_vessel_id", None):
+        legs_stmt = (
+            select(Leg)
+            .where(Leg.vessel_id == user.assigned_vessel_id)
+            .order_by(Leg.etd.desc())
+            .limit(30)
+        )
+    legs = list((await db.execute(legs_stmt)).scalars().all())
+    selected = (await db.get(Leg, leg_id)) if leg_id else (legs[0] if legs else None)
+
+    checklists: list[OnboardChecklist] = []
+    checklist_items: dict[int, list[dict[str, object]]] = {}
+    visitors: list[VisitorLog] = []
+    if selected:
+        checklists = list(
+            (
+                await db.execute(
+                    select(OnboardChecklist)
+                    .where(OnboardChecklist.leg_id == selected.id)
+                    .order_by(OnboardChecklist.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        checklist_items = {c.id: _load_items(c.items_json) for c in checklists}
+        visitors = list(
+            (
+                await db.execute(
+                    select(VisitorLog)
+                    .where(VisitorLog.leg_id == selected.id)
+                    .order_by(VisitorLog.time_in.desc())
+                    .limit(50)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    # Modèles disponibles à l'instanciation (kind → titre).
+    templates_choices = {k: v["title"] for k, v in CHECKLIST_TEMPLATES.items()}
+    return templates.TemplateResponse(
+        "staff/onboard/compliance.html",
+        {
+            "request": request,
+            "user": user,
+            "legs": legs,
+            "leg": selected,
+            "checklists": checklists,
+            "checklist_items": checklist_items,
+            "visitors": visitors,
+            "templates_choices": templates_choices,
+        },
+    )
+
+
+@router.post("/compliance/checklist")
+async def post_checklist(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> RedirectResponse:
+    """Instancie une check-list à partir d'un ``kind`` prédéfini."""
+    f = await request.form()
+    leg_id = int(f["leg_id"])
+    kind = str(f.get("kind") or "")
+    tpl = CHECKLIST_TEMPLATES.get(kind)
+    if not tpl:
+        # kind inconnu — on ne crée rien, retour silencieux sur la page.
+        return RedirectResponse(url=f"/onboard/compliance?leg_id={leg_id}", status_code=303)
+    items = _checklist_items_for(kind)
+    cl = OnboardChecklist(
+        leg_id=leg_id,
+        kind=kind,
+        title=str(tpl["title"]),
+        items_json=json.dumps(items, ensure_ascii=False),
+    )
+    db.add(cl)
+    await db.flush()
+    await activity_record(
+        db,
+        action="checklist_create",
+        user_id=user.id,
+        user_name=user.username,
+        module="captain",
+        entity_type="onboard_checklist",
+        entity_id=cl.id,
+        entity_label=cl.title,
+    )
+    return RedirectResponse(url=f"/onboard/compliance?leg_id={leg_id}", status_code=303)
+
+
+@router.post("/compliance/checklist/{checklist_id}/item")
+async def post_checklist_item(
+    checklist_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> RedirectResponse:
+    """Bascule l'état coché/décoché d'un item ; recalcule ``completed_at``."""
+    f = await request.form()
+    cl = await db.get(OnboardChecklist, checklist_id)
+    if cl is None:
+        return RedirectResponse(url="/onboard/compliance", status_code=303)
+    items = _load_items(cl.items_json)
+    idx = _maybe_int(f.get("item_index"))
+    if idx is not None and 0 <= idx < len(items):
+        items[idx]["checked"] = not bool(items[idx]["checked"])
+        cl.items_json = json.dumps(items, ensure_ascii=False)
+        # Complète quand tous les items sont cochés (et au moins un item).
+        all_checked = bool(items) and all(bool(it["checked"]) for it in items)
+        if all_checked and cl.completed_at is None:
+            cl.completed_at = datetime.now(UTC)
+            cl.signed_by_id = user.id
+            cl.signed_by_name = getattr(user, "full_name", None) or user.username
+        elif not all_checked and cl.completed_at is not None:
+            cl.completed_at = None
+            cl.signed_by_id = None
+            cl.signed_by_name = None
+        await db.flush()
+        await activity_record(
+            db,
+            action="checklist_item_toggle",
+            user_id=user.id,
+            user_name=user.username,
+            module="captain",
+            entity_type="onboard_checklist",
+            entity_id=cl.id,
+            detail=f"item {idx} → {'✓' if items[idx]['checked'] else '✗'}",
+        )
+    return RedirectResponse(url=f"/onboard/compliance?leg_id={cl.leg_id}", status_code=303)
+
+
+@router.post("/compliance/visitor")
+async def post_compliance_visitor(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> RedirectResponse:
+    """Ajoute une entrée au registre visiteurs ISPS depuis l'espace Conformité.
+
+    Réutilise la même logique que ``post_visitor`` (endpoint historique
+    ``/onboard/crew/visitor``) mais redirige vers l'espace Conformité.
+    """
+    f = await request.form()
+    v = VisitorLog(
+        leg_id=int(f["leg_id"]),
+        full_name=f["full_name"],
+        company=f.get("company") or None,
+        purpose=f.get("purpose") or None,
+        id_document=f.get("id_document") or None,
+        time_in=datetime.now(UTC),
+        escorted_by=f.get("escorted_by") or None,
+        notes=f.get("notes") or None,
+    )
+    db.add(v)
+    await db.flush()
+    await activity_record(
+        db,
+        action="visitor_log_create",
+        user_id=user.id,
+        user_name=user.username,
+        module="captain",
+        entity_type="visitor_log",
+        entity_id=v.id,
+        entity_label=v.full_name,
+    )
+    return RedirectResponse(url=f"/onboard/compliance?leg_id={v.leg_id}", status_code=303)
+
+
+@router.post("/compliance/visitor/{visitor_id}/checkout")
+async def post_visitor_checkout(
+    visitor_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> RedirectResponse:
+    """Renseigne ``time_out`` = maintenant pour clôturer une visite."""
+    v = await db.get(VisitorLog, visitor_id)
+    if v is None:
+        return RedirectResponse(url="/onboard/compliance", status_code=303)
+    if v.time_out is None:
+        v.time_out = datetime.now(UTC)
+        await db.flush()
+        await activity_record(
+            db,
+            action="visitor_log_checkout",
+            user_id=user.id,
+            user_name=user.username,
+            module="captain",
+            entity_type="visitor_log",
+            entity_id=v.id,
+            entity_label=v.full_name,
+        )
+    return RedirectResponse(url=f"/onboard/compliance?leg_id={v.leg_id}", status_code=303)
 
 
 # ────────────────────────────────────────────────────────────────────
 #                              Helpers
 # ────────────────────────────────────────────────────────────────────
+
+
+def _safe_onboard_redirect(v, default: str) -> str:
+    """Whitelist d'URL de retour : chemin relatif ``/onboard/...`` uniquement.
+
+    Empêche un open-redirect via le champ caché ``next`` (on n'accepte ni
+    URL absolue ``//host`` ni schéma externe).
+    """
+    if not isinstance(v, str):
+        return default
+    v = v.strip()
+    if v.startswith("/onboard/") and not v.startswith("//"):
+        return v
+    return default
 
 
 def _clean_client_uuid(v) -> str | None:

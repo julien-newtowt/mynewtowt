@@ -241,17 +241,17 @@ async def declare_eta_shift(
         entity_label=f"leg={leg_id} reason={reason}",
         ip_address=_client_ip(request),
     )
-    # Alertes : commercial (interne) + clients impactés (extranet /me).
+    # Alerte interne (commercial).
     with contextlib.suppress(Exception):
         await notifications.notify_eta_shift(db, leg.leg_code, leg_id, reason)
+    # UC-03 — challenge TOUTES les dates dépendantes (legs aval, escales,
+    # dockers, packing lists) ET notifie les clients impactés (source + aval).
+    # La cascade prend en charge la notification client : pas de double envoi.
     with contextlib.suppress(Exception):
-        await notifications.notify_clients_eta_shift(
-            db,
-            leg_id=leg_id,
-            leg_code=leg.leg_code,
-            previous_eta=shift.previous_eta,
-            new_eta=shift.new_eta,
-            reason=reason,
+        from app.services import date_cascade
+
+        await date_cascade.cascade_from_leg(
+            db, leg, delta=shift.new_eta - shift.previous_eta
         )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 

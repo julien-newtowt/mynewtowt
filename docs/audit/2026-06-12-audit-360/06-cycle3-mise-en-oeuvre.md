@@ -71,9 +71,29 @@ migration `0027`, pour éviter toute collision de chaîne Alembic) :
 3. **Planning** : cascade complète des dates à chaque décalage (UC-03,
    `services/date_cascade.py`) ; vue conflits de quai.
 
-Reste à câbler par le parent après collecte : appel `cascade_from_leg`
-dans l'endpoint ETA shift du `captain_router` ; `claims_cost` et finalisation
-du rollup ; escalade SLA tickets (FLX-08) ; contrôle ROB ±2 t.
+**Livrés et collectés** (les 3 agents + câblage parent) :
+- Escale : actions → SOF auto (FLX-04), coûts opérations+quai → LegFinance,
+  verrouillage d'escale + garde (migration 0027).
+- Bord : check-lists ISM/ISPS + registre visiteurs (FLX-11) ; noon report
+  pré-rempli depuis la position satcom (FLX-07, déjà câblé, confirmé).
+- Planning : cascade complète des dates (UC-03, `date_cascade.py`) — legs
+  aval, opérations d'escale, docker shifts, + notification clients ; vue
+  conflits de quai `/planning/conflicts`.
+- Captain : cascade câblée dans l'endpoint ETA shift (remplace l'ancienne
+  notification directe — plus de double envoi).
+- Finance : claims → `LegFinance.claims_cost_eur` (FLX-09, migration 0028 ;
+  Σ règlement sinon provision des sinistres provisioned/settled du leg).
+
+Vérifié : `ruff` propre, 318 routes, chaîne Alembic 0023→0028 linéaire,
+**270 tests verts**.
+
+**Restent ouverts** : escalade SLA tickets (FLX-08, nécessite un champ
+`escalated_at` → migration dédiée, non fait pour éviter une migration
+concurrente ce cycle) ; contrôle ROB ±2 t en warning qualité (raffinement
+du recalcul MRV) ; surfaçage du coût sinistres dans l'écran finance (la
+valeur alimente déjà la marge). Packing list : pas de champ `loading_date`
+ni de `leg_id` sur `PackingList` (FK commande) → cascade PL sans objet
+tant que la fusion des rails (§4.2) n'a pas ajouté `booking_id`.
 
 ## 4. Refontes profondes — séquencement (à venir)
 

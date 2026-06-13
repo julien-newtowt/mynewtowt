@@ -59,6 +59,13 @@ class Leg(Base):
     # haversine et persistée pour alimenter le label Anemos (CO₂ évité).
     distance_nm: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
 
+    # Escale closure lock — l'escale (opérations + shifts dockers) est
+    # par-leg ; le verrou vit donc sur le leg. Une fois verrouillée, les
+    # endpoints create/edit/start/end/delete d'escale refusent toute
+    # modification (cf. escale_router._assert_escale_unlocked).
+    escale_locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    escale_locked_by: Mapped[str | None] = mapped_column(String(100))
+
     # Voyage closure workflow (submitted by captain → reviewed by ops → approved by manager)
     closure_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closure_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

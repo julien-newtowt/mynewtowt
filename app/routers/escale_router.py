@@ -10,6 +10,7 @@ Reprises de la V3.0.0 :
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -20,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.escale import (
     DIRECTIONS,
+    ESCALE_ACTION_TO_SOF,
     OPERATION_ACTIONS,
     OPERATION_TYPES,
     DockerShift,
@@ -27,12 +29,95 @@ from app.models.escale import (
 )
 from app.models.leg import Leg
 from app.models.port import Port
+from app.models.sof_event import SOF_EVENT_TYPES, SofEvent
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.templating import templates
 
+logger = logging.getLogger("escale")
+
 router = APIRouter(prefix="/escale", tags=["escale"])
+
+
+def _escale_locked(leg: Leg) -> bool:
+    """L'escale du leg est-elle verrouillée (clôture administrative) ?"""
+    return leg.escale_locked_at is not None
+
+
+def _assert_escale_unlocked(leg: Leg) -> None:
+    """Garde-fou : refuse toute écriture si l'escale est verrouillée.
+
+    Levée d'une 400 avec message FR explicite — appelée par tous les
+    endpoints create/edit/start/end/delete d'opérations et de shifts.
+    """
+    if _escale_locked(leg):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Escale verrouillée — modification impossible. "
+                "Déverrouillez l'escale pour la modifier."
+            ),
+        )
+
+
+async def _sync_sof_from_operation(
+    db: AsyncSession,
+    request: Request,
+    user,
+    op: EscaleOperation,
+) -> None:
+    """FLX-04 — crée l'événement SOF équivalent à une opération d'escale.
+
+    Idempotent (dédoublonne sur leg_id + event_type + occurred_at) et
+    best-effort : toute erreur est journalisée mais ne casse jamais
+    l'action escale. ``occurred_at`` = actual_start ou planned_start ou
+    maintenant. Ne fait rien si l'``action`` n'a pas d'équivalent SOF.
+    """
+    event_type = ESCALE_ACTION_TO_SOF.get(op.action)
+    if event_type is None or event_type not in SOF_EVENT_TYPES:
+        return
+    try:
+        occurred_at = op.actual_start or op.planned_start or datetime.now(UTC)
+        existing = (
+            await db.execute(
+                select(SofEvent.id).where(
+                    SofEvent.leg_id == op.leg_id,
+                    SofEvent.event_type == event_type,
+                    SofEvent.occurred_at == occurred_at,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return
+        e = SofEvent(
+            leg_id=op.leg_id,
+            event_type=event_type,
+            label=op.label,
+            occurred_at=occurred_at,
+            notes=f"Auto depuis escale (op #{op.id})",
+            recorded_by_id=user.id,
+            recorded_by_name=user.full_name or user.username,
+        )
+        db.add(e)
+        await db.flush()
+        await activity_record(
+            db,
+            action="create",
+            user_id=user.id,
+            user_name=user.full_name or user.username,
+            user_role=user.role,
+            module="escale",
+            entity_type="sof_event",
+            entity_id=e.id,
+            entity_label=f"{event_type}@{occurred_at.isoformat()}",
+            detail=f"auto from escale op {op.id}",
+            ip_address=_client_ip(request),
+        )
+    except Exception:
+        logger.exception(
+            "SOF auto-creation failed for escale op %s (action=%s)", op.id, op.action
+        )
 
 
 @router.get("", response_class=HTMLResponse)
@@ -109,7 +194,9 @@ async def escale_index(
             "pol": pol,
             "pod": pod,
             "vessel_status": vessel_status,
-            "leg_locked": selected_leg.status == "completed" if selected_leg else False,
+            "leg_locked": _escale_locked(selected_leg) if selected_leg else False,
+            "escale_locked_by": selected_leg.escale_locked_by if selected_leg else None,
+            "escale_locked_at": selected_leg.escale_locked_at if selected_leg else None,
             "leg_terminated": (
                 bool(selected_leg and selected_leg.atd and selected_leg.ata)
                 if selected_leg
@@ -132,12 +219,16 @@ async def create_operation(
     label: str | None = Form(None),
     planned_start: str | None = Form(None),
     planned_end: str | None = Form(None),
+    cost_forecast: float | None = Form(None),
+    cost_actual: float | None = Form(None),
     notes: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("escale", "M")),
 ):
-    if not await db.get(Leg, leg_id):
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
         raise HTTPException(status_code=404)
+    _assert_escale_unlocked(leg)
     op = EscaleOperation(
         leg_id=leg_id,
         direction=direction,
@@ -146,6 +237,8 @@ async def create_operation(
         label=label,
         planned_start=datetime.fromisoformat(planned_start) if planned_start else None,
         planned_end=datetime.fromisoformat(planned_end) if planned_end else None,
+        cost_forecast=cost_forecast,
+        cost_actual=cost_actual,
         notes=notes,
     )
     db.add(op)
@@ -162,6 +255,8 @@ async def create_operation(
         entity_label=f"{operation_type}/{action} leg={leg_id}",
         ip_address=_client_ip(request),
     )
+    # FLX-04 — relier escale ↔ onboard : génère le SOF équivalent.
+    await _sync_sof_from_operation(db, request, user, op)
     return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
 
 
@@ -175,9 +270,14 @@ async def start_operation(
     op = await db.get(EscaleOperation, op_id)
     if op is None:
         raise HTTPException(status_code=404)
+    leg = await db.get(Leg, op.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
     op.actual_start = datetime.now(UTC)
     op.status = "in_progress"
     await db.flush()
+    # FLX-04 — l'opération démarrée matérialise son SOF (occurred_at réel).
+    await _sync_sof_from_operation(db, request, user, op)
     return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
 
 
@@ -191,6 +291,9 @@ async def end_operation(
     op = await db.get(EscaleOperation, op_id)
     if op is None:
         raise HTTPException(status_code=404)
+    leg = await db.get(Leg, op.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
     op.actual_end = datetime.now(UTC)
     op.status = "completed"
     await db.flush()
@@ -212,8 +315,10 @@ async def create_docker_shift(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("escale", "M")),
 ):
-    if not await db.get(Leg, leg_id):
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
         raise HTTPException(status_code=404)
+    _assert_escale_unlocked(leg)
     s = DockerShift(
         leg_id=leg_id,
         direction=direction,
@@ -253,6 +358,9 @@ async def docker_progress(
     s = await db.get(DockerShift, shift_id)
     if s is None:
         raise HTTPException(status_code=404)
+    leg = await db.get(Leg, s.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
     s.palettes_done = palettes_done
     await db.flush()
     return RedirectResponse(url=f"/escale?leg_id={s.leg_id}", status_code=303)
@@ -265,10 +373,17 @@ async def lock_leg(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("escale", "M")),
 ):
+    """Verrouille l'escale du leg (clôture administrative).
+
+    Renseigne ``escale_locked_at`` / ``escale_locked_by`` ; dès lors les
+    endpoints de modification d'escale refusent toute écriture
+    (``_assert_escale_unlocked``).
+    """
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
-    leg.status = "completed"
+    leg.escale_locked_at = datetime.now(UTC)
+    leg.escale_locked_by = user.full_name or user.username
     await db.flush()
     await activity_record(
         db,
@@ -280,7 +395,37 @@ async def lock_leg(
         entity_type="leg",
         entity_id=leg.id,
         entity_label=leg.leg_code,
-        detail="locked",
+        detail="escale locked",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+
+
+@router.post("/legs/{leg_id}/unlock")
+async def unlock_leg(
+    leg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "S")),
+):
+    """Déverrouille l'escale du leg (permission S = Suppress)."""
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    leg.escale_locked_at = None
+    leg.escale_locked_by = None
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="leg",
+        entity_id=leg.id,
+        entity_label=leg.leg_code,
+        detail="escale unlocked",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
