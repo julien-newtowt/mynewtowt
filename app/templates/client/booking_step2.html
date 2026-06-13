@@ -59,6 +59,18 @@
       <div class="alert alert--error" role="alert"><strong>Erreur :</strong> {{ error }}</div>
     {% endif %}
 
+    {% if prefill %}
+      <div class="alert" role="status">
+        <span class="alert-icon">📄</span>
+        <strong>Devis {{ prefill.reference }} repris</strong> — quantités pré-remplies, vérifiez et complétez la description.
+        {% if prefill.extra_lines %}
+          <br />Votre devis comporte {{ prefill.extra_lines|length + 1 }} types de palette ;
+          ajoutez les lignes suivantes dans les notes ou contactez-nous :
+          {% for f, c in prefill.extra_lines %}<span class="mono">{{ c }}×{{ f }}</span>{% if not loop.last %}, {% endif %}{% endfor %}.
+        {% endif %}
+      </div>
+    {% endif %}
+
     <form method="post" action="/booking/new/{{ leg.leg_code }}">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
 
@@ -69,21 +81,22 @@
         <div id="items-area" data-item-row="0">
           <div class="form-group">
             <label class="form-label required">Format</label>
+            {% set pf = prefill.format if prefill else None %}
             <select class="form-control" name="items-0-format" required>
-              <option value="EPAL">EPAL — Europalette</option>
-              <option value="USPAL">USPAL — US Pallet</option>
-              <option value="PORTPAL">PORTPAL — Portuaire</option>
-              <option value="IBC">IBC</option>
-              <option value="BIGBAG">BIGBAG</option>
-              <option value="BARRIQUE120">Barrique 120 L</option>
-              <option value="BARRIQUE140">Barrique 140 L</option>
+              <option value="EPAL" {% if pf == 'EPAL' %}selected{% endif %}>EPAL — Europalette</option>
+              <option value="USPAL" {% if pf == 'USPAL' %}selected{% endif %}>USPAL — US Pallet</option>
+              <option value="PORTPAL" {% if pf == 'PORTPAL' %}selected{% endif %}>PORTPAL — Portuaire</option>
+              <option value="IBC" {% if pf == 'IBC' %}selected{% endif %}>IBC</option>
+              <option value="BIGBAG" {% if pf == 'BIGBAG' %}selected{% endif %}>BIGBAG</option>
+              <option value="BARRIQUE120" {% if pf == 'BARRIQUE120' %}selected{% endif %}>Barrique 120 L</option>
+              <option value="BARRIQUE140" {% if pf == 'BARRIQUE140' %}selected{% endif %}>Barrique 140 L</option>
             </select>
           </div>
 
           <div class="form-row">
             <div class="form-group">
               <label class="form-label required">Nombre</label>
-              <input class="form-control" type="number" name="items-0-count" min="1" max="1000" value="1" required />
+              <input class="form-control" type="number" name="items-0-count" min="1" max="1000" value="{{ prefill.count if prefill and prefill.count else 1 }}" required />
             </div>
             <div class="form-group">
               <label class="form-label">Poids unitaire (kg)</label>

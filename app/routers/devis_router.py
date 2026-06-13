@@ -184,6 +184,7 @@ async def devis_submit(
         palettes_total=sum(c for _f, c in items),
         tonnage_t=tonnage_t,
         hazardous=hazardous,
+        items=items,
         lang=getattr(request.state, "lang", "fr") or "fr",
     )
 
@@ -231,7 +232,7 @@ async def devis_detail(
         raise HTTPException(status_code=404, detail="Devis introuvable")
     pol, pod = await _ports_by_locode(db, quote.pol_locode, quote.pod_locode)
     leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         "public/devis_result.html",
         {
             "request": request,
@@ -242,6 +243,16 @@ async def devis_detail(
             "client": client,
         },
     )
+    # Mémorise le devis pour pré-remplir la réservation (survit au mur de
+    # connexion : le wizard /booking lit ce cookie). Durée courte.
+    resp.set_cookie(
+        "towt_pending_quote",
+        quote.reference,
+        max_age=7200,
+        httponly=True,
+        samesite="lax",
+    )
+    return resp
 
 
 @router.get("/devis/{reference}.pdf")
