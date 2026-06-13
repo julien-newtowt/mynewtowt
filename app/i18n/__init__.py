@@ -41,9 +41,15 @@ def _load(lang: str) -> dict[str, str]:
 
 
 def t(key: str, lang: str = DEFAULT, **fmt: Any) -> str:
-    """Translate ``key`` for the requested language. Falls back to FR then key."""
+    """Translate ``key`` for the requested language.
+
+    Resolution order : requested language → French reference (``DEFAULT``)
+    → the raw key (last resort). A missing key therefore never surfaces the
+    raw identifier as long as it exists in the FR reference catalog.
+    """
     lang = (lang or DEFAULT).lower()
-    msg = _load(lang).get(key) or _load(DEFAULT).get(key) or key
+    catalog = _load(lang)
+    msg = catalog[key] if key in catalog else _load(DEFAULT).get(key, key)
     if fmt:
         with contextlib.suppress(KeyError, IndexError):
             msg = msg.format(**fmt)
