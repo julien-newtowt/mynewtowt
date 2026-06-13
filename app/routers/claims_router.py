@@ -21,6 +21,7 @@ from app.models.claim import CLAIM_STATUSES, CLAIM_TYPES, Claim, ClaimTimelineEn
 from app.models.leg import Leg
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
+from app.services.stowage import zone_label, zones_for_leg
 from app.templating import templates
 
 router = APIRouter(prefix="/claims", tags=["claims"])
@@ -55,16 +56,43 @@ async def claims_index(
     )
 
 
+async def _stowage_zones_for(db: AsyncSession, leg_id: int | None) -> list[dict]:
+    """Zones du plan d'arrimage d'un leg pour le picker claims — best-effort.
+
+    Toute erreur (pas de plan, etc.) → liste vide : la position cale reste
+    saisissable en texte libre. Lecture seule.
+    """
+    if not leg_id:
+        return []
+    try:
+        return await zones_for_leg(db, leg_id)
+    except Exception:
+        # best-effort : la position cale reste saisissable en texte libre.
+        return []
+
+
 @router.get("/new", response_class=HTMLResponse)
 async def claim_new_form(
     request: Request,
+    leg_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("claims", "M")),
 ):
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
+    # Si un leg est présélectionné (query ?leg_id=), on pré-charge ses zones
+    # d'arrimage pour le picker de position cale (claim cargo). Sinon liste
+    # vide : l'opérateur choisit d'abord un leg puis ré-ouvre/édite.
+    stowage_zones = await _stowage_zones_for(db, leg_id)
     return templates.TemplateResponse(
         "staff/claims/new.html",
-        {"request": request, "user": user, "legs": legs, "claim_types": CLAIM_TYPES},
+        {
+            "request": request,
+            "user": user,
+            "legs": legs,
+            "claim_types": CLAIM_TYPES,
+            "selected_leg_id": leg_id,
+            "stowage_zones": stowage_zones,
+        },
     )
 
 
@@ -86,6 +114,12 @@ async def claim_create(
 ):
     if claim_type not in CLAIM_TYPES:
         raise HTTPException(status_code=400, detail="invalid claim_type")
+    # Position cale : pour un claim cargo lié à un leg, la valeur provient en
+    # principe du picker (zones du plan d'arrimage). On normalise et on reste
+    # tolérant — une valeur hors plan est conservée en texte libre (cf. mission
+    # FLX-10 : le claim n'a pas de lien batch direct, la zone est choisie par
+    # l'opérateur dans le plan du leg, pas auto-résolue).
+    cargo_position = (cargo_position or "").strip() or None
     # Sequence reference CLM-YYYY-NNNN
     year = datetime.now(UTC).year
     seq = (
@@ -150,6 +184,21 @@ async def claim_detail(
         raise HTTPException(status_code=404)
     leg = await db.get(Leg, claim.leg_id) if claim.leg_id else None
     booking = await db.get(Booking, claim.booking_id) if claim.booking_id else None
+    # Picker position cale : zones du plan d'arrimage du leg pour un claim
+    # cargo (best-effort → liste vide si pas de plan / autre type).
+    stowage_zones = (
+        await _stowage_zones_for(db, claim.leg_id)
+        if claim.claim_type == "cargo"
+        else []
+    )
+    # Indice humain de la zone (partie après "—" du label), ou "" si la
+    # position est du texte libre non conforme à la convention de nommage.
+    full_label = zone_label(claim.cargo_position)
+    cargo_position_hint = (
+        full_label.split("—", 1)[1].strip()
+        if claim.cargo_position and "—" in full_label
+        else ""
+    )
     return templates.TemplateResponse(
         "staff/claims/detail.html",
         {
@@ -159,8 +208,58 @@ async def claim_detail(
             "leg": leg,
             "booking": booking,
             "statuses": CLAIM_STATUSES,
+            "stowage_zones": stowage_zones,
+            "cargo_position_hint": cargo_position_hint,
         },
     )
+
+
+@router.post("/{claim_id}/cargo-position")
+async def claim_update_cargo_position(
+    claim_id: int,
+    request: Request,
+    cargo_position: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("claims", "M")),
+):
+    """Remonte / met à jour la position cale (zone d'arrimage) d'un claim cargo.
+
+    La valeur vient du picker (zones du plan d'arrimage du leg). Tolérant :
+    une valeur hors plan est conservée en texte libre (cf. FLX-10 — pas de
+    lien batch direct, la zone est choisie par l'opérateur). ``flush`` only.
+    """
+    c = await db.get(Claim, claim_id)
+    if c is None:
+        raise HTTPException(status_code=404)
+    new_position = (cargo_position or "").strip() or None
+    old_position = c.cargo_position
+    if new_position == old_position:
+        return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    c.cargo_position = new_position
+    db.add(
+        ClaimTimelineEntry(
+            claim_id=c.id,
+            author_id=user.id,
+            author_name=user.full_name or user.username,
+            kind="note",
+            body=f"Position cale : {old_position or '—'} → {new_position or '—'}",
+        )
+    )
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="claims",
+        entity_type="claim",
+        entity_id=c.id,
+        entity_label=c.reference,
+        detail=f"cargo_position {old_position or '—'} → {new_position or '—'}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
 
 
 @router.post("/{claim_id}/status")

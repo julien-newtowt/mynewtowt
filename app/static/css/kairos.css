@@ -1751,3 +1751,18 @@ form textarea {
 .main { padding: var(--space-5) var(--space-6); }
 @media (max-width: 768px) { .main { padding: var(--space-4); } }
 
+
+/* ─────────────────── Dashboard : police unique (Manrope) ──────────────────
+   Uniformisation demandée : sur les tableaux de bord, on force une seule
+   famille (--font-sans) au lieu du mix serif (.display/.value) + mono. */
+.dashboard-uniform-font,
+.dashboard-uniform-font .display,
+.dashboard-uniform-font .value,
+.dashboard-uniform-font .mono,
+.dashboard-uniform-font code,
+.dashboard-uniform-font h1,
+.dashboard-uniform-font h2,
+.dashboard-uniform-font h3,
+.dashboard-uniform-font h4 {
+  font-family: var(--font-sans) !important;
+}

@@ -42,9 +42,16 @@ CURRENCY_LABELS: dict[str, str] = {
     "VND": "VND · Đồng vietnamien",
 }
 
-# Common cashbox movement categories (free text on top, these are
-# suggestions in the dropdown).
-MOVEMENT_CATEGORIES: tuple[str, ...] = (
+# Catégories séparées par sens du flux : encaissement (income) vs
+# décaissement (expense). La liste affichée dépend du sens choisi.
+INCOME_CATEGORIES: tuple[str, ...] = (
+    "vente_a_bord",
+    "depot_recharge",
+    "remboursement",
+    "autre_encaissement",
+)
+
+EXPENSE_CATEGORIES: tuple[str, ...] = (
     "avance_equipage",
     "avitaillement",
     "transport_terrestre",
@@ -54,11 +61,19 @@ MOVEMENT_CATEGORIES: tuple[str, ...] = (
     "frais_portuaire",
     "douane",
     "carburant_annexe",
-    "depot_recharge",
     "autre",
 )
 
+# Union (rétro-compat : import historique de MOVEMENT_CATEGORIES).
+MOVEMENT_CATEGORIES: tuple[str, ...] = INCOME_CATEGORIES + EXPENSE_CATEGORIES
+
 CATEGORY_LABELS: dict[str, str] = {
+    # Encaissement
+    "vente_a_bord": "Vente à bord",
+    "depot_recharge": "Dépôt / recharge de caisse",
+    "remboursement": "Remboursement / avoir",
+    "autre_encaissement": "Autre encaissement",
+    # Décaissement
     "avance_equipage": "Avance équipage",
     "avitaillement": "Avitaillement (eau, vivres)",
     "transport_terrestre": "Transport terrestre",
@@ -68,9 +83,19 @@ CATEGORY_LABELS: dict[str, str] = {
     "frais_portuaire": "Frais portuaire",
     "douane": "Formalité douanière",
     "carburant_annexe": "Carburant annexe",
-    "depot_recharge": "Dépôt / recharge de caisse",
     "autre": "Autre",
 }
+
+# Sens d'un code catégorie : "income" (encaissement) | "expense" (décaissement).
+CATEGORY_KIND: dict[str, str] = {
+    **dict.fromkeys(INCOME_CATEGORIES, "income"),
+    **dict.fromkeys(EXPENSE_CATEGORIES, "expense"),
+}
+
+
+def categories_for(kind: str) -> tuple[str, ...]:
+    """Codes catégorie autorisés pour un sens de flux."""
+    return INCOME_CATEGORIES if kind == "income" else EXPENSE_CATEGORIES
 
 
 class OnboardCashbox(Base):
@@ -122,9 +147,22 @@ class CashboxMovement(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     recorded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    # Pièce justificative (scan/photo) — chemin relatif via services.safe_files.
     receipt_url: Mapped[str | None] = mapped_column(String(500))
+    receipt_mime: Mapped[str | None] = mapped_column(String(100))
+
+    # Verrouillage comptable : posé à la clôture mensuelle (après export).
+    # Un mouvement rattaché à une clôture est en lecture seule.
+    closure_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cashbox_closures.id", ondelete="SET NULL"), index=True
+    )
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     cashbox: Mapped[OnboardCashbox] = relationship(back_populates="movements")
+
+    @property
+    def is_locked(self) -> bool:
+        return self.closure_id is not None
 
     __table_args__ = (
         Index("ix_cashbox_mov_cb_date", "cashbox_id", "occurred_at"),
@@ -140,11 +178,16 @@ class CashboxClosure(Base):
         ForeignKey("onboard_cashboxes.id", ondelete="CASCADE"), nullable=False
     )
     currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     counted_balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     computed_balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     variance: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    movement_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Export comptable produit à la clôture (chemin relatif). La présence
+    # d'une clôture vaut verrouillage des mouvements de la période.
+    exported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

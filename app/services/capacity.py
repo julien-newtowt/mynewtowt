@@ -73,6 +73,9 @@ async def _reserved_by_orders(db: AsyncSession, leg_id: int) -> int:
         .where(
             OrderAssignment.leg_id == leg_id,
             Order.status.in_(_ORDER_RESERVED_STATUSES),
+            # B2.2 — une commande reprise en booking est comptée via le booking ;
+            # l'exclure ici évite le double-comptage.
+            Order.booking_id.is_(None),
         )
     )
     total = Decimal("0")
@@ -87,6 +90,9 @@ async def _reserved_by_orders(db: AsyncSession, leg_id: int) -> int:
         Order.leg_id == leg_id,
         Order.status.in_(_ORDER_RESERVED_STATUSES),
         ~has_assignment,
+        # B2.2 — idem : une commande reprise en booking ne réserve plus
+        # directement (sa palette est portée par le booking).
+        Order.booking_id.is_(None),
     )
     direct = Decimal(int((await db.scalar(direct_stmt)) or 0))
     return math.ceil(total + direct)

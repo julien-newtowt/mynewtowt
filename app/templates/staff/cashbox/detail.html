@@ -24,14 +24,14 @@
 
 <article class="card mb-4">
   <h2>Nouveau mouvement</h2>
-  <form method="post" action="/cashbox/{{ vessel.id }}/movement">
+  <form method="post" action="/cashbox/{{ vessel.id }}/movement" enctype="multipart/form-data" data-cashbox-form>
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     <div class="grid grid-3 gap-3">
       <div class="field">
-        <label for="movement_kind">Type</label>
-        <select id="movement_kind" name="movement_kind">
-          <option value="expense">Dépense</option>
-          <option value="income">Entrée (recharge)</option>
+        <label for="movement_kind">Sens</label>
+        <select id="movement_kind" name="movement_kind" data-kind-select>
+          <option value="income">Encaissement</option>
+          <option value="expense" selected>Décaissement</option>
         </select>
       </div>
       <div class="field">
@@ -46,8 +46,13 @@
       </div>
       <div class="field">
         <label for="category">Catégorie</label>
-        <select id="category" name="category" required>
-          {% for c in categories %}<option value="{{ c }}">{{ category_labels[c] }}</option>{% endfor %}
+        <select id="category" name="category" required data-category-select>
+          {% for c in income_categories %}
+            <option value="{{ c }}" data-kind="income">{{ category_labels[c] }}</option>
+          {% endfor %}
+          {% for c in expense_categories %}
+            <option value="{{ c }}" data-kind="expense">{{ category_labels[c] }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="field" style="grid-column: span 2;">
@@ -58,26 +63,121 @@
         <label for="occurred_at">Date/heure</label>
         <input id="occurred_at" name="occurred_at" type="datetime-local" />
       </div>
+      <div class="field" style="grid-column: span 2;">
+        <label for="receipt">Justificatif (scan / photo)</label>
+        <input id="receipt" name="receipt" type="file" accept="image/*,application/pdf" capture="environment" />
+        <p class="form-hint">Sur mobile, ouvre l'appareil photo pour scanner le ticket.</p>
+      </div>
     </div>
     <button type="submit" class="btn btn-primary">Enregistrer</button>
   </form>
+</article>
+
+{# ─────────────────── Export comptable + clôture mensuelle ─────────────── #}
+<article class="card mb-4">
+  <h2>Export comptable & clôture mensuelle</h2>
+  <p class="text-muted">
+    Exportez les mouvements d'un mois (CSV comptable). La <strong>clôture</strong>
+    exporte puis <strong>verrouille</strong> définitivement les mouvements de la période.
+  </p>
+  <form method="get" action="/cashbox/{{ vessel.id }}/export.csv" class="grid grid-3 gap-3" style="align-items:end;">
+    <div class="field">
+      <label for="exp_year">Année</label>
+      <input id="exp_year" name="year" type="number" value="{{ default_year }}" min="2020" max="2099" required />
+    </div>
+    <div class="field">
+      <label for="exp_month">Mois</label>
+      <input id="exp_month" name="month" type="number" value="{{ default_month }}" min="1" max="12" required />
+    </div>
+    <div class="field">
+      <button type="submit" class="btn btn-secondary">Exporter (CSV)</button>
+    </div>
+  </form>
+
+  <form method="post" action="/cashbox/{{ vessel.id }}/close" class="mt-4"
+        data-confirm="Clôturer ce mois ? Les mouvements de la période seront verrouillés (lecture seule) après export.">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-3 gap-3" style="align-items:end;">
+      <div class="field">
+        <label for="cl_year">Année à clôturer</label>
+        <input id="cl_year" name="year" type="number" value="{{ default_year }}" min="2020" max="2099" required />
+      </div>
+      <div class="field">
+        <label for="cl_month">Mois à clôturer</label>
+        <input id="cl_month" name="month" type="number" value="{{ default_month }}" min="1" max="12" required />
+      </div>
+    </div>
+    <p class="form-hint mt-2">Solde compté en caisse (optionnel, pour l'écart) :</p>
+    <div class="grid grid-3 gap-3">
+      {% for c in currencies %}
+      <div class="field">
+        <label for="counted_{{ c }}">{{ c }} compté</label>
+        <input id="counted_{{ c }}" name="counted_{{ c }}" type="text" inputmode="decimal" placeholder="optionnel" />
+      </div>
+      {% endfor %}
+    </div>
+    <button type="submit" class="btn btn-cuivre">Clôturer le mois (export + verrouillage)</button>
+  </form>
+
+  {% if closures %}
+  <h3 class="mt-4">Clôtures</h3>
+  <table>
+    <thead><tr><th>Période</th><th>Devise</th><th class="text-right">Compté</th><th class="text-right">Calculé</th><th class="text-right">Écart</th><th>Mvts</th><th>Clôturé le</th></tr></thead>
+    <tbody>
+      {% for cl in closures %}
+      <tr>
+        <td class="mono text-sm">{{ cl.period_end|date }}</td>
+        <td class="mono">{{ cl.currency }}</td>
+        <td class="text-right mono">{{ "%.2f"|format(cl.counted_balance|float) }}</td>
+        <td class="text-right mono">{{ "%.2f"|format(cl.computed_balance|float) }}</td>
+        <td class="text-right mono {% if cl.variance != 0 %}text-error{% endif %}">{{ "%+.2f"|format(cl.variance|float) }}</td>
+        <td>{{ cl.movement_count }}</td>
+        <td class="text-sm text-muted">{{ cl.closed_at|datetime }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 </article>
 
 <article class="card">
   <h2>Mouvements récents {% if currency_filter %}({{ currency_filter }}){% endif %}</h2>
   {% if movements %}
     <table>
-      <thead><tr><th>Date</th><th>Devise</th><th class="text-right">Montant</th><th>Catégorie</th><th>Description</th></tr></thead>
+      <thead><tr><th>Date</th><th>Devise</th><th class="text-right">Montant</th><th>Catégorie</th><th>Description</th><th>Justif.</th><th></th></tr></thead>
       <tbody>
         {% for m in movements %}
           <tr>
-            <td class="mono text-sm">{{ m.occurred_at|datetime }}</td>
+            <td class="mono text-sm">
+              {{ m.occurred_at|datetime }}
+              {% if m.is_locked %}<span class="pill pill-neutral" title="Verrouillé (clôturé)">🔒</span>{% endif %}
+            </td>
             <td class="mono">{{ m.currency }}</td>
             <td class="text-right mono {% if m.amount < 0 %}text-error{% else %}text-success{% endif %}">
               {{ "%+.2f"|format(m.amount|float) }}
             </td>
-            <td><span class="pill pill-neutral">{{ category_labels.get(m.category, m.category) }}</span></td>
+            <td>
+              {% if category_kind.get(m.category) == 'income' %}
+                <span class="pill pill-ok">{{ category_labels.get(m.category, m.category) }}</span>
+              {% else %}
+                <span class="pill pill-warn">{{ category_labels.get(m.category, m.category) }}</span>
+              {% endif %}
+            </td>
             <td>{{ m.description }}</td>
+            <td>
+              {% if m.receipt_url %}
+                <a href="/cashbox/{{ vessel.id }}/movement/{{ m.id }}/receipt" target="_blank" class="btn btn-ghost btn-sm">📎 Voir</a>
+              {% elif not m.is_locked %}
+                <form method="post" action="/cashbox/{{ vessel.id }}/movement/{{ m.id }}/receipt" enctype="multipart/form-data" style="display:inline;">
+                  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                  <input type="file" name="receipt" accept="image/*,application/pdf" capture="environment"
+                         data-autosubmit style="max-width:9rem;" />
+                </form>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td></td>
           </tr>
         {% endfor %}
       </tbody>
@@ -86,4 +186,6 @@
     <p class="text-muted">Aucun mouvement.</p>
   {% endif %}
 </article>
+
+<script src="/static/js/cashbox-form.js" defer></script>
 {% endblock %}

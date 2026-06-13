@@ -6,7 +6,7 @@ unauthenticated clients and exposes only data flagged `is_bookable=True`.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -103,12 +103,16 @@ async def routes_search(
     request: Request,
     from_: str | None = Query(None, alias="from"),
     to: str | None = Query(None, alias="to"),
-    from_date: datetime | None = Query(None),
-    to_date: datetime | None = Query(None),
+    # Dates reçues en str (jamais en date typée) : un champ vide ``""`` soumis
+    # par le formulaire ne doit pas déclencher de 422 — on parse en tolérant.
+    from_date: str | None = Query(None),
+    to_date: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
+    parsed_from = _parse_date_param(from_date)
+    parsed_to = _parse_date_param(to_date)
     results = await _search_legs(
-        db, from_country=from_, to_country=to, from_date=from_date, to_date=to_date
+        db, from_country=from_, to_country=to, from_date=parsed_from, to_date=parsed_to
     )
     return templates.TemplateResponse(
         "public/routes.html",
@@ -118,11 +122,31 @@ async def routes_search(
             "filters": {
                 "from": from_ or "",
                 "to": to or "",
-                "from_date": from_date.isoformat() if from_date else "",
-                "to_date": to_date.isoformat() if to_date else "",
+                "from_date": parsed_from.date().isoformat() if parsed_from else "",
+                "to_date": parsed_to.date().isoformat() if parsed_to else "",
             },
         },
     )
+
+
+def _parse_date_param(value: str | None) -> datetime | None:
+    """Parse une date de filtre tolérante : vide/invalide → None (pas de 422).
+
+    Accepte ``YYYY-MM-DD`` (``<input type=date>``) ou un datetime ISO complet.
+    """
+    if not value or not value.strip():
+        return None
+    raw = value.strip()
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        try:
+            dt = datetime.combine(date.fromisoformat(raw), datetime.min.time())
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
 
 
 @router.get("/routes/{leg_code}", response_class=HTMLResponse)
