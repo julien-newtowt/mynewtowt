@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.models.booking import Booking
 from app.models.commercial import Order
 from app.models.leg import Leg
 from app.models.packing_list import (
@@ -68,8 +69,12 @@ async def _load_or_410(db: AsyncSession, token: str, request: Request) -> Packin
 @router.get("/{token}", response_class=HTMLResponse)
 async def portal_home(token: str, request: Request, db: AsyncSession = Depends(get_db)):
     pl = await _load_or_410(db, token, request)
-    order = await db.get(Order, pl.order_id)
-    leg = await db.get(Leg, order.leg_id) if (order and order.leg_id) else None
+    # PL issue d'une commande (rail A) OU d'un booking (rail B) : on dérive
+    # le voyage du parent présent (B1 — fusion des rails).
+    order = await db.get(Order, pl.order_id) if pl.order_id else None
+    booking = await db.get(Booking, pl.booking_id) if pl.booking_id else None
+    leg_id = (order.leg_id if order else None) or (booking.leg_id if booking else None)
+    leg = await db.get(Leg, leg_id) if leg_id else None
     vessel = await db.get(Vessel, leg.vessel_id) if leg else None
     pol = await db.get(Port, leg.departure_port_id) if leg else None
     pod = await db.get(Port, leg.arrival_port_id) if leg else None
@@ -79,6 +84,7 @@ async def portal_home(token: str, request: Request, db: AsyncSession = Depends(g
             "request": request,
             "pl": pl,
             "order": order,
+            "booking": booking,
             "leg": leg,
             "vessel": vessel,
             "pol": pol,
