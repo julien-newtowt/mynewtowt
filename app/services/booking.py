@@ -18,12 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.booking import Booking, BookingItem
 from app.models.client_account import ClientAccount
 from app.models.leg import Leg
+from app.models.port import Port
 from app.services.capacity import (
     CapacityExceeded,
     check_and_lock,
     get_available_capacity,
 )
-from app.services.pricing import PriceQuote, compute_quote
+from app.services.quoting import GridQuote, compute_grid_quote, resolve_grid
 
 
 @dataclass(frozen=True)
@@ -73,10 +74,12 @@ async def create_draft(
     delivery_address: str | None,
     shipper_reference: str | None,
     notes: str | None,
-) -> tuple[Booking, PriceQuote]:
+) -> tuple[Booking, GridQuote]:
     """Create a booking in draft status, with an indicative price.
 
-    No capacity lock yet — only at confirm() time.
+    No capacity lock yet — only at confirm() time. Le prix indicatif est
+    calculé sur la grille tarifaire applicable (grille du client connu,
+    sinon grille par défaut de la route) — cf. services.quoting.
     """
     capacity = await get_available_capacity(db, leg.id)
     total_palettes, total_weight, hazardous = _aggregate_totals(items)
@@ -87,14 +90,22 @@ async def create_draft(
             f"Requested {total_palettes}, available {capacity.available_palettes}"
         )
 
-    quote = compute_quote(
-        base_price_per_palette_eur=leg.public_price_per_palette_eur,
+    pol = await db.get(Port, leg.departure_port_id)
+    pod = await db.get(Port, leg.arrival_port_id)
+    if pol is None or pod is None:
+        raise BookingError("Route incomplète : ports du leg introuvables")
+    grid = await resolve_grid(
+        db,
+        pol_locode=pol.locode,
+        pod_locode=pod.locode,
+        on_date=leg.etd.date() if leg.etd else None,
+        commercial_client_id=client.commercial_client_id,
+    )
+    quote = compute_grid_quote(
+        grid,
         items=[(i.pallet_format, i.pallet_count) for i in items],
+        tonnage_t=(total_weight / Decimal("1000")) if total_weight else None,
         hazardous=hazardous,
-        oversize=False,
-        etd=leg.etd,
-        capacity=capacity,
-        client_segment=client.segment,
     )
 
     booking = Booking(

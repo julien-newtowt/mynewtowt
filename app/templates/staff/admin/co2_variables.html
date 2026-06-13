@@ -1,0 +1,110 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Variables CO₂ — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Admin</span>
+  <h1 class="display">Variables CO₂</h1>
+  <p class="text-muted">Facteurs d'émission paramétrables et versionnés — consommés par les estimations CO₂ (booking, certificats, KPI). Chaque modification crée une nouvelle version : l'historique n'est jamais supprimé.</p>
+</header>
+
+{% if not current_by_name %}
+<article class="card mb-4">
+  <div class="alert alert-warn mb-3">Aucune variable versionnée en base — l'application utilise les <strong>valeurs codées (non versionnées)</strong> ci-dessous.</div>
+  <table class="data-table">
+    <thead><tr><th>Variable</th><th>Valeur codée</th><th>Unité</th></tr></thead>
+    <tbody>
+      {% for name, meta in variable_defs.items() %}
+      <tr>
+        <td class="mono">{{ name }}</td>
+        <td class="mono">{{ meta.fallback }}</td>
+        <td>{{ meta.unit }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="/admin/co2/init" class="mt-3">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <button type="submit" class="btn btn-primary">Initialiser depuis les valeurs courantes</button>
+  </form>
+</article>
+{% endif %}
+
+<article class="card mb-4">
+  <h2>Variables en vigueur</h2>
+  <table class="data-table">
+    <thead><tr><th>Variable</th><th>Libellé</th><th>Valeur</th><th>Unité</th><th>Source</th><th>Date d'effet</th><th>Statut</th></tr></thead>
+    <tbody>
+      {% for name, meta in variable_defs.items() %}
+      {% set cur = current_by_name.get(name) %}
+      <tr>
+        <td class="mono">{{ name }}</td>
+        <td>{{ meta.label }}</td>
+        <td class="mono">{% if cur %}{{ cur.value }}{% else %}{{ meta.fallback }}{% endif %}</td>
+        <td>{% if cur %}{{ cur.unit or '—' }}{% else %}{{ meta.unit }}{% endif %}</td>
+        <td>{% if cur %}{{ cur.source or '—' }}{% else %}<span class="text-muted">constante code</span>{% endif %}</td>
+        <td>{% if cur %}{{ cur.effective_date|date("%d/%m/%Y") }}{% else %}—{% endif %}</td>
+        <td>
+          {% if cur %}<span class="pill pill-ok">versionnée</span>
+          {% else %}<span class="pill pill-warn">codée (non versionnée)</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+<article class="card mb-4">
+  <h2>Modifier une variable</h2>
+  <p class="text-muted text-sm">Enregistrer crée une <strong>nouvelle version</strong> (valeur, source, date d'effet) — la version précédente passe en historique. Prise en compte sous 60 secondes (cache).</p>
+  <div class="grid grid-2 gap-3">
+    {% for name, meta in variable_defs.items() %}
+    {% set cur = current_by_name.get(name) %}
+    <form method="post" action="/admin/co2/update">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <input type="hidden" name="name" value="{{ name }}" />
+      <h3 class="mono">{{ name }}</h3>
+      <div class="field">
+        <label for="value-{{ name }}">Nouvelle valeur ({{ meta.unit }})</label>
+        <input id="value-{{ name }}" name="value" type="number" step="0.000001" min="0.000001" required
+               value="{% if cur %}{{ cur.value }}{% else %}{{ meta.fallback }}{% endif %}" />
+      </div>
+      <div class="field">
+        <label for="source-{{ name }}">Source / référence</label>
+        <input id="source-{{ name }}" name="source" type="text" required maxlength="200"
+               placeholder="ex. Audit vérificateur 2026, IMO 4th GHG Study" />
+      </div>
+      <div class="field">
+        <label for="effective-{{ name }}">Date d'effet</label>
+        <input id="effective-{{ name }}" name="effective_date" type="date" required value="{{ today }}" />
+      </div>
+      <button type="submit" class="btn btn-primary">Enregistrer une nouvelle version</button>
+    </form>
+    {% endfor %}
+  </div>
+</article>
+
+<article class="card">
+  <h2>Historique complet</h2>
+  <table class="data-table">
+    <thead><tr><th>Variable</th><th>Valeur</th><th>Unité</th><th>Source</th><th>Date d'effet</th><th>Statut</th><th>Créée par</th><th>Créée le</th></tr></thead>
+    <tbody>
+      {% for v in history %}
+      <tr>
+        <td class="mono">{{ v.name }}</td>
+        <td class="mono">{{ v.value }}</td>
+        <td>{{ v.unit or '—' }}</td>
+        <td>{{ v.source or '—' }}</td>
+        <td>{{ v.effective_date|date("%d/%m/%Y") }}</td>
+        <td>{% if v.is_current %}<span class="pill pill-ok">en vigueur</span>{% else %}<span class="pill pill-neutral">archivée</span>{% endif %}</td>
+        <td>{{ v.created_by or '—' }}</td>
+        <td class="text-muted text-xs">{{ v.created_at|datetime("%d/%m/%Y %H:%M") }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="text-muted text-center">Aucune version enregistrée — initialisez depuis les valeurs courantes.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

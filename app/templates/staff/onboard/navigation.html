@@ -1,5 +1,11 @@
 {% extends "staff/_layout.html" %}
 {% block title %}Navigation — {{ brand.nom_court }}{% endblock %}
+{% block head %}
+{{ super() }}
+<link rel="manifest" href="/manifest.json" />
+<script src="/static/js/pwa-onboard.js" defer></script>
+<script src="/static/js/onboard-offline.js" defer></script>
+{% endblock %}
 {% block content %}
 <a href="/onboard" class="btn btn-ghost mb-3">← Onboard</a>
 <header class="mb-4">
@@ -35,7 +41,7 @@
     {% else %}
       <p class="text-muted text-sm mb-3">Position satcom indisponible (&gt; 6h) — saisie manuelle requise.</p>
     {% endif %}
-    <form method="post" action="/onboard/navigation/noon-report">
+    <form method="post" action="/onboard/navigation/noon-report" data-offline-queue>
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <input type="hidden" name="leg_id" value="{{ leg.id }}" />
       <div class="grid grid-2 gap-3">
@@ -58,7 +64,7 @@
 
   <article class="card">
     <h2>Saisir une entrée de quart</h2>
-    <form method="post" action="/onboard/navigation/watch-log">
+    <form method="post" action="/onboard/navigation/watch-log" data-offline-queue>
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <input type="hidden" name="leg_id" value="{{ leg.id }}" />
       <div class="grid grid-2 gap-3">

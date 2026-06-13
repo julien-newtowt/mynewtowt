@@ -11,7 +11,7 @@ from app.database import get_db
 from app.models.booking import Booking
 from app.models.client_account import ClientAccount
 from app.permissions import require_permission
-from app.services import invoicing, messaging, notifications
+from app.services import messaging, notifications
 from app.services.activity import record as activity_record
 from app.services.booking import InvalidStatusTransition, advance, cancel, confirm
 from app.services.booking_lifecycle import on_status_change
@@ -115,7 +115,9 @@ async def confirm_booking(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     await confirm(db, booking)
-    await invoicing.issue_for_booking(db, booking)
+    # COM-05 — pas d'émission de facture in-app : la facturation est gérée
+    # par la comptabilité hors plateforme. La confirmation se limite au
+    # changement de statut + notifications de cycle de vie (booking note).
     await on_status_change(db, booking, "confirmed")
     await activity_record(
         db,

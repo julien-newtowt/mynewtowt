@@ -22,6 +22,7 @@ from app.i18n import get_lang_from_request
 from app.services import blog as blog_svc
 from app.services import contact as contact_svc
 from app.services.activity import record as activity_record
+from app.services.leads import push_lead
 from app.templating import templates
 
 router = APIRouter(tags=["vitrine"])
@@ -170,6 +171,17 @@ async def contact_submit(
         entity_label=payload.email,
         detail=f"{payload.pol or '?'} -> {payload.pod or '?'}",
         ip_address=request.client.host if request.client else None,
+    )
+    # COM-04 — relais best-effort du lead vers l'équipe commerciale
+    # (Pipedrive + notification in-app + email). Ne lève jamais.
+    await push_lead(
+        db,
+        name=payload.name,
+        email=payload.email,
+        company=payload.company,
+        phone=payload.phone,
+        message=payload.message,
+        source="contact",
     )
     return RedirectResponse(url="/contact/merci", status_code=303)
 

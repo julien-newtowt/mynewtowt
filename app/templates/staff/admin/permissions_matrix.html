@@ -1,0 +1,76 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Droits par profil — {{ brand.nom_court }}{% endblock %}
+{% block head %}{{ super() }}
+<style>
+  .perm-table-wrap { overflow-x: auto; }
+  .perm-table th, .perm-table td { white-space: nowrap; }
+  .perm-table thead th:first-child,
+  .perm-table tbody th:first-child {
+    position: sticky; left: 0; background: #fff; z-index: 2;
+  }
+  .perm-table select { min-width: 76px; }
+  td.perm-override { background: rgba(180, 113, 72, 0.15); }
+  td.perm-override select { border-color: var(--cuivre); }
+  .data-table tr:hover td.perm-override { background: rgba(180, 113, 72, 0.25); }
+</style>
+{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Admin</span>
+  <h1 class="display">Droits par profil</h1>
+  <p class="text-muted">Grille rôles × modules — niveaux C (consulter), M (modifier), S (supprimer), ∅ = aucun accès. Les cellules surlignées diffèrent de la matrice par défaut (override stocké en base).</p>
+</header>
+
+<div class="alert alert-warn mb-4">Les modifications s'appliquent sous 60 secondes (cache). Le rôle administrateur conserve toujours l'accès admin.</div>
+
+{% if saved %}
+<div class="alert alert-success mb-4">Modifications enregistrées — {{ override_count }} override(s) actif(s).</div>
+{% endif %}
+{% if skipped %}
+<div class="alert alert-error mb-4">La cellule administrateur × admin ne peut pas être dégradée — cette modification a été ignorée.</div>
+{% endif %}
+
+<form method="post" action="/admin/permissions">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+  <article class="card">
+    <div class="flex justify-between items-center mb-2">
+      <h2 style="margin:0;">Matrice effective</h2>
+      <span class="badge">{{ override_count }} override(s)</span>
+    </div>
+    <div class="perm-table-wrap">
+      <table class="data-table perm-table">
+        <thead>
+          <tr>
+            <th>Rôle</th>
+            {% for m in modules %}<th class="mono text-xs">{{ m }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for role in roles %}
+          <tr>
+            <th class="mono text-sm">{{ role }}</th>
+            {% for m in modules %}
+            {% set cell = grid[role][m] %}
+            <td{% if cell.overridden %} class="perm-override" title="Défaut : {{ cell.default or '∅' }}"{% endif %}>
+              <select name="perm-{{ role }}-{{ m }}"
+                      {% if role == 'administrateur' and m == 'admin' %}title="Verrouillé — l'administrateur conserve toujours l'accès admin"{% endif %}>
+                {% for lvl in levels %}
+                <option value="{{ lvl }}" {% if cell.level == lvl %}selected{% endif %}>{{ lvl or '∅' }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="flex gap-2 items-center mt-3">
+      <button type="submit" class="btn btn-primary">Enregistrer la grille</button>
+      <span class="text-muted text-sm">Seules les cellules différentes du défaut sont stockées en base ; une cellule revenue au défaut supprime son override.</span>
+    </div>
+  </article>
+</form>
+
+{% endblock %}

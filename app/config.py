@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from_name: str = "NEWTOWT"
     smtp_from_address: str = "no-reply@newtowt.eu"
+    # Boîte de l'équipe commerciale — reçoit les nouveaux leads (formulaire
+    # de contact public). None → envoi silencieusement ignoré.
+    commercial_inbox_email: str | None = None
 
     # Observability
     sentry_dsn: str | None = None

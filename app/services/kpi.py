@@ -72,10 +72,16 @@ async def compute_for_leg(db: AsyncSession, leg: Leg) -> LegKPI:
         avg_speed_kn = (distance_nm / duration_hours).quantize(Decimal("0.01"))
 
     # ── CO₂ évité ──────────────────────────────────────────────────────────
+    # Facteurs versionnés en base (ENV-02) — repli sur les constantes.
     co2_avoided_kg: Decimal | None = None
     if distance_nm and tonnage_t > 0:
         try:
-            estimate = co2_estimate(distance_nm=distance_nm, tonnage_t=tonnage_t)
+            from app.services.co2 import get_factors
+
+            factors = await get_factors(db)
+            estimate = co2_estimate(
+                distance_nm=distance_nm, tonnage_t=tonnage_t, factors=factors
+            )
             co2_avoided_kg = estimate.avoided_co2_kg.quantize(Decimal("0.01"))
         except Exception:
             pass

@@ -14,6 +14,8 @@ Reprises de la V3.0.0 :
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -30,11 +32,22 @@ from app.config import settings
 from app.database import get_db
 from app.i18n import SUPPORTED as SUPPORTED_LANGS
 from app.models.activity_log import ActivityLog
+from app.models.co2_variable import Co2Variable
 from app.models.finance import OpexParameter
 from app.models.insurance import INSURANCE_KINDS, InsuranceContract
+from app.models.role_permission import RolePermission
 from app.models.user import User
 from app.models.vessel import Vessel
-from app.permissions import ROLES, require_permission
+from app.permissions import (
+    MODULES,
+    ROLES,
+    VALID_LEVELS,
+    get_default_matrix,
+    get_effective_matrix,
+    invalidate_permissions_cache,
+    require_permission,
+)
+from app.services import co2 as co2_service
 from app.services.activity import record as activity_record
 from app.templating import templates
 
@@ -878,6 +891,291 @@ async def staff_mfa_disable(
             ua=request.headers.get("user-agent"),
         )
     return RedirectResponse(url="/admin/my-account?mfa=disabled", status_code=303)
+
+
+# ────────────────────────────────────────────── CO2 variables (ENV-02)
+# Variables versionnées consommées par services/co2.py — les fallbacks
+# codés restent la référence tant que la table est vide.
+CO2_VARIABLE_DEFS: dict[str, dict] = {
+    co2_service.TOWT_EF_VARIABLE: {
+        "label": "Facteur d'émission TOWT (voile)",
+        "unit": "gCO2/t.km",
+        "fallback": co2_service.TOWT_CO2_EF_G_PER_TKM,
+    },
+    co2_service.CONV_EF_VARIABLE: {
+        "label": "Facteur d'émission conventionnel (cargo fuel)",
+        "unit": "gCO2/t.km",
+        "fallback": co2_service.CONV_CO2_EF_G_PER_TKM,
+    },
+}
+
+
+@router.get("/co2", response_class=HTMLResponse)
+async def co2_variables_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> HTMLResponse:
+    rows = list(
+        (
+            await db.execute(
+                select(Co2Variable).order_by(
+                    Co2Variable.name,
+                    Co2Variable.effective_date.desc(),
+                    Co2Variable.id.desc(),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    current_by_name = {r.name: r for r in rows if r.is_current}
+    return templates.TemplateResponse(
+        "staff/admin/co2_variables.html",
+        {
+            "request": request,
+            "user": user,
+            "variable_defs": CO2_VARIABLE_DEFS,
+            "current_by_name": current_by_name,
+            "history": rows,
+            "today": date.today().isoformat(),
+        },
+    )
+
+
+@router.post("/co2/init")
+async def co2_variables_init(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    """Initialise les variables versionnées depuis les constantes codées."""
+    existing = set(
+        (
+            await db.execute(
+                select(Co2Variable.name).where(Co2Variable.name.in_(tuple(CO2_VARIABLE_DEFS)))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    created: list[str] = []
+    for name, meta in CO2_VARIABLE_DEFS.items():
+        if name in existing:
+            continue
+        db.add(
+            Co2Variable(
+                name=name,
+                value=meta["fallback"],
+                unit=meta["unit"],
+                source="Valeurs codées (init admin)",
+                effective_date=date.today(),
+                is_current=True,
+                created_by=user.username,
+            )
+        )
+        created.append(f"{name}={meta['fallback']}")
+    if created:
+        await db.flush()
+        co2_service.invalidate_factors_cache()
+        await activity_record(
+            db,
+            action="co2_variable_init",
+            user_id=user.id,
+            user_name=user.full_name or user.username,
+            user_role=user.role,
+            module="admin",
+            entity_type="co2_variable",
+            entity_label="init",
+            detail="; ".join(created),
+            ip_address=_client_ip(request),
+        )
+    return RedirectResponse(url="/admin/co2", status_code=303)
+
+
+@router.post("/co2/update")
+async def co2_variables_update(
+    request: Request,
+    name: str = Form(...),
+    value: str = Form(...),
+    source: str = Form(""),
+    effective_date: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    """Mise à jour versionnée : INSERT nouvelle ligne + bascule is_current.
+
+    L'historique n'est jamais supprimé ni modifié (hors flag is_current).
+    """
+    if name not in CO2_VARIABLE_DEFS:
+        raise HTTPException(status_code=400, detail="variable CO2 inconnue")
+    try:
+        new_value = Decimal(value.strip().replace(",", "."))
+    except InvalidOperation:
+        raise HTTPException(status_code=400, detail="valeur numérique invalide") from None
+    if not new_value.is_finite() or new_value <= 0:
+        raise HTTPException(status_code=400, detail="la valeur doit être strictement positive")
+    if new_value >= Decimal("1000000"):
+        raise HTTPException(status_code=400, detail="valeur hors plage (max 999999.999999)")
+    try:
+        eff_date = date.fromisoformat(effective_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date d'effet invalide") from None
+    source_clean = source.strip()[:200] or None
+
+    previous_rows = (
+        (
+            await db.execute(
+                select(Co2Variable).where(
+                    Co2Variable.name == name, Co2Variable.is_current.is_(True)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    old_value = previous_rows[0].value if previous_rows else CO2_VARIABLE_DEFS[name]["fallback"]
+    for prev in previous_rows:
+        prev.is_current = False
+    db.add(
+        Co2Variable(
+            name=name,
+            value=new_value,
+            unit=CO2_VARIABLE_DEFS[name]["unit"],
+            source=source_clean,
+            effective_date=eff_date,
+            is_current=True,
+            created_by=user.username,
+        )
+    )
+    await db.flush()
+    co2_service.invalidate_factors_cache()
+    await activity_record(
+        db,
+        action="co2_variable_update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="co2_variable",
+        entity_label=name,
+        detail=f"{name}: {old_value} → {new_value} ({source_clean or 'sans source'})",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/admin/co2", status_code=303)
+
+
+# ────────────────────────────────────────────── Permissions matrix (ARC-04)
+@router.get("/permissions", response_class=HTMLResponse)
+async def permissions_matrix_page(
+    request: Request,
+    saved: int = 0,
+    skipped: int = 0,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> HTMLResponse:
+    effective = await get_effective_matrix(db)
+    defaults = get_default_matrix()
+    grid: dict[str, dict[str, dict]] = {}
+    override_count = 0
+    for role in ROLES:
+        row: dict[str, dict] = {}
+        for module in MODULES:
+            level = effective.get((role, module), "")
+            default = defaults.get((role, module), "")
+            overridden = level != default
+            if overridden:
+                override_count += 1
+            row[module] = {"level": level, "default": default, "overridden": overridden}
+        grid[role] = row
+    return templates.TemplateResponse(
+        "staff/admin/permissions_matrix.html",
+        {
+            "request": request,
+            "user": user,
+            "grid": grid,
+            "roles": ROLES,
+            "modules": MODULES,
+            "levels": VALID_LEVELS,
+            "override_count": override_count,
+            "saved": saved,
+            "skipped": skipped,
+        },
+    )
+
+
+@router.post("/permissions")
+async def permissions_matrix_update(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    """Upsert des seules cellules qui diffèrent du défaut codé en dur.
+
+    - cellule revenue au défaut → suppression de l'override DB ;
+    - (administrateur, admin) jamais dégradable → ignorée + avertissement ;
+    - cache permissions invalidé (prise d'effet ≤ 60 s).
+    """
+    form = await request.form()
+    defaults = get_default_matrix()
+    existing = {
+        (r.role, r.module): r for r in (await db.execute(select(RolePermission))).scalars().all()
+    }
+    changes: list[str] = []
+    skipped_admin = False
+    for role in ROLES:
+        for module in MODULES:
+            raw = form.get(f"perm-{role}-{module}")
+            if raw is None:
+                continue
+            submitted = str(raw).strip()
+            if submitted not in VALID_LEVELS:
+                continue  # valeur inattendue → on ignore la cellule
+            default = defaults.get((role, module), "")
+            if role == "administrateur" and module == "admin" and submitted != default:
+                skipped_admin = True
+                continue
+            row = existing.get((role, module))
+            current = row.level if row is not None else default
+            if submitted == current:
+                continue
+            label_from = current or "∅"
+            label_to = submitted or "∅"
+            if submitted == default:
+                # Retour au défaut → l'override n'a plus lieu d'exister.
+                if row is not None:
+                    await db.delete(row)
+                    changes.append(f"{role}/{module}: {label_from} → défaut ({label_to})")
+            elif row is None:
+                db.add(
+                    RolePermission(
+                        role=role, module=module, level=submitted, updated_by=user.username
+                    )
+                )
+                changes.append(f"{role}/{module}: {label_from} → {label_to}")
+            else:
+                row.level = submitted
+                row.updated_by = user.username
+                changes.append(f"{role}/{module}: {label_from} → {label_to}")
+    if changes:
+        await db.flush()
+        invalidate_permissions_cache()
+        await activity_record(
+            db,
+            action="permissions_update",
+            user_id=user.id,
+            user_name=user.full_name or user.username,
+            user_role=user.role,
+            module="admin",
+            entity_type="role_permission",
+            entity_label=f"{len(changes)} cellule(s)",
+            detail="; ".join(changes)[:2000],
+            ip_address=_client_ip(request),
+        )
+    url = f"/admin/permissions?saved={1 if changes else 0}"
+    if skipped_admin:
+        url += "&skipped=1"
+    return RedirectResponse(url=url, status_code=303)
 
 
 def _client_ip(request: Request) -> str | None:

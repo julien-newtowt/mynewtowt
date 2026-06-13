@@ -1,6 +1,6 @@
 {% extends "public/_layout_v2.html" %}
 {% block title %}NewTowt — fret maritime à la voile vers le Brésil & l'Amérique latine{% endblock %}
-{% block description %}NewTowt transporte du fret palettisé (café, cacao, fret industriel) à la voile vers le Brésil et l'Amérique latine. CO₂ réduit jusqu'à 95 %, label ANEMOS. Une flotte qui navigue depuis 2011.{% endblock %}
+{% block description %}NewTowt transporte du fret palettisé (café, cacao, fret industriel) à la voile vers le Brésil et l'Amérique latine. Transport vélique décarboné, label ANEMOS. Une flotte qui navigue depuis 2011.{% endblock %}
 {% block content %}
 
 <section class="hero">
@@ -10,8 +10,8 @@
     <p class="hero-baseline">Bienvenue à bord. Une flotte qui navigue, pas un projet.</p>
     <p class="hero-lead">
       NewTowt opère déjà une ligne régulière pour le café, le cacao et le fret
-      industriel — marchandises dangereuses comprises — avec une réduction de CO₂
-      jusqu'à 95 %, mesurée et certifiée par le label ANEMOS.
+      industriel — marchandises dangereuses comprises — avec une décarbonation
+      mesurée et certifiée par le label ANEMOS.
     </p>
 
     <form class="hero-search" method="get" action="/routes" role="search">
@@ -39,14 +39,14 @@
     <p class="section-lead">
       Pionnière du transport vélique depuis 2011, NewTowt exploite une flotte de
       voiliers-cargos qui relient l'Europe au Brésil et à l'Amérique latine, avec
-      des plannings prévisibles et un impact carbone réduit jusqu'à 95 %.
+      des plannings prévisibles et un impact carbone radicalement réduit.
     </p>
 
     <div class="feature-grid">
       <div class="feature-card">
-        <h3>Décarboné jusqu'à −95 %</h3>
-        <p>Réduction de CO₂ jusqu'à 95 % vs cargo conventionnel — transport par lot
-           certifié par le label <strong>ANEMOS</strong>, traçabilité de port à port.</p>
+        <h3>Transport vélique décarboné</h3>
+        <p>Décarbonation mesurée et certifiée — transport par lot certifié par le
+           label <strong>ANEMOS</strong>, traçabilité de port à port.</p>
       </div>
       <div class="feature-card">
         <h3>Une flotte qui navigue</h3>
@@ -67,10 +67,9 @@
     <span class="section-kicker">Plannings ouverts</span>
     <h2 class="section-title">Prochains départs disponibles</h2>
 
-    {% if upcoming %}
+    {% if upcoming_legs %}
     <div class="booking-grid">
-      {% for leg in upcoming %}
-        {% set occ = ((leg.capacity_palettes - leg.available_palettes) / leg.capacity_palettes * 100) if leg.capacity_palettes else 0 %}
+      {% for leg in upcoming_legs %}
         <article class="booking-card">
           <div class="booking-header">
             <span class="leg-code">{{ leg.leg_code }}</span>
@@ -87,20 +86,10 @@
             <span>ETD <span class="mono">{{ leg.etd|date }}</span></span>
             <span>ETA <span class="mono">{{ leg.eta|date }}</span></span>
           </div>
-          <div>
-            <div class="capacity-gauge">
-              <div class="capacity-fill {% if occ > 85 %}warn{% endif %}{% if leg.available_palettes <= 0 %} full{% endif %}"
-                   style="width: {{ occ|round(0) }}%;"></div>
-            </div>
-            <div class="capacity-label">{{ leg.available_palettes }} / {{ leg.capacity_palettes }} palettes disponibles</div>
-          </div>
+          <a href="/devis?leg={{ leg.leg_code }}" class="btn btn-primary btn-block">Demander un devis</a>
           <div class="booking-actions">
             <a href="/routes/{{ leg.leg_code }}" class="btn btn-secondary">Détails</a>
-            {% if leg.available_palettes > 0 %}
-              <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-primary">Réserver</a>
-            {% else %}
-              <span class="btn btn-secondary" style="opacity:.5;cursor:default;">Complet</span>
-            {% endif %}
+            <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-primary">Réserver</a>
           </div>
         </article>
       {% endfor %}

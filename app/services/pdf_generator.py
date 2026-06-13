@@ -123,6 +123,21 @@ def render_invoice(*, booking, leg, vessel, pol, pod, client, invoice=None) -> D
 
 
 # ---------------------------------------------------------------------------
+# Booking Note (COM-05) — confirme la réservation et ses conditions.
+# La facturation est émise par la comptabilité NEWTOWT hors plateforme.
+# ---------------------------------------------------------------------------
+
+
+def render_booking_note(*, booking, leg, vessel, pol, pod, client) -> DocumentBytes:
+    ctx = _common_ctx(booking, leg, vessel, pol, pod, client)
+    ctx["note_ref"] = f"BN-{booking.reference}"
+    ctx["price_eur"] = booking.confirmed_price_eur or booking.estimated_price_eur
+    ctx["price_is_confirmed"] = booking.confirmed_price_eur is not None
+    html, pdf = _render_pdf("pdf/booking_note.html", ctx)
+    return DocumentBytes(html=html, pdf=pdf, filename=f"BookingNote_{booking.reference}.pdf")
+
+
+# ---------------------------------------------------------------------------
 # Label Anemos (anciennement "Certificat CO₂") — PDF
 # ---------------------------------------------------------------------------
 

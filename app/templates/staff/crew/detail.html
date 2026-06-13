@@ -19,6 +19,10 @@
   </div>
 </header>
 
+{% if error %}
+<div class="alert alert-error mb-4">{{ error }}</div>
+{% endif %}
+
 <div class="grid grid-2 gap-4">
   <article class="card">
     <h2>Documents & visas</h2>
@@ -58,6 +62,42 @@
     </tbody>
   </table>
   {% else %}<p class="text-muted">Aucun embarquement enregistré.</p>{% endif %}
+</article>
+
+<article class="card mt-4">
+  <h2>Nouvel embarquement</h2>
+  <p class="text-muted">La conformité Schengen (90 j / 180 j) et la validité du passeport sont vérifiées avant la création — un statut non conforme bloque l'embarquement.</p>
+  <form method="POST" action="/crew/members/{{ member.id }}/assignments">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-2 gap-3">
+      <div class="field">
+        <label>Leg</label>
+        <select name="leg_id" required>
+          {% for l in legs %}
+          <option value="{{ l.id }}">{{ l.leg_code }} — ETD {{ l.etd|date }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>Rôle à bord</label>
+        <select name="role_on_board">
+          <option value="">— rôle habituel ({{ member.role }})</option>
+          {% for r in roles %}
+          <option value="{{ r }}">{{ r|replace('_', ' ')|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field"><label>Embarquement</label><input type="datetime-local" name="embark_at" /></div>
+      <div class="field"><label>Débarquement</label><input type="datetime-local" name="disembark_at" /></div>
+    </div>
+    <div class="alert alert-warn mt-3">
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="override_compliance" />
+        <span><strong>Forcer malgré la non-conformité</strong> — outrepasse le blocage Schengen / passeport. L'action sera tracée dans le journal d'audit.</span>
+      </label>
+    </div>
+    <button class="btn btn-primary mt-3" type="submit">Embarquer</button>
+  </form>
 </article>
 
 <article class="card mt-4">

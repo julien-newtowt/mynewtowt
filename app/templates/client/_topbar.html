@@ -10,7 +10,7 @@
     {%- set _page_labels = {
           "/me": "Dashboard",
           "/me/bookings": "My bookings",
-          "/me/invoices": "My invoices",
+          "/me/documents": "My documents",
           "/me/anemos": "My Anemos labels",
           "/me/account": "My account",
           "/booking/new": "New booking",
@@ -20,7 +20,7 @@
     {%- set _page_labels = {
           "/me": "Tableau de bord",
           "/me/bookings": "Mes réservations",
-          "/me/invoices": "Mes factures",
+          "/me/documents": "Mes documents",
           "/me/anemos": "Mes labels Anemos",
           "/me/account": "Mon compte",
           "/booking/new": "Nouvelle réservation",
@@ -64,7 +64,7 @@
       </div>
       <a href="/me/account"><i data-lucide="settings"></i><span>{% if lang == 'en' %}My account{% else %}Mon compte{% endif %}</span></a>
       <a href="/me/bookings"><i data-lucide="package"></i><span>{% if lang == 'en' %}My bookings{% else %}Mes réservations{% endif %}</span></a>
-      <a href="/me/invoices"><i data-lucide="euro"></i><span>{% if lang == 'en' %}My invoices{% else %}Mes factures{% endif %}</span></a>
+      <a href="/me/documents"><i data-lucide="file-text"></i><span>{% if lang == 'en' %}My documents{% else %}Mes documents{% endif %}</span></a>
       <div class="menu-divider"></div>
       <a href="/me/logout" style="color: var(--danger);">
         <i data-lucide="log-out"></i>

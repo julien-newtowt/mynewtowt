@@ -46,4 +46,20 @@
     </div>
   </form>
 </article>
+
+<article class="card mt-4">
+  <h2>Consolidation depuis l'exploitation</h2>
+  <p class="text-muted">
+    Recalcule automatiquement : <strong>Revenu</strong> (réservations plateforme confirmées et
+    au-delà + commandes commerciales du leg), <strong>Coûts dockers</strong> (shifts saisis en
+    escale) et <strong>Quote-part OPEX</strong> (paramètre « opex_daily_sea » × jours de mer
+    ATD→ATA, sinon ETD→ETA). Les <strong>Frais portuaires</strong> sont pré-remplis depuis la
+    configuration des ports uniquement s'ils sont vides. « <strong>Autres coûts</strong> » reste
+    un champ manuel et n'est jamais écrasé.
+  </p>
+  <form method="POST" action="/finance/legs/{{ leg.id }}/rollup">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+    <button type="submit" class="btn btn-secondary"><i data-lucide="refresh-cw"></i> Recalculer depuis l'exploitation</button>
+  </form>
+</article>
 {% endblock %}

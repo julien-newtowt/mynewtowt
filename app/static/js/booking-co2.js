@@ -3,6 +3,8 @@
  *
  * Recalcule à chaque modification des champs items-N-count et items-N-unit_weight_kg
  * la consommation CO₂ NEWTOWT et l'évitement vs cargo conventionnel.
+ * L'évitement est exprimé en kg absolus uniquement — jamais en pourcentage
+ * (action corrective ENV-01).
  *
  * Markup attendu :
  *   <div id="co2-estimator"
@@ -15,7 +17,6 @@
  *     <span class="co2-towt"></span>
  *     <span class="co2-conv"></span>
  *     <span class="co2-avoided"></span>
- *     <span class="co2-pct"></span>
  *   </div>
  *
  * Defaults marketing : 500 kg / palette si poids unitaire non renseigné.
@@ -41,6 +42,16 @@
   function bind() {
     var el = document.getElementById("co2-estimator");
     if (!el) return;
+
+    // ENV-01 : aucun pourcentage affiché — retire les éventuels spans .co2-pct
+    // hérités du markup, ainsi que les parenthèses vides laissées autour.
+    el.querySelectorAll(".co2-pct").forEach(function (n) {
+      var parent = n.parentNode;
+      n.remove();
+      if (parent) {
+        parent.innerHTML = parent.innerHTML.replace(/\s*\(\s*\)/, "");
+      }
+    });
 
     var distance_nm = readNumber(el, "data-distance-nm", 0);
     var towt_ef = readNumber(el, "data-towt-ef-g-tkm", 1.5);
@@ -70,14 +81,12 @@
       var towt_kg = tkm * towt_ef / 1000.0;
       var conv_kg = tkm * conv_ef / 1000.0;
       var avoided_kg = conv_kg - towt_kg;
-      var pct = conv_kg > 0 ? (100 * avoided_kg / conv_kg) : 0;
 
       _set(el, ".co2-distance", fmt(distance_km, 0) + " km");
       _set(el, ".co2-tonnage", fmt(tonnage_t, 2) + " t");
       _set(el, ".co2-towt", fmt(towt_kg, 1) + " kg");
       _set(el, ".co2-conv", fmt(conv_kg, 1) + " kg");
       _set(el, ".co2-avoided", fmt(avoided_kg, 1) + " kg");
-      _set(el, ".co2-pct", fmt(pct, 1) + " %");
 
       // Visibility : montre le bloc dès qu'on a une tonnage > 0
       el.classList.toggle("co2-active", tonnage_t > 0);

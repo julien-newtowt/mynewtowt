@@ -4,6 +4,15 @@
 {% block doc_ref %}{{ cert_ref }}{% endblock %}
 {% block content %}
 
+{# ENV-03 — valeurs persistées du certificat (régularisées sur le réel
+   déclaré) quand il existe, sinon estimation forfaitaire à la volée. #}
+{% set method = certificate.method if certificate else None %}
+{% set distance_source = certificate.distance_source if certificate else None %}
+{% set co2_towt_kg = certificate.co2_emitted_kg if certificate else emission.towt_co2_kg %}
+{% set co2_conv_kg = certificate.co2_conventional_kg if certificate else emission.conventional_co2_kg %}
+{% set co2_avoided_kg = certificate.co2_avoided_kg if certificate else emission.avoided_co2_kg %}
+{% set dist_nm = certificate.distance_nm if certificate else emission.distance_nm %}
+
 <div style="text-align:center; padding:20pt 0;">
   <span class="kicker">{{ brand.mention }}</span>
   <h1 class="c-teal" style="font-size:26pt; margin:6pt 0;">Certificat d'émissions évitées</h1>
@@ -13,10 +22,10 @@
 <div class="box" style="text-align:center; border-left:none; border-top:3px solid #87BD29; padding:14pt;">
   <div class="label">CO₂ évité par cette expédition</div>
   <div style="font-family:'DM Serif Display', Georgia, serif; font-size:32pt; color:#87BD29; line-height:1; margin:6pt 0;">
-    {{ "%.0f"|format(emission.avoided_co2_kg|float) }} kg
+    {{ "%.0f"|format(co2_avoided_kg|float) }} kg
   </div>
   <div class="small c-gris">
-    soit <strong>{{ emission.avoidance_pct }} %</strong> vs cargo conventionnel
+    vs cargo conventionnel équivalent (référence IMO)
   </div>
 </div>
 
@@ -58,7 +67,7 @@
   </tr>
   <tr>
     <td><strong>Distance parcourue</strong></td>
-    <td class="mono">{{ "%.0f"|format(emission.distance_nm|float) }} NM ({{ "%.0f"|format(emission.distance_km|float) }} km)</td>
+    <td class="mono">{{ "%.0f"|format(dist_nm|float) }} NM ({{ "%.0f"|format(dist_nm|float * 1.852) }} km)</td>
   </tr>
 </table>
 
@@ -74,18 +83,18 @@
   <tbody>
     <tr>
       <td>Cargo vélique {{ brand.nom_court }}</td>
-      <td class="text-right c-vert mono"><strong>1,5</strong></td>
-      <td class="text-right mono">{{ "%.3f"|format(emission.towt_co2_kg|float) }}</td>
+      <td class="text-right c-vert mono"><strong>{% if method == "declared" %}—{% else %}1,5{% endif %}</strong></td>
+      <td class="text-right mono">{{ "%.3f"|format(co2_towt_kg|float) }}</td>
     </tr>
     <tr>
       <td>Cargo conventionnel (référence IMO)</td>
       <td class="text-right c-gris mono">13,7</td>
-      <td class="text-right mono">{{ "%.3f"|format(emission.conventional_co2_kg|float) }}</td>
+      <td class="text-right mono">{{ "%.3f"|format(co2_conv_kg|float) }}</td>
     </tr>
     <tr class="total-row">
       <td class="text-right" colspan="2">Émissions évitées</td>
       <td class="text-right mono" style="font-size:12pt;">
-        <span class="badge-co2">- {{ "%.0f"|format(emission.avoided_co2_kg|float) }} kg CO₂</span>
+        <span class="badge-co2">- {{ "%.0f"|format(co2_avoided_kg|float) }} kg CO₂</span>
       </td>
     </tr>
   </tbody>
@@ -93,9 +102,15 @@
 
 <div class="footer-mention" style="margin-top:14pt;">
   <strong>Méthodologie</strong> : alignée EU MRV (UE 2015/757) et GHG Protocol Scope 3 catégorie 4 (Upstream Transportation).
-  Émissions {{ brand.nom_court }} : mesures embarquées + audit vérificateur tiers accrédité.
+  {% if method == "declared" %}
+  Émissions {{ brand.nom_court }} calculées sur les consommations déclarées à bord (noon reports signés) — distance {{ "%.0f"|format(dist_nm|float) }} NM ({{ distance_source }}).
+  {% else %}
+  Émissions {{ brand.nom_court }} estimées par facteur forfaitaire (1,5 g CO₂/t·km) — régularisation sur données déclarées à venir.
+  {% endif %}
   Émissions de référence : IMO Fourth GHG Study + IFP Energies Nouvelles.
+  {% if distance_source != "noon_reports" %}
   Distance orthodromique × coefficient d'élongation 1,15.
+  {% endif %}
   Détail : {{ brand.site_public }}/about/anemos.
 </div>
 

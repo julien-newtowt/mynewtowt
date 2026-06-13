@@ -36,14 +36,17 @@ from app.routers import (
     client_dashboard_router,
     commercial_router,
     crew_router,
+    devis_router,
     escale_router,
     finance_router,
     kpi_router,
     modules_router,
     mrv_router,
     notifications_router,
+    onboard_router,
     planning_router,
     public_router,
+    pwa_router,
     seo_router,
     staff_auth_router,
     staff_booking_router,
@@ -93,6 +96,8 @@ def create_app() -> FastAPI:
     # --------------------------------------------------------------- Routers
     app.include_router(public_router.router)
     app.include_router(vitrine_router.router)
+    app.include_router(devis_router.router)
+    app.include_router(pwa_router.router)
     app.include_router(seo_router.router)
     app.include_router(api_v1_router.router)
     app.include_router(staff_auth_router.router)
@@ -126,6 +131,7 @@ def create_app() -> FastAPI:
     app.include_router(tickets_router.router)
     app.include_router(cashbox_router.router)
     app.include_router(modules_router.router)
+    app.include_router(onboard_router.router)
     app.include_router(chat_router.router)
     app.include_router(client_auth_router.router)
     app.include_router(client_dashboard_router.router)

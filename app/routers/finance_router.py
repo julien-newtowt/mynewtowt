@@ -5,6 +5,7 @@ Routes
 GET  /finance                        → finance_index
 GET  /finance/legs/{leg_id}/edit     → finance_leg_edit_form
 POST /finance/legs/{leg_id}          → finance_leg_upsert
+POST /finance/legs/{leg_id}/rollup   → finance_leg_rollup (FLX-05)
 GET  /finance/opex                   → finance_opex_list
 POST /finance/opex                   → finance_opex_create
 POST /finance/opex/{param_id}/edit   → finance_opex_edit
@@ -33,6 +34,7 @@ from app.models.leg import Leg
 from app.models.port import Port
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
+from app.services.finance_rollup import rollup_for_leg
 from app.templating import templates
 
 router = APIRouter(prefix="/finance", tags=["finance"])
@@ -228,6 +230,54 @@ async def finance_leg_upsert(
     )
 
     return RedirectResponse(url="/finance", status_code=303)
+
+
+# ──────────────────────────────────────────────────────────────
+# 3 bis. LegFinance rollup — consolidation depuis l'exploitation (FLX-05)
+# ──────────────────────────────────────────────────────────────
+
+
+@router.post("/legs/{leg_id}/rollup")
+async def finance_leg_rollup(
+    leg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("finance", "M")),
+) -> RedirectResponse:
+    """Recalcule la ligne LegFinance depuis les modules d'exploitation.
+
+    Revenu (bookings + commandes), coûts dockers, quote-part OPEX ;
+    pré-remplit les frais portuaires si vides ; « Autres coûts » reste
+    manuel (cf. services.finance_rollup).
+    """
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404, detail="Leg not found")
+
+    finance = await rollup_for_leg(db, leg)
+
+    await activity_record(
+        db,
+        action="finance_rollup",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="finance",
+        entity_type="leg_finance",
+        entity_id=finance.id,
+        entity_label=leg.leg_code,
+        detail=(
+            f"leg_id={leg_id} revenue={finance.revenue_eur} "
+            f"dockers={finance.docker_costs_eur} opex={finance.opex_share_eur} "
+            f"port_fees={finance.port_fees_eur} margin={finance.margin_eur}"
+        ),
+        ip_address=_client_ip(request),
+    )
+
+    target = f"/finance/legs/{leg_id}/edit"
+    if request.headers.get("hx-request"):
+        return RedirectResponse(url=target, status_code=303, headers={"HX-Redirect": target})
+    return RedirectResponse(url=target, status_code=303)
 
 
 # ──────────────────────────────────────────────────────────────

@@ -27,6 +27,9 @@ class WatchLog(Base):
     entry: Mapped[str] = mapped_column(Text, nullable=False)
     weather_summary: Mapped[str | None] = mapped_column(String(300))
 
+    # Dédoublonnage PWA offline — UUID généré côté navigateur (onboard-offline.js)
+    client_uuid: Mapped[str | None] = mapped_column(String(36), unique=True)
+
     # Signature de l'officier de quart (verrouille le log à la signature)
     signed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

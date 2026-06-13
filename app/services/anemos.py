@@ -5,27 +5,42 @@ déclenchée par le cycle de vie du booking à ``discharged``/``delivered``
 (cf. ``services/booking_lifecycle.py``) et peut aussi être appelée à la
 demande.
 
-La distance est résolue dans cet ordre :
-1. ``leg.distance_nm`` (persistée — source de vérité après 1ʳᵉ traversée) ;
-2. haversine depuis les coordonnées POL/POD (et on persiste le résultat
-   sur le leg pour les fois suivantes) ;
-3. table de paires de ports en dur (fallback historique V3.0).
+ENV-03 — régularisation sur le réel déclaré :
+- **distance** : Σ ``NoonReport.distance_24h_nm`` du leg quand le bord a
+  déclaré (``distance_source = 'noon_reports'``), sinon distance
+  planifiée (``'planned'``) résolue dans cet ordre :
+  1. ``leg.distance_nm`` (persistée — source de vérité après 1ʳᵉ traversée) ;
+  2. haversine depuis les coordonnées POL/POD (et on persiste le résultat
+     sur le leg pour les fois suivantes) ;
+  3. table de paires de ports en dur (fallback historique V3.0).
+- **émissions NEWTOWT** : consommations déclarées à bord (Σ fuel noon
+  reports × densité MDO × 3.206) allouées au booking pro-rata tonnage
+  (``method = 'declared'``), sinon facteur forfaitaire 1,5 g/t·km
+  (``method = 'theoretical'``).
+- **référence conventionnelle** : toujours 13,7 g/t·km sur la même
+  distance ; CO₂ évité = conventionnel − NEWTOWT, plancher à 0.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.anemos_certificate import AnemosCertificate
 from app.models.booking import Booking
 from app.models.leg import Leg
+from app.models.noon_report import NoonReport
 from app.models.port import Port
 from app.services.activity import record as activity_record
 from app.services.co2 import estimate as estimate_co2
+from app.services.mrv_export import CO2_EMISSION_FACTOR_MDO
+from app.services.mrv_sync import resolve_mdo_density
 from app.services.ports import haversine_nm
+
+# Statuts comptant dans la cargaison effective d'un leg (allocation pro-rata).
+_ALLOCATION_STATUSES = ("confirmed", "loaded", "at_sea", "discharged", "delivered")
 
 # Fallback historique (V3.0) — paires de ports connues, distance orthodromique.
 _DISTANCE_NM: dict[frozenset[str], Decimal] = {
@@ -67,8 +82,51 @@ def resolve_distance_nm(leg: Leg | None, pol: Port | None, pod: Port | None) -> 
     return _table_distance(getattr(pol, "locode", None), getattr(pod, "locode", None))
 
 
+async def _noon_total(db: AsyncSession, leg_id: int, column) -> Decimal:
+    """Somme d'une colonne NoonReport sur un leg (0 si rien de déclaré)."""
+    total = await db.scalar(
+        select(func.coalesce(func.sum(column), 0)).where(NoonReport.leg_id == leg_id)
+    )
+    return Decimal(str(total or 0))
+
+
+async def _booking_share(db: AsyncSession, booking: Booking) -> Decimal:
+    """Part du booking dans la cargaison effective du leg.
+
+    Pro-rata du tonnage (``total_weight_kg``) des bookings du leg en
+    statut actif (confirmed → delivered) ; fallback pro-rata palettes si
+    aucun poids n'est renseigné ; 1 si le leg n'a aucune cargaison
+    dénombrable (le booking porte alors tout).
+    """
+    weight_total = Decimal(
+        str(
+            await db.scalar(
+                select(func.coalesce(func.sum(Booking.total_weight_kg), 0))
+                .where(Booking.leg_id == booking.leg_id)
+                .where(Booking.status.in_(_ALLOCATION_STATUSES))
+            )
+            or 0
+        )
+    )
+    if weight_total > 0:
+        return (booking.total_weight_kg or Decimal("0")) / weight_total
+    palettes_total = await db.scalar(
+        select(func.coalesce(func.sum(Booking.total_palettes), 0))
+        .where(Booking.leg_id == booking.leg_id)
+        .where(Booking.status.in_(_ALLOCATION_STATUSES))
+    )
+    if palettes_total:
+        return Decimal(booking.total_palettes or 0) / Decimal(palettes_total)
+    return Decimal("1")
+
+
 async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertificate:
-    """Crée (ou retourne) le label Anemos d'un booking. Idempotent."""
+    """Crée (ou retourne) le label Anemos d'un booking. Idempotent.
+
+    ENV-03 : émissions NEWTOWT sur le réel déclaré à bord quand il existe
+    (``method = 'declared'``), sinon estimation forfaitaire
+    (``'theoretical'``). Cf. docstring module pour le détail du calcul.
+    """
     existing = (
         await db.execute(
             select(AnemosCertificate).where(AnemosCertificate.booking_id == booking.id)
@@ -81,13 +139,41 @@ async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertifi
     pol = await db.get(Port, leg.departure_port_id) if leg else None
     pod = await db.get(Port, leg.arrival_port_id) if leg else None
 
-    distance = resolve_distance_nm(leg, pol, pod)
-    # Persiste la distance sur le leg si elle n'y était pas (store-after-crossing).
-    if leg is not None and leg.distance_nm is None:
-        leg.distance_nm = distance
+    # a) Distance réelle parcourue (noon reports) sinon planifiée.
+    noon_distance = await _noon_total(db, booking.leg_id, NoonReport.distance_24h_nm)
+    if noon_distance > 0:
+        distance = noon_distance.quantize(Decimal("0.01"))
+        distance_source = "noon_reports"
+    else:
+        distance = resolve_distance_nm(leg, pol, pod)
+        distance_source = "planned"
+        # Persiste la distance sur le leg si elle n'y était pas (store-after-crossing).
+        if leg is not None and leg.distance_nm is None:
+            leg.distance_nm = distance
 
     tonnage = (booking.total_weight_kg or Decimal("0")) / Decimal("1000")
-    emission = estimate_co2(distance_nm=distance, tonnage_t=tonnage)
+    # Facteurs versionnés en base (ENV-02) — repli silencieux sur les constantes.
+    from app.services.co2 import get_factors
+
+    factors = await get_factors(db)
+    emission = estimate_co2(distance_nm=distance, tonnage_t=tonnage, factors=factors)
+
+    # b) Émissions NEWTOWT — réel déclaré à bord si disponible.
+    fuel_l = await _noon_total(db, booking.leg_id, NoonReport.fuel_consumed_24h_l)
+    if fuel_l > 0:
+        density = await resolve_mdo_density(db)  # t/m³
+        # litres × densité/1000 → tonnes fuel ; × 3.206 → t CO₂ ; × 1000 → kg.
+        leg_co2_kg = fuel_l * density * Decimal(str(CO2_EMISSION_FACTOR_MDO))
+        share = await _booking_share(db, booking)
+        towt_kg = (leg_co2_kg * share).quantize(Decimal("0.001"))
+        method = "declared"
+    else:
+        towt_kg = emission.towt_co2_kg
+        method = "theoretical"
+
+    # c) Référence conventionnelle : 13,7 g/t·km sur la même distance.
+    conventional_kg = emission.conventional_co2_kg
+    avoided_kg = max(conventional_kg - towt_kg, Decimal("0")).quantize(Decimal("0.001"))
 
     cert = AnemosCertificate(
         reference=f"ANEMOS-{booking.reference}",
@@ -96,9 +182,11 @@ async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertifi
         leg_id=booking.leg_id,
         tonnage_transported_t=tonnage,
         distance_nm=distance,
-        co2_emitted_kg=emission.towt_co2_kg,
-        co2_conventional_kg=emission.conventional_co2_kg,
-        co2_avoided_kg=emission.avoided_co2_kg,
+        co2_emitted_kg=towt_kg,
+        co2_conventional_kg=conventional_kg,
+        co2_avoided_kg=avoided_kg,
+        method=method,
+        distance_source=distance_source,
     )
     db.add(cert)
     await db.flush()

@@ -1,0 +1,43 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Devis émis — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial</span>
+    <h1 class="display">Devis émis</h1>
+    <p class="text-muted">100 derniers devis générés par l'outil public de cotation et le wizard de réservation.</p>
+  </div>
+  <a href="/commercial" class="btn btn-ghost">← Pilotage commercial</a>
+</header>
+
+<article class="card">
+  <table class="data-table">
+    <thead><tr><th>Référence</th><th>Émis le</th><th>Route</th><th>Palettes</th><th>Total</th><th>Demandeur</th><th>Grille</th><th>Validité</th></tr></thead>
+    <tbody>
+      {% for r in quotes %}
+      {% set q = r.quote %}
+      <tr>
+        <td><a href="/devis/{{ q.reference }}" class="mono">{{ q.reference }}</a></td>
+        <td class="text-muted text-sm">{{ q.created_at|datetime("%d/%m/%Y") }}</td>
+        <td><span class="mono">{{ q.pol_locode }} → {{ q.pod_locode }}</span></td>
+        <td>{{ q.palettes_total }}</td>
+        <td class="mono">{{ q.total_eur|money }}</td>
+        <td>
+          {% set company = q.contact_company or r.account_company %}
+          {% set email = q.contact_email or r.account_email %}
+          {{ company or '—' }}
+          {% if email %}<br/><small class="text-muted">{{ email }}</small>{% endif %}
+          {% if r.account_email %}<span class="pill pill-ok">Compte client</span>{% endif %}
+        </td>
+        <td class="mono">{{ q.grid_reference or '—' }}</td>
+        <td>{{ q.valid_until|date if q.valid_until else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="text-muted text-center">Aucun devis émis pour l'instant.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

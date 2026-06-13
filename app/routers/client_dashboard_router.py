@@ -4,7 +4,7 @@ Routes :
 - /me              dashboard summary
 - /me/bookings     list of bookings
 - /me/bookings/{ref} detail
-- /me/invoices     list of invoices
+- /me/invoices     legacy 301 → /me/documents (facturation hors plateforme)
 - /me/co2          CO2 certificates
 - /me/account      profile + security (incl. MFA setup/verify/disable)
 """
@@ -30,7 +30,6 @@ from app.config import settings
 from app.database import get_db
 from app.models.anemos_certificate import AnemosCertificate
 from app.models.booking import Booking
-from app.models.client_invoice import ClientInvoice
 from app.models.leg import Leg
 from app.models.notification import Notification
 from app.models.packing_list import PackingListDocument
@@ -252,21 +251,14 @@ async def track(
     )
 
 
-@router.get("/me/invoices", response_class=HTMLResponse)
-async def invoices(
-    request: Request,
-    client=Depends(get_current_client),
-    db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
-    res = await db.execute(
-        select(ClientInvoice)
-        .where(ClientInvoice.client_account_id == client.id)
-        .order_by(ClientInvoice.issued_at.desc())
-    )
-    return templates.TemplateResponse(
-        "client/invoices.html",
-        {"request": request, "client": client, "invoices": list(res.scalars().all())},
-    )
+@router.get("/me/invoices")
+async def invoices_legacy_redirect() -> RedirectResponse:
+    """COM-05 — la facturation est émise par la comptabilité hors plateforme.
+
+    Les anciens liens /me/invoices redirigent vers le hub documents
+    (booking notes). Le modèle ClientInvoice et services/invoicing restent
+    dormants pour un futur export comptable."""
+    return RedirectResponse(url="/me/documents", status_code=301)
 
 
 @router.get("/me/documents", response_class=HTMLResponse)

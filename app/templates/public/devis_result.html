@@ -1,0 +1,88 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}Devis {{ quote.reference }} — NewTowt{% endblock %}
+{% block description %}Devis de fret maritime à la voile {{ quote.reference }}.{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-inner">
+    <span class="hero-kicker">Devis</span>
+    <h1 class="hero-title">Devis <span class="mono">{{ quote.reference }}</span></h1>
+    <p class="hero-lead">
+      {{ pol.name if pol else quote.pol_locode }}
+      {%- if pol and pol.country %} {{ pol.country|flag }}{% endif %}
+      →
+      {{ pod.name if pod else quote.pod_locode }}
+      {%- if pod and pod.country %} {{ pod.country|flag }}{% endif %}
+      {% if leg %} · traversée <span class="mono">{{ leg.leg_code }}</span>{% endif %}
+      {% if quote.etd_snapshot %} · départ prévu {{ quote.etd_snapshot|date }}{% endif %}
+    </p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-inner" style="max-width:760px;">
+
+    <div class="card">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="text-align:left;border-bottom:2px solid var(--teal);">
+            <th style="padding:.5rem .25rem;">Désignation</th>
+            <th style="padding:.5rem .25rem;text-align:right;">Qté</th>
+            <th style="padding:.5rem .25rem;text-align:right;">PU</th>
+            <th style="padding:.5rem .25rem;text-align:right;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in quote.lines %}
+          <tr style="border-bottom:1px solid var(--sable);">
+            <td style="padding:.5rem .25rem;">
+              {{ line.label }}
+              {% if line.kind == 'option' %}<span class="pill">option</span>{% endif %}
+            </td>
+            <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ line.quantity|round(2) }}</td>
+            <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ line.unit_price_eur|money }}</td>
+            <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ line.total_eur|money }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3" style="padding:.5rem .25rem;text-align:right;">Fret</td>
+            <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ quote.freight_subtotal_eur|money }}</td>
+          </tr>
+          <tr>
+            <td colspan="3" style="padding:.5rem .25rem;text-align:right;">Options</td>
+            <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ quote.options_total_eur|money }}</td>
+          </tr>
+          <tr style="border-top:2px solid var(--teal);font-weight:700;">
+            <td colspan="3" style="padding:.5rem .25rem;text-align:right;">Total HT</td>
+            <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ quote.total_eur|money }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <p class="form-hint" style="margin-top:var(--sp-4);">
+      Grille appliquée : <span class="mono">{{ quote.grid_reference or '—' }}</span>
+      {% if quote.client_account_id %}(grille client){% else %}(grille de la route){% endif %}
+      · {{ quote.palettes_total }} palette(s)
+      {% if quote.tonnage_t %} · {{ quote.tonnage_t|round(2) }} t{% endif %}
+      {% if quote.hazardous %} · IMDG{% endif %}<br />
+      Devis indicatif HT, hors droits et taxes locales, valable jusqu'au
+      <strong>{{ quote.valid_until|date if quote.valid_until else '—' }}</strong>.
+      La capacité est confirmée par notre équipe à la réservation.
+    </p>
+
+    <div style="display:flex;gap:var(--sp-3);flex-wrap:wrap;margin-top:var(--sp-5);">
+      <a class="btn btn-primary" href="/devis/{{ quote.reference }}.pdf">Télécharger le PDF</a>
+      {% if leg %}
+      <a class="btn btn-secondary" href="/booking/new/{{ leg.leg_code }}">Réserver cette traversée</a>
+      {% else %}
+      <a class="btn btn-secondary" href="/booking/new">Réserver</a>
+      {% endif %}
+      <a class="btn btn-ghost" href="/contact">Parler à un commercial</a>
+      <a class="btn btn-ghost" href="/devis">Nouveau devis</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
