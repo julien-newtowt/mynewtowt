@@ -95,47 +95,101 @@ valeur alimente déjà la marge). Packing list : pas de champ `loading_date`
 ni de `leg_id` sur `PackingList` (FK commande) → cascade PL sans objet
 tant que la fusion des rails (§4.2) n'a pas ajouté `booking_id`.
 
-## 4. Refontes profondes — séquencement (à venir)
+## 4. Blocs d'évolution — prêts à lancer
 
-Ces trois directions partagent une cible : **un seul modèle de vente, un seul
-modèle cargo**, alimenté soit par l'opérateur (back-office), soit par le client
-(front). Elles se font par étapes réversibles, schéma additif d'abord.
+> Cible commune des blocs B1→B3 : **un seul modèle de vente, un seul modèle
+> cargo**, alimenté soit par l'opérateur (back-office), soit par le client
+> (front). Chaque bloc est une fiche de lancement autonome (objectif,
+> périmètre, schéma, étapes, acceptance, dépendances). Migrations additives,
+> étapes réversibles. **Prochaine révision Alembic libre : `0029`.**
+> Ordre recommandé : **B1 → B2 → B3** (B4/B5 indépendants, lançables en parallèle).
 
-### 4.1 Fusion des rails A (commandes) et B (bookings)
-**Cible** : un objet de réservation unique, deux canaux de saisie. Le canal
-est une propriété (`channel ∈ {operator, client}`), pas un modèle séparé.
+### Bloc B1 — Booking → packing list + portail `/p/{token}` 🟢 GO
+**Pourquoi** (direction) : « Rail B booking doit emmener vers Packing lists +
+portail /p/token ». Première brique tangible de la fusion des rails.
+**Périmètre** : `app/models/packing_list.py`, `app/services/packing_list.py`,
+`app/services/booking_lifecycle.py`, migration `0029`, e-mail/notif client.
+**Schéma** : `packing_lists.booking_id` (FK bookings, nullable, à côté de
+`order_id` qui devient nullable) + contrainte « order_id XOR booking_id ».
 **Étapes** :
-1. Pont de capacité (✅ déjà : `capacity.py` somme bookings + commandes).
-2. **Booking → packing list + portail** (§4.2) : rail B atteint la chaîne cargo.
-3. Vue unifiée du remplissage et du CA par leg (référentiel client commun
-   `client_accounts ↔ commercial_clients`, ✅ lien déjà posé en cycle 2).
-4. Convergence des statuts (commande/booking) sur une seule machine d'états.
-5. Bascule des écrans : un back-office « réservations » unique (filtre canal).
+1. Migration `0029` : `booking_id` nullable + index ; `order_id` nullable.
+2. `packing_list.create_for_booking(db, booking)` (jumeau de la création
+   rail A) : génère le token 24 hex / 90 j, pré-remplit les champs TOWT
+   depuis le booking (leg, POL/POD, références).
+3. Hook : dans `booking_lifecycle.on_status_change(..., "confirmed")`, appeler
+   `create_for_booking` (idempotent) + notifier le client (lien portail).
+4. Portail `/p/{token}` : déjà agnostique du parent — vérifier l'affichage
+   quand la PL vient d'un booking (pas d'un order).
+**Acceptance** : confirmer un booking crée une PL + token ; le client la
+remplit via `/p/{token}` ; verrouillage et audit identiques au rail A.
+**Dépendances** : aucune (le lien `client_accounts ↔ commercial_clients` est
+déjà posé). **Débloque** : cascade dates → PL (champ `loading_date` à ajouter
+ici), et la vue cargo unifiée de B2.
 
-### 4.2 Booking → packing list + portail `/p/{token}`
-**Schéma** : `packing_lists.booking_id` (nullable, à côté de `order_id`),
-migration `0028`. **Service** : sur `booking → confirmed`
-(`booking_lifecycle.on_status_change`), créer la PL + token portail (réutilise
-`services/packing_list`), notifier le client. **Effet** : le client booking
-remplit sa packing list comme un chargeur du rail A — première brique tangible
-de la fusion.
+### Bloc B2 — Fusion du traitement des rails A (commandes) et B (bookings) 🟢 GO
+**Pourquoi** (direction) : « RAIL A et B doivent fusionner — le canal de vente
+est soit le backend (remplissage opérateur) soit le front (remplissage client) ».
+**Périmètre** : `app/models/booking.py` (+ `channel`), back-office réservations,
+`app/services/capacity.py` (✅ pont fait), vues commerciales.
+**Étapes** :
+1. Ajouter `channel ∈ {operator, client}` sur le booking (migration) ;
+   les commandes opérateur deviennent des bookings `channel=operator`.
+2. Machine d'états unique (réconcilier `ORDER_STATUSES` et booking statuses).
+3. Back-office « Réservations » unique avec filtre par canal ; vue de
+   remplissage et CA par leg consolidée (bookings tous canaux).
+4. Migration de reprise : convertir les `orders` existants en bookings
+   `operator` (script idempotent, dry-run d'abord).
+**Acceptance** : un opérateur et un client créent la même entité ; capacité,
+CA et remplissage par leg sont lus en un seul endroit ; aucun double comptage.
+**Dépendances** : B1 (le rail B doit déjà atteindre la chaîne cargo).
+**Risque** : Med — reprise de données ; livrer derrière un feature flag
+(`feature_flags` existe, inutilisé).
 
-### 4.3 Stowage 18 zones ↔ Escale (opérations + dockers)
-**Cible** : le plan d'arrimage et les vacations dockers parlent le même langage
-de cale. **Étapes** : exposer l'occupation par cale (`hold`) du stowage aux
-docker shifts (cadence par cale) ; à l'auto-assignation, refléter l'ordre de
-chargement dans la planification des shifts ; remonter la position cale d'un
-batch sinistré au claim (auto-zone, prescrit).
+### Bloc B3 — Stowage 18 zones ↔ Escale (opérations + dockers) 🟡 GO conditionnel
+**Pourquoi** (direction) : « Le plan d'arrimage 18 zones doit connecter avec
+Escale : opérations + dockers ».
+**Périmètre** : `app/services/stowage.py`, `app/models/stowage.py`,
+`app/routers/escale_router.py`, `app/models/escale.py` (lien cale↔shift).
+**Étapes** :
+1. Exposer l'occupation par cale (`hold`) du plan d'arrimage.
+2. Lier `DockerShift.hold` aux zones du stowage (cadence palettes/heure par
+   cale) ; à l'auto-assignation, refléter l'ordre de chargement dans la
+   planification des vacations.
+3. Auto-zone des claims cargo : remonter la position cale d'un batch sinistré
+   (prescrit, FLX-10).
+**Acceptance** : ouvrir une vacation docker affiche la cale et son
+remplissage ; un claim cargo connaît sa zone d'arrimage.
+**Dépendances** : aucune dure ; bénéficie de B1/B2 (batches issus des deux
+canaux). **Statut** : GO dès qu'une ressource se libère après B1.
 
-## 5. Actions d'exploitation (hors code)
+### Bloc B4 — Escalade SLA des tickets (FLX-08) 🟢 GO
+**Périmètre** : `app/models/ticket.py` (+ `escalated_at`), `app/services/tickets.py`,
+`app/services/notifications.py`, tâche de scan, migration.
+**Étapes** : champ `escalated_at` ; au dépassement de `sla_target_at` (P1 2 h /
+P2 8 h / P3 72 h), notifier le rôle `manager_maritime` une seule fois
+(dédup via `escalated_at`) ; déclenché par un scan (cron Power Automate
+existant, ou au chargement du kanban). **Acceptance** : un ticket P1 dépassé
+notifie le manager une fois et apparaît « en retard ».
 
-1. `alembic upgrade head` (migrations 0023→0027 ; 0028 à venir avec §4.2).
-2. Variables d'env : `MAPTILER_TOKEN` (ou `MAPBOX_TOKEN`),
-   `COMMERCIAL_INBOX_EMAIL`, `PIPEDRIVE_API_TOKEN` ; puis
-   `docker compose up -d --force-recreate app`.
-3. Commercial : générer les grilles par défaut, **relire les taux** (formule
-   OPEX), relier les comptes plateforme aux clients négociés.
-4. Lancer `python -m scripts.renumber_legs` (dry-run) puis `--yes` après revue.
+### Bloc B5 — Contrôle qualité MRV ROB ±2 t 🟢 GO
+**Périmètre** : `app/services/mrv_sync.py` / recalcul MRV, `app/models/mrv.py`
+(`quality_status`, `quality_notes`). **Étape** : à la génération MRV depuis
+noon report, comparer ROB déclaré vs ROB calculé (précédent + bunkering −
+consommation) ; si |écart| > 2 t → `quality_status="warning"` + note.
+**Acceptance** : un écart > 2 t lève un warning visible à l'export DNV.
+
+## 5. Actions d'exploitation (hors code) — pré-déploiement
+
+1. **Migrations** : `alembic upgrade head` (chaîne `0023 → 0028` appliquée
+   cette itération ; `0029+` viendront avec B1).
+2. **Variables d'env** : lancer **`./scripts/setup_env.sh`** (idempotent ;
+   complète `MAPTILER_TOKEN`/`MAPBOX_TOKEN`, `COMMERCIAL_INBOX_EMAIL`,
+   `PIPEDRIVE_API_TOKEN`, `SMTP_HOST`, et vérifie `SECRET_KEY`/`DATABASE_URL`),
+   puis `docker compose up -d --force-recreate app`.
+3. **Commercial** : générer les grilles par défaut, **relire les taux**
+   (formule OPEX), relier les comptes plateforme aux clients négociés.
+4. **Planning** : `python -m scripts.renumber_legs` (dry-run) puis `--yes`
+   après revue.
 
 ---
 
