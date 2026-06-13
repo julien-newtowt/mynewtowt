@@ -171,7 +171,6 @@ _LEGACY_ROLE_MAP: dict[str, str] = {
     "manager": "operation",
     "operator": "operation",
     "viewer": "data_analyst",
-    "gestionnaire_passagers": "commercial",  # deprecated
 }
 
 _LEVEL_ORDER: dict[str, int] = {"C": 1, "M": 2, "S": 3}

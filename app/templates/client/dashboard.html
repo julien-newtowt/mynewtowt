@@ -15,6 +15,32 @@
   </a>
 </header>
 
+{% if alert_items %}
+<section class="card" style="border-left:4px solid var(--cuivre); margin-bottom:var(--space-4);">
+  <div class="flex justify-between items-center mb-2">
+    <h2 style="margin:0;">
+      <i data-lucide="bell-ring"></i>
+      {% if lang == 'en' %}Alerts{% else %}Alertes{% endif %}
+      <span class="pill pill-warn">{{ notif_unread }}</span>
+    </h2>
+    <a href="/me/notifications" class="btn btn-ghost">
+      {% if lang == 'en' %}See all →{% else %}Voir tout →{% endif %}
+    </a>
+  </div>
+  <ul style="list-style:none; margin:0; padding:0;">
+    {% for n in alert_items %}
+    <li style="padding:8px 0; border-bottom:1px solid var(--sable);">
+      <a href="{{ n.link or '/me/notifications' }}" style="text-decoration:none;">
+        <strong>{{ n.title }}</strong>
+        {% if n.detail %}<span class="text-muted"> — {{ n.detail }}</span>{% endif %}
+        <span class="text-muted text-sm"> · {{ n.created_at|date }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 <section class="kpi-strip">
   <div class="kpi-card">
     <div class="label">{% if lang == 'en' %}Active shipments{% else %}Expéditions en cours{% endif %}</div>

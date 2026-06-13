@@ -53,11 +53,6 @@ async def presse(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("public/presse.html", {"request": request})
 
 
-@router.get("/passagers", response_class=HTMLResponse)
-async def passagers(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("public/passagers.html", {"request": request})
-
-
 @router.get("/actualites", response_class=HTMLResponse)
 async def actualites(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Actualités — billets de catégorie ``actualite`` (pont depuis LinkedIn)."""

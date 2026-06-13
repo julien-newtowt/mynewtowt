@@ -5,7 +5,6 @@ Auth: staff with `planning` permission (C/M/S per matrix).
 
 from __future__ import annotations
 
-import contextlib
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -301,18 +300,6 @@ async def leg_detail(
     pol = await db.get(Port, leg.departure_port_id)
     pod = await db.get(Port, leg.arrival_port_id)
 
-    # Météo POL @ ETD + POD @ ETA (best-effort, jamais bloquant)
-    from app.services import weather as wx
-
-    weather_pol = None
-    weather_pod = None
-    if pol and pol.latitude is not None and pol.longitude is not None and leg.etd:
-        with contextlib.suppress(Exception):
-            weather_pol = await wx.fetch_at(pol.latitude, pol.longitude, leg.etd)
-    if pod and pod.latitude is not None and pod.longitude is not None and leg.eta:
-        with contextlib.suppress(Exception):
-            weather_pod = await wx.fetch_at(pod.latitude, pod.longitude, leg.eta)
-
     return templates.TemplateResponse(
         "staff/planning/leg_detail.html",
         {
@@ -322,10 +309,6 @@ async def leg_detail(
             "vessel": vessel,
             "pol": pol,
             "pod": pod,
-            "weather_pol": weather_pol,
-            "weather_pol_summary": wx.summarize(weather_pol),
-            "weather_pod": weather_pod,
-            "weather_pod_summary": wx.summarize(weather_pod),
         },
     )
 
@@ -443,10 +426,6 @@ async def delete_leg_action(
                 "vessel": vessel,
                 "pol": pol,
                 "pod": pod,
-                "weather_pol": None,
-                "weather_pol_summary": "—",
-                "weather_pod": None,
-                "weather_pod_summary": "—",
                 "delete_error": str(e),
             },
             status_code=400,
@@ -558,6 +537,7 @@ async def public_share(
         legs = [leg for leg in legs if leg.is_bookable]
 
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    vessels_by_id = {v.id: v for v in vessels}
     port_ids = {leg.departure_port_id for leg in legs} | {leg.arrival_port_id for leg in legs}
     ports = (
         {
@@ -567,14 +547,29 @@ async def public_share(
         if port_ids
         else {}
     )
-    gantt_rows = _build_gantt_rows(
-        vessels=vessels,
-        legs=legs,
-        window_start=now - timedelta(days=7),
-        window_end=now + timedelta(days=GANTT_WINDOW_DAYS),
-        ports=ports,
-        conflict_ids=set(),
-    )
+
+    # Tableau commercial : une ligne par traversée, triée par date de départ.
+    table_rows: list[dict] = []
+    for leg in sorted(legs, key=lambda li: li.etd):
+        vessel = vessels_by_id.get(leg.vessel_id)
+        pol = ports.get(leg.departure_port_id)
+        pod = ports.get(leg.arrival_port_id)
+        transit_hours = (leg.eta - leg.etd).total_seconds() / 3600 if leg.eta and leg.etd else None
+        transit_days = round(transit_hours / 24, 1) if transit_hours else None
+        table_rows.append(
+            {
+                "leg_code": leg.leg_code,
+                "vessel_code": vessel.code if vessel else "",
+                "vessel_name": vessel.name if vessel else "",
+                "pol": pol,
+                "pod": pod,
+                "etd": leg.etd,
+                "eta": leg.eta,
+                "transit_days": transit_days,
+                "status": leg.status,
+                "is_bookable": leg.is_bookable,
+            }
+        )
 
     return templates.TemplateResponse(
         "public/planning_share.html",
@@ -582,9 +577,8 @@ async def public_share(
             "request": request,
             "share": share,
             "vessels": vessels,
-            "legs": legs,
-            "ports": ports,
-            "gantt_rows": gantt_rows,
+            "table_rows": table_rows,
+            "generated_at": now,
         },
     )
 

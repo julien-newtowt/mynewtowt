@@ -111,6 +111,10 @@
   {% if distance_source != "noon_reports" %}
   Distance orthodromique × coefficient d'élongation 1,15.
   {% endif %}
+  {% if distance_source == "unverified" %}
+  <strong>Distance forfaitaire non vérifiée</strong> — coordonnées de port manquantes ;
+  valeur à confirmer avant usage réglementaire.
+  {% endif %}
   Détail : {{ brand.site_public }}/about/anemos.
 </div>
 

@@ -10,17 +10,19 @@ from app.services import anemos, invoicing
 # --- invoicing ---------------------------------------------------------------
 
 
-def test_compute_amounts_french_vat() -> None:
+def test_compute_amounts_vat_exempt_maritime() -> None:
+    # Transport maritime international exonéré de TVA (art. 262 II CGI) → 0 %.
     excl, vat, incl = invoicing.compute_amounts(Decimal("100"))
     assert excl == Decimal("100.00")
-    assert vat == Decimal("20.00")
-    assert incl == Decimal("120.00")
+    assert vat == Decimal("0.00")
+    assert incl == Decimal("100.00")
 
 
 def test_compute_amounts_rounds_to_cents() -> None:
     excl, vat, incl = invoicing.compute_amounts(Decimal("33.33"))
-    assert vat == Decimal("6.67")  # 33.33 * 0.20 = 6.666 → 6.67
+    assert vat == Decimal("0.00")  # exonéré
     assert incl == excl + vat
+    assert incl == Decimal("33.33")
 
 
 def test_invoice_reference_format() -> None:

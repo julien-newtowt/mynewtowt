@@ -66,6 +66,9 @@ async def dashboard(
         )
     )
     notif_unread = await notifications.count_unread(db, client_id=client.id)
+    # Alertes proactives affichées dès la connexion (retard / décalage ETA…).
+    all_notifs = await notifications.list_for(db, client_id=client.id, limit=20)
+    alert_items = [n for n in all_notifs if not n.is_read][:5]
     return templates.TemplateResponse(
         "client/dashboard.html",
         {
@@ -75,6 +78,7 @@ async def dashboard(
             "active_count": active_count,
             "co2_avoided_kg": float(co2_avoided or 0),
             "notif_unread": notif_unread,
+            "alert_items": alert_items,
         },
     )
 

@@ -65,10 +65,18 @@ def _table_distance(pol_locode: str | None, pod_locode: str | None) -> Decimal:
     return _DEFAULT_DISTANCE_NM
 
 
-def resolve_distance_nm(leg: Leg | None, pol: Port | None, pod: Port | None) -> Decimal:
-    """Distance NM pour un leg, selon l'ordre persistée → haversine → table."""
+def resolve_distance_with_source(
+    leg: Leg | None, pol: Port | None, pod: Port | None
+) -> tuple[Decimal, str]:
+    """(distance NM, source) — persistée → haversine → table → forfait.
+
+    ``source`` ∈ {``leg_persisted``, ``haversine``, ``port_table``,
+    ``unverified``}. ``unverified`` signale le repli forfaitaire (ports
+    sans coordonnées et hors table) : il **doit** être mentionné sur tout
+    document client (cf. certificat Anemos) — jamais silencieux.
+    """
     if leg is not None and leg.distance_nm is not None:
-        return Decimal(leg.distance_nm)
+        return Decimal(leg.distance_nm), "leg_persisted"
     if (
         pol is not None
         and pod is not None
@@ -78,8 +86,17 @@ def resolve_distance_nm(leg: Leg | None, pol: Port | None, pod: Port | None) -> 
         and pod.longitude is not None
     ):
         nm = haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude)
-        return Decimal(str(round(nm, 2)))
-    return _table_distance(getattr(pol, "locode", None), getattr(pod, "locode", None))
+        return Decimal(str(round(nm, 2))), "haversine"
+    pol_locode = getattr(pol, "locode", None)
+    pod_locode = getattr(pod, "locode", None)
+    if pol_locode and pod_locode and frozenset({pol_locode, pod_locode}) in _DISTANCE_NM:
+        return _DISTANCE_NM[frozenset({pol_locode, pod_locode})], "port_table"
+    return _DEFAULT_DISTANCE_NM, "unverified"
+
+
+def resolve_distance_nm(leg: Leg | None, pol: Port | None, pod: Port | None) -> Decimal:
+    """Distance NM pour un leg (cf. ``resolve_distance_with_source``)."""
+    return resolve_distance_with_source(leg, pol, pod)[0]
 
 
 async def _noon_total(db: AsyncSession, leg_id: int, column) -> Decimal:
@@ -145,10 +162,10 @@ async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertifi
         distance = noon_distance.quantize(Decimal("0.01"))
         distance_source = "noon_reports"
     else:
-        distance = resolve_distance_nm(leg, pol, pod)
-        distance_source = "planned"
-        # Persiste la distance sur le leg si elle n'y était pas (store-after-crossing).
-        if leg is not None and leg.distance_nm is None:
+        distance, distance_source = resolve_distance_with_source(leg, pol, pod)
+        # Persiste la distance sur le leg seulement si elle est fiable
+        # (jamais le forfait « unverified », qui doit rester signalé).
+        if leg is not None and leg.distance_nm is None and distance_source != "unverified":
             leg.distance_nm = distance
 
     tonnage = (booking.total_weight_kg or Decimal("0")) / Decimal("1000")

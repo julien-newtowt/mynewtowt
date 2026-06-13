@@ -68,7 +68,8 @@
       · {{ quote.palettes_total }} palette(s)
       {% if quote.tonnage_t %} · {{ quote.tonnage_t|round(2) }} t{% endif %}
       {% if quote.hazardous %} · IMDG{% endif %}<br />
-      Devis indicatif HT, hors droits et taxes locales, valable jusqu'au
+      Transport maritime international exonéré de TVA (art. 262 II CGI) — montants nets.<br />
+      Devis indicatif, hors droits et frais locaux, valable jusqu'au
       <strong>{{ quote.valid_until|date if quote.valid_until else '—' }}</strong>.
       La capacité est confirmée par notre équipe à la réservation.
     </p>

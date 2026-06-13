@@ -9,6 +9,7 @@ Reprises de la V3.0.0 :
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from datetime import UTC, datetime
@@ -36,7 +37,7 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import WatchLog
 from app.permissions import require_permission
-from app.services import mrv_sync
+from app.services import mrv_sync, notifications
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.signature import (
@@ -240,6 +241,18 @@ async def declare_eta_shift(
         entity_label=f"leg={leg_id} reason={reason}",
         ip_address=_client_ip(request),
     )
+    # Alertes : commercial (interne) + clients impactés (extranet /me).
+    with contextlib.suppress(Exception):
+        await notifications.notify_eta_shift(db, leg.leg_code, leg_id, reason)
+    with contextlib.suppress(Exception):
+        await notifications.notify_clients_eta_shift(
+            db,
+            leg_id=leg_id,
+            leg_code=leg.leg_code,
+            previous_eta=shift.previous_eta,
+            new_eta=shift.new_eta,
+            reason=reason,
+        )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 
