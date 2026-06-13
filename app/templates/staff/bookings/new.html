@@ -1,0 +1,129 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Nouvelle réservation (opérateur) — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<a href="/staff/bookings" class="btn btn-ghost mb-3">← Réservations</a>
+
+<header class="mb-4">
+  <span class="kicker">Réservation · rail opérateur</span>
+  <h1 class="display">Nouvelle réservation pour un client</h1>
+  <p class="text-muted">
+    L'opérateur réserve de l'espace en cale au nom d'un client connu. La
+    réservation est créée puis soumise directement (statut « submitted »),
+    prête pour la confirmation. Le client est notifié.
+  </p>
+</header>
+
+{% if error %}
+  <div class="alert alert-error mb-4" role="alert"><strong>Erreur :</strong> {{ error }}</div>
+{% endif %}
+
+{% if not accounts %}
+  <div class="alert alert-warn" role="alert">Aucun compte client vérifié. Créez d'abord un compte client.</div>
+{% elif not legs %}
+  <div class="alert alert-warn" role="alert">Aucune traversée ouverte à la réservation (bookable + capacité disponible).</div>
+{% else %}
+<form method="post" action="/staff/bookings/new" class="card">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <h2 class="card-title">Client &amp; traversée</h2>
+  <div class="grid grid-2 gap-3">
+    <div class="field">
+      <label for="client_account_id">Client (compte vérifié)</label>
+      <select id="client_account_id" name="client_account_id" required>
+        <option value="">— Sélectionner —</option>
+        {% for a in accounts %}
+          <option value="{{ a.id }}">{{ a.company_name }} · {{ a.email }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="leg_id">Traversée (leg réservable)</label>
+      <select id="leg_id" name="leg_id" required>
+        <option value="">— Sélectionner —</option>
+        {% for item in legs %}
+          <option value="{{ item.leg.id }}">
+            {{ item.leg.leg_code }} ·
+            {{ item.pol.locode if item.pol else '?' }} → {{ item.pod.locode if item.pod else '?' }} ·
+            ETD {{ item.leg.etd|date }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <h2 class="card-title mt-4">Lignes cargo</h2>
+  <p class="text-muted text-sm mb-3">
+    Renseignez une ou plusieurs lignes. Les lignes vides (sans nombre ni
+    description) sont ignorées.
+  </p>
+
+  {% for i in cargo_rows %}
+    <fieldset class="field" style="border:1px solid var(--border, #ddd);border-radius:8px;padding:var(--space-3);margin-bottom:var(--space-3);">
+      <legend class="text-sm text-muted">Ligne {{ i + 1 }}</legend>
+      <div class="grid grid-3 gap-3">
+        <div class="field">
+          <label for="items-{{ i }}-format">Format</label>
+          <select id="items-{{ i }}-format" name="items-{{ i }}-format">
+            <option value="">—</option>
+            <option value="EPAL">EPAL — Europalette</option>
+            <option value="USPAL">USPAL — US Pallet</option>
+            <option value="PORTPAL">PORTPAL — Portuaire</option>
+            <option value="IBC">IBC</option>
+            <option value="BIGBAG">BIGBAG</option>
+            <option value="BARRIQUE120">Barrique 120 L</option>
+            <option value="BARRIQUE140">Barrique 140 L</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="items-{{ i }}-count">Nombre</label>
+          <input id="items-{{ i }}-count" name="items-{{ i }}-count" type="number" min="0" max="1000" value="0" />
+        </div>
+        <div class="field">
+          <label for="items-{{ i }}-unit_weight_kg">Poids unitaire (kg)</label>
+          <input id="items-{{ i }}-unit_weight_kg" name="items-{{ i }}-unit_weight_kg" type="number" step="0.1" min="0" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="items-{{ i }}-description">Description marchandise</label>
+        <input id="items-{{ i }}-description" name="items-{{ i }}-description" type="text" maxlength="500" placeholder="Ex : caisses de vin rouge Bordeaux AOC" />
+      </div>
+      <div class="flex gap-4">
+        <label class="flex gap-2" style="align-items:center;">
+          <input type="checkbox" name="items-{{ i }}-stackable" checked /> Empilable
+        </label>
+        <label class="flex gap-2" style="align-items:center;">
+          <input type="checkbox" name="items-{{ i }}-hazardous" /> Marchandise dangereuse (IMDG)
+        </label>
+      </div>
+    </fieldset>
+  {% endfor %}
+
+  <h2 class="card-title mt-4">Logistique (optionnel)</h2>
+  <div class="grid grid-2 gap-3">
+    <div class="field">
+      <label for="pickup_address">Adresse d'enlèvement</label>
+      <textarea id="pickup_address" name="pickup_address" rows="2"></textarea>
+    </div>
+    <div class="field">
+      <label for="delivery_address">Adresse de livraison</label>
+      <textarea id="delivery_address" name="delivery_address" rows="2"></textarea>
+    </div>
+    <div class="field">
+      <label for="shipper_reference">Référence chargeur</label>
+      <input id="shipper_reference" name="shipper_reference" type="text" maxlength="100" />
+    </div>
+    <div class="field">
+      <label for="notes">Notes / contraintes</label>
+      <textarea id="notes" name="notes" rows="2"></textarea>
+    </div>
+  </div>
+
+  <div class="flex gap-2 mt-4">
+    <button type="submit" class="btn btn-primary">Créer et soumettre la réservation</button>
+    <a href="/staff/bookings" class="btn btn-ghost">Annuler</a>
+  </div>
+</form>
+{% endif %}
+
+{% endblock %}
