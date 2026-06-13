@@ -218,3 +218,78 @@ async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertifi
         entity_label=cert.reference,
     )
     return cert
+
+
+# ---------------------------------------------------------------------------
+# Reporting RSE annuel par client (ENV-06)
+# ---------------------------------------------------------------------------
+
+
+async def available_report_years(db: AsyncSession, client_account_id: int) -> list[int]:
+    """Années pour lesquelles le client a au moins un label, plus récentes d'abord."""
+    rows = (
+        await db.execute(
+            select(AnemosCertificate.issued_at).where(
+                AnemosCertificate.client_account_id == client_account_id
+            )
+        )
+    ).all()
+    years = sorted({r[0].year for r in rows if r[0] is not None}, reverse=True)
+    return years
+
+
+async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) -> dict:
+    """Agrège les labels Anemos d'un client sur une année.
+
+    Retourne les totaux (tonnage, distance, CO₂ évité/émis/référence), le
+    nombre d'expéditions, la part calculée sur données réelles déclarées
+    (méthode « declared »), et la liste détaillée des expéditions — base du
+    rapport RSE annuel téléchargeable (Bilan Carbone® scope 3 cat. 4).
+    """
+    res = await db.execute(
+        select(AnemosCertificate, Booking.reference, Leg.leg_code)
+        .join(Booking, Booking.id == AnemosCertificate.booking_id, isouter=True)
+        .join(Leg, Leg.id == AnemosCertificate.leg_id, isouter=True)
+        .where(AnemosCertificate.client_account_id == client_account_id)
+        .order_by(AnemosCertificate.issued_at.asc())
+    )
+    rows = []
+    tot_tonnage = Decimal("0")
+    tot_distance = Decimal("0")
+    tot_avoided = Decimal("0")
+    tot_emitted = Decimal("0")
+    tot_conventional = Decimal("0")
+    declared_count = 0
+    for cert, booking_ref, leg_code in res.all():
+        if cert.issued_at is None or cert.issued_at.year != year:
+            continue
+        if cert.method == "declared":
+            declared_count += 1
+        tot_tonnage += cert.tonnage_transported_t or Decimal("0")
+        tot_distance += cert.distance_nm or Decimal("0")
+        tot_avoided += cert.co2_avoided_kg or Decimal("0")
+        tot_emitted += cert.co2_emitted_kg or Decimal("0")
+        tot_conventional += cert.co2_conventional_kg or Decimal("0")
+        rows.append(
+            {
+                "reference": cert.reference,
+                "booking_ref": booking_ref,
+                "leg_code": leg_code,
+                "issued_at": cert.issued_at,
+                "tonnage_t": cert.tonnage_transported_t,
+                "distance_nm": cert.distance_nm,
+                "co2_avoided_kg": cert.co2_avoided_kg,
+                "method": cert.method,
+            }
+        )
+    return {
+        "year": year,
+        "shipments": rows,
+        "shipment_count": len(rows),
+        "declared_count": declared_count,
+        "total_tonnage_t": tot_tonnage,
+        "total_distance_nm": tot_distance,
+        "total_avoided_kg": tot_avoided,
+        "total_emitted_kg": tot_emitted,
+        "total_conventional_kg": tot_conventional,
+    }

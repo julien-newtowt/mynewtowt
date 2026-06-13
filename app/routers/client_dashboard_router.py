@@ -11,6 +11,8 @@ Routes :
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -368,9 +370,88 @@ async def anemos(
     for cert, booking_ref in res.all():
         cert.booking_ref = booking_ref
         certificates.append(cert)
+    from app.services import anemos as anemos_svc
+
+    report_years = await anemos_svc.available_report_years(db, client.id)
     return templates.TemplateResponse(
         "client/anemos.html",
-        {"request": request, "client": client, "certificates": certificates},
+        {
+            "request": request,
+            "client": client,
+            "certificates": certificates,
+            "report_years": report_years,
+        },
+    )
+
+
+@router.get("/me/anemos/report/{year}.pdf")
+async def anemos_annual_report_pdf(
+    year: int,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Rapport RSE annuel consolidé (ENV-06) — PDF téléchargeable."""
+    from app.services import anemos as anemos_svc
+
+    report = await anemos_svc.annual_report(db, client_account_id=client.id, year=year)
+    if report["shipment_count"] == 0:
+        raise HTTPException(status_code=404, detail="Aucune expédition pour cette année")
+
+    from weasyprint import HTML  # import tardif — deps natives lourdes
+
+    tpl = templates.get_template("pdf/anemos_annual_report.html")
+    html = tpl.render(
+        report=report,
+        client=client,
+        site_url=settings.site_url,
+        issued_at=datetime.now(UTC),
+    )
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="rapport-co2-{client.id}-{year}.pdf"'
+        },
+    )
+
+
+@router.get("/me/anemos/report/{year}.csv")
+async def anemos_annual_report_csv(
+    year: int,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Rapport RSE annuel (ENV-06) — export CSV pour intégration Bilan Carbone®."""
+    import csv
+    import io
+
+    from app.services import anemos as anemos_svc
+
+    report = await anemos_svc.annual_report(db, client_account_id=client.id, year=year)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(
+        ["reference", "booking", "leg", "issued_at", "tonnage_t", "distance_nm",
+         "co2_avoided_kg", "method"]
+    )
+    for s in report["shipments"]:
+        w.writerow(
+            [
+                s["reference"], s["booking_ref"] or "", s["leg_code"] or "",
+                s["issued_at"].date() if s["issued_at"] else "",
+                s["tonnage_t"], s["distance_nm"], s["co2_avoided_kg"], s["method"] or "",
+            ]
+        )
+    w.writerow([])
+    w.writerow(["TOTAL", "", "", year, report["total_tonnage_t"],
+                report["total_distance_nm"], report["total_avoided_kg"], ""])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="rapport-co2-{client.id}-{year}.csv"'
+        },
     )
 
 
