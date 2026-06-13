@@ -1,0 +1,82 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Funnel commercial — NEWTOWT{% endblock %}
+{% block content %}
+<header class="mb-4">
+  <span class="kicker">Commercial</span>
+  <h1 class="display">Funnel commercial</h1>
+  <p class="text-muted">Conversion devis → réservation → confirmation, sur {{ days }} jours.</p>
+</header>
+
+<div class="mb-4">
+  {% for d in [30, 90, 180, 365] %}
+    <a href="/commercial/funnel?days={{ d }}" class="btn {% if days == d %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">{{ d }} j</a>
+  {% endfor %}
+</div>
+
+{# ── KPI clés ───────────────────────────────────────────────────────── #}
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">Devis émis</div>
+    <div class="value">{{ report.quotes_total }}</div>
+    <div class="delta text-muted">{{ report.quotes_converted }} convertis</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Conversion devis → résa</div>
+    <div class="value text-accent">{{ report.quote_to_booking_pct }} %</div>
+    <div class="delta text-muted">devis → réservation</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Confirmé sous {{ report.confirm_promise_hours|int }} h</div>
+    <div class="value {% if report.confirm_under_promise_pct is not none and report.confirm_under_promise_pct < 80 %}text-error{% endif %}">
+      {% if report.confirm_under_promise_pct is not none %}{{ report.confirm_under_promise_pct }} %{% else %}—{% endif %}
+    </div>
+    <div class="delta text-muted">
+      délai médian
+      {% if report.confirm_delay_median_h is not none %}{{ report.confirm_delay_median_h }} h{% else %}—{% endif %}
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Self-service</div>
+    <div class="value">{% if report.self_service_pct is not none %}{{ report.self_service_pct }} %{% else %}—{% endif %}</div>
+    <div class="delta text-muted">vs back-office ({{ report.engaged_total }} engagées)</div>
+  </div>
+</section>
+
+{# ── Entonnoir par statut ───────────────────────────────────────────── #}
+<article class="card mb-4">
+  <h2>Entonnoir des réservations</h2>
+  {% set fmax = (report.bookings_by_status.values()|max) or 1 %}
+  {% for st in ['draft','submitted','confirmed','loaded','at_sea','discharged','delivered'] %}
+    {% set n = report.bookings_by_status.get(st, 0) %}
+    <div class="mb-2">
+      <div style="display:flex;justify-content:space-between;">
+        <span class="mono text-sm">{{ st }}</span><span class="mono">{{ n }}</span>
+      </div>
+      <div style="background:var(--sable);border-radius:4px;height:14px;overflow:hidden;">
+        <div style="height:14px;width:{{ (100 * n / fmax)|round(1) }}%;background:var(--teal);"></div>
+      </div>
+    </div>
+  {% endfor %}
+  <p class="text-muted text-sm mt-2">
+    Conversion submitted → confirmed : <strong>{{ report.submitted_to_confirmed_pct }} %</strong>.
+    Annulées : {{ report.bookings_by_status.get('cancelled', 0) }}.
+  </p>
+</article>
+
+{# ── Top routes ─────────────────────────────────────────────────────── #}
+<article class="card">
+  <h2>Top routes (réservations)</h2>
+  {% if report.top_routes %}
+  <table>
+    <thead><tr><th>Route</th><th class="text-right">Réservations</th></tr></thead>
+    <tbody>
+      {% for r in report.top_routes %}
+      <tr><td class="mono">{{ r.pol }} → {{ r.pod }}</td><td class="text-right mono">{{ r.count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucune réservation sur la période.</p>
+  {% endif %}
+</article>
+{% endblock %}

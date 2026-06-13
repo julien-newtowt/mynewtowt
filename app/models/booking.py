@@ -54,6 +54,12 @@ class Booking(Base):
     hazardous: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     oversize: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Devis d'origine (COM-13) : renseigné quand la réservation est issue d'un
+    # devis public — mesure la conversion devis → booking.
+    quote_id: Mapped[int | None] = mapped_column(
+        ForeignKey("quotes.id", ondelete="SET NULL"), index=True
+    )
+
     estimated_price_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     confirmed_price_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
 

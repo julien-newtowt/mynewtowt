@@ -739,6 +739,24 @@ async def devis_list(
     )
 
 
+@router.get("/funnel", response_class=HTMLResponse)
+async def funnel_dashboard(
+    request: Request,
+    days: int = 90,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Instrumentation du funnel commercial (COM-13)."""
+    from app.services.funnel import commercial_funnel
+
+    days = days if days in (30, 90, 180, 365) else 90
+    report = await commercial_funnel(db, days=days)
+    return templates.TemplateResponse(
+        "staff/commercial/funnel.html",
+        {"request": request, "user": user, "report": report, "days": days},
+    )
+
+
 # ────────────────────────────────────────────── Offers
 @router.get("/offers", response_class=HTMLResponse)
 async def offers_list(

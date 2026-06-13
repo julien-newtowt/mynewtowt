@@ -195,6 +195,11 @@ async def step_2_cargo_submit(
             status_code=400,
         )
 
+    # Devis d'origine (COM-13) : cookie/param posé par le parcours devis.
+    src_quote = await _resolve_source_quote(
+        db, leg, form.get("quote") or request.cookies.get("towt_pending_quote")
+    )
+
     try:
         booking, _quote = await create_draft(
             db,
@@ -205,6 +210,7 @@ async def step_2_cargo_submit(
             delivery_address=(form.get("delivery_address") or None),
             shipper_reference=(form.get("shipper_reference") or None),
             notes=(form.get("notes") or None),
+            quote_id=src_quote.id if src_quote else None,
         )
     except CapacityExceeded as e:
         return templates.TemplateResponse(
@@ -229,7 +235,28 @@ async def step_2_cargo_submit(
             status_code=400,
         )
 
-    return RedirectResponse(url=f"/booking/{booking.reference}/confirm", status_code=303)
+    if src_quote is not None and src_quote.status == "issued":
+        src_quote.status = "accepted"
+        await db.flush()
+
+    resp = RedirectResponse(url=f"/booking/{booking.reference}/confirm", status_code=303)
+    resp.delete_cookie("towt_pending_quote")
+    return resp
+
+
+async def _resolve_source_quote(db: AsyncSession, leg: Leg, quote_ref: str | None):
+    """Devis d'origine d'une réservation, si la référence correspond au leg."""
+    if not quote_ref:
+        return None
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        from app.services.quoting import find_quote
+
+        q = await find_quote(db, quote_ref)
+        if q is not None and (q.leg_id is None or q.leg_id == leg.id):
+            return q
+    return None
 
 
 @router.get("/{ref}/confirm", response_class=HTMLResponse)

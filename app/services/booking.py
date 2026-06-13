@@ -75,6 +75,7 @@ async def create_draft(
     shipper_reference: str | None,
     notes: str | None,
     channel: str = "client",
+    quote_id: int | None = None,
 ) -> tuple[Booking, GridQuote]:
     """Create a booking in draft status, with an indicative price.
 
@@ -118,6 +119,7 @@ async def create_draft(
         leg_id=leg.id,
         status="draft",
         channel=channel,
+        quote_id=quote_id,
         total_palettes=total_palettes,
         total_weight_kg=total_weight,
         hazardous=hazardous,
