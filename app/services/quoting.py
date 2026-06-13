@@ -18,6 +18,7 @@ Le prix public n'est plus affiché : il est restitué par l'outil de devis
 
 from __future__ import annotations
 
+import json
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -441,6 +442,7 @@ async def create_quote(
     palettes_total: int,
     tonnage_t: Decimal | None,
     hazardous: bool,
+    items: list[tuple[str, int]] | None = None,
     lang: str = "fr",
 ) -> Quote:
     quote = Quote(
@@ -464,6 +466,7 @@ async def create_quote(
         options_total_eur=computed.options_total_eur,
         total_eur=computed.total_eur,
         valid_until=(datetime.now(UTC) + timedelta(days=QUOTE_VALIDITY_DAYS)).date(),
+        items_json=json.dumps([[f, c] for f, c in items]) if items else None,
         lang=lang,
     )
     db.add(quote)

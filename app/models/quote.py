@@ -71,6 +71,9 @@ class Quote(Base):
     valid_until: Mapped[_date | None] = mapped_column(Date)
     lang: Mapped[str] = mapped_column(String(5), default="fr", nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Lignes palettes [[format, count], …] — JSON, pour pré-remplir le wizard
+    # de réservation lors de la conversion devis → booking.
+    items_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

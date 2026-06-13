@@ -12,6 +12,7 @@ Steps:
 
 from __future__ import annotations
 
+import json
 from datetime import UTC
 from decimal import Decimal
 
@@ -41,6 +42,9 @@ from app.services.capacity import (
 from app.templating import templates
 
 router = APIRouter(prefix="/booking", tags=["booking"])
+
+# Nombre maximal de lignes palettes balayées dans le formulaire cargo.
+_MAX_ITEM_ROWS = 30
 
 
 @router.get("/new", response_class=HTMLResponse)
@@ -82,6 +86,7 @@ async def step_1_search(
 async def step_2_cargo_form(
     request: Request,
     leg_code: str,
+    quote: str | None = None,
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -93,14 +98,14 @@ async def step_2_cargo_form(
         from app.services.ports import haversine_nm
 
         distance_nm = round(
-            haversine_nm(
-                pol.latitude,
-                pol.longitude,
-                pod.latitude,
-                pod.longitude,
-            ),
+            haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude),
             1,
         )
+
+    # Conversion devis → réservation : pré-remplissage depuis un devis
+    # (référence en query ?quote= ou cookie towt_pending_quote).
+    prefill = await _quote_prefill(db, leg, quote or request.cookies.get("towt_pending_quote"))
+
     return templates.TemplateResponse(
         "client/booking_step2.html",
         {
@@ -110,8 +115,34 @@ async def step_2_cargo_form(
             "pol": pol,
             "pod": pod,
             "distance_nm": distance_nm,
+            "prefill": prefill,
         },
     )
+
+
+async def _quote_prefill(db: AsyncSession, leg: Leg, quote_ref: str | None) -> dict | None:
+    """Pré-remplissage (format/quantité de la 1ʳᵉ ligne + réf devis) si le
+    devis correspond bien à la traversée. Best-effort, jamais bloquant."""
+    if not quote_ref:
+        return None
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        from app.services.quoting import find_quote
+
+        q = await find_quote(db, quote_ref)
+        if q is None or (q.leg_id is not None and q.leg_id != leg.id):
+            return None
+        raw = json.loads(q.items_json) if q.items_json else []
+        items = [
+            {"format": f, "count": c}
+            for f, c in raw[:_MAX_ITEM_ROWS]
+            if isinstance(c, int) and c > 0
+        ]
+        if not items:
+            return None
+        return {"reference": q.reference, "items": items}
+    return None
 
 
 @router.post("/new/{leg_code}", response_class=HTMLResponse)
@@ -126,11 +157,12 @@ async def step_2_cargo_submit(
 
     items_raw = []
     # form encoding : items-0-format, items-0-count, items-0-description ...
-    i = 0
-    while True:
+    # On balaie une plage bornée et on tolère les trous (lignes supprimées
+    # côté client) — pas d'arrêt au premier index manquant.
+    for i in range(_MAX_ITEM_ROWS):
         fmt = form.get(f"items-{i}-format")
         if fmt is None:
-            break
+            continue
         try:
             count = int(form.get(f"items-{i}-count", "0"))
             description = (form.get(f"items-{i}-description") or "").strip()
@@ -150,7 +182,6 @@ async def step_2_cargo_submit(
                 )
         except (ValueError, TypeError):
             pass
-        i += 1
 
     if not items_raw:
         return templates.TemplateResponse(
