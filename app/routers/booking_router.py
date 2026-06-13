@@ -43,6 +43,9 @@ from app.templating import templates
 
 router = APIRouter(prefix="/booking", tags=["booking"])
 
+# Nombre maximal de lignes palettes balayées dans le formulaire cargo.
+_MAX_ITEM_ROWS = 30
+
 
 @router.get("/new", response_class=HTMLResponse)
 async def step_1_search(
@@ -130,14 +133,15 @@ async def _quote_prefill(db: AsyncSession, leg: Leg, quote_ref: str | None) -> d
         q = await find_quote(db, quote_ref)
         if q is None or (q.leg_id is not None and q.leg_id != leg.id):
             return None
-        items = json.loads(q.items_json) if q.items_json else []
-        first = items[0] if items else None
-        return {
-            "reference": q.reference,
-            "format": first[0] if first else None,
-            "count": first[1] if first else None,
-            "extra_lines": items[1:] if len(items) > 1 else [],
-        }
+        raw = json.loads(q.items_json) if q.items_json else []
+        items = [
+            {"format": f, "count": c}
+            for f, c in raw[:_MAX_ITEM_ROWS]
+            if isinstance(c, int) and c > 0
+        ]
+        if not items:
+            return None
+        return {"reference": q.reference, "items": items}
     return None
 
 
@@ -153,11 +157,12 @@ async def step_2_cargo_submit(
 
     items_raw = []
     # form encoding : items-0-format, items-0-count, items-0-description ...
-    i = 0
-    while True:
+    # On balaie une plage bornée et on tolère les trous (lignes supprimées
+    # côté client) — pas d'arrêt au premier index manquant.
+    for i in range(_MAX_ITEM_ROWS):
         fmt = form.get(f"items-{i}-format")
         if fmt is None:
-            break
+            continue
         try:
             count = int(form.get(f"items-{i}-count", "0"))
             description = (form.get(f"items-{i}-description") or "").strip()
@@ -177,7 +182,6 @@ async def step_2_cargo_submit(
                 )
         except (ValueError, TypeError):
             pass
-        i += 1
 
     if not items_raw:
         return templates.TemplateResponse(
