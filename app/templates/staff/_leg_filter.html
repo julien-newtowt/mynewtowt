@@ -1,0 +1,78 @@
+{#
+  Module de filtrage standard — navire × année × leg (réutilisable).
+
+  Contexte : dict construit par services.leg_filter.build_leg_filter
+  (clés : vessels, selected_vessel, years, current_year, legs, leg_id,
+  selected_leg).
+
+  Usage :
+    {% from "staff/_leg_filter.html" import leg_filter, leg_summary %}
+    {{ leg_filter(f, "/escale") }}
+    {% call leg_summary(f.selected_leg, pol, pod, vessel_status, leg_locked) %}
+      ...boutons d'action spécifiques à la page...
+    {% endcall %}
+
+  CSP-safe : liens GET uniquement, classes Kairos (.vessel-tabs, .year-selector,
+  .leg-chip, .leg-summary…). ``base_path`` = racine de la page (ex. "/kpi").
+#}
+
+{% macro leg_filter(f, base_path, show_legs=True) %}
+<div class="planning-filters mb-3">
+  <div class="vessel-tabs">
+    {% for v in f.vessels %}
+    <a href="{{ base_path }}?vessel={{ v.code }}&year={{ f.current_year }}"
+       class="vessel-tab {% if f.selected_vessel == v.code %}active{% endif %}">
+      <i data-lucide="ship"></i> {{ v.name }}
+    </a>
+    {% endfor %}
+  </div>
+  <div class="year-selector">
+    {% for y in f.years %}
+    <a href="{{ base_path }}?vessel={{ f.selected_vessel }}&year={{ y }}"
+       class="year-btn {% if f.current_year == y %}active{% endif %}">{{ y }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if show_legs %}
+<div class="leg-selector">
+  {% for leg in f.legs %}
+  {% set terminated = leg.atd is not none and leg.ata is not none %}
+  {% set locked = leg.status == 'completed' %}
+  <a href="{{ base_path }}?vessel={{ f.selected_vessel }}&year={{ f.current_year }}&leg_id={{ leg.id }}"
+     class="leg-chip {% if f.leg_id == leg.id %}active{% endif %} {% if terminated %}terminated{% endif %} {% if locked %}locked{% endif %}">
+    <strong>{{ leg.leg_code }}</strong>
+    <span class="mono text-xs">{{ leg.etd|date }}</span>
+  </a>
+  {% else %}
+  <span class="text-muted">Aucun leg sur cette année.</span>
+  {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+
+{% macro leg_summary(selected_leg, pol, pod, vessel_status=None, locked=False) %}
+<div class="leg-summary {% if locked %}locked-banner{% endif %}">
+  <div class="leg-summary-left">
+    <h3>{{ selected_leg.leg_code }}</h3>
+    <span class="text-muted">
+      {% if pol %}{{ pol.country|flag }} {{ pol.name }}{% endif %} →
+      {% if pod %}{{ pod.country|flag }} {{ pod.name }}{% endif %}
+    </span>
+  </div>
+  {% if vessel_status %}
+  <div class="vessel-status-badge {{ vessel_status }}">
+    {% if vessel_status == 'a_quai' %}<i data-lucide="anchor"></i> À quai{% else %}<i data-lucide="waves"></i> En mer{% endif %}
+  </div>
+  {% endif %}
+  {% if locked %}<span class="lock-badge"><i data-lucide="lock"></i> Verrouillée</span>{% endif %}
+  <div class="leg-summary-dates">
+    <div><span class="lbl">ETD</span>{{ selected_leg.etd|datetime("%d/%m %H:%M") }}</div>
+    <div><span class="lbl">ETA</span>{{ selected_leg.eta|datetime("%d/%m %H:%M") }}</div>
+    <div><span class="lbl">ATA</span><span class="{% if selected_leg.ata %}text-green{% endif %}">{{ selected_leg.ata|datetime("%d/%m %H:%M") if selected_leg.ata else '—' }}</span></div>
+    <div><span class="lbl">ATD</span><span class="{% if selected_leg.atd %}text-green{% endif %}">{{ selected_leg.atd|datetime("%d/%m %H:%M") if selected_leg.atd else '—' }}</span></div>
+  </div>
+  {% if caller %}<div style="margin-left:auto;display:flex;gap:6px;">{{ caller() }}</div>{% endif %}
+</div>
+{% endmacro %}

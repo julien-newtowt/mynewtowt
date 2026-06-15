@@ -1,4 +1,5 @@
 {% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_filter, leg_summary %}
 {% block title %}Escale — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
@@ -9,70 +10,22 @@
   </div>
 </header>
 
-<div class="planning-filters mb-3">
-  <div class="vessel-tabs">
-    {% for v in vessels %}
-    <a href="/escale?vessel={{ v.code }}&year={{ current_year }}" class="vessel-tab {% if selected_vessel == v.code %}active{% endif %}">
-      <i data-lucide="ship"></i> {{ v.name }}
-    </a>
-    {% endfor %}
-  </div>
-  <div class="year-selector">
-    {% for y in years %}
-    <a href="/escale?vessel={{ selected_vessel }}&year={{ y }}" class="year-btn {% if current_year == y %}active{% endif %}">{{ y }}</a>
-    {% endfor %}
-  </div>
-</div>
-
-<div class="leg-selector">
-  {% for leg in legs %}
-  {% set terminated = leg.atd is not none and leg.ata is not none %}
-  {% set locked = leg.status == 'completed' %}
-  <a href="/escale?vessel={{ selected_vessel }}&year={{ current_year }}&leg_id={{ leg.id }}"
-     class="leg-chip {% if leg_id == leg.id %}active{% endif %} {% if terminated %}terminated{% endif %} {% if locked %}locked{% endif %}">
-    <strong>{{ leg.leg_code }}</strong>
-    <span class="mono text-xs">{{ leg.etd|date }}</span>
-  </a>
-  {% else %}
-  <span class="text-muted">Aucune escale sur cette année.</span>
-  {% endfor %}
-</div>
+{{ leg_filter(leg_filter_ctx, "/escale") }}
 
 {% if selected_leg %}
-<div class="leg-summary {% if leg_locked %}locked-banner{% endif %}">
-  <div class="leg-summary-left">
-    <h3>{{ selected_leg.leg_code }}</h3>
-    <span class="text-muted">
-      {% if pol %}{{ pol.country|flag }} {{ pol.name }}{% endif %} →
-      {% if pod %}{{ pod.country|flag }} {{ pod.name }}{% endif %}
-    </span>
-  </div>
-  {% if vessel_status %}
-  <div class="vessel-status-badge {{ vessel_status }}">
-    {% if vessel_status == 'a_quai' %}<i data-lucide="anchor"></i> À quai{% else %}<i data-lucide="waves"></i> En mer{% endif %}
-  </div>
+{% call leg_summary(selected_leg, pol, pod, vessel_status, leg_locked) %}
+  {% if leg_locked %}
+  <form method="post" action="/escale/legs/{{ selected_leg.id }}/unlock">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <button type="submit" class="btn btn-secondary btn-sm" title="Déverrouiller l'escale"><i data-lucide="lock-open"></i> Déverrouiller</button>
+  </form>
+  {% else %}
+  <form method="post" action="/escale/legs/{{ selected_leg.id }}/lock">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <button type="submit" class="btn btn-secondary btn-sm" title="Verrouiller l'escale"><i data-lucide="lock"></i> Verrouiller</button>
+  </form>
   {% endif %}
-  {% if leg_locked %}<span class="lock-badge"><i data-lucide="lock"></i> Verrouillée</span>{% endif %}
-  <div class="leg-summary-dates">
-    <div><span class="lbl">ETD</span>{{ selected_leg.etd|datetime("%d/%m %H:%M") }}</div>
-    <div><span class="lbl">ETA</span>{{ selected_leg.eta|datetime("%d/%m %H:%M") }}</div>
-    <div><span class="lbl">ATA</span><span class="{% if selected_leg.ata %}text-green{% endif %}">{{ selected_leg.ata|datetime("%d/%m %H:%M") if selected_leg.ata else '—' }}</span></div>
-    <div><span class="lbl">ATD</span><span class="{% if selected_leg.atd %}text-green{% endif %}">{{ selected_leg.atd|datetime("%d/%m %H:%M") if selected_leg.atd else '—' }}</span></div>
-  </div>
-  <div style="margin-left:auto;display:flex;gap:6px;">
-    {% if leg_locked %}
-    <form method="post" action="/escale/legs/{{ selected_leg.id }}/unlock">
-      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-secondary btn-sm" title="Déverrouiller l'escale"><i data-lucide="lock-open"></i> Déverrouiller</button>
-    </form>
-    {% else %}
-    <form method="post" action="/escale/legs/{{ selected_leg.id }}/lock">
-      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-secondary btn-sm" title="Verrouiller l'escale"><i data-lucide="lock"></i> Verrouiller</button>
-    </form>
-    {% endif %}
-  </div>
-</div>
+{% endcall %}
 
 {% if leg_locked %}
 <div class="alert alert-warning mb-3">

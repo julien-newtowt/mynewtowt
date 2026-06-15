@@ -117,9 +117,7 @@ async def _sync_sof_from_operation(
             ip_address=_client_ip(request),
         )
     except Exception:
-        logger.exception(
-            "SOF auto-creation failed for escale op %s (action=%s)", op.id, op.action
-        )
+        logger.exception("SOF auto-creation failed for escale op %s (action=%s)", op.id, op.action)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -193,6 +191,16 @@ async def escale_index(
         {
             "request": request,
             "user": user,
+            # Module de filtrage standard (cf. staff/_leg_filter.html).
+            "leg_filter_ctx": {
+                "vessels": vessels,
+                "selected_vessel": selected_vessel,
+                "years": years,
+                "current_year": current_year,
+                "legs": legs,
+                "leg_id": leg_id,
+                "selected_leg": selected_leg,
+            },
             "vessels": vessels,
             "selected_vessel": selected_vessel,
             "years": years,

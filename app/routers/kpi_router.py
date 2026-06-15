@@ -48,26 +48,38 @@ def _to_decimal(v: str | None) -> Decimal | None:
 @router.get("/", response_class=HTMLResponse)
 async def kpi_index(
     request: Request,
+    vessel: str | None = None,
+    year: int | None = None,
+    leg_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("kpi", "C")),
 ) -> HTMLResponse:
-    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()))).scalars().all())
-
-    # ── Auto-alimentation : chaque leg porte un KPI calculé automatiquement ──
-    # (tonnage, distance, vitesse, CO₂ évité + émis, intensités carbone). Les
-    # KPI marqués « saisie manuelle » (is_manual) ne sont jamais réécrits.
+    # Module de filtrage standard navire × année × leg (cf. _leg_filter.html).
     from app.services.kpi import compute_for_leg
+    from app.services.leg_filter import build_leg_filter
 
+    f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id)
+    legs = f["legs"]
+    all_legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()))).scalars().all())
+
+    # ── Auto-alimentation : chaque leg du périmètre porte un KPI calculé ─────
+    # automatiquement (tonnage, distance, CO₂ évité + émis, intensités). Les
+    # KPI marqués « saisie manuelle » (is_manual) ne sont jamais réécrits.
     existing = {k.leg_id: k for k in (await db.execute(select(LegKPI))).scalars().all()}
     for leg in legs:
         k = existing.get(leg.id)
         if k is None or not k.is_manual:
             await compute_for_leg(db, leg)
 
-    kpis = list((await db.execute(select(LegKPI).order_by(LegKPI.id.desc()))).scalars().all())
+    leg_ids = [leg.id for leg in legs]
+    kpis = [
+        k
+        for k in (await db.execute(select(LegKPI).order_by(LegKPI.id.desc()))).scalars().all()
+        if k.leg_id in leg_ids
+    ]
     leg_map = {leg.id: leg for leg in legs}
 
-    # Aggregates
+    # Aggregates (sur le périmètre filtré)
     total_tonnage_t = sum((k.tonnage_kg or Decimal(0)) for k in kpis) / Decimal(1000)
     total_co2_avoided_kg = sum((k.co2_avoided_kg or Decimal(0)) for k in kpis)
     total_co2_emitted_t = sum((k.co2_emitted_kg or Decimal(0)) for k in kpis) / Decimal(1000)
@@ -84,8 +96,9 @@ async def kpi_index(
         {
             "request": request,
             "user": user,
+            "leg_filter_ctx": f,
             "kpis": kpis,
-            "legs": legs,
+            "legs": all_legs,
             "leg_map": leg_map,
             "total_tonnage_t": total_tonnage_t,
             "total_co2_avoided_kg": total_co2_avoided_kg,
