@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.testclient import TestClient
 
 from app.csrf import CSRF_COOKIE, CSRFMiddleware
@@ -24,6 +24,11 @@ def _make_app() -> FastAPI:
         password: str = Form(...),
     ) -> dict[str, str]:
         return {"email": email, "password": password}
+
+    @app.get("/favicon.ico")
+    async def favicon() -> JSONResponse:
+        # Sous-ressource non-HTML, fetchée eagerly par le navigateur.
+        return JSONResponse({"ok": True})
 
     return app
 
@@ -82,6 +87,32 @@ def test_get_is_safe_method() -> None:
     client = TestClient(_make_app())
     r = client.get("/page")
     assert r.status_code == 200
+
+
+def test_cookieless_asset_does_not_set_csrf_cookie() -> None:
+    """Régression 1ère connexion : une sous-ressource non-HTML cookie-less
+    (favicon, /static…) ne doit PAS poser/écraser le cookie CSRF, sinon elle
+    désynchronise le token du formulaire (double-submit race)."""
+    client = TestClient(_make_app())
+    r = client.get("/favicon.ico")  # aucun cookie envoyé
+    assert r.status_code == 200
+    assert CSRF_COOKIE not in r.cookies  # pas de Set-Cookie sur asset cookie-less
+
+
+def test_first_login_survives_parallel_asset_fetch() -> None:
+    """Le token du formulaire reste valide même si un asset est fetché juste
+    après le chargement de la page (le cookie n'est pas clobberisé)."""
+    client = TestClient(_make_app())
+    page = client.get("/page")
+    token = page.cookies.get(CSRF_COOKIE)
+    assert token
+    # Le navigateur refetch le favicon (cookie désormais présent) — idempotent.
+    client.get("/favicon.ico")
+    r = client.post(
+        "/page",
+        data={"_csrf": token, "email": "a@b.c", "password": "x"},
+    )
+    assert r.status_code == 200, r.text
 
 
 def test_first_visit_form_works_via_state_token() -> None:

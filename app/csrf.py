@@ -5,7 +5,15 @@ The middleware:
 - exposes it on ``request.state.csrf_token`` so templates / HTMX clients
   can render it even on the very first visit (when the cookie is only
   set in the response),
-- always re-sets the cookie on the response so it stays in sync,
+- (re)sets the cookie on the response **only for HTML documents, or when the
+  client already had the cookie**. This avoids a double-submit race on the
+  very first visit: a brand-new visitor (no cookie) fetches the page *and*
+  eager sub-resources (``/favicon.ico``, ``/static/*``, ``/manifest.json``…)
+  in parallel; each cookie-less request would otherwise mint a *different*
+  token and the last response to land would win the cookie — desyncing it
+  from the ``_csrf`` token baked into the form → "CSRF validation failed" on
+  first login. Scoping the Set-Cookie to HTML documents keeps the cookie in
+  sync with the rendered form.
 - on mutating requests, requires either an ``x-csrf-token`` header or a
   ``_csrf`` form field whose value matches the cookie.
 
@@ -80,12 +88,19 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 return Response("CSRF validation failed", status_code=403, media_type="text/plain")
 
         response = await call_next(request)
-        response.set_cookie(
-            CSRF_COOKIE,
-            cookie_value,
-            httponly=False,  # JS must read it to set the header (HTMX injects)
-            secure=request.url.scheme == "https",
-            samesite="lax",
-            path="/",
-        )
+        # On ne (re)pose le cookie que sur un document HTML, ou si le client
+        # l'avait déjà : sinon les requêtes parallèles cookie-less du tout
+        # premier hit (favicon, /static, manifest…) forgeraient chacune un
+        # token différent et écraseraient celui aligné sur le formulaire.
+        had_cookie = request.cookies.get(CSRF_COOKIE) is not None
+        is_html = response.headers.get("content-type", "").startswith("text/html")
+        if had_cookie or is_html:
+            response.set_cookie(
+                CSRF_COOKIE,
+                cookie_value,
+                httponly=False,  # JS must read it to set the header (HTMX injects)
+                secure=request.url.scheme == "https",
+                samesite="lax",
+                path="/",
+            )
         return response
