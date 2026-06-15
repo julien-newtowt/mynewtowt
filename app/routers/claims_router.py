@@ -32,21 +32,30 @@ router = APIRouter(prefix="/claims", tags=["claims"])
 async def claims_index(
     request: Request,
     status: str | None = None,
+    vessel: str | None = None,
+    year: int | None = None,
+    leg_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("claims", "C")),
 ) -> HTMLResponse:
+    from app.services.leg_filter import build_leg_filter, set_leg_filter_cookie
+
+    flt = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id, request=request)
     stmt = select(Claim).order_by(Claim.declared_at.desc())
     if status:
         stmt = stmt.where(Claim.status == status)
+    if leg_id:
+        stmt = stmt.where(Claim.leg_id == leg_id)
     claims = list((await db.execute(stmt)).scalars().all())
     counts = dict.fromkeys(CLAIM_STATUSES, 0)
     for c in claims:
         counts[c.status] = counts.get(c.status, 0) + 1
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "staff/claims/index.html",
         {
             "request": request,
             "user": user,
+            "leg_filter_ctx": flt,
             "claims": claims,
             "counts": counts,
             "claim_types": CLAIM_TYPES,
@@ -54,6 +63,8 @@ async def claims_index(
             "statuses": CLAIM_STATUSES,
         },
     )
+    set_leg_filter_cookie(response, flt)
+    return response
 
 
 async def _stowage_zones_for(db: AsyncSession, leg_id: int | None) -> list[dict]:
@@ -187,17 +198,13 @@ async def claim_detail(
     # Picker position cale : zones du plan d'arrimage du leg pour un claim
     # cargo (best-effort → liste vide si pas de plan / autre type).
     stowage_zones = (
-        await _stowage_zones_for(db, claim.leg_id)
-        if claim.claim_type == "cargo"
-        else []
+        await _stowage_zones_for(db, claim.leg_id) if claim.claim_type == "cargo" else []
     )
     # Indice humain de la zone (partie après "—" du label), ou "" si la
     # position est du texte libre non conforme à la convention de nommage.
     full_label = zone_label(claim.cargo_position)
     cargo_position_hint = (
-        full_label.split("—", 1)[1].strip()
-        if claim.cargo_position and "—" in full_label
-        else ""
+        full_label.split("—", 1)[1].strip() if claim.cargo_position and "—" in full_label else ""
     )
     return templates.TemplateResponse(
         "staff/claims/detail.html",

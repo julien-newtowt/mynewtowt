@@ -1,10 +1,22 @@
 {% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_filter, leg_summary %}
 {% block title %}Onboard — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 <header class="mb-4">
   <span class="kicker">Vue commandant</span>
   <h1 class="display">À bord</h1>
+  <p class="text-muted">Sélectionnez un leg — les pages du module opérations en héritent.</p>
 </header>
+
+{{ leg_filter(leg_filter_ctx, "/onboard") }}
+
+{% if selected_leg %}
+{% call leg_summary(selected_leg, pol, pod, vessel_status) %}
+  <a href="/onboard/navigation?leg_id={{ selected_leg.id }}" class="btn btn-secondary btn-sm">🌊 Navigation</a>
+  <a href="/escale?leg_id={{ selected_leg.id }}" class="btn btn-secondary btn-sm">⚓ Escale</a>
+  <a href="/stowage/legs/{{ selected_leg.id }}" class="btn btn-secondary btn-sm">📦 Chargement</a>
+{% endcall %}
+{% endif %}
 
 <a href="/captain/next-port"
    class="card mb-4"

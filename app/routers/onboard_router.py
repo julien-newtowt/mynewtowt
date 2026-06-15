@@ -32,6 +32,7 @@ from app.models.noon_report import (
     NoonReportSail,
     NoonReportWeather,
 )
+from app.models.vessel import Vessel
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 from app.permissions import require_permission
 from app.services import mrv_sync
@@ -119,9 +120,15 @@ def _load_items(raw: str | None) -> list[dict[str, object]]:
 @router.get("", response_class=HTMLResponse)
 async def onboard_landing(
     request: Request,
+    vessel: str | None = None,
+    year: int | None = None,
+    leg_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
+    from app.models.port import Port
+    from app.services.leg_filter import build_leg_filter, set_leg_filter_cookie
+
     now = datetime.now(UTC)
     active_legs = list(
         (
@@ -138,31 +145,56 @@ async def onboard_landing(
     next_etd = (
         await db.execute(select(Leg).where(Leg.etd > now).order_by(Leg.etd.asc()).limit(1))
     ).scalar_one_or_none()
-    return templates.TemplateResponse(
+
+    # Sélection du leg pour tout le module opérations (persistée en cookie ;
+    # les sous-pages onboard / escale en héritent).
+    f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id, request=request)
+    selected_leg = f["selected_leg"]
+    pol = pod = None
+    vessel_status = None
+    if selected_leg:
+        pol = await db.get(Port, selected_leg.departure_port_id)
+        pod = await db.get(Port, selected_leg.arrival_port_id)
+        vessel_status = "en_mer" if (selected_leg.atd and not selected_leg.ata) else "a_quai"
+
+    response = templates.TemplateResponse(
         "staff/onboard/landing.html",
-        {"request": request, "user": user, "active_legs": active_legs, "next_etd": next_etd},
+        {
+            "request": request,
+            "user": user,
+            "active_legs": active_legs,
+            "next_etd": next_etd,
+            "leg_filter_ctx": f,
+            "selected_leg": selected_leg,
+            "pol": pol,
+            "pod": pod,
+            "vessel_status": vessel_status,
+        },
     )
+    set_leg_filter_cookie(response, f)
+    return response
 
 
 @router.get("/navigation", response_class=HTMLResponse)
 async def onboard_navigation(
     request: Request,
+    vessel: str | None = None,
+    year: int | None = None,
     leg_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
-    # Filtre RBAC : si l'user est rattaché à un navire (assigned_vessel_id),
-    # on ne lui montre que les legs de ce navire.
-    legs_stmt = select(Leg).order_by(Leg.etd.desc()).limit(30)
+    from app.services.leg_filter import build_leg_filter, set_leg_filter_cookie
+
+    # Filtre RBAC : si l'user est rattaché à un navire, on force ce navire.
     if getattr(user, "assigned_vessel_id", None):
-        legs_stmt = (
-            select(Leg)
-            .where(Leg.vessel_id == user.assigned_vessel_id)
-            .order_by(Leg.etd.desc())
-            .limit(30)
-        )
-    legs = list((await db.execute(legs_stmt)).scalars().all())
-    selected = (await db.get(Leg, leg_id)) if leg_id else (legs[0] if legs else None)
+        assigned = await db.get(Vessel, user.assigned_vessel_id)
+        if assigned is not None:
+            vessel = assigned.code
+    # Module de filtrage standard (hérite du leg choisi sur /onboard via cookie).
+    f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id, request=request)
+    legs = f["legs"]
+    selected = f["selected_leg"] or (legs[0] if legs else None)
     noon_reports = []
     watch_logs = []
     latest_position = None
@@ -203,11 +235,15 @@ async def onboard_navigation(
                 )
             except Exception:
                 weather_now = None
-    return templates.TemplateResponse(
+    # Le leg réellement affiché devient la sélection mémorisée.
+    f["leg_id"] = selected.id if selected else f["leg_id"]
+    f["selected_leg"] = selected
+    response = templates.TemplateResponse(
         "staff/onboard/navigation.html",
         {
             "request": request,
             "user": user,
+            "leg_filter_ctx": f,
             "legs": legs,
             "leg": selected,
             "noon_reports": noon_reports,
@@ -221,6 +257,8 @@ async def onboard_navigation(
             "noon_vessel_conditions": NOON_VESSEL_CONDITIONS,
         },
     )
+    set_leg_filter_cookie(response, f)
+    return response
 
 
 @router.post("/navigation/noon-report")

@@ -35,11 +35,17 @@ router = APIRouter(prefix="/mrv", tags=["mrv"])
 @router.get("/", response_class=HTMLResponse)
 async def mrv_index(
     request: Request,
+    vessel: str | None = None,
+    year: int | None = None,
+    leg_id: int | None = None,
     vessel_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("mrv", "C")),
 ) -> HTMLResponse:
-    vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    from app.services.leg_filter import build_leg_filter, set_leg_filter_cookie
+
+    f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id, request=request)
+    vessels = f["vessels"]
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(30))).scalars().all())
     events = list(
         (await db.execute(select(MRVEvent).order_by(MRVEvent.recorded_at.desc()).limit(50)))
@@ -54,11 +60,12 @@ async def mrv_index(
         if leg:
             leg_map[lid] = leg
     summary = carbon_report_summary([_decor(e, leg_map) for e in events])
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "staff/mrv/index.html",
         {
             "request": request,
             "user": user,
+            "leg_filter_ctx": f,
             "vessels": vessels,
             "legs": legs,
             "events": events,
@@ -67,6 +74,8 @@ async def mrv_index(
             "co2_factor": CO2_EMISSION_FACTOR_MDO,
         },
     )
+    set_leg_filter_cookie(response, f)
+    return response
 
 
 @router.post("/legs/{leg_id}/events")

@@ -1,4 +1,5 @@
 {% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_filter %}
 {% block title %}Finance{% endblock %}
 {% block content %}
 <header class="flex justify-between items-center mb-4">
@@ -11,6 +12,8 @@
     <a href="/finance/opex" class="btn btn-secondary"><i data-lucide="settings"></i> OPEX</a>
   </div>
 </header>
+
+{{ leg_filter(leg_filter_ctx, "/finance") }}
 
 <section class="kpi-strip mb-4">
   <div class="kpi-card"><div class="label">Revenu total</div><div class="value">{{ total_revenue_eur|money }}</div></div>

@@ -20,12 +20,61 @@ Contexte retourné (clés stables, consommées par la macro) ::
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.leg import Leg
 from app.models.vessel import Vessel
+
+if TYPE_CHECKING:
+    from fastapi import Request, Response
+
+# Cookie de persistance de la sélection (navire|année|leg) — permet aux pages
+# du module opérations d'« hériter » du leg choisi sur /onboard sans repasser
+# les query-params.
+LEG_FILTER_COOKIE = "towt_leg_filter"
+_COOKIE_MAX_AGE = 60 * 60 * 12  # 12 h
+
+
+def _from_cookie(request: Request | None) -> tuple[str | None, int | None, int | None]:
+    """Décode ``vessel|year|leg_id`` du cookie de filtre (tolérant)."""
+    if request is None:
+        return (None, None, None)
+    raw = request.cookies.get(LEG_FILTER_COOKIE)
+    if not raw:
+        return (None, None, None)
+    parts = [*raw.split("|"), "", "", ""][:3]
+    vessel = parts[0] or None
+    try:
+        year = int(parts[1]) if parts[1] else None
+    except ValueError:
+        year = None
+    try:
+        leg_id = int(parts[2]) if parts[2] else None
+    except ValueError:
+        leg_id = None
+    return (vessel, year, leg_id)
+
+
+def set_leg_filter_cookie(response: Response, f: dict) -> None:
+    """Persiste la sélection courante (à appeler sur la réponse d'une page)."""
+    value = "|".join(
+        [
+            str(f.get("selected_vessel") or ""),
+            str(f.get("current_year") or ""),
+            str(f.get("leg_id") or ""),
+        ]
+    )
+    response.set_cookie(
+        LEG_FILTER_COOKIE,
+        value,
+        max_age=_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
 
 
 async def build_leg_filter(
@@ -34,8 +83,19 @@ async def build_leg_filter(
     vessel: str | None = None,
     year: int | None = None,
     leg_id: int | None = None,
+    request: Request | None = None,
 ) -> dict:
-    """Construit le contexte du filtre navire × année × leg (lecture seule)."""
+    """Construit le contexte du filtre navire × année × leg (lecture seule).
+
+    Les paramètres absents (None) sont complétés depuis le cookie de filtre
+    (``request``), pour que les pages du module opérations héritent du leg
+    sélectionné ailleurs.
+    """
+    c_vessel, c_year, c_leg = _from_cookie(request)
+    vessel = vessel or c_vessel
+    year = year or c_year
+    leg_id = leg_id if leg_id is not None else c_leg
+
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     selected_vessel = vessel or (vessels[0].code if vessels else None)
     current_year = year or datetime.now(UTC).year

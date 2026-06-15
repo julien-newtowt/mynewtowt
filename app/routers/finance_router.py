@@ -80,11 +80,22 @@ def _client_ip(request: Request) -> str | None:
 @router.get("/", response_class=HTMLResponse)
 async def finance_index(
     request: Request,
+    vessel: str | None = None,
+    year: int | None = None,
+    leg_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("finance", "C")),
 ) -> HTMLResponse:
-    # All LegFinance rows (used in the table)
-    finances: list[LegFinance] = list((await db.execute(select(LegFinance))).scalars().all())
+    from app.services.leg_filter import build_leg_filter, set_leg_filter_cookie
+
+    # Module de filtrage standard navire × année × leg.
+    flt = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id, request=request)
+    scope_ids = {leg_id} if leg_id else {lg.id for lg in flt["legs"]}
+
+    # LegFinance rows du périmètre (navire × année, ou leg sélectionné)
+    finances: list[LegFinance] = [
+        f for f in (await db.execute(select(LegFinance))).scalars().all() if f.leg_id in scope_ids
+    ]
 
     # Build a leg_code map so the template can label each row
     leg_ids = {f.leg_id for f in finances}
@@ -123,11 +134,12 @@ async def finance_index(
     )
     total_margin = sum((f.margin_eur for f in finances), Decimal("0"))
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "staff/finance/index.html",
         {
             "request": request,
             "user": user,
+            "leg_filter_ctx": flt,
             "finances": finances,
             "leg_map": leg_map,
             "opex": opex,
@@ -137,6 +149,8 @@ async def finance_index(
             "total_margin_eur": total_margin,
         },
     )
+    set_leg_filter_cookie(response, flt)
+    return response
 
 
 # ──────────────────────────────────────────────────────────────

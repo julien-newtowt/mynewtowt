@@ -16,7 +16,7 @@
   .leg-chip, .leg-summary…). ``base_path`` = racine de la page (ex. "/kpi").
 #}
 
-{% macro leg_filter(f, base_path, show_legs=True) %}
+{% macro leg_filter(f, base_path, show_legs=True, leg_href=None, leg_href_suffix="") %}
 <div class="planning-filters mb-3">
   <div class="vessel-tabs">
     {% for v in f.vessels %}
@@ -39,7 +39,7 @@
   {% for leg in f.legs %}
   {% set terminated = leg.atd is not none and leg.ata is not none %}
   {% set locked = leg.status == 'completed' %}
-  <a href="{{ base_path }}?vessel={{ f.selected_vessel }}&year={{ f.current_year }}&leg_id={{ leg.id }}"
+  <a href="{% if leg_href %}{{ leg_href }}{{ leg.id }}{{ leg_href_suffix }}{% else %}{{ base_path }}?vessel={{ f.selected_vessel }}&year={{ f.current_year }}&leg_id={{ leg.id }}{% endif %}"
      class="leg-chip {% if f.leg_id == leg.id %}active{% endif %} {% if terminated %}terminated{% endif %} {% if locked %}locked{% endif %}">
     <strong>{{ leg.leg_code }}</strong>
     <span class="mono text-xs">{{ leg.etd|date }}</span>

@@ -130,18 +130,16 @@ async def escale_index(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("escale", "C")),
 ) -> HTMLResponse:
-    vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
-    selected_vessel = vessel or (vessels[0].code if vessels else None)
-    current_year = year or datetime.now(UTC).year
-    years = list(range(current_year - 1, current_year + 3))
+    from app.services.leg_filter import build_leg_filter, set_leg_filter_cookie
 
-    stmt_legs = select(Leg).order_by(Leg.etd.asc())
-    if selected_vessel:
-        v = next((v for v in vessels if v.code == selected_vessel), None)
-        if v:
-            stmt_legs = stmt_legs.where(Leg.vessel_id == v.id)
-    legs = list((await db.execute(stmt_legs)).scalars().all())
-    legs = [lg for lg in legs if lg.etd and lg.etd.year == current_year]
+    # Module de filtrage standard (hérite du leg choisi sur /onboard via cookie).
+    f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id, request=request)
+    vessels = f["vessels"]
+    selected_vessel = f["selected_vessel"]
+    current_year = f["current_year"]
+    years = f["years"]
+    legs = f["legs"]
+    leg_id = f["leg_id"]
 
     selected_leg = None
     operations: list[EscaleOperation] = []
@@ -186,21 +184,14 @@ async def escale_index(
                 logger.exception("occupation_by_hold failed for leg %s", selected_leg.id)
                 stowage_by_hold = {}
 
-    return templates.TemplateResponse(
+    f["selected_leg"] = selected_leg
+    response = templates.TemplateResponse(
         "staff/escale/index.html",
         {
             "request": request,
             "user": user,
             # Module de filtrage standard (cf. staff/_leg_filter.html).
-            "leg_filter_ctx": {
-                "vessels": vessels,
-                "selected_vessel": selected_vessel,
-                "years": years,
-                "current_year": current_year,
-                "legs": legs,
-                "leg_id": leg_id,
-                "selected_leg": selected_leg,
-            },
+            "leg_filter_ctx": f,
             "vessels": vessels,
             "selected_vessel": selected_vessel,
             "years": years,
@@ -228,6 +219,8 @@ async def escale_index(
             "directions": DIRECTIONS,
         },
     )
+    set_leg_filter_cookie(response, f)
+    return response
 
 
 @router.post("/legs/{leg_id}/operations")

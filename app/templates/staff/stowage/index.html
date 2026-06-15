@@ -1,4 +1,5 @@
 {% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_filter %}
 {% block title %}Stowage — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
@@ -9,6 +10,8 @@
     <p class="text-muted">18 zones par navire — INF/MIL/SUP × AR/AV × AR/MIL/AV. SUP_AV réservées aux IMO et hors-gabarit.</p>
   </div>
 </header>
+
+{{ leg_filter(leg_filter_ctx, "/stowage", leg_href="/stowage/legs/") }}
 
 <article class="card">
   <table class="data-table">

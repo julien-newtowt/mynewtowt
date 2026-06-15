@@ -49,9 +49,15 @@ router = APIRouter(prefix="/stowage", tags=["stowage"])
 @router.get("/", response_class=HTMLResponse)
 async def stowage_index(
     request: Request,
+    vessel: str | None = None,
+    year: int | None = None,
+    leg_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "C")),
 ) -> HTMLResponse:
+    from app.services.leg_filter import build_leg_filter, set_leg_filter_cookie
+
+    f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id, request=request)
     plans = list(
         (await db.execute(select(StowagePlan).order_by(StowagePlan.updated_at.desc()).limit(50)))
         .scalars()
@@ -62,10 +68,18 @@ async def stowage_index(
         leg = await db.get(Leg, p.leg_id)
         if leg is not None:
             legs_by_id[p.leg_id] = leg
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "staff/stowage/index.html",
-        {"request": request, "user": user, "plans": plans, "legs_by_id": legs_by_id},
+        {
+            "request": request,
+            "user": user,
+            "leg_filter_ctx": f,
+            "plans": plans,
+            "legs_by_id": legs_by_id,
+        },
     )
+    set_leg_filter_cookie(response, f)
+    return response
 
 
 @router.get("/legs/{leg_id}", response_class=HTMLResponse)

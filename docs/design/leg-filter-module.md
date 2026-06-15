@@ -66,18 +66,40 @@ Paramètres utiles :
 }
 ```
 
+## Héritage de la sélection (cookie)
+
+La sélection (navire | année | leg) est persistée dans le cookie
+`towt_leg_filter` (12 h, httponly, SameSite=Lax) :
+
+- `set_leg_filter_cookie(response, f)` — à appeler sur la réponse de la page.
+- `build_leg_filter(..., request=request)` — complète les paramètres absents
+  depuis le cookie.
+
+Ainsi, **le leg choisi sur `/onboard` est hérité** par les autres pages du
+module opérations (navigation, escale, plan de chargement…) sans repasser les
+query-params. Un changement de sélection sur n'importe quelle page met le
+cookie à jour.
+
 ## Conventions
 
 - Liens **GET** uniquement (`base_path?vessel=&year=&leg_id=`) — CSP-safe,
   aucun JS inline.
-- L'année par défaut = année courante ; le navire par défaut = premier navire.
-- Les pages qui pré-existaient avec un filtre ad hoc (ex. dropdown leg) doivent
-  migrer vers ce module pour homogénéiser l'UX.
+- L'année par défaut = année courante ; le navire par défaut = premier navire
+  (ou cookie). Une page RBAC-navire (ex. navigation avec `assigned_vessel_id`)
+  force son navire.
+- `leg_href` / `leg_href_suffix` : faire pointer les chips vers une page de
+  détail (ex. `leg_href="/stowage/legs/"`, ou `"/mrv/legs/"` +
+  `leg_href_suffix="/carbon"`) plutôt que vers `base_path?leg_id=`.
 
 ## Pages adoptantes
 
-| Page | Base path | Statut |
+| Page | Base path | Sélection leg |
 |---|---|---|
-| Escale | `/escale` | ✅ migré vers le composant |
-| KPI | `/kpi` | ✅ filtre navire × année (+ chips → carbon report) |
-| _(à venir)_ Plan de chargement, MRV, Onboard navigation | — | 🟡 même composant à brancher |
+| Onboard (landing) | `/onboard` | ✅ **point d'entrée** — pose le cookie |
+| Onboard › Navigation | `/onboard/navigation` | ✅ hérite (cookie), RBAC navire |
+| Escale | `/escale` | ✅ hérite (cookie) |
+| Plan de chargement | `/stowage` | ✅ chips → plan du leg |
+| MRV | `/mrv` | ✅ chips → carbon report du leg |
+| KPI | `/kpi` | ✅ filtre navire × année |
+| Claims | `/claims` | ✅ filtre la liste par leg |
+| Finance | `/finance` | ✅ filtre navire × année |

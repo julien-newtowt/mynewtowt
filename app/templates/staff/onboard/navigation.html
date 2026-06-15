@@ -1,4 +1,5 @@
 {% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_filter %}
 {% block title %}Navigation — {{ brand.nom_court }}{% endblock %}
 {% block head %}
 {{ super() }}
@@ -13,16 +14,7 @@
   <h1 class="display">Navigation</h1>
 </header>
 
-<form method="get" class="card mb-4" style="display:flex; gap:var(--space-3); align-items:end;">
-  <div class="field" style="flex:1; margin:0;">
-    <label for="leg_id">Voyage actif</label>
-    <select id="leg_id" name="leg_id" onchange="this.form.submit()">
-      {% for l in legs %}
-        <option value="{{ l.id }}" {% if leg and leg.id == l.id %}selected{% endif %}>{{ l.leg_code }} — {{ l.etd|date }}</option>
-      {% endfor %}
-    </select>
-  </div>
-</form>
+{{ leg_filter(leg_filter_ctx, "/onboard/navigation") }}
 
 {% if leg %}
 <div class="grid grid-2 gap-4">
