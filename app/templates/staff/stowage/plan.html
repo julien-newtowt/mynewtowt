@@ -1,12 +1,12 @@
 {% extends "staff/_layout.html" %}
 {% from "staff/stowage/_ship_map.html" import ship_map %}
-{% block title %}Plan d'arrimage {{ leg.leg_code }} — {{ brand.nom_court }}{% endblock %}
+{% block title %}Plan de chargement {{ leg.leg_code }} — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
 <header class="flex justify-between items-center mb-4">
   <div>
     <span class="kicker">Cargo · {{ leg.leg_code }}</span>
-    <h1 class="display">Plan d'arrimage</h1>
+    <h1 class="display">Plan de chargement</h1>
     <p class="text-muted">18 zones · classe {{ evaluation.vessel_class }} — capacités &amp; résistances du référentiel.</p>
   </div>
   <div class="flex gap-2">
@@ -46,7 +46,7 @@
 
 {# ---- Schéma navire (repérage visuel) ---- #}
 <article class="card mb-4">
-  <h2>Schéma d'arrimage</h2>
+  <h2>Schéma de chargement</h2>
   <p class="text-muted text-sm">Occupation par zone — cliquez une zone pour la mettre en évidence.</p>
   {{ ship_map(evaluation, [], decks, holds, blocks, interactive=True) }}
 </article>

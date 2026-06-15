@@ -10,7 +10,7 @@
     <p class="text-muted">{{ title }}{% if batch and batch.description %} — {{ batch.description|truncate(60) }}{% endif %}</p>
   </div>
   <div class="flex gap-2">
-    {% if leg %}<a href="/stowage/legs/{{ leg.id }}" class="btn btn-ghost btn-sm">Plan d'arrimage {{ leg.leg_code }}</a>{% endif %}
+    {% if leg %}<a href="/stowage/legs/{{ leg.id }}" class="btn btn-ghost btn-sm">Plan de chargement {{ leg.leg_code }}</a>{% endif %}
   </div>
 </header>
 
@@ -45,8 +45,8 @@
 {% else %}
 <article class="card">
   <div class="alert alert-info">
-    Cette marchandise n'est pas encore positionnée dans un plan d'arrimage.
-    {% if batch %}Générez le plan depuis <a href="/stowage">Plan d'arrimage</a>.{% endif %}
+    Cette marchandise n'est pas encore positionnée dans un plan de chargement.
+    {% if batch %}Générez le plan depuis <a href="/stowage">Plan de chargement</a>.{% endif %}
   </div>
 </article>
 {% endif %}

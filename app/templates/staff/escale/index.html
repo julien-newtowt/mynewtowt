@@ -148,12 +148,12 @@
   <article class="card">
     <div class="section-header"><h3><i data-lucide="users"></i> Shifts dockers</h3></div>
 
-    {# B3 — occupation du plan d'arrimage par cale (relie dockers ↔ stowage). #}
+    {# B3 — occupation du plan de chargement par cale (relie dockers ↔ stowage). #}
     <div class="mb-3">
       <h4 class="flex items-center gap-2" style="margin:0 0 8px;">
         <i data-lucide="package"></i> Occupation par cale
-        <a href="/stowage/legs/{{ selected_leg.id }}" class="btn btn-ghost btn-sm" title="Ouvrir le plan d'arrimage">
-          <i data-lucide="external-link"></i> Plan d'arrimage
+        <a href="/stowage/legs/{{ selected_leg.id }}" class="btn btn-ghost btn-sm" title="Ouvrir le plan de chargement">
+          <i data-lucide="external-link"></i> Plan de chargement
         </a>
       </h4>
       {% if stowage_by_hold %}
@@ -175,7 +175,7 @@
         {% endfor %}
       </div>
       {% else %}
-      <p class="text-muted">Plan d'arrimage non renseigné.</p>
+      <p class="text-muted">Plan de chargement non renseigné.</p>
       {% endif %}
     </div>
 

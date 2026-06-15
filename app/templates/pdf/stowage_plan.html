@@ -1,5 +1,5 @@
 {% extends "pdf/_base.html" %}
-{% block title %}Plan d'arrimage — {{ leg.leg_code }}{% endblock %}
+{% block title %}Plan de chargement — {{ leg.leg_code }}{% endblock %}
 {% block doc_kind %}Plan de chargement · Stowage{% endblock %}
 {% block doc_ref %}{{ leg.leg_code }}{% endblock %}
 {% block content %}
@@ -47,7 +47,7 @@
   <div class="box"><div class="label">Tonnage chargé</div><div class="value">{{ '%.1f'|format(evaluation.totals.used_t) }} t / {{ '%.0f'|format(evaluation.totals.max_load_t) }} t</div></div>
 </div>
 
-<p class="section-title">Schéma d'arrimage — 18 zones (poupe ◀ → ▶ proue)</p>
+<p class="section-title">Schéma de chargement — 18 zones (poupe ◀ → ▶ proue)</p>
 <table class="ship">
   <tr class="holds-row">
     <td></td>

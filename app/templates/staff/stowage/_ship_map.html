@@ -16,7 +16,7 @@
 {% macro ship_map(evaluation, target_zones, decks, holds, blocks, interactive=False) %}
 {% set zeval = (evaluation.zones if evaluation else {}) %}
 {% set targets = target_zones or [] %}
-<div class="ship-map" role="img" aria-label="Schéma d'arrimage du navire — 18 zones">
+<div class="ship-map" role="img" aria-label="Schéma de chargement du navire — 18 zones">
   <div class="ship-map-bow-label">◀ POUPE (arrière)</div>
   <div class="ship-map-grid">
     {% for deck in decks %}

@@ -17,10 +17,10 @@
         <option value="{{ z.zone }}">{{ z.label }}{% if z.is_dangerous %} ⚠ dangereux{% endif %} ({{ z.pallet_count }} pal.)</option>
         {% endfor %}
       </select>
-      <p class="text-muted text-sm mt-2">Zones occupées du plan d'arrimage du leg sélectionné. Pour une autre valeur, créez le claim puis éditez la position sur sa fiche.</p>
+      <p class="text-muted text-sm mt-2">Zones occupées du plan de chargement du leg sélectionné. Pour une autre valeur, créez le claim puis éditez la position sur sa fiche.</p>
       {% else %}
       <input name="cargo_position" placeholder="ex. INF_AR_MIL" />
-      <p class="text-muted text-sm mt-2">Sélectionnez un leg doté d'un plan d'arrimage et ré-ouvrez le formulaire (<span class="mono">?leg_id=…</span>) pour choisir une zone, ou saisissez la position en texte libre.</p>
+      <p class="text-muted text-sm mt-2">Sélectionnez un leg doté d'un plan de chargement et ré-ouvrez le formulaire (<span class="mono">?leg_id=…</span>) pour choisir une zone, ou saisissez la position en texte libre.</p>
       {% endif %}
     </div>
     <div class="field" style="grid-column:span 2;"><label>Titre</label><input name="title" required /></div>

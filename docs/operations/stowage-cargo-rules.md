@@ -124,7 +124,7 @@ Portuaire 70 kg ≈ 716 t · Eupal ≈ 821 t · Big Bag 1,2 t ≈ 943 t · Mix B
 Quand on génère le plan (**« Suggérer auto »**), chaque lot (`PackingListBatch`)
 est recopié dans une affectation `StowageItem`, **figeant la photo arrimage** :
 
-| Packing list (`PackingListBatch`) | → | Plan d'arrimage (`StowageItem`) |
+| Packing list (`PackingListBatch`) | → | Plan de chargement (`StowageItem`) |
 |---|---|---|
 | `pallet_format`, `pallet_count` | → | idem |
 | `weight_kg` | → | `weight_kg` (poids total du lot) |
@@ -174,11 +174,11 @@ visualise l'occupation des 18 zones et **positionne** une marchandise (repère
 
 | Vue | Accès |
 |---|---|
-| Plan d'arrimage | `/stowage/legs/{leg_id}` — schéma complet + occupation. |
+| Plan de chargement | `/stowage/legs/{leg_id}` — schéma complet + occupation. |
 | Lot (packing list) | bouton **📍 Localiser** → `/stowage/locate/batch/{batch_id}`. |
 | Commande commerciale | **📍 Localiser à bord** → `/stowage/locate/order/{order_id}`. |
-| Claim cargo | lien **Plan d'arrimage →** depuis la position cale du claim. |
-| Escale (dockers) | occupation par cale + lien plan d'arrimage. |
+| Claim cargo | lien **Plan de chargement →** depuis la position cale du claim. |
+| Escale (dockers) | occupation par cale + lien plan de chargement. |
 | **Espace client** | section **Position à bord** dans le détail du booking. |
 | **Portail expéditeur** | section **Position de votre marchandise à bord** (`/p/{token}`). |
 

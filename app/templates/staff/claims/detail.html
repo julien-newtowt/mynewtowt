@@ -26,7 +26,7 @@
         {% if claim.cargo_position %}
           <span class="mono">{{ claim.cargo_position }}</span>
           {% if cargo_position_hint %}<span class="text-muted text-sm"> — {{ cargo_position_hint }}</span>{% endif %}
-          {% if leg %}<a href="/stowage/legs/{{ leg.id }}" class="btn btn-ghost btn-sm">Plan d'arrimage →</a>{% endif %}
+          {% if leg %}<a href="/stowage/legs/{{ leg.id }}" class="btn btn-ghost btn-sm">Plan de chargement →</a>{% endif %}
         {% else %}—{% endif %}
       </td></tr>
       <tr><td>Assureur</td><td>{{ claim.insurer or '—' }}</td></tr>
@@ -56,7 +56,7 @@
     <form method="post" action="/claims/{{ claim.id }}/cargo-position">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       {% if stowage_zones %}
-      <div class="field"><label>Zone du plan d'arrimage{% if leg %} — leg <span class="mono">{{ leg.leg_code }}</span>{% endif %}</label>
+      <div class="field"><label>Zone du plan de chargement{% if leg %} — leg <span class="mono">{{ leg.leg_code }}</span>{% endif %}</label>
         <select name="cargo_position">
           <option value="">— non renseignée</option>
           {% for z in stowage_zones %}
@@ -69,7 +69,7 @@
       {% endif %}
       {% else %}
       <div class="field"><label>Position cale (texte libre)</label><input name="cargo_position" value="{{ claim.cargo_position or '' }}" placeholder="ex. INF_AR_MIL" /></div>
-      <p class="text-muted text-sm">Aucun plan d'arrimage pour ce leg : saisie en texte libre. {% if leg %}<a href="/stowage/legs/{{ leg.id }}">Créer le plan →</a>{% endif %}</p>
+      <p class="text-muted text-sm">Aucun plan de chargement pour ce leg : saisie en texte libre. {% if leg %}<a href="/stowage/legs/{{ leg.id }}">Créer le plan →</a>{% endif %}</p>
       {% endif %}
       <button type="submit" class="btn btn-secondary btn-sm">Enregistrer la position</button>
     </form>
