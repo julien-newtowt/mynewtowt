@@ -67,23 +67,36 @@ TWS (kt) · AWA (°) · AWS (kt) · Sea state · Sea direction (°) · Ship spee
 J0 · FWD J1 · FWD MS · AFT J1 · AFT MS (ON/OFF) · Sail Boost · ME PS load (%) · ME SB load (%)
 
 ### Correspondance avec le modèle applicatif `NoonReport`
-| Champ form | `NoonReport` |
-|---|---|
-| Date/Time (UTC) | `recorded_at` |
-| Latitude / Longitude | `latitude` / `longitude` |
-| Ship speed / COG | `sog_avg` / `cog_avg` |
-| TWS / Sea direction | `wind_speed_kn` / `wind_direction_deg` |
-| Sea state | `sea_state_bf` |
-| Total consumption | `fuel_consumed_24h_l` (⚠ form en **t**, modèle en **L**) |
-| Distance from last report | `distance_24h_nm` |
-| ROB DO | `rob_fuel_l` (⚠ form en **t**, modèle en **L**) |
-| — | `visibility_nm`, `barometric_hpa` (non couverts par le form) |
+Depuis la migration **0038**, le `NoonReport` ERP est **aligné sur le
+formulaire officiel** : champs voyage/SOSP/ETA/ROB scalaires + trois tables
+filles (machine, météo, voilure). Saisie via Onboard › Navigation (sections
+repliables).
 
-> **Écarts connus** (le modèle ERP est un sous-ensemble du form officiel) :
-> détail par moteur (running hours / DO par moteur), SOSP, ETA multi-vitesses,
-> voilure, urée/FW ne sont pas encore stockés en base. Le form xlsx reste la
-> source de saisie exhaustive ; le `NoonReport` ERP en capte l'essentiel pour
-> MRV/KPI.
+| Bloc form | Modèle ERP |
+|---|---|
+| Date/Time (UTC), Lat/Lon | `recorded_at`, `latitude`, `longitude` |
+| Type of report, Vessel condition | `report_type`, `vessel_condition` |
+| Previous/Next port (UNCODE) | `previous_port`, `next_port` |
+| Deadweight, Draft Fwd/Aft, Trim | `deadweight_t`, `draft_fwd_m`, `draft_aft_m`, `trim_m` |
+| Since last report (time/dist/speed) | `time_since_last_h`, `distance_since_last_nm`, `speed_since_last_kn` |
+| Since SOSP (time/dist/speed) | `time_since_sosp_h`, `distance_since_sosp_nm`, `speed_since_sosp_kn` |
+| Distance to go | `distance_to_go_nm` |
+| Announced ETA, ETB | `announced_eta`, `etb` |
+| ETA 7,0 / 7,5 / 8,0 / 8,5 / 9,0 kt | `eta_70_kt` … `eta_90_kt` |
+| Total consumption, GO Density | `total_consumption_t`, `go_density` |
+| ROB DO / Urée / FW, Production FW | `rob_do_t`, `rob_uree_t`, `rob_fw_t`, `production_fw_t` |
+| Machine (par moteur) | table `noon_report_engines` (running hours, conso DO, compteurs J/J-1) |
+| Météo (relevés 4 h) | table `noon_report_weather` (TWS/AWA/AWS/état mer/dir./vitesse) |
+| Voilure (relevés 4 h) | table `noon_report_sails` (J0, FWD/AFT J1/MS, boost, charge ME PS/SB) |
+
+> **Champs historiques conservés** : `sog_avg`, `cog_avg`, `wind_speed_kn`,
+> `wind_direction_deg`, `sea_state_bf`, `visibility_nm`, `barometric_hpa`,
+> `fuel_consumed_24h_l`, `distance_24h_nm`, `rob_fuel_l` — toujours utilisés
+> par la synchro MRV (`services/mrv_sync.ensure_from_noon`).
+>
+> **Unités** : le formulaire officiel exprime le fuel en **tonnes**
+> (`total_consumption_t`, `rob_do_t`) ; les champs historiques `*_l` restent en
+> litres (conversion via `go_density`, ~0,86 t/m³).
 
 ---
 

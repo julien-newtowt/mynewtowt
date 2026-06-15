@@ -64,6 +64,110 @@
         <div class="field" style="grid-column:span 2;"><label for="rob_fuel_l">ROB fuel (L)</label><input id="rob_fuel_l" name="rob_fuel_l" type="number" step="1" /></div>
         <div class="field" style="grid-column:span 2;"><label for="remarks">Remarques</label><textarea id="remarks" name="remarks" rows="2"></textarea></div>
       </div>
+
+      {# ── Champs formulaire officiel TOWT (CFOTE_05) — sections repliables ── #}
+      <details class="mt-3">
+        <summary><strong>Voyage &amp; condition</strong></summary>
+        <div class="grid grid-2 gap-3 mt-2">
+          <div class="field"><label>Type de report</label><select name="report_type"><option value="">—</option>{% for rt in noon_report_types %}<option>{{ rt }}</option>{% endfor %}</select></div>
+          <div class="field"><label>Condition navire</label><select name="vessel_condition"><option value="">—</option>{% for vc in noon_vessel_conditions %}<option>{{ vc }}</option>{% endfor %}</select></div>
+          <div class="field"><label>Port précédent (UNCODE)</label><input name="previous_port" maxlength="10" /></div>
+          <div class="field"><label>Port suivant (UNCODE)</label><input name="next_port" maxlength="10" /></div>
+          <div class="field"><label>Deadweight (t)</label><input name="deadweight_t" type="number" step="0.1" /></div>
+          <div class="field"><label>Trim (m)</label><input name="trim_m" type="number" step="0.1" /></div>
+          <div class="field"><label>Draft Fwd (m)</label><input name="draft_fwd_m" type="number" step="0.1" /></div>
+          <div class="field"><label>Draft Aft (m)</label><input name="draft_aft_m" type="number" step="0.1" /></div>
+          <div class="field"><label>Temps depuis dernier report (h)</label><input name="time_since_last_h" type="number" step="0.1" /></div>
+          <div class="field"><label>Vitesse depuis dernier report (kn)</label><input name="speed_since_last_kn" type="number" step="0.1" /></div>
+          <div class="field"><label>Distance depuis dernier report (NM)</label><input name="distance_since_last_nm" type="number" step="0.1" /></div>
+          <div class="field"><label>Distance to go (NM)</label><input name="distance_to_go_nm" type="number" step="0.1" /></div>
+          <div class="field"><label>Temps depuis SOSP (h)</label><input name="time_since_sosp_h" type="number" step="0.1" /></div>
+          <div class="field"><label>Vitesse depuis SOSP (kn)</label><input name="speed_since_sosp_kn" type="number" step="0.1" /></div>
+          <div class="field"><label>Distance depuis SOSP (NM)</label><input name="distance_since_sosp_nm" type="number" step="0.1" /></div>
+        </div>
+      </details>
+
+      <details class="mt-3">
+        <summary><strong>ETA / ETB</strong></summary>
+        <div class="grid grid-2 gap-3 mt-2">
+          <div class="field"><label>ETA annoncée</label><input name="announced_eta" type="datetime-local" /></div>
+          <div class="field"><label>ETB</label><input name="etb" type="datetime-local" /></div>
+          <div class="field"><label>ETA 7,0 kt</label><input name="eta_70_kt" type="datetime-local" /></div>
+          <div class="field"><label>ETA 7,5 kt</label><input name="eta_75_kt" type="datetime-local" /></div>
+          <div class="field"><label>ETA 8,0 kt</label><input name="eta_80_kt" type="datetime-local" /></div>
+          <div class="field"><label>ETA 8,5 kt</label><input name="eta_85_kt" type="datetime-local" /></div>
+          <div class="field"><label>ETA 9,0 kt</label><input name="eta_90_kt" type="datetime-local" /></div>
+        </div>
+      </details>
+
+      <details class="mt-3">
+        <summary><strong>Machine</strong> — running hours &amp; conso DO par moteur</summary>
+        <table class="data-table mt-2" style="font-size:var(--text-xs);">
+          <thead><tr><th>Moteur</th><th>Running h</th><th>Conso DO (t)</th><th>Compteur J</th><th>Compteur J-1</th></tr></thead>
+          <tbody>
+            {% for eng in noon_engines %}
+            <tr>
+              <td>{{ eng }}</td>
+              <td><input name="eng_rh_{{ loop.index0 }}" type="number" step="0.1" style="width:5rem;" /></td>
+              <td><input name="eng_do_{{ loop.index0 }}" type="number" step="0.0001" style="width:6rem;" /></td>
+              <td><input name="eng_rhd_{{ loop.index0 }}" type="number" step="1" style="width:5rem;" /></td>
+              <td><input name="eng_rhd1_{{ loop.index0 }}" type="number" step="1" style="width:5rem;" /></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="grid grid-3 gap-3 mt-2">
+          <div class="field"><label>Conso totale (t)</label><input name="total_consumption_t" type="number" step="0.0001" /></div>
+          <div class="field"><label>Densité GO (t/m³)</label><input name="go_density" type="number" step="0.001" /></div>
+          <div class="field"><label>ROB DO (t)</label><input name="rob_do_t" type="number" step="0.01" /></div>
+          <div class="field"><label>ROB Urée (t)</label><input name="rob_uree_t" type="number" step="0.01" /></div>
+          <div class="field"><label>ROB FW (t)</label><input name="rob_fw_t" type="number" step="0.01" /></div>
+          <div class="field"><label>Production FW (t)</label><input name="production_fw_t" type="number" step="0.01" /></div>
+        </div>
+      </details>
+
+      <details class="mt-3">
+        <summary><strong>Météo</strong> — relevés 4 h</summary>
+        <table class="data-table mt-2" style="font-size:var(--text-xs);">
+          <thead><tr><th>Heure</th><th>TWS (kn)</th><th>AWA (°)</th><th>AWS (kn)</th><th>État mer</th><th>Dir. mer (°)</th><th>Vitesse (kn)</th></tr></thead>
+          <tbody>
+            {% for slot in noon_time_slots %}
+            <tr>
+              <td class="mono">{{ slot }}</td>
+              <td><input name="w_tws_{{ loop.index0 }}" type="number" step="0.1" style="width:4.5rem;" /></td>
+              <td><input name="w_awa_{{ loop.index0 }}" type="number" step="1" style="width:4.5rem;" /></td>
+              <td><input name="w_aws_{{ loop.index0 }}" type="number" step="0.1" style="width:4.5rem;" /></td>
+              <td><input name="w_ss_{{ loop.index0 }}" type="number" min="0" max="12" style="width:4rem;" /></td>
+              <td><input name="w_sd_{{ loop.index0 }}" type="number" step="1" style="width:4.5rem;" /></td>
+              <td><input name="w_spd_{{ loop.index0 }}" type="number" step="0.1" style="width:4.5rem;" /></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+
+      <details class="mt-3">
+        <summary><strong>Voilure</strong> — relevés 4 h (ON = coché)</summary>
+        <table class="data-table mt-2" style="font-size:var(--text-xs);">
+          <thead><tr><th>Heure</th><th>J0</th><th>FWD J1</th><th>FWD MS</th><th>AFT J1</th><th>AFT MS</th><th>Boost</th><th>ME PS %</th><th>ME SB %</th></tr></thead>
+          <tbody>
+            {% for slot in noon_time_slots %}
+            <tr>
+              <td class="mono">{{ slot }}</td>
+              <td><input type="checkbox" name="s_j0_{{ loop.index0 }}" value="1" /></td>
+              <td><input type="checkbox" name="s_fwdj1_{{ loop.index0 }}" value="1" /></td>
+              <td><input type="checkbox" name="s_fwdms_{{ loop.index0 }}" value="1" /></td>
+              <td><input type="checkbox" name="s_aftj1_{{ loop.index0 }}" value="1" /></td>
+              <td><input type="checkbox" name="s_aftms_{{ loop.index0 }}" value="1" /></td>
+              <td><input name="s_boost_{{ loop.index0 }}" type="number" step="0.1" style="width:4rem;" /></td>
+              <td><input name="s_psload_{{ loop.index0 }}" type="number" step="0.01" style="width:4rem;" /></td>
+              <td><input name="s_sbload_{{ loop.index0 }}" type="number" step="0.01" style="width:4rem;" /></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+
       <button type="submit" class="btn btn-primary mt-3">Enregistrer</button>
     </form>
   </article>

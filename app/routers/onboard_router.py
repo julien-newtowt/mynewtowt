@@ -22,7 +22,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.leg import Leg
-from app.models.noon_report import NoonReport
+from app.models.noon_report import (
+    NOON_ENGINES,
+    NOON_REPORT_TYPES,
+    NOON_TIME_SLOTS,
+    NOON_VESSEL_CONDITIONS,
+    NoonReport,
+    NoonReportEngine,
+    NoonReportSail,
+    NoonReportWeather,
+)
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 from app.permissions import require_permission
 from app.services import mrv_sync
@@ -205,6 +214,11 @@ async def onboard_navigation(
             "watch_logs": watch_logs,
             "latest_position": latest_position,
             "weather_now": weather_now,
+            # Constantes du formulaire officiel TOWT (CFOTE_05) pour le rendu.
+            "noon_engines": NOON_ENGINES,
+            "noon_time_slots": NOON_TIME_SLOTS,
+            "noon_report_types": NOON_REPORT_TYPES,
+            "noon_vessel_conditions": NOON_VESSEL_CONDITIONS,
         },
     )
 
@@ -241,10 +255,40 @@ async def post_noon_report(
         fuel_consumed_24h_l=_maybe_float(f.get("fuel_consumed_24h_l")),
         distance_24h_nm=_maybe_float(f.get("distance_24h_nm")),
         rob_fuel_l=_maybe_float(f.get("rob_fuel_l")),
+        # Alignement formulaire officiel TOWT (CFOTE_05)
+        report_type=(f.get("report_type") or None),
+        previous_port=((f.get("previous_port") or "").strip().upper() or None),
+        next_port=((f.get("next_port") or "").strip().upper() or None),
+        vessel_condition=(f.get("vessel_condition") or None),
+        deadweight_t=_maybe_float(f.get("deadweight_t")),
+        draft_fwd_m=_maybe_float(f.get("draft_fwd_m")),
+        draft_aft_m=_maybe_float(f.get("draft_aft_m")),
+        trim_m=_maybe_float(f.get("trim_m")),
+        time_since_last_h=_maybe_float(f.get("time_since_last_h")),
+        distance_since_last_nm=_maybe_float(f.get("distance_since_last_nm")),
+        speed_since_last_kn=_maybe_float(f.get("speed_since_last_kn")),
+        time_since_sosp_h=_maybe_float(f.get("time_since_sosp_h")),
+        distance_since_sosp_nm=_maybe_float(f.get("distance_since_sosp_nm")),
+        speed_since_sosp_kn=_maybe_float(f.get("speed_since_sosp_kn")),
+        distance_to_go_nm=_maybe_float(f.get("distance_to_go_nm")),
+        announced_eta=_maybe_dt(f.get("announced_eta")),
+        etb=_maybe_dt(f.get("etb")),
+        eta_70_kt=_maybe_dt(f.get("eta_70_kt")),
+        eta_75_kt=_maybe_dt(f.get("eta_75_kt")),
+        eta_80_kt=_maybe_dt(f.get("eta_80_kt")),
+        eta_85_kt=_maybe_dt(f.get("eta_85_kt")),
+        eta_90_kt=_maybe_dt(f.get("eta_90_kt")),
+        total_consumption_t=_maybe_float(f.get("total_consumption_t")),
+        go_density=_maybe_float(f.get("go_density")),
+        rob_do_t=_maybe_float(f.get("rob_do_t")),
+        rob_uree_t=_maybe_float(f.get("rob_uree_t")),
+        rob_fw_t=_maybe_float(f.get("rob_fw_t")),
+        production_fw_t=_maybe_float(f.get("production_fw_t")),
         remarks=f.get("remarks") or None,
         recorded_by_id=user.id,
         client_uuid=client_uuid,
     )
+    _attach_noon_children(nr, f)
     db.add(nr)
     await db.flush()
     await activity_record(
@@ -397,7 +441,9 @@ async def post_visitor(
         entity_id=v.id,
         entity_label=v.full_name,
     )
-    return RedirectResponse(url=_safe_onboard_redirect(f.get("next"), "/onboard/crew"), status_code=303)
+    return RedirectResponse(
+        url=_safe_onboard_redirect(f.get("next"), "/onboard/crew"), status_code=303
+    )
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -654,3 +700,96 @@ def _maybe_int(v):
         return int(v)
     except (TypeError, ValueError):
         return None
+
+
+def _maybe_bool(v) -> bool:
+    """Checkbox HTML : présent (« 1 »/« on ») → True, absent → False."""
+    return str(v).strip().lower() in ("1", "true", "on", "yes") if v is not None else False
+
+
+def _maybe_dt(v):
+    """Parse un champ datetime-local (« YYYY-MM-DDTHH:MM ») en datetime UTC.
+
+    Tolérant : renvoie None si vide ou non parsable. Pas de conversion de
+    fuseau (saisie supposée en UTC bord, cohérente avec recorded_at).
+    """
+    if v is None or not str(v).strip():
+        return None
+    try:
+        return datetime.fromisoformat(str(v).strip()).replace(tzinfo=UTC)
+    except (TypeError, ValueError):
+        return None
+
+
+def _attach_noon_children(nr: NoonReport, f) -> None:
+    """Construit les lignes filles (machine / météo / voilure) du noon report.
+
+    Lit les champs indexés du formulaire officiel et n'ajoute une ligne que si
+    elle porte au moins une valeur (pas de lignes vides). Les collections de
+    relations sont cascade-persistées au flush du parent.
+    """
+    # Machine — un relevé par moteur (NOON_ENGINES).
+    for i, name in enumerate(NOON_ENGINES):
+        rh = _maybe_float(f.get(f"eng_rh_{i}"))
+        do = _maybe_float(f.get(f"eng_do_{i}"))
+        rhd = _maybe_float(f.get(f"eng_rhd_{i}"))
+        rhd1 = _maybe_float(f.get(f"eng_rhd1_{i}"))
+        if rh is None and do is None and rhd is None and rhd1 is None:
+            continue
+        nr.engines.append(
+            NoonReportEngine(
+                engine=name,
+                running_hours_h=rh,
+                do_consumption_t=do,
+                running_hours_d=rhd,
+                running_hours_d1=rhd1,
+            )
+        )
+    # Météo — un relevé par créneau (NOON_TIME_SLOTS).
+    for i, slot in enumerate(NOON_TIME_SLOTS):
+        vals = (
+            _maybe_float(f.get(f"w_tws_{i}")),
+            _maybe_float(f.get(f"w_awa_{i}")),
+            _maybe_float(f.get(f"w_aws_{i}")),
+            _maybe_int(f.get(f"w_ss_{i}")),
+            _maybe_float(f.get(f"w_sd_{i}")),
+            _maybe_float(f.get(f"w_spd_{i}")),
+        )
+        if all(v is None for v in vals):
+            continue
+        nr.weather_rows.append(
+            NoonReportWeather(
+                slot_time=slot,
+                tws_kn=vals[0],
+                awa_deg=vals[1],
+                aws_kn=vals[2],
+                sea_state=vals[3],
+                sea_direction_deg=vals[4],
+                ship_speed_kn=vals[5],
+            )
+        )
+    # Voilure — un relevé par créneau.
+    for i, slot in enumerate(NOON_TIME_SLOTS):
+        j0 = _maybe_bool(f.get(f"s_j0_{i}"))
+        fj1 = _maybe_bool(f.get(f"s_fwdj1_{i}"))
+        fms = _maybe_bool(f.get(f"s_fwdms_{i}"))
+        aj1 = _maybe_bool(f.get(f"s_aftj1_{i}"))
+        ams = _maybe_bool(f.get(f"s_aftms_{i}"))
+        boost = _maybe_float(f.get(f"s_boost_{i}"))
+        ps = _maybe_float(f.get(f"s_psload_{i}"))
+        sb = _maybe_float(f.get(f"s_sbload_{i}"))
+        if not (j0 or fj1 or fms or aj1 or ams) and boost is None and ps is None and sb is None:
+            continue
+        nr.sail_rows.append(
+            NoonReportSail(
+                slot_time=slot,
+                j0=j0,
+                fwd_j1=fj1,
+                fwd_ms=fms,
+                aft_j1=aj1,
+                aft_ms=ams,
+                sail_boost=boost,
+                me_ps_load_pct=ps,
+                me_sb_load_pct=sb,
+            )
+        )

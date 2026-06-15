@@ -41,7 +41,12 @@ from app.models.mfa_recovery_code import MfaRecoveryCode
 from app.models.mrv import MRVEvent, MRVParameter
 from app.models.news_item import NewsItem
 from app.models.news_source import NewsSource
-from app.models.noon_report import NoonReport
+from app.models.noon_report import (
+    NoonReport,
+    NoonReportEngine,
+    NoonReportSail,
+    NoonReportWeather,
+)
 from app.models.notification import Notification
 from app.models.onboard_cashbox import (
     CashboxClosure,
@@ -113,6 +118,9 @@ __all__ = [
     "NewsItem",
     "NewsSource",
     "NoonReport",
+    "NoonReportEngine",
+    "NoonReportSail",
+    "NoonReportWeather",
     "Notification",
     "OnboardCashbox",
     "OnboardChecklist",
