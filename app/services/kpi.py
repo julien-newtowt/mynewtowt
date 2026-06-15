@@ -79,12 +79,16 @@ async def compute_for_leg(db: AsyncSession, leg: Leg) -> LegKPI:
             from app.services.co2 import get_factors
 
             factors = await get_factors(db)
-            estimate = co2_estimate(
-                distance_nm=distance_nm, tonnage_t=tonnage_t, factors=factors
-            )
+            estimate = co2_estimate(distance_nm=distance_nm, tonnage_t=tonnage_t, factors=factors)
             co2_avoided_kg = estimate.avoided_co2_kg.quantize(Decimal("0.01"))
         except Exception:
             pass
+
+    # ── Carbone (Carbon Report CFOTE_09) — auto depuis noon reports + facteur DO ─
+    from app.services.carbon import compute_carbon_for_leg
+
+    carbon = await compute_carbon_for_leg(db, leg, cargo_t=tonnage_t, distance_nm=distance_nm)
+    co2_emitted_kg = (carbon.co2_emitted_t * Decimal("1000")).quantize(Decimal("0.01"))
 
     # ── On-time : ATA ≤ ETA contractuelle ─────────────────────────────────
     on_time = True
@@ -114,6 +118,12 @@ async def compute_for_leg(db: AsyncSession, leg: Leg) -> LegKPI:
             on_time=on_time,
             occupancy_pct=occupancy_pct,
             co2_avoided_kg=co2_avoided_kg,
+            do_consumed_t=carbon.do_consumed_t,
+            co2_emitted_kg=co2_emitted_kg,
+            co2_per_nm_kg=carbon.co2_per_nm_kg,
+            co2_per_t_kg=carbon.co2_per_t_kg,
+            co2_per_tnm_g=carbon.co2_per_tnm_g,
+            is_manual=False,
         )
         db.add(kpi)
     else:
@@ -125,6 +135,12 @@ async def compute_for_leg(db: AsyncSession, leg: Leg) -> LegKPI:
         existing.on_time = on_time
         existing.occupancy_pct = occupancy_pct
         existing.co2_avoided_kg = co2_avoided_kg
+        existing.do_consumed_t = carbon.do_consumed_t
+        existing.co2_emitted_kg = co2_emitted_kg
+        existing.co2_per_nm_kg = carbon.co2_per_nm_kg
+        existing.co2_per_t_kg = carbon.co2_per_t_kg
+        existing.co2_per_tnm_g = carbon.co2_per_tnm_g
+        existing.is_manual = False
         kpi = existing
 
     await db.flush()

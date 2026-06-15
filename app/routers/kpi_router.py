@@ -51,12 +51,27 @@ async def kpi_index(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("kpi", "C")),
 ) -> HTMLResponse:
-    kpis = list((await db.execute(select(LegKPI).order_by(LegKPI.id.desc()))).scalars().all())
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()))).scalars().all())
+
+    # ── Auto-alimentation : chaque leg porte un KPI calculé automatiquement ──
+    # (tonnage, distance, vitesse, CO₂ évité + émis, intensités carbone). Les
+    # KPI marqués « saisie manuelle » (is_manual) ne sont jamais réécrits.
+    from app.services.kpi import compute_for_leg
+
+    existing = {k.leg_id: k for k in (await db.execute(select(LegKPI))).scalars().all()}
+    for leg in legs:
+        k = existing.get(leg.id)
+        if k is None or not k.is_manual:
+            await compute_for_leg(db, leg)
+
+    kpis = list((await db.execute(select(LegKPI).order_by(LegKPI.id.desc()))).scalars().all())
+    leg_map = {leg.id: leg for leg in legs}
 
     # Aggregates
     total_tonnage_t = sum((k.tonnage_kg or Decimal(0)) for k in kpis) / Decimal(1000)
     total_co2_avoided_kg = sum((k.co2_avoided_kg or Decimal(0)) for k in kpis)
+    total_co2_emitted_t = sum((k.co2_emitted_kg or Decimal(0)) for k in kpis) / Decimal(1000)
+    total_do_t = sum((k.do_consumed_t or Decimal(0)) for k in kpis)
 
     if kpis:
         on_time_count = sum(1 for k in kpis if k.on_time)
@@ -71,8 +86,11 @@ async def kpi_index(
             "user": user,
             "kpis": kpis,
             "legs": legs,
+            "leg_map": leg_map,
             "total_tonnage_t": total_tonnage_t,
             "total_co2_avoided_kg": total_co2_avoided_kg,
+            "total_co2_emitted_t": total_co2_emitted_t,
+            "total_do_t": total_do_t,
             "on_time_pct": on_time_pct,
         },
     )
@@ -196,6 +214,7 @@ async def kpi_upsert(
             on_time=on_time,
             occupancy_pct=_to_decimal(occupancy_pct),
             co2_avoided_kg=_to_decimal(co2_avoided_kg),
+            is_manual=True,
         )
         db.add(kpi)
     else:
@@ -209,6 +228,8 @@ async def kpi_upsert(
         existing.on_time = on_time
         existing.occupancy_pct = _to_decimal(occupancy_pct)
         existing.co2_avoided_kg = _to_decimal(co2_avoided_kg)
+        # Saisie manuelle : on verrouille contre l'auto-alimentation.
+        existing.is_manual = True
 
     await db.flush()
 

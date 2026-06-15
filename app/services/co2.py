@@ -26,9 +26,40 @@ TOWT_CO2_EF_G_PER_TKM = Decimal("1.5")
 CONV_CO2_EF_G_PER_TKM = Decimal("13.7")
 NM_TO_KM = Decimal("1.852")
 
+# Facteur d'émission CO₂ du MDO/DO consommé — source MEPC.391(81) : combustion
+# de 1 g de DO → 3,206 gCO₂ (Carbon Report officiel CFOTE_09). Donc 1 t DO →
+# 3,206 tCO₂.
+DO_CO2_G_PER_G = Decimal("3.206")
+
 # Noms des variables versionnées en base (cf. app.models.co2_variable).
 TOWT_EF_VARIABLE = "towt_co2_ef"
 CONV_EF_VARIABLE = "conventional_co2_ef"
+DO_CO2_EF_VARIABLE = "do_co2_ef"
+
+
+async def get_do_co2_factor(db: AsyncSession) -> Decimal:
+    """Facteur CO₂ par tonne de DO (tCO₂/tDO) — DB versionnée → fallback.
+
+    Lit la variable ``do_co2_ef`` (``co2_variables``, écran /admin/co2) si
+    présente, sinon retombe sur la constante MEPC.391(81) (3,206). Lecture
+    seule, tolérante (toute erreur DB → constante).
+    """
+    try:
+        from app.models.co2_variable import Co2Variable
+
+        row = (
+            await db.execute(
+                select(Co2Variable).where(
+                    Co2Variable.is_current.is_(True),
+                    Co2Variable.name == DO_CO2_EF_VARIABLE,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is not None:
+            return Decimal(row.value)
+    except Exception:
+        pass
+    return DO_CO2_G_PER_G
 
 
 @dataclass(frozen=True)

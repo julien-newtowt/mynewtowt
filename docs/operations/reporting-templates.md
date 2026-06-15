@@ -126,18 +126,30 @@ Bilan **berth-to-berth** d'un voyage : consommation, émissions et facteurs.
   l'arrivée/au départ de chaque quai, conso pendant l'escale et pendant la
   traversée (pier-to-pier)
 
-### Correspondance ERP — module **MRV** (`/mrv`)
-Le Carbon Report ERP est généré par le module MRV (règlement UE 2015/757) :
-- Saisie des `MRVEvent` (fuel / distance / cargo) par leg.
-- Exports : **DNV CSV** (`/mrv/export/dnv.csv`) et **Carbon Report**
-  (`/mrv/export/carbon-report.txt`).
-- Facteurs d'émission CO₂ : cf. `app/services/co2.py` + `Co2Variable`
-  (admin `/admin/co2`). Le form fixe la source **MEPC.391(81)** comme
-  référence des facteurs DO (CO₂/CH₄/N₂O).
+### Correspondance ERP — **calcul automatique par leg**
+Depuis la migration **0039**, le Carbon Report est **généré automatiquement**
+pour chaque leg (`app/services/carbon.py` → `compute_carbon_for_leg`) :
 
-> **Écart connu** : la granularité réservoir-par-réservoir et compteur moteur
-> du form n'est pas modélisée en base ; le module MRV travaille au niveau
-> événement/leg. Le xlsx reste la référence de saisie terrain détaillée.
+| Bloc form CFOTE_09 | Source ERP (auto) |
+|---|---|
+| Consommation DO (ME/AE/total) | somme des noon reports du leg (`total_consumption_t`, sinon moteurs) |
+| Distance berth-to-berth | `leg.distance_nm` (haversine) |
+| Cargo (B/L) | tonnage des bookings confirmés |
+| Facteur CO₂ DO | `do_co2_ef` (≈ 3,206 tCO₂/tDO, MEPC.391(81)) — éditable `/admin/co2` |
+| CO₂ total / par mille / par tonne / par t·nm (EU MRV) | calculés et persistés dans `LegKPI` |
+
+- **Vue par leg** : `/mrv/legs/{leg_id}/carbon` (résultats CFOTE_09 calculés) ;
+  lien depuis chaque ligne de `/kpi`.
+- **KPI auto-alimentés** : `/kpi` calcule le `LegKPI` de **chaque** leg à
+  l'ouverture (sauf KPI verrouillé `is_manual`). CO₂ émis + évité, DO consommé,
+  intensité t·nm affichés par leg.
+- Exports MRV historiques conservés : **DNV CSV** (`/mrv/export/dnv.csv`) et
+  **Carbon Report texte** (`/mrv/export/carbon-report.txt`).
+
+> **Écart connu** : la granularité réservoir-par-réservoir et compteur moteur du
+> formulaire n'est pas modélisée (mesures opérationnelles) ; l'ERP calcule à
+> partir de la consommation agrégée des noon reports. Le xlsx reste la référence
+> de saisie terrain détaillée.
 
 ---
 

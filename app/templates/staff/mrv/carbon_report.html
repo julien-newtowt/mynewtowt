@@ -1,0 +1,50 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Carbon Report {{ leg.leg_code }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">MRV · Carbon Report · {{ leg.leg_code }}</span>
+    <h1 class="display">Carbon Report</h1>
+    <p class="text-muted">Calcul automatique (CFOTE_09) — consommation DO, CO₂ émis &amp; intensités.</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="/static/reference/towt_carbon_report_template.xlsx" download class="btn btn-ghost btn-sm">📥 Modèle</a>
+    <a href="/kpi" class="btn btn-ghost">← KPI</a>
+  </div>
+</header>
+
+<article class="card mb-4">
+  <h2>Voyage</h2>
+  <table class="data-table">
+    <tr><td>Navire</td><td>{{ vessel.name if vessel else '—' }}{% if vessel %} <span class="mono text-sm">· classe {{ vessel.vessel_class }}</span>{% endif %}</td></tr>
+    <tr><td>Route</td><td>{% if pol %}{{ pol.name }} ({{ pol.locode }}){% endif %} → {% if pod %}{{ pod.name }} ({{ pod.locode }}){% endif %}</td></tr>
+    <tr><td>Distance berth-to-berth</td><td class="mono">{{ carbon.distance_nm or '—' }} {% if carbon.distance_nm %}NM{% endif %}</td></tr>
+    <tr><td>Cargo (B/L)</td><td class="mono">{{ "%.1f"|format(carbon.cargo_t) }} t</td></tr>
+    <tr><td>Facteur CO₂ DO appliqué</td><td class="mono">{{ carbon.do_co2_factor }} tCO₂/tDO <span class="text-muted text-sm">(MEPC.391(81))</span></td></tr>
+  </table>
+</article>
+
+<section class="kpi-strip mb-4">
+  <div class="kpi-card"><div class="label">Consommation DO</div><div class="value">{{ "%.3f"|format(carbon.do_consumed_t) }} t</div><div class="delta text-muted">noon reports du leg</div></div>
+  <div class="kpi-card"><div class="label">CO₂ émis</div><div class="value">{{ "%.3f"|format(carbon.co2_emitted_t) }} t</div><div class="delta text-muted">DO × facteur</div></div>
+  <div class="kpi-card"><div class="label">CO₂ évité</div><div class="value text-success">{{ carbon.avoided_co2_kg or '—' }} {% if carbon.avoided_co2_kg %}kg{% endif %}</div><div class="delta up">vs conventionnel</div></div>
+</section>
+
+<article class="card">
+  <h2>Intensités d'émission</h2>
+  <table class="data-table">
+    <thead><tr><th>Indicateur</th><th>Valeur</th><th>Unité</th></tr></thead>
+    <tbody>
+      <tr><td>CO₂ par mille</td><td class="mono">{{ carbon.co2_per_nm_kg or '—' }}</td><td>kgCO₂ / NM</td></tr>
+      <tr><td>CO₂ par tonne de cargo</td><td class="mono">{{ carbon.co2_per_t_kg or '—' }}</td><td>kgCO₂ / t</td></tr>
+      <tr><td>CO₂ par tonne·mille (EU MRV)</td><td class="mono">{{ carbon.co2_per_tnm_g or '—' }}</td><td>gCO₂ / (t·NM)</td></tr>
+    </tbody>
+  </table>
+  <p class="text-muted text-sm mt-2">
+    Données dérivées automatiquement des noon reports (consommation), de la distance haversine du leg et du tonnage des bookings confirmés.
+    {% if not carbon.distance_nm or carbon.cargo_t == 0 %}Certaines intensités sont indisponibles tant que distance et cargo ne sont pas renseignés.{% endif %}
+  </p>
+</article>
+
+{% endblock %}

@@ -12,26 +12,32 @@
 </header>
 
 <section class="kpi-strip">
-  <div class="kpi-card"><div class="label">Tonnage cumulé</div><div class="value">{{ "%.0f"|format(total_tonnage_t) }} t</div><div class="delta text-muted">total des legs trackés</div></div>
+  <div class="kpi-card"><div class="label">Tonnage cumulé</div><div class="value">{{ "%.0f"|format(total_tonnage_t) }} t</div><div class="delta text-muted">total des legs</div></div>
+  <div class="kpi-card"><div class="label">CO₂ émis cumulé</div><div class="value">{{ "%.1f"|format(total_co2_emitted_t) }} t</div><div class="delta text-muted">DO consommé {{ "%.1f"|format(total_do_t) }} t</div></div>
   <div class="kpi-card"><div class="label">CO₂ évité cumulé</div><div class="value text-success">{{ "%.0f"|format(total_co2_avoided_kg) }} kg</div><div class="delta up">vs cargo conventionnel</div></div>
   <div class="kpi-card"><div class="label">On-time performance</div><div class="value">{{ "%.0f"|format(on_time_pct) }} %</div><div class="delta text-muted">legs livrés à l'heure</div></div>
-  <div class="kpi-card"><div class="label">Legs trackés</div><div class="value">{{ kpis|length }}</div><div class="delta text-muted">KPI persistés</div></div>
+  <div class="kpi-card"><div class="label">Legs trackés</div><div class="value">{{ kpis|length }}</div><div class="delta text-muted">auto-alimentés</div></div>
 </section>
 
 <article class="card mt-4">
   <h2>KPI par leg</h2>
+  <p class="text-muted text-sm">Calculs générés automatiquement pour chaque leg (tonnage, distance, CO₂ émis &amp; évité). Une saisie manuelle verrouille le leg contre le recalcul.</p>
   {% if kpis %}
     <table>
-      <thead><tr><th>Leg</th><th>Palettes</th><th>Tonnage</th><th>Distance</th><th>Vitesse moy.</th><th>Occupation</th><th>CO₂ évité</th><th>On-time</th>{% if user.role == 'administrateur' %}<th></th>{% endif %}</tr></thead>
+      <thead><tr><th>Leg</th><th>Palettes</th><th>Tonnage</th><th>Distance</th><th>Vitesse moy.</th><th>Occupation</th><th>DO (t)</th><th>CO₂ émis</th><th>CO₂/t·nm</th><th>CO₂ évité</th><th>On-time</th><th>Source</th>{% if user.role == 'administrateur' %}<th></th>{% endif %}</tr></thead>
       <tbody>{% for k in kpis %}<tr>
-        <td class="mono">{% if k.leg_id %}{{ k.leg_id }}{% else %}—{% endif %}</td>
+        <td class="mono">{% if leg_map.get(k.leg_id) %}<a href="/mrv/legs/{{ k.leg_id }}/carbon">{{ leg_map[k.leg_id].leg_code }}</a>{% else %}#{{ k.leg_id }}{% endif %}</td>
         <td>{{ k.palettes_carried }}</td>
-        <td>{{ k.tonnage_kg }} kg</td>
+        <td>{{ "%.1f"|format(k.tonnage_kg / 1000) if k.tonnage_kg else 0 }} t</td>
         <td>{{ k.distance_nm or '—' }} {% if k.distance_nm %}NM{% endif %}</td>
         <td>{{ k.avg_speed_kn or '—' }} {% if k.avg_speed_kn %}kn{% endif %}</td>
         <td>{{ k.occupancy_pct or '—' }} {% if k.occupancy_pct %}%{% endif %}</td>
-        <td class="mono">{{ k.co2_avoided_kg or '—' }}</td>
+        <td class="mono">{{ k.do_consumed_t or '—' }}</td>
+        <td class="mono">{{ "%.1f"|format(k.co2_emitted_kg / 1000) ~ ' t' if k.co2_emitted_kg else '—' }}</td>
+        <td class="mono">{{ k.co2_per_tnm_g or '—' }}</td>
+        <td class="mono text-success">{{ k.co2_avoided_kg or '—' }}</td>
         <td>{% if k.on_time %}<span class="pill pill-ok">OK</span>{% else %}<span class="pill pill-warn">Retard</span>{% endif %}</td>
+        <td>{% if k.is_manual %}<span class="pill pill-warn">manuel</span>{% else %}<span class="pill pill-ok">auto</span>{% endif %}</td>
         {% if user.role == 'administrateur' %}
         <td class="flex gap-1">
           <a href="/kpi/legs/{{ k.leg_id }}/edit" class="btn btn-xs">Modifier</a>

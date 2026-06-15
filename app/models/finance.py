@@ -103,6 +103,14 @@ class LegKPI(Base):
     on_time: Mapped[bool] = mapped_column(Boolean, default=True)
     occupancy_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     co2_avoided_kg: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    # ── Carbone (Carbon Report CFOTE_09) — auto-calculé par services.carbon ──
+    do_consumed_t: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    co2_emitted_kg: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    co2_per_nm_kg: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    co2_per_t_kg: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    co2_per_tnm_g: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    # Verrou « saisie manuelle » : si vrai, l'auto-calcul ne réécrit pas ce KPI.
+    is_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

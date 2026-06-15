@@ -182,6 +182,42 @@ def _decor(ev: MRVEvent, leg_map: dict[int, Leg]) -> _AdapterMRV:
     return _AdapterMRV(ev, leg_map.get(ev.leg_id))
 
 
+@router.get("/legs/{leg_id}/carbon", response_class=HTMLResponse)
+async def mrv_carbon_report(
+    leg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """Carbon Report d'un leg (CFOTE_09) — calculé automatiquement.
+
+    Résultats (consommation DO, CO₂ émis, intensités par mille / tonne /
+    tonne·mille) dérivés des noon reports + distance + cargo + facteur DO.
+    """
+    from app.models.port import Port
+    from app.services.carbon import compute_carbon_for_leg
+
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404, detail="Leg not found")
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
+    pol = await db.get(Port, leg.departure_port_id) if leg.departure_port_id else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
+    carbon = await compute_carbon_for_leg(db, leg)
+    return templates.TemplateResponse(
+        "staff/mrv/carbon_report.html",
+        {
+            "request": request,
+            "user": user,
+            "leg": leg,
+            "vessel": vessel,
+            "pol": pol,
+            "pod": pod,
+            "carbon": carbon,
+        },
+    )
+
+
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
