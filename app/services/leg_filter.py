@@ -121,3 +121,53 @@ async def build_leg_filter(
         "leg_id": leg_id,
         "selected_leg": selected_leg,
     }
+
+
+def _d(dt, fmt: str = "%d/%m") -> str:
+    """Date courte tolérante (``—`` si absente)."""
+    return dt.strftime(fmt) if dt else "—"
+
+
+def format_leg_option(leg: Leg, ports: dict) -> str:
+    """Libellé riche d'un leg pour un ``<select>`` : Année · POL→POD · ETD/ATD · ETA/ATA.
+
+    ``ports`` : map ``{port_id: Port}`` (pour résoudre les LOCODE POL/POD).
+    """
+    year = leg.etd.year if leg.etd else "—"
+    pol = ports.get(leg.departure_port_id)
+    pod = ports.get(leg.arrival_port_id)
+    pol_s = pol.locode if pol else "?"
+    pod_s = pod.locode if pod else "?"
+    return (
+        f"{leg.leg_code} · {year} · {pol_s}→{pod_s} · "
+        f"ETD {_d(leg.etd)}/ATD {_d(leg.atd)} · "
+        f"ETA {_d(leg.eta)}/ATA {_d(leg.ata)}"
+    )
+
+
+async def leg_select_options(db: AsyncSession, *, vessel_id: int | None = None) -> list[dict]:
+    """Options de leg pour un ``<select>`` « Leg lié », triées chronologiquement.
+
+    Renvoie ``[{"id", "leg_code", "etd", "label"}]`` où ``label`` suit le format
+    *Année · POL→POD · ETD/ATD · ETA/ATA*. Tri par ETD croissant (legs sans ETD
+    en fin). Lecture seule. À rendre via la macro ``leg_option_tags``.
+    """
+    from app.models.port import Port
+
+    stmt = select(Leg)
+    if vessel_id is not None:
+        stmt = stmt.where(Leg.vessel_id == vessel_id)
+    legs = list((await db.execute(stmt)).scalars().all())
+    ports = {p.id: p for p in (await db.execute(select(Port))).scalars().all()}
+    options = [
+        {
+            "id": lg.id,
+            "leg_code": lg.leg_code,
+            "etd": lg.etd,
+            "label": format_leg_option(lg, ports),
+        }
+        for lg in legs
+    ]
+    # Ordre chronologique (ETD croissant) ; legs sans ETD relégués en fin.
+    options.sort(key=lambda o: (o["etd"] is None, o["etd"] or 0))
+    return options

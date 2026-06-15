@@ -89,7 +89,10 @@ async def claim_new_form(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("claims", "M")),
 ):
+    from app.services.leg_filter import leg_select_options
+
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
+    leg_options = await leg_select_options(db)
     # Si un leg est présélectionné (query ?leg_id=), on pré-charge ses zones
     # d'arrimage pour le picker de position cale (claim cargo). Sinon liste
     # vide : l'opérateur choisit d'abord un leg puis ré-ouvre/édite.
@@ -100,6 +103,7 @@ async def claim_new_form(
             "request": request,
             "user": user,
             "legs": legs,
+            "leg_options": leg_options,
             "claim_types": CLAIM_TYPES,
             "selected_leg_id": leg_id,
             "stowage_zones": stowage_zones,

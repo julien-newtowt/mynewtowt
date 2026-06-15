@@ -766,7 +766,10 @@ async def offer_new_form(
         .scalars()
         .all()
     )
+    from app.services.leg_filter import leg_select_options
+
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
+    leg_options = await leg_select_options(db)
     grids = list(
         (await db.execute(select(RateGrid).where(RateGrid.status == "active"))).scalars().all()
     )
@@ -777,6 +780,7 @@ async def offer_new_form(
             "user": user,
             "clients": clients,
             "legs": legs,
+            "leg_options": leg_options,
             "grids": grids,
             "offer": None,
         },
@@ -962,10 +966,20 @@ async def order_new_form(
         .scalars()
         .all()
     )
+    from app.services.leg_filter import leg_select_options
+
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
+    leg_options = await leg_select_options(db)
     return templates.TemplateResponse(
         "staff/commercial/order_form.html",
-        {"request": request, "user": user, "clients": clients, "legs": legs, "order": None},
+        {
+            "request": request,
+            "user": user,
+            "clients": clients,
+            "legs": legs,
+            "leg_options": leg_options,
+            "order": None,
+        },
     )
 
 

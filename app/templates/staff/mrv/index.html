@@ -1,5 +1,5 @@
 {% extends "staff/_layout.html" %}
-{% from "staff/_leg_filter.html" import leg_filter %}
+{% from "staff/_leg_filter.html" import leg_filter, leg_option_tags %}
 {% block title %}MRV — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
@@ -65,7 +65,7 @@
   <h2>Ajouter un événement</h2>
   <form method="post" action="/mrv/legs/{{ legs[0].id if legs else 0 }}/events">
     <div class="grid grid-3 gap-2">
-      <div class="field"><label>Leg</label><select name="leg_id_select" onchange="this.form.action='/mrv/legs/'+this.value+'/events'">{% for l in legs %}<option value="{{ l.id }}">{{ l.leg_code }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Leg</label><select name="leg_id_select" onchange="this.form.action='/mrv/legs/'+this.value+'/events'">{{ leg_option_tags(leg_options) }}</select></div>
       <div class="field"><label>Type</label><select name="event_kind"><option>bunkering</option><option>noon_consumption</option><option>arrival_rob</option><option>departure_rob</option></select></div>
       <div class="field"><label>Date</label><input name="recorded_at" type="datetime-local" required /></div>
       <div class="field"><label>Fuel type</label><select name="fuel_type"><option>MDO</option><option>MGO</option></select></div>

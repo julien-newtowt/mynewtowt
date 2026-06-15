@@ -1,4 +1,5 @@
 {% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_option_tags %}
 {% block title %}Équipage onboard{% endblock %}
 {% block content %}
 <a href="/onboard" class="btn btn-ghost mb-3">← Onboard</a>
@@ -10,7 +11,7 @@
     <form method="post" action="/onboard/crew/visitor">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <div class="grid grid-2 gap-3">
-        <div class="field"><label>Leg</label><select name="leg_id" required>{% for l in legs %}<option value="{{ l.id }}">{{ l.leg_code }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Leg</label><select name="leg_id" required>{{ leg_option_tags(leg_options) }}</select></div>
         <div class="field"><label>Nom complet</label><input name="full_name" required /></div>
         <div class="field"><label>Société</label><input name="company" /></div>
         <div class="field"><label>Motif</label><input name="purpose" /></div>

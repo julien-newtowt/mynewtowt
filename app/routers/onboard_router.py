@@ -417,7 +417,10 @@ async def onboard_crew(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
+    from app.services.leg_filter import leg_select_options
+
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(20))).scalars().all())
+    leg_options = await leg_select_options(db)
     visitors_today = list(
         (await db.execute(select(VisitorLog).order_by(VisitorLog.time_in.desc()).limit(20)))
         .scalars()
@@ -438,6 +441,7 @@ async def onboard_crew(
             "request": request,
             "user": user,
             "legs": legs,
+            "leg_options": leg_options,
             "visitors": visitors_today,
             "checklists": checklists,
         },
@@ -506,6 +510,9 @@ async def onboard_compliance(
         )
     legs = list((await db.execute(legs_stmt)).scalars().all())
     selected = (await db.get(Leg, leg_id)) if leg_id else (legs[0] if legs else None)
+    from app.services.leg_filter import leg_select_options
+
+    leg_options = await leg_select_options(db, vessel_id=getattr(user, "assigned_vessel_id", None))
 
     checklists: list[OnboardChecklist] = []
     checklist_items: dict[int, list[dict[str, object]]] = {}
@@ -543,6 +550,7 @@ async def onboard_compliance(
             "request": request,
             "user": user,
             "legs": legs,
+            "leg_options": leg_options,
             "leg": selected,
             "checklists": checklists,
             "checklist_items": checklist_items,

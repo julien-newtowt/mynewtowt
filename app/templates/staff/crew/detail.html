@@ -1,4 +1,5 @@
 {% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_option_tags %}
 {% block title %}{{ member.full_name }} — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
@@ -73,9 +74,7 @@
       <div class="field">
         <label>Leg</label>
         <select name="leg_id" required>
-          {% for l in legs %}
-          <option value="{{ l.id }}">{{ l.leg_code }} — ETD {{ l.etd|date }}</option>
-          {% endfor %}
+          {{ leg_option_tags(leg_options) }}
         </select>
       </div>
       <div class="field">

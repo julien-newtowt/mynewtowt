@@ -368,7 +368,10 @@ async def _member_detail_context(
         .scalars()
         .all()
     )
+    from app.services.leg_filter import leg_select_options
+
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()))).scalars().all())
+    leg_options = await leg_select_options(db)
     return {
         "request": request,
         "user": user,
@@ -378,6 +381,7 @@ async def _member_detail_context(
         "leaves": leaves,
         "tickets": tickets,
         "legs": legs,
+        "leg_options": leg_options,
         "roles": CREW_ROLES,
         "error": error,
     }

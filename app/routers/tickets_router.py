@@ -92,7 +92,10 @@ async def new_form(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("tickets", "M")),
 ) -> HTMLResponse:
+    from app.services.leg_filter import leg_select_options
+
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
+    leg_options = await leg_select_options(db)
     users = list(
         (await db.execute(select(User).where(User.is_active.is_(True)).order_by(User.full_name)))
         .scalars()
@@ -104,6 +107,7 @@ async def new_form(
             "request": request,
             "user": user,
             "legs": legs,
+            "leg_options": leg_options,
             "users": users,
             "categories": CATEGORIES,
             "category_labels": CATEGORY_LABELS,
@@ -135,9 +139,12 @@ async def create_action(
             created_by_id=user.id,
         )
     except TicketError as e:
+        from app.services.leg_filter import leg_select_options
+
         legs = list(
             (await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all()
         )
+        leg_options = await leg_select_options(db)
         users = list(
             (await db.execute(select(User).where(User.is_active.is_(True)))).scalars().all()
         )
@@ -147,6 +154,7 @@ async def create_action(
                 "request": request,
                 "user": user,
                 "legs": legs,
+                "leg_options": leg_options,
                 "users": users,
                 "categories": CATEGORIES,
                 "category_labels": CATEGORY_LABELS,

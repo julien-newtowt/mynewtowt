@@ -1,4 +1,5 @@
 {% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_option_tags %}
 {% block title %}Conformité — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 <a href="/onboard" class="btn btn-ghost mb-3">← Onboard</a>
@@ -11,9 +12,7 @@
   <div class="field" style="flex:1; margin:0;">
     <label for="leg_id">Voyage</label>
     <select id="leg_id" name="leg_id" onchange="this.form.submit()">
-      {% for l in legs %}
-        <option value="{{ l.id }}" {% if leg and leg.id == l.id %}selected{% endif %}>{{ l.leg_code }} — {{ l.etd|date }}</option>
-      {% endfor %}
+      {{ leg_option_tags(leg_options, leg.id if leg else None) }}
     </select>
   </div>
 </form>

@@ -16,6 +16,20 @@
   .leg-chip, .leg-summary…). ``base_path`` = racine de la page (ex. "/kpi").
 #}
 
+{#
+  Options d'un <select> « Leg lié » — libellé riche (Année · POL→POD · ETD/ATD
+  · ETA/ATA), trié chronologiquement. ``options`` = sortie de
+  services.leg_filter.leg_select_options(db). À insérer dans un <select>
+  existant : {{ leg_option_tags(leg_options, selected_id, blank=True) }}.
+#}
+{% macro leg_option_tags(options, selected=None, blank=False, blank_label="—") %}
+  {% if blank %}<option value="">{{ blank_label }}</option>{% endif %}
+  {% for o in options %}
+  <option value="{{ o.id }}"{% if selected is not none and (selected|string) == (o.id|string) %} selected{% endif %}>{{ o.label }}</option>
+  {% endfor %}
+{% endmacro %}
+
+
 {% macro leg_filter(f, base_path, show_legs=True, leg_href=None, leg_href_suffix="") %}
 <div class="planning-filters mb-3">
   <div class="vessel-tabs">

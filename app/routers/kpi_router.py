@@ -91,6 +91,9 @@ async def kpi_index(
     else:
         on_time_pct = 0.0
 
+    from app.services.leg_filter import leg_select_options
+
+    leg_options = await leg_select_options(db)
     return templates.TemplateResponse(
         "staff/kpi/index.html",
         {
@@ -99,6 +102,7 @@ async def kpi_index(
             "leg_filter_ctx": f,
             "kpis": kpis,
             "legs": all_legs,
+            "leg_options": leg_options,
             "leg_map": leg_map,
             "total_tonnage_t": total_tonnage_t,
             "total_co2_avoided_kg": total_co2_avoided_kg,

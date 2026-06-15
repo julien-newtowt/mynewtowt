@@ -60,11 +60,15 @@ async def mrv_index(
         if leg:
             leg_map[lid] = leg
     summary = carbon_report_summary([_decor(e, leg_map) for e in events])
+    from app.services.leg_filter import leg_select_options
+
+    leg_options = await leg_select_options(db)
     response = templates.TemplateResponse(
         "staff/mrv/index.html",
         {
             "request": request,
             "user": user,
+            "leg_options": leg_options,
             "leg_filter_ctx": f,
             "vessels": vessels,
             "legs": legs,
