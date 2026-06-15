@@ -1,4 +1,5 @@
 {% extends "client/_layout.html" %}
+{% from "staff/stowage/_ship_map.html" import ship_map %}
 {% block title %}{{ booking.reference }} — NEWTOWT{% endblock %}
 {% block content %}
 
@@ -82,6 +83,28 @@
     </tbody>
   </table>
 </section>
+
+{% if positions %}
+<section class="card mb-4">
+  <h2>{% if lang == 'en' %}Position on board{% else %}Position à bord{% endif %}</h2>
+  <p class="text-muted text-sm">
+    {% if lang == 'en' %}Where your pallets are stowed in the vessel (pin 📍). Only your positions are shown.{% else %}Emplacement de vos palettes dans le navire (repère 📍). Seules vos positions sont affichées.{% endif %}
+  </p>
+  {{ ship_map(None, target_zones, decks, holds, blocks, interactive=False) }}
+  <table class="data-table mt-3">
+    <thead><tr>
+      <th>{% if lang == 'en' %}Zone{% else %}Zone{% endif %}</th>
+      <th>{% if lang == 'en' %}Location{% else %}Emplacement{% endif %}</th>
+      <th>{% if lang == 'en' %}Pallets{% else %}Palettes{% endif %}</th>
+    </tr></thead>
+    <tbody>
+      {% for p in positions %}
+      <tr><td class="mono">{{ p.zone }}</td><td>{{ p.label }}</td><td>{{ p.pallet_count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 
 {% if booking.status in ('confirmed','loaded','at_sea','discharged','delivered') %}
 <section class="card mt-4">

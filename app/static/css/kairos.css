@@ -1766,3 +1766,53 @@ form textarea {
 .dashboard-uniform-font h4 {
   font-family: var(--font-sans) !important;
 }
+
+/* ───────────────────────── Stowage — schéma navire (repérage cargo) ─── */
+.ship-map { overflow-x: auto; }
+.ship-map-grid {
+  display: grid;
+  grid-template-columns: 130px repeat(6, minmax(56px, 1fr));
+  gap: 4px;
+  align-items: stretch;
+  min-width: 560px;
+}
+.ship-map-deck-label {
+  display: flex; align-items: center;
+  font-weight: var(--fw-semibold); font-size: var(--text-xs);
+  color: var(--teal); background: var(--sable);
+  border-radius: var(--radius-sm); padding: 0 10px;
+}
+.ship-cell, .ship-cell-link { position: relative; min-height: 62px; display: block; }
+.ship-cell-link { text-decoration: none; color: inherit; }
+.ship-cell {
+  border: 1px solid var(--gris-clair);
+  border-radius: var(--radius-sm);
+  overflow: hidden; height: 100%; background: var(--blanc);
+}
+.ship-cell-empty { --fill: rgba(0,0,0,0.04); }
+.ship-cell-ok    { --fill: rgba(13,89,102,0.18); }
+.ship-cell-high  { --fill: rgba(180,113,72,0.30); }
+.ship-cell-full  { --fill: rgba(196,69,54,0.32); }
+.ship-cell-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--fill); z-index: 0; }
+.ship-cell-body {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; padding: 4px; gap: 2px; text-align: center;
+}
+.ship-cell-zone { font-size: var(--text-xs); color: var(--gris); }
+.ship-cell-num { font-weight: var(--fw-bold); font-size: var(--text-sm); color: var(--teal-dark); }
+.ship-cell-target { outline: 3px solid var(--vert); outline-offset: -2px; box-shadow: 0 0 0 2px rgba(135,189,41,0.40); }
+.ship-cell-pin { font-size: 1.05em; }
+.ship-cell-warn { color: var(--danger); font-weight: var(--fw-bold); }
+.ship-cell-seg { color: var(--bleu-marine); font-size: 0.85em; }
+.ship-map-bow-label { font-size: var(--text-xs); color: var(--gris); text-transform: uppercase; letter-spacing: var(--ls-wider); margin: 8px 0 2px; }
+.ship-map-bow-label-end { text-align: right; }
+.ship-map-holds { display: flex; justify-content: space-between; font-size: var(--text-xs); color: var(--teal); font-weight: var(--fw-semibold); margin-top: 4px; }
+.ship-map-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; font-size: var(--text-xs); color: var(--gris); align-items: center; }
+.ship-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.ship-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--gris-clair); }
+.ship-swatch.ship-cell-empty { background: #E0E0E0; }
+.ship-swatch.ship-cell-ok    { background: rgba(13,89,102,0.45); }
+.ship-swatch.ship-cell-high  { background: var(--cuivre); }
+.ship-swatch.ship-cell-full  { background: var(--danger); }
+.ship-warn-list { display: flex; flex-direction: column; gap: 6px; }

@@ -1,4 +1,5 @@
 {% extends "portal/_layout.html" %}
+{% from "staff/stowage/_ship_map.html" import ship_map %}
 {% block title %}Portail expéditeur — {{ order.reference if order else (booking.reference if booking else '') }}{% endblock %}
 {% block portal_content %}
 {# Référence/volume : commande (rail A) ou booking (rail B). #}
@@ -52,6 +53,22 @@
     <li>Recevoir le Bill of Lading après chargement à bord.</li>
   </ol>
 </article>
+
+{% if positions %}
+<article class="card mt-4">
+  <h2>Position de votre marchandise à bord</h2>
+  <p class="text-muted text-sm">Emplacement de vos palettes dans le navire (repère 📍). Seules vos positions sont affichées.</p>
+  {{ ship_map(None, target_zones, decks, holds, blocks, interactive=False) }}
+  <table class="data-table mt-3">
+    <thead><tr><th>Zone</th><th>Emplacement</th><th>Palettes</th></tr></thead>
+    <tbody>
+      {% for p in positions %}
+      <tr><td class="mono">{{ p.zone }}</td><td>{{ p.label }}</td><td>{{ p.pallet_count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endif %}
 
 <article class="card mt-4">
   <h2>Voyage & navire</h2>

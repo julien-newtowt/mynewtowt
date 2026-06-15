@@ -68,7 +68,7 @@ from app.models.sof_event import (
     OnboardMessageMention,
     SofEvent,
 )
-from app.models.stowage import StowageItem, StowagePlan
+from app.models.stowage import StowageItem, StowagePlan, StowageZoneSpec
 from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
 from app.models.vessel import Vessel
@@ -141,6 +141,7 @@ __all__ = [
     "SofEvent",
     "StowageItem",
     "StowagePlan",
+    "StowageZoneSpec",
     "Ticket",
     "TicketComment",
     "User",

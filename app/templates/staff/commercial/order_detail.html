@@ -18,6 +18,7 @@
     <form method="post" action="/cargo/packing-lists/from-order/{{ order.id }}" style="display:inline;">
       <button type="submit" class="btn btn-secondary btn-sm">+ Packing list</button>
     </form>
+    <a href="/stowage/locate/order/{{ order.id }}" class="btn btn-ghost btn-sm" title="Localiser la cargaison à bord">📍 Localiser à bord</a>
     <a href="/commercial/orders" class="btn btn-ghost">← Retour</a>
   </div>
 </header>

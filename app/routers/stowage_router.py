@@ -19,14 +19,27 @@ from app.models.commercial import Order
 from app.models.leg import Leg
 from app.models.packing_list import PackingList, PackingListBatch
 from app.models.stowage import (
+    BLOCKS,
     DANGEROUS_ZONES,
+    DECKS,
+    HOLDS,
     ZONE_LOADING_ORDER,
     StowageItem,
     StowagePlan,
 )
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
-from app.services.stowage import suggest_assignments, zone_usage_summary
+from app.services.stowage import (
+    _vessel_class_for_leg,
+    evaluate_plan,
+    locate_batch,
+    locate_for_order,
+    parse_zone,
+    suggest_assignments,
+    zone_label,
+    zone_usage_summary,
+)
+from app.services.stowage_specs import get_specs
 from app.templating import templates
 
 router = APIRouter(prefix="/stowage", tags=["stowage"])
@@ -83,6 +96,7 @@ async def stowage_plan_view(
             for it in items
         ]
     )
+    evaluation = await evaluate_plan(db, leg_id)
     return templates.TemplateResponse(
         "staff/stowage/plan.html",
         {
@@ -94,6 +108,11 @@ async def stowage_plan_view(
             "zones": ZONE_LOADING_ORDER,
             "dangerous_zones": DANGEROUS_ZONES,
             "usage": usage,
+            "evaluation": evaluation,
+            "decks": DECKS,
+            "holds": HOLDS,
+            "blocks": BLOCKS,
+            "ship_map_target": None,
         },
     )
 
@@ -108,6 +127,13 @@ async def add_item(
     weight_kg: float | None = Form(None),
     is_dangerous: bool = Form(False),
     is_oversized: bool = Form(False),
+    is_stacked: bool = Form(False),
+    stackable: bool = Form(True),
+    length_cm: float | None = Form(None),
+    width_cm: float | None = Form(None),
+    height_cm: float | None = Form(None),
+    hs_code: str | None = Form(None),
+    imdg_class: str | None = Form(None),
     notes: str | None = Form(None),
     order_id: int | None = Form(None),
     batch_id: int | None = Form(None),
@@ -129,6 +155,13 @@ async def add_item(
         weight_kg=weight_kg,
         is_dangerous=is_dangerous,
         is_oversized=is_oversized,
+        is_stacked=is_stacked,
+        stackable=stackable,
+        length_cm=length_cm,
+        width_cm=width_cm,
+        height_cm=height_cm,
+        hs_code=hs_code,
+        imdg_class=imdg_class,
         notes=notes,
     )
     db.add(item)
@@ -181,17 +214,32 @@ async def suggest_plan(
                 .all()
             )
             for b in batches:
+                # Remontée packing list → arrimage : dimension, poids, hauteur,
+                # classement (HS/IMDG/UN), gerbabilité. Figés à l'affectation.
                 items_in.append(
                     {
                         "batch_id": b.id,
                         "order_id": o.id,
                         "pallet_format": b.pallet_format,
                         "pallet_count": b.pallet_count,
+                        "weight_kg": b.weight_kg,
+                        "description": b.description,
+                        "hs_code": b.hs_code,
+                        "imdg_class": b.imdg_class,
+                        "un_number": b.un_number,
+                        "length_cm": b.length_cm,
+                        "width_cm": b.width_cm,
+                        "height_cm": b.height_cm,
+                        "cubage_m3": b.cubage_m3,
+                        "stackable": b.stackable,
                         "is_dangerous": b.hazardous,
                         "is_oversized": _is_oversized(b),
                     }
                 )
-    placed = suggest_assignments(items_in)
+    # Capacités réelles de la classe du navire (référentiel d'arrimage).
+    specs = await get_specs(db, await _vessel_class_for_leg(db, plan.leg_id))
+    capacities = {zone: spec.get("capacity_epal") for zone, spec in specs.items()}
+    placed = suggest_assignments(items_in, capacities=capacities)
     # Clear previous suggestions and re-add
     for it in plan.items or []:
         await db.delete(it)
@@ -207,6 +255,16 @@ async def suggest_plan(
                 zone=p["zone"],
                 pallet_format=p["pallet_format"],
                 pallet_count=p["pallet_count"],
+                weight_kg=p.get("weight_kg"),
+                description=p.get("description"),
+                hs_code=p.get("hs_code"),
+                imdg_class=p.get("imdg_class"),
+                un_number=p.get("un_number"),
+                length_cm=p.get("length_cm"),
+                width_cm=p.get("width_cm"),
+                height_cm=p.get("height_cm"),
+                cubage_m3=p.get("cubage_m3"),
+                stackable=p.get("stackable", True),
                 is_dangerous=p.get("is_dangerous", False),
                 is_oversized=p.get("is_oversized", False),
             )
@@ -256,6 +314,133 @@ async def approve_plan(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/stowage/legs/{plan.leg_id}", status_code=303)
+
+
+@router.get("/legs/{leg_id}/plan.pdf")
+async def stowage_plan_pdf(
+    leg_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "C")),
+):
+    """Plan d'arrimage imprimable (WeasyPrint), style onepager."""
+    from fastapi.responses import Response
+    from weasyprint import HTML  # local import — heavy native deps
+
+    from app.config import settings
+    from app.models.port import Port
+    from app.models.vessel import Vessel
+
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    plan = (
+        await db.execute(
+            select(StowagePlan)
+            .options(selectinload(StowagePlan.items))
+            .where(StowagePlan.leg_id == leg_id)
+        )
+    ).scalar_one_or_none()
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
+    pol = await db.get(Port, leg.departure_port_id) if leg.departure_port_id else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
+    evaluation = await evaluate_plan(db, leg_id)
+
+    tpl = templates.get_template("pdf/stowage_plan.html")
+    html = tpl.render(
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        plan=plan,
+        items=(plan.items if plan else []),
+        evaluation=evaluation,
+        decks=DECKS,
+        holds=HOLDS,
+        blocks=BLOCKS,
+        zone_label=zone_label,
+        parse_zone=parse_zone,
+        issued_at=datetime.now(UTC),
+        site_url=settings.site_url,
+    )
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    code = leg.leg_code or leg_id
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="arrimage_{code}.pdf"'},
+    )
+
+
+@router.get("/locate/batch/{batch_id}", response_class=HTMLResponse)
+async def locate_batch_view(
+    batch_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "C")),
+) -> HTMLResponse:
+    """Repérage visuel : où se trouve un lot (batch) à bord du navire."""
+    positions = await locate_batch(db, batch_id)
+    batch = await db.get(PackingListBatch, batch_id)
+    leg = None
+    evaluation = None
+    if positions:
+        leg = await db.get(Leg, positions[0]["leg_id"])
+        if leg is not None:
+            evaluation = await evaluate_plan(db, leg.id)
+    target_zones = {p["zone"] for p in positions}
+    return templates.TemplateResponse(
+        "staff/stowage/locate.html",
+        {
+            "request": request,
+            "user": user,
+            "positions": positions,
+            "target_zones": target_zones,
+            "batch": batch,
+            "order": None,
+            "leg": leg,
+            "evaluation": evaluation,
+            "decks": DECKS,
+            "holds": HOLDS,
+            "blocks": BLOCKS,
+            "title": f"Lot #{batch_id}",
+        },
+    )
+
+
+@router.get("/locate/order/{order_id}", response_class=HTMLResponse)
+async def locate_order_view(
+    order_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "C")),
+) -> HTMLResponse:
+    """Repérage visuel : positions à bord des lots d'une commande."""
+    positions = await locate_for_order(db, order_id)
+    order = await db.get(Order, order_id)
+    leg = None
+    evaluation = None
+    if positions:
+        leg = await db.get(Leg, positions[0]["leg_id"])
+        if leg is not None:
+            evaluation = await evaluate_plan(db, leg.id)
+    target_zones = {p["zone"] for p in positions}
+    return templates.TemplateResponse(
+        "staff/stowage/locate.html",
+        {
+            "request": request,
+            "user": user,
+            "positions": positions,
+            "target_zones": target_zones,
+            "batch": None,
+            "order": order,
+            "leg": leg,
+            "evaluation": evaluation,
+            "decks": DECKS,
+            "holds": HOLDS,
+            "blocks": BLOCKS,
+            "title": f"Commande #{order_id}",
+        },
+    )
 
 
 def _is_oversized(batch: PackingListBatch) -> bool:

@@ -16,6 +16,12 @@ class Vessel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(4), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Classe de navire — pilote le référentiel d'arrimage (capacités &
+    # résistances par zone). Tous les sister-ships partagent la même classe
+    # (ex. Anemos / Artemis / Atlantis… = "phoenix").
+    vessel_class: Mapped[str] = mapped_column(
+        String(40), default="phoenix", nullable=False, server_default="phoenix"
+    )
     imo_number: Mapped[str | None] = mapped_column(String(20))
     flag: Mapped[str | None] = mapped_column(String(2))
     dwt: Mapped[float | None] = mapped_column(Float)

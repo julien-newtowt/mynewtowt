@@ -78,6 +78,12 @@ async def portal_home(token: str, request: Request, db: AsyncSession = Depends(g
     vessel = await db.get(Vessel, leg.vessel_id) if leg else None
     pol = await db.get(Port, leg.departure_port_id) if leg else None
     pod = await db.get(Port, leg.arrival_port_id) if leg else None
+    # Repérage à bord — uniquement les positions de CETTE packing list
+    # (jamais l'occupation globale du navire — confidentialité inter-clients).
+    from app.models.stowage import BLOCKS, DECKS, HOLDS
+    from app.services.stowage import locate_for_packing_list
+
+    positions = await locate_for_packing_list(db, pl.id)
     return templates.TemplateResponse(
         "portal/home.html",
         {
@@ -90,6 +96,11 @@ async def portal_home(token: str, request: Request, db: AsyncSession = Depends(g
             "pol": pol,
             "pod": pod,
             "token": token,
+            "positions": positions,
+            "target_zones": {p["zone"] for p in positions},
+            "decks": DECKS,
+            "holds": HOLDS,
+            "blocks": BLOCKS,
         },
     )
 

@@ -1,0 +1,112 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Plan d'arrimage — {{ leg.leg_code }}{% endblock %}
+{% block doc_kind %}Plan de chargement · Stowage{% endblock %}
+{% block doc_ref %}{{ leg.leg_code }}{% endblock %}
+{% block content %}
+
+<style>
+  .section-title {
+    font-size: 9pt; font-weight: 700; color: #0D5966; background: #EFE6D6;
+    padding: 5pt 8pt; margin: 12pt 0 6pt; border-left: 3px solid #0D5966;
+  }
+  table.ship { border-collapse: collapse; width: 100%; margin: 4pt 0; }
+  table.ship td { border: 1px solid #CBBfa9; padding: 4pt; text-align: center;
+    font-size: 7.5pt; vertical-align: middle; height: 30pt; }
+  table.ship td.deck { background: #0D5966; color: #fff; font-weight: 700;
+    text-align: left; width: 70pt; }
+  .cell-zone { font-family: "JetBrains Mono", monospace; font-size: 6.5pt; color: #555; }
+  .cell-num { font-weight: 700; font-size: 8.5pt; }
+  .small { font-size: 7.5pt; }
+  .c-gris { color: #6E6E6E; }
+  .warn-li { font-size: 8pt; padding: 2pt 0; }
+  .holds-row td { background:#EFE6D6; font-size:7pt; font-weight:600; color:#0D5966; }
+  td.mono { font-family: "JetBrains Mono", monospace; font-size: 7.5pt; }
+</style>
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Navire · Vessel</div>
+    <div class="value">
+      {% if vessel %}<strong>{{ vessel.name }}</strong>
+        <span class="small"> · classe {{ evaluation.vessel_class }}</span>
+        {% if vessel.imo_number %}<br/><span class="small mono">IMO {{ vessel.imo_number }}</span>{% endif %}
+      {% else %}<span class="small c-gris">—</span>{% endif %}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Route · Leg</div>
+    <div class="value">
+      {% if pol %}{{ pol.name }}{% endif %} → {% if pod %}{{ pod.name }}{% endif %}
+      <br/><span class="small mono">{{ leg.leg_code }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="box"><div class="label">Palettes</div><div class="value">{{ evaluation.totals.pallet_count }}</div></div>
+  <div class="box"><div class="label">Tonnage chargé</div><div class="value">{{ '%.1f'|format(evaluation.totals.used_t) }} t / {{ '%.0f'|format(evaluation.totals.max_load_t) }} t</div></div>
+</div>
+
+<p class="section-title">Schéma d'arrimage — 18 zones (poupe ◀ → ▶ proue)</p>
+<table class="ship">
+  <tr class="holds-row">
+    <td></td>
+    <td colspan="3">◀ Cale ARRIÈRE</td>
+    <td colspan="3">Cale AVANT ▶</td>
+  </tr>
+  {% for deck in decks %}
+  <tr>
+    <td class="deck">{{ {'SUP':'Pont sup.','MIL':'Pont interm.','INF':'Pont inf.'}[deck] }}</td>
+    {% for hold in holds %}{% for block in blocks %}
+      {% set zone = deck ~ '_' ~ hold ~ '_' ~ block %}
+      {% set z = evaluation.zones.get(zone) %}
+      {% set pct = (z.pct if z else 0) %}
+      {% set bg = '#E0E0E0' if pct == 0 else ('#E8746B' if pct > 100 else ('#E8C36B' if pct >= 70 else '#BFE0DE')) %}
+      <td style="background: {{ bg }};">
+        <div class="cell-zone">{{ block }}</div>
+        {% if z and z.capacity_epal %}<div class="cell-num">{{ z.pallet_count }}/{{ z.capacity_epal }}</div>{% endif %}
+        {% if z and z.warnings %}<div class="small">⚠</div>{% endif %}
+      </td>
+    {% endfor %}{% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+<p class="small c-gris">Capacité = palettes EPAL-équivalentes du référentiel de classe · cellule = palettes / capacité · ⚠ = avertissement de zone.</p>
+
+{% if evaluation.warnings %}
+<p class="section-title">Avertissements ({{ evaluation.warnings|length }})</p>
+<ul>
+  {% for w in evaluation.warnings %}
+  <li class="warn-li"><strong class="mono">{{ w.zone }}</strong> — {{ w.message }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<p class="section-title">Lots affectés ({{ items|length }})</p>
+{% if items %}
+<table>
+  <thead><tr>
+    <th>Zone</th><th>Lot</th><th>Description</th><th>Format</th><th>Pal.</th><th>Poids</th><th>Classement</th><th>Gerbé</th>
+  </tr></thead>
+  <tbody>
+    {% for it in items %}
+    <tr>
+      <td class="mono">{{ it.zone }}</td>
+      <td class="mono">{{ it.batch_id or '—' }}</td>
+      <td class="small">{{ it.description|truncate(30) if it.description else '—' }}</td>
+      <td class="small">{{ it.pallet_format }}</td>
+      <td>{{ it.pallet_count }}</td>
+      <td class="mono">{{ (it.weight_kg/1000)|round(2) ~ ' t' if it.weight_kg else '—' }}</td>
+      <td class="small">{% if it.imdg_class %}IMDG {{ it.imdg_class }}{% elif it.hs_code %}HS {{ it.hs_code }}{% else %}—{% endif %}</td>
+      <td class="small">{{ 'gerbé' if it.is_stacked else 'base' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="c-gris small">Aucune affectation.</p>
+{% endif %}
+
+<p class="small c-gris" style="margin-top:14pt;">Émis le {{ issued_at.strftime('%d/%m/%Y %H:%M UTC') }} · Plan théorique de chargement — référentiel classe {{ evaluation.vessel_class }}.</p>
+
+{% endblock %}

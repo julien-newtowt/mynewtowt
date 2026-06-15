@@ -27,11 +27,15 @@
 </section>
 
 <article class="card mt-4">
-  <h2>Navires</h2>
+  <div class="flex justify-between items-center mb-2">
+    <h2 style="margin:0;">Navires</h2>
+    <a href="/admin/stowage-specs" class="btn btn-ghost btn-sm">Référentiel d'arrimage →</a>
+  </div>
   <table>
-    <thead><tr><th>Code</th><th>Nom</th><th>IMO</th><th>Capacité</th><th>Statut</th></tr></thead>
+    <thead><tr><th>Code</th><th>Nom</th><th>Classe</th><th>IMO</th><th>Capacité</th><th>Statut</th></tr></thead>
     <tbody>{% for v in vessels %}<tr>
       <td class="mono">{{ v.code }}</td><td>{{ v.name }}</td>
+      <td><span class="pill pill-neutral">{{ v.vessel_class }}</span></td>
       <td class="mono text-sm">{{ v.imo_number or '—' }}</td>
       <td>{{ v.capacity_palettes }}</td>
       <td>{% if v.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Inactif</span>{% endif %}</td>

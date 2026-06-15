@@ -21,7 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commercial import PALETTE_COEFFICIENTS
 from app.models.stowage import (
+    BLOCKS,
     DANGEROUS_ZONES,
+    DECKS,
     HOLDS,
     ZONE_LOADING_ORDER,
     StowageItem,
@@ -31,14 +33,25 @@ from app.models.stowage import (
 ZONE_CAPACITY_DEFAULT = 50  # palettes EPAL équivalentes par zone (à affiner)
 
 
-def suggest_assignments(items: Iterable[dict]) -> list[dict]:
+def suggest_assignments(
+    items: Iterable[dict], capacities: dict[str, float] | None = None
+) -> list[dict]:
     """items : [{ 'batch_id', 'pallet_format', 'pallet_count', 'is_dangerous', 'is_oversized' }]
 
     Retourne la même liste enrichie de `'zone': '<DECK>_<HOLD>_<BLOCK>'`.
+
+    ``capacities`` : capacité EPAL-équivalente par zone (référentiel de la
+    classe de navire — cf. ``services.stowage_specs``). À défaut, capacité
+    indicative plate (``ZONE_CAPACITY_DEFAULT``).
     """
     items = list(items)
     used: dict[str, float] = defaultdict(float)
     out: list[dict] = []
+
+    def _cap(zone: str) -> float:
+        if capacities:
+            return float(capacities.get(zone, ZONE_CAPACITY_DEFAULT))
+        return float(ZONE_CAPACITY_DEFAULT)
 
     # 1. Dangerous / oversized → SUP_AV
     danger_queue = [it for it in items if it.get("is_dangerous") or it.get("is_oversized")]
@@ -48,7 +61,7 @@ def suggest_assignments(items: Iterable[dict]) -> list[dict]:
         coeff = PALETTE_COEFFICIENTS.get(it.get("pallet_format") or "EPAL", 1.0)
         load = (it.get("pallet_count") or 0) * coeff
         for zone in candidate_zones:
-            if used[zone] + load <= ZONE_CAPACITY_DEFAULT:
+            if used[zone] + load <= _cap(zone):
                 used[zone] += load
                 return zone
         return None
@@ -232,11 +245,329 @@ async def zones_for_leg(db: AsyncSession, leg_id: int) -> list[dict]:
             bucket["is_dangerous"] = True
 
     order = {zone: i for i, zone in enumerate(ZONE_LOADING_ORDER)}
-    out = [
-        {**bucket, "label": zone_label(bucket["zone"])}
-        for bucket in agg.values()
-    ]
+    out = [{**bucket, "label": zone_label(bucket["zone"])} for bucket in agg.values()]
     # Tri par ordre de chargement ; les zones inconnues (texte libre exotique)
     # passent en fin de liste.
+    out.sort(key=lambda z: order.get(z["zone"], len(order)))
+    return out
+
+
+def parse_zone(zone: str | None) -> tuple[str | None, str | None, str | None]:
+    """Décompose une zone ``{DECK}_{HOLD}_{BLOCK}`` → ``(deck, hold, block)``.
+
+    Renvoie ``(None, None, None)`` pour une zone vide ou non conforme (texte
+    libre, ``OVERFLOW``…). Utilisé par le repérage visuel (SVG) et les vues.
+    """
+    if not zone:
+        return (None, None, None)
+    parts = zone.split("_")
+    if len(parts) != 3:
+        return (None, None, None)
+    deck, hold, block = parts
+    if deck not in DECKS or hold not in HOLDS or block not in BLOCKS:
+        return (None, None, None)
+    return (deck, hold, block)
+
+
+async def _vessel_class_for_leg(db: AsyncSession, leg_id: int) -> str:
+    """Classe du navire d'un leg (pour résoudre le référentiel d'arrimage)."""
+    from app.models.leg import Leg
+    from app.models.vessel import Vessel
+    from app.services.stowage_specs import DEFAULT_VESSEL_CLASS
+
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        return DEFAULT_VESSEL_CLASS
+    vessel = await db.get(Vessel, leg.vessel_id)
+    return (vessel.vessel_class if vessel else None) or DEFAULT_VESSEL_CLASS
+
+
+def _per_pallet_weight_kg(item: StowageItem) -> float | None:
+    """Poids unitaire d'une palette de l'item (total / nombre de palettes)."""
+    if item.weight_kg is None or not item.pallet_count:
+        return None
+    return item.weight_kg / item.pallet_count
+
+
+async def evaluate_plan(db: AsyncSession, leg_id: int) -> dict:
+    """Évalue le plan d'arrimage d'un leg vs le référentiel de la classe.
+
+    Politique : **avertissement seul** — aucune affectation n'est bloquée, les
+    non-conformités (surcharge, résistance pont, gerbage interdit, hors-zone
+    IMO/gabarit) sont remontées comme avertissements.
+
+    Forme de retour::
+
+        {
+          "vessel_class": str,
+          "zones": { zone: {capacity_epal, used_epal, pct, max_load_t, used_t,
+                            load_pct, pallet_count, items, segregated,
+                            warnings:[str]} },
+          "warnings": [ {zone, level, message} ],   # liste à plat (panneau)
+          "totals": {capacity_epal, used_epal, max_load_t, used_t, pallet_count},
+        }
+
+    Lecture seule. Tolérant : zones hors référentiel ignorées des totaux mais
+    signalées. ``used_epal`` pondère par ``PALETTE_COEFFICIENTS``.
+    """
+    from app.services.stowage_specs import (
+        HEAVY_PALLET_KG,
+        capacity_total,
+        get_specs,
+        max_load_total_t,
+    )
+
+    vessel_class = await _vessel_class_for_leg(db, leg_id)
+    specs = await get_specs(db, vessel_class)
+
+    zones: dict[str, dict] = {
+        zone: {
+            "capacity_epal": int(spec.get("capacity_epal") or 0),
+            "used_epal": 0.0,
+            "pct": 0.0,
+            "max_load_t": spec.get("max_load_t"),
+            "used_t": 0.0,
+            "load_pct": 0.0,
+            "pallet_count": 0,
+            "items": 0,
+            "segregated": bool(spec.get("segregated")),
+            "warnings": [],
+        }
+        for zone, spec in specs.items()
+    }
+    flat_warnings: list[dict] = []
+    used_t_total = 0.0
+    pallet_total = 0
+
+    plan_id = (
+        await db.execute(select(StowagePlan.id).where(StowagePlan.leg_id == leg_id))
+    ).scalar_one_or_none()
+    items: list[StowageItem] = []
+    if plan_id is not None:
+        items = list(
+            (await db.execute(select(StowageItem).where(StowageItem.plan_id == plan_id)))
+            .scalars()
+            .all()
+        )
+
+    for it in items:
+        coeff = PALETTE_COEFFICIENTS.get(it.pallet_format or "EPAL", 1.0)
+        load_epal = (it.pallet_count or 0) * coeff
+        weight_t = (it.weight_kg or 0) / 1000.0
+        pallet_total += it.pallet_count or 0
+        used_t_total += weight_t
+        spec = specs.get(it.zone)
+        zbucket = zones.get(it.zone)
+        if zbucket is None:
+            flat_warnings.append(
+                {
+                    "zone": it.zone,
+                    "level": "warn",
+                    "message": f"Zone « {it.zone} » hors référentiel de la classe {vessel_class}.",
+                }
+            )
+            continue
+        zbucket["used_epal"] += load_epal
+        zbucket["used_t"] += weight_t
+        zbucket["pallet_count"] += it.pallet_count or 0
+        zbucket["items"] += 1
+
+        ppw = _per_pallet_weight_kg(it)
+        max_ppw = spec.get("max_pallet_weight_kg") if spec else None
+        # Résistance : palette trop lourde pour ce pont.
+        if ppw is not None and max_ppw and ppw > max_ppw:
+            msg = (
+                f"Palette {ppw / 1000:.2f} t > résistance pont "
+                f"({max_ppw / 1000:.2f} t) en {it.zone}."
+            )
+            zbucket["warnings"].append(msg)
+            flat_warnings.append({"zone": it.zone, "level": "warn", "message": msg})
+        # Gerbage des palettes lourdes interdit sur certains ponts.
+        if (
+            it.is_stacked
+            and ppw is not None
+            and ppw >= HEAVY_PALLET_KG
+            and spec
+            and not spec.get("heavy_stack_allowed", True)
+        ):
+            msg = f"Gerbage palette lourde non admis en {it.zone} (résistance pont)."
+            zbucket["warnings"].append(msg)
+            flat_warnings.append({"zone": it.zone, "level": "warn", "message": msg})
+        # Gerbage d'un lot non gerbable.
+        if it.is_stacked and not it.stackable:
+            msg = f"Lot non gerbable affecté en gerbé ({it.zone})."
+            zbucket["warnings"].append(msg)
+            flat_warnings.append({"zone": it.zone, "level": "warn", "message": msg})
+        # Hors-gabarit / IMO placés hors zones dédiées.
+        if (it.is_oversized or it.is_dangerous) and it.zone not in DANGEROUS_ZONES:
+            kind = "Hors-gabarit" if it.is_oversized else "IMO/dangereux"
+            msg = f"{kind} hors zone dédiée (SUP_AV) : {it.zone}."
+            zbucket["warnings"].append(msg)
+            flat_warnings.append({"zone": it.zone, "level": "info", "message": msg})
+
+    # Dépassements capacité / charge par zone.
+    for zone, z in zones.items():
+        if z["capacity_epal"]:
+            z["pct"] = round(100 * z["used_epal"] / z["capacity_epal"], 1)
+            if z["used_epal"] > z["capacity_epal"]:
+                msg = (
+                    f"Capacité dépassée en {zone} : "
+                    f"{z['used_epal']:.0f}/{z['capacity_epal']} pal. EPAL-éq."
+                )
+                z["warnings"].append(msg)
+                flat_warnings.append({"zone": zone, "level": "warn", "message": msg})
+        if z["max_load_t"]:
+            z["load_pct"] = round(100 * z["used_t"] / z["max_load_t"], 1)
+            if z["used_t"] > z["max_load_t"]:
+                msg = f"Surcharge en {zone} : " f"{z['used_t']:.1f}/{z['max_load_t']:.1f} t."
+                z["warnings"].append(msg)
+                flat_warnings.append({"zone": zone, "level": "warn", "message": msg})
+
+    return {
+        "vessel_class": vessel_class,
+        "zones": zones,
+        "warnings": flat_warnings,
+        "totals": {
+            "capacity_epal": capacity_total(specs),
+            "used_epal": round(sum(z["used_epal"] for z in zones.values()), 1),
+            "max_load_t": max_load_total_t(specs),
+            "used_t": round(used_t_total, 1),
+            "pallet_count": pallet_total,
+        },
+    }
+
+
+async def locate_batch(db: AsyncSession, batch_id: int) -> list[dict]:
+    """Localise un lot (packing list batch) dans le navire.
+
+    Renvoie la (ou les) position(s) d'arrimage du batch :
+
+        [{"zone", "label", "deck", "hold", "block", "pallet_count",
+          "is_dangerous", "is_oversized", "is_stacked", "leg_id",
+          "plan_id", "plan_status"}]
+
+    Liste vide si le lot n'est affecté à aucun plan. Lecture seule. C'est le
+    socle du repérage visuel « où est ma marchandise à bord ? », accessible
+    depuis toute vue qui positionne une cargaison.
+    """
+    rows = (
+        await db.execute(
+            select(StowageItem, StowagePlan)
+            .join(StowagePlan, StowageItem.plan_id == StowagePlan.id)
+            .where(StowageItem.batch_id == batch_id)
+        )
+    ).all()
+    out: list[dict] = []
+    for it, plan in rows:
+        deck, hold, block = parse_zone(it.zone)
+        out.append(
+            {
+                "zone": it.zone,
+                "label": zone_label(it.zone),
+                "deck": deck,
+                "hold": hold,
+                "block": block,
+                "pallet_count": it.pallet_count or 0,
+                "is_dangerous": it.is_dangerous,
+                "is_oversized": it.is_oversized,
+                "is_stacked": it.is_stacked,
+                "leg_id": plan.leg_id,
+                "plan_id": plan.id,
+                "plan_status": plan.status,
+            }
+        )
+    order = {zone: i for i, zone in enumerate(ZONE_LOADING_ORDER)}
+    out.sort(key=lambda z: order.get(z["zone"], len(order)))
+    return out
+
+
+async def locate_for_packing_list(db: AsyncSession, packing_list_id: int) -> list[dict]:
+    """Localise les lots d'une packing list dans le navire (agrégé par zone).
+
+    Pour le repérage côté client / portail expéditeur. Renvoie uniquement les
+    positions des lots de **cette** packing list — jamais l'occupation globale
+    du navire (confidentialité inter-clients). Lecture seule.
+    """
+    from app.models.packing_list import PackingListBatch
+
+    batch_ids = list(
+        (
+            await db.execute(
+                select(PackingListBatch.id).where(
+                    PackingListBatch.packing_list_id == packing_list_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not batch_ids:
+        return []
+    rows = (
+        await db.execute(
+            select(StowageItem, StowagePlan)
+            .join(StowagePlan, StowageItem.plan_id == StowagePlan.id)
+            .where(StowageItem.batch_id.in_(batch_ids))
+        )
+    ).all()
+    agg: dict[str, dict] = {}
+    for it, plan in rows:
+        deck, hold, block = parse_zone(it.zone)
+        bucket = agg.setdefault(
+            it.zone,
+            {
+                "zone": it.zone,
+                "label": zone_label(it.zone),
+                "deck": deck,
+                "hold": hold,
+                "block": block,
+                "pallet_count": 0,
+                "is_dangerous": False,
+                "leg_id": plan.leg_id,
+            },
+        )
+        bucket["pallet_count"] += it.pallet_count or 0
+        if it.is_dangerous or it.is_oversized or it.zone in DANGEROUS_ZONES:
+            bucket["is_dangerous"] = True
+    order = {zone: i for i, zone in enumerate(ZONE_LOADING_ORDER)}
+    out = list(agg.values())
+    out.sort(key=lambda z: order.get(z["zone"], len(order)))
+    return out
+
+
+async def locate_for_order(db: AsyncSession, order_id: int) -> list[dict]:
+    """Localise les lots d'une commande dans le navire (agrégé par zone).
+
+    Renvoie ``[{"zone", "label", "deck", "hold", "block", "pallet_count",
+    "is_dangerous", "leg_id"}]`` pour la commande. Lecture seule.
+    """
+    rows = (
+        await db.execute(
+            select(StowageItem, StowagePlan)
+            .join(StowagePlan, StowageItem.plan_id == StowagePlan.id)
+            .where(StowageItem.order_id == order_id)
+        )
+    ).all()
+    agg: dict[str, dict] = {}
+    for it, plan in rows:
+        deck, hold, block = parse_zone(it.zone)
+        bucket = agg.setdefault(
+            it.zone,
+            {
+                "zone": it.zone,
+                "label": zone_label(it.zone),
+                "deck": deck,
+                "hold": hold,
+                "block": block,
+                "pallet_count": 0,
+                "is_dangerous": False,
+                "leg_id": plan.leg_id,
+            },
+        )
+        bucket["pallet_count"] += it.pallet_count or 0
+        if it.is_dangerous or it.is_oversized or it.zone in DANGEROUS_ZONES:
+            bucket["is_dangerous"] = True
+    order = {zone: i for i, zone in enumerate(ZONE_LOADING_ORDER)}
+    out = list(agg.values())
     out.sort(key=lambda z: order.get(z["zone"], len(order)))
     return out

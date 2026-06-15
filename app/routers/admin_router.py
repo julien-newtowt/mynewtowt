@@ -358,6 +358,94 @@ async def opex_upsert(
     return RedirectResponse(url="/admin/opex", status_code=303)
 
 
+# ────────────────────────────────────────────── Stowage zone specs (référentiel)
+@router.get("/stowage-specs", response_class=HTMLResponse)
+async def stowage_specs_list(
+    request: Request,
+    vessel_class: str = "phoenix",
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> HTMLResponse:
+    """Référentiel d'arrimage par classe de navire (capacités & résistances).
+
+    Seed idempotent à l'ouverture (matérialise le référentiel théorique en DB
+    pour permettre l'édition zone par zone).
+    """
+    from app.services.stowage_specs import ensure_specs
+
+    classes = list((await db.execute(select(Vessel.vessel_class).distinct())).scalars().all())
+    classes = sorted({c for c in classes if c} | {"phoenix"})
+    specs = await ensure_specs(db, vessel_class)
+    # Ordre de chargement pour un affichage cohérent.
+    from app.models.stowage import ZONE_LOADING_ORDER
+
+    ordered = [specs[z] for z in ZONE_LOADING_ORDER if z in specs]
+    return templates.TemplateResponse(
+        "staff/admin/stowage_specs.html",
+        {
+            "request": request,
+            "user": user,
+            "specs": ordered,
+            "vessel_class": vessel_class,
+            "classes": classes,
+        },
+    )
+
+
+@router.post("/stowage-specs")
+async def stowage_specs_update(
+    request: Request,
+    vessel_class: str = Form(...),
+    zone: str = Form(...),
+    capacity_epal: int = Form(...),
+    max_load_t: float | None = Form(None),
+    max_pallet_weight_kg: float | None = Form(None),
+    stack_allowed: bool = Form(False),
+    heavy_stack_allowed: bool = Form(False),
+    segregated: bool = Form(False),
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    from app.models.stowage import StowageZoneSpec
+
+    existing = (
+        await db.execute(
+            select(StowageZoneSpec).where(
+                StowageZoneSpec.vessel_class == vessel_class,
+                StowageZoneSpec.zone == zone,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        existing = StowageZoneSpec(vessel_class=vessel_class, zone=zone)
+        db.add(existing)
+    existing.capacity_epal = capacity_epal
+    existing.max_load_t = max_load_t
+    existing.max_pallet_weight_kg = max_pallet_weight_kg
+    existing.stack_allowed = stack_allowed
+    existing.heavy_stack_allowed = heavy_stack_allowed
+    existing.segregated = segregated
+    existing.notes = notes
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="stowage_zone_spec",
+        entity_id=existing.id,
+        entity_label=f"{vessel_class}/{zone}",
+        detail=f"cap={capacity_epal} max_t={max_load_t}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(
+        url=f"/admin/stowage-specs?vessel_class={vessel_class}", status_code=303
+    )
+
+
 # ────────────────────────────────────────────── Insurance contracts
 @router.get("/insurance", response_class=HTMLResponse)
 async def insurance_list(

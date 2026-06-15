@@ -1,0 +1,64 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Référentiel d'arrimage — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Admin · Cargo</span>
+  <h1 class="display">Référentiel d'arrimage</h1>
+  <p class="text-muted">Capacités &amp; résistances par zone, par classe de navire — pilote le plan de chargement, les capacités et les contrôles de surcharge.</p>
+</header>
+
+<article class="card mb-4">
+  <form method="get" action="/admin/stowage-specs" class="flex gap-2 items-center">
+    <label class="text-sm">Classe de navire</label>
+    <select name="vessel_class">
+      {% for c in classes %}<option value="{{ c }}" {% if c == vessel_class %}selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn btn-secondary btn-sm">Afficher</button>
+  </form>
+  <p class="text-muted text-sm mt-2">Source : plan théorique de chargement (classe Phoenix). Les valeurs ci-dessous surchargent le référentiel par défaut.</p>
+</article>
+
+<article class="card">
+  <h2>Zones ({{ specs|length }})</h2>
+  {# Formulaires (vides) référencés par les inputs du tableau via l'attribut HTML5 form= (sans JS, CSP-safe). #}
+  {% for s in specs %}
+  <form id="z-{{ s.zone }}" method="post" action="/admin/stowage-specs">
+    <input type="hidden" name="vessel_class" value="{{ vessel_class }}" />
+    <input type="hidden" name="zone" value="{{ s.zone }}" />
+  </form>
+  {% endfor %}
+  <table class="data-table" style="font-size:var(--text-xs);">
+    <thead>
+      <tr>
+        <th>Zone</th>
+        <th>Capacité (EPAL-éq)</th>
+        <th>Charge max (t)</th>
+        <th>Poids palette max (kg)</th>
+        <th>Gerbage</th>
+        <th>Gerbage lourd</th>
+        <th>Ségrégué</th>
+        <th>Notes</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in specs %}
+      <tr>
+        <td class="mono"><strong>{{ s.zone }}</strong></td>
+        <td><input form="z-{{ s.zone }}" name="capacity_epal" type="number" min="0" value="{{ s.capacity_epal }}" style="width:5rem;" /></td>
+        <td><input form="z-{{ s.zone }}" name="max_load_t" type="number" step="0.1" value="{{ s.max_load_t if s.max_load_t is not none else '' }}" style="width:5rem;" /></td>
+        <td><input form="z-{{ s.zone }}" name="max_pallet_weight_kg" type="number" step="1" value="{{ s.max_pallet_weight_kg if s.max_pallet_weight_kg is not none else '' }}" style="width:6rem;" /></td>
+        <td><input form="z-{{ s.zone }}" name="stack_allowed" type="checkbox" value="1" {% if s.stack_allowed %}checked{% endif %} /></td>
+        <td><input form="z-{{ s.zone }}" name="heavy_stack_allowed" type="checkbox" value="1" {% if s.heavy_stack_allowed %}checked{% endif %} /></td>
+        <td><input form="z-{{ s.zone }}" name="segregated" type="checkbox" value="1" {% if s.segregated %}checked{% endif %} /></td>
+        <td><input form="z-{{ s.zone }}" name="notes" type="text" value="{{ s.notes or '' }}" style="width:9rem;" /></td>
+        <td><button form="z-{{ s.zone }}" type="submit" class="btn btn-primary btn-sm" title="Enregistrer">💾</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="text-muted text-sm mt-2">Politique de contrôle : <strong>avertissement seul</strong> — ces seuils déclenchent des alertes dans le plan, sans bloquer les affectations.</p>
+</article>
+
+{% endblock %}

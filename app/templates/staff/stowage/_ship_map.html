@@ -1,0 +1,70 @@
+{#
+  Schéma navire — repérage visuel de la cargaison (18 zones).
+
+  Coupe longitudinale : 3 ponts (SUP/MIL/INF, haut→bas) × 6 positions de
+  longueur (cale ARRIÈRE puis AVANT, chacune blocs AR/MIL/AV, poupe→proue).
+
+  macro ship_map(evaluation, target_zones, decks, holds, blocks, interactive)
+    - evaluation   : dict renvoyé par services.stowage.evaluate_plan (ou None)
+    - target_zones : set de zones à surligner (position recherchée) — optionnel
+    - decks/holds/blocks : tuples de app.models.stowage
+    - interactive  : si vrai, chaque zone est cliquable (filtre #zone-<zone>)
+
+  CSP-safe : aucune balise <script> ; uniquement classes Kairos + styles inline
+  (autorisés par la CSP, seuls les scripts inline sont interdits).
+#}
+{% macro ship_map(evaluation, target_zones, decks, holds, blocks, interactive=False) %}
+{% set zeval = (evaluation.zones if evaluation else {}) %}
+{% set targets = target_zones or [] %}
+<div class="ship-map" role="img" aria-label="Schéma d'arrimage du navire — 18 zones">
+  <div class="ship-map-bow-label">◀ POUPE (arrière)</div>
+  <div class="ship-map-grid">
+    {% for deck in decks %}
+      <div class="ship-map-deck-label">{{ {'SUP':'Pont supérieur','MIL':'Pont intermédiaire','INF':'Pont inférieur'}[deck] }}</div>
+      {% for hold in holds %}
+        {% for block in blocks %}
+          {% set zone = deck ~ '_' ~ hold ~ '_' ~ block %}
+          {% set z = zeval.get(zone) %}
+          {% set pct = (z.pct if z else 0) %}
+          {% set lvl = 'empty' if pct == 0 else ('full' if pct > 100 else ('high' if pct >= 70 else 'ok')) %}
+          {% set is_target = zone in targets %}
+          {% set has_warn = z and z.warnings %}
+          {% set cell %}
+            <div class="ship-cell ship-cell-{{ lvl }}{% if is_target %} ship-cell-target{% endif %}"
+                 title="{{ zone }} — {% if z %}{{ z.pallet_count }} pal · {{ '%.0f'|format(z.used_epal) }}/{{ z.capacity_epal }} EPAL-éq{% if z.max_load_t %} · {{ '%.1f'|format(z.used_t) }}/{{ '%.1f'|format(z.max_load_t) }} t{% endif %}{% else %}libre{% endif %}">
+              <div class="ship-cell-fill" style="height:{{ pct if pct < 100 else 100 }}%"></div>
+              <div class="ship-cell-body">
+                <span class="ship-cell-zone mono">{{ block }}</span>
+                {% if z and z.capacity_epal %}
+                  <span class="ship-cell-num mono">{{ z.pallet_count }}/{{ z.capacity_epal }}</span>
+                {% endif %}
+                {% if is_target %}<span class="ship-cell-pin" aria-label="position">📍</span>{% endif %}
+                {% if has_warn %}<span class="ship-cell-warn" aria-label="alerte" title="{{ z.warnings|join(' · ') }}">⚠</span>{% endif %}
+                {% if z and z.segregated %}<span class="ship-cell-seg" title="Cale ségréguée — temp./humidité contrôlées">❄</span>{% endif %}
+              </div>
+            </div>
+          {% endset %}
+          {% if interactive %}
+            <a class="ship-cell-link" href="#zone-{{ zone }}" aria-label="Zone {{ zone }}">{{ cell }}</a>
+          {% else %}
+            {{ cell }}
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+    {% endfor %}
+  </div>
+  <div class="ship-map-bow-label ship-map-bow-label-end">PROUE (avant) ▶</div>
+  <div class="ship-map-holds">
+    <span>◀ Cale ARRIÈRE</span><span>Cale AVANT ▶</span>
+  </div>
+  <div class="ship-map-legend">
+    <span class="ship-legend-item"><i class="ship-swatch ship-cell-empty"></i> libre</span>
+    <span class="ship-legend-item"><i class="ship-swatch ship-cell-ok"></i> &lt; 70 %</span>
+    <span class="ship-legend-item"><i class="ship-swatch ship-cell-high"></i> 70–100 %</span>
+    <span class="ship-legend-item"><i class="ship-swatch ship-cell-full"></i> surcharge</span>
+    <span class="ship-legend-item">📍 position recherchée</span>
+    <span class="ship-legend-item">⚠ alerte</span>
+    <span class="ship-legend-item">❄ ségrégué</span>
+  </div>
+</div>
+{% endmacro %}

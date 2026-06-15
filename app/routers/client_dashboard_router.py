@@ -135,9 +135,31 @@ async def booking_detail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     messages = await messaging.list_for_booking(db, booking.id)
     await messaging.mark_thread_read(db, booking.id, reader="client")
+    # Repérage à bord — uniquement les positions des lots de ce booking
+    # (jamais l'occupation globale du navire — confidentialité inter-clients).
+    from sqlalchemy import select
+
+    from app.models.packing_list import PackingList
+    from app.models.stowage import BLOCKS, DECKS, HOLDS
+    from app.services.stowage import locate_for_packing_list
+
+    pl_id = (
+        await db.execute(select(PackingList.id).where(PackingList.booking_id == booking.id))
+    ).scalar_one_or_none()
+    positions = await locate_for_packing_list(db, pl_id) if pl_id else []
     return templates.TemplateResponse(
         "client/booking_detail.html",
-        {"request": request, "client": client, "booking": booking, "messages": messages},
+        {
+            "request": request,
+            "client": client,
+            "booking": booking,
+            "messages": messages,
+            "positions": positions,
+            "target_zones": {p["zone"] for p in positions},
+            "decks": DECKS,
+            "holds": HOLDS,
+            "blocks": BLOCKS,
+        },
     )
 
 

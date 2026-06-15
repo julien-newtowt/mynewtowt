@@ -30,7 +30,7 @@
 <article class="card">
   <h2>Batches ({{ pl.batches|length }})</h2>
   <table class="data-table">
-    <thead><tr><th>#</th><th>Format</th><th>Palettes</th><th>Description</th><th>Poids (kg)</th><th>Cubage (m³)</th><th>HS</th><th>Dangereux</th></tr></thead>
+    <thead><tr><th>#</th><th>Format</th><th>Palettes</th><th>Description</th><th>Poids (kg)</th><th>Cubage (m³)</th><th>HS</th><th>Dangereux</th><th>À bord</th></tr></thead>
     <tbody>
       {% for b in pl.batches %}
       <tr>
@@ -42,9 +42,10 @@
         <td class="mono">{{ b.cubage_m3 if b.cubage_m3 else '—' }}</td>
         <td class="mono">{{ b.hs_code or '—' }}</td>
         <td>{% if b.hazardous %}<span class="pill pill-error">IMO {{ b.imdg_class or '' }}</span>{% else %}—{% endif %}</td>
+        <td><a href="/stowage/locate/batch/{{ b.id }}" class="btn btn-ghost btn-sm" title="Localiser dans le navire">📍 Localiser</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="text-muted text-center">Aucun batch.</td></tr>
+      <tr><td colspan="9" class="text-muted text-center">Aucun batch.</td></tr>
       {% endfor %}
     </tbody>
   </table>

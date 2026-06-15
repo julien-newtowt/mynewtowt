@@ -1,0 +1,54 @@
+{% extends "staff/_layout.html" %}
+{% from "staff/stowage/_ship_map.html" import ship_map %}
+{% block title %}Repérage à bord — {{ title }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Cargo · Repérage à bord</span>
+    <h1 class="display">Position de la cargaison</h1>
+    <p class="text-muted">{{ title }}{% if batch and batch.description %} — {{ batch.description|truncate(60) }}{% endif %}</p>
+  </div>
+  <div class="flex gap-2">
+    {% if leg %}<a href="/stowage/legs/{{ leg.id }}" class="btn btn-ghost btn-sm">Plan d'arrimage {{ leg.leg_code }}</a>{% endif %}
+  </div>
+</header>
+
+{% if positions %}
+<article class="card mb-4">
+  <h2>Schéma navire</h2>
+  <p class="text-muted text-sm">La (ou les) zone(s) marquée(s) 📍 indiquent la position de la marchandise à bord.</p>
+  {{ ship_map(evaluation, target_zones, decks, holds, blocks, interactive=False) }}
+</article>
+
+<article class="card">
+  <div class="section-header"><h3>Détail des positions ({{ positions|length }})</h3></div>
+  <table class="data-table">
+    <thead><tr><th>Zone</th><th>Repère</th><th>Palettes</th><th>Type</th><th>Plan</th></tr></thead>
+    <tbody>
+      {% for p in positions %}
+      <tr>
+        <td class="mono"><strong>{{ p.zone }}</strong></td>
+        <td>{{ p.label }}</td>
+        <td>{{ p.pallet_count }}</td>
+        <td>
+          {% if p.is_dangerous %}<span class="pill pill-error">IMO</span>{% endif %}
+          {% if p.is_oversized %}<span class="pill pill-warn">Hors-gabarit</span>{% endif %}
+          {% if p.is_stacked %}<span class="pill pill-warn">gerbé</span>{% else %}<span class="pill">base</span>{% endif %}
+        </td>
+        <td>{% if p.leg_id %}<a href="/stowage/legs/{{ p.leg_id }}">leg #{{ p.leg_id }}</a> <span class="badge">{{ p.plan_status or '' }}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% else %}
+<article class="card">
+  <div class="alert alert-info">
+    Cette marchandise n'est pas encore positionnée dans un plan d'arrimage.
+    {% if batch %}Générez le plan depuis <a href="/stowage">Plan d'arrimage</a>.{% endif %}
+  </div>
+</article>
+{% endif %}
+
+{% endblock %}
