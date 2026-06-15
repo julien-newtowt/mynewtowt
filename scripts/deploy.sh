@@ -179,23 +179,20 @@ sync_code() {
 
   cd "${PROJECT_ROOT}"
 
-  # Refuse to clobber uncommitted work (tracked files only ; .env est gitignore).
-  if ! git diff --quiet || ! git diff --cached --quiet; then
-    fatal "Working tree has uncommitted changes — commit/stash first, or use --skip-git-sync"
-  fi
-
-  log "Fetching ${GIT_REMOTE} (tags + prune)"
-  git fetch --prune --tags "${GIT_REMOTE}" || fatal "git fetch ${GIT_REMOTE} failed"
-
   if [[ -n "${VERSION}" ]]; then
+    # Version épinglée (-v) : on récupère puis on checkout cette ref.
     log "Checking out pinned version: ${VERSION}"
-    git checkout --quiet "${VERSION}" || fatal "git checkout ${VERSION} failed"
+    git fetch --prune --tags "${GIT_REMOTE}" || fatal "git fetch ${GIT_REMOTE} failed"
+    git checkout "${VERSION}" || fatal "git checkout ${VERSION} failed"
   else
-    log "Updating ${DEPLOY_BRANCH} → ${GIT_REMOTE}/${DEPLOY_BRANCH}"
-    git checkout --quiet "${DEPLOY_BRANCH}" || fatal "git checkout ${DEPLOY_BRANCH} failed"
-    # Fast-forward only : refuse une divergence locale plutôt que de merger.
+    # Défaut : (re)synchronise SYSTÉMATIQUEMENT la branche cible sur origin.
+    # Exécute exactement : git fetch origin / git checkout main /
+    # git merge --ff-only origin/main / git rev-parse --short HEAD.
+    log "Syncing ${DEPLOY_BRANCH} from ${GIT_REMOTE}"
+    git fetch "${GIT_REMOTE}" || fatal "git fetch ${GIT_REMOTE} failed"
+    git checkout "${DEPLOY_BRANCH}" || fatal "git checkout ${DEPLOY_BRANCH} failed"
     git merge --ff-only "${GIT_REMOTE}/${DEPLOY_BRANCH}" \
-      || fatal "Cannot fast-forward ${DEPLOY_BRANCH} to ${GIT_REMOTE}/${DEPLOY_BRANCH} (diverged — résolvez manuellement)"
+      || fatal "Cannot fast-forward ${DEPLOY_BRANCH} to ${GIT_REMOTE}/${DEPLOY_BRANCH} (diverged — résolvez manuellement, ou --skip-git-sync)"
   fi
 
   VERSION="$(git rev-parse --short HEAD)"
