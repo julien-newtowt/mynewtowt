@@ -26,10 +26,15 @@ le transport de denrées (café).
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.stowage import ZONE_LOADING_ORDER, StowageZoneSpec
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_VESSEL_CLASS = "phoenix"
 
@@ -143,15 +148,27 @@ async def get_specs(db: AsyncSession, vessel_class: str | None = None) -> dict[s
     """
     vessel_class = vessel_class or DEFAULT_VESSEL_CLASS
     specs = build_reference_specs(vessel_class)
-    rows = (
-        (
-            await db.execute(
-                select(StowageZoneSpec).where(StowageZoneSpec.vessel_class == vessel_class)
+    # Renforcement : si la table n'existe pas encore (migration 0037 non
+    # appliquée) on dégrade proprement vers le référentiel en mémoire au lieu
+    # de planter. Savepoint isolé pour ne pas polluer la transaction de requête.
+    try:
+        async with db.begin_nested():
+            rows = (
+                (
+                    await db.execute(
+                        select(StowageZoneSpec).where(StowageZoneSpec.vessel_class == vessel_class)
+                    )
+                )
+                .scalars()
+                .all()
             )
+    except (ProgrammingError, OperationalError):
+        logger.warning(
+            "stowage_zone_specs indisponible — fallback sur le référentiel %s "
+            "(migration 0037 non appliquée ?)",
+            vessel_class,
         )
-        .scalars()
-        .all()
-    )
+        return specs
     for row in rows:
         if row.zone in specs:
             specs[row.zone] = _row_to_dict(row)

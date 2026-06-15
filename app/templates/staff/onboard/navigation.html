@@ -27,7 +27,13 @@
 {% if leg %}
 <div class="grid grid-2 gap-4">
   <article class="card">
-    <h2>Saisir un noon report</h2>
+    <div class="flex justify-between items-center">
+      <h2 style="margin:0;">Saisir un noon report</h2>
+      <a href="/static/reference/towt_noon_report_template.xlsx" download
+         class="btn btn-ghost btn-sm" title="Modèle officiel TOWT (xlsx) — référence de remplissage">
+        📥 Modèle (xlsx)
+      </a>
+    </div>
     {% if latest_position %}
       <div class="alert alert-info mb-3" style="background:var(--sable); border-left:3px solid var(--teal);">
         <strong>Position satcom</strong> ·
