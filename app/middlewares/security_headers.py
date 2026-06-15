@@ -47,4 +47,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Strict-Transport-Security"] = (
             "max-age=31536000; includeSubDomains; preload"
         )
+        # Pages HTML dynamiques : jamais mises en cache par le navigateur.
+        # Évite qu'un formulaire périmé (ex. change-password sans token _csrf
+        # d'une version antérieure) soit resservi depuis le cache → 403 CSRF.
+        # Bonne pratique sécurité pour des pages authentifiées. Les assets
+        # /static (text/css, application/javascript…) ne sont pas concernés.
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
         return response
