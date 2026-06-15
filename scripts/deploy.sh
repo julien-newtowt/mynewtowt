@@ -3,23 +3,26 @@
 #
 # Workflow (idempotent, safe to re-run):
 #   1. Pre-flight checks (env, docker, branch)
-#   2. Snapshot Postgres + tag git release
-#   3. Pull image / build
-#   4. Maintenance mode ON
-#   5. Apply Alembic migrations
-#   6. Rolling restart app + worker
-#   7. Smoke tests on /health
-#   8. Maintenance mode OFF
-#   9. Post-deploy report
+#   2. Sync working tree to target git ref (fetch + checkout / fast-forward)
+#   3. Snapshot Postgres + tag git release
+#   4. Pull image / build
+#   5. Maintenance mode ON
+#   6. Apply Alembic migrations
+#   7. Rolling restart app + worker
+#   8. Smoke tests on /health
+#   9. Maintenance mode OFF
+#  10. Post-deploy report
 #
 # Failure modes are explicit:
 #   - migration error  → DB snapshot restored, image NOT swapped, exit 1
 #   - smoke test fail  → previous image redeployed (rollback), exit 2
 #
 # Usage:
-#   scripts/deploy.sh                          # deploys current branch HEAD
-#   scripts/deploy.sh -v v3.0.1                # deploys a specific tag
+#   scripts/deploy.sh                          # deploys origin/main HEAD (pulls)
+#   scripts/deploy.sh -v v3.0.1                # checks out & deploys a tag/sha
+#   scripts/deploy.sh -b release/x             # deploys a specific branch
 #   scripts/deploy.sh -e staging               # target staging env
+#   scripts/deploy.sh --skip-git-sync          # deploy the working tree as-is
 #   scripts/deploy.sh --skip-snapshot          # for hotfixes only
 
 set -euo pipefail
@@ -35,6 +38,13 @@ ENV="${ENV:-production}"
 VERSION="${VERSION:-}"
 SKIP_SNAPSHOT=0
 SKIP_TESTS=0
+SKIP_GIT_SYNC=0
+
+# Git sync — d'où le code déployé est tiré (cf. sync_code). C'est l'étape qui
+# manquait : sans elle, le build utilisait le working tree local (souvent
+# périmé) au lieu du dernier code poussé.
+GIT_REMOTE="${GIT_REMOTE:-origin}"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 
 DB_CONTAINER="${DB_CONTAINER:-mynewtowt-db}"
 APP_CONTAINER="${APP_CONTAINER:-mynewtowt-app}"
@@ -70,18 +80,22 @@ Usage: $(basename "$0") [options]
 
 Options:
   -e, --env ENV            Target environment (production|staging) [default: production]
-  -v, --version VERSION    Git tag or sha to deploy [default: current HEAD]
+  -v, --version VERSION    Git tag or sha to check out & deploy [default: branch HEAD]
+  -b, --branch BRANCH      Branch to deploy when no --version [default: main]
+      --skip-git-sync      Deploy the current working tree as-is (no fetch/checkout)
       --skip-snapshot      Skip pre-deploy DB snapshot (hotfix only — risky)
       --skip-tests         Skip post-deploy smoke tests (NOT recommended)
   -h, --help               Show this help
 
 Environment variables:
-  ENV, VERSION, DB_CONTAINER, APP_CONTAINER, COMPOSE_FILE,
-  HEALTH_URL, HEALTH_TIMEOUT_SECONDS, BACKUP_DIR, BACKUP_RETENTION_DAYS
+  ENV, VERSION, GIT_REMOTE, DEPLOY_BRANCH, DB_CONTAINER, APP_CONTAINER,
+  COMPOSE_FILE, HEALTH_URL, HEALTH_TIMEOUT_SECONDS, BACKUP_DIR,
+  BACKUP_RETENTION_DAYS
 
 Examples:
-  $(basename "$0")
-  $(basename "$0") -v v3.0.1
+  $(basename "$0")                       # pull & deploy origin/main
+  $(basename "$0") -v v3.0.1             # check out & deploy a tag
+  $(basename "$0") -b release/3.1        # deploy a branch
   $(basename "$0") --env staging
 EOF
 }
@@ -90,6 +104,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -e|--env)            ENV="$2"; shift 2 ;;
     -v|--version)        VERSION="$2"; shift 2 ;;
+    -b|--branch)         DEPLOY_BRANCH="$2"; shift 2 ;;
+    --skip-git-sync)     SKIP_GIT_SYNC=1; shift ;;
     --skip-snapshot)     SKIP_SNAPSHOT=1; shift ;;
     --skip-tests)        SKIP_TESTS=1; shift ;;
     -h|--help)           usage; exit 0 ;;
@@ -126,10 +142,16 @@ preflight() {
     fi
   fi
 
-  if [[ -z "${VERSION}" ]]; then
-    VERSION="$(git rev-parse --short HEAD)"
+  # NB : on ne fige PAS VERSION sur le HEAD local ici — sync_code() met le
+  # working tree à jour sur la ref cible puis renseigne VERSION (sinon on
+  # déploierait le code local potentiellement périmé).
+  if [[ -n "${VERSION}" ]]; then
+    log "Target version (pinned): ${VERSION}"
+  elif (( SKIP_GIT_SYNC == 1 )); then
+    log "Target: working tree as-is (--skip-git-sync)"
+  else
+    log "Target: ${GIT_REMOTE}/${DEPLOY_BRANCH} (latest pushed)"
   fi
-  log "Target version: ${VERSION}"
 
   # Disk space guard (≥ 2 GB free)
   local free_kb
@@ -139,6 +161,45 @@ preflight() {
   fi
 
   success "Pre-flight checks passed"
+}
+
+# ---------------------------------------------------------------------------
+# Code sync — met le working tree à jour sur la ref cible AVANT le build.
+# Sans cette étape, ``docker compose build`` (COPY app ./app) embarque le code
+# local, souvent périmé → les modifications poussées (et leurs migrations) ne
+# sont pas déployées.
+# ---------------------------------------------------------------------------
+
+sync_code() {
+  if (( SKIP_GIT_SYNC == 1 )); then
+    warn "Skipping git sync (--skip-git-sync) — deploying the working tree as-is"
+    VERSION="${VERSION:-$(git -C "${PROJECT_ROOT}" rev-parse --short HEAD)}"
+    return
+  fi
+
+  cd "${PROJECT_ROOT}"
+
+  # Refuse to clobber uncommitted work (tracked files only ; .env est gitignore).
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    fatal "Working tree has uncommitted changes — commit/stash first, or use --skip-git-sync"
+  fi
+
+  log "Fetching ${GIT_REMOTE} (tags + prune)"
+  git fetch --prune --tags "${GIT_REMOTE}" || fatal "git fetch ${GIT_REMOTE} failed"
+
+  if [[ -n "${VERSION}" ]]; then
+    log "Checking out pinned version: ${VERSION}"
+    git checkout --quiet "${VERSION}" || fatal "git checkout ${VERSION} failed"
+  else
+    log "Updating ${DEPLOY_BRANCH} → ${GIT_REMOTE}/${DEPLOY_BRANCH}"
+    git checkout --quiet "${DEPLOY_BRANCH}" || fatal "git checkout ${DEPLOY_BRANCH} failed"
+    # Fast-forward only : refuse une divergence locale plutôt que de merger.
+    git merge --ff-only "${GIT_REMOTE}/${DEPLOY_BRANCH}" \
+      || fatal "Cannot fast-forward ${DEPLOY_BRANCH} to ${GIT_REMOTE}/${DEPLOY_BRANCH} (diverged — résolvez manuellement)"
+  fi
+
+  VERSION="$(git rev-parse --short HEAD)"
+  success "Code synced to ${VERSION} — $(git log -1 --format='%s' | cut -c1-70)"
 }
 
 # ---------------------------------------------------------------------------
@@ -408,6 +469,7 @@ EOF
 
 main() {
   preflight
+  sync_code
   snapshot_db
   tag_release
   build_image
