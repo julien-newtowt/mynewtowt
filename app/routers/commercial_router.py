@@ -124,10 +124,47 @@ async def clients_list(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
+    from app.services.pipedrive_sync import is_configured
+
     clients = list((await db.execute(select(Client).order_by(Client.name.asc()))).scalars().all())
     return templates.TemplateResponse(
         "staff/commercial/clients.html",
-        {"request": request, "user": user, "clients": clients, "types": CLIENT_TYPES},
+        {
+            "request": request,
+            "user": user,
+            "clients": clients,
+            "types": CLIENT_TYPES,
+            "pipedrive_configured": is_configured(),
+        },
+    )
+
+
+@router.post("/clients/sync")
+async def clients_sync_pipedrive(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+) -> RedirectResponse:
+    """Remonte les organisations Pipedrive dans la liste des clients."""
+    from app.services.pipedrive_sync import sync_clients
+
+    result = await sync_clients(db)
+    if not result["configured"]:
+        return RedirectResponse(url="/commercial/clients?pd=disabled", status_code=303)
+    await activity_record(
+        db,
+        action="sync",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="client",
+        entity_label=f"pipedrive: +{result['created']} / ~{result['updated']}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(
+        url=f"/commercial/clients?pd=ok&created={result['created']}&updated={result['updated']}",
+        status_code=303,
     )
 
 
