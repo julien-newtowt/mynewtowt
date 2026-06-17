@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Vérification 2FA — {{ brand.nom_court }}{% endblock %}
 {% block body %}
-<div class="auth-shell">
+<div class="auth-shell"
+     style="background-image: linear-gradient(rgba(13,89,102,.78), rgba(13,89,102,.86)), url('{{ asset('img/equipe-newtowt.jpg') }}'); background-size: cover; background-position: center;">
   <div class="auth-card">
     <div class="auth-brand">
       <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" />
