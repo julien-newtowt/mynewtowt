@@ -1,16 +1,13 @@
 {% extends "public/_layout_v2.html" %}
-{% block title %}Contact & demande de cotation — NewTowt{% endblock %}
-{% block description %}Contactez NewTowt pour une demande de cotation de fret maritime à la voile : ports d'origine et de destination, nature de la marchandise, volume, dates.{% endblock %}
+{% block title %}{{ t('contact_meta_title', lang) }}{% endblock %}
+{% block description %}{{ t('contact_meta_desc', lang) }}{% endblock %}
 
 {% block content %}
 <section class="hero">
   <div class="hero-inner">
-    <span class="hero-kicker">Contact</span>
-    <h1 class="hero-title">Demandez votre cotation</h1>
-    <p class="hero-lead">
-      Décrivez votre besoin de transport : nos équipes vous répondent et préparent
-      le relais vers votre espace de réservation. Aucun paiement n'a lieu sur cette page.
-    </p>
+    <span class="hero-kicker">{{ t('contact_hero_kicker', lang) }}</span>
+    <h1 class="hero-title">{{ t('contact_hero_title', lang) }}</h1>
+    <p class="hero-lead">{{ t('contact_hero_lead', lang) }}</p>
   </div>
 </section>
 
@@ -20,34 +17,34 @@
 
       {# ───────── Coordonnées ───────── #}
       <div>
-        <h2 class="section-title">Nous joindre</h2>
+        <h2 class="section-title">{{ t('contact_reach_title', lang) }}</h2>
 
-        <h3>Adresse opérationnelle</h3>
+        <h3>{{ t('contact_addr_op', lang) }}</h3>
         <p>52 quai Frissard<br/>76600 Le Havre, France</p>
 
-        <h3>Siège social</h3>
+        <h3>{{ t('contact_addr_hq', lang) }}</h3>
         <p>128 boulevard Raspail<br/>75006 Paris, France</p>
 
-        <h3>Téléphone</h3>
+        <h3>{{ t('contact_phone', lang) }}</h3>
         <p><a href="tel:+33984338962">+33 9 84 33 89 62</a></p>
 
-        <h3>Protection des données</h3>
+        <h3>{{ t('contact_dpo', lang) }}</h3>
         <p><a href="mailto:dpo@newtowt.eu">dpo@newtowt.eu</a></p>
 
         <div class="map-placeholder" role="img"
-             aria-label="Carte — Le Havre, 52 quai Frissard — visuel à venir"
+             aria-label="{{ t('contact_map_text', lang) }}"
              style="margin-top:var(--sp-5);">
-          <span>Carte — Le Havre — <em>visuel à venir</em></span>
+          <span>{{ t('contact_map_text', lang) }}</span>
         </div>
       </div>
 
       {# ───────── Formulaire de cotation ───────── #}
       <div>
-        <h2 class="section-title">Votre demande</h2>
+        <h2 class="section-title">{{ t('contact_form_title', lang) }}</h2>
 
         {% if errors %}
         <div class="alert alert--error" role="alert">
-          Merci de corriger les champs signalés ci-dessous.
+          {{ t('contact_err_summary', lang) }}
         </div>
         {% endif %}
 
@@ -62,41 +59,41 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="name">Nom et prénom *</label>
+            <label class="form-label" for="name">{{ t('contact_lbl_name', lang) }} *</label>
             <input class="form-control" id="name" name="name" type="text" required
                    value="{{ values.name|default('') }}" autocomplete="name" />
-            {% if errors.name %}<p class="form-hint" style="color:var(--c-danger);">Champ obligatoire.</p>{% endif %}
+            {% if errors.name %}<p class="form-hint" style="color:var(--c-danger);">{{ t('contact_err_required', lang) }}</p>{% endif %}
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label" for="company">Société</label>
+              <label class="form-label" for="company">{{ t('contact_lbl_company', lang) }}</label>
               <input class="form-control" id="company" name="company" type="text"
                      value="{{ values.company|default('') }}" autocomplete="organization" />
             </div>
             <div class="form-group">
-              <label class="form-label" for="email">E-mail *</label>
+              <label class="form-label" for="email">{{ t('contact_lbl_email', lang) }} *</label>
               <input class="form-control" id="email" name="email" type="email" required
                      value="{{ values.email|default('') }}" autocomplete="email" />
-              {% if errors.email == 'invalid' %}<p class="form-hint" style="color:var(--c-danger);">Adresse e-mail invalide.</p>
-              {% elif errors.email %}<p class="form-hint" style="color:var(--c-danger);">Champ obligatoire.</p>{% endif %}
+              {% if errors.email == 'invalid' %}<p class="form-hint" style="color:var(--c-danger);">{{ t('contact_err_email_invalid', lang) }}</p>
+              {% elif errors.email %}<p class="form-hint" style="color:var(--c-danger);">{{ t('contact_err_required', lang) }}</p>{% endif %}
             </div>
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="phone">Téléphone</label>
+            <label class="form-label" for="phone">{{ t('contact_lbl_phone', lang) }}</label>
             <input class="form-control" id="phone" name="phone" type="tel"
                    value="{{ values.phone|default('') }}" autocomplete="tel" />
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label" for="pol">Port d'origine</label>
+              <label class="form-label" for="pol">{{ t('contact_lbl_pol', lang) }}</label>
               <input class="form-control" id="pol" name="pol" type="text"
                      placeholder="Fécamp" value="{{ values.pol|default('') }}" />
             </div>
             <div class="form-group">
-              <label class="form-label" for="pod">Port de destination</label>
+              <label class="form-label" for="pod">{{ t('contact_lbl_pod', lang) }}</label>
               <input class="form-control" id="pod" name="pod" type="text"
                      placeholder="São Sebastião" value="{{ values.pod|default('') }}" />
             </div>
@@ -104,41 +101,41 @@
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label" for="cargo_nature">Nature de la marchandise</label>
+              <label class="form-label" for="cargo_nature">{{ t('contact_lbl_cargo', lang) }}</label>
               <input class="form-control" id="cargo_nature" name="cargo_nature" type="text"
-                     placeholder="Café, cacao, fret industriel…" value="{{ values.cargo_nature|default('') }}" />
+                     placeholder="{{ t('contact_ph_cargo', lang) }}" value="{{ values.cargo_nature|default('') }}" />
             </div>
             <div class="form-group">
-              <label class="form-label" for="volume_weight">Volume / poids</label>
+              <label class="form-label" for="volume_weight">{{ t('contact_lbl_volume', lang) }}</label>
               <input class="form-control" id="volume_weight" name="volume_weight" type="text"
-                     placeholder="ex. 12 palettes / 6 t" value="{{ values.volume_weight|default('') }}" />
+                     placeholder="{{ t('contact_ph_volume', lang) }}" value="{{ values.volume_weight|default('') }}" />
             </div>
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="desired_dates">Dates envisagées</label>
+            <label class="form-label" for="desired_dates">{{ t('contact_lbl_dates', lang) }}</label>
             <input class="form-control" id="desired_dates" name="desired_dates" type="text"
-                   placeholder="ex. T1 2026" value="{{ values.desired_dates|default('') }}" />
+                   placeholder="{{ t('contact_ph_dates', lang) }}" value="{{ values.desired_dates|default('') }}" />
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="message">Précisions</label>
+            <label class="form-label" for="message">{{ t('contact_lbl_message', lang) }}</label>
             <textarea class="form-control" id="message" name="message" rows="4">{{ values.message|default('') }}</textarea>
           </div>
 
           <div class="form-group field-check">
             <label>
               <input type="checkbox" name="consent" value="1" required />
-              J'accepte que mes données soient utilisées pour traiter ma demande,
-              conformément à la <a href="/about/privacy">politique de confidentialité</a>. *
+              {{ t('contact_consent_pre', lang) }}
+              <a href="/about/privacy">{{ t('contact_consent_link', lang) }}</a>. *
             </label>
-            {% if errors.consent %}<p class="form-hint" style="color:var(--c-danger);">Votre consentement est nécessaire.</p>{% endif %}
+            {% if errors.consent %}<p class="form-hint" style="color:var(--c-danger);">{{ t('contact_err_consent', lang) }}</p>{% endif %}
           </div>
 
           <div class="form-actions">
-            <button type="submit" class="btn btn-primary btn-lg">Envoyer ma demande</button>
+            <button type="submit" class="btn btn-primary btn-lg">{{ t('contact_submit', lang) }}</button>
           </div>
-          <p class="caption">* Champs obligatoires. Aucun paiement n'est demandé ici.</p>
+          <p class="caption">{{ t('contact_required_note', lang) }}</p>
         </form>
       </div>
 
