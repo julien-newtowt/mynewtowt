@@ -54,6 +54,8 @@ EXEMPT_PATHS_PREFIXES = (
     "/api/tracking/",  # Power Automate satcom ingest — auth via X-API-Token
     "/webhooks/",  # external webhooks sign their payloads
     "/api/veille/",  # Power Automate veille refresh — auth via X-API-Token
+    "/api/weather/",  # Power Automate météo snapshot 30 min — auth via X-API-Token
+    "/api/tickets/",  # Power Automate escalade SLA — auth via X-API-Token
     "/health",
     "/metrics",
 )

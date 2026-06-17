@@ -30,6 +30,15 @@ def _make_app() -> FastAPI:
         # Sous-ressource non-HTML, fetchée eagerly par le navigateur.
         return JSONResponse({"ok": True})
 
+    # Endpoints machine (cron Power Automate) — exemptés de CSRF, auth X-API-Token.
+    @app.post("/api/weather/refresh")
+    async def weather_refresh() -> JSONResponse:
+        return JSONResponse({"ok": True})
+
+    @app.post("/api/tickets/escalate-sla")
+    async def escalate_sla() -> JSONResponse:
+        return JSONResponse({"ok": True})
+
     return app
 
 
@@ -81,6 +90,16 @@ def test_post_with_matching_csrf_header_succeeds() -> None:
         headers={"x-csrf-token": token},
     )
     assert r.status_code == 200
+
+
+def test_exempt_api_cron_endpoints_bypass_csrf() -> None:
+    """Les endpoints machine (cron Power Automate) sont exemptés de CSRF :
+    un POST sans token _csrf doit passer (l'auth est faite par X-API-Token)."""
+    client = TestClient(_make_app())
+    for path in ("/api/weather/refresh", "/api/tickets/escalate-sla"):
+        r = client.post(path)
+        assert r.status_code == 200, f"{path} → {r.status_code} (attendu 200, exempté CSRF)"
+        assert r.json() == {"ok": True}
 
 
 def test_get_is_safe_method() -> None:
