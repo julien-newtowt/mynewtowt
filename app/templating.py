@@ -193,6 +193,32 @@ templates.env.globals["app_version"] = settings.app_version
 templates.env.globals["app_env"] = settings.app_env
 templates.env.globals["site_url"] = settings.site_url
 
+
+# ─────────── Cache-busting des assets statiques (JS/CSS) ──────────────────
+# Les fichiers /static/* sont mis en cache par le navigateur ; sans empreinte,
+# une nouvelle version de JS/CSS n'est pas re-téléchargée après déploiement.
+# ``asset('js/foo.js')`` ajoute ``?v=<mtime>`` → le cache est invalidé dès que
+# le fichier change (et reste stable sinon). mtime mémorisé (faible coût).
+_STATIC_DIR = Path(__file__).parent / "static"
+_asset_v_cache: dict[str, int] = {}
+
+
+def _asset(path: str) -> str:
+    rel = path.lstrip("/")
+    if rel.startswith("static/"):
+        rel = rel[len("static/") :]
+    v = _asset_v_cache.get(rel)
+    if v is None:
+        try:
+            v = int((_STATIC_DIR / rel).stat().st_mtime)
+        except OSError:
+            v = 0
+        _asset_v_cache[rel] = v
+    return f"/static/{rel}?v={v}"
+
+
+templates.env.globals["asset"] = _asset
+
 # ─────────── SEO / lisibilité IA (Schema.org + hreflang) ──────────────────
 # Fiche Organisation injectée dans le <head> de la vitrine (bloc de données
 # `application/ld+json` — non exécuté, compatible CSP stricte).

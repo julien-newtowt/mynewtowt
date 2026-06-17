@@ -4,8 +4,8 @@
 {% block head %}{{ super() }}
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
-<script src="/static/js/fleet-map.js" defer></script>
-<script src="/static/js/tracking-history.js" defer></script>
+<script src="{{ asset('js/fleet-map.js') }}" defer></script>
+<script src="{{ asset('js/tracking-history.js') }}" defer></script>
 {% endblock %}
 {% block content %}
 <header class="flex justify-between items-center mb-4">
