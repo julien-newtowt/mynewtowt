@@ -150,3 +150,35 @@ def test_first_visit_form_works_via_state_token() -> None:
         data={"_csrf": token_from_html, "email": "a@b.c", "password": "x"},
     )
     assert r.status_code == 200
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Secure flag — must honour X-Forwarded-Proto, exactly like the session
+# cookies (app/auth._is_https). Régression du 403 « CSRF validation failed »
+# persistant : derrière Caddy (TLS terminé, l'app voit http + X-Forwarded-
+# Proto=https), le cookie towt_csrf était posé SANS Secure alors que le
+# cookie de session l'avait → incohérence d'attributs, le navigateur cessait
+# de renvoyer towt_csrf sur le POST et le middleware reforgeait un token neuf
+# qui ne correspondait jamais au champ _csrf rendu côté serveur.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_csrf_cookie_not_secure_over_plain_http() -> None:
+    """Sur du HTTP nu (pas de proxy TLS), le cookie ne doit PAS être Secure,
+    sinon le navigateur le drop silencieusement."""
+    client = TestClient(_make_app())
+    r = client.get("/page")
+    set_cookie = r.headers.get("set-cookie", "")
+    assert CSRF_COOKIE in set_cookie
+    assert "Secure" not in set_cookie
+
+
+def test_csrf_cookie_secure_when_forwarded_proto_https() -> None:
+    """TLS terminé par Caddy : l'app voit http mais X-Forwarded-Proto=https.
+    Le cookie towt_csrf DOIT alors porter Secure (cohérent avec le cookie de
+    session via app/auth._is_https) pour être renvoyé sur le POST."""
+    client = TestClient(_make_app())
+    r = client.get("/page", headers={"x-forwarded-proto": "https"})
+    set_cookie = r.headers.get("set-cookie", "")
+    assert CSRF_COOKIE in set_cookie
+    assert "Secure" in set_cookie

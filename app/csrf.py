@@ -34,6 +34,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.auth import _is_https
+
 CSRF_COOKIE = "towt_csrf"
 CSRF_HEADER = "x-csrf-token"
 CSRF_FORM_FIELD = "_csrf"
@@ -101,7 +103,16 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 CSRF_COOKIE,
                 cookie_value,
                 httponly=False,  # JS must read it to set the header (HTMX injects)
-                secure=request.url.scheme == "https",
+                # Le flag Secure DOIT refléter le schéma *effectif* via
+                # X-Forwarded-Proto (TLS terminé par Caddy ; l'app voit http
+                # en interne). Utiliser `request.url.scheme` seul dépend de
+                # --proxy-headers et pouvait poser un cookie incohérent avec
+                # les cookies de session (app/auth._is_https) : le navigateur
+                # cessait alors de renvoyer towt_csrf sur le POST → le
+                # middleware reforgeait un token neuf qui ne correspondait
+                # jamais au champ _csrf rendu → 403 « CSRF validation failed »
+                # persistant (notamment sur le flux change-password forcé).
+                secure=_is_https(request),
                 samesite="lax",
                 path="/",
             )
