@@ -1,28 +1,24 @@
 {% extends "public/_layout_v2.html" %}
-{% block title %}Recrutement — embarquez avec NewTowt{% endblock %}
-{% block description %}NewTowt recrute pour armer une flotte de voiliers-cargos qui navigue déjà. Marins et fonctions support : rejoignez une filière du transport maritime décarboné.{% endblock %}
+{% block title %}{{ t('recr_meta_title', lang) }}{% endblock %}
+{% block description %}{{ t('recr_meta_desc', lang) }}{% endblock %}
 
 {% block content %}
 <section class="hero">
   <div class="hero-inner">
-    <span class="hero-kicker">Recrutement</span>
-    <h1 class="hero-title">Embarquez dans une aventure qui navigue déjà</h1>
-    <p class="hero-lead">
-      NewTowt arme une flotte de six voiliers-cargos et bâtit une filière du transport
-      maritime à la voile. Marins et fonctions à terre : nous cherchons celles et ceux
-      qui veulent décarboner le fret pour de vrai.
-    </p>
+    <span class="hero-kicker">{{ t('recr_hero_kicker', lang) }}</span>
+    <h1 class="hero-title">{{ t('recr_hero_title', lang) }}</h1>
+    <p class="hero-lead">{{ t('recr_hero_lead', lang) }}</p>
   </div>
 </section>
 
 <section class="section" style="padding-top:0;">
   <div class="section-inner">
     <figure style="margin:0; border-radius: var(--radius-md, 12px); overflow:hidden; box-shadow: var(--shadow-lg);">
-      <div role="img" aria-label="L'ensemble des collaborateurs NewTowt devant l'Anemos, Le Havre"
+      <div role="img" aria-label="{{ t('recr_photo_caption', lang) }}"
            style="width:100%; aspect-ratio:16/7; background:#EFE6D6 center / cover no-repeat;
                   background-image:url('{{ asset('img/equipe-newtowt.jpg') }}');"></div>
       <figcaption class="text-muted" style="padding:.6rem 0 0; font-size:.9rem;">
-        L'ensemble des collaborateurs NewTowt devant l'<em>Anemos</em> — Le Havre.
+        {{ t('recr_photo_caption', lang) }}
       </figcaption>
     </figure>
   </div>
@@ -32,23 +28,20 @@
 
 <section class="section">
   <div class="section-inner">
-    <span class="section-kicker">Pourquoi nous rejoindre</span>
-    <h2 class="section-title">Une compagnie qui grandit</h2>
+    <span class="section-kicker">{{ t('recr_why_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('recr_why_title', lang) }}</h2>
     <div class="feature-grid">
       <article class="feature-card">
-        <h3>Naviguer à la voile</h3>
-        <p>Des navires de la classe TSC 80, 9 à 10 marins à bord, une propulsion
-           principalement vélique sous pavillon français.</p>
+        <h3>{{ t('recr_card1_title', lang) }}</h3>
+        <p>{{ t('recr_card1_body', lang) }}</p>
       </article>
       <article class="feature-card">
-        <h3>Un métier qui a du sens</h3>
-        <p>Réduire massivement les émissions de CO₂ sur des routes long-courrier réelles
-           vers le Brésil et l'Amérique latine.</p>
+        <h3>{{ t('recr_card2_title', lang) }}</h3>
+        <p>{{ t('recr_card2_body', lang) }}</p>
       </article>
       <article class="feature-card">
-        <h3>Une filière à construire</h3>
-        <p>Quatre navires en construction, une ligne qui s'étend : les opportunités
-           grandissent avec la flotte.</p>
+        <h3>{{ t('recr_card3_title', lang) }}</h3>
+        <p>{{ t('recr_card3_body', lang) }}</p>
       </article>
     </div>
   </div>
@@ -56,18 +49,14 @@
 
 <section class="section section--sand">
   <div class="section-inner">
-    <span class="section-kicker">Postes ouverts</span>
-    <h2 class="section-title">Nos offres</h2>
+    <span class="section-kicker">{{ t('recr_jobs_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('recr_jobs_title', lang) }}</h2>
     <div class="callout callout--teal">
-      <strong>Offres en cours de publication.</strong> La liste des postes ouverts
-      (navigants et fonctions support) sera affichée ici prochainement.
-      <em>[Emplacement réservé — postes à compléter.]</em>
+      <strong>{{ t('recr_jobs_callout_strong', lang) }}</strong> {{ t('recr_jobs_callout_body', lang) }}
+      <em>{{ t('recr_jobs_callout_note', lang) }}</em>
     </div>
-    <p style="margin-top:var(--sp-5);">
-      Vous souhaitez nous rejoindre dès maintenant ? Adressez-nous une candidature
-      spontanée.
-    </p>
-    <p><a href="/contact" class="btn btn-primary btn-lg">Candidature spontanée</a></p>
+    <p style="margin-top:var(--sp-5);">{{ t('recr_spontaneous', lang) }}</p>
+    <p><a href="/contact" class="btn btn-primary btn-lg">{{ t('recr_spontaneous_btn', lang) }}</a></p>
   </div>
 </section>
 {% endblock %}

@@ -76,6 +76,16 @@ class Settings(BaseSettings):
     # navire, historisé pour consultation ultérieure des legs réalisés).
     weather_api_token: str | None = None
 
+    # Marad (MaraSoft « Generic API ») — ship & crew management. Intégration
+    # LECTURE SEULE des données crew (cf. docs/integrations/marad-crew-readonly.md).
+    # mynewtowt n'écrit jamais dans Marad. Sans MARAD_API_TOKEN, le client est
+    # un no-op et l'endpoint cron renvoie 503.
+    marad_base_url: str = "https://external.marad.ms"
+    marad_api_token: str | None = None  # clé d'API Marad (envoyée en header)
+    marad_api_key_header: str = "X-Api-Key"  # nom du header d'auth (à confirmer éditeur)
+    marad_sync_token: str | None = None  # X-API-Token du cron interne POST /api/marad/refresh
+    marad_vessel_map: str = ""  # "marad_vessel_id=vessel_id,..." (cf. TRACKING_VESSEL_MAP)
+
     # Veille d'actualité — agrégateur NewsData.io + token de rafraîchissement
     # (POST /api/veille/refresh, déclenché en cron par Power Automate).
     newsdata_api_key: str | None = None
