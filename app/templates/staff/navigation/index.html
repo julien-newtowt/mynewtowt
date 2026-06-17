@@ -5,7 +5,7 @@
 {% block head %}{{ super() }}
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
-<script src="/static/js/navigation-map.js" defer></script>
+<script src="{{ asset('js/navigation-map.js') }}" defer></script>
 <style>
   .leg-chip.selected { background: var(--teal, #0D5966); color: #fff; border-color: var(--teal, #0D5966); }
   .nav-pills { display:flex; flex-wrap:wrap; gap:8px; margin:.5rem 0 1rem; align-items:center; }
