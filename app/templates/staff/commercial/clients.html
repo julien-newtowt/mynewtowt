@@ -7,8 +7,34 @@
     <span class="kicker">Commercial</span>
     <h1 class="display">Clients</h1>
   </div>
-  <a href="#new-client" class="btn btn-primary">+ Nouveau client</a>
+  <div class="flex items-center" style="gap:8px;">
+    {% if pipedrive_configured %}
+    <form method="post" action="/commercial/clients/sync" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-secondary" title="Remonter les organisations depuis Pipedrive">
+        <i data-lucide="refresh-cw"></i> Synchroniser Pipedrive
+      </button>
+    </form>
+    {% else %}
+    <span class="pill pill-neutral" title="Renseignez PIPEDRIVE_API_TOKEN dans .env">Pipedrive non configuré</span>
+    {% endif %}
+    <a href="#new-client" class="btn btn-primary">+ Nouveau client</a>
+  </div>
 </header>
+
+{% set _pd = request.query_params.get('pd') %}
+{% if _pd == 'ok' %}
+<div class="alert alert-success mb-4">
+  <i data-lucide="check-circle"></i>
+  Synchronisation Pipedrive terminée : {{ request.query_params.get('created', 0) }} créé(s),
+  {{ request.query_params.get('updated', 0) }} mis à jour.
+</div>
+{% elif _pd == 'disabled' %}
+<div class="alert alert-warn mb-4">
+  <i data-lucide="alert-triangle"></i>
+  Pipedrive n'est pas configuré (<code>PIPEDRIVE_API_TOKEN</code> manquant) — synchronisation ignorée.
+</div>
+{% endif %}
 
 <article class="card mb-4">
   <table class="data-table">
@@ -16,7 +42,7 @@
     <tbody>
       {% for c in clients %}
       <tr>
-        <td><a href="/commercial/clients/{{ c.id }}"><strong>{{ c.name }}</strong></a>{% if c.vat_number %}<br/><small class="text-muted mono">{{ c.vat_number }}</small>{% endif %}</td>
+        <td><a href="/commercial/clients/{{ c.id }}"><strong>{{ c.name }}</strong></a>{% if c.pipedrive_org_id %} <span class="badge" title="Lié à Pipedrive (org #{{ c.pipedrive_org_id }})">PD</span>{% endif %}{% if c.vat_number %}<br/><small class="text-muted mono">{{ c.vat_number }}</small>{% endif %}</td>
         <td><span class="badge badge-{{ 'active' if c.client_type == 'freight_forwarder' else 'draft' }}">{{ c.client_type }}</span></td>
         <td>{{ c.contact_name or '—' }}<br/><small class="text-muted">{{ c.contact_email or '' }}</small></td>
         <td>{% if c.country %}<span class="port-badge">{{ c.country|flag }} {{ c.country }}</span>{% else %}—{% endif %}</td>

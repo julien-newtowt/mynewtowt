@@ -27,6 +27,35 @@ def _enabled() -> bool:
     return PIPEDRIVE_API_TOKEN is not None
 
 
+def enabled() -> bool:
+    """Public : True si un token Pipedrive est configuré (.env)."""
+    return _enabled()
+
+
+async def list_organizations(*, max_items: int = 1000) -> list[dict]:
+    """Liste paginée des organisations Pipedrive (≤ ``max_items``).
+
+    Renvoie une liste de dicts org (clés Pipedrive : id, name, address,
+    address_country, owner_id…). Liste vide si non configuré ou en erreur.
+    """
+    out: list[dict] = []
+    start = 0
+    page = 100
+    while len(out) < max_items:
+        data = await _request("GET", "/organizations", params={"start": start, "limit": page})
+        if not data or not data.get("success"):
+            break
+        rows = data.get("data") or []
+        if not rows:
+            break
+        out.extend(rows)
+        pagination = (data.get("additional_data") or {}).get("pagination") or {}
+        if not pagination.get("more_items_in_collection"):
+            break
+        start = pagination.get("next_start") or (start + page)
+    return out[:max_items]
+
+
 async def _request(
     method: str, path: str, *, json: dict | None = None, params: dict | None = None
 ) -> dict | None:
