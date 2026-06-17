@@ -160,13 +160,16 @@ mynewtowt/
 | Stowage | `/stowage` | ✅ 18 zones + algo glouton |
 | Claims | `/claims` | ✅ workflow 6 statuts + timeline |
 | MRV | `/mrv` | ✅ events fuel + exports DNV CSV + Carbon Report |
+| Navigation | `/navigation` | ✅ trajet réel/leg : carte points GPS + trait, distance réelle vs théorique, durée, restant, météo historisée |
 | Finance | `/finance` | 🟡 LegFinance + OpexParameter |
 | KPI | `/kpi` | 🟡 stub — certificats CO₂ à venir |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
 | Cashbox | `/cashbox` | ✅ EUR/USD/VND |
 | RH | `/rh` | 🟡 stub |
+| Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |
+| Météo historisée | `/api/weather/refresh` | ✅ snapshot Windy du dernier point GPS / navire (cron 30 min, `WEATHER_API_TOKEN`) → `vessel_weather` |
 | Chat Kairos AI | `/chat` | ✅ Claude Sonnet 4.6 |
 | Veille d'actualité | `/veille` + `/api/veille/refresh` | 🟡 P1 — flux brut NewsData.io (staff), refresh cron Power Automate ; IA (synthèse/scoring) en P2 |
 | Admin | `/admin/...` | ✅ users + opex + insurance + maintenance + activity-logs |

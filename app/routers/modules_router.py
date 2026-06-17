@@ -142,9 +142,27 @@ async def rh_decide_leave(
 # ────────────────────────────────────────────────────────────────────
 
 
+def _parse_day(value: str | None, *, end_of_day: bool = False) -> datetime | None:
+    """Parse un ``<input type=date>`` (YYYY-MM-DD) en datetime aware UTC."""
+    if not value:
+        return None
+    try:
+        d = date.fromisoformat(value.strip())
+    except (ValueError, AttributeError):
+        return None
+    t = datetime(d.year, d.month, d.day, tzinfo=UTC)
+    return t.replace(hour=23, minute=59, second=59) if end_of_day else t
+
+
 @router.get("/tracking", response_class=HTMLResponse)
 async def tracking_index(
     request: Request,
+    history: int = 0,
+    vessel: str | None = None,
+    year: int | None = None,
+    leg_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("planning", "C")),
 ) -> HTMLResponse:
@@ -162,6 +180,67 @@ async def tracking_index(
         last_positions[v.id] = p
     from app.config import settings as _settings
 
+    # ── Mode « historique des trajets » ───────────────────────────────────
+    # Toggle en haut de page : affiche le filtre de référence (navire × année ×
+    # leg, cf. _leg_filter.html) + un cadrage par dates, puis trace tous les
+    # points enregistrés reliés par un trait (trajet réellement réalisé).
+    history_on = bool(history)
+    history_ctx = None
+    if history_on:
+        from urllib.parse import urlencode
+
+        from app.services.leg_filter import build_leg_filter
+        from app.services.voyage_track import (
+            positions_for_leg,
+            positions_in_window,
+            positions_payload,
+        )
+
+        f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id)
+        selected_leg = f["selected_leg"]
+        sel_vessel = next((v for v in vessels if v.code == f["selected_vessel"]), None)
+
+        df = _parse_day(date_from)
+        dt_to = _parse_day(date_to, end_of_day=True)
+
+        positions: list[VesselPosition] = []
+        if selected_leg is not None:
+            # Un leg sélectionné prime : sa fenêtre départ→arrivée fait foi.
+            positions = await positions_for_leg(db, selected_leg)
+        elif sel_vessel is not None:
+            # Sinon, cadrage par dates explicites, à défaut l'année courante.
+            start = df or datetime(f["current_year"], 1, 1, tzinfo=UTC)
+            end = dt_to or datetime(f["current_year"], 12, 31, 23, 59, 59, tzinfo=UTC)
+            positions = await positions_in_window(
+                db, vessel_id=sel_vessel.id, start=start, end=end
+            )
+
+        # Query-params propagés sur les liens du filtre (préserve le mode + dates)
+        xq_pairs = [("history", "1")]
+        if date_from:
+            xq_pairs.append(("date_from", date_from))
+        if date_to:
+            xq_pairs.append(("date_to", date_to))
+        extra_query = urlencode(xq_pairs)
+
+        track_vessel = None
+        if selected_leg is not None:
+            track_vessel = next(
+                (v for v in vessels if v.id == selected_leg.vessel_id), sel_vessel
+            )
+        else:
+            track_vessel = sel_vessel
+
+        history_ctx = {
+            "f": f,
+            "points": positions_payload(positions),
+            "date_from": date_from or "",
+            "date_to": date_to or "",
+            "extra_query": extra_query,
+            "selected_leg": selected_leg,
+            "track_vessel": track_vessel,
+        }
+
     return templates.TemplateResponse(
         "staff/tracking/index.html",
         {
@@ -170,6 +249,8 @@ async def tracking_index(
             "vessels": vessels,
             "last_positions": last_positions,
             "maptiler_token": _settings.map_token,
+            "history_on": history_on,
+            "history": history_ctx,
         },
     )
 

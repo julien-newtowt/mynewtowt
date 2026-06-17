@@ -30,11 +30,19 @@
 {% endmacro %}
 
 
-{% macro leg_filter(f, base_path, show_legs=True, leg_href=None, leg_href_suffix="") %}
+{#
+  ``extra_query`` (optionnel) : chaîne de query-params déjà encodée (ex.
+  "history=1&date_from=2026-01-01") propagée sur tous les liens du filtre,
+  pour que la sélection navire/année/leg conserve un état de page externe
+  (ex. mode historique du tracking). Vide par défaut → aucun impact sur les
+  pages existantes (KPI, MRV…).
+#}
+{% macro leg_filter(f, base_path, show_legs=True, leg_href=None, leg_href_suffix="", extra_query="") %}
+{% set xq = ("&" ~ extra_query) if extra_query else "" %}
 <div class="planning-filters mb-3">
   <div class="vessel-tabs">
     {% for v in f.vessels %}
-    <a href="{{ base_path }}?vessel={{ v.code }}&year={{ f.current_year }}"
+    <a href="{{ base_path }}?vessel={{ v.code }}&year={{ f.current_year }}{{ xq }}"
        class="vessel-tab {% if f.selected_vessel == v.code %}active{% endif %}">
       <i data-lucide="ship"></i> {{ v.name }}
     </a>
@@ -42,7 +50,7 @@
   </div>
   <div class="year-selector">
     {% for y in f.years %}
-    <a href="{{ base_path }}?vessel={{ f.selected_vessel }}&year={{ y }}"
+    <a href="{{ base_path }}?vessel={{ f.selected_vessel }}&year={{ y }}{{ xq }}"
        class="year-btn {% if f.current_year == y %}active{% endif %}">{{ y }}</a>
     {% endfor %}
   </div>
@@ -53,7 +61,7 @@
   {% for leg in f.legs %}
   {% set terminated = leg.atd is not none and leg.ata is not none %}
   {% set locked = leg.status == 'completed' %}
-  <a href="{% if leg_href %}{{ leg_href }}{{ leg.id }}{{ leg_href_suffix }}{% else %}{{ base_path }}?vessel={{ f.selected_vessel }}&year={{ f.current_year }}&leg_id={{ leg.id }}{% endif %}"
+  <a href="{% if leg_href %}{{ leg_href }}{{ leg.id }}{{ leg_href_suffix }}{% else %}{{ base_path }}?vessel={{ f.selected_vessel }}&year={{ f.current_year }}&leg_id={{ leg.id }}{{ xq }}{% endif %}"
      class="leg-chip {% if f.leg_id == leg.id %}active{% endif %} {% if terminated %}terminated{% endif %} {% if locked %}locked{% endif %}">
     <strong>{{ leg.leg_code }}</strong>
     <span class="mono text-xs">{{ leg.etd|date }}</span>
