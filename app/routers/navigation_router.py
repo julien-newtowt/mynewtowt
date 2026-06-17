@@ -31,7 +31,9 @@ from app.config import settings
 from app.database import get_db
 from app.models.leg import Leg
 from app.models.port import Port
+from app.models.vessel import Vessel
 from app.permissions import require_permission
+from app.services import weather as wx
 from app.services import weather_history
 from app.services.activity import record as activity_record
 from app.services.leg_filter import build_leg_filter
@@ -39,6 +41,20 @@ from app.services.voyage_track import compute_metrics, positions_for_leg, positi
 from app.templating import templates
 
 logger = logging.getLogger("weather")
+
+# Palette de couleurs distinctes par leg sélectionné (charte Kairos + extensions).
+_LEG_PALETTE = (
+    "#0D5966",
+    "#B47148",
+    "#87BD29",
+    "#1F7A8C",
+    "#9B5DE5",
+    "#E07A5F",
+    "#3D405B",
+    "#2A9D8F",
+    "#C81D6B",
+    "#5A7D2A",
+)
 
 # NB : préfixe ``/performance/navigation`` et non ``/navigation`` — ce dernier
 # est déjà pris par la page vitrine publique (vitrine_router : marketing
@@ -62,9 +78,45 @@ def _weather_payload(observations) -> list[dict]:
             "wave_dir": o.wave_direction_deg,
             "wave_period_s": o.wave_period_s,
             "temp_c": o.temperature_c,
+            "pressure_hpa": o.pressure_hpa,
+            "visibility_km": o.visibility_km,
         }
         for o in observations
     ]
+
+
+def _port_dict(p: Port | None) -> dict | None:
+    if p is None or p.latitude is None or p.longitude is None:
+        return None
+    return {"lat": p.latitude, "lon": p.longitude, "name": p.name, "locode": p.locode}
+
+
+def _fleet_weather_entry(vessel: Vessel, obs) -> dict:
+    """Bloc « conditions actuelles » d'un navire à partir de sa dernière observation."""
+    bf = wx.beaufort(obs.wind_speed_kn)
+    return {
+        "vessel_code": vessel.code,
+        "vessel_name": vessel.name,
+        "recorded_at": obs.recorded_at,
+        "lat": obs.latitude,
+        "lon": obs.longitude,
+        "wind_kn": obs.wind_speed_kn,
+        "wind_dir": obs.wind_direction_deg,
+        "wind_compass": wx.compass(obs.wind_direction_deg),
+        "beaufort": bf[0] if bf else None,
+        "beaufort_label": bf[1] if bf else None,
+        "current_kn": obs.current_speed_kn,
+        "current_dir": obs.current_direction_deg,
+        "current_compass": wx.compass(obs.current_direction_deg),
+        "wave_m": obs.wave_height_m,
+        "wave_dir": obs.wave_direction_deg,
+        "wave_period_s": obs.wave_period_s,
+        "temp_c": obs.temperature_c,
+        "pressure_hpa": obs.pressure_hpa,
+        "visibility_km": obs.visibility_km,
+        "humidity_pct": obs.humidity_pct,
+        "cloud_cover_pct": obs.cloud_cover_pct,
+    }
 
 
 @router.get("", response_class=HTMLResponse)
@@ -73,44 +125,118 @@ async def navigation_index(
     request: Request,
     vessel: str | None = None,
     year: int | None = None,
-    leg_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("planning", "C")),
 ) -> HTMLResponse:
-    f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id)
-    selected: Leg | None = f["selected_leg"]
+    # Multi-sélection : plusieurs legs (potentiellement de plusieurs navires)
+    # via des query-params ``leg_id`` répétés (?leg_id=12&leg_id=15…).
+    selected_ids: list[int] = []
+    for raw in request.query_params.getlist("leg_id"):
+        try:
+            lid = int(raw)
+        except ValueError:
+            continue
+        if lid not in selected_ids:
+            selected_ids.append(lid)
 
-    ctx: dict = {
-        "request": request,
-        "user": user,
-        "leg_filter_ctx": f,
-        "maptiler_token": settings.map_token,
-        "selected_leg": selected,
-        "metrics": None,
-        "points": [],
-        "dep_port": None,
-        "arr_port": None,
-        "weather_count": 0,
-        "weather_provider": weather_history.active_provider(),
-    }
+    # Filtre de référence pour la navigation navire × année (chips multi-toggle).
+    f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=None)
 
-    if selected is not None:
-        positions = await positions_for_leg(db, selected)
-        dep_port = await db.get(Port, selected.departure_port_id)
-        arr_port = await db.get(Port, selected.arrival_port_id)
-        metrics = compute_metrics(positions, selected, arr_port=arr_port)
-        observations = await weather_history.observations_for_leg(db, selected)
-        ctx.update(
+    # ── Legs sélectionnés : trace + métriques + météo, une couleur par leg ──
+    legs_data: list[dict] = []
+    map_legs: list[dict] = []
+    for idx, lid in enumerate(selected_ids):
+        leg = await db.get(Leg, lid)
+        if leg is None:
+            continue
+        positions = await positions_for_leg(db, leg)
+        dep = await db.get(Port, leg.departure_port_id)
+        arr = await db.get(Port, leg.arrival_port_id)
+        metrics = compute_metrics(positions, leg, arr_port=arr)
+        observations = await weather_history.observations_for_leg(db, leg)
+        v_obj = await db.get(Vessel, leg.vessel_id)
+        color = _LEG_PALETTE[idx % len(_LEG_PALETTE)]
+        pts = positions_payload(positions)
+        wx_pts = _weather_payload(observations)
+        legs_data.append(
             {
+                "leg": leg,
+                "vessel": v_obj,
+                "dep": dep,
+                "arr": arr,
                 "metrics": metrics,
-                "points": positions_payload(positions),
-                "dep_port": dep_port,
-                "arr_port": arr_port,
-                "weather_count": len(observations),
+                "color": color,
+                "point_count": len(pts),
+                "weather_count": len(wx_pts),
+            }
+        )
+        map_legs.append(
+            {
+                "leg_code": leg.leg_code,
+                "vessel": v_obj.name if v_obj else "",
+                "color": color,
+                "points": pts,
+                "weather": wx_pts,
+                "dep": _port_dict(dep),
+                "arr": _port_dict(arr),
             }
         )
 
-    return templates.TemplateResponse("staff/navigation/index.html", ctx)
+    # ── URLs de bascule (add/remove) des chips du navire/année courant ──
+    from urllib.parse import urlencode
+
+    base = "/performance/navigation"
+
+    def _toggle_url(lid: int) -> str:
+        new = [x for x in selected_ids if x != lid] if lid in selected_ids else [*selected_ids, lid]
+        qs = [("vessel", f["selected_vessel"] or ""), ("year", f["current_year"])]
+        qs += [("leg_id", x) for x in new]
+        return base + "?" + urlencode(qs)
+
+    leg_chips = [
+        {"leg": lg, "selected": lg.id in selected_ids, "toggle_url": _toggle_url(lg.id)}
+        for lg in f["legs"]
+    ]
+    # Pills des legs sélectionnés (tous navires) avec URL de retrait.
+    selected_pills = [
+        {
+            "leg": d["leg"],
+            "vessel": d["vessel"],
+            "color": d["color"],
+            "remove_url": _toggle_url(d["leg"].id),
+        }
+        for d in legs_data
+    ]
+    # Query-string propagée sur les onglets navire/année (préserve la sélection).
+    extra_query = urlencode([("leg_id", x) for x in selected_ids])
+
+    # ── Bloc « conditions actuelles par navire » (dernière obs / navire) ──
+    latest = await weather_history.latest_per_vessel(db)
+    vessels_by_id = {v.id: v for v in f["vessels"]}
+    fleet_weather = []
+    for vid, obs in latest.items():
+        v_obj = vessels_by_id.get(vid) or await db.get(Vessel, vid)
+        if v_obj is not None:
+            fleet_weather.append(_fleet_weather_entry(v_obj, obs))
+    fleet_weather.sort(key=lambda e: e["vessel_code"])
+
+    return templates.TemplateResponse(
+        "staff/navigation/index.html",
+        {
+            "request": request,
+            "user": user,
+            "leg_filter_ctx": f,
+            "maptiler_token": settings.map_token,
+            "selected_ids": selected_ids,
+            "legs_data": legs_data,
+            "map_legs": map_legs,
+            "leg_chips": leg_chips,
+            "selected_pills": selected_pills,
+            "extra_query": extra_query,
+            "fleet_weather": fleet_weather,
+            "weather_provider": weather_history.active_provider(),
+        },
+    )
 
 
 @router.get("/legs/{leg_id}/weather")

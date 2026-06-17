@@ -108,6 +108,10 @@ async def snapshot_latest(db: AsyncSession) -> dict:
                 wave_direction_deg=wp.wave_direction_deg,
                 wave_period_s=wp.wave_period_s,
                 temperature_c=wp.temperature_c,
+                pressure_hpa=wp.pressure_hpa,
+                visibility_km=wp.visibility_km,
+                humidity_pct=wp.humidity_pct,
+                cloud_cover_pct=wp.cloud_cover_pct,
                 provider=wp_provider(provider),
             )
         )
@@ -153,3 +157,24 @@ async def observations_for_leg(
     """Observations météo historisées rattachées à un leg (fenêtre départ→arrivée)."""
     start, end, _ = leg_window(leg, now=now)
     return await observations_in_window(db, vessel_id=leg.vessel_id, start=start, end=end)
+
+
+async def latest_per_vessel(db: AsyncSession) -> dict[int, VesselWeather]:
+    """Dernière observation météo historisée par navire ``{vessel_id: VesselWeather}``.
+
+    Alimente le bloc « conditions actuelles par navire » de la page Navigation.
+    """
+    rows = list(
+        (
+            await db.execute(
+                select(VesselWeather).order_by(VesselWeather.recorded_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    out: dict[int, VesselWeather] = {}
+    for r in rows:
+        if r.vessel_id not in out:  # 1er rencontré = le plus récent (tri desc)
+            out[r.vessel_id] = r
+    return out

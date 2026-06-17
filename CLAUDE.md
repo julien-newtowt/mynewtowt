@@ -160,7 +160,7 @@ mynewtowt/
 | Stowage | `/stowage` | ✅ 18 zones + algo glouton |
 | Claims | `/claims` | ✅ workflow 6 statuts + timeline |
 | MRV | `/mrv` | ✅ events fuel + exports DNV CSV + Carbon Report |
-| Navigation | `/performance/navigation` | ✅ trajet réel/leg : carte points GPS + trait, distance réelle vs théorique, durée, restant, météo historisée |
+| Navigation | `/performance/navigation` | ✅ multi-legs/multi-navires : carte (1 couleur/leg) points GPS + trait + route théorique, tableau comparatif (réelle/théorique/écart/durée/restant), météo le long du trajet + blocs « conditions actuelles » par navire (rose des vents, anémomètre/Beaufort, pression, visibilité, T°…) |
 | Finance | `/finance` | 🟡 LegFinance + OpexParameter |
 | KPI | `/kpi` | 🟡 stub — certificats CO₂ à venir |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes |

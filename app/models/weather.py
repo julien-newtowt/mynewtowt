@@ -49,6 +49,11 @@ class VesselWeather(Base):
     wave_direction_deg: Mapped[float | None] = mapped_column(Float)
     wave_period_s: Mapped[float | None] = mapped_column(Float)
     temperature_c: Mapped[float | None] = mapped_column(Float)
+    # V3.9 — bloc « conditions actuelles » : pression, visibilité, humidité, nébulosité.
+    pressure_hpa: Mapped[float | None] = mapped_column(Float)
+    visibility_km: Mapped[float | None] = mapped_column(Float)
+    humidity_pct: Mapped[float | None] = mapped_column(Float)
+    cloud_cover_pct: Mapped[float | None] = mapped_column(Float)
 
     provider: Mapped[str] = mapped_column(String(20), default="windy", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
