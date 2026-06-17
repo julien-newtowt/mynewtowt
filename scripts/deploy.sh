@@ -142,6 +142,18 @@ preflight() {
     fi
   fi
 
+  # Vérification des clés / API tokens (.env). Bloque si une clé OBLIGATOIRE
+  # manque ou reste par défaut ; n'avertit (non bloquant) que pour les
+  # intégrations optionnelles — dont WEATHER_API_TOKEN (snapshot météo 30 min,
+  # POST /api/weather/refresh) et WINDY_API_KEY (repli Open-Meteo sinon).
+  # Cf. scripts/check_api_keys.sh et docs/operations/03-tracking-meteo-runbook.md.
+  if [[ -x "${SCRIPT_DIR}/check_api_keys.sh" ]]; then
+    if ! ENV_FILE="${PROJECT_ROOT}/.env" COMPOSE_FILE="${COMPOSE_FILE}" \
+         "${SCRIPT_DIR}/check_api_keys.sh"; then
+      fatal "API key verification failed (see above) — refusing to deploy"
+    fi
+  fi
+
   # NB : on ne fige PAS VERSION sur le HEAD local ici — sync_code() met le
   # working tree à jour sur la ref cible puis renseigne VERSION (sinon on
   # déploierait le code local potentiellement périmé).
