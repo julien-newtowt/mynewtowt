@@ -7,12 +7,40 @@
     <span class="kicker">Humain</span>
     <h1 class="display">Gestion d'équipage</h1>
   </div>
-  <div class="flex gap-2">
+  <div class="flex gap-2 items-center">
     <a href="/crew/compliance" class="btn btn-ghost"><i data-lucide="shield-check"></i> Compliance</a>
     <a href="/crew/calendar" class="btn btn-ghost"><i data-lucide="calendar"></i> Calendrier</a>
+    {% if marad_configured %}
+    <form method="post" action="/crew/sync-marad" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-secondary" title="Remonter marins et plannings depuis Marad (lecture seule)">
+        <i data-lucide="refresh-cw"></i> Synchroniser Marad
+      </button>
+    </form>
+    {% else %}
+    <span class="pill pill-neutral" title="Renseignez MARAD_API_TOKEN dans .env">Marad non configuré</span>
+    {% endif %}
     <a href="/crew/new" class="btn btn-primary">+ Nouveau marin</a>
   </div>
 </header>
+
+{% set _md = request.query_params.get('marad') %}
+{% if _md == 'ok' %}
+<div class="alert alert-success mb-4">
+  <i data-lucide="check-circle"></i>
+  Synchronisation Marad terminée — marins : {{ request.query_params.get('cc', 0) }} créé(s),
+  {{ request.query_params.get('cu', 0) }} mis à jour ; plannings :
+  {{ request.query_params.get('sc', 0) }} créé(s), {{ request.query_params.get('su', 0) }} mis à jour.
+  {% if request.query_params.get('err', '0') != '0' %}
+  <span class="text-muted">({{ request.query_params.get('err') }} erreur(s) — voir logs)</span>
+  {% endif %}
+</div>
+{% elif _md == 'disabled' %}
+<div class="alert alert-warn mb-4">
+  <i data-lucide="alert-triangle"></i>
+  Marad n'est pas configuré (<code>MARAD_API_TOKEN</code> manquant) — synchronisation ignorée.
+</div>
+{% endif %}
 
 {% if compliance_alerts %}
 <div class="alert alert-warn mb-4">

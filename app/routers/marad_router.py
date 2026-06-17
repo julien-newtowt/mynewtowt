@@ -46,6 +46,6 @@ async def marad_refresh_api(
     if not _secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
 
-    result = await marad_sync.sync_crew(db)
+    result = await marad_sync.sync_all(db)
     logger.info("Marad refresh (API): %s", result)
     return JSONResponse(result)

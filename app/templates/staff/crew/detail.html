@@ -65,6 +65,32 @@
   {% else %}<p class="text-muted">Aucun embarquement enregistré.</p>{% endif %}
 </article>
 
+{% if marad_schedules %}
+<article class="card mt-4">
+  <h2><i data-lucide="refresh-cw"></i> Planning Marad ({{ marad_schedules|length }})
+    <span class="pill pill-neutral">lecture seule</span></h2>
+  <p class="text-muted text-sm">Plannings d'embarquement importés de Marad (un « voyage » Marad = un leg). Réconciliés au leg interne quand le code correspond.</p>
+  <table class="data-table">
+    <thead><tr><th>Voyage / Leg</th><th>Navire</th><th>Rôle</th><th>Début</th><th>Fin</th><th>Statut</th></tr></thead>
+    <tbody>
+      {% for s in marad_schedules %}
+      <tr>
+        <td class="mono text-sm">
+          {{ s.marad_voyage_ref or '—' }}
+          {% if s.leg_id %}<br/><small class="text-muted">leg #{{ s.leg_id }}</small>{% endif %}
+        </td>
+        <td>{{ s.marad_vessel_name or ('navire #' ~ s.vessel_id if s.vessel_id else '—') }}</td>
+        <td>{{ s.rank_label or '—' }}</td>
+        <td class="mono text-sm">{{ s.start_date or '—' }}</td>
+        <td class="mono text-sm">{{ s.end_date or '—' }}</td>
+        <td>{% if s.status %}<span class="badge">{{ s.status }}</span>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endif %}
+
 <article class="card mt-4">
   <h2>Nouvel embarquement</h2>
   <p class="text-muted">La conformité Schengen (90 j / 180 j) et la validité du passeport sont vérifiées avant la création — un statut non conforme bloque l'embarquement.</p>

@@ -25,6 +25,7 @@ from app.models.crew import (
     CrewCertification,
     CrewLeave,
     CrewMember,
+    MaradCrewSchedule,
 )
 from app.models.crew_ticket import TRANSPORT_MODES, CrewTicket
 from app.models.leg import Leg
@@ -134,6 +135,8 @@ async def crew_index(
         "active": sum(1 for a in active_assigns),
         "repos": total - sum(1 for a in active_assigns),
     }
+    from app.utils import marad
+
     return templates.TemplateResponse(
         "staff/crew/index.html",
         {
@@ -145,7 +148,49 @@ async def crew_index(
             "bordees": dict(bordees),
             "compliance_alerts": compliance_alerts,
             "stats": stats,
+            "marad_configured": marad.enabled(),
         },
+    )
+
+
+@router.post("/sync-marad")
+async def crew_sync_marad(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "M")),
+) -> RedirectResponse:
+    """Synchronise l'équipage et les plannings depuis Marad (LECTURE SEULE).
+
+    Bouton « Synchroniser Marad » sur /crew : remonte les marins
+    (``crew_members``) et les plannings d'embarquement (``marad_crew_schedules``,
+    voyage↔leg). No-op si Marad n'est pas configuré.
+    """
+    from app.services.marad_sync import sync_all
+
+    result = await sync_all(db)
+    if not result["configured"]:
+        return RedirectResponse(url="/crew?marad=disabled", status_code=303)
+    await activity_record(
+        db,
+        action="sync",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="crew",
+        entity_type="crew_member",
+        entity_label=(
+            f"marad: marins +{result['crew_created']}/~{result['crew_updated']}, "
+            f"plannings +{result['sched_created']}/~{result['sched_updated']}"
+        ),
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(
+        url=(
+            f"/crew?marad=ok&cc={result['crew_created']}&cu={result['crew_updated']}"
+            f"&sc={result['sched_created']}&su={result['sched_updated']}"
+            f"&err={result['errors']}"
+        ),
+        status_code=303,
     )
 
 
@@ -372,6 +417,18 @@ async def _member_detail_context(
 
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()))).scalars().all())
     leg_options = await leg_select_options(db)
+    # Plannings importés de Marad (lecture seule) pour ce marin.
+    marad_schedules = list(
+        (
+            await db.execute(
+                select(MaradCrewSchedule)
+                .where(MaradCrewSchedule.crew_member_id == member_id)
+                .order_by(MaradCrewSchedule.start_date.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     return {
         "request": request,
         "user": user,
@@ -383,6 +440,7 @@ async def _member_detail_context(
         "legs": legs,
         "leg_options": leg_options,
         "roles": CREW_ROLES,
+        "marad_schedules": marad_schedules,
         "error": error,
     }
 
