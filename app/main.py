@@ -40,6 +40,7 @@ from app.routers import (
     escale_router,
     finance_router,
     kpi_router,
+    marad_router,
     modules_router,
     mrv_router,
     navigation_router,
@@ -120,6 +121,7 @@ def create_app() -> FastAPI:
     app.include_router(kpi_router.router)
     app.include_router(navigation_router.router)
     app.include_router(navigation_router.api_router)
+    app.include_router(marad_router.api_router)
     app.include_router(finance_router.router)
     # ─── Public/API (no auth, token-protected) ───
     app.include_router(cargo_portal_router.router)
