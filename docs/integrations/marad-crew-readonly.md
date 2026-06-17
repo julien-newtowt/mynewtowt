@@ -1,12 +1,16 @@
 # Intégration Marad → mynewtowt (crew) — note de cadrage (LECTURE SEULE)
 
-> **Statut : note de conception (cadrage), non implémentée.** Aucun code
-> applicatif n'est modifié par ce document. Objectif : lire des données crew
-> depuis Marad (logiciel de ship & crew management de l'éditeur **MaraSoft
-> B.V.**) pour alimenter notre module Crew. **mynewtowt n'écrira jamais dans
+> **Statut : upsert crew members IMPLÉMENTÉ (read-only côté Marad).** Le client
+> HTTP (`app/utils/marad.py`), le service de sync (`app/services/marad_sync.py`)
+> et le cron (`POST /api/marad/refresh`) sont en place. Le schéma de
+> `GET /api/Crewing` a été **confirmé** par un échantillon de l'éditeur
+> (2026-06-17) → le mapping des champs crew member est figé (cf. §3.1).
+> **Restent à brancher** : documents/certificats (`GetCrewMembersDocuments`),
+> schedules, et la confirmation du **nom du header d'auth**
+> (`MARAD_API_KEY_HEADER`, défaut `X-Api-Key`). **mynewtowt n'écrit jamais dans
 > Marad.**
 >
-> Date : 2026-06-17 · Auteur : cadrage technique.
+> Date : 2026-06-17 · Auteur : cadrage + implémentation.
 
 ---
 
@@ -211,24 +215,40 @@ Source lue : `app/models/crew.py`, `app/routers/crew_router.py`,
 > et des conventions REST .NET. **À remplacer par les noms réels** une fois le
 > schéma JSON obtenu. Aucun de ces noms n'est confirmé par la doc.
 
-### 3.1 `GET /api/Crewing` / `CrewMember` → `CrewMember`
+### 3.1 `GET /api/Crewing` → `CrewMember` — ✅ schéma confirmé (échantillon éditeur 2026-06-17)
 
-| Champ mynewtowt | Champ Marad (hypothèse ❓) | Notes |
+Schéma réel renvoyé par l'API (champs notables) : `id` (**GUID**, ex.
+`3fa85f64-5717-4562-b3fc-2c963f66afa6`), `callName`, `firstName`, `lastName`,
+`gender` (int), `birthDate` (ISO datetime), `countryOfBirthName`,
+`cityOfBirthName`, `nationality`, `crewAgents[]`, `airportName`, `phone`,
+`mobilePhone`, `email`, `noticeEmail`, `idNumber`, `bankAccount`, `ranks[]`
+(liste de libellés), `livingAddress{}`, `postAddress{}`, `sizes{}`,
+`vesselNames[]`.
+
+Mapping **implémenté** dans `app/services/marad_sync.py` (additif, non
+destructeur — un champ n'est écrasé que si Marad fournit une valeur exploitable,
+les placeholders Swagger `"string"` sont ignorés) :
+
+| Champ mynewtowt | Champ Marad (confirmé) | Notes |
 |---|---|---|
-| `full_name` | `firstName` + `lastName` (à concaténer) | ❓ structure du nom |
-| `role` | `rankId` / `rankName` (via `getranks`) | **mapping rang→rôle FR requis** |
-| `nationality` | `nationality` (ISO2 ?) | normaliser → CHAR(2) majuscule |
-| `date_of_birth` | `dateOfBirth` | format date ❓ |
-| `passport_number` | via `GetPassportDetails` | endpoint batch dédié |
-| `passport_expires_at` | via `GetPassportDetails` | idem |
-| `email` | `email` | |
-| `phone` | `phone` / `mobile` | |
-| `is_active` | statut « on board / on shore / inactive » ❓ | mapper vers booléen |
-| `seaman_book_number` / `_expires_at` | document type « seaman book » (via documents) | ❓ |
-| **`marad_id`** (clé externe à ajouter) | `id` (PK Marad) | **clé de réconciliation** (cf. §4) |
-| `notes` | `remarks` | **NE PAS écraser** si saisi en ERP (cf. §5) |
-| `visa_us_expires_at`, `visa_br_expires_at` | documents type visa US/BR | via documents ❓ |
-| `schengen_*` | — | **JAMAIS importé** (calcul interne) |
+| **`marad_id`** | `id` | **GUID** → colonne `String(36)` (clé de réconciliation, §4) |
+| `full_name` | `firstName` + `lastName` (fallback `callName`) | concaténé, `(sans nom)` si vide |
+| `role` | `ranks[0]` | 1er rang (libellé brut, tronqué 60). Mapping fin rang→rôle FR = TODO via `getranks` |
+| `nationality` | `nationality` | conservé **uniquement** si code ISO-2 (colonne CHAR(2)) |
+| `date_of_birth` | `birthDate` | parse ISO datetime → date |
+| `email` | `email` | gardé si contient `@` |
+| `phone` | `mobilePhone` (fallback `phone`) | tronqué 50 |
+| `is_active` | — | défaut `True` à la création, **préservé** ensuite (Marad ne fournit pas de flag) |
+| `passport_*`, `seaman_book_*` | via `GetPassportDetails` / documents | **non encore branché** |
+| `visa_us_expires_at`, `visa_br_expires_at` | documents type visa | **non encore branché** |
+| `schengen_*` | — | **JAMAIS importé** (calcul interne, §5.2) |
+| `notes` | — | **JAMAIS écrasé** par la sync |
+
+**Champs Marad volontairement NON importés** (sensibles ou hors modèle) :
+`bankAccount` (**donnée bancaire — jamais stockée**), `idNumber`,
+`livingAddress`/`postAddress`, `sizes`, `crewAgents`, `airportName`, `gender`,
+`countryOfBirthName`/`cityOfBirthName`, `noticeEmail`, `vesselNames`
+(le rattachement navire/leg reste manuel, §3.3 / §8).
 
 ### 3.2 `GetCrewMembersDocuments` → `CrewCertification`
 
