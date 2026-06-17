@@ -16,8 +16,11 @@ from app.utils import pipedrive
 
 def test_sync_clients_upsert(monkeypatch) -> None:
     orgs = [
-        {"id": 101, "name": "Acme Forwarding", "address": "12 Dock Rd, Le Havre"},
-        {"id": 102, "name": "Café Brasil Imports", "address": None},
+        {"id": 101, "name": "Acme Forwarding", "address": "12 Dock Rd, Le Havre",
+         "open_deals_count": 2},
+        {"id": 102, "name": "Café Brasil Imports", "address": None, "won_deals_count": 1},
+        {"id": 104, "name": "Prospect sans deal", "open_deals_count": 0,
+         "closed_deals_count": 0},  # ignoré : aucun deal
         {"id": None, "name": "ignored (no id)"},
         {"id": 103, "name": ""},  # ignoré (pas de nom)
     ]
@@ -44,12 +47,13 @@ def test_sync_clients_upsert(monkeypatch) -> None:
 
                 r1 = await pipedrive_sync.sync_clients(s)
                 assert r1["configured"] is True
-                assert r1["created"] == 1   # org 102
-                assert r1["updated"] == 1   # org 101
-                assert r1["total"] == 4
+                assert r1["created"] == 1   # org 102 (a un deal gagné)
+                assert r1["updated"] == 1   # org 101 (a des deals ouverts)
+                assert r1["skipped"] == 1   # org 104 (aucun deal)
+                assert r1["total"] == 5
 
                 clients = {c.pipedrive_org_id: c for c in (await s.execute(select(Client))).scalars().all()}
-                assert set(clients) == {101, 102}
+                assert set(clients) == {101, 102}  # 104 (sans deal) non importé
                 # 101 : nom mis à jour, contact manuel préservé, type inchangé
                 assert clients[101].name == "Acme Forwarding"
                 assert clients[101].contact_email == "ops@acme.test"
@@ -79,7 +83,10 @@ def test_sync_clients_not_configured(monkeypatch) -> None:
             Session = async_sessionmaker(eng, expire_on_commit=False)
             async with Session() as s:
                 r = await pipedrive_sync.sync_clients(s)
-                assert r == {"configured": False, "created": 0, "updated": 0, "total": 0, "errors": 0}
+                assert r == {
+                    "configured": False, "created": 0, "updated": 0,
+                    "skipped": 0, "total": 0, "errors": 0,
+                }
         finally:
             await eng.dispose()
 

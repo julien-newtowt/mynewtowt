@@ -163,7 +163,10 @@ async def clients_sync_pipedrive(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(
-        url=f"/commercial/clients?pd=ok&created={result['created']}&updated={result['updated']}",
+        url=(
+            f"/commercial/clients?pd=ok&created={result['created']}"
+            f"&updated={result['updated']}&skipped={result.get('skipped', 0)}"
+        ),
         status_code=303,
     )
 
