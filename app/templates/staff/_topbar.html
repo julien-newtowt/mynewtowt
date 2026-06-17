@@ -78,9 +78,11 @@
       </div>
     </div>
 
+    {% if newtowt_agent_enabled %}
     <a href="/chat" class="topbar-action" title="Newtowt Agent">
       <i data-lucide="message-square"></i>
     </a>
+    {% endif %}
 
     <button type="button" class="topbar-action" id="topbar-notif-btn" data-menu-toggle="topbar-notif-menu" title="Notifications" aria-haspopup="menu">
       <i data-lucide="bell"></i>
@@ -99,7 +101,7 @@
     <div class="topbar-menu" id="topbar-user-menu" role="menu">
       <div class="menu-header">{% if user is defined and user %}{{ user.full_name or user.username }} · {{ user.role }}{% else %}Compte{% endif %}</div>
       <a href="/admin"><i data-lucide="settings"></i><span>Configuration</span></a>
-      <a href="/chat"><i data-lucide="message-square"></i><span>Newtowt Agent</span></a>
+      {% if newtowt_agent_enabled %}<a href="/chat"><i data-lucide="message-square"></i><span>Newtowt Agent</span></a>{% endif %}
       <div class="menu-divider"></div>
       <a href="/logout" style="color: var(--danger);"><i data-lucide="log-out"></i><span>Déconnexion</span></a>
     </div>

@@ -88,6 +88,7 @@ def _i18n_context_processor(request: Request) -> dict[str, Any]:
         "lang_options": list(_i18n_supported),
         "brand": _BRAND_BY_LANG.get(lang, _BRAND_BY_LANG[_i18n_default]),
         "notif_count": getattr(request.state, "notif_count", 0),
+        "newtowt_agent_enabled": getattr(request.state, "newtowt_agent_enabled", True),
     }
 
 

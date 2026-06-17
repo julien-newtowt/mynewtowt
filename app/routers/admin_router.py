@@ -568,6 +568,33 @@ async def maintenance_disable(
     return RedirectResponse(url="/admin/maintenance", status_code=303)
 
 
+# ─────────────────────────────────────── Newtowt Agent (chatbot) toggle
+@router.post("/newtowt-agent")
+async def newtowt_agent_toggle(
+    request: Request,
+    enabled: str = Form("off"),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    """Active / désactive le Newtowt Agent (chatbot Kairos AI) — toggle config."""
+    from app.services.feature_flags import set_newtowt_agent
+
+    on = enabled in ("on", "true", "1", "yes")
+    await set_newtowt_agent(db, on, user_id=user.id)
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="feature_flag",
+        entity_label="newtowt_agent=" + ("on" if on else "off"),
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/admin", status_code=303)
+
+
 # ────────────────────────────────────────────── Activity log viewer
 @router.get("/activity-logs", response_class=HTMLResponse)
 async def activity_logs_view(

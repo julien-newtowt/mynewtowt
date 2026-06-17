@@ -27,6 +27,29 @@
 </section>
 
 <article class="card mt-4">
+  <div class="flex justify-between items-center" style="gap:12px;flex-wrap:wrap;">
+    <div>
+      <h2 style="margin:0;">Newtowt Agent</h2>
+      <p class="text-muted text-sm" style="margin:.25rem 0 0;">
+        Chatbot Kairos AI (widget topbar + page <code>/chat</code>). Statut :
+        {% if newtowt_agent_enabled %}<span class="pill pill-ok">Activé</span>
+        {% else %}<span class="pill pill-neutral">Désactivé</span>{% endif %}
+      </p>
+    </div>
+    <form method="post" action="/admin/newtowt-agent">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+      {% if newtowt_agent_enabled %}
+      <input type="hidden" name="enabled" value="off">
+      <button type="submit" class="btn btn-secondary"><i data-lucide="power-off"></i> Désactiver l'agent</button>
+      {% else %}
+      <input type="hidden" name="enabled" value="on">
+      <button type="submit" class="btn btn-primary"><i data-lucide="power"></i> Activer l'agent</button>
+      {% endif %}
+    </form>
+  </div>
+</article>
+
+<article class="card mt-4">
   <div class="flex justify-between items-center mb-2">
     <h2 style="margin:0;">Navires</h2>
     <a href="/admin/stowage-specs" class="btn btn-ghost btn-sm">Référentiel de chargement →</a>
