@@ -1,19 +1,19 @@
 {% extends "public/_layout_v2.html" %}
 {% block title %}{{ leg.leg_code }} — {{ pol.name if pol }} → {{ pod.name if pod }} — NEWTOWT{% endblock %}
-{% block description %}Traversée à la voile {{ pol.name if pol }} → {{ pod.name if pod }} par {{ vessel.name }} — {{ duration_days }} jours — transport vélique décarboné, certifié label Anemos.{% endblock %}
+{% block description %}{{ t('rd_meta_desc', lang, pol=(pol.name if pol else ''), pod=(pod.name if pod else ''), vessel=vessel.name, days=(duration_days if duration_days is not none else '')) }}{% endblock %}
 {% block head %}{{ super() }}
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
-<script src="/static/js/route-map.js" defer></script>
-<script src="/static/js/route-tabs.js" defer></script>
+<script src="{{ asset('js/route-map.js') }}" defer></script>
+<script src="{{ asset('js/route-tabs.js') }}" defer></script>
 {% endblock %}
 {% block content %}
 
 <main class="main" id="main">
   <nav class="breadcrumb">
-    <a href="/">Accueil</a>
+    <a href="/">{{ t('rd_bc_home', lang) }}</a>
     <span class="breadcrumb-separator">→</span>
-    <a href="/routes">Routes</a>
+    <a href="/routes">{{ t('rd_bc_routes', lang) }}</a>
     <span class="breadcrumb-separator">→</span>
     <span class="mono">{{ leg.leg_code }}</span>
   </nav>
@@ -28,7 +28,7 @@
       <div class="rd-journey-point">
         <div class="rd-dot"></div>
         <div class="rd-journey-body">
-          <div class="rd-label">Départ · POL</div>
+          <div class="rd-label">{{ t('rd_departure_pol', lang) }}</div>
           <div class="rd-place">
             {{ pol.country|flag if pol else '' }} {{ pol.name if pol else '—' }}
           </div>
@@ -37,7 +37,7 @@
             {% if pol %}<span class="rd-code">{{ pol.locode }}</span>{% endif %}
             {% if pol and pol.country %}<span>{{ pol.country }}</span>{% endif %}
             {% if pol_config and pol_config.agent_name %}
-              <span>Agent : {{ pol_config.agent_name }}</span>
+              <span>{{ t('rd_agent', lang) }} {{ pol_config.agent_name }}</span>
             {% endif %}
           </div>
         </div>
@@ -50,12 +50,12 @@
         </span>
         <div class="rd-chips">
           {% if duration_days is not none %}
-            <span class="rd-chip">{{ duration_days }} jours</span>
+            <span class="rd-chip">{{ t('rd_days', lang, n=duration_days) }}</span>
           {% endif %}
           {% if distance_nm %}
             <span class="rd-chip">{{ "{:,}".format(distance_nm).replace(",", " ") }} NM</span>
           {% endif %}
-          <span class="rd-chip rd-chip--green">Transport vélique décarboné</span>
+          <span class="rd-chip rd-chip--green">{{ t('rd_decarbonised', lang) }}</span>
         </div>
       </div>
 
@@ -63,7 +63,7 @@
       <div class="rd-journey-point">
         <div class="rd-dot rd-dot--pod"></div>
         <div class="rd-journey-body">
-          <div class="rd-label">Arrivée · POD</div>
+          <div class="rd-label">{{ t('rd_arrival_pod', lang) }}</div>
           <div class="rd-place">
             {{ pod.country|flag if pod else '' }} {{ pod.name if pod else '—' }}
           </div>
@@ -72,7 +72,7 @@
             {% if pod %}<span class="rd-code">{{ pod.locode }}</span>{% endif %}
             {% if pod and pod.country %}<span>{{ pod.country }}</span>{% endif %}
             {% if pod_config and pod_config.agent_name %}
-              <span>Agent : {{ pod_config.agent_name }}</span>
+              <span>{{ t('rd_agent', lang) }} {{ pod_config.agent_name }}</span>
             {% endif %}
           </div>
         </div>
@@ -83,12 +83,12 @@
     {# Booking CTA #}
     <aside class="booking-cta">
       <div class="co2-badge">
-        🌿 <span class="co2-value">Transport vélique décarboné</span><br>
-        <span style="opacity:.9;">certifié label Anemos</span>
+        🌿 <span class="co2-value">{{ t('rd_decarbonised', lang) }}</span><br>
+        <span style="opacity:.9;">{{ t('rd_anemos_certified', lang) }}</span>
       </div>
 
-      <a href="/devis?leg={{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">Demander un devis</a>
-      <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">Réserver cette traversée</a>
+      <a href="/devis?leg={{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">{{ t('home_request_quote', lang) }}</a>
+      <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">{{ t('devis_book_crossing', lang) }}</a>
     </aside>
 
   </div>{# /rd-hero #}
@@ -110,8 +110,8 @@
 
   {# ── TABS ── #}
   <div class="rd-tab-bar">
-    <button class="js-tab-btn is-active" data-target="tab-schedule">Traversée</button>
-    <button class="js-tab-btn" data-target="tab-eco">Éco-calculateur</button>
+    <button class="js-tab-btn is-active" data-target="tab-schedule">{{ t('rd_tab_schedule', lang) }}</button>
+    <button class="js-tab-btn" data-target="tab-eco">{{ t('rd_tab_eco', lang) }}</button>
   </div>
 
   {# TAB 1 — Traversée #}
@@ -121,13 +121,13 @@
       {# Left: full schedule timeline #}
       <div>
         <div class="card" style="margin-bottom:var(--sp-5);">
-          <div class="card-title">Horaire de traversée</div>
+          <div class="card-title">{{ t('rd_schedule_title', lang) }}</div>
           <div style="display:flex; flex-direction:column; gap:var(--sp-4);">
 
             <div style="display:flex; gap:var(--sp-4); align-items:flex-start;">
               <div style="width:10px; height:10px; background:var(--c-teal); border-radius:50%; margin-top:6px; flex-shrink:0;"></div>
               <div>
-                <div class="rd-label">Port de chargement (POL)</div>
+                <div class="rd-label">{{ t('rd_pol_full', lang) }}</div>
                 <div style="font-size:var(--fs-18); font-weight:var(--fw-bold); color:var(--c-teal);">
                   {{ pol.country|flag if pol else '' }} {{ pol.name if pol else '—' }}
                   {% if pol %}<span class="rd-code" style="margin-left:var(--sp-2);">{{ pol.locode }}</span>{% endif %}
@@ -137,7 +137,7 @@
                 </div>
                 {% if cut_off_at %}
                 <div style="font-size:var(--fs-14); color:var(--c-grey); margin-top:var(--sp-1);">
-                  Clôture réservations : <strong>{{ cut_off_at|datetime }} UTC</strong>
+                  {{ t('rd_booking_cutoff', lang) }} <strong>{{ cut_off_at|datetime }} UTC</strong>
                 </div>
                 {% endif %}
               </div>
@@ -149,7 +149,7 @@
                 <div>
                   <div style="font-weight:var(--fw-bold);">{{ vessel.name }}</div>
                   <div style="font-size:var(--fs-13); color:var(--c-grey);">
-                    Pavillon {{ vessel.flag|flag if vessel.flag else '—' }}{{ vessel.flag or '' }}
+                    {{ t('rd_flag', lang) }} {{ vessel.flag|flag if vessel.flag else '—' }}{{ vessel.flag or '' }}
                     {% if vessel.dwt %} · DWT {{ "{:,.0f}".format(vessel.dwt).replace(",", " ") }} t{% endif %}
                     · {{ vessel.default_speed_kn|round(1) }} kn
                   </div>
@@ -160,7 +160,7 @@
             <div style="display:flex; gap:var(--sp-4); align-items:flex-start;">
               <div style="width:10px; height:10px; background:var(--c-copper); border-radius:50%; margin-top:6px; flex-shrink:0;"></div>
               <div>
-                <div class="rd-label">Port de déchargement (POD)</div>
+                <div class="rd-label">{{ t('rd_pod_full', lang) }}</div>
                 <div style="font-size:var(--fs-18); font-weight:var(--fw-bold); color:var(--c-copper);">
                   {{ pod.country|flag if pod else '' }} {{ pod.name if pod else '—' }}
                   {% if pod %}<span class="rd-code" style="margin-left:var(--sp-2);">{{ pod.locode }}</span>{% endif %}
@@ -175,16 +175,15 @@
 
         {# Conditions de transport #}
         <div class="card">
-          <div class="card-title">Conditions de transport</div>
+          <div class="card-title">{{ t('rd_conditions_title', lang) }}</div>
           <ul class="conditions-list">
-            <li>Marchandises non dangereuses (ADR/IMDG) acceptées avec déclaration préalable</li>
-            <li>Cale ventilée, température ambiante (pas de température contrôlée)</li>
-            <li>Paiement par virement bancaire — facturation HT/TTC à la confirmation</li>
-            <li>Label Anemos délivré automatiquement après livraison</li>
+            <li>{{ t('rd_cond1', lang) }}</li>
+            <li>{{ t('rd_cond2', lang) }}</li>
+            <li>{{ t('rd_cond3', lang) }}</li>
+            <li>{{ t('rd_cond4', lang) }}</li>
           </ul>
           <div class="alert" style="margin-top:var(--sp-4);">
-            <strong>Emballage maritime :</strong> cette traversée est océanique.
-            Prévoyez un conditionnement adapté aux mouvements de houle.
+            <strong>{{ t('rd_packing_strong', lang) }}</strong> {{ t('rd_packing_text', lang) }}
           </div>
         </div>
       </div>
@@ -194,39 +193,39 @@
 
         {# Informations clés #}
         <div class="rd-sidebar-block">
-          <p class="rd-sidebar-title">📅 Informations clés</p>
+          <p class="rd-sidebar-title">📅 {{ t('rd_key_info', lang) }}</p>
           <dl>
             {% if duration_days is not none %}
             <div class="rd-sidebar-row">
-              <dt>Transit time</dt><dd>{{ duration_days }} jours</dd>
+              <dt>{{ t('rd_transit', lang) }}</dt><dd>{{ t('rd_days', lang, n=duration_days) }}</dd>
             </div>
             {% endif %}
             {% if distance_nm %}
             <div class="rd-sidebar-row">
-              <dt>Distance</dt><dd>{{ "{:,}".format(distance_nm).replace(",", " ") }} NM</dd>
+              <dt>{{ t('rd_distance', lang) }}</dt><dd>{{ "{:,}".format(distance_nm).replace(",", " ") }} NM</dd>
             </div>
             {% endif %}
             {% if cut_off_at %}
             <div class="rd-sidebar-row">
-              <dt>Cut-off</dt><dd>{{ cut_off_at.strftime('%d %b %Y %H:%M') }} UTC</dd>
+              <dt>{{ t('rd_cutoff', lang) }}</dt><dd>{{ cut_off_at.strftime('%d %b %Y %H:%M') }} UTC</dd>
             </div>
             {% endif %}
             <div class="rd-sidebar-row">
-              <dt>Tarif</dt><dd><a href="/devis?leg={{ leg.leg_code }}" style="color:var(--c-teal);">Sur devis →</a></dd>
+              <dt>{{ t('rd_rate', lang) }}</dt><dd><a href="/devis?leg={{ leg.leg_code }}" style="color:var(--c-teal);">{{ t('rd_on_quote', lang) }}</a></dd>
             </div>
           </dl>
         </div>
 
         {# Navire #}
         <div class="rd-sidebar-block">
-          <p class="rd-sidebar-title">🚢 Navire</p>
+          <p class="rd-sidebar-title">🚢 {{ t('rd_vessel_title', lang) }}</p>
           <dl>
             <div class="rd-sidebar-row">
-              <dt>Nom</dt><dd>{{ vessel.name }}</dd>
+              <dt>{{ t('rd_vessel_name_label', lang) }}</dt><dd>{{ vessel.name }}</dd>
             </div>
             {% if vessel.flag %}
             <div class="rd-sidebar-row">
-              <dt>Pavillon</dt><dd>{{ vessel.flag|flag }} {{ vessel.flag }}</dd>
+              <dt>{{ t('rd_flag', lang) }}</dt><dd>{{ vessel.flag|flag }} {{ vessel.flag }}</dd>
             </div>
             {% endif %}
             {% if vessel.imo_number %}
@@ -240,22 +239,22 @@
             </div>
             {% endif %}
             <div class="rd-sidebar-row">
-              <dt>Vitesse</dt><dd>{{ vessel.default_speed_kn|round(1) }} kn</dd>
+              <dt>{{ t('rd_speed', lang) }}</dt><dd>{{ vessel.default_speed_kn|round(1) }} kn</dd>
             </div>
           </dl>
         </div>
 
         {% if pol_config and (pol_config.agent_name or pol_config.documents_required) %}
         <div class="rd-sidebar-block">
-          <p class="rd-sidebar-title">📋 Départ — {{ pol.name if pol else 'POL' }}</p>
+          <p class="rd-sidebar-title">📋 {{ t('rd_dep_docs', lang) }} {{ pol.name if pol else 'POL' }}</p>
           {% if pol_config.agent_name %}
           <div class="rd-sidebar-row">
-            <dt>Agent</dt><dd>{{ pol_config.agent_name }}</dd>
+            <dt>{{ t('rd_agent_short', lang) }}</dt><dd>{{ pol_config.agent_name }}</dd>
           </div>
           {% endif %}
           {% if pol_config.documents_required %}
           <div style="font-size:var(--fs-13); color:var(--c-grey); margin-top:var(--sp-2);">
-            Docs requis : {{ pol_config.documents_required }}
+            {{ t('rd_docs_required', lang) }} {{ pol_config.documents_required }}
           </div>
           {% endif %}
         </div>
@@ -263,10 +262,10 @@
 
         {% if pod_config and (pod_config.agent_name or pod_config.restrictions) %}
         <div class="rd-sidebar-block">
-          <p class="rd-sidebar-title">📋 Arrivée — {{ pod.name if pod else 'POD' }}</p>
+          <p class="rd-sidebar-title">📋 {{ t('rd_arr_docs', lang) }} {{ pod.name if pod else 'POD' }}</p>
           {% if pod_config.agent_name %}
           <div class="rd-sidebar-row">
-            <dt>Agent</dt><dd>{{ pod_config.agent_name }}</dd>
+            <dt>{{ t('rd_agent_short', lang) }}</dt><dd>{{ pod_config.agent_name }}</dd>
           </div>
           {% endif %}
           {% if pod_config.restrictions %}
@@ -284,11 +283,8 @@
   {# TAB 2 — Éco-calculateur #}
   <section id="tab-eco" class="js-tab-pane" hidden>
     <div class="card">
-      <div class="card-title">Éco-calculateur</div>
-      <p class="rd-eco-intro">
-        Comparaison des émissions de CO₂ pour cette traversée entre le transport à la voile
-        NEWTOWT et le cargo conventionnel à moteur, exprimées par tonne de marchandise transportée.
-      </p>
+      <div class="card-title">{{ t('rd_tab_eco', lang) }}</div>
+      <p class="rd-eco-intro">{{ t('rd_eco_intro', lang) }}</p>
 
       {% if distance_nm %}
       {% set eco_dist    = distance_nm * 1.852 %}
@@ -299,10 +295,10 @@
         <table class="rd-eco-table">
           <thead>
             <tr>
-              <th>Mode</th>
-              <th>Segment</th>
-              <th style="text-align:right;">Distance (km)</th>
-              <th style="text-align:right;">CO₂ / tonne</th>
+              <th>{{ t('rd_eco_mode', lang) }}</th>
+              <th>{{ t('rd_eco_segment', lang) }}</th>
+              <th style="text-align:right;">{{ t('rd_eco_distance', lang) }}</th>
+              <th style="text-align:right;">{{ t('rd_eco_co2', lang) }}</th>
             </tr>
           </thead>
           <tbody>
@@ -313,7 +309,7 @@
               <td class="td-num" style="color:var(--c-green);">{{ "%.1f"|format(eco_towt) }} kg</td>
             </tr>
             <tr class="rd-eco-row--conv">
-              <td><span style="color:var(--c-grey);">🛢 Cargo conventionnel</span></td>
+              <td><span style="color:var(--c-grey);">🛢 {{ t('rd_eco_conv', lang) }}</span></td>
               <td>{{ pol.name if pol else '—' }} → {{ pod.name if pod else '—' }}</td>
               <td class="td-num">{{ "{:,.0f}".format(eco_dist).replace(",", " ") }}</td>
               <td class="td-num">{{ "%.1f"|format(eco_conv) }} kg</td>
@@ -321,7 +317,7 @@
           </tbody>
           <tfoot>
             <tr>
-              <td colspan="3" style="font-weight:var(--fw-bold); padding-top:var(--sp-4);">CO₂ évité par tonne</td>
+              <td colspan="3" style="font-weight:var(--fw-bold); padding-top:var(--sp-4);">{{ t('rd_eco_avoided', lang) }}</td>
               <td class="td-num" style="font-weight:var(--fw-bold); color:var(--c-green); padding-top:var(--sp-4);">
                 {{ "%.1f"|format(eco_avoided) }} kg
               </td>
@@ -330,16 +326,12 @@
         </table>
       </div>
       {% else %}
-      <div class="alert">Les coordonnées des ports sont nécessaires pour calculer les émissions.</div>
+      <div class="alert">{{ t('rd_eco_need_coords', lang) }}</div>
       {% endif %}
 
       <p class="rd-eco-note">
-        Les émissions sont exprimées en kg de CO₂ par tonne de marchandise pour la traversée complète.
-        Facteurs NEWTOWT : <strong>1,5 g CO₂/t.km</strong> (propulsion vélique).
-        Référence conventionnelle : <strong>13,7 g CO₂/t.km</strong> (GLEC Framework v3).
-        Ces valeurs sont indicatives — le certificat Anemos nominatif est émis automatiquement
-        après livraison sur la base du tonnage réel.
-        <a href="/about/anemos" style="color:var(--c-teal);">En savoir plus sur le Label Anemos →</a>
+        {{ t('rd_eco_note', lang) }}
+        <a href="/about/anemos" style="color:var(--c-teal);">{{ t('rd_eco_more_link', lang) }}</a>
       </p>
     </div>
   </section>
