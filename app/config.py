@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     # Token X-API-Token pour POST /api/tickets/escalate-sla (cron Power
     # Automate : escalade SLA des tickets escale dont le délai est dépassé).
     tickets_sla_api_token: str | None = None
+    # Token X-API-Token pour POST /api/weather/refresh (cron Power Automate
+    # toutes les 30 min : snapshot météo Windy du dernier point GPS de chaque
+    # navire, historisé pour consultation ultérieure des legs réalisés).
+    weather_api_token: str | None = None
 
     # Veille d'actualité — agrégateur NewsData.io + token de rafraîchissement
     # (POST /api/veille/refresh, déclenché en cron par Power Automate).

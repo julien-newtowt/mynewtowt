@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 OPEN_METEO_MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 WINDY_POINT_FORECAST_URL = "https://api.windy.com/api/point-forecast/v2"
 
 
@@ -32,6 +33,10 @@ class WeatherPoint:
     wave_height_m: float | None
     wave_direction_deg: float | None
     wave_period_s: float | None
+    # V3.8 — conditions complémentaires (température air, courant de surface).
+    temperature_c: float | None = None
+    current_speed_kn: float | None = None
+    current_direction_deg: float | None = None
 
 
 @dataclass(frozen=True)
@@ -66,14 +71,17 @@ async def _fetch_open_meteo(lat: float, lon: float, hours: int) -> WeatherForeca
     params_wind = {
         "latitude": lat,
         "longitude": lon,
-        "hourly": "wind_speed_10m,wind_direction_10m",
+        "hourly": "wind_speed_10m,wind_direction_10m,temperature_2m",
         "wind_speed_unit": "kn",
         "forecast_hours": hours,
     }
     params_marine = {
         "latitude": lat,
         "longitude": lon,
-        "hourly": "wave_height,wave_direction,wave_period",
+        "hourly": (
+            "wave_height,wave_direction,wave_period,"
+            "ocean_current_velocity,ocean_current_direction"
+        ),
         "forecast_hours": hours,
     }
     try:
@@ -97,6 +105,9 @@ async def _fetch_open_meteo(lat: float, lon: float, hours: int) -> WeatherForeca
             wave_height_m=_safe(marine.get("wave_height"), i),
             wave_direction_deg=_safe(marine.get("wave_direction"), i),
             wave_period_s=_safe(marine.get("wave_period"), i),
+            temperature_c=_safe(wind.get("temperature_2m"), i),
+            current_speed_kn=_kmh_to_kn(_safe(marine.get("ocean_current_velocity"), i)),
+            current_direction_deg=_safe(marine.get("ocean_current_direction"), i),
         )
         for i, t in enumerate(times)
     ]
@@ -110,7 +121,7 @@ async def _fetch_windy(lat: float, lon: float, hours: int) -> WeatherForecast | 
         "lat": lat,
         "lon": lon,
         "model": "gfs",
-        "parameters": ["wind", "waves"],
+        "parameters": ["wind", "waves", "temp"],
         "levels": ["surface"],
         "key": settings.windy_api_key,
     }
@@ -129,6 +140,7 @@ async def _fetch_windy(lat: float, lon: float, hours: int) -> WeatherForecast | 
     waves_h = data.get("waves_height-surface", [])
     waves_d = data.get("waves_direction-surface", [])
     waves_p = data.get("waves_period-surface", [])
+    temp_k = data.get("temp-surface", [])
     points: list[WeatherPoint] = []
     for i, t in enumerate(times[:hours]):
         u = _safe(wind_u, i) or 0.0
@@ -137,6 +149,7 @@ async def _fetch_windy(lat: float, lon: float, hours: int) -> WeatherForecast | 
         speed_kn = speed_ms * 1.9438
         dir_deg = (math.degrees(math.atan2(-u, -v)) + 360) % 360
         iso = _dt.datetime.utcfromtimestamp(t / 1000).isoformat() + "Z"
+        tk = _safe(temp_k, i)
         points.append(
             WeatherPoint(
                 time=iso,
@@ -145,6 +158,9 @@ async def _fetch_windy(lat: float, lon: float, hours: int) -> WeatherForecast | 
                 wave_height_m=_safe(waves_h, i),
                 wave_direction_deg=_safe(waves_d, i),
                 wave_period_s=_safe(waves_p, i),
+                # Windy renvoie la température en Kelvin. Courant non fourni par
+                # le modèle GFS → complété via Open-Meteo (fetch_point_conditions).
+                temperature_c=round(tk - 273.15, 1) if tk is not None else None,
             )
         )
     return WeatherForecast(latitude=lat, longitude=lon, provider="windy", points=points)
@@ -155,6 +171,32 @@ def _safe(arr, i):
         return arr[i] if arr else None
     except (IndexError, TypeError):
         return None
+
+
+def _kmh_to_kn(v: float | None) -> float | None:
+    """km/h → nœuds (Open-Meteo donne les courants océaniques en km/h)."""
+    return round(v * 0.539957, 2) if v is not None else None
+
+
+def _nearest_point(points: list[WeatherPoint], when) -> WeatherPoint | None:
+    """Point dont le timestamp est le plus proche de ``when`` (aware UTC)."""
+    if not points:
+        return None
+    target = when.replace(tzinfo=_dt.UTC) if when.tzinfo is None else when
+    best: WeatherPoint | None = None
+    best_delta = float("inf")
+    for p in points:
+        try:
+            t = _dt.datetime.fromisoformat(p.time.replace("Z", "+00:00"))
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=_dt.UTC)
+        except (ValueError, AttributeError):
+            continue
+        delta = abs((t - target).total_seconds())
+        if delta < best_delta:
+            best_delta = delta
+            best = p
+    return best
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -179,6 +221,7 @@ async def fetch_at(
     when,
     *,
     window_hours: int = 72,
+    provider: Literal["open-meteo", "windy"] = "open-meteo",
 ) -> WeatherPoint | None:
     """Renvoie le point forecast le plus proche d'une datetime cible.
 
@@ -186,26 +229,143 @@ async def fetch_at(
     et on pioche l'index dont le timestamp est le plus proche. Utilisé par
     leg_detail (POL @ ETD, POD @ ETA) et next-port (ETA arrivée).
     """
-    import datetime as _dt
-
-    fc = await fetch_forecast(lat, lon, hours=window_hours)
+    fc = await fetch_forecast(lat, lon, hours=window_hours, provider=provider)
     if not fc or not fc.points:
         return None
-    target = when.replace(tzinfo=_dt.UTC) if when.tzinfo is None else when
-    best: WeatherPoint | None = None
-    best_delta = float("inf")
-    for p in fc.points:
-        try:
-            t = _dt.datetime.fromisoformat(p.time.replace("Z", "+00:00"))
-            if t.tzinfo is None:
-                t = t.replace(tzinfo=_dt.UTC)
-        except (ValueError, AttributeError):
-            continue
-        delta = abs((t - target).total_seconds())
-        if delta < best_delta:
-            best_delta = delta
-            best = p
-    return best
+    return _nearest_point(fc.points, when)
+
+
+def _merge_points(primary: WeatherPoint, fallback: WeatherPoint | None) -> WeatherPoint:
+    """Complète les champs ``None`` de ``primary`` avec ceux de ``fallback``."""
+    if fallback is None:
+        return primary
+    import dataclasses
+
+    patch = {
+        field: getattr(fallback, field)
+        for field in (
+            "wind_speed_kn",
+            "wind_direction_deg",
+            "wave_height_m",
+            "wave_direction_deg",
+            "wave_period_s",
+            "temperature_c",
+            "current_speed_kn",
+            "current_direction_deg",
+        )
+        if getattr(primary, field) is None and getattr(fallback, field) is not None
+    }
+    return dataclasses.replace(primary, **patch) if patch else primary
+
+
+async def _fetch_open_meteo_range(
+    lat: float,
+    lon: float,
+    *,
+    start_date: str,
+    end_date: str,
+    archive: bool = False,
+) -> WeatherForecast | None:
+    """Hourly vent/température (+ houle/courant via marine) sur une plage de dates.
+
+    ``archive=True`` → endpoint réanalyse ERA5 (dates anciennes) ; sinon endpoint
+    forecast (couvre ~3 mois de passé récent et le futur). Le marine endpoint
+    fournit houle + courant pour la même plage. Permet d'obtenir la météo
+    **valide au moment** d'un point GPS historique (et pas une prévision future).
+    """
+    wind_url = OPEN_METEO_ARCHIVE_URL if archive else OPEN_METEO_FORECAST_URL
+    params_wind = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": "wind_speed_10m,wind_direction_10m,temperature_2m",
+        "wind_speed_unit": "kn",
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+    params_marine = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": (
+            "wave_height,wave_direction,wave_period,"
+            "ocean_current_velocity,ocean_current_direction"
+        ),
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+    wind: dict = {}
+    marine: dict = {}
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            r_wind = await client.get(wind_url, params=params_wind)
+            r_wind.raise_for_status()
+            wind = r_wind.json().get("hourly", {})
+            try:
+                r_marine = await client.get(OPEN_METEO_MARINE_URL, params=params_marine)
+                r_marine.raise_for_status()
+                marine = r_marine.json().get("hourly", {})
+            except httpx.HTTPError as e:
+                logger.info("Open-Meteo marine range failed (%s,%s): %s", lat, lon, e)
+    except httpx.HTTPError as e:
+        logger.warning("Open-Meteo range fetch failed (%s,%s): %s", lat, lon, e)
+        return None
+
+    times = wind.get("time", []) or marine.get("time", [])
+    points = [
+        WeatherPoint(
+            time=t,
+            wind_speed_kn=_safe(wind.get("wind_speed_10m"), i),
+            wind_direction_deg=_safe(wind.get("wind_direction_10m"), i),
+            wave_height_m=_safe(marine.get("wave_height"), i),
+            wave_direction_deg=_safe(marine.get("wave_direction"), i),
+            wave_period_s=_safe(marine.get("wave_period"), i),
+            temperature_c=_safe(wind.get("temperature_2m"), i),
+            current_speed_kn=_kmh_to_kn(_safe(marine.get("ocean_current_velocity"), i)),
+            current_direction_deg=_safe(marine.get("ocean_current_direction"), i),
+        )
+        for i, t in enumerate(times)
+    ]
+    return WeatherForecast(latitude=lat, longitude=lon, provider="open-meteo", points=points)
+
+
+async def fetch_point_conditions(
+    lat: float,
+    lon: float,
+    when,
+    *,
+    provider: Literal["open-meteo", "windy"] = "windy",
+) -> WeatherPoint | None:
+    """Conditions complètes (vent · houle · courant · température) **au moment** d'un point GPS.
+
+    Stratégie sensible au temps (les positions satcom sont des relevés passés) :
+
+    1. Quasi temps réel (point récent / leg actif) → on interroge en priorité
+       Windy (forecast pertinent) ;
+    2. dans tous les cas, on récupère la valeur exacte à l'heure du point via
+       Open-Meteo (forecast ``past_days`` pour le passé récent, archive ERA5
+       au-delà) — c'est aussi la source du **courant** que GFS/Windy ne donne pas ;
+    3. fusion : Windy prime, Open-Meteo complète les champs manquants.
+
+    Utilisé par Performance › Navigation (1 point échantillonné / 30 min).
+    """
+    when_utc = when.replace(tzinfo=_dt.UTC) if when.tzinfo is None else when
+    now = _dt.datetime.now(_dt.UTC)
+    age_days = (now - when_utc).total_seconds() / 86400.0  # >0 passé, <0 futur
+
+    primary: WeatherPoint | None = None
+    if provider == "windy" and settings.windy_api_key and -10 <= age_days <= 2:
+        primary = await fetch_at(lat, lon, when_utc, provider="windy")
+
+    day = when_utc.date()
+    start = (day - _dt.timedelta(days=1)).isoformat()
+    end = (day + _dt.timedelta(days=1)).isoformat()
+    om_fc = await _fetch_open_meteo_range(
+        lat, lon, start_date=start, end_date=end, archive=age_days > 5
+    )
+    om_point = _nearest_point(om_fc.points, when_utc) if om_fc else None
+
+    if primary is None:
+        return om_point
+    return _merge_points(primary, om_point)
 
 
 def summarize(point: WeatherPoint | None) -> str:

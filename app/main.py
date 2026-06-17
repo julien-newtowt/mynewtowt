@@ -42,6 +42,7 @@ from app.routers import (
     kpi_router,
     modules_router,
     mrv_router,
+    navigation_router,
     notifications_router,
     onboard_router,
     planning_router,
@@ -117,6 +118,8 @@ def create_app() -> FastAPI:
     app.include_router(mrv_router.router)
     # ─── Phase 4 ERP : kpi / finance ───
     app.include_router(kpi_router.router)
+    app.include_router(navigation_router.router)
+    app.include_router(navigation_router.api_router)
     app.include_router(finance_router.router)
     # ─── Public/API (no auth, token-protected) ───
     app.include_router(cargo_portal_router.router)

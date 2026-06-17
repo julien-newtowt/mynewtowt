@@ -1,0 +1,129 @@
+{% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_filter %}
+{% block title %}Navigation{% endblock %}
+{% block head %}{{ super() }}
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
+<script src="/static/js/navigation-map.js" defer></script>
+{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Performance</span>
+    <h1 class="display">Navigation</h1>
+  </div>
+</header>
+
+<p class="text-muted text-sm mb-3">
+  Trajet réellement réalisé par leg : positions satcom, distance réelle vs théorique,
+  durée depuis le départ, distance restante et météo le long de la trace.
+</p>
+
+{{ leg_filter(leg_filter_ctx, "/navigation") }}
+
+{% if not selected_leg %}
+<article class="card">
+  <p class="text-muted">Sélectionne un leg ci-dessus pour afficher sa navigation.</p>
+</article>
+{% else %}
+
+{% set m = metrics %}
+{% set ecart = (m.actual_nm - m.theoretical_nm) if (m and m.theoretical_nm is not none) else none %}
+{% set dur_h = m.duration_hours if m else none %}
+{% set dur_d = (dur_h // 24)|int if dur_h is not none else none %}
+{% set dur_r = (dur_h % 24)|round(0, 'floor')|int if dur_h is not none else none %}
+
+<div class="leg-summary" style="margin-bottom:1rem;">
+  <div class="leg-summary-left">
+    <h3 class="mono">{{ selected_leg.leg_code }}</h3>
+    <span class="text-muted">
+      {% if dep_port %}{{ dep_port.country|flag }} {{ dep_port.name }}{% endif %} →
+      {% if arr_port %}{{ arr_port.country|flag }} {{ arr_port.name }}{% endif %}
+    </span>
+  </div>
+  <div class="vessel-status-badge {{ 'en_mer' if m and m.is_active else 'a_quai' }}">
+    {% if m and m.is_active %}<i data-lucide="waves"></i> En mer{% else %}<i data-lucide="anchor"></i> Arrivé{% endif %}
+  </div>
+</div>
+
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">Distance réelle parcourue</div>
+    <div class="value">{{ "%.0f"|format(m.actual_nm) }} <span class="text-sm">NM</span></div>
+    <div class="delta text-muted">{{ m.point_count }} points GPS</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Distance théorique</div>
+    <div class="value">{{ ("%.0f NM"|format(m.theoretical_nm)) if m.theoretical_nm is not none else '—' }}</div>
+    <div class="delta text-muted">orthodromique POL→POD</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Écart (réel − théorique)</div>
+    {% if ecart is not none %}
+    <div class="value {{ 'text-warn' if ecart > 0 else 'text-success' }}">{{ "%+.0f"|format(ecart) }} <span class="text-sm">NM</span></div>
+    <div class="delta text-muted">{{ "%+.0f"|format((ecart / m.theoretical_nm * 100) if m.theoretical_nm else 0) }} % vs théorique</div>
+    {% else %}<div class="value">—</div>{% endif %}
+  </div>
+  <div class="kpi-card">
+    <div class="label">Durée depuis le départ</div>
+    <div class="value">{% if dur_h is not none %}{{ dur_d }}j {{ dur_r }}h{% else %}—{% endif %}</div>
+    <div class="delta text-muted">{% if m.avg_speed_kn %}{{ "%.1f"|format(m.avg_speed_kn) }} kn moy.{% else %}vitesse moy. —{% endif %}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Distance restante</div>
+    <div class="value">{{ ("%.0f NM"|format(m.remaining_nm)) if m.remaining_nm is not none else '—' }}</div>
+    <div class="delta text-muted">{% if selected_leg.ata %}leg arrivé{% else %}dernier point → POD{% endif %}</div>
+  </div>
+</section>
+
+<article class="card mt-4" style="padding:0; overflow:hidden;">
+  <div id="navigation-map" class="js-navigation-map"
+       style="width:100%; height:560px; background:var(--sable-light); position:relative;"
+       data-maptiler-token="{{ maptiler_token }}"
+       data-points='{{ points|tojson }}'
+       data-weather-url="/navigation/legs/{{ selected_leg.id }}/weather"
+       {% if dep_port and dep_port.latitude is not none and dep_port.longitude is not none %}
+       data-dep='{{ {"lat": dep_port.latitude, "lon": dep_port.longitude, "name": dep_port.name, "locode": dep_port.locode}|tojson }}'
+       {% endif %}
+       {% if arr_port and arr_port.latitude is not none and arr_port.longitude is not none %}
+       data-arr='{{ {"lat": arr_port.latitude, "lon": arr_port.longitude, "name": arr_port.name, "locode": arr_port.locode}|tojson }}'
+       {% endif %}
+       data-no-position-text="Aucun point GPS pour ce leg."
+       data-no-position-detail="Les positions satcom alimentent la trace une fois le leg démarré."></div>
+</article>
+
+<article class="card mt-3">
+  <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2 style="margin:0;">Météo le long du trajet</h2>
+      <p class="text-muted text-sm" style="margin:.25rem 0 0;">
+        Source <strong>{{ 'Windy' if weather_provider == 'windy' else 'Open-Meteo' }}</strong> ·
+        {{ weather_count }} relevé(s) historisé(s) · vent, courant, vague, température.
+        <br>Snapshot du dernier point GPS de chaque navire toutes les 30 min (cron) → historisé pour les legs réalisés.
+      </p>
+    </div>
+    <div class="flex items-center gap-2" style="gap:8px;">
+      <span id="weather-status" class="pill" data-state="idle">En attente…</span>
+      {% if user.role in ['administrateur', 'operation', 'armement', 'manager_maritime'] %}
+      <form method="post" action="/navigation/weather/refresh" style="display:inline;">
+        <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+        <button type="submit" class="btn btn-xs btn-secondary" title="Historiser maintenant la météo du dernier point GPS">
+          <i data-lucide="refresh-cw"></i> Snapshot
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  <div class="map-legend" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:.75rem;font-size:.85rem;color:var(--muted, #6E6E6E);">
+    <span><span style="display:inline-block;width:18px;height:3px;background:#0D5966;vertical-align:middle;"></span> Trajet réel</span>
+    <span><span style="display:inline-block;width:18px;height:3px;background:#B47148;border-top:2px dashed #B47148;vertical-align:middle;"></span> Route théorique POL→POD</span>
+    <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#87BD29;vertical-align:middle;"></span> Point GPS</span>
+    <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid #0D5966;vertical-align:middle;"></span> Point météo (clic = détail)</span>
+  </div>
+  <p class="text-muted text-xs" style="margin-top:.5rem;">
+    Note : la météo historique provient de la réanalyse pour les legs passés ;
+    elle peut être indisponible pour des points très anciens (affichés « — »).
+  </p>
+</article>
+{% endif %}
+{% endblock %}

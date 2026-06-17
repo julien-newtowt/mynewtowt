@@ -78,6 +78,7 @@ from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
+from app.models.weather import VesselWeather
 
 __all__ = [
     "ActivityLog",
@@ -155,6 +156,7 @@ __all__ = [
     "User",
     "Vessel",
     "VesselPosition",
+    "VesselWeather",
     "VisitorLog",
     "WatchLog",
 ]
