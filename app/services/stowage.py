@@ -12,11 +12,13 @@ palettes par zone (3 ponts × 6 blocs × ~50 = ~900 palettes pour un 850).
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Iterable
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commercial import PALETTE_COEFFICIENTS
@@ -29,6 +31,8 @@ from app.models.stowage import (
     StowageItem,
     StowagePlan,
 )
+
+logger = logging.getLogger(__name__)
 
 ZONE_CAPACITY_DEFAULT = 50  # palettes EPAL équivalentes par zone (à affiner)
 
@@ -270,16 +274,31 @@ def parse_zone(zone: str | None) -> tuple[str | None, str | None, str | None]:
 
 
 async def _vessel_class_for_leg(db: AsyncSession, leg_id: int) -> str:
-    """Classe du navire d'un leg (pour résoudre le référentiel d'arrimage)."""
+    """Classe du navire d'un leg (pour résoudre le référentiel d'arrimage).
+
+    Renforcement : si la colonne ``vessels.vessel_class`` n'existe pas encore
+    (migration 0037 non appliquée), on dégrade proprement vers la classe par
+    défaut au lieu de planter (500). Savepoint isolé pour ne pas polluer la
+    transaction de requête — même garde-fou que ``stowage_specs.get_specs``.
+    """
     from app.models.leg import Leg
     from app.models.vessel import Vessel
     from app.services.stowage_specs import DEFAULT_VESSEL_CLASS
 
     leg = await db.get(Leg, leg_id)
-    if leg is None:
+    if leg is None or not leg.vessel_id:
         return DEFAULT_VESSEL_CLASS
-    vessel = await db.get(Vessel, leg.vessel_id)
-    return (vessel.vessel_class if vessel else None) or DEFAULT_VESSEL_CLASS
+    try:
+        async with db.begin_nested():
+            vessel = await db.get(Vessel, leg.vessel_id)
+            return (vessel.vessel_class if vessel else None) or DEFAULT_VESSEL_CLASS
+    except (ProgrammingError, OperationalError):
+        logger.warning(
+            "vessels.vessel_class indisponible — fallback classe %s "
+            "(migration 0037 non appliquée ?)",
+            DEFAULT_VESSEL_CLASS,
+        )
+        return DEFAULT_VESSEL_CLASS
 
 
 def _per_pallet_weight_kg(item: StowageItem) -> float | None:
@@ -344,11 +363,23 @@ async def evaluate_plan(db: AsyncSession, leg_id: int) -> dict:
     ).scalar_one_or_none()
     items: list[StowageItem] = []
     if plan_id is not None:
-        items = list(
-            (await db.execute(select(StowageItem).where(StowageItem.plan_id == plan_id)))
-            .scalars()
-            .all()
-        )
+        # Renforcement : les colonnes packing-list de stowage_items (description,
+        # hs_code, dimensions, gerbage…) sont ajoutées par la migration 0037. Si
+        # elle n'est pas appliquée, le SELECT ORM échoue — on dégrade vers un
+        # plan sans item (savepoint isolé) plutôt que de renvoyer un 500.
+        try:
+            async with db.begin_nested():
+                items = list(
+                    (await db.execute(select(StowageItem).where(StowageItem.plan_id == plan_id)))
+                    .scalars()
+                    .all()
+                )
+        except (ProgrammingError, OperationalError):
+            logger.warning(
+                "stowage_items (colonnes 0037) indisponible — plan évalué sans "
+                "item (migration 0037 non appliquée ?)"
+            )
+            items = []
 
     for it in items:
         coeff = PALETTE_COEFFICIENTS.get(it.pallet_format or "EPAL", 1.0)
@@ -419,7 +450,7 @@ async def evaluate_plan(db: AsyncSession, leg_id: int) -> dict:
         if z["max_load_t"]:
             z["load_pct"] = round(100 * z["used_t"] / z["max_load_t"], 1)
             if z["used_t"] > z["max_load_t"]:
-                msg = f"Surcharge en {zone} : " f"{z['used_t']:.1f}/{z['max_load_t']:.1f} t."
+                msg = f"Surcharge en {zone} : {z['used_t']:.1f}/{z['max_load_t']:.1f} t."
                 z["warnings"].append(msg)
                 flat_warnings.append({"zone": zone, "level": "warn", "message": msg})
 
