@@ -1,16 +1,14 @@
 {% extends "public/_layout_v2.html" %}
-{% block title %}Devis en ligne — NewTowt{% endblock %}
-{% block description %}Générez un devis indicatif de fret maritime à la voile : route, palettes, tonnage. Sans création de compte.{% endblock %}
+{% block title %}{{ t('devis_meta_title', lang) }}{% endblock %}
+{% block description %}{{ t('devis_meta_desc', lang) }}{% endblock %}
 
 {% block content %}
 <section class="hero">
   <div class="hero-inner">
-    <span class="hero-kicker">Devis</span>
-    <h1 class="hero-title">Votre devis en ligne</h1>
+    <span class="hero-kicker">{{ t('devis_hero_kicker', lang) }}</span>
+    <h1 class="hero-title">{{ t('devis_hero_title', lang) }}</h1>
     <p class="hero-lead">
-      Obtenez immédiatement un devis indicatif, sans créer de compte.
-      Le calcul s'appuie sur la grille tarifaire de la route
-      {%- if client %} — et sur votre grille négociée si vous en avez une{% endif %}.
+      {{ t('devis_hero_lead', lang) }}{% if client %}{{ t('devis_hero_lead_client', lang) }}{% endif %}.
     </p>
   </div>
 </section>
@@ -23,7 +21,7 @@
     {% endif %}
 
     {% if client %}
-    <p class="pill">Connecté : {{ client.company_name }} — votre grille tarifaire s'applique si elle existe.</p>
+    <p class="pill">{{ t('devis_logged_in_pre', lang) }} {{ client.company_name }} {{ t('devis_logged_in_post', lang) }}</p>
     {% endif %}
 
     <form method="POST" action="/devis" novalidate>
@@ -36,7 +34,7 @@
         </label>
       </div>
 
-      <h2 class="section-title">1 · La route</h2>
+      <h2 class="section-title">1 · {{ t('devis_step1_route', lang) }}</h2>
       {% if leg %}
         <input type="hidden" name="leg_code" value="{{ leg.leg_code }}" />
         <div class="card" style="margin-bottom:var(--sp-5);">
@@ -47,15 +45,15 @@
           →
           {{ leg_pod.name if leg_pod else '—' }}
           {%- if leg_pod and leg_pod.country %} {{ leg_pod.country|flag }}{% endif %}<br />
-          {% if leg.etd %}Départ prévu : <span class="mono">{{ leg.etd|date }}</span>{% endif %}
+          {% if leg.etd %}{{ t('devis_departure_planned', lang) }} <span class="mono">{{ leg.etd|date }}</span>{% endif %}
           <div style="margin-top:var(--sp-2);">
-            <a href="/devis" class="btn btn-ghost">Changer de route</a>
+            <a href="/devis" class="btn btn-ghost">{{ t('devis_change_route', lang) }}</a>
           </div>
         </div>
       {% else %}
         <div class="grid grid-2" style="gap:var(--sp-4);">
           <div class="form-group">
-            <label class="form-label" for="pol">Port de départ *</label>
+            <label class="form-label" for="pol">{{ t('devis_lbl_pol', lang) }} *</label>
             <select class="form-control" id="pol" name="pol" required>
               <option value="">—</option>
               {% for p in pol_ports %}
@@ -66,7 +64,7 @@
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label" for="pod">Port d'arrivée *</label>
+            <label class="form-label" for="pod">{{ t('devis_lbl_pod', lang) }} *</label>
             <select class="form-control" id="pod" name="pod" required>
               <option value="">—</option>
               {% for p in pod_ports %}
@@ -79,11 +77,11 @@
         </div>
       {% endif %}
 
-      <h2 class="section-title">2 · Votre cargaison</h2>
+      <h2 class="section-title">2 · {{ t('devis_step2_cargo', lang) }}</h2>
       {% for i in range(max_rows) %}
       <div class="grid grid-2" style="gap:var(--sp-4);">
         <div class="form-group">
-          <label class="form-label" for="items-{{ i }}-format">Format palette{% if i == 0 %} *{% endif %}</label>
+          <label class="form-label" for="items-{{ i }}-format">{{ t('devis_lbl_format', lang) }}{% if i == 0 %} *{% endif %}</label>
           <select class="form-control" id="items-{{ i }}-format" name="items-{{ i }}-format">
             <option value="">—</option>
             {% for fmt in pallet_formats %}
@@ -92,7 +90,7 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label" for="items-{{ i }}-count">Nombre{% if i == 0 %} *{% endif %}</label>
+          <label class="form-label" for="items-{{ i }}-count">{{ t('devis_lbl_count', lang) }}{% if i == 0 %} *{% endif %}</label>
           <input class="form-control" id="items-{{ i }}-count" name="items-{{ i }}-count"
                  type="number" min="1" max="1000" value="{{ values.get('items-' ~ i ~ '-count', '') }}" />
         </div>
@@ -101,36 +99,36 @@
 
       <div class="grid grid-2" style="gap:var(--sp-4);">
         <div class="form-group">
-          <label class="form-label" for="tonnage_t">Tonnage total chargé (t)</label>
+          <label class="form-label" for="tonnage_t">{{ t('devis_lbl_tonnage', lang) }}</label>
           <input class="form-control" id="tonnage_t" name="tonnage_t" type="text"
-                 inputmode="decimal" placeholder="ex. 12.5" value="{{ values.tonnage_t|default('') }}" />
-          <p class="form-hint">Sert aux options tarifées à la tonne.</p>
+                 inputmode="decimal" placeholder="{{ t('devis_ph_tonnage', lang) }}" value="{{ values.tonnage_t|default('') }}" />
+          <p class="form-hint">{{ t('devis_hint_tonnage', lang) }}</p>
         </div>
         <div class="form-group" style="align-self:end;">
           <label class="form-label" for="hazardous" style="display:flex;gap:.5rem;align-items:center;">
             <input id="hazardous" type="checkbox" name="hazardous"
                    {% if values.hazardous == 'on' %}checked{% endif %} />
-            Marchandises dangereuses (IMDG)
+            {{ t('devis_hazardous', lang) }}
           </label>
         </div>
       </div>
 
-      <h2 class="section-title">3 · Vos coordonnées <small>(facultatif)</small></h2>
-      <p class="form-hint">Laissez un email pour recevoir le devis et être recontacté par notre équipe commerciale.</p>
+      <h2 class="section-title">3 · {{ t('devis_step3_contact', lang) }} <small>{{ t('devis_step3_optional', lang) }}</small></h2>
+      <p class="form-hint">{{ t('devis_contact_hint', lang) }}</p>
       <div class="grid grid-2" style="gap:var(--sp-4);">
         <div class="form-group">
-          <label class="form-label" for="contact_name">Nom</label>
+          <label class="form-label" for="contact_name">{{ t('devis_lbl_name', lang) }}</label>
           <input class="form-control" id="contact_name" name="contact_name" type="text"
                  autocomplete="name" value="{{ values.contact_name|default('') }}" />
         </div>
         <div class="form-group">
-          <label class="form-label" for="contact_company">Société</label>
+          <label class="form-label" for="contact_company">{{ t('devis_lbl_company', lang) }}</label>
           <input class="form-control" id="contact_company" name="contact_company" type="text"
                  autocomplete="organization" value="{{ values.contact_company|default('') }}" />
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label" for="contact_email">Email</label>
+        <label class="form-label" for="contact_email">{{ t('devis_lbl_email', lang) }}</label>
         <input class="form-control" id="contact_email" name="contact_email" type="email"
                autocomplete="email" value="{{ values.contact_email|default('') }}" />
       </div>
@@ -138,19 +136,16 @@
         <label class="form-label" for="consent" style="display:flex;gap:.5rem;align-items:start;">
           <input id="consent" type="checkbox" name="consent"
                  {% if values.consent == 'on' %}checked{% endif %} />
-          <span>J'accepte que mes coordonnées soient utilisées pour me recontacter
-          (cf. <a href="/about/privacy">politique de confidentialité</a>). Obligatoire si email renseigné.</span>
+          <span>{{ t('devis_consent_pre', lang) }}
+          <a href="/about/privacy">{{ t('devis_consent_link', lang) }}</a>{{ t('devis_consent_post', lang) }}</span>
         </label>
       </div>
 
-      <button class="btn btn-primary btn-lg" type="submit">Générer mon devis</button>
-      <a href="/routes" class="btn btn-ghost">← Voir les traversées</a>
+      <button class="btn btn-primary btn-lg" type="submit">{{ t('devis_submit', lang) }}</button>
+      <a href="/routes" class="btn btn-ghost">{{ t('devis_see_crossings', lang) }}</a>
     </form>
 
-    <p class="form-hint" style="margin-top:var(--sp-5);">
-      Devis indicatif HT, hors droits et taxes locales, valable 30 jours.
-      La capacité est confirmée par notre équipe à la réservation.
-    </p>
+    <p class="form-hint" style="margin-top:var(--sp-5);">{{ t('devis_footer_note', lang) }}</p>
   </div>
 </section>
 {% endblock %}

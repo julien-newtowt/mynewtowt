@@ -1,20 +1,20 @@
 {% extends "public/_layout_v2.html" %}
-{% block title %}Devis {{ quote.reference }} — NewTowt{% endblock %}
-{% block description %}Devis de fret maritime à la voile {{ quote.reference }}.{% endblock %}
+{% block title %}{{ t('devis_result_meta_title', lang, ref=quote.reference) }}{% endblock %}
+{% block description %}{{ t('devis_result_meta_desc', lang, ref=quote.reference) }}{% endblock %}
 
 {% block content %}
 <section class="hero">
   <div class="hero-inner">
-    <span class="hero-kicker">Devis</span>
-    <h1 class="hero-title">Devis <span class="mono">{{ quote.reference }}</span></h1>
+    <span class="hero-kicker">{{ t('devis_hero_kicker', lang) }}</span>
+    <h1 class="hero-title">{{ t('devis_result_word', lang) }} <span class="mono">{{ quote.reference }}</span></h1>
     <p class="hero-lead">
       {{ pol.name if pol else quote.pol_locode }}
       {%- if pol and pol.country %} {{ pol.country|flag }}{% endif %}
       →
       {{ pod.name if pod else quote.pod_locode }}
       {%- if pod and pod.country %} {{ pod.country|flag }}{% endif %}
-      {% if leg %} · traversée <span class="mono">{{ leg.leg_code }}</span>{% endif %}
-      {% if quote.etd_snapshot %} · départ prévu {{ quote.etd_snapshot|date }}{% endif %}
+      {% if leg %} · {{ t('devis_result_crossing', lang) }} <span class="mono">{{ leg.leg_code }}</span>{% endif %}
+      {% if quote.etd_snapshot %} · {{ t('devis_result_departure', lang) }} {{ quote.etd_snapshot|date }}{% endif %}
     </p>
   </div>
 </section>
@@ -26,10 +26,10 @@
       <table style="width:100%;border-collapse:collapse;">
         <thead>
           <tr style="text-align:left;border-bottom:2px solid var(--teal);">
-            <th style="padding:.5rem .25rem;">Désignation</th>
-            <th style="padding:.5rem .25rem;text-align:right;">Qté</th>
-            <th style="padding:.5rem .25rem;text-align:right;">PU</th>
-            <th style="padding:.5rem .25rem;text-align:right;">Total</th>
+            <th style="padding:.5rem .25rem;">{{ t('devis_th_desc', lang) }}</th>
+            <th style="padding:.5rem .25rem;text-align:right;">{{ t('devis_th_qty', lang) }}</th>
+            <th style="padding:.5rem .25rem;text-align:right;">{{ t('devis_th_unit', lang) }}</th>
+            <th style="padding:.5rem .25rem;text-align:right;">{{ t('devis_th_total', lang) }}</th>
           </tr>
         </thead>
         <tbody>
@@ -37,7 +37,7 @@
           <tr style="border-bottom:1px solid var(--sable);">
             <td style="padding:.5rem .25rem;">
               {{ line.label }}
-              {% if line.kind == 'option' %}<span class="pill">option</span>{% endif %}
+              {% if line.kind == 'option' %}<span class="pill">{{ t('devis_option', lang) }}</span>{% endif %}
             </td>
             <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ line.quantity|round(2) }}</td>
             <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ line.unit_price_eur|money }}</td>
@@ -47,15 +47,15 @@
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="3" style="padding:.5rem .25rem;text-align:right;">Fret</td>
+            <td colspan="3" style="padding:.5rem .25rem;text-align:right;">{{ t('devis_freight', lang) }}</td>
             <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ quote.freight_subtotal_eur|money }}</td>
           </tr>
           <tr>
-            <td colspan="3" style="padding:.5rem .25rem;text-align:right;">Options</td>
+            <td colspan="3" style="padding:.5rem .25rem;text-align:right;">{{ t('devis_options', lang) }}</td>
             <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ quote.options_total_eur|money }}</td>
           </tr>
           <tr style="border-top:2px solid var(--teal);font-weight:700;">
-            <td colspan="3" style="padding:.5rem .25rem;text-align:right;">Total HT</td>
+            <td colspan="3" style="padding:.5rem .25rem;text-align:right;">{{ t('devis_total_ht', lang) }}</td>
             <td style="padding:.5rem .25rem;text-align:right;" class="mono">{{ quote.total_eur|money }}</td>
           </tr>
         </tfoot>
@@ -63,26 +63,26 @@
     </div>
 
     <p class="form-hint" style="margin-top:var(--sp-4);">
-      Grille appliquée : <span class="mono">{{ quote.grid_reference or '—' }}</span>
-      {% if quote.client_account_id %}(grille client){% else %}(grille de la route){% endif %}
-      · {{ quote.palettes_total }} palette(s)
+      {{ t('devis_grid_applied', lang) }} <span class="mono">{{ quote.grid_reference or '—' }}</span>
+      {% if quote.client_account_id %}{{ t('devis_grid_client', lang) }}{% else %}{{ t('devis_grid_route', lang) }}{% endif %}
+      · {{ quote.palettes_total }} {{ t('devis_palettes', lang) }}
       {% if quote.tonnage_t %} · {{ quote.tonnage_t|round(2) }} t{% endif %}
       {% if quote.hazardous %} · IMDG{% endif %}<br />
-      Transport maritime international exonéré de TVA (art. 262 II CGI) — montants nets.<br />
-      Devis indicatif, hors droits et frais locaux, valable jusqu'au
+      {{ t('devis_vat_note', lang) }}<br />
+      {{ t('devis_valid_until_pre', lang) }}
       <strong>{{ quote.valid_until|date if quote.valid_until else '—' }}</strong>.
-      La capacité est confirmée par notre équipe à la réservation.
+      {{ t('devis_capacity_note', lang) }}
     </p>
 
     <div style="display:flex;gap:var(--sp-3);flex-wrap:wrap;margin-top:var(--sp-5);">
-      <a class="btn btn-primary" href="/devis/{{ quote.reference }}.pdf">Télécharger le PDF</a>
+      <a class="btn btn-primary" href="/devis/{{ quote.reference }}.pdf">{{ t('devis_download_pdf', lang) }}</a>
       {% if leg %}
-      <a class="btn btn-secondary" href="/booking/new/{{ leg.leg_code }}?quote={{ quote.reference }}">Réserver cette traversée</a>
+      <a class="btn btn-secondary" href="/booking/new/{{ leg.leg_code }}?quote={{ quote.reference }}">{{ t('devis_book_crossing', lang) }}</a>
       {% else %}
-      <a class="btn btn-secondary" href="/booking/new">Réserver</a>
+      <a class="btn btn-secondary" href="/booking/new">{{ t('devis_book', lang) }}</a>
       {% endif %}
-      <a class="btn btn-ghost" href="/contact">Parler à un commercial</a>
-      <a class="btn btn-ghost" href="/devis">Nouveau devis</a>
+      <a class="btn btn-ghost" href="/contact">{{ t('devis_talk_sales', lang) }}</a>
+      <a class="btn btn-ghost" href="/devis">{{ t('devis_new_quote', lang) }}</a>
     </div>
   </div>
 </section>
