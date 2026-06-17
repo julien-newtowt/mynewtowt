@@ -323,6 +323,13 @@ def require_permission(module: str, level: Level):
             )
         except Exception:
             request.state.notif_count = 0
+        # État du Newtowt Agent (toggle /admin) pour masquer le widget topbar.
+        try:
+            from app.services.feature_flags import newtowt_agent_enabled
+
+            request.state.newtowt_agent_enabled = await newtowt_agent_enabled(db)
+        except Exception:
+            request.state.newtowt_agent_enabled = True
         return user
 
     return _checker

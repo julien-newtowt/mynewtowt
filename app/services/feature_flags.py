@@ -12,11 +12,56 @@ Resolution rules (in order):
 from __future__ import annotations
 
 import hashlib
+import time
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.feature_flag import FeatureFlag
+
+# ─────────────────── Toggle global « Newtowt Agent » (chatbot Kairos AI) ──────
+# Activable / désactivable depuis /admin (Configuration). Stocké en FeatureFlag
+# (clé ``newtowt_agent``). Défaut = activé (le chatbot fonctionnait avant le
+# toggle). Lecture mise en cache (TTL court) pour éviter une requête DB sur
+# chaque page staff (le topbar l'affiche partout).
+NEWTOWT_AGENT_KEY = "newtowt_agent"
+_AGENT_CACHE_TTL_S = 30.0
+_agent_cache: dict[str, float | bool] = {"value": True, "exp": 0.0}
+
+
+async def newtowt_agent_enabled(db: AsyncSession, *, use_cache: bool = True) -> bool:
+    """État du « Newtowt Agent » (chatbot). Défaut activé si le flag est absent."""
+    now = time.monotonic()
+    if use_cache and now < float(_agent_cache["exp"]):
+        return bool(_agent_cache["value"])
+    flag = (
+        await db.execute(select(FeatureFlag).where(FeatureFlag.key == NEWTOWT_AGENT_KEY))
+    ).scalar_one_or_none()
+    value = True if flag is None else bool(flag.enabled)
+    _agent_cache["value"] = value
+    _agent_cache["exp"] = now + _AGENT_CACHE_TTL_S
+    return value
+
+
+async def set_newtowt_agent(db: AsyncSession, enabled: bool, *, user_id: int | None = None) -> None:
+    """Active / désactive le Newtowt Agent et invalide le cache."""
+    flag = (
+        await db.execute(select(FeatureFlag).where(FeatureFlag.key == NEWTOWT_AGENT_KEY))
+    ).scalar_one_or_none()
+    if flag is None:
+        flag = FeatureFlag(
+            key=NEWTOWT_AGENT_KEY,
+            enabled=enabled,
+            description="Chatbot Kairos AI (Newtowt Agent) — widget topbar + page /chat.",
+            updated_by_id=user_id,
+        )
+        db.add(flag)
+    else:
+        flag.enabled = enabled
+        flag.updated_by_id = user_id
+    await db.flush()
+    _agent_cache["value"] = enabled
+    _agent_cache["exp"] = time.monotonic() + _AGENT_CACHE_TTL_S
 
 
 def _bucket(identifier: str, flag_key: str) -> int:
