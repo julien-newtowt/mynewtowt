@@ -20,10 +20,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("crew_members", sa.Column("marad_id", sa.Integer(), nullable=True))
+    # Marad expose des identifiants GUID (ex. "3fa85f64-5717-4562-b3fc-2c963f66afa6").
+    op.add_column("crew_members", sa.Column("marad_id", sa.String(length=36), nullable=True))
     op.create_index("ix_crew_members_marad_id", "crew_members", ["marad_id"], unique=True)
     op.add_column(
-        "crew_certifications", sa.Column("marad_document_id", sa.Integer(), nullable=True)
+        "crew_certifications", sa.Column("marad_document_id", sa.String(length=36), nullable=True)
     )
     op.create_index(
         "ix_crew_certifications_marad_document_id",

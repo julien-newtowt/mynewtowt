@@ -48,7 +48,8 @@ class CrewMember(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Clé externe de réconciliation pour l'import LECTURE SEULE depuis Marad
     # (cf. docs/integrations/marad-crew-readonly.md). NULL = saisi dans l'ERP.
-    marad_id: Mapped[int | None] = mapped_column(Integer, unique=True, index=True)
+    # Marad expose un GUID (ex. "3fa85f64-5717-4562-b3fc-2c963f66afa6").
+    marad_id: Mapped[str | None] = mapped_column(String(36), unique=True, index=True)
 
 
 class CrewAssignment(Base):
@@ -80,8 +81,8 @@ class CrewCertification(Base):
     issued_at: Mapped[_date | None] = mapped_column(Date)
     expires_at: Mapped[_date | None] = mapped_column(Date)
     document_url: Mapped[str | None] = mapped_column(String(500))
-    # Clé externe de réconciliation pour l'import LECTURE SEULE depuis Marad.
-    marad_document_id: Mapped[int | None] = mapped_column(Integer, unique=True, index=True)
+    # Clé externe de réconciliation pour l'import LECTURE SEULE depuis Marad (GUID).
+    marad_document_id: Mapped[str | None] = mapped_column(String(36), unique=True, index=True)
 
 
 class CrewLeave(Base):

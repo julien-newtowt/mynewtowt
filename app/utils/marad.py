@@ -15,9 +15,10 @@ Configuration (.env, cf. app/config) :
 ``GET /api/CrewingSchedule`` = **1 req/min** ; autres = 15 req/min. À appeler
 depuis un cron périodique (pas à la volée).
 
-NOTE : les schémas JSON réels de Marad ne sont pas encore confirmés ; les
-fonctions haut niveau renvoient le JSON brut (le mapping de champs est finalisé
-par ``services.marad_sync`` une fois un échantillon réel obtenu).
+NOTE : le schéma de ``GET /api/Crewing`` est **confirmé** (échantillon éditeur
+2026-06-17, mappé dans ``services.marad_sync``). Les autres schémas (documents,
+schedules) restent à confirmer ; les fonctions haut niveau renvoient le JSON
+brut.
 """
 
 from __future__ import annotations

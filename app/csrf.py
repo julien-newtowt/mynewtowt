@@ -58,6 +58,7 @@ EXEMPT_PATHS_PREFIXES = (
     "/api/veille/",  # Power Automate veille refresh — auth via X-API-Token
     "/api/weather/",  # Power Automate météo snapshot 30 min — auth via X-API-Token
     "/api/tickets/",  # Power Automate escalade SLA — auth via X-API-Token
+    "/api/marad/",  # Power Automate sync crew Marad (read-only) — auth via X-API-Token
     "/health",
     "/metrics",
 )
