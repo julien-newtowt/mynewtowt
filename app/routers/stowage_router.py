@@ -6,11 +6,13 @@ Algorithme de suggestion : services.stowage.suggest_assignments.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -41,6 +43,8 @@ from app.services.stowage import (
 )
 from app.services.stowage_specs import get_specs
 from app.templating import templates
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stowage", tags=["stowage"])
 
@@ -92,18 +96,33 @@ async def stowage_plan_view(
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
-    plan = (
-        await db.execute(
-            select(StowagePlan)
-            .options(selectinload(StowagePlan.items))
-            .where(StowagePlan.leg_id == leg_id)
+    # Renforcement : selectinload(StowagePlan.items) lit les colonnes packing-list
+    # de stowage_items ajoutées par la migration 0037. Si elle n'est pas appliquée,
+    # le SELECT échoue (500). On dégrade alors vers le plan seul + items vides
+    # (savepoint isolé), comme stowage_specs.get_specs / _vessel_class_for_leg.
+    try:
+        async with db.begin_nested():
+            plan = (
+                await db.execute(
+                    select(StowagePlan)
+                    .options(selectinload(StowagePlan.items))
+                    .where(StowagePlan.leg_id == leg_id)
+                )
+            ).scalar_one_or_none()
+        items = list(plan.items) if (plan is not None and plan.items is not None) else []
+    except (ProgrammingError, OperationalError):
+        logger.warning(
+            "stowage_items (colonnes 0037) indisponible — plan affiché sans item "
+            "(migration 0037 non appliquée ?)"
         )
-    ).scalar_one_or_none()
+        plan = (
+            await db.execute(select(StowagePlan).where(StowagePlan.leg_id == leg_id))
+        ).scalar_one_or_none()
+        items = []
     if plan is None:
         plan = StowagePlan(leg_id=leg_id, status="draft")
         db.add(plan)
         await db.flush()
-    items = plan.items if plan.items is not None else []
     usage = zone_usage_summary(
         [
             {"zone": it.zone, "pallet_format": it.pallet_format, "pallet_count": it.pallet_count}
