@@ -40,7 +40,10 @@ from app.templating import templates
 
 logger = logging.getLogger("weather")
 
-router = APIRouter(prefix="/navigation", tags=["navigation"])
+# NB : préfixe ``/performance/navigation`` et non ``/navigation`` — ce dernier
+# est déjà pris par la page vitrine publique (vitrine_router : marketing
+# courants/propulsion vélique). On évite ainsi la collision de route.
+router = APIRouter(prefix="/performance/navigation", tags=["navigation"])
 api_router = APIRouter(prefix="/api/weather", tags=["weather-api"])
 
 
@@ -154,7 +157,7 @@ async def weather_refresh_manual(
         entity_id=None,
         detail=f"manual snapshot — {result.get('saved', 0)} historisé(s)",
     )
-    target = request.headers.get("referer") or "/navigation"
+    target = request.headers.get("referer") or "/performance/navigation"
     if request.headers.get("hx-request"):
         from fastapi.responses import Response
 

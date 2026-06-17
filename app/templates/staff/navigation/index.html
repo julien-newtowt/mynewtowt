@@ -19,7 +19,7 @@
   durée depuis le départ, distance restante et météo le long de la trace.
 </p>
 
-{{ leg_filter(leg_filter_ctx, "/navigation") }}
+{{ leg_filter(leg_filter_ctx, "/performance/navigation") }}
 
 {% if not selected_leg %}
 <article class="card">
@@ -81,7 +81,7 @@
        style="width:100%; height:560px; background:var(--sable-light); position:relative;"
        data-maptiler-token="{{ maptiler_token }}"
        data-points='{{ points|tojson }}'
-       data-weather-url="/navigation/legs/{{ selected_leg.id }}/weather"
+       data-weather-url="/performance/navigation/legs/{{ selected_leg.id }}/weather"
        {% if dep_port and dep_port.latitude is not none and dep_port.longitude is not none %}
        data-dep='{{ {"lat": dep_port.latitude, "lon": dep_port.longitude, "name": dep_port.name, "locode": dep_port.locode}|tojson }}'
        {% endif %}
@@ -105,7 +105,7 @@
     <div class="flex items-center gap-2" style="gap:8px;">
       <span id="weather-status" class="pill" data-state="idle">En attente…</span>
       {% if user.role in ['administrateur', 'operation', 'armement', 'manager_maritime'] %}
-      <form method="post" action="/navigation/weather/refresh" style="display:inline;">
+      <form method="post" action="/performance/navigation/weather/refresh" style="display:inline;">
         <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
         <button type="submit" class="btn btn-xs btn-secondary" title="Historiser maintenant la météo du dernier point GPS">
           <i data-lucide="refresh-cw"></i> Snapshot

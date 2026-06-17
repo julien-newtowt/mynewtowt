@@ -4,7 +4,7 @@
 > **météo historisée**. Audience : staff NEWTOWT / ops déploiement.
 >
 > Couvre : la page **Tracking** (`/tracking`, historique des trajets), la page
-> **Performance › Navigation** (`/navigation`) et le **snapshot météo** Windy
+> **Performance › Navigation** (`/performance/navigation`) et le **snapshot météo** Windy
 > (`POST /api/weather/refresh`, cron Power Automate toutes les 30 min).
 
 ## 1. Vue d'ensemble
@@ -12,10 +12,10 @@
 | Élément | Détail |
 |---|---|
 | Page tracking | `/tracking` — positions live + toggle « historique des trajets » (filtre navire × leg × période, trait reliant les points) |
-| Page navigation | `/navigation` — par leg : carte points GPS + route théorique, distance réelle vs théorique, durée, distance restante, météo le long du trajet |
+| Page navigation | `/performance/navigation` — par leg : carte points GPS + route théorique, distance réelle vs théorique, durée, distance restante, météo le long du trajet |
 | Ingestion positions | `POST /api/tracking/upload` (header `X-API-Token`, cf. runbook tracking satcom) → table `vessel_positions` |
 | Endpoint cron météo | `POST /api/weather/refresh` (header `X-API-Token: <WEATHER_API_TOKEN>`) |
-| Snapshot manuel | bouton « Snapshot » sur `/navigation` (permission `planning` M) |
+| Snapshot manuel | bouton « Snapshot » sur `/performance/navigation` (permission `planning` M) |
 | Module RBAC | `planning` — Consult pour voir, Modify pour déclencher un snapshot manuel |
 | Fournisseur météo | [Windy Point Forecast](https://api.windy.com/) (si `WINDY_API_KEY`) ; **repli Open-Meteo** sinon (gratuit) |
 | Tables | `vessel_positions` (positions satcom) · `vessel_weather` (relevés météo historisés) |
@@ -123,7 +123,7 @@ du point fraîchement reçu sans attendre le prochain tick de 30 min.
   choisir un navire/leg (filtre de référence) **ou** une période (dates du/au).
   La carte trace tous les points reliés par un trait = parcours réellement
   réalisé. Clic sur un point → date/SOG/COG.
-- **Navigation** (`/navigation`) : sélectionner un leg (actif ou historique).
+- **Navigation** (`/performance/navigation`) : sélectionner un leg (actif ou historique).
   La page affiche distance réelle vs théorique, durée depuis le départ, distance
   restante, et les relevés météo historisés le long de la trace (clic = détail
   vent/courant/vague/température). Bouton « Snapshot » pour forcer un relevé.
