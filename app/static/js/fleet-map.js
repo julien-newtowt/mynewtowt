@@ -83,6 +83,16 @@
           .addTo(map);
       });
 
+      // Zoom automatique sur les navires positionnés (au lieu du plan monde).
+      if (withPos.length === 1) {
+        map.jumpTo({ center: [withPos[0].lon, withPos[0].lat], zoom: 5 });
+      } else if (withPos.length > 1) {
+        var b = new window.maplibregl.LngLatBounds(
+          [withPos[0].lon, withPos[0].lat], [withPos[0].lon, withPos[0].lat]);
+        withPos.forEach(function (v) { b.extend([v.lon, v.lat]); });
+        map.fitBounds(b, { padding: 60, maxZoom: 6, duration: 500 });
+      }
+
       if (!withPos.length) {
         var note = document.createElement("div");
         note.style.cssText = (

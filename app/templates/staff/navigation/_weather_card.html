@@ -1,0 +1,122 @@
+{#
+  Carte « conditions actuelles » d'un navire — blocs visuels.
+
+  Reçoit ``e`` : dict construit par navigation_router._fleet_weather_entry
+  (vessel_name/code, recorded_at, wind_kn/dir/compass, beaufort(_label),
+  current_*, wave_*, temp_c, pressure_hpa, visibility_km, humidity_pct,
+  cloud_cover_pct).
+
+  CSP-safe : SVG inline (pas de script), styles via classes .wx-* (kairos.css
+  + bloc <style> de la page). Pas de <script> inline.
+#}
+{% macro weather_card(e) %}
+{% set gust = (e.wind_kn if e.wind_kn is not none else 0) %}
+{% set gauge = (-90 + (([gust, 45]|min) / 45.0 * 180)) %}
+<article class="wx-card">
+  <header class="wx-card-head">
+    <div>
+      <strong class="mono">{{ e.vessel_code }}</strong> {{ e.vessel_name }}
+    </div>
+    <span class="wx-time" title="Dernier relevé historisé">
+      <i data-lucide="clock"></i>
+      {{ e.recorded_at|datetime("%d/%m %H:%M") if e.recorded_at else "—" }}
+    </span>
+  </header>
+
+  <div class="wx-gauges">
+    {# ── Rose des vents ── #}
+    <div class="wx-gauge">
+      <svg viewBox="0 0 120 120" width="120" height="120" role="img"
+           aria-label="Rose des vents">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#E2DCCB" stroke-width="2"/>
+        <circle cx="60" cy="60" r="40" fill="none" stroke="#EFE6D6" stroke-width="1"/>
+        {% for ang in range(0, 360, 30) %}
+        <line x1="60" y1="10" x2="60" y2="16"
+              transform="rotate({{ ang }} 60 60)" stroke="#B9B09A" stroke-width="1.5"/>
+        {% endfor %}
+        <text x="60" y="22" text-anchor="middle" class="wx-rose-card">N</text>
+        <text x="104" y="64" text-anchor="middle" class="wx-rose-card">E</text>
+        <text x="60" y="112" text-anchor="middle" class="wx-rose-card">S</text>
+        <text x="16" y="64" text-anchor="middle" class="wx-rose-card">O</text>
+        {% if e.wind_dir is not none %}
+        {# Flèche météo : pointe vers la direction D'OÙ vient le vent. #}
+        <g transform="rotate({{ e.wind_dir }} 60 60)">
+          <polygon points="60,14 53,40 60,34 67,40" fill="#0D5966"/>
+          <line x1="60" y1="34" x2="60" y2="92" stroke="#0D5966" stroke-width="3"/>
+        </g>
+        {% endif %}
+        <circle cx="60" cy="60" r="4" fill="#0D5966"/>
+      </svg>
+      <div class="wx-gauge-label">
+        Vent {{ e.wind_compass or "" }}
+        {% if e.wind_dir is not none %}<span class="text-muted">({{ "%.0f"|format(e.wind_dir) }}°)</span>{% endif %}
+      </div>
+    </div>
+
+    {# ── Anémomètre (jauge semi-circulaire 0–45 kn) ── #}
+    <div class="wx-gauge">
+      <svg viewBox="0 0 120 80" width="120" height="80" role="img" aria-label="Anémomètre">
+        <path d="M12 70 A48 48 0 0 1 108 70" fill="none" stroke="#E2DCCB" stroke-width="8"
+              stroke-linecap="round"/>
+        <path d="M12 70 A48 48 0 0 1 108 70" fill="none" stroke="#87BD29" stroke-width="8"
+              stroke-linecap="round" stroke-dasharray="150.8"
+              stroke-dashoffset="{{ 150.8 - (([gust, 45]|min) / 45.0 * 150.8) }}"/>
+        <g transform="rotate({{ gauge }} 60 70)">
+          <line x1="60" y1="70" x2="60" y2="30" stroke="#0D5966" stroke-width="3"/>
+        </g>
+        <circle cx="60" cy="70" r="4" fill="#0D5966"/>
+      </svg>
+      <div class="wx-gauge-label">
+        <strong class="wx-big">{{ "%.0f"|format(e.wind_kn) if e.wind_kn is not none else "—" }}</strong> kn
+        {% if e.beaufort is not none %}
+        <span class="badge" title="{{ e.beaufort_label }}">F{{ e.beaufort }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Tuiles conditions ── #}
+  <div class="wx-tiles">
+    <div class="wx-tile">
+      <i data-lucide="thermometer"></i>
+      <span class="wx-v">{{ "%.1f °C"|format(e.temp_c) if e.temp_c is not none else "—" }}</span>
+      <span class="wx-k">Température</span>
+    </div>
+    <div class="wx-tile">
+      <i data-lucide="gauge"></i>
+      <span class="wx-v">{{ "%.0f hPa"|format(e.pressure_hpa) if e.pressure_hpa is not none else "—" }}</span>
+      <span class="wx-k">Pression</span>
+    </div>
+    <div class="wx-tile">
+      <i data-lucide="eye"></i>
+      <span class="wx-v">{{ "%.0f km"|format(e.visibility_km) if e.visibility_km is not none else "—" }}</span>
+      <span class="wx-k">Visibilité</span>
+    </div>
+    <div class="wx-tile">
+      <i data-lucide="droplets"></i>
+      <span class="wx-v">{{ "%.0f %%"|format(e.humidity_pct) if e.humidity_pct is not none else "—" }}</span>
+      <span class="wx-k">Humidité</span>
+    </div>
+    <div class="wx-tile">
+      <i data-lucide="cloud"></i>
+      <span class="wx-v">{{ "%.0f %%"|format(e.cloud_cover_pct) if e.cloud_cover_pct is not none else "—" }}</span>
+      <span class="wx-k">Nébulosité</span>
+    </div>
+    <div class="wx-tile">
+      <i data-lucide="waves"></i>
+      <span class="wx-v">{{ "%.1f m"|format(e.wave_m) if e.wave_m is not none else "—" }}</span>
+      <span class="wx-k">Houle{% if e.wave_period_s is not none %} · {{ "%.0f s"|format(e.wave_period_s) }}{% endif %}</span>
+    </div>
+    <div class="wx-tile">
+      <i data-lucide="navigation-2"></i>
+      <span class="wx-v">{{ "%.1f kn"|format(e.current_kn) if e.current_kn is not none else "—" }}</span>
+      <span class="wx-k">Courant {{ e.current_compass or "" }}</span>
+    </div>
+    <div class="wx-tile">
+      <i data-lucide="map-pin"></i>
+      <span class="wx-v mono">{{ "%.2f, %.2f"|format(e.lat, e.lon) }}</span>
+      <span class="wx-k">Position</span>
+    </div>
+  </div>
+</article>
+{% endmacro %}

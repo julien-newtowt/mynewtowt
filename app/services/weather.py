@@ -37,6 +37,11 @@ class WeatherPoint:
     temperature_c: float | None = None
     current_speed_kn: float | None = None
     current_direction_deg: float | None = None
+    # V3.9 — bloc « conditions actuelles » par navire (page Navigation).
+    pressure_hpa: float | None = None
+    visibility_km: float | None = None
+    humidity_pct: float | None = None
+    cloud_cover_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -71,7 +76,10 @@ async def _fetch_open_meteo(lat: float, lon: float, hours: int) -> WeatherForeca
     params_wind = {
         "latitude": lat,
         "longitude": lon,
-        "hourly": "wind_speed_10m,wind_direction_10m,temperature_2m",
+        "hourly": (
+            "wind_speed_10m,wind_direction_10m,temperature_2m,"
+            "surface_pressure,visibility,relative_humidity_2m,cloud_cover"
+        ),
         "wind_speed_unit": "kn",
         "forecast_hours": hours,
     }
@@ -108,6 +116,10 @@ async def _fetch_open_meteo(lat: float, lon: float, hours: int) -> WeatherForeca
             temperature_c=_safe(wind.get("temperature_2m"), i),
             current_speed_kn=_kmh_to_kn(_safe(marine.get("ocean_current_velocity"), i)),
             current_direction_deg=_safe(marine.get("ocean_current_direction"), i),
+            pressure_hpa=_safe(wind.get("surface_pressure"), i),
+            visibility_km=_m_to_km(_safe(wind.get("visibility"), i)),
+            humidity_pct=_safe(wind.get("relative_humidity_2m"), i),
+            cloud_cover_pct=_safe(wind.get("cloud_cover"), i),
         )
         for i, t in enumerate(times)
     ]
@@ -121,7 +133,7 @@ async def _fetch_windy(lat: float, lon: float, hours: int) -> WeatherForecast | 
         "lat": lat,
         "lon": lon,
         "model": "gfs",
-        "parameters": ["wind", "waves", "temp"],
+        "parameters": ["wind", "waves", "temp", "pressure"],
         "levels": ["surface"],
         "key": settings.windy_api_key,
     }
@@ -141,6 +153,7 @@ async def _fetch_windy(lat: float, lon: float, hours: int) -> WeatherForecast | 
     waves_d = data.get("waves_direction-surface", [])
     waves_p = data.get("waves_period-surface", [])
     temp_k = data.get("temp-surface", [])
+    press_pa = data.get("pressure-surface", [])
     points: list[WeatherPoint] = []
     for i, t in enumerate(times[:hours]):
         u = _safe(wind_u, i) or 0.0
@@ -150,6 +163,7 @@ async def _fetch_windy(lat: float, lon: float, hours: int) -> WeatherForecast | 
         dir_deg = (math.degrees(math.atan2(-u, -v)) + 360) % 360
         iso = _dt.datetime.utcfromtimestamp(t / 1000).isoformat() + "Z"
         tk = _safe(temp_k, i)
+        pa = _safe(press_pa, i)
         points.append(
             WeatherPoint(
                 time=iso,
@@ -158,9 +172,11 @@ async def _fetch_windy(lat: float, lon: float, hours: int) -> WeatherForecast | 
                 wave_height_m=_safe(waves_h, i),
                 wave_direction_deg=_safe(waves_d, i),
                 wave_period_s=_safe(waves_p, i),
-                # Windy renvoie la température en Kelvin. Courant non fourni par
-                # le modèle GFS → complété via Open-Meteo (fetch_point_conditions).
+                # Windy : température en Kelvin, pression en Pa. Courant /
+                # visibilité non fournis par GFS → complétés via Open-Meteo
+                # (fetch_point_conditions).
                 temperature_c=round(tk - 273.15, 1) if tk is not None else None,
+                pressure_hpa=round(pa / 100.0, 1) if pa is not None else None,
             )
         )
     return WeatherForecast(latitude=lat, longitude=lon, provider="windy", points=points)
@@ -176,6 +192,11 @@ def _safe(arr, i):
 def _kmh_to_kn(v: float | None) -> float | None:
     """km/h → nœuds (Open-Meteo donne les courants océaniques en km/h)."""
     return round(v * 0.539957, 2) if v is not None else None
+
+
+def _m_to_km(v: float | None) -> float | None:
+    """mètres → km (Open-Meteo donne la visibilité en mètres)."""
+    return round(v / 1000.0, 1) if v is not None else None
 
 
 def _nearest_point(points: list[WeatherPoint], when) -> WeatherPoint | None:
@@ -252,6 +273,10 @@ def _merge_points(primary: WeatherPoint, fallback: WeatherPoint | None) -> Weath
             "temperature_c",
             "current_speed_kn",
             "current_direction_deg",
+            "pressure_hpa",
+            "visibility_km",
+            "humidity_pct",
+            "cloud_cover_pct",
         )
         if getattr(primary, field) is None and getattr(fallback, field) is not None
     }
@@ -274,10 +299,17 @@ async def _fetch_open_meteo_range(
     **valide au moment** d'un point GPS historique (et pas une prévision future).
     """
     wind_url = OPEN_METEO_ARCHIVE_URL if archive else OPEN_METEO_FORECAST_URL
+    hourly_vars = (
+        "wind_speed_10m,wind_direction_10m,temperature_2m,"
+        "surface_pressure,relative_humidity_2m,cloud_cover"
+    )
+    # ``visibility`` existe sur l'endpoint forecast mais pas sur l'archive ERA5.
+    if not archive:
+        hourly_vars += ",visibility"
     params_wind = {
         "latitude": lat,
         "longitude": lon,
-        "hourly": "wind_speed_10m,wind_direction_10m,temperature_2m",
+        "hourly": hourly_vars,
         "wind_speed_unit": "kn",
         "start_date": start_date,
         "end_date": end_date,
@@ -321,6 +353,10 @@ async def _fetch_open_meteo_range(
             temperature_c=_safe(wind.get("temperature_2m"), i),
             current_speed_kn=_kmh_to_kn(_safe(marine.get("ocean_current_velocity"), i)),
             current_direction_deg=_safe(marine.get("ocean_current_direction"), i),
+            pressure_hpa=_safe(wind.get("surface_pressure"), i),
+            visibility_km=_m_to_km(_safe(wind.get("visibility"), i)),
+            humidity_pct=_safe(wind.get("relative_humidity_2m"), i),
+            cloud_cover_pct=_safe(wind.get("cloud_cover"), i),
         )
         for i, t in enumerate(times)
     ]
@@ -380,6 +416,38 @@ def summarize(point: WeatherPoint | None) -> str:
     if point.wave_height_m is not None:
         parts.append(f"houle {point.wave_height_m:.1f} m")
     return " · ".join(parts) if parts else "—"
+
+
+def compass(deg: float | None) -> str:
+    """Rose 16 directions publique (None → '')."""
+    return _compass(deg) if deg is not None else ""
+
+
+# Échelle de Beaufort (force, libellé FR) par seuil de vent en nœuds.
+_BEAUFORT = (
+    (1, "Calme"),
+    (3, "Très légère brise"),
+    (6, "Légère brise"),
+    (10, "Petite brise"),
+    (16, "Jolie brise"),
+    (21, "Bonne brise"),
+    (27, "Vent frais"),
+    (33, "Grand frais"),
+    (40, "Coup de vent"),
+    (47, "Fort coup de vent"),
+    (55, "Tempête"),
+    (63, "Violente tempête"),
+)
+
+
+def beaufort(kn: float | None) -> tuple[int, str] | None:
+    """(force Beaufort 0-12, libellé FR) à partir du vent en nœuds."""
+    if kn is None:
+        return None
+    for force, (upper, label) in enumerate(_BEAUFORT):
+        if kn < upper:
+            return force, label
+    return 12, "Ouragan"
 
 
 def _compass(deg: float) -> str:

@@ -29,7 +29,20 @@ def _fake_point(lat, lon, when):
         temperature_c=14.5,
         current_speed_kn=0.7,
         current_direction_deg=200.0,
+        pressure_hpa=1013.0,
+        visibility_km=24.0,
+        humidity_pct=72.0,
+        cloud_cover_pct=40.0,
     )
+
+
+def test_beaufort_scale() -> None:
+    assert wx.beaufort(None) is None
+    assert wx.beaufort(0)[0] == 0
+    assert wx.beaufort(22)[0] == 6  # vent frais
+    assert wx.beaufort(70)[0] == 12  # ouragan
+    assert wx.compass(315) == "NW"
+    assert wx.compass(None) == ""
 
 
 def test_snapshot_latest_is_idempotent(monkeypatch) -> None:
@@ -74,6 +87,9 @@ def test_snapshot_latest_is_idempotent(monkeypatch) -> None:
                 assert o.wind_speed_kn == 18.0
                 assert o.temperature_c == 14.5
                 assert o.current_speed_kn == 0.7
+                assert o.pressure_hpa == 1013.0
+                assert o.visibility_km == 24.0
+                assert o.humidity_pct == 72.0
 
                 # 2e passage sans nouveau point → rien de sauvé (idempotent)
                 r2 = await wh.snapshot_latest(s)
