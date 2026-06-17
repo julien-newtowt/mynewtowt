@@ -309,4 +309,13 @@ CATALOG: dict[str, str] = {
     "rd_eco_need_coords": "Se necesitan las coordenadas de los puertos para calcular las emisiones.",
     "rd_eco_note": "Las emisiones se expresan en kg de CO₂ por tonelada de mercancía para la travesía completa. Factores NEWTOWT: 1,5 g CO₂/t.km (propulsión vélica). Referencia convencional: 13,7 g CO₂/t.km (GLEC Framework v3). Estos valores son indicativos — el certificado Anemos nominal se emite automáticamente tras la entrega según el tonelaje real.",
     "rd_eco_more_link": "Más información sobre el Sello Anemos →",
+    # Posición de la flota (seguimiento público en vivo)
+    "fleet_pos_kicker": "Seguimiento en tiempo real",
+    "fleet_pos_title": "¿Dónde está la flota NEWTOWT?",
+    "fleet_pos_lead": "Cada buque reporta su posición por satélite. El mapa muestra la última posición conocida de cada velero de carga en actividad de nuestra flota.",
+    "fleet_pos_map_none": "Aún no hay posición registrada.",
+    "fleet_pos_map_none_detail": "Las posiciones de los buques llegan por satélite.",
+    "fleet_pos_position": "Posición",
+    "fleet_pos_updated": "Actualizado",
+    "fleet_pos_none_vessel": "Aún no hay posición reportada.",
 }
