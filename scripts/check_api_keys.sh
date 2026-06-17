@@ -113,6 +113,8 @@ FEATURES=(
   "NEWSDATA_API_KEY|/veille affiche « non configuré »"
   "ANTHROPIC_API_KEY|chatbot Kairos AI désactivé"
   "PIPEDRIVE_API_TOKEN|synchro CRM leads désactivée"
+  "MARAD_API_TOKEN|connexion Marad désactivée (crew + plannings) → /crew sans bouton sync"
+  "MARAD_SYNC_TOKEN|POST /api/marad/refresh → 503 (cron sync crew/plannings Marad)"
 )
 head_ "Intégrations (optionnelles)"
 for entry in "${FEATURES[@]}"; do

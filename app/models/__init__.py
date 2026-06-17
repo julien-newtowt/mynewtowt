@@ -29,6 +29,7 @@ from app.models.crew import (
     CrewCertification,
     CrewLeave,
     CrewMember,
+    MaradCrewSchedule,
 )
 from app.models.crew_ticket import CrewTicket
 from app.models.escale import DockerShift, EscaleOperation
@@ -113,6 +114,7 @@ __all__ = [
     "Leg",
     "LegFinance",
     "LegKPI",
+    "MaradCrewSchedule",
     "MRVEvent",
     "MRVParameter",
     "MfaRecoveryCode",

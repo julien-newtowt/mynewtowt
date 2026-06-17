@@ -121,6 +121,16 @@ async def list_crew(modified_since: str | None = None) -> Any | None:
     return await _get("/api/Crewing", params=params)
 
 
+async def list_schedules(modified_since: str | None = None) -> Any | None:
+    """GET /api/CrewingSchedule (1 req/min). Plannings d'embarquement.
+
+    Chez Marad, un « voyage » correspond à notre ``leg``. ``modified_since`` :
+    filtre delta éventuel (format ❓ à confirmer).
+    """
+    params = {"modifiedDate": modified_since} if modified_since else None
+    return await _get("/api/CrewingSchedule", params=params)
+
+
 async def list_ranks() -> Any | None:
     return await _get("/api/ranks/getranks")
 

@@ -104,3 +104,41 @@ class CrewLeave(Base):
     decided_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MaradCrewSchedule(Base):
+    """Miroir LECTURE SEULE des plannings d'embarquement Marad (CrewingSchedule).
+
+    Importé depuis Marad (`GET /api/CrewingSchedule`). On ne crée **pas**
+    automatiquement de `CrewAssignment` (dont le `leg_id` est une FK obligatoire) :
+    on stocke le planning Marad tel quel, à titre indicatif.
+
+    Chez Marad, **un « voyage » correspond à notre `leg`** : on conserve donc la
+    référence du voyage (`marad_voyage_ref`) et on tente de la réconcilier avec
+    un `leg` interne via `leg_code` (`leg_id` renseigné si la correspondance est
+    trouvée, sinon NULL → rattachement manuel possible côté ERP).
+    cf. docs/integrations/marad-crew-readonly.md §3.3.
+    """
+
+    __tablename__ = "marad_crew_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Clé d'idempotence : id du schedule côté Marad (GUID).
+    marad_schedule_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    # Marin local résolu via CrewMember.marad_id (NULL si pas encore synchronisé).
+    crew_member_id: Mapped[int | None] = mapped_column(ForeignKey("crew_members.id"), index=True)
+    # GUID du marin côté Marad (conservé pour re-résoudre après un sync crew ultérieur).
+    marad_crew_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    # Navire local résolu via MARAD_VESSEL_MAP (NULL si non mappé).
+    vessel_id: Mapped[int | None] = mapped_column(ForeignKey("vessels.id"))
+    marad_vessel_name: Mapped[str | None] = mapped_column(String(120))
+    # « Voyage » Marad = notre leg. Référence brute + leg interne réconcilié.
+    marad_voyage_ref: Mapped[str | None] = mapped_column(String(80), index=True)
+    leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"), index=True)
+    rank_label: Mapped[str | None] = mapped_column(String(80))
+    start_date: Mapped[_date | None] = mapped_column(Date)
+    end_date: Mapped[_date | None] = mapped_column(Date)
+    status: Mapped[str | None] = mapped_column(String(40))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

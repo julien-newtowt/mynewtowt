@@ -29,7 +29,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.crew import CrewMember
+from app.models.crew import CrewMember, MaradCrewSchedule
+from app.models.leg import Leg
 from app.utils import marad
 
 logger = logging.getLogger("marad")
@@ -194,3 +195,170 @@ async def sync_crew(db: AsyncSession) -> dict:
     }
     logger.info("Marad sync: %s", result)
     return result
+
+
+# ─────────────────── Plannings d'embarquement (CrewingSchedule) ───────────────────
+# Schéma /api/CrewingSchedule NON ENCORE confirmé → extraction défensive sur des
+# clés candidates (même approche que le crew avant confirmation). Le mapping
+# définitif sera figé dès qu'un échantillon réel sera fourni. Chez Marad, un
+# « voyage » = notre `leg` (réconcilié via leg_code).
+
+_SCHED_ID_KEYS = ("id", "scheduleId", "crewingScheduleId")
+_SCHED_CREW_KEYS = ("crewMemberId", "crewId", "personId", "seafarerId", "crewMemberGuid")
+_SCHED_VESSEL_ID_KEYS = ("vesselId", "shipId", "vesselGuid")
+_SCHED_VESSEL_NAME_KEYS = ("vesselName", "shipName")
+_SCHED_VOYAGE_KEYS = (
+    "voyage",
+    "voyageNo",
+    "voyageNumber",
+    "voyageRef",
+    "voyageName",
+    "voyageCode",
+    "legCode",
+    "tripCode",
+)
+_SCHED_RANK_KEYS = ("rankName", "rank", "position", "rankLabel", "function")
+_SCHED_START_KEYS = ("startDate", "signOnDate", "embarkDate", "fromDate", "dateFrom", "plannedSignOn")
+_SCHED_END_KEYS = ("endDate", "signOffDate", "disembarkDate", "toDate", "dateTo", "plannedSignOff")
+_SCHED_STATUS_KEYS = ("status", "state", "scheduleStatus")
+
+
+def _pick(rec: dict, keys: tuple[str, ...]) -> str | None:
+    """1re valeur exploitable parmi plusieurs clés candidates (placeholders ignorés)."""
+    for k in keys:
+        c = _clean(rec.get(k))
+        if c:
+            return c
+    return None
+
+
+def _parse_date(val: str | None) -> date | None:
+    if not val:
+        return None
+    try:
+        return datetime.fromisoformat(val.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def _norm_code(code: str | None) -> str:
+    """Normalise un code de leg / référence voyage pour la réconciliation."""
+    return (code or "").strip().upper().replace(" ", "")
+
+
+async def sync_schedules(db: AsyncSession) -> dict:
+    """Upsert idempotent des plannings Marad dans ``marad_crew_schedules``.
+
+    Lecture seule côté Marad. Réconcilie :
+    - le marin via ``CrewMember.marad_id`` ;
+    - le navire via ``MARAD_VESSEL_MAP`` ;
+    - le **leg** via le « voyage » Marad ↔ ``leg_code``.
+    No-op propre si Marad n'est pas configuré.
+    """
+    if not marad.enabled():
+        return {
+            "configured": False,
+            "fetched": 0,
+            "created": 0,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "note": "MARAD_API_TOKEN non configuré — intégration inactive.",
+        }
+
+    payload = await marad.list_schedules()
+    records = _records(payload)
+
+    # Index de réconciliation (une seule requête chacun).
+    vmap = marad.vessel_map()  # {marad_vessel_id: vessel_id (str)}
+    crew_rows = (
+        await db.execute(
+            select(CrewMember.id, CrewMember.marad_id).where(CrewMember.marad_id.is_not(None))
+        )
+    ).all()
+    crew_by_marad = {marad_id: cid for cid, marad_id in crew_rows}
+    leg_rows = (await db.execute(select(Leg.id, Leg.leg_code))).all()
+    leg_by_code = {_norm_code(code): lid for lid, code in leg_rows if code}
+
+    created = updated = skipped = errors = 0
+    for rec in records:
+        sched_id = _pick(rec, _SCHED_ID_KEYS)
+        if not sched_id:
+            skipped += 1
+            continue
+        try:
+            crew_guid = _pick(rec, _SCHED_CREW_KEYS)
+            voyage_ref = _pick(rec, _SCHED_VOYAGE_KEYS)
+            marad_vessel_id = _pick(rec, _SCHED_VESSEL_ID_KEYS)
+            vessel_id = None
+            if marad_vessel_id and marad_vessel_id in vmap:
+                try:
+                    vessel_id = int(vmap[marad_vessel_id])
+                except ValueError:
+                    vessel_id = None
+            leg_id = leg_by_code.get(_norm_code(voyage_ref)) if voyage_ref else None
+            crew_member_id = crew_by_marad.get(crew_guid) if crew_guid else None
+
+            row = (
+                await db.execute(
+                    select(MaradCrewSchedule).where(
+                        MaradCrewSchedule.marad_schedule_id == sched_id
+                    )
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                row = MaradCrewSchedule(marad_schedule_id=sched_id)
+                db.add(row)
+                created += 1
+            else:
+                updated += 1
+            row.crew_member_id = crew_member_id
+            row.marad_crew_id = crew_guid
+            row.vessel_id = vessel_id
+            row.marad_vessel_name = _pick(rec, _SCHED_VESSEL_NAME_KEYS)
+            row.marad_voyage_ref = voyage_ref
+            row.leg_id = leg_id
+            row.rank_label = (_pick(rec, _SCHED_RANK_KEYS) or None)
+            if row.rank_label:
+                row.rank_label = row.rank_label[:80]
+            row.start_date = _parse_date(_pick(rec, _SCHED_START_KEYS))
+            row.end_date = _parse_date(_pick(rec, _SCHED_END_KEYS))
+            row.status = _pick(rec, _SCHED_STATUS_KEYS)
+        except Exception:  # un schedule fautif ne stoppe pas le batch
+            logger.exception("Marad schedules: échec sur le schedule %s", sched_id)
+            errors += 1
+
+    await db.flush()
+    result = {
+        "configured": True,
+        "fetched": len(records),
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors,
+        "note": "Sync read-only Marad → marad_crew_schedules (voyage↔leg, navire, marin).",
+    }
+    logger.info("Marad schedules sync: %s", result)
+    return result
+
+
+async def sync_all(db: AsyncSession) -> dict:
+    """Synchronise crew + plannings (CrewingSchedule) en un appel.
+
+    Utilisé par le bouton « Synchroniser Marad » (/crew) et le cron
+    ``POST /api/marad/refresh``. Renvoie un résumé à plat pour l'UI + le détail.
+    """
+    crew = await sync_crew(db)
+    sched = await sync_schedules(db)
+    return {
+        "configured": crew["configured"],
+        "crew_created": crew.get("created", 0),
+        "crew_updated": crew.get("updated", 0),
+        "crew_fetched": crew.get("fetched", 0),
+        "sched_created": sched.get("created", 0),
+        "sched_updated": sched.get("updated", 0),
+        "sched_fetched": sched.get("fetched", 0),
+        "errors": crew.get("errors", 0) + sched.get("errors", 0),
+        "crew": crew,
+        "schedules": sched,
+    }

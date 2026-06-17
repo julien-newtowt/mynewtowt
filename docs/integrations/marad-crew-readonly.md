@@ -1,14 +1,16 @@
 # Intégration Marad → mynewtowt (crew) — note de cadrage (LECTURE SEULE)
 
-> **Statut : upsert crew members IMPLÉMENTÉ (read-only côté Marad).** Le client
-> HTTP (`app/utils/marad.py`), le service de sync (`app/services/marad_sync.py`)
-> et le cron (`POST /api/marad/refresh`) sont en place. Le schéma de
-> `GET /api/Crewing` a été **confirmé** par un échantillon de l'éditeur
-> (2026-06-17) → le mapping des champs crew member est figé (cf. §3.1).
-> **Restent à brancher** : documents/certificats (`GetCrewMembersDocuments`),
-> schedules, et la confirmation du **nom du header d'auth**
-> (`MARAD_API_KEY_HEADER`, défaut `X-Api-Key`). **mynewtowt n'écrit jamais dans
-> Marad.**
+> **Statut : crew members + plannings IMPLÉMENTÉS (read-only côté Marad).** Le
+> client HTTP (`app/utils/marad.py`), le service de sync
+> (`app/services/marad_sync.py` : `sync_crew`, `sync_schedules`, `sync_all`), le
+> cron (`POST /api/marad/refresh`) et le **bouton « Synchroniser Marad »** sur
+> `/crew` sont en place. Le schéma de `GET /api/Crewing` est **confirmé** (§3.1).
+> Les plannings (`GET /api/CrewingSchedule`) sont importés dans une **table
+> miroir** `marad_crew_schedules` (§3.3), avec réconciliation **« voyage » Marad
+> ↔ `leg`** ; le schéma schedule reste à confirmer (extraction défensive).
+> **Restent à brancher** : documents/certificats (`GetCrewMembersDocuments`) et
+> la confirmation du **nom du header d'auth** (`MARAD_API_KEY_HEADER`, défaut
+> `X-Api-Key`). **mynewtowt n'écrit jamais dans Marad.**
 >
 > Date : 2026-06-17 · Auteur : cadrage + implémentation.
 
@@ -262,21 +264,37 @@ les placeholders Swagger `"string"` sont ignorés) :
 | `crew_member_id` | FK locale résolue via `marad_id` | |
 | **`marad_document_id`** (à ajouter) | `id` du document | clé d'idempotence |
 
-### 3.3 `GET /api/CrewingSchedule` → `CrewAssignment`
+### 3.3 `GET /api/CrewingSchedule` → table miroir `marad_crew_schedules` — ✅ IMPLÉMENTÉ (mapping provisoire)
 
-| Champ mynewtowt | Champ Marad (hypothèse ❓) | Notes |
+> **Décision appliquée** : on **ne crée PAS** de `CrewAssignment` (dont `leg_id`
+> est une FK obligatoire). Les schedules Marad sont importés dans une **table
+> miroir read-only** `marad_crew_schedules` (modèle `MaradCrewSchedule`,
+> migration `0043`) et affichés sur la fiche marin (`/crew/members/{id}`,
+> section « Planning Marad »).
+
+> **Précision métier (confirmée par l'utilisateur)** : chez Marad, **un
+> « voyage » = notre `leg`**. La sync conserve la référence voyage
+> (`marad_voyage_ref`) et **réconcilie automatiquement** avec un `leg` interne
+> via `leg_code` (insensible à la casse/espaces). `leg_id` est renseigné si la
+> correspondance existe, sinon NULL (rattachement manuel possible).
+
+⚠️ **Le schéma exact de `/api/CrewingSchedule` n'est pas encore confirmé** :
+l'extraction est **défensive** (plusieurs clés candidates par champ, cf.
+`_SCHED_*_KEYS` dans `services/marad_sync.py`). Le mapping sera figé dès qu'un
+échantillon réel sera fourni (comme pour le crew).
+
+| Colonne miroir | Champ Marad (clés candidates) | Notes |
 |---|---|---|
-| `embark_at` / `disembark_at` | `startDate` / `endDate` du schedule | TZ ❓ |
-| `role_on_board` | rang sur ce schedule | |
-| `crew_member_id` | via `marad_id` du crew | |
-| `leg_id` | **❌ pas de correspondance directe** | **risque majeur** — voir §8 |
-| **`marad_schedule_id`** (à ajouter) | `id` du schedule | idempotence |
-
-> **Décision recommandée pour les schedules** : en V1, **ne PAS auto-créer de
-> `CrewAssignment`** (car `leg_id` est obligatoire et non dérivable de Marad).
-> Stocker les schedules importés dans une **table miroir dédiée**
-> (`marad_crew_schedules`, read-only) et les **afficher à titre indicatif**
-> sur la fiche marin. Le rattachement à un leg reste une action ERP manuelle.
+| `marad_schedule_id` | `id` / `scheduleId` / `crewingScheduleId` | clé d'idempotence |
+| `crew_member_id` | `crewMemberId` / `crewId` / `personId`… | résolu via `CrewMember.marad_id` |
+| `marad_crew_id` | idem (brut) | conservé pour re-résoudre après un sync crew |
+| `vessel_id` | `vesselId` / `shipId` | résolu via `MARAD_VESSEL_MAP` |
+| `marad_vessel_name` | `vesselName` / `shipName` | |
+| `marad_voyage_ref` | `voyage` / `voyageNo` / `voyageName` / `legCode`… | **= notre leg** |
+| `leg_id` | (réconcilié) | match `marad_voyage_ref` ↔ `leg_code` |
+| `rank_label` | `rankName` / `rank` / `position`… | |
+| `start_date` / `end_date` | `startDate`/`signOnDate`… / `endDate`/`signOffDate`… | |
+| `status` | `status` / `state` | |
 
 ### 3.4 Référentiels
 

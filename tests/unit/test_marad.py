@@ -253,5 +253,138 @@ def test_sync_crew_skips_records_without_id(monkeypatch) -> None:
 
 
 async def _ret(value):
-    """Petite coroutine helper pour les fakes de ``marad.list_crew``."""
+    """Petite coroutine helper pour les fakes de ``marad.list_crew`` / ``list_schedules``."""
     return value
+
+
+def test_sync_schedules_resolves_voyage_to_leg(monkeypatch) -> None:
+    from datetime import UTC, date, datetime
+
+    from app.models.crew import CrewMember, MaradCrewSchedule
+    from app.models.leg import Leg
+    from app.models.vessel import Vessel
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        # Référentiels locaux : navire + leg (leg_code) + marin (marad_id).
+        vessel = Vessel(code="CF", name="Anemos")
+        s.add(vessel)
+        await s.flush()
+        leg = Leg(
+            leg_code="1CFRBR6",
+            vessel_id=vessel.id,
+            departure_port_id=1,
+            arrival_port_id=1,
+            etd_ref=datetime(2026, 3, 1, tzinfo=UTC),
+            eta_ref=datetime(2026, 3, 10, tzinfo=UTC),
+            etd=datetime(2026, 3, 1, tzinfo=UTC),
+            eta=datetime(2026, 3, 10, tzinfo=UTC),
+        )
+        member = CrewMember(marad_id="crew-guid-1", full_name="Jean Dupont", role="capitaine")
+        s.add_all([leg, member])
+        await s.flush()
+
+        # MARAD_VESSEL_MAP : navire Marad "MV1" → notre vessel.id
+        monkeypatch.setattr(marad.settings, "marad_vessel_map", f"MV1={vessel.id}")
+
+        schedule = {
+            "id": "sched-1",
+            "crewMemberId": "crew-guid-1",
+            "vesselId": "MV1",
+            "vesselName": "Anemos",
+            "voyageNo": "1cfrbr6",  # casse différente → réconciliation insensible à la casse
+            "rankName": "Capitaine",
+            "startDate": "2026-03-01T00:00:00Z",
+            "endDate": "2026-03-10T00:00:00Z",
+            "status": "Confirmed",
+        }
+        monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret([schedule]))
+
+        r = await marad_sync.sync_schedules(s)
+        assert (r["configured"], r["fetched"], r["created"], r["updated"]) == (True, 1, 1, 0)
+
+        row = (
+            await s.execute(
+                select(MaradCrewSchedule).where(MaradCrewSchedule.marad_schedule_id == "sched-1")
+            )
+        ).scalar_one()
+        assert row.crew_member_id == member.id  # résolu via marad_id
+        assert row.vessel_id == vessel.id  # résolu via MARAD_VESSEL_MAP
+        assert row.leg_id == leg.id  # voyage Marad ↔ leg_code
+        assert row.marad_voyage_ref == "1cfrbr6"
+        assert row.rank_label == "Capitaine"
+        assert row.start_date == date(2026, 3, 1)
+        assert row.end_date == date(2026, 3, 10)
+        assert row.status == "Confirmed"
+
+        # 2e passage : idempotent (pas de doublon).
+        r2 = await marad_sync.sync_schedules(s)
+        assert (r2["created"], r2["updated"]) == (0, 1)
+        assert len((await s.execute(select(MaradCrewSchedule))).scalars().all()) == 1
+
+    _run_with_db(_check)
+
+
+def test_sync_schedules_skips_without_id_and_handles_unmapped(monkeypatch) -> None:
+    from app.models.crew import MaradCrewSchedule
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+    # Un schedule sans id (skip) + un schedule mappable mais sans réfs résolvables.
+    monkeypatch.setattr(
+        marad,
+        "list_schedules",
+        lambda modified_since=None: _ret(
+            [{"rankName": "Bosco"}, {"id": "s2", "voyageNo": "INCONNU"}]
+        ),
+    )
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        r = await marad_sync.sync_schedules(s)
+        assert (r["fetched"], r["created"], r["skipped"]) == (2, 1, 1)
+        row = (
+            await s.execute(
+                select(MaradCrewSchedule).where(MaradCrewSchedule.marad_schedule_id == "s2")
+            )
+        ).scalar_one()
+        # Réfs non résolues → NULL, mais la ligne miroir existe quand même.
+        assert row.crew_member_id is None
+        assert row.leg_id is None
+        assert row.marad_voyage_ref == "INCONNU"
+
+    _run_with_db(_check)
+
+
+def test_sync_all_combines_crew_and_schedules(monkeypatch) -> None:
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+    monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([_crew_record()]))
+    monkeypatch.setattr(
+        marad,
+        "list_schedules",
+        lambda modified_since=None: _ret([{"id": "s1", "voyageNo": "X"}]),
+    )
+
+    async def _check(s):
+        r = await marad_sync.sync_all(s)
+        assert r["configured"] is True
+        assert r["crew_created"] == 1
+        assert r["sched_created"] == 1
+        assert r["errors"] == 0
+        assert r["crew"]["fetched"] == 1 and r["schedules"]["fetched"] == 1
+
+    _run_with_db(_check)
+
+
+def test_sync_all_noop_when_not_configured(monkeypatch) -> None:
+    monkeypatch.setattr(marad, "enabled", lambda: False)
+
+    async def _check(s):
+        r = await marad_sync.sync_all(s)
+        assert r["configured"] is False
+        assert r["crew_created"] == 0 and r["sched_created"] == 0
+
+    _run_with_db(_check)
