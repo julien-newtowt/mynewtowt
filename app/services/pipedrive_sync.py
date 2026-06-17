@@ -24,18 +24,45 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_CLIENT_TYPE = "freight_forwarder"
 
+# Compteurs de deals présents sur l'objet organisation Pipedrive. Une org est
+# considérée « cliente » dès qu'elle a au moins un deal (ouvert ou clos).
+_DEAL_COUNT_KEYS = (
+    "open_deals_count",
+    "closed_deals_count",
+    "related_open_deals_count",
+    "related_closed_deals_count",
+    "won_deals_count",
+    "lost_deals_count",
+)
+
+
+def _org_has_deal(org: dict) -> bool:
+    """True si l'organisation Pipedrive porte au moins un deal."""
+    return any((org.get(k) or 0) for k in _DEAL_COUNT_KEYS)
+
 
 def is_configured() -> bool:
     return pipedrive.enabled()
 
 
 async def sync_clients(db: AsyncSession) -> dict:
-    """Upsert des organisations Pipedrive dans ``commercial_clients``.
+    """Upsert des organisations Pipedrive **ayant un deal** dans ``commercial_clients``.
 
-    Renvoie ``{configured, created, updated, total, errors}``.
+    Seules les organisations avec au moins un deal (ouvert ou clos) sont
+    remontées — les autres sont ignorées (``skipped``) pour ne pas polluer la
+    liste clients.
+
+    Renvoie ``{configured, created, updated, skipped, total, errors}``.
     """
     if not pipedrive.enabled():
-        return {"configured": False, "created": 0, "updated": 0, "total": 0, "errors": 0}
+        return {
+            "configured": False,
+            "created": 0,
+            "updated": 0,
+            "skipped": 0,
+            "total": 0,
+            "errors": 0,
+        }
 
     orgs = await pipedrive.list_organizations()
     by_pd = {
@@ -46,12 +73,17 @@ async def sync_clients(db: AsyncSession) -> dict:
 
     created = 0
     updated = 0
+    skipped = 0
     errors = 0
     for org in orgs:
         try:
             pd_id = org.get("id")
             name = (org.get("name") or "").strip()
             if not pd_id or not name:
+                continue
+            # Filtre métier : on ne remonte que les organisations avec un deal.
+            if not _org_has_deal(org):
+                skipped += 1
                 continue
             address = (org.get("address") or "").strip() or None
             existing = by_pd.get(int(pd_id))
@@ -82,6 +114,7 @@ async def sync_clients(db: AsyncSession) -> dict:
         "configured": True,
         "created": created,
         "updated": updated,
+        "skipped": skipped,
         "total": len(orgs),
         "errors": errors,
     }
