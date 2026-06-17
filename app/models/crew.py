@@ -46,6 +46,9 @@ class CrewMember(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Clé externe de réconciliation pour l'import LECTURE SEULE depuis Marad
+    # (cf. docs/integrations/marad-crew-readonly.md). NULL = saisi dans l'ERP.
+    marad_id: Mapped[int | None] = mapped_column(Integer, unique=True, index=True)
 
 
 class CrewAssignment(Base):
@@ -77,6 +80,8 @@ class CrewCertification(Base):
     issued_at: Mapped[_date | None] = mapped_column(Date)
     expires_at: Mapped[_date | None] = mapped_column(Date)
     document_url: Mapped[str | None] = mapped_column(String(500))
+    # Clé externe de réconciliation pour l'import LECTURE SEULE depuis Marad.
+    marad_document_id: Mapped[int | None] = mapped_column(Integer, unique=True, index=True)
 
 
 class CrewLeave(Base):
