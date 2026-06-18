@@ -257,7 +257,22 @@ async def _ret(value):
     return value
 
 
-def test_sync_schedules_resolves_voyage_to_leg(monkeypatch) -> None:
+def _schedule_record(**over) -> dict:
+    """Échantillon conforme au schéma réel /api/CrewingSchedule (objets imbriqués)."""
+    rec = {
+        "id": "sched-1",
+        "crewMember": {"id": "crew-guid-1", "firstName": "Jean", "lastName": "Dupont"},
+        "rank": "Capitaine",
+        "status": "Confirmed",
+        "vessel": "Anemos",  # NOM du navire (pas un id)
+        "startInfo": {"dateTime": "2026-03-05T00:00:00Z", "port": "Fécamp"},
+        "endInfo": {"dateTime": "2026-03-09T00:00:00Z", "port": "Fortaleza"},
+    }
+    rec.update(over)
+    return rec
+
+
+def test_sync_schedules_resolves_vessel_and_leg(monkeypatch) -> None:
     from datetime import UTC, date, datetime
 
     from app.models.crew import CrewMember, MaradCrewSchedule
@@ -269,7 +284,7 @@ def test_sync_schedules_resolves_voyage_to_leg(monkeypatch) -> None:
     async def _check(s):
         from sqlalchemy import select
 
-        # Référentiels locaux : navire + leg (leg_code) + marin (marad_id).
+        # Référentiels locaux : navire (nom) + leg (fenêtre de dates) + marin (marad_id).
         vessel = Vessel(code="CF", name="Anemos")
         s.add(vessel)
         await s.flush()
@@ -287,21 +302,9 @@ def test_sync_schedules_resolves_voyage_to_leg(monkeypatch) -> None:
         s.add_all([leg, member])
         await s.flush()
 
-        # MARAD_VESSEL_MAP : navire Marad "MV1" → notre vessel.id
-        monkeypatch.setattr(marad.settings, "marad_vessel_map", f"MV1={vessel.id}")
-
-        schedule = {
-            "id": "sched-1",
-            "crewMemberId": "crew-guid-1",
-            "vesselId": "MV1",
-            "vesselName": "Anemos",
-            "voyageNo": "1cfrbr6",  # casse différente → réconciliation insensible à la casse
-            "rankName": "Capitaine",
-            "startDate": "2026-03-01T00:00:00Z",
-            "endDate": "2026-03-10T00:00:00Z",
-            "status": "Confirmed",
-        }
-        monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret([schedule]))
+        monkeypatch.setattr(
+            marad, "list_schedules", lambda modified_since=None: _ret([_schedule_record()])
+        )
 
         r = await marad_sync.sync_schedules(s)
         assert (r["configured"], r["fetched"], r["created"], r["updated"]) == (True, 1, 1, 0)
@@ -311,13 +314,14 @@ def test_sync_schedules_resolves_voyage_to_leg(monkeypatch) -> None:
                 select(MaradCrewSchedule).where(MaradCrewSchedule.marad_schedule_id == "sched-1")
             )
         ).scalar_one()
-        assert row.crew_member_id == member.id  # résolu via marad_id
-        assert row.vessel_id == vessel.id  # résolu via MARAD_VESSEL_MAP
-        assert row.leg_id == leg.id  # voyage Marad ↔ leg_code
-        assert row.marad_voyage_ref == "1cfrbr6"
+        assert row.crew_member_id == member.id  # crewMember.id ↔ marad_id
+        assert row.vessel_id == vessel.id  # résolu via le nom du navire
+        assert row.leg_id == leg.id  # voyage = leg : fenêtre de dates du navire
+        assert row.marad_vessel_name == "Anemos"
+        assert row.marad_voyage_ref == "Fécamp → Fortaleza"  # route POL→POD
         assert row.rank_label == "Capitaine"
-        assert row.start_date == date(2026, 3, 1)
-        assert row.end_date == date(2026, 3, 10)
+        assert row.start_date == date(2026, 3, 5)
+        assert row.end_date == date(2026, 3, 9)
         assert row.status == "Confirmed"
 
         # 2e passage : idempotent (pas de doublon).
@@ -332,13 +336,11 @@ def test_sync_schedules_skips_without_id_and_handles_unmapped(monkeypatch) -> No
     from app.models.crew import MaradCrewSchedule
 
     monkeypatch.setattr(marad, "enabled", lambda: True)
-    # Un schedule sans id (skip) + un schedule mappable mais sans réfs résolvables.
+    # Un schedule sans id (skip) + un schedule sans réfs résolvables (navire inconnu).
     monkeypatch.setattr(
         marad,
         "list_schedules",
-        lambda modified_since=None: _ret(
-            [{"rankName": "Bosco"}, {"id": "s2", "voyageNo": "INCONNU"}]
-        ),
+        lambda modified_since=None: _ret([{"rank": "Bosco"}, {"id": "s2", "vessel": "Inconnu"}]),
     )
 
     async def _check(s):
@@ -353,8 +355,10 @@ def test_sync_schedules_skips_without_id_and_handles_unmapped(monkeypatch) -> No
         ).scalar_one()
         # Réfs non résolues → NULL, mais la ligne miroir existe quand même.
         assert row.crew_member_id is None
+        assert row.vessel_id is None
         assert row.leg_id is None
-        assert row.marad_voyage_ref == "INCONNU"
+        assert row.marad_vessel_name == "Inconnu"
+        assert row.marad_voyage_ref is None  # pas de port → pas de route
 
     _run_with_db(_check)
 
@@ -365,7 +369,7 @@ def test_sync_all_combines_crew_and_schedules(monkeypatch) -> None:
     monkeypatch.setattr(
         marad,
         "list_schedules",
-        lambda modified_since=None: _ret([{"id": "s1", "voyageNo": "X"}]),
+        lambda modified_since=None: _ret([{"id": "s1", "vessel": "X"}]),
     )
 
     async def _check(s):
