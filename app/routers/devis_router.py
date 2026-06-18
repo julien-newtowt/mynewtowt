@@ -230,6 +230,40 @@ async def devis_submit(
     return RedirectResponse(url=f"/devis/{quote.reference}", status_code=303)
 
 
+@router.get("/devis/{reference}.pdf")
+async def devis_pdf(
+    reference: str,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    quote = await find_quote(db, reference)
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Devis introuvable")
+    pol, pod = await _ports_by_locode(db, quote.pol_locode, quote.pod_locode)
+    leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
+    vessel = await db.get(Vessel, leg.vessel_id) if leg is not None else None
+
+    from weasyprint import HTML  # import tardif — dépendances natives lourdes
+
+    from app.config import settings
+
+    tpl = templates.get_template("pdf/quote.html")
+    html = tpl.render(
+        quote=quote,
+        pol=pol,
+        pod=pod,
+        leg=leg,
+        vessel=vessel,
+        site_url=settings.site_url,
+        issued_at=datetime.now(UTC),
+    )
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{quote.reference}.pdf"'},
+    )
+
+
 @router.get("/devis/{reference}", response_class=HTMLResponse)
 async def devis_detail(
     request: Request,
@@ -263,40 +297,6 @@ async def devis_detail(
         samesite="lax",
     )
     return resp
-
-
-@router.get("/devis/{reference}.pdf")
-async def devis_pdf(
-    reference: str,
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    quote = await find_quote(db, reference)
-    if quote is None:
-        raise HTTPException(status_code=404, detail="Devis introuvable")
-    pol, pod = await _ports_by_locode(db, quote.pol_locode, quote.pod_locode)
-    leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
-    vessel = await db.get(Vessel, leg.vessel_id) if leg is not None else None
-
-    from weasyprint import HTML  # import tardif — dépendances natives lourdes
-
-    from app.config import settings
-
-    tpl = templates.get_template("pdf/quote.html")
-    html = tpl.render(
-        quote=quote,
-        pol=pol,
-        pod=pod,
-        leg=leg,
-        vessel=vessel,
-        site_url=settings.site_url,
-        issued_at=datetime.now(UTC),
-    )
-    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{quote.reference}.pdf"'},
-    )
 
 
 # ---------------------------------------------------------------------------
