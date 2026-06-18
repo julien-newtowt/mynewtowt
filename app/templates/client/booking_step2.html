@@ -7,7 +7,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Réservation — Cargo · {{ leg.leg_code }}</title>
+  <title>{{ t('bk2_title', lang) }} · {{ leg.leg_code }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="/static/css/colors_and_type.css" />
@@ -40,11 +40,11 @@
   </header>
 
   <main class="main main--wizard" id="main">
-    <h1 class="page-title">Détails du cargo</h1>
-    <p class="page-subtitle">Décrivez votre marchandise et les quantités à expédier.</p>
+    <h1 class="page-title">{{ t('bk2_page_title', lang) }}</h1>
+    <p class="page-subtitle">{{ t('bk2_page_subtitle', lang) }}</p>
 
     <aside class="summary-card">
-      <div class="summary-title">Route sélectionnée</div>
+      <div class="summary-title">{{ t('bk2_selected_route', lang) }}</div>
       <div class="summary-route">
         {{ pol.country|flag if pol else '' }} {{ pol.name if pol else '—' }} →
         {{ pod.name if pod else '—' }} {{ pod.country|flag if pod else '' }}
@@ -57,15 +57,14 @@
     </aside>
 
     {% if error %}
-      <div class="alert alert--error" role="alert"><strong>Erreur :</strong> {{ error }}</div>
+      <div class="alert alert--error" role="alert"><strong>{{ t('bk2_error', lang) }}</strong> {{ error }}</div>
     {% endif %}
 
     {% if prefill %}
       <div class="alert" role="status">
         <span class="alert-icon">📄</span>
-        <strong>Devis {{ prefill.reference }} repris</strong> —
-        {{ prefill['items']|length }} ligne(s) de palettes pré-remplies ;
-        vérifiez les quantités et complétez la description.
+        <strong>{{ t('bk2_prefill_strong', lang, ref=prefill.reference) }}</strong> —
+        {{ t('bk2_prefill_text', lang, n=prefill['items']|length) }}
       </div>
     {% endif %}
 
@@ -73,8 +72,8 @@
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
 
       <section class="form-section">
-        <h2 class="form-section-title">Vos palettes</h2>
-        <p class="form-hint" style="margin-bottom:var(--sp-5);">Décrivez vos types de palette. Ajoutez autant de lignes que de formats différents.</p>
+        <h2 class="form-section-title">{{ t('bk2_your_pallets', lang) }}</h2>
+        <p class="form-hint" style="margin-bottom:var(--sp-5);">{{ t('bk2_pallets_hint', lang) }}</p>
 
         {% set rows = prefill['items'] if (prefill and prefill['items']) else [None] %}
         <div id="cargo-rows" data-next-index="{{ rows|length }}">
@@ -82,121 +81,121 @@
           {% set i = loop.index0 %}
           <div class="cargo-row" data-cargo-row style="border:1px solid var(--c-border,#ddd);border-radius:8px;padding:var(--sp-4);margin-bottom:var(--sp-4);">
             <div class="form-group">
-              <label class="form-label required">Format</label>
+              <label class="form-label required">{{ t('bk2_format', lang) }}</label>
               {% set pf = it.format if it else None %}
               <select class="form-control" name="items-{{ i }}-format" required>
-                <option value="EPAL" {% if pf == 'EPAL' %}selected{% endif %}>EPAL — Europalette</option>
-                <option value="USPAL" {% if pf == 'USPAL' %}selected{% endif %}>USPAL — US Pallet</option>
-                <option value="PORTPAL" {% if pf == 'PORTPAL' %}selected{% endif %}>PORTPAL — Portuaire</option>
+                <option value="EPAL" {% if pf == 'EPAL' %}selected{% endif %}>{{ t('bk2_opt_epal', lang) }}</option>
+                <option value="USPAL" {% if pf == 'USPAL' %}selected{% endif %}>{{ t('bk2_opt_uspal', lang) }}</option>
+                <option value="PORTPAL" {% if pf == 'PORTPAL' %}selected{% endif %}>{{ t('bk2_opt_portpal', lang) }}</option>
                 <option value="IBC" {% if pf == 'IBC' %}selected{% endif %}>IBC</option>
                 <option value="BIGBAG" {% if pf == 'BIGBAG' %}selected{% endif %}>BIGBAG</option>
-                <option value="BARRIQUE120" {% if pf == 'BARRIQUE120' %}selected{% endif %}>Barrique 120 L</option>
-                <option value="BARRIQUE140" {% if pf == 'BARRIQUE140' %}selected{% endif %}>Barrique 140 L</option>
+                <option value="BARRIQUE120" {% if pf == 'BARRIQUE120' %}selected{% endif %}>{{ t('bk2_opt_barrique120', lang) }}</option>
+                <option value="BARRIQUE140" {% if pf == 'BARRIQUE140' %}selected{% endif %}>{{ t('bk2_opt_barrique140', lang) }}</option>
               </select>
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label required">Nombre</label>
+                <label class="form-label required">{{ t('bk2_count', lang) }}</label>
                 <input class="form-control" type="number" name="items-{{ i }}-count" min="1" max="1000" value="{{ it.count if it and it.count else 1 }}" required />
               </div>
               <div class="form-group">
-                <label class="form-label">Poids unitaire (kg)</label>
+                <label class="form-label">{{ t('bk2_unit_weight', lang) }}</label>
                 <input class="form-control" type="number" name="items-{{ i }}-unit_weight_kg" step="0.1" min="0" />
-                <span class="form-hint">Poids brut par unité (emballage inclus).</span>
+                <span class="form-hint">{{ t('bk2_unit_weight_hint', lang) }}</span>
               </div>
             </div>
             <div class="form-group">
-              <label class="form-label required">Description marchandise</label>
-              <input class="form-control" type="text" name="items-{{ i }}-description" required placeholder="Ex : caisses de vin rouge Bordeaux AOC, cartons de 6" />
+              <label class="form-label required">{{ t('bk2_goods_desc', lang) }}</label>
+              <input class="form-control" type="text" name="items-{{ i }}-description" required placeholder="{{ t('bk2_goods_ph', lang) }}" />
             </div>
             <div class="radio-group">
               <label class="radio-option">
                 <input type="checkbox" name="items-{{ i }}-stackable" checked />
-                <div class="radio-content"><div class="radio-label">Empilable</div><div class="radio-description">Les palettes peuvent être gerbées en cale.</div></div>
+                <div class="radio-content"><div class="radio-label">{{ t('bk2_stackable', lang) }}</div><div class="radio-description">{{ t('bk2_stackable_desc', lang) }}</div></div>
               </label>
               <label class="radio-option">
                 <input type="checkbox" name="items-{{ i }}-hazardous" />
-                <div class="radio-content"><div class="radio-label">Marchandise dangereuse (IMDG)</div><div class="radio-description">Matière réglementée — déclaration préalable obligatoire.</div></div>
+                <div class="radio-content"><div class="radio-label">{{ t('bk2_hazardous', lang) }}</div><div class="radio-description">{{ t('bk2_hazardous_desc', lang) }}</div></div>
               </label>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm" data-remove-row>✕ Retirer cette ligne</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-remove-row>{{ t('bk2_remove_row', lang) }}</button>
           </div>
           {% endfor %}
         </div>
 
-        <button type="button" class="btn btn-secondary" data-add-row>+ Ajouter une ligne</button>
+        <button type="button" class="btn btn-secondary" data-add-row>{{ t('bk2_add_row', lang) }}</button>
 
         {# Gabarit cloné par cargo-rows.js (__I__ = index injecté). #}
         <template id="cargo-row-tpl">
           <div class="cargo-row" data-cargo-row style="border:1px solid var(--c-border,#ddd);border-radius:8px;padding:var(--sp-4);margin-bottom:var(--sp-4);">
             <div class="form-group">
-              <label class="form-label required">Format</label>
+              <label class="form-label required">{{ t('bk2_format', lang) }}</label>
               <select class="form-control" name="items-__I__-format" required>
-                <option value="EPAL">EPAL — Europalette</option>
-                <option value="USPAL">USPAL — US Pallet</option>
-                <option value="PORTPAL">PORTPAL — Portuaire</option>
+                <option value="EPAL">{{ t('bk2_opt_epal', lang) }}</option>
+                <option value="USPAL">{{ t('bk2_opt_uspal', lang) }}</option>
+                <option value="PORTPAL">{{ t('bk2_opt_portpal', lang) }}</option>
                 <option value="IBC">IBC</option>
                 <option value="BIGBAG">BIGBAG</option>
-                <option value="BARRIQUE120">Barrique 120 L</option>
-                <option value="BARRIQUE140">Barrique 140 L</option>
+                <option value="BARRIQUE120">{{ t('bk2_opt_barrique120', lang) }}</option>
+                <option value="BARRIQUE140">{{ t('bk2_opt_barrique140', lang) }}</option>
               </select>
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label required">Nombre</label>
+                <label class="form-label required">{{ t('bk2_count', lang) }}</label>
                 <input class="form-control" type="number" name="items-__I__-count" min="1" max="1000" value="1" required />
               </div>
               <div class="form-group">
-                <label class="form-label">Poids unitaire (kg)</label>
+                <label class="form-label">{{ t('bk2_unit_weight', lang) }}</label>
                 <input class="form-control" type="number" name="items-__I__-unit_weight_kg" step="0.1" min="0" />
-                <span class="form-hint">Poids brut par unité (emballage inclus).</span>
+                <span class="form-hint">{{ t('bk2_unit_weight_hint', lang) }}</span>
               </div>
             </div>
             <div class="form-group">
-              <label class="form-label required">Description marchandise</label>
-              <input class="form-control" type="text" name="items-__I__-description" required placeholder="Ex : caisses de vin rouge Bordeaux AOC, cartons de 6" />
+              <label class="form-label required">{{ t('bk2_goods_desc', lang) }}</label>
+              <input class="form-control" type="text" name="items-__I__-description" required placeholder="{{ t('bk2_goods_ph', lang) }}" />
             </div>
             <div class="radio-group">
               <label class="radio-option">
                 <input type="checkbox" name="items-__I__-stackable" checked />
-                <div class="radio-content"><div class="radio-label">Empilable</div><div class="radio-description">Les palettes peuvent être gerbées en cale.</div></div>
+                <div class="radio-content"><div class="radio-label">{{ t('bk2_stackable', lang) }}</div><div class="radio-description">{{ t('bk2_stackable_desc', lang) }}</div></div>
               </label>
               <label class="radio-option">
                 <input type="checkbox" name="items-__I__-hazardous" />
-                <div class="radio-content"><div class="radio-label">Marchandise dangereuse (IMDG)</div><div class="radio-description">Matière réglementée — déclaration préalable obligatoire.</div></div>
+                <div class="radio-content"><div class="radio-label">{{ t('bk2_hazardous', lang) }}</div><div class="radio-description">{{ t('bk2_hazardous_desc', lang) }}</div></div>
               </label>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm" data-remove-row>✕ Retirer cette ligne</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-remove-row>{{ t('bk2_remove_row', lang) }}</button>
           </div>
         </template>
       </section>
 
       <section class="form-section">
-        <h2 class="form-section-title">Conditionnement</h2>
+        <h2 class="form-section-title">{{ t('bk2_packaging', lang) }}</h2>
         <div class="alert">
-          <span class="alert-icon">ℹ️</span><strong>Conseil :</strong> pour une route océanique, privilégiez un emballage maritime renforcé (film étirable + sangles).
+          <span class="alert-icon">ℹ️</span><strong>{{ t('bk2_packaging_tip_strong', lang) }}</strong> {{ t('bk2_packaging_tip', lang) }}
         </div>
       </section>
 
       <section class="form-section">
-        <h2 class="form-section-title">Logistique</h2>
+        <h2 class="form-section-title">{{ t('bk2_logistics', lang) }}</h2>
         <div class="form-group">
-          <label class="form-label">Adresse d'enlèvement (optionnel)</label>
+          <label class="form-label">{{ t('bk2_pickup', lang) }}</label>
           <textarea class="form-control" name="pickup_address" rows="2"></textarea>
         </div>
         <div class="form-group">
-          <label class="form-label">Adresse de livraison (optionnel)</label>
+          <label class="form-label">{{ t('bk2_delivery', lang) }}</label>
           <textarea class="form-control" name="delivery_address" rows="2"></textarea>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Votre référence chargeur (optionnel)</label>
+            <label class="form-label">{{ t('bk2_shipper_ref', lang) }}</label>
             <input class="form-control" type="text" name="shipper_reference" maxlength="100" />
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Notes / contraintes (optionnel)</label>
-          <textarea class="form-control" name="notes" rows="3" placeholder="Ex : fragile, haut de pile, orientation à respecter…"></textarea>
+          <label class="form-label">{{ t('bk2_notes', lang) }}</label>
+          <textarea class="form-control" name="notes" rows="3" placeholder="{{ t('bk2_notes_ph', lang) }}"></textarea>
         </div>
       </section>
 
@@ -204,34 +203,33 @@
       <section class="form-section" id="co2-estimator"
                data-distance-nm="{{ distance_nm }}"
                data-towt-ef-g-tkm="1.5" data-conv-ef-g-tkm="13.7" data-default-weight-kg="500">
-        <h2 class="form-section-title">🌿 Impact CO₂ estimé — Label Anemos</h2>
+        <h2 class="form-section-title">{{ t('bk2_co2_title', lang) }}</h2>
         <p class="form-hint" style="margin-bottom:var(--sp-5);">
-          Méthodologie NEWTOWT (1,5 g CO₂/t·km) vs cargo conventionnel (13,7 g CO₂/t·km).
-          Mis à jour en temps réel selon les palettes ci-dessus.
+          {{ t('bk2_co2_method', lang) }}
         </p>
         <div class="info-grid">
           <div class="info-item">
-            <div class="info-label">Distance · tonnage ({{ pol.locode if pol else '?' }} → {{ pod.locode if pod else '?' }})</div>
+            <div class="info-label">{{ t('bk2_co2_distance_tonnage', lang) }} ({{ pol.locode if pol else '?' }} → {{ pod.locode if pod else '?' }})</div>
             <div class="info-value"><span class="co2-distance">—</span> · <span class="co2-tonnage">—</span></div>
           </div>
           <div class="info-item">
-            <div class="info-label">CO₂ NEWTOWT (vs conv. <span class="co2-conv">—</span>)</div>
+            <div class="info-label">{{ t('bk2_co2_newtowt_pre', lang) }} <span class="co2-conv">—</span>)</div>
             <div class="info-value" style="color:var(--c-green);"><span class="co2-towt">—</span></div>
           </div>
           <div class="info-item">
-            <div class="info-label">CO₂ évité</div>
+            <div class="info-label">{{ t('bk2_co2_avoided', lang) }}</div>
             <div class="info-value" style="color:var(--c-copper);"><span class="co2-avoided">—</span></div>
           </div>
         </div>
         <p class="form-hint" style="margin-top:var(--sp-4);">
-          Estimation indicative — le bilan définitif vous sera remis avec le
-          <strong>label Anemos nominatif</strong> à la livraison.
+          {{ t('bk2_co2_note_pre', lang) }}
+          <strong>{{ t('bk2_co2_note_strong', lang) }}</strong> {{ t('bk2_co2_note_post', lang) }}
         </p>
       </section>
 
       <div class="form-actions">
-        <a href="/booking/new" class="btn btn-secondary btn-lg">← Retour</a>
-        <button type="submit" class="btn btn-primary btn-lg">Continuer vers confirmation →</button>
+        <a href="/booking/new" class="btn btn-secondary btn-lg">{{ t('bk2_back', lang) }}</a>
+        <button type="submit" class="btn btn-primary btn-lg">{{ t('bk2_continue', lang) }}</button>
       </div>
     </form>
   </main>

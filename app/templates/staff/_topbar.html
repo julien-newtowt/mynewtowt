@@ -1,6 +1,6 @@
 {# Topbar — included once at the top of any logged-in staff layout. #}
 <header class="topbar" role="banner">
-  <button type="button" class="sidebar-toggle" data-sidebar-toggle aria-label="Basculer la barre latérale">
+  <button type="button" class="sidebar-toggle" data-sidebar-toggle aria-label="{{ t('tb_toggle_sidebar', lang) }}">
     <i data-lucide="menu" class="nav-icon"></i>
   </button>
 
@@ -8,51 +8,51 @@
      via {% block topbar_title %} dans une page enfant). #}
   {%- set _path = request.url.path -%}
   {%- set _page_labels = {
-        "/dashboard": "Tableau de bord",
-        "/planning": "Planning flotte",
-        "/planning/shares": "Partages publics",
-        "/planning/legs/new": "Nouveau leg",
-        "/planning/legs/new-from-map": "Leg depuis la carte",
-        "/commercial": "Commercial",
-        "/commercial/clients": "Clients commerciaux",
-        "/commercial/grids": "Grilles tarifaires",
-        "/commercial/grids/new": "Nouvelle grille",
-        "/commercial/offers": "Offres",
-        "/commercial/offers/new": "Nouvelle offre",
-        "/commercial/orders": "Commandes",
-        "/commercial/orders/new": "Nouvelle commande",
-        "/cargo": "Cargo",
-        "/cargo/packing-lists": "Packing lists",
-        "/escale": "Escale (Import/Export)",
-        "/captain": "On Board",
-        "/onboard": "Onboard 4 espaces",
-        "/crew": "Équipage",
-        "/crew/compliance": "Compliance équipage",
-        "/crew/calendar": "Calendrier équipage",
-        "/crew/new": "Nouveau marin",
-        "/stowage": "Plan de chargement",
-        "/claims": "Claims",
-        "/claims/new": "Nouveau claim",
-        "/mrv": "MRV — CO₂",
-        "/finance": "Finance",
-        "/kpi": "KPI",
-        "/rh": "RH",
-        "/tickets": "Tickets escale",
-        "/cashbox": "Caisse de bord",
-        "/tracking": "Tracking flotte",
+        "/dashboard": t('s_nav_dashboard', lang),
+        "/planning": t('tb_planning_fleet', lang),
+        "/planning/shares": t('s_nav_shares', lang),
+        "/planning/legs/new": t('tb_new_leg', lang),
+        "/planning/legs/new-from-map": t('tb_leg_from_map', lang),
+        "/commercial": t('s_grp_commercial', lang),
+        "/commercial/clients": t('tb_clients_commercial', lang),
+        "/commercial/grids": t('s_nav_grids', lang),
+        "/commercial/grids/new": t('tb_new_grid', lang),
+        "/commercial/offers": t('s_nav_offers', lang),
+        "/commercial/offers/new": t('tb_new_offer', lang),
+        "/commercial/orders": t('s_nav_orders', lang),
+        "/commercial/orders/new": t('tb_new_order', lang),
+        "/cargo": t('s_grp_cargo', lang),
+        "/cargo/packing-lists": t('tb_packing_lists', lang),
+        "/escale": t('s_nav_escale', lang),
+        "/captain": t('tb_onboard', lang),
+        "/onboard": t('s_nav_onboard', lang),
+        "/crew": t('s_nav_crew', lang),
+        "/crew/compliance": t('tb_crew_compliance', lang),
+        "/crew/calendar": t('tb_crew_calendar', lang),
+        "/crew/new": t('tb_crew_new', lang),
+        "/stowage": t('tb_stowage', lang),
+        "/claims": t('s_nav_claims', lang),
+        "/claims/new": t('tb_new_claim', lang),
+        "/mrv": t('tb_mrv', lang),
+        "/finance": t('s_nav_finance', lang),
+        "/kpi": t('s_nav_kpi', lang),
+        "/rh": t('s_nav_rh', lang),
+        "/tickets": t('s_nav_tickets', lang),
+        "/cashbox": t('s_nav_cashbox', lang),
+        "/tracking": t('s_nav_tracking', lang),
         "/chat": "Newtowt Agent",
-        "/staff/bookings": "Bookings",
-        "/dashboard/analytics": "Analytics",
-        "/admin": "Configuration",
-        "/admin/users": "Utilisateurs",
-        "/admin/opex": "Paramètres OPEX",
-        "/admin/stowage-specs": "Référentiel de chargement",
-        "/admin/insurance": "Assurances",
-        "/admin/maintenance": "Mode maintenance",
-        "/admin/activity-logs": "Activity logs",
-        "/admin/ports": "Référentiel ports",
-        "/admin/my-account": "Mon compte",
-        "/admin/my-account/change-password": "Changer mon mot de passe",
+        "/staff/bookings": t('s_nav_bookings', lang),
+        "/dashboard/analytics": t('s_nav_analytics', lang),
+        "/admin": t('s_nav_config', lang),
+        "/admin/users": t('tb_users', lang),
+        "/admin/opex": t('tb_opex', lang),
+        "/admin/stowage-specs": t('tb_stowage_specs', lang),
+        "/admin/insurance": t('tb_insurance', lang),
+        "/admin/maintenance": t('tb_maintenance', lang),
+        "/admin/activity-logs": t('tb_activity_logs', lang),
+        "/admin/ports": t('s_nav_ports', lang),
+        "/admin/my-account": t('tb_my_account', lang),
+        "/admin/my-account/change-password": t('tb_change_password', lang),
   } -%}
   {%- set _default_title = brand.nom_court ~ ' — ERP' -%}
   {%- set _label = _page_labels.get(_path) -%}
@@ -69,7 +69,7 @@
     <div class="clock-widget" aria-live="off">
       <div class="clock-item">
         <span class="clock-time" data-clock="local">--:--</span>
-        <span class="clock-label" data-tz="local-label">Local</span>
+        <span class="clock-label" data-tz="local-label">{{ t('tb_local', lang) }}</span>
       </div>
       <span class="clock-sep" aria-hidden="true"></span>
       <div class="clock-item">
@@ -84,26 +84,26 @@
     </a>
     {% endif %}
 
-    <button type="button" class="topbar-action" id="topbar-notif-btn" data-menu-toggle="topbar-notif-menu" title="Notifications" aria-haspopup="menu">
+    <button type="button" class="topbar-action" id="topbar-notif-btn" data-menu-toggle="topbar-notif-menu" title="{{ t('tb_notifications', lang) }}" aria-haspopup="menu">
       <i data-lucide="bell"></i>
       {% if notif_count and notif_count > 0 %}<span class="badge">{{ notif_count }}</span>{% endif %}
     </button>
     <div class="topbar-menu" id="topbar-notif-menu" role="menu">
-      <div class="menu-header">Notifications</div>
+      <div class="menu-header">{{ t('tb_notifications', lang) }}</div>
       <div style="padding: var(--space-3) var(--space-2); color: var(--gris); font-size: var(--text-sm);">
-        Aucune notification.
+        {{ t('tb_no_notifications', lang) }}
       </div>
     </div>
 
-    <button type="button" class="topbar-action" id="topbar-user-btn" data-menu-toggle="topbar-user-menu" title="Mon compte" aria-haspopup="menu">
+    <button type="button" class="topbar-action" id="topbar-user-btn" data-menu-toggle="topbar-user-menu" title="{{ t('tb_my_account', lang) }}" aria-haspopup="menu">
       <i data-lucide="user"></i>
     </button>
     <div class="topbar-menu" id="topbar-user-menu" role="menu">
-      <div class="menu-header">{% if user is defined and user %}{{ user.full_name or user.username }} · {{ user.role }}{% else %}Compte{% endif %}</div>
-      <a href="/admin"><i data-lucide="settings"></i><span>Configuration</span></a>
+      <div class="menu-header">{% if user is defined and user %}{{ user.full_name or user.username }} · {{ user.role }}{% else %}{{ t('tb_account', lang) }}{% endif %}</div>
+      <a href="/admin"><i data-lucide="settings"></i><span>{{ t('s_nav_config', lang) }}</span></a>
       {% if newtowt_agent_enabled %}<a href="/chat"><i data-lucide="message-square"></i><span>Newtowt Agent</span></a>{% endif %}
       <div class="menu-divider"></div>
-      <a href="/logout" style="color: var(--danger);"><i data-lucide="log-out"></i><span>Déconnexion</span></a>
+      <a href="/logout" style="color: var(--danger);"><i data-lucide="log-out"></i><span>{{ t('s_logout', lang) }}</span></a>
     </div>
   </div>
 </header>

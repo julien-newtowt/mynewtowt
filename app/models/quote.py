@@ -68,6 +68,13 @@ class Quote(Base):
     )
     total_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"), nullable=False)
 
+    # Ajustement commercial (remise négative / majoration positive) appliqué par
+    # le commercial sur le total calculé, avec commentaire justificatif.
+    adjustment_eur: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal("0"), nullable=False
+    )
+    adjustment_comment: Mapped[str | None] = mapped_column(Text)
+
     valid_until: Mapped[_date | None] = mapped_column(Date)
     lang: Mapped[str] = mapped_column(String(5), default="fr", nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
@@ -81,6 +88,14 @@ class Quote(Base):
     lines: Mapped[list[QuoteLine]] = relationship(
         back_populates="quote", cascade="all, delete-orphan", order_by="QuoteLine.position"
     )
+    views: Mapped[list[QuoteView]] = relationship(
+        back_populates="quote", cascade="all, delete-orphan", order_by="QuoteView.viewed_at.desc()"
+    )
+
+    @property
+    def net_total_eur(self) -> Decimal:
+        """Total final = total calculé + ajustement commercial (signé)."""
+        return (self.total_eur or Decimal("0")) + (self.adjustment_eur or Decimal("0"))
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Quote {self.reference} {self.pol_locode}->{self.pod_locode}>"
@@ -104,3 +119,25 @@ class QuoteLine(Base):
     total_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"), nullable=False)
 
     quote: Mapped[Quote] = relationship(back_populates="lines")
+
+
+class QuoteView(Base):
+    """Historique des consultations d'un devis (ouverture du lien /devis/{ref}).
+
+    Permet au commercial de savoir si — et combien de fois — le client a
+    consulté son devis. ``viewer`` distingue client authentifié / invité / staff.
+    """
+
+    __tablename__ = "quote_views"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quote_id: Mapped[int] = mapped_column(
+        ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    viewed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    viewer: Mapped[str] = mapped_column(String(20), default="client", nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(String(64))
+
+    quote: Mapped[Quote] = relationship(back_populates="views")

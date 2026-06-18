@@ -325,6 +325,12 @@ async def register(
     db.add(client)
     await db.flush()
 
+    # Rapprochement auto compte ↔ client commercial par e-mail (override manuel
+    # possible ensuite via la fiche client). Best-effort.
+    from app.services.client_linking import auto_link_account
+
+    await auto_link_account(db, client)
+
     await activity_record(
         db,
         action="client_register",

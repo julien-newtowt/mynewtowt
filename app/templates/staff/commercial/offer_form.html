@@ -11,9 +11,14 @@
 <article class="card">
   <form method="post" action="/commercial/offers">
     <div class="grid grid-2 gap-4">
+      {# Le client et le leg pilotent (HTMX) le rafraîchissement des grilles
+         applicables — voir GET /commercial/offers/grid-options. #}
       <div class="field">
         <label for="client_id">Client</label>
-        <select id="client_id" name="client_id" required>
+        <select id="client_id" name="client_id" required
+                hx-get="/commercial/offers/grid-options"
+                hx-target="#grid_id" hx-swap="innerHTML"
+                hx-include="#client_id,#leg_id" hx-trigger="change">
           {% for c in clients %}<option value="{{ c.id }}">{{ c.name }} ({{ c.client_type }})</option>{% endfor %}
         </select>
       </div>
@@ -22,7 +27,7 @@
         <input id="title" name="title" type="text" required />
       </div>
       <div class="field">
-        <label for="grid_id">Grille tarifaire</label>
+        <label for="grid_id">Grille tarifaire <small class="text-muted">(filtrée par client + leg)</small></label>
         <select id="grid_id" name="grid_id">
           <option value="">Sans grille</option>
           {% for g in grids %}<option value="{{ g.id }}">{{ g.reference }} · base {{ g.base_rate_per_palette }}€</option>{% endfor %}
@@ -30,7 +35,10 @@
       </div>
       <div class="field">
         <label for="leg_id">Leg ciblé</label>
-        <select id="leg_id" name="leg_id">
+        <select id="leg_id" name="leg_id"
+                hx-get="/commercial/offers/grid-options"
+                hx-target="#grid_id" hx-swap="innerHTML"
+                hx-include="#client_id,#leg_id" hx-trigger="change">
           <option value="">Aucun</option>
           {{ leg_option_tags(leg_options) }}
         </select>

@@ -24,6 +24,7 @@ from app.database import get_db
 from app.models.commercial import PALETTE_COEFFICIENTS
 from app.models.leg import Leg
 from app.models.port import Port
+from app.models.quote import QuoteView
 from app.models.vessel import Vessel
 from app.services import rate_limit
 from app.services.activity import record as activity_record
@@ -213,11 +214,57 @@ async def devis_submit(
                 message=f"Devis {quote.reference} — {pol}→{pod}, "
                 f"{quote.palettes_total} palettes, total {quote.total_eur} EUR",
                 source="devis",
+                leg_code=leg_code,
+                details={
+                    "pol": pol,
+                    "pod": pod,
+                    "palettes": str(quote.palettes_total),
+                    "tonnage_t": str(tonnage_t) if tonnage_t is not None else None,
+                    "hazardous": "Oui" if hazardous else "Non",
+                    "quote_reference": quote.reference,
+                    "quote_total_eur": str(quote.total_eur),
+                },
             )
         except Exception:
             pass
 
     return RedirectResponse(url=f"/devis/{quote.reference}", status_code=303)
+
+
+@router.get("/devis/{reference}.pdf")
+async def devis_pdf(
+    reference: str,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    quote = await find_quote(db, reference)
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Devis introuvable")
+    pol, pod = await _ports_by_locode(db, quote.pol_locode, quote.pod_locode)
+    leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
+    vessel = await db.get(Vessel, leg.vessel_id) if leg is not None else None
+
+    from weasyprint import HTML  # import tardif — dépendances natives lourdes
+
+    from app.config import settings
+    from app.templating import brand_for_lang
+
+    tpl = templates.get_template("pdf/quote.html")
+    html = tpl.render(
+        quote=quote,
+        pol=pol,
+        pod=pod,
+        leg=leg,
+        vessel=vessel,
+        brand=brand_for_lang(quote.lang),
+        site_url=settings.site_url,
+        issued_at=datetime.now(UTC),
+    )
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{quote.reference}.pdf"'},
+    )
 
 
 @router.get("/devis/{reference}", response_class=HTMLResponse)
@@ -232,6 +279,17 @@ async def devis_detail(
         raise HTTPException(status_code=404, detail="Devis introuvable")
     pol, pod = await _ports_by_locode(db, quote.pol_locode, quote.pod_locode)
     leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
+
+    # Historise la consultation du lien par le client (visible côté commercial).
+    db.add(
+        QuoteView(
+            quote_id=quote.id,
+            viewer="client" if client is not None else "guest",
+            ip_address=_client_ip(request),
+        )
+    )
+    await db.flush()
+
     resp = templates.TemplateResponse(
         "public/devis_result.html",
         {
@@ -253,40 +311,6 @@ async def devis_detail(
         samesite="lax",
     )
     return resp
-
-
-@router.get("/devis/{reference}.pdf")
-async def devis_pdf(
-    reference: str,
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    quote = await find_quote(db, reference)
-    if quote is None:
-        raise HTTPException(status_code=404, detail="Devis introuvable")
-    pol, pod = await _ports_by_locode(db, quote.pol_locode, quote.pod_locode)
-    leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
-    vessel = await db.get(Vessel, leg.vessel_id) if leg is not None else None
-
-    from weasyprint import HTML  # import tardif — dépendances natives lourdes
-
-    from app.config import settings
-
-    tpl = templates.get_template("pdf/quote.html")
-    html = tpl.render(
-        quote=quote,
-        pol=pol,
-        pod=pod,
-        leg=leg,
-        vessel=vessel,
-        site_url=settings.site_url,
-        issued_at=datetime.now(UTC),
-    )
-    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{quote.reference}.pdf"'},
-    )
 
 
 # ---------------------------------------------------------------------------

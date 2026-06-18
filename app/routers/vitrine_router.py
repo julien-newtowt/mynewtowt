@@ -177,6 +177,13 @@ async def contact_submit(
         phone=payload.phone,
         message=payload.message,
         source="contact",
+        details={
+            "pol": payload.pol,
+            "pod": payload.pod,
+            "cargo_nature": payload.cargo_nature,
+            "volume_weight": payload.volume_weight,
+            "desired_dates": payload.desired_dates,
+        },
     )
     return RedirectResponse(url="/contact/merci", status_code=303)
 

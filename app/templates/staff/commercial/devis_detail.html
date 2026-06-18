@@ -1,0 +1,109 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Devis {{ quote.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial · Devis</span>
+    <h1 class="display mono">{{ quote.reference }}</h1>
+    <p class="text-muted">
+      {{ quote.pol_locode }} → {{ quote.pod_locode }}
+      {% if leg %}· <span class="mono">{{ leg.leg_code }}</span>{% endif %}
+      · émis le {{ quote.created_at|datetime("%d/%m/%Y") }}
+    </p>
+  </div>
+  <div class="flex items-center" style="gap:8px;">
+    <a href="/devis/{{ quote.reference }}.pdf" class="btn btn-secondary" target="_blank"><i data-lucide="file-text"></i> PDF</a>
+    <a href="/commercial/devis" class="btn btn-ghost">← Devis émis</a>
+  </div>
+</header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Demandeur</h2>
+    <p>
+      <strong>{{ quote.contact_company or '—' }}</strong><br />
+      {{ quote.contact_name or '' }}<br />
+      {% if quote.contact_email %}<a href="mailto:{{ quote.contact_email }}">{{ quote.contact_email }}</a>{% endif %}
+    </p>
+    <p class="text-muted text-sm">
+      {{ quote.palettes_total }} palette(s)
+      {% if quote.tonnage_t %}· {{ quote.tonnage_t|round(2) }} t{% endif %}
+      {% if quote.hazardous %}· <span class="badge">IMDG</span>{% endif %}
+      · grille {{ quote.grid_reference or '—' }}
+    </p>
+  </article>
+
+  <article class="card">
+    <h2>Consultations du lien</h2>
+    {% if quote.views %}
+    <p class="text-muted text-sm mb-2">{{ quote.views|length }} consultation(s) — dernière {{ quote.views[0].viewed_at|datetime("%d/%m/%Y %H:%M") }}.</p>
+    <ul style="list-style:none;margin:0;padding:0;max-height:180px;overflow:auto;">
+      {% for v in quote.views %}
+      <li style="padding:4px 0;border-bottom:1px solid var(--sable);">
+        <span class="mono text-sm">{{ v.viewed_at|datetime("%d/%m/%Y %H:%M") }}</span>
+        · <span class="pill {{ 'pill-ok' if v.viewer == 'client' else 'pill-neutral' }}">{{ v.viewer }}</span>
+        {% if v.ip_address %}<span class="text-muted text-sm"> · {{ v.ip_address }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-muted">Le client n'a pas encore consulté ce devis.</p>
+    {% endif %}
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Détail</h2>
+  <table class="data-table">
+    <thead><tr><th>Désignation</th><th class="text-right">Qté</th><th class="text-right">PU (EUR)</th><th class="text-right">Total (EUR)</th></tr></thead>
+    <tbody>
+      {% for line in quote.lines %}
+      <tr>
+        <td>{{ line.label }}</td>
+        <td class="text-right">{{ line.quantity|round(2) }}</td>
+        <td class="text-right mono">{{ line.unit_price_eur|money }}</td>
+        <td class="text-right mono">{{ line.total_eur|money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><td colspan="3" class="text-right">Total HT calculé</td><td class="text-right mono">{{ quote.total_eur|money }}</td></tr>
+      {% if quote.adjustment_eur %}
+      <tr>
+        <td colspan="3" class="text-right">{% if quote.adjustment_eur < 0 %}Remise commerciale{% else %}Ajustement{% endif %}{% if quote.adjustment_comment %} <span class="text-muted text-sm">— {{ quote.adjustment_comment }}</span>{% endif %}</td>
+        <td class="text-right mono">{{ quote.adjustment_eur|money }}</td>
+      </tr>
+      <tr style="font-weight:bold;"><td colspan="3" class="text-right">Total HT net</td><td class="text-right mono">{{ quote.net_total_eur|money }}</td></tr>
+      {% endif %}
+    </tfoot>
+  </table>
+</article>
+
+<article class="card mt-4">
+  <h2>Remise / ajustement commercial</h2>
+  <p class="text-muted text-sm mb-2">
+    Montant signé en EUR appliqué au total calculé : <strong>négatif pour une remise</strong>,
+    positif pour une majoration. Visible sur le PDF du devis.
+  </p>
+  <form method="post" action="/commercial/devis/{{ quote.reference }}/adjust">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="adjustment_eur">Ajustement (EUR)</label>
+        <input id="adjustment_eur" name="adjustment_eur" type="text" inputmode="decimal"
+               value="{{ quote.adjustment_eur }}" placeholder="-150.00" />
+      </div>
+      <div class="field">
+        <label for="adjustment_comment">Commentaire</label>
+        <input id="adjustment_comment" name="adjustment_comment" type="text" maxlength="500"
+               value="{{ quote.adjustment_comment or '' }}" placeholder="Ex : remise fidélité client" />
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <button type="submit" class="btn btn-primary">Enregistrer l'ajustement</button>
+    </div>
+  </form>
+</article>
+
+{% endblock %}

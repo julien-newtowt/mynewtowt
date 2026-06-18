@@ -152,6 +152,11 @@ class RateGrid(Base):
     adjustment_index: Mapped[Decimal] = mapped_column(
         Numeric(6, 4), default=Decimal("1.0000"), nullable=False
     )
+    # Paramétrage fin (NULL = défaut global / pas de minimum) :
+    # - surcharge marchandises dangereuses (IMDG) en points de % (ex. 25.00) ;
+    # - minimum de facturation appliqué au total du devis.
+    hazardous_surcharge_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    min_charge_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

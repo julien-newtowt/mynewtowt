@@ -1,5 +1,5 @@
 {% extends "staff/_layout.html" %}
-{% block title %}Tableau de bord — NEWTOWT ERP{% endblock %}
+{% block title %}{{ t('s_nav_dashboard', lang) }} — NEWTOWT ERP{% endblock %}
 {% block head %}{{ super() }}
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
@@ -10,8 +10,8 @@
 
 <div class="welcome-banner">
   <div>
-    <h2>Bienvenue {{ user.full_name or user.username }}</h2>
-    <p>Pilotez la flotte, les opérations et les clients NEWTOWT — rôle <strong>{{ user.role }}</strong>.</p>
+    <h2>{{ t('dash_welcome', lang) }} {{ user.full_name or user.username }}</h2>
+    <p>{{ t('dash_pilot_lead_pre', lang) }} <strong>{{ user.role }}</strong>.</p>
   </div>
   <span class="welcome-date" id="current-date"></span>
 </div>
@@ -19,13 +19,13 @@
 {% if notifications %}
 <section class="notif-center">
   <div class="section-header">
-    <h3><i data-lucide="bell"></i> Notifications
+    <h3><i data-lucide="bell"></i> {{ t('dash_notifications', lang) }}
       {% if notif_count %}<span class="unread-badge">{{ notif_count }}</span>{% endif %}
     </h3>
     {% set has_read = notifications|selectattr("is_read")|list %}
     {% if has_read %}
     <form method="post" action="/notifications/archive-read" style="margin-left:auto;">
-      <button type="submit" class="btn btn-ghost btn-sm"><i data-lucide="archive"></i> Archiver lues</button>
+      <button type="submit" class="btn btn-ghost btn-sm"><i data-lucide="archive"></i> {{ t('dash_archive_read', lang) }}</button>
     </form>
     {% endif %}
   </div>
@@ -43,13 +43,13 @@
     <div class="dash-notif-actions">
       {% if n.link %}<a href="{{ n.link }}" class="btn btn-ghost btn-sm"><i data-lucide="external-link"></i></a>{% endif %}
       <form method="post" action="/notifications/{{ n.id }}/toggle-read" style="display:inline;">
-        <button type="submit" class="btn btn-ghost btn-sm" title="{{ 'Marquer non lu' if n.is_read else 'Marquer lu' }}">
+        <button type="submit" class="btn btn-ghost btn-sm" title="{{ t('dash_mark_unread', lang) if n.is_read else t('dash_mark_read', lang) }}">
           <i data-lucide="{{ 'eye-off' if n.is_read else 'eye' }}"></i>
         </button>
       </form>
       {% if n.is_read %}
       <form method="post" action="/notifications/{{ n.id }}/archive" style="display:inline;">
-        <button type="submit" class="btn btn-ghost btn-sm" title="Archiver"><i data-lucide="archive"></i></button>
+        <button type="submit" class="btn btn-ghost btn-sm" title="{{ t('dash_archive', lang) }}"><i data-lucide="archive"></i></button>
       </form>
       {% endif %}
     </div>
@@ -59,38 +59,38 @@
 {% endif %}
 
 <header class="mb-4">
-  <span class="kicker">Pilotage</span>
-  <h1 class="display">Tableau de bord</h1>
+  <span class="kicker">{{ t('s_grp_pilotage', lang) }}</span>
+  <h1 class="display">{{ t('s_nav_dashboard', lang) }}</h1>
   <p class="text-muted">{{ user.full_name or user.username }} · <span class="mono">{{ user.role }}</span></p>
 </header>
 
 <section class="kpi-strip">
   <div class="kpi-card">
-    <div class="label">Bookings à confirmer</div>
+    <div class="label">{{ t('dash_bookings_confirm', lang) }}</div>
     <div class="value">{{ bookings_to_confirm }}</div>
-    <div class="delta text-muted">en statut submitted</div>
+    <div class="delta text-muted">{{ t('dash_in_submitted', lang) }}</div>
   </div>
   <div class="kpi-card">
-    <div class="label">Legs à venir</div>
+    <div class="label">{{ t('dash_legs_upcoming', lang) }}</div>
     <div class="value">{{ legs_upcoming }}</div>
-    <div class="delta text-muted">ETD futur</div>
+    <div class="delta text-muted">{{ t('dash_etd_future', lang) }}</div>
   </div>
   <div class="kpi-card">
-    <div class="label">Tickets P1 ouverts</div>
+    <div class="label">{{ t('dash_tickets_p1', lang) }}</div>
     <div class="value {% if tickets_p1 > 0 %}text-error{% endif %}">{{ tickets_p1 }}</div>
-    <div class="delta text-muted">SLA 2 h</div>
+    <div class="delta text-muted">{{ t('dash_sla_2h', lang) }}</div>
   </div>
   <div class="kpi-card">
-    <div class="label">Flotte</div>
+    <div class="label">{{ t('dash_fleet', lang) }}</div>
     <div class="value">{{ vessels|length }}</div>
-    <div class="delta text-muted">navires en activité</div>
+    <div class="delta text-muted">{{ t('dash_active_vessels', lang) }}</div>
   </div>
 </section>
 
 <article class="card mb-4" style="padding:0; overflow:hidden;">
   <div style="padding:var(--space-3); border-bottom:1px solid var(--gris-clair); display:flex; justify-content:space-between; align-items:center;">
-    <h2 style="margin:0;">Position flotte</h2>
-    <a href="/tracking" class="btn btn-ghost text-sm">Détail tracking →</a>
+    <h2 style="margin:0;">{{ t('dash_fleet_pos', lang) }}</h2>
+    <a href="/tracking" class="btn btn-ghost text-sm">{{ t('dash_tracking_detail', lang) }}</a>
   </div>
   {%- set ns = namespace(items=[]) -%}
   {%- for v in vessels -%}
@@ -107,42 +107,42 @@
   <div id="dashboard-map" class="js-fleet-map"
        style="width:100%; height:380px; background:var(--sable-light); position:relative;"
        data-maptiler-token="{{ maptiler_token }}"
-       data-no-position-text="Aucune position enregistrée."
-       data-no-position-detail="Alimente <code>vessel_positions</code> via le module Tracking (POST /api/tracking/upload avec X-API-Token)."
+       data-no-position-text="{{ t('fleet_pos_map_none', lang) }}"
+       data-no-position-detail="{{ t('dash_no_pos_detail', lang) }}"
        data-vessels='{{ ns.items|tojson }}'></div>
 </article>
 
 <div class="grid grid-2 gap-4">
   <article class="card">
-    <h2>Actions rapides</h2>
+    <h2>{{ t('dash_quick_actions', lang) }}</h2>
     <div class="flex gap-2 mt-3" style="flex-wrap:wrap;">
-      <a href="/staff/bookings?status_filter=submitted" class="btn btn-primary">Bookings à confirmer</a>
-      <a href="/planning/legs/new" class="btn btn-secondary">Nouveau leg</a>
-      <a href="/commercial/orders/new" class="btn btn-secondary">Nouvelle commande</a>
-      <a href="/tickets/new" class="btn btn-secondary">Nouveau ticket P1</a>
-      <a href="/onboard" class="btn btn-secondary">Vue commandant</a>
+      <a href="/staff/bookings?status_filter=submitted" class="btn btn-primary">{{ t('dash_bookings_confirm', lang) }}</a>
+      <a href="/planning/legs/new" class="btn btn-secondary">{{ t('tb_new_leg', lang) }}</a>
+      <a href="/commercial/orders/new" class="btn btn-secondary">{{ t('tb_new_order', lang) }}</a>
+      <a href="/tickets/new" class="btn btn-secondary">{{ t('dash_new_ticket_p1', lang) }}</a>
+      <a href="/onboard" class="btn btn-secondary">{{ t('dash_captain_view', lang) }}</a>
       <a href="/chat" class="btn btn-accent">💬 Newtowt Agent</a>
     </div>
   </article>
 
   <article class="card">
-    <h2>Modules disponibles</h2>
+    <h2>{{ t('dash_modules', lang) }}</h2>
     <div class="grid grid-2 gap-2" style="font-size:var(--text-sm);">
-      <a href="/planning">📅 Planning</a>
-      <a href="/commercial">📈 Commercial (clients, grilles, offres, commandes)</a>
-      <a href="/cargo">📦 Cargo (BL, PL)</a>
-      <a href="/escale">⚓ Escale Import/Export</a>
-      <a href="/onboard">⛵ Onboard 4 espaces</a>
-      <a href="/tickets">🎫 Tickets escale</a>
-      <a href="/cashbox">💰 Caisse de bord</a>
-      <a href="/crew">👥 Équipage</a>
-      <a href="/rh">🧑‍💼 RH</a>
-      <a href="/finance">💶 Finance</a>
-      <a href="/kpi">📈 KPI</a>
-      <a href="/mrv">🌍 MRV</a>
-      <a href="/claims">🛡 Claims</a>
-      <a href="/tracking">🛰 Tracking</a>
-      <a href="/dashboard/analytics">📊 Analytics</a>
+      <a href="/planning">📅 {{ t('s_nav_planning', lang) }}</a>
+      <a href="/commercial">📈 {{ t('dash_mod_commercial', lang) }}</a>
+      <a href="/cargo">📦 {{ t('dash_mod_cargo', lang) }}</a>
+      <a href="/escale">⚓ {{ t('s_nav_escale', lang) }}</a>
+      <a href="/onboard">⛵ {{ t('s_nav_onboard', lang) }}</a>
+      <a href="/tickets">🎫 {{ t('s_nav_tickets', lang) }}</a>
+      <a href="/cashbox">💰 {{ t('s_nav_cashbox', lang) }}</a>
+      <a href="/crew">👥 {{ t('s_nav_crew', lang) }}</a>
+      <a href="/rh">🧑‍💼 {{ t('dash_mod_rh', lang) }}</a>
+      <a href="/finance">💶 {{ t('s_nav_finance', lang) }}</a>
+      <a href="/kpi">📈 {{ t('s_nav_kpi', lang) }}</a>
+      <a href="/mrv">🌍 {{ t('dash_mod_mrv', lang) }}</a>
+      <a href="/claims">🛡 {{ t('s_nav_claims', lang) }}</a>
+      <a href="/tracking">🛰 {{ t('dash_mod_tracking', lang) }}</a>
+      <a href="/dashboard/analytics">📊 {{ t('s_nav_analytics', lang) }}</a>
     </div>
   </article>
 </div>

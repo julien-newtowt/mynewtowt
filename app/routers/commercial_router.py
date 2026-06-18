@@ -12,14 +12,14 @@ from __future__ import annotations
 import io
 from datetime import UTC, datetime
 from datetime import date as _date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -37,7 +37,8 @@ from app.models.commercial import (
     RateOffer,
 )
 from app.models.leg import Leg
-from app.models.quote import Quote
+from app.models.port import Port
+from app.models.quote import Quote, QuoteView
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.commercial import (
@@ -121,12 +122,27 @@ async def commercial_index(
 @router.get("/clients", response_class=HTMLResponse)
 async def clients_list(
     request: Request,
+    q: str | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
     from app.services.pipedrive_sync import is_configured
 
-    clients = list((await db.execute(select(Client).order_by(Client.name.asc()))).scalars().all())
+    # Recherche base client : nom, contact, e-mail, n° TVA, ville/pays.
+    query = select(Client)
+    term = (q or "").strip()
+    if term:
+        like = f"%{term}%"
+        query = query.where(
+            or_(
+                Client.name.ilike(like),
+                Client.contact_name.ilike(like),
+                Client.contact_email.ilike(like),
+                Client.vat_number.ilike(like),
+                Client.country.ilike(like),
+            )
+        )
+    clients = list((await db.execute(query.order_by(Client.name.asc()))).scalars().all())
     return templates.TemplateResponse(
         "staff/commercial/clients.html",
         {
@@ -135,6 +151,7 @@ async def clients_list(
             "clients": clients,
             "types": CLIENT_TYPES,
             "pipedrive_configured": is_configured(),
+            "search_q": term,
         },
     )
 
@@ -166,6 +183,7 @@ async def clients_sync_pipedrive(
         url=(
             f"/commercial/clients?pd=ok&created={result['created']}"
             f"&updated={result['updated']}&skipped={result.get('skipped', 0)}"
+            f"&linked={result.get('linked', 0)}"
         ),
         status_code=303,
     )
@@ -338,6 +356,25 @@ async def client_account_unlink(
 
 
 # ────────────────────────────────────────────── Rate grids
+def _opt_decimal(value: str | None) -> Decimal | None:
+    """Parse un décimal optionnel (champ vide → None ; invalide → None)."""
+    raw = (value or "").strip().replace(",", ".")
+    if not raw:
+        return None
+    try:
+        return Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+async def _route_ports(db: AsyncSession) -> list[Port]:
+    """Ports desservis par au moins un leg (pour pré-remplir POL/POD des grilles)."""
+    ids = select(Leg.departure_port_id).union(select(Leg.arrival_port_id))
+    return list(
+        (await db.execute(select(Port).where(Port.id.in_(ids)).order_by(Port.name))).scalars().all()
+    )
+
+
 def _clean_locode(value: str | None, field: str) -> str | None:
     """LOCODE UN normalisé (majuscules) ou None ; 400 si format invalide."""
     code = (value or "").strip().upper()
@@ -443,7 +480,13 @@ async def grid_new_form(
     )
     return templates.TemplateResponse(
         "staff/commercial/grid_form.html",
-        {"request": request, "user": user, "clients": clients, "grid": None},
+        {
+            "request": request,
+            "user": user,
+            "clients": clients,
+            "grid": None,
+            "route_ports": await _route_ports(db),
+        },
     )
 
 
@@ -458,6 +501,8 @@ async def grid_create(
     valid_to: str | None = Form(None),
     base_rate: float = Form(...),
     adjustment_index: float = Form(1.0),
+    hazardous_surcharge_pct: str | None = Form(None),
+    min_charge_eur: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -482,6 +527,8 @@ async def grid_create(
         currency="EUR",
         base_rate_per_palette=Decimal(str(base_rate)),
         adjustment_index=Decimal(str(adjustment_index)),
+        hazardous_surcharge_pct=_opt_decimal(hazardous_surcharge_pct),
+        min_charge_eur=_opt_decimal(min_charge_eur),
     )
     db.add(grid)
     await db.flush()
@@ -530,7 +577,13 @@ async def grid_edit_form(
     )
     return templates.TemplateResponse(
         "staff/commercial/grid_form.html",
-        {"request": request, "user": user, "clients": clients, "grid": grid},
+        {
+            "request": request,
+            "user": user,
+            "clients": clients,
+            "grid": grid,
+            "route_ports": await _route_ports(db),
+        },
     )
 
 
@@ -546,6 +599,8 @@ async def grid_edit(
     valid_to: str | None = Form(None),
     base_rate: float = Form(...),
     adjustment_index: float = Form(1.0),
+    hazardous_surcharge_pct: str | None = Form(None),
+    min_charge_eur: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -565,6 +620,8 @@ async def grid_edit(
     grid.valid_to = _date.fromisoformat(valid_to) if valid_to else None
     grid.base_rate_per_palette = Decimal(str(base_rate))
     grid.adjustment_index = Decimal(str(adjustment_index))
+    grid.hazardous_surcharge_pct = _opt_decimal(hazardous_surcharge_pct)
+    grid.min_charge_eur = _opt_decimal(min_charge_eur)
     await db.flush()
     await activity_record(
         db,
@@ -779,6 +836,82 @@ async def devis_list(
     )
 
 
+@router.get("/devis/{reference}", response_class=HTMLResponse)
+async def devis_detail_staff(
+    reference: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Détail d'un devis côté commercial : lignes, ajustement, consultations."""
+    quote = (
+        await db.execute(
+            select(Quote)
+            .where(Quote.reference == reference)
+            .options(selectinload(Quote.lines), selectinload(Quote.views))
+        )
+    ).scalar_one_or_none()
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Devis introuvable")
+    pol = (
+        await db.execute(select(Port).where(Port.locode == quote.pol_locode))
+    ).scalar_one_or_none()
+    pod = (
+        await db.execute(select(Port).where(Port.locode == quote.pod_locode))
+    ).scalar_one_or_none()
+    leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
+    return templates.TemplateResponse(
+        "staff/commercial/devis_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "quote": quote,
+            "pol": pol,
+            "pod": pod,
+            "leg": leg,
+        },
+    )
+
+
+@router.post("/devis/{reference}/adjust")
+async def devis_adjust(
+    reference: str,
+    request: Request,
+    adjustment_eur: str = Form("0"),
+    adjustment_comment: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Applique une remise / majoration (signée) + commentaire sur un devis."""
+    quote = (
+        await db.execute(select(Quote).where(Quote.reference == reference))
+    ).scalar_one_or_none()
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Devis introuvable")
+    raw = (adjustment_eur or "0").strip().replace(",", ".")
+    try:
+        amount = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        amount = Decimal("0")
+    quote.adjustment_eur = amount
+    quote.adjustment_comment = (adjustment_comment or "").strip() or None
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="quote",
+        entity_id=quote.id,
+        entity_label=quote.reference,
+        detail=f"ajustement {amount} EUR",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/commercial/devis/{reference}", status_code=303)
+
+
 # ────────────────────────────────────────────── Offers
 @router.get("/offers", response_class=HTMLResponse)
 async def offers_list(
@@ -824,6 +957,61 @@ async def offer_new_form(
             "grids": grids,
             "offer": None,
         },
+    )
+
+
+async def _grids_for(db: AsyncSession, *, client_id: int | None, leg: Leg | None) -> list[RateGrid]:
+    """Grilles actives applicables à un client + un leg (POL/POD).
+
+    Retenues : statut ``active``, valides à ce jour, et soit propres au client
+    soit grilles par défaut (``client_id`` NULL). Si un leg est fourni, on ne
+    garde que les grilles dont la route (POL/POD) correspond — une grille sans
+    POL/POD est un joker accepté pour toute route. Les grilles spécifiques au
+    client sont listées avant les grilles par défaut.
+    """
+    today = datetime.now(UTC).date()
+    query = select(RateGrid).where(
+        RateGrid.status == "active",
+        RateGrid.valid_from <= today,
+        or_(RateGrid.valid_to.is_(None), RateGrid.valid_to >= today),
+    )
+    if client_id:
+        query = query.where(or_(RateGrid.client_id == client_id, RateGrid.client_id.is_(None)))
+    else:
+        query = query.where(RateGrid.client_id.is_(None))
+
+    pol = pod = None
+    if leg is not None:
+        pol_port = await db.get(Port, leg.departure_port_id)
+        pod_port = await db.get(Port, leg.arrival_port_id)
+        pol = pol_port.locode if pol_port else None
+        pod = pod_port.locode if pod_port else None
+    if pol and pod:
+        query = query.where(
+            or_(RateGrid.pol_locode.is_(None), RateGrid.pol_locode == pol),
+            or_(RateGrid.pod_locode.is_(None), RateGrid.pod_locode == pod),
+        )
+
+    grids = list((await db.execute(query)).scalars().all())
+    # Client-specific d'abord, puis défaut ; tri secondaire par référence.
+    grids.sort(key=lambda g: (g.client_id is None, g.reference or ""))
+    return grids
+
+
+@router.get("/offers/grid-options", response_class=HTMLResponse)
+async def offer_grid_options(
+    request: Request,
+    client_id: int | None = None,
+    leg_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Partial HTMX : options du <select> grille filtrées par client + leg."""
+    leg = await db.get(Leg, leg_id) if leg_id else None
+    grids = await _grids_for(db, client_id=client_id, leg=leg)
+    return templates.TemplateResponse(
+        "staff/commercial/_grid_options.html",
+        {"request": request, "grids": grids},
     )
 
 

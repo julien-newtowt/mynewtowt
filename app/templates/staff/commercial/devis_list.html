@@ -18,11 +18,11 @@
       {% for r in quotes %}
       {% set q = r.quote %}
       <tr>
-        <td><a href="/devis/{{ q.reference }}" class="mono">{{ q.reference }}</a></td>
+        <td><a href="/commercial/devis/{{ q.reference }}" class="mono">{{ q.reference }}</a></td>
         <td class="text-muted text-sm">{{ q.created_at|datetime("%d/%m/%Y") }}</td>
         <td><span class="mono">{{ q.pol_locode }} → {{ q.pod_locode }}</span></td>
         <td>{{ q.palettes_total }}</td>
-        <td class="mono">{{ q.total_eur|money }}</td>
+        <td class="mono">{{ q.net_total_eur|money }}{% if q.adjustment_eur %} <span class="pill pill-warn" title="Ajustement appliqué">±</span>{% endif %}</td>
         <td>
           {% set company = q.contact_company or r.account_company %}
           {% set email = q.contact_email or r.account_email %}
