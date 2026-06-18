@@ -22,10 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.claim import VesselPosition
-from app.models.crew import (
-    CrewLeave,
-    CrewMember,
-)
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.user import User
@@ -58,73 +54,10 @@ router = APIRouter(tags=["modules"])
 # ────────────────────────────────────────────────────────────────────
 
 
-@router.get("/rh", response_class=HTMLResponse)
-async def rh_index(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("rh", "C")),
-) -> HTMLResponse:
-    members = list(
-        (await db.execute(select(CrewMember).where(CrewMember.is_active.is_(True)))).scalars().all()
-    )
-    leaves = list(
-        (await db.execute(select(CrewLeave).order_by(CrewLeave.created_at.desc()).limit(50)))
-        .scalars()
-        .all()
-    )
-    pending = [lv for lv in leaves if lv.status == "requested"]
-    return templates.TemplateResponse(
-        "staff/rh/index.html",
-        {
-            "request": request,
-            "user": user,
-            "members": members,
-            "leaves": leaves,
-            "pending": pending,
-        },
-    )
-
-
-@router.post("/rh/leave")
-async def rh_create_leave(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("rh", "M")),
-) -> RedirectResponse:
-    f = await request.form()
-    leave = CrewLeave(
-        crew_member_id=int(f["crew_member_id"]),
-        kind=f["kind"],
-        start_date=date.fromisoformat(f["start_date"]),
-        end_date=date.fromisoformat(f["end_date"]),
-        status="requested",
-        reason=f.get("reason") or None,
-    )
-    db.add(leave)
-    await db.flush()
-    return RedirectResponse(url="/rh", status_code=303)
-
-
-@router.post("/rh/leave/{leave_id}/decide")
-async def rh_decide_leave(
-    leave_id: int,
-    decision: str = Form(...),  # 'approved' | 'rejected'
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("rh", "M")),
-) -> RedirectResponse:
-    leave = await db.get(CrewLeave, leave_id)
-    if not leave:
-        raise HTTPException(status_code=404, detail="Not found")
-    if decision not in ("approved", "rejected"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"decision must be 'approved' or 'rejected', got {decision!r}",
-        )
-    leave.status = decision
-    leave.decided_by_id = user.id
-    leave.decided_at = datetime.now(UTC)
-    await db.flush()
-    return RedirectResponse(url="/rh", status_code=303)
+# NOTE SIRH-L0 — Les routes /rh, /rh/leave (POST), /rh/leave/{id}/decide
+# ont été extraites vers le routeur dédié ``rh_router`` (monté dans
+# main.py), prélude à la montée en charge du SIRH sédentaires. Voir
+# ``docs/strategy/CAHIER_DES_CHARGES_SIRH.md``.
 
 
 # NOTE V3.1 — Les routes /escale, /escale/{leg_id}, /escale/{leg_id}/operation

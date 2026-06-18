@@ -49,6 +49,7 @@ from app.routers import (
     planning_router,
     public_router,
     pwa_router,
+    rh_router,
     seo_router,
     staff_auth_router,
     staff_booking_router,
@@ -136,6 +137,7 @@ def create_app() -> FastAPI:
     app.include_router(tickets_router.router)
     app.include_router(tickets_router.api_router)
     app.include_router(cashbox_router.router)
+    app.include_router(rh_router.router)
     app.include_router(modules_router.router)
     app.include_router(onboard_router.router)
     app.include_router(chat_router.router)

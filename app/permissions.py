@@ -38,6 +38,7 @@ ROLES: tuple[str, ...] = (
     "marins",
     "commercial",
     "manager_maritime",
+    "rh",
 )
 
 MODULES: tuple[str, ...] = (
@@ -86,7 +87,8 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("armement", "captain"): "C",
     ("armement", "crew"): "CMS",
     ("armement", "mrv"): "C",
-    ("armement", "rh"): "CM",
+    # rh : consultation seule — l'écriture RH passe au rôle dédié ``rh``.
+    ("armement", "rh"): "C",
     ("armement", "chat"): "C",
     # technique
     ("technique", "planning"): "C",
@@ -155,6 +157,15 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("manager_maritime", "analytics"): "CM",
     ("manager_maritime", "chat"): "CM",
     ("manager_maritime", "admin"): "C",
+    # rh — gestionnaire RH (SIRH sédentaires). Autorité de saisie/validation
+    # sur le module rh ; consultation contextuelle ailleurs. La masse
+    # salariale (finance) reste à arbitrer — défaut : pas d'accès.
+    ("rh", "rh"): "CMS",
+    ("rh", "planning"): "C",
+    ("rh", "crew"): "C",
+    ("rh", "analytics"): "C",
+    ("rh", "chat"): "CM",
+    ("rh", "veille"): "C",
     # veille — informationnel (tout le staff consulte ; gestion des sources
     # pour les rôles transverses). administrateur a déjà CMS via la boucle.
     ("operation", "veille"): "CM",
