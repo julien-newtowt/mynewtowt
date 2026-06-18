@@ -12,7 +12,7 @@ from __future__ import annotations
 import io
 from datetime import UTC, datetime
 from datetime import date as _date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -37,7 +37,8 @@ from app.models.commercial import (
     RateOffer,
 )
 from app.models.leg import Leg
-from app.models.quote import Quote
+from app.models.port import Port
+from app.models.quote import Quote, QuoteView
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.commercial import (
@@ -793,6 +794,82 @@ async def devis_list(
         "staff/commercial/devis_list.html",
         {"request": request, "user": user, "quotes": quotes},
     )
+
+
+@router.get("/devis/{reference}", response_class=HTMLResponse)
+async def devis_detail_staff(
+    reference: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Détail d'un devis côté commercial : lignes, ajustement, consultations."""
+    quote = (
+        await db.execute(
+            select(Quote)
+            .where(Quote.reference == reference)
+            .options(selectinload(Quote.lines), selectinload(Quote.views))
+        )
+    ).scalar_one_or_none()
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Devis introuvable")
+    pol = (
+        await db.execute(select(Port).where(Port.locode == quote.pol_locode))
+    ).scalar_one_or_none()
+    pod = (
+        await db.execute(select(Port).where(Port.locode == quote.pod_locode))
+    ).scalar_one_or_none()
+    leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
+    return templates.TemplateResponse(
+        "staff/commercial/devis_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "quote": quote,
+            "pol": pol,
+            "pod": pod,
+            "leg": leg,
+        },
+    )
+
+
+@router.post("/devis/{reference}/adjust")
+async def devis_adjust(
+    reference: str,
+    request: Request,
+    adjustment_eur: str = Form("0"),
+    adjustment_comment: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Applique une remise / majoration (signée) + commentaire sur un devis."""
+    quote = (
+        await db.execute(select(Quote).where(Quote.reference == reference))
+    ).scalar_one_or_none()
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Devis introuvable")
+    raw = (adjustment_eur or "0").strip().replace(",", ".")
+    try:
+        amount = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        amount = Decimal("0")
+    quote.adjustment_eur = amount
+    quote.adjustment_comment = (adjustment_comment or "").strip() or None
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="quote",
+        entity_id=quote.id,
+        entity_label=quote.reference,
+        detail=f"ajustement {amount} EUR",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/commercial/devis/{reference}", status_code=303)
 
 
 # ────────────────────────────────────────────── Offers

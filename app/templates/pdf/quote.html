@@ -74,10 +74,23 @@
       <td colspan="3" style="padding:2mm 1mm;text-align:right;">Options</td>
       <td style="padding:2mm 1mm;text-align:right;">{{ quote.options_total_eur|money }}</td>
     </tr>
-    <tr style="border-top:1.5pt solid #0D5966;font-weight:bold;">
-      <td colspan="3" style="padding:2mm 1mm;text-align:right;">Total HT</td>
+    <tr style="border-top:1.5pt solid #0D5966;{% if quote.adjustment_eur %}{% else %}font-weight:bold;{% endif %}">
+      <td colspan="3" style="padding:2mm 1mm;text-align:right;">{% if quote.adjustment_eur %}Sous-total HT{% else %}Total HT{% endif %}</td>
       <td style="padding:2mm 1mm;text-align:right;">{{ quote.total_eur|money }}</td>
     </tr>
+    {% if quote.adjustment_eur %}
+    <tr>
+      <td colspan="3" style="padding:2mm 1mm;text-align:right;">
+        {% if quote.adjustment_eur < 0 %}Remise commerciale{% else %}Ajustement{% endif %}
+        {% if quote.adjustment_comment %}<br /><span style="font-weight:normal;font-size:8pt;color:#6E6E6E;">{{ quote.adjustment_comment }}</span>{% endif %}
+      </td>
+      <td style="padding:2mm 1mm;text-align:right;">{{ quote.adjustment_eur|money }}</td>
+    </tr>
+    <tr style="border-top:1.5pt solid #0D5966;font-weight:bold;">
+      <td colspan="3" style="padding:2mm 1mm;text-align:right;">Total HT net</td>
+      <td style="padding:2mm 1mm;text-align:right;">{{ quote.net_total_eur|money }}</td>
+    </tr>
+    {% endif %}
   </tfoot>
 </table>
 

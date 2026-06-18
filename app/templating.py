@@ -170,6 +170,15 @@ _BRAND_BY_LANG: dict[str, dict[str, Any]] = {
 }
 
 
+def brand_for_lang(lang: str | None) -> dict[str, Any]:
+    """Dict d'identité corporate pour une langue (fallback FR).
+
+    Utile aux rendus hors-requête (PDF WeasyPrint via ``get_template().render()``)
+    où le context processor n'injecte pas ``brand``.
+    """
+    return _BRAND_BY_LANG.get((lang or "").lower(), _BRAND_BY_LANG[_i18n_default])
+
+
 templates = Jinja2Templates(
     directory=str(TEMPLATES_DIR),
     context_processors=[_i18n_context_processor],

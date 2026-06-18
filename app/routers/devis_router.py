@@ -24,6 +24,7 @@ from app.database import get_db
 from app.models.commercial import PALETTE_COEFFICIENTS
 from app.models.leg import Leg
 from app.models.port import Port
+from app.models.quote import QuoteView
 from app.models.vessel import Vessel
 from app.services import rate_limit
 from app.services.activity import record as activity_record
@@ -245,6 +246,7 @@ async def devis_pdf(
     from weasyprint import HTML  # import tardif — dépendances natives lourdes
 
     from app.config import settings
+    from app.templating import brand_for_lang
 
     tpl = templates.get_template("pdf/quote.html")
     html = tpl.render(
@@ -253,6 +255,7 @@ async def devis_pdf(
         pod=pod,
         leg=leg,
         vessel=vessel,
+        brand=brand_for_lang(quote.lang),
         site_url=settings.site_url,
         issued_at=datetime.now(UTC),
     )
@@ -276,6 +279,17 @@ async def devis_detail(
         raise HTTPException(status_code=404, detail="Devis introuvable")
     pol, pod = await _ports_by_locode(db, quote.pol_locode, quote.pod_locode)
     leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
+
+    # Historise la consultation du lien par le client (visible côté commercial).
+    db.add(
+        QuoteView(
+            quote_id=quote.id,
+            viewer="client" if client is not None else "guest",
+            ip_address=_client_ip(request),
+        )
+    )
+    await db.flush()
+
     resp = templates.TemplateResponse(
         "public/devis_result.html",
         {
