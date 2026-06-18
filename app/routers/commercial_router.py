@@ -19,7 +19,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -121,12 +121,27 @@ async def commercial_index(
 @router.get("/clients", response_class=HTMLResponse)
 async def clients_list(
     request: Request,
+    q: str | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
     from app.services.pipedrive_sync import is_configured
 
-    clients = list((await db.execute(select(Client).order_by(Client.name.asc()))).scalars().all())
+    # Recherche base client : nom, contact, e-mail, n° TVA, ville/pays.
+    query = select(Client)
+    term = (q or "").strip()
+    if term:
+        like = f"%{term}%"
+        query = query.where(
+            or_(
+                Client.name.ilike(like),
+                Client.contact_name.ilike(like),
+                Client.contact_email.ilike(like),
+                Client.vat_number.ilike(like),
+                Client.country.ilike(like),
+            )
+        )
+    clients = list((await db.execute(query.order_by(Client.name.asc()))).scalars().all())
     return templates.TemplateResponse(
         "staff/commercial/clients.html",
         {
@@ -135,6 +150,7 @@ async def clients_list(
             "clients": clients,
             "types": CLIENT_TYPES,
             "pipedrive_configured": is_configured(),
+            "search_q": term,
         },
     )
 
@@ -824,6 +840,61 @@ async def offer_new_form(
             "grids": grids,
             "offer": None,
         },
+    )
+
+
+async def _grids_for(db: AsyncSession, *, client_id: int | None, leg: Leg | None) -> list[RateGrid]:
+    """Grilles actives applicables à un client + un leg (POL/POD).
+
+    Retenues : statut ``active``, valides à ce jour, et soit propres au client
+    soit grilles par défaut (``client_id`` NULL). Si un leg est fourni, on ne
+    garde que les grilles dont la route (POL/POD) correspond — une grille sans
+    POL/POD est un joker accepté pour toute route. Les grilles spécifiques au
+    client sont listées avant les grilles par défaut.
+    """
+    today = datetime.now(UTC).date()
+    query = select(RateGrid).where(
+        RateGrid.status == "active",
+        RateGrid.valid_from <= today,
+        or_(RateGrid.valid_to.is_(None), RateGrid.valid_to >= today),
+    )
+    if client_id:
+        query = query.where(or_(RateGrid.client_id == client_id, RateGrid.client_id.is_(None)))
+    else:
+        query = query.where(RateGrid.client_id.is_(None))
+
+    pol = pod = None
+    if leg is not None:
+        pol_port = await db.get(Port, leg.departure_port_id)
+        pod_port = await db.get(Port, leg.arrival_port_id)
+        pol = pol_port.locode if pol_port else None
+        pod = pod_port.locode if pod_port else None
+    if pol and pod:
+        query = query.where(
+            or_(RateGrid.pol_locode.is_(None), RateGrid.pol_locode == pol),
+            or_(RateGrid.pod_locode.is_(None), RateGrid.pod_locode == pod),
+        )
+
+    grids = list((await db.execute(query)).scalars().all())
+    # Client-specific d'abord, puis défaut ; tri secondaire par référence.
+    grids.sort(key=lambda g: (g.client_id is None, g.reference or ""))
+    return grids
+
+
+@router.get("/offers/grid-options", response_class=HTMLResponse)
+async def offer_grid_options(
+    request: Request,
+    client_id: int | None = None,
+    leg_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Partial HTMX : options du <select> grille filtrées par client + leg."""
+    leg = await db.get(Leg, leg_id) if leg_id else None
+    grids = await _grids_for(db, client_id=client_id, leg=leg)
+    return templates.TemplateResponse(
+        "staff/commercial/_grid_options.html",
+        {"request": request, "grids": grids},
     )
 
 

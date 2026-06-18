@@ -37,7 +37,16 @@
 </div>
 {% endif %}
 
+<form method="get" action="/commercial/clients" class="flex items-center mb-4" style="gap:8px;" role="search">
+  <input type="search" name="q" value="{{ search_q or '' }}"
+         placeholder="Rechercher un client (nom, contact, e-mail, TVA, pays)…"
+         class="form-control" style="max-width:420px;" autofocus />
+  <button type="submit" class="btn btn-secondary"><i data-lucide="search"></i> Rechercher</button>
+  {% if search_q %}<a href="/commercial/clients" class="btn btn-ghost">Réinitialiser</a>{% endif %}
+</form>
+
 <article class="card mb-4">
+  {% if search_q %}<p class="text-muted text-sm mb-2">{{ clients|length }} résultat(s) pour « {{ search_q }} ».</p>{% endif %}
   <table class="data-table">
     <thead><tr><th>Nom</th><th>Type</th><th>Contact</th><th>Pays</th><th>Actif</th></tr></thead>
     <tbody>
@@ -50,7 +59,7 @@
         <td>{% if c.is_active %}<span class="pill pill-ok">Oui</span>{% else %}<span class="pill pill-neutral">Non</span>{% endif %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text-muted text-center">Aucun client encore.</td></tr>
+      <tr><td colspan="5" class="text-muted text-center">{% if search_q %}Aucun client ne correspond à votre recherche.{% else %}Aucun client encore.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
