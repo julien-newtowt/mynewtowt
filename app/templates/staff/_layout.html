@@ -8,7 +8,7 @@
 
 {% block body %}
 <div class="app-shell-v2">
-  <aside class="sidebar" aria-label="Menu staff">
+  <aside class="sidebar" aria-label="{{ t('s_menu_aria', lang) }}">
     <div class="brand-mark">
       <a href="/dashboard" style="border:none;">
         <img src="{{ brand.logo_white }}" alt="{{ brand.nom_court }}" />
@@ -19,92 +19,92 @@
     <nav>
       <div class="nav-group" data-group="pilotage">
         <button class="nav-group-toggle" aria-expanded="true">
-          <span class="nav-group-title"><i data-lucide="layout-dashboard"></i><span>Pilotage</span></span>
+          <span class="nav-group-title"><i data-lucide="layout-dashboard"></i><span>{{ t('s_grp_pilotage', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/dashboard"><i data-lucide="layout-dashboard"></i><span>Tableau de bord</span></a></li>
-          <li><a href="/planning"><i data-lucide="calendar"></i><span>Planning</span></a></li>
-          <li><a href="/planning/shares"><i data-lucide="share-2"></i><span>Partages publics</span></a></li>
-          <li><a href="/veille"><i data-lucide="newspaper"></i><span>Veille d'actualité</span></a></li>
+          <li><a href="/dashboard"><i data-lucide="layout-dashboard"></i><span>{{ t('s_nav_dashboard', lang) }}</span></a></li>
+          <li><a href="/planning"><i data-lucide="calendar"></i><span>{{ t('s_nav_planning', lang) }}</span></a></li>
+          <li><a href="/planning/shares"><i data-lucide="share-2"></i><span>{{ t('s_nav_shares', lang) }}</span></a></li>
+          <li><a href="/veille"><i data-lucide="newspaper"></i><span>{{ t('s_nav_veille', lang) }}</span></a></li>
         </ul>
       </div>
 
       <div class="nav-group" data-group="commercial">
         <button class="nav-group-toggle" aria-expanded="true">
-          <span class="nav-group-title"><i data-lucide="trending-up"></i><span>Commercial</span></span>
+          <span class="nav-group-title"><i data-lucide="trending-up"></i><span>{{ t('s_grp_commercial', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/commercial"><i data-lucide="layout-dashboard"></i><span>Pilotage commercial</span></a></li>
-          <li><a href="/commercial/clients"><i data-lucide="users"></i><span>Clients (FF / Shipper)</span></a></li>
-          <li><a href="/commercial/grids"><i data-lucide="layers"></i><span>Grilles tarifaires</span></a></li>
-          <li><a href="/commercial/devis"><i data-lucide="calculator"></i><span>Devis</span></a></li>
-          <li><a href="/commercial/offers"><i data-lucide="file-text"></i><span>Offres</span></a></li>
-          <li><a href="/commercial/orders"><i data-lucide="package"></i><span>Commandes</span></a></li>
+          <li><a href="/commercial"><i data-lucide="layout-dashboard"></i><span>{{ t('s_nav_commercial_overview', lang) }}</span></a></li>
+          <li><a href="/commercial/clients"><i data-lucide="users"></i><span>{{ t('s_nav_clients', lang) }}</span></a></li>
+          <li><a href="/commercial/grids"><i data-lucide="layers"></i><span>{{ t('s_nav_grids', lang) }}</span></a></li>
+          <li><a href="/commercial/devis"><i data-lucide="calculator"></i><span>{{ t('s_nav_devis', lang) }}</span></a></li>
+          <li><a href="/commercial/offers"><i data-lucide="file-text"></i><span>{{ t('s_nav_offers', lang) }}</span></a></li>
+          <li><a href="/commercial/orders"><i data-lucide="package"></i><span>{{ t('s_nav_orders', lang) }}</span></a></li>
         </ul>
       </div>
 
       <div class="nav-group" data-group="cargo">
         <button class="nav-group-toggle" aria-expanded="true">
-          <span class="nav-group-title"><i data-lucide="package"></i><span>Cargo</span></span>
+          <span class="nav-group-title"><i data-lucide="package"></i><span>{{ t('s_grp_cargo', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/staff/bookings"><i data-lucide="briefcase"></i><span>Bookings</span></a></li>
-          <li><a href="/cargo"><i data-lucide="file-text"></i><span>Documents (BL, PL, factures)</span></a></li>
+          <li><a href="/staff/bookings"><i data-lucide="briefcase"></i><span>{{ t('s_nav_bookings', lang) }}</span></a></li>
+          <li><a href="/cargo"><i data-lucide="file-text"></i><span>{{ t('s_nav_documents', lang) }}</span></a></li>
         </ul>
       </div>
 
       <div class="nav-group" data-group="operations">
         <button class="nav-group-toggle" aria-expanded="true">
-          <span class="nav-group-title"><i data-lucide="anchor"></i><span>Opérations</span></span>
+          <span class="nav-group-title"><i data-lucide="anchor"></i><span>{{ t('s_grp_operations', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/escale"><i data-lucide="anchor"></i><span>Escale (Import/Export)</span></a></li>
-          <li><a href="/onboard"><i data-lucide="ship"></i><span>Onboard 4 espaces</span></a></li>
-          <li><a href="/tickets"><i data-lucide="ticket"></i><span>Tickets escale</span></a></li>
-          <li><a href="/cashbox"><i data-lucide="euro"></i><span>Caisse de bord</span></a></li>
-          <li><a href="/tracking"><i data-lucide="map"></i><span>Tracking flotte</span></a></li>
+          <li><a href="/escale"><i data-lucide="anchor"></i><span>{{ t('s_nav_escale', lang) }}</span></a></li>
+          <li><a href="/onboard"><i data-lucide="ship"></i><span>{{ t('s_nav_onboard', lang) }}</span></a></li>
+          <li><a href="/tickets"><i data-lucide="ticket"></i><span>{{ t('s_nav_tickets', lang) }}</span></a></li>
+          <li><a href="/cashbox"><i data-lucide="euro"></i><span>{{ t('s_nav_cashbox', lang) }}</span></a></li>
+          <li><a href="/tracking"><i data-lucide="map"></i><span>{{ t('s_nav_tracking', lang) }}</span></a></li>
         </ul>
       </div>
 
       <div class="nav-group" data-group="humain">
         <button class="nav-group-toggle" aria-expanded="false">
-          <span class="nav-group-title"><i data-lucide="users"></i><span>Humain</span></span>
+          <span class="nav-group-title"><i data-lucide="users"></i><span>{{ t('s_grp_humain', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/crew"><i data-lucide="users"></i><span>Équipage</span></a></li>
-          <li><a href="/rh"><i data-lucide="user-cog"></i><span>RH (congés, Schengen)</span></a></li>
+          <li><a href="/crew"><i data-lucide="users"></i><span>{{ t('s_nav_crew', lang) }}</span></a></li>
+          <li><a href="/rh"><i data-lucide="user-cog"></i><span>{{ t('s_nav_rh', lang) }}</span></a></li>
         </ul>
       </div>
 
       <div class="nav-group" data-group="performance">
         <button class="nav-group-toggle" aria-expanded="false">
-          <span class="nav-group-title"><i data-lucide="trending-up"></i><span>Performance</span></span>
+          <span class="nav-group-title"><i data-lucide="trending-up"></i><span>{{ t('s_grp_performance', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/finance"><i data-lucide="euro"></i><span>Finance</span></a></li>
-          <li><a href="/kpi"><i data-lucide="bar-chart-3"></i><span>KPI</span></a></li>
-          <li><a href="/performance/navigation"><i data-lucide="compass"></i><span>Navigation</span></a></li>
-          <li><a href="/mrv"><i data-lucide="fuel"></i><span>MRV / CO₂</span></a></li>
-          <li><a href="/claims"><i data-lucide="shield-alert"></i><span>Claims</span></a></li>
-          <li><a href="/dashboard/analytics"><i data-lucide="bar-chart"></i><span>Analytics</span></a></li>
+          <li><a href="/finance"><i data-lucide="euro"></i><span>{{ t('s_nav_finance', lang) }}</span></a></li>
+          <li><a href="/kpi"><i data-lucide="bar-chart-3"></i><span>{{ t('s_nav_kpi', lang) }}</span></a></li>
+          <li><a href="/performance/navigation"><i data-lucide="compass"></i><span>{{ t('s_nav_navigation', lang) }}</span></a></li>
+          <li><a href="/mrv"><i data-lucide="fuel"></i><span>{{ t('s_nav_mrv', lang) }}</span></a></li>
+          <li><a href="/claims"><i data-lucide="shield-alert"></i><span>{{ t('s_nav_claims', lang) }}</span></a></li>
+          <li><a href="/dashboard/analytics"><i data-lucide="bar-chart"></i><span>{{ t('s_nav_analytics', lang) }}</span></a></li>
         </ul>
       </div>
 
       <div class="nav-group" data-group="admin">
         <button class="nav-group-toggle" aria-expanded="false">
-          <span class="nav-group-title"><i data-lucide="settings"></i><span>Admin</span></span>
+          <span class="nav-group-title"><i data-lucide="settings"></i><span>{{ t('s_grp_admin', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/admin"><i data-lucide="settings"></i><span>Configuration</span></a></li>
-          <li><a href="/admin/ports"><i data-lucide="map-pin"></i><span>Référentiel ports</span></a></li>
-          <li><a href="/admin/security"><i data-lucide="shield-check"></i><span>Sécurité (MFA)</span></a></li>
+          <li><a href="/admin"><i data-lucide="settings"></i><span>{{ t('s_nav_config', lang) }}</span></a></li>
+          <li><a href="/admin/ports"><i data-lucide="map-pin"></i><span>{{ t('s_nav_ports', lang) }}</span></a></li>
+          <li><a href="/admin/security"><i data-lucide="shield-check"></i><span>{{ t('s_nav_security', lang) }}</span></a></li>
         </ul>
       </div>
     </nav>
@@ -123,7 +123,7 @@
     {% endif %}
 
     <div class="sidebar-footer">
-      <a href="/logout" class="btn-icon-only" title="Déconnexion" aria-label="Déconnexion">
+      <a href="/logout" class="btn-icon-only" title="{{ t('s_logout', lang) }}" aria-label="{{ t('s_logout', lang) }}">
         <i data-lucide="log-out"></i>
       </a>
     </div>
