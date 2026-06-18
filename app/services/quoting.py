@@ -351,9 +351,13 @@ def compute_grid_quote(
         )
 
     if hazardous and freight_subtotal > 0:
-        surcharge = (freight_subtotal * HAZARDOUS_SURCHARGE_RATE).quantize(
-            _TWO_PLACES, rounding=ROUND_HALF_UP
+        # Taux IMDG : configurable par grille (points de %), sinon défaut global.
+        haz_rate = (
+            (Decimal(grid.hazardous_surcharge_pct) / Decimal("100"))
+            if grid.hazardous_surcharge_pct is not None
+            else HAZARDOUS_SURCHARGE_RATE
         )
+        surcharge = (freight_subtotal * haz_rate).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
         lines.append(
             QuoteLineDraft(
                 kind="surcharge",
@@ -392,6 +396,24 @@ def compute_grid_quote(
     total = (freight_subtotal + surcharge + options_total).quantize(
         _TWO_PLACES, rounding=ROUND_HALF_UP
     )
+
+    # Minimum de facturation (paramétrage fin) : si le total est en-deçà du
+    # minimum de la grille, on ajoute une ligne d'ajustement portant au plancher.
+    if grid.min_charge_eur is not None and total < Decimal(grid.min_charge_eur):
+        topup = (Decimal(grid.min_charge_eur) - total).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
+        lines.append(
+            QuoteLineDraft(
+                kind="surcharge",
+                label="Ajustement minimum de facturation",
+                unit=None,
+                quantity=Decimal("1"),
+                unit_price_eur=topup,
+                total_eur=topup,
+            )
+        )
+        options_total += topup
+        total = Decimal(grid.min_charge_eur).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
+
     return GridQuote(
         grid_id=grid.id,
         grid_reference=grid.reference,

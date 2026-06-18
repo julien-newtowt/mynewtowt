@@ -355,6 +355,25 @@ async def client_account_unlink(
 
 
 # ────────────────────────────────────────────── Rate grids
+def _opt_decimal(value: str | None) -> Decimal | None:
+    """Parse un décimal optionnel (champ vide → None ; invalide → None)."""
+    raw = (value or "").strip().replace(",", ".")
+    if not raw:
+        return None
+    try:
+        return Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+async def _route_ports(db: AsyncSession) -> list[Port]:
+    """Ports desservis par au moins un leg (pour pré-remplir POL/POD des grilles)."""
+    ids = select(Leg.departure_port_id).union(select(Leg.arrival_port_id))
+    return list(
+        (await db.execute(select(Port).where(Port.id.in_(ids)).order_by(Port.name))).scalars().all()
+    )
+
+
 def _clean_locode(value: str | None, field: str) -> str | None:
     """LOCODE UN normalisé (majuscules) ou None ; 400 si format invalide."""
     code = (value or "").strip().upper()
@@ -460,7 +479,13 @@ async def grid_new_form(
     )
     return templates.TemplateResponse(
         "staff/commercial/grid_form.html",
-        {"request": request, "user": user, "clients": clients, "grid": None},
+        {
+            "request": request,
+            "user": user,
+            "clients": clients,
+            "grid": None,
+            "route_ports": await _route_ports(db),
+        },
     )
 
 
@@ -475,6 +500,8 @@ async def grid_create(
     valid_to: str | None = Form(None),
     base_rate: float = Form(...),
     adjustment_index: float = Form(1.0),
+    hazardous_surcharge_pct: str | None = Form(None),
+    min_charge_eur: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -499,6 +526,8 @@ async def grid_create(
         currency="EUR",
         base_rate_per_palette=Decimal(str(base_rate)),
         adjustment_index=Decimal(str(adjustment_index)),
+        hazardous_surcharge_pct=_opt_decimal(hazardous_surcharge_pct),
+        min_charge_eur=_opt_decimal(min_charge_eur),
     )
     db.add(grid)
     await db.flush()
@@ -547,7 +576,13 @@ async def grid_edit_form(
     )
     return templates.TemplateResponse(
         "staff/commercial/grid_form.html",
-        {"request": request, "user": user, "clients": clients, "grid": grid},
+        {
+            "request": request,
+            "user": user,
+            "clients": clients,
+            "grid": grid,
+            "route_ports": await _route_ports(db),
+        },
     )
 
 
@@ -563,6 +598,8 @@ async def grid_edit(
     valid_to: str | None = Form(None),
     base_rate: float = Form(...),
     adjustment_index: float = Form(1.0),
+    hazardous_surcharge_pct: str | None = Form(None),
+    min_charge_eur: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -582,6 +619,8 @@ async def grid_edit(
     grid.valid_to = _date.fromisoformat(valid_to) if valid_to else None
     grid.base_rate_per_palette = Decimal(str(base_rate))
     grid.adjustment_index = Decimal(str(adjustment_index))
+    grid.hazardous_surcharge_pct = _opt_decimal(hazardous_surcharge_pct)
+    grid.min_charge_eur = _opt_decimal(min_charge_eur)
     await db.flush()
     await activity_record(
         db,
