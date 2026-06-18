@@ -422,3 +422,79 @@ def test_sync_all_noop_when_not_configured(monkeypatch) -> None:
         assert r["crew_created"] == 0 and r["sched_created"] == 0
 
     _run_with_db(_check)
+
+
+# ───────────────────────── Header d'auth (essai multi-candidats) ─────────────
+
+
+class _FakeResp:
+    def __init__(self, status: int, payload=None) -> None:
+        self.status_code = status
+        self._payload = payload
+        self.content = b"x" if payload is not None else b""
+        self.text = ""
+
+    def json(self):
+        return self._payload
+
+
+class _FakeClient:
+    """Faux httpx.AsyncClient : n'authentifie que pour ``accept_header``."""
+
+    def __init__(self, accept_header: str, payload) -> None:
+        self.accept_header = accept_header
+        self.payload = payload
+        self.tried: list[str] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def request(self, method, url, params=None, json=None, headers=None):
+        ((name, _val),) = headers.items()
+        self.tried.append(name)
+        if name == self.accept_header:
+            return _FakeResp(200, self.payload)
+        return _FakeResp(403)
+
+
+def test_request_tries_apikey_then_apitoken(monkeypatch) -> None:
+    """Au défaut, on essaie ApiKey puis ApiToken et on mémorise le gagnant."""
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")  # défaut
+    monkeypatch.setattr(marad, "_working_header", None)
+
+    captured: dict = {}
+
+    def _factory(*a, **k):
+        c = _FakeClient(accept_header="ApiToken", payload=[{"ok": 1}])
+        captured["client"] = c
+        return c
+
+    monkeypatch.setattr(marad.httpx, "AsyncClient", _factory)
+
+    out = asyncio.run(marad.list_vessels())
+    assert out == [{"ok": 1}]
+    assert captured["client"].tried[:2] == ["ApiKey", "ApiToken"]
+    assert marad._working_header == "ApiToken"  # mémorisé pour les appels suivants
+
+
+def test_request_all_headers_fail_returns_none(monkeypatch) -> None:
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")
+    monkeypatch.setattr(marad, "_working_header", None)
+    monkeypatch.setattr(
+        marad.httpx, "AsyncClient", lambda *a, **k: _FakeClient(accept_header="Nope", payload=None)
+    )
+    assert asyncio.run(marad.list_vessels()) is None
+    assert marad._working_header is None
+
+
+def test_header_candidates_respects_explicit_pin(monkeypatch) -> None:
+    monkeypatch.setattr(marad, "_working_header", None)
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "Authorization")
+    cands = marad._header_candidates()
+    assert cands[0] == "Authorization"  # pin .env prioritaire
+    assert "ApiKey" in cands and "ApiToken" in cands

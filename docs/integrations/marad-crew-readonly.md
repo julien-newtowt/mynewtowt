@@ -8,10 +8,11 @@
 > Les plannings (`GET /api/CrewingSchedule`, **schéma confirmé** 2026-06-18) sont
 > importés dans une **table miroir** `marad_crew_schedules` (§3.3), avec
 > réconciliation **« voyage » Marad ↔ `leg`** par navire + fenêtre de dates.
-> **Restent à brancher** : documents/certificats (`GetCrewMembersDocuments`) et
-> la confirmation du **nom du header d'auth** (`MARAD_API_KEY_HEADER`, défaut
-> `X-Api-Key` — la doc Swagger `external.marad.ms` renvoie 403 hors réseau
-> autorisé). **mynewtowt n'écrit jamais dans Marad.**
+> **Header d'auth** : non confirmé (Swagger en 403 hors réseau autorisé) → le
+> client **essaie automatiquement** `ApiKey`, `ApiToken`, puis `X-Api-Key` et
+> mémorise celui qui authentifie (`MARAD_API_KEY_HEADER` permet de forcer un
+> header précis). **Reste à brancher** : documents/certificats
+> (`GetCrewMembersDocuments`). **mynewtowt n'écrit jamais dans Marad.**
 >
 > Date : 2026-06-17 · Auteur : cadrage + implémentation.
 
