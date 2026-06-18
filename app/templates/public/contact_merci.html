@@ -1,21 +1,19 @@
 {% extends "public/_layout_v2.html" %}
-{% block title %}Demande envoyée — NewTowt{% endblock %}
-{% block description %}Votre demande de cotation a bien été transmise à l'équipe NewTowt.{% endblock %}
+{% block title %}{{ t('merci_meta_title', lang) }}{% endblock %}
+{% block description %}{{ t('merci_meta_desc', lang) }}{% endblock %}
 {% block head %}<meta name="robots" content="noindex, follow" />{% endblock %}
 
 {% block content %}
 <section class="hero">
   <div class="hero-inner" style="text-align:center;">
-    <span class="hero-kicker">Merci</span>
-    <h1 class="hero-title">Votre demande est partie</h1>
+    <span class="hero-kicker">{{ t('merci_kicker', lang) }}</span>
+    <h1 class="hero-title">{{ t('merci_title', lang) }}</h1>
     <p class="hero-lead">
-      Nous avons bien reçu votre demande de cotation. Notre équipe commerciale vous
-      recontacte au plus vite pour préparer votre traversée et, le cas échéant, le
-      relais vers votre espace de réservation.
+      {{ t('merci_lead', lang) }}
     </p>
     <p style="margin-top:var(--sp-6);">
-      <a href="/" class="btn btn-secondary btn-lg">Retour à l'accueil</a>
-      <a href="/routes" class="btn btn-primary btn-lg">Voir les routes</a>
+      <a href="/" class="btn btn-secondary btn-lg">{{ t('merci_back_home', lang) }}</a>
+      <a href="/routes" class="btn btn-primary btn-lg">{{ t('merci_see_routes', lang) }}</a>
     </p>
   </div>
 </section>

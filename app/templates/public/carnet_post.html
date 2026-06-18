@@ -21,13 +21,13 @@
 {% block content %}
 <section class="section">
   <div class="container" style="max-width:760px;">
-    <nav class="breadcrumb" aria-label="Fil d'Ariane">
-      <a href="/carnet">Carnet de construction</a>
+    <nav class="breadcrumb" aria-label="{{ t('carnet_breadcrumb', lang) }}">
+      <a href="/carnet">{{ t('carnet_log_label', lang) }}</a>
       <span class="breadcrumb-separator">/</span>
       <span>{{ post.title }}</span>
     </nav>
 
-    <span class="eyebrow">Carnet de construction</span>
+    <span class="eyebrow">{{ t('carnet_log_label', lang) }}</span>
     <h1 class="display">{{ post.title }}</h1>
     <p class="caption mono">
       {% if post.published_at %}{{ post.published_at|date }}{% endif %}
@@ -35,9 +35,9 @@
     </p>
 
     <div class="map-placeholder" role="img"
-         aria-label="Photographie du chantier — visuel à venir"
+         aria-label="{{ t('carnet_photo_aria', lang) }}"
          style="margin:var(--sp-5) 0;min-height:280px;">
-      <span>Photo du chantier — <em>visuel à venir</em></span>
+      <span>{{ t('carnet_photo_placeholder', lang) }}</span>
     </div>
 
     <div class="article-body">
@@ -45,7 +45,7 @@
     </div>
 
     <hr class="rule-hair" style="margin:var(--sp-7) 0;" />
-    <p><a href="/carnet" class="btn btn-secondary">← Tout le carnet</a></p>
+    <p><a href="/carnet" class="btn btn-secondary">{{ t('carnet_all', lang) }}</a></p>
   </div>
 </section>
 {% endblock %}
