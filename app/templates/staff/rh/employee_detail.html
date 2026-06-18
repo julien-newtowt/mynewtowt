@@ -1,0 +1,67 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ employee.full_name }} — RH{% endblock %}
+{% block content %}
+<a href="/rh/employees" class="btn btn-ghost mb-3">← Collaborateurs</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Collaborateur · <span class="mono">{{ employee.matricule }}</span></span>
+    <h1 class="display">{{ employee.full_name }}</h1>
+    <p class="text-muted">{{ employee.job_title or 'Poste non renseigné' }}{% if employee.department %} · {{ employee.department }}{% endif %}</p>
+  </div>
+  <div class="flex gap-2 items-center">
+    {% if employee.status == 'active' %}<span class="pill pill-ok">Actif</span>
+    {% elif employee.status == 'suspended' %}<span class="pill pill-warn">Suspendu</span>
+    {% else %}<span class="pill pill-neutral">Sorti</span>{% endif %}
+    <a href="/rh/employees/{{ employee.id }}/edit" class="btn btn-secondary"><i data-lucide="pencil"></i> Modifier</a>
+  </div>
+</header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Coordonnées professionnelles</h2>
+    <table>
+      <tr><th>Email pro</th><td>{{ employee.email_pro or '—' }}</td></tr>
+      <tr><th>Téléphone pro</th><td>{{ employee.phone_pro or '—' }}</td></tr>
+      <tr><th>Lieu de travail</th><td>{{ employee.work_location or '—' }}</td></tr>
+      <tr><th>Date de naissance</th><td class="mono">{{ employee.birth_date or '—' }}</td></tr>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Contrat & ancienneté</h2>
+    <table>
+      <tr><th>Date d'entrée</th><td class="mono">{{ employee.entry_date or '—' }}</td></tr>
+      <tr><th>Date de sortie</th><td class="mono">{{ employee.exit_date or '—' }}</td></tr>
+      <tr><th>Ancienneté</th><td>{% if employee.seniority_years is not none %}{{ employee.seniority_years }} an(s){% else %}—{% endif %}</td></tr>
+      <tr><th>Manager</th><td>{% if manager %}<a href="/rh/employees/{{ manager.id }}">{{ manager.full_name }}</a>{% else %}—{% endif %}</td></tr>
+    </table>
+    <p class="text-muted text-sm mt-2">Les contrats détaillés et leurs avenants arrivent au lot L2.</p>
+  </article>
+
+  <article class="card">
+    <h2>Soldes</h2>
+    <div class="flex gap-4">
+      <div><span class="stat-card-value">{{ employee.cp_balance }}</span><span class="stat-card-label">CP</span></div>
+      <div><span class="stat-card-value">{{ employee.rtt_balance }}</span><span class="stat-card-label">RTT</span></div>
+    </div>
+  </article>
+
+  <article class="card">
+    <h2>Rattachements</h2>
+    <table>
+      <tr><th>Compte staff</th><td>{% if account %}{{ account.username }} <span class="pill pill-neutral">{{ account.role }}</span>{% else %}<span class="text-muted">non lié</span>{% endif %}</td></tr>
+      <tr><th>Fiche marin</th><td>{% if employee.crew_member_id %}<a href="/crew/members/{{ employee.crew_member_id }}">#{{ employee.crew_member_id }}</a>{% else %}—{% endif %}</td></tr>
+      <tr><th>Identifiant Silae</th><td class="mono">{{ employee.silae_id or '—' }}</td></tr>
+    </table>
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Zone de danger</h2>
+  <form method="post" action="/rh/employees/{{ employee.id }}/delete" onsubmit="return confirm('Supprimer définitivement ce dossier ?');">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <button class="btn btn-danger" type="submit"><i data-lucide="trash-2"></i> Supprimer le dossier</button>
+  </form>
+</article>
+{% endblock %}

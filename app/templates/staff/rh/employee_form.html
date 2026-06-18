@@ -1,0 +1,70 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{% if employee %}Modifier {{ employee.full_name }}{% else %}Nouveau collaborateur{% endif %}{% endblock %}
+{% block content %}
+{% set action = "/rh/employees/" ~ employee.id ~ "/edit" if employee else "/rh/employees" %}
+<a href="{{ '/rh/employees/' ~ employee.id if employee else '/rh/employees' }}" class="btn btn-ghost mb-3">← Retour</a>
+<header class="mb-4">
+  <span class="kicker">Humain</span>
+  <h1 class="display">{% if employee %}Modifier le dossier{% else %}Nouveau collaborateur{% endif %}</h1>
+</header>
+
+<form method="post" action="{{ action }}" class="card">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <h2>Identité</h2>
+  <div class="grid grid-3 gap-3">
+    <div class="field"><label>Matricule *</label><input name="matricule" value="{{ employee.matricule if employee else '' }}" required /></div>
+    <div class="field"><label>Prénom *</label><input name="first_name" value="{{ employee.first_name if employee else '' }}" required /></div>
+    <div class="field"><label>Nom *</label><input name="last_name" value="{{ employee.last_name if employee else '' }}" required /></div>
+    <div class="field"><label>Email pro</label><input name="email_pro" type="email" value="{{ employee.email_pro or '' if employee else '' }}" /></div>
+    <div class="field"><label>Téléphone pro</label><input name="phone_pro" value="{{ employee.phone_pro or '' if employee else '' }}" /></div>
+    <div class="field"><label>Date de naissance</label><input name="birth_date" type="date" value="{{ employee.birth_date or '' if employee else '' }}" /></div>
+  </div>
+
+  <h2 class="mt-4">Poste</h2>
+  <div class="grid grid-3 gap-3">
+    <div class="field"><label>Intitulé de poste</label><input name="job_title" value="{{ employee.job_title or '' if employee else '' }}" /></div>
+    <div class="field"><label>Service</label><input name="department" value="{{ employee.department or '' if employee else '' }}" /></div>
+    <div class="field"><label>Lieu de travail</label><input name="work_location" value="{{ employee.work_location or '' if employee else '' }}" /></div>
+    <div class="field">
+      <label>Manager</label>
+      <select name="manager_id">
+        <option value="">—</option>
+        {% for m in managers %}<option value="{{ m.id }}" {% if employee and employee.manager_id == m.id %}selected{% endif %}>{{ m.full_name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Date d'entrée</label><input name="entry_date" type="date" value="{{ employee.entry_date or '' if employee else '' }}" /></div>
+    <div class="field"><label>Date de sortie</label><input name="exit_date" type="date" value="{{ employee.exit_date or '' if employee else '' }}" /></div>
+    <div class="field">
+      <label>Statut</label>
+      <select name="status">
+        {% for s in statuses %}<option value="{{ s }}" {% if employee and employee.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <h2 class="mt-4">Soldes & rattachements</h2>
+  <div class="grid grid-3 gap-3">
+    <div class="field"><label>Solde CP</label><input name="cp_balance" type="number" step="0.5" value="{{ employee.cp_balance if employee else '0' }}" /></div>
+    <div class="field"><label>Solde RTT</label><input name="rtt_balance" type="number" step="0.5" value="{{ employee.rtt_balance if employee else '0' }}" /></div>
+    <div class="field"><label>Identifiant Silae</label><input name="silae_id" value="{{ employee.silae_id or '' if employee else '' }}" /></div>
+    <div class="field">
+      <label>Compte staff (self-service)</label>
+      <select name="user_id">
+        <option value="">—</option>
+        {% for u in users %}<option value="{{ u.id }}" {% if employee and employee.user_id == u.id %}selected{% endif %}>{{ u.full_name or u.username }} ({{ u.username }})</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Fiche marin liée</label>
+      <select name="crew_member_id">
+        <option value="">—</option>
+        {% for c in crew %}<option value="{{ c.id }}" {% if employee and employee.crew_member_id == c.id %}selected{% endif %}>{{ c.full_name }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <p class="text-muted text-sm mt-3"><i data-lucide="shield"></i> RGPD — aucune donnée bancaire (RIB) ni n° de sécurité sociale (NIR) n'est saisie ici : ces données restent dans Silae.</p>
+  <button class="btn btn-primary mt-2" type="submit">{% if employee %}Enregistrer{% else %}Créer le dossier{% endif %}</button>
+</form>
+{% endblock %}

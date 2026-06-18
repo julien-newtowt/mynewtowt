@@ -32,6 +32,7 @@ from app.models.crew import (
     MaradCrewSchedule,
 )
 from app.models.crew_ticket import CrewTicket
+from app.models.employee import Employee
 from app.models.escale import DockerShift, EscaleOperation
 from app.models.feature_flag import FeatureFlag
 from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
@@ -106,6 +107,7 @@ __all__ = [
     "CrewMember",
     "CrewTicket",
     "DockerShift",
+    "Employee",
     "EscaleOperation",
     "EtaShift",
     "FeatureFlag",

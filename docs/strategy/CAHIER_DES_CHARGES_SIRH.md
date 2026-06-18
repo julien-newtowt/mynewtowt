@@ -461,16 +461,16 @@ authentifié, scopé serveur à ses propres données).
 
 ## 9. Lotissement (roadmap)
 
-| Lot | Contenu | Dépendances |
-|---|---|---|
-| **L0** | Rôle `rh` + extraction `rh_router.py` + matrice | `permissions.py` |
-| **L1** | `employees` + dossier + import fichier | L0 |
-| **L2** | Contrats/avenants + alertes d'échéance | L1 |
-| **L3** | Congés/absences sédentaires + self-service consultation | L1 |
-| **L4** | EVP + verrouillage période | L1–L3 |
-| **L5** | Export Silae (CSV puis API) + journal des lots | L4 |
-| **L6** | Coffre-fort bulletins + entretiens + reporting RH | L1–L4 |
-| **v2** | Workflow validation manager, note de frais, recrutement/ATS | — |
+| Lot | Contenu | Dépendances | État |
+|---|---|---|---|
+| **L0** | Rôle `rh` + extraction `rh_router.py` + matrice | `permissions.py` | ✅ livré |
+| **L1** | `employees` + dossier + import fichier | L0 | ✅ livré |
+| **L2** | Contrats/avenants + alertes d'échéance | L1 | ⏳ à venir |
+| **L3** | Congés/absences sédentaires + self-service consultation | L1 | ⏳ à venir |
+| **L4** | EVP + verrouillage période | L1–L3 | ⏳ à venir |
+| **L5** | Export Silae (CSV puis API) + journal des lots | L4 | ⏳ à venir |
+| **L6** | Coffre-fort bulletins + entretiens + reporting RH | L1–L4 | ⏳ à venir |
+| **v2** | Workflow validation manager, note de frais, recrutement/ATS | — | ⏳ à venir |
 
 ---
 

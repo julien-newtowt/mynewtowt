@@ -1,0 +1,67 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Import collaborateurs — RH{% endblock %}
+{% block content %}
+<a href="/rh/employees" class="btn btn-ghost mb-3">← Collaborateurs</a>
+<header class="mb-4">
+  <span class="kicker">Humain · Reprise</span>
+  <h1 class="display">Importer des collaborateurs</h1>
+</header>
+
+{% if committed %}
+<div class="alert alert-success mb-4"><i data-lucide="check-circle"></i> {{ committed }} collaborateur(s) importé(s) avec succès.</div>
+{% elif result and is_dry %}
+<div class="alert alert-info mb-4"><i data-lucide="eye"></i> Simulation — aucune donnée enregistrée. Décochez « Simulation » et renvoyez le fichier pour importer.</div>
+{% endif %}
+
+<article class="card">
+  <h2>Fichier CSV</h2>
+  <p class="text-muted text-sm">
+    Colonnes obligatoires : <code>matricule</code>, <code>prenom</code>/<code>first_name</code>,
+    <code>nom</code>/<code>last_name</code>. Colonnes optionnelles reconnues : email, telephone,
+    poste, service, lieu, date_entree, date_sortie, statut, solde_cp, solde_rtt, silae_id.
+    Séparateur <code>;</code> ou <code>,</code>, dates en <code>AAAA-MM-JJ</code> ou <code>JJ/MM/AAAA</code>.
+  </p>
+  <form method="post" action="/rh/import" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="field"><label>Fichier</label><input type="file" name="file" accept=".csv,text/csv" required /></div>
+    <label class="flex gap-2 items-center mt-2"><input type="checkbox" name="dry_run" value="1" checked /> Simulation (vérifier sans enregistrer)</label>
+    <button class="btn btn-primary mt-3" type="submit"><i data-lucide="upload"></i> Analyser / Importer</button>
+  </form>
+</article>
+
+{% if result %}
+<article class="card mt-4">
+  <h2>Rapport</h2>
+  <div class="flex gap-4 mb-3">
+    <span class="pill pill-ok">{{ importable|length }} importable(s)</span>
+    <span class="pill pill-neutral">{{ already|length }} déjà en base (ignoré)</span>
+    <span class="pill {{ 'pill-error' if result.errors else 'pill-ok' }}">{{ result.errors|length }} erreur(s)</span>
+  </div>
+
+  {% if result.errors %}
+  <h3>Erreurs</h3>
+  <table>
+    <thead><tr><th>Ligne</th><th>Message</th></tr></thead>
+    <tbody>
+      {% for e in result.errors %}<tr><td class="mono">{{ e.line }}</td><td class="text-sm">{{ e.message }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if importable %}
+  <h3 class="mt-3">À importer</h3>
+  <table>
+    <thead><tr><th>Matricule</th><th>Prénom</th><th>Nom</th><th>Service</th></tr></thead>
+    <tbody>
+      {% for r in importable %}<tr><td class="mono">{{ r.matricule }}</td><td>{{ r.first_name }}</td><td>{{ r.last_name }}</td><td>{{ r.department or '—' }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if already %}
+  <h3 class="mt-3">Déjà en base (matricule existant)</h3>
+  <p class="text-muted text-sm">{% for r in already %}<span class="mono">{{ r.matricule }}</span>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+  {% endif %}
+</article>
+{% endif %}
+{% endblock %}

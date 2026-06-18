@@ -1,0 +1,78 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Collaborateurs — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Humain</span>
+    <h1 class="display">Collaborateurs</h1>
+  </div>
+  <div class="flex gap-2 items-center">
+    <a href="/rh" class="btn btn-ghost"><i data-lucide="calendar-days"></i> Congés</a>
+    <a href="/rh/import" class="btn btn-ghost"><i data-lucide="upload"></i> Importer</a>
+    <a href="/rh/employees/new" class="btn btn-primary">+ Nouveau collaborateur</a>
+  </div>
+</header>
+
+<section class="stats-grid mb-4">
+  <div class="stat-card">
+    <div class="stat-card-icon teal"><i data-lucide="users"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ stats.total }}</span><span class="stat-card-label">Effectif total</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon green"><i data-lucide="user-check"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ stats.active }}</span><span class="stat-card-label">En activité</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon"><i data-lucide="user-minus"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ stats.left }}</span><span class="stat-card-label">Sortis / suspendus</span></div>
+  </div>
+</section>
+
+<form method="get" action="/rh/employees" class="card mb-4">
+  <div class="grid grid-4 gap-3">
+    <div class="field"><label>Recherche</label><input name="q" value="{{ f_q or '' }}" placeholder="Nom, matricule, poste" /></div>
+    <div class="field">
+      <label>Statut</label>
+      <select name="status">
+        <option value="">Tous</option>
+        {% for s in statuses %}<option value="{{ s }}" {% if f_status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Service</label>
+      <select name="department">
+        <option value="">Tous</option>
+        {% for d in departments %}<option value="{{ d }}" {% if f_department == d %}selected{% endif %}>{{ d }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field" style="align-self:end;"><button class="btn btn-secondary" type="submit"><i data-lucide="search"></i> Filtrer</button></div>
+  </div>
+</form>
+
+<article class="card">
+  {% if employees %}
+  <table>
+    <thead><tr><th>Matricule</th><th>Nom</th><th>Poste</th><th>Service</th><th>Entrée</th><th>Statut</th></tr></thead>
+    <tbody>
+      {% for e in employees %}
+      <tr>
+        <td class="mono">{{ e.matricule }}</td>
+        <td><a href="/rh/employees/{{ e.id }}">{{ e.full_name }}</a></td>
+        <td>{{ e.job_title or '—' }}</td>
+        <td>{{ e.department or '—' }}</td>
+        <td class="mono text-sm">{{ e.entry_date or '—' }}</td>
+        <td>
+          {% if e.status == 'active' %}<span class="pill pill-ok">Actif</span>
+          {% elif e.status == 'suspended' %}<span class="pill pill-warn">Suspendu</span>
+          {% else %}<span class="pill pill-neutral">Sorti</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucun collaborateur. <a href="/rh/employees/new">En créer un</a> ou <a href="/rh/import">importer un fichier</a>.</p>
+  {% endif %}
+</article>
+{% endblock %}

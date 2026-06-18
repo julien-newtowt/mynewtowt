@@ -1,7 +1,13 @@
 {% extends "staff/_layout.html" %}
 {% block title %}RH — {{ brand.nom_court }}{% endblock %}
 {% block content %}
-<header class="mb-4"><span class="kicker">Humain</span><h1 class="display">Ressources humaines</h1></header>
+<header class="flex justify-between items-center mb-4">
+  <div><span class="kicker">Humain</span><h1 class="display">Ressources humaines</h1></div>
+  <div class="flex gap-2 items-center">
+    <a href="/rh/employees" class="btn btn-secondary"><i data-lucide="users"></i> Collaborateurs</a>
+    <a href="/rh/import" class="btn btn-ghost"><i data-lucide="upload"></i> Importer</a>
+  </div>
+</header>
 
 <div class="grid grid-2 gap-4">
   <article class="card">
