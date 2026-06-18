@@ -460,6 +460,26 @@ rollback_app() {
 # Reporting
 # ---------------------------------------------------------------------------
 
+# Statut compact des intégrations optionnelles (jamais la valeur en clair) —
+# affiché en fin de déploiement pour repérer d'un coup d'œil ce qui est actif
+# (Marad crew/plannings, météo, tracking, carto, IA, CRM). Complète le contrôle
+# d'exhaustivité du preflight (scripts/check_api_keys.sh).
+integration_status() {
+  local f="${PROJECT_ROOT}/.env"
+  [[ -f "$f" ]] || return 0
+  echo "  Intégrations (.env, lecture seule) :"
+  local k v
+  for k in MARAD_API_TOKEN MARAD_SYNC_TOKEN WEATHER_API_TOKEN WINDY_API_KEY \
+           TRACKING_API_TOKEN MAPTILER_TOKEN ANTHROPIC_API_KEY PIPEDRIVE_API_TOKEN; do
+    v="$(sed -n "s/^${k}=\(.*\)$/\1/p" "$f" | tail -n1 | sed 's/[[:space:]]*#.*$//; s/[[:space:]]*$//')"
+    if [[ -n "$v" ]]; then
+      printf '    \xe2\x9c\x93 %-22s configuré\n' "$k"
+    else
+      printf '    \xe2\x80\xa2 %-22s absent (intégration inactive)\n' "$k"
+    fi
+  done
+}
+
 report() {
   cat <<EOF
 
@@ -473,6 +493,8 @@ report() {
   Time             : $(date -u +%FT%TZ)
 ────────────────────────────────────────────────────────────────────
 EOF
+  integration_status
+  echo "────────────────────────────────────────────────────────────────────"
 }
 
 # ---------------------------------------------------------------------------
