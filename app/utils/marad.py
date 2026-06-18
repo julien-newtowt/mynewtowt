@@ -8,8 +8,10 @@ jamais dans Marad.
 Configuration (.env, cf. app/config) :
 - ``MARAD_API_TOKEN``      : clé d'API (envoyée en header). Sans elle → no-op.
 - ``MARAD_BASE_URL``       : défaut ``https://external.marad.ms``.
-- ``MARAD_API_KEY_HEADER`` : nom du header d'auth (défaut ``X-Api-Key`` — à
-  confirmer auprès de l'éditeur, cf. docs/integrations/marad-crew-readonly.md).
+- ``MARAD_API_KEY_HEADER`` : nom du header d'auth. Si laissé au défaut
+  (``X-Api-Key``), le client **essaie automatiquement** ``ApiKey`` puis
+  ``ApiToken`` puis ``X-Api-Key`` et mémorise celui qui authentifie. Fixez cette
+  variable pour forcer un header précis.
 
 ⚠️ Rate limits Marad (confirmés) : ``GET /api/Crewing`` et
 ``GET /api/CrewingSchedule`` = **1 req/min** ; autres = 15 req/min. À appeler
@@ -68,33 +70,79 @@ def _assert_allowed(path: str) -> None:
         )
 
 
-def _headers() -> dict[str, str]:
-    return {settings.marad_api_key_header: (settings.marad_api_token or "").strip()}
+# Nom du header d'auth : non confirmé par l'éditeur (doc Swagger en 403). L'API
+# accepte vraisemblablement « ApiKey » ou « ApiToken » (ou « X-Api-Key »). On
+# essaie donc plusieurs candidats et on **mémorise** celui qui authentifie, pour
+# ne pas gaspiller le quota (GET /api/Crewing = 1 req/min).
+_DEFAULT_HEADER = "X-Api-Key"
+_CANDIDATE_HEADERS: tuple[str, ...] = ("ApiKey", "ApiToken", "X-Api-Key")
+_working_header: str | None = None
+
+
+def _header_candidates() -> list[str]:
+    """Ordre d'essai des noms de header : connu-qui-marche → pin .env → candidats."""
+    out: list[str] = []
+    if _working_header:
+        out.append(_working_header)
+    explicit = (settings.marad_api_key_header or "").strip()
+    if explicit and explicit != _DEFAULT_HEADER:
+        out.append(explicit)  # l'opérateur a fixé un header précis dans .env
+    out.extend(_CANDIDATE_HEADERS)
+    seen: set[str] = set()
+    return [h for h in out if not (h in seen or seen.add(h))]
 
 
 async def _request(
     method: str, path: str, *, params: dict | None = None, json: dict | None = None
 ) -> Any | None:
-    """Appel HTTP read-only borné à la whitelist. None si non configuré / erreur."""
+    """Appel HTTP read-only borné à la whitelist. None si non configuré / erreur.
+
+    Essaie les headers d'auth candidats jusqu'à ce que l'un authentifie (pas de
+    401/403) ; le header gagnant est mémorisé pour les appels suivants.
+    """
+    global _working_header
     if not enabled():
         return None
     _assert_allowed(path)
     if method.upper() not in ("GET", "POST"):  # double garde-fou : pas de PUT/DELETE
         raise ValueError(f"marad: méthode {method} interdite (read-only)")
     url = f"{settings.marad_base_url.rstrip('/')}{path}"
+    token = (settings.marad_api_token or "").strip()
+    last_auth_status: int | None = None
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            r = await client.request(method, url, params=params, json=json, headers=_headers())
-            if r.status_code == 429:
-                logger.warning("marad %s %s → 429 rate-limited", method, path)
-                return None
-            if r.status_code >= 400:
-                logger.warning("marad %s %s → %d %s", method, path, r.status_code, r.text[:200])
-                return None
-            return r.json() if r.content else None
+            for header_name in _header_candidates():
+                r = await client.request(
+                    method, url, params=params, json=json, headers={header_name: token}
+                )
+                if r.status_code in (401, 403):
+                    last_auth_status = r.status_code
+                    if header_name != _working_header:
+                        logger.info(
+                            "marad %s %s → %d avec header '%s' — essai suivant",
+                            method, path, r.status_code, header_name,
+                        )
+                    else:
+                        _working_header = None  # le header mémorisé ne marche plus
+                    continue
+                if r.status_code == 429:
+                    logger.warning("marad %s %s → 429 rate-limited", method, path)
+                    return None
+                if r.status_code >= 400:
+                    logger.warning("marad %s %s → %d %s", method, path, r.status_code, r.text[:200])
+                    return None
+                if _working_header != header_name:
+                    logger.info("marad: header d'auth retenu = '%s'", header_name)
+                    _working_header = header_name
+                return r.json() if r.content else None
     except httpx.HTTPError as e:
         logger.warning("marad %s %s failed: %s", method, path, e)
         return None
+    logger.warning(
+        "marad %s %s → auth échouée (%s) sur tous les headers candidats %s",
+        method, path, last_auth_status, _header_candidates(),
+    )
+    return None
 
 
 async def _get(path: str, *, params: dict | None = None) -> Any | None:
