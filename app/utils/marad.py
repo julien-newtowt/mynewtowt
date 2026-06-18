@@ -136,6 +136,7 @@ async def list_ranks() -> Any | None:
 
 
 async def list_vessels() -> Any | None:
+    """GET /api/vessels/getVessels (15 req/min). Schéma confirmé : ``[{number, name}]``."""
     return await _get("/api/vessels/getVessels")
 
 

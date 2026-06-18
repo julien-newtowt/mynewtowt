@@ -289,8 +289,17 @@ async def sync_schedules(db: AsyncSession) -> dict:
         )
     ).all()
     crew_by_marad = {marad_id: cid for cid, marad_id in crew_rows}
-    vessel_rows = (await db.execute(select(Vessel.id, Vessel.name))).all()
-    vessel_by_name = {(name or "").strip().upper(): vid for vid, name in vessel_rows if name}
+    # Marad identifie un navire par {number, name} (cf. /api/vessels/getVessels) ;
+    # le champ `vessel` du schedule peut porter l'un ou l'autre → on indexe nos
+    # navires par nom ET par code (le nom prime en cas de collision).
+    vessel_rows = (await db.execute(select(Vessel.id, Vessel.name, Vessel.code))).all()
+    vessel_by_key: dict[str, int] = {}
+    for vid, name, _code in vessel_rows:
+        if name:
+            vessel_by_key[name.strip().upper()] = vid
+    for vid, _name, code in vessel_rows:
+        if code:
+            vessel_by_key.setdefault(code.strip().upper(), vid)
     # Legs groupés par navire avec leur fenêtre [atd|etd, ata|eta] (UTC naïf).
     leg_rows = (
         await db.execute(select(Leg.id, Leg.vessel_id, Leg.etd, Leg.eta, Leg.atd, Leg.ata))
@@ -312,7 +321,7 @@ async def sync_schedules(db: AsyncSession) -> dict:
             vessel_str = _clean(rec.get("vessel"))
             vessel_id = None
             if vessel_str:
-                vessel_id = vessel_by_name.get(vessel_str.strip().upper())
+                vessel_id = vessel_by_key.get(vessel_str.strip().upper())
                 if vessel_id is None and vessel_str in vmap:
                     try:
                         vessel_id = int(vmap[vessel_str])
