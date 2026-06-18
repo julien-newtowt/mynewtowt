@@ -84,7 +84,10 @@ class Settings(BaseSettings):
     marad_api_token: str | None = None  # clé d'API Marad (envoyée en header)
     marad_api_key_header: str = "X-Api-Key"  # nom du header d'auth (à confirmer éditeur)
     marad_sync_token: str | None = None  # X-API-Token du cron interne POST /api/marad/refresh
-    marad_vessel_map: str = ""  # "marad_vessel_id=vessel_id,..." (cf. TRACKING_VESSEL_MAP)
+    # Repli de mapping navire. Marad identifie un navire par {number, name}
+    # (/api/vessels/getVessels) ; la sync résout d'abord par nom/code de notre
+    # table Vessel, puis via cette map "marad_number_ou_nom=vessel_id,...".
+    marad_vessel_map: str = ""
 
     # Veille d'actualité — agrégateur NewsData.io + token de rafraîchissement
     # (POST /api/veille/refresh, déclenché en cron par Power Automate).

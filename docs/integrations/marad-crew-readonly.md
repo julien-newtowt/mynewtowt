@@ -314,8 +314,12 @@ Schéma réel (objets **imbriqués**) :
 
 - `GET /api/ranks/getranks` → table de mapping `marad_rank → role` (config,
   pas un modèle métier).
-- `GET /api/vessels/getVessels` → mapping `marad_vessel_id → Vessel.id`
-  (analogue à `TRACKING_VESSEL_MAP` déjà utilisé pour le tracking satcom).
+- `GET /api/vessels/getVessels` — ✅ **schéma confirmé** (2026-06-18) :
+  `[{ "number": "…", "name": "…" }]`. Un navire Marad est identifié par un
+  **`number`** (+ `name`), pas par un GUID. La sync des plannings résout le
+  champ `vessel` (qui peut porter le nom **ou** le number) contre nos
+  `Vessel.name` puis `Vessel.code`, avec repli `MARAD_VESSEL_MAP`
+  (`marad_number_ou_nom=vessel_id,...`).
 
 ---
 

@@ -332,6 +332,36 @@ def test_sync_schedules_resolves_vessel_and_leg(monkeypatch) -> None:
     _run_with_db(_check)
 
 
+def test_sync_schedules_resolves_vessel_by_code(monkeypatch) -> None:
+    """Le champ `vessel` peut porter le NUMÉRO Marad → match sur Vessel.code."""
+    from app.models.crew import MaradCrewSchedule
+    from app.models.vessel import Vessel
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        vessel = Vessel(code="CF", name="Anemos")
+        s.add(vessel)
+        await s.flush()
+        # Le schedule référence le navire par "CF" (= notre code, pas le nom).
+        monkeypatch.setattr(
+            marad,
+            "list_schedules",
+            lambda modified_since=None: _ret([{"id": "sx", "vessel": "cf"}]),
+        )
+        await marad_sync.sync_schedules(s)
+        row = (
+            await s.execute(
+                select(MaradCrewSchedule).where(MaradCrewSchedule.marad_schedule_id == "sx")
+            )
+        ).scalar_one()
+        assert row.vessel_id == vessel.id
+
+    _run_with_db(_check)
+
+
 def test_sync_schedules_skips_without_id_and_handles_unmapped(monkeypatch) -> None:
     from app.models.crew import MaradCrewSchedule
 

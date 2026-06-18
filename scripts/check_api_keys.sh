@@ -124,6 +124,25 @@ for entry in "${FEATURES[@]}"; do
   else warng "$key" "absent → $cons"; opt_missing=1; fi
 done
 
+# --- 3b. Exhaustivité : toute clé ACTIVE de .env.example doit exister dans .env
+# Garantit qu'aucune clé nouvellement déclarée (ex. MARAD_API_TOKEN /
+# MARAD_SYNC_TOKEN) n'est oubliée au déploiement, même si elle n'est pas listée
+# explicitement plus haut. Non bloquant (avertissement) — mais affiché à chaque
+# run de deploy.sh. Seules les lignes NON commentées de .env.example comptent.
+EXAMPLE_FILE="${EXAMPLE_FILE:-$ROOT/.env.example}"
+if [[ -f "$EXAMPLE_FILE" ]]; then
+  head_ "Exhaustivité (.env vs .env.example)"
+  exhaustive_ok=1
+  while IFS= read -r key; do
+    [[ -z "$key" ]] && continue
+    if ! grep -qE "^[[:space:]]*${key}=" "$ENV_FILE"; then
+      warng "$key" "déclaré dans .env.example mais ABSENT de .env → à installer"
+      opt_missing=1; exhaustive_ok=0
+    fi
+  done < <(sed -nE 's/^([A-Z][A-Z0-9_]+)=.*/\1/p' "$EXAMPLE_FILE" | sort -u)
+  (( exhaustive_ok == 1 )) && ok ".env" "exhaustif (toutes les clés de .env.example présentes)"
+fi
+
 # --- 4. Dérive host ↔ conteneur (optionnelle) --------------------------------
 if (( CONTAINER_CHECK == 1 )); then
   head_ "Cohérence host ↔ conteneur ${APP_SERVICE}"
