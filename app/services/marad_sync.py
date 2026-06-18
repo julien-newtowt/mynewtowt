@@ -23,7 +23,7 @@ Schéma Marad ``/api/Crewing`` (confirmé) — champs utilisés :
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.crew import CrewMember, MaradCrewSchedule
 from app.models.leg import Leg
+from app.models.vessel import Vessel
 from app.utils import marad
 
 logger = logging.getLogger("marad")
@@ -198,29 +199,15 @@ async def sync_crew(db: AsyncSession) -> dict:
 
 
 # ─────────────────── Plannings d'embarquement (CrewingSchedule) ───────────────────
-# Schéma /api/CrewingSchedule NON ENCORE confirmé → extraction défensive sur des
-# clés candidates (même approche que le crew avant confirmation). Le mapping
-# définitif sera figé dès qu'un échantillon réel sera fourni. Chez Marad, un
-# « voyage » = notre `leg` (réconcilié via leg_code).
+# Schéma /api/CrewingSchedule CONFIRMÉ (échantillon éditeur 2026-06-18) :
+#   id (GUID) ; crewMember{ id (GUID), firstName, lastName, … } ;
+#   rank ; status ; vessel (NOM) ;
+#   startInfo{ dateTime, date, time, remarks, port } ; endInfo{ … }.
+# Pas de code « voyage » explicite → le leg est réconcilié par **navire + fenêtre
+# de dates** (un « voyage » Marad = un leg). marad_voyage_ref = route POL→POD.
 
-_SCHED_ID_KEYS = ("id", "scheduleId", "crewingScheduleId")
-_SCHED_CREW_KEYS = ("crewMemberId", "crewId", "personId", "seafarerId", "crewMemberGuid")
-_SCHED_VESSEL_ID_KEYS = ("vesselId", "shipId", "vesselGuid")
-_SCHED_VESSEL_NAME_KEYS = ("vesselName", "shipName")
-_SCHED_VOYAGE_KEYS = (
-    "voyage",
-    "voyageNo",
-    "voyageNumber",
-    "voyageRef",
-    "voyageName",
-    "voyageCode",
-    "legCode",
-    "tripCode",
-)
-_SCHED_RANK_KEYS = ("rankName", "rank", "position", "rankLabel", "function")
-_SCHED_START_KEYS = ("startDate", "signOnDate", "embarkDate", "fromDate", "dateFrom", "plannedSignOn")
-_SCHED_END_KEYS = ("endDate", "signOffDate", "disembarkDate", "toDate", "dateTo", "plannedSignOff")
-_SCHED_STATUS_KEYS = ("status", "state", "scheduleStatus")
+_SCHED_RANK_KEYS = ("rank", "rankName", "position")
+_SCHED_STATUS_KEYS = ("status", "state")
 
 
 def _pick(rec: dict, keys: tuple[str, ...]) -> str | None:
@@ -232,27 +219,52 @@ def _pick(rec: dict, keys: tuple[str, ...]) -> str | None:
     return None
 
 
-def _parse_date(val: str | None) -> date | None:
+def _subdict(rec: dict, key: str) -> dict:
+    """Sous-objet imbriqué (crewMember / startInfo / endInfo) ou {} si absent."""
+    v = rec.get(key)
+    return v if isinstance(v, dict) else {}
+
+
+def _parse_dt(val: str | None) -> datetime | None:
     if not val:
         return None
     try:
-        return datetime.fromisoformat(val.replace("Z", "+00:00")).date()
+        return datetime.fromisoformat(val.replace("Z", "+00:00"))
     except ValueError:
         return None
 
 
-def _norm_code(code: str | None) -> str:
-    """Normalise un code de leg / référence voyage pour la réconciliation."""
-    return (code or "").strip().upper().replace(" ", "")
+def _to_naive_utc(dt: datetime | None) -> datetime | None:
+    """Normalise en UTC naïf (compat SQLite, qui perd la tzinfo en stockage)."""
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
+
+
+def _resolve_leg(
+    vessel_id: int | None,
+    start_dt: datetime | None,
+    legs_by_vessel: dict[int, list[tuple[int, datetime | None, datetime | None]]],
+) -> int | None:
+    """Leg dont la fenêtre [début, fin] contient l'embarquement (un voyage = un leg)."""
+    if not vessel_id or start_dt is None:
+        return None
+    s = _to_naive_utc(start_dt)
+    for leg_id, lo, hi in legs_by_vessel.get(vessel_id, ()):
+        if lo is not None and hi is not None and lo <= s <= hi:
+            return leg_id
+    return None
 
 
 async def sync_schedules(db: AsyncSession) -> dict:
     """Upsert idempotent des plannings Marad dans ``marad_crew_schedules``.
 
     Lecture seule côté Marad. Réconcilie :
-    - le marin via ``CrewMember.marad_id`` ;
-    - le navire via ``MARAD_VESSEL_MAP`` ;
-    - le **leg** via le « voyage » Marad ↔ ``leg_code``.
+    - le marin via ``CrewMember.marad_id`` (objet imbriqué ``crewMember.id``) ;
+    - le navire via son **nom** (champ ``vessel``) — repli ``MARAD_VESSEL_MAP`` ;
+    - le **leg** via navire + fenêtre de dates (un « voyage » Marad = un leg).
     No-op propre si Marad n'est pas configuré.
     """
     if not marad.enabled():
@@ -270,34 +282,52 @@ async def sync_schedules(db: AsyncSession) -> dict:
     records = _records(payload)
 
     # Index de réconciliation (une seule requête chacun).
-    vmap = marad.vessel_map()  # {marad_vessel_id: vessel_id (str)}
+    vmap = marad.vessel_map()  # repli {marad_vessel_id|nom: vessel_id (str)}
     crew_rows = (
         await db.execute(
             select(CrewMember.id, CrewMember.marad_id).where(CrewMember.marad_id.is_not(None))
         )
     ).all()
     crew_by_marad = {marad_id: cid for cid, marad_id in crew_rows}
-    leg_rows = (await db.execute(select(Leg.id, Leg.leg_code))).all()
-    leg_by_code = {_norm_code(code): lid for lid, code in leg_rows if code}
+    vessel_rows = (await db.execute(select(Vessel.id, Vessel.name))).all()
+    vessel_by_name = {(name or "").strip().upper(): vid for vid, name in vessel_rows if name}
+    # Legs groupés par navire avec leur fenêtre [atd|etd, ata|eta] (UTC naïf).
+    leg_rows = (
+        await db.execute(select(Leg.id, Leg.vessel_id, Leg.etd, Leg.eta, Leg.atd, Leg.ata))
+    ).all()
+    legs_by_vessel: dict[int, list[tuple[int, datetime | None, datetime | None]]] = {}
+    for lid, vid, etd, eta, atd, ata in leg_rows:
+        legs_by_vessel.setdefault(vid, []).append(
+            (lid, _to_naive_utc(atd or etd), _to_naive_utc(ata or eta))
+        )
 
     created = updated = skipped = errors = 0
     for rec in records:
-        sched_id = _pick(rec, _SCHED_ID_KEYS)
+        sched_id = _clean(rec.get("id"))
         if not sched_id:
             skipped += 1
             continue
         try:
-            crew_guid = _pick(rec, _SCHED_CREW_KEYS)
-            voyage_ref = _pick(rec, _SCHED_VOYAGE_KEYS)
-            marad_vessel_id = _pick(rec, _SCHED_VESSEL_ID_KEYS)
+            crew_guid = _clean(_subdict(rec, "crewMember").get("id"))
+            vessel_str = _clean(rec.get("vessel"))
             vessel_id = None
-            if marad_vessel_id and marad_vessel_id in vmap:
-                try:
-                    vessel_id = int(vmap[marad_vessel_id])
-                except ValueError:
-                    vessel_id = None
-            leg_id = leg_by_code.get(_norm_code(voyage_ref)) if voyage_ref else None
-            crew_member_id = crew_by_marad.get(crew_guid) if crew_guid else None
+            if vessel_str:
+                vessel_id = vessel_by_name.get(vessel_str.strip().upper())
+                if vessel_id is None and vessel_str in vmap:
+                    try:
+                        vessel_id = int(vmap[vessel_str])
+                    except ValueError:
+                        vessel_id = None
+
+            si, ei = _subdict(rec, "startInfo"), _subdict(rec, "endInfo")
+            start_dt = _parse_dt(_clean(si.get("dateTime")))
+            end_dt = _parse_dt(_clean(ei.get("dateTime")))
+            start_port, end_port = _clean(si.get("port")), _clean(ei.get("port"))
+            voyage_ref = (
+                f"{start_port or '?'} → {end_port or '?'}"[:80]
+                if (start_port or end_port)
+                else None
+            )
 
             row = (
                 await db.execute(
@@ -312,17 +342,16 @@ async def sync_schedules(db: AsyncSession) -> dict:
                 created += 1
             else:
                 updated += 1
-            row.crew_member_id = crew_member_id
+            row.crew_member_id = crew_by_marad.get(crew_guid) if crew_guid else None
             row.marad_crew_id = crew_guid
             row.vessel_id = vessel_id
-            row.marad_vessel_name = _pick(rec, _SCHED_VESSEL_NAME_KEYS)
+            row.marad_vessel_name = vessel_str
             row.marad_voyage_ref = voyage_ref
-            row.leg_id = leg_id
-            row.rank_label = (_pick(rec, _SCHED_RANK_KEYS) or None)
-            if row.rank_label:
-                row.rank_label = row.rank_label[:80]
-            row.start_date = _parse_date(_pick(rec, _SCHED_START_KEYS))
-            row.end_date = _parse_date(_pick(rec, _SCHED_END_KEYS))
+            row.leg_id = _resolve_leg(vessel_id, start_dt, legs_by_vessel)
+            rank = _pick(rec, _SCHED_RANK_KEYS)
+            row.rank_label = rank[:80] if rank else None
+            row.start_date = start_dt.date() if start_dt else None
+            row.end_date = end_dt.date() if end_dt else None
             row.status = _pick(rec, _SCHED_STATUS_KEYS)
         except Exception:  # un schedule fautif ne stoppe pas le batch
             logger.exception("Marad schedules: échec sur le schedule %s", sched_id)
