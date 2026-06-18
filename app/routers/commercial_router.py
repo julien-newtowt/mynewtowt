@@ -183,6 +183,7 @@ async def clients_sync_pipedrive(
         url=(
             f"/commercial/clients?pd=ok&created={result['created']}"
             f"&updated={result['updated']}&skipped={result.get('skipped', 0)}"
+            f"&linked={result.get('linked', 0)}"
         ),
         status_code=303,
     )

@@ -110,11 +110,23 @@ async def sync_clients(db: AsyncSession) -> dict:
             logger.warning("pipedrive sync: org ignorée (%s): %s", org.get("id"), e)
 
     await db.flush()
+
+    # Rapprochement auto des comptes plateforme non liés (par e-mail) avec les
+    # clients fraîchement remontés.
+    linked = 0
+    try:
+        from app.services.client_linking import link_unlinked_accounts
+
+        linked = await link_unlinked_accounts(db)
+    except Exception:
+        logger.warning("post-sync account linking failed", exc_info=True)
+
     result = {
         "configured": True,
         "created": created,
         "updated": updated,
         "skipped": skipped,
+        "linked": linked,
         "total": len(orgs),
         "errors": errors,
     }

@@ -27,7 +27,8 @@
 <div class="alert alert-success mb-4">
   <i data-lucide="check-circle"></i>
   Synchronisation Pipedrive terminée : {{ request.query_params.get('created', 0) }} créé(s),
-  {{ request.query_params.get('updated', 0) }} mis à jour.
+  {{ request.query_params.get('updated', 0) }} mis à jour,
+  {{ request.query_params.get('linked', 0) }} compte(s) plateforme relié(s) par e-mail.
   <span class="text-muted">({{ request.query_params.get('skipped', 0) }} organisation(s) sans deal ignorée(s))</span>
 </div>
 {% elif _pd == 'disabled' %}
