@@ -104,14 +104,73 @@ async def find_or_create_organization(name: str, **extra: Any) -> dict | None:
 
 
 async def create_deal(
-    title: str, *, org_id: int | None = None, value: float | None = None, currency: str = "EUR"
+    title: str,
+    *,
+    org_id: int | None = None,
+    value: float | None = None,
+    currency: str = "EUR",
+    pipeline_id: int | None = None,
+    stage_id: int | None = None,
 ) -> dict | None:
     payload: dict[str, Any] = {"title": title, "currency": currency}
     if org_id:
         payload["org_id"] = org_id
     if value is not None:
         payload["value"] = value
+    if pipeline_id:
+        payload["pipeline_id"] = pipeline_id
+    if stage_id:
+        payload["stage_id"] = stage_id
     data = await _request("POST", "/deals", json=payload)
+    return (data or {}).get("data")
+
+
+async def find_pipeline_id(name: str) -> int | None:
+    """Résout l'``id`` d'un pipeline Pipedrive par son nom (insensible à la casse).
+
+    Renvoie ``None`` si non configuré, introuvable ou en erreur.
+    """
+    if not name:
+        return None
+    data = await _request("GET", "/pipelines")
+    if not data or not data.get("success"):
+        return None
+    target = name.strip().lower()
+    for p in data.get("data") or []:
+        if (p.get("name") or "").strip().lower() == target:
+            return p.get("id")
+    return None
+
+
+async def first_stage_id(pipeline_id: int) -> int | None:
+    """Premier étage (plus petit ``order_nr``) d'un pipeline."""
+    if not pipeline_id:
+        return None
+    data = await _request("GET", "/stages", params={"pipeline_id": pipeline_id})
+    if not data or not data.get("success"):
+        return None
+    stages = [s for s in (data.get("data") or []) if s.get("id")]
+    if not stages:
+        return None
+    stages.sort(key=lambda s: s.get("order_nr") or 0)
+    return stages[0].get("id")
+
+
+async def add_note(
+    content: str, *, deal_id: int | None = None, org_id: int | None = None
+) -> dict | None:
+    """Crée une note Pipedrive rattachée à un deal et/ou une organisation.
+
+    ``content`` accepte du HTML simple (Pipedrive l'affiche tel quel).
+    """
+    if not (content or "").strip():
+        return None
+    payload: dict[str, Any] = {"content": content}
+    if deal_id:
+        payload["deal_id"] = deal_id
+    if org_id:
+        payload["org_id"] = org_id
+    data = await _request("POST", "/notes", json=payload)
     return (data or {}).get("data")
 
 

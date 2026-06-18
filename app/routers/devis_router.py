@@ -213,6 +213,16 @@ async def devis_submit(
                 message=f"Devis {quote.reference} — {pol}→{pod}, "
                 f"{quote.palettes_total} palettes, total {quote.total_eur} EUR",
                 source="devis",
+                leg_code=leg_code,
+                details={
+                    "pol": pol,
+                    "pod": pod,
+                    "palettes": str(quote.palettes_total),
+                    "tonnage_t": str(tonnage_t) if tonnage_t is not None else None,
+                    "hazardous": "Oui" if hazardous else "Non",
+                    "quote_reference": quote.reference,
+                    "quote_total_eur": str(quote.total_eur),
+                },
             )
         except Exception:
             pass
