@@ -6,6 +6,7 @@
 <link rel="manifest" href="/manifest.json" />
 <script src="/static/js/pwa-onboard.js" defer></script>
 <script src="/static/js/onboard-offline.js" defer></script>
+<script src="{{ asset('js/noon-fuel.js') }}" defer></script>
 {% endblock %}
 {% block content %}
 <a href="/onboard" class="btn btn-ghost mb-3">← Onboard</a>
@@ -106,7 +107,7 @@
             <tr>
               <td>{{ eng }}</td>
               <td><input name="eng_rh_{{ loop.index0 }}" type="number" step="0.1" style="width:5rem;" /></td>
-              <td><input name="eng_do_{{ loop.index0 }}" type="number" step="0.0001" style="width:6rem;" /></td>
+              <td><input name="eng_do_{{ loop.index0 }}" class="eng-do" type="number" step="0.0001" style="width:6rem;" /></td>
               <td><input name="eng_rhd_{{ loop.index0 }}" type="number" step="1" style="width:5rem;" /></td>
               <td><input name="eng_rhd1_{{ loop.index0 }}" type="number" step="1" style="width:5rem;" /></td>
             </tr>
@@ -114,12 +115,15 @@
           </tbody>
         </table>
         <div class="grid grid-3 gap-3 mt-2">
-          <div class="field"><label>Conso totale (t)</label><input name="total_consumption_t" type="number" step="0.0001" /></div>
+          <div class="field"><label>Conso totale (t) <small class="text-muted">— auto : somme moteurs</small></label><input id="noon-total-conso" name="total_consumption_t" type="number" step="0.0001" /></div>
           <div class="field"><label>Densité GO (t/m³)</label><input name="go_density" type="number" step="0.001" /></div>
-          <div class="field"><label>ROB DO (t)</label><input name="rob_do_t" type="number" step="0.01" /></div>
+          <div class="field"><label>ROB DO (t) <small class="text-muted">— auto : ROB préc. − conso</small></label><input id="noon-rob-do" name="rob_do_t" type="number" step="0.01" data-prev-rob="{{ last_rob_do_t if last_rob_do_t is not none else '' }}" /></div>
           <div class="field"><label>ROB Urée (t)</label><input name="rob_uree_t" type="number" step="0.01" /></div>
           <div class="field"><label>ROB FW (t)</label><input name="rob_fw_t" type="number" step="0.01" /></div>
           <div class="field"><label>Production FW (t)</label><input name="production_fw_t" type="number" step="0.01" /></div>
+        </div>
+        <div id="noon-fuel-alert" class="alert alert-warn mt-2" hidden>
+          <i data-lucide="alert-triangle"></i> Valeur saisie manuellement — l'auto-calcul est désactivé pour ce champ.
         </div>
       </details>
 
