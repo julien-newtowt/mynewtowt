@@ -49,11 +49,12 @@ def leg_window(leg: Leg, *, now: datetime | None = None) -> tuple[datetime, date
 
     - start = ATD si disponible, sinon ETD (départ planifié) ;
     - end   = ATA si arrivé, sinon ``now`` (leg en cours) ;
-    - is_active = leg non encore arrivé (ATA absente).
+    - is_active = leg **réellement parti** (ATD posée) et **pas encore arrivé**
+      (ATA absente). Un leg futur (sans ATD) n'est donc PAS « en mer ».
     """
     now = now or datetime.now(UTC)
     start = leg.atd or leg.etd
-    is_active = leg.ata is None
+    is_active = leg.atd is not None and leg.ata is None
     end = leg.ata or now
     # Garde-fou : si l'horloge serveur est en amont du départ planifié.
     if end < start:

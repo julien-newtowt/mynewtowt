@@ -182,6 +182,31 @@ async def navigation_index(
             }
         )
 
+    # ── Statut de navigation par leg (tri-état) + invariant « un seul leg en
+    # mer par navire » ──
+    # Un leg non parti (ATD absente) est « planifié » — jamais « en mer » ;
+    # un leg parti et non arrivé est « en mer » ; sinon « arrivé ». Et comme un
+    # navire ne peut naviguer qu'un leg à la fois, seul le leg parti le plus
+    # récemment (ATD max) reste « en mer » — les éventuels at_sea antérieurs
+    # (ATA jamais posée) sont considérés arrivés.
+    from collections import defaultdict
+
+    _at_sea: dict[int, list] = defaultdict(list)
+    for d in legs_data:
+        lg = d["leg"]
+        if lg.atd is None:
+            d["nav_status"] = "planned"
+        elif lg.ata is None:
+            d["nav_status"] = "at_sea"
+            _at_sea[lg.vessel_id].append(d)
+        else:
+            d["nav_status"] = "arrived"
+    for ds in _at_sea.values():
+        if len(ds) > 1:
+            ds.sort(key=lambda d: d["leg"].atd, reverse=True)
+            for d in ds[1:]:
+                d["nav_status"] = "arrived"
+
     # ── URLs de bascule (add/remove) des chips du navire/année courant ──
     from urllib.parse import urlencode
 
