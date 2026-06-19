@@ -4,8 +4,12 @@ S'appuie sur le client whitelisté ``app.utils.marad`` (mêmes endpoints, même
 auth multi-header). N'écrit jamais côté MARAD ni en base. Affiche le JSON
 retourné (tronqué par défaut pour les grosses listes ; ``--raw`` = complet).
 
-⚠️ Rate limits MARAD : ``crew`` et ``schedules`` = 1 req/min ; autres = 15/min.
-Sans argument, n'appelle que les endpoints légers (ping + vessels + ranks).
+⚠️ Rate limits MARAD : l'API renvoie 429 dès deux appels rapprochés (même sur
+les endpoints « légers »). ``ping()`` interroge **le même** endpoint que
+``vessels`` (``/api/vessels/getVessels``) — ne PAS les enchaîner. Bonne pratique :
+**un seul endpoint par invocation** (le script appelle ``vessels`` par défaut).
+Pour enchaîner plusieurs endpoints, ``--delay`` insère une pause (défaut 65 s).
+``crew`` et ``schedules`` = 1 req/min stricte.
 
 Usage (dans le conteneur app) :
   docker compose exec app python -m scripts.marad_probe                  # ping+vessels+ranks
@@ -32,7 +36,9 @@ from app.utils import marad
 # Surface les tentatives d'auth multi-header (quel header a authentifié) + erreurs.
 logging.basicConfig(level=logging.INFO, format="[marad] %(levelname)s %(message)s")
 
-_LIGHT = ("ping", "vessels", "ranks")  # 15 req/min — sûrs à enchaîner
+# NB : ping() appelle /api/vessels/getVessels — c'est donc le MÊME endpoint que
+# `vessels`. On NE les enchaîne pas (sinon 429 immédiat). Défaut = un seul appel.
+_DEFAULT = ("vessels",)
 
 
 def _ids(value: str | None) -> list[int]:
@@ -75,13 +81,16 @@ async def _call(endpoint: str, *, since: str | None, ids: list[int]):
     raise SystemExit(f"Endpoint inconnu : {endpoint!r}")
 
 
-async def run(*, endpoint: str | None, since: str | None, ids: list[int], raw: bool, limit: int) -> int:
+async def run(*, endpoint: str | None, since: str | None, ids: list[int], raw: bool, limit: int, delay: float) -> int:
     if not marad.enabled():
         print("MARAD non configuré : MARAD_API_TOKEN absent du .env → no-op.")
         return 1
     print(f"Base URL : {settings.marad_base_url}")
-    targets = [endpoint] if endpoint else list(_LIGHT)
-    for ep in targets:
+    targets = [endpoint] if endpoint else list(_DEFAULT)
+    for i, ep in enumerate(targets):
+        if i > 0 and delay > 0:
+            print(f"\n… pause {delay:.0f}s (anti rate-limit MARAD) …")
+            await asyncio.sleep(delay)
         if ep in ("passports", "documents") and not ids:
             print(f"\n===== {ep} =====\n→ --ids requis (ex. --ids 12,34).")
             continue
@@ -105,9 +114,17 @@ def main() -> int:
     p.add_argument("--ids", default=None, help="IDs crew séparés par des virgules (passports/documents).")
     p.add_argument("--raw", action="store_true", help="affiche le JSON complet (pas de troncature).")
     p.add_argument("--limit", type=int, default=3, help="nb d'éléments affichés pour une liste (défaut 3).")
+    p.add_argument("--delay", type=float, default=65.0, help="pause (s) entre appels multiples (défaut 65 — rate-limit MARAD).")
     args = p.parse_args()
     return asyncio.run(
-        run(endpoint=args.endpoint, since=args.since, ids=_ids(args.ids), raw=args.raw, limit=args.limit)
+        run(
+            endpoint=args.endpoint,
+            since=args.since,
+            ids=_ids(args.ids),
+            raw=args.raw,
+            limit=args.limit,
+            delay=args.delay,
+        )
     )
 
 
