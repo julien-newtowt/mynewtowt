@@ -29,7 +29,8 @@
   <h2 class="card-title">Client &amp; traversée</h2>
   <div class="grid grid-2 gap-3">
     <div class="field">
-      <label for="client_account_id">Client (compte vérifié)</label>
+      <label for="client-search">Client (compte vérifié)</label>
+      <input id="client-search" type="search" class="form-control mb-2" placeholder="Rechercher un client (société, e-mail)…" autocomplete="off" />
       <select id="client_account_id" name="client_account_id" required>
         <option value="">— Sélectionner —</option>
         {% for a in accounts %}
@@ -44,7 +45,7 @@
         {% for item in legs %}
           <option value="{{ item.leg.id }}">
             {{ item.leg.leg_code }} ·
-            {{ item.pol.locode if item.pol else '?' }} → {{ item.pod.locode if item.pod else '?' }} ·
+            {{ item.pol.name if item.pol else '?' }} ({{ item.pol.locode if item.pol else '?' }}) → {{ item.pod.name if item.pod else '?' }} ({{ item.pod.locode if item.pod else '?' }}) ·
             ETD {{ item.leg.etd|date }}
           </option>
         {% endfor %}
@@ -52,15 +53,15 @@
     </div>
   </div>
 
-  <h2 class="card-title mt-4">Lignes cargo</h2>
+  <h2 class="card-title mt-4">Cargaison</h2>
   <p class="text-muted text-sm mb-3">
-    Renseignez une ou plusieurs lignes. Les lignes vides (sans nombre ni
-    description) sont ignorées.
+    Renseignez un ou plusieurs batches. Les batches vides (sans nombre ni
+    description) sont ignorés.
   </p>
 
   {% for i in cargo_rows %}
-    <fieldset class="field" style="border:1px solid var(--border, #ddd);border-radius:8px;padding:var(--space-3);margin-bottom:var(--space-3);">
-      <legend class="text-sm text-muted">Ligne {{ i + 1 }}</legend>
+    <fieldset class="field cargo-batch" data-index="{{ i }}" {% if i > 0 %}hidden{% endif %} style="border:1px solid var(--border, #ddd);border-radius:8px;padding:var(--space-3);margin-bottom:var(--space-3);">
+      <legend class="text-sm text-muted">Batch {{ i + 1 }}</legend>
       <div class="grid grid-3 gap-3">
         <div class="field">
           <label for="items-{{ i }}-format">Format</label>
@@ -99,16 +100,12 @@
     </fieldset>
   {% endfor %}
 
+  <button type="button" id="add-batch" class="btn btn-secondary">
+    <i data-lucide="plus"></i> Rajouter un batch
+  </button>
+
   <h2 class="card-title mt-4">Logistique (optionnel)</h2>
   <div class="grid grid-2 gap-3">
-    <div class="field">
-      <label for="pickup_address">Adresse d'enlèvement</label>
-      <textarea id="pickup_address" name="pickup_address" rows="2"></textarea>
-    </div>
-    <div class="field">
-      <label for="delivery_address">Adresse de livraison</label>
-      <textarea id="delivery_address" name="delivery_address" rows="2"></textarea>
-    </div>
     <div class="field">
       <label for="shipper_reference">Référence chargeur</label>
       <input id="shipper_reference" name="shipper_reference" type="text" maxlength="100" />
@@ -126,4 +123,5 @@
 </form>
 {% endif %}
 
+<script src="{{ asset('js/operator-booking.js') }}" defer></script>
 {% endblock %}
