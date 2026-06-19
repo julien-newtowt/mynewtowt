@@ -1,0 +1,104 @@
+{% extends "staff/_layout.html" %}
+{% block title %}EVP {{ period }} — RH{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Humain · Paie</span>
+    <h1 class="display">Éléments variables de paie</h1>
+  </div>
+  <a href="/rh/employees" class="btn btn-ghost"><i data-lucide="users"></i> Collaborateurs</a>
+</header>
+
+<div class="flex justify-between items-center mb-4">
+  <div class="flex gap-2 items-center">
+    <a href="/rh/payroll/{{ prev_period }}" class="btn btn-ghost">←</a>
+    <span class="pill pill-neutral mono" style="font-size:1.1rem;">{{ period }}</span>
+    <a href="/rh/payroll/{{ next_period }}" class="btn btn-ghost">→</a>
+    {% if locked %}<span class="pill pill-warn"><i data-lucide="lock"></i> Période verrouillée</span>
+    {% else %}<span class="pill pill-ok">Brouillon</span>{% endif %}
+  </div>
+  {% if not locked %}
+  <div class="flex gap-2">
+    <form method="post" action="/rh/payroll/{{ period }}/sync-absences" style="display:inline">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button class="btn btn-secondary" type="submit"><i data-lucide="refresh-cw"></i> Importer les absences du mois</button>
+    </form>
+    {% if line_count %}
+    <form method="post" action="/rh/payroll/{{ period }}/lock" style="display:inline" onsubmit="return confirm('Verrouiller la période ? Les lignes ne seront plus modifiables.');">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button class="btn btn-primary" type="submit"><i data-lucide="lock"></i> Verrouiller la période</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% set _synced = request.query_params.get('synced') %}
+{% if _synced is not none %}
+<div class="alert alert-success mb-4"><i data-lucide="check-circle"></i> {{ _synced }} ligne(s) d'absence importée(s).</div>
+{% endif %}
+
+{% if not locked %}
+<article class="card mb-4">
+  <h2>Ajouter une ligne</h2>
+  <form method="post" action="/rh/payroll/{{ period }}/lines">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-4 gap-3">
+      <div class="field" style="grid-column:span 2;">
+        <label>Collaborateur *</label>
+        <select name="employee_id" required>
+          {% for e in active_employees %}<option value="{{ e.id }}">{{ e.full_name }} ({{ e.matricule }})</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>Type d'EVP *</label>
+        <select name="evp_type" required>
+          {% for key, label in evp_types.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label>Quantité</label><input name="quantity" type="number" step="0.01" value="0" /></div>
+      <div class="field"><label>Montant (€)</label><input name="amount" type="number" step="0.01" /></div>
+      <div class="field" style="grid-column:span 3;"><label>Commentaire</label><input name="comment" /></div>
+    </div>
+    <button class="btn btn-primary mt-3" type="submit">Ajouter</button>
+  </form>
+</article>
+{% endif %}
+
+<article class="card">
+  <h2>Lignes ({{ line_count }})</h2>
+  {% if lines %}
+  <table>
+    <thead><tr><th>Collaborateur</th><th>Type</th><th>Quantité</th><th>Montant</th><th>Source</th><th>Statut</th><th>Commentaire</th><th></th></tr></thead>
+    <tbody>
+      {% for l in lines %}
+      {% set emp = employees.get(l.employee_id) %}
+      <tr>
+        <td>{% if emp %}<a href="/rh/employees/{{ emp.id }}">{{ emp.full_name }}</a>{% else %}#{{ l.employee_id }}{% endif %}</td>
+        <td>{{ l.type_label }}</td>
+        <td class="mono">{{ l.quantity }}</td>
+        <td class="mono">{{ l.amount|money if l.amount is not none else '—' }}</td>
+        <td>{% if l.source == 'absence' %}<span class="pill pill-neutral">absence</span>{% elif l.source == 'import' %}<span class="pill pill-neutral">import</span>{% else %}<span class="pill pill-neutral">manuel</span>{% endif %}</td>
+        <td>
+          {% if l.status == 'draft' %}<span class="pill pill-ok">Brouillon</span>
+          {% elif l.status == 'locked' %}<span class="pill pill-warn">Verrouillé</span>
+          {% else %}<span class="pill pill-neutral">Exporté</span>{% endif %}
+        </td>
+        <td class="text-sm text-muted">{{ l.comment or '' }}</td>
+        <td>
+          {% if l.is_editable %}
+          <form method="post" action="/rh/payroll/{{ period }}/lines/{{ l.id }}/delete" style="display:inline" onsubmit="return confirm('Supprimer cette ligne ?');">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button class="btn btn-ghost btn-sm" type="submit"><i data-lucide="trash-2"></i></button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucun élément variable pour cette période. Ajoutez une ligne ou importez les absences du mois.</p>
+  {% endif %}
+</article>
+{% endblock %}

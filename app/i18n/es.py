@@ -410,6 +410,7 @@ CATALOG: dict[str, str] = {
     "tb_rh_employees": "Colaboradores",
     "tb_rh_contract_alerts": "Vencimientos de contratos",
     "tb_rh_absences": "Permisos y ausencias",
+    "tb_rh_payroll": "Variables de nómina",
     "tb_rh_my_absences": "Mis permisos",
     "tb_rh_import": "Importar colaboradores",
     "s_nav_finance": "Finanzas",

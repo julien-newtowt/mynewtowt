@@ -30,11 +30,19 @@ from app.models.employment_contract import (
     EmploymentContract,
 )
 from app.models.hr_absence import ABSENCE_KINDS, ABSENCE_STATUSES, HrAbsence
+from app.models.payroll_variable import EVP_TYPES, PayrollVariable
 from app.models.user import User
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.hr_absences import count_business_days
 from app.services.hr_import import parse_employees_csv
+from app.services.payroll import (
+    current_period,
+    is_valid_period,
+    overlaps_period,
+    period_bounds,
+    shift_period,
+)
 from app.templating import templates
 
 router = APIRouter(tags=["rh"])
@@ -1062,6 +1070,212 @@ async def self_absence_cancel(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/rh/moi/absences", status_code=303)
+
+
+# ────────────────────────────────────────────────────────────────────
+#              Éléments variables de paie / EVP (L4)
+# ────────────────────────────────────────────────────────────────────
+
+
+def _period_is_locked(lines: list[PayrollVariable]) -> bool:
+    """Une période est figée dès qu'une ligne est verrouillée ou exportée."""
+    return any(line.status in ("locked", "exported") for line in lines)
+
+
+@router.get("/rh/payroll", response_class=HTMLResponse)
+async def payroll_redirect(
+    user=Depends(require_permission("rh", "C")),
+) -> RedirectResponse:
+    return RedirectResponse(url=f"/rh/payroll/{current_period()}", status_code=303)
+
+
+@router.get("/rh/payroll/{period}", response_class=HTMLResponse)
+async def payroll_period(
+    period: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "C")),
+) -> HTMLResponse:
+    if not is_valid_period(period):
+        raise HTTPException(status_code=404, detail="période invalide")
+    lines = list(
+        (
+            await db.execute(
+                select(PayrollVariable)
+                .where(PayrollVariable.period == period)
+                .order_by(PayrollVariable.employee_id, PayrollVariable.evp_type)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    employees = {
+        e.id: e for e in (await db.execute(select(Employee))).scalars().all()
+    }
+    active_employees = sorted(
+        (e for e in employees.values() if e.status == "active"),
+        key=lambda e: (e.last_name, e.first_name),
+    )
+    return templates.TemplateResponse(
+        "staff/rh/payroll.html",
+        {
+            "request": request,
+            "user": user,
+            "period": period,
+            "prev_period": shift_period(period, -1),
+            "next_period": shift_period(period, 1),
+            "lines": lines,
+            "employees": employees,
+            "active_employees": active_employees,
+            "evp_types": EVP_TYPES,
+            "locked": _period_is_locked(lines),
+            "line_count": len(lines),
+        },
+    )
+
+
+async def _load_period_lines(db: AsyncSession, period: str) -> list[PayrollVariable]:
+    return list(
+        (await db.execute(select(PayrollVariable).where(PayrollVariable.period == period)))
+        .scalars()
+        .all()
+    )
+
+
+@router.post("/rh/payroll/{period}/lines")
+async def payroll_add_line(
+    period: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    if not is_valid_period(period):
+        raise HTTPException(status_code=404, detail="période invalide")
+    if _period_is_locked(await _load_period_lines(db, period)):
+        raise HTTPException(status_code=400, detail="période verrouillée")
+    f = await request.form()
+    emp_id = _opt_int(f.get("employee_id"), "Collaborateur")
+    emp = await db.get(Employee, emp_id) if emp_id else None
+    if not emp:
+        raise HTTPException(status_code=400, detail="collaborateur introuvable")
+    evp_type = _opt_str(f.get("evp_type"))
+    if evp_type not in EVP_TYPES:
+        raise HTTPException(status_code=400, detail="type d'EVP invalide")
+    line = PayrollVariable(
+        employee_id=emp_id,
+        period=period,
+        evp_type=evp_type,
+        quantity=_opt_decimal(f.get("quantity"), "Quantité") or Decimal("0"),
+        amount=_opt_decimal(f.get("amount"), "Montant"),
+        comment=_opt_str(f.get("comment")),
+        source="manual",
+        status="draft",
+        created_by_id=user.id,
+    )
+    db.add(line)
+    await db.flush()
+    await activity_record(
+        db, action="create", user_id=user.id,
+        user_name=user.full_name or user.username, user_role=user.role,
+        module="rh", entity_type="payroll_variable", entity_id=line.id,
+        entity_label=f"{emp.full_name} — {line.type_label} ({period})",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/rh/payroll/{period}", status_code=303)
+
+
+@router.post("/rh/payroll/{period}/lines/{line_id}/delete")
+async def payroll_delete_line(
+    period: str,
+    line_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    line = await db.get(PayrollVariable, line_id)
+    if not line or line.period != period:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not line.is_editable:
+        raise HTTPException(status_code=400, detail="ligne verrouillée — suppression impossible")
+    await db.delete(line)
+    await db.flush()
+    return RedirectResponse(url=f"/rh/payroll/{period}", status_code=303)
+
+
+@router.post("/rh/payroll/{period}/sync-absences")
+async def payroll_sync_absences(
+    period: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    if not is_valid_period(period):
+        raise HTTPException(status_code=404, detail="période invalide")
+    existing = await _load_period_lines(db, period)
+    if _period_is_locked(existing):
+        raise HTTPException(status_code=400, detail="période verrouillée")
+    already = {line.absence_id for line in existing if line.absence_id is not None}
+    first, last = period_bounds(period)
+    # Absences approuvées recoupant le mois.
+    approved = list(
+        (
+            await db.execute(
+                select(HrAbsence).where(
+                    HrAbsence.status == "approved",
+                    HrAbsence.start_date <= last,
+                    HrAbsence.end_date >= first,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    created = 0
+    for ab in approved:
+        if ab.id in already or not overlaps_period(ab.start_date, ab.end_date, period):
+            continue
+        db.add(
+            PayrollVariable(
+                employee_id=ab.employee_id,
+                period=period,
+                evp_type="absence",
+                quantity=ab.business_days,
+                comment=f"{ab.kind} du {ab.start_date} au {ab.end_date}",
+                source="absence",
+                status="draft",
+                absence_id=ab.id,
+                created_by_id=user.id,
+            )
+        )
+        created += 1
+    await db.flush()
+    return RedirectResponse(url=f"/rh/payroll/{period}?synced={created}", status_code=303)
+
+
+@router.post("/rh/payroll/{period}/lock")
+async def payroll_lock(
+    period: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    if not is_valid_period(period):
+        raise HTTPException(status_code=404, detail="période invalide")
+    lines = await _load_period_lines(db, period)
+    if not lines:
+        raise HTTPException(status_code=400, detail="aucune ligne à verrouiller")
+    for line in lines:
+        if line.status == "draft":
+            line.status = "locked"
+    await db.flush()
+    await activity_record(
+        db, action="lock", user_id=user.id,
+        user_name=user.full_name or user.username, user_role=user.role,
+        module="rh", entity_type="payroll_period", entity_id=None,
+        entity_label=f"période {period} verrouillée ({len(lines)} lignes)",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/rh/payroll/{period}", status_code=303)
 
 
 # ────────────────────────────────────────────────────────────────────

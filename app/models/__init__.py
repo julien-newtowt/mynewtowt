@@ -65,6 +65,7 @@ from app.models.packing_list import (
     PortalAccessLog,
     PortalMessage,
 )
+from app.models.payroll_variable import PayrollVariable
 from app.models.planning_share import PlanningShare
 from app.models.port import Port
 from app.models.quote import Quote, QuoteLine
@@ -142,6 +143,7 @@ __all__ = [
     "PackingListAudit",
     "PackingListBatch",
     "PackingListDocument",
+    "PayrollVariable",
     "PlanningShare",
     "Port",
     "PortConfig",
