@@ -9,6 +9,9 @@
     <p class="text-muted">
       {% if grid.pol_locode %}<span class="mono">{{ grid.pol_locode }} → {{ grid.pod_locode }}</span> ·{% elif grid.client %}Toutes routes ·{% endif %}
       Valide {{ grid.valid_from|date }} → {{ grid.valid_to|date if grid.valid_to else '∞' }} · base {{ grid.base_rate_per_palette|money }} · × {{ grid.adjustment_index }}
+      {% if grid.hazardous_surcharge_pct is not none %} · IMDG {{ grid.hazardous_surcharge_pct }}%{% endif %}
+      {% if grid.min_charge_eur is not none %} · min {{ grid.min_charge_eur|money }}{% endif %}
+      {% if grid.volume_commitment is not none %} · engagement min {{ grid.volume_commitment }} pal.{% endif %}
     </p>
   </div>
   <div class="flex gap-2">

@@ -80,6 +80,10 @@ class GridQuote:
     options_total_eur: Decimal = Decimal("0")
     total_eur: Decimal = Decimal("0")
     currency: str = "EUR"
+    # Engagement minimum de volume (palettes) de la grille — None = aucun.
+    volume_commitment: int | None = None
+    # True si la quantité demandée est sous l'engagement minimum.
+    below_commitment: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -425,6 +429,10 @@ def compute_grid_quote(
         options_total_eur=options_total.quantize(_TWO_PLACES, rounding=ROUND_HALF_UP),
         total_eur=total,
         currency=grid.currency,
+        volume_commitment=grid.volume_commitment,
+        below_commitment=bool(
+            grid.volume_commitment and total_palettes < grid.volume_commitment
+        ),
     )
 
 

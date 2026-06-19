@@ -157,6 +157,8 @@ class RateGrid(Base):
     # - minimum de facturation appliqué au total du devis.
     hazardous_surcharge_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     min_charge_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    # Engagement minimum de volume (palettes/commande) — grilles shipper (Module 6).
+    volume_commitment: Mapped[int | None] = mapped_column(Integer)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
