@@ -247,6 +247,9 @@ async def onboard_navigation(
             "legs": legs,
             "leg": selected,
             "noon_reports": noon_reports,
+            # ROB DO du dernier report du leg → base de chaîne pour le ROB auto
+            # du nouveau report (ROB = ROB précédent − conso).
+            "last_rob_do_t": (noon_reports[0].rob_do_t if noon_reports else None),
             "watch_logs": watch_logs,
             "latest_position": latest_position,
             "weather_now": weather_now,
