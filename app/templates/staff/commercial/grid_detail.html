@@ -1,5 +1,6 @@
 {% extends "staff/_layout.html" %}
 {% block title %}{{ grid.reference }} — {{ brand.nom_court }}{% endblock %}
+{% set editable = grid.status != 'active' %}
 {% block content %}
 
 <header class="flex justify-between items-center mb-4">
@@ -7,8 +8,11 @@
     <span class="kicker">Commercial · {{ grid.client.name if grid.client else 'Grille par défaut' }}</span>
     <h1 class="display">{{ grid.reference }}</h1>
     <p class="text-muted">
-      {% if grid.pol_locode %}<span class="mono">{{ grid.pol_locode }} → {{ grid.pod_locode }}</span> ·{% elif grid.client %}Toutes routes ·{% endif %}
-      Valide {{ grid.valid_from|date }} → {{ grid.valid_to|date if grid.valid_to else '∞' }} · base {{ grid.base_rate_per_palette|money }} · × {{ grid.adjustment_index }}
+      {% if grid.client %}{{ grid.lines|length }} route{{ 's' if grid.lines|length != 1 else '' }} ·{% else %}Défaut ({{ grid.lines|length }} route{{ 's' if grid.lines|length != 1 else '' }}) ·{% endif %}
+      Valide {{ grid.valid_from|date }} → {{ grid.valid_to|date if grid.valid_to else '∞' }} · × {{ grid.adjustment_index }}
+      {% if vessel %} · navire {{ vessel.name }}{% endif %}
+      {% if grid.bl_fee is not none %} · BL {{ grid.bl_fee|money }}{% endif %}
+      {% if grid.booking_fee is not none %} · booking {{ grid.booking_fee|money }}{% endif %}
       {% if grid.hazardous_surcharge_pct is not none %} · IMDG {{ grid.hazardous_surcharge_pct }}%{% endif %}
       {% if grid.min_charge_eur is not none %} · min {{ grid.min_charge_eur|money }}{% endif %}
       {% if grid.volume_commitment is not none %} · engagement min {{ grid.volume_commitment }} pal.{% endif %}
@@ -22,10 +26,10 @@
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <button type="submit" class="btn btn-primary btn-sm">Activer</button>
     </form>
-    {% if grid.pol_locode and grid.pod_locode %}
+    {% if grid.lines %}
     <form method="post" action="/commercial/grids/{{ grid.id }}/recalculate" style="display:inline;">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-secondary btn-sm" title="Recalcule le tarif de base via OPEX × jours de mer / 850">↻ Recalculer (OPEX)</button>
+      <button type="submit" class="btn btn-secondary btn-sm" title="Recalcule le base_rate de toutes les routes non-manuelles (OPEX × jours de mer / 850)">↻ Recalculer (OPEX)</button>
     </form>
     {% endif %}
     {% endif %}
@@ -34,32 +38,139 @@
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <button type="submit" class="btn btn-secondary btn-sm" title="Déverrouille l'édition (la grille n'est plus appliquée)">Repasser en brouillon</button>
     </form>
-    {% endif %}
-    {% if grid.status == 'active' %}
     <span class="btn btn-secondary btn-sm" style="opacity:.5;cursor:not-allowed;" title="Grille active verrouillée — repassez-la en brouillon">Modifier (verrouillé)</span>
     {% else %}
-    <a href="/commercial/grids/{{ grid.id }}/edit" class="btn btn-secondary btn-sm">Modifier</a>
+    <a href="/commercial/grids/{{ grid.id }}/edit" class="btn btn-secondary btn-sm">Modifier l'en-tête</a>
     {% endif %}
     <a href="/commercial/grids" class="btn btn-ghost">← Retour</a>
   </div>
 </header>
 
+{% if not editable %}
+<div class="alert alert-info mb-3">Grille <strong>active</strong> verrouillée — repassez-la en brouillon pour éditer ses routes, brackets et options.</div>
+{% endif %}
+
 <article class="card">
-  <h2>Brackets dégressifs</h2>
+  <h2>Routes (POL → POD)</h2>
+  <p class="text-muted text-sm">Chaque route porte sa distance, son OPEX jour et son tarif de base : <span class="mono">base_rate = OPEX/j × (distance / (8 × 24)) / 850</span>. Le tarif effectif d'un devis = base_rate × bracket × index.</p>
   <table class="data-table">
-    <thead><tr><th>Bracket</th><th>Libellé</th><th>Max qty</th><th>Coefficient</th><th>Tarif effectif</th></tr></thead>
+    <thead><tr><th>Route</th><th>Distance (NM)</th><th>Jours de mer</th><th>OPEX/j</th><th>Tarif base</th><th>Source</th>{% if editable %}<th></th>{% endif %}</tr></thead>
     <tbody>
-      {% for l in grid.lines %}
+      {% for r in grid.lines %}
       <tr>
-        <td class="mono">{{ l.bracket_key }}</td>
-        <td>{{ l.bracket_label }}</td>
-        <td class="mono">{{ l.max_qty }}</td>
-        <td class="mono">× {{ l.coeff }}</td>
-        <td class="mono">{{ ((grid.base_rate_per_palette * l.coeff * grid.adjustment_index))|money }}</td>
+        <td class="mono">{{ r.pol_locode }} → {{ r.pod_locode }}</td>
+        <td class="mono">{{ r.distance_nm }}</td>
+        <td class="mono">{{ r.nav_days }}</td>
+        <td class="mono">{{ r.opex_daily|money }}</td>
+        <td class="mono">{{ r.base_rate|money }}</td>
+        <td>{% if r.is_manual %}<span class="pill pill-neutral">manuel</span>{% else %}<span class="pill pill-ok">OPEX</span>{% endif %}</td>
+        {% if editable %}
+        <td class="flex gap-2">
+          <details>
+            <summary class="btn btn-ghost btn-sm">Éditer</summary>
+            <form method="post" action="/commercial/grids/{{ grid.id }}/routes/{{ r.id }}/edit" class="mt-2">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <div class="field">
+                <label>Distance (NM) <small class="text-muted">— vide = re-résolue</small></label>
+                <input name="distance_nm" type="number" min="0" step="0.01" value="{{ r.distance_nm }}" class="mono" />
+              </div>
+              <div class="field">
+                <label>Tarif base manuel (€) <small class="text-muted">— vide = OPEX</small></label>
+                <input name="base_rate" type="number" min="0" step="0.01" placeholder="OPEX auto" class="mono" {% if r.is_manual %}value="{{ r.base_rate }}"{% endif %} />
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm">Enregistrer</button>
+            </form>
+          </details>
+          <form method="post" action="/commercial/grids/{{ grid.id }}/routes/{{ r.id }}/recalculate" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-ghost btn-sm" title="Recalcule l'OPEX (efface la surcharge manuelle)">↻</button>
+          </form>
+          <form method="post" action="/commercial/grids/{{ grid.id }}/routes/{{ r.id }}/delete" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--cuivre);" data-confirm>Supprimer</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ '7' if editable else '6' }}" class="text-muted text-center">Aucune route. Ajoutez une route POL→POD.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if editable %}
+  <h3 class="mt-3">Ajouter une route</h3>
+  <form method="post" action="/commercial/grids/{{ grid.id }}/routes">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="route-pol">POL (LOCODE)</label>
+        <input id="route-pol" name="pol_locode" type="text" maxlength="5" placeholder="FRFEC" class="mono" list="route-ports" required />
+      </div>
+      <div class="field">
+        <label for="route-pod">POD (LOCODE)</label>
+        <input id="route-pod" name="pod_locode" type="text" maxlength="5" placeholder="BRSSO" class="mono" list="route-ports" required />
+      </div>
+      <datalist id="route-ports">
+        {% for p in route_ports or [] %}<option value="{{ p.locode }}">{{ p.name }}{% if p.country %} ({{ p.country }}){% endif %}</option>{% endfor %}
+      </datalist>
+      <div class="field">
+        <label for="route-distance">Distance (NM) <small class="text-muted">— vide = résolue (orthodromie/table)</small></label>
+        <input id="route-distance" name="distance_nm" type="number" min="0" step="0.01" placeholder="auto" class="mono" />
+      </div>
+      <div class="field">
+        <label for="route-base">Tarif base manuel (€) <small class="text-muted">— vide = formule OPEX</small></label>
+        <input id="route-base" name="base_rate" type="number" min="0" step="0.01" placeholder="OPEX auto" class="mono" />
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Ajouter la route</button>
+  </form>
+  {% endif %}
+</article>
+
+<article class="card mt-4">
+  <h2>Brackets de volume</h2>
+  <p class="text-muted text-sm">Coefficients dégressifs par volume, partagés par toutes les routes de la grille.</p>
+  <table class="data-table">
+    <thead><tr><th>Libellé</th><th>Max qty</th><th>Coefficient</th></tr></thead>
+    <tbody>
+      {% for b in grid.brackets %}
+      <tr>
+        <td>{{ b.label or b.key or b.max_qty }}</td>
+        <td class="mono">{{ b.max_qty }}</td>
+        <td class="mono">× {{ b.coeff }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+
+  {% if editable %}
+  <h3 class="mt-3">Éditer les brackets</h3>
+  <p class="text-muted text-sm">Laissez une ligne vide pour la supprimer. Les lignes renseignées remplacent l'ensemble des brackets.</p>
+  <form method="post" action="/commercial/grids/{{ grid.id }}/brackets">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <table class="data-table">
+      <thead><tr><th>Libellé</th><th>Max qty</th><th>Coefficient</th></tr></thead>
+      <tbody>
+        {% for b in grid.brackets %}
+        <tr>
+          <td><input name="bracket_label" type="text" maxlength="80" value="{{ b.label or '' }}" /></td>
+          <td><input name="bracket_max_qty" type="number" min="1" step="1" value="{{ b.max_qty }}" class="mono" /></td>
+          <td><input name="bracket_coeff" type="number" min="0" step="0.01" value="{{ b.coeff }}" class="mono" /></td>
+        </tr>
+        {% endfor %}
+        {% for _ in range(3) %}
+        <tr>
+          <td><input name="bracket_label" type="text" maxlength="80" placeholder="ex. 200 palettes" /></td>
+          <td><input name="bracket_max_qty" type="number" min="1" step="1" placeholder="200" class="mono" /></td>
+          <td><input name="bracket_coeff" type="number" min="0" step="0.01" placeholder="0.80" class="mono" /></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit" class="btn btn-primary">Enregistrer les brackets</button>
+  </form>
+  {% endif %}
   {% if grid.notes %}
   <div class="alert alert-info mt-3">{{ grid.notes }}</div>
   {% endif %}

@@ -6,9 +6,9 @@
   <span class="kicker">Commercial</span>
   <h1 class="display">{{ 'Modifier ' ~ grid.reference if grid else 'Nouvelle grille tarifaire' }}</h1>
   {% if grid %}
-  <p class="text-muted">Les brackets dégressifs et les options tarifaires se gèrent depuis la fiche de la grille.</p>
+  <p class="text-muted">Les routes (POL→POD) et les brackets de volume se gèrent depuis la fiche de la grille.</p>
   {% else %}
-  <p class="text-muted">Les 7 brackets dégressifs (lt50 → full ship) sont créés automatiquement selon le type de client.</p>
+  <p class="text-muted">Créez l'en-tête (client + période), puis ajoutez les routes et ajustez les brackets depuis la fiche. Les brackets dégressifs sont initialisés selon le type de client.</p>
   {% endif %}
 </header>
 
@@ -19,26 +19,17 @@
       <div class="field">
         <label for="client_id">Client</label>
         <select id="client_id" name="client_id">
-          <option value="">— Aucun (grille par défaut de route) —</option>
+          <option value="">— Aucun (grille par défaut) —</option>
           {% for c in clients %}<option value="{{ c.id }}" {% if grid and grid.client_id == c.id %}selected{% endif %}>{{ c.name }} ({{ c.client_type }})</option>{% endfor %}
         </select>
       </div>
       <div class="field">
-        <label for="base_rate">Tarif base (€/palette)</label>
-        <input id="base_rate" name="base_rate" type="number" min="0" step="0.01" required {% if grid %}value="{{ grid.base_rate_per_palette }}"{% endif %} />
+        <label for="vessel_id">Navire de référence <small class="text-muted">— lookup OPEX au recalcul</small></label>
+        <select id="vessel_id" name="vessel_id">
+          <option value="">— Paramètre global OPEX —</option>
+          {% for v in vessels %}<option value="{{ v.id }}" {% if grid and grid.vessel_id == v.id %}selected{% endif %}>{{ v.name }} ({{ v.code }})</option>{% endfor %}
+        </select>
       </div>
-      <div class="field">
-        <label for="pol_locode">POL (LOCODE) <small class="text-muted">— voyages existants</small></label>
-        <input id="pol_locode" name="pol_locode" type="text" maxlength="5" placeholder="FRLEH" class="mono" list="route-ports" {% if grid and grid.pol_locode %}value="{{ grid.pol_locode }}"{% endif %} />
-      </div>
-      <div class="field">
-        <label for="pod_locode">POD (LOCODE) <small class="text-muted">— voyages existants</small></label>
-        <input id="pod_locode" name="pod_locode" type="text" maxlength="5" placeholder="FRLEH" class="mono" list="route-ports" {% if grid and grid.pod_locode %}value="{{ grid.pod_locode }}"{% endif %} />
-      </div>
-      {# Recherche voyage : LOCODE des ports effectivement desservis par un leg. #}
-      <datalist id="route-ports">
-        {% for p in route_ports or [] %}<option value="{{ p.locode }}">{{ p.name }}{% if p.country %} ({{ p.country }}){% endif %}</option>{% endfor %}
-      </datalist>
       <div class="field">
         <label for="valid_from">Valide du</label>
         <input id="valid_from" name="valid_from" type="date" required {% if grid %}value="{{ grid.valid_from }}"{% endif %} />
@@ -50,6 +41,14 @@
       <div class="field">
         <label for="adjustment_index">Index d'ajustement</label>
         <input id="adjustment_index" name="adjustment_index" type="number" step="0.0001" value="{{ grid.adjustment_index if grid else '1.0' }}" />
+      </div>
+      <div class="field">
+        <label for="bl_fee">Forfait BL (€) <small class="text-muted">— vide = aucun</small></label>
+        <input id="bl_fee" name="bl_fee" type="number" min="0" step="0.01" placeholder="ex. 35.00" {% if grid and grid.bl_fee is not none %}value="{{ grid.bl_fee }}"{% endif %} />
+      </div>
+      <div class="field">
+        <label for="booking_fee">Forfait booking (€) <small class="text-muted">— vide = aucun</small></label>
+        <input id="booking_fee" name="booking_fee" type="number" min="0" step="0.01" placeholder="ex. 50.00" {% if grid and grid.booking_fee is not none %}value="{{ grid.booking_fee }}"{% endif %} />
       </div>
       <div class="field">
         <label for="hazardous_surcharge_pct">Surcharge IMDG (%) <small class="text-muted">— vide = défaut 25 %</small></label>
@@ -67,13 +66,13 @@
         <label for="is_default">Grille par défaut</label>
         <label style="margin-bottom:0;">
           <input id="is_default" type="checkbox" name="is_default" {% if grid and grid.is_default %}checked{% endif %} />
-          Grille par défaut de la route (sans client, POL/POD obligatoires)
+          Grille par défaut (sans client, repli pour tout demandeur inconnu)
         </label>
       </div>
     </div>
     <div class="alert alert-info mb-3">
-      Une grille <strong>client</strong> peut couvrir une route précise (POL/POD) ou toutes ses routes (POL/POD vides).
-      Une grille <strong>par défaut</strong> s'applique aux demandeurs inconnus : route POL/POD obligatoire et aucun client.
+      Une grille <strong>client</strong> couvre une ou plusieurs <strong>routes</strong> (lignes POL→POD), chacune avec sa distance et son tarif de base OPEX.
+      Une grille <strong>par défaut</strong> (sans client) sert de repli pour les demandeurs inconnus.
     </div>
     <div class="flex gap-2">
       <button type="submit" class="btn btn-primary">{{ 'Enregistrer' if grid else 'Créer la grille' }}</button>

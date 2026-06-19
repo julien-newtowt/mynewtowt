@@ -30,7 +30,7 @@
         <label for="grid_id">Grille tarifaire <small class="text-muted">(filtrée par client + leg)</small></label>
         <select id="grid_id" name="grid_id">
           <option value="">Sans grille</option>
-          {% for g in grids %}<option value="{{ g.id }}">{{ g.reference }} · base {{ g.base_rate_per_palette }}€</option>{% endfor %}
+          {% for g in grids %}<option value="{{ g.id }}">{{ g.reference }} · {% if g.client_id %}client{% else %}défaut{% endif %} · {{ g.lines|length }} route{{ 's' if g.lines|length != 1 else '' }}</option>{% endfor %}
         </select>
       </div>
       <div class="field">

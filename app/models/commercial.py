@@ -18,6 +18,7 @@ Brackets dégressifs (DEFAULT_BRACKETS_SHIPPER) :
 
 from __future__ import annotations
 
+import json
 from datetime import date as _date
 from datetime import datetime
 from decimal import Decimal
@@ -123,13 +124,21 @@ class Client(Base):
 
 
 class RateGrid(Base):
-    """Grille tarifaire = 1 route POL/POD + 1 période.
+    """Grille tarifaire = 1 client (ou défaut) + 1 période + N routes.
 
-    Deux familles :
-    - grille **client** (`client_id` renseigné) — s'applique au client connu ;
-      une grille client sans route (pol/pod NULL) vaut pour toutes ses routes.
-    - grille **par défaut** (`client_id` NULL, `is_default=True`) — s'applique
-      à tout demandeur inconnu sur la route, et sert de repli.
+    Modèle multi-routes (Module 6) :
+    - l'**en-tête** porte le client (ou ``is_default``), la période, l'index
+      d'ajustement, les forfaits documentaires (BL / booking), le paramétrage
+      fin (IMDG, minimum de facturation, engagement de volume) et les
+      **brackets de volume** (``brackets_json`` — coefficients dégressifs au
+      niveau grille, remplace les anciennes lignes-brackets) ;
+    - chaque **route** (``RateGridLine``) porte POL/POD, sa distance, son OPEX
+      jour et son ``base_rate`` (OPEX × jours de mer / 850) ;
+    - ``vessel_id`` sert au lookup de l'OPEX jour par navire au recalcul.
+
+    Deux familles : grille **client** (``client_id`` renseigné) ou grille
+    **par défaut** (``client_id`` NULL, ``is_default=True``) — repli pour tout
+    demandeur inconnu, une seule active, multi-routes.
     """
 
     __tablename__ = "rate_grids"
@@ -139,19 +148,22 @@ class RateGrid(Base):
     client_id: Mapped[int | None] = mapped_column(
         ForeignKey("commercial_clients.id"), nullable=True, index=True
     )
-    # Route couverte par la grille (UN/LOCODE 5 car.) — NULL = toutes routes
-    # (uniquement pertinent pour une grille client).
-    pol_locode: Mapped[str | None] = mapped_column(String(5), index=True)
-    pod_locode: Mapped[str | None] = mapped_column(String(5), index=True)
+    # Navire de référence — sert au lookup de l'OPEX jour lors du recalcul des
+    # routes (sinon paramètre global opex_daily_sea, sinon repli).
+    vessel_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vessels.id"), nullable=True, index=True
+    )
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
     valid_from: Mapped[_date] = mapped_column(Date, nullable=False)
     valid_to: Mapped[_date | None] = mapped_column(Date)
     currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
-    base_rate_per_palette: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     adjustment_index: Mapped[Decimal] = mapped_column(
         Numeric(6, 4), default=Decimal("1.0000"), nullable=False
     )
+    # Forfaits documentaires (sucre au-dessus des options) — repris au devis.
+    bl_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    booking_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     # Paramétrage fin (NULL = défaut global / pas de minimum) :
     # - surcharge marchandises dangereuses (IMDG) en points de % (ex. 25.00) ;
     # - minimum de facturation appliqué au total du devis.
@@ -159,6 +171,9 @@ class RateGrid(Base):
     min_charge_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     # Engagement minimum de volume (palettes/commande) — grilles shipper (Module 6).
     volume_commitment: Mapped[int | None] = mapped_column(Integer)
+    # Brackets de volume (coefficients dégressifs) au niveau grille — JSON
+    # liste de {key,label,max_qty,coeff}. NULL = défaut shipper (cf. brackets).
+    brackets_json: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -166,15 +181,32 @@ class RateGrid(Base):
 
     client: Mapped[Client | None] = relationship(back_populates="rate_grids")
     lines: Mapped[list[RateGridLine]] = relationship(
-        back_populates="grid", cascade="all, delete-orphan", order_by="RateGridLine.max_qty"
+        back_populates="grid", cascade="all, delete-orphan", order_by="RateGridLine.id"
     )
     options: Mapped[list[RateGridOption]] = relationship(
         back_populates="grid", cascade="all, delete-orphan", order_by="RateGridOption.id"
     )
 
+    @property
+    def brackets(self) -> list[dict]:
+        """Brackets de volume (depuis ``brackets_json``) — défaut shipper si absent."""
+        if self.brackets_json:
+            try:
+                data = json.loads(self.brackets_json)
+            except (ValueError, TypeError):
+                data = None
+            if isinstance(data, list) and data:
+                return data
+        return list(DEFAULT_BRACKETS_SHIPPER)
+
 
 class RateGridLine(Base):
-    """Une bracket d'une grille tarifaire."""
+    """Une route POL→POD d'une grille (distance / OPEX jour / base_rate).
+
+    ``nav_days = distance_nm / (8 nœuds × 24 h)`` et
+    ``base_rate = opex_daily × nav_days / 850``. ``is_manual`` gèle le
+    ``base_rate`` (surcharge manuelle) : le recalcul OPEX ne le réécrit pas.
+    """
 
     __tablename__ = "rate_grid_lines"
 
@@ -182,10 +214,15 @@ class RateGridLine(Base):
     grid_id: Mapped[int] = mapped_column(
         ForeignKey("rate_grids.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    bracket_key: Mapped[str] = mapped_column(String(20), nullable=False)
-    bracket_label: Mapped[str] = mapped_column(String(80), nullable=False)
-    max_qty: Mapped[int] = mapped_column(Integer, nullable=False)
-    coeff: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
+    pol_locode: Mapped[str] = mapped_column(String(5), nullable=False, index=True)
+    pod_locode: Mapped[str] = mapped_column(String(5), nullable=False, index=True)
+    # Route rattachée à un leg type (optionnel — distance reprise du leg).
+    leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"), nullable=True)
+    distance_nm: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    nav_days: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    opex_daily: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    base_rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    is_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     grid: Mapped[RateGrid] = relationship(back_populates="lines")
 

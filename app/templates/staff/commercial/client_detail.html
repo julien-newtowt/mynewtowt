@@ -33,14 +33,14 @@
   <article class="card">
     <h2>Grilles tarifaires</h2>
     <table class="data-table">
-      <thead><tr><th>Référence</th><th>Route</th><th>Statut</th><th>Tarif base</th></tr></thead>
+      <thead><tr><th>Référence</th><th>Routes</th><th>Statut</th><th>Validité</th></tr></thead>
       <tbody>
         {% for g in grids %}
         <tr>
           <td><a href="/commercial/grids/{{ g.id }}" class="mono">{{ g.reference }}</a></td>
-          <td>{% if g.pol_locode %}<span class="mono">{{ g.pol_locode }} → {{ g.pod_locode }}</span>{% else %}Toutes routes{% endif %}</td>
+          <td class="mono">{{ g.lines|length }} route{{ 's' if g.lines|length != 1 else '' }}</td>
           <td><span class="badge badge-{{ g.status }}">{{ g.status }}</span></td>
-          <td class="mono">{{ g.base_rate_per_palette|money }}</td>
+          <td>{{ g.valid_from|date }} → {{ g.valid_to|date if g.valid_to else '∞' }}</td>
         </tr>
         {% else %}
         <tr><td colspan="4" class="text-muted text-center">Aucune grille pour ce client.</td></tr>

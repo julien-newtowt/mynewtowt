@@ -10,6 +10,7 @@ Reprises de la V3.0.0 :
 from __future__ import annotations
 
 import io
+import json
 from datetime import UTC, datetime
 from datetime import date as _date
 from decimal import Decimal, InvalidOperation
@@ -39,6 +40,7 @@ from app.models.commercial import (
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.quote import Quote
+from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.commercial import (
@@ -49,7 +51,11 @@ from app.services.commercial import (
     next_order_reference,
     pick_bracket,
 )
-from app.services.quoting import _default_base_rate, backfill_default_grids
+from app.services.quoting import (
+    _match_route,
+    backfill_default_grids,
+    compute_route_economics,
+)
 from app.templating import templates
 
 router = APIRouter(prefix="/commercial", tags=["commercial"])
@@ -246,6 +252,7 @@ async def client_detail(
         (
             await db.execute(
                 select(RateGrid)
+                .options(selectinload(RateGrid.lines))
                 .where(RateGrid.client_id == client.id)
                 .order_by(RateGrid.created_at.desc())
             )
@@ -399,36 +406,48 @@ def _clean_locode(value: str | None, field: str) -> str | None:
     return code
 
 
-def _validate_grid_route(
-    *, client_id: int | None, pol: str | None, pod: str | None, is_default: bool
-) -> None:
-    """Règles route/défaut d'une grille.
+def _validate_grid_header(*, client_id: int | None, is_default: bool) -> None:
+    """Règles d'en-tête d'une grille (les routes sont des lignes séparées).
 
-    - POL et POD vont ensemble (route complète, ou aucune route) ;
-    - grille par défaut : route POL/POD obligatoire, sans client ;
-    - grille non défaut : client obligatoire (route précise ou toutes-routes).
+    - grille par défaut : aucun client ;
+    - grille non défaut : client obligatoire.
     """
-    if (pol is None) != (pod is None):
+    if is_default and client_id is not None:
         raise HTTPException(
             status_code=400,
-            detail="route incomplète : renseigner POL et POD ensemble, ou aucun des deux",
+            detail="une grille par défaut ne peut pas être rattachée à un client",
         )
-    if is_default:
-        if client_id is not None:
-            raise HTTPException(
-                status_code=400,
-                detail="une grille par défaut ne peut pas être rattachée à un client",
-            )
-        if pol is None or pod is None:
-            raise HTTPException(
-                status_code=400,
-                detail="une grille par défaut requiert une route POL/POD",
-            )
-    elif client_id is None:
+    if not is_default and client_id is None:
         raise HTTPException(
             status_code=400,
             detail="une grille doit être rattachée à un client, ou marquée « grille par défaut »",
         )
+
+
+async def _vessels(db: AsyncSession) -> list[Vessel]:
+    """Navires actifs (pour le select navire de référence d'une grille)."""
+    return list(
+        (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.name)))
+        .scalars()
+        .all()
+    )
+
+
+async def _grid_editable(db: AsyncSession, grid_id: int) -> RateGrid:
+    """Grille (avec routes) éditable : 404 si absente, 400 si active (verrouillée)."""
+    grid = (
+        await db.execute(
+            select(RateGrid).options(selectinload(RateGrid.lines)).where(RateGrid.id == grid_id)
+        )
+    ).scalar_one_or_none()
+    if grid is None:
+        raise HTTPException(status_code=404)
+    if grid.status == "active":
+        raise HTTPException(
+            status_code=400,
+            detail="Grille active verrouillée — repassez-la en brouillon pour la modifier.",
+        )
+    return grid
 
 
 @router.get("/grids", response_class=HTMLResponse)
@@ -495,8 +514,8 @@ async def grid_new_form(
             "request": request,
             "user": user,
             "clients": clients,
+            "vessels": await _vessels(db),
             "grid": None,
-            "route_ports": await _route_ports(db),
         },
     )
 
@@ -505,58 +524,49 @@ async def grid_new_form(
 async def grid_create(
     request: Request,
     client_id: int | None = Form(None),
-    pol_locode: str | None = Form(None),
-    pod_locode: str | None = Form(None),
+    vessel_id: int | None = Form(None),
     is_default: bool = Form(False),
     valid_from: str = Form(...),
     valid_to: str | None = Form(None),
-    base_rate: float = Form(...),
     adjustment_index: float = Form(1.0),
+    bl_fee: str | None = Form(None),
+    booking_fee: str | None = Form(None),
     hazardous_surcharge_pct: str | None = Form(None),
     min_charge_eur: str | None = Form(None),
     volume_commitment: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
-    pol = _clean_locode(pol_locode, "POL")
-    pod = _clean_locode(pod_locode, "POD")
-    _validate_grid_route(client_id=client_id, pol=pol, pod=pod, is_default=is_default)
+    _validate_grid_header(client_id=client_id, is_default=is_default)
     client = None
     if client_id is not None:
         client = await db.get(Client, client_id)
         if client is None:
             raise HTTPException(status_code=404, detail="client introuvable")
+    if vessel_id is not None and await db.get(Vessel, vessel_id) is None:
+        raise HTTPException(status_code=404, detail="navire introuvable")
     ref = await next_grid_reference(db)
+    # Brackets de volume au niveau grille selon le type de client (shipper :
+    # dégressif complet ; FF : tarif flat). Stockés en JSON sur l'en-tête.
+    brackets = default_brackets_for(client.client_type if client else "shipper")
     grid = RateGrid(
         reference=ref,
         client_id=client.id if client else None,
-        pol_locode=pol,
-        pod_locode=pod,
+        vessel_id=vessel_id,
         is_default=is_default,
         status="draft",
         valid_from=_date.fromisoformat(valid_from),
         valid_to=_date.fromisoformat(valid_to) if valid_to else None,
         currency="EUR",
-        base_rate_per_palette=Decimal(str(base_rate)),
         adjustment_index=Decimal(str(adjustment_index)),
+        bl_fee=_opt_decimal(bl_fee),
+        booking_fee=_opt_decimal(booking_fee),
         hazardous_surcharge_pct=_opt_decimal(hazardous_surcharge_pct),
         min_charge_eur=_opt_decimal(min_charge_eur),
         volume_commitment=_opt_int(volume_commitment),
+        brackets_json=json.dumps(brackets),
     )
     db.add(grid)
-    await db.flush()
-    # Auto-create default brackets based on client_type (shipper pour une
-    # grille par défaut : brackets dégressifs complets).
-    for b in default_brackets_for(client.client_type if client else "shipper"):
-        db.add(
-            RateGridLine(
-                grid_id=grid.id,
-                bracket_key=b["key"],
-                bracket_label=b["label"],
-                max_qty=int(b["max_qty"]),
-                coeff=Decimal(str(b["coeff"])),
-            )
-        )
     await db.flush()
     await activity_record(
         db,
@@ -594,8 +604,8 @@ async def grid_edit_form(
             "request": request,
             "user": user,
             "clients": clients,
+            "vessels": await _vessels(db),
             "grid": grid,
-            "route_ports": await _route_ports(db),
         },
     )
 
@@ -605,13 +615,13 @@ async def grid_edit(
     grid_id: int,
     request: Request,
     client_id: int | None = Form(None),
-    pol_locode: str | None = Form(None),
-    pod_locode: str | None = Form(None),
+    vessel_id: int | None = Form(None),
     is_default: bool = Form(False),
     valid_from: str = Form(...),
     valid_to: str | None = Form(None),
-    base_rate: float = Form(...),
     adjustment_index: float = Form(1.0),
+    bl_fee: str | None = Form(None),
+    booking_fee: str | None = Form(None),
     hazardous_surcharge_pct: str | None = Form(None),
     min_charge_eur: str | None = Form(None),
     volume_commitment: str | None = Form(None),
@@ -628,19 +638,19 @@ async def grid_edit(
             status_code=400,
             detail="Grille active verrouillée — repassez-la en brouillon pour la modifier.",
         )
-    pol = _clean_locode(pol_locode, "POL")
-    pod = _clean_locode(pod_locode, "POD")
-    _validate_grid_route(client_id=client_id, pol=pol, pod=pod, is_default=is_default)
+    _validate_grid_header(client_id=client_id, is_default=is_default)
     if client_id is not None and await db.get(Client, client_id) is None:
         raise HTTPException(status_code=404, detail="client introuvable")
+    if vessel_id is not None and await db.get(Vessel, vessel_id) is None:
+        raise HTTPException(status_code=404, detail="navire introuvable")
     grid.client_id = client_id
-    grid.pol_locode = pol
-    grid.pod_locode = pod
+    grid.vessel_id = vessel_id
     grid.is_default = is_default
     grid.valid_from = _date.fromisoformat(valid_from)
     grid.valid_to = _date.fromisoformat(valid_to) if valid_to else None
-    grid.base_rate_per_palette = Decimal(str(base_rate))
     grid.adjustment_index = Decimal(str(adjustment_index))
+    grid.bl_fee = _opt_decimal(bl_fee)
+    grid.booking_fee = _opt_decimal(booking_fee)
     grid.hazardous_surcharge_pct = _opt_decimal(hazardous_surcharge_pct)
     grid.min_charge_eur = _opt_decimal(min_charge_eur)
     grid.volume_commitment = _opt_int(volume_commitment)
@@ -681,12 +691,15 @@ async def grid_detail(
     ).scalar_one_or_none()
     if grid is None:
         raise HTTPException(status_code=404)
+    vessel = await db.get(Vessel, grid.vessel_id) if grid.vessel_id else None
     return templates.TemplateResponse(
         "staff/commercial/grid_detail.html",
         {
             "request": request,
             "user": user,
             "grid": grid,
+            "vessel": vessel,
+            "route_ports": await _route_ports(db),
             "option_units": RATE_OPTION_UNITS,
             "option_unit_labels": RATE_OPTION_UNIT_LABELS,
         },
@@ -703,17 +716,14 @@ async def grid_activate(
     grid = await db.get(RateGrid, grid_id)
     if grid is None:
         raise HTTPException(status_code=404)
-    # Une seule grille active par périmètre (client, ou route pour une grille
-    # par défaut) : les autres actives sont marquées « superseded ».
+    # Une seule grille active par périmètre : par client pour une grille client,
+    # une seule grille par défaut active globalement. Les autres actives du même
+    # périmètre sont marquées « superseded ».
     others = select(RateGrid).where(RateGrid.id != grid.id, RateGrid.status == "active")
     if grid.client_id is not None:
         others = others.where(RateGrid.client_id == grid.client_id)
     else:
-        others = others.where(
-            RateGrid.client_id.is_(None),
-            RateGrid.pol_locode == grid.pol_locode,
-            RateGrid.pod_locode == grid.pod_locode,
-        )
+        others = others.where(RateGrid.client_id.is_(None), RateGrid.is_default.is_(True))
     superseded = 0
     for other in (await db.execute(others)).scalars().all():
         other.status = "superseded"
@@ -765,6 +775,23 @@ async def grid_set_draft(
     return RedirectResponse(url=f"/commercial/grids/{grid_id}", status_code=303)
 
 
+async def _recalc_route(db: AsyncSession, grid: RateGrid, route: RateGridLine) -> None:
+    """Recalcule distance/nav_days/opex/base_rate d'une route (OPEX du navire)."""
+    leg = await db.get(Leg, route.leg_id) if route.leg_id else None
+    distance, nav_days, opex_daily, base = await compute_route_economics(
+        db,
+        pol_locode=route.pol_locode,
+        pod_locode=route.pod_locode,
+        vessel_id=grid.vessel_id,
+        leg=leg,
+    )
+    route.distance_nm = distance
+    route.nav_days = nav_days
+    route.opex_daily = opex_daily
+    route.base_rate = base
+    route.is_manual = False
+
+
 @router.post("/grids/{grid_id}/recalculate")
 async def grid_recalculate(
     grid_id: int,
@@ -772,8 +799,12 @@ async def grid_recalculate(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
-    """Recalcule le tarif de base via la formule OPEX (opex_daily × nav_days / 850)."""
-    grid = await db.get(RateGrid, grid_id)
+    """Recalcule le base_rate de toutes les routes non-manuelles (OPEX × jours / 850)."""
+    grid = (
+        await db.execute(
+            select(RateGrid).options(selectinload(RateGrid.lines)).where(RateGrid.id == grid_id)
+        )
+    ).scalar_one_or_none()
     if grid is None:
         raise HTTPException(status_code=404)
     if grid.status == "active":
@@ -781,12 +812,12 @@ async def grid_recalculate(
             status_code=400,
             detail="Grille active verrouillée — repassez-la en brouillon pour la recalculer.",
         )
-    if not (grid.pol_locode and grid.pod_locode):
-        raise HTTPException(
-            status_code=400,
-            detail="Recalcul OPEX impossible : la grille n'a pas de route POL/POD.",
-        )
-    grid.base_rate_per_palette = await _default_base_rate(db, grid.pol_locode, grid.pod_locode)
+    recalculated = 0
+    for route in grid.lines:
+        if route.is_manual:
+            continue
+        await _recalc_route(db, grid, route)
+        recalculated += 1
     await db.flush()
     await activity_record(
         db,
@@ -798,10 +829,232 @@ async def grid_recalculate(
         entity_type="rate_grid",
         entity_id=grid.id,
         entity_label=grid.reference,
-        detail=f"recalculated base_rate={grid.base_rate_per_palette}",
+        detail=f"recalculated routes={recalculated}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/commercial/grids/{grid_id}", status_code=303)
+
+
+# ────────────────────────────────────────────── Grid routes (lignes-routes)
+@router.post("/grids/{grid_id}/routes")
+async def grid_route_create(
+    grid_id: int,
+    request: Request,
+    pol_locode: str = Form(...),
+    pod_locode: str = Form(...),
+    distance_nm: str | None = Form(None),
+    base_rate: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Ajoute une route POL→POD à la grille (distance saisie ou résolue)."""
+    grid = await _grid_editable(db, grid_id)
+    pol = _clean_locode(pol_locode, "POL")
+    pod = _clean_locode(pod_locode, "POD")
+    if pol is None or pod is None:
+        raise HTTPException(status_code=400, detail="POL et POD sont requis pour une route.")
+    if pol == pod:
+        raise HTTPException(status_code=400, detail="POL et POD doivent être différents.")
+    if _match_route(grid, pol, pod) is not None:
+        raise HTTPException(status_code=400, detail="Cette route existe déjà sur la grille.")
+    manual_base = _opt_decimal(base_rate)
+    distance, nav_days, opex_daily, base = await compute_route_economics(
+        db,
+        pol_locode=pol,
+        pod_locode=pod,
+        vessel_id=grid.vessel_id,
+        distance_nm=_opt_decimal(distance_nm),
+    )
+    route = RateGridLine(
+        grid_id=grid.id,
+        pol_locode=pol,
+        pod_locode=pod,
+        distance_nm=distance,
+        nav_days=nav_days,
+        opex_daily=opex_daily,
+        base_rate=manual_base if manual_base is not None else base,
+        is_manual=manual_base is not None,
+    )
+    db.add(route)
+    await db.flush()
+    await activity_record(
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid_line",
+        entity_id=route.id,
+        entity_label=f"{grid.reference} · {pol}→{pod}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+@router.post("/grids/{grid_id}/routes/{route_id}/edit")
+async def grid_route_edit(
+    grid_id: int,
+    route_id: int,
+    request: Request,
+    distance_nm: str | None = Form(None),
+    base_rate: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Édite la distance et/ou le base_rate (surcharge manuelle) d'une route."""
+    grid = await _grid_editable(db, grid_id)
+    route = await db.get(RateGridLine, route_id)
+    if route is None or route.grid_id != grid.id:
+        raise HTTPException(status_code=404)
+    manual_base = _opt_decimal(base_rate)
+    distance, nav_days, opex_daily, base = await compute_route_economics(
+        db,
+        pol_locode=route.pol_locode,
+        pod_locode=route.pod_locode,
+        vessel_id=grid.vessel_id,
+        distance_nm=_opt_decimal(distance_nm),
+    )
+    route.distance_nm = distance
+    route.nav_days = nav_days
+    route.opex_daily = opex_daily
+    if manual_base is not None:
+        route.base_rate = manual_base
+        route.is_manual = True
+    else:
+        route.base_rate = base
+        route.is_manual = False
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid_line",
+        entity_id=route.id,
+        entity_label=f"{grid.reference} · {route.pol_locode}→{route.pod_locode}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+@router.post("/grids/{grid_id}/routes/{route_id}/recalculate")
+async def grid_route_recalculate(
+    grid_id: int,
+    route_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Recalcule l'économie OPEX d'une route (efface la surcharge manuelle)."""
+    grid = await _grid_editable(db, grid_id)
+    route = await db.get(RateGridLine, route_id)
+    if route is None or route.grid_id != grid.id:
+        raise HTTPException(status_code=404)
+    await _recalc_route(db, grid, route)
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid_line",
+        entity_id=route.id,
+        entity_label=f"{grid.reference} · {route.pol_locode}→{route.pod_locode}",
+        detail=f"recalculated base_rate={route.base_rate}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+@router.post("/grids/{grid_id}/routes/{route_id}/delete")
+async def grid_route_delete(
+    grid_id: int,
+    route_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "S")),
+):
+    grid = await _grid_editable(db, grid_id)
+    route = await db.get(RateGridLine, route_id)
+    if route is None or route.grid_id != grid.id:
+        raise HTTPException(status_code=404)
+    label = f"{grid.reference} · {route.pol_locode}→{route.pod_locode}"
+    route_pk = route.id
+    await db.delete(route)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid_line",
+        entity_id=route_pk,
+        entity_label=label,
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+# ────────────────────────────────────────────── Grid brackets (volume)
+@router.post("/grids/{grid_id}/brackets")
+async def grid_brackets_update(
+    grid_id: int,
+    request: Request,
+    bracket_max_qty: list[str] = Form(default=[]),
+    bracket_coeff: list[str] = Form(default=[]),
+    bracket_label: list[str] = Form(default=[]),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Remplace les brackets de volume de la grille (coefficients dégressifs)."""
+    grid = await _grid_editable(db, grid_id)
+    brackets: list[dict] = []
+    for max_qty_raw, coeff_raw, label_raw in zip(
+        bracket_max_qty, bracket_coeff, bracket_label, strict=False
+    ):
+        max_qty = _opt_int(max_qty_raw)
+        coeff = _opt_decimal(coeff_raw)
+        if max_qty is None or coeff is None:
+            continue  # ligne vide → ignorée
+        if max_qty <= 0 or coeff < 0:
+            raise HTTPException(
+                status_code=400, detail="bracket invalide : max_qty > 0 et coeff ≥ 0"
+            )
+        label = (label_raw or "").strip() or f"{max_qty} palettes"
+        brackets.append(
+            {
+                "key": f"q{max_qty}",
+                "label": label,
+                "max_qty": max_qty,
+                "coeff": float(coeff),
+            }
+        )
+    if not brackets:
+        raise HTTPException(status_code=400, detail="au moins une bracket est requise")
+    brackets.sort(key=lambda b: b["max_qty"])
+    grid.brackets_json = json.dumps(brackets)
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid.id,
+        entity_label=grid.reference,
+        detail=f"brackets updated ({len(brackets)})",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
 
 
 # ────────────────────────────────────────────── Grid options
@@ -1049,7 +1302,15 @@ async def offer_new_form(
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
     leg_options = await leg_select_options(db)
     grids = list(
-        (await db.execute(select(RateGrid).where(RateGrid.status == "active"))).scalars().all()
+        (
+            await db.execute(
+                select(RateGrid)
+                .options(selectinload(RateGrid.lines))
+                .where(RateGrid.status == "active")
+            )
+        )
+        .scalars()
+        .all()
     )
     return templates.TemplateResponse(
         "staff/commercial/offer_form.html",
@@ -1065,37 +1326,28 @@ async def offer_new_form(
     )
 
 
-async def _grids_for(db: AsyncSession, *, client_id: int | None, leg: Leg | None) -> list[RateGrid]:
-    """Grilles actives applicables à un client + un leg (POL/POD).
+async def _grids_for(db: AsyncSession, *, client_id: int | None) -> list[RateGrid]:
+    """Grilles actives applicables à un client (multi-routes).
 
     Retenues : statut ``active``, valides à ce jour, et soit propres au client
-    soit grilles par défaut (``client_id`` NULL). Si un leg est fourni, on ne
-    garde que les grilles dont la route (POL/POD) correspond — une grille sans
-    POL/POD est un joker accepté pour toute route. Les grilles spécifiques au
-    client sont listées avant les grilles par défaut.
+    soit grilles par défaut (``client_id`` NULL). La route est résolue à la
+    création de l'offre via la ligne-route POL/POD de la grille (cf. le leg
+    ciblé). Les grilles spécifiques au client sont listées avant les défauts.
     """
     today = datetime.now(UTC).date()
-    query = select(RateGrid).where(
-        RateGrid.status == "active",
-        RateGrid.valid_from <= today,
-        or_(RateGrid.valid_to.is_(None), RateGrid.valid_to >= today),
+    query = (
+        select(RateGrid)
+        .options(selectinload(RateGrid.lines))
+        .where(
+            RateGrid.status == "active",
+            RateGrid.valid_from <= today,
+            or_(RateGrid.valid_to.is_(None), RateGrid.valid_to >= today),
+        )
     )
     if client_id:
         query = query.where(or_(RateGrid.client_id == client_id, RateGrid.client_id.is_(None)))
     else:
         query = query.where(RateGrid.client_id.is_(None))
-
-    pol = pod = None
-    if leg is not None:
-        pol_port = await db.get(Port, leg.departure_port_id)
-        pod_port = await db.get(Port, leg.arrival_port_id)
-        pol = pol_port.locode if pol_port else None
-        pod = pod_port.locode if pod_port else None
-    if pol and pod:
-        query = query.where(
-            or_(RateGrid.pol_locode.is_(None), RateGrid.pol_locode == pol),
-            or_(RateGrid.pod_locode.is_(None), RateGrid.pod_locode == pod),
-        )
 
     grids = list((await db.execute(query)).scalars().all())
     # Client-specific d'abord, puis défaut ; tri secondaire par référence.
@@ -1111,9 +1363,8 @@ async def offer_grid_options(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    """Partial HTMX : options du <select> grille filtrées par client + leg."""
-    leg = await db.get(Leg, leg_id) if leg_id else None
-    grids = await _grids_for(db, client_id=client_id, leg=leg)
+    """Partial HTMX : options du <select> grille filtrées par client."""
+    grids = await _grids_for(db, client_id=client_id)
     return templates.TemplateResponse(
         "staff/commercial/_grid_options.html",
         {"request": request, "grids": grids},
@@ -1135,34 +1386,38 @@ async def offer_create(
 ):
     if not await db.get(Client, client_id):
         raise HTTPException(status_code=404, detail="client introuvable")
-    grid = await db.get(RateGrid, grid_id) if grid_id else None
+    grid = (
+        (
+            await db.execute(
+                select(RateGrid).options(selectinload(RateGrid.lines)).where(RateGrid.id == grid_id)
+            )
+        ).scalar_one_or_none()
+        if grid_id
+        else None
+    )
     proposed_rate = Decimal("0")
     total = Decimal("0")
-    if grid is not None and estimated_palettes > 0:
-        # Build bracket lookup from lines
-        lines = list(
-            (
-                await db.execute(
-                    select(RateGridLine)
-                    .where(RateGridLine.grid_id == grid.id)
-                    .order_by(RateGridLine.max_qty)
-                )
+    if grid is not None and estimated_palettes > 0 and grid.lines:
+        # Route ciblée : ligne POL/POD du leg, sinon première route de la grille.
+        route = None
+        if leg_id:
+            leg = await db.get(Leg, leg_id)
+            if leg is not None:
+                pol_port = await db.get(Port, leg.departure_port_id)
+                pod_port = await db.get(Port, leg.arrival_port_id)
+                if pol_port and pod_port:
+                    route = _match_route(grid, pol_port.locode, pod_port.locode)
+        if route is None:
+            route = grid.lines[0]
+        # Bracket de volume au niveau grille (coefficients dégressifs).
+        picked = pick_bracket(grid.brackets, estimated_palettes)
+        if picked:
+            proposed_rate = bracket_rate(
+                base_rate=route.base_rate,
+                coeff=picked["coeff"],
+                adjustment_index=grid.adjustment_index,
             )
-            .scalars()
-            .all()
-        )
-        if lines:
-            picked = pick_bracket(
-                [{"max_qty": ln.max_qty, "coeff": float(ln.coeff)} for ln in lines],
-                estimated_palettes,
-            )
-            if picked:
-                proposed_rate = bracket_rate(
-                    base_rate=grid.base_rate_per_palette,
-                    coeff=picked["coeff"],
-                    adjustment_index=grid.adjustment_index,
-                )
-                total = (proposed_rate * Decimal(estimated_palettes)).quantize(Decimal("0.01"))
+            total = (proposed_rate * Decimal(estimated_palettes)).quantize(Decimal("0.01"))
 
     ref = await next_offer_reference(db)
     offer = RateOffer(
