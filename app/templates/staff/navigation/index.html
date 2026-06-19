@@ -113,7 +113,7 @@
         <td class="mono">{% if dh is not none %}{{ (dh // 24)|int }}j {{ (dh % 24)|int }}h{% else %}—{% endif %}</td>
         <td class="mono">{{ "%.0f NM"|format(m.remaining_nm) if m.remaining_nm is not none else "—" }}</td>
         <td class="mono">{{ m.point_count }}</td>
-        <td>{% if m.is_active %}<span class="pill pill-ok">En mer</span>{% else %}<span class="pill">Arrivé</span>{% endif %}</td>
+        <td>{% if d.nav_status == 'planned' %}<span class="pill pill-info">Planifié</span>{% elif d.nav_status == 'at_sea' %}<span class="pill pill-ok">En mer</span>{% else %}<span class="pill">Arrivé</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
