@@ -78,6 +78,8 @@ async def _call(endpoint: str, *, since: str | None, ids: list[int]):
         return await marad.get_passport_details(ids)
     if endpoint == "documents":
         return await marad.get_crew_documents(ids)
+    if endpoint == "sync":
+        return await marad.get_sync_details()
     raise SystemExit(f"Endpoint inconnu : {endpoint!r}")
 
 
@@ -107,7 +109,7 @@ def main() -> int:
     p.add_argument(
         "endpoint",
         nargs="?",
-        choices=["ping", "vessels", "ranks", "crew", "schedules", "passports", "documents"],
+        choices=["ping", "vessels", "ranks", "crew", "schedules", "passports", "documents", "sync"],
         help="endpoint à interroger (défaut : ping+vessels+ranks).",
     )
     p.add_argument("--since", default=None, help="filtre modified_since (crew/schedules), ISO 8601.")
