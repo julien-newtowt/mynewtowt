@@ -196,6 +196,12 @@ async def get_crew_documents(crew_ids: list[int]) -> Any | None:
     return await _post_read("/api/CrewingDocuments/GetCrewMembersDocuments", json={"ids": crew_ids})
 
 
+async def get_sync_details() -> Any | None:
+    """GET /api/Synchronization/getSyncDetails — métadonnées de compte/synchro
+    (utile pour diagnostiquer un compte/tenant vide ou mal provisionné)."""
+    return await _get("/api/Synchronization/getSyncDetails")
+
+
 def vessel_map() -> dict[str, str]:
     """Mapping ``marad_vessel_id -> vessel_id`` depuis MARAD_VESSEL_MAP."""
     raw = (settings.marad_vessel_map or "").strip()
