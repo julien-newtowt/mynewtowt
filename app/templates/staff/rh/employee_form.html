@@ -43,10 +43,8 @@
     </div>
   </div>
 
-  <h2 class="mt-4">Soldes & rattachements</h2>
+  <h2 class="mt-4">Rattachements</h2>
   <div class="grid grid-3 gap-3">
-    <div class="field"><label>Solde CP</label><input name="cp_balance" type="number" step="0.5" value="{{ employee.cp_balance if employee else '0' }}" /></div>
-    <div class="field"><label>Solde RTT</label><input name="rtt_balance" type="number" step="0.5" value="{{ employee.rtt_balance if employee else '0' }}" /></div>
     <div class="field"><label>Identifiant Silae</label><input name="silae_id" value="{{ employee.silae_id or '' if employee else '' }}" /></div>
     <div class="field">
       <label>Compte staff (self-service)</label>

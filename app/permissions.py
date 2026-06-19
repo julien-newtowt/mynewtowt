@@ -163,6 +163,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("rh", "rh"): "CMS",
     ("rh", "planning"): "C",
     ("rh", "crew"): "C",
+    ("rh", "finance"): "C",
     ("rh", "analytics"): "C",
     ("rh", "chat"): "CM",
     ("rh", "veille"): "C",

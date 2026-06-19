@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 from app.services.hr_import import parse_employees_csv
 
@@ -27,14 +26,11 @@ def test_semicolon_delimiter_and_accented_headers() -> None:
     assert row["entry_date"] == date(2024, 3, 1)
 
 
-def test_french_dates_and_decimal_comma() -> None:
-    # Semicolon delimiter so the decimal comma in 12,5 is not split.
-    csv = "matricule;prenom;nom;date_entree;solde_cp\nE1;Jean;Bon;15/01/2023;12,5\n"
+def test_french_dates() -> None:
+    csv = "matricule;prenom;nom;date_entree\nE1;Jean;Bon;15/01/2023\n"
     res = parse_employees_csv(csv)
     assert res.ok, res.errors
-    row = res.rows[0]
-    assert row["entry_date"] == date(2023, 1, 15)
-    assert row["cp_balance"] == Decimal("12.5")
+    assert res.rows[0]["entry_date"] == date(2023, 1, 15)
 
 
 def test_missing_required_column() -> None:

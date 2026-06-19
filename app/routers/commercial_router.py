@@ -38,7 +38,7 @@ from app.models.commercial import (
 )
 from app.models.leg import Leg
 from app.models.port import Port
-from app.models.quote import Quote, QuoteView
+from app.models.quote import Quote
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.commercial import (

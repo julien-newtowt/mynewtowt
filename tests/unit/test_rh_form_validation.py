@@ -25,7 +25,6 @@ from app.routers.rh_router import (
 def test_employee_valid_minimal() -> None:
     data = _employee_from_form({"matricule": "E1", "first_name": "A", "last_name": "B"})
     assert data["matricule"] == "E1"
-    assert data["cp_balance"] == Decimal("0")
     assert data["status"] == "active"
 
 
@@ -33,14 +32,6 @@ def test_employee_bad_date_raises_400() -> None:
     with pytest.raises(HTTPException) as exc:
         _employee_from_form(
             {"matricule": "E1", "first_name": "A", "last_name": "B", "birth_date": "31/02/2020"}
-        )
-    assert exc.value.status_code == 400
-
-
-def test_employee_bad_decimal_raises_400() -> None:
-    with pytest.raises(HTTPException) as exc:
-        _employee_from_form(
-            {"matricule": "E1", "first_name": "A", "last_name": "B", "cp_balance": "abc"}
         )
     assert exc.value.status_code == 400
 

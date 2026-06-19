@@ -15,7 +15,6 @@ Dossier RH des salariés à terre (par opposition aux navigants gérés par
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
 
 from sqlalchemy import (
     Date,
@@ -23,7 +22,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    Numeric,
     String,
     func,
 )
@@ -71,9 +69,8 @@ class Employee(Base):
     exit_date: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
 
-    # Soldes affichés (alimentés ultérieurement par Silae / calcul interne).
-    cp_balance: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=0, nullable=False)
-    rtt_balance: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=0, nullable=False)
+    # NB : les soldes de congés (CP) sont gérés dans Silae (source de vérité) —
+    # non stockés ici (décision de cadrage). Pas de RTT dans la convention.
 
     # Clé de rapprochement avec Silae (export EVP, import bulletins).
     silae_id: Mapped[str | None] = mapped_column(String(60))

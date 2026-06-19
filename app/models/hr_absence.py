@@ -31,7 +31,6 @@ from app.database import Base
 
 ABSENCE_KINDS: tuple[str, ...] = (
     "cp",
-    "rtt",
     "maladie",
     "maternite",
     "paternite",

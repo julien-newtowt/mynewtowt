@@ -316,8 +316,6 @@ def _employee_from_form(f) -> dict:
         "entry_date": _opt_date(f.get("entry_date"), "Date d'entrée"),
         "exit_date": _opt_date(f.get("exit_date"), "Date de sortie"),
         "status": status,
-        "cp_balance": _opt_decimal(f.get("cp_balance"), "Solde CP") or Decimal("0"),
-        "rtt_balance": _opt_decimal(f.get("rtt_balance"), "Solde RTT") or Decimal("0"),
         "user_id": _opt_int(f.get("user_id"), "Compte staff"),
         "crew_member_id": _opt_int(f.get("crew_member_id"), "Fiche marin"),
         "silae_id": _opt_str(f.get("silae_id")),
@@ -1706,9 +1704,6 @@ async def _reporting_data(db: AsyncSession) -> dict:
         if ab.start_date.year == year or ab.end_date.year == year:
             absence_days[ab.kind] = absence_days.get(ab.kind, 0) + float(ab.business_days)
 
-    cp_total = sum(float(e.cp_balance) for e in active)
-    rtt_total = sum(float(e.rtt_balance) for e in active)
-
     return {
         "headcount": len(active),
         "by_department": dict(sorted(by_department.items())),
@@ -1719,8 +1714,6 @@ async def _reporting_data(db: AsyncSession) -> dict:
         "turnover": turnover_rate(exits_year, len(active)),
         "payroll_mass": payroll_mass,
         "absence_days": dict(sorted(absence_days.items())),
-        "cp_total": round(cp_total, 1),
-        "rtt_total": round(rtt_total, 1),
         "year": year,
     }
 
@@ -1752,8 +1745,6 @@ async def reporting_export(
         f"sorties_{d['year']};{d['exits_year']}",
         f"turnover_pct;{d['turnover']}",
         f"masse_salariale_brute;{d['payroll_mass']}",
-        f"solde_cp_total;{d['cp_total']}",
-        f"solde_rtt_total;{d['rtt_total']}",
     ]
     for dept, n in d["by_department"].items():
         lines.append(f"effectif_service_{dept};{n}")

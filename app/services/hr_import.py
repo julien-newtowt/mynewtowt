@@ -51,16 +51,12 @@ COLUMN_ALIASES: dict[str, str] = {
     "date_sortie": "exit_date",
     "status": "status",
     "statut": "status",
-    "cp_balance": "cp_balance",
-    "solde_cp": "cp_balance",
-    "rtt_balance": "rtt_balance",
-    "solde_rtt": "rtt_balance",
     "silae_id": "silae_id",
 }
 
 REQUIRED_FIELDS: tuple[str, ...] = ("matricule", "first_name", "last_name")
 DATE_FIELDS: tuple[str, ...] = ("birth_date", "entry_date", "exit_date")
-DECIMAL_FIELDS: tuple[str, ...] = ("cp_balance", "rtt_balance")
+DECIMAL_FIELDS: tuple[str, ...] = ()
 
 
 @dataclass
