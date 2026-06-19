@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -175,6 +175,84 @@ async def onboard_landing(
     return response
 
 
+def _beaufort_from_kn(kn: float | None) -> int | None:
+    if kn is None:
+        return None
+    for i, th in enumerate([1, 4, 7, 11, 17, 22, 28, 34, 41, 48, 56, 64]):
+        if kn < th:
+            return i
+    return 12
+
+
+async def compute_noon_prefill(db, leg, weather_now, last_report) -> dict:
+    """Valeurs pré-remplies (toutes modifiables) du noon report, dérivées des
+    positions GPS, de la météo, du planning et des événements SOF (SOSP)."""
+    from app.models.port import Port
+    from app.models.sof_event import SofEvent
+    from app.services.ports import haversine_nm
+    from app.services.voyage_track import actual_distance_nm, positions_in_window
+
+    now = datetime.now(UTC)
+    pf: dict = {}
+    pol = await db.get(Port, leg.departure_port_id)
+    pod = await db.get(Port, leg.arrival_port_id)
+    # Ports fixes pour le leg (depuis le planning).
+    pf["previous_port"] = pol.locode if pol else ""
+    pf["next_port"] = pod.locode if pod else ""
+    # ETA annoncée = ETA de planification.
+    pf["announced_eta"] = leg.eta.strftime("%Y-%m-%dT%H:%M") if leg.eta else ""
+    # Beaufort dérivé du vent météo courant.
+    bf = _beaufort_from_kn(getattr(weather_now, "wind_speed_kn", None) if weather_now else None)
+    if bf is not None:
+        pf["sea_state_bf"] = bf
+
+    start = leg.atd or leg.etd
+    all_pos = await positions_in_window(db, vessel_id=leg.vessel_id, start=start, end=now)
+    last_pos = all_pos[-1] if all_pos else None
+
+    if last_pos and pod and pod.latitude is not None and pod.longitude is not None:
+        pf["distance_to_go_nm"] = round(
+            haversine_nm(last_pos.latitude, last_pos.longitude, pod.latitude, pod.longitude), 1
+        )
+
+    win24 = await positions_in_window(
+        db, vessel_id=leg.vessel_id, start=now - timedelta(hours=24), end=now
+    )
+    if len(win24) >= 2:
+        pf["distance_24h_nm"] = round(actual_distance_nm(win24), 1)
+
+    async def _segment(t0):
+        hours = max((now - t0).total_seconds() / 3600.0, 0.0)
+        win = await positions_in_window(db, vessel_id=leg.vessel_id, start=t0, end=now)
+        dist = actual_distance_nm(win) if len(win) >= 2 else 0.0
+        spd = round(dist / hours, 1) if hours > 0 and dist > 0 else None
+        return round(hours, 1), round(dist, 1), spd
+
+    if last_report and last_report.recorded_at:
+        h, d, s = await _segment(last_report.recorded_at)
+        pf["time_since_last_h"] = h
+        pf["distance_since_last_nm"] = d
+        if s is not None:
+            pf["speed_since_last_kn"] = s
+
+    sosp = (
+        await db.execute(
+            select(SofEvent)
+            .where(SofEvent.leg_id == leg.id, SofEvent.event_type == "SOSP")
+            .order_by(SofEvent.occurred_at.asc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if sosp and sosp.occurred_at:
+        h, d, s = await _segment(sosp.occurred_at)
+        pf["time_since_sosp_h"] = h
+        pf["distance_since_sosp_nm"] = d
+        if s is not None:
+            pf["speed_since_sosp_kn"] = s
+
+    return pf
+
+
 @router.get("/navigation", response_class=HTMLResponse)
 async def onboard_navigation(
     request: Request,
@@ -235,6 +313,13 @@ async def onboard_navigation(
                 )
             except Exception:
                 weather_now = None
+    # Pré-remplissage avancé du noon report (GPS / météo / planning / SOF).
+    noon_prefill: dict = {}
+    if selected:
+        noon_prefill = await compute_noon_prefill(
+            db, selected, weather_now, noon_reports[0] if noon_reports else None
+        )
+
     # Le leg réellement affiché devient la sélection mémorisée.
     f["leg_id"] = selected.id if selected else f["leg_id"]
     f["selected_leg"] = selected
@@ -247,6 +332,7 @@ async def onboard_navigation(
             "legs": legs,
             "leg": selected,
             "noon_reports": noon_reports,
+            "noon_prefill": noon_prefill,
             # ROB DO du dernier report du leg → base de chaîne pour le ROB auto
             # du nouveau report (ROB = ROB précédent − conso).
             "last_rob_do_t": (noon_reports[0].rob_do_t if noon_reports else None),
