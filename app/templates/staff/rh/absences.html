@@ -1,0 +1,98 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Absences — RH{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div><span class="kicker">Humain</span><h1 class="display">Congés & absences</h1></div>
+  <div class="flex gap-2 items-center">
+    <a href="/rh/employees" class="btn btn-ghost"><i data-lucide="users"></i> Collaborateurs</a>
+  </div>
+</header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Saisir une absence</h2>
+    <p class="text-muted text-sm">Saisie centralisée RH — le statut « Approuvé » vaut validation immédiate.</p>
+    <form method="post" action="/rh/absences">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="grid grid-2 gap-3">
+        <div class="field" style="grid-column:span 2;">
+          <label>Collaborateur *</label>
+          <select name="employee_id" required>
+            {% for e in active_employees %}<option value="{{ e.id }}">{{ e.full_name }} ({{ e.matricule }})</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Type *</label>
+          <select name="kind" required>{% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label>Statut</label>
+          <select name="status"><option value="approved">Approuvé</option><option value="requested">En attente</option></select>
+        </div>
+        <div class="field"><label>Du *</label><input name="start_date" type="date" required /></div>
+        <div class="field"><label>Au *</label><input name="end_date" type="date" required /></div>
+        <label class="flex gap-2 items-center"><input type="checkbox" name="half_day_start" value="1" /> Demi-journée (début)</label>
+        <label class="flex gap-2 items-center"><input type="checkbox" name="half_day_end" value="1" /> Demi-journée (fin)</label>
+        <div class="field" style="grid-column:span 2;"><label>Motif</label><input name="reason" /></div>
+      </div>
+      <button class="btn btn-primary mt-3" type="submit">Enregistrer</button>
+    </form>
+  </article>
+
+  <article class="card">
+    <h2>Demandes en attente ({{ pending|length }})</h2>
+    {% if pending %}
+    <table>
+      <thead><tr><th>Collaborateur</th><th>Type</th><th>Période</th><th>Jours</th><th>Action</th></tr></thead>
+      <tbody>
+        {% for a in pending %}
+        {% set emp = employees.get(a.employee_id) %}
+        <tr>
+          <td>{{ emp.full_name if emp else '#' ~ a.employee_id }}</td>
+          <td><span class="pill pill-neutral">{{ a.kind }}</span></td>
+          <td class="mono text-sm">{{ a.start_date }} → {{ a.end_date }}</td>
+          <td class="mono">{{ a.business_days }}</td>
+          <td class="flex gap-2">
+            <form method="post" action="/rh/absences/{{ a.id }}/decide" style="display:inline"><input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" /><input type="hidden" name="decision" value="approved" /><button class="btn btn-primary text-sm">Approuver</button></form>
+            <form method="post" action="/rh/absences/{{ a.id }}/decide" style="display:inline"><input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" /><input type="hidden" name="decision" value="rejected" /><button class="btn btn-danger text-sm">Refuser</button></form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="text-muted">Aucune demande en attente.</p>{% endif %}
+  </article>
+</div>
+
+<article class="card mt-4">
+  <header class="flex justify-between items-center mb-3">
+    <h2>Historique</h2>
+    <form method="get" action="/rh/absences" class="flex gap-2 items-center">
+      <select name="status" onchange="this.form.submit()">
+        <option value="">Tous statuts</option>
+        {% for s in statuses %}<option value="{{ s }}" {% if f_status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </form>
+  </header>
+  <table>
+    <thead><tr><th>Collaborateur</th><th>Type</th><th>Période</th><th>Jours</th><th>Statut</th></tr></thead>
+    <tbody>
+      {% for a in absences %}
+      {% set emp = employees.get(a.employee_id) %}
+      <tr>
+        <td>{% if emp %}<a href="/rh/employees/{{ emp.id }}">{{ emp.full_name }}</a>{% else %}#{{ a.employee_id }}{% endif %}</td>
+        <td>{{ a.kind }}</td>
+        <td class="mono text-sm">{{ a.start_date }} → {{ a.end_date }}</td>
+        <td class="mono">{{ a.business_days }}</td>
+        <td>
+          {% if a.status == 'approved' %}<span class="pill pill-ok">Approuvé</span>
+          {% elif a.status == 'rejected' %}<span class="pill pill-error">Refusé</span>
+          {% elif a.status == 'requested' %}<span class="pill pill-warn">En attente</span>
+          {% else %}<span class="pill pill-neutral">Annulé</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endblock %}

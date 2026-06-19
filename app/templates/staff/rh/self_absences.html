@@ -1,0 +1,69 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Mes congés{% endblock %}
+{% block content %}
+<a href="/rh/moi" class="btn btn-ghost mb-3">← Mon espace RH</a>
+<header class="mb-4"><span class="kicker">Self-service</span><h1 class="display">Mes congés & absences</h1></header>
+
+{% if not employee %}
+<div class="alert alert-warn"><i data-lucide="alert-triangle"></i> Aucune fiche collaborateur n'est liée à votre compte. Contactez le service RH.</div>
+{% else %}
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Solde</h2>
+    <div class="flex gap-4">
+      <div><span class="stat-card-value">{{ employee.cp_balance }}</span><span class="stat-card-label">CP</span></div>
+      <div><span class="stat-card-value">{{ employee.rtt_balance }}</span><span class="stat-card-label">RTT</span></div>
+    </div>
+  </article>
+
+  <article class="card">
+    <h2>Déposer une demande</h2>
+    <form method="post" action="/rh/moi/absences">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="grid grid-2 gap-3">
+        <div class="field"><label>Type *</label><select name="kind" required>{% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select></div>
+        <div class="field"></div>
+        <div class="field"><label>Du *</label><input name="start_date" type="date" required /></div>
+        <div class="field"><label>Au *</label><input name="end_date" type="date" required /></div>
+        <label class="flex gap-2 items-center"><input type="checkbox" name="half_day_start" value="1" /> Demi-journée (début)</label>
+        <label class="flex gap-2 items-center"><input type="checkbox" name="half_day_end" value="1" /> Demi-journée (fin)</label>
+        <div class="field" style="grid-column:span 2;"><label>Motif</label><input name="reason" /></div>
+      </div>
+      <button class="btn btn-primary mt-3" type="submit">Soumettre la demande</button>
+    </form>
+  </article>
+</div>
+
+<article class="card mt-4">
+  <h2>Mes demandes</h2>
+  {% if absences %}
+  <table>
+    <thead><tr><th>Type</th><th>Période</th><th>Jours</th><th>Statut</th><th></th></tr></thead>
+    <tbody>
+      {% for a in absences %}
+      <tr>
+        <td>{{ a.kind }}</td>
+        <td class="mono text-sm">{{ a.start_date }} → {{ a.end_date }}</td>
+        <td class="mono">{{ a.business_days }}</td>
+        <td>
+          {% if a.status == 'approved' %}<span class="pill pill-ok">Approuvé</span>
+          {% elif a.status == 'rejected' %}<span class="pill pill-error">Refusé</span>
+          {% elif a.status == 'requested' %}<span class="pill pill-warn">En attente</span>
+          {% else %}<span class="pill pill-neutral">Annulé</span>{% endif %}
+        </td>
+        <td>
+          {% if a.status == 'requested' %}
+          <form method="post" action="/rh/moi/absences/{{ a.id }}/cancel" style="display:inline" onsubmit="return confirm('Annuler cette demande ?');">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button class="btn btn-ghost btn-sm" type="submit">Annuler</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="text-muted">Aucune demande pour le moment.</p>{% endif %}
+</article>
+{% endif %}
+{% endblock %}

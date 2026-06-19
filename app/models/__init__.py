@@ -37,6 +37,7 @@ from app.models.employment_contract import EmploymentContract
 from app.models.escale import DockerShift, EscaleOperation
 from app.models.feature_flag import FeatureFlag
 from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
+from app.models.hr_absence import HrAbsence
 from app.models.insurance import InsuranceContract
 from app.models.known_device import KnownDevice
 from app.models.leg import Leg
@@ -113,6 +114,7 @@ __all__ = [
     "EscaleOperation",
     "EtaShift",
     "FeatureFlag",
+    "HrAbsence",
     "InsuranceContract",
     "KnownDevice",
     "Leg",

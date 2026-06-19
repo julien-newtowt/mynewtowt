@@ -1,0 +1,41 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Mon espace RH{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div><span class="kicker">Self-service</span><h1 class="display">Mon espace RH</h1></div>
+  {% if employee %}<a href="/rh/moi/absences" class="btn btn-secondary"><i data-lucide="calendar-days"></i> Mes congés</a>{% endif %}
+</header>
+
+{% if not employee %}
+<div class="alert alert-warn"><i data-lucide="alert-triangle"></i> Aucune fiche collaborateur n'est liée à votre compte. Contactez le service RH.</div>
+{% else %}
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Ma fiche</h2>
+    <table>
+      <tr><th>Nom</th><td>{{ employee.full_name }}</td></tr>
+      <tr><th>Matricule</th><td class="mono">{{ employee.matricule }}</td></tr>
+      <tr><th>Poste</th><td>{{ employee.job_title or '—' }}</td></tr>
+      <tr><th>Service</th><td>{{ employee.department or '—' }}</td></tr>
+      <tr><th>Email pro</th><td>{{ employee.email_pro or '—' }}</td></tr>
+      <tr><th>Date d'entrée</th><td class="mono">{{ employee.entry_date or '—' }}</td></tr>
+    </table>
+    <p class="text-muted text-sm mt-2">Consultation seule — pour toute modification, contactez le service RH.</p>
+  </article>
+
+  <article class="card">
+    <h2>Mes soldes</h2>
+    <div class="flex gap-4">
+      <div><span class="stat-card-value">{{ employee.cp_balance }}</span><span class="stat-card-label">CP</span></div>
+      <div><span class="stat-card-value">{{ employee.rtt_balance }}</span><span class="stat-card-label">RTT</span></div>
+    </div>
+    <h2 class="mt-4">Mes contrats en cours</h2>
+    {% if contracts %}
+    <ul>
+      {% for c in contracts %}<li>{{ c.contract_type|upper }} — depuis le <span class="mono">{{ c.start_date }}</span>{% if c.end_date %} (terme {{ c.end_date }}){% endif %}</li>{% endfor %}
+    </ul>
+    {% else %}<p class="text-muted">Aucun contrat actif enregistré.</p>{% endif %}
+  </article>
+</div>
+{% endif %}
+{% endblock %}

@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_staff
 from app.database import get_db
 from app.models.crew import CrewLeave, CrewMember
 from app.models.employee import EMPLOYEE_STATUSES, Employee
@@ -28,9 +29,11 @@ from app.models.employment_contract import (
     FIXED_TERM_TYPES,
     EmploymentContract,
 )
+from app.models.hr_absence import ABSENCE_KINDS, ABSENCE_STATUSES, HrAbsence
 from app.models.user import User
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
+from app.services.hr_absences import count_business_days
 from app.services.hr_import import parse_employees_csv
 from app.templating import templates
 
@@ -682,6 +685,284 @@ async def contract_alerts(
             "employees": employees,
         },
     )
+
+
+# ────────────────────────────────────────────────────────────────────
+#                  Congés & absences sédentaires (L3)
+# ────────────────────────────────────────────────────────────────────
+
+
+def _absence_fields(f) -> dict:
+    """Extrait/valide kind, dates, demi-journées, motif + décompte ouvré."""
+    kind = (f.get("kind") or "").strip()
+    if kind not in ABSENCE_KINDS:
+        raise HTTPException(status_code=400, detail="type d'absence invalide")
+    start_raw = (f.get("start_date") or "").strip()
+    end_raw = (f.get("end_date") or "").strip()
+    if not start_raw or not end_raw:
+        raise HTTPException(status_code=400, detail="dates de début et de fin obligatoires")
+    start = date.fromisoformat(start_raw)
+    end = date.fromisoformat(end_raw)
+    half_start = f.get("half_day_start") is not None
+    half_end = f.get("half_day_end") is not None
+    try:
+        days = count_business_days(
+            start, end, half_day_start=half_start, half_day_end=half_end
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "kind": kind,
+        "start_date": start,
+        "end_date": end,
+        "half_day_start": half_start,
+        "half_day_end": half_end,
+        "business_days": days,
+        "reason": (f.get("reason") or "").strip() or None,
+    }
+
+
+@router.get("/rh/absences", response_class=HTMLResponse)
+async def absences_index(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "C")),
+    status: str | None = None,
+    employee_id: int | None = None,
+) -> HTMLResponse:
+    query = select(HrAbsence)
+    if status in ABSENCE_STATUSES:
+        query = query.where(HrAbsence.status == status)
+    if employee_id:
+        query = query.where(HrAbsence.employee_id == employee_id)
+    absences = list(
+        (await db.execute(query.order_by(HrAbsence.start_date.desc()).limit(200)))
+        .scalars()
+        .all()
+    )
+    employees = {
+        e.id: e for e in (await db.execute(select(Employee))).scalars().all()
+    }
+    pending = [a for a in absences if a.status == "requested"]
+    active_employees = [
+        e for e in employees.values() if e.status == "active"
+    ]
+    active_employees.sort(key=lambda e: (e.last_name, e.first_name))
+    return templates.TemplateResponse(
+        "staff/rh/absences.html",
+        {
+            "request": request,
+            "user": user,
+            "absences": absences,
+            "employees": employees,
+            "active_employees": active_employees,
+            "pending": pending,
+            "kinds": ABSENCE_KINDS,
+            "statuses": ABSENCE_STATUSES,
+            "f_status": status,
+            "f_employee_id": employee_id,
+        },
+    )
+
+
+@router.post("/rh/absences")
+async def absence_create(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    f = await request.form()
+    emp_id = int(f["employee_id"]) if f.get("employee_id") else None
+    emp = await db.get(Employee, emp_id) if emp_id else None
+    if not emp:
+        raise HTTPException(status_code=400, detail="collaborateur introuvable")
+    data = _absence_fields(f)
+    # Saisie RH : décision immédiate possible (autorité centrale).
+    new_status = (f.get("status") or "approved").strip()
+    if new_status not in ("requested", "approved"):
+        raise HTTPException(status_code=400, detail="statut initial invalide")
+    absence = HrAbsence(
+        employee_id=emp_id,
+        status=new_status,
+        requested_by_id=user.id,
+        **data,
+    )
+    if new_status == "approved":
+        absence.decided_by_id = user.id
+        absence.decided_at = datetime.now(UTC)
+    db.add(absence)
+    await db.flush()
+    await activity_record(
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="hr_absence",
+        entity_id=absence.id,
+        entity_label=f"{emp.full_name} — {absence.kind} ({absence.business_days} j)",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/rh/absences", status_code=303)
+
+
+@router.post("/rh/absences/{absence_id}/decide")
+async def absence_decide(
+    absence_id: int,
+    request: Request,
+    decision: str = Form(...),  # 'approved' | 'rejected'
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    absence = await db.get(HrAbsence, absence_id)
+    if not absence:
+        raise HTTPException(status_code=404, detail="Not found")
+    if decision not in ("approved", "rejected"):
+        raise HTTPException(status_code=400, detail="décision invalide")
+    absence.status = decision
+    absence.decided_by_id = user.id
+    absence.decided_at = datetime.now(UTC)
+    await db.flush()
+    await activity_record(
+        db,
+        action=decision,
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="hr_absence",
+        entity_id=absence.id,
+        entity_label=f"absence #{absence.id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/rh/absences", status_code=303)
+
+
+# ────────────────────────────────────────────────────────────────────
+#              Self-service collaborateur (L3 — consultation)
+# ────────────────────────────────────────────────────────────────────
+
+
+async def _my_employee(db: AsyncSession, user) -> Employee | None:
+    """Fiche du collaborateur connecté (scoping strict par user_id)."""
+    return (
+        await db.execute(select(Employee).where(Employee.user_id == user.id))
+    ).scalar_one_or_none()
+
+
+@router.get("/rh/moi", response_class=HTMLResponse)
+async def self_index(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_staff),
+) -> HTMLResponse:
+    emp = await _my_employee(db, user)
+    contracts = []
+    if emp:
+        contracts = list(
+            (
+                await db.execute(
+                    select(EmploymentContract)
+                    .where(
+                        EmploymentContract.employee_id == emp.id,
+                        EmploymentContract.status == "active",
+                    )
+                    .order_by(EmploymentContract.start_date.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return templates.TemplateResponse(
+        "staff/rh/self_index.html",
+        {"request": request, "user": user, "employee": emp, "contracts": contracts},
+    )
+
+
+@router.get("/rh/moi/absences", response_class=HTMLResponse)
+async def self_absences(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_staff),
+) -> HTMLResponse:
+    emp = await _my_employee(db, user)
+    absences = []
+    if emp:
+        absences = list(
+            (
+                await db.execute(
+                    select(HrAbsence)
+                    .where(HrAbsence.employee_id == emp.id)
+                    .order_by(HrAbsence.start_date.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return templates.TemplateResponse(
+        "staff/rh/self_absences.html",
+        {
+            "request": request,
+            "user": user,
+            "employee": emp,
+            "absences": absences,
+            "kinds": ABSENCE_KINDS,
+        },
+    )
+
+
+@router.post("/rh/moi/absences")
+async def self_absence_request(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_staff),
+) -> RedirectResponse:
+    emp = await _my_employee(db, user)
+    if not emp:
+        raise HTTPException(status_code=403, detail="aucune fiche collaborateur liée à ce compte")
+    f = await request.form()
+    data = _absence_fields(f)
+    absence = HrAbsence(
+        employee_id=emp.id,
+        status="requested",
+        requested_by_id=user.id,
+        **data,
+    )
+    db.add(absence)
+    await db.flush()
+    await activity_record(
+        db,
+        action="request",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="hr_absence",
+        entity_id=absence.id,
+        entity_label=f"demande {absence.kind} ({absence.business_days} j)",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/rh/moi/absences", status_code=303)
+
+
+@router.post("/rh/moi/absences/{absence_id}/cancel")
+async def self_absence_cancel(
+    absence_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_staff),
+) -> RedirectResponse:
+    emp = await _my_employee(db, user)
+    absence = await db.get(HrAbsence, absence_id)
+    # Scoping : on n'annule que SA propre demande encore en attente.
+    if not emp or not absence or absence.employee_id != emp.id:
+        raise HTTPException(status_code=404, detail="Not found")
+    if absence.status != "requested":
+        raise HTTPException(status_code=400, detail="seules les demandes en attente sont annulables")
+    absence.status = "cancelled"
+    await db.flush()
+    return RedirectResponse(url="/rh/moi/absences", status_code=303)
 
 
 # ────────────────────────────────────────────────────────────────────
