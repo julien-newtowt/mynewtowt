@@ -71,6 +71,7 @@ from app.models.port import Port
 from app.models.quote import Quote, QuoteLine
 from app.models.rate_limit import RateLimitAttempt
 from app.models.role_permission import RolePermission
+from app.models.silae_export_batch import SilaeExportBatch
 from app.models.sof_event import (
     CargoDocument,
     EtaShift,
@@ -157,6 +158,7 @@ __all__ = [
     "RateLimitAttempt",
     "RateOffer",
     "RolePermission",
+    "SilaeExportBatch",
     "SofEvent",
     "StowageItem",
     "StowagePlan",

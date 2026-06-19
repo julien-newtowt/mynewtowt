@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,7 @@ from app.models.employment_contract import (
 )
 from app.models.hr_absence import ABSENCE_KINDS, ABSENCE_STATUSES, HrAbsence
 from app.models.payroll_variable import EVP_TYPES, PayrollVariable
+from app.models.silae_export_batch import EXPORT_BATCH_STATUSES, SilaeExportBatch
 from app.models.user import User
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
@@ -43,6 +44,7 @@ from app.services.payroll import (
     period_bounds,
     shift_period,
 )
+from app.services.silae_export import build_evp_csv
 from app.templating import templates
 
 router = APIRouter(tags=["rh"])
@@ -1276,6 +1278,154 @@ async def payroll_lock(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/rh/payroll/{period}", status_code=303)
+
+
+# ────────────────────────────────────────────────────────────────────
+#                  Export Silae + journal des lots (L5)
+# ────────────────────────────────────────────────────────────────────
+
+
+@router.post("/rh/payroll/{period}/export")
+async def payroll_export(
+    period: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    if not is_valid_period(period):
+        raise HTTPException(status_code=404, detail="période invalide")
+    # Seules les lignes verrouillées (et pas déjà exportées) partent à la paie.
+    lines = list(
+        (
+            await db.execute(
+                select(PayrollVariable).where(
+                    PayrollVariable.period == period,
+                    PayrollVariable.status == "locked",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not lines:
+        raise HTTPException(
+            status_code=400,
+            detail="aucune ligne verrouillée à exporter (verrouillez la période d'abord)",
+        )
+    employees = {
+        e.id: e
+        for e in (
+            await db.execute(
+                select(Employee).where(
+                    Employee.id.in_({line.employee_id for line in lines})
+                )
+            )
+        )
+        .scalars()
+        .all()
+    }
+    rows = []
+    for line in lines:
+        emp = employees.get(line.employee_id)
+        rows.append(
+            {
+                "matricule": emp.matricule if emp else "",
+                "silae_id": (emp.silae_id if emp else "") or "",
+                "nom": emp.last_name if emp else "",
+                "prenom": emp.first_name if emp else "",
+                "periode": line.period,
+                "type_evp": line.evp_type,
+                "libelle": line.type_label,
+                "quantite": line.quantity,
+                "montant": "" if line.amount is None else line.amount,
+                "commentaire": line.comment or "",
+            }
+        )
+    csv_content = build_evp_csv(rows)
+    batch = SilaeExportBatch(
+        period=period,
+        kind="evp",
+        format="csv",
+        content=csv_content,
+        line_count=len(lines),
+        status="generated",
+        created_by_id=user.id,
+    )
+    db.add(batch)
+    await db.flush()
+    # Fige les lignes : exportées + rattachées au lot (idempotence garantie).
+    for line in lines:
+        line.status = "exported"
+        line.export_batch_id = batch.id
+    await db.flush()
+    await activity_record(
+        db, action="export", user_id=user.id,
+        user_name=user.full_name or user.username, user_role=user.role,
+        module="rh", entity_type="silae_export_batch", entity_id=batch.id,
+        entity_label=f"export EVP {period} ({len(lines)} lignes)",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/rh/exports", status_code=303)
+
+
+@router.get("/rh/exports", response_class=HTMLResponse)
+async def exports_journal(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "C")),
+) -> HTMLResponse:
+    batches = list(
+        (
+            await db.execute(
+                select(SilaeExportBatch).order_by(SilaeExportBatch.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return templates.TemplateResponse(
+        "staff/rh/exports.html",
+        {
+            "request": request,
+            "user": user,
+            "batches": batches,
+            "statuses": EXPORT_BATCH_STATUSES,
+        },
+    )
+
+
+@router.get("/rh/exports/{batch_id}/download")
+async def export_download(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "C")),
+) -> Response:
+    batch = await db.get(SilaeExportBatch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Not found")
+    return Response(
+        content=batch.content or "",
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{batch.filename}"'},
+    )
+
+
+@router.post("/rh/exports/{batch_id}/status")
+async def export_set_status(
+    batch_id: int,
+    request: Request,
+    status: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    batch = await db.get(SilaeExportBatch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Not found")
+    if status not in EXPORT_BATCH_STATUSES:
+        raise HTTPException(status_code=400, detail="statut de lot invalide")
+    batch.status = status
+    await db.flush()
+    return RedirectResponse(url="/rh/exports", status_code=303)
 
 
 # ────────────────────────────────────────────────────────────────────

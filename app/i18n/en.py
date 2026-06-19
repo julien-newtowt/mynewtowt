@@ -411,6 +411,7 @@ CATALOG: dict[str, str] = {
     "tb_rh_contract_alerts": "Contract deadlines",
     "tb_rh_absences": "Leave & absences",
     "tb_rh_payroll": "Payroll variables",
+    "tb_rh_exports": "Silae exports",
     "tb_rh_my_absences": "My leave",
     "tb_rh_import": "Import employees",
     "s_nav_finance": "Finance",

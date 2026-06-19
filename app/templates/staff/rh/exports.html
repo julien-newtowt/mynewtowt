@@ -1,0 +1,48 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Exports Silae — RH{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Humain · Paie</span>
+    <h1 class="display">Journal des exports Silae</h1>
+  </div>
+  <a href="/rh/payroll" class="btn btn-ghost"><i data-lucide="receipt"></i> EVP / Paie</a>
+</header>
+
+<article class="card">
+  {% if batches %}
+  <table>
+    <thead><tr><th>Date</th><th>Période</th><th>Type</th><th>Lignes</th><th>Statut</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for b in batches %}
+      <tr>
+        <td class="mono text-sm">{{ b.created_at|datetime if b.created_at else '' }}</td>
+        <td class="mono">{{ b.period }}</td>
+        <td><span class="pill pill-neutral">{{ b.kind }}</span> {{ b.format }}</td>
+        <td class="mono">{{ b.line_count }}</td>
+        <td>
+          {% if b.status == 'generated' %}<span class="pill pill-ok">Généré</span>
+          {% elif b.status == 'sent' %}<span class="pill pill-warn">Transmis</span>
+          {% elif b.status == 'acknowledged' %}<span class="pill pill-ok">Accusé reçu</span>
+          {% else %}<span class="pill pill-error">Erreur</span>{% endif %}
+        </td>
+        <td class="flex gap-2 items-center">
+          <a href="/rh/exports/{{ b.id }}/download" class="btn btn-ghost btn-sm"><i data-lucide="download"></i> CSV</a>
+          <form method="post" action="/rh/exports/{{ b.id }}/status" class="flex gap-1 items-center" style="display:inline-flex">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <select name="status" onchange="this.form.submit()">
+              {% for s in statuses %}<option value="{{ s }}" {% if b.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+            </select>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucun export généré. Verrouillez une période d'EVP puis exportez-la.</p>
+  {% endif %}
+</article>
+
+<p class="text-muted text-sm mt-3"><i data-lucide="info"></i> Format CSV générique (séparateur <code>;</code>). Le mapping exact des rubriques Silae sera figé avec le cabinet de paie (cf. cahier des charges §10.3).</p>
+{% endblock %}
