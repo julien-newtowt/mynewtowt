@@ -19,8 +19,24 @@
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <button type="submit" class="btn btn-primary btn-sm">Activer</button>
     </form>
+    {% if grid.pol_locode and grid.pod_locode %}
+    <form method="post" action="/commercial/grids/{{ grid.id }}/recalculate" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-secondary btn-sm" title="Recalcule le tarif de base via OPEX × jours de mer / 850">↻ Recalculer (OPEX)</button>
+    </form>
     {% endif %}
+    {% endif %}
+    {% if grid.status == 'active' %}
+    <form method="post" action="/commercial/grids/{{ grid.id }}/draft" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-secondary btn-sm" title="Déverrouille l'édition (la grille n'est plus appliquée)">Repasser en brouillon</button>
+    </form>
+    {% endif %}
+    {% if grid.status == 'active' %}
+    <span class="btn btn-secondary btn-sm" style="opacity:.5;cursor:not-allowed;" title="Grille active verrouillée — repassez-la en brouillon">Modifier (verrouillé)</span>
+    {% else %}
     <a href="/commercial/grids/{{ grid.id }}/edit" class="btn btn-secondary btn-sm">Modifier</a>
+    {% endif %}
     <a href="/commercial/grids" class="btn btn-ghost">← Retour</a>
   </div>
 </header>

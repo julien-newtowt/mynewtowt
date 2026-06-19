@@ -49,7 +49,7 @@ from app.services.commercial import (
     next_order_reference,
     pick_bracket,
 )
-from app.services.quoting import backfill_default_grids
+from app.services.quoting import _default_base_rate, backfill_default_grids
 from app.templating import templates
 
 router = APIRouter(prefix="/commercial", tags=["commercial"])
@@ -607,6 +607,13 @@ async def grid_edit(
     grid = await db.get(RateGrid, grid_id)
     if grid is None:
         raise HTTPException(status_code=404)
+    # Cycle de vie : une grille active est verrouillée (cf. Module 6) — il faut
+    # la repasser en brouillon (ou en créer une nouvelle) avant de l'éditer.
+    if grid.status == "active":
+        raise HTTPException(
+            status_code=400,
+            detail="Grille active verrouillée — repassez-la en brouillon pour la modifier.",
+        )
     pol = _clean_locode(pol_locode, "POL")
     pod = _clean_locode(pod_locode, "POD")
     _validate_grid_route(client_id=client_id, pol=pol, pod=pod, is_default=is_default)
@@ -681,6 +688,21 @@ async def grid_activate(
     grid = await db.get(RateGrid, grid_id)
     if grid is None:
         raise HTTPException(status_code=404)
+    # Une seule grille active par périmètre (client, ou route pour une grille
+    # par défaut) : les autres actives sont marquées « superseded ».
+    others = select(RateGrid).where(RateGrid.id != grid.id, RateGrid.status == "active")
+    if grid.client_id is not None:
+        others = others.where(RateGrid.client_id == grid.client_id)
+    else:
+        others = others.where(
+            RateGrid.client_id.is_(None),
+            RateGrid.pol_locode == grid.pol_locode,
+            RateGrid.pod_locode == grid.pod_locode,
+        )
+    superseded = 0
+    for other in (await db.execute(others)).scalars().all():
+        other.status = "superseded"
+        superseded += 1
     grid.status = "active"
     await db.flush()
     await activity_record(
@@ -693,7 +715,75 @@ async def grid_activate(
         entity_type="rate_grid",
         entity_id=grid.id,
         entity_label=grid.reference,
-        detail="activated",
+        detail=f"activated (superseded={superseded})",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/commercial/grids/{grid_id}", status_code=303)
+
+
+@router.post("/grids/{grid_id}/draft")
+async def grid_set_draft(
+    grid_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Repasse une grille en brouillon (déverrouille l'édition)."""
+    grid = await db.get(RateGrid, grid_id)
+    if grid is None:
+        raise HTTPException(status_code=404)
+    grid.status = "draft"
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid.id,
+        entity_label=grid.reference,
+        detail="set_draft",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/commercial/grids/{grid_id}", status_code=303)
+
+
+@router.post("/grids/{grid_id}/recalculate")
+async def grid_recalculate(
+    grid_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Recalcule le tarif de base via la formule OPEX (opex_daily × nav_days / 850)."""
+    grid = await db.get(RateGrid, grid_id)
+    if grid is None:
+        raise HTTPException(status_code=404)
+    if grid.status == "active":
+        raise HTTPException(
+            status_code=400,
+            detail="Grille active verrouillée — repassez-la en brouillon pour la recalculer.",
+        )
+    if not (grid.pol_locode and grid.pod_locode):
+        raise HTTPException(
+            status_code=400,
+            detail="Recalcul OPEX impossible : la grille n'a pas de route POL/POD.",
+        )
+    grid.base_rate_per_palette = await _default_base_rate(db, grid.pol_locode, grid.pod_locode)
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid.id,
+        entity_label=grid.reference,
+        detail=f"recalculated base_rate={grid.base_rate_per_palette}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/commercial/grids/{grid_id}", status_code=303)
