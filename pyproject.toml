@@ -13,6 +13,11 @@ filterwarnings = [
     "error",
     "ignore::DeprecationWarning:passlib.*",
     "ignore::DeprecationWarning:itsdangerous.*",
+    # Artefact connu des tests async (aiosqlite + boucle pytest-asyncio) :
+    # la socketpair interne de la boucle est collectée par le GC après le
+    # dispose() du moteur → ResourceWarning "unclosed socket" remontée en
+    # PytestUnraisableExceptionWarning. Filtre ciblé (sockets uniquement).
+    "ignore:Exception ignored in.*socket:pytest.PytestUnraisableExceptionWarning",
 ]
 
 [tool.coverage.run]
