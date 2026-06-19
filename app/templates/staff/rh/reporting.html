@@ -1,0 +1,62 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Reporting RH{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div><span class="kicker">Humain · Pilotage</span><h1 class="display">Reporting RH</h1></div>
+  <div class="flex gap-2">
+    <a href="/rh/employees" class="btn btn-ghost"><i data-lucide="users"></i> Collaborateurs</a>
+    <a href="/rh/reporting/export.csv" class="btn btn-secondary"><i data-lucide="download"></i> Export CSV</a>
+  </div>
+</header>
+
+<section class="stats-grid mb-4">
+  <div class="stat-card"><div class="stat-card-icon teal"><i data-lucide="users"></i></div><div class="stat-card-body"><span class="stat-card-value">{{ headcount }}</span><span class="stat-card-label">Effectif actif</span></div></div>
+  <div class="stat-card"><div class="stat-card-icon"><i data-lucide="trending-up"></i></div><div class="stat-card-body"><span class="stat-card-value">{{ turnover }} %</span><span class="stat-card-label">Turnover {{ year }}</span></div></div>
+  <div class="stat-card"><div class="stat-card-icon green"><i data-lucide="award"></i></div><div class="stat-card-body"><span class="stat-card-value">{{ avg_seniority }}</span><span class="stat-card-label">Ancienneté moy. (ans)</span></div></div>
+  <div class="stat-card"><div class="stat-card-icon cuivre"><i data-lucide="euro"></i></div><div class="stat-card-body"><span class="stat-card-value">{{ payroll_mass|money }}</span><span class="stat-card-label">Masse salariale brute</span></div></div>
+</section>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Effectif par service</h2>
+    <table><thead><tr><th>Service</th><th>Effectif</th></tr></thead><tbody>
+      {% for dept, n in by_department.items() %}<tr><td>{{ dept }}</td><td class="mono">{{ n }}</td></tr>{% endfor %}
+      {% if not by_department %}<tr><td colspan="2" class="text-muted">Aucun collaborateur actif.</td></tr>{% endif %}
+    </tbody></table>
+  </article>
+
+  <article class="card">
+    <h2>Pyramide des âges</h2>
+    <table><thead><tr><th>Tranche</th><th>Effectif</th></tr></thead><tbody>
+      {% for bracket, n in by_bracket.items() %}<tr><td>{{ bracket }}</td><td class="mono">{{ n }}</td></tr>{% endfor %}
+    </tbody></table>
+  </article>
+
+  <article class="card">
+    <h2>Mouvements {{ year }}</h2>
+    <table>
+      <tr><th>Entrées</th><td class="mono">{{ entries_year }}</td></tr>
+      <tr><th>Sorties</th><td class="mono">{{ exits_year }}</td></tr>
+      <tr><th>Turnover</th><td class="mono">{{ turnover }} %</td></tr>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Absentéisme {{ year }} (jours ouvrés)</h2>
+    <table><thead><tr><th>Type</th><th>Jours</th></tr></thead><tbody>
+      {% for kind, days in absence_days.items() %}<tr><td>{{ kind }}</td><td class="mono">{{ days }}</td></tr>{% endfor %}
+      {% if not absence_days %}<tr><td colspan="2" class="text-muted">Aucune absence approuvée.</td></tr>{% endif %}
+    </tbody></table>
+  </article>
+
+  <article class="card">
+    <h2>Soldes de congés (cumul)</h2>
+    <div class="flex gap-4">
+      <div><span class="stat-card-value">{{ cp_total }}</span><span class="stat-card-label">CP</span></div>
+      <div><span class="stat-card-value">{{ rtt_total }}</span><span class="stat-card-label">RTT</span></div>
+    </div>
+  </article>
+</div>
+
+<p class="text-muted text-sm mt-3"><i data-lucide="info"></i> Masse salariale = somme des bruts des contrats actifs (approximation v1).</p>
+{% endblock %}

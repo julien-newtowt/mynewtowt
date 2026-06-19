@@ -38,6 +38,7 @@ from app.models.escale import DockerShift, EscaleOperation
 from app.models.feature_flag import FeatureFlag
 from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
 from app.models.hr_absence import HrAbsence
+from app.models.hr_review import HrReview
 from app.models.insurance import InsuranceContract
 from app.models.known_device import KnownDevice
 from app.models.leg import Leg
@@ -66,6 +67,7 @@ from app.models.packing_list import (
     PortalMessage,
 )
 from app.models.payroll_variable import PayrollVariable
+from app.models.payslip import Payslip
 from app.models.planning_share import PlanningShare
 from app.models.port import Port
 from app.models.quote import Quote, QuoteLine
@@ -117,6 +119,7 @@ __all__ = [
     "EtaShift",
     "FeatureFlag",
     "HrAbsence",
+    "HrReview",
     "InsuranceContract",
     "KnownDevice",
     "Leg",
@@ -145,6 +148,7 @@ __all__ = [
     "PackingListBatch",
     "PackingListDocument",
     "PayrollVariable",
+    "Payslip",
     "PlanningShare",
     "Port",
     "PortConfig",

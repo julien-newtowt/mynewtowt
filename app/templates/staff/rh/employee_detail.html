@@ -142,6 +142,80 @@
   </details>
 </article>
 
+<div class="grid grid-2 gap-4 mt-4">
+  <article class="card">
+    <h2>Bulletins de paie</h2>
+    {% if payslips %}
+    <table>
+      <thead><tr><th>Période</th><th>Fichier</th><th></th></tr></thead>
+      <tbody>
+        {% for p in payslips %}
+        <tr>
+          <td class="mono">{{ p.period }}</td>
+          <td class="text-sm">{{ p.filename }}</td>
+          <td class="flex gap-2">
+            <a href="/rh/payslips/{{ p.id }}/download" class="btn btn-ghost btn-sm"><i data-lucide="download"></i></a>
+            <form method="post" action="/rh/payslips/{{ p.id }}/delete" style="display:inline" onsubmit="return confirm('Supprimer ce bulletin ?');">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button class="btn btn-ghost btn-sm" type="submit"><i data-lucide="trash-2"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="text-muted">Aucun bulletin archivé.</p>{% endif %}
+    <details class="mt-3">
+      <summary class="btn btn-secondary btn-sm">+ Déposer un bulletin (PDF)</summary>
+      <form method="post" action="/rh/employees/{{ employee.id }}/payslips" enctype="multipart/form-data" class="mt-3">
+        <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+        <div class="grid grid-2 gap-3">
+          <div class="field"><label>Période *</label><input name="period" value="{{ current_period }}" placeholder="AAAA-MM" required /></div>
+          <div class="field"><label>Fichier PDF *</label><input type="file" name="file" accept="application/pdf,.pdf" required /></div>
+        </div>
+        <button class="btn btn-primary mt-2" type="submit">Déposer</button>
+      </form>
+    </details>
+  </article>
+
+  <article class="card">
+    <h2>Entretiens</h2>
+    {% if reviews %}
+    <table>
+      <thead><tr><th>Type</th><th>Date</th><th>Échéance</th><th></th></tr></thead>
+      <tbody>
+        {% for r in reviews %}
+        <tr>
+          <td>{{ r.type_label }}</td>
+          <td class="mono text-sm">{{ r.review_date }}</td>
+          <td>{% if r.next_due_date %}<span class="mono text-sm">{{ r.next_due_date }}</span>{% if r.is_due_soon %} <span class="pill pill-warn">à prévoir</span>{% endif %}{% else %}—{% endif %}</td>
+          <td>
+            <form method="post" action="/rh/reviews/{{ r.id }}/delete" style="display:inline" onsubmit="return confirm('Supprimer cet entretien ?');">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button class="btn btn-ghost btn-sm" type="submit"><i data-lucide="trash-2"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="text-muted">Aucun entretien enregistré.</p>{% endif %}
+    <details class="mt-3">
+      <summary class="btn btn-secondary btn-sm">+ Enregistrer un entretien</summary>
+      <form method="post" action="/rh/employees/{{ employee.id }}/reviews" class="mt-3">
+        <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+        <div class="grid grid-2 gap-3">
+          <div class="field"><label>Type *</label><select name="review_type" required>{% for key, label in review_types.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+          <div class="field"><label>Date *</label><input name="review_date" type="date" required /></div>
+          <div class="field"><label>Prochaine échéance</label><input name="next_due_date" type="date" /></div>
+          <div class="field" style="grid-column:span 2;"><label>Synthèse</label><textarea name="summary" rows="2"></textarea></div>
+        </div>
+        <button class="btn btn-primary mt-2" type="submit">Enregistrer</button>
+      </form>
+    </details>
+  </article>
+</div>
+
 <article class="card mt-4">
   <h2>Zone de danger</h2>
   <form method="post" action="/rh/employees/{{ employee.id }}/delete" onsubmit="return confirm('Supprimer définitivement ce dossier ?');">

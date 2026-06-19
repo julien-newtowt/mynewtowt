@@ -3,7 +3,12 @@
 {% block content %}
 <header class="flex justify-between items-center mb-4">
   <div><span class="kicker">Self-service</span><h1 class="display">Mon espace RH</h1></div>
-  {% if employee %}<a href="/rh/moi/absences" class="btn btn-secondary"><i data-lucide="calendar-days"></i> Mes congés</a>{% endif %}
+  {% if employee %}
+  <div class="flex gap-2">
+    <a href="/rh/moi/absences" class="btn btn-secondary"><i data-lucide="calendar-days"></i> Mes congés</a>
+    <a href="/rh/moi/bulletins" class="btn btn-ghost"><i data-lucide="file-text"></i> Mes bulletins</a>
+  </div>
+  {% endif %}
 </header>
 
 {% if not employee %}

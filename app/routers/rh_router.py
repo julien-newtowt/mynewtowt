@@ -30,13 +30,16 @@ from app.models.employment_contract import (
     EmploymentContract,
 )
 from app.models.hr_absence import ABSENCE_KINDS, ABSENCE_STATUSES, HrAbsence
+from app.models.hr_review import REVIEW_TYPES, HrReview
 from app.models.payroll_variable import EVP_TYPES, PayrollVariable
+from app.models.payslip import Payslip
 from app.models.silae_export_batch import EXPORT_BATCH_STATUSES, SilaeExportBatch
 from app.models.user import User
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.hr_absences import count_business_days
 from app.services.hr_import import parse_employees_csv
+from app.services.hr_reporting import age_bracket, age_on, seniority_years, turnover_rate
 from app.services.payroll import (
     current_period,
     is_valid_period,
@@ -46,6 +49,7 @@ from app.services.payroll import (
 )
 from app.services.silae_export import build_evp_csv
 from app.templating import templates
+from app.utils.file_validation import validate_upload
 
 router = APIRouter(tags=["rh"])
 
@@ -380,6 +384,28 @@ async def employee_detail(
     )
     # Contrats initiaux (non-avenants) proposables comme parent d'un avenant.
     base_contracts = [c for c in contracts if not c.is_amendment]
+    payslips = list(
+        (
+            await db.execute(
+                select(Payslip)
+                .where(Payslip.employee_id == employee_id)
+                .order_by(Payslip.period.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    reviews = list(
+        (
+            await db.execute(
+                select(HrReview)
+                .where(HrReview.employee_id == employee_id)
+                .order_by(HrReview.review_date.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/rh/employee_detail.html",
         {
@@ -394,6 +420,10 @@ async def employee_detail(
             "contract_statuses": CONTRACT_STATUSES,
             "fixed_term_types": FIXED_TERM_TYPES,
             "default_convention": DEFAULT_CONVENTION,
+            "payslips": payslips,
+            "reviews": reviews,
+            "review_types": REVIEW_TYPES,
+            "current_period": current_period(),
         },
     )
 
@@ -1426,6 +1456,316 @@ async def export_set_status(
     batch.status = status
     await db.flush()
     return RedirectResponse(url="/rh/exports", status_code=303)
+
+
+# ────────────────────────────────────────────────────────────────────
+#        Coffre-fort bulletins + entretiens + reporting (L6)
+# ────────────────────────────────────────────────────────────────────
+
+
+@router.post("/rh/employees/{employee_id}/payslips")
+async def payslip_upload(
+    employee_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+    file: UploadFile | None = None,
+    period: str = Form(...),
+) -> RedirectResponse:
+    emp = await db.get(Employee, employee_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not is_valid_period(period):
+        raise HTTPException(status_code=400, detail="période invalide (AAAA-MM)")
+    raw = await file.read() if file else b""
+    if not raw:
+        raise HTTPException(status_code=400, detail="fichier manquant")
+    result = validate_upload(file.filename or "bulletin.pdf", raw)
+    if not result.ok:
+        raise HTTPException(status_code=400, detail=result.reason or "fichier invalide")
+    if result.detected_mime != "application/pdf":
+        raise HTTPException(status_code=400, detail="le bulletin doit être un PDF")
+    payslip = Payslip(
+        employee_id=employee_id,
+        period=period,
+        filename=file.filename or f"bulletin-{period}.pdf",
+        content=raw,
+        file_size=len(raw),
+        uploaded_by_id=user.id,
+    )
+    db.add(payslip)
+    await db.flush()
+    await activity_record(
+        db, action="create", user_id=user.id,
+        user_name=user.full_name or user.username, user_role=user.role,
+        module="rh", entity_type="payslip", entity_id=payslip.id,
+        entity_label=f"bulletin {emp.full_name} {period}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/rh/employees/{employee_id}", status_code=303)
+
+
+def _payslip_response(payslip: Payslip) -> Response:
+    return Response(
+        content=payslip.content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{payslip.filename}"'},
+    )
+
+
+@router.get("/rh/payslips/{payslip_id}/download")
+async def payslip_download(
+    payslip_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "C")),
+) -> Response:
+    payslip = await db.get(Payslip, payslip_id)
+    if not payslip:
+        raise HTTPException(status_code=404, detail="Not found")
+    await activity_record(
+        db, action="download", user_id=user.id,
+        user_name=user.full_name or user.username, user_role=user.role,
+        module="rh", entity_type="payslip", entity_id=payslip.id,
+        entity_label=f"bulletin #{payslip.id} ({payslip.period})",
+        ip_address=_client_ip(request),
+    )
+    return _payslip_response(payslip)
+
+
+@router.post("/rh/payslips/{payslip_id}/delete")
+async def payslip_delete(
+    payslip_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "S")),
+) -> RedirectResponse:
+    payslip = await db.get(Payslip, payslip_id)
+    if not payslip:
+        raise HTTPException(status_code=404, detail="Not found")
+    employee_id = payslip.employee_id
+    await db.delete(payslip)
+    await db.flush()
+    return RedirectResponse(url=f"/rh/employees/{employee_id}", status_code=303)
+
+
+@router.post("/rh/employees/{employee_id}/reviews")
+async def review_create(
+    employee_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    emp = await db.get(Employee, employee_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Not found")
+    f = await request.form()
+    review_type = _opt_str(f.get("review_type"))
+    if review_type not in REVIEW_TYPES:
+        raise HTTPException(status_code=400, detail="type d'entretien invalide")
+    review_date = _opt_date(f.get("review_date"), "Date de l'entretien")
+    if not review_date:
+        raise HTTPException(status_code=400, detail="date de l'entretien obligatoire")
+    review = HrReview(
+        employee_id=employee_id,
+        review_type=review_type,
+        review_date=review_date,
+        next_due_date=_opt_date(f.get("next_due_date"), "Prochaine échéance"),
+        summary=_opt_str(f.get("summary")),
+        created_by_id=user.id,
+    )
+    db.add(review)
+    await db.flush()
+    await activity_record(
+        db, action="create", user_id=user.id,
+        user_name=user.full_name or user.username, user_role=user.role,
+        module="rh", entity_type="hr_review", entity_id=review.id,
+        entity_label=f"entretien {emp.full_name} ({review.type_label})",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/rh/employees/{employee_id}", status_code=303)
+
+
+@router.post("/rh/reviews/{review_id}/delete")
+async def review_delete(
+    review_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "S")),
+) -> RedirectResponse:
+    review = await db.get(HrReview, review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Not found")
+    employee_id = review.employee_id
+    await db.delete(review)
+    await db.flush()
+    return RedirectResponse(url=f"/rh/employees/{employee_id}", status_code=303)
+
+
+# ── Self-service : mes bulletins ────────────────────────────────────────
+
+
+@router.get("/rh/moi/bulletins", response_class=HTMLResponse)
+async def self_payslips(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_staff),
+) -> HTMLResponse:
+    await _populate_topbar_state(request, db, user)
+    emp = await _my_employee(db, user)
+    payslips = []
+    if emp:
+        payslips = list(
+            (
+                await db.execute(
+                    select(Payslip)
+                    .where(Payslip.employee_id == emp.id)
+                    .order_by(Payslip.period.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return templates.TemplateResponse(
+        "staff/rh/self_payslips.html",
+        {"request": request, "user": user, "employee": emp, "payslips": payslips},
+    )
+
+
+@router.get("/rh/moi/bulletins/{payslip_id}/download")
+async def self_payslip_download(
+    payslip_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_staff),
+) -> Response:
+    emp = await _my_employee(db, user)
+    payslip = await db.get(Payslip, payslip_id)
+    # Scoping : on ne télécharge que SES propres bulletins.
+    if not emp or not payslip or payslip.employee_id != emp.id:
+        raise HTTPException(status_code=404, detail="Not found")
+    await activity_record(
+        db, action="download", user_id=user.id,
+        user_name=user.full_name or user.username, user_role=user.role,
+        module="rh", entity_type="payslip", entity_id=payslip.id,
+        entity_label=f"self-bulletin #{payslip.id} ({payslip.period})",
+        ip_address=_client_ip(request),
+    )
+    return _payslip_response(payslip)
+
+
+# ── Reporting RH ────────────────────────────────────────────────────────
+
+
+async def _reporting_data(db: AsyncSession) -> dict:
+    employees = list((await db.execute(select(Employee))).scalars().all())
+    active = [e for e in employees if e.status == "active"]
+    today = date.today()
+    year = today.year
+
+    by_department: dict[str, int] = {}
+    for e in active:
+        by_department[e.department or "—"] = by_department.get(e.department or "—", 0) + 1
+
+    by_bracket: dict[str, int] = {}
+    for e in active:
+        if e.birth_date:
+            b = age_bracket(age_on(e.birth_date, today))
+            by_bracket[b] = by_bracket.get(b, 0) + 1
+
+    seniorities = [seniority_years(e.entry_date, today) for e in active if e.entry_date]
+    avg_seniority = round(sum(seniorities) / len(seniorities), 1) if seniorities else 0.0
+
+    entries_year = sum(1 for e in employees if e.entry_date and e.entry_date.year == year)
+    exits_year = sum(1 for e in employees if e.exit_date and e.exit_date.year == year)
+
+    # Masse salariale = somme des bruts des contrats actifs (approx. v1).
+    contracts = list(
+        (
+            await db.execute(
+                select(EmploymentContract).where(EmploymentContract.status == "active")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    payroll_mass = sum((c.gross_monthly or 0) for c in contracts)
+
+    # Absentéisme : jours ouvrés d'absences approuvées de l'année, par type.
+    absences = list(
+        (
+            await db.execute(
+                select(HrAbsence).where(HrAbsence.status == "approved")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    absence_days: dict[str, float] = {}
+    for ab in absences:
+        if ab.start_date.year == year or ab.end_date.year == year:
+            absence_days[ab.kind] = absence_days.get(ab.kind, 0) + float(ab.business_days)
+
+    cp_total = sum(float(e.cp_balance) for e in active)
+    rtt_total = sum(float(e.rtt_balance) for e in active)
+
+    return {
+        "headcount": len(active),
+        "by_department": dict(sorted(by_department.items())),
+        "by_bracket": {b: by_bracket.get(b, 0) for b in ("<25", "25-34", "35-44", "45-54", "55+")},
+        "avg_seniority": avg_seniority,
+        "entries_year": entries_year,
+        "exits_year": exits_year,
+        "turnover": turnover_rate(exits_year, len(active)),
+        "payroll_mass": payroll_mass,
+        "absence_days": dict(sorted(absence_days.items())),
+        "cp_total": round(cp_total, 1),
+        "rtt_total": round(rtt_total, 1),
+        "year": year,
+    }
+
+
+@router.get("/rh/reporting", response_class=HTMLResponse)
+async def reporting(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "C")),
+) -> HTMLResponse:
+    data = await _reporting_data(db)
+    return templates.TemplateResponse(
+        "staff/rh/reporting.html",
+        {"request": request, "user": user, **data},
+    )
+
+
+@router.get("/rh/reporting/export.csv")
+async def reporting_export(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "C")),
+) -> Response:
+    d = await _reporting_data(db)
+    lines = [
+        "indicateur;valeur",
+        f"effectif_actif;{d['headcount']}",
+        f"anciennete_moyenne_ans;{d['avg_seniority']}",
+        f"entrees_{d['year']};{d['entries_year']}",
+        f"sorties_{d['year']};{d['exits_year']}",
+        f"turnover_pct;{d['turnover']}",
+        f"masse_salariale_brute;{d['payroll_mass']}",
+        f"solde_cp_total;{d['cp_total']}",
+        f"solde_rtt_total;{d['rtt_total']}",
+    ]
+    for dept, n in d["by_department"].items():
+        lines.append(f"effectif_service_{dept};{n}")
+    for bracket, n in d["by_bracket"].items():
+        lines.append(f"pyramide_{bracket};{n}")
+    for kind, days in d["absence_days"].items():
+        lines.append(f"absences_{kind}_jours;{days}")
+    return Response(
+        content="﻿" + "\n".join(lines) + "\n",
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="reporting_rh.csv"'},
+    )
 
 
 # ────────────────────────────────────────────────────────────────────

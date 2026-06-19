@@ -412,6 +412,8 @@ CATALOG: dict[str, str] = {
     "tb_rh_absences": "Licenças e ausências",
     "tb_rh_payroll": "Variáveis de folha",
     "tb_rh_exports": "Exportações Silae",
+    "tb_rh_reporting": "Relatórios RH",
+    "tb_rh_my_payslips": "Meus holerites",
     "tb_rh_my_absences": "Minhas licenças",
     "tb_rh_import": "Importar colaboradores",
     "s_nav_finance": "Finanças",

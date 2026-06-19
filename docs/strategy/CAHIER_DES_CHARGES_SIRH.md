@@ -469,7 +469,7 @@ authentifié, scopé serveur à ses propres données).
 | **L3** | Congés/absences sédentaires + self-service consultation | L1 | ✅ livré |
 | **L4** | EVP + verrouillage période | L1–L3 | ✅ livré |
 | **L5** | Export Silae (CSV puis API) + journal des lots | L4 | ✅ livré |
-| **L6** | Coffre-fort bulletins + entretiens + reporting RH | L1–L4 | ⏳ à venir |
+| **L6** | Coffre-fort bulletins + entretiens + reporting RH | L1–L4 | ✅ livré |
 | **v2** | Workflow validation manager, note de frais, recrutement/ATS | — | ⏳ à venir |
 
 ---
