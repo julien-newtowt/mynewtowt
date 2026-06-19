@@ -407,6 +407,7 @@ CATALOG: dict[str, str] = {
     "s_nav_crew": "Équipage",
     "s_nav_rh": "Ressources humaines",
     "tb_rh_employees": "Collaborateurs",
+    "tb_rh_contract_alerts": "Échéances contrats",
     "tb_rh_import": "Import collaborateurs",
     "s_nav_finance": "Finance",
     "s_nav_kpi": "KPI",

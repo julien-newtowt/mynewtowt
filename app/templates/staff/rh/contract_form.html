@@ -1,0 +1,42 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Modifier contrat — {{ employee.full_name }}{% endblock %}
+{% block content %}
+<a href="/rh/employees/{{ employee.id }}" class="btn btn-ghost mb-3">← {{ employee.full_name }}</a>
+<header class="mb-4">
+  <span class="kicker">Contrat · {{ employee.full_name }}</span>
+  <h1 class="display">Modifier le contrat</h1>
+</header>
+
+<form method="post" action="/rh/contracts/{{ contract.id }}/edit" class="card">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+  <div class="grid grid-3 gap-3">
+    <div class="field">
+      <label>Type *</label>
+      <select name="contract_type" required>
+        {% for ct in contract_types %}<option value="{{ ct }}" {% if contract.contract_type == ct %}selected{% endif %}>{{ ct|upper }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Avenant à</label>
+      <select name="parent_contract_id">
+        <option value="">— (contrat initial)</option>
+        {% for bc in base_contracts %}<option value="{{ bc.id }}" {% if contract.parent_contract_id == bc.id %}selected{% endif %}>{{ bc.contract_type|upper }} du {{ bc.start_date }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Statut</label>
+      <select name="status">{% for st in contract_statuses %}<option value="{{ st }}" {% if contract.status == st %}selected{% endif %}>{{ st }}</option>{% endfor %}</select>
+    </div>
+    <div class="field"><label>Date de début *</label><input name="start_date" type="date" value="{{ contract.start_date }}" required /></div>
+    <div class="field"><label>Date de fin</label><input name="end_date" type="date" value="{{ contract.end_date or '' }}" /></div>
+    <div class="field"><label>Fin de période d'essai</label><input name="trial_end_date" type="date" value="{{ contract.trial_end_date or '' }}" /></div>
+    <div class="field"><label>Convention</label><input name="convention" value="{{ contract.convention }}" /></div>
+    <div class="field"><label>Classification</label><input name="classification" value="{{ contract.classification or '' }}" /></div>
+    <div class="field"><label>Temps de travail (h/sem)</label><input name="weekly_hours" type="number" step="0.5" value="{{ contract.weekly_hours if contract.weekly_hours is not none else '' }}" /></div>
+    <div class="field"><label>Brut mensuel (€)</label><input name="gross_monthly" type="number" step="0.01" value="{{ contract.gross_monthly if contract.gross_monthly is not none else '' }}" /></div>
+    <div class="field" style="grid-column:span 2;"><label>Motif / objet</label><input name="motive" value="{{ contract.motive or '' }}" /></div>
+  </div>
+  <p class="text-muted text-sm mt-3">Les CDD, contrats d'alternance et stages exigent une date de fin.</p>
+  <button class="btn btn-primary mt-2" type="submit">Enregistrer</button>
+</form>
+{% endblock %}

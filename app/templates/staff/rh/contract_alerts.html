@@ -1,0 +1,42 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Échéances contrats — RH{% endblock %}
+{% block content %}
+<a href="/rh/employees" class="btn btn-ghost mb-3">← Collaborateurs</a>
+<header class="mb-4">
+  <span class="kicker">Humain · Échéances</span>
+  <h1 class="display">Alertes contrats</h1>
+  <p class="text-muted">Contrats actifs dont la période d'essai ou le terme arrive à échéance (≤ 30 jours) ou est dépassé.</p>
+</header>
+
+<article class="card">
+  {% if alerts %}
+  <table>
+    <thead><tr><th>Collaborateur</th><th>Type</th><th>Échéance</th><th>Date</th><th>Reste</th></tr></thead>
+    <tbody>
+      {% for c in alerts %}
+      {% set emp = employees.get(c.employee_id) %}
+      <tr>
+        <td>{% if emp %}<a href="/rh/employees/{{ emp.id }}">{{ emp.full_name }}</a> <span class="mono text-sm text-muted">{{ emp.matricule }}</span>{% else %}#{{ c.employee_id }}{% endif %}</td>
+        <td>{% if c.is_amendment %}<span class="pill pill-neutral">Avenant</span>{% else %}<span class="pill pill-ok">{{ c.contract_type|upper }}</span>{% endif %}</td>
+        <td>
+          {% if c.end_expired %}<span class="pill pill-error">Terme dépassé</span>
+          {% elif c.end_warning %}<span class="pill pill-warn">Fin de contrat</span>
+          {% elif c.trial_warning %}<span class="pill pill-warn">Fin de période d'essai</span>{% endif %}
+        </td>
+        <td class="mono text-sm">
+          {% if c.end_expired or c.end_warning %}{{ c.end_date }}{% else %}{{ c.trial_end_date }}{% endif %}
+        </td>
+        <td class="mono">
+          {% if c.end_expired %}{{ c.end_days_remaining }} j
+          {% elif c.end_warning %}{{ c.end_days_remaining }} j
+          {% elif c.trial_warning %}{{ c.trial_days_remaining }} j{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted"><i data-lucide="check-circle"></i> Aucune échéance contractuelle à signaler.</p>
+  {% endif %}
+</article>
+{% endblock %}

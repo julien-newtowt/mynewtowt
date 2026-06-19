@@ -21,6 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.crew import CrewLeave, CrewMember
 from app.models.employee import EMPLOYEE_STATUSES, Employee
+from app.models.employment_contract import (
+    CONTRACT_STATUSES,
+    CONTRACT_TYPES,
+    DEFAULT_CONVENTION,
+    FIXED_TERM_TYPES,
+    EmploymentContract,
+)
 from app.models.user import User
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
@@ -311,6 +318,21 @@ async def employee_detail(
         raise HTTPException(status_code=404, detail="Not found")
     manager = await db.get(Employee, emp.manager_id) if emp.manager_id else None
     account = await db.get(User, emp.user_id) if emp.user_id else None
+    contracts = list(
+        (
+            await db.execute(
+                select(EmploymentContract)
+                .where(EmploymentContract.employee_id == employee_id)
+                .order_by(
+                    EmploymentContract.start_date.desc(), EmploymentContract.id.desc()
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    # Contrats initiaux (non-avenants) proposables comme parent d'un avenant.
+    base_contracts = [c for c in contracts if not c.is_amendment]
     return templates.TemplateResponse(
         "staff/rh/employee_detail.html",
         {
@@ -319,6 +341,12 @@ async def employee_detail(
             "employee": emp,
             "manager": manager,
             "account": account,
+            "contracts": contracts,
+            "base_contracts": base_contracts,
+            "contract_types": CONTRACT_TYPES,
+            "contract_statuses": CONTRACT_STATUSES,
+            "fixed_term_types": FIXED_TERM_TYPES,
+            "default_convention": DEFAULT_CONVENTION,
         },
     )
 
@@ -414,6 +442,246 @@ async def employee_delete(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/rh/employees", status_code=303)
+
+
+# ────────────────────────────────────────────────────────────────────
+#                  Contrats & avenants (L2)
+# ────────────────────────────────────────────────────────────────────
+
+
+def _contract_from_form(f) -> dict:
+    """Extrait/valide les champs d'un contrat depuis un form."""
+
+    def s(key: str) -> str | None:
+        val = (f.get(key) or "").strip()
+        return val or None
+
+    def d(key: str) -> date | None:
+        val = (f.get(key) or "").strip()
+        return date.fromisoformat(val) if val else None
+
+    def num(key: str) -> Decimal | None:
+        val = (f.get(key) or "").strip().replace(",", ".")
+        return Decimal(val) if val else None
+
+    def fk(key: str) -> int | None:
+        val = (f.get(key) or "").strip()
+        return int(val) if val else None
+
+    contract_type = s("contract_type")
+    if contract_type not in CONTRACT_TYPES:
+        raise HTTPException(status_code=400, detail="type de contrat invalide")
+    status = s("status") or "active"
+    if status not in CONTRACT_STATUSES:
+        raise HTTPException(status_code=400, detail="statut de contrat invalide")
+    start_date = d("start_date")
+    if not start_date:
+        raise HTTPException(status_code=400, detail="date de début obligatoire")
+    end_date = d("end_date")
+    if contract_type in FIXED_TERM_TYPES and not end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="un contrat à durée déterminée (CDD/alternance/stage) exige une date de fin",
+        )
+    if end_date and end_date < start_date:
+        raise HTTPException(status_code=400, detail="la date de fin précède la date de début")
+    parent_id = fk("parent_contract_id")
+    return {
+        "contract_type": contract_type,
+        "parent_contract_id": parent_id,
+        "is_amendment": parent_id is not None,
+        "convention": s("convention") or DEFAULT_CONVENTION,
+        "classification": s("classification"),
+        "start_date": start_date,
+        "end_date": end_date,
+        "trial_end_date": d("trial_end_date"),
+        "weekly_hours": num("weekly_hours"),
+        "gross_monthly": num("gross_monthly"),
+        "motive": s("motive"),
+        "status": status,
+    }
+
+
+@router.post("/rh/employees/{employee_id}/contracts")
+async def contract_create(
+    employee_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    emp = await db.get(Employee, employee_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Not found")
+    f = await request.form()
+    data = _contract_from_form(f)
+    # Un avenant doit référencer un contrat de ce même collaborateur.
+    if data["parent_contract_id"] is not None:
+        parent = await db.get(EmploymentContract, data["parent_contract_id"])
+        if not parent or parent.employee_id != employee_id:
+            raise HTTPException(status_code=400, detail="contrat parent invalide")
+    contract = EmploymentContract(employee_id=employee_id, **data)
+    db.add(contract)
+    await db.flush()
+    await activity_record(
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="employment_contract",
+        entity_id=contract.id,
+        entity_label=f"{emp.full_name} — {contract.contract_type}"
+        + (" (avenant)" if contract.is_amendment else ""),
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/rh/employees/{employee_id}", status_code=303)
+
+
+@router.get("/rh/contracts/{contract_id}/edit", response_class=HTMLResponse)
+async def contract_edit_form(
+    contract_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> HTMLResponse:
+    contract = await db.get(EmploymentContract, contract_id)
+    if not contract:
+        raise HTTPException(status_code=404, detail="Not found")
+    employee = await db.get(Employee, contract.employee_id)
+    base_contracts = list(
+        (
+            await db.execute(
+                select(EmploymentContract).where(
+                    EmploymentContract.employee_id == contract.employee_id,
+                    EmploymentContract.is_amendment.is_(False),
+                    EmploymentContract.id != contract_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return templates.TemplateResponse(
+        "staff/rh/contract_form.html",
+        {
+            "request": request,
+            "user": user,
+            "contract": contract,
+            "employee": employee,
+            "base_contracts": base_contracts,
+            "contract_types": CONTRACT_TYPES,
+            "contract_statuses": CONTRACT_STATUSES,
+            "fixed_term_types": FIXED_TERM_TYPES,
+            "default_convention": DEFAULT_CONVENTION,
+        },
+    )
+
+
+@router.post("/rh/contracts/{contract_id}/edit")
+async def contract_update(
+    contract_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "M")),
+) -> RedirectResponse:
+    contract = await db.get(EmploymentContract, contract_id)
+    if not contract:
+        raise HTTPException(status_code=404, detail="Not found")
+    f = await request.form()
+    data = _contract_from_form(f)
+    if data["parent_contract_id"] is not None:
+        if data["parent_contract_id"] == contract_id:
+            raise HTTPException(status_code=400, detail="un contrat ne peut être son propre parent")
+        parent = await db.get(EmploymentContract, data["parent_contract_id"])
+        if not parent or parent.employee_id != contract.employee_id:
+            raise HTTPException(status_code=400, detail="contrat parent invalide")
+    for key, value in data.items():
+        setattr(contract, key, value)
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="employment_contract",
+        entity_id=contract.id,
+        entity_label=f"contrat #{contract.id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/rh/employees/{contract.employee_id}", status_code=303)
+
+
+@router.post("/rh/contracts/{contract_id}/delete")
+async def contract_delete(
+    contract_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "S")),
+) -> RedirectResponse:
+    contract = await db.get(EmploymentContract, contract_id)
+    if not contract:
+        raise HTTPException(status_code=404, detail="Not found")
+    employee_id = contract.employee_id
+    await db.delete(contract)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="employment_contract",
+        entity_id=contract_id,
+        entity_label=f"contrat #{contract_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/rh/employees/{employee_id}", status_code=303)
+
+
+@router.get("/rh/contracts/alerts", response_class=HTMLResponse)
+async def contract_alerts(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "C")),
+) -> HTMLResponse:
+    # Contrats actifs porteurs d'une échéance (essai ou terme).
+    contracts = list(
+        (
+            await db.execute(
+                select(EmploymentContract).where(
+                    EmploymentContract.status == "active",
+                    or_(
+                        EmploymentContract.end_date.is_not(None),
+                        EmploymentContract.trial_end_date.is_not(None),
+                    ),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    alerts = [c for c in contracts if c.has_alert]
+    alerts.sort(key=lambda c: (c.end_days_remaining if c.end_days_remaining is not None else 9999))
+    emp_ids = {c.employee_id for c in alerts}
+    employees = {
+        e.id: e
+        for e in (
+            await db.execute(select(Employee).where(Employee.id.in_(emp_ids)))
+        ).scalars().all()
+    } if emp_ids else {}
+    return templates.TemplateResponse(
+        "staff/rh/contract_alerts.html",
+        {
+            "request": request,
+            "user": user,
+            "alerts": alerts,
+            "employees": employees,
+        },
+    )
 
 
 # ────────────────────────────────────────────────────────────────────

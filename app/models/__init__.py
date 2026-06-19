@@ -33,6 +33,7 @@ from app.models.crew import (
 )
 from app.models.crew_ticket import CrewTicket
 from app.models.employee import Employee
+from app.models.employment_contract import EmploymentContract
 from app.models.escale import DockerShift, EscaleOperation
 from app.models.feature_flag import FeatureFlag
 from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
@@ -108,6 +109,7 @@ __all__ = [
     "CrewTicket",
     "DockerShift",
     "Employee",
+    "EmploymentContract",
     "EscaleOperation",
     "EtaShift",
     "FeatureFlag",

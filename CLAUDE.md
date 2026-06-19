@@ -166,7 +166,7 @@ mynewtowt/
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
 | Cashbox | `/cashbox` | ✅ EUR/USD/VND |
-| RH (SIRH) | `/rh` | 🟡 congés marins + collaborateurs sédentaires (dossier, CRUD, import fichier) — SIRH en cours (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |
+| RH (SIRH) | `/rh` | 🟡 congés marins + collaborateurs sédentaires (dossier, CRUD, import fichier, contrats & avenants + alertes d'échéance) — SIRH en cours (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |
 | Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |
 | Météo historisée | `/api/weather/refresh` | ✅ snapshot Windy du dernier point GPS / navire (cron 30 min, `WEATHER_API_TOKEN`) → `vessel_weather` |
