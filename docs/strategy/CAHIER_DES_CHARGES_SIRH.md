@@ -524,10 +524,18 @@ des sédentaires** ciblés par l'EVP (§4.4). Il se remplit depuis les
   `JrsEmbarque`, `NbjPos15`/`ValPos15`, catégorie & `Taux ENIM`, `NbPart`,
   `JrsNonExo`/`HrsNonExo`. À spécifier avant développement.
 
-> **Décision à prendre** : prioriser (a) l'export **marins/ENIM** (ce gabarit,
-> source `crew`), (b) un export **sédentaires** vers Silae (format à fournir),
-> ou (c) les deux. Le générateur CSV sédentaire actuel (L5) reste en place et
-> générique tant que (b) n'est pas figé.
+> **Décision (2026-06-19)** : **les deux** exports sont au périmètre —
+> (a) **marins/ENIM** (ce gabarit, source `crew`) **et** (b) **sédentaires**
+> vers Silae. Mais :
+> - **(a) marins/ENIM : différé** — *« on verra plus tard »*. Les règles de
+>   paie ENIM (calcul `JrsMer`/`JrsEmbarque`, catégorie & `Taux ENIM`,
+>   `NbPart`, exonérations) doivent être fournies avant développement.
+> - **(b) sédentaires** : le générateur CSV actuel (L5) reste en place,
+>   **générique**, jusqu'à réception du gabarit Silae sédentaires (mapping
+>   `evp_type` → rubrique).
+>
+> → **Aucun des deux exports n'est bloqué côté code applicatif** ; ils
+> attendent des **intrants métier** (règles ENIM / gabarit sédentaires).
 
 ---
 
@@ -566,15 +574,20 @@ des sédentaires** ciblés par l'EVP (§4.4). Il se remplit depuis les
 
 | # | Question | Décision | Statut code |
 |---|---|---|---|
-| 1 | **Format d'import/export Silae** (rubriques) | Gabarit Silae reçu = **feed marins / ENIM** (voir §10.4), distinct de l'EVP sédentaires. Périmètre exact à confirmer (cf. §10.4). | ⏳ en attente — export ENIM non construit |
+| 1 | **Format d'import/export Silae** (rubriques) | **Les deux** exports au périmètre (marins/ENIM + sédentaires). Marins/ENIM = gabarit reçu (§10.4) mais **différé** (règles ENIM à fournir). Sédentaires = CSV générique L5 jusqu'au gabarit dédié. | ⏳ en attente d'intrants métier (règles ENIM / gabarit sédentaires) |
 | 2 | **Décompte des congés** | Jours **ouvrables** (lun–sam, dimanche exclu). **Pas de RTT**. | ✅ `count_business_days` ouvrables ; RTT retiré |
 | 3 | **Soldes CP** | Gérés dans **Silae** (source de vérité) — non stockés/édités dans MyNewtowt. | ✅ colonnes `cp_balance`/`rtt_balance` supprimées (migration 0052) |
 | 4 | **Effectif initial / reprise** | **Import depuis Silae** (fichier). | ✅ import CSV L1 (mapping rubriques Silae à finaliser avec §10.4) |
 | 5 | **Conservation des pièces** | **Départ du salarié + 2 ans**. Les bulletins de salaire (BS) sont sur **DIGIPOSTE** (le coffre-fort MyNewtowt n'est qu'une copie d'archive optionnelle). | 🟡 règle documentée ; purge auto = backlog |
 | 6 | **Accès `rh` au module `finance`** | **`C`** (consultation masse salariale). | ✅ `("rh","finance"): "C"` |
 
-### 13.1 Restent à préciser
-- **§10.4** : périmètre exact du feed Silae marins (calcul `JrsMer`/`JrsEmbarque`,
-  catégories/taux ENIM, parts, exonérations) — bloquant pour construire l'export.
+### 13.1 Intrants métier attendus (débloquent du code)
+- **Règles paie ENIM** (feed marins, §10.4) : calcul `JrsMer`/`JrsEmbarque`,
+  `NbjPos15`/`ValPos15`, catégorie & `Taux ENIM`, `NbPart`,
+  `JrsNonExo`/`HrsNonExo` → pour construire l'export marins (différé).
+- **Gabarit Silae sédentaires** : colonnes / codes rubriques → pour figer le
+  mapping `evp_type` → rubrique (le CSV L5 reste générique en attendant).
+
+### 13.2 Petits points en suspens (non bloquants)
 - **Jours fériés** dans le décompte des congés (non gérés en v1).
 - **Purge automatique** « départ + 2 ans » (à intégrer au chantier purges DB ciblées).
