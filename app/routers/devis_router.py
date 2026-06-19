@@ -156,7 +156,7 @@ async def devis_submit(
     ).date()
 
     try:
-        grid = await resolve_grid(
+        grid, route = await resolve_grid(
             db,
             pol_locode=pol,
             pod_locode=pod,
@@ -164,7 +164,7 @@ async def devis_submit(
             commercial_client_id=commercial_client_id,
         )
         computed = compute_grid_quote(
-            grid, items=items, tonnage_t=tonnage_t, hazardous=hazardous
+            grid, route, items=items, tonnage_t=tonnage_t, hazardous=hazardous
         )
     except QuotingError as e:
         context = await _form_context(

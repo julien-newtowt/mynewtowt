@@ -98,7 +98,7 @@ async def create_draft(
     pod = await db.get(Port, leg.arrival_port_id)
     if pol is None or pod is None:
         raise BookingError("Route incomplète : ports du leg introuvables")
-    grid = await resolve_grid(
+    grid, route = await resolve_grid(
         db,
         pol_locode=pol.locode,
         pod_locode=pod.locode,
@@ -107,6 +107,7 @@ async def create_draft(
     )
     quote = compute_grid_quote(
         grid,
+        route,
         items=[(i.pallet_format, i.pallet_count) for i in items],
         tonnage_t=(total_weight / Decimal("1000")) if total_weight else None,
         hazardous=hazardous,

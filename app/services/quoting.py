@@ -1,16 +1,21 @@
-"""Quoting — résolution de grille tarifaire + calcul de devis.
+"""Quoting — résolution de grille tarifaire multi-routes + calcul de devis.
 
-Mécanique décidée par la direction (2026-06) :
+Mécanique Module 6 (modèle multi-routes) :
 
-- une grille tarifaire couvre **1 route POL/POD + 1 période** ;
-- il existe une **grille par défaut** par route (``client_id NULL``,
-  ``is_default=True``) — créée à la demande si absente ;
+- une grille tarifaire couvre **1 client (ou défaut) + 1 période + N routes** ;
+  chaque **route** (``RateGridLine``) porte POL/POD, sa distance, son OPEX jour
+  et son ``base_rate`` (OPEX × jours de mer / 850) ;
+- les **brackets de volume** (coefficients dégressifs) remontent au niveau
+  **grille** (``brackets_json``), partagés par toutes les routes ;
+- il existe une **grille par défaut** (``client_id NULL``, ``is_default=True``)
+  multi-routes — sa route est créée à la demande si absente ;
 - si le demandeur est un **client connu** (compte client relié à un client
-  commercial), c'est **sa** grille qui s'applique : grille client sur la
-  route, sinon grille client toutes-routes, sinon grille par défaut ;
+  commercial), c'est **sa** grille qui s'applique dès qu'elle porte la route
+  POL/POD demandée ; sinon repli sur la grille par défaut ;
 - une grille porte des **options** (``RateGridOption``) tarifées à la
-  palette, à la tonne chargée, à la réservation ou à la booking note ;
-  les options actives sont reprises dans chaque devis.
+  palette, à la tonne chargée, à la réservation ou à la booking note, plus des
+  forfaits documentaires (``bl_fee`` / ``booking_fee``) ; les options actives
+  et les forfaits renseignés sont repris dans chaque devis.
 
 Le prix public n'est plus affiché : il est restitué par l'outil de devis
 (``/devis``) et par le wizard de réservation, via ce service.
@@ -41,6 +46,7 @@ from app.models.finance import OpexParameter
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.quote import Quote, QuoteLine
+from app.models.vessel import Vessel
 
 # Paramètres économiques de repli (formule historique NEWTOWT :
 # base = OPEX jour × jours de navigation / capacité navire).
@@ -99,6 +105,16 @@ def _grid_window_clause(on_date: date):
     )
 
 
+def _match_route(grid: RateGrid, pol_locode: str, pod_locode: str) -> RateGridLine | None:
+    """Ligne-route de la grille couvrant POL→POD (insensible à la casse)."""
+    pol = pol_locode.upper().strip()
+    pod = pod_locode.upper().strip()
+    for line in grid.lines:
+        if (line.pol_locode or "").upper() == pol and (line.pod_locode or "").upper() == pod:
+            return line
+    return None
+
+
 async def resolve_grid(
     db: AsyncSession,
     *,
@@ -106,57 +122,46 @@ async def resolve_grid(
     pod_locode: str,
     on_date: date | None = None,
     commercial_client_id: int | None = None,
-) -> RateGrid:
-    """Grille applicable : client (route puis toutes-routes) sinon défaut.
+) -> tuple[RateGrid, RateGridLine]:
+    """(grille, route) applicable : grille client (route POL/POD) sinon défaut.
 
-    Crée la grille par défaut de la route si elle n'existe pas encore.
+    Recherche la grille active du client portant la route demandée ; à défaut,
+    retombe sur la grille par défaut (dont la route est créée au besoin).
     """
     on_date = on_date or datetime.now(UTC).date()
     pol_locode = pol_locode.upper().strip()
     pod_locode = pod_locode.upper().strip()
 
     if commercial_client_id is not None:
-        # 1) grille client sur la route exacte
+        # Grille active du client portant la route exacte demandée.
         stmt = (
             select(RateGrid)
+            .join(RateGridLine, RateGridLine.grid_id == RateGrid.id)
             .options(selectinload(RateGrid.lines), selectinload(RateGrid.options))
             .where(
                 RateGrid.client_id == commercial_client_id,
-                RateGrid.pol_locode == pol_locode,
-                RateGrid.pod_locode == pod_locode,
+                RateGridLine.pol_locode == pol_locode,
+                RateGridLine.pod_locode == pod_locode,
                 *_grid_window_clause(on_date),
             )
             .order_by(RateGrid.valid_from.desc())
-            .limit(1)
         )
-        grid = (await db.execute(stmt)).scalar_one_or_none()
+        grid = (await db.execute(stmt)).scalars().unique().first()
         if grid is not None:
-            return grid
-        # 2) grille client toutes-routes (pol/pod NULL)
-        stmt = (
-            select(RateGrid)
-            .options(selectinload(RateGrid.lines), selectinload(RateGrid.options))
-            .where(
-                RateGrid.client_id == commercial_client_id,
-                RateGrid.pol_locode.is_(None),
-                RateGrid.pod_locode.is_(None),
-                *_grid_window_clause(on_date),
-            )
-            .order_by(RateGrid.valid_from.desc())
-            .limit(1)
-        )
-        grid = (await db.execute(stmt)).scalar_one_or_none()
-        if grid is not None:
-            return grid
+            route = _match_route(grid, pol_locode, pod_locode)
+            if route is not None:
+                return grid, route
 
-    # 3) grille par défaut de la route (créée si absente)
+    # Repli : grille par défaut multi-routes (route créée si absente).
     return await ensure_default_grid(db, pol_locode=pol_locode, pod_locode=pod_locode)
 
 
 async def ensure_default_grid(
     db: AsyncSession, *, pol_locode: str, pod_locode: str
-) -> RateGrid:
-    """Retourne la grille par défaut de la route, en la créant au besoin."""
+) -> tuple[RateGrid, RateGridLine]:
+    """(grille par défaut, route) — crée la grille et/ou la route au besoin."""
+    pol_locode = pol_locode.upper().strip()
+    pod_locode = pod_locode.upper().strip()
     today = datetime.now(UTC).date()
     stmt = (
         select(RateGrid)
@@ -164,73 +169,77 @@ async def ensure_default_grid(
         .where(
             RateGrid.is_default.is_(True),
             RateGrid.client_id.is_(None),
-            RateGrid.pol_locode == pol_locode,
-            RateGrid.pod_locode == pod_locode,
             *_grid_window_clause(today),
         )
         .order_by(RateGrid.valid_from.desc())
         .limit(1)
     )
     grid = (await db.execute(stmt)).scalar_one_or_none()
-    if grid is not None:
-        return grid
-
-    base_rate = await _default_base_rate(db, pol_locode, pod_locode)
-    grid = RateGrid(
-        reference=_generate_grid_reference(default=True),
-        client_id=None,
-        pol_locode=pol_locode,
-        pod_locode=pod_locode,
-        is_default=True,
-        status="active",
-        valid_from=today,
-        valid_to=None,
-        base_rate_per_palette=base_rate,
-        notes="Grille par défaut générée automatiquement (formule OPEX).",
-    )
-    db.add(grid)
-    await db.flush()
-
-    for bracket in DEFAULT_BRACKETS_SHIPPER:
+    if grid is None:
+        grid = RateGrid(
+            reference=_generate_grid_reference(default=True),
+            client_id=None,
+            is_default=True,
+            status="active",
+            valid_from=today,
+            valid_to=None,
+            currency="EUR",
+            adjustment_index=Decimal("1.0000"),
+            brackets_json=json.dumps(DEFAULT_BRACKETS_SHIPPER),
+            notes="Grille par défaut générée automatiquement (formule OPEX).",
+        )
+        db.add(grid)
+        await db.flush()
+        # Options standard de la grille par défaut : la booking note est
+        # facturée d'office ; la manutention est fournie comme exemple inactif
+        # que le commercial active/ajuste.
         db.add(
-            RateGridLine(
+            RateGridOption(
                 grid_id=grid.id,
-                bracket_key=bracket["key"],
-                bracket_label=bracket["label"],
-                max_qty=bracket["max_qty"],
-                coeff=Decimal(str(bracket["coeff"])),
+                code="BOOKING_NOTE",
+                label="Booking note & dossier documentaire",
+                unit="per_booking_note",
+                amount_eur=Decimal("50.00"),
+                is_active=True,
             )
         )
-    # Options standard de la grille par défaut : la booking note est
-    # facturée d'office ; la manutention est fournie comme exemple inactif
-    # que le commercial active/ajuste par route.
-    db.add(
-        RateGridOption(
-            grid_id=grid.id,
-            code="BOOKING_NOTE",
-            label="Booking note & dossier documentaire",
-            unit="per_booking_note",
-            amount_eur=Decimal("50.00"),
-            is_active=True,
+        db.add(
+            RateGridOption(
+                grid_id=grid.id,
+                code="THC",
+                label="Manutention portuaire (THC)",
+                unit="per_palette",
+                amount_eur=Decimal("12.00"),
+                is_active=False,
+            )
         )
-    )
-    db.add(
-        RateGridOption(
-            grid_id=grid.id,
-            code="THC",
-            label="Manutention portuaire (THC)",
-            unit="per_palette",
-            amount_eur=Decimal("12.00"),
-            is_active=False,
+        await db.flush()
+        await db.refresh(grid, attribute_names=["lines", "options"])
+
+    route = _match_route(grid, pol_locode, pod_locode)
+    if route is None:
+        distance, nav_days, opex_daily, base = await compute_route_economics(
+            db, pol_locode=pol_locode, pod_locode=pod_locode, vessel_id=grid.vessel_id
         )
-    )
-    await db.flush()
-    await db.refresh(grid, attribute_names=["lines", "options"])
-    return grid
+        route = RateGridLine(
+            grid_id=grid.id,
+            pol_locode=pol_locode,
+            pod_locode=pod_locode,
+            distance_nm=distance,
+            nav_days=nav_days,
+            opex_daily=opex_daily,
+            base_rate=base,
+            is_manual=False,
+        )
+        db.add(route)
+        await db.flush()
+        await db.refresh(grid, attribute_names=["lines"])
+        route = _match_route(grid, pol_locode, pod_locode) or route
+    return grid, route
 
 
 async def backfill_default_grids(db: AsyncSession) -> int:
-    """Crée la grille par défaut de chaque route POL/POD présente au planning."""
+    """Crée une route par défaut pour chaque route POL/POD présente au planning."""
     pol = Port.__table__.alias("pol")
     pod = Port.__table__.alias("pod")
     stmt = (
@@ -246,49 +255,82 @@ async def backfill_default_grids(db: AsyncSession) -> int:
     for pol_locode, pod_locode in (await db.execute(stmt)).all():
         if not pol_locode or not pod_locode:
             continue
-        before = await db.scalar(
-            select(RateGrid.id)
+        existing = await db.scalar(
+            select(RateGridLine.id)
+            .join(RateGrid, RateGrid.id == RateGridLine.grid_id)
             .where(
                 RateGrid.is_default.is_(True),
-                RateGrid.pol_locode == pol_locode,
-                RateGrid.pod_locode == pod_locode,
+                RateGrid.client_id.is_(None),
+                RateGridLine.pol_locode == pol_locode,
+                RateGridLine.pod_locode == pod_locode,
             )
             .limit(1)
         )
-        if before is None:
+        if existing is None:
             await ensure_default_grid(db, pol_locode=pol_locode, pod_locode=pod_locode)
             created += 1
     return created
 
 
-async def _default_base_rate(db: AsyncSession, pol_locode: str, pod_locode: str) -> Decimal:
-    """Taux de base de la grille par défaut — formule OPEX historique.
-
-    base = OPEX jour × jours de navigation / 850 palettes, où la distance
-    est résolue ports → haversine → table de repli (cf. services.anemos).
-    """
-    from app.services.anemos import resolve_distance_nm  # import tardif (cycle co2)
-
-    pol = (
-        await db.execute(select(Port).where(Port.locode == pol_locode))
-    ).scalar_one_or_none()
-    pod = (
-        await db.execute(select(Port).where(Port.locode == pod_locode))
-    ).scalar_one_or_none()
-    distance_nm = resolve_distance_nm(None, pol, pod)
-
+async def _resolve_opex_daily(db: AsyncSession, vessel_id: int | None) -> Decimal:
+    """OPEX jour : navire de la grille → paramètre global → repli historique."""
+    if vessel_id is not None:
+        vessel = await db.get(Vessel, vessel_id)
+        if vessel is not None and vessel.opex_daily_sea_eur is not None:
+            return Decimal(str(vessel.opex_daily_sea_eur))
     opex_daily = await db.scalar(
         select(OpexParameter.parameter_value).where(
             OpexParameter.parameter_name == OPEX_PARAMETER_NAME
         )
     )
-    opex = Decimal(opex_daily) if opex_daily is not None else FALLBACK_OPEX_DAILY_EUR
+    return Decimal(opex_daily) if opex_daily is not None else FALLBACK_OPEX_DAILY_EUR
 
-    nav_days = Decimal(distance_nm) / (TRANSIT_SPEED_KN * Decimal("24"))
-    base = (opex * nav_days / VESSEL_CAPACITY_PALETTES).quantize(
+
+def route_nav_days(distance_nm: Decimal) -> Decimal:
+    """Jours de navigation = distance / (8 nœuds × 24 h)."""
+    return (Decimal(distance_nm) / (TRANSIT_SPEED_KN * Decimal("24"))).quantize(
+        Decimal("0.001"), rounding=ROUND_HALF_UP
+    )
+
+
+def route_base_rate(opex_daily: Decimal, nav_days: Decimal) -> Decimal:
+    """Taux de base €/palette = OPEX jour × jours de mer / 850 (plancher 1 €)."""
+    base = (Decimal(opex_daily) * Decimal(nav_days) / VESSEL_CAPACITY_PALETTES).quantize(
         _TWO_PLACES, rounding=ROUND_HALF_UP
     )
     return max(base, Decimal("1.00"))
+
+
+async def compute_route_economics(
+    db: AsyncSession,
+    *,
+    pol_locode: str,
+    pod_locode: str,
+    vessel_id: int | None = None,
+    leg: Leg | None = None,
+    distance_nm: Decimal | None = None,
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """(distance_nm, nav_days, opex_daily, base_rate) d'une route.
+
+    Distance : valeur fournie (saisie) → leg → ports (haversine/table de repli,
+    cf. services.anemos). OPEX jour : navire de la grille → paramètre global →
+    repli historique.
+    """
+    from app.services.anemos import resolve_distance_nm  # import tardif (cycle co2)
+
+    if distance_nm is None:
+        pol = (
+            await db.execute(select(Port).where(Port.locode == pol_locode.upper().strip()))
+        ).scalar_one_or_none()
+        pod = (
+            await db.execute(select(Port).where(Port.locode == pod_locode.upper().strip()))
+        ).scalar_one_or_none()
+        distance_nm = resolve_distance_nm(leg, pol, pod)
+    distance = Decimal(distance_nm).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
+    opex_daily = await _resolve_opex_daily(db, vessel_id)
+    nav_days = route_nav_days(distance)
+    base = route_base_rate(opex_daily, nav_days)
+    return distance, nav_days, opex_daily, base
 
 
 def _generate_grid_reference(*, default: bool) -> str:
@@ -302,28 +344,39 @@ def _generate_grid_reference(*, default: bool) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _bracket_label(bracket: dict) -> str:
+    return str(bracket.get("label") or bracket.get("key") or bracket.get("max_qty") or "")
+
+
 def bracket_for_quantity(grid: RateGrid, qty: int) -> tuple[str, Decimal]:
-    """(label, coeff) de la bracket applicable à ``qty`` palettes."""
-    lines = sorted(grid.lines, key=lambda li: li.max_qty)
-    for line in lines:
-        if qty <= line.max_qty:
-            return line.bracket_label, Decimal(line.coeff)
-    if lines:
-        last = lines[-1]
-        return last.bracket_label, Decimal(last.coeff)
+    """(label, coeff) de la bracket de volume applicable à ``qty`` palettes.
+
+    Les brackets sont portés par la grille (``brackets_json``), partagés par
+    toutes ses routes.
+    """
+    brackets = sorted(grid.brackets, key=lambda b: int(b["max_qty"]))
+    for bracket in brackets:
+        if qty <= int(bracket["max_qty"]):
+            return _bracket_label(bracket), Decimal(str(bracket["coeff"]))
+    if brackets:
+        last = brackets[-1]
+        return _bracket_label(last), Decimal(str(last["coeff"]))
     return "Tarif unique", Decimal("1.0")
 
 
 def compute_grid_quote(
     grid: RateGrid,
+    route: RateGridLine,
     *,
     items: list[tuple[str, int]],
     tonnage_t: Decimal | None = None,
     hazardous: bool = False,
 ) -> GridQuote:
-    """Calcule un devis : fret par format + surcharges + options actives.
+    """Calcule un devis : fret (base_rate de la route) + surcharges + options.
 
-    Fonction pure (la grille et ses relations doivent être chargées).
+    Fonction pure : la grille (brackets/options) et la ``route`` (base_rate)
+    doivent être chargées. ``route`` est la ligne POL/POD de la grille issue de
+    ``resolve_grid``.
     """
     total_palettes = sum(count for _fmt, count in items)
     if total_palettes <= 0:
@@ -331,7 +384,7 @@ def compute_grid_quote(
 
     bracket_label, bracket_coeff = bracket_for_quantity(grid, total_palettes)
     effective_base = (
-        Decimal(grid.base_rate_per_palette) * Decimal(grid.adjustment_index) * bracket_coeff
+        Decimal(route.base_rate) * Decimal(grid.adjustment_index) * bracket_coeff
     )
 
     lines: list[QuoteLineDraft] = []
@@ -394,6 +447,29 @@ def compute_grid_quote(
                 quantity=qty,
                 unit_price_eur=amount,
                 total_eur=line_total,
+            )
+        )
+
+    # Forfaits documentaires de l'en-tête (sucre au-dessus des options) — repris
+    # une fois par devis lorsqu'ils sont renseignés.
+    for fee, fee_label in (
+        (grid.booking_fee, "Frais de réservation (booking)"),
+        (grid.bl_fee, "Frais de connaissement (BL)"),
+    ):
+        if fee is None:
+            continue
+        amount = Decimal(fee).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
+        if amount <= 0:
+            continue
+        options_total += amount
+        lines.append(
+            QuoteLineDraft(
+                kind="option",
+                label=fee_label,
+                unit="per_booking",
+                quantity=Decimal("1"),
+                unit_price_eur=amount,
+                total_eur=amount,
             )
         )
 
