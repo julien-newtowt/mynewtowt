@@ -367,6 +367,17 @@ def _opt_decimal(value: str | None) -> Decimal | None:
         return None
 
 
+def _opt_int(value: str | None) -> int | None:
+    """Parse un entier optionnel (champ vide / invalide → None)."""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 async def _route_ports(db: AsyncSession) -> list[Port]:
     """Ports desservis par au moins un leg (pour pré-remplir POL/POD des grilles)."""
     ids = select(Leg.departure_port_id).union(select(Leg.arrival_port_id))
@@ -503,6 +514,7 @@ async def grid_create(
     adjustment_index: float = Form(1.0),
     hazardous_surcharge_pct: str | None = Form(None),
     min_charge_eur: str | None = Form(None),
+    volume_commitment: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -529,6 +541,7 @@ async def grid_create(
         adjustment_index=Decimal(str(adjustment_index)),
         hazardous_surcharge_pct=_opt_decimal(hazardous_surcharge_pct),
         min_charge_eur=_opt_decimal(min_charge_eur),
+        volume_commitment=_opt_int(volume_commitment),
     )
     db.add(grid)
     await db.flush()
@@ -601,6 +614,7 @@ async def grid_edit(
     adjustment_index: float = Form(1.0),
     hazardous_surcharge_pct: str | None = Form(None),
     min_charge_eur: str | None = Form(None),
+    volume_commitment: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -629,6 +643,7 @@ async def grid_edit(
     grid.adjustment_index = Decimal(str(adjustment_index))
     grid.hazardous_surcharge_pct = _opt_decimal(hazardous_surcharge_pct)
     grid.min_charge_eur = _opt_decimal(min_charge_eur)
+    grid.volume_commitment = _opt_int(volume_commitment)
     await db.flush()
     await activity_record(
         db,

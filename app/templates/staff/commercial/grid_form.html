@@ -60,6 +60,10 @@
         <input id="min_charge_eur" name="min_charge_eur" type="number" min="0" step="0.01" placeholder="ex. 250.00" {% if grid and grid.min_charge_eur is not none %}value="{{ grid.min_charge_eur }}"{% endif %} />
       </div>
       <div class="field">
+        <label for="volume_commitment">Engagement min. volume (palettes) <small class="text-muted">— shipper, vide = aucun</small></label>
+        <input id="volume_commitment" name="volume_commitment" type="number" min="0" step="1" placeholder="ex. 50" {% if grid and grid.volume_commitment is not none %}value="{{ grid.volume_commitment }}"{% endif %} />
+      </div>
+      <div class="field">
         <label for="is_default">Grille par défaut</label>
         <label style="margin-bottom:0;">
           <input id="is_default" type="checkbox" name="is_default" {% if grid and grid.is_default %}checked{% endif %} />
