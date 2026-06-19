@@ -250,6 +250,41 @@ async def compute_noon_prefill(db, leg, weather_now, last_report) -> dict:
         if s is not None:
             pf["speed_since_sosp_kn"] = s
 
+    # ── Météo 4 h : pour chaque créneau, l'observation historisée la plus
+    # proche de l'horaire (tolérance 6 h). TWS ← vent, Dir mer ← houle/vent,
+    # État mer ← Beaufort. AWA/AWS/vitesse restent en saisie manuelle. ──
+    from app.models.noon_report import NOON_TIME_SLOTS
+    from app.services.weather_history import observations_for_leg
+
+    obs = await observations_for_leg(db, leg)
+    slots: list[dict] = []
+    for s in NOON_TIME_SLOTS:
+        hh, mm = int(s[:2]), int(s[3:5])
+        target = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if target > now:
+            target -= timedelta(days=1)
+        best, best_diff = None, None
+        for o in obs:
+            diff = abs((o.recorded_at - target).total_seconds())
+            if best_diff is None or diff < best_diff:
+                best, best_diff = o, diff
+        entry: dict = {}
+        if best is not None and best_diff is not None and best_diff <= 6 * 3600:
+            if best.wind_speed_kn is not None:
+                entry["tws"] = round(best.wind_speed_kn, 1)
+            sd = (
+                best.wave_direction_deg
+                if best.wave_direction_deg is not None
+                else best.wind_direction_deg
+            )
+            if sd is not None:
+                entry["sd"] = round(sd)
+            bf = _beaufort_from_kn(best.wind_speed_kn)
+            if bf is not None:
+                entry["ss"] = bf
+        slots.append(entry)
+    pf["weather_slots"] = slots
+
     return pf
 
 
@@ -333,6 +368,7 @@ async def onboard_navigation(
             "leg": selected,
             "noon_reports": noon_reports,
             "noon_prefill": noon_prefill,
+            "weather_slots": noon_prefill.get("weather_slots", []),
             # ROB DO du dernier report du leg → base de chaîne pour le ROB auto
             # du nouveau report (ROB = ROB précédent − conso).
             "last_rob_do_t": (noon_reports[0].rob_do_t if noon_reports else None),
