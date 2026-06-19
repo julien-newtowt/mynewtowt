@@ -1,6 +1,7 @@
-// Noon report — auto-calcul conso totale (somme moteurs) + ROB (précédent − conso).
-// Les deux champs restent éditables ; toute saisie manuelle désactive l'auto
-// pour ce champ et affiche une alerte.
+// Noon report — auto-calculs (tous éditables ; saisie manuelle = override + alerte).
+//  • Conso totale = somme des « Conso DO » moteurs (ce report).
+//  • ROB DO = ROB du report précédent − conso.
+//  • ETA 7,0→9,0 kt = maintenant + distance_to_go / vitesse.
 (function () {
   "use strict";
 
@@ -9,11 +10,10 @@
     return isNaN(v) ? 0 : v;
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
+  function initFuel() {
     var total = document.getElementById("noon-total-conso");
     var rob = document.getElementById("noon-rob-do");
     if (!total || !rob) return;
-
     var engines = Array.prototype.slice.call(document.querySelectorAll(".eng-do"));
     var alertBox = document.getElementById("noon-fuel-alert");
     var prevRob = parseFloat(rob.getAttribute("data-prev-rob"));
@@ -22,7 +22,6 @@
     function showAlert() {
       if (alertBox) alertBox.removeAttribute("hidden");
     }
-
     function recompute() {
       var sum = engines.reduce(function (a, el) {
         return a + num(el);
@@ -36,20 +35,57 @@
         rob.value = (prevRob - t).toFixed(2);
       }
     }
-
     engines.forEach(function (el) {
       el.addEventListener("input", recompute);
     });
     total.addEventListener("input", function () {
       total.dataset.overridden = "1";
       showAlert();
-      recompute(); // ROB suit le total saisi (sauf si ROB aussi forcé)
+      recompute();
     });
     rob.addEventListener("input", function () {
       rob.dataset.overridden = "1";
       showAlert();
     });
-
     recompute();
+  }
+
+  function initEtaBySpeed() {
+    var dtg = document.querySelector('[name="distance_to_go_nm"]');
+    if (!dtg) return;
+    var speeds = { eta_70_kt: 7.0, eta_75_kt: 7.5, eta_80_kt: 8.0, eta_85_kt: 8.5, eta_90_kt: 9.0 };
+    function fmt(d) {
+      var p = function (n) {
+        return (n < 10 ? "0" : "") + n;
+      };
+      return (
+        d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+        "T" + p(d.getHours()) + ":" + p(d.getMinutes())
+      );
+    }
+    function recompute() {
+      var dist = parseFloat(dtg.value);
+      Object.keys(speeds).forEach(function (name) {
+        var el = document.querySelector('[name="' + name + '"]');
+        if (!el || el.dataset.overridden === "1") return;
+        if (isNaN(dist) || dist <= 0) return;
+        var eta = new Date(Date.now() + (dist / speeds[name]) * 3600 * 1000);
+        el.value = fmt(eta);
+      });
+    }
+    Object.keys(speeds).forEach(function (name) {
+      var el = document.querySelector('[name="' + name + '"]');
+      if (el)
+        el.addEventListener("input", function () {
+          el.dataset.overridden = "1";
+        });
+    });
+    dtg.addEventListener("input", recompute);
+    recompute();
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    initFuel();
+    initEtaBySpeed();
   });
 })();

@@ -55,9 +55,9 @@
         <div class="field"><label for="cog_avg">COG moyen (°)</label><input id="cog_avg" name="cog_avg" type="number" step="1" {% if latest_position and latest_position.cog_deg is not none %}value="{{ "%.0f"|format(latest_position.cog_deg) }}"{% endif %} /></div>
         <div class="field"><label for="wind_speed_kn">Vent (kn)</label><input id="wind_speed_kn" name="wind_speed_kn" type="number" step="0.1" {% if weather_now and weather_now.wind_speed_kn is not none %}value="{{ "%.1f"|format(weather_now.wind_speed_kn) }}"{% endif %} /></div>
         <div class="field"><label for="wind_direction_deg">Vent (°)</label><input id="wind_direction_deg" name="wind_direction_deg" type="number" step="1" {% if weather_now and weather_now.wind_direction_deg is not none %}value="{{ "%.0f"|format(weather_now.wind_direction_deg) }}"{% endif %} /></div>
-        <div class="field"><label for="sea_state_bf">Mer (Beaufort)</label><input id="sea_state_bf" name="sea_state_bf" type="number" min="0" max="12" /></div>
+        <div class="field"><label for="sea_state_bf">Mer (Beaufort) <small class="text-muted">— auto météo</small></label><input id="sea_state_bf" name="sea_state_bf" type="number" min="0" max="12" value="{{ noon_prefill.get('sea_state_bf', '') }}" /></div>
         <div class="field"><label for="visibility_nm">Visibilité (NM)</label><input id="visibility_nm" name="visibility_nm" type="number" step="0.1" /></div>
-        <div class="field"><label for="distance_24h_nm">Distance 24h (NM)</label><input id="distance_24h_nm" name="distance_24h_nm" type="number" step="0.1" /></div>
+        <div class="field"><label for="distance_24h_nm">Distance 24h (NM) <small class="text-muted">— auto GPS</small></label><input id="distance_24h_nm" name="distance_24h_nm" type="number" step="0.1" value="{{ noon_prefill.get('distance_24h_nm', '') }}" /></div>
         <div class="field"><label for="fuel_consumed_24h_l">Fuel consommé 24h (L)</label><input id="fuel_consumed_24h_l" name="fuel_consumed_24h_l" type="number" step="1" /></div>
         <div class="field" style="grid-column:span 2;"><label for="rob_fuel_l">ROB fuel (L)</label><input id="rob_fuel_l" name="rob_fuel_l" type="number" step="1" /></div>
         <div class="field" style="grid-column:span 2;"><label for="remarks">Remarques</label><textarea id="remarks" name="remarks" rows="2"></textarea></div>
@@ -69,26 +69,26 @@
         <div class="grid grid-2 gap-3 mt-2">
           <div class="field"><label>Type de report</label><select name="report_type"><option value="">—</option>{% for rt in noon_report_types %}<option>{{ rt }}</option>{% endfor %}</select></div>
           <div class="field"><label>Condition navire</label><select name="vessel_condition"><option value="">—</option>{% for vc in noon_vessel_conditions %}<option>{{ vc }}</option>{% endfor %}</select></div>
-          <div class="field"><label>Port précédent (UNCODE)</label><input name="previous_port" maxlength="10" /></div>
-          <div class="field"><label>Port suivant (UNCODE)</label><input name="next_port" maxlength="10" /></div>
+          <div class="field"><label>Port précédent (UNCODE) <small class="text-muted">— planning</small></label><input name="previous_port" maxlength="10" value="{{ noon_prefill.get('previous_port', '') }}" /></div>
+          <div class="field"><label>Port suivant (UNCODE) <small class="text-muted">— planning</small></label><input name="next_port" maxlength="10" value="{{ noon_prefill.get('next_port', '') }}" /></div>
           <div class="field"><label>Deadweight (t)</label><input name="deadweight_t" type="number" step="0.1" /></div>
           <div class="field"><label>Trim (m)</label><input name="trim_m" type="number" step="0.1" /></div>
           <div class="field"><label>Draft Fwd (m)</label><input name="draft_fwd_m" type="number" step="0.1" /></div>
           <div class="field"><label>Draft Aft (m)</label><input name="draft_aft_m" type="number" step="0.1" /></div>
-          <div class="field"><label>Temps depuis dernier report (h)</label><input name="time_since_last_h" type="number" step="0.1" /></div>
-          <div class="field"><label>Vitesse depuis dernier report (kn)</label><input name="speed_since_last_kn" type="number" step="0.1" /></div>
-          <div class="field"><label>Distance depuis dernier report (NM)</label><input name="distance_since_last_nm" type="number" step="0.1" /></div>
-          <div class="field"><label>Distance to go (NM)</label><input name="distance_to_go_nm" type="number" step="0.1" /></div>
-          <div class="field"><label>Temps depuis SOSP (h)</label><input name="time_since_sosp_h" type="number" step="0.1" /></div>
-          <div class="field"><label>Vitesse depuis SOSP (kn)</label><input name="speed_since_sosp_kn" type="number" step="0.1" /></div>
-          <div class="field"><label>Distance depuis SOSP (NM)</label><input name="distance_since_sosp_nm" type="number" step="0.1" /></div>
+          <div class="field"><label>Temps depuis dernier report (h) <small class="text-muted">— auto</small></label><input name="time_since_last_h" type="number" step="0.1" value="{{ noon_prefill.get('time_since_last_h', '') }}" /></div>
+          <div class="field"><label>Vitesse depuis dernier report (kn) <small class="text-muted">— auto</small></label><input name="speed_since_last_kn" type="number" step="0.1" value="{{ noon_prefill.get('speed_since_last_kn', '') }}" /></div>
+          <div class="field"><label>Distance depuis dernier report (NM) <small class="text-muted">— auto GPS</small></label><input name="distance_since_last_nm" type="number" step="0.1" value="{{ noon_prefill.get('distance_since_last_nm', '') }}" /></div>
+          <div class="field"><label>Distance to go (NM) <small class="text-muted">— auto GPS</small></label><input name="distance_to_go_nm" type="number" step="0.1" value="{{ noon_prefill.get('distance_to_go_nm', '') }}" /></div>
+          <div class="field"><label>Temps depuis SOSP (h) <small class="text-muted">— auto</small></label><input name="time_since_sosp_h" type="number" step="0.1" value="{{ noon_prefill.get('time_since_sosp_h', '') }}" /></div>
+          <div class="field"><label>Vitesse depuis SOSP (kn) <small class="text-muted">— auto</small></label><input name="speed_since_sosp_kn" type="number" step="0.1" value="{{ noon_prefill.get('speed_since_sosp_kn', '') }}" /></div>
+          <div class="field"><label>Distance depuis SOSP (NM) <small class="text-muted">— auto GPS</small></label><input name="distance_since_sosp_nm" type="number" step="0.1" value="{{ noon_prefill.get('distance_since_sosp_nm', '') }}" /></div>
         </div>
       </details>
 
       <details class="mt-3">
         <summary><strong>ETA / ETB</strong></summary>
         <div class="grid grid-2 gap-3 mt-2">
-          <div class="field"><label>ETA annoncée</label><input name="announced_eta" type="datetime-local" /></div>
+          <div class="field"><label>ETA annoncée <small class="text-muted">— planning</small></label><input name="announced_eta" type="datetime-local" value="{{ noon_prefill.get('announced_eta', '') }}" /></div>
           <div class="field"><label>ETB</label><input name="etb" type="datetime-local" /></div>
           <div class="field"><label>ETA 7,0 kt</label><input name="eta_70_kt" type="datetime-local" /></div>
           <div class="field"><label>ETA 7,5 kt</label><input name="eta_75_kt" type="datetime-local" /></div>
