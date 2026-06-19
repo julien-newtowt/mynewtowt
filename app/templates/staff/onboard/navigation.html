@@ -17,8 +17,13 @@
 {{ leg_filter(leg_filter_ctx, "/onboard/navigation") }}
 
 {% if leg %}
+<div class="flex items-center gap-2 mb-4" role="group" aria-label="Saisies de bord">
+  <a href="#noon-form" class="btn btn-primary"><i data-lucide="clipboard-list"></i> Saisir noon report</a>
+  <a href="#watch-form" class="btn btn-secondary"><i data-lucide="book-open"></i> Saisir journal de bord</a>
+  <button type="button" class="btn btn-ghost" disabled title="Bientôt disponible"><i data-lucide="leaf"></i> Saisir carbon report (prochainement)</button>
+</div>
 <div class="grid grid-2 gap-4">
-  <article class="card">
+  <article class="card" id="noon-form">
     <div class="flex justify-between items-center">
       <h2 style="margin:0;">Saisir un noon report</h2>
       <a href="/static/reference/towt_noon_report_template.xlsx" download
@@ -164,7 +169,7 @@
     </form>
   </article>
 
-  <article class="card">
+  <article class="card" id="watch-form">
     <h2>Saisir une entrée de quart</h2>
     <form method="post" action="/onboard/navigation/watch-log" data-offline-queue>
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
