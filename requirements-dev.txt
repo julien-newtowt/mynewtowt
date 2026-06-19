@@ -8,6 +8,7 @@ pytest-cov==6.0.0
 pytest-mock==3.14.0
 pytest-xdist==3.6.1
 testcontainers[postgres]==4.9.1
+aiosqlite==0.22.1  # driver async sqlite in-memory pour les tests unitaires
 httpx==0.28.1
 faker==33.3.0
 
