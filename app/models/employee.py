@@ -58,6 +58,8 @@ class Employee(Base):
     email_pro: Mapped[str | None] = mapped_column(String(255))
     phone_pro: Mapped[str | None] = mapped_column(String(40))
 
+    # Conservée volontairement (cf. cahier §4.1) pour l'âge / la pyramide
+    # des âges du reporting RH — ce n'est pas une pièce d'identité ni un NIR.
     birth_date: Mapped[date | None] = mapped_column(Date)
 
     job_title: Mapped[str | None] = mapped_column(String(150))

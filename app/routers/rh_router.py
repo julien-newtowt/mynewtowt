@@ -11,7 +11,7 @@ Couvre à ce stade :
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -45,6 +45,44 @@ def _client_ip(request: Request) -> str | None:
     if fwd:
         return fwd.split(",")[0].strip()
     return request.client.host if request.client else None
+
+
+# ── Conversions de formulaire sûres (HTTP 400 plutôt que 500) ───────────
+
+
+def _opt_str(value) -> str | None:
+    val = (value or "").strip()
+    return val or None
+
+
+def _opt_date(value, label: str) -> date | None:
+    val = (value or "").strip()
+    if not val:
+        return None
+    try:
+        return date.fromisoformat(val)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{label} : date invalide") from exc
+
+
+def _opt_decimal(value, label: str) -> Decimal | None:
+    val = (value or "").strip().replace(",", ".")
+    if not val:
+        return None
+    try:
+        return Decimal(val)
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"{label} : nombre invalide") from exc
+
+
+def _opt_int(value, label: str) -> int | None:
+    val = (value or "").strip()
+    if not val:
+        return None
+    try:
+        return int(val)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{label} : entier invalide") from exc
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -86,11 +124,17 @@ async def rh_create_leave(
     user=Depends(require_permission("rh", "M")),
 ) -> RedirectResponse:
     f = await request.form()
+    crew_member_id = _opt_int(f.get("crew_member_id"), "Marin")
+    kind = _opt_str(f.get("kind"))
+    start_date = _opt_date(f.get("start_date"), "Du")
+    end_date = _opt_date(f.get("end_date"), "Au")
+    if not crew_member_id or not kind or not start_date or not end_date:
+        raise HTTPException(status_code=400, detail="marin, type et dates obligatoires")
     leave = CrewLeave(
-        crew_member_id=int(f["crew_member_id"]),
-        kind=f["kind"],
-        start_date=date.fromisoformat(f["start_date"]),
-        end_date=date.fromisoformat(f["end_date"]),
+        crew_member_id=crew_member_id,
+        kind=kind,
+        start_date=start_date,
+        end_date=end_date,
         status="requested",
         reason=f.get("reason") or None,
     )
@@ -128,7 +172,11 @@ async def rh_decide_leave(
 
 async def _form_choices(db: AsyncSession, *, exclude_id: int | None = None) -> dict:
     """Listes déroulantes des formulaires (managers, comptes staff, marins)."""
-    mgr_q = select(Employee).order_by(Employee.last_name, Employee.first_name)
+    mgr_q = (
+        select(Employee)
+        .where(Employee.status == "active")
+        .order_by(Employee.last_name, Employee.first_name)
+    )
     if exclude_id:
         mgr_q = mgr_q.where(Employee.id != exclude_id)
     managers = list((await db.execute(mgr_q)).scalars().all())
@@ -233,46 +281,32 @@ async def employee_new_form(
 
 
 def _employee_from_form(f) -> dict:
-    """Extrait/normalise les champs Employee depuis un form (create/update)."""
+    """Extrait/valide les champs Employee depuis un form (create/update).
 
-    def s(key: str) -> str | None:
-        val = (f.get(key) or "").strip()
-        return val or None
-
-    def d(key: str) -> date | None:
-        val = (f.get(key) or "").strip()
-        return date.fromisoformat(val) if val else None
-
-    def num(key: str) -> Decimal:
-        val = (f.get(key) or "").strip().replace(",", ".")
-        return Decimal(val) if val else Decimal("0")
-
-    def fk(key: str) -> int | None:
-        val = (f.get(key) or "").strip()
-        return int(val) if val else None
-
-    status = s("status") or "active"
+    Lève ``HTTPException(400)`` sur saisie malformée (date/nombre/entier).
+    """
+    status = _opt_str(f.get("status")) or "active"
     if status not in EMPLOYEE_STATUSES:
-        raise HTTPException(status_code=400, detail="invalid status")
+        raise HTTPException(status_code=400, detail="statut invalide")
     return {
-        "matricule": s("matricule"),
-        "first_name": s("first_name"),
-        "last_name": s("last_name"),
-        "email_pro": s("email_pro"),
-        "phone_pro": s("phone_pro"),
-        "birth_date": d("birth_date"),
-        "job_title": s("job_title"),
-        "department": s("department"),
-        "manager_id": fk("manager_id"),
-        "work_location": s("work_location"),
-        "entry_date": d("entry_date"),
-        "exit_date": d("exit_date"),
+        "matricule": _opt_str(f.get("matricule")),
+        "first_name": _opt_str(f.get("first_name")),
+        "last_name": _opt_str(f.get("last_name")),
+        "email_pro": _opt_str(f.get("email_pro")),
+        "phone_pro": _opt_str(f.get("phone_pro")),
+        "birth_date": _opt_date(f.get("birth_date"), "Date de naissance"),
+        "job_title": _opt_str(f.get("job_title")),
+        "department": _opt_str(f.get("department")),
+        "manager_id": _opt_int(f.get("manager_id"), "Manager"),
+        "work_location": _opt_str(f.get("work_location")),
+        "entry_date": _opt_date(f.get("entry_date"), "Date d'entrée"),
+        "exit_date": _opt_date(f.get("exit_date"), "Date de sortie"),
         "status": status,
-        "cp_balance": num("cp_balance"),
-        "rtt_balance": num("rtt_balance"),
-        "user_id": fk("user_id"),
-        "crew_member_id": fk("crew_member_id"),
-        "silae_id": s("silae_id"),
+        "cp_balance": _opt_decimal(f.get("cp_balance"), "Solde CP") or Decimal("0"),
+        "rtt_balance": _opt_decimal(f.get("rtt_balance"), "Solde RTT") or Decimal("0"),
+        "user_id": _opt_int(f.get("user_id"), "Compte staff"),
+        "crew_member_id": _opt_int(f.get("crew_member_id"), "Fiche marin"),
+        "silae_id": _opt_str(f.get("silae_id")),
     }
 
 
@@ -429,6 +463,29 @@ async def employee_delete(
     emp = await db.get(Employee, employee_id)
     if not emp:
         raise HTTPException(status_code=404, detail="Not found")
+    # Garde-fou : refuser la suppression si des données liées existent
+    # (FK NOT NULL sans cascade → sinon IntegrityError/500 en Postgres).
+    # Pour un dossier RH actif, passer le statut à « sorti » plutôt que
+    # supprimer (conservation/audit).
+    deps = (
+        await db.execute(
+            select(func.count(EmploymentContract.id)).where(
+                EmploymentContract.employee_id == employee_id
+            )
+        )
+    ).scalar_one()
+    deps += (
+        await db.execute(
+            select(func.count(HrAbsence.id)).where(HrAbsence.employee_id == employee_id)
+        )
+    ).scalar_one()
+    deps += (
+        await db.execute(
+            select(func.count(Employee.id)).where(Employee.manager_id == employee_id)
+        )
+    ).scalar_one()
+    if deps:
+        return RedirectResponse(url=f"/rh/employees/{employee_id}?err=deps", status_code=303)
     label = emp.full_name
     await db.delete(emp)
     await db.flush()
@@ -453,34 +510,17 @@ async def employee_delete(
 
 
 def _contract_from_form(f) -> dict:
-    """Extrait/valide les champs d'un contrat depuis un form."""
-
-    def s(key: str) -> str | None:
-        val = (f.get(key) or "").strip()
-        return val or None
-
-    def d(key: str) -> date | None:
-        val = (f.get(key) or "").strip()
-        return date.fromisoformat(val) if val else None
-
-    def num(key: str) -> Decimal | None:
-        val = (f.get(key) or "").strip().replace(",", ".")
-        return Decimal(val) if val else None
-
-    def fk(key: str) -> int | None:
-        val = (f.get(key) or "").strip()
-        return int(val) if val else None
-
-    contract_type = s("contract_type")
+    """Extrait/valide les champs d'un contrat depuis un form (HTTP 400 si KO)."""
+    contract_type = _opt_str(f.get("contract_type"))
     if contract_type not in CONTRACT_TYPES:
         raise HTTPException(status_code=400, detail="type de contrat invalide")
-    status = s("status") or "active"
+    status = _opt_str(f.get("status")) or "active"
     if status not in CONTRACT_STATUSES:
         raise HTTPException(status_code=400, detail="statut de contrat invalide")
-    start_date = d("start_date")
+    start_date = _opt_date(f.get("start_date"), "Date de début")
     if not start_date:
         raise HTTPException(status_code=400, detail="date de début obligatoire")
-    end_date = d("end_date")
+    end_date = _opt_date(f.get("end_date"), "Date de fin")
     if contract_type in FIXED_TERM_TYPES and not end_date:
         raise HTTPException(
             status_code=400,
@@ -488,19 +528,19 @@ def _contract_from_form(f) -> dict:
         )
     if end_date and end_date < start_date:
         raise HTTPException(status_code=400, detail="la date de fin précède la date de début")
-    parent_id = fk("parent_contract_id")
+    parent_id = _opt_int(f.get("parent_contract_id"), "Contrat parent")
     return {
         "contract_type": contract_type,
         "parent_contract_id": parent_id,
         "is_amendment": parent_id is not None,
-        "convention": s("convention") or DEFAULT_CONVENTION,
-        "classification": s("classification"),
+        "convention": _opt_str(f.get("convention")) or DEFAULT_CONVENTION,
+        "classification": _opt_str(f.get("classification")),
         "start_date": start_date,
         "end_date": end_date,
-        "trial_end_date": d("trial_end_date"),
-        "weekly_hours": num("weekly_hours"),
-        "gross_monthly": num("gross_monthly"),
-        "motive": s("motive"),
+        "trial_end_date": _opt_date(f.get("trial_end_date"), "Fin de période d'essai"),
+        "weekly_hours": _opt_decimal(f.get("weekly_hours"), "Temps de travail"),
+        "gross_monthly": _opt_decimal(f.get("gross_monthly"), "Brut mensuel"),
+        "motive": _opt_str(f.get("motive")),
         "status": status,
     }
 
@@ -628,6 +668,19 @@ async def contract_delete(
     if not contract:
         raise HTTPException(status_code=404, detail="Not found")
     employee_id = contract.employee_id
+    # Garde-fou : un contrat initial référencé par des avenants ne peut être
+    # supprimé tel quel (FK parent_contract_id → sinon 500 en Postgres).
+    amendments = (
+        await db.execute(
+            select(func.count(EmploymentContract.id)).where(
+                EmploymentContract.parent_contract_id == contract_id
+            )
+        )
+    ).scalar_one()
+    if amendments:
+        return RedirectResponse(
+            url=f"/rh/employees/{employee_id}?err=contract_deps", status_code=303
+        )
     await db.delete(contract)
     await db.flush()
     await activity_record(
@@ -697,12 +750,10 @@ def _absence_fields(f) -> dict:
     kind = (f.get("kind") or "").strip()
     if kind not in ABSENCE_KINDS:
         raise HTTPException(status_code=400, detail="type d'absence invalide")
-    start_raw = (f.get("start_date") or "").strip()
-    end_raw = (f.get("end_date") or "").strip()
-    if not start_raw or not end_raw:
+    start = _opt_date(f.get("start_date"), "Du")
+    end = _opt_date(f.get("end_date"), "Au")
+    if not start or not end:
         raise HTTPException(status_code=400, detail="dates de début et de fin obligatoires")
-    start = date.fromisoformat(start_raw)
-    end = date.fromisoformat(end_raw)
     half_start = f.get("half_day_start") is not None
     half_end = f.get("half_day_end") is not None
     try:
@@ -743,7 +794,19 @@ async def absences_index(
     employees = {
         e.id: e for e in (await db.execute(select(Employee))).scalars().all()
     }
-    pending = [a for a in absences if a.status == "requested"]
+    # File d'attente : requête indépendante des filtres d'historique
+    # (sinon un filtre « approuvé » masquerait les demandes en attente).
+    pending = list(
+        (
+            await db.execute(
+                select(HrAbsence)
+                .where(HrAbsence.status == "requested")
+                .order_by(HrAbsence.start_date.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     active_employees = [
         e for e in employees.values() if e.status == "active"
     ]
@@ -772,7 +835,7 @@ async def absence_create(
     user=Depends(require_permission("rh", "M")),
 ) -> RedirectResponse:
     f = await request.form()
-    emp_id = int(f["employee_id"]) if f.get("employee_id") else None
+    emp_id = _opt_int(f.get("employee_id"), "Collaborateur")
     emp = await db.get(Employee, emp_id) if emp_id else None
     if not emp:
         raise HTTPException(status_code=400, detail="collaborateur introuvable")
@@ -851,12 +914,35 @@ async def _my_employee(db: AsyncSession, user) -> Employee | None:
     ).scalar_one_or_none()
 
 
+async def _populate_topbar_state(request: Request, db: AsyncSession, user) -> None:
+    """Alimente l'état topbar (badge notif + flag Agent) pour les pages
+    self-service, qui n'utilisent pas ``require_permission`` (lequel le fait
+    sur les pages RH). Sans cela, le badge cloche et le widget Agent
+    afficheraient des valeurs par défaut figées.
+    """
+    try:
+        from app.services.notifications import count_unread
+
+        request.state.notif_count = await count_unread(
+            db, user_id=user.id, user_role=user.role
+        )
+    except Exception:
+        request.state.notif_count = 0
+    try:
+        from app.services.feature_flags import newtowt_agent_enabled
+
+        request.state.newtowt_agent_enabled = await newtowt_agent_enabled(db)
+    except Exception:
+        request.state.newtowt_agent_enabled = True
+
+
 @router.get("/rh/moi", response_class=HTMLResponse)
 async def self_index(
     request: Request,
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_staff),
 ) -> HTMLResponse:
+    await _populate_topbar_state(request, db, user)
     emp = await _my_employee(db, user)
     contracts = []
     if emp:
@@ -886,6 +972,7 @@ async def self_absences(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_staff),
 ) -> HTMLResponse:
+    await _populate_topbar_state(request, db, user)
     emp = await _my_employee(db, user)
     absences = []
     if emp:
@@ -962,6 +1049,18 @@ async def self_absence_cancel(
         raise HTTPException(status_code=400, detail="seules les demandes en attente sont annulables")
     absence.status = "cancelled"
     await db.flush()
+    await activity_record(
+        db,
+        action="cancel",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="hr_absence",
+        entity_id=absence.id,
+        entity_label=f"annulation demande #{absence.id}",
+        ip_address=_client_ip(request),
+    )
     return RedirectResponse(url="/rh/moi/absences", status_code=303)
 
 

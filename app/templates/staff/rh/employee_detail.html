@@ -3,6 +3,13 @@
 {% block content %}
 <a href="/rh/employees" class="btn btn-ghost mb-3">← Collaborateurs</a>
 
+{% set _err = request.query_params.get('err') %}
+{% if _err == 'deps' %}
+<div class="alert alert-warn mb-3"><i data-lucide="alert-triangle"></i> Suppression impossible : ce collaborateur a des contrats, absences ou subordonnés rattachés. Passez son statut à « sorti » ou supprimez d'abord les éléments liés.</div>
+{% elif _err == 'contract_deps' %}
+<div class="alert alert-warn mb-3"><i data-lucide="alert-triangle"></i> Suppression impossible : ce contrat est référencé par un ou plusieurs avenants. Supprimez d'abord les avenants.</div>
+{% endif %}
+
 <header class="flex justify-between items-center mb-4">
   <div>
     <span class="kicker">Collaborateur · <span class="mono">{{ employee.matricule }}</span></span>
