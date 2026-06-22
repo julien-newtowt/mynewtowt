@@ -124,16 +124,16 @@
           </div>
 
           <div class="form-group field-check">
-            <label>
+            <label style="font-size:1.05rem;">
               <input type="checkbox" name="consent" value="1" required />
               {{ t('contact_consent_pre', lang) }}
-              <a href="/about/privacy">{{ t('contact_consent_link', lang) }}</a>. *
+              <a href="/about/privacy" style="font-size:1.1rem;font-weight:600;">{{ t('contact_consent_link', lang) }}</a>. *
             </label>
             {% if errors.consent %}<p class="form-hint" style="color:var(--c-danger);">{{ t('contact_err_consent', lang) }}</p>{% endif %}
           </div>
 
           <div class="form-actions">
-            <button type="submit" class="btn btn-primary btn-lg">{{ t('contact_submit', lang) }}</button>
+            <button type="submit" class="btn btn-primary btn-lg" style="font-size:1.2rem;">{{ t('contact_submit', lang) }}</button>
           </div>
           <p class="caption">{{ t('contact_required_note', lang) }}</p>
         </form>

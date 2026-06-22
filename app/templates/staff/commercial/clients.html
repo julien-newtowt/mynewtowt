@@ -91,7 +91,29 @@
       </div>
       <div class="field">
         <label for="contact_phone">Téléphone</label>
-        <input id="contact_phone" name="contact_phone" type="tel" />
+        <div class="flex gap-2">
+          <select id="phone_dial_code" name="phone_dial_code" style="max-width:11rem;" aria-label="Indicatif international">
+            <option value="+33" selected>🇫🇷 +33 France</option>
+            <option value="+32">🇧🇪 +32 Belgique</option>
+            <option value="+41">🇨🇭 +41 Suisse</option>
+            <option value="+352">🇱🇺 +352 Luxembourg</option>
+            <option value="+44">🇬🇧 +44 Royaume-Uni</option>
+            <option value="+351">🇵🇹 +351 Portugal</option>
+            <option value="+34">🇪🇸 +34 Espagne</option>
+            <option value="+39">🇮🇹 +39 Italie</option>
+            <option value="+49">🇩🇪 +49 Allemagne</option>
+            <option value="+31">🇳🇱 +31 Pays-Bas</option>
+            <option value="+1">🇺🇸 +1 USA / Canada</option>
+            <option value="+55">🇧🇷 +55 Brésil</option>
+            <option value="+212">🇲🇦 +212 Maroc</option>
+            <option value="+221">🇸🇳 +221 Sénégal</option>
+            <option value="+225">🇨🇮 +225 Côte d'Ivoire</option>
+            <option value="+84">🇻🇳 +84 Vietnam</option>
+          </select>
+          <input id="contact_phone" name="contact_phone" type="tel" placeholder="6 12 34 56 78"
+                 autocomplete="tel-national" style="flex:1;" />
+        </div>
+        <small class="text-muted">Indicatif international + numéro local.</small>
       </div>
       <div class="field">
         <label for="country">Pays (ISO 2)</label>

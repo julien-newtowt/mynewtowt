@@ -19,8 +19,17 @@ class PlanningShare(Base):
     # Filters applied to the shared view (JSON stringified for V3.0).
     label: Mapped[str | None] = mapped_column(String(200))
     vessel_id: Mapped[int | None] = mapped_column(ForeignKey("vessels.id"))
+    # Filtres géographiques optionnels : ne montrer que les traversées
+    # partant de ce POL et/ou arrivant à ce POD.
+    pol_port_id: Mapped[int | None] = mapped_column(ForeignKey("ports.id"))
+    pod_port_id: Mapped[int | None] = mapped_column(ForeignKey("ports.id"))
     only_bookable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+
+    # Période de filtrage optionnelle (sur l'ETD). NULL ⇒ fenêtre par défaut
+    # (7 j passés → 90 j à venir) appliquée à l'affichage public.
+    date_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    date_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

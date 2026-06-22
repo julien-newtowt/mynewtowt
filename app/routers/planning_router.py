@@ -488,9 +488,33 @@ async def shares_index(
 ) -> HTMLResponse:
     shares = await list_shares(db)
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    # Ports effectivement desservis (POL = ports de départ, POD = ports
+    # d'arrivée) pour alimenter les sélecteurs de filtre du formulaire.
+    pol_ids = select(Leg.departure_port_id).distinct()
+    pod_ids = select(Leg.arrival_port_id).distinct()
+    pol_ports = list(
+        (await db.execute(select(Port).where(Port.id.in_(pol_ids)).order_by(Port.locode)))
+        .scalars()
+        .all()
+    )
+    pod_ports = list(
+        (await db.execute(select(Port).where(Port.id.in_(pod_ids)).order_by(Port.locode)))
+        .scalars()
+        .all()
+    )
+    # id→port pour ré-afficher les filtres baked dans le tableau des partages.
+    filter_ports = {p.id: p for p in pol_ports} | {p.id: p for p in pod_ports}
     return templates.TemplateResponse(
         "staff/planning/shares.html",
-        {"request": request, "user": user, "shares": shares, "vessels": vessels},
+        {
+            "request": request,
+            "user": user,
+            "shares": shares,
+            "vessels": vessels,
+            "pol_ports": pol_ports,
+            "pod_ports": pod_ports,
+            "filter_ports": filter_ports,
+        },
     )
 
 
@@ -499,8 +523,12 @@ async def shares_create(
     request: Request,
     label: str = Form(""),
     vessel_id: str = Form(""),
+    pol_port_id: str = Form(""),
+    pod_port_id: str = Form(""),
     only_bookable: str = Form(""),
     description: str = Form(""),
+    date_from: str = Form(""),
+    date_to: str = Form(""),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("planning", "M")),
 ) -> RedirectResponse:
@@ -508,8 +536,12 @@ async def shares_create(
         db,
         label=label.strip() or None,
         vessel_id=int(vessel_id) if vessel_id else None,
+        pol_port_id=int(pol_port_id) if pol_port_id else None,
+        pod_port_id=int(pod_port_id) if pod_port_id else None,
         only_bookable=(only_bookable == "on"),
         description=description.strip() or None,
+        date_from=_parse_dt(date_from, allow_empty=True),
+        date_to=_parse_dt(date_to, allow_empty=True),
         expires_at=None,
         created_by_id=user.id,
     )
@@ -555,14 +587,28 @@ async def public_share(
     share.last_access_at = datetime.now(UTC)
 
     now = datetime.now(UTC)
+    # Période : si le partage a une plage explicite, on la respecte ;
+    # sinon fenêtre par défaut (7 j passés → 90 j à venir). date_to est
+    # rendue inclusive jusqu'à la fin de la journée.
+    window_from = share.date_from or (now - timedelta(days=7))
+    window_to = (
+        share.date_to.replace(hour=23, minute=59, second=59)
+        if share.date_to
+        else now + timedelta(days=GANTT_WINDOW_DAYS)
+    )
     legs = await list_legs_in_window(
         db,
-        date_from=now - timedelta(days=7),
-        date_to=now + timedelta(days=GANTT_WINDOW_DAYS),
+        date_from=window_from,
+        date_to=window_to,
         vessel_id=share.vessel_id,
     )
     if share.only_bookable:
         legs = [leg for leg in legs if leg.is_bookable]
+    # Filtres géographiques optionnels (POL de départ / POD d'arrivée).
+    if share.pol_port_id:
+        legs = [leg for leg in legs if leg.departure_port_id == share.pol_port_id]
+    if share.pod_port_id:
+        legs = [leg for leg in legs if leg.arrival_port_id == share.pod_port_id]
 
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     vessels_by_id = {v.id: v for v in vessels}

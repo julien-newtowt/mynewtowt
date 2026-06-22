@@ -39,7 +39,7 @@ from app.templating import templates
 
 router = APIRouter(tags=["devis"])
 
-_MAX_ITEM_ROWS = 3
+_MAX_ITEM_ROWS = 30
 _RATE_LIMIT_SCOPE = "quote_public"
 _RATE_LIMIT_MAX = 10
 _RATE_LIMIT_WINDOW_MIN = 30
@@ -341,6 +341,19 @@ async def _form_context(
             vessel = await db.get(Vessel, leg_obj.vessel_id)
 
     pol_ports, pod_ports = await _route_ports(db)
+    # Reconstitue les lots saisis (pour repopuler après erreur) à partir des
+    # valeurs soumises ; tolère les trous d'index laissés par la suppression
+    # d'un lot côté JS. Au moins un lot vide par défaut.
+    item_rows: list[dict] = []
+    if values:
+        for i in range(_MAX_ITEM_ROWS):
+            fmt = (values.get(f"items-{i}-format") or "").strip()
+            cnt = (values.get(f"items-{i}-count") or "").strip()
+            if fmt or cnt:
+                item_rows.append({"format": fmt, "count": cnt})
+    if not item_rows:
+        item_rows = [{"format": "", "count": ""}]
+
     return {
         "request": request,
         "client": client,
@@ -351,7 +364,7 @@ async def _form_context(
         "pol_ports": pol_ports,
         "pod_ports": pod_ports,
         "pallet_formats": list(PALETTE_COEFFICIENTS.keys()),
-        "max_rows": _MAX_ITEM_ROWS,
+        "item_rows": item_rows,
         "error": error,
         "values": values or {},
     }

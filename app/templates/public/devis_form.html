@@ -2,6 +2,8 @@
 {% block title %}{{ t('devis_meta_title', lang) }}{% endblock %}
 {% block description %}{{ t('devis_meta_desc', lang) }}{% endblock %}
 
+{% block head %}<script src="/static/js/cargo-rows.js" defer></script>{% endblock %}
+
 {% block content %}
 <section class="hero">
   <div class="hero-inner">
@@ -78,24 +80,57 @@
       {% endif %}
 
       <h2 class="section-title">2 · {{ t('devis_step2_cargo', lang) }}</h2>
-      {% for i in range(max_rows) %}
-      <div class="grid grid-2" style="gap:var(--sp-4);">
-        <div class="form-group">
-          <label class="form-label" for="items-{{ i }}-format">{{ t('devis_lbl_format', lang) }}{% if i == 0 %} *{% endif %}</label>
-          <select class="form-control" id="items-{{ i }}-format" name="items-{{ i }}-format">
-            <option value="">—</option>
-            {% for fmt in pallet_formats %}
-            <option value="{{ fmt }}" {% if values.get('items-' ~ i ~ '-format') == fmt %}selected{% endif %}>{{ fmt }}</option>
-            {% endfor %}
-          </select>
+
+      <div id="cargo-rows" data-next-index="{{ item_rows|length }}">
+        {% for it in item_rows %}
+        {% set i = loop.index0 %}
+        <div class="cargo-row" data-cargo-row
+             style="border:1px solid var(--c-border,#ddd);border-radius:8px;padding:var(--sp-4);margin-bottom:var(--sp-4);">
+          <div class="grid grid-2" style="gap:var(--sp-4);">
+            <div class="form-group">
+              <label class="form-label" for="items-{{ i }}-format">{{ t('devis_lbl_format', lang) }}{% if i == 0 %} *{% endif %}</label>
+              <select class="form-control" id="items-{{ i }}-format" name="items-{{ i }}-format">
+                <option value="">—</option>
+                {% for fmt in pallet_formats %}
+                <option value="{{ fmt }}" {% if it.format == fmt %}selected{% endif %}>{{ fmt }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="items-{{ i }}-count">{{ t('devis_lbl_count', lang) }}{% if i == 0 %} *{% endif %}</label>
+              <input class="form-control" id="items-{{ i }}-count" name="items-{{ i }}-count"
+                     type="number" min="1" max="1000" value="{{ it.count }}" />
+            </div>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" data-remove-row>{{ t('devis_remove_batch', lang) }}</button>
         </div>
-        <div class="form-group">
-          <label class="form-label" for="items-{{ i }}-count">{{ t('devis_lbl_count', lang) }}{% if i == 0 %} *{% endif %}</label>
-          <input class="form-control" id="items-{{ i }}-count" name="items-{{ i }}-count"
-                 type="number" min="1" max="1000" value="{{ values.get('items-' ~ i ~ '-count', '') }}" />
-        </div>
+        {% endfor %}
       </div>
-      {% endfor %}
+
+      <button type="button" class="btn btn-secondary" data-add-row>{{ t('devis_add_batch', lang) }}</button>
+
+      {# Gabarit cloné par cargo-rows.js (__I__ = index injecté). #}
+      <template id="cargo-row-tpl">
+        <div class="cargo-row" data-cargo-row
+             style="border:1px solid var(--c-border,#ddd);border-radius:8px;padding:var(--sp-4);margin-bottom:var(--sp-4);">
+          <div class="grid grid-2" style="gap:var(--sp-4);">
+            <div class="form-group">
+              <label class="form-label">{{ t('devis_lbl_format', lang) }}</label>
+              <select class="form-control" name="items-__I__-format">
+                <option value="">—</option>
+                {% for fmt in pallet_formats %}
+                <option value="{{ fmt }}">{{ fmt }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('devis_lbl_count', lang) }}</label>
+              <input class="form-control" name="items-__I__-count" type="number" min="1" max="1000" />
+            </div>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" data-remove-row>{{ t('devis_remove_batch', lang) }}</button>
+        </div>
+      </template>
 
       <div class="grid grid-2" style="gap:var(--sp-4);">
         <div class="form-group">
@@ -133,15 +168,15 @@
                autocomplete="email" value="{{ values.contact_email|default('') }}" />
       </div>
       <div class="form-group">
-        <label class="form-label" for="consent" style="display:flex;gap:.5rem;align-items:start;">
+        <label class="form-label" for="consent" style="display:flex;gap:.5rem;align-items:start;font-size:1.05rem;">
           <input id="consent" type="checkbox" name="consent"
                  {% if values.consent == 'on' %}checked{% endif %} />
           <span>{{ t('devis_consent_pre', lang) }}
-          <a href="/about/privacy">{{ t('devis_consent_link', lang) }}</a>{{ t('devis_consent_post', lang) }}</span>
+          <a href="/about/privacy" style="font-size:1.1rem;font-weight:600;">{{ t('devis_consent_link', lang) }}</a>{{ t('devis_consent_post', lang) }}</span>
         </label>
       </div>
 
-      <button class="btn btn-primary btn-lg" type="submit">{{ t('devis_submit', lang) }}</button>
+      <button class="btn btn-primary btn-lg" type="submit" style="font-size:1.2rem;">{{ t('devis_submit', lang) }}</button>
       <a href="/routes" class="btn btn-ghost">{{ t('devis_see_crossings', lang) }}</a>
     </form>
 

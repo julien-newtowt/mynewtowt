@@ -27,6 +27,32 @@
         {% endfor %}
       </select>
     </div>
+    <div class="field">
+      <label for="pol_port_id">Port de départ (POL, optionnel)</label>
+      <select id="pol_port_id" name="pol_port_id">
+        <option value="">Tous les ports de départ</option>
+        {% for p in pol_ports %}
+          <option value="{{ p.id }}">{{ p.locode }} — {{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="pod_port_id">Port d'arrivée (POD, optionnel)</label>
+      <select id="pod_port_id" name="pod_port_id">
+        <option value="">Tous les ports d'arrivée</option>
+        {% for p in pod_ports %}
+          <option value="{{ p.id }}">{{ p.locode }} — {{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="date_from">Période — du (optionnel)</label>
+      <input id="date_from" name="date_from" type="date" />
+    </div>
+    <div class="field">
+      <label for="date_to">Période — au (optionnel)</label>
+      <input id="date_to" name="date_to" type="date" />
+    </div>
     <div class="field field-check">
       <input id="only_bookable" type="checkbox" name="only_bookable" />
       <label for="only_bookable">Afficher uniquement les legs réservables</label>
@@ -61,7 +87,14 @@
           <tr style="{% if not s.is_active %}opacity:0.5;{% endif %}">
             <td>{{ s.label or '—' }}</td>
             <td>{{ v.name if v else 'Tous' }}</td>
-            <td>{% if s.only_bookable %}<span class="pill pill-info">Bookables</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>
+              {% set has_filter = s.only_bookable or s.pol_port_id or s.pod_port_id or s.date_from or s.date_to %}
+              {% if s.only_bookable %}<span class="pill pill-info">Bookables</span>{% endif %}
+              {% if s.pol_port_id and filter_ports.get(s.pol_port_id) %}<span class="pill pill-neutral mono">POL {{ filter_ports[s.pol_port_id].locode }}</span>{% endif %}
+              {% if s.pod_port_id and filter_ports.get(s.pod_port_id) %}<span class="pill pill-neutral mono">POD {{ filter_ports[s.pod_port_id].locode }}</span>{% endif %}
+              {% if s.date_from or s.date_to %}<span class="pill pill-neutral">{{ s.date_from|date if s.date_from else '…' }} → {{ s.date_to|date if s.date_to else '…' }}</span>{% endif %}
+              {% if not has_filter %}<span class="text-muted">—</span>{% endif %}
+            </td>
             <td>
               <code style="font-size:var(--text-xs);">{{ site_url }}/planning/share/{{ s.token }}</code>
             </td>

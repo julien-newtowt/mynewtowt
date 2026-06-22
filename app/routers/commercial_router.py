@@ -203,6 +203,7 @@ async def client_create(
     contact_name: str | None = Form(None),
     contact_email: str | None = Form(None),
     contact_phone: str | None = Form(None),
+    phone_dial_code: str | None = Form(None),
     country: str | None = Form(None),
     vat_number: str | None = Form(None),
     notes: str | None = Form(None),
@@ -216,7 +217,7 @@ async def client_create(
         client_type=client_type,
         contact_name=(contact_name or "").strip() or None,
         contact_email=(contact_email or "").strip() or None,
-        contact_phone=(contact_phone or "").strip() or None,
+        contact_phone=_compose_phone(phone_dial_code, contact_phone),
         country=(country or "").strip().upper()[:2] or None,
         vat_number=(vat_number or "").strip() or None,
         notes=notes,
@@ -363,6 +364,24 @@ async def client_account_unlink(
 
 
 # ────────────────────────────────────────────── Rate grids
+def _compose_phone(dial_code: str | None, number: str | None) -> str | None:
+    """Combine indicatif international + numéro local en un téléphone unique.
+
+    - numéro vide ⇒ None ;
+    - numéro déjà en format international (commence par ``+`` ou ``00``) ⇒
+      conservé tel quel (l'indicatif est ignoré pour éviter un doublon) ;
+    - sinon ⇒ ``{indicatif} {numéro}`` (ex. ``+33 6 12 34 56 78``).
+    """
+    num = (number or "").strip()
+    if not num:
+        return None
+    if num.startswith("+") or num.startswith("00"):
+        return num[:50]
+    code = (dial_code or "").strip()
+    composed = f"{code} {num}".strip() if code else num
+    return composed[:50]
+
+
 def _opt_decimal(value: str | None) -> Decimal | None:
     """Parse un décimal optionnel (champ vide → None ; invalide → None)."""
     raw = (value or "").strip().replace(",", ".")

@@ -147,6 +147,8 @@ CATALOG: dict[str, str] = {
     "devis_step2_cargo": "Your cargo",
     "devis_lbl_format": "Pallet format",
     "devis_lbl_count": "Quantity",
+    "devis_add_batch": "+ Add a batch",
+    "devis_remove_batch": "Remove this batch",
     "devis_lbl_tonnage": "Total loaded tonnage (t)",
     "devis_ph_tonnage": "e.g. 12.5",
     "devis_hint_tonnage": "Used for options priced per tonne.",
