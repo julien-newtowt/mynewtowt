@@ -165,3 +165,23 @@ def test_suggest_uses_first_zone_when_capacity_allows():
     ]
     result = suggest_assignments(items, capacities=capacities)
     assert result[0]["zone"] == "INF_AR_AR"
+
+
+def test_suggest_tolerates_none_capacity():
+    """REGRESSION : une zone avec capacité None (spec DB sans capacity_epal)
+    ne doit pas provoquer un float(None) → TypeError (500 à la génération)."""
+    capacities = dict.fromkeys(ZONE_LOADING_ORDER, 50)
+    capacities["INF_AR_AR"] = None  # spec sans capacité saisie
+    items = [
+        {
+            "batch_id": 1,
+            "pallet_format": "EPAL",
+            "pallet_count": 3,
+            "is_dangerous": False,
+            "is_oversized": False,
+        }
+    ]
+    # Ne doit pas lever : la zone à capacité None retombe sur la capacité
+    # par défaut et reste utilisable.
+    result = suggest_assignments(items, capacities=capacities)
+    assert result[0]["zone"] == "INF_AR_AR"

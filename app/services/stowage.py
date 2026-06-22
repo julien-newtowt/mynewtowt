@@ -53,9 +53,14 @@ def suggest_assignments(
     out: list[dict] = []
 
     def _cap(zone: str) -> float:
-        if capacities:
-            return float(capacities.get(zone, ZONE_CAPACITY_DEFAULT))
-        return float(ZONE_CAPACITY_DEFAULT)
+        # Robustesse : une zone peut exister dans ``capacities`` avec une valeur
+        # ``None`` (spec sans ``capacity_epal``). ``dict.get(zone, DEFAULT)`` ne
+        # remplace PAS un None explicite → on coalesce nous-mêmes pour éviter un
+        # ``float(None)`` (TypeError 500 à la génération du plan).
+        val = capacities.get(zone) if capacities else None
+        if val is None:
+            return float(ZONE_CAPACITY_DEFAULT)
+        return float(val)
 
     # 1. Dangerous / oversized → SUP_AV
     danger_queue = [it for it in items if it.get("is_dangerous") or it.get("is_oversized")]

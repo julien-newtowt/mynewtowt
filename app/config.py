@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     pipedrive_api_token: str | None = None
     # Pipeline cible des deals créés depuis mytowt (leads web/devis). Résolu par
     # nom via l'API Pipedrive ; le premier étage du pipeline est utilisé.
-    pipedrive_pipeline_name: str = "Dealsfromweb"
+    pipedrive_pipeline_name: str = "Deals from web"
     anthropic_api_key: str | None = None
     windy_api_key: str | None = None
     mapbox_token: str | None = None

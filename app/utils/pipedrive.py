@@ -56,6 +56,35 @@ async def list_organizations(*, max_items: int = 1000) -> list[dict]:
     return out[:max_items]
 
 
+async def list_deals(*, max_items: int = 10000) -> list[dict]:
+    """Liste paginée de TOUS les deals (tous pipelines, tous statuts).
+
+    ``status=all_not_deleted`` couvre les deals ouverts, gagnés et perdus,
+    quel que soit le pipeline — ce qui permet de remonter toute organisation
+    ayant au moins un deal. Liste vide si non configuré ou en erreur.
+    """
+    out: list[dict] = []
+    start = 0
+    page = 500
+    while len(out) < max_items:
+        data = await _request(
+            "GET",
+            "/deals",
+            params={"start": start, "limit": page, "status": "all_not_deleted"},
+        )
+        if not data or not data.get("success"):
+            break
+        rows = data.get("data") or []
+        if not rows:
+            break
+        out.extend(rows)
+        pagination = (data.get("additional_data") or {}).get("pagination") or {}
+        if not pagination.get("more_items_in_collection"):
+            break
+        start = pagination.get("next_start") or (start + page)
+    return out[:max_items]
+
+
 async def _request(
     method: str, path: str, *, json: dict | None = None, params: dict | None = None
 ) -> dict | None:
@@ -135,9 +164,15 @@ async def find_pipeline_id(name: str) -> int | None:
     data = await _request("GET", "/pipelines")
     if not data or not data.get("success"):
         return None
-    target = name.strip().lower()
+
+    # Comparaison tolérante aux espaces/casse : « Deals from web » doit
+    # matcher « Dealsfromweb », « deals from web », etc.
+    def _norm(s: str) -> str:
+        return "".join((s or "").split()).lower()
+
+    target = _norm(name)
     for p in data.get("data") or []:
-        if (p.get("name") or "").strip().lower() == target:
+        if _norm(p.get("name") or "") == target:
             return p.get("id")
     return None
 
