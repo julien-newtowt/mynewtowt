@@ -64,6 +64,34 @@
   <p class="text-muted">{{ user.full_name or user.username }} · <span class="mono">{{ user.role }}</span></p>
 </header>
 
+{# ADM-02 — alertes proactives #}
+<section class="card mb-4">
+  <div class="section-header">
+    <h3><i data-lucide="siren"></i> Alertes
+      {% if alerts %}<span class="unread-badge">{{ alerts|length }}</span>{% endif %}
+      {% if alerts_danger %}<span class="pill" style="background:var(--cuivre);color:#fff;">{{ alerts_danger }} critique(s)</span>{% endif %}
+    </h3>
+  </div>
+  {% if alerts %}
+  <div class="grid grid-2 gap-2">
+    {% for a in alerts %}
+    <a href="{{ a.link }}" class="dash-notif-card" style="text-decoration:none;border-left:4px solid {{ 'var(--cuivre)' if a.severity == 'danger' else ('#caa63a' if a.severity == 'warning' else 'var(--teal)') }};">
+      <span class="dash-notif-icon"><i data-lucide="{{ a.icon }}"></i></span>
+      <div class="dash-notif-body">
+        <div class="dash-notif-title">
+          <strong>{{ a.title }}</strong>
+          <span class="pill {{ 'pill-warn' if a.severity != 'info' else 'pill-neutral' }}">{{ a.severity }}</span>
+        </div>
+        <div class="dash-notif-text">{{ a.message }}</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-muted"><i data-lucide="check-circle"></i> Aucune alerte active — tout est sous contrôle.</p>
+  {% endif %}
+</section>
+
 <section class="kpi-strip">
   <div class="kpi-card">
     <div class="label">{{ t('dash_bookings_confirm', lang) }}</div>

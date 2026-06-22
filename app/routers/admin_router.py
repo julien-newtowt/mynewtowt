@@ -289,6 +289,185 @@ async def users_reset_password(
     return RedirectResponse(url="/admin/users", status_code=303)
 
 
+# ────────────────────────────────────────────── Vessels CRUD (ADM-01)
+
+
+def _vessel_float(value: str | None) -> float | None:
+    raw = (value or "").strip().replace(",", ".")
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="valeur numérique invalide") from exc
+
+
+def _apply_vessel_form(
+    vessel: Vessel,
+    *,
+    name: str,
+    vessel_class: str,
+    imo_number: str | None,
+    flag: str | None,
+    dwt: str | None,
+    capacity_palettes: str | None,
+    default_speed_kn: str | None,
+    default_elongation: str | None,
+    opex_daily_sea_eur: str | None,
+) -> None:
+    vessel.name = name.strip()
+    vessel.vessel_class = (vessel_class or "phoenix").strip() or "phoenix"
+    vessel.imo_number = (imo_number or "").strip() or None
+    vessel.flag = (flag or "").strip().upper()[:2] or None
+    vessel.dwt = _vessel_float(dwt)
+    cap = _vessel_float(capacity_palettes)
+    if cap is not None:
+        vessel.capacity_palettes = int(cap)
+    spd = _vessel_float(default_speed_kn)
+    if spd is not None:
+        vessel.default_speed_kn = spd
+    elong = _vessel_float(default_elongation)
+    if elong is not None:
+        vessel.default_elongation = elong
+    vessel.opex_daily_sea_eur = _vessel_float(opex_daily_sea_eur)
+
+
+@router.get("/vessels", response_class=HTMLResponse)
+async def vessels_list(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> HTMLResponse:
+    vessels = await _vessels_for_form(db)
+    return templates.TemplateResponse(
+        "staff/admin/vessels.html",
+        {"request": request, "user": user, "vessels": vessels},
+    )
+
+
+@router.get("/vessels/new", response_class=HTMLResponse)
+async def vessel_new_form(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "staff/admin/vessel_form.html",
+        {"request": request, "user": user, "vessel": None},
+    )
+
+
+@router.post("/vessels")
+async def vessel_create(
+    request: Request,
+    code: str = Form(...),
+    name: str = Form(...),
+    vessel_class: str = Form("phoenix"),
+    imo_number: str | None = Form(None),
+    flag: str | None = Form(None),
+    dwt: str | None = Form(None),
+    capacity_palettes: str | None = Form(None),
+    default_speed_kn: str | None = Form(None),
+    default_elongation: str | None = Form(None),
+    opex_daily_sea_eur: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    code_clean = code.strip().upper()
+    if not code_clean or len(code_clean) > 4:
+        raise HTTPException(status_code=400, detail="code navire invalide (1 à 4 caractères)")
+    existing = (
+        await db.execute(select(Vessel).where(Vessel.code == code_clean))
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="code navire déjà utilisé")
+    vessel = Vessel(code=code_clean)
+    _apply_vessel_form(
+        vessel, name=name, vessel_class=vessel_class, imo_number=imo_number, flag=flag,
+        dwt=dwt, capacity_palettes=capacity_palettes, default_speed_kn=default_speed_kn,
+        default_elongation=default_elongation, opex_daily_sea_eur=opex_daily_sea_eur,
+    )
+    db.add(vessel)
+    await db.flush()
+    await activity_record(
+        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="admin", entity_type="vessel", entity_id=vessel.id,
+        entity_label=vessel.code, detail=f"class={vessel.vessel_class}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/admin/vessels", status_code=303)
+
+
+@router.get("/vessels/{vessel_id}/edit", response_class=HTMLResponse)
+async def vessel_edit_form(
+    vessel_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+) -> HTMLResponse:
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse(
+        "staff/admin/vessel_form.html",
+        {"request": request, "user": user, "vessel": vessel},
+    )
+
+
+@router.post("/vessels/{vessel_id}/edit")
+async def vessel_edit(
+    vessel_id: int,
+    request: Request,
+    name: str = Form(...),
+    vessel_class: str = Form("phoenix"),
+    imo_number: str | None = Form(None),
+    flag: str | None = Form(None),
+    dwt: str | None = Form(None),
+    capacity_palettes: str | None = Form(None),
+    default_speed_kn: str | None = Form(None),
+    default_elongation: str | None = Form(None),
+    opex_daily_sea_eur: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        raise HTTPException(status_code=404)
+    _apply_vessel_form(
+        vessel, name=name, vessel_class=vessel_class, imo_number=imo_number, flag=flag,
+        dwt=dwt, capacity_palettes=capacity_palettes, default_speed_kn=default_speed_kn,
+        default_elongation=default_elongation, opex_daily_sea_eur=opex_daily_sea_eur,
+    )
+    await db.flush()
+    await activity_record(
+        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="admin", entity_type="vessel", entity_id=vessel.id,
+        entity_label=vessel.code, ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/admin/vessels", status_code=303)
+
+
+@router.post("/vessels/{vessel_id}/toggle")
+async def vessel_toggle_active(
+    vessel_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        raise HTTPException(status_code=404)
+    vessel.is_active = not vessel.is_active
+    await db.flush()
+    await activity_record(
+        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="admin", entity_type="vessel", entity_id=vessel.id,
+        entity_label=vessel.code, detail="réactivé" if vessel.is_active else "désactivé",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/admin/vessels", status_code=303)
+
+
 # ────────────────────────────────────────────── OPEX parameters
 @router.get("/opex", response_class=HTMLResponse)
 async def opex_list(

@@ -280,6 +280,27 @@ def test_v2_nox_sox_avoided_restored():
     assert EmissionFactors is not None
 
 
+# ───────────────────────────── Admin (V2 parité) ──────────────────────────────
+
+
+def test_v2_vessel_crud_restored():
+    """ADM-01 : CRUD navires (création/édition/désactivation)."""
+    from app.routers.admin_router import router
+
+    m = _methods(router)
+    assert ("POST", "/admin/vessels") in m
+    assert ("GET", "/admin/vessels/{vessel_id}/edit") in m
+    assert ("POST", "/admin/vessels/{vessel_id}/edit") in m
+    assert ("POST", "/admin/vessels/{vessel_id}/toggle") in m
+
+
+def test_v2_dashboard_alerts_engine_restored():
+    """ADM-02 : moteur d'alertes (6 familles, tri par sévérité)."""
+    from app.services.dashboard_alerts import compute_alerts
+
+    assert callable(compute_alerts)
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # Ces fonctionnalités existaient en V2, sont spécifiées (docs/audit/specs), mais
 # pas encore implémentées. Le skip documente la dette de parité de façon vivante.
@@ -293,8 +314,6 @@ _PENDING = {
     "stowage_onboard_view": "STO-01 — vue à bord du plan de chargement",
     "stowage_drag_drop": "STO-02 — réaffectation de zone (drag-drop)",
     "onboard_cargo_doc_structured": "ONB-02 — documents cargo structurés",
-    "admin_vessel_crud": "ADM-01 — CRUD navires",
-    "admin_alerts_engine": "ADM-02 — moteur d'alertes du dashboard",
     "commercial_order_attachments": "COM-04 — pièces jointes commande (spec écrite)",
 }
 
