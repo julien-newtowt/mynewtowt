@@ -1,7 +1,62 @@
-# Arbitrages métier — à trancher avant le Lot 1 des modules concernés
+# Arbitrages métier — décisions actées
 
-Ces décisions conditionnent le périmètre de certains tickets P0. Tant qu'elles ne sont pas
-prises, les tickets « bloqués » ci‑dessous ne doivent pas démarrer.
+Ces décisions conditionnent le périmètre de certains tickets P0. **Statut : tranchées le
+2026‑06‑22.** Le tableau de synthèse en bas reste pour mémoire ; les conséquences ci‑dessous
+font foi pour le périmètre des tickets.
+
+## ✅ Décisions actées (2026‑06‑22)
+
+### A1 — MRV : **Hybride** (noon auto + compteurs DO de contrôle)
+- **Tickets en périmètre :** MRV‑04, MRV‑05, MRV‑06 (tous **GO**).
+- **Conséquence :** conserver la **synchro auto** noon/SOF → `MRVEvent` (gain V3) **ET** réintroduire
+  les **4 compteurs DO** + `compute_consumption` (ME/AE) + `compute_rob` + **contrôle qualité
+  multi‑règles** (statut `error` bloquant) appliqué à **tous** les events (auto et manuels).
+  Source primaire machine = compteurs ; noon report = complément + cross‑check. L'export DNV
+  18 colonnes (MRV‑01) et la position DMS (MRV‑07) restent indispensables.
+
+### A2 — Finance : **Prévisionnel/réalisé complet**
+- **Tickets en périmètre :** FIN‑01 (modèle 5 postes × 2 colonnes), FIN‑02 (export CSV).
+- **Conséquence :** restaurer sur `LegFinance` le couple **forecast/actual** des 5 postes
+  (CA, portuaire, **quai**, OPEX mer, opérations) + résultat + marge prév/réel + **écarts** +
+  ligne **TOTAL** ; export CSV 18 colonnes.
+- **Migration :** recréer les colonnes forecast/actual + `quay_cost` (sans cible V3) ; définir
+  la reprise de l'historique V2 avant tout écrasement.
+
+### A3 — Stowage/Escale : **Configurable par zone**
+- **Ticket en périmètre :** STO‑05.
+- **Conséquence :** `evaluate_plan` garde l'**avertissement par défaut** (gain V3) ; ajouter un
+  **flag de blocage dur par zone** dans `StowageZoneSpec` (ex. zones DG, résistance de pont
+  critique) ; rejet HTTP 400 uniquement sur les zones marquées « strictes ».
+
+### A4 — Crew : **Autoriser l'embarquement hors leg** (comportement V2)
+- **Ticket en périmètre :** CREW‑04 (+ CREW‑08 anti‑overlap).
+- **Conséquence :** rendre `CrewAssignment.leg_id` **nullable** et permettre l'affectation
+  directe à un **navire** sans leg planifié (embarquement anticipé) ; le rattachement à un leg
+  reste possible (optionnel). Réintroduire l'**anti‑overlap** d'embarquement.
+- **Migration :** `leg_id` nullable ; conserver/dériver le navire d'affectation.
+
+### A5 — Cargo : **Facturation hors plateforme + nettoyer le code dormant**
+- **Ticket en périmètre :** EVO‑01.
+- **Conséquence :** **retirer** `client_invoice`/`invoicing` et la redirection **301** silencieuse
+  de `/me/invoices` (ou la remplacer par une page explicite « facturation gérée hors
+  plateforme »). Documenter la décision dans `CLAUDE.md`.
+
+### A6 — Portail expéditeur : **Portail token riche + espace `/me`**
+- **Tickets en périmètre :** CARGO‑06, CARGO‑10, CARGO‑11, CARGO‑12 (tous **GO**, périmètre complet).
+- **Conséquence :** restaurer le **portail token complet** (saisie/correction de batches, dépôt
+  de documents, import Excel, suivi voyage, guide + fiche navire, multilingue) **en plus** de
+  l'espace client authentifié `/me`. **SEC‑02** (rate‑limit token) devient **obligatoire**.
+
+### A7 — Droits `data_analyst` : **Restriction V3 + accès ciblé aux réglages**
+- **Tickets en périmètre :** ADM‑06, FIN‑03, MRV‑06.
+- **Conséquence :** **ne pas** remettre `data_analyst` dans un module `admin` global. Exposer les
+  réglages **CO₂ / émissions (NOx/SOx) / MRV** via une **permission ciblée** (écran de
+  paramètres accessible aux rôles `data_analyst` **et** `administrateur`), en s'appuyant sur
+  l'éditeur de matrice de permissions V3 (overrides DB).
+
+---
+
+## Tableau de synthèse (pour mémoire)
 
 | # | Décision | Options | Tickets bloqués | Recommandation |
 |---|---|---|---|---|

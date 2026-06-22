@@ -77,5 +77,7 @@ Lot 3 (P2)             itératif
 Lot 4 (EVO-*)          consolidation modules V3-only
 ```
 
-> ⚠️ Plusieurs tickets P0 dépendent d'une **décision métier** (`ARBITRAGES.md`). Les trancher
-> avant de démarrer le Lot 1 du module concerné (notamment MRV, Finance, Cargo/portail, Crew).
+> ✅ Les 7 arbitrages métier (`ARBITRAGES.md`) sont **tranchés (2026‑06‑22)** — le périmètre des
+> P0 est figé : MRV hybride (compteurs + noon), Finance prévisionnel/réalisé complet, Stowage
+> blocage configurable par zone, Crew embarquement hors leg autorisé, Cargo facturation hors
+> plateforme (nettoyage), portail token riche + `/me`, droits `data_analyst` ciblés.
