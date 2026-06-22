@@ -20,6 +20,8 @@ from app.database import Base
 
 CLAIM_TYPES = ("cargo", "crew", "hull", "war_risk", "third_party", "other")
 CLAIM_STATUSES = ("open", "in_review", "provisioned", "settled", "rejected", "closed")
+# Catégories de pièces jointes d'un sinistre (factures, expertises…).
+CLAIM_DOC_TYPES = ("facture", "expertise", "photo", "courrier", "rapport", "autre")
 
 
 class Claim(Base):
@@ -46,6 +48,11 @@ class Claim(Base):
     settled_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     insurer: Mapped[str | None] = mapped_column(String(200))
     insurer_claim_ref: Mapped[str | None] = mapped_column(String(80))
+    # Lien structuré vers le contrat d'assurance (module Finance). Le champ
+    # texte ``insurer`` reste en repli quand aucun contrat n'est sélectionné.
+    insurance_contract_id: Mapped[int | None] = mapped_column(
+        ForeignKey("insurance_contracts.id")
+    )
 
     cargo_position: Mapped[str | None] = mapped_column(String(40))  # if cargo claim
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
@@ -54,6 +61,16 @@ class Claim(Base):
         back_populates="claim",
         cascade="all, delete-orphan",
         order_by="ClaimTimelineEntry.at",
+    )
+    documents: Mapped[list[ClaimDocument]] = relationship(
+        back_populates="claim",
+        cascade="all, delete-orphan",
+        order_by="ClaimDocument.uploaded_at",
+    )
+    provision_history: Mapped[list[ClaimProvisionHistory]] = relationship(
+        back_populates="claim",
+        cascade="all, delete-orphan",
+        order_by="ClaimProvisionHistory.at",
     )
 
 
@@ -73,6 +90,47 @@ class ClaimTimelineEntry(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
 
     claim: Mapped[Claim] = relationship(back_populates="timeline")
+
+
+class ClaimDocument(Base):
+    """Pièce jointe d'un sinistre (facture, expertise, photo, courrier…)."""
+
+    __tablename__ = "claim_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    claim_id: Mapped[int] = mapped_column(
+        ForeignKey("claims.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    doc_type: Mapped[str] = mapped_column(String(20), default="autre", nullable=False)
+    label: Mapped[str | None] = mapped_column(String(200))
+    file_path: Mapped[str | None] = mapped_column(String(500))
+    file_mime: Mapped[str | None] = mapped_column(String(80))
+    uploaded_by: Mapped[str | None] = mapped_column(String(200))
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    claim: Mapped[Claim] = relationship(back_populates="documents")
+
+
+class ClaimProvisionHistory(Base):
+    """Historique des révisions de provision d'un sinistre (montant + motif)."""
+
+    __tablename__ = "claim_provision_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    claim_id: Mapped[int] = mapped_column(
+        ForeignKey("claims.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    amount_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    reason: Mapped[str | None] = mapped_column(Text)
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    author_name: Mapped[str | None] = mapped_column(String(200))
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    claim: Mapped[Claim] = relationship(back_populates="provision_history")
 
 
 class VesselPosition(Base):

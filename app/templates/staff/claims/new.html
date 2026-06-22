@@ -29,7 +29,18 @@
     <div class="field" style="grid-column:span 2;"><label>Description</label><textarea name="description" rows="4" required></textarea></div>
     <div class="field"><label>Survenu le</label><input name="occurred_at" type="datetime-local" required /></div>
     <div class="field"><label>Provision (EUR)</label><input name="provision_eur" type="number" step="0.01" /></div>
-    <div class="field"><label>Assureur</label><input name="insurer" /></div>
+    <div class="field">
+      <label>Contrat d'assurance</label>
+      <select name="insurance_contract_id">
+        <option value="">— Aucun / texte libre —</option>
+        {% for ct in contracts %}
+        <option value="{{ ct.id }}">{{ ct.reference }} — {{ ct.insurer }} ({{ ct.kind }})</option>
+        {% endfor %}
+      </select>
+      <p class="text-muted text-sm mt-2">Lie le sinistre à une police. L'assureur est repris du contrat si laissé vide.</p>
+    </div>
+    <div class="field"><label>Assureur (texte libre)</label><input name="insurer" /></div>
+    <div class="field"><label>Réf. sinistre assureur</label><input name="insurer_claim_ref" /></div>
   </div>
   <button class="btn btn-primary mt-3" type="submit">Créer le claim</button>
 </form>

@@ -1,0 +1,60 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Sinistralité — Claims{% endblock %}
+{% block content %}
+
+<a href="/claims" class="btn btn-ghost mb-3">← Claims</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Risque</span>
+    <h1 class="display">Reporting sinistralité</h1>
+  </div>
+  <a href="/claims/stats.csv" class="btn btn-ghost">⬇ Export CSV</a>
+</header>
+
+<section class="grid grid-3 gap-3 mb-4">
+  <div class="stat-card">
+    <span class="kicker">Total sinistres</span>
+    <strong style="font-size:var(--text-2xl);">{{ stats.total }}</strong>
+  </div>
+  <div class="stat-card">
+    <span class="kicker">Provisions totales</span>
+    <strong style="font-size:var(--text-2xl);">{{ stats.total_provision|money }}</strong>
+  </div>
+  <div class="stat-card">
+    <span class="kicker">Réglé total</span>
+    <strong style="font-size:var(--text-2xl);">{{ stats.total_settled|money }}</strong>
+  </div>
+  <div class="stat-card">
+    <span class="kicker">Délai moyen de règlement</span>
+    <strong style="font-size:var(--text-2xl);">{{ stats.avg_settle_days if stats.avg_settle_days is not none else '—' }}</strong>
+    <small class="text-muted">jours (déclaration → règlement)</small>
+  </div>
+</section>
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Par type</h2>
+    <table class="data-table">
+      <thead><tr><th>Type</th><th>Nombre</th></tr></thead>
+      <tbody>
+        {% for t, n in stats.by_type.items() %}
+        <tr><td><span class="badge">{{ t }}</span></td><td class="mono">{{ n }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  <article class="card">
+    <h2>Par statut</h2>
+    <table class="data-table">
+      <thead><tr><th>Statut</th><th>Nombre</th></tr></thead>
+      <tbody>
+        {% for s, n in stats.by_status.items() %}
+        <tr><td><span class="badge badge-{{ s }}">{{ s }}</span></td><td class="mono">{{ n }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</div>
+
+{% endblock %}

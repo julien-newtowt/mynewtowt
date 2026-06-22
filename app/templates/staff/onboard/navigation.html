@@ -21,6 +21,8 @@
 <div class="flex items-center gap-2 mb-4" role="group" aria-label="Saisies de bord">
   <a href="#noon-form" class="btn btn-primary"><i data-lucide="clipboard-list"></i> Saisir noon report</a>
   <a href="#watch-form" class="btn btn-secondary"><i data-lucide="book-open"></i> Saisir journal de bord</a>
+  <a href="/claims?leg_id={{ leg.id }}" class="btn btn-ghost"><i data-lucide="shield-alert"></i> Sinistres du leg</a>
+  <a href="/claims/new?leg_id={{ leg.id }}" class="btn btn-ghost"><i data-lucide="plus"></i> Déclarer un sinistre</a>
   <button type="button" class="btn btn-ghost" disabled title="Bientôt disponible"><i data-lucide="leaf"></i> Saisir carbon report (prochainement)</button>
 </div>
 <div class="grid grid-2 gap-4">

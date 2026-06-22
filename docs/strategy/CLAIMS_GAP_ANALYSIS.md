@@ -129,6 +129,22 @@ claims                         (existant — + insurance_contract_id)
 └── claim_provision_history    (P3 — révisions de provision)
 ```
 
+## 6 bis. Statut d'implémentation (2026‑06‑22)
+
+Le programme de rattrapage a été **implémenté intégralement** :
+
+| Écart | Livré |
+|---|---|
+| E1 | ✅ `claim_documents` + upload/download/suppression + section fiche (factures/expertises/photos), validation via `safe_files` |
+| E2 | ✅ `claims.insurance_contract_id` (FK) + sélecteur contrat (création & fiche), reprise auto du nom assureur, réf. sinistre |
+| E3 | ✅ auto‑résolution best‑effort de la position cale depuis le plan + deep‑link « Plan de chargement » |
+| E4/E5 | ✅ filtre `?leg_id=` + boutons « Sinistres du leg » / « Déclarer un sinistre » sur l'onboard navigation |
+| E6 | ✅ `claim_provision_history` (révisions tracées montant + motif) + route `/provision` ; impact `LegFinance.claims_cost_eur` déjà câblé (`finance_rollup`) |
+| E7 | ✅ notifications `new_claim` (ouverture + provisioned/settled/rejected) ciblant `manager_maritime` |
+| E8 | ✅ `/claims/stats` (par type/statut, provisions, réglé, délai moyen) + export CSV |
+
+Migration : `20260622_0059_claims_upgrade`.
+
 ## 7. Recommandation
 
 Démarrer par **P1 (E1 documents + E2 assureur)** : ce sont les deux écarts qui

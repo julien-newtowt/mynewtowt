@@ -10,7 +10,13 @@ from app.models.blog_post import BlogPost
 from app.models.booking import Booking, BookingItem
 from app.models.booking_message import BookingMessage
 from app.models.chat import ChatConversation, ChatMessage
-from app.models.claim import Claim, ClaimTimelineEntry, VesselPosition
+from app.models.claim import (
+    Claim,
+    ClaimDocument,
+    ClaimProvisionHistory,
+    ClaimTimelineEntry,
+    VesselPosition,
+)
 from app.models.client_account import ClientAccount
 from app.models.client_invoice import ClientInvoice
 from app.models.co2_variable import Co2Variable
@@ -103,6 +109,8 @@ __all__ = [
     "ChatConversation",
     "ChatMessage",
     "Claim",
+    "ClaimDocument",
+    "ClaimProvisionHistory",
     "ClaimTimelineEntry",
     "Client",
     "ClientAccount",

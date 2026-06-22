@@ -8,7 +8,10 @@
     <span class="kicker">Risque</span>
     <h1 class="display">Claims & sinistres</h1>
   </div>
-  <a href="/claims/new" class="btn btn-primary">+ Nouveau claim</a>
+  <div class="flex gap-2">
+    <a href="/claims/stats" class="btn btn-ghost">📊 Reporting</a>
+    <a href="/claims/new" class="btn btn-primary">+ Nouveau claim</a>
+  </div>
 </header>
 
 {{ leg_filter(leg_filter_ctx, "/claims") }}
