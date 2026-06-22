@@ -472,7 +472,7 @@ class _FakeClient:
 
 
 def test_request_query_apikey_first(monkeypatch) -> None:
-    """Le query param ``apiKey`` (méthode Marasoft) est essayé en premier."""
+    """Le query param ``apikey`` (minuscules, méthode Marasoft) est essayé en 1er."""
     monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
     monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")  # défaut
     monkeypatch.setattr(marad, "_working_strategy", None)
@@ -480,7 +480,7 @@ def test_request_query_apikey_first(monkeypatch) -> None:
     captured: dict = {}
 
     def _factory(*a, **k):
-        c = _FakeClient(accept_header="query:apiKey", payload=[{"ok": 1}])
+        c = _FakeClient(accept_header="query:apikey", payload=[{"ok": 1}])
         captured["client"] = c
         return c
 
@@ -488,8 +488,8 @@ def test_request_query_apikey_first(monkeypatch) -> None:
 
     out = asyncio.run(marad.list_vessels())
     assert out == [{"ok": 1}]
-    assert captured["client"].tried[0] == "query:apiKey"  # essayé en 1er
-    assert marad._working_strategy == "query:apiKey"  # mémorisé pour la suite
+    assert captured["client"].tried[0] == "query:apikey"  # essayé en 1er
+    assert marad._working_strategy == "query:apikey"  # mémorisé pour la suite
 
 
 def test_request_falls_through_to_header_apitoken(monkeypatch) -> None:
@@ -550,4 +550,4 @@ def test_auth_strategies_respects_explicit_pin(monkeypatch) -> None:
     labels = [label for label, _h, _p in strategies]
     assert labels[0] == "header:MyKey"  # pin .env prioritaire (header)
     assert "query:MyKey" in labels  # et aussi en query string
-    assert "query:apiKey" in labels and "header:ApiKey" in labels
+    assert "query:apikey" in labels and "header:ApiKey" in labels

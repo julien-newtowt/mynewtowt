@@ -97,8 +97,12 @@ def _auth_strategies() -> list[_Strategy]:
         candidates.append((f"header:{explicit}", {explicit: token}, {}))
         candidates.append((f"query:{explicit}", {}, {explicit: token}))
     candidates += [
-        ("query:apiKey", {}, {"apiKey": token}),  # méthode documentée Marasoft
-        ("header:apiKey", {"apiKey": token}, {}),
+        # Méthode CONFIRMÉE Marasoft : query param « apikey » (minuscules).
+        # Les query params sont sensibles à la casse → ne pas confondre avec
+        # « apiKey ». Cf. intégration Power BI cliente (Web.Contents ?apikey=…).
+        ("query:apikey", {}, {"apikey": token}),
+        ("query:apiKey", {}, {"apiKey": token}),  # repli (casse alternative)
+        ("header:apikey", {"apikey": token}, {}),
         ("header:ApiKey", {"ApiKey": token}, {}),
         ("header:X-API-KEY", {"X-API-KEY": token}, {}),
         ("header:ApiToken", {"ApiToken": token}, {}),
