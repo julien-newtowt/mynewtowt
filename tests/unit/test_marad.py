@@ -461,10 +461,10 @@ class _FakeClient:
 
 
 def test_request_tries_apikey_then_apitoken(monkeypatch) -> None:
-    """Au défaut, on essaie ApiKey puis ApiToken et on mémorise le gagnant."""
+    """Au défaut, on essaie ApiKey puis ApiToken et on mémorise le schéma gagnant."""
     monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
     monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")  # défaut
-    monkeypatch.setattr(marad, "_working_header", None)
+    monkeypatch.setattr(marad, "_working_strategy", None)
 
     captured: dict = {}
 
@@ -478,23 +478,44 @@ def test_request_tries_apikey_then_apitoken(monkeypatch) -> None:
     out = asyncio.run(marad.list_vessels())
     assert out == [{"ok": 1}]
     assert captured["client"].tried[:2] == ["ApiKey", "ApiToken"]
-    assert marad._working_header == "ApiToken"  # mémorisé pour les appels suivants
+    assert marad._working_strategy == "header:ApiToken"  # mémorisé pour la suite
 
 
 def test_request_all_headers_fail_returns_none(monkeypatch) -> None:
     monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
     monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")
-    monkeypatch.setattr(marad, "_working_header", None)
+    monkeypatch.setattr(marad, "_working_strategy", None)
     monkeypatch.setattr(
         marad.httpx, "AsyncClient", lambda *a, **k: _FakeClient(accept_header="Nope", payload=None)
     )
     assert asyncio.run(marad.list_vessels()) is None
-    assert marad._working_header is None
+    assert marad._working_strategy is None
 
 
-def test_header_candidates_respects_explicit_pin(monkeypatch) -> None:
-    monkeypatch.setattr(marad, "_working_header", None)
+def test_request_tries_bearer_scheme(monkeypatch) -> None:
+    """Le schéma Authorization: Bearer fait partie des candidats essayés."""
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")
+    monkeypatch.setattr(marad, "_working_strategy", None)
+
+    captured: dict = {}
+
+    def _factory(*a, **k):
+        c = _FakeClient(accept_header="Authorization", payload=[{"ok": 1}])
+        captured["client"] = c
+        return c
+
+    monkeypatch.setattr(marad.httpx, "AsyncClient", _factory)
+    out = asyncio.run(marad.list_vessels())
+    assert out == [{"ok": 1}]
+    assert "Authorization" in captured["client"].tried
+    assert marad._working_strategy == "Authorization:Bearer"
+
+
+def test_auth_strategies_respects_explicit_pin(monkeypatch) -> None:
+    monkeypatch.setattr(marad, "_working_strategy", None)
     monkeypatch.setattr(marad.settings, "marad_api_key_header", "Authorization")
-    cands = marad._header_candidates()
-    assert cands[0] == "Authorization"  # pin .env prioritaire
-    assert "ApiKey" in cands and "ApiToken" in cands
+    strategies = marad._auth_strategies()
+    labels = [label for label, _ in strategies]
+    assert labels[0] == "header:Authorization"  # pin .env prioritaire
+    assert "header:ApiKey" in labels and "header:ApiToken" in labels

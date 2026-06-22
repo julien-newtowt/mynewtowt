@@ -70,26 +70,38 @@ def _assert_allowed(path: str) -> None:
         )
 
 
-# Nom du header d'auth : non confirmé par l'éditeur (doc Swagger en 403). L'API
-# accepte vraisemblablement « ApiKey » ou « ApiToken » (ou « X-Api-Key »). On
-# essaie donc plusieurs candidats et on **mémorise** celui qui authentifie, pour
-# ne pas gaspiller le quota (GET /api/Crewing = 1 req/min).
+# Schéma d'auth non confirmé par l'éditeur (Swagger en 403). On essaie plusieurs
+# stratégies (noms de header au token brut + « Authorization: Bearer ») et on
+# **mémorise** celle qui authentifie, pour ne pas gaspiller le quota
+# (GET /api/Crewing = 1 req/min). MARAD_API_KEY_HEADER force un nom de header.
 _DEFAULT_HEADER = "X-Api-Key"
-_CANDIDATE_HEADERS: tuple[str, ...] = ("ApiKey", "ApiToken", "X-Api-Key")
-_working_header: str | None = None
+_working_strategy: str | None = None
 
 
-def _header_candidates() -> list[str]:
-    """Ordre d'essai des noms de header : connu-qui-marche → pin .env → candidats."""
-    out: list[str] = []
-    if _working_header:
-        out.append(_working_header)
+def _auth_strategies() -> list[tuple[str, dict[str, str]]]:
+    """Liste ordonnée ``(label, headers)`` des schémas d'auth à essayer.
+
+    Ordre : stratégie mémorisée → header explicite (.env) → candidats usuels
+    (ApiKey / ApiToken / X-Api-Key) → Authorization Bearer → Authorization brut.
+    """
+    token = (settings.marad_api_token or "").strip()
+    candidates: list[tuple[str, dict[str, str]]] = []
     explicit = (settings.marad_api_key_header or "").strip()
     if explicit and explicit != _DEFAULT_HEADER:
-        out.append(explicit)  # l'opérateur a fixé un header précis dans .env
-    out.extend(_CANDIDATE_HEADERS)
+        candidates.append((f"header:{explicit}", {explicit: token}))
+    candidates += [
+        ("header:ApiKey", {"ApiKey": token}),
+        ("header:ApiToken", {"ApiToken": token}),
+        ("header:X-Api-Key", {"X-Api-Key": token}),
+        ("Authorization:Bearer", {"Authorization": f"Bearer {token}"}),
+        ("Authorization:raw", {"Authorization": token}),
+    ]
+    # Stratégie mémorisée en tête.
+    if _working_strategy:
+        candidates.sort(key=lambda c: c[0] != _working_strategy)
+    # Dédoublonnage par label en préservant l'ordre.
     seen: set[str] = set()
-    return [h for h in out if not (h in seen or seen.add(h))]
+    return [c for c in candidates if not (c[0] in seen or seen.add(c[0]))]
 
 
 async def _request(
@@ -97,33 +109,25 @@ async def _request(
 ) -> Any | None:
     """Appel HTTP read-only borné à la whitelist. None si non configuré / erreur.
 
-    Essaie les headers d'auth candidats jusqu'à ce que l'un authentifie (pas de
-    401/403) ; le header gagnant est mémorisé pour les appels suivants.
+    Essaie les schémas d'auth jusqu'à ce que l'un authentifie (pas de 401/403) ;
+    le schéma gagnant est mémorisé pour les appels suivants.
     """
-    global _working_header
+    global _working_strategy
     if not enabled():
         return None
     _assert_allowed(path)
     if method.upper() not in ("GET", "POST"):  # double garde-fou : pas de PUT/DELETE
         raise ValueError(f"marad: méthode {method} interdite (read-only)")
     url = f"{settings.marad_base_url.rstrip('/')}{path}"
-    token = (settings.marad_api_token or "").strip()
     last_auth_status: int | None = None
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            for header_name in _header_candidates():
-                r = await client.request(
-                    method, url, params=params, json=json, headers={header_name: token}
-                )
+            for label, headers in _auth_strategies():
+                r = await client.request(method, url, params=params, json=json, headers=headers)
                 if r.status_code in (401, 403):
                     last_auth_status = r.status_code
-                    if header_name != _working_header:
-                        logger.info(
-                            "marad %s %s → %d avec header '%s' — essai suivant",
-                            method, path, r.status_code, header_name,
-                        )
-                    else:
-                        _working_header = None  # le header mémorisé ne marche plus
+                    if label == _working_strategy:
+                        _working_strategy = None  # le schéma mémorisé ne marche plus
                     continue
                 if r.status_code == 429:
                     logger.warning("marad %s %s → 429 rate-limited", method, path)
@@ -131,16 +135,15 @@ async def _request(
                 if r.status_code >= 400:
                     logger.warning("marad %s %s → %d %s", method, path, r.status_code, r.text[:200])
                     return None
-                if _working_header != header_name:
-                    logger.info("marad: header d'auth retenu = '%s'", header_name)
-                    _working_header = header_name
+                if _working_strategy != label:
+                    logger.info("marad: schéma d'auth retenu = '%s'", label)
+                    _working_strategy = label
                 return r.json() if r.content else None
     except httpx.HTTPError as e:
         logger.warning("marad %s %s failed: %s", method, path, e)
         return None
     logger.warning(
-        "marad %s %s → auth échouée (%s) sur tous les headers candidats %s",
-        method, path, last_auth_status, _header_candidates(),
+        "marad %s %s → auth refusée (%s) sur tous les schémas", method, path, last_auth_status
     )
     return None
 
@@ -203,22 +206,75 @@ async def get_sync_details() -> Any | None:
 
 
 async def diagnose() -> dict:
-    """Sonde légère pour expliquer un « rien ne remonte ».
+    """Sonde détaillée pour expliquer un « rien ne remonte ».
 
-    Appelle ``getVessels`` (15 req/min, peu coûteux) pour distinguer une API
-    **injoignable / non authentifiée** d'un **tenant joignable mais vide**.
-    Renvoie ``{configured, reachable, working_header, base_url, vessels_count}``.
+    Teste ``GET /api/vessels/getVessels`` (15 req/min) avec chaque schéma d'auth
+    et capture, pour chacun, le code HTTP **ou** l'erreur réseau. Permet de
+    distinguer : hôte injoignable (DNS/firewall/URL), authentification refusée
+    (401/403 partout), chemin inexistant (404), ou succès.
+
+    Renvoie ``{configured, reachable, authenticated, classification, base_url,
+    working_strategy, attempts: [{strategy, status|error}], vessels_count}``.
     """
     if not enabled():
-        return {"configured": False, "reachable": False, "base_url": settings.marad_base_url}
-    vessels = await _get("/api/vessels/getVessels")
-    reachable = vessels is not None
+        return {
+            "configured": False,
+            "reachable": False,
+            "authenticated": False,
+            "classification": "not_configured",
+            "base_url": settings.marad_base_url,
+        }
+
+    url = f"{settings.marad_base_url.rstrip('/')}/api/vessels/getVessels"
+    attempts: list[dict] = []
+    any_response = False  # au moins une réponse HTTP reçue (hôte joignable)
+    authed = False
+    vessels_count: int | None = None
+    saw_401_403 = False
+    saw_404 = False
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            for label, headers in _auth_strategies():
+                try:
+                    r = await client.get(url, headers=headers)
+                    any_response = True
+                    attempts.append({"strategy": label, "status": r.status_code})
+                    if r.status_code in (401, 403):
+                        saw_401_403 = True
+                        continue
+                    if r.status_code == 404:
+                        saw_404 = True
+                        continue
+                    if r.status_code < 400:
+                        authed = True
+                        data = r.json() if r.content else None
+                        if isinstance(data, list):
+                            vessels_count = len(data)
+                        break
+                except httpx.HTTPError as e:
+                    attempts.append({"strategy": label, "error": type(e).__name__})
+    except Exception as e:  # pragma: no cover - garde-fou
+        attempts.append({"strategy": "*", "error": type(e).__name__})
+
+    if authed:
+        classification = "ok"
+    elif not any_response:
+        classification = "unreachable"  # aucune réponse HTTP → réseau/DNS/URL
+    elif saw_401_403:
+        classification = "auth_refused"  # hôte répond mais refuse l'auth
+    elif saw_404:
+        classification = "wrong_path"  # hôte répond mais endpoint inconnu
+    else:
+        classification = "http_error"
     return {
         "configured": True,
-        "reachable": reachable,
-        "working_header": _working_header,
+        "reachable": any_response,
+        "authenticated": authed,
+        "classification": classification,
         "base_url": settings.marad_base_url,
-        "vessels_count": len(vessels) if isinstance(vessels, list) else (0 if vessels is None else None),
+        "working_strategy": _working_strategy,
+        "attempts": attempts,
+        "vessels_count": vessels_count,
     }
 
 

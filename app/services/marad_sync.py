@@ -412,19 +412,42 @@ async def sync_all(db: AsyncSession) -> dict:
     if crew["configured"] and (crew.get("fetched", 0) + sched.get("fetched", 0)) == 0:
         try:
             diag = await marad.diagnose()
-            if not diag.get("reachable"):
+            base = diag.get("base_url")
+            cls = diag.get("classification")
+            if cls == "unreachable":
                 diagnostic = (
-                    "API Marad injoignable ou authentification refusée. Vérifiez "
-                    f"MARAD_API_TOKEN, MARAD_API_KEY_HEADER et MARAD_BASE_URL "
-                    f"(actuelle : {diag.get('base_url')}). Possible aussi : quota "
-                    "atteint (GET /api/Crewing = 1 req/min)."
+                    f"Hôte Marad injoignable ({base}) — aucune réponse HTTP. "
+                    "Causes probables : URL incorrecte, DNS, ou pare-feu sortant "
+                    "bloquant l'accès depuis le serveur. Vérifiez MARAD_BASE_URL et "
+                    "que le serveur peut joindre ce domaine."
+                )
+            elif cls == "auth_refused":
+                diagnostic = (
+                    "Hôte Marad joignable mais authentification refusée (401/403) sur "
+                    "tous les schémas testés (ApiKey, ApiToken, X-Api-Key, "
+                    "Authorization Bearer). Vérifiez MARAD_API_TOKEN et, si l'éditeur "
+                    "impose un header précis, fixez MARAD_API_KEY_HEADER."
+                )
+            elif cls == "wrong_path":
+                diagnostic = (
+                    f"Hôte joignable mais endpoint introuvable (404) sur {base}. "
+                    "Le préfixe de l'API a peut-être changé — vérifiez MARAD_BASE_URL "
+                    "(ex. avec/sans suffixe de version)."
+                )
+            elif cls == "ok":
+                diagnostic = (
+                    "API Marad joignable et authentifiée "
+                    f"(navires visibles : {diag.get('vessels_count')}), mais aucun "
+                    "marin/planning retourné : compte/tenant vide, filtre delta, ou "
+                    "schéma de réponse inattendu sur /api/Crewing."
                 )
             else:
                 diagnostic = (
-                    "API Marad joignable mais aucun marin/planning retourné "
-                    f"(navires visibles : {diag.get('vessels_count')}). Compte/tenant "
-                    "vide, filtre delta, ou schéma de réponse inattendu."
+                    f"Synchro Marad sans données ({base}, classification : {cls}). "
+                    "Vérifiez token, header d'auth et URL ; quota possible "
+                    "(GET /api/Crewing = 1 req/min)."
                 )
+            logger.info("marad diagnose: %s", diag)
         except Exception:  # le diagnostic ne doit jamais faire échouer la synchro
             logger.warning("marad diagnose failed", exc_info=True)
 
