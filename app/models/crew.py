@@ -59,13 +59,24 @@ class CrewAssignment(Base):
     crew_member_id: Mapped[int] = mapped_column(
         ForeignKey("crew_members.id"), nullable=False, index=True
     )
-    leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id"), nullable=False, index=True)
+    # CREW-04 (A4) — embarquement hors leg autorisé : leg_id devient optionnel ;
+    # un embarquement peut alors être rattaché au navire (vessel_id) sans leg
+    # précis (relève au port, mobilisation, etc.). Au moins l'un des deux doit
+    # être renseigné (garde applicative côté routeur).
+    leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"), nullable=True, index=True)
+    vessel_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vessels.id"), nullable=True, index=True
+    )
     role_on_board: Mapped[str | None] = mapped_column(String(60))
     embark_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     disembark_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     embark_port_id: Mapped[int | None] = mapped_column(ForeignKey("ports.id"))
     disembark_port_id: Mapped[int | None] = mapped_column(ForeignKey("ports.id"))
     notes: Mapped[str | None] = mapped_column(Text)
+    # CREW-05 — billet (titre de transport) attaché à l'embarquement.
+    ticket_path: Mapped[str | None] = mapped_column(String(500))
+    ticket_filename: Mapped[str | None] = mapped_column(String(255))
+    ticket_mime: Mapped[str | None] = mapped_column(String(80))
 
 
 class CrewCertification(Base):

@@ -332,6 +332,11 @@ class Order(Base):
     notify_name: Mapped[str | None] = mapped_column(String(200))
     notify_address: Mapped[str | None] = mapped_column(Text)
     pipedrive_deal_id: Mapped[int | None] = mapped_column(Integer)
+    # COM-04 — pièce jointe (bon de commande / contrat signé). Stockage hors
+    # base via services.safe_files ; une seule PJ (remplacée au ré-upload).
+    attachment_path: Mapped[str | None] = mapped_column(String(500))
+    attachment_filename: Mapped[str | None] = mapped_column(String(255))
+    attachment_mime: Mapped[str | None] = mapped_column(String(80))
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_reason: Mapped[str | None] = mapped_column(Text)

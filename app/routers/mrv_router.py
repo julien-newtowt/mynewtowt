@@ -150,7 +150,8 @@ async def add_event(
     user=Depends(require_permission("mrv", "M")),
 ):
     """Création d'un événement MRV (compteurs DO, ROB, cargo, position DMS)."""
-    if not await db.get(Leg, leg_id):
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
         raise HTTPException(status_code=404)
     form = dict(await request.form())
     if not (form.get("event_kind") or "").strip() or not (form.get("recorded_at") or "").strip():
@@ -163,6 +164,11 @@ async def add_event(
         created_by=user.full_name or user.username,
     )
     _apply_event_form(ev, form)
+    # MRV-07 — pré-remplit la position DMS depuis le dernier point GPS du navire
+    # si l'opérateur ne l'a pas saisie (best-effort, saisie manuelle prioritaire).
+    from app.services.mrv_compute import autofill_event_position
+
+    await autofill_event_position(db, leg, ev)
     db.add(ev)
     await db.flush()
     # A1 hybride — recalcule conso ME/AE, ROB chaîné et qualité du leg.

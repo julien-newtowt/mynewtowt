@@ -148,3 +148,49 @@ async def leg_has_quality_errors(db: AsyncSession, leg_id: int | None = None) ->
     if leg_id is not None:
         stmt = stmt.where(MRVEvent.leg_id == leg_id)
     return (await db.execute(stmt.limit(1))).scalar_one_or_none() is not None
+
+
+# ─────────────────────── MRV-07 — auto-remplissage GPS → DMS ────────────────
+
+
+def decimal_to_dms(value: float, *, is_lat: bool) -> tuple[int, Decimal, str]:
+    """Convertit une coordonnée décimale en (degrés, minutes, hémisphère).
+
+    Minutes arrondies à 3 décimales (cohérent avec ``MRVEvent.lat_min``).
+    """
+    if is_lat:
+        hemi = "N" if value >= 0 else "S"
+    else:
+        hemi = "E" if value >= 0 else "W"
+    av = abs(value)
+    deg = int(av)
+    minutes = (Decimal(str(av)) - Decimal(deg)) * Decimal("60")
+    return deg, minutes.quantize(Decimal("0.001")), hemi
+
+
+async def autofill_event_position(db: AsyncSession, leg, ev: MRVEvent) -> bool:
+    """Si la position DMS de l'événement est vide, la pré-remplit depuis la
+    dernière position GPS connue du navire du leg. Retourne True si rempli.
+
+    Best-effort : aucune position ⇒ aucun changement (saisie manuelle reste
+    possible). Saisie déjà présente (lat_deg renseigné) ⇒ on ne touche à rien.
+    """
+    if ev.lat_deg is not None or ev.lon_deg is not None:
+        return False
+    if leg is None or leg.vessel_id is None:
+        return False
+    from app.models.claim import VesselPosition
+
+    pos = (
+        await db.execute(
+            select(VesselPosition)
+            .where(VesselPosition.vessel_id == leg.vessel_id)
+            .order_by(VesselPosition.recorded_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if pos is None:
+        return False
+    ev.lat_deg, ev.lat_min, ev.lat_ns = decimal_to_dms(pos.latitude, is_lat=True)
+    ev.lon_deg, ev.lon_min, ev.lon_ew = decimal_to_dms(pos.longitude, is_lat=False)
+    return True

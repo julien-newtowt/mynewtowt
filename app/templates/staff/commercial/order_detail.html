@@ -79,6 +79,25 @@
 </article>
 {% endif %}
 
+<article class="card mt-4">
+  <h2>Pièce jointe (bon de commande / contrat)</h2>
+  {% if order.attachment_path %}
+  <div class="flex items-center gap-2">
+    <a href="/commercial/orders/{{ order.id }}/attachment" class="btn btn-secondary btn-sm"><i data-lucide="download"></i> {{ order.attachment_filename or 'Télécharger' }}</a>
+    <form method="post" action="/commercial/orders/{{ order.id }}/attachment/delete" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--cuivre);" data-confirm="Supprimer la pièce jointe ?">Supprimer</button>
+    </form>
+  </div>
+  {% else %}
+  <form method="post" action="/commercial/orders/{{ order.id }}/attachment" enctype="multipart/form-data" class="flex items-center gap-2">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <input type="file" name="file" required />
+    <button type="submit" class="btn btn-primary btn-sm">Joindre</button>
+  </form>
+  {% endif %}
+</article>
+
 {% if order.status != 'cancelled' %}
 <article class="card mt-4">
   <h2>Annuler la commande</h2>

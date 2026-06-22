@@ -18,8 +18,8 @@ from decimal import Decimal, InvalidOperation
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -2041,6 +2041,93 @@ async def order_assignment_delete(
         ip_address=_client_ip(request),
     )
     return _hx_or_redirect(request, f"/commercial/orders/{order_id}")
+
+
+@router.post("/orders/{order_id}/attachment")
+async def order_upload_attachment(
+    order_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """COM-04 — joint le bon de commande / contrat signé (une PJ, remplacée)."""
+    from app.services.safe_files import UploadRejected, resolve_path, save_upload
+
+    order = await db.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=404)
+    content = await file.read()
+    try:
+        rel_path, mime = save_upload(content, file.filename or "document", subdir="orders")
+    except UploadRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Remplace la PJ précédente (best-effort sur le fichier disque).
+    if order.attachment_path:
+        try:
+            resolve_path(order.attachment_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+    order.attachment_path = rel_path
+    order.attachment_filename = file.filename
+    order.attachment_mime = mime
+    await db.flush()
+    await activity_record(
+        db, action="upload", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="commercial", entity_type="order", entity_id=order.id,
+        entity_label=order.reference, detail=file.filename, ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/orders/{order.id}")
+
+
+@router.get("/orders/{order_id}/attachment")
+async def order_download_attachment(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+):
+    from app.services.safe_files import UploadRejected, resolve_path
+
+    order = await db.get(Order, order_id)
+    if order is None or not order.attachment_path:
+        raise HTTPException(status_code=404)
+    try:
+        path = resolve_path(order.attachment_path)
+    except (UploadRejected, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="fichier introuvable") from exc
+    return FileResponse(
+        path, media_type=order.attachment_mime or "application/octet-stream",
+        filename=order.attachment_filename or path.name,
+    )
+
+
+@router.post("/orders/{order_id}/attachment/delete")
+async def order_delete_attachment(
+    order_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    from app.services.safe_files import resolve_path
+
+    order = await db.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=404)
+    if order.attachment_path:
+        try:
+            resolve_path(order.attachment_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+    order.attachment_path = None
+    order.attachment_filename = None
+    order.attachment_mime = None
+    await db.flush()
+    await activity_record(
+        db, action="delete", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="commercial", entity_type="order", entity_id=order.id,
+        entity_label=order.reference, detail="PJ supprimée", ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/orders/{order.id}")
 
 
 @router.post("/orders/{order_id}/confirm")

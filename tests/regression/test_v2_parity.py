@@ -326,16 +326,52 @@ def test_v2_stowage_routes_restored():
     assert ("POST", "/stowage/plans/{plan_id}/items/{item_id}/delete") in m
 
 
+# ──────────────── Crew / MRV / Commercial — reprise additive (V2 parité) ────────
+
+
+def test_v2_crew_offleg_and_ticket_restored():
+    """CREW-04 (embarquement hors leg) + CREW-05 (billet attaché)."""
+    from app.models.crew import CrewAssignment
+    from app.routers.crew_router import router
+
+    assert CrewAssignment.__table__.c.leg_id.nullable is True   # A4
+    assert hasattr(CrewAssignment, "vessel_id")
+    for f in ("ticket_path", "ticket_filename", "ticket_mime"):
+        assert hasattr(CrewAssignment, f), f
+    m = _methods(router)
+    assert ("POST", "/crew/assignments/{assignment_id}/ticket") in m
+    assert ("GET", "/crew/assignments/{assignment_id}/ticket") in m
+    assert ("POST", "/crew/assignments/{assignment_id}/ticket/delete") in m
+
+
+def test_v2_mrv_dms_autofill_restored():
+    """MRV-07 — convertisseur décimal→DMS + auto-remplissage de la position."""
+    from app.services.mrv_compute import autofill_event_position, decimal_to_dms
+
+    deg, minutes, hemi = decimal_to_dms(49.5, is_lat=True)
+    assert (deg, hemi) == (49, "N")
+    assert callable(autofill_event_position)
+
+
+def test_v2_order_attachments_restored():
+    """COM-04 — pièce jointe (bon de commande / contrat) sur la commande."""
+    from app.models.commercial import Order
+    from app.routers.commercial_router import router
+
+    for f in ("attachment_path", "attachment_filename", "attachment_mime"):
+        assert hasattr(Order, f), f
+    m = _methods(router)
+    assert ("POST", "/commercial/orders/{order_id}/attachment") in m
+    assert ("GET", "/commercial/orders/{order_id}/attachment") in m
+    assert ("POST", "/commercial/orders/{order_id}/attachment/delete") in m
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # Ces fonctionnalités existaient en V2, sont spécifiées (docs/audit/specs), mais
 # pas encore implémentées. Le skip documente la dette de parité de façon vivante.
 
 _PENDING = {
-    "crew_embark_off_leg": "CREW-04/A4 — embarquement hors leg (leg_id nullable + vessel_id)",
-    "crew_ticket_upload": "CREW-05 — upload/download PJ billet (spec écrite)",
-    "mrv_dms_autofill": "MRV-07 — auto-remplissage GPS de la position DMS (saisie manuelle OK)",
-    "onboard_cargo_doc_structured": "ONB-02 — documents cargo structurés",
-    "commercial_order_attachments": "COM-04 — pièces jointes commande (spec écrite)",
+    "onboard_cargo_doc_structured": "ONB-02 — documents cargo structurés (formulaires guidés 13 types)",
 }
 
 

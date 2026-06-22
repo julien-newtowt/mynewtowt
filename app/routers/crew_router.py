@@ -14,8 +14,8 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from datetime import date as _date
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -591,7 +591,8 @@ async def crew_detail(
 async def crew_assign(
     member_id: int,
     request: Request,
-    leg_id: int = Form(...),
+    leg_id: int | None = Form(None),
+    vessel_id: int | None = Form(None),
     role_on_board: str | None = Form(None),
     embark_at: str | None = Form(None),
     disembark_at: str | None = Form(None),
@@ -600,9 +601,22 @@ async def crew_assign(
     user=Depends(require_permission("crew", "M")),
 ):
     member = await db.get(CrewMember, member_id)
-    leg = await db.get(Leg, leg_id)
-    if member is None or leg is None:
+    if member is None:
         raise HTTPException(status_code=404)
+    # CREW-04 (A4) — embarquement sur un leg précis OU hors leg (rattaché au
+    # navire). Au moins l'un des deux est requis.
+    leg = await db.get(Leg, leg_id) if leg_id else None
+    if leg_id and leg is None:
+        raise HTTPException(status_code=404)
+    if leg is not None:
+        vessel_id = leg.vessel_id  # cohérence : le navire suit le leg
+    elif vessel_id is not None:
+        if await db.get(Vessel, vessel_id) is None:
+            raise HTTPException(status_code=404, detail="navire inconnu")
+    else:
+        raise HTTPException(
+            status_code=400, detail="Renseigner un leg ou un navire pour l'embarquement."
+        )
 
     try:
         embark_dt = datetime.fromisoformat(embark_at) if embark_at else None
@@ -683,6 +697,7 @@ async def crew_assign(
     a = CrewAssignment(
         crew_member_id=member_id,
         leg_id=leg_id,
+        vessel_id=vessel_id,
         role_on_board=(role_on_board or "").strip() or None,
         embark_at=embark_dt,
         disembark_at=disembark_dt,
@@ -707,6 +722,92 @@ async def crew_assign(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)
+
+
+@router.post("/assignments/{assignment_id}/ticket")
+async def crew_assignment_ticket_upload(
+    assignment_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "M")),
+):
+    """CREW-05 — joint le billet (titre de transport) à l'embarquement."""
+    from app.services.safe_files import UploadRejected, resolve_path, save_upload
+
+    a = await db.get(CrewAssignment, assignment_id)
+    if a is None:
+        raise HTTPException(status_code=404)
+    content = await file.read()
+    try:
+        rel_path, mime = save_upload(content, file.filename or "billet", subdir="crew_tickets")
+    except UploadRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if a.ticket_path:
+        try:
+            resolve_path(a.ticket_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+    a.ticket_path = rel_path
+    a.ticket_filename = file.filename
+    a.ticket_mime = mime
+    await db.flush()
+    await activity_record(
+        db, action="upload", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="crew", entity_type="crew_assignment", entity_id=a.id,
+        entity_label=f"billet {file.filename}", ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/crew/members/{a.crew_member_id}", status_code=303)
+
+
+@router.get("/assignments/{assignment_id}/ticket")
+async def crew_assignment_ticket_download(
+    assignment_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "C")),
+):
+    from app.services.safe_files import UploadRejected, resolve_path
+
+    a = await db.get(CrewAssignment, assignment_id)
+    if a is None or not a.ticket_path:
+        raise HTTPException(status_code=404)
+    try:
+        path = resolve_path(a.ticket_path)
+    except (UploadRejected, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="fichier introuvable") from exc
+    return FileResponse(
+        path, media_type=a.ticket_mime or "application/octet-stream",
+        filename=a.ticket_filename or path.name,
+    )
+
+
+@router.post("/assignments/{assignment_id}/ticket/delete")
+async def crew_assignment_ticket_delete(
+    assignment_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "M")),
+):
+    from app.services.safe_files import resolve_path
+
+    a = await db.get(CrewAssignment, assignment_id)
+    if a is None:
+        raise HTTPException(status_code=404)
+    if a.ticket_path:
+        try:
+            resolve_path(a.ticket_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+    a.ticket_path = None
+    a.ticket_filename = None
+    a.ticket_mime = None
+    await db.flush()
+    await activity_record(
+        db, action="delete", user_id=user.id, user_name=user.full_name or user.username,
+        user_role=user.role, module="crew", entity_type="crew_assignment", entity_id=a.id,
+        entity_label="billet supprimé", ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/crew/members/{a.crew_member_id}", status_code=303)
 
 
 @router.post("/members/{member_id}/tickets")
