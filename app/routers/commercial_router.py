@@ -32,6 +32,7 @@ from app.models.commercial import (
     RATE_OPTION_UNITS,
     Client,
     Order,
+    OrderAssignment,
     RateGrid,
     RateGridLine,
     RateGridOption,
@@ -46,11 +47,14 @@ from app.services import capacity as capacity_svc
 from app.services.activity import record as activity_record
 from app.services.commercial import (
     bracket_rate,
+    compatible_legs_for_order,
     default_brackets_for,
+    leg_is_late_for_order,
     next_grid_reference,
     next_offer_reference,
     next_order_reference,
     pick_bracket,
+    suggest_leg_for_order,
 )
 from app.services.quoting import (
     _match_route,
@@ -288,6 +292,7 @@ async def client_create(
     contact_email: str | None = Form(None),
     contact_phone: str | None = Form(None),
     phone_dial_code: str | None = Form(None),
+    address: str | None = Form(None),
     country: str | None = Form(None),
     vat_number: str | None = Form(None),
     notes: str | None = Form(None),
@@ -302,6 +307,7 @@ async def client_create(
         contact_name=(contact_name or "").strip() or None,
         contact_email=(contact_email or "").strip() or None,
         contact_phone=_compose_phone(phone_dial_code, contact_phone),
+        address=(address or "").strip() or None,
         country=(country or "").strip().upper()[:2] or None,
         vat_number=(vat_number or "").strip() or None,
         notes=notes,
@@ -379,6 +385,97 @@ async def client_detail(
             "unlinked_accounts": unlinked_accounts,
         },
     )
+
+
+@router.get("/clients/{client_id}/edit", response_class=HTMLResponse)
+async def client_edit_form(
+    client_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+) -> HTMLResponse:
+    client = await db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse(
+        "staff/commercial/client_form.html",
+        {"request": request, "user": user, "client": client, "types": CLIENT_TYPES},
+    )
+
+
+@router.post("/clients/{client_id}/edit")
+async def client_edit(
+    client_id: int,
+    request: Request,
+    name: str = Form(...),
+    client_type: str = Form(...),
+    contact_name: str | None = Form(None),
+    contact_email: str | None = Form(None),
+    contact_phone: str | None = Form(None),
+    phone_dial_code: str | None = Form(None),
+    address: str | None = Form(None),
+    country: str | None = Form(None),
+    vat_number: str | None = Form(None),
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    client = await db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404)
+    if client_type not in CLIENT_TYPES:
+        raise HTTPException(status_code=400, detail="invalid client_type")
+    client.name = name.strip()
+    client.client_type = client_type
+    client.contact_name = (contact_name or "").strip() or None
+    client.contact_email = (contact_email or "").strip() or None
+    client.contact_phone = _compose_phone(phone_dial_code, contact_phone)
+    client.address = (address or "").strip() or None
+    client.country = (country or "").strip().upper()[:2] or None
+    client.vat_number = (vat_number or "").strip() or None
+    client.notes = (notes or "").strip() or None
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="client",
+        entity_id=client.id,
+        entity_label=client.name,
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/clients/{client.id}")
+
+
+@router.post("/clients/{client_id}/toggle-active")
+async def client_toggle_active(
+    client_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    client = await db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404)
+    client.is_active = not client.is_active
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="client",
+        entity_id=client.id,
+        entity_label=client.name,
+        detail="réactivé" if client.is_active else "désactivé",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/clients/{client.id}")
 
 
 @router.post("/clients/{client_id}/accounts/link")
@@ -486,6 +583,25 @@ def _opt_int(value: str | None) -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _opt_date(value: str | None, field: str = "date") -> _date | None:
+    """Parse une date ISO optionnelle (``YYYY-MM-DD``) ; vide → None.
+
+    Une saisie non vide mais invalide lève un 400 (cohérent avec
+    ``_clean_locode``) plutôt que d'être silencieusement ignorée — sinon une
+    fenêtre de livraison mal saisie désactiverait sans bruit l'alerte « hors
+    délai » qui est le cœur de COM-01.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return _date.fromisoformat(raw[:10])
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"{field} invalide : date au format AAAA-MM-JJ"
+        ) from exc
 
 
 async def _route_ports(db: AsyncSession) -> list[Port]:
@@ -1684,6 +1800,17 @@ async def order_create(
     cargo_description: str | None = Form(None),
     shipper_name: str | None = Form(None),
     consignee_name: str | None = Form(None),
+    palette_format: str | None = Form(None),
+    weight_per_palette_kg: str | None = Form(None),
+    thc_included: str | None = Form(None),
+    booking_fee: str | None = Form(None),
+    documentation_fee: str | None = Form(None),
+    departure_locode: str | None = Form(None),
+    arrival_locode: str | None = Form(None),
+    delivery_date_start: str | None = Form(None),
+    delivery_date_end: str | None = Form(None),
+    rate_grid_id: str | None = Form(None),
+    rate_grid_line_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -1703,6 +1830,17 @@ async def order_create(
         cargo_description=cargo_description,
         shipper_name=shipper_name,
         consignee_name=consignee_name,
+        palette_format=(palette_format or "").strip() or None,
+        weight_per_palette_kg=_opt_decimal(weight_per_palette_kg),
+        thc_included=thc_included in ("on", "true", "1"),
+        booking_fee=_opt_decimal(booking_fee),
+        documentation_fee=_opt_decimal(documentation_fee),
+        departure_locode=_clean_locode(departure_locode, "POL"),
+        arrival_locode=_clean_locode(arrival_locode, "POD"),
+        delivery_date_start=_opt_date(delivery_date_start, "Livraison (début)"),
+        delivery_date_end=_opt_date(delivery_date_end, "Livraison (fin)"),
+        rate_grid_id=_opt_int(rate_grid_id),
+        rate_grid_line_id=_opt_int(rate_grid_line_id),
     )
     db.add(order)
     await db.flush()
@@ -1742,6 +1880,167 @@ async def order_detail(
         "staff/commercial/order_detail.html",
         {"request": request, "user": user, "order": order, "leg": leg},
     )
+
+
+@router.get("/orders/{order_id}/assign", response_class=HTMLResponse)
+async def order_assign_form(
+    order_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+) -> HTMLResponse:
+    """COM-01 — écran d'affectation : legs compatibles avec la route souhaitée,
+    suggestion automatique et alerte « hors délai » (ETA > date de livraison).
+
+    Affectation **simple-leg** (parité V2) : une commande est affectée à un
+    seul leg ; réaffecter remplace l'affectation. La ventilation multi-legs
+    avec répartition du CA est un chantier P1 distinct (cf. backlog COM).
+    """
+    order = (
+        await db.execute(
+            select(Order)
+            .options(selectinload(Order.client), selectinload(Order.assignments))
+            .where(Order.id == order_id)
+        )
+    ).scalar_one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404)
+
+    legs = await compatible_legs_for_order(db, order)
+    current_leg_id = order.assignments[0].leg_id if order.assignments else None
+    # Pré-sélection : le leg actuellement affecté s'il figure dans les
+    # candidats, sinon la suggestion automatique (1er compatible dans les délais).
+    suggested = next((lg for lg in legs if lg.id == current_leg_id), None)
+    if suggested is None:
+        suggested = suggest_leg_for_order(legs, order)
+    ports = {p.id: p for p in (await db.execute(select(Port))).scalars().all()}
+    leg_rows = [
+        {
+            "leg": lg,
+            "pol": ports.get(lg.departure_port_id),
+            "pod": ports.get(lg.arrival_port_id),
+            "late": leg_is_late_for_order(lg, order),
+            "current": lg.id == current_leg_id,
+        }
+        for lg in legs
+    ]
+    return templates.TemplateResponse(
+        "staff/commercial/assign_form.html",
+        {
+            "request": request,
+            "user": user,
+            "order": order,
+            "leg_rows": leg_rows,
+            "suggested": suggested,
+        },
+    )
+
+
+@router.post("/orders/{order_id}/assign")
+async def order_assign_submit(
+    order_id: int,
+    request: Request,
+    leg_id: int = Form(...),
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Affecte la commande à un leg (simple-leg, parité V2). Réaffecter
+    remplace l'affectation existante. Les palettes affectées dérivent de la
+    commande (``booked_palettes``) pour rester cohérentes avec la capacité —
+    pas de quantité divergente saisie ici.
+    """
+    order = (
+        await db.execute(
+            select(Order)
+            .options(selectinload(Order.assignments))
+            .where(Order.id == order_id)
+        )
+    ).scalar_one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404)
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404, detail="leg introuvable")
+    if leg.atd is not None:
+        raise HTTPException(
+            status_code=400, detail="ce leg est déjà parti — affectation impossible"
+        )
+
+    # Simple-leg : on remplace toute affectation existante (sur ce leg ou un autre).
+    for existing in list(order.assignments):
+        await db.delete(existing)
+    await db.flush()
+    db.add(
+        OrderAssignment(
+            order_id=order.id,
+            leg_id=leg_id,
+            palettes_count=max(0, order.booked_palettes),
+            pallet_format=(order.palette_format or "EPAL").strip() or "EPAL",
+            notes=(notes or "").strip() or None,
+        )
+    )
+    order.leg_id = leg_id  # le reste de l'app (packing list, stowage) lit order.leg_id
+    # NB — l'affectation est orthogonale à la confirmation commerciale : on ne
+    # touche pas au statut ici (la confirmation passe par ``order_confirm`` qui
+    # pose ``confirmed_at`` et déclenche ses effets de bord).
+    await db.flush()
+    await activity_record(
+        db,
+        action="assign",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="order",
+        entity_id=order.id,
+        entity_label=order.reference,
+        detail=f"→ leg {leg.leg_code} ({order.booked_palettes} pal.)",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/orders/{order.id}")
+
+
+@router.post("/orders/{order_id}/assignments/{assignment_id}/delete")
+async def order_assignment_delete(
+    order_id: int,
+    assignment_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    assignment = await db.get(OrderAssignment, assignment_id)
+    if assignment is None or assignment.order_id != order_id:
+        raise HTTPException(status_code=404)
+    leg_id = assignment.leg_id
+    await db.delete(assignment)
+    await db.flush()
+    # Si le leg principal était celui-ci, le ré-aligner sur une affectation
+    # restante (ou le détacher).
+    order = (
+        await db.execute(
+            select(Order)
+            .options(selectinload(Order.assignments))
+            .where(Order.id == order_id)
+        )
+    ).scalar_one_or_none()
+    if order is not None and order.leg_id == leg_id:
+        order.leg_id = order.assignments[0].leg_id if order.assignments else None
+        await db.flush()
+    await activity_record(
+        db,
+        action="unassign",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="order",
+        entity_id=order_id,
+        entity_label=order.reference if order else str(order_id),
+        detail=f"retrait affectation leg {leg_id}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/orders/{order_id}")
 
 
 @router.post("/orders/{order_id}/confirm")

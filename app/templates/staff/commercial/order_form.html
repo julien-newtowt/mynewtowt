@@ -40,8 +40,49 @@
         <label for="consignee_name">Consignee</label>
         <input id="consignee_name" name="consignee_name" type="text" />
       </div>
+      <div class="field">
+        <label for="palette_format">Format palette</label>
+        <input id="palette_format" name="palette_format" type="text" value="EPAL" placeholder="EPAL, USPAL…" />
+      </div>
+      <div class="field">
+        <label for="weight_per_palette_kg">Poids / palette (kg)</label>
+        <input id="weight_per_palette_kg" name="weight_per_palette_kg" type="number" step="0.01" min="0" />
+      </div>
+      <div class="field">
+        <label for="booking_fee">Frais de booking (€)</label>
+        <input id="booking_fee" name="booking_fee" type="number" step="0.01" min="0" />
+      </div>
+      <div class="field">
+        <label for="documentation_fee">Frais documentaires (€)</label>
+        <input id="documentation_fee" name="documentation_fee" type="number" step="0.01" min="0" />
+      </div>
     </div>
-    <div class="field">
+
+    <h3 class="mt-3">Route souhaitée &amp; livraison</h3>
+    <p class="text-muted text-sm">Renseignez la route (LOCODE UN) et la fenêtre de livraison pour piloter l'affectation au leg (alerte « hors délai »).</p>
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="departure_locode">POL (départ)</label>
+        <input id="departure_locode" name="departure_locode" type="text" maxlength="5" placeholder="FRLEH" />
+      </div>
+      <div class="field">
+        <label for="arrival_locode">POD (arrivée)</label>
+        <input id="arrival_locode" name="arrival_locode" type="text" maxlength="5" placeholder="MQFDF" />
+      </div>
+      <div class="field">
+        <label for="delivery_date_start">Livraison — début</label>
+        <input id="delivery_date_start" name="delivery_date_start" type="date" />
+      </div>
+      <div class="field">
+        <label for="delivery_date_end">Livraison — fin (au plus tard)</label>
+        <input id="delivery_date_end" name="delivery_date_end" type="date" />
+      </div>
+    </div>
+    <label class="flex items-center gap-2 mt-2">
+      <input type="checkbox" name="thc_included" /> THC inclus
+    </label>
+
+    <div class="field mt-3">
       <label for="cargo_description">Description marchandise</label>
       <textarea id="cargo_description" name="cargo_description" rows="3"></textarea>
     </div>

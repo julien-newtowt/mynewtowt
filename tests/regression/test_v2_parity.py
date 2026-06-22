@@ -191,6 +191,33 @@ def test_v2_mrv_do_counters_present():
         assert hasattr(MRVEvent, f), f
 
 
+# ───────────────────────────── Commercial (V2 parité) ────────────────────────
+
+
+def test_v2_commercial_routes_restored():
+    """V2 : affectation commande→leg, édition/désactivation client."""
+    from app.routers.commercial_router import router
+
+    m = _methods(router)
+    assert ("GET", "/commercial/orders/{order_id}/assign") in m      # COM-01
+    assert ("POST", "/commercial/orders/{order_id}/assign") in m
+    assert ("POST", "/commercial/orders/{order_id}/assignments/{assignment_id}/delete") in m
+    assert ("GET", "/commercial/clients/{client_id}/edit") in m      # COM-03
+    assert ("POST", "/commercial/clients/{client_id}/edit") in m
+    assert ("POST", "/commercial/clients/{client_id}/toggle-active") in m
+
+
+def test_v2_order_rich_fields_restored():
+    """COM-02 : la commande V3 retrouve format/poids/THC/frais/route/dates + lien grille."""
+    from app.models.commercial import Order
+
+    for f in ("palette_format", "weight_per_palette_kg", "thc_included",
+              "booking_fee", "documentation_fee", "departure_locode",
+              "arrival_locode", "delivery_date_start", "delivery_date_end",
+              "rate_grid_id", "rate_grid_line_id"):
+        assert hasattr(Order, f), f
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # Ces fonctionnalités existaient en V2, sont spécifiées (docs/audit/specs), mais
 # pas encore implémentées. Le skip documente la dette de parité de façon vivante.
@@ -211,8 +238,7 @@ _PENDING = {
     "onboard_leg_attachments": "ONB-03 — pièces jointes leg / docs agent d'escale",
     "admin_vessel_crud": "ADM-01 — CRUD navires",
     "admin_alerts_engine": "ADM-02 — moteur d'alertes du dashboard",
-    "commercial_order_leg_assign": "COM-01 — affectation commande→leg",
-    "commercial_client_edit": "COM-03 — édition client",
+    "commercial_order_attachments": "COM-04 — pièces jointes commande (spec écrite)",
 }
 
 

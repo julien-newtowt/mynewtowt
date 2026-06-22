@@ -18,6 +18,7 @@
     <form method="post" action="/cargo/packing-lists/from-order/{{ order.id }}" style="display:inline;">
       <button type="submit" class="btn btn-secondary btn-sm">+ Packing list</button>
     </form>
+    <a href="/commercial/orders/{{ order.id }}/assign" class="btn btn-secondary btn-sm" title="Affecter la commande à un leg"><i data-lucide="git-merge"></i> Affecter à un leg</a>
     <a href="/stowage/locate/order/{{ order.id }}" class="btn btn-ghost btn-sm" title="Localiser la cargaison à bord">📍 Localiser à bord</a>
     <a href="/commercial/orders" class="btn btn-ghost">← Retour</a>
   </div>
@@ -29,9 +30,13 @@
     <table class="data-table">
       <tr><td>Client</td><td><strong>{{ order.client.name if order.client else '—' }}</strong></td></tr>
       <tr><td>Leg</td><td class="mono">{{ leg.leg_code if leg else '—' }}</td></tr>
-      <tr><td>Palettes</td><td>{{ order.booked_palettes }}</td></tr>
+      <tr><td>Palettes</td><td>{{ order.booked_palettes }} {% if order.palette_format %}<span class="pill">{{ order.palette_format }}</span>{% endif %}</td></tr>
+      <tr><td>Poids / palette</td><td>{{ '%.0f kg'|format(order.weight_per_palette_kg|float) if order.weight_per_palette_kg else '—' }}</td></tr>
       <tr><td>Tarif</td><td class="mono">{{ order.rate_per_palette_eur|money if order.rate_per_palette_eur else '—' }}</td></tr>
+      <tr><td>Frais</td><td class="mono">booking {{ order.booking_fee|money if order.booking_fee else '—' }} · doc {{ order.documentation_fee|money if order.documentation_fee else '—' }}{% if order.thc_included %} · <span class="pill pill-ok">THC inclus</span>{% endif %}</td></tr>
       <tr><td>Total</td><td class="mono">{{ order.total_eur|money if order.total_eur else '—' }}</td></tr>
+      <tr><td>Route souhaitée</td><td class="mono">{{ order.departure_locode or '—' }} → {{ order.arrival_locode or '—' }}</td></tr>
+      <tr><td>Livraison</td><td>{{ order.delivery_date_start|date if order.delivery_date_start else '—' }} → {{ order.delivery_date_end|date if order.delivery_date_end else '—' }}</td></tr>
       <tr><td>Confirmée le</td><td>{{ order.confirmed_at|datetime if order.confirmed_at else '—' }}</td></tr>
     </table>
   </article>
@@ -53,10 +58,21 @@
 <article class="card mt-4">
   <h2>Affectations leg</h2>
   <table class="data-table">
-    <thead><tr><th>Leg</th><th>Palettes</th><th>Format</th></tr></thead>
+    <thead><tr><th>Leg</th><th>Palettes</th><th>Format</th><th>Notes</th><th></th></tr></thead>
     <tbody>
       {% for a in order.assignments %}
-      <tr><td class="mono">{{ a.leg_id }}</td><td>{{ a.palettes_count }}</td><td>{{ a.pallet_format }}</td></tr>
+      <tr>
+        <td class="mono">{{ a.leg_id }}{% if a.leg_id == order.leg_id %} <span class="badge" title="Leg principal">principal</span>{% endif %}</td>
+        <td>{{ a.palettes_count }}</td>
+        <td>{{ a.pallet_format }}</td>
+        <td class="text-muted text-sm">{{ a.notes or '—' }}</td>
+        <td>
+          <form method="post" action="/commercial/orders/{{ order.id }}/assignments/{{ a.id }}/delete" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--cuivre);" data-confirm="Retirer cette affectation ?">Retirer</button>
+          </form>
+        </td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>

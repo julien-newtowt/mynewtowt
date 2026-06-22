@@ -8,9 +8,18 @@
     <h1 class="display">{{ client.name }}</h1>
     <p class="text-muted">{{ client.contact_name or '—' }} · {{ client.contact_email or '—' }}</p>
   </div>
-  <div class="flex gap-2">
+  <div class="flex gap-2 items-center">
     <span class="badge badge-{{ 'active' if client.client_type == 'freight_forwarder' else 'draft' }}">{{ client.client_type }}</span>
     {% if client.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Inactif</span>{% endif %}
+    <a href="/commercial/clients/{{ client.id }}/edit" class="btn btn-secondary btn-sm"><i data-lucide="pencil"></i> Éditer</a>
+    <form method="post" action="/commercial/clients/{{ client.id }}/toggle-active" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      {% if client.is_active %}
+      <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--cuivre);" data-confirm="Désactiver ce client ?">Désactiver</button>
+      {% else %}
+      <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--vert);">Réactiver</button>
+      {% endif %}
+    </form>
     <a href="/commercial/clients" class="btn btn-ghost">← Retour</a>
   </div>
 </header>
@@ -24,6 +33,7 @@
       <tr><td>Téléphone</td><td>{{ client.contact_phone or '—' }}</td></tr>
       <tr><td>Pays</td><td>{% if client.country %}<span class="port-badge">{{ client.country|flag }} {{ client.country }}</span>{% else %}—{% endif %}</td></tr>
       <tr><td>TVA</td><td class="mono">{{ client.vat_number or '—' }}</td></tr>
+      <tr><td>Adresse</td><td>{{ client.address or '—' }}</td></tr>
     </table>
     {% if client.notes %}
     <div class="alert alert-info mt-3">{{ client.notes }}</div>

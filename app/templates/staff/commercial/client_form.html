@@ -1,0 +1,65 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Éditer {{ client.name }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial · Client</span>
+    <h1 class="display">Éditer « {{ client.name }} »</h1>
+  </div>
+  <a href="/commercial/clients/{{ client.id }}" class="btn btn-ghost">← Retour à la fiche</a>
+</header>
+
+<article class="card">
+  <form method="post" action="/commercial/clients/{{ client.id }}/edit">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="name">Nom commercial</label>
+        <input id="name" name="name" type="text" value="{{ client.name }}" required />
+      </div>
+      <div class="field">
+        <label for="client_type">Type</label>
+        <select id="client_type" name="client_type" required>
+          {% for t in types %}<option value="{{ t }}" {{ 'selected' if client.client_type == t else '' }}>{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="contact_name">Contact (nom)</label>
+        <input id="contact_name" name="contact_name" type="text" value="{{ client.contact_name or '' }}" />
+      </div>
+      <div class="field">
+        <label for="contact_email">Contact (email)</label>
+        <input id="contact_email" name="contact_email" type="email" value="{{ client.contact_email or '' }}" />
+      </div>
+      <div class="field">
+        <label for="contact_phone">Téléphone</label>
+        <input id="contact_phone" name="contact_phone" type="tel" value="{{ client.contact_phone or '' }}"
+               placeholder="+33 6 12 34 56 78" />
+        <small class="text-muted">Format international complet (l'indicatif est conservé tel quel).</small>
+      </div>
+      <div class="field">
+        <label for="country">Pays (ISO 2)</label>
+        <input id="country" name="country" type="text" maxlength="2" value="{{ client.country or '' }}" />
+      </div>
+      <div class="field">
+        <label for="vat_number">TVA intracommunautaire</label>
+        <input id="vat_number" name="vat_number" type="text" value="{{ client.vat_number or '' }}" />
+      </div>
+    </div>
+    <div class="field">
+      <label for="address">Adresse</label>
+      <textarea id="address" name="address" rows="2">{{ client.address or '' }}</textarea>
+    </div>
+    <div class="field">
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="3">{{ client.notes or '' }}</textarea>
+    </div>
+    <div class="flex gap-2">
+      <button type="submit" class="btn btn-primary">Enregistrer</button>
+      <a href="/commercial/clients/{{ client.id }}" class="btn btn-ghost">Annuler</a>
+    </div>
+  </form>
+</article>
+
+{% endblock %}

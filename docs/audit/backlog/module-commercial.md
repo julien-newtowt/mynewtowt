@@ -85,6 +85,22 @@ Cible V3 : `app/routers/{commercial_router,devis_router}.py`, `app/models/{comme
 - **Objectif :** restaurer la visibilité commerciale (performance/conversion par grille, CA total).
 - **Effort :** M
 
+### [COM-11] Ventilation multi‑legs d'une commande (CA + capacité + PL)
+- **Priorité :** P1 · **Lot :** 2
+- **Contexte :** COM‑01 a été livré en **simple‑leg** (parité V2 : une commande ⇄ un
+  leg, `palettes_count = booked_palettes`, réaffectation = remplacement). Le modèle
+  `OrderAssignment` supporte plusieurs affectations par commande, mais l'activer
+  réellement exige de rendre cohérents trois consommateurs aujourd'hui scalaires :
+  1. **Finance** (`finance_rollup`) attribue `order.total_eur` au seul `order.leg_id`
+     → répartir le CA au prorata des palettes par affectation ;
+  2. **Capacité** lit déjà les `order_assignments` ventilés, mais `booked_palettes`
+     doit être réconcilié avec la somme des `palettes_count` (garde anti‑sur‑réservation) ;
+  3. **Packing list / stowage** résolvent le voyage via `order.leg_id` → introduire un
+     leg par affectation (PL/BL stables même après réaffectation partielle).
+- **Critères d'acceptation :** une commande ventilée 40/40 sur 2 legs facture 50/50 le CA,
+  réserve 40+40 en capacité, et chaque PL/BL reste rattachée à son leg d'origine.
+- **Effort :** L
+
 ### [COM-09] Auto‑création packing list + notifications à la confirmation de commande
 - **Priorité :** P1 · **Lot :** 2
 - **Réf V2 :** `commercial_router.py` (`_on_order_confirmed` : PL + batch pré‑rempli + notify opérations)
