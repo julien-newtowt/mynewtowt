@@ -60,16 +60,37 @@ def _deal_org_id(deal: dict) -> int | None:
         return None
 
 
+# Champs standard (non « activité ») exclus du balayage de secours afin de ne
+# pas classer un transitaire à tort sur la base de son nom/adresse.
+_STANDARD_STR_KEYS = frozenset(
+    {
+        "name",
+        "address",
+        "address_country",
+        "address_locality",
+        "address_admin_area_level_1",
+        "address_admin_area_level_2",
+        "address_route",
+        "address_subpremise",
+        "address_postal_code",
+        "owner_name",
+        "cc_email",
+    }
+)
+
+
 def _org_activity(org: dict) -> str:
     """Récupère l'« activité » de l'organisation Pipedrive.
 
     Priorité au champ personnalisé configuré (``PIPEDRIVE_ORG_ACTIVITY_KEY``) ;
-    à défaut, on repère une valeur de champ commençant par « IFF » (le seul
-    motif qui nous intéresse pour distinguer un transitaire).
+    à défaut, on repère une valeur de champ (hors champs standard nom/adresse)
+    commençant par « IFF » — le seul motif qui distingue un transitaire.
     """
     if _ACTIVITY_FIELD_KEY:
         return str(org.get(_ACTIVITY_FIELD_KEY) or "").strip()
-    for value in org.values():
+    for key, value in org.items():
+        if key in _STANDARD_STR_KEYS:
+            continue
         if isinstance(value, str) and value.strip().upper().startswith(_FF_ACTIVITY_PREFIX):
             return value.strip()
     return ""

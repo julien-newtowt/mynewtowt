@@ -16,8 +16,10 @@ from app.utils import pipedrive
 
 def test_sync_clients_upsert(monkeypatch) -> None:
     orgs = [
+        # 101 : transitaire — activité (champ custom) commençant par IFF.
         {"id": 101, "name": "Acme Forwarding", "address": "12 Dock Rd, Le Havre",
-         "open_deals_count": 2},
+         "open_deals_count": 2, "custom_activity": "IFF - commissionnaire"},
+        # 102 : chargeur direct (pas d'activité IFF).
         {"id": 102, "name": "Café Brasil Imports", "address": None, "won_deals_count": 1},
         {"id": 104, "name": "Prospect sans deal", "open_deals_count": 0,
          "closed_deals_count": 0},  # ignoré : aucun deal
@@ -29,7 +31,11 @@ def test_sync_clients_upsert(monkeypatch) -> None:
     async def _fake_list(*, max_items=1000):
         return orgs
 
+    async def _fake_deals(*, max_items=10000):
+        return []  # détection via compteurs de deals (fallback)
+
     monkeypatch.setattr(pipedrive, "list_organizations", _fake_list)
+    monkeypatch.setattr(pipedrive, "list_deals", _fake_deals)
 
     async def _run():
         eng = create_async_engine("sqlite+aiosqlite://")
@@ -54,12 +60,13 @@ def test_sync_clients_upsert(monkeypatch) -> None:
 
                 clients = {c.pipedrive_org_id: c for c in (await s.execute(select(Client))).scalars().all()}
                 assert set(clients) == {101, 102}  # 104 (sans deal) non importé
-                # 101 : nom mis à jour, contact manuel préservé, type inchangé
+                # 101 : nom mis à jour, contact manuel préservé, type dérivé de
+                # l'activité IFF → freight_forwarder.
                 assert clients[101].name == "Acme Forwarding"
                 assert clients[101].contact_email == "ops@acme.test"
-                assert clients[101].client_type == "shipper"
-                # 102 : créé avec type par défaut
-                assert clients[102].client_type == "freight_forwarder"
+                assert clients[101].client_type == "freight_forwarder"
+                # 102 : pas d'activité IFF → chargeur (shipper)
+                assert clients[102].client_type == "shipper"
 
                 # 2e passage : idempotent (aucune création)
                 r2 = await pipedrive_sync.sync_clients(s)
