@@ -54,6 +54,49 @@
       {% endif %}
     </div>
   </article>
+
+  <article class="card">
+    <h2>Jalons logistiques</h2>
+    <p class="text-muted">Parcours de la marchandise — affiché sur le Label Anemos du client.</p>
+    <form method="post" action="/staff/bookings/{{ booking.reference }}/milestones">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="grid grid-2 gap-3">
+        <div class="field">
+          <label for="goods_arrived_pol_at">Arrivée marchandise au port de chargement</label>
+          <input id="goods_arrived_pol_at" type="datetime-local" name="goods_arrived_pol_at"
+                 value="{{ booking.goods_arrived_pol_at.strftime('%Y-%m-%dT%H:%M') if booking.goods_arrived_pol_at else '' }}" />
+        </div>
+        <div class="field">
+          <label for="loaded_at">Chargement</label>
+          <input id="loaded_at" type="datetime-local" name="loaded_at"
+                 value="{{ booking.loaded_at.strftime('%Y-%m-%dT%H:%M') if booking.loaded_at else '' }}" />
+        </div>
+        <div class="field">
+          <label for="at_sea_at">Départ du navire du port de chargement</label>
+          <input id="at_sea_at" type="datetime-local" name="at_sea_at"
+                 value="{{ booking.at_sea_at.strftime('%Y-%m-%dT%H:%M') if booking.at_sea_at else '' }}" />
+          {% if leg and leg.atd %}<small class="text-muted">ATD navire planifié : {{ leg.atd|datetime }}</small>{% endif %}
+        </div>
+        <div class="field">
+          <label>Arrivée au port de déchargement (ATA navire)</label>
+          <input type="datetime-local" disabled
+                 value="{{ leg.ata.strftime('%Y-%m-%dT%H:%M') if leg and leg.ata else '' }}" />
+          <small class="text-muted">Issu du suivi navire (planning / capitaine).</small>
+        </div>
+        <div class="field">
+          <label for="discharged_at">Déchargement</label>
+          <input id="discharged_at" type="datetime-local" name="discharged_at"
+                 value="{{ booking.discharged_at.strftime('%Y-%m-%dT%H:%M') if booking.discharged_at else '' }}" />
+        </div>
+        <div class="field">
+          <label for="delivered_at">Retrait de la marchandise par le client</label>
+          <input id="delivered_at" type="datetime-local" name="delivered_at"
+                 value="{{ booking.delivered_at.strftime('%Y-%m-%dT%H:%M') if booking.delivered_at else '' }}" />
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary mt-3">Enregistrer les jalons</button>
+    </form>
+  </article>
 </div>
 
 <section class="card mt-4" id="messages">

@@ -74,6 +74,43 @@
       </tbody>
     </table>
   </div>
+
+  {# ── Timeline du parcours de la marchandise (par expédition) ── #}
+  <section style="margin-top:var(--space-5);">
+    <h2>{% if lang == 'en' %}Shipment journey{% else %}Suivi du parcours de la marchandise{% endif %}</h2>
+    {% for c in certificates %}
+      {% if c.timeline %}
+      <article class="card" style="margin-bottom:var(--space-4);">
+        <h3 style="margin-top:0;">
+          <span class="mono">{{ c.reference }}</span>
+          {% if c.booking_ref %}<span class="text-muted">· {{ c.booking_ref }}</span>{% endif %}
+        </h3>
+        <ol style="list-style:none; padding:0; margin:0; border-left:2px solid var(--sable); margin-left:8px;">
+          {% for step in c.timeline %}
+          <li style="position:relative; padding:0 0 var(--space-3) var(--space-4);">
+            <span style="position:absolute; left:-7px; top:3px; width:12px; height:12px; border-radius:999px;
+                         background:{% if step.available %}var(--vert){% else %}var(--sable){% endif %};
+                         border:2px solid var(--blanc); box-shadow:0 0 0 1px var(--gris-clair);"></span>
+            <div style="display:flex; flex-wrap:wrap; gap:var(--space-2); align-items:baseline;">
+              <strong style="{% if not step.available %}color:var(--gris);{% endif %}">{{ step.label }}</strong>
+              {% if step.available %}
+                <span class="mono text-muted">{{ step.at|datetime }}</span>
+              {% else %}
+                <span class="pill pill-neutral">{% if lang == 'en' %}Not recorded{% else %}Non renseigné{% endif %}</span>
+                {% if c.booking_ref %}
+                  <a href="/me/bookings/{{ c.booking_ref }}" class="btn btn-ghost btn-sm">
+                    {% if lang == 'en' %}Add from booking{% else %}Compléter depuis la réservation{% endif %} →
+                  </a>
+                {% endif %}
+              {% endif %}
+            </div>
+          </li>
+          {% endfor %}
+        </ol>
+      </article>
+      {% endif %}
+    {% endfor %}
+  </section>
 {% else %}
   <p class="text-muted">
     {% if lang == 'en' %}No certificate issued yet. They are generated at delivery.{% else %}Aucun certificat émis pour l'instant. Ils sont générés à la livraison.{% endif %}

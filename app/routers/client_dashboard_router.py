@@ -383,14 +383,30 @@ async def anemos(
 ) -> HTMLResponse:
     """Page des Labels Anemos (anciennement "Certificats CO₂")."""
     res = await db.execute(
-        select(AnemosCertificate, Booking.reference)
+        select(AnemosCertificate, Booking)
         .join(Booking, Booking.id == AnemosCertificate.booking_id, isouter=True)
         .where(AnemosCertificate.client_account_id == client.id)
         .order_by(AnemosCertificate.issued_at.desc())
     )
+    from app.models.leg import Leg
+    from app.services.booking_timeline import build_shipment_timeline
+
+    rows = res.all()
+    # Pré-charge les legs des bookings (anti N+1) pour les ATD/ATA de la timeline.
+    leg_ids = {b.leg_id for _c, b in rows if b is not None and b.leg_id}
+    legs = (
+        {
+            li.id: li
+            for li in (await db.execute(select(Leg).where(Leg.id.in_(leg_ids)))).scalars().all()
+        }
+        if leg_ids
+        else {}
+    )
     certificates = []
-    for cert, booking_ref in res.all():
-        cert.booking_ref = booking_ref
+    for cert, booking in rows:
+        cert.booking_ref = booking.reference if booking is not None else None
+        leg = legs.get(booking.leg_id) if booking is not None else None
+        cert.timeline = build_shipment_timeline(booking, leg) if booking is not None else []
         certificates.append(cert)
     from app.services import anemos as anemos_svc
 

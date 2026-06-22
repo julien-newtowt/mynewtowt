@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -44,6 +45,18 @@ _CHANNELS = ("client", "operator")
 _OPERATOR_CARGO_ROWS = 5
 
 router = APIRouter(prefix="/staff/bookings", tags=["staff-booking"])
+
+
+def _parse_milestone(value: str) -> datetime | None:
+    """Parse une valeur ``datetime-local`` (``YYYY-MM-DDTHH:MM``) → UTC ou None."""
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("T", " "))
+    except ValueError:
+        return None
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
 
 
 @router.get(
@@ -277,12 +290,60 @@ async def detail(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     client = await db.get(ClientAccount, booking.client_account_id)
+    leg = await db.get(Leg, booking.leg_id) if booking.leg_id else None
     messages = await messaging.list_for_booking(db, booking.id)
     await messaging.mark_thread_read(db, booking.id, reader="staff")
     return templates.TemplateResponse(
         "staff/booking_detail.html",
-        {"request": request, "booking": booking, "client": client, "messages": messages},
+        {
+            "request": request,
+            "booking": booking,
+            "client": client,
+            "leg": leg,
+            "messages": messages,
+        },
     )
+
+
+@router.post(
+    "/{ref}/milestones",
+    dependencies=[Depends(require_permission("booking", "M"))],
+)
+async def update_milestones(
+    request: Request,
+    ref: str,
+    goods_arrived_pol_at: str = Form(""),
+    loaded_at: str = Form(""),
+    at_sea_at: str = Form(""),
+    discharged_at: str = Form(""),
+    delivered_at: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("booking", "M")),
+) -> RedirectResponse:
+    """Met à jour les jalons logistiques (timeline Label Anemos) du booking."""
+    booking = (
+        await db.execute(select(Booking).where(Booking.reference == ref))
+    ).scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    booking.goods_arrived_pol_at = _parse_milestone(goods_arrived_pol_at)
+    booking.loaded_at = _parse_milestone(loaded_at)
+    booking.at_sea_at = _parse_milestone(at_sea_at)
+    booking.discharged_at = _parse_milestone(discharged_at)
+    booking.delivered_at = _parse_milestone(delivered_at)
+    await db.flush()
+    await activity_record(
+        db,
+        action="booking_milestones_update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="booking",
+        entity_type="booking",
+        entity_id=booking.id,
+        entity_label=booking.reference,
+    )
+    return RedirectResponse(url=f"/staff/bookings/{ref}", status_code=303)
 
 
 @router.post(

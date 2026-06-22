@@ -67,6 +67,9 @@ class Booking(Base):
 
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Jalon logistique : arrivée de la marchandise au port de chargement
+    # (en amont du chargement). Renseigné depuis la fiche réservation.
+    goods_arrived_pol_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     loaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     at_sea_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     discharged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
