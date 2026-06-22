@@ -1,0 +1,61 @@
+{% extends "pdf/_base.html" %}
+{% block title %}MRV Carbon Report{% endblock %}
+{% block doc_kind %}MRV · Carbon Report{% endblock %}
+{% block doc_ref %}{% if vessel %}{{ vessel.code }}{% else %}Flotte{% endif %}{% if year %} · {{ year }}{% endif %}{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Périmètre · Scope</div>
+    <div class="value">
+      {% if vessel %}<strong>{{ vessel.name }}</strong>{% if vessel.imo_number %} · IMO {{ vessel.imo_number }}{% endif %}<br/>{% else %}<strong>Toute la flotte</strong><br/>{% endif %}
+      {% if year %}Année · Year : {{ year }}<br/>{% else %}Toutes années · All years<br/>{% endif %}
+      Émis le · Issued : {{ issued_at.strftime("%d/%m/%Y %H:%M") }}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Synthèse · Summary</div>
+    <div class="value">
+      Événements · Events : <strong>{{ summary.event_count }}</strong><br/>
+      Consommation totale · Total fuel : <strong>{{ "%.3f"|format(summary.total_fuel_t) }} t</strong><br/>
+      CO₂ total · Total CO₂ : <strong>{{ "%.3f"|format(summary.total_co2_t) }} t</strong><br/>
+      Facteur · Factor MDO : {{ co2_factor }} t CO₂ / t
+    </div>
+  </div>
+</div>
+
+<h2>Événements · Events</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Date</th><th>Leg</th><th>Type</th>
+      <th class="text-right">Distance (NM)</th>
+      <th class="text-right">Conso (t)</th>
+      <th class="text-right">ROB calc. (t)</th>
+      <th>Qualité</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    {% set leg = leg_map.get(e.leg_id) %}
+    <tr>
+      <td class="mono small">{{ e.recorded_at.strftime("%d/%m/%Y %H:%M") if e.recorded_at else '—' }}</td>
+      <td class="mono">{{ leg.leg_code if leg else e.leg_id }}</td>
+      <td>{{ e.event_kind }}</td>
+      <td class="text-right">{{ "%.2f"|format(e.distance_nm) if e.distance_nm is not none else '—' }}</td>
+      <td class="text-right">{{ "%.3f"|format(e.total_consumption_t) if e.total_consumption_t is not none else ("%.3f"|format(e.fuel_mass_t) if e.fuel_mass_t is not none else '—') }}</td>
+      <td class="text-right">{{ "%.3f"|format(e.rob_calculated_t) if e.rob_calculated_t is not none else '—' }}</td>
+      <td>{{ e.quality_status or 'ok' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="c-gris">Aucun événement</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p class="small c-gris">
+  Rapport conforme à la réglementation UE MRV. Facteur d'émission MDO/MGO :
+  {{ co2_factor }} t CO₂ / t de carburant. {{ brand.raison_sociale }}.
+</p>
+
+{% endblock %}

@@ -156,6 +156,39 @@ def test_v2_crew_member_full_fields_present():
         assert hasattr(CrewMember, f), f
 
 
+# ───────────────────────────── MRV (V2 parité) ─────────────────────────────
+
+
+def test_v2_mrv_routes_restored():
+    """V2 : edit/delete event, export DNV, Carbon Report PDF, params."""
+    from app.routers.mrv_router import router
+
+    m = _methods(router)
+    assert ("POST", "/mrv/events/{event_id}/edit") in m       # MRV-03
+    assert ("POST", "/mrv/events/{event_id}/delete") in m
+    assert ("GET", "/mrv/export/dnv.csv") in m                # MRV-01
+    assert ("GET", "/mrv/export/carbon-report.pdf") in m      # MRV-02
+    assert ("POST", "/mrv/params") in m                       # MRV-06
+
+
+def test_v2_dnv_export_is_18_columns():
+    """MRV-01 : l'export DNV Veracity a bien 18 colonnes nommées."""
+    from app.services.mrv_export import DNV_18_HEADERS
+
+    assert len(DNV_18_HEADERS) == 18
+    assert DNV_18_HEADERS[0] == "IMO"
+
+
+def test_v2_mrv_do_counters_present():
+    """MRV-04 : les 4 compteurs DO + ME/AE/ROB calculés existent."""
+    from app.models.mrv import MRVEvent
+
+    for f in ("port_me_do_counter", "stbd_me_do_counter", "fwd_gen_do_counter",
+              "aft_gen_do_counter", "me_consumption_t", "ae_consumption_t",
+              "total_consumption_t", "rob_calculated_t", "lat_deg", "lat_ns"):
+        assert hasattr(MRVEvent, f), f
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # Ces fonctionnalités existaient en V2, sont spécifiées (docs/audit/specs), mais
 # pas encore implémentées. Le skip documente la dette de parité de façon vivante.
@@ -164,10 +197,7 @@ _PENDING = {
     "escale_port_status_ata_atd": "ESC-02 — flux statut portuaire / pose ATA-ATD (spec écrite)",
     "crew_embark_off_leg": "CREW-04/A4 — embarquement hors leg (leg_id nullable + vessel_id)",
     "crew_ticket_upload": "CREW-05 — upload/download PJ billet (spec écrite)",
-    "mrv_dnv_18_columns": "MRV-01 — export DNV 18 colonnes (spec écrite)",
-    "mrv_carbon_report_pdf": "MRV-02 — Carbon Report PDF + blocage qualité (spec écrite)",
-    "mrv_event_edit_delete": "MRV-03 — édition/suppression event MRV (spec écrite)",
-    "mrv_do_counters": "MRV-04 — 4 compteurs DO + calcul ME/AE/ROB (spec écrite)",
+    "mrv_dms_autofill": "MRV-07 — auto-remplissage GPS de la position DMS (saisie manuelle OK)",
     "finance_forecast_actual": "FIN-01 — modèle prévisionnel/réalisé (spec écrite)",
     "finance_csv_export": "FIN-02 — export CSV finance",
     "kpi_nox_sox": "FIN-03 — NOx/SOx évités",
