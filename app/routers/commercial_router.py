@@ -42,6 +42,7 @@ from app.models.port import Port
 from app.models.quote import Quote
 from app.models.vessel import Vessel
 from app.permissions import require_permission
+from app.services import capacity as capacity_svc
 from app.services.activity import record as activity_record
 from app.services.commercial import (
     bracket_rate,
@@ -110,6 +111,13 @@ async def commercial_index(
         .scalars()
         .all()
     )
+
+    # Remplissage des legs en cours de commercialisation : legs réservables, non
+    # encore appareillés, dont la fenêtre de réservation est ouverte. Le service
+    # capacity lève NotBookable/BookingClosed pour les legs hors commercialisation
+    # → on s'en sert comme filtre. Occupation = (bookings + commandes) / capacité.
+    fill_legs, fill_summary = await _commercialization_fill(db)
+
     return templates.TemplateResponse(
         "staff/commercial/index.html",
         {
@@ -120,8 +128,84 @@ async def commercial_index(
             "offers_open": offers_open,
             "orders_open": orders_open,
             "last_orders": last_orders,
+            "fill_legs": fill_legs,
+            "fill_summary": fill_summary,
         },
     )
+
+
+async def _commercialization_fill(db: AsyncSession) -> tuple[list[dict], dict]:
+    """Taux de remplissage des legs en cours de commercialisation.
+
+    Renvoie ``(lignes, synthèse)`` où chaque ligne décrit un leg réservable
+    (code, navire, ports, ETD, capacité, réservé, disponible, % occupation) et
+    la synthèse agrège capacité/réservé sur l'ensemble.
+    """
+    now = datetime.now(UTC)
+    candidate_legs = list(
+        (
+            await db.execute(
+                select(Leg)
+                .where(Leg.is_bookable.is_(True))
+                .where(Leg.atd.is_(None))
+                .where(Leg.etd >= now)
+                .order_by(Leg.etd.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not candidate_legs:
+        return [], {"capacity": 0, "reserved": 0, "occupancy_pct": 0.0, "count": 0}
+
+    vessels = {
+        v.id: v for v in (await db.execute(select(Vessel))).scalars().all()
+    }
+    port_ids = {leg.departure_port_id for leg in candidate_legs} | {
+        leg.arrival_port_id for leg in candidate_legs
+    }
+    ports = {
+        p.id: p
+        for p in (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()
+    }
+
+    rows: list[dict] = []
+    total_cap = 0
+    total_res = 0
+    for leg in candidate_legs:
+        try:
+            info = await capacity_svc.get_available_capacity(db, leg.id)
+        except (capacity_svc.NotBookable, capacity_svc.BookingClosed):
+            continue
+        except ValueError:
+            continue
+        vessel = vessels.get(leg.vessel_id)
+        pol = ports.get(leg.departure_port_id)
+        pod = ports.get(leg.arrival_port_id)
+        total_cap += info.capacity_palettes
+        total_res += info.reserved_palettes
+        rows.append(
+            {
+                "leg_id": leg.id,
+                "leg_code": leg.leg_code,
+                "vessel_name": vessel.name if vessel else "—",
+                "pol_locode": pol.locode if pol else "?",
+                "pod_locode": pod.locode if pod else "?",
+                "etd": leg.etd,
+                "booking_close_at": leg.booking_close_at,
+                "capacity": info.capacity_palettes,
+                "reserved": info.reserved_palettes,
+                "available": info.available_palettes,
+                "occupancy_pct": info.occupancy_pct,
+            }
+        )
+    summary = {
+        "capacity": total_cap,
+        "reserved": total_res,
+        "occupancy_pct": round(100 * total_res / total_cap, 1) if total_cap else 0.0,
+        "count": len(rows),
+    }
+    return rows, summary
 
 
 # ────────────────────────────────────────────── Clients (FF / Shipper)

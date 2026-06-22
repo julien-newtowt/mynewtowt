@@ -49,6 +49,46 @@
 
 <article class="card">
   <div class="section-header">
+    <h3><i data-lucide="gauge"></i> Remplissage des legs en commercialisation</h3>
+    {% if fill_summary.count %}
+    <span class="pill pill-info">{{ fill_summary.reserved }} / {{ fill_summary.capacity }} pal. · {{ fill_summary.occupancy_pct }} % global</span>
+    {% endif %}
+  </div>
+  {% if fill_legs %}
+  <table class="data-table">
+    <thead>
+      <tr><th>Leg</th><th>Navire</th><th>Route</th><th>ETD</th><th>Remplissage</th><th>Dispo.</th></tr>
+    </thead>
+    <tbody>
+      {% for f in fill_legs %}
+      {% set pct = f.occupancy_pct %}
+      {% set color = 'var(--vert)' if pct >= 85 else ('var(--cuivre)' if pct >= 50 else 'var(--teal)') %}
+      <tr>
+        <td><a href="/planning/legs/{{ f.leg_id }}" class="mono">{{ f.leg_code }}</a></td>
+        <td>{{ f.vessel_name }}</td>
+        <td><span class="mono">{{ f.pol_locode }}→{{ f.pod_locode }}</span></td>
+        <td class="text-muted text-sm">{{ f.etd|date }}</td>
+        <td style="min-width:200px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="flex:1; height:10px; background:var(--sable-light); border-radius:999px; overflow:hidden;">
+              <div style="height:100%; width:{{ [pct, 100]|min }}%; background:{{ color }};"></div>
+            </div>
+            <strong class="mono" style="font-size:var(--text-xs); min-width:42px; text-align:right;">{{ pct }} %</strong>
+          </div>
+          <span class="text-muted text-sm">{{ f.reserved }} / {{ f.capacity }} pal.</span>
+        </td>
+        <td class="mono">{{ f.available }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucun leg actuellement en commercialisation (réservable, fenêtre ouverte, non appareillé).</p>
+  {% endif %}
+</article>
+
+<article class="card">
+  <div class="section-header">
     <h3><i data-lucide="package"></i> Dernières commandes</h3>
     <a href="/commercial/orders" class="btn btn-ghost text-sm">Toutes les commandes →</a>
   </div>
