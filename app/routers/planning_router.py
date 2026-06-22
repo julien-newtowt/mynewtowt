@@ -5,10 +5,12 @@ Auth: staff with `planning` permission (C/M/S per matrix).
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -479,6 +481,114 @@ async def delete_leg_action(
 # ---------------------------------------------------------------------------
 # Public share management (staff)
 # ---------------------------------------------------------------------------
+
+
+async def _planning_rows(db: AsyncSession, *, vessel_id: int | None, year: int):
+    """Legs de l'année (+ filtre navire), avec navire & ports résolus, triés ETD."""
+    window_start = datetime(year, 1, 1, tzinfo=UTC)
+    window_end = datetime(year, 12, 31, 23, 59, tzinfo=UTC)
+    legs = await list_legs_in_window(
+        db, date_from=window_start, date_to=window_end, vessel_id=vessel_id
+    )
+    legs = sorted(legs, key=lambda lg: lg.etd or window_start)
+    vmap = {v.id: v for v in (await db.execute(select(Vessel))).scalars().all()}
+    port_ids = {lg.departure_port_id for lg in legs} | {lg.arrival_port_id for lg in legs}
+    pmap = (
+        {p.id: p for p in (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()}
+        if port_ids else {}
+    )
+    rows = [
+        {
+            "leg": lg,
+            "vessel": vmap.get(lg.vessel_id),
+            "pol": pmap.get(lg.departure_port_id),
+            "pod": pmap.get(lg.arrival_port_id),
+        }
+        for lg in legs
+    ]
+    return rows, vmap, pmap
+
+
+@router.get("/pdf/commercial")
+async def planning_commercial_pdf(
+    request: Request,
+    vessel_id: int | None = None,
+    year: int | None = None,
+    lang: str = "fr",
+    group_by: str = "chrono",
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("planning", "C")),
+):
+    """PLN-01 — brochure commerciale imprimable (PDF), filtrée navire/année,
+    vue chronologique ou groupée par destination, FR/EN.
+    """
+    from app.services.pdf_generator import render_planning_brochure
+
+    year = year or datetime.now(UTC).year
+    lang = lang if lang in ("fr", "en") else "fr"
+    rows, _vmap, _pmap = await _planning_rows(db, vessel_id=vessel_id, year=year)
+
+    if group_by == "destination":
+        buckets: dict[str, list] = {}
+        for r in rows:
+            key = r["pod"].name if r["pod"] else "—"
+            buckets.setdefault(key, []).append(r)
+        groups = [{"title": k, "rows": v} for k, v in sorted(buckets.items())]
+    else:
+        title = "Chronological schedule" if lang == "en" else "Calendrier chronologique"
+        groups = [{"title": title, "rows": rows}]
+
+    port_count = len({r["pol"].id for r in rows if r["pol"]} | {r["pod"].id for r in rows if r["pod"]})
+    summary = {
+        "leg_count": len(rows),
+        "vessel_count": len({r["vessel"].id for r in rows if r["vessel"]}),
+        "port_count": port_count,
+    }
+    vessel = await db.get(Vessel, vessel_id) if vessel_id else None
+    meta = {"year": year, "vessel_name": vessel.name if vessel else None, "group_by": group_by}
+
+    doc = render_planning_brochure(groups=groups, summary=summary, meta=meta, lang=lang)
+    return Response(
+        content=doc.pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="planning_newtowt.pdf"'},
+    )
+
+
+@router.get("/export/csv")
+async def planning_export_csv(
+    request: Request,
+    vessel_id: int | None = None,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("planning", "C")),
+):
+    """PLN-03 — export CSV du planning réel (filtré navire/année)."""
+    year = year or datetime.now(UTC).year
+    rows, _vmap, _pmap = await _planning_rows(db, vessel_id=vessel_id, year=year)
+
+    def _iso(dt):
+        return dt.isoformat() if dt else ""
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "leg_code", "vessel", "pol_locode", "pol_name", "pod_locode", "pod_name",
+        "etd", "eta", "atd", "ata", "status", "distance_nm", "is_bookable",
+    ])
+    for r in rows:
+        lg, v, pol, pod = r["leg"], r["vessel"], r["pol"], r["pod"]
+        writer.writerow([
+            lg.leg_code, v.name if v else "", pol.locode if pol else "", pol.name if pol else "",
+            pod.locode if pod else "", pod.name if pod else "",
+            _iso(lg.etd), _iso(lg.eta), _iso(lg.atd), _iso(lg.ata),
+            lg.status, lg.distance_nm or "", "1" if lg.is_bookable else "0",
+        ])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="planning_reel.csv"'},
+    )
 
 
 @router.get(

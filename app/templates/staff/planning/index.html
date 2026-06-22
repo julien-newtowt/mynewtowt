@@ -12,6 +12,8 @@
       ⚠ Conflits de port{% if conflict_count %} ({{ conflict_count }}){% endif %}
     </a>
     <a href="/planning/scenarios" class="btn btn-ghost">🔀 Planif. provisoires</a>
+    <a href="/planning/pdf/commercial?year={{ selected_year }}{% if filter_vessel_id %}&vessel_id={{ filter_vessel_id }}{% endif %}" class="btn btn-ghost" target="_blank">📄 Brochure PDF</a>
+    <a href="/planning/export/csv?year={{ selected_year }}{% if filter_vessel_id %}&vessel_id={{ filter_vessel_id }}{% endif %}" class="btn btn-ghost">⬇ Export CSV</a>
     <a href="/planning/shares" class="btn btn-ghost">Partages publics</a>
     <a href="/planning/legs/new-from-map" class="btn btn-secondary">📍 Sur la carte</a>
     <a href="/planning/legs/new" class="btn btn-primary">+ Nouveau leg</a>

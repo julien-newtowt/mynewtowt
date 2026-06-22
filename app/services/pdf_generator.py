@@ -221,5 +221,29 @@ def render_anemos_certificate(
     return DocumentBytes(html=html, pdf=pdf, filename=f"LabelAnemos_{ctx['cert_ref']}.pdf")
 
 
+def render_planning_brochure(
+    *, groups, summary, meta, lang: str = "fr"
+) -> DocumentBytes:
+    """PLN-01 — brochure commerciale imprimable du planning.
+
+    ``groups`` est une liste de ``{"title": str, "rows": [{leg, vessel, pol, pod}]}``
+    (vue chrono/route/destination construite côté routeur), ``summary`` un dict
+    d'agrégats (nb legs, navires, période) et ``meta`` les filtres appliqués.
+    """
+    from app.templating import brand_for_lang
+
+    ctx = {
+        "groups": groups,
+        "summary": summary,
+        "meta": meta,
+        "lang": lang,
+        "brand": brand_for_lang(lang),
+        "issued_at": datetime.now(UTC),
+        "site_url": settings.site_url,
+    }
+    html, pdf = _render_pdf("pdf/planning_commercial.html", ctx)
+    return DocumentBytes(html=html, pdf=pdf, filename="planning_newtowt.pdf")
+
+
 # Alias backward-compat — peut disparaître en V3.7
 render_co2_certificate = render_anemos_certificate

@@ -301,6 +301,18 @@ def test_v2_dashboard_alerts_engine_restored():
     assert callable(compute_alerts)
 
 
+# ───────────────────────────── Planning (V2 parité) ───────────────────────────
+
+
+def test_v2_planning_exports_restored():
+    """PLN-01 brochure PDF + PLN-03 export CSV du planning réel."""
+    from app.routers.planning_router import router
+
+    m = _methods(router)
+    assert ("GET", "/planning/pdf/commercial") in m
+    assert ("GET", "/planning/export/csv") in m
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # Ces fonctionnalités existaient en V2, sont spécifiées (docs/audit/specs), mais
 # pas encore implémentées. Le skip documente la dette de parité de façon vivante.
@@ -309,8 +321,6 @@ _PENDING = {
     "crew_embark_off_leg": "CREW-04/A4 — embarquement hors leg (leg_id nullable + vessel_id)",
     "crew_ticket_upload": "CREW-05 — upload/download PJ billet (spec écrite)",
     "mrv_dms_autofill": "MRV-07 — auto-remplissage GPS de la position DMS (saisie manuelle OK)",
-    "planning_commercial_pdf": "PLN-01 — brochure commerciale imprimable",
-    "planning_csv_export": "PLN-03 — export CSV planning réel",
     "stowage_onboard_view": "STO-01 — vue à bord du plan de chargement",
     "stowage_drag_drop": "STO-02 — réaffectation de zone (drag-drop)",
     "onboard_cargo_doc_structured": "ONB-02 — documents cargo structurés",
