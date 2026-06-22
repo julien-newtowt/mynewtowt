@@ -41,7 +41,7 @@ from app.services.crew_compliance import (
     refresh_schengen_for_members,
     vessel_readiness,
 )
-from app.templating import templates
+from app.templating import brand_for_lang, templates
 
 router = APIRouter(prefix="/crew", tags=["crew"])
 
@@ -114,6 +114,7 @@ async def crew_index(
         if m is None:
             continue
         bordees[vname]["crew"].append(m)
+        bordees[vname]["vessel_id"] = vsl.id if vsl else None
     for info in bordees.values():
         roles_present = {normalize_role(m.role) for m in info["crew"]}
         info["missing"] = [ROLE_LABELS.get(r, r) for r in REQUIRED_ROLES if r not in roles_present]
@@ -323,32 +324,104 @@ async def crew_new_form(
     )
 
 
+def _pdate(value: str | None) -> _date | None:
+    """Parse tolérant d'une date ISO de formulaire."""
+    if not value or not str(value).strip():
+        return None
+    try:
+        return _date.fromisoformat(str(value).strip())
+    except ValueError:
+        return None
+
+
+def _naive(dt: datetime | None) -> datetime | None:
+    """Normalise en datetime naïf (UTC supposé) pour comparer sans erreur tz.
+
+    Les dates de formulaire sont naïves ; celles en base peuvent être aware
+    (Postgres) — comparer directement lèverait un TypeError. On retire le tz.
+    """
+    return dt.replace(tzinfo=None) if dt is not None else None
+
+
+async def _find_overlap(
+    db: AsyncSession,
+    *,
+    member_id: int,
+    embark: datetime | None,
+    disembark: datetime | None,
+    exclude_id: int | None = None,
+) -> CrewAssignment | None:
+    """CREW-08 — renvoie une affectation chevauchante du marin, ou None.
+
+    Comparaison datetime‑granulaire à bornes STRICTES : deux périodes qui se
+    touchent (débarquement == ré‑embarquement) ne se chevauchent pas — une
+    relève le même jour reste permise. Période ouverte = ±infini.
+    """
+    lo = _naive(embark) or datetime.min
+    hi = _naive(disembark) or datetime.max
+    existing = list(
+        (
+            await db.execute(
+                select(CrewAssignment)
+                .where(CrewAssignment.crew_member_id == member_id)
+                .where(CrewAssignment.embark_at.is_not(None))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for ex in existing:
+        if exclude_id is not None and ex.id == exclude_id:
+            continue
+        ex_lo = _naive(ex.embark_at) or datetime.min
+        ex_hi = _naive(ex.disembark_at) or datetime.max
+        if lo < ex_hi and ex_lo < hi:
+            return ex
+    return None
+
+
+# CREW-03 — champs de la fiche marin pilotés par formulaire (create + edit).
+_MEMBER_STR_FIELDS = ("passport_number", "seaman_book_number", "email", "phone", "notes")
+_MEMBER_DATE_FIELDS = (
+    "date_of_birth",
+    "passport_expires_at",
+    "visa_us_expires_at",
+    "visa_br_expires_at",
+    "seaman_book_expires_at",
+)
+
+
+def _apply_member_form(m: CrewMember, form: dict) -> None:
+    """Applique les champs présents d'un formulaire à la fiche marin."""
+    if "full_name" in form and (form.get("full_name") or "").strip():
+        m.full_name = form["full_name"].strip()
+    if "role" in form:
+        m.role = (form.get("role") or "").strip()
+    if "nationality" in form:
+        m.nationality = (form.get("nationality") or "").strip().upper()[:2] or None
+    for f in _MEMBER_STR_FIELDS:
+        if f in form:
+            setattr(m, f, (form.get(f) or "").strip() or None)
+    for f in _MEMBER_DATE_FIELDS:
+        if f in form:
+            setattr(m, f, _pdate(form.get(f)))
+
+
 @router.post("/members")
 async def crew_create(
     request: Request,
-    full_name: str = Form(...),
-    role: str = Form(...),
-    nationality: str | None = Form(None),
-    passport_number: str | None = Form(None),
-    passport_expires_at: str | None = Form(None),
-    email: str | None = Form(None),
-    phone: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("crew", "M")),
 ):
+    """CREW-01/03 — création d'une fiche marin (tous les champs)."""
+    form = dict(await request.form())
+    role = (form.get("role") or "").strip()
     if role not in CREW_ROLES:
         raise HTTPException(status_code=400, detail="invalid role")
-    m = CrewMember(
-        full_name=full_name.strip(),
-        role=role,
-        nationality=(nationality or "").strip().upper()[:2] or None,
-        passport_number=(passport_number or "").strip() or None,
-        passport_expires_at=(
-            _date.fromisoformat(passport_expires_at) if passport_expires_at else None
-        ),
-        email=(email or "").strip() or None,
-        phone=(phone or "").strip() or None,
-    )
+    if not (form.get("full_name") or "").strip():
+        raise HTTPException(status_code=400, detail="full_name required")
+    m = CrewMember(full_name=form["full_name"].strip(), role=role)
+    _apply_member_form(m, form)
     db.add(m)
     await db.flush()
     await activity_record(
@@ -363,7 +436,55 @@ async def crew_create(
         entity_label=m.full_name,
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url="/crew", status_code=303)
+    return RedirectResponse(url=f"/crew/members/{m.id}", status_code=303)
+
+
+@router.get("/members/{member_id}/edit", response_class=HTMLResponse)
+async def crew_edit_form(
+    member_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "M")),
+) -> HTMLResponse:
+    m = await db.get(CrewMember, member_id)
+    if m is None:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse(
+        "staff/crew/new.html",
+        {"request": request, "user": user, "roles": CREW_ROLES, "member": m},
+    )
+
+
+@router.post("/members/{member_id}/edit")
+async def crew_edit(
+    member_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "M")),
+):
+    """CREW-01/03 — édition d'une fiche marin."""
+    m = await db.get(CrewMember, member_id)
+    if m is None:
+        raise HTTPException(status_code=404)
+    form = dict(await request.form())
+    role = (form.get("role") or m.role or "").strip()
+    if role not in CREW_ROLES:
+        raise HTTPException(status_code=400, detail="invalid role")
+    _apply_member_form(m, form)
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="crew",
+        entity_type="crew_member",
+        entity_id=m.id,
+        entity_label=m.full_name,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)
 
 
 async def _member_detail_context(
@@ -515,6 +636,31 @@ async def crew_assign(
     if passport_reason:
         blocking.append(passport_reason)
 
+    # Gardes DURES (non contournables par l'override, qui ne lève que la
+    # non-conformité Schengen/passeport) : ordre des dates + anti-overlap.
+    if embark_dt and disembark_dt and embark_dt > disembark_dt:
+        return templates.TemplateResponse(
+            "staff/crew/detail.html",
+            await _member_detail_context(
+                request, db, user, member,
+                error="Date de débarquement antérieure à l'embarquement.",
+            ),
+            status_code=400,
+        )
+    overlap = await _find_overlap(
+        db, member_id=member_id, embark=embark_dt, disembark=disembark_dt
+    )
+    if overlap is not None:
+        return templates.TemplateResponse(
+            "staff/crew/detail.html",
+            await _member_detail_context(
+                request, db, user, member,
+                error=f"Chevauchement avec un embarquement existant (leg {overlap.leg_id}). "
+                "Un marin ne peut être embarqué sur deux périodes simultanées.",
+            ),
+            status_code=400,
+        )
+
     override = override_compliance == "on"
     if blocking and not override:
         return templates.TemplateResponse(
@@ -596,6 +742,164 @@ async def crew_ticket_create(
     db.add(t)
     await db.flush()
     return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)
+
+
+@router.post("/assignments/{assignment_id}/edit")
+async def crew_assignment_edit(
+    assignment_id: int,
+    request: Request,
+    leg_id: int = Form(...),
+    role_on_board: str | None = Form(None),
+    embark_at: str | None = Form(None),
+    disembark_at: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "M")),
+):
+    """CREW-04 — édition d'une affectation (navire/leg, dates, poste)."""
+    a = await db.get(CrewAssignment, assignment_id)
+    if a is None:
+        raise HTTPException(status_code=404)
+    if await db.get(Leg, leg_id) is None:
+        raise HTTPException(status_code=404, detail="leg inconnu")
+    try:
+        new_embark = datetime.fromisoformat(embark_at) if embark_at else None
+        new_disembark = datetime.fromisoformat(disembark_at) if disembark_at else None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="dates invalides") from exc
+    if new_embark and new_disembark and new_embark > new_disembark:
+        raise HTTPException(status_code=400, detail="débarquement avant embarquement")
+    # CREW-08 — anti-overlap aussi à l'édition (en s'excluant soi-même).
+    overlap = await _find_overlap(
+        db,
+        member_id=a.crew_member_id,
+        embark=new_embark,
+        disembark=new_disembark,
+        exclude_id=a.id,
+    )
+    if overlap is not None:
+        raise HTTPException(
+            status_code=400, detail=f"chevauchement avec l'affectation {overlap.id}"
+        )
+    a.leg_id = leg_id
+    a.role_on_board = (role_on_board or "").strip() or None
+    a.embark_at = new_embark
+    a.disembark_at = new_disembark
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="crew",
+        entity_type="crew_assignment",
+        entity_id=a.id,
+        entity_label=f"member={a.crew_member_id} leg={leg_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/crew/members/{a.crew_member_id}", status_code=303)
+
+
+@router.post("/assignments/{assignment_id}/delete")
+async def crew_assignment_delete(
+    assignment_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "S")),
+):
+    """CREW-04 — suppression d'une affectation."""
+    a = await db.get(CrewAssignment, assignment_id)
+    if a is None:
+        raise HTTPException(status_code=404)
+    member_id = a.crew_member_id
+    await db.delete(a)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="crew",
+        entity_type="crew_assignment",
+        entity_id=assignment_id,
+        entity_label=f"assignment {assignment_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)
+
+
+@router.get("/border-police/{vessel_id}")
+async def crew_border_police_pdf(
+    vessel_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "C")),
+):
+    """CREW-02 — liste d'équipage bilingue (FR/EN) pour la police aux frontières.
+
+    Recense les marins embarqués sur le navire (affectations en cours, sur un
+    leg du navire) et produit un PDF WeasyPrint à présenter à la PAF / autorités.
+    """
+    from fastapi.responses import Response
+    from weasyprint import HTML
+
+    from app.config import settings
+
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        raise HTTPException(status_code=404)
+
+    now = datetime.now(UTC)
+    legs = {
+        leg.id: leg
+        for leg in (
+            await db.execute(select(Leg).where(Leg.vessel_id == vessel_id))
+        ).scalars().all()
+    }
+    assigns = list(
+        (
+            await db.execute(
+                select(CrewAssignment)
+                .where(CrewAssignment.leg_id.in_(list(legs.keys()) or [-1]))
+                .where(CrewAssignment.embark_at.is_not(None))
+                .where(CrewAssignment.embark_at <= now)  # déjà à bord
+                .where(
+                    (CrewAssignment.disembark_at.is_(None)) | (CrewAssignment.disembark_at > now)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    seen: set[int] = set()
+    rows = []
+    for a in assigns:
+        if a.crew_member_id in seen:
+            continue
+        seen.add(a.crew_member_id)
+        m = await db.get(CrewMember, a.crew_member_id)
+        if m is not None:
+            rows.append({"member": m, "assignment": a})
+    rows.sort(key=lambda r: r["member"].full_name)
+    foreign_count = sum(
+        1 for r in rows if (r["member"].nationality or "").upper() not in ("FR", "")
+    )
+
+    tpl = templates.get_template("pdf/crew_list.html")
+    html = tpl.render(
+        vessel=vessel,
+        rows=rows,
+        foreign_count=foreign_count,
+        issued_at=now,
+        brand=brand_for_lang("fr"),
+        site_url=settings.site_url,
+    )
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="CrewList_{vessel.code}.pdf"'},
+    )
 
 
 def _client_ip(request: Request) -> str | None:

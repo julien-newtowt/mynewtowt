@@ -1,0 +1,70 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Crew List — {{ vessel.name }}{% endblock %}
+{% block doc_kind %}Crew List · Liste d'équipage{% endblock %}
+{% block doc_ref %}{{ vessel.code }}{% if vessel.imo_number %} · IMO {{ vessel.imo_number }}{% endif %}{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Navire · Vessel</div>
+    <div class="value">
+      <strong>{{ vessel.name }}</strong><br/>
+      {{ vessel.code }}{% if vessel.imo_number %} · IMO {{ vessel.imo_number }}{% endif %}<br/>
+      {% if vessel.flag %}Pavillon · Flag : {{ vessel.flag }}{% endif %}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Synthèse · Summary</div>
+    <div class="value">
+      Effectif embarqué · Crew on board : <strong>{{ rows|length }}</strong><br/>
+      Personnel étranger · Foreign nationals : <strong>{{ foreign_count }}</strong><br/>
+      Émis le · Issued : {{ issued_at.strftime("%d/%m/%Y %H:%M UTC") }}
+    </div>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Nom · Name</th>
+      <th>Poste · Rank</th>
+      <th>Nationalité · Nat.</th>
+      <th>Naissance · DOB</th>
+      <th>Passeport · Passport</th>
+      <th>Visa</th>
+      <th>Embarqué · Embarked</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    {% set m = r.member %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td><strong>{{ m.full_name }}</strong></td>
+      <td>{{ r.assignment.role_on_board or m.role }}</td>
+      <td class="mono">{{ m.nationality or '—' }}</td>
+      <td class="mono">{{ m.date_of_birth.strftime("%d/%m/%Y") if m.date_of_birth else '—' }}</td>
+      <td class="mono">{{ m.passport_number or '—' }}{% if m.passport_expires_at %}<br/><span class="small">exp. {{ m.passport_expires_at.strftime("%d/%m/%Y") }}</span>{% endif %}</td>
+      <td class="small">
+        {% if m.visa_us_expires_at %}US: {{ m.visa_us_expires_at.strftime("%d/%m/%Y") }}<br/>{% endif %}
+        {% if m.visa_br_expires_at %}BR: {{ m.visa_br_expires_at.strftime("%d/%m/%Y") }}{% endif %}
+        {% if not m.visa_us_expires_at and not m.visa_br_expires_at %}—{% endif %}
+      </td>
+      <td class="mono">{{ r.assignment.embark_at.strftime("%d/%m/%Y") if r.assignment.embark_at else '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="c-gris">Aucun marin embarqué · No crew on board</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="stamp">
+  <div>
+    <div class="kicker">{{ brand.raison_sociale }}</div>
+    <div class="small c-gris">Document présenté aux autorités · Presented to authorities</div>
+  </div>
+  <div class="sig-area">Cachet et signature<br/>du commandant · Master</div>
+</div>
+
+{% endblock %}

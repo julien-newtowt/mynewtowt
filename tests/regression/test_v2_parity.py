@@ -132,15 +132,37 @@ def test_v2_docker_productivity_restored():
         assert hasattr(DockerShift, prop), prop
 
 
+# ───────────────────────────── Crew (V2 parité) ─────────────────────────────
+
+
+def test_v2_crew_routes_restored():
+    """V2 : édition fiche marin, Crew List PAF, édition/suppression affectation."""
+    from app.routers.crew_router import router
+
+    m = _methods(router)
+    assert ("POST", "/crew/members/{member_id}/edit") in m  # CREW-01
+    assert ("GET", "/crew/members/{member_id}/edit") in m
+    assert ("GET", "/crew/border-police/{vessel_id}") in m  # CREW-02
+    assert ("POST", "/crew/assignments/{assignment_id}/edit") in m  # CREW-04
+    assert ("POST", "/crew/assignments/{assignment_id}/delete") in m
+
+
+def test_v2_crew_member_full_fields_present():
+    """CREW-03 : les champs de la fiche marin V2 existent et sont saisissables."""
+    from app.models.crew import CrewMember
+
+    for f in ("date_of_birth", "visa_us_expires_at", "visa_br_expires_at",
+              "seaman_book_number", "seaman_book_expires_at", "nationality"):
+        assert hasattr(CrewMember, f), f
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # Ces fonctionnalités existaient en V2, sont spécifiées (docs/audit/specs), mais
 # pas encore implémentées. Le skip documente la dette de parité de façon vivante.
 
 _PENDING = {
     "escale_port_status_ata_atd": "ESC-02 — flux statut portuaire / pose ATA-ATD (spec écrite)",
-    "crew_member_edit": "CREW-01 — édition fiche marin (spec écrite)",
-    "crew_border_police_pdf": "CREW-02 — export PDF Crew List PAF (spec écrite)",
-    "crew_assignment_edit_delete": "CREW-04 — édition/suppression affectation (spec écrite)",
+    "crew_embark_off_leg": "CREW-04/A4 — embarquement hors leg (leg_id nullable + vessel_id)",
     "crew_ticket_upload": "CREW-05 — upload/download PJ billet (spec écrite)",
     "mrv_dnv_18_columns": "MRV-01 — export DNV 18 colonnes (spec écrite)",
     "mrv_carbon_report_pdf": "MRV-02 — Carbon Report PDF + blocage qualité (spec écrite)",

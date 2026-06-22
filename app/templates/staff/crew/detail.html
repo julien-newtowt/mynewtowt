@@ -16,6 +16,7 @@
     {% if member.schengen_status == 'compliant' %}<span class="pill pill-ok">Schengen OK</span>
     {% elif member.schengen_status == 'warning' %}<span class="pill pill-warn">Schengen Warning</span>
     {% else %}<span class="pill pill-error">Non-compliant</span>{% endif %}
+    <a href="/crew/members/{{ member.id }}/edit" class="btn btn-secondary btn-sm">✎ Modifier</a>
     <a href="/crew" class="btn btn-ghost">← Retour</a>
   </div>
 </header>
@@ -55,10 +56,32 @@
   <h2>Embarquements / débarquements ({{ assignments|length }})</h2>
   {% if assignments %}
   <table class="data-table">
-    <thead><tr><th>Leg</th><th>Rôle</th><th>Embarquement</th><th>Débarquement</th></tr></thead>
+    <thead><tr><th>Leg</th><th>Rôle</th><th>Embarquement</th><th>Débarquement</th><th></th></tr></thead>
     <tbody>
       {% for a in assignments %}
-      <tr><td class="mono">{{ a.leg_id }}</td><td>{{ a.role_on_board or '—' }}</td><td>{{ a.embark_at|datetime if a.embark_at else '—' }}</td><td>{{ a.disembark_at|datetime if a.disembark_at else '—' }}</td></tr>
+      <tr>
+        <td class="mono">{{ a.leg_id }}</td>
+        <td>{{ a.role_on_board or '—' }}</td>
+        <td>{{ a.embark_at|datetime if a.embark_at else '—' }}</td>
+        <td>{{ a.disembark_at|datetime if a.disembark_at else '—' }}</td>
+        <td class="text-right">
+          <form method="post" action="/crew/assignments/{{ a.id }}/delete" style="display:inline;" data-confirm="Supprimer cet embarquement ?">
+            <button type="submit" class="btn btn-danger btn-sm">🗑</button>
+          </form>
+        </td>
+      </tr>
+      <tr><td colspan="5">
+        <details>
+          <summary class="text-muted">✎ Modifier l'embarquement (leg {{ a.leg_id }})</summary>
+          <form method="post" action="/crew/assignments/{{ a.id }}/edit" class="grid grid-4 gap-2 mt-2">
+            <div class="field"><label>Leg</label><input name="leg_id" type="number" value="{{ a.leg_id }}" required /></div>
+            <div class="field"><label>Rôle à bord</label><input name="role_on_board" value="{{ a.role_on_board or '' }}" /></div>
+            <div class="field"><label>Embarquement</label><input name="embark_at" type="datetime-local" value="{{ a.embark_at.strftime('%Y-%m-%dT%H:%M') if a.embark_at else '' }}" /></div>
+            <div class="field"><label>Débarquement</label><input name="disembark_at" type="datetime-local" value="{{ a.disembark_at.strftime('%Y-%m-%dT%H:%M') if a.disembark_at else '' }}" /></div>
+            <div style="grid-column:span 4;"><button type="submit" class="btn btn-primary btn-sm">Enregistrer</button></div>
+          </form>
+        </details>
+      </td></tr>
       {% endfor %}
     </tbody>
   </table>
