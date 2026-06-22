@@ -85,6 +85,23 @@ async def kpi_index(
     total_co2_emitted_t = sum((k.co2_emitted_kg or Decimal(0)) for k in kpis) / Decimal(1000)
     total_do_t = sum((k.do_consumed_t or Decimal(0)) for k in kpis)
 
+    # FIN-03 — NOx / SOx évités par leg (cargo × distance × Δfacteur), + totaux.
+    from app.services.emissions import estimate_avoided, get_emission_factors
+
+    em_factors = await get_emission_factors(db)
+    emissions_by_leg: dict[int, object] = {}
+    total_nox_avoided_kg = Decimal(0)
+    total_sox_avoided_kg = Decimal(0)
+    for k in kpis:
+        res = estimate_avoided(
+            cargo_t=(k.tonnage_kg or Decimal(0)) / Decimal(1000),
+            distance_nm=k.distance_nm,
+            factors=em_factors,
+        )
+        emissions_by_leg[k.leg_id] = res
+        total_nox_avoided_kg += res.nox_avoided_kg
+        total_sox_avoided_kg += res.sox_avoided_kg
+
     if kpis:
         on_time_count = sum(1 for k in kpis if k.on_time)
         on_time_pct = on_time_count / len(kpis) * 100.0
@@ -109,6 +126,9 @@ async def kpi_index(
             "total_co2_emitted_t": total_co2_emitted_t,
             "total_do_t": total_do_t,
             "on_time_pct": on_time_pct,
+            "emissions_by_leg": emissions_by_leg,
+            "total_nox_avoided_kg": total_nox_avoided_kg,
+            "total_sox_avoided_kg": total_sox_avoided_kg,
         },
     )
 
@@ -128,6 +148,10 @@ async def kpi_export_csv(
         if leg:
             leg_map[lid] = leg.leg_code
 
+    from app.services.emissions import estimate_avoided, get_emission_factors
+
+    em_factors = await get_emission_factors(db)
+
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
@@ -141,9 +165,16 @@ async def kpi_export_csv(
             "on_time",
             "occupancy_pct",
             "co2_avoided_kg",
+            "nox_avoided_kg",
+            "sox_avoided_kg",
         ]
     )
     for k in kpis:
+        em = estimate_avoided(
+            cargo_t=(k.tonnage_kg or Decimal(0)) / Decimal(1000),
+            distance_nm=k.distance_nm,
+            factors=em_factors,
+        )
         writer.writerow(
             [
                 leg_map.get(k.leg_id, ""),
@@ -155,6 +186,8 @@ async def kpi_export_csv(
                 "1" if k.on_time else "0",
                 k.occupancy_pct,
                 k.co2_avoided_kg,
+                em.nox_avoided_kg,
+                em.sox_avoided_kg,
             ]
         )
 

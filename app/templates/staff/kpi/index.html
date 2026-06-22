@@ -18,6 +18,8 @@
   <div class="kpi-card"><div class="label">{{ t('kpi_total_tonnage', lang) }}</div><div class="value">{{ "%.0f"|format(total_tonnage_t) }} t</div><div class="delta text-muted">{{ t('kpi_total_legs', lang) }}</div></div>
   <div class="kpi-card"><div class="label">{{ t('kpi_co2_emitted', lang) }}</div><div class="value">{{ "%.1f"|format(total_co2_emitted_t) }} t</div><div class="delta text-muted">{{ t('kpi_do_consumed', lang) }} {{ "%.1f"|format(total_do_t) }} t</div></div>
   <div class="kpi-card"><div class="label">{{ t('kpi_co2_avoided', lang) }}</div><div class="value text-success">{{ "%.0f"|format(total_co2_avoided_kg) }} kg</div><div class="delta up">{{ t('kpi_vs_conv', lang) }}</div></div>
+  <div class="kpi-card"><div class="label">NOx évité</div><div class="value text-success">{{ "%.1f"|format(total_nox_avoided_kg) }} kg</div><div class="delta up">vs conventionnel</div></div>
+  <div class="kpi-card"><div class="label">SOx évité</div><div class="value text-success">{{ "%.1f"|format(total_sox_avoided_kg) }} kg</div><div class="delta up">vs conventionnel</div></div>
   <div class="kpi-card"><div class="label">{{ t('kpi_ontime_perf', lang) }}</div><div class="value">{{ "%.0f"|format(on_time_pct) }} %</div><div class="delta text-muted">{{ t('kpi_legs_ontime', lang) }}</div></div>
   <div class="kpi-card"><div class="label">{{ t('kpi_legs_tracked', lang) }}</div><div class="value">{{ kpis|length }}</div><div class="delta text-muted">{{ t('kpi_auto_fed', lang) }}</div></div>
 </section>
@@ -27,7 +29,7 @@
   <p class="text-muted text-sm">{{ t('kpi_per_leg_help', lang) }}</p>
   {% if kpis %}
     <table>
-      <thead><tr><th>Leg</th><th>{{ t('kpi_palettes', lang) }}</th><th>{{ t('kpi_tonnage', lang) }}</th><th>Distance</th><th>{{ t('kpi_avg_speed', lang) }}</th><th>{{ t('kpi_occupancy', lang) }}</th><th>DO (t)</th><th>{{ t('kpi_co2_emitted_short', lang) }}</th><th>CO₂/t·nm</th><th>{{ t('kpi_co2_avoided_short', lang) }}</th><th>On-time</th><th>{{ t('kpi_source', lang) }}</th>{% if user.role == 'administrateur' %}<th></th>{% endif %}</tr></thead>
+      <thead><tr><th>Leg</th><th>{{ t('kpi_palettes', lang) }}</th><th>{{ t('kpi_tonnage', lang) }}</th><th>Distance</th><th>{{ t('kpi_avg_speed', lang) }}</th><th>{{ t('kpi_occupancy', lang) }}</th><th>DO (t)</th><th>{{ t('kpi_co2_emitted_short', lang) }}</th><th>CO₂/t·nm</th><th>{{ t('kpi_co2_avoided_short', lang) }}</th><th>NOx évité</th><th>SOx évité</th><th>On-time</th><th>{{ t('kpi_source', lang) }}</th>{% if user.role == 'administrateur' %}<th></th>{% endif %}</tr></thead>
       <tbody>{% for k in kpis %}<tr>
         <td class="mono">{% if leg_map.get(k.leg_id) %}<a href="/mrv/legs/{{ k.leg_id }}/carbon">{{ leg_map[k.leg_id].leg_code }}</a>{% else %}#{{ k.leg_id }}{% endif %}</td>
         <td>{{ k.palettes_carried }}</td>
@@ -39,6 +41,9 @@
         <td class="mono">{{ "%.1f"|format(k.co2_emitted_kg / 1000) ~ ' t' if k.co2_emitted_kg else '—' }}</td>
         <td class="mono">{{ k.co2_per_tnm_g or '—' }}</td>
         <td class="mono text-success">{{ k.co2_avoided_kg or '—' }}</td>
+        {% set em = emissions_by_leg.get(k.leg_id) %}
+        <td class="mono text-success">{{ "%.2f"|format(em.nox_avoided_kg) if em else '—' }}</td>
+        <td class="mono text-success">{{ "%.2f"|format(em.sox_avoided_kg) if em else '—' }}</td>
         <td>{% if k.on_time %}<span class="pill pill-ok">OK</span>{% else %}<span class="pill pill-warn">{{ t('kpi_late', lang) }}</span>{% endif %}</td>
         <td>{% if k.is_manual %}<span class="pill pill-warn">{{ t('kpi_manual', lang) }}</span>{% else %}<span class="pill pill-ok">{{ t('kpi_auto', lang) }}</span>{% endif %}</td>
         {% if user.role == 'administrateur' %}

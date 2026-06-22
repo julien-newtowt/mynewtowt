@@ -246,6 +246,40 @@ def test_v2_onboard_leg_attachments_restored():
     assert hasattr(LegAttachment, "category")
 
 
+# ───────────────────────────── Finance / KPI (V2 parité) ──────────────────────
+
+
+def test_v2_finance_forecast_actual_restored():
+    """FIN-01 : LegFinance retrouve le couple prévisionnel/réel + écarts (A2)."""
+    from app.models.finance import LegFinance
+
+    for f in ("revenue_forecast_eur", "port_fees_forecast_eur",
+              "docker_costs_forecast_eur", "opex_share_forecast_eur",
+              "other_costs_forecast_eur", "margin_forecast_eur"):
+        assert hasattr(LegFinance, f), f
+    # propriétés d'écart
+    for p in ("revenue_variance_eur", "margin_variance_eur"):
+        assert isinstance(getattr(LegFinance, p), property), p
+
+
+def test_v2_finance_csv_export_restored():
+    """FIN-02 : route d'export CSV finance prévisionnel/réel."""
+    from app.routers.finance_router import router
+
+    assert ("GET", "/finance/export/csv") in _methods(router)
+
+
+def test_v2_nox_sox_avoided_restored():
+    """FIN-03 : facteurs + calcul NOx/SOx évités (paramétrables)."""
+    from app.services.emissions import EmissionFactors, estimate_avoided, get_emission_factors
+
+    assert callable(estimate_avoided)
+    assert callable(get_emission_factors)
+    res = estimate_avoided(cargo_t=10, distance_nm=100)
+    assert res.nox_avoided_kg > 0 and res.sox_avoided_kg > 0
+    assert EmissionFactors is not None
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # Ces fonctionnalités existaient en V2, sont spécifiées (docs/audit/specs), mais
 # pas encore implémentées. Le skip documente la dette de parité de façon vivante.
@@ -254,9 +288,6 @@ _PENDING = {
     "crew_embark_off_leg": "CREW-04/A4 — embarquement hors leg (leg_id nullable + vessel_id)",
     "crew_ticket_upload": "CREW-05 — upload/download PJ billet (spec écrite)",
     "mrv_dms_autofill": "MRV-07 — auto-remplissage GPS de la position DMS (saisie manuelle OK)",
-    "finance_forecast_actual": "FIN-01 — modèle prévisionnel/réalisé (spec écrite)",
-    "finance_csv_export": "FIN-02 — export CSV finance",
-    "kpi_nox_sox": "FIN-03 — NOx/SOx évités",
     "planning_commercial_pdf": "PLN-01 — brochure commerciale imprimable",
     "planning_csv_export": "PLN-03 — export CSV planning réel",
     "stowage_onboard_view": "STO-01 — vue à bord du plan de chargement",

@@ -26,6 +26,7 @@ class LegFinance(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id"), nullable=False, unique=True)
 
+    # ── Réel (consolidé par le rollup FLX-05 depuis bookings/SOF/escale) ──
     revenue_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     port_fees_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     docker_costs_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
@@ -35,10 +36,55 @@ class LegFinance(Base):
     other_costs_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     margin_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
 
+    # ── Prévisionnel / budget par poste (FIN-01, arbitrage A2) — saisi par le
+    # contrôle de gestion ; le réel ci-dessus reste alimenté par le rollup. ──
+    revenue_forecast_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+    port_fees_forecast_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+    docker_costs_forecast_eur: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, nullable=False
+    )
+    opex_share_forecast_eur: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, nullable=False
+    )
+    other_costs_forecast_eur: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, nullable=False
+    )
+    margin_forecast_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+
     notes: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+    # ── Écarts réel − prévisionnel (positif = mieux que le budget pour le CA
+    # et la marge ; pour un poste de coût, positif = dépassement). ──
+    @staticmethod
+    def _delta(actual: Decimal | None, forecast: Decimal | None) -> Decimal:
+        return (actual or Decimal("0")) - (forecast or Decimal("0"))
+
+    @property
+    def revenue_variance_eur(self) -> Decimal:
+        return self._delta(self.revenue_eur, self.revenue_forecast_eur)
+
+    @property
+    def port_fees_variance_eur(self) -> Decimal:
+        return self._delta(self.port_fees_eur, self.port_fees_forecast_eur)
+
+    @property
+    def docker_costs_variance_eur(self) -> Decimal:
+        return self._delta(self.docker_costs_eur, self.docker_costs_forecast_eur)
+
+    @property
+    def opex_share_variance_eur(self) -> Decimal:
+        return self._delta(self.opex_share_eur, self.opex_share_forecast_eur)
+
+    @property
+    def other_costs_variance_eur(self) -> Decimal:
+        return self._delta(self.other_costs_eur, self.other_costs_forecast_eur)
+
+    @property
+    def margin_variance_eur(self) -> Decimal:
+        return self._delta(self.margin_eur, self.margin_forecast_eur)
 
 
 class OpexParameter(Base):
