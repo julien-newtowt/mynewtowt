@@ -77,31 +77,50 @@ def _assert_allowed(path: str) -> None:
 _DEFAULT_HEADER = "X-Api-Key"
 _working_strategy: str | None = None
 
+# Type d'une stratégie d'auth : (label, headers, query_params).
+_Strategy = tuple[str, dict[str, str], dict[str, str]]
 
-def _auth_strategies() -> list[tuple[str, dict[str, str]]]:
-    """Liste ordonnée ``(label, headers)`` des schémas d'auth à essayer.
 
-    Ordre : stratégie mémorisée → header explicite (.env) → candidats usuels
-    (ApiKey / ApiToken / X-Api-Key) → Authorization Bearer → Authorization brut.
+def _auth_strategies() -> list[_Strategy]:
+    """Schémas d'auth à essayer ``(label, headers, query_params)``.
+
+    Marasoft (API ASP.NET Core, lib mihirdilip/aspnetcore-authentication-apikey)
+    accepte la clé **en header OU en query string**, sous un même nom — historiquement
+    ``apiKey`` en query string (cf. release notes). On essaie donc le query param
+    ``apiKey`` ET plusieurs noms de header. ``MARAD_API_KEY_HEADER`` force un nom
+    précis (utilisé en header ET en query). Le schéma gagnant est mémorisé.
     """
     token = (settings.marad_api_token or "").strip()
-    candidates: list[tuple[str, dict[str, str]]] = []
     explicit = (settings.marad_api_key_header or "").strip()
+    candidates: list[_Strategy] = []
     if explicit and explicit != _DEFAULT_HEADER:
-        candidates.append((f"header:{explicit}", {explicit: token}))
+        candidates.append((f"header:{explicit}", {explicit: token}, {}))
+        candidates.append((f"query:{explicit}", {}, {explicit: token}))
     candidates += [
-        ("header:ApiKey", {"ApiKey": token}),
-        ("header:ApiToken", {"ApiToken": token}),
-        ("header:X-Api-Key", {"X-Api-Key": token}),
-        ("Authorization:Bearer", {"Authorization": f"Bearer {token}"}),
-        ("Authorization:raw", {"Authorization": token}),
+        ("query:apiKey", {}, {"apiKey": token}),  # méthode documentée Marasoft
+        ("header:apiKey", {"apiKey": token}, {}),
+        ("header:ApiKey", {"ApiKey": token}, {}),
+        ("header:X-API-KEY", {"X-API-KEY": token}, {}),
+        ("header:ApiToken", {"ApiToken": token}, {}),
+        ("Authorization:Bearer", {"Authorization": f"Bearer {token}"}, {}),
+        ("Authorization:raw", {"Authorization": token}, {}),
     ]
-    # Stratégie mémorisée en tête.
-    if _working_strategy:
+    if _working_strategy:  # schéma mémorisé en tête
         candidates.sort(key=lambda c: c[0] != _working_strategy)
-    # Dédoublonnage par label en préservant l'ordre.
     seen: set[str] = set()
     return [c for c in candidates if not (c[0] in seen or seen.add(c[0]))]
+
+
+async def prime_auth() -> str | None:
+    """Découvre & mémorise le schéma d'auth via ``getVessels`` (15 req/min).
+
+    À appeler AVANT les endpoints à quota serré (``/api/Crewing`` = 1 req/min) :
+    on évite ainsi de gâcher leur quota en essayant plusieurs schémas dessus.
+    """
+    if not enabled() or _working_strategy:
+        return _working_strategy
+    await _get("/api/vessels/getVessels")  # met à jour _working_strategy si succès
+    return _working_strategy
 
 
 async def _request(
@@ -122,8 +141,11 @@ async def _request(
     last_auth_status: int | None = None
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            for label, headers in _auth_strategies():
-                r = await client.request(method, url, params=params, json=json, headers=headers)
+            for label, headers, auth_params in _auth_strategies():
+                merged_params = {**(params or {}), **auth_params}
+                r = await client.request(
+                    method, url, params=merged_params or None, json=json, headers=headers
+                )
                 if r.status_code in (401, 403):
                     last_auth_status = r.status_code
                     if label == _working_strategy:
@@ -234,9 +256,9 @@ async def diagnose() -> dict:
     saw_404 = False
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            for label, headers in _auth_strategies():
+            for label, headers, auth_params in _auth_strategies():
                 try:
-                    r = await client.get(url, headers=headers)
+                    r = await client.get(url, headers=headers, params=auth_params or None)
                     any_response = True
                     attempts.append({"strategy": label, "status": r.status_code})
                     if r.status_code in (401, 403):

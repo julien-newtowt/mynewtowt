@@ -439,7 +439,11 @@ class _FakeResp:
 
 
 class _FakeClient:
-    """Faux httpx.AsyncClient : n'authentifie que pour ``accept_header``."""
+    """Faux httpx.AsyncClient : n'authentifie que pour ``accept_key``.
+
+    ``accept_key`` est soit un nom de header (ex. ``ApiKey``, ``Authorization``),
+    soit ``query:<param>`` (ex. ``query:apiKey``) pour l'auth en query string.
+    """
 
     def __init__(self, accept_header: str, payload) -> None:
         self.accept_header = accept_header
@@ -452,18 +456,46 @@ class _FakeClient:
     async def __aexit__(self, *a):
         return False
 
+    def _sig(self, headers, params) -> str:
+        if headers:
+            return next(iter(headers))  # nom du header (un seul par stratégie)
+        if params:
+            return "query:" + next(iter(params))
+        return "?"
+
     async def request(self, method, url, params=None, json=None, headers=None):
-        ((name, _val),) = headers.items()
-        self.tried.append(name)
-        if name == self.accept_header:
+        sig = self._sig(headers, params)
+        self.tried.append(sig)
+        if sig == self.accept_header:
             return _FakeResp(200, self.payload)
         return _FakeResp(403)
 
 
-def test_request_tries_apikey_then_apitoken(monkeypatch) -> None:
-    """Au défaut, on essaie ApiKey puis ApiToken et on mémorise le schéma gagnant."""
+def test_request_query_apikey_first(monkeypatch) -> None:
+    """Le query param ``apiKey`` (méthode Marasoft) est essayé en premier."""
     monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
     monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")  # défaut
+    monkeypatch.setattr(marad, "_working_strategy", None)
+
+    captured: dict = {}
+
+    def _factory(*a, **k):
+        c = _FakeClient(accept_header="query:apiKey", payload=[{"ok": 1}])
+        captured["client"] = c
+        return c
+
+    monkeypatch.setattr(marad.httpx, "AsyncClient", _factory)
+
+    out = asyncio.run(marad.list_vessels())
+    assert out == [{"ok": 1}]
+    assert captured["client"].tried[0] == "query:apiKey"  # essayé en 1er
+    assert marad._working_strategy == "query:apiKey"  # mémorisé pour la suite
+
+
+def test_request_falls_through_to_header_apitoken(monkeypatch) -> None:
+    """Si query+headers usuels échouent, on tente les autres noms (ApiToken)."""
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")
     monkeypatch.setattr(marad, "_working_strategy", None)
 
     captured: dict = {}
@@ -474,14 +506,13 @@ def test_request_tries_apikey_then_apitoken(monkeypatch) -> None:
         return c
 
     monkeypatch.setattr(marad.httpx, "AsyncClient", _factory)
-
     out = asyncio.run(marad.list_vessels())
     assert out == [{"ok": 1}]
-    assert captured["client"].tried[:2] == ["ApiKey", "ApiToken"]
-    assert marad._working_strategy == "header:ApiToken"  # mémorisé pour la suite
+    assert "ApiToken" in captured["client"].tried
+    assert marad._working_strategy == "header:ApiToken"
 
 
-def test_request_all_headers_fail_returns_none(monkeypatch) -> None:
+def test_request_all_schemes_fail_returns_none(monkeypatch) -> None:
     monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
     monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")
     monkeypatch.setattr(marad, "_working_strategy", None)
@@ -514,8 +545,9 @@ def test_request_tries_bearer_scheme(monkeypatch) -> None:
 
 def test_auth_strategies_respects_explicit_pin(monkeypatch) -> None:
     monkeypatch.setattr(marad, "_working_strategy", None)
-    monkeypatch.setattr(marad.settings, "marad_api_key_header", "Authorization")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "MyKey")
     strategies = marad._auth_strategies()
-    labels = [label for label, _ in strategies]
-    assert labels[0] == "header:Authorization"  # pin .env prioritaire
-    assert "header:ApiKey" in labels and "header:ApiToken" in labels
+    labels = [label for label, _h, _p in strategies]
+    assert labels[0] == "header:MyKey"  # pin .env prioritaire (header)
+    assert "query:MyKey" in labels  # et aussi en query string
+    assert "query:apiKey" in labels and "header:ApiKey" in labels

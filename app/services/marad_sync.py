@@ -402,6 +402,10 @@ async def sync_all(db: AsyncSession) -> dict:
     Utilisé par le bouton « Synchroniser Marad » (/crew) et le cron
     ``POST /api/marad/refresh``. Renvoie un résumé à plat pour l'UI + le détail.
     """
+    # Découvre d'abord le schéma d'auth via un endpoint à quota large
+    # (getVessels, 15 req/min) pour ne pas gâcher le quota de /api/Crewing
+    # (1 req/min) en essayant plusieurs schémas dessus.
+    await marad.prime_auth()
     crew = await sync_crew(db)
     sched = await sync_schedules(db)
 
@@ -424,9 +428,11 @@ async def sync_all(db: AsyncSession) -> dict:
             elif cls == "auth_refused":
                 diagnostic = (
                     "Hôte Marad joignable mais authentification refusée (401/403) sur "
-                    "tous les schémas testés (ApiKey, ApiToken, X-Api-Key, "
-                    "Authorization Bearer). Vérifiez MARAD_API_TOKEN et, si l'éditeur "
-                    "impose un header précis, fixez MARAD_API_KEY_HEADER."
+                    "tous les schémas testés (apiKey en query string ET en header, "
+                    "ApiKey/X-API-KEY/ApiToken, Authorization Bearer). Le token est "
+                    "probablement invalide/expiré, ou l'éditeur impose un nom de clé "
+                    "précis : vérifiez MARAD_API_TOKEN et fixez MARAD_API_KEY_HEADER "
+                    "(nom utilisé en header ET en query)."
                 )
             elif cls == "wrong_path":
                 diagnostic = (
