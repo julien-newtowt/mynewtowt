@@ -123,6 +123,8 @@ def test_v2_escale_edit_delete_routes_restored():
     assert "/escale/operations/{op_id}/delete" in p
     assert "/escale/dockers/{shift_id}/edit" in p
     assert "/escale/dockers/{shift_id}/delete" in p
+    # ESC-02 — pilotage du statut portuaire / pose ATA-ATD.
+    assert "/escale/legs/{leg_id}/port-status" in p
 
 
 def test_v2_docker_productivity_restored():
@@ -194,7 +196,6 @@ def test_v2_mrv_do_counters_present():
 # pas encore implémentées. Le skip documente la dette de parité de façon vivante.
 
 _PENDING = {
-    "escale_port_status_ata_atd": "ESC-02 — flux statut portuaire / pose ATA-ATD (spec écrite)",
     "crew_embark_off_leg": "CREW-04/A4 — embarquement hors leg (leg_id nullable + vessel_id)",
     "crew_ticket_upload": "CREW-05 — upload/download PJ billet (spec écrite)",
     "mrv_dms_autofill": "MRV-07 — auto-remplissage GPS de la position DMS (saisie manuelle OK)",

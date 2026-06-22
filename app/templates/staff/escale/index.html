@@ -39,6 +39,23 @@
 </div>
 {% endif %}
 
+{% if not leg_locked %}
+<article class="card mb-3">
+  <div class="section-header"><h3><i data-lucide="ship"></i> Statut portuaire</h3></div>
+  <p class="text-muted text-sm">
+    ATA : <span class="mono">{{ selected_leg.ata|datetime if selected_leg.ata else '— non posée' }}</span> ·
+    ATD : <span class="mono">{{ selected_leg.atd|datetime if selected_leg.atd else '— non posée' }}</span>
+  </p>
+  <form method="post" action="/escale/legs/{{ selected_leg.id }}/port-status" class="flex gap-2" style="align-items:flex-end; flex-wrap:wrap;">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="field"><label>Horodatage (UTC)</label><input name="status_time" type="datetime-local" /></div>
+    <button type="submit" name="new_status" value="a_quai" class="btn btn-primary btn-sm">⚓ À quai (pose ATA)</button>
+    <button type="submit" name="new_status" value="pilote_depart" class="btn btn-secondary btn-sm">🚢 Pilote départ (pose ATD)</button>
+  </form>
+  <p class="text-muted text-xs mt-1">Pose ATA/ATD, recalcule l'OPEX réel (rollup) et notifie la compagnie (EOSP/SOSP).</p>
+</article>
+{% endif %}
+
 <div class="grid grid-2 gap-4">
   <article class="card">
     <div class="section-header"><h3><i data-lucide="anchor"></i> Opérations</h3></div>

@@ -611,6 +611,87 @@ async def delete_docker_shift(
     return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
 
 
+def _to_utc(dt: datetime | None) -> datetime | None:
+    """Rend un datetime aware UTC (les saisies de formulaire sont naïves)."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
+@router.post("/legs/{leg_id}/port-status")
+async def update_port_status(
+    leg_id: int,
+    request: Request,
+    new_status: str = Form(...),
+    status_time: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "M")),
+):
+    """ESC-02 — pilotage du statut portuaire : pose ATA/ATD, recalcule la
+    finance (rollup) et notifie la compagnie. **Idempotent** : re-soumettre
+    (correction d'horodatage) ne réémet pas de notification.
+
+    Réutilise les helpers V3 partagés avec le commandant (``voyage_events``) :
+    arrivée = EOSP (à quai), départ = SOSP (pilote départ).
+
+    NB — la pose d'ATA/ATD n'altère ni l'ETD ni l'ETA du leg : la propagation
+    des dates prévisionnelles aval (``cascade_from_leg``) relève du décalage
+    d'ETA (déclaration capitaine / édition planning), pas de l'enregistrement
+    du réel. On ne cascade donc pas ici — comportement aligné sur le flux SOF
+    du commandant (``captain_router``), qui ne cascade pas non plus à l'arrivée
+    ou au départ.
+    """
+    from app.services.finance_rollup import rollup_for_leg
+    from app.services.notifications import notify_eosp, notify_sosp
+    from app.services.voyage_events import on_vessel_arrived, on_vessel_departed
+
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    _assert_escale_unlocked(leg)
+    t = _to_utc(_parse_iso(status_time)) or datetime.now(UTC)
+
+    if new_status == "a_quai":
+        first_arrival = leg.ata is None  # garde d'idempotence (avant mutation)
+        leg.ata = t
+        leg.status = "in_progress"
+        await on_vessel_arrived(db, leg)  # idempotent : ata déjà posée, avance bookings
+        await rollup_for_leg(db, leg)
+        if first_arrival:
+            await notify_eosp(db, leg.leg_code, leg.id)
+    elif new_status == "pilote_depart":
+        if leg.ata is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Renseigner d'abord le statut « à quai » (ATA) avant le départ.",
+            )
+        first_departure = leg.atd is None  # garde d'idempotence (avant mutation)
+        leg.atd = t
+        leg.status = "completed"
+        await on_vessel_departed(db, leg)
+        await rollup_for_leg(db, leg)
+        if first_departure:
+            await notify_sosp(db, leg.leg_code, leg.id)
+    else:
+        raise HTTPException(status_code=400, detail="statut portuaire inconnu")
+
+    await db.flush()
+    await activity_record(
+        db,
+        action="port_status",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="leg",
+        entity_id=leg.id,
+        entity_label=leg.leg_code,
+        detail=f"→ {new_status} @ {t.isoformat()}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+
+
 @router.post("/legs/{leg_id}/lock")
 async def lock_leg(
     leg_id: int,
