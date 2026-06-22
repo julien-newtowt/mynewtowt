@@ -112,7 +112,7 @@
   <table class="data-table">
     <thead><tr>
       <th>Zone</th><th>Order</th><th>Lot</th><th>Description</th><th>Format</th>
-      <th>Pal.</th><th>Poids</th><th>Dim. (L×l×h cm)</th><th>Classement</th><th>Gerbé</th><th>Flags</th>
+      <th>Pal.</th><th>Poids</th><th>Dim. (L×l×h cm)</th><th>Classement</th><th>Gerbé</th><th>Flags</th><th>Actions</th>
     </tr></thead>
     <tbody>
       {% for it in items %}
@@ -137,6 +137,21 @@
           {% if it.is_dangerous %}<span class="pill pill-error">IMO</span>{% endif %}
           {% if it.is_oversized %}<span class="pill pill-warn">Hors-gabarit</span>{% endif %}
           {% if not it.stackable %}<span class="pill">non gerbable</span>{% endif %}
+        </td>
+        <td>
+          {% if plan.status != 'locked' %}
+          <form method="post" action="/stowage/plans/{{ plan.id }}/items/{{ it.id }}/move" class="flex gap-1 items-center" style="margin-bottom:4px;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <select name="new_zone" class="form-input" style="font-size:0.75rem;width:90px;" aria-label="Déplacer vers la zone">
+              {% for z in zones %}<option value="{{ z }}" {{ 'selected' if z == it.zone else '' }}>{{ z }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-xs" title="Déplacer">↦</button>
+          </form>
+          <form method="post" action="/stowage/plans/{{ plan.id }}/items/{{ it.id }}/delete" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-ghost btn-xs" style="color:var(--cuivre);" data-confirm="Retirer cette affectation ?"><i data-lucide="trash-2"></i></button>
+          </form>
+          {% else %}<span class="text-muted">—</span>{% endif %}
         </td>
       </tr>
       {% endfor %}

@@ -214,6 +214,112 @@ async def add_item(
     return RedirectResponse(url=f"/stowage/legs/{plan.leg_id}", status_code=303)
 
 
+@router.post("/plans/{plan_id}/items/{item_id}/move")
+async def move_item(
+    plan_id: int,
+    item_id: int,
+    request: Request,
+    new_zone: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """STO-02 — déplace une palette d'une zone à l'autre (sans supprimer/recréer)."""
+    item = await db.get(StowageItem, item_id)
+    if item is None or item.plan_id != plan_id:
+        raise HTTPException(status_code=404)
+    if new_zone not in ZONE_LOADING_ORDER:
+        raise HTTPException(status_code=400, detail="zone invalide")
+    plan = await db.get(StowagePlan, plan_id)
+    old_zone = item.zone
+    item.zone = new_zone
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="cargo",
+        entity_type="stowage_item",
+        entity_id=item.id,
+        entity_label=f"plan={plan_id} {old_zone}→{new_zone}",
+        ip_address=_client_ip(request),
+    )
+    leg_id = plan.leg_id if plan else None
+    return RedirectResponse(url=f"/stowage/legs/{leg_id}", status_code=303)
+
+
+@router.post("/plans/{plan_id}/items/{item_id}/delete")
+async def delete_item(
+    plan_id: int,
+    item_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """STO-03 — retire une affectation sans tout réécraser."""
+    item = await db.get(StowageItem, item_id)
+    if item is None or item.plan_id != plan_id:
+        raise HTTPException(status_code=404)
+    plan = await db.get(StowagePlan, plan_id)
+    leg_id = plan.leg_id if plan else None
+    await db.delete(item)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="cargo",
+        entity_type="stowage_item",
+        entity_id=item_id,
+        entity_label=f"plan={plan_id} item={item_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/stowage/legs/{leg_id}", status_code=303)
+
+
+@router.get("/onboard/{leg_id}", response_class=HTMLResponse)
+async def stowage_onboard_view(
+    leg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> HTMLResponse:
+    """STO-01 — vue « à bord » du plan de chargement (lecture seule, perm captain)."""
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    plan = (
+        await db.execute(
+            select(StowagePlan)
+            .options(selectinload(StowagePlan.items))
+            .where(StowagePlan.leg_id == leg_id)
+        )
+    ).scalar_one_or_none()
+    items = list(plan.items) if plan and plan.items else []
+    usage = zone_usage_summary(
+        [
+            {"zone": it.zone, "pallet_format": it.pallet_format, "pallet_count": it.pallet_count}
+            for it in items
+        ]
+    )
+    return templates.TemplateResponse(
+        "staff/stowage/onboard.html",
+        {
+            "request": request,
+            "user": user,
+            "leg": leg,
+            "plan": plan,
+            "items": items,
+            "zones": ZONE_LOADING_ORDER,
+            "dangerous_zones": DANGEROUS_ZONES,
+            "usage": usage,
+        },
+    )
+
+
 @router.post("/plans/{plan_id}/suggest")
 async def suggest_plan(
     plan_id: int,

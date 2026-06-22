@@ -313,6 +313,19 @@ def test_v2_planning_exports_restored():
     assert ("GET", "/planning/export/csv") in m
 
 
+# ───────────────────────────── Stowage (V2 parité) ────────────────────────────
+
+
+def test_v2_stowage_routes_restored():
+    """STO-01 vue à bord + STO-02 réaffectation de zone + STO-03 retrait."""
+    from app.routers.stowage_router import router
+
+    m = _methods(router)
+    assert ("GET", "/stowage/onboard/{leg_id}") in m
+    assert ("POST", "/stowage/plans/{plan_id}/items/{item_id}/move") in m
+    assert ("POST", "/stowage/plans/{plan_id}/items/{item_id}/delete") in m
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # Ces fonctionnalités existaient en V2, sont spécifiées (docs/audit/specs), mais
 # pas encore implémentées. Le skip documente la dette de parité de façon vivante.
@@ -321,8 +334,6 @@ _PENDING = {
     "crew_embark_off_leg": "CREW-04/A4 — embarquement hors leg (leg_id nullable + vessel_id)",
     "crew_ticket_upload": "CREW-05 — upload/download PJ billet (spec écrite)",
     "mrv_dms_autofill": "MRV-07 — auto-remplissage GPS de la position DMS (saisie manuelle OK)",
-    "stowage_onboard_view": "STO-01 — vue à bord du plan de chargement",
-    "stowage_drag_drop": "STO-02 — réaffectation de zone (drag-drop)",
     "onboard_cargo_doc_structured": "ONB-02 — documents cargo structurés",
     "commercial_order_attachments": "COM-04 — pièces jointes commande (spec écrite)",
 }

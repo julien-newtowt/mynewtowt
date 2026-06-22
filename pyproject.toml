@@ -13,6 +13,11 @@ filterwarnings = [
     "error",
     "ignore::DeprecationWarning:passlib.*",
     "ignore::DeprecationWarning:itsdangerous.*",
+    # Signature TemplateResponse(name, context) — utilisée dans tout le code
+    # applicatif ; Starlette la déprécie au profit de (request, name). Dette
+    # connue et assumée côté app (cf. app/templating.py), filtrée comme les
+    # autres déprécations tierces ci-dessus.
+    "ignore::DeprecationWarning:starlette.templating",
     # Artefact connu des tests async (aiosqlite + boucle pytest-asyncio) :
     # la socketpair interne de la boucle est collectée par le GC après le
     # dispose() du moteur → ResourceWarning "unclosed socket" remontée en
