@@ -218,6 +218,34 @@ def test_v2_order_rich_fields_restored():
         assert hasattr(Order, f), f
 
 
+# ───────────────────────────── Onboard / Captain (V2 parité) ──────────────────
+
+
+def test_v2_onboard_sof_edit_delete_restored():
+    """ONB-01 : édition + suppression d'un SOF non signé (+ garde lock)."""
+    from app.routers.captain_router import router
+
+    m = _methods(router)
+    assert ("POST", "/captain/sof-events/{event_id}/edit") in m
+    assert ("POST", "/captain/sof-events/{event_id}/delete") in m
+
+
+def test_v2_onboard_leg_attachments_restored():
+    """ONB-03 : upload/download/delete de pièces jointes leg + catégories."""
+    from app.routers.captain_router import router
+
+    m = _methods(router)
+    assert ("POST", "/captain/legs/{leg_id}/attachments") in m
+    assert ("GET", "/captain/legs/{leg_id}/attachments/{att_id}/download") in m
+    assert ("POST", "/captain/legs/{leg_id}/attachments/{att_id}/delete") in m
+    from app.models.leg_attachment import LegAttachment, LEG_ATTACHMENT_CATEGORIES
+
+    assert "port_agent" in LEG_ATTACHMENT_CATEGORIES
+    assert "bl_signed" in LEG_ATTACHMENT_CATEGORIES
+    assert "letter_protest" in LEG_ATTACHMENT_CATEGORIES
+    assert hasattr(LegAttachment, "category")
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # Ces fonctionnalités existaient en V2, sont spécifiées (docs/audit/specs), mais
 # pas encore implémentées. Le skip documente la dette de parité de façon vivante.
@@ -233,9 +261,7 @@ _PENDING = {
     "planning_csv_export": "PLN-03 — export CSV planning réel",
     "stowage_onboard_view": "STO-01 — vue à bord du plan de chargement",
     "stowage_drag_drop": "STO-02 — réaffectation de zone (drag-drop)",
-    "onboard_sof_edit_delete": "ONB-01 — édition/suppression SOF non signé",
     "onboard_cargo_doc_structured": "ONB-02 — documents cargo structurés",
-    "onboard_leg_attachments": "ONB-03 — pièces jointes leg / docs agent d'escale",
     "admin_vessel_crud": "ADM-01 — CRUD navires",
     "admin_alerts_engine": "ADM-02 — moteur d'alertes du dashboard",
     "commercial_order_attachments": "COM-04 — pièces jointes commande (spec écrite)",

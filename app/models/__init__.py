@@ -48,6 +48,7 @@ from app.models.hr_review import HrReview
 from app.models.insurance import InsuranceContract
 from app.models.known_device import KnownDevice
 from app.models.leg import Leg
+from app.models.leg_attachment import LegAttachment
 from app.models.mfa_recovery_code import MfaRecoveryCode
 from app.models.mrv import MRVEvent, MRVParameter
 from app.models.news_item import NewsItem
@@ -133,6 +134,7 @@ __all__ = [
     "InsuranceContract",
     "KnownDevice",
     "Leg",
+    "LegAttachment",
     "LegFinance",
     "LegKPI",
     "MRVEvent",
