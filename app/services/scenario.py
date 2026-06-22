@@ -243,6 +243,7 @@ async def update_scenario_leg(
     transit_speed_kn: float | None = None,
     elongation_coef: float | None = None,
     notes: str | None = None,
+    cascade: bool = True,
 ) -> ScenarioLeg:
     new_dep = departure_port_id if departure_port_id is not None else leg.departure_port_id
     new_arr = arrival_port_id if arrival_port_id is not None else leg.arrival_port_id
@@ -251,6 +252,10 @@ async def update_scenario_leg(
     _validate_leg_inputs(
         departure_port_id=new_dep, arrival_port_id=new_arr, etd=new_etd, eta=new_eta
     )
+
+    # Repères AVANT modification — frontière et delta de la cascade aval.
+    old_etd = leg.etd
+    dates_changed = (new_etd != leg.etd) or (new_eta != leg.eta)
 
     if vessel_id is not None:
         leg.vessel_id = vessel_id
@@ -270,8 +275,64 @@ async def update_scenario_leg(
         leg.elongation_coef = elongation_coef
     if notes is not None:
         leg.notes = notes.strip() or None
+
+    if cascade and dates_changed:
+        await _cascade_downstream(db, leg, old_etd=old_etd)
     await db.flush()
     return leg
+
+
+async def _cascade_downstream(
+    db: AsyncSession, leg: ScenarioLeg, *, old_etd: datetime
+) -> list[int]:
+    """Recalcule les legs aval du même navire pour éviter les chevauchements.
+
+    Deux passes :
+      1. **Décalage rigide** : si l'ETD a bougé, on translate tous les legs aval
+         (même navire, même scénario, ETD > ancien ETD) du même delta — la
+         planification relative est préservée (comme le moteur réel).
+      2. **Résolution des chevauchements** : on parcourt ensuite les legs aval
+         par ETD croissant et on repousse vers l'avant tout leg qui démarrerait
+         avant la fin (ETA) du leg précédent — en conservant sa durée. Couvre
+         aussi l'allongement d'une escale (ETA étendue) sans décalage d'ETD.
+
+    Renvoie la liste des ids de legs aval effectivement déplacés.
+    """
+    delta = leg.etd - old_etd
+    downstream = list(
+        (
+            await db.execute(
+                select(ScenarioLeg)
+                .where(ScenarioLeg.scenario_id == leg.scenario_id)
+                .where(ScenarioLeg.vessel_id == leg.vessel_id)
+                .where(ScenarioLeg.id != leg.id)
+                .where(ScenarioLeg.etd > old_etd)
+                .order_by(ScenarioLeg.etd.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    moved: set[int] = set()
+
+    # 1. Décalage rigide du delta (préserve les intervalles entre legs).
+    if delta:
+        for dl in downstream:
+            dl.etd = dl.etd + delta
+            dl.eta = dl.eta + delta
+            moved.add(dl.id)
+
+    # 2. Résolution des chevauchements résiduels (jamais vers le passé).
+    prev_eta = leg.eta
+    for dl in sorted(downstream, key=lambda x: x.etd):
+        if dl.etd < prev_eta:
+            push = prev_eta - dl.etd
+            dl.etd = dl.etd + push
+            dl.eta = dl.eta + push
+            moved.add(dl.id)
+        prev_eta = dl.eta
+
+    return sorted(moved)
 
 
 async def delete_scenario_leg(db: AsyncSession, leg: ScenarioLeg) -> None:
