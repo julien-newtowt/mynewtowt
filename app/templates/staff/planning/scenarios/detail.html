@@ -1,5 +1,21 @@
 {% extends "staff/_layout.html" %}
 {% block title %}{{ scenario.name }} — Scénario provisoire{% endblock %}
+{% block head %}{{ super() }}
+<style>
+  /* Drag & drop des traversées provisoires (scenario-gantt-drag.js). */
+  [data-draggable-bar] { cursor: grab; }
+  [data-draggable-bar]:active { cursor: grabbing; }
+  /* Bords « poignées » : indices visuels de redimensionnement début/fin. */
+  [data-draggable-bar]::before,
+  [data-draggable-bar]::after {
+    content: ""; position: absolute; top: 0; bottom: 0; width: 8px;
+    cursor: ew-resize;
+  }
+  [data-draggable-bar]::before { left: 0; }
+  [data-draggable-bar]::after { right: 0; }
+</style>
+<script src="/static/js/scenario-gantt-drag.js" defer></script>
+{% endblock %}
 {% block content %}
 
 <a href="/planning/scenarios" class="btn btn-ghost mb-3">← Planifications provisoires</a>
@@ -84,7 +100,12 @@
 {# ── Vue Gantt ── #}
 <section class="card" style="overflow-x:auto;">
   <h2 class="mb-3">Vue Gantt provisoire {{ selected_year }}</h2>
-  <div class="gantt-wrapper" style="min-width:1100px;">
+  <p class="text-muted text-sm mb-2"><i data-lucide="move"></i> Glissez une barre pour décaler la traversée ; tirez un bord pour décaler le début (ETD) ou la fin (ETA / escale). Un simple clic ouvre l'édition.</p>
+  <div class="gantt-wrapper" style="min-width:1100px;"
+       data-scenario-gantt
+       data-scenario-id="{{ scenario.id }}"
+       data-window-start="{{ window_start_ms }}"
+       data-window-end="{{ window_end_ms }}">
     <div class="gantt-timeline" style="display:grid; grid-template-columns:200px 1fr; gap:var(--space-2); margin-bottom:var(--space-2);">
       <div></div>
       <div class="gantt-axis" style="position:relative; height:28px; border-bottom:1px solid var(--gris-clair);">
@@ -105,6 +126,7 @@
           {% for bar in row.bars %}
             <a href="/planning/scenarios/{{ scenario.id }}/legs/{{ bar.leg_id }}/edit"
                class="gantt-bar"
+               data-draggable-bar data-leg-id="{{ bar.leg_id }}"
                style="position:absolute; left:{{ bar.left_pct }}%; width:{{ bar.width_pct }}%; top:4px; bottom:4px;
                       background: {% if bar.status == 'completed' %}var(--vert){% elif bar.status == 'inprogress' %}var(--cuivre){% elif bar.status == 'cancelled' %}var(--gris){% else %}var(--teal){% endif %};
                       color:var(--blanc); border-radius:var(--radius-sm); padding:2px 6px; font-size:var(--text-xs);

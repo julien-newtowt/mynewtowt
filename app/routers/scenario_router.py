@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -292,6 +292,8 @@ async def scenario_detail(
             "gantt_rows": gantt_rows,
             "month_marks": month_marks,
             "today_pct": today_pct,
+            "window_start_ms": int(window_start.timestamp() * 1000),
+            "window_end_ms": int(window_end.timestamp() * 1000),
             "selected_year": selected_year,
             "years": sorted(years),
             "filter_vessel_id": vessel_id,
@@ -529,6 +531,42 @@ async def update_leg_action(
             status_code=400,
         )
     return RedirectResponse(url=f"/planning/scenarios/{scenario_id}", status_code=303)
+
+
+@router.post("/{scenario_id}/legs/{leg_id}/move")
+async def move_leg_action(
+    request: Request,
+    scenario_id: int,
+    leg_id: int,
+    etd: str = Form(...),
+    eta: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("planning", "M")),
+) -> JSONResponse:
+    """Déplace une traversée provisoire par glisser-déposer dans le Gantt.
+
+    Reçoit les nouvelles dates ETD/ETA (issues du drag) et met à jour le leg.
+    Renvoie du JSON (le front recharge la vue en cas de succès).
+    """
+    await _get_scenario_or_404(db, scenario_id)
+    leg = await _get_leg_or_404(db, scenario_id, leg_id)
+    try:
+        await svc.update_scenario_leg(
+            db,
+            leg,
+            etd=_parse_dt(etd, allow_empty=True),
+            eta=_parse_dt(eta, allow_empty=True),
+        )
+    except (InvalidLegDates, PlanningError, svc.ScenarioError) as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    return JSONResponse(
+        {
+            "ok": True,
+            "leg_id": leg.id,
+            "etd": leg.etd.strftime("%Y-%m-%dT%H:%M"),
+            "eta": leg.eta.strftime("%Y-%m-%dT%H:%M"),
+        }
+    )
 
 
 @router.post("/{scenario_id}/legs/{leg_id}/delete")
