@@ -389,6 +389,7 @@ CATALOG: dict[str, str] = {
     "s_grp_admin": "Admin",
     "s_nav_dashboard": "Painel",
     "s_nav_planning": "Planejamento",
+    "s_nav_scenarios": "Planejamentos provisórios",
     "s_nav_shares": "Compartilhamentos públicos",
     "s_nav_veille": "Monitoramento de notícias",
     "s_nav_commercial_overview": "Pilotagem comercial",

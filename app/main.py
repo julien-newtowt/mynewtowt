@@ -50,6 +50,7 @@ from app.routers import (
     public_router,
     pwa_router,
     rh_router,
+    scenario_router,
     seo_router,
     staff_auth_router,
     staff_booking_router,
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(staff_dashboard_router.router)
     app.include_router(staff_booking_router.router)
     app.include_router(planning_router.router)
+    app.include_router(scenario_router.router)
     app.include_router(cargo_router.router)
     # ─── Phase 2 ERP : full modules promoted from modules_router stubs ───
     app.include_router(commercial_router.router)

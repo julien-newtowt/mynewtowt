@@ -68,6 +68,7 @@ from app.models.packing_list import (
 )
 from app.models.payroll_variable import PayrollVariable
 from app.models.payslip import Payslip
+from app.models.planning_scenario import PlanningScenario, ScenarioLeg
 from app.models.planning_share import PlanningShare
 from app.models.port import Port
 from app.models.quote import Quote, QuoteLine
@@ -149,6 +150,7 @@ __all__ = [
     "PackingListDocument",
     "PayrollVariable",
     "Payslip",
+    "PlanningScenario",
     "PlanningShare",
     "Port",
     "PortConfig",
@@ -162,6 +164,7 @@ __all__ = [
     "RateLimitAttempt",
     "RateOffer",
     "RolePermission",
+    "ScenarioLeg",
     "SilaeExportBatch",
     "SofEvent",
     "StowageItem",

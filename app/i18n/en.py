@@ -389,6 +389,7 @@ CATALOG: dict[str, str] = {
     "s_grp_admin": "Admin",
     "s_nav_dashboard": "Dashboard",
     "s_nav_planning": "Planning",
+    "s_nav_scenarios": "Draft plannings",
     "s_nav_shares": "Public shares",
     "s_nav_veille": "News watch",
     "s_nav_commercial_overview": "Sales overview",

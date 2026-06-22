@@ -1,0 +1,79 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Nouveau scénario — Planning{% endblock %}
+{% block head %}{{ super() }}
+<style>
+  .seed-options { display:grid; grid-template-columns:1fr 1fr; gap:var(--space-3); margin-top:var(--space-2); }
+  .seed-card { border:1px solid var(--gris-clair); border-radius:var(--radius-md); padding:var(--space-3); cursor:pointer; }
+  .seed-card.is-active { border-color:var(--teal); box-shadow:0 0 0 3px rgba(13,89,102,.12); }
+  #clone-filters[hidden] { display:none; }
+</style>
+{% endblock %}
+{% block content %}
+
+<a href="/planning/scenarios" class="btn btn-ghost mb-3">← Planifications provisoires</a>
+
+<header class="mb-4">
+  <span class="kicker">Planning</span>
+  <h1 class="display">Nouveau scénario provisoire</h1>
+  <p class="text-muted">Partez d'une feuille blanche ou clonez la planification actuelle comme base de travail.</p>
+</header>
+
+{% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+
+<form method="post" action="/planning/scenarios/new" class="card">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <div class="grid grid-2 gap-3">
+    <div class="field">
+      <label for="name">Nom du scénario *</label>
+      <input id="name" name="name" maxlength="120" required
+             value="{{ form.name if form is defined else '' }}"
+             placeholder="Saison 2027 — option Brésil hebdomadaire" />
+    </div>
+    <div class="field">
+      <label for="description">Description (optionnel)</label>
+      <input id="description" name="description" maxlength="500"
+             value="{{ form.description if form is defined else '' }}"
+             placeholder="Hypothèse : +1 rotation Fécamp ⇄ São Sebastião" />
+    </div>
+  </div>
+
+  <h2 class="mt-4">Initialisation</h2>
+  <div class="seed-options" x-data="{ seed: 'blank' }">
+    <label class="seed-card" :class="seed === 'blank' && 'is-active'">
+      <input type="radio" name="seed" value="blank" x-model="seed" checked />
+      <strong>Feuille blanche</strong>
+      <p class="text-muted text-sm" style="margin:var(--space-1) 0 0;">Démarrer vide et ajouter les traversées une à une.</p>
+    </label>
+    <label class="seed-card" :class="seed === 'clone' && 'is-active'">
+      <input type="radio" name="seed" value="clone" x-model="seed" />
+      <strong>Cloner la planification actuelle</strong>
+      <p class="text-muted text-sm" style="margin:var(--space-1) 0 0;">Copier les legs réels comme point de départ modifiable.</p>
+    </label>
+
+    <div id="clone-filters" class="grid grid-2 gap-3" style="grid-column:1 / -1;" x-show="seed === 'clone'" x-cloak>
+      <div class="field">
+        <label for="clone_vessel_id">Navire à cloner</label>
+        <select id="clone_vessel_id" name="clone_vessel_id">
+          <option value="">Tous les navires</option>
+          {% for v in vessels %}
+            <option value="{{ v.id }}">{{ v.code }} — {{ v.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="clone_year">Année à cloner</label>
+        <input id="clone_year" name="clone_year" type="number" min="2011" max="2100"
+               value="{{ current_year }}" placeholder="{{ current_year }}" />
+        <small class="text-muted">Vide ⇒ toutes les périodes.</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex gap-2 mt-4">
+    <a href="/planning/scenarios" class="btn btn-ghost">Annuler</a>
+    <button type="submit" class="btn btn-primary">Créer le scénario</button>
+  </div>
+</form>
+
+{% endblock %}

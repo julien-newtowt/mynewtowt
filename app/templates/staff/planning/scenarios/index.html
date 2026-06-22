@@ -1,0 +1,55 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Planifications provisoires — {{ brand.nom_court }} ERP{% endblock %}
+{% block content %}
+
+<a href="/planning" class="btn btn-ghost mb-3">← Planning</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Pilotage</span>
+    <h1 class="display">Planifications provisoires</h1>
+    <p class="text-muted">Scénarios « what-if » isolés — aucune incidence sur la planification en cours.</p>
+  </div>
+  <a href="/planning/scenarios/new" class="btn btn-primary">+ Nouveau scénario</a>
+</header>
+
+<article class="card">
+  {% if scenarios %}
+    <table>
+      <thead>
+        <tr>
+          <th>Scénario</th>
+          <th>Traversées</th>
+          <th>Statut</th>
+          <th>Créé par</th>
+          <th>Mis à jour</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sc in scenarios %}
+          <tr style="{% if sc.status == 'archived' %}opacity:0.6;{% endif %}">
+            <td>
+              <a href="/planning/scenarios/{{ sc.id }}"><strong>{{ sc.name }}</strong></a>
+              {% if sc.description %}<br><small class="text-muted">{{ sc.description }}</small>{% endif %}
+            </td>
+            <td>{{ counts.get(sc.id, 0) }}</td>
+            <td>
+              {% if sc.status == 'draft' %}<span class="pill pill-info">Brouillon</span>
+              {% else %}<span class="pill pill-neutral">Archivé</span>{% endif %}
+            </td>
+            <td>{{ sc.created_by_name or '—' }}</td>
+            <td>{{ sc.updated_at|date }}</td>
+            <td>
+              <a href="/planning/scenarios/{{ sc.id }}" class="btn btn-ghost text-sm">Ouvrir</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted">Aucun scénario. Créez une planification provisoire pour tester des hypothèses sans toucher au planning réel.</p>
+  {% endif %}
+</article>
+
+{% endblock %}

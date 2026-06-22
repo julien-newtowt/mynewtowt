@@ -1,0 +1,114 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{% if leg %}Éditer traversée{% else %}Nouvelle traversée{% endif %} — {{ scenario.name }}{% endblock %}
+{% block content %}
+
+<a href="/planning/scenarios/{{ scenario.id }}" class="btn btn-ghost mb-3">← {{ scenario.name }}</a>
+
+<header class="mb-4">
+  <span class="kicker">Scénario provisoire</span>
+  {% if leg %}
+    <h1 class="display">Éditer la traversée <span class="mono text-accent">{{ leg.label or '#' ~ leg.id }}</span></h1>
+  {% else %}
+    <h1 class="display">Nouvelle traversée provisoire</h1>
+  {% endif %}
+</header>
+
+{% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+
+<form method="post"
+      action="{% if leg %}/planning/scenarios/{{ scenario.id }}/legs/{{ leg.id }}/edit{% else %}/planning/scenarios/{{ scenario.id }}/legs/new{% endif %}"
+      class="card">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <div class="grid grid-3 gap-3">
+    <div class="field">
+      <label for="vessel_id">Navire *</label>
+      <select id="vessel_id" name="vessel_id" required>
+        {% for v in vessels %}
+          <option value="{{ v.id }}" {% if leg and leg.vessel_id == v.id %}selected{% endif %}>{{ v.code }} — {{ v.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="label">Étiquette (optionnel)</label>
+      <input id="label" name="label" maxlength="40"
+             value="{{ leg.label if leg and leg.label else (form.label if form is defined else '') }}"
+             placeholder="ex. 1CFRBR7" />
+    </div>
+    <div class="field">
+      <label for="status">Statut (couleur Gantt)</label>
+      <select id="status" name="status">
+        {% set st = leg.status if leg else 'planned' %}
+        <option value="planned" {% if st == 'planned' %}selected{% endif %}>Planifié</option>
+        <option value="inprogress" {% if st == 'inprogress' %}selected{% endif %}>En cours</option>
+        <option value="completed" {% if st == 'completed' %}selected{% endif %}>Terminé</option>
+        <option value="cancelled" {% if st == 'cancelled' %}selected{% endif %}>Annulé</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="grid grid-2 gap-3 mt-2">
+    <div class="field">
+      <label for="departure_port_id">Port de départ (POL) *</label>
+      <select id="departure_port_id" name="departure_port_id" required>
+        {% for p in ports %}
+          <option value="{{ p.id }}" {% if leg and leg.departure_port_id == p.id %}selected{% endif %}>{{ p.locode }} — {{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="arrival_port_id">Port d'arrivée (POD) *</label>
+      <select id="arrival_port_id" name="arrival_port_id" required>
+        {% for p in ports %}
+          <option value="{{ p.id }}" {% if leg and leg.arrival_port_id == p.id %}selected{% endif %}>{{ p.locode }} — {{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="grid grid-3 gap-3 mt-2">
+    <div class="field">
+      <label for="etd">ETD (départ prévu) *</label>
+      <input id="etd" type="datetime-local" name="etd" required
+             value="{% if leg %}{{ leg.etd.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+    </div>
+    <div class="field">
+      <label for="eta">ETA (arrivée prévue) *</label>
+      <input id="eta" type="datetime-local" name="eta" required
+             value="{% if leg %}{{ leg.eta.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+    </div>
+    <div class="field">
+      <label for="port_stay_planned_hours">Escale prévue (heures)</label>
+      <input id="port_stay_planned_hours" type="number" name="port_stay_planned_hours" min="0" max="720"
+             value="{% if leg and leg.port_stay_planned_hours is not none %}{{ leg.port_stay_planned_hours }}{% endif %}"
+             placeholder="48" />
+    </div>
+  </div>
+
+  <div class="grid grid-3 gap-3 mt-2">
+    <div class="field">
+      <label for="transit_speed_kn">Vitesse traversée (kn)</label>
+      <input id="transit_speed_kn" type="number" step="0.1" min="0" max="30" name="transit_speed_kn"
+             value="{{ leg.transit_speed_kn if leg and leg.transit_speed_kn is not none else '' }}"
+             placeholder="défaut navire" />
+    </div>
+    <div class="field">
+      <label for="elongation_coef">Coefficient d'élongation</label>
+      <input id="elongation_coef" type="number" step="0.01" min="1" max="3" name="elongation_coef"
+             value="{{ leg.elongation_coef if leg and leg.elongation_coef is not none else '' }}"
+             placeholder="défaut navire (1.15)" />
+    </div>
+    <div class="field">
+      <label for="notes">Notes</label>
+      <input id="notes" name="notes" maxlength="500"
+             value="{{ leg.notes if leg and leg.notes else '' }}" />
+    </div>
+  </div>
+
+  <div class="flex gap-2 mt-4">
+    <a href="/planning/scenarios/{{ scenario.id }}" class="btn btn-ghost">Annuler</a>
+    <button type="submit" class="btn btn-primary">{% if leg %}Enregistrer{% else %}Ajouter la traversée{% endif %}</button>
+  </div>
+</form>
+
+{% endblock %}
