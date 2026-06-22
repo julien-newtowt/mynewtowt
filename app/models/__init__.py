@@ -49,6 +49,7 @@ from app.models.news_source import NewsSource
 from app.models.noon_report import (
     NoonReport,
     NoonReportEngine,
+    NoonReportHold,
     NoonReportSail,
     NoonReportWeather,
 )
@@ -134,6 +135,7 @@ __all__ = [
     "NewsSource",
     "NoonReport",
     "NoonReportEngine",
+    "NoonReportHold",
     "NoonReportSail",
     "NoonReportWeather",
     "Notification",

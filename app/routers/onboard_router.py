@@ -24,11 +24,13 @@ from app.database import get_db
 from app.models.leg import Leg
 from app.models.noon_report import (
     NOON_ENGINES,
+    NOON_HOLD_LOCATIONS,
     NOON_REPORT_TYPES,
     NOON_TIME_SLOTS,
     NOON_VESSEL_CONDITIONS,
     NoonReport,
     NoonReportEngine,
+    NoonReportHold,
     NoonReportSail,
     NoonReportWeather,
 )
@@ -380,6 +382,7 @@ async def onboard_navigation(
             "noon_time_slots": NOON_TIME_SLOTS,
             "noon_report_types": NOON_REPORT_TYPES,
             "noon_vessel_conditions": NOON_VESSEL_CONDITIONS,
+            "noon_hold_locations": NOON_HOLD_LOCATIONS,
         },
     )
     set_leg_filter_cookie(response, f)
@@ -962,5 +965,22 @@ def _attach_noon_children(nr: NoonReport, f) -> None:
                 sail_boost=boost,
                 me_ps_load_pct=ps,
                 me_sb_load_pct=sb,
+            )
+        )
+    # Cales — température (°C) & humidité relative (%) à minuit/midi par cale.
+    for i, location in enumerate(NOON_HOLD_LOCATIONS):
+        tmn = _maybe_float(f.get(f"hold_tmn_{i}"))
+        hmn = _maybe_float(f.get(f"hold_hmn_{i}"))
+        tmd = _maybe_float(f.get(f"hold_tmd_{i}"))
+        hmd = _maybe_float(f.get(f"hold_hmd_{i}"))
+        if tmn is None and hmn is None and tmd is None and hmd is None:
+            continue
+        nr.hold_rows.append(
+            NoonReportHold(
+                location=location,
+                temp_midnight_c=tmn,
+                humidity_midnight_pct=hmn,
+                temp_midday_c=tmd,
+                humidity_midday_pct=hmd,
             )
         )

@@ -30,6 +30,18 @@ NOON_TIME_SLOTS: tuple[str, ...] = ("16:00", "20:00", "00:00", "04:00", "08:00",
 NOON_REPORT_TYPES: tuple[str, ...] = ("Noon report", "Arrival Report", "Departure report")
 NOON_VESSEL_CONDITIONS: tuple[str, ...] = ("Laden", "Ballast", "Partly laden")
 
+# Emplacements des relevés température/humidité des cales (CFOTE_05) — ordre
+# figé du formulaire officiel (cellier + 6 cales FWD/Aft).
+NOON_HOLD_LOCATIONS: tuple[str, ...] = (
+    "Cellar",
+    "Upper FWD hold",
+    "Middle FWD hold",
+    "Lower FWD hold",
+    "Upper Aft hold",
+    "Middle Aft hold",
+    "Lower Aft hold",
+)
+
 
 class NoonReport(Base):
     __tablename__ = "noon_reports"
@@ -112,6 +124,9 @@ class NoonReport(Base):
     sail_rows: Mapped[list[NoonReportSail]] = relationship(
         back_populates="noon_report", cascade="all, delete-orphan", order_by="NoonReportSail.id"
     )
+    hold_rows: Mapped[list[NoonReportHold]] = relationship(
+        back_populates="noon_report", cascade="all, delete-orphan", order_by="NoonReportHold.id"
+    )
 
 
 class NoonReportEngine(Base):
@@ -172,3 +187,26 @@ class NoonReportSail(Base):
     me_sb_load_pct: Mapped[float | None] = mapped_column(Float)  # ME starboard load %
 
     noon_report: Mapped[NoonReport] = relationship(back_populates="sail_rows")
+
+
+class NoonReportHold(Base):
+    """Relevé température / humidité d'une cale (minuit & midi).
+
+    Reprend la section « Hold conditions » du formulaire officiel TOWT
+    (CFOTE_05) : cellier + cales FWD/Aft, température (°C) et humidité
+    relative (%) relevées à minuit et à midi.
+    """
+
+    __tablename__ = "noon_report_holds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    noon_report_id: Mapped[int] = mapped_column(
+        ForeignKey("noon_reports.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    location: Mapped[str] = mapped_column(String(40), nullable=False)  # cf. NOON_HOLD_LOCATIONS
+    temp_midnight_c: Mapped[float | None] = mapped_column(Float)
+    humidity_midnight_pct: Mapped[float | None] = mapped_column(Float)
+    temp_midday_c: Mapped[float | None] = mapped_column(Float)
+    humidity_midday_pct: Mapped[float | None] = mapped_column(Float)
+
+    noon_report: Mapped[NoonReport] = relationship(back_populates="hold_rows")
