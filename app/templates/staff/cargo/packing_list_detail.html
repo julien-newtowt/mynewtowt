@@ -14,6 +14,8 @@
   </div>
   <div class="flex gap-2">
     <span class="badge badge-{{ pl.status }}">{{ pl.status }}</span>
+    <a href="/cargo/packing-lists/{{ pl.id }}/history" class="btn btn-ghost btn-sm">Historique</a>
+    <a href="/cargo/packing-lists/{{ pl.id }}/arrival-notice.pdf" class="btn btn-ghost btn-sm" target="_blank">Arrival Notice</a>
     {% if pl.status != 'locked' %}
     <form method="post" action="/cargo/packing-lists/{{ pl.id }}/lock" style="display:inline;">
       <button type="submit" class="btn btn-primary btn-sm">Verrouiller</button>
@@ -30,20 +32,53 @@
 <article class="card">
   <h2>Batches ({{ pl.batches|length }})</h2>
   <table class="data-table">
-    <thead><tr><th>#</th><th>Format</th><th>Palettes</th><th>Description</th><th>Poids (kg)</th><th>Cubage (m³)</th><th>HS</th><th>Dangereux</th><th>À bord</th></tr></thead>
+    <thead><tr><th>#</th><th>Format</th><th>Palettes</th><th>Consignee</th><th>Poids (kg)</th><th>HS</th><th>Dangereux</th><th>BL</th><th>Actions</th></tr></thead>
     <tbody>
       {% for b in pl.batches %}
       <tr>
         <td class="mono">{{ b.batch_number or b.id }}</td>
         <td><span class="badge">{{ b.pallet_format }}</span></td>
         <td>{{ b.pallet_count }}</td>
-        <td>{{ b.description or '—' }}</td>
+        <td>{{ b.consignee_name or '—' }}</td>
         <td class="mono">{{ b.weight_kg if b.weight_kg else '—' }}</td>
-        <td class="mono">{{ b.cubage_m3 if b.cubage_m3 else '—' }}</td>
         <td class="mono">{{ b.hs_code or '—' }}</td>
         <td>{% if b.hazardous %}<span class="pill pill-error">IMO {{ b.imdg_class or '' }}</span>{% else %}—{% endif %}</td>
-        <td><a href="/stowage/locate/batch/{{ b.id }}" class="btn btn-ghost btn-sm" title="Localiser dans le navire">📍 Localiser</a></td>
+        <td><a href="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl.pdf" class="btn btn-ghost btn-sm" target="_blank" title="Bill of Lading">{{ b.bl_number or 'Générer BL' }}</a></td>
+        <td class="flex gap-1">
+          <a href="/stowage/locate/batch/{{ b.id }}" class="btn btn-ghost btn-sm" title="Localiser à bord">📍</a>
+          {% if pl.status != 'locked' %}
+          <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/delete" style="display:inline;" data-confirm="Supprimer ce batch ?">
+            <button type="submit" class="btn btn-danger btn-sm" title="Supprimer">🗑</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
+      {% if pl.status != 'locked' %}
+      <tr class="batch-edit-row">
+        <td colspan="9">
+          <details>
+            <summary class="text-muted">✎ Modifier le batch #{{ b.batch_number or b.id }}</summary>
+            <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/edit" class="mt-2">
+              <div class="grid grid-3 gap-3">
+                <div class="field"><label>Type de marchandise</label><input name="type_of_goods" value="{{ b.type_of_goods or '' }}" /></div>
+                <div class="field"><label>Description (BL)</label><input name="description_of_goods" value="{{ b.description_of_goods or '' }}" /></div>
+                <div class="field"><label>HS</label><input name="hs_code" value="{{ b.hs_code or '' }}" /></div>
+                <div class="field"><label>Shipper</label><input name="shipper_name" value="{{ b.shipper_name or '' }}" /></div>
+                <div class="field"><label>Shipper — adresse</label><input name="shipper_address" value="{{ b.shipper_address or '' }}" /></div>
+                <div class="field"><label>Shipper — pays</label><input name="shipper_country" value="{{ b.shipper_country or '' }}" /></div>
+                <div class="field"><label>Consignee</label><input name="consignee_name" value="{{ b.consignee_name or '' }}" /></div>
+                <div class="field"><label>Consignee — adresse</label><input name="consignee_address" value="{{ b.consignee_address or '' }}" /></div>
+                <div class="field"><label>Consignee — pays</label><input name="consignee_country" value="{{ b.consignee_country or '' }}" /></div>
+                <div class="field"><label>Notify</label><input name="notify_name" value="{{ b.notify_name or '' }}" /></div>
+                <div class="field"><label>Poids (kg)</label><input name="weight_kg" type="number" step="0.1" value="{{ b.weight_kg or '' }}" /></div>
+                <div class="field"><label>Palettes</label><input name="pallet_count" type="number" min="1" value="{{ b.pallet_count }}" /></div>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm mt-2">Enregistrer</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+      {% endif %}
       {% else %}
       <tr><td colspan="9" class="text-muted text-center">Aucun batch.</td></tr>
       {% endfor %}
@@ -59,7 +94,10 @@
       <div class="field"><label>HS</label><input name="hs_code" type="text" /></div>
       <div class="field"><label>Poids (kg)</label><input name="weight_kg" type="number" step="0.1" /></div>
       <div class="field"><label>Cubage (m³)</label><input name="cubage_m3" type="number" step="0.001" /></div>
-      <div class="field"><label>Description</label><input name="description" type="text" /></div>
+      <div class="field"><label>Type de marchandise</label><input name="type_of_goods" type="text" /></div>
+      <div class="field"><label>Description (BL)</label><input name="description_of_goods" type="text" /></div>
+      <div class="field"><label>Shipper</label><input name="shipper_name" type="text" /></div>
+      <div class="field"><label>Consignee</label><input name="consignee_name" type="text" /></div>
     </div>
     <button type="submit" class="btn btn-primary btn-sm">+ Ajouter</button>
   </form>

@@ -1,0 +1,123 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Bill of Lading {{ bl_number }}{% endblock %}
+{% block doc_kind %}Bill of Lading · Connaissement{% endblock %}
+{% block doc_ref %}{{ bl_number }}{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Shipper · Expéditeur</div>
+    <div class="value">
+      {% if batch.shipper_name %}<strong>{{ batch.shipper_name }}</strong><br/>{% endif %}
+      {% if batch.shipper_address %}{{ batch.shipper_address }}<br/>{% endif %}
+      {% if batch.shipper_postal or batch.shipper_city %}{{ batch.shipper_postal }} {{ batch.shipper_city }}<br/>{% endif %}
+      {% if batch.shipper_country %}{{ batch.shipper_country }}{% endif %}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Carrier · Transporteur</div>
+    <div class="value">
+      <strong>{{ brand.raison_sociale }}</strong><br/>
+      {{ brand.adresse }}<br/>
+      {{ brand.telephone }}<br/>
+      {{ brand.email }}
+    </div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Consignee · Destinataire</div>
+    <div class="value">
+      {% if batch.consignee_name %}<strong>{{ batch.consignee_name }}</strong><br/>{% endif %}
+      {% if batch.consignee_address %}{{ batch.consignee_address }}<br/>{% endif %}
+      {% if batch.consignee_postal or batch.consignee_city %}{{ batch.consignee_postal }} {{ batch.consignee_city }}<br/>{% endif %}
+      {% if batch.consignee_country %}{{ batch.consignee_country }}{% endif %}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Notify party</div>
+    <div class="value">
+      {% if batch.notify_name %}<strong>{{ batch.notify_name }}</strong><br/>{% endif %}
+      {% if batch.notify_address %}{{ batch.notify_address }}<br/>{% endif %}
+      {% if batch.notify_postal or batch.notify_city %}{{ batch.notify_postal }} {{ batch.notify_city }}<br/>{% endif %}
+      {% if batch.notify_country %}{{ batch.notify_country }}{% endif %}
+    </div>
+  </div>
+</div>
+
+<h2>Voyage</h2>
+<table>
+  {% if vessel %}<tr>
+    <td style="width:25%;"><strong>Navire / Vessel</strong></td>
+    <td>{{ vessel.name }} <span class="small mono">({{ vessel.code }}{% if vessel.imo_number %} · IMO {{ vessel.imo_number }}{% endif %}{% if vessel.flag %} · {{ vessel.flag }}{% endif %})</span></td>
+  </tr>{% endif %}
+  {% if leg %}<tr>
+    <td><strong>Voyage · Leg code</strong></td>
+    <td class="mono">{{ leg.leg_code }}</td>
+  </tr>{% endif %}
+  {% if pol %}<tr>
+    <td><strong>Port of Loading (POL)</strong></td>
+    <td>{{ pol.name }} <span class="small">({{ pol.locode }} · {{ pol.country }})</span></td>
+  </tr>{% endif %}
+  {% if pod %}<tr>
+    <td><strong>Port of Discharge (POD)</strong></td>
+    <td>{{ pod.name }} <span class="small">({{ pod.locode }} · {{ pod.country }})</span></td>
+  </tr>{% endif %}
+  {% if leg and leg.etd %}<tr>
+    <td><strong>ETD</strong></td>
+    <td class="mono">{{ leg.etd.strftime("%d/%m/%Y %H:%M UTC") }}</td>
+  </tr>{% endif %}
+  {% if leg and leg.eta %}<tr>
+    <td><strong>ETA</strong></td>
+    <td class="mono">{{ leg.eta.strftime("%d/%m/%Y %H:%M UTC") }}</td>
+  </tr>{% endif %}
+</table>
+
+<h2>Goods · Marchandises</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Format</th>
+      <th class="text-right">Qté palettes</th>
+      <th>Description</th>
+      <th>HS</th>
+      <th class="text-right">Poids (kg)</th>
+      <th>IMDG</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="mono">{{ batch.pallet_format }}</td>
+      <td class="text-right">{{ batch.pallet_count }}</td>
+      <td>{{ batch.description_of_goods or batch.type_of_goods or batch.description or '—' }}</td>
+      <td class="mono">{{ batch.hs_code or '—' }}</td>
+      <td class="text-right">{{ batch.weight_kg or '—' }}</td>
+      <td>
+        {% if batch.hazardous %}
+          <span class="badge-imdg">{{ batch.imdg_class or 'IMDG' }}</span>
+          {% if batch.un_number %}<br/><span class="small">UN {{ batch.un_number }}</span>{% endif %}
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+  </tbody>
+</table>
+{% if batch.marks_and_numbers %}<p class="small"><strong>Marks &amp; numbers :</strong> {{ batch.marks_and_numbers }}</p>{% endif %}
+
+<h2>Conditions</h2>
+<p class="small">
+  Transport assuré conformément aux Règles de La Haye-Visby. La responsabilité
+  du transporteur est plafonnée selon les conventions internationales en vigueur.
+</p>
+
+<div class="stamp">
+  <div>
+    <div class="kicker">Émis{% if pol %} à {{ pol.name }}{% endif %} le {{ issued_at.strftime("%d/%m/%Y") }}</div>
+    <div class="small c-gris">Number of Original B/L : {{ number_of_obl }} ({{ number_of_obl }} OBL signés)</div>
+  </div>
+  <div class="sig-area">
+    Cachet et signature<br/>du transporteur
+  </div>
+</div>
+
+{% endblock %}

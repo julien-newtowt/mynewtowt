@@ -37,6 +37,22 @@ if TYPE_CHECKING:
 
 TOKEN_VALIDITY_DAYS = 90
 
+# CARGO-02 — champs requis pour une packing list « complète » (mentions
+# obligatoires du connaissement). Sert au calcul de ``completion_pct``.
+_BATCH_REQUIRED_FIELDS: tuple[str, ...] = (
+    "shipper_name",
+    "shipper_address",
+    "shipper_city",
+    "shipper_country",
+    "consignee_name",
+    "consignee_address",
+    "consignee_city",
+    "consignee_country",
+    "type_of_goods",
+    "pallet_count",
+    "weight_kg",
+)
+
 
 def generate_token() -> str:
     return uuid.uuid4().hex[:24]
@@ -115,10 +131,18 @@ class PackingList(Base):
 
     @property
     def completion_pct(self) -> int:
+        # CARGO-02 — complétude documentaire douanière : moyenne du taux de
+        # remplissage des champs requis du connaissement sur tous les batches.
         if not self.batches:
             return 0
-        filled = sum(1 for b in self.batches if b.weight_kg is not None and b.weight_kg > 0)
-        return round(100 * filled / len(self.batches)) if self.batches else 0
+        total = len(self.batches) * len(_BATCH_REQUIRED_FIELDS)
+        filled = sum(
+            1
+            for b in self.batches
+            for f in _BATCH_REQUIRED_FIELDS
+            if (v := getattr(b, f, None)) is not None and str(v).strip()
+        )
+        return round(100 * filled / total) if total else 0
 
 
 class PackingListBatch(Base):
@@ -145,6 +169,32 @@ class PackingListBatch(Base):
     un_number: Mapped[str | None] = mapped_column(String(10))
     stackable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     marks_and_numbers: Mapped[str | None] = mapped_column(Text)
+
+    # CARGO-02 — parties du connaissement (mentions obligatoires du BL).
+    shipper_name: Mapped[str | None] = mapped_column(String(200))
+    shipper_address: Mapped[str | None] = mapped_column(Text)
+    shipper_postal: Mapped[str | None] = mapped_column(String(20))
+    shipper_city: Mapped[str | None] = mapped_column(String(100))
+    shipper_country: Mapped[str | None] = mapped_column(String(100))
+    notify_name: Mapped[str | None] = mapped_column(String(200))
+    notify_address: Mapped[str | None] = mapped_column(Text)
+    notify_postal: Mapped[str | None] = mapped_column(String(20))
+    notify_city: Mapped[str | None] = mapped_column(String(100))
+    notify_country: Mapped[str | None] = mapped_column(String(100))
+    consignee_name: Mapped[str | None] = mapped_column(String(200))
+    consignee_address: Mapped[str | None] = mapped_column(Text)
+    consignee_postal: Mapped[str | None] = mapped_column(String(20))
+    consignee_city: Mapped[str | None] = mapped_column(String(100))
+    consignee_country: Mapped[str | None] = mapped_column(String(100))
+
+    # CARGO-02 — marchandise (BL / douane).
+    type_of_goods: Mapped[str | None] = mapped_column(String(200))
+    description_of_goods: Mapped[str | None] = mapped_column(Text)
+
+    # CARGO-01 — numérotation Bill of Lading persistante (ex. TUAW_1CFRBR6_001).
+    bl_number: Mapped[str | None] = mapped_column(String(50), index=True)
+    bl_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

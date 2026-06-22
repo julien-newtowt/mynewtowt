@@ -12,19 +12,58 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking
+from app.models.commercial import Order
 from app.models.leg import Leg
 from app.models.packing_list import (
     PackingList,
     PackingListAudit,
+    PackingListBatch,
     PortalAccessLog,
     default_token_expiry,
     generate_token,
 )
+from app.models.port import Port
+from app.models.vessel import Vessel
 from app.services.activity import record as activity_record
+
+# CARGO-03 — champs de batch éditables soumis à l'audit field-by-field.
+AUDITABLE_FIELDS: tuple[str, ...] = (
+    "pallet_format",
+    "pallet_count",
+    "description",
+    "hs_code",
+    "weight_kg",
+    "cubage_m3",
+    "length_cm",
+    "width_cm",
+    "height_cm",
+    "hazardous",
+    "imdg_class",
+    "un_number",
+    "stackable",
+    "marks_and_numbers",
+    "shipper_name",
+    "shipper_address",
+    "shipper_postal",
+    "shipper_city",
+    "shipper_country",
+    "notify_name",
+    "notify_address",
+    "notify_postal",
+    "notify_city",
+    "notify_country",
+    "consignee_name",
+    "consignee_address",
+    "consignee_postal",
+    "consignee_city",
+    "consignee_country",
+    "type_of_goods",
+    "description_of_goods",
+)
 
 
 def hash_token(token: str) -> str:
@@ -139,6 +178,45 @@ async def record_audit(
     await db.flush()
 
 
+# CARGO-03 — typage des champs de batch pour la coercition des formulaires
+# (partagé entre la saisie staff et la saisie portail).
+_BATCH_FLOAT_FIELDS = {"weight_kg", "cubage_m3", "length_cm", "width_cm", "height_cm"}
+_BATCH_INT_FIELDS = {"pallet_count"}
+_BATCH_BOOL_FIELDS = {"hazardous", "stackable"}
+
+
+def coerce_batch_form(form: dict) -> dict:
+    """Construit le dict de valeurs typées à partir d'un formulaire de batch.
+
+    Seules les clés présentes dans le formulaire sont retournées (mise à jour
+    partielle + audit ciblé). Chaînes vides → None.
+    """
+    out: dict = {}
+    for field in AUDITABLE_FIELDS:
+        if field not in form:
+            continue
+        raw = form.get(field)
+        if field in _BATCH_BOOL_FIELDS:
+            out[field] = str(raw).lower() in ("1", "true", "on", "yes")
+            continue
+        if raw is None or str(raw).strip() == "":
+            out[field] = None
+            continue
+        if field in _BATCH_FLOAT_FIELDS:
+            try:
+                out[field] = float(str(raw).replace(",", "."))
+            except ValueError:
+                out[field] = None
+        elif field in _BATCH_INT_FIELDS:
+            try:
+                out[field] = int(float(str(raw)))
+            except ValueError:
+                out[field] = None
+        else:
+            out[field] = str(raw).strip()
+    return out
+
+
 def can_modify(pl: PackingList) -> bool:
     return pl.status != "locked"
 
@@ -157,3 +235,92 @@ async def unlock(db: AsyncSession, pl: PackingList) -> PackingList:
     pl.locked_by = None
     await db.flush()
     return pl
+
+
+async def apply_batch_update(
+    db: AsyncSession,
+    *,
+    batch: PackingListBatch,
+    new_values: dict,
+    actor: str,
+    actor_name: str | None,
+) -> int:
+    """CARGO-03 — applique les changements d'un batch en traçant chaque champ.
+
+    Seuls les champs de ``AUDITABLE_FIELDS`` présents dans ``new_values`` et
+    réellement modifiés sont écrits (et audités). Retourne le nombre de champs
+    modifiés.
+    """
+    changed = 0
+    for field in AUDITABLE_FIELDS:
+        if field not in new_values:
+            continue
+        old = getattr(batch, field)
+        new = new_values[field]
+        if old == new:
+            continue
+        setattr(batch, field, new)
+        await record_audit(
+            db,
+            packing_list_id=batch.packing_list_id,
+            batch_id=batch.id,
+            actor=actor,
+            actor_name=actor_name,
+            field=field,
+            old_value=old,
+            new_value=new,
+        )
+        changed += 1
+    if changed:
+        await db.flush()
+    return changed
+
+
+async def resolve_pl_context(
+    db: AsyncSession, pl: PackingList
+) -> tuple[Order | None, Booking | None, Leg | None, Vessel | None, Port | None, Port | None]:
+    """Résout (order, booking, leg, vessel, pol, pod) d'une packing list.
+
+    Gère les deux rails : PL issue d'une commande (``order_id``) OU d'un
+    booking (``booking_id``) — cf. CheckConstraint XOR sur PackingList.
+    """
+    order = await db.get(Order, pl.order_id) if pl.order_id else None
+    booking = await db.get(Booking, pl.booking_id) if pl.booking_id else None
+    leg_id = (order.leg_id if order else None) or (booking.leg_id if booking else None)
+    leg = await db.get(Leg, leg_id) if leg_id else None
+    vessel = await db.get(Vessel, leg.vessel_id) if leg and leg.vessel_id else None
+    pol = await db.get(Port, leg.departure_port_id) if leg and leg.departure_port_id else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg and leg.arrival_port_id else None
+    return order, booking, leg, vessel, pol, pod
+
+
+async def _count_issued_bls_for_leg(db: AsyncSession, *, leg_id: int) -> int:
+    """Nombre de BL déjà émis (toutes packing lists) sur un leg donné."""
+    stmt = (
+        select(func.count(PackingListBatch.id))
+        .select_from(PackingListBatch)
+        .join(PackingList, PackingListBatch.packing_list_id == PackingList.id)
+        .outerjoin(Order, PackingList.order_id == Order.id)
+        .outerjoin(Booking, PackingList.booking_id == Booking.id)
+        .where(PackingListBatch.bl_number.is_not(None))
+        .where(or_(Order.leg_id == leg_id, Booking.leg_id == leg_id))
+    )
+    return int((await db.scalar(stmt)) or 0)
+
+
+async def assign_bl_number(
+    db: AsyncSession, pl: PackingList, batch: PackingListBatch, leg: Leg | None
+) -> str:
+    """CARGO-01 — affecte (idempotent) un numéro de BL ``TUAW_{leg_code}_{seq:03d}``.
+
+    Anti-doublon par leg : la séquence = nombre de BL déjà émis sur le leg + 1.
+    Si le batch a déjà un numéro, on le renvoie sans rien changer.
+    """
+    if batch.bl_number:
+        return batch.bl_number
+    voyage = leg.leg_code if (leg and leg.leg_code) else "NA"
+    seq = (await _count_issued_bls_for_leg(db, leg_id=leg.id) + 1) if leg else 1
+    batch.bl_number = f"TUAW_{voyage}_{seq:03d}"
+    batch.bl_issued_at = datetime.now(UTC)
+    await db.flush()
+    return batch.bl_number

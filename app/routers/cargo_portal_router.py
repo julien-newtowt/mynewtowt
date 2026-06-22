@@ -14,9 +14,9 @@ Sécurité :
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,18 +27,25 @@ from app.models.leg import Leg
 from app.models.packing_list import (
     PackingList,
     PackingListBatch,
+    PackingListDocument,
     PortalMessage,
 )
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.services import rate_limit
 from app.services.packing_list import (
+    apply_batch_update,
     can_modify,
+    coerce_batch_form,
     get_by_token,
     log_portal_access,
     record_audit,
 )
+from app.services.safe_files import UploadRejected, resolve_path, save_upload
 from app.templating import templates
+
+# CARGO-06 — types de documents déposables par l'expéditeur depuis le portail.
+_PORTAL_DOC_KINDS = ("customs", "msds", "other")
 
 router = APIRouter(prefix="/p", tags=["cargo-portal"])
 
@@ -136,40 +143,26 @@ async def portal_packing(token: str, request: Request, db: AsyncSession = Depend
 
 
 @router.post("/{token}/packing/batches")
-async def portal_packing_add(
-    token: str,
-    request: Request,
-    pallet_format: str = Form("EPAL"),
-    pallet_count: int = Form(1),
-    description: str | None = Form(None),
-    hs_code: str | None = Form(None),
-    weight_kg: float | None = Form(None),
-    cubage_m3: float | None = Form(None),
-    db: AsyncSession = Depends(get_db),
-):
+async def portal_packing_add(token: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """CARGO-02/03 — ajout d'un batch par l'expéditeur (tous champs : adresses,
+    marchandise, dimensions). Audit de la création."""
     pl = await _load_or_410(db, token, request)
     if not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
-    # Compute next batch number
-    existing = list(
+    # Valeurs typées ; on ne passe au constructeur que les champs renseignés
+    # (les colonnes à défaut — pallet_format/pallet_count — gardent leur défaut).
+    vals = {k: v for k, v in coerce_batch_form(dict(await request.form())).items() if v is not None}
+    count = int(
         (
-            await db.execute(
-                select(PackingListBatch).where(PackingListBatch.packing_list_id == pl.id)
+            await db.scalar(
+                select(func.count(PackingListBatch.id)).where(
+                    PackingListBatch.packing_list_id == pl.id
+                )
             )
         )
-        .scalars()
-        .all()
+        or 0
     )
-    b = PackingListBatch(
-        packing_list_id=pl.id,
-        batch_number=len(existing) + 1,
-        pallet_format=pallet_format,
-        pallet_count=pallet_count,
-        description=description,
-        hs_code=hs_code,
-        weight_kg=weight_kg,
-        cubage_m3=cubage_m3,
-    )
+    b = PackingListBatch(packing_list_id=pl.id, batch_number=count + 1, **vals)
     db.add(b)
     await db.flush()
     await record_audit(
@@ -180,9 +173,151 @@ async def portal_packing_add(
         actor_name=None,
         field="_create_batch",
         old_value=None,
-        new_value=f"{pallet_count}×{pallet_format}",
+        new_value=f"{b.pallet_count}×{b.pallet_format}",
     )
     return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
+
+
+async def _portal_batch_or_404(
+    db: AsyncSession, pl: PackingList, batch_id: int
+) -> PackingListBatch:
+    """Charge un batch en garantissant qu'il appartient bien à la PL du token."""
+    b = await db.get(PackingListBatch, batch_id)
+    if b is None or b.packing_list_id != pl.id:
+        raise HTTPException(status_code=404)
+    return b
+
+
+@router.post("/{token}/packing/batches/{batch_id}/edit")
+async def portal_packing_edit(
+    token: str, batch_id: int, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """CARGO-03 — édition d'un batch par l'expéditeur (audit field-by-field)."""
+    pl = await _load_or_410(db, token, request)
+    if not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    batch = await _portal_batch_or_404(db, pl, batch_id)
+    await apply_batch_update(
+        db,
+        batch=batch,
+        new_values=coerce_batch_form(dict(await request.form())),
+        actor="client",
+        actor_name=None,
+    )
+    return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
+
+
+@router.post("/{token}/packing/batches/{batch_id}/delete")
+async def portal_packing_delete(
+    token: str, batch_id: int, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """CARGO-03 — suppression d'un batch par l'expéditeur."""
+    pl = await _load_or_410(db, token, request)
+    if not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    batch = await _portal_batch_or_404(db, pl, batch_id)
+    await record_audit(
+        db,
+        packing_list_id=pl.id,
+        batch_id=batch_id,
+        actor="client",
+        actor_name=None,
+        field="_delete_batch",
+        old_value=f"{batch.pallet_count}×{batch.pallet_format}",
+        new_value=None,
+    )
+    await db.delete(batch)
+    await db.flush()
+    return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
+
+
+# ─────────────────────────── Documents (CARGO-06) ───────────────────────────
+
+
+@router.get("/{token}/documents", response_class=HTMLResponse)
+async def portal_documents(token: str, request: Request, db: AsyncSession = Depends(get_db)):
+    pl = await _load_or_410(db, token, request)
+    docs = list(
+        (
+            await db.execute(
+                select(PackingListDocument)
+                .where(PackingListDocument.packing_list_id == pl.id)
+                .order_by(PackingListDocument.uploaded_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return templates.TemplateResponse(
+        "portal/documents.html",
+        {"request": request, "pl": pl, "token": token, "docs": docs, "kinds": _PORTAL_DOC_KINDS},
+    )
+
+
+@router.post("/{token}/documents/upload")
+async def portal_documents_upload(
+    token: str,
+    request: Request,
+    file: UploadFile = File(...),
+    kind: str = Form("other"),
+    label: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    pl = await _load_or_410(db, token, request)
+    if not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    content = await file.read()
+    try:
+        rel_path, mime = save_upload(content, file.filename or "document", subdir="cargo-portal")
+    except UploadRejected as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    db.add(
+        PackingListDocument(
+            packing_list_id=pl.id,
+            kind=kind if kind in _PORTAL_DOC_KINDS else "other",
+            label=(label or file.filename or "document")[:200],
+            file_path=rel_path,
+            file_mime=mime,
+            uploaded_by="client",
+        )
+    )
+    await db.flush()
+    return RedirectResponse(url=f"/p/{token}/documents", status_code=303)
+
+
+@router.get("/{token}/documents/{doc_id}/download")
+async def portal_documents_download(
+    token: str, doc_id: int, request: Request, db: AsyncSession = Depends(get_db)
+):
+    pl = await _load_or_410(db, token, request)
+    doc = await db.get(PackingListDocument, doc_id)
+    if doc is None or doc.packing_list_id != pl.id or not doc.file_path:
+        raise HTTPException(status_code=404)
+    try:
+        path = resolve_path(doc.file_path)
+    except (UploadRejected, FileNotFoundError) as e:
+        raise HTTPException(status_code=404) from e
+    return FileResponse(
+        path, media_type=doc.file_mime or "application/octet-stream", filename=doc.label or "document"
+    )
+
+
+@router.post("/{token}/documents/{doc_id}/delete")
+async def portal_documents_delete(
+    token: str, doc_id: int, request: Request, db: AsyncSession = Depends(get_db)
+):
+    pl = await _load_or_410(db, token, request)
+    doc = await db.get(PackingListDocument, doc_id)
+    if doc is None or doc.packing_list_id != pl.id:
+        raise HTTPException(status_code=404)
+    if doc.file_path:
+        try:
+            resolve_path(doc.file_path).unlink(missing_ok=True)
+        except (UploadRejected, FileNotFoundError):
+            pass
+    await db.delete(doc)
+    await db.flush()
+    return RedirectResponse(url=f"/p/{token}/documents", status_code=303)
 
 
 @router.post("/{token}/packing/submit")
