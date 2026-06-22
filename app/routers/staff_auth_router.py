@@ -13,11 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import (
     STAFF_COOKIE,
     STAFF_MFA_PENDING_COOKIE,
+    STAFF_MFA_TRUSTED_COOKIE,
+    cookie_kwargs_for_mfa_trusted,
     cookie_kwargs_for_staff,
     cookie_kwargs_for_staff_mfa_pending,
     create_staff_mfa_pending,
+    create_staff_mfa_trusted,
     create_staff_session,
     decode_staff_mfa_pending,
+    decode_staff_mfa_trusted,
     verify_password,
 )
 from app.database import get_db
@@ -59,8 +63,13 @@ async def login(
             status_code=400,
         )
 
-    # MFA challenge si activé sur ce compte staff
-    if getattr(user, "mfa_enabled", False) and user.mfa_secret:
+    # MFA challenge si activé sur ce compte staff — sauf si cet appareil a déjà
+    # validé un MFA dans les dernières 24 h (cookie de confiance signé).
+    mfa_required = getattr(user, "mfa_enabled", False) and user.mfa_secret
+    trusted = decode_staff_mfa_trusted(
+        request.cookies.get(STAFF_MFA_TRUSTED_COOKIE) or "", user.id
+    )
+    if mfa_required and not trusted:
         await activity_record(
             db,
             action="login_password_ok_mfa_required",
@@ -211,6 +220,12 @@ async def staff_mfa_challenge_submit(
     redirect = RedirectResponse(url=redirect_to, status_code=303)
     redirect.set_cookie(value=token, **cookie_kwargs_for_staff(request, role=user.role))
     redirect.delete_cookie(STAFF_MFA_PENDING_COOKIE, path="/")
+    # Appareil de confiance : on ne redemandera pas le MFA sur ce navigateur
+    # pendant 24 h.
+    redirect.set_cookie(
+        value=create_staff_mfa_trusted(user.id),
+        **cookie_kwargs_for_mfa_trusted(STAFF_MFA_TRUSTED_COOKIE, request),
+    )
     return redirect
 
 

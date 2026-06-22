@@ -31,6 +31,12 @@ CLIENT_MFA_PENDING_TTL_SECONDS = 5 * 60
 STAFF_MFA_PENDING_COOKIE = "towt_staff_mfa_pending"
 STAFF_MFA_PENDING_TTL_SECONDS = 5 * 60
 
+# Cookie « appareil de confiance MFA » : posé après une validation MFA réussie,
+# il permet de sauter le challenge MFA pendant 24 h sur ce navigateur.
+STAFF_MFA_TRUSTED_COOKIE = "towt_staff_mfa_trusted"
+CLIENT_MFA_TRUSTED_COOKIE = "towt_client_mfa_trusted"
+MFA_TRUSTED_TTL_SECONDS = 24 * 60 * 60
+
 # Durée de session staff par rôle (en minutes). Les marins / commandants
 # embarquent pour 15+ jours sans satcom fiable → leur fenêtre par défaut
 # (480 min = 8h) est trop courte. On donne 14 jours pour ces rôles, en
@@ -60,6 +66,12 @@ _staff_serializer = URLSafeTimedSerializer(settings.secret_key, salt="staff-sess
 _client_serializer = URLSafeTimedSerializer(settings.secret_key, salt="client-session")
 _client_mfa_serializer = URLSafeTimedSerializer(settings.secret_key, salt="client-mfa-pending")
 _staff_mfa_serializer = URLSafeTimedSerializer(settings.secret_key, salt="staff-mfa-pending")
+_staff_mfa_trusted_serializer = URLSafeTimedSerializer(
+    settings.secret_key, salt="staff-mfa-trusted"
+)
+_client_mfa_trusted_serializer = URLSafeTimedSerializer(
+    settings.secret_key, salt="client-mfa-trusted"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +160,54 @@ def cookie_kwargs_for_staff_mfa_pending(request: Request | None = None) -> dict:
     return {
         "key": STAFF_MFA_PENDING_COOKIE,
         "max_age": STAFF_MFA_PENDING_TTL_SECONDS,
+        "httponly": True,
+        "secure": _is_https(request),
+        "samesite": "lax",
+        "path": "/",
+    }
+
+
+# ── Appareil de confiance MFA (persistance 24 h) ────────────────────────────
+
+
+def create_staff_mfa_trusted(user_id: int) -> str:
+    """Token signé (24 h) attestant d'un MFA staff réussi sur cet appareil."""
+    payload = {"uid": user_id, "iat": datetime.now(UTC).timestamp()}
+    return _staff_mfa_trusted_serializer.dumps(payload)
+
+
+def decode_staff_mfa_trusted(token: str, user_id: int) -> bool:
+    """True si le token de confiance est valide, non-expiré et lié à ``user_id``."""
+    if not token:
+        return False
+    try:
+        payload = _staff_mfa_trusted_serializer.loads(token, max_age=MFA_TRUSTED_TTL_SECONDS)
+    except (BadSignature, SignatureExpired):
+        return False
+    return payload.get("uid") == user_id
+
+
+def create_client_mfa_trusted(client_id: int) -> str:
+    """Token signé (24 h) attestant d'un MFA client réussi sur cet appareil."""
+    payload = {"cid": client_id, "iat": datetime.now(UTC).timestamp()}
+    return _client_mfa_trusted_serializer.dumps(payload)
+
+
+def decode_client_mfa_trusted(token: str, client_id: int) -> bool:
+    if not token:
+        return False
+    try:
+        payload = _client_mfa_trusted_serializer.loads(token, max_age=MFA_TRUSTED_TTL_SECONDS)
+    except (BadSignature, SignatureExpired):
+        return False
+    return payload.get("cid") == client_id
+
+
+def cookie_kwargs_for_mfa_trusted(key: str, request: Request | None = None) -> dict:
+    """Kwargs ``set_cookie`` d'un cookie « appareil de confiance MFA » (24 h)."""
+    return {
+        "key": key,
+        "max_age": MFA_TRUSTED_TTL_SECONDS,
         "httponly": True,
         "secure": _is_https(request),
         "samesite": "lax",

@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     # LECTURE SEULE des données crew (cf. docs/integrations/marad-crew-readonly.md).
     # mynewtowt n'écrit jamais dans Marad. Sans MARAD_API_TOKEN, le client est
     # un no-op et l'endpoint cron renvoie 503.
-    marad_base_url: str = "https://external.marad.ms"
+    marad_base_url: str = "https://external02.marad.ms"
     marad_api_token: str | None = None  # clé d'API Marad (envoyée en header)
     # Header d'auth. Au défaut "X-Api-Key", le client essaie ApiKey/ApiToken/
     # X-Api-Key et retient celui qui marche. Fixer pour forcer un header précis.

@@ -7,7 +7,7 @@ jamais dans Marad.
 
 Configuration (.env, cf. app/config) :
 - ``MARAD_API_TOKEN``      : clé d'API (envoyée en header). Sans elle → no-op.
-- ``MARAD_BASE_URL``       : défaut ``https://external.marad.ms``.
+- ``MARAD_BASE_URL``       : défaut ``https://external02.marad.ms``.
 - ``MARAD_API_KEY_HEADER`` : nom du header d'auth. Si laissé au défaut
   (``X-Api-Key``), le client **essaie automatiquement** ``ApiKey`` puis
   ``ApiToken`` puis ``X-Api-Key`` et mémorise celui qui authentifie. Fixez cette

@@ -23,11 +23,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import (
     CLIENT_COOKIE,
     CLIENT_MFA_PENDING_COOKIE,
+    CLIENT_MFA_TRUSTED_COOKIE,
     cookie_kwargs_for_client,
     cookie_kwargs_for_client_mfa_pending,
+    cookie_kwargs_for_mfa_trusted,
     create_client_mfa_pending,
+    create_client_mfa_trusted,
     create_client_session,
     decode_client_mfa_pending,
+    decode_client_mfa_trusted,
     hash_password,
     verify_password,
 )
@@ -114,8 +118,13 @@ async def login(
 
     # Si MFA activé sur ce compte : ne pas poser le cookie session tout
     # de suite. On signe un token court (5min) "MFA pending" et on
-    # redirige vers /me/login/mfa pour la phase challenge.
-    if getattr(user, "mfa_enabled", False) and user.mfa_secret:
+    # redirige vers /me/login/mfa pour la phase challenge. Sauf si cet
+    # appareil a validé un MFA dans les dernières 24 h (cookie de confiance).
+    mfa_required = getattr(user, "mfa_enabled", False) and user.mfa_secret
+    trusted = decode_client_mfa_trusted(
+        request.cookies.get(CLIENT_MFA_TRUSTED_COOKIE) or "", user.id
+    )
+    if mfa_required and not trusted:
         await activity_record(
             db,
             action="client_login_password_ok_mfa_required",
@@ -273,6 +282,11 @@ async def mfa_challenge_submit(
     redirect = RedirectResponse(url="/me", status_code=303)
     redirect.set_cookie(value=token, **cookie_kwargs_for_client(request))
     redirect.delete_cookie(CLIENT_MFA_PENDING_COOKIE, path="/")
+    # Appareil de confiance : MFA non redemandé sur ce navigateur pendant 24 h.
+    redirect.set_cookie(
+        value=create_client_mfa_trusted(user.id),
+        **cookie_kwargs_for_mfa_trusted(CLIENT_MFA_TRUSTED_COOKIE, request),
+    )
     return redirect
 
 
