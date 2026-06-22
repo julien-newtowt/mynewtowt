@@ -258,6 +258,8 @@ async def diagnose() -> dict:
     vessels_count: int | None = None
     saw_401_403 = False
     saw_404 = False
+    auth_error_body: str | None = None  # corps du 1er 401/403 (message serveur)
+    www_authenticate: str | None = None
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             for label, headers, auth_params in _auth_strategies():
@@ -267,6 +269,12 @@ async def diagnose() -> dict:
                     attempts.append({"strategy": label, "status": r.status_code})
                     if r.status_code in (401, 403):
                         saw_401_403 = True
+                        # Capture le message d'erreur du serveur (1re fois) — il
+                        # indique souvent « clé invalide » vs « clé manquante ».
+                        if auth_error_body is None and r.content:
+                            auth_error_body = r.text[:300]
+                        if www_authenticate is None:
+                            www_authenticate = r.headers.get("www-authenticate")
                         continue
                     if r.status_code == 404:
                         saw_404 = True
@@ -292,6 +300,10 @@ async def diagnose() -> dict:
         classification = "wrong_path"  # hôte répond mais endpoint inconnu
     else:
         classification = "http_error"
+
+    # Confirme qu'un token est bien chargé (sans l'exposer en clair).
+    token = (settings.marad_api_token or "").strip()
+    token_preview = (token[:6] + "…") if token else None
     return {
         "configured": True,
         "reachable": any_response,
@@ -300,7 +312,13 @@ async def diagnose() -> dict:
         "base_url": settings.marad_base_url,
         "working_strategy": _working_strategy,
         "attempts": attempts,
+        "tried_strategies": [a.get("strategy") for a in attempts],
         "vessels_count": vessels_count,
+        "auth_error_body": auth_error_body,
+        "www_authenticate": www_authenticate,
+        "token_set": bool(token),
+        "token_preview": token_preview,
+        "token_len": len(token),
     }
 
 

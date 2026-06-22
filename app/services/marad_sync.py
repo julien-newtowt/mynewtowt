@@ -426,13 +426,20 @@ async def sync_all(db: AsyncSession) -> dict:
                     "que le serveur peut joindre ce domaine."
                 )
             elif cls == "auth_refused":
+                tried = ", ".join(diag.get("tried_strategies") or []) or "—"
+                tok = (
+                    f"token chargé ({diag.get('token_preview')}, {diag.get('token_len')} car.)"
+                    if diag.get("token_set")
+                    else "AUCUN token chargé (MARAD_API_TOKEN vide !)"
+                )
+                server = diag.get("auth_error_body")
+                server_part = f" Réponse serveur : « {server} »." if server else ""
                 diagnostic = (
-                    "Hôte Marad joignable mais authentification refusée (401/403) sur "
-                    "tous les schémas testés (apiKey en query string ET en header, "
-                    "ApiKey/X-API-KEY/ApiToken, Authorization Bearer). Le token est "
-                    "probablement invalide/expiré, ou l'éditeur impose un nom de clé "
-                    "précis : vérifiez MARAD_API_TOKEN et fixez MARAD_API_KEY_HEADER "
-                    "(nom utilisé en header ET en query)."
+                    "Hôte Marad joignable mais authentification refusée (401/403). "
+                    f"Schémas testés : {tried}. {tok}.{server_part} "
+                    "→ Si « query:apikey » figure ci-dessus, le correctif est déployé "
+                    "et le token ne correspond pas à celui de votre intégration "
+                    "(vérifiez MARAD_API_TOKEN). Sinon, le déploiement n'est pas à jour."
                 )
             elif cls == "wrong_path":
                 diagnostic = (
