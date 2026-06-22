@@ -199,6 +199,31 @@ async def test_portal_batch_isolation_404(db):
 
 
 @pytest.mark.asyncio
+async def test_portal_document_delete_is_audited(db):
+    """La suppression d'un document portail laisse une trace d'audit."""
+    from app.models.packing_list import PackingListDocument
+    from app.routers.cargo_portal_router import portal_documents_delete
+
+    pl, _ = await _setup_graph(db, with_leg=False)
+    doc = PackingListDocument(
+        packing_list_id=pl.id,
+        kind="customs",
+        label="Facture commerciale",
+        file_path="cargo-portal/inexistant.pdf",  # fichier absent → unlink ignoré
+        uploaded_by="client",
+    )
+    db.add(doc)
+    await db.flush()
+    did = doc.id
+
+    resp = await portal_documents_delete(pl.token, did, _Req(path="/p/x/documents"), db=db)
+    assert resp.status_code == 303
+    assert (await db.get(PackingListDocument, did)) is None
+    audits = (await db.execute(PackingListAudit.__table__.select())).fetchall()
+    assert any(a.field == "_delete_document" for a in audits)
+
+
+@pytest.mark.asyncio
 async def test_bill_of_lading_pdf_renders_from_batch(db, staff_user):
     from app.routers.cargo_packing_router import batch_bill_of_lading
 

@@ -40,8 +40,13 @@ _OTHER_COLS = [
 def upgrade() -> None:
     for name, type_ in _ADDRESS_COLS + _OTHER_COLS:
         op.add_column("packing_list_batches", sa.Column(name, type_, nullable=True))
+    # Unique : interdit deux Bills of Lading au même numéro (les NULL restent
+    # multiples — batches sans BL émis). Anti-doublon au niveau base.
     op.create_index(
-        "ix_packing_list_batches_bl_number", "packing_list_batches", ["bl_number"]
+        "ix_packing_list_batches_bl_number",
+        "packing_list_batches",
+        ["bl_number"],
+        unique=True,
     )
 
 

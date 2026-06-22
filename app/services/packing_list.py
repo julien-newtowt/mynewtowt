@@ -13,6 +13,7 @@ import hashlib
 from datetime import UTC, datetime
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking
@@ -237,6 +238,45 @@ async def unlock(db: AsyncSession, pl: PackingList) -> PackingList:
     return pl
 
 
+async def create_batch(
+    db: AsyncSession,
+    *,
+    pl: PackingList,
+    vals: dict,
+    actor: str,
+    actor_name: str | None,
+) -> PackingListBatch:
+    """Crée un batch (numéro = rang suivant) + audit — partagé staff/portail.
+
+    ``vals`` provient de ``coerce_batch_form`` ; les clés à None sont écartées
+    par l'appelant pour laisser jouer les défauts des colonnes obligatoires.
+    """
+    count = int(
+        (
+            await db.scalar(
+                select(func.count(PackingListBatch.id)).where(
+                    PackingListBatch.packing_list_id == pl.id
+                )
+            )
+        )
+        or 0
+    )
+    b = PackingListBatch(packing_list_id=pl.id, batch_number=count + 1, **vals)
+    db.add(b)
+    await db.flush()
+    await record_audit(
+        db,
+        packing_list_id=pl.id,
+        batch_id=b.id,
+        actor=actor,
+        actor_name=actor_name,
+        field="_create_batch",
+        old_value=None,
+        new_value=f"{b.pallet_count}×{b.pallet_format}",
+    )
+    return b
+
+
 async def apply_batch_update(
     db: AsyncSession,
     *,
@@ -315,12 +355,24 @@ async def assign_bl_number(
 
     Anti-doublon par leg : la séquence = nombre de BL déjà émis sur le leg + 1.
     Si le batch a déjà un numéro, on le renvoie sans rien changer.
+
+    La colonne ``bl_number`` est UNIQUE ; en cas de collision concurrente
+    (deux émissions simultanées sur le même leg lisant le même compteur), le
+    flush échoue et on ré-essaie avec le compteur réactualisé (savepoint).
     """
     if batch.bl_number:
         return batch.bl_number
     voyage = leg.leg_code if (leg and leg.leg_code) else "NA"
-    seq = (await _count_issued_bls_for_leg(db, leg_id=leg.id) + 1) if leg else 1
-    batch.bl_number = f"TUAW_{voyage}_{seq:03d}"
-    batch.bl_issued_at = datetime.now(UTC)
-    await db.flush()
-    return batch.bl_number
+    last_error: Exception | None = None
+    for _attempt in range(5):
+        seq = (await _count_issued_bls_for_leg(db, leg_id=leg.id) + 1) if leg else 1
+        batch.bl_number = f"TUAW_{voyage}_{seq:03d}"
+        batch.bl_issued_at = datetime.now(UTC)
+        try:
+            async with db.begin_nested():
+                await db.flush()
+            return batch.bl_number
+        except IntegrityError as exc:  # collision de numéro → on recompte
+            last_error = exc
+            batch.bl_number = None
+    raise last_error or RuntimeError("BL number assignment failed")

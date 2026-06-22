@@ -192,7 +192,8 @@ class PackingListBatch(Base):
     description_of_goods: Mapped[str | None] = mapped_column(Text)
 
     # CARGO-01 — numérotation Bill of Lading persistante (ex. TUAW_1CFRBR6_001).
-    bl_number: Mapped[str | None] = mapped_column(String(50), index=True)
+    # Unique : interdit deux BL au même numéro (anti-doublon au niveau base).
+    bl_number: Mapped[str | None] = mapped_column(String(50), unique=True, index=True)
     bl_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(

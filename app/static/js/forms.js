@@ -6,13 +6,25 @@
  * page navigation.
  *
  * Opt out with: <form data-no-double-submit>
+ *
+ * Also handles <form data-confirm="message"> : asks for confirmation before
+ * submitting (destructive actions). If declined, the submit is cancelled.
  */
 (function () {
   "use strict";
 
   document.addEventListener("submit", function (e) {
     var form = e.target;
-    if (!form || form.dataset.noDoubleSubmit !== undefined) return;
+    if (!form) return;
+
+    // Confirmation guard for destructive forms (data-confirm="…").
+    var confirmMsg = form.dataset ? form.dataset.confirm : null;
+    if (confirmMsg && !window.confirm(confirmMsg)) {
+      e.preventDefault();
+      return;
+    }
+
+    if (form.dataset.noDoubleSubmit !== undefined) return;
 
     var btns = form.querySelectorAll('button[type="submit"], input[type="submit"]');
     btns.forEach(function (btn) {

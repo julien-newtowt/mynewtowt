@@ -96,7 +96,8 @@
       </div>
       {% endif %}
 
-      {% if v_crew or v_rh %}
+      {# Groupe Humain toujours rendu : /rh/moi est un self-service universel
+         (tout collaborateur staff y a droit) ; crew/rh restent filtrés. #}
       <div class="nav-group" data-group="humain">
         <button class="nav-group-toggle" aria-expanded="false">
           <span class="nav-group-title"><i data-lucide="users"></i><span>{{ t('s_grp_humain', lang) }}</span></span>
@@ -108,7 +109,6 @@
           <li><a href="/rh/moi"><i data-lucide="circle-user"></i><span>{{ t('s_nav_rh_self', lang) }}</span></a></li>
         </ul>
       </div>
-      {% endif %}
 
       {% if v_finance or v_kpi or v_planning or v_mrv or v_claims or v_analytics %}
       <div class="nav-group" data-group="performance">

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -37,6 +37,7 @@ from app.services.packing_list import (
     apply_batch_update,
     can_modify,
     coerce_batch_form,
+    create_batch,
     get_by_token,
     log_portal_access,
     record_audit,
@@ -152,29 +153,7 @@ async def portal_packing_add(token: str, request: Request, db: AsyncSession = De
     # Valeurs typées ; on ne passe au constructeur que les champs renseignés
     # (les colonnes à défaut — pallet_format/pallet_count — gardent leur défaut).
     vals = {k: v for k, v in coerce_batch_form(dict(await request.form())).items() if v is not None}
-    count = int(
-        (
-            await db.scalar(
-                select(func.count(PackingListBatch.id)).where(
-                    PackingListBatch.packing_list_id == pl.id
-                )
-            )
-        )
-        or 0
-    )
-    b = PackingListBatch(packing_list_id=pl.id, batch_number=count + 1, **vals)
-    db.add(b)
-    await db.flush()
-    await record_audit(
-        db,
-        packing_list_id=pl.id,
-        batch_id=b.id,
-        actor="client",
-        actor_name=None,
-        field="_create_batch",
-        old_value=None,
-        new_value=f"{b.pallet_count}×{b.pallet_format}",
-    )
+    await create_batch(db, pl=pl, vals=vals, actor="client", actor_name=None)
     return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
 
 
@@ -271,17 +250,26 @@ async def portal_documents_upload(
         rel_path, mime = save_upload(content, file.filename or "document", subdir="cargo-portal")
     except UploadRejected as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    db.add(
-        PackingListDocument(
-            packing_list_id=pl.id,
-            kind=kind if kind in _PORTAL_DOC_KINDS else "other",
-            label=(label or file.filename or "document")[:200],
-            file_path=rel_path,
-            file_mime=mime,
-            uploaded_by="client",
-        )
+    doc = PackingListDocument(
+        packing_list_id=pl.id,
+        kind=kind if kind in _PORTAL_DOC_KINDS else "other",
+        label=(label or file.filename or "document")[:200],
+        file_path=rel_path,
+        file_mime=mime,
+        uploaded_by="client",
     )
+    db.add(doc)
     await db.flush()
+    await record_audit(
+        db,
+        packing_list_id=pl.id,
+        batch_id=None,
+        actor="client",
+        actor_name=None,
+        field="_upload_document",
+        old_value=None,
+        new_value=doc.label,
+    )
     return RedirectResponse(url=f"/p/{token}/documents", status_code=303)
 
 
@@ -315,8 +303,19 @@ async def portal_documents_delete(
             resolve_path(doc.file_path).unlink(missing_ok=True)
         except (UploadRejected, FileNotFoundError):
             pass
+    label = doc.label
     await db.delete(doc)
     await db.flush()
+    await record_audit(
+        db,
+        packing_list_id=pl.id,
+        batch_id=None,
+        actor="client",
+        actor_name=None,
+        field="_delete_document",
+        old_value=label,
+        new_value=None,
+    )
     return RedirectResponse(url=f"/p/{token}/documents", status_code=303)
 
 

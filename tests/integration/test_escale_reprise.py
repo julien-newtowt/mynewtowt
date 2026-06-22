@@ -101,6 +101,37 @@ async def test_edit_operation_sets_manual_actual_times(db, staff_user):
 
 
 @pytest.mark.asyncio
+async def test_edit_operation_reconciles_sof_no_duplicate(db, staff_user):
+    """Éditer l'heure d'une opération ne doit PAS accumuler de SOF obsolètes."""
+    from app.models.sof_event import SofEvent
+    from app.routers.escale_router import edit_operation
+
+    await _setup_leg(db)
+    op = EscaleOperation(leg_id=1, operation_type="relations_externes", action="nor")
+    db.add(op)
+    await db.flush()
+
+    common = dict(
+        direction="BOTH", operation_type="relations_externes", action="nor",
+        label=None, planned_start=None, planned_end=None,
+        status=None, cost_forecast=None, cost_actual=None, notes=None,
+        db=db, user=staff_user,
+    )
+    # 1re saisie : SOF NOR créé à 10:00.
+    await edit_operation(op.id, _Req(), actual_start="2026-04-01T10:00:00", actual_end=None, **common)
+    # Correction : l'heure passe à 11:00 → l'ancien SOF doit être remplacé.
+    await edit_operation(op.id, _Req(), actual_start="2026-04-01T11:00:00", actual_end=None, **common)
+
+    sofs = (
+        (await db.execute(SofEvent.__table__.select().where(SofEvent.__table__.c.leg_id == 1)))
+        .fetchall()
+    )
+    nor_events = [s for s in sofs if s.event_type == "NOR"]
+    assert len(nor_events) == 1, f"SOF NOR dupliqués : {len(nor_events)}"
+    assert nor_events[0].occurred_at.hour == 11
+
+
+@pytest.mark.asyncio
 async def test_delete_operation(db, staff_user):
     from app.routers.escale_router import delete_operation
 

@@ -97,7 +97,7 @@ async def _sync_sof_from_operation(
             event_type=event_type,
             label=op.label,
             occurred_at=occurred_at,
-            notes=f"Auto depuis escale (op #{op.id})",
+            notes=_auto_sof_note(op.id),
             recorded_by_id=user.id,
             recorded_by_name=user.full_name or user.username,
         )
@@ -118,6 +118,31 @@ async def _sync_sof_from_operation(
         )
     except Exception:
         logger.exception("SOF auto-creation failed for escale op %s (action=%s)", op.id, op.action)
+
+
+def _auto_sof_note(op_id: int) -> str:
+    return f"Auto depuis escale (op #{op_id})"
+
+
+async def _unsync_sof_from_operation(db: AsyncSession, op: EscaleOperation) -> None:
+    """Supprime les SOF auto-générés par une opération (avant re-synchro à l'édition).
+
+    Évite l'accumulation d'événements SOF obsolètes quand l'heure d'une
+    opération change : on retire l'auto-SOF précédent puis on le recrée à la
+    nouvelle date (cf. ``edit_operation``).
+    """
+    rows = (
+        await db.execute(
+            select(SofEvent).where(
+                SofEvent.leg_id == op.leg_id,
+                SofEvent.notes == _auto_sof_note(op.id),
+            )
+        )
+    ).scalars().all()
+    for ev in rows:
+        await db.delete(ev)
+    if rows:
+        await db.flush()
 
 
 @router.get("", response_class=HTMLResponse)
@@ -380,7 +405,9 @@ async def edit_operation(
         entity_label=f"{operation_type}/{action} leg={op.leg_id}",
         ip_address=_client_ip(request),
     )
-    # Re-synchronise le SOF (occurred_at peut avoir changé).
+    # Réconcilie le SOF : retire l'auto-SOF obsolète (l'occurred_at a pu
+    # changer) puis le recrée à la nouvelle date — pas d'accumulation.
+    await _unsync_sof_from_operation(db, op)
     await _sync_sof_from_operation(db, request, user, op)
     return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,6 +27,7 @@ from app.services.packing_list import (
     assign_bl_number,
     can_modify,
     coerce_batch_form,
+    create_batch,
     lock,
     record_audit,
     resolve_pl_context,
@@ -146,29 +147,7 @@ async def add_batch(
     if pl is None or not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     vals = {k: v for k, v in coerce_batch_form(dict(await request.form())).items() if v is not None}
-    count = int(
-        (
-            await db.scalar(
-                select(func.count(PackingListBatch.id)).where(
-                    PackingListBatch.packing_list_id == pl_id
-                )
-            )
-        )
-        or 0
-    )
-    b = PackingListBatch(packing_list_id=pl.id, batch_number=count + 1, **vals)
-    db.add(b)
-    await db.flush()
-    await record_audit(
-        db,
-        packing_list_id=pl.id,
-        batch_id=b.id,
-        actor="staff",
-        actor_name=user.full_name or user.username,
-        field="_create_batch",
-        old_value=None,
-        new_value=f"{b.pallet_count}×{b.pallet_format}",
-    )
+    await create_batch(db, pl=pl, vals=vals, actor="staff", actor_name=user.full_name or user.username)
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
 
 
