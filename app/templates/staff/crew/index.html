@@ -25,12 +25,20 @@
 </header>
 
 {% set _md = request.query_params.get('marad') %}
-{% if _md == 'ok' %}
+{% if _md == 'ok' and request.query_params.get('empty') == '1' %}
+<div class="alert alert-warn mb-4">
+  <i data-lucide="alert-triangle"></i>
+  <strong>Synchronisation Marad : rien remonté</strong> (marins reçus :
+  {{ request.query_params.get('cf', 0) }}, plannings reçus : {{ request.query_params.get('sf', 0) }}).
+  {% if request.query_params.get('diag') %}<br/><span class="text-muted">{{ request.query_params.get('diag') }}</span>{% endif %}
+</div>
+{% elif _md == 'ok' %}
 <div class="alert alert-success mb-4">
   <i data-lucide="check-circle"></i>
   Synchronisation Marad terminée — marins : {{ request.query_params.get('cc', 0) }} créé(s),
-  {{ request.query_params.get('cu', 0) }} mis à jour ; plannings :
-  {{ request.query_params.get('sc', 0) }} créé(s), {{ request.query_params.get('su', 0) }} mis à jour.
+  {{ request.query_params.get('cu', 0) }} mis à jour ({{ request.query_params.get('cf', 0) }} reçus) ;
+  plannings : {{ request.query_params.get('sc', 0) }} créé(s),
+  {{ request.query_params.get('su', 0) }} mis à jour ({{ request.query_params.get('sf', 0) }} reçus).
   {% if request.query_params.get('err', '0') != '0' %}
   <span class="text-muted">({{ request.query_params.get('err') }} erreur(s) — voir logs)</span>
   {% endif %}

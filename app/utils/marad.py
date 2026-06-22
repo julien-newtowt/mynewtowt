@@ -202,6 +202,26 @@ async def get_sync_details() -> Any | None:
     return await _get("/api/Synchronization/getSyncDetails")
 
 
+async def diagnose() -> dict:
+    """Sonde légère pour expliquer un « rien ne remonte ».
+
+    Appelle ``getVessels`` (15 req/min, peu coûteux) pour distinguer une API
+    **injoignable / non authentifiée** d'un **tenant joignable mais vide**.
+    Renvoie ``{configured, reachable, working_header, base_url, vessels_count}``.
+    """
+    if not enabled():
+        return {"configured": False, "reachable": False, "base_url": settings.marad_base_url}
+    vessels = await _get("/api/vessels/getVessels")
+    reachable = vessels is not None
+    return {
+        "configured": True,
+        "reachable": reachable,
+        "working_header": _working_header,
+        "base_url": settings.marad_base_url,
+        "vessels_count": len(vessels) if isinstance(vessels, list) else (0 if vessels is None else None),
+    }
+
+
 def vessel_map() -> dict[str, str]:
     """Mapping ``marad_vessel_id -> vessel_id`` depuis MARAD_VESSEL_MAP."""
     raw = (settings.marad_vessel_map or "").strip()

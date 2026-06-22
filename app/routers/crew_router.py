@@ -184,14 +184,19 @@ async def crew_sync_marad(
         ),
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(
-        url=(
-            f"/crew?marad=ok&cc={result['crew_created']}&cu={result['crew_updated']}"
-            f"&sc={result['sched_created']}&su={result['sched_updated']}"
-            f"&err={result['errors']}"
-        ),
-        status_code=303,
+    total_fetched = result.get("crew_fetched", 0) + result.get("sched_fetched", 0)
+    base = (
+        f"/crew?marad=ok&cc={result['crew_created']}&cu={result['crew_updated']}"
+        f"&sc={result['sched_created']}&su={result['sched_updated']}"
+        f"&cf={result.get('crew_fetched', 0)}&sf={result.get('sched_fetched', 0)}"
+        f"&err={result['errors']}"
     )
+    # Rien remonté : on bascule sur un bandeau de diagnostic explicite.
+    if total_fetched == 0 and result.get("diagnostic"):
+        from urllib.parse import quote
+
+        base += f"&empty=1&diag={quote(result['diagnostic'])}"
+    return RedirectResponse(url=base, status_code=303)
 
 
 @router.get("/compliance", response_class=HTMLResponse)

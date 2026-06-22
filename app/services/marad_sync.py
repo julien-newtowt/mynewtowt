@@ -42,17 +42,33 @@ def is_configured() -> bool:
 
 
 def _records(payload: Any) -> list[dict]:
-    """Normalise une réponse Marad en liste de dicts."""
+    """Normalise une réponse Marad en liste de dicts.
+
+    Tolérant aux wrappers Marad usuels (``data``/``items``/…), aux noms
+    spécifiques (``crewMembers``/``crewing``/``schedules``…), et au cas d'un
+    dict enveloppe ne contenant qu'une seule liste.
+    """
     if payload is None:
         return []
     if isinstance(payload, list):
         return [r for r in payload if isinstance(r, dict)]
     if isinstance(payload, dict):
-        for key in ("data", "items", "results", "value", "records"):
+        for key in (
+            "data", "items", "results", "value", "records",
+            "crewMembers", "crewmembers", "crewing", "crew",
+            "schedules", "crewingSchedule", "list", "rows",
+        ):
             v = payload.get(key)
             if isinstance(v, list):
                 return [r for r in v if isinstance(r, dict)]
-        return [payload]
+        # Enveloppe à une seule liste (clé inconnue) → on la prend.
+        list_values = [v for v in payload.values() if isinstance(v, list)]
+        if len(list_values) == 1:
+            return [r for r in list_values[0] if isinstance(r, dict)]
+        # Sinon, si le dict ressemble à un enregistrement (a un id), on le garde.
+        if any(k in payload for k in ("id", "Id", "ID")):
+            return [payload]
+        return []
     return []
 
 
@@ -388,6 +404,30 @@ async def sync_all(db: AsyncSession) -> dict:
     """
     crew = await sync_crew(db)
     sched = await sync_schedules(db)
+
+    # Diagnostic : si l'API est configurée mais que RIEN n'a été récupéré,
+    # on sonde la connectivité pour expliquer le « rien ne remonte » plutôt
+    # que de laisser un silencieux 0/0.
+    diagnostic: str | None = None
+    if crew["configured"] and (crew.get("fetched", 0) + sched.get("fetched", 0)) == 0:
+        try:
+            diag = await marad.diagnose()
+            if not diag.get("reachable"):
+                diagnostic = (
+                    "API Marad injoignable ou authentification refusée. Vérifiez "
+                    f"MARAD_API_TOKEN, MARAD_API_KEY_HEADER et MARAD_BASE_URL "
+                    f"(actuelle : {diag.get('base_url')}). Possible aussi : quota "
+                    "atteint (GET /api/Crewing = 1 req/min)."
+                )
+            else:
+                diagnostic = (
+                    "API Marad joignable mais aucun marin/planning retourné "
+                    f"(navires visibles : {diag.get('vessels_count')}). Compte/tenant "
+                    "vide, filtre delta, ou schéma de réponse inattendu."
+                )
+        except Exception:  # le diagnostic ne doit jamais faire échouer la synchro
+            logger.warning("marad diagnose failed", exc_info=True)
+
     return {
         "configured": crew["configured"],
         "crew_created": crew.get("created", 0),
@@ -397,6 +437,7 @@ async def sync_all(db: AsyncSession) -> dict:
         "sched_updated": sched.get("updated", 0),
         "sched_fetched": sched.get("fetched", 0),
         "errors": crew.get("errors", 0) + sched.get("errors", 0),
+        "diagnostic": diagnostic,
         "crew": crew,
         "schedules": sched,
     }
