@@ -124,7 +124,7 @@
         </div>
         <div class="gantt-lane" style="position:relative; height:32px; background:var(--sable-light); border-radius:var(--radius-sm);">
           {% for bar in row.bars %}
-            {% set _catcolor = {'export':'var(--vert)','import':'var(--teal)','hors_europe':'var(--cuivre)','intra_eu':'var(--gris)'} %}
+            {% set _catcolor = {'export':'var(--bleu-marine)','import':'var(--cuivre)','hors_europe':'var(--gris)','intra_eu':'var(--vert)'} %}
             <a href="/planning/scenarios/{{ scenario.id }}/legs/{{ bar.leg_id }}/edit"
                class="gantt-bar"
                data-draggable-bar data-leg-id="{{ bar.leg_id }}"
@@ -144,10 +144,10 @@
   </div>
 
   <div class="mt-4 flex gap-4" style="font-size:var(--text-xs); color:var(--gris); flex-wrap:wrap;">
-    <span><span style="display:inline-block; width:12px; height:12px; background:var(--vert); border-radius:2px;"></span> Export (Europe → hors Europe)</span>
-    <span><span style="display:inline-block; width:12px; height:12px; background:var(--teal); border-radius:2px;"></span> Import (hors Europe → Europe)</span>
-    <span><span style="display:inline-block; width:12px; height:12px; background:var(--cuivre); border-radius:2px;"></span> Hors Europe</span>
-    <span><span style="display:inline-block; width:12px; height:12px; background:var(--gris); border-radius:2px;"></span> Intra-Europe</span>
+    <span><span style="display:inline-block; width:12px; height:12px; background:var(--bleu-marine); border-radius:2px;"></span> Export</span>
+    <span><span style="display:inline-block; width:12px; height:12px; background:var(--cuivre); border-radius:2px;"></span> Import Amérique du sud</span>
+    <span><span style="display:inline-block; width:12px; height:12px; background:var(--gris); border-radius:2px;"></span> Hors Europe</span>
+    <span><span style="display:inline-block; width:12px; height:12px; background:var(--vert); border-radius:2px;"></span> Intra-Europe</span>
   </div>
 </section>
 

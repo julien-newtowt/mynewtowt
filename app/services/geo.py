@@ -27,8 +27,8 @@ TRADE_CATEGORIES: tuple[str, ...] = ("export", "import", "hors_europe", "intra_e
 
 # Libellés humains des catégories.
 TRADE_CATEGORY_LABELS: dict[str, str] = {
-    "export": "Export (Europe → hors Europe)",
-    "import": "Import (hors Europe → Europe)",
+    "export": "Export",
+    "import": "Import Amérique du sud",
     "hors_europe": "Hors Europe",
     "intra_eu": "Intra-Europe",
 }
