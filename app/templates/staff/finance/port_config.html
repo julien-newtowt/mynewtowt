@@ -67,6 +67,16 @@
           <textarea name="notes" rows="2" class="form-input">{{ cfg.notes or '' if cfg else '' }}</textarea>
         </label>
       </div>
+      <fieldset class="mt-3" style="border:1px solid var(--gris-clair); border-radius:var(--radius-md); padding:var(--space-3);">
+        <legend class="kicker">Opérations commerciales — jours fermés</legend>
+        <p class="text-muted text-sm" style="margin:0 0 var(--space-2);">Si le port n'opère pas le week-end, l'escale se décale automatiquement vers le(s) jour(s) ouvré(s) suivant(s) dans le planning.</p>
+        <label class="field-check" style="display:inline-flex; gap:.4rem; align-items:center; margin-right:var(--space-4);">
+          <input type="checkbox" name="closed_saturday" {% if cfg and cfg.closed_saturday %}checked{% endif %} /> Fermé le samedi
+        </label>
+        <label class="field-check" style="display:inline-flex; gap:.4rem; align-items:center;">
+          <input type="checkbox" name="closed_sunday" {% if cfg and cfg.closed_sunday %}checked{% endif %} /> Fermé le dimanche
+        </label>
+      </fieldset>
       <div class="mt-3">
         <button type="submit" class="btn btn-primary">Enregistrer</button>
       </div>

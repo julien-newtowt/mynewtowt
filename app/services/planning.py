@@ -579,6 +579,75 @@ DEFAULT_PORT_STAY_HOURS = 24
 """Durée d'escale supposée si ``port_stay_planned_hours`` n'est pas renseigné."""
 
 
+# ---------------------------------------------------------------------------
+# Jours ouvrés portuaires (fermeture commerciale samedi/dimanche)
+# ---------------------------------------------------------------------------
+
+# Python ``datetime.weekday()`` : lundi=0 … samedi=5, dimanche=6.
+_SATURDAY = 5
+_SUNDAY = 6
+
+
+def next_working_departure(
+    arrival: datetime,
+    stay_hours: float,
+    closed_weekdays: set[int],
+) -> datetime:
+    """Date de départ après escale, en tenant compte des jours fermés au commerce.
+
+    Règle : les opérations commerciales (chargement/déchargement) ne peuvent
+    avoir lieu un jour fermé. Si le navire arrive un jour fermé, l'escale **se
+    décale au prochain jour ouvré**. Tout jour fermé traversé par l'escale en
+    prolonge la durée d'un jour, et le départ ne tombe jamais un jour fermé.
+
+    Sans jour fermé (``closed_weekdays`` vide), renvoie simplement
+    ``arrival + stay_hours``.
+    """
+    if not closed_weekdays:
+        return arrival + timedelta(hours=stay_hours)
+
+    # 1. Début effectif des opérations : prochain jour ouvré si arrivée fermée.
+    start = arrival
+    while start.weekday() in closed_weekdays:
+        start = start + timedelta(days=1)
+
+    # 2. Départ naïf, puis +1 jour par jour fermé traversé par l'escale.
+    departure = start + timedelta(hours=stay_hours)
+    cursor = start.date()
+    while cursor < departure.date():
+        cursor = cursor + timedelta(days=1)
+        if cursor.weekday() in closed_weekdays:
+            departure = departure + timedelta(days=1)
+
+    # 3. Le départ ne peut pas tomber un jour fermé → repousse au prochain ouvré.
+    while departure.weekday() in closed_weekdays:
+        departure = departure + timedelta(days=1)
+    return departure
+
+
+async def closed_weekdays_for_port(db: AsyncSession, port_id: int | None) -> set[int]:
+    """Jours fermés au commerce d'un port (depuis ``PortConfig``).
+
+    Renvoie un sous-ensemble de ``{5, 6}`` (samedi/dimanche). Vide si le port
+    n'a pas de configuration ou n'a aucune restriction.
+    """
+    if not port_id:
+        return set()
+    from app.models.finance import PortConfig
+
+    cfg = (
+        await db.execute(select(PortConfig).where(PortConfig.port_id == port_id))
+    ).scalar_one_or_none()
+    if cfg is None:
+        return set()
+    closed: set[int] = set()
+    if cfg.closed_saturday:
+        closed.add(_SATURDAY)
+    if cfg.closed_sunday:
+        closed.add(_SUNDAY)
+    return closed
+
+
 def detect_port_conflicts(
     legs: Sequence[Leg],
     *,

@@ -21,6 +21,7 @@ from app.services.activity import record as activity_record
 from app.services.planning import (
     InvalidLegDates,
     PlanningError,
+    closed_weekdays_for_port,
     create_leg,
     create_share,
     delete_leg,
@@ -29,6 +30,7 @@ from app.services.planning import (
     list_legs_in_window,
     list_shares,
     lookup_share,
+    next_working_departure,
     revoke_share,
     update_leg,
 )
@@ -180,8 +182,6 @@ async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
     Le dict est sérialisé en data-attribute du form et appliqué côté JS
     quand l'utilisateur sélectionne un navire (cf. leg-form-suggest.js).
     """
-    from datetime import timedelta
-
     from sqlalchemy import desc
 
     suggestions: dict[int, dict] = {}
@@ -198,7 +198,10 @@ async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
         if base is None:
             continue
         stay = last.port_stay_planned_hours or 48
-        suggested = base + timedelta(hours=stay)
+        # Décale le départ si le port d'arrivée est fermé au commerce le WE :
+        # l'escale glisse vers le(s) jour(s) ouvré(s) suivant(s).
+        closed = await closed_weekdays_for_port(db, last.arrival_port_id)
+        suggested = next_working_departure(base, stay, closed)
         suggestions[v.id] = {
             "etd": suggested.strftime("%Y-%m-%dT%H:%M"),
             "pol_id": last.arrival_port_id,

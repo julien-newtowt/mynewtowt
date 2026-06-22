@@ -500,6 +500,8 @@ async def finance_port_config_upsert(
     documents_required: str | None = Form(None),
     restrictions: str | None = Form(None),
     notes_for_captain: str | None = Form(None),
+    closed_saturday: str | None = Form(None),
+    closed_sunday: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("finance", "M")),
 ) -> RedirectResponse:
@@ -538,6 +540,8 @@ async def finance_port_config_upsert(
     config.notes_for_captain = (
         notes_for_captain.strip() if notes_for_captain and notes_for_captain.strip() else None
     )
+    config.closed_saturday = closed_saturday == "on"
+    config.closed_sunday = closed_sunday == "on"
 
     await db.flush()
 

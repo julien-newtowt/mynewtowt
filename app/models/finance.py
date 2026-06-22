@@ -89,6 +89,13 @@ class PortConfig(Base):
     restrictions: Mapped[str | None] = mapped_column(Text)  # douane, quarantaine, ISPS
     notes_for_captain: Mapped[str | None] = mapped_column(Text)
 
+    # Jours sans opérations commerciales (port fermé au commerce). Quand un
+    # navire arrive un jour fermé — ou que l'escale s'étend sur un jour fermé —
+    # l'escale se décale vers le(s) jour(s) ouvré(s) suivant(s). Pris en compte
+    # par le moteur de planification (services.planning.next_working_departure).
+    closed_saturday: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    closed_sunday: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
 
 class LegKPI(Base):
     __tablename__ = "leg_kpis"
