@@ -25,6 +25,7 @@ from app.models.leg import Leg
 from app.models.planning_scenario import PlanningScenario, ScenarioLeg
 from app.models.port import Port
 from app.models.vessel import Vessel
+from app.services.geo import leg_trade_category
 from app.services.planning import (
     MAX_PLAUSIBLE_SPEED_KN,
     InvalidLegDates,
@@ -442,6 +443,9 @@ def build_gantt_rows(
                     "leg_id": leg.id,
                     "leg_code": leg.label or f"#{leg.id}",
                     "status": leg.status,
+                    "category": leg_trade_category(
+                        pol.country if pol else None, pod.country if pod else None
+                    ),
                     "left_pct": round(left_pct, 3),
                     "width_pct": round(max(width_pct, 1.0), 3),
                     "pol_locode": pol.locode if pol else "",

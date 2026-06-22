@@ -18,6 +18,7 @@ from app.models.port import Port
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
+from app.services.geo import leg_trade_category
 from app.services.planning import (
     InvalidLegDates,
     PlanningError,
@@ -696,6 +697,9 @@ def _build_gantt_rows(
                     "leg_id": leg.id,
                     "leg_code": leg.leg_code,
                     "status": leg.status,
+                    "category": leg_trade_category(
+                        pol.country if pol else None, pod.country if pod else None
+                    ),
                     "left_pct": round(left_pct, 3),
                     "width_pct": round(max(width_pct, 1.0), 3),
                     "pol_locode": pol.locode if pol else "",
