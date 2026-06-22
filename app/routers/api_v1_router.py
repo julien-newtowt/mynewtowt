@@ -7,9 +7,10 @@ webhooks back to the client.
 
 from __future__ import annotations
 
+import hmac
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,12 +27,32 @@ from app.services.capacity import NotBookable, get_available_capacity
 router = APIRouter(prefix="/api/v1", tags=["api-v1"])
 
 
+async def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """SEC-06 — auth des routes B2B de l'API v1 (header ``X-API-Key``).
+
+    Secure-by-default : sans ``public_api_key`` configurée, l'API renvoie 503
+    (cohérent avec les autres endpoints machine). Clé absente/invalide → 401.
+    Comparaison en temps constant (``hmac.compare_digest``).
+    """
+    configured = settings.public_api_key
+    if not configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Public API not configured",
+        )
+    if not x_api_key or not hmac.compare_digest(x_api_key, configured):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key",
+        )
+
+
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__, "env": settings.app_env}
 
 
-@router.get("/ports/nearby")
+@router.get("/ports/nearby", dependencies=[Depends(require_api_key)])
 async def ports_nearby(
     lat: float,
     lon: float,
@@ -59,7 +80,7 @@ async def ports_nearby(
     ]
 
 
-@router.get("/ports/search")
+@router.get("/ports/search", dependencies=[Depends(require_api_key)])
 async def ports_search(
     q: str | None = None,
     country: str | None = None,
@@ -92,7 +113,7 @@ async def ports_search(
     ]
 
 
-@router.get("/ports/bbox")
+@router.get("/ports/bbox", dependencies=[Depends(require_api_key)])
 async def ports_bbox(
     min_lat: float,
     min_lon: float,
@@ -136,7 +157,7 @@ async def ports_bbox(
     }
 
 
-@router.get("/ports/next-clocks")
+@router.get("/ports/next-clocks", dependencies=[Depends(require_api_key)])
 async def ports_next_clocks(
     limit: int = 3,
     db: AsyncSession = Depends(get_db),
@@ -186,7 +207,7 @@ async def spec_link() -> dict[str, str]:
     return {"openapi": f"{settings.site_url}/openapi.json", "docs": f"{settings.site_url}/docs"}
 
 
-@router.get("/legs/{leg_id}", response_model=LegPublic)
+@router.get("/legs/{leg_id}", response_model=LegPublic, dependencies=[Depends(require_api_key)])
 async def get_leg_public(leg_id: int, db: AsyncSession = Depends(get_db)) -> LegPublic:
     stmt = (
         select(Leg, Vessel)
@@ -222,7 +243,7 @@ async def get_leg_public(leg_id: int, db: AsyncSession = Depends(get_db)) -> Leg
     )
 
 
-@router.get("/legs/{leg_id}/capacity", response_model=CapacityOut)
+@router.get("/legs/{leg_id}/capacity", response_model=CapacityOut, dependencies=[Depends(require_api_key)])
 async def get_capacity(leg_id: int, db: AsyncSession = Depends(get_db)) -> CapacityOut:
     try:
         info = await get_available_capacity(db, leg_id)
@@ -237,7 +258,7 @@ async def get_capacity(leg_id: int, db: AsyncSession = Depends(get_db)) -> Capac
     )
 
 
-@router.get("/routes")
+@router.get("/routes", dependencies=[Depends(require_api_key)])
 async def list_routes(
     from_country: str | None = None,
     to_country: str | None = None,

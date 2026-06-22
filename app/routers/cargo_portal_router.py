@@ -31,6 +31,7 @@ from app.models.packing_list import (
 )
 from app.models.port import Port
 from app.models.vessel import Vessel
+from app.services import rate_limit
 from app.services.packing_list import (
     can_modify,
     get_by_token,
@@ -43,6 +44,19 @@ router = APIRouter(prefix="/p", tags=["cargo-portal"])
 
 
 async def _load_or_410(db: AsyncSession, token: str, request: Request) -> PackingList:
+    # SEC-02 — rate-limit par IP sur le portail token. On compte aussi les
+    # accès à un token invalide (freine le balayage de tokens). Le service de
+    # rate-limit existe déjà (app/services/rate_limit) ; il n'était pas câblé.
+    ip = _client_ip(request) or "unknown"
+    if await rate_limit.exceeded(
+        db,
+        scope="portal_token",
+        identifier=ip,
+        max_attempts=60,
+        window_minutes=10,
+    ):
+        raise HTTPException(status_code=429, detail="Trop de requêtes — patientez quelques minutes.")
+    await rate_limit.record(db, scope="portal_token", identifier=ip)
     pl = await get_by_token(db, token)
     if pl is None:
         # Always log access attempts, even invalid (hashed)

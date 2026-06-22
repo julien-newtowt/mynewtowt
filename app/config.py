@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     mapbox_token: str | None = None
     maptiler_token: str | None = None
     tracking_api_token: str | None = None
+    # SEC-06 — clé d'API publique B2B (header X-API-Key) pour /api/v1/*. Sans
+    # cette valeur, l'API v1 (read-only) renvoie 503 : secure-by-default, l'API
+    # externe reste fermée tant qu'aucune clé n'est provisionnée.
+    public_api_key: str | None = None
     # Token X-API-Token pour POST /api/tickets/escalate-sla (cron Power
     # Automate : escalade SLA des tickets escale dont le délai est dépassé).
     tickets_sla_api_token: str | None = None

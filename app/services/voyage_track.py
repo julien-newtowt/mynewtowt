@@ -87,11 +87,33 @@ async def positions_for_leg(
     return await positions_in_window(db, vessel_id=leg.vessel_id, start=start, end=end)
 
 
-def actual_distance_nm(positions: list[VesselPosition]) -> float:
-    """Distance réellement parcourue = somme des sauts haversine entre points."""
+# SEC-05 — au-delà de cette vitesse implicite, un segment est considéré comme
+# un saut satcom aberrant (point GPS corrompu) et exclu du cumul. Seuil
+# généreux (très au-dessus de la vitesse d'un voilier-cargo) : on ne filtre que
+# l'impossible physique. Approche vitesse plutôt que seuil NM fixe (V2 = 50 NM,
+# valable seulement à cadence horaire) car robuste aux écarts de cadence.
+MAX_PLAUSIBLE_SPEED_KN = 30.0
+
+
+def actual_distance_nm(
+    positions: list[VesselPosition],
+    *,
+    max_speed_kn: float | None = None,
+) -> float:
+    """Distance réellement parcourue = somme des sauts haversine entre points.
+
+    Si ``max_speed_kn`` est fourni, les segments dont la vitesse implicite
+    (distance / durée) dépasse ce seuil — ou dont la durée est nulle alors que
+    la distance ne l'est pas — sont exclus (filtre anti-saut satcom, SEC-05).
+    """
     total = 0.0
     for a, b in pairwise(positions):
-        total += haversine_nm(a.latitude, a.longitude, b.latitude, b.longitude)
+        seg = haversine_nm(a.latitude, a.longitude, b.latitude, b.longitude)
+        if max_speed_kn is not None and seg > 0:
+            hours = (b.recorded_at - a.recorded_at).total_seconds() / 3600.0
+            if hours <= 0 or (seg / hours) > max_speed_kn:
+                continue  # saut aberrant — ignoré
+        total += seg
     return total
 
 
@@ -106,7 +128,8 @@ def compute_metrics(
     now = now or datetime.now(UTC)
     start, _end, is_active = leg_window(leg, now=now)
 
-    actual = actual_distance_nm(positions)
+    # Filtre anti-saut actif sur la métrique consommée par l'UI (SEC-05).
+    actual = actual_distance_nm(positions, max_speed_kn=MAX_PLAUSIBLE_SPEED_KN)
 
     theoretical: float | None = float(leg.distance_nm) if leg.distance_nm is not None else None
 

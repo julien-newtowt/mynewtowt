@@ -16,6 +16,25 @@
     </div>
     <small class="role-label">ERP{% if user is defined and user %} — {{ user.role }}{% endif %}</small>
 
+    {#- SEC-03 — drapeaux de visibilité par module (matrice par défaut). Le
+       rôle vide (utilisateur absent) renvoie False partout → rien n'est rendu. -#}
+    {%- set role = (user.role if (user is defined and user) else '') -%}
+    {%- set v_planning = can_access(role, 'planning') -%}
+    {%- set v_veille = can_access(role, 'veille') -%}
+    {%- set v_commercial = can_access(role, 'commercial') -%}
+    {%- set v_booking = can_access(role, 'booking') -%}
+    {%- set v_cargo = can_access(role, 'cargo') -%}
+    {%- set v_escale = can_access(role, 'escale') -%}
+    {%- set v_captain = can_access(role, 'captain') -%}
+    {%- set v_tickets = can_access(role, 'tickets') -%}
+    {%- set v_crew = can_access(role, 'crew') -%}
+    {%- set v_rh = can_access(role, 'rh') -%}
+    {%- set v_finance = can_access(role, 'finance') -%}
+    {%- set v_kpi = can_access(role, 'kpi') -%}
+    {%- set v_mrv = can_access(role, 'mrv') -%}
+    {%- set v_claims = can_access(role, 'claims') -%}
+    {%- set v_analytics = can_access(role, 'analytics') -%}
+    {%- set v_admin = can_access(role, 'admin') -%}
     <nav>
       <div class="nav-group" data-group="pilotage">
         <button class="nav-group-toggle" aria-expanded="true">
@@ -24,13 +43,14 @@
         </button>
         <ul class="nav-group-list">
           <li><a href="/dashboard"><i data-lucide="layout-dashboard"></i><span>{{ t('s_nav_dashboard', lang) }}</span></a></li>
-          <li><a href="/planning"><i data-lucide="calendar"></i><span>{{ t('s_nav_planning', lang) }}</span></a></li>
+          {% if v_planning %}<li><a href="/planning"><i data-lucide="calendar"></i><span>{{ t('s_nav_planning', lang) }}</span></a></li>
           <li><a href="/planning/scenarios"><i data-lucide="git-branch"></i><span>{{ t('s_nav_scenarios', lang) }}</span></a></li>
-          <li><a href="/planning/shares"><i data-lucide="share-2"></i><span>{{ t('s_nav_shares', lang) }}</span></a></li>
-          <li><a href="/veille"><i data-lucide="newspaper"></i><span>{{ t('s_nav_veille', lang) }}</span></a></li>
+          <li><a href="/planning/shares"><i data-lucide="share-2"></i><span>{{ t('s_nav_shares', lang) }}</span></a></li>{% endif %}
+          {% if v_veille %}<li><a href="/veille"><i data-lucide="newspaper"></i><span>{{ t('s_nav_veille', lang) }}</span></a></li>{% endif %}
         </ul>
       </div>
 
+      {% if v_commercial %}
       <div class="nav-group" data-group="commercial">
         <button class="nav-group-toggle" aria-expanded="true">
           <span class="nav-group-title"><i data-lucide="trending-up"></i><span>{{ t('s_grp_commercial', lang) }}</span></span>
@@ -45,59 +65,69 @@
           <li><a href="/commercial/orders"><i data-lucide="package"></i><span>{{ t('s_nav_orders', lang) }}</span></a></li>
         </ul>
       </div>
+      {% endif %}
 
+      {% if v_booking or v_cargo %}
       <div class="nav-group" data-group="cargo">
         <button class="nav-group-toggle" aria-expanded="true">
           <span class="nav-group-title"><i data-lucide="package"></i><span>{{ t('s_grp_cargo', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/staff/bookings"><i data-lucide="briefcase"></i><span>{{ t('s_nav_bookings', lang) }}</span></a></li>
-          <li><a href="/cargo"><i data-lucide="file-text"></i><span>{{ t('s_nav_documents', lang) }}</span></a></li>
+          {% if v_booking %}<li><a href="/staff/bookings"><i data-lucide="briefcase"></i><span>{{ t('s_nav_bookings', lang) }}</span></a></li>{% endif %}
+          {% if v_cargo %}<li><a href="/cargo"><i data-lucide="file-text"></i><span>{{ t('s_nav_documents', lang) }}</span></a></li>{% endif %}
         </ul>
       </div>
+      {% endif %}
 
+      {% if v_escale or v_captain or v_tickets or v_planning %}
       <div class="nav-group" data-group="operations">
         <button class="nav-group-toggle" aria-expanded="true">
           <span class="nav-group-title"><i data-lucide="anchor"></i><span>{{ t('s_grp_operations', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/escale"><i data-lucide="anchor"></i><span>{{ t('s_nav_escale', lang) }}</span></a></li>
-          <li><a href="/onboard"><i data-lucide="ship"></i><span>{{ t('s_nav_onboard', lang) }}</span></a></li>
-          <li><a href="/tickets"><i data-lucide="ticket"></i><span>{{ t('s_nav_tickets', lang) }}</span></a></li>
-          <li><a href="/cashbox"><i data-lucide="euro"></i><span>{{ t('s_nav_cashbox', lang) }}</span></a></li>
-          <li><a href="/tracking"><i data-lucide="map"></i><span>{{ t('s_nav_tracking', lang) }}</span></a></li>
+          {% if v_escale %}<li><a href="/escale"><i data-lucide="anchor"></i><span>{{ t('s_nav_escale', lang) }}</span></a></li>{% endif %}
+          {% if v_captain %}<li><a href="/onboard"><i data-lucide="ship"></i><span>{{ t('s_nav_onboard', lang) }}</span></a></li>
+          <li><a href="/cashbox"><i data-lucide="euro"></i><span>{{ t('s_nav_cashbox', lang) }}</span></a></li>{% endif %}
+          {% if v_tickets %}<li><a href="/tickets"><i data-lucide="ticket"></i><span>{{ t('s_nav_tickets', lang) }}</span></a></li>{% endif %}
+          {% if v_planning %}<li><a href="/tracking"><i data-lucide="map"></i><span>{{ t('s_nav_tracking', lang) }}</span></a></li>{% endif %}
         </ul>
       </div>
+      {% endif %}
 
+      {% if v_crew or v_rh %}
       <div class="nav-group" data-group="humain">
         <button class="nav-group-toggle" aria-expanded="false">
           <span class="nav-group-title"><i data-lucide="users"></i><span>{{ t('s_grp_humain', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/crew"><i data-lucide="users"></i><span>{{ t('s_nav_crew', lang) }}</span></a></li>
-          <li><a href="/rh"><i data-lucide="user-cog"></i><span>{{ t('s_nav_rh', lang) }}</span></a></li>
+          {% if v_crew %}<li><a href="/crew"><i data-lucide="users"></i><span>{{ t('s_nav_crew', lang) }}</span></a></li>{% endif %}
+          {% if v_rh %}<li><a href="/rh"><i data-lucide="user-cog"></i><span>{{ t('s_nav_rh', lang) }}</span></a></li>{% endif %}
           <li><a href="/rh/moi"><i data-lucide="circle-user"></i><span>{{ t('s_nav_rh_self', lang) }}</span></a></li>
         </ul>
       </div>
+      {% endif %}
 
+      {% if v_finance or v_kpi or v_planning or v_mrv or v_claims or v_analytics %}
       <div class="nav-group" data-group="performance">
         <button class="nav-group-toggle" aria-expanded="false">
           <span class="nav-group-title"><i data-lucide="trending-up"></i><span>{{ t('s_grp_performance', lang) }}</span></span>
           <i data-lucide="chevron-right" class="nav-group-caret"></i>
         </button>
         <ul class="nav-group-list">
-          <li><a href="/finance"><i data-lucide="euro"></i><span>{{ t('s_nav_finance', lang) }}</span></a></li>
-          <li><a href="/kpi"><i data-lucide="bar-chart-3"></i><span>{{ t('s_nav_kpi', lang) }}</span></a></li>
-          <li><a href="/performance/navigation"><i data-lucide="compass"></i><span>{{ t('s_nav_navigation', lang) }}</span></a></li>
-          <li><a href="/mrv"><i data-lucide="fuel"></i><span>{{ t('s_nav_mrv', lang) }}</span></a></li>
-          <li><a href="/claims"><i data-lucide="shield-alert"></i><span>{{ t('s_nav_claims', lang) }}</span></a></li>
-          <li><a href="/dashboard/analytics"><i data-lucide="bar-chart"></i><span>{{ t('s_nav_analytics', lang) }}</span></a></li>
+          {% if v_finance %}<li><a href="/finance"><i data-lucide="euro"></i><span>{{ t('s_nav_finance', lang) }}</span></a></li>{% endif %}
+          {% if v_kpi %}<li><a href="/kpi"><i data-lucide="bar-chart-3"></i><span>{{ t('s_nav_kpi', lang) }}</span></a></li>{% endif %}
+          {% if v_planning %}<li><a href="/performance/navigation"><i data-lucide="compass"></i><span>{{ t('s_nav_navigation', lang) }}</span></a></li>{% endif %}
+          {% if v_mrv %}<li><a href="/mrv"><i data-lucide="fuel"></i><span>{{ t('s_nav_mrv', lang) }}</span></a></li>{% endif %}
+          {% if v_claims %}<li><a href="/claims"><i data-lucide="shield-alert"></i><span>{{ t('s_nav_claims', lang) }}</span></a></li>{% endif %}
+          {% if v_analytics %}<li><a href="/dashboard/analytics"><i data-lucide="bar-chart"></i><span>{{ t('s_nav_analytics', lang) }}</span></a></li>{% endif %}
         </ul>
       </div>
+      {% endif %}
 
+      {% if v_admin %}
       <div class="nav-group" data-group="admin">
         <button class="nav-group-toggle" aria-expanded="false">
           <span class="nav-group-title"><i data-lucide="settings"></i><span>{{ t('s_grp_admin', lang) }}</span></span>
@@ -109,6 +139,7 @@
           <li><a href="/admin/security"><i data-lucide="shield-check"></i><span>{{ t('s_nav_security', lang) }}</span></a></li>
         </ul>
       </div>
+      {% endif %}
     </nav>
 
     {% if user is defined and user %}

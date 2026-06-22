@@ -197,6 +197,14 @@ def _t(key: str, lang: str = _i18n_default, **fmt) -> str:
 templates.env.globals["t"] = _t
 templates.env.globals["i18n_default"] = _i18n_default
 
+# SEC-03 — helper de visibilité sidebar : masque les entrées d'un module
+# auquel le rôle n'a pas accès (évite les liens menant à un 403). Basé sur la
+# matrice PAR DÉFAUT (affichage uniquement ; le contrôle d'accès effectif reste
+# appliqué sur le chemin requête par require_permission()).
+from app.permissions import has_any_access as _has_any_access  # noqa: E402
+
+templates.env.globals["can_access"] = _has_any_access
+
 templates.env.globals["app_name"] = settings.app_name
 templates.env.globals["app_version"] = settings.app_version
 templates.env.globals["app_env"] = settings.app_env
