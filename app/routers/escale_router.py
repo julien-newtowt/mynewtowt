@@ -314,6 +314,109 @@ async def end_operation(
     return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
 
 
+def _parse_iso(value: str | None) -> datetime | None:
+    """Parse tolérant d'un datetime ISO de formulaire (ESC-03)."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+@router.post("/operations/{op_id}/edit")
+async def edit_operation(
+    op_id: int,
+    request: Request,
+    direction: str = Form("BOTH"),
+    operation_type: str = Form(...),
+    action: str = Form(...),
+    label: str | None = Form(None),
+    planned_start: str | None = Form(None),
+    planned_end: str | None = Form(None),
+    actual_start: str | None = Form(None),
+    actual_end: str | None = Form(None),
+    status: str | None = Form(None),
+    cost_forecast: float | None = Form(None),
+    cost_actual: float | None = Form(None),
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "M")),
+):
+    """ESC-01/03 — édition d'une opération (dont saisie manuelle des heures réelles)."""
+    op = await db.get(EscaleOperation, op_id)
+    if op is None:
+        raise HTTPException(status_code=404)
+    leg = await db.get(Leg, op.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
+    op.direction = direction
+    op.operation_type = operation_type
+    op.action = action
+    op.label = label
+    op.planned_start = _parse_iso(planned_start)
+    op.planned_end = _parse_iso(planned_end)
+    op.actual_start = _parse_iso(actual_start)
+    op.actual_end = _parse_iso(actual_end)
+    if status:
+        op.status = status
+    elif op.actual_end:
+        op.status = "completed"
+    elif op.actual_start:
+        op.status = "in_progress"
+    op.cost_forecast = cost_forecast
+    op.cost_actual = cost_actual
+    op.notes = notes
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="escale_operation",
+        entity_id=op.id,
+        entity_label=f"{operation_type}/{action} leg={op.leg_id}",
+        ip_address=_client_ip(request),
+    )
+    # Re-synchronise le SOF (occurred_at peut avoir changé).
+    await _sync_sof_from_operation(db, request, user, op)
+    return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
+
+
+@router.post("/operations/{op_id}/delete")
+async def delete_operation(
+    op_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "S")),
+):
+    """ESC-01 — suppression d'une opération (interdite si escale verrouillée)."""
+    op = await db.get(EscaleOperation, op_id)
+    if op is None:
+        raise HTTPException(status_code=404)
+    leg = await db.get(Leg, op.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
+    leg_id = op.leg_id
+    await db.delete(op)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="escale_operation",
+        entity_id=op_id,
+        entity_label=f"op {op_id} leg={leg_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+
+
 def _normalize_hold(hold: str | None) -> str | None:
     """Valide la cale d'un shift docker contre ``stowage.HOLDS``.
 
@@ -392,6 +495,93 @@ async def docker_progress(
     s.palettes_done = palettes_done
     await db.flush()
     return RedirectResponse(url=f"/escale?leg_id={s.leg_id}", status_code=303)
+
+
+@router.post("/dockers/{shift_id}/edit")
+async def edit_docker_shift(
+    shift_id: int,
+    request: Request,
+    direction: str = Form("BOTH"),
+    company: str | None = Form(None),
+    nb_dockers: int = Form(0),
+    palettes_target: int | None = Form(None),
+    palettes_done: int | None = Form(None),
+    hold: str | None = Form(None),
+    planned_start: str | None = Form(None),
+    planned_end: str | None = Form(None),
+    actual_start: str | None = Form(None),
+    actual_end: str | None = Form(None),
+    cost_eur: float | None = Form(None),
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "M")),
+):
+    """ESC-01/03 — édition d'un shift docker (dont heures réelles + cadence)."""
+    s = await db.get(DockerShift, shift_id)
+    if s is None:
+        raise HTTPException(status_code=404)
+    leg = await db.get(Leg, s.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
+    s.direction = direction
+    s.company = company
+    s.nb_dockers = nb_dockers
+    s.palettes_target = palettes_target
+    if palettes_done is not None:
+        s.palettes_done = palettes_done
+    s.hold = _normalize_hold(hold)
+    s.planned_start = _parse_iso(planned_start)
+    s.planned_end = _parse_iso(planned_end)
+    s.actual_start = _parse_iso(actual_start)
+    s.actual_end = _parse_iso(actual_end)
+    s.cost_eur = cost_eur
+    s.notes = notes
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="docker_shift",
+        entity_id=s.id,
+        entity_label=f"shift {company} leg={s.leg_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/escale?leg_id={s.leg_id}", status_code=303)
+
+
+@router.post("/dockers/{shift_id}/delete")
+async def delete_docker_shift(
+    shift_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "S")),
+):
+    """ESC-01 — suppression d'un shift docker."""
+    s = await db.get(DockerShift, shift_id)
+    if s is None:
+        raise HTTPException(status_code=404)
+    leg = await db.get(Leg, s.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
+    leg_id = s.leg_id
+    await db.delete(s)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="docker_shift",
+        entity_id=shift_id,
+        entity_label=f"shift {shift_id} leg={leg_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
 
 
 @router.post("/legs/{leg_id}/lock")

@@ -102,6 +102,29 @@ class DockerShift(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    # ESC-05 — productivité dockers (palettes/heure) calculée à la volée depuis
+    # les colonnes existantes (target/done + bornes planifiées/réelles).
+    @property
+    def planned_rate(self) -> float | None:
+        if self.palettes_target and self.planned_start and self.planned_end:
+            hours = (self.planned_end - self.planned_start).total_seconds() / 3600
+            return round(self.palettes_target / hours, 1) if hours > 0 else 0.0
+        return None
+
+    @property
+    def actual_rate(self) -> float | None:
+        if self.palettes_done and self.actual_start and self.actual_end:
+            hours = (self.actual_end - self.actual_start).total_seconds() / 3600
+            return round(self.palettes_done / hours, 1) if hours > 0 else 0.0
+        return None
+
+    @property
+    def rate_delta_pct(self) -> float | None:
+        pr, ar = self.planned_rate, self.actual_rate
+        if pr and ar and pr > 0:
+            return round((ar - pr) / pr * 100, 1)
+        return None
+
 
 # Garde-fou d'intégrité : toute cible du mapping FLX-04 doit exister dans
 # la liste réglementaire SOF_EVENT_TYPES (sinon le SOF auto-généré serait
