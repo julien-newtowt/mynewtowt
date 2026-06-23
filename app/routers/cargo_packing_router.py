@@ -6,13 +6,14 @@ field-by-field. Verrouillage par un staff après validation côté armateur.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.models.booking import Booking
 from app.models.commercial import Order
 from app.models.packing_list import (
     PackingList,
@@ -21,6 +22,7 @@ from app.models.packing_list import (
     PortalMessage,
 )
 from app.permissions import require_permission
+from app.services import cargo_excel
 from app.services.activity import record as activity_record
 from app.services.packing_list import (
     apply_batch_update,
@@ -37,7 +39,9 @@ from app.services.pdf_generator import (
     render_arrival_notice,
     render_bill_of_lading_from_pl,
 )
+from app.services.safe_files import content_length_exceeds_max
 from app.templating import templates
+from app.utils.file_validation import validate_size
 
 router = APIRouter(prefix="/cargo/packing-lists", tags=["cargo-packing"])
 
@@ -371,6 +375,152 @@ async def packing_list_arrival_notice(
         media_type=doc.mime,
         headers={"Content-Disposition": f'inline; filename="{doc.filename}"'},
     )
+
+
+def _xlsx_response(content: bytes, filename: str) -> Response:
+    return Response(
+        content=content,
+        media_type=cargo_excel.XLSX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+async def _pl_excel_context(db: AsyncSession, pl: PackingList) -> dict:
+    """Colonnes de contexte (voyage / navire / POL / POD) d'une packing list."""
+    _order, _booking, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
+    return {
+        "voyage_id": leg.leg_code if leg else None,
+        "vessel": vessel.name if vessel else None,
+        "pol_code": pol.locode if pol else None,
+        "pod_code": pod.locode if pod else None,
+    }
+
+
+@router.get("/{pl_id}/template.xlsx")
+async def packing_list_template_xlsx(
+    pl_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "C")),
+) -> Response:
+    """CARGO-09 — template Excel vide (en-têtes) pour saisie de masse."""
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    return _xlsx_response(cargo_excel.build_template_xlsx(), f"packing_list_{pl_id}_template.xlsx")
+
+
+@router.get("/{pl_id}/export.xlsx")
+async def packing_list_export_xlsx(
+    pl_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "C")),
+) -> Response:
+    """CARGO-09 — export Excel des batches d'une packing list."""
+    pl = (
+        await db.execute(
+            select(PackingList)
+            .options(selectinload(PackingList.batches))
+            .where(PackingList.id == pl_id)
+        )
+    ).scalar_one_or_none()
+    if pl is None:
+        raise HTTPException(status_code=404)
+    ctx = await _pl_excel_context(db, pl)
+    content = cargo_excel.export_packing_list_xlsx(list(pl.batches), **ctx)
+    return _xlsx_response(content, f"packing_list_{pl_id}.xlsx")
+
+
+@router.get("/voyage/{leg_id}/export.xlsx")
+async def voyage_export_xlsx(
+    leg_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "C")),
+) -> Response:
+    """CARGO-09 — export Excel de toutes les packing lists d'un voyage (leg)."""
+    pls = list(
+        (
+            await db.execute(
+                select(PackingList)
+                .options(selectinload(PackingList.batches))
+                .outerjoin(Order, PackingList.order_id == Order.id)
+                .outerjoin(Booking, PackingList.booking_id == Booking.id)
+                .where(or_(Order.leg_id == leg_id, Booking.leg_id == leg_id))
+                .order_by(PackingList.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    rows: list[tuple] = []
+    for pl in pls:
+        ctx = await _pl_excel_context(db, pl)
+        rows.extend((b, cargo_excel.batch_context(b, **ctx)) for b in pl.batches)
+    return _xlsx_response(cargo_excel.export_rows_xlsx(rows), f"voyage_{leg_id}_packing.xlsx")
+
+
+@router.post("/{pl_id}/import-xlsx")
+async def packing_list_import_xlsx(
+    pl_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """CARGO-09 — import Excel : remplace les batches (refusé si PL verrouillée)."""
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
+    pl = (
+        await db.execute(
+            select(PackingList)
+            .options(selectinload(PackingList.batches))
+            .where(PackingList.id == pl_id)
+        )
+    ).scalar_one_or_none()
+    if pl is None or not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    content = await file.read()
+    # Le header Content-Length est falsifiable (et absent en transfert chunké) :
+    # on revérifie la taille réelle après lecture (anti zip-bomb / OOM).
+    size_check = validate_size(content)
+    if not size_check.ok:
+        raise HTTPException(status_code=413, detail=size_check.reason)
+    try:
+        parsed = cargo_excel.parse_xlsx(content)
+    except Exception as exc:  # classeur illisible / corrompu
+        raise HTTPException(status_code=400, detail="fichier Excel illisible") from exc
+    if not parsed:
+        raise HTTPException(status_code=400, detail="aucune ligne exploitable dans le fichier")
+    actor_name = user.full_name or user.username
+    # Remplacement : on vide les batches existants puis on recrée depuis l'import.
+    for b in list(pl.batches):
+        await db.delete(b)
+    await db.flush()
+    for vals in parsed:
+        await create_batch(db, pl=pl, vals=vals, actor="staff", actor_name=actor_name)
+    await record_audit(
+        db,
+        packing_list_id=pl.id,
+        batch_id=None,
+        actor="staff",
+        actor_name=actor_name,
+        field="_import_excel",
+        old_value=None,
+        new_value=f"{len(parsed)} batches importés",
+    )
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=actor_name,
+        user_role=user.role,
+        module="cargo",
+        entity_type="packing_list",
+        entity_id=pl.id,
+        entity_label=str(pl.id),
+        detail=f"import Excel ({len(parsed)} batches)",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
 
 
 def _client_ip(request: Request) -> str | None:

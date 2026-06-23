@@ -114,6 +114,21 @@
     <button type="submit" class="btn btn-primary btn-sm">+ Ajouter</button>
   </form>
   {% endif %}
+
+  <h3 class="mt-4">Excel (saisie de masse)</h3>
+  <div class="flex gap-2 items-center flex-wrap">
+    <a href="/cargo/packing-lists/{{ pl.id }}/export.xlsx" class="btn btn-secondary btn-sm">⤓ Exporter la PL</a>
+    <a href="/cargo/packing-lists/{{ pl.id }}/template.xlsx" class="btn btn-ghost btn-sm">⤓ Template vierge</a>
+    {% if order and order.leg_id %}
+    <a href="/cargo/packing-lists/voyage/{{ order.leg_id }}/export.xlsx" class="btn btn-ghost btn-sm">⤓ Exporter le voyage</a>
+    {% endif %}
+  </div>
+  {% if pl.status != 'locked' %}
+  <form method="post" action="/cargo/packing-lists/{{ pl.id }}/import-xlsx" enctype="multipart/form-data" class="flex gap-2 items-center mt-2" data-confirm="Importer ce fichier remplacera tous les batches existants. Continuer ?">
+    <input type="file" name="file" accept=".xlsx" required />
+    <button type="submit" class="btn btn-primary btn-sm">⤴ Importer (remplace les batches)</button>
+  </form>
+  {% endif %}
 </article>
 
 <article class="card mt-4">

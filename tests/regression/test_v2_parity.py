@@ -125,6 +125,25 @@ def test_v2_cargo_portal_routes_restored():
     assert "/p/{token}/documents/{doc_id}/delete" in p
 
 
+def test_v2_cargo_excel_routes_restored():
+    """CARGO-09 : import/export Excel (PL, voyage, template) staff + portail."""
+    from app.routers.cargo_packing_router import router as staff_router
+    from app.routers.cargo_portal_router import router as portal_router
+    from app.services import cargo_excel
+
+    sp = _paths(staff_router)
+    assert "/cargo/packing-lists/{pl_id}/export.xlsx" in sp
+    assert "/cargo/packing-lists/{pl_id}/template.xlsx" in sp
+    assert "/cargo/packing-lists/{pl_id}/import-xlsx" in sp
+    assert "/cargo/packing-lists/voyage/{leg_id}/export.xlsx" in sp
+    pp = _paths(portal_router)
+    assert "/p/{token}/packing/template.xlsx" in pp
+    assert "/p/{token}/packing/import-xlsx" in pp
+    # round-trip service : export ↔ parse
+    assert callable(cargo_excel.export_packing_list_xlsx)
+    assert callable(cargo_excel.parse_xlsx)
+
+
 # ───────────────────────────── Escale (V2 parité) ─────────────────────────────
 
 
