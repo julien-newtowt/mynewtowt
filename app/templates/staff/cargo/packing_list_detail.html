@@ -72,7 +72,16 @@
                 <div class="field"><label>Notify</label><input name="notify_name" value="{{ b.notify_name or '' }}" /></div>
                 <div class="field"><label>Poids (kg)</label><input name="weight_kg" type="number" step="0.1" value="{{ b.weight_kg or '' }}" /></div>
                 <div class="field"><label>Palettes</label><input name="pallet_count" type="number" min="1" value="{{ b.pallet_count }}" /></div>
+                <div class="field"><label>Longueur (cm)</label><input name="length_cm" type="number" step="0.1" value="{{ b.length_cm or '' }}" /></div>
+                <div class="field"><label>Largeur (cm)</label><input name="width_cm" type="number" step="0.1" value="{{ b.width_cm or '' }}" /></div>
+                <div class="field"><label>Hauteur (cm)</label><input name="height_cm" type="number" step="0.1" value="{{ b.height_cm or '' }}" /></div>
+                <div class="field"><label>Nb. colis</label><input name="cases_quantity" type="number" min="0" value="{{ b.cases_quantity or '' }}" /></div>
+                <div class="field"><label>Unités / colis</label><input name="units_per_case" type="number" min="0" value="{{ b.units_per_case or '' }}" /></div>
+                <div class="field"><label>Valeur (USD)</label><input name="cargo_value_usd" type="number" step="0.01" value="{{ b.cargo_value_usd or '' }}" /></div>
               </div>
+              <p class="text-muted text-sm mt-2">
+                Calculé : surface {{ b.surface_m2 or '—' }} m² · volume {{ b.volume_m3 or '—' }} m³ · densité {{ b.density or '—' }} t/m²
+              </p>
               <button type="submit" class="btn btn-primary btn-sm mt-2">Enregistrer</button>
             </form>
           </details>
@@ -96,6 +105,9 @@
       <div class="field"><label>Cubage (m³)</label><input name="cubage_m3" type="number" step="0.001" /></div>
       <div class="field"><label>Type de marchandise</label><input name="type_of_goods" type="text" /></div>
       <div class="field"><label>Description (BL)</label><input name="description_of_goods" type="text" /></div>
+      <div class="field"><label>Nb. colis</label><input name="cases_quantity" type="number" min="0" /></div>
+      <div class="field"><label>Unités / colis</label><input name="units_per_case" type="number" min="0" /></div>
+      <div class="field"><label>Valeur (USD)</label><input name="cargo_value_usd" type="number" step="0.01" /></div>
       <div class="field"><label>Shipper</label><input name="shipper_name" type="text" /></div>
       <div class="field"><label>Consignee</label><input name="consignee_name" type="text" /></div>
     </div>

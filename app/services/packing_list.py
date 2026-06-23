@@ -64,6 +64,9 @@ AUDITABLE_FIELDS: tuple[str, ...] = (
     "consignee_country",
     "type_of_goods",
     "description_of_goods",
+    "cases_quantity",
+    "units_per_case",
+    "cargo_value_usd",
 )
 
 
@@ -179,8 +182,15 @@ async def record_audit(
 
 # CARGO-03 — typage des champs de batch pour la coercition des formulaires
 # (partagé entre la saisie staff et la saisie portail).
-_BATCH_FLOAT_FIELDS = {"weight_kg", "cubage_m3", "length_cm", "width_cm", "height_cm"}
-_BATCH_INT_FIELDS = {"pallet_count"}
+_BATCH_FLOAT_FIELDS = {
+    "weight_kg",
+    "cubage_m3",
+    "length_cm",
+    "width_cm",
+    "height_cm",
+    "cargo_value_usd",
+}
+_BATCH_INT_FIELDS = {"pallet_count", "cases_quantity", "units_per_case"}
 _BATCH_BOOL_FIELDS = {"hazardous", "stackable"}
 
 
