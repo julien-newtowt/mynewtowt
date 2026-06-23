@@ -126,6 +126,12 @@ async def commercial_index(
     # → on s'en sert comme filtre. Occupation = (bookings + commandes) / capacité.
     fill_legs, fill_summary = await _commercialization_fill(db)
 
+    # COM-08 — performance / conversion par grille + CA global.
+    from app.services.commercial_dashboard import commercial_totals, grid_performance
+
+    grid_perf = await grid_performance(db)
+    perf_totals = await commercial_totals(db)
+
     return templates.TemplateResponse(
         "staff/commercial/index.html",
         {
@@ -138,6 +144,8 @@ async def commercial_index(
             "last_orders": last_orders,
             "fill_legs": fill_legs,
             "fill_summary": fill_summary,
+            "grid_perf": grid_perf,
+            "perf_totals": perf_totals,
         },
     )
 
