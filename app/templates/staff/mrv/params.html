@@ -21,6 +21,11 @@
            value="{{ params.mdo_admissible_deviation.value if params.get('mdo_admissible_deviation') else '2.0' }}" />
     <small class="text-muted">Au-delà, l'écart entre ROB déclaré et calculé met l'événement en erreur (export bloqué).</small>
   </div>
+  <div class="field mt-3">
+    <label>Facteur d'émission CO₂ (tCO₂/tDO)</label>
+    <input type="number" value="{{ '%.3f'|format(co2_factor) }}" disabled />
+    <small class="text-muted">Facteur MEPC.391(81) versionné — éditable dans <a href="/admin/co2">/admin/co2</a>.</small>
+  </div>
   <button class="btn btn-primary mt-3" type="submit">Enregistrer</button>
 </form>
 {% endblock %}

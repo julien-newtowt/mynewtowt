@@ -350,10 +350,13 @@ async def mrv_params_form(
     user=Depends(require_permission("mrv", "M")),
 ) -> HTMLResponse:
     """MRV-06 — écran d'édition des paramètres MRV (densité, déviation, facteur CO₂)."""
+    from app.services.co2 import get_do_co2_factor
+
     params = {p.name: p for p in (await db.execute(select(MRVParameter))).scalars().all()}
+    co2_factor = await get_do_co2_factor(db)
     return templates.TemplateResponse(
         "staff/mrv/params.html",
-        {"request": request, "user": user, "params": params},
+        {"request": request, "user": user, "params": params, "co2_factor": co2_factor},
     )
 
 
