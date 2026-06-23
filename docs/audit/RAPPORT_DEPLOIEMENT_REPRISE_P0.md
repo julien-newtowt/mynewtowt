@@ -152,20 +152,25 @@ par un test, et les fonctionnalités non reprises sont `skip` avec motif.
 
 - **Restaurées et vérifiées :** Lot 0, Cargo, ESC-01/02/03/05,
   CREW-01..05, MRV-01..07, COM-01/02/03/04, ONB-01/03, FIN-01/02/03,
-  PLN-01/03, STO-01/02/03, ADM-01/02.
-- **Restant `skip` (1) :** **ONB-02** — documents cargo structurés
-  (formulaires guidés 13 types, valeurs légales pré-remplies, signataire
-  choisi parmi le crew embarqué). Effort **L**, spécifié au backlog.
+  PLN-01/03, STO-01/02/03, ADM-01/02, **ONB-02**.
+- **Restant : aucun.** ✅ Toute la parité **P0** vis-à-vis de la V2 est
+  restaurée (`_PENDING` vide dans `test_v2_parity`).
 
-Suite complète : **602 passed, 1 skipped** (départ 463). ~13 nouveaux fichiers
-de tests d'intégration de reprise + le tableau de parité.
+**ONB-02** (livré) — documents cargo guidés : 12 types structurés (NOR,
+NOR-RT, Holds Certificate, Key/Pre-Loading Meeting, 6 Letters of Protest,
+Mate's Receipt), champs spécifiques par type sérialisés en `data_json`,
+mentions légales pré-remplies (réserve de droits LOP, « apparent good order »
+Mate's Receipt), signataire choisi parmi l'équipage embarqué, export PDF
+générique piloté par schéma. Migration `0068`.
+
+Suite complète : **618 passed, 1 skipped** (départ 463). ~14 fichiers de tests
+d'intégration de reprise + le tableau de parité.
 
 ---
 
 ## 6. Reste à faire (hors périmètre de cette PR)
 
-1. **ONB-02 (P0)** — seul item P0 non livré (formulaires cargo guidés). À
-   traiter en lot dédié vu l'ampleur (13 types + PDF par type).
+1. **P0 — terminé** (ONB-02 inclus). Plus aucun gap de parité P0.
 2. **P1 / P2** — backlog complet par module dans `docs/audit/backlog/*`
    (ex. ONB-04 messagerie de bord, ONB-05 clôture PDF+checklist, ONB-06 claims
    détaillés, FIN-04..07 KPI consolidé, COM-05..11 conversion/pipedrive/

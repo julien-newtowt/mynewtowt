@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    @page { size: A4; margin: 2cm 1.8cm; @bottom-center { content: "NEWTOWT — TransOceanic Wind Transport"; font-size: 8px; color: #0D5966; } }
+    body { font-family: "Manrope", "Helvetica", sans-serif; color: #21303a; font-size: 11px; line-height: 1.45; }
+    .kicker { color: #87BD29; text-transform: uppercase; letter-spacing: .08em; font-size: 9px; font-weight: 700; }
+    h1 { color: #0D5966; font-size: 20px; margin: 2px 0 4px; }
+    .meta { color: #6b7a82; font-size: 10px; margin-bottom: 16px; }
+    .meta .mono { font-family: "JetBrains Mono", monospace; }
+    table.facts { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    table.facts td { padding: 6px 8px; border-bottom: 1px solid #eef2f3; vertical-align: top; }
+    table.facts td.lbl { width: 38%; color: #6b7a82; font-size: 9.5px; text-transform: uppercase; }
+    table.facts td.val { white-space: pre-wrap; }
+    .legal { margin-top: 18px; padding: 10px 12px; background: #EFE6D6; border-radius: 6px; font-style: italic; font-size: 10px; }
+    .sign { margin-top: 36px; display: flex; justify-content: space-between; }
+    .sign div { width: 45%; border-top: 1px solid #21303a; padding-top: 4px; font-size: 9.5px; color: #6b7a82; }
+  </style>
+</head>
+<body>
+  <div class="kicker">Document de bord</div>
+  <h1>{{ title }}</h1>
+  <div class="meta">
+    {{ vessel.name if vessel else '—' }} ·
+    <span class="mono">{{ leg.leg_code }}</span>
+    {% if pol %}· {{ pol.locode }}{% endif %}{% if pod %} → {{ pod.locode }}{% endif %}
+    {% if doc.reference %}· Réf. {{ doc.reference }}{% endif %}
+    · Émis le {{ issued_at.strftime('%d/%m/%Y %H:%M') if issued_at else '' }}
+  </div>
+
+  <table class="facts">
+    {% for label, value in rows %}
+    <tr><td class="lbl">{{ label }}</td><td class="val">{{ value }}</td></tr>
+    {% endfor %}
+  </table>
+
+  {% if legal_note %}
+  <div class="legal">{{ legal_note }}</div>
+  {% endif %}
+
+  <div class="sign">
+    <div>Signature commandant / officier</div>
+    <div>Cachet agent / terminal</div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,81 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ doc_type.label }} — {{ leg.leg_code }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">À bord · Document cargo</span>
+    <h1 class="display">{{ doc_type.label }}</h1>
+    <p class="text-muted">
+      <span class="mono">{{ leg.leg_code }}</span> ·
+      {{ vessel.name if vessel else '—' }}
+    </p>
+  </div>
+  <a href="/captain?leg_id={{ leg.id }}" class="btn btn-ghost">← Onboard</a>
+</header>
+
+{% if not doc %}
+<article class="card mb-3">
+  <form method="get" action="/captain/legs/{{ leg.id }}/docs/new" class="flex gap-2 items-end">
+    <div class="field" style="min-width:320px;">
+      <label for="kind">Type de document</label>
+      <select id="kind" name="kind" onchange="this.form.submit()">
+        {% for code, label in doc_choices %}
+        <option value="{{ code }}" {{ 'selected' if code == kind else '' }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-secondary btn-sm">Changer de type</button>
+  </form>
+</article>
+{% endif %}
+
+<article class="card">
+  <form method="post"
+        action="{{ '/captain/legs/' ~ leg.id ~ '/docs/' ~ doc.id ~ '/edit' if doc else '/captain/legs/' ~ leg.id ~ '/docs' }}">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    {% if not doc %}<input type="hidden" name="kind" value="{{ kind }}" />{% endif %}
+
+    {% if doc_type.legal_note %}
+    <div class="alert alert-info mb-3"><i data-lucide="info"></i> {{ doc_type.legal_note }}</div>
+    {% endif %}
+
+    <div class="field" style="max-width:320px;">
+      <label for="reference">Référence (optionnel)</label>
+      <input id="reference" name="reference" type="text" value="{{ doc.reference or '' if doc else '' }}" />
+    </div>
+
+    <div class="grid grid-2 gap-4">
+      {% for f in doc_type.fields %}
+      {% set val = values.get(f.name, '') %}
+      <div class="field" {% if f.kind == 'textarea' %}style="grid-column:1/-1;"{% endif %}>
+        <label for="{{ f.name }}">{{ f.label }}</label>
+        {% if f.kind == 'textarea' %}
+        <textarea id="{{ f.name }}" name="{{ f.name }}" rows="{{ f.rows }}">{{ val }}</textarea>
+        {% elif f.kind == 'date' %}
+        <input id="{{ f.name }}" name="{{ f.name }}" type="date" value="{{ val }}" />
+        {% elif f.kind == 'time' %}
+        <input id="{{ f.name }}" name="{{ f.name }}" type="time" value="{{ val }}" />
+        {% elif f.kind == 'crew' %}
+        <select id="{{ f.name }}" name="{{ f.name }}">
+          <option value="">—</option>
+          {% for name in crew_names %}<option value="{{ name }}" {{ 'selected' if name == val else '' }}>{{ name }}</option>{% endfor %}
+          {# Conserve une valeur saisie auparavant même si le marin a débarqué #}
+          {% if val and val not in crew_names %}<option value="{{ val }}" selected>{{ val }} (hors bordée)</option>{% endif %}
+        </select>
+        {% else %}
+        <input id="{{ f.name }}" name="{{ f.name }}" type="text" value="{{ val }}" />
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="flex gap-2 mt-4">
+      <button type="submit" class="btn btn-primary">{{ 'Enregistrer' if doc else 'Créer le document' }}</button>
+      {% if doc %}<a href="/captain/legs/{{ leg.id }}/docs/{{ doc.id }}.pdf" class="btn btn-secondary" target="_blank"><i data-lucide="file-text"></i> PDF</a>{% endif %}
+      <a href="/captain?leg_id={{ leg.id }}" class="btn btn-ghost">Annuler</a>
+    </div>
+  </form>
+</article>
+
+{% endblock %}
