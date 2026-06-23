@@ -101,10 +101,34 @@
     </button>
     <div class="topbar-menu" id="topbar-notif-menu" role="menu">
       <div class="menu-header">{{ t('tb_notifications', lang) }}</div>
+      {% for n in recent_notifications %}
+      <a href="{{ n.link or '/dashboard' }}" class="{% if not n.is_read %}notif-unread{% endif %}">
+        <i data-lucide="{{ 'bell-dot' if not n.is_read else 'bell' }}"></i>
+        <span>
+          <strong>{{ n.title }}</strong>
+          {% if n.detail %}<br/><small class="text-muted">{{ n.detail|truncate(60) }}</small>{% endif %}
+        </span>
+      </a>
+      {% else %}
       <div style="padding: var(--space-3) var(--space-2); color: var(--gris); font-size: var(--text-sm);">
         {{ t('tb_no_notifications', lang) }}
       </div>
+      {% endfor %}
     </div>
+
+    {% if lang_options and lang_options|length > 1 %}
+    <button type="button" class="topbar-action" id="topbar-lang-btn" data-menu-toggle="topbar-lang-menu" title="{{ t('tb_language', lang) }}" aria-haspopup="menu">
+      <i data-lucide="languages"></i>
+    </button>
+    <div class="topbar-menu" id="topbar-lang-menu" role="menu">
+      <div class="menu-header">{{ t('tb_language', lang) }}</div>
+      {% for l in lang_options %}
+      <a href="/lang/{{ l }}" data-lang="{{ l }}"{% if l == lang %} class="notif-unread"{% endif %}>
+        <span>{{ l|upper }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
 
     <button type="button" class="topbar-action" id="topbar-user-btn" data-menu-toggle="topbar-user-menu" title="{{ t('tb_my_account', lang) }}" aria-haspopup="menu">
       <i data-lucide="user"></i>

@@ -1030,6 +1030,9 @@ form textarea {
   text-align: left;
 }
 .topbar-menu a:hover, .topbar-menu button:hover { background: var(--sable-light); }
+/* UX-04/05 — notification non lue / langue active dans les menus topbar. */
+.topbar-menu a.notif-unread { font-weight: 700; }
+.topbar-menu a.notif-unread strong { color: var(--teal); }
 .topbar-menu .menu-divider {
   border-top: 1px solid var(--gris-clair);
   margin: 4px 0;

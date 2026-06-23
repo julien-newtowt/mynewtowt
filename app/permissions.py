@@ -324,17 +324,25 @@ def require_permission(module: str, level: Level):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Permission denied: {module}/{level}",
             )
-        # Pré-charge le compteur notif pour le topbar (read-only, ~1ms).
+        # Pré-charge le compteur notif + les 5 plus récentes pour le topbar
+        # (read-only, ~1-2ms). UX-04 : la cloche affiche le vrai flux.
         try:
-            from app.services.notifications import count_unread
+            from app.services.notifications import count_unread, list_for
 
             request.state.notif_count = await count_unread(
                 db,
                 user_id=user.id,
                 user_role=user.role,
             )
+            request.state.recent_notifications = await list_for(
+                db,
+                user_id=user.id,
+                user_role=user.role,
+                limit=5,
+            )
         except Exception:
             request.state.notif_count = 0
+            request.state.recent_notifications = []
         # État du Newtowt Agent (toggle /admin) pour masquer le widget topbar.
         try:
             from app.services.feature_flags import newtowt_agent_enabled

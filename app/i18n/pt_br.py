@@ -431,6 +431,7 @@ CATALOG: dict[str, str] = {
     "s_logout": "Sair",
     # Topbar
     "tb_toggle_sidebar": "Alternar barra lateral",
+    "tb_language": "Idioma",
     "tb_notifications": "Notificações",
     "tb_no_notifications": "Nenhuma notificação.",
     "tb_my_account": "Minha conta",
