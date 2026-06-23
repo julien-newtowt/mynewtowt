@@ -170,10 +170,19 @@ def test_v2_escale_edit_delete_routes_restored():
 
 
 def test_v2_docker_productivity_restored():
+    """ESC-05 : cadence dockers (pal/h) — propriétés + affichage UI."""
+    from pathlib import Path
+
     from app.models.escale import DockerShift
+    from app.templating import templates
 
     for prop in ("planned_rate", "actual_rate", "rate_delta_pct"):
         assert hasattr(DockerShift, prop), prop
+    # La cadence est exposée dans l'écran escale (pas seulement calculée).
+    tpl = Path("app/templates/staff/escale/index.html").read_text(encoding="utf-8")
+    assert "Cadence (pal/h)" in tpl
+    assert "s.actual_rate" in tpl and "s.rate_delta_pct" in tpl
+    assert templates.env.get_template("staff/escale/index.html") is not None
 
 
 def test_v2_escale_intervenant_durations_restored():
