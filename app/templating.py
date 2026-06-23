@@ -78,8 +78,14 @@ def _i18n_context_processor(request: Request) -> dict[str, Any]:
     ``require_permission()``) → le badge cloche du topbar fonctionne sur
     toutes les pages staff sans répéter la query dans chaque vue.
     """
+    # PLN-04 — une vue peut imposer la langue du rendu (ex. partage planning
+    # public dans la langue choisie à la création) via ``request.state``. Cette
+    # surcharge prime sur le cookie / l'Accept-Language du visiteur.
+    forced_lang = getattr(request.state, "forced_lang", None)
     cookie_lang = request.cookies.get("towt_lang")
-    if cookie_lang and cookie_lang.lower() in _i18n_supported:
+    if forced_lang and str(forced_lang).lower() in _i18n_supported:
+        lang = str(forced_lang).lower()
+    elif cookie_lang and cookie_lang.lower() in _i18n_supported:
         lang = cookie_lang.lower()
     else:
         lang = _i18n_get_lang(request, user=None)

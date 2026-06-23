@@ -853,6 +853,12 @@ async def create_share(
     pod_port_id: int | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    recipient_name: str | None = None,
+    recipient_company: str | None = None,
+    recipient_email: str | None = None,
+    recipient_notes: str | None = None,
+    lang: str = "fr",
+    legs_ids: str | None = None,
 ) -> PlanningShare:
     share = PlanningShare(
         token=_new_share_token(),
@@ -866,11 +872,58 @@ async def create_share(
         date_to=date_to,
         expires_at=expires_at,
         created_by_id=created_by_id,
+        recipient_name=recipient_name,
+        recipient_company=recipient_company,
+        recipient_email=recipient_email,
+        recipient_notes=recipient_notes,
+        lang=clamp_share_lang(lang),
+        legs_ids=legs_ids,
         is_active=True,
     )
     db.add(share)
     await db.flush()
     return share
+
+
+# PLN-04 — langues supportées pour le partage public (le template public ne gère
+# que FR/EN ; toute autre valeur retombe sur FR). Source unique du clamp.
+SHARE_LANGS = ("fr", "en")
+
+
+def clamp_share_lang(lang: str | None) -> str:
+    """Borne une langue de partage à ``SHARE_LANGS`` (défaut ``fr``)."""
+    return lang if lang in SHARE_LANGS else "fr"
+
+
+def legs_ids_list(raw: str | None) -> list[int]:
+    """Parse une saisie de sélection leg-à-leg en liste d'IDs entiers triés/uniques.
+
+    Accepte des IDs séparés par virgule / espace / point-virgule ; ignore tout
+    token non entier ou ≤ 0. Source unique du parsing (écriture **et** lecture).
+    """
+    if not raw:
+        return []
+    ids: list[int] = []
+    for part in raw.replace(";", ",").replace(" ", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            val = int(part)
+        except ValueError:
+            continue
+        if val > 0 and val not in ids:
+            ids.append(val)
+    return sorted(ids)
+
+
+def parse_legs_ids(raw: str | None) -> str | None:
+    """Normalise une sélection leg-à-leg en CSV d'IDs triés, ou ``None`` si vide.
+
+    ⇒ ``None`` fait retomber le partage sur les filtres navire/port/période.
+    """
+    ids = legs_ids_list(raw)
+    return ",".join(str(i) for i in ids) if ids else None
 
 
 async def lookup_share(db: AsyncSession, token: str) -> PlanningShare | None:
