@@ -238,17 +238,13 @@ async def employees_index(
             )
         )
     employees = list(
-        (await db.execute(query.order_by(Employee.last_name, Employee.first_name)))
-        .scalars()
-        .all()
+        (await db.execute(query.order_by(Employee.last_name, Employee.first_name))).scalars().all()
     )
 
     # Stats globales (indépendantes des filtres).
     total = (await db.execute(select(func.count(Employee.id)))).scalar_one()
     active = (
-        await db.execute(
-            select(func.count(Employee.id)).where(Employee.status == "active")
-        )
+        await db.execute(select(func.count(Employee.id)).where(Employee.status == "active"))
     ).scalar_one()
     departments = [
         d
@@ -372,9 +368,7 @@ async def employee_detail(
             await db.execute(
                 select(EmploymentContract)
                 .where(EmploymentContract.employee_id == employee_id)
-                .order_by(
-                    EmploymentContract.start_date.desc(), EmploymentContract.id.desc()
-                )
+                .order_by(EmploymentContract.start_date.desc(), EmploymentContract.id.desc())
             )
         )
         .scalars()
@@ -472,7 +466,9 @@ async def employee_update(
         if clash:
             raise HTTPException(status_code=400, detail="matricule déjà utilisé")
     if data["manager_id"] == employee_id:
-        raise HTTPException(status_code=400, detail="un collaborateur ne peut être son propre manager")
+        raise HTTPException(
+            status_code=400, detail="un collaborateur ne peut être son propre manager"
+        )
     for key, value in data.items():
         setattr(emp, key, value)
     await db.flush()
@@ -518,9 +514,7 @@ async def employee_delete(
         )
     ).scalar_one()
     deps += (
-        await db.execute(
-            select(func.count(Employee.id)).where(Employee.manager_id == employee_id)
-        )
+        await db.execute(select(func.count(Employee.id)).where(Employee.manager_id == employee_id))
     ).scalar_one()
     if deps:
         return RedirectResponse(url=f"/rh/employees/{employee_id}?err=deps", status_code=303)
@@ -761,12 +755,16 @@ async def contract_alerts(
     alerts = [c for c in contracts if c.has_alert]
     alerts.sort(key=lambda c: (c.end_days_remaining if c.end_days_remaining is not None else 9999))
     emp_ids = {c.employee_id for c in alerts}
-    employees = {
-        e.id: e
-        for e in (
-            await db.execute(select(Employee).where(Employee.id.in_(emp_ids)))
-        ).scalars().all()
-    } if emp_ids else {}
+    employees = (
+        {
+            e.id: e
+            for e in (await db.execute(select(Employee).where(Employee.id.in_(emp_ids))))
+            .scalars()
+            .all()
+        }
+        if emp_ids
+        else {}
+    )
     return templates.TemplateResponse(
         "staff/rh/contract_alerts.html",
         {
@@ -795,9 +793,7 @@ def _absence_fields(f) -> dict:
     half_start = f.get("half_day_start") is not None
     half_end = f.get("half_day_end") is not None
     try:
-        days = count_business_days(
-            start, end, half_day_start=half_start, half_day_end=half_end
-        )
+        days = count_business_days(start, end, half_day_start=half_start, half_day_end=half_end)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
@@ -825,13 +821,9 @@ async def absences_index(
     if employee_id:
         query = query.where(HrAbsence.employee_id == employee_id)
     absences = list(
-        (await db.execute(query.order_by(HrAbsence.start_date.desc()).limit(200)))
-        .scalars()
-        .all()
+        (await db.execute(query.order_by(HrAbsence.start_date.desc()).limit(200))).scalars().all()
     )
-    employees = {
-        e.id: e for e in (await db.execute(select(Employee))).scalars().all()
-    }
+    employees = {e.id: e for e in (await db.execute(select(Employee))).scalars().all()}
     # File d'attente : requête indépendante des filtres d'historique
     # (sinon un filtre « approuvé » masquerait les demandes en attente).
     pending = list(
@@ -845,9 +837,7 @@ async def absences_index(
         .scalars()
         .all()
     )
-    active_employees = [
-        e for e in employees.values() if e.status == "active"
-    ]
+    active_employees = [e for e in employees.values() if e.status == "active"]
     active_employees.sort(key=lambda e: (e.last_name, e.first_name))
     return templates.TemplateResponse(
         "staff/rh/absences.html",
@@ -961,9 +951,7 @@ async def _populate_topbar_state(request: Request, db: AsyncSession, user) -> No
     try:
         from app.services.notifications import count_unread
 
-        request.state.notif_count = await count_unread(
-            db, user_id=user.id, user_role=user.role
-        )
+        request.state.notif_count = await count_unread(db, user_id=user.id, user_role=user.role)
     except Exception:
         request.state.notif_count = 0
     try:
@@ -1084,7 +1072,9 @@ async def self_absence_cancel(
     if not emp or not absence or absence.employee_id != emp.id:
         raise HTTPException(status_code=404, detail="Not found")
     if absence.status != "requested":
-        raise HTTPException(status_code=400, detail="seules les demandes en attente sont annulables")
+        raise HTTPException(
+            status_code=400, detail="seules les demandes en attente sont annulables"
+        )
     absence.status = "cancelled"
     await db.flush()
     await activity_record(
@@ -1139,9 +1129,7 @@ async def payroll_period(
         .scalars()
         .all()
     )
-    employees = {
-        e.id: e for e in (await db.execute(select(Employee))).scalars().all()
-    }
+    employees = {e.id: e for e in (await db.execute(select(Employee))).scalars().all()}
     active_employees = sorted(
         (e for e in employees.values() if e.status == "active"),
         key=lambda e: (e.last_name, e.first_name),
@@ -1205,9 +1193,14 @@ async def payroll_add_line(
     db.add(line)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="rh", entity_type="payroll_variable", entity_id=line.id,
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="payroll_variable",
+        entity_id=line.id,
         entity_label=f"{emp.full_name} — {line.type_label} ({period})",
         ip_address=_client_ip(request),
     )
@@ -1299,9 +1292,14 @@ async def payroll_lock(
             line.status = "locked"
     await db.flush()
     await activity_record(
-        db, action="lock", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="rh", entity_type="payroll_period", entity_id=None,
+        db,
+        action="lock",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="payroll_period",
+        entity_id=None,
         entity_label=f"période {period} verrouillée ({len(lines)} lignes)",
         ip_address=_client_ip(request),
     )
@@ -1344,9 +1342,7 @@ async def payroll_export(
         e.id: e
         for e in (
             await db.execute(
-                select(Employee).where(
-                    Employee.id.in_({line.employee_id for line in lines})
-                )
+                select(Employee).where(Employee.id.in_({line.employee_id for line in lines}))
             )
         )
         .scalars()
@@ -1387,9 +1383,14 @@ async def payroll_export(
         line.export_batch_id = batch.id
     await db.flush()
     await activity_record(
-        db, action="export", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="rh", entity_type="silae_export_batch", entity_id=batch.id,
+        db,
+        action="export",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="silae_export_batch",
+        entity_id=batch.id,
         entity_label=f"export EVP {period} ({len(lines)} lignes)",
         ip_address=_client_ip(request),
     )
@@ -1403,11 +1404,7 @@ async def exports_journal(
     user=Depends(require_permission("rh", "C")),
 ) -> HTMLResponse:
     batches = list(
-        (
-            await db.execute(
-                select(SilaeExportBatch).order_by(SilaeExportBatch.created_at.desc())
-            )
-        )
+        (await db.execute(select(SilaeExportBatch).order_by(SilaeExportBatch.created_at.desc())))
         .scalars()
         .all()
     )
@@ -1494,9 +1491,14 @@ async def payslip_upload(
     db.add(payslip)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="rh", entity_type="payslip", entity_id=payslip.id,
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="payslip",
+        entity_id=payslip.id,
         entity_label=f"bulletin {emp.full_name} {period}",
         ip_address=_client_ip(request),
     )
@@ -1522,9 +1524,14 @@ async def payslip_download(
     if not payslip:
         raise HTTPException(status_code=404, detail="Not found")
     await activity_record(
-        db, action="download", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="rh", entity_type="payslip", entity_id=payslip.id,
+        db,
+        action="download",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="payslip",
+        entity_id=payslip.id,
         entity_label=f"bulletin #{payslip.id} ({payslip.period})",
         ip_address=_client_ip(request),
     )
@@ -1575,9 +1582,14 @@ async def review_create(
     db.add(review)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="rh", entity_type="hr_review", entity_id=review.id,
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="hr_review",
+        entity_id=review.id,
         entity_label=f"entretien {emp.full_name} ({review.type_label})",
         ip_address=_client_ip(request),
     )
@@ -1643,9 +1655,14 @@ async def self_payslip_download(
     if not emp or not payslip or payslip.employee_id != emp.id:
         raise HTTPException(status_code=404, detail="Not found")
     await activity_record(
-        db, action="download", user_id=user.id,
-        user_name=user.full_name or user.username, user_role=user.role,
-        module="rh", entity_type="payslip", entity_id=payslip.id,
+        db,
+        action="download",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="rh",
+        entity_type="payslip",
+        entity_id=payslip.id,
         entity_label=f"self-bulletin #{payslip.id} ({payslip.period})",
         ip_address=_client_ip(request),
     )
@@ -1679,11 +1696,7 @@ async def _reporting_data(db: AsyncSession) -> dict:
 
     # Masse salariale = somme des bruts des contrats actifs (approx. v1).
     contracts = list(
-        (
-            await db.execute(
-                select(EmploymentContract).where(EmploymentContract.status == "active")
-            )
-        )
+        (await db.execute(select(EmploymentContract).where(EmploymentContract.status == "active")))
         .scalars()
         .all()
     )
@@ -1691,13 +1704,7 @@ async def _reporting_data(db: AsyncSession) -> dict:
 
     # Absentéisme : jours ouvrés d'absences approuvées de l'année, par type.
     absences = list(
-        (
-            await db.execute(
-                select(HrAbsence).where(HrAbsence.status == "approved")
-            )
-        )
-        .scalars()
-        .all()
+        (await db.execute(select(HrAbsence).where(HrAbsence.status == "approved"))).scalars().all()
     )
     absence_days: dict[str, float] = {}
     for ab in absences:
@@ -1792,9 +1799,7 @@ async def employees_import(
     result = parse_employees_csv(content)
 
     # Doublons par rapport à l'existant en base → signalés, non importés.
-    existing = {
-        m for (m,) in (await db.execute(select(Employee.matricule))).all()
-    }
+    existing = {m for (m,) in (await db.execute(select(Employee.matricule))).all()}
     importable = [r for r in result.rows if r["matricule"] not in existing]
     already = [r for r in result.rows if r["matricule"] in existing]
 

@@ -125,9 +125,7 @@ async def _escale_operations_cost(db: AsyncSession, leg: Leg) -> Decimal:
     ``cost_actual`` si renseigné, sinon ``cost_forecast`` (repli 0).
     """
     operations = list(
-        (
-            await db.execute(select(EscaleOperation).where(EscaleOperation.leg_id == leg.id))
-        )
+        (await db.execute(select(EscaleOperation).where(EscaleOperation.leg_id == leg.id)))
         .scalars()
         .all()
     )

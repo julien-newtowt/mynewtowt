@@ -105,9 +105,7 @@ async def claim_new_form(
     leg_options = await leg_select_options(db)
     # Booking Notes (BN) — réservations récentes, pour rattacher le claim.
     bookings = list(
-        (
-            await db.execute(select(Booking).order_by(Booking.created_at.desc()).limit(200))
-        )
+        (await db.execute(select(Booking).order_by(Booking.created_at.desc()).limit(200)))
         .scalars()
         .all()
     )
@@ -147,7 +145,9 @@ async def _active_contracts(db: AsyncSession) -> list[InsuranceContract]:
     )
 
 
-async def _auto_cargo_position(db: AsyncSession, *, leg_id: int | None, booking_id: int | None) -> str | None:
+async def _auto_cargo_position(
+    db: AsyncSession, *, leg_id: int | None, booking_id: int | None
+) -> str | None:
     """Récupère best-effort la zone d'arrimage depuis le plan de chargement.
 
     Pour un sinistre cargo lié à un booking, on tente de localiser la
@@ -162,8 +162,12 @@ async def _auto_cargo_position(db: AsyncSession, *, leg_id: int | None, booking_
         from app.services.stowage import locate_for_order
 
         order = (
-            await db.execute(select(Order).where(Order.booking_id == booking_id).limit(1))
-        ).scalar_one_or_none() if hasattr(Order, "booking_id") else None
+            (
+                await db.execute(select(Order).where(Order.booking_id == booking_id).limit(1))
+            ).scalar_one_or_none()
+            if hasattr(Order, "booking_id")
+            else None
+        )
         if order is None:
             return None
         spots = await locate_for_order(db, order.id)
@@ -623,9 +627,7 @@ async def claim_download_document(
     return Response(
         content=path.read_bytes(),
         media_type=doc.file_mime or "application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{doc.label or path.name}"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{doc.label or path.name}"'},
     )
 
 

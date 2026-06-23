@@ -85,9 +85,7 @@ async def add_movement(
         raise CashboxError("Description required")
     occ = occurred_at or datetime.now(UTC)
     if await is_period_closed(db, cashbox, currency.upper(), occ):
-        raise PeriodClosed(
-            "Période clôturée : impossible d'ajouter un mouvement à cette date."
-        )
+        raise PeriodClosed("Période clôturée : impossible d'ajouter un mouvement à cette date.")
     mov = CashboxMovement(
         cashbox_id=cashbox.id,
         amount=amount,
@@ -204,8 +202,17 @@ def export_csv(movements: list[CashboxMovement], *, vessel_code: str, period: st
     w = csv.writer(buf, delimiter=";")
     w.writerow([f"Caisse de bord — {vessel_code} — période {period}"])
     w.writerow(
-        ["Date", "Sens", "Catégorie", "Libellé", "Montant", "Devise",
-         "Justificatif", "Saisi le", "Verrou"]
+        [
+            "Date",
+            "Sens",
+            "Catégorie",
+            "Libellé",
+            "Montant",
+            "Devise",
+            "Justificatif",
+            "Saisi le",
+            "Verrou",
+        ]
     )
     for m in movements:
         kind = "Encaissement" if m.amount > 0 else "Décaissement"

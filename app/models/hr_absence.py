@@ -48,9 +48,7 @@ class HrAbsence(Base):
     __tablename__ = "hr_absences"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    employee_id: Mapped[int] = mapped_column(
-        ForeignKey("employees.id"), nullable=False, index=True
-    )
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
 
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)

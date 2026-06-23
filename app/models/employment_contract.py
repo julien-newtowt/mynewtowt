@@ -68,9 +68,7 @@ class EmploymentContract(Base):
     __tablename__ = "employment_contracts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    employee_id: Mapped[int] = mapped_column(
-        ForeignKey("employees.id"), nullable=False, index=True
-    )
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
 
     contract_type: Mapped[str] = mapped_column(String(30), nullable=False)
     parent_contract_id: Mapped[int | None] = mapped_column(
@@ -78,9 +76,7 @@ class EmploymentContract(Base):
     )
     is_amendment: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    convention: Mapped[str] = mapped_column(
-        String(60), default=DEFAULT_CONVENTION, nullable=False
-    )
+    convention: Mapped[str] = mapped_column(String(60), default=DEFAULT_CONVENTION, nullable=False)
     classification: Mapped[str | None] = mapped_column(String(80))
 
     start_date: Mapped[date] = mapped_column(Date, nullable=False)

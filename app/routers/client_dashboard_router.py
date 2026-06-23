@@ -448,9 +448,7 @@ async def anemos_annual_report_pdf(
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'inline; filename="rapport-co2-{client.id}-{year}.pdf"'
-        },
+        headers={"Content-Disposition": f'inline; filename="rapport-co2-{client.id}-{year}.pdf"'},
     )
 
 
@@ -470,20 +468,43 @@ async def anemos_annual_report_csv(
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(
-        ["reference", "booking", "leg", "issued_at", "tonnage_t", "distance_nm",
-         "co2_avoided_kg", "method"]
+        [
+            "reference",
+            "booking",
+            "leg",
+            "issued_at",
+            "tonnage_t",
+            "distance_nm",
+            "co2_avoided_kg",
+            "method",
+        ]
     )
     for s in report["shipments"]:
         w.writerow(
             [
-                s["reference"], s["booking_ref"] or "", s["leg_code"] or "",
+                s["reference"],
+                s["booking_ref"] or "",
+                s["leg_code"] or "",
                 s["issued_at"].date() if s["issued_at"] else "",
-                s["tonnage_t"], s["distance_nm"], s["co2_avoided_kg"], s["method"] or "",
+                s["tonnage_t"],
+                s["distance_nm"],
+                s["co2_avoided_kg"],
+                s["method"] or "",
             ]
         )
     w.writerow([])
-    w.writerow(["TOTAL", "", "", year, report["total_tonnage_t"],
-                report["total_distance_nm"], report["total_avoided_kg"], ""])
+    w.writerow(
+        [
+            "TOTAL",
+            "",
+            "",
+            year,
+            report["total_tonnage_t"],
+            report["total_distance_nm"],
+            report["total_avoided_kg"],
+            "",
+        ]
+    )
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",

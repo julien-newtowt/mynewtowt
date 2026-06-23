@@ -31,8 +31,14 @@ async def _employee(db, matricule="E1", **kw) -> Employee:
 
 
 async def _approved_absence(db, employee_id, start, end, days, kind="cp") -> HrAbsence:
-    ab = HrAbsence(employee_id=employee_id, kind=kind, start_date=start,
-                   end_date=end, business_days=days, status="approved")
+    ab = HrAbsence(
+        employee_id=employee_id,
+        kind=kind,
+        start_date=start,
+        end_date=end,
+        business_days=days,
+        status="approved",
+    )
     db.add(ab)
     await db.flush()
     return ab
@@ -40,8 +46,13 @@ async def _approved_absence(db, employee_id, start, end, days, kind="cp") -> HrA
 
 async def test_add_line_persists(db, staff_user):
     emp = await _employee(db)
-    form = {"employee_id": str(emp.id), "evp_type": "prime_objectifs",
-            "quantity": "1", "amount": "500", "comment": "Q2"}
+    form = {
+        "employee_id": str(emp.id),
+        "evp_type": "prime_objectifs",
+        "quantity": "1",
+        "amount": "500",
+        "comment": "Q2",
+    }
     resp = await payroll_add_line(PERIOD, FakeRequest(form), db, staff_user)
     assert resp.status_code == 303
     line = (await db.execute(select(PayrollVariable))).scalar_one()

@@ -383,9 +383,7 @@ def compute_grid_quote(
         raise QuotingError("Au moins une palette est requise pour coter.")
 
     bracket_label, bracket_coeff = bracket_for_quantity(grid, total_palettes)
-    effective_base = (
-        Decimal(route.base_rate) * Decimal(grid.adjustment_index) * bracket_coeff
-    )
+    effective_base = Decimal(route.base_rate) * Decimal(grid.adjustment_index) * bracket_coeff
 
     lines: list[QuoteLineDraft] = []
     freight_subtotal = Decimal("0")
@@ -506,15 +504,11 @@ def compute_grid_quote(
         total_eur=total,
         currency=grid.currency,
         volume_commitment=grid.volume_commitment,
-        below_commitment=bool(
-            grid.volume_commitment and total_palettes < grid.volume_commitment
-        ),
+        below_commitment=bool(grid.volume_commitment and total_palettes < grid.volume_commitment),
     )
 
 
-def _option_quantity(
-    unit: str, *, total_palettes: int, tonnage_t: Decimal | None
-) -> Decimal:
+def _option_quantity(unit: str, *, total_palettes: int, tonnage_t: Decimal | None) -> Decimal:
     if unit == "per_palette":
         return Decimal(total_palettes)
     if unit == "per_tonne":
@@ -596,8 +590,6 @@ async def create_quote(
 
 async def find_quote(db: AsyncSession, reference: str) -> Quote | None:
     stmt = (
-        select(Quote)
-        .options(selectinload(Quote.lines))
-        .where(Quote.reference == reference.upper())
+        select(Quote).options(selectinload(Quote.lines)).where(Quote.reference == reference.upper())
     )
     return (await db.execute(stmt)).scalar_one_or_none()

@@ -77,9 +77,7 @@ def test_contract_bad_parent_id_raises_400() -> None:
 
 # ── Absence ─────────────────────────────────────────────────────────────
 def test_absence_valid_computes_business_days() -> None:
-    data = _absence_fields(
-        {"kind": "cp", "start_date": "2026-06-15", "end_date": "2026-06-19"}
-    )
+    data = _absence_fields({"kind": "cp", "start_date": "2026-06-15", "end_date": "2026-06-19"})
     assert data["business_days"] == Decimal("5")
     assert data["start_date"] == date(2026, 6, 15)
 

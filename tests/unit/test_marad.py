@@ -148,9 +148,7 @@ def test_sync_crew_creates_and_maps(monkeypatch) -> None:
             "errors": 0,
             "note": r["note"],
         }
-        m = (
-            await s.execute(select(CrewMember).where(CrewMember.marad_id == _GUID))
-        ).scalar_one()
+        m = (await s.execute(select(CrewMember).where(CrewMember.marad_id == _GUID))).scalar_one()
         assert m.full_name == "Jean Dupont"
         assert m.role == "Capitaine"  # premier rang
         assert m.nationality == "FR"
@@ -180,9 +178,7 @@ def test_sync_crew_idempotent_and_preserves_erp_fields(monkeypatch) -> None:
         assert (r1["created"], r1["updated"]) == (1, 0)
 
         # Un champ géré par l'ERP (hors périmètre Marad) est renseigné à la main.
-        m = (
-            await s.execute(select(CrewMember).where(CrewMember.marad_id == _GUID))
-        ).scalar_one()
+        m = (await s.execute(select(CrewMember).where(CrewMember.marad_id == _GUID))).scalar_one()
         m.schengen_status = "warning"
         m.visa_br_expires_at = date(2027, 1, 1)
         await s.flush()
@@ -224,9 +220,7 @@ def test_sync_crew_placeholder_does_not_clobber(monkeypatch) -> None:
         monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([empty]))
         await marad_sync.sync_crew(s)
 
-        m = (
-            await s.execute(select(CrewMember).where(CrewMember.marad_id == _GUID))
-        ).scalar_one()
+        m = (await s.execute(select(CrewMember).where(CrewMember.marad_id == _GUID))).scalar_one()
         assert m.full_name == "Jean Dupont"  # conservé
         assert m.role == "Capitaine"  # conservé
         assert m.email == "jean.dupont@example.com"  # conservé

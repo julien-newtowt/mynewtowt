@@ -54,13 +54,10 @@ def test_moving_leg_later_cascades_downstream() -> None:
         await s.flush()
 
         # Décale L1 de +3 jours → L2 et L3 suivent du même delta.
-        await svc.update_scenario_leg(
-            s, l1, etd=D0 + timedelta(days=3), eta=D0 + timedelta(days=4)
-        )
+        await svc.update_scenario_leg(s, l1, etd=D0 + timedelta(days=3), eta=D0 + timedelta(days=4))
 
         legs = {
-            x.departure_port_id: x
-            for x in (await s.execute(select(ScenarioLeg))).scalars().all()
+            x.departure_port_id: x for x in (await s.execute(select(ScenarioLeg))).scalars().all()
         }
         assert legs[2].etd == D0 + timedelta(days=5)  # L2 décalé +3j
         assert legs[3].etd == D0 + timedelta(days=7)  # L3 décalé +3j

@@ -52,10 +52,10 @@ def test_current_period_format():
     "start,end,period,expected",
     [
         (date(2026, 6, 10), date(2026, 6, 12), "2026-06", True),
-        (date(2026, 5, 28), date(2026, 6, 2), "2026-06", True),   # chevauche début
-        (date(2026, 6, 28), date(2026, 7, 3), "2026-06", True),   # chevauche fin
+        (date(2026, 5, 28), date(2026, 6, 2), "2026-06", True),  # chevauche début
+        (date(2026, 6, 28), date(2026, 7, 3), "2026-06", True),  # chevauche fin
         (date(2026, 5, 1), date(2026, 5, 31), "2026-06", False),  # mois précédent
-        (date(2026, 7, 1), date(2026, 7, 5), "2026-06", False),   # mois suivant
+        (date(2026, 7, 1), date(2026, 7, 5), "2026-06", False),  # mois suivant
     ],
 )
 def test_overlaps_period(start, end, period, expected):

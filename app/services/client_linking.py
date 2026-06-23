@@ -70,9 +70,7 @@ async def find_client_for_email(db: AsyncSession, email: str | None) -> Client |
         return None
 
     exact = (
-        await db.execute(
-            select(Client).where(func.lower(Client.contact_email) == clean).limit(1)
-        )
+        await db.execute(select(Client).where(func.lower(Client.contact_email) == clean).limit(1))
     ).scalar_one_or_none()
     if exact is not None:
         return exact
@@ -81,11 +79,7 @@ async def find_client_for_email(db: AsyncSession, email: str | None) -> Client |
     if not dom or dom in _GENERIC_DOMAINS:
         return None
     candidates = list(
-        (
-            await db.execute(
-                select(Client).where(func.lower(Client.contact_email).like(f"%@{dom}"))
-            )
-        )
+        (await db.execute(select(Client).where(func.lower(Client.contact_email).like(f"%@{dom}"))))
         .scalars()
         .all()
     )
