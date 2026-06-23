@@ -146,6 +146,12 @@ class VesselPosition(Base):
     sog_kn: Mapped[float | None] = mapped_column()
     cog_deg: Mapped[float | None] = mapped_column()
     source: Mapped[str] = mapped_column(String(40), default="manual", nullable=False)
+    # TRK-05 — traçabilité de l'import : lot d'origine (nom de fichier) + date
+    # d'insertion en base (distincte de ``recorded_at`` = instant de la mesure).
+    import_batch: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     # SEC-04 — intégrité & perf : une position par (navire, instant). Garantit
     # l'idempotence de l'upload satcom (anti-doublon en concurrence) et indexe

@@ -48,6 +48,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.claim import VesselPosition
 from app.models.vessel import Vessel
+from app.permissions import require_permission
 
 router = APIRouter(prefix="/api/tracking", tags=["tracking-api"])
 logger = logging.getLogger("tracking")
@@ -590,6 +591,7 @@ async def upload_positions(
                     )
                 ),
                 source=str(source_val)[:40],
+                import_batch=(inner_name or filename or None) and str(inner_name or filename)[:100],
             )
         )
         inserted += 1
@@ -604,3 +606,58 @@ async def upload_positions(
             "file": inner_name,
         }
     )
+
+
+async def latest_positions(db: AsyncSession) -> list[dict]:
+    """TRK-01 — dernière position connue de chaque navire (contrat stable).
+
+    Pour chaque navire, la ligne dont ``recorded_at`` est maximal. Renvoie une
+    liste de dicts sérialisables (lat/lon/sog/cog/recorded_at/source/navire).
+    """
+    from sqlalchemy import func
+
+    sub = (
+        select(
+            VesselPosition.vessel_id.label("vid"),
+            func.max(VesselPosition.recorded_at).label("max_time"),
+        )
+        .group_by(VesselPosition.vessel_id)
+        .subquery()
+    )
+    rows = (
+        await db.execute(
+            select(VesselPosition, Vessel.name, Vessel.code)
+            .join(
+                sub,
+                (VesselPosition.vessel_id == sub.c.vid)
+                & (VesselPosition.recorded_at == sub.c.max_time),
+            )
+            .join(Vessel, Vessel.id == VesselPosition.vessel_id)
+            .order_by(Vessel.code)
+        )
+    ).all()
+    out: list[dict] = []
+    for pos, vname, vcode in rows:
+        out.append(
+            {
+                "vessel_id": pos.vessel_id,
+                "vessel_code": vcode,
+                "vessel_name": vname,
+                "lat": pos.latitude,
+                "lon": pos.longitude,
+                "sog": pos.sog_kn,
+                "cog": pos.cog_deg,
+                "recorded_at": pos.recorded_at.isoformat() if pos.recorded_at else None,
+                "source": pos.source,
+            }
+        )
+    return out
+
+
+@router.get("/latest")
+async def get_latest_positions(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> JSONResponse:
+    """TRK-01 — endpoint JSON : dernière position de chaque navire (staff)."""
+    return JSONResponse(await latest_positions(db))
