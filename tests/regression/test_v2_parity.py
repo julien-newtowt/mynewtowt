@@ -368,6 +368,43 @@ def test_v2_mrv_do_counters_present():
         assert hasattr(MRVEvent, f), f
 
 
+def test_v2_mrv_multirule_quality_restored():
+    """MRV-05 : contrôle qualité multi-règles + statut `error` bloquant."""
+    from decimal import Decimal
+
+    from app.models.mrv import MRVEvent
+    from app.services.mrv_compute import leg_has_quality_errors, validate_event
+
+    assert callable(leg_has_quality_errors)
+    # Règle compteurs monotones : une baisse vs l'événement précédent ⇒ error.
+    prev = MRVEvent(
+        leg_id=1,
+        event_kind="noon_consumption",
+        fuel_type="MDO",
+        port_me_do_counter=100,
+        stbd_me_do_counter=100,
+        fwd_gen_do_counter=50,
+        aft_gen_do_counter=50,
+    )
+    cur = MRVEvent(
+        leg_id=1,
+        event_kind="noon_consumption",
+        fuel_type="MDO",
+        port_me_do_counter=90,  # en baisse → anomalie
+        stbd_me_do_counter=100,
+        fwd_gen_do_counter=50,
+        aft_gen_do_counter=50,
+    )
+    validate_event(cur, prev, density=Decimal("0.845"), deviation=Decimal("2"))
+    assert cur.quality_status == "error"
+    assert "baisse" in (cur.quality_notes or "")
+    # Le blocage qualité (export Carbon Report) s'appuie sur ce statut error.
+    from pathlib import Path
+
+    mrv_src = Path("app/routers/mrv_router.py").read_text(encoding="utf-8")
+    assert 'quality_status == "error"' in mrv_src
+
+
 # ───────────────────────────── Commercial (V2 parité) ────────────────────────
 
 
