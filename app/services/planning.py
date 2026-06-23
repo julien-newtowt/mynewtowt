@@ -648,6 +648,38 @@ async def closed_weekdays_for_port(db: AsyncSession, port_id: int | None) -> set
     return closed
 
 
+# ─────────────────────────── PLN-05 — détection de retard ────────────────────
+
+DELAY_THRESHOLD_HOURS = 4.0
+
+
+def _dev_hours(current: datetime | None, reference: datetime | None) -> float:
+    """Écart (heures) courant − référence ; positif = en retard.
+
+    tz-safe : normalise les deux bornes en naïf (SQLite relit naïf, Postgres
+    aware) avant la soustraction.
+    """
+    if current is None or reference is None:
+        return 0.0
+    c = current.replace(tzinfo=None)
+    r = reference.replace(tzinfo=None)
+    return (c - r).total_seconds() / 3600.0
+
+
+def leg_delay_hours(leg: Leg) -> float:
+    """Pire retard (heures) du prévisionnel courant vs la référence figée.
+
+    Compare ETD↔ETD_ref et ETA↔ETA_ref ; renvoie le plus grand écart (positif
+    = retard, négatif = avance).
+    """
+    return max(_dev_hours(leg.etd, leg.etd_ref), _dev_hours(leg.eta, leg.eta_ref))
+
+
+def is_delayed(leg: Leg, threshold_hours: float = DELAY_THRESHOLD_HOURS) -> bool:
+    """True si le leg accuse un retard ≥ seuil vs sa référence (PLN-05)."""
+    return leg_delay_hours(leg) >= threshold_hours
+
+
 def detect_port_conflicts(
     legs: Sequence[Leg],
     *,

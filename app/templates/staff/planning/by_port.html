@@ -1,0 +1,60 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Planning par port — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Pilotage</span>
+    <h1 class="display">Planning par port — {{ selected_year }}</h1>
+    <p class="text-muted">Départs et arrivées regroupés par port · retard signalé ≥ 4 h vs référence.</p>
+  </div>
+  <a href="/planning?year={{ selected_year }}" class="btn btn-ghost">← Gantt</a>
+</header>
+
+{% macro leg_row(e, kind) %}
+<tr class="{{ 'row-late' if e.delayed else '' }}">
+  <td class="mono">{{ e.leg.leg_code }}</td>
+  <td>{{ e.vessel.name if e.vessel else '—' }}</td>
+  <td class="mono text-xs">{{ e.pol.locode if e.pol else '?' }} → {{ e.pod.locode if e.pod else '?' }}</td>
+  <td class="mono text-xs">{{ (e.leg.etd if kind == 'dep' else e.leg.eta)|datetime("%d/%m %H:%M") }}</td>
+  <td>
+    {% if e.delayed %}<span class="pill" style="background:var(--cuivre);color:#fff;">retard {{ e.delay_h }} h</span>
+    {% else %}<span class="pill pill-ok">à l'heure</span>{% endif %}
+  </td>
+</tr>
+{% endmacro %}
+
+{% for g in port_groups %}
+<article class="card mb-3">
+  <div class="section-header">
+    <h3><i data-lucide="anchor"></i>
+      {{ g.port.name if g.port else '—' }}
+      {% if g.port %}<span class="mono text-sm">({{ g.port.locode }})</span>{% endif %}
+    </h3>
+  </div>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <h4>Départs ({{ g.departures|length }})</h4>
+      {% if g.departures %}
+      <table class="data-table">
+        <thead><tr><th>Leg</th><th>Navire</th><th>Route</th><th>ETD</th><th>Statut</th></tr></thead>
+        <tbody>{% for e in g.departures %}{{ leg_row(e, 'dep') }}{% endfor %}</tbody>
+      </table>
+      {% else %}<p class="text-muted">Aucun départ.</p>{% endif %}
+    </div>
+    <div>
+      <h4>Arrivées ({{ g.arrivals|length }})</h4>
+      {% if g.arrivals %}
+      <table class="data-table">
+        <thead><tr><th>Leg</th><th>Navire</th><th>Route</th><th>ETA</th><th>Statut</th></tr></thead>
+        <tbody>{% for e in g.arrivals %}{{ leg_row(e, 'arr') }}{% endfor %}</tbody>
+      </table>
+      {% else %}<p class="text-muted">Aucune arrivée.</p>{% endif %}
+    </div>
+  </div>
+</article>
+{% else %}
+<article class="card text-center"><p class="text-muted">Aucun leg sur la période.</p></article>
+{% endfor %}
+
+{% endblock %}
