@@ -607,3 +607,44 @@ async def locate_for_order(db: AsyncSession, order_id: int) -> list[dict]:
     out = list(agg.values())
     out.sort(key=lambda z: order.get(z["zone"], len(order)))
     return out
+
+
+# ───────────────────── STO-05 — politique de blocage capacité (A3) ─────────────
+
+STOWAGE_BLOCK_FLAG = "stowage_block_overcapacity"
+
+
+async def check_zone_admission(
+    db: AsyncSession,
+    leg_id: int,
+    zone: str,
+    *,
+    add_pallets: int,
+    add_weight_kg: float | None,
+    pallet_format: str | None,
+) -> tuple[bool, str | None]:
+    """Vérifie qu'un nouvel item tient dans la zone (capacité EPAL-éq. + poids).
+
+    Retourne ``(ok, motif)``. ``ok=True`` si la zone n'a pas de spec (pas de
+    contrainte connue) ou si l'ajout reste dans les limites.
+    """
+    ev = await evaluate_plan(db, leg_id)
+    z = ev.get("zones", {}).get(zone)
+    if z is None:
+        return True, None
+    coeff = PALETTE_COEFFICIENTS.get(pallet_format or "EPAL", 1.0)
+    new_used_epal = (z.get("used_epal") or 0.0) + (add_pallets or 0) * coeff
+    cap = z.get("capacity_epal") or 0
+    if cap and new_used_epal > cap:
+        return False, (
+            f"Capacité dépassée en zone {zone} : " f"{new_used_epal:.0f}/{cap} pal. EPAL-éq."
+        )
+    max_t = z.get("max_load_t")
+    if max_t and add_weight_kg:
+        new_used_t = (z.get("used_t") or 0.0) + (add_weight_kg / 1000.0)
+        if new_used_t > float(max_t):
+            return False, (
+                f"Charge maximale dépassée en zone {zone} : "
+                f"{new_used_t:.1f}/{float(max_t):.1f} t."
+            )
+    return True, None
