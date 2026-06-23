@@ -379,11 +379,32 @@ async def assign_bl_number(
 # ───────────────── COM-09 — packing list auto à la confirmation commande ──────
 
 
+def batch_prefill_from_order(order: Order) -> dict:
+    """CARGO-08 — valeurs d'un 1er batch pré-rempli depuis la commande.
+
+    Reporte parties (shipper/consignee/notify), marchandise et volume connus
+    de la commande. Les clés ``None`` sont écartées (défauts de colonne).
+    """
+    vals = {
+        "pallet_count": order.booked_palettes or 1,
+        "pallet_format": order.palette_format or "EPAL",
+        "shipper_name": order.shipper_name,
+        "shipper_address": order.shipper_address,
+        "consignee_name": order.consignee_name,
+        "consignee_address": order.consignee_address,
+        "notify_name": order.notify_name,
+        "notify_address": order.notify_address,
+        "description_of_goods": order.description_of_goods or order.cargo_description,
+    }
+    return {k: v for k, v in vals.items() if v is not None}
+
+
 async def ensure_for_order(db: AsyncSession, order: Order) -> tuple[PackingList, bool]:
     """Get-or-create la packing list d'une commande (idempotent).
 
     Retourne ``(packing_list, created)`` — ``created=False`` si une PL existait
-    déjà pour la commande (pas de doublon à la re-confirmation).
+    déjà pour la commande (pas de doublon à la re-confirmation). À la création,
+    un 1er batch est **pré-rempli** depuis la commande (CARGO-08).
     """
     existing = (
         await db.execute(select(PackingList).where(PackingList.order_id == order.id))
@@ -393,4 +414,11 @@ async def ensure_for_order(db: AsyncSession, order: Order) -> tuple[PackingList,
     pl = PackingList(order_id=order.id, status="draft")
     db.add(pl)
     await db.flush()
+    await create_batch(
+        db,
+        pl=pl,
+        vals=batch_prefill_from_order(order),
+        actor="system",
+        actor_name="création commande",
+    )
     return pl, True
