@@ -465,6 +465,14 @@ def test_v2_planning_delay_and_by_port_restored():
     assert ("GET", "/planning/by-port") in _methods(router)
 
 
+def test_v2_co2_equivalences_restored():
+    """FIN-05 : équivalences pédagogiques CO₂ (vols / conteneurs)."""
+    from app.services.co2 import co2_equivalences
+
+    eq = co2_equivalences(1_050_000)
+    assert eq["flights_paris_nyc"] > 0 and eq["containers_asia_eu"] > 0
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # ✅ Toute la parité P0 vis-à-vis de la V2 est désormais restaurée.
 # Les évolutions P1/P2 restent tracées dans docs/audit/backlog/.

@@ -20,6 +20,8 @@
   <div class="kpi-card"><div class="label">{{ t('kpi_co2_avoided', lang) }}</div><div class="value text-success">{{ "%.0f"|format(total_co2_avoided_kg) }} kg</div><div class="delta up">{{ t('kpi_vs_conv', lang) }}</div></div>
   <div class="kpi-card"><div class="label">NOx évité</div><div class="value text-success">{{ "%.1f"|format(total_nox_avoided_kg) }} kg</div><div class="delta up">vs conventionnel</div></div>
   <div class="kpi-card"><div class="label">SOx évité</div><div class="value text-success">{{ "%.1f"|format(total_sox_avoided_kg) }} kg</div><div class="delta up">vs conventionnel</div></div>
+  <div class="kpi-card"><div class="label">≈ Vols Paris-NYC évités</div><div class="value text-success">{{ "%.1f"|format(co2_equiv.flights_paris_nyc) }}</div><div class="delta text-muted">équivalence CO₂</div></div>
+  <div class="kpi-card"><div class="label">≈ Conteneurs Asie-EU</div><div class="value text-success">{{ "%.0f"|format(co2_equiv.containers_asia_eu) }}</div><div class="delta text-muted">équivalence CO₂</div></div>
   <div class="kpi-card"><div class="label">{{ t('kpi_ontime_perf', lang) }}</div><div class="value">{{ "%.0f"|format(on_time_pct) }} %</div><div class="delta text-muted">{{ t('kpi_legs_ontime', lang) }}</div></div>
   <div class="kpi-card"><div class="label">{{ t('kpi_legs_tracked', lang) }}</div><div class="value">{{ kpis|length }}</div><div class="delta text-muted">{{ t('kpi_auto_fed', lang) }}</div></div>
 </section>

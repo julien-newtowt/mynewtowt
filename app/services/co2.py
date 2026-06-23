@@ -196,3 +196,26 @@ def estimate(
         conventional_co2_kg=conv_kg,
         avoided_co2_kg=avoided,
     )
+
+
+# ───────────────────── FIN-05 — équivalences pédagogiques CO₂ ──────────────────
+# Facteurs V2 (tonnes de CO₂ par unité) — storytelling RSE.
+CO2_PER_FLIGHT_PARIS_NYC_T = Decimal("525")  # 1 vol Paris-NYC (~300 pax)
+CO2_PER_CONTAINER_ASIA_EU_T = Decimal("2.5")  # 1 conteneur Asie→Europe (conventionnel)
+
+
+def co2_equivalences(co2_avoided_kg: Decimal | float | int | None) -> dict:
+    """Traduit une masse de CO₂ évité (kg) en équivalences pédagogiques.
+
+    Renvoie le nombre de vols Paris-NYC et de conteneurs Asie-Europe évités.
+    """
+    avoided_t = Decimal(str(co2_avoided_kg or 0)) / Decimal("1000")
+    flights = (avoided_t / CO2_PER_FLIGHT_PARIS_NYC_T) if CO2_PER_FLIGHT_PARIS_NYC_T else Decimal(0)
+    containers = (
+        (avoided_t / CO2_PER_CONTAINER_ASIA_EU_T) if CO2_PER_CONTAINER_ASIA_EU_T else Decimal(0)
+    )
+    return {
+        "avoided_t": avoided_t.quantize(Decimal("0.01")),
+        "flights_paris_nyc": flights.quantize(Decimal("0.01")),
+        "containers_asia_eu": containers.quantize(Decimal("0.1")),
+    }

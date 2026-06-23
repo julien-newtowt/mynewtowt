@@ -166,12 +166,12 @@
   <form method="post" action="/stowage/plans/{{ plan.id }}/items">
     <div class="grid grid-3 gap-2">
       <div class="field"><label>Zone</label><select name="zone">{% for z in zones %}<option>{{ z }}</option>{% endfor %}</select></div>
-      <div class="field"><label>Format</label><select name="pallet_format"><option>EPAL</option><option>USPAL</option><option>PORTPAL</option><option>IBC</option><option>BIGBAG</option></select></div>
+      <div class="field"><label>Format</label><select name="pallet_format"><option>EPAL</option><option>USPAL</option><option>PORTPAL</option><option>IBC</option><option>BIGBAG</option><option>BARRIQUE120</option><option>BARRIQUE140</option></select></div>
       <div class="field"><label>Palettes</label><input name="pallet_count" type="number" value="1" min="1" /></div>
       <div class="field"><label>Poids total (kg)</label><input name="weight_kg" type="number" step="0.1" /></div>
       <div class="field"><label>Hauteur (cm)</label><input name="height_cm" type="number" step="0.1" /></div>
       <div class="field"><label>HS code</label><input name="hs_code" type="text" /></div>
-      <div class="field"><label>IMDG</label><input name="imdg_class" type="text" /></div>
+      <div class="field"><label>Classe IMDG</label><select name="imdg_class"><option value="">—</option>{% for c in ['1','2','3','4.1','4.2','4.3','5.1','5.2','6.1','6.2','7','8','9'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></div>
       <div class="field"><label><input type="checkbox" name="is_stacked" value="1" /> Gerbé (stack)</label></div>
       <div class="field"><label><input type="checkbox" name="is_dangerous" value="1" /> IMO</label></div>
       <div class="field"><label><input type="checkbox" name="is_oversized" value="1" /> Hors-gabarit</label></div>
