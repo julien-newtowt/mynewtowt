@@ -58,9 +58,12 @@ from app.services.commercial import (
     suggest_leg_for_order,
 )
 from app.services.quoting import (
+    QuotingError,
     _match_route,
     backfill_default_grids,
+    compute_grid_quote,
     compute_route_economics,
+    resolve_grid,
 )
 from app.templating import templates
 
@@ -1786,6 +1789,59 @@ async def order_new_form(
             "leg_options": leg_options,
             "order": None,
         },
+    )
+
+
+@router.get("/api/rate-lookup", response_class=HTMLResponse)
+async def rate_lookup(
+    request: Request,
+    departure_locode: str | None = None,
+    arrival_locode: str | None = None,
+    booked_palettes: int = 0,
+    palette_format: str = "EPAL",
+    hazardous: bool = False,
+    client_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """COM-07 — devis live depuis la grille active (fragment HTMX).
+
+    Le broker tire le tarif de la grille (route POL→POD, bracket de volume,
+    surcharges/options) au lieu de le saisir à la main. Les noms de paramètres
+    reprennent ceux des champs du formulaire de commande (envoi direct via
+    ``hx-include``). Retourne un fragment : tarif €/palette + total.
+
+    Note : ``resolve_grid`` est *get-or-create* — il matérialise la grille par
+    défaut et la route POL/POD si elles n'existent pas encore (données de
+    référence idempotentes, jamais du contenu utilisateur). Comportement repris
+    tel quel de l'outil de devis public ``/devis``, pour que l'estimation
+    coïncide exactement avec ce qu'une réservation facturerait.
+    """
+    quote = None
+    error = None
+    if not departure_locode or not arrival_locode:
+        error = "Renseignez POL et POD pour estimer le tarif."
+    elif booked_palettes <= 0:
+        error = "Indiquez un nombre de palettes (> 0)."
+    else:
+        try:
+            grid, route = await resolve_grid(
+                db,
+                pol_locode=departure_locode,
+                pod_locode=arrival_locode,
+                commercial_client_id=client_id,
+            )
+            quote = compute_grid_quote(
+                grid,
+                route,
+                items=[(palette_format or "EPAL", booked_palettes)],
+                hazardous=hazardous,
+            )
+        except QuotingError as exc:
+            error = str(exc)
+    return templates.TemplateResponse(
+        "staff/commercial/_rate_lookup.html",
+        {"request": request, "user": user, "quote": quote, "error": error},
     )
 
 

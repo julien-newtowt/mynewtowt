@@ -1,0 +1,24 @@
+{# COM-07 — fragment HTMX : tarif grille recommandé pour la route saisie. #}
+{% if error %}
+<p class="text-muted text-sm">{{ error }}</p>
+{% elif quote %}
+<div class="alert alert-info">
+  <div class="flex justify-between items-center" style="border-bottom:none; gap:var(--space-3); flex-wrap:wrap;">
+    <div>
+      <strong class="mono">{{ quote.base_rate_eur|money }}</strong> / palette
+      <span class="text-muted text-sm">· total {{ quote.total_eur|money }}</span>
+    </div>
+    <div class="text-sm text-muted">
+      grille <span class="mono">{{ quote.grid_reference }}</span>{% if quote.is_default_grid %} (défaut){% endif %}
+      · {{ quote.bracket_label }}
+    </div>
+    <button type="button" class="btn btn-secondary btn-sm"
+            data-apply-rate="{{ quote.base_rate_eur }}" data-apply-target="rate_per_palette_eur">
+      Appliquer ce tarif
+    </button>
+  </div>
+  {% if quote.below_commitment %}
+  <p class="text-sm mt-1" style="color:var(--cuivre);">⚠ Quantité sous l'engagement minimum de la grille ({{ quote.volume_commitment }} palettes).</p>
+  {% endif %}
+</div>
+{% endif %}

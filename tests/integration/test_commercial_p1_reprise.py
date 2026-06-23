@@ -77,3 +77,81 @@ async def test_ensure_for_order_get_or_create(db):
     pl2, created2 = await ensure_for_order(db, o)
     assert created1 is True and created2 is False
     assert pl1.id == pl2.id
+
+
+# ─────────────────────────────── COM-07 ───────────────────────────────
+
+
+class _RenderReq:
+    headers: dict[str, str] = {}
+    cookies: dict[str, str] = {}
+    query_params: dict[str, str] = {}
+    client = SimpleNamespace(host="127.0.0.1")
+    url = SimpleNamespace(path="/commercial/api/rate-lookup")
+    state = SimpleNamespace(notif_count=0, newtowt_agent_enabled=True, recent_notifications=[])
+
+
+async def _ports(db):
+    from app.models.port import Port
+
+    db.add(Port(id=1, locode="FRLEH", name="Le Havre", country="FR"))
+    db.add(Port(id=2, locode="MQFDF", name="Fort-de-France", country="MQ"))
+    await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_rate_lookup_returns_grid_price(db, staff_user):
+    from app.routers.commercial_router import rate_lookup
+
+    await _ports(db)
+    resp = await rate_lookup(
+        _RenderReq(),
+        departure_locode="FRLEH",
+        arrival_locode="MQFDF",
+        booked_palettes=100,
+        palette_format="EPAL",
+        db=db,
+        user=staff_user,
+    )
+    assert resp.status_code == 200
+    html = resp.body.decode()
+    assert "data-apply-rate=" in html  # bouton « Appliquer ce tarif »
+    assert "EUR" in html  # tarif rendu via le filtre money
+
+
+@pytest.mark.asyncio
+async def test_rate_lookup_requires_route(db, staff_user):
+    from app.routers.commercial_router import rate_lookup
+
+    resp = await rate_lookup(
+        _RenderReq(),
+        departure_locode=None,
+        arrival_locode=None,
+        booked_palettes=10,
+        db=db,
+        user=staff_user,
+    )
+    assert "Renseignez POL et POD" in resp.body.decode()
+
+
+@pytest.mark.asyncio
+async def test_rate_lookup_requires_palettes(db, staff_user):
+    from app.routers.commercial_router import rate_lookup
+
+    await _ports(db)
+    resp = await rate_lookup(
+        _RenderReq(),
+        departure_locode="FRLEH",
+        arrival_locode="MQFDF",
+        booked_palettes=0,
+        db=db,
+        user=staff_user,
+    )
+    assert "palettes" in resp.body.decode().lower()
+
+
+def test_order_form_template_compiles():
+    """Le formulaire de commande (HTMX rate-lookup) compile sans erreur."""
+    from app.templating import templates
+
+    assert templates.env.get_template("staff/commercial/order_form.html") is not None

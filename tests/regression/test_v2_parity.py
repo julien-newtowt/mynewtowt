@@ -360,6 +360,7 @@ def test_v2_commercial_routes_restored():
     assert ("GET", "/commercial/clients/{client_id}/edit") in m  # COM-03
     assert ("POST", "/commercial/clients/{client_id}/edit") in m
     assert ("POST", "/commercial/clients/{client_id}/toggle-active") in m
+    assert ("GET", "/commercial/api/rate-lookup") in m  # COM-07 — devis grille live
 
 
 def test_v2_order_rich_fields_restored():

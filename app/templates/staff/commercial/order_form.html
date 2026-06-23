@@ -82,6 +82,18 @@
       <input type="checkbox" name="thc_included" /> THC inclus
     </label>
 
+    {# COM-07 — devis live depuis la grille active (HTMX, méthode sûre). #}
+    <div class="mt-3">
+      <button type="button" class="btn btn-secondary btn-sm"
+              hx-get="/commercial/api/rate-lookup"
+              hx-include="[name='departure_locode'],[name='arrival_locode'],[name='booked_palettes'],[name='palette_format'],[name='client_id']"
+              hx-target="#rate-lookup-result" hx-swap="innerHTML">
+        Estimer le tarif grille
+      </button>
+      <small class="text-muted">— tire le tarif €/palette de la grille active (route, volume, options).</small>
+      <div id="rate-lookup-result" class="mt-2"></div>
+    </div>
+
     <div class="field mt-3">
       <label for="cargo_description">Description marchandise</label>
       <textarea id="cargo_description" name="cargo_description" rows="3"></textarea>
@@ -93,4 +105,5 @@
   </form>
 </article>
 
+<script src="/static/js/commercial-rate.js" defer></script>
 {% endblock %}
