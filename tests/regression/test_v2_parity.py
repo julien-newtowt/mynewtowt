@@ -1016,6 +1016,26 @@ def test_v2_admin_exports_purges_restored():
     assert ("POST", "/admin/database/purge") in m
 
 
+def test_v2_admin_emission_factors_editable_restored():
+    """ADM-06 : facteurs NOx / SOx réexposés dans l'éditeur CO₂ versionné admin.
+
+    En V2 les paramètres d'émission étaient éditables par l'admin/data ; en V3
+    seuls les 2 facteurs CO₂ l'étaient — les 4 facteurs NOx/SOx (lus par
+    ``services.emissions``) restaient invisibles. On vérifie qu'ils sont de
+    nouveau dans ``CO2_VARIABLE_DEFS`` (donc rendus par le même formulaire) et
+    que les routes d'édition versionnée existent.
+    """
+    from app.routers.admin_router import CO2_VARIABLE_DEFS, router
+    from app.services import emissions as em
+
+    for name in (em.NOX_CONV_VAR, em.NOX_SAIL_VAR, em.SOX_CONV_VAR, em.SOX_SAIL_VAR):
+        assert name in CO2_VARIABLE_DEFS
+    m = _methods(router)
+    assert ("GET", "/admin/co2") in m
+    assert ("POST", "/admin/co2/update") in m
+    assert ("POST", "/admin/co2/init") in m
+
+
 def test_v2_cargo_batch_prefill_restored():
     """CARGO-08 : 1er batch de la PL pré-rempli depuis la commande (parties, volume)."""
     from app.models.commercial import Order
