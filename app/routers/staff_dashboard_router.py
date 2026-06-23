@@ -69,6 +69,19 @@ async def dashboard(
         limit=20,
     )
 
+    # ADM-03 — KPI métier : CA prévisionnel, CO₂ évité, remplissage, prochains départs.
+    from app.services.co2 import co2_equivalences
+    from app.services.dashboard_kpis import (
+        ca_previsionnel,
+        fleet_kpis,
+        upcoming_departures,
+    )
+
+    ca_forecast = await ca_previsionnel(db)
+    fleet = await fleet_kpis(db, now)
+    departures = await upcoming_departures(db, now, limit=8)
+    co2_equiv = co2_equivalences(fleet["co2_avoided_kg"])
+
     return templates.TemplateResponse(
         "staff/dashboard.html",
         {
@@ -84,5 +97,10 @@ async def dashboard(
             "notif_count": sum(1 for n in notifications if not n.is_read),
             "alerts": alerts,
             "alerts_danger": sum(1 for a in alerts if a["severity"] == "danger"),
+            # ADM-03
+            "ca_forecast": ca_forecast,
+            "fleet_kpis": fleet,
+            "co2_equiv": co2_equiv,
+            "upcoming_departures": departures,
         },
     )
