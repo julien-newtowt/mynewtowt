@@ -928,6 +928,25 @@ def test_v2_mrv_editable_params_drive_quality():
     # (le comportement « seuil éditable → statut » est couvert en intégration).
 
 
+def test_v2_stowage_capacity_format_stacking_restored():
+    """STO-07 : capacité réelle par zone × format × gerbage (modèle de coefficients).
+
+    La V2 portait une matrice xlsx (zone × format × gerbé/simple). La V3 la
+    restitue par ``epal_footprint`` : empreinte = palettes × coeff_format ×
+    facteur_gerbage (½ quand la zone autorise le gerbage). On vérifie que le
+    helper centralise bien format ET gerbage.
+    """
+    from app.services.stowage import STACK_FOOTPRINT_FACTOR, epal_footprint
+
+    assert 0 < STACK_FOOTPRINT_FACTOR < 1
+    # Format pris en compte (BARRIQUE140 = 2.0 EPAL-équivalent).
+    assert epal_footprint(3, "BARRIQUE140") == 6.0
+    # Gerbage dans une zone gerbable → empreinte réduite.
+    assert epal_footprint(10, "EPAL", is_stacked=True, stack_allowed=True) == 5.0
+    # Gerbage déclaré dans une zone non gerbable → empreinte pleine.
+    assert epal_footprint(10, "EPAL", is_stacked=True, stack_allowed=False) == 10.0
+
+
 def test_v2_stowage_bilingual_plan_restored():
     """STO-06 : bilinguisme FR/EN du plan d'arrimage (labels zones + PDF)."""
     from app.routers.stowage_router import router
