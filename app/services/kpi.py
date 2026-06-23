@@ -17,6 +17,52 @@ from app.models.leg import Leg
 from app.models.sof_event import SofEvent
 
 
+def aggregate_emissions(kpis, em_factors) -> tuple[dict, dict]:
+    """Agrège les émissions d'un ensemble de ``LegKPI`` en une seule passe.
+
+    Retourne ``(totals, by_leg_id)`` :
+
+    - ``totals`` : ``co2_avoided_kg``, ``co2_emitted_t``, ``tonnage_t``,
+      ``do_t``, ``nox_avoided_kg``, ``sox_avoided_kg`` ;
+    - ``by_leg_id`` : ``{leg_id: AvoidedEmissions}`` (détail NOx/SOx par leg).
+
+    ``em_factors`` = sortie de ``emissions.get_emission_factors``. Fonction pure
+    (aucun accès DB) : source unique de l'agrégat environnemental, partagée par
+    ``/kpi`` (totaux + détail par leg) et ``/kpi/consolidated`` (totaux).
+    """
+    from app.services.emissions import estimate_avoided
+
+    co2_avoided_kg = Decimal(0)
+    co2_emitted_kg = Decimal(0)
+    tonnage_kg = Decimal(0)
+    do_t = Decimal(0)
+    nox_avoided_kg = Decimal(0)
+    sox_avoided_kg = Decimal(0)
+    by_leg: dict[int, object] = {}
+    for k in kpis:
+        co2_avoided_kg += k.co2_avoided_kg or Decimal(0)
+        co2_emitted_kg += k.co2_emitted_kg or Decimal(0)
+        tonnage_kg += k.tonnage_kg or Decimal(0)
+        do_t += k.do_consumed_t or Decimal(0)
+        res = estimate_avoided(
+            cargo_t=(k.tonnage_kg or Decimal(0)) / Decimal(1000),
+            distance_nm=k.distance_nm,
+            factors=em_factors,
+        )
+        by_leg[k.leg_id] = res
+        nox_avoided_kg += res.nox_avoided_kg
+        sox_avoided_kg += res.sox_avoided_kg
+    totals = {
+        "co2_avoided_kg": co2_avoided_kg,
+        "co2_emitted_t": co2_emitted_kg / Decimal(1000),
+        "tonnage_t": tonnage_kg / Decimal(1000),
+        "do_t": do_t,
+        "nox_avoided_kg": nox_avoided_kg,
+        "sox_avoided_kg": sox_avoided_kg,
+    }
+    return totals, by_leg
+
+
 async def compute_for_leg(db: AsyncSession, leg: Leg) -> LegKPI:
     """Calcule et persiste un LegKPI pour le leg donné (idempotent : écrase si existant)."""
     from app.services.co2 import estimate as co2_estimate

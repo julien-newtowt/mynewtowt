@@ -1,0 +1,129 @@
+{% extends "staff/_layout.html" %}
+{% block title %}KPI consolidés{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Pilotage · Data</span>
+    <h1 class="display">KPI consolidés</h1>
+    <p class="text-muted">Vue d'entrée agrégée : Commerce · Flotte · Environnement · Exploitation.</p>
+  </div>
+  <a href="/kpi" class="btn btn-ghost"><i data-lucide="table"></i> KPI par leg</a>
+</header>
+
+<div class="flex items-center gap-2 mb-4" style="flex-wrap:wrap;">
+  <span class="text-muted text-sm">Année (sections « réalisé ») :</span>
+  <div class="year-selector">
+    {% for y in years %}
+    <a href="/kpi/consolidated?year={{ y }}" class="year-btn {% if current_year == y %}active{% endif %}">{{ y }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<section class="grid grid-2 gap-3">
+
+  {# ── Commerce ── #}
+  <article class="card">
+    <div class="flex justify-between items-center mb-2">
+      <h2 style="margin:0;"><i data-lucide="handshake"></i> Commerce <span class="text-muted text-sm">· carnet global</span></h2>
+      <a href="/commercial" class="btn btn-ghost btn-xs">Détail →</a>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ data.commerce.ca_total_eur|money }}</span>
+        <span class="stat-card-label">CA réalisé</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ data.commerce.offers_emitted }}</span>
+        <span class="stat-card-label">Offres émises</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ data.commerce.offers_accepted }}</span>
+        <span class="stat-card-label">Offres acceptées</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ '%.0f%%'|format(data.commerce.conversion_pct) if data.commerce.conversion_pct is not none else '—' }}</span>
+        <span class="stat-card-label">Conversion</span></div></div>
+    </div>
+  </article>
+
+  {# ── Flotte / Ops (prévisionnel) ── #}
+  <article class="card">
+    <div class="flex justify-between items-center mb-2">
+      <h2 style="margin:0;"><i data-lucide="ship"></i> Flotte &amp; prévisionnel <span class="text-muted text-sm">· courant</span></h2>
+      <a href="/dashboard/analytics" class="btn btn-ghost btn-xs">Analytics →</a>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ '%.1f%%'|format(data.fleet.occupancy_pct) }}</span>
+        <span class="stat-card-label">Remplissage à venir</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ data.fleet.reserved }}/{{ data.fleet.capacity }}</span>
+        <span class="stat-card-label">Palettes réservées</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ data.ca_forecast_eur|money }}</span>
+        <span class="stat-card-label">CA prévisionnel</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value text-success">{{ '%.0f'|format(data.fleet.co2_avoided_kg) }} kg</span>
+        <span class="stat-card-label">CO₂ évité prév.</span></div></div>
+    </div>
+  </article>
+
+  {# ── Environnement (réalisé) ── #}
+  <article class="card">
+    <div class="flex justify-between items-center mb-2">
+      <h2 style="margin:0;"><i data-lucide="leaf"></i> Environnement <span class="text-muted text-sm">· réalisé {{ data.year }}</span></h2>
+      <a href="/mrv/carbon" class="btn btn-ghost btn-xs">Carbon report →</a>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value text-success">{{ '%.0f'|format(data.env.co2_avoided_kg) }} kg</span>
+        <span class="stat-card-label">CO₂ évité</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ '%.1f'|format(data.env.co2_emitted_t) }} t</span>
+        <span class="stat-card-label">CO₂ émis</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ '%.0f'|format(data.env.nox_avoided_kg) }} kg</span>
+        <span class="stat-card-label">NOx évité</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ '%.0f'|format(data.env.sox_avoided_kg) }} kg</span>
+        <span class="stat-card-label">SOx évité</span></div></div>
+    </div>
+    <p class="text-muted text-sm" style="margin-top:.5rem;">
+      Soit ≈ <strong>{{ '%.1f'|format(data.env.equiv.flights_paris_nyc) }}</strong> vols Paris-NYC et
+      <strong>{{ '%.1f'|format(data.env.equiv.containers_asia_eu) }}</strong> conteneurs Asie-Europe évités ·
+      {{ '%.1f'|format(data.env.tonnage_t) }} t transportées · {{ '%.2f'|format(data.env.do_t) }} t DO.
+    </p>
+  </article>
+
+  {# ── Exploitation ── #}
+  <article class="card">
+    <div class="flex justify-between items-center mb-2">
+      <h2 style="margin:0;"><i data-lucide="activity"></i> Exploitation <span class="text-muted text-sm">· réalisé {{ data.year }}</span></h2>
+      <a href="/performance/navigation/kpis" class="btn btn-ghost btn-xs">Navigation →</a>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ data.exploitation.completed }}/{{ data.exploitation.leg_count }}</span>
+        <span class="stat-card-label">Legs réalisés</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ '%.1f%%'|format(data.on_time_pct) }}</span>
+        <span class="stat-card-label">Ponctualité</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ '%.1f'|format(data.exploitation.avg_sea_duration_days) if data.exploitation.avg_sea_duration_days is not none else '—' }}</span>
+        <span class="stat-card-label">Durée mer moy. (j)</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ '%.1f'|format(data.exploitation.avg_speed_kn) if data.exploitation.avg_speed_kn is not none else '—' }}</span>
+        <span class="stat-card-label">Vitesse moy. (kn)</span></div></div>
+    </div>
+    <p class="text-muted text-sm" style="margin-top:.5rem;">
+      Écart planning moyen :
+      <strong>{{ '%.1f h'|format(data.exploitation.avg_planning_deviation_h) if data.exploitation.avg_planning_deviation_h is not none else '—' }}</strong>
+      (ETD→ATD).
+    </p>
+  </article>
+
+</section>
+
+<p class="text-muted text-sm mt-3">
+  Sections « réalisé » sur {{ data.year }} : {{ data.leg_count }} legs · {{ data.kpi_count }} KPI calculés.
+  Les cartes Commerce (carnet global) et Flotte (prévisionnel courant) ne dépendent pas de l'année.
+  Le détail prévisionnel/réalisé par poste est sur <a href="/finance">/finance</a>.
+</p>
+{% endblock %}
