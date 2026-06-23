@@ -178,6 +178,23 @@ async def add_item(
         raise HTTPException(status_code=404)
     if zone not in ZONE_LOADING_ORDER:
         raise HTTPException(status_code=400, detail="zone invalide")
+    # STO-05 (A3) — blocage configurable : si le feature flag est actif, on
+    # refuse un ajout qui dépasserait la capacité/charge de la zone (sinon
+    # l'évaluation se contente d'un avertissement non bloquant).
+    from app.services.feature_flags import is_enabled
+    from app.services.stowage import STOWAGE_BLOCK_FLAG, check_zone_admission
+
+    if await is_enabled(db, STOWAGE_BLOCK_FLAG, user_role=user.role):
+        ok, reason = await check_zone_admission(
+            db,
+            plan.leg_id,
+            zone,
+            add_pallets=pallet_count,
+            add_weight_kg=weight_kg,
+            pallet_format=pallet_format,
+        )
+        if not ok:
+            raise HTTPException(status_code=400, detail=reason)
     item = StowageItem(
         plan_id=plan_id,
         order_id=order_id,

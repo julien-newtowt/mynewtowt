@@ -493,6 +493,14 @@ def test_v2_closure_reopen_and_recap_restored():
     assert ("GET", "/captain/legs/{leg_id}/closure.pdf") in m
 
 
+def test_v2_stowage_block_policy_restored():
+    """STO-05 (A3) : politique de blocage capacité configurable (feature flag)."""
+    from app.services.stowage import STOWAGE_BLOCK_FLAG, check_zone_admission
+
+    assert callable(check_zone_admission)
+    assert STOWAGE_BLOCK_FLAG == "stowage_block_overcapacity"
+
+
 def test_v2_exploitation_kpis_restored():
     """FIN-04 : indicateurs d'exploitation (écart planning, durée, vitesse)."""
     from app.services.exploitation import exploitation_summary, planning_deviation_hours
