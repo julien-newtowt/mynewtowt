@@ -1,0 +1,84 @@
+{% extends "portal/_layout.html" %}
+{% block title %}Suivi voyage — {{ brand.nom_court }}{% endblock %}
+{% block portal_content %}
+
+<header class="mb-4">
+  <span class="kicker">Portail expéditeur</span>
+  <h1 class="display">Suivi du voyage</h1>
+  <p class="lead">Avancement de votre expédition, du prévisionnel au réel.</p>
+</header>
+
+{% if not leg %}
+<article class="card"><p class="text-muted">Votre commande n'est pas encore rattachée à un voyage. Cette page se complétera dès l'affectation au navire.</p></article>
+{% else %}
+
+{# ── Itinéraire ── #}
+<article class="card">
+  <h2>Itinéraire</h2>
+  <div class="flex items-center justify-between" style="gap:var(--space-4); flex-wrap:wrap; border-bottom:none;">
+    <div class="text-center">
+      <div class="display" style="font-size:var(--text-lg);">{% if pol %}{{ pol.country|flag }} {{ pol.name }}{% else %}—{% endif %}</div>
+      <div class="mono text-xs text-muted">{{ pol.locode if pol else '' }} · chargement</div>
+    </div>
+    <div style="font-size:1.6rem; color:var(--teal);">⛵ →</div>
+    <div class="text-center">
+      <div class="display" style="font-size:var(--text-lg);">{% if pod %}{{ pod.country|flag }} {{ pod.name }}{% else %}—{% endif %}</div>
+      <div class="mono text-xs text-muted">{{ pod.locode if pod else '' }} · déchargement</div>
+    </div>
+    <div class="text-center">
+      <div class="display" style="font-size:var(--text-lg);"><a href="/p/{{ token }}/vessel">{{ vessel.name if vessel else '—' }}</a></div>
+      <div class="mono text-xs text-muted">{{ vessel.code if vessel else '' }} · fiche navire</div>
+    </div>
+  </div>
+</article>
+
+{# ── 3 phases : prévu / mis à jour / réel ── #}
+<div class="grid grid-3 gap-4 mt-4">
+  <article class="card" style="border-left:4px solid var(--gris-clair);">
+    <h3 class="kicker">Prévu (référence)</h3>
+    <table class="data-table">
+      <tr><td>Départ</td><td>{{ leg.etd_ref|datetime if leg.etd_ref else '—' }}</td></tr>
+      <tr><td>Arrivée</td><td>{{ leg.eta_ref|datetime if leg.eta_ref else '—' }}</td></tr>
+    </table>
+  </article>
+  <article class="card" style="border-left:4px solid var(--teal);">
+    <h3 class="kicker" style="color:var(--teal);">Mis à jour (estimé)</h3>
+    <table class="data-table">
+      <tr><td>ETD</td><td>{{ leg.etd|datetime if leg.etd else '—' }}</td></tr>
+      <tr><td>ETA</td><td>{{ leg.eta|datetime if leg.eta else '—' }}</td></tr>
+    </table>
+    {% if leg.etd_ref and leg.etd and leg.etd != leg.etd_ref %}
+    <p class="pill pill-warn mt-2">Nouveau planning communiqué</p>
+    {% endif %}
+  </article>
+  <article class="card" style="border-left:4px solid var(--vert);">
+    <h3 class="kicker" style="color:var(--vert);">Réel</h3>
+    <table class="data-table">
+      <tr><td>ATD (départ)</td><td>{{ leg.atd|datetime if leg.atd else '—' }}</td></tr>
+      <tr><td>ATA (arrivée)</td><td>{{ leg.ata|datetime if leg.ata else '—' }}</td></tr>
+    </table>
+    {% if leg.ata %}<p class="pill pill-ok mt-2">⚓ Arrivé à destination</p>
+    {% elif leg.atd %}<p class="pill pill-info mt-2">⛵ En mer</p>
+    {% else %}<p class="pill pill-neutral mt-2">À quai au départ</p>{% endif %}
+  </article>
+</div>
+
+{# ── Dernière position connue ── #}
+<article class="card mt-4">
+  <h2>Position du navire</h2>
+  {% if last_position %}
+  <table class="data-table">
+    <tr><td>Latitude</td><td class="mono">{{ '%.4f'|format(last_position.latitude) }}</td></tr>
+    <tr><td>Longitude</td><td class="mono">{{ '%.4f'|format(last_position.longitude) }}</td></tr>
+    {% if last_position.sog_kn is not none %}<tr><td>Vitesse</td><td class="mono">{{ '%.1f'|format(last_position.sog_kn) }} nœuds</td></tr>{% endif %}
+    {% if last_position.cog_deg is not none %}<tr><td>Cap</td><td class="mono">{{ '%.0f'|format(last_position.cog_deg) }}°</td></tr>{% endif %}
+    <tr><td>Relevé le</td><td>{{ last_position.recorded_at|datetime }}</td></tr>
+  </table>
+  <p class="text-muted text-sm mt-2">Position satellite la plus récente transmise par le navire.</p>
+  {% else %}
+  <p class="text-muted">Aucune position transmise pour le moment. Le navire émet sa position dès le départ.</p>
+  {% endif %}
+</article>
+
+{% endif %}
+{% endblock %}

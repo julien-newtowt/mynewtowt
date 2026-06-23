@@ -456,6 +456,77 @@ async def portal_privacy(token: str, request: Request, db: AsyncSession = Depend
     )
 
 
+# ─────────────────────────── Suivi voyage (CARGO-10) ────────────────────────
+
+
+@router.get("/{token}/voyage", response_class=HTMLResponse)
+async def portal_voyage(token: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """CARGO-10 — écran « Suivi voyage » : 3 phases (prévu/màj/réel), position."""
+    pl = await _load_or_410(db, token, request)
+    from app.services.packing_list import resolve_pl_context
+
+    _order, _booking, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
+    last_position = None
+    if vessel is not None:
+        from app.models.claim import VesselPosition
+
+        last_position = (
+            await db.execute(
+                select(VesselPosition)
+                .where(VesselPosition.vessel_id == vessel.id)
+                .order_by(VesselPosition.recorded_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    return templates.TemplateResponse(
+        "portal/voyage.html",
+        {
+            "request": request,
+            "pl": pl,
+            "token": token,
+            "leg": leg,
+            "vessel": vessel,
+            "pol": pol,
+            "pod": pod,
+            "last_position": last_position,
+        },
+    )
+
+
+# ─────────────────────────── Guide & fiche navire (CARGO-11) ────────────────
+
+
+@router.get("/{token}/guide", response_class=HTMLResponse)
+async def portal_guide(token: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """CARGO-11 — guide expéditeur (process, palettisation, US AMS/ISF, FAQ)."""
+    pl = await _load_or_410(db, token, request)
+    return templates.TemplateResponse(
+        "portal/guide.html",
+        {"request": request, "pl": pl, "token": token},
+    )
+
+
+@router.get("/{token}/vessel", response_class=HTMLResponse)
+async def portal_vessel(token: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """CARGO-11 — fiche navire (page statique, onboarding client)."""
+    pl = await _load_or_410(db, token, request)
+    from app.services.packing_list import resolve_pl_context
+
+    _order, _booking, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
+    return templates.TemplateResponse(
+        "portal/vessel.html",
+        {
+            "request": request,
+            "pl": pl,
+            "token": token,
+            "leg": leg,
+            "vessel": vessel,
+            "pol": pol,
+            "pod": pod,
+        },
+    )
+
+
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None

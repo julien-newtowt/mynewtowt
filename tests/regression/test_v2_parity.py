@@ -144,6 +144,16 @@ def test_v2_cargo_excel_routes_restored():
     assert callable(cargo_excel.parse_xlsx)
 
 
+def test_v2_cargo_portal_screens_restored():
+    """CARGO-10/11 : écrans portail « Suivi voyage », « Guide » et fiche navire."""
+    from app.routers.cargo_portal_router import router
+
+    p = _paths(router)
+    assert "/p/{token}/voyage" in p  # CARGO-10
+    assert "/p/{token}/guide" in p  # CARGO-11
+    assert "/p/{token}/vessel" in p  # CARGO-11
+
+
 # ───────────────────────────── Escale (V2 parité) ─────────────────────────────
 
 

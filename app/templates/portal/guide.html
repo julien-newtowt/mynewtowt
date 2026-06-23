@@ -1,0 +1,104 @@
+{% extends "portal/_layout.html" %}
+{% block title %}Guide expéditeur — {{ brand.nom_court }}{% endblock %}
+{% block portal_content %}
+
+<header class="mb-4">
+  <span class="kicker">Portail expéditeur</span>
+  <h1 class="display">Guide de l'expéditeur</h1>
+  <p class="lead">Tout ce qu'il faut savoir pour préparer votre expédition à la voile avec {{ brand.nom_court }}.</p>
+</header>
+
+<article class="card">
+  <h2>Sommaire</h2>
+  <ol style="line-height:1.9;">
+    <li><a href="#process">Le processus d'expédition</a></li>
+    <li><a href="#calendrier">Délais &amp; calendrier</a></li>
+    <li><a href="#packing">Remplir la packing list</a></li>
+    <li><a href="#documents">Documents requis</a></li>
+    <li><a href="#palettisation">Palettisation &amp; conditionnement</a></li>
+    <li><a href="#tarifs">Grille tarifaire &amp; facturation</a></li>
+    <li><a href="#us">Export vers les États-Unis (AMS / ISF)</a></li>
+    <li><a href="#faq">FAQ</a></li>
+    <li><a href="#contact">Contact</a></li>
+  </ol>
+</article>
+
+<article class="card mt-4" id="process">
+  <h2>1. Le processus d'expédition</h2>
+  <ol style="line-height:1.8;">
+    <li><strong>Réservation</strong> — votre espace en cale est confirmé par l'armateur.</li>
+    <li><strong>Packing list</strong> — vous renseignez le détail de vos palettes (parties, marchandise, dimensions, poids).</li>
+    <li><strong>Validation</strong> — l'armateur vérifie puis verrouille la packing list.</li>
+    <li><strong>Chargement</strong> — vos palettes sont arrimées à bord au port de départ.</li>
+    <li><strong>Traversée</strong> — suivez la position du navire dans <a href="/p/{{ token }}/voyage">Suivi voyage</a>.</li>
+    <li><strong>Livraison</strong> — vous recevez le Bill of Lading et l'avis d'arrivée.</li>
+  </ol>
+</article>
+
+<article class="card mt-4" id="calendrier">
+  <h2>2. Délais &amp; calendrier</h2>
+  <p>La packing list doit être complétée et validée <strong>avant la date limite de chargement</strong> (« cut-off »), généralement quelques jours avant l'ETD. Les dates prévisionnelles et réelles de votre voyage sont consultables en temps réel dans <a href="/p/{{ token }}/voyage">Suivi voyage</a>.</p>
+</article>
+
+<article class="card mt-4" id="packing">
+  <h2>3. Remplir la packing list</h2>
+  <h3>Parties</h3>
+  <p>Renseignez le <strong>shipper</strong> (expéditeur), le <strong>consignee</strong> (destinataire) et le <strong>notify</strong> (partie à notifier) — nom et adresse complète. Ces mentions sont obligatoires sur le connaissement (Bill of Lading).</p>
+  <h3>Marchandise</h3>
+  <p>Indiquez le type de marchandise, la description douanière (pour le BL), le code HS, le nombre de colis et la valeur déclarée. Pour les marchandises dangereuses, précisez la classe IMDG et le numéro ONU.</p>
+  <h3>Dimensions &amp; poids</h3>
+  <p>Saisissez longueur, largeur, hauteur (cm) et poids (kg) par batch. La surface, le volume et la densité sont calculés automatiquement. Pour une saisie en masse, utilisez l'<a href="/p/{{ token }}/packing">import Excel</a>.</p>
+</article>
+
+<article class="card mt-4" id="documents">
+  <h2>4. Documents requis</h2>
+  <ul style="line-height:1.8;">
+    <li>Facture commerciale &amp; liste de colisage.</li>
+    <li>Documents douaniers (export / import selon destination).</li>
+    <li>Fiche de données de sécurité (MSDS) pour les produits réglementés.</li>
+  </ul>
+  <p>Déposez-les dans l'onglet <a href="/p/{{ token }}/documents">Documents</a> du portail.</p>
+</article>
+
+<article class="card mt-4" id="palettisation">
+  <h2>5. Palettisation &amp; conditionnement</h2>
+  <h3>Formats acceptés</h3>
+  <p>EPAL (europe), USPAL, PORTPAL, IBC, big-bag, barriques. Le format influe sur le coefficient de calage et la tarification.</p>
+  <h3>Bonnes pratiques</h3>
+  <ul style="line-height:1.8;">
+    <li>Palettes filmées et cerclées, gerbables si possible.</li>
+    <li>Étiquetage clair (marks &amp; numbers) reportant la référence de commande.</li>
+    <li>Respect des hauteurs maximales communiquées par l'armateur.</li>
+  </ul>
+</article>
+
+<article class="card mt-4" id="tarifs">
+  <h2>6. Grille tarifaire &amp; facturation</h2>
+  <p>Le fret est calculé sur la base d'un tarif par palette dégressif selon le volume réservé, majoré le cas échéant des frais documentaires (booking note, Bill of Lading) et d'une surcharge marchandises dangereuses. Votre offre détaille le tarif applicable ; la facture est émise après chargement.</p>
+</article>
+
+<article class="card mt-4" id="us">
+  <h2>7. Export vers les États-Unis (AMS / ISF)</h2>
+  <h3>AMS (Automated Manifest System)</h3>
+  <p>Le manifeste doit être transmis aux douanes américaines avant le départ. Communiquez vos informations cargo complètes dans les délais demandés par l'armateur.</p>
+  <h3>ISF « 10+2 » (Importer Security Filing)</h3>
+  <p>L'importateur (ou son agent) dépose l'ISF auprès du CBP au moins 24 h avant le chargement. Assurez-vous que votre consignee dispose des éléments nécessaires.</p>
+</article>
+
+<article class="card mt-4" id="faq">
+  <h2>8. FAQ</h2>
+  <h3>Puis-je modifier ma packing list après l'avoir soumise ?</h3>
+  <p>Oui, tant qu'elle n'est pas verrouillée par l'armateur. Une fois verrouillée, contactez-nous via la <a href="/p/{{ token }}/messages">messagerie</a>.</p>
+  <h3>Comment suivre mon expédition ?</h3>
+  <p>L'onglet <a href="/p/{{ token }}/voyage">Suivi voyage</a> affiche les phases prévue / estimée / réelle et la dernière position du navire.</p>
+  <h3>Quand reçois-je le Bill of Lading ?</h3>
+  <p>Après le chargement à bord et la validation de la packing list.</p>
+</article>
+
+<article class="card mt-4" id="contact">
+  <h2>9. Contact</h2>
+  <p>Une question ? Écrivez-nous via la <a href="/p/{{ token }}/messages">messagerie sécurisée</a> du portail ou à <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>.</p>
+  <p class="text-muted text-sm">{{ brand.nom_court }} — {{ brand.adresse }}</p>
+</article>
+
+{% endblock %}
