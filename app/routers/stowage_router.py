@@ -131,6 +131,8 @@ async def stowage_plan_view(
         ]
     )
     evaluation = await evaluate_plan(db, leg_id)
+    from app.services.imdg import IMDG_CLASSES, imdg_label
+
     return templates.TemplateResponse(
         "staff/stowage/plan.html",
         {
@@ -146,6 +148,8 @@ async def stowage_plan_view(
             "decks": DECKS,
             "holds": HOLDS,
             "blocks": BLOCKS,
+            "imdg_classes": IMDG_CLASSES,
+            "imdg_label": imdg_label,
             "ship_map_target": None,
         },
     )
