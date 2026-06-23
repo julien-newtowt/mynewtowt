@@ -1,0 +1,163 @@
+{% extends "pdf/carnet_bord/_base.html" %}
+
+{% block content %}
+<!-- Chapitre 1: La Traverse -->
+<div class="chapter">
+    <div class="chapter-number">1. La Traverse</div>
+    <h1 class="chapter-title">La Traverse</h1>
+
+    <!-- Carte avec trace GPS -->
+    <h2 class="section-title">Carte de la route</h2>
+    
+    <div class="map-container" style="height: 450px;">
+        <div class="map-visual">
+            {% if gps_trace and gps_trace|length > 0 %}
+            <svg class="route-map" viewBox="0 0 800 400" preserveAspectRatio="xMidYMid meet">
+                <!-- Fond -->
+                <rect width="100%" height="100%" fill="var(--sable-light)" />
+                
+                <!-- Trace GPS -->
+                <path 
+                    d="{{ gps_trace|map(attribute='svg_path')|join(' ') }}"
+                    class="route-path"
+                    fill="none"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                />
+                
+                <!-- Points remarquables -->
+                {% for highlight in highlights %}
+                <g transform="translate({{ highlight.x }}, {{ highlight.y }})">
+                    <circle cx="0" cy="0" r="6" fill="var(--teal)" stroke="var(--blanc)" stroke-width="2"/>
+                    <text x="10" y="-5" class="highlight-label" 
+                          style="font-size: 10pt; fill: var(--teal); font-weight: bold;">
+                        {{ loop.index }}
+                    </text>
+                </g>
+                {% endfor %}
+                
+                <!-- Ports -->
+                {% if pol %}
+                <circle cx="{{ pol.x }}" cy="{{ pol.y }}" r="8" fill="var(--vert)" />
+                <text x="{{ pol.x }}" y="{{ pol.y - 15 }}" 
+                      style="font-size: 10pt; fill: var(--vert); text-anchor: middle;">
+                    {{ pol.name }}
+                </text>
+                {% endif %}
+                
+                {% if pod %}
+                <circle cx="{{ pod.x }}" cy="{{ pod.y }}" r="8" fill="var(--cuivre)" />
+                <text x="{{ pod.x }}" y="{{ pod.y - 15 }}" 
+                      style="font-size: 10pt; fill: var(--cuivre); text-anchor: middle;">
+                    {{ pod.name }}
+                </text>
+                {% endif %}
+            </svg>
+            {% else %}
+            <div class="placeholder" style="height: 100%;">
+                Carte de la traverse - Trace GPS non disponible
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Lgende de la carte -->
+    <div style="display: flex; justify-content: center; gap: 20pt; margin-top: 15pt;">
+        <div style="display: flex; align-items: center; gap: 5pt;">
+            <div style="width: 20px; height: 3px; background: var(--vert);"></div>
+            <span style="font-size: 12pt;">Voile</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 5pt;">
+            <div style="width: 20px; height: 3px; background: var(--cuivre);"></div>
+            <span style="font-size: 12pt;">Assist</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 5pt;">
+            <div style="width: 20px; height: 3px; background: var(--gris);"></div>
+            <span style="font-size: 12pt;">Moteur</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 5pt;">
+            <div style="width: 12px; height: 12px; background: var(--teal); border-radius: 50%;"></div>
+            <span style="font-size: 12pt;">Point remarquable</span>
+        </div>
+    </div>
+
+    <!-- Informations de la traverse -->
+    <h2 class="section-title">Informations de la traverse</h2>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ distance_nm or "N/A" }}</div>
+            <div class="stat-label">Distance (NM)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ duration_days or "N/A" }}</div>
+            <div class="stat-label">Dure (jours)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ sog_avg or "N/A" }}</div>
+            <div class="stat-label">Vitesse moy. (noeuds)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ sog_max or "N/A" }}</div>
+            <div class="stat-label">Vitesse max. (noeuds)</div>
+        </div>
+    </div>
+
+    <!-- Points remarquables -->
+    {% if highlights and highlights|length > 0 %}
+    <h2 class="section-title">Points remarquables</h2>
+    
+    <div class="gallery">
+        {% for highlight in highlights %}
+        <div class="gallery-item">
+            {% if highlight.photo %}
+            <img src="{{ highlight.photo.file_path }}" 
+                 alt="{{ highlight.title }}" 
+                 class="gallery-image"
+            />
+            {% else %}
+            <div class="image-placeholder">
+                Photo non disponible
+            </div>
+            {% endif %}
+            <div class="gallery-caption">
+                <strong>{{ highlight.title }}</strong>
+                {{ highlight.description or "" }}
+                <div style="margin-top: 8pt; font-size: 10pt; color: var(--gris);">
+                    {{ highlight.occurred_at.strftime("%d/%m/%Y %H:%M") if highlight.occurred_at else "" }}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="info-box" style="background: var(--blanc-casse); border-left: 4px solid var(--gris-clair);">
+        <div class="label">Points remarquables</div>
+        <div style="font-size: 14pt; color: var(--gris);">
+            Aucun point remarquable enregistr pour cette traverse.
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Rpartition propulsion -->
+    {% if propulsion_stats %}
+    <h2 class="section-title">Rpartition de la propulsion</h2>
+    
+    <div style="display: flex; gap: 20pt; margin: 20pt 0;">
+        <div class="stat-card" style="flex: 1;">
+            <div class="stat-value" style="color: var(--vert);">{{ propulsion_stats.sail_pct or "0" }}%</div>
+            <div class="stat-label">Voile pure</div>
+        </div>
+        <div class="stat-card" style="flex: 1;">
+            <div class="stat-value" style="color: var(--cuivre);">{{ propulsion_stats.assisted_pct or "0" }}%</div>
+            <div class="stat-label">Assistance moteur</div>
+        </div>
+        <div class="stat-card" style="flex: 1;">
+            <div class="stat-value" style="color: var(--gris);">{{ propulsion_stats.motor_pct or "0" }}%</div>
+            <div class="stat-label">Moteur seul</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

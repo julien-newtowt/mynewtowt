@@ -1,0 +1,123 @@
+{% extends "pdf/carnet_bord/_base.html" %}
+
+{% block content %}
+<!-- Chapitre 3: Le Chargement -->
+<div class="chapter">
+    <div class="chapter-number">3. Le Chargement</div>
+    <h1 class="chapter-title">Le Chargement</h1>
+
+    {% if client %}
+    <div class="info-box">
+        <div class="label">Chargeur destinataire</div>
+        <div class="value" style="font-size: 20pt;">{{ client.company_name }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Statistiques de chargement -->
+    <h2 class="section-title">Statistiques du chargement</h2>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ total_palettes or "0" }}</div>
+            <div class="stat-label">Palettes totales</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ client_palettes or "0" }}</div>
+            <div class="stat-label">Palettes {{ client.company_name if client else "client" }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ total_weight_kg|float/1000|round(2) or "0" }} t</div>
+            <div class="stat-label">Poids total</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ client_weight_kg|float/1000|round(2) or "0" }} t</div>
+            <div class="stat-label">Poids {{ client.company_name if client else "client" }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ fill_rate_surface or "0" }}%</div>
+            <div class="stat-label">Remplissage surface</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ fill_rate_weight or "0" }}%</div>
+            <div class="stat-label">Remplissage poids</div>
+        </div>
+    </div>
+
+    <!-- Produits transports -->
+    <h2 class="section-title">Produits transports</h2>
+    
+    {% if products and products|length > 0 %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 40%;">Produit</th>
+                <th style="width: 20%; text-align: right;">Quantit</th>
+                <th style="width: 20%; text-align: right;">Poids (kg)</th>
+                <th style="width: 20%; text-align: right;">% du total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for product in products %}
+            <tr>
+                <td>{{ product.name }}</td>
+                <td style="text-align: right;">{{ product.quantity or "N/A" }}</td>
+                <td style="text-align: right;">{{ product.weight_kg|float|round(0) or "0" }}</td>
+                <td style="text-align: right;">{{ product.pct|float|round(1) or "0" }}%</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="info-box" style="background: var(--blanc-casse); border-left: 4px solid var(--gris-clair);">
+        <div class="label">Produits</div>
+        <div style="font-size: 14pt; color: var(--gris);">
+            Aucune information sur les produits disponibles.
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Photos de chargement -->
+    {% if loading_photos and loading_photos|length > 0 %}
+    <h2 class="section-title">Photos du chargement</h2>
+    <div class="gallery">
+        {% for photo in loading_photos %}
+        <div class="gallery-item">
+            <img src="{{ photo.file_path }}" 
+                 alt="{{ photo.label or 'Photo de chargement' }}" 
+                 class="gallery-image"
+            />
+            {% if photo.label %}
+            <div class="gallery-caption">
+                <strong>{{ photo.label }}</strong>
+                {% if photo.taken_at %}
+                <div style="margin-top: 5pt; font-size: 10pt; color: var(--gris);">
+                    {{ photo.taken_at.strftime("%d/%m/%Y %H:%M") }}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Mise en avant des palettes du chargeur -->
+    {% if client_palettes > 0 %}
+    <h2 class="section-title">Mise en avant : Palettes {{ client.company_name if client else "client" }}</h2>
+    <div class="info-box">
+        <div class="label">Palettes du chargeur</div>
+        <div style="font-size: 16pt; line-height: 1.6;">
+            <p>
+                Ce voyage transportait <strong>{{ client_palettes }}</strong> palettes 
+                pour <strong>{{ client.company_name if client else "le client" }}</strong>, 
+                soit <strong>{{ client_palettes/total_palettes*100|round(1) if total_palettes > 0 else "0" }}%</strong> 
+                de la cargaison totale.
+            </p>
+            <p>
+                Poids : <strong>{{ client_weight_kg|float/1000|round(2) or "0" }} tonnes</strong>
+            </p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

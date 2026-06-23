@@ -1,0 +1,91 @@
+{% extends "pdf/carnet_bord/_base.html" %}
+
+{% block content %}
+<!-- Chapitre 7: Conditions mtorologiques -->
+<div class="chapter">
+    <div class="chapter-number">7. Conditions mtorologiques</div>
+    <h1 class="chapter-title">Conditions mtorologiques</h1>
+
+    <div style="font-size: 14pt; line-height: 1.7; margin-bottom: 20pt;">
+        <p>
+            Les conditions mtorologiques rencontres pendant la traverse 
+            ont un impact direct sur la performance de navigation et le confort 
+            de l'quipage. Ce chapitre prsente les conditions marquantes.
+        </p>
+    </div>
+
+    <!-- Visuels mto -->
+    {% if weather_images and weather_images|length > 0 %}
+    <h2 class="section-title">Visuels mtorologiques</h2>
+    
+    <div class="gallery">
+        {% for image in weather_images %}
+        <div class="gallery-item">
+            <img src="{{ image.file_path }}" 
+                 alt="{{ image.label or 'Carte mto' }}" 
+                 class="gallery-image"
+            />
+            {% if image.label %}
+            <div class="gallery-caption">
+                <strong>{{ image.label }}</strong>
+                {% if image.description %}
+                <div style="margin-top: 5pt; font-size: 11pt;">
+                    {{ image.description }}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="info-box" style="background: var(--blanc-casse); border-left: 4px solid var(--gris-clair);">
+        <div class="label">Visuels mtorologiques</div>
+        <div style="font-size: 14pt; color: var(--gris);">
+            Aucun visuel mtorologique disponible pour cette traverse.
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Statistiques mto -->
+    {% if weather_stats %}
+    <h2 class="section-title">Statistiques mtorologiques</h2>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ weather_stats.avg_wind_speed or "N/A" }}</div>
+            <div class="stat-label">Vent moyen (noeuds)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ weather_stats.max_wind_speed or "N/A" }}</div>
+            <div class="stat-label">Vent max. (noeuds)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ weather_stats.avg_sea_state or "N/A" }}</div>
+            <div class="stat-label">tat de la mer (Beaufort)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ weather_stats.avg_visibility or "N/A" }}</div>
+            <div class="stat-label">Visibilit (NM)</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- vnements mto marquants -->
+    {% if weather_events and weather_events|length > 0 %}
+    <h2 class="section-title">vnements mtorologiques marquants</h2>
+    
+    <div class="timeline">
+        {% for event in weather_events %}
+        <div class="timeline-item">
+            <div class="timeline-date">
+                {{ event.occurred_at.strftime("%d/%m/%Y %H:%M") if event.occurred_at else "" }}
+            </div>
+            <div class="timeline-title">{{ event.title }}</div>
+            <div class="timeline-description">{{ event.description or "" }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

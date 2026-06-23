@@ -1,0 +1,148 @@
+{% extends "pdf/carnet_bord/_base.html" %}
+
+{% block content %}
+<!-- Conclusion -->
+<div class="chapter">
+    <div class="chapter-number">9. Conclusion</div>
+    <h1 class="chapter-title">Conclusion</h1>
+
+    <!-- Message de remerciement -->
+    <div style="font-size: 16pt; line-height: 1.8; text-align: center; max-width: 800px; margin: 0 auto 40pt;">
+        {% if conclusion_message %}
+        {{ conclusion_message }}
+        {% else %}
+        <p>
+            Cher {{ client.company_name if client else "client" }},
+        </p>
+        <p>
+            Nous tenons  vous remercier pour votre confiance en choisissant NewTowt 
+            pour le transport de votre marchandise. Ce voyage a t l'occasion de 
+            dmontrer une fois de plus que le transport maritime dcaron par voilier 
+            cargo est une solution performante et responsable.
+        </p>
+        <p>
+            Grce  vous, nous continuons  faire avancer la transition cologique 
+            du transport maritime.
+        </p>
+        {% endif %}
+    </div>
+
+    <!-- Prochaines traverses -->
+    {% if upcoming_legs and upcoming_legs|length > 0 %}
+    <h2 class="section-title">Prochaines traverses</h2>
+    
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 25%;">Voyage</th>
+                <th style="width: 30%;">Itinraire</th>
+                <th style="width: 20%; text-align: right;">Dpart</th>
+                <th style="width: 20%; text-align: right;">Arrive</th>
+                <th style="width: 5%;"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for leg in upcoming_legs %}
+            <tr>
+                <td class="mono">{{ leg.leg_code }}</td>
+                <td>{{ leg.departure_port.name }}  {{ leg.arrival_port.name }}</td>
+                <td style="text-align: right;">{{ leg.etd.strftime("%d/%m/%Y") if leg.etd else "N/A" }}</td>
+                <td style="text-align: right;">{{ leg.eta.strftime("%d/%m/%Y") if leg.eta else "N/A" }}</td>
+                <td style="text-align: center;"></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <!-- Contacts -->
+    <h2 class="section-title">Contacts</h2>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20pt; margin: 20pt 0;">
+        {% if contacts.commercial %}
+        <div class="info-box" style="background: var(--blanc); border-left: 4px solid var(--teal);">
+            <div class="label">Commercial</div>
+            <div style="font-size: 14pt; line-height: 1.6;">
+                <strong>{{ contacts.commercial.name }}</strong><br/>
+                {{ contacts.commercial.email }}<br/>
+                {{ contacts.commercial.phone }}
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if contacts.operations %}
+        <div class="info-box" style="background: var(--blanc); border-left: 4px solid var(--vert);">
+            <div class="label">Oprations</div>
+            <div style="font-size: 14pt; line-height: 1.6;">
+                <strong>{{ contacts.operations.name }}</strong><br/>
+                {{ contacts.operations.email }}<br/>
+                {{ contacts.operations.phone }}
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if contacts.technical %}
+        <div class="info-box" style="background: var(--blanc); border-left: 4px solid var(--cuivre);">
+            <div class="label">Technique</div>
+            <div style="font-size: 14pt; line-height: 1.6;">
+                <strong>{{ contacts.technical.name }}</strong><br/>
+                {{ contacts.technical.email }}<br/>
+                {{ contacts.technical.phone }}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- QR Code -->
+    <h2 class="section-title">Ressources en ligne</h2>
+    
+    <div style="display: flex; justify-content: center; gap: 40pt; margin: 30pt 0;">
+        {% if qr_album %}
+        <div style="text-align: center;">
+            <div style="width: 120px; height: 120px; background: var(--blanc); border: 1px solid var(--gris-clair); margin: 0 auto 10pt;">
+                {% if qr_album_image %}
+                <img src="{{ qr_album_image }}" alt="QR Code Album" style="width: 100%; height: 100%;" />
+                {% else %}
+                <div style="padding: 40px; font-size: 10pt; color: var(--gris);">
+                    QR Code
+                </div>
+                {% endif %}
+            </div>
+            <div style="font-size: 14pt; color: var(--teal); font-weight: bold;">
+                Album photo du voyage
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if qr_anemos %}
+        <div style="text-align: center;">
+            <div style="width: 120px; height: 120px; background: var(--blanc); border: 1px solid var(--gris-clair); margin: 0 auto 10pt;">
+                {% if qr_anemos_image %}
+                <img src="{{ qr_anemos_image }}" alt="QR Code ANEMOS" style="width: 100%; height: 100%;" />
+                {% else %}
+                <div style="padding: 40px; font-size: 10pt; color: var(--gris);">
+                    QR Code
+                </div>
+                {% endif %}
+            </div>
+            <div style="font-size: 14pt; color: var(--teal); font-weight: bold;">
+                Site ANEMOS
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Footer -->
+    <div class="carnet-footer">
+        <div>
+            <span class="brand">NewTowt</span> - Label ANEMOS
+        </div>
+        <div style="margin-top: 10pt;">
+            Ensemble, transportons diffremment.
+        </div>
+        <div style="margin-top: 10pt; font-size: 10pt;">
+            {{ brand.site_public if brand else "www.newtowt.com" }}
+        </div>
+    </div>
+</div>
+{% endblock %}

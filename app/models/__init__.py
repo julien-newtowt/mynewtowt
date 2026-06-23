@@ -94,6 +94,8 @@ from app.models.stowage import StowageItem, StowagePlan, StowageZoneSpec
 from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
 from app.models.vessel import Vessel
+from app.models.voyage_highlight import VoyageHighlight
+from app.models.voyage_photo import VoyagePhoto
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 from app.models.weather import VesselWeather
 
@@ -186,6 +188,8 @@ __all__ = [
     "TicketComment",
     "User",
     "Vessel",
+    "VoyageHighlight",
+    "VoyagePhoto",
     "VesselPosition",
     "VesselWeather",
     "VisitorLog",

@@ -1,0 +1,441 @@
+{% extends "pdf/_base.html" %}
+
+{% block title %}Carnet de Bord ANEMOS - {{ leg.leg_code }}{% endblock %}
+{% block doc_kind %}Carnet de Bord{% endblock %}
+{% block doc_ref %}ANEMOS-{{ leg.leg_code }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Carnet de Bord ANEMOS - Styles spécifiques */
+    @page {
+        size: A4 landscape;
+        margin: 20mm 15mm;
+    }
+    
+    body {
+        font-family: var(--font-corps);
+        font-size: var(--text-base);
+        line-height: var(--lh-normal);
+        color: var(--text-0);
+    }
+    
+    /* Couverture */
+    .cover-container {
+        position: relative;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    
+    .cover-header {
+        text-align: left;
+        padding: 10pt 0;
+    }
+    
+    .cover-title {
+        font-family: var(--font-serif);
+        font-size: 48pt;
+        font-weight: var(--fw-bold);
+        color: var(--teal);
+        text-align: center;
+        margin: 40pt 0 20pt 0;
+        letter-spacing: var(--ls-wider);
+    }
+    
+    .cover-subtitle {
+        font-size: 24pt;
+        color: var(--teal-dark);
+        text-align: center;
+        margin-bottom: 30pt;
+        font-weight: var(--fw-semibold);
+    }
+    
+    .cover-voyage-info {
+        text-align: center;
+        margin: 20pt 0;
+    }
+    
+    .cover-voyage-info .voyage-detail {
+        font-size: 16pt;
+        margin: 8pt 0;
+        color: var(--anthracite);
+    }
+    
+    .cover-voyage-info .voyage-detail strong {
+        color: var(--teal);
+    }
+    
+    .cover-footer {
+        text-align: center;
+        padding: 20pt 0;
+    }
+    
+    .anemos-logo {
+        max-width: 200px;
+        margin: 0 auto;
+    }
+    
+    /* Chapitres */
+    .chapter {
+        page-break-after: always;
+    }
+    
+    .chapter-title {
+        font-family: var(--font-serif);
+        font-size: 32pt;
+        color: var(--teal);
+        border-bottom: 3px solid var(--vert);
+        padding-bottom: 10pt;
+        margin: 40pt 0 30pt 0;
+        letter-spacing: var(--ls-wide);
+    }
+    
+    .chapter-number {
+        font-size: 14pt;
+        color: var(--gris);
+        margin-bottom: 5pt;
+    }
+    
+    .section-title {
+        font-family: var(--font-titre);
+        font-size: 20pt;
+        color: var(--teal-dark);
+        margin: 30pt 0 15pt 0;
+        border-left: 4px solid var(--vert);
+        padding-left: 15pt;
+    }
+    
+    /* Cartes et visuels */
+    .map-container {
+        width: 100%;
+        margin: 20pt 0;
+        border: 1px solid var(--gris-clair);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+    }
+    
+    .map-visual {
+        width: 100%;
+        height: 400px;
+        background-color: var(--sable-light);
+        position: relative;
+    }
+    
+    .route-map {
+        width: 100%;
+        height: 100%;
+    }
+    
+    .route-path {
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+    
+    .route-path.sail {
+        stroke: var(--vert);
+    }
+    
+    .route-path.assisted {
+        stroke: var(--cuivre);
+    }
+    
+    .route-path.motor {
+        stroke: var(--gris);
+    }
+    
+    .map-marker {
+        width: 12px;
+        height: 12px;
+        background-color: var(--teal);
+        border-radius: 50%;
+        position: absolute;
+        transform: translate(-50%, -50%);
+    }
+    
+    /* Galeries */
+    .gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 15pt;
+        margin: 20pt 0;
+    }
+    
+    .gallery-item {
+        background: var(--blanc);
+        border: 1px solid var(--gris-clair);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .gallery-image {
+        width: 100%;
+        height: 160px;
+        object-fit: cover;
+    }
+    
+    .gallery-caption {
+        padding: 10pt;
+        font-size: var(--text-sm);
+        color: var(--text-0);
+    }
+    
+    .gallery-caption strong {
+        color: var(--teal);
+        display: block;
+        margin-bottom: 5pt;
+    }
+    
+    /* Placeholders */
+    .placeholder {
+        background-color: var(--sable-light);
+        border: 2px dashed var(--gris-clair);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--gris);
+        font-style: italic;
+        min-height: 150px;
+        text-align: center;
+        padding: 20pt;
+    }
+    
+    .image-placeholder {
+        background-color: var(--sable-light);
+        border: 1px solid var(--gris-clair);
+        min-height: 160px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--gris);
+        font-style: italic;
+    }
+    
+    /* Tableaux */
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20pt 0;
+        font-size: var(--text-sm);
+    }
+    
+    .data-table th,
+    .data-table td {
+        padding: 10pt;
+        text-align: left;
+        border-bottom: 1px solid var(--gris-clair);
+    }
+    
+    .data-table th {
+        background-color: var(--sable-light);
+        color: var(--teal);
+        font-weight: var(--fw-semibold);
+    }
+    
+    .data-table tr:hover {
+        background-color: var(--blanc-casse);
+    }
+    
+    .data-table .highlight-row {
+        background-color: var(--vert-light);
+    }
+    
+    /* Boîtes d'information */
+    .info-box {
+        background: var(--sable-light);
+        border-left: 4px solid var(--teal);
+        padding: 15pt;
+        margin: 20pt 0;
+        border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    }
+    
+    .info-box .label {
+        font-size: var(--text-sm);
+        color: var(--gris);
+        text-transform: uppercase;
+        letter-spacing: var(--ls-wider);
+        margin-bottom: 5pt;
+    }
+    
+    .info-box .value {
+        font-family: var(--font-serif);
+        font-size: 24pt;
+        color: var(--teal);
+        font-weight: var(--fw-bold);
+    }
+    
+    .info-box .value-small {
+        font-size: 18pt;
+    }
+    
+    .info-box .value-unit {
+        font-size: 14pt;
+        color: var(--gris);
+        font-weight: var(--fw-normal);
+    }
+    
+    /* Timeline */
+    .timeline {
+        position: relative;
+        padding-left: 30pt;
+        margin: 20pt 0;
+    }
+    
+    .timeline::before {
+        content: '';
+        position: absolute;
+        left: 10pt;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--teal);
+    }
+    
+    .timeline-item {
+        position: relative;
+        padding-bottom: 20pt;
+    }
+    
+    .timeline-item::before {
+        content: '';
+        position: absolute;
+        left: -30pt;
+        top: 5pt;
+        width: 12px;
+        height: 12px;
+        background: var(--vert);
+        border-radius: 50%;
+        border: 2px solid var(--blanc);
+    }
+    
+    .timeline-date {
+        font-size: var(--text-sm);
+        color: var(--gris);
+        margin-bottom: 5pt;
+    }
+    
+    .timeline-title {
+        font-weight: var(--fw-semibold);
+        color: var(--teal);
+        margin-bottom: 5pt;
+    }
+    
+    .timeline-description {
+        font-size: var(--text-sm);
+        color: var(--text-0);
+        line-height: var(--lh-relaxed);
+    }
+    
+    /* Stats et métriques */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 15pt;
+        margin: 20pt 0;
+    }
+    
+    .stat-card {
+        background: var(--blanc);
+        border: 1px solid var(--gris-clair);
+        border-radius: var(--radius-md);
+        padding: 15pt;
+        text-align: center;
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .stat-card .stat-value {
+        font-family: var(--font-serif);
+        font-size: 28pt;
+        color: var(--teal);
+        font-weight: var(--fw-bold);
+    }
+    
+    .stat-card .stat-label {
+        font-size: var(--text-sm);
+        color: var(--gris);
+        margin-top: 5pt;
+        text-transform: uppercase;
+        letter-spacing: var(--ls-wide);
+    }
+    
+    /* Équipage */
+    .crew-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 20pt;
+        margin: 20pt 0;
+    }
+    
+    .crew-member-card {
+        text-align: center;
+    }
+    
+    .crew-photo {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid var(--teal);
+        margin: 0 auto 10pt auto;
+    }
+    
+    .crew-name {
+        font-weight: var(--fw-semibold);
+        color: var(--teal);
+        margin-bottom: 5pt;
+    }
+    
+    .crew-role {
+        font-size: var(--text-sm);
+        color: var(--gris);
+    }
+    
+    /* Pied de page */
+    .carnet-footer {
+        margin-top: 40pt;
+        padding-top: 20pt;
+        border-top: 1px solid var(--gris-clair);
+        font-size: var(--text-sm);
+        color: var(--gris);
+        text-align: center;
+    }
+    
+    .carnet-footer .brand {
+        font-weight: var(--fw-semibold);
+        color: var(--teal);
+    }
+    
+    /* Utilitaires */
+    .text-center {
+        text-align: center;
+    }
+    
+    .text-right {
+        text-align: right;
+    }
+    
+    .mt-1 { margin-top: 5pt; }
+    .mt-2 { margin-top: 10pt; }
+    .mt-3 { margin-top: 15pt; }
+    .mt-4 { margin-top: 20pt; }
+    .mb-1 { margin-bottom: 5pt; }
+    .mb-2 { margin-bottom: 10pt; }
+    .mb-3 { margin-bottom: 15pt; }
+    .mb-4 { margin-bottom: 20pt; }
+    
+    .c-teal { color: var(--teal); }
+    .c-vert { color: var(--vert); }
+    .c-cuivre { color: var(--cuivre); }
+    .c-gris { color: var(--gris); }
+    
+    .bg-teal { background-color: var(--teal); }
+    .bg-vert { background-color: var(--vert); }
+    .bg-sable { background-color: var(--sable); }
+</style>
+{% endblock %}
+
+{% block content %}
+{% endblock %}

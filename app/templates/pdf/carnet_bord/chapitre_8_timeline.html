@@ -1,0 +1,104 @@
+{% extends "pdf/carnet_bord/_base.html" %}
+
+{% block content %}
+<!-- Chapitre 8: Timeline complte -->
+<div class="chapter">
+    <div class="chapter-number">8. Timeline complte</div>
+    <h1 class="chapter-title">Timeline complte</h1>
+
+    <div style="font-size: 14pt; line-height: 1.7; margin-bottom: 20pt;">
+        <p>
+            Cette timeline retrace l'intgralit du voyage, des prparatifs  la livraison, 
+            en passant par toutes les tapes de la traverse.
+        </p>
+    </div>
+
+    <!-- Timeline -->
+    {% if timeline_events and timeline_events|length > 0 %}
+    <div class="timeline">
+        {% for event in timeline_events %}
+        <div class="timeline-item">
+            <div class="timeline-date">
+                {{ event.occurred_at.strftime("%d/%m/%Y %H:%M") if event.occurred_at else "" }}
+                {% if event.planned_at %}
+                <span style="color: var(--gris); font-size: 10pt;"> (prvu: {{ event.planned_at.strftime("%d/%m/%Y %H:%M") }})</span>
+                {% endif %}
+            </div>
+            <div class="timeline-title">{{ event.event_type|replace('_', ' ')|title }}</div>
+            {% if event.event_category %}
+            <div style="font-size: 12pt; color: var(--cuivre); margin-bottom: 5pt;">
+                {{ event.event_category|replace('_', ' ')|title }}
+            </div>
+            {% endif %}
+            {% if event.location %}
+            <div style="font-size: 12pt; color: var(--gris); margin-bottom: 5pt;">
+                 {{ event.location }}
+            </div>
+            {% endif %}
+            {% if event.description %}
+            <div class="timeline-description">{{ event.description }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="info-box" style="background: var(--blanc-casse); border-left: 4px solid var(--gris-clair);">
+        <div class="label">Timeline</div>
+        <div style="font-size: 14pt; color: var(--gris);">
+            Aucune vnement de timeline disponible pour ce voyage.
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Statistiques de la timeline -->
+    {% if timeline_stats %}
+    <h2 class="section-title" style="margin-top: 40pt;">Statistiques du voyage</h2>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ timeline_stats.total_events or "0" }}</div>
+            <div class="stat-label">vnements totaux</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ timeline_stats.navigation_days or "0" }}</div>
+            <div class="stat-label">Jours de navigation</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ timeline_stats.port_days or "0" }}</div>
+            <div class="stat-label">Jours  quai</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ timeline_stats.escale_count or "0" }}</div>
+            <div class="stat-label">Escales</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ETD/ETA -->
+    {% if etd_eta_info %}
+    <h2 class="section-title" style="margin-top: 40pt;">ETD / ETA</h2>
+    
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 30%;">tape</th>
+                <th style="width: 35%; text-align: right;">Prvu</th>
+                <th style="width: 35%; text-align: right;">Rel</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Dpart (ETD)</td>
+                <td style="text-align: right;">{{ etd_eta_info.etd_planned.strftime("%d/%m/%Y %H:%M") if etd_eta_info.etd_planned else "N/A" }}</td>
+                <td style="text-align: right;">{{ etd_eta_info.etd_actual.strftime("%d/%m/%Y %H:%M") if etd_eta_info.etd_actual else "N/A" }}</td>
+            </tr>
+            <tr>
+                <td>Arrive (ETA)</td>
+                <td style="text-align: right;">{{ etd_eta_info.eta_planned.strftime("%d/%m/%Y %H:%M") if etd_eta_info.eta_planned else "N/A" }}</td>
+                <td style="text-align: right;">{{ etd_eta_info.eta_actual.strftime("%d/%m/%Y %H:%M") if etd_eta_info.eta_actual else "N/A" }}</td>
+            </tr>
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endblock %}

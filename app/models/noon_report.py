@@ -53,6 +53,8 @@ class NoonReport(Base):
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     sog_avg: Mapped[float | None] = mapped_column(Float)  # SOG moyen 24h
+    sog_max: Mapped[float | None] = mapped_column(Float, comment="SOG maximum 24h")
+    propulsion_mode: Mapped[str | None] = mapped_column(String(20), comment="Mode de propulsion: sail/assisted/motor")
     cog_avg: Mapped[float | None] = mapped_column(Float)  # COG moyen 24h
     wind_speed_kn: Mapped[float | None] = mapped_column(Float)
     wind_direction_deg: Mapped[float | None] = mapped_column(Float)

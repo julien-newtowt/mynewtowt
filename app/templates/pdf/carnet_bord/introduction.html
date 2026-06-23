@@ -1,0 +1,85 @@
+{% extends "pdf/carnet_bord/_base.html" %}
+
+{% block content %}
+<!-- Introduction -->
+<div class="chapter">
+    <div class="chapter-number">0. Introduction</div>
+    <h1 class="chapter-title">Prsentation ANEMOS & NewTowt</h1>
+
+    <!-- ANEMOS Presentation -->
+    <div class="info-box">
+        <div class="label">Le Label ANEMOS</div>
+        <div class="value-small" style="font-size: 16pt; line-height: 1.6;">
+            ANEMOS est le label de transport dcaron par voilier cargo de NewTowt. 
+            Il atteste de la rduction des missions CO2 grce  la propulsion olienne.
+        </div>
+    </div>
+
+    <!-- Vessel Specs -->
+    <h2 class="section-title">Fiche technique du navire</h2>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ vessel.loa_m or "N/A" }}</div>
+            <div class="stat-label">Longueur (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ vessel.beam_m or "N/A" }}</div>
+            <div class="stat-label">Largeur (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ vessel.mast_height_m or "N/A" }}</div>
+            <div class="stat-label">Hauteur de mt (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ vessel.sail_area_sqm or "N/A" }}</div>
+            <div class="stat-label">Surface de voile (m2)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ vessel.capacity_palettes or "N/A" }}</div>
+            <div class="stat-label">Capacit palettes</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ vessel.capacity_barriques or "N/A" }}</div>
+            <div class="stat-label">Capacit barriques</div>
+        </div>
+    </div>
+
+    {% if vessel.description %}
+    <div style="margin-top: 30pt; font-size: 14pt; line-height: 1.7;">
+        {{ vessel.description }}
+    </div>
+    {% endif %}
+
+    <!-- Philosophy -->
+    <h2 class="section-title" style="margin-top: 40pt;">Notre philosophie</h2>
+    <div style="font-size: 14pt; line-height: 1.7;">
+        <p>
+            NewTowt rinvente le transport maritime en combinant la tradition de la voile 
+            et les technologies modernes. Chaque traverse est une dmonstration 
+            que le commerce peut tre cologique et performant.
+        </p>
+        <p style="margin-top: 15pt;">
+            Ce carnet de bord est le tmoignage de notre engagement pour un transport 
+            maritime dcaron, transparent et responsable.
+        </p>
+    </div>
+
+    <!-- Route Map Placeholder -->
+    <h2 class="section-title" style="margin-top: 40pt;">Nos routes</h2>
+    <div class="map-container">
+        <div class="map-visual">
+            {% if route_map_image %}
+            <img src="{{ route_map_image }}" 
+                 alt="Carte des routes NewTowt" 
+                 style="width: 100%; height: 100%; object-fit: contain;"
+            />
+            {% else %}
+            <div class="placeholder" style="height: 100%;">
+                Carte des routes -  ajouter une carte brande NewTowt
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

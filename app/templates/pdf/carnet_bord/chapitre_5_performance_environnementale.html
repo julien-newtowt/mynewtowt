@@ -1,0 +1,119 @@
+{% extends "pdf/carnet_bord/_base.html" %}
+
+{% block content %}
+<!-- Chapitre 5: Performance environnementale -->
+<div class="chapter">
+    <div class="chapter-number">5. Performance environnementale</div>
+    <h1 class="chapter-title">Performance environnementale</h1>
+
+    <div style="font-size: 14pt; line-height: 1.7; margin-bottom: 20pt;">
+        <p>
+            NewTowt s'engage  rduire l'empreinte carbone du transport maritime. 
+            Ce chapitre prsente les rsultats environnementaux de cette traverse, 
+            calculs de manire transparente et vrifiable.
+        </p>
+    </div>
+
+    <!-- CO2 vit -->
+    <h2 class="section-title">Bilan CO2</h2>
+    
+    <div style="display: flex; gap: 30pt; margin: 20pt 0;">
+        <div class="info-box" style="flex: 1; background: linear-gradient(135deg, var(--vert-light) 0%, var(--vert) 100%);">
+            <div class="label" style="color: var(--blanc);">CO2 vit</div>
+            <div class="value" style="color: var(--blanc); font-size: 36pt;">
+                {{ co2_avoided_kg|float|round(0) or "0" }} kg
+            </div>
+            <div style="color: var(--blanc-casse); font-size: 12pt; margin-top: 5pt;">
+                vs transport conventionnel quivalent
+            </div>
+        </div>
+        
+        <div class="info-box" style="flex: 1;">
+            <div class="label">Taux de dcarbonation</div>
+            <div class="value" style="color: var(--teal);">{{ decarbonation_rate or "0" }}%</div>
+            <div style="color: var(--gris); font-size: 12pt; margin-top: 5pt;">
+                Rduction par rapport au conventionnel
+            </div>
+        </div>
+    </div>
+
+    <!-- Dtails des missions -->
+    <h2 class="section-title">Dtail des missions</h2>
+    
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 40%;">Mode de transport</th>
+                <th style="width: 20%; text-align: right;">Facteur (g CO2/t.km)</th>
+                <th style="width: 20%; text-align: right;">Distance (NM)</th>
+                <th style="width: 20%; text-align: right;">missions (kg CO2)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Cargo vlique NewTowt</td>
+                <td style="text-align: right;">{{ towt_factor or "1,5" }}</td>
+                <td style="text-align: right;">{{ distance_nm|float|round(0) or "0" }}</td>
+                <td style="text-align: right;">{{ co2_emitted_kg|float|round(0) or "0" }}</td>
+            </tr>
+            <tr>
+                <td>Cargo conventionnel (rfrence IMO)</td>
+                <td style="text-align: right;">{{ conventional_factor or "13,7" }}</td>
+                <td style="text-align: right;">{{ distance_nm|float|round(0) or "0" }}</td>
+                <td style="text-align: right;">{{ co2_conventional_kg|float|round(0) or "0" }}</td>
+            </tr>
+            <tr class="highlight-row">
+                <td colspan="3" style="text-align: right; font-weight: bold;">missions vites</td>
+                <td style="text-align: right; font-weight: bold; color: var(--vert);">
+                    -{{ co2_avoided_kg|float|round(0) or "0" }} kg
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Consommation -->
+    <h2 class="section-title">Consommation de carburant</h2>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ fuel_consumed_l|float|round(0) or "0" }}</div>
+            <div class="stat-label">Litres consomms</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ fuel_consumed_l|float/1000|round(2) or "0" }}</div>
+            <div class="stat-label">Tonnes de carburant</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ emission_rate or "N/A" }}</div>
+            <div class="stat-label">Taux d'mission (g CO2/t.km)</div>
+        </div>
+    </div>
+
+    <!-- Mthodologie -->
+    <h2 class="section-title">Mthodologie</h2>
+    <div style="font-size: 12pt; line-height: 1.6; background: var(--sable-light); padding: 15pt; border-radius: var(--radius-md);">
+        <p>
+            <strong>Mthodologie :</strong> Aligne EU MRV (UE 2015/757) et GHG Protocol Scope 3 catgorie 4 (Upstream Transportation).
+        </p>
+        <p style="margin-top: 10pt;">
+            <strong>missions NewTowt :</strong> 
+            {% if method == "declared" %}
+            Calcules sur les consommations dclares  bord (noon reports signs)  distance {{ distance_source or "N/A" }}.
+            {% else %}
+            Estimes par facteur forfaitaire (1,5 g CO2/tkm)  rgularisation sur donnes dclares  venir.
+            {% endif %}
+        </p>
+        <p style="margin-top: 10pt;">
+            <strong>missions de rfrence :</strong> IMO Fourth GHG Study + IFP Energies Nouvelles.
+        </p>
+        <p style="margin-top: 10pt;">
+            <strong>Vrification :</strong> 
+            {% if verification_statement %}
+            {{ verification_statement }}
+            {% else %}
+            En cours de mise en place pour une vrification tierce.
+            {% endif %}
+        </p>
+    </div>
+</div>
+{% endblock %}
