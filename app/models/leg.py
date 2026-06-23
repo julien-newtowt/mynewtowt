@@ -1,4 +1,4 @@
-"""Voyage segment (leg) — backbone of the planning and booking system."""
+"""Voyage segment (leg)  backbone of the planning and booking system."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -51,22 +51,22 @@ class Leg(Base):
     transit_speed_kn: Mapped[float | None] = mapped_column()
     elongation_coef: Mapped[float | None] = mapped_column()
 
-    # Durée d'escale planifiée à l'arrivée (heures). Sert au planning :
-    # le leg suivant du même navire commence après ETA + port_stay_planned_hours.
+    # Dure d'escale planifie  l'arrive (heures). Sert au planning :
+    # le leg suivant du mme navire commence aprs ETA + port_stay_planned_hours.
     port_stay_planned_hours: Mapped[int | None] = mapped_column(Integer)
 
-    # Distance orthodromique POL→POD (milles nautiques). Calculée par
-    # haversine et persistée pour alimenter le label Anemos (CO₂ évité).
+    # Distance orthodromique POLPOD (milles nautiques). Calcule par
+    # haversine et persiste pour alimenter le label Anemos (CO vit).
     distance_nm: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
 
-    # Escale closure lock — l'escale (opérations + shifts dockers) est
-    # par-leg ; le verrou vit donc sur le leg. Une fois verrouillée, les
+    # Escale closure lock  l'escale (oprations + shifts dockers) est
+    # par-leg ; le verrou vit donc sur le leg. Une fois verrouille, les
     # endpoints create/edit/start/end/delete d'escale refusent toute
     # modification (cf. escale_router._assert_escale_unlocked).
     escale_locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     escale_locked_by: Mapped[str | None] = mapped_column(String(100))
 
-    # Voyage closure workflow (submitted by captain → reviewed by ops → approved by manager)
+    # Voyage closure workflow (submitted by captain  reviewed by ops  approved by manager)
     closure_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closure_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closure_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -90,5 +90,13 @@ class Leg(Base):
         Index("ix_legs_bookable", "is_bookable"),
     )
 
+    # Relations pour Carnet de Bord ANEMOS
+    highlights: Mapped[list["VoyageHighlight"]] = relationship(
+        "VoyageHighlight", back_populates="leg", cascade="all, delete-orphan"
+    )
+    photos: Mapped[list["VoyagePhoto"]] = relationship(
+        "VoyagePhoto", back_populates="leg", cascade="all, delete-orphan"
+    )
+
     def __repr__(self) -> str:  # pragma: no cover
-        return f"<Leg {self.leg_code} {self.etd.date()}→{self.eta.date()}>"
+        return f"<Leg {self.leg_code} {self.etd.date()}{self.eta.date()}>"

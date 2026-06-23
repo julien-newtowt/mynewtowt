@@ -1,0 +1,103 @@
+{% extends "pdf/carnet_bord/_base.html" %}
+
+{% block content %}
+<!-- Chapitre 2: L'quipage -->
+<div class="chapter">
+    <div class="chapter-number">2. L'quipage</div>
+    <h1 class="chapter-title">L'quipage</h1>
+
+    {% if crew_description %}
+    <div style="font-size: 14pt; line-height: 1.7; margin-bottom: 30pt;">
+        {{ crew_description }}
+    </div>
+    {% endif %}
+
+    <!-- Grille de l'quipage -->
+    {% if crew_members and crew_members|length > 0 %}
+    <div class="crew-grid">
+        {% for member in crew_members %}
+        <div class="crew-member-card">
+            {% if member.photo_path %}
+            <img src="{{ member.photo_path }}" 
+                 alt="{{ member.full_name }}" 
+                 class="crew-photo"
+            />
+            {% else %}
+            <div class="image-placeholder" style="width: 120px; height: 120px; border-radius: 50%; margin: 0 auto 10pt auto;">
+                Photo
+            </div>
+            {% endif %}
+            <div class="crew-name">{{ member.full_name }}</div>
+            <div class="crew-role">{{ member.role or "Membre d'quipage" }}</div>
+            {% if member.bio %}
+            <div style="font-size: 11pt; color: var(--text-0); margin-top: 8pt; line-height: 1.5;">
+                {{ member.bio }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="info-box" style="background: var(--blanc-casse); border-left: 4px solid var(--gris-clair);">
+        <div class="label">Quipage</div>
+        <div style="font-size: 14pt; color: var(--gris);">
+            Aucune information sur l'quipage disponible pour ce voyage.
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Organigramme -->
+    {% if crew_org_chart %}
+    <h2 class="section-title" style="margin-top: 40pt;">Organigramme</h2>
+    <div style="margin: 20pt 0;">
+        <img src="{{ crew_org_chart }}" 
+             alt="Organigramme de l'quipage" 
+             style="max-width: 100%; height: auto;"
+        />
+    </div>
+    {% endif %}
+
+    <!-- Bordes -->
+    {% if watch_info %}
+    <h2 class="section-title">Composition des bordes</h2>
+    <div style="font-size: 14pt; line-height: 1.7;">
+        <p>
+            Ce voyage a t effectu avec {{ watch_info.num_watches or "N/A" }} bordes 
+            composes comme suit :
+        </p>
+        {% if watch_info.watches %}
+        <ul style="margin-top: 10pt;">
+            {% for watch in watch_info.watches %}
+            <li>
+                {{ watch.name }} : {{ watch.members|length }} membres
+                {% if watch.members %}
+                ({{ watch.members|map(attribute='full_name')|join(', ') }})
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Photos d'quipage -->
+    {% if crew_photos and crew_photos|length > 0 %}
+    <h2 class="section-title" style="margin-top: 40pt;">Photos de l'quipage</h2>
+    <div class="gallery">
+        {% for photo in crew_photos %}
+        <div class="gallery-item">
+            <img src="{{ photo.file_path }}" 
+                 alt="{{ photo.label or 'Photo d\'\''equipage' }}" 
+                 class="gallery-image"
+            />
+            {% if photo.label %}
+            <div class="gallery-caption">
+                <strong>{{ photo.label }}</strong>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

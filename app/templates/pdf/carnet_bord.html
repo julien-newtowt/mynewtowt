@@ -1,0 +1,59 @@
+{% extends "pdf/_base.html" %}
+
+{% block title %}Carnet de Bord ANEMOS - {{ leg.leg_code }}{% endblock %}
+{% block doc_kind %}Carnet de Bord{% endblock %}
+{% block doc_ref %}ANEMOS-{{ leg.leg_code }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    @page {
+        size: A4 landscape;
+        margin: 20mm 15mm;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{# ======================================================================== #}
+{# CARNET DE BORD ANEMOS - Template principal                              #}
+{# Assemblage de tous les chapitres                                         #}
+{# ======================================================================== #}
+
+{# Couverture #}
+{% include "pdf/carnet_bord/cover.html" %}
+
+{# Introduction #}
+{% include "pdf/carnet_bord/introduction.html" %}
+
+{# Chapitre 1: La Traverse #}
+{% include "pdf/carnet_bord/chapitre_1_traversee.html" %}
+
+{# Chapitre 2: L'quipage (module activable) #}
+{% if crew_members or crew_photos or crew_description %}
+{% include "pdf/carnet_bord/chapitre_2_equipage.html" %}
+{% endif %}
+
+{# Chapitre 3: Le Chargement #}
+{% include "pdf/carnet_bord/chapitre_3_chargement.html" %}
+
+{# Chapitre 4: Conditions de transport #}
+{% include "pdf/carnet_bord/chapitre_4_conditions_transport.html" %}
+
+{# Chapitre 5: Performance environnementale #}
+{% include "pdf/carnet_bord/chapitre_5_performance_environnementale.html" %}
+
+{# Chapitre 6: Performance de navigation #}
+{% include "pdf/carnet_bord/chapitre_6_performance_navigation.html" %}
+
+{# Chapitre 7: Conditions mtorologiques (module activable) #}
+{% if weather_images or weather_stats or weather_events %}
+{% include "pdf/carnet_bord/chapitre_7_meteorologie.html" %}
+{% endif %}
+
+{# Chapitre 8: Timeline complte #}
+{% include "pdf/carnet_bord/chapitre_8_timeline.html" %}
+
+{# Conclusion #}
+{% include "pdf/carnet_bord/conclusion.html" %}
+
+{% endblock %}

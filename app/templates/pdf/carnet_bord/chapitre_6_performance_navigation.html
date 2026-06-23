@@ -1,0 +1,143 @@
+{% extends "pdf/carnet_bord/_base.html" %}
+
+{% block content %}
+<!-- Chapitre 6: Performance de navigation -->
+<div class="chapter">
+    <div class="chapter-number">6. Performance de navigation</div>
+    <h1 class="chapter-title">Performance de navigation</h1>
+
+    <div style="font-size: 14pt; line-height: 1.7; margin-bottom: 20pt;">
+        <p>
+            La performance de navigation est au cur de notre dmonstration : 
+            le vent est notre principale source de propulsion. Ce chapitre dtaille 
+            la part relle du vent dans cette traverse.
+        </p>
+    </div>
+
+    <!-- Temps sous voile -->
+    <h2 class="section-title">Temps de navigation</h2>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ sailing_hours or "0" }}</div>
+            <div class="stat-label">Heures sous voile pure</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ assisted_hours or "0" }}</div>
+            <div class="stat-label">Heures en assistance</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ motor_hours or "0" }}</div>
+            <div class="stat-label">Heures moteur seul</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ total_hours or "0" }}</div>
+            <div class="stat-label">Heures totales</div>
+        </div>
+    </div>
+
+    <!-- Rpartition propulsion -->
+    <h2 class="section-title">Rpartition de la propulsion</h2>
+    
+    <div style="display: flex; gap: 20pt; margin: 20pt 0;">
+        <div style="flex: 1;">
+            <div style="width: 100%; height: 200px; background: conic-gradient(
+                var(--vert) 0% {{ sail_pct or "0" }}%,
+                var(--cuivre) {{ sail_pct or "0" }}% {{ sail_pct|float + (assisted_pct or 0)|float }}%,
+                var(--gris) {{ sail_pct|float + (assisted_pct or 0)|float }}% 100%
+            ); border-radius: 50%; position: relative;">
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+                    <div style="font-size: 24pt; font-weight: bold; color: var(--teal);">
+                        {{ sail_pct or "0" }}%
+                    </div>
+                    <div style="font-size: 12pt; color: var(--gris);">
+                        Voile pure
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+            <div style="display: flex; align-items: center; gap: 10pt; margin-bottom: 10pt;">
+                <div style="width: 20px; height: 20px; background: var(--vert); border-radius: 50%;"></div>
+                <span style="font-size: 14pt;"><strong>{{ sail_pct or "0" }}%</strong> Voile pure</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10pt; margin-bottom: 10pt;">
+                <div style="width: 20px; height: 20px; background: var(--cuivre); border-radius: 50%;"></div>
+                <span style="font-size: 14pt;"><strong>{{ assisted_pct or "0" }}%</strong> Assistance moteur</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10pt;">
+                <div style="width: 20px; height: 20px; background: var(--gris); border-radius: 50%;"></div>
+                <span style="font-size: 14pt;"><strong>{{ motor_pct or "0" }}%</strong> Moteur seul</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vitesses -->
+    <h2 class="section-title">Vitesses</h2>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ sog_avg or "N/A" }}</div>
+            <div class="stat-label">Vitesse moyenne (noeuds)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ sog_max or "N/A" }}</div>
+            <div class="stat-label">Vitesse maximale (noeuds)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ distance_nm or "N/A" }}</div>
+            <div class="stat-label">Distance parcourue (NM)</div>
+        </div>
+    </div>
+
+    <!-- Charge moteurs -->
+    {% if engine_data %}
+    <h2 class="section-title">Charge des moteurs</h2>
+    
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 40%;">Moteur</th>
+                <th style="width: 30%; text-align: right;">Charge moyenne (%)</th>
+                <th style="width: 30%; text-align: right;">Heures de fonctionnement</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for engine in engine_data %}
+            <tr>
+                <td>{{ engine.name }}</td>
+                <td style="text-align: right;">{{ engine.load_pct|float|round(1) or "0" }}%</td>
+                <td style="text-align: right;">{{ engine.hours|float|round(1) or "0" }} h</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <!-- Trim des voiles -->
+    {% if sail_trim_data %}
+    <h2 class="section-title">Rglages des voiles</h2>
+    
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 30%;">Voile</th>
+                <th style="width: 25%; text-align: right;">Temps d'utilisation (%)</th>
+                <th style="width: 25%; text-align: right;">Charge moyenne (%)</th>
+                <th style="width: 20%; text-align: right;">Effet boost</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sail in sail_trim_data %}
+            <tr>
+                <td>{{ sail.name }}</td>
+                <td style="text-align: right;">{{ sail.usage_pct|float|round(1) or "0" }}%</td>
+                <td style="text-align: right;">{{ sail.load_pct|float|round(1) or "0" }}%</td>
+                <td style="text-align: right;">{{ sail.boost|float|round(2) or "0" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endblock %}

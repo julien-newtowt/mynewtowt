@@ -1,0 +1,79 @@
+{% extends "pdf/carnet_bord/_base.html" %}
+
+{% block content %}
+<div class="cover-container">
+    <!-- Header -->
+    <div class="cover-header">
+        <div class="kicker" style="font-size: 14pt; color: var(--vert); letter-spacing: var(--ls-widest);">
+            LABEL ANEMOS
+        </div>
+    </div>
+
+    <!-- Title -->
+    <div class="cover-title">
+        CARNET DE BORD
+    </div>
+
+    <!-- Subtitle -->
+    <div class="cover-subtitle">
+        Transport dcaron par voilier cargo
+    </div>
+
+    <!-- Voyage Info -->
+    <div class="cover-voyage-info">
+        <div class="voyage-detail">
+            <strong>Navire :</strong> {{ vessel.name }}
+        </div>
+        <div class="voyage-detail">
+            <strong>Voyage :</strong> {{ leg.leg_code }}
+        </div>
+        <div class="voyage-detail">
+            <strong>Itinraire :</strong> 
+            {{ pol.name if pol else "N/A" }}  {{ pod.name if pod else "N/A" }}
+        </div>
+        <div class="voyage-detail">
+            <strong>Priode :</strong> 
+            {{ leg.atd.strftime("%d/%m/%Y") if leg.atd else leg.etd.strftime("%d/%m/%Y") }}  
+            {{ leg.ata.strftime("%d/%m/%Y") if leg.ata else leg.eta.strftime("%d/%m/%Y") }}
+        </div>
+        {% if client %}
+        <div class="voyage-detail">
+            <strong>Chargeur :</strong> {{ client.company_name }}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Main Visual -->
+    <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+        {% if cover_photo %}
+        <img src="{{ cover_photo.file_path }}" 
+             alt="Navire {{ vessel.name }}" 
+             style="max-width: 80%; max-height: 300px; object-fit: contain;"
+        />
+        {% else %}
+        <div class="placeholder" style="width: 80%; height: 300px;">
+            Photo du navire -  ajouter une photo de couverture
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Footer -->
+    <div class="cover-footer">
+        <div class="anemos-logo">
+            {% if anemos_logo %}
+            <img src="{{ anemos_logo }}" alt="Label ANEMOS" style="max-height: 60px;" />
+            {% else %}
+            <div style="font-size: 24pt; font-weight: bold; color: var(--teal);">
+                ANEMOS
+            </div>
+            {% endif %}
+        </div>
+        <div style="margin-top: 10pt; font-size: 12pt; color: var(--gris);">
+            <strong>NewTowt</strong> - Transport maritime dcaron par voilier cargo
+        </div>
+        <div style="font-size: 10pt; color: var(--gris); margin-top: 5pt;">
+            Gnr le {{ generated_at.strftime("%d/%m/%Y  %H:%M") }}
+        </div>
+    </div>
+</div>
+{% endblock %}
