@@ -26,6 +26,14 @@
   <div class="kpi-card"><div class="label">{{ t('kpi_legs_tracked', lang) }}</div><div class="value">{{ kpis|length }}</div><div class="delta text-muted">{{ t('kpi_auto_fed', lang) }}</div></div>
 </section>
 
+{# FIN-04 — section Exploitation #}
+<section class="kpi-strip mt-2">
+  <div class="kpi-card"><div class="label">Voyages terminés</div><div class="value">{{ exploitation.completed }}</div><div class="delta text-muted">ATD + ATA posés</div></div>
+  <div class="kpi-card"><div class="label">Écart planning moyen</div><div class="value">{{ "%.1f h"|format(exploitation.avg_planning_deviation_h) if exploitation.avg_planning_deviation_h is not none else '—' }}</div><div class="delta text-muted">ATD vs ETD réf.</div></div>
+  <div class="kpi-card"><div class="label">Durée de mer moyenne</div><div class="value">{{ "%.1f j"|format(exploitation.avg_sea_duration_days) if exploitation.avg_sea_duration_days is not none else '—' }}</div><div class="delta text-muted">ATD → ATA</div></div>
+  <div class="kpi-card"><div class="label">Vitesse d'exploitation</div><div class="value">{{ "%.1f kn"|format(exploitation.avg_speed_kn) if exploitation.avg_speed_kn is not none else '—' }}</div><div class="delta text-muted">moyenne flotte</div></div>
+</section>
+
 <article class="card mt-4">
   <h2>{{ t('kpi_per_leg', lang) }}</h2>
   <p class="text-muted text-sm">{{ t('kpi_per_leg_help', lang) }}</p>
