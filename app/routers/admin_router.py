@@ -19,7 +19,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1505,6 +1505,113 @@ async def permissions_matrix_update(
     if skipped_admin:
         url += "&skipped=1"
     return RedirectResponse(url=url, status_code=303)
+
+
+# ────────────────────────────────────────────── Data export / purge (ADM-04)
+
+
+@router.get("/data", response_class=HTMLResponse)
+async def admin_data(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> HTMLResponse:
+    from app.services.admin_data import ALLOWED_EXPORT_TABLES, ALLOWED_PURGE_TABLES
+
+    return templates.TemplateResponse(
+        "staff/admin/data.html",
+        {
+            "request": request,
+            "user": user,
+            "export_tables": ALLOWED_EXPORT_TABLES,
+            "purge_tables": ALLOWED_PURGE_TABLES,
+        },
+    )
+
+
+@router.get("/export/global.zip")
+async def admin_export_global(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> Response:
+    """ADM-04 — export ZIP global (un CSV par table whitelistée)."""
+    from app.services.admin_data import export_global_zip
+
+    data = await export_global_zip(db)
+    await activity_record(
+        db,
+        action="export_global",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="database",
+        entity_label="global.zip",
+        ip_address=_client_ip(request),
+    )
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="newtowt_export.zip"'},
+    )
+
+
+@router.get("/export/table/{table_name}.csv")
+async def admin_export_table(
+    table_name: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> Response:
+    """ADM-04 — export CSV sélectif d'une table whitelistée."""
+    from app.services.admin_data import export_table_csv
+
+    try:
+        csv_text = await export_table_csv(db, table_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(
+        content=csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{table_name}.csv"'},
+    )
+
+
+@router.post("/database/purge")
+async def admin_purge_table(
+    request: Request,
+    table_name: str = Form(...),
+    confirm: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "S")),
+):
+    """ADM-04 — purge ciblée d'une table whitelistée. Double confirmation :
+    l'opérateur retape le nom exact de la table dans ``confirm``.
+    """
+    from app.services.admin_data import purge_table
+
+    if confirm.strip() != table_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmation invalide : retapez le nom exact de la table.",
+        )
+    try:
+        deleted = await purge_table(db, table_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await activity_record(
+        db,
+        action="purge",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="database",
+        entity_label=table_name,
+        detail=f"{deleted} lignes supprimées",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/admin/data?purged=1", status_code=303)
 
 
 def _client_ip(request: Request) -> str | None:

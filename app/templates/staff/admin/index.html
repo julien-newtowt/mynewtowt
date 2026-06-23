@@ -3,7 +3,11 @@
 {% block content %}
 <header class="flex justify-between items-center mb-4">
   <div><span class="kicker">Gouvernance</span><h1 class="display">Configuration</h1></div>
-  <a href="/admin/users#user-form" class="btn btn-primary">+ Nouvel utilisateur</a>
+  <div class="flex gap-2">
+    <a href="/admin/data" class="btn btn-secondary"><i data-lucide="database"></i> Exports &amp; purges</a>
+    <a href="/admin/vessels" class="btn btn-secondary"><i data-lucide="ship"></i> Navires</a>
+    <a href="/admin/users#user-form" class="btn btn-primary">+ Nouvel utilisateur</a>
+  </div>
 </header>
 
 <section class="kpi-strip">

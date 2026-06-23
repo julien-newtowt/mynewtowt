@@ -1,0 +1,49 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Données — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Administration</span>
+    <h1 class="display">Exports &amp; purges</h1>
+    <p class="text-muted">Sauvegarde CSV (portabilité / RGPD) et nettoyage de campagne. Tables sensibles (identifiants, paie) exclues.</p>
+  </div>
+  <a href="/admin/export/global.zip" class="btn btn-primary"><i data-lucide="download"></i> Export ZIP global</a>
+</header>
+
+{% if request.query_params.get('purged') %}
+<div class="alert alert-success mb-3"><i data-lucide="check-circle"></i> Purge effectuée.</div>
+{% endif %}
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Export sélectif</h2>
+    <p class="text-muted text-sm">Un CSV par table métier.</p>
+    <div class="flex" style="flex-wrap:wrap; gap:6px;">
+      {% for t in export_tables %}
+      <a href="/admin/export/table/{{ t }}.csv" class="btn btn-ghost btn-sm"><i data-lucide="file-text"></i> {{ t }}</a>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="card">
+    <h2 style="color:var(--cuivre);">Purge ciblée</h2>
+    <p class="text-muted text-sm">Vide une table de journal/positions (irréversible). Retapez le nom exact pour confirmer.</p>
+    <form method="post" action="/admin/database/purge">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="table_name">Table</label>
+        <select id="table_name" name="table_name">
+          {% for t in purge_tables %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="confirm">Confirmation — retapez le nom de la table</label>
+        <input id="confirm" name="confirm" type="text" autocomplete="off" required />
+      </div>
+      <button type="submit" class="btn btn-danger btn-sm" data-confirm="Purge IRRÉVERSIBLE de la table sélectionnée. Confirmer ?">Purger</button>
+    </form>
+  </article>
+</div>
+
+{% endblock %}
