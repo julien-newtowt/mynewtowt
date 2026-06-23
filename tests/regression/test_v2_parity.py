@@ -888,6 +888,32 @@ def test_v2_kpi_consolidated_view_restored():
     assert templates.env.get_template("staff/kpi/consolidated.html") is not None
 
 
+def test_v2_claims_insurance_exposure_restored():
+    """FIN-06 : détail provision / indemnité / franchise des sinistres au KPI.
+
+    La V2 distinguait, dans le reporting assurance, la réserve provisionnée,
+    l'indemnité réglée et la franchise (déductible contrat) — la V3 n'agrégeait
+    qu'un coût plat. Le service ``claims_exposure`` restaure ce détail et est
+    branché dans la vue KPI consolidée.
+    """
+    import inspect
+
+    from app.services.insurance_kpi import claims_exposure
+    from app.services.kpi_consolidated import consolidated_kpis
+
+    assert callable(claims_exposure)
+    # Branché dans la consolidation (section ``insurance``).
+    src = inspect.getsource(consolidated_kpis)
+    assert "claims_exposure" in src and '"insurance"' in src
+    # Carte « Assurance & sinistres » rendue sur la page consolidée.
+    from app.templating import templates
+
+    tmpl = templates.env.loader.get_source(templates.env, "staff/kpi/consolidated.html")[0]
+    assert "data.insurance.provision_total" in tmpl
+    assert "data.insurance.franchise_total" in tmpl
+    assert "data.insurance.net_company_total" in tmpl
+
+
 def test_v2_mrv_editable_params_drive_quality():
     """MRV-06 : densité MDO + seuil de déviation éditables (UI) pilotent la qualité."""
     from app.routers.mrv_router import router

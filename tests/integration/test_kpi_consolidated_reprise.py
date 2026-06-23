@@ -85,6 +85,10 @@ async def test_consolidated_kpis_aggregates_sources(db):
     # Exploitation — leg réalisé + ponctualité.
     assert data["exploitation"]["completed"] == 1
     assert data["on_time_pct"] == 100.0
+    # Assurance — exposition sinistres présente (FIN-06), même vide.
+    assert "insurance" in data
+    assert data["insurance"]["claim_count"] == 0
+    assert data["insurance"]["net_company_total"] == Decimal(0)
 
 
 @pytest.mark.asyncio
