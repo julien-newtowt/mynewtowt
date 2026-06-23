@@ -180,3 +180,37 @@ def test_positions_for_leg_db() -> None:
             await eng.dispose()
 
     asyncio.run(_run())
+
+
+# ─────────────────────────────── TRK-03 ───────────────────────────────
+
+
+def test_real_elongation_ratio() -> None:
+    """Allongement réel = distance GPS / orthodromique (TRK-03)."""
+    from app.services.voyage_track import TrackMetrics
+
+    m = TrackMetrics(
+        point_count=10,
+        actual_nm=1200.0,
+        theoretical_nm=1000.0,
+        remaining_nm=None,
+        duration_hours=None,
+        avg_speed_kn=8.0,
+        is_active=False,
+    )
+    assert m.real_elongation == 1.2
+
+
+def test_real_elongation_none_without_theoretical() -> None:
+    from app.services.voyage_track import TrackMetrics
+
+    m = TrackMetrics(
+        point_count=1,
+        actual_nm=10.0,
+        theoretical_nm=None,
+        remaining_nm=None,
+        duration_hours=None,
+        avg_speed_kn=None,
+        is_active=True,
+    )
+    assert m.real_elongation is None

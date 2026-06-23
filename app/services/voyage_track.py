@@ -43,6 +43,17 @@ class TrackMetrics:
     avg_speed_kn: float | None  # vitesse moyenne réelle
     is_active: bool  # leg en cours (pas encore arrivé)
 
+    @property
+    def real_elongation(self) -> float | None:
+        """TRK-03 — ratio d'allongement réel = distance GPS / orthodromique.
+
+        > 1 = route plus longue que l'orthodromie (cap au vent, contournements).
+        ``None`` si l'orthodromique est inconnue ou nulle.
+        """
+        if self.theoretical_nm and self.theoretical_nm > 0:
+            return round(self.actual_nm / self.theoretical_nm, 3)
+        return None
+
 
 def leg_window(leg: Leg, *, now: datetime | None = None) -> tuple[datetime, datetime, bool]:
     """(start, end, is_active) pour un leg.

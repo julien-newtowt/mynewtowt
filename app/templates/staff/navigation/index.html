@@ -91,7 +91,7 @@
   <table class="data-table">
     <thead><tr>
       <th>Leg</th><th>Navire</th><th>Trajet</th><th>Réelle</th><th>Théorique</th>
-      <th>Écart</th><th>Durée</th><th>Restante</th><th>Points</th><th>Statut</th>
+      <th>Écart</th><th>Vit. moy.</th><th>Allong.</th><th>Durée</th><th>Restante</th><th>Points</th><th>Statut</th>
     </tr></thead>
     <tbody>
     {% for d in legs_data %}
@@ -110,6 +110,8 @@
         <td class="mono {{ 'text-warn' if (ecart is not none and ecart > 0) else 'text-success' if ecart is not none else '' }}">
           {{ "%+.0f NM"|format(ecart) if ecart is not none else "—" }}
         </td>
+        <td class="mono">{{ "%.1f kn"|format(m.avg_speed_kn) if m.avg_speed_kn is not none else "—" }}</td>
+        <td class="mono">{{ "×%.2f"|format(m.real_elongation) if m.real_elongation is not none else "—" }}</td>
         <td class="mono">{% if dh is not none %}{{ (dh // 24)|int }}j {{ (dh % 24)|int }}h{% else %}—{% endif %}</td>
         <td class="mono">{{ "%.0f NM"|format(m.remaining_nm) if m.remaining_nm is not none else "—" }}</td>
         <td class="mono">{{ m.point_count }}</td>
