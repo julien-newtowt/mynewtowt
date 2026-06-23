@@ -47,6 +47,35 @@
   </div>
 </section>
 
+{# COM-08 — performance / conversion par grille + CA. #}
+<article class="card">
+  <div class="section-header">
+    <h3><i data-lucide="trending-up"></i> Performance par grille</h3>
+    {% if perf_totals %}
+    <span class="pill pill-info">CA réalisé {{ perf_totals.ca_total_eur|money }}{% if perf_totals.conversion_pct is not none %} · conversion {{ perf_totals.conversion_pct }} %{% endif %}</span>
+    {% endif %}
+  </div>
+  {% if grid_perf %}
+  <table class="data-table">
+    <thead>
+      <tr><th>Grille</th><th class="text-right">Offres émises</th><th class="text-right">Acceptées</th><th class="text-right">Conversion</th><th class="text-right">Commandes</th><th class="text-right">CA réalisé</th></tr>
+    </thead>
+    <tbody>
+      {% for g in grid_perf %}
+      <tr>
+        <td><a href="/commercial/grids/{{ g.grid_id }}" class="mono">{{ g.grid_reference }}</a>{% if g.is_default %} <span class="pill pill-neutral">défaut</span>{% endif %}</td>
+        <td class="text-right">{{ g.offers_emitted }}</td>
+        <td class="text-right">{{ g.offers_accepted }}</td>
+        <td class="text-right">{{ g.conversion_pct ~ ' %' if g.conversion_pct is not none else '—' }}</td>
+        <td class="text-right">{{ g.orders_count }}</td>
+        <td class="text-right mono">{{ g.ca_eur|money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="text-muted">Aucune activité commerciale par grille pour le moment.</p>{% endif %}
+</article>
+
 <article class="card">
   <div class="section-header">
     <h3><i data-lucide="gauge"></i> Remplissage des legs en commercialisation</h3>

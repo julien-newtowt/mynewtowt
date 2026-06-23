@@ -155,3 +155,81 @@ def test_order_form_template_compiles():
     from app.templating import templates
 
     assert templates.env.get_template("staff/commercial/order_form.html") is not None
+
+
+# ─────────────────────────────── COM-08 ───────────────────────────────
+
+
+async def _grid(db, ref="RG-2026-0001", is_default=False):
+    from datetime import date
+
+    from app.models.commercial import RateGrid
+
+    g = RateGrid(reference=ref, status="active", valid_from=date(2026, 1, 1), is_default=is_default)
+    db.add(g)
+    await db.flush()
+    return g
+
+
+@pytest.mark.asyncio
+async def test_grid_performance_kpis(db):
+    from decimal import Decimal
+
+    from app.models.commercial import RateOffer
+    from app.services.commercial_dashboard import commercial_totals, grid_performance
+
+    c = Client(name="ACME", client_type="shipper")
+    db.add(c)
+    await db.flush()
+    g = await _grid(db)
+    # 3 offres émises (sent/accepted/declined), 1 acceptée
+    for ref, status in [("RO-1", "sent"), ("RO-2", "accepted"), ("RO-3", "declined")]:
+        db.add(RateOffer(reference=ref, client_id=c.id, grid_id=g.id, title="T", status=status))
+    # 2 commandes liées à la grille : 1 confirmée (CA réalisé), 1 draft (non réalisé)
+    db.add(
+        Order(
+            reference="ORD-A",
+            client_id=c.id,
+            rate_grid_id=g.id,
+            status="confirmed",
+            total_eur=Decimal("1000.00"),
+        )
+    )
+    db.add(
+        Order(
+            reference="ORD-B",
+            client_id=c.id,
+            rate_grid_id=g.id,
+            status="draft",
+            total_eur=Decimal("500.00"),
+        )
+    )
+    await db.flush()
+
+    perf = await grid_performance(db)
+    assert len(perf) == 1
+    row = perf[0]
+    assert row["offers_emitted"] == 3
+    assert row["offers_accepted"] == 1
+    assert row["conversion_pct"] == round(100 / 3, 1)
+    assert row["orders_count"] == 2
+    assert row["ca_eur"] == Decimal("1000.00")  # seul le confirmé compte
+
+    totals = await commercial_totals(db)
+    assert totals["ca_total_eur"] == Decimal("1000.00")
+    assert totals["offers_emitted"] == 3 and totals["offers_accepted"] == 1
+
+
+@pytest.mark.asyncio
+async def test_grid_performance_empty_when_no_activity(db):
+    from app.services.commercial_dashboard import grid_performance
+
+    await _grid(db)  # grille sans offre ni commande
+    assert await grid_performance(db) == []
+
+
+def test_commercial_index_template_compiles():
+    """L'index commercial (tableau perf par grille COM-08) compile."""
+    from app.templating import templates
+
+    assert templates.env.get_template("staff/commercial/index.html") is not None

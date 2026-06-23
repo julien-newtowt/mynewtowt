@@ -363,6 +363,13 @@ def test_v2_commercial_routes_restored():
     assert ("GET", "/commercial/api/rate-lookup") in m  # COM-07 — devis grille live
 
 
+def test_v2_commercial_grid_performance_restored():
+    """COM-08 : performance/conversion par grille + CA (tableau de bord)."""
+    from app.services.commercial_dashboard import commercial_totals, grid_performance
+
+    assert callable(grid_performance) and callable(commercial_totals)
+
+
 def test_v2_order_rich_fields_restored():
     """COM-02 : la commande V3 retrouve format/poids/THC/frais/route/dates + lien grille."""
     from app.models.commercial import Order
