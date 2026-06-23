@@ -350,3 +350,62 @@ async def test_params_save_updates_density(db, staff_user):
     )
     assert resp.status_code == 303
     assert await resolve_density(db) == Decimal("0.900")
+
+
+# ─────────────── MRV-06 — le seuil éditable pilote le contrôle qualité ─────────
+
+
+async def _noon(db, leg, t, *, rob_l, consumed_l=0.0):
+    from app.models.noon_report import NoonReport
+
+    noon = NoonReport(
+        leg_id=leg.id,
+        recorded_at=t,
+        latitude=49.0,
+        longitude=-1.0,
+        fuel_consumed_24h_l=consumed_l,
+        rob_fuel_l=rob_l,
+    )
+    db.add(noon)
+    await db.flush()
+    return noon
+
+
+@pytest.mark.asyncio
+async def test_sync_quality_uses_editable_deviation_threshold(db):
+    """MRV-06 : un seuil de déviation abaissé met l'event de sync en warning.
+
+    Écart ≈ 1,01 t : « ok » au seuil par défaut (2 t), « warning » à 0,5 t.
+    """
+    from app.services.mrv_sync import ensure_from_noon
+
+    leg = await _setup_leg(db)
+    base = datetime(2026, 4, 2, tzinfo=UTC)
+    # Point de référence ROB antérieur (10 000 L).
+    db.add(_ev(leg.id, base, rob_l=Decimal("10000")))
+    await db.flush()
+    # Noon déclarant 8 800 L sans conso → écart calculé 1,2 kL ≈ 1,01 t (×0,845).
+    noon = await _noon(db, leg, base + timedelta(hours=24), rob_l=8800.0, consumed_l=0.0)
+
+    # Seuil par défaut (2 t) → conforme.
+    ev = await ensure_from_noon(db, noon)
+    assert ev.quality_status == "ok"
+    assert "≤ 2 t" in (ev.quality_notes or "")
+
+
+@pytest.mark.asyncio
+async def test_sync_quality_warns_when_threshold_lowered(db):
+    from app.models.mrv import MRVParameter
+    from app.services.mrv_sync import ensure_from_noon
+
+    leg = await _setup_leg(db)
+    # Seuil abaissé à 0,5 t via le paramètre éditable.
+    db.add(MRVParameter(name="mdo_admissible_deviation", value=Decimal("0.5"), unit="t"))
+    base = datetime(2026, 4, 2, tzinfo=UTC)
+    db.add(_ev(leg.id, base, rob_l=Decimal("10000")))
+    await db.flush()
+    noon = await _noon(db, leg, base + timedelta(hours=24), rob_l=8800.0, consumed_l=0.0)
+
+    ev = await ensure_from_noon(db, noon)
+    assert ev.quality_status == "warning"
+    assert "> 0.5 t" in (ev.quality_notes or "")

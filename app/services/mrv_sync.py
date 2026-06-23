@@ -84,18 +84,14 @@ async def ensure_from_noon(db: AsyncSession, noon: NoonReport) -> MRVEvent | Non
     return ev
 
 
-# Seuil d'écart ROB toléré entre valeur déclarée et valeur calculée (tonnes).
-_ROB_DEVIATION_THRESHOLD_T = Decimal("2.0")
-# Densité MDO de référence pour la conversion litres → tonnes (1000 L = 1 m³).
-_MDO_DENSITY_T_M3 = _FALLBACK_MDO_DENSITY
-
-
 async def _apply_rob_quality(db: AsyncSession, noon: NoonReport, ev: MRVEvent) -> None:
     """Renseigne ``quality_status`` / ``quality_notes`` sur ``ev`` (B5).
 
     Compare le ROB déclaré au noon report au ROB calculé à partir du dernier
-    point ROB connu sur le même leg, moins la consommation 24h. Écart toléré :
-    ±2 t (densité MDO 0,845 t/m³).
+    point ROB connu sur le même leg, moins la consommation 24h. Le seuil d'écart
+    toléré et la densité MDO sont les **paramètres MRV éditables** (MRV-06) :
+    ``mdo_admissible_deviation`` (défaut 2 t) et ``avg_mdo_density`` (défaut
+    0,845 t/m³) — réglables via ``/mrv/params``.
     """
     prior = (
         await db.execute(
@@ -123,16 +119,25 @@ async def _apply_rob_quality(db: AsyncSession, noon: NoonReport, ev: MRVEvent) -
         ev.quality_notes = "ROB déclaré manquant"
         return
 
-    dev_t = abs(declared_rob_l - expected_rob_l) / Decimal("1000") * _MDO_DENSITY_T_M3
-    if dev_t > _ROB_DEVIATION_THRESHOLD_T:
+    # MRV-06 — seuil de déviation et densité pilotés par les paramètres éditables.
+    # On réutilise les résolveurs canoniques de ``mrv_compute`` (mêmes que
+    # ``recompute_leg``) pour que le contrôle qualité du chemin de sync et celui
+    # du recalcul soient strictement cohérents sur la donnée réglementaire.
+    from app.services.mrv_compute import resolve_density, resolve_deviation
+
+    density = await resolve_density(db)
+    threshold = await resolve_deviation(db)
+    dev_t = abs(declared_rob_l - expected_rob_l) / Decimal("1000") * density
+    thr = f"{float(threshold):g}"  # « 2 » / « 0.5 » (sans zéros traînants)
+    if dev_t > threshold:
         ev.quality_status = "warning"
         ev.quality_notes = (
-            f"Écart ROB {dev_t:.2f} t > 2 t "
+            f"Écart ROB {dev_t:.2f} t > {thr} t admissibles "
             f"(déclaré {declared_rob_l} L vs calculé {expected_rob_l} L)."
         )
     else:
         ev.quality_status = "ok"
-        ev.quality_notes = f"Écart ROB {dev_t:.2f} t (≤ 2 t)."
+        ev.quality_notes = f"Écart ROB {dev_t:.2f} t (≤ {thr} t)."
 
 
 async def ensure_from_sof(db: AsyncSession, sof: SofEvent) -> MRVEvent | None:
