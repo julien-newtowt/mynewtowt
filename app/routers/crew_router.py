@@ -10,6 +10,7 @@ Reprise des écrans riches de la V3.0.0 :
 
 from __future__ import annotations
 
+import contextlib
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from datetime import date as _date
@@ -656,19 +657,23 @@ async def crew_assign(
         return templates.TemplateResponse(
             "staff/crew/detail.html",
             await _member_detail_context(
-                request, db, user, member,
+                request,
+                db,
+                user,
+                member,
                 error="Date de débarquement antérieure à l'embarquement.",
             ),
             status_code=400,
         )
-    overlap = await _find_overlap(
-        db, member_id=member_id, embark=embark_dt, disembark=disembark_dt
-    )
+    overlap = await _find_overlap(db, member_id=member_id, embark=embark_dt, disembark=disembark_dt)
     if overlap is not None:
         return templates.TemplateResponse(
             "staff/crew/detail.html",
             await _member_detail_context(
-                request, db, user, member,
+                request,
+                db,
+                user,
+                member,
                 error=f"Chevauchement avec un embarquement existant (leg {overlap.leg_id}). "
                 "Un marin ne peut être embarqué sur deux périodes simultanées.",
             ),
@@ -751,18 +756,23 @@ async def crew_assignment_ticket_upload(
     except UploadRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if a.ticket_path:
-        try:
+        with contextlib.suppress(Exception):
             resolve_path(a.ticket_path).unlink(missing_ok=True)
-        except Exception:
-            pass
     a.ticket_path = rel_path
     a.ticket_filename = file.filename
     a.ticket_mime = mime
     await db.flush()
     await activity_record(
-        db, action="upload", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="crew", entity_type="crew_assignment", entity_id=a.id,
-        entity_label=f"billet {file.filename}", ip_address=_client_ip(request),
+        db,
+        action="upload",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="crew",
+        entity_type="crew_assignment",
+        entity_id=a.id,
+        entity_label=f"billet {file.filename}",
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/crew/members/{a.crew_member_id}", status_code=303)
 
@@ -783,7 +793,8 @@ async def crew_assignment_ticket_download(
     except (UploadRejected, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="fichier introuvable") from exc
     return FileResponse(
-        path, media_type=a.ticket_mime or "application/octet-stream",
+        path,
+        media_type=a.ticket_mime or "application/octet-stream",
         filename=a.ticket_filename or path.name,
     )
 
@@ -801,18 +812,23 @@ async def crew_assignment_ticket_delete(
     if a is None:
         raise HTTPException(status_code=404)
     if a.ticket_path:
-        try:
+        with contextlib.suppress(Exception):
             resolve_path(a.ticket_path).unlink(missing_ok=True)
-        except Exception:
-            pass
     a.ticket_path = None
     a.ticket_filename = None
     a.ticket_mime = None
     await db.flush()
     await activity_record(
-        db, action="delete", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="crew", entity_type="crew_assignment", entity_id=a.id,
-        entity_label="billet supprimé", ip_address=_client_ip(request),
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="crew",
+        entity_type="crew_assignment",
+        entity_id=a.id,
+        entity_label="billet supprimé",
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/crew/members/{a.crew_member_id}", status_code=303)
 
@@ -960,9 +976,7 @@ async def crew_border_police_pdf(
     now = datetime.now(UTC)
     legs = {
         leg.id: leg
-        for leg in (
-            await db.execute(select(Leg).where(Leg.vessel_id == vessel_id))
-        ).scalars().all()
+        for leg in (await db.execute(select(Leg).where(Leg.vessel_id == vessel_id))).scalars().all()
     }
     assigns = list(
         (

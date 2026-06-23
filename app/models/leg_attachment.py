@@ -19,14 +19,14 @@ from app.database import Base
 
 # Catégories de pièces jointes (parité V2 — 8 catégories).
 LEG_ATTACHMENT_CATEGORIES: tuple[str, ...] = (
-    "port_agent",      # documents reçus de l'agent d'escale
-    "bl_signed",       # connaissements signés
+    "port_agent",  # documents reçus de l'agent d'escale
+    "bl_signed",  # connaissements signés
     "letter_protest",  # lettre de protestation (LOP)
-    "survey",          # constats / rapports d'expertise
-    "customs",         # documents douaniers
-    "invoice",         # factures (agent, fournisseurs)
-    "photo",           # photos cargo / avaries
-    "other",           # divers
+    "survey",  # constats / rapports d'expertise
+    "customs",  # documents douaniers
+    "invoice",  # factures (agent, fournisseurs)
+    "photo",  # photos cargo / avaries
+    "other",  # divers
 )
 
 # Sous-ensemble « documents agent d'escale » (zone filtrée de l'écran).

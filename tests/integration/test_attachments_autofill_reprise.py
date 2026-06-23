@@ -57,8 +57,17 @@ async def _setup_leg(db):
     db.add(Port(id=2, locode="BRSSO", name="Santos", country="BR"))
     await db.flush()
     base = datetime(2026, 4, 1, tzinfo=UTC)
-    leg = Leg(id=1, leg_code="1CFRBR6", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-              etd_ref=base, eta_ref=base + timedelta(days=20), etd=base, eta=base + timedelta(days=20))
+    leg = Leg(
+        id=1,
+        leg_code="1CFRBR6",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd_ref=base,
+        eta_ref=base + timedelta(days=20),
+        etd=base,
+        eta=base + timedelta(days=20),
+    )
     db.add(leg)
     await db.flush()
     return leg
@@ -83,8 +92,11 @@ async def test_order_attachment_upload_download_delete(db, staff_user, _upload_r
     await db.flush()
 
     resp = await order_upload_attachment(
-        order.id, _Req(), file=_Upload("contrat.pdf", b"%PDF-1.4 contrat"),
-        db=db, user=staff_user,
+        order.id,
+        _Req(),
+        file=_Upload("contrat.pdf", b"%PDF-1.4 contrat"),
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code in (200, 303)
     await db.refresh(order)
@@ -118,14 +130,27 @@ async def test_mrv_add_event_autofills_dms_from_last_position(db, staff_user):
     from app.routers.mrv_router import add_event
 
     await _setup_leg(db)
-    db.add(VesselPosition(vessel_id=1, recorded_at=datetime(2026, 4, 2, 6, tzinfo=UTC),
-                          latitude=49.5, longitude=-0.25))
+    db.add(
+        VesselPosition(
+            vessel_id=1,
+            recorded_at=datetime(2026, 4, 2, 6, tzinfo=UTC),
+            latitude=49.5,
+            longitude=-0.25,
+        )
+    )
     await db.flush()
 
     await add_event(
-        1, _FormReq({"event_kind": "noon_consumption", "recorded_at": "2026-04-02T12:00:00",
-                     "fuel_mass_t": "5.0"}),
-        db=db, user=staff_user,
+        1,
+        _FormReq(
+            {
+                "event_kind": "noon_consumption",
+                "recorded_at": "2026-04-02T12:00:00",
+                "fuel_mass_t": "5.0",
+            }
+        ),
+        db=db,
+        user=staff_user,
     )
     ev = (await db.execute(MRVEvent.__table__.select())).fetchone()
     assert ev.lat_deg == 49 and ev.lat_ns == "N"
@@ -137,13 +162,28 @@ async def test_mrv_autofill_does_not_override_manual_position(db, staff_user):
     from app.routers.mrv_router import add_event
 
     await _setup_leg(db)
-    db.add(VesselPosition(vessel_id=1, recorded_at=datetime(2026, 4, 2, 6, tzinfo=UTC),
-                          latitude=49.5, longitude=-0.25))
+    db.add(
+        VesselPosition(
+            vessel_id=1,
+            recorded_at=datetime(2026, 4, 2, 6, tzinfo=UTC),
+            latitude=49.5,
+            longitude=-0.25,
+        )
+    )
     await db.flush()
     await add_event(
-        1, _FormReq({"event_kind": "noon_consumption", "recorded_at": "2026-04-02T12:00:00",
-                     "fuel_mass_t": "5.0", "lat_deg": "10", "lat_ns": "S"}),
-        db=db, user=staff_user,
+        1,
+        _FormReq(
+            {
+                "event_kind": "noon_consumption",
+                "recorded_at": "2026-04-02T12:00:00",
+                "fuel_mass_t": "5.0",
+                "lat_deg": "10",
+                "lat_ns": "S",
+            }
+        ),
+        db=db,
+        user=staff_user,
     )
     ev = (await db.execute(MRVEvent.__table__.select())).fetchone()
     assert ev.lat_deg == 10 and ev.lat_ns == "S"  # saisie manuelle préservée
@@ -163,9 +203,16 @@ async def test_crew_embark_off_leg(db, staff_user):
     await db.flush()
 
     resp = await crew_assign(
-        m.id, _Req(), leg_id=None, vessel_id=1, role_on_board="matelot",
-        embark_at="2026-04-01T08:00:00", disembark_at="2026-04-10T08:00:00",
-        override_compliance=None, db=db, user=staff_user,
+        m.id,
+        _Req(),
+        leg_id=None,
+        vessel_id=1,
+        role_on_board="matelot",
+        embark_at="2026-04-01T08:00:00",
+        disembark_at="2026-04-10T08:00:00",
+        override_compliance=None,
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     a = (await db.execute(CrewAssignment.__table__.select())).fetchone()
@@ -184,9 +231,16 @@ async def test_crew_embark_requires_leg_or_vessel(db, staff_user):
     await db.flush()
     with pytest.raises(HTTPException) as exc:
         await crew_assign(
-            m.id, _Req(), leg_id=None, vessel_id=None, role_on_board=None,
-            embark_at=None, disembark_at=None, override_compliance=None,
-            db=db, user=staff_user,
+            m.id,
+            _Req(),
+            leg_id=None,
+            vessel_id=None,
+            role_on_board=None,
+            embark_at=None,
+            disembark_at=None,
+            override_compliance=None,
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 400
 
@@ -208,7 +262,11 @@ async def test_crew_ticket_upload_download_delete(db, staff_user, _upload_root):
     await db.flush()
 
     await crew_assignment_ticket_upload(
-        a.id, _Req(), file=_Upload("billet.pdf", b"%PDF-1.4 billet"), db=db, user=staff_user,
+        a.id,
+        _Req(),
+        file=_Upload("billet.pdf", b"%PDF-1.4 billet"),
+        db=db,
+        user=staff_user,
     )
     await db.refresh(a)
     assert a.ticket_path and a.ticket_filename == "billet.pdf"

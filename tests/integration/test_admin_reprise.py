@@ -28,10 +28,19 @@ async def test_vessel_create_edit_toggle(db, staff_user):
     from app.routers.admin_router import vessel_create, vessel_edit, vessel_toggle_active
 
     resp = await vessel_create(
-        _Req(), code="art", name="Artemis", vessel_class="phoenix",
-        imo_number="1234567", flag="fr", dwt="1200", capacity_palettes="850",
-        default_speed_kn="8.5", default_elongation="1.2", opex_daily_sea_eur="9000",
-        db=db, user=staff_user,
+        _Req(),
+        code="art",
+        name="Artemis",
+        vessel_class="phoenix",
+        imo_number="1234567",
+        flag="fr",
+        dwt="1200",
+        capacity_palettes="850",
+        default_speed_kn="8.5",
+        default_elongation="1.2",
+        opex_daily_sea_eur="9000",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     v = (await db.execute(Vessel.__table__.select())).fetchone()
@@ -41,9 +50,19 @@ async def test_vessel_create_edit_toggle(db, staff_user):
     assert float(v.default_speed_kn) == 8.5
 
     await vessel_edit(
-        v.id, _Req(), name="Artemis II", vessel_class="phoenix", imo_number="1234567",
-        flag="FR", dwt="1300", capacity_palettes="900", default_speed_kn="9",
-        default_elongation="1.15", opex_daily_sea_eur="9500", db=db, user=staff_user,
+        v.id,
+        _Req(),
+        name="Artemis II",
+        vessel_class="phoenix",
+        imo_number="1234567",
+        flag="FR",
+        dwt="1300",
+        capacity_palettes="900",
+        default_speed_kn="9",
+        default_elongation="1.15",
+        opex_daily_sea_eur="9500",
+        db=db,
+        user=staff_user,
     )
     obj = await db.get(Vessel, v.id)
     assert obj.name == "Artemis II" and obj.capacity_palettes == 900
@@ -64,9 +83,19 @@ async def test_vessel_create_rejects_duplicate_code(db, staff_user):
     await db.flush()
     with pytest.raises(HTTPException) as exc:
         await vessel_create(
-            _Req(), code="ANE", name="Clone", vessel_class="phoenix", imo_number=None,
-            flag=None, dwt=None, capacity_palettes=None, default_speed_kn=None,
-            default_elongation=None, opex_daily_sea_eur=None, db=db, user=staff_user,
+            _Req(),
+            code="ANE",
+            name="Clone",
+            vessel_class="phoenix",
+            imo_number=None,
+            flag=None,
+            dwt=None,
+            capacity_palettes=None,
+            default_speed_kn=None,
+            default_elongation=None,
+            opex_daily_sea_eur=None,
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 409
 
@@ -83,9 +112,18 @@ async def _ports_vessels(db):
 
 
 def _leg(leg_id, vessel_id, etd, eta, **kw):
-    return Leg(id=leg_id, leg_code=f"{leg_id}X", vessel_id=vessel_id,
-               departure_port_id=1, arrival_port_id=2,
-               etd_ref=etd, eta_ref=eta, etd=etd, eta=eta, **kw)
+    return Leg(
+        id=leg_id,
+        leg_code=f"{leg_id}X",
+        vessel_id=vessel_id,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd_ref=etd,
+        eta_ref=eta,
+        etd=etd,
+        eta=eta,
+        **kw,
+    )
 
 
 @pytest.mark.asyncio
@@ -99,8 +137,9 @@ async def test_alerts_eta_overdue_and_late_arrival(db):
     db.add(_leg(1, 1, etd=now - timedelta(days=25), eta=now - timedelta(hours=48)))
     # ATA 30h après ETA → retard warning.
     eta2 = now - timedelta(days=5)
-    db.add(_leg(2, 2, etd=now - timedelta(days=25), eta=eta2,
-                ata=eta2 + timedelta(hours=30), atd=None))
+    db.add(
+        _leg(2, 2, etd=now - timedelta(days=25), eta=eta2, ata=eta2 + timedelta(hours=30), atd=None)
+    )
     await db.flush()
 
     alerts = await compute_alerts(db, year)

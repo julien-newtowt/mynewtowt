@@ -81,44 +81,50 @@ async def compute_alerts(db: AsyncSession, year: int | None = None) -> list[dict
         if ata and eta:
             delay_h = (ata - eta).total_seconds() / 3600
             if delay_h > 24:
-                alerts.append({
-                    "family": "retard",
-                    "severity": "warning" if delay_h < 72 else "danger",
-                    "icon": "clock",
-                    "title": f"Retard {leg.leg_code}",
-                    "message": (
-                        f"{_vname(leg)} — arrivée {_pname(leg.arrival_port_id)} avec "
-                        f"{_h((ata - eta).total_seconds())} h de retard"
-                    ),
-                    "link": link,
-                })
+                alerts.append(
+                    {
+                        "family": "retard",
+                        "severity": "warning" if delay_h < 72 else "danger",
+                        "icon": "clock",
+                        "title": f"Retard {leg.leg_code}",
+                        "message": (
+                            f"{_vname(leg)} — arrivée {_pname(leg.arrival_port_id)} avec "
+                            f"{_h((ata - eta).total_seconds())} h de retard"
+                        ),
+                        "link": link,
+                    }
+                )
 
         # 2. ETA dépassée (>24 h) sans ATA/ATD.
         if eta and not ata and not atd:
             overdue_h = (now - eta).total_seconds() / 3600
             if overdue_h > 24:
-                alerts.append({
-                    "family": "retard",
-                    "severity": "danger",
-                    "icon": "alert-triangle",
-                    "title": f"ETA dépassée {leg.leg_code}",
-                    "message": (
-                        f"{_vname(leg)} → {_pname(leg.arrival_port_id)} — ETA dépassée de "
-                        f"{_h((now - eta).total_seconds())} h, ATA non renseignée"
-                    ),
-                    "link": link,
-                })
+                alerts.append(
+                    {
+                        "family": "retard",
+                        "severity": "danger",
+                        "icon": "alert-triangle",
+                        "title": f"ETA dépassée {leg.leg_code}",
+                        "message": (
+                            f"{_vname(leg)} → {_pname(leg.arrival_port_id)} — ETA dépassée de "
+                            f"{_h((now - eta).total_seconds())} h, ATA non renseignée"
+                        ),
+                        "link": link,
+                    }
+                )
 
         # 3. Escale non verrouillée (ATD posée mais pas de lock).
         if atd and leg.escale_locked_at is None:
-            alerts.append({
-                "family": "verrouillage",
-                "severity": "info",
-                "icon": "unlock",
-                "title": f"Escale non verrouillée {leg.leg_code}",
-                "message": f"{_vname(leg)} — ATD posée mais escale non verrouillée",
-                "link": link,
-            })
+            alerts.append(
+                {
+                    "family": "verrouillage",
+                    "severity": "info",
+                    "icon": "unlock",
+                    "title": f"Escale non verrouillée {leg.leg_code}",
+                    "message": f"{_vname(leg)} — ATD posée mais escale non verrouillée",
+                    "link": link,
+                }
+            )
 
         # 4. Départ imminent (<48 h) sans opération planifiée.
         if etd and not atd:
@@ -128,17 +134,19 @@ async def compute_alerts(db: AsyncSession, year: int | None = None) -> list[dict
                     select(func.count(EscaleOperation.id)).where(EscaleOperation.leg_id == leg.id)
                 )
                 if not ops_count:
-                    alerts.append({
-                        "family": "preparation",
-                        "severity": "warning",
-                        "icon": "alert-circle",
-                        "title": f"Départ imminent {leg.leg_code}",
-                        "message": (
-                            f"{_vname(leg)} — départ {_pname(leg.departure_port_id)} dans "
-                            f"{_h((etd - now).total_seconds())} h, aucune opération planifiée"
-                        ),
-                        "link": link,
-                    })
+                    alerts.append(
+                        {
+                            "family": "preparation",
+                            "severity": "warning",
+                            "icon": "alert-circle",
+                            "title": f"Départ imminent {leg.leg_code}",
+                            "message": (
+                                f"{_vname(leg)} — départ {_pname(leg.departure_port_id)} dans "
+                                f"{_h((etd - now).total_seconds())} h, aucune opération planifiée"
+                            ),
+                            "link": link,
+                        }
+                    )
 
     # 5. Conflit de port — deux navires différents, même port d'arrivée, <48 h.
     by_port: dict[int, list[Leg]] = {}
@@ -157,22 +165,22 @@ async def compute_alerts(db: AsyncSession, year: int | None = None) -> list[dict
                     if key in seen_conflicts:
                         continue
                     seen_conflicts.add(key)
-                    alerts.append({
-                        "family": "conflit",
-                        "severity": "warning",
-                        "icon": "alert-triangle",
-                        "title": f"Conflit port {_pname(port_id)}",
-                        "message": (
-                            f"{_vname(a)} ({a.leg_code}) et {_vname(b)} ({b.leg_code}) — "
-                            f"ETA à moins de 48 h d'écart"
-                        ),
-                        "link": f"/planning?leg_id={a.id}",
-                    })
+                    alerts.append(
+                        {
+                            "family": "conflit",
+                            "severity": "warning",
+                            "icon": "alert-triangle",
+                            "title": f"Conflit port {_pname(port_id)}",
+                            "message": (
+                                f"{_vname(a)} ({a.leg_code}) et {_vname(b)} ({b.leg_code}) — "
+                                f"ETA à moins de 48 h d'écart"
+                            ),
+                            "link": f"/planning?leg_id={a.id}",
+                        }
+                    )
 
     # 6. Commandes actives non affectées (ni leg ni affectation).
-    has_assignment = (
-        select(OrderAssignment.id).where(OrderAssignment.order_id == Order.id).exists()
-    )
+    has_assignment = select(OrderAssignment.id).where(OrderAssignment.order_id == Order.id).exists()
     unassigned = await db.scalar(
         select(func.count(Order.id)).where(
             Order.status.in_(_ACTIVE_ORDER_STATUSES),
@@ -182,14 +190,16 @@ async def compute_alerts(db: AsyncSession, year: int | None = None) -> list[dict
     )
     if unassigned:
         plural = "s" if unassigned > 1 else ""
-        alerts.append({
-            "family": "commercial",
-            "severity": "info",
-            "icon": "package",
-            "title": f"{unassigned} commande{plural} non affectée{plural}",
-            "message": "Des commandes actives attendent une affectation à un leg.",
-            "link": "/commercial/orders",
-        })
+        alerts.append(
+            {
+                "family": "commercial",
+                "severity": "info",
+                "icon": "package",
+                "title": f"{unassigned} commande{plural} non affectée{plural}",
+                "message": "Des commandes actives attendent une affectation à un leg.",
+                "link": "/commercial/orders",
+            }
+        )
 
     alerts.sort(key=lambda a: _SEVERITY_ORDER.get(a["severity"], 3))
     return alerts

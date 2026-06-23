@@ -132,13 +132,17 @@ async def _unsync_sof_from_operation(db: AsyncSession, op: EscaleOperation) -> N
     nouvelle date (cf. ``edit_operation``).
     """
     rows = (
-        await db.execute(
-            select(SofEvent).where(
-                SofEvent.leg_id == op.leg_id,
-                SofEvent.notes == _auto_sof_note(op.id),
+        (
+            await db.execute(
+                select(SofEvent).where(
+                    SofEvent.leg_id == op.leg_id,
+                    SofEvent.notes == _auto_sof_note(op.id),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for ev in rows:
         await db.delete(ev)
     if rows:

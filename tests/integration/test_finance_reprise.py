@@ -27,8 +27,17 @@ async def _setup_leg(db):
     db.add(Port(id=2, locode="BRSSO", name="Santos", country="BR"))
     await db.flush()
     base = datetime(2026, 4, 1, tzinfo=UTC)
-    leg = Leg(id=1, leg_code="1CFRBR6", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-              etd_ref=base, eta_ref=base + timedelta(days=20), etd=base, eta=base + timedelta(days=20))
+    leg = Leg(
+        id=1,
+        leg_code="1CFRBR6",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd_ref=base,
+        eta_ref=base + timedelta(days=20),
+        etd=base,
+        eta=base + timedelta(days=20),
+    )
     db.add(leg)
     await db.flush()
     return leg
@@ -43,13 +52,21 @@ async def test_finance_upsert_forecast_actual_and_variance(db, staff_user):
 
     await _setup_leg(db)
     resp = await finance_leg_upsert(
-        1, _Req(),
-        revenue_eur="10000", port_fees_eur="2000", docker_costs_eur="1500",
-        opex_share_eur="3000", other_costs_eur="500",
-        revenue_forecast_eur="9000", port_fees_forecast_eur="1800",
-        docker_costs_forecast_eur="1200", opex_share_forecast_eur="3200",
-        other_costs_forecast_eur="400", notes="budget Q2",
-        db=db, user=staff_user,
+        1,
+        _Req(),
+        revenue_eur="10000",
+        port_fees_eur="2000",
+        docker_costs_eur="1500",
+        opex_share_eur="3000",
+        other_costs_eur="500",
+        revenue_forecast_eur="9000",
+        port_fees_forecast_eur="1800",
+        docker_costs_forecast_eur="1200",
+        opex_share_forecast_eur="3200",
+        other_costs_forecast_eur="400",
+        notes="budget Q2",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     fin = (
@@ -62,15 +79,19 @@ async def test_finance_upsert_forecast_actual_and_variance(db, staff_user):
 
     # Propriétés d'écart sur l'objet ORM.
     obj = await db.get(LegFinance, fin.id)
-    assert obj.revenue_variance_eur == Decimal("1000.00")   # 10000 - 9000
-    assert obj.margin_variance_eur == Decimal("600.00")     # 3000 - 2400
+    assert obj.revenue_variance_eur == Decimal("1000.00")  # 10000 - 9000
+    assert obj.margin_variance_eur == Decimal("600.00")  # 3000 - 2400
 
 
 def test_finance_variance_properties_pure():
     f = LegFinance(
-        leg_id=1, revenue_eur=Decimal("100"), revenue_forecast_eur=Decimal("80"),
-        port_fees_eur=Decimal("30"), port_fees_forecast_eur=Decimal("25"),
-        margin_eur=Decimal("20"), margin_forecast_eur=Decimal("15"),
+        leg_id=1,
+        revenue_eur=Decimal("100"),
+        revenue_forecast_eur=Decimal("80"),
+        port_fees_eur=Decimal("30"),
+        port_fees_forecast_eur=Decimal("25"),
+        margin_eur=Decimal("20"),
+        margin_forecast_eur=Decimal("15"),
     )
     assert f.revenue_variance_eur == Decimal("20")
     assert f.port_fees_variance_eur == Decimal("5")
@@ -85,8 +106,15 @@ async def test_finance_csv_export_18_columns(db, staff_user):
     from app.routers.finance_router import _CSV_HEADERS, finance_export_csv
 
     await _setup_leg(db)
-    db.add(LegFinance(leg_id=1, revenue_eur=Decimal("10000"), revenue_forecast_eur=Decimal("9000"),
-                      margin_eur=Decimal("3000"), margin_forecast_eur=Decimal("2400")))
+    db.add(
+        LegFinance(
+            leg_id=1,
+            revenue_eur=Decimal("10000"),
+            revenue_forecast_eur=Decimal("9000"),
+            margin_eur=Decimal("3000"),
+            margin_forecast_eur=Decimal("2400"),
+        )
+    )
     await db.flush()
 
     resp = await finance_export_csv(_Req(), db=db, user=staff_user)
@@ -144,8 +172,15 @@ async def test_emission_factors_read_from_co2_variables(db):
     from app.models.co2_variable import Co2Variable
     from app.services.emissions import NOX_CONV_VAR, get_emission_factors
 
-    db.add(Co2Variable(name=NOX_CONV_VAR, value=Decimal("0.000500"), unit="kg/tnm",
-                       effective_date=date(2026, 1, 1), is_current=True))
+    db.add(
+        Co2Variable(
+            name=NOX_CONV_VAR,
+            value=Decimal("0.000500"),
+            unit="kg/tnm",
+            effective_date=date(2026, 1, 1),
+            is_current=True,
+        )
+    )
     await db.flush()
     factors = await get_emission_factors(db)
     assert factors.conv_nox == Decimal("0.000500")

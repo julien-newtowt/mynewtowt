@@ -11,7 +11,6 @@ from decimal import Decimal
 
 import pytest
 
-
 # ───────────────────── Injection de formules CSV ─────────────────────
 
 
@@ -64,9 +63,20 @@ async def test_planning_csv_export_escapes_malicious_vessel_name(db, staff_user)
     db.add(Port(id=2, locode="BRSSO", name="Santos", country="BR"))
     await db.flush()
     base = datetime(2026, 3, 1, tzinfo=UTC)
-    db.add(Leg(id=1, leg_code="1CFRBR6", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-               etd_ref=base, eta_ref=base + timedelta(days=20), etd=base, eta=base + timedelta(days=20),
-               status="planned"))
+    db.add(
+        Leg(
+            id=1,
+            leg_code="1CFRBR6",
+            vessel_id=1,
+            departure_port_id=1,
+            arrival_port_id=2,
+            etd_ref=base,
+            eta_ref=base + timedelta(days=20),
+            etd=base,
+            eta=base + timedelta(days=20),
+            status="planned",
+        )
+    )
     await db.flush()
 
     resp = await planning_export_csv(_Req(), vessel_id=None, year=2026, db=db, user=staff_user)
@@ -82,8 +92,8 @@ def test_content_length_guard():
     from app.services.safe_files import content_length_exceeds_max
 
     assert content_length_exceeds_max(str(500 * 1024 * 1024)) is True  # 500 Mo → rejeté
-    assert content_length_exceeds_max(str(1024)) is False              # 1 Ko → OK
-    assert content_length_exceeds_max(None) is False                   # absent → on lit (puis validate_size)
+    assert content_length_exceeds_max(str(1024)) is False  # 1 Ko → OK
+    assert content_length_exceeds_max(None) is False  # absent → on lit (puis validate_size)
     assert content_length_exceeds_max("not-a-number") is False
 
 
@@ -99,7 +109,13 @@ def test_destructive_deletes_require_suppress_level():
     from app.routers.crew_router import crew_assignment_ticket_delete
     from app.routers.stowage_router import delete_item
 
-    for fn in (delete_sof_event, delete_leg_attachment, order_assignment_delete,
-               order_delete_attachment, delete_item, crew_assignment_ticket_delete):
+    for fn in (
+        delete_sof_event,
+        delete_leg_attachment,
+        order_assignment_delete,
+        order_delete_attachment,
+        delete_item,
+        crew_assignment_ticket_delete,
+    ):
         src = inspect.getsource(fn)
         assert '"S"' in src, f"{fn.__name__} devrait exiger le niveau S"

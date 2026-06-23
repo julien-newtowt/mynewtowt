@@ -29,8 +29,19 @@ async def _setup_plan(db):
     db.add(Port(id=2, locode="BRSSO", name="Santos", country="BR"))
     await db.flush()
     base = datetime(2026, 4, 1, tzinfo=UTC)
-    db.add(Leg(id=1, leg_code="1CFRBR6", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-               etd_ref=base, eta_ref=base + timedelta(days=20), etd=base, eta=base + timedelta(days=20)))
+    db.add(
+        Leg(
+            id=1,
+            leg_code="1CFRBR6",
+            vessel_id=1,
+            departure_port_id=1,
+            arrival_port_id=2,
+            etd_ref=base,
+            eta_ref=base + timedelta(days=20),
+            etd=base,
+            eta=base + timedelta(days=20),
+        )
+    )
     await db.flush()
     plan = StowagePlan(leg_id=1, status="draft")
     db.add(plan)
@@ -50,8 +61,7 @@ async def test_move_item_changes_zone(db, staff_user):
     db.add(item)
     await db.flush()
 
-    resp = await move_item(plan.id, item.id, _Req(), new_zone="MIL_AR_MIL",
-                           db=db, user=staff_user)
+    resp = await move_item(plan.id, item.id, _Req(), new_zone="MIL_AR_MIL", db=db, user=staff_user)
     assert resp.status_code == 303
     await db.refresh(item)
     assert item.zone == "MIL_AR_MIL"

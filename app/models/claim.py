@@ -52,9 +52,7 @@ class Claim(Base):
     insurer_claim_ref: Mapped[str | None] = mapped_column(String(80))
     # Lien structuré vers le contrat d'assurance (module Finance). Le champ
     # texte ``insurer`` reste en repli quand aucun contrat n'est sélectionné.
-    insurance_contract_id: Mapped[int | None] = mapped_column(
-        ForeignKey("insurance_contracts.id")
-    )
+    insurance_contract_id: Mapped[int | None] = mapped_column(ForeignKey("insurance_contracts.id"))
 
     cargo_position: Mapped[str | None] = mapped_column(String(40))  # if cargo claim
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))

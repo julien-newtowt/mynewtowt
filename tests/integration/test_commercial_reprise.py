@@ -24,8 +24,11 @@ class _Req:
 
 
 async def _client(db, **kw):
-    c = Client(name=kw.pop("name", "ACME Forwarding"),
-               client_type=kw.pop("client_type", "freight_forwarder"), **kw)
+    c = Client(
+        name=kw.pop("name", "ACME Forwarding"),
+        client_type=kw.pop("client_type", "freight_forwarder"),
+        **kw,
+    )
     db.add(c)
     await db.flush()
     return c
@@ -42,10 +45,15 @@ async def _ports_and_vessel(db):
 def _leg(leg_id, dep, arr, etd, days=18):
     base = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=etd)
     return Leg(
-        id=leg_id, leg_code=f"{leg_id}CFRMQ6", vessel_id=1,
-        departure_port_id=dep, arrival_port_id=arr,
-        etd_ref=base, eta_ref=base + timedelta(days=days),
-        etd=base, eta=base + timedelta(days=days),
+        id=leg_id,
+        leg_code=f"{leg_id}CFRMQ6",
+        vessel_id=1,
+        departure_port_id=dep,
+        arrival_port_id=arr,
+        etd_ref=base,
+        eta_ref=base + timedelta(days=days),
+        etd=base,
+        eta=base + timedelta(days=days),
     )
 
 
@@ -58,12 +66,20 @@ async def test_client_edit_updates_all_fields(db, staff_user):
 
     c = await _client(db, contact_name="Old", address=None, country="FR")
     resp = await client_edit(
-        c.id, _Req(), name="ACME Logistics", client_type="shipper",
-        contact_name="Jane Doe", contact_email="jane@acme.io",
-        contact_phone="612345678", phone_dial_code="+33",
-        address="12 quai de Southampton\n76600 Le Havre", country="fr",
-        vat_number="FR12345678901", notes="VIP",
-        db=db, user=staff_user,
+        c.id,
+        _Req(),
+        name="ACME Logistics",
+        client_type="shipper",
+        contact_name="Jane Doe",
+        contact_email="jane@acme.io",
+        contact_phone="612345678",
+        phone_dial_code="+33",
+        address="12 quai de Southampton\n76600 Le Havre",
+        country="fr",
+        vat_number="FR12345678901",
+        notes="VIP",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     await db.refresh(c)
@@ -99,15 +115,27 @@ async def test_order_create_persists_rich_fields(db, staff_user):
 
     c = await _client(db)
     resp = await order_create(
-        _Req(), client_id=c.id, leg_id=None, booked_palettes=40,
-        rate_per_palette_eur=120.0, cargo_description="Vin",
-        shipper_name="Cave X", consignee_name="Import Y",
-        palette_format="USPAL", weight_per_palette_kg="650.5",
-        thc_included="on", booking_fee="50", documentation_fee="25",
-        departure_locode="frleh", arrival_locode="mqfdf",
-        delivery_date_start="2026-02-01", delivery_date_end="2026-02-20",
-        rate_grid_id=None, rate_grid_line_id=None,
-        db=db, user=staff_user,
+        _Req(),
+        client_id=c.id,
+        leg_id=None,
+        booked_palettes=40,
+        rate_per_palette_eur=120.0,
+        cargo_description="Vin",
+        shipper_name="Cave X",
+        consignee_name="Import Y",
+        palette_format="USPAL",
+        weight_per_palette_kg="650.5",
+        thc_included="on",
+        booking_fee="50",
+        documentation_fee="25",
+        departure_locode="frleh",
+        arrival_locode="mqfdf",
+        delivery_date_start="2026-02-01",
+        delivery_date_end="2026-02-20",
+        rate_grid_id=None,
+        rate_grid_line_id=None,
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     order = (await db.execute(Order.__table__.select())).fetchone()
@@ -129,15 +157,27 @@ async def test_order_create_rejects_bad_locode(db, staff_user):
     c = await _client(db)
     with pytest.raises(HTTPException) as exc:
         await order_create(
-            _Req(), client_id=c.id, leg_id=None, booked_palettes=10,
-            rate_per_palette_eur=None, cargo_description=None,
-            shipper_name=None, consignee_name=None,
-            palette_format=None, weight_per_palette_kg=None, thc_included=None,
-            booking_fee=None, documentation_fee=None,
-            departure_locode="TOOLONG", arrival_locode=None,
-            delivery_date_start=None, delivery_date_end=None,
-            rate_grid_id=None, rate_grid_line_id=None,
-            db=db, user=staff_user,
+            _Req(),
+            client_id=c.id,
+            leg_id=None,
+            booked_palettes=10,
+            rate_per_palette_eur=None,
+            cargo_description=None,
+            shipper_name=None,
+            consignee_name=None,
+            palette_format=None,
+            weight_per_palette_kg=None,
+            thc_included=None,
+            booking_fee=None,
+            documentation_fee=None,
+            departure_locode="TOOLONG",
+            arrival_locode=None,
+            delivery_date_start=None,
+            delivery_date_end=None,
+            rate_grid_id=None,
+            rate_grid_line_id=None,
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 400
 
@@ -152,15 +192,27 @@ async def test_order_create_rejects_bad_delivery_date(db, staff_user):
     c = await _client(db)
     with pytest.raises(HTTPException) as exc:
         await order_create(
-            _Req(), client_id=c.id, leg_id=None, booked_palettes=10,
-            rate_per_palette_eur=None, cargo_description=None,
-            shipper_name=None, consignee_name=None,
-            palette_format=None, weight_per_palette_kg=None, thc_included=None,
-            booking_fee=None, documentation_fee=None,
-            departure_locode=None, arrival_locode=None,
-            delivery_date_start=None, delivery_date_end="2026-13-45",
-            rate_grid_id=None, rate_grid_line_id=None,
-            db=db, user=staff_user,
+            _Req(),
+            client_id=c.id,
+            leg_id=None,
+            booked_palettes=10,
+            rate_per_palette_eur=None,
+            cargo_description=None,
+            shipper_name=None,
+            consignee_name=None,
+            palette_format=None,
+            weight_per_palette_kg=None,
+            thc_included=None,
+            booking_fee=None,
+            documentation_fee=None,
+            departure_locode=None,
+            arrival_locode=None,
+            delivery_date_start=None,
+            delivery_date_end="2026-13-45",
+            rate_grid_id=None,
+            rate_grid_line_id=None,
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 400
 
@@ -174,8 +226,7 @@ async def test_assign_duplicate_leg_blocked_by_unique_constraint(db, staff_user)
     db.add(_leg(1, 1, 2, etd=10))
     await db.flush()
     c = await _client(db)
-    order = Order(reference="ORD-2026-0010", client_id=c.id, status="draft",
-                  booked_palettes=10)
+    order = Order(reference="ORD-2026-0010", client_id=c.id, status="draft", booked_palettes=10)
     db.add(order)
     await db.flush()
     db.add(OrderAssignment(order_id=order.id, leg_id=1, palettes_count=10))
@@ -208,9 +259,9 @@ async def test_compatible_legs_filtered_by_route(db):
     from app.services.commercial import compatible_legs_for_order
 
     await _ports_and_vessel(db)
-    db.add(_leg(1, 1, 2, etd=10))   # FRLEH→MQFDF  ✓
-    db.add(_leg(2, 1, 3, etd=12))   # FRLEH→BRSSO  ✗ (mauvais POD)
-    db.add(_leg(3, 1, 2, etd=40))   # FRLEH→MQFDF  ✓
+    db.add(_leg(1, 1, 2, etd=10))  # FRLEH→MQFDF  ✓
+    db.add(_leg(2, 1, 3, etd=12))  # FRLEH→BRSSO  ✗ (mauvais POD)
+    db.add(_leg(3, 1, 2, etd=40))  # FRLEH→MQFDF  ✓
     await db.flush()
     # leg parti (atd renseigné) → exclu.
     departed = _leg(4, 1, 2, etd=5)
@@ -236,18 +287,28 @@ async def test_order_assign_single_leg_replaces(db, staff_user):
     db.add(_leg(3, 1, 2, etd=40))
     await db.flush()
     c = await _client(db)
-    order = Order(reference="ORD-2026-0001", client_id=c.id, status="draft",
-                  booked_palettes=40, palette_format="USPAL")
+    order = Order(
+        reference="ORD-2026-0001",
+        client_id=c.id,
+        status="draft",
+        booked_palettes=40,
+        palette_format="USPAL",
+    )
     db.add(order)
     await db.flush()
 
     resp = await order_assign_submit(
-        order.id, _Req(), leg_id=1, notes="cale avant", db=db, user=staff_user,
+        order.id,
+        _Req(),
+        leg_id=1,
+        notes="cale avant",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     rows = (await db.execute(OrderAssignment.__table__.select())).fetchall()
     assert len(rows) == 1
-    assert rows[0].palettes_count == 40       # dérivé de la commande (anti-divergence)
+    assert rows[0].palettes_count == 40  # dérivé de la commande (anti-divergence)
     assert rows[0].pallet_format == "USPAL"
     await db.refresh(order)
     assert order.leg_id == 1
@@ -274,13 +335,11 @@ async def test_order_assign_rejects_departed_leg(db, staff_user):
     db.add(departed)
     await db.flush()
     c = await _client(db)
-    order = Order(reference="ORD-2026-0009", client_id=c.id, status="draft",
-                  booked_palettes=20)
+    order = Order(reference="ORD-2026-0009", client_id=c.id, status="draft", booked_palettes=20)
     db.add(order)
     await db.flush()
     with pytest.raises(HTTPException) as exc:
-        await order_assign_submit(order.id, _Req(), leg_id=1, notes=None,
-                                  db=db, user=staff_user)
+        await order_assign_submit(order.id, _Req(), leg_id=1, notes=None, db=db, user=staff_user)
     assert exc.value.status_code == 400
 
 
@@ -292,8 +351,7 @@ async def test_order_assignment_delete_clears_leg(db, staff_user):
     db.add(_leg(1, 1, 2, etd=10))
     await db.flush()
     c = await _client(db)
-    order = Order(reference="ORD-2026-0002", client_id=c.id, status="draft",
-                  booked_palettes=80)
+    order = Order(reference="ORD-2026-0002", client_id=c.id, status="draft", booked_palettes=80)
     db.add(order)
     await db.flush()
 

@@ -29,8 +29,15 @@ async def _setup_leg(db):
     await db.flush()
     base = datetime(2026, 4, 1, tzinfo=UTC)
     leg = Leg(
-        id=1, leg_code="1CFRBR6", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd_ref=base, eta_ref=base + timedelta(days=20), etd=base, eta=base + timedelta(days=20),
+        id=1,
+        leg_code="1CFRBR6",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd_ref=base,
+        eta_ref=base + timedelta(days=20),
+        etd=base,
+        eta=base + timedelta(days=20),
     )
     db.add(leg)
     await db.flush()
@@ -71,7 +78,9 @@ async def test_edit_operation_sets_manual_actual_times(db, staff_user):
     from app.routers.escale_router import edit_operation
 
     await _setup_leg(db)
-    op = EscaleOperation(leg_id=1, operation_type="technique", action="inspection", status="planned")
+    op = EscaleOperation(
+        leg_id=1, operation_type="technique", action="inspection", status="planned"
+    )
     db.add(op)
     await db.flush()
 
@@ -111,21 +120,32 @@ async def test_edit_operation_reconciles_sof_no_duplicate(db, staff_user):
     db.add(op)
     await db.flush()
 
-    common = dict(
-        direction="BOTH", operation_type="relations_externes", action="nor",
-        label=None, planned_start=None, planned_end=None,
-        status=None, cost_forecast=None, cost_actual=None, notes=None,
-        db=db, user=staff_user,
-    )
+    common = {
+        "direction": "BOTH",
+        "operation_type": "relations_externes",
+        "action": "nor",
+        "label": None,
+        "planned_start": None,
+        "planned_end": None,
+        "status": None,
+        "cost_forecast": None,
+        "cost_actual": None,
+        "notes": None,
+        "db": db,
+        "user": staff_user,
+    }
     # 1re saisie : SOF NOR créé à 10:00.
-    await edit_operation(op.id, _Req(), actual_start="2026-04-01T10:00:00", actual_end=None, **common)
+    await edit_operation(
+        op.id, _Req(), actual_start="2026-04-01T10:00:00", actual_end=None, **common
+    )
     # Correction : l'heure passe à 11:00 → l'ancien SOF doit être remplacé.
-    await edit_operation(op.id, _Req(), actual_start="2026-04-01T11:00:00", actual_end=None, **common)
+    await edit_operation(
+        op.id, _Req(), actual_start="2026-04-01T11:00:00", actual_end=None, **common
+    )
 
     sofs = (
-        (await db.execute(SofEvent.__table__.select().where(SofEvent.__table__.c.leg_id == 1)))
-        .fetchall()
-    )
+        await db.execute(SofEvent.__table__.select().where(SofEvent.__table__.c.leg_id == 1))
+    ).fetchall()
     nor_events = [s for s in sofs if s.event_type == "NOR"]
     assert len(nor_events) == 1, f"SOF NOR dupliqués : {len(nor_events)}"
     assert nor_events[0].occurred_at.hour == 11
@@ -191,15 +211,23 @@ async def test_port_status_flow_ata_atd(db, staff_user):
     # Départ refusé avant l'arrivée.
     with pytest.raises(HTTPException) as exc:
         await update_port_status(
-            leg.id, _Req(), new_status="pilote_depart",
-            status_time="2026-04-25T10:00:00", db=db, user=staff_user,
+            leg.id,
+            _Req(),
+            new_status="pilote_depart",
+            status_time="2026-04-25T10:00:00",
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 400
 
     # À quai → ATA posée, statut in_progress, finance recalculée (rollup).
     resp = await update_port_status(
-        leg.id, _Req(), new_status="a_quai",
-        status_time="2026-04-21T10:00:00", db=db, user=staff_user,
+        leg.id,
+        _Req(),
+        new_status="a_quai",
+        status_time="2026-04-21T10:00:00",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     # ``leg`` est identity-mappé : la route a muté le même objet (pas de refresh
@@ -207,14 +235,20 @@ async def test_port_status_flow_ata_atd(db, staff_user):
     assert leg.ata is not None
     assert leg.status == "in_progress"
     fin = (
-        await db.execute(LegFinance.__table__.select().where(LegFinance.__table__.c.leg_id == leg.id))
+        await db.execute(
+            LegFinance.__table__.select().where(LegFinance.__table__.c.leg_id == leg.id)
+        )
     ).fetchone()
     assert fin is not None  # rollup_for_leg a créé la ligne finance
 
     # Pilote départ → ATD posée, statut completed.
     resp = await update_port_status(
-        leg.id, _Req(), new_status="pilote_depart",
-        status_time="2026-04-25T10:00:00", db=db, user=staff_user,
+        leg.id,
+        _Req(),
+        new_status="pilote_depart",
+        status_time="2026-04-25T10:00:00",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     assert leg.atd is not None
@@ -234,28 +268,50 @@ async def test_port_status_notifications_are_idempotent(db, staff_user):
     async def _count(notif_type: str) -> int:
         rows = (
             await db.execute(
-                Notification.__table__.select().where(
-                    Notification.__table__.c.type == notif_type
-                )
+                Notification.__table__.select().where(Notification.__table__.c.type == notif_type)
             )
         ).fetchall()
         return len(rows)
 
     # 1re arrivée → 1 EOSP.
-    await update_port_status(leg.id, _Req(), new_status="a_quai",
-                             status_time="2026-04-21T10:00:00", db=db, user=staff_user)
+    await update_port_status(
+        leg.id,
+        _Req(),
+        new_status="a_quai",
+        status_time="2026-04-21T10:00:00",
+        db=db,
+        user=staff_user,
+    )
     assert await _count("eosp") == 1
     # Correction de l'horodatage d'arrivée → toujours 1 EOSP (pas de doublon).
-    await update_port_status(leg.id, _Req(), new_status="a_quai",
-                             status_time="2026-04-21T11:00:00", db=db, user=staff_user)
+    await update_port_status(
+        leg.id,
+        _Req(),
+        new_status="a_quai",
+        status_time="2026-04-21T11:00:00",
+        db=db,
+        user=staff_user,
+    )
     assert leg.ata.hour == 11  # la correction est bien appliquée
     assert await _count("eosp") == 1
 
     # 1er départ → 1 SOSP ; re-soumission → toujours 1.
-    await update_port_status(leg.id, _Req(), new_status="pilote_depart",
-                             status_time="2026-04-25T10:00:00", db=db, user=staff_user)
-    await update_port_status(leg.id, _Req(), new_status="pilote_depart",
-                             status_time="2026-04-25T12:00:00", db=db, user=staff_user)
+    await update_port_status(
+        leg.id,
+        _Req(),
+        new_status="pilote_depart",
+        status_time="2026-04-25T10:00:00",
+        db=db,
+        user=staff_user,
+    )
+    await update_port_status(
+        leg.id,
+        _Req(),
+        new_status="pilote_depart",
+        status_time="2026-04-25T12:00:00",
+        db=db,
+        user=staff_user,
+    )
     assert await _count("sosp") == 1
 
 

@@ -362,9 +362,7 @@ class OrderAssignment(Base):
     __tablename__ = "order_assignments"
     # Une commande ne peut être affectée deux fois au même leg — garde-fou base
     # contre les doublons (concurrence) ; l'unicité applicative ne suffit pas.
-    __table_args__ = (
-        UniqueConstraint("order_id", "leg_id", name="uq_order_assignment_order_leg"),
-    )
+    __table_args__ = (UniqueConstraint("order_id", "leg_id", name="uq_order_assignment_order_leg"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(

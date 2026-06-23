@@ -70,7 +70,9 @@ async def _setup_graph(db, *, with_leg: bool = True):
 @pytest.mark.asyncio
 async def test_apply_batch_update_audits_only_changed_fields(db):
     pl, _ = await _setup_graph(db, with_leg=False)
-    b = PackingListBatch(packing_list_id=pl.id, batch_number=1, pallet_format="EPAL", pallet_count=2)
+    b = PackingListBatch(
+        packing_list_id=pl.id, batch_number=1, pallet_format="EPAL", pallet_count=2
+    )
     db.add(b)
     await db.flush()
 
@@ -88,9 +90,7 @@ async def test_apply_batch_update_audits_only_changed_fields(db):
     )
     assert changed == 3  # consignee_name + consignee_city + type_of_goods
     assert b.consignee_name == "Buyer SA"
-    audits = (
-        (await db.execute(PackingListAudit.__table__.select())).fetchall()
-    )
+    audits = (await db.execute(PackingListAudit.__table__.select())).fetchall()
     fields = {a.field for a in audits}
     assert {"consignee_name", "consignee_city", "type_of_goods"} <= fields
     assert "pallet_count" not in fields

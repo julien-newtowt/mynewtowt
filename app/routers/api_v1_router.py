@@ -243,7 +243,9 @@ async def get_leg_public(leg_id: int, db: AsyncSession = Depends(get_db)) -> Leg
     )
 
 
-@router.get("/legs/{leg_id}/capacity", response_model=CapacityOut, dependencies=[Depends(require_api_key)])
+@router.get(
+    "/legs/{leg_id}/capacity", response_model=CapacityOut, dependencies=[Depends(require_api_key)]
+)
 async def get_capacity(leg_id: int, db: AsyncSession = Depends(get_db)) -> CapacityOut:
     try:
         info = await get_available_capacity(db, leg_id)

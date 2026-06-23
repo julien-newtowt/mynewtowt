@@ -88,6 +88,7 @@ def _apply_event_form(ev: MRVEvent, form: dict) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="recorded_at invalide") from exc
 
+
 router = APIRouter(prefix="/mrv", tags=["mrv"])
 
 
@@ -306,7 +307,9 @@ async def export_carbon_report_pdf(
     events = list((await db.execute(stmt)).scalars().all())
     leg_map, vessel_map, _port = await _resolve_maps(db, events)
     if vessel_id is not None:
-        events = [e for e in events if leg_map.get(e.leg_id) and leg_map[e.leg_id].vessel_id == vessel_id]
+        events = [
+            e for e in events if leg_map.get(e.leg_id) and leg_map[e.leg_id].vessel_id == vessel_id
+        ]
     if year is not None:
         events = [e for e in events if e.recorded_at and e.recorded_at.year == year]
 
@@ -347,10 +350,7 @@ async def mrv_params_form(
     user=Depends(require_permission("mrv", "M")),
 ) -> HTMLResponse:
     """MRV-06 — écran d'édition des paramètres MRV (densité, déviation, facteur CO₂)."""
-    params = {
-        p.name: p
-        for p in (await db.execute(select(MRVParameter))).scalars().all()
-    }
+    params = {p.name: p for p in (await db.execute(select(MRVParameter))).scalars().all()}
     return templates.TemplateResponse(
         "staff/mrv/params.html",
         {"request": request, "user": user, "params": params},

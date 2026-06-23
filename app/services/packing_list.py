@@ -99,9 +99,7 @@ async def create_for_booking(db: AsyncSession, booking: Booking) -> PackingList:
     à l'affichage côté portail — pas de colonnes dédiées sur PackingList.
     """
     existing = (
-        await db.execute(
-            select(PackingList).where(PackingList.booking_id == booking.id)
-        )
+        await db.execute(select(PackingList).where(PackingList.booking_id == booking.id))
     ).scalar_one_or_none()
     if existing is not None:
         return existing

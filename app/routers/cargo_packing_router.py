@@ -147,7 +147,9 @@ async def add_batch(
     if pl is None or not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     vals = {k: v for k, v in coerce_batch_form(dict(await request.form())).items() if v is not None}
-    await create_batch(db, pl=pl, vals=vals, actor="staff", actor_name=user.full_name or user.username)
+    await create_batch(
+        db, pl=pl, vals=vals, actor="staff", actor_name=user.full_name or user.username
+    )
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
 
 

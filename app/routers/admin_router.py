@@ -383,16 +383,30 @@ async def vessel_create(
         raise HTTPException(status_code=409, detail="code navire déjà utilisé")
     vessel = Vessel(code=code_clean)
     _apply_vessel_form(
-        vessel, name=name, vessel_class=vessel_class, imo_number=imo_number, flag=flag,
-        dwt=dwt, capacity_palettes=capacity_palettes, default_speed_kn=default_speed_kn,
-        default_elongation=default_elongation, opex_daily_sea_eur=opex_daily_sea_eur,
+        vessel,
+        name=name,
+        vessel_class=vessel_class,
+        imo_number=imo_number,
+        flag=flag,
+        dwt=dwt,
+        capacity_palettes=capacity_palettes,
+        default_speed_kn=default_speed_kn,
+        default_elongation=default_elongation,
+        opex_daily_sea_eur=opex_daily_sea_eur,
     )
     db.add(vessel)
     await db.flush()
     await activity_record(
-        db, action="create", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="vessel", entity_id=vessel.id,
-        entity_label=vessel.code, detail=f"class={vessel.vessel_class}",
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="vessel",
+        entity_id=vessel.id,
+        entity_label=vessel.code,
+        detail=f"class={vessel.vessel_class}",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/vessels", status_code=303)
@@ -434,15 +448,29 @@ async def vessel_edit(
     if vessel is None:
         raise HTTPException(status_code=404)
     _apply_vessel_form(
-        vessel, name=name, vessel_class=vessel_class, imo_number=imo_number, flag=flag,
-        dwt=dwt, capacity_palettes=capacity_palettes, default_speed_kn=default_speed_kn,
-        default_elongation=default_elongation, opex_daily_sea_eur=opex_daily_sea_eur,
+        vessel,
+        name=name,
+        vessel_class=vessel_class,
+        imo_number=imo_number,
+        flag=flag,
+        dwt=dwt,
+        capacity_palettes=capacity_palettes,
+        default_speed_kn=default_speed_kn,
+        default_elongation=default_elongation,
+        opex_daily_sea_eur=opex_daily_sea_eur,
     )
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="vessel", entity_id=vessel.id,
-        entity_label=vessel.code, ip_address=_client_ip(request),
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="vessel",
+        entity_id=vessel.id,
+        entity_label=vessel.code,
+        ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/vessels", status_code=303)
 
@@ -460,9 +488,16 @@ async def vessel_toggle_active(
     vessel.is_active = not vessel.is_active
     await db.flush()
     await activity_record(
-        db, action="update", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="admin", entity_type="vessel", entity_id=vessel.id,
-        entity_label=vessel.code, detail="réactivé" if vessel.is_active else "désactivé",
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="vessel",
+        entity_id=vessel.id,
+        entity_label=vessel.code,
+        detail="réactivé" if vessel.is_active else "désactivé",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/vessels", status_code=303)

@@ -26,8 +26,15 @@ async def _setup_leg(db):
     await db.flush()
     base = datetime(2026, 4, 1, tzinfo=UTC)
     leg = Leg(
-        id=1, leg_code="1CFRBR6", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd_ref=base, eta_ref=base + timedelta(days=20), etd=base, eta=base + timedelta(days=20),
+        id=1,
+        leg_code="1CFRBR6",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd_ref=base,
+        eta_ref=base + timedelta(days=20),
+        etd=base,
+        eta=base + timedelta(days=20),
     )
     db.add(leg)
     await db.flush()
@@ -41,10 +48,16 @@ async def test_edit_unsigned_sof_updates_and_resyncs_mrv(db, staff_user):
     await _setup_leg(db)
     # SOSP (départ) → génère un MRVEvent dérivé.
     await add_sof_event(
-        1, _Req(),
-        event_type="SOSP", occurred_at="2026-04-01T08:00:00",
-        label="Départ", latitude=None, longitude=None, notes=None,
-        db=db, user=staff_user,
+        1,
+        _Req(),
+        event_type="SOSP",
+        occurred_at="2026-04-01T08:00:00",
+        label="Départ",
+        latitude=None,
+        longitude=None,
+        notes=None,
+        db=db,
+        user=staff_user,
     )
     sof = (await db.execute(SofEvent.__table__.select())).fetchone()
     mrv = (await db.execute(MRVEvent.__table__.select())).fetchone()
@@ -52,9 +65,16 @@ async def test_edit_unsigned_sof_updates_and_resyncs_mrv(db, staff_user):
 
     # Correction de l'heure → le MRVEvent dérivé suit.
     resp = await edit_sof_event(
-        sof.id, _Req(), event_type="SOSP", occurred_at="2026-04-01T09:30:00",
-        label="Départ corrigé", latitude=49.5, longitude=0.1, notes="recalé",
-        db=db, user=staff_user,
+        sof.id,
+        _Req(),
+        event_type="SOSP",
+        occurred_at="2026-04-01T09:30:00",
+        label="Départ corrigé",
+        latitude=49.5,
+        longitude=0.1,
+        notes="recalé",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     refreshed = await db.get(SofEvent, sof.id)
@@ -70,14 +90,27 @@ async def test_edit_signed_sof_rejected(db, staff_user):
     from app.routers.captain_router import edit_sof_event
 
     await _setup_leg(db)
-    e = SofEvent(leg_id=1, event_type="NOR", occurred_at=datetime(2026, 4, 1, 10, tzinfo=UTC),
-                 is_locked=True, signed_by_name="Cmdt")
+    e = SofEvent(
+        leg_id=1,
+        event_type="NOR",
+        occurred_at=datetime(2026, 4, 1, 10, tzinfo=UTC),
+        is_locked=True,
+        signed_by_name="Cmdt",
+    )
     db.add(e)
     await db.flush()
     with pytest.raises(HTTPException) as exc:
         await edit_sof_event(
-            e.id, _Req(), event_type="NOR", occurred_at="2026-04-01T11:00:00",
-            label="x", latitude=None, longitude=None, notes=None, db=db, user=staff_user,
+            e.id,
+            _Req(),
+            event_type="NOR",
+            occurred_at="2026-04-01T11:00:00",
+            label="x",
+            latitude=None,
+            longitude=None,
+            notes=None,
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 409
 
@@ -88,8 +121,16 @@ async def test_delete_unsigned_sof_cleans_mrv(db, staff_user):
 
     await _setup_leg(db)
     await add_sof_event(
-        1, _Req(), event_type="EOSP", occurred_at="2026-04-20T07:00:00",
-        label=None, latitude=None, longitude=None, notes=None, db=db, user=staff_user,
+        1,
+        _Req(),
+        event_type="EOSP",
+        occurred_at="2026-04-20T07:00:00",
+        label=None,
+        latitude=None,
+        longitude=None,
+        notes=None,
+        db=db,
+        user=staff_user,
     )
     sof = (await db.execute(SofEvent.__table__.select())).fetchone()
     assert (await db.execute(MRVEvent.__table__.select())).fetchone() is not None
@@ -108,8 +149,9 @@ async def test_delete_signed_sof_rejected(db, staff_user):
     from app.routers.captain_router import delete_sof_event
 
     await _setup_leg(db)
-    e = SofEvent(leg_id=1, event_type="NOR", occurred_at=datetime(2026, 4, 1, 10, tzinfo=UTC),
-                 is_locked=True)
+    e = SofEvent(
+        leg_id=1, event_type="NOR", occurred_at=datetime(2026, 4, 1, 10, tzinfo=UTC), is_locked=True
+    )
     db.add(e)
     await db.flush()
     with pytest.raises(HTTPException) as exc:
@@ -151,8 +193,13 @@ async def test_leg_attachment_upload_download_delete(db, staff_user, _upload_roo
     await _setup_leg(db)
     pdf = b"%PDF-1.4 faux connaissement signe"
     resp = await upload_leg_attachment(
-        1, _Req(), file=_Upload("bl_signe.pdf", pdf), category="bl_signed",
-        label="BL #1", db=db, user=staff_user,
+        1,
+        _Req(),
+        file=_Upload("bl_signe.pdf", pdf),
+        category="bl_signed",
+        label="BL #1",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     att = (await db.execute(LegAttachment.__table__.select())).fetchone()
@@ -183,8 +230,13 @@ async def test_leg_attachment_rejects_bad_extension(db, staff_user, _upload_root
     await _setup_leg(db)
     with pytest.raises(HTTPException) as exc:
         await upload_leg_attachment(
-            1, _Req(), file=_Upload("malware.exe", b"MZ\x90\x00"),
-            category="other", label=None, db=db, user=staff_user,
+            1,
+            _Req(),
+            file=_Upload("malware.exe", b"MZ\x90\x00"),
+            category="other",
+            label=None,
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 400
 
@@ -198,7 +250,12 @@ async def test_leg_attachment_rejects_unknown_category(db, staff_user, _upload_r
     await _setup_leg(db)
     with pytest.raises(HTTPException) as exc:
         await upload_leg_attachment(
-            1, _Req(), file=_Upload("doc.pdf", b"%PDF-1.4"),
-            category="nope", label=None, db=db, user=staff_user,
+            1,
+            _Req(),
+            file=_Upload("doc.pdf", b"%PDF-1.4"),
+            category="nope",
+            label=None,
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 400

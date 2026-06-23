@@ -25,12 +25,35 @@ async def _setup(db):
     db.add(Port(id=2, locode="BRSSO", name="Santos", country="BR"))
     await db.flush()
     base = datetime(2026, 3, 1, tzinfo=UTC)
-    db.add(Leg(id=1, leg_code="1CFRBR6", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-               etd_ref=base, eta_ref=base + timedelta(days=20), etd=base, eta=base + timedelta(days=20),
-               status="planned", is_bookable=True))
-    db.add(Leg(id=2, leg_code="2AFRBR6", vessel_id=2, departure_port_id=1, arrival_port_id=2,
-               etd_ref=base + timedelta(days=5), eta_ref=base + timedelta(days=25),
-               etd=base + timedelta(days=5), eta=base + timedelta(days=25), status="planned"))
+    db.add(
+        Leg(
+            id=1,
+            leg_code="1CFRBR6",
+            vessel_id=1,
+            departure_port_id=1,
+            arrival_port_id=2,
+            etd_ref=base,
+            eta_ref=base + timedelta(days=20),
+            etd=base,
+            eta=base + timedelta(days=20),
+            status="planned",
+            is_bookable=True,
+        )
+    )
+    db.add(
+        Leg(
+            id=2,
+            leg_code="2AFRBR6",
+            vessel_id=2,
+            departure_port_id=1,
+            arrival_port_id=2,
+            etd_ref=base + timedelta(days=5),
+            eta_ref=base + timedelta(days=25),
+            etd=base + timedelta(days=5),
+            eta=base + timedelta(days=25),
+            status="planned",
+        )
+    )
     await db.flush()
 
 
@@ -66,8 +89,13 @@ async def test_planning_brochure_pdf_renders(db, staff_user):
 
     await _setup(db)
     resp = await planning_commercial_pdf(
-        _Req(), vessel_id=None, year=2026, lang="fr", group_by="chrono",
-        db=db, user=staff_user,
+        _Req(),
+        vessel_id=None,
+        year=2026,
+        lang="fr",
+        group_by="chrono",
+        db=db,
+        user=staff_user,
     )
     assert resp.media_type == "application/pdf"
     assert len(resp.body) > 500

@@ -21,10 +21,9 @@ Permissions:
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
-
 import csv
 import io
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -270,12 +269,24 @@ async def finance_leg_upsert(
 
 _CSV_HEADERS = (
     "leg_code",
-    "revenue_forecast", "revenue_actual", "revenue_variance",
-    "port_fees_forecast", "port_fees_actual", "port_fees_variance",
-    "docker_costs_forecast", "docker_costs_actual", "docker_costs_variance",
-    "opex_share_forecast", "opex_share_actual", "opex_share_variance",
-    "other_costs_forecast", "other_costs_actual", "other_costs_variance",
-    "margin_forecast", "margin_actual", "margin_variance",
+    "revenue_forecast",
+    "revenue_actual",
+    "revenue_variance",
+    "port_fees_forecast",
+    "port_fees_actual",
+    "port_fees_variance",
+    "docker_costs_forecast",
+    "docker_costs_actual",
+    "docker_costs_variance",
+    "opex_share_forecast",
+    "opex_share_actual",
+    "opex_share_variance",
+    "other_costs_forecast",
+    "other_costs_actual",
+    "other_costs_variance",
+    "margin_forecast",
+    "margin_actual",
+    "margin_variance",
 )
 
 
@@ -313,17 +324,31 @@ async def finance_export_csv(
     writer.writerow(_CSV_HEADERS)
     for f in finances:
         leg = leg_map.get(f.leg_id)
-        writer.writerow(sanitize_row(
-            [
-                leg.leg_code if leg else f.leg_id,
-                f.revenue_forecast_eur, f.revenue_eur, f.revenue_variance_eur,
-                f.port_fees_forecast_eur, f.port_fees_eur, f.port_fees_variance_eur,
-                f.docker_costs_forecast_eur, f.docker_costs_eur, f.docker_costs_variance_eur,
-                f.opex_share_forecast_eur, f.opex_share_eur, f.opex_share_variance_eur,
-                f.other_costs_forecast_eur, f.other_costs_eur, f.other_costs_variance_eur,
-                f.margin_forecast_eur, f.margin_eur, f.margin_variance_eur,
-            ]
-        ))
+        writer.writerow(
+            sanitize_row(
+                [
+                    leg.leg_code if leg else f.leg_id,
+                    f.revenue_forecast_eur,
+                    f.revenue_eur,
+                    f.revenue_variance_eur,
+                    f.port_fees_forecast_eur,
+                    f.port_fees_eur,
+                    f.port_fees_variance_eur,
+                    f.docker_costs_forecast_eur,
+                    f.docker_costs_eur,
+                    f.docker_costs_variance_eur,
+                    f.opex_share_forecast_eur,
+                    f.opex_share_eur,
+                    f.opex_share_variance_eur,
+                    f.other_costs_forecast_eur,
+                    f.other_costs_eur,
+                    f.other_costs_variance_eur,
+                    f.margin_forecast_eur,
+                    f.margin_eur,
+                    f.margin_variance_eur,
+                ]
+            )
+        )
     await activity_record(
         db,
         action="finance_export_csv",

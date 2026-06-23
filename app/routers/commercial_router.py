@@ -9,6 +9,7 @@ Reprises de la V3.0.0 :
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 from datetime import UTC, datetime
@@ -162,9 +163,7 @@ async def _commercialization_fill(db: AsyncSession) -> tuple[list[dict], dict]:
     if not candidate_legs:
         return [], {"capacity": 0, "reserved": 0, "occupancy_pct": 0.0, "count": 0}
 
-    vessels = {
-        v.id: v for v in (await db.execute(select(Vessel))).scalars().all()
-    }
+    vessels = {v.id: v for v in (await db.execute(select(Vessel))).scalars().all()}
     port_ids = {leg.departure_port_id for leg in candidate_legs} | {
         leg.arrival_port_id for leg in candidate_legs
     }
@@ -1952,9 +1951,7 @@ async def order_assign_submit(
     """
     order = (
         await db.execute(
-            select(Order)
-            .options(selectinload(Order.assignments))
-            .where(Order.id == order_id)
+            select(Order).options(selectinload(Order.assignments)).where(Order.id == order_id)
         )
     ).scalar_one_or_none()
     if order is None:
@@ -2019,9 +2016,7 @@ async def order_assignment_delete(
     # restante (ou le détacher).
     order = (
         await db.execute(
-            select(Order)
-            .options(selectinload(Order.assignments))
-            .where(Order.id == order_id)
+            select(Order).options(selectinload(Order.assignments)).where(Order.id == order_id)
         )
     ).scalar_one_or_none()
     if order is not None and order.leg_id == leg_id:
@@ -2071,18 +2066,24 @@ async def order_upload_attachment(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     # Remplace la PJ précédente (best-effort sur le fichier disque).
     if order.attachment_path:
-        try:
+        with contextlib.suppress(Exception):
             resolve_path(order.attachment_path).unlink(missing_ok=True)
-        except Exception:
-            pass
     order.attachment_path = rel_path
     order.attachment_filename = file.filename
     order.attachment_mime = mime
     await db.flush()
     await activity_record(
-        db, action="upload", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="order", entity_id=order.id,
-        entity_label=order.reference, detail=file.filename, ip_address=_client_ip(request),
+        db,
+        action="upload",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="order",
+        entity_id=order.id,
+        entity_label=order.reference,
+        detail=file.filename,
+        ip_address=_client_ip(request),
     )
     return _hx_or_redirect(request, f"/commercial/orders/{order.id}")
 
@@ -2103,7 +2104,8 @@ async def order_download_attachment(
     except (UploadRejected, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="fichier introuvable") from exc
     return FileResponse(
-        path, media_type=order.attachment_mime or "application/octet-stream",
+        path,
+        media_type=order.attachment_mime or "application/octet-stream",
         filename=order.attachment_filename or path.name,
     )
 
@@ -2121,18 +2123,24 @@ async def order_delete_attachment(
     if order is None:
         raise HTTPException(status_code=404)
     if order.attachment_path:
-        try:
+        with contextlib.suppress(Exception):
             resolve_path(order.attachment_path).unlink(missing_ok=True)
-        except Exception:
-            pass
     order.attachment_path = None
     order.attachment_filename = None
     order.attachment_mime = None
     await db.flush()
     await activity_record(
-        db, action="delete", user_id=user.id, user_name=user.full_name or user.username,
-        user_role=user.role, module="commercial", entity_type="order", entity_id=order.id,
-        entity_label=order.reference, detail="PJ supprimée", ip_address=_client_ip(request),
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="order",
+        entity_id=order.id,
+        entity_label=order.reference,
+        detail="PJ supprimée",
+        ip_address=_client_ip(request),
     )
     return _hx_or_redirect(request, f"/commercial/orders/{order.id}")
 

@@ -14,6 +14,8 @@ Sécurité :
 
 from __future__ import annotations
 
+import contextlib
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import select
@@ -63,7 +65,9 @@ async def _load_or_410(db: AsyncSession, token: str, request: Request) -> Packin
         max_attempts=60,
         window_minutes=10,
     ):
-        raise HTTPException(status_code=429, detail="Trop de requêtes — patientez quelques minutes.")
+        raise HTTPException(
+            status_code=429, detail="Trop de requêtes — patientez quelques minutes."
+        )
     await rate_limit.record(db, scope="portal_token", identifier=ip)
     pl = await get_by_token(db, token)
     if pl is None:
@@ -286,7 +290,9 @@ async def portal_documents_download(
     except (UploadRejected, FileNotFoundError) as e:
         raise HTTPException(status_code=404) from e
     return FileResponse(
-        path, media_type=doc.file_mime or "application/octet-stream", filename=doc.label or "document"
+        path,
+        media_type=doc.file_mime or "application/octet-stream",
+        filename=doc.label or "document",
     )
 
 
@@ -299,10 +305,8 @@ async def portal_documents_delete(
     if doc is None or doc.packing_list_id != pl.id:
         raise HTTPException(status_code=404)
     if doc.file_path:
-        try:
+        with contextlib.suppress(UploadRejected, FileNotFoundError):
             resolve_path(doc.file_path).unlink(missing_ok=True)
-        except (UploadRejected, FileNotFoundError):
-            pass
     label = doc.label
     await db.delete(doc)
     await db.flush()

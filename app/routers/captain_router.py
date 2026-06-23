@@ -271,9 +271,7 @@ async def declare_eta_shift(
     with contextlib.suppress(Exception):
         from app.services import date_cascade
 
-        await date_cascade.cascade_from_leg(
-            db, leg, delta=shift.new_eta - shift.previous_eta
-        )
+        await date_cascade.cascade_from_leg(db, leg, delta=shift.new_eta - shift.previous_eta)
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 

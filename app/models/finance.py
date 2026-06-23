@@ -39,7 +39,9 @@ class LegFinance(Base):
     # ── Prévisionnel / budget par poste (FIN-01, arbitrage A2) — saisi par le
     # contrôle de gestion ; le réel ci-dessus reste alimenté par le rollup. ──
     revenue_forecast_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
-    port_fees_forecast_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+    port_fees_forecast_eur: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, nullable=False
+    )
     docker_costs_forecast_eur: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), default=0, nullable=False
     )

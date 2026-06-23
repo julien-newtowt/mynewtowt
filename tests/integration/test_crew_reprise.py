@@ -30,8 +30,15 @@ async def _setup_leg(db):
     await db.flush()
     base = datetime(2026, 4, 1, tzinfo=UTC)
     leg = Leg(
-        id=1, leg_code="1CFRBR6", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd_ref=base, eta_ref=base + timedelta(days=20), etd=base, eta=base + timedelta(days=20),
+        id=1,
+        leg_code="1CFRBR6",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd_ref=base,
+        eta_ref=base + timedelta(days=20),
+        etd=base,
+        eta=base + timedelta(days=20),
     )
     db.add(leg)
     await db.flush()
@@ -45,17 +52,19 @@ async def _setup_leg(db):
 async def test_crew_create_full_then_edit(db, staff_user):
     from app.routers.crew_router import crew_create, crew_edit
 
-    req = _Req(form={
-        "full_name": "Jean Marin",
-        "role": "capitaine",
-        "nationality": "fr",
-        "date_of_birth": "1985-06-15",
-        "passport_number": "12AB34567",
-        "passport_expires_at": "2030-01-01",
-        "visa_us_expires_at": "2028-03-01",
-        "seaman_book_number": "SB-999",
-        "email": "jean@example.test",
-    })
+    req = _Req(
+        form={
+            "full_name": "Jean Marin",
+            "role": "capitaine",
+            "nationality": "fr",
+            "date_of_birth": "1985-06-15",
+            "passport_number": "12AB34567",
+            "passport_expires_at": "2030-01-01",
+            "visa_us_expires_at": "2028-03-01",
+            "seaman_book_number": "SB-999",
+            "email": "jean@example.test",
+        }
+    )
     resp = await crew_create(req, db=db, user=staff_user)
     assert resp.status_code == 303
     m = (await db.execute(CrewMember.__table__.select())).fetchone()
@@ -67,8 +76,10 @@ async def test_crew_create_full_then_edit(db, staff_user):
 
     # Édition : on corrige le visa BR + téléphone.
     resp = await crew_edit(
-        m.id, _Req(form={"role": "capitaine", "visa_br_expires_at": "2029-09-09", "phone": "0102030405"}),
-        db=db, user=staff_user,
+        m.id,
+        _Req(form={"role": "capitaine", "visa_br_expires_at": "2029-09-09", "phone": "0102030405"}),
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     member = await db.get(CrewMember, m.id)
@@ -102,9 +113,14 @@ async def test_assignment_edit_and_delete(db, staff_user):
     await db.flush()
 
     resp = await crew_assignment_edit(
-        a.id, _Req(), leg_id=1, role_on_board="capitaine",
-        embark_at="2026-04-02T08:00:00", disembark_at="2026-04-18T18:00:00",
-        db=db, user=staff_user,
+        a.id,
+        _Req(),
+        leg_id=1,
+        role_on_board="capitaine",
+        embark_at="2026-04-02T08:00:00",
+        disembark_at="2026-04-18T18:00:00",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     await db.refresh(a)
@@ -129,7 +145,8 @@ async def test_find_overlap_detects_and_allows_handover(db):
     db.add(CrewMember(id=1, full_name="Jean Marin", role="capitaine"))
     await db.flush()
     a1 = CrewAssignment(
-        crew_member_id=1, leg_id=1,
+        crew_member_id=1,
+        leg_id=1,
         embark_at=datetime(2026, 4, 1, tzinfo=UTC),
         disembark_at=datetime(2026, 4, 20, tzinfo=UTC),
     )
@@ -138,23 +155,29 @@ async def test_find_overlap_detects_and_allows_handover(db):
 
     # Période chevauchante → détectée.
     ov = await _find_overlap(
-        db, member_id=1,
-        embark=datetime(2026, 4, 10), disembark=datetime(2026, 4, 25),
+        db,
+        member_id=1,
+        embark=datetime(2026, 4, 10),
+        disembark=datetime(2026, 4, 25),
     )
     assert ov is not None and ov.id == a1.id
 
     # Relève le même jour (embarque pile au débarquement) → autorisée.
     none = await _find_overlap(
-        db, member_id=1,
-        embark=datetime(2026, 4, 20), disembark=datetime(2026, 5, 1),
+        db,
+        member_id=1,
+        embark=datetime(2026, 4, 20),
+        disembark=datetime(2026, 5, 1),
     )
     assert none is None
 
     # On s'exclut soi-même.
     assert (
         await _find_overlap(
-            db, member_id=1,
-            embark=datetime(2026, 4, 1), disembark=datetime(2026, 4, 20),
+            db,
+            member_id=1,
+            embark=datetime(2026, 4, 1),
+            disembark=datetime(2026, 4, 20),
             exclude_id=a1.id,
         )
         is None
@@ -171,12 +194,16 @@ async def test_assignment_edit_rejects_overlap(db, staff_user):
     db.add(CrewMember(id=1, full_name="Jean Marin", role="capitaine"))
     await db.flush()
     a1 = CrewAssignment(
-        crew_member_id=1, leg_id=1,
-        embark_at=datetime(2026, 4, 1, tzinfo=UTC), disembark_at=datetime(2026, 4, 10, tzinfo=UTC),
+        crew_member_id=1,
+        leg_id=1,
+        embark_at=datetime(2026, 4, 1, tzinfo=UTC),
+        disembark_at=datetime(2026, 4, 10, tzinfo=UTC),
     )
     a2 = CrewAssignment(
-        crew_member_id=1, leg_id=1,
-        embark_at=datetime(2026, 4, 15, tzinfo=UTC), disembark_at=datetime(2026, 4, 25, tzinfo=UTC),
+        crew_member_id=1,
+        leg_id=1,
+        embark_at=datetime(2026, 4, 15, tzinfo=UTC),
+        disembark_at=datetime(2026, 4, 25, tzinfo=UTC),
     )
     db.add_all([a1, a2])
     await db.flush()
@@ -184,9 +211,14 @@ async def test_assignment_edit_rejects_overlap(db, staff_user):
     # Édite a2 pour chevaucher a1 → rejeté (400).
     with pytest.raises(HTTPException) as exc:
         await crew_assignment_edit(
-            a2.id, _Req(), leg_id=1, role_on_board=None,
-            embark_at="2026-04-05T00:00:00", disembark_at="2026-04-20T00:00:00",
-            db=db, user=staff_user,
+            a2.id,
+            _Req(),
+            leg_id=1,
+            role_on_board=None,
+            embark_at="2026-04-05T00:00:00",
+            disembark_at="2026-04-20T00:00:00",
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 400
 
@@ -197,13 +229,26 @@ async def test_crew_assign_success(db, staff_user):
     from app.routers.crew_router import crew_assign
 
     await _setup_leg(db)
-    db.add(CrewMember(id=1, full_name="Jean Marin", role="capitaine",
-                      nationality="FR", passport_expires_at=date(2030, 1, 1)))
+    db.add(
+        CrewMember(
+            id=1,
+            full_name="Jean Marin",
+            role="capitaine",
+            nationality="FR",
+            passport_expires_at=date(2030, 1, 1),
+        )
+    )
     await db.flush()
     resp = await crew_assign(
-        1, _Req(), leg_id=1, role_on_board="capitaine",
-        embark_at="2026-04-01T00:00:00", disembark_at="2026-04-20T00:00:00",
-        override_compliance=None, db=db, user=staff_user,
+        1,
+        _Req(),
+        leg_id=1,
+        role_on_board="capitaine",
+        embark_at="2026-04-01T00:00:00",
+        disembark_at="2026-04-20T00:00:00",
+        override_compliance=None,
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     count = len((await db.execute(CrewAssignment.__table__.select())).fetchall())
@@ -218,8 +263,16 @@ async def test_border_police_pdf_renders(db, staff_user):
     from app.routers.crew_router import crew_border_police_pdf
 
     await _setup_leg(db)
-    db.add(CrewMember(id=1, full_name="Jean Marin", role="capitaine", nationality="FR",
-                      passport_number="12AB34567", passport_expires_at=date(2030, 1, 1)))
+    db.add(
+        CrewMember(
+            id=1,
+            full_name="Jean Marin",
+            role="capitaine",
+            nationality="FR",
+            passport_number="12AB34567",
+            passport_expires_at=date(2030, 1, 1),
+        )
+    )
     db.add(CrewMember(id=2, full_name="John Sailor", role="marin", nationality="GB"))
     await db.flush()
     db.add(CrewAssignment(crew_member_id=1, leg_id=1, embark_at=datetime(2026, 4, 1, tzinfo=UTC)))

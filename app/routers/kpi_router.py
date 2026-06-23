@@ -176,21 +176,23 @@ async def kpi_export_csv(
             distance_nm=k.distance_nm,
             factors=em_factors,
         )
-        writer.writerow(sanitize_row(
-            [
-                leg_map.get(k.leg_id, ""),
-                k.palettes_carried,
-                k.tonnage_kg,
-                k.distance_nm,
-                k.duration_hours,
-                k.avg_speed_kn,
-                "1" if k.on_time else "0",
-                k.occupancy_pct,
-                k.co2_avoided_kg,
-                em.nox_avoided_kg,
-                em.sox_avoided_kg,
-            ]
-        ))
+        writer.writerow(
+            sanitize_row(
+                [
+                    leg_map.get(k.leg_id, ""),
+                    k.palettes_carried,
+                    k.tonnage_kg,
+                    k.distance_nm,
+                    k.duration_hours,
+                    k.avg_speed_kn,
+                    "1" if k.on_time else "0",
+                    k.occupancy_pct,
+                    k.co2_avoided_kg,
+                    em.nox_avoided_kg,
+                    em.sox_avoided_kg,
+                ]
+            )
+        )
 
     output.seek(0)
     return StreamingResponse(

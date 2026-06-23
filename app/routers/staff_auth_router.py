@@ -82,9 +82,7 @@ async def login(
     # MFA challenge si activé sur ce compte staff — sauf si cet appareil a déjà
     # validé un MFA dans les dernières 24 h (cookie de confiance signé).
     mfa_required = getattr(user, "mfa_enabled", False) and user.mfa_secret
-    trusted = decode_staff_mfa_trusted(
-        request.cookies.get(STAFF_MFA_TRUSTED_COOKIE) or "", user.id
-    )
+    trusted = decode_staff_mfa_trusted(request.cookies.get(STAFF_MFA_TRUSTED_COOKIE) or "", user.id)
     if mfa_required and not trusted:
         await activity_record(
             db,

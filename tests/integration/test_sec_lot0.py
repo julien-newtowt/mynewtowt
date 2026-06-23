@@ -17,7 +17,6 @@ from app.models.claim import VesselPosition
 from app.models.vessel import Vessel
 from app.services import rate_limit
 
-
 # ─────────────────────────────── SEC-01 ───────────────────────────────
 
 

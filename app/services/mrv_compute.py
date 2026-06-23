@@ -50,7 +50,9 @@ def _declared_rob_t(ev: MRVEvent, density: Decimal) -> Decimal | None:
     return (Decimal(str(ev.rob_l)) / Decimal(1000)) * density
 
 
-def validate_event(ev: MRVEvent, prev: MRVEvent | None, *, density: Decimal, deviation: Decimal) -> None:
+def validate_event(
+    ev: MRVEvent, prev: MRVEvent | None, *, density: Decimal, deviation: Decimal
+) -> None:
     """Pose ``quality_status`` (ok/warning/error) + notes sur un événement."""
     errors: list[str] = []
     warnings: list[str] = []
@@ -112,7 +114,11 @@ async def recompute_leg(db: AsyncSession, leg_id: int) -> int:
     for ev in events:
         # Consommation ME/AE depuis les deltas de compteurs.
         if _has_all_counters(ev) and prev is not None and _has_all_counters(prev):
-            d = lambda c: Decimal(str(getattr(ev, c))) - Decimal(str(getattr(prev, c)))  # noqa: E731
+            # Bornes liées en défauts (ev, prev) — delta de compteur consommé
+            # dans l'itération courante.
+            def d(c, ev=ev, prev=prev):
+                return Decimal(str(getattr(ev, c))) - Decimal(str(getattr(prev, c)))
+
             me = (d("port_me_do_counter") + d("stbd_me_do_counter")) * density
             ae = (d("fwd_gen_do_counter") + d("aft_gen_do_counter")) * density
             ev.me_consumption_t = me
@@ -128,7 +134,11 @@ async def recompute_leg(db: AsyncSession, leg_id: int) -> int:
 
         # ROB calculé chaîné : base + soutage − consommation.
         bunker = Decimal(str(ev.bunkering_qty_t)) if ev.bunkering_qty_t is not None else Decimal(0)
-        cons = Decimal(str(ev.total_consumption_t)) if ev.total_consumption_t is not None else Decimal(0)
+        cons = (
+            Decimal(str(ev.total_consumption_t))
+            if ev.total_consumption_t is not None
+            else Decimal(0)
+        )
         if prev is not None and prev.rob_calculated_t is not None:
             ev.rob_calculated_t = Decimal(str(prev.rob_calculated_t)) + bunker - cons
         else:
@@ -158,10 +168,8 @@ def decimal_to_dms(value: float, *, is_lat: bool) -> tuple[int, Decimal, str]:
 
     Minutes arrondies à 3 décimales (cohérent avec ``MRVEvent.lat_min``).
     """
-    if is_lat:
-        hemi = "N" if value >= 0 else "S"
-    else:
-        hemi = "E" if value >= 0 else "W"
+    positive, negative = ("N", "S") if is_lat else ("E", "W")
+    hemi = positive if value >= 0 else negative
     av = abs(value)
     deg = int(av)
     minutes = (Decimal(str(av)) - Decimal(deg)) * Decimal("60")

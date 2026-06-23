@@ -137,7 +137,9 @@ def compute_metrics(
     remaining: float | None = None
     if leg.ata is not None:
         remaining = 0.0
-    elif positions and arr_port and arr_port.latitude is not None and arr_port.longitude is not None:
+    elif (
+        positions and arr_port and arr_port.latitude is not None and arr_port.longitude is not None
+    ):
         last = positions[-1]
         remaining = haversine_nm(
             last.latitude, last.longitude, arr_port.latitude, arr_port.longitude

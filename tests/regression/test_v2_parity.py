@@ -62,10 +62,23 @@ def test_v2_antijump_filter_restored():
 
 # V2 PackingListBatch portait les adresses structurées + description marchandise.
 _V2_BATCH_FIELDS = (
-    "shipper_name", "shipper_address", "shipper_postal", "shipper_city", "shipper_country",
-    "notify_name", "notify_address", "notify_postal", "notify_city", "notify_country",
-    "consignee_name", "consignee_address", "consignee_postal", "consignee_city",
-    "consignee_country", "type_of_goods", "description_of_goods",
+    "shipper_name",
+    "shipper_address",
+    "shipper_postal",
+    "shipper_city",
+    "shipper_country",
+    "notify_name",
+    "notify_address",
+    "notify_postal",
+    "notify_city",
+    "notify_country",
+    "consignee_name",
+    "consignee_address",
+    "consignee_postal",
+    "consignee_city",
+    "consignee_country",
+    "type_of_goods",
+    "description_of_goods",
 )
 
 
@@ -153,8 +166,14 @@ def test_v2_crew_member_full_fields_present():
     """CREW-03 : les champs de la fiche marin V2 existent et sont saisissables."""
     from app.models.crew import CrewMember
 
-    for f in ("date_of_birth", "visa_us_expires_at", "visa_br_expires_at",
-              "seaman_book_number", "seaman_book_expires_at", "nationality"):
+    for f in (
+        "date_of_birth",
+        "visa_us_expires_at",
+        "visa_br_expires_at",
+        "seaman_book_number",
+        "seaman_book_expires_at",
+        "nationality",
+    ):
         assert hasattr(CrewMember, f), f
 
 
@@ -166,11 +185,11 @@ def test_v2_mrv_routes_restored():
     from app.routers.mrv_router import router
 
     m = _methods(router)
-    assert ("POST", "/mrv/events/{event_id}/edit") in m       # MRV-03
+    assert ("POST", "/mrv/events/{event_id}/edit") in m  # MRV-03
     assert ("POST", "/mrv/events/{event_id}/delete") in m
-    assert ("GET", "/mrv/export/dnv.csv") in m                # MRV-01
-    assert ("GET", "/mrv/export/carbon-report.pdf") in m      # MRV-02
-    assert ("POST", "/mrv/params") in m                       # MRV-06
+    assert ("GET", "/mrv/export/dnv.csv") in m  # MRV-01
+    assert ("GET", "/mrv/export/carbon-report.pdf") in m  # MRV-02
+    assert ("POST", "/mrv/params") in m  # MRV-06
 
 
 def test_v2_dnv_export_is_18_columns():
@@ -185,9 +204,18 @@ def test_v2_mrv_do_counters_present():
     """MRV-04 : les 4 compteurs DO + ME/AE/ROB calculés existent."""
     from app.models.mrv import MRVEvent
 
-    for f in ("port_me_do_counter", "stbd_me_do_counter", "fwd_gen_do_counter",
-              "aft_gen_do_counter", "me_consumption_t", "ae_consumption_t",
-              "total_consumption_t", "rob_calculated_t", "lat_deg", "lat_ns"):
+    for f in (
+        "port_me_do_counter",
+        "stbd_me_do_counter",
+        "fwd_gen_do_counter",
+        "aft_gen_do_counter",
+        "me_consumption_t",
+        "ae_consumption_t",
+        "total_consumption_t",
+        "rob_calculated_t",
+        "lat_deg",
+        "lat_ns",
+    ):
         assert hasattr(MRVEvent, f), f
 
 
@@ -199,10 +227,10 @@ def test_v2_commercial_routes_restored():
     from app.routers.commercial_router import router
 
     m = _methods(router)
-    assert ("GET", "/commercial/orders/{order_id}/assign") in m      # COM-01
+    assert ("GET", "/commercial/orders/{order_id}/assign") in m  # COM-01
     assert ("POST", "/commercial/orders/{order_id}/assign") in m
     assert ("POST", "/commercial/orders/{order_id}/assignments/{assignment_id}/delete") in m
-    assert ("GET", "/commercial/clients/{client_id}/edit") in m      # COM-03
+    assert ("GET", "/commercial/clients/{client_id}/edit") in m  # COM-03
     assert ("POST", "/commercial/clients/{client_id}/edit") in m
     assert ("POST", "/commercial/clients/{client_id}/toggle-active") in m
 
@@ -211,10 +239,19 @@ def test_v2_order_rich_fields_restored():
     """COM-02 : la commande V3 retrouve format/poids/THC/frais/route/dates + lien grille."""
     from app.models.commercial import Order
 
-    for f in ("palette_format", "weight_per_palette_kg", "thc_included",
-              "booking_fee", "documentation_fee", "departure_locode",
-              "arrival_locode", "delivery_date_start", "delivery_date_end",
-              "rate_grid_id", "rate_grid_line_id"):
+    for f in (
+        "palette_format",
+        "weight_per_palette_kg",
+        "thc_included",
+        "booking_fee",
+        "documentation_fee",
+        "departure_locode",
+        "arrival_locode",
+        "delivery_date_start",
+        "delivery_date_end",
+        "rate_grid_id",
+        "rate_grid_line_id",
+    ):
         assert hasattr(Order, f), f
 
 
@@ -238,7 +275,7 @@ def test_v2_onboard_leg_attachments_restored():
     assert ("POST", "/captain/legs/{leg_id}/attachments") in m
     assert ("GET", "/captain/legs/{leg_id}/attachments/{att_id}/download") in m
     assert ("POST", "/captain/legs/{leg_id}/attachments/{att_id}/delete") in m
-    from app.models.leg_attachment import LegAttachment, LEG_ATTACHMENT_CATEGORIES
+    from app.models.leg_attachment import LEG_ATTACHMENT_CATEGORIES, LegAttachment
 
     assert "port_agent" in LEG_ATTACHMENT_CATEGORIES
     assert "bl_signed" in LEG_ATTACHMENT_CATEGORIES
@@ -253,9 +290,14 @@ def test_v2_finance_forecast_actual_restored():
     """FIN-01 : LegFinance retrouve le couple prévisionnel/réel + écarts (A2)."""
     from app.models.finance import LegFinance
 
-    for f in ("revenue_forecast_eur", "port_fees_forecast_eur",
-              "docker_costs_forecast_eur", "opex_share_forecast_eur",
-              "other_costs_forecast_eur", "margin_forecast_eur"):
+    for f in (
+        "revenue_forecast_eur",
+        "port_fees_forecast_eur",
+        "docker_costs_forecast_eur",
+        "opex_share_forecast_eur",
+        "other_costs_forecast_eur",
+        "margin_forecast_eur",
+    ):
         assert hasattr(LegFinance, f), f
     # propriétés d'écart
     for p in ("revenue_variance_eur", "margin_variance_eur"):
@@ -334,7 +376,7 @@ def test_v2_crew_offleg_and_ticket_restored():
     from app.models.crew import CrewAssignment
     from app.routers.crew_router import router
 
-    assert CrewAssignment.__table__.c.leg_id.nullable is True   # A4
+    assert CrewAssignment.__table__.c.leg_id.nullable is True  # A4
     assert hasattr(CrewAssignment, "vessel_id")
     for f in ("ticket_path", "ticket_filename", "ticket_mime"):
         assert hasattr(CrewAssignment, f), f

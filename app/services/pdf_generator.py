@@ -221,9 +221,7 @@ def render_anemos_certificate(
     return DocumentBytes(html=html, pdf=pdf, filename=f"LabelAnemos_{ctx['cert_ref']}.pdf")
 
 
-def render_planning_brochure(
-    *, groups, summary, meta, lang: str = "fr"
-) -> DocumentBytes:
+def render_planning_brochure(*, groups, summary, meta, lang: str = "fr") -> DocumentBytes:
     """PLN-01 — brochure commerciale imprimable du planning.
 
     ``groups`` est une liste de ``{"title": str, "rows": [{leg, vessel, pol, pod}]}``
