@@ -652,11 +652,18 @@ async def _member_detail_context(
         .scalars()
         .all()
     )
+    # CREW-07 — garde-fou cohérence billet/escale par affectation (alertes
+    # embarquement manquant / postérieur à l'ETD / billet non chargé).
+    from app.services.escale_crew import crew_assignment_alerts
+
+    assignment_alerts = await crew_assignment_alerts(db, assigns)
+
     return {
         "request": request,
         "user": user,
         "member": member,
         "assignments": assigns,
+        "assignment_alerts": assignment_alerts,
         "certifications": certs,
         "leaves": leaves,
         "tickets": tickets,

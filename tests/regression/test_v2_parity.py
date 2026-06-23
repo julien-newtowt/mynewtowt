@@ -234,6 +234,18 @@ def test_v2_escale_crew_coupling_restored():
     assert "passage_paf" in OPERATION_ACTIONS  # action auto-PAF restaurée
 
 
+def test_v2_crew_ticket_escale_coherence_restored():
+    """CREW-07 : alertes billet/escale surfacées sur la fiche marin."""
+    from pathlib import Path
+
+    from app.services.escale_crew import crew_assignment_alerts
+
+    assert callable(crew_assignment_alerts)
+    # La fiche marin affiche les alertes par affectation (colonne dédiée).
+    tpl = Path("app/templates/staff/crew/detail.html").read_text(encoding="utf-8")
+    assert "assignment_alerts" in tpl
+
+
 def test_v2_ux_time_input_restored():
     """UX-01 : partial de saisie d'heure portuaire (fuseau UTC/Paris/Port local + aperçu UTC)."""
     from app.templating import templates

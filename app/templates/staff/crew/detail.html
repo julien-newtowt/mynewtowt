@@ -64,7 +64,7 @@
   <h2>Embarquements / débarquements ({{ assignments|length }})</h2>
   {% if assignments %}
   <table class="data-table">
-    <thead><tr><th>Leg</th><th>Rôle</th><th>Embarquement</th><th>Débarquement</th><th></th></tr></thead>
+    <thead><tr><th>Leg</th><th>Rôle</th><th>Embarquement</th><th>Débarquement</th><th>Alertes</th><th></th></tr></thead>
     <tbody>
       {% for a in assignments %}
       <tr>
@@ -72,13 +72,19 @@
         <td>{{ a.role_on_board or '—' }}</td>
         <td>{{ a.embark_at|datetime if a.embark_at else '—' }}</td>
         <td>{{ a.disembark_at|datetime if a.disembark_at else '—' }}</td>
+        {# CREW-07 — cohérence billet/escale par affectation. #}
+        <td>
+          {% set alerts = assignment_alerts.get(a.id, []) %}
+          {% for al in alerts %}<span class="pill {{ 'pill-warn' if al.level == 'warning' else 'pill-info' }}" title="{{ al.message }}">{{ al.message }}</span> {% endfor %}
+          {% if not alerts %}<span class="pill pill-ok">OK</span>{% endif %}
+        </td>
         <td class="text-right">
           <form method="post" action="/crew/assignments/{{ a.id }}/delete" style="display:inline;" data-confirm="Supprimer cet embarquement ?">
             <button type="submit" class="btn btn-danger btn-sm">🗑</button>
           </form>
         </td>
       </tr>
-      <tr><td colspan="5">
+      <tr><td colspan="6">
         <details>
           <summary class="text-muted">✎ Modifier l'embarquement (leg {{ a.leg_id }})</summary>
           <form method="post" action="/crew/assignments/{{ a.id }}/edit" class="grid grid-4 gap-2 mt-2">

@@ -526,6 +526,65 @@ def test_embarkation_alerts():
 
 
 @pytest.mark.asyncio
+async def test_crew_assignment_alerts_per_assignment(db):
+    """CREW-07 — alertes billet/escale indexées par affectation (fiche marin)."""
+    from app.services.escale_crew import crew_assignment_alerts
+
+    leg = await _setup_leg(db)
+    m = CrewMember(full_name="Jean Marin", role="matelot")
+    db.add(m)
+    await db.flush()
+    # Affectation incohérente : embarquement après l'ETD + billet absent.
+    a_bad = CrewAssignment(
+        crew_member_id=m.id, leg_id=leg.id, embark_at=leg.etd + timedelta(days=3)
+    )
+    # Affectation cohérente : embarquement avant l'ETD + billet chargé.
+    a_ok = CrewAssignment(
+        crew_member_id=m.id,
+        leg_id=leg.id,
+        embark_at=leg.etd - timedelta(days=1),
+        ticket_path="crew_tickets/x.pdf",
+    )
+    db.add_all([a_bad, a_ok])
+    await db.flush()
+
+    alerts = await crew_assignment_alerts(db, [a_bad, a_ok])
+    assert a_bad.id in alerts and a_ok.id not in alerts  # seul l'incohérent alerte
+    msgs = [x["message"] for x in alerts[a_bad.id]]
+    assert any("ETD" in msg for msg in msgs)
+    assert any("Billet" in msg for msg in msgs)
+
+
+@pytest.mark.asyncio
+async def test_crew_detail_renders_with_alerts(db, staff_user):
+    """La fiche marin (panneau alertes CREW-07) se rend sans erreur."""
+    from types import SimpleNamespace as _NS
+
+    from app.routers.crew_router import crew_detail
+
+    leg = await _setup_leg(db)
+    m = CrewMember(full_name="Jean Marin", role="matelot")
+    db.add(m)
+    await db.flush()
+    db.add(
+        CrewAssignment(crew_member_id=m.id, leg_id=leg.id, embark_at=leg.etd + timedelta(days=2))
+    )
+    await db.flush()
+
+    class _Req:
+        headers: dict[str, str] = {}
+        cookies: dict[str, str] = {}
+        query_params: dict[str, str] = {}
+        client = _NS(host="127.0.0.1")
+        url = _NS(path=f"/crew/members/{m.id}")
+        state = _NS(notif_count=0, newtowt_agent_enabled=True, recent_notifications=[])
+
+    resp = await crew_detail(m.id, _Req(), db=db, user=staff_user)
+    assert resp.status_code == 200
+    assert resp.context["assignment_alerts"]  # au moins une alerte
+
+
+@pytest.mark.asyncio
 async def test_escale_index_renders_with_crew_panel(db, staff_user):
     """Le rendu de la page escale (avec panneau équipage ESC-06) ne lève pas."""
     from app.routers.escale_router import escale_index

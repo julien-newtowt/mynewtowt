@@ -113,36 +113,61 @@ async def maybe_create_paf(
     return paf
 
 
+def _assignment_alert_messages(a: CrewAssignment, leg_etd: datetime | None) -> list[dict]:
+    """Règles d'alerte billet/embarquement pour **une** affectation.
+
+    ``leg_etd`` = ETD (naïf) du leg de l'affectation, ``None`` si hors leg.
+    Retourne ``[{level, message}]`` (vide si l'affectation est cohérente).
+    """
+    out: list[dict] = []
+    embark = _naive(a.embark_at)
+    if embark is None and a.disembark_at is None:
+        out.append({"level": "warning", "message": "Date d'embarquement manquante"})
+    elif embark is not None and leg_etd is not None and embark > leg_etd:
+        out.append({"level": "warning", "message": "Embarquement saisi après l'ETD du voyage"})
+    if not a.ticket_path:
+        out.append({"level": "info", "message": "Billet non chargé"})
+    return out
+
+
 def embarkation_alerts(assignments: list[CrewAssignment], leg: Leg | None) -> list[dict]:
-    """Confronte embarquements & billets à la fenêtre du voyage.
+    """Confronte embarquements & billets à la fenêtre du voyage (vue leg / escale).
 
     Retourne une liste d'alertes ``{level, member_id, message}`` :
     - embarquement sans date → warning ;
     - embarquement après l'ETD du voyage → warning (incompatibilité dates) ;
     - billet non chargé → info.
     """
-    alerts: list[dict] = []
     etd = _naive(leg.etd or leg.etd_ref) if leg else None
+    alerts: list[dict] = []
     for a in assignments:
-        embark = _naive(a.embark_at)
-        if embark is None and a.disembark_at is None:
-            alerts.append(
-                {
-                    "level": "warning",
-                    "member_id": a.crew_member_id,
-                    "message": "Date d'embarquement manquante",
-                }
-            )
-        elif embark is not None and etd is not None and embark > etd:
-            alerts.append(
-                {
-                    "level": "warning",
-                    "member_id": a.crew_member_id,
-                    "message": "Embarquement saisi après l'ETD du voyage",
-                }
-            )
-        if not a.ticket_path:
-            alerts.append(
-                {"level": "info", "member_id": a.crew_member_id, "message": "Billet non chargé"}
-            )
+        alerts.extend(
+            {"member_id": a.crew_member_id, **msg} for msg in _assignment_alert_messages(a, etd)
+        )
     return alerts
+
+
+async def crew_assignment_alerts(
+    db: AsyncSession, assignments: list[CrewAssignment]
+) -> dict[int, list[dict]]:
+    """CREW-07 — alertes billet/embarquement **par affectation** d'un marin.
+
+    Pour la fiche marin : résout l'ETD du leg de chaque affectation et applique
+    les mêmes règles que ``embarkation_alerts`` (source unique :
+    ``_assignment_alert_messages``), mais indexées par ``assignment_id``.
+    Retourne ``{assignment_id: [{level, message}]}`` (affectations sans alerte
+    omises). Lecture seule.
+    """
+    out: dict[int, list[dict]] = {}
+    etd_cache: dict[int, datetime | None] = {}
+    for a in assignments:
+        etd: datetime | None = None
+        if a.leg_id is not None:
+            if a.leg_id not in etd_cache:
+                lg = await db.get(Leg, a.leg_id)
+                etd_cache[a.leg_id] = _naive(lg.etd or lg.etd_ref) if lg else None
+            etd = etd_cache[a.leg_id]
+        msgs = _assignment_alert_messages(a, etd)
+        if msgs:
+            out[a.id] = msgs
+    return out
