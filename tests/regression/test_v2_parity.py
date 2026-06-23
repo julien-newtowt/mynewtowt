@@ -633,6 +633,22 @@ def test_v2_tracking_latest_and_import_batch_restored():
         assert hasattr(VesselPosition, f), f
 
 
+def test_v2_tracking_status_color_markers_restored():
+    """TRK-04 : marqueurs flotte colorés par statut (SOG) + légende."""
+    from pathlib import Path
+
+    from app.templating import templates
+
+    js = Path("app/static/js/fleet-map.js").read_text(encoding="utf-8")
+    assert "vesselStatus" in js
+    # les 3 couleurs de statut (à quai / manœuvre / en mer)
+    for color in ("#0D5966", "#B47148", "#87BD29"):
+        assert color in js
+    tpl = Path("app/templates/staff/tracking/index.html").read_text(encoding="utf-8")
+    assert '"sog"' in tpl  # le SOG est transmis aux marqueurs
+    assert templates.env.get_template("staff/tracking/index.html") is not None
+
+
 def test_v2_navigation_avg_speed_elongation_restored():
     """TRK-03 : vitesse moyenne + allongement réel affichés en navigation."""
     from pathlib import Path

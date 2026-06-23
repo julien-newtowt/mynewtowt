@@ -16,6 +16,14 @@
 (function () {
   "use strict";
 
+  // TRK-04 — statut d'un navire d'après sa vitesse fond (SOG, en nœuds).
+  // Seuils : < 0.5 kn = à quai ; < 3 kn = manœuvre/lent ; sinon = en mer.
+  function vesselStatus(sog) {
+    if (typeof sog !== "number" || sog < 0.5) return { label: "À quai", color: "#0D5966" };
+    if (sog < 3) return { label: "Manœuvre", color: "#B47148" };
+    return { label: "En mer", color: "#87BD29" };
+  }
+
   function initMap(el) {
     if (!el || el.dataset.fleetMapBound === "1") return;
     if (typeof window.maplibregl === "undefined") {
@@ -59,17 +67,22 @@
 
       withPos.forEach(function (v) {
         var marker = document.createElement("div");
+        // TRK-04 — codage couleur du statut par vitesse fond (SOG) :
+        // à quai (gris/teal), manœuvre (cuivre), en mer (vert).
+        var status = vesselStatus(v.sog);
         marker.style.cssText = (
-          "width:34px;height:34px;border-radius:50%;background:#0D5966;" +
+          "width:34px;height:34px;border-radius:50%;background:" + status.color + ";" +
           "color:#fff;display:flex;align-items:center;justify-content:center;" +
           "font-family:'JetBrains Mono',monospace;font-weight:700;font-size:11px;" +
           "border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4);"
         );
+        marker.title = status.label;
         marker.textContent = v.code || "";
         var html = "<strong>" + (v.name || "") + "</strong>";
         if (v.code) {
           html += "<br><span style=\"font-family:monospace\">" + v.code + "</span>";
         }
+        html += "<br><span style=\"color:" + status.color + ";font-weight:700;\">● " + status.label + "</span>";
         if (typeof v.sog === "number") html += "<br>SOG " + v.sog + " kn";
         if (typeof v.cog === "number") html += " · COG " + Math.round(v.cog) + "°";
         if (v.recorded_at) {

@@ -77,6 +77,12 @@
        data-no-position-text="Aucune position enregistrée."
        data-no-position-detail="Alimente <code>vessel_positions</code> via le module Tracking (POST /api/tracking/upload avec X-API-Token)."
        data-vessels='{{ ns.items|tojson }}'></div>
+  {# TRK-04 — légende du codage couleur de statut (par SOG). #}
+  <div class="flex gap-3 text-sm text-muted" style="padding:var(--space-2) var(--space-3); border-top:1px solid var(--gris-clair); flex-wrap:wrap;">
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0D5966;margin-right:4px;"></span>À quai (&lt; 0,5 kn)</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#B47148;margin-right:4px;"></span>Manœuvre (&lt; 3 kn)</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#87BD29;margin-right:4px;"></span>En mer (≥ 3 kn)</span>
+  </div>
 </article>
 {% endif %}
 
