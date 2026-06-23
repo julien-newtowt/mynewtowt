@@ -308,6 +308,53 @@ def test_v2_ux_vietnamese_catalog_parity_restored():
     assert not mismatches, f"placeholders divergents : {mismatches}"
 
 
+def test_v2_cargo_portal_multilingual_restored():
+    """CARGO-12 : portail expéditeur multilingue (5 langues + sélecteur)."""
+    import re
+    from pathlib import Path
+
+    from app.i18n import en, es, fr, pt_br, vi
+    from app.templating import templates
+
+    # Bloc de clés portail (préfixe pt_) présent dans le catalogue de référence.
+    pt_keys = {k for k in fr.CATALOG if k.startswith("pt_")}
+    assert len(pt_keys) >= 150, f"trop peu de clés portail : {len(pt_keys)}"
+
+    # Parité des clés pt_ sur les 5 langues (fr en es pt-br vi).
+    for name, mod in (("en", en), ("es", es), ("pt_br", pt_br), ("vi", vi)):
+        mod_pt = {k for k in mod.CATALOG if k.startswith("pt_")}
+        assert pt_keys == mod_pt, f"écart de clés portail {name}↔fr : {pt_keys ^ mod_pt}"
+
+    # Placeholders ({ref}, {count}…) préservés clé à clé dans chaque langue.
+    ph = re.compile(r"\{[a-zA-Z0-9_]*\}")
+    for name, mod in (("en", en), ("es", es), ("pt_br", pt_br), ("vi", vi)):
+        bad = [
+            k for k in pt_keys if set(ph.findall(fr.CATALOG[k])) != set(ph.findall(mod.CATALOG[k]))
+        ]
+        assert not bad, f"placeholders divergents {name} : {bad}"
+
+    # Traduction réellement câblée (fr ≠ en sur un libellé de navigation).
+    assert fr.CATALOG["pt_nav_overview"] != en.CATALOG["pt_nav_overview"]
+
+    # Les templates portail utilisent t() et compilent ; sélecteur de langue présent.
+    portal = Path("app/templates/portal")
+    layout = (portal / "_layout.html").read_text(encoding="utf-8")
+    assert "/lang/" in layout  # sélecteur de langue (liens /lang/{l})
+    for name in (
+        "_layout.html",
+        "home.html",
+        "voyage.html",
+        "packing.html",
+        "guide.html",
+        "messages.html",
+        "documents.html",
+        "vessel.html",
+        "privacy.html",
+    ):
+        assert 't("pt_' in (portal / name).read_text(encoding="utf-8"), name
+        assert templates.env.get_template(f"portal/{name}") is not None
+
+
 # ───────────────────────────── Crew (V2 parité) ─────────────────────────────
 
 

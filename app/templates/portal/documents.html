@@ -1,31 +1,31 @@
 {% extends "portal/_layout.html" %}
 {% block portal_content %}
-<h1 class="display">Documents</h1>
-<p class="text-muted">Déposez ici vos documents douaniers (factures, MSDS, certificats…).</p>
+<h1 class="display">{{ t("pt_nav_documents", lang) }}</h1>
+<p class="text-muted">{{ t("pt_documents_lead", lang) }}</p>
 
 <div class="card" style="margin-bottom: var(--space-5);">
   <form method="post" action="/p/{{ token }}/documents/upload" enctype="multipart/form-data" class="flex" style="gap: var(--space-3); align-items:flex-end; flex-wrap:wrap;">
     <div>
-      <label class="field-label" for="doc-kind">Type</label>
+      <label class="field-label" for="doc-kind">{{ t("pt_documents_type", lang) }}</label>
       <select id="doc-kind" name="kind" class="form-select">
         {% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
       </select>
     </div>
     <div style="flex:1; min-width:180px;">
-      <label class="field-label" for="doc-label">Libellé (optionnel)</label>
-      <input id="doc-label" type="text" name="label" class="form-input" placeholder="Facture commerciale…" />
+      <label class="field-label" for="doc-label">{{ t("pt_documents_label", lang) }}</label>
+      <input id="doc-label" type="text" name="label" class="form-input" placeholder="{{ t('pt_documents_label_placeholder', lang) }}" />
     </div>
     <div>
-      <label class="field-label" for="doc-file">Fichier</label>
+      <label class="field-label" for="doc-file">{{ t("pt_documents_file", lang) }}</label>
       <input id="doc-file" type="file" name="file" required />
     </div>
-    <button type="submit" class="btn btn-primary">Déposer</button>
+    <button type="submit" class="btn btn-primary">{{ t("pt_documents_upload", lang) }}</button>
   </form>
 </div>
 
 {% if docs %}
 <table class="data-table">
-  <thead><tr><th>Type</th><th>Libellé</th><th>Déposé le</th><th></th></tr></thead>
+  <thead><tr><th>{{ t("pt_documents_type", lang) }}</th><th>{{ t("pt_documents_label", lang) }}</th><th>{{ t("pt_documents_uploaded_at", lang) }}</th><th></th></tr></thead>
   <tbody>
     {% for d in docs %}
     <tr>
@@ -33,9 +33,9 @@
       <td>{{ d.label }}</td>
       <td class="mono">{{ d.uploaded_at|datetime }}</td>
       <td class="text-right">
-        <a class="btn btn-sm" href="/p/{{ token }}/documents/{{ d.id }}/download">Télécharger</a>
-        <form method="post" action="/p/{{ token }}/documents/{{ d.id }}/delete" style="display:inline;" data-confirm="Supprimer ce document ?">
-          <button type="submit" class="btn btn-sm btn-danger">Supprimer</button>
+        <a class="btn btn-sm" href="/p/{{ token }}/documents/{{ d.id }}/download">{{ t("pt_documents_download", lang) }}</a>
+        <form method="post" action="/p/{{ token }}/documents/{{ d.id }}/delete" style="display:inline;" data-confirm="{{ t('pt_documents_delete_confirm', lang) }}">
+          <button type="submit" class="btn btn-sm btn-danger">{{ t("pt_documents_delete", lang) }}</button>
         </form>
       </td>
     </tr>
@@ -43,6 +43,6 @@
   </tbody>
 </table>
 {% else %}
-<p class="empty-state">Aucun document déposé pour le moment.</p>
+<p class="empty-state">{{ t("pt_documents_empty", lang) }}</p>
 {% endif %}
 {% endblock %}
