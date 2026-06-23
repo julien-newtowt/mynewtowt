@@ -212,6 +212,16 @@ def test_v2_escale_crew_coupling_restored():
     assert "passage_paf" in OPERATION_ACTIONS  # action auto-PAF restaurée
 
 
+def test_v2_ux_time_input_restored():
+    """UX-01 : partial de saisie d'heure portuaire (fuseau UTC/Paris/Port local + aperçu UTC)."""
+    from app.templating import templates
+
+    macro = templates.env.get_template("staff/_time_input.html").module.tz_datetime
+    html = str(macro("planned_start", label="Début"))
+    assert 'class="tz-input-wrap"' in html and 'class="tz-select"' in html
+    assert "tz-utc-hint" in html
+
+
 # ───────────────────────────── Crew (V2 parité) ─────────────────────────────
 
 

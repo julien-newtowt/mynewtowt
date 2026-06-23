@@ -1,4 +1,5 @@
 {% extends "staff/_layout.html" %}
+{% from "staff/_time_input.html" import tz_datetime %}
 {% block title %}On Board — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
@@ -72,7 +73,7 @@
     <form method="post" action="/captain/legs/{{ leg.id }}/sof">
       <div class="grid grid-2 gap-2">
         <div class="field"><label>Type</label><select name="event_type">{% for t in event_types %}<option>{{ t }}</option>{% endfor %}</select></div>
-        <div class="field"><label>Quand</label><input name="occurred_at" type="datetime-local" required /></div>
+        {{ tz_datetime("occurred_at", label="Quand", required=True) }}
         <div class="field"><label>Libellé</label><input name="label" type="text" /></div>
         <div class="field"><label>Latitude</label><input name="latitude" type="number" step="0.0001" /></div>
         <div class="field"><label>Longitude</label><input name="longitude" type="number" step="0.0001" /></div>
