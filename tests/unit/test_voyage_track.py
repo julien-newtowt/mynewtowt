@@ -17,9 +17,14 @@ from app.models.vessel import Vessel
 from app.services import voyage_track as vt
 
 
-def _mk_pos(vessel_id, when, lat, lon):
+def _mk_pos(vessel_id, when, lat, lon, sog=None):
     return VesselPosition(
-        vessel_id=vessel_id, recorded_at=when, latitude=lat, longitude=lon, source="test"
+        vessel_id=vessel_id,
+        recorded_at=when,
+        latitude=lat,
+        longitude=lon,
+        sog_kn=sog,
+        source="test",
     )
 
 
@@ -214,3 +219,100 @@ def test_real_elongation_none_without_theoretical() -> None:
         is_active=True,
     )
     assert m.real_elongation is None
+
+
+# ─────────────────────────────── TRK-02 ───────────────────────────────
+
+
+def test_sog_stats() -> None:
+    base = datetime(2026, 3, 1, tzinfo=UTC)
+    pts = [
+        _mk_pos(1, base, 49.0, 0.0, sog=6.0),
+        _mk_pos(1, base + timedelta(hours=1), 49.1, 0.0, sog=None),
+        _mk_pos(1, base + timedelta(hours=2), 49.2, 0.0, sog=10.0),
+    ]
+    avg, mx = vt.sog_stats(pts)
+    assert avg == 8.0 and mx == 10.0
+    # Aucun SOG relevé → (None, None).
+    assert vt.sog_stats([_mk_pos(1, base, 49.0, 0.0)]) == (None, None)
+    assert vt.sog_stats([]) == (None, None)
+
+
+def test_annual_navigation_kpis_db() -> None:
+    async def _run():
+        eng = create_async_engine("sqlite+aiosqlite://")
+        try:
+            async with eng.begin() as c:
+                await c.run_sync(Base.metadata.create_all)
+            Session = async_sessionmaker(eng, expire_on_commit=False)
+            async with Session() as s:
+                v = Vessel(code="ANE", name="Anemos")
+                s.add(v)
+                dep = Port(name="Fécamp", locode="FRFEC", country="FR")
+                arr = Port(
+                    name="Dakar", locode="SNDKR", country="SN", latitude=14.0, longitude=-17.0
+                )
+                s.add_all([dep, arr])
+                await s.flush()
+                base = datetime(2026, 3, 1, tzinfo=UTC)
+                # Leg 2026 AVEC positions GPS → présent dans le KPI.
+                leg_with = Leg(
+                    leg_code="1ANE6",
+                    vessel_id=v.id,
+                    departure_port_id=dep.id,
+                    arrival_port_id=arr.id,
+                    etd=base,
+                    eta=base + timedelta(days=3),
+                    etd_ref=base,
+                    eta_ref=base + timedelta(days=3),
+                    atd=base,
+                    ata=base + timedelta(days=3),
+                    distance_nm=Decimal("100"),
+                )
+                # Leg 2026 SANS positions → exclu.
+                leg_without = Leg(
+                    leg_code="2ANE6",
+                    vessel_id=v.id,
+                    departure_port_id=dep.id,
+                    arrival_port_id=arr.id,
+                    etd=base + timedelta(days=20),
+                    eta=base + timedelta(days=23),
+                    etd_ref=base + timedelta(days=20),
+                    eta_ref=base + timedelta(days=23),
+                )
+                # Leg d'une AUTRE année → exclu malgré ses positions.
+                base_2025 = datetime(2025, 5, 1, tzinfo=UTC)
+                leg_other_year = Leg(
+                    leg_code="1ANE5",
+                    vessel_id=v.id,
+                    departure_port_id=dep.id,
+                    arrival_port_id=arr.id,
+                    etd=base_2025,
+                    eta=base_2025 + timedelta(days=2),
+                    etd_ref=base_2025,
+                    eta_ref=base_2025 + timedelta(days=2),
+                    atd=base_2025,
+                    ata=base_2025 + timedelta(days=2),
+                )
+                s.add_all([leg_with, leg_without, leg_other_year])
+                s.add_all(
+                    [
+                        _mk_pos(v.id, base + timedelta(hours=6), 49.0, 0.0, sog=6.0),
+                        _mk_pos(v.id, base + timedelta(hours=18), 48.0, -2.0, sog=9.0),
+                        _mk_pos(v.id, base_2025 + timedelta(hours=6), 49.0, 0.0, sog=7.0),
+                    ]
+                )
+                await s.flush()
+
+                rows = await vt.annual_navigation_kpis(s, 2026, vessel_id=v.id)
+                # Seul le leg 2026 à GPS est présent.
+                assert len(rows) == 1
+                r = rows[0]
+                assert r.leg.leg_code == "1ANE6"
+                assert r.metrics.point_count == 2
+                assert r.avg_sog_kn == 7.5 and r.max_sog_kn == 9.0
+                assert r.metrics.theoretical_nm == 100.0
+        finally:
+            await eng.dispose()
+
+    asyncio.run(_run())

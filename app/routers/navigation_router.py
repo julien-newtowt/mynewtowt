@@ -22,9 +22,11 @@ from __future__ import annotations
 
 import logging
 import secrets as _secrets
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -37,7 +39,12 @@ from app.services import weather as wx
 from app.services import weather_history
 from app.services.activity import record as activity_record
 from app.services.leg_filter import build_leg_filter
-from app.services.voyage_track import compute_metrics, positions_for_leg, positions_payload
+from app.services.voyage_track import (
+    annual_navigation_kpis,
+    compute_metrics,
+    positions_for_leg,
+    positions_payload,
+)
 from app.templating import templates
 
 logger = logging.getLogger("weather")
@@ -260,6 +267,90 @@ async def navigation_index(
             "extra_query": extra_query,
             "fleet_weather": fleet_weather,
             "weather_provider": weather_history.active_provider(),
+        },
+    )
+
+
+@router.get("/kpis", response_class=HTMLResponse)
+async def navigation_kpis(
+    request: Request,
+    vessel: str | None = None,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("planning", "C")),
+) -> HTMLResponse:
+    """TRK-02 — vue KPI navigation agrégée par année.
+
+    Tableau « tous les legs à GPS de l'année » (optionnellement filtré par
+    navire) : point_count, vitesse moyenne, SOG moyen/max, distance réelle /
+    théorique, allongement. Restaure la vue de performance de flotte V2
+    (``/navigation-kpis``).
+    """
+    vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    current_year = year or datetime.now(UTC).year
+    # Fenêtre d'années orientée historique (4 ans glissants jusqu'à l'année courante).
+    years = list(range(current_year - 3, current_year + 1))
+    # selected_vessel == "" → tous les navires (agrégat de flotte). Un code
+    # inconnu (typo, navire supprimé) retombe sur l'agrégat flotte : on
+    # normalise alors selected_vessel à "" pour que l'onglet actif (« Tous les
+    # navires ») reflète bien les données affichées.
+    v = next((x for x in vessels if x.code == (vessel or "")), None)
+    selected_vessel = v.code if v else ""
+
+    rows = await annual_navigation_kpis(db, current_year, vessel_id=v.id if v else None)
+
+    vessels_by_id = {x.id: x for x in vessels}
+    port_cache: dict[int, Port | None] = {}
+
+    async def _port(pid: int) -> Port | None:
+        if pid not in port_cache:
+            port_cache[pid] = await db.get(Port, pid)
+        return port_cache[pid]
+
+    enriched: list[dict] = []
+    total_points = 0
+    total_actual = 0.0
+    total_theoretical = 0.0
+    for r in rows:
+        dep = await _port(r.leg.departure_port_id)
+        arr = await _port(r.leg.arrival_port_id)
+        enriched.append(
+            {
+                "leg": r.leg,
+                "vessel": vessels_by_id.get(r.leg.vessel_id),
+                "dep": dep,
+                "arr": arr,
+                "metrics": r.metrics,
+                "avg_sog_kn": r.avg_sog_kn,
+                "max_sog_kn": r.max_sog_kn,
+            }
+        )
+        total_points += r.metrics.point_count
+        total_actual += r.metrics.actual_nm
+        if r.metrics.theoretical_nm is not None:
+            total_theoretical += r.metrics.theoretical_nm
+
+    totals = {
+        "leg_count": len(enriched),
+        "points": total_points,
+        "actual_nm": total_actual,
+        "theoretical_nm": total_theoretical or None,
+        "real_elongation": (
+            round(total_actual / total_theoretical, 3) if total_theoretical > 0 else None
+        ),
+    }
+
+    return templates.TemplateResponse(
+        "staff/navigation/kpis.html",
+        {
+            "request": request,
+            "user": user,
+            "vessels": vessels,
+            "selected_vessel": selected_vessel,
+            "years": years,
+            "current_year": current_year,
+            "rows": enriched,
+            "totals": totals,
         },
     )
 

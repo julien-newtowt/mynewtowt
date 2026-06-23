@@ -1,0 +1,93 @@
+{% extends "staff/_layout.html" %}
+{% block title %}KPI navigation{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Performance</span>
+    <h1 class="display">KPI navigation — {{ current_year }}</h1>
+  </div>
+  <a href="/performance/navigation" class="btn btn-ghost"><i data-lucide="map"></i> Carte des trajets</a>
+</header>
+
+<p class="text-muted text-sm mb-3">
+  Tous les legs de l'année porteurs d'au moins un point GPS satcom. Pour chaque
+  leg : nombre de points, vitesse moyenne, vitesse fond (SOG) moyenne/max,
+  distance réellement parcourue vs orthodromique et ratio d'allongement.
+</p>
+
+{# ── Filtre navire (Tous + par navire) × année ── #}
+<div class="planning-filters mb-3">
+  <div class="vessel-tabs">
+    <a href="/performance/navigation/kpis?vessel=&year={{ current_year }}"
+       class="vessel-tab {% if not selected_vessel %}active{% endif %}">
+      <i data-lucide="layers"></i> Tous les navires
+    </a>
+    {% for v in vessels %}
+    <a href="/performance/navigation/kpis?vessel={{ v.code }}&year={{ current_year }}"
+       class="vessel-tab {% if selected_vessel == v.code %}active{% endif %}">
+      <i data-lucide="ship"></i> {{ v.name }}
+    </a>
+    {% endfor %}
+  </div>
+  <div class="year-selector">
+    {% for y in years %}
+    <a href="/performance/navigation/kpis?vessel={{ selected_vessel }}&year={{ y }}"
+       class="year-btn {% if current_year == y %}active{% endif %}">{{ y }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{# ── Synthèse de flotte sur l'année ── #}
+<section class="stats-grid mb-3">
+  <div class="stat-card">
+    <div class="stat-card-icon teal"><i data-lucide="route"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ totals.leg_count }}</span><span class="stat-card-label">Legs à GPS</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon sky"><i data-lucide="map-pin"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ totals.points }}</span><span class="stat-card-label">Points GPS</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon green"><i data-lucide="ruler"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ "%.0f"|format(totals.actual_nm) }}</span><span class="stat-card-label">NM parcourus</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-icon cuivre"><i data-lucide="git-compare"></i></div>
+    <div class="stat-card-body"><span class="stat-card-value">{{ "×%.2f"|format(totals.real_elongation) if totals.real_elongation is not none else "—" }}</span><span class="stat-card-label">Allongement flotte</span></div>
+  </div>
+</section>
+
+<article class="card" style="overflow-x:auto;">
+  {% if rows %}
+  <table class="data-table">
+    <thead><tr>
+      <th>Leg</th><th>Navire</th><th>Trajet</th><th>Points</th>
+      <th>Vit. moy.</th><th>SOG moy.</th><th>SOG max</th>
+      <th>Réelle</th><th>Théorique</th><th>Allong.</th>
+    </tr></thead>
+    <tbody>
+    {% for d in rows %}
+      {% set m = d.metrics %}
+      <tr>
+        <td><strong class="mono">{{ d.leg.leg_code }}</strong><br><span class="mono text-xs text-muted">{{ d.leg.etd|date }}</span></td>
+        <td>{{ d.vessel.name if d.vessel else "—" }}</td>
+        <td class="text-sm">
+          {% if d.dep %}{{ d.dep.country|flag }} {{ d.dep.locode }}{% endif %} →
+          {% if d.arr %}{{ d.arr.country|flag }} {{ d.arr.locode }}{% endif %}
+        </td>
+        <td class="mono">{{ m.point_count }}</td>
+        <td class="mono">{{ "%.1f kn"|format(m.avg_speed_kn) if m.avg_speed_kn is not none else "—" }}</td>
+        <td class="mono">{{ "%.1f kn"|format(d.avg_sog_kn) if d.avg_sog_kn is not none else "—" }}</td>
+        <td class="mono">{{ "%.1f kn"|format(d.max_sog_kn) if d.max_sog_kn is not none else "—" }}</td>
+        <td class="mono">{{ "%.0f"|format(m.actual_nm) }} NM</td>
+        <td class="mono">{{ "%.0f NM"|format(m.theoretical_nm) if m.theoretical_nm is not none else "—" }}</td>
+        <td class="mono">{{ "×%.2f"|format(m.real_elongation) if m.real_elongation is not none else "—" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucun leg porteur de points GPS pour {{ current_year }}{% if selected_vessel %} sur ce navire{% endif %}.</p>
+  {% endif %}
+</article>
+{% endblock %}
