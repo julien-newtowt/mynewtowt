@@ -30,9 +30,7 @@
           </form>
           {% endif %}
           {% if o.status in ('draft','sent','accepted') %}
-          <form method="post" action="/commercial/offers/{{ o.id }}/convert" style="display:inline;">
-            <button type="submit" class="btn btn-sm btn-primary">→ Commande</button>
-          </form>
+          <a href="/commercial/offers/{{ o.id }}/convert" class="btn btn-sm btn-primary">→ Commande</a>
           {% endif %}
         </td>
       </tr>

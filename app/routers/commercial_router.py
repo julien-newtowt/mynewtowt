@@ -1708,14 +1708,55 @@ async def offer_send(
     return RedirectResponse(url="/commercial/offers", status_code=303)
 
 
-@router.post("/offers/{offer_id}/convert")
-async def offer_convert_to_order(
+@router.get("/offers/{offer_id}/convert", response_class=HTMLResponse)
+async def offer_convert_form(
     offer_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
+) -> HTMLResponse:
+    """COM-05 — écran de conversion offre→commande éditable (route/qty/format/prix)."""
+    offer = await db.get(RateOffer, offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404)
+    if offer.status not in ("draft", "sent", "accepted"):
+        raise HTTPException(status_code=400, detail="offre non convertible")
+    leg = await db.get(Leg, offer.leg_id) if offer.leg_id else None
+    pol = await db.get(Port, leg.departure_port_id) if leg and leg.departure_port_id else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg and leg.arrival_port_id else None
+    client = await db.get(Client, offer.client_id)
+    return templates.TemplateResponse(
+        "staff/commercial/order_convert_form.html",
+        {
+            "request": request,
+            "user": user,
+            "offer": offer,
+            "leg": leg,
+            "client": client,
+            "pol_locode": pol.locode if pol else "",
+            "pod_locode": pod.locode if pod else "",
+        },
+    )
+
+
+@router.post("/offers/{offer_id}/convert")
+async def offer_convert_to_order(
+    offer_id: int,
+    request: Request,
+    booked_palettes: int | None = Form(None),
+    palette_format: str | None = Form(None),
+    rate_per_palette_eur: str | None = Form(None),
+    total_eur: str | None = Form(None),
+    departure_locode: str | None = Form(None),
+    arrival_locode: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
 ):
-    """Convertir une offre en commande ferme."""
+    """Convertir une offre en commande ferme.
+
+    COM-05 — les valeurs (qty/format/prix/route) peuvent être ajustées au
+    moment de la conversion ; à défaut, on reprend celles de l'offre.
+    """
     offer = await db.get(RateOffer, offer_id)
     if offer is None:
         raise HTTPException(status_code=404)
@@ -1730,9 +1771,15 @@ async def offer_convert_to_order(
         offer_id=offer.id,
         leg_id=offer.leg_id,
         status="draft",
-        booked_palettes=offer.estimated_palettes or 0,
-        rate_per_palette_eur=offer.proposed_rate_eur,
-        total_eur=offer.total_eur,
+        booked_palettes=(
+            booked_palettes if booked_palettes is not None else (offer.estimated_palettes or 0)
+        ),
+        rate_per_palette_eur=_opt_decimal(rate_per_palette_eur) or offer.proposed_rate_eur,
+        total_eur=_opt_decimal(total_eur) or offer.total_eur,
+        palette_format=(palette_format or None),
+        departure_locode=(departure_locode or None),
+        arrival_locode=(arrival_locode or None),
+        rate_grid_id=offer.grid_id,
         pipedrive_deal_id=offer.pipedrive_deal_id,
     )
     db.add(order)
