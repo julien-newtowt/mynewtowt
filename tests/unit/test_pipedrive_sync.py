@@ -117,3 +117,96 @@ def test_sync_clients_not_configured(monkeypatch) -> None:
             await eng.dispose()
 
     asyncio.run(_run())
+
+
+# ─────────────────────────── COM-06 — push Deal sur offre/commande ───────────
+
+
+def test_push_deal_for_offer(monkeypatch) -> None:
+    """Une offre émise crée un Deal Pipedrive (org find-or-create + montant)."""
+    from decimal import Decimal
+
+    from app.models.commercial import RateOffer
+
+    async def _run():
+        eng = create_async_engine("sqlite+aiosqlite://")
+        try:
+            async with eng.begin() as c:
+                await c.run_sync(Base.metadata.create_all)
+            Session = async_sessionmaker(eng, expire_on_commit=False)
+            async with Session() as s:
+                client = Client(name="ACME Ltd", client_type="shipper")
+                s.add(client)
+                await s.flush()
+                offer = RateOffer(
+                    reference="OFF-1",
+                    client_id=client.id,
+                    title="Offre ACME",
+                    status="sent",
+                    total_eur=Decimal("9600"),
+                )
+                s.add(offer)
+                await s.flush()
+
+                monkeypatch.setattr(pipedrive, "enabled", lambda: True)
+                created: dict = {}
+
+                async def _foc(name, **kw):
+                    return {"id": 55, "name": name}
+
+                async def _pid(name):
+                    return 7
+
+                async def _stage(pid):
+                    return 3
+
+                async def _deal(title, **kw):
+                    created.update({"title": title, **kw})
+                    return {"id": 999}
+
+                monkeypatch.setattr(pipedrive, "find_or_create_organization", _foc)
+                monkeypatch.setattr(pipedrive, "find_pipeline_id", _pid)
+                monkeypatch.setattr(pipedrive, "first_stage_id", _stage)
+                monkeypatch.setattr(pipedrive, "create_deal", _deal)
+
+                did = await pipedrive_sync.push_deal_for(s, offer)
+                assert did == 999 and offer.pipedrive_deal_id == 999
+                assert created["org_id"] == 55
+                assert created["value"] == 9600.0
+                assert created["pipeline_id"] == 7 and created["stage_id"] == 3
+                assert "OFF-1" in created["title"]
+
+                # Idempotent : un 2e appel ne recrée pas de deal.
+                created.clear()
+                did2 = await pipedrive_sync.push_deal_for(s, offer)
+                assert did2 == 999 and not created
+        finally:
+            await eng.dispose()
+
+    asyncio.run(_run())
+
+
+def test_push_deal_for_noop_when_disabled(monkeypatch) -> None:
+    """Pipedrive non configuré → no-op (aucun deal, entité inchangée)."""
+    from app.models.commercial import RateOffer
+
+    async def _run():
+        eng = create_async_engine("sqlite+aiosqlite://")
+        try:
+            async with eng.begin() as c:
+                await c.run_sync(Base.metadata.create_all)
+            Session = async_sessionmaker(eng, expire_on_commit=False)
+            async with Session() as s:
+                client = Client(name="ACME", client_type="shipper")
+                s.add(client)
+                await s.flush()
+                offer = RateOffer(reference="OFF-2", client_id=client.id, title="X", status="draft")
+                s.add(offer)
+                await s.flush()
+                monkeypatch.setattr(pipedrive, "enabled", lambda: False)
+                assert await pipedrive_sync.push_deal_for(s, offer) is None
+                assert offer.pipedrive_deal_id is None
+        finally:
+            await eng.dispose()
+
+    asyncio.run(_run())

@@ -1692,6 +1692,8 @@ async def offer_send(
     o.status = "sent"
     o.sent_at = datetime.now(UTC)
     await db.flush()
+    # COM-06 — une offre émise devient une opportunité : push Deal Pipedrive.
+    await _push_pipedrive_deal(db, o)
     await activity_record(
         db,
         action="update",
@@ -2279,6 +2281,8 @@ async def order_confirm(
         pl, created = await ensure_for_order(db, order)
         if created:
             await notifications.notify_packing_list_created(db, order.reference, pl.id)
+        # COM-06 — commande confirmée : push (ou réutilisation) du Deal Pipedrive.
+        await _push_pipedrive_deal(db, order)
     await activity_record(
         db,
         action="update",
@@ -2486,3 +2490,15 @@ def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
     )
+
+
+async def _push_pipedrive_deal(db: AsyncSession, entity) -> None:
+    """COM-06 — pousse un Deal Pipedrive (best-effort, jamais bloquant).
+
+    No-op si Pipedrive n'est pas configuré. Toute erreur est avalée pour ne
+    jamais casser le flux commercial (offre envoyée / commande confirmée).
+    """
+    from app.services.pipedrive_sync import push_deal_for
+
+    with contextlib.suppress(Exception):
+        await push_deal_for(db, entity)
