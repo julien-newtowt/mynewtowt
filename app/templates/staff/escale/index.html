@@ -194,7 +194,7 @@
 
     {% if shifts %}
     <table class="data-table">
-      <thead><tr><th>Compagnie</th><th>Direction</th><th>Cale</th><th>Dockers</th><th>Cible / Réalisé</th><th>Coût</th></tr></thead>
+      <thead><tr><th>Compagnie</th><th>Direction</th><th>Cale</th><th>Dockers</th><th>Cible / Réalisé</th><th>Cadence (pal/h)</th><th>Coût</th></tr></thead>
       <tbody>
         {% for s in shifts %}
         <tr>
@@ -207,6 +207,17 @@
             <div class="progress-bar"><div class="progress-bar-fill" style="width:{{ (100 * (s.palettes_done or 0) / s.palettes_target) if s.palettes_target else 0 }}%"></div></div>
             <small class="mono">{{ s.palettes_done }}/{{ s.palettes_target }}</small>
             {% else %}{{ s.palettes_done }}{% endif %}
+          </td>
+          {# ESC-05 — cadence dockers : prévue vs réelle + écart %. #}
+          <td class="mono text-sm">
+            {% if s.actual_rate is not none %}
+              <strong>{{ s.actual_rate }}</strong>{% if s.planned_rate is not none %} <span class="text-muted">/ {{ s.planned_rate }}</span>{% endif %}
+              {% if s.rate_delta_pct is not none %}
+                <span class="pill {{ 'pill-ok' if s.rate_delta_pct >= 0 else 'pill-warn' }}">{{ '%+.0f%%'|format(s.rate_delta_pct) }}</span>
+              {% endif %}
+            {% elif s.planned_rate is not none %}
+              <span class="text-muted">cible {{ s.planned_rate }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td class="mono">{{ s.cost_eur|money if s.cost_eur else '—' }}</td>
         </tr>
