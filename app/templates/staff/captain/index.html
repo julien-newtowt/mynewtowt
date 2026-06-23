@@ -20,6 +20,28 @@
   {% endfor %}
 </div>
 
+{# ONB-07 — alertes contextuelles de bord (notifications). #}
+{% if onboard_notifs %}
+<article class="card mt-3">
+  <div class="section-header"><h3><i data-lucide="bell"></i> Alertes de bord ({{ onboard_notifs|length }})</h3></div>
+  {% for n in onboard_notifs %}
+  <div class="dash-notif-card {% if n.is_read %}notif-read{% endif %}">
+    <span class="dash-notif-icon">⚓</span>
+    <div class="dash-notif-body" style="flex:1;">
+      <div class="dash-notif-title">
+        {% if n.link %}<a href="{{ n.link }}"><strong>{{ n.title }}</strong></a>{% else %}<strong>{{ n.title }}</strong>{% endif %}
+        <span class="dash-notif-time">{{ n.created_at|datetime }}</span>
+      </div>
+      {% if n.detail %}<div class="dash-notif-text">{{ n.detail }}</div>{% endif %}
+    </div>
+    <form method="post" action="/captain/notifications/{{ n.id }}/dismiss" style="display:inline;">
+      <button type="submit" class="btn btn-ghost btn-sm" title="Masquer">✕</button>
+    </form>
+  </div>
+  {% endfor %}
+</article>
+{% endif %}
+
 {% if leg %}
 <div class="grid grid-2 gap-4">
   <article class="card">

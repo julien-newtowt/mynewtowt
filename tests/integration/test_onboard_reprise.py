@@ -259,3 +259,49 @@ async def test_leg_attachment_rejects_unknown_category(db, staff_user, _upload_r
             user=staff_user,
         )
     assert exc.value.status_code == 400
+
+
+# ─────────────────────────────── ONB-07 ───────────────────────────────
+
+
+class _FullReq:
+    headers: dict[str, str] = {}
+    cookies: dict[str, str] = {}
+    query_params: dict[str, str] = {}
+    client = SimpleNamespace(host="127.0.0.1")
+    url = SimpleNamespace(path="/captain")
+    state = SimpleNamespace(notif_count=0, newtowt_agent_enabled=True, recent_notifications=[])
+
+
+@pytest.mark.asyncio
+async def test_dismiss_onboard_notification_archives(db, staff_user):
+    from app.routers.captain_router import dismiss_onboard_notification
+    from app.services.notifications import create as notif_create
+
+    n = await notif_create(db, type="eosp", title="EOSP 1CFRBR6", target_role=staff_user.role)
+    resp = await dismiss_onboard_notification(n.id, _Req(), db=db, user=staff_user)
+    assert resp.status_code == 303
+    await db.refresh(n)
+    assert n.is_archived is True
+
+
+@pytest.mark.asyncio
+async def test_captain_index_lists_onboard_notifs(db, staff_user):
+    from app.routers.captain_router import captain_index
+    from app.services.notifications import create as notif_create
+
+    await _setup_leg(db)
+    await notif_create(
+        db, type="eosp", title="EOSP 1CFRBR6", detail="navire en mer", target_role=staff_user.role
+    )
+    resp = await captain_index(_FullReq(), leg_id=1, db=db, user=staff_user)
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/captain/index.html"
+    assert len(resp.context["onboard_notifs"]) == 1
+    # la notification archivée disparaît
+    n = resp.context["onboard_notifs"][0]
+    from app.services.notifications import archive
+
+    await archive(db, n)
+    resp2 = await captain_index(_FullReq(), leg_id=1, db=db, user=staff_user)
+    assert resp2.context["onboard_notifs"] == []
