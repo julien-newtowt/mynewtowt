@@ -233,3 +233,109 @@ def test_commercial_index_template_compiles():
     from app.templating import templates
 
     assert templates.env.get_template("staff/commercial/index.html") is not None
+
+
+# ─────────────────────────────── COM-05 ───────────────────────────────
+
+
+async def _offer(db, **over):
+    from decimal import Decimal
+
+    from app.models.commercial import RateOffer
+
+    c = Client(name="ACME", client_type="shipper")
+    db.add(c)
+    await db.flush()
+    vals = {
+        "reference": "RO-2026-0001",
+        "client_id": c.id,
+        "title": "Offre Le Havre → FDF",
+        "status": "sent",
+        "estimated_palettes": 80,
+        "proposed_rate_eur": Decimal("120.00"),
+        "total_eur": Decimal("9600.00"),
+    }
+    vals.update(over)
+    o = RateOffer(**vals)
+    db.add(o)
+    await db.flush()
+    return o
+
+
+@pytest.mark.asyncio
+async def test_offer_convert_form_renders(db, staff_user):
+    from app.routers.commercial_router import offer_convert_form
+
+    o = await _offer(db)
+    resp = await offer_convert_form(o.id, _RenderReq(), db=db, user=staff_user)
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/commercial/order_convert_form.html"
+    assert resp.context["offer"].id == o.id
+
+
+@pytest.mark.asyncio
+async def test_offer_convert_with_edited_values(db, staff_user):
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from app.models.commercial import RateOffer
+    from app.routers.commercial_router import offer_convert_to_order as order_convert
+
+    o = await _offer(db)
+    resp = await order_convert(
+        o.id,
+        _Req(),
+        booked_palettes=120,
+        palette_format="USPAL",
+        rate_per_palette_eur="100.00",
+        total_eur="12000.00",
+        departure_locode="FRLEH",
+        arrival_locode="MQFDF",
+        db=db,
+        user=staff_user,
+    )
+    assert resp.status_code == 303
+    order = (await db.execute(select(Order))).scalars().one()
+    assert order.booked_palettes == 120
+    assert order.palette_format == "USPAL"
+    assert order.rate_per_palette_eur == Decimal("100.00")
+    assert order.total_eur == Decimal("12000.00")
+    assert order.departure_locode == "FRLEH"
+    # offre passée à "accepted"
+    off = await db.get(RateOffer, o.id)
+    assert off.status == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_offer_convert_falls_back_to_offer_values(db, staff_user):
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from app.routers.commercial_router import offer_convert_to_order as order_convert
+
+    o = await _offer(db)
+    await order_convert(
+        o.id,
+        _Req(),
+        booked_palettes=None,
+        palette_format=None,
+        rate_per_palette_eur=None,
+        total_eur=None,
+        departure_locode=None,
+        arrival_locode=None,
+        db=db,
+        user=staff_user,
+    )
+    order = (await db.execute(select(Order))).scalars().one()
+    assert order.booked_palettes == 80  # repris de l'offre
+    assert order.rate_per_palette_eur == Decimal("120.00")
+    assert order.total_eur == Decimal("9600.00")
+
+
+def test_offers_and_convert_templates_compile():
+    from app.templating import templates
+
+    for n in ("staff/commercial/offers.html", "staff/commercial/order_convert_form.html"):
+        assert templates.env.get_template(n) is not None

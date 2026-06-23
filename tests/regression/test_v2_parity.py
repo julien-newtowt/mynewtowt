@@ -370,6 +370,15 @@ def test_v2_commercial_grid_performance_restored():
     assert callable(grid_performance) and callable(commercial_totals)
 
 
+def test_v2_commercial_editable_conversion_restored():
+    """COM-05 : conversion offre→commande éditable (route/qty/format/prix)."""
+    from app.routers.commercial_router import router
+
+    m = _methods(router)
+    assert ("GET", "/commercial/offers/{offer_id}/convert") in m  # écran éditable
+    assert ("POST", "/commercial/offers/{offer_id}/convert") in m
+
+
 def test_v2_order_rich_fields_restored():
     """COM-02 : la commande V3 retrouve format/poids/THC/frais/route/dates + lien grille."""
     from app.models.commercial import Order

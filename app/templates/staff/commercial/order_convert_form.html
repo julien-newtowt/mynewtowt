@@ -1,0 +1,63 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Convertir l'offre {{ offer.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Commercial · conversion offre → commande</span>
+  <h1 class="display">Convertir {{ offer.reference }}</h1>
+  <p class="text-muted">Client <strong>{{ client.name if client else '—' }}</strong> · ajustez la route, la quantité, le format et le prix avant de créer la commande ferme.</p>
+</header>
+
+<article class="card">
+  <form method="post" action="/commercial/offers/{{ offer.id }}/convert">
+    <input type="hidden" name="client_id" value="{{ offer.client_id }}" />
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="booked_palettes">Palettes réservées</label>
+        <input id="booked_palettes" name="booked_palettes" type="number" min="0"
+               value="{{ offer.estimated_palettes or 0 }}" />
+      </div>
+      <div class="field">
+        <label for="palette_format">Format palette</label>
+        <input id="palette_format" name="palette_format" type="text" value="EPAL" placeholder="EPAL, USPAL…" />
+      </div>
+      <div class="field">
+        <label for="departure_locode">POL (départ)</label>
+        <input id="departure_locode" name="departure_locode" type="text" maxlength="5" value="{{ pol_locode }}" />
+      </div>
+      <div class="field">
+        <label for="arrival_locode">POD (arrivée)</label>
+        <input id="arrival_locode" name="arrival_locode" type="text" maxlength="5" value="{{ pod_locode }}" />
+      </div>
+      <div class="field">
+        <label for="rate_per_palette_eur">Tarif (€/palette)</label>
+        <input id="rate_per_palette_eur" name="rate_per_palette_eur" type="number" step="0.01" min="0"
+               value="{{ offer.proposed_rate_eur or '' }}" />
+      </div>
+      <div class="field">
+        <label for="total_eur">Total (€)</label>
+        <input id="total_eur" name="total_eur" type="number" step="0.01" min="0"
+               value="{{ offer.total_eur or '' }}" />
+      </div>
+    </div>
+
+    {# COM-07 — recalcul du tarif depuis la grille active (HTMX). #}
+    <div class="mt-3">
+      <button type="button" class="btn btn-secondary btn-sm"
+              hx-get="/commercial/api/rate-lookup"
+              hx-include="[name='departure_locode'],[name='arrival_locode'],[name='booked_palettes'],[name='palette_format'],[name='client_id']"
+              hx-target="#rate-lookup-result" hx-swap="innerHTML">
+        Recalculer le tarif grille
+      </button>
+      <div id="rate-lookup-result" class="mt-2"></div>
+    </div>
+
+    <div class="flex gap-2 mt-3">
+      <button type="submit" class="btn btn-primary">Créer la commande</button>
+      <a href="/commercial/offers" class="btn btn-ghost">Annuler</a>
+    </div>
+  </form>
+</article>
+
+<script src="/static/js/commercial-rate.js" defer></script>
+{% endblock %}
