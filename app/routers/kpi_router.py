@@ -80,27 +80,19 @@ async def kpi_index(
     leg_map = {leg.id: leg for leg in legs}
 
     # Aggregates (sur le périmètre filtré)
-    total_tonnage_t = sum((k.tonnage_kg or Decimal(0)) for k in kpis) / Decimal(1000)
-    total_co2_avoided_kg = sum((k.co2_avoided_kg or Decimal(0)) for k in kpis)
-    total_co2_emitted_t = sum((k.co2_emitted_kg or Decimal(0)) for k in kpis) / Decimal(1000)
-    total_do_t = sum((k.do_consumed_t or Decimal(0)) for k in kpis)
-
-    # FIN-03 — NOx / SOx évités par leg (cargo × distance × Δfacteur), + totaux.
-    from app.services.emissions import estimate_avoided, get_emission_factors
+    # FIN-03 — NOx / SOx évités + totaux CO₂/tonnage/DO, agrégats partagés avec
+    # /kpi/consolidated (source unique : services.kpi.aggregate_emissions).
+    from app.services.emissions import get_emission_factors
+    from app.services.kpi import aggregate_emissions
 
     em_factors = await get_emission_factors(db)
-    emissions_by_leg: dict[int, object] = {}
-    total_nox_avoided_kg = Decimal(0)
-    total_sox_avoided_kg = Decimal(0)
-    for k in kpis:
-        res = estimate_avoided(
-            cargo_t=(k.tonnage_kg or Decimal(0)) / Decimal(1000),
-            distance_nm=k.distance_nm,
-            factors=em_factors,
-        )
-        emissions_by_leg[k.leg_id] = res
-        total_nox_avoided_kg += res.nox_avoided_kg
-        total_sox_avoided_kg += res.sox_avoided_kg
+    env_totals, emissions_by_leg = aggregate_emissions(kpis, em_factors)
+    total_tonnage_t = env_totals["tonnage_t"]
+    total_co2_avoided_kg = env_totals["co2_avoided_kg"]
+    total_co2_emitted_t = env_totals["co2_emitted_t"]
+    total_do_t = env_totals["do_t"]
+    total_nox_avoided_kg = env_totals["nox_avoided_kg"]
+    total_sox_avoided_kg = env_totals["sox_avoided_kg"]
 
     # FIN-05 — équivalences pédagogiques du CO₂ évité (vols / conteneurs).
     from app.services.co2 import co2_equivalences
@@ -141,6 +133,39 @@ async def kpi_index(
             "total_sox_avoided_kg": total_sox_avoided_kg,
             "co2_equiv": equiv,
             "exploitation": exploitation,
+        },
+    )
+
+
+@router.get("/consolidated", response_class=HTMLResponse)
+async def kpi_consolidated(
+    request: Request,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("kpi", "C")),
+) -> HTMLResponse:
+    """FIN-07 — page d'entrée KPI consolidée (Commerce / Flotte / Env / Exploitation).
+
+    Agrège les indicateurs des différentes sources et renvoie vers les vues
+    détaillées (``/kpi``, ``/commercial``, ``/mrv/carbon``, ``/finance``,
+    ``/performance/navigation/kpis``).
+    """
+    from datetime import UTC, datetime
+
+    from app.services.kpi_consolidated import consolidated_kpis
+
+    now = datetime.now(UTC)
+    current_year = year or now.year
+    data = await consolidated_kpis(db, year=current_year, now=now)
+    years = list(range(current_year - 3, current_year + 1))
+    return templates.TemplateResponse(
+        "staff/kpi/consolidated.html",
+        {
+            "request": request,
+            "user": user,
+            "data": data,
+            "years": years,
+            "current_year": current_year,
         },
     )
 

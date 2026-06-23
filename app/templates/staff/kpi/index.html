@@ -7,9 +7,14 @@
     <span class="kicker">{{ t('s_grp_performance', lang) }}</span>
     <h1 class="display">{{ t('kpi_fleet_title', lang) }}</h1>
   </div>
-  <a href="/kpi/export.csv" class="btn btn-secondary">
-    <i data-lucide="download"></i> {{ t('kpi_export_csv', lang) }}
-  </a>
+  <div class="flex gap-2">
+    <a href="/kpi/consolidated" class="btn btn-ghost">
+      <i data-lucide="layout-dashboard"></i> Vue consolidée
+    </a>
+    <a href="/kpi/export.csv" class="btn btn-secondary">
+      <i data-lucide="download"></i> {{ t('kpi_export_csv', lang) }}
+    </a>
+  </div>
 </header>
 
 {{ leg_filter(leg_filter_ctx, "/kpi") }}

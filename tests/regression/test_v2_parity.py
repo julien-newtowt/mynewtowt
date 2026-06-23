@@ -736,6 +736,17 @@ def test_v2_stowage_block_policy_restored():
     assert STOWAGE_BLOCK_FLAG == "stowage_block_overcapacity"
 
 
+def test_v2_kpi_consolidated_view_restored():
+    """FIN-07 : page KPI consolidée agrégeant les sources (Commerce/Flotte/Env/Exploitation)."""
+    from app.routers.kpi_router import router
+    from app.services.kpi_consolidated import consolidated_kpis
+    from app.templating import templates
+
+    assert ("GET", "/kpi/consolidated") in _methods(router)
+    assert callable(consolidated_kpis)
+    assert templates.env.get_template("staff/kpi/consolidated.html") is not None
+
+
 def test_v2_mrv_editable_params_drive_quality():
     """MRV-06 : densité MDO + seuil de déviation éditables (UI) pilotent la qualité."""
     from app.routers.mrv_router import router
