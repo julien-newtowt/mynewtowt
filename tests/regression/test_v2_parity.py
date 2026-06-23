@@ -493,6 +493,15 @@ def test_v2_closure_reopen_and_recap_restored():
     assert ("GET", "/captain/legs/{leg_id}/closure.pdf") in m
 
 
+def test_v2_exploitation_kpis_restored():
+    """FIN-04 : indicateurs d'exploitation (écart planning, durée, vitesse)."""
+    from app.services.exploitation import exploitation_summary, planning_deviation_hours
+
+    assert callable(exploitation_summary) and callable(planning_deviation_hours)
+    s = exploitation_summary([], None)
+    assert "avg_planning_deviation_h" in s and "avg_sea_duration_days" in s
+
+
 def test_v2_admin_exports_purges_restored():
     """ADM-04 : exports CSV/ZIP whitelistés + purge ciblée (whitelist)."""
     from app.routers.admin_router import router

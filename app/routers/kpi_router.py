@@ -107,6 +107,11 @@ async def kpi_index(
 
     equiv = co2_equivalences(total_co2_avoided_kg)
 
+    # FIN-04 — indicateurs d'exploitation (écart planning, durée mer, vitesse).
+    from app.services.exploitation import exploitation_summary
+
+    exploitation = exploitation_summary(legs, kpis)
+
     if kpis:
         on_time_count = sum(1 for k in kpis if k.on_time)
         on_time_pct = on_time_count / len(kpis) * 100.0
@@ -135,6 +140,7 @@ async def kpi_index(
             "total_nox_avoided_kg": total_nox_avoided_kg,
             "total_sox_avoided_kg": total_sox_avoided_kg,
             "co2_equiv": equiv,
+            "exploitation": exploitation,
         },
     )
 
