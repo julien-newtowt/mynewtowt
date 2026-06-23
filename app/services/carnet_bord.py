@@ -5,7 +5,7 @@ Ce service est responsable de :
 2. La prparation des donnes pour les templates
 3. La gnration du PDF final
 
-Le Carnet de Bord est gnr automatiquement  la fin d'un leg (quand le statut 
+Le Carnet de Bord est gnr automatiquement  la fin d'un leg (quand le statut
 passera  "completed" ou "closed"). Il peut aussi tre gnr manuellement.
 
 Structure du Carnet de Bord (10 sections) :
@@ -45,7 +45,7 @@ from app.models.noon_report import (
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.models.voyage_highlight import VoyageHighlight
-from app.models.voyage_photo import VoyagePhoto, BATCH_CATEGORIES
+from app.models.voyage_photo import VoyagePhoto
 
 # Propulsion modes
 PROPULSION_MODES = ("sail", "assisted", "motor")
@@ -203,23 +203,23 @@ async def get_carnet_bord_data(
 
     # GPS Trace depuis NoonReports
     noon_reports = await db.execute(
-        select(NoonReport)
-        .where(NoonReport.leg_id == leg_id)
-        .order_by(NoonReport.recorded_at)
+        select(NoonReport).where(NoonReport.leg_id == leg_id).order_by(NoonReport.recorded_at)
     )
     noon_reports = noon_reports.scalars().all()
 
     if noon_reports:
         data.gps_trace = []
         for report in noon_reports:
-            data.gps_trace.append({
-                "latitude": report.latitude,
-                "longitude": report.longitude,
-                "recorded_at": report.recorded_at,
-                "propulsion_mode": report.propulsion_mode,
-                "sog": report.sog_avg,
-                "cog": report.cog_avg,
-            })
+            data.gps_trace.append(
+                {
+                    "latitude": report.latitude,
+                    "longitude": report.longitude,
+                    "recorded_at": report.recorded_at,
+                    "propulsion_mode": report.propulsion_mode,
+                    "sog": report.sog_avg,
+                    "cog": report.cog_avg,
+                }
+            )
 
         # Calculer distance, dure, vitesses
         if leg.distance_nm:
@@ -329,7 +329,9 @@ async def get_carnet_bord_data(
         if product_map:
             total_weight = sum(p["weight_kg"] for p in product_map.values())
             for product in product_map.values():
-                product["pct"] = (product["weight_kg"] / total_weight * 100) if total_weight > 0 else 0
+                product["pct"] = (
+                    (product["weight_kg"] / total_weight * 100) if total_weight > 0 else 0
+                )
             data.products = list(product_map.values())
 
         # Taux de remplissage (simplifi)
@@ -351,8 +353,9 @@ async def get_carnet_bord_data(
 
     # Donnes des cales depuis NoonReportHold
     hold_rows = await db.execute(
-        select(NoonReportHold)
-        .where(NoonReportHold.noon_report_id.in_([r.id for r in noon_reports]))
+        select(NoonReportHold).where(
+            NoonReportHold.noon_report_id.in_([r.id for r in noon_reports])
+        )
     )
     hold_rows = hold_rows.scalars().all()
 
@@ -375,22 +378,22 @@ async def get_carnet_bord_data(
                 zone_data[zone]["temp_min"] = min(
                     zone_data[zone]["temp_min"] or 0,
                     row.temp_midnight_c or 0,
-                    row.temp_midday_c or 0
+                    row.temp_midday_c or 0,
                 )
                 zone_data[zone]["temp_max"] = max(
                     zone_data[zone]["temp_max"] or 0,
                     row.temp_midnight_c or 0,
-                    row.temp_midday_c or 0
+                    row.temp_midday_c or 0,
                 )
                 zone_data[zone]["humidity_min"] = min(
                     zone_data[zone]["humidity_min"] or 0,
                     row.humidity_midnight_pct or 0,
-                    row.humidity_midday_pct or 0
+                    row.humidity_midday_pct or 0,
                 )
                 zone_data[zone]["humidity_max"] = max(
                     zone_data[zone]["humidity_max"] or 0,
                     row.humidity_midnight_pct or 0,
-                    row.humidity_midday_pct or 0
+                    row.humidity_midday_pct or 0,
                 )
 
         data.hold_data = list(zone_data.values())
@@ -450,9 +453,7 @@ async def get_carnet_bord_data(
 
         # Calculer le taux de dcarbonation
         if cert.co2_conventional_kg and cert.co2_conventional_kg > 0:
-            data.decarbonation_rate = (
-                (cert.co2_avoided_kg / cert.co2_conventional_kg) * 100
-            )
+            data.decarbonation_rate = (cert.co2_avoided_kg / cert.co2_conventional_kg) * 100
 
     # Consommation depuis NoonReports
     if noon_reports:
@@ -470,8 +471,9 @@ async def get_carnet_bord_data(
 
     # Temps de propulsion depuis NoonReportSail
     sail_rows = await db.execute(
-        select(NoonReportSail)
-        .where(NoonReportSail.noon_report_id.in_([r.id for r in noon_reports]))
+        select(NoonReportSail).where(
+            NoonReportSail.noon_report_id.in_([r.id for r in noon_reports])
+        )
     )
     sail_rows = sail_rows.scalars().all()
 
@@ -498,8 +500,9 @@ async def get_carnet_bord_data(
 
     # Donnes moteurs depuis NoonReportEngine
     engine_rows = await db.execute(
-        select(NoonReportEngine)
-        .where(NoonReportEngine.noon_report_id.in_([r.id for r in noon_reports]))
+        select(NoonReportEngine).where(
+            NoonReportEngine.noon_report_id.in_([r.id for r in noon_reports])
+        )
     )
     engine_rows = engine_rows.scalars().all()
 
@@ -565,38 +568,46 @@ async def get_carnet_bord_data(
 
         # Dpart
         if leg.atd:
-            data.timeline_events.append({
-                "event_type": "departure",
-                "event_category": "port",
-                "occurred_at": leg.atd,
-                "planned_at": leg.etd,
-                "location": data.pol.name if data.pol else "Port de dpart",
-                "description": "Dpart du port",
-            })
+            data.timeline_events.append(
+                {
+                    "event_type": "departure",
+                    "event_category": "port",
+                    "occurred_at": leg.atd,
+                    "planned_at": leg.etd,
+                    "location": data.pol.name if data.pol else "Port de dpart",
+                    "description": "Dpart du port",
+                }
+            )
 
         # Arrive
         if leg.ata:
-            data.timeline_events.append({
-                "event_type": "arrival",
-                "event_category": "port",
-                "occurred_at": leg.ata,
-                "planned_at": leg.eta,
-                "location": data.pod.name if data.pod else "Port d'arrive",
-                "description": "Arrive au port",
-            })
+            data.timeline_events.append(
+                {
+                    "event_type": "arrival",
+                    "event_category": "port",
+                    "occurred_at": leg.ata,
+                    "planned_at": leg.eta,
+                    "location": data.pod.name if data.pod else "Port d'arrive",
+                    "description": "Arrive au port",
+                }
+            )
 
         # Points remarquables comme vnements
         for highlight in data.highlights:
-            data.timeline_events.append({
-                "event_type": "highlight",
-                "event_category": highlight.category,
-                "occurred_at": highlight.occurred_at,
-                "location": f"Lat: {highlight.latitude}, Long: {highlight.longitude}",
-                "description": highlight.title,
-            })
+            data.timeline_events.append(
+                {
+                    "event_type": "highlight",
+                    "event_category": highlight.category,
+                    "occurred_at": highlight.occurred_at,
+                    "location": f"Lat: {highlight.latitude}, Long: {highlight.longitude}",
+                    "description": highlight.title,
+                }
+            )
 
         # Trier par date
-        data.timeline_events.sort(key=lambda x: x["occurred_at"] if x["occurred_at"] else datetime.min)
+        data.timeline_events.sort(
+            key=lambda x: x["occurred_at"] if x["occurred_at"] else datetime.min
+        )
 
     # ETD/ETA info
     if leg:

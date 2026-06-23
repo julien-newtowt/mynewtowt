@@ -10,19 +10,17 @@ Endpoints pour :
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.leg import Leg
 from app.models.user import User
-from app.models.voyage_highlight import VoyageHighlight, HIGHLIGHT_CATEGORIES
-from app.models.voyage_photo import VoyagePhoto, BATCH_CATEGORIES, PHOTO_CATEGORIES
-from app.permissions import get_current_user, require_permission
+from app.models.voyage_highlight import HIGHLIGHT_CATEGORIES, VoyageHighlight
+from app.models.voyage_photo import BATCH_CATEGORIES, PHOTO_CATEGORIES, VoyagePhoto
+from app.permissions import get_current_user
 from app.schemas.voyage_highlight import (
     VoyageHighlightCreate,
     VoyageHighlightList,
@@ -42,6 +40,7 @@ router = APIRouter(prefix="/carnet-bord", tags=["Carnet de Bord ANEMOS"])
 # Carnet de Bord - Gnration
 # =============================================================================
 
+
 @router.get("/legs/{leg_id}/preview")
 async def preview_carnet_bord(
     leg_id: int,
@@ -51,7 +50,6 @@ async def preview_carnet_bord(
 ) -> Response:
     """Prvisualise le Carnet de Bord pour un leg (HTML)."""
     from app.templating import render_template
-    from app.services.carnet_bord import get_carnet_bord_data
 
     # Vrifier que le leg existe
     leg = await db.get(Leg, leg_id)
@@ -141,7 +139,7 @@ async def preview_carnet_bord(
 
 
 @router.get("/legs/{leg_id}/pdf")
-async def generate_carnet_bord_pdf(
+async def download_carnet_bord_pdf(
     leg_id: int,
     client_account_id: int | None = Query(None, description="ID du client pour personnalisation"),
     db: AsyncSession = Depends(get_db),
@@ -157,7 +155,7 @@ async def generate_carnet_bord_pdf(
     pdf_bytes = await generate_carnet_bord_pdf(db, leg_id, client_account_id)
 
     filename = f"CarnetBord_ANEMOS_{leg.leg_code}.pdf"
-    
+
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -171,6 +169,7 @@ async def generate_carnet_bord_pdf(
 # =============================================================================
 # Points Remarquables (Voyage Highlights)
 # =============================================================================
+
 
 @router.get("/legs/{leg_id}/highlights", response_model=VoyageHighlightList)
 async def list_voyage_highlights(
@@ -207,7 +206,6 @@ async def create_voyage_highlight(
     current_user: User = Depends(get_current_user),
 ) -> VoyageHighlight:
     """Cre un nouveau point remarquable."""
-    from sqlalchemy import select
 
     leg = await db.get(Leg, leg_id)
     if not leg:
@@ -304,6 +302,7 @@ async def delete_voyage_highlight(
 # Photos de Voyage
 # =============================================================================
 
+
 @router.get("/legs/{leg_id}/photos", response_model=VoyagePhotoList)
 async def list_voyage_photos(
     leg_id: int,
@@ -348,7 +347,6 @@ async def create_voyage_photo(
     current_user: User = Depends(get_current_user),
 ) -> VoyagePhoto:
     """Ajoute une photo  un leg."""
-    from sqlalchemy import select
 
     leg = await db.get(Leg, leg_id)
     if not leg:

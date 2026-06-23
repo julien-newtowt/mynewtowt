@@ -26,9 +26,7 @@ class VoyagePhotoBase(BaseModel):
     file_path: str = Field(..., max_length=500, description="Chemin du fichier")
     file_mime: str | None = Field(None, max_length=80, description="Type MIME du fichier")
     file_size: int | None = Field(None, description="Taille du fichier en octets")
-    original_name: str | None = Field(
-        None, max_length=255, description="Nom original du fichier"
-    )
+    original_name: str | None = Field(None, max_length=255, description="Nom original du fichier")
     taken_at: datetime | None = Field(None, description="Date et heure de prise de vue")
     latitude: float | None = Field(None, description="Latitude de prise de vue")
     longitude: float | None = Field(None, description="Longitude de prise de vue")
@@ -60,9 +58,7 @@ class VoyagePhotoUpdate(BaseModel):
     file_path: str | None = Field(None, max_length=500, description="Chemin du fichier")
     file_mime: str | None = Field(None, max_length=80, description="Type MIME du fichier")
     file_size: int | None = Field(None, description="Taille du fichier en octets")
-    original_name: str | None = Field(
-        None, max_length=255, description="Nom original du fichier"
-    )
+    original_name: str | None = Field(None, max_length=255, description="Nom original du fichier")
     taken_at: datetime | None = Field(None, description="Date et heure de prise de vue")
     latitude: float | None = Field(None, description="Latitude de prise de vue")
     longitude: float | None = Field(None, description="Longitude de prise de vue")

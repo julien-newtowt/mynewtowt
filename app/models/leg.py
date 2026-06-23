@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -19,6 +20,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.voyage_highlight import VoyageHighlight
+    from app.models.voyage_photo import VoyagePhoto
 
 
 class Leg(Base):
@@ -91,10 +96,10 @@ class Leg(Base):
     )
 
     # Relations pour Carnet de Bord ANEMOS
-    highlights: Mapped[list["VoyageHighlight"]] = relationship(
+    highlights: Mapped[list[VoyageHighlight]] = relationship(
         "VoyageHighlight", back_populates="leg", cascade="all, delete-orphan"
     )
-    photos: Mapped[list["VoyagePhoto"]] = relationship(
+    photos: Mapped[list[VoyagePhoto]] = relationship(
         "VoyagePhoto", back_populates="leg", cascade="all, delete-orphan"
     )
 
