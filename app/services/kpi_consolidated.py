@@ -23,6 +23,7 @@ from app.services.commercial_dashboard import commercial_totals
 from app.services.dashboard_kpis import ca_previsionnel, fleet_kpis
 from app.services.emissions import get_emission_factors
 from app.services.exploitation import exploitation_summary
+from app.services.insurance_kpi import claims_exposure
 from app.services.kpi import aggregate_emissions
 
 
@@ -68,6 +69,9 @@ async def consolidated_kpis(
     exploitation = exploitation_summary(legs, kpis)
     on_time_pct = round(sum(1 for k in kpis if k.on_time) / len(kpis) * 100, 1) if kpis else 0.0
 
+    # ── Exposition assurance / sinistres (FIN-06) — global, instantané ──
+    insurance = await claims_exposure(db)
+
     return {
         "year": year,
         "leg_count": len(legs),
@@ -78,4 +82,5 @@ async def consolidated_kpis(
         "env": env,
         "exploitation": exploitation,
         "on_time_pct": on_time_pct,
+        "insurance": insurance,
     }

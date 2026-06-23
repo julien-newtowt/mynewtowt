@@ -119,6 +119,29 @@
     </p>
   </article>
 
+  {# ── Assurance / Sinistres (FIN-06) — détail provision / indemnité / franchise ── #}
+  <article class="card">
+    <div class="flex justify-between items-center mb-2">
+      <h2 style="margin:0;"><i data-lucide="shield"></i> Assurance &amp; sinistres <span class="text-muted text-sm">· exposition courante</span></h2>
+      <a href="/claims" class="btn btn-ghost btn-xs">Sinistres →</a>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value text-accent">{{ data.insurance.provision_total|money }}</span>
+        <span class="stat-card-label">Provisions ({{ data.insurance.open_count }} ouverts)</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ data.insurance.settled_total|money }}</span>
+        <span class="stat-card-label">Indemnités réglées</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ data.insurance.franchise_total|money }}</span>
+        <span class="stat-card-label">Franchises (déductibles)</span></div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ data.insurance.net_company_total|money }}</span>
+        <span class="stat-card-label">Coût net compagnie</span></div></div>
+    </div>
+    <p class="text-muted text-sm" style="margin-top:.5rem;">{{ data.insurance.claim_count }} sinistre(s) au total · franchise = déductible du contrat rattaché.</p>
+  </article>
+
 </section>
 
 <p class="text-muted text-sm mt-3">
