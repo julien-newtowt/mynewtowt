@@ -74,17 +74,14 @@ async def create_for_order(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "M")),
 ):
+    from app.services.packing_list import ensure_for_order
+
     order = await db.get(Order, order_id)
     if order is None:
         raise HTTPException(status_code=404)
-    existing = (
-        await db.execute(select(PackingList).where(PackingList.order_id == order_id))
-    ).scalar_one_or_none()
-    if existing is not None:
-        return RedirectResponse(url=f"/cargo/packing-lists/{existing.id}", status_code=303)
-    pl = PackingList(order_id=order_id, status="draft")
-    db.add(pl)
-    await db.flush()
+    pl, created = await ensure_for_order(db, order)
+    if not created:
+        return RedirectResponse(url=f"/cargo/packing-lists/{pl.id}", status_code=303)
     await activity_record(
         db,
         action="create",

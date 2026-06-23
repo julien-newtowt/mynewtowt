@@ -374,3 +374,23 @@ async def assign_bl_number(
             last_error = exc
             batch.bl_number = None
     raise last_error or RuntimeError("BL number assignment failed")
+
+
+# ───────────────── COM-09 — packing list auto à la confirmation commande ──────
+
+
+async def ensure_for_order(db: AsyncSession, order: Order) -> tuple[PackingList, bool]:
+    """Get-or-create la packing list d'une commande (idempotent).
+
+    Retourne ``(packing_list, created)`` — ``created=False`` si une PL existait
+    déjà pour la commande (pas de doublon à la re-confirmation).
+    """
+    existing = (
+        await db.execute(select(PackingList).where(PackingList.order_id == order.id))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing, False
+    pl = PackingList(order_id=order.id, status="draft")
+    db.add(pl)
+    await db.flush()
+    return pl, True

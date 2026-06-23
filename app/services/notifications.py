@@ -133,6 +133,19 @@ async def notify_new_cargo_message(
     )
 
 
+async def notify_packing_list_created(
+    db: AsyncSession, order_reference: str, packing_list_id: int
+) -> Notification:
+    """COM-09 — packing list créée à la confirmation d'une commande."""
+    return await create(
+        db,
+        type="new_packing_list",
+        title=f"Packing list à préparer — {order_reference}",
+        link=f"/cargo/packing-lists/{packing_list_id}",
+        target_role="operation",
+    )
+
+
 async def notify_eosp(db: AsyncSession, leg_code: str, leg_id: int) -> Notification:
     return await create(
         db,
