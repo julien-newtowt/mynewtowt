@@ -445,16 +445,30 @@ async def approve_plan(
 @router.get("/legs/{leg_id}/plan.pdf")
 async def stowage_plan_pdf(
     leg_id: int,
+    request: Request,
+    lang: str | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "C")),
 ):
-    """Plan d'arrimage imprimable (WeasyPrint), style onepager."""
+    """Plan d'arrimage imprimable (WeasyPrint), style onepager.
+
+    STO-06 — bilingue FR/EN : ``?lang=en`` (ou la langue de l'utilisateur)
+    produit un plan communicable à un équipage / port étranger.
+    """
     from fastapi.responses import Response
     from weasyprint import HTML  # local import — heavy native deps
 
     from app.config import settings
+    from app.i18n import get_lang_from_request
     from app.models.port import Port
     from app.models.vessel import Vessel
+    from app.services.stowage import stowage_pdf_labels
+    from app.templating import brand_for_lang
+
+    # Langue : query explicite (?lang=en) sinon préférence utilisateur / requête.
+    pdf_lang = (lang or get_lang_from_request(request, user) or "fr").lower()
+    if pdf_lang not in ("fr", "en"):
+        pdf_lang = "fr"  # plan bilingue FR/EN uniquement (STO-06)
 
     leg = await db.get(Leg, leg_id)
     if leg is None:
@@ -485,6 +499,9 @@ async def stowage_plan_pdf(
         blocks=BLOCKS,
         zone_label=zone_label,
         parse_zone=parse_zone,
+        lang=pdf_lang,
+        labels=stowage_pdf_labels(pdf_lang),
+        brand=brand_for_lang(pdf_lang),
         issued_at=datetime.now(UTC),
         site_url=settings.site_url,
     )

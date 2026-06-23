@@ -305,19 +305,31 @@ async def occupation_by_hold(db: AsyncSession, leg_id: int) -> dict[str, dict]:
     return out
 
 
-# Libellés des segments du code zone ``{DECK}_{HOLD}_{BLOCK}`` pour un
-# indice humain (cf. app.models.stowage : convention de nommage).
-_DECK_LABELS = {"INF": "pont INF", "MIL": "pont MIL", "SUP": "pont SUP"}
-_HOLD_LABELS = {"AR": "cale AR", "AV": "cale AV"}
-_BLOCK_LABELS = {"AR": "bloc AR", "MIL": "bloc MIL", "AV": "bloc AV"}
+# Libellés bilingues (FR/EN) des segments du code zone ``{DECK}_{HOLD}_{BLOCK}``
+# pour un indice humain (cf. app.models.stowage : convention de nommage).
+# STO-06 — le plan d'arrimage doit être communicable en EN (équipage / port
+# étranger). Les langues non FR/EN retombent sur le FR.
+_DECK_LABELS = {
+    "fr": {"INF": "pont INF", "MIL": "pont MIL", "SUP": "pont SUP"},
+    "en": {"INF": "lower deck", "MIL": "middle deck", "SUP": "upper deck"},
+}
+_HOLD_LABELS = {
+    "fr": {"AR": "cale AR", "AV": "cale AV"},
+    "en": {"AR": "aft hold", "AV": "fwd hold"},
+}
+_BLOCK_LABELS = {
+    "fr": {"AR": "bloc AR", "MIL": "bloc MIL", "AV": "bloc AV"},
+    "en": {"AR": "aft block", "MIL": "mid block", "AV": "fwd block"},
+}
 
 
-def zone_label(zone: str | None) -> str:
-    """Indice humain d'une zone ``{DECK}_{HOLD}_{BLOCK}``.
+def zone_label(zone: str | None, lang: str = "fr") -> str:
+    """Indice humain bilingue d'une zone ``{DECK}_{HOLD}_{BLOCK}``.
 
-    Ex. ``INF_AR_MIL`` → ``"INF_AR_MIL — cale AR, pont INF, bloc MIL"``.
-    Renvoie le code brut tel quel si la zone est vide ou non conforme à la
-    convention (3 segments) — on reste tolérant pour le texte libre.
+    Ex. ``INF_AR_MIL`` → ``"INF_AR_MIL — cale AR, pont INF, bloc MIL"`` (fr) /
+    ``"INF_AR_MIL — aft hold, lower deck, mid block"`` (en). Renvoie le code brut
+    tel quel si la zone est vide ou non conforme à la convention (3 segments) —
+    on reste tolérant pour le texte libre. ``lang`` non FR/EN ⇒ FR.
     """
     if not zone:
         return ""
@@ -325,13 +337,85 @@ def zone_label(zone: str | None) -> str:
     if len(parts) != 3:
         return zone
     deck, hold, block = parts
-    bits = [
-        _HOLD_LABELS.get(hold),
-        _DECK_LABELS.get(deck),
-        _BLOCK_LABELS.get(block),
-    ]
+    decks = _DECK_LABELS.get(lang, _DECK_LABELS["fr"])
+    holds = _HOLD_LABELS.get(lang, _HOLD_LABELS["fr"])
+    blocks = _BLOCK_LABELS.get(lang, _BLOCK_LABELS["fr"])
+    bits = [holds.get(hold), decks.get(deck), blocks.get(block)]
     hint = ", ".join(b for b in bits if b)
     return f"{zone} — {hint}" if hint else zone
+
+
+# STO-06 — libellés du PDF plan d'arrimage (FR/EN). Document remis à l'équipage
+# ou au port : doit pouvoir être produit en anglais.
+_PDF_LABELS: dict[str, dict] = {
+    "fr": {
+        "doc_kind": "Plan de chargement · Stowage",
+        "vessel": "Navire",
+        "leg": "Route",
+        "vessel_class": "classe",
+        "pallets": "Palettes",
+        "loaded_tonnage": "Tonnage chargé",
+        "diagram_title": "Schéma de chargement — 18 zones (poupe ◀ → ▶ proue)",
+        "aft_hold": "◀ Cale ARRIÈRE",
+        "fwd_hold": "Cale AVANT ▶",
+        "deck": {"SUP": "Pont sup.", "MIL": "Pont interm.", "INF": "Pont inf."},
+        "capacity_caption": (
+            "Capacité = palettes EPAL-équivalentes du référentiel de classe · "
+            "cellule = palettes / capacité · ⚠ = avertissement de zone."
+        ),
+        "warnings": "Avertissements",
+        "assigned_lots": "Lots affectés",
+        "col_zone": "Zone",
+        "col_lot": "Lot",
+        "col_description": "Description",
+        "col_format": "Format",
+        "col_pallets": "Pal.",
+        "col_weight": "Poids",
+        "col_class": "Classement",
+        "col_stacked": "Gerbé",
+        "no_assignment": "Aucune affectation.",
+        "stacked": "gerbé",
+        "floor": "base",
+        "issued_on": "Émis le",
+        "footer_note": "Plan théorique de chargement — référentiel classe",
+    },
+    "en": {
+        "doc_kind": "Stowage plan",
+        "vessel": "Vessel",
+        "leg": "Leg",
+        "vessel_class": "class",
+        "pallets": "Pallets",
+        "loaded_tonnage": "Loaded tonnage",
+        "diagram_title": "Loading diagram — 18 zones (stern ◀ → ▶ bow)",
+        "aft_hold": "◀ AFT hold",
+        "fwd_hold": "FWD hold ▶",
+        "deck": {"SUP": "Upper deck", "MIL": "Middle deck", "INF": "Lower deck"},
+        "capacity_caption": (
+            "Capacity = EPAL-equivalent pallets from the class reference · "
+            "cell = pallets / capacity · ⚠ = zone warning."
+        ),
+        "warnings": "Warnings",
+        "assigned_lots": "Assigned lots",
+        "col_zone": "Zone",
+        "col_lot": "Lot",
+        "col_description": "Description",
+        "col_format": "Format",
+        "col_pallets": "Plts",
+        "col_weight": "Weight",
+        "col_class": "Class.",
+        "col_stacked": "Stacked",
+        "no_assignment": "No assignment.",
+        "stacked": "stacked",
+        "floor": "floor",
+        "issued_on": "Issued on",
+        "footer_note": "Theoretical loading plan — class reference",
+    },
+}
+
+
+def stowage_pdf_labels(lang: str = "fr") -> dict:
+    """Libellés du PDF plan d'arrimage pour la langue (FR/EN ; sinon FR)."""
+    return _PDF_LABELS.get(lang, _PDF_LABELS["fr"])
 
 
 async def zones_for_leg(db: AsyncSession, leg_id: int) -> list[dict]:
