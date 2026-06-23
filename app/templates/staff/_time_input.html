@@ -1,0 +1,28 @@
+{# UX-01 — saisie d'heure portuaire avec sélecteur de fuseau + aperçu UTC.
+
+   Reprise V2 : restaure le sélecteur UTC / Paris / Port local et l'aperçu UTC
+   immédiat (câblé par app/static/js/towt-tz.js sur `.tz-input-wrap`). Le champ
+   datetime-local conserve son `name` d'origine ; un champ compagnon `{name}_tz`
+   porte le fuseau choisi (ignoré côté serveur — il ne pilote que l'aperçu).
+
+   Usage :
+     {% from "staff/_time_input.html" import tz_datetime %}
+     {{ tz_datetime("planned_start", label="Début prévu", value=op.planned_start) }}
+#}
+{% macro tz_datetime(name, label="", value="", required=False) %}
+{% if value and value is not string %}{% set value = value.strftime('%Y-%m-%dT%H:%M') %}{% endif %}
+<div class="field">
+  {% if label %}<label for="{{ name }}">{{ label }}</label>{% endif %}
+  <div class="tz-input-wrap">
+    <input type="datetime-local" id="{{ name }}" name="{{ name }}"
+           value="{{ value or '' }}"
+           {% if required %}required{% endif %} />
+    <select class="tz-select" name="{{ name }}_tz" aria-label="Fuseau horaire">
+      <option value="port_local">Port local</option>
+      <option value="Europe/Paris">Paris</option>
+      <option value="UTC">UTC</option>
+    </select>
+  </div>
+  <small class="tz-utc-hint text-muted text-xs"></small>
+</div>
+{% endmacro %}
