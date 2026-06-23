@@ -493,6 +493,19 @@ def test_v2_closure_reopen_and_recap_restored():
     assert ("GET", "/captain/legs/{leg_id}/closure.pdf") in m
 
 
+def test_v2_admin_exports_purges_restored():
+    """ADM-04 : exports CSV/ZIP whitelistés + purge ciblée (whitelist)."""
+    from app.routers.admin_router import router
+    from app.services.admin_data import ALLOWED_PURGE_TABLES, export_global_zip, purge_table
+
+    assert callable(export_global_zip) and callable(purge_table)
+    assert "users" not in ALLOWED_PURGE_TABLES  # jamais purger les comptes
+    m = _methods(router)
+    assert ("GET", "/admin/export/global.zip") in m
+    assert ("GET", "/admin/export/table/{table_name}.csv") in m
+    assert ("POST", "/admin/database/purge") in m
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # ✅ Toute la parité P0 vis-à-vis de la V2 est désormais restaurée.
 # Les évolutions P1/P2 restent tracées dans docs/audit/backlog/.
