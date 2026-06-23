@@ -162,6 +162,10 @@ async def captain_index(
     next_port = None
     if selected and selected.arrival_port_id:
         next_port = await db.get(Port, selected.arrival_port_id)
+    # ONB-07 — alertes contextuelles de bord (centre de notifications global).
+    from app.services.notifications import list_for as _notif_list
+
+    onboard_notifs = await _notif_list(db, user_id=user.id, user_role=user.role, limit=8)
     return templates.TemplateResponse(
         "staff/captain/index.html",
         {
@@ -172,6 +176,7 @@ async def captain_index(
             "vessel": vessel,
             "next_port_tz": next_port.timezone if next_port and next_port.timezone else None,
             "next_port_label": next_port.locode if next_port else None,
+            "onboard_notifs": onboard_notifs,
             "events": events,
             "eta_shifts": eta_shifts,
             "messages": messages,
@@ -185,6 +190,29 @@ async def captain_index(
             "cargo_doc_kinds": set(_cargo_doc_choices_codes()),
         },
     )
+
+
+@router.post("/notifications/{notif_id}/dismiss")
+async def dismiss_onboard_notification(
+    notif_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+):
+    """ONB-07 — masque une alerte de bord (archive la notification)."""
+    from app.models.notification import Notification
+    from app.services.notifications import archive
+
+    notif = await db.get(Notification, notif_id)
+    if notif is not None:
+        await archive(db, notif)
+    target = request.headers.get("referer") or "/captain"
+    if target.startswith(("http://", "https://")):
+        from urllib.parse import urlparse as _urlparse
+
+        _p = _urlparse(target)
+        target = (_p.path or "/captain") + (("?" + _p.query) if _p.query else "")
+    return RedirectResponse(url=target, status_code=303)
 
 
 @router.post("/legs/{leg_id}/sof")

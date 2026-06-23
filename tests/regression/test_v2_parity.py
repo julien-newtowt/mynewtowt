@@ -402,6 +402,14 @@ def test_v2_order_rich_fields_restored():
 # ───────────────────────────── Onboard / Captain (V2 parité) ──────────────────
 
 
+def test_v2_onboard_notifications_inpage_restored():
+    """ONB-07 : alertes de bord in-page + masquage (centre de notifications)."""
+    from app.routers.captain_router import router
+
+    m = _methods(router)
+    assert ("POST", "/captain/notifications/{notif_id}/dismiss") in m
+
+
 def test_v2_onboard_sof_edit_delete_restored():
     """ONB-01 : édition + suppression d'un SOF non signé (+ garde lock)."""
     from app.routers.captain_router import router
