@@ -28,6 +28,7 @@ OPERATION_ACTIONS = (
     "gangway_down",
     "embarquement",
     "debarquement",
+    "passage_paf",
     "soutage",
     "avitaillement",
     "relation_presse",

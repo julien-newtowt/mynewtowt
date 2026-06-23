@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.models.crew import CrewAssignment, CrewMember
 from app.models.escale import DockerShift, EscaleOperation
 from app.models.leg import Leg
 from app.models.port import Port
@@ -405,3 +406,154 @@ def test_operation_durations_none_when_incomplete():
     op = EscaleOperation(leg_id=1, operation_type="t", action="a", planned_start=None)
     assert op.planned_duration_hours is None
     assert op.actual_duration_hours is None
+
+
+# ─────────────────────────────── ESC-06 ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_embarkation_creates_assignment_and_paf(db, staff_user):
+    """Saisir un embarquement avec un marin crée l'affectation + le passage PAF (FR)."""
+    from app.routers.escale_router import create_operation
+
+    await _setup_leg(db)  # POL = FRFEC (France)
+    m = CrewMember(full_name="Jean Marin", role="matelot")
+    db.add(m)
+    await db.flush()
+
+    resp = await create_operation(
+        1,
+        _Req(),
+        direction="BOTH",
+        operation_type="armement",
+        action="embarquement",
+        label="Embarquement relève",
+        intervenant=None,
+        crew_member_id=m.id,
+        planned_start="2026-04-01T08:00:00",
+        planned_end=None,
+        cost_forecast=None,
+        cost_actual=None,
+        notes=None,
+        db=db,
+        user=staff_user,
+    )
+    assert resp.status_code == 303
+    # CrewAssignment créée pour ce marin / navire.
+    assignments = (await db.execute(CrewAssignment.__table__.select())).fetchall()
+    assert len(assignments) == 1
+    assert assignments[0].crew_member_id == m.id
+    assert assignments[0].vessel_id == 1
+    assert assignments[0].embark_port_id == 1  # FRFEC
+    # Passage PAF auto (FRFEC = port français).
+    ops = (
+        await db.execute(
+            EscaleOperation.__table__.select().where(
+                EscaleOperation.__table__.c.action == "passage_paf"
+            )
+        )
+    ).fetchall()
+    assert len(ops) == 1
+
+
+@pytest.mark.asyncio
+async def test_disembarkation_closes_active_assignment(db):
+    from app.routers.escale_router import EscaleOperation as _Op
+    from app.services.escale_crew import couple_crew_assignment
+
+    leg = await _setup_leg(db)
+    m = CrewMember(full_name="Jean Marin", role="matelot")
+    db.add(m)
+    await db.flush()
+    db.add(
+        CrewAssignment(
+            crew_member_id=m.id,
+            leg_id=1,
+            vessel_id=1,
+            embark_at=datetime(2026, 4, 1, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+
+    op = _Op(
+        leg_id=1,
+        operation_type="armement",
+        action="debarquement",
+        actual_start=datetime(2026, 4, 20, tzinfo=UTC),
+    )
+    db.add(op)
+    await db.flush()
+    closed = await couple_crew_assignment(db, op, leg, m.id)
+    assert closed is not None
+    assert closed.disembark_at is not None
+    assert closed.disembark_port_id == 2  # port d'arrivée
+
+
+@pytest.mark.asyncio
+async def test_paf_idempotent_per_leg(db):
+    from app.services.escale_crew import maybe_create_paf
+
+    leg = await _setup_leg(db)
+    op1 = EscaleOperation(leg_id=1, operation_type="armement", action="embarquement")
+    op2 = EscaleOperation(leg_id=1, operation_type="armement", action="embarquement")
+    db.add_all([op1, op2])
+    await db.flush()
+    assert await maybe_create_paf(db, op1, leg) is not None
+    assert await maybe_create_paf(db, op2, leg) is None  # déjà un PAF sur le leg
+
+
+def test_embarkation_alerts():
+    from app.services.escale_crew import embarkation_alerts
+
+    base = datetime(2026, 4, 1, tzinfo=UTC)
+    leg = Leg(
+        id=1,
+        leg_code="1CFRBR6",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd_ref=base,
+        eta_ref=base,
+        etd=base,
+        eta=base,
+    )
+    # embarquement APRÈS l'ETD + sans billet → 2 alertes
+    a = CrewAssignment(crew_member_id=5, leg_id=1, embark_at=base + timedelta(days=2))
+    alerts = embarkation_alerts([a], leg)
+    levels = {al["level"] for al in alerts}
+    assert "warning" in levels  # embarquement après ETD
+    assert "info" in levels  # billet non chargé
+
+
+@pytest.mark.asyncio
+async def test_escale_index_renders_with_crew_panel(db, staff_user):
+    """Le rendu de la page escale (avec panneau équipage ESC-06) ne lève pas."""
+    from app.routers.escale_router import escale_index
+
+    leg = await _setup_leg(db)
+    m = CrewMember(full_name="Jean Marin", role="matelot")
+    db.add(m)
+    await db.flush()
+    db.add(
+        CrewAssignment(
+            crew_member_id=m.id,
+            leg_id=leg.id,
+            vessel_id=1,
+            embark_at=datetime(2026, 4, 1, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+
+    class _FullReq:
+        headers: dict[str, str] = {}
+        cookies: dict[str, str] = {}
+        query_params: dict[str, str] = {}
+        client = SimpleNamespace(host="127.0.0.1")
+        url = SimpleNamespace(path="/escale")
+        state = SimpleNamespace(notif_count=0, newtowt_agent_enabled=True)
+
+    resp = await escale_index(_FullReq(), leg_id=leg.id, db=db, user=staff_user)
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/escale/index.html"
+    assert resp.context["crew_assignments"]
+    assert resp.context["embark_alerts"]  # billet non chargé → au moins 1 alerte

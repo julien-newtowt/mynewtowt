@@ -195,6 +195,23 @@ def test_v2_escale_intervenant_durations_restored():
     assert op.actual_duration_hours is None
 
 
+def test_v2_escale_crew_coupling_restored():
+    """ESC-06 : couplage embarquement/débarquement → équipage + auto-PAF + alertes."""
+    from app.models.escale import OPERATION_ACTIONS
+    from app.services.escale_crew import (
+        CREW_ACTIONS,
+        couple_crew_assignment,
+        embarkation_alerts,
+        maybe_create_paf,
+    )
+
+    assert callable(couple_crew_assignment)
+    assert callable(maybe_create_paf)
+    assert callable(embarkation_alerts)
+    assert "embarquement" in CREW_ACTIONS and "debarquement" in CREW_ACTIONS
+    assert "passage_paf" in OPERATION_ACTIONS  # action auto-PAF restaurée
+
+
 # ───────────────────────────── Crew (V2 parité) ─────────────────────────────
 
 

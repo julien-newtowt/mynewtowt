@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.crew import CrewAssignment, CrewMember
 from app.models.escale import (
     DIRECTIONS,
     ESCALE_ACTION_TO_SOF,
@@ -34,6 +35,11 @@ from app.models.stowage import HOLDS
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
+from app.services.escale_crew import (
+    couple_crew_assignment,
+    embarkation_alerts,
+    maybe_create_paf,
+)
 from app.services.stowage import occupation_by_hold
 from app.templating import templates
 
@@ -176,6 +182,10 @@ async def escale_index(
     pol = pod = None
     vessel_status = None
     stowage_by_hold: dict[str, dict] = {}
+    vessel_crew: list[CrewMember] = []
+    crew_assignments: list[CrewAssignment] = []
+    embark_alerts: list[dict] = []
+    crew_by_id: dict[int, str] = {}
     if leg_id:
         selected_leg = await db.get(Leg, leg_id)
         if selected_leg:
@@ -204,6 +214,43 @@ async def escale_index(
             pol = await db.get(Port, selected_leg.departure_port_id)
             pod = await db.get(Port, selected_leg.arrival_port_id)
             vessel_status = "en_mer" if (selected_leg.atd and not selected_leg.ata) else "a_quai"
+            # ESC-06 — équipage du navire (pour la sélection embarq./débarq.) +
+            # affectations du voyage (panneau billets) + alertes de cohérence.
+            if selected_leg.vessel_id:
+                vessel_crew = list(
+                    (
+                        await db.execute(
+                            select(CrewMember)
+                            .where(CrewMember.is_active.is_(True))
+                            .order_by(CrewMember.full_name.asc())
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            crew_assignments = list(
+                (
+                    await db.execute(
+                        select(CrewAssignment)
+                        .where(CrewAssignment.leg_id == leg_id)
+                        .order_by(CrewAssignment.embark_at.asc().nullslast())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            embark_alerts = embarkation_alerts(crew_assignments, selected_leg)
+            # Noms des marins référencés (équipage actif + affectés au voyage).
+            member_ids = {m.id for m in vessel_crew} | {a.crew_member_id for a in crew_assignments}
+            if member_ids:
+                rows = list(
+                    (await db.execute(select(CrewMember).where(CrewMember.id.in_(member_ids))))
+                    .scalars()
+                    .all()
+                )
+                crew_by_id = {m.id: m.full_name for m in rows}
+            else:
+                crew_by_id = {}
             # B3 — occupation du plan d'arrimage par cale, pour relier le
             # planning dockers au stowage. Best-effort : ne casse jamais la
             # page si le plan/les items sont absents ou en erreur.
@@ -246,6 +293,11 @@ async def escale_index(
             "operation_types": OPERATION_TYPES,
             "operation_actions": OPERATION_ACTIONS,
             "directions": DIRECTIONS,
+            # ESC-06 — couplage équipage.
+            "vessel_crew": vessel_crew,
+            "crew_assignments": crew_assignments,
+            "embark_alerts": embark_alerts,
+            "crew_by_id": crew_by_id,
         },
     )
     set_leg_filter_cookie(response, f)
@@ -261,6 +313,7 @@ async def create_operation(
     action: str = Form(...),
     label: str | None = Form(None),
     intervenant: str | None = Form(None),
+    crew_member_id: int | None = Form(None),
     planned_start: str | None = Form(None),
     planned_end: str | None = Form(None),
     cost_forecast: float | None = Form(None),
@@ -302,6 +355,9 @@ async def create_operation(
     )
     # FLX-04 — relier escale ↔ onboard : génère le SOF équivalent.
     await _sync_sof_from_operation(db, request, user, op)
+    # ESC-06 — couplage équipage (embarquement/débarquement) + auto-PAF FR.
+    await couple_crew_assignment(db, op, leg, crew_member_id)
+    await maybe_create_paf(db, op, leg)
     return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
 
 
