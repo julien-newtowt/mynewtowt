@@ -17,7 +17,7 @@ from __future__ import annotations
 import contextlib
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -34,7 +34,7 @@ from app.models.packing_list import (
 )
 from app.models.port import Port
 from app.models.vessel import Vessel
-from app.services import rate_limit
+from app.services import cargo_excel, rate_limit
 from app.services.packing_list import (
     apply_batch_update,
     can_modify,
@@ -44,8 +44,14 @@ from app.services.packing_list import (
     log_portal_access,
     record_audit,
 )
-from app.services.safe_files import UploadRejected, resolve_path, save_upload
+from app.services.safe_files import (
+    UploadRejected,
+    content_length_exceeds_max,
+    resolve_path,
+    save_upload,
+)
 from app.templating import templates
+from app.utils.file_validation import validate_size
 
 # CARGO-06 — types de documents déposables par l'expéditeur depuis le portail.
 _PORTAL_DOC_KINDS = ("customs", "msds", "other")
@@ -211,6 +217,73 @@ async def portal_packing_delete(
     )
     await db.delete(batch)
     await db.flush()
+    return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
+
+
+# ─────────────────────────── Excel import/export (CARGO-09) ─────────────────
+
+
+@router.get("/{token}/packing/template.xlsx")
+async def portal_packing_template_xlsx(
+    token: str, request: Request, db: AsyncSession = Depends(get_db)
+) -> Response:
+    """CARGO-09 — template Excel vide pour saisie de masse côté expéditeur."""
+    await _load_or_410(db, token, request)
+    return Response(
+        content=cargo_excel.build_template_xlsx(),
+        media_type=cargo_excel.XLSX_MIME,
+        headers={"Content-Disposition": 'attachment; filename="packing_list_template.xlsx"'},
+    )
+
+
+@router.post("/{token}/packing/import-xlsx")
+async def portal_packing_import_xlsx(
+    token: str,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """CARGO-09 — import Excel par l'expéditeur : remplace les batches."""
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
+    pl = await _load_or_410(db, token, request)
+    if not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    content = await file.read()
+    # Content-Length falsifiable / absent en chunké : revérif taille réelle.
+    size_check = validate_size(content)
+    if not size_check.ok:
+        raise HTTPException(status_code=413, detail=size_check.reason)
+    try:
+        parsed = cargo_excel.parse_xlsx(content)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="fichier Excel illisible") from exc
+    if not parsed:
+        raise HTTPException(status_code=400, detail="aucune ligne exploitable dans le fichier")
+    existing = list(
+        (
+            await db.execute(
+                select(PackingListBatch).where(PackingListBatch.packing_list_id == pl.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for b in existing:
+        await db.delete(b)
+    await db.flush()
+    for vals in parsed:
+        await create_batch(db, pl=pl, vals=vals, actor="client", actor_name=None)
+    await record_audit(
+        db,
+        packing_list_id=pl.id,
+        batch_id=None,
+        actor="client",
+        actor_name=None,
+        field="_import_excel",
+        old_value=None,
+        new_value=f"{len(parsed)} batches importés",
+    )
     return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
 
 
