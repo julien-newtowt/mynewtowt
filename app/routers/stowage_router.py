@@ -19,7 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.commercial import Order
 from app.models.leg import Leg
-from app.models.packing_list import PackingList, PackingListBatch
+from app.models.packing_list import PackingListBatch
 from app.models.stowage import (
     BLOCKS,
     DANGEROUS_ZONES,
@@ -34,6 +34,7 @@ from app.services.activity import record as activity_record
 from app.services.stowage import (
     _vessel_class_for_leg,
     evaluate_plan,
+    gather_suggestion_items,
     locate_batch,
     locate_for_order,
     parse_zone,
@@ -344,60 +345,29 @@ async def suggest_plan(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "M")),
 ):
-    """Génère des affectations en aspirant les batches PL des orders du leg."""
+    """Génère des affectations en aspirant les batches PL des orders du leg.
+
+    STO-09 — fallback : une commande sans batch de packing list (PL absente ou
+    encore vide) est tout de même arrimée via un item placeholder issu de la
+    réservation, pour permettre l'arrimage avant la saisie des documents cargo.
+    """
     plan = await db.get(StowagePlan, plan_id)
     if plan is None:
         raise HTTPException(status_code=404)
-    # Trouve les orders du leg
-    orders = list(
-        (await db.execute(select(Order).where(Order.leg_id == plan.leg_id))).scalars().all()
-    )
-    items_in: list[dict] = []
-    for o in orders:
-        pls = list(
-            (await db.execute(select(PackingList).where(PackingList.order_id == o.id)))
-            .scalars()
-            .all()
-        )
-        for pl in pls:
-            batches = list(
-                (
-                    await db.execute(
-                        select(PackingListBatch).where(PackingListBatch.packing_list_id == pl.id)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            for b in batches:
-                # Remontée packing list → arrimage : dimension, poids, hauteur,
-                # classement (HS/IMDG/UN), gerbabilité. Figés à l'affectation.
-                items_in.append(
-                    {
-                        "batch_id": b.id,
-                        "order_id": o.id,
-                        "pallet_format": b.pallet_format,
-                        "pallet_count": b.pallet_count,
-                        "weight_kg": b.weight_kg,
-                        "description": b.description,
-                        "hs_code": b.hs_code,
-                        "imdg_class": b.imdg_class,
-                        "un_number": b.un_number,
-                        "length_cm": b.length_cm,
-                        "width_cm": b.width_cm,
-                        "height_cm": b.height_cm,
-                        "cubage_m3": b.cubage_m3,
-                        "stackable": b.stackable,
-                        "is_dangerous": b.hazardous,
-                        "is_oversized": _is_oversized(b),
-                    }
-                )
+    items_in = await gather_suggestion_items(db, plan.leg_id)
     # Capacités réelles de la classe du navire (référentiel d'arrimage).
     specs = await get_specs(db, await _vessel_class_for_leg(db, plan.leg_id))
     capacities = {zone: spec.get("capacity_epal") for zone, spec in specs.items()}
     placed = suggest_assignments(items_in, capacities=capacities)
-    # Clear previous suggestions and re-add
-    for it in plan.items or []:
+    # Clear previous suggestions and re-add. Requête explicite plutôt que
+    # ``plan.items`` (relation lazy → MissingGreenlet en contexte async quand le
+    # plan vient d'une autre requête sans items eager-loadés).
+    existing = list(
+        (await db.execute(select(StowageItem).where(StowageItem.plan_id == plan.id)))
+        .scalars()
+        .all()
+    )
+    for it in existing:
         await db.delete(it)
     await db.flush()
     for p in placed:
@@ -597,17 +567,6 @@ async def locate_order_view(
             "title": f"Commande #{order_id}",
         },
     )
-
-
-def _is_oversized(batch: PackingListBatch) -> bool:
-    """Indicates the batch needs SUP_AV (oversize basket : 380×150×220 cm, 5.1 t)."""
-    if batch.length_cm and batch.length_cm > 380:
-        return True
-    if batch.width_cm and batch.width_cm > 150:
-        return True
-    if batch.height_cm and batch.height_cm > 220:
-        return True
-    return bool(batch.weight_kg and batch.weight_kg > 5100)
 
 
 def _client_ip(request: Request) -> str | None:

@@ -736,6 +736,35 @@ def test_v2_stowage_block_policy_restored():
     assert STOWAGE_BLOCK_FLAG == "stowage_block_overcapacity"
 
 
+def test_v2_stowage_before_cargo_doc_restored():
+    """STO-09 : arrimage avant cargo doc (fallback order→item placeholder)."""
+    from decimal import Decimal
+    from types import SimpleNamespace
+
+    from app.services.stowage import (
+        batch_is_oversized,
+        gather_suggestion_items,
+        order_placeholder_item,
+    )
+
+    assert callable(gather_suggestion_items) and callable(batch_is_oversized)
+    # Le placeholder est construit depuis la réservation, sans batch_id.
+    o = SimpleNamespace(
+        id=7,
+        booked_palettes=10,
+        palette_format="EPAL",
+        weight_per_palette_kg=Decimal("250"),
+        cargo_description="Cacao",
+        description_of_goods=None,
+    )
+    item = order_placeholder_item(o)
+    assert item["batch_id"] is None  # provisoire : pas de batch source
+    assert item["order_id"] == 7 and item["pallet_count"] == 10
+    assert item["weight_kg"] == 2500.0
+    # Routé comme cargaison normale faute de signal au niveau commande.
+    assert item["is_dangerous"] is False and item["is_oversized"] is False
+
+
 def test_v2_exploitation_kpis_restored():
     """FIN-04 : indicateurs d'exploitation (écart planning, durée, vitesse)."""
     from app.services.exploitation import exploitation_summary, planning_deviation_hours

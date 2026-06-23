@@ -23,6 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commercial import PALETTE_COEFFICIENTS
 from app.models.stowage import (
+    BASKET_CMU_T,
+    BASKET_HEIGHT_M,
+    BASKET_LENGTH_CM,
+    BASKET_WIDTH_CM,
     BLOCKS,
     DANGEROUS_ZONES,
     DECKS,
@@ -91,6 +95,125 @@ def suggest_assignments(
         out.append({**it, "zone": zone or "OVERFLOW"})
 
     return out
+
+
+def batch_is_oversized(batch) -> bool:
+    """Le lot dépasse le panier standard (380×150×220 cm, 5,1 t) → zone SUP_AV.
+
+    Mêmes seuils que le gabarit panier (cf. ``app.models.stowage`` :
+    ``BASKET_*``). Tolérant aux dimensions absentes (``None`` → non hors-gabarit).
+    """
+    if batch.length_cm and batch.length_cm > BASKET_LENGTH_CM:
+        return True
+    if batch.width_cm and batch.width_cm > BASKET_WIDTH_CM:
+        return True
+    if batch.height_cm and batch.height_cm > BASKET_HEIGHT_M * 100:
+        return True
+    return bool(batch.weight_kg and batch.weight_kg > BASKET_CMU_T * 1000)
+
+
+def order_placeholder_item(order) -> dict:
+    """STO-09 — item d'arrimage *placeholder* issu de la réservation d'une commande.
+
+    Permet d'arrimer **avant** la création des documents cargo : quand une
+    commande n'a pas encore de **batch** de packing list, on construit un item à
+    partir des données de réservation (``booked_palettes``, ``palette_format``,
+    poids unitaire). ``batch_id`` reste ``None`` (signal du caractère
+    provisoire).
+
+    Les caractéristiques fines (dangerosité, hors-gabarit, dimensions,
+    HS/IMDG/UN) n'existent qu'au niveau batch : le placeholder est donc routé
+    comme cargaison **normale** (``is_dangerous``/``is_oversized`` False), faute
+    de signal au niveau commande. Re-suggérer après création des batches remplace
+    le placeholder par le détail réel (et reclasse l'IMO/hors-gabarit en SUP_AV).
+    """
+    weight_total: float | None = None
+    if order.weight_per_palette_kg is not None and order.booked_palettes:
+        weight_total = float(order.weight_per_palette_kg) * order.booked_palettes
+    return {
+        "batch_id": None,
+        "order_id": order.id,
+        "pallet_format": order.palette_format or "EPAL",
+        "pallet_count": order.booked_palettes or 0,
+        "weight_kg": weight_total,
+        "description": order.cargo_description or order.description_of_goods,
+        "hs_code": None,
+        "imdg_class": None,
+        "un_number": None,
+        "length_cm": None,
+        "width_cm": None,
+        "height_cm": None,
+        "cubage_m3": None,
+        "stackable": True,
+        "is_dangerous": False,
+        "is_oversized": False,
+    }
+
+
+async def gather_suggestion_items(db: AsyncSession, leg_id: int) -> list[dict]:
+    """Items à arrimer pour un leg : batches PL des commandes, avec fallback STO-09.
+
+    Pour chaque commande du leg :
+
+    - si elle porte des batches de packing list → un item par batch (détail figé
+      depuis la PL) ;
+    - sinon (aucun batch — PL absente *ou* encore vide), si elle a des palettes
+      réservées → un item *placeholder* (``order_placeholder_item``) afin
+      d'autoriser l'arrimage avant la saisie des docs cargo.
+
+    Lecture seule. Consommé par ``suggest_assignments`` (puis persistance dans le
+    routeur).
+    """
+    from app.models.commercial import Order
+    from app.models.packing_list import PackingList, PackingListBatch
+
+    orders = list((await db.execute(select(Order).where(Order.leg_id == leg_id))).scalars().all())
+    items_in: list[dict] = []
+    for o in orders:
+        pls = list(
+            (await db.execute(select(PackingList).where(PackingList.order_id == o.id)))
+            .scalars()
+            .all()
+        )
+        batches: list = []
+        for pl in pls:
+            batches.extend(
+                (
+                    await db.execute(
+                        select(PackingListBatch).where(PackingListBatch.packing_list_id == pl.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        if batches:
+            for b in batches:
+                # Remontée packing list → arrimage : dimension, poids, hauteur,
+                # classement (HS/IMDG/UN), gerbabilité. Figés à l'affectation.
+                items_in.append(
+                    {
+                        "batch_id": b.id,
+                        "order_id": o.id,
+                        "pallet_format": b.pallet_format,
+                        "pallet_count": b.pallet_count,
+                        "weight_kg": b.weight_kg,
+                        "description": b.description,
+                        "hs_code": b.hs_code,
+                        "imdg_class": b.imdg_class,
+                        "un_number": b.un_number,
+                        "length_cm": b.length_cm,
+                        "width_cm": b.width_cm,
+                        "height_cm": b.height_cm,
+                        "cubage_m3": b.cubage_m3,
+                        "stackable": b.stackable,
+                        "is_dangerous": b.hazardous,
+                        "is_oversized": batch_is_oversized(b),
+                    }
+                )
+        elif (o.booked_palettes or 0) > 0:
+            # STO-09 — la commande n'a pas (encore) de packing list : placeholder.
+            items_in.append(order_placeholder_item(o))
+    return items_in
 
 
 def zone_usage_summary(items: Iterable[dict]) -> dict[str, float]:
