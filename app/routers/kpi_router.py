@@ -102,6 +102,11 @@ async def kpi_index(
         total_nox_avoided_kg += res.nox_avoided_kg
         total_sox_avoided_kg += res.sox_avoided_kg
 
+    # FIN-05 — équivalences pédagogiques du CO₂ évité (vols / conteneurs).
+    from app.services.co2 import co2_equivalences
+
+    equiv = co2_equivalences(total_co2_avoided_kg)
+
     if kpis:
         on_time_count = sum(1 for k in kpis if k.on_time)
         on_time_pct = on_time_count / len(kpis) * 100.0
@@ -129,6 +134,7 @@ async def kpi_index(
             "emissions_by_leg": emissions_by_leg,
             "total_nox_avoided_kg": total_nox_avoided_kg,
             "total_sox_avoided_kg": total_sox_avoided_kg,
+            "co2_equiv": equiv,
         },
     )
 

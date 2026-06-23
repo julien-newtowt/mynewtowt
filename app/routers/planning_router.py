@@ -625,6 +625,63 @@ async def planning_export_csv(
     )
 
 
+@router.get("/by-port", response_class=HTMLResponse)
+async def planning_by_port(
+    request: Request,
+    vessel_id: int | None = None,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("planning", "C")),
+) -> HTMLResponse:
+    """PLN-06 — vue « par port » : départs et arrivées regroupés par port,
+    avec signalement de retard (PLN-05, ≥ 4 h vs référence).
+    """
+    from app.services.planning import is_delayed, leg_delay_hours
+
+    year = year or datetime.now(UTC).year
+    rows, _vmap, pmap = await _planning_rows(db, vessel_id=vessel_id, year=year)
+
+    groups: dict[int, dict] = {}
+
+    def _bucket(port_id: int | None) -> dict | None:
+        if port_id is None:
+            return None
+        if port_id not in groups:
+            groups[port_id] = {"port": pmap.get(port_id), "departures": [], "arrivals": []}
+        return groups[port_id]
+
+    for r in rows:
+        lg = r["leg"]
+        entry = {
+            "leg": lg,
+            "vessel": r["vessel"],
+            "pol": r["pol"],
+            "pod": r["pod"],
+            "delayed": is_delayed(lg),
+            "delay_h": round(leg_delay_hours(lg), 1),
+        }
+        dep = _bucket(lg.departure_port_id)
+        if dep is not None:
+            dep["departures"].append(entry)
+        arr = _bucket(lg.arrival_port_id)
+        if arr is not None:
+            arr["arrivals"].append(entry)
+
+    port_groups = sorted(groups.values(), key=lambda g: g["port"].locode if g["port"] else "~")
+    vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    return templates.TemplateResponse(
+        "staff/planning/by_port.html",
+        {
+            "request": request,
+            "user": user,
+            "port_groups": port_groups,
+            "vessels": vessels,
+            "filter_vessel_id": vessel_id,
+            "selected_year": year,
+        },
+    )
+
+
 @router.get(
     "/shares",
     response_class=HTMLResponse,

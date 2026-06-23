@@ -443,6 +443,36 @@ def test_v2_cargo_docs_guided_restored():
     assert ("POST", "/captain/legs/{leg_id}/docs/{doc_id}/edit") in m
 
 
+# ───────────────────────────── Tracking (V2 parité — P1) ──────────────────────
+
+
+def test_v2_tracking_latest_and_import_batch_restored():
+    """TRK-01 endpoint /latest + TRK-05 traçabilité d'import des positions."""
+    from app.models.claim import VesselPosition
+    from app.routers.tracking_router import router
+
+    assert ("GET", "/api/tracking/latest") in _methods(router)
+    for f in ("import_batch", "created_at"):
+        assert hasattr(VesselPosition, f), f
+
+
+def test_v2_planning_delay_and_by_port_restored():
+    """PLN-05 détection de retard (≥4 h) + PLN-06 vue par port."""
+    from app.routers.planning_router import router
+    from app.services.planning import is_delayed, leg_delay_hours
+
+    assert callable(is_delayed) and callable(leg_delay_hours)
+    assert ("GET", "/planning/by-port") in _methods(router)
+
+
+def test_v2_co2_equivalences_restored():
+    """FIN-05 : équivalences pédagogiques CO₂ (vols / conteneurs)."""
+    from app.services.co2 import co2_equivalences
+
+    eq = co2_equivalences(1_050_000)
+    assert eq["flights_paris_nyc"] > 0 and eq["containers_asia_eu"] > 0
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # ✅ Toute la parité P0 vis-à-vis de la V2 est désormais restaurée.
 # Les évolutions P1/P2 restent tracées dans docs/audit/backlog/.
