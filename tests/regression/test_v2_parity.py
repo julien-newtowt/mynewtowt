@@ -532,6 +532,18 @@ def test_v2_admin_exports_purges_restored():
     assert ("POST", "/admin/database/purge") in m
 
 
+def test_v2_cargo_batch_prefill_restored():
+    """CARGO-08 : 1er batch de la PL pré-rempli depuis la commande (parties, volume)."""
+    from app.models.commercial import Order
+    from app.services.packing_list import batch_prefill_from_order
+
+    assert callable(batch_prefill_from_order)
+    vals = batch_prefill_from_order(
+        Order(reference="ORD-T", client_id=1, booked_palettes=8, shipper_name="S")
+    )
+    assert vals["pallet_count"] == 8 and vals["shipper_name"] == "S"
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # ✅ Toute la parité P0 vis-à-vis de la V2 est désormais restaurée.
 # Les évolutions P1/P2 restent tracées dans docs/audit/backlog/.
