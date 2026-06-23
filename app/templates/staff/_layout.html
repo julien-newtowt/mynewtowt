@@ -143,6 +143,23 @@
       {% endif %}
     </nav>
 
+    {# UX-03 — horloge sidebar : UTC (toujours) + heure au port de destination
+       quand la page expose next_port_tz (IANA). Le data-port-tz alimente aussi
+       la conversion « Port local » des saisies d'heure (towt-tz.js). #}
+    <div class="sidebar-clock"{% if next_port_tz %} data-port-tz="{{ next_port_tz }}"{% endif %}>
+      <div class="clock-row">
+        <span class="clock-label">UTC</span>
+        <span class="clock-time" data-clock="utc">--:--</span>
+      </div>
+      {% if next_port_tz %}
+      <hr class="clock-port-separator" />
+      <div class="clock-row">
+        <span class="clock-label">{{ next_port_label or 'Port' }}</span>
+        <span class="clock-time" data-clock="port" data-port-tz="{{ next_port_tz }}">--:--</span>
+      </div>
+      {% endif %}
+    </div>
+
     {% if user is defined and user %}
     <div class="sidebar-userbadge">
       <div class="user-avatar">

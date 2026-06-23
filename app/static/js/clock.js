@@ -25,6 +25,16 @@
       setText(el.querySelector("[data-clock=local]"), fmt(userTz));
       setText(el.querySelector("[data-clock=paris]"), fmt("Europe/Paris"));
     });
+    // UX-03 — horloge sidebar : UTC (toujours) + heure au port de destination
+    // (quand un data-port-tz est fourni par la page).
+    document.querySelectorAll(".sidebar-clock").forEach(function (el) {
+      setText(el.querySelector("[data-clock=utc]"), fmt("UTC"));
+      var portEl = el.querySelector("[data-clock=port]");
+      if (portEl) {
+        var ptz = portEl.dataset ? portEl.dataset.portTz : null;
+        setText(portEl, ptz ? fmt(ptz) : "--:--");
+      }
+    });
   }
 
   function tzShort(tz) {

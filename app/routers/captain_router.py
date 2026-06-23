@@ -158,6 +158,10 @@ async def captain_index(
             .all()
         )
         vessel = await db.get(Vessel, selected.vessel_id)
+    # UX-03 — port de destination (horloge sidebar « prochain port »).
+    next_port = None
+    if selected and selected.arrival_port_id:
+        next_port = await db.get(Port, selected.arrival_port_id)
     return templates.TemplateResponse(
         "staff/captain/index.html",
         {
@@ -166,6 +170,8 @@ async def captain_index(
             "legs": legs,
             "leg": selected,
             "vessel": vessel,
+            "next_port_tz": next_port.timezone if next_port and next_port.timezone else None,
+            "next_port_label": next_port.locode if next_port else None,
             "events": events,
             "eta_shifts": eta_shifts,
             "messages": messages,
