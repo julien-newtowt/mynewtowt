@@ -18,6 +18,7 @@ import os
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.commercial import Client
 from app.utils import pipedrive
 
@@ -105,6 +106,48 @@ def _client_type_for(org: dict) -> str:
 
 def is_configured() -> bool:
     return pipedrive.enabled()
+
+
+async def push_deal_for(db: AsyncSession, entity) -> int | None:
+    """COM-06 — pousse un Deal Pipedrive pour une **offre** ou une **commande**.
+
+    ``entity`` porte ``client_id``, ``reference``, ``total_eur`` et
+    ``pipedrive_deal_id`` (``RateOffer`` et ``Order`` partagent ces champs).
+
+    - **No-op** si Pipedrive n'est pas configuré ;
+    - **idempotent** : ne recrée pas de deal si ``pipedrive_deal_id`` est déjà
+      renseigné (retourne l'existant) ;
+    - **best-effort** : les erreurs réseau sont avalées par le client HTTP
+      (retour ``None``), l'entité reste inchangée.
+
+    L'organisation est résolue (find-or-create) depuis le client, le deal est
+    créé sur le pipeline ``settings.pipedrive_pipeline_name`` (1er étage), avec
+    le montant ``total_eur``. Retourne l'id du deal (existant ou créé) ou ``None``.
+    """
+    existing = getattr(entity, "pipedrive_deal_id", None)
+    if existing or not pipedrive.enabled():
+        return existing
+    client = await db.get(Client, entity.client_id)
+    if client is None or not (client.name or "").strip():
+        return None
+    org = await pipedrive.find_or_create_organization(client.name)
+    org_id = org.get("id") if org else None
+    pipeline_id = await pipedrive.find_pipeline_id(settings.pipedrive_pipeline_name)
+    stage_id = await pipedrive.first_stage_id(pipeline_id) if pipeline_id else None
+    value = float(entity.total_eur) if getattr(entity, "total_eur", None) is not None else None
+    deal = await pipedrive.create_deal(
+        title=f"{entity.reference} · {client.name}",
+        org_id=org_id,
+        value=value,
+        pipeline_id=pipeline_id,
+        stage_id=stage_id,
+    )
+    deal_id = (deal or {}).get("id")
+    if deal_id:
+        entity.pipedrive_deal_id = deal_id
+        await db.flush()
+        return deal_id
+    return None
 
 
 async def sync_clients(db: AsyncSession) -> dict:

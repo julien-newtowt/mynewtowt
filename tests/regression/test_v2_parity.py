@@ -385,6 +385,19 @@ def test_v2_crew_member_full_fields_present():
         assert hasattr(CrewMember, f), f
 
 
+def test_v2_pipedrive_deal_push_restored():
+    """COM-06 : push d'un Deal Pipedrive sur offre/commande (best-effort, no-op si off)."""
+    import inspect
+
+    from app.routers import commercial_router
+    from app.services.pipedrive_sync import push_deal_for
+
+    assert callable(push_deal_for)
+    # Câblé dans le routeur commercial (offre émise + commande confirmée).
+    src = inspect.getsource(commercial_router)
+    assert "_push_pipedrive_deal" in src
+
+
 # ───────────────────────────── MRV (V2 parité) ─────────────────────────────
 
 
