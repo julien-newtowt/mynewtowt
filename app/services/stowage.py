@@ -8,6 +8,12 @@ Algorithme glouton :
 La capacité par zone dépend du format de palette (PALETTE_COEFFICIENTS dans
 app.models.commercial). À défaut on prend une capacité indicative de ~50
 palettes par zone (3 ponts × 6 blocs × ~50 = ~900 palettes pour un 850).
+
+Capacité réelle (STO-07) — modèle de coefficients : la capacité d'une zone est
+un nombre d'emplacements plancher EPAL-équivalents (``StowageZoneSpec``), le
+format pondère via ``PALETTE_COEFFICIENTS`` et le gerbage partage l'empreinte
+au sol (cf. ``epal_footprint``). Ce modèle restitue la matrice V2
+(zone × format × gerbé/simple) sans table dédiée par format.
 """
 
 from __future__ import annotations
@@ -40,6 +46,38 @@ logger = logging.getLogger(__name__)
 
 ZONE_CAPACITY_DEFAULT = 50  # palettes EPAL équivalentes par zone (à affiner)
 
+# STO-07 — empreinte plancher d'une palette gerbée (2-high). La V2 portait une
+# matrice de capacité par (zone × format × gerbé/simple) issue du xlsx ; la V3
+# la restitue par un modèle de coefficients : la capacité de zone est un nombre
+# d'emplacements plancher EPAL-équivalents, le format pondère via
+# ``PALETTE_COEFFICIENTS``, et le gerbage partage l'empreinte au sol de la base
+# (une palette gerbée ne consomme qu'une fraction d'emplacement). Approche
+# documentée et centralisée dans ``epal_footprint`` ci-dessous.
+STACK_FOOTPRINT_FACTOR = 0.5  # palette gerbée = ½ emplacement plancher
+
+
+def epal_footprint(
+    pallet_count: int | None,
+    pallet_format: str | None,
+    *,
+    is_stacked: bool = False,
+    stack_allowed: bool = True,
+) -> float:
+    """Empreinte plancher consommée, en palettes EPAL-équivalentes.
+
+    Combine le coefficient de format (``PALETTE_COEFFICIENTS`` : EPAL=1,
+    BARRIQUE140=2…) et le gerbage : une palette gerbée dans une zone qui
+    l'autorise partage l'empreinte de sa base et ne compte que pour
+    ``STACK_FOOTPRINT_FACTOR`` d'emplacement plancher. Un gerbage déclaré dans
+    une zone qui ne l'autorise pas est ignoré pour l'empreinte (compté plein —
+    l'incohérence est signalée par ailleurs en avertissement).
+    """
+    coeff = PALETTE_COEFFICIENTS.get(pallet_format or "EPAL", 1.0)
+    base = (pallet_count or 0) * coeff
+    if is_stacked and stack_allowed:
+        return base * STACK_FOOTPRINT_FACTOR
+    return base
+
 
 def suggest_assignments(
     items: Iterable[dict], capacities: dict[str, float] | None = None
@@ -71,8 +109,7 @@ def suggest_assignments(
     normal_queue = [it for it in items if it not in danger_queue]
 
     def _place(it: dict, candidate_zones: list[str]) -> str | None:
-        coeff = PALETTE_COEFFICIENTS.get(it.get("pallet_format") or "EPAL", 1.0)
-        load = (it.get("pallet_count") or 0) * coeff
+        load = epal_footprint(it.get("pallet_count"), it.get("pallet_format"))
         for zone in candidate_zones:
             if used[zone] + load <= _cap(zone):
                 used[zone] += load
@@ -223,8 +260,7 @@ def zone_usage_summary(items: Iterable[dict]) -> dict[str, float]:
         zone = it.get("zone")
         if not zone:
             continue
-        coeff = PALETTE_COEFFICIENTS.get(it.get("pallet_format") or "EPAL", 1.0)
-        used[zone] += (it.get("pallet_count") or 0) * coeff
+        used[zone] += epal_footprint(it.get("pallet_count"), it.get("pallet_format"))
     return dict(used)
 
 
@@ -594,12 +630,18 @@ async def evaluate_plan(db: AsyncSession, leg_id: int) -> dict:
             items = []
 
     for it in items:
-        coeff = PALETTE_COEFFICIENTS.get(it.pallet_format or "EPAL", 1.0)
-        load_epal = (it.pallet_count or 0) * coeff
+        spec = specs.get(it.zone)
+        # STO-07 — empreinte pondérée format × gerbage (gerbé = ½ emplacement
+        # quand la zone l'autorise).
+        load_epal = epal_footprint(
+            it.pallet_count,
+            it.pallet_format,
+            is_stacked=it.is_stacked,
+            stack_allowed=bool(spec.get("stack_allowed", True)) if spec else True,
+        )
         weight_t = (it.weight_kg or 0) / 1000.0
         pallet_total += it.pallet_count or 0
         used_t_total += weight_t
-        spec = specs.get(it.zone)
         zbucket = zones.get(it.zone)
         if zbucket is None:
             flat_warnings.append(
@@ -839,8 +881,7 @@ async def check_zone_admission(
     z = ev.get("zones", {}).get(zone)
     if z is None:
         return True, None
-    coeff = PALETTE_COEFFICIENTS.get(pallet_format or "EPAL", 1.0)
-    new_used_epal = (z.get("used_epal") or 0.0) + (add_pallets or 0) * coeff
+    new_used_epal = (z.get("used_epal") or 0.0) + epal_footprint(add_pallets, pallet_format)
     cap = z.get("capacity_epal") or 0
     if cap and new_used_epal > cap:
         return False, (
