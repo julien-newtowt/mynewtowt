@@ -12,6 +12,7 @@
   <div class="flex gap-2">
     <span class="badge badge-{{ plan.status }}">{{ plan.status }}</span>
     <a href="/stowage/legs/{{ leg.id }}/plan.pdf" class="btn btn-ghost btn-sm">⬇ PDF</a>
+    <a href="/stowage/legs/{{ leg.id }}/plan.pdf?lang=en" class="btn btn-ghost btn-sm" title="Stowage plan (English)">⬇ PDF EN</a>
     <form method="post" action="/stowage/plans/{{ plan.id }}/suggest" style="display:inline;">
       <button type="submit" class="btn btn-secondary btn-sm">↺ Suggérer auto</button>
     </form>

@@ -736,6 +736,23 @@ def test_v2_stowage_block_policy_restored():
     assert STOWAGE_BLOCK_FLAG == "stowage_block_overcapacity"
 
 
+def test_v2_stowage_bilingual_plan_restored():
+    """STO-06 : bilinguisme FR/EN du plan d'arrimage (labels zones + PDF)."""
+    from app.routers.stowage_router import router
+    from app.services.stowage import stowage_pdf_labels, zone_label
+    from app.templating import templates
+
+    # Labels zones bilingues.
+    assert "aft hold" in zone_label("INF_AR_AR", "en")
+    assert "cale AR" in zone_label("INF_AR_AR", "fr")
+    # Jeu de libellés PDF FR/EN à clés identiques.
+    fr, en = stowage_pdf_labels("fr"), stowage_pdf_labels("en")
+    assert set(fr.keys()) == set(en.keys()) and fr != en
+    # La route PDF accepte ?lang= (param) et le template compile.
+    assert ("GET", "/stowage/legs/{leg_id}/plan.pdf") in _methods(router)
+    assert templates.env.get_template("pdf/stowage_plan.html") is not None
+
+
 def test_v2_stowage_before_cargo_doc_restored():
     """STO-09 : arrimage avant cargo doc (fallback order→item placeholder)."""
     from decimal import Decimal
