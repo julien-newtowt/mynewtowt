@@ -482,6 +482,17 @@ def test_v2_order_confirm_autocreates_pl():
     assert callable(notify_packing_list_created)
 
 
+def test_v2_closure_reopen_and_recap_restored():
+    """ONB-05 : réouverture de clôture + PDF récapitulatif + checklist."""
+    from app.routers.captain_router import router
+    from app.services.closure import closure_checklist, closure_recap_data
+
+    assert callable(closure_checklist) and callable(closure_recap_data)
+    m = _methods(router)
+    assert ("POST", "/captain/legs/{leg_id}/closure/reopen") in m
+    assert ("GET", "/captain/legs/{leg_id}/closure.pdf") in m
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # ✅ Toute la parité P0 vis-à-vis de la V2 est désormais restaurée.
 # Les évolutions P1/P2 restent tracées dans docs/audit/backlog/.

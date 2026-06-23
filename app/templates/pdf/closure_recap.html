@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    @page { size: A4; margin: 1.6cm 1.5cm; @bottom-center { content: "NEWTOWT — Récapitulatif de clôture d'escale"; font-size: 8px; color: #0D5966; } }
+    body { font-family: "Manrope", "Helvetica", sans-serif; color: #21303a; font-size: 10.5px; }
+    h1 { color: #0D5966; font-size: 20px; margin: 0 0 2px; }
+    .kicker { color: #87BD29; text-transform: uppercase; letter-spacing: .08em; font-size: 9px; font-weight: 700; }
+    .meta { color: #6b7a82; font-size: 10px; margin-bottom: 14px; }
+    .mono { font-family: "JetBrains Mono", monospace; }
+    h2 { color: #0D5966; font-size: 12.5px; border-bottom: 2px solid #87BD29; padding-bottom: 2px; margin: 14px 0 6px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 8px; text-transform: uppercase; color: #6b7a82; border-bottom: 1px solid #cdd6da; padding: 3px 5px; }
+    td { padding: 3px 5px; border-bottom: 1px solid #eef2f3; font-size: 9.5px; }
+    .grid2 { display: flex; gap: 18px; }
+    .grid2 > div { flex: 1; }
+    .chk { list-style: none; padding: 0; margin: 0; }
+    .chk li { padding: 2px 0; }
+    .ok { color: #2e7d32; } .ko { color: #B47148; }
+    .val { background: #EFE6D6; border-radius: 6px; padding: 8px 10px; font-size: 9.5px; }
+  </style>
+</head>
+<body>
+  <div class="kicker">Clôture d'escale</div>
+  <h1>Récapitulatif — {{ leg.leg_code }}</h1>
+  <div class="meta">
+    {{ vessel.name if vessel else '—' }} ·
+    {{ pol.locode if pol else '?' }} → {{ pod.locode if pod else '?' }} ·
+    ATD {{ leg.atd.strftime('%d/%m/%Y %H:%M') if leg.atd else '—' }} ·
+    ATA {{ leg.ata.strftime('%d/%m/%Y %H:%M') if leg.ata else '—' }} ·
+    Généré le {{ generated_at.strftime('%d/%m/%Y %H:%M') }}
+  </div>
+
+  <div class="grid2">
+    <div>
+      <h2>Checklist documentaire</h2>
+      <ul class="chk">
+        {% for c in checklist %}
+        <li class="{{ 'ok' if c.present else 'ko' }}">{{ '☑' if c.present else '☐' }} {{ c.label }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div>
+      <h2>Validation</h2>
+      <div class="val">
+        Soumise : {{ leg.closure_submitted_at.strftime('%d/%m/%Y %H:%M') if leg.closure_submitted_at else '—' }} ({{ leg.closure_submitted_by or '—' }})<br/>
+        Validée ops : {{ leg.closure_reviewed_at.strftime('%d/%m/%Y %H:%M') if leg.closure_reviewed_at else '—' }} ({{ leg.closure_reviewed_by or '—' }})<br/>
+        Approuvée : {{ leg.closure_approved_at.strftime('%d/%m/%Y %H:%M') if leg.closure_approved_at else '—' }}
+      </div>
+    </div>
+  </div>
+
+  <h2>Statement of Facts ({{ sof|length }})</h2>
+  {% if sof %}
+  <table>
+    <thead><tr><th>Type</th><th>Quand</th><th>Notes</th><th>Signé</th></tr></thead>
+    <tbody>
+      {% for e in sof %}
+      <tr>
+        <td class="mono">{{ e.event_type }}</td>
+        <td class="mono">{{ e.occurred_at.strftime('%d/%m %H:%M') if e.occurred_at else '—' }}</td>
+        <td>{{ (e.label or e.notes or '—')|truncate(40) }}</td>
+        <td>{{ '🔒' if e.is_locked else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>Aucun événement SOF.</p>{% endif %}
+
+  <div class="grid2">
+    <div>
+      <h2>Documents cargo ({{ docs|length }})</h2>
+      {% if docs %}
+      <table>
+        <thead><tr><th>Type</th><th>Réf.</th><th>Partie</th></tr></thead>
+        <tbody>{% for d in docs %}<tr><td class="mono">{{ d.kind }}</td><td>{{ d.reference or '—' }}</td><td>{{ d.party_name or '—' }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<p>Aucun.</p>{% endif %}
+    </div>
+    <div>
+      <h2>Pièces jointes ({{ attachments|length }})</h2>
+      {% if attachments %}
+      <table>
+        <thead><tr><th>Catégorie</th><th>Document</th></tr></thead>
+        <tbody>{% for a in attachments %}<tr><td>{{ a.category }}</td><td>{{ (a.label or a.original_name or '—')|truncate(30) }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<p>Aucune.</p>{% endif %}
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <h2>Équipage embarqué ({{ crew|length }})</h2>
+      {% if crew %}
+      <table><tbody>{% for c in crew %}<tr><td>{{ c.name }}</td><td>{{ c.role }}</td></tr>{% endfor %}</tbody></table>
+      {% else %}<p>—</p>{% endif %}
+    </div>
+    <div>
+      <h2>Finance &amp; KPI</h2>
+      <div class="val">
+        Marge réelle : {{ '%.0f €'|format(finance.margin_eur|float) if finance else '—' }}<br/>
+        CA : {{ '%.0f €'|format(finance.revenue_eur|float) if finance else '—' }}<br/>
+        Tonnage : {{ '%.1f t'|format((kpi.tonnage_kg|float)/1000) if kpi and kpi.tonnage_kg else '—' }} ·
+        CO₂ évité : {{ '%.0f kg'|format(kpi.co2_avoided_kg|float) if kpi and kpi.co2_avoided_kg else '—' }}
+      </div>
+    </div>
+  </div>
+
+  {% if leg.closure_notes %}
+  <h2>Notes de clôture</h2>
+  <p style="white-space:pre-wrap;">{{ leg.closure_notes }}</p>
+  {% endif %}
+</body>
+</html>
