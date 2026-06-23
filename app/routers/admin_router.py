@@ -18,7 +18,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -147,6 +147,76 @@ async def users_create(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/users", status_code=303)
+
+
+# ────────────────────────────────────────────── ADM-05 — import utilisateurs
+@router.get("/users/import", response_class=HTMLResponse)
+async def users_import_form(
+    request: Request,
+    user=Depends(require_permission("admin", "M")),
+) -> HTMLResponse:
+    """ADM-05 — écran d'import Excel (modèle + dépôt + rapport)."""
+    from app.services.user_import import IMPORT_COLUMNS
+
+    return templates.TemplateResponse(
+        "staff/admin/users_import.html",
+        {"request": request, "user": user, "columns": IMPORT_COLUMNS, "report": None},
+    )
+
+
+@router.get("/users/import/template.xlsx")
+async def users_import_template(
+    user=Depends(require_permission("admin", "M")),
+) -> Response:
+    """ADM-05 — modèle Excel d'import utilisateurs."""
+    from app.services.user_import import XLSX_MIME, build_template_xlsx
+
+    return Response(
+        content=build_template_xlsx(),
+        media_type=XLSX_MIME,
+        headers={"Content-Disposition": 'attachment; filename="users_import_template.xlsx"'},
+    )
+
+
+@router.post("/users/import", response_class=HTMLResponse)
+async def users_import(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+) -> HTMLResponse:
+    """ADM-05 — importe les utilisateurs et restitue le rapport."""
+    from app.services.safe_files import content_length_exceeds_max
+    from app.services.user_import import IMPORT_COLUMNS, import_users, parse_users_xlsx
+    from app.utils.file_validation import validate_size
+
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
+    content = await file.read()
+    size_check = validate_size(content)
+    if not size_check.ok:
+        raise HTTPException(status_code=413, detail=size_check.reason)
+    try:
+        rows = parse_users_xlsx(content)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="fichier Excel illisible") from exc
+    report = await import_users(db, rows)
+    await activity_record(
+        db,
+        action="import",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="user",
+        entity_label="import Excel",
+        detail=f"{len(report['created'])} créés, {len(report['skipped'])} ignorés",
+        ip_address=_client_ip(request),
+    )
+    return templates.TemplateResponse(
+        "staff/admin/users_import.html",
+        {"request": request, "user": user, "columns": IMPORT_COLUMNS, "report": report},
+    )
 
 
 @router.get("/users/{user_id}/edit", response_class=HTMLResponse)

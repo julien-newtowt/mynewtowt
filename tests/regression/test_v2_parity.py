@@ -508,6 +508,18 @@ def test_v2_dashboard_kpis_restored():
     assert callable(upcoming_departures)
 
 
+def test_v2_admin_user_import_restored():
+    """ADM-05 : import en masse d'utilisateurs (Excel) + modèle + rapport."""
+    from app.routers.admin_router import router
+    from app.services.user_import import build_template_xlsx, import_users, parse_users_xlsx
+
+    assert callable(build_template_xlsx) and callable(parse_users_xlsx) and callable(import_users)
+    m = _methods(router)
+    assert ("GET", "/admin/users/import") in m
+    assert ("GET", "/admin/users/import/template.xlsx") in m
+    assert ("POST", "/admin/users/import") in m
+
+
 # ───────────────────────────── Planning (V2 parité) ───────────────────────────
 
 

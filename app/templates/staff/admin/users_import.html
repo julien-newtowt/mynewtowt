@@ -1,0 +1,67 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Import utilisateurs — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Administration · utilisateurs</span>
+    <h1 class="display">Import Excel</h1>
+    <p class="text-muted">Onboarding en masse : téléchargez le modèle, remplissez-le, puis importez-le. Chaque ligne est validée indépendamment.</p>
+  </div>
+  <a href="/admin/users" class="btn btn-ghost">← Utilisateurs</a>
+</header>
+
+<article class="card">
+  <h2>1. Modèle</h2>
+  <p class="text-muted">Colonnes attendues : <span class="mono">{{ columns|join(', ') }}</span>. <code>password</code> est optionnel — un mot de passe temporaire est généré sinon. Le rôle doit faire partie des rôles autorisés.</p>
+  <a href="/admin/users/import/template.xlsx" class="btn btn-secondary btn-sm">⤓ Télécharger le modèle</a>
+
+  <h2 class="mt-4">2. Import</h2>
+  <form method="post" action="/admin/users/import" enctype="multipart/form-data" class="flex gap-2 items-center" data-confirm="Importer ce fichier va créer les comptes valides. Continuer ?">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <input type="file" name="file" accept=".xlsx" required />
+    <button type="submit" class="btn btn-primary btn-sm">⤴ Importer</button>
+  </form>
+</article>
+
+{% if report %}
+<article class="card mt-4">
+  <h2>Rapport d'import</h2>
+  <p>
+    <span class="pill pill-ok">{{ report.created|length }} créé(s)</span>
+    <span class="pill pill-warn">{{ report.skipped|length }} ignoré(s)</span>
+  </p>
+
+  {% if report.created %}
+  <h3 class="mt-3">Comptes créés</h3>
+  <p class="text-muted text-sm">⚠ Les mots de passe temporaires ne sont affichés qu'une seule fois. Transmettez-les de façon sécurisée ; ils devront être changés à la 1re connexion.</p>
+  <table class="data-table">
+    <thead><tr><th>Username</th><th>Email</th><th>Rôle</th><th>Mot de passe temporaire</th></tr></thead>
+    <tbody>
+      {% for c in report.created %}
+      <tr>
+        <td class="mono">{{ c.username }}</td>
+        <td>{{ c.email }}</td>
+        <td><span class="badge">{{ c.role }}</span></td>
+        <td class="mono">{{ c.temp_password or '(fourni)' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if report.skipped %}
+  <h3 class="mt-3">Lignes ignorées</h3>
+  <table class="data-table">
+    <thead><tr><th>Ligne</th><th>Motif</th></tr></thead>
+    <tbody>
+      {% for s in report.skipped %}
+      <tr><td class="mono">{{ s.line }}</td><td>{{ s.reason }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</article>
+{% endif %}
+
+{% endblock %}
