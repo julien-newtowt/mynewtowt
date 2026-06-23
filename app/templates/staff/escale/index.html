@@ -65,15 +65,20 @@
       <tbody>
         {% for op in operations %}
         <tr>
-          <td><strong>{{ op.operation_type }}</strong><br/><small class="text-muted">{{ op.action }}</small></td>
+          <td>
+            <strong>{{ op.operation_type }}</strong><br/><small class="text-muted">{{ op.action }}</small>
+            {% if op.intervenant %}<br/><small class="text-muted">👤 {{ op.intervenant }}</small>{% endif %}
+          </td>
           <td><span class="badge">{{ op.direction or '—' }}</span></td>
           <td class="mono text-xs">
             {{ op.planned_start|datetime("%d/%m %H:%M") if op.planned_start else '—' }}<br/>
             <small>{{ op.planned_end|datetime("%H:%M") if op.planned_end else '' }}</small>
+            {% if op.planned_duration_hours is not none %}<br/><small class="text-muted">{{ op.planned_duration_hours }} h</small>{% endif %}
           </td>
           <td class="mono text-xs">
             {{ op.actual_start|datetime("%d/%m %H:%M") if op.actual_start else '—' }}<br/>
             <small>{{ op.actual_end|datetime("%H:%M") if op.actual_end else '' }}</small>
+            {% if op.actual_duration_hours is not none %}<br/><small class="text-muted">{{ op.actual_duration_hours }} h</small>{% endif %}
           </td>
           <td><span class="badge badge-{{ op.status }}">{{ op.status }}</span></td>
           <td>
@@ -108,6 +113,7 @@
         <div class="field"><label>Début prévu</label><input name="planned_start" type="datetime-local" /></div>
         <div class="field"><label>Fin prévue</label><input name="planned_end" type="datetime-local" /></div>
         <div class="field"><label>Libellé</label><input name="label" type="text" /></div>
+        <div class="field"><label>Intervenant</label><input name="intervenant" type="text" placeholder="Nom / société" /></div>
         <div class="field"><label>Coût prévu (€)</label><input name="cost_forecast" type="number" step="0.01" /></div>
       </div>
       <button type="submit" class="btn btn-primary btn-sm">+ Opération</button>

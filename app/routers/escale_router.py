@@ -260,6 +260,7 @@ async def create_operation(
     operation_type: str = Form(...),
     action: str = Form(...),
     label: str | None = Form(None),
+    intervenant: str | None = Form(None),
     planned_start: str | None = Form(None),
     planned_end: str | None = Form(None),
     cost_forecast: float | None = Form(None),
@@ -278,6 +279,7 @@ async def create_operation(
         operation_type=operation_type,
         action=action,
         label=label,
+        intervenant=intervenant or None,
         planned_start=datetime.fromisoformat(planned_start) if planned_start else None,
         planned_end=datetime.fromisoformat(planned_end) if planned_end else None,
         cost_forecast=cost_forecast,
@@ -361,6 +363,7 @@ async def edit_operation(
     operation_type: str = Form(...),
     action: str = Form(...),
     label: str | None = Form(None),
+    intervenant: str | None = Form(None),
     planned_start: str | None = Form(None),
     planned_end: str | None = Form(None),
     actual_start: str | None = Form(None),
@@ -383,6 +386,7 @@ async def edit_operation(
     op.operation_type = operation_type
     op.action = action
     op.label = label
+    op.intervenant = intervenant or None
     op.planned_start = _parse_iso(planned_start)
     op.planned_end = _parse_iso(planned_end)
     op.actual_start = _parse_iso(actual_start)
