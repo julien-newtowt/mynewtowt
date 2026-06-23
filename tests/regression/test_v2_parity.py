@@ -256,6 +256,24 @@ def test_v2_ux_sidebar_port_clock_restored():
     assert "sidebar-clock" in clock_js and "data-clock=port" in clock_js
 
 
+def test_v2_ux_vietnamese_catalog_parity_restored():
+    """UX-02 : le catalogue vietnamien a la parité de clés avec le français."""
+    import re
+
+    from app.i18n import fr, vi
+
+    fr_keys = set(fr.CATALOG)
+    vi_keys = set(vi.CATALOG)
+    assert fr_keys == vi_keys, f"écart de clés vi↔fr : manquant={fr_keys - vi_keys}"
+    assert len(vi.CATALOG) >= 500
+    # Les marqueurs de format ({count}, {name}…) sont préservés clé à clé.
+    ph = re.compile(r"\{[a-zA-Z0-9_]*\}")
+    mismatches = [
+        k for k in fr.CATALOG if set(ph.findall(fr.CATALOG[k])) != set(ph.findall(vi.CATALOG[k]))
+    ]
+    assert not mismatches, f"placeholders divergents : {mismatches}"
+
+
 # ───────────────────────────── Crew (V2 parité) ─────────────────────────────
 
 
