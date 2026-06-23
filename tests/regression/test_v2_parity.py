@@ -185,6 +185,19 @@ def test_v2_docker_productivity_restored():
     assert templates.env.get_template("staff/escale/index.html") is not None
 
 
+def test_v2_escale_timezone_inputs_restored():
+    """ESC-07 : sélecteur de fuseau (UTC/Paris/Port) sur tous les datetime escale."""
+    from pathlib import Path
+
+    from app.templating import templates
+
+    tpl = Path("app/templates/staff/escale/index.html").read_text(encoding="utf-8")
+    # Plus aucun datetime-local brut : tous passent par la macro tz_datetime.
+    assert 'type="datetime-local"' not in tpl
+    assert 'tz_datetime("status_time"' in tpl
+    assert templates.env.get_template("staff/escale/index.html") is not None
+
+
 def test_v2_escale_intervenant_durations_restored():
     """ESC-04 : intervenant + durées prévue/réelle des opérations d'escale."""
     from datetime import UTC, datetime, timedelta

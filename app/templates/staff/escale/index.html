@@ -49,7 +49,8 @@
   </p>
   <form method="post" action="/escale/legs/{{ selected_leg.id }}/port-status" class="flex gap-2" style="align-items:flex-end; flex-wrap:wrap;">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-    <div class="field"><label>Horodatage (UTC)</label><input name="status_time" type="datetime-local" /></div>
+    {# ESC-07 — sélecteur de fuseau (UTC/Paris/Port) + aperçu UTC sur l'horodatage. #}
+    {{ tz_datetime("status_time", label="Horodatage") }}
     <button type="submit" name="new_status" value="a_quai" class="btn btn-primary btn-sm">⚓ À quai (pose ATA)</button>
     <button type="submit" name="new_status" value="pilote_depart" class="btn btn-secondary btn-sm">🚢 Pilote départ (pose ATD)</button>
   </form>
