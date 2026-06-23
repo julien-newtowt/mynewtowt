@@ -1,6 +1,6 @@
 {% extends "portal/_layout.html" %}
 {% from "staff/stowage/_ship_map.html" import ship_map %}
-{% block title %}Portail expéditeur — {{ order.reference if order else (booking.reference if booking else '') }}{% endblock %}
+{% block title %}{{ t("pt_brand_portal", lang) }} — {{ order.reference if order else (booking.reference if booking else '') }}{% endblock %}
 {% block portal_content %}
 {# Référence/volume : commande (rail A) ou booking (rail B). #}
 {% set ref = order.reference if order else (booking.reference if booking else '') %}
@@ -8,9 +8,9 @@
 {% set shipper = (order.shipper_name if order and order.shipper_name else (booking.shipper_reference if booking and booking.shipper_reference else '')) %}
 
 <header class="mb-4">
-  <span class="kicker">Portail expéditeur</span>
-  <h1 class="display">Bienvenue {{ shipper }}</h1>
-  <p class="lead">Suivez votre expédition <strong class="mono">{{ ref }}</strong> et complétez les informations attendues.</p>
+  <span class="kicker">{{ t("pt_brand_portal", lang) }}</span>
+  <h1 class="display">{{ t("pt_home_welcome", lang) }} {{ shipper }}</h1>
+  <p class="lead">{{ t("pt_home_track_prefix", lang) }} <strong class="mono">{{ ref }}</strong> {{ t("pt_home_track_suffix", lang) }}</p>
 </header>
 
 <section class="stats-grid">
@@ -18,21 +18,21 @@
     <div class="stat-card-icon teal"><i data-lucide="package"></i></div>
     <div class="stat-card-body">
       <span class="stat-card-value">{{ palettes }}</span>
-      <span class="stat-card-label">Palettes réservées</span>
+      <span class="stat-card-label">{{ t("pt_home_palettes_booked", lang) }}</span>
     </div>
   </div>
   <div class="stat-card">
     <div class="stat-card-icon green"><i data-lucide="ship"></i></div>
     <div class="stat-card-body">
       <span class="stat-card-value">{{ vessel.name if vessel else '—' }}</span>
-      <span class="stat-card-label">Navire</span>
+      <span class="stat-card-label">{{ t("pt_vessel", lang) }}</span>
     </div>
   </div>
   <div class="stat-card">
     <div class="stat-card-icon sky"><i data-lucide="anchor"></i></div>
     <div class="stat-card-body">
       <span class="stat-card-value">{{ pol.locode if pol else '?' }} → {{ pod.locode if pod else '?' }}</span>
-      <span class="stat-card-label">Itinéraire</span>
+      <span class="stat-card-label">{{ t("pt_itinerary", lang) }}</span>
     </div>
   </div>
   <div class="stat-card">
@@ -45,22 +45,22 @@
 </section>
 
 <article class="card">
-  <h2>Prochaines étapes</h2>
+  <h2>{{ t("pt_home_next_steps", lang) }}</h2>
   <ol style="line-height:1.8;">
-    <li>Remplir la <a href="/p/{{ token }}/packing"><strong>packing list</strong></a> détaillée (poids, dimensions, HS code, IMO).</li>
-    <li>Échanger avec l'armateur via la <a href="/p/{{ token }}/messages"><strong>messagerie sécurisée</strong></a>.</li>
-    <li>Attendre la confirmation du verrouillage côté armateur.</li>
-    <li>Recevoir le Bill of Lading après chargement à bord.</li>
+    <li>{{ t("pt_home_step_packing_pre", lang) }} <a href="/p/{{ token }}/packing"><strong>{{ t("pt_home_step_packing_link", lang) }}</strong></a> {{ t("pt_home_step_packing_post", lang) }}</li>
+    <li>{{ t("pt_home_step_messages_pre", lang) }} <a href="/p/{{ token }}/messages"><strong>{{ t("pt_home_step_messages_link", lang) }}</strong></a>.</li>
+    <li>{{ t("pt_home_step_lock", lang) }}</li>
+    <li>{{ t("pt_home_step_bl", lang) }}</li>
   </ol>
 </article>
 
 {% if positions %}
 <article class="card mt-4">
-  <h2>Position de votre marchandise à bord</h2>
-  <p class="text-muted text-sm">Emplacement de vos palettes dans le navire (repère 📍). Seules vos positions sont affichées.</p>
+  <h2>{{ t("pt_home_cargo_position", lang) }}</h2>
+  <p class="text-muted text-sm">{{ t("pt_home_cargo_position_help", lang) }}</p>
   {{ ship_map(None, target_zones, decks, holds, blocks, interactive=False) }}
   <table class="data-table mt-3">
-    <thead><tr><th>Zone</th><th>Emplacement</th><th>Palettes</th></tr></thead>
+    <thead><tr><th>{{ t("pt_home_th_zone", lang) }}</th><th>{{ t("pt_home_th_location", lang) }}</th><th>{{ t("pt_palettes", lang) }}</th></tr></thead>
     <tbody>
       {% for p in positions %}
       <tr><td class="mono">{{ p.zone }}</td><td>{{ p.label }}</td><td>{{ p.pallet_count }}</td></tr>
@@ -71,10 +71,10 @@
 {% endif %}
 
 <article class="card mt-4">
-  <h2>Voyage & navire</h2>
+  <h2>{{ t("pt_home_voyage_vessel", lang) }}</h2>
   <table class="data-table">
-    <tr><td>Navire</td><td>{{ vessel.name if vessel else '—' }} <span class="mono text-xs">({{ vessel.code if vessel else '' }})</span></td></tr>
-    <tr><td>Itinéraire</td><td>
+    <tr><td>{{ t("pt_vessel", lang) }}</td><td>{{ vessel.name if vessel else '—' }} <span class="mono text-xs">({{ vessel.code if vessel else '' }})</span></td></tr>
+    <tr><td>{{ t("pt_itinerary", lang) }}</td><td>
       {% if pol %}{{ pol.country|flag }} {{ pol.name }} ({{ pol.locode }}){% endif %}
       → {% if pod %}{{ pod.country|flag }} {{ pod.name }} ({{ pod.locode }}){% endif %}
     </td></tr>

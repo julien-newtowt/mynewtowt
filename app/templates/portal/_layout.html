@@ -5,15 +5,22 @@
     <a href="/p/{{ token }}" style="border:none;">
       <img src="{{ brand.logo_light }}" alt="{{ brand.nom_court }}" style="height: 38px;" />
     </a>
-    <nav style="display:flex; gap: var(--space-4); flex-wrap:wrap;">
-      <a href="/p/{{ token }}">Vue d'ensemble</a>
-      <a href="/p/{{ token }}/voyage">Suivi voyage</a>
-      <a href="/p/{{ token }}/packing">Packing list</a>
-      <a href="/p/{{ token }}/documents">Documents</a>
-      <a href="/p/{{ token }}/messages">Messages</a>
-      <a href="/p/{{ token }}/guide">Guide</a>
-      <a href="/p/{{ token }}/privacy" class="text-muted">Confidentialité</a>
-    </nav>
+    <div style="display:flex; align-items:center; gap: var(--space-4); flex-wrap:wrap;">
+      <nav style="display:flex; gap: var(--space-4); flex-wrap:wrap;">
+        <a href="/p/{{ token }}">{{ t("pt_nav_overview", lang) }}</a>
+        <a href="/p/{{ token }}/voyage">{{ t("pt_nav_voyage", lang) }}</a>
+        <a href="/p/{{ token }}/packing">{{ t("pt_nav_packing", lang) }}</a>
+        <a href="/p/{{ token }}/documents">{{ t("pt_nav_documents", lang) }}</a>
+        <a href="/p/{{ token }}/messages">{{ t("pt_nav_messages", lang) }}</a>
+        <a href="/p/{{ token }}/guide">{{ t("pt_nav_guide", lang) }}</a>
+        <a href="/p/{{ token }}/privacy" class="text-muted">{{ t("pt_nav_privacy", lang) }}</a>
+      </nav>
+      <div class="portal-lang-switch" style="display:flex; gap: var(--space-2); font-size: var(--text-xs);" aria-label="{{ t('pt_lang_label', lang) }}">
+        {% for l in lang_options %}
+        <a href="/lang/{{ l }}" data-lang="{{ l }}"{% if l == lang %} style="font-weight:700; color:var(--teal);"{% else %} class="text-muted"{% endif %}>{{ l|upper }}</a>
+        {% endfor %}
+      </div>
+    </div>
   </header>
 
   <main id="main" class="container" style="padding: var(--space-5) var(--space-5);">
@@ -22,7 +29,7 @@
 
   <footer style="background: var(--teal-dark); color: var(--blanc-casse); padding: var(--space-4) var(--space-5); margin-top: var(--space-7); font-size: var(--text-xs);">
     <div class="container flex justify-between" style="border-bottom:none;">
-      <span>© {{ brand.nom_court }} — portail expéditeur sécurisé</span>
+      <span>© {{ brand.nom_court }} — {{ t("pt_footer_secure", lang) }}</span>
       <span>{{ brand.adresse }} · <a href="mailto:{{ brand.email }}" style="color:var(--vert-light);">{{ brand.email }}</a></span>
     </div>
   </footer>

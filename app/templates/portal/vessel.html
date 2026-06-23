@@ -1,15 +1,15 @@
 {% extends "portal/_layout.html" %}
-{% block title %}Fiche navire — {{ brand.nom_court }}{% endblock %}
+{% block title %}{{ t("pt_vessel_title", lang) }} — {{ brand.nom_court }}{% endblock %}
 {% block portal_content %}
 
 <header class="mb-4">
-  <span class="kicker">Portail expéditeur</span>
-  <h1 class="display">{{ vessel.name if vessel else 'Navire' }}</h1>
-  <p class="lead">Le voilier-cargo qui transporte votre marchandise, décarboné par le vent.</p>
+  <span class="kicker">{{ t("pt_brand_portal", lang) }}</span>
+  <h1 class="display">{{ vessel.name if vessel else t("pt_vessel", lang) }}</h1>
+  <p class="lead">{{ t("pt_vessel_lead", lang) }}</p>
 </header>
 
 {% if not vessel %}
-<article class="card"><p class="text-muted">Le navire de votre voyage n'est pas encore désigné.</p></article>
+<article class="card"><p class="text-muted">{{ t("pt_vessel_none", lang) }}</p></article>
 {% else %}
 
 <section class="stats-grid">
@@ -17,57 +17,57 @@
     <div class="stat-card-icon teal"><i data-lucide="ship"></i></div>
     <div class="stat-card-body">
       <span class="stat-card-value">{{ vessel.code }}</span>
-      <span class="stat-card-label">Code navire</span>
+      <span class="stat-card-label">{{ t("pt_vessel_code", lang) }}</span>
     </div>
   </div>
   <div class="stat-card">
     <div class="stat-card-icon green"><i data-lucide="package"></i></div>
     <div class="stat-card-body">
       <span class="stat-card-value">{{ vessel.capacity_palettes }}</span>
-      <span class="stat-card-label">Palettes (capacité)</span>
+      <span class="stat-card-label">{{ t("pt_vessel_capacity_palettes", lang) }}</span>
     </div>
   </div>
   <div class="stat-card">
     <div class="stat-card-icon sky"><i data-lucide="wind"></i></div>
     <div class="stat-card-body">
-      <span class="stat-card-value">{{ '%.0f'|format(vessel.default_speed_kn) }} nds</span>
-      <span class="stat-card-label">Vitesse moyenne</span>
+      <span class="stat-card-value">{{ '%.0f'|format(vessel.default_speed_kn) }} {{ t("pt_vessel_kn_short", lang) }}</span>
+      <span class="stat-card-label">{{ t("pt_vessel_avg_speed", lang) }}</span>
     </div>
   </div>
   <div class="stat-card">
     <div class="stat-card-icon cuivre"><i data-lucide="flag"></i></div>
     <div class="stat-card-body">
       <span class="stat-card-value">{% if vessel.flag %}{{ vessel.flag|flag }} {{ vessel.flag }}{% else %}—{% endif %}</span>
-      <span class="stat-card-label">Pavillon</span>
+      <span class="stat-card-label">{{ t("pt_vessel_flag", lang) }}</span>
     </div>
   </div>
 </section>
 
 <article class="card">
-  <h2>Caractéristiques</h2>
+  <h2>{{ t("pt_vessel_specs", lang) }}</h2>
   <table class="data-table">
-    <tr><td>Nom</td><td>{{ vessel.name }}</td></tr>
-    <tr><td>Code</td><td class="mono">{{ vessel.code }}</td></tr>
+    <tr><td>{{ t("pt_vessel_name", lang) }}</td><td>{{ vessel.name }}</td></tr>
+    <tr><td>{{ t("pt_vessel_code_label", lang) }}</td><td class="mono">{{ vessel.code }}</td></tr>
     {% if vessel.imo_number %}<tr><td>IMO</td><td class="mono">{{ vessel.imo_number }}</td></tr>{% endif %}
-    {% if vessel.flag %}<tr><td>Pavillon</td><td>{{ vessel.flag|flag }} {{ vessel.flag }}</td></tr>{% endif %}
-    <tr><td>Capacité</td><td>{{ vessel.capacity_palettes }} palettes</td></tr>
-    {% if vessel.dwt %}<tr><td>Port en lourd</td><td>{{ '%.0f'|format(vessel.dwt) }} t</td></tr>{% endif %}
-    <tr><td>Propulsion</td><td>Vélique — transport décarboné à la voile</td></tr>
+    {% if vessel.flag %}<tr><td>{{ t("pt_vessel_flag", lang) }}</td><td>{{ vessel.flag|flag }} {{ vessel.flag }}</td></tr>{% endif %}
+    <tr><td>{{ t("pt_vessel_capacity", lang) }}</td><td>{{ vessel.capacity_palettes }} {{ t("pt_palettes_lc", lang) }}</td></tr>
+    {% if vessel.dwt %}<tr><td>{{ t("pt_vessel_dwt", lang) }}</td><td>{{ '%.0f'|format(vessel.dwt) }} t</td></tr>{% endif %}
+    <tr><td>{{ t("pt_vessel_propulsion", lang) }}</td><td>{{ t("pt_vessel_propulsion_value", lang) }}</td></tr>
   </table>
 </article>
 
 {% if leg %}
 <article class="card mt-4">
-  <h2>Voyage en cours</h2>
+  <h2>{{ t("pt_vessel_current_voyage", lang) }}</h2>
   <table class="data-table">
-    <tr><td>Itinéraire</td><td>
+    <tr><td>{{ t("pt_itinerary", lang) }}</td><td>
       {% if pol %}{{ pol.country|flag }} {{ pol.name }} ({{ pol.locode }}){% endif %}
       → {% if pod %}{{ pod.country|flag }} {{ pod.name }} ({{ pod.locode }}){% endif %}
     </td></tr>
     <tr><td>ETD</td><td>{{ leg.etd|datetime if leg.etd else '—' }}</td></tr>
     <tr><td>ETA</td><td>{{ leg.eta|datetime if leg.eta else '—' }}</td></tr>
   </table>
-  <p class="mt-2"><a href="/p/{{ token }}/voyage" class="btn btn-secondary btn-sm">Suivre le voyage →</a></p>
+  <p class="mt-2"><a href="/p/{{ token }}/voyage" class="btn btn-secondary btn-sm">{{ t("pt_vessel_track_voyage", lang) }} →</a></p>
 </article>
 {% endif %}
 
