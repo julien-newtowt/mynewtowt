@@ -1,4 +1,4 @@
-"""Cargo P1 — reprise (CARGO-08 pré-remplissage du 1er batch à la création de la PL)."""
+"""Cargo P1 — reprise (CARGO-08 pré-remplissage batch + CARGO-13 champs goods riches)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,14 @@ import pytest
 from sqlalchemy import select
 
 from app.models.commercial import Client, Order
-from app.models.packing_list import PackingListBatch
-from app.services.packing_list import batch_prefill_from_order, ensure_for_order
+from app.models.packing_list import PackingList, PackingListAudit, PackingListBatch
+from app.services.packing_list import (
+    apply_batch_update,
+    batch_prefill_from_order,
+    coerce_batch_form,
+    create_batch,
+    ensure_for_order,
+)
 
 
 async def _order(db, **overrides):
@@ -123,3 +129,66 @@ async def test_ensure_for_order_idempotent_no_extra_batch(db):
         .all()
     )
     assert len(batches) == 1  # toujours un seul batch
+
+
+# ─────────────────────────────── CARGO-13 ───────────────────────────────
+
+
+def test_compute_dimensions_properties():
+    """surface / volume / densité dérivés des dimensions (formules V2)."""
+    b = PackingListBatch(
+        packing_list_id=1, length_cm=120, width_cm=80, height_cm=100, weight_kg=400
+    )
+    assert b.surface_m2 == 0.96  # 120*80/10000
+    assert b.volume_m3 == 0.96  # 120*80*100/1e6
+    assert b.density == round((400 / 1000) / 0.96, 3)  # t / m²
+
+
+def test_compute_dimensions_none_when_missing():
+    b = PackingListBatch(packing_list_id=1, length_cm=120)
+    assert b.surface_m2 is None
+    assert b.volume_m3 is None
+    assert b.density is None
+
+
+def test_rich_goods_fields_coerced():
+    """cases_quantity / units_per_case → int ; cargo_value_usd → float."""
+    vals = coerce_batch_form(
+        {"cases_quantity": "12", "units_per_case": "6", "cargo_value_usd": "1500,50"}
+    )
+    assert vals["cases_quantity"] == 12
+    assert vals["units_per_case"] == 6
+    assert vals["cargo_value_usd"] == 1500.50
+
+
+@pytest.mark.asyncio
+async def test_rich_goods_fields_create_and_audited(db):
+    o = await _order(db)
+    pl = PackingList(order_id=o.id, status="draft")
+    db.add(pl)
+    await db.flush()
+    b = await create_batch(
+        db,
+        pl=pl,
+        vals={"cargo_value_usd": 999.0, "cases_quantity": 4},
+        actor="staff",
+        actor_name="agent",
+    )
+    assert b.cargo_value_usd == 999.0 and b.cases_quantity == 4
+
+    # une édition trace le champ riche modifié
+    changed = await apply_batch_update(
+        db, batch=b, new_values={"units_per_case": 10}, actor="staff", actor_name="agent"
+    )
+    assert changed == 1
+    assert b.units_per_case == 10
+    audits = (
+        (
+            await db.execute(
+                select(PackingListAudit).where(PackingListAudit.field == "units_per_case")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(audits) == 1 and audits[0].new_value == "10"

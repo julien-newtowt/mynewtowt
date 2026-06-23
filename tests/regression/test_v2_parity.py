@@ -544,6 +544,20 @@ def test_v2_cargo_batch_prefill_restored():
     assert vals["pallet_count"] == 8 and vals["shipper_name"] == "S"
 
 
+def test_v2_cargo_rich_goods_fields_restored():
+    """CARGO-13 : champs goods riches (colis, valeur) + dimensions dérivées."""
+    from app.models.packing_list import PackingListBatch
+    from app.services.packing_list import AUDITABLE_FIELDS
+
+    for f in ("cases_quantity", "units_per_case", "cargo_value_usd"):
+        assert f in AUDITABLE_FIELDS
+        assert hasattr(PackingListBatch, f)
+    b = PackingListBatch(
+        packing_list_id=1, length_cm=100, width_cm=100, height_cm=100, weight_kg=200
+    )
+    assert b.surface_m2 == 1.0 and b.volume_m3 == 1.0 and b.density == 0.2
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # ✅ Toute la parité P0 vis-à-vis de la V2 est désormais restaurée.
 # Les évolutions P1/P2 restent tracées dans docs/audit/backlog/.

@@ -190,6 +190,10 @@ class PackingListBatch(Base):
     # CARGO-02 — marchandise (BL / douane).
     type_of_goods: Mapped[str | None] = mapped_column(String(200))
     description_of_goods: Mapped[str | None] = mapped_column(Text)
+    # CARGO-13 — champs goods riches (douane / valeur déclarée).
+    cases_quantity: Mapped[int | None] = mapped_column(Integer)
+    units_per_case: Mapped[int | None] = mapped_column(Integer)
+    cargo_value_usd: Mapped[float | None] = mapped_column(Float)
 
     # CARGO-01 — numérotation Bill of Lading persistante (ex. TUAW_1CFRBR6_001).
     # Unique : interdit deux BL au même numéro (anti-doublon au niveau base).
@@ -201,6 +205,27 @@ class PackingListBatch(Base):
     )
 
     packing_list: Mapped[PackingList] = relationship(back_populates="batches")
+
+    # CARGO-13 — dimensions dérivées (calculées, jamais stockées) : surface au
+    # sol, volume et densité surfacique. Formules reprises de la V2.
+    @property
+    def surface_m2(self) -> float | None:
+        if self.length_cm and self.width_cm:
+            return round(self.length_cm * self.width_cm / 10_000, 4)
+        return None
+
+    @property
+    def volume_m3(self) -> float | None:
+        if self.length_cm and self.width_cm and self.height_cm:
+            return round(self.length_cm * self.width_cm * self.height_cm / 1_000_000, 4)
+        return None
+
+    @property
+    def density(self) -> float | None:
+        surface = self.surface_m2
+        if self.weight_kg and surface and surface > 0:
+            return round((self.weight_kg / 1000) / surface, 3)
+        return None
 
 
 class PackingListAudit(Base):
