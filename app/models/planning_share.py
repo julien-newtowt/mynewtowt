@@ -26,6 +26,17 @@ class PlanningShare(Base):
     only_bookable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
 
+    # PLN-04 — suivi destinataire (à qui le lien a été envoyé) + langue du
+    # rendu public + sélection leg-à-leg optionnelle.
+    recipient_name: Mapped[str | None] = mapped_column(String(200))
+    recipient_company: Mapped[str | None] = mapped_column(String(200))
+    recipient_email: Mapped[str | None] = mapped_column(String(200))
+    recipient_notes: Mapped[str | None] = mapped_column(Text)
+    # Langue du partage public (fr/en) — corrige le partage EN cassé.
+    lang: Mapped[str] = mapped_column(String(5), default="fr", nullable=False)
+    # CSV d'IDs de legs explicitement sélectionnés (NULL ⇒ filtres ci-dessus).
+    legs_ids: Mapped[str | None] = mapped_column(Text)
+
     # Période de filtrage optionnelle (sur l'ETD). NULL ⇒ fenêtre par défaut
     # (7 j passés → 90 j à venir) appliquée à l'affichage public.
     date_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

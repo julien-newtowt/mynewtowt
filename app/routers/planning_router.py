@@ -709,6 +709,14 @@ async def shares_index(
     )
     # id→port pour ré-afficher les filtres baked dans le tableau des partages.
     filter_ports = {p.id: p for p in pol_ports} | {p.id: p for p in pod_ports}
+    # PLN-04 — résolution des créateurs (« créé par ») pour l'historique.
+    creator_ids = {s.created_by_id for s in shares if s.created_by_id}
+    creators: dict[int, str] = {}
+    if creator_ids:
+        from app.models.user import User
+
+        for u in (await db.execute(select(User).where(User.id.in_(creator_ids)))).scalars().all():
+            creators[u.id] = u.full_name or u.username
     return templates.TemplateResponse(
         "staff/planning/shares.html",
         {
@@ -719,6 +727,7 @@ async def shares_index(
             "pol_ports": pol_ports,
             "pod_ports": pod_ports,
             "filter_ports": filter_ports,
+            "creators": creators,
         },
     )
 
@@ -734,9 +743,17 @@ async def shares_create(
     description: str = Form(""),
     date_from: str = Form(""),
     date_to: str = Form(""),
+    recipient_name: str = Form(""),
+    recipient_company: str = Form(""),
+    recipient_email: str = Form(""),
+    recipient_notes: str = Form(""),
+    lang: str = Form("fr"),
+    legs_ids: str = Form(""),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("planning", "M")),
 ) -> RedirectResponse:
+    from app.services.planning import parse_legs_ids
+
     await create_share(
         db,
         label=label.strip() or None,
@@ -747,6 +764,12 @@ async def shares_create(
         description=description.strip() or None,
         date_from=_parse_dt(date_from, allow_empty=True),
         date_to=_parse_dt(date_to, allow_empty=True),
+        recipient_name=recipient_name.strip() or None,
+        recipient_company=recipient_company.strip() or None,
+        recipient_email=recipient_email.strip() or None,
+        recipient_notes=recipient_notes.strip() or None,
+        lang=lang,
+        legs_ids=parse_legs_ids(legs_ids),
         expires_at=None,
         created_by_id=user.id,
     )
@@ -801,12 +824,26 @@ async def public_share(
         if share.date_to
         else now + timedelta(days=GANTT_WINDOW_DAYS)
     )
-    legs = await list_legs_in_window(
-        db,
-        date_from=window_from,
-        date_to=window_to,
-        vessel_id=share.vessel_id,
-    )
+    # PLN-04 — sélection leg-à-leg explicite : on charge exactement les legs
+    # choisis (hors fenêtre temporelle), sinon on applique la fenêtre + navire.
+    # Parsing partagé avec l'écriture (services.planning.legs_ids_list).
+    from app.services.planning import legs_ids_list
+
+    selected_ids = legs_ids_list(share.legs_ids)
+    if selected_ids:
+        stmt = select(Leg).where(Leg.id.in_(selected_ids))
+        # Le filtre navire du partage reste appliqué à la sélection explicite
+        # (cohérent avec le chemin fenêtré ; pas de fuite hors navire scoping).
+        if share.vessel_id:
+            stmt = stmt.where(Leg.vessel_id == share.vessel_id)
+        legs = list((await db.execute(stmt)).scalars().all())
+    else:
+        legs = await list_legs_in_window(
+            db,
+            date_from=window_from,
+            date_to=window_to,
+            vessel_id=share.vessel_id,
+        )
     if share.only_bookable:
         legs = [leg for leg in legs if leg.is_bookable]
     # Filtres géographiques optionnels (POL de départ / POD d'arrivée).
@@ -850,6 +887,12 @@ async def public_share(
             }
         )
 
+    # PLN-04 — langue du partage : on force la langue choisie à la création
+    # (corrige le partage public EN). Le context processor i18n lit
+    # ``request.state.forced_lang`` et en déduit ``lang`` + ``brand``.
+    from app.services.planning import clamp_share_lang
+
+    request.state.forced_lang = clamp_share_lang(share.lang)
     return templates.TemplateResponse(
         "public/planning_share.html",
         {

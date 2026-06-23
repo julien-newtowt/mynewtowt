@@ -61,8 +61,39 @@
       <label for="description">Description (visible côté client)</label>
       <input id="description" name="description" maxlength="500" />
     </div>
+    <div class="field">
+      <label for="lang">Langue du lien public</label>
+      <select id="lang" name="lang">
+        <option value="fr">Français</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="legs_ids">Legs précis (IDs séparés par virgule, optionnel)</label>
+      <input id="legs_ids" name="legs_ids" placeholder="12, 15, 18" />
+    </div>
   </div>
-  <button type="submit" class="btn btn-primary">Créer le lien</button>
+
+  <h3 class="mt-3">Destinataire (suivi interne)</h3>
+  <div class="grid grid-2 gap-3">
+    <div class="field">
+      <label for="recipient_name">Nom</label>
+      <input id="recipient_name" name="recipient_name" maxlength="200" />
+    </div>
+    <div class="field">
+      <label for="recipient_company">Société</label>
+      <input id="recipient_company" name="recipient_company" maxlength="200" />
+    </div>
+    <div class="field">
+      <label for="recipient_email">Email</label>
+      <input id="recipient_email" name="recipient_email" type="email" maxlength="200" />
+    </div>
+    <div class="field">
+      <label for="recipient_notes">Notes</label>
+      <input id="recipient_notes" name="recipient_notes" maxlength="500" />
+    </div>
+  </div>
+  <button type="submit" class="btn btn-primary mt-3">Créer le lien</button>
 </form>
 
 <article class="card">
@@ -72,11 +103,13 @@
       <thead>
         <tr>
           <th>Libellé</th>
+          <th>Destinataire</th>
           <th>Navire</th>
           <th>Filtres</th>
+          <th>Lng</th>
           <th>URL publique</th>
           <th>Accès</th>
-          <th>Créé</th>
+          <th>Créé (par)</th>
           <th>Statut</th>
           <th></th>
         </tr>
@@ -86,20 +119,29 @@
           {% set v = (vessels | selectattr("id", "equalto", s.vessel_id) | list | first) if s.vessel_id else none %}
           <tr style="{% if not s.is_active %}opacity:0.5;{% endif %}">
             <td>{{ s.label or '—' }}</td>
+            <td>
+              {% if s.recipient_name or s.recipient_company or s.recipient_email %}
+                <strong>{{ s.recipient_name or '—' }}</strong>
+                {% if s.recipient_company %}<br><span class="text-muted text-sm">{{ s.recipient_company }}</span>{% endif %}
+                {% if s.recipient_email %}<br><span class="mono text-sm">{{ s.recipient_email }}</span>{% endif %}
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
             <td>{{ v.name if v else 'Tous' }}</td>
             <td>
-              {% set has_filter = s.only_bookable or s.pol_port_id or s.pod_port_id or s.date_from or s.date_to %}
+              {% set has_filter = s.only_bookable or s.pol_port_id or s.pod_port_id or s.date_from or s.date_to or s.legs_ids %}
+              {% if s.legs_ids %}<span class="pill pill-info mono">Legs {{ s.legs_ids }}</span>{% endif %}
               {% if s.only_bookable %}<span class="pill pill-info">Bookables</span>{% endif %}
               {% if s.pol_port_id and filter_ports.get(s.pol_port_id) %}<span class="pill pill-neutral mono">POL {{ filter_ports[s.pol_port_id].locode }}</span>{% endif %}
               {% if s.pod_port_id and filter_ports.get(s.pod_port_id) %}<span class="pill pill-neutral mono">POD {{ filter_ports[s.pod_port_id].locode }}</span>{% endif %}
               {% if s.date_from or s.date_to %}<span class="pill pill-neutral">{{ s.date_from|date if s.date_from else '…' }} → {{ s.date_to|date if s.date_to else '…' }}</span>{% endif %}
               {% if not has_filter %}<span class="text-muted">—</span>{% endif %}
             </td>
+            <td><span class="pill pill-neutral mono">{{ s.lang|upper }}</span></td>
             <td>
               <code style="font-size:var(--text-xs);">{{ site_url }}/planning/share/{{ s.token }}</code>
             </td>
             <td>{{ s.access_count }}</td>
-            <td>{{ s.created_at|date }}</td>
+            <td>{{ s.created_at|date }}{% if s.created_by_id and creators.get(s.created_by_id) %}<br><span class="text-muted text-sm">{{ creators[s.created_by_id] }}</span>{% endif %}</td>
             <td>
               {% if s.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Révoqué</span>{% endif %}
             </td>

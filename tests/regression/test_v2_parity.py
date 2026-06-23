@@ -736,6 +736,16 @@ def test_v2_stowage_block_policy_restored():
     assert STOWAGE_BLOCK_FLAG == "stowage_block_overcapacity"
 
 
+def test_v2_planning_share_recipient_lang_restored():
+    """PLN-04 : fiche destinataire + langue + sélection leg-à-leg des partages."""
+    from app.models.planning_share import PlanningShare
+    from app.services.planning import parse_legs_ids
+
+    for field in ("recipient_name", "recipient_company", "recipient_email", "lang", "legs_ids"):
+        assert hasattr(PlanningShare, field), field
+    assert parse_legs_ids("3,1,1") == "1,3"
+
+
 def test_v2_kpi_consolidated_view_restored():
     """FIN-07 : page KPI consolidée agrégeant les sources (Commerce/Flotte/Env/Exploitation)."""
     from app.routers.kpi_router import router
