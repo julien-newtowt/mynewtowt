@@ -222,6 +222,28 @@ def test_v2_ux_time_input_restored():
     assert "tz-utc-hint" in html
 
 
+def test_v2_ux_topbar_notif_and_lang_restored():
+    """UX-04/05 : la cloche liste le vrai flux + sélecteur de langue staff."""
+    from types import SimpleNamespace
+
+    from app.templating import _BRAND_BY_LANG, templates
+
+    ctx = {
+        "request": SimpleNamespace(url=SimpleNamespace(path="/dashboard")),
+        "lang": "fr",
+        "brand": _BRAND_BY_LANG["fr"],
+        "user": SimpleNamespace(full_name="Op", username="op", role="operation"),
+        "notif_count": 1,
+        "recent_notifications": [
+            SimpleNamespace(title="Test", detail=None, link="/x", is_read=False)
+        ],
+        "lang_options": ["fr", "en", "vi"],
+        "newtowt_agent_enabled": True,
+    }
+    html = templates.env.get_template("staff/_topbar.html").render(**ctx)
+    assert "Test" in html and "/lang/en" in html and "topbar-lang-menu" in html
+
+
 # ───────────────────────────── Crew (V2 parité) ─────────────────────────────
 
 
