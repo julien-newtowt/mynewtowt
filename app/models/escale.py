@@ -66,6 +66,9 @@ class EscaleOperation(Base):
     operation_type: Mapped[str] = mapped_column(String(40), nullable=False)
     action: Mapped[str] = mapped_column(String(40), nullable=False)
     label: Mapped[str | None] = mapped_column(String(200))
+    # ESC-04 — intervenant (nom/société qui réalise l'opération) : affiché
+    # partout en V2 (manutentionnaire, agent, prestataire…).
+    intervenant: Mapped[str | None] = mapped_column(String(200))
     notes: Mapped[str | None] = mapped_column(Text)
     planned_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     planned_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -78,6 +81,29 @@ class EscaleOperation(Base):
     cost_forecast: Mapped[float | None] = mapped_column()
     cost_actual: Mapped[float | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # ESC-04 — durées dérivées (heures) des bornes prévue/réelle. Reprise V2 :
+    # mêmes accesseurs ``planned_duration_hours`` / ``actual_duration_hours``,
+    # calculés à la volée plutôt que stockés (toujours cohérents).
+    @staticmethod
+    def _duration_h(start: datetime | None, end: datetime | None) -> float | None:
+        if start is None or end is None:
+            return None
+        # Normalise les tz (SQLite renvoie naïf, Postgres aware) avant le delta.
+        if start.tzinfo is None and end.tzinfo is not None:
+            end = end.replace(tzinfo=None)
+        elif start.tzinfo is not None and end.tzinfo is None:
+            start = start.replace(tzinfo=None)
+        hours = (end - start).total_seconds() / 3600
+        return round(hours, 2) if hours >= 0 else None
+
+    @property
+    def planned_duration_hours(self) -> float | None:
+        return self._duration_h(self.planned_start, self.planned_end)
+
+    @property
+    def actual_duration_hours(self) -> float | None:
+        return self._duration_h(self.actual_start, self.actual_end)
 
 
 class DockerShift(Base):

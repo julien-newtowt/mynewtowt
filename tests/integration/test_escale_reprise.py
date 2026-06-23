@@ -91,6 +91,7 @@ async def test_edit_operation_sets_manual_actual_times(db, staff_user):
         operation_type="technique",
         action="inspection",
         label="Inspection cale",
+        intervenant=None,
         planned_start=None,
         planned_end=None,
         actual_start="2026-04-01T10:00:00",
@@ -125,6 +126,7 @@ async def test_edit_operation_reconciles_sof_no_duplicate(db, staff_user):
         "operation_type": "relations_externes",
         "action": "nor",
         "label": None,
+        "intervenant": None,
         "planned_start": None,
         "planned_end": None,
         "status": None,
@@ -353,3 +355,53 @@ async def test_edit_and_delete_docker_shift(db, staff_user):
     resp = await delete_docker_shift(sid, _Req(), db=db, user=staff_user)
     assert resp.status_code == 303
     assert (await db.get(DockerShift, sid)) is None
+
+
+# ─────────────────────────────── ESC-04 ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_operation_persists_intervenant(db, staff_user):
+    from app.routers.escale_router import create_operation
+
+    await _setup_leg(db)
+    resp = await create_operation(
+        1,
+        _Req(),
+        direction="IMPORT",
+        operation_type="manutention",
+        action="dechargement",
+        label="Déchargement cale AR",
+        intervenant="Manutentions du Port SARL",
+        planned_start="2026-04-01T08:00:00",
+        planned_end="2026-04-01T14:00:00",
+        cost_forecast=None,
+        cost_actual=None,
+        notes=None,
+        db=db,
+        user=staff_user,
+    )
+    assert resp.status_code == 303
+    op = (await db.execute(EscaleOperation.__table__.select())).fetchone()
+    assert op.intervenant == "Manutentions du Port SARL"
+
+
+def test_operation_durations_computed():
+    base = datetime(2026, 4, 1, tzinfo=UTC)
+    op = EscaleOperation(
+        leg_id=1,
+        operation_type="manutention",
+        action="dechargement",
+        planned_start=base,
+        planned_end=base + timedelta(hours=6),
+        actual_start=base + timedelta(minutes=30),
+        actual_end=base + timedelta(hours=5, minutes=30),
+    )
+    assert op.planned_duration_hours == 6.0
+    assert op.actual_duration_hours == 5.0
+
+
+def test_operation_durations_none_when_incomplete():
+    op = EscaleOperation(leg_id=1, operation_type="t", action="a", planned_start=None)
+    assert op.planned_duration_hours is None
+    assert op.actual_duration_hours is None

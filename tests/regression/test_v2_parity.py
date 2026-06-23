@@ -176,6 +176,25 @@ def test_v2_docker_productivity_restored():
         assert hasattr(DockerShift, prop), prop
 
 
+def test_v2_escale_intervenant_durations_restored():
+    """ESC-04 : intervenant + durées prévue/réelle des opérations d'escale."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.escale import EscaleOperation
+
+    assert hasattr(EscaleOperation, "intervenant")
+    base = datetime(2026, 4, 1, tzinfo=UTC)
+    op = EscaleOperation(
+        leg_id=1,
+        operation_type="manutention",
+        action="dechargement",
+        planned_start=base,
+        planned_end=base + timedelta(hours=4),
+    )
+    assert op.planned_duration_hours == 4.0
+    assert op.actual_duration_hours is None
+
+
 # ───────────────────────────── Crew (V2 parité) ─────────────────────────────
 
 
