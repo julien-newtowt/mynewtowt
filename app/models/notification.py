@@ -25,6 +25,7 @@ from app.database import Base
 NOTIFICATION_TYPES = (
     "new_order",
     "new_cargo_message",
+    "new_packing_list",
     "eosp",
     "sosp",
     "new_claim",

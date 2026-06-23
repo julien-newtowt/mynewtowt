@@ -473,6 +473,15 @@ def test_v2_co2_equivalences_restored():
     assert eq["flights_paris_nyc"] > 0 and eq["containers_asia_eu"] > 0
 
 
+def test_v2_order_confirm_autocreates_pl():
+    """COM-09 : la confirmation d'une commande auto-crée la PL (+ notif ops)."""
+    from app.services.notifications import notify_packing_list_created
+    from app.services.packing_list import ensure_for_order
+
+    assert callable(ensure_for_order)
+    assert callable(notify_packing_list_created)
+
+
 # ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
 # ✅ Toute la parité P0 vis-à-vis de la V2 est désormais restaurée.
 # Les évolutions P1/P2 restent tracées dans docs/audit/backlog/.

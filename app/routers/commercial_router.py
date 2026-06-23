@@ -2155,9 +2155,19 @@ async def order_confirm(
     order = await db.get(Order, order_id)
     if order is None:
         raise HTTPException(status_code=404)
+    already_confirmed = order.status == "confirmed"
     order.status = "confirmed"
     order.confirmed_at = datetime.now(UTC)
     await db.flush()
+    # COM-09 — auto-création de la packing list + notification opérations (à la
+    # 1re confirmation seulement ; ensure_for_order reste idempotent).
+    if not already_confirmed:
+        from app.services import notifications
+        from app.services.packing_list import ensure_for_order
+
+        pl, created = await ensure_for_order(db, order)
+        if created:
+            await notifications.notify_packing_list_created(db, order.reference, pl.id)
     await activity_record(
         db,
         action="update",
