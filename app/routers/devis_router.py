@@ -390,12 +390,8 @@ async def _route_ports(db: AsyncSession) -> tuple[list[Port], list[Port]]:
 async def _ports_by_locode(
     db: AsyncSession, pol_locode: str, pod_locode: str
 ) -> tuple[Port | None, Port | None]:
-    pol = (
-        await db.execute(select(Port).where(Port.locode == pol_locode))
-    ).scalar_one_or_none()
-    pod = (
-        await db.execute(select(Port).where(Port.locode == pod_locode))
-    ).scalar_one_or_none()
+    pol = (await db.execute(select(Port).where(Port.locode == pol_locode))).scalar_one_or_none()
+    pod = (await db.execute(select(Port).where(Port.locode == pod_locode))).scalar_one_or_none()
     return pol, pod
 
 

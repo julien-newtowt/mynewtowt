@@ -135,9 +135,7 @@ def parse_employees_csv(content: str) -> ImportResult:
     present = {f for f in fields if f}
     missing = [f for f in REQUIRED_FIELDS if f not in present]
     if missing:
-        result.errors.append(
-            RowError(1, f"colonnes obligatoires manquantes: {', '.join(missing)}")
-        )
+        result.errors.append(RowError(1, f"colonnes obligatoires manquantes: {', '.join(missing)}"))
         return result
 
     seen_matricules: set[str] = set()

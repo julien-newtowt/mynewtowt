@@ -1,31 +1,35 @@
 {% extends "staff/_layout.html" %}
-{% block title %}Nouveau marin{% endblock %}
+{% block title %}{% if member %}Modifier {{ member.full_name }}{% else %}Nouveau marin{% endif %}{% endblock %}
 {% block content %}
-<a href="/crew" class="btn btn-ghost mb-3">← Crew</a>
-<header class="mb-4"><span class="kicker">Équipage</span><h1 class="display">Nouveau membre</h1></header>
+<a href="{% if member %}/crew/members/{{ member.id }}{% else %}/crew{% endif %}" class="btn btn-ghost mb-3">← Crew</a>
+<header class="mb-4">
+  <span class="kicker">Équipage</span>
+  <h1 class="display">{% if member %}Modifier la fiche marin{% else %}Nouveau membre{% endif %}</h1>
+</header>
 
-<form method="post" action="/crew/new" class="card">
+<form method="post" action="{% if member %}/crew/members/{{ member.id }}/edit{% else %}/crew/members{% endif %}" class="card">
   <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
   <div class="grid grid-2 gap-3">
-    <div class="field"><label>Nom complet</label><input name="full_name" required /></div>
+    <div class="field"><label>Nom complet</label><input name="full_name" value="{{ member.full_name if member else '' }}" required /></div>
     <div class="field">
       <label>Rôle</label>
       <select name="role" required>
-        <option value="captain">Commandant</option>
-        <option value="chief_mate">Second</option>
-        <option value="ab">Matelot (AB)</option>
-        <option value="cook">Cuisinier</option>
-        <option value="engineer">Mécanicien</option>
-        <option value="other">Autre</option>
+        {% for r in roles %}
+        <option value="{{ r }}"{% if member and member.role == r %} selected{% endif %}>{{ r|replace('_', ' ')|capitalize }}</option>
+        {% endfor %}
       </select>
     </div>
-    <div class="field"><label>Nationalité (ISO 2)</label><input name="nationality" maxlength="2" placeholder="FR" /></div>
-    <div class="field"><label>Date de naissance</label><input name="date_of_birth" type="date" /></div>
-    <div class="field"><label>N° passeport</label><input name="passport_number" /></div>
-    <div class="field"><label>Expiration passeport</label><input name="passport_expires_at" type="date" /></div>
-    <div class="field"><label>Email</label><input name="email" type="email" /></div>
-    <div class="field"><label>Téléphone</label><input name="phone" /></div>
-    <div class="field" style="grid-column:span 2;"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+    <div class="field"><label>Nationalité (ISO 2)</label><input name="nationality" maxlength="2" placeholder="FR" value="{{ member.nationality if member and member.nationality else '' }}" /></div>
+    <div class="field"><label>Date de naissance</label><input name="date_of_birth" type="date" value="{{ member.date_of_birth.isoformat() if member and member.date_of_birth else '' }}" /></div>
+    <div class="field"><label>N° passeport</label><input name="passport_number" value="{{ member.passport_number if member and member.passport_number else '' }}" /></div>
+    <div class="field"><label>Expiration passeport</label><input name="passport_expires_at" type="date" value="{{ member.passport_expires_at.isoformat() if member and member.passport_expires_at else '' }}" /></div>
+    <div class="field"><label>Visa US — expiration</label><input name="visa_us_expires_at" type="date" value="{{ member.visa_us_expires_at.isoformat() if member and member.visa_us_expires_at else '' }}" /></div>
+    <div class="field"><label>Visa BR — expiration</label><input name="visa_br_expires_at" type="date" value="{{ member.visa_br_expires_at.isoformat() if member and member.visa_br_expires_at else '' }}" /></div>
+    <div class="field"><label>N° livret maritime</label><input name="seaman_book_number" value="{{ member.seaman_book_number if member and member.seaman_book_number else '' }}" /></div>
+    <div class="field"><label>Livret maritime — expiration</label><input name="seaman_book_expires_at" type="date" value="{{ member.seaman_book_expires_at.isoformat() if member and member.seaman_book_expires_at else '' }}" /></div>
+    <div class="field"><label>Email</label><input name="email" type="email" value="{{ member.email if member and member.email else '' }}" /></div>
+    <div class="field"><label>Téléphone</label><input name="phone" value="{{ member.phone if member and member.phone else '' }}" /></div>
+    <div class="field" style="grid-column:span 2;"><label>Notes</label><textarea name="notes" rows="2">{{ member.notes if member and member.notes else '' }}</textarea></div>
   </div>
   <button class="btn btn-primary mt-3" type="submit">Enregistrer</button>
 </form>

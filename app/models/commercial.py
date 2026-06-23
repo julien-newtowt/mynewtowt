@@ -32,6 +32,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -307,6 +308,20 @@ class Order(Base):
     booked_palettes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     rate_per_palette_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     total_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    # COM-02 — caractéristiques riches de la commande (reprise V2).
+    palette_format: Mapped[str | None] = mapped_column(String(20))
+    weight_per_palette_kg: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    thc_included: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    booking_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    documentation_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    # Route souhaitée + fenêtre de livraison — pilotent l'affectation au leg (COM-01).
+    departure_locode: Mapped[str | None] = mapped_column(String(5))
+    arrival_locode: Mapped[str | None] = mapped_column(String(5))
+    delivery_date_start: Mapped[_date | None] = mapped_column(Date)
+    delivery_date_end: Mapped[_date | None] = mapped_column(Date)
+    # Traçabilité de la grille appliquée (fiche grille → « commandes liées »).
+    rate_grid_id: Mapped[int | None] = mapped_column(ForeignKey("rate_grids.id"), index=True)
+    rate_grid_line_id: Mapped[int | None] = mapped_column(ForeignKey("rate_grid_lines.id"))
     cargo_description: Mapped[str | None] = mapped_column(Text)
     description_of_goods: Mapped[str | None] = mapped_column(Text)
     # Adresses structurées
@@ -317,6 +332,11 @@ class Order(Base):
     notify_name: Mapped[str | None] = mapped_column(String(200))
     notify_address: Mapped[str | None] = mapped_column(Text)
     pipedrive_deal_id: Mapped[int | None] = mapped_column(Integer)
+    # COM-04 — pièce jointe (bon de commande / contrat signé). Stockage hors
+    # base via services.safe_files ; une seule PJ (remplacée au ré-upload).
+    attachment_path: Mapped[str | None] = mapped_column(String(500))
+    attachment_filename: Mapped[str | None] = mapped_column(String(255))
+    attachment_mime: Mapped[str | None] = mapped_column(String(80))
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_reason: Mapped[str | None] = mapped_column(Text)
@@ -340,6 +360,9 @@ class OrderAssignment(Base):
     """Affectation d'une commande à un leg (pour ventiler une ord. sur plusieurs voyages)."""
 
     __tablename__ = "order_assignments"
+    # Une commande ne peut être affectée deux fois au même leg — garde-fou base
+    # contre les doublons (concurrence) ; l'unicité applicative ne suffit pas.
+    __table_args__ = (UniqueConstraint("order_id", "leg_id", name="uq_order_assignment_order_leg"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(

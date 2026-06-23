@@ -33,9 +33,7 @@ class Payslip(Base):
     __tablename__ = "payslips"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    employee_id: Mapped[int] = mapped_column(
-        ForeignKey("employees.id"), nullable=False, index=True
-    )
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
     period: Mapped[str] = mapped_column(String(7), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)

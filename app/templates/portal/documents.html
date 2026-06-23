@@ -1,0 +1,48 @@
+{% extends "portal/_layout.html" %}
+{% block portal_content %}
+<h1 class="display">Documents</h1>
+<p class="text-muted">Déposez ici vos documents douaniers (factures, MSDS, certificats…).</p>
+
+<div class="card" style="margin-bottom: var(--space-5);">
+  <form method="post" action="/p/{{ token }}/documents/upload" enctype="multipart/form-data" class="flex" style="gap: var(--space-3); align-items:flex-end; flex-wrap:wrap;">
+    <div>
+      <label class="field-label" for="doc-kind">Type</label>
+      <select id="doc-kind" name="kind" class="form-select">
+        {% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+      </select>
+    </div>
+    <div style="flex:1; min-width:180px;">
+      <label class="field-label" for="doc-label">Libellé (optionnel)</label>
+      <input id="doc-label" type="text" name="label" class="form-input" placeholder="Facture commerciale…" />
+    </div>
+    <div>
+      <label class="field-label" for="doc-file">Fichier</label>
+      <input id="doc-file" type="file" name="file" required />
+    </div>
+    <button type="submit" class="btn btn-primary">Déposer</button>
+  </form>
+</div>
+
+{% if docs %}
+<table class="data-table">
+  <thead><tr><th>Type</th><th>Libellé</th><th>Déposé le</th><th></th></tr></thead>
+  <tbody>
+    {% for d in docs %}
+    <tr>
+      <td><span class="badge">{{ d.kind }}</span></td>
+      <td>{{ d.label }}</td>
+      <td class="mono">{{ d.uploaded_at|datetime }}</td>
+      <td class="text-right">
+        <a class="btn btn-sm" href="/p/{{ token }}/documents/{{ d.id }}/download">Télécharger</a>
+        <form method="post" action="/p/{{ token }}/documents/{{ d.id }}/delete" style="display:inline;" data-confirm="Supprimer ce document ?">
+          <button type="submit" class="btn btn-sm btn-danger">Supprimer</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty-state">Aucun document déposé pour le moment.</p>
+{% endif %}
+{% endblock %}

@@ -17,12 +17,21 @@ from app.utils import pipedrive
 def test_sync_clients_upsert(monkeypatch) -> None:
     orgs = [
         # 101 : transitaire — activité (champ custom) commençant par IFF.
-        {"id": 101, "name": "Acme Forwarding", "address": "12 Dock Rd, Le Havre",
-         "open_deals_count": 2, "custom_activity": "IFF - commissionnaire"},
+        {
+            "id": 101,
+            "name": "Acme Forwarding",
+            "address": "12 Dock Rd, Le Havre",
+            "open_deals_count": 2,
+            "custom_activity": "IFF - commissionnaire",
+        },
         # 102 : chargeur direct (pas d'activité IFF).
         {"id": 102, "name": "Café Brasil Imports", "address": None, "won_deals_count": 1},
-        {"id": 104, "name": "Prospect sans deal", "open_deals_count": 0,
-         "closed_deals_count": 0},  # ignoré : aucun deal
+        {
+            "id": 104,
+            "name": "Prospect sans deal",
+            "open_deals_count": 0,
+            "closed_deals_count": 0,
+        },  # ignoré : aucun deal
         {"id": None, "name": "ignored (no id)"},
         {"id": 103, "name": ""},  # ignoré (pas de nom)
     ]
@@ -45,20 +54,26 @@ def test_sync_clients_upsert(monkeypatch) -> None:
             Session = async_sessionmaker(eng, expire_on_commit=False)
             async with Session() as s:
                 # Un client déjà lié à l'org 101 (contact saisi à la main).
-                s.add(Client(
-                    name="Acme (ancien nom)", client_type="shipper",
-                    contact_email="ops@acme.test", pipedrive_org_id=101,
-                ))
+                s.add(
+                    Client(
+                        name="Acme (ancien nom)",
+                        client_type="shipper",
+                        contact_email="ops@acme.test",
+                        pipedrive_org_id=101,
+                    )
+                )
                 await s.flush()
 
                 r1 = await pipedrive_sync.sync_clients(s)
                 assert r1["configured"] is True
-                assert r1["created"] == 1   # org 102 (a un deal gagné)
-                assert r1["updated"] == 1   # org 101 (a des deals ouverts)
-                assert r1["skipped"] == 1   # org 104 (aucun deal)
+                assert r1["created"] == 1  # org 102 (a un deal gagné)
+                assert r1["updated"] == 1  # org 101 (a des deals ouverts)
+                assert r1["skipped"] == 1  # org 104 (aucun deal)
                 assert r1["total"] == 5
 
-                clients = {c.pipedrive_org_id: c for c in (await s.execute(select(Client))).scalars().all()}
+                clients = {
+                    c.pipedrive_org_id: c for c in (await s.execute(select(Client))).scalars().all()
+                }
                 assert set(clients) == {101, 102}  # 104 (sans deal) non importé
                 # 101 : nom mis à jour, contact manuel préservé, type dérivé de
                 # l'activité IFF → freight_forwarder.
@@ -91,8 +106,12 @@ def test_sync_clients_not_configured(monkeypatch) -> None:
             async with Session() as s:
                 r = await pipedrive_sync.sync_clients(s)
                 assert r == {
-                    "configured": False, "created": 0, "updated": 0,
-                    "skipped": 0, "total": 0, "errors": 0,
+                    "configured": False,
+                    "created": 0,
+                    "updated": 0,
+                    "skipped": 0,
+                    "total": 0,
+                    "errors": 0,
                 }
         finally:
             await eng.dispose()

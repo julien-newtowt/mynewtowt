@@ -149,7 +149,11 @@ async def clone_real_legs_into(
                 etd=leg.etd,
                 eta=leg.eta,
                 label=leg.leg_code,
-                status=leg.status if leg.status in {"planned", "inprogress", "completed", "cancelled"} else "planned",
+                status=(
+                    leg.status
+                    if leg.status in {"planned", "inprogress", "completed", "cancelled"}
+                    else "planned"
+                ),
                 port_stay_planned_hours=leg.port_stay_planned_hours,
                 transit_speed_kn=leg.transit_speed_kn,
                 elongation_coef=leg.elongation_coef,
@@ -216,7 +220,9 @@ async def add_scenario_leg(
         etd=etd,
         eta=eta,
         label=(label or "").strip() or None,
-        status=status if status in {"planned", "inprogress", "completed", "cancelled"} else "planned",
+        status=(
+            status if status in {"planned", "inprogress", "completed", "cancelled"} else "planned"
+        ),
         port_stay_planned_hours=port_stay_planned_hours,
         transit_speed_kn=transit_speed_kn,
         elongation_coef=elongation_coef,
@@ -495,9 +501,7 @@ async def compare_to_real(
     if vessel_id is not None:
         stmt = stmt.where(Leg.vessel_id == vessel_id)
     real_legs = list((await db.execute(stmt)).scalars().all())
-    in_window = [
-        li for li in scenario_legs if li.eta >= window_start and li.etd <= window_end
-    ]
+    in_window = [li for li in scenario_legs if li.eta >= window_start and li.etd <= window_end]
     return ComparisonStat(
         scenario_legs=len(in_window),
         real_legs=len(real_legs),

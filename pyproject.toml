@@ -13,6 +13,11 @@ filterwarnings = [
     "error",
     "ignore::DeprecationWarning:passlib.*",
     "ignore::DeprecationWarning:itsdangerous.*",
+    # Signature TemplateResponse(name, context) — utilisée dans tout le code
+    # applicatif ; Starlette la déprécie au profit de (request, name). Dette
+    # connue et assumée côté app (cf. app/templating.py), filtrée comme les
+    # autres déprécations tierces ci-dessus.
+    "ignore::DeprecationWarning:starlette.templating",
     # Artefact connu des tests async (aiosqlite + boucle pytest-asyncio) :
     # la socketpair interne de la boucle est collectée par le GC après le
     # dispose() du moteur → ResourceWarning "unclosed socket" remontée en
@@ -71,6 +76,10 @@ extend-immutable-calls = [
 [tool.ruff.lint.per-file-ignores]
 # Les __init__.py de packages ré-exportent volontairement (routers, models).
 "**/__init__.py" = ["F401"]
+# Doublures de test (_Req, _FormReq…) : attributs de classe mutables jamais
+# mutés (idiome de test double) — l'annotation ClassVar (RUF012) n'apporte
+# rien ici. La règle reste pleinement appliquée sous app/.
+"tests/**" = ["RUF012"]
 
 [tool.black]
 line-length = 100

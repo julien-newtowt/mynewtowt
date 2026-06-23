@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    @page { size: A4; margin: 1.6cm 1.4cm; @bottom-center { content: "NEWTOWT — TransOceanic Wind Transport"; font-size: 8px; color: #0D5966; } }
+    body { font-family: "Manrope", "Helvetica", sans-serif; color: #21303a; font-size: 11px; }
+    h1 { color: #0D5966; font-size: 22px; margin: 0 0 2px; }
+    .kicker { color: #87BD29; text-transform: uppercase; letter-spacing: .08em; font-size: 9px; font-weight: 700; }
+    .summary { background: #EFE6D6; border-radius: 8px; padding: 10px 14px; margin: 12px 0 18px; display: flex; gap: 24px; }
+    .summary div span { display: block; }
+    .summary .v { font-size: 18px; font-weight: 700; color: #0D5966; }
+    .summary .l { font-size: 9px; color: #6b7a82; text-transform: uppercase; }
+    h2 { color: #0D5966; font-size: 13px; border-bottom: 2px solid #87BD29; padding-bottom: 3px; margin: 16px 0 6px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 8.5px; text-transform: uppercase; color: #6b7a82; border-bottom: 1px solid #cdd6da; padding: 4px 6px; }
+    td { padding: 4px 6px; border-bottom: 1px solid #eef2f3; font-size: 10px; }
+    .mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+</head>
+<body>
+  <div class="kicker">{{ 'Sailing schedule' if lang == 'en' else 'Planning de navigation' }}</div>
+  <h1>{{ 'Commercial schedule' if lang == 'en' else 'Brochure commerciale' }} — {{ meta.year }}</h1>
+  <p style="color:#6b7a82;margin:2px 0 0;">
+    {% if meta.vessel_name %}{{ 'Vessel' if lang == 'en' else 'Navire' }} : {{ meta.vessel_name }} · {% endif %}
+    {{ 'Issued' if lang == 'en' else 'Émis le' }} {{ issued_at.strftime('%d/%m/%Y') }}
+  </p>
+
+  <div class="summary">
+    <div><span class="v">{{ summary.leg_count }}</span><span class="l">{{ 'voyages' if lang == 'en' else 'legs' }}</span></div>
+    <div><span class="v">{{ summary.vessel_count }}</span><span class="l">{{ 'vessels' if lang == 'en' else 'navires' }}</span></div>
+    <div><span class="v">{{ summary.port_count }}</span><span class="l">{{ 'ports' }}</span></div>
+  </div>
+
+  {% for g in groups %}
+  <h2>{{ g.title }}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Leg</th>
+        <th>{{ 'Vessel' if lang == 'en' else 'Navire' }}</th>
+        <th>{{ 'From' if lang == 'en' else 'Départ' }}</th>
+        <th>{{ 'To' if lang == 'en' else 'Arrivée' }}</th>
+        <th>ETD</th>
+        <th>ETA</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in g.rows %}
+      <tr>
+        <td class="mono">{{ r.leg.leg_code }}</td>
+        <td>{{ r.vessel.name if r.vessel else '—' }}</td>
+        <td>{{ r.pol.name if r.pol else '—' }}{% if r.pol %} <span class="mono">({{ r.pol.locode }})</span>{% endif %}</td>
+        <td>{{ r.pod.name if r.pod else '—' }}{% if r.pod %} <span class="mono">({{ r.pod.locode }})</span>{% endif %}</td>
+        <td class="mono">{{ r.leg.etd.strftime('%d/%m/%Y') if r.leg.etd else '—' }}</td>
+        <td class="mono">{{ r.leg.eta.strftime('%d/%m/%Y') if r.leg.eta else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</body>
+</html>

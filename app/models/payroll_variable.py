@@ -54,9 +54,7 @@ class PayrollVariable(Base):
     __tablename__ = "payroll_variables"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    employee_id: Mapped[int] = mapped_column(
-        ForeignKey("employees.id"), nullable=False, index=True
-    )
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
     # Période de paie au format AAAA-MM.
     period: Mapped[str] = mapped_column(String(7), nullable=False)
     evp_type: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -69,9 +67,7 @@ class PayrollVariable(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
 
     # Ligne auto-générée depuis une absence approuvée (déduplication).
-    absence_id: Mapped[int | None] = mapped_column(
-        ForeignKey("hr_absences.id"), nullable=True
-    )
+    absence_id: Mapped[int | None] = mapped_column(ForeignKey("hr_absences.id"), nullable=True)
     # Lot d'export Silae (alimenté au lot L5).
     export_batch_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

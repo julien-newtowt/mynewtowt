@@ -161,3 +161,38 @@ async def ensure_from_sof(db: AsyncSession, sof: SofEvent) -> MRVEvent | None:
     db.add(ev)
     await db.flush()
     return ev
+
+
+async def resync_from_sof(db: AsyncSession, sof: SofEvent) -> None:
+    """Réaligne le MRVEvent dérivé après **édition** d'un SOF (ONB-01).
+
+    - type SOF toujours mappé → met à jour ``event_kind`` + ``recorded_at`` ;
+    - type devenu non mappé → supprime l'événement MRV dérivé devenu caduc ;
+    - aucun événement dérivé mais type désormais mappé → le crée.
+    Best-effort : l'appelant isole en try/except.
+    """
+    kind = map_sof_to_mrv_type(sof.event_type)
+    existing = (
+        await db.execute(select(MRVEvent).where(MRVEvent.sof_event_id == sof.id))
+    ).scalar_one_or_none()
+    if kind is None:
+        if existing is not None:
+            await db.delete(existing)
+            await db.flush()
+        return
+    if existing is None:
+        await ensure_from_sof(db, sof)
+        return
+    existing.event_kind = kind
+    existing.recorded_at = sof.occurred_at
+    await db.flush()
+
+
+async def remove_for_sof(db: AsyncSession, sof_event_id: int) -> None:
+    """Supprime l'éventuel MRVEvent dérivé d'un SOF (à la **suppression** du SOF)."""
+    existing = (
+        await db.execute(select(MRVEvent).where(MRVEvent.sof_event_id == sof_event_id))
+    ).scalar_one_or_none()
+    if existing is not None:
+        await db.delete(existing)
+        await db.flush()

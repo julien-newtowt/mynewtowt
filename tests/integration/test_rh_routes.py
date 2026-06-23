@@ -49,8 +49,15 @@ async def _contract(db, employee_id, **kw) -> EmploymentContract:
 
 # ── La FK est bien appliquée (sinon les gardes seraient inutiles) ───────
 async def test_foreign_keys_are_enforced(db):
-    db.add(HrAbsence(employee_id=999, kind="cp", start_date=date(2026, 1, 1),
-                     end_date=date(2026, 1, 2), business_days=1))
+    db.add(
+        HrAbsence(
+            employee_id=999,
+            kind="cp",
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 1, 2),
+            business_days=1,
+        )
+    )
     with pytest.raises(IntegrityError):
         await db.flush()
     await db.rollback()
@@ -102,8 +109,12 @@ async def test_contract_delete_ok_without_amendment(db, staff_user):
 
 # ── Création employé : persistance + unicité matricule ──────────────────
 async def test_employee_create_persists(db, staff_user):
-    form = {"matricule": "NEW1", "first_name": "Jean", "last_name": "Bon",
-            "department": "Commercial"}
+    form = {
+        "matricule": "NEW1",
+        "first_name": "Jean",
+        "last_name": "Bon",
+        "department": "Commercial",
+    }
     resp = await employee_create(FakeRequest(form), db, staff_user)
     assert resp.status_code == 303
     row = (await db.execute(select(Employee).where(Employee.matricule == "NEW1"))).scalar_one()
@@ -121,8 +132,13 @@ async def test_employee_create_duplicate_matricule_400(db, staff_user):
 # ── Absences : création RH + décision ───────────────────────────────────
 async def test_absence_create_approved_and_reject(db, staff_user):
     emp = await _employee(db)
-    form = {"employee_id": str(emp.id), "kind": "cp", "status": "approved",
-            "start_date": "2026-06-15", "end_date": "2026-06-19"}
+    form = {
+        "employee_id": str(emp.id),
+        "kind": "cp",
+        "status": "approved",
+        "start_date": "2026-06-15",
+        "end_date": "2026-06-19",
+    }
     await absence_create(FakeRequest(form), db, staff_user)
     absence = (await db.execute(select(HrAbsence))).scalar_one()
     assert absence.status == "approved"
@@ -136,8 +152,9 @@ async def test_absence_create_approved_and_reject(db, staff_user):
 
 # ── Self-service : scoping strict par user_id ───────────────────────────
 async def test_self_service_scoping(db, staff_user):
-    db.add(User(id=2, username="bob", email="bob@example.test",
-                hashed_password="x", role="commercial"))
+    db.add(
+        User(id=2, username="bob", email="bob@example.test", hashed_password="x", role="commercial")
+    )
     await db.flush()
     mine = await _employee(db, "MINE", user_id=1)
     other = await _employee(db, "OTHER", user_id=2)
@@ -145,8 +162,14 @@ async def test_self_service_scoping(db, staff_user):
     assert (await _my_employee(db, staff_user)).id == mine.id
 
     # Une demande appartenant à un AUTRE collaborateur n'est pas annulable.
-    foreign = HrAbsence(employee_id=other.id, kind="cp", start_date=date(2026, 1, 1),
-                        end_date=date(2026, 1, 2), business_days=1, status="requested")
+    foreign = HrAbsence(
+        employee_id=other.id,
+        kind="cp",
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 2),
+        business_days=1,
+        status="requested",
+    )
     db.add(foreign)
     await db.flush()
     with pytest.raises(HTTPException) as exc:

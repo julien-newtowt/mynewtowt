@@ -144,9 +144,7 @@ async def tracking_index(
             # Sinon, cadrage par dates explicites, à défaut l'année courante.
             start = df or datetime(f["current_year"], 1, 1, tzinfo=UTC)
             end = dt_to or datetime(f["current_year"], 12, 31, 23, 59, 59, tzinfo=UTC)
-            positions = await positions_in_window(
-                db, vessel_id=sel_vessel.id, start=start, end=end
-            )
+            positions = await positions_in_window(db, vessel_id=sel_vessel.id, start=start, end=end)
 
         # Query-params propagés sur les liens du filtre (préserve le mode + dates)
         xq_pairs = [("history", "1")]
@@ -158,9 +156,7 @@ async def tracking_index(
 
         track_vessel = None
         if selected_leg is not None:
-            track_vessel = next(
-                (v for v in vessels if v.id == selected_leg.vessel_id), sel_vessel
-            )
+            track_vessel = next((v for v in vessels if v.id == selected_leg.vessel_id), sel_vessel)
         else:
             track_vessel = sel_vessel
 

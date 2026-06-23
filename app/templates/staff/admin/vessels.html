@@ -1,0 +1,43 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Navires — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Administration</span>
+    <h1 class="display">Navires</h1>
+  </div>
+  <a href="/admin/vessels/new" class="btn btn-primary">+ Nouveau navire</a>
+</header>
+
+<article class="card">
+  <table class="data-table">
+    <thead><tr><th>Code</th><th>Nom</th><th>Classe</th><th>IMO</th><th>Pavillon</th><th>Capacité</th><th>Vitesse</th><th>OPEX/j</th><th>Statut</th><th></th></tr></thead>
+    <tbody>
+      {% for v in vessels %}
+      <tr>
+        <td class="mono">{{ v.code }}</td>
+        <td>{{ v.name }}</td>
+        <td><span class="pill pill-neutral">{{ v.vessel_class }}</span></td>
+        <td class="mono text-sm">{{ v.imo_number or '—' }}</td>
+        <td>{% if v.flag %}<span class="port-badge">{{ v.flag|flag }} {{ v.flag }}</span>{% else %}—{% endif %}</td>
+        <td>{{ v.capacity_palettes }} pal.</td>
+        <td>{{ v.default_speed_kn }} kn</td>
+        <td class="mono">{{ '%.0f €'|format(v.opex_daily_sea_eur) if v.opex_daily_sea_eur else '—' }}</td>
+        <td>{% if v.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Inactif</span>{% endif %}</td>
+        <td class="flex gap-1">
+          <a href="/admin/vessels/{{ v.id }}/edit" class="btn btn-ghost btn-xs"><i data-lucide="pencil"></i></a>
+          <form method="post" action="/admin/vessels/{{ v.id }}/toggle" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-ghost btn-xs" style="color:var(--cuivre);" data-confirm="{{ 'Désactiver' if v.is_active else 'Réactiver' }} ce navire ?">{{ 'Désactiver' if v.is_active else 'Réactiver' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" class="text-muted text-center">Aucun navire.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

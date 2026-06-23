@@ -21,10 +21,12 @@ Permissions:
 
 from __future__ import annotations
 
+import csv
+import io
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -197,6 +199,11 @@ async def finance_leg_upsert(
     docker_costs_eur: str | None = Form(None),
     opex_share_eur: str | None = Form(None),
     other_costs_eur: str | None = Form(None),
+    revenue_forecast_eur: str | None = Form(None),
+    port_fees_forecast_eur: str | None = Form(None),
+    docker_costs_forecast_eur: str | None = Form(None),
+    opex_share_forecast_eur: str | None = Form(None),
+    other_costs_forecast_eur: str | None = Form(None),
     notes: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("finance", "M")),
@@ -212,6 +219,14 @@ async def finance_leg_upsert(
     other = _to_decimal(other_costs_eur)
     margin = rev - port - docker - opex_s - other
 
+    # FIN-01 (A2) — budget prévisionnel par poste + marge prévisionnelle.
+    f_rev = _to_decimal(revenue_forecast_eur)
+    f_port = _to_decimal(port_fees_forecast_eur)
+    f_docker = _to_decimal(docker_costs_forecast_eur)
+    f_opex = _to_decimal(opex_share_forecast_eur)
+    f_other = _to_decimal(other_costs_forecast_eur)
+    f_margin = f_rev - f_port - f_docker - f_opex - f_other
+
     result = await db.execute(select(LegFinance).where(LegFinance.leg_id == leg_id))
     finance: LegFinance | None = result.scalar_one_or_none()
 
@@ -225,6 +240,12 @@ async def finance_leg_upsert(
     finance.opex_share_eur = opex_s
     finance.other_costs_eur = other
     finance.margin_eur = margin
+    finance.revenue_forecast_eur = f_rev
+    finance.port_fees_forecast_eur = f_port
+    finance.docker_costs_forecast_eur = f_docker
+    finance.opex_share_forecast_eur = f_opex
+    finance.other_costs_forecast_eur = f_other
+    finance.margin_forecast_eur = f_margin
     finance.notes = notes or None
 
     await db.flush()
@@ -244,6 +265,107 @@ async def finance_leg_upsert(
     )
 
     return RedirectResponse(url="/finance", status_code=303)
+
+
+_CSV_HEADERS = (
+    "leg_code",
+    "revenue_forecast",
+    "revenue_actual",
+    "revenue_variance",
+    "port_fees_forecast",
+    "port_fees_actual",
+    "port_fees_variance",
+    "docker_costs_forecast",
+    "docker_costs_actual",
+    "docker_costs_variance",
+    "opex_share_forecast",
+    "opex_share_actual",
+    "opex_share_variance",
+    "other_costs_forecast",
+    "other_costs_actual",
+    "other_costs_variance",
+    "margin_forecast",
+    "margin_actual",
+    "margin_variance",
+)
+
+
+@router.get("/export/csv")
+async def finance_export_csv(
+    request: Request,
+    vessel: str | None = None,
+    year: int | None = None,
+    leg_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("finance", "C")),
+) -> Response:
+    """FIN-02 — export CSV finance (18 colonnes prévisionnel/réel/écart par leg).
+
+    Respecte le filtre navire × année × leg de l'écran finance.
+    """
+    from app.services.leg_filter import build_leg_filter
+
+    flt = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id, request=request)
+    scope_ids = {leg_id} if leg_id else {lg.id for lg in flt["legs"]}
+    finances = [
+        f for f in (await db.execute(select(LegFinance))).scalars().all() if f.leg_id in scope_ids
+    ]
+    leg_map: dict[int, Leg] = {}
+    for f in finances:
+        leg = await db.get(Leg, f.leg_id)
+        if leg:
+            leg_map[f.leg_id] = leg
+    finances.sort(key=lambda f: leg_map[f.leg_id].leg_code if f.leg_id in leg_map else "")
+
+    from app.utils.csv_safe import sanitize_row
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(_CSV_HEADERS)
+    for f in finances:
+        leg = leg_map.get(f.leg_id)
+        writer.writerow(
+            sanitize_row(
+                [
+                    leg.leg_code if leg else f.leg_id,
+                    f.revenue_forecast_eur,
+                    f.revenue_eur,
+                    f.revenue_variance_eur,
+                    f.port_fees_forecast_eur,
+                    f.port_fees_eur,
+                    f.port_fees_variance_eur,
+                    f.docker_costs_forecast_eur,
+                    f.docker_costs_eur,
+                    f.docker_costs_variance_eur,
+                    f.opex_share_forecast_eur,
+                    f.opex_share_eur,
+                    f.opex_share_variance_eur,
+                    f.other_costs_forecast_eur,
+                    f.other_costs_eur,
+                    f.other_costs_variance_eur,
+                    f.margin_forecast_eur,
+                    f.margin_eur,
+                    f.margin_variance_eur,
+                ]
+            )
+        )
+    await activity_record(
+        db,
+        action="finance_export_csv",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="finance",
+        entity_type="leg_finance",
+        entity_id=None,
+        entity_label=f"{len(finances)} legs",
+        ip_address=_client_ip(request),
+    )
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="finance_prev_reel.csv"'},
+    )
 
 
 # ──────────────────────────────────────────────────────────────

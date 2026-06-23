@@ -82,6 +82,7 @@
         <i data-lucide="ship"></i>
         <strong>{{ vname }}</strong>
         <span class="bordee-count">{{ b.crew|length }} embarqués</span>
+        {% if b.vessel_id %}<a href="/crew/border-police/{{ b.vessel_id }}" class="btn btn-ghost btn-sm" target="_blank" title="Liste d'équipage PAF">📄 PAF</a>{% endif %}
       </div>
       {% if b.missing %}
       <div class="bordee-missing">⚠️ Postes vacants : {{ b.missing|map('capitalize')|join(', ') }}</div>

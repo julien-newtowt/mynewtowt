@@ -11,6 +11,7 @@ Logique reprise de la V3.0.0 :
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import UTC, datetime, time
 from datetime import date as _date
 from decimal import Decimal
 
@@ -93,3 +94,64 @@ def compute_offer_total(
     return (
         bracket_rate(base_rate=base_rate, coeff=coeff, adjustment_index=adjustment_index) * qty
     ).quantize(Decimal("0.01"))
+
+
+# ───────────────────────── Affectation commande → leg (COM-01) ──────────────
+
+
+def leg_is_late_for_order(leg, order) -> bool:
+    """True si l'ETA du ``leg`` dépasse la fin de la fenêtre de livraison
+    souhaitée de la ``order`` (``delivery_date_end``). Sans fenêtre ou sans
+    ETA, aucune commande n'est « hors délai ».
+
+    On compare des **instants** (pas ``eta.date()``) contre la fin de journée
+    UTC de la date butoir : un navire arrivant à 23 h UTC le jour J reste dans
+    les délais ; à 00 h 30 le lendemain il est en retard. Cela évite l'aléa de
+    troncature ``.date()`` aux abords de minuit (retard faussement posé d'un
+    jour selon le fuseau). Un ETA naïf (SQLite de test) est interprété en UTC.
+    """
+    if order.delivery_date_end is None or leg.eta is None:
+        return False
+    deadline = datetime.combine(order.delivery_date_end, time(23, 59, 59), tzinfo=UTC)
+    eta = leg.eta if leg.eta.tzinfo is not None else leg.eta.replace(tzinfo=UTC)
+    return eta > deadline
+
+
+def suggest_leg_for_order(legs: Iterable, order):
+    """Suggère le meilleur leg pour une commande : le premier compatible
+    livrant dans les délais ; à défaut, le premier compatible (le plus tôt).
+    ``legs`` est supposé déjà trié par ETD croissant.
+    """
+    legs = list(legs)
+    on_time = [lg for lg in legs if not leg_is_late_for_order(lg, order)]
+    if on_time:
+        return on_time[0]
+    return legs[0] if legs else None
+
+
+async def compatible_legs_for_order(db: AsyncSession, order) -> list:
+    """Legs candidats à l'affectation d'une commande : filtrés sur la route
+    souhaitée (POL/POD locodes de la commande) et non encore partis
+    (``atd`` NULL), triés par ETD croissant.
+
+    Sans route renseignée, retourne tous les legs à venir (le broker affine).
+    """
+    from sqlalchemy.orm import aliased
+
+    from app.models.leg import Leg
+    from app.models.port import Port
+
+    dep = aliased(Port)
+    arr = aliased(Port)
+    stmt = (
+        select(Leg)
+        .join(dep, Leg.departure_port_id == dep.id)
+        .join(arr, Leg.arrival_port_id == arr.id)
+        .where(Leg.atd.is_(None))
+    )
+    if order.departure_locode:
+        stmt = stmt.where(dep.locode == order.departure_locode.upper())
+    if order.arrival_locode:
+        stmt = stmt.where(arr.locode == order.arrival_locode.upper())
+    stmt = stmt.order_by(Leg.etd.asc())
+    return list((await db.execute(stmt)).scalars().all())

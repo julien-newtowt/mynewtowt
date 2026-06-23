@@ -83,9 +83,7 @@ async def _reserved_by_orders(db: AsyncSession, leg_id: int) -> int:
         coef = Decimal(str(PALETTE_COEFFICIENTS.get(pallet_format, 1.0)))
         total += Decimal(palettes_count or 0) * coef
 
-    has_assignment = (
-        select(OrderAssignment.id).where(OrderAssignment.order_id == Order.id).exists()
-    )
+    has_assignment = select(OrderAssignment.id).where(OrderAssignment.order_id == Order.id).exists()
     direct_stmt = select(func.coalesce(func.sum(Order.booked_palettes), 0)).where(
         Order.leg_id == leg_id,
         Order.status.in_(_ORDER_RESERVED_STATUSES),

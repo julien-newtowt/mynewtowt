@@ -41,12 +41,8 @@ class Employee(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
     # Liens optionnels vers le compte staff et la fiche marin.
-    user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), unique=True, nullable=True
-    )
-    crew_member_id: Mapped[int | None] = mapped_column(
-        ForeignKey("crew_members.id"), nullable=True
-    )
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), unique=True, nullable=True)
+    crew_member_id: Mapped[int | None] = mapped_column(ForeignKey("crew_members.id"), nullable=True)
 
     matricule: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)

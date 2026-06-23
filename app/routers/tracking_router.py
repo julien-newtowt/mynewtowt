@@ -476,6 +476,10 @@ async def upload_positions(
     inserted = 0
     skipped = 0
     errors: list[str] = []
+    # SEC-04 — dédoublonnage intra-lot : le SELECT par ligne ne voit pas les
+    # insertions non encore flushées du même upload. Sans ce garde-fou, deux
+    # lignes (même navire, même instant) violeraient uq_vessel_position_time.
+    seen: set[tuple[int, datetime]] = set()
 
     vessels_by_code = {v.code: v for v in (await db.execute(select(Vessel))).scalars().all()}
     vmap = _vessel_map()
@@ -528,6 +532,9 @@ async def upload_positions(
             continue
 
         # Idempotent : skip duplicates (same vessel + same recorded_at)
+        if (v.id, dt) in seen:
+            skipped += 1
+            continue
         existing = (
             await db.execute(
                 select(VesselPosition)
@@ -538,6 +545,7 @@ async def upload_positions(
         if existing is not None:
             skipped += 1
             continue
+        seen.add((v.id, dt))
 
         # source : prend "Active interface" (Starlink_xxx) si dispo, sinon "satcom"
         source_val = (

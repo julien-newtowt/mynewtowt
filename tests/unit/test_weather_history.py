@@ -64,12 +64,24 @@ def test_snapshot_latest_is_idempotent(monkeypatch) -> None:
                 await s.flush()
                 base = datetime(2026, 3, 1, 12, tzinfo=UTC)
                 # v a 2 positions (la plus récente sera snapshotée), v2 aucune
-                s.add_all([
-                    VesselPosition(vessel_id=v.id, recorded_at=base, latitude=49.0,
-                                   longitude=-2.0, source="t"),
-                    VesselPosition(vessel_id=v.id, recorded_at=base + timedelta(hours=1),
-                                   latitude=49.2, longitude=-2.1, source="t"),
-                ])
+                s.add_all(
+                    [
+                        VesselPosition(
+                            vessel_id=v.id,
+                            recorded_at=base,
+                            latitude=49.0,
+                            longitude=-2.0,
+                            source="t",
+                        ),
+                        VesselPosition(
+                            vessel_id=v.id,
+                            recorded_at=base + timedelta(hours=1),
+                            latitude=49.2,
+                            longitude=-2.1,
+                            source="t",
+                        ),
+                    ]
+                )
                 await s.flush()
 
                 r1 = await wh.snapshot_latest(s)
@@ -94,20 +106,23 @@ def test_snapshot_latest_is_idempotent(monkeypatch) -> None:
                 # 2e passage sans nouveau point → rien de sauvé (idempotent)
                 r2 = await wh.snapshot_latest(s)
                 assert r2["saved"] == 0
-                count = (
-                    await s.execute(select(func.count()).select_from(VesselWeather))
-                ).scalar()
+                count = (await s.execute(select(func.count()).select_from(VesselWeather))).scalar()
                 assert count == 1
 
                 # nouveau point → nouvel historique
-                s.add(VesselPosition(vessel_id=v.id, recorded_at=base + timedelta(hours=2),
-                                     latitude=49.4, longitude=-2.2, source="t"))
+                s.add(
+                    VesselPosition(
+                        vessel_id=v.id,
+                        recorded_at=base + timedelta(hours=2),
+                        latitude=49.4,
+                        longitude=-2.2,
+                        source="t",
+                    )
+                )
                 await s.flush()
                 r3 = await wh.snapshot_latest(s)
                 assert r3["saved"] == 1
-                count = (
-                    await s.execute(select(func.count()).select_from(VesselWeather))
-                ).scalar()
+                count = (await s.execute(select(func.count()).select_from(VesselWeather))).scalar()
                 assert count == 2
         finally:
             await eng.dispose()
@@ -128,20 +143,40 @@ def test_observations_for_leg_window() -> None:
                 await s.flush()
                 base = datetime(2026, 3, 1, tzinfo=UTC)
                 leg = Leg(
-                    leg_code="1X", vessel_id=v.id, departure_port_id=1, arrival_port_id=2,
-                    etd=base, eta=base + timedelta(days=3),
-                    etd_ref=base, eta_ref=base + timedelta(days=3),
-                    atd=base, ata=base + timedelta(days=3),
+                    leg_code="1X",
+                    vessel_id=v.id,
+                    departure_port_id=1,
+                    arrival_port_id=2,
+                    etd=base,
+                    eta=base + timedelta(days=3),
+                    etd_ref=base,
+                    eta_ref=base + timedelta(days=3),
+                    atd=base,
+                    ata=base + timedelta(days=3),
                 )
                 s.add(leg)
-                s.add_all([
-                    VesselWeather(vessel_id=v.id, recorded_at=base - timedelta(hours=2),
-                                  latitude=1, longitude=1),  # hors fenêtre
-                    VesselWeather(vessel_id=v.id, recorded_at=base + timedelta(hours=5),
-                                  latitude=1, longitude=1),
-                    VesselWeather(vessel_id=v.id, recorded_at=base + timedelta(days=2),
-                                  latitude=1, longitude=1),
-                ])
+                s.add_all(
+                    [
+                        VesselWeather(
+                            vessel_id=v.id,
+                            recorded_at=base - timedelta(hours=2),
+                            latitude=1,
+                            longitude=1,
+                        ),  # hors fenêtre
+                        VesselWeather(
+                            vessel_id=v.id,
+                            recorded_at=base + timedelta(hours=5),
+                            latitude=1,
+                            longitude=1,
+                        ),
+                        VesselWeather(
+                            vessel_id=v.id,
+                            recorded_at=base + timedelta(days=2),
+                            latitude=1,
+                            longitude=1,
+                        ),
+                    ]
+                )
                 await s.flush()
                 obs = await wh.observations_for_leg(s, leg)
                 assert len(obs) == 2

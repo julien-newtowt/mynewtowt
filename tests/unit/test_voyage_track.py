@@ -29,8 +29,15 @@ def test_leg_window_active_vs_terminated() -> None:
     eta = base + timedelta(days=10)
     # Leg actif (pas d'ATA) : end ≈ now, is_active True.
     leg_active = Leg(
-        leg_code="1X", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=etd, eta=eta, etd_ref=etd, eta_ref=eta, atd=base,
+        leg_code="1X",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=etd,
+        eta=eta,
+        etd_ref=etd,
+        eta_ref=eta,
+        atd=base,
     )
     now = base + timedelta(days=3)
     start, end, active = vt.leg_window(leg_active, now=now)
@@ -38,9 +45,16 @@ def test_leg_window_active_vs_terminated() -> None:
 
     # Leg terminé (ATD + ATA) : fenêtre exacte, is_active False.
     leg_done = Leg(
-        leg_code="2X", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=etd, eta=eta, etd_ref=etd, eta_ref=eta,
-        atd=base, ata=base + timedelta(days=9),
+        leg_code="2X",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=etd,
+        eta=eta,
+        etd_ref=etd,
+        eta_ref=eta,
+        atd=base,
+        ata=base + timedelta(days=9),
     )
     start, end, active = vt.leg_window(leg_done, now=now)
     assert start == base and end == base + timedelta(days=9) and active is False
@@ -63,9 +77,16 @@ def test_actual_distance_sums_segments() -> None:
 def test_compute_metrics_active_leg() -> None:
     base = datetime(2026, 3, 1, tzinfo=UTC)
     leg = Leg(
-        leg_code="1CFRBR6", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=base, eta=base + timedelta(days=5), etd_ref=base, eta_ref=base + timedelta(days=5),
-        atd=base, distance_nm=Decimal("100"),
+        leg_code="1CFRBR6",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=base,
+        eta=base + timedelta(days=5),
+        etd_ref=base,
+        eta_ref=base + timedelta(days=5),
+        atd=base,
+        distance_nm=Decimal("100"),
     )
     arr = Port(name="Dakar", locode="SNDKR", country="SN", latitude=51.0, longitude=0.0)
     pts = [
@@ -87,9 +108,17 @@ def test_compute_metrics_active_leg() -> None:
 def test_compute_metrics_terminated_remaining_zero() -> None:
     base = datetime(2026, 3, 1, tzinfo=UTC)
     leg = Leg(
-        leg_code="2X", vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=base, eta=base + timedelta(days=2), etd_ref=base, eta_ref=base + timedelta(days=2),
-        atd=base, ata=base + timedelta(days=2), distance_nm=Decimal("50"),
+        leg_code="2X",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=base,
+        eta=base + timedelta(days=2),
+        etd_ref=base,
+        eta_ref=base + timedelta(days=2),
+        atd=base,
+        ata=base + timedelta(days=2),
+        distance_nm=Decimal("50"),
     )
     arr = Port(name="X", locode="XXXXX", country="FR", latitude=51.0, longitude=0.0)
     pts = [_mk_pos(1, base, 49.0, 0.0), _mk_pos(1, base + timedelta(days=2), 50.9, 0.0)]
@@ -121,19 +150,27 @@ def test_positions_for_leg_db() -> None:
                 await s.flush()
                 base = datetime(2026, 3, 1, tzinfo=UTC)
                 leg = Leg(
-                    leg_code="1X", vessel_id=v.id, departure_port_id=1, arrival_port_id=2,
-                    etd=base, eta=base + timedelta(days=3),
-                    etd_ref=base, eta_ref=base + timedelta(days=3),
-                    atd=base, ata=base + timedelta(days=3),
+                    leg_code="1X",
+                    vessel_id=v.id,
+                    departure_port_id=1,
+                    arrival_port_id=2,
+                    etd=base,
+                    eta=base + timedelta(days=3),
+                    etd_ref=base,
+                    eta_ref=base + timedelta(days=3),
+                    atd=base,
+                    ata=base + timedelta(days=3),
                 )
                 s.add(leg)
                 # 1 point avant la fenêtre, 2 dedans, 1 après
-                s.add_all([
-                    _mk_pos(v.id, base - timedelta(hours=1), 49.0, 0.0),
-                    _mk_pos(v.id, base + timedelta(hours=6), 49.5, 0.0),
-                    _mk_pos(v.id, base + timedelta(days=2), 50.0, 0.0),
-                    _mk_pos(v.id, base + timedelta(days=4), 50.5, 0.0),
-                ])
+                s.add_all(
+                    [
+                        _mk_pos(v.id, base - timedelta(hours=1), 49.0, 0.0),
+                        _mk_pos(v.id, base + timedelta(hours=6), 49.5, 0.0),
+                        _mk_pos(v.id, base + timedelta(days=2), 50.0, 0.0),
+                        _mk_pos(v.id, base + timedelta(days=4), 50.5, 0.0),
+                    ]
+                )
                 await s.flush()
                 pts = await vt.positions_for_leg(s, leg)
                 assert len(pts) == 2

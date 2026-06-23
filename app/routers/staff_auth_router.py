@@ -45,17 +45,33 @@ async def login(
     password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
+    ip = _client_ip(request) or "unknown"
+    # SEC-01 — anti-brute-force sur le login mot de passe (DB-backed, par IP).
+    # On vérifie AVANT le test des identifiants ; chaque échec est enregistré.
+    if await rate_limit.exceeded(
+        db,
+        scope="staff_login_ip",
+        identifier=ip,
+        max_attempts=5,
+        window_minutes=15,
+    ):
+        return templates.TemplateResponse(
+            "staff/login.html",
+            {"request": request, "error": "Trop de tentatives — patientez quelques minutes."},
+            status_code=429,
+        )
     user = (
         await db.execute(
             select(User).where(User.username == username.strip(), User.is_active.is_(True))
         )
     ).scalar_one_or_none()
     if not user or not verify_password(password, user.hashed_password):
+        await rate_limit.record(db, scope="staff_login_ip", identifier=ip)
         await activity_record(
             db,
             action="login_fail",
             user_name=username,
-            ip_address=_client_ip(request),
+            ip_address=ip,
         )
         return templates.TemplateResponse(
             "staff/login.html",
@@ -66,9 +82,7 @@ async def login(
     # MFA challenge si activé sur ce compte staff — sauf si cet appareil a déjà
     # validé un MFA dans les dernières 24 h (cookie de confiance signé).
     mfa_required = getattr(user, "mfa_enabled", False) and user.mfa_secret
-    trusted = decode_staff_mfa_trusted(
-        request.cookies.get(STAFF_MFA_TRUSTED_COOKIE) or "", user.id
-    )
+    trusted = decode_staff_mfa_trusted(request.cookies.get(STAFF_MFA_TRUSTED_COOKIE) or "", user.id)
     if mfa_required and not trusted:
         await activity_record(
             db,

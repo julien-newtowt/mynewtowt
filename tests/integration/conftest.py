@@ -67,9 +67,7 @@ async def db():
 @pytest_asyncio.fixture
 def staff_user():
     """Utilisateur factice passé aux coroutines (bypass require_permission)."""
-    return SimpleNamespace(
-        id=1, full_name="Admin Test", username="admin", role="administrateur"
-    )
+    return SimpleNamespace(id=1, full_name="Admin Test", username="admin", role="administrateur")
 
 
 class FakeRequest:

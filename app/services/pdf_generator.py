@@ -77,6 +77,57 @@ def _bl_number(booking) -> str:
     return f"TUAW_{booking.leg_id}_{booking.id}"
 
 
+def render_bill_of_lading_from_pl(
+    *, pl, batch, leg, vessel, pol, pod, bl_number, issued_at=None
+) -> DocumentBytes:
+    """CARGO-01 — Bill of Lading généré depuis un batch de packing list.
+
+    Les parties (shipper/consignee/notify) et la marchandise proviennent du
+    ``PackingListBatch`` saisi par l'expéditeur (et non d'un booking).
+    """
+    from app.templating import brand_for_lang
+
+    ctx = {
+        "pl": pl,
+        "batch": batch,
+        "leg": leg,
+        "vessel": vessel,
+        "pol": pol,
+        "pod": pod,
+        "bl_number": bl_number,
+        "issued_at": issued_at or datetime.now(UTC),
+        "number_of_obl": 3,
+        "brand": brand_for_lang("fr"),
+        "site_url": settings.site_url,
+    }
+    html, pdf = _render_pdf("pdf/bill_of_lading_pl.html", ctx)
+    return DocumentBytes(html=html, pdf=pdf, filename=f"{bl_number}.pdf")
+
+
+def render_arrival_notice(*, pl, batches, leg, vessel, pol, pod) -> DocumentBytes:
+    """CARGO-05 — Avis d'arrivée (Arrival Notice) depuis la packing list."""
+    from app.templating import brand_for_lang
+
+    total_palettes = sum((b.pallet_count or 0) for b in batches)
+    total_weight = sum((b.weight_kg or 0) for b in batches)
+    ctx = {
+        "pl": pl,
+        "batches": batches,
+        "leg": leg,
+        "vessel": vessel,
+        "pol": pol,
+        "pod": pod,
+        "total_palettes": total_palettes,
+        "total_weight": total_weight,
+        "issued_at": datetime.now(UTC),
+        "brand": brand_for_lang("fr"),
+        "site_url": settings.site_url,
+    }
+    html, pdf = _render_pdf("pdf/arrival_notice.html", ctx)
+    ref = leg.leg_code if leg and leg.leg_code else pl.id
+    return DocumentBytes(html=html, pdf=pdf, filename=f"ArrivalNotice_{ref}.pdf")
+
+
 # ---------------------------------------------------------------------------
 # Packing List
 # ---------------------------------------------------------------------------
@@ -168,6 +219,28 @@ def render_anemos_certificate(
     ctx["tonnage_t"] = tonnage
     html, pdf = _render_pdf("pdf/anemos_certificate.html", ctx)
     return DocumentBytes(html=html, pdf=pdf, filename=f"LabelAnemos_{ctx['cert_ref']}.pdf")
+
+
+def render_planning_brochure(*, groups, summary, meta, lang: str = "fr") -> DocumentBytes:
+    """PLN-01 — brochure commerciale imprimable du planning.
+
+    ``groups`` est une liste de ``{"title": str, "rows": [{leg, vessel, pol, pod}]}``
+    (vue chrono/route/destination construite côté routeur), ``summary`` un dict
+    d'agrégats (nb legs, navires, période) et ``meta`` les filtres appliqués.
+    """
+    from app.templating import brand_for_lang
+
+    ctx = {
+        "groups": groups,
+        "summary": summary,
+        "meta": meta,
+        "lang": lang,
+        "brand": brand_for_lang(lang),
+        "issued_at": datetime.now(UTC),
+        "site_url": settings.site_url,
+    }
+    html, pdf = _render_pdf("pdf/planning_commercial.html", ctx)
+    return DocumentBytes(html=html, pdf=pdf, filename="planning_newtowt.pdf")
 
 
 # Alias backward-compat — peut disparaître en V3.7

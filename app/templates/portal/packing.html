@@ -22,19 +22,45 @@
   <h2>Batches ({{ pl.batches|length }})</h2>
   {% if pl.batches %}
   <table class="data-table">
-    <thead><tr><th>#</th><th>Format</th><th>Palettes</th><th>Description</th><th>Poids (kg)</th><th>Cubage (m³)</th><th>HS</th><th>Dim.</th></tr></thead>
+    <thead><tr><th>#</th><th>Format</th><th>Palettes</th><th>Consignee</th><th>Poids (kg)</th><th>HS</th><th>Actions</th></tr></thead>
     <tbody>
       {% for b in pl.batches %}
       <tr>
         <td class="mono">{{ b.batch_number or b.id }}</td>
         <td><span class="badge">{{ b.pallet_format }}</span></td>
         <td>{{ b.pallet_count }}</td>
-        <td>{{ b.description or '—' }}</td>
+        <td>{{ b.consignee_name or '—' }}</td>
         <td class="mono">{{ b.weight_kg if b.weight_kg else '—' }}</td>
-        <td class="mono">{{ b.cubage_m3 if b.cubage_m3 else '—' }}</td>
         <td class="mono">{{ b.hs_code or '—' }}</td>
-        <td class="text-xs">{% if b.length_cm %}{{ b.length_cm|round(0) }}×{{ b.width_cm|round(0) }}×{{ b.height_cm|round(0) }} cm{% else %}—{% endif %}</td>
+        <td>
+          {% if pl.status != 'locked' %}
+          <form method="post" action="/p/{{ token }}/packing/batches/{{ b.id }}/delete" style="display:inline;" data-confirm="Supprimer ce batch ?">
+            <button type="submit" class="btn btn-danger btn-sm">🗑</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
+      {% if pl.status != 'locked' %}
+      <tr><td colspan="7">
+        <details>
+          <summary class="text-muted">✎ Modifier le batch #{{ b.batch_number or b.id }}</summary>
+          <form method="post" action="/p/{{ token }}/packing/batches/{{ b.id }}/edit" class="mt-2">
+            <div class="grid grid-3 gap-3">
+              <div class="field"><label>Type de marchandise</label><input name="type_of_goods" value="{{ b.type_of_goods or '' }}" /></div>
+              <div class="field"><label>Description (BL)</label><input name="description_of_goods" value="{{ b.description_of_goods or '' }}" /></div>
+              <div class="field"><label>HS</label><input name="hs_code" value="{{ b.hs_code or '' }}" /></div>
+              <div class="field"><label>Shipper</label><input name="shipper_name" value="{{ b.shipper_name or '' }}" /></div>
+              <div class="field"><label>Consignee</label><input name="consignee_name" value="{{ b.consignee_name or '' }}" /></div>
+              <div class="field"><label>Consignee — adresse</label><input name="consignee_address" value="{{ b.consignee_address or '' }}" /></div>
+              <div class="field"><label>Consignee — ville</label><input name="consignee_city" value="{{ b.consignee_city or '' }}" /></div>
+              <div class="field"><label>Consignee — pays</label><input name="consignee_country" value="{{ b.consignee_country or '' }}" /></div>
+              <div class="field"><label>Poids (kg)</label><input name="weight_kg" type="number" step="0.1" value="{{ b.weight_kg or '' }}" /></div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm mt-2">Enregistrer</button>
+          </form>
+        </details>
+      </td></tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>
@@ -57,8 +83,10 @@
       <div class="field"><label>Palettes</label><input name="pallet_count" type="number" value="1" min="1" /></div>
       <div class="field"><label>HS code</label><input name="hs_code" type="text" /></div>
       <div class="field"><label>Poids total (kg)</label><input name="weight_kg" type="number" step="0.1" /></div>
-      <div class="field"><label>Cubage (m³)</label><input name="cubage_m3" type="number" step="0.001" /></div>
-      <div class="field"><label>Description</label><input name="description" type="text" /></div>
+      <div class="field"><label>Type de marchandise</label><input name="type_of_goods" type="text" /></div>
+      <div class="field"><label>Description (BL)</label><input name="description_of_goods" type="text" /></div>
+      <div class="field"><label>Shipper</label><input name="shipper_name" type="text" /></div>
+      <div class="field"><label>Consignee</label><input name="consignee_name" type="text" /></div>
     </div>
     <button type="submit" class="btn btn-primary btn-sm">+ Ajouter le batch</button>
   </form>

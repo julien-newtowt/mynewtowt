@@ -1,0 +1,102 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Affecter {{ order.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial · Affectation</span>
+    <h1 class="display">Affecter {{ order.reference }}</h1>
+    <p class="text-muted">
+      {{ order.client.name if order.client else '—' }} ·
+      {{ order.booked_palettes }} palettes ({{ order.palette_format or 'EPAL' }}) ·
+      route {{ order.departure_locode or '∗' }} → {{ order.arrival_locode or '∗' }}
+      {% if order.delivery_date_end %}· livraison au plus tard le {{ order.delivery_date_end|date }}{% endif %}
+    </p>
+  </div>
+  <a href="/commercial/orders/{{ order.id }}" class="btn btn-ghost">← Retour à la commande</a>
+</header>
+
+{% if not order.departure_locode and not order.arrival_locode %}
+<div class="alert alert-info mb-3">
+  <i data-lucide="info"></i>
+  Aucune route renseignée sur la commande : tous les legs à venir sont proposés.
+  Précisez POL/POD sur la commande pour filtrer les legs compatibles.
+</div>
+{% endif %}
+
+{% if order.assignments %}
+<article class="card mb-4">
+  <h2>Affectations actuelles</h2>
+  <table class="data-table">
+    <thead><tr><th>Leg</th><th>Palettes</th><th>Format</th><th></th></tr></thead>
+    <tbody>
+      {% for a in order.assignments %}
+      <tr>
+        <td class="mono">{{ a.leg_id }}{% if a.leg_id == order.leg_id %} <span class="badge">principal</span>{% endif %}</td>
+        <td>{{ a.palettes_count }}</td>
+        <td>{{ a.pallet_format }}</td>
+        <td>
+          <form method="post" action="/commercial/orders/{{ order.id }}/assignments/{{ a.id }}/delete" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--cuivre);" data-confirm="Retirer cette affectation ?">Retirer</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endif %}
+
+<article class="card">
+  <h2>Legs compatibles</h2>
+  {% if leg_rows %}
+  {% if suggested %}
+  <p class="text-muted text-sm mb-2">
+    <i data-lucide="sparkles"></i> Suggestion : <strong class="mono">{{ suggested.leg_code }}</strong>
+    (le plus tôt livrant dans les délais).
+  </p>
+  {% endif %}
+  <form method="post" action="/commercial/orders/{{ order.id }}/assign">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <table class="data-table">
+      <thead><tr><th></th><th>Leg</th><th>Route</th><th>ETD</th><th>ETA</th><th>Délai</th></tr></thead>
+      <tbody>
+        {% for row in leg_rows %}
+        <tr class="{{ 'row-late' if row.late else '' }}">
+          <td>
+            <input type="radio" name="leg_id" value="{{ row.leg.id }}"
+                   {{ 'checked' if suggested and row.leg.id == suggested.id else '' }}
+                   aria-label="Choisir le leg {{ row.leg.leg_code }}" />
+          </td>
+          <td class="mono">{{ row.leg.leg_code }}{% if row.current %} <span class="badge">actuel</span>{% endif %}</td>
+          <td class="mono text-xs">
+            {{ row.pol.locode if row.pol else '?' }} → {{ row.pod.locode if row.pod else '?' }}
+          </td>
+          <td class="mono text-xs">{{ row.leg.etd|date if row.leg.etd else '—' }}</td>
+          <td class="mono text-xs">{{ row.leg.eta|date if row.leg.eta else '—' }}</td>
+          <td>
+            {% if row.late %}<span class="pill" style="background:var(--cuivre);color:#fff;">hors délai</span>
+            {% else %}<span class="pill pill-ok">dans les délais</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p class="text-muted text-sm mt-2">
+      {{ order.booked_palettes }} palette(s) ({{ order.palette_format or 'EPAL' }}) seront affectées —
+      réaffecter remplace l'affectation actuelle.
+    </p>
+    <div class="field" style="max-width:480px;">
+      <label for="notes">Notes (optionnel)</label>
+      <input id="notes" name="notes" type="text" />
+    </div>
+    <button type="submit" class="btn btn-primary">Affecter au leg sélectionné</button>
+  </form>
+  {% else %}
+  <p class="text-muted">Aucun leg compatible avec cette route. Ajustez la route souhaitée sur la commande ou créez un leg.</p>
+  {% endif %}
+</article>
+
+{% endblock %}

@@ -55,6 +55,11 @@ async def dashboard(
         ).scalar_one_or_none()
         last_positions[v.id] = p
 
+    # ADM-02 — alertes proactives (« qu'est-ce qui ne va pas aujourd'hui ? »).
+    from app.services.dashboard_alerts import compute_alerts
+
+    alerts = await compute_alerts(db, now.year)
+
     # Notifications dashboard
     notifications = await list_notifications(
         db,
@@ -77,5 +82,7 @@ async def dashboard(
             "maptiler_token": settings.map_token,
             "notifications": notifications,
             "notif_count": sum(1 for n in notifications if not n.is_read),
+            "alerts": alerts,
+            "alerts_danger": sum(1 for a in alerts if a["severity"] == "danger"),
         },
     )

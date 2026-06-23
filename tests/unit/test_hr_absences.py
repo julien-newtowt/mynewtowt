@@ -48,9 +48,9 @@ def test_half_days_both_ends() -> None:
 def test_half_day_on_sunday_border_not_counted() -> None:
     # lun → dim : dimanche exclu (6 ouvrables) ; demi-journée sur le dimanche
     # (non ouvrable) n'est pas décomptée.
-    assert count_business_days(
-        date(2026, 6, 15), date(2026, 6, 21), half_day_end=True
-    ) == Decimal("6")
+    assert count_business_days(date(2026, 6, 15), date(2026, 6, 21), half_day_end=True) == Decimal(
+        "6"
+    )
 
 
 def test_pure_sunday_is_zero() -> None:

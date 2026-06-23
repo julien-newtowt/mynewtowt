@@ -173,8 +173,7 @@ async def on_status_change(db: AsyncSession, booking: Booking, new_status: str) 
                 client_id=client.id,
                 type="info",
                 title=f"Packing list à compléter — {ref}",
-                detail="Renseignez le détail de vos palettes pour finaliser "
-                "votre expédition.",
+                detail="Renseignez le détail de vos palettes pour finaliser " "votre expédition.",
                 link=f"/p/{pl.token}",
             )
         except Exception:

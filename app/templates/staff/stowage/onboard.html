@@ -1,0 +1,57 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Plan de chargement à bord — {{ leg.leg_code }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">À bord · Plan de chargement</span>
+    <h1 class="display"><span class="mono">{{ leg.leg_code }}</span></h1>
+    <p class="text-muted">Vue lecture seule du plan d'arrimage — accès commandant.</p>
+  </div>
+  <a href="/captain?leg_id={{ leg.id }}" class="btn btn-ghost">← Onboard</a>
+</header>
+
+{% if not items %}
+<article class="card text-center"><p class="text-muted">Aucune cargaison affectée à ce voyage.</p></article>
+{% else %}
+
+<article class="card mb-4">
+  <div class="section-header"><h3><i data-lucide="layout-grid"></i> Occupation par zone</h3></div>
+  <div class="grid grid-3 gap-2">
+    {% for zone in zones %}
+    {% set used = usage.get(zone, 0) %}
+    <div class="stat-card">
+      <div class="stat-card-icon {{ 'cuivre' if zone in dangerous_zones else 'teal' }}"><i data-lucide="package"></i></div>
+      <div class="stat-card-body">
+        <span class="stat-card-value">{{ '%.0f'|format(used) }} pal.</span>
+        <span class="stat-card-label">Zone {{ zone }}{% if zone in dangerous_zones %} · <span class="pill">IMO</span>{% endif %}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</article>
+
+<article class="card">
+  <div class="section-header"><h3><i data-lucide="list"></i> Détail des affectations ({{ items|length }})</h3></div>
+  <table class="data-table">
+    <thead><tr><th>Zone</th><th>Format</th><th>Palettes</th><th>Poids</th><th>Particularités</th></tr></thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td><span class="pill">{{ it.zone }}</span></td>
+        <td>{{ it.pallet_format }}</td>
+        <td>{{ it.pallet_count }}</td>
+        <td class="mono">{{ '%.0f kg'|format(it.weight_kg) if it.weight_kg else '—' }}</td>
+        <td>
+          {% if it.is_dangerous %}<span class="pill">IMDG {{ it.imdg_class or '' }}</span>{% endif %}
+          {% if it.is_oversized %}<span class="pill">hors-gabarit</span>{% endif %}
+          {% if not it.is_dangerous and not it.is_oversized %}<span class="text-muted">—</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endif %}
+
+{% endblock %}

@@ -8,10 +8,12 @@ from decimal import Decimal
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -50,9 +52,7 @@ class Claim(Base):
     insurer_claim_ref: Mapped[str | None] = mapped_column(String(80))
     # Lien structuré vers le contrat d'assurance (module Finance). Le champ
     # texte ``insurer`` reste en repli quand aucun contrat n'est sélectionné.
-    insurance_contract_id: Mapped[int | None] = mapped_column(
-        ForeignKey("insurance_contracts.id")
-    )
+    insurance_contract_id: Mapped[int | None] = mapped_column(ForeignKey("insurance_contracts.id"))
 
     cargo_position: Mapped[str | None] = mapped_column(String(40))  # if cargo claim
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
@@ -146,3 +146,11 @@ class VesselPosition(Base):
     sog_kn: Mapped[float | None] = mapped_column()
     cog_deg: Mapped[float | None] = mapped_column()
     source: Mapped[str] = mapped_column(String(40), default="manual", nullable=False)
+
+    # SEC-04 — intégrité & perf : une position par (navire, instant). Garantit
+    # l'idempotence de l'upload satcom (anti-doublon en concurrence) et indexe
+    # les lectures historiques (navire × période).
+    __table_args__ = (
+        UniqueConstraint("vessel_id", "recorded_at", name="uq_vessel_position_time"),
+        Index("ix_vessel_positions_vessel_time", "vessel_id", "recorded_at"),
+    )

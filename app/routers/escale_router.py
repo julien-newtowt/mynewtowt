@@ -97,7 +97,7 @@ async def _sync_sof_from_operation(
             event_type=event_type,
             label=op.label,
             occurred_at=occurred_at,
-            notes=f"Auto depuis escale (op #{op.id})",
+            notes=_auto_sof_note(op.id),
             recorded_by_id=user.id,
             recorded_by_name=user.full_name or user.username,
         )
@@ -118,6 +118,35 @@ async def _sync_sof_from_operation(
         )
     except Exception:
         logger.exception("SOF auto-creation failed for escale op %s (action=%s)", op.id, op.action)
+
+
+def _auto_sof_note(op_id: int) -> str:
+    return f"Auto depuis escale (op #{op_id})"
+
+
+async def _unsync_sof_from_operation(db: AsyncSession, op: EscaleOperation) -> None:
+    """Supprime les SOF auto-générés par une opération (avant re-synchro à l'édition).
+
+    Évite l'accumulation d'événements SOF obsolètes quand l'heure d'une
+    opération change : on retire l'auto-SOF précédent puis on le recrée à la
+    nouvelle date (cf. ``edit_operation``).
+    """
+    rows = (
+        (
+            await db.execute(
+                select(SofEvent).where(
+                    SofEvent.leg_id == op.leg_id,
+                    SofEvent.notes == _auto_sof_note(op.id),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for ev in rows:
+        await db.delete(ev)
+    if rows:
+        await db.flush()
 
 
 @router.get("", response_class=HTMLResponse)
@@ -314,6 +343,111 @@ async def end_operation(
     return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
 
 
+def _parse_iso(value: str | None) -> datetime | None:
+    """Parse tolérant d'un datetime ISO de formulaire (ESC-03)."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+@router.post("/operations/{op_id}/edit")
+async def edit_operation(
+    op_id: int,
+    request: Request,
+    direction: str = Form("BOTH"),
+    operation_type: str = Form(...),
+    action: str = Form(...),
+    label: str | None = Form(None),
+    planned_start: str | None = Form(None),
+    planned_end: str | None = Form(None),
+    actual_start: str | None = Form(None),
+    actual_end: str | None = Form(None),
+    status: str | None = Form(None),
+    cost_forecast: float | None = Form(None),
+    cost_actual: float | None = Form(None),
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "M")),
+):
+    """ESC-01/03 — édition d'une opération (dont saisie manuelle des heures réelles)."""
+    op = await db.get(EscaleOperation, op_id)
+    if op is None:
+        raise HTTPException(status_code=404)
+    leg = await db.get(Leg, op.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
+    op.direction = direction
+    op.operation_type = operation_type
+    op.action = action
+    op.label = label
+    op.planned_start = _parse_iso(planned_start)
+    op.planned_end = _parse_iso(planned_end)
+    op.actual_start = _parse_iso(actual_start)
+    op.actual_end = _parse_iso(actual_end)
+    if status:
+        op.status = status
+    elif op.actual_end:
+        op.status = "completed"
+    elif op.actual_start:
+        op.status = "in_progress"
+    op.cost_forecast = cost_forecast
+    op.cost_actual = cost_actual
+    op.notes = notes
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="escale_operation",
+        entity_id=op.id,
+        entity_label=f"{operation_type}/{action} leg={op.leg_id}",
+        ip_address=_client_ip(request),
+    )
+    # Réconcilie le SOF : retire l'auto-SOF obsolète (l'occurred_at a pu
+    # changer) puis le recrée à la nouvelle date — pas d'accumulation.
+    await _unsync_sof_from_operation(db, op)
+    await _sync_sof_from_operation(db, request, user, op)
+    return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
+
+
+@router.post("/operations/{op_id}/delete")
+async def delete_operation(
+    op_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "S")),
+):
+    """ESC-01 — suppression d'une opération (interdite si escale verrouillée)."""
+    op = await db.get(EscaleOperation, op_id)
+    if op is None:
+        raise HTTPException(status_code=404)
+    leg = await db.get(Leg, op.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
+    leg_id = op.leg_id
+    await db.delete(op)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="escale_operation",
+        entity_id=op_id,
+        entity_label=f"op {op_id} leg={leg_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+
+
 def _normalize_hold(hold: str | None) -> str | None:
     """Valide la cale d'un shift docker contre ``stowage.HOLDS``.
 
@@ -392,6 +526,174 @@ async def docker_progress(
     s.palettes_done = palettes_done
     await db.flush()
     return RedirectResponse(url=f"/escale?leg_id={s.leg_id}", status_code=303)
+
+
+@router.post("/dockers/{shift_id}/edit")
+async def edit_docker_shift(
+    shift_id: int,
+    request: Request,
+    direction: str = Form("BOTH"),
+    company: str | None = Form(None),
+    nb_dockers: int = Form(0),
+    palettes_target: int | None = Form(None),
+    palettes_done: int | None = Form(None),
+    hold: str | None = Form(None),
+    planned_start: str | None = Form(None),
+    planned_end: str | None = Form(None),
+    actual_start: str | None = Form(None),
+    actual_end: str | None = Form(None),
+    cost_eur: float | None = Form(None),
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "M")),
+):
+    """ESC-01/03 — édition d'un shift docker (dont heures réelles + cadence)."""
+    s = await db.get(DockerShift, shift_id)
+    if s is None:
+        raise HTTPException(status_code=404)
+    leg = await db.get(Leg, s.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
+    s.direction = direction
+    s.company = company
+    s.nb_dockers = nb_dockers
+    s.palettes_target = palettes_target
+    if palettes_done is not None:
+        s.palettes_done = palettes_done
+    s.hold = _normalize_hold(hold)
+    s.planned_start = _parse_iso(planned_start)
+    s.planned_end = _parse_iso(planned_end)
+    s.actual_start = _parse_iso(actual_start)
+    s.actual_end = _parse_iso(actual_end)
+    s.cost_eur = cost_eur
+    s.notes = notes
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="docker_shift",
+        entity_id=s.id,
+        entity_label=f"shift {company} leg={s.leg_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/escale?leg_id={s.leg_id}", status_code=303)
+
+
+@router.post("/dockers/{shift_id}/delete")
+async def delete_docker_shift(
+    shift_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "S")),
+):
+    """ESC-01 — suppression d'un shift docker."""
+    s = await db.get(DockerShift, shift_id)
+    if s is None:
+        raise HTTPException(status_code=404)
+    leg = await db.get(Leg, s.leg_id)
+    if leg is not None:
+        _assert_escale_unlocked(leg)
+    leg_id = s.leg_id
+    await db.delete(s)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="docker_shift",
+        entity_id=shift_id,
+        entity_label=f"shift {shift_id} leg={leg_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+
+
+def _to_utc(dt: datetime | None) -> datetime | None:
+    """Rend un datetime aware UTC (les saisies de formulaire sont naïves)."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
+@router.post("/legs/{leg_id}/port-status")
+async def update_port_status(
+    leg_id: int,
+    request: Request,
+    new_status: str = Form(...),
+    status_time: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "M")),
+):
+    """ESC-02 — pilotage du statut portuaire : pose ATA/ATD, recalcule la
+    finance (rollup) et notifie la compagnie. **Idempotent** : re-soumettre
+    (correction d'horodatage) ne réémet pas de notification.
+
+    Réutilise les helpers V3 partagés avec le commandant (``voyage_events``) :
+    arrivée = EOSP (à quai), départ = SOSP (pilote départ).
+
+    NB — la pose d'ATA/ATD n'altère ni l'ETD ni l'ETA du leg : la propagation
+    des dates prévisionnelles aval (``cascade_from_leg``) relève du décalage
+    d'ETA (déclaration capitaine / édition planning), pas de l'enregistrement
+    du réel. On ne cascade donc pas ici — comportement aligné sur le flux SOF
+    du commandant (``captain_router``), qui ne cascade pas non plus à l'arrivée
+    ou au départ.
+    """
+    from app.services.finance_rollup import rollup_for_leg
+    from app.services.notifications import notify_eosp, notify_sosp
+    from app.services.voyage_events import on_vessel_arrived, on_vessel_departed
+
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    _assert_escale_unlocked(leg)
+    t = _to_utc(_parse_iso(status_time)) or datetime.now(UTC)
+
+    if new_status == "a_quai":
+        first_arrival = leg.ata is None  # garde d'idempotence (avant mutation)
+        leg.ata = t
+        leg.status = "in_progress"
+        await on_vessel_arrived(db, leg)  # idempotent : ata déjà posée, avance bookings
+        await rollup_for_leg(db, leg)
+        if first_arrival:
+            await notify_eosp(db, leg.leg_code, leg.id)
+    elif new_status == "pilote_depart":
+        if leg.ata is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Renseigner d'abord le statut « à quai » (ATA) avant le départ.",
+            )
+        first_departure = leg.atd is None  # garde d'idempotence (avant mutation)
+        leg.atd = t
+        leg.status = "completed"
+        await on_vessel_departed(db, leg)
+        await rollup_for_leg(db, leg)
+        if first_departure:
+            await notify_sosp(db, leg.leg_code, leg.id)
+    else:
+        raise HTTPException(status_code=400, detail="statut portuaire inconnu")
+
+    await db.flush()
+    await activity_record(
+        db,
+        action="port_status",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="escale",
+        entity_type="leg",
+        entity_id=leg.id,
+        entity_label=leg.leg_code,
+        detail=f"→ {new_status} @ {t.isoformat()}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
 
 
 @router.post("/legs/{leg_id}/lock")

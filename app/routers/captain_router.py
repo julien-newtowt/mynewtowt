@@ -14,14 +14,19 @@ import logging
 import re
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.finance import PortConfig
 from app.models.leg import Leg
+from app.models.leg_attachment import (
+    LEG_ATTACHMENT_CATEGORIES,
+    PORT_AGENT_CATEGORIES,
+    LegAttachment,
+)
 from app.models.noon_report import NoonReport
 from app.models.port import Port
 from app.models.sof_event import (
@@ -44,6 +49,7 @@ from app.services.signature import (
     compute_noon_hash,
     compute_sof_hash,
     compute_watch_hash,
+    ensure_unlocked,
     sign_record,
 )
 from app.services.voyage_events import (
@@ -76,6 +82,7 @@ async def captain_index(
     eta_shifts: list[EtaShift] = []
     messages: list[OnboardMessage] = []
     docs: list[CargoDocument] = []
+    attachments: list[LegAttachment] = []
     vessel = None
     if selected:
         events = list(
@@ -124,6 +131,17 @@ async def captain_index(
             .scalars()
             .all()
         )
+        attachments = list(
+            (
+                await db.execute(
+                    select(LegAttachment)
+                    .where(LegAttachment.leg_id == selected.id)
+                    .order_by(LegAttachment.uploaded_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
         vessel = await db.get(Vessel, selected.vessel_id)
     return templates.TemplateResponse(
         "staff/captain/index.html",
@@ -137,6 +155,9 @@ async def captain_index(
             "eta_shifts": eta_shifts,
             "messages": messages,
             "docs": docs,
+            "attachments": attachments,
+            "attachment_categories": LEG_ATTACHMENT_CATEGORIES,
+            "port_agent_categories": PORT_AGENT_CATEGORIES,
             "event_types": SOF_EVENT_TYPES,
             "eta_reasons": ETA_SHIFT_REASONS,
         },
@@ -250,9 +271,7 @@ async def declare_eta_shift(
     with contextlib.suppress(Exception):
         from app.services import date_cascade
 
-        await date_cascade.cascade_from_leg(
-            db, leg, delta=shift.new_eta - shift.previous_eta
-        )
+        await date_cascade.cascade_from_leg(db, leg, delta=shift.new_eta - shift.previous_eta)
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 
@@ -434,6 +453,216 @@ async def next_port(
 # ─────────────────────────────────────────────────────────────────────
 #                  Signature / lock — SOF / noon / watch
 # ─────────────────────────────────────────────────────────────────────
+
+
+@router.post("/sof-events/{event_id}/edit")
+async def edit_sof_event(
+    event_id: int,
+    request: Request,
+    event_type: str = Form(...),
+    occurred_at: str = Form(...),
+    label: str | None = Form(None),
+    latitude: float | None = Form(None),
+    longitude: float | None = Form(None),
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """ONB-01 — corrige un SOF **non signé** (type/label/heure/position/notes).
+
+    Interdit dès que le SOF est signé (``is_locked``) → 409. L'éventuel
+    MRVEvent dérivé est réaligné (best-effort) pour rester cohérent.
+    """
+    e = await db.get(SofEvent, event_id)
+    if e is None:
+        raise HTTPException(status_code=404)
+    ensure_unlocked(e)
+    if event_type not in SOF_EVENT_TYPES:
+        raise HTTPException(status_code=400, detail="invalid event_type")
+    try:
+        occurred = datetime.fromisoformat(occurred_at)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="occurred_at invalide") from exc
+    e.event_type = event_type
+    e.label = (label or "").strip() or None
+    e.occurred_at = occurred
+    e.latitude = latitude
+    e.longitude = longitude
+    e.notes = (notes or "").strip() or None
+    await db.flush()
+    try:
+        await mrv_sync.resync_from_sof(db, e)
+    except Exception:
+        logger.exception("MRV resync failed for SOF edit %s (%s)", e.id, event_type)
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="sof_event",
+        entity_id=e.id,
+        entity_label=f"{event_type}@{occurred_at}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={e.leg_id}", status_code=303)
+
+
+@router.post("/sof-events/{event_id}/delete")
+async def delete_sof_event(
+    event_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "S")),
+):
+    """ONB-01 — supprime un SOF **non signé** (faute de saisie). 409 si signé.
+
+    Retire aussi l'éventuel MRVEvent dérivé (best-effort).
+    """
+    e = await db.get(SofEvent, event_id)
+    if e is None:
+        raise HTTPException(status_code=404)
+    ensure_unlocked(e)
+    leg_id = e.leg_id
+    label = f"{e.event_type}@{e.occurred_at.isoformat()}"
+    try:
+        await mrv_sync.remove_for_sof(db, e.id)
+    except Exception:
+        logger.exception("MRV cleanup failed for SOF delete %s", e.id)
+    await db.delete(e)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="sof_event",
+        entity_id=event_id,
+        entity_label=label,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+@router.post("/legs/{leg_id}/attachments")
+async def upload_leg_attachment(
+    leg_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    category: str = Form("other"),
+    label: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """ONB-03 — dépose une pièce jointe catégorisée sur le leg (documents reçus
+    du bord / agent d'escale). Validation extension + taille + magic number.
+    """
+    from app.services.safe_files import (
+        UploadRejected,
+        content_length_exceeds_max,
+        save_upload,
+    )
+
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    if category not in LEG_ATTACHMENT_CATEGORIES:
+        raise HTTPException(status_code=400, detail="catégorie inconnue")
+    content = await file.read()
+    try:
+        rel_path, mime = save_upload(content, file.filename or "fichier", subdir="legs")
+    except UploadRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    att = LegAttachment(
+        leg_id=leg_id,
+        category=category,
+        label=(label or "").strip() or None,
+        original_name=file.filename,
+        file_path=rel_path,
+        file_mime=mime,
+        file_size=len(content),
+        uploaded_by_id=user.id,
+        uploaded_by_name=user.full_name or user.username,
+    )
+    db.add(att)
+    await db.flush()
+    await activity_record(
+        db,
+        action="upload",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="leg_attachment",
+        entity_id=att.id,
+        entity_label=f"{category}:{file.filename}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+@router.get("/legs/{leg_id}/attachments/{att_id}/download")
+async def download_leg_attachment(
+    leg_id: int,
+    att_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+):
+    from app.services.safe_files import UploadRejected, resolve_path
+
+    att = await db.get(LegAttachment, att_id)
+    if att is None or att.leg_id != leg_id:
+        raise HTTPException(status_code=404)
+    try:
+        path = resolve_path(att.file_path)
+    except (UploadRejected, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="fichier introuvable") from exc
+    return FileResponse(
+        path,
+        media_type=att.file_mime or "application/octet-stream",
+        filename=att.original_name or path.name,
+    )
+
+
+@router.post("/legs/{leg_id}/attachments/{att_id}/delete")
+async def delete_leg_attachment(
+    leg_id: int,
+    att_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "S")),
+):
+    from app.services.safe_files import resolve_path
+
+    att = await db.get(LegAttachment, att_id)
+    if att is None or att.leg_id != leg_id:
+        raise HTTPException(status_code=404)
+    label = f"{att.category}:{att.original_name or att.id}"
+    # Supprime le fichier disque (best-effort) puis la métadonnée.
+    try:
+        resolve_path(att.file_path).unlink(missing_ok=True)
+    except Exception:
+        logger.exception("leg attachment file unlink failed (%s)", att.file_path)
+    await db.delete(att)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="leg_attachment",
+        entity_id=att_id,
+        entity_label=label,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 
 @router.post("/sof-events/{event_id}/sign")

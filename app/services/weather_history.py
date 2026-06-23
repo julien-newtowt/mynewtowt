@@ -165,11 +165,7 @@ async def latest_per_vessel(db: AsyncSession) -> dict[int, VesselWeather]:
     Alimente le bloc « conditions actuelles par navire » de la page Navigation.
     """
     rows = list(
-        (
-            await db.execute(
-                select(VesselWeather).order_by(VesselWeather.recorded_at.desc())
-            )
-        )
+        (await db.execute(select(VesselWeather).order_by(VesselWeather.recorded_at.desc())))
         .scalars()
         .all()
     )

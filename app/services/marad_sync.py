@@ -54,9 +54,19 @@ def _records(payload: Any) -> list[dict]:
         return [r for r in payload if isinstance(r, dict)]
     if isinstance(payload, dict):
         for key in (
-            "data", "items", "results", "value", "records",
-            "crewMembers", "crewmembers", "crewing", "crew",
-            "schedules", "crewingSchedule", "list", "rows",
+            "data",
+            "items",
+            "results",
+            "value",
+            "records",
+            "crewMembers",
+            "crewmembers",
+            "crewing",
+            "crew",
+            "schedules",
+            "crewingSchedule",
+            "list",
+            "rows",
         ):
             v = payload.get(key)
             if isinstance(v, list):
@@ -356,9 +366,7 @@ async def sync_schedules(db: AsyncSession) -> dict:
 
             row = (
                 await db.execute(
-                    select(MaradCrewSchedule).where(
-                        MaradCrewSchedule.marad_schedule_id == sched_id
-                    )
+                    select(MaradCrewSchedule).where(MaradCrewSchedule.marad_schedule_id == sched_id)
                 )
             ).scalar_one_or_none()
             if row is None:

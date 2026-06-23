@@ -38,9 +38,7 @@ class HrReview(Base):
     __tablename__ = "hr_reviews"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    employee_id: Mapped[int] = mapped_column(
-        ForeignKey("employees.id"), nullable=False, index=True
-    )
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
     review_type: Mapped[str] = mapped_column(String(20), nullable=False)
     review_date: Mapped[date] = mapped_column(Date, nullable=False)
     next_due_date: Mapped[date | None] = mapped_column(Date)

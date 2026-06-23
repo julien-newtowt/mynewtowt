@@ -51,8 +51,12 @@ async def test_payslip_upload_rejects_non_pdf(db, staff_user):
     emp = await _employee(db)
     with pytest.raises(HTTPException) as exc:
         await payslip_upload(
-            emp.id, FakeRequest(), db, staff_user,
-            file=_upload(b"PK\x03\x04 zipdata", name="x.zip"), period="2026-06",
+            emp.id,
+            FakeRequest(),
+            db,
+            staff_user,
+            file=_upload(b"PK\x03\x04 zipdata", name="x.zip"),
+            period="2026-06",
         )
     assert exc.value.status_code == 400
 
@@ -69,8 +73,15 @@ async def test_payslip_upload_invalid_period(db, staff_user):
 async def test_self_payslip_download_scoping(db, staff_user):
     mine = await _employee(db, "MINE", user_id=1)
     other = await _employee(db, "OTHER")
-    db.add(Payslip(employee_id=other.id, period="2026-06", filename="b.pdf",
-                   content=_PDF, file_size=len(_PDF)))
+    db.add(
+        Payslip(
+            employee_id=other.id,
+            period="2026-06",
+            filename="b.pdf",
+            content=_PDF,
+            file_size=len(_PDF),
+        )
+    )
     await db.flush()
     foreign = (await db.execute(select(Payslip))).scalar_one()
     # On ne télécharge pas le bulletin d'autrui.
@@ -89,18 +100,35 @@ async def test_review_create_validation(db, staff_user):
     assert r.review_type == "annuel"
 
     with pytest.raises(HTTPException) as exc:
-        await review_create(emp.id, FakeRequest({"review_type": "inconnu",
-                                                 "review_date": "2026-03-01"}), db, staff_user)
+        await review_create(
+            emp.id,
+            FakeRequest({"review_type": "inconnu", "review_date": "2026-03-01"}),
+            db,
+            staff_user,
+        )
     assert exc.value.status_code == 400
 
 
 async def test_reporting_aggregates(db, staff_user):
-    await _employee(db, "A", department="Commercial", status="active",
-                    birth_date=date(1990, 1, 1), entry_date=date(2020, 1, 1))
-    await _employee(db, "B", department="Commercial", status="active",
-                    birth_date=date(1965, 1, 1), entry_date=date(2010, 1, 1))
-    await _employee(db, "C", department="Ops", status="left",
-                    exit_date=date(date.today().year, 2, 1))
+    await _employee(
+        db,
+        "A",
+        department="Commercial",
+        status="active",
+        birth_date=date(1990, 1, 1),
+        entry_date=date(2020, 1, 1),
+    )
+    await _employee(
+        db,
+        "B",
+        department="Commercial",
+        status="active",
+        birth_date=date(1965, 1, 1),
+        entry_date=date(2010, 1, 1),
+    )
+    await _employee(
+        db, "C", department="Ops", status="left", exit_date=date(date.today().year, 2, 1)
+    )
 
     data = await _reporting_data(db)
     assert data["headcount"] == 2

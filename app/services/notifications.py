@@ -209,8 +209,9 @@ async def notify_clients_eta_shift(
     active = ("submitted", "confirmed", "loaded", "at_sea")
     rows = (
         await db.execute(
-            select(Booking.reference, Booking.client_account_id)
-            .where(Booking.leg_id == leg_id, Booking.status.in_(active))
+            select(Booking.reference, Booking.client_account_id).where(
+                Booking.leg_id == leg_id, Booking.status.in_(active)
+            )
         )
     ).all()
 

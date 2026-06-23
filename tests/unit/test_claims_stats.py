@@ -26,15 +26,26 @@ def test_claims_stats_aggregates() -> None:
                 s.add_all(
                     [
                         Claim(
-                            reference="CLM-2026-0001", claim_type="cargo", title="A",
-                            description="x", status="settled", occurred_at=now,
-                            declared_at=now - timedelta(days=10), settled_at=now,
-                            provision_eur=Decimal("1000"), settled_eur=Decimal("800"),
+                            reference="CLM-2026-0001",
+                            claim_type="cargo",
+                            title="A",
+                            description="x",
+                            status="settled",
+                            occurred_at=now,
+                            declared_at=now - timedelta(days=10),
+                            settled_at=now,
+                            provision_eur=Decimal("1000"),
+                            settled_eur=Decimal("800"),
                         ),
                         Claim(
-                            reference="CLM-2026-0002", claim_type="hull", title="B",
-                            description="y", status="open", occurred_at=now,
-                            declared_at=now, provision_eur=Decimal("500"),
+                            reference="CLM-2026-0002",
+                            claim_type="hull",
+                            title="B",
+                            description="y",
+                            status="open",
+                            occurred_at=now,
+                            declared_at=now,
+                            provision_eur=Decimal("500"),
                         ),
                     ]
                 )

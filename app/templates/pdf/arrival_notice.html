@@ -1,0 +1,59 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Arrival Notice{% if leg %} {{ leg.leg_code }}{% endif %}{% endblock %}
+{% block doc_kind %}Arrival Notice · Avis d'arrivée{% endblock %}
+{% block doc_ref %}{% if leg %}{{ leg.leg_code }}{% else %}PL-{{ pl.id }}{% endif %}{% endblock %}
+{% block content %}
+
+<p class="small">
+  Nous vous informons de l'arrivée prochaine de la marchandise désignée ci-dessous.
+  Merci de prendre vos dispositions pour le dédouanement et l'enlèvement.
+</p>
+
+<h2>Voyage</h2>
+<table>
+  {% if vessel %}<tr><td style="width:25%;"><strong>Navire / Vessel</strong></td><td>{{ vessel.name }} <span class="small mono">({{ vessel.code }})</span></td></tr>{% endif %}
+  {% if leg %}<tr><td><strong>Voyage · Leg code</strong></td><td class="mono">{{ leg.leg_code }}</td></tr>{% endif %}
+  {% if pol %}<tr><td><strong>POL</strong></td><td>{{ pol.name }} <span class="small">({{ pol.locode }})</span></td></tr>{% endif %}
+  {% if pod %}<tr><td><strong>POD</strong></td><td>{{ pod.name }} <span class="small">({{ pod.locode }})</span></td></tr>{% endif %}
+  {% if leg and leg.eta %}<tr><td><strong>ETA</strong></td><td class="mono">{{ leg.eta.strftime("%d/%m/%Y %H:%M UTC") }}</td></tr>{% endif %}
+</table>
+
+<h2>Marchandises</h2>
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Consignee</th>
+      <th>Description</th>
+      <th>Format</th>
+      <th class="text-right">Palettes</th>
+      <th class="text-right">Poids (kg)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in batches %}
+      <tr>
+        <td>{{ b.batch_number or loop.index }}</td>
+        <td>{{ b.consignee_name or '—' }}</td>
+        <td>{{ b.description_of_goods or b.type_of_goods or b.description or '—' }}</td>
+        <td class="mono">{{ b.pallet_format }}</td>
+        <td class="text-right">{{ b.pallet_count }}</td>
+        <td class="text-right">{{ b.weight_kg or '—' }}</td>
+      </tr>
+    {% endfor %}
+    <tr class="total-row">
+      <td colspan="4" class="text-right">TOTAL</td>
+      <td class="text-right">{{ total_palettes }}</td>
+      <td class="text-right">{{ total_weight }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="stamp">
+  <div>
+    <div class="kicker">Émis le {{ issued_at.strftime("%d/%m/%Y") }}</div>
+  </div>
+  <div class="sig-area">{{ brand.nom_court }}</div>
+</div>
+
+{% endblock %}

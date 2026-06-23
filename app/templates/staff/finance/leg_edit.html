@@ -10,23 +10,30 @@
   <form method="POST" action="/finance/legs/{{ leg.id }}">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
 
-    <div class="form-grid-2">
-      <label>Revenu (EUR)
-        <input type="number" name="revenue_eur" value="{{ finance.revenue_eur if finance else 0 }}" step="0.01" class="form-input" required>
-      </label>
-      <label>Frais portuaires (EUR)
-        <input type="number" name="port_fees_eur" value="{{ finance.port_fees_eur if finance else 0 }}" step="0.01" class="form-input">
-      </label>
-      <label>Coûts dockers (EUR)
-        <input type="number" name="docker_costs_eur" value="{{ finance.docker_costs_eur if finance else 0 }}" step="0.01" class="form-input">
-      </label>
-      <label>Quote-part OPEX (EUR)
-        <input type="number" name="opex_share_eur" value="{{ finance.opex_share_eur if finance else 0 }}" step="0.01" class="form-input">
-      </label>
-      <label>Autres coûts (EUR)
-        <input type="number" name="other_costs_eur" value="{{ finance.other_costs_eur if finance else 0 }}" step="0.01" class="form-input">
-      </label>
-    </div>
+    <p class="text-muted text-sm mb-2">Double colonne <strong>Prévisionnel</strong> (budget saisi) / <strong>Réel</strong> (saisi ici ou consolidé par le rollup). L'écart se lit ci-dessous.</p>
+    <table class="data-table">
+      <thead><tr><th>Poste</th><th>Prévisionnel (EUR)</th><th>Réel (EUR)</th><th>Écart</th></tr></thead>
+      <tbody>
+        {% set posts = [
+          ('revenue', 'Revenu', 'CA'),
+          ('port_fees', 'Frais portuaires', 'cost'),
+          ('docker_costs', 'Coûts dockers', 'cost'),
+          ('opex_share', 'Quote-part OPEX', 'cost'),
+          ('other_costs', 'Autres coûts', 'cost')
+        ] %}
+        {% for key, lab, kind in posts %}
+        {% set fval = finance['%s_forecast_eur'|format(key)] if finance else 0 %}
+        {% set aval = finance['%s_eur'|format(key)] if finance else 0 %}
+        {% set var = finance['%s_variance_eur'|format(key)] if finance else 0 %}
+        <tr>
+          <td>{{ lab }}</td>
+          <td><input type="number" name="{{ key }}_forecast_eur" value="{{ fval }}" step="0.01" class="form-input"></td>
+          <td><input type="number" name="{{ key }}_eur" value="{{ aval }}" step="0.01" class="form-input" {{ 'required' if key == 'revenue' else '' }}></td>
+          <td class="mono {% if (kind == 'CA' and var >= 0) or (kind == 'cost' and var <= 0) %}text-success{% else %}text-error{% endif %}">{{ var|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
 
     <div class="mt-3">
       <label>Notes
@@ -36,7 +43,9 @@
 
     {% if finance %}
     <p class="text-muted mt-2">
-      Marge calculée actuelle : <strong class="mono {% if finance.margin_eur < 0 %}text-error{% else %}text-success{% endif %}">{{ finance.margin_eur|money }}</strong>
+      Marge prévisionnelle : <strong class="mono">{{ finance.margin_forecast_eur|money }}</strong> ·
+      Marge réelle : <strong class="mono {% if finance.margin_eur < 0 %}text-error{% else %}text-success{% endif %}">{{ finance.margin_eur|money }}</strong> ·
+      Écart : <strong class="mono {% if finance.margin_variance_eur >= 0 %}text-success{% else %}text-error{% endif %}">{{ finance.margin_variance_eur|money }}</strong>
     </p>
     {% endif %}
 

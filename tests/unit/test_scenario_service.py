@@ -43,19 +43,25 @@ def _leg(id, vessel_id, dep, arr, etd, eta, *, label=None, status="planned", elo
 
 def test_validate_leg_inputs_ok() -> None:
     now = datetime.now(UTC)
-    _validate_leg_inputs(departure_port_id=1, arrival_port_id=2, etd=now, eta=now + timedelta(days=3))
+    _validate_leg_inputs(
+        departure_port_id=1, arrival_port_id=2, etd=now, eta=now + timedelta(days=3)
+    )
 
 
 def test_validate_leg_inputs_rejects_same_port() -> None:
     now = datetime.now(UTC)
     with pytest.raises(InvalidLegDates):
-        _validate_leg_inputs(departure_port_id=1, arrival_port_id=1, etd=now, eta=now + timedelta(days=1))
+        _validate_leg_inputs(
+            departure_port_id=1, arrival_port_id=1, etd=now, eta=now + timedelta(days=1)
+        )
 
 
 def test_validate_leg_inputs_rejects_etd_after_eta() -> None:
     now = datetime.now(UTC)
     with pytest.raises(InvalidLegDates):
-        _validate_leg_inputs(departure_port_id=1, arrival_port_id=2, etd=now + timedelta(days=1), eta=now)
+        _validate_leg_inputs(
+            departure_port_id=1, arrival_port_id=2, etd=now + timedelta(days=1), eta=now
+        )
 
 
 # ── Gantt ──────────────────────────────────────────────────────────────────
@@ -65,7 +71,9 @@ def test_build_gantt_rows_positions_bar_within_window() -> None:
     ws = datetime(2027, 1, 1, tzinfo=UTC)
     we = datetime(2027, 12, 31, 23, 59, tzinfo=UTC)
     vessel = SimpleNamespace(id=10, code="C", name="Anemos")
-    leg = _leg(1, 10, 1, 2, datetime(2027, 7, 1, tzinfo=UTC), datetime(2027, 7, 15, tzinfo=UTC), label="L1")
+    leg = _leg(
+        1, 10, 1, 2, datetime(2027, 7, 1, tzinfo=UTC), datetime(2027, 7, 15, tzinfo=UTC), label="L1"
+    )
     rows = build_gantt_rows(vessels=[vessel], legs=[leg], window_start=ws, window_end=we, ports={})
     assert len(rows) == 1
     bars = rows[0]["bars"]
@@ -96,24 +104,36 @@ def test_build_gantt_rows_fallback_label_uses_id() -> None:
 
 
 def test_scenario_warnings_flags_continuity_break() -> None:
-    a = _leg(1, 10, 1, 2, datetime(2027, 1, 1, tzinfo=UTC), datetime(2027, 1, 10, tzinfo=UTC), label="A")
+    a = _leg(
+        1, 10, 1, 2, datetime(2027, 1, 1, tzinfo=UTC), datetime(2027, 1, 10, tzinfo=UTC), label="A"
+    )
     # b part du port 3 alors que a arrive au port 2 → rupture de continuité
-    b = _leg(2, 10, 3, 4, datetime(2027, 1, 20, tzinfo=UTC), datetime(2027, 1, 30, tzinfo=UTC), label="B")
+    b = _leg(
+        2, 10, 3, 4, datetime(2027, 1, 20, tzinfo=UTC), datetime(2027, 1, 30, tzinfo=UTC), label="B"
+    )
     warns = scenario_warnings([a, b], ports={})
     assert any("continuité" in w for w in warns)
 
 
 def test_scenario_warnings_flags_overlap() -> None:
-    a = _leg(1, 10, 1, 2, datetime(2027, 1, 1, tzinfo=UTC), datetime(2027, 1, 20, tzinfo=UTC), label="A")
+    a = _leg(
+        1, 10, 1, 2, datetime(2027, 1, 1, tzinfo=UTC), datetime(2027, 1, 20, tzinfo=UTC), label="A"
+    )
     # b démarre avant la fin de a sur le même navire → chevauchement
-    b = _leg(2, 10, 2, 3, datetime(2027, 1, 10, tzinfo=UTC), datetime(2027, 1, 25, tzinfo=UTC), label="B")
+    b = _leg(
+        2, 10, 2, 3, datetime(2027, 1, 10, tzinfo=UTC), datetime(2027, 1, 25, tzinfo=UTC), label="B"
+    )
     warns = scenario_warnings([a, b], ports={})
     assert any("chevauchement" in w for w in warns)
 
 
 def test_scenario_warnings_clean_chain_is_silent() -> None:
-    a = _leg(1, 10, 1, 2, datetime(2027, 1, 1, tzinfo=UTC), datetime(2027, 1, 10, tzinfo=UTC), label="A")
-    b = _leg(2, 10, 2, 3, datetime(2027, 1, 15, tzinfo=UTC), datetime(2027, 1, 25, tzinfo=UTC), label="B")
+    a = _leg(
+        1, 10, 1, 2, datetime(2027, 1, 1, tzinfo=UTC), datetime(2027, 1, 10, tzinfo=UTC), label="A"
+    )
+    b = _leg(
+        2, 10, 2, 3, datetime(2027, 1, 15, tzinfo=UTC), datetime(2027, 1, 25, tzinfo=UTC), label="B"
+    )
     assert scenario_warnings([a, b], ports={}) == []
 
 
@@ -131,7 +151,15 @@ def test_to_csv_has_header_and_rows() -> None:
     vessel = SimpleNamespace(id=10, code="C", name="Anemos")
     port_a = SimpleNamespace(id=1, locode="FRFEC", name="Fécamp")
     port_b = SimpleNamespace(id=2, locode="BRSSO", name="São Sebastião")
-    leg = _leg(1, 10, 1, 2, datetime(2027, 1, 1, 8, 0, tzinfo=UTC), datetime(2027, 1, 15, 8, 0, tzinfo=UTC), label="L1")
+    leg = _leg(
+        1,
+        10,
+        1,
+        2,
+        datetime(2027, 1, 1, 8, 0, tzinfo=UTC),
+        datetime(2027, 1, 15, 8, 0, tzinfo=UTC),
+        label="L1",
+    )
     csv_text = to_csv(scenario, [leg], {10: vessel}, {1: port_a, 2: port_b})
     lines = csv_text.strip().splitlines()
     assert lines[0].startswith("leg;navire;POL;POD")
