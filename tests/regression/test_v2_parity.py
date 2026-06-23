@@ -408,15 +408,48 @@ def test_v2_order_attachments_restored():
     assert ("POST", "/commercial/orders/{order_id}/attachment/delete") in m
 
 
-# ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
-# Ces fonctionnalités existaient en V2, sont spécifiées (docs/audit/specs), mais
-# pas encore implémentées. Le skip documente la dette de parité de façon vivante.
+# ───────────────────────────── Onboard ONB-02 (V2 parité) ─────────────────────
 
-_PENDING = {
-    "onboard_cargo_doc_structured": "ONB-02 — documents cargo structurés (formulaires guidés 13 types)",
-}
+
+def test_v2_cargo_docs_guided_restored():
+    """ONB-02 : 13 types de documents guidés + champs structurés + signataire."""
+    from app.models.sof_event import CargoDocument
+    from app.routers.captain_router import router
+    from app.services.cargo_documents import CARGO_DOC_TYPES, field_defaults
+
+    # data_json (contenu structuré) réintroduit sur le modèle.
+    assert hasattr(CargoDocument, "data_json")
+    # Les 13 types V2 (SOF étant géré par la section SOF dédiée) — au moins les 12 guidés.
+    for code in (
+        "NOR",
+        "NOR_RT",
+        "HOLDS_CERT",
+        "KEY_MEETING",
+        "PRE_MEETING",
+        "MATES_RECEIPT",
+        "LOP_FP",
+        "LOP_DELAYS",
+        "LOP_DOCUMENT",
+        "LOP_QTY",
+        "LOP_DEADFREIGHT",
+        "LOP_OTHER",
+    ):
+        assert code in CARGO_DOC_TYPES, code
+    # Mentions légales pré-remplies.
+    assert field_defaults("LOP_FP")["reserve"]
+    m = _methods(router)
+    assert ("GET", "/captain/legs/{leg_id}/docs/new") in m
+    assert ("GET", "/captain/legs/{leg_id}/docs/{doc_id}/edit") in m
+    assert ("POST", "/captain/legs/{leg_id}/docs/{doc_id}/edit") in m
+
+
+# ──────────────────── Parité V2 NON ENCORE reprise (gaps tracés) ────────────────
+# ✅ Toute la parité P0 vis-à-vis de la V2 est désormais restaurée.
+# Les évolutions P1/P2 restent tracées dans docs/audit/backlog/.
+
+_PENDING: dict[str, str] = {}
 
 
 @pytest.mark.parametrize("key,reason", sorted(_PENDING.items()))
-def test_pending_v2_parity(key, reason):
+def test_pending_v2_parity(key, reason):  # pragma: no cover - plus aucun gap P0
     pytest.skip(f"Parité V2 à reprendre — {reason}")

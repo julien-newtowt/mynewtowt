@@ -154,24 +154,28 @@
             </form>
           {% endif %}
         </td>
-        <td><a href="/captain/legs/{{ leg.id }}/docs/{{ d.id }}.pdf" class="btn btn-xs btn-secondary">PDF</a></td>
+        <td class="flex gap-1">
+          {% if d.kind in cargo_doc_kinds %}
+          <a href="/captain/legs/{{ leg.id }}/docs/{{ d.id }}/edit" class="btn btn-xs" title="Éditer le formulaire guidé"><i data-lucide="pencil"></i></a>
+          {% endif %}
+          <a href="/captain/legs/{{ leg.id }}/docs/{{ d.id }}.pdf" class="btn btn-xs btn-secondary">PDF</a>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   {% else %}<p class="text-muted">Aucun document généré.</p>{% endif %}
 
-  <h4 class="mt-3">Nouveau document</h4>
-  <form method="post" action="/captain/legs/{{ leg.id }}/docs">
-    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
-    <div class="grid grid-3 gap-2">
-      <div class="field"><label>Type</label><select name="kind"><option>NOR</option><option>NOR_RT</option><option>LOP_GENERAL</option><option>LOP_DRAFT</option><option>MATES_RECEIPT</option><option>OTHER</option></select></div>
-      <div class="field"><label>Référence</label><input name="reference" type="text" /></div>
-      <div class="field"><label>Émis le</label><input name="issued_at" type="datetime-local" required /></div>
-      <div class="field"><label>Partie</label><input name="party_name" type="text" /></div>
+  {# ONB-02 — création guidée : formulaires structurés par type #}
+  <h4 class="mt-3">Nouveau document guidé</h4>
+  <form method="get" action="/captain/legs/{{ leg.id }}/docs/new" class="flex gap-2 items-end">
+    <div class="field" style="min-width:340px;">
+      <label for="new_doc_kind">Type de document</label>
+      <select id="new_doc_kind" name="kind">
+        {% for code, label in cargo_doc_choices %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+      </select>
     </div>
-    <div class="field"><label>Corps</label><textarea name="body" rows="3"></textarea></div>
-    <button type="submit" class="btn btn-primary btn-sm">Émettre</button>
+    <button type="submit" class="btn btn-primary btn-sm">Ouvrir le formulaire</button>
   </form>
 </article>
 

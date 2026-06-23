@@ -10,6 +10,7 @@ Reprises de la V3.0.0 :
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import re
 from datetime import UTC, datetime
@@ -65,6 +66,20 @@ logger = logging.getLogger("captain")
 router = APIRouter(prefix="/captain", tags=["captain"])
 
 MENTION_RE = re.compile(r"@([A-Za-z0-9_]{2,40})")
+
+
+def _cargo_doc_choices() -> list[tuple[str, str]]:
+    from app.services.cargo_documents import CARGO_DOC_TYPES
+
+    return [(code, dt.label) for code, dt in CARGO_DOC_TYPES.items()]
+
+
+def _cargo_doc_choices_codes() -> list[str]:
+    from app.services.cargo_documents import CARGO_DOC_TYPES
+
+    return list(CARGO_DOC_TYPES.keys())
+
+
 BOT_TRIGGERS = ("@MYTOWT_BOT", "@mytowt_bot", "@bot")
 
 
@@ -160,6 +175,8 @@ async def captain_index(
             "port_agent_categories": PORT_AGENT_CATEGORIES,
             "event_types": SOF_EVENT_TYPES,
             "eta_reasons": ETA_SHIFT_REASONS,
+            "cargo_doc_choices": _cargo_doc_choices(),
+            "cargo_doc_kinds": set(_cargo_doc_choices_codes()),
         },
     )
 
@@ -324,28 +341,135 @@ async def post_onboard_message(
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 
+async def _embarked_crew_names(db: AsyncSession, vessel_id: int | None) -> list[str]:
+    """Noms de l'équipage embarqué sur le navire (pour le choix du signataire)."""
+    if vessel_id is None:
+        return []
+    from app.models.crew import CrewAssignment, CrewMember
+
+    now = datetime.now(UTC)
+    rows = (
+        await db.execute(
+            select(CrewMember.full_name)
+            .join(CrewAssignment, CrewAssignment.crew_member_id == CrewMember.id)
+            .where(CrewAssignment.vessel_id == vessel_id)
+            .where(CrewAssignment.embark_at.is_not(None))
+            .where((CrewAssignment.disembark_at.is_(None)) | (CrewAssignment.disembark_at > now))
+            .order_by(CrewMember.full_name)
+        )
+    ).all()
+    return sorted({r[0] for r in rows if r[0]})
+
+
+async def _cargo_doc_form_ctx(db: AsyncSession, request, user, leg, doc=None):
+    """Contexte du formulaire guidé (type, champs, défauts, équipage embarqué)."""
+    from app.services.cargo_documents import (
+        CARGO_DOC_TYPES,
+        field_defaults,
+        parse_data_json,
+    )
+
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
+    pol = await db.get(Port, leg.departure_port_id) if leg.departure_port_id else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
+    current_port = (pod.name if leg.ata and pod else (pol.name if pol else "")) or ""
+    prefill = {"date_today": datetime.now(UTC).date().isoformat(), "current_port": current_port}
+
+    kind = doc.kind if doc else request.query_params.get("kind", "NOR")
+    if kind not in CARGO_DOC_TYPES:
+        kind = "NOR"
+    doc_type = CARGO_DOC_TYPES[kind]
+    values = field_defaults(kind, prefill)
+    if doc is not None:
+        values.update(parse_data_json(doc.data_json))
+    return {
+        "request": request,
+        "user": user,
+        "leg": leg,
+        "vessel": vessel,
+        "doc": doc,
+        "kind": kind,
+        "doc_type": doc_type,
+        "values": values,
+        "crew_names": await _embarked_crew_names(db, leg.vessel_id),
+        "doc_choices": [(c, dt.label) for c, dt in CARGO_DOC_TYPES.items()],
+    }
+
+
+@router.get("/legs/{leg_id}/docs/new", response_class=HTMLResponse)
+async def cargo_doc_new_form(
+    leg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> HTMLResponse:
+    """ONB-02 — formulaire guidé d'un document cargo (champs par type)."""
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    ctx = await _cargo_doc_form_ctx(db, request, user, leg, doc=None)
+    return templates.TemplateResponse("staff/captain/cargo_doc_form.html", ctx)
+
+
+@router.get("/legs/{leg_id}/docs/{doc_id}/edit", response_class=HTMLResponse)
+async def cargo_doc_edit_form(
+    leg_id: int,
+    doc_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> HTMLResponse:
+    leg = await db.get(Leg, leg_id)
+    doc = await db.get(CargoDocument, doc_id)
+    if leg is None or doc is None or doc.leg_id != leg_id:
+        raise HTTPException(status_code=404)
+    ctx = await _cargo_doc_form_ctx(db, request, user, leg, doc=doc)
+    return templates.TemplateResponse("staff/captain/cargo_doc_form.html", ctx)
+
+
 @router.post("/legs/{leg_id}/docs")
 async def create_cargo_document(
     leg_id: int,
     request: Request,
-    kind: str = Form(...),
-    reference: str | None = Form(None),
-    issued_at: str = Form(...),
-    party_name: str | None = Form(None),
-    body: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ):
-    if not await db.get(Leg, leg_id):
-        raise HTTPException(status_code=404)
-    d = CargoDocument(
-        leg_id=leg_id,
-        kind=kind,
-        reference=reference,
-        issued_at=datetime.fromisoformat(issued_at),
-        party_name=party_name,
-        body=body,
+    """Crée un document cargo. Type guidé → champs structurés (data_json) ;
+    type libre → corps texte (rétro-compatible).
+    """
+    from app.services.cargo_documents import (
+        CARGO_DOC_TYPES,
+        coerce_doc_form,
+        recipient_of,
     )
+
+    if await db.get(Leg, leg_id) is None:
+        raise HTTPException(status_code=404)
+    form = dict(await request.form())
+    kind = (form.get("kind") or "").strip()
+    reference = (form.get("reference") or "").strip() or None
+    issued_raw = (form.get("issued_at") or "").strip()
+    issued_at = datetime.fromisoformat(issued_raw) if issued_raw else datetime.now(UTC)
+
+    if kind in CARGO_DOC_TYPES:
+        data = coerce_doc_form(kind, form)
+        d = CargoDocument(
+            leg_id=leg_id,
+            kind=kind,
+            reference=reference,
+            issued_at=issued_at,
+            party_name=recipient_of(kind, data),
+            data_json=json.dumps(data),
+        )
+    else:
+        d = CargoDocument(
+            leg_id=leg_id,
+            kind=kind or "OTHER",
+            reference=reference,
+            issued_at=issued_at,
+            party_name=(form.get("party_name") or "").strip() or None,
+            body=(form.get("body") or "").strip() or None,
+        )
     db.add(d)
     await db.flush()
     await activity_record(
@@ -357,7 +481,49 @@ async def create_cargo_document(
         module="captain",
         entity_type="cargo_document",
         entity_id=d.id,
-        entity_label=f"{kind} {reference or ''}".strip(),
+        entity_label=f"{d.kind} {reference or ''}".strip(),
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+@router.post("/legs/{leg_id}/docs/{doc_id}/edit")
+async def update_cargo_document(
+    leg_id: int,
+    doc_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """ONB-02 — met à jour un document guidé (champs structurés)."""
+    from app.services.cargo_documents import (
+        CARGO_DOC_TYPES,
+        coerce_doc_form,
+        recipient_of,
+    )
+
+    doc = await db.get(CargoDocument, doc_id)
+    if doc is None or doc.leg_id != leg_id:
+        raise HTTPException(status_code=404)
+    form = dict(await request.form())
+    doc.reference = (form.get("reference") or "").strip() or None
+    if doc.kind in CARGO_DOC_TYPES:
+        data = coerce_doc_form(doc.kind, form)
+        doc.data_json = json.dumps(data)
+        doc.party_name = recipient_of(doc.kind, data)
+    else:
+        doc.body = (form.get("body") or "").strip() or None
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="cargo_document",
+        entity_id=doc.id,
+        entity_label=f"{doc.kind} {doc.reference or ''}".strip(),
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
@@ -965,22 +1131,42 @@ async def captain_cargo_doc_pdf(
     if doc is None:
         raise HTTPException(status_code=404)
 
+    from app.services.cargo_documents import CARGO_DOC_TYPES, doc_rows, parse_data_json
+
     leg = await db.get(Leg, leg_id)
     vessel = await db.get(Vessel, leg.vessel_id) if leg and leg.vessel_id else None
     pol = await db.get(Port, leg.departure_port_id) if leg and leg.departure_port_id else None
     pod = await db.get(Port, leg.arrival_port_id) if leg and leg.arrival_port_id else None
 
-    tpl_name = _DOC_TEMPLATES.get(doc.kind, "pdf/cargo_doc_nor.html")
-    tpl = templates.get_template(tpl_name)
-    html = tpl.render(
-        doc=doc,
-        leg=leg,
-        vessel=vessel,
-        pol=pol,
-        pod=pod,
-        issued_at=doc.issued_at,
-        site_url=settings.site_url,
-    )
+    if doc.kind in CARGO_DOC_TYPES:
+        # ONB-02 — rendu guidé : table libellé/valeur + mention légale.
+        doc_type = CARGO_DOC_TYPES[doc.kind]
+        data = parse_data_json(doc.data_json)
+        tpl = templates.get_template("pdf/cargo_doc_generic.html")
+        html = tpl.render(
+            doc=doc,
+            leg=leg,
+            vessel=vessel,
+            pol=pol,
+            pod=pod,
+            issued_at=doc.issued_at,
+            title=doc_type.label,
+            rows=doc_rows(doc.kind, data),
+            legal_note=doc_type.legal_note,
+            site_url=settings.site_url,
+        )
+    else:
+        tpl_name = _DOC_TEMPLATES.get(doc.kind, "pdf/cargo_doc_nor.html")
+        tpl = templates.get_template(tpl_name)
+        html = tpl.render(
+            doc=doc,
+            leg=leg,
+            vessel=vessel,
+            pol=pol,
+            pod=pod,
+            issued_at=doc.issued_at,
+            site_url=settings.site_url,
+        )
     pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
     safe_ref = (doc.reference or str(doc.id)).replace("/", "-")
     return Response(
