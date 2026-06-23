@@ -664,6 +664,24 @@ def test_v2_navigation_avg_speed_elongation_restored():
     assert templates.env.get_template("staff/navigation/index.html") is not None
 
 
+def test_v2_navigation_annual_kpis_restored():
+    """TRK-02 : vue KPI navigation agrégée par année (tous legs à GPS)."""
+    from pathlib import Path
+
+    from app.routers.navigation_router import router
+    from app.services.voyage_track import annual_navigation_kpis, sog_stats
+    from app.templating import templates
+
+    # endpoint agrégé annuel restauré
+    assert ("GET", "/performance/navigation/kpis") in _methods(router)
+    assert callable(annual_navigation_kpis) and callable(sog_stats)
+    # le template compile et porte les colonnes attendues (points / SOG / distances)
+    kpis = Path("app/templates/staff/navigation/kpis.html").read_text(encoding="utf-8")
+    for token in ("point_count", "avg_sog_kn", "max_sog_kn", "actual_nm", "real_elongation"):
+        assert token in kpis, token
+    assert templates.env.get_template("staff/navigation/kpis.html") is not None
+
+
 def test_v2_planning_delay_and_by_port_restored():
     """PLN-05 détection de retard (≥4 h) + PLN-06 vue par port."""
     from app.routers.planning_router import router

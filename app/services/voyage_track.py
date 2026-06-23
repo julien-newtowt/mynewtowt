@@ -177,6 +177,76 @@ def compute_metrics(
     )
 
 
+@dataclass(frozen=True)
+class NavigationKpiRow:
+    """Ligne agrégée de la vue KPI navigation annuelle (TRK-02).
+
+    Un leg de l'année qui porte au moins un point GPS : ses métriques de
+    navigation (``metrics``) plus les statistiques de vitesse fond relevée
+    (``avg_sog_kn`` / ``max_sog_kn``, issues du champ ``sog_kn`` des positions,
+    distinctes de ``metrics.avg_speed_kn`` qui est distance/durée).
+    """
+
+    leg: Leg
+    metrics: TrackMetrics
+    avg_sog_kn: float | None  # moyenne des SOG relevés (instantané satcom)
+    max_sog_kn: float | None  # SOG max relevé
+
+
+def sog_stats(positions: list[VesselPosition]) -> tuple[float | None, float | None]:
+    """(moyenne, max) des vitesses fond relevées (``sog_kn``), ``(None, None)``
+    si aucune position ne porte de SOG."""
+    sogs = [float(p.sog_kn) for p in positions if p.sog_kn is not None]
+    if not sogs:
+        return (None, None)
+    return (round(sum(sogs) / len(sogs), 2), round(max(sogs), 2))
+
+
+async def annual_navigation_kpis(
+    db: AsyncSession,
+    year: int,
+    *,
+    vessel_id: int | None = None,
+    now: datetime | None = None,
+) -> list[NavigationKpiRow]:
+    """KPI navigation agrégés — tous les legs à GPS d'une année (TRK-02).
+
+    Restaure la vue V2 « tous les legs à positions GPS de l'année » : pour
+    chaque leg dont l'ETD tombe dans ``year`` (optionnellement restreint à un
+    navire via ``vessel_id``) et qui porte **au moins un point GPS**, calcule
+    point_count, distance réelle/théorique, allongement, vitesse moyenne (= la
+    métrique distance/durée) et les statistiques de SOG relevé (moyenne/max).
+
+    Les legs sans aucune position GPS sont exclus (vue « performance réelle »).
+    Tri par ETD croissant. Lecture seule.
+    """
+    now = now or datetime.now(UTC)
+    stmt = select(Leg).order_by(Leg.etd.asc())
+    if vessel_id is not None:
+        stmt = stmt.where(Leg.vessel_id == vessel_id)
+    # Filtre d'année côté Python (cohérent avec build_leg_filter), robuste aux
+    # différences de dialecte sur extract('year', ...) entre Postgres et SQLite.
+    legs = [lg for lg in (await db.execute(stmt)).scalars().all() if lg.etd and lg.etd.year == year]
+
+    rows: list[NavigationKpiRow] = []
+    for leg in legs:
+        positions = await positions_for_leg(db, leg, now=now)
+        if not positions:
+            continue
+        arr = await db.get(Port, leg.arrival_port_id)
+        metrics = compute_metrics(positions, leg, arr_port=arr, now=now)
+        avg_sog, max_sog = sog_stats(positions)
+        rows.append(
+            NavigationKpiRow(
+                leg=leg,
+                metrics=metrics,
+                avg_sog_kn=avg_sog,
+                max_sog_kn=max_sog,
+            )
+        )
+    return rows
+
+
 def downsample_for_weather(
     positions: list[VesselPosition], *, minutes: int = WEATHER_SAMPLE_MINUTES
 ) -> list[VesselPosition]:
