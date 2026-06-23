@@ -557,3 +557,31 @@ async def test_escale_index_renders_with_crew_panel(db, staff_user):
     assert resp.template.name == "staff/escale/index.html"
     assert resp.context["crew_assignments"]
     assert resp.context["embark_alerts"]  # billet non chargé → au moins 1 alerte
+
+
+# ─────────────────────────────── UX-03 ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_sidebar_port_clock_rendered(db, staff_user):
+    """UX-03 : l'horloge sidebar expose le fuseau du port de destination."""
+    from app.routers.escale_router import escale_index
+
+    leg = await _setup_leg(db)
+    pod = await db.get(Port, 2)  # BRSSO (arrivée)
+    pod.timezone = "America/Sao_Paulo"
+    await db.flush()
+
+    class _FullReq:
+        headers: dict[str, str] = {}
+        cookies: dict[str, str] = {}
+        query_params: dict[str, str] = {}
+        client = SimpleNamespace(host="127.0.0.1")
+        url = SimpleNamespace(path="/escale")
+        state = SimpleNamespace(notif_count=0, newtowt_agent_enabled=True, recent_notifications=[])
+
+    resp = await escale_index(_FullReq(), leg_id=leg.id, db=db, user=staff_user)
+    html = resp.body.decode()
+    assert 'class="sidebar-clock"' in html
+    assert 'data-clock="utc"' in html  # UTC toujours présent
+    assert 'data-port-tz="America/Sao_Paulo"' in html  # port de destination

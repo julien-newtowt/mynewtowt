@@ -279,6 +279,9 @@ async def escale_index(
             "shifts": shifts,
             "pol": pol,
             "pod": pod,
+            # UX-03 — horloge sidebar « port de destination » (fuseau IANA).
+            "next_port_tz": (pod.timezone if pod and pod.timezone else None),
+            "next_port_label": (pod.locode if pod else None),
             "stowage_by_hold": stowage_by_hold,
             "holds": HOLDS,
             "vessel_status": vessel_status,

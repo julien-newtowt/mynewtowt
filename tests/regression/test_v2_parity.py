@@ -244,6 +244,18 @@ def test_v2_ux_topbar_notif_and_lang_restored():
     assert "Test" in html and "/lang/en" in html and "topbar-lang-menu" in html
 
 
+def test_v2_ux_sidebar_port_clock_restored():
+    """UX-03 : horloge sidebar (UTC + port de destination) rebranchée."""
+    from pathlib import Path
+
+    layout = Path("app/templates/staff/_layout.html").read_text(encoding="utf-8")
+    assert 'class="sidebar-clock"' in layout
+    assert 'data-clock="utc"' in layout
+    assert "next_port_tz" in layout  # liaison au port de destination
+    clock_js = Path("app/static/js/clock.js").read_text(encoding="utf-8")
+    assert "sidebar-clock" in clock_js and "data-clock=port" in clock_js
+
+
 # ───────────────────────────── Crew (V2 parité) ─────────────────────────────
 
 
