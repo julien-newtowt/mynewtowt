@@ -130,7 +130,7 @@
         <td class="mono">{{ (it.length_cm|int) ~ '×' ~ (it.width_cm|int) ~ '×' ~ (it.height_cm|int) if it.length_cm and it.width_cm and it.height_cm else '—' }}</td>
         <td>
           {% if it.hs_code %}<span class="pill">HS {{ it.hs_code }}</span>{% endif %}
-          {% if it.imdg_class %}<span class="pill pill-error">IMDG {{ it.imdg_class }}</span>{% endif %}
+          {% if it.imdg_class %}<span class="pill pill-error" title="{{ imdg_label(it.imdg_class) }}">IMDG {{ it.imdg_class }}</span>{% endif %}
           {% if not it.hs_code and not it.imdg_class %}—{% endif %}
         </td>
         <td>{% if it.is_stacked %}<span class="pill pill-warn">gerbé</span>{% else %}<span class="pill">base</span>{% endif %}</td>
@@ -172,7 +172,7 @@
       <div class="field"><label>Poids total (kg)</label><input name="weight_kg" type="number" step="0.1" /></div>
       <div class="field"><label>Hauteur (cm)</label><input name="height_cm" type="number" step="0.1" /></div>
       <div class="field"><label>HS code</label><input name="hs_code" type="text" /></div>
-      <div class="field"><label>Classe IMDG</label><select name="imdg_class"><option value="">—</option>{% for c in ['1','2','3','4.1','4.2','4.3','5.1','5.2','6.1','6.2','7','8','9'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Classe IMDG</label><select name="imdg_class"><option value="">—</option>{% for c in imdg_classes %}<option value="{{ c.code }}">{{ c.code }} — {{ c.label_fr }}</option>{% endfor %}</select></div>
       <div class="field"><label><input type="checkbox" name="is_stacked" value="1" /> Gerbé (stack)</label></div>
       <div class="field"><label><input type="checkbox" name="is_dangerous" value="1" /> IMO</label></div>
       <div class="field"><label><input type="checkbox" name="is_oversized" value="1" /> Hors-gabarit</label></div>

@@ -810,6 +810,26 @@ def test_v2_stowage_bilingual_plan_restored():
     assert templates.env.get_template("pdf/stowage_plan.html") is not None
 
 
+def test_v2_stowage_imdg_referential_restored():
+    """STO-08 : référentiel IMDG bilingue (select IMO labellisé) restauré."""
+    from pathlib import Path
+
+    from app.services.imdg import IMDG_CLASSES, imdg_label
+
+    codes = [c["code"] for c in IMDG_CLASSES]
+    # Couverture des 9 classes + divisions officielles (≥ 20 entrées).
+    assert len(IMDG_CLASSES) >= 20
+    for code in ("1.1", "2.3", "3", "4.3", "5.2", "6.1", "9"):
+        assert code in codes, code
+    # Libellés bilingues + format « code — libellé ».
+    assert imdg_label("3", "fr").startswith("3 — Liquides")
+    assert imdg_label("3", "en").startswith("3 — Flammable")
+    assert imdg_label("", "fr") == "" and imdg_label("999", "fr") == "999"
+    # Le select stowage est alimenté par le référentiel (plus de codes en dur).
+    tpl = Path("app/templates/staff/stowage/plan.html").read_text(encoding="utf-8")
+    assert "for c in imdg_classes" in tpl
+
+
 def test_v2_stowage_before_cargo_doc_restored():
     """STO-09 : arrimage avant cargo doc (fallback order→item placeholder)."""
     from decimal import Decimal
