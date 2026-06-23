@@ -46,15 +46,9 @@ class Vessel(Base):
     loa_m: Mapped[float | None] = mapped_column(
         Float, comment="Longueur hors-tout (Length Overall) en mtres"
     )
-    beam_m: Mapped[float | None] = mapped_column(
-        Float, comment="Largeur (Beam) en mtres"
-    )
-    height_m: Mapped[float | None] = mapped_column(
-        Float, comment="Hauteur totale en mtres"
-    )
-    mast_height_m: Mapped[float | None] = mapped_column(
-        Float, comment="Hauteur de mt en mtres"
-    )
+    beam_m: Mapped[float | None] = mapped_column(Float, comment="Largeur (Beam) en mtres")
+    height_m: Mapped[float | None] = mapped_column(Float, comment="Hauteur totale en mtres")
+    mast_height_m: Mapped[float | None] = mapped_column(Float, comment="Hauteur de mt en mtres")
     draft_max_m: Mapped[float | None] = mapped_column(
         Float, comment="Tirant d'eau maximal en mtres"
     )
@@ -65,17 +59,11 @@ class Vessel(Base):
     )
 
     # Capacits
-    capacity_barriques: Mapped[int | None] = mapped_column(
-        Integer, comment="Capacit en barriques"
-    )
-    capacity_pax: Mapped[int | None] = mapped_column(
-        Integer, comment="Capacit en passagers"
-    )
+    capacity_barriques: Mapped[int | None] = mapped_column(Integer, comment="Capacit en barriques")
+    capacity_pax: Mapped[int | None] = mapped_column(Integer, comment="Capacit en passagers")
 
     # Identification et administration
-    home_port: Mapped[str | None] = mapped_column(
-        String(100), comment="Port d'attache"
-    )
+    home_port: Mapped[str | None] = mapped_column(String(100), comment="Port d'attache")
     port_of_registry: Mapped[str | None] = mapped_column(
         String(100), comment="Port d'immatriculation"
     )

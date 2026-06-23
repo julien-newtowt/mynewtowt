@@ -188,10 +188,10 @@ __all__ = [
     "TicketComment",
     "User",
     "Vessel",
-    "VoyageHighlight",
-    "VoyagePhoto",
     "VesselPosition",
     "VesselWeather",
     "VisitorLog",
+    "VoyageHighlight",
+    "VoyagePhoto",
     "WatchLog",
 ]
