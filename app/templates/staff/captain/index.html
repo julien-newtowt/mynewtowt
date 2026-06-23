@@ -272,6 +272,17 @@
   <p class="text-muted text-sm mb-3"><strong>Notes :</strong> {{ leg.closure_notes }}</p>
   {% endif %}
 
+  {# ONB-05 — récapitulatif PDF + réouverture #}
+  <div class="flex gap-2 mb-3">
+    <a href="/captain/legs/{{ leg.id }}/closure.pdf" class="btn btn-secondary btn-sm" target="_blank"><i data-lucide="file-text"></i> Récapitulatif PDF</a>
+    {% if closure_step >= 1 %}
+    <form method="post" action="/captain/legs/{{ leg.id }}/closure/reopen" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--cuivre);" data-confirm="Rouvrir la clôture ? La chaîne de validation sera réinitialisée."><i data-lucide="rotate-ccw"></i> Rouvrir</button>
+    </form>
+    {% endif %}
+  </div>
+
   {% if closure_step == 0 %}
   <form method="post" action="/captain/legs/{{ leg.id }}/closure/submit">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">

@@ -1409,6 +1409,76 @@ async def closure_approve(
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 
+@router.post("/legs/{leg_id}/closure/reopen")
+async def closure_reopen(
+    leg_id: int,
+    request: Request,
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "S")),
+):
+    """ONB-05 — rouvre une clôture : efface la chaîne de validation et repasse
+    le leg en cours, pour corriger un document/SOF avant re-soumission.
+    """
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    if not leg.closure_submitted_at:
+        raise HTTPException(status_code=400, detail="Clôture non engagée — rien à rouvrir")
+    leg.closure_submitted_at = None
+    leg.closure_submitted_by = None
+    leg.closure_reviewed_at = None
+    leg.closure_reviewed_by = None
+    leg.closure_approved_at = None
+    if leg.status == "completed":
+        leg.status = "in_progress"
+    if notes:
+        leg.closure_notes = (leg.closure_notes or "") + f"\n[Réouverture] {notes}"
+    await db.flush()
+    await activity_record(
+        db,
+        action="voyage_closure_reopen",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="leg",
+        entity_id=leg.id,
+        entity_label=leg.leg_code,
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+@router.get("/legs/{leg_id}/closure.pdf")
+async def closure_recap_pdf(
+    leg_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+):
+    """ONB-05 — PDF récapitulatif de clôture (leg / SOF / docs / PJ / crew /
+    finance / KPI / chaîne de validation + checklist documentaire).
+    """
+    from fastapi.responses import Response
+    from weasyprint import HTML
+
+    from app.config import settings
+    from app.services.closure import closure_recap_data
+
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    ctx = await closure_recap_data(db, leg)
+    ctx["site_url"] = settings.site_url
+    html = templates.get_template("pdf/closure_recap.html").render(**ctx)
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="cloture_{leg.leg_code}.pdf"'},
+    )
+
+
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
