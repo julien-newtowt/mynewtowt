@@ -48,6 +48,7 @@ from app.permissions import (
     require_permission,
 )
 from app.services import co2 as co2_service
+from app.services import emissions as emissions_service
 from app.services.activity import record as activity_record
 from app.templating import templates
 
@@ -1295,6 +1296,11 @@ async def staff_mfa_disable(
 # ────────────────────────────────────────────── CO2 variables (ENV-02)
 # Variables versionnées consommées par services/co2.py — les fallbacks
 # codés restent la référence tant que la table est vide.
+#
+# ADM-06 — on réexpose aussi les facteurs NOx / SOx (FIN-03, kg/t.nm) dans le
+# même éditeur versionné : ils sont lus par ``services.emissions`` mais
+# n'étaient pas éditables. Source de vérité unique : ``emissions`` (noms +
+# constantes de repli) pour éviter toute dérive nom/valeur.
 CO2_VARIABLE_DEFS: dict[str, dict] = {
     co2_service.TOWT_EF_VARIABLE: {
         "label": "Facteur d'émission TOWT (voile)",
@@ -1305,6 +1311,26 @@ CO2_VARIABLE_DEFS: dict[str, dict] = {
         "label": "Facteur d'émission conventionnel (cargo fuel)",
         "unit": "gCO2/t.km",
         "fallback": co2_service.CONV_CO2_EF_G_PER_TKM,
+    },
+    emissions_service.NOX_CONV_VAR: {
+        "label": "Facteur NOx — navire conventionnel",
+        "unit": "kg/t.nm",
+        "fallback": emissions_service.CONV_NOX_PER_TNM,
+    },
+    emissions_service.NOX_SAIL_VAR: {
+        "label": "Facteur NOx — voilier-cargo",
+        "unit": "kg/t.nm",
+        "fallback": emissions_service.SAIL_NOX_PER_TNM,
+    },
+    emissions_service.SOX_CONV_VAR: {
+        "label": "Facteur SOx — navire conventionnel",
+        "unit": "kg/t.nm",
+        "fallback": emissions_service.CONV_SOX_PER_TNM,
+    },
+    emissions_service.SOX_SAIL_VAR: {
+        "label": "Facteur SOx — voilier-cargo",
+        "unit": "kg/t.nm",
+        "fallback": emissions_service.SAIL_SOX_PER_TNM,
     },
 }
 

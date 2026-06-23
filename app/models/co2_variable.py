@@ -8,6 +8,13 @@ chaque valeur reste traçable (source, auteur, date d'effet).
 Noms de variables consommés par ``app.services.co2`` :
 - ``towt_co2_ef``         — facteur d'émission TOWT (gCO₂/t.km)
 - ``conventional_co2_ef`` — facteur d'émission conventionnel (gCO₂/t.km)
+
+Noms consommés par ``app.services.emissions`` (NOx / SOx, kg/t.nm) :
+- ``conventional_nox_per_tnm`` / ``sail_nox_per_tnm``
+- ``conventional_sox_per_tnm`` / ``sail_sox_per_tnm``
+
+Ces facteurs descendent jusqu'à ~1e-5 → ``Numeric(15, 9)`` (cf. migration
+0077) pour les stocker sans arrondi.
 """
 
 from __future__ import annotations
@@ -35,7 +42,7 @@ class Co2Variable(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
-    value: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    value: Mapped[Decimal] = mapped_column(Numeric(15, 9), nullable=False)
     unit: Mapped[str | None] = mapped_column(String(20))
     # Référence de la valeur, ex. "Audit vérificateur 2026" / "IMO 4th GHG Study".
     source: Mapped[str | None] = mapped_column(String(200))
