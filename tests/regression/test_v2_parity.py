@@ -541,6 +541,32 @@ def test_v2_onboard_notifications_inpage_restored():
     assert ("POST", "/captain/notifications/{notif_id}/dismiss") in m
 
 
+def test_v2_onboard_messaging_enriched_restored():
+    """ONB-04 : messagerie de bord enrichie — suppression, autocomplete @mention,
+    messages système (journal des actions clés).
+    """
+    import inspect
+
+    from app.models.sof_event import OnboardMessage
+    from app.routers.captain_router import (
+        closure_approve,
+        post_onboard_system_message,
+        router,
+        sign_sof_event,
+    )
+
+    m = _methods(router)
+    # Suppression d'un message + endpoint d'autocomplete des mentions.
+    assert ("POST", "/captain/legs/{leg_id}/messages/{msg_id}/delete") in m
+    assert ("GET", "/captain/messages/users") in m
+    # Flag « message système » + helper de journalisation.
+    assert hasattr(OnboardMessage, "is_system")
+    assert callable(post_onboard_system_message)
+    # Le journal système est posté aux actions clés (SOF signé, clôture).
+    assert "post_onboard_system_message" in inspect.getsource(sign_sof_event)
+    assert "post_onboard_system_message" in inspect.getsource(closure_approve)
+
+
 def test_v2_onboard_sof_edit_delete_restored():
     """ONB-01 : édition + suppression d'un SOF non signé (+ garde lock)."""
     from app.routers.captain_router import router
