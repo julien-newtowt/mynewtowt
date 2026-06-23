@@ -493,6 +493,15 @@ def test_v2_closure_reopen_and_recap_restored():
     assert ("GET", "/captain/legs/{leg_id}/closure.pdf") in m
 
 
+def test_v2_crew_api_and_deactivation_restored():
+    """CREW-06 API par navire + CREW-08 désactivation marin."""
+    from app.routers.crew_router import router
+
+    m = _methods(router)
+    assert ("GET", "/crew/api/by-vessel/{vessel_id}") in m
+    assert ("POST", "/crew/members/{member_id}/toggle-active") in m
+
+
 def test_v2_stowage_block_policy_restored():
     """STO-05 (A3) : politique de blocage capacité configurable (feature flag)."""
     from app.services.stowage import STOWAGE_BLOCK_FLAG, check_zone_admission

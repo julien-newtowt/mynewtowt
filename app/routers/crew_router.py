@@ -488,6 +488,102 @@ async def crew_edit(
     return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)
 
 
+async def _has_active_embarkation(db: AsyncSession, member_id: int) -> bool:
+    """True si le marin a un embarquement en cours (non débarqué)."""
+    now = datetime.now(UTC)
+    return bool(
+        await db.scalar(
+            select(CrewAssignment.id)
+            .where(CrewAssignment.crew_member_id == member_id)
+            .where(CrewAssignment.embark_at.is_not(None))
+            .where((CrewAssignment.disembark_at.is_(None)) | (CrewAssignment.disembark_at > now))
+            .limit(1)
+        )
+    )
+
+
+@router.post("/members/{member_id}/toggle-active")
+async def crew_member_toggle_active(
+    member_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "M")),
+):
+    """CREW-08 — désactive/réactive un marin. Désactivation refusée tant qu'un
+    embarquement est en cours (un marin embarqué ne peut pas être retiré).
+    """
+    m = await db.get(CrewMember, member_id)
+    if m is None:
+        raise HTTPException(status_code=404)
+    if m.is_active and await _has_active_embarkation(db, member_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Marin embarqué : débarquez-le avant de le désactiver.",
+        )
+    m.is_active = not m.is_active
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="crew",
+        entity_type="crew_member",
+        entity_id=m.id,
+        entity_label=m.full_name,
+        detail="réactivé" if m.is_active else "désactivé",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)
+
+
+@router.get("/api/by-vessel/{vessel_id}")
+async def crew_api_by_vessel(
+    vessel_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "C")),
+):
+    """CREW-06 — API JSON : équipage actuellement embarqué sur un navire."""
+    from fastapi.responses import JSONResponse
+
+    now = datetime.now(UTC)
+    rows = (
+        await db.execute(
+            select(
+                CrewMember.id,
+                CrewMember.full_name,
+                CrewMember.role,
+                CrewMember.nationality,
+                CrewAssignment.leg_id,
+                CrewAssignment.embark_at,
+                CrewAssignment.disembark_at,
+            )
+            .join(CrewAssignment, CrewAssignment.crew_member_id == CrewMember.id)
+            .where(
+                (CrewAssignment.vessel_id == vessel_id)
+                | (CrewAssignment.leg_id.in_(select(Leg.id).where(Leg.vessel_id == vessel_id)))
+            )
+            .where(CrewAssignment.embark_at.is_not(None))
+            .where((CrewAssignment.disembark_at.is_(None)) | (CrewAssignment.disembark_at > now))
+            .order_by(CrewMember.full_name)
+        )
+    ).all()
+    crew = [
+        {
+            "member_id": r.id,
+            "full_name": r.full_name,
+            "role": r.role,
+            "nationality": r.nationality,
+            "leg_id": r.leg_id,
+            "embark_at": r.embark_at.isoformat() if r.embark_at else None,
+            "disembark_at": r.disembark_at.isoformat() if r.disembark_at else None,
+        }
+        for r in rows
+    ]
+    return JSONResponse({"vessel_id": vessel_id, "count": len(crew), "crew": crew})
+
+
 async def _member_detail_context(
     request: Request,
     db: AsyncSession,

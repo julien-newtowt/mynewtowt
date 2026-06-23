@@ -17,6 +17,14 @@
     {% elif member.schengen_status == 'warning' %}<span class="pill pill-warn">Schengen Warning</span>
     {% else %}<span class="pill pill-error">Non-compliant</span>{% endif %}
     <a href="/crew/members/{{ member.id }}/edit" class="btn btn-secondary btn-sm">✎ Modifier</a>
+    <form method="post" action="/crew/members/{{ member.id }}/toggle-active" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      {% if member.is_active %}
+      <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--cuivre);" data-confirm="Désactiver ce marin ?">Désactiver</button>
+      {% else %}
+      <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--vert);">Réactiver</button>
+      {% endif %}
+    </form>
     <a href="/crew" class="btn btn-ghost">← Retour</a>
   </div>
 </header>
