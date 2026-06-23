@@ -633,6 +633,21 @@ def test_v2_tracking_latest_and_import_batch_restored():
         assert hasattr(VesselPosition, f), f
 
 
+def test_v2_navigation_avg_speed_elongation_restored():
+    """TRK-03 : vitesse moyenne + allongement réel affichés en navigation."""
+    from pathlib import Path
+
+    from app.services.voyage_track import TrackMetrics
+
+    assert hasattr(TrackMetrics, "real_elongation")
+    nav = Path("app/templates/staff/navigation/index.html").read_text(encoding="utf-8")
+    assert "m.avg_speed_kn" in nav and "m.real_elongation" in nav
+    # le template compile (en-tête + lignes cohérentes)
+    from app.templating import templates
+
+    assert templates.env.get_template("staff/navigation/index.html") is not None
+
+
 def test_v2_planning_delay_and_by_port_restored():
     """PLN-05 détection de retard (≥4 h) + PLN-06 vue par port."""
     from app.routers.planning_router import router
