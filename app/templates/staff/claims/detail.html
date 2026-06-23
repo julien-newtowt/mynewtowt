@@ -22,6 +22,7 @@
       <tr><td>Type</td><td><span class="badge">{{ claim.claim_type }}</span></td></tr>
       <tr><td>Leg lié</td><td class="mono">{{ leg.leg_code if leg else '—' }}</td></tr>
       <tr><td>Booking lié</td><td class="mono">{{ booking.reference if booking else '—' }}</td></tr>
+      <tr><td>Marin concerné</td><td>{{ crew_member.full_name if crew_member else '—' }}</td></tr>
       <tr><td>Position cale</td><td>
         {% if claim.cargo_position %}
           <span class="mono">{{ claim.cargo_position }}</span>

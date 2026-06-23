@@ -566,6 +566,29 @@ def test_v2_onboard_leg_attachments_restored():
     assert hasattr(LegAttachment, "category")
 
 
+def test_v2_claims_sof_auto_and_crew_link_restored():
+    """ONB-06 : SOF auto à la déclaration + rattachement marin d'un sinistre.
+
+    V2 posait un événement SOF ``CLAIM_DECLARED`` à la déclaration d'un sinistre
+    rattaché à un leg, et liait un sinistre équipage au marin concerné. On
+    vérifie le type SOF, la colonne de rattachement et la prise en compte par la
+    route de création.
+    """
+    import inspect
+
+    from app.models.claim import Claim
+    from app.models.sof_event import SOF_EVENT_TYPES
+    from app.routers.claims_router import claim_create
+
+    # Type SOF réglementaire ajouté + colonne de rattachement marin.
+    assert "CLAIM_DECLARED" in SOF_EVENT_TYPES
+    assert hasattr(Claim, "crew_member_id")
+    # La route de création pose le SOF et accepte le marin rattaché.
+    src = inspect.getsource(claim_create)
+    assert "CLAIM_DECLARED" in src
+    assert "crew_member_id" in src
+
+
 # ───────────────────────────── Finance / KPI (V2 parité) ──────────────────────
 
 

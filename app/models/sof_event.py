@@ -52,6 +52,7 @@ SOF_EVENT_TYPES = (
     "DISCHARGING_START",
     "DISCHARGING_END",
     "DRAFT_SURVEY",
+    "CLAIM_DECLARED",  # ONB-06 — déclaration d'un sinistre rattaché au leg
     "OTHER",
 )
 

@@ -35,6 +35,8 @@ class Claim(Base):
     claim_type: Mapped[str] = mapped_column(String(20), nullable=False)
     leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"), index=True)
     booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"))
+    # ONB-06 — rattachement précis pour un sinistre équipage : le marin concerné.
+    crew_member_id: Mapped[int | None] = mapped_column(ForeignKey("crew_members.id"))
 
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)

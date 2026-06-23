@@ -26,8 +26,10 @@ from app.models.claim import (
     ClaimProvisionHistory,
     ClaimTimelineEntry,
 )
+from app.models.crew import CrewMember
 from app.models.insurance import InsuranceContract
 from app.models.leg import Leg
+from app.models.sof_event import SofEvent
 from app.permissions import require_permission
 from app.services import notifications, safe_files
 from app.services.activity import record as activity_record
@@ -114,6 +116,18 @@ async def claim_new_form(
     # vide : l'opérateur choisit d'abord un leg puis ré-ouvre/édite.
     stowage_zones = await _stowage_zones_for(db, leg_id)
     contracts = await _active_contracts(db)
+    # ONB-06 — marins actifs, pour rattacher un sinistre équipage à une personne.
+    crew_members = list(
+        (
+            await db.execute(
+                select(CrewMember)
+                .where(CrewMember.is_active.is_(True))
+                .order_by(CrewMember.full_name)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         "staff/claims/new.html",
         {
@@ -126,6 +140,7 @@ async def claim_new_form(
             "selected_leg_id": leg_id,
             "stowage_zones": stowage_zones,
             "contracts": contracts,
+            "crew_members": crew_members,
         },
     )
 
@@ -190,6 +205,7 @@ async def claim_create(
     occurred_at: str = Form(...),
     leg_id: int | None = Form(None),
     booking_id: int | None = Form(None),
+    crew_member_id: int | None = Form(None),
     provision_eur: float | None = Form(None),
     insurer: str | None = Form(None),
     insurer_claim_ref: str | None = Form(None),
@@ -223,15 +239,17 @@ async def claim_create(
         or 0
     ) + 1
     ref = f"CLM-{year}-{seq:04d}"
+    occurred_dt = datetime.fromisoformat(occurred_at)
     c = Claim(
         reference=ref,
         claim_type=claim_type,
         leg_id=leg_id,
         booking_id=booking_id,
+        crew_member_id=crew_member_id,
         title=title.strip(),
         description=description,
         status="open",
-        occurred_at=datetime.fromisoformat(occurred_at),
+        occurred_at=occurred_dt,
         provision_eur=Decimal(str(provision_eur)) if provision_eur else None,
         insurer=(insurer or None),
         insurer_claim_ref=(insurer_claim_ref or "").strip() or None,
@@ -250,6 +268,19 @@ async def claim_create(
             body=f"Claim ouvert : {title}",
         )
     )
+    # ONB-06 — SOF auto : un sinistre rattaché à un leg pose un événement
+    # « CLAIM_DECLARED » au Statement of Facts (traçabilité réglementaire).
+    if leg_id is not None:
+        db.add(
+            SofEvent(
+                leg_id=leg_id,
+                event_type="CLAIM_DECLARED",
+                label=f"Sinistre déclaré : {ref} — {title.strip()}",
+                occurred_at=occurred_dt,
+                recorded_by_id=user.id,
+                recorded_by_name=user.full_name or user.username,
+            )
+        )
     # E6 — trace la provision initiale dans l'historique.
     if c.provision_eur is not None:
         db.add(
@@ -308,6 +339,7 @@ async def claim_detail(
         raise HTTPException(status_code=404)
     leg = await db.get(Leg, claim.leg_id) if claim.leg_id else None
     booking = await db.get(Booking, claim.booking_id) if claim.booking_id else None
+    crew_member = await db.get(CrewMember, claim.crew_member_id) if claim.crew_member_id else None
     contract = (
         await db.get(InsuranceContract, claim.insurance_contract_id)
         if claim.insurance_contract_id
@@ -333,6 +365,7 @@ async def claim_detail(
             "claim": claim,
             "leg": leg,
             "booking": booking,
+            "crew_member": crew_member,
             "contract": contract,
             "contracts": contracts,
             "statuses": CLAIM_STATUSES,

@@ -10,6 +10,7 @@
     <div class="field"><label>Type</label><select name="claim_type" required><option value="cargo">Cargo</option><option value="crew">Équipage</option><option value="hull">Hull/DIV</option><option value="war_risk">War risk</option><option value="third_party">Tiers</option><option value="other">Autre</option></select></div>
     <div class="field"><label>Leg lié</label><select name="leg_id">{{ leg_option_tags(leg_options, selected_leg_id, blank=True) }}</select></div>
     <div class="field"><label>Booking Note (BN)</label><select name="booking_id"><option value="">— Aucune —</option>{% for b in bookings %}<option value="{{ b.id }}">{{ b.reference }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Marin concerné <span class="text-muted text-sm">(claim équipage)</span></label><select name="crew_member_id"><option value="">— Aucun —</option>{% for m in crew_members %}<option value="{{ m.id }}">{{ m.full_name }}</option>{% endfor %}</select></div>
     <div class="field" style="grid-column:span 2;">
       <label>Position cale <span class="text-muted text-sm">(claim cargo)</span></label>
       {% if stowage_zones %}
