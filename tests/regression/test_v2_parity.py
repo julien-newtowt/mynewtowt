@@ -495,6 +495,19 @@ def test_v2_dashboard_alerts_engine_restored():
     assert callable(compute_alerts)
 
 
+def test_v2_dashboard_kpis_restored():
+    """ADM-03 : KPI métier (CA prévisionnel, CO₂ évité, remplissage, départs)."""
+    from app.services.dashboard_kpis import (
+        ca_previsionnel,
+        fleet_kpis,
+        upcoming_departures,
+    )
+
+    assert callable(ca_previsionnel)
+    assert callable(fleet_kpis)
+    assert callable(upcoming_departures)
+
+
 # ───────────────────────────── Planning (V2 parité) ───────────────────────────
 
 
