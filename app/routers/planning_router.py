@@ -567,6 +567,8 @@ async def planning_export_csv(
     year = year or datetime.now(UTC).year
     rows, _vmap, _pmap = await _planning_rows(db, vessel_id=vessel_id, year=year)
 
+    from app.utils.csv_safe import sanitize_row
+
     def _iso(dt):
         return dt.isoformat() if dt else ""
 
@@ -578,12 +580,12 @@ async def planning_export_csv(
     ])
     for r in rows:
         lg, v, pol, pod = r["leg"], r["vessel"], r["pol"], r["pod"]
-        writer.writerow([
+        writer.writerow(sanitize_row([
             lg.leg_code, v.name if v else "", pol.locode if pol else "", pol.name if pol else "",
             pod.locode if pod else "", pod.name if pod else "",
             _iso(lg.etd), _iso(lg.eta), _iso(lg.atd), _iso(lg.ata),
             lg.status, lg.distance_nm or "", "1" if lg.is_bookable else "0",
-        ])
+        ]))
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",

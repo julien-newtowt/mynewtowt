@@ -255,7 +255,7 @@ async def delete_item(
     item_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("cargo", "M")),
+    user=Depends(require_permission("cargo", "S")),
 ):
     """STO-03 — retire une affectation sans tout réécraser."""
     item = await db.get(StowageItem, item_id)

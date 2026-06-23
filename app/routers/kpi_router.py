@@ -149,6 +149,7 @@ async def kpi_export_csv(
             leg_map[lid] = leg.leg_code
 
     from app.services.emissions import estimate_avoided, get_emission_factors
+    from app.utils.csv_safe import sanitize_row
 
     em_factors = await get_emission_factors(db)
 
@@ -175,7 +176,7 @@ async def kpi_export_csv(
             distance_nm=k.distance_nm,
             factors=em_factors,
         )
-        writer.writerow(
+        writer.writerow(sanitize_row(
             [
                 leg_map.get(k.leg_id, ""),
                 k.palettes_carried,
@@ -189,7 +190,7 @@ async def kpi_export_csv(
                 em.nox_avoided_kg,
                 em.sox_avoided_kg,
             ]
-        )
+        ))
 
     output.seek(0)
     return StreamingResponse(

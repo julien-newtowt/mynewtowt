@@ -516,7 +516,7 @@ async def delete_sof_event(
     event_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("captain", "S")),
 ):
     """ONB-01 — supprime un SOF **non signé** (faute de saisie). 409 si signé.
 
@@ -562,8 +562,14 @@ async def upload_leg_attachment(
     """ONB-03 — dépose une pièce jointe catégorisée sur le leg (documents reçus
     du bord / agent d'escale). Validation extension + taille + magic number.
     """
-    from app.services.safe_files import UploadRejected, save_upload
+    from app.services.safe_files import (
+        UploadRejected,
+        content_length_exceeds_max,
+        save_upload,
+    )
 
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
@@ -631,7 +637,7 @@ async def delete_leg_attachment(
     att_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("captain", "S")),
 ):
     from app.services.safe_files import resolve_path
 

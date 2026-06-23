@@ -13,11 +13,28 @@ import secrets
 from pathlib import Path
 
 from app.config import settings
-from app.utils.file_validation import validate_upload
+from app.utils.file_validation import MAX_FILE_SIZE_MB, validate_upload
 
 
 class UploadRejected(Exception):
     """Upload refusé (extension/taille/MIME invalide ou chemin suspect)."""
+
+
+# Marge multipart : Content-Length couvre le fichier + champs de formulaire +
+# délimiteurs ; on tolère 1 Mo de surcoût avant de rejeter en amont (le contrôle
+# fin de taille du fichier reste assuré par ``validate_size`` après lecture).
+_MAX_REQUEST_BYTES = (MAX_FILE_SIZE_MB + 1) * 1024 * 1024
+
+
+def content_length_exceeds_max(content_length: str | None) -> bool:
+    """True si l'en-tête Content-Length dépasse la taille max tolérée.
+
+    Sert de pré-filtre anti-OOM : permet de rejeter (413) un upload géant
+    AVANT de charger le corps de la requête en mémoire.
+    """
+    if content_length and content_length.isdigit():
+        return int(content_length) > _MAX_REQUEST_BYTES
+    return False
 
 
 def _upload_root() -> Path:

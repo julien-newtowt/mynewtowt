@@ -173,10 +173,38 @@ de tests d'intégration de reprise + le tableau de parité.
 
 ---
 
-## 7. Checklist avant merge
+## 7. Revue de sécurité (`/security-review`)
 
-- [ ] **`/security-review`** sur la PR #50 (obligatoire avant merge sur `main`,
-      cf. `CLAUDE.md`).
+Revue effectuée sur l'ensemble du diff de reprise (3 passes : fichiers,
+autorisation/CSRF/IDOR, injection/PDF/CSV/SQL). **Aucune vulnérabilité
+haute/critique.** Surfaces vérifiées propres : SQL paramétré (pas de f-string
+identifiant), pas de path-traversal (`resolve_path` ancré + noms aléatoires),
+IDOR enfant→parent correctement scopé (`att.leg_id == leg_id`,
+`item.plan_id == plan_id`…), mass-assignment bloqué (allowlists + `status`
+forcé), pas de SSTI/XSS PDF (autoescape, pas de `|safe`), garde clé API v1
+constant-time fail-closed, redirections serveur uniquement.
+
+**3 correctifs appliqués** (commit de durcissement) :
+
+| Sévérité | Constat | Correctif |
+|---|---|---|
+| Moyenne | Upload lu intégralement en mémoire avant contrôle de taille (DoS/OOM) | Pré-filtre `Content-Length` → **413** avant lecture (3 routes upload), aligné sur `tracking_router` |
+| Basse | Injection de formules CSV (noms navire/port libres) | Helper `csv_safe.sanitize_row` (préfixe `'` sur cellules **texte** à risque ; nombres négatifs préservés) sur exports planning/finance/kpi |
+| Basse | Suppressions gardées en `M` au lieu de `S` | Routes de suppression (SOF, PJ leg, affectation, PJ commande, item stowage, billet) passées en **`require_permission(..., "S")`** |
+
+Observations résiduelles **informatives** (conformes au design documenté, non
+corrigées) : RBAC au niveau **module** (pas de scoping par objet) — modèle
+applicatif existant ; vue stowage « à bord » lisible via permission `captain`
+(lecture seule, audience attendue) ; alertes dashboard cross-module visibles de
+tout staff (comme les widgets existants). Le sniffing magic-number reste
+indicatif mais l'impact XSS est neutralisé par `Content-Disposition: attachment`.
+
+Tests de non-régression sécurité ajoutés (`tests/integration/test_security_hardening.py`).
+
+## 8. Checklist avant merge
+
+- [x] **`/security-review`** — fait (cf. §7), 3 correctifs intégrés, aucune
+      vulnérabilité haute/critique résiduelle.
 - [ ] Appliquer les migrations `0061→0067` en pré-prod (Alembic) et vérifier le
       schéma (colonnes nullables, FK, index, contraintes d'unicité).
 - [ ] Recette persona : broker (affectation/PJ commande), commandant (SOF

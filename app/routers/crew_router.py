@@ -733,8 +733,15 @@ async def crew_assignment_ticket_upload(
     user=Depends(require_permission("crew", "M")),
 ):
     """CREW-05 — joint le billet (titre de transport) à l'embarquement."""
-    from app.services.safe_files import UploadRejected, resolve_path, save_upload
+    from app.services.safe_files import (
+        UploadRejected,
+        content_length_exceeds_max,
+        resolve_path,
+        save_upload,
+    )
 
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
     a = await db.get(CrewAssignment, assignment_id)
     if a is None:
         raise HTTPException(status_code=404)
@@ -786,7 +793,7 @@ async def crew_assignment_ticket_delete(
     assignment_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("crew", "M")),
+    user=Depends(require_permission("crew", "S")),
 ):
     from app.services.safe_files import resolve_path
 

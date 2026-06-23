@@ -2007,7 +2007,7 @@ async def order_assignment_delete(
     assignment_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("commercial", "M")),
+    user=Depends(require_permission("commercial", "S")),
 ):
     assignment = await db.get(OrderAssignment, assignment_id)
     if assignment is None or assignment.order_id != order_id:
@@ -2052,8 +2052,15 @@ async def order_upload_attachment(
     user=Depends(require_permission("commercial", "M")),
 ):
     """COM-04 — joint le bon de commande / contrat signé (une PJ, remplacée)."""
-    from app.services.safe_files import UploadRejected, resolve_path, save_upload
+    from app.services.safe_files import (
+        UploadRejected,
+        content_length_exceeds_max,
+        resolve_path,
+        save_upload,
+    )
 
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
     order = await db.get(Order, order_id)
     if order is None:
         raise HTTPException(status_code=404)
@@ -2106,7 +2113,7 @@ async def order_delete_attachment(
     order_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("commercial", "M")),
+    user=Depends(require_permission("commercial", "S")),
 ):
     from app.services.safe_files import resolve_path
 

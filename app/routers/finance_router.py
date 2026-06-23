@@ -306,12 +306,14 @@ async def finance_export_csv(
             leg_map[f.leg_id] = leg
     finances.sort(key=lambda f: leg_map[f.leg_id].leg_code if f.leg_id in leg_map else "")
 
+    from app.utils.csv_safe import sanitize_row
+
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(_CSV_HEADERS)
     for f in finances:
         leg = leg_map.get(f.leg_id)
-        writer.writerow(
+        writer.writerow(sanitize_row(
             [
                 leg.leg_code if leg else f.leg_id,
                 f.revenue_forecast_eur, f.revenue_eur, f.revenue_variance_eur,
@@ -321,7 +323,7 @@ async def finance_export_csv(
                 f.other_costs_forecast_eur, f.other_costs_eur, f.other_costs_variance_eur,
                 f.margin_forecast_eur, f.margin_eur, f.margin_variance_eur,
             ]
-        )
+        ))
     await activity_record(
         db,
         action="finance_export_csv",
