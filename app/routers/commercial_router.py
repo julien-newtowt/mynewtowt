@@ -2151,6 +2151,89 @@ async def order_assignment_delete(
     return _hx_or_redirect(request, f"/commercial/orders/{order_id}")
 
 
+@router.post("/orders/{order_id}/split")
+async def order_split_submit(
+    order_id: int,
+    request: Request,
+    leg_ids: list[int] = Form(...),
+    palettes: list[int] = Form(...),
+    notes: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """COM-11 — ventilation multi-legs : répartit la commande sur plusieurs legs.
+
+    Garde de réconciliation capacité : la somme des palettes ventilées doit
+    égaler ``booked_palettes`` (ni sur- ni sous-réservation). Remplace toutes
+    les affectations existantes. Le premier leg devient le leg principal
+    (``order.leg_id``) pour la résolution PL/stowage.
+    """
+    order = (
+        await db.execute(
+            select(Order).options(selectinload(Order.assignments)).where(Order.id == order_id)
+        )
+    ).scalar_one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404)
+    if order.booked_palettes <= 0:
+        raise HTTPException(status_code=400, detail="commande sans palettes réservées")
+    if len(leg_ids) != len(palettes) or not leg_ids:
+        raise HTTPException(status_code=400, detail="ventilation incohérente")
+    if len(set(leg_ids)) != len(leg_ids):
+        raise HTTPException(status_code=400, detail="un même leg ne peut figurer deux fois")
+    pairs = list(zip(leg_ids, palettes, strict=True))
+    if any(p <= 0 for _, p in pairs):
+        raise HTTPException(status_code=400, detail="chaque part doit être > 0 palette")
+    if sum(p for _, p in pairs) != order.booked_palettes:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"la somme des palettes ventilées doit égaler les "
+                f"{order.booked_palettes} palettes réservées"
+            ),
+        )
+    # Validation des legs (existants, non partis).
+    legs: dict[int, Leg] = {}
+    for lid in leg_ids:
+        leg = await db.get(Leg, lid)
+        if leg is None:
+            raise HTTPException(status_code=404, detail=f"leg {lid} introuvable")
+        if leg.atd is not None:
+            raise HTTPException(status_code=400, detail=f"leg {leg.leg_code} déjà parti")
+        legs[lid] = leg
+
+    for existing in list(order.assignments):
+        await db.delete(existing)
+    await db.flush()
+    fmt = (order.palette_format or "EPAL").strip() or "EPAL"
+    for lid, pal in pairs:
+        db.add(
+            OrderAssignment(
+                order_id=order.id,
+                leg_id=lid,
+                palettes_count=pal,
+                pallet_format=fmt,
+                notes=(notes or "").strip() or None,
+            )
+        )
+    order.leg_id = leg_ids[0]  # leg principal (résolution PL/stowage)
+    await db.flush()
+    await activity_record(
+        db,
+        action="split",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="order",
+        entity_id=order.id,
+        entity_label=order.reference,
+        detail="ventilation : " + ", ".join(f"{legs[lid].leg_code}={pal}" for lid, pal in pairs),
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/orders/{order.id}")
+
+
 @router.post("/orders/{order_id}/attachment")
 async def order_upload_attachment(
     order_id: int,

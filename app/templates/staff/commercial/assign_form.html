@@ -99,4 +99,30 @@
   {% endif %}
 </article>
 
+{% if leg_rows %}
+<article class="card mt-4">
+  <h2>Ventilation multi-legs <span class="text-muted text-sm">· COM-11</span></h2>
+  <p class="text-muted text-sm mb-2">
+    Répartissez les <strong>{{ order.booked_palettes }}</strong> palettes sur plusieurs legs.
+    La somme ventilée doit égaler le total réservé (réconciliation capacité).
+    Le CA est ventilé au prorata des palettes ; la 1ʳᵉ ligne devient le leg principal.
+  </p>
+  <form method="post" action="/commercial/orders/{{ order.id }}/split" id="split-form" data-booked="{{ order.booked_palettes }}">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div id="split-rows"></div>
+    <template id="split-leg-options">{% for row in leg_rows %}<option value="{{ row.leg.id }}">{{ row.leg.leg_code }}{% if row.late %} (hors délai){% endif %}</option>{% endfor %}</template>
+    <div class="flex items-center gap-3 mt-2" style="flex-wrap:wrap;">
+      <button type="button" class="btn btn-ghost btn-sm" id="split-add"><i data-lucide="plus"></i> Ajouter un leg</button>
+      <span class="text-sm">Total ventilé : <strong id="split-sum">0</strong> / {{ order.booked_palettes }}</span>
+    </div>
+    <div class="field mt-2" style="max-width:480px;">
+      <label for="split-notes">Notes (optionnel)</label>
+      <input id="split-notes" name="notes" type="text" />
+    </div>
+    <button type="submit" class="btn btn-primary mt-2" id="split-submit" disabled>Ventiler la commande</button>
+  </form>
+</article>
+<script src="/static/js/order-split.js" defer></script>
+{% endif %}
+
 {% endblock %}
