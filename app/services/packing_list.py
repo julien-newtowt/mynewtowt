@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,6 +112,7 @@ async def create_for_booking(db: AsyncSession, booking: Booking) -> PackingList:
     pl = PackingList(
         booking_id=booking.id,
         order_id=None,
+        leg_id=booking.leg_id,  # COM-11 — leg d'origine épinglé
         token=generate_token(),
         token_expires_at=default_token_expiry(),
         status="draft",
@@ -334,7 +335,9 @@ async def resolve_pl_context(
     """
     order = await db.get(Order, pl.order_id) if pl.order_id else None
     booking = await db.get(Booking, pl.booking_id) if pl.booking_id else None
-    leg_id = (order.leg_id if order else None) or (booking.leg_id if booking else None)
+    # COM-11 — leg épinglé prioritaire (stable après réaffectation partielle) ;
+    # repli dynamique sur order/booking pour les PL héritées (leg_id NULL).
+    leg_id = pl.leg_id or (order.leg_id if order else None) or (booking.leg_id if booking else None)
     leg = await db.get(Leg, leg_id) if leg_id else None
     vessel = await db.get(Vessel, leg.vessel_id) if leg and leg.vessel_id else None
     pol = await db.get(Port, leg.departure_port_id) if leg and leg.departure_port_id else None
@@ -351,7 +354,8 @@ async def _count_issued_bls_for_leg(db: AsyncSession, *, leg_id: int) -> int:
         .outerjoin(Order, PackingList.order_id == Order.id)
         .outerjoin(Booking, PackingList.booking_id == Booking.id)
         .where(PackingListBatch.bl_number.is_not(None))
-        .where(or_(Order.leg_id == leg_id, Booking.leg_id == leg_id))
+        # COM-11 — leg épinglé prioritaire, repli sur order/booking (PL héritées).
+        .where(func.coalesce(PackingList.leg_id, Order.leg_id, Booking.leg_id) == leg_id)
     )
     return int((await db.scalar(stmt)) or 0)
 
@@ -421,7 +425,7 @@ async def ensure_for_order(db: AsyncSession, order: Order) -> tuple[PackingList,
     ).scalar_one_or_none()
     if existing is not None:
         return existing, False
-    pl = PackingList(order_id=order.id, status="draft")
+    pl = PackingList(order_id=order.id, leg_id=order.leg_id, status="draft")
     db.add(pl)
     await db.flush()
     await create_batch(

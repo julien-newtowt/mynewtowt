@@ -639,6 +639,12 @@ def test_v2_com11_multileg_revenue_ventilation_restored():
 
     assert ("POST", "/commercial/orders/{order_id}/split") in _methods(router)
     assert "booked_palettes" in inspect.getsource(order_split_submit)
+    # PL/BL épinglées au leg d'origine (stables après réaffectation partielle).
+    from app.models.packing_list import PackingList
+    from app.services.packing_list import resolve_pl_context
+
+    assert hasattr(PackingList, "leg_id")
+    assert "pl.leg_id" in inspect.getsource(resolve_pl_context)
 
 
 def test_v2_finance_forecast_actual_restored():

@@ -79,6 +79,11 @@ class PackingList(Base):
         nullable=True,
         index=True,
     )
+    # COM-11 — leg d'origine épinglé à la création. Stabilise la résolution
+    # PL/BL : une commande ventilée multi-legs (dont ``order.leg_id`` peut
+    # basculer après réaffectation partielle) garde sa PL rattachée à son leg.
+    # NULL (lignes héritées) ⇒ repli dynamique sur ``order/booking.leg_id``.
+    leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"), index=True)
     token: Mapped[str] = mapped_column(
         String(32), unique=True, nullable=False, default=generate_token, index=True
     )
