@@ -142,6 +142,9 @@ class OnboardMessage(Base):
     author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     author_name: Mapped[str] = mapped_column(String(200), nullable=False)
     is_bot: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # ONB-04 — message système (journal des actions clés : SOF signé, clôture…).
+    # Non éditable / non supprimable par l'équipage (auteur = système).
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

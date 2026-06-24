@@ -139,17 +139,22 @@
   <div class="section-header"><h3><i data-lucide="message-square"></i> Messagerie de bord ({{ messages|length }})</h3></div>
   <div style="max-height:300px; overflow-y:auto;">
     {% for m in messages|reverse %}
-    <div class="dash-notif-card {% if m.is_bot %}notif-read{% endif %}">
-      <span class="dash-notif-icon">{{ '🤖' if m.is_bot else '⛵' }}</span>
+    <div class="dash-notif-card {% if m.is_bot or m.is_system %}notif-read{% endif %}">
+      <span class="dash-notif-icon">{{ '📌' if m.is_system else ('🤖' if m.is_bot else '⛵') }}</span>
       <div class="dash-notif-body">
         <div class="dash-notif-title"><strong>{{ m.author_name }}</strong><span class="dash-notif-time">{{ m.created_at|datetime }}</span></div>
         <div class="dash-notif-text">{{ m.body }}</div>
       </div>
+      {% if not m.is_system and (m.author_id == user.id or user.role == 'administrateur') %}
+      <form method="post" action="/captain/legs/{{ leg.id }}/messages/{{ m.id }}/delete" onsubmit="return confirm('Supprimer ce message ?');">
+        <button type="submit" class="btn btn-ghost btn-xs" title="Supprimer"><i data-lucide="trash-2"></i></button>
+      </form>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
   <form method="post" action="/captain/legs/{{ leg.id }}/messages" class="mt-3">
-    <div class="field"><label>Nouveau message <small class="text-muted">(utilisez @username pour mentionner, @MYTOWT_BOT pour interroger le bot)</small></label><textarea name="body" rows="2" required></textarea></div>
+    <div class="field"><label>Nouveau message <small class="text-muted">(utilisez @username pour mentionner, @MYTOWT_BOT pour interroger le bot)</small></label><textarea name="body" rows="2" required data-mention-input autocomplete="off"></textarea></div>
     <button type="submit" class="btn btn-primary btn-sm">Envoyer</button>
   </form>
 </article>
@@ -332,4 +337,5 @@
 <article class="card text-center"><p class="text-muted">Sélectionnez un leg ci-dessus.</p></article>
 {% endif %}
 
+<script src="/static/js/mention-autocomplete.js" defer></script>
 {% endblock %}

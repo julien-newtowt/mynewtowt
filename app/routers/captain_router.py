@@ -16,7 +16,7 @@ import re
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -372,6 +372,90 @@ async def post_onboard_message(
             )
         )
     await db.flush()
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+async def post_onboard_system_message(db: AsyncSession, leg: Leg, body: str) -> None:
+    """ONB-04 — poste un message **système** dans le fil de bord du leg.
+
+    Journal des actions clés (SOF signé, clôture…) : auteur « SYSTÈME », non
+    éditable / non supprimable par l'équipage.
+
+    Savepoint (``begin_nested``) : un échec d'INSERT (ex. migration 0079 non
+    appliquée) ne roule en arrière que le point de sauvegarde — la transaction
+    métier appelante (signature SOF, clôture) reste intacte. L'appelant
+    enveloppe dans ``contextlib.suppress`` → vraiment best-effort.
+    """
+    async with db.begin_nested():
+        db.add(
+            OnboardMessage(
+                leg_id=leg.id,
+                vessel_id=leg.vessel_id,
+                author_id=None,
+                author_name="SYSTÈME",
+                is_system=True,
+                body=body,
+            )
+        )
+
+
+@router.get("/messages/users")
+async def onboard_message_users(
+    q: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> JSONResponse:
+    """ONB-04 — autocomplete des @mentions : utilisateurs staff actifs.
+
+    Renvoie ``[{"username", "full_name"}]`` filtré sur ``q`` (préfixe insensible
+    à la casse sur username ou nom). Alimente le picker de mention du fil de bord.
+    """
+    stmt = select(User).where(User.is_active.is_(True))
+    term = (q or "").strip()
+    if term:
+        like = f"%{term}%"
+        stmt = stmt.where(User.username.ilike(like) | User.full_name.ilike(like))
+    rows = list((await db.execute(stmt.order_by(User.username).limit(20))).scalars().all())
+    return JSONResponse(
+        [{"username": u.username, "full_name": u.full_name or u.username} for u in rows]
+    )
+
+
+@router.post("/legs/{leg_id}/messages/{msg_id}/delete")
+async def delete_onboard_message(
+    leg_id: int,
+    msg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """ONB-04 — supprime un message de bord (auteur ou administrateur).
+
+    Les messages système (``is_system``) ne sont jamais supprimables. Les
+    mentions rattachées sont supprimées en cascade (FK ``ondelete=CASCADE``).
+    """
+    msg = await db.get(OnboardMessage, msg_id)
+    if msg is None or msg.leg_id != leg_id:
+        raise HTTPException(status_code=404)
+    if msg.is_system:
+        raise HTTPException(status_code=403, detail="Message système non supprimable")
+    is_author = msg.author_id is not None and msg.author_id == user.id
+    if not (is_author or user.role == "administrateur"):
+        raise HTTPException(status_code=403, detail="Seuls l'auteur ou un administrateur")
+    await db.delete(msg)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="onboard_message",
+        entity_id=msg_id,
+        entity_label=f"leg {leg_id}",
+        ip_address=_client_ip(request),
+    )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 
@@ -900,6 +984,11 @@ async def sign_sof_event(
                 await on_vessel_departed(db, leg)
             elif e.event_type in ARRIVAL_SOF_TYPES:
                 await on_vessel_arrived(db, leg)
+            # ONB-04 — journal de bord : trace la signature SOF (best-effort).
+            with contextlib.suppress(Exception):
+                await post_onboard_system_message(
+                    db, leg, f"SOF {e.event_type} signé par {user.full_name or user.username}."
+                )
     except Exception:
         logger.exception("voyage event hook failed for SOF event %s", e.id)
     return RedirectResponse(url=f"/captain?leg_id={e.leg_id}", status_code=303)
@@ -1412,6 +1501,12 @@ async def closure_approve(
         leg.closure_notes = (leg.closure_notes or "") + f"\n[Approbation] {notes}"
     leg.status = "completed"
     await db.flush()
+
+    # ONB-04 — journal de bord : trace la clôture du voyage (best-effort).
+    with contextlib.suppress(Exception):
+        await post_onboard_system_message(
+            db, leg, f"Escale clôturée et approuvée par {user.full_name or user.username}."
+        )
 
     try:
         from app.services.kpi import compute_for_leg
