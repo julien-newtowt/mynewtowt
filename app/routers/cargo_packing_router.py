@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -444,7 +444,9 @@ async def voyage_export_xlsx(
                 .options(selectinload(PackingList.batches))
                 .outerjoin(Order, PackingList.order_id == Order.id)
                 .outerjoin(Booking, PackingList.booking_id == Booking.id)
-                .where(or_(Order.leg_id == leg_id, Booking.leg_id == leg_id))
+                # COM-11 — leg épinglé prioritaire (repli order/booking pour les PL
+                # héritées), cohérent avec resolve_pl_context / la numérotation BL.
+                .where(func.coalesce(PackingList.leg_id, Order.leg_id, Booking.leg_id) == leg_id)
                 .order_by(PackingList.id)
             )
         )
