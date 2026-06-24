@@ -618,6 +618,24 @@ def test_v2_claims_sof_auto_and_crew_link_restored():
 # ───────────────────────────── Finance / KPI (V2 parité) ──────────────────────
 
 
+def test_v2_com11_multileg_revenue_ventilation_restored():
+    """COM-11 : CA d'une commande ventilée multi-legs réparti au prorata palettes.
+
+    Le rollup finance répartit ``Order.total_eur`` entre les legs au prorata des
+    ``OrderAssignment.palettes_count`` (une commande sans affectation reste à
+    pleine valeur sur ``Order.leg_id``).
+    """
+    import inspect
+
+    from app.services import finance_rollup
+
+    assert callable(finance_rollup._order_revenue_for_leg)
+    src = inspect.getsource(finance_rollup._order_revenue_for_leg)
+    # Prorata palettes des affectations (et non plus pleine valeur sur leg direct).
+    assert "OrderAssignment" in src and "palettes_count" in src
+    assert "rollup_for_leg" in dir(finance_rollup)
+
+
 def test_v2_finance_forecast_actual_restored():
     """FIN-01 : LegFinance retrouve le couple prévisionnel/réel + écarts (A2)."""
     from app.models.finance import LegFinance

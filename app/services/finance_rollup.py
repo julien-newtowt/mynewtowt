@@ -23,21 +23,23 @@ d'exploitation déjà saisies dans les autres modules :
 - ``other_costs_eur``  ← jamais écrasé (champ strictement manuel).
 - ``margin_eur``       ← revenue − (port_fees + dockers + opex + autres).
 
-Simplification V1 (assumée) : une commande commerciale ventilée sur
-plusieurs legs via ``OrderAssignment`` est comptée à PLEINE valeur sur
-son leg direct (``Order.leg_id``) — aucun prorata multi-leg n'est
-appliqué.
+Ventilation multi-legs (COM-11) : une commande répartie sur plusieurs legs
+via ``OrderAssignment`` voit son ``total_eur`` ventilé au prorata des
+``palettes_count`` par leg (une commande 40/40 facture 50/50). Une commande
+sans affectation reste comptée à pleine valeur sur ``Order.leg_id`` (parité
+simple-leg). Réconciliation capacité (``booked_palettes`` = Σ
+``palettes_count``) et un leg par affectation pour PL/BL : reliquat suivi.
 """
 
 from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking
-from app.models.commercial import Order
+from app.models.commercial import Order, OrderAssignment
 from app.models.escale import DockerShift, EscaleOperation
 from app.models.finance import LegFinance, OpexParameter, PortConfig
 from app.models.leg import Leg
@@ -139,13 +141,71 @@ async def _escale_operations_cost(db: AsyncSession, leg: Leg) -> Decimal:
     return _q2(total)
 
 
+async def _order_revenue_for_leg(db: AsyncSession, leg: Leg, direct_orders: list[Order]) -> Decimal:
+    """CA des commandes attribué à ``leg`` (COM-11 — ventilation multi-legs).
+
+    Une commande répartie sur plusieurs legs via ``OrderAssignment`` voit son
+    ``total_eur`` **ventilé au prorata des ``palettes_count``** : une commande
+    40/40 sur deux legs facture 50/50 le CA. Une commande **sans** affectation
+    reste comptée à pleine valeur sur ``Order.leg_id`` (parité simple-leg V2 —
+    rétro-compatible, ``OrderAssignment`` vide = comportement inchangé).
+
+    ``direct_orders`` = commandes ``Order.leg_id == leg.id`` au statut « revenu »
+    déjà chargées par l'appelant (réutilisées pour le repli simple-leg).
+
+    Cas dégénéré : une commande dont **toutes** les affectations portent 0
+    palette (Σ palettes = 0) ne peut être proratisée et ne contribue alors à
+    aucun leg (CA nul) — configuration anormale (une ventilation suppose des
+    palettes réparties).
+    """
+    total = Decimal("0")
+
+    # 1. Part ventilée : affectations de ce leg, prorata palettes de la commande.
+    assignments = list(
+        (await db.execute(select(OrderAssignment).where(OrderAssignment.leg_id == leg.id)))
+        .scalars()
+        .all()
+    )
+    ventilated_order_ids: set[int] = set()
+    for a in assignments:
+        order = await db.get(Order, a.order_id)
+        if order is None or order.status not in ORDER_REVENUE_STATUSES:
+            continue
+        ventilated_order_ids.add(order.id)
+        total_pal = (
+            await db.execute(
+                select(func.coalesce(func.sum(OrderAssignment.palettes_count), 0)).where(
+                    OrderAssignment.order_id == order.id
+                )
+            )
+        ).scalar() or 0
+        if total_pal <= 0:
+            continue
+        total += _dec(order.total_eur) * Decimal(a.palettes_count) / Decimal(total_pal)
+
+    # 2. Repli simple-leg : commandes directes SANS aucune affectation.
+    for o in direct_orders:
+        if o.id in ventilated_order_ids:
+            continue
+        has_assign = (
+            await db.execute(
+                select(func.count(OrderAssignment.id)).where(OrderAssignment.order_id == o.id)
+            )
+        ).scalar() or 0
+        if has_assign:
+            continue  # commande ventilée ailleurs (affectations sur d'autres legs)
+        total += _dec(o.total_eur)
+
+    return total
+
+
 async def rollup_for_leg(db: AsyncSession, leg: Leg) -> LegFinance:
     """Get-or-create puis recalcule la ligne ``LegFinance`` du leg.
 
     Signature stable — appelée aussi depuis le endpoint de clôture de
     voyage. Voir le docstring module pour la formule détaillée ; rappel
-    V1 : les commandes ventilées multi-leg (``OrderAssignment``) sont
-    comptées à pleine valeur sur leur leg direct (``Order.leg_id``).
+    COM-11 : les commandes ventilées multi-leg (``OrderAssignment``) voient
+    leur CA réparti au prorata des palettes par leg (``_order_revenue_for_leg``).
 
     Flush (jamais commit — géré par la dependency ``get_db``) puis
     retourne la ligne.
@@ -193,7 +253,7 @@ async def rollup_for_leg(db: AsyncSession, leg: Leg) -> LegFinance:
         .scalars()
         .all()
     )
-    order_revenue = sum((_dec(o.total_eur) for o in orders), Decimal("0"))
+    order_revenue = await _order_revenue_for_leg(db, leg, orders)
     revenue = _q2(booking_revenue + order_revenue)
 
     # 2. Coûts dockers — Σ DockerShift.cost_eur du leg.
