@@ -634,6 +634,11 @@ def test_v2_com11_multileg_revenue_ventilation_restored():
     # Prorata palettes des affectations (et non plus pleine valeur sur leg direct).
     assert "OrderAssignment" in src and "palettes_count" in src
     assert "rollup_for_leg" in dir(finance_rollup)
+    # Route de découpage multi-legs + garde de réconciliation capacité.
+    from app.routers.commercial_router import order_split_submit, router
+
+    assert ("POST", "/commercial/orders/{order_id}/split") in _methods(router)
+    assert "booked_palettes" in inspect.getsource(order_split_submit)
 
 
 def test_v2_finance_forecast_actual_restored():
