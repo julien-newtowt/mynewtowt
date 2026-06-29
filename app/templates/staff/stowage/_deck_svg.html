@@ -1,0 +1,37 @@
+{# STO-10 — vue SVG top-down d'un pont : grille 2 cales × 3 blocs, remplissage
+   teal proportionnel au taux d'occupation, contour rouge pour les zones DG (IMO).
+   Géométrie fixe et déterministe (dérivée de hold/block). Zéro script (CSP-strict).
+   Attendu : `deck` (str) et `zones` (liste de 6 dicts deck_layout). #}
+{% set cols = {'AR': 0, 'MIL': 1, 'AV': 2} %}
+{% set rows = {'AV': 0, 'AR': 1} %}
+{% set cw = 96 %}{% set ch = 60 %}{% set pad = 8 %}
+<figure class="deck-svg" style="margin:0;">
+  <figcaption class="text-sm" style="margin-bottom:4px;font-weight:600;">
+    Pont {{ deck }} <span class="text-xs text-muted">(avant ↑ · arrière ↓)</span>
+  </figcaption>
+  <svg viewBox="0 0 {{ 3 * cw + 4 * pad }} {{ 2 * ch + 3 * pad }}" role="img"
+       aria-label="Plan d'occupation du pont {{ deck }}"
+       style="width:100%;max-width:340px;height:auto;">
+    {% for z in zones %}
+    {% set cx = pad + cols[z.block] * (cw + pad) %}
+    {% set cy = pad + rows[z.hold] * (ch + pad) %}
+    <g>
+      <rect x="{{ cx }}" y="{{ cy }}" width="{{ cw }}" height="{{ ch }}" rx="6"
+            fill="var(--teal)" fill-opacity="{{ (0.12 + 0.88 * z.fill_ratio)|round(3) }}"
+            stroke="{{ 'var(--cuivre)' if z.is_dangerous else 'var(--border, #cbd5e1)' }}"
+            stroke-width="{{ 3 if z.is_dangerous else 1 }}">
+        <title>{{ z.zone }} — {{ z.pallet_count }}/{{ z.capacity_epal }} EPAL{% if z.is_dangerous %} · zone DG (IMO){% endif %}</title>
+      </rect>
+      <text x="{{ cx + cw / 2 }}" y="{{ cy + ch / 2 - 3 }}" text-anchor="middle"
+            font-size="11" font-weight="600" fill="var(--ink, #1e293b)"
+            stroke="#fff" stroke-width="0.7" paint-order="stroke">{{ z.block }}/{{ z.hold }}</text>
+      <text x="{{ cx + cw / 2 }}" y="{{ cy + ch / 2 + 12 }}" text-anchor="middle"
+            font-size="11" fill="var(--ink, #1e293b)"
+            stroke="#fff" stroke-width="0.7" paint-order="stroke">{{ z.pallet_count }}/{{ z.capacity_epal }}</text>
+      {% if z.is_dangerous %}
+      <text x="{{ cx + cw - 11 }}" y="{{ cy + 14 }}" text-anchor="middle" font-size="12">⚠</text>
+      {% endif %}
+    </g>
+    {% endfor %}
+  </svg>
+</figure>

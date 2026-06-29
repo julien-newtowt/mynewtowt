@@ -171,7 +171,7 @@ mynewtowt/
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |
 | Météo historisée | `/api/weather/refresh` | ✅ snapshot Windy du dernier point GPS / navire (cron 30 min, `WEATHER_API_TOKEN`) → `vessel_weather` |
 | Chat Kairos AI | `/chat` | ✅ Claude Sonnet 4.6 |
-| Veille d'actualité | `/veille` + `/api/veille/refresh` | 🟡 P1 — flux brut NewsData.io (staff), refresh cron Power Automate ; IA (synthèse/scoring) en P2 |
+| Veille d'actualité | `/veille` + `/api/veille/refresh` | ✅ flux NewsData.io (staff), refresh cron Power Automate + **couche IA** (score de pertinence affiné + digest quotidien, dégradation gracieuse sans clé → scoring heuristique) |
 | Admin | `/admin/...` | ✅ users + opex + insurance + maintenance + activity-logs |
 
 ## Glossaire maritime
@@ -254,9 +254,9 @@ de Continuité d'Activité) et `docs/audit/ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md
 Backlog actif :
 1. Certificats CO₂ : couverts par le **label Anemos** (PDF WeasyPrint par booking).
 2. DOCX generators : Bill of Lading + offre commerciale.
-3. Stowage visualisation : vue SVG top-down des navires.
+3. ✅ Stowage visualisation : vue SVG top-down des navires (STO-10, lot 72).
 4. Exports admin : ZIP global + sélectifs par module.
 5. Purges DB ciblées : `ALLOWED_TABLES` whitelist + `bindparams()`.
 6. Mailing notifications email (HTML + texte).
-7. Consolidation V3-only restante : unifier congés `CrewLeave`/`HrAbsence`
-   (EVO-02), veille IA (EVO-04), PWA offline réel (EVO-05).
+7. ✅ Consolidation V3-only soldée : congés unifiés `/rh/conges` (EVO-02),
+   veille IA (EVO-04), PWA offline réel IndexedDB + Background Sync (EVO-05).

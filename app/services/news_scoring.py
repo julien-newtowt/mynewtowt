@@ -15,9 +15,42 @@ import re
 # « port/ports/portuaire » mais pas « sport/transport ».
 _KEYWORD_WEIGHTS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (30, ("décarbon", "decarbon", "zéro émission", "zero emission", "low carbon", "bas carbone")),
-    (30, ("voile", "wind propulsion", "wind-assisted", "sail cargo", "vélique", "wingsail", "rotor sail")),
-    (20, ("fret maritime", "cargo ship", "shipping", "transport maritime", "supply chain", "freight")),
-    (15, ("mrv", "cii", "imo", "fueleu", "ets maritime", "réglementation", "regulation", "carbon tax")),
+    (
+        30,
+        (
+            "voile",
+            "wind propulsion",
+            "wind-assisted",
+            "sail cargo",
+            "vélique",
+            "wingsail",
+            "rotor sail",
+        ),
+    ),
+    (
+        20,
+        (
+            "fret maritime",
+            "cargo ship",
+            "shipping",
+            "transport maritime",
+            "supply chain",
+            "freight",
+        ),
+    ),
+    (
+        15,
+        (
+            "mrv",
+            "cii",
+            "imo",
+            "fueleu",
+            "ets maritime",
+            "réglementation",
+            "regulation",
+            "carbon tax",
+        ),
+    ),
     (15, ("port", "escale", "terminal", "douane")),
     (10, ("towt", "neoline", "grain de sail", "windcoop", "canopée", "zéphyr", "sailcargo")),
 )

@@ -77,10 +77,19 @@ suite complète validée par la CI — base Postgres non disponible en local).
   signatures IMO généralisées aux documents cargo : hash SHA‑256 + verrou,
   migration `0081`), **EVO‑08** (lot 68 — agrégat des métriques de navigation
   réelle dans les KPI d'exploitation : distance cumulée, allongement, SOG moyen).
-- ⏳ **EVO‑04 (socle livré, lot 70)** : scoring **heuristique** de pertinence des
-  actualités (mots-clés des domaines NEWTOWT, badge priorité dans la veille) ;
-  la **synthèse/scoring IA** (Claude) reste à brancher en couche au-dessus.
-- ⏳ **EVO‑05** (PWA offline réel — IndexedDB). Reporté (effort L).
+- ✅ **EVO‑04 (complété, lots 70 + 73)** : socle heuristique (lot 70) **+ couche
+  IA** (lot 73 — `services/news_ai.py` en miroir du pattern chatbot) : score de
+  pertinence affiné (`news_items.ai_score`) + **digest quotidien** (`news_digests`),
+  branchés au cron `veille/refresh` (manuel + API), badge priorité qui préfère
+  le score IA et **retombe sur l'heuristique** sans `ANTHROPIC_API_KEY`
+  (dégradation gracieuse), anti-injection réutilisé, migration additive `0084`.
+- ✅ **EVO‑05 (complété, lot 74)** : PWA offline réel — file de saisies migrée de
+  `localStorage` (fragile) vers **IndexedDB** (`onboard-idb.js`, store partagé
+  page ↔ SW) + **Background Sync** (`sw.js` rejoue la file tag
+  `towt-onboard-flush` même page fermée). Idempotence serveur déjà en place
+  (`client_uuid` + contraintes uniques, migration 0023) — **aucune nouvelle
+  migration**. Repli `localStorage` + migration des entrées historiques ;
+  notification des pages au flush en arrière-plan.
 
 ### Action D — **Finitions P2** — ⏳ **partielle**
 - ✅ UX‑06 (lot 51) · ✅ **CARGO‑14 complété** : messagerie lu/non‑lus (lot 54),
@@ -91,18 +100,21 @@ suite complète validée par la CI — base Postgres non disponible en local).
   « jours embarqués / an » sur la liste équipage (lot 61).
 - ✅ **COM‑10 (tranche)** : statuts intermédiaires de commande pilotables
   (confirmé → chargé → livré, transition avant + garde 409, lot 62).
-- ✅ **STO‑10 (tranche)** : API JSON d'occupation d'arrimage par cale + par zone
-  (`/stowage/legs/{id}/occupation.json`, lecture seule, lot 63).
+- ✅ **STO‑10 (complété)** : API JSON d'occupation d'arrimage par cale + par zone
+  (`/stowage/legs/{id}/occupation.json`, lecture seule, lot 63) + **vue SVG
+  top‑down par pont** (lot 72 — `deck_layout`, partial `_deck_svg.html`, grille
+  2 cales × 3 blocs colorée par taux d'occupation, badges DG, toggle additif).
 - ✅ **ONB‑08 (tranche)** : champs lieu / contexte de l'incident sur les sinistres
   (claims) — saisie au formulaire + affichage détail (migration `0082`, lot 67).
 - ✅ **PLN‑07 (tranche)** : raccourcis ports pilotés par `Port.is_shortcut`
   (toggle admin) dans le formulaire de leg, **avec repli** sur la liste codée en
   dur si aucun port marqué — pas de régression (migration `0083`, lot 69).
-- ⏳ **ESC‑08 (partiel)** : Type→Action (lot 57) + synthèse commerciale (lot 60)
+- ✅ **ESC‑08 (complété)** : Type→Action (lot 57) + synthèse commerciale (lot 60)
   + timeline du flux opérationnel (lot 64) + **métriques de navigation du leg**
   (distance réelle/théorique/restante, vitesse moy., allongement — lot 65)
-  + **liens d'impression plan d'arrimage FR/EN** depuis l'escale (lot 66).
-  Reste : lanes d'activités parallèles (réorganisation UI).
+  + **liens d'impression plan d'arrimage FR/EN** depuis l'escale (lot 66)
+  + **lanes d'activités parallèles** (lot 71 — `operations_by_lane`, vue
+  swim‑lanes par catégorie d'opération, toggle `<details>` additif).
 
 ### Action E — **Gouvernance**
 - ✅ `CLAUDE.md` corrigé (EVO‑06). ⏳ matrice de tests persona au pipeline ;
@@ -117,8 +129,10 @@ suite complète validée par la CI — base Postgres non disponible en local).
   (jusqu'au lot 46, 87 migrations, parité P0 = 100 %). La branche y ajoute **10
   commits** récents (passagers + lots 47‑52 + docs) — c'est l'objet de la PR #101.
 - **Aucun écart fonctionnel bloquant** ; aucun persona en NO‑GO.
-- **Reste au backlog (non bloquant) :** EVO‑02 (congés), EVO‑04 (veille IA),
-  EVO‑05 (PWA offline), ESC‑08, CARGO‑14. Détail dans `docs/audit/backlog/*`.
+- **Backlog de consolidation V3‑only soldé :** EVO‑02 (congés), EVO‑03, EVO‑04
+  (veille IA), EVO‑05 (PWA offline IndexedDB + Background Sync), EVO‑08, EVO‑09,
+  ESC‑08, STO‑10 et CARGO‑14 sont livrés (lots 47‑74). Specs des items historiques
+  dans `docs/audit/backlog/*`.
 
 > *La version initiale de ce document, basée sur une référence `origin/main`
 > périmée, surestimait l'écart entre la branche et `main`. Corrigé après fetch.*

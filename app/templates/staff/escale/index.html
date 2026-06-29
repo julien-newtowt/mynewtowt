@@ -162,6 +162,42 @@
     </table>
     {% else %}<p class="text-muted">Aucune opération.</p>{% endif %}
 
+    {# ESC-08 — vue en swim-lanes : activités menées en parallèle, une colonne
+       par catégorie d'opération. Complément additif de la table ci-dessus. #}
+    {% if lanes %}
+    <details class="mt-3">
+      <summary class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+        <i data-lucide="columns-3"></i> Activités parallèles ({{ lanes|length }} catégorie{{ 's' if lanes|length > 1 else '' }})
+      </summary>
+      <div class="lane-grid mt-2" style="display:grid;grid-template-columns:repeat({{ lanes|length }}, minmax(180px, 1fr));gap:10px;overflow-x:auto;">
+        {% for lane in lanes %}
+        <div class="lane-col">
+          <h4 class="lane-head" style="margin:0 0 8px;display:flex;align-items:center;gap:6px;">
+            {{ lane.label }} <span class="pill pill-neutral">{{ lane.ops|length }}</span>
+          </h4>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            {% for op in lane.ops %}
+            <div class="lane-card card" style="padding:8px;">
+              <div class="flex items-center gap-2" style="flex-wrap:wrap;">
+                <strong class="text-sm">{{ op.action }}</strong>
+                <span class="badge badge-{{ op.status }}">{{ op.status }}</span>
+                {% if op.direction %}<span class="badge">{{ op.direction }}</span>{% endif %}
+              </div>
+              {% if op.label %}<div class="text-sm">{{ op.label }}</div>{% endif %}
+              {% if op.intervenant %}<div class="text-xs text-muted">👤 {{ op.intervenant }}</div>{% endif %}
+              <div class="mono text-xs text-muted">
+                {{ (op.actual_start or op.planned_start)|datetime("%d/%m %H:%M") if (op.actual_start or op.planned_start) else '—' }}
+                {% if op.actual_end or op.planned_end %}→ {{ (op.actual_end or op.planned_end)|datetime("%H:%M") }}{% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
     {% if not leg_locked %}
     <h4 class="mt-3">Nouvelle opération</h4>
     <form method="post" action="/escale/legs/{{ selected_leg.id }}/operations">

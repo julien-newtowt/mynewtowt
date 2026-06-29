@@ -498,7 +498,9 @@ async def mrv_leg_detail(
 
     zero = Decimal("0")
     totals = {
-        "consumption_t": sum((e.total_consumption_t or e.fuel_mass_t or zero for e in events), zero),
+        "consumption_t": sum(
+            (e.total_consumption_t or e.fuel_mass_t or zero for e in events), zero
+        ),
         "bunkering_t": sum((e.bunkering_qty_t or zero for e in events), zero),
         "distance_nm": sum((e.distance_nm or zero for e in events), zero),
         "cargo_t": max((e.cargo_carried_t or zero for e in events), default=zero),

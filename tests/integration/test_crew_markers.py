@@ -29,9 +29,7 @@ def test_assignment_days_in_year_clamping():
         == 10
     )
     # Toujours à bord (pas de débarquement) → jusqu'à now.
-    assert (
-        assignment_days_in_year(datetime(2026, 6, 1, tzinfo=UTC), None, 2026, now=now) == 30
-    )
+    assert assignment_days_in_year(datetime(2026, 6, 1, tzinfo=UTC), None, 2026, now=now) == 30
     # À cheval sur le 1er janvier → borné au début d'année.
     assert (
         assignment_days_in_year(
