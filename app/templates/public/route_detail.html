@@ -6,6 +6,7 @@
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
 <script src="{{ asset('js/route-map.js') }}" defer></script>
 <script src="{{ asset('js/route-tabs.js') }}" defer></script>
+<script src="{{ asset('js/route-eco.js') }}" defer></script>
 {% endblock %}
 {% block content %}
 
@@ -81,14 +82,19 @@
     </div>{# /rd-journey #}
 
     {# Booking CTA #}
-    <aside class="booking-cta">
-      <div class="co2-badge">
+    <aside class="rd-cta-card">
+      <a href="/devis?leg={{ leg.leg_code }}"
+         class="btn btn-primary btn-block btn-lg rd-cta-quote"
+         aria-label="{{ t('rd_cta_quote', lang) }}">{{ t('rd_cta_quote', lang) }}</a>
+      {% if client %}
+      <a href="/booking/new/{{ leg.leg_code }}"
+         class="btn btn-secondary btn-block rd-cta-book"
+         aria-label="{{ t('rd_cta_book', lang) }}">{{ t('rd_cta_book', lang) }}</a>
+      {% endif %}
+      <div class="co2-badge rd-cta-eco">
         🌿 <span class="co2-value">{{ t('rd_decarbonised', lang) }}</span><br>
         <span style="opacity:.9;">{{ t('rd_anemos_certified', lang) }}</span>
       </div>
-
-      <a href="/devis?leg={{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">{{ t('home_request_quote', lang) }}</a>
-      <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-white btn-block btn-lg">{{ t('devis_book_crossing', lang) }}</a>
     </aside>
 
   </div>{# /rd-hero #}
@@ -179,12 +185,27 @@
           <ul class="conditions-list">
             <li>{{ t('rd_cond1', lang) }}</li>
             <li>{{ t('rd_cond2', lang) }}</li>
-            <li>{{ t('rd_cond3', lang) }}</li>
             <li>{{ t('rd_cond4', lang) }}</li>
+            <li>{{ t('rd_cond5', lang) }} <a href="/about/terms" style="color:var(--c-teal);">CGV →</a></li>
           </ul>
           <div class="alert" style="margin-top:var(--sp-4);">
             <strong>{{ t('rd_packing_strong', lang) }}</strong> {{ t('rd_packing_text', lang) }}
           </div>
+        </div>
+
+        {# Qualité à bord #}
+        <div class="card rd-quality-card" style="margin-top:var(--sp-5);">
+          <div class="rd-quality-head">
+            <svg class="rd-quality-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true" focusable="false">
+              <path d="M4 30c4 0 4 3 8 3s4-3 8-3 4 3 8 3 4-3 8-3 4 3 8 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M4 38c4 0 4 3 8 3s4-3 8-3 4 3 8 3 4-3 8-3 4 3 8 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+              <path d="M30 6v16M30 6c-2.5 1.5-3.5 4-3.5 6.5M30 6c2.5 1.5 3.5 4 3.5 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="30" cy="24" r="3" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <h2 class="rd-quality-title">{{ t('rd_quality_title', lang) }}</h2>
+          </div>
+          <p class="rd-quality-body">{{ t('rd_quality_body', lang) }}</p>
+          <a href="/impact" class="rd-quality-link">{{ t('rd_quality_link', lang) }}</a>
         </div>
       </div>
 
@@ -325,17 +346,86 @@
           </tfoot>
         </table>
       </div>
+      {% set eco_tree_kg   = 25.0 %}{# kg CO₂ absorbé / arbre / an #}
+      {% set eco_flight_kg = 1000.0 %}{# kg CO₂ / vol Paris–NY, 1 passager aller #}
+      {% set eco_truck_kg  = 0.9 %}{# kg CO₂ / km poids lourd #}
+
+      {# ── Estimateur par lot + équivalences ── #}
+      <div class="rd-eco-lot"
+           data-eco-lot
+           data-avoided-per-t="{{ eco_avoided }}"
+           data-tree-kg="{{ eco_tree_kg }}"
+           data-flight-kg="{{ eco_flight_kg }}"
+           data-truck-kg="{{ eco_truck_kg }}"
+           data-lang="{{ lang }}">
+        <div class="rd-eco-lot-input">
+          <label for="eco-tonnage">{{ t('rd_eco_tonnage_label', lang) }}</label>
+          <input type="number" id="eco-tonnage" data-eco-tonnage
+                 min="0.1" step="0.1" value="1" inputmode="decimal"
+                 aria-describedby="eco-lot-result">
+        </div>
+        <p class="rd-eco-lot-result" id="eco-lot-result">
+          {{ t('rd_eco_lot_avoided', lang) }} :
+          <strong data-eco-lot-value>{{ "%.1f"|format(eco_avoided) }}</strong> <span>kg CO₂</span>
+        </p>
+      </div>
+
+      {# ── Dataviz « équivalences » ── #}
+      <section class="eco-equiv" aria-label="{{ t('rd_eco_equiv_title', lang) }}">
+        <svg class="windrose-motif eco-equiv-motif" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+          <g fill="none" stroke="currentColor" stroke-width="0.6">
+            <circle cx="50" cy="50" r="46"/>
+            <circle cx="50" cy="50" r="30"/>
+            <path d="M50 2v96M2 50h96M18 18l64 64M82 18L18 82"/>
+          </g>
+        </svg>
+        <h3 class="eco-equiv-title">{{ t('rd_eco_equiv_title', lang) }}</h3>
+        <div class="eco-equiv-grid">
+          <div class="eco-equiv-card">
+            <svg class="eco-equiv-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true" focusable="false">
+              <path d="M24 44V28" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M24 30c-7 0-12-4.5-12-11 0-2 .6-3.8 1.6-5.3C12.7 11.6 13 9.4 14.2 7.7 15.8 5.4 18.7 4 24 4s8.2 1.4 9.8 3.7c1.2 1.7 1.5 3.9.6 6 1 1.5 1.6 3.3 1.6 5.3 0 6.5-5 11-12 11Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            </svg>
+            <span class="eco-equiv-num" data-eco-eq-trees>{{ "%.1f"|format(eco_avoided / eco_tree_kg) }}</span>
+            <span class="eco-equiv-label">{{ t('rd_eco_eq_trees', lang) }}</span>
+          </div>
+          <div class="eco-equiv-card">
+            <svg class="eco-equiv-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true" focusable="false">
+              <path d="M44 24c0 1.5-1.2 2.7-2.7 2.7L28 27l-7 13h-4l3-13-9 .2-3 4H5l2-6.9L5 21h3l3 4 9 .2-3-13h4l7 13 13.3.3C42.8 21.3 44 22.5 44 24Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            </svg>
+            <span class="eco-equiv-num" data-eco-eq-flights>{{ "%.2f"|format(eco_avoided / eco_flight_kg) }}</span>
+            <span class="eco-equiv-label">{{ t('rd_eco_eq_flights', lang) }}</span>
+          </div>
+          <div class="eco-equiv-card">
+            <svg class="eco-equiv-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true" focusable="false">
+              <path d="M4 12h22v20H4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              <path d="M26 18h9l7 7v7h-16z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              <circle cx="14" cy="36" r="4" stroke="currentColor" stroke-width="2"/>
+              <circle cx="34" cy="36" r="4" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <span class="eco-equiv-num" data-eco-eq-truck>{{ "{:,.0f}".format(eco_avoided / eco_truck_kg).replace(",", " ") }}</span>
+            <span class="eco-equiv-label">{{ t('rd_eco_eq_truck', lang) }}</span>
+          </div>
+        </div>
+      </section>
       {% else %}
       <div class="alert">{{ t('rd_eco_need_coords', lang) }}</div>
       {% endif %}
 
       <p class="rd-eco-note">
-        {{ t('rd_eco_note', lang) }}
+        {{ t('rd_eco_method_note', lang) }}
         <a href="/about/anemos" style="color:var(--c-teal);">{{ t('rd_eco_more_link', lang) }}</a>
       </p>
     </div>
   </section>
 
 </main>
+
+{# Sticky mobile CTA (< 768px) #}
+<div class="rd-cta-sticky">
+  <a href="/devis?leg={{ leg.leg_code }}"
+     class="btn btn-primary btn-block btn-lg"
+     aria-label="{{ t('rd_cta_quote', lang) }}">{{ t('rd_cta_quote', lang) }}</a>
+</div>
 
 {% endblock %}
