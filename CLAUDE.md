@@ -153,7 +153,7 @@ mynewtowt/
 |---|---|---|
 | Planning | `/planning` | ✅ Gantt + table + share token |
 | Commercial | `/commercial` | ✅ clients, grids, offers, orders |
-| Cargo (packing list + portail) | `/cargo` + `/p/{token}` | ✅ batches, audit, lock, messagerie |
+| Cargo (packing list + portail) | `/cargo` + `/p/{token}` | ✅ batches + **audit consultable** + edit/suppr + lock + messagerie ; **BL reconnecté au batch** (n° `TUAW_…`), Arrival Notice, import/export Excel, portail multilingue |
 | Escale (port call) | `/escale` | ✅ operations + dockers + lock |
 | Onboard / Captain | `/captain` | ✅ SOF + ETA shifts + messagerie + docs |
 | Crew | `/crew` | ✅ bordées + compliance Schengen + calendar |
@@ -161,8 +161,8 @@ mynewtowt/
 | Claims | `/claims` | ✅ workflow 6 statuts + timeline |
 | MRV | `/mrv` | ✅ events fuel + exports DNV CSV + Carbon Report |
 | Navigation | `/performance/navigation` | ✅ multi-legs/multi-navires : carte (1 couleur/leg) points GPS + trait + route théorique, tableau comparatif (réelle/théorique/écart/durée/restant), météo le long du trajet + blocs « conditions actuelles » par navire (rose des vents, anémomètre/Beaufort, pression, visibilité, T°…) |
-| Finance | `/finance` | 🟡 LegFinance + OpexParameter |
-| KPI | `/kpi` | 🟡 stub — certificats CO₂ à venir |
+| Finance | `/finance` | ✅ prévisionnel/réel 5 postes + écarts + export CSV + NOx/SOx évités + section Exploitation + détail assurance + CRUD OPEX |
+| KPI | `/kpi` | ✅ vue KPI consolidée + Carbon Report par leg (intensités t·nm) ; **certificats CO₂ = label Anemos** (par booking + RSE annuel) |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
 | Cashbox | `/cashbox` | ✅ EUR/USD/VND |
@@ -226,15 +226,37 @@ mynewtowt/
 - Pas de police `Inter`, `Poppins`, `Segoe UI` — uniquement Manrope.
 - Pas de module passengers — disparu en v3.0.0 (restructuration corporate).
 
+## Décisions actées & ré-absorptions (à ne pas recompter comme régressions)
+
+Source : `docs/audit/backlog/ARBITRAGES.md` (tranché 2026-06-22) + reprise V2→V3.
+
+- **Cargo facturation hors plateforme (A5)** : `/me/invoices` = page explicite ;
+  modèle `ClientInvoice` inactif (le service `invoicing` ne sert qu'au calcul
+  des montants booking/Anemos).
+- **Certificats CO₂ = label Anemos** (par booking + RSE annuel), pas un PDF
+  nominatif par client.
+- **Insurance n'est PAS V3-only** : module repris/enrichi (détail
+  provision/indemnité/franchise au KPI).
+- **Congés marins migrés crew → RH** (séparation des permissions `crew` ↔ `rh`).
+- **Suppression utilisateur = désactivation** (`is_active`).
+- **Facteur CO₂ versionné** (`/admin/co2`) ; NOx/SOx ré-exposés (A7, accès ciblé
+  `data_analyst` + `administrateur`, sans module `admin` global).
+- **MRV hybride (A1)** : noon auto + compteurs DO de contrôle.
+- **Stowage (A3)** : « avertir » par défaut + blocage dur configurable par zone.
+- **Crew (A4)** : embarquement hors leg autorisé (`leg_id` nullable).
+
 ## Roadmap & backlog
 
 Voir `docs/strategy/NOTE_TECHNIQUE_CONTINUITE_OPERATIONNELLE.md` (Plan
-de Continuité d'Activité) pour la spécification module-par-module.
+de Continuité d'Activité) et `docs/audit/ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md`
+(état branches + plan de rattrapage).
 
 Backlog actif :
-1. KPI : certificats CO₂ nominatifs PDF (WeasyPrint).
+1. Certificats CO₂ : couverts par le **label Anemos** (PDF WeasyPrint par booking).
 2. DOCX generators : Bill of Lading + offre commerciale.
 3. Stowage visualisation : vue SVG top-down des navires.
 4. Exports admin : ZIP global + sélectifs par module.
 5. Purges DB ciblées : `ALLOWED_TABLES` whitelist + `bindparams()`.
 6. Mailing notifications email (HTML + texte).
+7. Consolidation V3-only restante : unifier congés `CrewLeave`/`HrAbsence`
+   (EVO-02), veille IA (EVO-04), PWA offline réel (EVO-05).
