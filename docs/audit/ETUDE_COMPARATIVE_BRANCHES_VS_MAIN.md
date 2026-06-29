@@ -83,7 +83,13 @@ suite complète validée par la CI — base Postgres non disponible en local).
   branchés au cron `veille/refresh` (manuel + API), badge priorité qui préfère
   le score IA et **retombe sur l'heuristique** sans `ANTHROPIC_API_KEY`
   (dégradation gracieuse), anti-injection réutilisé, migration additive `0084`.
-- ⏳ **EVO‑05** (PWA offline réel — IndexedDB). Reporté (effort L).
+- ✅ **EVO‑05 (complété, lot 74)** : PWA offline réel — file de saisies migrée de
+  `localStorage` (fragile) vers **IndexedDB** (`onboard-idb.js`, store partagé
+  page ↔ SW) + **Background Sync** (`sw.js` rejoue la file tag
+  `towt-onboard-flush` même page fermée). Idempotence serveur déjà en place
+  (`client_uuid` + contraintes uniques, migration 0023) — **aucune nouvelle
+  migration**. Repli `localStorage` + migration des entrées historiques ;
+  notification des pages au flush en arrière-plan.
 
 ### Action D — **Finitions P2** — ⏳ **partielle**
 - ✅ UX‑06 (lot 51) · ✅ **CARGO‑14 complété** : messagerie lu/non‑lus (lot 54),
@@ -123,8 +129,10 @@ suite complète validée par la CI — base Postgres non disponible en local).
   (jusqu'au lot 46, 87 migrations, parité P0 = 100 %). La branche y ajoute **10
   commits** récents (passagers + lots 47‑52 + docs) — c'est l'objet de la PR #101.
 - **Aucun écart fonctionnel bloquant** ; aucun persona en NO‑GO.
-- **Reste au backlog (non bloquant) :** EVO‑02 (congés), EVO‑04 (veille IA),
-  EVO‑05 (PWA offline), ESC‑08, CARGO‑14. Détail dans `docs/audit/backlog/*`.
+- **Backlog de consolidation V3‑only soldé :** EVO‑02 (congés), EVO‑03, EVO‑04
+  (veille IA), EVO‑05 (PWA offline IndexedDB + Background Sync), EVO‑08, EVO‑09,
+  ESC‑08, STO‑10 et CARGO‑14 sont livrés (lots 47‑74). Specs des items historiques
+  dans `docs/audit/backlog/*`.
 
 > *La version initiale de ce document, basée sur une référence `origin/main`
 > périmée, surestimait l'écart entre la branche et `main`. Corrigé après fetch.*

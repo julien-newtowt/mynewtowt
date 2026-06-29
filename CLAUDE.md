@@ -254,9 +254,9 @@ de Continuité d'Activité) et `docs/audit/ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md
 Backlog actif :
 1. Certificats CO₂ : couverts par le **label Anemos** (PDF WeasyPrint par booking).
 2. DOCX generators : Bill of Lading + offre commerciale.
-3. Stowage visualisation : vue SVG top-down des navires.
+3. ✅ Stowage visualisation : vue SVG top-down des navires (STO-10, lot 72).
 4. Exports admin : ZIP global + sélectifs par module.
 5. Purges DB ciblées : `ALLOWED_TABLES` whitelist + `bindparams()`.
 6. Mailing notifications email (HTML + texte).
-7. Consolidation V3-only restante : unifier congés `CrewLeave`/`HrAbsence`
-   (EVO-02), veille IA (EVO-04), PWA offline réel (EVO-05).
+7. ✅ Consolidation V3-only soldée : congés unifiés `/rh/conges` (EVO-02),
+   veille IA (EVO-04), PWA offline réel IndexedDB + Background Sync (EVO-05).

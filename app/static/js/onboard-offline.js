@@ -1,24 +1,27 @@
 /*
- * File de soumission hors-ligne — espace bord (ARC-01, liaisons satellite).
+ * File de soumission hors-ligne — espace bord (ARC-01 / EVO-05, liaisons satellite).
  *
  * Cible tout <form data-offline-queue> :
- *  - submit intercepté → POST fetch avec header x-csrf-token (cookie
- *    towt_csrf, même lecture que csrf-htmx.js) ;
- *  - échec réseau (ou navigator.onLine === false) → l'entrée
- *    {url, fields, queued_at} est poussée dans localStorage
- *    ("towt_offline_queue"), toast d'information, form reset ;
+ *  - submit intercepté → POST fetch avec header x-csrf-token (cookie towt_csrf) ;
+ *  - échec réseau (ou navigator.onLine === false) → l'entrée {url, fields,
+ *    queued_at} est persistée dans IndexedDB (store « pending », via
+ *    onboard-idb.js) ; repli localStorage si IndexedDB indisponible ;
+ *  - une synchro en arrière-plan est demandée (Background Sync, tag
+ *    "towt-onboard-flush") : le service worker rejoue la file même page fermée.
  *  - succès → suit la redirection (window.location = response.url).
  *
- * Au chargement de page et sur l'événement "online", la file est rejouée
- * séquentiellement : retrait à chaque succès, arrêt au premier échec.
+ * Au chargement, sur l'événement "online" et au message du SW, la file est
+ * rejouée séquentiellement (retrait à chaque succès, arrêt au premier échec).
  * Le dédoublonnage est géré côté serveur via le champ caché client_uuid
- * (UUID généré ici), colonnes uniques noon_reports/watch_logs.
+ * (UUID généré ici), colonnes uniques noon_reports/watch_logs (migration 0023).
  */
 (function () {
   "use strict";
 
-  var QUEUE_KEY = "towt_offline_queue";
+  var QUEUE_KEY = "towt_offline_queue"; // repli si IndexedDB indisponible
+  var SYNC_TAG = "towt-onboard-flush";
   var flushing = false;
+  var idbOk = !!(window.towtIdb && window.towtIdb.available());
 
   /* ----- CSRF — même lecture du cookie que csrf-htmx.js ----- */
 
@@ -29,9 +32,9 @@
     return match ? match.split("=")[1] : null;
   }
 
-  /* ----- localStorage queue ----- */
+  /* ----- localStorage (repli uniquement) ----- */
 
-  function loadQueue() {
+  function lsLoad() {
     try {
       var raw = localStorage.getItem(QUEUE_KEY);
       var q = raw ? JSON.parse(raw) : [];
@@ -41,7 +44,7 @@
     }
   }
 
-  function saveQueue(q) {
+  function lsSave(q) {
     try {
       localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
     } catch (e) {
@@ -49,10 +52,83 @@
     }
   }
 
-  function enqueue(url, fields) {
-    var q = loadQueue();
-    q.push({ url: url, fields: fields, queued_at: new Date().toISOString() });
-    saveQueue(q);
+  /* ----- File unifiée (IndexedDB préféré, localStorage en repli) ----- */
+
+  function qAdd(url, fields) {
+    var entry = { url: url, fields: fields, queued_at: new Date().toISOString() };
+    if (idbOk) {
+      return window.towtIdb.enqueue(entry).catch(function () {
+        // bascule de secours si l'écriture IDB échoue
+        var q = lsLoad();
+        q.push(entry);
+        lsSave(q);
+      });
+    }
+    var q = lsLoad();
+    q.push(entry);
+    lsSave(q);
+    return Promise.resolve();
+  }
+
+  function qAll() {
+    if (idbOk) {
+      return window.towtIdb.all().catch(function () {
+        return lsLoad();
+      });
+    }
+    return Promise.resolve(lsLoad());
+  }
+
+  // Retire l'entrée traitée. En IndexedDB par clé `id` ; en localStorage on
+  // retire la tête (flux séquentiel).
+  function qRemove(entry) {
+    if (idbOk && entry && typeof entry.id !== "undefined") {
+      return window.towtIdb.remove(entry.id).catch(function () {});
+    }
+    var q = lsLoad();
+    q.shift();
+    lsSave(q);
+    return Promise.resolve();
+  }
+
+  // Migre une éventuelle file localStorage historique vers IndexedDB (one-shot).
+  function migrateLegacy() {
+    if (!idbOk) return Promise.resolve();
+    var legacy = lsLoad();
+    if (!legacy.length) return Promise.resolve();
+    return legacy
+      .reduce(function (chain, e) {
+        return chain.then(function () {
+          return window.towtIdb.enqueue({
+            url: e.url,
+            fields: e.fields,
+            queued_at: e.queued_at
+          });
+        });
+      }, Promise.resolve())
+      .then(function () {
+        try {
+          localStorage.removeItem(QUEUE_KEY);
+        } catch (e) {
+          /* ignore */
+        }
+      })
+      .catch(function () {});
+  }
+
+  /* ----- Background Sync ----- */
+
+  function requestSync() {
+    if (!("serviceWorker" in navigator) || !("SyncManager" in window)) return;
+    navigator.serviceWorker.ready
+      .then(function (reg) {
+        if (reg && reg.sync) {
+          return reg.sync.register(SYNC_TAG);
+        }
+      })
+      .catch(function () {
+        /* sync indisponible — le rejeu page/online prend le relais */
+      });
   }
 
   /* ----- Feedback utilisateur ----- */
@@ -62,7 +138,6 @@
       window.showToast(message, type || "info");
       return;
     }
-    // Repli minimal si toast.js absent (page servie depuis le cache SW).
     var banner = document.createElement("div");
     banner.setAttribute("role", "status");
     banner.style.cssText =
@@ -76,15 +151,13 @@
     }, 6000);
   }
 
-  /* ----- POST helper ----- */
+  /* ----- client_uuid (idempotence serveur) ----- */
 
   function makeUuid() {
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
       return window.crypto.randomUUID();
     }
-    return (
-      "q-" + Date.now().toString(16) + "-" + Math.random().toString(16).slice(2, 14)
-    );
+    return "q-" + Date.now().toString(16) + "-" + Math.random().toString(16).slice(2, 14);
   }
 
   function ensureClientUuid(form) {
@@ -99,6 +172,8 @@
     return input;
   }
 
+  /* ----- POST helper ----- */
+
   function postForm(url, body) {
     var headers = {};
     var csrf = getCsrf();
@@ -111,10 +186,18 @@
     });
   }
 
-  // Succès réel = 2xx ET pas une redirection suivie vers /login
-  // (session expirée : la sauvegarde n'a PAS eu lieu).
+  // Succès réel = 2xx ET pas une redirection vers /login (session expirée).
   function isRealSuccess(resp) {
     return resp.ok && !(resp.url && resp.url.indexOf("/login") !== -1);
+  }
+
+  function entryToFormData(entry) {
+    var body = new FormData();
+    var fields = entry.fields || {};
+    Object.keys(fields).forEach(function (k) {
+      body.append(k, fields[k]);
+    });
+    return body;
   }
 
   /* ----- Rejeu de la file (séquentiel, stop au premier échec) ----- */
@@ -122,7 +205,6 @@
   function flushQueue() {
     if (flushing) return;
     if (navigator.onLine === false) return;
-    if (!loadQueue().length) return;
     flushing = true;
     var sent = 0;
 
@@ -134,31 +216,27 @@
     }
 
     function step() {
-      var q = loadQueue();
-      if (!q.length) {
-        done();
-        return;
-      }
-      var entry = q[0];
-      var body = new FormData();
-      Object.keys(entry.fields || {}).forEach(function (k) {
-        body.append(k, entry.fields[k]);
+      qAll().then(function (q) {
+        if (!q.length) {
+          done();
+          return;
+        }
+        var entry = q[0];
+        postForm(entry.url, entryToFormData(entry))
+          .then(function (resp) {
+            if (isRealSuccess(resp)) {
+              qRemove(entry).then(function () {
+                sent += 1;
+                step();
+              });
+            } else {
+              done(); // serveur joignable mais refus — on retentera plus tard
+            }
+          })
+          .catch(function () {
+            done(); // toujours hors-ligne — stop, on garde la file
+          });
       });
-      postForm(entry.url, body)
-        .then(function (resp) {
-          if (isRealSuccess(resp)) {
-            var rest = loadQueue();
-            rest.shift();
-            saveQueue(rest);
-            sent += 1;
-            step();
-          } else {
-            done(); // serveur joignable mais refus — on retentera plus tard
-          }
-        })
-        .catch(function () {
-          done(); // toujours hors-ligne — stop, on garde la file
-        });
     }
 
     step();
@@ -179,12 +257,14 @@
       });
 
       function queueIt() {
-        enqueue(url, fields);
-        notify(
-          "Hors ligne — saisie conservée localement, synchronisation au retour du réseau.",
-          "warn"
-        );
-        form.reset();
+        qAdd(url, fields).then(function () {
+          requestSync();
+          notify(
+            "Hors ligne — saisie conservée localement, synchronisation au retour du réseau.",
+            "warn"
+          );
+          form.reset();
+        });
       }
 
       if (navigator.onLine === false) {
@@ -201,8 +281,7 @@
               window.location.reload();
             }
           } else if (resp.url && resp.url.indexOf("/login") !== -1) {
-            // Session expirée : on conserve la saisie puis on ré-authentifie.
-            queueIt();
+            queueIt(); // session expirée : on conserve puis ré-authentifie
             window.location = resp.url;
           } else {
             notify("Échec de l'envoi (HTTP " + resp.status + ").", "error");
@@ -220,7 +299,15 @@
     var forms = document.querySelectorAll("form[data-offline-queue]");
     Array.prototype.forEach.call(forms, bindForm);
     window.addEventListener("online", flushQueue);
-    flushQueue();
+    // Le SW signale la fin d'un flush en arrière-plan → on rafraîchit le toast/état.
+    if ("serviceWorker" in navigator && navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener("message", function (evt) {
+        if (evt.data && evt.data.type === "towt-flushed" && evt.data.count > 0) {
+          notify(evt.data.count + " saisie(s) synchronisée(s) en arrière-plan.", "success");
+        }
+      });
+    }
+    migrateLegacy().then(flushQueue);
   }
 
   if (document.readyState === "loading") {
