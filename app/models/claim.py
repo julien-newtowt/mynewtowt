@@ -57,6 +57,10 @@ class Claim(Base):
     insurance_contract_id: Mapped[int | None] = mapped_column(ForeignKey("insurance_contracts.id"))
 
     cargo_position: Mapped[str | None] = mapped_column(String(40))  # if cargo claim
+    # ONB-08 — lieu de l'incident (port, position en mer, zone à bord) et
+    # circonstances/contexte libres, pour qualifier le sinistre.
+    incident_location: Mapped[str | None] = mapped_column(String(200))
+    incident_context: Mapped[str | None] = mapped_column(Text)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
     timeline: Mapped[list[ClaimTimelineEntry]] = relationship(

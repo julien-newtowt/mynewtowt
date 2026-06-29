@@ -211,6 +211,8 @@ async def claim_create(
     insurer_claim_ref: str | None = Form(None),
     insurance_contract_id: int | None = Form(None),
     cargo_position: str | None = Form(None),
+    incident_location: str | None = Form(None),
+    incident_context: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("claims", "M")),
 ):
@@ -255,6 +257,8 @@ async def claim_create(
         insurer_claim_ref=(insurer_claim_ref or "").strip() or None,
         insurance_contract_id=insurance_contract_id,
         cargo_position=cargo_position,
+        incident_location=(incident_location or "").strip() or None,
+        incident_context=(incident_context or "").strip() or None,
         created_by_id=user.id,
     )
     db.add(c)

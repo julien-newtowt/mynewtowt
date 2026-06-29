@@ -90,6 +90,8 @@ suite complète validée par la CI — base Postgres non disponible en local).
   (confirmé → chargé → livré, transition avant + garde 409, lot 62).
 - ✅ **STO‑10 (tranche)** : API JSON d'occupation d'arrimage par cale + par zone
   (`/stowage/legs/{id}/occupation.json`, lecture seule, lot 63).
+- ✅ **ONB‑08 (tranche)** : champs lieu / contexte de l'incident sur les sinistres
+  (claims) — saisie au formulaire + affichage détail (migration `0082`, lot 67).
 - ⏳ **ESC‑08 (partiel)** : Type→Action (lot 57) + synthèse commerciale (lot 60)
   + timeline du flux opérationnel (lot 64) + **métriques de navigation du leg**
   (distance réelle/théorique/restante, vitesse moy., allongement — lot 65)
