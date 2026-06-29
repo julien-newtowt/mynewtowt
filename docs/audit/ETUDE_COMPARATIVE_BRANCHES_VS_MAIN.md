@@ -121,10 +121,17 @@ delta marketing** de `main` resté en avance (§2.2).
   détail leg : events + badges qualité + agrégats bunkering/cargo), **PLN‑02/05**
   (lot 49 — réalisé délégué exposé + dérive planning au détail leg). Chaque lot
   avec test de non‑régression.
-- **Résiduels restants (non bloquants)** : finitions **P2** (UX‑06, ESC‑08,
-  CARGO‑14) + **Lot 4 / EVO** (consolidation des modules V3-only :
-  `client_invoice` dormant, congés `CrewLeave`/`HrAbsence` non unifiés,
-  `erp_scaffold` à nettoyer, veille IA, PWA offline réel). Détail par module dans
+- **Action C (consolidation V3-only) — partiellement réalisée** : **EVO‑03**
+  (lot 50 — suppression du scaffold mort/collisions), **EVO‑01** (lot 51 —
+  facturation hors plateforme, page explicite, A5), **EVO‑06** (lot 52 —
+  correction `CLAUDE.md` + décisions actées). **UX‑06** (lot 51 — `.empty-state`
+  + icônes pages d'erreur).
+- **Résiduels restants (non bloquants, plus lourds — à planifier)** :
+  **EVO‑02** (unifier congés `CrewLeave`/`HrAbsence` — migration de schéma),
+  **EVO‑04** (veille IA — effort L + dépendance Anthropic), **EVO‑05** (PWA
+  offline réel — IndexedDB), **ESC‑08** (cockpit d'escale), **CARGO‑14** (confort
+  cargo). Reportés volontairement : impact schéma / dépendances externes / effort
+  L, à traiter avec une base de test exécutable. Détail dans
   `docs/audit/backlog/*`.
 
 ---
@@ -155,18 +162,21 @@ delta marketing** de `main` resté en avance (§2.2).
 ### Action B — **Lever les résiduels P1** (faible volume) — ✅ **réalisée**
 - ADM‑07 (lot 47), MRV‑08 (lot 48), PLN‑02/05 (lot 49) — livrés avec tests.
 
-### Action C — **Consolider les modules V3-only (Lot 4 / EVO)**
-- Trancher `client_invoice` ; unifier les congés ; nettoyer `erp_scaffold` ;
-  brancher la veille IA ; PWA offline réel. **Effort :** M–L (décisions métier
-  partiellement actées dans `docs/audit/backlog/ARBITRAGES.md`).
+### Action C — **Consolider les modules V3-only (Lot 4 / EVO)** — ⏳ **partielle**
+- ✅ EVO‑03 `erp_scaffold` supprimé (lot 50) · ✅ EVO‑01 facturation hors
+  plateforme (lot 51, A5) · ✅ EVO‑06 `CLAUDE.md` (lot 52).
+- ⏳ Restant : EVO‑02 (unifier congés — migration), EVO‑04 (veille IA — L),
+  EVO‑05 (PWA offline — L). Reportés (impact schéma / dépendances / effort L),
+  à traiter avec une base de test exécutable.
 
 ### Action D — **Finitions P2** (itératif, non bloquant)
-- UX‑06, ESC‑08, CARGO‑14 + finitions par module.
+- ✅ UX‑06 (lot 51 — `.empty-state` + icônes 403/404). ⏳ ESC‑08 (cockpit
+  d'escale), CARGO‑14 (confort cargo) + finitions par module.
 
 ### Action E — **Gouvernance**
-- Corriger `CLAUDE.md` (statuts inexacts — cf. document de référence §12) ;
-  ajouter la matrice de tests persona au pipeline ; versionner le contrat d'API
-  tracking si des flux Power Automate consomment la lecture GET.
+- ✅ `CLAUDE.md` corrigé (EVO‑06, lot 52). ⏳ ajouter la matrice de tests persona
+  au pipeline ; versionner le contrat d'API tracking si des flux Power Automate
+  consomment la lecture GET.
 
 ### Séquencement
 ```
