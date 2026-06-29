@@ -110,7 +110,7 @@
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <div class="grid grid-3 gap-2">
         <div class="field"><label>Type</label><select name="operation_type">{% for t in operation_types %}<option>{{ t }}</option>{% endfor %}</select></div>
-        <div class="field"><label>Action</label><select name="action">{% for a in operation_actions %}<option>{{ a }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Action</label><select name="action">{% for t, acts in actions_by_type.items() %}<optgroup label="{{ t }}">{% for a in acts %}<option>{{ a }}</option>{% endfor %}</optgroup>{% endfor %}</select></div>
         <div class="field"><label>Direction</label><select name="direction">{% for d in directions %}<option>{{ d }}</option>{% endfor %}</select></div>
         {{ tz_datetime("planned_start", label="Début prévu") }}
         {{ tz_datetime("planned_end", label="Fin prévue") }}

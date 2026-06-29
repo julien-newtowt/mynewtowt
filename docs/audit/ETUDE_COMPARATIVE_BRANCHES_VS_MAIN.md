@@ -82,7 +82,9 @@ suite complète validée par la CI — base Postgres non disponible en local).
 - ✅ UX‑06 (lot 51) · ✅ **CARGO‑14 complété** : messagerie lu/non‑lus (lot 54),
   suppression PL staff perm S (lot 55), alerte IMDG + auto‑fill dimensions par
   format de palette (lot 56).
-- ⏳ ESC‑08 (cockpit d'escale) — dernier P2 nommé (UI‑lourd).
+- ⏳ **ESC‑08 (partiel)** : dépendance Type→Action (`ACTIONS_BY_TYPE` + sélecteur
+  groupé en `<optgroup>`, lot 57). Reste du cockpit (timeline flux opérationnel,
+  lanes parallèles, métriques nav, commandes du leg) — UI‑lourd.
 
 ### Action E — **Gouvernance**
 - ✅ `CLAUDE.md` corrigé (EVO‑06). ⏳ matrice de tests persona au pipeline ;
