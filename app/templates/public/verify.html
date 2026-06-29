@@ -1,0 +1,139 @@
+{% extends "public/_layout_v2.html" %}
+
+{% block title %}
+  {% if lang == 'en' %}Verify a certificate{% else %}Vérifier un certificat{% endif %} — {{ brand.nom_court }}
+{% endblock %}
+
+{% block description %}
+  {% if lang == 'en' %}
+    Public verification of an Anemos avoided-emissions certificate: tonnage, distance, avoided CO₂, method, date and factor — no personal data.
+  {% else %}
+    Vérification publique d'un certificat Anemos d'émissions évitées : tonnage, distance, CO₂ évité, méthode, date et facteur — sans donnée personnelle.
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+<section class="hero hero--rose">
+  <svg class="windrose-motif" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+    <g fill="none" stroke="currentColor" stroke-width="0.6">
+      <circle cx="50" cy="50" r="46"/><circle cx="50" cy="50" r="30"/>
+      <path d="M50 2v96M2 50h96M18 18l64 64M82 18L18 82"/>
+    </g>
+  </svg>
+  <div class="hero-inner">
+    <span class="hero-kicker">{% if lang == 'en' %}Verification{% else %}Vérification{% endif %}</span>
+    <h1 class="hero-title">
+      {% if lang == 'en' %}Verify a certificate{% else %}Vérifier un certificat{% endif %}
+    </h1>
+    <p class="hero-lead">
+      {% if lang == 'en' %}
+        Enter the serial number printed on an Anemos certificate. We show the figures only —
+        no personal data.
+      {% else %}
+        Saisissez le numéro de série imprimé sur un certificat Anemos. Nous n'affichons que les
+        chiffres — aucune donnée personnelle.
+      {% endif %}
+    </p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="vrf-wrap">
+    <form class="vrf-form" method="GET" action="/verify" role="search">
+      <input type="text" name="ref" value="{{ ref or '' }}"
+             placeholder="{% if lang == 'en' %}e.g. ANEMOS-BK-2026-0042{% else %}ex. ANEMOS-BK-2026-0042{% endif %}"
+             aria-label="{% if lang == 'en' %}Certificate reference{% else %}Référence du certificat{% endif %}"
+             autocomplete="off" spellcheck="false" maxlength="40" required>
+      <button type="submit" class="btn btn-primary">
+        {% if lang == 'en' %}Verify{% else %}Vérifier{% endif %}
+      </button>
+    </form>
+
+    {% if searched and not certificate %}
+    <div class="vrf-notfound" role="status">
+      <strong>{% if lang == 'en' %}Reference not found.{% else %}Référence introuvable.{% endif %}</strong>
+      {% if lang == 'en' %}
+        Check the serial number on the certificate and try again.
+      {% else %}
+        Vérifiez le numéro de série figurant sur le certificat et réessayez.
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if certificate %}
+    <div class="vrf-card">
+      <span class="section-kicker">{% if lang == 'en' %}Verified certificate{% else %}Certificat vérifié{% endif %}</span>
+      <div class="label" style="color:var(--c-grey);font-size:var(--fs-13)">{{ certificate.reference }}</div>
+      <div class="vrf-hero-num">{{ "%.0f"|format(certificate.co2_avoided_kg|float) }}&thinsp;kg</div>
+      <div style="color:var(--c-grey);font-size:var(--fs-14)">
+        {% if lang == 'en' %}CO₂ avoided vs an equivalent conventional cargo{% else %}CO₂ évité vs un cargo conventionnel équivalent{% endif %}
+      </div>
+
+      <table class="vrf-table">
+        <tr>
+          <th>{% if lang == 'en' %}Tonnage{% else %}Tonnage{% endif %}</th>
+          <td>{{ "%.3f"|format(certificate.tonnage_transported_t|float) }} t</td>
+        </tr>
+        <tr>
+          <th>{% if lang == 'en' %}Distance{% else %}Distance{% endif %}</th>
+          <td>{{ "%.0f"|format(certificate.distance_nm|float) }} NM ({{ "%.0f"|format(certificate.distance_nm|float * 1.852) }} km)</td>
+        </tr>
+        <tr>
+          <th>{% if lang == 'en' %}Avoided CO₂{% else %}CO₂ évité{% endif %}</th>
+          <td>{{ "%.0f"|format(certificate.co2_avoided_kg|float) }} kg</td>
+        </tr>
+        <tr>
+          <th>{% if lang == 'en' %}Method{% else %}Méthode{% endif %}</th>
+          <td>
+            {% if certificate.method == 'declared' %}
+              {% if lang == 'en' %}declared (signed noon reports){% else %}réel déclaré (noon reports signés){% endif %}
+            {% else %}
+              {% if lang == 'en' %}estimated (certified factor){% else %}forfait (facteur certifié){% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>{% if lang == 'en' %}Factor applied{% else %}Facteur appliqué{% endif %}</th>
+          <td>
+            {% if applied_factor is not none %}{{ "%.2f"|format(applied_factor) }}{% else %}1,5{% endif %}
+            g CO₂/t·km
+            <span style="color:var(--c-grey)">· {% if lang == 'en' %}ref. 13.7{% else %}réf. 13,7{% endif %}</span>
+          </td>
+        </tr>
+        <tr>
+          <th>{% if lang == 'en' %}Issue date{% else %}Date d'émission{% endif %}</th>
+          <td>{{ certificate.issued_at.strftime("%d/%m/%Y") if certificate.issued_at else "—" }}</td>
+        </tr>
+      </table>
+    </div>
+
+    {% set co2_kg = certificate.co2_avoided_kg|float %}
+    {% include "public/_co2_equivalences.html" with context %}
+
+    <p style="margin-top:var(--sp-6);font-size:var(--fs-13);color:var(--c-grey)">
+      {% if lang == 'en' %}
+        Scope: tank-to-wake, gas CO₂ only (not CO₂e). Vessel emissions verified under EU&nbsp;MRV and
+        public in the THETIS-MRV registry; the avoided-emissions calculation is our published method.
+        <a href="/preuves">See our evidence &amp; method →</a>
+      {% else %}
+        Périmètre : tank-to-wake, gaz CO₂ uniquement (pas du CO₂e). Émissions des navires vérifiées sous
+        EU&nbsp;MRV et publiques dans le registre THETIS-MRV ; le calcul des émissions évitées est notre
+        méthode publiée. <a href="/preuves">Voir nos preuves &amp; notre méthode →</a>
+      {% endif %}
+    </p>
+    {% endif %}
+
+    {% if not searched %}
+    <p style="margin-top:var(--sp-5);font-size:var(--fs-14);color:var(--c-grey)">
+      {% if lang == 'en' %}
+        Looking for the method behind the figures? <a href="/preuves">See our evidence page →</a>
+      {% else %}
+        Vous cherchez la méthode derrière les chiffres ? <a href="/preuves">Voir notre page preuves →</a>
+      {% endif %}
+    </p>
+    {% endif %}
+  </div>
+</section>
+
+{% endblock %}

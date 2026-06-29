@@ -690,6 +690,7 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 .eco-equiv { position: relative; overflow: hidden; margin-top: var(--sp-5); padding: var(--sp-6); background: var(--c-sand); border-radius: var(--r-2); }
 .eco-equiv-motif { position: absolute; bottom: -18%; right: -8%; width: clamp(200px, 30vw, 360px); color: var(--c-teal); opacity: 0.06; }
 .eco-equiv-title { position: relative; z-index: 1; font-family: var(--font-serif); font-weight: var(--fw-regular); font-size: var(--fs-20); color: var(--c-teal); margin: 0 0 var(--sp-5); }
+.eco-equiv-caption { position: relative; z-index: 1; font-size: var(--fs-14); line-height: var(--lh-normal); color: var(--c-grey); margin: calc(-1 * var(--sp-3)) 0 var(--sp-5); max-width: 640px; }
 .eco-equiv-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); }
 @media (max-width: 640px) { .eco-equiv-grid { grid-template-columns: 1fr; } }
 .eco-equiv-card {
@@ -699,6 +700,35 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 .eco-equiv-icon { width: 44px; height: 44px; color: var(--c-green); }
 .eco-equiv-num { font-family: var(--font-mono); font-size: var(--fs-32); font-weight: var(--fw-extrabold); color: var(--c-teal); line-height: 1; }
 .eco-equiv-label { font-size: var(--fs-13); color: var(--c-anthracite); line-height: var(--lh-tight); }
+
+/* ============================================================
+   /preuves — page de preuve opposable (méthode / vérif / registre)
+   ============================================================ */
+.prf-list { list-style: none; padding: 0; margin: var(--sp-5) 0; display: flex; flex-direction: column; gap: var(--sp-4); }
+.prf-list li { position: relative; padding-left: var(--sp-6); font-size: var(--fs-15); line-height: var(--lh-normal); color: var(--c-anthracite); }
+.prf-list li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 8px; height: 8px; border-radius: 50%; background: var(--c-green); }
+.prf-subtitle { font-size: var(--fs-18); font-weight: var(--fw-bold); color: var(--c-teal); margin: var(--sp-7) 0 var(--sp-4); }
+
+.prf-faq { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-5); }
+.prf-faq-item { background: var(--c-paper); border: 1px solid rgba(13,89,102,0.14); border-radius: var(--r-2); padding: var(--sp-4) var(--sp-5); }
+.prf-faq-item summary { cursor: pointer; font-weight: var(--fw-bold); color: var(--c-teal); font-size: var(--fs-16); list-style: none; }
+.prf-faq-item summary::-webkit-details-marker { display: none; }
+.prf-faq-item summary::after { content: "+"; float: right; color: var(--c-grey); font-weight: var(--fw-regular); }
+.prf-faq-item[open] summary::after { content: "−"; }
+.prf-faq-item p { margin: var(--sp-3) 0 0; font-size: var(--fs-14); line-height: var(--lh-normal); color: var(--c-anthracite); }
+
+/* /verify — fiche de vérification publique (sans PII) */
+.vrf-wrap { max-width: 760px; margin: 0 auto; padding: 0 var(--gutter); }
+.vrf-form { display: flex; gap: var(--sp-3); flex-wrap: wrap; margin: var(--sp-5) 0; }
+.vrf-form input[type="text"] { flex: 1 1 280px; padding: var(--sp-4); border: 1px solid var(--c-grey-soft); border-radius: var(--r-2); font-size: var(--fs-16); font-family: var(--font-mono); }
+.vrf-card { background: var(--c-paper); border: 1px solid rgba(13,89,102,0.14); border-top: 3px solid var(--c-green); border-radius: var(--r-2); padding: var(--sp-6); margin: var(--sp-5) 0; }
+.vrf-hero-num { font-family: var(--font-serif); font-size: clamp(2rem, 5vw, 3rem); color: var(--c-green); line-height: 1; margin: var(--sp-2) 0; }
+.vrf-table { width: 100%; border-collapse: collapse; margin-top: var(--sp-4); }
+.vrf-table th, .vrf-table td { padding: var(--sp-3) var(--sp-4); text-align: left; border-bottom: 1px solid var(--c-grey-soft); font-size: var(--fs-14); }
+.vrf-table th { color: var(--c-grey); font-weight: var(--fw-bold); width: 42%; }
+.vrf-table td { font-family: var(--font-mono); color: var(--c-anthracite); }
+.vrf-table tr:last-child th, .vrf-table tr:last-child td { border-bottom: none; }
+.vrf-notfound { background: var(--c-sand); border-left: 6px solid var(--c-copper); padding: var(--sp-5); margin: var(--sp-5) 0; font-size: var(--fs-15); }
 
 /* ============================================================
    Landing v1 — "Nouvelle Étoile" (refonte accueil)

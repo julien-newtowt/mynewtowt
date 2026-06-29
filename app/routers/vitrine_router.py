@@ -2,7 +2,9 @@
 
 Routes publiques (aucune authentification) :
 - ``/flotte``      : « Notre flotte » (classe TSC 80, capacités, cales).
-- ``/impact``      : environnement maîtrisé à bord, LACOE©, décarbonation.
+- ``/impact``      : environnement maîtrisé à bord, surveillance qualité, décarbonation.
+- ``/preuves``     : méthode, vérification (EU MRV / THETIS-MRV), registre des certificats.
+- ``/verify``      : vérification publique d'un certificat Anemos (sans PII, rate-limitée).
 - ``/navigation``  : courants, propulsion vélique, routes.
 - ``/contact``     : coordonnées + formulaire de demande de cotation (GET/POST).
 - ``/contact/merci``: accusé de réception.
@@ -13,14 +15,19 @@ prépare le relais vers l'équipe commerciale (extranet de réservation).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, Request
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.i18n import get_lang_from_request
+from app.models.anemos_certificate import AnemosCertificate
 from app.services import blog as blog_svc
 from app.services import contact as contact_svc
+from app.services import rate_limit
 from app.services.activity import record as activity_record
 from app.services.leads import push_lead
 from app.templating import templates
@@ -36,6 +43,101 @@ async def fleet_capabilities(request: Request) -> HTMLResponse:
 @router.get("/impact", response_class=HTMLResponse)
 async def impact(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("public/impact.html", {"request": request})
+
+
+@router.get("/preuves", response_class=HTMLResponse)
+async def preuves(request: Request) -> HTMLResponse:
+    """Page de preuve opposable (méthode / vérification / registre) — ENV-04.
+
+    Actif commercial permanent : répond aux 4 questions d'un auditeur Scope 3
+    (d'où vient le chiffre, qui l'a vérifié, mesuré ou théorique, où le
+    retrouver). Statique — aucune donnée DB.
+    """
+    return templates.TemplateResponse("public/preuves.html", {"request": request})
+
+
+# Lookup d'un certificat Anemos par référence — public, sans PII, rate-limité.
+_VERIFY_RATE_SCOPE = "anemos_verify"
+
+
+def _applied_factor(cert: AnemosCertificate) -> float | None:
+    """Facteur NEWTOWT effectivement appliqué (g CO₂/t·km), dérivé du certificat.
+
+    Reproductible à partir des valeurs persistées : émissions / (t × km) × 1000.
+    Renvoie ``None`` si la base de calcul est nulle.
+    """
+    try:
+        tonnage = Decimal(cert.tonnage_transported_t or 0)
+        distance_km = Decimal(cert.distance_nm or 0) * Decimal("1.852")
+        tkm = tonnage * distance_km
+        if tkm <= 0:
+            return None
+        return float(Decimal(cert.co2_emitted_kg or 0) * Decimal("1000") / tkm)
+    except Exception:
+        return None
+
+
+async def _lookup_certificate(
+    db: AsyncSession, ref: str
+) -> AnemosCertificate | None:
+    """Résout une référence saisie en certificat (tolérant casse / préfixe)."""
+    candidates = [ref]
+    upper = ref.upper()
+    if upper not in candidates:
+        candidates.append(upper)
+    if not upper.startswith("ANEMOS-"):
+        candidates.append(f"ANEMOS-{upper}")
+    for candidate in candidates:
+        cert = (
+            await db.execute(
+                select(AnemosCertificate).where(AnemosCertificate.reference == candidate)
+            )
+        ).scalar_one_or_none()
+        if cert is not None:
+            return cert
+    return None
+
+
+@router.get("/verify", response_class=HTMLResponse)
+async def verify_certificate(
+    request: Request,
+    ref: str | None = Query(default=None, max_length=40),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Vérification publique d'un certificat Anemos — sans PII, rate-limitée.
+
+    Affiche uniquement les métriques physiques (tonnage, distance, CO₂ évité,
+    méthode, date, facteur appliqué). Aucune donnée nominative (client,
+    cargaison, adresses) n'est exposée. Référence introuvable → message neutre.
+    """
+    ctx: dict = {"request": request, "ref": ref, "searched": False, "certificate": None}
+    if not ref or not ref.strip():
+        return templates.TemplateResponse("public/verify.html", ctx)
+
+    ctx["searched"] = True
+    ip = request.client.host if request.client else ""
+    if await rate_limit.exceeded(
+        db, scope=_VERIFY_RATE_SCOPE, identifier=ip, max_attempts=30, window_minutes=10
+    ):
+        ctx["rate_limited"] = True
+        return templates.TemplateResponse("public/verify.html", ctx, status_code=429)
+    await rate_limit.record(db, scope=_VERIFY_RATE_SCOPE, identifier=ip)
+
+    cert = await _lookup_certificate(db, ref.strip())
+    if cert is not None:
+        ctx["certificate"] = cert
+        ctx["applied_factor"] = _applied_factor(cert)
+    return templates.TemplateResponse("public/verify.html", ctx)
+
+
+@router.get("/verify/{cert_ref}", response_class=HTMLResponse)
+async def verify_certificate_by_ref(
+    request: Request,
+    cert_ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Lien direct (QR) ``/verify/{ref}`` — même rendu que ``/verify?ref=``."""
+    return await verify_certificate(request=request, ref=cert_ref, db=db)
 
 
 @router.get("/navigation", response_class=HTMLResponse)

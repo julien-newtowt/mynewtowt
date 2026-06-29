@@ -217,6 +217,13 @@ def render_anemos_certificate(
     ctx["certificate"] = certificate
     ctx["cert_ref"] = certificate.reference if certificate else f"ANEMOS-{booking.reference}"
     ctx["tonnage_t"] = tonnage
+    # ENV-04 — QR de vérification publique : pointe vers /verify/{ref} (page
+    # sans PII). Inline data-URI → pas d'appel réseau côté WeasyPrint.
+    base = (settings.site_url or "").rstrip("/")
+    ctx["verify_url"] = f"{base}/verify/{ctx['cert_ref']}"
+    from app.services.mfa import qr_data_uri
+
+    ctx["verify_qr"] = qr_data_uri(ctx["verify_url"])
     html, pdf = _render_pdf("pdf/anemos_certificate.html", ctx)
     return DocumentBytes(html=html, pdf=pdf, filename=f"LabelAnemos_{ctx['cert_ref']}.pdf")
 

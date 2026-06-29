@@ -1,6 +1,6 @@
 {% extends "public/_layout_v2.html" %}
 {% block title %}Impact — environnement maîtrisé & décarbonation — NewTowt{% endblock %}
-{% block description %}À bord, la qualité de votre marchandise est protégée par la conception du navire puis mesurée par le système LACOE©. Transport vélique décarboné, label ANEMOS.{% endblock %}
+{% block description %}À bord, la qualité de votre marchandise est protégée par la conception du navire puis suivie en continu. Transport vélique décarboné, certificat Anemos d'émissions évitées.{% endblock %}
 
 {% block structured_data %}
 <script type="application/ld+json">
@@ -9,9 +9,9 @@
   "@type": "FAQPage",
   "mainEntity": [
     {"@type": "Question", "name": "Comment la décarbonation du transport à la voile est-elle mesurée et certifiée ?",
-     "acceptedAnswer": {"@type": "Answer", "text": "Le label ANEMOS certifie le transport par lot, avec un calcul de CO₂ équivalent par kilomètre et une traçabilité de port à port. Le CO₂ évité est exprimé en kilogrammes sur chaque certificat nominatif."}},
+     "acceptedAnswer": {"@type": "Answer", "text": "Anemos, notre certification d'émissions évitées, documente le CO₂ évité par lot, exprimé en kilogrammes sur un certificat nominatif, avec une traçabilité de port à port et une méthode publiée."}},
     {"@type": "Question", "name": "Comment la qualité de la marchandise est-elle préservée à bord ?",
-     "acceptedAnswer": {"@type": "Answer", "text": "Par une protection passive (cales à la température de la mer, faible écart jour-nuit, air marin sec), une ventilation segmentée jusqu'à six renouvellements d'air par heure, et une mesure continue via le système LACOE© (capteurs de température et d'humidité dans chaque cale)."}}
+     "acceptedAnswer": {"@type": "Answer", "text": "Par une protection passive (cales à la température de la mer, faible écart jour-nuit, air marin sec), une ventilation segmentée jusqu'à six renouvellements d'air par heure, et une surveillance continue de la température et de l'humidité dans chaque cale."}}
   ]
 }
 </script>
@@ -63,13 +63,13 @@
 
 <section class="section">
   <div class="section-inner">
-    <span class="section-kicker">LACOE©</span>
+    <span class="section-kicker">Qualité mesurée</span>
     <h2 class="section-title">Une qualité mesurée, pas seulement promise</h2>
     <p class="section-lead">
-      Notre système <strong>LACOE©</strong> fixe pour chaque voyage des seuils
+      Notre <strong>dispositif de surveillance</strong> fixe pour chaque voyage des seuils
       critiques afin d'éviter la condensation, place des capteurs de température et
       d'humidité dans chaque cale, enregistre les données pour analyse, et s'appuie
-      sur des équipages formés ; un réseau de capteurs relié à une passerelle suit
+      sur des équipages formés ; un réseau de capteurs relié à la passerelle suit
       en continu la température, l'hygrométrie, la pression et la hauteur des vagues.
     </p>
     <div class="callout callout--teal">
@@ -87,13 +87,20 @@
     <h2 class="section-title">Une décarbonation mesurée et certifiée</h2>
     <p class="section-lead">
       Le transport à la voile réduit <strong>radicalement</strong> les émissions de CO₂.
-      Le label <strong>ANEMOS</strong> certifie le transport par lot, avec un calcul
-      de CO₂ équivalent par kilomètre et une traçabilité de port à port. La
-      crédibilité de cet argument s'appuie sur le reporting CO₂ que votre espace
-      client fournit déjà, lot par lot.
+      <strong>Anemos</strong>, notre <strong>certification d'émissions évitées</strong>,
+      documente le <strong>CO₂ évité par lot</strong> — calculé sur vos données réelles —
+      avec une traçabilité de port à port. Un <strong>certificat nominatif</strong>
+      accompagne chaque expédition, prêt pour vos rapports RSE et à partager avec vos
+      clients.
     </p>
-    <p>
-      <a href="/about/anemos" class="btn btn-secondary">Méthodologie du label ANEMOS</a>
+
+    {% set co2_kg = 72297 %}
+    {% set eq_caption = "Exemple illustratif : un chargement de 1 000 t sur une traversée transatlantique (≈ 5 900 km) évite environ 72 t de CO₂ par rapport à un cargo conventionnel." %}
+    {% include "public/_co2_equivalences.html" with context %}
+
+    <p style="margin-top:var(--sp-6);display:flex;gap:var(--sp-4);flex-wrap:wrap;align-items:center;">
+      <a href="/preuves" class="btn btn-primary">Voir nos preuves et notre méthode →</a>
+      <a href="/about/anemos" class="btn btn-secondary">Méthodologie Anemos</a>
     </p>
   </div>
 </section>

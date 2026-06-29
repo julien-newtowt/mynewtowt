@@ -41,7 +41,7 @@ def generated_docs_for(booking: Booking) -> list[dict]:
         },
         {
             "kind": "anemos",
-            "label": "Label Anemos",
+            "label": "Certificat Anemos",
             "url": f"/me/bookings/{ref}/anemos.pdf",
             "available": discharged,
         },

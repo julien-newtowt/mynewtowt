@@ -1,0 +1,56 @@
+{# ──────────────────────────────────────────────────────────────────────────
+   Composant dataviz « équivalences » réutilisable (impact, /preuves, /verify).
+
+   Paramètres :
+     co2_kg   (float, requis)  — masse de CO₂ évité, en kilogrammes absolus.
+     eq_caption (str, optionnel) — légende affichée sous le titre (ex. exemple
+                                   illustratif). Aucun pourcentage : kg absolus.
+
+   Facteurs pédagogiques (alignés sur /routes/{code}) :
+     arbre  = 25 kg CO₂ absorbé / an · vol  = 1 000 kg (Paris–NY, 1 pax aller)
+     camion = 0,9 kg CO₂ / km.
+   ────────────────────────────────────────────────────────────────────────── #}
+{% set _co2 = co2_kg|float %}
+{% set _tree_kg = 25.0 %}
+{% set _flight_kg = 1000.0 %}
+{% set _truck_kg = 0.9 %}
+<section class="eco-equiv" aria-label="{{ t('rd_eco_equiv_title', lang) }}">
+  <svg class="windrose-motif eco-equiv-motif" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+    <g fill="none" stroke="currentColor" stroke-width="0.6">
+      <circle cx="50" cy="50" r="46"/>
+      <circle cx="50" cy="50" r="30"/>
+      <path d="M50 2v96M2 50h96M18 18l64 64M82 18L18 82"/>
+    </g>
+  </svg>
+  <h3 class="eco-equiv-title">{{ t('rd_eco_equiv_title', lang) }}</h3>
+  {% if eq_caption %}
+  <p class="eco-equiv-caption">{{ eq_caption }}</p>
+  {% endif %}
+  <div class="eco-equiv-grid">
+    <div class="eco-equiv-card">
+      <svg class="eco-equiv-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true" focusable="false">
+        <path d="M24 44V28" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <path d="M24 30c-7 0-12-4.5-12-11 0-2 .6-3.8 1.6-5.3C12.7 11.6 13 9.4 14.2 7.7 15.8 5.4 18.7 4 24 4s8.2 1.4 9.8 3.7c1.2 1.7 1.5 3.9.6 6 1 1.5 1.6 3.3 1.6 5.3 0 6.5-5 11-12 11Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+      <span class="eco-equiv-num">{{ "%.1f"|format(_co2 / _tree_kg) }}</span>
+      <span class="eco-equiv-label">{{ t('rd_eco_eq_trees', lang) }}</span>
+    </div>
+    <div class="eco-equiv-card">
+      <svg class="eco-equiv-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true" focusable="false">
+        <path d="M44 24c0 1.5-1.2 2.7-2.7 2.7L28 27l-7 13h-4l3-13-9 .2-3 4H5l2-6.9L5 21h3l3 4 9 .2-3-13h4l7 13 13.3.3C42.8 21.3 44 22.5 44 24Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+      <span class="eco-equiv-num">{{ "%.2f"|format(_co2 / _flight_kg) }}</span>
+      <span class="eco-equiv-label">{{ t('rd_eco_eq_flights', lang) }}</span>
+    </div>
+    <div class="eco-equiv-card">
+      <svg class="eco-equiv-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true" focusable="false">
+        <path d="M4 12h22v20H4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M26 18h9l7 7v7h-16z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        <circle cx="14" cy="36" r="4" stroke="currentColor" stroke-width="2"/>
+        <circle cx="34" cy="36" r="4" stroke="currentColor" stroke-width="2"/>
+      </svg>
+      <span class="eco-equiv-num">{{ "{:,.0f}".format(_co2 / _truck_kg).replace(",", " ") }}</span>
+      <span class="eco-equiv-label">{{ t('rd_eco_eq_truck', lang) }}</span>
+    </div>
+  </div>
+</section>
