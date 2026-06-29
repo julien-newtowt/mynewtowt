@@ -262,6 +262,14 @@ async def escale_index(
                 stowage_by_hold = {}
 
     f["selected_leg"] = selected_leg
+
+    # ESC-08 — synthèse commerciale du leg (commandes + packing lists liées).
+    leg_overview = None
+    if selected_leg is not None:
+        from app.services.leg_overview import commercial_overview
+
+        leg_overview = await commercial_overview(db, selected_leg.id)
+
     response = templates.TemplateResponse(
         "staff/escale/index.html",
         {
@@ -297,6 +305,7 @@ async def escale_index(
             "operation_types": OPERATION_TYPES,
             "operation_actions": OPERATION_ACTIONS,
             "actions_by_type": ACTIONS_BY_TYPE,
+            "leg_overview": leg_overview,
             "directions": DIRECTIONS,
             # ESC-06 — couplage équipage.
             "vessel_crew": vessel_crew,

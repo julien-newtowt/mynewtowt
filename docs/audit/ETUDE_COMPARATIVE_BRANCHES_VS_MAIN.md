@@ -84,9 +84,9 @@ suite complète validée par la CI — base Postgres non disponible en local).
   suppression PL staff perm S (lot 55), alerte IMDG + auto‑fill dimensions par
   format de palette (lot 56).
 - ✅ **ADM‑08** : viewer d'audit — filtre par utilisateur + pagination (lot 58).
-- ⏳ **ESC‑08 (partiel)** : dépendance Type→Action (`ACTIONS_BY_TYPE` + sélecteur
-  groupé en `<optgroup>`, lot 57). Reste du cockpit (timeline flux opérationnel,
-  lanes parallèles, métriques nav, commandes du leg) — UI‑lourd.
+- ⏳ **ESC‑08 (partiel)** : dépendance Type→Action (lot 57) + **synthèse
+  commerciale du leg** (commandes + packing lists liées, lot 60). Reste du
+  cockpit (timeline flux opérationnel, lanes parallèles, métriques nav) — UI‑lourd.
 
 ### Action E — **Gouvernance**
 - ✅ `CLAUDE.md` corrigé (EVO‑06). ⏳ matrice de tests persona au pipeline ;
