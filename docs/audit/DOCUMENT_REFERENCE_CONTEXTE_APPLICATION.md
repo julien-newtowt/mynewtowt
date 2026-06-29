@@ -408,23 +408,23 @@ documenté et assumé.
 
 ## 10. État des branches vs `main` (contexte de continuité)
 
-Au 2026‑06‑29, le dépôt distant ne porte que **`main`** et la branche de travail
-**`claude/email-branches-audit-5uw0b2`**. Comparaison **par présence réelle de
-code** (et non par graphe de commits) :
+Au 2026‑06‑29, le dépôt distant porte **`main`** et la branche de travail
+**`claude/email-branches-audit-5uw0b2`**, qui **partagent la même histoire**
+(ancêtre commun `3b21fe4`, « Reprise P1 — lot 46 ») :
 
-- **La branche de travail est ~99 % un sur-ensemble de `main`** : elle porte la
-  campagne **« Reprise P0/P1 »** (parité staff V2→V3 complète, P0 = 100 %),
-  **8 modules absents de `main`** (`rh`/SIRH, `navigation`, `onboard`, `devis`,
-  `marad`, `pwa`, `scenario`, `carnet_bord`), **+58 migrations** (`…0023`→`…0080`)
-  et le **tableau de parité** `test_v2_parity.py`.
-- **`main` est très en retard** : **29 migrations** (vs 87), **0 commit
-  « Reprise »**, pas de tableau de parité. Son seul surplus est un **mince delta
-  vitrine** (page recrutement, passagers 2027, kit presse, actualités) resté en
-  avance.
+- **`main` est à jour** : V3 + vitrine/veille/analytics **+ toute la campagne
+  Reprise P0/P1** (PR #50→#100, jusqu'au lot 46), **87 migrations** (`…0080`),
+  parité P0 = 100 % (`test_v2_parity.py`, `_PENDING` vide).
+- **La branche = `main` + 10 commits** de la session courante : page
+  `/passagers`, lots **47 (ADM‑07)**, **48 (MRV‑08)**, **49 (PLN‑02/05)**,
+  **50 (EVO‑03)**, **51 (EVO‑01 + UX‑06)**, **52 (EVO‑06)** + ces documents.
 
-⇒ Le rattrapage = **reporter le delta marketing sur la branche, puis fusionner
-la branche dans `main`**. Plan détaillé dans
-`ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md` (Action A).
+⇒ La « promotion vers `main` » est un **merge normal de 10 commits** (PR #101).
+Plan détaillé dans `ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md`.
+
+> ⚠️ Une version antérieure de cette section décrivait `main` comme « très en
+> retard (29 migrations) » et les histoires comme « non liées » : **erreur due à
+> une référence `origin/main` périmée localement**, corrigée après `git fetch`.
 
 ---
 
