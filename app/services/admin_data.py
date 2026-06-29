@@ -65,6 +65,22 @@ ALLOWED_PURGE_TABLES: tuple[str, ...] = (
     "rate_limit_attempts",
 )
 
+# Colonne d'horodatage de chaque table purgeable, pour la purge **ciblée par
+# rétention** (supprimer les lignes plus anciennes qu'une date). Le nom de
+# colonne vient TOUJOURS de cette whitelist (jamais d'une entrée libre) ; la
+# date est un paramètre lié (expression SQLAlchemy paramétrée, pas de f-string).
+PURGE_DATE_COLUMNS: dict[str, str] = {
+    "activity_logs": "created_at",
+    "vessel_positions": "recorded_at",
+    "vessel_weather": "recorded_at",
+    "portal_access_logs": "accessed_at",
+    "rate_limit_attempts": "attempted_at",
+}
+# Garde de complétude : toute table purgeable doit déclarer sa colonne de date.
+assert set(ALLOWED_PURGE_TABLES) == set(
+    PURGE_DATE_COLUMNS
+), "chaque table purgeable doit déclarer sa colonne d'horodatage (PURGE_DATE_COLUMNS)"
+
 
 def _table(name: str):
     """Table SQLAlchemy d'un nom whitelisté, sinon ``ValueError``."""
@@ -109,5 +125,24 @@ async def purge_table(db: AsyncSession, table_name: str) -> int:
         raise ValueError(f"table non purgeable : {table_name}")
     table = _table(table_name)
     result = await db.execute(delete(table))
+    await db.flush()
+    return int(result.rowcount or 0)
+
+
+async def purge_table_before(db: AsyncSession, table_name: str, cutoff: datetime) -> int:
+    """Purge **ciblée par rétention** : supprime les lignes de ``table_name``
+    plus anciennes que ``cutoff`` (sur la colonne d'horodatage whitelistée).
+
+    Le nom de colonne provient de ``PURGE_DATE_COLUMNS`` (jamais d'une entrée
+    utilisateur) et la date est un paramètre lié → DELETE paramétré, sans
+    interpolation d'identifiant ni de valeur. ``ValueError`` si la table n'est
+    pas purgeable. Retourne le nombre de lignes supprimées.
+    """
+    if table_name not in ALLOWED_PURGE_TABLES:
+        raise ValueError(f"table non purgeable : {table_name}")
+    col_name = PURGE_DATE_COLUMNS[table_name]
+    table = _table(table_name)
+    column = table.c[col_name]
+    result = await db.execute(delete(table).where(column < cutoff))
     await db.flush()
     return int(result.rowcount or 0)

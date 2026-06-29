@@ -1749,13 +1749,21 @@ async def admin_purge_table(
     request: Request,
     table_name: str = Form(...),
     confirm: str = Form(...),
+    older_than_days: int | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "S")),
 ):
-    """ADM-04 — purge ciblée d'une table whitelistée. Double confirmation :
-    l'opérateur retape le nom exact de la table dans ``confirm``.
+    """ADM-04 — purge d'une table whitelistée. Double confirmation : l'opérateur
+    retape le nom exact de la table dans ``confirm``.
+
+    Si ``older_than_days`` est fourni (> 0), la purge est **ciblée par
+    rétention** : seules les lignes plus anciennes que ``maintenant −
+    older_than_days`` sont supprimées (colonne d'horodatage whitelistée).
+    Sinon, la table est intégralement vidée.
     """
-    from app.services.admin_data import purge_table
+    from datetime import UTC, datetime, timedelta
+
+    from app.services.admin_data import purge_table, purge_table_before
 
     if confirm.strip() != table_name:
         raise HTTPException(
@@ -1763,7 +1771,13 @@ async def admin_purge_table(
             detail="Confirmation invalide : retapez le nom exact de la table.",
         )
     try:
-        deleted = await purge_table(db, table_name)
+        if older_than_days is not None and older_than_days > 0:
+            cutoff = datetime.now(UTC) - timedelta(days=older_than_days)
+            deleted = await purge_table_before(db, table_name, cutoff)
+            detail = f"{deleted} lignes supprimées (> {older_than_days} j)"
+        else:
+            deleted = await purge_table(db, table_name)
+            detail = f"{deleted} lignes supprimées (table vidée)"
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await activity_record(
@@ -1775,7 +1789,7 @@ async def admin_purge_table(
         module="admin",
         entity_type="database",
         entity_label=table_name,
-        detail=f"{deleted} lignes supprimées",
+        detail=detail,
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/data?purged=1", status_code=303)
