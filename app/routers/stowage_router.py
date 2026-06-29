@@ -37,10 +37,12 @@ from app.services.stowage import (
     gather_suggestion_items,
     locate_batch,
     locate_for_order,
+    occupation_by_hold,
     parse_zone,
     suggest_assignments,
     zone_label,
     zone_usage_summary,
+    zones_for_leg,
 )
 from app.services.stowage_specs import get_specs
 from app.templating import templates
@@ -300,6 +302,36 @@ async def delete_item(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/stowage/legs/{leg_id}", status_code=303)
+
+
+@router.get("/legs/{leg_id}/occupation.json")
+async def stowage_occupation_json(
+    leg_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "C")),
+):
+    """STO-10 — occupation d'arrimage d'un leg en JSON (par cale + par zone).
+
+    Lecture seule, destinée aux consommateurs externes/JS (tableaux de bord,
+    intégrations). ``weight_kg`` est sérialisé en flottant."""
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    by_hold = {
+        hold: {
+            "pallet_count": v["pallet_count"],
+            "weight_kg": float(v["weight_kg"]),
+            "zones": v["zones"],
+            "dangerous": v["dangerous"],
+        }
+        for hold, v in (await occupation_by_hold(db, leg_id)).items()
+    }
+    return {
+        "leg_id": leg.id,
+        "leg_code": leg.leg_code,
+        "by_hold": by_hold,
+        "by_zone": await zones_for_leg(db, leg_id),
+    }
 
 
 @router.get("/onboard/{leg_id}", response_class=HTMLResponse)

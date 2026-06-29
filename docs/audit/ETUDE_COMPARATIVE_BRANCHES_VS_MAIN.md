@@ -88,6 +88,8 @@ suite complète validée par la CI — base Postgres non disponible en local).
   « jours embarqués / an » sur la liste équipage (lot 61).
 - ✅ **COM‑10 (tranche)** : statuts intermédiaires de commande pilotables
   (confirmé → chargé → livré, transition avant + garde 409, lot 62).
+- ✅ **STO‑10 (tranche)** : API JSON d'occupation d'arrimage par cale + par zone
+  (`/stowage/legs/{id}/occupation.json`, lecture seule, lot 63).
 - ⏳ **ESC‑08 (partiel)** : dépendance Type→Action (lot 57) + **synthèse
   commerciale du leg** (commandes + packing lists liées, lot 60). Reste du
   cockpit (timeline flux opérationnel, lanes parallèles, métriques nav) — UI‑lourd.
