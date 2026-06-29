@@ -86,6 +86,8 @@ suite complète validée par la CI — base Postgres non disponible en local).
 - ✅ **ADM‑08** : viewer d'audit — filtre par utilisateur + pagination (lot 58).
 - ✅ **CREW‑09 (tranche)** : marqueur « étranger » (hors Schengen) + colonne
   « jours embarqués / an » sur la liste équipage (lot 61).
+- ✅ **COM‑10 (tranche)** : statuts intermédiaires de commande pilotables
+  (confirmé → chargé → livré, transition avant + garde 409, lot 62).
 - ⏳ **ESC‑08 (partiel)** : dépendance Type→Action (lot 57) + **synthèse
   commerciale du leg** (commandes + packing lists liées, lot 60). Reste du
   cockpit (timeline flux opérationnel, lanes parallèles, métriques nav) — UI‑lourd.
