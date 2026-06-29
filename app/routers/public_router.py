@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_optional_client
 from app.config import settings
 from app.database import get_db
 from app.models.claim import VesselPosition
@@ -151,7 +152,10 @@ def _parse_date_param(value: str | None) -> datetime | None:
 
 @router.get("/routes/{leg_code}", response_class=HTMLResponse)
 async def route_detail(
-    request: Request, leg_code: str, db: AsyncSession = Depends(get_db)
+    request: Request,
+    leg_code: str,
+    db: AsyncSession = Depends(get_db),
+    client=Depends(get_optional_client),
 ) -> HTMLResponse:
     stmt = (
         select(Leg, Vessel)
@@ -206,6 +210,7 @@ async def route_detail(
             "duration_days": duration_days,
             "cut_off_at": cut_off_at,
             "map_token": settings.map_token,
+            "client": client,
         },
     )
 

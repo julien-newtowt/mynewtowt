@@ -640,6 +640,66 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 .rd-eco-avoided { display: inline-flex; align-items: center; gap: var(--sp-2); background: rgba(135,189,41,.15); border-radius: 999px; padding: var(--sp-1) var(--sp-3); color: #3e6400; font-weight: var(--fw-bold); font-size: var(--fs-13); }
 .rd-eco-note { font-size: var(--fs-13); color: var(--c-grey); line-height: var(--lh-normal); margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--c-grey-soft); }
 
+/* ---- CTA de conversion (encart hero) ---- */
+.rd-cta-card {
+  background: var(--c-paper); border: 1px solid var(--c-grey-soft);
+  border-radius: var(--r-2); padding: var(--sp-5); box-shadow: var(--sh-card);
+  display: flex; flex-direction: column; gap: var(--sp-3);
+}
+.rd-cta-card .rd-cta-eco { margin-top: var(--sp-2); }
+
+/* ---- CTA sticky mobile (< 768px) ---- */
+.rd-cta-sticky { display: none; }
+@media (max-width: 767px) {
+  .rd-cta-card .rd-cta-quote { display: none; } /* évite le doublon avec la barre fixe */
+  .rd-cta-sticky {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--c-paper); border-top: 1px solid var(--c-grey-soft);
+    box-shadow: 0 -4px 16px -8px rgba(13, 89, 102, 0.3);
+  }
+}
+
+/* ---- Bloc « Qualité à bord » ---- */
+.rd-quality-card { background: var(--c-sand); border-color: transparent; }
+.rd-quality-head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.rd-quality-icon { width: 40px; height: 40px; color: var(--c-teal); flex: none; }
+.rd-quality-title { font-family: var(--font-serif); font-weight: var(--fw-regular); font-size: var(--fs-24); color: var(--c-teal); margin: 0; }
+.rd-quality-body { font-size: var(--fs-16); line-height: var(--lh-normal); color: var(--c-anthracite); margin: 0 0 var(--sp-4); }
+.rd-quality-link { color: var(--c-teal); font-weight: var(--fw-semibold); text-decoration: none; }
+.rd-quality-link:hover { text-decoration: underline; }
+
+/* ---- Éco-calculateur : estimateur par lot ---- */
+.rd-eco-lot {
+  margin-top: var(--sp-5); padding: var(--sp-5);
+  background: var(--c-bone); border: 1px solid var(--c-grey-soft); border-radius: var(--r-2);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4) var(--sp-6);
+}
+.rd-eco-lot-input { display: flex; flex-direction: column; gap: var(--sp-1); }
+.rd-eco-lot-input label { font-size: var(--fs-13); font-weight: var(--fw-semibold); color: var(--c-teal); }
+.rd-eco-lot-input input {
+  width: 120px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-16);
+  border: 1px solid var(--c-grey-soft); border-radius: var(--r-2); background: var(--c-paper);
+  color: var(--c-anthracite); font-family: var(--font-mono);
+}
+.rd-eco-lot-input input:focus { outline: none; border-color: var(--c-teal); box-shadow: 0 0 0 3px rgba(13,89,102,0.1); }
+.rd-eco-lot-result { font-size: var(--fs-16); color: var(--c-anthracite); margin: 0; }
+.rd-eco-lot-result strong { font-family: var(--font-mono); font-size: var(--fs-20); color: var(--c-teal); }
+
+/* ---- Dataviz « équivalences » (composant partagé) ---- */
+.eco-equiv { position: relative; overflow: hidden; margin-top: var(--sp-5); padding: var(--sp-6); background: var(--c-sand); border-radius: var(--r-2); }
+.eco-equiv-motif { position: absolute; bottom: -18%; right: -8%; width: clamp(200px, 30vw, 360px); color: var(--c-teal); opacity: 0.06; }
+.eco-equiv-title { position: relative; z-index: 1; font-family: var(--font-serif); font-weight: var(--fw-regular); font-size: var(--fs-20); color: var(--c-teal); margin: 0 0 var(--sp-5); }
+.eco-equiv-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); }
+@media (max-width: 640px) { .eco-equiv-grid { grid-template-columns: 1fr; } }
+.eco-equiv-card {
+  background: var(--c-paper); border: 1px solid rgba(13,89,102,0.12); border-radius: var(--r-2);
+  padding: var(--sp-5); text-align: center; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+}
+.eco-equiv-icon { width: 44px; height: 44px; color: var(--c-green); }
+.eco-equiv-num { font-family: var(--font-mono); font-size: var(--fs-32); font-weight: var(--fw-extrabold); color: var(--c-teal); line-height: 1; }
+.eco-equiv-label { font-size: var(--fs-13); color: var(--c-anthracite); line-height: var(--lh-tight); }
+
 /* ============================================================
    Landing v1 — "Nouvelle Étoile" (refonte accueil)
    ============================================================ */
