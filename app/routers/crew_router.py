@@ -36,6 +36,8 @@ from app.services.activity import record as activity_record
 from app.services.crew_compliance import (
     REQUIRED_ROLES,
     ROLE_LABELS,
+    embarked_days_by_member,
+    is_non_schengen_national,
     normalize_role,
     passport_blocking_reason,
     refresh_member_schengen,
@@ -137,6 +139,11 @@ async def crew_index(
         "active": sum(1 for a in active_assigns),
         "repos": total - sum(1 for a in active_assigns),
     }
+
+    # CREW-09 — marqueur « étranger » (hors Schengen) + jours embarqués sur l'année.
+    embarked_days = await embarked_days_by_member(db, now.year, now=now)
+    foreigner_ids = {m.id for m in members if is_non_schengen_national(m.nationality)}
+
     from app.utils import marad
 
     return templates.TemplateResponse(
@@ -150,6 +157,9 @@ async def crew_index(
             "bordees": dict(bordees),
             "compliance_alerts": compliance_alerts,
             "stats": stats,
+            "embarked_days": embarked_days,
+            "foreigner_ids": foreigner_ids,
+            "current_year": now.year,
             "marad_configured": marad.enabled(),
         },
     )

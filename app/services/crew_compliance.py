@@ -358,3 +358,53 @@ async def vessel_readiness(db: AsyncSession, vessel_id: int, at_date: date) -> d
         "missing_labels": [ROLE_LABELS.get(r, r) for r in missing],
         "complete": not missing,
     }
+
+
+# ───────────────────────── CREW-09 — marqueur « étranger » & temps d'embarquement ─────────────────────────
+def is_non_schengen_national(nationality: str | None) -> bool:
+    """Marqueur « étranger » (hors Schengen) dérivé de la nationalité.
+
+    True si une nationalité est renseignée et hors espace Schengen ; False si
+    Schengen ou nationalité inconnue (pas de marqueur)."""
+    nat = (nationality or "").strip().upper()
+    return bool(nat) and nat not in SCHENGEN_COUNTRIES
+
+
+def assignment_days_in_year(
+    embark_at: datetime | None,
+    disembark_at: datetime | None,
+    year: int,
+    *,
+    now: datetime,
+) -> int:
+    """Jours embarqués d'une affectation, bornés à l'année ``year`` (inclus).
+
+    Affectation toujours en cours (``disembark_at`` None) → comptée jusqu'à
+    ``now`` (borné à la fin d'année)."""
+    if embark_at is None:
+        return 0
+    year_start = datetime(year, 1, 1, tzinfo=UTC)
+    year_end = datetime(year, 12, 31, tzinfo=UTC)
+    start = max(_as_utc(embark_at), year_start)
+    end = min(_as_utc(disembark_at or now), year_end)
+    if end < start:
+        return 0
+    return (end.date() - start.date()).days + 1
+
+
+async def embarked_days_by_member(
+    db: AsyncSession, year: int, *, now: datetime | None = None
+) -> dict[int, int]:
+    """Total de jours embarqués par marin sur l'année (toutes affectations)."""
+    now = now or datetime.now(UTC)
+    rows = (
+        (await db.execute(select(CrewAssignment).where(CrewAssignment.embark_at.is_not(None))))
+        .scalars()
+        .all()
+    )
+    totals: dict[int, int] = defaultdict(int)
+    for a in rows:
+        totals[a.crew_member_id] += assignment_days_in_year(
+            a.embark_at, a.disembark_at, year, now=now
+        )
+    return dict(totals)

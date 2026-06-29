@@ -2413,6 +2413,48 @@ async def order_cancel(
     return RedirectResponse(url="/commercial/orders", status_code=303)
 
 
+# COM-10 — cycle de vie post-confirmation : confirmé → chargé → livré.
+_ORDER_FORWARD = {"confirmed": "loaded", "loaded": "delivered"}
+
+
+@router.post("/orders/{order_id}/advance")
+async def order_advance(
+    order_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """COM-10 — fait avancer la commande dans le cycle confirmé → chargé → livré.
+
+    Transition avant uniquement (pas de saut d'étape) ; 409 si aucune transition
+    n'est possible depuis le statut courant."""
+    order = await db.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=404)
+    target = _ORDER_FORWARD.get(order.status)
+    if target is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Aucune transition possible depuis le statut « {order.status} »",
+        )
+    order.status = target
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="order",
+        entity_id=order.id,
+        entity_label=order.reference,
+        detail=f"status={target}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/commercial/orders/{order_id}", status_code=303)
+
+
 # ────────────────────────────────────────────── Offer DOCX export
 @router.get("/offers/{offer_id}/export.docx")
 async def offer_export_docx(
