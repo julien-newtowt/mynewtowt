@@ -34,6 +34,16 @@
   </div>
 </header>
 
+{% set hazardous = pl.batches | selectattr('hazardous') | list %}
+{% if hazardous %}
+<div class="alert alert-warn mb-4" role="alert">
+  <i data-lucide="alert-triangle"></i>
+  <strong>Marchandises dangereuses (IMDG)</strong> — {{ hazardous|length }} batch(es) classé(s) dangereux :
+  {% for b in hazardous %}<span class="pill pill-warn">{{ b.imdg_class or 'IMDG' }}{% if b.un_number %} · UN{{ b.un_number }}{% endif %}</span> {% endfor %}
+  <span class="text-muted text-sm">Vérifier ségrégation, documentation et arrimage.</span>
+</div>
+{% endif %}
+
 <article class="card">
   <h2>Batches ({{ pl.batches|length }})</h2>
   <table class="data-table">

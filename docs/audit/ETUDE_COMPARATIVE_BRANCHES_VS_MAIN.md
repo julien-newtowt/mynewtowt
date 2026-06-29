@@ -79,11 +79,10 @@ suite complète validée par la CI — base Postgres non disponible en local).
   IndexedDB). Reportés (dépendances externes / effort L).
 
 ### Action D — **Finitions P2** — ⏳ **partielle**
-- ✅ UX‑06 (lot 51) · ✅ **CARGO‑14 (messagerie)** (lot 54 — `PortalMessage`
-  marquage lu + badge non‑lus) · ✅ **CARGO‑14 (suppression PL staff, perm S)**
-  (lot 55 — cascade batches/messages/docs/audit).
-- ⏳ ESC‑08 (cockpit d'escale) ; reste de CARGO‑14 (alertes IMDG, auto‑fill
-  dimensions par type de palette).
+- ✅ UX‑06 (lot 51) · ✅ **CARGO‑14 complété** : messagerie lu/non‑lus (lot 54),
+  suppression PL staff perm S (lot 55), alerte IMDG + auto‑fill dimensions par
+  format de palette (lot 56).
+- ⏳ ESC‑08 (cockpit d'escale) — dernier P2 nommé (UI‑lourd).
 
 ### Action E — **Gouvernance**
 - ✅ `CLAUDE.md` corrigé (EVO‑06). ⏳ matrice de tests persona au pipeline ;

@@ -247,6 +247,31 @@ async def unlock(db: AsyncSession, pl: PackingList) -> PackingList:
     return pl
 
 
+# CARGO-14 — empreinte standard (longueur × largeur, cm) par format de palette,
+# pour pré-remplir les dimensions d'un batch laissées vides. Les formats sans
+# empreinte standard connue (barriques) ne sont pas auto-remplis.
+PALLET_DIMENSIONS: dict[str, tuple[float, float]] = {
+    "EPAL": (120.0, 80.0),
+    "USPAL": (120.0, 100.0),
+    "PORTPAL": (120.0, 100.0),
+    "IBC": (120.0, 100.0),
+    "BIGBAG": (90.0, 90.0),
+}
+
+
+def apply_default_dimensions(vals: dict) -> dict:
+    """Pré-remplit ``length_cm``/``width_cm`` depuis le format de palette quand
+    elles sont absentes — sans jamais écraser une valeur saisie. Mute et renvoie
+    ``vals``."""
+    dims = PALLET_DIMENSIONS.get(vals.get("pallet_format") or "")
+    if dims:
+        if not vals.get("length_cm"):
+            vals["length_cm"] = dims[0]
+        if not vals.get("width_cm"):
+            vals["width_cm"] = dims[1]
+    return vals
+
+
 async def create_batch(
     db: AsyncSession,
     *,
@@ -270,7 +295,9 @@ async def create_batch(
         )
         or 0
     )
-    b = PackingListBatch(packing_list_id=pl.id, batch_number=count + 1, **vals)
+    b = PackingListBatch(
+        packing_list_id=pl.id, batch_number=count + 1, **apply_default_dimensions(dict(vals))
+    )
     db.add(b)
     await db.flush()
     await record_audit(
