@@ -47,6 +47,8 @@
     <div class="flex justify-between items-center mb-2" style="gap:1rem;">
       <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
         {% if item.is_pinned %}<span class="badge badge-completed"><i data-lucide="pin"></i> Épinglé</span>{% endif %}
+        {% set sc = scores.get(item.id) %}
+        {% if sc and sc.score %}<span class="pill {% if sc.label == 'haute' %}pill-ok{% elif sc.label == 'moyenne' %}pill-warn{% else %}pill-neutral{% endif %}" title="Pertinence {{ sc.score }}/100 (heuristique)">priorité {{ sc.label }}</span>{% endif %}
         <span class="badge">{{ source_names.get(item.source_id, '—') }}</span>
         {% if item.publisher %}<span class="pill mono text-sm">{{ item.publisher }}</span>{% endif %}
         {% if item.category %}<span class="pill text-sm">{{ item.category }}</span>{% endif %}

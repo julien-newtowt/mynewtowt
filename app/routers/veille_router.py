@@ -93,6 +93,15 @@ async def veille_index(
         items = list((await db.execute(stmt)).scalars().all())
 
     source_names = {s.id: s.name for s in sources}
+
+    # EVO-04 (socle) — scoring heuristique de pertinence par item (priorité UI).
+    from app.services.news_scoring import priority_label, score_news_item
+
+    scores = {}
+    for it in items:
+        s = score_news_item(it.title, it.description)
+        scores[it.id] = {"score": s, "label": priority_label(s)}
+
     return templates.TemplateResponse(
         "staff/veille/index.html",
         {
@@ -101,6 +110,7 @@ async def veille_index(
             "items": items,
             "sources": sources,
             "source_names": source_names,
+            "scores": scores,
             "filter_source_id": source_id,
             "q": q or "",
             "configured": newsdata.is_configured(),
