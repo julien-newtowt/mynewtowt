@@ -90,9 +90,10 @@ suite complète validée par la CI — base Postgres non disponible en local).
   (confirmé → chargé → livré, transition avant + garde 409, lot 62).
 - ✅ **STO‑10 (tranche)** : API JSON d'occupation d'arrimage par cale + par zone
   (`/stowage/legs/{id}/occupation.json`, lecture seule, lot 63).
-- ⏳ **ESC‑08 (partiel)** : Type→Action (lot 57) + **synthèse commerciale du leg**
-  (lot 60) + **timeline du flux opérationnel** (5 étapes dérivées ATA/ATD/ops/
-  clôture, lot 64). Reste du cockpit (lanes parallèles, métriques nav) — UI‑lourd.
+- ⏳ **ESC‑08 (partiel)** : Type→Action (lot 57) + synthèse commerciale (lot 60)
+  + timeline du flux opérationnel (lot 64) + **métriques de navigation du leg**
+  (distance réelle/théorique/restante, vitesse moy., allongement — lot 65).
+  Reste : lanes d'activités parallèles, impression stowage FR‑EN.
 
 ### Action E — **Gouvernance**
 - ✅ `CLAUDE.md` corrigé (EVO‑06). ⏳ matrice de tests persona au pipeline ;
