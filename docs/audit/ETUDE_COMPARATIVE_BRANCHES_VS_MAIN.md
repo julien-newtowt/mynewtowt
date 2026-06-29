@@ -77,8 +77,10 @@ suite complète validée par la CI — base Postgres non disponible en local).
   signatures IMO généralisées aux documents cargo : hash SHA‑256 + verrou,
   migration `0081`), **EVO‑08** (lot 68 — agrégat des métriques de navigation
   réelle dans les KPI d'exploitation : distance cumulée, allongement, SOG moyen).
-- ⏳ **EVO‑04** (veille IA — effort L + Anthropic), **EVO‑05** (PWA offline réel —
-  IndexedDB). Reportés (dépendances externes / effort L).
+- ⏳ **EVO‑04 (socle livré, lot 70)** : scoring **heuristique** de pertinence des
+  actualités (mots-clés des domaines NEWTOWT, badge priorité dans la veille) ;
+  la **synthèse/scoring IA** (Claude) reste à brancher en couche au-dessus.
+- ⏳ **EVO‑05** (PWA offline réel — IndexedDB). Reporté (effort L).
 
 ### Action D — **Finitions P2** — ⏳ **partielle**
 - ✅ UX‑06 (lot 51) · ✅ **CARGO‑14 complété** : messagerie lu/non‑lus (lot 54),
