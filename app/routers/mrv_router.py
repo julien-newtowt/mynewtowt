@@ -465,6 +465,68 @@ async def mrv_carbon_report(
     )
 
 
+@router.get("/legs/{leg_id}", response_class=HTMLResponse)
+async def mrv_leg_detail(
+    leg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """MRV-08 — vue détail d'un leg : table d'événements ligne-à-ligne (avec
+    badges qualité), agrégats consommation / bunkering / cargo, et report
+    carbone (CO₂ + intensités) du leg."""
+    from app.services.carbon import compute_carbon_for_leg
+
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404, detail="Leg not found")
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
+    pol = await db.get(Port, leg.departure_port_id) if leg.departure_port_id else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
+
+    events = list(
+        (
+            await db.execute(
+                select(MRVEvent)
+                .where(MRVEvent.leg_id == leg_id)
+                .order_by(MRVEvent.recorded_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    zero = Decimal("0")
+    totals = {
+        "consumption_t": sum((e.total_consumption_t or e.fuel_mass_t or zero for e in events), zero),
+        "bunkering_t": sum((e.bunkering_qty_t or zero for e in events), zero),
+        "distance_nm": sum((e.distance_nm or zero for e in events), zero),
+        "cargo_t": max((e.cargo_carried_t or zero for e in events), default=zero),
+    }
+    quality = {
+        "error": sum(1 for e in events if e.quality_status == "error"),
+        "warning": sum(1 for e in events if e.quality_status == "warning"),
+        "ok": sum(1 for e in events if e.quality_status not in ("error", "warning")),
+    }
+    carbon = await compute_carbon_for_leg(db, leg)
+
+    return templates.TemplateResponse(
+        "staff/mrv/leg_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "leg": leg,
+            "vessel": vessel,
+            "pol": pol,
+            "pod": pod,
+            "events": events,
+            "totals": totals,
+            "quality": quality,
+            "carbon": carbon,
+        },
+    )
+
+
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
