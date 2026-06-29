@@ -12,13 +12,14 @@
 
 <article class="card">
   <table class="data-table">
-    <thead><tr><th>PL #</th><th>Order</th><th>Statut</th><th>Batches</th><th>Complétion</th><th>Token</th><th>Expire</th></tr></thead>
+    <thead><tr><th>PL #</th><th>Order</th><th>Statut</th><th>Msg</th><th>Batches</th><th>Complétion</th><th>Token</th><th>Expire</th></tr></thead>
     <tbody>
       {% for pl in packing_lists %}
       <tr>
         <td><a href="/cargo/packing-lists/{{ pl.id }}" class="mono">PL-{{ pl.id }}</a></td>
         <td class="mono">{{ pl.order_id }}</td>
         <td><span class="badge badge-{{ pl.status }}">{{ pl.status }}</span></td>
+        <td>{% set n = unread.get(pl.id, 0) %}{% if n %}<span class="pill pill-warn" title="{{ n }} message(s) client non lu(s)">{{ n }} ✉</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
         <td>{{ pl.batch_count }}</td>
         <td>
           <div class="progress-bar"><div class="progress-bar-fill" style="width:{{ pl.completion_pct }}%"></div></div>
@@ -28,7 +29,7 @@
         <td class="text-muted text-sm">{{ pl.token_expires_at|datetime("%d/%m/%Y") if pl.token_expires_at else '—' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text-muted text-center">Aucune packing list pour l'instant. Créez-en une depuis une commande.</td></tr>
+      <tr><td colspan="8" class="text-muted text-center">Aucune packing list pour l'instant. Créez-en une depuis une commande.</td></tr>
       {% endfor %}
     </tbody>
   </table>

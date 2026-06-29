@@ -72,13 +72,20 @@ suite complète validée par la CI — base Postgres non disponible en local).
 - ADM‑07, MRV‑08, PLN‑02/05.
 
 ### Action C — **Consolidation V3‑only (Lot 4 / EVO)** — ⏳ **partielle**
-- ✅ EVO‑03 (lot 50), EVO‑01 (lot 51, A5), EVO‑06 (lot 52).
-- ⏳ **EVO‑02** (unifier congés `CrewLeave`/`HrAbsence` — migration de schéma),
-  **EVO‑04** (veille IA — effort L + Anthropic), **EVO‑05** (PWA offline réel —
-  IndexedDB). Reportés (impact schéma / dépendances / effort L).
+- ✅ EVO‑03 (lot 50), EVO‑01 (lot 51, A5), EVO‑06 (lot 52), **EVO‑02** (lot 53 —
+  service + vue de lecture unifiés `CrewLeave`/`HrAbsence`, **sans fusion de
+  schéma** : `/rh/conges`).
+- ⏳ **EVO‑04** (veille IA — effort L + Anthropic), **EVO‑05** (PWA offline réel —
+  IndexedDB). Reportés (dépendances externes / effort L).
 
 ### Action D — **Finitions P2** — ⏳ **partielle**
-- ✅ UX‑06 (lot 51). ⏳ ESC‑08 (cockpit d'escale), CARGO‑14 (confort cargo).
+- ✅ UX‑06 (lot 51) · ✅ **CARGO‑14 complété** : messagerie lu/non‑lus (lot 54),
+  suppression PL staff perm S (lot 55), alerte IMDG + auto‑fill dimensions par
+  format de palette (lot 56).
+- ✅ **ADM‑08** : viewer d'audit — filtre par utilisateur + pagination (lot 58).
+- ⏳ **ESC‑08 (partiel)** : dépendance Type→Action (`ACTIONS_BY_TYPE` + sélecteur
+  groupé en `<optgroup>`, lot 57). Reste du cockpit (timeline flux opérationnel,
+  lanes parallèles, métriques nav, commandes du leg) — UI‑lourd.
 
 ### Action E — **Gouvernance**
 - ✅ `CLAUDE.md` corrigé (EVO‑06). ⏳ matrice de tests persona au pipeline ;

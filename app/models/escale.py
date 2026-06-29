@@ -36,6 +36,22 @@ OPERATION_ACTIONS = (
     "autre",
 )
 
+# ESC-08 — dépendance Type → Action : chaque type d'opération porte le
+# sous-ensemble d'actions qui le concerne. Sert à grouper le sélecteur d'action
+# par type (``<optgroup>``) côté formulaire d'escale. Partition exacte de
+# ``OPERATION_ACTIONS`` (chaque action une seule fois ; garde de complétude).
+ACTIONS_BY_TYPE: dict[str, tuple[str, ...]] = {
+    "technique": ("soutage", "avitaillement", "inspection", "gangway_up", "gangway_down"),
+    "armement": ("embarquement", "debarquement", "eosp", "sosp", "passage_paf"),
+    "relations_externes": ("pilot_on", "pilot_off", "relation_presse"),
+    "documentaire": ("nor",),
+    "commercial": ("autre",),
+}
+assert set(ACTIONS_BY_TYPE) <= set(OPERATION_TYPES), "type d'opération inconnu dans ACTIONS_BY_TYPE"
+assert tuple(sorted(a for acts in ACTIONS_BY_TYPE.values() for a in acts)) == tuple(
+    sorted(OPERATION_ACTIONS)
+), "ACTIONS_BY_TYPE doit partitionner exactement OPERATION_ACTIONS"
+
 # FLX-04 — relier escale ↔ onboard (SOF). Une opération d'escale dont
 # l'``action`` figure ici génère automatiquement l'événement SOF
 # équivalent côté commandant (cf. escale_router._sync_sof_from_operation),

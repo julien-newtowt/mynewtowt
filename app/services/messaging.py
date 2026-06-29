@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking_message import BookingMessage
+from app.models.packing_list import PortalMessage
 
 
 async def post(
@@ -47,3 +48,38 @@ async def mark_thread_read(db: AsyncSession, booking_id: int, *, reader: str) ->
         .values(is_read=True)
     )
     await db.flush()
+
+
+# ─────────────────────────── CARGO-14 — messagerie portail expéditeur ───────────────────────────
+async def mark_portal_read(db: AsyncSession, packing_list_id: int, *, reader: str) -> None:
+    """Marque lus les ``PortalMessage`` NON envoyés par ``reader`` (client|staff).
+
+    Appelé à la consultation : le staff lit les messages du client, le portail
+    expéditeur lit les messages du staff.
+    """
+    other = "staff" if reader == "client" else "client"
+    await db.execute(
+        update(PortalMessage)
+        .where(PortalMessage.packing_list_id == packing_list_id)
+        .where(PortalMessage.sender == other)
+        .where(PortalMessage.is_read.is_(False))
+        .values(is_read=True)
+    )
+    await db.flush()
+
+
+async def portal_unread_counts(
+    db: AsyncSession, packing_list_ids: list[int], *, reader: str
+) -> dict[int, int]:
+    """Nombre de ``PortalMessage`` non lus (envoyés par l'autre partie) par PL."""
+    if not packing_list_ids:
+        return {}
+    other = "staff" if reader == "client" else "client"
+    rows = await db.execute(
+        select(PortalMessage.packing_list_id, func.count())
+        .where(PortalMessage.packing_list_id.in_(packing_list_ids))
+        .where(PortalMessage.sender == other)
+        .where(PortalMessage.is_read.is_(False))
+        .group_by(PortalMessage.packing_list_id)
+    )
+    return dict(rows.all())

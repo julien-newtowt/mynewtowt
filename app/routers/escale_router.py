@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.crew import CrewAssignment, CrewMember
 from app.models.escale import (
+    ACTIONS_BY_TYPE,
     DIRECTIONS,
     ESCALE_ACTION_TO_SOF,
     OPERATION_ACTIONS,
@@ -295,6 +296,7 @@ async def escale_index(
             ),
             "operation_types": OPERATION_TYPES,
             "operation_actions": OPERATION_ACTIONS,
+            "actions_by_type": ACTIONS_BY_TYPE,
             "directions": DIRECTIONS,
             # ESC-06 — couplage équipage.
             "vessel_crew": vessel_crew,

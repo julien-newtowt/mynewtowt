@@ -65,9 +65,12 @@ async def packing_lists_index(
         .scalars()
         .all()
     )
+    from app.services import messaging
+
+    unread = await messaging.portal_unread_counts(db, [pl.id for pl in pls], reader="staff")
     return templates.TemplateResponse(
         "staff/cargo/packing_lists.html",
-        {"request": request, "user": user, "packing_lists": pls},
+        {"request": request, "user": user, "packing_lists": pls, "unread": unread},
     )
 
 
@@ -130,6 +133,10 @@ async def packing_list_detail(
         .scalars()
         .all()
     )
+    # CARGO-14 — la consultation staff marque lus les messages du client.
+    from app.services import messaging
+
+    await messaging.mark_portal_read(db, pl_id, reader="staff")
     return templates.TemplateResponse(
         "staff/cargo/packing_list_detail.html",
         {"request": request, "user": user, "pl": pl, "order": order, "messages": messages},
@@ -288,6 +295,38 @@ async def delete_batch(
     await db.delete(batch)
     await db.flush()
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+
+
+@router.post("/{pl_id}/delete")
+async def delete_packing_list(
+    pl_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "S")),
+):
+    """CARGO-14 — suppression d'une packing list entière (interdite si
+    verrouillée). Les batches, messages, documents et l'audit sont supprimés en
+    cascade (FK ``ondelete=CASCADE`` / ``delete-orphan``). Tracé dans le journal
+    d'activité (append-only, indépendant de la PL)."""
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    if not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="cargo",
+        entity_type="packing_list",
+        entity_id=pl_id,
+        entity_label=f"PL-{pl_id}",
+    )
+    await db.delete(pl)
+    await db.flush()
+    return RedirectResponse(url="/cargo/packing-lists", status_code=303)
 
 
 @router.get("/{pl_id}/history", response_class=HTMLResponse)
