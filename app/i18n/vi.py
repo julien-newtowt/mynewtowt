@@ -275,7 +275,7 @@ CATALOG: dict[str, str] = {
     "rd_agent_short": "Đại lý",
     "rd_days": "{n} ngày",
     "rd_decarbonised": "Vận tải bằng sức gió phi carbon",
-    "rd_anemos_certified": "được chứng nhận nhãn Anemos",
+    "rd_anemos_certified": "được chứng nhận Anemos",
     "rd_tab_schedule": "Chuyến vượt biển",
     "rd_tab_eco": "Máy tính sinh thái",
     "rd_schedule_title": "Lịch trình chuyến vượt biển",

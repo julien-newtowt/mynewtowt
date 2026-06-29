@@ -294,7 +294,7 @@ CATALOG: dict[str, str] = {
     "rd_agent_short": "Agent",
     "rd_days": "{n} days",
     "rd_decarbonised": "Decarbonised wind propulsion",
-    "rd_anemos_certified": "Anemos label certified",
+    "rd_anemos_certified": "Anemos-certified",
     "rd_tab_schedule": "Crossing",
     "rd_tab_eco": "Eco-calculator",
     "rd_schedule_title": "Crossing schedule",
