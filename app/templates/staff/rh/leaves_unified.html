@@ -1,0 +1,65 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Congés & absences — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div><span class="kicker">Humain</span><h1 class="display">Congés &amp; absences (vue unifiée)</h1></div>
+  <div class="flex gap-2 items-center">
+    <a href="/rh" class="btn btn-ghost"><i data-lucide="arrow-left"></i> RH</a>
+  </div>
+</header>
+
+<p class="text-muted">
+  Vue transverse en lecture seule des congés <strong>marins</strong>
+  (<span class="mono">CrewLeave</span>) et des absences <strong>sédentaires</strong>
+  (<span class="mono">HrAbsence</span>). La saisie et la validation restent propres
+  à chaque population.
+</p>
+
+<section class="kpi-strip mb-4">
+  <div class="kpi-card"><div class="label">Total</div><div class="value">{{ summary.total }}</div></div>
+  <div class="kpi-card"><div class="label">Marins</div><div class="value">{{ summary.marin }}</div></div>
+  <div class="kpi-card"><div class="label">Sédentaires</div><div class="value">{{ summary.sedentaire }}</div></div>
+  <div class="kpi-card"><div class="label">En attente</div><div class="value">{{ summary.pending }}</div></div>
+</section>
+
+<p class="mb-3">
+  <a href="/rh/conges" class="pill {% if not status_filter %}pill-info{% else %}pill-neutral{% endif %}">Tous</a>
+  <a href="/rh/conges?status=requested" class="pill {% if status_filter == 'requested' %}pill-warn{% else %}pill-neutral{% endif %}">En attente</a>
+  <a href="/rh/conges?status=approved" class="pill {% if status_filter == 'approved' %}pill-ok{% else %}pill-neutral{% endif %}">Approuvés</a>
+  <a href="/rh/conges?status=rejected" class="pill {% if status_filter == 'rejected' %}pill-error{% else %}pill-neutral{% endif %}">Refusés</a>
+</p>
+
+<article class="card">
+  {% if rows %}
+  <table class="data-table">
+    <thead>
+      <tr><th>Population</th><th>Personne</th><th>Type</th><th>Du</th><th>Au</th><th>Jours ouvrés</th><th>Statut</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{% if r.source == 'crew' %}<span class="pill pill-info">Marin</span>{% else %}<span class="pill pill-neutral">Sédentaire</span>{% endif %}</td>
+        <td>{{ r.person_name }}</td>
+        <td><span class="badge">{{ r.kind }}</span></td>
+        <td class="mono">{{ r.start_date }}</td>
+        <td class="mono">{{ r.end_date }}</td>
+        <td class="mono">{{ r.business_days if r.business_days is not none else '—' }}</td>
+        <td>
+          {% if r.status == 'approved' %}<span class="pill pill-ok">Approuvé</span>
+          {% elif r.status == 'rejected' %}<span class="pill pill-error">Refusé</span>
+          {% elif r.status == 'cancelled' %}<span class="pill pill-neutral">Annulé</span>
+          {% else %}<span class="pill pill-warn">En attente</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    <i data-lucide="calendar-off"></i>
+    <p class="empty-title">Aucun congé ni absence</p>
+    <p class="empty-hint">Aucune entrée ne correspond au filtre sélectionné.</p>
+  </div>
+  {% endif %}
+</article>
+{% endblock %}

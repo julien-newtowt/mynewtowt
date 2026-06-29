@@ -131,6 +131,33 @@ async def rh_index(
     )
 
 
+@router.get("/rh/conges", response_class=HTMLResponse)
+async def rh_unified_leaves(
+    request: Request,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("rh", "C")),
+) -> HTMLResponse:
+    """EVO-02 — vue unifiée des congés marins (``CrewLeave``) et absences
+    sédentaires (``HrAbsence``) derrière un service de lecture commun. Lecture
+    transverse uniquement : la saisie/validation reste propre à chaque population
+    (séparation des droits ``crew`` ↔ ``rh``)."""
+    from app.services import leaves as leaves_svc
+
+    status_f = status if status in ("requested", "approved", "rejected", "cancelled") else None
+    rows = await leaves_svc.list_unified(db, status=status_f)
+    return templates.TemplateResponse(
+        "staff/rh/leaves_unified.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": rows,
+            "summary": leaves_svc.summary(rows),
+            "status_filter": status_f,
+        },
+    )
+
+
 @router.post("/rh/leave")
 async def rh_create_leave(
     request: Request,

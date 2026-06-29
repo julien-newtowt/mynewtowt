@@ -72,10 +72,11 @@ suite complète validée par la CI — base Postgres non disponible en local).
 - ADM‑07, MRV‑08, PLN‑02/05.
 
 ### Action C — **Consolidation V3‑only (Lot 4 / EVO)** — ⏳ **partielle**
-- ✅ EVO‑03 (lot 50), EVO‑01 (lot 51, A5), EVO‑06 (lot 52).
-- ⏳ **EVO‑02** (unifier congés `CrewLeave`/`HrAbsence` — migration de schéma),
-  **EVO‑04** (veille IA — effort L + Anthropic), **EVO‑05** (PWA offline réel —
-  IndexedDB). Reportés (impact schéma / dépendances / effort L).
+- ✅ EVO‑03 (lot 50), EVO‑01 (lot 51, A5), EVO‑06 (lot 52), **EVO‑02** (lot 53 —
+  service + vue de lecture unifiés `CrewLeave`/`HrAbsence`, **sans fusion de
+  schéma** : `/rh/conges`).
+- ⏳ **EVO‑04** (veille IA — effort L + Anthropic), **EVO‑05** (PWA offline réel —
+  IndexedDB). Reportés (dépendances externes / effort L).
 
 ### Action D — **Finitions P2** — ⏳ **partielle**
 - ✅ UX‑06 (lot 51). ⏳ ESC‑08 (cockpit d'escale), CARGO‑14 (confort cargo).
