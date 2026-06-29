@@ -244,12 +244,32 @@ async def about_terms(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("public/about_terms.html", {"request": request})
 
 
+@router.get("/solutions/cafe")
+async def solutions_cafe_placeholder():
+    """Tuile « Café » de la landing : redirection placeholder en attendant la
+    page verticale dédiée (cf. landing v1, point ouvert n°2). Mène au tunnel
+    commercial pour ne pas perdre l'intention d'achat café."""
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(url="/contact", status_code=302)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
 async def _next_bookable_legs(db: AsyncSession, *, limit: int = 6) -> list[dict[str, Any]]:
+    from decimal import Decimal
+
+    from app.services import co2 as co2_service
+    from app.services.ports import haversine_nm
+
+    # Poids de référence d'une palette pour la vignette « CO₂ évité / palette »
+    # affichée sur les cartes de leg (storytelling landing — pas un devis).
+    PALLET_WEIGHT_T = Decimal("0.8")
+
+    factors = await co2_service.get_factors(db)
     now = datetime.now(UTC)
     stmt = (
         select(Leg, Vessel)
@@ -264,6 +284,22 @@ async def _next_bookable_legs(db: AsyncSession, *, limit: int = 6) -> list[dict[
     for leg, vessel in rows:
         pol = await db.get(Port, leg.departure_port_id)
         pod = await db.get(Port, leg.arrival_port_id)
+        co2_per_pallet_kg: int | None = None
+        if (
+            pol is not None
+            and pod is not None
+            and pol.latitude is not None
+            and pol.longitude is not None
+            and pod.latitude is not None
+            and pod.longitude is not None
+        ):
+            distance_nm = Decimal(
+                str(haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude))
+            )
+            estimate = co2_service.estimate(
+                distance_nm=distance_nm, tonnage_t=PALLET_WEIGHT_T, factors=factors
+            )
+            co2_per_pallet_kg = int(estimate.avoided_co2_kg.to_integral_value())
         out.append(
             {
                 "leg_id": leg.id,
@@ -273,6 +309,7 @@ async def _next_bookable_legs(db: AsyncSession, *, limit: int = 6) -> list[dict[
                 "pod": pod,
                 "etd": leg.etd,
                 "eta": leg.eta,
+                "co2_per_pallet_kg": co2_per_pallet_kg,
             }
         )
     return out

@@ -639,3 +639,127 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 .rd-eco-table .td-num { text-align: right; font-family: var(--font-mono); font-weight: var(--fw-semibold); }
 .rd-eco-avoided { display: inline-flex; align-items: center; gap: var(--sp-2); background: rgba(135,189,41,.15); border-radius: 999px; padding: var(--sp-1) var(--sp-3); color: #3e6400; font-weight: var(--fw-bold); font-size: var(--fs-13); }
 .rd-eco-note { font-size: var(--fs-13); color: var(--c-grey); line-height: var(--lh-normal); margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--c-grey-soft); }
+
+/* ============================================================
+   Landing v1 — "Nouvelle Étoile" (refonte accueil)
+   ============================================================ */
+
+/* ---- Motif rose des vents (filigrane discret) ---- */
+.windrose-motif {
+  position: absolute; pointer-events: none; z-index: 0;
+  width: clamp(280px, 38vw, 520px); height: auto;
+  color: var(--c-green); opacity: 0.06;
+}
+.hero--rose .windrose-motif { top: -8%; right: -6%; }
+.hero--rose .hero-inner { position: relative; z-index: 1; }
+
+/* ---- Micro-preuve sous le formulaire hero ---- */
+.hero-proof {
+  margin-top: var(--sp-5); font-size: var(--fs-14); color: var(--c-grey);
+  max-width: 680px; line-height: var(--lh-normal);
+}
+.hero-proof em { font-style: normal; font-weight: var(--fw-semibold); color: var(--c-teal); }
+
+/* ---- Image héros pleine largeur ---- */
+.hero-figure { margin: 0; }
+.hero-figure img {
+  width: 100%; height: clamp(240px, 46vh, 520px);
+  object-fit: cover; display: block;
+}
+
+/* ---- Bandeau de preuve ---- */
+.proofstrip { background: var(--c-bone); border-bottom: 1px solid var(--border-hair); }
+.proofstrip-inner {
+  max-width: var(--container); margin: 0 auto;
+  padding: var(--sp-4) var(--gutter);
+  text-align: center; font-size: var(--fs-14); font-weight: var(--fw-semibold);
+  letter-spacing: 0.01em; color: var(--c-teal); line-height: var(--lh-normal);
+}
+
+/* ---- Cartes "Pourquoi" : accroche + lien ---- */
+.feature-lede {
+  font-size: var(--fs-16); font-weight: var(--fw-semibold);
+  color: var(--c-teal); margin: 0 0 var(--sp-3) !important;
+}
+.feature-card .feature-link {
+  display: inline-block; margin-top: var(--sp-4);
+  font-size: var(--fs-14); font-weight: var(--fw-semibold);
+  color: var(--c-teal); border-bottom: 1px solid transparent;
+}
+.feature-card .feature-link:hover { color: var(--c-copper); border-bottom-color: var(--c-copper); }
+
+/* ---- Badge CO₂ évité / palette (sur carte de leg) ---- */
+.co2-badge {
+  display: flex; align-items: center; gap: var(--sp-2);
+  background: rgba(135, 189, 41, 0.12);
+  border: 1px solid rgba(135, 189, 41, 0.35);
+  border-radius: var(--r-2); padding: var(--sp-2) var(--sp-3);
+  position: relative; overflow: hidden;
+}
+.co2-badge-rose { width: 22px; height: 22px; color: var(--c-green); flex: none; opacity: 0.8; }
+.co2-badge-val {
+  font-family: var(--font-mono); font-weight: var(--fw-bold);
+  font-size: var(--fs-18); color: #3e6400; line-height: 1;
+}
+.co2-badge-label {
+  font-size: var(--fs-12); color: var(--c-grey); font-weight: var(--fw-semibold);
+  text-transform: uppercase; letter-spacing: var(--tr-loose); line-height: 1.2;
+}
+
+/* Aligne le CTA en bas des cartes de leg (hauteurs inégales) */
+.booking-card > .btn-block:last-child { margin-top: auto; }
+
+/* ---- CTA pied de section traversées ---- */
+.sched-cta { text-align: center; margin-top: var(--sp-7); }
+
+/* ---- Tuiles marchandises sensibles ---- */
+.verticals-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-4); margin-top: var(--sp-6);
+}
+.vertical-tile {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end;
+  gap: var(--sp-2); min-height: 140px; padding: var(--sp-5);
+  border-radius: var(--r-2); border: 1px solid var(--c-grey-soft);
+  background: var(--c-paper); border-bottom: none;
+}
+.vertical-tile.is-active {
+  border-left: 4px solid var(--c-green); color: var(--c-teal);
+  transition: box-shadow var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+}
+.vertical-tile.is-active:hover {
+  box-shadow: var(--sh-card); transform: translateY(-2px); border-bottom: none;
+}
+.vertical-tile.is-soon { background: var(--c-bone); border-style: dashed; opacity: 0.85; }
+.vertical-name { font-size: var(--fs-20); font-weight: var(--fw-bold); color: var(--c-teal); }
+.vertical-tile.is-soon .vertical-name { color: var(--c-grey); }
+.vertical-soon {
+  font-size: var(--fs-12); font-weight: var(--fw-bold); text-transform: uppercase;
+  letter-spacing: var(--tr-loose); color: var(--c-copper);
+  background: rgba(180, 113, 72, 0.12); border-radius: var(--r-pill);
+  padding: 2px var(--sp-3);
+}
+
+/* ---- Bandeau de clôture (fond nuit, premium) ---- */
+.closing-band {
+  background: var(--c-night); color: var(--fg-on-dark);
+  position: relative; overflow: hidden; padding: var(--sp-9) 0;
+}
+.closing-band .windrose-motif { color: var(--c-green); opacity: 0.08; bottom: -14%; left: -4%; }
+.closing-inner {
+  position: relative; z-index: 1;
+  max-width: var(--container); margin: 0 auto; padding: 0 var(--gutter);
+  text-align: center;
+}
+.closing-title {
+  font-size: clamp(1.75rem, 3vw, 2.5rem); font-weight: var(--fw-bold);
+  color: #fff; margin: 0 0 var(--sp-6); line-height: var(--lh-snug);
+}
+.closing-actions { display: flex; gap: var(--sp-4); justify-content: center; flex-wrap: wrap; }
+.btn-on-dark { color: #fff; border-color: rgba(255, 255, 255, 0.6); }
+.btn-on-dark:hover { background: #fff; color: var(--c-night); border-color: #fff; }
+
+@media (max-width: 480px) {
+  .verticals-grid { grid-template-columns: 1fr 1fr; }
+  .closing-actions .btn { width: 100%; }
+}
