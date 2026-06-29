@@ -134,6 +134,10 @@ async def stowage_plan_view(
     )
     evaluation = await evaluate_plan(db, leg_id)
     from app.services.imdg import IMDG_CLASSES, imdg_label
+    from app.services.stowage import deck_layout
+
+    # STO-10 — grille d'occupation par pont pour la vue SVG top-down.
+    decks_layout = await deck_layout(db, leg_id)
 
     return templates.TemplateResponse(
         "staff/stowage/plan.html",
@@ -147,6 +151,7 @@ async def stowage_plan_view(
             "dangerous_zones": DANGEROUS_ZONES,
             "usage": usage,
             "evaluation": evaluation,
+            "decks_layout": decks_layout,
             "decks": DECKS,
             "holds": HOLDS,
             "blocks": BLOCKS,

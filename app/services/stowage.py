@@ -504,6 +504,53 @@ async def zones_for_leg(db: AsyncSession, leg_id: int) -> list[dict]:
     return out
 
 
+async def deck_layout(db: AsyncSession, leg_id: int) -> dict[str, list[dict]]:
+    """STO-10 — grille d'occupation par pont, pour la vue SVG top-down.
+
+    Renvoie ``{deck: [zone_dict, ...]}`` pour les **3 ponts** (INF/MIL/SUP),
+    chacun avec ses **6 zones** (2 cales × 3 blocs) dans l'ordre ``(hold,
+    block)``. Chaque ``zone_dict`` fusionne l'occupation (palettes) et la
+    capacité (specs) :
+
+        {zone, deck, hold, block, pallet_count, capacity_epal,
+         fill_ratio (0..1), is_dangerous}
+
+    Géométrie régulière et déterministe : toutes les zones sont présentes
+    (``pallet_count=0`` si vide), ce qui permet un rendu SVG sur grille fixe.
+    Lecture seule (réutilise ``zones_for_leg`` + le référentiel de specs).
+    """
+    from app.services.stowage_specs import get_specs
+
+    occ = {row["zone"]: row for row in await zones_for_leg(db, leg_id)}
+    vessel_class = await _vessel_class_for_leg(db, leg_id)
+    specs = await get_specs(db, vessel_class)
+
+    layout: dict[str, list[dict]] = {deck: [] for deck in DECKS}
+    for deck in DECKS:
+        for hold in HOLDS:
+            for block in BLOCKS:
+                zone = f"{deck}_{hold}_{block}"
+                row = occ.get(zone)
+                cap = int((specs.get(zone) or {}).get("capacity_epal") or 0)
+                pallets = int(row["pallet_count"]) if row else 0
+                ratio = min(pallets / cap, 1.0) if cap else (1.0 if pallets else 0.0)
+                layout[deck].append(
+                    {
+                        "zone": zone,
+                        "deck": deck,
+                        "hold": hold,
+                        "block": block,
+                        "pallet_count": pallets,
+                        "capacity_epal": cap,
+                        "fill_ratio": round(ratio, 3),
+                        "is_dangerous": bool(
+                            (row and row["is_dangerous"]) or zone in DANGEROUS_ZONES
+                        ),
+                    }
+                )
+    return layout
+
+
 def parse_zone(zone: str | None) -> tuple[str | None, str | None, str | None]:
     """Décompose une zone ``{DECK}_{HOLD}_{BLOCK}`` → ``(deck, hold, block)``.
 

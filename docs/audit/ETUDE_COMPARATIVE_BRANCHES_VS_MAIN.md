@@ -91,8 +91,10 @@ suite complète validée par la CI — base Postgres non disponible en local).
   « jours embarqués / an » sur la liste équipage (lot 61).
 - ✅ **COM‑10 (tranche)** : statuts intermédiaires de commande pilotables
   (confirmé → chargé → livré, transition avant + garde 409, lot 62).
-- ✅ **STO‑10 (tranche)** : API JSON d'occupation d'arrimage par cale + par zone
-  (`/stowage/legs/{id}/occupation.json`, lecture seule, lot 63).
+- ✅ **STO‑10 (complété)** : API JSON d'occupation d'arrimage par cale + par zone
+  (`/stowage/legs/{id}/occupation.json`, lecture seule, lot 63) + **vue SVG
+  top‑down par pont** (lot 72 — `deck_layout`, partial `_deck_svg.html`, grille
+  2 cales × 3 blocs colorée par taux d'occupation, badges DG, toggle additif).
 - ✅ **ONB‑08 (tranche)** : champs lieu / contexte de l'incident sur les sinistres
   (claims) — saisie au formulaire + affichage détail (migration `0082`, lot 67).
 - ✅ **PLN‑07 (tranche)** : raccourcis ports pilotés par `Port.is_shortcut`

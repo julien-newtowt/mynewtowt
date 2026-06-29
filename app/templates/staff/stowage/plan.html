@@ -52,6 +52,28 @@
   {{ ship_map(evaluation, [], decks, holds, blocks, interactive=True) }}
 </article>
 
+{# ---- STO-10 : vue SVG top-down par pont (complément additif) ---- #}
+{% if decks_layout %}
+<article class="card mb-4">
+  <details open>
+    <summary style="cursor:pointer;list-style:none;">
+      <h2 style="display:inline;">Vue ponts (SVG top-down)</h2>
+    </summary>
+    <p class="text-muted text-sm mt-2">
+      Une grille 2 cales × 3 blocs par pont. Remplissage proportionnel à
+      l'occupation (palettes / capacité) ; contour cuivré et ⚠ pour les zones DG (IMO).
+    </p>
+    <div class="grid grid-3 gap-4 mt-2">
+      {% for deck in decks %}
+        {% with zones = decks_layout[deck] %}
+          {% include "staff/stowage/_deck_svg.html" %}
+        {% endwith %}
+      {% endfor %}
+    </div>
+  </details>
+</article>
+{% endif %}
+
 {# ---- Avertissements (politique : signaler, ne jamais bloquer) ---- #}
 {% if evaluation.warnings %}
 <article class="card mb-4">
