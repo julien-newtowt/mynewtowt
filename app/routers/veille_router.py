@@ -116,9 +116,7 @@ async def veille_index(
     today = datetime.now(UTC).date()
     digest = (
         await db.execute(
-            select(NewsDigest)
-            .where(NewsDigest.day == today, NewsDigest.lang == "fr")
-            .limit(1)
+            select(NewsDigest).where(NewsDigest.day == today, NewsDigest.lang == "fr").limit(1)
         )
     ).scalar_one_or_none()
 

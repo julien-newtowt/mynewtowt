@@ -39,7 +39,15 @@ async def test_leg_detail_aggregates(db, staff_user):
 
     await _setup_leg(db)
     t = datetime(2026, 4, 2, 12, tzinfo=UTC)
-    db.add(_ev(1, t, total_consumption_t=Decimal("1.500"), distance_nm=Decimal("100"), cargo_carried_t=Decimal("900")))
+    db.add(
+        _ev(
+            1,
+            t,
+            total_consumption_t=Decimal("1.500"),
+            distance_nm=Decimal("100"),
+            cargo_carried_t=Decimal("900"),
+        )
+    )
     db.add(_ev(1, t, kind="bunkering", bunkering_qty_t=Decimal("5.000")))
     db.add(
         _ev(

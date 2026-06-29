@@ -54,7 +54,9 @@ async def test_distinct_uuids_create_distinct_rows(db, staff_user):
     await post_noon_report(FakeRequest(_noon_form(leg.id, "uuid-bbb")), db=db, user=staff_user)
 
     total = (
-        await db.execute(select(func.count()).select_from(NoonReport).where(NoonReport.leg_id == leg.id))
+        await db.execute(
+            select(func.count()).select_from(NoonReport).where(NoonReport.leg_id == leg.id)
+        )
     ).scalar_one()
     assert total == 2
 

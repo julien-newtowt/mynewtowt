@@ -33,7 +33,7 @@ _SCORING_SYSTEM = (
     "décarbonés (fret maritime à propulsion vélique, réglementation MRV/CII/IMO, "
     "ports, écosystème de la décarbonation maritime). Pour chaque actualité, note "
     "de 0 à 100 sa pertinence pour cet armateur (0 = hors-sujet, 100 = critique). "
-    "Réponds EXCLUSIVEMENT par un objet JSON {\"<id>\": <score>, ...}, sans texte."
+    'Réponds EXCLUSIVEMENT par un objet JSON {"<id>": <score>, ...}, sans texte.'
 )
 
 _DIGEST_SYSTEM = (
