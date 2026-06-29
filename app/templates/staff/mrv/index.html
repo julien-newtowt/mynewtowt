@@ -50,7 +50,7 @@
       <tr>
         <td class="mono text-sm">{{ e.recorded_at|datetime }}</td>
         <td><span class="badge">{{ e.event_kind }}</span></td>
-        <td class="mono">{{ l.leg_code if l else e.leg_id }}</td>
+        <td class="mono"><a href="/mrv/legs/{{ e.leg_id }}" title="Détail MRV du leg">{{ l.leg_code if l else e.leg_id }}</a></td>
         <td class="mono">{{ e.total_consumption_t if e.total_consumption_t is not none else (e.fuel_mass_t or '—') }}</td>
         <td class="mono">{{ e.rob_calculated_t if e.rob_calculated_t is not none else '—' }}</td>
         <td class="mono">{{ e.distance_nm or '—' }}</td>

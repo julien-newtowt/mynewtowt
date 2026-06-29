@@ -14,6 +14,7 @@ CATALOG: dict[str, str] = {
     "nav_carnet": "Build log",
     "nav_actualites": "News",
     "nav_recrutement": "Careers",
+    "nav_passagers": "Passengers",
     "nav_presse": "Press",
     "nav_quote": "Request a quote",
     "footer_navigation": "Navigation",
@@ -428,6 +429,7 @@ CATALOG: dict[str, str] = {
     "s_nav_config": "Configuration",
     "s_nav_ports": "Ports reference",
     "s_nav_security": "Security (MFA)",
+    "s_nav_integrations": "Integrations",
     "s_logout": "Log out",
     # Topbar
     "tb_toggle_sidebar": "Toggle sidebar",

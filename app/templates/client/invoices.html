@@ -1,49 +1,18 @@
 {% extends "client/_layout.html" %}
-{% block title %}{% if lang == 'en' %}My invoices{% else %}Mes factures{% endif %} — NEWTOWT{% endblock %}
+{% block title %}{% if lang == 'en' %}Invoices{% else %}Factures{% endif %} — NEWTOWT{% endblock %}
 {% block content %}
 
-<h1>{% if lang == 'en' %}My invoices{% else %}Mes factures{% endif %}</h1>
+<h1>{% if lang == 'en' %}Invoices{% else %}Factures{% endif %}</h1>
 
-{% if invoices %}
-  <div class="card">
-    <table>
-      <thead>
-        <tr>
-          <th>{% if lang == 'en' %}Reference{% else %}Référence{% endif %}</th>
-          <th>{% if lang == 'en' %}Issued{% else %}Émise le{% endif %}</th>
-          <th>{% if lang == 'en' %}Due{% else %}Échéance{% endif %}</th>
-          <th>{% if lang == 'en' %}Net{% else %}HT{% endif %}</th>
-          <th>{% if lang == 'en' %}VAT{% else %}TVA{% endif %}</th>
-          <th>{% if lang == 'en' %}Gross{% else %}TTC{% endif %}</th>
-          <th>{% if lang == 'en' %}Status{% else %}Statut{% endif %}</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for inv in invoices %}
-          <tr>
-            <td><span class="mono">{{ inv.reference }}</span></td>
-            <td>{{ inv.issued_at|date }}</td>
-            <td>{{ inv.due_at|date if inv.due_at else '—' }}</td>
-            <td>{{ inv.amount_excl_vat_eur|money }}</td>
-            <td>{{ inv.vat_amount_eur|money }}</td>
-            <td><strong>{{ inv.amount_incl_vat_eur|money }}</strong></td>
-            <td>
-              {% if inv.status == 'paid' %}<span class="pill pill-ok">{% if lang == 'en' %}Paid{% else %}Payée{% endif %}</span>
-              {% elif inv.status == 'overdue' %}<span class="pill pill-error">{% if lang == 'en' %}Overdue{% else %}En retard{% endif %}</span>
-              {% elif inv.status == 'issued' %}<span class="pill pill-warn">{% if lang == 'en' %}To pay{% else %}À payer{% endif %}</span>
-              {% else %}<span class="pill pill-neutral">{{ inv.status }}</span>{% endif %}
-            </td>
-            <td>{% if inv.pdf_url %}<a href="{{ inv.pdf_url }}" class="btn btn-ghost">PDF →</a>{% endif %}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-{% else %}
-  <p class="text-muted">
-    {% if lang == 'en' %}No invoice issued yet.{% else %}Aucune facture émise pour l'instant.{% endif %}
+{# EVO-01 / A5 — facturation gérée hors plateforme (virement bancaire). L'ancienne
+   liste ClientInvoice (modèle dormant) est remplacée par cette page explicite. #}
+<div class="empty-state">
+  <i data-lucide="file-text"></i>
+  <p class="empty-title">{% if lang == 'en' %}Invoicing is handled off-platform{% else %}Facturation gérée hors plateforme{% endif %}</p>
+  <p class="empty-hint">
+    {% if lang == 'en' %}NEWTOWT invoices by bank transfer; our accounting team sends your invoices directly. Your booking confirmations and supporting documents remain available in your documents hub.
+    {% else %}NEWTOWT facture par virement bancaire ; notre comptabilité vous adresse vos factures directement. Vos confirmations de réservation et pièces justificatives restent disponibles dans votre espace documents.{% endif %}
   </p>
-{% endif %}
-
+  <a href="/me/documents" class="btn btn-primary mt-3">{% if lang == 'en' %}Go to my documents{% else %}Voir mes documents{% endif %}</a>
+</div>
 {% endblock %}

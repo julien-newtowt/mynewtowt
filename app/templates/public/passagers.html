@@ -1,0 +1,60 @@
+{% extends "public/_layout_v2.html" %}
+{% block title %}Voyager à bord — service passagers 2027 — NewTowt{% endblock %}
+{% block description %}En 2027, NewTowt ouvrira un service passagers : douze couchettes à bord de voiliers-cargos qui relient l'Europe au Brésil et à l'Amérique latine.{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-inner">
+    <span class="hero-kicker">Service passagers — 2027</span>
+    <h1 class="hero-title">Traverser l'Atlantique à la voile</h1>
+    <p class="hero-lead">
+      Chaque navire de la classe TSC 80 dispose de douze couchettes passagers. C'est sur
+      cette base qu'ouvrira, en 2027, notre service passagers — une traversée lente,
+      décarbonée, au rythme du vent et des courants.
+    </p>
+  </div>
+</section>
+
+{% include "public/_translation_notice.html" %}
+
+<section class="section">
+  <div class="section-inner">
+    <span class="section-kicker">Ce qui vous attend</span>
+    <h2 class="section-title">Une autre façon de voyager</h2>
+    <div class="feature-grid">
+      <article class="feature-card">
+        <h3>Douze couchettes</h3>
+        <p>Une capacité intime à bord de voiliers-cargos en service, aux côtés de
+           l'équipage de 9 à 10 marins.</p>
+      </article>
+      <article class="feature-card">
+        <h3>Des routes réelles</h3>
+        <p>Europe ↔ Brésil et Amérique latine : les mêmes traversées que notre fret,
+           au plus près de l'océan.</p>
+      </article>
+      <article class="feature-card">
+        <h3>Décarboné par nature</h3>
+        <p>Une propulsion principalement vélique : voyager en réduisant l'empreinte
+           carbone jusqu'à 95 %.</p>
+      </article>
+    </div>
+
+    <div class="map-placeholder" role="img"
+         aria-label="Vie à bord — visuel à venir"
+         style="height:auto;min-height:280px;margin-top:var(--sp-6);">
+      <span>Vie à bord — <em>visuel à venir</em></span>
+    </div>
+  </div>
+</section>
+
+<section class="section section--sand">
+  <div class="section-inner" style="text-align:center;">
+    <h2 class="section-title">Intéressé·e par une traversée en 2027 ?</h2>
+    <p class="section-lead">
+      Le service ouvrira en 2027. Faites-nous part de votre intérêt dès maintenant,
+      nous vous tiendrons informé·e.
+    </p>
+    <p><a href="/contact" class="btn btn-primary btn-lg">Manifester mon intérêt</a></p>
+  </div>
+</section>
+{% endblock %}

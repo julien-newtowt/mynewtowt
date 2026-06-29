@@ -14,6 +14,7 @@ CATALOG: dict[str, str] = {
     "nav_carnet": "Nhật ký đóng tàu",
     "nav_actualites": "Tin tức",
     "nav_recrutement": "Tuyển dụng",
+    "nav_passagers": "Hành khách",
     "nav_presse": "Báo chí",
     "nav_quote": "Yêu cầu báo giá",
     "footer_navigation": "Hành hải",
@@ -428,6 +429,7 @@ CATALOG: dict[str, str] = {
     "s_nav_config": "Cấu hình",
     "s_nav_ports": "Danh mục cảng",
     "s_nav_security": "Bảo mật (MFA)",
+    "s_nav_integrations": "Tích hợp",
     "s_logout": "Đăng xuất",
     # Topbar
     "tb_toggle_sidebar": "Bật/tắt thanh bên",

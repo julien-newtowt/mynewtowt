@@ -1819,3 +1819,9 @@ form textarea {
 .ship-swatch.ship-cell-high  { background: var(--cuivre); }
 .ship-swatch.ship-cell-full  { background: var(--danger); }
 .ship-warn-list { display: flex; flex-direction: column; gap: 6px; }
+
+/* Empty state (UX-06) — placeholder centré pour listes / cartes / tableaux vides */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; padding: 32px 16px; color: var(--gris); }
+.empty-state svg, .empty-state [data-lucide] { width: 40px; height: 40px; color: var(--gris-clair); }
+.empty-state .empty-title { font-weight: var(--fw-semibold); color: var(--teal-dark); font-size: var(--text-md); }
+.empty-state .empty-hint { font-size: var(--text-sm); color: var(--gris); max-width: 42ch; }

@@ -1,0 +1,8 @@
+{# ADM-07 — résultat HTMX du test de connexion d'une intégration externe #}
+{% if ok %}
+<span class="pill pill-ok"><i data-lucide="check-circle"></i> Connexion Pipedrive établie</span>
+{% elif not configured %}
+<span class="pill pill-warn"><i data-lucide="alert-triangle"></i> Jeton non configuré — définir <code>PIPEDRIVE_API_TOKEN</code></span>
+{% else %}
+<span class="pill pill-error"><i data-lucide="x-circle"></i> Échec de connexion — vérifier le jeton Pipedrive</span>
+{% endif %}

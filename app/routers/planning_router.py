@@ -334,6 +334,8 @@ async def leg_detail(
     pol = await db.get(Port, leg.departure_port_id)
     pod = await db.get(Port, leg.arrival_port_id)
 
+    from app.services.planning import is_delayed, leg_delay_hours
+
     return templates.TemplateResponse(
         "staff/planning/leg_detail.html",
         {
@@ -343,6 +345,8 @@ async def leg_detail(
             "vessel": vessel,
             "pol": pol,
             "pod": pod,
+            "delayed": is_delayed(leg),
+            "delay_h": round(leg_delay_hours(leg), 1),
         },
     )
 
