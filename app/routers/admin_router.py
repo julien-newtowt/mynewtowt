@@ -940,19 +940,32 @@ async def activity_logs_view(
     request: Request,
     module: str | None = None,
     action: str | None = None,
+    actor: str | None = None,
+    page: int = 1,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "C")),
 ) -> HTMLResponse:
+    """ADM-08 — viewer d'audit : filtres module/action/**utilisateur** +
+    **pagination**. Le filtre acteur est une recherche partielle insensible à la
+    casse sur ``user_name`` (valeur bindée — pas de f-string SQL)."""
+    limit = max(10, min(limit, 500))
+    page = max(1, page)
     stmt = select(ActivityLog).order_by(ActivityLog.created_at.desc())
     if module:
         stmt = stmt.where(ActivityLog.module == module)
     if action:
         stmt = stmt.where(ActivityLog.action == action)
-    stmt = stmt.limit(max(10, min(limit, 500)))
-    logs = list((await db.execute(stmt)).scalars().all())
+    if actor:
+        stmt = stmt.where(ActivityLog.user_name.ilike(f"%{actor}%"))
+    # On lit ``limit + 1`` lignes pour détecter la page suivante sans COUNT.
+    rows = list(
+        (await db.execute(stmt.offset((page - 1) * limit).limit(limit + 1))).scalars().all()
+    )
+    has_next = len(rows) > limit
+    logs = rows[:limit]
 
-    # Aggregate counts for filter chips
+    # Aggregate counts for filter chips (sur la page courante)
     modules_count: dict[str, int] = {}
     for log in logs:
         modules_count[log.module or "—"] = modules_count.get(log.module or "—", 0) + 1
@@ -966,6 +979,10 @@ async def activity_logs_view(
             "modules_count": modules_count,
             "filter_module": module,
             "filter_action": action,
+            "filter_actor": actor,
+            "page": page,
+            "has_prev": page > 1,
+            "has_next": has_next,
         },
     )
 

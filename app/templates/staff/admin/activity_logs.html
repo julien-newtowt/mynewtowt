@@ -17,6 +17,14 @@
   {% endfor %}
 </div>
 
+<form method="get" action="/admin/activity-logs" class="flex gap-2 mb-3 items-center">
+  {% if filter_module %}<input type="hidden" name="module" value="{{ filter_module }}">{% endif %}
+  {% if filter_action %}<input type="hidden" name="action" value="{{ filter_action }}">{% endif %}
+  <input type="text" name="actor" value="{{ filter_actor or '' }}" placeholder="Filtrer par utilisateur…">
+  <button type="submit" class="btn btn-secondary btn-sm">Rechercher</button>
+  {% if filter_actor %}<a href="/admin/activity-logs{% if filter_module %}?module={{ filter_module }}{% endif %}" class="btn btn-ghost btn-sm" title="Effacer le filtre utilisateur">×</a>{% endif %}
+</form>
+
 <article class="card">
   <table class="data-table">
     <thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Module</th><th>Entité</th><th>Détail</th><th>IP</th></tr></thead>
@@ -37,5 +45,14 @@
     </tbody>
   </table>
 </article>
+
+{% if has_prev or has_next %}
+{% set suffix %}{% if filter_module %}&module={{ filter_module }}{% endif %}{% if filter_action %}&action={{ filter_action }}{% endif %}{% if filter_actor %}&actor={{ filter_actor|urlencode }}{% endif %}{% endset %}
+<nav class="flex gap-2 mt-3 items-center justify-center">
+  {% if has_prev %}<a href="/admin/activity-logs?page={{ page - 1 }}{{ suffix }}" class="btn btn-ghost btn-sm">← Précédent</a>{% endif %}
+  <span class="text-muted">Page {{ page }}</span>
+  {% if has_next %}<a href="/admin/activity-logs?page={{ page + 1 }}{{ suffix }}" class="btn btn-ghost btn-sm">Suivant →</a>{% endif %}
+</nav>
+{% endif %}
 
 {% endblock %}
