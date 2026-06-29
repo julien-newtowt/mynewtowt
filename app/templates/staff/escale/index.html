@@ -227,6 +227,8 @@
         <a href="/stowage/legs/{{ selected_leg.id }}" class="btn btn-ghost btn-sm" title="Ouvrir le plan de chargement">
           <i data-lucide="external-link"></i> Plan de chargement
         </a>
+        <a href="/stowage/legs/{{ selected_leg.id }}/plan.pdf?lang=fr" class="btn btn-ghost btn-sm" target="_blank" hx-boost="false" title="Plan d'arrimage imprimable (FR)">🇫🇷 PDF</a>
+        <a href="/stowage/legs/{{ selected_leg.id }}/plan.pdf?lang=en" class="btn btn-ghost btn-sm" target="_blank" hx-boost="false" title="Stowage plan printable (EN)">🇬🇧 PDF</a>
       </h4>
       {% if stowage_by_hold %}
       <div class="grid grid-2 gap-2">
