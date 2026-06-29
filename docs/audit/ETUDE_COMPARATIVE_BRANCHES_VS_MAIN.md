@@ -115,12 +115,17 @@ delta marketing** de `main` resté en avance (§2.2).
 - **Parité P0 (cœur métier staff) : 100 %** — `_PENDING` vide dans
   `test_v2_parity.py` ; les 12 parcours persona sont rejouables (plus aucun
   persona en NO-GO).
-- **Évolutions P1 : largement livrées** (47 lots #50→#100).
-- **Résiduels (non bloquants)** : quelques P1/P2 (MRV‑08 bunkering, ADM‑07 écran
-  Pipedrive, PLN‑02/05, UX‑06, ESC‑08, CARGO‑14) + **Lot 4 / EVO** (consolidation
-  des modules V3-only : `client_invoice` dormant, congés `CrewLeave`/`HrAbsence`
-  non unifiés, `erp_scaffold` à nettoyer, veille IA, PWA offline réel). Détail
-  par module dans `docs/audit/backlog/*`.
+- **Évolutions P1 : largement livrées** (lots #50→#100, + lots 47‑49 ci‑dessous).
+- **Action B (résiduels P1) — réalisée** : **ADM‑07** (lot 47 — écran
+  intégrations Pipedrive : état + test de connexion), **MRV‑08** (lot 48 — vue
+  détail leg : events + badges qualité + agrégats bunkering/cargo), **PLN‑02/05**
+  (lot 49 — réalisé délégué exposé + dérive planning au détail leg). Chaque lot
+  avec test de non‑régression.
+- **Résiduels restants (non bloquants)** : finitions **P2** (UX‑06, ESC‑08,
+  CARGO‑14) + **Lot 4 / EVO** (consolidation des modules V3-only :
+  `client_invoice` dormant, congés `CrewLeave`/`HrAbsence` non unifiés,
+  `erp_scaffold` à nettoyer, veille IA, PWA offline réel). Détail par module dans
+  `docs/audit/backlog/*`.
 
 ---
 
@@ -147,8 +152,8 @@ delta marketing** de `main` resté en avance (§2.2).
   d'intégration + report du delta marketing). **Risque de conflit :** concentré
   sur `vitrine_router.py` et `app/templates/public/*`.
 
-### Action B — **Lever les résiduels P1** (faible volume)
-- MRV‑08, PLN‑02/05, ADM‑07. **Effort :** S–M chacun.
+### Action B — **Lever les résiduels P1** (faible volume) — ✅ **réalisée**
+- ADM‑07 (lot 47), MRV‑08 (lot 48), PLN‑02/05 (lot 49) — livrés avec tests.
 
 ### Action C — **Consolider les modules V3-only (Lot 4 / EVO)**
 - Trancher `client_invoice` ; unifier les congés ; nettoyer `erp_scaffold` ;
