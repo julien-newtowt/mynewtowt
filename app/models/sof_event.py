@@ -191,3 +191,11 @@ class CargoDocument(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # EVO-09 — signature/lock IMO (même mécanisme que SOF/noon/watch) :
+    # tamper-evidence SHA-256 + verrouillage. Une fois signé, le document
+    # n'est plus modifiable (``ensure_unlocked`` → 409).
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    signed_by_name: Mapped[str | None] = mapped_column(String(200))
+    signature_hash: Mapped[str | None] = mapped_column(String(64))
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

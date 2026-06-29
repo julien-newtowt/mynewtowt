@@ -47,6 +47,7 @@ from app.services import mrv_sync, notifications
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.signature import (
+    compute_cargo_doc_hash,
     compute_noon_hash,
     compute_sof_hash,
     compute_watch_hash,
@@ -623,6 +624,7 @@ async def update_cargo_document(
     doc = await db.get(CargoDocument, doc_id)
     if doc is None or doc.leg_id != leg_id:
         raise HTTPException(status_code=404)
+    ensure_unlocked(doc)  # EVO-09 — document signé = non modifiable (409)
     form = dict(await request.form())
     doc.reference = (form.get("reference") or "").strip() or None
     if doc.kind in CARGO_DOC_TYPES:
@@ -642,6 +644,39 @@ async def update_cargo_document(
         entity_type="cargo_document",
         entity_id=doc.id,
         entity_label=f"{doc.kind} {doc.reference or ''}".strip(),
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
+
+
+@router.post("/legs/{leg_id}/docs/{doc_id}/sign")
+async def sign_cargo_document(
+    leg_id: int,
+    doc_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """EVO-09 — signe et verrouille un document cargo (NOR/LOP/Mate's Receipt…).
+
+    Même mécanisme IMO que SOF/noon/watch : SHA-256 tamper-evidence +
+    ``is_locked``. Un document signé n'est plus modifiable (409 sur l'édition)."""
+    doc = await db.get(CargoDocument, doc_id)
+    if doc is None or doc.leg_id != leg_id:
+        raise HTTPException(status_code=404)
+    sign_record(doc, user, hash_fn=compute_cargo_doc_hash)
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="cargo_document",
+        entity_id=doc.id,
+        entity_label=f"{doc.kind} {doc.reference or ''}".strip(),
+        detail="signed",
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)

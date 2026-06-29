@@ -58,6 +58,42 @@
 </article>
 {% endif %}
 
+{% if leg_overview %}
+<article class="card mb-3">
+  <div class="section-header"><h3><i data-lucide="package"></i> Commercial du leg</h3></div>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <h4>Commandes ({{ leg_overview.orders|length }})</h4>
+      {% if leg_overview.orders %}
+      <table class="data-table">
+        <thead><tr><th>Référence</th><th>Client</th><th>Palettes</th><th>Statut</th></tr></thead>
+        <tbody>
+          {% for row in leg_overview.orders %}
+          <tr>
+            <td class="mono"><a href="/commercial/orders/{{ row.order.id }}">{{ row.order.reference }}</a></td>
+            <td>{{ row.client_name }}</td>
+            <td class="mono">{{ row.order.booked_palettes }}</td>
+            <td><span class="badge badge-{{ row.order.status }}">{{ row.order.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="text-muted">Aucune commande affectée à ce leg.</p>{% endif %}
+    </div>
+    <div>
+      <h4>Packing lists ({{ leg_overview.packing_lists|length }})</h4>
+      {% if leg_overview.packing_lists %}
+      <ul style="list-style:none;padding-left:0;margin:0;display:flex;flex-direction:column;gap:6px;">
+        {% for pl in leg_overview.packing_lists %}
+        <li><a href="/cargo/packing-lists/{{ pl.id }}" class="mono">PL-{{ pl.id }}</a> <span class="badge badge-{{ pl.status }}">{{ pl.status }}</span></li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="text-muted">Aucune packing list pour ce leg.</p>{% endif %}
+    </div>
+  </div>
+</article>
+{% endif %}
+
 <div class="grid grid-2 gap-4">
   <article class="card">
     <div class="section-header"><h3><i data-lucide="anchor"></i> Opérations</h3></div>

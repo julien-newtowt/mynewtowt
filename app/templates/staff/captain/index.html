@@ -182,9 +182,17 @@
             </form>
           {% endif %}
         </td>
-        <td class="flex gap-1">
+        <td class="flex gap-1 items-center">
+          {% if d.is_locked %}
+          <span class="pill pill-ok" title="Signé le {{ d.signed_at|datetime }} par {{ d.signed_by_name }}"><i data-lucide="lock"></i> Signé</span>
+          {% else %}
           {% if d.kind in cargo_doc_kinds %}
           <a href="/captain/legs/{{ leg.id }}/docs/{{ d.id }}/edit" class="btn btn-xs" title="Éditer le formulaire guidé"><i data-lucide="pencil"></i></a>
+          {% endif %}
+          <form method="post" action="/captain/legs/{{ leg.id }}/docs/{{ d.id }}/sign" style="display:inline;" data-confirm="Signer et verrouiller {{ d.kind }} {{ d.reference or '' }} ? Le document ne sera plus modifiable.">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}">
+            <button type="submit" class="btn btn-xs btn-primary" title="Signer (IMO)"><i data-lucide="pen-tool"></i> Signer</button>
+          </form>
           {% endif %}
           <a href="/captain/legs/{{ leg.id }}/docs/{{ d.id }}.pdf" class="btn btn-xs btn-secondary">PDF</a>
         </td>
