@@ -91,23 +91,23 @@ issues de la réinitialisation : `newtowt-erp-development`, `quirky-edison`,
   `origin/main:app/models/commercial.py` → absorbé.
 → **Branches conservables en archive le temps de confirmer, puis à purger.**
 
-### D — Lignée distincte, contenu à trier au cas par cas (non confirmé absorbé)
-Branches portant un thème identifiable mais **non vérifié present/absent** de
-`main` lors de cette passe — à arbitrer avant suppression :
+### D — Lignée distincte, contenu **vérifié ré‑absorbé dans `main`**
+Sondage ciblé de `main` (2026‑06‑29) pour chaque signature fonctionnelle :
+**toutes présentes**. Aucune de ces branches ne porte de travail unique.
 
-| Branche | Thème apparent |
-|---|---|
-| `gifted-franklin` | Sonde MARAD `getSyncDetails` (diagnostic compte/tenant). |
-| `sirh-integration-specs` | Specs SIRH / arbitrage périmètre Silae (marins ENIM + sédentaires). |
-| `fix/git-stabilization` | Stabilisation de l'environnement git + stratégie de dév. |
-| `amazing-davinci` | Lot ancien (merge PR #48) — probablement pré‑reset. |
-| `fix/ci-pipeline-repair` | Réparation pipeline CI (UP038/ruff 0.9.2). |
-| `fervent-dijkstra` | `Cache-Control: no-store` sur les pages HTML (anti‑CSRF périmé). |
-| `adoring-johnson` | COM‑13 — instrumentation du funnel commercial. |
+| Branche | Signature sondée | Dans `main` ? | Localisation dans `main` |
+|---|---|---|---|
+| `gifted-franklin` | MARAD + sonde `getSyncDetails` | ✅ | `app/utils/marad.py`, `scripts/marad_probe*`, `/api/marad`, config |
+| `amazing-davinci` | MARAD sync `/api/marad/refresh`, clés | ✅ | idem MARAD (même périmètre) |
+| `sirh-integration-specs` | SIRH L4/L5/L6 (EVP, Silae, coffre bulletins, entretiens) | ✅ | services/models RH, `payslip`, export Silae |
+| `fix/git-stabilization` | grilles (surcharge IMDG %/min factur.), rapprochement compte↔client, KPI i18n | ✅ | `app/services` commercial + catalogues i18n |
+| `fix/ci-pipeline-repair` | black + ruff 0.9.2 épinglés | ✅ | `.github/`, `requirements.txt` (CI verte) |
+| `fervent-dijkstra` | `Cache-Control: no-store` HTML, CSRF POST | ✅ | `app/middlewares/security_headers.py`, `csrf.py` |
+| `adoring-johnson` | COM‑13 funnel, cashbox, devis→réservation | ✅ | `modules_router.py`, `analytics/commercial.html`, `cashbox` |
 
-→ Pour chacune : sonder `main`, et si la fonctionnalité manque réellement,
-**cherry‑pick / ré‑implémenter** sur une branche issue de `main` (pas de merge
-direct — lignées disjointes).
+→ **Reclassées en « absorbées ». Plus rien à récupérer ; candidates à purge** au
+même titre que la classe C. Seuls subsistent des artefacts jetables (scripts de
+diagnostic, reformat mécanique one‑shot) sans valeur de conservation.
 
 ---
 
@@ -117,18 +117,24 @@ direct — lignées disjointes).
   porteur de toute la reprise V2→V3 et des lots récents jusqu'au **76**.
 - **La prolifération de branches est un artefact d'un reset d'historique** :
   18 des 20 branches sont sur une **lignée disjointe** de `main`. Leur « avance »
-  est trompeuse — l'essentiel est **déjà ré‑absorbé** (vérifié pour COM‑11, SOF,
-  grilles multi‑routes).
-- **Aucun écart bloquant** : rien dans ces branches n'invalide `main`.
+  est trompeuse.
+- **Vérification de contenu : `main` est un sur‑ensemble.** Toutes les
+  signatures fonctionnelles sondées (classes C **et D**) sont **présentes dans
+  `main`** : COM‑11, SOF, grilles multi‑routes, MARAD (+ sonde), SIRH L4‑L6,
+  rapprochement compte↔client, KPI i18n, CI black/ruff, `no-store`/CSRF, COM‑13
+  funnel, cashbox, devis→réservation. **Aucune branche ne porte de travail
+  unique non mergé.**
+- **Aucun écart bloquant**, aucune fonctionnalité à rapatrier.
 
 ### Recommandations
-1. **Purger** les 8 placeholders (classe B) — aucune valeur.
-2. **Purger** les branches de classe A et C **après** confirmation rapide
-   (contenu dans `main`).
-3. **Trier** les 7 branches de classe D : sonde `main` → cherry‑pick/ré‑implé si
-   réellement manquant, sinon purge.
-4. **Conserver `main` comme unique trunk** ; créer toute nouvelle branche **à
-   partir de `main`** pour éviter de régénérer des lignées orphelines.
+1. **Purge sûre** des 8 placeholders (classe B) — strictement vides.
+2. **Purge** des classes A, C et D — contenu intégralement dans `main`
+   (vérifié). Ne subsistent que des artefacts jetables (scripts de diagnostic,
+   reformat one‑shot).
+3. **Conserver `main` comme unique trunk** ; créer toute nouvelle branche **à
+   partir de `main`** pour ne pas régénérer de lignées orphelines.
+4. **Hygiène** : envisager un nettoyage en masse des branches distantes (toutes
+   sauf `main`) une fois la purge validée par un humain.
 
 > Cette étude complète `ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md` (qui traçait la
 > branche de travail vs `main`) en élargissant à **l'ensemble** des branches du
