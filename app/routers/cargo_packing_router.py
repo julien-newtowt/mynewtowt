@@ -297,6 +297,38 @@ async def delete_batch(
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
 
 
+@router.post("/{pl_id}/delete")
+async def delete_packing_list(
+    pl_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "S")),
+):
+    """CARGO-14 — suppression d'une packing list entière (interdite si
+    verrouillée). Les batches, messages, documents et l'audit sont supprimés en
+    cascade (FK ``ondelete=CASCADE`` / ``delete-orphan``). Tracé dans le journal
+    d'activité (append-only, indépendant de la PL)."""
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    if not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="cargo",
+        entity_type="packing_list",
+        entity_id=pl_id,
+        entity_label=f"PL-{pl_id}",
+    )
+    await db.delete(pl)
+    await db.flush()
+    return RedirectResponse(url="/cargo/packing-lists", status_code=303)
+
+
 @router.get("/{pl_id}/history", response_class=HTMLResponse)
 async def packing_list_history(
     pl_id: int,

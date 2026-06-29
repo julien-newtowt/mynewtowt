@@ -25,6 +25,11 @@
       <button type="submit" class="btn btn-secondary btn-sm">Déverrouiller</button>
     </form>
     {% endif %}
+    {% if pl.status != 'locked' %}
+    <form method="post" action="/cargo/packing-lists/{{ pl.id }}/delete" style="display:inline;" data-confirm="Supprimer définitivement la PL-{{ pl.id }} (batches, messages et documents inclus) ?">
+      <button type="submit" class="btn btn-danger btn-sm" title="Supprimer la packing list">🗑 Supprimer</button>
+    </form>
+    {% endif %}
     <a href="/cargo/packing-lists" class="btn btn-ghost">← Retour</a>
   </div>
 </header>
