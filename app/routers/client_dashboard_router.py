@@ -279,14 +279,20 @@ async def track(
     )
 
 
-@router.get("/me/invoices")
-async def invoices_legacy_redirect() -> RedirectResponse:
-    """COM-05 — la facturation est émise par la comptabilité hors plateforme.
-
-    Les anciens liens /me/invoices redirigent vers le hub documents
-    (booking notes). Le modèle ClientInvoice et services/invoicing restent
-    dormants pour un futur export comptable."""
-    return RedirectResponse(url="/me/documents", status_code=301)
+@router.get("/me/invoices", response_class=HTMLResponse)
+async def invoices_page(
+    request: Request,
+    client=Depends(get_current_client),
+) -> HTMLResponse:
+    """EVO-01 / arbitrage A5 — la facturation est émise par la comptabilité
+    hors plateforme (virement bancaire). Page explicite remplaçant l'ancien
+    301 silencieux vers /me/documents. Le modèle ClientInvoice reste inactif
+    (non listé) ; le service ``invoicing`` n'est conservé que pour le calcul
+    des montants (booking/Anemos)."""
+    return templates.TemplateResponse(
+        "client/invoices.html",
+        {"request": request, "client": client},
+    )
 
 
 @router.get("/me/documents", response_class=HTMLResponse)
