@@ -247,6 +247,36 @@ async def annual_navigation_kpis(
     return rows
 
 
+async def navigation_aggregate(db: AsyncSession, legs, *, now: datetime | None = None) -> dict:
+    """EVO-08 — agrégat des métriques de navigation sur un périmètre de legs.
+
+    Pour les legs porteurs d'au moins un point GPS : distance réelle cumulée,
+    allongement réel moyen, SOG moyen. Alimente la section Exploitation des KPI."""
+    total_real = 0.0
+    elongations: list[float] = []
+    sogs: list[float] = []
+    legs_with_gps = 0
+    for leg in legs:
+        positions = await positions_for_leg(db, leg, now=now)
+        if not positions:
+            continue
+        legs_with_gps += 1
+        arr = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
+        m = compute_metrics(positions, leg, arr_port=arr, now=now)
+        total_real += m.actual_nm
+        if m.real_elongation is not None:
+            elongations.append(m.real_elongation)
+        avg_sog, _ = sog_stats(positions)
+        if avg_sog is not None:
+            sogs.append(avg_sog)
+    return {
+        "legs_with_gps": legs_with_gps,
+        "total_real_nm": round(total_real, 1),
+        "avg_elongation": round(sum(elongations) / len(elongations), 3) if elongations else None,
+        "avg_sog_kn": round(sum(sogs) / len(sogs), 1) if sogs else None,
+    }
+
+
 def downsample_for_weather(
     positions: list[VesselPosition], *, minutes: int = WEATHER_SAMPLE_MINUTES
 ) -> list[VesselPosition]:
