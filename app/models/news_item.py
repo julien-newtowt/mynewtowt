@@ -52,5 +52,9 @@ class NewsItem(Base):
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # EVO-04 — score de pertinence affiné par IA (0–100), rempli au cron quand
+    # ANTHROPIC_API_KEY est présente. NULL ⇒ l'UI retombe sur le heuristique.
+    ai_score: Mapped[int | None] = mapped_column(Integer)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<NewsItem {self.id} {self.title[:40]!r}>"

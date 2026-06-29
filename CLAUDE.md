@@ -171,7 +171,7 @@ mynewtowt/
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |
 | Météo historisée | `/api/weather/refresh` | ✅ snapshot Windy du dernier point GPS / navire (cron 30 min, `WEATHER_API_TOKEN`) → `vessel_weather` |
 | Chat Kairos AI | `/chat` | ✅ Claude Sonnet 4.6 |
-| Veille d'actualité | `/veille` + `/api/veille/refresh` | 🟡 P1 — flux brut NewsData.io (staff), refresh cron Power Automate ; IA (synthèse/scoring) en P2 |
+| Veille d'actualité | `/veille` + `/api/veille/refresh` | ✅ flux NewsData.io (staff), refresh cron Power Automate + **couche IA** (score de pertinence affiné + digest quotidien, dégradation gracieuse sans clé → scoring heuristique) |
 | Admin | `/admin/...` | ✅ users + opex + insurance + maintenance + activity-logs |
 
 ## Glossaire maritime

@@ -27,6 +27,25 @@
 </div>
 {% endif %}
 
+{# EVO-04 — synthèse du jour (digest IA). Rendu sûr : on découpe le markdown
+   en puces échappées par Jinja (jamais de |safe sur du contenu modèle). #}
+{% if digest %}
+<article class="card mb-3" style="border-left:3px solid var(--vert);">
+  <div class="flex items-center gap-2 mb-1">
+    <i data-lucide="sparkles"></i>
+    <strong>Synthèse du jour</strong>
+    <span class="pill pill-ok text-xs" title="Générée par IA">IA</span>
+    <span class="text-xs text-muted mono">{{ digest.generated_at|datetime }}</span>
+  </div>
+  <ul style="margin:.25rem 0 0;padding-left:1.1rem;">
+    {% for line in digest.body.split('\n') %}
+      {% set clean = line.lstrip('-* ').strip() %}
+      {% if clean %}<li class="text-sm">{{ clean }}</li>{% endif %}
+    {% endfor %}
+  </ul>
+</article>
+{% endif %}
+
 <form method="GET" action="/veille" class="flex gap-2 mb-3 items-center">
   <input type="search" name="q" value="{{ q }}" placeholder="Rechercher dans les titres…" class="input" style="max-width:280px;" />
   <button type="submit" class="btn btn-ghost btn-sm"><i data-lucide="search"></i></button>
@@ -48,7 +67,7 @@
       <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
         {% if item.is_pinned %}<span class="badge badge-completed"><i data-lucide="pin"></i> Épinglé</span>{% endif %}
         {% set sc = scores.get(item.id) %}
-        {% if sc and sc.score %}<span class="pill {% if sc.label == 'haute' %}pill-ok{% elif sc.label == 'moyenne' %}pill-warn{% else %}pill-neutral{% endif %}" title="Pertinence {{ sc.score }}/100 (heuristique)">priorité {{ sc.label }}</span>{% endif %}
+        {% if sc and sc.score %}<span class="pill {% if sc.label == 'haute' %}pill-ok{% elif sc.label == 'moyenne' %}pill-warn{% else %}pill-neutral{% endif %}" title="Pertinence {{ sc.score }}/100 ({{ 'IA' if sc.ai else 'heuristique' }})">priorité {{ sc.label }}{% if sc.ai %} ✦{% endif %}</span>{% endif %}
         <span class="badge">{{ source_names.get(item.source_id, '—') }}</span>
         {% if item.publisher %}<span class="pill mono text-sm">{{ item.publisher }}</span>{% endif %}
         {% if item.category %}<span class="pill text-sm">{{ item.category }}</span>{% endif %}

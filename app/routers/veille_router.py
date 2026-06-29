@@ -94,13 +94,33 @@ async def veille_index(
 
     source_names = {s.id: s.name for s in sources}
 
-    # EVO-04 (socle) — scoring heuristique de pertinence par item (priorité UI).
+    # EVO-04 — priorité par item : score IA (ai_score) si présent, sinon
+    # repli sur le scoring heuristique (lot 70). ``ai`` signale l'origine.
     from app.services.news_scoring import priority_label, score_news_item
 
     scores = {}
     for it in items:
-        s = score_news_item(it.title, it.description)
-        scores[it.id] = {"score": s, "label": priority_label(s)}
+        if it.ai_score is not None:
+            s = it.ai_score
+            origin = True
+        else:
+            s = score_news_item(it.title, it.description)
+            origin = False
+        scores[it.id] = {"score": s, "label": priority_label(s), "ai": origin}
+
+    # EVO-04 — synthèse du jour (digest IA), si générée au dernier cron.
+    from datetime import UTC, datetime
+
+    from app.models.news_digest import NewsDigest
+
+    today = datetime.now(UTC).date()
+    digest = (
+        await db.execute(
+            select(NewsDigest)
+            .where(NewsDigest.day == today, NewsDigest.lang == "fr")
+            .limit(1)
+        )
+    ).scalar_one_or_none()
 
     return templates.TemplateResponse(
         "staff/veille/index.html",
@@ -111,6 +131,7 @@ async def veille_index(
             "sources": sources,
             "source_names": source_names,
             "scores": scores,
+            "digest": digest,
             "filter_source_id": source_id,
             "q": q or "",
             "configured": newsdata.is_configured(),
@@ -280,6 +301,10 @@ async def veille_refresh_manual(
             detail="NEWSDATA_API_KEY non configurée dans .env",
         )
     result = await news_ingest.ingest_all(db)
+    # EVO-04 — enrichissement IA (score affiné + digest du jour). No-op sans clé.
+    from app.services import news_ai
+
+    result["ai"] = await news_ai.enrich_after_ingest(db)
     await activity_record(
         db,
         action="veille_refresh",
@@ -322,5 +347,9 @@ async def veille_refresh_api(
             detail="NEWSDATA_API_KEY non configurée dans .env",
         )
     result = await news_ingest.ingest_all(db)
+    # EVO-04 — enrichissement IA (score affiné + digest du jour). No-op sans clé.
+    from app.services import news_ai
+
+    result["ai"] = await news_ai.enrich_after_ingest(db)
     logger.info("Veille refresh (API): %s", result)
     return JSONResponse(result)
