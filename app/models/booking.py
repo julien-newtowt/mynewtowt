@@ -34,8 +34,12 @@ class Booking(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     reference: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
 
-    client_account_id: Mapped[int] = mapped_column(
-        ForeignKey("client_accounts.id"), nullable=False, index=True
+    # Nullable : une réservation invité (wizard sans compte) est créée en
+    # brouillon AVANT l'autocréation du compte. Le compte client est rattaché
+    # à la validation (étape 3) — cf. CONV / autocréation. Tout booking
+    # `submitted` ou au-delà a forcément un compte rattaché.
+    client_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("client_accounts.id"), nullable=True, index=True
     )
     leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id"), nullable=False, index=True)
 
@@ -56,6 +60,14 @@ class Booking(Base):
 
     estimated_price_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     confirmed_price_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+
+    # Conversion devis → réservation : référence du devis (DEV-…) à l'origine
+    # de la réservation, pour mesurer le taux quote → booking et neutraliser la
+    # relance J+1 sur les devis convertis.
+    source_quote_reference: Mapped[str | None] = mapped_column(String(24), index=True)
+
+    # Frais d'annulation calculés (grille COM-08 : 0/25/50/100 % selon J-30/J-7/J-2).
+    cancellation_fee_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
 
     pickup_address: Mapped[str | None] = mapped_column(Text)
     delivery_address: Mapped[str | None] = mapped_column(Text)

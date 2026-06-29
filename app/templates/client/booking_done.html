@@ -1,14 +1,9 @@
 {% extends "client/_layout.html" %}
-{% block title %}{% if lang == 'en' %}Booking submitted{% else %}Réservation soumise{% endif %} — NEWTOWT{% endblock %}
+{% block title %}{{ t('booking_done_title', lang) }} — NEWTOWT{% endblock %}
 {% block content %}
 
 <div class="card text-center" style="background: var(--gradient-ocean); color: var(--bg-0)">
-  <h1 style="color: var(--bg-0)" class="display">
-    {% if lang == 'en' %}Thank you!{% else %}Merci !{% endif %}
-  </h1>
-  <p style="font-size: var(--text-lg)">
-    {% if lang == 'en' %}Your booking request has been recorded.{% else %}Votre demande de réservation est enregistrée.{% endif %}
-  </p>
+  <h1 style="color: var(--bg-0)" class="display">{{ t('booking_done_title', lang) }}</h1>
   <p>
     {% if lang == 'en' %}Reference:{% else %}Référence :{% endif %}
     <strong class="mono">{{ booking.reference }}</strong>
@@ -16,26 +11,16 @@
 </div>
 
 <div class="card mt-4">
-  <h2>{% if lang == 'en' %}What's next?{% else %}Et maintenant ?{% endif %}</h2>
-  <ol>
-    {% if lang == 'en' %}
-    <li>Our commercial team confirms your booking within <strong>4 business hours</strong>.</li>
-    <li>You receive an email with the confirmation, the final price and a link to your invoice.</li>
-    <li>At loading, we hand over the <strong>Bill of Lading</strong> and the mate's receipt.</li>
-    <li>At delivery, we issue your <strong>avoided Anemos label</strong>.</li>
-    {% else %}
-    <li>Notre équipe commerciale confirme votre réservation sous <strong>4 heures ouvrées</strong>.</li>
-    <li>Vous recevez par email la confirmation, le prix final et votre booking note. La facturation est émise par notre comptabilité hors plateforme.</li>
-    <li>Au chargement, nous vous transmettons le <strong>Bill of Lading</strong> et le mate's receipt.</li>
-    <li>À la livraison, nous émettons votre <strong>label Anemos évité</strong>.</li>
-    {% endif %}
-  </ol>
+  <p class="text-accent" style="font-weight:600;">
+    <a href="/me/bookings">{{ t('booking_done_account', lang) }}</a>
+  </p>
+  <p style="line-height:1.6;">{{ t('booking_done_next', lang) }}</p>
   <div class="flex gap-3 mt-4">
-    <a href="/me/bookings/{{ booking.reference }}" class="btn btn-primary">
-      {% if lang == 'en' %}View details{% else %}Voir le détail{% endif %}
+    <a href="/me/bookings" class="btn btn-primary">
+      {% if lang == 'en' %}My bookings{% else %}Mes réservations{% endif %}
     </a>
-    <a href="/me" class="btn btn-ghost">
-      {% if lang == 'en' %}Back to dashboard{% else %}Retour au tableau de bord{% endif %}
+    <a href="/me/bookings/{{ booking.reference }}" class="btn btn-ghost">
+      {% if lang == 'en' %}View details{% else %}Voir le détail{% endif %}
     </a>
   </div>
 </div>

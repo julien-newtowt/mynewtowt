@@ -75,15 +75,26 @@
     </p>
 
     <div style="display:flex;gap:var(--sp-3);flex-wrap:wrap;margin-top:var(--sp-5);">
-      <a class="btn btn-primary" href="/devis/{{ quote.reference }}.pdf">{{ t('devis_download_pdf', lang) }}</a>
       {% if leg %}
-      <a class="btn btn-secondary" href="/booking/new/{{ leg.leg_code }}?quote={{ quote.reference }}">{{ t('devis_book_crossing', lang) }}</a>
+      <a class="btn btn-primary" href="/booking/new/{{ leg.leg_code }}?quote={{ quote.reference }}">{{ t('devis_book_crossing', lang) }}</a>
       {% else %}
-      <a class="btn btn-secondary" href="/booking/new">{{ t('devis_book', lang) }}</a>
+      <a class="btn btn-primary" href="/booking/new">{{ t('devis_book', lang) }}</a>
       {% endif %}
+      <a class="btn btn-secondary" href="/devis/{{ quote.reference }}.pdf">{{ t('devis_download_pdf', lang) }}</a>
       <a class="btn btn-ghost" href="/contact">{{ t('devis_talk_sales', lang) }}</a>
       <a class="btn btn-ghost" href="/devis">{{ t('devis_new_quote', lang) }}</a>
     </div>
+    <p class="form-hint" style="margin-top:var(--sp-3);">{{ t('devis_book_reassure', lang) }}</p>
+
+    {% if co2_avoided_kg and co2_avoided_kg > 0 %}
+    <div class="card" style="margin-top:var(--sp-5);background:var(--sable,#EFE6D6);">
+      <p style="font-weight:600;color:var(--teal);margin-bottom:var(--sp-3);">
+        {{ t('devis_co2_line', lang, x="%.0f"|format(co2_avoided_kg)) }}
+      </p>
+      {% set co2_kg = co2_avoided_kg %}
+      {% include "public/_co2_equivalences.html" with context %}
+    </div>
+    {% endif %}
   </div>
 </section>
 {% endblock %}

@@ -93,6 +93,11 @@ async def set_language(lang: str, request: Request):
 @router.get("/", response_class=HTMLResponse)
 async def landing(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     upcoming = await _next_bookable_legs(db, limit=6)
+    from app.services import analytics
+
+    await analytics.record(
+        db, "landing_view", lang=getattr(request.state, "lang", "fr"), channel="public"
+    )
     return templates.TemplateResponse(
         "public/landing.html",
         {"request": request, "upcoming_legs": upcoming},
@@ -169,6 +174,16 @@ async def route_detail(
     leg, vessel = row
     pol = await db.get(Port, leg.departure_port_id)
     pod = await db.get(Port, leg.arrival_port_id)
+
+    from app.services import analytics
+
+    await analytics.record(
+        db,
+        "route_view",
+        reference=leg.leg_code,
+        lang=getattr(request.state, "lang", "fr"),
+        channel="client" if client else "public",
+    )
 
     # Config portuaire (agent, docs, restrictions) pour les blocs port.
     from app.models.finance import PortConfig

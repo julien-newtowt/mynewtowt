@@ -84,6 +84,9 @@ class Quote(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Relance J+1 sur devis non converti (nurturing avant-vente) : horodatage
+    # de l'envoi (NULL = jamais relancé). Une seule relance par devis.
+    followup_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     lines: Mapped[list[QuoteLine]] = relationship(
         back_populates="quote", cascade="all, delete-orphan", order_by="QuoteLine.position"

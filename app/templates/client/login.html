@@ -16,6 +16,7 @@
     {% endif %}
     <form method="post" action="/me/login">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}" />{% endif %}
       <div class="field">
         <label for="email">Email</label>
         <input id="email" type="email" name="email" autocomplete="email" required autofocus />

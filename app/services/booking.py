@@ -67,7 +67,7 @@ def _aggregate_totals(items: Sequence[BookingItemInput]) -> tuple[int, Decimal, 
 async def create_draft(
     db: AsyncSession,
     *,
-    client: ClientAccount,
+    client: ClientAccount | None,
     leg: Leg,
     items: Sequence[BookingItemInput],
     pickup_address: str | None,
@@ -75,12 +75,19 @@ async def create_draft(
     shipper_reference: str | None,
     notes: str | None,
     channel: str = "client",
+    source_quote_reference: str | None = None,
 ) -> tuple[Booking, GridQuote]:
     """Create a booking in draft status, with an indicative price.
 
     No capacity lock yet — only at confirm() time. Le prix indicatif est
     calculé sur la grille tarifaire applicable (grille du client connu,
     sinon grille par défaut de la route) — cf. services.quoting.
+
+    ``client`` peut être ``None`` : c'est le **brouillon invité** du wizard
+    (session anonyme). Le compte client est créé et rattaché à la validation
+    (étape 3) — cf. autocréation. Le brouillon est alors tarifé sur la grille
+    par défaut de la route (pas de grille négociée tant que le compte n'est pas
+    connu).
 
     ``channel`` (B2) trace le rail de remplissage : "client" (wizard public,
     défaut) ou "operator" (back-office). Le wizard client n'a pas à le passer.
@@ -103,7 +110,7 @@ async def create_draft(
         pol_locode=pol.locode,
         pod_locode=pod.locode,
         on_date=leg.etd.date() if leg.etd else None,
-        commercial_client_id=client.commercial_client_id,
+        commercial_client_id=(client.commercial_client_id if client else None),
     )
     quote = compute_grid_quote(
         grid,
@@ -115,7 +122,7 @@ async def create_draft(
 
     booking = Booking(
         reference=generate_reference(),
-        client_account_id=client.id,
+        client_account_id=(client.id if client else None),
         leg_id=leg.id,
         status="draft",
         channel=channel,
@@ -127,6 +134,7 @@ async def create_draft(
         delivery_address=delivery_address,
         shipper_reference=shipper_reference,
         notes=notes,
+        source_quote_reference=source_quote_reference,
     )
     db.add(booking)
     await db.flush()
@@ -220,8 +228,61 @@ async def confirm(
     return booking
 
 
+# Grille des frais d'annulation (COM-08) : palier (jours avant ETD) → quote-part.
+#   > 30 j  → 0 %   ·   J-30 à J-7 → 25 %   ·   J-7 à J-2 → 50 %   ·   < J-2 → 100 %
+_CANCELLATION_TIERS: tuple[tuple[int, Decimal], ...] = (
+    (30, Decimal("0")),
+    (7, Decimal("0.25")),
+    (2, Decimal("0.50")),
+    (0, Decimal("1.00")),
+)
+
+
+def cancellation_fee_rate(days_to_etd: int | None) -> Decimal:
+    """Quote-part de frais d'annulation pour ``days_to_etd`` jours avant l'ETD."""
+    if days_to_etd is None:
+        return Decimal("0")
+    for threshold, rate in _CANCELLATION_TIERS:
+        if days_to_etd >= threshold:
+            return rate
+    return Decimal("1.00")
+
+
+def compute_cancellation_fee(
+    *,
+    status: str,
+    price_eur: Decimal | None,
+    days_to_etd: int | None,
+) -> Decimal:
+    """Frais d'annulation (EUR) selon la grille COM-08.
+
+    Aucun frais tant que la réservation n'est pas confirmée (annulation libre
+    en ``draft``/``submitted``). Au-delà, application de la grille sur le prix
+    confirmé (ou estimé à défaut).
+    """
+    if status not in ("confirmed", "loaded", "at_sea"):
+        return Decimal("0")
+    base = price_eur or Decimal("0")
+    rate = cancellation_fee_rate(days_to_etd)
+    return (base * rate).quantize(Decimal("0.01"))
+
+
+def _days_to_etd(leg: Leg | None, on: datetime | None = None) -> int | None:
+    if leg is None or leg.etd is None:
+        return None
+    now = on or datetime.now(UTC)
+    return (leg.etd.date() - now.date()).days
+
+
 async def cancel(db: AsyncSession, booking: Booking, reason: str) -> Booking:
     _assert_transition(booking.status, "cancelled")
+    # Frais d'annulation figés au moment de l'annulation (grille COM-08).
+    leg = await db.get(Leg, booking.leg_id)
+    booking.cancellation_fee_eur = compute_cancellation_fee(
+        status=booking.status,
+        price_eur=booking.confirmed_price_eur or booking.estimated_price_eur,
+        days_to_etd=_days_to_etd(leg),
+    )
     booking.status = "cancelled"
     booking.cancelled_at = datetime.now(UTC)
     booking.cancelled_reason = reason

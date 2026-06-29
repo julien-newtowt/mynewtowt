@@ -10,16 +10,18 @@ téléchargeable en PDF via une URL non listée.
 
 from __future__ import annotations
 
+import secrets as _secrets
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CLIENT_COOKIE, AuthError, get_current_client
+from app.config import settings
 from app.database import get_db
 from app.models.commercial import PALETTE_COEFFICIENTS
 from app.models.leg import Leg
@@ -201,6 +203,18 @@ async def devis_submit(
         ip_address=_client_ip(request),
     )
 
+    # Analytics tunnel : devis généré.
+    from app.services import analytics
+
+    await analytics.record(
+        db,
+        "quote_generated",
+        reference=quote.reference,
+        lang=getattr(request.state, "lang", "fr"),
+        channel="client" if client else "public",
+        detail=f"{pol}->{pod}",
+    )
+
     # Lead commercial (best-effort) : tout devis invité avec email est un lead.
     if contact_email and client is None:
         try:
@@ -242,6 +256,12 @@ async def devis_pdf(
     pol, pod = await _ports_by_locode(db, quote.pol_locode, quote.pod_locode)
     leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
     vessel = await db.get(Vessel, leg.vessel_id) if leg is not None else None
+
+    from app.services import analytics
+
+    await analytics.record(
+        db, "quote_pdf_download", reference=quote.reference, lang=quote.lang
+    )
 
     from weasyprint import HTML  # import tardif — dépendances natives lourdes
 
@@ -290,6 +310,9 @@ async def devis_detail(
     )
     await db.flush()
 
+    # CO₂ évité estimé sur le lot (réassurance + dataviz équivalences).
+    co2_avoided_kg = await _quote_co2_avoided_kg(db, quote, pol, pod, leg)
+
     resp = templates.TemplateResponse(
         "public/devis_result.html",
         {
@@ -299,18 +322,82 @@ async def devis_detail(
             "pod": pod,
             "leg": leg,
             "client": client,
+            "co2_avoided_kg": co2_avoided_kg,
         },
     )
     # Mémorise le devis pour pré-remplir la réservation (survit au mur de
-    # connexion : le wizard /booking lit ce cookie). Durée courte.
+    # connexion : le wizard /booking lit ce cookie). Durée ~7 jours pour
+    # laisser le temps de la décision d'achat.
     resp.set_cookie(
         "towt_pending_quote",
         quote.reference,
-        max_age=7200,
+        max_age=604800,
         httponly=True,
         samesite="lax",
     )
     return resp
+
+
+async def _quote_co2_avoided_kg(db, quote, pol, pod, leg) -> float:
+    """CO₂ évité estimé (kg) pour le lot du devis. Best-effort → 0.0 si inconnu."""
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        from app.services import co2 as co2_service
+        from app.services.ports import haversine_nm
+
+        distance_nm = None
+        if leg is not None and getattr(leg, "distance_nm", None):
+            distance_nm = Decimal(str(leg.distance_nm))
+        elif (
+            pol is not None
+            and pod is not None
+            and pol.latitude is not None
+            and pod.latitude is not None
+        ):
+            distance_nm = Decimal(
+                str(haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude))
+            )
+        if distance_nm is None or distance_nm <= 0:
+            return 0.0
+        # Tonnage : valeur saisie, sinon estimation 500 kg/palette (cohérent
+        # avec l'estimateur du wizard).
+        tonnage = quote.tonnage_t
+        if not tonnage:
+            tonnage = (Decimal(quote.palettes_total or 0) * Decimal("500")) / Decimal("1000")
+        if tonnage <= 0:
+            return 0.0
+        factors = await co2_service.get_factors(db)
+        est = co2_service.estimate(
+            distance_nm=distance_nm, tonnage_t=tonnage, factors=factors
+        )
+        return float(est.avoided_co2_kg)
+    return 0.0
+
+
+@router.post("/api/quotes/followup")
+async def quotes_followup_api(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Cron externe (Power Automate) — relance J+1 sur devis non convertis.
+
+    Auth par X-API-Token. Retourne 503 si ``QUOTE_FOLLOWUP_API_TOKEN`` absent.
+    """
+    expected = settings.quote_followup_api_token
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="QUOTE_FOLLOWUP_API_TOKEN non configuré dans .env",
+        )
+    received = request.headers.get("x-api-token") or ""
+    if not _secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
+
+    from app.services import quote_followup
+
+    result = await quote_followup.send_followups(db)
+    return JSONResponse(result)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,49 @@
+{% if lang == 'en' %}Hello {{ recipient_name }},
+
+Your quote {{ reference }} for {{ pol_name }} → {{ pod_name }} ({{ palettes }} pallet(s), {{ total_eur }} EUR) is ready.
+
+Reserve your space — your cargo is pre-filled and your account is created automatically when you confirm:
+{{ book_url }}
+
+View your quote: {{ quote_url }}
+{% if valid_until %}Quote valid until {{ valid_until }}.{% endif %}
+
+— The NEWTOWT team
+TransOceanic Wind Transport · communication@towt.eu
+{% elif lang == 'es' %}Hola {{ recipient_name }},
+
+Su cotización {{ reference }} para {{ pol_name }} → {{ pod_name }} ({{ palettes }} palé(s), {{ total_eur }} EUR) está lista.
+
+Reserve su espacio — su carga está prerrellenada y su cuenta se crea automáticamente al validar:
+{{ book_url }}
+
+Ver su cotización: {{ quote_url }}
+{% if valid_until %}Cotización válida hasta {{ valid_until }}.{% endif %}
+
+— El equipo NEWTOWT
+TransOceanic Wind Transport · communication@towt.eu
+{% elif lang == 'pt-br' %}Olá {{ recipient_name }},
+
+Sua cotação {{ reference }} para {{ pol_name }} → {{ pod_name }} ({{ palettes }} palete(s), {{ total_eur }} EUR) está pronta.
+
+Reserve seu espaço — sua carga é pré-preenchida e sua conta é criada automaticamente ao validar:
+{{ book_url }}
+
+Ver sua cotação: {{ quote_url }}
+{% if valid_until %}Cotação válida até {{ valid_until }}.{% endif %}
+
+— Equipe NEWTOWT
+TransOceanic Wind Transport · communication@towt.eu
+{% else %}Bonjour {{ recipient_name }},
+
+Votre devis {{ reference }} pour {{ pol_name }} → {{ pod_name }} ({{ palettes }} palette(s), {{ total_eur }} EUR) est prêt.
+
+Réservez votre place — votre cargaison est pré-remplie et votre compte est créé automatiquement à la validation :
+{{ book_url }}
+
+Consulter votre devis : {{ quote_url }}
+{% if valid_until %}Devis valable jusqu'au {{ valid_until }}.{% endif %}
+
+— L'équipe NEWTOWT
+TransOceanic Wind Transport · communication@towt.eu
+{% endif %}

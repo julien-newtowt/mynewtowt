@@ -399,6 +399,11 @@ async def confirm_booking(
     # par la comptabilité hors plateforme. La confirmation se limite au
     # changement de statut + notifications de cycle de vie (booking note).
     await on_status_change(db, booking, "confirmed")
+    from app.services import analytics
+
+    await analytics.record(
+        db, "booking_confirmed", reference=booking.reference, channel="client"
+    )
     await activity_record(
         db,
         action="booking_confirm",

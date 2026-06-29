@@ -104,6 +104,10 @@ class Settings(BaseSettings):
     newsdata_base_url: str = "https://newsdata.io/api/1/latest"
     veille_api_token: str | None = None
 
+    # Relance J+1 sur devis non converti (nurturing avant-vente). Token du cron
+    # externe (POST /api/quotes/followup, déclenché par Power Automate).
+    quote_followup_api_token: str | None = None
+
     # Note V3.1 — Stripe retiré : NEWTOWT facture par virement bancaire
     # uniquement (cf. pdf/invoice.html). L'équipe commerciale confirme les
     # bookings sous 4h, aucun paiement n'est traité par l'app.

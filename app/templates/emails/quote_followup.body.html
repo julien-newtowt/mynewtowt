@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="{{ lang|default('fr') }}">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#EFE6D6;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EFE6D6;padding:24px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:600px;">
+        <tr><td style="background:#0D5966;padding:20px 28px;">
+          <span style="color:#ffffff;font-size:20px;font-weight:bold;letter-spacing:0.5px;">NEWTOWT</span>
+          <span style="color:#87BD29;font-size:13px;"> · {% if lang == 'en' %}decarbonised wind shipping{% else %}transport vélique décarboné{% endif %}</span>
+        </td></tr>
+        <tr><td style="padding:28px;">
+          <h1 style="margin:0 0 16px;font-size:20px;color:#0D5966;">
+            {% if lang == 'en' %}Your quote {{ reference }} is ready{% elif lang == 'es' %}Su cotización {{ reference }} está lista{% elif lang == 'pt-br' %}Sua cotação {{ reference }} está pronta{% else %}Votre devis {{ reference }} est prêt{% endif %}
+          </h1>
+          <p style="margin:0 0 12px;font-size:15px;line-height:1.5;">
+            {% if lang == 'en' %}Hello{% elif lang == 'es' %}Hola{% elif lang == 'pt-br' %}Olá{% else %}Bonjour{% endif %} {{ recipient_name }},
+          </p>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.5;">
+            <strong>{{ pol_name }} → {{ pod_name }}</strong> · {{ palettes }}
+            {% if lang == 'en' %}pallet(s){% elif lang == 'es' %}palé(s){% elif lang == 'pt-br' %}palete(s){% else %}palette(s){% endif %}
+            · <strong>{{ total_eur }} EUR</strong>
+          </p>
+          <p style="margin:0 0 20px;font-size:15px;line-height:1.5;">
+            {% if lang == 'en' %}Reserve your space — your cargo is pre-filled and your account is created automatically when you confirm.{% elif lang == 'es' %}Reserve su espacio — su carga está prerrellenada y su cuenta se crea automáticamente al validar.{% elif lang == 'pt-br' %}Reserve seu espaço — sua carga é pré-preenchida e sua conta é criada automaticamente ao validar.{% else %}Réservez votre place — votre cargaison est pré-remplie et votre compte est créé automatiquement à la validation.{% endif %}
+          </p>
+          <p style="margin:0 0 12px;">
+            <a href="{{ book_url }}" style="display:inline-block;background:#87BD29;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;font-size:15px;">
+              {% if lang == 'en' %}Book (pre-filled){% elif lang == 'es' %}Reservar (prerrellenado){% elif lang == 'pt-br' %}Reservar (pré-preenchido){% else %}Réserver (pré-rempli){% endif %}
+            </a>
+          </p>
+          <p style="margin:0 0 8px;font-size:13px;">
+            <a href="{{ quote_url }}" style="color:#0D5966;">
+              {% if lang == 'en' %}View your quote{% elif lang == 'es' %}Ver su cotización{% elif lang == 'pt-br' %}Ver sua cotação{% else %}Consulter votre devis{% endif %}
+            </a>
+          </p>
+          {% if valid_until %}
+          <p style="margin:8px 0 0;font-size:12px;color:#666;">
+            {% if lang == 'en' %}Quote valid until {{ valid_until }}.{% elif lang == 'es' %}Cotización válida hasta {{ valid_until }}.{% elif lang == 'pt-br' %}Cotação válida até {{ valid_until }}.{% else %}Devis valable jusqu'au {{ valid_until }}.{% endif %}
+          </p>
+          {% endif %}
+        </td></tr>
+        <tr><td style="background:#f5f1e8;padding:18px 28px;font-size:12px;color:#666;">
+          TransOceanic Wind Transport · <a href="mailto:communication@towt.eu" style="color:#0D5966;">communication@towt.eu</a>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

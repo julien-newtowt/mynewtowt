@@ -1,0 +1,43 @@
+{# Wizard de réservation — squelette standalone « Nouvelle Étoile »
+   (header = stepper, pas la sidebar client : le wizard tourne en session
+   invité). Charge colors_and_type + newtowt-public (pas kairos). Les pages
+   filles définissent `wizard_step` (1|2|3) et le bloc `wizard_content`. #}
+<!DOCTYPE html>
+<html lang="{{ lang|default('fr') }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block wizard_title %}{{ t('nav_book', lang) }}{% endblock %} · NEWTOWT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/static/css/colors_and_type.css" />
+  <link rel="stylesheet" href="/static/css/newtowt-public.css" />
+  <link rel="icon" type="image/png" href="/static/img/favicon.png" />
+  <script src="/static/js/csrf-htmx.js" defer></script>
+  <script src="/static/js/forms.js" defer></script>
+  {% block wizard_head %}{% endblock %}
+</head>
+<body>
+  <header class="header" role="banner">
+    <div class="header-inner">
+      <a class="header-logo" href="/"><img src="/static/img/logo_NEWTOWT_email.png" alt="NEWTOWT" /></a>
+      <div class="progress-steps" aria-label="{{ t('booking_step_counter', lang, n=wizard_step|default(1)) }}">
+        {% set steps = [('1', t('booking_step_route', lang)), ('2', t('booking_step_cargo', lang)), ('3', t('booking_step_confirm', lang))] %}
+        {% for num, label in steps %}
+          {% set idx = loop.index %}
+          <div class="progress-step {% if wizard_step > idx %}completed{% elif wizard_step == idx %}active{% endif %}">
+            <div class="step-number">{% if wizard_step > idx %}✓{% else %}{{ num }}{% endif %}</div>
+            <span class="step-label">{{ label }}</span>
+          </div>
+          {% if not loop.last %}<span class="step-arrow">→</span>{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </header>
+
+  <main class="main main--wizard" id="main">
+    <p class="wizard-counter">{{ t('booking_step_counter', lang, n=wizard_step|default(1)) }}</p>
+    {% block wizard_content %}{% endblock %}
+  </main>
+</body>
+</html>

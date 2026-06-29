@@ -34,6 +34,46 @@
   </div>
 </section>
 
+{# Tunnel de conversion (CONV-06) — événements analytics #}
+<article class="card mt-4">
+  <h2>Tunnel de conversion {{ year }}</h2>
+  <section class="kpi-strip">
+    <div class="kpi-card">
+      <div class="label">Conversion landing → booking</div>
+      <div class="value {% if landing_to_booking_pct >= 5 %}text-success{% endif %}">{{ landing_to_booking_pct }} %</div>
+      <div class="delta text-muted">cible ≥ 5 %</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Conversion devis → booking</div>
+      <div class="value">{{ quote_to_booking_pct }} %</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Self-service</div>
+      <div class="value {% if self_service_pct >= 30 %}text-success{% endif %}">{{ self_service_pct }} %</div>
+      <div class="delta text-muted">cible ≥ 30 %</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Délai soumis → confirmé</div>
+      <div class="value {% if avg_confirm_delay_h is not none and avg_confirm_delay_h < 4 %}text-success{% elif avg_confirm_delay_h is not none %}text-error{% endif %}">{{ avg_confirm_delay_h }} h{% if avg_confirm_delay_h is none %}—{% endif %}</div>
+      <div class="delta text-muted">cible &lt; 4 h</div>
+    </div>
+  </section>
+  {% set event_labels = {
+    "landing_view": "Vues landing", "route_view": "Vues route",
+    "quote_generated": "Devis générés", "quote_pdf_download": "PDF devis téléchargés",
+    "book_click": "Clics « Réserver »", "booking_submitted": "Réservations soumises",
+    "account_created": "Comptes créés", "booking_confirmed": "Réservations confirmées"
+  } %}
+  <table class="data-table mt-3">
+    <thead><tr><th>Étape</th><th>Événements</th></tr></thead>
+    <tbody>
+      {% for ev, label in event_labels.items() %}
+      <tr><td>{{ label }}</td><td><strong>{{ event_counts.get(ev, 0) }}</strong></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
 <div class="grid grid-2 gap-4 mt-4">
   {# Funnel visuel #}
   <article class="card">
