@@ -420,6 +420,10 @@ async def portal_messages(token: str, request: Request, db: AsyncSession = Depen
         .scalars()
         .all()
     )
+    # CARGO-14 — la consultation par l'expéditeur marque lus les messages du staff.
+    from app.services import messaging
+
+    await messaging.mark_portal_read(db, pl.id, reader="client")
     return templates.TemplateResponse(
         "portal/messages.html",
         {"request": request, "pl": pl, "messages": messages, "token": token},

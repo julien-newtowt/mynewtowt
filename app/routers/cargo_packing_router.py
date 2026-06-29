@@ -65,9 +65,12 @@ async def packing_lists_index(
         .scalars()
         .all()
     )
+    from app.services import messaging
+
+    unread = await messaging.portal_unread_counts(db, [pl.id for pl in pls], reader="staff")
     return templates.TemplateResponse(
         "staff/cargo/packing_lists.html",
-        {"request": request, "user": user, "packing_lists": pls},
+        {"request": request, "user": user, "packing_lists": pls, "unread": unread},
     )
 
 
@@ -130,6 +133,10 @@ async def packing_list_detail(
         .scalars()
         .all()
     )
+    # CARGO-14 — la consultation staff marque lus les messages du client.
+    from app.services import messaging
+
+    await messaging.mark_portal_read(db, pl_id, reader="staff")
     return templates.TemplateResponse(
         "staff/cargo/packing_list_detail.html",
         {"request": request, "user": user, "pl": pl, "order": order, "messages": messages},
