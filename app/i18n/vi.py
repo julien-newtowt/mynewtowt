@@ -14,6 +14,7 @@ CATALOG: dict[str, str] = {
     "nav_carnet": "Nhật ký đóng tàu",
     "nav_actualites": "Tin tức",
     "nav_recrutement": "Tuyển dụng",
+    "nav_passagers": "Hành khách",
     "nav_presse": "Báo chí",
     "nav_quote": "Yêu cầu báo giá",
     "footer_navigation": "Hành hải",

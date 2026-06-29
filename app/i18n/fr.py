@@ -14,6 +14,7 @@ CATALOG: dict[str, str] = {
     "nav_carnet": "Carnet",
     "nav_actualites": "Actualités",
     "nav_recrutement": "Recrutement",
+    "nav_passagers": "Passagers",
     "nav_presse": "Presse",
     "nav_quote": "Demander une cotation",
     "footer_navigation": "Navigation",
