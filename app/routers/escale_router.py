@@ -263,12 +263,18 @@ async def escale_index(
 
     f["selected_leg"] = selected_leg
 
-    # ESC-08 — synthèse commerciale du leg (commandes + packing lists liées).
+    # ESC-08 — synthèse commerciale + timeline + métriques de navigation du leg.
     leg_overview = None
+    port_call = None
+    nav_metrics = None
     if selected_leg is not None:
-        from app.services.leg_overview import commercial_overview
+        from app.services.leg_overview import commercial_overview, port_call_steps
+        from app.services.voyage_track import compute_metrics, positions_for_leg
 
         leg_overview = await commercial_overview(db, selected_leg.id)
+        port_call = port_call_steps(selected_leg, operations)
+        positions = await positions_for_leg(db, selected_leg)
+        nav_metrics = compute_metrics(positions, selected_leg, arr_port=pod)
 
     response = templates.TemplateResponse(
         "staff/escale/index.html",
@@ -306,6 +312,8 @@ async def escale_index(
             "operation_actions": OPERATION_ACTIONS,
             "actions_by_type": ACTIONS_BY_TYPE,
             "leg_overview": leg_overview,
+            "port_call": port_call,
+            "nav_metrics": nav_metrics,
             "directions": DIRECTIONS,
             # ESC-06 — couplage équipage.
             "vessel_crew": vessel_crew,

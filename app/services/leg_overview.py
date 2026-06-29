@@ -1,8 +1,8 @@
-"""ESC-08 (tranche) — synthèse commerciale d'un leg pour la vue d'escale.
+"""ESC-08 (tranche) — éléments du cockpit d'escale pour un leg.
 
-Expose, en lecture, les **commandes commerciales** affectées à un leg et les
-**packing lists** associées (épinglées au leg ou rattachées à l'une de ses
-commandes), avec liens vers Commercial / Cargo. Sert le cockpit d'escale.
+- ``commercial_overview`` : commandes affectées + packing lists liées.
+- ``port_call_steps`` : timeline du flux opérationnel (5 étapes) dérivée de
+  l'état du leg (ATA/ATD), de ses opérations et du verrouillage d'escale.
 """
 
 from __future__ import annotations
@@ -12,6 +12,43 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commercial import Client, Order
 from app.models.packing_list import PackingList
+
+# Étapes du flux opérationnel d'escale (ordre chronologique).
+_PORT_CALL_STEPS = (
+    ("planifie", "Planifié"),
+    ("arrivee", "Arrivée (ATA)"),
+    ("operations", "Opérations"),
+    ("appareillage", "Appareillage (ATD)"),
+    ("cloture", "Clôturé"),
+)
+
+
+def port_call_steps(leg, operations) -> list[dict]:
+    """Timeline du flux opérationnel : 5 étapes, chacune ``done`` / ``current`` /
+    ``pending``. La première étape non terminée (dans l'ordre) est ``current``.
+
+    Dérivée de : leg planifié (toujours fait) → ATA posée → toutes les opérations
+    terminées (``actual_end``) → ATD posée → escale verrouillée."""
+    ops = list(operations or [])
+    done_flags = {
+        "planifie": True,
+        "arrivee": leg.ata is not None,
+        "operations": bool(ops) and all(o.actual_end is not None for o in ops),
+        "appareillage": leg.atd is not None,
+        "cloture": getattr(leg, "escale_locked_at", None) is not None,
+    }
+    out: list[dict] = []
+    current_assigned = False
+    for key, label in _PORT_CALL_STEPS:
+        if done_flags[key]:
+            state = "done"
+        elif not current_assigned:
+            state = "current"
+            current_assigned = True
+        else:
+            state = "pending"
+        out.append({"key": key, "label": label, "state": state})
+    return out
 
 
 async def commercial_overview(db: AsyncSession, leg_id: int) -> dict:

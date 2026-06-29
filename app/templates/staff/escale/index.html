@@ -28,6 +28,28 @@
   {% endif %}
 {% endcall %}
 
+{% if port_call %}
+<article class="card mb-3">
+  <div class="section-header"><h3><i data-lucide="git-commit"></i> Flux opérationnel</h3></div>
+  <div class="flex gap-2" style="flex-wrap:wrap;align-items:center;">
+    {% for step in port_call %}
+    <span class="pill {% if step.state == 'done' %}pill-ok{% elif step.state == 'current' %}pill-warn{% else %}pill-neutral{% endif %}" title="{{ step.state }}">{% if step.state == 'done' %}✓{% elif step.state == 'current' %}●{% else %}○{% endif %} {{ step.label }}</span>
+    {%- if not loop.last %} <span class="text-muted">→</span> {% endif %}
+    {% endfor %}
+  </div>
+</article>
+{% endif %}
+
+{% if nav_metrics and nav_metrics.point_count %}
+<section class="kpi-strip mb-3">
+  <div class="kpi-card"><div class="label">Distance réelle</div><div class="value">{{ "%.0f"|format(nav_metrics.actual_nm) }} NM</div><div class="delta text-muted">{{ nav_metrics.point_count }} points GPS</div></div>
+  <div class="kpi-card"><div class="label">Théorique</div><div class="value">{{ "%.0f"|format(nav_metrics.theoretical_nm) if nav_metrics.theoretical_nm else '—' }}{% if nav_metrics.theoretical_nm %} NM{% endif %}</div><div class="delta text-muted">orthodromie</div></div>
+  <div class="kpi-card"><div class="label">Restant</div><div class="value">{{ "%.0f"|format(nav_metrics.remaining_nm) if nav_metrics.remaining_nm is not none else '—' }}{% if nav_metrics.remaining_nm is not none %} NM{% endif %}</div></div>
+  <div class="kpi-card"><div class="label">Vitesse moy.</div><div class="value">{{ "%.1f"|format(nav_metrics.avg_speed_kn) if nav_metrics.avg_speed_kn else '—' }}{% if nav_metrics.avg_speed_kn %} kn{% endif %}</div></div>
+  <div class="kpi-card"><div class="label">Allongement</div><div class="value">{{ nav_metrics.real_elongation if nav_metrics.real_elongation else '—' }}</div><div class="delta text-muted">réel / orthodromie</div></div>
+</section>
+{% endif %}
+
 {% if leg_locked %}
 <div class="alert alert-warning mb-3">
   <i data-lucide="lock"></i>
@@ -205,6 +227,8 @@
         <a href="/stowage/legs/{{ selected_leg.id }}" class="btn btn-ghost btn-sm" title="Ouvrir le plan de chargement">
           <i data-lucide="external-link"></i> Plan de chargement
         </a>
+        <a href="/stowage/legs/{{ selected_leg.id }}/plan.pdf?lang=fr" class="btn btn-ghost btn-sm" target="_blank" hx-boost="false" title="Plan d'arrimage imprimable (FR)">🇫🇷 PDF</a>
+        <a href="/stowage/legs/{{ selected_leg.id }}/plan.pdf?lang=en" class="btn btn-ghost btn-sm" target="_blank" hx-boost="false" title="Stowage plan printable (EN)">🇬🇧 PDF</a>
       </h4>
       {% if stowage_by_hold %}
       <div class="grid grid-2 gap-2">
