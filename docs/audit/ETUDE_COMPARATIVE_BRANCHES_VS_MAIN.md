@@ -93,6 +93,9 @@ suite complète validée par la CI — base Postgres non disponible en local).
   (`/stowage/legs/{id}/occupation.json`, lecture seule, lot 63).
 - ✅ **ONB‑08 (tranche)** : champs lieu / contexte de l'incident sur les sinistres
   (claims) — saisie au formulaire + affichage détail (migration `0082`, lot 67).
+- ✅ **PLN‑07 (tranche)** : raccourcis ports pilotés par `Port.is_shortcut`
+  (toggle admin) dans le formulaire de leg, **avec repli** sur la liste codée en
+  dur si aucun port marqué — pas de régression (migration `0083`, lot 69).
 - ⏳ **ESC‑08 (partiel)** : Type→Action (lot 57) + synthèse commerciale (lot 60)
   + timeline du flux opérationnel (lot 64) + **métriques de navigation du leg**
   (distance réelle/théorique/restante, vitesse moy., allongement — lot 65)

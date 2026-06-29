@@ -89,23 +89,38 @@
   {# ── Étape 2 : Origine / destination ── #}
   <fieldset class="wizard-step" data-step="2" hidden style="border:none;padding:0;margin:0;">
     <h2>Origine / destination</h2>
+    {# PLN-07 — raccourcis pilotés par Port.is_shortcut (admin) ; repli sur la
+       liste historique si aucun port n'est marqué (pas de régression). #}
+    {% set shortcut_ports = ports | selectattr('is_shortcut') | list %}
     <div class="leg-shortcuts grid grid-2 gap-4 mb-3">
       <div>
         <span class="kicker">Raccourcis POL (départ)</span>
         <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+          {% if shortcut_ports %}
+          {% for p in shortcut_ports %}
+          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="{{ p.locode }}">{{ p.country|flag }} {{ p.name }} <span class="mono text-muted">{{ p.locode }}</span></button>
+          {% endfor %}
+          {% else %}
           <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="FRFEC">🇫🇷 Fécamp <span class="mono text-muted">FRFEC</span></button>
           <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="BRSSO">🇧🇷 São Sebastião <span class="mono text-muted">BRSSO</span></button>
           <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="USNYC">🇺🇸 New York <span class="mono text-muted">USNYC</span></button>
           <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="FRLEH">🇫🇷 Le Havre <span class="mono text-muted">FRLEH</span></button>
+          {% endif %}
         </div>
       </div>
       <div>
         <span class="kicker">Raccourcis POD (arrivée)</span>
         <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+          {% if shortcut_ports %}
+          {% for p in shortcut_ports %}
+          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="{{ p.locode }}">{{ p.country|flag }} {{ p.name }} <span class="mono text-muted">{{ p.locode }}</span></button>
+          {% endfor %}
+          {% else %}
           <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="BRSSO">🇧🇷 São Sebastião <span class="mono text-muted">BRSSO</span></button>
           <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="FRFEC">🇫🇷 Fécamp <span class="mono text-muted">FRFEC</span></button>
           <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="USNYC">🇺🇸 New York <span class="mono text-muted">USNYC</span></button>
           <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="FRLEH">🇫🇷 Le Havre <span class="mono text-muted">FRLEH</span></button>
+          {% endif %}
         </div>
       </div>
     </div>

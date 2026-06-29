@@ -594,6 +594,33 @@ def request_ports_back_url() -> str:
     return "/admin/ports"
 
 
+@router.post("/admin/ports/{port_id}/toggle-shortcut")
+async def admin_port_toggle_shortcut(
+    port_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+) -> RedirectResponse:
+    """PLN-07 — bascule le statut « raccourci » d'un port (proposé en un clic
+    dans le formulaire de création de leg)."""
+    port = await db.get(Port, port_id)
+    if not port:
+        raise HTTPException(status_code=404, detail="Port not found")
+    port.is_shortcut = not port.is_shortcut
+    await activity_record(
+        db,
+        action="port_shortcut_toggle",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="port",
+        entity_id=port.id,
+        entity_label=port.locode,
+        detail=f"is_shortcut={port.is_shortcut}",
+    )
+    return RedirectResponse(url=request_ports_back_url(), status_code=303)
+
+
 # ───────────────────────── PortConfig (contacts agent / pilote / docs) ─────────
 
 
