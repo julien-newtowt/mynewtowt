@@ -104,6 +104,12 @@ async def kpi_index(
 
     exploitation = exploitation_summary(legs, kpis)
 
+    # EVO-08 — agrégat des métriques de navigation (distance réelle, allongement,
+    # SOG moyen) sur le périmètre filtré, exposé dans la section Exploitation.
+    from app.services.voyage_track import navigation_aggregate
+
+    nav_aggregate = await navigation_aggregate(db, legs)
+
     if kpis:
         on_time_count = sum(1 for k in kpis if k.on_time)
         on_time_pct = on_time_count / len(kpis) * 100.0
@@ -133,6 +139,7 @@ async def kpi_index(
             "total_sox_avoided_kg": total_sox_avoided_kg,
             "co2_equiv": equiv,
             "exploitation": exploitation,
+            "nav_aggregate": nav_aggregate,
         },
     )
 

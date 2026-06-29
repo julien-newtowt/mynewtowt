@@ -75,7 +75,8 @@ suite complète validée par la CI — base Postgres non disponible en local).
 - ✅ EVO‑03 (lot 50), EVO‑01 (lot 51, A5), EVO‑06 (lot 52), **EVO‑02** (lot 53 —
   congés unifiés `/rh/conges`, sans fusion de schéma), **EVO‑09** (lot 59 —
   signatures IMO généralisées aux documents cargo : hash SHA‑256 + verrou,
-  migration `0081`).
+  migration `0081`), **EVO‑08** (lot 68 — agrégat des métriques de navigation
+  réelle dans les KPI d'exploitation : distance cumulée, allongement, SOG moyen).
 - ⏳ **EVO‑04** (veille IA — effort L + Anthropic), **EVO‑05** (PWA offline réel —
   IndexedDB). Reportés (dépendances externes / effort L).
 
@@ -90,6 +91,8 @@ suite complète validée par la CI — base Postgres non disponible en local).
   (confirmé → chargé → livré, transition avant + garde 409, lot 62).
 - ✅ **STO‑10 (tranche)** : API JSON d'occupation d'arrimage par cale + par zone
   (`/stowage/legs/{id}/occupation.json`, lecture seule, lot 63).
+- ✅ **ONB‑08 (tranche)** : champs lieu / contexte de l'incident sur les sinistres
+  (claims) — saisie au formulaire + affichage détail (migration `0082`, lot 67).
 - ⏳ **ESC‑08 (partiel)** : Type→Action (lot 57) + synthèse commerciale (lot 60)
   + timeline du flux opérationnel (lot 64) + **métriques de navigation du leg**
   (distance réelle/théorique/restante, vitesse moy., allongement — lot 65)

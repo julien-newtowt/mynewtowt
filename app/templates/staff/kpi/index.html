@@ -39,6 +39,15 @@
   <div class="kpi-card"><div class="label">Vitesse d'exploitation</div><div class="value">{{ "%.1f kn"|format(exploitation.avg_speed_kn) if exploitation.avg_speed_kn is not none else '—' }}</div><div class="delta text-muted">moyenne flotte</div></div>
 </section>
 
+{# EVO-08 — agrégat des métriques de navigation réelle (GPS) #}
+{% if nav_aggregate and nav_aggregate.legs_with_gps %}
+<section class="kpi-strip mt-2">
+  <div class="kpi-card"><div class="label">Distance réelle cumulée</div><div class="value">{{ "%.0f NM"|format(nav_aggregate.total_real_nm) }}</div><div class="delta text-muted">{{ nav_aggregate.legs_with_gps }} legs à GPS</div></div>
+  <div class="kpi-card"><div class="label">Allongement moyen</div><div class="value">{{ nav_aggregate.avg_elongation if nav_aggregate.avg_elongation is not none else '—' }}</div><div class="delta text-muted">réel / orthodromie</div></div>
+  <div class="kpi-card"><div class="label">SOG moyen</div><div class="value">{{ "%.1f kn"|format(nav_aggregate.avg_sog_kn) if nav_aggregate.avg_sog_kn is not none else '—' }}</div><div class="delta text-muted">vitesse fond relevée</div></div>
+</section>
+{% endif %}
+
 <article class="card mt-4">
   <h2>{{ t('kpi_per_leg', lang) }}</h2>
   <p class="text-muted text-sm">{{ t('kpi_per_leg_help', lang) }}</p>
