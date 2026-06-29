@@ -29,6 +29,9 @@ class Port(Base):
     subdivision: Mapped[str | None] = mapped_column(String(8))
     # Admins can hide a port without deleting it (preserves FK history).
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # PLN-07 — port « raccourci » proposé en un clic dans le formulaire de leg
+    # (remplace la liste de LOCODE codée en dur ; repli sur celle-ci si aucun).
+    is_shortcut: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # =========================================================================
     # Champs pour le Carnet de Bord ANEMOS (MAN - curation humaine)

@@ -91,9 +91,16 @@
           <td>
             {% if p.is_active %}<span class="pill pill-ok">Actif</span>
             {% else %}<span class="pill pill-error">Inactif</span>{% endif %}
+            {% if p.is_shortcut %}<span class="pill pill-info">★ Raccourci</span>{% endif %}
           </td>
           <td class="text-right">
             <a href="/admin/ports/{{ p.id }}/config" class="btn btn-ghost text-sm">Config</a>
+            <form method="post" action="/admin/ports/{{ p.id }}/toggle-shortcut" style="display:inline;">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button type="submit" class="btn btn-ghost text-sm" title="Proposer ce port en raccourci dans le formulaire de leg">
+                {% if p.is_shortcut %}★ Retirer raccourci{% else %}☆ Raccourci{% endif %}
+              </button>
+            </form>
             <form method="post" action="/admin/ports/{{ p.id }}/toggle" style="display:inline;">
               <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
               <button type="submit" class="btn btn-ghost text-sm">
