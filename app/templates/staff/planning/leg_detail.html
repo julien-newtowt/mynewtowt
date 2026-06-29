@@ -36,6 +36,15 @@
         <tr><th>ETA</th><td><span class="mono">{{ leg.eta|datetime }}</span></td></tr>
         <tr><th>ATD</th><td>{% if leg.atd %}<span class="mono">{{ leg.atd|datetime }}</span>{% else %}<span class="text-muted">non parti</span>{% endif %}</td></tr>
         <tr><th>ATA</th><td>{% if leg.ata %}<span class="mono">{{ leg.ata|datetime }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
+        <tr><th>Réalisé</th><td class="text-muted text-sm">
+          ATD/ATA &amp; statut portuaire posés depuis l'<a href="/escale">Escale</a> (pilotage ATA/ATD)
+          et le bord (SOF). Édition du prévisionnel : bouton « Éditer ».
+        </td></tr>
+        {% if delayed is defined and delayed %}
+        <tr><th>Dérive planning</th><td>
+          <span class="pill pill-warn" title="Écart ETD/ETA vs référence ≥ 4 h">⚠ retard {{ delay_h }} h</span>
+        </td></tr>
+        {% endif %}
         <tr><th>Escale prévue</th><td>
           {% if leg.port_stay_planned_hours is not none %}
             <span class="mono">{{ leg.port_stay_planned_hours }} h</span>
