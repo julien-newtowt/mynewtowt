@@ -84,6 +84,8 @@ suite complète validée par la CI — base Postgres non disponible en local).
   suppression PL staff perm S (lot 55), alerte IMDG + auto‑fill dimensions par
   format de palette (lot 56).
 - ✅ **ADM‑08** : viewer d'audit — filtre par utilisateur + pagination (lot 58).
+- ✅ **CREW‑09 (tranche)** : marqueur « étranger » (hors Schengen) + colonne
+  « jours embarqués / an » sur la liste équipage (lot 61).
 - ⏳ **ESC‑08 (partiel)** : dépendance Type→Action (lot 57) + **synthèse
   commerciale du leg** (commandes + packing lists liées, lot 60). Reste du
   cockpit (timeline flux opérationnel, lanes parallèles, métriques nav) — UI‑lourd.

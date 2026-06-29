@@ -105,19 +105,23 @@
 <article class="card">
   <h2>Tous les marins ({{ members|length }})</h2>
   <table class="data-table">
-    <thead><tr><th>Nom</th><th>Rôle</th><th>Nationalité</th><th>Passeport</th><th>Schengen</th></tr></thead>
+    <thead><tr><th>Nom</th><th>Rôle</th><th>Nationalité</th><th>Passeport</th><th>Schengen</th><th title="Jours embarqués sur {{ current_year }}">Jours emb. {{ current_year }}</th></tr></thead>
     <tbody>
       {% for m in members %}
       <tr>
         <td><a href="/crew/members/{{ m.id }}">{{ m.full_name }}</a></td>
         <td><span class="badge">{{ m.role }}</span></td>
-        <td>{% if m.nationality %}<span class="port-badge">{{ m.nationality|flag }} {{ m.nationality }}</span>{% else %}—{% endif %}</td>
+        <td>
+          {% if m.nationality %}<span class="port-badge">{{ m.nationality|flag }} {{ m.nationality }}</span>{% else %}—{% endif %}
+          {% if m.id in foreigner_ids %}<span class="pill pill-warn" title="Ressortissant hors espace Schengen">étranger</span>{% endif %}
+        </td>
         <td class="mono text-sm">{{ m.passport_number or '—' }}<br/><small class="text-muted">exp. {{ m.passport_expires_at or '—' }}</small></td>
         <td>
           {% if m.schengen_status == 'compliant' %}<span class="pill pill-ok">OK</span>
           {% elif m.schengen_status == 'warning' %}<span class="pill pill-warn">Warning</span>
           {% else %}<span class="pill pill-error">Non-compliant</span>{% endif %}
         </td>
+        <td class="mono">{{ embarked_days.get(m.id, 0) }}</td>
       </tr>
       {% endfor %}
     </tbody>
