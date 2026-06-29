@@ -44,6 +44,7 @@ PUBLIC_PAGES: tuple[tuple[str, str, str], ...] = (
     ("/", "weekly", "1.0"),
     ("/flotte", "monthly", "0.9"),
     ("/impact", "monthly", "0.9"),
+    ("/preuves", "monthly", "0.8"),
     ("/navigation", "monthly", "0.7"),
     ("/carnet", "weekly", "0.6"),
     ("/actualites", "weekly", "0.5"),
@@ -114,8 +115,10 @@ def build_llms_txt(base_url: str) -> str:
         "- Construction par Piriou au Vietnam (chantiers Song Thu et Ba Son).\n\n"
         "## Pages clés\n\n"
         f"- [Notre flotte]({base}/flotte) : navires TSC 80, capacités, cales.\n"
-        f"- [Impact]({base}/impact) : environnement maîtrisé à bord, LACOE©, "
-        "décarbonation, label ANEMOS.\n"
+        f"- [Impact]({base}/impact) : environnement maîtrisé à bord, surveillance "
+        "qualité, décarbonation, certificat Anemos d'émissions évitées.\n"
+        f"- [Preuves]({base}/preuves) : méthode (tank-to-wake, CO₂), vérification "
+        "EU MRV / registre THETIS-MRV, et vérification publique des certificats.\n"
         f"- [Navigation]({base}/navigation) : courants, propulsion vélique, routes.\n"
         f"- [Routes & plannings]({base}/routes) : prochaines traversées.\n"
         f"- [Carnet de construction]({base}/carnet) : avancée des navires en "
@@ -170,8 +173,8 @@ def organization_jsonld(base_url: str) -> dict:
         "url": base + "/",
         "description": (
             "Compagnie maritime française de fret à la voile vers le Brésil et "
-            "l'Amérique latine : café, cacao et fret industriel, réduction de "
-            "CO₂ jusqu'à 95 % certifiée par le label ANEMOS."
+            "l'Amérique latine : café, cacao et fret industriel, émissions "
+            "évitées documentées par le certificat Anemos (EU MRV, tank-to-wake CO₂)."
         ),
         "foundingDate": "2011",
         "founder": {"@type": "Person", "name": "Karl Sement"},
@@ -212,8 +215,8 @@ def service_jsonld(base_url: str) -> dict:
         "description": (
             "Transport de fret palettisé (café, cacao, fret industriel, "
             "marchandises dangereuses des classes 2, 3, 4.1, 8 et 9) sur "
-            "voiliers-cargos, avec réduction de CO₂ jusqu'à 95 % certifiée "
-            "par le label ANEMOS."
+            "voiliers-cargos, émissions évitées documentées par le certificat "
+            "Anemos (EU MRV, tank-to-wake CO₂)."
         ),
     }
 

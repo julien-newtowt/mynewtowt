@@ -9,6 +9,8 @@ CATALOG: dict[str, str] = {
     "nav_book": "Book",
     "nav_our_fleet": "Our fleet",
     "nav_impact": "Impact",
+    "nav_preuves": "Evidence",
+    "nav_anemos": "Anemos certification",
     "nav_navigation": "Navigation",
     "nav_contact": "Contact",
     "nav_carnet": "Build log",
@@ -329,7 +331,7 @@ CATALOG: dict[str, str] = {
     "rd_eco_conv": "Conventional cargo ship",
     "rd_eco_avoided": "CO₂ avoided per tonne",
     "rd_eco_need_coords": "Port coordinates are required to calculate emissions.",
-    "rd_eco_note": "Emissions are expressed in kg of CO₂ per tonne of goods for the full crossing. NEWTOWT factors: 1.5 g CO₂/t.km (wind propulsion). Conventional reference: 13.7 g CO₂/t.km (GLEC Framework v3). These values are indicative — the named Anemos certificate is issued automatically after delivery based on actual tonnage.",
+    "rd_eco_note": "Emissions are expressed in kg of CO₂ per tonne of goods for the full crossing. NEWTOWT factors: 1.5 g CO₂/t.km (wind propulsion). Conventional reference: 13.7 g CO₂/t.km (IMO Fourth GHG Study / IFP Energies Nouvelles). These values are indicative — the named Anemos certificate is issued automatically after delivery based on actual tonnage.",
     "rd_eco_more_link": "Learn more about Anemos →",
     # "Quality on board" block
     "rd_quality_title": "Quality on board",

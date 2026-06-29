@@ -1,5 +1,5 @@
 {% extends "pdf/_base.html" %}
-{% block title %}Label Anemos {{ cert_ref }}{% endblock %}
+{% block title %}Certificat Anemos {{ cert_ref }}{% endblock %}
 {% block doc_kind %}Certificat · CO₂ avoidance certificate{% endblock %}
 {% block doc_ref %}{{ cert_ref }}{% endblock %}
 {% block content %}
@@ -101,7 +101,7 @@
 </table>
 
 <div class="footer-mention" style="margin-top:14pt;">
-  <strong>Méthodologie</strong> : alignée EU MRV (UE 2015/757) et GHG Protocol Scope 3 catégorie 4 (Upstream Transportation).
+  <strong>Méthodologie</strong> : alignée EU MRV (UE 2015/757) et compatible GHG Protocol Scope 3 catégorie 4 (Upstream Transportation). Périmètre tank-to-wake, gaz CO₂ uniquement (hors CH₄/N₂O — pas du CO₂e).
   {% if method == "declared" %}
   Émissions {{ brand.nom_court }} calculées sur les consommations déclarées à bord (noon reports signés) — distance {{ "%.0f"|format(dist_nm|float) }} NM ({{ distance_source }}).
   {% else %}
@@ -117,6 +117,18 @@
   {% endif %}
   Détail : {{ brand.site_public }}/about/anemos.
 </div>
+
+{% if verify_qr %}
+<div style="display:flex; align-items:center; gap:12pt; margin-top:14pt; padding:10pt; border:1px solid #d9d2c4; border-radius:4pt;">
+  <img src="{{ verify_qr }}" alt="QR vérification" style="width:74pt; height:74pt;"/>
+  <div class="small c-gris">
+    <strong class="c-teal">Vérifier ce certificat</strong><br/>
+    Scannez le QR ou saisissez la référence <span class="mono">{{ cert_ref }}</span>
+    sur <span class="mono">{{ verify_url }}</span>.<br/>
+    Page publique, sans donnée personnelle — tonnage, distance, CO₂ évité, méthode, date et facteur.
+  </div>
+</div>
+{% endif %}
 
 <div class="stamp">
   <div>

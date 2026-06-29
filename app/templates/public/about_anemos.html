@@ -1,14 +1,14 @@
 {% extends "public/_layout_v2.html" %}
 
 {% block title %}
-  {% if lang == 'en' %}Anemos label — Certified wind cargo{% else %}Label Anemos — Cargo vélique certifié{% endif %} — {{ brand.nom_court }}
+  {% if lang == 'en' %}Anemos certification — Certified wind cargo{% else %}Certification Anemos — Cargo vélique certifié{% endif %} — {{ brand.nom_court }}
 {% endblock %}
 
 {% block description %}
   {% if lang == 'en' %}
-    {{ brand.nom_court }} is certified by the Anemos label: independent third-party verification of CO₂ savings for every sailing cargo shipment.
+    {{ brand.nom_court }} issues the Anemos avoided-emissions certificate: a published, reproducible method backed by EU MRV-verified vessel emissions, for every sailing cargo shipment.
   {% else %}
-    {{ brand.nom_court }} est certifié par le label Anemos : vérification tierce indépendante des économies de CO₂ pour chaque expédition en cargo vélique.
+    {{ brand.nom_court }} émet le certificat Anemos d'émissions évitées : une méthode publiée et reproductible, adossée aux émissions de ses navires vérifiées sous EU MRV, pour chaque expédition en cargo vélique.
   {% endif %}
 {% endblock %}
 
@@ -18,7 +18,7 @@
 <section class="an-hero">
   <div class="an-hero-inner">
     <div class="an-hero-body">
-      <span class="an-kicker">Label Anemos</span>
+      <span class="an-kicker">Certification Anemos</span>
       <h1 class="an-hero-title">
         {% if lang == 'en' %}
           Sailing cargo,<br>independently certified
@@ -55,21 +55,21 @@
         </svg>
         <span class="an-seal-name">ANEMOS</span>
         <span class="an-seal-sub">
-          {% if lang == 'en' %}Certified carbon label{% else %}Label carbone certifié{% endif %}
+          {% if lang == 'en' %}Avoided-emissions certificate{% else %}Certificat d'émissions évitées{% endif %}
         </span>
       </div>
     </div>
   </div>
 </section>
 
-{# ===== QU'EST-CE QUE LE LABEL ===== #}
+{# ===== QU'EST-CE QUE LA CERTIFICATION ===== #}
 <section class="section" style="background:var(--c-paper);">
   <div class="section-inner">
     <span class="section-kicker">
       {% if lang == 'en' %}About{% else %}C'est quoi{% endif %}
     </span>
     <h2 class="section-title">
-      {% if lang == 'en' %}The Anemos label{% else %}Le label Anemos{% endif %}
+      {% if lang == 'en' %}The Anemos certification{% else %}La certification Anemos{% endif %}
     </h2>
     <p class="section-lead" style="max-width:700px">
       {% if lang == 'en' %}
@@ -179,11 +179,22 @@
     <p style="font-size:var(--fs-16);line-height:var(--lh-normal);color:var(--c-grey);margin-bottom:var(--sp-6)">
       {% if lang == 'en' %}
         Transparent methodology, aligned with <strong>EU&nbsp;MRV</strong> (Regulation EU&nbsp;2015/757)
-        and <strong>GHG Protocol Scope&nbsp;3</strong>, category&nbsp;4 (Upstream Transportation &amp; Distribution).
+        and compatible with <strong>GHG Protocol Scope&nbsp;3</strong>, category&nbsp;4 (Upstream Transportation &amp; Distribution).
       {% else %}
         Méthode transparente, alignée avec le règlement européen <strong>EU&nbsp;MRV</strong>
-        (UE&nbsp;2015/757) et le <strong>GHG Protocol Scope&nbsp;3</strong>,
+        (UE&nbsp;2015/757) et compatible avec le <strong>GHG Protocol Scope&nbsp;3</strong>,
         catégorie&nbsp;4 (Transport &amp; Distribution amont).
+      {% endif %}
+    </p>
+    <p class="callout callout--teal" style="font-size:var(--fs-14);line-height:var(--lh-normal);margin-bottom:var(--sp-6)">
+      {% if lang == 'en' %}
+        <strong>Scope:</strong> tank-to-wake (on-board fuel combustion, the EU&nbsp;MRV perimeter),
+        gas <strong>CO₂</strong> only — excluding CH₄ and N₂O, so the figure is
+        <strong>not CO₂e</strong>. Inland pre- and post-carriage are not included.
+      {% else %}
+        <strong>Périmètre :</strong> tank-to-wake (combustion du carburant à bord, périmètre EU&nbsp;MRV),
+        gaz <strong>CO₂</strong> uniquement — hors CH₄ et N₂O, ce n'est donc
+        <strong>pas du CO₂e</strong>. Le pré- et post-acheminement terrestres ne sont pas inclus.
       {% endif %}
     </p>
 

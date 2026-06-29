@@ -9,6 +9,8 @@ CATALOG: dict[str, str] = {
     "nav_book": "Reservar",
     "nav_our_fleet": "Nuestra flota",
     "nav_impact": "Impacto",
+    "nav_preuves": "Pruebas",
+    "nav_anemos": "Certificación Anemos",
     "nav_navigation": "Navegación",
     "nav_contact": "Contacto",
     "nav_carnet": "Diario de obra",
@@ -329,7 +331,7 @@ CATALOG: dict[str, str] = {
     "rd_eco_conv": "Carguero convencional",
     "rd_eco_avoided": "CO₂ evitado por tonelada",
     "rd_eco_need_coords": "Se necesitan las coordenadas de los puertos para calcular las emisiones.",
-    "rd_eco_note": "Las emisiones se expresan en kg de CO₂ por tonelada de mercancía para la travesía completa. Factores NEWTOWT: 1,5 g CO₂/t.km (propulsión vélica). Referencia convencional: 13,7 g CO₂/t.km (GLEC Framework v3). Estos valores son indicativos — el certificado Anemos nominal se emite automáticamente tras la entrega según el tonelaje real.",
+    "rd_eco_note": "Las emisiones se expresan en kg de CO₂ por tonelada de mercancía para la travesía completa. Factores NEWTOWT: 1,5 g CO₂/t.km (propulsión vélica). Referencia convencional: 13,7 g CO₂/t.km (IMO Fourth GHG Study / IFP Energies Nouvelles). Estos valores son indicativos — el certificado Anemos nominal se emite automáticamente tras la entrega según el tonelaje real.",
     "rd_eco_more_link": "Más información sobre Anemos →",
     # Bloque «La calidad a bordo»
     "rd_quality_title": "La calidad a bordo",

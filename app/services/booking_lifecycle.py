@@ -71,7 +71,7 @@ _EVENTS: dict[str, dict[str, str]] = {
         "subject": "Cargaison débarquée",
         "heading": "Votre cargaison est débarquée",
         "message": "La cargaison de la réservation {ref} a été débarquée à destination. "
-        "Votre label Anemos est disponible.",
+        "Votre certificat Anemos est disponible.",
         "cta": "Suivre la traversée",
     },
     "delivered": {
