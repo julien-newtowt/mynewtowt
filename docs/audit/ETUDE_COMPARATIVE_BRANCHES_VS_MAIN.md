@@ -73,8 +73,9 @@ suite complète validée par la CI — base Postgres non disponible en local).
 
 ### Action C — **Consolidation V3‑only (Lot 4 / EVO)** — ⏳ **partielle**
 - ✅ EVO‑03 (lot 50), EVO‑01 (lot 51, A5), EVO‑06 (lot 52), **EVO‑02** (lot 53 —
-  service + vue de lecture unifiés `CrewLeave`/`HrAbsence`, **sans fusion de
-  schéma** : `/rh/conges`).
+  congés unifiés `/rh/conges`, sans fusion de schéma), **EVO‑09** (lot 59 —
+  signatures IMO généralisées aux documents cargo : hash SHA‑256 + verrou,
+  migration `0081`).
 - ⏳ **EVO‑04** (veille IA — effort L + Anthropic), **EVO‑05** (PWA offline réel —
   IndexedDB). Reportés (dépendances externes / effort L).
 

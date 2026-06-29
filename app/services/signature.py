@@ -77,6 +77,22 @@ def compute_watch_hash(w) -> str:
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
+def compute_cargo_doc_hash(d) -> str:
+    """EVO-09 — SHA-256 d'un document cargo (NOR/LOP/Mate's Receipt…)."""
+    parts = [
+        _norm(d.leg_id),
+        _norm(d.kind),
+        _norm(d.reference),
+        _norm(d.issued_at),
+        _norm(d.party_name),
+        _norm(d.body),
+        _norm(d.data_json),
+        _norm(d.signed_by_id),
+        _norm(d.signed_at),
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
 def sign_record(record, user, *, hash_fn) -> None:
     """Signe un record : pose signed_at / signed_by_* + signature_hash + lock."""
     if getattr(record, "is_locked", False):
