@@ -257,8 +257,11 @@ Backlog actif :
    (`/cargo/booking/{ref}/bl.docx` + `/me/bookings/{ref}/bl.docx`) + offre
    commerciale (`/offers/{id}/export.docx`) (lot 75).
 3. ✅ Stowage visualisation : vue SVG top-down des navires (STO-10, lot 72).
-4. Exports admin : ZIP global + sélectifs par module.
-5. Purges DB ciblées : `ALLOWED_TABLES` whitelist + `bindparams()`.
+4. ✅ Exports admin : ZIP global + CSV sélectif par table whitelistée
+   (ADM-04, `admin_data.py`).
+5. ✅ Purges DB ciblées : whitelist `ALLOWED_PURGE_TABLES` + DELETE paramétré
+   (expression SQLAlchemy, jamais de f-string) + **purge par rétention**
+   (lignes plus anciennes que N jours, colonne d'horodatage whitelistée — lot 76).
 6. Mailing notifications email (HTML + texte).
 7. ✅ Consolidation V3-only soldée : congés unifiés `/rh/conges` (EVO-02),
    veille IA (EVO-04), PWA offline réel IndexedDB + Background Sync (EVO-05).
