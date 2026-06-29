@@ -853,3 +853,31 @@ textarea.form-control { resize: vertical; min-height: 100px; }
   .verticals-grid { grid-template-columns: 1fr 1fr; }
   .closing-actions .btn { width: 100%; }
 }
+
+/* ── Wizard de réservation (CONV) ───────────────────────────────────────── */
+.wizard-counter { font-size: var(--fs-13); font-weight: var(--fw-semibold); color: var(--c-teal); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 var(--sp-4); }
+
+/* Étape 1 — cartes traversées */
+.bk-route-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--sp-4); }
+.bk-route-card { background: var(--c-paper); border: 1px solid var(--c-grey-soft); border-radius: var(--r-2); padding: var(--sp-5); transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.bk-route-card:hover { border-color: var(--c-teal); box-shadow: var(--sh-lift); }
+.bk-route-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.bk-leg-code { font-weight: var(--fw-bold); color: var(--c-teal); }
+.bk-vessel { font-size: var(--fs-13); color: var(--c-grey); }
+.bk-route-line { font-size: var(--fs-20); font-weight: var(--fw-bold); margin-bottom: var(--sp-3); }
+.bk-arrow { color: var(--c-copper); margin: 0 var(--sp-2); }
+.bk-route-meta { display: flex; gap: var(--sp-4); flex-wrap: wrap; font-size: var(--fs-13); color: var(--c-grey); margin-bottom: var(--sp-4); }
+.bk-route-actions { display: flex; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* CTA flottant en bas de l'écran < 768 px (parcours utilisable au pouce) */
+@media (max-width: 768px) {
+  .wizard-actions {
+    position: sticky; bottom: 0; z-index: 20;
+    background: var(--c-paper, #fff);
+    margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter));
+    padding: var(--sp-3) var(--gutter);
+    border-top: 1px solid var(--c-grey-soft);
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.06);
+  }
+  .wizard-actions .btn { flex: 1 1 auto; }
+}

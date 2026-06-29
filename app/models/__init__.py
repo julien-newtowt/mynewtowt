@@ -5,6 +5,7 @@ which is required for `init_db()` (dev) and Alembic auto-generate.
 """
 
 from app.models.activity_log import ActivityLog
+from app.models.analytics_event import AnalyticsEvent
 from app.models.anemos_certificate import AnemosCertificate
 from app.models.blog_post import BlogPost
 from app.models.booking import Booking, BookingItem
@@ -102,6 +103,7 @@ from app.models.weather import VesselWeather
 
 __all__ = [
     "ActivityLog",
+    "AnalyticsEvent",
     "AnemosCertificate",
     "BlogPost",
     "Booking",

@@ -393,6 +393,42 @@ async def analytics_commercial(
         round(funnel["confirmed"] / funnel["submitted"] * 100) if funnel["submitted"] else 0
     )
 
+    # Tunnel de conversion (CONV-06) : événements analytics depuis le 1ᵉʳ janvier.
+    from app.services import analytics as analytics_service
+
+    event_counts = await analytics_service.counts_since(db, year_start)
+    # Conversions vision produit : landing → booking (cible ≥ 5 %) et quote → booking.
+    landing_views = event_counts.get("landing_view", 0)
+    quotes_generated = event_counts.get("quote_generated", 0)
+    bookings_submitted = event_counts.get("booking_submitted", 0)
+    accounts_created = event_counts.get("account_created", 0)
+    landing_to_booking_pct = (
+        round(bookings_submitted / landing_views * 100, 1) if landing_views else 0
+    )
+    quote_to_booking_pct = (
+        round(bookings_submitted / quotes_generated * 100, 1) if quotes_generated else 0
+    )
+    self_service_pct = (
+        round(accounts_created / bookings_submitted * 100) if bookings_submitted else 0
+    )
+
+    # Délai moyen submitted → confirmed (heures) — cible < 4 h.
+    delay_rows = (
+        await db.execute(
+            select(Booking.submitted_at, Booking.confirmed_at).where(
+                Booking.confirmed_at.is_not(None),
+                Booking.submitted_at.is_not(None),
+                Booking.confirmed_at >= year_start,
+            )
+        )
+    ).all()
+    delays_h = [
+        (c - s).total_seconds() / 3600.0
+        for s, c in delay_rows
+        if c is not None and s is not None and c >= s
+    ]
+    avg_confirm_delay_h = round(sum(delays_h) / len(delays_h), 1) if delays_h else None
+
     return templates.TemplateResponse(
         "staff/analytics/commercial.html",
         {
@@ -406,6 +442,11 @@ async def analytics_commercial(
             "inv_by_status": inv_by_status,
             "total_revenue": total_revenue,
             "conversion_pct": conversion_pct,
+            "event_counts": event_counts,
+            "landing_to_booking_pct": landing_to_booking_pct,
+            "quote_to_booking_pct": quote_to_booking_pct,
+            "self_service_pct": self_service_pct,
+            "avg_confirm_delay_h": avg_confirm_delay_h,
         },
     )
 

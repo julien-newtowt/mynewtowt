@@ -1,79 +1,114 @@
-{% extends "client/_layout.html" %}
-{% block title %}{% if lang == 'en' %}Booking — Confirmation{% else %}Réservation — Confirmation{% endif %}{% endblock %}
-{% block content %}
+{% extends "client/booking_base.html" %}
+{% set wizard_step = 3 %}
+{% block wizard_title %}{{ t('booking_step_confirm', lang) }}{% endblock %}
 
-<h1>{% if lang == 'en' %}New booking{% else %}Nouvelle réservation{% endif %}</h1>
-<p class="text-muted">
-  {% if lang == 'en' %}Step 3 / 3 — Confirmation for{% else %}Étape 3 / 3 — Confirmation pour{% endif %}
-  <span class="mono text-accent">{{ booking.reference }}</span>
-</p>
+{% block wizard_content %}
+  <h1 class="page-title">{{ t('bk3_title', lang) }}</h1>
+  <p class="page-subtitle">{{ t('bk3_subtitle', lang) }} <span class="mono">{{ booking.reference }}</span></p>
 
-<div class="kpi-strip">
-  <div class="kpi-card">
-    <div class="label">{% if lang == 'en' %}Step{% else %}Étape{% endif %}</div>
-    <div class="value text-muted">1 / 3 ✓</div>
-  </div>
-  <div class="kpi-card">
-    <div class="label">{% if lang == 'en' %}Step{% else %}Étape{% endif %}</div>
-    <div class="value text-muted">2 / 3 ✓</div>
-  </div>
-  <div class="kpi-card">
-    <div class="label">{% if lang == 'en' %}Step{% else %}Étape{% endif %}</div>
-    <div class="value">3 / 3</div>
-  </div>
-</div>
-
-{% if error %}
-  <div class="alert alert-error" role="alert">{{ error }}</div>
-{% endif %}
-
-<section class="card mb-4">
-  <h2>{% if lang == 'en' %}Summary{% else %}Récapitulatif{% endif %}</h2>
-  <div class="grid grid-2 gap-4">
-    <div>
-      <strong>{% if lang == 'en' %}Route{% else %}Route{% endif %}</strong><br />
-      <span class="mono text-accent">{{ leg.leg_code }}</span><br />
-      ETD <span class="mono">{{ leg.etd|datetime }}</span><br />
-      ETA <span class="mono">{{ leg.eta|datetime }}</span>
+  {% if booking.source_quote_reference %}
+    <div class="alert" role="status">
+      <span class="alert-icon">📄</span>
+      {{ t('booking_from_quote', lang, ref=booking.source_quote_reference) }}
     </div>
-    <div>
-      <strong>{% if lang == 'en' %}Cargo{% else %}Cargo{% endif %}</strong><br />
-      {{ booking.total_palettes }} {% if lang == 'en' %}pallet(s){% else %}palette(s){% endif %} —
-      {{ booking.total_weight_kg|round(1) }} kg<br />
-      {% if booking.hazardous %}<span class="pill pill-warn">⚠ IMDG</span>{% endif %}
+  {% endif %}
+
+  {% if account_exists %}
+    <div class="alert alert--error" role="alert">
+      <strong>{{ t('booking_account_exists', lang) }}</strong>
+      <a href="{{ login_url }}">{{ t('bk3_login_cta', lang) }}</a>
     </div>
-  </div>
-  <div class="mt-4">
-    <strong>{% if lang == 'en' %}Estimated price:{% else %}Prix estimé :{% endif %}</strong>
-    <span class="display" style="font-size: var(--text-xl); color: var(--accent)">
-      {{ booking.estimated_price_eur|money }}
-    </span>
-    <small class="text-muted">
-      {% if lang == 'en' %}(not binding, confirmation within 4 business hours){% else %}(non engageant, confirmation sous 4h ouvrées){% endif %}
-    </small>
-  </div>
-</section>
+  {% elif error %}
+    <div class="alert alert--error" role="alert">{{ error }}</div>
+  {% endif %}
 
-<form method="post" action="/booking/{{ booking.reference }}/confirm" class="card">
-  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-  <div class="field field-check">
-    <input id="accept_terms" type="checkbox" name="accept_terms" required />
-    <label for="accept_terms">
-      {% if lang == 'en' %}
-        I accept the current <a href="/about/terms" target="_blank">terms (v2026.1)</a> and the
-        <a href="/about/privacy" target="_blank">privacy policy</a>.
-      {% else %}
-        J'accepte les <a href="/about/terms" target="_blank">CGV en vigueur (v2026.1)</a> et la
-        <a href="/about/privacy" target="_blank">politique de confidentialité</a>.
-      {% endif %}
-    </label>
-  </div>
-  <button class="btn btn-primary btn-lg" type="submit">
-    {% if lang == 'en' %}Submit my booking{% else %}Soumettre ma réservation{% endif %}
-  </button>
-  <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-ghost">
-    {% if lang == 'en' %}← Edit cargo{% else %}← Modifier le cargo{% endif %}
-  </a>
-</form>
+  <section class="form-section">
+    <h2 class="form-section-title">{{ t('bk3_summary', lang) }}</h2>
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="info-label">{{ t('booking_step_route', lang) }}</div>
+        <div class="info-value">
+          <span class="mono">{{ leg.leg_code }}</span><br />
+          ETD <span class="mono">{{ leg.etd|datetime }}</span><br />
+          ETA <span class="mono">{{ leg.eta|datetime }}</span>
+        </div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">{{ t('booking_step_cargo', lang) }}</div>
+        <div class="info-value">
+          {{ booking.total_palettes }} {{ t('bk3_pallets', lang) }} — {{ booking.total_weight_kg|round(1) }} kg
+          {% if booking.hazardous %}<br /><span class="pill" style="background:var(--c-copper);color:#fff;">⚠ IMDG</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <p style="margin-top:var(--sp-4);">
+      <strong>{{ t('bk3_estimated_price', lang) }}</strong>
+      <span style="font-size:var(--fs-20);color:var(--c-teal);font-weight:var(--fw-bold);">{{ booking.estimated_price_eur|money }}</span>
+      <span class="form-hint">{{ t('bk3_price_note', lang) }}</span>
+    </p>
+  </section>
 
+  <form method="post" action="/booking/{{ booking.reference }}/confirm">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+    {% if needs_account %}
+    <section class="form-section">
+      <h2 class="form-section-title">{{ t('booking_account_title', lang) }}</h2>
+      <p class="form-hint" style="margin-bottom:var(--sp-5);">{{ t('booking_account_hint', lang) }}</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label required">Email</label>
+          <input class="form-control" type="email" name="email" autocomplete="email" required
+                 value="{{ values.email if values else '' }}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label required">{{ t('bk3_company', lang) }}</label>
+          <input class="form-control" type="text" name="company_name" required
+                 value="{{ values.company_name if values else '' }}" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">{{ t('bk3_contact_name', lang) }}</label>
+          <input class="form-control" type="text" name="contact_name"
+                 value="{{ values.contact_name if values else '' }}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('bk3_country', lang) }}</label>
+          <input class="form-control" type="text" name="country" maxlength="2" placeholder="FR"
+                 value="{{ values.country if values else '' }}" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label required">{{ t('bk3_password', lang) }}</label>
+        <input class="form-control" type="password" name="password" minlength="12"
+               autocomplete="new-password" {% if needs_account %}required{% endif %} />
+        <span class="form-hint">{{ t('bk3_password_hint', lang) }}</span>
+      </div>
+      <p class="form-hint">
+        <a href="/me/login?next=/booking/{{ booking.reference }}/confirm">{{ t('bk3_have_account', lang) }}</a>
+      </p>
+    </section>
+    {% endif %}
+
+    <section class="form-section">
+      <label class="radio-option" style="align-items:flex-start;">
+        <input type="checkbox" name="accept_terms" required />
+        <div class="radio-content">
+          <div class="radio-label">{{ t('booking_cgv', lang) }}</div>
+          <div class="radio-description">
+            {{ t('booking_consent_note', lang) }}
+            <a href="/about/terms" target="_blank">{{ t('bk3_terms_link', lang) }}</a> ·
+            <a href="/about/privacy" target="_blank">{{ t('bk3_privacy_link', lang) }}</a>
+          </div>
+        </div>
+      </label>
+      <p class="form-hint" style="margin-top:var(--sp-3);">{{ t('booking_cancellation_note', lang) }}</p>
+    </section>
+
+    <div class="form-actions wizard-actions">
+      <a href="/booking/new/{{ leg.leg_code }}" class="btn btn-secondary btn-lg">{{ t('bk3_edit_cargo', lang) }}</a>
+      <button type="submit" class="btn btn-primary btn-lg">{{ t('booking_submit', lang) }}</button>
+    </div>
+  </form>
 {% endblock %}

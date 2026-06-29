@@ -1,0 +1,1 @@
+{% if lang == 'en' %}Your NEWTOWT quote {{ reference }} — your space is waiting{% elif lang == 'es' %}Su cotización NEWTOWT {{ reference }} — su espacio le espera{% elif lang == 'pt-br' %}Sua cotação NEWTOWT {{ reference }} — seu espaço espera por você{% else %}Votre devis NEWTOWT {{ reference }} — votre place vous attend{% endif %}

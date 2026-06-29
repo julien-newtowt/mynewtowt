@@ -32,7 +32,6 @@ from app.auth import (
     create_client_session,
     decode_client_mfa_pending,
     decode_client_mfa_trusted,
-    hash_password,
     verify_password,
 )
 from app.database import get_db
@@ -54,9 +53,21 @@ _LOGIN_ERR = "Identifiants incorrects ou compte non vérifié."
 router = APIRouter(tags=["client-auth"])
 
 
+def _safe_next(next_url: str | None) -> str | None:
+    """N'autorise qu'une redirection interne relative (anti open-redirect)."""
+    if not next_url:
+        return None
+    if next_url.startswith("/") and not next_url.startswith("//"):
+        return next_url
+    return None
+
+
 @router.get("/me/login", response_class=HTMLResponse)
-async def login_form(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("client/login.html", {"request": request, "error": None})
+async def login_form(request: Request, next: str | None = None) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "client/login.html",
+        {"request": request, "error": None, "next_url": _safe_next(next)},
+    )
 
 
 @router.post("/me/login", response_class=HTMLResponse)
@@ -64,10 +75,12 @@ async def login(
     request: Request,
     email: str = Form(...),
     password: str = Form(...),
+    next: str = Form(""),
     db: AsyncSession = Depends(get_db),
 ):
     ip = _client_ip(request) or "unknown"
     email_clean = email.strip().lower()
+    next_url = _safe_next(next)
 
     # Rate-limit par IP (10/10 min). On vérifie AVANT le lookup DB pour ne
     # pas exposer un canal de timing par cache miss.
@@ -80,7 +93,11 @@ async def login(
     ):
         return templates.TemplateResponse(
             "client/login.html",
-            {"request": request, "error": "Trop de tentatives — patientez 10 minutes."},
+            {
+                "request": request,
+                "error": "Trop de tentatives — patientez 10 minutes.",
+                "next_url": next_url,
+            },
             status_code=429,
         )
 
@@ -112,7 +129,7 @@ async def login(
         await asyncio.sleep(0.05)
         return templates.TemplateResponse(
             "client/login.html",
-            {"request": request, "error": _LOGIN_ERR},
+            {"request": request, "error": _LOGIN_ERR, "next_url": next_url},
             status_code=400,
         )
 
@@ -167,7 +184,7 @@ async def login(
         )
 
     token = create_client_session(user.id)
-    redirect = RedirectResponse(url="/me", status_code=303)
+    redirect = RedirectResponse(url=next_url or "/me", status_code=303)
     redirect.set_cookie(value=token, **cookie_kwargs_for_client(request))
     return redirect
 
@@ -305,45 +322,30 @@ async def register(
     country: str = Form(""),
     db: AsyncSession = Depends(get_db),
 ):
-    email_clean = email.strip().lower()
-    if len(password) < 12:
-        return templates.TemplateResponse(
-            "client/register.html",
-            {
-                "request": request,
-                "error": "Le mot de passe doit contenir au moins 12 caractères.",
-            },
-            status_code=400,
+    from app.services import client_account as client_account_service
+
+    try:
+        client = await client_account_service.create_account(
+            db,
+            email=email,
+            password=password,
+            company_name=company_name,
+            contact_name=contact_name,
+            country=country,
+            language=getattr(request.state, "lang", "fr") or "fr",
         )
-    existing = (
-        await db.execute(select(ClientAccount).where(ClientAccount.email == email_clean))
-    ).scalar_one_or_none()
-    if existing:
+    except client_account_service.EmailAlreadyExists:
         return templates.TemplateResponse(
             "client/register.html",
             {"request": request, "error": "Un compte existe déjà avec cet email."},
             status_code=400,
         )
-
-    client = ClientAccount(
-        email=email_clean,
-        hashed_password=hash_password(password),
-        company_name=company_name.strip(),
-        contact_name=contact_name.strip() or None,
-        country=(country.strip().upper() or None),
-        # V3.0: instant verification for ease of testing; production should
-        # require email-link verification before is_verified=True.
-        is_verified=True,
-        segment="occasional",
-    )
-    db.add(client)
-    await db.flush()
-
-    # Rapprochement auto compte ↔ client commercial par e-mail (override manuel
-    # possible ensuite via la fiche client). Best-effort.
-    from app.services.client_linking import auto_link_account
-
-    await auto_link_account(db, client)
+    except client_account_service.AccountError as exc:
+        return templates.TemplateResponse(
+            "client/register.html",
+            {"request": request, "error": str(exc)},
+            status_code=400,
+        )
 
     await activity_record(
         db,
