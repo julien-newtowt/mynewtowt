@@ -1,0 +1,55 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Admin — Intégrations{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div><span class="kicker">Gouvernance</span><h1 class="display">Intégrations externes</h1></div>
+  <div class="flex gap-2">
+    <a href="/admin" class="btn btn-ghost"><i data-lucide="arrow-left"></i> Configuration</a>
+  </div>
+</header>
+
+<article class="card">
+  <div class="flex justify-between items-center mb-2">
+    <h2 style="margin:0;"><i data-lucide="git-branch-plus"></i> Pipedrive (CRM)</h2>
+    {% if pd_enabled %}
+    <span class="pill pill-ok">Configuré</span>
+    {% else %}
+    <span class="pill pill-neutral">Non configuré</span>
+    {% endif %}
+  </div>
+
+  <p class="text-muted">
+    Synchronisation des organisations Pipedrive vers les clients commerciaux et
+    création de Deals depuis les offres/commandes. Le jeton d'API est piloté par
+    l'environnement (<code>PIPEDRIVE_API_TOKEN</code>) — source de vérité ; cet
+    écran permet d'en vérifier la connectivité sans manipuler le secret.
+  </p>
+
+  <table class="data-table">
+    <tbody>
+      <tr><th scope="row">Endpoint</th><td><code>{{ pd_base_url }}</code></td></tr>
+      <tr><th scope="row">Pipeline cible (Deals)</th><td>{{ pd_pipeline }}</td></tr>
+      <tr><th scope="row">Jeton</th>
+        <td>{% if pd_enabled %}présent (masqué){% else %}absent — défini via <code>PIPEDRIVE_API_TOKEN</code>{% endif %}</td></tr>
+    </tbody>
+  </table>
+
+  {% if not pd_enabled %}
+  <div class="alert alert-warn mt-2">
+    <i data-lucide="info"></i>
+    Renseignez <code>PIPEDRIVE_API_TOKEN</code> dans l'environnement puis
+    redémarrez l'application pour activer l'intégration.
+  </div>
+  {% endif %}
+
+  <div class="flex items-center gap-2 mt-3">
+    <button class="btn btn-secondary" type="button"
+            hx-post="/admin/integrations/pipedrive/test"
+            hx-target="#pd-test-result" hx-swap="innerHTML"
+            {% if not pd_enabled %}disabled{% endif %}>
+      <i data-lucide="plug-zap"></i> Tester la connexion
+    </button>
+    <span id="pd-test-result"></span>
+  </div>
+</article>
+{% endblock %}

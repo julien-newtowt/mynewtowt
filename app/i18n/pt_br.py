@@ -429,6 +429,7 @@ CATALOG: dict[str, str] = {
     "s_nav_config": "Configuração",
     "s_nav_ports": "Referência de portos",
     "s_nav_security": "Segurança (MFA)",
+    "s_nav_integrations": "Integrações",
     "s_logout": "Sair",
     # Topbar
     "tb_toggle_sidebar": "Alternar barra lateral",

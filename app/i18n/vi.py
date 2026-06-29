@@ -429,6 +429,7 @@ CATALOG: dict[str, str] = {
     "s_nav_config": "Cấu hình",
     "s_nav_ports": "Danh mục cảng",
     "s_nav_security": "Bảo mật (MFA)",
+    "s_nav_integrations": "Tích hợp",
     "s_logout": "Đăng xuất",
     # Topbar
     "tb_toggle_sidebar": "Bật/tắt thanh bên",

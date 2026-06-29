@@ -51,6 +51,7 @@ from app.services import co2 as co2_service
 from app.services import emissions as emissions_service
 from app.services.activity import record as activity_record
 from app.templating import templates
+from app.utils import pipedrive
 
 router = APIRouter(prefix="/admin", tags=["admin-enriched"])
 
@@ -878,6 +879,59 @@ async def newtowt_agent_toggle(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin", status_code=303)
+
+
+# ─────────────────────────────────────── ADM-07 — Intégrations externes
+@router.get("/integrations", response_class=HTMLResponse)
+async def integrations(
+    request: Request,
+    user=Depends(require_permission("admin", "C")),
+) -> HTMLResponse:
+    """État des intégrations externes + test de connexion (Pipedrive).
+
+    Le jeton reste piloté par l'environnement (``PIPEDRIVE_API_TOKEN``) —
+    source de vérité ; cet écran expose l'état de configuration et permet de
+    vérifier la connectivité sans manipuler le secret côté UI.
+    """
+    return templates.TemplateResponse(
+        "staff/admin/integrations.html",
+        {
+            "request": request,
+            "user": user,
+            "pd_enabled": pipedrive.enabled(),
+            "pd_base_url": pipedrive.PIPEDRIVE_BASE_URL,
+            "pd_pipeline": settings.pipedrive_pipeline_name,
+        },
+    )
+
+
+@router.post("/integrations/pipedrive/test", response_class=HTMLResponse)
+async def integrations_pipedrive_test(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+) -> HTMLResponse:
+    """Teste la connexion Pipedrive (``GET /users/me``) et renvoie un badge HTMX."""
+    try:
+        ok = await pipedrive.ping()
+    except Exception:
+        ok = False
+    await activity_record(
+        db,
+        action="test",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="integration",
+        entity_label="pipedrive",
+        detail="ok" if ok else "échec",
+        ip_address=_client_ip(request),
+    )
+    return templates.TemplateResponse(
+        "staff/admin/_integration_test_result.html",
+        {"request": request, "ok": ok, "configured": pipedrive.enabled()},
+    )
 
 
 # ────────────────────────────────────────────── Activity log viewer
