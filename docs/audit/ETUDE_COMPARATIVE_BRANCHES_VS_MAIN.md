@@ -98,11 +98,12 @@ suite complète validée par la CI — base Postgres non disponible en local).
 - ✅ **PLN‑07 (tranche)** : raccourcis ports pilotés par `Port.is_shortcut`
   (toggle admin) dans le formulaire de leg, **avec repli** sur la liste codée en
   dur si aucun port marqué — pas de régression (migration `0083`, lot 69).
-- ⏳ **ESC‑08 (partiel)** : Type→Action (lot 57) + synthèse commerciale (lot 60)
+- ✅ **ESC‑08 (complété)** : Type→Action (lot 57) + synthèse commerciale (lot 60)
   + timeline du flux opérationnel (lot 64) + **métriques de navigation du leg**
   (distance réelle/théorique/restante, vitesse moy., allongement — lot 65)
-  + **liens d'impression plan d'arrimage FR/EN** depuis l'escale (lot 66).
-  Reste : lanes d'activités parallèles (réorganisation UI).
+  + **liens d'impression plan d'arrimage FR/EN** depuis l'escale (lot 66)
+  + **lanes d'activités parallèles** (lot 71 — `operations_by_lane`, vue
+  swim‑lanes par catégorie d'opération, toggle `<details>` additif).
 
 ### Action E — **Gouvernance**
 - ✅ `CLAUDE.md` corrigé (EVO‑06). ⏳ matrice de tests persona au pipeline ;

@@ -267,12 +267,18 @@ async def escale_index(
     leg_overview = None
     port_call = None
     nav_metrics = None
+    lanes = None
     if selected_leg is not None:
-        from app.services.leg_overview import commercial_overview, port_call_steps
+        from app.services.leg_overview import (
+            commercial_overview,
+            operations_by_lane,
+            port_call_steps,
+        )
         from app.services.voyage_track import compute_metrics, positions_for_leg
 
         leg_overview = await commercial_overview(db, selected_leg.id)
         port_call = port_call_steps(selected_leg, operations)
+        lanes = operations_by_lane(operations)
         positions = await positions_for_leg(db, selected_leg)
         nav_metrics = compute_metrics(positions, selected_leg, arr_port=pod)
 
@@ -314,6 +320,7 @@ async def escale_index(
             "leg_overview": leg_overview,
             "port_call": port_call,
             "nav_metrics": nav_metrics,
+            "lanes": lanes,
             "directions": DIRECTIONS,
             # ESC-06 — couplage équipage.
             "vessel_crew": vessel_crew,
