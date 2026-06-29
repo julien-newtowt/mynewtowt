@@ -126,6 +126,15 @@ async def staff_bl_pdf(
     return await _bl_response(db, ref)
 
 
+@router.get("/cargo/booking/{ref}/bl.docx")
+async def staff_bl_docx(
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "C")),
+) -> Response:
+    return await _bl_docx_response(db, ref)
+
+
 @router.get("/cargo/booking/{ref}/packing-list.pdf")
 async def staff_pl_pdf(
     ref: str,
@@ -173,6 +182,15 @@ async def client_bl_pdf(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     return await _bl_response(db, ref, owner_client_id=client.id)
+
+
+@router.get("/me/bookings/{ref}/bl.docx")
+async def client_bl_docx(
+    ref: str,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    return await _bl_docx_response(db, ref, owner_client_id=client.id)
 
 
 @router.get("/me/bookings/{ref}/packing-list.pdf")
@@ -250,6 +268,14 @@ def _pdf_response(doc) -> Response:
     )
 
 
+def _docx_response(doc) -> Response:
+    return Response(
+        content=doc.docx,
+        media_type=doc.mime,
+        headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
+    )
+
+
 async def _bl_response(db, ref, owner_client_id=None) -> Response:
     booking = await _get_booking(db, ref, owner_client_id)
     if booking.status in ("draft",):
@@ -262,6 +288,29 @@ async def _bl_response(db, ref, owner_client_id=None) -> Response:
         booking=booking, leg=leg, vessel=vessel, pol=pol, pod=pod, client=client
     )
     return _pdf_response(doc)
+
+
+async def _bl_docx_response(db, ref, owner_client_id=None) -> Response:
+    """Bill of Lading au format Word (.docx) — même garde que la version PDF."""
+    booking = await _get_booking(db, ref, owner_client_id)
+    if booking.status in ("draft",):
+        raise HTTPException(
+            status_code=400,
+            detail="Bill of Lading not available until the booking is confirmed",
+        )
+    leg, vessel, pol, pod, client = await _load_booking_bundle(db, booking)
+    from app.services.docx_generator import build_bill_of_lading_docx
+
+    doc = build_bill_of_lading_docx(
+        booking=booking,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        client=client,
+        bl_number=f"TUAW_{booking.leg_id}_{booking.id}",
+    )
+    return _docx_response(doc)
 
 
 async def _packing_response(db, ref, owner_client_id=None) -> Response:

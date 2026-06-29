@@ -253,7 +253,9 @@ de Continuité d'Activité) et `docs/audit/ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md
 
 Backlog actif :
 1. Certificats CO₂ : couverts par le **label Anemos** (PDF WeasyPrint par booking).
-2. DOCX generators : Bill of Lading + offre commerciale.
+2. ✅ DOCX generators : service `docx_generator.py` — Bill of Lading
+   (`/cargo/booking/{ref}/bl.docx` + `/me/bookings/{ref}/bl.docx`) + offre
+   commerciale (`/offers/{id}/export.docx`) (lot 75).
 3. ✅ Stowage visualisation : vue SVG top-down des navires (STO-10, lot 72).
 4. Exports admin : ZIP global + sélectifs par module.
 5. Purges DB ciblées : `ALLOWED_TABLES` whitelist + `bindparams()`.
