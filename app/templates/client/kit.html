@@ -1,0 +1,139 @@
+{% extends "client/_layout.html" %}
+{% block title %}Kit B2B2C · {{ booking.reference }} — NEWTOWT{% endblock %}
+{% block content %}
+
+<a href="/me/bookings/{{ booking.reference }}" class="btn btn-ghost btn-sm">
+  ← {% if lang == 'en' %}Back to booking{% else %}Retour à la réservation{% endif %}
+</a>
+
+<h1>Kit B2B2C · <span class="mono">{{ booking.reference }}</span></h1>
+<p class="text-muted">
+  {% if lang == 'en' %}
+    Ready-to-use assets to sell this shipment to your own customers: an origin
+    story, the avoided-CO₂ proof and a verification QR code.
+  {% else %}
+    Des assets prêts à l'emploi pour revendre cette expédition à vos propres
+    clients : un récit d'origine, la preuve de CO₂ évité et un QR de vérification.
+  {% endif %}
+</p>
+
+{% if request.query_params.get('saved') %}
+<div class="alert alert-success">
+  {% if lang == 'en' %}Saved.{% else %}Enregistré.{% endif %}
+</div>
+{% endif %}
+
+{# ===== Co-branding ===== #}
+<section class="card" style="display:flex;align-items:center;gap:var(--space-4);flex-wrap:wrap;">
+  <img src="{{ brand.logo_light }}" alt="NEWTOWT" style="max-height:40px;" />
+  {% if client.brand_logo_path %}
+    <span class="text-muted" style="font-size:1.25rem;">×</span>
+    <img src="/me/brand/logo" alt="{{ client.brand_name or client.company_name }}" style="max-height:40px;" />
+  {% elif client.brand_name %}
+    <span class="text-muted" style="font-size:1.25rem;">×</span>
+    <strong>{{ client.brand_name }}</strong>
+  {% endif %}
+  <a href="/me/brand" class="btn btn-ghost btn-sm" style="margin-left:auto;">
+    {% if lang == 'en' %}Edit my brand{% else %}Modifier ma marque{% endif %}
+  </a>
+</section>
+
+{# ===== CO₂ évité (valeur figée du certificat) + QR ===== #}
+{% if cert and co2_kg %}
+<section class="card">
+  <h2 style="margin-top:0;">
+    {{ co2_kg }} kg {% if lang == 'en' %}of CO₂ avoided{% else %}de CO₂ évité{% endif %}
+  </h2>
+  <p class="text-muted">
+    {% if lang == 'en' %}On this shipment, vs an equivalent conventional cargo ship — tank-to-wake, certified Anemos.
+    {% else %}Sur cette expédition, vs un cargo conventionnel équivalent — tank-to-wake, certifié Anemos.{% endif %}
+  </p>
+  <div style="display:flex;gap:var(--space-5);flex-wrap:wrap;margin:var(--space-4) 0;">
+    <div><strong style="font-size:1.4rem;">{{ (co2_kg / 25) | round(0, 'floor') | int }}</strong><br/>
+      <span class="text-muted">{{ t('rd_eco_eq_trees', lang) }}</span></div>
+    <div><strong style="font-size:1.4rem;">{{ (co2_kg / 1000) | round(1) }}</strong><br/>
+      <span class="text-muted">{{ t('rd_eco_eq_flights', lang) }}</span></div>
+    <div><strong style="font-size:1.4rem;">{{ (co2_kg / 0.9) | round(0, 'floor') | int }}</strong><br/>
+      <span class="text-muted">{{ t('rd_eco_eq_truck', lang) }}</span></div>
+  </div>
+  <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap;">
+    {% if co2eq_qr %}
+    <img src="{{ co2eq_qr }}" width="96" height="96"
+         alt="{% if lang == 'en' %}Verification QR code{% else %}QR code de vérification{% endif %}" />
+    {% endif %}
+    {% if verify_url %}
+    <a href="{{ verify_url }}" target="_blank" class="btn btn-secondary btn-sm">
+      {% if lang == 'en' %}Verify the certificate →{% else %}Vérifier le certificat →{% endif %}
+    </a>
+    {% endif %}
+    <a href="/me/bookings/{{ booking.reference }}/anemos.pdf" target="_blank" class="btn btn-ghost btn-sm">
+      {% if lang == 'en' %}Certificate PDF{% else %}Certificat PDF{% endif %}
+    </a>
+  </div>
+</section>
+{% else %}
+<section class="card">
+  <p class="text-muted">
+    {% if lang == 'en' %}
+      The Anemos certificate (with your avoided CO₂) is issued automatically on
+      delivery. You can already prepare your origin story below.
+    {% else %}
+      Le certificat Anemos (avec votre CO₂ évité) est émis automatiquement à la
+      livraison. Vous pouvez déjà préparer votre récit d'origine ci-dessous.
+    {% endif %}
+  </p>
+</section>
+{% endif %}
+
+{# ===== Terroir (self-service) ===== #}
+<section class="card">
+  <h2 style="margin-top:0;">{% if lang == 'en' %}Origin &amp; terroir{% else %}Origine &amp; terroir{% endif %}</h2>
+  <p class="text-muted">
+    {% if lang == 'en' %}Personalise the story — the CO₂ figure stays the certified one.
+    {% else %}Personnalisez le récit — le chiffre de CO₂ reste celui, certifié, du certificat.{% endif %}
+  </p>
+  <form method="post" action="/me/bookings/{{ booking.reference }}/kit">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="form-group">
+      <label class="form-label" for="coffee_origin">{% if lang == 'en' %}Origin{% else %}Origine{% endif %}</label>
+      <select class="form-control" id="coffee_origin" name="coffee_origin">
+        <option value="">{% if lang == 'en' %}— None —{% else %}— Aucune —{% endif %}</option>
+        {% for o in origins %}
+        <option value="{{ o }}"{% if origin == o %} selected{% endif %}>{{ origin_label(o, lang) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="coffee_region">{% if lang == 'en' %}Region{% else %}Région{% endif %}</label>
+      <input class="form-control" type="text" id="coffee_region" name="coffee_region"
+             maxlength="120" value="{{ booking.coffee_region or '' }}" placeholder="Huila, Huehuetenango…" />
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="coffee_producer">{% if lang == 'en' %}Producer / cooperative{% else %}Producteur / coopérative{% endif %}</label>
+      <input class="form-control" type="text" id="coffee_producer" name="coffee_producer"
+             maxlength="160" value="{{ booking.coffee_producer or '' }}" />
+    </div>
+    <button class="btn btn-primary" type="submit">
+      {% if lang == 'en' %}Update the story{% else %}Mettre à jour le récit{% endif %}
+    </button>
+  </form>
+</section>
+
+{# ===== Récit d'origine ===== #}
+{% if story_long %}
+<section class="card">
+  <h2 style="margin-top:0;">{% if lang == 'en' %}Your origin story{% else %}Votre récit d'origine{% endif %}</h2>
+  <p>{{ story_long }}</p>
+  <h3>{% if lang == 'en' %}Short version (label / social){% else %}Version courte (étiquette / réseaux){% endif %}</h3>
+  <p class="text-muted">{{ story_short }}</p>
+</section>
+{% else %}
+<section class="card">
+  <p class="text-muted">
+    {% if lang == 'en' %}Choose an origin above to generate your ready-to-use story.
+    {% else %}Choisissez une origine ci-dessus pour générer votre récit prêt à l'emploi.{% endif %}
+  </p>
+</section>
+{% endif %}
+
+{% endblock %}

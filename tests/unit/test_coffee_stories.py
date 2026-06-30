@@ -89,6 +89,25 @@ def test_thousands_separator_per_language() -> None:
 
 
 # ───────────────────────── exemples vitrine ─────────────────────────
+# ───────────────────────── origines (kit ERP / Vague 3) ─────────────────────────
+@pytest.mark.parametrize("origin", cs.ORIGINS)
+def test_is_valid_origin_accepts_known(origin: str) -> None:
+    assert cs.is_valid_origin(origin)
+
+
+@pytest.mark.parametrize("bad", ["brazil", "", None, "Colombie", "café"])
+def test_is_valid_origin_rejects_unknown(bad) -> None:
+    assert not cs.is_valid_origin(bad)
+
+
+def test_origin_label_per_language() -> None:
+    assert cs.origin_label("colombie", "fr") == "Colombie"
+    assert cs.origin_label("colombie", "en") == "Colombia"
+    assert cs.origin_label("mexique", "pt-br") == "México"
+    assert cs.origin_label("mexique", "es") == "Mexique"  # es → fr
+    assert cs.origin_label("unknown", "fr") == ""
+
+
 @pytest.mark.parametrize("origin", cs.ORIGINS)
 @pytest.mark.parametrize("lang", ALL_LANGS)
 def test_marketing_example_shape(origin: str, lang: str) -> None:

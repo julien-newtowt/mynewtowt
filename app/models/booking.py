@@ -74,6 +74,13 @@ class Booking(Base):
     shipper_reference: Mapped[str | None] = mapped_column(String(100))
     notes: Mapped[str | None] = mapped_column(Text)
 
+    # Vague 3 — terroir café (kit B2B2C) : origine + région + producteur,
+    # injectés dans le récit d'origine du certificat Anemos. Personnalisables
+    # par le client (le chiffre de CO₂ reste celui, immuable, du certificat).
+    coffee_origin: Mapped[str | None] = mapped_column(String(20))
+    coffee_region: Mapped[str | None] = mapped_column(String(120))
+    coffee_producer: Mapped[str | None] = mapped_column(String(160))
+
     signed_terms_version: Mapped[str | None] = mapped_column(String(20))
     signed_terms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

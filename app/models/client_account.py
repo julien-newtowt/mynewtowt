@@ -27,6 +27,10 @@ class ClientAccount(Base):
     vat_number: Mapped[str | None] = mapped_column(String(50))
     country: Mapped[str | None] = mapped_column(String(2))
     billing_address: Mapped[str | None] = mapped_column(Text)
+    # Vague 3 — co-branding du kit B2B2C : marque + logo du client, repris sur
+    # la page kit pour co-signer les assets remis à son propre consommateur.
+    brand_name: Mapped[str | None] = mapped_column(String(120))
+    brand_logo_path: Mapped[str | None] = mapped_column(String(255))
     language: Mapped[str] = mapped_column(String(5), default="fr")
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mfa_secret: Mapped[str | None] = mapped_column(String(64))

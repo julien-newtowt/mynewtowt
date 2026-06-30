@@ -11,6 +11,7 @@ Routes :
 
 from __future__ import annotations
 
+import mimetypes
 from datetime import UTC, datetime
 
 from fastapi import (
@@ -37,8 +38,8 @@ from app.models.notification import Notification
 from app.models.packing_list import PackingListDocument
 from app.models.port import Port
 from app.models.vessel import Vessel
+from app.services import coffee_stories, messaging, mfa, notifications, safe_files, security_alerts
 from app.services import documents as documents_svc
-from app.services import messaging, mfa, notifications, safe_files, security_alerts
 from app.services.activity import record as activity_record
 from app.services.booking import find_by_reference, list_for_client
 from app.services.vessel_position import get_latest_position
@@ -727,3 +728,168 @@ async def mfa_disable(
         ua=ua,
     )
     return RedirectResponse(url="/me/account?mfa=disabled", status_code=303)
+
+
+# ─────────────────────────── Vague 3 — kit B2B2C ───────────────────────────
+# Espace marque (co-branding) + pack par expédition assemblant le récit
+# d'origine, la dataviz CO₂ (vrai CO₂ évité + QR /verify) et le certificat.
+
+_LOGO_MIME_OK = {"image/png", "image/jpeg", "image/svg+xml", "image/webp"}
+
+
+@router.get("/me/brand", response_class=HTMLResponse)
+async def brand_space(
+    request: Request,
+    client=Depends(get_current_client),
+) -> HTMLResponse:
+    """Espace marque : nom + logo du client, repris pour co-brander le kit."""
+    return templates.TemplateResponse(
+        "client/brand.html",
+        {"request": request, "client": client},
+    )
+
+
+@router.post("/me/brand")
+async def brand_save(
+    request: Request,
+    brand_name: str = Form(""),
+    logo: UploadFile | None = File(None),
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    client.brand_name = (brand_name or "").strip()[:120] or None
+    if logo is not None and getattr(logo, "filename", ""):
+        content = await logo.read()
+        try:
+            rel_path, mime = safe_files.save_upload(
+                content, logo.filename or "logo", subdir=f"brand/{client.id}"
+            )
+        except safe_files.UploadRejected as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        if mime and mime not in _LOGO_MIME_OK:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Logo : formats acceptés PNG, JPEG, SVG ou WebP.",
+            )
+        client.brand_logo_path = rel_path
+    await db.flush()
+    await activity_record(
+        db,
+        action="client_brand_update",
+        user_name=client.email,
+        module="booking",
+        entity_type="client_account",
+        entity_id=client.id,
+        entity_label=client.company_name,
+    )
+    return RedirectResponse(url="/me/brand?saved=1", status_code=303)
+
+
+@router.post("/me/brand/logo/delete")
+async def brand_logo_delete(
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    client.brand_logo_path = None
+    await db.flush()
+    return RedirectResponse(url="/me/brand?saved=1", status_code=303)
+
+
+@router.get("/me/brand/logo")
+async def brand_logo(
+    client=Depends(get_current_client),
+) -> Response:
+    """Sert le logo de marque du client (pour <img>)."""
+    if not client.brand_logo_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No logo")
+    try:
+        path = safe_files.resolve_path(client.brand_logo_path)
+    except (safe_files.UploadRejected, FileNotFoundError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File missing") from None
+    mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return Response(content=path.read_bytes(), media_type=mime)
+
+
+@router.get("/me/bookings/{ref}/kit", response_class=HTMLResponse)
+async def booking_kit(
+    request: Request,
+    ref: str,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Pack par expédition : récit d'origine + dataviz CO₂ + QR + certificat,
+    co-brandé avec la marque du client. Le terroir (origine/région/producteur)
+    est éditable ici ; le CO₂ reste celui, immuable, du certificat."""
+    booking = await find_by_reference(db, ref)
+    if not booking or booking.client_account_id != client.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    cert = (
+        await db.execute(
+            select(AnemosCertificate).where(AnemosCertificate.booking_id == booking.id)
+        )
+    ).scalar_one_or_none()
+    leg = await db.get(Leg, booking.leg_id)
+    vessel = await db.get(Vessel, leg.vessel_id) if leg else None
+    lang = getattr(request.state, "lang", "fr")
+
+    co2_kg = int(cert.co2_avoided_kg) if cert and cert.co2_avoided_kg else None
+    verify_url = f"{settings.site_url.rstrip('/')}/verify/{cert.reference}" if cert else None
+    qr = mfa.qr_data_uri(verify_url) if verify_url else None
+
+    origin = (
+        booking.coffee_origin if coffee_stories.is_valid_origin(booking.coffee_origin) else None
+    )
+    story_long = story_short = None
+    if origin:
+        story_long = coffee_stories.render_story(
+            origin,
+            lang,
+            "long",
+            region=booking.coffee_region,
+            producer=booking.coffee_producer,
+            vessel=vessel.name if vessel else None,
+            co2_kg=co2_kg,
+        )
+        story_short = coffee_stories.render_story(origin, lang, "short", co2_kg=co2_kg)
+
+    return templates.TemplateResponse(
+        "client/kit.html",
+        {
+            "request": request,
+            "client": client,
+            "booking": booking,
+            "cert": cert,
+            "vessel": vessel,
+            "co2_kg": co2_kg,
+            "verify_url": verify_url,
+            "co2eq_qr": qr,
+            "co2eq_verify_url": verify_url,
+            "co2eq_value": co2_kg or 250,
+            "origin": origin,
+            "story_long": story_long,
+            "story_short": story_short,
+            "origins": coffee_stories.ORIGINS,
+            "origin_label": coffee_stories.origin_label,
+        },
+    )
+
+
+@router.post("/me/bookings/{ref}/kit")
+async def booking_kit_save(
+    ref: str,
+    coffee_origin: str = Form(""),
+    coffee_region: str = Form(""),
+    coffee_producer: str = Form(""),
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Enregistre le terroir café (self-service client) sur la réservation."""
+    booking = await find_by_reference(db, ref)
+    if not booking or booking.client_account_id != client.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    o = (coffee_origin or "").strip().lower()
+    booking.coffee_origin = o if coffee_stories.is_valid_origin(o) else None
+    booking.coffee_region = (coffee_region or "").strip()[:120] or None
+    booking.coffee_producer = (coffee_producer or "").strip()[:160] or None
+    await db.flush()
+    return RedirectResponse(url=f"/me/bookings/{ref}/kit?saved=1", status_code=303)
