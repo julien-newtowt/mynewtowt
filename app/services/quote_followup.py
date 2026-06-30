@@ -38,9 +38,7 @@ async def _is_converted(db: AsyncSession, quote: Quote) -> bool:
         return True
     ref = (
         await db.execute(
-            select(Booking.id)
-            .where(Booking.source_quote_reference == quote.reference)
-            .limit(1)
+            select(Booking.id).where(Booking.source_quote_reference == quote.reference).limit(1)
         )
     ).first()
     return ref is not None
@@ -79,9 +77,7 @@ async def find_pending(db: AsyncSession, *, now: datetime | None = None) -> list
 
 
 async def _port_name(db: AsyncSession, locode: str) -> str:
-    port = (
-        await db.execute(select(Port).where(Port.locode == locode))
-    ).scalar_one_or_none()
+    port = (await db.execute(select(Port).where(Port.locode == locode))).scalar_one_or_none()
     return port.name if port and port.name else locode
 
 

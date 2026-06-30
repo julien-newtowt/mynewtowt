@@ -295,7 +295,9 @@ async def step_2_cargo_submit(
         if not (form.get("imdg_class") or "").strip():
             return _error("Indiquez la classe IMDG pour les marchandises dangereuses.")
         if not fds_present:
-            return _error("La fiche de données de sécurité (FDS) est obligatoire pour les marchandises dangereuses.")
+            return _error(
+                "La fiche de données de sécurité (FDS) est obligatoire pour les marchandises dangereuses."
+            )
 
     quote_ref = (form.get("quote") or "").strip() or request.cookies.get("towt_pending_quote")
     if quote_ref:

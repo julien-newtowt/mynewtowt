@@ -41,9 +41,7 @@ async def find_by_email(db: AsyncSession, email: str) -> ClientAccount | None:
     if not clean:
         return None
     return (
-        await db.execute(
-            select(ClientAccount).where(func.lower(ClientAccount.email) == clean)
-        )
+        await db.execute(select(ClientAccount).where(func.lower(ClientAccount.email) == clean))
     ).scalar_one_or_none()
 
 

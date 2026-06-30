@@ -259,9 +259,7 @@ async def devis_pdf(
 
     from app.services import analytics
 
-    await analytics.record(
-        db, "quote_pdf_download", reference=quote.reference, lang=quote.lang
-    )
+    await analytics.record(db, "quote_pdf_download", reference=quote.reference, lang=quote.lang)
 
     from weasyprint import HTML  # import tardif — dépendances natives lourdes
 
@@ -368,9 +366,7 @@ async def _quote_co2_avoided_kg(db, quote, pol, pod, leg) -> float:
         if tonnage <= 0:
             return 0.0
         factors = await co2_service.get_factors(db)
-        est = co2_service.estimate(
-            distance_nm=distance_nm, tonnage_t=tonnage, factors=factors
-        )
+        est = co2_service.estimate(distance_nm=distance_nm, tonnage_t=tonnage, factors=factors)
         return float(est.avoided_co2_kg)
     return 0.0
 

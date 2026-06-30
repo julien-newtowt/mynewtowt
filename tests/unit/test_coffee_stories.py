@@ -97,7 +97,12 @@ def test_marketing_example_shape(origin: str, lang: str) -> None:
     assert ex["title"] and ex["region"] and ex["producer"]
     # L'exemple doit produire un récit cohérent et vérifiable.
     txt = cs.render_story(
-        origin, lang, "long", region=ex["region"], producer=ex["producer"],
-        vessel=ex["vessel"], co2_kg=ex["co2_kg"],
+        origin,
+        lang,
+        "long",
+        region=ex["region"],
+        producer=ex["producer"],
+        vessel=ex["vessel"],
+        co2_kg=ex["co2_kg"],
     )
     assert "%" not in txt and "{" not in txt

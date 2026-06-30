@@ -788,7 +788,6 @@ CATALOG: dict[str, str] = {
     "pt_privacy_point5": "Une fois la packing list verrouillée par l'armateur, vos saisies sont figées (audit trail field-by-field).",
     "pt_privacy_personal_data": "Données personnelles",
     "pt_privacy_gdpr": "Conformément au RGPD, vous pouvez exercer vos droits d'accès, rectification, suppression en écrivant à",
-
     # ── Wizard de conversion (CONV) ──
     "booking_step_route": "Route",
     "booking_step_cargo": "Cargaison",

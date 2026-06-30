@@ -788,7 +788,6 @@ CATALOG: dict[str, str] = {
     "pt_privacy_point5": "Once the packing list is locked by the carrier, your entries are frozen (field-by-field audit trail).",
     "pt_privacy_personal_data": "Personal data",
     "pt_privacy_gdpr": "In accordance with the GDPR, you may exercise your rights of access, rectification and deletion by writing to",
-
     # ── Wizard de conversion (CONV) ──
     "booking_step_route": "Route",
     "booking_step_cargo": "Cargo",
