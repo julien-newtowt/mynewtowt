@@ -11,6 +11,7 @@ Routes :
 
 from __future__ import annotations
 
+import base64
 import mimetypes
 from datetime import UTC, datetime
 
@@ -893,3 +894,78 @@ async def booking_kit_save(
     booking.coffee_producer = (coffee_producer or "").strip()[:160] or None
     await db.flush()
     return RedirectResponse(url=f"/me/bookings/{ref}/kit?saved=1", status_code=303)
+
+
+def _brand_logo_data_uri(client) -> str | None:
+    """Logo de marque du client encodé en data: URI (pour l'embarquer dans le PDF)."""
+    if not client.brand_logo_path:
+        return None
+    try:
+        path = safe_files.resolve_path(client.brand_logo_path)
+    except (safe_files.UploadRejected, FileNotFoundError):
+        return None
+    mime = mimetypes.guess_type(path.name)[0] or "image/png"
+    b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
+@router.get("/me/bookings/{ref}/kit.pdf")
+async def booking_kit_pdf(
+    request: Request,
+    ref: str,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Kit B2B2C par expédition (PDF co-brandé téléchargeable)."""
+    from app.services import pdf_generator
+
+    booking = await find_by_reference(db, ref)
+    if not booking or booking.client_account_id != client.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    cert = (
+        await db.execute(
+            select(AnemosCertificate).where(AnemosCertificate.booking_id == booking.id)
+        )
+    ).scalar_one_or_none()
+    leg = await db.get(Leg, booking.leg_id)
+    vessel = await db.get(Vessel, leg.vessel_id) if leg else None
+    pol = await db.get(Port, leg.departure_port_id) if leg else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg else None
+    lang = getattr(request.state, "lang", "fr")
+
+    co2_kg = int(cert.co2_avoided_kg) if cert and cert.co2_avoided_kg else None
+    origin = (
+        booking.coffee_origin if coffee_stories.is_valid_origin(booking.coffee_origin) else None
+    )
+    story_long = story_short = None
+    if origin:
+        story_long = coffee_stories.render_story(
+            origin,
+            lang,
+            "long",
+            region=booking.coffee_region,
+            producer=booking.coffee_producer,
+            vessel=vessel.name if vessel else None,
+            co2_kg=co2_kg,
+        )
+        story_short = coffee_stories.render_story(origin, lang, "short", co2_kg=co2_kg)
+
+    doc = pdf_generator.render_kit(
+        booking=booking,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        client=client,
+        cert=cert,
+        lang=lang,
+        co2_kg=co2_kg,
+        story_long=story_long,
+        story_short=story_short,
+        client_logo_data=_brand_logo_data_uri(client),
+    )
+    return Response(
+        content=doc.pdf,
+        media_type=doc.mime,
+        headers={"Content-Disposition": f'inline; filename="{doc.filename}"'},
+    )

@@ -1,0 +1,66 @@
+{% extends "pdf/_base.html" %}
+{% set _en = (lang == 'en') %}
+
+{% block title %}Kit B2B2C — {{ booking.reference }}{% endblock %}
+{% block doc_kind %}Kit B2B2C{% endblock %}
+{% block doc_ref %}{{ booking.reference }}{% endblock %}
+
+{% block content %}
+
+{# Co-branding NEWTOWT × client #}
+{% if client_logo_data or client.brand_name %}
+<div style="display:flex;align-items:center;gap:10pt;margin-bottom:12pt;">
+  <span class="small c-gris">{{ 'In partnership with' if _en else 'En partenariat avec' }}</span>
+  {% if client_logo_data %}
+    <img src="{{ client_logo_data }}" alt="{{ client.brand_name or client.company_name }}" style="max-height:28pt;" />
+  {% else %}
+    <strong class="c-teal">{{ client.brand_name }}</strong>
+  {% endif %}
+</div>
+{% endif %}
+
+<h1>{{ 'Your coffee, sailed across' if _en else 'Votre café, traversé à la voile' }}</h1>
+<p class="baseline">
+  {{ 'Preserved quality · proven decarbonization · a story that sells' if _en
+     else 'Qualité préservée · décarbonation prouvée · un récit qui se vend' }}
+</p>
+
+{# CO₂ évité (figé) + équivalences + QR #}
+{% if cert and co2_kg %}
+<h2>{{ 'Avoided CO₂' if _en else 'CO₂ évité' }}</h2>
+<div class="grid-2">
+  <div>
+    <p><span class="badge-co2">{{ co2_kg }} kg {{ 'CO₂ avoided' if _en else 'de CO₂ évité' }}</span></p>
+    <p class="small">
+      {{ 'On this shipment, vs an equivalent conventional cargo ship — tank-to-wake, certified Anemos.'
+         if _en else "Sur cette expédition, vs un cargo conventionnel équivalent — tank-to-wake, certifié Anemos." }}
+    </p>
+    <div class="grid-3" style="margin-top:8pt;">
+      <div class="box"><div class="value"><strong>{{ (co2_kg / 25) | round(0, 'floor') | int }}</strong></div><div class="label">{{ t('rd_eco_eq_trees', lang) }}</div></div>
+      <div class="box"><div class="value"><strong>{{ (co2_kg / 1000) | round(1) }}</strong></div><div class="label">{{ t('rd_eco_eq_flights', lang) }}</div></div>
+      <div class="box"><div class="value"><strong>{{ (co2_kg / 0.9) | round(0, 'floor') | int }}</strong></div><div class="label">{{ t('rd_eco_eq_truck', lang) }}</div></div>
+    </div>
+  </div>
+  <div class="text-center">
+    {% if verify_qr %}<img src="{{ verify_qr }}" alt="QR" style="width:96pt;height:96pt;" />{% endif %}
+    <div class="small mono">{{ cert.reference }}</div>
+    <div class="small">{{ 'Scan to verify' if _en else 'Scannez pour vérifier' }}</div>
+  </div>
+</div>
+{% endif %}
+
+{# Récit d'origine #}
+{% if story_long %}
+<h2>{{ 'Origin story' if _en else "Récit d'origine" }}</h2>
+<p>{{ story_long }}</p>
+<h3>{{ 'Short version (label / social)' if _en else 'Version courte (étiquette / réseaux)' }}</h3>
+<p class="small">{{ story_short }}</p>
+{% endif %}
+
+<div class="footer-mention">
+  {{ 'Avoided CO₂ (tank-to-wake), certified Anemos — verifiable at'
+     if _en else 'CO₂ évité (tank-to-wake), certifié Anemos — vérifiable sur' }}
+  {{ verify_url or (site_url ~ '/verify') }}
+</div>
+
+{% endblock %}

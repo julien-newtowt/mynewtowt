@@ -228,6 +228,43 @@ def render_anemos_certificate(
     return DocumentBytes(html=html, pdf=pdf, filename=f"CertificatAnemos_{ctx['cert_ref']}.pdf")
 
 
+def render_kit(
+    *,
+    booking,
+    leg,
+    vessel,
+    pol,
+    pod,
+    client,
+    cert,
+    lang: str = "fr",
+    co2_kg: int | None,
+    story_long: str | None,
+    story_short: str | None,
+    client_logo_data: str | None = None,
+) -> DocumentBytes:
+    """Kit B2B2C par expédition (Vague 3) : récit d'origine + CO₂ évité figé +
+    QR de vérification, co-brandé avec la marque du client. PDF téléchargeable."""
+    ctx = _common_ctx(booking, leg, vessel, pol, pod, client)
+    base = (settings.site_url or "").rstrip("/")
+    verify_url = f"{base}/verify/{cert.reference}" if cert else None
+    ctx.update(
+        cert=cert,
+        lang=lang,
+        co2_kg=co2_kg,
+        story_long=story_long,
+        story_short=story_short,
+        client_logo_data=client_logo_data,
+        verify_url=verify_url,
+    )
+    if verify_url:
+        from app.services.mfa import qr_data_uri
+
+        ctx["verify_qr"] = qr_data_uri(verify_url)
+    html, pdf = _render_pdf("pdf/kit.html", ctx)
+    return DocumentBytes(html=html, pdf=pdf, filename=f"KitB2B2C_{booking.reference}.pdf")
+
+
 def render_planning_brochure(*, groups, summary, meta, lang: str = "fr") -> DocumentBytes:
     """PLN-01 — brochure commerciale imprimable du planning.
 
