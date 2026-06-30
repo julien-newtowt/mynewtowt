@@ -387,7 +387,7 @@ async def anemos(
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    """Page des Labels Anemos (anciennement "Certificats CO₂")."""
+    """Page des certificats Anemos (anciennement "Certificats CO₂")."""
     res = await db.execute(
         select(AnemosCertificate, Booking)
         .join(Booking, Booking.id == AnemosCertificate.booking_id, isouter=True)

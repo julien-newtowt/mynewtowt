@@ -1,10 +1,10 @@
-"""Label Anemos — certificat de transport décarboné par voilier cargo.
+"""Certificat Anemos — preuve de transport décarboné par voilier cargo.
 
 Émis par booking à l'arrivée (status ∈ discharged|delivered). Atteste du
 tonnage transporté, de la distance, et du CO₂ évité par rapport au
 shipping conventionnel équivalent.
 
-Note V3.6 : ce certificat a été renommé en "Label Anemos" (anciennement
+Note V3.6 : ce document est le « certificat Anemos » (anciennement
 "Certificat CO₂"). Les colonnes co2_* restent — ce sont des métriques
 physiques, pas du branding. La table s'appelle désormais
 ``anemos_certificates`` (cf. migration 20260519_0012).

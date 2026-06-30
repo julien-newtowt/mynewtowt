@@ -237,7 +237,7 @@ async def about(request: Request) -> HTMLResponse:
 
 @router.get("/about/anemos", response_class=HTMLResponse)
 async def about_anemos(request: Request) -> HTMLResponse:
-    """Méthodologie Label Anemos (anciennement /about/co2)."""
+    """Méthodologie Certification Anemos (anciennement /about/co2)."""
     return templates.TemplateResponse("public/about_anemos.html", {"request": request})
 
 

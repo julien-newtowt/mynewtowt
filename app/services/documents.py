@@ -1,6 +1,6 @@
 """Agrégation des documents d'un client (hub /me/documents).
 
-Combine les documents *générés* (BL, packing list, booking note, label Anemos —
+Combine les documents *générés* (BL, packing list, booking note, certificat Anemos —
 liens vers les endpoints PDF owner-only existants de ``cargo_router``) et
 les pièces *uploadées* par le client (``PackingListDocument`` rattachées au
 booking). Les règles de disponibilité reflètent celles de ``cargo_router``.

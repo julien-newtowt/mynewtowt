@@ -1,4 +1,4 @@
-"""Label Anemos — résolution de distance + émission du certificat.
+"""Certificat Anemos — résolution de distance + émission du certificat.
 
 L'émission est **idempotente** : un seul certificat par booking. Elle est
 déclenchée par le cycle de vie du booking à ``discharged``/``delivered``
@@ -138,7 +138,7 @@ async def _booking_share(db: AsyncSession, booking: Booking) -> Decimal:
 
 
 async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertificate:
-    """Crée (ou retourne) le label Anemos d'un booking. Idempotent.
+    """Crée (ou retourne) le certificat Anemos d'un booking. Idempotent.
 
     ENV-03 : émissions NEWTOWT sur le réel déclaré à bord quand il existe
     (``method = 'declared'``), sinon estimation forfaitaire
@@ -239,7 +239,7 @@ async def available_report_years(db: AsyncSession, client_account_id: int) -> li
 
 
 async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) -> dict:
-    """Agrège les labels Anemos d'un client sur une année.
+    """Agrège les certificats Anemos d'un client sur une année.
 
     Retourne les totaux (tonnage, distance, CO₂ évité/émis/référence), le
     nombre d'expéditions, la part calculée sur données réelles déclarées

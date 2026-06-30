@@ -229,7 +229,7 @@ async def client_anemos_pdf(
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Label Anemos (anciennement certificat CO₂) — PDF téléchargeable."""
+    """Certificat Anemos (anciennement certificat CO₂) — PDF téléchargeable."""
     return await _co2_response(db, ref, owner_client_id=client.id)
 
 

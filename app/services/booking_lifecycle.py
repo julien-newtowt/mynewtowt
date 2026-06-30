@@ -2,7 +2,7 @@
 
 ``on_status_change(db, booking, new_status)`` est le point unique qui, à
 chaque transition, notifie le client (in-app + email best-effort) et
-déclenche les actions associées (émission du label Anemos au
+déclenche les actions associées (émission du certificat Anemos au
 débarquement). Appelé depuis ``services/booking.advance`` (voyage),
 ``booking_router`` (submit) et ``staff_booking_router`` (confirm/reject).
 
@@ -134,7 +134,7 @@ async def on_status_change(db: AsyncSession, booking: Booking, new_status: str) 
     if new_status == "cancelled":
         cta_url = "/me/bookings"
 
-    # Label Anemos émis au débarquement / à la livraison.
+    # Certificat Anemos émis au débarquement / à la livraison.
     if new_status in ("discharged", "delivered"):
         try:
             await anemos.issue_for_booking(db, booking)

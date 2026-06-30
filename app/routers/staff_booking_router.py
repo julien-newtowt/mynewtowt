@@ -320,7 +320,7 @@ async def update_milestones(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("booking", "M")),
 ) -> RedirectResponse:
-    """Met à jour les jalons logistiques (timeline Label Anemos) du booking."""
+    """Met à jour les jalons logistiques (timeline certificat Anemos) du booking."""
     booking = (
         await db.execute(select(Booking).where(Booking.reference == ref))
     ).scalar_one_or_none()

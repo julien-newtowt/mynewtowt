@@ -189,7 +189,7 @@ def render_booking_note(*, booking, leg, vessel, pol, pod, client) -> DocumentBy
 
 
 # ---------------------------------------------------------------------------
-# Label Anemos (anciennement "Certificat CO₂") — PDF
+# Certificat Anemos (anciennement "Certificat CO₂") — PDF
 # ---------------------------------------------------------------------------
 
 
@@ -204,7 +204,7 @@ def render_anemos_certificate(
     distance_nm: Decimal,
     certificate=None,
 ) -> DocumentBytes:
-    """Génère un PDF Label Anemos.
+    """Génère un PDF Certificat Anemos.
 
     Le PDF atteste du tonnage transporté, distance, CO₂ évité par rapport
     au shipping conventionnel. Référence : ``ANEMOS-<booking.reference>``
@@ -225,7 +225,7 @@ def render_anemos_certificate(
 
     ctx["verify_qr"] = qr_data_uri(ctx["verify_url"])
     html, pdf = _render_pdf("pdf/anemos_certificate.html", ctx)
-    return DocumentBytes(html=html, pdf=pdf, filename=f"LabelAnemos_{ctx['cert_ref']}.pdf")
+    return DocumentBytes(html=html, pdf=pdf, filename=f"CertificatAnemos_{ctx['cert_ref']}.pdf")
 
 
 def render_planning_brochure(*, groups, summary, meta, lang: str = "fr") -> DocumentBytes:
