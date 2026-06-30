@@ -4,7 +4,7 @@ Quand le commandant consigne un SOF de départ (SOSP) ou d'arrivée (EOSP),
 le système matérialise ATD/ATA sur le leg et fait avancer les bookings
 embarqués dans leur cycle de vie via ``services.booking.advance`` — qui
 valide chaque transition et déclenche déjà les effets de bord
-(notifications client, emails, label Anemos) via ``booking_lifecycle``.
+(notifications client, emails, certificat Anemos) via ``booking_lifecycle``.
 
 Les deux hooks sont **idempotents** : rappeler ``on_vessel_departed`` sur
 un leg déjà parti ne fait rien (ATD posé, bookings déjà en mer). Les
@@ -115,7 +115,7 @@ async def on_vessel_departed(db: AsyncSession, leg: Leg) -> None:
 
 
 async def on_vessel_arrived(db: AsyncSession, leg: Leg) -> None:
-    """SOF d'arrivée (EOSP) → ATA réel + bookings débarqués (label Anemos)."""
+    """SOF d'arrivée (EOSP) → ATA réel + bookings débarqués (certificat Anemos)."""
     ata_set = False
     if leg.ata is None:
         leg.ata = datetime.now(UTC)

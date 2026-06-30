@@ -120,7 +120,7 @@
     </a>
     {% if booking.status in ('discharged','delivered') %}
       <a href="/me/bookings/{{ booking.reference }}/anemos.pdf" target="_blank" class="btn btn-accent">
-        🌱 {% if lang == 'en' %}Anemos label{% else %}Label Anemos{% endif %}
+        🌱 {% if lang == 'en' %}Anemos certificate{% else %}Certificat Anemos{% endif %}
       </a>
     {% endif %}
   </div>

@@ -75,10 +75,10 @@
     </a>
     {% if booking.status in ('discharged','delivered') %}
       <a href="/cargo/booking/{{ booking.reference }}/anemos.pdf" target="_blank" class="btn btn-accent">
-        Label Anemos
+        Certificat Anemos
       </a>
     {% else %}
-      <button class="btn btn-ghost" disabled title="Disponible après débarquement">Label Anemos (après débarq.)</button>
+      <button class="btn btn-ghost" disabled title="Disponible après débarquement">Certificat Anemos (après débarq.)</button>
     {% endif %}
   </div>
 </article>

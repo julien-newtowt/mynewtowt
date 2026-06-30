@@ -61,7 +61,7 @@ class Leg(Base):
     port_stay_planned_hours: Mapped[int | None] = mapped_column(Integer)
 
     # Distance orthodromique POLPOD (milles nautiques). Calcule par
-    # haversine et persiste pour alimenter le label Anemos (CO vit).
+    # haversine et persiste pour alimenter le certificat Anemos (CO vit).
     distance_nm: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
 
     # Escale closure lock  l'escale (oprations + shifts dockers) est

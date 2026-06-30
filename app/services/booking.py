@@ -315,7 +315,7 @@ async def advance(db: AsyncSession, booking: Booking, target: str) -> Booking:
     if field and getattr(booking, field, None) is None:
         setattr(booking, field, datetime.now(UTC))
     await db.flush()
-    # Effets de bord (notifications client, email, label Anemos). Import
+    # Effets de bord (notifications client, email, certificat Anemos). Import
     # tardif pour éviter tout cycle d'import au chargement du module.
     from app.services.booking_lifecycle import on_status_change
 
