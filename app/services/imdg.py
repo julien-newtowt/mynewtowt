@@ -9,6 +9,8 @@ Source : Code maritime international des marchandises dangereuses (IMDG).
 
 from __future__ import annotations
 
+import re
+
 # (code, libellé FR, libellé EN). Ordre officiel (classe.division croissante).
 IMDG_CLASSES: list[dict[str, str]] = [
     {
@@ -87,3 +89,17 @@ def imdg_label(code: str | None, lang: str = "fr") -> str:
         if c["code"] == code:
             return f"{code} — {c[key]}"
     return code
+
+
+def is_valid_imdg_code(code: str | None) -> bool:
+    """Vrai si ``code`` est une classe IMDG connue (validation stricte)."""
+    return bool(code) and code in IMDG_CODES
+
+
+# N° ONU : « UN » + 4 chiffres (ex. ``UN1203``). L'espace est toléré à la saisie.
+_UN_NUMBER_RE = re.compile(r"UN ?\d{4}", re.IGNORECASE)
+
+
+def is_valid_un_number(value: str | None) -> bool:
+    """Vrai si ``value`` est un n° ONU bien formé (``UN`` + 4 chiffres)."""
+    return bool(value) and bool(_UN_NUMBER_RE.fullmatch(value.strip()))
