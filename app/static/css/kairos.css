@@ -1825,3 +1825,21 @@ form textarea {
 .empty-state svg, .empty-state [data-lucide] { width: 40px; height: 40px; color: var(--gris-clair); }
 .empty-state .empty-title { font-weight: var(--fw-semibold); color: var(--teal-dark); font-size: var(--text-md); }
 .empty-state .empty-hint { font-size: var(--text-sm); color: var(--gris); max-width: 42ch; }
+
+/* Dropzone FDS (wizard réservation, Vague 1) — confort de dépôt, progressif. */
+.fds-zone {
+  border: 1px dashed var(--c-grey-soft, #B5B0A6);
+  border-radius: var(--r-3, 8px);
+  padding: var(--space-3, 12px);
+  transition: border-color .15s, background .15s;
+}
+.fds-zone.is-dragover {
+  border-color: var(--teal, #0D5966);
+  background: rgba(13, 89, 102, 0.06);
+}
+.fds-filename:not(:empty) {
+  display: inline-block;
+  margin-top: 6px;
+  font-weight: 600;
+  color: var(--teal, #0D5966);
+}

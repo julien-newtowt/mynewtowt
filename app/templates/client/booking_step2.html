@@ -5,6 +5,7 @@
   <script src="/static/js/booking-co2.js" defer></script>
   <script src="/static/js/cargo-rows.js" defer></script>
   <script src="/static/js/booking-imdg.js" defer></script>
+  <script src="/static/js/booking-fds.js" defer></script>
 {% endblock %}
 
 {% block wizard_content %}
@@ -167,7 +168,11 @@
       </div>
       <div class="form-group">
         <label class="form-label required">{{ t('booking_fds_label', lang) }}</label>
-        <input class="form-control" type="file" name="fds_file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
+        <div class="fds-zone" data-fds-zone>
+          <input class="form-control" type="file" name="fds_file"
+                 accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" data-fds-input />
+          <span class="form-hint fds-filename" data-fds-filename></span>
+        </div>
         <span class="form-hint">{{ t('booking_fds_required', lang) }}</span>
       </div>
     </section>

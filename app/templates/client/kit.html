@@ -17,6 +17,12 @@
   {% endif %}
 </p>
 
+<p style="margin:var(--space-4) 0;">
+  <a href="/me/bookings/{{ booking.reference }}/kit.pdf" target="_blank" class="btn btn-primary">
+    ⬇ {% if lang == 'en' %}Download the kit (PDF){% else %}Télécharger le kit (PDF){% endif %}
+  </a>
+</p>
+
 {% if request.query_params.get('saved') %}
 <div class="alert alert-success">
   {% if lang == 'en' %}Saved.{% else %}Enregistré.{% endif %}
