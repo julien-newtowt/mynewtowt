@@ -1,0 +1,65 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}My brand{% else %}Ma marque{% endif %} — NEWTOWT{% endblock %}
+{% block content %}
+
+<h1>{% if lang == 'en' %}My brand{% else %}Ma marque{% endif %}</h1>
+<p class="text-muted">
+  {% if lang == 'en' %}
+    Your brand and logo co-sign the B2B2C kit you hand to your own customers
+    (origin story, avoided-CO₂ proof). NEWTOWT branding is always kept alongside.
+  {% else %}
+    Votre marque et votre logo co-signent le kit B2B2C que vous remettez à vos
+    propres clients (récit d'origine, preuve de CO₂ évité). L'identité NEWTOWT
+    reste toujours présente à côté.
+  {% endif %}
+</p>
+
+{% if request.query_params.get('saved') %}
+<div class="alert alert-success">
+  {% if lang == 'en' %}Brand saved.{% else %}Marque enregistrée.{% endif %}
+</div>
+{% endif %}
+
+<section class="card">
+  <form method="post" action="/me/brand" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+    <div class="form-group">
+      <label class="form-label" for="brand_name">
+        {% if lang == 'en' %}Brand name{% else %}Nom de marque{% endif %}
+      </label>
+      <input class="form-control" type="text" id="brand_name" name="brand_name"
+             maxlength="120" value="{{ client.brand_name or '' }}"
+             placeholder="{{ client.company_name }}" />
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">
+        {% if lang == 'en' %}Logo (PNG, JPEG, SVG or WebP){% else %}Logo (PNG, JPEG, SVG ou WebP){% endif %}
+      </label>
+      {% if client.brand_logo_path %}
+      <div style="margin-bottom:var(--space-3);">
+        <img src="/me/brand/logo" alt="{{ client.brand_name or client.company_name }}"
+             style="max-height:64px;background:#fff;padding:6px;border:1px solid var(--border-hair,#ddd);border-radius:8px;" />
+      </div>
+      {% endif %}
+      <input class="form-control" type="file" name="logo"
+             accept=".png,.jpg,.jpeg,.svg,.webp,image/png,image/jpeg,image/svg+xml,image/webp" />
+    </div>
+
+    <button class="btn btn-primary" type="submit">
+      {% if lang == 'en' %}Save{% else %}Enregistrer{% endif %}
+    </button>
+  </form>
+
+  {% if client.brand_logo_path %}
+  <form method="post" action="/me/brand/logo/delete" style="margin-top:var(--space-3);">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <button class="btn btn-ghost btn-sm" type="submit">
+      {% if lang == 'en' %}Remove logo{% else %}Retirer le logo{% endif %}
+    </button>
+  </form>
+  {% endif %}
+</section>
+
+{% endblock %}

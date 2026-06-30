@@ -222,6 +222,18 @@ _MARKETING_EXAMPLE: dict[str, dict[str, object]] = {
 }
 
 
+def is_valid_origin(origin: str | None) -> bool:
+    """Vrai si ``origin`` est une origine café connue (validation formulaire)."""
+    return bool(origin) and origin in ORIGINS
+
+
+def origin_label(origin: str | None, lang: str = _DEFAULT_LANG) -> str:
+    """Nom de pays d'une origine (ex. « Colombie »), vide si inconnue."""
+    if origin not in ORIGINS:
+        return ""
+    return _COUNTRY[origin][_norm_lang(lang)]
+
+
 def _norm_lang(lang: str | None) -> str:
     """Langue du kit (es → fr ; inconnue → fr)."""
     code = (lang or "").lower()
