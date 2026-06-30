@@ -103,9 +103,7 @@ async def test_create_account_success(db):
 @pytest.mark.asyncio
 async def test_create_account_short_password_rejected(db):
     with pytest.raises(cas.AccountError):
-        await cas.create_account(
-            db, email="x@example.com", password="short", company_name="ACME"
-        )
+        await cas.create_account(db, email="x@example.com", password="short", company_name="ACME")
 
 
 @pytest.mark.asyncio
@@ -150,7 +148,9 @@ async def test_followup_selects_only_eligible_quotes(db):
     db.add(_quote("DEV-2026-DDD", created_at=now - timedelta(days=1), email=None))
     # Déjà accepté (converti) → exclu.
     db.add(
-        _quote("DEV-2026-EEE", created_at=now - timedelta(days=1), email="e@ex.com", status="accepted")
+        _quote(
+            "DEV-2026-EEE", created_at=now - timedelta(days=1), email="e@ex.com", status="accepted"
+        )
     )
     await db.flush()
 

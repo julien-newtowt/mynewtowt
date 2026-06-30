@@ -52,16 +52,15 @@ def test_compute_cancellation_fee_grid():
 def test_no_cancellation_fee_before_confirmation():
     # Annulation libre tant que la réservation n'est pas confirmée.
     for st in ("draft", "submitted"):
-        assert (
-            compute_cancellation_fee(status=st, price_eur=Decimal("1000"), days_to_etd=1)
-            == Decimal("0")
-        )
+        assert compute_cancellation_fee(
+            status=st, price_eur=Decimal("1000"), days_to_etd=1
+        ) == Decimal("0")
 
 
 def test_cancellation_fee_handles_missing_price():
-    assert compute_cancellation_fee(
-        status="confirmed", price_eur=None, days_to_etd=1
-    ) == Decimal("0")
+    assert compute_cancellation_fee(status="confirmed", price_eur=None, days_to_etd=1) == Decimal(
+        "0"
+    )
 
 
 def test_analytics_event_whitelist():

@@ -264,14 +264,13 @@ async def about_terms(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("public/about_terms.html", {"request": request})
 
 
-@router.get("/solutions/cafe")
-async def solutions_cafe_placeholder():
-    """Tuile « Café » de la landing : redirection placeholder en attendant la
-    page verticale dédiée (cf. landing v1, point ouvert n°2). Mène au tunnel
-    commercial pour ne pas perdre l'intention d'achat café."""
-    from fastapi.responses import RedirectResponse
-
-    return RedirectResponse(url="/contact", status_code=302)
+@router.get("/solutions/cafe", response_class=HTMLResponse)
+async def solutions_cafe(request: Request) -> HTMLResponse:
+    """Page verticale « Café » du kit B2B2C : récits d'origine (Colombie,
+    Guatemala, Mexique) + dataviz interactive du CO₂ évité. Indexable (cf.
+    sitemap / llms.txt). Les récits sont des gabarits rendus avec des valeurs
+    d'exemple ; l'ERP injecte les valeurs réelles depuis le certificat."""
+    return templates.TemplateResponse("public/solutions_cafe.html", {"request": request})
 
 
 # ---------------------------------------------------------------------------

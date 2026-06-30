@@ -767,7 +767,6 @@ CATALOG: dict[str, str] = {
     "pt_privacy_point5": "Sau khi danh sách đóng gói được chủ tàu khóa, các mục bạn nhập sẽ được cố định (audit trail theo từng trường).",
     "pt_privacy_personal_data": "Dữ liệu cá nhân",
     "pt_privacy_gdpr": "Theo quy định GDPR, bạn có thể thực hiện các quyền truy cập, chỉnh sửa, xóa bằng cách viết tới",
-
     # ── Parité fr↔vi : home + wizard de conversion ──
     "home_hero_proof": "Một đội tàu đang vận hành, không phải dự án — <em>Anemos</em> &amp; <em>Artemis</em>, hai tàu buồm chở hàng đang khai thác.",
     "home_proofstrip": "Hai tàu buồm chở hàng đang khai thác · +4 tàu cùng loại đang đóng · Tuyến Châu Âu ⇄ Brazil · CO₂ được đo &amp; chứng nhận — chứng chỉ Anemos",

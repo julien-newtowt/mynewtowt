@@ -788,7 +788,6 @@ CATALOG: dict[str, str] = {
     "pt_privacy_point5": "Uma vez que a lista de embalagem é bloqueada pelo armador, suas entradas ficam congeladas (audit trail campo a campo).",
     "pt_privacy_personal_data": "Dados pessoais",
     "pt_privacy_gdpr": "Em conformidade com o RGPD, você pode exercer seus direitos de acesso, retificação e exclusão escrevendo para",
-
     # ── Wizard de conversion (CONV) ──
     "booking_step_route": "Rota",
     "booking_step_cargo": "Carga",

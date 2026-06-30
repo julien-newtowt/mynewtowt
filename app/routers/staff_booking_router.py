@@ -401,9 +401,7 @@ async def confirm_booking(
     await on_status_change(db, booking, "confirmed")
     from app.services import analytics
 
-    await analytics.record(
-        db, "booking_confirmed", reference=booking.reference, channel="client"
-    )
+    await analytics.record(db, "booking_confirmed", reference=booking.reference, channel="client")
     await activity_record(
         db,
         action="booking_confirm",

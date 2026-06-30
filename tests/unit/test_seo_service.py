@@ -41,7 +41,13 @@ def test_llms_txt_structure_and_links() -> None:
     assert "> " in txt  # blockquote summary
     assert f"{BASE}/flotte" in txt
     assert f"{BASE}/impact" in txt
-    assert "ANEMOS" in txt
+    assert f"{BASE}/preuves" in txt
+    assert f"{BASE}/solutions/cafe" in txt
+    # Copie nettoyée : « certifié Anemos », sans pourcentage ni « label ».
+    assert "certifié Anemos" in txt
+    assert "ANEMOS" not in txt
+    assert "label" not in txt
+    assert "95" not in txt
 
 
 # ───────────────────────── sitemap.xml ─────────────────────────

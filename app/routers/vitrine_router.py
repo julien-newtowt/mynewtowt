@@ -77,9 +77,7 @@ def _applied_factor(cert: AnemosCertificate) -> float | None:
         return None
 
 
-async def _lookup_certificate(
-    db: AsyncSession, ref: str
-) -> AnemosCertificate | None:
+async def _lookup_certificate(db: AsyncSession, ref: str) -> AnemosCertificate | None:
     """Résout une référence saisie en certificat (tolérant casse / préfixe)."""
     candidates = [ref]
     upper = ref.upper()
