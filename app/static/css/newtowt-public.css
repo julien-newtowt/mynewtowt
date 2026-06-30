@@ -881,3 +881,112 @@ textarea.form-control { resize: vertical; min-height: 100px; }
   }
   .wizard-actions .btn { flex: 1 1 auto; }
 }
+
+/* ─────────────── Composant « équivalences CO₂ » (co2-equivalences.js) ───────────────
+   Réutilisable : fiche route, /impact, certificat, kit B2B2C. Charte NEWTOWT. */
+.co2eq {
+  position: relative; overflow: hidden;
+  background: var(--c-sand); border-radius: var(--r-3);
+  padding: var(--sp-6) var(--sp-6) var(--sp-5);
+  box-shadow: 0 10px 30px rgba(9, 63, 72, 0.12);
+}
+.co2eq__compass {
+  position: absolute; right: -40px; top: -40px; width: 220px; height: 220px;
+  opacity: 0.06; color: var(--c-teal); pointer-events: none;
+}
+.co2eq__kicker {
+  font-size: var(--fs-12); letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--c-teal-soft); font-weight: var(--fw-bold, 700); margin: 0 0 var(--sp-1);
+}
+.co2eq__headline {
+  font-family: var(--font-serif); color: var(--c-teal);
+  font-size: clamp(2rem, 5vw, 2.6rem); line-height: var(--lh-tight); margin: 0 0 2px;
+}
+.co2eq__unit {
+  font-size: var(--fs-18); color: var(--c-teal-soft);
+  font-family: var(--font-sans); font-weight: 700;
+}
+.co2eq__sub { font-size: var(--fs-14); color: var(--c-anthracite); margin: 0 0 var(--sp-5); }
+
+.co2eq__control { margin: 0 0 var(--sp-5); }
+.co2eq__control label {
+  display: block; font-size: var(--fs-13); font-weight: 700;
+  color: var(--c-teal-deep); margin: 0 0 var(--sp-2);
+}
+.co2eq__row { display: flex; align-items: center; gap: var(--sp-4); }
+.co2eq__range {
+  -webkit-appearance: none; appearance: none; flex: 1; height: 6px; border-radius: 6px;
+  background: linear-gradient(90deg,
+    var(--c-green) 0%, var(--c-green) var(--co2eq-fill, 30%),
+    #d8cdb6 var(--co2eq-fill, 30%), #d8cdb6 100%);
+  outline: none;
+}
+.co2eq__range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--c-teal); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.25); cursor: pointer;
+}
+.co2eq__range::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--c-teal);
+  border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.25); cursor: pointer;
+}
+.co2eq__numwrap {
+  display: flex; align-items: center; gap: var(--sp-1);
+  background: var(--c-paper); border: 1px solid var(--border-hair);
+  border-radius: var(--r-3); padding: var(--sp-1) var(--sp-3);
+}
+.co2eq__numwrap input {
+  width: 74px; border: none; outline: none; font-family: var(--font-sans); font-weight: 800;
+  font-size: var(--fs-18); color: var(--c-teal); text-align: right; background: transparent;
+}
+.co2eq__numwrap span { font-size: var(--fs-13); color: var(--c-grey); font-weight: 700; }
+
+.co2eq__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); }
+.co2eq__tile {
+  background: var(--c-paper); border-radius: var(--r-3); padding: var(--sp-4);
+  text-align: center; border: 1px solid var(--border-hair);
+}
+.co2eq__ic {
+  width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; margin: 0 auto var(--sp-3);
+  background: rgba(135, 189, 41, 0.22); color: var(--c-teal-deep);
+}
+.co2eq__ic svg { width: 24px; height: 24px; }
+.co2eq__big { font-family: var(--font-sans); font-weight: 800; font-size: var(--fs-32); color: var(--c-teal); line-height: 1; }
+.co2eq__lbl { font-size: var(--fs-13); font-weight: 700; color: var(--c-anthracite); margin: var(--sp-1) 0; }
+.co2eq__hyp { font-size: var(--fs-12); color: var(--c-grey); line-height: var(--lh-snug); }
+
+.co2eq__foot {
+  display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-5);
+  padding-top: var(--sp-4); border-top: 1px solid var(--border-hair);
+}
+.co2eq__qr { flex: 0 0 auto; width: 46px; height: 46px; }
+.co2eq__foot p { margin: 0; font-size: var(--fs-13); color: var(--c-teal-deep); }
+.co2eq__foot p b { color: var(--c-teal); }
+
+@media (max-width: 560px) {
+  .co2eq__grid { grid-template-columns: 1fr; }
+  .co2eq__row { flex-wrap: wrap; }
+}
+
+/* ─────────────── Récits d'origine café (/solutions/cafe, kit B2B2C) ─────────────── */
+.cafe-stories {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-5);
+  margin-top: var(--sp-6);
+}
+.cafe-story { display: flex; flex-direction: column; margin-bottom: 0; }
+.cafe-story__title {
+  font-family: var(--font-serif); color: var(--c-teal);
+  font-size: var(--fs-20); margin: 0 0 var(--sp-3);
+}
+.cafe-story__body {
+  font-size: var(--fs-14); line-height: var(--lh-normal);
+  color: var(--c-anthracite); margin: 0 0 var(--sp-4);
+}
+.cafe-story__short {
+  margin: auto 0 0; padding-top: var(--sp-4); border-top: 1px solid var(--border-hair);
+  font-size: var(--fs-13); color: var(--c-grey); line-height: var(--lh-snug);
+}
+.cafe-story__short .pill { margin-right: var(--sp-2); }
+@media (max-width: 860px) {
+  .cafe-stories { grid-template-columns: 1fr; }
+}

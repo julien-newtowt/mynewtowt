@@ -243,6 +243,15 @@ def _asset(path: str) -> str:
 
 templates.env.globals["asset"] = _asset
 
+# ─────────── Kit B2B2C — récits d'origine café (gabarits ERP) ──────────────
+# Exposés à la vitrine (/solutions/cafe). render_story() renvoie du texte brut
+# (auto-échappé par Jinja) ; les valeurs injectées peuvent venir d'une saisie.
+from app.services import coffee_stories as _coffee  # noqa: E402
+
+templates.env.globals["coffee_story"] = _coffee.render_story
+templates.env.globals["coffee_origins"] = list(_coffee.ORIGINS)
+templates.env.globals["coffee_example"] = _coffee.marketing_example
+
 # ─────────── SEO / lisibilité IA (Schema.org + hreflang) ──────────────────
 # Fiche Organisation injectée dans le <head> de la vitrine (bloc de données
 # `application/ld+json` — non exécuté, compatible CSP stricte).
