@@ -45,6 +45,7 @@ PUBLIC_PAGES: tuple[tuple[str, str, str], ...] = (
     ("/flotte", "monthly", "0.9"),
     ("/impact", "monthly", "0.9"),
     ("/preuves", "monthly", "0.8"),
+    ("/solutions/cafe", "monthly", "0.9"),
     ("/navigation", "monthly", "0.7"),
     ("/carnet", "weekly", "0.6"),
     ("/actualites", "weekly", "0.5"),
@@ -100,9 +101,9 @@ def build_llms_txt(base_url: str) -> str:
         "> Compagnie maritime française de fret à la voile. NewTowt opère déjà "
         "une ligne régulière vers le Brésil et l'Amérique latine — une flotte "
         "qui navigue, pas un projet — et transporte du fret palettisé (café, "
-        "cacao, fret industriel, marchandises dangereuses incluses) avec une "
-        "réduction de CO₂ jusqu'à 95 %, mesurée et certifiée par le label "
-        "ANEMOS. Présidée par Karl Sement.\n\n"
+        "cacao, fret industriel, marchandises dangereuses incluses) en cales "
+        "ségréguées, avec un CO₂ évité mesuré par lot et certifié Anemos "
+        "(périmètre tank-to-wake, en CO₂). Présidée par Karl Sement.\n\n"
         "## Faits clés\n\n"
         "- Six voiliers-cargos sisterships de la classe TSC 80 : Anemos et "
         "Artemis en opération ; Atlantis, Astérias, Archimedes et Atlas en "
@@ -116,9 +117,11 @@ def build_llms_txt(base_url: str) -> str:
         "## Pages clés\n\n"
         f"- [Notre flotte]({base}/flotte) : navires TSC 80, capacités, cales.\n"
         f"- [Impact]({base}/impact) : environnement maîtrisé à bord, surveillance "
-        "qualité, décarbonation, certificat Anemos d'émissions évitées.\n"
-        f"- [Preuves]({base}/preuves) : méthode (tank-to-wake, CO₂), vérification "
-        "EU MRV / registre THETIS-MRV, et vérification publique des certificats.\n"
+        "température/humidité, décarbonation, certificat Anemos.\n"
+        f"- [Preuves]({base}/preuves) : méthode CO₂ (tank-to-wake), vérification "
+        "EU MRV (registre THETIS-MRV), vérification de certificat.\n"
+        f"- [Solutions café]({base}/solutions/cafe) : transport de café vert à la "
+        "voile, routes d'origine, kit B2B2C.\n"
         f"- [Navigation]({base}/navigation) : courants, propulsion vélique, routes.\n"
         f"- [Routes & plannings]({base}/routes) : prochaines traversées.\n"
         f"- [Carnet de construction]({base}/carnet) : avancée des navires en "
@@ -173,8 +176,8 @@ def organization_jsonld(base_url: str) -> dict:
         "url": base + "/",
         "description": (
             "Compagnie maritime française de fret à la voile vers le Brésil et "
-            "l'Amérique latine : café, cacao et fret industriel, émissions "
-            "évitées documentées par le certificat Anemos (EU MRV, tank-to-wake CO₂)."
+            "l'Amérique latine : café, cacao et fret industriel, en cales "
+            "ségréguées, avec un CO₂ évité mesuré par lot et certifié Anemos."
         ),
         "foundingDate": "2011",
         "founder": {"@type": "Person", "name": "Karl Sement"},
@@ -211,12 +214,19 @@ def service_jsonld(base_url: str) -> dict:
         "@type": "Service",
         "serviceType": "Transport maritime de fret à la voile (décarboné)",
         "provider": {"@id": f"{base}/#organization"},
-        "areaServed": ["Europe", "Brésil", "Amérique latine"],
+        "areaServed": [
+            "Europe",
+            "Brésil",
+            "Colombie",
+            "Guatemala",
+            "Mexique",
+            "Amérique latine",
+        ],
         "description": (
             "Transport de fret palettisé (café, cacao, fret industriel, "
             "marchandises dangereuses des classes 2, 3, 4.1, 8 et 9) sur "
-            "voiliers-cargos, émissions évitées documentées par le certificat "
-            "Anemos (EU MRV, tank-to-wake CO₂)."
+            "voiliers-cargos, en cales ségréguées, avec un CO₂ évité mesuré "
+            "par lot et certifié Anemos."
         ),
     }
 
