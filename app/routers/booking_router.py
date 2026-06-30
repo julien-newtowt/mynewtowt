@@ -56,6 +56,7 @@ from app.services.capacity import (
     NotBookable,
     get_available_capacity,
 )
+from app.services.imdg import IMDG_CLASSES, is_valid_imdg_code, is_valid_un_number
 from app.services.safe_files import UploadRejected, save_upload
 from app.templating import templates
 
@@ -179,6 +180,7 @@ async def step_2_cargo_form(
             "pod": pod,
             "distance_nm": distance_nm,
             "prefill": prefill,
+            "imdg_classes": IMDG_CLASSES,
         },
     )
 
@@ -278,6 +280,13 @@ async def step_2_cargo_submit(
                 "pol": pol,
                 "pod": pod,
                 "distance_nm": distance_nm,
+                "imdg_classes": IMDG_CLASSES,
+                # Conserve la saisie IMDG pour ne pas la perdre au re-rendu.
+                "imdg_form": {
+                    "imdg_class": (form.get("imdg_class") or "").strip(),
+                    "un_number": (form.get("un_number") or "").strip(),
+                    "hs_code": (form.get("hs_code") or "").strip(),
+                },
                 "error": message,
             },
             status_code=code,
@@ -292,8 +301,14 @@ async def step_2_cargo_submit(
     fds_upload = form.get("fds_file")
     fds_present = bool(getattr(fds_upload, "filename", "") or "")
     if has_hazardous:
-        if not (form.get("imdg_class") or "").strip():
+        imdg_class = (form.get("imdg_class") or "").strip()
+        if not imdg_class:
             return _error("Indiquez la classe IMDG pour les marchandises dangereuses.")
+        if not is_valid_imdg_code(imdg_class):
+            return _error("Classe IMDG invalide. Sélectionnez une classe dans la liste.")
+        un_number = (form.get("un_number") or "").strip()
+        if un_number and not is_valid_un_number(un_number):
+            return _error("Numéro ONU invalide (format attendu : UN1203).")
         if not fds_present:
             return _error(
                 "La fiche de données de sécurité (FDS) est obligatoire pour les marchandises dangereuses."

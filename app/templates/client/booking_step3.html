@@ -104,6 +104,27 @@
         </div>
       </label>
       <p class="form-hint" style="margin-top:var(--sp-3);">{{ t('booking_cancellation_note', lang) }}</p>
+      {# Grille d'annulation COM-08 affichée en clair (réduit le risque de litige). #}
+      <details class="cancellation-grid" style="margin-top:var(--sp-3);">
+        <summary style="cursor:pointer;font-weight:600;color:var(--c-teal);">
+          {{ 'Cancellation fees (applied to the confirmed price)' if lang == 'en'
+             else "Frais d'annulation (sur le prix confirmé)" }}
+        </summary>
+        <table style="width:100%;margin-top:var(--sp-2);border-collapse:collapse;font-size:var(--fs-14);">
+          <thead>
+            <tr style="text-align:left;border-bottom:1px solid var(--border-hair);">
+              <th style="padding:var(--sp-2) var(--sp-3);">{{ 'Window before ETD' if lang == 'en' else 'Fenêtre avant ETD' }}</th>
+              <th style="padding:var(--sp-2) var(--sp-3);">{{ 'Fee' if lang == 'en' else "Frais" }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style="padding:var(--sp-2) var(--sp-3);">&gt; 30 {{ 'days' if lang == 'en' else 'jours' }}</td><td style="padding:var(--sp-2) var(--sp-3);">0 %</td></tr>
+            <tr><td style="padding:var(--sp-2) var(--sp-3);">30 → 7 {{ 'days' if lang == 'en' else 'jours' }}</td><td style="padding:var(--sp-2) var(--sp-3);">25 %</td></tr>
+            <tr><td style="padding:var(--sp-2) var(--sp-3);">7 → 2 {{ 'days' if lang == 'en' else 'jours' }}</td><td style="padding:var(--sp-2) var(--sp-3);">50 %</td></tr>
+            <tr><td style="padding:var(--sp-2) var(--sp-3);">&lt; 2 {{ 'days' if lang == 'en' else 'jours' }}</td><td style="padding:var(--sp-2) var(--sp-3);">100 %</td></tr>
+          </tbody>
+        </table>
+      </details>
     </section>
 
     <div class="form-actions wizard-actions">

@@ -147,16 +147,23 @@
       <div class="form-row">
         <div class="form-group">
           <label class="form-label required">{{ t('booking_imdg_class', lang) }}</label>
-          <input class="form-control" type="text" name="imdg_class" maxlength="20" placeholder="3, 6.1, 9…" />
+          <select class="form-control" name="imdg_class">
+            <option value="">{{ '— Select a class —' if lang == 'en' else '— Choisir une classe —' }}</option>
+            {% for c in imdg_classes %}
+            <option value="{{ c.code }}"{% if imdg_form and imdg_form.imdg_class == c.code %} selected{% endif %}>{{ c.code }} — {{ c.label_en if lang == 'en' else c.label_fr }}</option>
+            {% endfor %}
+          </select>
         </div>
         <div class="form-group">
           <label class="form-label">{{ t('booking_un_number', lang) }}</label>
-          <input class="form-control" type="text" name="un_number" maxlength="10" placeholder="UN1203" />
+          <input class="form-control" type="text" name="un_number" maxlength="10" placeholder="UN1203"
+                 value="{{ imdg_form.un_number if imdg_form else '' }}" />
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">{{ t('booking_hs_code', lang) }}</label>
-        <input class="form-control" type="text" name="hs_code" maxlength="20" placeholder="2710.12" />
+        <input class="form-control" type="text" name="hs_code" maxlength="20" placeholder="2710.12"
+               value="{{ imdg_form.hs_code if imdg_form else '' }}" />
       </div>
       <div class="form-group">
         <label class="form-label required">{{ t('booking_fds_label', lang) }}</label>
