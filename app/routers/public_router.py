@@ -270,7 +270,19 @@ async def solutions_cafe(request: Request) -> HTMLResponse:
     Guatemala, Mexique) + dataviz interactive du CO₂ évité. Indexable (cf.
     sitemap / llms.txt). Les récits sont des gabarits rendus avec des valeurs
     d'exemple ; l'ERP injecte les valeurs réelles depuis le certificat."""
-    return templates.TemplateResponse("public/solutions_cafe.html", {"request": request})
+    from app.services.mfa import qr_data_uri
+
+    # QR réel (scannable) vers l'outil public de vérification des certificats —
+    # cohérent avec « CO₂ évité, vérifiable en scannant le code ».
+    verify_url = f"{settings.site_url.rstrip('/')}/verify"
+    return templates.TemplateResponse(
+        "public/solutions_cafe.html",
+        {
+            "request": request,
+            "co2eq_verify_url": verify_url,
+            "co2eq_qr": qr_data_uri(verify_url),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

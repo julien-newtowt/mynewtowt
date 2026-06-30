@@ -93,16 +93,26 @@
   </div>
 
   <div class="co2eq__foot">
-    <svg class="co2eq__qr" viewBox="0 0 100 100" aria-hidden="true">
-      <rect width="100" height="100" rx="10" fill="#fff" stroke="#e3d9c6"/>
-      <g fill="#0D5966">
-        <rect x="16" y="16" width="22" height="22"/><rect x="22" y="22" width="10" height="10" fill="#fff"/>
-        <rect x="62" y="16" width="22" height="22"/><rect x="68" y="22" width="10" height="10" fill="#fff"/>
-        <rect x="16" y="62" width="22" height="22"/><rect x="22" y="68" width="10" height="10" fill="#fff"/>
-        <rect x="46" y="46" width="8" height="8"/><rect x="62" y="58" width="8" height="8"/>
-        <rect x="74" y="62" width="8" height="8"/><rect x="58" y="74" width="8" height="8"/><rect x="74" y="78" width="8" height="6"/>
-      </g>
-    </svg>
+    {% if co2eq_qr %}
+      {# QR réel (segno) vers l'outil de vérification — data: URI autorisé par CSP img-src. #}
+      <a class="co2eq__qr" href="{{ co2eq_verify_url | default('/verify') }}"
+         title="{{ 'Verify a certificate' if _en else 'Vérifier un certificat' }}">
+        <img src="{{ co2eq_qr }}" width="46" height="46"
+             alt="{{ 'QR code to verify a certificate' if _en else 'QR code de vérification de certificat' }}" />
+      </a>
+    {% else %}
+      {# Repli décoratif (usage purement maquette, sans contexte de vérification). #}
+      <svg class="co2eq__qr" viewBox="0 0 100 100" aria-hidden="true">
+        <rect width="100" height="100" rx="10" fill="#fff" stroke="#e3d9c6"/>
+        <g fill="#0D5966">
+          <rect x="16" y="16" width="22" height="22"/><rect x="22" y="22" width="10" height="10" fill="#fff"/>
+          <rect x="62" y="16" width="22" height="22"/><rect x="68" y="22" width="10" height="10" fill="#fff"/>
+          <rect x="16" y="62" width="22" height="22"/><rect x="22" y="68" width="10" height="10" fill="#fff"/>
+          <rect x="46" y="46" width="8" height="8"/><rect x="62" y="58" width="8" height="8"/>
+          <rect x="74" y="62" width="8" height="8"/><rect x="58" y="74" width="8" height="8"/><rect x="74" y="78" width="8" height="6"/>
+        </g>
+      </svg>
+    {% endif %}
     <p>
       {% if _en %}
         CO₂ avoided <b>(tank-to-wake)</b>, certified <b>Anemos</b> — verifiable by scanning the code.
