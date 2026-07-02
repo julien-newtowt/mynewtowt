@@ -1,4 +1,6 @@
 {% extends "public/_layout_v2.html" %}
+{# P6 — langues réellement servies par cette page (hreflang honnête) #}
+{% set page_langs = ['fr'] %}
 {% block title %}{{ post.title }} — Carnet de construction — NewTowt{% endblock %}
 {% block description %}{{ post.lead or post.title }}{% endblock %}
 

@@ -1,4 +1,6 @@
 {% extends "public/_layout_v2.html" %}
+{# P6 — langues réellement servies par cette page (hreflang honnête) #}
+{% set page_langs = ['fr', 'en'] %}
 
 {% block title %}
   {% if lang == 'en' %}Anemos certification — Certified wind cargo{% else %}Certification Anemos — Cargo vélique certifié{% endif %} — {{ brand.nom_court }}

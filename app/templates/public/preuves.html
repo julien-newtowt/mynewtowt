@@ -1,16 +1,7 @@
 {% extends "public/_layout_v2.html" %}
 
-{% block title %}
-  {% if lang == 'en' %}Evidence — method, verification & registry{% else %}Preuves — méthode, vérification & registre{% endif %} — {{ brand.nom_court }}
-{% endblock %}
-
-{% block description %}
-  {% if lang == 'en' %}
-    Where every CO₂ figure comes from, how it's verified (EU MRV / THETIS-MRV), measured vs estimated, and how to look up a certificate. Tank-to-wake, CO₂ (not CO₂e).
-  {% else %}
-    D'où vient chaque chiffre de CO₂, comment il est vérifié (EU MRV / THETIS-MRV), mesuré ou théorique, et comment retrouver un certificat. Périmètre tank-to-wake, CO₂ (pas du CO₂e).
-  {% endif %}
-{% endblock %}
+{% block title %}{{ t('prf_meta_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block description %}{{ t('prf_meta_desc', lang) }}{% endblock %}
 
 {% block content %}
 
@@ -23,100 +14,38 @@
     </g>
   </svg>
   <div class="hero-inner">
-    <span class="hero-kicker">{% if lang == 'en' %}Evidence{% else %}Preuves{% endif %}</span>
-    <h1 class="hero-title">
-      {% if lang == 'en' %}Proof, not just a promise.{% else %}La preuve, pas seulement la promesse.{% endif %}
-    </h1>
-    <p class="hero-lead">
-      {% if lang == 'en' %}
-        Need to back up your Scope&nbsp;3? Here's where every figure comes from, how it's
-        verified, and how to look it up.
-      {% else %}
-        Vous devez justifier votre Scope&nbsp;3 ? Voici d'où vient chaque chiffre, comment il
-        est vérifié, et comment le retrouver.
-      {% endif %}
-    </p>
+    <span class="hero-kicker">{{ t('prf_hero_kicker', lang) }}</span>
+    <h1 class="hero-title">{{ t('prf_hero_title', lang) }}</h1>
+    <p class="hero-lead">{{ t('prf_hero_lead', lang) }}</p>
   </div>
 </section>
-
-{% if lang not in ('fr', 'en') %}{% include "public/_translation_notice.html" %}{% endif %}
 
 {# ===== SECTION 1 — D'OÙ VIENT LE CHIFFRE ? ===== #}
 <section class="section">
   <div class="an-method-inner">
-    <span class="section-kicker">1 · {% if lang == 'en' %}The figure{% else %}Le chiffre{% endif %}</span>
-    <h2 class="section-title">
-      {% if lang == 'en' %}Where the figure comes from{% else %}D'où vient le chiffre ?{% endif %}
-    </h2>
+    <span class="section-kicker">1 · {{ t('prf_s1_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('prf_s1_title', lang) }}</h2>
 
     <ul class="prf-list">
-      <li>
-        <strong>{% if lang == 'en' %}Perimeter: tank-to-wake (TtW){% else %}Périmètre : tank-to-wake (TtW){% endif %}</strong>
-        — {% if lang == 'en' %}
-          on-board fuel-combustion emissions. This is the perimeter of the <strong>EU&nbsp;MRV</strong>
-          regulation. Inland pre- and post-carriage are <strong>not included</strong> (assumed explicitly).
-        {% else %}
-          les émissions de combustion du carburant à bord. C'est le périmètre du règlement
-          <strong>EU&nbsp;MRV</strong>. Le pré-acheminement et le post-acheminement terrestres
-          <strong>ne sont pas inclus</strong> (assumé explicitement).
-        {% endif %}
-      </li>
-      <li>
-        <strong>{% if lang == 'en' %}Gas: CO₂{% else %}Gaz : CO₂{% endif %}</strong>
-        — {% if lang == 'en' %}
-          values are expressed in CO₂, <strong>excluding CH₄ and N₂O</strong> (these are not CO₂e).
-        {% else %}
-          les valeurs sont exprimées en CO₂, <strong>hors CH₄ et N₂O</strong> (ce ne sont pas des CO₂e).
-        {% endif %}
-      </li>
-      <li>
-        <strong>{% if lang == 'en' %}Conventional reference{% else %}Référence conventionnelle{% endif %}</strong>
-        : 13,7&nbsp;g&nbsp;CO₂/t·km (IMO Fourth GHG Study / IFP Energies Nouvelles).
-      </li>
-      <li>
-        <strong>{% if lang == 'en' %}Our factor{% else %}Notre facteur{% endif %}</strong>
-        : 1,5&nbsp;g&nbsp;CO₂/t·km,
-        {% if lang == 'en' %}
-          derived from our vessels' real emissions, <strong>versioned</strong> (each certificate
-          carries the factor version used).
-        {% else %}
-          dérivé des émissions réelles de nos navires, <strong>versionné</strong> (chaque certificat
-          porte la version de facteur utilisée).
-        {% endif %}
-      </li>
+      <li><strong>{{ t('prf_li1_t', lang) }}</strong> — {{ t('prf_li1_b', lang)|safe }}</li>
+      <li><strong>{{ t('prf_li2_t', lang) }}</strong> — {{ t('prf_li2_b', lang)|safe }}</li>
+      <li><strong>{{ t('prf_li3_t', lang) }}</strong> : {{ t('prf_li3_b', lang)|safe }}</li>
+      <li><strong>{{ t('prf_li4_t', lang) }}</strong> : {{ t('prf_li4_b', lang)|safe }}</li>
     </ul>
 
-    <h3 class="prf-subtitle">{% if lang == 'en' %}Formula{% else %}Formule{% endif %}</h3>
+    <h3 class="prf-subtitle">{{ t('prf_formula_title', lang) }}</h3>
     <div class="an-formula">
-      {% if lang == 'en' %}
-        <p><code>CO₂ avoided (kg) = (13.7 − 1.5) × tonnage (t) × distance (km) ÷ 1&thinsp;000</code></p>
-        <p><code>distance (km) = distance (NM) × 1.852</code></p>
-      {% else %}
-        <p><code>CO₂ évité (kg) = (13,7 − 1,5) × tonnage (t) × distance (km) ÷ 1&thinsp;000</code></p>
-        <p><code>distance (km) = distance (NM) × 1,852</code></p>
-      {% endif %}
+      <p><code>{{ t('prf_formula_l1', lang) }}</code></p>
+      <p><code>{{ t('prf_formula_l2', lang) }}</code></p>
     </div>
 
     <p class="callout callout--teal" style="font-size:var(--fs-14);line-height:var(--lh-normal)">
-      <strong>{% if lang == 'en' %}Compatibility{% else %}Compatibilité{% endif %}</strong> :
-      {% if lang == 'en' %}
-        figures usable in a <strong>GHG Protocol Scope&nbsp;3 cat.&nbsp;4</strong> declaration (upstream
-        transport) and a <strong>Bilan&nbsp;Carbone®</strong>, bearing in mind the figure is
-        <strong>CO₂ (TtW)</strong>.
-      {% else %}
-        valeurs intégrables dans une déclaration <strong>GHG Protocol Scope&nbsp;3 cat.&nbsp;4</strong>
-        (transport amont) et un <strong>Bilan&nbsp;Carbone®</strong> — en gardant à l'esprit qu'il
-        s'agit de <strong>CO₂ (TtW)</strong>.
-      {% endif %}
+      <strong>{{ t('prf_compat_t', lang) }}</strong> : {{ t('prf_compat_b', lang)|safe }}
     </p>
 
     <p style="margin-top:var(--sp-5);display:flex;gap:var(--sp-4);flex-wrap:wrap;">
-      <a href="/preuves/methodologie.pdf" class="btn btn-secondary">
-        {% if lang == 'en' %}Download the methodology (PDF){% else %}Télécharger la méthodologie (PDF){% endif %}
-      </a>
-      <a href="/about/anemos" class="btn btn-ghost">
-        {% if lang == 'en' %}Read the method online →{% else %}Lire la méthode en ligne →{% endif %}
-      </a>
+      <a href="/preuves/methodologie.pdf" class="btn btn-secondary">{{ t('prf_dl_method', lang) }}</a>
+      <a href="/about/anemos" class="btn btn-ghost">{{ t('prf_read_online', lang) }}</a>
     </p>
   </div>
 </section>
@@ -124,32 +53,11 @@
 {# ===== SECTION 2 — QUI L'A VÉRIFIÉ ? ===== #}
 <section class="section section--sand">
   <div class="an-method-inner">
-    <span class="section-kicker">2 · {% if lang == 'en' %}Verification{% else %}Vérification{% endif %}</span>
-    <h2 class="section-title">
-      {% if lang == 'en' %}Who verified it{% else %}Qui l'a vérifié ?{% endif %}
-    </h2>
-    <p class="section-lead" style="max-width:760px">
-      {% if lang == 'en' %}
-        Our vessels' emissions are <strong>monitored, reported and verified by an accredited body</strong>
-        under <strong>EU&nbsp;MRV</strong> (Regulation EU&nbsp;2015/757). They are
-        <strong>publicly available in EMSA's THETIS-MRV registry</strong>.
-      {% else %}
-        Les émissions de nos navires sont <strong>surveillées, déclarées et vérifiées par un organisme
-        accrédité</strong> dans le cadre du règlement <strong>EU&nbsp;MRV</strong> (UE&nbsp;2015/757).
-        Elles sont <strong>consultables dans le registre public THETIS-MRV de l'EMSA</strong>.
-      {% endif %}
-    </p>
+    <span class="section-kicker">2 · {{ t('prf_s2_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('prf_s2_title', lang) }}</h2>
+    <p class="section-lead" style="max-width:760px">{{ t('prf_s2_lead', lang)|safe }}</p>
     <p class="callout" style="font-size:var(--fs-14);line-height:var(--lh-normal);max-width:760px">
-      <strong>{% if lang == 'en' %}Important distinction{% else %}Distinction importante{% endif %}</strong> :
-      {% if lang == 'en' %}
-        third-party verification covers <strong>our vessels' emissions</strong>. The
-        <strong>avoided-emissions calculation</strong> (the difference with a conventional reference
-        cargo) is <strong>our method</strong>, published and reproducible above.
-      {% else %}
-        la vérification tierce porte sur <strong>les émissions de nos navires</strong>. Le
-        <strong>calcul des émissions évitées</strong> (la différence avec un cargo conventionnel de
-        référence) est <strong>notre méthode</strong>, publiée et reproductible ci-dessus.
-      {% endif %}
+      <strong>{{ t('prf_s2_callout_t', lang) }}</strong> : {{ t('prf_s2_callout_b', lang)|safe }}
     </p>
   </div>
 </section>
@@ -157,51 +65,20 @@
 {# ===== SECTION 3 — MESURÉ OU THÉORIQUE ? ===== #}
 <section class="section">
   <div class="an-method-inner">
-    <span class="section-kicker">3 · {% if lang == 'en' %}Data{% else %}Donnée{% endif %}</span>
-    <h2 class="section-title">
-      {% if lang == 'en' %}Measured or estimated?{% else %}Mesuré ou théorique ?{% endif %}
-    </h2>
-    <p class="section-lead" style="max-width:760px">
-      {% if lang == 'en' %}
-        When real data is available, the certificate uses <strong>declared on-board fuel (signed noon
-        reports)</strong> and the <strong>actual distance sailed</strong>; otherwise the
-        <strong>certified factor</strong> and an <strong>orthodromic distance (× 1.15)</strong>.
-        <strong>The method used is printed on every certificate.</strong> An <strong>annual
-        measured-vs-estimated reconciliation</strong> is published.
-      {% else %}
-        Quand les données réelles sont disponibles, le certificat est calculé sur les
-        <strong>consommations déclarées à bord (noon reports signés)</strong> et la <strong>distance
-        réellement parcourue</strong>. À défaut, il applique le <strong>facteur certifié</strong> et une
-        <strong>distance orthodromique (× 1,15)</strong>. <strong>La méthode retenue est imprimée sur
-        chaque certificat.</strong> Une <strong>réconciliation annuelle</strong> mesuré/théorique est publiée.
-      {% endif %}
-    </p>
+    <span class="section-kicker">3 · {{ t('prf_s3_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('prf_s3_title', lang) }}</h2>
+    <p class="section-lead" style="max-width:760px">{{ t('prf_s3_lead', lang)|safe }}</p>
   </div>
 </section>
 
 {# ===== SECTION 4 — PUIS-JE LE RETROUVER ? ===== #}
 <section class="section section--sand">
   <div class="an-method-inner">
-    <span class="section-kicker">4 · {% if lang == 'en' %}Registry{% else %}Registre{% endif %}</span>
-    <h2 class="section-title">
-      {% if lang == 'en' %}Can I look it up?{% else %}Puis-je le retrouver ?{% endif %}
-    </h2>
-    <p class="section-lead" style="max-width:760px">
-      {% if lang == 'en' %}
-        Every certificate carries a <strong>serial number</strong> and a <strong>QR code</strong>. Scan
-        it, or enter the reference on our <strong>public verification page</strong>: tonnage, distance,
-        avoided CO₂, method, date and factor version — <strong>no personal data</strong>.
-      {% else %}
-        Chaque certificat porte un <strong>numéro de série</strong> et un <strong>QR code</strong>.
-        Scannez-le, ou saisissez la référence sur notre <strong>page de vérification publique</strong> :
-        vous y retrouvez le tonnage, la distance, le CO₂ évité, la méthode, la date et la version de
-        facteur — <strong>sans donnée personnelle</strong>.
-      {% endif %}
-    </p>
+    <span class="section-kicker">4 · {{ t('prf_s4_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('prf_s4_title', lang) }}</h2>
+    <p class="section-lead" style="max-width:760px">{{ t('prf_s4_lead', lang)|safe }}</p>
     <p style="margin-top:var(--sp-5)">
-      <a href="/verify" class="btn btn-primary">
-        {% if lang == 'en' %}Verify a certificate →{% else %}Vérifier un certificat →{% endif %}
-      </a>
+      <a href="/verify" class="btn btn-primary">{{ t('prf_s4_cta', lang) }}</a>
     </p>
   </div>
 </section>
@@ -210,38 +87,19 @@
 <section class="section">
   <div class="an-method-inner">
     <span class="section-kicker">5 · FAQ</span>
-    <h2 class="section-title">
-      {% if lang == 'en' %}Buyer &amp; ESG FAQ{% else %}FAQ acheteur RSE{% endif %}
-    </h2>
-
-    {% set faq = [
-      ('Périmètre well-to-wake ou tank-to-wake ?',
-       'Well-to-wake or tank-to-wake perimeter?',
-       'Tank-to-wake (combustion à bord), périmètre EU MRV. Le pré/post-acheminement terrestre n\'est pas inclus.',
-       'Tank-to-wake (on-board combustion), the EU MRV perimeter. Inland pre/post-carriage is not included.'),
-      ('CO₂ ou CO₂e ?',
-       'CO₂ or CO₂e?',
-       'CO₂ uniquement (hors CH₄/N₂O). À prendre en compte si votre reporting est en CO₂e.',
-       'CO₂ only (excl. CH₄/N₂O). Mind this if your reporting is in CO₂e.'),
-      ('Insetting ou compensation ?',
-       'Insetting or offset?',
-       'Ni l\'un ni l\'autre : c\'est une réduction à la source (moins de carburant brûlé), pas un crédit ni une compensation.',
-       'Neither: it is a reduction at source (less fuel burned), not a credit nor an offset.'),
-      ('Risque de double comptage ?',
-       'Double-counting risk?',
-       'Le certificat porte sur le segment maritime de votre expédition ; déclarez-le sur ce segment, en Scope 3 cat. 4.',
-       'The certificate covers the maritime segment of your shipment; declare it on that segment, in Scope 3 cat. 4.'),
-      ('Compatible Bilan Carbone® / ADEME ?',
-       'Compatible with Bilan Carbone® / ADEME?',
-       'Oui pour la catégorie transport amont, en gardant le périmètre TtW / CO₂ à l\'esprit.',
-       'Yes for the upstream-transport category, mind the TtW / CO₂ scope.')
-    ] %}
+    <h2 class="section-title">{{ t('prf_faq_title', lang) }}</h2>
 
     <div class="prf-faq">
-      {% for q_fr, q_en, a_fr, a_en in faq %}
+      {% for qk, ak in [
+        ('prf_faq1_q', 'prf_faq1_a'),
+        ('prf_faq2_q', 'prf_faq2_a'),
+        ('prf_faq3_q', 'prf_faq3_a'),
+        ('prf_faq4_q', 'prf_faq4_a'),
+        ('prf_faq5_q', 'prf_faq5_a'),
+      ] %}
       <details class="prf-faq-item"{% if loop.first %} open{% endif %}>
-        <summary>{% if lang == 'en' %}{{ q_en }}{% else %}{{ q_fr }}{% endif %}</summary>
-        <p>{% if lang == 'en' %}{{ a_en }}{% else %}{{ a_fr }}{% endif %}</p>
+        <summary>{{ t(qk, lang) }}</summary>
+        <p>{{ t(ak, lang) }}</p>
       </details>
       {% endfor %}
     </div>
@@ -251,25 +109,15 @@
 {# ===== SECTION 6 — TÉLÉCHARGEMENTS + CTA ===== #}
 <section class="an-cta">
   <div class="an-cta-inner">
-    <h2>{% if lang == 'en' %}A shipment to justify?{% else %}Une expédition à justifier ?{% endif %}</h2>
-    <p>
-      {% if lang == 'en' %}
-        Download the methodology and a sample annual CO₂ report — the co-branded ESG kit
-        is prepared with our team.
-      {% else %}
-        Téléchargez la méthodologie et un spécimen du rapport CO₂ annuel — le kit RSE
-        co-brandé se prépare avec notre équipe.
-      {% endif %}
-    </p>
+    <h2>{{ t('prf_s6_title', lang) }}</h2>
+    <p>{{ t('prf_s6_lead', lang) }}</p>
     <div style="display:flex;gap:var(--sp-4);justify-content:center;flex-wrap:wrap">
-      <a href="/preuves/methodologie.pdf" class="btn btn-white btn-lg">
-        {% if lang == 'en' %}Methodology (PDF){% else %}Méthodologie (PDF){% endif %}
-      </a>
+      <a href="/preuves/methodologie.pdf" class="btn btn-white btn-lg">{{ t('prf_s6_btn_method', lang) }}</a>
       <a href="/preuves/rapport-annuel-exemple.pdf" class="btn btn-lg" style="color:#fff;border:2px solid rgba(255,255,255,0.45);background:transparent;">
-        {% if lang == 'en' %}Annual report — sample (PDF){% else %}Rapport annuel — spécimen (PDF){% endif %}
+        {{ t('prf_s6_btn_sample', lang) }}
       </a>
       <a href="/contact" class="btn btn-lg" style="color:#fff;border:2px solid rgba(255,255,255,0.45);background:transparent;">
-        {% if lang == 'en' %}Co-branded ESG kit — talk to us{% else %}Kit RSE co-brandé — parler à notre équipe{% endif %}
+        {{ t('prf_s6_btn_kit', lang) }}
       </a>
     </div>
   </div>

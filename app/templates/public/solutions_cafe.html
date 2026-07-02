@@ -1,16 +1,7 @@
 {% extends "public/_layout_v2.html" %}
 
-{% block title %}
-  {% if lang == 'en' %}Green coffee, sailed across — {{ brand.nom_court }}{% else %}Café vert transporté à la voile — {{ brand.nom_court }}{% endif %}
-{% endblock %}
-
-{% block description %}
-  {% if lang == 'en' %}
-    Green coffee carried under sail from Latin America: origin routes (Colombia, Guatemala, Mexico), cargo kept at sea temperature, and a per-batch CO₂ avoided certified by Anemos — verifiable by QR.
-  {% else %}
-    Café vert transporté à la voile depuis l'Amérique latine : routes d'origine (Colombie, Guatemala, Mexique), cargaison à la température de la mer, et un CO₂ évité par lot certifié Anemos — vérifiable par QR.
-  {% endif %}
-{% endblock %}
+{% block title %}{{ t('cafe_meta_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block description %}{{ t('cafe_meta_desc', lang) }}{% endblock %}
 
 {% block head %}
   <script src="{{ asset('js/co2-equivalences.js') }}" defer></script>
@@ -27,56 +18,22 @@
     </g>
   </svg>
   <div class="hero-inner">
-    <span class="hero-kicker">{% if lang == 'en' %}Coffee · B2B2C kit{% else %}Café · kit B2B2C{% endif %}</span>
-    <h1 class="hero-title">
-      {% if lang == 'en' %}Green coffee, sailed across.{% else %}Le café vert, traversé à la voile.{% endif %}
-    </h1>
-    <p class="hero-lead">
-      {% if lang == 'en' %}
-        From the Andes to your roastery — carried below the waterline, at sea temperature,
-        with a per-batch CO₂ avoided certified by Anemos and verifiable by QR.
-      {% else %}
-        Des Andes à votre torréfaction — transporté sous la ligne de flottaison, à la
-        température de la mer, avec un CO₂ évité par lot certifié Anemos et vérifiable par QR.
-      {% endif %}
-    </p>
+    <span class="hero-kicker">{{ t('cafe_hero_kicker', lang) }}</span>
+    <h1 class="hero-title">{{ t('cafe_hero_title', lang) }}</h1>
+    <p class="hero-lead">{{ t('cafe_hero_lead', lang) }}</p>
   </div>
 </section>
-
-{% if lang not in ('fr', 'en') %}{% include "public/_translation_notice.html" %}{% endif %}
 
 {# ===== SECTION 1 — POURQUOI LA VOILE POUR LE CAFÉ ===== #}
 <section class="section">
   <div class="an-method-inner">
-    <span class="section-kicker">1 · {% if lang == 'en' %}Why sail{% else %}Pourquoi la voile{% endif %}</span>
-    <h2 class="section-title">
-      {% if lang == 'en' %}A bean that arrives as it left{% else %}Un grain qui arrive comme il est parti{% endif %}
-    </h2>
-    <p class="section-lead" style="max-width:760px">
-      {% if lang == 'en' %}
-        A conventional container overheats crossing the tropics, and the thermal swings dull a
-        high-grown bean. Aboard our sailing cargo ships the coffee travels below the waterline,
-        at sea temperature — its aromatics protected the whole way.
-      {% else %}
-        Un conteneur conventionnel surchauffe en traversant les tropiques, et les à-coups
-        thermiques fatiguent un grain de haute altitude. À bord de nos voiliers-cargos, le café
-        voyage sous la ligne de flottaison, à la température de la mer — ses arômes protégés sur
-        tout le trajet.
-      {% endif %}
-    </p>
+    <span class="section-kicker">1 · {{ t('cafe_s1_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('cafe_s1_title', lang) }}</h2>
+    <p class="section-lead" style="max-width:760px">{{ t('cafe_s1_lead', lang) }}</p>
     <ul class="prf-list">
-      <li>
-        <strong>{% if lang == 'en' %}Origin routes{% else %}Routes d'origine{% endif %}</strong>
-        — {% if lang == 'en' %}Colombia, Guatemala and Mexico to Europe.{% else %}Colombie, Guatemala et Mexique vers l'Europe.{% endif %}
-      </li>
-      <li>
-        <strong>{% if lang == 'en' %}Segregated holds{% else %}Cales ségréguées{% endif %}</strong>
-        — {% if lang == 'en' %}cargo kept dry and stable, away from engine heat.{% else %}cargaison au sec et stable, loin de la chaleur moteur.{% endif %}
-      </li>
-      <li>
-        <strong>{% if lang == 'en' %}Certified, verifiable CO₂{% else %}CO₂ certifié, vérifiable{% endif %}</strong>
-        — {% if lang == 'en' %}avoided CO₂ measured per batch, certified by Anemos, looked up by QR.{% else %}CO₂ évité mesuré par lot, certifié Anemos, retrouvé par QR.{% endif %}
-      </li>
+      <li><strong>{{ t('cafe_li1_t', lang) }}</strong> — {{ t('cafe_li1_b', lang) }}</li>
+      <li><strong>{{ t('cafe_li2_t', lang) }}</strong> — {{ t('cafe_li2_b', lang) }}</li>
+      <li><strong>{{ t('cafe_li3_t', lang) }}</strong> — {{ t('cafe_li3_b', lang) }}</li>
     </ul>
   </div>
 </section>
@@ -84,21 +41,9 @@
 {# ===== SECTION 2 — RÉCITS D'ORIGINE (gabarits du kit B2B2C) ===== #}
 <section class="section section--sand">
   <div class="an-method-inner">
-    <span class="section-kicker">2 · {% if lang == 'en' %}Origin stories{% else %}Récits d'origine{% endif %}</span>
-    <h2 class="section-title">
-      {% if lang == 'en' %}The story your customers read{% else %}Le récit que lisent vos clients{% endif %}
-    </h2>
-    <p class="section-lead" style="max-width:760px">
-      {% if lang == 'en' %}
-        Ready-to-use product-sheet copy for each origin. The figures below are illustrative
-        examples — on a real batch, region, grower, ship and avoided CO₂ are filled automatically
-        from the Anemos certificate.
-      {% else %}
-        Des textes de fiche produit prêts à l'emploi pour chaque origine. Les chiffres ci-dessous
-        sont des exemples illustratifs — sur un lot réel, la région, le producteur, le navire et le
-        CO₂ évité sont remplis automatiquement depuis le certificat Anemos.
-      {% endif %}
-    </p>
+    <span class="section-kicker">2 · {{ t('cafe_s2_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('cafe_s2_title', lang) }}</h2>
+    <p class="section-lead" style="max-width:760px">{{ t('cafe_s2_lead', lang) }}</p>
 
     <div class="cafe-stories">
       {% for origin in coffee_origins %}
@@ -108,7 +53,7 @@
           <p class="cafe-story__body">{{ coffee_story(origin, lang, 'long',
               region=ex.region, producer=ex.producer, vessel=ex.vessel, co2_kg=ex.co2_kg) }}</p>
           <p class="cafe-story__short">
-            <span class="pill pill-neutral">{% if lang == 'en' %}Label / social{% else %}Étiquette / réseaux{% endif %}</span>
+            <span class="pill pill-neutral">{{ t('cafe_s2_pill', lang) }}</span>
             {{ coffee_story(origin, lang, 'short', co2_kg=ex.co2_kg) }}
           </p>
         </article>
@@ -120,20 +65,9 @@
 {# ===== SECTION 3 — LE CO₂ ÉVITÉ, RENDU TANGIBLE ===== #}
 <section class="section">
   <div class="an-method-inner">
-    <span class="section-kicker">3 · {% if lang == 'en' %}Tangible impact{% else %}Impact tangible{% endif %}</span>
-    <h2 class="section-title">
-      {% if lang == 'en' %}What the avoided CO₂ adds up to{% else %}Ce que représente le CO₂ évité{% endif %}
-    </h2>
-    <p class="section-lead" style="max-width:760px;margin-bottom:var(--sp-5)">
-      {% if lang == 'en' %}
-        Drag the slider to see a batch's avoided CO₂ in everyday terms. Assumptions are shown for
-        transparency — no percentages, only absolute kilograms from the per-batch Anemos calculation.
-      {% else %}
-        Faites glisser le curseur pour traduire le CO₂ évité d'un lot en repères concrets. Les
-        hypothèses sont affichées par transparence — aucun pourcentage, uniquement des kilos absolus
-        issus du calcul Anemos par lot.
-      {% endif %}
-    </p>
+    <span class="section-kicker">3 · {{ t('cafe_s3_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('cafe_s3_title', lang) }}</h2>
+    <p class="section-lead" style="max-width:760px;margin-bottom:var(--sp-5)">{{ t('cafe_s3_lead', lang) }}</p>
     {% include "public/_co2_equivalences_interactive.html" %}
   </div>
 </section>
@@ -141,20 +75,12 @@
 {# ===== CTA ===== #}
 <section class="an-cta">
   <div class="an-cta-inner">
-    <h2>{% if lang == 'en' %}A coffee shipment to plan?{% else %}Une expédition de café à organiser ?{% endif %}</h2>
-    <p>
-      {% if lang == 'en' %}
-        Tell us your origin and volume — we'll send routes, lead times and a quote, plus the B2B2C kit.
-      {% else %}
-        Dites-nous votre origine et votre volume — nous renvoyons routes, délais et cotation, avec le kit B2B2C.
-      {% endif %}
-    </p>
+    <h2>{{ t('cafe_cta_title', lang) }}</h2>
+    <p>{{ t('cafe_cta_lead', lang) }}</p>
     <div style="display:flex;gap:var(--sp-4);justify-content:center;flex-wrap:wrap">
-      <a href="/contact" class="btn btn-white btn-lg">
-        {% if lang == 'en' %}Request a quote{% else %}Demander une cotation{% endif %}
-      </a>
+      <a href="/contact" class="btn btn-white btn-lg">{{ t('cafe_cta_btn_quote', lang) }}</a>
       <a href="/preuves" class="btn btn-lg" style="color:#fff;border:2px solid rgba(255,255,255,0.45);background:transparent;">
-        {% if lang == 'en' %}See the method &amp; proof{% else %}Voir la méthode &amp; les preuves{% endif %}
+        {{ t('cafe_cta_btn_proof', lang) }}
       </a>
     </div>
   </div>

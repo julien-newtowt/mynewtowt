@@ -60,6 +60,21 @@ PUBLIC_PAGES: tuple[tuple[str, str, str], ...] = (
     ("/about/privacy", "yearly", "0.2"),
 )
 
+# Langues réellement servies par page (P6 — hreflang honnête). Les pages
+# absentes de cette carte sont disponibles dans les 4 langues publiques.
+# On ne déclare jamais d'alternate vers du contenu non traduit : le contenu
+# FR servi sous ?lang=es serait du contenu dupliqué mal étiqueté.
+PAGE_LANGS: dict[str, tuple[str, ...]] = {
+    "/navigation": ("fr",),
+    "/carnet": ("fr",),
+    "/actualites": ("fr",),
+    "/presse": ("fr",),
+    "/about": ("fr", "en"),
+    "/about/anemos": ("fr", "en"),
+    "/about/legal": ("fr", "en"),
+    "/about/privacy": ("fr", "en"),
+}
+
 # Zones réservées à l'extranet / l'ERP — hors indexation.
 DISALLOW = (
     "/admin/",
@@ -144,16 +159,19 @@ def build_sitemap_xml(base_url: str, *, lastmod: str | None = None) -> str:
         loc = f"{base}{path}"
         out.append("  <url>")
         out.append(f"    <loc>{escape(loc)}</loc>")
-        # Alternates hreflang par langue (?lang=xx) + x-default.
-        for lang in PUBLIC_LANGS:
-            href = f"{loc}?lang={lang}"
+        # Alternates hreflang par langue réellement servie (?lang=xx) +
+        # x-default. Page monolingue → aucun alternate (rien à déclarer).
+        langs = PAGE_LANGS.get(path, PUBLIC_LANGS)
+        if len(langs) > 1:
+            for lang in langs:
+                href = f"{loc}?lang={lang}"
+                out.append(
+                    f'    <xhtml:link rel="alternate" hreflang="{_HREFLANG[lang]}" '
+                    f'href="{escape(href)}"/>'
+                )
             out.append(
-                f'    <xhtml:link rel="alternate" hreflang="{_HREFLANG[lang]}" '
-                f'href="{escape(href)}"/>'
+                f'    <xhtml:link rel="alternate" hreflang="x-default" ' f'href="{escape(loc)}"/>'
             )
-        out.append(
-            f'    <xhtml:link rel="alternate" hreflang="x-default" ' f'href="{escape(loc)}"/>'
-        )
         if lastmod:
             out.append(f"    <lastmod>{escape(lastmod)}</lastmod>")
         out.append(f"    <changefreq>{changefreq}</changefreq>")
