@@ -29,7 +29,7 @@
     {% if grid.lines %}
     <form method="post" action="/commercial/grids/{{ grid.id }}/recalculate" style="display:inline;">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-secondary btn-sm" title="Recalcule le base_rate de toutes les routes non-manuelles (OPEX × jours de mer / 850)">↻ Recalculer (OPEX)</button>
+      <button type="submit" class="btn btn-secondary btn-sm" title="Recalcule le base_rate de toutes les routes non-manuelles (OPEX × jours de mer / 978)">↻ Recalculer (OPEX)</button>
     </form>
     {% endif %}
     {% endif %}

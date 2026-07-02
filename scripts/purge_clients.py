@@ -28,6 +28,7 @@ Usage :
   python -m scripts.purge_clients --all --yes          # purge TOUS les clients (hors ceux à commandes)
   python -m scripts.purge_clients --all --force --yes  # inclut les clients à commandes (+ leurs commandes)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -48,12 +49,8 @@ async def run(*, execute: bool, scope_all: bool, force: bool) -> int:
             target = target.where(Client.pipedrive_org_id.is_not(None))
 
         n_target = await db.scalar(select(func.count()).select_from(target.subquery()))
-        with_orders = (
-            select(Order.client_id).where(Order.client_id.in_(target)).distinct()
-        )
-        n_with_orders = await db.scalar(
-            select(func.count()).select_from(with_orders.subquery())
-        )
+        with_orders = select(Order.client_id).where(Order.client_id.in_(target)).distinct()
+        n_with_orders = await db.scalar(select(func.count()).select_from(with_orders.subquery()))
         n_accounts = await db.scalar(
             select(func.count()).select_from(
                 select(ClientAccount.id)
@@ -75,7 +72,9 @@ async def run(*, execute: bool, scope_all: bool, force: bool) -> int:
         scope = "TOUS les clients" if scope_all else "clients Pipedrive (pipedrive_org_id non NULL)"
         print(f"Périmètre          : {scope}")
         print(f"Clients ciblés     : {n_target}")
-        print(f"  · avec commandes : {n_with_orders}  ({'supprimés (--force)' if force else 'CONSERVÉS'})")
+        print(
+            f"  · avec commandes : {n_with_orders}  ({'supprimés (--force)' if force else 'CONSERVÉS'})"
+        )
         print(f"Grilles liées      : {n_grids}  (supprimées)")
         print(f"Offres liées       : {n_offers}  (supprimées)")
         print(f"Comptes plateforme : {n_accounts}  (déliés, non supprimés)")
@@ -115,7 +114,9 @@ async def run(*, execute: bool, scope_all: bool, force: bool) -> int:
         deleted = result.rowcount if result.rowcount is not None else "?"
         print(f"\n✓ Purge terminée : {deleted} client(s) supprimé(s).")
         if not force and n_with_orders:
-            print(f"  ({n_with_orders} client(s) à commandes conservé(s) — relancer avec --force pour les inclure.)")
+            print(
+                f"  ({n_with_orders} client(s) à commandes conservé(s) — relancer avec --force pour les inclure.)"
+            )
         print("Relancez ensuite « Synchroniser Pipedrive » pour repeupler depuis le jeu filtré.")
         return 0
 
@@ -123,8 +124,12 @@ async def run(*, execute: bool, scope_all: bool, force: bool) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(description="Purge des clients commerciaux (reprise via synchro).")
     p.add_argument("--yes", action="store_true", help="Exécute réellement (sinon dry-run).")
-    p.add_argument("--all", action="store_true", help="Vise tous les clients (pas seulement Pipedrive).")
-    p.add_argument("--force", action="store_true", help="Inclut les clients à commandes (+ leurs commandes).")
+    p.add_argument(
+        "--all", action="store_true", help="Vise tous les clients (pas seulement Pipedrive)."
+    )
+    p.add_argument(
+        "--force", action="store_true", help="Inclut les clients à commandes (+ leurs commandes)."
+    )
     args = p.parse_args()
     return asyncio.run(run(execute=args.yes, scope_all=args.all, force=args.force))
 

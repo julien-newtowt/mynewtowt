@@ -4,7 +4,7 @@ Mécanique Module 6 (modèle multi-routes) :
 
 - une grille tarifaire couvre **1 client (ou défaut) + 1 période + N routes** ;
   chaque **route** (``RateGridLine``) porte POL/POD, sa distance, son OPEX jour
-  et son ``base_rate`` (OPEX × jours de mer / 850) ;
+  et son ``base_rate`` (OPEX × jours de mer / capacité navire, 978 EPAL) ;
 - les **brackets de volume** (coefficients dégressifs) remontent au niveau
   **grille** (``brackets_json``), partagés par toutes les routes ;
 - il existe une **grille par défaut** (``client_id NULL``, ``is_default=True``)
@@ -52,7 +52,9 @@ from app.models.vessel import Vessel
 # base = OPEX jour × jours de navigation / capacité navire).
 FALLBACK_OPEX_DAILY_EUR = Decimal("12000")
 OPEX_PARAMETER_NAME = "opex_daily_sea"
-VESSEL_CAPACITY_PALETTES = Decimal("850")
+# Capacité commerciale unique (P4, arbitrage direction) = capacité physique de
+# cale (référentiel stowage Phoenix). Pilote le taux de base €/palette.
+VESSEL_CAPACITY_PALETTES = Decimal("978")
 TRANSIT_SPEED_KN = Decimal("8")
 HAZARDOUS_SURCHARGE_RATE = Decimal("0.25")
 QUOTE_VALIDITY_DAYS = 30
@@ -294,7 +296,7 @@ def route_nav_days(distance_nm: Decimal) -> Decimal:
 
 
 def route_base_rate(opex_daily: Decimal, nav_days: Decimal) -> Decimal:
-    """Taux de base €/palette = OPEX jour × jours de mer / 850 (plancher 1 €)."""
+    """Taux de base €/palette = OPEX jour × jours de mer / 978 (plancher 1 €)."""
     base = (Decimal(opex_daily) * Decimal(nav_days) / VESSEL_CAPACITY_PALETTES).quantize(
         _TWO_PLACES, rounding=ROUND_HALF_UP
     )

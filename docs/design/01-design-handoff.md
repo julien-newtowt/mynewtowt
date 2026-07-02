@@ -105,7 +105,7 @@ Card cliquable pour un leg réservable.
 │ Fécamp 🇫🇷 ──[8j]──► New York 🇺🇸                  │
 │ ETD 2026-06-04 · ETA 2026-06-12                  │
 │                                                  │
-│ Capacité restante : ████████░░░░░░ 612 / 850 EPAL │
+│ Capacité restante : ████████░░░░░░ 703 / 978 EPAL │
 │ Tarif indicatif : 38 EUR / palette                │
 │                                                  │
 │            [Voir détails]  [Réserver →]          │

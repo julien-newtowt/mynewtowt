@@ -15,6 +15,7 @@ Convention :
 Pour ajouter un port : insère la tuple dans la bonne section régionale
 en respectant l'ordre alphabétique du LOCODE.
 """
+
 from __future__ import annotations
 
 PortTuple = tuple[str, str, str, float, float, str]
@@ -335,6 +336,7 @@ WORLD_PORTS: list[PortTuple] = [
 def as_port_rows(source: str = "world_ports") -> list:
     """Convert the embedded tuples to PortRow instances usable by upsert_ports."""
     from app.services.ports import PortRow
+
     return [
         PortRow(
             locode=locode,

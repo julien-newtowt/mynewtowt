@@ -28,12 +28,12 @@ NEWTOWT est une compagnie française de transport maritime cargo à la voile (ca
 
 | Code | Nom | Capacité indicative | Notes |
 |------|-----|---------------------|-------|
-| 1 | Anemos | 850 palettes EPAL | |
-| 2 | Artemis | 850 palettes EPAL | |
-| 3 | Atlantis | 850 palettes EPAL | Livraison 2026 |
-| 4 | Atlas | 850 palettes EPAL | Livraison 2026|
-| 5 | Archimedes | 850 palettes EPAL | Livraison 2026 |
-| 6 | Asterias | 850 palettes EPAL | Livraison 2026 |
+| 1 | Anemos | 978 palettes EPAL | |
+| 2 | Artemis | 978 palettes EPAL | |
+| 3 | Atlantis | 978 palettes EPAL | Livraison 2026 |
+| 4 | Atlas | 978 palettes EPAL | Livraison 2026|
+| 5 | Archimedes | 978 palettes EPAL | Livraison 2026 |
+| 6 | Astérias | 978 palettes EPAL | Livraison 2026 |
 
 L'entreprise utilise une infrastructure Microsoft O365 et Sharepoint.
 ### 1.2 Activité métier couverte
@@ -584,11 +584,13 @@ Classes utilitaires `app.css` à utiliser de préférence aux styles inline : `.
 - Clôture : `closure_status` ∈ {open, review, approved, locked}, `closure_reviewed_by/_at`, `closure_approved_by/_at`, `closure_notes`, `closure_pdf_path`.
 - Timestamps : `created_at`, `updated_at`, `notes`.
 
-**Génération du `leg_code`** :
+**Génération du `leg_code`** (format canonique — source de vérité
+`app/services/planning.py:_leg_code_for`) :
 ```
-leg_code = f"{vessel_code}{letter}{dep_country.upper()}{arr_country.upper()}{year_suffix}"
-# letter = A..Z dérivée de sequence (1→A, 2→B…)
-# year_suffix = dernier chiffre de l'année (2026→"6")
+leg_code = f"{sequence}{vessel_code}{dep_country[:2].upper()}{arr_country[:2].upper()}{year_digit}"
+# sequence = numéro d'ordre du leg (chiffre de tête)
+# vessel_code = code du navire (ex. "C") ; year_digit = dernier chiffre de l'année (2026→"6")
+# ex. 1CFRBR6
 ```
 
 **Calcul navigation** (méthode `compute_navigation()`) :

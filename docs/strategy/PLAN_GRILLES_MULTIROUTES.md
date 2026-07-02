@@ -43,18 +43,18 @@ Déjà livré (rattrapage partiel, sur `main`) :
 | `distance_nm` | orthodromique (saisie ou depuis le leg) |
 | `nav_days` | `distance / (8 kn × 24)` |
 | `opex_daily` | OPEX jour (navire/param) |
-| `base_rate` | `opex_daily × nav_days / 850` |
+| `base_rate` | `opex_daily × nav_days / 978` |
 | `is_manual` (bool) | surcharge manuelle du base_rate |
 
 > Les **brackets** ne sont **plus** des `rate_grid_lines` : ils deviennent
 > `brackets_json` sur la grille (ou une petite table `rate_grid_brackets`).
 > Défauts : Shipper `<50 ×1.10 · 100 ×1.00 · 200 ×0.80 · 300 ×0.80 · 400 ×0.80 ·
-> 500 ×0.70 · full 850 ×0.60` ; FF flat ×1.00.
+> 500 ×0.70 · full 978 ×0.60` ; FF flat ×1.00.
 
 ## Formule (inchangée, par ligne-route)
 ```
 nav_days = distance_nm / (8 × 24)
-base_rate = opex_daily × nav_days / 850
+base_rate = opex_daily × nav_days / 978
 rate[bracket] = base_rate × bracket.coeff × adjustment_index × coeff_format
 ```
 

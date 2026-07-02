@@ -38,7 +38,7 @@ L'analyse de `https://www.cma-cgm.fr/ebusiness` met en évidence
 | Unité = **palette** (pas TEU) | Sélecteur en palettes EPAL / USPAL / etc. |
 | Pas de transbordement | Pas de "shipment leg" multi-navires |
 | Décarboné = différenciateur | CO₂ mis en avant à chaque étape |
-| Capacité limitée (850 EPAL/navire) | Sentiment de rareté assumé |
+| Capacité limitée (978 EPAL/navire) | Sentiment de rareté assumé |
 | Marchandises dangereuses → SUP_AV | Workflow IMDG dédié |
 | Pas de container 20'/40' | Sélecteur format unique (palette) |
 

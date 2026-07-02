@@ -8,6 +8,7 @@ Usage (from project root):
 If --password is omitted the script prompts interactively (hidden input).
 Exits 1 if the username is not found or is inactive.
 """
+
 from __future__ import annotations
 
 import asyncio

@@ -3,6 +3,7 @@
 Run via:
   docker compose exec app python -m scripts.seed_demo
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -27,9 +28,7 @@ async def seed() -> None:
     async with SessionLocal() as db:
         # ----- Admin user -----
         existing_admin = (
-            await db.execute(
-                select(User).where(User.username == settings.initial_admin_username)
-            )
+            await db.execute(select(User).where(User.username == settings.initial_admin_username))
         ).scalar_one_or_none()
         if not existing_admin:
             db.add(
@@ -60,13 +59,18 @@ async def seed() -> None:
             )
 
         # ----- Vessels -----
+        # Flotte P4 : 6 sisterships classe TSC 80 (interne « phoenix »).
+        # 2 en opération (Anemos, Artemis), 4 en construction. Capacité
+        # commerciale unique = 978 EPAL ; 12 couchettes passagers (offre 2027).
         vessels_def = [
-            ("1", "Anemos", "9123456", "FR", 850),
-            ("2", "Artemis", "9123457", "FR", 850),
-            ("3", "Atlantis", "9123458", "FR", 850),
-            ("4", "Atlas", "9123459", "FR", 850),
+            ("1", "Anemos", "9123456", "FR", "operational"),
+            ("2", "Artemis", "9123457", "FR", "operational"),
+            ("3", "Atlantis", "9123458", "FR", "under_construction"),
+            ("4", "Atlas", "9123459", "FR", "under_construction"),
+            ("5", "Archimedes", "9123460", "FR", "under_construction"),
+            ("6", "Astérias", "9123461", "FR", "under_construction"),
         ]
-        for code, name, imo, flag, cap in vessels_def:
+        for code, name, imo, flag, build_status in vessels_def:
             row = (await db.execute(select(Vessel).where(Vessel.code == code))).scalar_one_or_none()
             if not row:
                 db.add(
@@ -75,7 +79,9 @@ async def seed() -> None:
                         name=name,
                         imo_number=imo,
                         flag=flag,
-                        capacity_palettes=cap,
+                        capacity_palettes=978,
+                        capacity_pax=12,
+                        build_status=build_status,
                         default_speed_kn=8.0,
                         default_elongation=1.15,
                         opex_daily_sea_eur=4500.0,
@@ -94,15 +100,11 @@ async def seed() -> None:
         for locode, name, country, lat, lon in ports_def:
             row = (await db.execute(select(Port).where(Port.locode == locode))).scalar_one_or_none()
             if not row:
-                db.add(
-                    Port(locode=locode, name=name, country=country, latitude=lat, longitude=lon)
-                )
+                db.add(Port(locode=locode, name=name, country=country, latitude=lat, longitude=lon))
 
         # ----- Demo client -----
         existing_client = (
-            await db.execute(
-                select(ClientAccount).where(ClientAccount.email == "demo@example.com")
-            )
+            await db.execute(select(ClientAccount).where(ClientAccount.email == "demo@example.com"))
         ).scalar_one_or_none()
         if not existing_client:
             db.add(
@@ -134,8 +136,12 @@ async def seed() -> None:
                 db.add(
                     FeatureFlag(
                         key=key,
-                        enabled=True if key in {"kairos_design_system", "booking_platform"} else False,
-                        rollout_pct=100 if key in {"kairos_design_system", "booking_platform"} else 0,
+                        enabled=(
+                            True if key in {"kairos_design_system", "booking_platform"} else False
+                        ),
+                        rollout_pct=(
+                            100 if key in {"kairos_design_system", "booking_platform"} else 0
+                        ),
                         description=desc,
                     )
                 )
@@ -156,12 +162,12 @@ async def seed() -> None:
 
         now = datetime.now(timezone.utc)
         leg_defs = [
-            ("1AFRUS6", v1, fec, nyc, 14, 8, Decimal("38"), 850),
-            ("1BUSFR6", v1, nyc, fec, 32, 8, Decimal("38"), 850),
-            ("2AFRBR6", v2, leh, sso, 21, 18, Decimal("42"), 850),
-            ("2BBRFR6", v2, sso, leh, 50, 18, Decimal("42"), 850),
-            ("3AFRUS6", v3, fec, bos, 28, 9, Decimal("36"), 850),
-            ("4APTUS6", v4, pdl, nyc, 7, 6, Decimal("34"), 850),
+            ("1AFRUS6", v1, fec, nyc, 14, 8, Decimal("38"), 978),
+            ("1BUSFR6", v1, nyc, fec, 32, 8, Decimal("38"), 978),
+            ("2AFRBR6", v2, leh, sso, 21, 18, Decimal("42"), 978),
+            ("2BBRFR6", v2, sso, leh, 50, 18, Decimal("42"), 978),
+            ("3AFRUS6", v3, fec, bos, 28, 9, Decimal("36"), 978),
+            ("4APTUS6", v4, pdl, nyc, 7, 6, Decimal("34"), 978),
         ]
         for leg_code, vessel, pol, pod, days_to_etd, transit_days, price, capacity in leg_defs:
             existing_leg = (
@@ -191,7 +197,9 @@ async def seed() -> None:
 
         await db.commit()
         print("Seed completed.")
-        print(f"  Admin login: {settings.initial_admin_username} / {settings.initial_admin_password}")
+        print(
+            f"  Admin login: {settings.initial_admin_username} / {settings.initial_admin_password}"
+        )
         print("  Commercial login: commercial / Demo!Commercial2026")
         print("  Demo client: demo@example.com / Demo!Client2026")
 

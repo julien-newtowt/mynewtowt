@@ -23,6 +23,7 @@ Sources :
 Idempotent : upsert sur le locode, ne remplace jamais une entrée
 manuelle par une entrée automatique.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,9 +42,7 @@ from app.services.ports import (
 )
 from scripts.data.world_ports import as_port_rows as embedded_world_ports
 
-DATAGOUV_DEFAULT_URL = (
-    "https://www.data.gouv.fr/fr/datasets/r/ac2c8109-8db3-40ff-af88-9e68ddafe66d"
-)
+DATAGOUV_DEFAULT_URL = "https://www.data.gouv.fr/fr/datasets/r/ac2c8109-8db3-40ff-af88-9e68ddafe66d"
 UNLOCODE_DEFAULT_URL = (
     "https://raw.githubusercontent.com/datasets/un-locode/master/data/code-list.csv"
 )
@@ -83,7 +82,10 @@ async def _resolve_datagouv_slug(slug: str) -> str | None:
         if fmt in ("csv", "xlsx") and url:
             logger.info(
                 "Resolved slug %r → %s (%s, %s)",
-                slug, res.get("title") or res.get("id"), fmt, url,
+                slug,
+                res.get("title") or res.get("id"),
+                fmt,
+                url,
             )
             return url
     logger.warning("No CSV/XLSX resource found in dataset %r", slug)
@@ -162,16 +164,18 @@ def parse_unlocode_csv(content: bytes) -> list[PortRow]:
         if not coords or not name:
             continue
         seen.add(locode)
-        out.append(PortRow(
-            locode=locode,
-            name=name[:100],
-            country=country,
-            latitude=coords[0],
-            longitude=coords[1],
-            source="unlocode",
-            function_code=function or "1-------",
-            subdivision=(row.get("Subdivision") or "").strip()[:8] or None,
-        ))
+        out.append(
+            PortRow(
+                locode=locode,
+                name=name[:100],
+                country=country,
+                latitude=coords[0],
+                longitude=coords[1],
+                source="unlocode",
+                function_code=function or "1-------",
+                subdivision=(row.get("Subdivision") or "").strip()[:8] or None,
+            )
+        )
     return out
 
 
@@ -194,7 +198,9 @@ async def load(
             await db.commit()
             logger.info(
                 "Embedded world catalogue : %d entries — %d inserted, %d updated",
-                len(rows), ins, upd,
+                len(rows),
+                ins,
+                upd,
             )
 
         # ─── data.gouv (URL fixe OU slug auto-résolu) ─────────────────
@@ -206,22 +212,23 @@ async def load(
                     url = resolved
                 else:
                     logger.warning(
-                        "Slug %r non résolu — fallback URL %s", datagouv_slug, url,
+                        "Slug %r non résolu — fallback URL %s",
+                        datagouv_slug,
+                        url,
                     )
             logger.info("Fetching data.gouv from %s", url)
             payload = await _download(url)
             if payload:
                 rows = parse_csv(payload, source=f"datagouv:{datagouv_slug or 'default'}")
                 if datagouv_country_filter:
-                    rows = [
-                        r for r in rows
-                        if r.country.upper() == datagouv_country_filter.upper()
-                    ]
+                    rows = [r for r in rows if r.country.upper() == datagouv_country_filter.upper()]
                 ins, upd = await upsert_ports(db, rows)
                 await db.commit()
                 logger.info(
                     "data.gouv : %d parsed, %d inserted, %d updated",
-                    len(rows), ins, upd,
+                    len(rows),
+                    ins,
+                    upd,
                 )
             else:
                 logger.warning("Skipping data.gouv (download failed)")
@@ -229,6 +236,7 @@ async def load(
         # ─── Fichier local (--from-file) ─────────────────────────────
         if from_file:
             from pathlib import Path
+
             path = Path(from_file)
             if not path.exists():
                 logger.error("File not found: %s", path)
@@ -240,7 +248,9 @@ async def load(
                 await db.commit()
                 logger.info(
                     "Local file : %d parsed, %d inserted, %d updated",
-                    len(rows), ins, upd,
+                    len(rows),
+                    ins,
+                    upd,
                 )
 
         # ─── UN/LOCODE (option) ──────────────────────────────────────
@@ -265,35 +275,52 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     parser = argparse.ArgumentParser(description="Load ports into the directory")
-    parser.add_argument("--skip-embedded", action="store_true",
-                        help="Ne charge pas le catalogue embarqué")
-    parser.add_argument("--skip-datagouv", action="store_true",
-                        help="Ne charge pas les ports data.gouv.fr")
-    parser.add_argument("--with-unlocode", action="store_true",
-                        help="Charge en plus le mirror UN/LOCODE github (long tail mondiale)")
-    parser.add_argument("--datagouv-url", default=DATAGOUV_DEFAULT_URL,
-                        help="URL directe d'une ressource data.gouv (CSV)")
-    parser.add_argument("--datagouv-slug", default=None,
-                        help="Slug data.gouv.fr (ex. seaports-locations-data) — "
-                             "résolu automatiquement vers la 1re ressource CSV")
-    parser.add_argument("--datagouv-country", default=None,
-                        help="Filtre les rows data.gouv par code pays ISO-2 "
-                             "(ex. FR). Par défaut: pas de filtre.")
+    parser.add_argument(
+        "--skip-embedded", action="store_true", help="Ne charge pas le catalogue embarqué"
+    )
+    parser.add_argument(
+        "--skip-datagouv", action="store_true", help="Ne charge pas les ports data.gouv.fr"
+    )
+    parser.add_argument(
+        "--with-unlocode",
+        action="store_true",
+        help="Charge en plus le mirror UN/LOCODE github (long tail mondiale)",
+    )
+    parser.add_argument(
+        "--datagouv-url",
+        default=DATAGOUV_DEFAULT_URL,
+        help="URL directe d'une ressource data.gouv (CSV)",
+    )
+    parser.add_argument(
+        "--datagouv-slug",
+        default=None,
+        help="Slug data.gouv.fr (ex. seaports-locations-data) — "
+        "résolu automatiquement vers la 1re ressource CSV",
+    )
+    parser.add_argument(
+        "--datagouv-country",
+        default=None,
+        help="Filtre les rows data.gouv par code pays ISO-2 "
+        "(ex. FR). Par défaut: pas de filtre.",
+    )
     parser.add_argument("--unlocode-url", default=UNLOCODE_DEFAULT_URL)
-    parser.add_argument("--from-file", default=None,
-                        help="Charge un CSV local (utile sans accès réseau)")
+    parser.add_argument(
+        "--from-file", default=None, help="Charge un CSV local (utile sans accès réseau)"
+    )
     args = parser.parse_args()
 
-    asyncio.run(load(
-        skip_embedded=args.skip_embedded,
-        skip_datagouv=args.skip_datagouv,
-        with_unlocode=args.with_unlocode,
-        datagouv_url=args.datagouv_url,
-        datagouv_slug=args.datagouv_slug,
-        datagouv_country_filter=args.datagouv_country,
-        unlocode_url=args.unlocode_url,
-        from_file=args.from_file,
-    ))
+    asyncio.run(
+        load(
+            skip_embedded=args.skip_embedded,
+            skip_datagouv=args.skip_datagouv,
+            with_unlocode=args.with_unlocode,
+            datagouv_url=args.datagouv_url,
+            datagouv_slug=args.datagouv_slug,
+            datagouv_country_filter=args.datagouv_country,
+            unlocode_url=args.unlocode_url,
+            from_file=args.from_file,
+        )
+    )
     return 0
 
 

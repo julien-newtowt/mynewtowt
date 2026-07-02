@@ -6,8 +6,8 @@ Algorithme glouton :
       jusqu'à atteindre la capacité de la zone, puis on passe à la suivante.
 
 La capacité par zone dépend du format de palette (PALETTE_COEFFICIENTS dans
-app.models.commercial). À défaut on prend une capacité indicative de ~50
-palettes par zone (3 ponts × 6 blocs × ~50 = ~900 palettes pour un 850).
+app.models.commercial). À défaut on prend une capacité indicative de ~54
+palettes par zone (18 zones × ~54 ≈ 978 palettes EPAL, capacité de cale).
 
 Capacité réelle (STO-07) — modèle de coefficients : la capacité d'une zone est
 un nombre d'emplacements plancher EPAL-équivalents (``StowageZoneSpec``), le

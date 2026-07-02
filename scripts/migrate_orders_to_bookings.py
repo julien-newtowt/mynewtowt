@@ -32,6 +32,7 @@ Note : les commandes ne portent pas de poids → ``total_weight_kg = 0``.
 Tout est exécuté dans UNE transaction (le script gère son commit, comme
 purge_legs) : rollback automatique en cas d'erreur.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -73,28 +74,36 @@ async def run(*, execute: bool) -> int:
     async with SessionLocal() as db:
         # Commandes reprenables : pas déjà reprises, rattachées à un leg, non annulées.
         orders = (
-            await db.execute(
-                select(Order)
-                .where(
-                    Order.booking_id.is_(None),
-                    Order.leg_id.is_not(None),
-                    Order.status != "cancelled",
+            (
+                await db.execute(
+                    select(Order)
+                    .where(
+                        Order.booking_id.is_(None),
+                        Order.leg_id.is_not(None),
+                        Order.status != "cancelled",
+                    )
+                    .order_by(Order.id)
                 )
-                .order_by(Order.id)
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         migrated: list[tuple[str, str, int, str]] = []  # (order_ref, booking_status, palettes, leg)
         blocked: list[tuple[str, int]] = []  # (order_ref, client_id) — pas de compte client
 
         for order in orders:
             account = (
-                await db.execute(
-                    select(ClientAccount).where(
-                        ClientAccount.commercial_client_id == order.client_id
+                (
+                    await db.execute(
+                        select(ClientAccount).where(
+                            ClientAccount.commercial_client_id == order.client_id
+                        )
                     )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
 
             if account is None:
                 blocked.append((order.reference, order.client_id))
