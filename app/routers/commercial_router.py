@@ -24,7 +24,10 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.client_account import ClientAccount
 from app.models.commercial import (
+    CAPACITY_PRIORITY_LABELS,
     CLIENT_TYPES,
+    CO_BRANDING_STATUS_LABELS,
+    CO_BRANDING_STATUSES,
     RATE_OPTION_UNIT_LABELS,
     RATE_OPTION_UNITS,
     Client,
@@ -389,6 +392,9 @@ async def client_detail(
             "grids": grids,
             "linked_accounts": linked_accounts,
             "unlinked_accounts": unlinked_accounts,
+            "co_branding_statuses": CO_BRANDING_STATUSES,
+            "co_branding_status_labels": CO_BRANDING_STATUS_LABELS,
+            "capacity_priority_labels": CAPACITY_PRIORITY_LABELS,
         },
     )
 
@@ -479,6 +485,59 @@ async def client_toggle_active(
         entity_id=client.id,
         entity_label=client.name,
         detail="réactivé" if client.is_active else "désactivé",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/clients/{client.id}")
+
+
+@router.post("/clients/{client_id}/anchor")
+async def client_anchor_update(
+    client_id: int,
+    request: Request,
+    is_anchor: bool = Form(False),
+    annual_volume_commitment: str | None = Form(None),
+    capacity_priority: str | None = Form(None),
+    co_branding_status: str = Form("none"),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Configure le statut « compte-ancre » d'un client (P11).
+
+    Engagement de volume annuel (palettes/an), rang de priorité capacité et
+    statut de co-branding. Surface d'écriture du back-office commercial ;
+    l'état est consulté en lecture dans le back-office booking.
+    """
+    client = await db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404)
+    if co_branding_status not in CO_BRANDING_STATUSES:
+        raise HTTPException(status_code=400, detail="statut de co-branding invalide")
+    priority = _opt_int(capacity_priority) or 0
+    if priority < 0:
+        raise HTTPException(status_code=400, detail="rang de priorité capacité invalide (>= 0)")
+    volume = _opt_int(annual_volume_commitment)
+    if volume is not None and volume < 0:
+        raise HTTPException(status_code=400, detail="engagement de volume invalide (>= 0)")
+    client.is_anchor = bool(is_anchor)
+    client.annual_volume_commitment = volume
+    client.capacity_priority = priority
+    client.co_branding_status = co_branding_status
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="client",
+        entity_id=client.id,
+        entity_label=client.name,
+        detail=(
+            f"compte-ancre={'oui' if client.is_anchor else 'non'} · "
+            f"volume={volume if volume is not None else '—'} · "
+            f"priorité={priority} · co-branding={co_branding_status}"
+        ),
         ip_address=_client_ip(request),
     )
     return _hx_or_redirect(request, f"/commercial/clients/{client.id}")

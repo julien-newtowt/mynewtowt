@@ -22,11 +22,17 @@ class BlogPost(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     slug: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
     category: Mapped[str] = mapped_column(String(20), nullable=False, default="carnet")
+    # Rubrique éditoriale (P8) : arrivees / chantier / equipage / clients.
+    # Transversale à ``category`` (carnet = construction, actualite = news) —
+    # sert au filtre par thème et au badge. Nullable (billets non catégorisés).
+    topic: Mapped[str | None] = mapped_column(String(20))
     lang: Mapped[str] = mapped_column(String(12), nullable=False, default="fr")
 
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     lead: Mapped[str | None] = mapped_column(String(500))
     body: Mapped[str] = mapped_column(Text, nullable=False)  # HTML de confiance (seed/admin)
+    # Photo de couverture (chemin static ou URL) — gabarit d'article illustré.
+    cover_image: Mapped[str | None] = mapped_column(String(300))
     author: Mapped[str | None] = mapped_column(String(120))
 
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

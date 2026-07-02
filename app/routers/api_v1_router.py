@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import __version__
+from app.auth import get_optional_staff
 from app.config import settings
 from app.database import get_db
 from app.models.leg import Leg
@@ -47,12 +48,28 @@ async def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
         )
 
 
+async def require_api_key_or_staff(
+    x_api_key: str | None = Header(default=None),
+    staff=Depends(get_optional_staff),
+) -> None:
+    """Ports en lecture : consommés par l'UI planning **interne** (JS) ET par
+    les intégrations B2B. Une session staff authentifiée (cookie) suffit ;
+    sinon on retombe sur la clé API B2B (SEC-06). On ne réexpose donc pas
+    publiquement ces endpoints, mais le planning interne charge la liste des
+    ports sans clé (régression SEC-06 : le JS staff n'envoyait aucune clé →
+    503, cascade Zone/Pays/Port vide).
+    """
+    if staff is not None:
+        return
+    await require_api_key(x_api_key=x_api_key)
+
+
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__, "env": settings.app_env}
 
 
-@router.get("/ports/nearby", dependencies=[Depends(require_api_key)])
+@router.get("/ports/nearby", dependencies=[Depends(require_api_key_or_staff)])
 async def ports_nearby(
     lat: float,
     lon: float,
@@ -80,7 +97,7 @@ async def ports_nearby(
     ]
 
 
-@router.get("/ports/search", dependencies=[Depends(require_api_key)])
+@router.get("/ports/search", dependencies=[Depends(require_api_key_or_staff)])
 async def ports_search(
     q: str | None = None,
     country: str | None = None,
@@ -113,7 +130,7 @@ async def ports_search(
     ]
 
 
-@router.get("/ports/bbox", dependencies=[Depends(require_api_key)])
+@router.get("/ports/bbox", dependencies=[Depends(require_api_key_or_staff)])
 async def ports_bbox(
     min_lat: float,
     min_lon: float,

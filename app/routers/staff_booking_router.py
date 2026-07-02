@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.booking import Booking
 from app.models.client_account import ClientAccount
+from app.models.commercial import Client
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.vessel import Vessel
@@ -290,6 +291,14 @@ async def detail(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     client = await db.get(ClientAccount, booking.client_account_id)
+    # Compte-ancre (P11) : si le compte plateforme est relié à un client
+    # commercial marqué « compte-ancre », on remonte sa priorité d'allocation
+    # de cale pour l'opérateur (lecture seule ici — édition côté commercial).
+    commercial_client = (
+        await db.get(Client, client.commercial_client_id)
+        if client is not None and client.commercial_client_id is not None
+        else None
+    )
     leg = await db.get(Leg, booking.leg_id) if booking.leg_id else None
     messages = await messaging.list_for_booking(db, booking.id)
     await messaging.mark_thread_read(db, booking.id, reader="staff")
@@ -299,6 +308,7 @@ async def detail(
             "request": request,
             "booking": booking,
             "client": client,
+            "commercial_client": commercial_client,
             "leg": leg,
             "messages": messages,
         },

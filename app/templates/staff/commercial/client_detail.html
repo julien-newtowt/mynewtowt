@@ -10,6 +10,7 @@
   </div>
   <div class="flex gap-2 items-center">
     <span class="badge badge-{{ 'active' if client.client_type == 'freight_forwarder' else 'draft' }}">{{ client.client_type }}</span>
+    {% if client.is_anchor %}<span class="pill pill-ok" title="Compte-ancre — partenaire stratégique"><i data-lucide="anchor"></i> Compte-ancre</span>{% endif %}
     {% if client.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Inactif</span>{% endif %}
     <a href="/commercial/clients/{{ client.id }}/edit" class="btn btn-secondary btn-sm"><i data-lucide="pencil"></i> Éditer</a>
     <form method="post" action="/commercial/clients/{{ client.id }}/toggle-active" style="display:inline;">
@@ -59,6 +60,53 @@
     </table>
   </article>
 </div>
+
+<article class="card mt-4">
+  <h2><i data-lucide="anchor"></i> Compte-ancre</h2>
+  <p class="text-muted text-sm">Partenaire stratégique qui sécurise le remplissage : engagement de volume annuel, priorité d'allocation de cale et co-branding. Ces attributs sont consultés dans le back-office booking (badge de priorité sur la réservation).</p>
+  <table class="data-table mb-3">
+    <tr><td>Statut</td><td>{% if client.is_anchor %}<span class="pill pill-ok">Compte-ancre</span>{% else %}<span class="pill pill-neutral">Client standard</span>{% endif %}</td></tr>
+    <tr><td>Engagement volume annuel</td><td class="mono">{{ client.annual_volume_commitment if client.annual_volume_commitment is not none else '—' }}{% if client.annual_volume_commitment is not none %} palettes/an{% endif %}</td></tr>
+    <tr><td>Priorité capacité</td><td>{{ client.capacity_priority_display }} <span class="text-muted mono">(rang {{ client.capacity_priority }})</span></td></tr>
+    <tr><td>Co-branding</td><td>{{ client.co_branding_label }}</td></tr>
+  </table>
+
+  <h3>Configurer</h3>
+  <form method="post" action="/commercial/clients/{{ client.id }}/anchor">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="field">
+      <label style="margin-bottom:0;">
+        <input type="checkbox" name="is_anchor" {{ 'checked' if client.is_anchor else '' }} />
+        Marquer comme compte-ancre (partenaire stratégique)
+      </label>
+    </div>
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="annual_volume_commitment">Engagement volume annuel (palettes/an)</label>
+        <input id="annual_volume_commitment" name="annual_volume_commitment" type="number" min="0" step="1"
+               class="mono" value="{{ client.annual_volume_commitment if client.annual_volume_commitment is not none else '' }}"
+               placeholder="ex. 2400" />
+      </div>
+      <div class="field">
+        <label for="capacity_priority">Priorité capacité</label>
+        <select id="capacity_priority" name="capacity_priority">
+          {% for rank, label in capacity_priority_labels.items() %}
+          <option value="{{ rank }}" {{ 'selected' if client.capacity_priority == rank else '' }}>{{ label }} (rang {{ rank }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="co_branding_status">Co-branding</label>
+        <select id="co_branding_status" name="co_branding_status">
+          {% for st in co_branding_statuses %}
+          <option value="{{ st }}" {{ 'selected' if client.co_branding_status == st else '' }}>{{ co_branding_status_labels.get(st, st) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Enregistrer le compte-ancre</button>
+  </form>
+</article>
 
 <article class="card mt-4">
   <h2>Comptes plateforme reliés</h2>
