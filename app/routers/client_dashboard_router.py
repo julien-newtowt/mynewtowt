@@ -1074,3 +1074,153 @@ async def booking_kit_pdf(
         media_type=doc.mime,
         headers={"Content-Disposition": f'inline; filename="{doc.filename}"'},
     )
+
+
+# ─────────── P12 — volet social du kit (visuels prêts à poster) ────────────
+# Trois visuels SVG par expédition, co-brandés NEWTOWT × marque du client,
+# portant le CO₂ évité en **kg absolus**, « certifié Anemos » et le QR de
+# voyage/vérification. ECGT : jamais de %, jamais de chiffre inventé (phrase
+# qualitative sans certificat). Le récit d'origine suit la verticale de
+# l'origine (café OU cacao) — cf. social_kit.resolve_origin.
+
+
+async def _social_render_kwargs(request: Request, booking, client, db: AsyncSession) -> dict:
+    """Assemble les données communes aux visuels social (récit + CO₂ + QR).
+
+    Le CO₂ provient du certificat Anemos (immuable) ; le QR pointe vers la page
+    voyage publique quand elle est publiée (l'histoire complète), sinon vers la
+    vérification du certificat — le CO₂ reste vérifiable dans les deux cas.
+    """
+    from app.services import social_kit
+
+    cert = (
+        await db.execute(
+            select(AnemosCertificate).where(AnemosCertificate.booking_id == booking.id)
+        )
+    ).scalar_one_or_none()
+    lang = getattr(request.state, "lang", "fr")
+
+    co2_kg = int(cert.co2_avoided_kg) if cert and cert.co2_avoided_kg else None
+    verify_url = f"{settings.site_url.rstrip('/')}/verify/{cert.reference}" if cert else None
+    voyage_url = (
+        f"{settings.site_url.rstrip('/')}/voyage/{booking.reference}"
+        if booking.voyage_public
+        else None
+    )
+    qr_target = voyage_url or verify_url
+    qr = mfa.qr_data_uri(qr_target) if qr_target else None
+
+    module = social_kit.resolve_origin(booking.coffee_origin)
+    origin = booking.coffee_origin if module else None
+    origin_label = module.origin_label(origin, lang) if module else ""
+    story_short = module.render_story(origin, lang, "short", co2_kg=co2_kg) if module else None
+    return {
+        "lang": lang,
+        "origin": origin,
+        "origin_label": origin_label,
+        "story_short": story_short,
+        "co2_kg": co2_kg,
+        "cert_ref": cert.reference if cert else None,
+        "qr_data_uri": qr,
+        "qr_is_voyage": bool(voyage_url),
+        "verify_url": qr_target,
+        "client_brand_name": client.brand_name,
+        "client_logo_data": _brand_logo_data_uri(client),
+    }
+
+
+@router.get("/me/bookings/{ref}/social/{fmt}.svg")
+async def booking_social_svg(
+    request: Request,
+    ref: str,
+    fmt: str,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Un visuel social (SVG autonome) pour une expédition et un format donné."""
+    from app.services import analytics, social_kit
+
+    if fmt not in social_kit.FORMATS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown format")
+    booking = await find_by_reference(db, ref)
+    if not booking or booking.client_account_id != client.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    kwargs = await _social_render_kwargs(request, booking, client, db)
+    svg = social_kit.render_svg(fmt, **kwargs)
+    await analytics.record(
+        db, "kit_generated", reference=booking.reference, channel="client", detail=f"social:{fmt}"
+    )
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={
+            "Content-Disposition": (
+                f'inline; filename="NEWTOWT_social_{booking.reference}_{fmt}.svg"'
+            ),
+            "Cache-Control": "private, max-age=300",
+        },
+    )
+
+
+def _social_readme(reference: str, lang: str) -> str:
+    """Notice du pack ZIP (garde-fous ECGT rappelés au client)."""
+    en = lang == "en"
+    if en:
+        return (
+            f"NEWTOWT — ready-to-post social visuals · shipment {reference}\n"
+            "=================================================\n\n"
+            "Three self-contained SVG visuals, co-branded NEWTOWT × your brand:\n"
+            "- square  1080x1080 (LinkedIn / Instagram)\n"
+            "- story   1080x1350 (portrait / stories)\n"
+            "- landscape 1200x628 (banner / link preview)\n\n"
+            "Each visual carries the CO2 avoided in ABSOLUTE KILOGRAMS (never a\n"
+            "percentage, never 'carbon neutral'), names the certificate ('certified\n"
+            "Anemos') and keeps the figure verifiable via the QR code. Please do not\n"
+            "alter the CO2 figure or remove the QR / Anemos mention.\n"
+        )
+    return (
+        f"NEWTOWT — visuels réseaux prêts à poster · expédition {reference}\n"
+        "=================================================\n\n"
+        "Trois visuels SVG autonomes, co-brandés NEWTOWT × votre marque :\n"
+        "- carré     1080x1080 (LinkedIn / Instagram)\n"
+        "- portrait  1080x1350 (story)\n"
+        "- paysage   1200x628 (bannière / aperçu de lien)\n\n"
+        "Chaque visuel porte le CO2 évité en KILOGRAMMES ABSOLUS (jamais un\n"
+        "pourcentage, jamais « neutre en carbone »), nomme le certificat\n"
+        "(« certifié Anemos ») et garde le chiffre vérifiable via le QR. Merci de\n"
+        "ne pas altérer le chiffre de CO2 ni retirer le QR / la mention Anemos.\n"
+    )
+
+
+@router.get("/me/bookings/{ref}/social.zip")
+async def booking_social_zip(
+    request: Request,
+    ref: str,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Pack ZIP des 3 visuels social (SVG) pour une expédition."""
+    import io
+    import zipfile
+
+    from app.services import analytics, social_kit
+
+    booking = await find_by_reference(db, ref)
+    if not booking or booking.client_account_id != client.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    kwargs = await _social_render_kwargs(request, booking, client, db)
+    folder = f"NEWTOWT_social_{booking.reference}"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(f"{folder}/LISEZMOI.txt", _social_readme(booking.reference, kwargs["lang"]))
+        for fmt in social_kit.FORMATS:
+            svg = social_kit.render_svg(fmt, **kwargs)
+            zf.writestr(f"{folder}/{folder}_{fmt}.svg", svg)
+    await analytics.record(
+        db, "kit_download", reference=booking.reference, channel="client", detail="social:zip"
+    )
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{folder}.zip"'},
+    )

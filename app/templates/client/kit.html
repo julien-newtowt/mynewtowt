@@ -111,6 +111,27 @@
 </section>
 {% endif %}
 
+{# ===== Visuels sociaux prêts à poster (P12) ===== #}
+<section class="card">
+  <h2 style="margin-top:0;">{{ t('kit_social_title', lang) }}</h2>
+  <p class="text-muted">{{ t('kit_social_desc', lang) }}</p>
+  <div style="display:flex;gap:var(--space-4);flex-wrap:wrap;align-items:flex-start;">
+    <img src="/me/bookings/{{ booking.reference }}/social/square.svg"
+         alt="{{ t('kit_social_square', lang) }}" width="220" height="220" loading="lazy"
+         style="border-radius:12px;border:1px solid var(--bg-3);max-width:220px;height:auto;" />
+    <div style="display:flex;flex-direction:column;gap:var(--space-2);min-width:240px;">
+      <a href="/me/bookings/{{ booking.reference }}/social/square.svg" target="_blank"
+         class="btn btn-secondary btn-sm">{{ t('kit_social_square', lang) }}</a>
+      <a href="/me/bookings/{{ booking.reference }}/social/story.svg" target="_blank"
+         class="btn btn-secondary btn-sm">{{ t('kit_social_story', lang) }}</a>
+      <a href="/me/bookings/{{ booking.reference }}/social/landscape.svg" target="_blank"
+         class="btn btn-secondary btn-sm">{{ t('kit_social_landscape', lang) }}</a>
+      <a href="/me/bookings/{{ booking.reference }}/social.zip"
+         class="btn btn-primary btn-sm">⬇ {{ t('kit_social_zip', lang) }}</a>
+    </div>
+  </div>
+</section>
+
 {# ===== Terroir (self-service) ===== #}
 <section class="card">
   <h2 style="margin-top:0;">{% if lang == 'en' %}Origin &amp; terroir{% else %}Origine &amp; terroir{% endif %}</h2>
