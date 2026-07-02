@@ -571,6 +571,28 @@ async def analytics_operations(
     )
 
 
+@router.get("/dashboard/analytics/media", response_class=HTMLResponse)
+async def analytics_media_calendar(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("analytics", "C")),
+) -> HTMLResponse:
+    """Rétroplanning médias 2026–2027 (P12) — moments média dérivés du planning.
+
+    Livraisons de navires (``Vessel.expected_delivery``) + arrivées café/cacao
+    (legs portant une origine). Dérivé des données ERP, sans modèle dédié.
+    """
+    from app.i18n import get_lang_from_request
+    from app.services import media_calendar
+
+    lang = get_lang_from_request(request, user=user)
+    calendar = await media_calendar.collect(db, lang=lang)
+    return templates.TemplateResponse(
+        "staff/analytics/media_calendar.html",
+        {"request": request, "user": user, "calendar": calendar},
+    )
+
+
 # ────────────────────────────────────────────────────────────────────
 #                                ADMIN
 # ────────────────────────────────────────────────────────────────────

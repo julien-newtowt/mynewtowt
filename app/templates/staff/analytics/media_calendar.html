@@ -1,0 +1,54 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('media_cal_title', lang) }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">{{ t('media_cal_kicker', lang) }} · <a href="/dashboard/analytics">Analytics</a></span>
+  <h1 class="display">{{ t('media_cal_title', lang) }}</h1>
+  <p class="text-muted">{{ t('media_cal_desc', lang) }}</p>
+</header>
+
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">{{ t('media_cal_deliveries', lang) }}</div>
+    <div class="value text-warning">{{ calendar.deliveries | length }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('media_cal_arrivals', lang) }}</div>
+    <div class="value text-success">{{ calendar.arrivals | length }}</div>
+  </div>
+</section>
+
+{% if calendar.has_content %}
+<article class="card mt-4">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width:14rem;">{{ t('media_cal_col_date', lang) }}</th>
+        <th>{{ t('media_cal_col_moment', lang) }}</th>
+        <th>{{ t('media_cal_col_detail', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in calendar.moments %}
+      <tr>
+        <td class="mono">{{ m.date_label }}</td>
+        <td>
+          {% if m.kind == 'vessel_delivery' %}
+          <span class="pill pill-warn">{{ t('media_cal_deliveries', lang) }}</span>
+          {% else %}
+          <span class="pill pill-ok">{{ t('media_cal_arrivals', lang) }}</span>
+          {% endif %}
+          <strong>{{ m.title }}</strong>
+        </td>
+        <td class="text-muted">{{ m.detail }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% else %}
+<div class="alert mt-4">{{ t('media_cal_empty', lang) }}</div>
+{% endif %}
+
+{% endblock %}
