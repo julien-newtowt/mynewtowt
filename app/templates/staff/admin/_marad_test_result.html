@@ -1,0 +1,25 @@
+{# ADM-07 — résultat HTMX du test de connexion Marad (crew, lecture seule).
+   `diag` = sortie de marad.diagnose() (jeton masqué). #}
+{% set c = diag.classification %}
+{% if c == "ok" %}
+<span class="pill pill-ok"><i data-lucide="check-circle"></i>
+  Connexion Marad établie{% if diag.vessels_count is not none %} — {{ diag.vessels_count }} navire(s) visibles{% endif %}</span>
+{% elif c == "not_configured" %}
+<span class="pill pill-warn"><i data-lucide="alert-triangle"></i>
+  Jeton non configuré — définir <code>MARAD_API_TOKEN</code></span>
+{% elif c == "rate_limited" %}
+<span class="pill pill-warn"><i data-lucide="timer"></i>
+  Quota Marad atteint (1 req/min) — réessayer dans une minute</span>
+{% elif c == "auth_refused" %}
+<span class="pill pill-error"><i data-lucide="shield-x"></i>
+  Authentification refusée (401/403) — vérifier <code>MARAD_API_TOKEN</code> / <code>MARAD_API_KEY_HEADER</code></span>
+{% elif c == "unreachable" %}
+<span class="pill pill-error"><i data-lucide="wifi-off"></i>
+  Hôte injoignable — vérifier <code>MARAD_BASE_URL</code> / réseau</span>
+{% elif c == "wrong_path" %}
+<span class="pill pill-error"><i data-lucide="map-pin-off"></i>
+  Endpoint inconnu (404) — vérifier <code>MARAD_BASE_URL</code></span>
+{% else %}
+<span class="pill pill-error"><i data-lucide="x-circle"></i>
+  Échec de connexion Marad{% if c %} ({{ c }}){% endif %}</span>
+{% endif %}

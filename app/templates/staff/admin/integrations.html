@@ -52,4 +52,50 @@
     <span id="pd-test-result"></span>
   </div>
 </article>
+
+<article class="card mt-4">
+  <div class="flex justify-between items-center mb-2">
+    <h2 style="margin:0;"><i data-lucide="anchor"></i> Marad (crew — lecture seule)</h2>
+    {% if marad_enabled %}
+    <span class="pill pill-ok">Configuré</span>
+    {% else %}
+    <span class="pill pill-neutral">Non configuré</span>
+    {% endif %}
+  </div>
+
+  <p class="text-muted">
+    Import en lecture seule des données équipage (Crewing, plannings) depuis
+    Marad/MaraSoft. Le jeton d'API est piloté par l'environnement
+    (<code>MARAD_API_TOKEN</code>) — source de vérité ; cet écran expose l'état
+    de configuration et permet de diagnostiquer la connexion (auth, quota, hôte)
+    sans manipuler le secret.
+  </p>
+
+  <table class="data-table">
+    <tbody>
+      <tr><th scope="row">Endpoint</th><td><code>{{ marad_base_url }}</code></td></tr>
+      <tr><th scope="row">Header d'auth</th><td><code>{{ marad_header }}</code></td></tr>
+      <tr><th scope="row">Jeton</th>
+        <td>{% if marad_enabled %}présent (masqué){% else %}absent — défini via <code>MARAD_API_TOKEN</code>{% endif %}</td></tr>
+    </tbody>
+  </table>
+
+  {% if not marad_enabled %}
+  <div class="alert alert-warn mt-2">
+    <i data-lucide="info"></i>
+    Renseignez <code>MARAD_API_TOKEN</code> dans l'environnement puis redémarrez
+    l'application pour activer l'intégration.
+  </div>
+  {% endif %}
+
+  <div class="flex items-center gap-2 mt-3">
+    <button class="btn btn-secondary" type="button"
+            hx-post="/admin/integrations/marad/test"
+            hx-target="#marad-test-result" hx-swap="innerHTML"
+            {% if not marad_enabled %}disabled{% endif %}>
+      <i data-lucide="plug-zap"></i> Tester la connexion
+    </button>
+    <span id="marad-test-result"></span>
+  </div>
+</article>
 {% endblock %}

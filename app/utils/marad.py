@@ -7,11 +7,12 @@ jamais dans Marad.
 
 Configuration (.env, cf. app/config) :
 - ``MARAD_API_TOKEN``      : clé d'API (envoyée en header). Sans elle → no-op.
-- ``MARAD_BASE_URL``       : défaut ``https://external02.marad.ms``.
-- ``MARAD_API_KEY_HEADER`` : nom du header d'auth. Si laissé au défaut
-  (``X-Api-Key``), le client **essaie automatiquement** ``ApiKey`` puis
-  ``ApiToken`` puis ``X-Api-Key`` et mémorise celui qui authentifie. Fixez cette
-  variable pour forcer un header précis.
+- ``MARAD_BASE_URL``       : défaut ``https://external.marad.ms``.
+- ``MARAD_API_KEY_HEADER`` : nom du header d'auth (défaut ``X-Api-Key``). Ce nom
+  est **épinglé et essayé en premier** (un seul appel, pas de cascade). Laissé
+  au défaut, le client essaie les headers usuels (``X-Api-Key``, ``ApiKey``,
+  ``ApiToken``, ``Authorization``) puis, en repli, la query string, et mémorise
+  le schéma qui authentifie. Fixez cette variable pour forcer un header précis.
 
 ⚠️ Rate limits Marad (confirmés) : ``GET /api/Crewing`` et
 ``GET /api/CrewingSchedule`` = **1 req/min** ; autres = 15 req/min. À appeler
@@ -93,26 +94,54 @@ def _auth_strategies() -> list[_Strategy]:
     token = (settings.marad_api_token or "").strip()
     explicit = (settings.marad_api_key_header or "").strip()
     candidates: list[_Strategy] = []
-    if explicit and explicit != _DEFAULT_HEADER:
+    # Header explicitement configuré → prioritaire, **même s'il vaut le défaut**
+    # (X-Api-Key). Auparavant le défaut n'était jamais épinglé → si le contrat
+    # réel est « X-Api-Key: <token> » en header, l'auth ne pouvait pas aboutir
+    # et l'opérateur ne pouvait pas la forcer.
+    if explicit:
         candidates.append((f"header:{explicit}", {explicit: token}, {}))
-        candidates.append((f"query:{explicit}", {}, {explicit: token}))
     candidates += [
-        # Méthode CONFIRMÉE Marasoft : query param « apikey » (minuscules).
-        # Les query params sont sensibles à la casse → ne pas confondre avec
-        # « apiKey ». Cf. intégration Power BI cliente (Web.Contents ?apikey=…).
-        ("query:apikey", {}, {"apikey": token}),
-        ("query:apiKey", {}, {"apiKey": token}),  # repli (casse alternative)
-        ("header:apikey", {"apikey": token}, {}),
+        # Header d'ABORD : Marasoft a retiré l'auth par query string en v5.5.24
+        # (« API Key must be in request headers »). On essaie donc les headers
+        # avant les query params, pour que la stratégie gagnante soit l'essai #1
+        # (évite la cascade de 429 sur les endpoints à 1 req/min).
+        ("header:X-Api-Key", {"X-Api-Key": token}, {}),
         ("header:ApiKey", {"ApiKey": token}, {}),
         ("header:X-API-KEY", {"X-API-KEY": token}, {}),
         ("header:ApiToken", {"ApiToken": token}, {}),
         ("Authorization:Bearer", {"Authorization": f"Bearer {token}"}, {}),
         ("Authorization:raw", {"Authorization": token}, {}),
+        # Query string en dernier (rétro-compat < v5.5.24 ; sensible à la casse).
+        ("query:apikey", {}, {"apikey": token}),
+        ("query:apiKey", {}, {"apiKey": token}),
     ]
     if _working_strategy:  # schéma mémorisé en tête
         candidates.sort(key=lambda c: c[0] != _working_strategy)
     seen: set[str] = set()
     return [c for c in candidates if not (c[0] in seen or seen.add(c[0]))]
+
+
+def _strategies_for_request() -> list[_Strategy]:
+    """Stratégies à essayer pour un appel réel.
+
+    Si un schéma est **épinglé** (``MARAD_API_KEY_HEADER`` configuré) ou déjà
+    **mémorisé** (``_working_strategy``), on n'essaie que **celui-là** : un seul
+    appel HTTP, donc pas de cascade de 401→429 sur les endpoints à 1 req/min
+    (c'était la cause n°1 des « auth refusée » / « synchro sans données »
+    intermittentes). Sinon, on renvoie la liste complète à sonder (header-first).
+    """
+    strategies = _auth_strategies()
+    if _working_strategy:
+        pinned = [s for s in strategies if s[0] == _working_strategy]
+        if pinned:
+            return pinned
+    explicit = (settings.marad_api_key_header or "").strip()
+    if explicit:
+        label = f"header:{explicit}"
+        pinned = [s for s in strategies if s[0] == label]
+        if pinned:
+            return pinned
+    return strategies
 
 
 async def prime_auth() -> str | None:
@@ -145,7 +174,7 @@ async def _request(
     last_auth_status: int | None = None
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            for label, headers, auth_params in _auth_strategies():
+            for label, headers, auth_params in _strategies_for_request():
                 merged_params = {**(params or {}), **auth_params}
                 r = await client.request(
                     method, url, params=merged_params or None, json=json, headers=headers
@@ -258,6 +287,7 @@ async def diagnose() -> dict:
     vessels_count: int | None = None
     saw_401_403 = False
     saw_404 = False
+    saw_429 = False
     auth_error_body: str | None = None  # corps du 1er 401/403 (message serveur)
     www_authenticate: str | None = None
     try:
@@ -279,6 +309,12 @@ async def diagnose() -> dict:
                     if r.status_code == 404:
                         saw_404 = True
                         continue
+                    if r.status_code == 429:
+                        # Endpoint à 1 req/min saturé : inutile de continuer à
+                        # sonder (les essais suivants tomberaient dans la même
+                        # fenêtre) — on classe « rate_limited » et on s'arrête.
+                        saw_429 = True
+                        break
                     if r.status_code < 400:
                         authed = True
                         data = r.json() if r.content else None
@@ -298,6 +334,8 @@ async def diagnose() -> dict:
         classification = "auth_refused"  # hôte répond mais refuse l'auth
     elif saw_404:
         classification = "wrong_path"  # hôte répond mais endpoint inconnu
+    elif saw_429:
+        classification = "rate_limited"  # quota 1 req/min épuisé — réessayer plus tard
     else:
         classification = "http_error"
 

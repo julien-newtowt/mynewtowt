@@ -51,7 +51,7 @@ from app.services import co2 as co2_service
 from app.services import emissions as emissions_service
 from app.services.activity import record as activity_record
 from app.templating import templates
-from app.utils import pipedrive
+from app.utils import marad, pipedrive
 
 router = APIRouter(prefix="/admin", tags=["admin-enriched"])
 
@@ -901,6 +901,9 @@ async def integrations(
             "pd_enabled": pipedrive.enabled(),
             "pd_base_url": pipedrive.PIPEDRIVE_BASE_URL,
             "pd_pipeline": settings.pipedrive_pipeline_name,
+            "marad_enabled": marad.enabled(),
+            "marad_base_url": settings.marad_base_url,
+            "marad_header": settings.marad_api_key_header or "auto (sondage)",
         },
     )
 
@@ -931,6 +934,40 @@ async def integrations_pipedrive_test(
     return templates.TemplateResponse(
         "staff/admin/_integration_test_result.html",
         {"request": request, "ok": ok, "configured": pipedrive.enabled()},
+    )
+
+
+@router.post("/integrations/marad/test", response_class=HTMLResponse)
+async def integrations_marad_test(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+) -> HTMLResponse:
+    """Teste la connexion Marad et renvoie un badge HTMX.
+
+    Utilise ``marad.diagnose()`` : distingue hôte injoignable, auth refusée,
+    chemin inconnu, quota (429) et succès — sans jamais exposer le jeton
+    (``diagnose`` le masque). Journalise le test (classification uniquement).
+    """
+    try:
+        diag = await marad.diagnose()
+    except Exception:  # pragma: no cover - garde-fou, ne casse jamais l'UI
+        diag = {"configured": marad.enabled(), "classification": "http_error"}
+    await activity_record(
+        db,
+        action="test",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="integration",
+        entity_label="marad",
+        detail=diag.get("classification", "?"),
+        ip_address=_client_ip(request),
+    )
+    return templates.TemplateResponse(
+        "staff/admin/_marad_test_result.html",
+        {"request": request, "diag": diag},
     )
 
 

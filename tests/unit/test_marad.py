@@ -465,16 +465,20 @@ class _FakeClient:
         return _FakeResp(403)
 
 
-def test_request_query_apikey_first(monkeypatch) -> None:
-    """Le query param ``apikey`` (minuscules, méthode Marasoft) est essayé en 1er."""
+def test_request_probes_header_first(monkeypatch) -> None:
+    """Sans header épinglé, on sonde les HEADERS d'abord (query string en repli).
+
+    Marasoft a retiré l'auth par query string en v5.5.24 → le header X-Api-Key
+    doit être l'essai #1 (et non plus « query:apikey » comme avant le correctif).
+    """
     monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
-    monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")  # défaut
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", None)  # non épinglé
     monkeypatch.setattr(marad, "_working_strategy", None)
 
     captured: dict = {}
 
     def _factory(*a, **k):
-        c = _FakeClient(accept_header="query:apikey", payload=[{"ok": 1}])
+        c = _FakeClient(accept_header="X-Api-Key", payload=[{"ok": 1}])
         captured["client"] = c
         return c
 
@@ -482,14 +486,14 @@ def test_request_query_apikey_first(monkeypatch) -> None:
 
     out = asyncio.run(marad.list_vessels())
     assert out == [{"ok": 1}]
-    assert captured["client"].tried[0] == "query:apikey"  # essayé en 1er
-    assert marad._working_strategy == "query:apikey"  # mémorisé pour la suite
+    assert captured["client"].tried[0] == "X-Api-Key"  # header, essayé en 1er
+    assert marad._working_strategy == "header:X-Api-Key"
 
 
 def test_request_falls_through_to_header_apitoken(monkeypatch) -> None:
-    """Si query+headers usuels échouent, on tente les autres noms (ApiToken)."""
+    """Si les headers usuels échouent, on tente les autres noms (ApiToken)."""
     monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
-    monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", None)
     monkeypatch.setattr(marad, "_working_strategy", None)
 
     captured: dict = {}
@@ -508,7 +512,7 @@ def test_request_falls_through_to_header_apitoken(monkeypatch) -> None:
 
 def test_request_all_schemes_fail_returns_none(monkeypatch) -> None:
     monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
-    monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", None)
     monkeypatch.setattr(marad, "_working_strategy", None)
     monkeypatch.setattr(
         marad.httpx, "AsyncClient", lambda *a, **k: _FakeClient(accept_header="Nope", payload=None)
@@ -520,7 +524,7 @@ def test_request_all_schemes_fail_returns_none(monkeypatch) -> None:
 def test_request_tries_bearer_scheme(monkeypatch) -> None:
     """Le schéma Authorization: Bearer fait partie des candidats essayés."""
     monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
-    monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", None)
     monkeypatch.setattr(marad, "_working_strategy", None)
 
     captured: dict = {}
@@ -543,5 +547,48 @@ def test_auth_strategies_respects_explicit_pin(monkeypatch) -> None:
     strategies = marad._auth_strategies()
     labels = [label for label, _h, _p in strategies]
     assert labels[0] == "header:MyKey"  # pin .env prioritaire (header)
-    assert "query:MyKey" in labels  # et aussi en query string
     assert "query:apikey" in labels and "header:ApiKey" in labels
+
+
+def test_explicit_pin_is_single_shot_even_at_default(monkeypatch) -> None:
+    """RC-1/RC-2 : un header épinglé (même « X-Api-Key ») est essayé SEUL.
+
+    Un seul appel HTTP → pas de cascade 401→429 sur les endpoints à 1 req/min.
+    Et le défaut peut enfin être forcé (avant, X-Api-Key n'était jamais épinglé).
+    """
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "X-Api-Key")
+    monkeypatch.setattr(marad, "_working_strategy", None)
+
+    captured: dict = {}
+
+    def _factory(*a, **k):
+        # Le faux serveur n'accepte PAS X-Api-Key → l'appel doit échouer sans
+        # essayer d'autres schémas (single-shot).
+        c = _FakeClient(accept_header="ApiToken", payload=[{"ok": 1}])
+        captured["client"] = c
+        return c
+
+    monkeypatch.setattr(marad.httpx, "AsyncClient", _factory)
+    out = asyncio.run(marad.list_vessels())
+    assert out is None  # pinné sur X-Api-Key qui échoue → pas de repli
+    assert captured["client"].tried == ["X-Api-Key"]  # un seul essai, pas de cascade
+
+
+def test_memorized_strategy_is_single_shot(monkeypatch) -> None:
+    """Un schéma déjà mémorisé est réutilisé seul (économie de quota 1 req/min)."""
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", None)
+    monkeypatch.setattr(marad, "_working_strategy", "header:ApiKey")
+
+    captured: dict = {}
+
+    def _factory(*a, **k):
+        c = _FakeClient(accept_header="ApiKey", payload=[{"ok": 1}])
+        captured["client"] = c
+        return c
+
+    monkeypatch.setattr(marad.httpx, "AsyncClient", _factory)
+    out = asyncio.run(marad.list_vessels())
+    assert out == [{"ok": 1}]
+    assert captured["client"].tried == ["ApiKey"]  # un seul essai (mémorisé)
