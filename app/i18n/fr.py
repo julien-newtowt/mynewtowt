@@ -876,4 +876,15 @@ CATALOG: dict[str, str] = {
     "vg_cta_title": "Vous êtes torréfacteur, importateur ou marque ?",
     "vg_cta_text": "Offrez cette histoire à vos propres clients : expédiez à la voile.",
     "vg_cta_button": "Découvrir le transport vélique",
+    # ── Preuve sociale (landing — P5) ──
+    "sp_counters_kicker": "La preuve en chiffres",
+    "sp_counters_title": "Une flotte qui charge, mesure et livre",
+    "sp_counter_pallets": "palettes embarquées",
+    "sp_counter_co2": "de CO₂ évité, attesté par certificat",
+    "sp_counter_crossings": "traversées réalisées",
+    "sp_counters_note": "Chiffres cumulés, calculés en direct depuis nos opérations — pas des estimations marketing.",
+    "sp_press_title": "Ils en parlent",
+    "sp_testimonials_kicker": "Ils naviguent avec nous",
+    "sp_testimonials_title": "Ce que nos clients en disent",
+    "sp_logos_title": "Ils expédient à la voile",
 }

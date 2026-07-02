@@ -876,4 +876,15 @@ CATALOG: dict[str, str] = {
     "vg_cta_title": "Você é torrefador, importador ou marca?",
     "vg_cta_text": "Ofereça esta história aos seus próprios clientes: envie à vela.",
     "vg_cta_button": "Descobrir o transporte à vela",
+    # ── Prova social (landing — P5) ──
+    "sp_counters_kicker": "A prova em números",
+    "sp_counters_title": "Uma frota que carrega, mede e entrega",
+    "sp_counter_pallets": "paletes embarcados",
+    "sp_counter_co2": "de CO₂ evitado, atestado por certificado",
+    "sp_counter_crossings": "travessias realizadas",
+    "sp_counters_note": "Números acumulados, calculados ao vivo a partir das nossas operações — não estimativas de marketing.",
+    "sp_press_title": "Falam de nós",
+    "sp_testimonials_kicker": "Navegam conosco",
+    "sp_testimonials_title": "O que dizem nossos clientes",
+    "sp_logos_title": "Enviam à vela",
 }

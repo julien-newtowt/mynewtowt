@@ -1,0 +1,85 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Dossier de presse — NEWTOWT{% endblock %}
+{% block doc_kind %}Dossier de presse{% endblock %}
+{% block doc_ref %}{{ issued_at|date }}{% endblock %}
+{% block content %}
+
+<h1 class="c-teal" style="font-size:18pt;margin-bottom:1mm;">NEWTOWT — dossier de presse</h1>
+<p class="c-gris" style="margin-top:0;">
+  Édité le {{ issued_at|date }} — cette page fait foi : version à jour et kit
+  complet sur {{ site_url }}/presse
+</p>
+
+<h3 class="c-teal">En une phrase</h3>
+<p>
+  Pour les chargeurs qui veulent décarboner réellement leur transport
+  long-courrier, <strong>NewTowt</strong> est la compagnie maritime à propulsion
+  vélique qui opère déjà une ligne régulière vers le Brésil et l'Amérique
+  latine — une flotte qui navigue, pas un projet — en transportant du fret
+  palettisé, marchandises dangereuses comprises, avec une réduction de CO₂
+  mesurée et documentée par le certificat Anemos d'émissions évitées.
+</p>
+
+{% if counters and counters.has_content %}
+<h3 class="c-teal">Les chiffres (calculés depuis nos systèmes d'exploitation)</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:4mm;">
+  <tbody>
+    {% if counters.pallets %}
+    <tr style="border-bottom:0.5pt solid #EFE6D6;">
+      <td style="padding:2mm 1mm;">Palettes embarquées</td>
+      <td style="padding:2mm 1mm;text-align:right;font-weight:bold;">{{ counters.pallets_str }}</td>
+    </tr>
+    {% endif %}
+    {% if counters.co2_avoided_kg %}
+    <tr style="border-bottom:0.5pt solid #EFE6D6;">
+      <td style="padding:2mm 1mm;">CO₂ évité, attesté par certificat Anemos</td>
+      <td style="padding:2mm 1mm;text-align:right;font-weight:bold;">−{{ counters.co2_str }}</td>
+    </tr>
+    {% endif %}
+    {% if counters.crossings %}
+    <tr>
+      <td style="padding:2mm 1mm;">Traversées réalisées</td>
+      <td style="padding:2mm 1mm;text-align:right;font-weight:bold;">{{ counters.crossings_str }}</td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+<p class="c-gris" style="font-size:8.5pt;">
+  Chiffres cumulés à la date d'édition, extraits en direct de la plateforme
+  d'exploitation (bookings embarqués, certificats émis, traversées avec
+  arrivée constatée).
+</p>
+{% endif %}
+
+<h3 class="c-teal">Faits de référence (vérifiés)</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:4mm;">
+  <tbody>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;"><td style="padding:2mm 1mm;width:34%;"><strong>Dénomination</strong></td><td style="padding:2mm 1mm;">NewTowt (marque : NEWTOWT)</td></tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;"><td style="padding:2mm 1mm;"><strong>Forme &amp; président</strong></td><td style="padding:2mm 1mm;">SAS · Karl Sement, président</td></tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;"><td style="padding:2mm 1mm;"><strong>Création</strong></td><td style="padding:2mm 1mm;">Pionnier du transport de marchandises à la voile depuis 2011</td></tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;"><td style="padding:2mm 1mm;"><strong>Flotte</strong></td><td style="padding:2mm 1mm;">6 sisterships TSC 80 — 2 en opération (Anemos, Artemis), 4 en construction (Atlantis, Astérias, Archimedes, Atlas)</td></tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;"><td style="padding:2mm 1mm;"><strong>Capacité</strong></td><td style="padding:2mm 1mm;">Charge utile &gt; 1 200 t · 1 050 m² · 6 cales</td></tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;"><td style="padding:2mm 1mm;"><strong>Routes</strong></td><td style="padding:2mm 1mm;">Europe ↔ Brésil &amp; Amérique latine</td></tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;"><td style="padding:2mm 1mm;"><strong>Marchandises</strong></td><td style="padding:2mm 1mm;">Café, cacao, fret industriel (dont marchandises dangereuses 2, 3, 4.1, 8, 9)</td></tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;"><td style="padding:2mm 1mm;"><strong>Décarbonation</strong></td><td style="padding:2mm 1mm;">Émissions évitées documentées · certificat Anemos (méthode publiée, émissions navires vérifiées EU MRV)</td></tr>
+    <tr><td style="padding:2mm 1mm;"><strong>Construction</strong></td><td style="padding:2mm 1mm;">Piriou (Vietnam) — chantiers Song Thu &amp; Ba Son</td></tr>
+  </tbody>
+</table>
+
+<h3 class="c-teal">La preuve, en libre accès</h3>
+<ul>
+  <li><strong>Méthode &amp; certificats</strong> : {{ site_url }}/preuves (méthodologie PDF, registre de vérification {{ site_url }}/verify)</li>
+  <li><strong>Position des navires en direct</strong> : {{ site_url }}/fleet</li>
+  <li><strong>Traversées ouvertes à la réservation</strong> : {{ site_url }}/routes</li>
+  <li><strong>Le café à la voile</strong> : {{ site_url }}/solutions/cafe</li>
+</ul>
+
+<h3 class="c-teal">Contact média</h3>
+<p>
+  {{ brand.raison_sociale }}<br />
+  {{ brand.adresse }}<br />
+  {{ brand.email }} · {{ brand.telephone }}<br />
+  Logos &amp; photothèque : {{ site_url }}/presse
+</p>
+
+{% endblock %}

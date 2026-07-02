@@ -263,6 +263,114 @@ async def preuves_sample_annual_report_pdf(
     )
 
 
+# ── Kit presse réel (P5 — fin des placeholders de /presse) ──────────────────
+_PRESS_LOGO_FILES = (
+    "logo_NEWTOWT_web.png",
+    "logo_NEWTOWT_web_dark.png",
+    "logo_NEWTOWT_web_white.png",
+    "logo_NEWTOWT_email.png",
+    "logo_NEWTOWT_email_white.png",
+)
+
+_PRESS_LOGO_README = """NEWTOWT — pack logos presse
+============================
+
+Fichiers :
+- logo_NEWTOWT_web.png         : usage écran, fond clair
+- logo_NEWTOWT_web_dark.png    : usage écran, variante sombre
+- logo_NEWTOWT_web_white.png   : usage écran, fond foncé / photo
+- logo_NEWTOWT_email.png       : usage e-mail / petits formats
+- logo_NEWTOWT_email_white.png : usage e-mail, fond foncé
+
+Règles d'usage : ne pas déformer, recolorer ni détourer le logo ;
+préfixe « NEW » en cuivre, wordmark teal (charte « Nouvelle Étoile »).
+Crédit photo & demandes HD : voir /presse — contact média sur le site.
+"""
+
+
+@router.get("/presse/logos.zip")
+async def presse_logos_zip(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Pack logos officiel (ZIP construit depuis les assets réels du site)."""
+    await _preuves_pdf_rate_limit(request, db)
+    key = ("presse-logos",)
+    blob = _PREUVES_PDF_CACHE.get(key)
+    if blob is None:
+        import io
+        import zipfile
+        from pathlib import Path
+
+        static_img = Path(__file__).resolve().parent.parent / "static" / "img"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("NEWTOWT_logos/LISEZMOI.txt", _PRESS_LOGO_README)
+            for name in _PRESS_LOGO_FILES:
+                path = static_img / name
+                if path.exists():
+                    zf.write(path, arcname=f"NEWTOWT_logos/{name}")
+        blob = buf.getvalue()
+        _PREUVES_PDF_CACHE[key] = blob
+    return Response(
+        content=blob,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="NEWTOWT_logos.zip"',
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
+
+
+@router.get("/presse/dossier.pdf")
+async def presse_dossier_pdf(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Dossier de presse — PDF réel généré depuis les faits vérifiés du site.
+
+    Inclut les compteurs cumulés calculés en base (mêmes chiffres que la
+    landing) : le dossier reste juste sans maintenance manuelle.
+    """
+    await _preuves_pdf_rate_limit(request, db)
+    from app.services import social_proof
+
+    counters = await social_proof.counters(db)
+    key = (
+        "dossier-presse",
+        counters.pallets,
+        counters.co2_avoided_kg,
+        counters.crossings,
+    )
+    pdf = _PREUVES_PDF_CACHE.get(key)
+    if pdf is None:
+        from datetime import UTC, datetime
+
+        from weasyprint import HTML  # import tardif — deps natives lourdes
+
+        from app.config import settings
+        from app.templating import brand_for_lang
+
+        tpl = templates.get_template("pdf/dossier_presse.html")
+        html = tpl.render(
+            counters=counters,
+            site_url=settings.site_url,
+            issued_at=datetime.now(UTC),
+            # Rendu hors-requête : le context processor n'injecte pas ``brand``.
+            brand=brand_for_lang("fr"),
+        )
+        pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+        _PREUVES_PDF_CACHE[key] = pdf
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'inline; filename="NEWTOWT_dossier_de_presse.pdf"',
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
+
+
 # Lookup d'un certificat Anemos par référence — public, sans PII, rate-limité.
 _VERIFY_RATE_SCOPE = "anemos_verify"
 

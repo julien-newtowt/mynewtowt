@@ -876,4 +876,15 @@ CATALOG: dict[str, str] = {
     "vg_cta_title": "Bạn là nhà rang xay, nhà nhập khẩu hay thương hiệu?",
     "vg_cta_text": "Hãy trao câu chuyện này cho chính khách hàng của bạn: vận chuyển bằng buồm.",
     "vg_cta_button": "Khám phá vận tải bằng buồm",
+    # ── Bằng chứng xã hội (trang chủ — P5) ──
+    "sp_counters_kicker": "Bằng chứng qua con số",
+    "sp_counters_title": "Một đội tàu đang xếp hàng, đo lường và giao hàng",
+    "sp_counter_pallets": "pallet đã xếp lên tàu",
+    "sp_counter_co2": "CO₂ tránh được, có chứng nhận",
+    "sp_counter_crossings": "chuyến vượt biển đã hoàn thành",
+    "sp_counters_note": "Số liệu tích lũy, tính trực tiếp từ hoạt động của chúng tôi — không phải ước tính tiếp thị.",
+    "sp_press_title": "Báo chí nói về chúng tôi",
+    "sp_testimonials_kicker": "Họ đồng hành cùng chúng tôi",
+    "sp_testimonials_title": "Khách hàng của chúng tôi nói gì",
+    "sp_logos_title": "Họ gửi hàng bằng thuyền buồm",
 }

@@ -876,4 +876,15 @@ CATALOG: dict[str, str] = {
     "vg_cta_title": "Are you a roaster, importer or brand?",
     "vg_cta_text": "Give this story to your own customers: ship under sail.",
     "vg_cta_button": "Discover sail cargo",
+    # ── Social proof (landing — P5) ──
+    "sp_counters_kicker": "Proof in numbers",
+    "sp_counters_title": "A fleet that loads, measures and delivers",
+    "sp_counter_pallets": "pallets shipped",
+    "sp_counter_co2": "of CO₂ avoided, attested by certificate",
+    "sp_counter_crossings": "crossings completed",
+    "sp_counters_note": "Cumulative figures, computed live from our operations — not marketing estimates.",
+    "sp_press_title": "In the press",
+    "sp_testimonials_kicker": "They sail with us",
+    "sp_testimonials_title": "What our clients say",
+    "sp_logos_title": "They ship under sail",
 }
