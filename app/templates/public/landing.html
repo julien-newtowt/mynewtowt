@@ -57,6 +57,81 @@
   <div class="proofstrip-inner">{{ t('home_proofstrip', lang)|safe }}</div>
 </aside>
 
+{# ─────────────  3bis. PREUVE SOCIALE : compteurs réels + presse  ───────────── #}
+{% if counters and counters.has_content %}
+<section class="section" aria-label="{{ t('sp_counters_title', lang) }}">
+  <div class="section-inner">
+    <span class="section-kicker">{{ t('sp_counters_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('sp_counters_title', lang) }}</h2>
+    <div class="social-counters">
+      {% if counters.pallets %}
+      <div class="social-counter">
+        <span class="social-counter-val">{{ counters.pallets_str }}</span>
+        <span class="social-counter-label">{{ t('sp_counter_pallets', lang) }}</span>
+      </div>
+      {% endif %}
+      {% if counters.co2_avoided_kg %}
+      <div class="social-counter">
+        <span class="social-counter-val">−{{ counters.co2_str }}</span>
+        <span class="social-counter-label">{{ t('sp_counter_co2', lang) }}</span>
+      </div>
+      {% endif %}
+      {% if counters.crossings %}
+      <div class="social-counter">
+        <span class="social-counter-val">{{ counters.crossings_str }}</span>
+        <span class="social-counter-label">{{ t('sp_counter_crossings', lang) }}</span>
+      </div>
+      {% endif %}
+    </div>
+    <p class="social-counters-note">{{ t('sp_counters_note', lang) }}</p>
+  </div>
+</section>
+{% endif %}
+
+{% if press_mentions %}
+<aside class="press-strip" aria-label="{{ t('sp_press_title', lang) }}">
+  <div class="press-strip-inner">
+    <span class="press-strip-label">{{ t('sp_press_title', lang) }}</span>
+    {% for m in press_mentions %}
+    <a class="press-strip-item" href="{{ m.url }}" target="_blank" rel="noopener"
+       title="{{ m.outlet }} — {{ m.title }}">{{ m.outlet }}</a>
+    {% endfor %}
+  </div>
+</aside>
+{% endif %}
+
+{% if testimonials %}
+<section class="section section--sand" aria-label="{{ t('sp_testimonials_title', lang) }}">
+  <div class="section-inner">
+    <span class="section-kicker">{{ t('sp_testimonials_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('sp_testimonials_title', lang) }}</h2>
+    <div class="feature-grid">
+      {% for tm in testimonials %}
+      <blockquote class="feature-card testimonial-card">
+        <p class="testimonial-quote">« {{ tm.quote }} »</p>
+        <footer class="testimonial-author">
+          <strong>{{ tm.author }}</strong>{% if tm.role %} — {{ tm.role }}{% endif %}{% if tm.company %}, {{ tm.company }}{% endif %}
+        </footer>
+      </blockquote>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if client_logos %}
+<section class="section" aria-label="{{ t('sp_logos_title', lang) }}">
+  <div class="section-inner">
+    <span class="section-kicker">{{ t('sp_logos_title', lang) }}</span>
+    <div class="clientlogos">
+      {% for cl in client_logos %}
+      <img class="clientlogos-item" src="{{ asset(cl.file) }}" alt="{{ cl.name }}" loading="lazy" />
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 {# ─────────────────────────────  4. POURQUOI (3 piliers)  ───────────────────────────── #}
 <section class="section">
   <div class="section-inner">

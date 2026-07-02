@@ -8,39 +8,39 @@
 
     <div style="font-size: 14pt; line-height: 1.7; margin-bottom: 20pt;">
         <p>
-            La qualit de conservation de la marchandise est une priorit absolue pour NewTowt. 
-            Les conditions en cale sont surveilles en continu pour garantir l'intgrit 
-            des produits transports, en particulier pour les vins, champagnes et spiritueux.
+            La qualité de conservation de la marchandise est une priorité absolue pour NewTowt. 
+            Les conditions en cale sont surveillées en continu pour garantir l'intégrité 
+            des produits transportés, en particulier pour les vins, champagnes et spiritueux.
         </p>
     </div>
 
     <!-- Statistiques globales -->
-    <h2 class="section-title">Synthse des conditions</h2>
+    <h2 class="section-title">Synthèse des conditions</h2>
     
     <div class="stats-grid">
         <div class="stat-card">
-            <div class="stat-value">{{ temp_avg or "N/A" }} C</div>
-            <div class="stat-label">Temprature moyenne</div>
+            <div class="stat-value">{{ temp_avg or "N/A" }} °C</div>
+            <div class="stat-label">Température moyenne</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ temp_min or "N/A" }} C</div>
-            <div class="stat-label">Temprature min.</div>
+            <div class="stat-value">{{ temp_min or "N/A" }} °C</div>
+            <div class="stat-label">Température min.</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ temp_max or "N/A" }} C</div>
-            <div class="stat-label">Temprature max.</div>
+            <div class="stat-value">{{ temp_max or "N/A" }} °C</div>
+            <div class="stat-label">Température max.</div>
         </div>
         <div class="stat-card">
             <div class="stat-value">{{ humidity_avg or "N/A" }}%</div>
-            <div class="stat-label">Humidit moyenne</div>
+            <div class="stat-label">Humidité moyenne</div>
         </div>
         <div class="stat-card">
             <div class="stat-value">{{ humidity_min or "N/A" }}%</div>
-            <div class="stat-label">Humidit min.</div>
+            <div class="stat-label">Humidité min.</div>
         </div>
         <div class="stat-card">
             <div class="stat-value">{{ humidity_max or "N/A" }}%</div>
-            <div class="stat-label">Humidit max.</div>
+            <div class="stat-label">Humidité max.</div>
         </div>
     </div>
 
@@ -52,8 +52,8 @@
         <thead>
             <tr>
                 <th style="width: 25%;">Zone</th>
-                <th style="width: 20%; text-align: right;">Temp. min (C)</th>
-                <th style="width: 20%; text-align: right;">Temp. max (C)</th>
+                <th style="width: 20%; text-align: right;">Temp. min (°C)</th>
+                <th style="width: 20%; text-align: right;">Temp. max (°C)</th>
                 <th style="width: 20%; text-align: right;">Hum. min (%)</th>
                 <th style="width: 20%; text-align: right;">Hum. max (%)</th>
             </tr>
@@ -74,18 +74,18 @@
     <div class="info-box" style="background: var(--blanc-casse); border-left: 4px solid var(--gris-clair);">
         <div class="label">Conditions par zone</div>
         <div style="font-size: 14pt; color: var(--gris);">
-            Aucune donne de cale disponible pour ce voyage.
+            Aucune donnée de cale disponible pour ce voyage.
         </div>
     </div>
     {% endif %}
 
-    <!-- Courbes de temprature -->
+    <!-- Courbes de température -->
     {% if temp_chart %}
-    <h2 class="section-title">volution des tempratures</h2>
+    <h2 class="section-title">Évolution des températures</h2>
     <div class="map-container" style="height: 250px;">
         <div class="map-visual">
             <img src="{{ temp_chart }}" 
-                 alt="Courbes de temprature" 
+                 alt="Courbes de température" 
                  style="width: 100%; height: 100%; object-fit: contain;"
             />
         </div>

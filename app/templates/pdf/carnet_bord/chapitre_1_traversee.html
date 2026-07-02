@@ -1,10 +1,10 @@
 {% extends "pdf/carnet_bord/_base.html" %}
 
 {% block content %}
-<!-- Chapitre 1: La Traverse -->
+<!-- Chapitre 1: La Traversée -->
 <div class="chapter">
-    <div class="chapter-number">1. La Traverse</div>
-    <h1 class="chapter-title">La Traverse</h1>
+    <div class="chapter-number">1. La Traversée</div>
+    <h1 class="chapter-title">La Traversée</h1>
 
     <!-- Carte avec trace GPS -->
     <h2 class="section-title">Carte de la route</h2>
@@ -56,13 +56,13 @@
             </svg>
             {% else %}
             <div class="placeholder" style="height: 100%;">
-                Carte de la traverse - Trace GPS non disponible
+                Carte de la traversée - Trace GPS non disponible
             </div>
             {% endif %}
         </div>
     </div>
 
-    <!-- Lgende de la carte -->
+    <!-- Légende de la carte -->
     <div style="display: flex; justify-content: center; gap: 20pt; margin-top: 15pt;">
         <div style="display: flex; align-items: center; gap: 5pt;">
             <div style="width: 20px; height: 3px; background: var(--vert);"></div>
@@ -70,7 +70,7 @@
         </div>
         <div style="display: flex; align-items: center; gap: 5pt;">
             <div style="width: 20px; height: 3px; background: var(--cuivre);"></div>
-            <span style="font-size: 12pt;">Assist</span>
+            <span style="font-size: 12pt;">Assisté</span>
         </div>
         <div style="display: flex; align-items: center; gap: 5pt;">
             <div style="width: 20px; height: 3px; background: var(--gris);"></div>
@@ -82,8 +82,8 @@
         </div>
     </div>
 
-    <!-- Informations de la traverse -->
-    <h2 class="section-title">Informations de la traverse</h2>
+    <!-- Informations de la traversée -->
+    <h2 class="section-title">Informations de la traversée</h2>
     
     <div class="stats-grid">
         <div class="stat-card">
@@ -92,7 +92,7 @@
         </div>
         <div class="stat-card">
             <div class="stat-value">{{ duration_days or "N/A" }}</div>
-            <div class="stat-label">Dure (jours)</div>
+            <div class="stat-label">Durée (jours)</div>
         </div>
         <div class="stat-card">
             <div class="stat-value">{{ sog_avg or "N/A" }}</div>
@@ -135,14 +135,14 @@
     <div class="info-box" style="background: var(--blanc-casse); border-left: 4px solid var(--gris-clair);">
         <div class="label">Points remarquables</div>
         <div style="font-size: 14pt; color: var(--gris);">
-            Aucun point remarquable enregistr pour cette traverse.
+            Aucun point remarquable enregistré pour cette traversée.
         </div>
     </div>
     {% endif %}
 
-    <!-- Rpartition propulsion -->
+    <!-- Répartition propulsion -->
     {% if propulsion_stats %}
-    <h2 class="section-title">Rpartition de la propulsion</h2>
+    <h2 class="section-title">Répartition de la propulsion</h2>
     
     <div style="display: flex; gap: 20pt; margin: 20pt 0;">
         <div class="stat-card" style="flex: 1;">

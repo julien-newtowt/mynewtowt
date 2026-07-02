@@ -1,15 +1,15 @@
 {% extends "pdf/carnet_bord/_base.html" %}
 
 {% block content %}
-<!-- Chapitre 8: Timeline complte -->
+<!-- Chapitre 8: Timeline complète -->
 <div class="chapter">
-    <div class="chapter-number">8. Timeline complte</div>
-    <h1 class="chapter-title">Timeline complte</h1>
+    <div class="chapter-number">8. Timeline complète</div>
+    <h1 class="chapter-title">Timeline complète</h1>
 
     <div style="font-size: 14pt; line-height: 1.7; margin-bottom: 20pt;">
         <p>
-            Cette timeline retrace l'intgralit du voyage, des prparatifs  la livraison, 
-            en passant par toutes les tapes de la traverse.
+            Cette timeline retrace l'intégralité du voyage, des préparatifs à la livraison, 
+            en passant par toutes les étapes de la traversée.
         </p>
     </div>
 
@@ -21,7 +21,7 @@
             <div class="timeline-date">
                 {{ event.occurred_at.strftime("%d/%m/%Y %H:%M") if event.occurred_at else "" }}
                 {% if event.planned_at %}
-                <span style="color: var(--gris); font-size: 10pt;"> (prvu: {{ event.planned_at.strftime("%d/%m/%Y %H:%M") }})</span>
+                <span style="color: var(--gris); font-size: 10pt;"> (prévu: {{ event.planned_at.strftime("%d/%m/%Y %H:%M") }})</span>
                 {% endif %}
             </div>
             <div class="timeline-title">{{ event.event_type|replace('_', ' ')|title }}</div>
@@ -32,7 +32,7 @@
             {% endif %}
             {% if event.location %}
             <div style="font-size: 12pt; color: var(--gris); margin-bottom: 5pt;">
-                 {{ event.location }}
+                à {{ event.location }}
             </div>
             {% endif %}
             {% if event.description %}
@@ -45,7 +45,7 @@
     <div class="info-box" style="background: var(--blanc-casse); border-left: 4px solid var(--gris-clair);">
         <div class="label">Timeline</div>
         <div style="font-size: 14pt; color: var(--gris);">
-            Aucune vnement de timeline disponible pour ce voyage.
+            Aucun événement de timeline disponible pour ce voyage.
         </div>
     </div>
     {% endif %}
@@ -57,7 +57,7 @@
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-value">{{ timeline_stats.total_events or "0" }}</div>
-            <div class="stat-label">vnements totaux</div>
+            <div class="stat-label">Événements totaux</div>
         </div>
         <div class="stat-card">
             <div class="stat-value">{{ timeline_stats.navigation_days or "0" }}</div>
@@ -65,7 +65,7 @@
         </div>
         <div class="stat-card">
             <div class="stat-value">{{ timeline_stats.port_days or "0" }}</div>
-            <div class="stat-label">Jours  quai</div>
+            <div class="stat-label">Jours à quai</div>
         </div>
         <div class="stat-card">
             <div class="stat-value">{{ timeline_stats.escale_count or "0" }}</div>
@@ -81,19 +81,19 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th style="width: 30%;">tape</th>
-                <th style="width: 35%; text-align: right;">Prvu</th>
-                <th style="width: 35%; text-align: right;">Rel</th>
+                <th style="width: 30%;">Étape</th>
+                <th style="width: 35%; text-align: right;">Prévu</th>
+                <th style="width: 35%; text-align: right;">Réel</th>
             </tr>
         </thead>
         <tbody>
             <tr>
-                <td>Dpart (ETD)</td>
+                <td>Départ (ETD)</td>
                 <td style="text-align: right;">{{ etd_eta_info.etd_planned.strftime("%d/%m/%Y %H:%M") if etd_eta_info.etd_planned else "N/A" }}</td>
                 <td style="text-align: right;">{{ etd_eta_info.etd_actual.strftime("%d/%m/%Y %H:%M") if etd_eta_info.etd_actual else "N/A" }}</td>
             </tr>
             <tr>
-                <td>Arrive (ETA)</td>
+                <td>Arrivée (ETA)</td>
                 <td style="text-align: right;">{{ etd_eta_info.eta_planned.strftime("%d/%m/%Y %H:%M") if etd_eta_info.eta_planned else "N/A" }}</td>
                 <td style="text-align: right;">{{ etd_eta_info.eta_actual.strftime("%d/%m/%Y %H:%M") if etd_eta_info.eta_actual else "N/A" }}</td>
             </tr>

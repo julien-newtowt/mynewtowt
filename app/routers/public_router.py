@@ -93,14 +93,24 @@ async def set_language(lang: str, request: Request):
 @router.get("/", response_class=HTMLResponse)
 async def landing(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     upcoming = await _next_bookable_legs(db, limit=6)
-    from app.services import analytics
+    from app.services import analytics, social_proof
 
     await analytics.record(
         db, "landing_view", lang=getattr(request.state, "lang", "fr"), channel="public"
     )
+    # Preuve sociale : compteurs réels (cache 10 min) + presse publiée ;
+    # témoignages/logos ne s'affichent que si contenu + accord fournis.
+    counters = await social_proof.counters(db)
     return templates.TemplateResponse(
         "public/landing.html",
-        {"request": request, "upcoming_legs": upcoming},
+        {
+            "request": request,
+            "upcoming_legs": upcoming,
+            "counters": counters,
+            "press_mentions": social_proof.PRESS_MENTIONS,
+            "testimonials": social_proof.TESTIMONIALS,
+            "client_logos": social_proof.CLIENT_LOGOS,
+        },
     )
 
 

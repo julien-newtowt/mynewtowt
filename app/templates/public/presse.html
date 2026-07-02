@@ -1,4 +1,6 @@
 {% extends "public/_layout_v2.html" %}
+{# P6 — langues réellement servies par cette page (hreflang honnête) #}
+{% set page_langs = ['fr'] %}
 {% block title %}Espace presse — NewTowt{% endblock %}
 {% block description %}Kit presse NewTowt : présentation officielle, faits de référence, logos et visuels à télécharger, contact média.{% endblock %}
 
@@ -54,26 +56,29 @@
 <section class="section">
   <div class="section-inner">
     <span class="section-kicker">Téléchargements</span>
-    <h2 class="section-title">Logos & visuels</h2>
+    <h2 class="section-title">Logos & dossier de presse</h2>
     <div class="feature-grid">
       <article class="feature-card">
         <h3>Logos NEWTOWT</h3>
-        <div class="map-placeholder" role="img" aria-label="Pack logos — fichier à venir"
-             style="height:auto;min-height:140px;margin-bottom:var(--sp-4);">
-          <span>Pack logos (.zip) — <em>fichier à venir</em></span>
-        </div>
+        <p style="background:var(--c-bone);border-radius:var(--radius-md,12px);padding:var(--sp-4);text-align:center;">
+          <img src="{{ asset('img/logo_NEWTOWT_web.png') }}" alt="Logo NEWTOWT"
+               style="max-height:56px;width:auto;" loading="lazy" />
+        </p>
+        <p>5 variantes (fond clair, sombre, blanc, e-mail) + règles d'usage.</p>
+        <p><a href="/presse/logos.zip" class="btn btn-primary">Télécharger le pack logos (.zip)</a></p>
       </article>
       <article class="feature-card">
         <h3>Dossier de presse</h3>
-        <div class="map-placeholder" role="img" aria-label="Dossier de presse — fichier à venir"
-             style="height:auto;min-height:140px;margin-bottom:var(--sp-4);">
-          <span>Dossier de presse (.pdf) — <em>fichier à venir</em></span>
-        </div>
+        <p>Présentation, faits vérifiés, chiffres cumulés extraits en direct de
+           nos systèmes, preuves en libre accès et contact média — généré à la
+           demande, toujours à jour.</p>
+        <p><a href="/presse/dossier.pdf" class="btn btn-primary">Télécharger le dossier (.pdf)</a></p>
       </article>
       <article class="feature-card">
-        <h3>Photothèque</h3>
-        <p>Navires, cales, escales et chantiers en haute définition.</p>
-        <p><em>Lien vers la base visuelle — à venir.</em></p>
+        <h3>Conditions d'usage</h3>
+        <p>Photos et logos libres d'usage pour la presse avec le crédit
+           <strong>« © NEWTOWT »</strong>. Ne pas déformer ni recolorer le logo.
+           Originaux haute définition sur demande au contact média ci-dessous.</p>
       </article>
     </div>
   </div>
@@ -81,12 +86,51 @@
 
 <section class="section section--sand">
   <div class="section-inner">
+    <span class="section-kicker">Photothèque</span>
+    <h2 class="section-title">Les navires, en vrai</h2>
+    <div class="press-gallery">
+      <figure>
+        <a href="{{ asset('img/Anemos-Artemis_mer.jpg') }}" target="_blank" rel="noopener">
+          <img src="{{ asset('img/Anemos-Artemis_mer.jpg') }}" alt="Anemos et Artemis en mer" loading="lazy" /></a>
+        <figcaption>Anemos &amp; Artemis en mer — © NEWTOWT</figcaption>
+      </figure>
+      <figure>
+        <a href="{{ asset('img/Anemos_depart.jpg') }}" target="_blank" rel="noopener">
+          <img src="{{ asset('img/Anemos_depart.jpg') }}" alt="Départ de l'Anemos" loading="lazy" /></a>
+        <figcaption>Départ de l'Anemos — © NEWTOWT</figcaption>
+      </figure>
+      <figure>
+        <a href="{{ asset('img/Artemis_devant.jpg') }}" target="_blank" rel="noopener">
+          <img src="{{ asset('img/Artemis_devant.jpg') }}" alt="Artemis sous voiles" loading="lazy" /></a>
+        <figcaption>Artemis sous voiles — © NEWTOWT</figcaption>
+      </figure>
+      <figure>
+        <a href="{{ asset('img/sortie-fecamp.jpg') }}" target="_blank" rel="noopener">
+          <img src="{{ asset('img/sortie-fecamp.jpg') }}" alt="Sortie du port de Fécamp" loading="lazy" /></a>
+        <figcaption>Sortie de Fécamp — © NEWTOWT</figcaption>
+      </figure>
+      <figure>
+        <a href="{{ asset('img/equipe-newtowt.jpg') }}" target="_blank" rel="noopener">
+          <img src="{{ asset('img/equipe-newtowt.jpg') }}" alt="L'équipe NEWTOWT" loading="lazy" /></a>
+        <figcaption>L'équipe NEWTOWT — © NEWTOWT</figcaption>
+      </figure>
+    </div>
+    <p style="margin-top:var(--sp-4);font-size:var(--fs-13,0.8125rem);color:var(--c-grey);">
+      Clic droit → « enregistrer » pour la version web ; originaux HD sur demande.
+    </p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-inner">
     <span class="section-kicker">Contact média</span>
     <h2 class="section-title">Une demande presse ?</h2>
     <div class="callout">
-      Le contact média dédié sera précisé ici. <em>[Emplacement réservé — contact
-      presse à compléter.]</em> Dans l'intervalle, écrivez-nous via le
-      <a href="/contact">formulaire de contact</a>.
+      <strong>{{ brand.raison_sociale }}</strong><br />
+      <a href="mailto:{{ brand.email }}">{{ brand.email }}</a> · {{ brand.telephone }}<br />
+      {{ brand.adresse }}<br />
+      Interviews, visites de navire à quai et images HD : par e-mail, ou via le
+      <a href="/contact">formulaire de contact</a> (mention « presse » dans le message).
     </div>
   </div>
 </section>

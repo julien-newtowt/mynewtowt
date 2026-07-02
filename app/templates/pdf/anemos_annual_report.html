@@ -2,7 +2,29 @@
 {% block title %}Rapport CO₂ {{ report.year }} — {{ client.company_name }}{% endblock %}
 {% block doc_kind %}Rapport CO₂ annuel · Annual CO₂ report{% endblock %}
 {% block doc_ref %}{{ report.year }}{% endblock %}
+{% block extra_css %}
+{% if specimen %}
+<style>
+  .specimen-watermark {
+    position: fixed; top: 42%; left: 6%; transform: rotate(-24deg);
+    font-size: 62pt; font-weight: 800; letter-spacing: 6pt;
+    color: rgba(180, 113, 72, 0.16);
+  }
+  .specimen-banner {
+    background: #B47148; color: #fff; padding: 3mm 4mm; font-weight: 700;
+    margin-bottom: 6mm; border-radius: 2mm; font-size: 10pt;
+  }
+</style>
+{% endif %}
+{% endblock %}
 {% block content %}
+
+{% if specimen %}
+<div class="specimen-watermark">SPÉCIMEN</div>
+<div class="specimen-banner">
+  SPÉCIMEN — document d'exemple, données fictives · Sample document, fictitious data
+</div>
+{% endif %}
 
 <table class="meta" style="width:100%;margin-bottom:8mm;">
   <tr>

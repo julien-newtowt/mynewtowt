@@ -18,7 +18,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
-# Événements du tunnel (cf. fiche /devis + wizard §5).
+# Événements du tunnel (cf. fiche /devis + wizard §5) + boucle B2B2C :
+# `voyage_page_view` compte les consultations de la page publique de voyage
+# (scans du QR imprimé sur le paquet) — North Star marketing B2B2C.
 ANALYTICS_EVENTS = (
     "landing_view",
     "route_view",
@@ -28,6 +30,7 @@ ANALYTICS_EVENTS = (
     "booking_submitted",
     "account_created",
     "booking_confirmed",
+    "voyage_page_view",
 )
 
 

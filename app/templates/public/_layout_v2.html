@@ -9,20 +9,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}NEWTOWT — Transport maritime cargo vélique{% endblock %}</title>
   <meta name="description" content="{% block description %}NewTowt — compagnie maritime française de fret à la voile vers le Brésil et l'Amérique latine. Café, cacao, fret industriel. Transport vélique décarboné, CO₂ évité certifié Anemos.{% endblock %}" />
-  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <meta name="robots" content="{% block robots %}index, follow, max-image-preview:large{% endblock %}" />
 
-  {# Canonical + alternates hreflang (i18n via ?lang=, x-default = FR) #}
+  {# Canonical + alternates hreflang (i18n via ?lang=, x-default = FR).
+     Honnêteté hreflang (P6) : une page non traduite restreint ses langues
+     réelles via `{% set page_langs = ['fr'] %}` en tête de template — on ne
+     déclare jamais d'alternate vers du contenu non traduit. #}
   <link rel="canonical" href="{{ site_url }}{{ request.url.path }}" />
-  {% for l in public_langs %}
+  {% set _hreflangs = page_langs if page_langs is defined else public_langs %}
+  {% if _hreflangs|length > 1 %}
+  {% for l in _hreflangs %}
   <link rel="alternate" hreflang="{{ hreflang_map[l] }}" href="{{ site_url }}{{ request.url.path }}?lang={{ l }}" />
   {% endfor %}
   <link rel="alternate" hreflang="x-default" href="{{ site_url }}{{ request.url.path }}" />
+  {% endif %}
 
-  {# Open Graph (partage social) #}
+  {# Open Graph + Twitter Cards (partage social) — og:image par défaut :
+     visuel de marque 1200×630 (photo réelle Anemos & Artemis), surchargeable
+     par page via le bloc og_image. #}
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="NewTowt" />
   <meta property="og:title" content="{{ self.title() }}" />
+  <meta property="og:description" content="{{ self.description() }}" />
   <meta property="og:url" content="{{ site_url }}{{ request.url.path }}" />
+  <meta property="og:image" content="{% block og_image %}{{ site_url }}/static/img/og-default.jpg{% endblock %}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{ self.title() }}" />
+  <meta name="twitter:description" content="{{ self.description() }}" />
+  <meta name="twitter:image" content="{{ self.og_image() }}" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

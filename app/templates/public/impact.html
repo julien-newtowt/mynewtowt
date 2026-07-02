@@ -1,6 +1,6 @@
 {% extends "public/_layout_v2.html" %}
-{% block title %}Impact — environnement maîtrisé & décarbonation — NewTowt{% endblock %}
-{% block description %}À bord, la qualité de votre marchandise est protégée par la conception du navire puis surveillée en continu (température et humidité). Transport vélique décarboné, CO₂ évité certifié Anemos.{% endblock %}
+{% block title %}{{ t('imp_meta_title', lang) }}{% endblock %}
+{% block description %}{{ t('imp_meta_desc', lang) }}{% endblock %}
 
 {% block structured_data %}
 <script type="application/ld+json">
@@ -8,10 +8,10 @@
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "mainEntity": [
-    {"@type": "Question", "name": "Comment la décarbonation du transport à la voile est-elle mesurée et certifiée ?",
-     "acceptedAnswer": {"@type": "Answer", "text": "Anemos, notre certification d'émissions évitées, documente le CO₂ évité par lot, exprimé en kilogrammes sur un certificat nominatif, avec une traçabilité de port à port et une méthode publiée."}},
-    {"@type": "Question", "name": "Comment la qualité de la marchandise est-elle préservée à bord ?",
-     "acceptedAnswer": {"@type": "Answer", "text": "Par une protection passive (cales à la température de la mer, faible écart jour-nuit, air marin sec), une ventilation segmentée jusqu'à six renouvellements d'air par heure, et une surveillance continue de la température et de l'humidité dans chaque cale."}}
+    {"@type": "Question", "name": {{ t('imp_faq1_q', lang)|tojson }},
+     "acceptedAnswer": {"@type": "Answer", "text": {{ t('imp_faq1_a', lang)|tojson }}}},
+    {"@type": "Question", "name": {{ t('imp_faq2_q', lang)|tojson }},
+     "acceptedAnswer": {"@type": "Answer", "text": {{ t('imp_faq2_a', lang)|tojson }}}}
   ]
 }
 </script>
@@ -20,99 +20,57 @@
 {% block content %}
 <section class="hero">
   <div class="hero-inner">
-    <span class="hero-kicker">Impact</span>
-    <h1 class="hero-title">Transporter à la voile, c'est aussi mieux transporter</h1>
-    <p class="hero-lead">
-      À bord, la qualité de votre marchandise n'est pas laissée au hasard : elle est
-      d'abord protégée par la conception même du navire, puis surveillée tout au
-      long de la traversée.
-    </p>
-  </div>
-</section>
-
-{% include "public/_translation_notice.html" %}
-
-<section class="section">
-  <div class="section-inner">
-    <span class="section-kicker">Protection passive</span>
-    <h2 class="section-title">La conception du navire fait le premier travail</h2>
-    <p class="section-lead">
-      La protection commence par un principe passif. Les cales sont maintenues à la
-      température de la mer, et comme la route lisse les écarts entre le Nord et le
-      Sud, la marchandise échappe aux à-coups thermiques. Le faible écart entre le
-      jour et la nuit évite la condensation, et l'air marin, sec et sain, complète
-      l'ensemble. C'est la raison physique pour laquelle le café et le cacao voyagent
-      mieux sous la ligne de flottaison que dans un conteneur qui surchauffe à
-      l'approche de l'équateur.
-    </p>
-  </div>
-</section>
-
-<section class="section section--sand">
-  <div class="section-inner">
-    <span class="section-kicker">Ventilation segmentée</span>
-    <h2 class="section-title">Une ventilation pensée cale par cale</h2>
-    <p class="section-lead">
-      Deux prises d'air naturelles par pont et trois ventilateurs indépendants — dont
-      une extraction <strong>ATEX</strong> dans la cale apte aux marchandises
-      dangereuses — permettent jusqu'à <strong>six renouvellements d'air par
-      heure</strong>, cale par cale ou par groupe, selon la nature du chargement.
-    </p>
+    <span class="hero-kicker">{{ t('imp_hero_kicker', lang) }}</span>
+    <h1 class="hero-title">{{ t('imp_hero_title', lang) }}</h1>
+    <p class="hero-lead">{{ t('imp_hero_lead', lang) }}</p>
   </div>
 </section>
 
 <section class="section">
   <div class="section-inner">
-    <span class="section-kicker">Qualité mesurée</span>
-    <h2 class="section-title">Une qualité mesurée, pas seulement promise</h2>
-    <p class="section-lead">
-      Notre <strong>dispositif de surveillance</strong> fixe pour chaque voyage des seuils
-      critiques afin d'éviter la condensation, place des capteurs de température et
-      d'humidité dans chaque cale, enregistre les données pour analyse, et s'appuie
-      sur des équipages formés ; un réseau de capteurs relié à la passerelle suit
-      en continu la température, l'hygrométrie, la pression et la hauteur des vagues.
-    </p>
-    <div class="callout callout--teal">
-      <strong>Preuve concrète.</strong> Un chargement de chocolat de 1 000 tonnes a
-      occupé 73 % du volume de soute, avec une ventilation tournant près de quatre
-      fois plus souvent qu'à vide, soit <strong>vingt-deux renouvellements d'air par
-      heure</strong>. Votre marchandise arrive ainsi dans l'état où elle est partie.
-    </div>
+    <span class="section-kicker">{{ t('imp_s1_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('imp_s1_title', lang) }}</h2>
+    <p class="section-lead">{{ t('imp_s1_lead', lang) }}</p>
   </div>
 </section>
 
 <section class="section section--sand">
   <div class="section-inner">
-    <span class="section-kicker">Décarbonation</span>
-    <h2 class="section-title">Une décarbonation mesurée et certifiée</h2>
-    <p class="section-lead">
-      Le transport à la voile réduit <strong>radicalement</strong> les émissions de CO₂.
-      <strong>Anemos</strong>, notre <strong>certification d'émissions évitées</strong>,
-      documente le <strong>CO₂ évité par lot</strong> — calculé sur vos données réelles —
-      avec une traçabilité de port à port. Un <strong>certificat nominatif</strong>
-      accompagne chaque expédition, prêt pour vos rapports RSE et à partager avec vos
-      clients.
-    </p>
+    <span class="section-kicker">{{ t('imp_s2_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('imp_s2_title', lang) }}</h2>
+    <p class="section-lead">{{ t('imp_s2_lead', lang)|safe }}</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-inner">
+    <span class="section-kicker">{{ t('imp_s3_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('imp_s3_title', lang) }}</h2>
+    <p class="section-lead">{{ t('imp_s3_lead', lang)|safe }}</p>
+    <div class="callout callout--teal">{{ t('imp_s3_callout', lang)|safe }}</div>
+  </div>
+</section>
+
+<section class="section section--sand">
+  <div class="section-inner">
+    <span class="section-kicker">{{ t('imp_s4_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('imp_s4_title', lang) }}</h2>
+    <p class="section-lead">{{ t('imp_s4_lead', lang)|safe }}</p>
 
     {% set co2_kg = 72297 %}
-    {% set eq_caption = "Exemple illustratif : un chargement de 1 000 t sur une traversée transatlantique (≈ 5 900 km) évite environ 72 t de CO₂ par rapport à un cargo conventionnel." %}
+    {% set eq_caption = t('imp_s4_eq_caption', lang) %}
     {% include "public/_co2_equivalences.html" with context %}
 
     <p style="margin-top:var(--sp-6);display:flex;gap:var(--sp-4);flex-wrap:wrap;align-items:center;">
-      <a href="/preuves" class="btn btn-primary">Voir nos preuves et notre méthode →</a>
-      <a href="/about/anemos" class="btn btn-secondary">Méthodologie Anemos</a>
+      <a href="/preuves" class="btn btn-primary">{{ t('imp_s4_cta_proof', lang) }}</a>
+      <a href="/about/anemos" class="btn btn-secondary">{{ t('imp_s4_cta_method', lang) }}</a>
     </p>
   </div>
 </section>
 
 <section class="section">
   <div class="section-inner">
-    <div class="callout">
-      <strong>À venir.</strong> Le triangle prix–carbone–qualité face à l'aérien et au
-      conteneur, ainsi que la décarbonation chiffrée détaillée (analyse de cycle de
-      vie CSRD), seront publiés ici dès validation des études en cours.
-      <em>[Emplacement réservé — contenu éditorial à compléter.]</em>
-    </div>
+    <div class="callout">{{ t('imp_avenir', lang)|safe }}</div>
   </div>
 </section>
 {% endblock %}
