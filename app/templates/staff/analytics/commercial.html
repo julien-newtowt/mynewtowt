@@ -40,8 +40,8 @@
   <section class="kpi-strip">
     <div class="kpi-card">
       <div class="label">Conversion landing → booking</div>
-      <div class="value {% if landing_to_booking_pct >= 5 %}text-success{% endif %}">{{ landing_to_booking_pct }} %</div>
-      <div class="delta text-muted">cible ≥ 5 %</div>
+      <div class="value {% if landing_to_booking_on_target %}text-success{% endif %}">{{ landing_to_booking_pct }} %</div>
+      <div class="delta {% if landing_to_booking_on_target %}text-success{% else %}text-muted{% endif %}">cible ≥ {{ conversion_target_pct }} % {% if landing_to_booking_on_target %}✓{% endif %}</div>
     </div>
     <div class="kpi-card">
       <div class="label">Conversion devis → booking</div>
@@ -49,8 +49,8 @@
     </div>
     <div class="kpi-card">
       <div class="label">Self-service</div>
-      <div class="value {% if self_service_pct >= 30 %}text-success{% endif %}">{{ self_service_pct }} %</div>
-      <div class="delta text-muted">cible ≥ 30 %</div>
+      <div class="value {% if self_service_on_target %}text-success{% endif %}">{{ self_service_pct }} %</div>
+      <div class="delta {% if self_service_on_target %}text-success{% else %}text-muted{% endif %}">cible ≥ {{ self_service_target_pct }} % {% if self_service_on_target %}✓{% endif %}</div>
     </div>
     <div class="kpi-card">
       <div class="label">Délai soumis → confirmé</div>
@@ -58,20 +58,64 @@
       <div class="delta text-muted">cible &lt; 4 h</div>
     </div>
   </section>
-  {% set event_labels = {
-    "landing_view": "Vues landing", "route_view": "Vues route",
-    "quote_generated": "Devis générés", "quote_pdf_download": "PDF devis téléchargés",
-    "book_click": "Clics « Réserver »", "booking_submitted": "Réservations soumises",
-    "account_created": "Comptes créés", "booking_confirmed": "Réservations confirmées"
-  } %}
+  {# Full funnel événementiel — chaque étape avec sa part du sommet (décrochages). #}
   <table class="data-table mt-3">
-    <thead><tr><th>Étape</th><th>Événements</th></tr></thead>
+    <thead><tr><th>Étape</th><th>Événements</th><th>% du sommet</th><th></th></tr></thead>
     <tbody>
-      {% for ev, label in event_labels.items() %}
-      <tr><td>{{ label }}</td><td><strong>{{ event_counts.get(ev, 0) }}</strong></td></tr>
+      {% for step in full_funnel %}
+      <tr>
+        <td>{{ step.label }}</td>
+        <td><strong>{{ step.count }}</strong></td>
+        <td>{{ step.pct_of_top }} %</td>
+        <td style="width:160px;">
+          <div style="background:var(--sable-light); border-radius:var(--radius-sm); overflow:hidden; height:10px;">
+            <div style="background:var(--teal); height:100%; width:{{ step.pct_of_top|int }}%;"></div>
+          </div>
+        </td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
+</article>
+
+{# Vue B2B2C (P9) — preuve → partage → boucle : chaque donnée ERP devient un actif. #}
+<article class="card mt-4">
+  <h2>Boucle B2B2C {{ year }}</h2>
+  <p class="text-muted mb-3">De la preuve publiée au réachat : consultations des pages de conviction, scans de QR (page voyage sur le paquet, vérification de certificat), kit co-brandé et recommandations clients.</p>
+  <section class="kpi-strip">
+    <div class="kpi-card">
+      <div class="label">Vues solutions (café/cacao)</div>
+      <div class="value">{{ b2b2c.solutions_view }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Scans page voyage (QR paquet)</div>
+      <div class="value text-success">{{ b2b2c.voyage_scans }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Vérifications certificat (QR)</div>
+      <div class="value">{{ b2b2c.verify_scans }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Kits générés</div>
+      <div class="value">{{ b2b2c.kits_generated }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Kits téléchargés</div>
+      <div class="value">{{ b2b2c.kits_downloaded }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Réachats (rebooking)</div>
+      <div class="value text-success">{{ b2b2c.rebookings }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Demandes de cotation</div>
+      <div class="value">{{ b2b2c.contact_submitted }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Vues impact / preuves</div>
+      <div class="value">{{ b2b2c.impact_view }} / {{ b2b2c.preuves_view }}</div>
+    </div>
+  </section>
 </article>
 
 <div class="grid grid-2 gap-4 mt-4">

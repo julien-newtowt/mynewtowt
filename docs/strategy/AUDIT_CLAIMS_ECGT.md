@@ -49,7 +49,7 @@ L'audit vise les formulations, pas le fond.
 | 2 | `/about` (« Nos engagements ») | « Émissions **divisées par dix** vs cargo conventionnel » | Élevé (surestimation : 13,7/1,5 = 9,1) | ✅ **Corrigé** : « divisées par neuf … (13,7 → 1,5 g CO₂/t·km, méthode publiée) » (fr + en) |
 | 3 | `/passagers` | « **Décarboné par nature** » (absolu, générique, service 2027 non opéré) | Élevé | ✅ **Corrigé** : « Propulsé par le vent » + « empreinte carbone du trajet » |
 | 4 | `/impact` (titre §Décarbonation + JSON-LD FAQ) | « décarbonation mesurée et **certifiée** », « notre **certification** d'émissions évitées » (auto-certification implicite) | Moyen-élevé (ENV-08 : auto-label) | ✅ **Corrigé** : « mesurée et **vérifiable** », « notre **certificat** d'émissions évitées (méthode publiée, émissions des navires vérifiées EU MRV) », JSON-LD aligné |
-| 5 | Footer sitewide + PDF certificat (`brand.mention`) | « Pionnier du transport maritime **décarboné** depuis 2011 » | Moyen (générique/absolu, mais substantiation à 1 clic) | 🟡 **Décision de marque** — options : (a) statu quo documenté (substantiation via /preuves liée dans le même footer) ; (b) « Pionnier du transport de marchandises **à la voile** depuis 2011 » (zéro risque, factuel) ; (c) « … bas carbone … ». Recommandation : **(b)**. Non appliqué unilatéralement (baseline de marque, présente aussi sur le PDF certificat) |
+| 5 | Footer sitewide + PDF certificat (`brand.mention`) | « Pionnier du transport maritime **décarboné** depuis 2011 » | Moyen (générique/absolu, mais substantiation à 1 clic) | ✅ **Corrigé** (arbitrage direction, 02/07/2026 → option (b)) : baseline factuelle « Pionnier du transport de marchandises **à la voile** depuis 2011 » appliquée aux 5 langues (`_BRAND_BY_LANG.mention` → footers publics + PDF certificat + PDF `_base`) et à la fiche presse. « À la voile » décrit le **procédé** (vérifiable), pas un bénéfice environnemental absolu |
 | 6 | Landing (hero lead, bandeau) | « réduction de CO₂ **certifiée Anemos** », « CO₂ **mesuré & certifié** — certificat Anemos » | Moyen | 🟢 **Conservé, documenté** : l'allégation nomme le document (certificat Anemos), la landing lie /preuves et /verify ; à re-tester après vérification tierce (cf. CDC). Ne jamais employer « certifié » sans « Anemos » ou sans lien de preuve |
 | 7 | Meta/SEO (`home_meta_title`, description layout, `rd_meta_desc`, chip `rd_decarbonised`) | « transport maritime décarboné (à la voile) » | Faible-moyen | 🟢 **Conservé, documenté** : « décarboné » y est adossé au mécanisme (voile) et les pages liées portent chiffres + certificat ; requête SEO structurante. À réévaluer si la DGCCRF publie une ligne plus stricte |
 | 8 | `/solutions/cafe` | « CO₂ évité par lot **certifié Anemos et vérifiable par QR** » | Faible | 🟢 Conforme (allégation spécifique + vérifiabilité immédiate) |
@@ -73,7 +73,7 @@ L'audit vise les formulations, pas le fond.
 
 1. **CDC vérification tierce** : `CDC_VERIFICATION_TIERCE_ANEMOS.md` —
    consultation à lancer immédiatement (rétro-planning avant le 27/09/2026).
-2. Arbitrer le point 5 (baseline footer) — décision de marque.
+2. ~~Arbitrer le point 5 (baseline footer)~~ — ✅ tranché 02/07/2026 (option (b), factuelle « à la voile »).
 3. Point 12 : sourcer les équivalences (petite PR dédiée).
 4. Ré-audit rapide des supports **hors site** (kits PDF envoyés, posts
    LinkedIn, dossiers commerciaux) avec la même grille §2 avant le 15/09/2026.

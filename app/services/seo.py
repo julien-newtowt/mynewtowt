@@ -46,6 +46,7 @@ PUBLIC_PAGES: tuple[tuple[str, str, str], ...] = (
     ("/impact", "monthly", "0.9"),
     ("/preuves", "monthly", "0.8"),
     ("/solutions/cafe", "monthly", "0.9"),
+    ("/solutions/cacao", "monthly", "0.9"),
     ("/navigation", "monthly", "0.7"),
     ("/carnet", "weekly", "0.6"),
     ("/actualites", "weekly", "0.5"),
@@ -137,6 +138,8 @@ def build_llms_txt(base_url: str) -> str:
         "EU MRV (registre THETIS-MRV), vérification de certificat.\n"
         f"- [Solutions café]({base}/solutions/cafe) : transport de café vert à la "
         "voile, routes d'origine, kit B2B2C.\n"
+        f"- [Solutions cacao]({base}/solutions/cacao) : transport de cacao/fèves à "
+        "la voile, cales à température maîtrisée, routes d'origine, kit B2B2C.\n"
         f"- [Navigation]({base}/navigation) : courants, propulsion vélique, routes.\n"
         f"- [Routes & plannings]({base}/routes) : prochaines traversées.\n"
         f"- [Carnet de construction]({base}/carnet) : avancée des navires en "

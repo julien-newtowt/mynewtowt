@@ -22,6 +22,32 @@ from app.models.analytics_event import ANALYTICS_EVENTS, AnalyticsEvent
 
 logger = logging.getLogger("analytics")
 
+# Paramètres de campagne standard (UTM) captés dans `detail` — pour attribuer
+# un événement à sa source d'acquisition sans outil tiers ni PII.
+_UTM_KEYS = ("utm_source", "utm_medium", "utm_campaign")
+
+
+def utm_from_request(request) -> str | None:
+    """Compacte les UTM présents dans la query en ``source=… medium=…`` (≤200c)."""
+    try:
+        qp = request.query_params
+    except Exception:  # pragma: no cover - requête factice sans query_params
+        return None
+    parts: list[str] = []
+    for key in _UTM_KEYS:
+        val = qp.get(key)
+        if val:
+            parts.append(f"{key[4:]}={str(val)[:40]}")
+    return " ".join(parts)[:200] if parts else None
+
+
+def detail_with_utm(request, base: str | None = None) -> str | None:
+    """Fusionne un libellé de base (ex. « cafe ») avec les UTM de la requête."""
+    utm = utm_from_request(request)
+    if base and utm:
+        return f"{base} | {utm}"[:200]
+    return base or utm or None
+
 
 async def record(
     db: AsyncSession,

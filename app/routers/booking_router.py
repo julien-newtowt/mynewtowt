@@ -512,6 +512,29 @@ async def step_3_confirm_submit(
         channel="client",
         detail="account_created" if account_created else "existing_account",
     )
+    # Boucle B2B2C : un client existant (compte non créé à l'instant) qui a déjà
+    # au moins une autre réservation « recommande » — signal de fidélité.
+    if not account_created and client is not None:
+        from sqlalchemy import func
+
+        from app.models.booking import Booking
+
+        prior = (
+            await db.execute(
+                select(func.count(Booking.id)).where(
+                    Booking.client_account_id == client.id,
+                    Booking.id != booking.id,
+                )
+            )
+        ).scalar_one()
+        if prior:
+            await analytics.record(
+                db,
+                "rebooking",
+                reference=booking.reference,
+                lang=getattr(request.state, "lang", "fr"),
+                channel="client",
+            )
 
     resp = RedirectResponse(url=f"/booking/{booking.reference}/done", status_code=303)
     resp.delete_cookie(_DRAFT_COOKIE, path="/")

@@ -29,6 +29,7 @@ from app.i18n import get_lang_from_request
 from app.models.anemos_certificate import AnemosCertificate
 from app.services import blog as blog_svc
 from app.services import contact as contact_svc
+from app.services import fleet as fleet_svc
 from app.services import rate_limit
 from app.services.activity import record as activity_record
 from app.services.leads import push_lead
@@ -38,23 +39,46 @@ router = APIRouter(tags=["vitrine"])
 
 
 @router.get("/flotte", response_class=HTMLResponse)
-async def fleet_capabilities(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("public/flotte.html", {"request": request})
+async def fleet_capabilities(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+    # Roster dérivé de l'ERP (Vessel) : statut + horizon de livraison, jamais
+    # une liste en dur. La page reste servie même si la base est indisponible
+    # (roster vide → le template retombe sur son récit générique).
+    roster = await fleet_svc.roster(db)
+    return templates.TemplateResponse("public/flotte.html", {"request": request, "fleet": roster})
 
 
 @router.get("/impact", response_class=HTMLResponse)
-async def impact(request: Request) -> HTMLResponse:
+async def impact(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+    from app.services import analytics
+
+    await analytics.record(
+        db,
+        "impact_view",
+        lang=getattr(request.state, "lang", "fr"),
+        channel="public",
+        detail=analytics.utm_from_request(request),
+    )
     return templates.TemplateResponse("public/impact.html", {"request": request})
 
 
 @router.get("/preuves", response_class=HTMLResponse)
-async def preuves(request: Request) -> HTMLResponse:
+async def preuves(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Page de preuve opposable (méthode / vérification / registre) — ENV-04.
 
     Actif commercial permanent : répond aux 4 questions d'un auditeur Scope 3
     (d'où vient le chiffre, qui l'a vérifié, mesuré ou théorique, où le
-    retrouver). Statique — aucune donnée DB.
+    retrouver). La page est statique ; seul l'événement de consultation (B2B2C)
+    est journalisé.
     """
+    from app.services import analytics
+
+    await analytics.record(
+        db,
+        "preuves_view",
+        lang=getattr(request.state, "lang", "fr"),
+        channel="public",
+        detail=analytics.utm_from_request(request),
+    )
     return templates.TemplateResponse("public/preuves.html", {"request": request})
 
 
@@ -440,6 +464,18 @@ async def verify_certificate(
     if cert is not None:
         ctx["certificate"] = cert
         ctx["applied_factor"] = _applied_factor(cert)
+    # Analytics B2B2C : un scan du QR de vérification (réf = identifiant public
+    # du certificat, jamais de PII). `found`/`notfound` mesure la qualité des QR.
+    from app.services import analytics
+
+    await analytics.record(
+        db,
+        "verify_lookup",
+        reference=ref.strip()[:40],
+        lang=getattr(request.state, "lang", "fr"),
+        channel="public",
+        detail=analytics.detail_with_utm(request, "found" if cert is not None else "notfound"),
+    )
     return templates.TemplateResponse("public/verify.html", ctx)
 
 
@@ -499,18 +535,47 @@ async def carnet_post(
     return templates.TemplateResponse("public/carnet_post.html", {"request": request, "post": post})
 
 
+# Verticales du kit B2B2C → libellé de nature de cargaison pré-rempli. Permet
+# une capture de lead segmentée (le lead relayé porte `cargo_nature` → funnel
+# commercial par verticale). Toute valeur hors table est ignorée (pas de
+# reflet d'entrée utilisateur dans le formulaire).
+_CONTACT_CARGO_PREFILL: dict[str, dict[str, str]] = {
+    "cafe": {
+        "fr": "Café vert",
+        "en": "Green coffee",
+        "es": "Café verde",
+        "pt-br": "Café verde",
+        "vi": "Cà phê nhân",
+    },
+    "cacao": {
+        "fr": "Cacao / fèves",
+        "en": "Cacao / beans",
+        "es": "Cacao / habas",
+        "pt-br": "Cacau / amêndoas",
+        "vi": "Ca cao / hạt",
+    },
+}
+
+
 @router.get("/contact", response_class=HTMLResponse)
 async def contact_form(
     request: Request,
     from_: str | None = None,
     to: str | None = None,
+    cargo: str | None = Query(default=None, max_length=20),
 ) -> HTMLResponse:
     """Affiche le formulaire de demande de cotation (pré-rempli si query)."""
+    lang = get_lang_from_request(request)
+    cargo_prefill = ""
+    if cargo:
+        by_lang = _CONTACT_CARGO_PREFILL.get(cargo.lower())
+        if by_lang:
+            cargo_prefill = by_lang.get(lang, by_lang.get("fr", ""))
     return templates.TemplateResponse(
         "public/contact.html",
         {
             "request": request,
-            "values": {"pol": from_ or "", "pod": to or ""},
+            "values": {"pol": from_ or "", "pod": to or "", "cargo_nature": cargo_prefill},
             "errors": {},
         },
     )
@@ -577,6 +642,17 @@ async def contact_submit(
         )
 
     entry = await contact_svc.create_contact_request(db, payload)
+    # Analytics tunnel : demande de cotation soumise (segmentée par nature de
+    # cargaison → funnel par verticale) + attribution UTM.
+    from app.services import analytics
+
+    await analytics.record(
+        db,
+        "contact_submitted",
+        lang=lang,
+        channel="public",
+        detail=analytics.detail_with_utm(request, (payload.cargo_nature or "")[:40] or None),
+    )
     await activity_record(
         db,
         action="contact_request_created",

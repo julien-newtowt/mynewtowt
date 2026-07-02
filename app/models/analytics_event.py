@@ -18,19 +18,33 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
-# Événements du tunnel (cf. fiche /devis + wizard §5) + boucle B2B2C :
-# `voyage_page_view` compte les consultations de la page publique de voyage
-# (scans du QR imprimé sur le paquet) — North Star marketing B2B2C.
+# Événements du tunnel (cf. fiche /devis + wizard §5) + boucle B2B2C.
+# Deux familles :
+#   • Tunnel commercial : landing → route → devis → réservation → confirmation.
+#   • B2B2C (P9) : consultations des pages de conviction (solutions/impact/
+#     preuves), scans du QR (voyage_page_view = page voyage publique ;
+#     verify_lookup = vérification d'un certificat), génération/téléchargement
+#     du kit co-brandé, et `rebooking` (client fidèle qui recommande).
+# `detail` porte, quand disponibles, les paramètres UTM (source/medium/campaign)
+# — jamais de PII.
 ANALYTICS_EVENTS = (
     "landing_view",
+    "solutions_view",
+    "impact_view",
+    "preuves_view",
     "route_view",
     "quote_generated",
     "quote_pdf_download",
     "book_click",
+    "contact_submitted",
     "booking_submitted",
     "account_created",
     "booking_confirmed",
+    "rebooking",
     "voyage_page_view",
+    "verify_lookup",
+    "kit_generated",
+    "kit_download",
 )
 
 

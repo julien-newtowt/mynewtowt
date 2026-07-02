@@ -288,18 +288,54 @@ async def about_terms(request: Request) -> HTMLResponse:
 
 
 @router.get("/solutions/cafe", response_class=HTMLResponse)
-async def solutions_cafe(request: Request) -> HTMLResponse:
+async def solutions_cafe(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Page verticale « Café » du kit B2B2C : récits d'origine (Colombie,
     Guatemala, Mexique) + dataviz interactive du CO₂ évité. Indexable (cf.
     sitemap / llms.txt). Les récits sont des gabarits rendus avec des valeurs
     d'exemple ; l'ERP injecte les valeurs réelles depuis le certificat."""
+    from app.services import analytics
     from app.services.mfa import qr_data_uri
 
+    await analytics.record(
+        db,
+        "solutions_view",
+        lang=getattr(request.state, "lang", "fr"),
+        channel="public",
+        detail=analytics.detail_with_utm(request, "cafe"),
+    )
     # QR réel (scannable) vers l'outil public de vérification des certificats —
     # cohérent avec « CO₂ évité, vérifiable en scannant le code ».
     verify_url = f"{settings.site_url.rstrip('/')}/verify"
     return templates.TemplateResponse(
         "public/solutions_cafe.html",
+        {
+            "request": request,
+            "co2eq_verify_url": verify_url,
+            "co2eq_qr": qr_data_uri(verify_url),
+        },
+    )
+
+
+@router.get("/solutions/cacao", response_class=HTMLResponse)
+async def solutions_cacao(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+    """Page verticale « Cacao » du kit B2B2C : récits d'origine (Équateur,
+    Pérou, République dominicaine) + dataviz du CO₂ évité. Verticale sœur de
+    /solutions/cafe (café-cacao) — indexable (sitemap / llms.txt). Les récits
+    sont des gabarits rendus avec des valeurs d'exemple ; l'ERP injecte les
+    valeurs réelles depuis le certificat."""
+    from app.services import analytics
+    from app.services.mfa import qr_data_uri
+
+    await analytics.record(
+        db,
+        "solutions_view",
+        lang=getattr(request.state, "lang", "fr"),
+        channel="public",
+        detail=analytics.detail_with_utm(request, "cacao"),
+    )
+    verify_url = f"{settings.site_url.rstrip('/')}/verify"
+    return templates.TemplateResponse(
+        "public/solutions_cacao.html",
         {
             "request": request,
             "co2eq_verify_url": verify_url,

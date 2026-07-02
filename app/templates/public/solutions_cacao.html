@@ -1,0 +1,89 @@
+{% extends "public/_layout_v2.html" %}
+
+{% block title %}{{ t('cacao_meta_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block description %}{{ t('cacao_meta_desc', lang) }}{% endblock %}
+
+{% block head %}
+  <script src="{{ asset('js/co2-equivalences.js') }}" defer></script>
+{% endblock %}
+
+{% block content %}
+
+{# ===== HERO ===== #}
+<section class="hero hero--rose">
+  <svg class="windrose-motif" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+    <g fill="none" stroke="currentColor" stroke-width="0.6">
+      <circle cx="50" cy="50" r="46"/><circle cx="50" cy="50" r="30"/>
+      <path d="M50 2v96M2 50h96M18 18l64 64M82 18L18 82"/>
+    </g>
+  </svg>
+  <div class="hero-inner">
+    <span class="hero-kicker">{{ t('cacao_hero_kicker', lang) }}</span>
+    <h1 class="hero-title">{{ t('cacao_hero_title', lang) }}</h1>
+    <p class="hero-lead">{{ t('cacao_hero_lead', lang) }}</p>
+  </div>
+</section>
+
+{# ===== SECTION 1 — POURQUOI LA VOILE POUR LE CACAO ===== #}
+<section class="section">
+  <div class="an-method-inner">
+    <span class="section-kicker">1 · {{ t('cacao_s1_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('cacao_s1_title', lang) }}</h2>
+    <p class="section-lead" style="max-width:760px">{{ t('cacao_s1_lead', lang) }}</p>
+    <ul class="prf-list">
+      <li><strong>{{ t('cacao_li1_t', lang) }}</strong> — {{ t('cacao_li1_b', lang) }}</li>
+      <li><strong>{{ t('cacao_li2_t', lang) }}</strong> — {{ t('cacao_li2_b', lang) }}</li>
+      <li><strong>{{ t('cacao_li3_t', lang) }}</strong> — {{ t('cacao_li3_b', lang) }}</li>
+    </ul>
+  </div>
+</section>
+
+{# ===== SECTION 2 — RÉCITS D'ORIGINE (gabarits du kit B2B2C) ===== #}
+<section class="section section--sand">
+  <div class="an-method-inner">
+    <span class="section-kicker">2 · {{ t('cacao_s2_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('cacao_s2_title', lang) }}</h2>
+    <p class="section-lead" style="max-width:760px">{{ t('cacao_s2_lead', lang) }}</p>
+
+    <div class="cafe-stories">
+      {% for origin in cacao_origins %}
+        {% set ex = cacao_example(origin, lang) %}
+        <article class="card cafe-story">
+          <h3 class="cafe-story__title">{{ ex.title }}</h3>
+          <p class="cafe-story__body">{{ cacao_story(origin, lang, 'long',
+              region=ex.region, producer=ex.producer, vessel=ex.vessel, co2_kg=ex.co2_kg) }}</p>
+          <p class="cafe-story__short">
+            <span class="pill pill-neutral">{{ t('cacao_s2_pill', lang) }}</span>
+            {{ cacao_story(origin, lang, 'short', co2_kg=ex.co2_kg) }}
+          </p>
+        </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+{# ===== SECTION 3 — LE CO₂ ÉVITÉ, RENDU TANGIBLE ===== #}
+<section class="section">
+  <div class="an-method-inner">
+    <span class="section-kicker">3 · {{ t('cacao_s3_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('cacao_s3_title', lang) }}</h2>
+    <p class="section-lead" style="max-width:760px;margin-bottom:var(--sp-5)">{{ t('cacao_s3_lead', lang) }}</p>
+    {% include "public/_co2_equivalences_interactive.html" %}
+  </div>
+</section>
+
+{# ===== CTA ===== #}
+<section class="an-cta">
+  <div class="an-cta-inner">
+    <h2>{{ t('cacao_cta_title', lang) }}</h2>
+    <p>{{ t('cacao_cta_lead', lang) }}</p>
+    <div style="display:flex;gap:var(--sp-4);justify-content:center;flex-wrap:wrap">
+      <a href="/contact?cargo=cacao" class="btn btn-white btn-lg">{{ t('cacao_cta_btn_quote', lang) }}</a>
+      <a href="/preuves" class="btn btn-lg" style="color:#fff;border:2px solid rgba(255,255,255,0.45);background:transparent;">
+        {{ t('cacao_cta_btn_proof', lang) }}
+      </a>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
