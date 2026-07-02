@@ -47,8 +47,14 @@ def test_t_handles_format_placeholders():
     # Custom catalog: simulate via direct call
     from app.i18n import _CATALOGS
 
-    _CATALOGS.setdefault("fr", {})["hello_named"] = "Bonjour {name}"
-    assert t("hello_named", "fr", name="Alice") == "Bonjour Alice"
+    catalog = _CATALOGS.setdefault("fr", {})
+    catalog["hello_named"] = "Bonjour {name}"
+    try:
+        assert t("hello_named", "fr", name="Alice") == "Bonjour Alice"
+    finally:
+        # Le catalogue fr est un objet partagé (module) : ne pas laisser la
+        # clé de test polluer les tests de parité fr↔vi exécutés ensuite.
+        catalog.pop("hello_named", None)
 
 
 def test_get_lang_from_request_uses_query_param():

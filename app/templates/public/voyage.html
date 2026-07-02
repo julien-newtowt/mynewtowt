@@ -1,0 +1,175 @@
+{% extends "public/_layout_v2.html" %}
+{# Page consommateur (QR pack) : contenu par lot, volontairement noindex —
+   la preuve se partage par QR/lien, pas par le référencement. #}
+{% block robots %}noindex, follow{% endblock %}
+{% block title %}{% if found %}{{ t('vg_title', lang) }} — {{ brand.nom_court }}{% else %}{{ t('vg_notfound_title', lang) }} — {{ brand.nom_court }}{% endif %}{% endblock %}
+{% block description %}{{ t('vg_lead', lang) }}{% endblock %}
+{% block head %}{{ super() }}
+{% if found and track %}
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
+<script src="{{ asset('js/voyage-map.js') }}" defer></script>
+{% endif %}
+{% endblock %}
+{% block content %}
+
+{% if not found %}
+<section class="section">
+  <div class="container">
+    <span class="kicker">{{ t('vg_kicker', lang) }}</span>
+    <h1 class="display">{{ t('vg_notfound_title', lang) }}</h1>
+    <p class="lead">
+      {% if rate_limited %}{{ t('vg_rate_limited', lang) }}{% else %}{{ t('vg_notfound_text', lang) }}{% endif %}
+    </p>
+    <p><a class="btn btn-secondary" href="/verify">{{ t('vg_verify_link', lang) }}</a></p>
+  </div>
+</section>
+{% else %}
+
+<section class="section">
+  <div class="container">
+    <span class="kicker">{{ t('vg_kicker', lang) }} · <span class="mono">{{ booking.reference }}</span></span>
+    <h1 class="display">{{ t('vg_title', lang) }}</h1>
+    <p class="lead">{{ t('vg_lead', lang) }}</p>
+    {% if brand_name or has_brand_logo %}
+    <p class="text-muted" style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;">
+      {{ t('vg_shipped_with', lang) }}
+      {% if has_brand_logo %}
+      <img src="/voyage/{{ booking.reference }}/brand-logo" alt="{{ brand_name or '' }}" style="max-height:32px;" />
+      {% endif %}
+      {% if brand_name %}<strong>{{ brand_name }}</strong>{% endif %}
+      <span aria-hidden="true">×</span> <strong>NEWTOWT</strong>
+    </p>
+    {% endif %}
+  </div>
+</section>
+
+{# ── La traversée ── #}
+<section class="container mb-5">
+  <article class="card">
+    <h2>{{ t('vg_journey', lang) }}</h2>
+    <div class="grid grid-3 gap-4">
+      <div>
+        <div class="text-muted">{{ t('vg_departure', lang) }}</div>
+        <div class="display" style="font-size:var(--text-lg);">{% if pol %}{{ pol.country|flag }} {{ pol.name }}{% else %}—{% endif %}</div>
+        <div class="mono text-sm text-muted">{{ (leg.atd or leg.etd)|date if leg else '—' }}</div>
+      </div>
+      <div>
+        <div class="text-muted">{% if leg and leg.ata %}{{ t('vg_arrival', lang) }}{% else %}{{ t('vg_arrival_expected', lang) }}{% endif %}</div>
+        <div class="display" style="font-size:var(--text-lg);">{% if pod %}{{ pod.country|flag }} {{ pod.name }}{% else %}—{% endif %}</div>
+        <div class="mono text-sm text-muted">{{ (leg.ata or leg.eta)|date if leg else '—' }}</div>
+      </div>
+      <div>
+        <div class="text-muted">{{ t('vg_vessel', lang) }}</div>
+        <div class="display" style="font-size:var(--text-lg);">⛵ {{ vessel.name if vessel else '—' }}</div>
+        <div class="mono text-sm text-muted">
+          {% if leg and leg.distance_nm %}{{ leg.distance_nm|int }} NM{% endif %}
+          {% if duration_days %} · {{ duration_days }} {{ t('vg_days', lang) }}{% endif %}
+        </div>
+      </div>
+    </div>
+  </article>
+</section>
+
+{# ── La route réellement suivie ── #}
+{% if track %}
+<section class="container mb-5">
+  <article class="card" style="padding:0; overflow:hidden;">
+    <div class="js-voyage-map"
+         style="width:100%; height:420px; background:var(--sable-light); position:relative;"
+         data-maptiler-token="{{ maptiler_token }}"
+         data-track='{{ track|tojson }}'
+         data-ports='{{ ports_json|tojson }}'
+         data-vessel-name="{{ vessel.name if vessel else '' }}"></div>
+  </article>
+  <p class="text-muted text-sm mt-2">{{ t('vg_map_note', lang) }}</p>
+</section>
+{% endif %}
+
+{# ── CO₂ évité (certificat Anemos) ── #}
+{% if co2_kg %}
+<section class="container mb-5">
+  <article class="card">
+    <h2 style="margin-top:0;"><span style="color:var(--vert);">−{{ co2_kg }}</span> {{ t('vg_co2_title', lang) }}</h2>
+    <p class="text-muted">{{ t('vg_co2_text', lang, ref=cert.reference) }}</p>
+    <a class="btn btn-secondary btn-sm" href="/verify/{{ cert.reference }}">{{ t('vg_co2_verify', lang) }}</a>
+  </article>
+</section>
+{% endif %}
+
+{# ── Conditions dans la cale ── #}
+{% if conditions %}
+<section class="container mb-5">
+  <article class="card">
+    <h2 style="margin-top:0;">{{ t('vg_cond_title', lang) }}</h2>
+    <p class="text-muted">{{ t('vg_cond_text', lang) }}</p>
+    <div class="grid grid-2 gap-4">
+      <div>
+        <div class="text-muted">{{ t('vg_cond_temp', lang) }}</div>
+        <div class="display" style="font-size:var(--text-xl);">{{ conditions.temp_avg }} °C</div>
+        <div class="mono text-sm text-muted">{{ t('vg_cond_min', lang) }} {{ conditions.temp_min }} °C · {{ t('vg_cond_max', lang) }} {{ conditions.temp_max }} °C</div>
+        {% if conditions.temp_points %}
+        <svg viewBox="0 0 600 120" role="img" aria-label="{{ t('vg_cond_temp', lang) }}"
+             style="width:100%; height:80px; margin-top:0.5rem;">
+          <polyline points="{{ conditions.temp_points }}" fill="none"
+                    stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        {% endif %}
+      </div>
+      {% if conditions.humidity_avg is not none %}
+      <div>
+        <div class="text-muted">{{ t('vg_cond_humidity', lang) }}</div>
+        <div class="display" style="font-size:var(--text-xl);">{{ conditions.humidity_avg }} %</div>
+        <div class="mono text-sm text-muted">{{ t('vg_cond_min', lang) }} {{ conditions.humidity_min }} % · {{ t('vg_cond_max', lang) }} {{ conditions.humidity_max }} %</div>
+        {% if conditions.humidity_points %}
+        <svg viewBox="0 0 600 120" role="img" aria-label="{{ t('vg_cond_humidity', lang) }}"
+             style="width:100%; height:80px; margin-top:0.5rem;">
+          <polyline points="{{ conditions.humidity_points }}" fill="none"
+                    stroke="var(--cuivre)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </article>
+</section>
+{% endif %}
+
+{# ── L'histoire de ce lot ── #}
+{% if story %}
+<section class="container mb-5">
+  <article class="card section--sand">
+    <h2 style="margin-top:0;">{{ t('vg_story_title', lang) }}</h2>
+    <p class="lead">{{ story }}</p>
+  </article>
+</section>
+{% endif %}
+
+{# ── À bord ── #}
+{% if photos %}
+<section class="container mb-5">
+  <h2>{{ t('vg_photos_title', lang) }}</h2>
+  <div class="grid grid-3 gap-4">
+    {% for photo in photos %}
+    <figure class="card" style="padding:0; overflow:hidden; margin:0;">
+      <img src="/voyage/{{ booking.reference }}/photos/{{ photo.id }}"
+           alt="{{ photo.label or t('vg_photos_title', lang) }}" loading="lazy"
+           style="width:100%; height:220px; object-fit:cover; display:block;" />
+      {% if photo.label %}<figcaption class="text-muted text-sm" style="padding:0.5rem 0.75rem;">{{ photo.label }}</figcaption>{% endif %}
+    </figure>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{# ── Boucle B2B2C : le lecteur est peut-être un pro ── #}
+<section class="container mb-5">
+  <article class="card closing-band" style="text-align:center;">
+    <h2 style="margin-top:0;">{{ t('vg_cta_title', lang) }}</h2>
+    <p class="lead">{{ t('vg_cta_text', lang) }}</p>
+    <a class="btn btn-primary" href="/solutions/cafe">{{ t('vg_cta_button', lang) }}</a>
+  </article>
+</section>
+
+{% endif %}
+{% endblock %}

@@ -44,7 +44,10 @@
   <div class="text-center">
     {% if verify_qr %}<img src="{{ verify_qr }}" alt="QR" style="width:96pt;height:96pt;" />{% endif %}
     <div class="small mono">{{ cert.reference }}</div>
-    <div class="small">{{ 'Scan to verify' if _en else 'Scannez pour vérifier' }}</div>
+    <div class="small">
+      {% if share_url %}{{ 'Scan to follow the voyage' if _en else 'Scannez pour suivre la traversée' }}
+      {% else %}{{ 'Scan to verify' if _en else 'Scannez pour vérifier' }}{% endif %}
+    </div>
   </div>
 </div>
 {% endif %}
@@ -58,6 +61,9 @@
 {% endif %}
 
 <div class="footer-mention">
+  {% if share_url %}
+  {{ 'Voyage of this shipment:' if _en else 'La traversée de cette expédition :' }} {{ share_url }} ·
+  {% endif %}
   {{ 'Avoided CO₂ (tank-to-wake), certified Anemos — verifiable at'
      if _en else 'CO₂ évité (tank-to-wake), certifié Anemos — vérifiable sur' }}
   {{ verify_url or (site_url ~ '/verify') }}

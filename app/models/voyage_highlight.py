@@ -1,8 +1,8 @@
-"""Voyage Highlight  Points remarquables d'une traverse pour le Carnet de Bord ANEMOS.
+"""Voyage Highlight — Points remarquables d'une traversée pour le Carnet de Bord ANEMOS.
 
-Ces points sont slectionns manuellement (MAN) pour mettre en valeur des
-vnements, lieux ou moments marquants de la traverse. Ils sont associs  des
-photos (via VoyagePhoto) et apparaissent dans le Chapitre 1 (La Traverse).
+Ces points sont sélectionnés manuellement (MAN) pour mettre en valeur des
+événements, lieux ou moments marquants de la traversée. Ils sont associés à des
+photos (via VoyagePhoto) et apparaissent dans le Chapitre 1 (La Traversée).
 """
 
 from __future__ import annotations
@@ -19,21 +19,21 @@ if TYPE_CHECKING:
     from app.models.leg import Leg
     from app.models.voyage_photo import VoyagePhoto
 
-# Catgories de points remarquables
+# Catégories de points remarquables
 HIGHLIGHT_CATEGORIES: tuple[str, ...] = (
-    "port",  # Port de dpart, arrive, escale
-    "meteorology",  # vnement mto remarquable
-    "navigation",  # Manuvre, changement de cap, etc.
-    "cargo",  # Opration de chargement/dchargement
-    "crew",  # vnement li  l'quipage
-    "vessel",  # Incident ou particularit sur le navire
+    "port",  # Port de départ, arrivée, escale
+    "meteorology",  # Événement météo remarquable
+    "navigation",  # Manœuvre, changement de cap, etc.
+    "cargo",  # Opération de chargement/déchargement
+    "crew",  # Événement lié à l'équipage
+    "vessel",  # Incident ou particularité sur le navire
     "wildlife",  # Observation faune marine
     "landscape",  # Paysage remarquable
 )
 
 
 class VoyageHighlight(Base):
-    """Point remarquable d'une traverse."""
+    """Point remarquable d'une traversée."""
 
     __tablename__ = "voyage_highlights"
 
@@ -42,7 +42,7 @@ class VoyageHighlight(Base):
         ForeignKey("legs.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    # Position gographique
+    # Position géographique
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
 
@@ -56,7 +56,7 @@ class VoyageHighlight(Base):
     description: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str] = mapped_column(String(50), nullable=False, default="navigation")
 
-    # Photo associe (optionnelle) - relation avec VoyagePhoto
+    # Photo associée (optionnelle) - relation avec VoyagePhoto
     photo_id: Mapped[int | None] = mapped_column(ForeignKey("voyage_photos.id"))
     photo: Mapped[VoyagePhoto | None] = relationship(
         "VoyagePhoto",
@@ -68,13 +68,13 @@ class VoyageHighlight(Base):
     # Ordre d'affichage dans le carnet
     display_order: Mapped[int] = mapped_column(Integer, default=0)
 
-    # Mtadonnes de cration
+    # Métadonnées de création
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     created_by: Mapped[str | None] = mapped_column(String(100))
 
-    # Mtadonnes de modification
+    # Métadonnées de modification
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_by: Mapped[str | None] = mapped_column(String(100))
 

@@ -65,10 +65,15 @@
   <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap;">
     {% if co2eq_qr %}
     <img src="{{ co2eq_qr }}" width="96" height="96"
-         alt="{% if lang == 'en' %}Verification QR code{% else %}QR code de vérification{% endif %}" />
+         alt="{% if voyage_url %}{% if lang == 'en' %}Voyage page QR code{% else %}QR code de la page du voyage{% endif %}{% else %}{% if lang == 'en' %}Verification QR code{% else %}QR code de vérification{% endif %}{% endif %}" />
+    {% endif %}
+    {% if voyage_url %}
+    <a href="{{ voyage_url }}" target="_blank" class="btn btn-secondary btn-sm">
+      {% if lang == 'en' %}Voyage page (QR target) →{% else %}Page du voyage (cible du QR) →{% endif %}
+    </a>
     {% endif %}
     {% if verify_url %}
-    <a href="{{ verify_url }}" target="_blank" class="btn btn-secondary btn-sm">
+    <a href="{{ verify_url }}" target="_blank" class="btn {% if voyage_url %}btn-ghost{% else %}btn-secondary{% endif %} btn-sm">
       {% if lang == 'en' %}Verify the certificate →{% else %}Vérifier le certificat →{% endif %}
     </a>
     {% endif %}
@@ -76,6 +81,21 @@
       {% if lang == 'en' %}Certificate PDF{% else %}Certificat PDF{% endif %}
     </a>
   </div>
+  {% if not voyage_url %}
+  <p class="text-muted text-sm" style="margin-top:var(--space-3);">
+    {% if lang == 'en' %}
+      Tip: publish the voyage page from the
+      <a href="/me/bookings/{{ booking.reference }}">booking page</a> so the QR tells
+      the whole story (real route, hold conditions, photos) instead of the
+      certificate alone.
+    {% else %}
+      Astuce : publiez la page du voyage depuis la
+      <a href="/me/bookings/{{ booking.reference }}">fiche réservation</a> pour que le QR
+      raconte toute l'histoire (trajet réel, conditions de cale, photos) plutôt
+      que le seul certificat.
+    {% endif %}
+  </p>
+  {% endif %}
 </section>
 {% else %}
 <section class="card">

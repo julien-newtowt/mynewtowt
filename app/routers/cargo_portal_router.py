@@ -35,6 +35,7 @@ from app.models.packing_list import (
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.services import cargo_excel, rate_limit
+from app.services import hold_conditions as hold_conditions_svc
 from app.services.packing_list import (
     apply_batch_update,
     can_modify,
@@ -482,6 +483,9 @@ async def portal_voyage(token: str, request: Request, db: AsyncSession = Depends
                 .limit(1)
             )
         ).scalar_one_or_none()
+    # Conditions de transport (T°/H% de cale, relevés à bord) — même agrégat
+    # que l'espace client et la page publique de voyage.
+    conditions = await hold_conditions_svc.for_leg(db, leg.id) if leg else None
     return templates.TemplateResponse(
         "portal/voyage.html",
         {
@@ -493,6 +497,7 @@ async def portal_voyage(token: str, request: Request, db: AsyncSession = Depends
             "pol": pol,
             "pod": pod,
             "last_position": last_position,
+            "conditions": conditions,
         },
     )
 

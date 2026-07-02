@@ -21,6 +21,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -80,6 +81,13 @@ class Booking(Base):
     coffee_origin: Mapped[str | None] = mapped_column(String(20))
     coffee_region: Mapped[str | None] = mapped_column(String(120))
     coffee_producer: Mapped[str | None] = mapped_column(String(160))
+
+    # Page publique de voyage (/voyage/{reference}) — destination du QR B2B2C
+    # imprimé sur le paquet. Opt-in explicite du client depuis /me, révocable ;
+    # jamais publiée sans ce consentement (aucune PII sur la page).
+    voyage_public: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
 
     signed_terms_version: Mapped[str | None] = mapped_column(String(20))
     signed_terms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

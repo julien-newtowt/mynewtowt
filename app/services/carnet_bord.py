@@ -1,24 +1,24 @@
-"""Carnet de Bord ANEMOS - Service de gnration.
+"""Carnet de Bord ANEMOS - Service de génération.
 
 Ce service est responsable de :
-1. L'agrgation des donnes ncessaires pour le Carnet de Bord
-2. La prparation des donnes pour les templates
-3. La gnration du PDF final
+1. L'agrégation des données nécessaires pour le Carnet de Bord
+2. La préparation des données pour les templates
+3. La génération du PDF final
 
-Le Carnet de Bord est gnr automatiquement  la fin d'un leg (quand le statut
-passera  "completed" ou "closed"). Il peut aussi tre gnr manuellement.
+Le Carnet de Bord est généré à la demande pour un leg (préversion HTML ou
+PDF), personnalisable par client (``client_account_id``).
 
 Structure du Carnet de Bord (10 sections) :
 0. Couverture
 1. Introduction (ANEMOS, navire, route, philosophie)
-2. Ch. 1 - La Traverse (carte + trace + ports + points remarquables)
-3. Ch. 2 - L'quipage (module activable)
-4. Ch. 3 - Le Chargement (personnalis chargeur)
+2. Ch. 1 - La Traversée (carte + trace + ports + points remarquables)
+3. Ch. 2 - L'équipage (module activable)
+4. Ch. 3 - Le Chargement (personnalisé chargeur)
 5. Ch. 4 - Conditions de transport (cale)
 6. Ch. 5 - Performance environnementale
 7. Ch. 6 - Performance de navigation
-8. Ch. 7 - Conditions mtorologiques (module activable)
-9. Ch. 8 - Timeline complte
+8. Ch. 7 - Conditions météorologiques (module activable)
+9. Ch. 8 - Timeline complète
 10. Conclusion
 """
 
@@ -39,23 +39,23 @@ from app.models.leg import Leg
 from app.models.noon_report import (
     NoonReport,
     NoonReportEngine,
-    NoonReportHold,
     NoonReportSail,
 )
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.models.voyage_highlight import VoyageHighlight
 from app.models.voyage_photo import VoyagePhoto
+from app.services import hold_conditions as hold_conditions_svc
 
 # Propulsion modes
 PROPULSION_MODES = ("sail", "assisted", "motor")
 
 
 class CarnetBordData:
-    """Structure de donnes pour le Carnet de Bord."""
+    """Structure de données pour le Carnet de Bord."""
 
     def __init__(self):
-        # Mtadonnes gnrales
+        # Métadonnées générales
         self.leg: Leg | None = None
         self.vessel: Vessel | None = None
         self.pol: Port | None = None
@@ -63,12 +63,12 @@ class CarnetBordData:
         self.client: ClientAccount | None = None
         self.generated_at: datetime = datetime.utcnow()
 
-        # Donnes par chapitre
+        # Données par chapitre
         self.cover_photo: VoyagePhoto | None = None
         self.route_map_image: str | None = None
         self.anemos_logo: str | None = None
 
-        # Chapitre 1 - La Traverse
+        # Chapitre 1 - La Traversée
         self.gps_trace: list[dict[str, Any]] = []
         self.highlights: list[VoyageHighlight] = []
         self.distance_nm: Decimal | None = None
@@ -77,7 +77,7 @@ class CarnetBordData:
         self.sog_max: float | None = None
         self.propulsion_stats: dict[str, Any] = {}
 
-        # Chapitre 2 - L'quipage
+        # Chapitre 2 - L'équipage
         self.crew_members: list[CrewMember] = []
         self.crew_photos: list[VoyagePhoto] = []
         self.crew_description: str | None = None
@@ -129,7 +129,7 @@ class CarnetBordData:
         self.engine_data: list[dict[str, Any]] = []
         self.sail_trim_data: list[dict[str, Any]] = []
 
-        # Chapitre 7 - Conditions mtorologiques
+        # Chapitre 7 - Conditions météorologiques
         self.weather_images: list[VoyagePhoto] = []
         self.weather_stats: dict[str, Any] = {}
         self.weather_events: list[dict[str, Any]] = []
@@ -154,19 +154,19 @@ async def get_carnet_bord_data(
     leg_id: int,
     client_account_id: int | None = None,
 ) -> CarnetBordData:
-    """Rcupre toutes les donnes ncessaires pour gnrer le Carnet de Bord.
+    """Récupère toutes les données nécessaires pour générer le Carnet de Bord.
 
     Args:
-        db: Session de base de donnes
-        leg_id: ID du leg pour lequel gnrer le carnet
+        db: Session de base de données
+        leg_id: ID du leg pour lequel générer le carnet
         client_account_id: ID du client (optionnel, pour personnalisation)
 
     Returns:
-        CarnetBordData: Objet contenant toutes les donnes organises par chapitre
+        CarnetBordData: Objet contenant toutes les données organisées par chapitre
     """
     data = CarnetBordData()
 
-    # Rcupration des donnes de base
+    # Récupération des données de base
     leg = await db.get(Leg, leg_id)
     if not leg:
         return data
@@ -181,7 +181,7 @@ async def get_carnet_bord_data(
     data.pol = await db.get(Port, leg.departure_port_id)
     data.pod = await db.get(Port, leg.arrival_port_id)
 
-    # Client (si spcifi ou depuis les bookings)
+    # Client (si spécifié ou depuis les bookings)
     if client_account_id:
         data.client = await db.get(ClientAccount, client_account_id)
     else:
@@ -198,7 +198,7 @@ async def get_carnet_bord_data(
             data.client = await db.get(ClientAccount, booking.client_account_id)
 
     # =========================================================================
-    # CHAPITRE 1 - La Traverse
+    # CHAPITRE 1 - La Traversée
     # =========================================================================
 
     # GPS Trace depuis NoonReports
@@ -221,7 +221,7 @@ async def get_carnet_bord_data(
                 }
             )
 
-        # Calculer distance, dure, vitesses
+        # Calculer distance, durée, vitesses
         if leg.distance_nm:
             data.distance_nm = Decimal(leg.distance_nm)
 
@@ -245,7 +245,7 @@ async def get_carnet_bord_data(
     )
     data.highlights = highlights.scalars().all()
 
-    # Rpartition propulsion
+    # Répartition propulsion
     propulsion_counts: dict[str, int] = {"sail": 0, "assisted": 0, "motor": 0}
     for report in noon_reports:
         mode = report.propulsion_mode
@@ -261,10 +261,10 @@ async def get_carnet_bord_data(
         }
 
     # =========================================================================
-    # CHAPITRE 2 - L'quipage
+    # CHAPITRE 2 - L'équipage
     # =========================================================================
 
-    # Membres d'quipage
+    # Membres d'équipage
     crew_members = await db.execute(
         select(CrewMember)
         .where(CrewMember.vessel_id == leg.vessel_id)
@@ -272,7 +272,7 @@ async def get_carnet_bord_data(
     )
     data.crew_members = crew_members.scalars().all()
 
-    # Photos d'quipage (batch "crew")
+    # Photos d'équipage (batch "crew")
     crew_photos = await db.execute(
         select(VoyagePhoto)
         .where(VoyagePhoto.leg_id == leg_id)
@@ -281,7 +281,7 @@ async def get_carnet_bord_data(
     )
     data.crew_photos = crew_photos.scalars().all()
 
-    # Description de l'quipage depuis le vessel
+    # Description de l'équipage depuis le vessel
     if vessel:
         data.crew_description = vessel.crew_description
 
@@ -301,7 +301,7 @@ async def get_carnet_bord_data(
         data.total_palettes = sum(b.total_palettes or 0 for b in bookings)
         data.total_weight_kg = sum(Decimal(b.total_weight_kg or 0) for b in bookings)
 
-        # Si un client est spcifi, calculer ses donnes
+        # Si un client est spécifié, calculer ses données
         if data.client:
             client_bookings = [b for b in bookings if b.client_account_id == data.client.id]
             if client_bookings:
@@ -310,7 +310,7 @@ async def get_carnet_bord_data(
                     Decimal(b.total_weight_kg or 0) for b in client_bookings
                 )
 
-        # Produits (simplifi -  dtailler)
+        # Produits (simplifié - à détailler)
         # Pour l'instant, on groupe par type de produit
         product_map: dict[str, dict[str, Any]] = {}
         for booking in bookings:
@@ -334,7 +334,7 @@ async def get_carnet_bord_data(
                 )
             data.products = list(product_map.values())
 
-        # Taux de remplissage (simplifi)
+        # Taux de remplissage (simplifié)
         if vessel and vessel.capacity_palettes and vessel.capacity_palettes > 0:
             data.fill_rate_surface = (data.total_palettes / vessel.capacity_palettes) * 100
 
@@ -351,75 +351,27 @@ async def get_carnet_bord_data(
     # CHAPITRE 4 - Conditions de transport
     # =========================================================================
 
-    # Donnes des cales depuis NoonReportHold
-    hold_rows = await db.execute(
-        select(NoonReportHold).where(
-            NoonReportHold.noon_report_id.in_([r.id for r in noon_reports])
-        )
-    )
-    hold_rows = hold_rows.scalars().all()
-
-    if hold_rows:
-        # Grouper par zone
-        zone_data: dict[str, dict[str, Any]] = {}
-        for row in hold_rows:
-            zone = row.location
-            if zone not in zone_data:
-                zone_data[zone] = {
-                    "name": zone,
-                    "temp_min": row.temp_midnight_c or row.temp_midday_c,
-                    "temp_max": row.temp_midnight_c or row.temp_midday_c,
-                    "humidity_min": row.humidity_midnight_pct or row.humidity_midday_pct,
-                    "humidity_max": row.humidity_midnight_pct or row.humidity_midday_pct,
-                    "temps": [],
-                    "humidities": [],
-                }
-            else:
-                zone_data[zone]["temp_min"] = min(
-                    zone_data[zone]["temp_min"] or 0,
-                    row.temp_midnight_c or 0,
-                    row.temp_midday_c or 0,
-                )
-                zone_data[zone]["temp_max"] = max(
-                    zone_data[zone]["temp_max"] or 0,
-                    row.temp_midnight_c or 0,
-                    row.temp_midday_c or 0,
-                )
-                zone_data[zone]["humidity_min"] = min(
-                    zone_data[zone]["humidity_min"] or 0,
-                    row.humidity_midnight_pct or 0,
-                    row.humidity_midday_pct or 0,
-                )
-                zone_data[zone]["humidity_max"] = max(
-                    zone_data[zone]["humidity_max"] or 0,
-                    row.humidity_midnight_pct or 0,
-                    row.humidity_midday_pct or 0,
-                )
-
-        data.hold_data = list(zone_data.values())
-
-        # Calculer les stats globales
-        all_temps = []
-        all_humidities = []
-        for row in hold_rows:
-            if row.temp_midnight_c:
-                all_temps.append(row.temp_midnight_c)
-            if row.temp_midday_c:
-                all_temps.append(row.temp_midday_c)
-            if row.humidity_midnight_pct:
-                all_humidities.append(row.humidity_midnight_pct)
-            if row.humidity_midday_pct:
-                all_humidities.append(row.humidity_midday_pct)
-
-        if all_temps:
-            data.temp_avg = sum(all_temps) / len(all_temps)
-            data.temp_min = min(all_temps)
-            data.temp_max = max(all_temps)
-
-        if all_humidities:
-            data.humidity_avg = sum(all_humidities) / len(all_humidities)
-            data.humidity_min = min(all_humidities)
-            data.humidity_max = max(all_humidities)
+    # Agrégation unique des relevés de cale — service partagé avec l'espace
+    # client, le portail expéditeur et la page publique de voyage. Corrige au
+    # passage le calcul min/max historique (les relevés absents comptaient 0).
+    conditions = await hold_conditions_svc.for_leg(db, leg_id)
+    if conditions:
+        data.hold_data = [
+            {
+                "name": h.location,
+                "temp_min": h.temp_min,
+                "temp_max": h.temp_max,
+                "humidity_min": h.humidity_min,
+                "humidity_max": h.humidity_max,
+            }
+            for h in conditions.holds
+        ]
+        data.temp_avg = conditions.temp_avg
+        data.temp_min = conditions.temp_min
+        data.temp_max = conditions.temp_max
+        data.humidity_avg = conditions.humidity_avg
+        data.humidity_min = conditions.humidity_min
+        data.humidity_max = conditions.humidity_max
 
     # =========================================================================
     # CHAPITRE 5 - Performance environnementale
@@ -451,7 +403,7 @@ async def get_carnet_bord_data(
         data.method = cert.method
         data.distance_source = cert.distance_source
 
-        # Calculer le taux de dcarbonation
+        # Calculer le taux de décarbonation
         if cert.co2_conventional_kg and cert.co2_conventional_kg > 0:
             data.decarbonation_rate = (cert.co2_avoided_kg / cert.co2_conventional_kg) * 100
 
@@ -461,7 +413,7 @@ async def get_carnet_bord_data(
         if fuel_values:
             data.fuel_consumed_l = sum(fuel_values)
 
-    # Facteurs par dfaut
+    # Facteurs par défaut
     data.towt_factor = 1.5  # g CO2/t.km
     data.conventional_factor = 13.7  # g CO2/t.km
 
@@ -478,12 +430,12 @@ async def get_carnet_bord_data(
     sail_rows = sail_rows.scalars().all()
 
     if sail_rows:
-        # Compter les heures par mode (simplifi)
-        # En ralit, il faudrait analyser les donnes plus finement
+        # Compter les heures par mode (simplifié)
+        # En réalité, il faudrait analyser les données plus finement
         for row in sail_rows:
-            # Si les voiles sont utilises
+            # Si les voiles sont utilisées
             if row.j0 or row.fwd_j1 or row.aft_j1 or row.fwd_ms or row.aft_ms:
-                # Vrifier si les moteurs sont aussi utiliss
+                # Vérifier si les moteurs sont aussi utilisés
                 if row.me_ps_load_pct or row.me_sb_load_pct:
                     data.assisted_hours += 24  # Approximation
                 else:
@@ -498,7 +450,7 @@ async def get_carnet_bord_data(
             data.assisted_pct = (data.assisted_hours / data.total_hours) * 100
             data.motor_pct = (data.motor_hours / data.total_hours) * 100
 
-    # Donnes moteurs depuis NoonReportEngine
+    # Données moteurs depuis NoonReportEngine
     engine_rows = await db.execute(
         select(NoonReportEngine).where(
             NoonReportEngine.noon_report_id.in_([r.id for r in noon_reports])
@@ -528,10 +480,10 @@ async def get_carnet_bord_data(
         data.engine_data = list(engine_map.values())
 
     # =========================================================================
-    # CHAPITRE 7 - Conditions mtorologiques
+    # CHAPITRE 7 - Conditions météorologiques
     # =========================================================================
 
-    # Photos mto (batch "meteorology")
+    # Photos météo (batch "meteorology")
     weather_photos = await db.execute(
         select(VoyagePhoto)
         .where(VoyagePhoto.leg_id == leg_id)
@@ -540,7 +492,7 @@ async def get_carnet_bord_data(
     )
     data.weather_images = weather_photos.scalars().all()
 
-    # Statistiques mto depuis NoonReports
+    # Statistiques météo depuis NoonReports
     if noon_reports:
         wind_speeds = [r.wind_speed_kn for r in noon_reports if r.wind_speed_kn]
         if wind_speeds:
@@ -561,12 +513,12 @@ async def get_carnet_bord_data(
     # CHAPITRE 8 - Timeline
     # =========================================================================
 
-    # vnements de timeline (simplifi)
-    # Pour l'instant, on cre des vnements de base
+    # Événements de timeline (simplifié)
+    # Pour l'instant, on crée des événements de base
     if leg:
         data.timeline_events = []
 
-        # Dpart
+        # Départ
         if leg.atd:
             data.timeline_events.append(
                 {
@@ -574,12 +526,12 @@ async def get_carnet_bord_data(
                     "event_category": "port",
                     "occurred_at": leg.atd,
                     "planned_at": leg.etd,
-                    "location": data.pol.name if data.pol else "Port de dpart",
-                    "description": "Dpart du port",
+                    "location": data.pol.name if data.pol else "Port de départ",
+                    "description": "Départ du port",
                 }
             )
 
-        # Arrive
+        # Arrivée
         if leg.ata:
             data.timeline_events.append(
                 {
@@ -587,12 +539,12 @@ async def get_carnet_bord_data(
                     "event_category": "port",
                     "occurred_at": leg.ata,
                     "planned_at": leg.eta,
-                    "location": data.pod.name if data.pod else "Port d'arrive",
-                    "description": "Arrive au port",
+                    "location": data.pod.name if data.pod else "Port d'arrivée",
+                    "description": "Arrivée au port",
                 }
             )
 
-        # Points remarquables comme vnements
+        # Points remarquables comme événements
         for highlight in data.highlights:
             data.timeline_events.append(
                 {
@@ -632,7 +584,7 @@ async def get_carnet_bord_data(
     )
     data.upcoming_legs = upcoming.scalars().all()
 
-    # Contacts (simplifi -  dtailler)
+    # Contacts (simplifié - à détailler)
     data.contacts = {
         "commercial": {
             "name": "Service Commercial NewTowt",
@@ -640,7 +592,7 @@ async def get_carnet_bord_data(
             "phone": "+33 1 23 45 67 89",
         },
         "operations": {
-            "name": "Service Oprations NewTowt",
+            "name": "Service Opérations NewTowt",
             "email": "operations@newtowt.com",
             "phone": "+33 1 23 45 67 90",
         },
@@ -654,42 +606,34 @@ async def get_carnet_bord_data(
     return data
 
 
+def build_carnet_context(data: CarnetBordData) -> dict[str, Any]:
+    """Contexte de rendu complet du template ``pdf/carnet_bord.html``.
+
+    Partagé entre la prévisualisation HTML (router) et la génération PDF :
+    les attributs de :class:`CarnetBordData` portent exactement les noms de
+    variables attendus par les templates de chapitres — le contexte est donc
+    l'état complet de l'objet (le PDF recevait historiquement un contexte
+    tronqué à 6 variables : défaut corrigé).
+    """
+    return dict(vars(data))
+
+
 async def generate_carnet_bord_pdf(
     db: AsyncSession,
     leg_id: int,
     client_account_id: int | None = None,
 ) -> bytes:
-    """Gnre le PDF du Carnet de Bord pour un leg.
+    """Génère le PDF du Carnet de Bord pour un leg (WeasyPrint).
 
-    Args:
-        db: Session de base de donnes
-        leg_id: ID du leg
-        client_account_id: ID du client pour personnalisation
-
-    Returns:
-        bytes: Contenu du PDF gnr
+    WeasyPrint est importé localement (dépendances natives lourdes) — même
+    convention que ``services.pdf_generator``.
     """
-    from app.services.pdf import render_pdf
-    from app.templating import render_template
+    from weasyprint import HTML  # local import — heavy native deps
 
-    # Rcuprer les donnes
+    from app.config import settings
+    from app.templating import templates
+
     data = await get_carnet_bord_data(db, leg_id, client_account_id)
-
-    # Prparer le contexte pour le template
-    context = {
-        "leg": data.leg,
-        "vessel": data.vessel,
-        "pol": data.pol,
-        "pod": data.pod,
-        "client": data.client,
-        "generated_at": data.generated_at,
-        # Ajouter toutes les autres donnes...
-    }
-
-    # Rendre le template
-    html = await render_template("pdf/carnet_bord.html", **context)
-
-    # Gnrer le PDF
-    pdf_bytes = await render_pdf(html)
-
-    return pdf_bytes
+    context = build_carnet_context(data)
+    html = templates.get_template("pdf/carnet_bord.html").render(**context)
+    return HTML(string=html, base_url=settings.site_url or "").write_pdf()

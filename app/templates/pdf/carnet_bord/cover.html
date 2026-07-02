@@ -16,7 +16,7 @@
 
     <!-- Subtitle -->
     <div class="cover-subtitle">
-        Transport dcaron par voilier cargo
+        Transport décarboné par voilier cargo
     </div>
 
     <!-- Voyage Info -->
@@ -28,12 +28,12 @@
             <strong>Voyage :</strong> {{ leg.leg_code }}
         </div>
         <div class="voyage-detail">
-            <strong>Itinraire :</strong> 
-            {{ pol.name if pol else "N/A" }}  {{ pod.name if pod else "N/A" }}
+            <strong>Itinéraire :</strong> 
+            {{ pol.name if pol else "N/A" }} → {{ pod.name if pod else "N/A" }}
         </div>
         <div class="voyage-detail">
-            <strong>Priode :</strong> 
-            {{ leg.atd.strftime("%d/%m/%Y") if leg.atd else leg.etd.strftime("%d/%m/%Y") }}  
+            <strong>Période :</strong> 
+            {{ leg.atd.strftime("%d/%m/%Y") if leg.atd else leg.etd.strftime("%d/%m/%Y") }} → 
             {{ leg.ata.strftime("%d/%m/%Y") if leg.ata else leg.eta.strftime("%d/%m/%Y") }}
         </div>
         {% if client %}
@@ -52,7 +52,7 @@
         />
         {% else %}
         <div class="placeholder" style="width: 80%; height: 300px;">
-            Photo du navire -  ajouter une photo de couverture
+            Photo du navire - à ajouter une photo de couverture
         </div>
         {% endif %}
     </div>
@@ -69,10 +69,10 @@
             {% endif %}
         </div>
         <div style="margin-top: 10pt; font-size: 12pt; color: var(--gris);">
-            <strong>NewTowt</strong> - Transport maritime dcaron par voilier cargo
+            <strong>NewTowt</strong> - Transport maritime décarboné par voilier cargo
         </div>
         <div style="font-size: 10pt; color: var(--gris); margin-top: 5pt;">
-            Gnr le {{ generated_at.strftime("%d/%m/%Y  %H:%M") }}
+            Généré le {{ generated_at.strftime("%d/%m/%Y à %H:%M") }}
         </div>
     </div>
 </div>

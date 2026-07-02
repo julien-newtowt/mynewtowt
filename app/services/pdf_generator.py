@@ -242,12 +242,19 @@ def render_kit(
     story_long: str | None,
     story_short: str | None,
     client_logo_data: str | None = None,
+    share_url: str | None = None,
 ) -> DocumentBytes:
     """Kit B2B2C par expédition (Vague 3) : récit d'origine + CO₂ évité figé +
-    QR de vérification, co-brandé avec la marque du client. PDF téléchargeable."""
+    QR, co-brandé avec la marque du client. PDF téléchargeable.
+
+    ``share_url`` (page publique de voyage ``/voyage/{ref}``, si publiée)
+    prime sur l'URL de vérification pour la cible du QR : le consommateur
+    scanne l'histoire complète, le certificat reste vérifiable depuis elle.
+    """
     ctx = _common_ctx(booking, leg, vessel, pol, pod, client)
     base = (settings.site_url or "").rstrip("/")
     verify_url = f"{base}/verify/{cert.reference}" if cert else None
+    qr_target = share_url or verify_url
     ctx.update(
         cert=cert,
         lang=lang,
@@ -256,11 +263,13 @@ def render_kit(
         story_short=story_short,
         client_logo_data=client_logo_data,
         verify_url=verify_url,
+        share_url=share_url,
+        qr_target=qr_target,
     )
-    if verify_url:
+    if qr_target:
         from app.services.mfa import qr_data_uri
 
-        ctx["verify_qr"] = qr_data_uri(verify_url)
+        ctx["verify_qr"] = qr_data_uri(qr_target)
     html, pdf = _render_pdf("pdf/kit.html", ctx)
     return DocumentBytes(html=html, pdf=pdf, filename=f"KitB2B2C_{booking.reference}.pdf")
 

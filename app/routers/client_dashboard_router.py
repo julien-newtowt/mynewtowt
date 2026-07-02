@@ -41,6 +41,7 @@ from app.models.port import Port
 from app.models.vessel import Vessel
 from app.services import coffee_stories, messaging, mfa, notifications, safe_files, security_alerts
 from app.services import documents as documents_svc
+from app.services import hold_conditions as hold_conditions_svc
 from app.services.activity import record as activity_record
 from app.services.booking import find_by_reference, list_for_client
 from app.services.vessel_position import get_latest_position
@@ -48,6 +49,10 @@ from app.templating import templates
 
 # Ordre des étapes de voyage pour la timeline de suivi.
 _VOYAGE_STEPS = ("submitted", "confirmed", "loaded", "at_sea", "discharged", "delivered")
+
+# Statuts où la traversée a commencé : conditions de cale consultables,
+# Carnet de Bord générable, page publique de voyage publiable.
+_VOYAGE_STARTED = ("loaded", "at_sea", "discharged", "delivered")
 
 router = APIRouter(tags=["client-dashboard"])
 
@@ -149,6 +154,13 @@ async def booking_detail(
         await db.execute(select(PackingList.id).where(PackingList.booking_id == booking.id))
     ).scalar_one_or_none()
     positions = await locate_for_packing_list(db, pl_id) if pl_id else []
+    # Conditions de transport (T°/H% de cale, relevés à bord) — la promesse
+    # « surveillées en continu » devient consultable dès que le voyage a
+    # commencé. Même agrégat que le portail expéditeur et la page publique.
+    conditions = None
+    if booking.status in _VOYAGE_STARTED:
+        conditions = await hold_conditions_svc.for_leg(db, booking.leg_id)
+    voyage_url = f"{settings.site_url.rstrip('/')}/voyage/{booking.reference}"
     return templates.TemplateResponse(
         "client/booking_detail.html",
         {
@@ -161,6 +173,9 @@ async def booking_detail(
             "decks": DECKS,
             "holds": HOLDS,
             "blocks": BLOCKS,
+            "conditions": conditions,
+            "carnet_available": booking.status in _VOYAGE_STARTED,
+            "voyage_url": voyage_url,
         },
     )
 
@@ -189,6 +204,62 @@ async def post_message(
             booking_id=booking.id,
         )
     return RedirectResponse(url=f"/me/bookings/{ref}#messages", status_code=303)
+
+
+@router.post("/me/bookings/{ref}/voyage-public")
+async def booking_voyage_public_toggle(
+    ref: str,
+    enabled: str = Form(""),
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Opt-in / opt-out de la page publique de voyage ``/voyage/{ref}``.
+
+    C'est la destination du QR B2B2C imprimé sur le paquet : jamais publiée
+    sans ce consentement explicite, dépubliable à tout moment. Tracé dans
+    l'audit trail (donnée rendue publique / retirée).
+    """
+    booking = await find_by_reference(db, ref)
+    if not booking or booking.client_account_id != client.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    booking.voyage_public = enabled == "on"
+    await db.flush()
+    await activity_record(
+        db,
+        action="client_voyage_public_on" if booking.voyage_public else "client_voyage_public_off",
+        user_name=client.email,
+        module="booking",
+        entity_type="booking",
+        entity_id=booking.id,
+        entity_label=booking.reference,
+    )
+    return RedirectResponse(url=f"/me/bookings/{ref}?voyage_saved=1", status_code=303)
+
+
+@router.get("/me/bookings/{ref}/carnet.pdf")
+async def booking_carnet_pdf(
+    ref: str,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Carnet de Bord de la traversée (PDF personnalisé pour ce client).
+
+    Dossier de preuve narratif : trace GPS, conditions de cale, performance
+    environnementale, photos. Disponible dès que le voyage a commencé.
+    """
+    from app.services.carnet_bord import generate_carnet_bord_pdf
+
+    booking = await find_by_reference(db, ref)
+    if not booking or booking.client_account_id != client.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    if booking.status not in _VOYAGE_STARTED:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    pdf_bytes = await generate_carnet_bord_pdf(db, booking.leg_id, client_account_id=client.id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="CarnetBord_{booking.reference}.pdf"'},
+    )
 
 
 @router.get("/me/messages", response_class=HTMLResponse)
@@ -835,7 +906,15 @@ async def booking_kit(
 
     co2_kg = int(cert.co2_avoided_kg) if cert and cert.co2_avoided_kg else None
     verify_url = f"{settings.site_url.rstrip('/')}/verify/{cert.reference}" if cert else None
-    qr = mfa.qr_data_uri(verify_url) if verify_url else None
+    # QR du kit : pointe vers la page publique de voyage quand elle est
+    # publiée (l'histoire complète), sinon vers la vérification du certificat.
+    voyage_url = (
+        f"{settings.site_url.rstrip('/')}/voyage/{booking.reference}"
+        if booking.voyage_public
+        else None
+    )
+    share_url = voyage_url or verify_url
+    qr = mfa.qr_data_uri(share_url) if share_url else None
 
     origin = (
         booking.coffee_origin if coffee_stories.is_valid_origin(booking.coffee_origin) else None
@@ -863,6 +942,8 @@ async def booking_kit(
             "vessel": vessel,
             "co2_kg": co2_kg,
             "verify_url": verify_url,
+            "voyage_url": voyage_url,
+            "share_url": share_url,
             "co2eq_qr": qr,
             "co2eq_verify_url": verify_url,
             "co2eq_value": co2_kg or 250,
@@ -950,6 +1031,11 @@ async def booking_kit_pdf(
         )
         story_short = coffee_stories.render_story(origin, lang, "short", co2_kg=co2_kg)
 
+    voyage_url = (
+        f"{settings.site_url.rstrip('/')}/voyage/{booking.reference}"
+        if booking.voyage_public
+        else None
+    )
     doc = pdf_generator.render_kit(
         booking=booking,
         leg=leg,
@@ -963,6 +1049,7 @@ async def booking_kit_pdf(
         story_long=story_long,
         story_short=story_short,
         client_logo_data=_brand_logo_data_uri(client),
+        share_url=voyage_url,
     )
     return Response(
         content=doc.pdf,

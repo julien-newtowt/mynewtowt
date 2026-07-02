@@ -25,10 +25,10 @@
 {# Introduction #}
 {% include "pdf/carnet_bord/introduction.html" %}
 
-{# Chapitre 1: La Traverse #}
+{# Chapitre 1: La Traversée #}
 {% include "pdf/carnet_bord/chapitre_1_traversee.html" %}
 
-{# Chapitre 2: L'quipage (module activable) #}
+{# Chapitre 2: L'équipage (module activable) #}
 {% if crew_members or crew_photos or crew_description %}
 {% include "pdf/carnet_bord/chapitre_2_equipage.html" %}
 {% endif %}
@@ -45,12 +45,12 @@
 {# Chapitre 6: Performance de navigation #}
 {% include "pdf/carnet_bord/chapitre_6_performance_navigation.html" %}
 
-{# Chapitre 7: Conditions mtorologiques (module activable) #}
+{# Chapitre 7: Conditions météorologiques (module activable) #}
 {% if weather_images or weather_stats or weather_events %}
 {% include "pdf/carnet_bord/chapitre_7_meteorologie.html" %}
 {% endif %}
 
-{# Chapitre 8: Timeline complte #}
+{# Chapitre 8: Timeline complète #}
 {% include "pdf/carnet_bord/chapitre_8_timeline.html" %}
 
 {# Conclusion #}

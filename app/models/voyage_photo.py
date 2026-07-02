@@ -1,15 +1,15 @@
-"""Voyage Photo  Photos associes  un leg pour le Carnet de Bord ANEMOS.
+"""Voyage Photo — Photos associées à un leg pour le Carnet de Bord ANEMOS.
 
-Les photos sont organises en **batches** (lots) correspondant  des moments ou
-catgories spcifiques de la traverse. Chaque batch peut contenir plusieurs photos.
+Les photos sont organisées en **batches** (lots) correspondant à des moments ou
+catégories spécifiques de la traversée. Chaque batch peut contenir plusieurs photos.
 
 Sources :
-- Photos de chargement/dchargement (module Onboarding)
-- Photos d'quipage (module Crew - organigramme)
+- Photos de chargement/déchargement (module Onboarding)
+- Photos d'équipage (module Crew - organigramme)
 - Photos de navigation (module Onboarding ou upload manuel)
-- Photos de points remarquables (lies  VoyageHighlight)
+- Photos de points remarquables (liées à VoyageHighlight)
 
-Les fichiers sont stocks via le service `safe_files` avec validation.
+Les fichiers sont stockés via le service `safe_files` avec validation.
 """
 
 from __future__ import annotations
@@ -26,47 +26,47 @@ if TYPE_CHECKING:
     from app.models.leg import Leg
     from app.models.voyage_highlight import VoyageHighlight
 
-# Catgories de batches (lots de photos)
+# Catégories de batches (lots de photos)
 BATCH_CATEGORIES: tuple[str, ...] = (
     "loading",  # Chargement de la cargaison
-    "unloading",  # Dchargement de la cargaison
-    "departure",  # Dpart du port
-    "arrival",  # Arrive au port
+    "unloading",  # Déchargement de la cargaison
+    "departure",  # Départ du port
+    "arrival",  # Arrivée au port
     "navigation",  # En mer (navigation)
-    "crew",  # Quipage (organigramme)
-    "vessel",  # Navire (gnral)
-    "cargo",  # Cargaison (gnral)
-    "port_pol",  # Port de dpart (POL)
-    "port_pod",  # Port d'arrive (POD)
+    "crew",  # Équipage (organigramme)
+    "vessel",  # Navire (général)
+    "cargo",  # Cargaison (général)
+    "port_pol",  # Port de départ (POL)
+    "port_pod",  # Port d'arrivée (POD)
     "escale",  # Escale
-    "highlight",  # Point remarquable (li  VoyageHighlight)
-    "meteorology",  # Mto
+    "highlight",  # Point remarquable (lié à VoyageHighlight)
+    "meteorology",  # Météo
     "other",  # Autres
 )
 
-# Catgories de photos (plus prcis que le batch)
+# Catégories de photos (plus précis que le batch)
 PHOTO_CATEGORIES: tuple[str, ...] = (
-    "crew_portrait",  # Portrait d'un membre d'quipage
+    "crew_portrait",  # Portrait d'un membre d'équipage
     "crew_group",  # Photo de groupe
     "cargo_palettes",  # Palettes de chargement
-    "cargo_loading",  # Opration de chargement
-    "cargo_unloading",  # Opration de dchargement
-    "vessel_exterior",  # Extrieur du navire
-    "vessel_interior",  # Intrieur du navire
+    "cargo_loading",  # Opération de chargement
+    "cargo_unloading",  # Opération de déchargement
+    "vessel_exterior",  # Extérieur du navire
+    "vessel_interior",  # Intérieur du navire
     "vessel_sails",  # Voiles
     "port_view",  # Vue du port
     "sea_landscape",  # Paysage marin
     "navigation",  # Navigation (mer, horizon)
-    "meteorology",  # Phnomne mto
+    "meteorology",  # Phénomène météo
     "wildlife",  # Faune marine
-    "event",  # vnement spcifique
+    "event",  # Événement spécifique
     "document",  # Document (BL, etc.)
     "other",  # Autres
 )
 
 
 class VoyagePhoto(Base):
-    """Photo associe  un leg et  un batch."""
+    """Photo associée à un leg et à un batch."""
 
     __tablename__ = "voyage_photos"
 
@@ -78,10 +78,10 @@ class VoyagePhoto(Base):
     # Batch auquel appartient la photo
     batch_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
 
-    # Catgorie de la photo
+    # Catégorie de la photo
     category: Mapped[str] = mapped_column(String(50), nullable=False, default="other")
 
-    # Lgende/description
+    # Légende/description
     label: Mapped[str | None] = mapped_column(String(200))
 
     # Fichier
@@ -104,7 +104,7 @@ class VoyagePhoto(Base):
         foreign_keys="VoyagePhoto.highlight_id",
     )
 
-    # Lien avec un membre d'quipage (pour les portraits)
+    # Lien avec un membre d'équipage (pour les portraits)
     crew_member_id: Mapped[int | None] = mapped_column(ForeignKey("crew_members.id"))
 
     # Upload

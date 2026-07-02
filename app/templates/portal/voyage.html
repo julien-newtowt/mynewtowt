@@ -80,5 +80,61 @@
   {% endif %}
 </article>
 
+{# ── Conditions de transport (T°/H% de cale) ── #}
+<article class="card mt-4">
+  <h2>{{ t("pt_cond_title", lang) }}</h2>
+  {% if conditions %}
+  <p class="text-muted text-sm">{{ t("pt_cond_lead", lang) }} ({{ conditions.readings }} {{ t("pt_cond_readings", lang) }})</p>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <div class="text-muted">{{ t("pt_cond_temp", lang) }}</div>
+      <div class="display" style="font-size:var(--text-xl);">{{ conditions.temp_avg }} °C</div>
+      <div class="mono text-xs text-muted">{{ t("pt_cond_min", lang) }} {{ conditions.temp_min }} °C · {{ t("pt_cond_max", lang) }} {{ conditions.temp_max }} °C</div>
+      {% if conditions.temp_points %}
+      <svg viewBox="0 0 600 120" role="img" aria-label="{{ t('pt_cond_chart_temp', lang) }}"
+           style="width:100%; height:64px; margin-top:0.5rem;">
+        <polyline points="{{ conditions.temp_points }}" fill="none"
+                  stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      {% endif %}
+    </div>
+    {% if conditions.humidity_avg is not none %}
+    <div>
+      <div class="text-muted">{{ t("pt_cond_humidity", lang) }}</div>
+      <div class="display" style="font-size:var(--text-xl);">{{ conditions.humidity_avg }} %</div>
+      <div class="mono text-xs text-muted">{{ t("pt_cond_min", lang) }} {{ conditions.humidity_min }} % · {{ t("pt_cond_max", lang) }} {{ conditions.humidity_max }} %</div>
+      {% if conditions.humidity_points %}
+      <svg viewBox="0 0 600 120" role="img" aria-label="{{ t('pt_cond_chart_hum', lang) }}"
+           style="width:100%; height:64px; margin-top:0.5rem;">
+        <polyline points="{{ conditions.humidity_points }}" fill="none"
+                  stroke="var(--cuivre)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <table class="data-table mt-3">
+    <thead><tr>
+      <th>{{ t("pt_cond_hold", lang) }}</th>
+      <th>T° {{ t("pt_cond_min", lang) }}</th><th>T° {{ t("pt_cond_max", lang) }}</th>
+      <th>H% {{ t("pt_cond_min", lang) }}</th><th>H% {{ t("pt_cond_max", lang) }}</th>
+    </tr></thead>
+    <tbody>
+      {% for h in conditions.holds %}
+      <tr>
+        <td>{{ h.location }}</td>
+        <td class="mono">{{ h.temp_min if h.temp_min is not none else '—' }}</td>
+        <td class="mono">{{ h.temp_max if h.temp_max is not none else '—' }}</td>
+        <td class="mono">{{ h.humidity_min if h.humidity_min is not none else '—' }}</td>
+        <td class="mono">{{ h.humidity_max if h.humidity_max is not none else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">{{ t("pt_cond_none", lang) }}</p>
+  {% endif %}
+</article>
+
 {% endif %}
 {% endblock %}

@@ -1,10 +1,14 @@
-"""Carnet de Bord ANEMOS - Router.
+"""Carnet de Bord ANEMOS — Router staff.
 
 Endpoints pour :
-- Gnrer le Carnet de Bord pour un leg
-- Prvisualiser le Carnet de Bord
-- Grer les points remarquables
-- Grer les photos de voyage
+- Générer le Carnet de Bord d'un leg (préversion HTML + PDF téléchargeable)
+- Gérer les points remarquables (VoyageHighlight)
+- Gérer les photos de voyage (VoyagePhoto)
+
+RBAC : module ``captain`` — consultation (C) pour la génération, modification
+(M) pour créer/mettre à jour points et photos, suppression (S) pour effacer.
+Le pendant client (PDF personnalisé par booking) vit dans
+``client_dashboard_router`` (``/me/bookings/{ref}/carnet.pdf``).
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -20,24 +25,34 @@ from app.models.leg import Leg
 from app.models.user import User
 from app.models.voyage_highlight import HIGHLIGHT_CATEGORIES, VoyageHighlight
 from app.models.voyage_photo import BATCH_CATEGORIES, PHOTO_CATEGORIES, VoyagePhoto
-from app.permissions import get_current_user
+from app.permissions import require_permission
+from app.schemas.voyage_highlight import (
+    VoyageHighlight as VoyageHighlightRead,
+)
 from app.schemas.voyage_highlight import (
     VoyageHighlightCreate,
     VoyageHighlightList,
     VoyageHighlightUpdate,
 )
 from app.schemas.voyage_photo import (
+    VoyagePhoto as VoyagePhotoRead,
+)
+from app.schemas.voyage_photo import (
     VoyagePhotoCreate,
     VoyagePhotoList,
     VoyagePhotoUpdate,
 )
-from app.services.carnet_bord import generate_carnet_bord_pdf, get_carnet_bord_data
+from app.services.carnet_bord import (
+    build_carnet_context,
+    generate_carnet_bord_pdf,
+    get_carnet_bord_data,
+)
 
 router = APIRouter(prefix="/carnet-bord", tags=["Carnet de Bord ANEMOS"])
 
 
 # =============================================================================
-# Carnet de Bord - Gnration
+# Carnet de Bord — Génération
 # =============================================================================
 
 
@@ -46,95 +61,17 @@ async def preview_carnet_bord(
     leg_id: int,
     client_account_id: int | None = Query(None, description="ID du client pour personnalisation"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("captain", "C")),
 ) -> Response:
-    """Prvisualise le Carnet de Bord pour un leg (HTML)."""
-    from app.templating import render_template
+    """Prévisualise le Carnet de Bord d'un leg (HTML, même contexte que le PDF)."""
+    from app.templating import templates
 
-    # Vrifier que le leg existe
     leg = await db.get(Leg, leg_id)
     if not leg:
-        raise HTTPException(status_code=404, detail="Leg non trouv")
+        raise HTTPException(status_code=404, detail="Leg non trouvé")
 
-    # Rcuprer les donnes
     data = await get_carnet_bord_data(db, leg_id, client_account_id)
-
-    # Prparer le contexte
-    context = {
-        "leg": data.leg,
-        "vessel": data.vessel,
-        "pol": data.pol,
-        "pod": data.pod,
-        "client": data.client,
-        "generated_at": data.generated_at,
-        # Ajouter les donnes ncessaires pour chaque chapitre
-        "cover_photo": data.cover_photo,
-        "route_map_image": data.route_map_image,
-        "anemos_logo": data.anemos_logo,
-        "gps_trace": data.gps_trace,
-        "highlights": data.highlights,
-        "distance_nm": data.distance_nm,
-        "duration_days": data.duration_days,
-        "sog_avg": data.sog_avg,
-        "sog_max": data.sog_max,
-        "propulsion_stats": data.propulsion_stats,
-        "crew_members": data.crew_members,
-        "crew_photos": data.crew_photos,
-        "crew_description": data.crew_description,
-        "crew_org_chart": data.crew_org_chart,
-        "total_palettes": data.total_palettes,
-        "client_palettes": data.client_palettes,
-        "total_weight_kg": data.total_weight_kg,
-        "client_weight_kg": data.client_weight_kg,
-        "fill_rate_surface": data.fill_rate_surface,
-        "fill_rate_weight": data.fill_rate_weight,
-        "products": data.products,
-        "loading_photos": data.loading_photos,
-        "hold_data": data.hold_data,
-        "temp_avg": data.temp_avg,
-        "temp_min": data.temp_min,
-        "temp_max": data.temp_max,
-        "humidity_avg": data.humidity_avg,
-        "humidity_min": data.humidity_min,
-        "humidity_max": data.humidity_max,
-        "temp_chart": data.temp_chart,
-        "hold_comments": data.hold_comments,
-        "co2_avoided_kg": data.co2_avoided_kg,
-        "co2_emitted_kg": data.co2_emitted_kg,
-        "co2_conventional_kg": data.co2_conventional_kg,
-        "decarbonation_rate": data.decarbonation_rate,
-        "fuel_consumed_l": data.fuel_consumed_l,
-        "emission_rate": data.emission_rate,
-        "towt_factor": data.towt_factor,
-        "conventional_factor": data.conventional_factor,
-        "method": data.method,
-        "distance_source": data.distance_source,
-        "verification_statement": data.verification_statement,
-        "sailing_hours": data.sailing_hours,
-        "assisted_hours": data.assisted_hours,
-        "motor_hours": data.motor_hours,
-        "total_hours": data.total_hours,
-        "sail_pct": data.sail_pct,
-        "assisted_pct": data.assisted_pct,
-        "motor_pct": data.motor_pct,
-        "engine_data": data.engine_data,
-        "sail_trim_data": data.sail_trim_data,
-        "weather_images": data.weather_images,
-        "weather_stats": data.weather_stats,
-        "weather_events": data.weather_events,
-        "timeline_events": data.timeline_events,
-        "timeline_stats": data.timeline_stats,
-        "etd_eta_info": data.etd_eta_info,
-        "conclusion_message": data.conclusion_message,
-        "upcoming_legs": data.upcoming_legs,
-        "contacts": data.contacts,
-        "qr_album": data.qr_album,
-        "qr_album_image": data.qr_album_image,
-        "qr_anemos": data.qr_anemos,
-        "qr_anemos_image": data.qr_anemos_image,
-    }
-
-    html = await render_template("pdf/carnet_bord.html", **context)
+    html = templates.get_template("pdf/carnet_bord.html").render(**build_carnet_context(data))
     return Response(content=html, media_type="text/html")
 
 
@@ -143,15 +80,13 @@ async def download_carnet_bord_pdf(
     leg_id: int,
     client_account_id: int | None = Query(None, description="ID du client pour personnalisation"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("captain", "C")),
 ) -> Response:
-    """Gnre et tlcharge le Carnet de Bord pour un leg (PDF)."""
-    # Vrifier que le leg existe
+    """Génère et télécharge le Carnet de Bord d'un leg (PDF WeasyPrint)."""
     leg = await db.get(Leg, leg_id)
     if not leg:
-        raise HTTPException(status_code=404, detail="Leg non trouv")
+        raise HTTPException(status_code=404, detail="Leg non trouvé")
 
-    # Gnrer le PDF
     pdf_bytes = await generate_carnet_bord_pdf(db, leg_id, client_account_id)
 
     filename = f"CarnetBord_ANEMOS_{leg.leg_code}.pdf"
@@ -167,7 +102,7 @@ async def download_carnet_bord_pdf(
 
 
 # =============================================================================
-# Points Remarquables (Voyage Highlights)
+# Points remarquables (VoyageHighlight)
 # =============================================================================
 
 
@@ -175,14 +110,12 @@ async def download_carnet_bord_pdf(
 async def list_voyage_highlights(
     leg_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("captain", "C")),
 ) -> VoyageHighlightList:
-    """Liste les points remarquables pour un leg."""
-    from sqlalchemy import select
-
+    """Liste les points remarquables d'un leg."""
     leg = await db.get(Leg, leg_id)
     if not leg:
-        raise HTTPException(status_code=404, detail="Leg non trouv")
+        raise HTTPException(status_code=404, detail="Leg non trouvé")
 
     highlights = await db.execute(
         select(VoyageHighlight)
@@ -198,24 +131,22 @@ async def list_voyage_highlights(
     )
 
 
-@router.post("/legs/{leg_id}/highlights", response_model=VoyageHighlight)
+@router.post("/legs/{leg_id}/highlights", response_model=VoyageHighlightRead)
 async def create_voyage_highlight(
     leg_id: int,
     highlight: VoyageHighlightCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("captain", "M")),
 ) -> VoyageHighlight:
-    """Cre un nouveau point remarquable."""
-
+    """Crée un nouveau point remarquable."""
     leg = await db.get(Leg, leg_id)
     if not leg:
-        raise HTTPException(status_code=404, detail="Leg non trouv")
+        raise HTTPException(status_code=404, detail="Leg non trouvé")
 
-    # Vrifier la catgorie
     if highlight.category not in HIGHLIGHT_CATEGORIES:
         raise HTTPException(
             status_code=400,
-            detail=f"Catgorie invalide. Choix possibles: {', '.join(HIGHLIGHT_CATEGORIES)}",
+            detail=f"Catégorie invalide. Choix possibles: {', '.join(HIGHLIGHT_CATEGORIES)}",
         )
 
     new_highlight = VoyageHighlight(
@@ -229,7 +160,7 @@ async def create_voyage_highlight(
         photo_id=highlight.photo_id,
         display_order=highlight.display_order or 0,
         created_at=datetime.utcnow(),
-        created_by=current_user.name or current_user.email,
+        created_by=current_user.full_name or current_user.username,
     )
 
     db.add(new_highlight)
@@ -239,43 +170,42 @@ async def create_voyage_highlight(
     return new_highlight
 
 
-@router.get("/highlights/{highlight_id}", response_model=VoyageHighlight)
+@router.get("/highlights/{highlight_id}", response_model=VoyageHighlightRead)
 async def get_voyage_highlight(
     highlight_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("captain", "C")),
 ) -> VoyageHighlight:
-    """Rcupre un point remarquable."""
+    """Récupère un point remarquable."""
     highlight = await db.get(VoyageHighlight, highlight_id)
     if not highlight:
-        raise HTTPException(status_code=404, detail="Point remarquable non trouv")
+        raise HTTPException(status_code=404, detail="Point remarquable non trouvé")
     return highlight
 
 
-@router.put("/highlights/{highlight_id}", response_model=VoyageHighlight)
+@router.put("/highlights/{highlight_id}", response_model=VoyageHighlightRead)
 async def update_voyage_highlight(
     highlight_id: int,
     highlight: VoyageHighlightUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("captain", "M")),
 ) -> VoyageHighlight:
-    """Met  jour un point remarquable."""
+    """Met à jour un point remarquable."""
     existing = await db.get(VoyageHighlight, highlight_id)
     if not existing:
-        raise HTTPException(status_code=404, detail="Point remarquable non trouv")
+        raise HTTPException(status_code=404, detail="Point remarquable non trouvé")
 
-    # Vrifier la catgorie
     if highlight.category and highlight.category not in HIGHLIGHT_CATEGORIES:
         raise HTTPException(
             status_code=400,
-            detail=f"Catgorie invalide. Choix possibles: {', '.join(HIGHLIGHT_CATEGORIES)}",
+            detail=f"Catégorie invalide. Choix possibles: {', '.join(HIGHLIGHT_CATEGORIES)}",
         )
 
     for key, value in highlight.model_dump(exclude_unset=True).items():
         setattr(existing, key, value)
 
     existing.updated_at = datetime.utcnow()
-    existing.updated_by = current_user.name or current_user.email
+    existing.updated_by = current_user.full_name or current_user.username
 
     await db.flush()
     await db.refresh(existing)
@@ -283,23 +213,24 @@ async def update_voyage_highlight(
     return existing
 
 
-@router.delete("/highlights/{highlight_id}", status_code=204)
+@router.delete("/highlights/{highlight_id}", status_code=204, response_class=Response)
 async def delete_voyage_highlight(
     highlight_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> None:
+    current_user: User = Depends(require_permission("captain", "S")),
+) -> Response:
     """Supprime un point remarquable."""
     highlight = await db.get(VoyageHighlight, highlight_id)
     if not highlight:
-        raise HTTPException(status_code=404, detail="Point remarquable non trouv")
+        raise HTTPException(status_code=404, detail="Point remarquable non trouvé")
 
     await db.delete(highlight)
     await db.flush()
+    return Response(status_code=204)
 
 
 # =============================================================================
-# Photos de Voyage
+# Photos de voyage (VoyagePhoto)
 # =============================================================================
 
 
@@ -307,16 +238,14 @@ async def delete_voyage_highlight(
 async def list_voyage_photos(
     leg_id: int,
     batch_id: str | None = Query(None, description="Filtrer par batch"),
-    category: str | None = Query(None, description="Filtrer par catgorie"),
+    category: str | None = Query(None, description="Filtrer par catégorie"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("captain", "C")),
 ) -> VoyagePhotoList:
-    """Liste les photos pour un leg."""
-    from sqlalchemy import select
-
+    """Liste les photos d'un leg."""
     leg = await db.get(Leg, leg_id)
     if not leg:
-        raise HTTPException(status_code=404, detail="Leg non trouv")
+        raise HTTPException(status_code=404, detail="Leg non trouvé")
 
     query = select(VoyagePhoto).where(VoyagePhoto.leg_id == leg_id)
 
@@ -339,31 +268,28 @@ async def list_voyage_photos(
     )
 
 
-@router.post("/legs/{leg_id}/photos", response_model=VoyagePhoto)
+@router.post("/legs/{leg_id}/photos", response_model=VoyagePhotoRead)
 async def create_voyage_photo(
     leg_id: int,
     photo: VoyagePhotoCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("captain", "M")),
 ) -> VoyagePhoto:
-    """Ajoute une photo  un leg."""
-
+    """Ajoute une photo à un leg."""
     leg = await db.get(Leg, leg_id)
     if not leg:
-        raise HTTPException(status_code=404, detail="Leg non trouv")
+        raise HTTPException(status_code=404, detail="Leg non trouvé")
 
-    # Vrifier la catgorie de batch
     if photo.batch_id not in BATCH_CATEGORIES:
         raise HTTPException(
             status_code=400,
             detail=f"Batch invalide. Choix possibles: {', '.join(BATCH_CATEGORIES)}",
         )
 
-    # Vrifier la catgorie de photo
     if photo.category not in PHOTO_CATEGORIES:
         raise HTTPException(
             status_code=400,
-            detail=f"Catgorie invalide. Choix possibles: {', '.join(PHOTO_CATEGORIES)}",
+            detail=f"Catégorie invalide. Choix possibles: {', '.join(PHOTO_CATEGORIES)}",
         )
 
     new_photo = VoyagePhoto(
@@ -381,7 +307,7 @@ async def create_voyage_photo(
         highlight_id=photo.highlight_id,
         crew_member_id=photo.crew_member_id,
         uploaded_by_id=current_user.id,
-        uploaded_by_name=current_user.name or current_user.email,
+        uploaded_by_name=current_user.full_name or current_user.username,
         display_order=photo.display_order or 0,
     )
 
@@ -392,43 +318,41 @@ async def create_voyage_photo(
     return new_photo
 
 
-@router.get("/photos/{photo_id}", response_model=VoyagePhoto)
+@router.get("/photos/{photo_id}", response_model=VoyagePhotoRead)
 async def get_voyage_photo(
     photo_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("captain", "C")),
 ) -> VoyagePhoto:
-    """Rcupre une photo."""
+    """Récupère une photo."""
     photo = await db.get(VoyagePhoto, photo_id)
     if not photo:
-        raise HTTPException(status_code=404, detail="Photo non trouve")
+        raise HTTPException(status_code=404, detail="Photo non trouvée")
     return photo
 
 
-@router.put("/photos/{photo_id}", response_model=VoyagePhoto)
+@router.put("/photos/{photo_id}", response_model=VoyagePhotoRead)
 async def update_voyage_photo(
     photo_id: int,
     photo: VoyagePhotoUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("captain", "M")),
 ) -> VoyagePhoto:
-    """Met  jour une photo."""
+    """Met à jour une photo."""
     existing = await db.get(VoyagePhoto, photo_id)
     if not existing:
-        raise HTTPException(status_code=404, detail="Photo non trouve")
+        raise HTTPException(status_code=404, detail="Photo non trouvée")
 
-    # Vrifier la catgorie de batch
     if photo.batch_id and photo.batch_id not in BATCH_CATEGORIES:
         raise HTTPException(
             status_code=400,
             detail=f"Batch invalide. Choix possibles: {', '.join(BATCH_CATEGORIES)}",
         )
 
-    # Vrifier la catgorie de photo
     if photo.category and photo.category not in PHOTO_CATEGORIES:
         raise HTTPException(
             status_code=400,
-            detail=f"Catgorie invalide. Choix possibles: {', '.join(PHOTO_CATEGORIES)}",
+            detail=f"Catégorie invalide. Choix possibles: {', '.join(PHOTO_CATEGORIES)}",
         )
 
     for key, value in photo.model_dump(exclude_unset=True).items():
@@ -440,16 +364,17 @@ async def update_voyage_photo(
     return existing
 
 
-@router.delete("/photos/{photo_id}", status_code=204)
+@router.delete("/photos/{photo_id}", status_code=204, response_class=Response)
 async def delete_voyage_photo(
     photo_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> None:
+    current_user: User = Depends(require_permission("captain", "S")),
+) -> Response:
     """Supprime une photo."""
     photo = await db.get(VoyagePhoto, photo_id)
     if not photo:
-        raise HTTPException(status_code=404, detail="Photo non trouve")
+        raise HTTPException(status_code=404, detail="Photo non trouvée")
 
     await db.delete(photo)
     await db.flush()
+    return Response(status_code=204)

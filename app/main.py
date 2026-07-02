@@ -29,6 +29,7 @@ from app.routers import (
     cargo_packing_router,
     cargo_portal_router,
     cargo_router,
+    carnet_bord_router,
     cashbox_router,
     chat_router,
     claims_router,
@@ -60,6 +61,7 @@ from app.routers import (
     tracking_router,
     veille_router,
     vitrine_router,
+    voyage_router,
 )
 from app.templating import templates
 
@@ -100,6 +102,7 @@ def create_app() -> FastAPI:
     # --------------------------------------------------------------- Routers
     app.include_router(public_router.router)
     app.include_router(vitrine_router.router)
+    app.include_router(voyage_router.router)
     app.include_router(devis_router.router)
     app.include_router(pwa_router.router)
     app.include_router(seo_router.router)
@@ -117,6 +120,7 @@ def create_app() -> FastAPI:
     app.include_router(escale_router.router)
     # ─── Phase 3 ERP : captain / stowage / claims / mrv ───
     app.include_router(captain_router.router)
+    app.include_router(carnet_bord_router.router)
     app.include_router(stowage_router.router)
     app.include_router(claims_router.router)
     app.include_router(mrv_router.router)

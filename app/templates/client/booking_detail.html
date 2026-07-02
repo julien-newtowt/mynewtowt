@@ -106,6 +106,89 @@
 </section>
 {% endif %}
 
+{% if conditions %}
+<section class="card mb-4">
+  <h2>{% if lang == 'en' %}Transport conditions{% else %}Conditions de transport{% endif %}</h2>
+  <p class="text-muted text-sm">
+    {% if lang == 'en' %}Temperature and humidity recorded twice a day in the holds — extract from the on-board registers ({{ conditions.readings }} readings).{% else %}Température et humidité relevées deux fois par jour dans les cales — extrait des registres de bord ({{ conditions.readings }} relevés).{% endif %}
+  </p>
+  <div class="grid grid-2 gap-4">
+    <div>
+      <div class="text-muted">{% if lang == 'en' %}Temperature{% else %}Température{% endif %}</div>
+      <div class="display" style="font-size: var(--text-xl)">{{ conditions.temp_avg }} °C</div>
+      <div class="mono text-sm text-muted">min {{ conditions.temp_min }} °C · max {{ conditions.temp_max }} °C</div>
+      {% if conditions.temp_points %}
+      <svg viewBox="0 0 600 120" role="img"
+           aria-label="{% if lang == 'en' %}Average hold temperature{% else %}Température moyenne des cales{% endif %}"
+           style="width:100%; height:72px; margin-top:0.5rem;">
+        <polyline points="{{ conditions.temp_points }}" fill="none"
+                  stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      {% endif %}
+    </div>
+    {% if conditions.humidity_avg is not none %}
+    <div>
+      <div class="text-muted">{% if lang == 'en' %}Humidity{% else %}Humidité{% endif %}</div>
+      <div class="display" style="font-size: var(--text-xl)">{{ conditions.humidity_avg }} %</div>
+      <div class="mono text-sm text-muted">min {{ conditions.humidity_min }} % · max {{ conditions.humidity_max }} %</div>
+      {% if conditions.humidity_points %}
+      <svg viewBox="0 0 600 120" role="img"
+           aria-label="{% if lang == 'en' %}Average hold humidity{% else %}Humidité moyenne des cales{% endif %}"
+           style="width:100%; height:72px; margin-top:0.5rem;">
+        <polyline points="{{ conditions.humidity_points }}" fill="none"
+                  stroke="var(--cuivre)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <table class="data-table mt-3">
+    <thead><tr>
+      <th>{% if lang == 'en' %}Hold{% else %}Cale{% endif %}</th>
+      <th>T° min</th><th>T° max</th><th>H% min</th><th>H% max</th>
+    </tr></thead>
+    <tbody>
+      {% for h in conditions.holds %}
+      <tr>
+        <td>{{ h.location }}</td>
+        <td class="mono">{{ h.temp_min if h.temp_min is not none else '—' }}</td>
+        <td class="mono">{{ h.temp_max if h.temp_max is not none else '—' }}</td>
+        <td class="mono">{{ h.humidity_min if h.humidity_min is not none else '—' }}</td>
+        <td class="mono">{{ h.humidity_max if h.humidity_max is not none else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if booking.status in ('loaded','at_sea','discharged','delivered') %}
+<section class="card mb-4">
+  <h2>{% if lang == 'en' %}Public voyage page (QR){% else %}Page publique du voyage (QR){% endif %}</h2>
+  {% if request.query_params.get('voyage_saved') %}
+  <div class="alert alert-success">{% if lang == 'en' %}Saved.{% else %}Enregistré.{% endif %}</div>
+  {% endif %}
+  <p class="text-muted text-sm">
+    {% if lang == 'en' %}Publish this shipment's voyage on a public page — the destination of the QR code printed on your packaging: real route on a map, hold conditions, avoided CO₂, on-board photos. No personal data is shown; you can unpublish at any time.{% else %}Publiez la traversée de cette expédition sur une page publique — la destination du QR code imprimé sur vos emballages : trajet réel sur carte, conditions de cale, CO₂ évité, photos de bord. Aucune donnée personnelle n'est affichée ; dépubliable à tout moment.{% endif %}
+  </p>
+  <form method="post" action="/me/bookings/{{ booking.reference }}/voyage-public">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <label style="display:flex;align-items:center;gap:0.5rem;">
+      <input type="checkbox" name="enabled" {% if booking.voyage_public %}checked{% endif %} />
+      {% if lang == 'en' %}Publish the voyage page{% else %}Publier la page du voyage{% endif %}
+    </label>
+    <button class="btn btn-primary mt-2" type="submit">{% if lang == 'en' %}Save{% else %}Enregistrer{% endif %}</button>
+  </form>
+  {% if booking.voyage_public %}
+  <p class="mt-3">
+    <a href="{{ voyage_url }}" target="_blank" class="btn btn-accent">🔗 {% if lang == 'en' %}View the public page{% else %}Voir la page publique{% endif %}</a>
+  </p>
+  <p class="mono text-sm text-muted">{{ voyage_url }}</p>
+  <p class="text-muted text-sm">{% if lang == 'en' %}The B2B2C kit QR now points to this page.{% else %}Le QR du kit B2B2C pointe désormais vers cette page.{% endif %}</p>
+  {% endif %}
+</section>
+{% endif %}
+
 {% if booking.status in ('confirmed','loaded','at_sea','discharged','delivered') %}
 <section class="card mt-4">
   <h2>{% if lang == 'en' %}Documents{% else %}Documents{% endif %}</h2>
@@ -121,6 +204,11 @@
     {% if booking.status in ('discharged','delivered') %}
       <a href="/me/bookings/{{ booking.reference }}/anemos.pdf" target="_blank" class="btn btn-accent">
         🌱 {% if lang == 'en' %}Anemos certificate{% else %}Certificat Anemos{% endif %}
+      </a>
+    {% endif %}
+    {% if carnet_available %}
+      <a href="/me/bookings/{{ booking.reference }}/carnet.pdf" target="_blank" class="btn btn-secondary">
+        📖 {% if lang == 'en' %}Voyage logbook (PDF){% else %}Carnet de Bord (PDF){% endif %}
       </a>
     {% endif %}
     <a href="/me/bookings/{{ booking.reference }}/kit" class="btn btn-ghost">
