@@ -13,11 +13,11 @@ Cette révision existe pour matérialiser l'étape « grilles multi-routes » du
 P11 et fournir un point d'ancrage stable au chaînage des comptes-ancres
 (``20260702_0093_comptes_ancres`` ← ``20260702_0091``). Elle est
 **volontairement no-op** : ré-appliquer le DDL de ``0054`` échouerait (colonnes/
-table déjà présentes). ``down_revision`` pointe sur le head réel ``0088`` (le
-plan mentionnait ``0089``, qui n'existe pas dans cette branche).
+table déjà présentes). ``down_revision`` est chaîné sur le head courant de la
+branche (``20260702_0090``, carnet éditorial) pour conserver un head unique.
 
 Revision ID: 20260702_0091
-Revises: 20260702_0088
+Revises: 20260702_0090
 Create Date: 2026-07-02
 """
 
@@ -25,7 +25,7 @@ from __future__ import annotations
 
 # revision identifiers, used by Alembic.
 revision = "20260702_0091"
-down_revision = "20260702_0088"
+down_revision = "20260702_0090"
 branch_labels = None
 depends_on = None
 

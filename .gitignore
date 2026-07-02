@@ -62,3 +62,6 @@ test-results/
 !docs/**/*.pdf
 *.zip
 !docs/**/*.zip
+
+# Claude Code agent worktrees / local state
+.claude/
