@@ -16,7 +16,11 @@
   <article class="card">
     <h2>Réservation</h2>
     <table>
-      <tr><th>Client</th><td>{% if client %}{{ client.company_name }} <span class="text-muted">({{ client.email }})</span>{% else %}#{{ booking.client_account_id }}{% endif %}</td></tr>
+      <tr><th>Client</th><td>{% if client %}{{ client.company_name }} <span class="text-muted">({{ client.email }})</span>{% else %}#{{ booking.client_account_id }}{% endif %}
+        {% if commercial_client and commercial_client.is_anchor %}
+        <a href="/commercial/clients/{{ commercial_client.id }}" class="pill pill-ok" title="Compte-ancre — priorité capacité : {{ commercial_client.capacity_priority_display }}{% if commercial_client.co_branding_status != 'none' %} · co-branding : {{ commercial_client.co_branding_label }}{% endif %}"><i data-lucide="anchor"></i> Compte-ancre · {{ commercial_client.capacity_priority_display }}</a>
+        {% endif %}
+      </td></tr>
       <tr><th>Palettes</th><td>{{ booking.total_palettes }}</td></tr>
       <tr><th>Poids</th><td>{{ booking.total_weight_kg }} kg</td></tr>
       <tr><th>Prix estimé</th><td>{{ booking.estimated_price_eur|money if booking.estimated_price_eur else '—' }}</td></tr>

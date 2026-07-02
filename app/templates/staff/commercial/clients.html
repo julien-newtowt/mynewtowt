@@ -53,7 +53,7 @@
     <tbody>
       {% for c in clients %}
       <tr>
-        <td><a href="/commercial/clients/{{ c.id }}"><strong>{{ c.name }}</strong></a>{% if c.pipedrive_org_id %} <span class="badge" title="Lié à Pipedrive (org #{{ c.pipedrive_org_id }})">PD</span>{% endif %}{% if c.vat_number %}<br/><small class="text-muted mono">{{ c.vat_number }}</small>{% endif %}</td>
+        <td><a href="/commercial/clients/{{ c.id }}"><strong>{{ c.name }}</strong></a>{% if c.is_anchor %} <span class="pill pill-ok" title="Compte-ancre (priorité : {{ c.capacity_priority_display }})"><i data-lucide="anchor"></i> Ancre</span>{% endif %}{% if c.pipedrive_org_id %} <span class="badge" title="Lié à Pipedrive (org #{{ c.pipedrive_org_id }})">PD</span>{% endif %}{% if c.vat_number %}<br/><small class="text-muted mono">{{ c.vat_number }}</small>{% endif %}</td>
         <td><span class="badge badge-{{ 'active' if c.client_type == 'freight_forwarder' else 'draft' }}">{{ c.client_type }}</span></td>
         <td>{{ c.contact_name or '—' }}<br/><small class="text-muted">{{ c.contact_email or '' }}</small></td>
         <td>{% if c.country %}<span class="port-badge">{{ c.country|flag }} {{ c.country }}</span>{% else %}—{% endif %}</td>

@@ -41,6 +41,34 @@ from app.database import Base
 
 CLIENT_TYPES = ("freight_forwarder", "shipper")
 RATE_GRID_STATUSES = ("draft", "active", "expired", "superseded")
+
+# Comptes-ancres (P11) — statut de co-branding d'un partenariat stratégique.
+# none    — pas de co-branding ;
+# pending — co-branding en discussion / à valider ;
+# active  — co-branding actif (assets co-signés, page kit, etc.).
+CO_BRANDING_STATUSES = ("none", "pending", "active")
+CO_BRANDING_STATUS_LABELS: dict[str, str] = {
+    "none": "Aucun",
+    "pending": "En discussion",
+    "active": "Actif",
+}
+# Rang de priorité capacité (allocation en cale des comptes-ancres) : 0 =
+# standard (aucune priorité) ; plus le rang est élevé, plus le compte est
+# servi en priorité lorsque la cale est contrainte.
+CAPACITY_PRIORITY_LABELS: dict[int, str] = {
+    0: "Standard",
+    1: "Prioritaire",
+    2: "Stratégique",
+}
+
+
+def capacity_priority_label(rank: int | None) -> str:
+    """Libellé du rang de priorité capacité (repli « Rang N » hors barème)."""
+    if rank is None:
+        return CAPACITY_PRIORITY_LABELS[0]
+    return CAPACITY_PRIORITY_LABELS.get(int(rank), f"Rang {int(rank)}")
+
+
 RATE_OFFER_STATUSES = ("draft", "sent", "accepted", "declined", "expired")
 ORDER_STATUSES = ("draft", "confirmed", "loaded", "delivered", "cancelled")
 
@@ -101,6 +129,25 @@ class Client(Base):
     vat_number: Mapped[str | None] = mapped_column(String(40))
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # ── Compte-ancre (P11) ────────────────────────────────────────────────
+    # Un « compte-ancre » est un partenaire stratégique qui sécurise le
+    # remplissage : il s'engage sur un volume annuel, bénéficie d'une priorité
+    # d'allocation de cale et peut faire l'objet d'un co-branding. Ces attributs
+    # sont portés par le référentiel commercial (Client) — la grille tarifaire
+    # négociée s'y rattache déjà, tout comme l'engagement de volume par commande.
+    is_anchor: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True, server_default="false"
+    )
+    # Engagement de volume annuel (palettes/an) — NULL = non renseigné.
+    annual_volume_commitment: Mapped[int | None] = mapped_column(Integer)
+    # Rang de priorité capacité (0 = standard, cf. CAPACITY_PRIORITY_LABELS).
+    capacity_priority: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, server_default="0"
+    )
+    # Statut de co-branding (cf. CO_BRANDING_STATUSES).
+    co_branding_status: Mapped[str] = mapped_column(
+        String(20), default="none", nullable=False, server_default="none"
+    )
     pipedrive_org_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -111,6 +158,16 @@ class Client(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+    @property
+    def capacity_priority_display(self) -> str:
+        """Libellé lisible du rang de priorité capacité."""
+        return capacity_priority_label(self.capacity_priority)
+
+    @property
+    def co_branding_label(self) -> str:
+        """Libellé lisible du statut de co-branding."""
+        return CO_BRANDING_STATUS_LABELS.get(self.co_branding_status, self.co_branding_status)
 
     rate_grids: Mapped[list[RateGrid]] = relationship(
         back_populates="client", cascade="all, delete-orphan"
