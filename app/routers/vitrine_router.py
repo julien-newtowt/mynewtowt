@@ -29,6 +29,7 @@ from app.i18n import get_lang_from_request
 from app.models.anemos_certificate import AnemosCertificate
 from app.services import blog as blog_svc
 from app.services import contact as contact_svc
+from app.services import fleet as fleet_svc
 from app.services import rate_limit
 from app.services.activity import record as activity_record
 from app.services.leads import push_lead
@@ -38,8 +39,12 @@ router = APIRouter(tags=["vitrine"])
 
 
 @router.get("/flotte", response_class=HTMLResponse)
-async def fleet_capabilities(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("public/flotte.html", {"request": request})
+async def fleet_capabilities(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+    # Roster dérivé de l'ERP (Vessel) : statut + horizon de livraison, jamais
+    # une liste en dur. La page reste servie même si la base est indisponible
+    # (roster vide → le template retombe sur son récit générique).
+    roster = await fleet_svc.roster(db)
+    return templates.TemplateResponse("public/flotte.html", {"request": request, "fleet": roster})
 
 
 @router.get("/impact", response_class=HTMLResponse)

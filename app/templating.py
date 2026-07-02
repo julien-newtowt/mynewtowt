@@ -112,7 +112,7 @@ _BRAND_BY_LANG: dict[str, dict[str, Any]] = {
     "fr": {
         "raison_sociale": "TransOceanic Wind Transport — NEWTOWT",
         "nom_court": "NEWTOWT",
-        "mention": "Pionnier du transport maritime décarboné depuis 2011",
+        "mention": "Pionnier du transport de marchandises à la voile depuis 2011",
         "adresse": "52 Quai Frissard - 76600 Le Havre",
         "telephone": "+33 9 84 33 89 62",
         "email": "communication@towt.eu",
@@ -125,7 +125,7 @@ _BRAND_BY_LANG: dict[str, dict[str, Any]] = {
     "en": {
         "raison_sociale": "TransOceanic Wind Transport — NEWTOWT",
         "nom_court": "NEWTOWT",
-        "mention": "Pioneer of decarbonised maritime transport since 2011",
+        "mention": "Pioneer of sail-powered cargo transport since 2011",
         "adresse": "52 Quai Frissard - 76600 Le Havre, France",
         "telephone": "+33 9 84 33 89 62",
         "email": "communication@towt.eu",
@@ -138,7 +138,7 @@ _BRAND_BY_LANG: dict[str, dict[str, Any]] = {
     "es": {
         "raison_sociale": "TransOceanic Wind Transport — NEWTOWT",
         "nom_court": "NEWTOWT",
-        "mention": "Pionero del transporte marítimo descarbonizado desde 2011",
+        "mention": "Pionero del transporte de mercancías a vela desde 2011",
         "adresse": "52 Quai Frissard - 76600 Le Havre, Francia",
         "telephone": "+33 9 84 33 89 62",
         "email": "communication@towt.eu",
@@ -151,7 +151,7 @@ _BRAND_BY_LANG: dict[str, dict[str, Any]] = {
     "pt-br": {
         "raison_sociale": "TransOceanic Wind Transport — NEWTOWT",
         "nom_court": "NEWTOWT",
-        "mention": "Pioneiro do transporte marítimo descarbonizado desde 2011",
+        "mention": "Pioneiro do transporte de mercadorias à vela desde 2011",
         "adresse": "52 Quai Frissard - 76600 Le Havre, França",
         "telephone": "+33 9 84 33 89 62",
         "email": "communication@towt.eu",
@@ -164,7 +164,7 @@ _BRAND_BY_LANG: dict[str, dict[str, Any]] = {
     "vi": {
         "raison_sociale": "TransOceanic Wind Transport — NEWTOWT",
         "nom_court": "NEWTOWT",
-        "mention": "Tiên phong vận tải hàng hải giảm cacbon từ 2011",
+        "mention": "Tiên phong vận tải hàng hóa bằng buồm từ 2011",
         "adresse": "52 Quai Frissard - 76600 Le Havre, Pháp",
         "telephone": "+33 9 84 33 89 62",
         "email": "communication@towt.eu",

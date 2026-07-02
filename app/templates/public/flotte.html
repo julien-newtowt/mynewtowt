@@ -9,7 +9,7 @@
   "@type": "FAQPage",
   "mainEntity": [
     {"@type": "Question", "name": "Combien de navires compte la flotte NewTowt ?",
-     "acceptedAnswer": {"@type": "Answer", "text": "Six voiliers-cargos identiques, sisterships de la classe TSC 80 : Anemos et Artemis en opération, Atlantis, Astérias, Archimedes et Atlas en construction."}},
+     "acceptedAnswer": {"@type": "Answer", "text": "Six voiliers-cargos identiques, sisterships de la classe TSC 80 : Anemos et Artemis en opération ; Atlantis (livraison juillet 2026), Atlas (septembre 2026), Archimedes et Astérias (2027) en construction."}},
     {"@type": "Question", "name": "Quelle est la capacité de chargement d'un navire NewTowt ?",
      "acceptedAnswer": {"@type": "Answer", "text": "Une charge utile de plus de 1 200 tonnes, répartie sur 1 050 m² de surface exploitable en six cales séparées sur trois ponts."}},
     {"@type": "Question", "name": "Les navires acceptent-ils les marchandises dangereuses ?",
@@ -57,6 +57,42 @@
     </div>
   </div>
 </section>
+
+{% if fleet and fleet.has_content %}
+<section class="section">
+  <div class="section-inner">
+    <span class="section-kicker">{{ t('fleet_roster_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('fleet_roster_title', lang) }}</h2>
+    <p class="section-lead">
+      {{ fleet.operational_count }} {{ t('fleet_roster_in_service', lang) }}
+      · {{ fleet.under_construction_count }} {{ t('fleet_roster_in_build', lang) }}.
+    </p>
+    <table class="an-table">
+      <tbody>
+        {% for v in fleet.operational %}
+        <tr>
+          <th scope="row">{{ v.name }}</th>
+          <td><span class="pill pill-ok">{{ t('fleet_roster_op_badge', lang) }}</span></td>
+        </tr>
+        {% endfor %}
+        {% for v in fleet.under_construction %}
+        {% set dlabel = v.delivery_label(lang) %}
+        <tr>
+          <th scope="row">{{ v.name }}</th>
+          <td>
+            <span class="pill pill-warn">{{ t('fleet_roster_building_badge', lang) }}</span>
+            {% if dlabel %}
+            <span style="margin-left:var(--space-2);">{{ t('fleet_roster_delivery', lang, date=dlabel) }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="caption">{{ t('fleet_roster_caption', lang) }}</p>
+  </div>
+</section>
+{% endif %}
 
 <section class="section section--sand">
   <div class="section-inner">

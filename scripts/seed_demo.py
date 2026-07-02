@@ -62,15 +62,19 @@ async def seed() -> None:
         # Flotte P4 : 6 sisterships classe TSC 80 (interne « phoenix »).
         # 2 en opération (Anemos, Artemis), 4 en construction. Capacité
         # commerciale unique = 978 EPAL ; 12 couchettes passagers (offre 2027).
+        # Horizon de livraison (P5), stocké en jeton machine « AAAA-MM » (ou
+        # « AAAA » quand seule l'année est connue) : Atlantis juillet 2026,
+        # Atlas septembre 2026, les deux suivants en 2027. Le mois est localisé
+        # à l'affichage (services/fleet.py) — la donnée reste triable/neutre.
         vessels_def = [
-            ("1", "Anemos", "9123456", "FR", "operational"),
-            ("2", "Artemis", "9123457", "FR", "operational"),
-            ("3", "Atlantis", "9123458", "FR", "under_construction"),
-            ("4", "Atlas", "9123459", "FR", "under_construction"),
-            ("5", "Archimedes", "9123460", "FR", "under_construction"),
-            ("6", "Astérias", "9123461", "FR", "under_construction"),
+            ("1", "Anemos", "9123456", "FR", "operational", None),
+            ("2", "Artemis", "9123457", "FR", "operational", None),
+            ("3", "Atlantis", "9123458", "FR", "under_construction", "2026-07"),
+            ("4", "Atlas", "9123459", "FR", "under_construction", "2026-09"),
+            ("5", "Archimedes", "9123460", "FR", "under_construction", "2027"),
+            ("6", "Astérias", "9123461", "FR", "under_construction", "2027"),
         ]
-        for code, name, imo, flag, build_status in vessels_def:
+        for code, name, imo, flag, build_status, expected_delivery in vessels_def:
             row = (await db.execute(select(Vessel).where(Vessel.code == code))).scalar_one_or_none()
             if not row:
                 db.add(
@@ -82,6 +86,7 @@ async def seed() -> None:
                         capacity_palettes=978,
                         capacity_pax=12,
                         build_status=build_status,
+                        expected_delivery=expected_delivery,
                         default_speed_kn=8.0,
                         default_elongation=1.15,
                         opex_daily_sea_eur=4500.0,

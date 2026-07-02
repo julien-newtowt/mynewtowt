@@ -46,6 +46,15 @@ class Vessel(Base):
     build_status: Mapped[str] = mapped_column(
         String(20), default="operational", server_default="operational", nullable=False
     )
+    # Horizon de livraison commercial (P5) — jeton machine « AAAA-MM » (mois
+    # connu, ex. « 2026-07 ») ou « AAAA » (année seule, ex. « 2027 »). Triable
+    # et neutre : le mois est localisé à l'affichage (services/fleet.py).
+    # Renseigné pour les navires en construction, NULL pour ceux en service.
+    # Source de vérité de /flotte : aucune date de livraison en dur dans un
+    # template (doctrine « pas de promesse sans donnée ERP »).
+    expected_delivery: Mapped[str | None] = mapped_column(
+        String(40), comment="Horizon de livraison AAAA-MM|AAAA (navires en construction)"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
