@@ -18,13 +18,23 @@
 
 {% include "public/_translation_notice.html" %}
 
+{% include "public/_topic_filter.html" with context %}
+
 <section class="section">
   <div class="section-inner">
     {% if posts %}
     <div class="feature-grid">
       {% for post in posts %}
       <article class="feature-card">
-        {% if post.published_at %}<p class="caption mono">{{ post.published_at|date }}</p>{% endif %}
+        {% if post.cover_image %}
+        <img src="{{ asset(post.cover_image) }}" alt="{{ post.title }}"
+             loading="lazy" decoding="async"
+             style="width:100%;height:160px;object-fit:cover;border-radius:var(--radius-md,12px);margin-bottom:var(--sp-4);display:block;" />
+        {% endif %}
+        <p class="caption mono">
+          {% if post.published_at %}{{ post.published_at|date }}{% endif %}
+          {% if post.topic and topic_labels %} · <span class="pill pill-neutral">{{ topic_labels.get(post.topic, post.topic) }}</span>{% endif %}
+        </p>
         <h3><a href="/carnet/{{ post.slug }}">{{ post.title }}</a></h3>
         {% if post.lead %}<p>{{ post.lead }}</p>{% endif %}
         <p><a href="/carnet/{{ post.slug }}">Lire la suite →</a></p>

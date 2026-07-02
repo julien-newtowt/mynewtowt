@@ -34,13 +34,22 @@
     <p class="caption mono">
       {% if post.published_at %}{{ post.published_at|date }}{% endif %}
       {% if post.author %} · {{ post.author }}{% endif %}
+      {% if post.topic and topic_labels %} · <span class="pill pill-neutral">{{ topic_labels.get(post.topic, post.topic) }}</span>{% endif %}
     </p>
 
+    {% if post.cover_image %}
+    <figure style="margin:var(--sp-5) 0;">
+      <img src="{{ asset(post.cover_image) }}" alt="{{ post.title }}"
+           loading="lazy" decoding="async"
+           style="width:100%;height:clamp(220px,42vh,460px);object-fit:cover;border-radius:var(--radius-md,12px);display:block;" />
+    </figure>
+    {% else %}
     <div class="map-placeholder" role="img"
          aria-label="{{ t('carnet_photo_aria', lang) }}"
          style="margin:var(--sp-5) 0;min-height:280px;">
       <span>{{ t('carnet_photo_placeholder', lang) }}</span>
     </div>
+    {% endif %}
 
     <div class="article-body">
       {{ post.body|safe }}

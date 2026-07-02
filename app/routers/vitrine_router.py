@@ -24,6 +24,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.i18n import get_lang_from_request
 from app.models.anemos_certificate import AnemosCertificate
@@ -509,20 +510,73 @@ async def passagers(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("public/passagers.html", {"request": request})
 
 
+def _topic_ctx(selected: str | None) -> dict:
+    """Contexte de filtre par rubrique (chips) partagé carnet/actualités."""
+    sel = selected if blog_svc.is_valid_topic(selected) else None
+    return {
+        "topics": list(blog_svc.TOPICS),
+        "topic_labels": blog_svc.TOPIC_LABELS,
+        "selected_topic": sel,
+    }
+
+
 @router.get("/actualites", response_class=HTMLResponse)
-async def actualites(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+async def actualites(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    topic: str | None = Query(default=None, max_length=20),
+) -> HTMLResponse:
     """Actualités — billets de catégorie ``actualite`` (pont depuis LinkedIn)."""
-    posts = await blog_svc.list_published(db, category="actualite")
+    sel = topic if blog_svc.is_valid_topic(topic) else None
+    posts = await blog_svc.list_published(db, category="actualite", topic=sel)
     return templates.TemplateResponse(
-        "public/actualites.html", {"request": request, "posts": posts}
+        "public/actualites.html",
+        {"request": request, "posts": posts, "rss_href": "/actualites/rss.xml", **_topic_ctx(sel)},
     )
 
 
+@router.get("/actualites/rss.xml")
+async def actualites_rss(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    """Flux RSS 2.0 des actualités."""
+    posts = await blog_svc.list_published(db, category="actualite", limit=30)
+    xml = blog_svc.build_rss(
+        posts,
+        base_url=settings.site_url,
+        title="NewTowt — Actualités",
+        description="Les nouvelles de la compagnie, de la flotte et de la ligne vers le Brésil.",
+        self_path="/actualites/rss.xml",
+    )
+    return Response(content=xml, media_type="application/rss+xml; charset=utf-8")
+
+
 @router.get("/carnet", response_class=HTMLResponse)
-async def carnet_index(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+async def carnet_index(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    topic: str | None = Query(default=None, max_length=20),
+) -> HTMLResponse:
     """Carnet de construction — liste des jalons (du plus récent au plus ancien)."""
-    posts = await blog_svc.list_published(db, category="carnet")
-    return templates.TemplateResponse("public/carnet.html", {"request": request, "posts": posts})
+    sel = topic if blog_svc.is_valid_topic(topic) else None
+    posts = await blog_svc.list_published(db, category="carnet", topic=sel)
+    return templates.TemplateResponse(
+        "public/carnet.html",
+        {"request": request, "posts": posts, "rss_href": "/carnet/rss.xml", **_topic_ctx(sel)},
+    )
+
+
+# Défini AVANT /carnet/{slug} pour ne pas être capturé par le paramètre de slug.
+@router.get("/carnet/rss.xml")
+async def carnet_rss(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    """Flux RSS 2.0 du carnet de construction."""
+    posts = await blog_svc.list_published(db, category="carnet", limit=30)
+    xml = blog_svc.build_rss(
+        posts,
+        base_url=settings.site_url,
+        title="NewTowt — Carnet de construction",
+        description="Du premier acier à la première voile : la construction des voiliers-cargos NewTowt.",
+        self_path="/carnet/rss.xml",
+    )
+    return Response(content=xml, media_type="application/rss+xml; charset=utf-8")
 
 
 @router.get("/carnet/{slug}", response_class=HTMLResponse)
@@ -532,7 +586,10 @@ async def carnet_post(
     post = await blog_svc.get_published_by_slug(db, slug)
     if post is None:
         return templates.TemplateResponse("public/404.html", {"request": request}, status_code=404)
-    return templates.TemplateResponse("public/carnet_post.html", {"request": request, "post": post})
+    return templates.TemplateResponse(
+        "public/carnet_post.html",
+        {"request": request, "post": post, "topic_labels": blog_svc.TOPIC_LABELS},
+    )
 
 
 # Verticales du kit B2B2C → libellé de nature de cargaison pré-rempli. Permet

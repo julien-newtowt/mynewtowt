@@ -1,0 +1,20 @@
+{# P8 — filtre par rubrique (chips) + lien RSS, partagé carnet / actualités.
+   Attend : topics, topic_labels, selected_topic, rss_href. #}
+{% if topics %}
+<section class="section" style="padding-top:0;padding-bottom:0;">
+  <div class="section-inner">
+    <div style="display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;">
+      <a href="{{ request.url.path }}"
+         class="pill {% if not selected_topic %}pill-info{% else %}pill-neutral{% endif %}">Tout</a>
+      {% for tp in topics %}
+      <a href="{{ request.url.path }}?topic={{ tp }}"
+         class="pill {% if selected_topic == tp %}pill-info{% else %}pill-neutral{% endif %}">{{ topic_labels.get(tp, tp) }}</a>
+      {% endfor %}
+      {% if rss_href %}
+      <a href="{{ rss_href }}" class="pill pill-neutral" style="margin-left:auto;"
+         title="Flux RSS">RSS</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
