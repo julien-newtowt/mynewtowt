@@ -252,6 +252,13 @@ templates.env.globals["coffee_story"] = _coffee.render_story
 templates.env.globals["coffee_origins"] = list(_coffee.ORIGINS)
 templates.env.globals["coffee_example"] = _coffee.marketing_example
 
+# Verticale sœur (/solutions/cacao) — même contrat, mêmes garde-fous.
+from app.services import cacao_stories as _cacao  # noqa: E402
+
+templates.env.globals["cacao_story"] = _cacao.render_story
+templates.env.globals["cacao_origins"] = list(_cacao.ORIGINS)
+templates.env.globals["cacao_example"] = _cacao.marketing_example
+
 # ─────────── SEO / lisibilité IA (Schema.org + hreflang) ──────────────────
 # Fiche Organisation injectée dans le <head> de la vitrine (bloc de données
 # `application/ld+json` — non exécuté, compatible CSP stricte).

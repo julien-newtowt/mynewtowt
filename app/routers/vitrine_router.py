@@ -504,18 +504,47 @@ async def carnet_post(
     return templates.TemplateResponse("public/carnet_post.html", {"request": request, "post": post})
 
 
+# Verticales du kit B2B2C → libellé de nature de cargaison pré-rempli. Permet
+# une capture de lead segmentée (le lead relayé porte `cargo_nature` → funnel
+# commercial par verticale). Toute valeur hors table est ignorée (pas de
+# reflet d'entrée utilisateur dans le formulaire).
+_CONTACT_CARGO_PREFILL: dict[str, dict[str, str]] = {
+    "cafe": {
+        "fr": "Café vert",
+        "en": "Green coffee",
+        "es": "Café verde",
+        "pt-br": "Café verde",
+        "vi": "Cà phê nhân",
+    },
+    "cacao": {
+        "fr": "Cacao / fèves",
+        "en": "Cacao / beans",
+        "es": "Cacao / habas",
+        "pt-br": "Cacau / amêndoas",
+        "vi": "Ca cao / hạt",
+    },
+}
+
+
 @router.get("/contact", response_class=HTMLResponse)
 async def contact_form(
     request: Request,
     from_: str | None = None,
     to: str | None = None,
+    cargo: str | None = Query(default=None, max_length=20),
 ) -> HTMLResponse:
     """Affiche le formulaire de demande de cotation (pré-rempli si query)."""
+    lang = get_lang_from_request(request)
+    cargo_prefill = ""
+    if cargo:
+        by_lang = _CONTACT_CARGO_PREFILL.get(cargo.lower())
+        if by_lang:
+            cargo_prefill = by_lang.get(lang, by_lang.get("fr", ""))
     return templates.TemplateResponse(
         "public/contact.html",
         {
             "request": request,
-            "values": {"pol": from_ or "", "pod": to or ""},
+            "values": {"pol": from_ or "", "pod": to or "", "cargo_nature": cargo_prefill},
             "errors": {},
         },
     )
