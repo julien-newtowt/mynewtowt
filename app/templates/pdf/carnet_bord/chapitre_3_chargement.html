@@ -43,9 +43,13 @@
         </div>
     </div>
 
-    <!-- Produits transportés -->
+    <!-- Produits transportés — vue staff uniquement.
+         Confidentialité inter-clients : la ventilation par produit agrège les
+         marchandises de TOUS les chargeurs du leg ; elle est masquée dans la
+         version téléchargée par un client depuis /me (client_view). -->
+    {% if not client_view %}
     <h2 class="section-title">Produits transportés</h2>
-    
+
     {% if products and products|length > 0 %}
     <table class="data-table">
         <thead>
@@ -74,6 +78,7 @@
             Aucune information sur les produits disponibles.
         </div>
     </div>
+    {% endif %}
     {% endif %}
 
     <!-- Photos de chargement -->

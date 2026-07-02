@@ -254,7 +254,11 @@ async def booking_carnet_pdf(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     if booking.status not in _VOYAGE_STARTED:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    pdf_bytes = await generate_carnet_bord_pdf(db, booking.leg_id, client_account_id=client.id)
+    # client_view=True : masque la ventilation cargo des co-chargeurs du leg
+    # (confidentialité inter-clients — cf. revue sécurité).
+    pdf_bytes = await generate_carnet_bord_pdf(
+        db, booking.leg_id, client_account_id=client.id, client_view=True
+    )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

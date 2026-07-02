@@ -12,6 +12,7 @@ Familles :
 4. Départ imminent sans préparation — ETD < 48 h, aucune opération d'escale.
 5. Conflit de port — deux navires différents au même port à < 48 h d'écart.
 6. Commandes non affectées — commandes actives sans leg ni affectation.
+7. Taux de service sous le plancher — ponctualité globale < 90 % (P10).
 """
 
 from __future__ import annotations
@@ -198,6 +199,29 @@ async def compute_alerts(db: AsyncSession, year: int | None = None) -> list[dict
                 "title": f"{unassigned} commande{plural} non affectée{plural}",
                 "message": "Des commandes actives attendent une affectation à un leg.",
                 "link": "/commercial/orders",
+            }
+        )
+
+    # 7. Taux de service sous le plancher (ponctualité globale < 90 %, P10).
+    # Même métrique que la vitrine (« Nos départs tenus ») — la promesse
+    # publique et l'alerte interne partagent une seule source de vérité.
+    from app.services import service_reliability
+
+    reliability = await service_reliability.overall(db)
+    if reliability.is_below_floor:
+        alerts.append(
+            {
+                "family": "service",
+                "severity": "danger",
+                "icon": "clock",
+                "title": f"Taux de service {reliability.pct:.0f} %",
+                "message": (
+                    f"Ponctualité sous {service_reliability.ALERT_FLOOR_PCT:.0f} % "
+                    f"(arrivée dans les {service_reliability.ON_TIME_WINDOW_HOURS:.0f} h "
+                    f"de l'ETA) sur {reliability.completed} traversées — "
+                    "affiché publiquement sur la vitrine."
+                ),
+                "link": "/kpi",
             }
         )
 

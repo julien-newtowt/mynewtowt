@@ -191,6 +191,12 @@
           <div class="alert" style="margin-top:var(--sp-4);">
             <strong>{{ t('rd_packing_strong', lang) }}</strong> {{ t('rd_packing_text', lang) }}
           </div>
+          {% if reliability and reliability.is_publishable %}
+          <div class="alert alert-success" style="margin-top:var(--sp-4);">
+            <strong>{{ reliability.pct|round|int }}&nbsp;% {{ t('rel_route_kept', lang) }}</strong>
+            {{ t('rel_route_method', lang, n=reliability.completed, h=reliability.window_hours|round|int) }}
+          </div>
+          {% endif %}
         </div>
 
         {# Qualité à bord #}

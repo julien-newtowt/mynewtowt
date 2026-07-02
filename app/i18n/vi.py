@@ -991,4 +991,11 @@ CATALOG: dict[str, str] = {
     "cafe_cta_lead": "Cho chúng tôi biết xuất xứ và khối lượng — chúng tôi gửi tuyến, thời gian và báo giá, kèm bộ kit B2B2C.",
     "cafe_cta_btn_quote": "Yêu cầu báo giá",
     "cafe_cta_btn_proof": "Xem phương pháp & bằng chứng",
+    # ── Tỷ lệ dịch vụ / đúng giờ (P10) ──
+    "rel_kicker": "Chuyến khởi hành đúng hẹn",
+    "rel_title": "Một tuyến đều đặn, được giữ đúng",
+    "rel_label": "chuyến vượt biển đến đúng giờ, trên {n} chuyến đã hoàn thành",
+    "rel_method": "«Đúng giờ» = đến thực tế trong vòng {h} giờ so với ETA đã công bố. Tính trực tiếp trên các chuyến đã hoàn thành.",
+    "rel_route_kept": "chuyến của tuyến này đến đúng giờ",
+    "rel_route_method": "trên {n} chuyến đã hoàn thành — đến trong vòng {h} giờ so với ETA công bố.",
 }
