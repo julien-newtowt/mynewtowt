@@ -13,7 +13,7 @@ Le pendant client (PDF personnalisé par booking) vit dans
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -159,7 +159,7 @@ async def create_voyage_highlight(
         category=highlight.category,
         photo_id=highlight.photo_id,
         display_order=highlight.display_order or 0,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
         created_by=current_user.full_name or current_user.username,
     )
 
@@ -204,7 +204,7 @@ async def update_voyage_highlight(
     for key, value in highlight.model_dump(exclude_unset=True).items():
         setattr(existing, key, value)
 
-    existing.updated_at = datetime.utcnow()
+    existing.updated_at = datetime.now(UTC)
     existing.updated_by = current_user.full_name or current_user.username
 
     await db.flush()

@@ -234,6 +234,18 @@ async def test_booking_carnet_pdf_guards_and_happy_path(db, monkeypatch):
     assert resp.body == b"%PDF-1.4 fake"
 
 
+@pytest.mark.asyncio
+async def test_carnet_pdf_real_render(db):
+    """Rendu réel WeasyPrint de bout en bout — exerce les 13 templates du
+    carnet (couverture, chapitres, conclusion) et le contexte complet."""
+    from app.services.carnet_bord import generate_carnet_bord_pdf
+
+    leg = await _leg(db)
+    await _seed_holds(db, leg)
+    pdf = await generate_carnet_bord_pdf(db, leg.id)
+    assert pdf.startswith(b"%PDF")
+
+
 # ───────────────────── portail expéditeur /p/{token} ─────────────────────
 
 

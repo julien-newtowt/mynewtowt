@@ -1,0 +1,187 @@
+{% extends "pdf/_base.html" %}
+{% set _en = lang == 'en' %}
+{% block title %}{{ 'Anemos Methodology' if _en else 'Méthodologie Anemos' }} — NEWTOWT{% endblock %}
+{% block doc_kind %}{{ 'Methodology' if _en else 'Méthodologie' }}{% endblock %}
+{% block doc_ref %}ANEMOS-METHOD v{{ doc_version }}{% endblock %}
+{% block content %}
+
+<h1 class="c-teal" style="font-size:16pt;margin-bottom:2mm;">
+  {{ 'Anemos methodology — avoided emissions per shipment'
+     if _en else 'Méthodologie Anemos — émissions évitées par expédition' }}
+</h1>
+<p class="c-gris" style="margin-top:0;">
+  {{ 'Version' if _en else 'Version' }} {{ doc_version }} — {{ issued_at|date }} ·
+  {{ 'Published and verifiable at' if _en else 'Publiée et vérifiable sur' }} {{ site_url }}/preuves
+</p>
+
+<h3 class="c-teal">1. {{ 'Purpose' if _en else 'Objet' }}</h3>
+<p>
+  {% if _en %}
+  The <strong>Anemos certificate</strong> is an attestation of <strong>avoided CO₂
+  emissions</strong>, issued by NEWTOWT for each delivered shipment, based on the
+  operating data of the vessel that carried it. It is issued by NEWTOWT (a
+  self-declared environmental claim in the meaning of EU consumer law), against a
+  <strong>published, reproducible method</strong> — this document — and a
+  <strong>public look-up registry</strong> ({{ site_url }}/verify).
+  {% else %}
+  Le <strong>certificat Anemos</strong> est une attestation d'<strong>émissions de CO₂
+  évitées</strong>, émise par NEWTOWT pour chaque expédition livrée, sur la base des
+  données d'exploitation du navire qui l'a transportée. Il est émis par NEWTOWT
+  (allégation environnementale auto-déclarée au sens du droit européen de la
+  consommation), adossé à une <strong>méthode publiée et reproductible</strong> — le
+  présent document — et à un <strong>registre public de vérification</strong>
+  ({{ site_url }}/verify).
+  {% endif %}
+</p>
+
+<h3 class="c-teal">2. {{ 'Perimeter' if _en else 'Périmètre' }}</h3>
+<ul>
+  <li>
+    <strong>Tank-to-wake (TtW)</strong> —
+    {{ 'on-board fuel-combustion emissions, the EU MRV perimeter (Regulation EU 2015/757).'
+       if _en else 'émissions de combustion du carburant à bord, périmètre du règlement EU MRV (UE 2015/757).' }}
+  </li>
+  <li>
+    <strong>{{ 'Gas: CO₂ only' if _en else 'Gaz : CO₂ uniquement' }}</strong> —
+    {{ 'excluding CH₄ and N₂O; figures are CO₂, not CO₂e.'
+       if _en else 'hors CH₄ et N₂O ; les valeurs sont du CO₂, pas du CO₂e.' }}
+  </li>
+  <li>
+    <strong>{{ 'Maritime segment only' if _en else 'Segment maritime uniquement' }}</strong> —
+    {{ 'port to port; inland pre- and post-carriage are explicitly excluded.'
+       if _en else 'de port à port ; le pré-acheminement et le post-acheminement terrestres sont explicitement exclus.' }}
+  </li>
+</ul>
+
+<h3 class="c-teal">3. {{ 'Emission factors' if _en else "Facteurs d'émission" }}</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:4mm;">
+  <thead>
+    <tr style="border-bottom:1.5pt solid #0D5966;text-align:left;">
+      <th style="padding:2mm 1mm;">{{ 'Factor' if _en else 'Facteur' }}</th>
+      <th style="padding:2mm 1mm;text-align:right;">{{ 'Value' if _en else 'Valeur' }}</th>
+      <th style="padding:2mm 1mm;">{{ 'Source' if _en else 'Source' }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;">
+      <td style="padding:2mm 1mm;">{{ 'NEWTOWT factor (sail cargo)' if _en else 'Facteur NEWTOWT (vélique)' }}</td>
+      <td style="padding:2mm 1mm;text-align:right;font-weight:bold;">{{ towt_ef }} g CO₂/t·km</td>
+      <td style="padding:2mm 1mm;">
+        {{ "derived from our vessels' real emissions — versioned" if _en else 'dérivé des émissions réelles de nos navires — versionné' }}
+        ({{ factor_version or ('reference constants' if _en else 'constantes de référence') }})
+      </td>
+    </tr>
+    <tr style="border-bottom:0.5pt solid #EFE6D6;">
+      <td style="padding:2mm 1mm;">{{ 'Conventional reference' if _en else 'Référence conventionnelle' }}</td>
+      <td style="padding:2mm 1mm;text-align:right;font-weight:bold;">{{ conv_ef }} g CO₂/t·km</td>
+      <td style="padding:2mm 1mm;">IMO Fourth GHG Study / IFP Énergies Nouvelles</td>
+    </tr>
+    <tr>
+      <td style="padding:2mm 1mm;">{{ 'DO combustion factor' if _en else 'Facteur de combustion du DO' }}</td>
+      <td style="padding:2mm 1mm;text-align:right;">3,206 t CO₂/t</td>
+      <td style="padding:2mm 1mm;">IMO MEPC.391(81)</td>
+    </tr>
+  </tbody>
+</table>
+<p class="c-gris" style="font-size:8.5pt;">
+  {{ 'Factors are versioned (audit trail); every certificate prints the factor version used at issuance. Any factor change triggers a revision of this document.'
+     if _en else 'Les facteurs sont versionnés (journal d\'audit) ; chaque certificat imprime la version de facteur utilisée à l\'émission. Tout changement de facteur déclenche une révision du présent document.' }}
+</p>
+
+<h3 class="c-teal">4. {{ 'Formula' if _en else 'Formule' }}</h3>
+<div class="bg-sable" style="padding:4mm;margin-bottom:4mm;font-family:'JetBrains Mono',monospace;font-size:9pt;">
+  <p style="margin:0 0 2mm 0;">CO₂ {{ 'avoided' if _en else 'évité' }} (kg) = ({{ conv_ef }} − {{ towt_ef }}) × {{ 'tonnage' if _en else 'tonnage' }} (t) × distance (km) ÷ 1 000</p>
+  <p style="margin:0;">distance (km) = distance (NM) × 1,852</p>
+</div>
+
+<h3 class="c-teal">5. {{ 'Measured vs estimated data' if _en else 'Données mesurées ou théoriques' }}</h3>
+<p>
+  {% if _en %}
+  In order of preference: <strong>(a) measured</strong> — declared on-board fuel
+  consumption (signed noon reports) and the actual distance sailed (GPS track);
+  <strong>(b) estimated</strong> — the versioned NEWTOWT factor and an orthodromic
+  distance with a routing allowance (× 1.15). <strong>The method used
+  (« declared » / « theoretical ») is printed on every certificate</strong>, together
+  with the distance source. An annual measured-vs-estimated reconciliation is published.
+  {% else %}
+  Par ordre de préférence : <strong>(a) mesuré</strong> — consommations déclarées à
+  bord (noon reports signés) et distance réellement parcourue (trace GPS) ;
+  <strong>(b) théorique</strong> — facteur NEWTOWT versionné et distance orthodromique
+  avec majoration de routage (× 1,15). <strong>La méthode retenue (« declared » /
+  « theoretical ») est imprimée sur chaque certificat</strong>, avec la source de
+  distance. Une réconciliation annuelle mesuré/théorique est publiée.
+  {% endif %}
+</p>
+
+<h3 class="c-teal">6. {{ 'Verification & limits' if _en else 'Vérification et limites' }}</h3>
+<ul>
+  <li>
+    {% if _en %}
+    <strong>Vessel emissions</strong>: monitored, reported and verified by an
+    accredited body under EU MRV; publicly available in EMSA's THETIS-MRV registry.
+    {% else %}
+    <strong>Émissions des navires</strong> : surveillées, déclarées et vérifiées par un
+    organisme accrédité dans le cadre du règlement EU MRV ; consultables dans le
+    registre public THETIS-MRV de l'EMSA.
+    {% endif %}
+  </li>
+  <li>
+    {% if _en %}
+    <strong>Avoided-emissions calculation</strong>: NEWTOWT's method, published and
+    reproducible (this document). A 2026 programme is under way for an
+    <strong>independent review of the method and its alignment with ISO 14083:2023 /
+    the GLEC Framework</strong>; its status is published at {{ site_url }}/preuves.
+    {% else %}
+    <strong>Calcul des émissions évitées</strong> : méthode NEWTOWT, publiée et
+    reproductible (le présent document). Un programme 2026 est engagé pour une
+    <strong>revue indépendante de la méthode et son alignement ISO 14083:2023 /
+    GLEC Framework</strong> ; son statut est publié sur {{ site_url }}/preuves.
+    {% endif %}
+  </li>
+  <li>
+    {% if _en %}
+    <strong>Explicit limits</strong>: figures are CO₂ (not CO₂e); this is not a product
+    life-cycle assessment; the conventional reference is a sector average.
+    {% else %}
+    <strong>Limites explicites</strong> : valeurs en CO₂ (pas en CO₂e) ; il ne s'agit
+    pas d'une analyse de cycle de vie produit ; la référence conventionnelle est une
+    moyenne sectorielle.
+    {% endif %}
+  </li>
+</ul>
+
+<h3 class="c-teal">7. {{ 'Proper use of the figures (EU 2024/825)' if _en else 'Bon usage des chiffres (dir. (UE) 2024/825)' }}</h3>
+<ul>
+  <li>{{ 'Communicate per shipment, in absolute kg of CO₂ avoided, citing the certificate reference and the verification link.'
+         if _en else 'Communiquer par expédition, en kg absolus de CO₂ évité, en citant la référence du certificat et le lien de vérification.' }}</li>
+  <li>{{ 'Report under GHG Protocol Scope 3 category 4 (upstream transport) or Bilan Carbone®, on the maritime segment only.'
+         if _en else 'Déclarer en GHG Protocol Scope 3 catégorie 4 (transport amont) ou Bilan Carbone®, sur le seul segment maritime.' }}</li>
+  <li>{{ 'This is a physical reduction at source: neither a credit, nor an offset, nor any form of “carbon neutrality”.'
+         if _en else 'Il s\'agit d\'une réduction physique à la source : ni crédit, ni compensation, ni aucune forme de « neutralité carbone ».' }}</li>
+  <li>{{ 'Do not extend the claim to the whole product: the claim covers the maritime transport of the lot, not the product itself.'
+         if _en else 'Ne pas étendre l\'allégation au produit entier : elle porte sur le transport maritime du lot, pas sur le produit lui-même.' }}</li>
+</ul>
+
+<h3 class="c-teal">8. {{ 'Public look-up' if _en else 'Vérification publique' }}</h3>
+<p>
+  {% if _en %}
+  Every certificate carries a serial number and a QR code. Anyone can look it up at
+  <strong>{{ site_url }}/verify</strong>: tonnage, distance, avoided CO₂, method, date
+  and factor version — with no personal data.
+  {% else %}
+  Chaque certificat porte un numéro de série et un QR code. Chacun peut le retrouver
+  sur <strong>{{ site_url }}/verify</strong> : tonnage, distance, CO₂ évité, méthode,
+  date et version de facteur — sans aucune donnée personnelle.
+  {% endif %}
+</p>
+
+<h3 class="c-teal">9. {{ 'Document control' if _en else 'Gestion du document' }}</h3>
+<p class="c-gris" style="font-size:8.5pt;">
+  {{ 'Owner' if _en else 'Propriétaire' }} : NEWTOWT —
+  {{ 'revision triggered by any change of factor, perimeter or data hierarchy.'
+     if _en else 'révision déclenchée par tout changement de facteur, de périmètre ou de hiérarchie de données.' }}
+  {{ 'Contact' if _en else 'Contact' }} : {{ brand.email }} ·
+  v{{ doc_version }} — {{ issued_at|date }}.
+</p>
+
+{% endblock %}

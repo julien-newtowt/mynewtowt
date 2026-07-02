@@ -274,6 +274,51 @@ def render_kit(
     return DocumentBytes(html=html, pdf=pdf, filename=f"KitB2B2C_{booking.reference}.pdf")
 
 
+# ---------------------------------------------------------------------------
+# Méthodologie Anemos (document public — /preuves)
+# ---------------------------------------------------------------------------
+
+# Version éditoriale du document de méthodologie. À incrémenter à chaque
+# changement de fond (facteur, périmètre, hiérarchie de données) — cf. §9 du
+# document lui-même.
+METHODOLOGY_DOC_VERSION = "1.0"
+
+
+def render_methodology(*, factors, lang: str = "fr") -> DocumentBytes:
+    """Méthodologie Anemos en PDF réel (ENV-04/ECGT — fin du lien factice).
+
+    ``factors`` est un :class:`app.services.co2.Co2Factors` : le document
+    imprime les facteurs **courants** (versionnés en base) au moment de la
+    génération — jamais des constantes marketing.
+    """
+    from app.templating import brand_for_lang
+
+    lang = "en" if lang == "en" else "fr"
+
+    def _fmt(value) -> str:
+        s = str(value)
+        return s if lang == "en" else s.replace(".", ",")
+
+    ctx = {
+        "lang": lang,
+        "doc_version": METHODOLOGY_DOC_VERSION,
+        "towt_ef": _fmt(factors.towt_ef_g_tkm),
+        "conv_ef": _fmt(factors.conventional_ef_g_tkm),
+        "factor_version": factors.source_version,
+        "issued_at": datetime.now(UTC),
+        "site_url": settings.site_url,
+        # Rendu hors-requête : le context processor n'injecte pas ``brand``.
+        "brand": brand_for_lang(lang),
+    }
+    html, pdf = _render_pdf("pdf/methodologie_anemos.html", ctx)
+    suffix = "en" if lang == "en" else "fr"
+    return DocumentBytes(
+        html=html,
+        pdf=pdf,
+        filename=f"NEWTOWT_Methodologie_Anemos_v{METHODOLOGY_DOC_VERSION}_{suffix}.pdf",
+    )
+
+
 def render_planning_brochure(*, groups, summary, meta, lang: str = "fr") -> DocumentBytes:
     """PLN-01 — brochure commerciale imprimable du planning.
 

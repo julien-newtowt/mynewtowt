@@ -24,7 +24,7 @@ Structure du Carnet de Bord (10 sections) :
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.anemos_certificate import AnemosCertificate
 from app.models.booking import Booking
 from app.models.client_account import ClientAccount
-from app.models.crew import CrewMember
+from app.models.crew import CrewAssignment, CrewMember
 from app.models.leg import Leg
 from app.models.noon_report import (
     NoonReport,
@@ -50,6 +50,75 @@ from app.services import hold_conditions as hold_conditions_svc
 # Propulsion modes
 PROPULSION_MODES = ("sail", "assisted", "motor")
 
+# ViewBox de la carte SVG du chapitre 1 (contrat du template
+# ``chapitre_1_traversee.html`` : trace ``svg_path`` + points/ports ``.x/.y``).
+MAP_W = 800
+MAP_H = 400
+MAP_PAD = 40
+
+
+def _make_projection(points: list[tuple[float, float]]):
+    """Projection équirectangulaire simple (lat/lon → viewBox du chapitre 1).
+
+    Cadre la carte sur l'étendue des points fournis ; étendue dégénérée
+    (un seul point, méridien unique…) → span de 1° pour éviter la division
+    par zéro. Fonction pure, testable.
+    """
+    if not points:
+        return lambda lat, lon: (MAP_W / 2.0, MAP_H / 2.0)
+    lats = [lat for lat, _ in points]
+    lons = [lon for _, lon in points]
+    lat_min, lat_max = min(lats), max(lats)
+    lon_min, lon_max = min(lons), max(lons)
+    lat_span = (lat_max - lat_min) or 1.0
+    lon_span = (lon_max - lon_min) or 1.0
+    inner_w = MAP_W - 2 * MAP_PAD
+    inner_h = MAP_H - 2 * MAP_PAD
+
+    def project(lat: float, lon: float) -> tuple[float, float]:
+        x = MAP_PAD + (lon - lon_min) / lon_span * inner_w
+        y = MAP_PAD + (1 - (lat - lat_min) / lat_span) * inner_h
+        return (round(x, 1), round(y, 1))
+
+    return project
+
+
+def _project_route(data: CarnetBordData) -> None:
+    """Projette trace GPS, points remarquables et ports pour la carte SVG.
+
+    Le template du chapitre 1 consomme ``gps_trace[n].svg_path`` (segments
+    ``M/L x,y`` joints en un ``<path d>``) et des attributs transitoires
+    ``.x/.y`` posés sur les points remarquables et les ports (jamais
+    persistés). Ce contrat n'avait jamais été implémenté côté service —
+    la carte du carnet était donc ingénérable.
+    """
+    geo: list[tuple[float, float]] = [(p["latitude"], p["longitude"]) for p in data.gps_trace]
+    geo += [(h.latitude, h.longitude) for h in data.highlights]
+    for port in (data.pol, data.pod):
+        if port is not None and port.latitude is not None and port.longitude is not None:
+            geo.append((port.latitude, port.longitude))
+    project = _make_projection(geo)
+
+    for i, point in enumerate(data.gps_trace):
+        x, y = project(point["latitude"], point["longitude"])
+        point["x"] = x
+        point["y"] = y
+        point["svg_path"] = f"{'M' if i == 0 else 'L'} {x},{y}"
+
+    for highlight in data.highlights:
+        highlight.x, highlight.y = project(highlight.latitude, highlight.longitude)
+
+    if data.pol is not None:
+        if data.pol.latitude is not None and data.pol.longitude is not None:
+            data.pol.x, data.pol.y = project(data.pol.latitude, data.pol.longitude)
+        else:
+            data.pol.x, data.pol.y = (MAP_PAD + 20.0, MAP_H / 2.0)
+    if data.pod is not None:
+        if data.pod.latitude is not None and data.pod.longitude is not None:
+            data.pod.x, data.pod.y = project(data.pod.latitude, data.pod.longitude)
+        else:
+            data.pod.x, data.pod.y = (MAP_W - MAP_PAD - 20.0, MAP_H / 2.0)
+
 
 class CarnetBordData:
     """Structure de données pour le Carnet de Bord."""
@@ -61,7 +130,7 @@ class CarnetBordData:
         self.pol: Port | None = None
         self.pod: Port | None = None
         self.client: ClientAccount | None = None
-        self.generated_at: datetime = datetime.utcnow()
+        self.generated_at: datetime = datetime.now(UTC)
 
         # Données par chapitre
         self.cover_photo: VoyagePhoto | None = None
@@ -260,17 +329,37 @@ async def get_carnet_bord_data(
             "motor_pct": (propulsion_counts["motor"] / total_points) * 100,
         }
 
+    # Carte SVG du chapitre 1 : projette trace, points remarquables et ports.
+    _project_route(data)
+
     # =========================================================================
     # CHAPITRE 2 - L'équipage
     # =========================================================================
 
-    # Membres d'équipage
-    crew_members = await db.execute(
-        select(CrewMember)
-        .where(CrewMember.vessel_id == leg.vessel_id)
-        .order_by(CrewMember.last_name, CrewMember.first_name)
+    # Membres d'équipage embarqués — la liaison passe par crew_assignments
+    # (CREW-04 : un embarquement est rattaché au leg, ou au navire seul pour
+    # les relèves hors leg). L'ancien code interrogeait des colonnes
+    # inexistantes (CrewMember.vessel_id / last_name) : défaut latent corrigé.
+    crew_ids = set(
+        (
+            await db.execute(
+                select(CrewAssignment.crew_member_id).where(
+                    (CrewAssignment.leg_id == leg_id)
+                    | (
+                        CrewAssignment.leg_id.is_(None)
+                        & (CrewAssignment.vessel_id == leg.vessel_id)
+                    )
+                )
+            )
+        )
+        .scalars()
+        .all()
     )
-    data.crew_members = crew_members.scalars().all()
+    if crew_ids:
+        crew_members = await db.execute(
+            select(CrewMember).where(CrewMember.id.in_(crew_ids)).order_by(CrewMember.full_name)
+        )
+        data.crew_members = crew_members.scalars().all()
 
     # Photos d'équipage (batch "crew")
     crew_photos = await db.execute(
@@ -615,7 +704,15 @@ def build_carnet_context(data: CarnetBordData) -> dict[str, Any]:
     l'état complet de l'objet (le PDF recevait historiquement un contexte
     tronqué à 6 variables : défaut corrigé).
     """
-    return dict(vars(data))
+    from app.templating import brand_for_lang
+
+    context = dict(vars(data))
+    # Rendu hors-requête : le context processor n'injecte pas ``brand``,
+    # dont dépend le pied de page @page de ``pdf/_base.html``, qui attend
+    # aussi ``issued_at`` (date d'émission du document).
+    context["brand"] = brand_for_lang("fr")
+    context["issued_at"] = data.generated_at
+    return context
 
 
 async def generate_carnet_bord_pdf(

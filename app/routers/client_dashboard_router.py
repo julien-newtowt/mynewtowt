@@ -516,12 +516,18 @@ async def anemos_annual_report_pdf(
 
     from weasyprint import HTML  # import tardif — deps natives lourdes
 
+    from app.templating import brand_for_lang
+
     tpl = templates.get_template("pdf/anemos_annual_report.html")
     html = tpl.render(
         report=report,
         client=client,
         site_url=settings.site_url,
         issued_at=datetime.now(UTC),
+        # Rendu hors-requête : le context processor n'injecte pas ``brand``
+        # (le pied de page @page de pdf/_base.html en dépend) — défaut latent
+        # corrigé à l'occasion de P3.
+        brand=brand_for_lang("fr"),
     )
     pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
     return Response(

@@ -110,9 +110,12 @@
       {% endif %}
     </p>
 
-    <p style="margin-top:var(--sp-5)">
-      <a href="/about/anemos" class="btn btn-secondary">
+    <p style="margin-top:var(--sp-5);display:flex;gap:var(--sp-4);flex-wrap:wrap;">
+      <a href="/preuves/methodologie.pdf" class="btn btn-secondary">
         {% if lang == 'en' %}Download the methodology (PDF){% else %}Télécharger la méthodologie (PDF){% endif %}
+      </a>
+      <a href="/about/anemos" class="btn btn-ghost">
+        {% if lang == 'en' %}Read the method online →{% else %}Lire la méthode en ligne →{% endif %}
       </a>
     </p>
   </div>
@@ -251,17 +254,22 @@
     <h2>{% if lang == 'en' %}A shipment to justify?{% else %}Une expédition à justifier ?{% endif %}</h2>
     <p>
       {% if lang == 'en' %}
-        Methodology (PDF) · Annual CO₂ report (sample) · Co-brandable ESG kit (slides) to present internally.
+        Download the methodology and a sample annual CO₂ report — the co-branded ESG kit
+        is prepared with our team.
       {% else %}
-        Méthodologie (PDF) · Rapport CO₂ annuel (exemple) · Kit RSE co-brandable (slides) pour présenter en interne.
+        Téléchargez la méthodologie et un spécimen du rapport CO₂ annuel — le kit RSE
+        co-brandé se prépare avec notre équipe.
       {% endif %}
     </p>
     <div style="display:flex;gap:var(--sp-4);justify-content:center;flex-wrap:wrap">
-      <a href="/contact" class="btn btn-white btn-lg">
-        {% if lang == 'en' %}Request a quote{% else %}Demander une cotation{% endif %}
+      <a href="/preuves/methodologie.pdf" class="btn btn-white btn-lg">
+        {% if lang == 'en' %}Methodology (PDF){% else %}Méthodologie (PDF){% endif %}
+      </a>
+      <a href="/preuves/rapport-annuel-exemple.pdf" class="btn btn-lg" style="color:#fff;border:2px solid rgba(255,255,255,0.45);background:transparent;">
+        {% if lang == 'en' %}Annual report — sample (PDF){% else %}Rapport annuel — spécimen (PDF){% endif %}
       </a>
       <a href="/contact" class="btn btn-lg" style="color:#fff;border:2px solid rgba(255,255,255,0.45);background:transparent;">
-        {% if lang == 'en' %}Talk to our team{% else %}Parler à notre équipe{% endif %}
+        {% if lang == 'en' %}Co-branded ESG kit — talk to us{% else %}Kit RSE co-brandé — parler à notre équipe{% endif %}
       </a>
     </div>
   </div>
