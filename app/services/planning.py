@@ -344,8 +344,8 @@ async def update_leg(
     delta to all downstream legs of the same vessel that haven't sailed yet.
 
     When vessel_id, departure_port_id, arrival_port_id ou etd's year change,
-    the leg_code is recomputed (format {SHIP}{LETTER}{POL}{POD}{YR}) avec
-    une lettre de séquence (A→J) unique pour éviter les collisions.
+    the leg_code is recomputed par ``_leg_code_for`` — format canonique
+    ``{seq}{vessel_code}{POL}{POD}{year_digit}`` (ex. ``1CFRBR6``).
 
     Returns the CascadeReport, ou None si aucune cascade n'a été effectuée.
     """

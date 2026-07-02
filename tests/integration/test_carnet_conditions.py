@@ -222,7 +222,7 @@ async def test_booking_carnet_pdf_guards_and_happy_path(db, monkeypatch):
     booking.status = "at_sea"
     await db.flush()
 
-    async def _fake_pdf(db_, leg_id, client_account_id=None):
+    async def _fake_pdf(db_, leg_id, client_account_id=None, *, client_view=False):
         assert leg_id == leg.id
         assert client_account_id == client.id
         return b"%PDF-1.4 fake"
@@ -244,6 +244,69 @@ async def test_carnet_pdf_real_render(db):
     await _seed_holds(db, leg)
     pdf = await generate_carnet_bord_pdf(db, leg.id)
     assert pdf.startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
+async def test_carnet_client_view_hides_coshipper_cargo(db):
+    """Confidentialité inter-clients : en vue client, la ventilation cargo
+    des co-chargeurs du leg est masquée ; en vue staff elle est présente.
+    Exerce aussi le chemin produits (BookingItem.cargo_description)."""
+    from app.models.booking import Booking, BookingItem
+    from app.services.carnet_bord import build_carnet_context, get_carnet_bord_data
+    from app.templating import templates
+
+    client_a = await _client(db)
+    client_b = ClientAccount(
+        email="cacao@example.test", hashed_password="x", company_name="Cacao SA"
+    )
+    db.add(client_b)
+    leg = await _leg(db)
+    await db.flush()
+
+    # Client A : café ; Client B (co-chargeur) : « Cacao premium ».
+    booking_a = Booking(
+        reference="BK-A", leg_id=leg.id, client_account_id=client_a.id, status="at_sea"
+    )
+    booking_b = Booking(
+        reference="BK-B", leg_id=leg.id, client_account_id=client_b.id, status="at_sea"
+    )
+    db.add_all([booking_a, booking_b])
+    await db.flush()
+    db.add(
+        BookingItem(
+            booking_id=booking_a.id,
+            pallet_format="EPAL",
+            pallet_count=10,
+            cargo_description="Café vert Huila",
+            total_weight_kg=8000,
+        )
+    )
+    db.add(
+        BookingItem(
+            booking_id=booking_b.id,
+            pallet_format="EPAL",
+            pallet_count=6,
+            cargo_description="Cacao premium Bahia",
+            total_weight_kg=5000,
+        )
+    )
+    await db.flush()
+
+    data = await get_carnet_bord_data(db, leg.id, client_account_id=client_a.id)
+    # Le chemin produits ne plante plus et agrège bien les deux cargaisons.
+    names = {p["name"] for p in data.products}
+    assert names == {"Café vert Huila", "Cacao premium Bahia"}
+
+    tpl = templates.get_template("pdf/carnet_bord.html")
+    staff_html = tpl.render(**build_carnet_context(data, client_view=False))
+    client_html = tpl.render(**build_carnet_context(data, client_view=True))
+
+    # Vue staff : le tableau produits et le cargo du co-chargeur sont visibles.
+    assert "Cacao premium Bahia" in staff_html
+    assert '<h2 class="section-title">Produits transportés</h2>' in staff_html
+    # Vue client : ni le tableau produits, ni le cargo du co-chargeur.
+    assert "Cacao premium Bahia" not in client_html
+    assert '<h2 class="section-title">Produits transportés</h2>' not in client_html
 
 
 # ───────────────────── portail expéditeur /p/{token} ─────────────────────

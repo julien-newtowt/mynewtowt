@@ -20,6 +20,7 @@ Exit code :
   0 3 * * *  docker compose exec -T app python -m scripts.verify_signatures \
              >> /var/log/mynewtowt/signature-audit.log 2>&1
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,7 +39,9 @@ from app.models.noon_report import NoonReport
 from app.models.sof_event import SofEvent
 from app.models.watch_log import WatchLog
 from app.services.signature import (
-    compute_noon_hash, compute_sof_hash, compute_watch_hash,
+    compute_noon_hash,
+    compute_sof_hash,
+    compute_watch_hash,
 )
 
 
@@ -75,16 +78,18 @@ async def _check_one(
     for r in records:
         recomputed = hash_fn(r)
         if recomputed != r.signature_hash:
-            violations.append(Violation(
-                kind=kind,
-                record_id=r.id,
-                leg_id=getattr(r, "leg_id", None),
-                label=label_fn(r),
-                stored_hash=r.signature_hash,
-                recomputed_hash=recomputed,
-                signed_by=getattr(r, "signed_by_name", None),
-                signed_at=str(getattr(r, "signed_at", "")),
-            ))
+            violations.append(
+                Violation(
+                    kind=kind,
+                    record_id=r.id,
+                    leg_id=getattr(r, "leg_id", None),
+                    label=label_fn(r),
+                    stored_hash=r.signature_hash,
+                    recomputed_hash=recomputed,
+                    signed_by=getattr(r, "signed_by_name", None),
+                    signed_at=str(getattr(r, "signed_at", "")),
+                )
+            )
     return len(records), violations
 
 
@@ -92,18 +97,27 @@ async def main(*, limit: int | None, json_output: bool) -> int:
     async with SessionLocal() as db:
         try:
             sof_checked, sof_v = await _check_one(
-                db, SofEvent, compute_sof_hash,
-                limit=limit, kind="sof_event",
+                db,
+                SofEvent,
+                compute_sof_hash,
+                limit=limit,
+                kind="sof_event",
                 label_fn=lambda e: f"{e.event_type}@{e.occurred_at}",
             )
             noon_checked, noon_v = await _check_one(
-                db, NoonReport, compute_noon_hash,
-                limit=limit, kind="noon_report",
+                db,
+                NoonReport,
+                compute_noon_hash,
+                limit=limit,
+                kind="noon_report",
                 label_fn=lambda n: f"leg={n.leg_id}@{n.recorded_at}",
             )
             watch_checked, watch_v = await _check_one(
-                db, WatchLog, compute_watch_hash,
-                limit=limit, kind="watch_log",
+                db,
+                WatchLog,
+                compute_watch_hash,
+                limit=limit,
+                kind="watch_log",
                 label_fn=lambda w: f"leg={w.leg_id} {w.watch_date} {w.watch_period}",
             )
         except Exception as e:
@@ -144,10 +158,18 @@ async def main(*, limit: int | None, json_output: bool) -> int:
 def cli() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("--json", dest="json_output", action="store_true",
-                   help="Sortie JSON (pour pipeline / alerting)")
-    p.add_argument("--limit", type=int, default=None,
-                   help="Limite par type (utile en CI / dev). Default: tout.")
+    p.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Sortie JSON (pour pipeline / alerting)",
+    )
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limite par type (utile en CI / dev). Default: tout.",
+    )
     args = p.parse_args()
     return asyncio.run(main(limit=args.limit, json_output=args.json_output))
 

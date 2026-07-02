@@ -13,7 +13,7 @@ Identifiants de référence :
 
 Brackets dégressifs (DEFAULT_BRACKETS_SHIPPER) :
   lt50 (×1.10), 100 (×1.00), 200 (×0.80), 300 (×0.80), 400 (×0.80),
-  500 (×0.70), full ship 850 (×0.60).
+  500 (×0.70), full ship 978 (×0.60).
 """
 
 from __future__ import annotations
@@ -134,7 +134,7 @@ class RateGrid(Base):
       **brackets de volume** (``brackets_json`` — coefficients dégressifs au
       niveau grille, remplace les anciennes lignes-brackets) ;
     - chaque **route** (``RateGridLine``) porte POL/POD, sa distance, son OPEX
-      jour et son ``base_rate`` (OPEX × jours de mer / 850) ;
+      jour et son ``base_rate`` (OPEX × jours de mer / 978) ;
     - ``vessel_id`` sert au lookup de l'OPEX jour par navire au recalcul.
 
     Deux familles : grille **client** (``client_id`` renseigné) ou grille
@@ -205,7 +205,7 @@ class RateGridLine(Base):
     """Une route POL→POD d'une grille (distance / OPEX jour / base_rate).
 
     ``nav_days = distance_nm / (8 nœuds × 24 h)`` et
-    ``base_rate = opex_daily × nav_days / 850``. ``is_manual`` gèle le
+    ``base_rate = opex_daily × nav_days / 978``. ``is_manual`` gèle le
     ``base_rate`` (surcharge manuelle) : le recalcul OPEX ne le réécrit pas.
     """
 

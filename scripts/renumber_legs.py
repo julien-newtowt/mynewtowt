@@ -55,12 +55,8 @@ async def _load_legs(db, *, vessel_code: str | None, year: int | None) -> list[L
 
 async def _build_plan(db, legs: list[Leg]) -> list[tuple[Leg, str]]:
     """Retourne [(leg, nouveau_code)] en séquence chronologique par (navire, année)."""
-    vessels = {
-        v.id: v for v in (await db.execute(select(Vessel))).scalars().all()
-    }
-    ports = {
-        p.id: p for p in (await db.execute(select(Port))).scalars().all()
-    }
+    vessels = {v.id: v for v in (await db.execute(select(Vessel))).scalars().all()}
+    ports = {p.id: p for p in (await db.execute(select(Port))).scalars().all()}
 
     # Numérotation chronologique : ETD croissant dans chaque groupe.
     counters: dict[tuple[int, int], int] = {}
@@ -93,15 +89,19 @@ async def run(*, execute: bool, vessel_code: str | None, year: int | None) -> in
         for leg, code in plan:
             flag = "→" if leg.leg_code != code else " "
             mark = "  CHANGE" if leg.leg_code != code else ""
-            print(f"  {leg.leg_code:>10} {flag} {code:<10} (id={leg.id}, ETD {leg.etd:%Y-%m-%d}){mark}")
+            print(
+                f"  {leg.leg_code:>10} {flag} {code:<10} (id={leg.id}, ETD {leg.etd:%Y-%m-%d}){mark}"
+            )
 
         if not changes:
             print("\nTout est déjà conforme — rien à faire.")
             return 0
 
         if not execute:
-            print(f"\n[dry-run] {len(changes)} code(s) seraient modifiés. "
-                  "Relancez avec --yes pour appliquer.")
+            print(
+                f"\n[dry-run] {len(changes)} code(s) seraient modifiés. "
+                "Relancez avec --yes pour appliquer."
+            )
             return 0
 
         # Phase 1 — codes temporaires (évite les collisions UNIQUE transitoires).

@@ -88,6 +88,20 @@
 </section>
 {% endif %}
 
+{% if reliability and reliability.is_publishable %}
+<section class="section section--sand" aria-label="{{ t('rel_title', lang) }}">
+  <div class="section-inner" style="text-align:center;">
+    <span class="section-kicker">{{ t('rel_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('rel_title', lang) }}</h2>
+    <p class="social-counter" style="margin:var(--sp-4) auto 0;">
+      <span class="social-counter-val">{{ reliability.pct|round|int }}&nbsp;%</span>
+      <span class="social-counter-label">{{ t('rel_label', lang, n=reliability.completed) }}</span>
+    </p>
+    <p class="social-counters-note">{{ t('rel_method', lang, h=reliability.window_hours|round|int) }}</p>
+  </div>
+</section>
+{% endif %}
+
 {% if press_mentions %}
 <aside class="press-strip" aria-label="{{ t('sp_press_title', lang) }}">
   <div class="press-strip-inner">

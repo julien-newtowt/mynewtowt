@@ -1024,7 +1024,7 @@ async def grid_recalculate(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
-    """Recalcule le base_rate de toutes les routes non-manuelles (OPEX × jours / 850)."""
+    """Recalcule le base_rate de toutes les routes non-manuelles (OPEX × jours / 978)."""
     grid = (
         await db.execute(
             select(RateGrid).options(selectinload(RateGrid.lines)).where(RateGrid.id == grid_id)

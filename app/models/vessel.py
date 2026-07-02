@@ -13,6 +13,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
+# Statuts de flotte (P4). « operational » = en service ; « under_construction »
+# = commandé/en chantier (livraison à venir).
+VESSEL_BUILD_STATUSES: tuple[str, ...] = ("operational", "under_construction")
+
 
 class Vessel(Base):
     __tablename__ = "vessels"
@@ -29,11 +33,19 @@ class Vessel(Base):
     imo_number: Mapped[str | None] = mapped_column(String(20))
     flag: Mapped[str | None] = mapped_column(String(2))
     dwt: Mapped[float | None] = mapped_column(Float)
-    capacity_palettes: Mapped[int] = mapped_column(Integer, default=850, nullable=False)
+    # Capacité commerciale unique (palettes EPAL réservables) = capacité
+    # physique de cale du référentiel stowage Phoenix (P4, arbitrage direction).
+    capacity_palettes: Mapped[int] = mapped_column(Integer, default=978, nullable=False)
     default_speed_kn: Mapped[float] = mapped_column(Float, default=8.0, nullable=False)
     default_elongation: Mapped[float] = mapped_column(Float, default=1.15, nullable=False)
     opex_daily_sea_eur: Mapped[float | None] = mapped_column(Float)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Statut de flotte (P4) : navire en service ou en construction. Source de
+    # vérité du récit « 2 en opération, 4 en construction » (cf.
+    # VESSEL_BUILD_STATUSES) pour l'ERP et, à terme, la vitrine.
+    build_status: Mapped[str] = mapped_column(
+        String(20), default="operational", server_default="operational", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -399,21 +399,25 @@ async def get_carnet_bord_data(
                     Decimal(b.total_weight_kg or 0) for b in client_bookings
                 )
 
-        # Produits (simplifié - à détailler)
-        # Pour l'instant, on groupe par type de produit
+        # Produits : agrégation par description de cargaison, depuis les lignes
+        # de réservation (``BookingItem.cargo_description``). L'ancien code lisait
+        # ``booking.goods_description`` — champ inexistant sur ``Booking`` (c'est
+        # ``BookingItem.cargo_description``) : il aurait planté dès qu'un leg
+        # portait des bookings. ``items`` est eager-load (selectin).
         product_map: dict[str, dict[str, Any]] = {}
         for booking in bookings:
-            if booking.goods_description:
-                for good in booking.goods_description.split(","):
-                    good = good.strip()
-                    if good not in product_map:
-                        product_map[good] = {
-                            "name": good,
-                            "quantity": 0,
-                            "weight_kg": Decimal("0"),
-                        }
-                    product_map[good]["quantity"] += booking.total_palettes or 0
-                    product_map[good]["weight_kg"] += Decimal(booking.total_weight_kg or 0)
+            for item in booking.items:
+                good = (item.cargo_description or "").strip()
+                if not good:
+                    continue
+                if good not in product_map:
+                    product_map[good] = {
+                        "name": good,
+                        "quantity": 0,
+                        "weight_kg": Decimal("0"),
+                    }
+                product_map[good]["quantity"] += item.pallet_count or 0
+                product_map[good]["weight_kg"] += Decimal(item.total_weight_kg or 0)
 
         if product_map:
             total_weight = sum(p["weight_kg"] for p in product_map.values())
@@ -695,7 +699,7 @@ async def get_carnet_bord_data(
     return data
 
 
-def build_carnet_context(data: CarnetBordData) -> dict[str, Any]:
+def build_carnet_context(data: CarnetBordData, *, client_view: bool = False) -> dict[str, Any]:
     """Contexte de rendu complet du template ``pdf/carnet_bord.html``.
 
     Partagé entre la prévisualisation HTML (router) et la génération PDF :
@@ -703,6 +707,11 @@ def build_carnet_context(data: CarnetBordData) -> dict[str, Any]:
     variables attendus par les templates de chapitres — le contexte est donc
     l'état complet de l'objet (le PDF recevait historiquement un contexte
     tronqué à 6 variables : défaut corrigé).
+
+    ``client_view`` (vue téléchargée par un client depuis ``/me``) masque la
+    ventilation cargo à l'échelle du navire (produits de TOUS les chargeurs
+    du leg) — confidentialité inter-clients (cf. revue sécurité). La vue
+    staff (défaut) reste complète.
     """
     from app.templating import brand_for_lang
 
@@ -712,6 +721,7 @@ def build_carnet_context(data: CarnetBordData) -> dict[str, Any]:
     # aussi ``issued_at`` (date d'émission du document).
     context["brand"] = brand_for_lang("fr")
     context["issued_at"] = data.generated_at
+    context["client_view"] = client_view
     return context
 
 
@@ -719,11 +729,14 @@ async def generate_carnet_bord_pdf(
     db: AsyncSession,
     leg_id: int,
     client_account_id: int | None = None,
+    *,
+    client_view: bool = False,
 ) -> bytes:
     """Génère le PDF du Carnet de Bord pour un leg (WeasyPrint).
 
     WeasyPrint est importé localement (dépendances natives lourdes) — même
-    convention que ``services.pdf_generator``.
+    convention que ``services.pdf_generator``. ``client_view=True`` produit
+    la version confidentielle (sans le mix cargo des co-chargeurs).
     """
     from weasyprint import HTML  # local import — heavy native deps
 
@@ -731,6 +744,6 @@ async def generate_carnet_bord_pdf(
     from app.templating import templates
 
     data = await get_carnet_bord_data(db, leg_id, client_account_id)
-    context = build_carnet_context(data)
+    context = build_carnet_context(data, client_view=client_view)
     html = templates.get_template("pdf/carnet_bord.html").render(**context)
     return HTML(string=html, base_url=settings.site_url or "").write_pdf()

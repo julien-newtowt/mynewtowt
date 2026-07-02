@@ -473,8 +473,12 @@ Pour chaque écran ou composant retravaillé :
 
 ### 9.4 Données factuelles à respecter dans les mockups
 
-- 8 voiliers-cargo opérés (ex. *Anemos*, *Artemis*, *Aphrodite*, *Pélican*).
-- Capacités typiques : 80-200 palettes EPAL.
+- ⚠️ OBSOLÈTE (corrigé P4) — chiffres périmés d'un brief de refonte
+  antérieur. Vérité courante : **6 sisterships classe TSC 80** (2 en
+  opération — *Anemos*, *Artemis* ; 4 en construction — *Atlantis*,
+  *Astérias*, *Archimedes*, *Atlas*) ; capacité commerciale **978 palettes
+  EPAL** par navire (« Aphrodite »/« Pélican » et « 80-200 palettes » ne sont
+  plus valides).
 - Vitesse moyenne : 7-9 nœuds (transit Atlantique ~15 j).
 - Émissions évitées : ~85-90 % vs cargo conventionnel (1.5 vs 13.7 g
   CO₂/t·km).

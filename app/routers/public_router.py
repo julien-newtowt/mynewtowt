@@ -93,7 +93,7 @@ async def set_language(lang: str, request: Request):
 @router.get("/", response_class=HTMLResponse)
 async def landing(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     upcoming = await _next_bookable_legs(db, limit=6)
-    from app.services import analytics, social_proof
+    from app.services import analytics, service_reliability, social_proof
 
     await analytics.record(
         db, "landing_view", lang=getattr(request.state, "lang", "fr"), channel="public"
@@ -101,12 +101,16 @@ async def landing(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLR
     # Preuve sociale : compteurs réels (cache 10 min) + presse publiée ;
     # témoignages/logos ne s'affichent que si contenu + accord fournis.
     counters = await social_proof.counters(db)
+    # Taux de service (ponctualité) — affiché seulement au-dessus d'un
+    # échantillon minimal (pas de « 100 % sur 1 traversée »).
+    reliability = await service_reliability.overall(db)
     return templates.TemplateResponse(
         "public/landing.html",
         {
             "request": request,
             "upcoming_legs": upcoming,
             "counters": counters,
+            "reliability": reliability,
             "press_mentions": social_proof.PRESS_MENTIONS,
             "testimonials": social_proof.TESTIMONIALS,
             "client_logos": social_proof.CLIENT_LOGOS,
@@ -221,6 +225,14 @@ async def route_detail(
     # Date de clôture des réservations : explicite ou ETD − 48 h.
     cut_off_at = leg.booking_close_at or (leg.etd - timedelta(hours=48))
 
+    # Ponctualité historique de la ligne (même POL → POD) — affichée si
+    # l'échantillon est suffisant (actif de confiance, P10).
+    from app.services import service_reliability
+
+    reliability = await service_reliability.for_route(
+        db, leg.departure_port_id, leg.arrival_port_id
+    )
+
     return templates.TemplateResponse(
         "public/route_detail.html",
         {
@@ -234,6 +246,7 @@ async def route_detail(
             "distance_nm": distance_nm,
             "duration_days": duration_days,
             "cut_off_at": cut_off_at,
+            "reliability": reliability,
             "map_token": settings.map_token,
             "client": client,
         },

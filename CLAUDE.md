@@ -224,7 +224,11 @@ mynewtowt/
 - Pas de f-string SQL pour des noms de table/colonne — whitelist + `bindparams()`.
 - Pas de framework JS lourd — HTMX + Alpine.js sont la norme.
 - Pas de police `Inter`, `Poppins`, `Segoe UI` — uniquement Manrope.
-- Pas de module passengers — disparu en v3.0.0 (restructuration corporate).
+- Pas de **module ERP** passengers (disparu en v3.0.0 : pas de modèle, pas
+  d'entrée dans la matrice de permissions). Mais le **service passagers 2027**
+  est une **intention commerciale assumée** (P4) : page vitrine `/passagers`
+  (12 couchettes/navire, champ `Vessel.capacity_pax`), sans logique ERP. Ne
+  pas recréer de module ERP passagers ; ne pas dépublier la page marketing.
 
 ## Décisions actées & ré-absorptions (à ne pas recompter comme régressions)
 

@@ -78,4 +78,7 @@ ou une reprise les considère comme des bugs :
 - **Anemos** remplace le « certificat de décarbonation par client » par un **certificat par booking** + rapport RSE annuel.
 - **Facteur CO₂ versionné** (`/admin/co2`) au lieu d'un paramètre éditable libre.
 - **Stowage** : politique « avertir, ne jamais bloquer » (sous réserve A3).
-- **Module passengers** définitivement supprimé (v3.0.0) — ne pas réintroduire.
+- **Module ERP passengers** définitivement supprimé (v3.0.0) — ne pas
+  réintroduire. NB (P4) : distinct du **service passagers 2027**, intention
+  commerciale assumée (page vitrine `/passagers`, `Vessel.capacity_pax`), qui
+  n'est **pas** un module ERP et reste publié.

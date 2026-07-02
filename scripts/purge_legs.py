@@ -24,6 +24,7 @@ Ordre FK-safe :
 
 Tout est exécuté dans UNE transaction : rollback automatique si erreur.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -56,11 +57,22 @@ from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 
 # Modèles dont les lignes liées au leg sont SUPPRIMÉES.
 LEG_OWNED_DELETE = [
-    EscaleOperation, DockerShift,
-    SofEvent, EtaShift, OnboardMessage, CargoDocument,
-    NoonReport, WatchLog, OnboardChecklist, VisitorLog,
-    MRVEvent, LegFinance, LegKPI,
-    CrewAssignment, OrderAssignment, StowagePlan,
+    EscaleOperation,
+    DockerShift,
+    SofEvent,
+    EtaShift,
+    OnboardMessage,
+    CargoDocument,
+    NoonReport,
+    WatchLog,
+    OnboardChecklist,
+    VisitorLog,
+    MRVEvent,
+    LegFinance,
+    LegKPI,
+    CrewAssignment,
+    OrderAssignment,
+    StowagePlan,
 ]
 
 # Modèles dont leg_id est mis à NULL (la ligne survit).
@@ -70,7 +82,9 @@ LEG_NULLABLE = [Claim, Ticket, CashboxMovement, CrewTicket, AnemosCertificate, O
 async def _target_leg_ids(db, *, vessel_code: str | None, before: datetime | None):
     stmt = select(Leg.id)
     if vessel_code:
-        v = (await db.execute(select(Vessel).where(Vessel.code == vessel_code))).scalar_one_or_none()
+        v = (
+            await db.execute(select(Vessel).where(Vessel.code == vessel_code))
+        ).scalar_one_or_none()
         if v is None:
             raise SystemExit(f"Navire {vessel_code!r} introuvable.")
         stmt = stmt.where(Leg.vessel_id == v.id)
@@ -84,12 +98,12 @@ async def run(*, execute: bool, vessel_code: str | None, before: datetime | None
         leg_ids_subq = await _target_leg_ids(db, vessel_code=vessel_code, before=before)
 
         n_legs = await db.scalar(
-            select(func.count()).select_from(select(Leg.id).where(Leg.id.in_(leg_ids_subq)).subquery())
+            select(func.count()).select_from(
+                select(Leg.id).where(Leg.id.in_(leg_ids_subq)).subquery()
+            )
         )
         bookings_subq = select(Booking.id).where(Booking.leg_id.in_(leg_ids_subq))
-        n_bookings = await db.scalar(
-            select(func.count()).select_from(bookings_subq.subquery())
-        )
+        n_bookings = await db.scalar(select(func.count()).select_from(bookings_subq.subquery()))
 
         print(f"Legs ciblés        : {n_legs}")
         print(f"Bookings impactés  : {n_bookings}")

@@ -1,7 +1,7 @@
 """Stowage plan — plan d'arrimage 18 zones par navire.
 
 STRUCTURE NAVIRE (identique pour Anemos / Artemis / Atlantis / Atlas /
-Archimedes / Asterias) :
+Archimedes / Astérias) :
 
     2 cales × 3 ponts × 3 blocs = 18 zones.
 
@@ -43,7 +43,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
-# Zones standard d'un navire 850 palettes (3 ponts × 2 cales × 3 blocs)
+# Zones standard d'un navire 978 palettes (3 ponts × 2 cales × 3 blocs)
 DECKS = ("INF", "MIL", "SUP")
 HOLDS = ("AR", "AV")
 BLOCKS = ("AR", "MIL", "AV")

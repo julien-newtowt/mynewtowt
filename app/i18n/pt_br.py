@@ -991,4 +991,11 @@ CATALOG: dict[str, str] = {
     "cafe_cta_lead": "Diga-nos a sua origem e o seu volume — enviamos rotas, prazos e cotação, com o kit B2B2C.",
     "cafe_cta_btn_quote": "Pedir uma cotação",
     "cafe_cta_btn_proof": "Ver o método e as provas",
+    # ── Taxa de serviço / pontualidade (P10) ──
+    "rel_kicker": "Partidas cumpridas",
+    "rel_title": "Uma linha regular, cumprida",
+    "rel_label": "das travessias chegaram no horário, de {n} realizadas",
+    "rel_method": "«No horário» = chegada real dentro de {h} h da ETA anunciada. Calculado ao vivo sobre as nossas travessias concluídas.",
+    "rel_route_kept": "das travessias desta linha chegaram no horário",
+    "rel_route_method": "de {n} travessias realizadas — chegada dentro de {h} h da ETA anunciada.",
 }

@@ -209,7 +209,7 @@ def test_route_economics_formula_matches_acceptance():
     nav_days = route_nav_days(Decimal("4500"))
     assert nav_days == Decimal("23.438")  # 4500 / (8 × 24) = 23.4375 → 23.438
     base = route_base_rate(Decimal("12000"), nav_days)
-    assert base == Decimal("330.89")  # 12000 × 23.438 / 850
+    assert base == Decimal("287.58")  # 12000 × 23.438 / 978 (capacité P4)
 
 
 def test_route_base_rate_has_floor():

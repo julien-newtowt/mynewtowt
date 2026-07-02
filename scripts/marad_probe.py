@@ -22,6 +22,7 @@ Usage (dans le conteneur app) :
   docker compose exec app python -m scripts.marad_probe documents --ids 12,34
   docker compose exec app python -m scripts.marad_probe vessels --raw    # JSON complet
 """
+
 from __future__ import annotations
 
 import argparse
@@ -83,7 +84,9 @@ async def _call(endpoint: str, *, since: str | None, ids: list[int]):
     raise SystemExit(f"Endpoint inconnu : {endpoint!r}")
 
 
-async def run(*, endpoint: str | None, since: str | None, ids: list[int], raw: bool, limit: int, delay: float) -> int:
+async def run(
+    *, endpoint: str | None, since: str | None, ids: list[int], raw: bool, limit: int, delay: float
+) -> int:
     if not marad.enabled():
         print("MARAD non configuré : MARAD_API_TOKEN absent du .env → no-op.")
         return 1
@@ -112,11 +115,24 @@ def main() -> int:
         choices=["ping", "vessels", "ranks", "crew", "schedules", "passports", "documents", "sync"],
         help="endpoint à interroger (défaut : ping+vessels+ranks).",
     )
-    p.add_argument("--since", default=None, help="filtre modified_since (crew/schedules), ISO 8601.")
-    p.add_argument("--ids", default=None, help="IDs crew séparés par des virgules (passports/documents).")
-    p.add_argument("--raw", action="store_true", help="affiche le JSON complet (pas de troncature).")
-    p.add_argument("--limit", type=int, default=3, help="nb d'éléments affichés pour une liste (défaut 3).")
-    p.add_argument("--delay", type=float, default=65.0, help="pause (s) entre appels multiples (défaut 65 — rate-limit MARAD).")
+    p.add_argument(
+        "--since", default=None, help="filtre modified_since (crew/schedules), ISO 8601."
+    )
+    p.add_argument(
+        "--ids", default=None, help="IDs crew séparés par des virgules (passports/documents)."
+    )
+    p.add_argument(
+        "--raw", action="store_true", help="affiche le JSON complet (pas de troncature)."
+    )
+    p.add_argument(
+        "--limit", type=int, default=3, help="nb d'éléments affichés pour une liste (défaut 3)."
+    )
+    p.add_argument(
+        "--delay",
+        type=float,
+        default=65.0,
+        help="pause (s) entre appels multiples (défaut 65 — rate-limit MARAD).",
+    )
     args = p.parse_args()
     return asyncio.run(
         run(
