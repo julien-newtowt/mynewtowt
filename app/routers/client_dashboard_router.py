@@ -984,6 +984,10 @@ async def booking_kit_save(
     booking.coffee_region = (coffee_region or "").strip()[:120] or None
     booking.coffee_producer = (coffee_producer or "").strip()[:160] or None
     await db.flush()
+    # Analytics B2B2C : le client a renseigné/généré le kit co-brandé.
+    from app.services import analytics
+
+    await analytics.record(db, "kit_generated", reference=booking.reference, channel="client")
     return RedirectResponse(url=f"/me/bookings/{ref}/kit?saved=1", status_code=303)
 
 
@@ -1061,6 +1065,10 @@ async def booking_kit_pdf(
         client_logo_data=_brand_logo_data_uri(client),
         share_url=voyage_url,
     )
+    # Analytics B2B2C : téléchargement du kit co-brandé (PDF par expédition).
+    from app.services import analytics
+
+    await analytics.record(db, "kit_download", reference=booking.reference, channel="client")
     return Response(
         content=doc.pdf,
         media_type=doc.mime,

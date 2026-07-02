@@ -412,6 +412,48 @@ async def analytics_commercial(
         round(accounts_created / bookings_submitted * 100) if bookings_submitted else 0
     )
 
+    # Cibles produit (P9) : on affiche l'écart à la cible, pas seulement la valeur.
+    CONVERSION_TARGET_PCT = 5.0  # landing → booking
+    SELF_SERVICE_TARGET_PCT = 30.0
+    landing_to_booking_on_target = landing_to_booking_pct >= CONVERSION_TARGET_PCT
+    self_service_on_target = self_service_pct >= SELF_SERVICE_TARGET_PCT
+
+    # Full funnel événementiel (P9) : chaque étape avec sa part du sommet
+    # (landing) → repère les décrochages. Ordre = parcours réel.
+    _full_funnel_steps = [
+        ("landing_view", "Landing"),
+        ("solutions_view", "Solutions (café/cacao)"),
+        ("route_view", "Routes"),
+        ("quote_generated", "Devis"),
+        ("book_click", "Clic réserver"),
+        ("booking_submitted", "Réservation soumise"),
+        ("booking_confirmed", "Réservation confirmée"),
+    ]
+    _funnel_top = event_counts.get("landing_view", 0) or 1
+    full_funnel = [
+        {
+            "key": key,
+            "label": label,
+            "count": event_counts.get(key, 0),
+            "pct_of_top": round(event_counts.get(key, 0) / _funnel_top * 100, 1),
+        }
+        for key, label in _full_funnel_steps
+    ]
+
+    # Vue B2B2C (P9) : preuve → partage → boucle. QR = page voyage (paquet) +
+    # vérification de certificat ; kit co-brandé ; recommandations (rebooking).
+    b2b2c = {
+        "solutions_view": event_counts.get("solutions_view", 0),
+        "impact_view": event_counts.get("impact_view", 0),
+        "preuves_view": event_counts.get("preuves_view", 0),
+        "contact_submitted": event_counts.get("contact_submitted", 0),
+        "voyage_scans": event_counts.get("voyage_page_view", 0),
+        "verify_scans": event_counts.get("verify_lookup", 0),
+        "kits_generated": event_counts.get("kit_generated", 0),
+        "kits_downloaded": event_counts.get("kit_download", 0),
+        "rebookings": event_counts.get("rebooking", 0),
+    }
+
     # Délai moyen submitted → confirmed (heures) — cible < 4 h.
     delay_rows = (
         await db.execute(
@@ -447,6 +489,12 @@ async def analytics_commercial(
             "quote_to_booking_pct": quote_to_booking_pct,
             "self_service_pct": self_service_pct,
             "avg_confirm_delay_h": avg_confirm_delay_h,
+            "conversion_target_pct": CONVERSION_TARGET_PCT,
+            "self_service_target_pct": SELF_SERVICE_TARGET_PCT,
+            "landing_to_booking_on_target": landing_to_booking_on_target,
+            "self_service_on_target": self_service_on_target,
+            "full_funnel": full_funnel,
+            "b2b2c": b2b2c,
         },
     )
 
