@@ -1,10 +1,15 @@
 """Renumérotation des routes (legs) — recalcule les ``leg_code``.
 
 Réaligne tous les ``leg_code`` sur le format canonique
-``{seq}{vessel_code}{POL}{POD}{year_digit}`` (cf. ``services.planning``),
-où ``seq`` est la position **chronologique** (par ETD) du leg dans son
-année, pour son navire. Utile après des imports, des suppressions ou des
-décalages qui ont laissé des séquences avec des trous ou des doublons.
+``{vessel_code 1 chiffre}{rang 1 lettre}{POL}{POD}{year_digit}``
+(cf. ``services.planning._leg_code_for``), où le rang est la position
+**chronologique** (par ETD) du leg dans son année, pour son navire
+(A = 1er, B = 2e, …). Utile après des imports, des suppressions ou des
+décalages qui ont laissé des séquences avec des trous ou des doublons —
+et pour migrer le stock existant vers le nouveau format (audit 2026-07).
+
+Les legs **annulés** sont exclus de la numérotation (code figé), comme
+dans ``services.planning.renumber_vessel_year``.
 
 Le recalcul se fait en **deux phases dans une seule transaction** pour ne
 jamais violer la contrainte ``UNIQUE(leg_code)`` pendant la bascule :
@@ -62,6 +67,9 @@ async def _build_plan(db, legs: list[Leg]) -> list[tuple[Leg, str]]:
     counters: dict[tuple[int, int], int] = {}
     plan: list[tuple[Leg, str]] = []
     for leg in sorted(legs, key=lambda li: (li.vessel_id, li.etd)):
+        if leg.status == "cancelled":
+            print(f"  ! leg id={leg.id} ({leg.leg_code}) ignoré — annulé (code figé)")
+            continue
         vessel = vessels.get(leg.vessel_id)
         pol = ports.get(leg.departure_port_id)
         pod = ports.get(leg.arrival_port_id)
