@@ -92,10 +92,13 @@ async def _advance_leg_bookings(
 
 async def on_vessel_departed(db: AsyncSession, leg: Leg) -> None:
     """SOF de départ (SOSP) → ATD réel + bookings confirmés/chargés en mer."""
+    from app.services.planning import refresh_leg_status
+
     atd_set = False
     if leg.atd is None:
         leg.atd = datetime.now(UTC)
         atd_set = True
+    refresh_leg_status(leg)
     advanced = await _advance_leg_bookings(
         db, leg, from_statuses=("confirmed", "loaded"), target="at_sea"
     )
@@ -116,10 +119,13 @@ async def on_vessel_departed(db: AsyncSession, leg: Leg) -> None:
 
 async def on_vessel_arrived(db: AsyncSession, leg: Leg) -> None:
     """SOF d'arrivée (EOSP) → ATA réel + bookings débarqués (certificat Anemos)."""
+    from app.services.planning import refresh_leg_status
+
     ata_set = False
     if leg.ata is None:
         leg.ata = datetime.now(UTC)
         ata_set = True
+    refresh_leg_status(leg)
     advanced = await _advance_leg_bookings(
         db, leg, from_statuses=("loaded", "at_sea"), target="discharged"
     )

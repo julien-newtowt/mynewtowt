@@ -538,13 +538,13 @@ async def analytics_operations(
             if t.status not in closed_statuses:
                 by_priority[p]["open"] += 1
 
-    # Active legs (inprogress)
+    # Active legs (in_progress)
     active_legs = list(
         (
             await db.execute(
                 select(Leg, Vessel)
                 .join(Vessel, Vessel.id == Leg.vessel_id)
-                .where(Leg.status == "inprogress")
+                .where(Leg.status == "in_progress")
                 .order_by(Leg.etd.asc())
             )
         ).all()

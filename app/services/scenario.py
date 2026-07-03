@@ -151,7 +151,7 @@ async def clone_real_legs_into(
                 label=leg.leg_code,
                 status=(
                     leg.status
-                    if leg.status in {"planned", "inprogress", "completed", "cancelled"}
+                    if leg.status in {"planned", "in_progress", "completed", "cancelled"}
                     else "planned"
                 ),
                 port_stay_planned_hours=leg.port_stay_planned_hours,
@@ -221,7 +221,7 @@ async def add_scenario_leg(
         eta=eta,
         label=(label or "").strip() or None,
         status=(
-            status if status in {"planned", "inprogress", "completed", "cancelled"} else "planned"
+            status if status in {"planned", "in_progress", "completed", "cancelled"} else "planned"
         ),
         port_stay_planned_hours=port_stay_planned_hours,
         transit_speed_kn=transit_speed_kn,
@@ -272,7 +272,7 @@ async def update_scenario_leg(
     leg.eta = new_eta
     if label is not None:
         leg.label = label.strip() or None
-    if status is not None and status in {"planned", "inprogress", "completed", "cancelled"}:
+    if status is not None and status in {"planned", "in_progress", "completed", "cancelled"}:
         leg.status = status
     if port_stay_planned_hours is not None:
         leg.port_stay_planned_hours = port_stay_planned_hours

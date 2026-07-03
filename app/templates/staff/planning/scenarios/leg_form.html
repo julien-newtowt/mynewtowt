@@ -182,7 +182,7 @@
         <select id="status" name="status">
           {% set st = leg.status if leg else 'planned' %}
           <option value="planned" {% if st == 'planned' %}selected{% endif %}>Planifié</option>
-          <option value="inprogress" {% if st == 'inprogress' %}selected{% endif %}>En cours</option>
+          <option value="in_progress" {% if st == 'in_progress' %}selected{% endif %}>En cours</option>
           <option value="completed" {% if st == 'completed' %}selected{% endif %}>Terminé</option>
           <option value="cancelled" {% if st == 'cancelled' %}selected{% endif %}>Annulé</option>
         </select>

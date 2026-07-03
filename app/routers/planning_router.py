@@ -25,6 +25,7 @@ from app.services.planning import (
     InvalidLegDates,
     PlanningError,
     closed_weekdays_for_port,
+    continuity_warnings,
     create_leg,
     create_share,
     delete_leg,
@@ -34,6 +35,7 @@ from app.services.planning import (
     list_shares,
     lookup_share,
     next_working_departure,
+    parse_form_datetime,
     revoke_share,
     update_leg,
 )
@@ -98,6 +100,12 @@ async def gantt_index(
         conflict_ids.add(a)
         conflict_ids.add(b)
 
+    # Ruptures de continuité (POD ≠ POL suivant) — suppression d'un leg
+    # intermédiaire ou changement de navire laissent un trou silencieux :
+    # on l'affiche en bandeau plutôt que de le laisser invisible.
+    vessels_by_id = {v.id: v for v in vessels}
+    continuity_alerts = continuity_warnings(legs, ports, vessels_by_id)
+
     # Build Gantt rows (one per vessel) with positioned bars
     gantt_rows = _build_gantt_rows(
         vessels=vessels,
@@ -121,6 +129,8 @@ async def gantt_index(
     if window_start <= now <= window_end:
         today_pct = round(((now - window_start).total_seconds() / total_s) * 100, 3)
 
+    from app.permissions import has_permission
+
     return templates.TemplateResponse(
         "staff/planning/index.html",
         {
@@ -137,7 +147,13 @@ async def gantt_index(
             "today_pct": today_pct,
             "window_start": window_start,
             "window_end": window_end,
+            "window_start_ms": int(window_start.timestamp() * 1000),
+            "window_end_ms": int(window_end.timestamp() * 1000),
             "conflict_count": len(conflicts),
+            "continuity_alerts": continuity_alerts,
+            # Drag-drop : purement cosmétique côté template (le serveur
+            # ré-applique require_permission sur /legs/{id}/move).
+            "can_move": has_permission(user.role, "planning", "M"),
         },
     )
 
@@ -289,6 +305,9 @@ async def create_leg_action(
             port_stay_planned_hours=_maybe_int(form.get("port_stay_planned_hours")),
         )
     except (InvalidLegDates, PlanningError, KeyError, ValueError) as e:
+        # get_db committe même sur un 400 re-rendu : on annule explicitement
+        # toute mutation partielle avant de ré-afficher le formulaire.
+        await db.rollback()
         vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
         ports = list((await db.execute(select(Port).order_by(Port.locode))).scalars().all())
         return templates.TemplateResponse(
@@ -387,6 +406,52 @@ async def update_leg_action(
     leg = await _get_leg_or_404(db, leg_id)
     form = await request.form()
     cascade = form.get("cascade") == "on"
+
+    async def _render_error(message: str, status_code: int = 400):
+        await db.rollback()  # get_db committe même sur un 400 re-rendu
+        # Le rollback expire l'instance : on la recharge explicitement pour
+        # que le template (sync) n'ait aucun lazy-load async à déclencher.
+        # (Un leg non persistant — INSERT annulé par le rollback — garde ses
+        # valeurs en mémoire, rien à recharger.)
+        from sqlalchemy import inspect as sa_inspect
+
+        if sa_inspect(leg).persistent:
+            await db.refresh(leg)
+        vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+        ports = list((await db.execute(select(Port).order_by(Port.locode))).scalars().all())
+        return templates.TemplateResponse(
+            "staff/planning/leg_form.html",
+            {
+                "request": request,
+                "user": user,
+                "leg": leg,
+                "vessels": vessels,
+                "ports": ports,
+                "error": message,
+            },
+            status_code=status_code,
+        )
+
+    # Verrou optimiste : le formulaire embarque l'updated_at du leg tel
+    # qu'affiché ; si quelqu'un a modifié le leg entre-temps, on refuse
+    # plutôt que d'écraser silencieusement sa modification.
+    expected = (form.get("expected_updated_at") or "").strip()
+    if expected:
+        from sqlalchemy import inspect as sa_inspect
+
+        # updated_at est server_default : il peut être non chargé (expiré
+        # post-flush) — on le matérialise explicitement, un accès paresseux
+        # en contexte async lèverait MissingGreenlet.
+        if "updated_at" in sa_inspect(leg).unloaded:
+            await db.refresh(leg, ["updated_at"])
+        if leg.updated_at and leg.updated_at.isoformat() != expected:
+            return await _render_error(
+                "Ce leg a été modifié par quelqu'un d'autre pendant votre édition. "
+                "Vérifiez les valeurs ci-dessous (rechargées) puis ré-appliquez vos "
+                "changements.",
+                status_code=409,
+            )
+
     try:
         report = await update_leg(
             db,
@@ -404,22 +469,12 @@ async def update_leg_action(
             elongation_coef=_maybe_float(form.get("elongation_coef")),
             port_stay_planned_hours=_maybe_int(form.get("port_stay_planned_hours")),
             cascade=cascade,
+            source="planning_edit",
+            actor_id=user.id,
+            actor_name=user.username,
         )
     except (InvalidLegDates, PlanningError) as e:
-        vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
-        ports = list((await db.execute(select(Port).order_by(Port.locode))).scalars().all())
-        return templates.TemplateResponse(
-            "staff/planning/leg_form.html",
-            {
-                "request": request,
-                "user": user,
-                "leg": leg,
-                "vessels": vessels,
-                "ports": ports,
-                "error": str(e),
-            },
-            status_code=400,
-        )
+        return await _render_error(str(e))
     await activity_record(
         db,
         action="leg_update",
@@ -431,7 +486,9 @@ async def update_leg_action(
         entity_id=leg.id,
         entity_label=leg.leg_code,
         detail=(
-            f"cascade delta={report.delta_hours:.1f}h " f"impacted={len(report.impacted_leg_ids)}"
+            f"cascade delta={report.delta_hours:.1f}h "
+            f"impacted={len(report.impacted_leg_ids)} "
+            f"renumbered={len(report.renumbered)}"
             if report
             else None
         ),
@@ -480,6 +537,124 @@ async def delete_leg_action(
         entity_label=leg.leg_code,
     )
     return RedirectResponse(url="/planning", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Drag-drop Gantt réel (PLN — déplacement d'une barre → update_leg + cascade)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/legs/{leg_id}/move")
+async def move_leg_action(
+    request: Request,
+    leg_id: int,
+    etd: str = Form(...),
+    eta: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("planning", "M")),
+):
+    """Déplace un leg RÉEL par glisser-déposer sur le Gantt.
+
+    Passe par ``update_leg`` (cascade activée) : toutes les validations
+    (chevauchement, continuité, vitesse plausible) et tous les effets
+    (cascade aval, renumérotation, historisation ``schedule_revisions``,
+    notifications clients) s'appliquent — mêmes règles que la fiche.
+    Refusé si le leg a déjà appareillé (le réalisé ne se déplace pas).
+    """
+    from fastapi.responses import JSONResponse
+
+    leg = await _get_leg_or_404(db, leg_id)
+    if leg.atd is not None or leg.status in ("completed", "cancelled"):
+        return JSONResponse(
+            {"ok": False, "error": "Ce leg a déjà appareillé — il ne peut plus être déplacé."},
+            status_code=400,
+        )
+    try:
+        report = await update_leg(
+            db,
+            leg,
+            etd=_parse_dt(etd),
+            eta=_parse_dt(eta),
+            cascade=True,
+            source="gantt_move",
+            actor_id=user.id,
+            actor_name=user.username,
+        )
+    except (InvalidLegDates, PlanningError) as e:
+        await db.rollback()
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    await activity_record(
+        db,
+        action="leg_update",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="planning",
+        entity_type="leg",
+        entity_id=leg.id,
+        entity_label=leg.leg_code,
+        detail=(
+            f"gantt_move delta={report.delta_hours:.1f}h "
+            f"impacted={len(report.impacted_leg_ids)}"
+            if report
+            else "gantt_move"
+        ),
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "leg_id": leg.id,
+            "leg_code": leg.leg_code,
+            "etd": leg.etd.strftime("%Y-%m-%dT%H:%M"),
+            "eta": leg.eta.strftime("%Y-%m-%dT%H:%M"),
+            "impacted": len(report.impacted_leg_ids) if report else 0,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Historique des recalculs d'un leg (règle n°7 — traçabilité)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/legs/{leg_id}/history", response_class=HTMLResponse)
+async def leg_history(
+    request: Request,
+    leg_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("planning", "C")),
+) -> HTMLResponse:
+    """Timeline des recalculs du leg : révisions de dates (subies et
+    déclenchées — ``schedule_revisions``) + ETA-shifts déclarés par le bord.
+    """
+    from app.models.sof_event import EtaShift
+    from app.services import schedule_history
+
+    leg = await _get_leg_or_404(db, leg_id)
+    vessel = await db.get(Vessel, leg.vessel_id)
+    revisions = await schedule_history.list_for_leg(db, leg_id)
+    eta_shifts = list(
+        (
+            await db.execute(
+                select(EtaShift)
+                .where(EtaShift.leg_id == leg_id)
+                .order_by(EtaShift.declared_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return templates.TemplateResponse(
+        "staff/planning/leg_history.html",
+        {
+            "request": request,
+            "user": user,
+            "leg": leg,
+            "vessel": vessel,
+            "revisions": revisions,
+            "eta_shifts": eta_shifts,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -970,19 +1145,10 @@ async def _get_leg_or_404(db: AsyncSession, leg_id: int) -> Leg:
 
 
 def _parse_dt(value, allow_empty: bool = False) -> datetime:
-    if value is None or value == "":
-        if allow_empty:
-            return None  # type: ignore[return-value]
-        raise InvalidLegDates("Date required")
-    # HTML <input type="datetime-local"> yields "2026-06-04T08:00"
-    s = str(value).replace("T", " ")
-    try:
-        dt = datetime.fromisoformat(s)
-    except ValueError as e:
-        raise InvalidLegDates(f"Invalid date format: {value}") from e
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt
+    # HTML <input type="datetime-local"> yields "2026-06-04T08:00" — parsing
+    # centralisé (aware UTC) dans services.planning, partagé avec le
+    # drag-drop Gantt et l'ETA-shift capitaine.
+    return parse_form_datetime(value, allow_empty=allow_empty)  # type: ignore[return-value]
 
 
 def _maybe_int(value) -> int | None:

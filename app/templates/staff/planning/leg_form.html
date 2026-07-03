@@ -211,13 +211,17 @@
     </div>
 
     {% if leg %}
+      {# Verrou optimiste : refuse l'enregistrement si le leg a été modifié
+         par quelqu'un d'autre depuis l'affichage du formulaire. #}
+      <input type="hidden" name="expected_updated_at" value="{{ leg.updated_at.isoformat() if leg.updated_at else '' }}" />
       <div class="alert alert-info" style="margin-top:var(--space-4);">
         <div class="field field-check" style="background:transparent; border:none; padding:0;">
           <input id="cascade" type="checkbox" name="cascade" checked />
           <label for="cascade"><strong>Cascade automatique</strong></label>
         </div>
         <p class="text-muted text-sm" style="margin:var(--space-1) 0 0 0;">
-          Décaler l'ETD propage le delta à tous les legs aval du même navire non encore appareillés.
+          Décaler l'ETD ou étendre l'ETA recale tous les legs aval du même navire non encore appareillés
+          (dates, opérations d'escale, clôtures booking) et renumérote les codes si l'ordre change.
         </p>
       </div>
     {% endif %}

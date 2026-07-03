@@ -57,12 +57,12 @@
     <table class="data-table">
       <thead><tr><th>Statut</th><th>Nombre</th><th>Part</th></tr></thead>
       <tbody>
-        {% set status_labels = {"planned": "Planifié", "inprogress": "En cours", "completed": "Terminé", "cancelled": "Annulé"} %}
+        {% set status_labels = {"planned": "Planifié", "in_progress": "En cours", "completed": "Terminé", "cancelled": "Annulé"} %}
         {% for status, count in legs_by_status.items()|sort(attribute="1", reverse=true) %}
         <tr>
           <td>
             {% if status == "completed" %}<span class="pill pill-ok">{{ status_labels.get(status, status) }}</span>
-            {% elif status == "inprogress" %}<span class="pill pill-warn">{{ status_labels.get(status, status) }}</span>
+            {% elif status == "in_progress" %}<span class="pill pill-warn">{{ status_labels.get(status, status) }}</span>
             {% elif status == "cancelled" %}<span class="pill pill-neutral">{{ status_labels.get(status, status) }}</span>
             {% else %}<span class="pill pill-info">{{ status_labels.get(status, status) }}</span>{% endif %}
           </td>

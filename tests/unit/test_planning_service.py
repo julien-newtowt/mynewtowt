@@ -38,15 +38,32 @@ def test_validate_dates_refuses_overlong_window() -> None:
 
 def test_leg_code_format() -> None:
     etd = datetime(2026, 6, 4, tzinfo=UTC)
-    # Format spec NEWTOWT : {seq}{vessel_code}{POL}{POD}{year_digit}
-    code = _leg_code_for("C", "FR", "BR", etd)
+    # Format officiel NEWTOWT :
+    # {code navire 1 chiffre}{rang année 1 lettre}{POL}{POD}{chiffre année}
+    # Ex. métier : 3e voyage 2026 du navire 1 (Anemos), France → Brésil.
+    code = _leg_code_for("1", "FR", "BR", etd, 3)
     assert code == "1CFRBR6"
+
+
+def test_leg_code_first_of_year_is_letter_a() -> None:
+    etd = datetime(2026, 6, 4, tzinfo=UTC)
+    assert _leg_code_for("1", "FR", "BR", etd) == "1AFRBR6"
 
 
 def test_leg_code_sequence_bump() -> None:
     etd = datetime(2026, 6, 4, tzinfo=UTC)
-    code_2 = _leg_code_for("C", "FR", "US", etd, 2)
-    assert code_2 == "2CFRUS6"
+    code_2 = _leg_code_for("2", "FR", "US", etd, 2)
+    assert code_2 == "2BFRUS6"
+
+
+def test_leg_code_rank_out_of_range() -> None:
+    from app.services.planning import PlanningError, rank_letter
+
+    assert rank_letter(26) == "Z"
+    with pytest.raises(PlanningError):
+        rank_letter(27)
+    with pytest.raises(PlanningError):
+        rank_letter(0)
 
 
 def _leg_ns(id, vessel_id, arrival_port_id, eta, stay=24):

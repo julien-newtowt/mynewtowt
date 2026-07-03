@@ -192,7 +192,7 @@ async def ports_next_clocks(
         .join(Port, Port.id == Leg.arrival_port_id)
         .join(Vessel, Vessel.id == Leg.vessel_id)
         .where(Leg.eta > now)
-        .where(Leg.status.in_(("planned", "inprogress")))
+        .where(Leg.status.in_(("planned", "in_progress")))
         .order_by(Leg.eta.asc())
         .limit(max(1, min(limit, 5)))
     )

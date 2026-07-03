@@ -4,15 +4,26 @@
 
 `mynewtowt` est la plateforme unifiée NEWTOWT (TransOceanic Wind
 Transport) — pionnier du transport maritime décarboné à la voile depuis
-2011. La V3 combine en un seul outil :
+2011. Version courante : **3.11.0**. La V3 combine en un seul outil :
 
-- **L'ERP interne** des collaborateurs : planning, commercial, escale,
-  cargo, équipage, finance, KPI, MRV, claims, captain/on board.
-- **La plateforme client** publique : recherche de routes, réservation
-  d'espace en cale, compte client authentifié (MFA), dashboard, factures,
-  certificats CO₂.
+- **L'ERP interne** des collaborateurs : planning (+ scénarios what-if),
+  commercial, escale, cargo, équipage, finance, KPI, MRV, claims,
+  captain/on board, carnet de bord ANEMOS.
+- **La plateforme client** authentifiée : recherche de routes, réservation
+  d'espace en cale, compte client (MFA), dashboard, factures,
+  certificats CO₂ (label Anemos).
+- **La vitrine publique marketing** (P3–P12) : landing, catalogue de
+  routes, verticales B2B2C **café** / **cacao**, page **preuves** opposables
+  + **vérification de certificats**, **carnet de construction** (blog + RSS),
+  **kit presse**, tunnel **devis/leads**, contact, traçabilité consommateur
+  **`/voyage/{ref}`**, taux de service, artefacts SEO (`robots.txt`,
+  `llms.txt`, `sitemap.xml`, hreflang).
 - **Le portail expéditeur** par token (`/p/{token}`) : packing list,
   messagerie sécurisée, documents, suivi.
+
+> ⚠️ Stripe a été retiré (V3.1) : NEWTOWT facture **par virement bancaire
+> uniquement**. Aucun paiement n'est traité par l'application ; l'équipe
+> commerciale confirme les bookings sous 4 h.
 
 ## Stack technique
 
@@ -26,9 +37,13 @@ Transport) — pionnier du transport maritime décarboné à la voile depuis
 | Auth | Cookies signés (itsdangerous) + bcrypt + MFA WebAuthn / TOTP |
 | Observabilité | OpenTelemetry + Prometheus + Sentry |
 | Carto | MapLibre GL + Mapbox / MapTiler |
-| Météo | Windy / OpenWeather |
-| IA | Claude Sonnet 4.6 (chatbot Kairos AI) |
+| Météo | Windy → repli Open-Meteo |
+| IA | Claude Sonnet 4.6 — **Newtowt Agent** (chatbot Kairos, prompt caching + tools ; RAG pgvector = backlog V3.1) ; couche IA veille |
 | PDF | WeasyPrint |
+| DOCX | `python-docx` (BL + offre commerciale) |
+| Crew (lecture) | Marad / MaraSoft (sync read-only) |
+| Reverse proxy / TLS | Caddy (Let's Encrypt auto) |
+| Paiement | ❌ aucun (virement bancaire hors app — Stripe retiré) |
 | Containers | Docker + docker-compose |
 
 ## Identité visuelle — charte « Nouvelle Étoile »
@@ -59,22 +74,23 @@ mynewtowt/
 │   ├── csrf.py                # double-submit cookie CSRF
 │   ├── templating.py          # Jinja2 env, filtres (money/date/datetime/flag), globals (t, brand)
 │   ├── i18n/                  # 5 catalogues (fr, en, es, pt-br, vi)
-│   ├── middlewares/
-│   │   ├── security_headers.py
-│   │   ├── maintenance.py     # toggle via /tmp/.maintenance
-│   │   └── force_password.py  # User.must_change_password redirection
+│   ├── middlewares/           # security_headers, maintenance (toggle /tmp/.maintenance),
+│   │                          # force_password (must_change_password), force_mfa (admin)
 │   ├── models/                # SQLAlchemy 2 Mapped[]
-│   ├── routers/               # 1 router par module (ou packagé dans modules_router)
+│   ├── routers/               # 1 router par module (ERP + vitrine + API + PWA)
+│   │                          # public/vitrine/voyage/devis/seo/carnet_bord/scenario/
+│   │                          # marad/api_v1/pwa/notifications + modules ERP
 │   ├── schemas/               # Pydantic DTO
-│   ├── services/              # logique métier réutilisable
+│   ├── services/              # logique métier réutilisable (~90 services)
 │   ├── utils/                 # file_validation, timezones, pipedrive
 │   ├── templates/
 │   │   ├── base.html          # squelette HTML, scripts, modal+toast containers
 │   │   ├── staff/             # ERP interne (sidebar + topbar dédiés)
 │   │   ├── client/            # plateforme client (sidebar + topbar dédiés)
-│   │   ├── public/            # marketing landing + routes catalog
+│   │   ├── public/            # vitrine marketing (landing, routes, verticales,
+│   │   │                      # preuves, presse, carnet, voyage, devis, contact)
 │   │   ├── portal/            # /p/{token} (token-based, no auth)
-│   │   ├── pdf/               # WeasyPrint BL/PL/invoice/CO2
+│   │   ├── pdf/               # WeasyPrint BL/PL/invoice/CO2/carnet
 │   │   └── errors/            # 404/403
 │   └── static/
 │       ├── css/tokens.css     # design tokens W3C
@@ -103,13 +119,22 @@ mynewtowt/
   `HX-Redirect`.
 
 ### Permissions
-- 8 rôles : `administrateur`, `operation`, `armement`, `technique`,
-  `data_analyst`, `marins`, `commercial`, `manager_maritime`.
-- 16 modules : planning, commercial, escale, cargo, finance, kpi, captain,
-  crew, claims, mrv, rh, booking, tickets, analytics, chat, admin.
+- 9 rôles : `administrateur`, `operation`, `armement`, `technique`,
+  `data_analyst`, `marins`, `commercial`, `manager_maritime`, `rh`.
+- 17 modules : planning, commercial, escale, cargo, finance, kpi, captain,
+  crew, claims, mrv, rh, booking, tickets, analytics, chat, veille, admin.
 - Niveaux C / M / S = Consult / Modify / Suppress.
 - Décorateur `Depends(require_permission("module", "C"|"M"|"S"))` sur
   toute route.
+- **ARC-04 — overrides en base** : la matrice codée en dur `_MATRIX`
+  (`permissions.py`) est la valeur PAR DÉFAUT ; des overrides par cellule
+  (rôle × module) se posent en base (table `role_permissions`, écran
+  `/admin/permissions`, cache 60 s). Le chemin requête consulte la matrice
+  **effective** (défaut + overrides) et **fail-closed** : toute erreur DB
+  retombe sur `_MATRIX`. La cellule `(administrateur, admin)` est verrouillée
+  (l'admin ne peut jamais se couper de l'administration). Les helpers
+  synchrones `has_permission`/`can_*` ne voient que `_MATRIX` (affichage/UI,
+  pas contrôle d'accès).
 
 ### Sécurité
 - **CSRF** : `CSRFMiddleware` (double-submit cookie `towt_csrf`).
@@ -119,6 +144,16 @@ mynewtowt/
 - **Force-password-change** : `ForcePasswordChangeMiddleware` redirige
   toute requête HTML vers `/admin/my-account/change-password` quand
   `User.must_change_password = True`.
+- **Force-MFA admin** : `ForceMfaForAdminMiddleware` redirige tout
+  `administrateur` sans MFA activé vers `/admin/my-account/mfa`
+  (toggle `REQUIRE_MFA_FOR_ADMIN`, à mettre `False` en dev local).
+- **MFA** : WebAuthn + TOTP + **codes de récupération** à usage unique
+  hachés (`mfa_recovery_codes`).
+- **Détection de nouvel appareil** : `known_devices` (empreinte SHA-256
+  UA + IP /24 ou /48, jamais en clair) → alerte email au login depuis un
+  appareil inconnu ou à la désactivation MFA (`services.security_alerts`,
+  no-op silencieux sans SMTP).
+- **Rate limiting** persistant : `rate_limit_attempts` (scope + identifiant).
 - **Audit trail** : `services.activity.record()` appelé sur tous les
   write actions. Table `activity_logs` append-only, viewer dans
   `/admin/activity-logs`.
@@ -128,6 +163,14 @@ mynewtowt/
 - **Tracking API** : `/api/tracking/upload` (X-API-Token) — public-mais-
   protégé pour Power Automate. Retourne 503 si `TRACKING_API_TOKEN`
   n'est pas configuré.
+- **API publique v1** (`/api/v1/*`, read-only) : auth par header
+  `X-API-Key` (`PUBLIC_API_KEY`) **secure-by-default** — renvoie 503 tant
+  qu'aucune clé n'est provisionnée (SEC-06). `security.txt` exposé sur
+  `/.well-known/security.txt`.
+- **Crons externes** (Power Automate) protégés par token `X-API-Token`
+  distinct, comparaison à temps constant : `WEATHER_API_TOKEN`,
+  `VEILLE_API_TOKEN`, `MARAD_SYNC_TOKEN`, `TICKETS_SLA_API_TOKEN`,
+  `QUOTE_FOLLOWUP_API_TOKEN` (503 si non configuré).
 
 ### Templates
 - Tous étendent `base.html` puis un layout par audience (`staff/_layout`,
@@ -152,10 +195,12 @@ mynewtowt/
 | Module | Route racine | État |
 |---|---|---|
 | Planning | `/planning` | ✅ Gantt + table + share token |
+| Planning — scénarios | `/planning/scenarios` | ✅ what-if isolé (jamais d'écriture sur `legs`) : brouillon ou clone de legs réels, Gantt/table/comparaison, export CSV, drag-drop |
 | Commercial | `/commercial` | ✅ clients, grids, offers, orders |
 | Cargo (packing list + portail) | `/cargo` + `/p/{token}` | ✅ batches + **audit consultable** + edit/suppr + lock + messagerie ; **BL reconnecté au batch** (n° `TUAW_…`), Arrival Notice, import/export Excel, portail multilingue |
 | Escale (port call) | `/escale` | ✅ operations + dockers + lock |
-| Onboard / Captain | `/captain` | ✅ SOF + ETA shifts + messagerie + docs |
+| Onboard / Captain | `/captain` | ✅ SOF + ETA shifts + messagerie + docs + quart (watch log) + clôture escale (ONB-05) |
+| Carnet de bord ANEMOS | `/carnet-bord` | ✅ éditeur staff (perm. `captain`) : highlights + photos par leg → preview HTML + PDF ; alimente la page publique `/voyage/{ref}` |
 | Crew | `/crew` | ✅ bordées + compliance Schengen + calendar |
 | Stowage | `/stowage` | ✅ 18 zones + algo glouton |
 | Claims | `/claims` | ✅ workflow 6 statuts + timeline |
@@ -170,16 +215,39 @@ mynewtowt/
 | Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |
 | Météo historisée | `/api/weather/refresh` | ✅ snapshot Windy du dernier point GPS / navire (cron 30 min, `WEATHER_API_TOKEN`) → `vessel_weather` |
-| Chat Kairos AI | `/chat` | ✅ Claude Sonnet 4.6 |
+| Chat Kairos AI (Newtowt Agent) | `/chat` | ✅ Claude Sonnet 4.6 (prompt caching + tools) ; toggle global via feature flag (`/admin`) |
 | Veille d'actualité | `/veille` + `/api/veille/refresh` | ✅ flux NewsData.io (staff), refresh cron Power Automate + **couche IA** (score de pertinence affiné + digest quotidien, dégradation gracieuse sans clé → scoring heuristique) |
-| Admin | `/admin/...` | ✅ users + opex + insurance + maintenance + activity-logs |
+| Notifications | `/notifications` | ✅ flux staff (par user/rôle) + badge cloche topbar (toggle-read / archive) |
+| Marad (crew) | `/api/marad/refresh` | ✅ sync **lecture seule** MaraSoft → `crew_members` (cron Power Automate, `MARAD_SYNC_TOKEN`), upsert idempotent |
+| Admin | `/admin/...` | ✅ users + opex + insurance + maintenance + activity-logs + **permissions** (overrides ARC-04) + **co2** (facteur versionné) + feature flags |
+
+### Vitrine publique marketing (P3–P12)
+
+| Zone | Route racine | État |
+|---|---|---|
+| Landing / routes | `/` , `/routes`, `/routes/{leg_code}`, `/fleet` | ✅ storefront public + recherche de legs + suivi flotte |
+| About / légal | `/about`, `/about/anemos`, `/about/legal`, `/about/privacy`, `/about/terms` | ✅ (301 legacy `/about/co2` → `/about/anemos`) |
+| Verticales B2B2C | `/solutions/cafe`, `/solutions/cacao` | ✅ storytelling origine (café vert, cacao) à la voile |
+| Preuves opposables | `/preuves` (+ `methodologie.pdf`, `rapport-annuel-exemple.pdf`) | ✅ méthodo + registre vérifiable (ENV-04) |
+| Vérification certificat | `/verify`, `/verify/{cert_ref}` | ✅ certificats Anemos vérifiables |
+| Kit presse | `/presse` (+ `logos.zip`, `dossier.pdf`) | ✅ dossier + logos |
+| Carnet de construction | `/carnet`, `/carnet/{slug}`, `/carnet/rss.xml` | ✅ blog éditorial + RSS |
+| Actualités | `/actualites`, `/actualites/rss.xml` | ✅ index news + RSS |
+| Traçabilité consommateur | `/voyage/{ref}` (+ photos, brand-logo) | ✅ « histoire d'une cargaison » multilingue, rate-limité |
+| Devis / leads | `/devis` (GET/POST), `/devis/{ref}`, `/devis/{ref}.pdf`, `/api/quotes/followup` | ✅ tunnel devis + PDF + relance J+1 (cron) |
+| Contact | `/contact`, `/contact/merci` | ✅ lead → `COMMERCIAL_INBOX_EMAIL` + Pipedrive |
+| Passagers (vitrine) | `/passagers` | ✅ page marketing service 2027 (pas d'ERP) |
+| Recrutement / impact / flotte | `/recrutement`, `/impact`, `/flotte` | ✅ pages de marque |
+| PWA « NEWTOWT Bord » | `/sw.js`, `/manifest.json` | ✅ offline IndexedDB + Background Sync |
+| SEO | `/robots.txt`, `/llms.txt`, `/sitemap.xml` | ✅ artefacts crawler + IA + hreflang |
+| API publique v1 | `/api/v1/*` | ✅ read-only B2B, `X-API-Key`, 503 sans clé (SEC-06) |
 
 ## Glossaire maritime
 
 | Terme | Définition |
 |---|---|
 | **Leg** | Segment de voyage port A → port B |
-| **leg_code** | Format `{seq}{vessel_code}{dep_country}{arr_country}{year_digit}` (ex. `1CFRBR6`) |
+| **leg_code** | Format `{vessel_code 1 chiffre}{rang année 1 lettre, A=1er}{dep_country}{arr_country}{year_digit}` (ex. `1CFRBR6` = navire 1, 3ᵉ voyage 2026, FR→BR). Rang = position chronologique par ETD dans l'année (renuméroté automatiquement) |
 | **ETD / ETA** | Estimated Time of Departure / Arrival |
 | **ATD / ATA** | Actual Time of Departure / Arrival |
 | **Escale** | Période où le navire est à quai |
@@ -266,6 +334,21 @@ Backlog actif :
 5. ✅ Purges DB ciblées : whitelist `ALLOWED_PURGE_TABLES` + DELETE paramétré
    (expression SQLAlchemy, jamais de f-string) + **purge par rétention**
    (lignes plus anciennes que N jours, colonne d'horodatage whitelistée — lot 76).
-6. Mailing notifications email (HTML + texte).
+6. Mailing notifications email (HTML + texte) : socle posé
+   (`services.email`, alertes sécurité + relais leads) ; templates
+   transactionnels riches restants.
 7. ✅ Consolidation V3-only soldée : congés unifiés `/rh/conges` (EVO-02),
    veille IA (EVO-04), PWA offline réel IndexedDB + Background Sync (EVO-05).
+8. ✅ **Vitrine marketing P3–P12** : conformité claims environnementaux
+   (ECGT), preuves opposables + vérif certificats, verticales café/cacao,
+   carnet de construction + RSS, kit presse & kit social B2B2C, taux de
+   service publié, i18n stratégique (PT-BR en tête, hreflang honnête),
+   tunnel devis + relance J+1, grilles multi-routes, comptes-ancres,
+   rétroplanning médias.
+9. ✅ **Intégration Marad (MaraSoft)** : sync crew lecture seule
+   (`docs/integrations/marad-crew-readonly.md`, runbook
+   `docs/operations/04-marad-crew-sync-runbook.md`).
+10. ✅ **Scénarios de planning** what-if isolés + **API publique v1**
+    read-only + **feature flags** (`role_permissions`, `feature_flags`).
+Backlog IA : RAG pgvector du Newtowt Agent sur `docs/`, streaming SSE
+(V3.1) ; le chatbot tourne aujourd'hui en prompt caching + tools.

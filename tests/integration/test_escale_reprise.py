@@ -244,7 +244,9 @@ async def test_port_status_flow_ata_atd(db, staff_user):
     ).fetchone()
     assert fin is not None  # rollup_for_leg a créé la ligne finance
 
-    # Pilote départ → ATD posée, statut completed.
+    # Pilote départ → ATD posée ; le statut reste « in_progress » : la
+    # machine à états unique ne passe à « completed » qu'à l'approbation de
+    # clôture de voyage (workflow captain), plus depuis l'escale.
     resp = await update_port_status(
         leg.id,
         _Req(),
@@ -255,7 +257,7 @@ async def test_port_status_flow_ata_atd(db, staff_user):
     )
     assert resp.status_code == 303
     assert leg.atd is not None
-    assert leg.status == "completed"
+    assert leg.status == "in_progress"
 
 
 @pytest.mark.asyncio
