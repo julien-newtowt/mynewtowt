@@ -1,17 +1,31 @@
 # NEWTOWT ERP — `mynewtowt`
 
-Plateforme ERP intégrée pour la compagnie NEWTOWT (transport maritime cargo
-à la voile). Combine en une seule application :
+Plateforme unifiée pour la compagnie NEWTOWT (transport maritime cargo
+à la voile). Version courante : **3.11.0**. Combine en une seule application :
 
-- L'**ERP interne** utilisé par les collaborateurs (planification, escale,
-  cargo, équipage, finance, KPI, MRV, claims, RH).
-- Le **portail client** auto-administré offrant pour la première fois une
-  **plateforme de réservation d'espace en cale**, le suivi documentaire,
-  les rapports d'émissions CO₂, le suivi de claims et la consultation
+- L'**ERP interne** utilisé par les collaborateurs (planification +
+  scénarios what-if, escale, cargo, équipage, finance, KPI, MRV, claims,
+  RH, captain/on board, carnet de bord ANEMOS).
+- Le **portail client** auto-administré offrant une **plateforme de
+  réservation d'espace en cale**, le suivi documentaire, les rapports
+  d'émissions CO₂ (label Anemos), le suivi de claims et la consultation
   des navigations.
+- La **vitrine publique marketing** (`/`) : landing + catalogue de routes,
+  verticales B2B2C **café** / **cacao**, page **preuves** opposables +
+  **vérification de certificats**, **carnet de construction** (blog + RSS),
+  **kit presse**, tunnel **devis/leads**, contact, traçabilité consommateur
+  `/voyage/{ref}`, taux de service, artefacts SEO (`robots.txt`, `llms.txt`,
+  `sitemap.xml`, hreflang).
+- Le **portail expéditeur** par token (`/p/{token}`) : packing list,
+  messagerie sécurisée, documents, suivi (sans authentification).
 - Une **veille d'actualité** interne (`/veille`) agrégeant l'actualité du
   transport maritime, du transport à la voile, du Brésil et de la
-  réglementation internationale, alimentée par l'agrégateur NewsData.io.
+  réglementation internationale, alimentée par l'agrégateur NewsData.io
+  (couche IA de scoring + digest quotidien).
+
+> ⚠️ Aucun paiement n'est traité par l'application (Stripe retiré en V3.1) :
+> NEWTOWT facture par **virement bancaire** uniquement, l'équipe commerciale
+> confirmant les bookings sous 4 h.
 
 ## Vision produit
 
@@ -19,8 +33,9 @@ Un seul outil, deux audiences :
 
 | Audience | Usages |
 |----------|--------|
-| Collaborateurs NEWTOWT (8 profils) | Pilotage opérationnel & décisionnel de la flotte |
-| Clients / prospects | Réservation, suivi, documentation, reporting CO₂, paiement |
+| Collaborateurs NEWTOWT (9 rôles) | Pilotage opérationnel & décisionnel de la flotte |
+| Clients / prospects | Réservation, suivi, documentation, reporting CO₂ |
+| Grand public / presse / consommateurs | Vitrine, verticales B2B2C, preuves & certificats, traçabilité `/voyage/{ref}` |
 
 ## Démarrage rapide
 
@@ -54,16 +69,18 @@ mynewtowt/
 │   ├── i18n/             # fr / en / es / pt-br / vi
 │   └── utils/            # helpers
 ├── docs/
-│   ├── strategy/         # roadmap, vision, livraison
+│   ├── strategy/         # roadmap, vision, SIRH, claims, continuité
 │   ├── design/           # design handoff + tokens Kairos
-│   ├── architecture/     # ADRs, flux, personas
+│   ├── architecture/     # ADRs, flux
 │   ├── security/         # security review + politiques
-│   ├── deployment/       # staging → prod, debugging
+│   ├── operations/       # runbooks (oncall, veille, tracking/météo, Marad)
+│   ├── integrations/     # Marad crew read-only, connecteurs externes
 │   ├── personas/         # parcours utilisateur
 │   ├── analytics/        # data strategy + dashboards
 │   ├── booking/          # plateforme réservation cale
-│   ├── api/              # OpenAPI + webhooks
-│   └── operations/       # runbook, oncall
+│   ├── i18n/             # audit traductions
+│   ├── audit/            # audits repo / 360 + backlog par module
+│   └── legacy/           # specs V2 archivées
 ├── migrations/           # Alembic
 ├── scripts/              # backup, seed, import
 └── tests/                # unit / integration / e2e
@@ -79,8 +96,12 @@ mynewtowt/
 - [`docs/analytics/01-data-strategy.md`](docs/analytics/01-data-strategy.md)
 - [`docs/security/01-security-review.md`](docs/security/01-security-review.md)
 - [`docs/personas/01-personas.md`](docs/personas/01-personas.md)
+- [`docs/vitrine-construction-plan.md`](docs/vitrine-construction-plan.md) — plan de construction de la vitrine publique
+- [`docs/integrations/marad-crew-readonly.md`](docs/integrations/marad-crew-readonly.md) — intégration Marad (crew, lecture seule)
 - [`docs/operations/01-runbook.md`](docs/operations/01-runbook.md)
 - [`docs/operations/02-veille-runbook.md`](docs/operations/02-veille-runbook.md) — activation & exploitation de la veille d'actualité
+- [`docs/operations/03-tracking-meteo-runbook.md`](docs/operations/03-tracking-meteo-runbook.md) — crons tracking + météo historisée
+- [`docs/operations/04-marad-crew-sync-runbook.md`](docs/operations/04-marad-crew-sync-runbook.md) — cron de sync crew Marad
 
 ## Stack technique
 
@@ -91,11 +112,14 @@ mynewtowt/
 | ORM | SQLAlchemy 2 async + asyncpg |
 | Migrations | Alembic |
 | Front | HTMX 2 + Alpine.js + Jinja2 SSR + design system Kairos |
-| Auth | itsdangerous + bcrypt + WebAuthn / TOTP |
+| Auth / MFA | itsdangerous + bcrypt + WebAuthn / TOTP + codes de récupération |
 | Observabilité | OpenTelemetry + Prometheus + Sentry |
-| Cartographie | MapLibre + Mapbox tiles |
-| Météo | Windy / OpenWeather |
-| IA | Claude Sonnet 4.6 (chatbot Kairos AI + RAG pgvector) |
+| Cartographie | MapLibre GL + MapTiler / Mapbox |
+| Météo | Windy → repli Open-Meteo |
+| IA | Claude Sonnet 4.6 — Newtowt Agent (prompt caching + tools ; RAG pgvector = backlog V3.1) + couche IA veille |
+| PDF / DOCX | WeasyPrint + python-docx |
+| Crew (lecture) | Marad / MaraSoft (sync read-only) |
+| Reverse proxy / TLS | Caddy (Let's Encrypt auto) |
 | Conteneurisation | Docker + docker-compose |
 
 ## Conventions
