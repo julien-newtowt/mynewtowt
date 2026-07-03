@@ -592,3 +592,24 @@ def test_memorized_strategy_is_single_shot(monkeypatch) -> None:
     out = asyncio.run(marad.list_vessels())
     assert out == [{"ok": 1}]
     assert captured["client"].tried == ["ApiKey"]  # un seul essai (mémorisé)
+
+
+def test_rate_limited_endpoint_single_shot_when_auth_not_primed(monkeypatch) -> None:
+    """Sur un endpoint à 1 req/min non authentifié, on ne sonde qu'UN schéma
+    (sinon 7×403→429 brûleraient le quota de la minute). getVessels (15 req/min)
+    garde la cascade complète."""
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret-key")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "")
+    marad._working_strategy = None  # auth pas encore amorcée
+
+    # Tout échoue (403) → on mesure le nombre d'essais effectués.
+    crew_client = _FakeClient(accept_header="Nope", payload=None)
+    monkeypatch.setattr(marad.httpx, "AsyncClient", lambda *a, **k: crew_client)
+    assert asyncio.run(marad.list_crew()) is None
+    assert len(crew_client.tried) == 1  # /api/Crewing : un seul essai
+
+    marad._working_strategy = None
+    vessels_client = _FakeClient(accept_header="Nope", payload=None)
+    monkeypatch.setattr(marad.httpx, "AsyncClient", lambda *a, **k: vessels_client)
+    assert asyncio.run(marad.list_vessels()) is None
+    assert len(vessels_client.tried) > 1  # getVessels : cascade complète autorisée

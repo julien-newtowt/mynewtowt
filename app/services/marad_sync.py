@@ -455,6 +455,15 @@ async def sync_all(db: AsyncSession) -> dict:
                     "Le préfixe de l'API a peut-être changé — vérifiez MARAD_BASE_URL "
                     "(ex. avec/sans suffixe de version)."
                 )
+            elif cls == "rate_limited":
+                diagnostic = (
+                    "Quota Marad atteint (429). Les endpoints crew "
+                    "(GET /api/Crewing, /api/CrewingSchedule) sont limités à "
+                    "1 requête/minute. Attendez ~1 min puis relancez — évitez de "
+                    "cliquer plusieurs fois de suite et laissez le cron espacer les "
+                    "appels. Si l'erreur persiste au-delà de quelques minutes, une "
+                    "autre intégration partage peut-être la clé et sature le quota."
+                )
             elif cls == "ok":
                 diagnostic = (
                     "API Marad joignable et authentifiée "

@@ -58,6 +58,14 @@ READ_ENDPOINTS: frozenset[str] = frozenset(
 )
 
 
+# Endpoints à quota SERRÉ (1 req/min côté Marad). Sur ceux-là, on ne sonde
+# JAMAIS plusieurs schémas d'auth : une cascade de 401→429 y brûlerait tout le
+# quota de la minute et garantirait l'échec. Si l'auth n'est pas encore amorcée
+# (``prime_auth`` via getVessels, 15 req/min), on tente un SEUL schéma (le
+# meilleur candidat) plutôt que la liste complète.
+RATE_LIMITED_ENDPOINTS: frozenset[str] = frozenset({"/api/Crewing", "/api/CrewingSchedule"})
+
+
 def enabled() -> bool:
     """True si une clé d'API Marad est configurée."""
     return bool((settings.marad_api_token or "").strip())
@@ -171,10 +179,23 @@ async def _request(
     if method.upper() not in ("GET", "POST"):  # double garde-fou : pas de PUT/DELETE
         raise ValueError(f"marad: méthode {method} interdite (read-only)")
     url = f"{settings.marad_base_url.rstrip('/')}{path}"
+    strategies = _strategies_for_request()
+    # Sur un endpoint à 1 req/min non encore authentifié, on ne tente qu'UN
+    # schéma : sonder les 8 y provoquerait 7×429 et épuiserait le quota. Le
+    # schéma retenu par ``prime_auth`` (getVessels, 15 req/min) est réutilisé
+    # dès qu'il est mémorisé — la cascade complète reste réservée à getVessels.
+    if path in RATE_LIMITED_ENDPOINTS and len(strategies) > 1:
+        strategies = strategies[:1]
+        logger.info(
+            "marad %s : auth non amorcée, essai d'un seul schéma (%s) pour "
+            "préserver le quota 1 req/min",
+            path,
+            strategies[0][0],
+        )
     last_auth_status: int | None = None
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            for label, headers, auth_params in _strategies_for_request():
+            for label, headers, auth_params in strategies:
                 merged_params = {**(params or {}), **auth_params}
                 r = await client.request(
                     method, url, params=merged_params or None, json=json, headers=headers
