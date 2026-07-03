@@ -12,8 +12,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.integration.conftest import FakeRequest
-
 
 class _ReqState:
     """Requête minimale avec .state/.cookies/.query_params (pour le rendu de
@@ -78,12 +76,32 @@ async def test_marad_test_without_token_reports_unconfigured(db, staff_user):
         assert diag["configured"] is False
 
 
+def _render_marad_result(diag: dict) -> str:
+    from app.templating import templates
+
+    return templates.env.get_template("staff/admin/_marad_test_result.html").render(diag=diag)
+
+
+def test_marad_badge_reports_crew_when_present():
+    """OK avec équipage → succès réel (la vraie cible de l'intégration)."""
+    html = _render_marad_result({"classification": "ok", "vessels_count": 0, "crew_count": 12})
+    assert "12 membre(s) d'équipage" in html
+    assert "pill-ok" in html
+
+
+def test_marad_badge_flags_empty_tenant():
+    """OK mais 0 navire ET 0 équipage → avertissement « compte vide »."""
+    html = _render_marad_result({"classification": "ok", "vessels_count": 0, "crew_count": 0})
+    assert "compte Marad vide" in html
+    assert "pill-warn" in html
+
+
 @pytest.mark.asyncio
 async def test_pipedrive_test_without_token_reports_unconfigured(db, staff_user):
     """Sans jeton, ping() renvoie False sans réseau → badge « non configuré »."""
     from app.routers.admin_router import integrations_pipedrive_test
 
-    resp = await integrations_pipedrive_test(FakeRequest(), db=db, user=staff_user)
+    resp = await integrations_pipedrive_test(_ReqState(), db=db, user=staff_user)
     assert resp.status_code == 200
     assert resp.template.name == "staff/admin/_integration_test_result.html"
     # Robuste à l'environnement : sans jeton, ping() est False sans réseau ;
