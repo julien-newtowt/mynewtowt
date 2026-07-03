@@ -121,7 +121,9 @@ def test_sailed_leg_never_moves_and_blocks_resolution() -> None:
     sailed = _lane_leg(
         2, BASE + timedelta(days=20), BASE + timedelta(days=40), atd=BASE + timedelta(days=20)
     )
-    pos = plan_downstream_shifts([sailed], delta=timedelta(days=5), source_eta=BASE + timedelta(days=15))
+    pos = plan_downstream_shifts(
+        [sailed], delta=timedelta(days=5), source_eta=BASE + timedelta(days=15)
+    )
     assert pos[2] == (BASE + timedelta(days=20), BASE + timedelta(days=40))  # immobile
     with pytest.raises(LegOverlap):
         plan_downstream_shifts([sailed], delta=timedelta(0), source_eta=BASE + timedelta(days=25))
@@ -138,14 +140,22 @@ def test_continuity_warnings_detects_hole() -> None:
     }
     legs = [
         SimpleNamespace(
-            vessel_id=1, status="planned", leg_code="1AFRBR6",
-            departure_port_id=1, arrival_port_id=2,
-            etd=BASE, eta=BASE + timedelta(days=20),
+            vessel_id=1,
+            status="planned",
+            leg_code="1AFRBR6",
+            departure_port_id=1,
+            arrival_port_id=2,
+            etd=BASE,
+            eta=BASE + timedelta(days=20),
         ),
         SimpleNamespace(
-            vessel_id=1, status="planned", leg_code="1BUSFR6",
-            departure_port_id=3, arrival_port_id=1,  # part de USNYC ≠ BRSSO
-            etd=BASE + timedelta(days=30), eta=BASE + timedelta(days=50),
+            vessel_id=1,
+            status="planned",
+            leg_code="1BUSFR6",
+            departure_port_id=3,
+            arrival_port_id=1,  # part de USNYC ≠ BRSSO
+            etd=BASE + timedelta(days=30),
+            eta=BASE + timedelta(days=50),
         ),
     ]
     warnings = continuity_warnings(legs, ports)
@@ -157,14 +167,22 @@ def test_continuity_warnings_ignores_cancelled() -> None:
     ports = {1: SimpleNamespace(locode="FRFEC"), 2: SimpleNamespace(locode="BRSSO")}
     legs = [
         SimpleNamespace(
-            vessel_id=1, status="cancelled", leg_code="X",
-            departure_port_id=2, arrival_port_id=2,
-            etd=BASE, eta=BASE + timedelta(days=5),
+            vessel_id=1,
+            status="cancelled",
+            leg_code="X",
+            departure_port_id=2,
+            arrival_port_id=2,
+            etd=BASE,
+            eta=BASE + timedelta(days=5),
         ),
         SimpleNamespace(
-            vessel_id=1, status="planned", leg_code="1AFRBR6",
-            departure_port_id=1, arrival_port_id=2,
-            etd=BASE + timedelta(days=10), eta=BASE + timedelta(days=30),
+            vessel_id=1,
+            status="planned",
+            leg_code="1AFRBR6",
+            departure_port_id=1,
+            arrival_port_id=2,
+            etd=BASE + timedelta(days=10),
+            eta=BASE + timedelta(days=30),
         ),
     ]
     assert continuity_warnings(legs, ports) == []

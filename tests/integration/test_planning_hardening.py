@@ -54,15 +54,23 @@ async def test_create_renumbers_by_etd_position(db):
     await _seed(db)
     # Créé EN PREMIER mais navigue en mars.
     leg_mar = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     assert leg_mar.leg_code == "1AFRBR6"
     # Créé ensuite mais navigue en janvier (avant) → il prend le rang A,
     # le leg de mars est renuméroté en B.
     leg_jan = await create_leg(
-        db, vessel_id=1, departure_port_id=2, arrival_port_id=1,
-        etd=datetime(2026, 1, 5, tzinfo=UTC), eta=datetime(2026, 1, 25, tzinfo=UTC),
+        db,
+        vessel_id=1,
+        departure_port_id=2,
+        arrival_port_id=1,
+        etd=datetime(2026, 1, 5, tzinfo=UTC),
+        eta=datetime(2026, 1, 25, tzinfo=UTC),
     )
     assert leg_jan.leg_code == "1ABRFR6"
     await db.refresh(leg_mar)
@@ -75,12 +83,20 @@ async def test_delete_renumbers_following_legs(db):
 
     await _seed(db)
     leg_a = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=datetime(2026, 1, 5, tzinfo=UTC), eta=datetime(2026, 1, 25, tzinfo=UTC),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=datetime(2026, 1, 5, tzinfo=UTC),
+        eta=datetime(2026, 1, 25, tzinfo=UTC),
     )
     leg_b = await create_leg(
-        db, vessel_id=1, departure_port_id=2, arrival_port_id=1,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=2,
+        arrival_port_id=1,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     assert (leg_a.leg_code, leg_b.leg_code) == ("1AFRBR6", "1BBRFR6")
     await delete_leg(db, leg_a)
@@ -99,17 +115,27 @@ async def test_forward_shift_beyond_gap_is_allowed_with_cascade(db):
     """
     await _seed(db)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     leg2 = await create_leg(
-        db, vessel_id=1, departure_port_id=2, arrival_port_id=1,
-        etd=BASE + timedelta(days=25), eta=BASE + timedelta(days=45),
+        db,
+        vessel_id=1,
+        departure_port_id=2,
+        arrival_port_id=1,
+        etd=BASE + timedelta(days=25),
+        eta=BASE + timedelta(days=45),
     )
     # +10 j : la nouvelle ETA (J+30) mord sur l'ETD de leg2 (J+25).
     report = await update_leg(
-        db, leg1,
-        etd=BASE + timedelta(days=10), eta=BASE + timedelta(days=30),
+        db,
+        leg1,
+        etd=BASE + timedelta(days=10),
+        eta=BASE + timedelta(days=30),
         cascade=True,
     )
     assert report is not None and leg2.id in report.impacted_leg_ids
@@ -124,12 +150,20 @@ async def test_eta_extension_cascades_downstream(db):
     lieu d'être refusé (comportement aligné sur le moteur scénario)."""
     await _seed(db)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     leg2 = await create_leg(
-        db, vessel_id=1, departure_port_id=2, arrival_port_id=1,
-        etd=BASE + timedelta(days=22), eta=BASE + timedelta(days=42),
+        db,
+        vessel_id=1,
+        departure_port_id=2,
+        arrival_port_id=1,
+        etd=BASE + timedelta(days=22),
+        eta=BASE + timedelta(days=42),
     )
     await update_leg(db, leg1, eta=BASE + timedelta(days=25), cascade=True)
     await db.refresh(leg2)
@@ -141,12 +175,20 @@ async def test_eta_extension_cascades_downstream(db):
 async def test_shift_without_cascade_still_validates_strictly(db):
     await _seed(db)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     await create_leg(
-        db, vessel_id=1, departure_port_id=2, arrival_port_id=1,
-        etd=BASE + timedelta(days=25), eta=BASE + timedelta(days=45),
+        db,
+        vessel_id=1,
+        departure_port_id=2,
+        arrival_port_id=1,
+        etd=BASE + timedelta(days=25),
+        eta=BASE + timedelta(days=45),
     )
     with pytest.raises(LegOverlap):
         await update_leg(db, leg1, eta=BASE + timedelta(days=30), cascade=False)
@@ -156,12 +198,20 @@ async def test_shift_without_cascade_still_validates_strictly(db):
 async def test_cascade_shifts_booking_close_and_writes_revisions(db):
     await _seed(db)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     leg2 = await create_leg(
-        db, vessel_id=1, departure_port_id=2, arrival_port_id=1,
-        etd=BASE + timedelta(days=25), eta=BASE + timedelta(days=45),
+        db,
+        vessel_id=1,
+        departure_port_id=2,
+        arrival_port_id=1,
+        etd=BASE + timedelta(days=25),
+        eta=BASE + timedelta(days=45),
     )
     close_before = ensure_utc(leg2.booking_close_at)
     await update_leg(db, leg1, etd=BASE + timedelta(days=2), eta=BASE + timedelta(days=22))
@@ -185,15 +235,23 @@ async def test_cascade_shifts_booking_close_and_writes_revisions(db):
 async def test_cancelled_leg_frees_its_slot(db):
     await _seed(db)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     leg1.status = "cancelled"
     await db.flush()
     # Même navire, même fenêtre : accepté car le leg annulé libère le créneau.
     replacement = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=3,
-        etd=BASE + timedelta(hours=6), eta=BASE + timedelta(days=19),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=3,
+        etd=BASE + timedelta(hours=6),
+        eta=BASE + timedelta(days=19),
     )
     assert replacement.leg_code == "1AFRUS6"  # rang A : l'annulé ne compte plus
 
@@ -213,12 +271,20 @@ async def test_eta_shift_parses_tz_and_cascades(db, staff_user):
 
     await _seed(db)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     leg2 = await create_leg(
-        db, vessel_id=1, departure_port_id=2, arrival_port_id=1,
-        etd=BASE + timedelta(days=22), eta=BASE + timedelta(days=42),
+        db,
+        vessel_id=1,
+        departure_port_id=2,
+        arrival_port_id=1,
+        etd=BASE + timedelta(days=22),
+        eta=BASE + timedelta(days=42),
     )
     resp = await declare_eta_shift(
         leg1.id,
@@ -254,13 +320,22 @@ async def test_eta_shift_rejects_eta_before_departure(db, staff_user):
 
     await _seed(db)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     with pytest.raises(HTTPException) as exc:
         await declare_eta_shift(
-            leg1.id, _Req(), new_eta="2026-02-01T00:00", reason="weather",
-            detail=None, db=db, user=staff_user,
+            leg1.id,
+            _Req(),
+            new_eta="2026-02-01T00:00",
+            reason="weather",
+            detail=None,
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 400
 
@@ -276,12 +351,20 @@ async def test_gantt_move_endpoint_updates_and_cascades(db, staff_user):
 
     await _seed(db)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     resp = await move_leg_action(
-        _Req(), leg1.id, etd="2026-03-03T00:00", eta="2026-03-23T00:00",
-        db=db, user=staff_user,
+        _Req(),
+        leg1.id,
+        etd="2026-03-03T00:00",
+        eta="2026-03-23T00:00",
+        db=db,
+        user=staff_user,
     )
     payload = json.loads(resp.body)
     assert payload["ok"] is True
@@ -298,14 +381,22 @@ async def test_gantt_move_refuses_sailed_leg(db, staff_user):
 
     await _seed(db)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     leg1.atd = BASE
     await db.flush()
     resp = await move_leg_action(
-        _Req(), leg1.id, etd="2026-03-05T00:00", eta="2026-03-25T00:00",
-        db=db, user=staff_user,
+        _Req(),
+        leg1.id,
+        etd="2026-03-05T00:00",
+        eta="2026-03-25T00:00",
+        db=db,
+        user=staff_user,
     )
     assert json.loads(resp.body)["ok"] is False
 
@@ -317,8 +408,12 @@ async def test_optimistic_lock_rejects_stale_edit(db, staff_user):
 
     await _seed(db)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=BASE, eta=BASE + timedelta(days=20),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
     )
     stale = "2020-01-01T00:00:00+00:00"  # updated_at périmé
     req = FakeRequest(
@@ -349,12 +444,20 @@ async def test_cascade_crossing_year_renumbers_leg_code(db):
     await _seed(db)
     dec = datetime(2026, 12, 1, tzinfo=UTC)
     leg1 = await create_leg(
-        db, vessel_id=1, departure_port_id=1, arrival_port_id=2,
-        etd=dec, eta=dec + timedelta(days=18),
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=dec,
+        eta=dec + timedelta(days=18),
     )
     leg2 = await create_leg(
-        db, vessel_id=1, departure_port_id=2, arrival_port_id=1,
-        etd=dec + timedelta(days=22), eta=dec + timedelta(days=40),
+        db,
+        vessel_id=1,
+        departure_port_id=2,
+        arrival_port_id=1,
+        etd=dec + timedelta(days=22),
+        eta=dec + timedelta(days=40),
     )
     assert leg2.leg_code == "1BBRFR6"
     # +15 j sur leg1 → leg2 part le 7 janvier 2027 : il devient le 1er leg
