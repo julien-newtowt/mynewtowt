@@ -436,6 +436,74 @@ async def test_optimistic_lock_rejects_stale_edit(db, staff_user):
     assert ensure_utc(leg1.etd) == BASE
 
 
+@pytest.mark.asyncio
+async def test_edit_validation_error_renders_form_with_orm_user(db):
+    """Régression prod (2026-07) : re-rendre le formulaire après une erreur de
+    validation faisait une 500 (MissingGreenlet). Cause : ``_render_error``
+    rollback → expire l'objet ORM ``user`` chargé dans la session → le layout
+    lit ``user.*`` → lazy-load async interdit. Le test utilise un VRAI User
+    (le bug était masqué par le staff_user factice SimpleNamespace)."""
+    from app.models.user import User
+    from app.routers.planning_router import update_leg_action
+    from tests.integration.conftest import FakeRequest
+
+    await _seed(db)
+    # Deux legs chevauchants (cas prod) : éditer le 1er → LegOverlap.
+    leg1 = await create_leg(
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
+    )
+    await create_leg(
+        db,
+        vessel_id=1,
+        departure_port_id=2,
+        arrival_port_id=1,
+        etd=BASE + timedelta(days=22),
+        eta=BASE + timedelta(days=42),
+    )
+    # User ORM réel, PERSISTANT (commit) : après un rollback il sera
+    # expiré-mais-persistant → lazy-load async au rendu (le cas prod). Un
+    # simple flush le rendrait transient au rollback et masquerait le bug.
+    user = User(
+        username="ops",
+        email="ops@test",
+        hashed_password="x",
+        role="administrateur",
+        full_name="Ops Réel",
+    )
+    db.add(user)
+    await db.commit()
+
+    req = FakeRequest(
+        form={
+            "vessel_id": "1",
+            "departure_port_id": "1",
+            "arrival_port_id": "2",
+            # dates du leg2 → chevauchement, sans cascade possible (recul)
+            "etd": (BASE + timedelta(days=25)).strftime("%Y-%m-%dT%H:%M"),
+            "eta": (BASE + timedelta(days=45)).strftime("%Y-%m-%dT%H:%M"),
+            "cascade": "",
+            "expected_updated_at": "",
+        }
+    )
+    req.state = SimpleNamespace(csrf_token="t", lang="fr")
+    req.cookies = {}
+    req.query_params = {}
+    req.scope = {"type": "http"}
+    req.url = SimpleNamespace(path=f"/planning/legs/{leg1.id}/edit", query="")
+
+    # Ne doit PAS lever (avant le fix : MissingGreenlet). 400 + form rendu.
+    resp = await update_leg_action(req, leg1.id, db=db, user=user)
+    assert resp.status_code == 400
+    body = resp.body.decode()
+    assert "Chevauchement" in body
+    assert "Ops Réel" in body  # le layout a bien rendu user.* sans crash
+
+
 # ───────────── cascade sur changement d'année → renumérotation ─────────────
 
 

@@ -305,9 +305,17 @@ async def create_leg_action(
             port_stay_planned_hours=_maybe_int(form.get("port_stay_planned_hours")),
         )
     except (InvalidLegDates, PlanningError, KeyError, ValueError) as e:
-        # get_db committe même sur un 400 re-rendu : on annule explicitement
-        # toute mutation partielle avant de ré-afficher le formulaire.
+        # get_db committe même sur un 400 re-rendu : on annule toute mutation
+        # partielle (create_leg peut avoir add+flush le leg avant qu'une
+        # renumérotation ne lève). Le rollback expire ``user`` (ORM de cette
+        # session) → on le rafraîchit avant le rendu (sinon lazy-load async
+        # au layout → MissingGreenlet → 500).
+        from sqlalchemy import inspect as sa_inspect
+
         await db.rollback()
+        user_state = sa_inspect(user, raiseerr=False)
+        if user_state is not None and user_state.persistent:
+            await db.refresh(user)
         vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
         ports = list((await db.execute(select(Port).order_by(Port.locode))).scalars().all())
         return templates.TemplateResponse(
@@ -408,13 +416,21 @@ async def update_leg_action(
     cascade = form.get("cascade") == "on"
 
     async def _render_error(message: str, status_code: int = 400):
-        await db.rollback()  # get_db committe même sur un 400 re-rendu
-        # Le rollback expire l'instance : on la recharge explicitement pour
-        # que le template (sync) n'ait aucun lazy-load async à déclencher.
-        # (Un leg non persistant — INSERT annulé par le rollback — garde ses
-        # valeurs en mémoire, rien à recharger.)
+        # get_db committe même sur un 400 re-rendu : on annule toute mutation
+        # partielle (ex. renumber_vessel_year qui lève après un flush). Le
+        # rollback EXPIRE les objets ORM de la session — dont ``user`` (chargé
+        # par require_permission dans CETTE session) et ``leg`` : les toucher
+        # au rendu (sync) déclencherait un lazy-load async → MissingGreenlet
+        # → 500. On les rafraîchit donc explicitement avant de rendre.
         from sqlalchemy import inspect as sa_inspect
 
+        await db.rollback()
+        # Rafraîchir les instances ORM que le rendu va toucher (le layout lit
+        # user.*, le form lit leg.*). ``raiseerr=False`` : en test ``user``
+        # peut être un objet factice non mappé → on ne le rafraîchit pas.
+        user_state = sa_inspect(user, raiseerr=False)
+        if user_state is not None and user_state.persistent:
+            await db.refresh(user)
         if sa_inspect(leg).persistent:
             await db.refresh(leg)
         vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
