@@ -19,9 +19,17 @@
 | Variable | Rôle | Sans elle |
 |---|---|---|
 | `MARAD_API_TOKEN` | Clé d'API Marad (fournie par l'éditeur) | sync = **no-op** (`configured:false`) |
+| `MARAD_BASE_URL` | Hôte du **serveur de votre tenant** (⚠ voir ci-dessous) | défaut `https://external.marad.ms` |
 | `MARAD_SYNC_TOKEN` | Secret du header `X-API-Token` du cron interne | endpoint → **503** |
-| `MARAD_API_KEY_HEADER` | (optionnel) force le header d'auth Marad | auto-détecté : `ApiKey`/`ApiToken`/`X-Api-Key` |
+| `MARAD_API_KEY_HEADER` | force le header d'auth Marad (recommandé : `ApiKey`) | auto-détecté : `ApiKey`/`ApiToken`/`X-Api-Key` (la cascade peut déclencher des 429) |
 | `MARAD_VESSEL_MAP` | (optionnel) repli `marad_number_ou_nom=vessel_id,…` | résolution navire par nom/code uniquement |
+
+> ⚠️ **`MARAD_BASE_URL` est par tenant.** Marasoft héberge chaque client sur un
+> serveur numéroté (`external.marad.ms`, `external02.marad.ms`, …). Une clé
+> valide peut **authentifier** sur un autre serveur mais y voir un **tenant
+> vide** (`getVessels` → `[]`, 0 marin, 0 planning). Reprendre l'hôte utilisé
+> par vos autres intégrations Marad (ex. requêtes Power BI). Tenant NEWTOWT :
+> `https://external02.marad.ms` (header d'auth confirmé : `ApiKey`).
 
 ## 3. Activation (première mise en service)
 
@@ -102,11 +110,24 @@ Le header côté flux ne correspond pas. Vérifier :
 inactive. L'installer avec `set_marad_keys.sh`.
 
 ### `200` mais `crew_fetched:0` / `sched_fetched:0`
-Marad n'a rien renvoyé. Causes possibles :
+Marad n'a rien renvoyé. Causes possibles (dans l'ordre de probabilité) :
+- **mauvais hôte tenant** : l'auth passe mais `getVessels` renvoie `[]` →
+  `MARAD_BASE_URL` pointe sur un serveur qui ne porte pas votre tenant
+  (cf. encadré §2). Vérifier avec
+  `docker compose exec app python -m scripts.marad_probe vessels` ;
 - compte Marad sans marin/planning ;
 - **mauvais header d'auth** : le client essaie `ApiKey`/`ApiToken`/`X-Api-Key`
   et journalise celui retenu (`marad: header d'auth retenu = '…'`). S'il n'en
   trouve aucun, fixer `MARAD_API_KEY_HEADER` dans `.env`.
+
+### `429` dès le premier appel (sans Retry-After)
+Le quota est déjà consommé par un **autre consommateur de la même clé** —
+typiquement un refresh Power BI (chaque refresh du rapport Marad = ~125
+requêtes, mêmes endpoints, même clé). Espacer les tests, éviter que le cron
+de sync coïncide avec le refresh planifié du rapport, et demander à l'éditeur
+une **clé dédiée** à mynewtowt. La cascade de sondage d'auth peut aussi
+s'auto-infliger des 429 : épingler `MARAD_API_KEY_HEADER=ApiKey` (un seul
+appel par requête).
 
 ### Plannings non reliés à un leg (`leg_id` vide)
 Le « voyage » Marad est réconcilié au `leg` par **navire + fenêtre de dates**.
