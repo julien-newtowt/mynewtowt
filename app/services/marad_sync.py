@@ -18,6 +18,12 @@ Schéma Marad ``/api/Crewing`` (confirmé) — champs utilisés :
 ``id`` (GUID), ``firstName``, ``lastName``, ``callName``, ``ranks`` (liste),
 ``nationality``, ``birthDate`` (ISO datetime), ``email``, ``mobilePhone``,
 ``phone``.
+
+⚠️ La **casse des clés JSON varie selon le serveur Marad** : les hôtes par
+tenant (``external02.marad.ms``…) sérialisent en PascalCase (``ID``,
+``FirstName``, ``BirthDate``…) là où l'échantillon éditeur était en camelCase.
+Tout accès aux champs passe donc par ``_field()`` (insensible à la casse) —
+ne jamais utiliser ``rec.get("...")`` directement sur un record Marad.
 """
 
 from __future__ import annotations
@@ -59,16 +65,15 @@ def _records(payload: Any) -> list[dict]:
             "results",
             "value",
             "records",
-            "crewMembers",
             "crewmembers",
             "crewing",
             "crew",
             "schedules",
-            "crewingSchedule",
+            "crewingschedule",
             "list",
             "rows",
         ):
-            v = payload.get(key)
+            v = _field(payload, key)
             if isinstance(v, list):
                 return [r for r in v if isinstance(r, dict)]
         # Enveloppe à une seule liste (clé inconnue) → on la prend.
@@ -76,10 +81,27 @@ def _records(payload: Any) -> list[dict]:
         if len(list_values) == 1:
             return [r for r in list_values[0] if isinstance(r, dict)]
         # Sinon, si le dict ressemble à un enregistrement (a un id), on le garde.
-        if any(k in payload for k in ("id", "Id", "ID")):
+        if _field(payload, "id") is not None:
             return [payload]
         return []
     return []
+
+
+def _field(rec: dict, key: str) -> Any:
+    """Valeur du champ ``key``, **insensible à la casse** de la clé.
+
+    Le serveur Marad sérialise en camelCase ou PascalCase selon sa version
+    (``external02`` renvoie ``ID``/``FirstName``/``StartInfo``…) : on ne
+    présume jamais de la casse. Les records sont petits (< 30 clés) — le
+    parcours linéaire en cas de non-correspondance exacte est négligeable.
+    """
+    if key in rec:
+        return rec[key]
+    kl = key.lower()
+    for k, v in rec.items():
+        if isinstance(k, str) and k.lower() == kl:
+            return v
+    return None
 
 
 def _clean(val: Any) -> str | None:
@@ -93,14 +115,14 @@ def _clean(val: Any) -> str | None:
 
 
 def _full_name(rec: dict) -> str | None:
-    first = _clean(rec.get("firstName"))
-    last = _clean(rec.get("lastName"))
+    first = _clean(_field(rec, "firstName"))
+    last = _clean(_field(rec, "lastName"))
     name = " ".join(p for p in (first, last) if p)
-    return name or _clean(rec.get("callName"))
+    return name or _clean(_field(rec, "callName"))
 
 
 def _first_rank(rec: dict) -> str | None:
-    ranks = rec.get("ranks")
+    ranks = _field(rec, "ranks")
     if isinstance(ranks, list):
         for r in ranks:
             c = _clean(r)
@@ -111,24 +133,24 @@ def _first_rank(rec: dict) -> str | None:
 
 def _nationality(rec: dict) -> str | None:
     """``nationality`` n'est conservé que si c'est un code ISO-2 (colonne CHAR(2))."""
-    n = _clean(rec.get("nationality"))
+    n = _clean(_field(rec, "nationality"))
     if n and len(n) == 2 and n.isalpha():
         return n.upper()
     return None
 
 
 def _phone(rec: dict) -> str | None:
-    p = _clean(rec.get("mobilePhone")) or _clean(rec.get("phone"))
+    p = _clean(_field(rec, "mobilePhone")) or _clean(_field(rec, "phone"))
     return p[:50] if p else None
 
 
 def _email(rec: dict) -> str | None:
-    e = _clean(rec.get("email"))
+    e = _clean(_field(rec, "email"))
     return e[:255] if e and "@" in e else None
 
 
 def _birth_date(rec: dict) -> date | None:
-    raw = _clean(rec.get("birthDate"))
+    raw = _clean(_field(rec, "birthDate"))
     if not raw:
         return None
     try:
@@ -190,7 +212,7 @@ async def sync_crew(db: AsyncSession) -> dict:
 
     created = updated = skipped = errors = 0
     for rec in records:
-        marad_id = _clean(rec.get("id"))
+        marad_id = _clean(_field(rec, "id"))
         if not marad_id:
             skipped += 1  # enregistrement sans GUID → non réconciliable
             continue
@@ -239,7 +261,7 @@ _SCHED_STATUS_KEYS = ("status", "state")
 def _pick(rec: dict, keys: tuple[str, ...]) -> str | None:
     """1re valeur exploitable parmi plusieurs clés candidates (placeholders ignorés)."""
     for k in keys:
-        c = _clean(rec.get(k))
+        c = _clean(_field(rec, k))
         if c:
             return c
     return None
@@ -247,7 +269,7 @@ def _pick(rec: dict, keys: tuple[str, ...]) -> str | None:
 
 def _subdict(rec: dict, key: str) -> dict:
     """Sous-objet imbriqué (crewMember / startInfo / endInfo) ou {} si absent."""
-    v = rec.get(key)
+    v = _field(rec, key)
     return v if isinstance(v, dict) else {}
 
 
@@ -338,13 +360,13 @@ async def sync_schedules(db: AsyncSession) -> dict:
 
     created = updated = skipped = errors = 0
     for rec in records:
-        sched_id = _clean(rec.get("id"))
+        sched_id = _clean(_field(rec, "id"))
         if not sched_id:
             skipped += 1
             continue
         try:
-            crew_guid = _clean(_subdict(rec, "crewMember").get("id"))
-            vessel_str = _clean(rec.get("vessel"))
+            crew_guid = _clean(_field(_subdict(rec, "crewMember"), "id"))
+            vessel_str = _clean(_field(rec, "vessel"))
             vessel_id = None
             if vessel_str:
                 vessel_id = vessel_by_key.get(vessel_str.strip().upper())
@@ -355,9 +377,9 @@ async def sync_schedules(db: AsyncSession) -> dict:
                         vessel_id = None
 
             si, ei = _subdict(rec, "startInfo"), _subdict(rec, "endInfo")
-            start_dt = _parse_dt(_clean(si.get("dateTime")))
-            end_dt = _parse_dt(_clean(ei.get("dateTime")))
-            start_port, end_port = _clean(si.get("port")), _clean(ei.get("port"))
+            start_dt = _parse_dt(_clean(_field(si, "dateTime")))
+            end_dt = _parse_dt(_clean(_field(ei, "dateTime")))
+            start_port, end_port = _clean(_field(si, "port")), _clean(_field(ei, "port"))
             voyage_ref = (
                 f"{start_port or '?'} → {end_port or '?'}"[:80]
                 if (start_port or end_port)
@@ -485,14 +507,29 @@ async def sync_all(db: AsyncSession) -> dict:
                     + body_part
                     + suspect_part
                     + " Les endpoints crew (/api/Crewing, /api/CrewingSchedule) "
-                    "restent à 1 req/min : espacez les tests d'au moins une minute."
+                    "restent à 1 req/min : espacez les tests d'au moins une minute. "
+                    "Si la clé API est partagée avec d'autres consommateurs "
+                    "(ex. rapports Power BI), leurs refresh consomment le même "
+                    "quota — demandez une clé dédiée à l'éditeur."
                 )
             elif cls == "ok":
+                # 0 navire alors que l'auth passe = presque toujours un MAUVAIS
+                # HÔTE : les tenants Marasoft vivent sur des serveurs numérotés
+                # (external.marad.ms, external02.marad.ms, …) et une clé valide
+                # peut authentifier sur un serveur où le tenant est vide.
+                host_hint = (
+                    " ⚠ 0 navire visible : la clé authentifie mais ce serveur ne "
+                    "porte pas votre tenant — vérifiez que MARAD_BASE_URL pointe "
+                    "sur l'hôte de VOTRE tenant (serveurs numérotés : "
+                    "external.marad.ms, external02.marad.ms, …)."
+                    if not diag.get("vessels_count")
+                    else ""
+                )
                 diagnostic = (
                     "API Marad joignable et authentifiée "
                     f"(navires visibles : {diag.get('vessels_count')}), mais aucun "
                     "marin/planning retourné : compte/tenant vide, filtre delta, ou "
-                    "schéma de réponse inattendu sur /api/Crewing."
+                    "schéma de réponse inattendu sur /api/Crewing." + host_hint
                 )
             else:
                 diagnostic = (

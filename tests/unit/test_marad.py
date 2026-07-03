@@ -228,6 +228,117 @@ def test_sync_crew_placeholder_does_not_clobber(monkeypatch) -> None:
     _run_with_db(_check)
 
 
+def test_sync_crew_accepts_pascalcase_fields(monkeypatch) -> None:
+    """Les serveurs par tenant (external02.marad.ms) sérialisent en PascalCase.
+
+    Schéma constaté en production (requêtes Power BI sur /api/Crewing) :
+    ``ID``, ``FirstName``, ``LastName``, ``BirthDate``, ``Ranks``… Avant le
+    correctif, ``rec.get("id")`` ne trouvait pas ``ID`` → 100 % des marins
+    étaient « skipped » alors que l'API répondait correctement.
+    """
+    from datetime import date
+
+    from app.models.crew import CrewMember
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+    pascal = {
+        "ID": _GUID,
+        "CallName": "JD",
+        "FirstName": "Jean",
+        "LastName": "Dupont",
+        "Gender": 0,
+        "BirthDate": "1988-03-12T00:00:00Z",
+        "Nationality": "FR",
+        "Ranks": ["Capitaine"],
+        "Email": "jean.dupont@example.com",
+        "MobilePhone": "+33 6 12 34 56 78",
+        "Phone": "",
+        "VesselNames": ["Anemos"],
+    }
+    monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([pascal]))
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        r = await marad_sync.sync_crew(s)
+        assert (r["fetched"], r["created"], r["skipped"]) == (1, 1, 0)
+        m = (await s.execute(select(CrewMember).where(CrewMember.marad_id == _GUID))).scalar_one()
+        assert m.full_name == "Jean Dupont"
+        assert m.role == "Capitaine"
+        assert m.nationality == "FR"
+        assert m.date_of_birth == date(1988, 3, 12)
+        assert m.email == "jean.dupont@example.com"
+        assert m.phone == "+33 6 12 34 56 78"
+
+    _run_with_db(_check)
+
+
+def test_sync_schedules_accepts_pascalcase_fields(monkeypatch) -> None:
+    """Même tolérance de casse pour /api/CrewingSchedule (objets imbriqués)."""
+    from datetime import UTC, date, datetime
+
+    from app.models.crew import CrewMember, MaradCrewSchedule
+    from app.models.leg import Leg
+    from app.models.vessel import Vessel
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        vessel = Vessel(code="CF", name="Anemos")
+        s.add(vessel)
+        await s.flush()
+        leg = Leg(
+            leg_code="1CFRBR6",
+            vessel_id=vessel.id,
+            departure_port_id=1,
+            arrival_port_id=1,
+            etd_ref=datetime(2026, 3, 1, tzinfo=UTC),
+            eta_ref=datetime(2026, 3, 10, tzinfo=UTC),
+            etd=datetime(2026, 3, 1, tzinfo=UTC),
+            eta=datetime(2026, 3, 10, tzinfo=UTC),
+        )
+        member = CrewMember(marad_id="crew-guid-1", full_name="Jean Dupont", role="capitaine")
+        s.add_all([leg, member])
+        await s.flush()
+
+        pascal = {
+            "ID": "sched-1",
+            "CrewMember": {"ID": "crew-guid-1", "FirstName": "Jean", "LastName": "Dupont"},
+            "Rank": "Capitaine",
+            "Status": "Confirmed",
+            "Vessel": "Anemos",
+            "StartInfo": {"DateTime": "2026-03-05T00:00:00Z", "Port": "Fécamp"},
+            "EndInfo": {"DateTime": "2026-03-09T00:00:00Z", "Port": "Fortaleza"},
+        }
+        monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret([pascal]))
+
+        r = await marad_sync.sync_schedules(s)
+        assert (r["fetched"], r["created"], r["skipped"]) == (1, 1, 0)
+        row = (
+            await s.execute(
+                select(MaradCrewSchedule).where(MaradCrewSchedule.marad_schedule_id == "sched-1")
+            )
+        ).scalar_one()
+        assert row.crew_member_id == member.id
+        assert row.vessel_id == vessel.id
+        assert row.leg_id == leg.id
+        assert row.marad_voyage_ref == "Fécamp → Fortaleza"
+        assert row.rank_label == "Capitaine"
+        assert row.start_date == date(2026, 3, 5)
+        assert row.end_date == date(2026, 3, 9)
+        assert row.status == "Confirmed"
+
+    _run_with_db(_check)
+
+
+def test_records_accepts_pascalcase_wrapper() -> None:
+    """L'enveloppe éventuelle (``Data``/``Value``…) tolère aussi le PascalCase."""
+    assert marad_sync._records({"Data": [{"ID": 1}]}) == [{"ID": 1}]
+    assert marad_sync._records({"ID": 9}) == [{"ID": 9}]
+
+
 def test_sync_crew_skips_records_without_id(monkeypatch) -> None:
     from app.models.crew import CrewMember
 
