@@ -753,11 +753,15 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
     # disparaître silencieusement. Les FK nullable nettoyées par la DB
     # (claims, tickets, certificats CO₂…) ne bloquent pas la suppression
     # car on les set à NULL avant le delete (cf. _nullify_optional_fks).
+    # LegKPI n'est PAS dans cette liste : c'est un rollup **dérivé**
+    # (auto-calculé par services.carbon / compute_for_leg), recalculable et
+    # sans valeur propre une fois son leg supprimé. On le nettoie
+    # automatiquement plus bas — sauf s'il a été **saisi manuellement**
+    # (``is_manual``), auquel cas il redevient de la donnée humaine à protéger.
     BLOCKING = [
         (Booking, "réservations"),
         (NoonReport, "noon reports"),
         (LegFinance, "fiche finance"),
-        (LegKPI, "KPI"),
         (EscaleOperation, "opérations escale"),
         (DockerShift, "shifts dockers"),
         (WatchLog, "entrées de quart"),
@@ -777,12 +781,27 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
         if count:
             blocks.append(f"{count} {label}")
 
+    # KPI saisi manuellement = donnée humaine → bloque comme le reste.
+    manual_kpi = await db.scalar(
+        select(func.count())
+        .select_from(LegKPI)
+        .where(LegKPI.leg_id == leg.id)
+        .where(LegKPI.is_manual.is_(True))
+    )
+    if manual_kpi:
+        blocks.append(f"{manual_kpi} KPI saisi(s) manuellement")
+
     if blocks:
         raise PlanningError(
             f"Impossible de supprimer le leg {leg.leg_code} — dépendances : "
             + ", ".join(blocks)
             + ". Nettoyez ces enregistrements avant suppression."
         )
+
+    # Nettoyage du KPI auto-calculé (non manuel) : sans valeur sans son leg.
+    from sqlalchemy import delete as sa_delete
+
+    await db.execute(sa_delete(LegKPI).where(LegKPI.leg_id == leg.id))
 
     # FK nullables qu'on délie proprement avant suppression (la DB
     # refuserait sinon avec un IntegrityError opaque).

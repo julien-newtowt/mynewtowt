@@ -104,6 +104,57 @@ async def test_delete_renumbers_following_legs(db):
     assert leg_b.leg_code == "1ABRFR6"  # redevient le 1er de l'année
 
 
+# ─────────────── suppression : KPI dérivé auto-nettoyé ───────────────
+
+
+@pytest.mark.asyncio
+async def test_delete_leg_removes_auto_kpi(db):
+    """Un KPI auto-calculé (rollup dérivé) ne bloque plus la suppression :
+    il est nettoyé automatiquement avec le leg."""
+    from sqlalchemy import func
+
+    from app.models.finance import LegKPI
+    from app.services.planning import delete_leg
+
+    await _seed(db)
+    leg = await create_leg(
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
+    )
+    db.add(LegKPI(leg_id=leg.id, palettes_carried=10))  # is_manual défaut False
+    await db.flush()
+    await delete_leg(db, leg)  # ne doit pas lever
+    remaining = await db.scalar(
+        select(func.count()).select_from(LegKPI).where(LegKPI.leg_id == leg.id)
+    )
+    assert remaining == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_leg_blocked_by_manual_kpi(db):
+    """Un KPI SAISI MANUELLEMENT reste une donnée humaine → bloque toujours."""
+    from app.models.finance import LegKPI
+    from app.services.planning import PlanningError, delete_leg
+
+    await _seed(db)
+    leg = await create_leg(
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
+    )
+    db.add(LegKPI(leg_id=leg.id, palettes_carried=10, is_manual=True))
+    await db.flush()
+    with pytest.raises(PlanningError, match="manuellement"):
+        await delete_leg(db, leg)
+
+
 # ─────────────── validation sur l'état final (cascade simulée) ───────────────
 
 
