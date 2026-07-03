@@ -10,7 +10,7 @@
 Production initiée le **18 mai 2026** sur la branche
 `claude/newtowt-erp-development-0kOfg`.
 
-Repository : `juliengonde-5g/mynewtowt`.
+Repository : `julien-newtowt/mynewtowt` (ex-`juliengonde-5g/mynewtowt`, transfert 2026-07).
 
 Objectif : refondre l'application TOWT V2 en `mynewtowt` V3, plateforme
 unique combinant ERP interne et portail client avec **plateforme de

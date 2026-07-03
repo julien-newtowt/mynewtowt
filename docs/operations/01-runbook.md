@@ -8,7 +8,7 @@
 |---------|-----|---------------------|
 | Application | `https://my.newtowt.eu` | Login user + MFA |
 | Staging | `https://staging.my.newtowt.eu` | Login user + MFA |
-| GitHub | `github.com/juliengonde-5g/mynewtowt` | OAuth + MFA |
+| GitHub | `github.com/julien-newtowt/mynewtowt` | OAuth + MFA |
 | Hébergeur OVH | `manager.ovh.com` | SSO interne |
 | Stripe | `dashboard.stripe.com` | SSO interne |
 | Sentry | `sentry.io/newtowt` | SSO interne |
@@ -21,7 +21,7 @@ Doppler.
 ## 2. Démarrage rapide d'un environnement local
 
 ```bash
-git clone git@github.com:juliengonde-5g/mynewtowt.git
+git clone git@github.com:julien-newtowt/mynewtowt.git
 cd mynewtowt
 cp .env.example .env
 docker compose up -d
@@ -53,6 +53,23 @@ Compte par défaut local : `admin@local` / `change-me-now`.
 ```
 
 ## 4. Déploiement
+
+> ⚠ **Migration de dépôt (2026-07)** : le repository a été transféré de
+> `juliengonde-5g/mynewtowt` vers **`julien-newtowt/mynewtowt`**.
+> `deploy.sh` ne code aucune URL en dur (il fetch le remote `origin` du
+> clone local), mais **le clone présent sur chaque serveur pointe encore
+> vers l'ancien dépôt**. Avant le premier déploiement post-transfert,
+> re-pointer le remote sur prod ET staging :
+>
+> ```bash
+> cd /opt/mynewtowt   # racine du clone serveur
+> git remote set-url origin git@github.com:julien-newtowt/mynewtowt.git
+> git remote -v       # vérifier
+> git fetch origin    # doit répondre sans erreur
+> ```
+>
+> (La redirection GitHub post-transfert fonctionne un temps, mais ne pas
+> s'y fier : deploy keys / permissions suivent le NOUVEAU dépôt.)
 
 Scripts livrés dans `scripts/` :
 

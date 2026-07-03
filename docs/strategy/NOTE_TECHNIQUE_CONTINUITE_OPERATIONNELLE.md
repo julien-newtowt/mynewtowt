@@ -1618,7 +1618,7 @@ Si **tout est perdu** (code, DB, serveur), suivre l'ordre :
 ## E. Contacts et conventions
 
 - **Contact sécurité** : `security@towt.eu` (publié dans `/.well-known/security.txt`).
-- **Repository** : `juliengonde-5G/mytowt`.
+- **Repository** : `julien-newtowt/mynewtowt`.
 - **Branche de référence pour cette note** : `claude/technical-documentation-recovery-eIUPG`.
 - **Documentation projet additionnelle** : `CLAUDE.md`, `README.md`, `docs/v2/tech-debt-audit.md`.
 - **Charte graphique source** : `Design/newtowt-design-tokens.json`.
