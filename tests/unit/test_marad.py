@@ -705,6 +705,75 @@ def test_memorized_strategy_is_single_shot(monkeypatch) -> None:
     assert captured["client"].tried == ["ApiKey"]  # un seul essai (mémorisé)
 
 
+def test_prime_auth_noop_when_header_pinned(monkeypatch) -> None:
+    """Header épinglé → prime_auth n'appelle PAS getVessels (un appel économisé).
+
+    Il n'y a rien à découvrir (un seul schéma sera essayé partout), et chaque
+    appel compte quand la clé est partagée avec d'autres consommateurs.
+    """
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "ApiKey")
+    monkeypatch.setattr(marad, "_working_strategy", None)
+
+    def _no_http(*a, **k):
+        raise AssertionError("prime_auth ne doit faire AUCUN appel HTTP (header épinglé)")
+
+    monkeypatch.setattr(marad.httpx, "AsyncClient", _no_http)
+    assert asyncio.run(marad.prime_auth()) is None
+
+
+class _Fake429Client:
+    """Faux httpx.AsyncClient : renvoie systématiquement 429."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def request(self, method, url, params=None, json=None, headers=None):
+        return _FakeResp(429)
+
+
+def test_request_records_last_status_on_429(monkeypatch) -> None:
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "ApiKey")
+    monkeypatch.setattr(marad, "_working_strategy", None)
+    monkeypatch.setattr(marad, "_last_status", {})
+    monkeypatch.setattr(marad.httpx, "AsyncClient", lambda *a, **k: _Fake429Client())
+
+    assert asyncio.run(marad.list_crew()) is None
+    assert marad.last_status("/api/Crewing") == 429
+
+
+def test_sync_all_quota_diagnostic_without_probing(monkeypatch) -> None:
+    """429 sur les endpoints crew → diagnostic « quota » direct, SANS re-sonder
+    getVessels (diagnose ne doit pas être appelé : chaque appel coûte du quota)."""
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "ApiKey")
+    monkeypatch.setattr(marad, "_working_strategy", None)
+    monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret(None))
+    monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret(None))
+    monkeypatch.setattr(marad, "last_status", lambda path: 429)
+
+    probed: list[str] = []
+
+    async def _diagnose():
+        probed.append("diagnose")
+        return {}
+
+    monkeypatch.setattr(marad, "diagnose", _diagnose)
+
+    async def _check(s):
+        r = await marad_sync.sync_all(s)
+        assert r["crew_fetched"] == 0 and r["sched_fetched"] == 0
+        assert "Quota Marad atteint" in r["diagnostic"]
+        assert "/api/Crewing et /api/CrewingSchedule" in r["diagnostic"]
+        assert probed == []  # pas d'appel getVessels supplémentaire
+
+    _run_with_db(_check)
+
+
 def test_rate_limited_endpoint_single_shot_when_auth_not_primed(monkeypatch) -> None:
     """Sur un endpoint à 1 req/min non authentifié, on ne sonde qu'UN schéma
     (sinon 7×403→429 brûleraient le quota de la minute). getVessels (15 req/min)

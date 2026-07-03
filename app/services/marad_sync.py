@@ -434,16 +434,39 @@ async def sync_all(db: AsyncSession) -> dict:
     """
     # Découvre d'abord le schéma d'auth via un endpoint à quota large
     # (getVessels, 15 req/min) pour ne pas gâcher le quota de /api/Crewing
-    # (1 req/min) en essayant plusieurs schémas dessus.
+    # (1 req/min) en essayant plusieurs schémas dessus. No-op quand
+    # MARAD_API_KEY_HEADER est épinglé : rien à découvrir, un appel économisé.
     await marad.prime_auth()
     crew = await sync_crew(db)
     sched = await sync_schedules(db)
 
     # Diagnostic : si l'API est configurée mais que RIEN n'a été récupéré,
-    # on sonde la connectivité pour expliquer le « rien ne remonte » plutôt
-    # que de laisser un silencieux 0/0.
+    # on explique le « rien ne remonte » plutôt que de laisser un silencieux 0/0.
     diagnostic: str | None = None
     if crew["configured"] and (crew.get("fetched", 0) + sched.get("fetched", 0)) == 0:
+        # Cas fréquent et déjà élucidé SANS re-sonder : les endpoints crew ont
+        # renvoyé 429 pendant CETTE sync (quota 1 req/min consommé par un appel
+        # récent — sonde marad_probe, double-clic, cron — ou par un refresh
+        # Power BI partageant la clé). Sonder getVessels n'apporterait rien et
+        # dépenserait du quota en plus.
+        throttled = [
+            p
+            for p in ("/api/Crewing", "/api/CrewingSchedule")
+            if marad.last_status(p) == 429
+        ]
+        if throttled:
+            diagnostic = (
+                f"Quota Marad atteint : 429 sur {' et '.join(throttled)} "
+                "(1 requête/minute par endpoint). Un appel récent (sonde "
+                "marad_probe, double-clic, cron) ou un refresh Power BI "
+                "utilisant la même clé API a consommé la minute. "
+                "Réessayez dans ~1 minute sans autre appel Marad."
+            )
+    if (
+        crew["configured"]
+        and (crew.get("fetched", 0) + sched.get("fetched", 0)) == 0
+        and diagnostic is None
+    ):
         try:
             diag = await marad.diagnose()
             base = diag.get("base_url")
