@@ -120,6 +120,35 @@ Scripts livrés dans `scripts/` :
 9. Smoke tests (12 endpoints). Échec ⇒ rollback + exit 2.
 10. Maintenance OFF + report.
 
+### 4.2 Contrainte anti-chevauchement (`legs_no_vessel_overlap`)
+
+La migration `0094` pose une contrainte d'exclusion Postgres empêchant
+deux legs non annulés d'un même navire de se chevaucher. **Si des
+chevauchements existent déjà en base, la migration les liste dans la
+sortie d'Alembic et saute la contrainte** (le déploiement passe quand
+même ; la validation applicative couvre les nouvelles écritures).
+
+Après correction des legs dans `/planning`, vérifier puis poser la
+contrainte manuellement :
+
+```sql
+-- 1. Lister les chevauchements restants (doit renvoyer 0 ligne)
+SELECT a.leg_code, a.etd, a.eta, b.leg_code, b.etd, b.eta
+FROM legs a JOIN legs b ON a.vessel_id = b.vessel_id AND a.id < b.id
+WHERE a.status <> 'cancelled' AND b.status <> 'cancelled'
+  AND a.etd < b.eta AND a.eta > b.etd;
+
+-- 2. Poser la contrainte
+ALTER TABLE legs ADD CONSTRAINT legs_no_vessel_overlap
+EXCLUDE USING gist (vessel_id WITH =, tstzrange(etd, eta) WITH &&)
+WHERE (status <> 'cancelled') DEFERRABLE INITIALLY DEFERRED;
+```
+
+```bash
+# Vérifier que la contrainte est en place
+docker compose exec db psql -U towt -d towt -c "\d legs" | grep legs_no_vessel_overlap
+```
+
 ## 5. Backups
 
 ### 5.1 Backup quotidien automatique
