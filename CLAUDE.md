@@ -247,7 +247,7 @@ mynewtowt/
 | Terme | Définition |
 |---|---|
 | **Leg** | Segment de voyage port A → port B |
-| **leg_code** | Format `{seq}{vessel_code}{dep_country}{arr_country}{year_digit}` (ex. `1CFRBR6`) |
+| **leg_code** | Format `{vessel_code 1 chiffre}{rang année 1 lettre, A=1er}{dep_country}{arr_country}{year_digit}` (ex. `1CFRBR6` = navire 1, 3ᵉ voyage 2026, FR→BR). Rang = position chronologique par ETD dans l'année (renuméroté automatiquement) |
 | **ETD / ETA** | Estimated Time of Departure / Arrival |
 | **ATD / ATA** | Actual Time of Departure / Arrival |
 | **Escale** | Période où le navire est à quai |

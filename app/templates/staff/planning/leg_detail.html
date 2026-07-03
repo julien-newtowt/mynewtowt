@@ -10,6 +10,7 @@
     <h1 class="display mono" style="color:var(--cuivre);">{{ leg.leg_code }}</h1>
   </div>
   <div class="flex gap-2">
+    <a href="/planning/legs/{{ leg.id }}/history" class="btn btn-ghost">🕐 Historique</a>
     <a href="/planning/legs/{{ leg.id }}/edit" class="btn btn-primary">Éditer</a>
     <form method="post" action="/planning/legs/{{ leg.id }}/delete" style="display:inline;" onsubmit="return confirm('Supprimer définitivement le leg {{ leg.leg_code }} ?');">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
@@ -53,7 +54,7 @@
         </td></tr>
         <tr><th>Statut</th><td>
           {% if leg.status == 'planned' %}<span class="pill pill-info">Planifié</span>
-          {% elif leg.status == 'inprogress' %}<span class="pill pill-warn">En cours</span>
+          {% elif leg.status == 'in_progress' %}<span class="pill pill-warn">En cours</span>
           {% elif leg.status == 'completed' %}<span class="pill pill-ok">Terminé</span>
           {% elif leg.status == 'cancelled' %}<span class="pill pill-neutral">Annulé</span>
           {% else %}<span class="pill pill-neutral">{{ leg.status }}</span>{% endif %}

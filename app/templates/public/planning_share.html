@@ -27,7 +27,7 @@
     font-size: var(--text-xs); font-weight: var(--fw-semibold);
   }
   .status-planned { background: #e6f0f2; color: var(--teal); }
-  .status-inprogress { background: #f3e9df; color: var(--cuivre); }
+  .status-in_progress { background: #f3e9df; color: var(--cuivre); }
   .status-completed { background: #e9f2e0; color: var(--vert); }
   .status-cancelled { background: #eee; color: var(--gris); }
 
@@ -100,7 +100,7 @@
             <td>
               <span class="status-pill status-{{ row.status }}">
                 {% if row.status == 'completed' %}{% if lang == 'en' %}Completed{% else %}Réalisée{% endif %}
-                {%- elif row.status == 'inprogress' %}{% if lang == 'en' %}In progress{% else %}En cours{% endif %}
+                {%- elif row.status == 'in_progress' %}{% if lang == 'en' %}In progress{% else %}En cours{% endif %}
                 {%- elif row.status == 'cancelled' %}{% if lang == 'en' %}Cancelled{% else %}Annulée{% endif %}
                 {%- else %}{% if lang == 'en' %}Scheduled{% else %}Planifiée{% endif %}{% endif %}
               </span>

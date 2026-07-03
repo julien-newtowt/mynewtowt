@@ -13,8 +13,9 @@ to impacted clients are emitted by NotificationService (V3.1).
 from __future__ import annotations
 
 import secrets
-from collections.abc import Sequence
-from dataclasses import dataclass
+import uuid
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -49,12 +50,73 @@ class LegSpeedIncoherent(PlanningError):
 # Au-delà, la durée saisie est forcément une erreur (typo de date).
 MAX_PLAUSIBLE_SPEED_KN = 18.0
 
+# Taxonomie UNIQUE des statuts de leg (stockage + affichage). Historiquement
+# deux graphies coexistaient (« inprogress » / « in_progress ») : la valeur
+# canonique est ``in_progress`` (migration 0094 normalise l'existant).
+LEG_STATUSES: tuple[str, ...] = ("planned", "in_progress", "completed", "cancelled")
+
+
+def ensure_utc(dt: datetime | None) -> datetime | None:
+    """Rend un datetime aware UTC (les naïfs sont réputés UTC dans tout l'ERP).
+
+    Les colonnes ``DateTime(timezone=True)`` reviennent aware sous Postgres
+    mais naïves sous SQLite (tests) ; les saisies ``datetime-local`` sont
+    naïves. Toute arithmétique de planification passe par ce helper pour ne
+    jamais mélanger naïf et aware.
+    """
+    if dt is None or dt.tzinfo is not None:
+        return dt
+    return dt.replace(tzinfo=UTC)
+
+
+def parse_form_datetime(value, allow_empty: bool = False) -> datetime | None:
+    """Parse une saisie ``<input type="datetime-local">`` en datetime aware UTC.
+
+    Source unique du parsing de dates de formulaire pour la planification
+    (fiche leg, drag-drop Gantt, ETA-shift capitaine). Lève ``InvalidLegDates``
+    sur valeur manquante (sauf ``allow_empty``) ou malformée.
+    """
+    if value is None or value == "":
+        if allow_empty:
+            return None
+        raise InvalidLegDates("Date required")
+    s = str(value).replace("T", " ")
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError as e:
+        raise InvalidLegDates(f"Invalid date format: {value}") from e
+    return ensure_utc(dt)
+
+
+def refresh_leg_status(leg: Leg) -> str:
+    """Recalcule ``leg.status`` à partir du réel — machine à états unique.
+
+    - ``cancelled`` est sticky (décision humaine, jamais recalculée) ;
+    - ``completed`` = clôture de voyage approuvée (``closure_approved_at``) ;
+    - ``in_progress`` = du premier fait réel (ATD ou ATA posé) à la clôture ;
+    - ``planned`` sinon.
+
+    Tous les flux qui posent ATD/ATA ou touchent la clôture (SOF capitaine,
+    statut portuaire escale, workflow closure) DOIVENT passer par ici plutôt
+    que d'écrire ``leg.status`` directement.
+    """
+    if leg.status == "cancelled":
+        return leg.status
+    if leg.closure_approved_at is not None:
+        leg.status = "completed"
+    elif leg.atd is not None or leg.ata is not None:
+        leg.status = "in_progress"
+    else:
+        leg.status = "planned"
+    return leg.status
+
 
 @dataclass(frozen=True)
 class CascadeReport:
     leg_id: int
     delta: timedelta
     impacted_leg_ids: list[int]
+    renumbered: list[tuple[int, str, str]] = field(default_factory=list)
 
     @property
     def delta_hours(self) -> float:
@@ -84,6 +146,7 @@ async def validate_leg_schedule(
     transit_speed_kn: float | None = None,
     elongation_coef: float | None = None,
     exclude_leg_id: int | None = None,
+    ignore_overlap_leg_ids: Iterable[int] = (),
 ) -> list[str]:
     """Contrôles d'intégrité d'un leg avant create/update.
 
@@ -95,6 +158,15 @@ async def validate_leg_schedule(
       - **Cohérence vitesse/distance** : la durée ne peut impliquer une
         vitesse > MAX_PLAUSIBLE_SPEED_KN, ni > 1.5× la vitesse planifiée.
 
+    Les legs **annulés** ne comptent ni pour le chevauchement ni pour la
+    continuité : annuler un leg libère son créneau.
+
+    ``ignore_overlap_leg_ids`` = legs aval que la cascade va décaler : la
+    validation d'un déplacement porte sur l'état FINAL (source déplacée +
+    aval recalés), ces legs sont donc exemptés du test de chevauchement
+    (leur position finale est garantie sans conflit par la simulation).
+    Ils restent pris en compte pour la continuité (l'ordre est préservé).
+
     Renvoie une liste d'**avertissements** non bloquants (ex. continuité
     douteuse mais tolérée). Les violations dures lèvent.
     """
@@ -102,13 +174,20 @@ async def validate_leg_schedule(
     from app.services.ports import haversine_nm
 
     warnings: list[str] = []
+    ignored = set(ignore_overlap_leg_ids)
 
     # ── 1. Chevauchement temporel sur le même navire ──────────────────
     overlap_stmt = (
-        select(Leg).where(Leg.vessel_id == vessel_id).where(Leg.etd < eta).where(Leg.eta > etd)
+        select(Leg)
+        .where(Leg.vessel_id == vessel_id)
+        .where(Leg.status != "cancelled")
+        .where(Leg.etd < eta)
+        .where(Leg.eta > etd)
     )
     if exclude_leg_id is not None:
         overlap_stmt = overlap_stmt.where(Leg.id != exclude_leg_id)
+    if ignored:
+        overlap_stmt = overlap_stmt.where(Leg.id.not_in(ignored))
     clash = (await db.execute(overlap_stmt.limit(1))).scalar_one_or_none()
     if clash is not None:
         raise LegOverlap(
@@ -121,6 +200,7 @@ async def validate_leg_schedule(
     prev_stmt = (
         select(Leg)
         .where(Leg.vessel_id == vessel_id)
+        .where(Leg.status != "cancelled")
         .where(Leg.etd < etd)
         .order_by(Leg.etd.desc())
         .limit(1)
@@ -138,6 +218,7 @@ async def validate_leg_schedule(
     next_stmt = (
         select(Leg)
         .where(Leg.vessel_id == vessel_id)
+        .where(Leg.status != "cancelled")
         .where(Leg.etd > etd)
         .order_by(Leg.etd.asc())
         .limit(1)
@@ -181,6 +262,19 @@ async def validate_leg_schedule(
     return warnings
 
 
+RANK_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def rank_letter(sequence: int) -> str:
+    """Rang chronologique du leg dans l'année → lettre (1=A, 2=B, … 26=Z)."""
+    if not 1 <= sequence <= len(RANK_LETTERS):
+        raise PlanningError(
+            f"Rang de leg hors plage (1-{len(RANK_LETTERS)}) : {sequence}. "
+            "Le format leg_code n'encode qu'une lettre de rang par année."
+        )
+    return RANK_LETTERS[sequence - 1]
+
+
 def _leg_code_for(
     vessel_code: str,
     pol_country: str,
@@ -188,21 +282,114 @@ def _leg_code_for(
     etd: datetime,
     sequence: int = 1,
 ) -> str:
-    """Génère le leg_code : ``{seq}{vessel_code}{POL}{POD}{year_digit}``
+    """Génère le leg_code — format officiel NEWTOWT :
 
-    ``seq`` est la position numérique du leg dans l'année pour ce navire
-    (1 = 1er leg de l'année, 2 = 2ème, …). ``year_digit`` est le dernier
-    chiffre de l'année de l'ETD.
-    Ex. ``1CFRBR6`` (1er leg du navire C en 2026, FR→BR).
+    ``{code navire (1 chiffre)}{rang dans l'année (1 lettre, A=1er)}``
+    ``{pays POL (2 lettres)}{pays POD (2 lettres)}{dernier chiffre année}``
+
+    Ex. ``1CFRBR6`` = navire **1** (Anemos), **3ᵉ** voyage de 2026 (C),
+    France → Brésil. Le rang est la position chronologique par ETD dans
+    l'année civile pour ce navire (cf. ``renumber_vessel_year``).
     """
     year_last_digit = str(etd.year)[-1]
     return (
-        f"{sequence}"
         f"{vessel_code}"
+        f"{rank_letter(sequence)}"
         f"{pol_country.upper()[:2]}"
         f"{pod_country.upper()[:2]}"
         f"{year_last_digit}"
     )
+
+
+async def renumber_vessel_year(
+    db: AsyncSession, vessel_id: int, year: int
+) -> list[tuple[int, str, str]]:
+    """Recale les leg_codes d'un navire sur une année : rang = position ETD.
+
+    Le rang (lettre) reflète TOUJOURS l'ordre chronologique réel des ETD de
+    l'année civile — insérer, décaler ou supprimer un leg renumérote les
+    voisins. Les legs **annulés** sont exclus de la numérotation (leur code
+    est figé, le remplaçant récupère le rang).
+
+    Renumérotation en deux phases (codes temporaires ``~{id}`` puis codes
+    finaux) pour ne jamais violer l'unicité pendant les échanges de rang.
+    Renvoie la liste des changements ``(leg_id, ancien_code, nouveau_code)``.
+    """
+    from app.models.port import Port
+    from app.models.vessel import Vessel
+
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        return []
+    year_start = datetime(year, 1, 1, tzinfo=UTC)
+    year_end = datetime(year + 1, 1, 1, tzinfo=UTC)
+    legs = list(
+        (
+            await db.execute(
+                select(Leg)
+                .where(Leg.vessel_id == vessel_id)
+                .where(Leg.etd >= year_start)
+                .where(Leg.etd < year_end)
+                .where(Leg.status != "cancelled")
+                .order_by(Leg.etd.asc(), Leg.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not legs:
+        return []
+
+    port_ids = {lg.departure_port_id for lg in legs} | {lg.arrival_port_id for lg in legs}
+    ports = {
+        p.id: p
+        for p in (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()
+    }
+
+    targets: dict[int, str] = {}
+    for seq, lg in enumerate(legs, start=1):
+        pol = ports.get(lg.departure_port_id)
+        pod = ports.get(lg.arrival_port_id)
+        if not (pol and pod):
+            continue
+        candidate = _leg_code_for(vessel.code, pol.country, pod.country, lg.etd, seq)
+        if candidate != lg.leg_code:
+            targets[lg.id] = candidate
+    if not targets:
+        return []
+
+    # Collision hors périmètre (autre navire, leg annulé figé, collision
+    # décennale du chiffre d'année) → erreur explicite plutôt qu'un
+    # IntegrityError opaque au commit.
+    in_scope = {lg.id for lg in legs}
+    clash = (
+        await db.execute(
+            select(Leg)
+            .where(Leg.leg_code.in_(list(targets.values())))
+            .where(Leg.id.not_in(in_scope))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if clash is not None:
+        raise PlanningError(
+            f"Renumérotation impossible : le code {clash.leg_code} est déjà "
+            f"porté par un leg hors périmètre (id={clash.id}). Résolvez la "
+            "collision (leg annulé homonyme ou collision décennale) d'abord."
+        )
+
+    changes: list[tuple[int, str, str]] = []
+    # Phase 1 — codes temporaires (uniques par construction).
+    for lg in legs:
+        if lg.id in targets:
+            changes.append((lg.id, lg.leg_code, targets[lg.id]))
+            lg.leg_code = f"~{lg.id}"
+    await db.flush()
+    # Phase 2 — codes définitifs.
+    for lg in legs:
+        if lg.id in targets:
+            lg.leg_code = targets[lg.id]
+    await db.flush()
+    return changes
 
 
 # ---------------------------------------------------------------------------
@@ -260,10 +447,12 @@ async def create_leg(
             "déjà passée. Décalez l'ETD ou désactivez l'ouverture à la réservation."
         )
 
-    # If leg_code not supplied, derive one (best-effort; admin can edit).
-    if leg_code is None:
-        from sqlalchemy import func
-
+    # Si leg_code non fourni : insertion avec un code provisoire, puis
+    # renumérotation de l'année du navire — le rang (lettre) reflète la
+    # position CHRONOLOGIQUE par ETD, pas l'ordre de création. Insérer un
+    # leg « au milieu » renumérote donc aussi les legs suivants de l'année.
+    auto_code = leg_code is None
+    if auto_code:
         from app.models.port import Port
         from app.models.vessel import Vessel
 
@@ -272,32 +461,7 @@ async def create_leg(
         pod = await db.get(Port, arrival_port_id)
         if not (vessel and pol and pod):
             raise PlanningError("Invalid vessel/port references")
-
-        # Séquence = nombre de legs déjà planifiés pour ce navire dans l'année + 1.
-        year_start = datetime(etd.year, 1, 1, tzinfo=UTC)
-        year_end = datetime(etd.year, 12, 31, 23, 59, tzinfo=UTC)
-        existing_count = (
-            await db.scalar(
-                select(func.count(Leg.id)).where(
-                    Leg.vessel_id == vessel_id,
-                    Leg.etd >= year_start,
-                    Leg.etd <= year_end,
-                )
-            )
-            or 0
-        )
-        start_seq = existing_count + 1
-
-        # Cherche un code libre à partir de la séquence calculée.
-        leg_code = _leg_code_for(vessel.code, pol.country, pod.country, etd, start_seq)
-        for seq in range(start_seq, start_seq + 26):
-            candidate = _leg_code_for(vessel.code, pol.country, pod.country, etd, seq)
-            existing = (
-                await db.execute(select(Leg).where(Leg.leg_code == candidate))
-            ).scalar_one_or_none()
-            if not existing:
-                leg_code = candidate
-                break
+        leg_code = f"~new{uuid.uuid4().hex[:8]}"
 
     leg = Leg(
         leg_code=leg_code,
@@ -319,7 +483,78 @@ async def create_leg(
     )
     db.add(leg)
     await db.flush()
+    if auto_code:
+        await renumber_vessel_year(db, vessel_id, etd.year)
     return leg
+
+
+async def _lane_after(
+    db: AsyncSession, *, vessel_id: int, after_etd: datetime, exclude_leg_id: int
+) -> list[Leg]:
+    """Legs (non annulés) du navire dont l'ETD est postérieur à ``after_etd``.
+
+    C'est la « voie » aval sur laquelle porte la cascade — y compris les
+    legs déjà appareillés (ATD posé), qui sont IMMOBILES mais participent
+    à la détection de conflit.
+    """
+    stmt = (
+        select(Leg)
+        .where(Leg.vessel_id == vessel_id)
+        .where(Leg.id != exclude_leg_id)
+        .where(Leg.status != "cancelled")
+        .where(Leg.etd > after_etd)
+        .order_by(Leg.etd.asc())
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+def plan_downstream_shifts(
+    downstream: Sequence[Leg],
+    *,
+    delta: timedelta,
+    source_eta: datetime,
+) -> dict[int, tuple[datetime, datetime]]:
+    """Positions finales (etd, eta) des legs aval après cascade — pur, sans I/O.
+
+    Deux passes (mêmes règles que le moteur scénario, généralisées au réel) :
+      1. **Décalage rigide** : les legs non appareillés (ATD null) sont
+         translatés de ``delta`` — la planification relative est préservée.
+      2. **Résolution des chevauchements** : parcours par ETD tentatif
+         croissant ; tout leg qui démarrerait avant la fin du précédent est
+         repoussé (durée conservée). Couvre l'allongement d'ETA sans
+         décalage d'ETD (``delta`` nul).
+
+    RÈGLE D'OR : un leg déjà appareillé (ATD posé) ne bouge JAMAIS. Si la
+    résolution exigerait de le déplacer, lève ``LegOverlap`` — l'opérateur
+    doit arbitrer manuellement.
+
+    Renvoie ``{leg_id: (etd_final, eta_final)}`` pour TOUTE la voie aval
+    (y compris les legs immobiles, à leur position d'origine).
+    """
+    pos: dict[int, tuple[datetime, datetime]] = {}
+    for lg in downstream:
+        etd0, eta0 = ensure_utc(lg.etd), ensure_utc(lg.eta)
+        if lg.atd is None and delta:
+            pos[lg.id] = (etd0 + delta, eta0 + delta)
+        else:
+            pos[lg.id] = (etd0, eta0)
+
+    prev_eta = ensure_utc(source_eta)
+    for lg in sorted(downstream, key=lambda x: pos[x.id][0]):
+        petd, peta = pos[lg.id]
+        if petd < prev_eta:
+            if lg.atd is not None:
+                raise LegOverlap(
+                    f"Recalcul impossible : le leg {lg.leg_code} a déjà "
+                    f"appareillé (ATD posé) et se retrouverait chevauché. "
+                    f"Ajustez la planification manuellement."
+                )
+            push = prev_eta - petd
+            petd, peta = petd + push, peta + push
+            pos[lg.id] = (petd, peta)
+        if peta > prev_eta:
+            prev_eta = peta
+    return pos
 
 
 async def update_leg(
@@ -339,50 +574,68 @@ async def update_leg(
     elongation_coef: float | None = None,
     port_stay_planned_hours: int | None = None,
     cascade: bool = True,
+    source: str = "planning_edit",
+    actor_id: int | None = None,
+    actor_name: str | None = None,
 ) -> CascadeReport | None:
-    """Update a leg in place. If etd shifts and cascade=True, propagate the
-    delta to all downstream legs of the same vessel that haven't sailed yet.
+    """Met à jour un leg. Toute modification de dates recalcule l'aval.
 
-    When vessel_id, departure_port_id, arrival_port_id ou etd's year change,
-    the leg_code is recomputed par ``_leg_code_for`` — format canonique
-    ``{seq}{vessel_code}{POL}{POD}{year_digit}`` (ex. ``1CFRBR6``).
+    Déroulé : **valider d'abord, muter ensuite** (``get_db`` committe même
+    quand la route intercepte l'erreur pour re-rendre le formulaire — on ne
+    laisse donc jamais la session sale sur une validation échouée).
 
-    Returns the CascadeReport, ou None si aucune cascade n'a été effectuée.
+    1. La cascade est **simulée** (``plan_downstream_shifts``) : la
+       validation de chevauchement porte sur l'état FINAL — un décalage
+       supérieur à l'interstice avec le leg suivant est accepté puisque
+       l'aval sera repoussé d'autant.
+    2. Les mutations sont appliquées, ``booking_close_at`` suit l'ETD.
+    3. ``date_cascade.cascade_from_leg`` propage (legs aval, opérations
+       escale, shifts dockers, notifications clients, révisions).
+    4. Les leg_codes des années/navires touchés sont renumérotés (le rang
+       est chronologique — cf. ``renumber_vessel_year``).
+
+    La cascade ne s'applique que si le navire ne change pas : déplacer un
+    leg vers un autre navire n'a pas de « delta » transposable.
+
+    ``source`` qualifie l'origine du recalcul dans ``schedule_revisions``
+    (``planning_edit`` | ``gantt_move`` | ``eta_shift``).
     """
-    from app.models.port import Port
-    from app.models.vessel import Vessel
-
-    new_etd = etd or leg.etd
-    new_eta = eta or leg.eta
+    new_etd = ensure_utc(etd) or ensure_utc(leg.etd)
+    new_eta = ensure_utc(eta) or ensure_utc(leg.eta)
     validate_dates(new_etd, new_eta)
 
-    delta = new_etd - leg.etd
-    # Capture old reference points BEFORE applying changes. La frontière de
-    # cascade (ancien ETD) est reconstituée dans date_cascade via leg.etd-delta.
-    old_vessel_id = leg.vessel_id
-    old_pol_id = leg.departure_port_id
-    old_pod_id = leg.arrival_port_id
-    old_year_digit = str(leg.etd.year)[-1]
-
-    leg.etd = new_etd
-    leg.eta = new_eta
-
-    if vessel_id is not None:
-        leg.vessel_id = vessel_id
-    if departure_port_id is not None:
-        leg.departure_port_id = departure_port_id
-    if arrival_port_id is not None:
-        leg.arrival_port_id = arrival_port_id
-    if leg.departure_port_id == leg.arrival_port_id:
+    new_vessel_id = vessel_id if vessel_id is not None else leg.vessel_id
+    new_pol_id = departure_port_id if departure_port_id is not None else leg.departure_port_id
+    new_pod_id = arrival_port_id if arrival_port_id is not None else leg.arrival_port_id
+    if new_pol_id == new_pod_id:
         raise InvalidLegDates("Departure and arrival ports must differ")
 
-    # Contrôles d'intégrité sur la nouvelle planification (exclut le leg
-    # courant des comparaisons chevauchement/continuité).
+    old_etd = ensure_utc(leg.etd)
+    old_eta = ensure_utc(leg.eta)
+    old_vessel_id = leg.vessel_id
+    old_year = leg.etd.year
+    delta = new_etd - old_etd
+    dates_changed = (new_etd != old_etd) or (new_eta != old_eta)
+    vessel_changed = new_vessel_id != old_vessel_id
+    do_cascade = cascade and dates_changed and not vessel_changed
+
+    # ── 1. Simulation de la cascade (état final) ──────────────────────
+    moved_ids: set[int] = set()
+    if do_cascade:
+        lane = await _lane_after(
+            db, vessel_id=new_vessel_id, after_etd=old_etd, exclude_leg_id=leg.id
+        )
+        planned = plan_downstream_shifts(lane, delta=delta, source_eta=new_eta)
+        moved_ids = {
+            lg.id for lg in lane if planned[lg.id] != (ensure_utc(lg.etd), ensure_utc(lg.eta))
+        }
+
+    # ── 2. Validation sur l'état FINAL (aval recalé exempté du test) ──
     await validate_leg_schedule(
         db,
-        vessel_id=leg.vessel_id,
-        departure_port_id=leg.departure_port_id,
-        arrival_port_id=leg.arrival_port_id,
+        vessel_id=new_vessel_id,
+        departure_port_id=new_pol_id,
+        arrival_port_id=new_pod_id,
         etd=new_etd,
         eta=new_eta,
         transit_speed_kn=(
@@ -390,7 +643,15 @@ async def update_leg(
         ),
         elongation_coef=(elongation_coef if elongation_coef is not None else leg.elongation_coef),
         exclude_leg_id=leg.id,
+        ignore_overlap_leg_ids=moved_ids,
     )
+
+    # ── 3. Mutations ──────────────────────────────────────────────────
+    leg.etd = new_etd
+    leg.eta = new_eta
+    leg.vessel_id = new_vessel_id
+    leg.departure_port_id = new_pol_id
+    leg.arrival_port_id = new_pod_id
 
     if is_bookable is not None:
         leg.is_bookable = is_bookable
@@ -400,6 +661,9 @@ async def update_leg(
         leg.public_price_per_palette_eur = public_price_per_palette_eur
     if booking_close_at is not None:
         leg.booking_close_at = booking_close_at
+    elif delta and leg.booking_close_at is not None:
+        # La clôture booking reste ancrée à l'ETD : elle suit le décalage.
+        leg.booking_close_at = ensure_utc(leg.booking_close_at) + delta
     elif etd is not None and leg.booking_close_at is None:
         # ETD modifiée + pas de clôture définie -> auto ETD-48h
         leg.booking_close_at = new_etd - timedelta(hours=BOOKING_CLOSE_LEAD_HOURS)
@@ -409,55 +673,59 @@ async def update_leg(
         leg.elongation_coef = elongation_coef
     if port_stay_planned_hours is not None:
         leg.port_stay_planned_hours = port_stay_planned_hours
-
-    # Recompute leg_code si l'une de ses entrées a changé
-    if (
-        leg.vessel_id != old_vessel_id
-        or leg.departure_port_id != old_pol_id
-        or leg.arrival_port_id != old_pod_id
-        or str(leg.etd.year)[-1] != old_year_digit
-    ):
-        vessel = await db.get(Vessel, leg.vessel_id)
-        pol = await db.get(Port, leg.departure_port_id)
-        pod = await db.get(Port, leg.arrival_port_id)
-        if vessel and pol and pod:
-            for seq in range(1, 100):
-                candidate = _leg_code_for(
-                    vessel.code,
-                    pol.country,
-                    pod.country,
-                    leg.etd,
-                    seq,
-                )
-                if candidate == leg.leg_code:
-                    break  # Déjà unique avec cette séquence — on garde
-                existing = (
-                    await db.execute(
-                        select(Leg).where(Leg.leg_code == candidate).where(Leg.id != leg.id)
-                    )
-                ).scalar_one_or_none()
-                if not existing:
-                    leg.leg_code = candidate
-                    break
-
-    if not cascade or delta == timedelta(0):
-        await db.flush()
-        return None
-
-    # Cascade complète (UC-03) : legs aval du même navire + opérations escale
-    # + shifts dockers + notification des clients impactés. La logique vit
-    # dans date_cascade.cascade_from_leg (best-effort, isolé par bloc) afin
-    # d'être appelable aussi depuis l'ETA-shift capitaine. La frontière des
-    # legs aval (ancien ETD) est reconstituée côté service via leg.etd - delta.
-    from app.services import date_cascade
-
-    summary = await date_cascade.cascade_from_leg(db, leg, delta=delta)
     await db.flush()
-    # CascadeReport.impacted_leg_ids = legs AVAL décalés (hors leg source),
-    # pour préserver le contrat historique (le détail audit compte les legs
-    # propagés). summary["impacted_leg_ids"] inclut le leg source en tête.
+
+    # ── 4. Historisation + cascade effective ──────────────────────────
+    batch_id = uuid.uuid4().hex[:12]
+    summary: dict = {}
+    if dates_changed:
+        from app.services import schedule_history
+
+        await schedule_history.record(
+            db,
+            leg=leg,
+            old_etd=old_etd,
+            new_etd=new_etd,
+            old_eta=old_eta,
+            new_eta=new_eta,
+            source=source,
+            batch_id=batch_id,
+            user_id=actor_id,
+            user_name=actor_name,
+        )
+    if do_cascade:
+        from app.services import date_cascade
+
+        summary = await date_cascade.cascade_from_leg(
+            db,
+            leg,
+            old_etd=old_etd,
+            old_eta=old_eta,
+            source=source,
+            batch_id=batch_id,
+            actor_id=actor_id,
+            actor_name=actor_name,
+        )
+
+    # ── 5. Renumérotation des leg_codes (rang chronologique) ──────────
+    renumbered: list[tuple[int, str, str]] = []
+    pairs = {(old_vessel_id, old_year), (leg.vessel_id, leg.etd.year)}
+    for vid, yr in pairs:
+        renumbered += await renumber_vessel_year(db, vid, yr)
+    renumbered += summary.get("renumbered", [])
+
+    await db.flush()
+    if not do_cascade:
+        return (
+            CascadeReport(leg_id=leg.id, delta=delta, impacted_leg_ids=[], renumbered=renumbered)
+            if dates_changed or renumbered
+            else None
+        )
+    # CascadeReport.impacted_leg_ids = legs AVAL décalés (hors leg source).
     downstream_ids = [lid for lid in summary.get("impacted_leg_ids", []) if lid != leg.id]
-    return CascadeReport(leg_id=leg.id, delta=delta, impacted_leg_ids=downstream_ids)
+    return CascadeReport(
+        leg_id=leg.id, delta=delta, impacted_leg_ids=downstream_ids, renumbered=renumbered
+    )
 
 
 async def delete_leg(db: AsyncSession, leg: Leg) -> None:
@@ -520,8 +788,12 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
     # refuserait sinon avec un IntegrityError opaque).
     await _nullify_optional_fks(db, leg.id)
 
+    vessel_id, year = leg.vessel_id, leg.etd.year
     await db.delete(leg)
     await db.flush()
+    # Le rang (lettre du leg_code) est chronologique : la suppression
+    # renumérote les legs suivants de l'année.
+    await renumber_vessel_year(db, vessel_id, year)
 
 
 async def _nullify_optional_fks(db: AsyncSession, leg_id: int) -> None:
@@ -542,12 +814,23 @@ async def _nullify_optional_fks(db: AsyncSession, leg_id: int) -> None:
     from app.models.commercial import Order
     from app.models.crew_ticket import CrewTicket
     from app.models.onboard_cashbox import CashboxMovement
+    from app.models.schedule_revision import ScheduleRevision
     from app.models.ticket import Ticket
 
     # CashboxMovement (pas OnboardCashbox) porte le leg_id : un mouvement
     # cash est rattaché à un leg, le coffre lui-même non.
     for model in (Claim, Ticket, CashboxMovement, CrewTicket, AnemosCertificate, Order):
         await db.execute(update(model).where(model.leg_id == leg_id).values(leg_id=None))
+    # L'historique de recalcul survit à la suppression du leg (snapshot
+    # leg_code conservé) — on délie les deux FK.
+    await db.execute(
+        update(ScheduleRevision).where(ScheduleRevision.leg_id == leg_id).values(leg_id=None)
+    )
+    await db.execute(
+        update(ScheduleRevision)
+        .where(ScheduleRevision.trigger_leg_id == leg_id)
+        .values(trigger_leg_id=None)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -678,6 +961,43 @@ def leg_delay_hours(leg: Leg) -> float:
 def is_delayed(leg: Leg, threshold_hours: float = DELAY_THRESHOLD_HOURS) -> bool:
     """True si le leg accuse un retard ≥ seuil vs sa référence (PLN-05)."""
     return leg_delay_hours(leg) >= threshold_hours
+
+
+def continuity_warnings(
+    legs: Sequence[Leg],
+    ports: dict[int, object],
+    vessels: dict[int, object] | None = None,
+) -> list[str]:
+    """Ruptures de continuité géographique sur le planning réel (par navire).
+
+    Une suppression de leg intermédiaire ou un changement de navire peut
+    laisser un trou POD ≠ POL sans qu'aucune validation ne se déclenche :
+    cette fonction alimente le bandeau d'avertissement du Gantt réel.
+    Les legs annulés sont ignorés. Ne lève jamais.
+    """
+    warnings: list[str] = []
+    by_vessel: dict[int, list[Leg]] = {}
+    for leg in legs:
+        if leg.status == "cancelled":
+            continue
+        by_vessel.setdefault(leg.vessel_id, []).append(leg)
+
+    from itertools import pairwise
+
+    for vessel_id, vessel_legs in by_vessel.items():
+        ordered = sorted(vessel_legs, key=lambda li: ensure_utc(li.etd))
+        for cur, nxt in pairwise(ordered):
+            if cur.arrival_port_id != nxt.departure_port_id:
+                pod = ports.get(cur.arrival_port_id)
+                pol = ports.get(nxt.departure_port_id)
+                vessel = (vessels or {}).get(vessel_id)
+                vname = getattr(vessel, "name", None) or f"navire #{vessel_id}"
+                warnings.append(
+                    f"{vname} : rupture de continuité entre {cur.leg_code} "
+                    f"(arrivée {getattr(pod, 'locode', '?')}) et {nxt.leg_code} "
+                    f"(départ {getattr(pol, 'locode', '?')})."
+                )
+    return warnings
 
 
 def detect_port_conflicts(

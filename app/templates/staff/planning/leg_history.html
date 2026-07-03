@@ -1,0 +1,93 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Historique {{ leg.leg_code }} — Planning{% endblock %}
+{% block content %}
+
+<a href="/planning/legs/{{ leg.id }}" class="btn btn-ghost mb-3">← {{ leg.leg_code }}</a>
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Traçabilité planification</span>
+    <h1 class="display">Historique des recalculs — <span class="mono" style="color:var(--cuivre);">{{ leg.leg_code }}</span></h1>
+    <p class="text-muted">{{ vessel.name if vessel else '—' }} · toutes les révisions de dates de ce leg (subies et déclenchées), avec leur origine.</p>
+  </div>
+</header>
+
+<article class="card">
+  <h2>Révisions de dates ({{ revisions|length }})</h2>
+  {% if revisions %}
+  <table>
+    <thead>
+      <tr>
+        <th>Quand</th>
+        <th>Leg</th>
+        <th>Origine</th>
+        <th>ETD</th>
+        <th>ETA</th>
+        <th>Motif</th>
+        <th>Par</th>
+        <th>Lot</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in revisions %}
+      <tr>
+        <td class="mono text-sm">{{ r.created_at|datetime }}</td>
+        <td>
+          <span class="mono">{{ r.leg_code or '—' }}</span>
+          {% if r.trigger_leg_id and r.leg_id != leg.id %}<span class="text-muted text-sm">(aval)</span>{% endif %}
+        </td>
+        <td>
+          {% if r.source == 'planning_edit' %}<span class="pill pill-info">Fiche planning</span>
+          {% elif r.source == 'gantt_move' %}<span class="pill pill-info">Drag-drop Gantt</span>
+          {% elif r.source == 'eta_shift' %}<span class="pill pill-warn">ETA-shift bord</span>
+          {% elif r.source == 'cascade' %}<span class="pill pill-neutral">Cascade</span>
+          {% else %}<span class="pill pill-neutral">{{ r.source }}</span>{% endif %}
+        </td>
+        <td class="mono text-sm">
+          {% if r.old_etd and r.new_etd and r.old_etd != r.new_etd %}
+            {{ r.old_etd|datetime }} → <strong>{{ r.new_etd|datetime }}</strong>
+          {% elif r.new_etd %}{{ r.new_etd|datetime }}{% else %}—{% endif %}
+        </td>
+        <td class="mono text-sm">
+          {% if r.old_eta and r.new_eta and r.old_eta != r.new_eta %}
+            {{ r.old_eta|datetime }} → <strong>{{ r.new_eta|datetime }}</strong>
+          {% elif r.new_eta %}{{ r.new_eta|datetime }}{% else %}—{% endif %}
+        </td>
+        <td class="text-sm">{{ r.reason or '—' }}{% if r.detail %} <span class="text-muted">· {{ r.detail }}</span>{% endif %}</td>
+        <td class="text-sm">{{ r.user_name or 'système' }}</td>
+        <td class="mono text-sm text-muted">{{ r.batch_id[:6] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucune révision de dates enregistrée pour ce leg.</p>
+  {% endif %}
+</article>
+
+<article class="card mt-4">
+  <h2>ETA-shifts déclarés par le bord ({{ eta_shifts|length }})</h2>
+  {% if eta_shifts %}
+  <table>
+    <thead>
+      <tr><th>Déclaré le</th><th>Ancienne ETA</th><th>Nouvelle ETA</th><th>Motif</th><th>Détail</th><th>Par</th></tr>
+    </thead>
+    <tbody>
+      {% for s in eta_shifts %}
+      <tr>
+        <td class="mono text-sm">{{ s.declared_at|datetime }}</td>
+        <td class="mono text-sm">{{ s.previous_eta|datetime }}</td>
+        <td class="mono text-sm"><strong>{{ s.new_eta|datetime }}</strong></td>
+        <td>{{ s.reason }}</td>
+        <td class="text-sm text-muted">{{ s.detail or '—' }}</td>
+        <td class="text-sm">{{ s.declared_by_name or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucun décalage d'ETA déclaré par le bord.</p>
+  {% endif %}
+</article>
+
+{% endblock %}

@@ -84,6 +84,7 @@ from app.models.port import Port
 from app.models.quote import Quote, QuoteLine
 from app.models.rate_limit import RateLimitAttempt
 from app.models.role_permission import RolePermission
+from app.models.schedule_revision import ScheduleRevision
 from app.models.silae_export_batch import SilaeExportBatch
 from app.models.sof_event import (
     CargoDocument,
@@ -183,6 +184,7 @@ __all__ = [
     "RateOffer",
     "RolePermission",
     "ScenarioLeg",
+    "ScheduleRevision",
     "SilaeExportBatch",
     "SofEvent",
     "StowageItem",

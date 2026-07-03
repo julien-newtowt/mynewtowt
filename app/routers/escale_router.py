@@ -744,10 +744,12 @@ async def update_port_status(
     _assert_escale_unlocked(leg)
     t = _to_utc(_parse_iso(status_time)) or datetime.now(UTC)
 
+    from app.services.planning import refresh_leg_status
+
     if new_status == "a_quai":
         first_arrival = leg.ata is None  # garde d'idempotence (avant mutation)
         leg.ata = t
-        leg.status = "in_progress"
+        refresh_leg_status(leg)
         await on_vessel_arrived(db, leg)  # idempotent : ata déjà posée, avance bookings
         await rollup_for_leg(db, leg)
         if first_arrival:
@@ -759,8 +761,16 @@ async def update_port_status(
                 detail="Renseigner d'abord le statut « à quai » (ATA) avant le départ.",
             )
         first_departure = leg.atd is None  # garde d'idempotence (avant mutation)
-        leg.atd = t
-        leg.status = "completed"
+        # L'ATD du leg est le départ RÉEL du POL, posé par le SOF du
+        # commandant (SOSP) : le flux escale ne l'écrase JAMAIS — poser ici
+        # l'heure du « pilote départ » (sortie du port d'ARRIVÉE) écrasait
+        # la donnée du bord avec un horodatage postérieur à l'ATA.
+        if first_departure:
+            leg.atd = t
+        # Statut dérivé de la machine à états unique : le leg reste
+        # « en cours » jusqu'à l'approbation de clôture (plus de passage
+        # direct à « completed » depuis l'escale).
+        refresh_leg_status(leg)
         await on_vessel_departed(db, leg)
         await rollup_for_leg(db, leg)
         if first_departure:

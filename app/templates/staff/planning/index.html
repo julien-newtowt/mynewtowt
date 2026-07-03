@@ -44,10 +44,30 @@
   {% endif %}
 </div>
 
-<section class="card" style="overflow-x:auto;">
-  <h2 class="mb-3">Vue Gantt {{ selected_year }} — année entière</h2>
+{% if continuity_alerts %}
+<div class="alert alert-warn mb-3">
+  <strong>⚠ Ruptures de continuité géographique</strong>
+  <ul style="margin:var(--space-1) 0 0 var(--space-4);">
+    {% for w in continuity_alerts %}<li class="text-sm">{{ w }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
 
-  <div class="gantt-wrapper" style="min-width:1100px;">
+{% if can_move %}
+<style>
+  [data-draggable-bar] { cursor: grab; }
+  [data-draggable-bar]:active { cursor: grabbing; }
+</style>
+{% endif %}
+
+<section class="card" style="overflow-x:auto;">
+  <h2 class="mb-3">Vue Gantt {{ selected_year }} — année entière
+    {% if can_move %}<span class="text-muted text-sm" style="font-weight:normal;">(glisser une barre planifiée pour décaler — cascade automatique)</span>{% endif %}
+  </h2>
+
+  <div class="gantt-wrapper" style="min-width:1100px;"
+       {% if can_move %}data-gantt-drag data-move-base="/planning/legs"
+       data-window-start="{{ window_start_ms }}" data-window-end="{{ window_end_ms }}"{% endif %}>
     <div class="gantt-timeline" style="display:grid; grid-template-columns:200px 1fr; gap:var(--space-2); margin-bottom:var(--space-2);">
       <div></div>
       <div class="gantt-axis" style="position:relative; height:28px; border-bottom:1px solid var(--gris-clair);">
@@ -74,6 +94,7 @@
             {% set _catcolor = {'export':'var(--bleu-marine)','import':'var(--cuivre)','hors_europe':'var(--gris)','intra_eu':'var(--vert)'} %}
             <a href="/planning/legs/{{ bar.leg_id }}"
                class="gantt-bar"
+               {% if can_move and bar.status == 'planned' %}data-draggable-bar data-leg-id="{{ bar.leg_id }}"{% endif %}
                style="position:absolute; left:{{ bar.left_pct }}%; width:{{ bar.width_pct }}%; top:4px; bottom:4px;
                       background: {{ _catcolor.get(bar.category, 'var(--teal)') }};
                       {% if bar.status == 'cancelled' %}opacity:0.45; text-decoration:line-through;{% endif %}
@@ -130,7 +151,7 @@
           <td>{{ leg.eta|date }}</td>
           <td>
             {% if leg.status == 'planned' %}<span class="pill pill-info">Planifié</span>
-            {% elif leg.status == 'inprogress' %}<span class="pill pill-warn">En cours</span>
+            {% elif leg.status == 'in_progress' %}<span class="pill pill-warn">En cours</span>
             {% elif leg.status == 'completed' %}<span class="pill pill-ok">Terminé</span>
             {% elif leg.status == 'cancelled' %}<span class="pill pill-neutral">Annulé</span>
             {% else %}<span class="pill pill-neutral">{{ leg.status }}</span>{% endif %}
@@ -145,4 +166,5 @@
   </table>
 </section>
 
+{% if can_move %}<script src="/static/js/planning-gantt-drag.js" defer></script>{% endif %}
 {% endblock %}

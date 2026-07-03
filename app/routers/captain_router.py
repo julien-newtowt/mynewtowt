@@ -285,23 +285,49 @@ async def declare_eta_shift(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ):
+    """UC-03 — le commandant déclare un décalage d'ETA (motif obligatoire).
+
+    Le parsing passe par ``parse_form_datetime`` (aware UTC) : mélanger la
+    saisie naïve du formulaire avec l'ETA aware relue de Postgres levait un
+    ``TypeError`` avalé par ``contextlib.suppress`` — la cascade et les
+    notifications clients ne s'exécutaient jamais en production.
+    """
+    import uuid as _uuid
+
+    from app.services.planning import InvalidLegDates, ensure_utc, parse_form_datetime
+
     if reason not in ETA_SHIFT_REASONS:
         raise HTTPException(status_code=400, detail="invalid reason")
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
+    try:
+        parsed_eta = parse_form_datetime(new_eta)
+    except InvalidLegDates as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    # La nouvelle ETA doit rester postérieure au départ (réel s'il est posé,
+    # prévisionnel sinon) — une ETA avant le départ est forcément une typo.
+    floor = ensure_utc(leg.atd) or ensure_utc(leg.etd)
+    if parsed_eta <= floor:
+        raise HTTPException(
+            status_code=400,
+            detail="La nouvelle ETA doit être postérieure au départ du leg.",
+        )
+
+    previous_eta = ensure_utc(leg.eta)
     shift = EtaShift(
         leg_id=leg_id,
-        previous_eta=leg.eta,
-        new_eta=datetime.fromisoformat(new_eta),
+        previous_eta=previous_eta,
+        new_eta=parsed_eta,
         reason=reason,
         detail=detail,
         declared_by_id=user.id,
         declared_by_name=user.full_name or user.username,
     )
     db.add(shift)
-    leg.eta = shift.new_eta
+    leg.eta = parsed_eta
     await db.flush()
+    batch_id = _uuid.uuid4().hex[:12]
     await activity_record(
         db,
         action="update",
@@ -314,16 +340,52 @@ async def declare_eta_shift(
         entity_label=f"leg={leg_id} reason={reason}",
         ip_address=_client_ip(request),
     )
-    # Alerte interne (commercial).
-    with contextlib.suppress(Exception):
+    # Historisation unifiée du recalcul (schedule_revisions, source=eta_shift).
+    try:
+        from app.services import schedule_history
+
+        await schedule_history.record(
+            db,
+            leg=leg,
+            old_etd=ensure_utc(leg.etd),
+            new_etd=ensure_utc(leg.etd),
+            old_eta=previous_eta,
+            new_eta=parsed_eta,
+            source="eta_shift",
+            batch_id=batch_id,
+            reason=reason,
+            detail=detail,
+            user_id=user.id,
+            user_name=user.full_name or user.username,
+        )
+    except Exception:
+        logger.exception("eta-shift: schedule history failed (leg %s)", leg_id)
+    # Alerte interne (commercial). Best-effort mais JAMAIS silencieux.
+    try:
         await notifications.notify_eta_shift(db, leg.leg_code, leg_id, reason)
+    except Exception:
+        logger.exception("eta-shift: staff notification failed (leg %s)", leg_id)
     # UC-03 — challenge TOUTES les dates dépendantes (legs aval, escales,
-    # dockers, packing lists) ET notifie les clients impactés (source + aval).
-    # La cascade prend en charge la notification client : pas de double envoi.
-    with contextlib.suppress(Exception):
+    # dockers) ET notifie les clients impactés (source + aval). La cascade
+    # prend en charge la notification client : pas de double envoi. Elle est
+    # best-effort en interne (bloc par bloc) ; plus jamais avalée globalement.
+    try:
         from app.services import date_cascade
 
-        await date_cascade.cascade_from_leg(db, leg, delta=shift.new_eta - shift.previous_eta)
+        summary = await date_cascade.cascade_from_leg(
+            db,
+            leg,
+            old_etd=ensure_utc(leg.etd),
+            old_eta=previous_eta,
+            source="eta_shift",
+            batch_id=batch_id,
+            actor_id=user.id,
+            actor_name=user.full_name or user.username,
+        )
+        if summary.get("skipped"):
+            logger.warning("eta-shift cascade partial (leg %s): %s", leg_id, summary["skipped"])
+    except Exception:
+        logger.exception("eta-shift: cascade failed (leg %s)", leg_id)
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
 
 
@@ -1534,7 +1596,9 @@ async def closure_approve(
     leg.closure_approved_at = datetime.now(UTC)
     if notes:
         leg.closure_notes = (leg.closure_notes or "") + f"\n[Approbation] {notes}"
-    leg.status = "completed"
+    from app.services.planning import refresh_leg_status
+
+    refresh_leg_status(leg)  # clôture approuvée → completed
     await db.flush()
 
     # ONB-04 — journal de bord : trace la clôture du voyage (best-effort).
@@ -1594,8 +1658,9 @@ async def closure_reopen(
     leg.closure_reviewed_at = None
     leg.closure_reviewed_by = None
     leg.closure_approved_at = None
-    if leg.status == "completed":
-        leg.status = "in_progress"
+    from app.services.planning import refresh_leg_status
+
+    refresh_leg_status(leg)  # clôture rouverte → retombe sur l'état dérivé du réel
     if notes:
         leg.closure_notes = (leg.closure_notes or "") + f"\n[Réouverture] {notes}"
     await db.flush()
