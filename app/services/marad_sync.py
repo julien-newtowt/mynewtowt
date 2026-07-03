@@ -456,13 +456,36 @@ async def sync_all(db: AsyncSession) -> dict:
                     "(ex. avec/sans suffixe de version)."
                 )
             elif cls == "rate_limited":
+                retry = diag.get("retry_after")
+                body = diag.get("rate_limit_body")
+                retry_part = (
+                    f" Le serveur demande de réessayer dans {retry} s (Retry-After)."
+                    if retry
+                    else " Aucun en-tête Retry-After renvoyé."
+                )
+                # Un 429 SANS Retry-After et avec un corps parlant d'auth trahit
+                # souvent un token refusé (429 anti-bruteforce) et non un vrai
+                # quota — on le signale explicitement.
+                looks_auth = bool(body) and any(
+                    kw in body.lower()
+                    for kw in ("invalid", "unauthor", "forbidden", "api key", "apikey", "token")
+                )
+                body_part = f" Réponse serveur : « {body} »." if body else ""
+                suspect_part = (
+                    " ⚠ Ce 429 ressemble à un refus d'authentification déguisé "
+                    "(message d'auth, pas de Retry-After) : vérifiez d'abord "
+                    "MARAD_API_TOKEN et le header d'auth AVANT de conclure au quota."
+                    if looks_auth and not retry
+                    else ""
+                )
                 diagnostic = (
-                    "Quota Marad atteint (429). Les endpoints crew "
-                    "(GET /api/Crewing, /api/CrewingSchedule) sont limités à "
-                    "1 requête/minute. Attendez ~1 min puis relancez — évitez de "
-                    "cliquer plusieurs fois de suite et laissez le cron espacer les "
-                    "appels. Si l'erreur persiste au-delà de quelques minutes, une "
-                    "autre intégration partage peut-être la clé et sature le quota."
+                    "Marad a renvoyé 429 sur getVessels (endpoint à 15 req/min, "
+                    "donc un 429 dès le 1er appel est anormal pour un simple quota)."
+                    + retry_part
+                    + body_part
+                    + suspect_part
+                    + " Les endpoints crew (/api/Crewing, /api/CrewingSchedule) "
+                    "restent à 1 req/min : espacez les tests d'au moins une minute."
                 )
             elif cls == "ok":
                 diagnostic = (

@@ -311,9 +311,17 @@ async def diagnose() -> dict:
     saw_429 = False
     auth_error_body: str | None = None  # corps du 1er 401/403 (message serveur)
     www_authenticate: str | None = None
+    rate_limit_body: str | None = None  # corps du 429 (quota réel vs auth masquée)
+    retry_after: str | None = None  # en-tête Retry-After du 429 (secondes/date)
+    # Si un schéma d'auth est déjà connu (mémorisé ou épinglé), on ne sonde
+    # QU'UN appel getVessels — indispensable ici : diagnose() est appelé juste
+    # après prime_auth()+crew+schedules, et re-sonder les 8 schémas ferait
+    # sauter le quota de getVessels (→ faux « rate_limited »). La cascade
+    # complète n'a lieu que si l'auth n'a jamais été établie.
+    strategies = _strategies_for_request()
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            for label, headers, auth_params in _auth_strategies():
+            for label, headers, auth_params in strategies:
                 try:
                     r = await client.get(url, headers=headers, params=auth_params or None)
                     any_response = True
@@ -331,10 +339,16 @@ async def diagnose() -> dict:
                         saw_404 = True
                         continue
                     if r.status_code == 429:
-                        # Endpoint à 1 req/min saturé : inutile de continuer à
-                        # sonder (les essais suivants tomberaient dans la même
-                        # fenêtre) — on classe « rate_limited » et on s'arrête.
+                        # Endpoint saturé : inutile de continuer à sonder (les
+                        # essais suivants tomberaient dans la même fenêtre). On
+                        # CAPTURE la réponse serveur : un vrai quota renvoie un
+                        # Retry-After et/ou un corps « rate limit » ; une clé
+                        # invalide renvoyée en 429 (anti-bruteforce) se trahit
+                        # par un corps « invalid/unauthorized ».
                         saw_429 = True
+                        retry_after = r.headers.get("retry-after")
+                        if r.content:
+                            rate_limit_body = r.text[:300]
                         break
                     if r.status_code < 400:
                         authed = True
@@ -375,6 +389,8 @@ async def diagnose() -> dict:
         "vessels_count": vessels_count,
         "auth_error_body": auth_error_body,
         "www_authenticate": www_authenticate,
+        "rate_limit_body": rate_limit_body,
+        "retry_after": retry_after,
         "token_set": bool(token),
         "token_preview": token_preview,
         "token_len": len(token),

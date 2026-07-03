@@ -9,7 +9,13 @@
   Jeton non configuré — définir <code>MARAD_API_TOKEN</code></span>
 {% elif c == "rate_limited" %}
 <span class="pill pill-warn"><i data-lucide="timer"></i>
-  Quota Marad atteint (1 req/min) — réessayer dans une minute</span>
+  Marad a renvoyé 429{% if diag.retry_after %} — Retry-After {{ diag.retry_after }} s{% else %} (sans Retry-After){% endif %}</span>
+{% if diag.rate_limit_body %}
+<div class="text-sm text-muted" style="margin-top:var(--space-1);">
+  Réponse serveur : <code>{{ diag.rate_limit_body }}</code>
+  {% if not diag.retry_after %}<br>⚠ Pas de <code>Retry-After</code> : si ce message parle d'authentification, c'est probablement le <code>MARAD_API_TOKEN</code> / header d'auth qu'il faut vérifier, pas le quota.{% endif %}
+</div>
+{% endif %}
 {% elif c == "auth_refused" %}
 <span class="pill pill-error"><i data-lucide="shield-x"></i>
   Authentification refusée (401/403) — vérifier <code>MARAD_API_TOKEN</code> / <code>MARAD_API_KEY_HEADER</code></span>
