@@ -497,6 +497,109 @@ def test_sync_schedules_tenant_shape_no_ids_matches_by_name(monkeypatch) -> None
     _run_with_db(_check)
 
 
+def test_end_to_end_crew_then_schedules_links_activity_to_member(monkeypatch) -> None:
+    """Flux RÉEL de production : le marin est créé par la sync crew (Marad fournit
+    le GUID), PUIS le planning — qui n'a NI id NI GUID, seulement le nom — doit
+    se rattacher à ce marin.
+
+    C'est la garantie « liaison activité ↔ équipage » : aucun marin n'est créé
+    depuis l'appli, tous viennent de Marad ; la seule clé commune entre
+    /api/Crewing (avec GUID) et /api/CrewingSchedule (sans GUID) est le nom.
+    """
+    from datetime import date
+
+    from app.models.crew import CrewMember, MaradCrewSchedule
+    from app.models.vessel import Vessel
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        s.add(Vessel(code="CF", name="Anemos"))
+        await s.flush()
+
+        # 1) Sync crew — schéma réel /api/Crewing (PascalCase, AVEC GUID).
+        crew_rec = {
+            "ID": _GUID,
+            "FirstName": "Élise",
+            "LastName": "Le Goff",
+            "Ranks": ["Capitaine"],
+            "Nationality": "FR",
+        }
+        monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([crew_rec]))
+        rc = await marad_sync.sync_crew(s)
+        assert (rc["created"], rc["skipped"]) == (1, 0)
+        member = (await s.execute(select(CrewMember))).scalar_one()
+        assert member.marad_id == _GUID and member.full_name == "Élise Le Goff"
+
+        # 2) Sync schedules — schéma réel /api/CrewingSchedule (PascalCase, SANS
+        #    id de planning, SANS GUID marin ; le même nom, orthographié pareil).
+        sched_rec = {
+            "CrewMember": {
+                "FirstName": "Élise",
+                "LastName": "Le Goff",
+                "EmployeeNumber": "EMP-7",
+            },
+            "Rank": "Capitaine",
+            "Status": "Confirmed",
+            "Vessel": "Anemos",
+            "StartInfo": {"DateTime": "2026-05-02T00:00:00Z", "Port": "Fécamp"},
+            "EndInfo": {"DateTime": "2026-05-14T00:00:00Z", "Port": "Fortaleza"},
+        }
+        monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret([sched_rec]))
+        rs = await marad_sync.sync_schedules(s)
+        assert (rs["created"], rs["skipped"]) == (1, 0)
+
+        row = (await s.execute(select(MaradCrewSchedule))).scalar_one()
+        # LIAISON VÉRIFIÉE : le planning pointe sur le marin créé par la sync crew.
+        assert row.crew_member_id == member.id
+        assert row.start_date == date(2026, 5, 2)
+        assert row.end_date == date(2026, 5, 14)
+        assert row.rank_label == "Capitaine"
+
+    _run_with_db(_check)
+
+
+def test_sync_all_crew_before_schedules_so_linkage_works(monkeypatch) -> None:
+    """sync_all doit synchroniser le crew AVANT les plannings, sinon le
+    rapprochement par nom échouerait (le marin n'existerait pas encore)."""
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+
+    order: list[str] = []
+
+    async def _list_crew(modified_since=None):
+        order.append("crew")
+        return [{"ID": _GUID, "FirstName": "Ana", "LastName": "Silva", "Ranks": ["Second"]}]
+
+    async def _list_schedules(modified_since=None):
+        order.append("schedules")
+        return [
+            {
+                "CrewMember": {"FirstName": "Ana", "LastName": "Silva"},
+                "Vessel": "Anemos",
+                "StartInfo": {"DateTime": "2026-06-01T00:00:00Z"},
+            }
+        ]
+
+    monkeypatch.setattr(marad, "list_crew", _list_crew)
+    monkeypatch.setattr(marad, "list_schedules", _list_schedules)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        from app.models.crew import CrewMember, MaradCrewSchedule
+
+        r = await marad_sync.sync_all(s)
+        assert order == ["crew", "schedules"]  # ordre garant de la liaison
+        assert r["crew_created"] == 1 and r["sched_created"] == 1
+        member = (await s.execute(select(CrewMember))).scalar_one()
+        row = (await s.execute(select(MaradCrewSchedule))).scalar_one()
+        assert row.crew_member_id == member.id  # activité rattachée à l'équipe
+
+    _run_with_db(_check)
+
+
 def test_sync_schedules_name_match_ignores_accents_and_case(monkeypatch) -> None:
     """Le rapprochement par nom tolère casse et accents (« MÜLLER » ↔ « Müller »)."""
     from app.models.crew import CrewMember, MaradCrewSchedule
