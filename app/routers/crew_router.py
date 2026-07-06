@@ -203,11 +203,16 @@ async def crew_sync_marad(
         f"&cf={result.get('crew_fetched', 0)}&sf={result.get('sched_fetched', 0)}"
         f"&err={result['errors']}"
     )
-    # Rien remonté : on bascule sur un bandeau de diagnostic explicite.
-    if total_fetched == 0 and result.get("diagnostic"):
+    # On propage le diagnostic dès qu'il existe (ex. plannings en 429 alors que
+    # le crew a réussi) — pas seulement quand tout est à 0, sinon un échec
+    # partiel est masqué par le succès du crew. ``empty=1`` distingue le cas
+    # « rien remonté » (bandeau d'erreur) du cas partiel (bandeau succès + avert.).
+    if result.get("diagnostic"):
         from urllib.parse import quote
 
-        base += f"&empty=1&diag={quote(result['diagnostic'])}"
+        base += f"&diag={quote(result['diagnostic'])}"
+        if total_fetched == 0:
+            base += "&empty=1"
     return RedirectResponse(url=base, status_code=303)
 
 

@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     # cascade sur les endpoints à 1 req/min).
     marad_api_key_header: str | None = None
     marad_sync_token: str | None = None  # X-API-Token du cron interne POST /api/marad/refresh
+    # Les 2 endpoints crew (/api/Crewing + /api/CrewingSchedule) sont à 1 req/min
+    # et ne peuvent être appelés coup sur coup : le cron patiente ce délai (s)
+    # puis retente les plannings UNE fois. 0 = pas de retry (le 429 est remonté).
+    marad_schedule_retry_wait: float = 65.0
     # Repli de mapping navire. Marad identifie un navire par {number, name}
     # (/api/vessels/getVessels) ; la sync résout d'abord par nom/code de notre
     # table Vessel, puis via cette map "marad_number_ou_nom=vessel_id,...".

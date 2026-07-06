@@ -43,6 +43,12 @@
   <span class="text-muted">({{ request.query_params.get('err') }} erreur(s) — voir logs)</span>
   {% endif %}
 </div>
+{% if request.query_params.get('diag') %}
+<div class="alert alert-warn mb-4">
+  <i data-lucide="alert-triangle"></i>
+  <strong>Synchronisation partielle</strong> — {{ request.query_params.get('diag') }}
+</div>
+{% endif %}
 {% elif _md == 'disabled' %}
 <div class="alert alert-warn mb-4">
   <i data-lucide="alert-triangle"></i>
