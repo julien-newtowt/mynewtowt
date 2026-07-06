@@ -12,6 +12,21 @@ from app.database import Base
 from app.services import marad_sync
 from app.utils import marad
 
+# Vraie fonction capturée avant tout monkeypatch (le fixture autouse ci-dessous
+# remplace ``marad.get_passport_details`` ; le test du contrat HTTP réel l'utilise).
+_REAL_GET_PASSPORT = marad.get_passport_details
+
+
+@pytest.fixture(autouse=True)
+def _no_real_passport_calls(monkeypatch):
+    """Par défaut, l'enrichissement passeport (GetPassportDetails, appelé par
+    sync_crew) ne touche PAS le réseau : les tests qui le vérifient l'overrident."""
+
+    async def _none(ids):
+        return None
+
+    monkeypatch.setattr(marad, "get_passport_details", _none)
+
 
 def test_enabled_reflects_token(monkeypatch) -> None:
     monkeypatch.setattr(marad.settings, "marad_api_token", None)
@@ -134,6 +149,7 @@ def test_sync_crew_creates_and_maps(monkeypatch) -> None:
         return [_crew_record()]
 
     monkeypatch.setattr(marad, "list_crew", _fake_list_crew)
+    monkeypatch.setattr(marad, "get_passport_details", lambda ids: _ret(None))
 
     async def _check(s):
         from sqlalchemy import select
@@ -146,6 +162,7 @@ def test_sync_crew_creates_and_maps(monkeypatch) -> None:
             "updated": 0,
             "skipped": 0,
             "errors": 0,
+            "passports": 0,
             "note": r["note"],
         }
         m = (await s.execute(select(CrewMember).where(CrewMember.marad_id == _GUID))).scalar_one()
@@ -337,6 +354,93 @@ def test_records_accepts_pascalcase_wrapper() -> None:
     """L'enveloppe éventuelle (``Data``/``Value``…) tolère aussi le PascalCase."""
     assert marad_sync._records({"Data": [{"ID": 1}]}) == [{"ID": 1}]
     assert marad_sync._records({"ID": 9}) == [{"ID": 9}]
+
+
+def test_sync_crew_enriches_passport_from_marad(monkeypatch) -> None:
+    """Le passeport n'est PAS dans /api/Crewing : il est enrichi via
+    GetPassportDetails (corps = tableau de GUID → liste PascalCase). Schéma réel
+    external02 : {CrewMemberID, PassportNumber, PassportExpiryDate, …}."""
+    from datetime import date
+
+    from app.models.crew import CrewMember
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+    monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([_crew_record()]))
+
+    captured = {}
+
+    async def _fake_passports(ids):
+        captured["ids"] = list(ids)  # doit être la liste de GUID
+        return [
+            {
+                "CrewMemberID": _GUID,
+                "CrewMemberName": "Jean Dupont",
+                "PassportNumber": "16AI32435",
+                "PassportIssueDate": "2016-02-24T10:00:00",
+                "PassportExpiryDate": "2026-02-23T10:00:00",
+                "PassportIssueCountry": "France",
+            },
+            {"CrewMemberID": "autre-guid-inconnu", "PassportNumber": "ZZ"},  # non rattaché → ignoré
+        ]
+
+    monkeypatch.setattr(marad, "get_passport_details", _fake_passports)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        r = await marad_sync.sync_crew(s)
+        assert r["passports"] == 1  # un seul marin enrichi
+        assert captured["ids"] == [_GUID]  # GUID transmis en tableau
+        m = (await s.execute(select(CrewMember).where(CrewMember.marad_id == _GUID))).scalar_one()
+        assert m.passport_number == "16AI32435"
+        assert m.passport_expires_at == date(2026, 2, 23)
+
+    _run_with_db(_check)
+
+
+def test_sync_passports_graceful_when_endpoint_fails(monkeypatch) -> None:
+    """Si GetPassportDetails échoue (None), la sync crew reste OK (0 passeport)."""
+    from app.models.crew import CrewMember
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+    monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([_crew_record()]))
+    monkeypatch.setattr(marad, "get_passport_details", lambda ids: _ret(None))
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        r = await marad_sync.sync_crew(s)
+        assert r["created"] == 1 and r["passports"] == 0
+        m = (await s.execute(select(CrewMember).where(CrewMember.marad_id == _GUID))).scalar_one()
+        assert m.passport_number is None  # rien écrasé
+
+    _run_with_db(_check)
+
+
+def test_get_passport_details_posts_raw_array(monkeypatch) -> None:
+    """Le corps envoyé à GetPassportDetails est un TABLEAU brut de GUID
+    (un corps {"ids": …} renvoie 417 côté Marad)."""
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "ApiKey")
+    monkeypatch.setattr(marad, "_working_strategy", "header:ApiKey")
+
+    sent = {}
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, params=None, json=None, headers=None):
+            sent["json"] = json
+            return _FakeResp(200, [{"CrewMemberID": "g", "PassportNumber": "X"}])
+
+    monkeypatch.setattr(marad.httpx, "AsyncClient", lambda *a, **k: _Client())
+    out = asyncio.run(_REAL_GET_PASSPORT(["g1", "g2"]))  # vraie fonction (pas le mock autouse)
+    assert out == [{"CrewMemberID": "g", "PassportNumber": "X"}]
+    assert sent["json"] == ["g1", "g2"]  # tableau brut, pas {"ids": …}
 
 
 def test_sync_crew_skips_records_without_id(monkeypatch) -> None:

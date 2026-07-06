@@ -184,7 +184,7 @@ async def prime_auth() -> str | None:
 
 
 async def _request(
-    method: str, path: str, *, params: dict | None = None, json: dict | None = None
+    method: str, path: str, *, params: dict | None = None, json: Any | None = None
 ) -> Any | None:
     """Appel HTTP read-only borné à la whitelist. None si non configuré / erreur.
 
@@ -249,8 +249,12 @@ async def _get(path: str, *, params: dict | None = None) -> Any | None:
     return await _request("GET", path, params=params)
 
 
-async def _post_read(path: str, *, json: dict) -> Any | None:
-    """POST de **lecture** uniquement (endpoint dans la whitelist)."""
+async def _post_read(path: str, *, json: Any) -> Any | None:
+    """POST de **lecture** uniquement (endpoint dans la whitelist).
+
+    ``json`` peut être un dict OU une **liste** (plusieurs endpoints Marad
+    attendent un tableau brut de GUID en corps, ex. GetPassportDetails /
+    GetCrewMembersDocuments — confirmé en prod)."""
     return await _request("POST", path, json=json)
 
 
@@ -289,11 +293,24 @@ async def list_vessels() -> Any | None:
 
 
 async def get_passport_details(crew_ids: list) -> Any | None:
-    return await _post_read("/api/CrewingDocuments/GetPassportDetails", json={"ids": crew_ids})
+    """POST /api/CrewingDocuments/GetPassportDetails (15 req/min).
+
+    Corps = **tableau brut de GUID** crew (schéma confirmé en prod ; un corps
+    ``{"ids": …}`` renvoie 417). Réponse = liste
+    ``[{CrewMemberID, PassportNumber, PassportIssueDate, PassportExpiryDate,
+    PassportIssueCountry, …}]``.
+    """
+    return await _post_read("/api/CrewingDocuments/GetPassportDetails", json=list(crew_ids))
 
 
 async def get_crew_documents(crew_ids: list) -> Any | None:
-    return await _post_read("/api/CrewingDocuments/GetCrewMembersDocuments", json={"ids": crew_ids})
+    """POST /api/CrewingDocuments/GetCrewMembersDocuments (15 req/min).
+
+    Corps = **tableau brut de GUID** crew. Réponse = dict
+    ``{crew_guid: [{ID, Name, Number, IssueDate, ExpiryDate, DocumentGroupName,
+    CountryName, …}]}`` — métadonnées de documents (certificats), **sans fichier**.
+    """
+    return await _post_read("/api/CrewingDocuments/GetCrewMembersDocuments", json=list(crew_ids))
 
 
 async def get_sync_details() -> Any | None:

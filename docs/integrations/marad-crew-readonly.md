@@ -243,8 +243,10 @@ les placeholders Swagger `"string"` sont ignorés) :
 | `email` | `email` | gardé si contient `@` |
 | `phone` | `mobilePhone` (fallback `phone`) | tronqué 50 |
 | `is_active` | — | défaut `True` à la création, **préservé** ensuite (Marad ne fournit pas de flag) |
-| `passport_*`, `seaman_book_*` | via `GetPassportDetails` / documents | **non encore branché** |
+| `passport_number`, `passport_expires_at` | `GetPassportDetails` (`PassportNumber` / `PassportExpiryDate`) — corps POST = **tableau brut de GUID**, réponse `[{CrewMemberID, PassportNumber, PassportExpiryDate, …}]` | ✅ **branché** (non destructeur) |
+| `seaman_book_*` | via documents | **non encore branché** |
 | `visa_us_expires_at`, `visa_br_expires_at` | documents type visa | **non encore branché** |
+| `photo_*` | ❌ **absent de l'API Marad** (ni record crew, ni documents — qui ne portent aucun fichier) → **upload manuel** dans l'ERP uniquement |
 | `schengen_*` | — | **JAMAIS importé** (calcul interne, §5.2) |
 | `notes` | — | **JAMAIS écrasé** par la sync |
 
