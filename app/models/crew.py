@@ -45,6 +45,12 @@ class CrewMember(Base):
     phone: Mapped[str | None] = mapped_column(String(50))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Photo d'identité (enrichissement ERP, hors périmètre Marad — jamais écrasée
+    # par la sync). Fichier stocké via services.safe_files ; servi par une route
+    # dédiée. NULL = pas de photo (avatar initiales par défaut).
+    photo_path: Mapped[str | None] = mapped_column(String(500))
+    photo_filename: Mapped[str | None] = mapped_column(String(255))
+    photo_mime: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Clé externe de réconciliation pour l'import LECTURE SEULE depuis Marad
     # (cf. docs/integrations/marad-crew-readonly.md). NULL = saisi dans l'ERP.

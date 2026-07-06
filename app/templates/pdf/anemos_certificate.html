@@ -71,6 +71,24 @@
   </tr>
 </table>
 
+{% if crew %}
+<h2>Équipage embarqué</h2>
+<table>
+  <thead>
+    <tr><th>Nom</th><th>Rôle</th><th>Nationalité</th></tr>
+  </thead>
+  <tbody>
+    {% for c in crew %}
+    <tr>
+      <td>{{ c.full_name }}</td>
+      <td>{{ c.role or "—" }}</td>
+      <td class="mono">{{ c.nationality or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 <h2>Calcul d'émissions</h2>
 <table>
   <thead>

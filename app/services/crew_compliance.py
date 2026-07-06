@@ -41,7 +41,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.crew import CrewAssignment, CrewMember
+from app.models.crew import CrewAssignment, CrewMember, MaradCrewSchedule
 from app.models.leg import Leg
 from app.models.port import Port
 
@@ -392,19 +392,130 @@ def assignment_days_in_year(
     return (end.date() - start.date()).days + 1
 
 
+def schedule_is_embarkation(s: MaradCrewSchedule) -> bool:
+    """Un planning Marad = **embarquement** s'il porte un navire.
+
+    Les plannings Marad incluent aussi des périodes à terre (congés,
+    indisponibilités : ``Vessel=null``, ex. ``status='Congés'``) qui ne sont PAS
+    des embarquements et ne doivent compter ni dans les jours embarqués, ni dans
+    la bordée, ni sur le certificat. On les exclut par l'absence de navire.
+    """
+    return bool(s.vessel_id or s.marad_vessel_name) and s.start_date is not None
+
+
+def _marad_days_in_year(s: MaradCrewSchedule, year: int, *, now: datetime) -> int:
+    """Jours embarqués d'un planning Marad sur l'année (mêmes bornes inclusives
+    que ``assignment_days_in_year``)."""
+    start = datetime(s.start_date.year, s.start_date.month, s.start_date.day, tzinfo=UTC)
+    end = (
+        datetime(s.end_date.year, s.end_date.month, s.end_date.day, tzinfo=UTC)
+        if s.end_date
+        else None
+    )
+    return assignment_days_in_year(start, end, year, now=now)
+
+
 async def embarked_days_by_member(
     db: AsyncSession, year: int, *, now: datetime | None = None
 ) -> dict[int, int]:
-    """Total de jours embarqués par marin sur l'année (toutes affectations)."""
+    """Total de jours embarqués par marin sur l'année.
+
+    Additionne les affectations ERP (``CrewAssignment``) **et** les plannings
+    d'embarquement importés de Marad (``MaradCrewSchedule`` avec navire). Comme
+    les marins proviennent exclusivement de Marad (aucune saisie manuelle), la
+    donnée réelle vient des plannings Marad — sans eux, l'indicateur restait à 0.
+    """
     now = now or datetime.now(UTC)
-    rows = (
+    totals: dict[int, int] = defaultdict(int)
+    assigns = (
         (await db.execute(select(CrewAssignment).where(CrewAssignment.embark_at.is_not(None))))
         .scalars()
         .all()
     )
-    totals: dict[int, int] = defaultdict(int)
-    for a in rows:
+    for a in assigns:
         totals[a.crew_member_id] += assignment_days_in_year(
             a.embark_at, a.disembark_at, year, now=now
         )
+    scheds = (
+        (
+            await db.execute(
+                select(MaradCrewSchedule).where(MaradCrewSchedule.crew_member_id.is_not(None))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for s in scheds:
+        if schedule_is_embarkation(s):
+            totals[s.crew_member_id] += _marad_days_in_year(s, year, now=now)
     return dict(totals)
+
+
+async def current_embarkations(
+    db: AsyncSession, *, on: _date | None = None
+) -> list[MaradCrewSchedule]:
+    """Plannings Marad **en cours** (embarquements dont la fenêtre contient ``on``).
+
+    Sert à la bordée actuelle par navire et à l'indicateur « En activité ».
+    """
+    on = on or _date.today()
+    rows = (
+        (
+            await db.execute(
+                select(MaradCrewSchedule).where(MaradCrewSchedule.crew_member_id.is_not(None))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        s
+        for s in rows
+        if schedule_is_embarkation(s)
+        and s.start_date <= on
+        and (s.end_date is None or on <= s.end_date)
+    ]
+
+
+async def crew_for_leg(
+    db: AsyncSession, leg: Leg, vessel_id: int | None = None
+) -> list[tuple[MaradCrewSchedule, CrewMember]]:
+    """Équipage embarqué sur un leg (pour le certificat Anemos).
+
+    Réconciliation : d'abord par ``leg_id`` (un « voyage » Marad = un leg) ;
+    à défaut de correspondance, repli sur ``vessel_id`` + chevauchement de la
+    fenêtre de dates avec [ETD, ETA] du leg. Exclut les périodes à terre.
+    """
+    stmt = (
+        select(MaradCrewSchedule, CrewMember)
+        .join(CrewMember, CrewMember.id == MaradCrewSchedule.crew_member_id)
+        .where(MaradCrewSchedule.leg_id == leg.id)
+        .order_by(CrewMember.full_name)
+    )
+    rows = [(s, m) for s, m in (await db.execute(stmt)).all() if schedule_is_embarkation(s)]
+    if rows:
+        return rows
+    vid = vessel_id if vessel_id is not None else leg.vessel_id
+    if vid is None:
+        return []
+    lo = (leg.atd or leg.etd)
+    hi = (leg.ata or leg.eta)
+    lo_d = lo.date() if lo else None
+    hi_d = hi.date() if hi else None
+    stmt = (
+        select(MaradCrewSchedule, CrewMember)
+        .join(CrewMember, CrewMember.id == MaradCrewSchedule.crew_member_id)
+        .where(MaradCrewSchedule.vessel_id == vid)
+        .order_by(CrewMember.full_name)
+    )
+    out: list[tuple[MaradCrewSchedule, CrewMember]] = []
+    for s, m in (await db.execute(stmt)).all():
+        if not schedule_is_embarkation(s):
+            continue
+        # Chevauchement [start,end] ∩ [ETD,ETA] (bornes ouvertes tolérées).
+        if hi_d is not None and s.start_date > hi_d:
+            continue
+        if lo_d is not None and s.end_date is not None and s.end_date < lo_d:
+            continue
+        out.append((s, m))
+    return out

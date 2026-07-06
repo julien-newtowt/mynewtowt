@@ -378,6 +378,13 @@ async def _co2_response(db, ref, owner_client_id=None) -> Response:
             select(AnemosCertificate).where(AnemosCertificate.booking_id == booking.id)
         )
     ).scalar_one_or_none()
+    # Équipage embarqué sur le voyage (leg) — figure sur le certificat Anemos.
+    from app.services.crew_compliance import crew_for_leg
+
+    crew = [
+        {"full_name": m.full_name, "role": s.rank_label or m.role, "nationality": m.nationality}
+        for s, m in await crew_for_leg(db, leg, vessel.id)
+    ]
     doc = render_anemos_certificate(
         booking=booking,
         leg=leg,
@@ -387,5 +394,6 @@ async def _co2_response(db, ref, owner_client_id=None) -> Response:
         client=client,
         distance_nm=distance,
         certificate=cert,
+        crew=crew,
     )
     return _pdf_response(doc)

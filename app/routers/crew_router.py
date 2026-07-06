@@ -36,6 +36,7 @@ from app.services.activity import record as activity_record
 from app.services.crew_compliance import (
     REQUIRED_ROLES,
     ROLE_LABELS,
+    current_embarkations,
     embarked_days_by_member,
     is_non_schengen_national,
     normalize_role,
@@ -84,8 +85,48 @@ async def crew_index(
 
     total = len(members)
 
-    # Bordée par navire (assignments actifs)
     now = datetime.now(UTC)
+    today = now.date()
+
+    # ── Bordées actuelles ─────────────────────────────────────────────────
+    # Source réelle : les plannings Marad EN COURS (un navire + fenêtre de dates
+    # contenant aujourd'hui). On complète avec les affectations ERP en cours
+    # (CrewAssignment) pour ne pas perdre une éventuelle saisie manuelle.
+    # ``active_member_ids`` = marins actuellement embarqués (indicateur « En activité »).
+    bordees: dict[str, dict] = defaultdict(lambda: {"crew": [], "missing": [], "vessel_id": None})
+    active_member_ids: set[int] = set()
+
+    current_scheds = await current_embarkations(db, on=today)
+    sched_member_ids = {s.crew_member_id for s in current_scheds}
+    crew_by_id: dict[int, CrewMember] = {}
+    if sched_member_ids:
+        for m in (
+            await db.execute(
+                select(CrewMember).where(
+                    CrewMember.id.in_(sched_member_ids), CrewMember.is_active.is_(True)
+                )
+            )
+        ).scalars():
+            crew_by_id[m.id] = m
+    sched_vessel_ids = {s.vessel_id for s in current_scheds if s.vessel_id}
+    vessels_by_id: dict[int, Vessel] = {}
+    if sched_vessel_ids:
+        for v in (
+            await db.execute(select(Vessel).where(Vessel.id.in_(sched_vessel_ids)))
+        ).scalars():
+            vessels_by_id[v.id] = v
+    for s in current_scheds:
+        m = crew_by_id.get(s.crew_member_id)
+        if m is None:
+            continue  # marin désactivé / inconnu
+        v = vessels_by_id.get(s.vessel_id) if s.vessel_id else None
+        vname = (v.name if v else None) or s.marad_vessel_name or "—"
+        bordees[vname]["crew"].append({"m": m, "role": s.rank_label or m.role})
+        if v is not None:
+            bordees[vname]["vessel_id"] = v.id
+        active_member_ids.add(m.id)
+
+    # Affectations ERP en cours (complément aux plannings Marad).
     active_assigns = list(
         (
             await db.execute(
@@ -99,27 +140,23 @@ async def crew_index(
         .scalars()
         .all()
     )
-    legs_index = {}
+    all_member_by_id = {m.id: m for m in members}
     for a in active_assigns:
-        leg = await db.get(Leg, a.leg_id)
-        if leg:
-            legs_index[a.id] = leg
-    # Group by vessel
-    bordees: dict[str, dict] = defaultdict(lambda: {"crew": [], "missing": []})
-    member_by_id = {m.id: m for m in members}
-    for a in active_assigns:
-        leg = legs_index.get(a.id)
-        if not leg:
-            continue
-        vsl = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
+        if a.crew_member_id in active_member_ids:
+            continue  # déjà listé via Marad
+        leg = await db.get(Leg, a.leg_id) if a.leg_id else None
+        vsl = await db.get(Vessel, leg.vessel_id) if (leg and leg.vessel_id) else None
         vname = vsl.name if vsl else "—"
-        m = member_by_id.get(a.crew_member_id)
-        if m is None:
+        m = all_member_by_id.get(a.crew_member_id) or await db.get(CrewMember, a.crew_member_id)
+        if m is None or not m.is_active:
             continue
-        bordees[vname]["crew"].append(m)
-        bordees[vname]["vessel_id"] = vsl.id if vsl else None
+        bordees[vname]["crew"].append({"m": m, "role": a.role_on_board or m.role})
+        if vsl is not None:
+            bordees[vname]["vessel_id"] = vsl.id
+        active_member_ids.add(m.id)
+
     for info in bordees.values():
-        roles_present = {normalize_role(m.role) for m in info["crew"]}
+        roles_present = {normalize_role(c["m"].role) for c in info["crew"]}
         info["missing"] = [ROLE_LABELS.get(r, r) for r in REQUIRED_ROLES if r not in roles_present]
 
     # Compliance alerts (passport / visa within 30 days)
@@ -136,8 +173,8 @@ async def crew_index(
 
     stats = {
         "total": total,
-        "active": sum(1 for a in active_assigns),
-        "repos": total - sum(1 for a in active_assigns),
+        "active": len(active_member_ids),
+        "repos": max(0, total - len(active_member_ids)),
     }
 
     # CREW-09 — marqueur « étranger » (hors Schengen) + jours embarqués sur l'année.
@@ -656,6 +693,43 @@ async def crew_api_by_vessel(
     return JSONResponse({"vessel_id": vessel_id, "count": len(crew), "crew": crew})
 
 
+def _embarkation_timeline(schedules: list, today: _date) -> dict | None:
+    """Barres de planning positionnées pour la vue timeline de la fiche marin.
+
+    Chaque planning Marad (embarquement = navire, ou période à terre = congé)
+    devient une barre positionnée en % sur l'axe [min début, max fin]. Renvoie
+    None si aucun planning daté.
+    """
+    dated = [s for s in schedules if s.start_date]
+    if not dated:
+        return None
+    lo = min(s.start_date for s in dated)
+    hi = max(max((s.end_date or today) for s in dated), lo)
+    if hi <= lo:
+        hi = lo + timedelta(days=1)
+    span = (hi - lo).days or 1
+    periods = []
+    for s in sorted(dated, key=lambda x: x.start_date):
+        end = s.end_date or today
+        if end < s.start_date:
+            end = s.start_date
+        left = (s.start_date - lo).days / span * 100
+        width = max(1.5, (end - s.start_date).days / span * 100)
+        periods.append(
+            {
+                "label": s.marad_vessel_name or s.status or "—",
+                "role": s.rank_label,
+                "start": s.start_date,
+                "end": s.end_date,
+                "status": s.status,
+                "is_embarkation": bool(s.vessel_id or s.marad_vessel_name),
+                "left": round(left, 2),
+                "width": round(min(width, max(0.0, 100 - left)), 2),
+            }
+        )
+    return {"start": lo, "end": hi, "periods": periods}
+
+
 async def _member_detail_context(
     request: Request,
     db: AsyncSession,
@@ -743,6 +817,7 @@ async def _member_detail_context(
         "leg_options": leg_options,
         "roles": CREW_ROLES,
         "marad_schedules": marad_schedules,
+        "embarkation_timeline": _embarkation_timeline(marad_schedules, _date.today()),
         "error": error,
     }
 
@@ -1006,6 +1081,102 @@ async def crew_assignment_ticket_delete(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/crew/members/{a.crew_member_id}", status_code=303)
+
+
+# ─────────────────────────── Photo d'identité marin ───────────────────────────
+# Enrichissement ERP local (hors périmètre Marad, jamais écrasé par la sync).
+
+
+@router.post("/members/{member_id}/photo")
+async def crew_member_photo_upload(
+    member_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "M")),
+):
+    """Ajoute / remplace la photo d'identité d'un marin (image uniquement)."""
+    from app.services.safe_files import (
+        UploadRejected,
+        content_length_exceeds_max,
+        resolve_path,
+        save_upload,
+    )
+
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
+    m = await db.get(CrewMember, member_id)
+    if m is None:
+        raise HTTPException(status_code=404)
+    content = await file.read()
+    try:
+        rel_path, mime = save_upload(content, file.filename or "photo", subdir="crew_photos")
+    except UploadRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not (mime or "").startswith("image/"):
+        with contextlib.suppress(Exception):
+            resolve_path(rel_path).unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="La photo doit être une image (JPEG/PNG/WebP).")
+    if m.photo_path:  # remplace l'ancienne
+        with contextlib.suppress(Exception):
+            resolve_path(m.photo_path).unlink(missing_ok=True)
+    m.photo_path = rel_path
+    m.photo_filename = file.filename
+    m.photo_mime = mime
+    await db.flush()
+    await activity_record(
+        db,
+        action="upload",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="crew",
+        entity_type="crew_member",
+        entity_id=m.id,
+        entity_label=f"photo {file.filename}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)
+
+
+@router.get("/members/{member_id}/photo")
+async def crew_member_photo(
+    member_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "C")),
+):
+    from app.services.safe_files import UploadRejected, resolve_path
+
+    m = await db.get(CrewMember, member_id)
+    if m is None or not m.photo_path:
+        raise HTTPException(status_code=404)
+    try:
+        path = resolve_path(m.photo_path)
+    except (UploadRejected, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="photo introuvable") from exc
+    return FileResponse(path, media_type=m.photo_mime or "application/octet-stream")
+
+
+@router.post("/members/{member_id}/photo/delete")
+async def crew_member_photo_delete(
+    member_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "M")),
+):
+    from app.services.safe_files import resolve_path
+
+    m = await db.get(CrewMember, member_id)
+    if m is None:
+        raise HTTPException(status_code=404)
+    if m.photo_path:
+        with contextlib.suppress(Exception):
+            resolve_path(m.photo_path).unlink(missing_ok=True)
+    m.photo_path = None
+    m.photo_filename = None
+    m.photo_mime = None
+    await db.flush()
+    return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)
 
 
 @router.post("/members/{member_id}/tickets")
