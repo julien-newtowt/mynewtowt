@@ -332,6 +332,13 @@ async def crew_calendar(
         .all()
     )
     for s in marad_scheds:
+        # Ne compter que les EMBARQUEMENTS (navire renseigné) : les plannings
+        # Marad incluent aussi des périodes à terre (congés, indisponibilités,
+        # ex. Status="Congés" avec Vessel=null) — ce ne sont pas des jours
+        # embarqués et ils fausseraient la heatmap. Ils restent visibles sur la
+        # fiche marin (section « Planning Marad »).
+        if not (s.marad_vessel_name or s.vessel_id):
+            continue
         _fill(s.crew_member_id, s.start_date, s.end_date)
     return templates.TemplateResponse(
         "staff/crew/calendar.html",
