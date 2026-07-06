@@ -656,6 +656,67 @@ def test_sync_schedules_real_tenant_shape_with_guids_and_leave(monkeypatch) -> N
     _run_with_db(_check)
 
 
+def test_sync_all_retries_schedules_after_wait_on_429(monkeypatch) -> None:
+    """Cron : /api/CrewingSchedule en 429 (appelé juste après /api/Crewing) →
+    on patiente puis on retente UNE fois, et les plannings remontent alors.
+    Le crew n'est PAS rappelé (économie de quota) et on ne dort pas réellement.
+    """
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+    monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([_crew_record()]))
+
+    calls = {"sched": 0}
+    statuses = iter([429, 200])  # 1er appel throttlé, 2e OK
+
+    async def _list_schedules(modified_since=None):
+        calls["sched"] += 1
+        st = next(statuses)
+        marad._last_status["/api/CrewingSchedule"] = st
+        return [] if st == 429 else [{"id": "s1", "vessel": "X"}]
+
+    monkeypatch.setattr(marad, "_last_status", {})
+    monkeypatch.setattr(marad, "list_schedules", _list_schedules)
+
+    slept: list[float] = []
+
+    async def _fake_sleep(sec):
+        slept.append(sec)
+
+    monkeypatch.setattr(marad_sync.asyncio, "sleep", _fake_sleep)
+
+    async def _check(s):
+        r = await marad_sync.sync_all(s, schedule_retry_wait=65)
+        assert calls["sched"] == 2  # 1 échec (429) + 1 retry réussi
+        assert slept == [65]  # a bien patienté une fois
+        assert r["sched_fetched"] == 1 and r["sched_created"] == 1
+        assert r["crew_fetched"] == 1  # crew NON rappelé
+
+    _run_with_db(_check)
+
+
+def test_sync_all_no_retry_when_wait_is_zero(monkeypatch) -> None:
+    """Bouton (wait=0) : pas de retry — le 429 est simplement remonté."""
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+    monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([_crew_record()]))
+    calls = {"sched": 0}
+
+    async def _list_schedules(modified_since=None):
+        calls["sched"] += 1
+        marad._last_status["/api/CrewingSchedule"] = 429
+        return None
+
+    monkeypatch.setattr(marad, "_last_status", {})
+    monkeypatch.setattr(marad, "list_schedules", _list_schedules)
+    monkeypatch.setattr(marad, "diagnose", lambda: _ret({}))
+
+    async def _check(s):
+        r = await marad_sync.sync_all(s)  # wait=0 par défaut
+        assert calls["sched"] == 1  # aucun retry
+        assert r["sched_fetched"] == 0
+        assert "CrewingSchedule a renvoyé 429" in (r["diagnostic"] or "")
+
+    _run_with_db(_check)
+
+
 def test_sync_all_surfaces_schedule_429_on_partial_success(monkeypatch) -> None:
     """Crew OK mais /api/CrewingSchedule en 429 → le message ne doit PAS masquer
     l'absence de plannings derrière le succès du crew (le trou « N marins, 0

@@ -28,6 +28,7 @@ ne jamais utiliser ``rec.get("...")`` directement sur un record Marad.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import unicodedata
@@ -501,11 +502,18 @@ async def sync_schedules(db: AsyncSession) -> dict:
     return result
 
 
-async def sync_all(db: AsyncSession) -> dict:
+async def sync_all(db: AsyncSession, *, schedule_retry_wait: float = 0.0) -> dict:
     """Synchronise crew + plannings (CrewingSchedule) en un appel.
 
     Utilisé par le bouton « Synchroniser Marad » (/crew) et le cron
     ``POST /api/marad/refresh``. Renvoie un résumé à plat pour l'UI + le détail.
+
+    ``schedule_retry_wait`` : si > 0 et que ``/api/CrewingSchedule`` a pris un
+    429 (les DEUX endpoints crew sont à 1 req/min et ne peuvent être appelés
+    coup sur coup sans throttling du second), on patiente ce délai puis on
+    réessaie **une** fois les plannings. À activer côté **cron** (automatisé,
+    peut se permettre la pause) ; laissé à 0 pour le bouton (réponse immédiate,
+    le 429 est alors remonté dans le diagnostic).
     """
     # Découvre d'abord le schéma d'auth via un endpoint à quota large
     # (getVessels, 15 req/min) pour ne pas gâcher le quota de /api/Crewing
@@ -514,6 +522,22 @@ async def sync_all(db: AsyncSession) -> dict:
     await marad.prime_auth()
     crew = await sync_crew(db)
     sched = await sync_schedules(db)
+
+    # /api/Crewing puis /api/CrewingSchedule enchaînés → le second prend souvent
+    # un 429 (quota 1 req/min par endpoint, fenêtre partagée en pratique). Si
+    # demandé, on patiente puis on retente UNE fois les plannings seuls (le crew
+    # n'est pas rappelé) : à la reprise, la fenêtre de CrewingSchedule est libre.
+    if (
+        schedule_retry_wait > 0
+        and sched.get("fetched", 0) == 0
+        and marad.last_status("/api/CrewingSchedule") == 429
+    ):
+        logger.info(
+            "marad sync: /api/CrewingSchedule throttlé (429) — nouvelle tentative dans %.0f s",
+            schedule_retry_wait,
+        )
+        await asyncio.sleep(schedule_retry_wait)
+        sched = await sync_schedules(db)
 
     # Diagnostic : si l'API est configurée mais que RIEN n'a été récupéré,
     # on explique le « rien ne remonte » plutôt que de laisser un silencieux 0/0.

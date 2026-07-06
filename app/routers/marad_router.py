@@ -46,6 +46,10 @@ async def marad_refresh_api(
     if not _secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
 
-    result = await marad_sync.sync_all(db)
+    # Cron automatisé : on peut se permettre d'attendre pour contourner le
+    # throttling 1 req/min de /api/CrewingSchedule (retry une fois après pause).
+    result = await marad_sync.sync_all(
+        db, schedule_retry_wait=settings.marad_schedule_retry_wait
+    )
     logger.info("Marad refresh (API): %s", result)
     return JSONResponse(result)

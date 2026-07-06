@@ -129,6 +129,22 @@ une **clé dédiée** à mynewtowt. La cascade de sondage d'auth peut aussi
 s'auto-infliger des 429 : épingler `MARAD_API_KEY_HEADER=ApiKey` (un seul
 appel par requête).
 
+### Crew OK mais `sched_fetched:0` (« N marins, 0 planning »)
+`/api/Crewing` **et** `/api/CrewingSchedule` sont chacun à **1 req/min**, mais la
+fenêtre est **partagée en pratique** : appelés coup sur coup dans un même
+`sync_all`, le second (plannings) prend un **429**. C'est le cas le plus
+fréquent une fois le crew fonctionnel. Trois remèdes, déjà en place :
+- **Cron** (`POST /api/marad/refresh`) : `sync_all` **patiente `MARAD_SCHEDULE_RETRY_WAIT`
+  secondes (défaut 65) puis retente les plannings une fois** — le crew n'est pas
+  rappelé. En pratique le cron remonte donc crew **et** plannings en un passage
+  (le call dure ~1 min, normal). Mettre `MARAD_SCHEDULE_RETRY_WAIT=0` pour
+  désactiver ce retry.
+- **Bouton `/crew`** : réponse immédiate (pas d'attente), mais le 429 est
+  désormais **affiché** (bandeau « Synchronisation partielle »). Les plannings
+  remonteront au prochain passage du cron, ou reprobez à la main ≥ 1 min après.
+- **Test manuel de bout en bout** : `curl -X POST https://<host>/api/marad/refresh
+  -H "X-API-Token: <MARAD_SYNC_TOKEN>"` — fait le retry, renvoie crew + plannings.
+
 ### Plannings non reliés à un leg (`leg_id` vide)
 Le « voyage » Marad est réconcilié au `leg` par **navire + fenêtre de dates**.
 Vérifier que le navire (nom/code) et les dates `leg` (`etd`/`eta`) couvrent la
