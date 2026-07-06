@@ -1843,3 +1843,43 @@ form textarea {
   font-weight: 600;
   color: var(--teal, #0D5966);
 }
+
+/* ── Fiche marin : photo d'identité + timeline d'embarquement ────────────── */
+.crew-photo-block { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.crew-photo {
+  width: 84px; height: 84px; border-radius: 12px; object-fit: cover;
+  border: 2px solid var(--sable, #EFE6D6); background: var(--sable, #EFE6D6);
+}
+.crew-photo-placeholder {
+  display: flex; align-items: center; justify-content: center;
+  font-family: "DM Serif Display", serif; font-size: 2rem; color: #fff;
+  background: var(--teal, #0D5966);
+}
+.crew-photo-form { display: flex; align-items: center; gap: 4px; }
+.crew-photo-file {
+  width: 116px; font-size: .72rem;
+}
+.crew-photo-file::file-selector-button {
+  border: 1px solid var(--teal, #0D5966); background: transparent;
+  color: var(--teal, #0D5966); border-radius: 6px; padding: 2px 6px;
+  font-size: .72rem; cursor: pointer; margin-right: 4px;
+}
+
+.emb-timeline { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.emb-row { display: grid; grid-template-columns: 160px 1fr; align-items: center; gap: 10px; }
+.emb-row-label { font-size: .85rem; line-height: 1.15; }
+.emb-track {
+  position: relative; height: 26px; border-radius: 6px;
+  background: var(--sable, #EFE6D6); overflow: hidden;
+}
+.emb-bar {
+  position: absolute; top: 3px; height: 20px; border-radius: 5px;
+  min-width: 3px; display: flex; align-items: center; padding: 0 6px;
+  box-sizing: border-box; white-space: nowrap; overflow: hidden;
+}
+.emb-bar-embark { background: var(--teal, #0D5966); }
+.emb-bar-shore { background: var(--cuivre, #B47148); opacity: .55; }
+.emb-bar-dates { font-size: .68rem; color: #fff; font-family: "JetBrains Mono", monospace; }
+@media (max-width: 640px) {
+  .emb-row { grid-template-columns: 100px 1fr; }
+}

@@ -203,18 +203,21 @@ def render_anemos_certificate(
     client,
     distance_nm: Decimal,
     certificate=None,
+    crew=None,
 ) -> DocumentBytes:
     """Génère un PDF Certificat Anemos.
 
     Le PDF atteste du tonnage transporté, distance, CO₂ évité par rapport
     au shipping conventionnel. Référence : ``ANEMOS-<booking.reference>``
-    si pas de certificate.reference fournie.
+    si pas de certificate.reference fournie. ``crew`` : liste optionnelle de
+    dicts ``{full_name, role, nationality}`` de l'équipage embarqué sur le leg.
     """
     tonnage = (booking.total_weight_kg or Decimal("0")) / Decimal("1000")
     emission = estimate_co2(distance_nm=distance_nm, tonnage_t=tonnage)
     ctx = _common_ctx(booking, leg, vessel, pol, pod, client)
     ctx["emission"] = emission
     ctx["certificate"] = certificate
+    ctx["crew"] = crew or []
     ctx["cert_ref"] = certificate.reference if certificate else f"ANEMOS-{booking.reference}"
     ctx["tonnage_t"] = tonnage
     # ENV-04 — QR de vérification publique : pointe vers /verify/{ref} (page

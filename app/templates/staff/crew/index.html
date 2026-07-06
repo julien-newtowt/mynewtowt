@@ -102,10 +102,10 @@
       <div class="bordee-missing">⚠️ Postes vacants : {{ b.missing|map('capitalize')|join(', ') }}</div>
       {% endif %}
       <div class="bordee-list">
-        {% for md in b.crew %}
-        <a href="/crew/members/{{ md.id }}" class="flex justify-between" style="border-bottom:none;">
-          <span>{{ md.full_name }}</span>
-          <span class="text-muted text-xs">{{ md.role }}</span>
+        {% for c in b.crew %}
+        <a href="/crew/members/{{ c.m.id }}" class="flex justify-between" style="border-bottom:none;">
+          <span>{{ c.m.full_name }}</span>
+          <span class="text-muted text-xs">{{ c.role }}</span>
         </a>
         {% endfor %}
       </div>
