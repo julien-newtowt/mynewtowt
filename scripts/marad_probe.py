@@ -42,12 +42,16 @@ logging.basicConfig(level=logging.INFO, format="[marad] %(levelname)s %(message)
 _DEFAULT = ("vessels",)
 
 
-def _ids(value: str | None) -> list[int]:
-    out: list[int] = []
+def _ids(value: str | None) -> list:
+    """IDs crew pour passports/documents. Marad identifie un marin par **GUID**
+    (ex. ``379b06a1-…``) → on garde les jetons tels quels (str), en convertissant
+    en int ceux qui sont purement numériques (rétro-compat)."""
+    out: list = []
     for part in (value or "").split(","):
         part = part.strip()
-        if part.isdigit():
-            out.append(int(part))
+        if not part:
+            continue
+        out.append(int(part) if part.isdigit() else part)
     return out
 
 
@@ -64,7 +68,7 @@ def _show(name: str, result, *, raw: bool, limit: int) -> None:
     print(json.dumps(payload, indent=2, ensure_ascii=False, default=str) + note)
 
 
-async def _call(endpoint: str, *, since: str | None, ids: list[int]):
+async def _call(endpoint: str, *, since: str | None, ids: list):
     if endpoint == "ping":
         return await marad.ping()
     if endpoint == "vessels":
@@ -85,7 +89,7 @@ async def _call(endpoint: str, *, since: str | None, ids: list[int]):
 
 
 async def run(
-    *, endpoint: str | None, since: str | None, ids: list[int], raw: bool, limit: int, delay: float
+    *, endpoint: str | None, since: str | None, ids: list, raw: bool, limit: int, delay: float
 ) -> int:
     if not marad.enabled():
         print("MARAD non configuré : MARAD_API_TOKEN absent du .env → no-op.")

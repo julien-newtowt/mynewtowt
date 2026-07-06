@@ -288,11 +288,11 @@ async def list_vessels() -> Any | None:
     return await _get("/api/vessels/getVessels")
 
 
-async def get_passport_details(crew_ids: list[int]) -> Any | None:
+async def get_passport_details(crew_ids: list) -> Any | None:
     return await _post_read("/api/CrewingDocuments/GetPassportDetails", json={"ids": crew_ids})
 
 
-async def get_crew_documents(crew_ids: list[int]) -> Any | None:
+async def get_crew_documents(crew_ids: list) -> Any | None:
     return await _post_read("/api/CrewingDocuments/GetCrewMembersDocuments", json={"ids": crew_ids})
 
 
