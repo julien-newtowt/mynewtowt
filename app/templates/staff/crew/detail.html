@@ -80,9 +80,9 @@
   </article>
 </div>
 
+{% if assignments %}
 <article class="card mt-4">
-  <h2>Embarquements / débarquements ({{ assignments|length }})</h2>
-  {% if assignments %}
+  <h2>Embarquements / débarquements ({{ assignments|length }}) <span class="pill pill-neutral">saisie ERP</span></h2>
   <table class="data-table">
     <thead><tr><th>Leg</th><th>Rôle</th><th>Embarquement</th><th>Débarquement</th><th>Alertes</th><th></th></tr></thead>
     <tbody>
@@ -119,12 +119,13 @@
       {% endfor %}
     </tbody>
   </table>
-  {% else %}<p class="text-muted">Aucun embarquement enregistré.</p>{% endif %}
 </article>
+{% endif %}
 
-{% if embarkation_timeline %}
 <article class="card mt-4">
   <h2><i data-lucide="calendar-range"></i> Planning d'embarquement</h2>
+  <a href="/crew/calendar?year={{ embarkation_timeline.start.year if embarkation_timeline else '' }}" class="btn btn-ghost btn-sm" style="float:right;"><i data-lucide="calendar"></i> Calendrier annuel</a>
+  {% if embarkation_timeline %}
   <p class="text-muted text-sm">
     Périodes d'embarquement (navire + rôle) et périodes à terre, du
     {{ embarkation_timeline.start }} au {{ embarkation_timeline.end }}.
@@ -147,8 +148,10 @@
     </div>
     {% endfor %}
   </div>
+  {% else %}
+  <p class="text-muted">Aucune période d'embarquement importée pour ce marin. Synchronisez les plannings Marad (bouton « Synchroniser plannings » sur la liste équipage).</p>
+  {% endif %}
 </article>
-{% endif %}
 
 {% if marad_schedules %}
 <article class="card mt-4">
@@ -177,40 +180,6 @@
 {% endif %}
 
 <article class="card mt-4">
-  <h2>Nouvel embarquement</h2>
-  <p class="text-muted">La conformité Schengen (90 j / 180 j) et la validité du passeport sont vérifiées avant la création — un statut non conforme bloque l'embarquement.</p>
-  <form method="POST" action="/crew/members/{{ member.id }}/assignments">
-    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-    <div class="grid grid-2 gap-3">
-      <div class="field">
-        <label>Leg</label>
-        <select name="leg_id" required>
-          {{ leg_option_tags(leg_options) }}
-        </select>
-      </div>
-      <div class="field">
-        <label>Rôle à bord</label>
-        <select name="role_on_board">
-          <option value="">— rôle habituel ({{ member.role }})</option>
-          {% for r in roles %}
-          <option value="{{ r }}">{{ r|replace('_', ' ')|capitalize }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field"><label>Embarquement</label><input type="datetime-local" name="embark_at" /></div>
-      <div class="field"><label>Débarquement</label><input type="datetime-local" name="disembark_at" /></div>
-    </div>
-    <div class="alert alert-warn mt-3">
-      <label class="flex items-center gap-2">
-        <input type="checkbox" name="override_compliance" />
-        <span><strong>Forcer malgré la non-conformité</strong> — outrepasse le blocage Schengen / passeport. L'action sera tracée dans le journal d'audit.</span>
-      </label>
-    </div>
-    <button class="btn btn-primary mt-3" type="submit">Embarquer</button>
-  </form>
-</article>
-
-<article class="card mt-4">
   <h2>Billets transport ({{ tickets|length }})</h2>
   {% if tickets %}
   <table class="data-table">
@@ -229,6 +198,31 @@
     </tbody>
   </table>
   {% else %}<p class="text-muted">Aucun billet enregistré.</p>{% endif %}
+
+  <details class="mt-3">
+    <summary class="btn btn-secondary btn-sm" style="display:inline-block;"><i data-lucide="plus"></i> Ajouter un billet</summary>
+    <form method="post" action="/crew/members/{{ member.id }}/tickets" class="mt-3">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="grid grid-3 gap-3">
+        <div class="field">
+          <label>Mode</label>
+          <select name="mode" required>
+            {% for md in transport_modes %}
+            <option value="{{ md }}">{{ md|replace('_', ' ')|capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field"><label>Référence</label><input name="reference" /></div>
+        <div class="field"><label>Compagnie</label><input name="carrier" /></div>
+        <div class="field"><label>Départ</label><input type="datetime-local" name="departure_at" /></div>
+        <div class="field"><label>Lieu de départ</label><input name="departure_location" /></div>
+        <div class="field"><label>Arrivée</label><input type="datetime-local" name="arrival_at" /></div>
+        <div class="field"><label>Lieu d'arrivée</label><input name="arrival_location" /></div>
+        <div class="field"><label>Coût (EUR)</label><input type="number" step="0.01" min="0" name="cost_eur" /></div>
+      </div>
+      <button class="btn btn-primary mt-3" type="submit">Enregistrer le billet</button>
+    </form>
+  </details>
 </article>
 
 {% endblock %}

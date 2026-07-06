@@ -423,17 +423,6 @@ async def crew_calendar(
     )
 
 
-@router.get("/new", response_class=HTMLResponse)
-async def crew_new_form(
-    request: Request,
-    user=Depends(require_permission("crew", "M")),
-):
-    return templates.TemplateResponse(
-        "staff/crew/new.html",
-        {"request": request, "user": user, "roles": CREW_ROLES, "member": None},
-    )
-
-
 def _pdate(value: str | None) -> _date | None:
     """Parse tolérant d'une date ISO de formulaire."""
     if not value or not str(value).strip():
@@ -515,38 +504,6 @@ def _apply_member_form(m: CrewMember, form: dict) -> None:
     for f in _MEMBER_DATE_FIELDS:
         if f in form:
             setattr(m, f, _pdate(form.get(f)))
-
-
-@router.post("/members")
-async def crew_create(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("crew", "M")),
-):
-    """CREW-01/03 — création d'une fiche marin (tous les champs)."""
-    form = dict(await request.form())
-    role = (form.get("role") or "").strip()
-    if role not in CREW_ROLES:
-        raise HTTPException(status_code=400, detail="invalid role")
-    if not (form.get("full_name") or "").strip():
-        raise HTTPException(status_code=400, detail="full_name required")
-    m = CrewMember(full_name=form["full_name"].strip(), role=role)
-    _apply_member_form(m, form)
-    db.add(m)
-    await db.flush()
-    await activity_record(
-        db,
-        action="create",
-        user_id=user.id,
-        user_name=user.full_name or user.username,
-        user_role=user.role,
-        module="crew",
-        entity_type="crew_member",
-        entity_id=m.id,
-        entity_label=m.full_name,
-        ip_address=_client_ip(request),
-    )
-    return RedirectResponse(url=f"/crew/members/{m.id}", status_code=303)
 
 
 @router.get("/members/{member_id}/edit", response_class=HTMLResponse)
@@ -816,6 +773,7 @@ async def _member_detail_context(
         "legs": legs,
         "leg_options": leg_options,
         "roles": CREW_ROLES,
+        "transport_modes": TRANSPORT_MODES,
         "marad_schedules": marad_schedules,
         "embarkation_timeline": _embarkation_timeline(marad_schedules, _date.today()),
         "error": error,
@@ -836,147 +794,6 @@ async def crew_detail(
         "staff/crew/detail.html",
         await _member_detail_context(request, db, user, m),
     )
-
-
-@router.post("/members/{member_id}/assignments")
-async def crew_assign(
-    member_id: int,
-    request: Request,
-    leg_id: int | None = Form(None),
-    vessel_id: int | None = Form(None),
-    role_on_board: str | None = Form(None),
-    embark_at: str | None = Form(None),
-    disembark_at: str | None = Form(None),
-    override_compliance: str | None = Form(None),
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("crew", "M")),
-):
-    member = await db.get(CrewMember, member_id)
-    if member is None:
-        raise HTTPException(status_code=404)
-    # CREW-04 (A4) — embarquement sur un leg précis OU hors leg (rattaché au
-    # navire). Au moins l'un des deux est requis.
-    leg = await db.get(Leg, leg_id) if leg_id else None
-    if leg_id and leg is None:
-        raise HTTPException(status_code=404)
-    if leg is not None:
-        vessel_id = leg.vessel_id  # cohérence : le navire suit le leg
-    elif vessel_id is not None:
-        if await db.get(Vessel, vessel_id) is None:
-            raise HTTPException(status_code=404, detail="navire inconnu")
-    else:
-        raise HTTPException(
-            status_code=400, detail="Renseigner un leg ou un navire pour l'embarquement."
-        )
-
-    try:
-        embark_dt = datetime.fromisoformat(embark_at) if embark_at else None
-        disembark_dt = datetime.fromisoformat(disembark_at) if disembark_at else None
-    except ValueError:
-        return templates.TemplateResponse(
-            "staff/crew/detail.html",
-            await _member_detail_context(
-                request, db, user, member, error="Dates d'embarquement/débarquement invalides."
-            ),
-            status_code=400,
-        )
-
-    # FLX-06 — garde-fou conformité AVANT création de l'embarquement :
-    # rafraîchit le snapshot Schengen persisté puis vérifie statut +
-    # validité passeport jusqu'à la fin d'embarquement prévue.
-    await refresh_member_schengen(db, member)
-
-    blocking: list[str] = []
-    if member.schengen_status == "non_compliant":
-        days = member.schengen_days_in_window
-        blocking.append(
-            "Statut Schengen non conforme"
-            + (f" ({days} j sur la fenêtre de 180 j, max 90 j)" if days is not None else "")
-            + "."
-        )
-    deadline = (
-        disembark_dt.date() if disembark_dt else embark_dt.date() if embark_dt else _date.today()
-    )
-    passport_reason = passport_blocking_reason(member, deadline)
-    if passport_reason:
-        blocking.append(passport_reason)
-
-    # Gardes DURES (non contournables par l'override, qui ne lève que la
-    # non-conformité Schengen/passeport) : ordre des dates + anti-overlap.
-    if embark_dt and disembark_dt and embark_dt > disembark_dt:
-        return templates.TemplateResponse(
-            "staff/crew/detail.html",
-            await _member_detail_context(
-                request,
-                db,
-                user,
-                member,
-                error="Date de débarquement antérieure à l'embarquement.",
-            ),
-            status_code=400,
-        )
-    overlap = await _find_overlap(db, member_id=member_id, embark=embark_dt, disembark=disembark_dt)
-    if overlap is not None:
-        return templates.TemplateResponse(
-            "staff/crew/detail.html",
-            await _member_detail_context(
-                request,
-                db,
-                user,
-                member,
-                error=f"Chevauchement avec un embarquement existant (leg {overlap.leg_id}). "
-                "Un marin ne peut être embarqué sur deux périodes simultanées.",
-            ),
-            status_code=400,
-        )
-
-    override = override_compliance == "on"
-    if blocking and not override:
-        return templates.TemplateResponse(
-            "staff/crew/detail.html",
-            await _member_detail_context(
-                request,
-                db,
-                user,
-                member,
-                error=(
-                    "Embarquement bloqué : "
-                    + " ".join(blocking)
-                    + " Cochez « Forcer malgré la non-conformité » pour passer outre "
-                    "(action tracée dans le journal d'audit)."
-                ),
-            ),
-            status_code=400,
-        )
-
-    a = CrewAssignment(
-        crew_member_id=member_id,
-        leg_id=leg_id,
-        vessel_id=vessel_id,
-        role_on_board=(role_on_board or "").strip() or None,
-        embark_at=embark_dt,
-        disembark_at=disembark_dt,
-    )
-    db.add(a)
-    await db.flush()
-
-    overridden = bool(blocking and override)
-    await activity_record(
-        db,
-        action="crew_assignment_override" if overridden else "create",
-        user_id=user.id,
-        user_name=user.full_name or user.username,
-        user_role=user.role,
-        module="crew",
-        entity_type="crew_assignment",
-        entity_id=a.id,
-        entity_label=f"member={member_id} leg={leg_id}",
-        detail=(
-            f"OVERRIDE compliance — motifs ignorés : {' '.join(blocking)}" if overridden else None
-        ),
-        ip_address=_client_ip(request),
-    )
-    return RedirectResponse(url=f"/crew/members/{member_id}", status_code=303)
 
 
 @router.post("/assignments/{assignment_id}/ticket")
