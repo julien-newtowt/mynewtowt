@@ -9,15 +9,21 @@ Principes de l'upsert (cf. docs/integrations/marad-crew-readonly.md) :
 - **idempotent** : un même GUID met à jour l'enregistrement existant ;
 - **additif / non destructeur** : un champ n'est écrasé que si Marad fournit une
   valeur exploitable (jamais de NULL/placeholder qui effacerait une saisie ERP) ;
-- **champs ERP préservés** : statut Schengen, visas, livret marin, passeport,
-  ``is_active``, ``notes`` ne sont pas gérés par Marad → jamais touchés ici ;
+- **champs ERP préservés** : statut Schengen, visas, livret marin,
+  ``is_active``, ``notes``, ``photo_*`` ne sont pas gérés par Marad → jamais
+  touchés ici ;
+- **passeport** : ``passport_number`` / ``passport_expires_at`` sont enrichis
+  depuis Marad via ``GetPassportDetails`` (endpoint séparé — le passeport n'est
+  PAS dans ``/api/Crewing``), en mode non destructeur ;
 - **champs sensibles ignorés volontairement** : ``bankAccount``, ``idNumber``,
   adresses postales, tailles de vêtements — non importés.
 
 Schéma Marad ``/api/Crewing`` (confirmé) — champs utilisés :
 ``id`` (GUID), ``firstName``, ``lastName``, ``callName``, ``ranks`` (liste),
 ``nationality``, ``birthDate`` (ISO datetime), ``email``, ``mobilePhone``,
-``phone``.
+``phone``. Le **passeport** vient d'un endpoint distinct (``GetPassportDetails``,
+corps = tableau brut de GUID → ``[{CrewMemberID, PassportNumber,
+PassportExpiryDate, …}]``).
 
 ⚠️ La **casse des clés JSON varie selon le serveur Marad** : les hôtes par
 tenant (``external02.marad.ms``…) sérialisent en PascalCase (``ID``,
@@ -193,11 +199,62 @@ def _apply(member: CrewMember, rec: dict, *, creating: bool) -> None:
         member.phone = phone
 
 
+def _passport_expiry(rec: dict) -> date | None:
+    """Date d'expiration passeport (``PassportExpiryDate`` ISO) ou None."""
+    raw = _clean(_field(rec, "passportExpiryDate"))
+    if not raw:
+        return None
+    dt = _parse_dt(raw)
+    return dt.date() if dt else None
+
+
+async def _sync_passports(db: AsyncSession, marad_ids: list[str]) -> int:
+    """Renseigne ``passport_number`` / ``passport_expires_at`` depuis Marad.
+
+    Source : ``POST /api/CrewingDocuments/GetPassportDetails`` (corps = tableau
+    brut de GUID) → liste ``[{CrewMemberID, PassportNumber, PassportExpiryDate,
+    …}]``. Réconcilié par ``CrewMemberID`` = ``CrewMember.marad_id``. Non
+    destructeur (n'écrit que si Marad fournit une valeur). Renvoie le nombre de
+    marins enrichis ; dégradation gracieuse (0) si l'appel échoue.
+    """
+    if not marad_ids:
+        return 0
+    data = await marad.get_passport_details(marad_ids)
+    rows = _records(data)
+    if not rows:
+        return 0
+    members = (
+        (await db.execute(select(CrewMember).where(CrewMember.marad_id.in_(marad_ids))))
+        .scalars()
+        .all()
+    )
+    by_marad = {m.marad_id: m for m in members}
+    applied = 0
+    for rec in rows:
+        member = by_marad.get(_clean(_field(rec, "crewMemberId")))
+        if member is None:
+            continue
+        number = _clean(_field(rec, "passportNumber"))
+        expiry = _passport_expiry(rec)
+        changed = False
+        if number:
+            member.passport_number = number[:60]
+            changed = True
+        if expiry:
+            member.passport_expires_at = expiry
+            changed = True
+        if changed:
+            applied += 1
+    return applied
+
+
 async def sync_crew(db: AsyncSession) -> dict:
     """Upsert idempotent du crew Marad dans ``crew_members`` (clé ``marad_id``).
 
-    No-op propre si Marad n'est pas configuré. Renvoie un résumé
-    ``{configured, fetched, created, updated, skipped, errors, note}``.
+    Enrichit aussi le passeport (numéro + expiration) via ``GetPassportDetails``
+    (le passeport n'est PAS dans ``/api/Crewing``). No-op propre si Marad n'est
+    pas configuré. Renvoie un résumé ``{configured, fetched, created, updated,
+    skipped, errors, passports, note}``.
     """
     if not marad.enabled():
         return {
@@ -214,11 +271,13 @@ async def sync_crew(db: AsyncSession) -> dict:
     records = _records(payload)
 
     created = updated = skipped = errors = 0
+    seen_ids: list[str] = []
     for rec in records:
         marad_id = _clean(_field(rec, "id"))
         if not marad_id:
             skipped += 1  # enregistrement sans GUID → non réconciliable
             continue
+        seen_ids.append(marad_id)
         try:
             member = (
                 await db.execute(select(CrewMember).where(CrewMember.marad_id == marad_id))
@@ -235,7 +294,12 @@ async def sync_crew(db: AsyncSession) -> dict:
             logger.exception("Marad sync: échec sur l'enregistrement %s", marad_id)
             errors += 1
 
-    await db.flush()  # commit géré par la dependency get_db
+    await db.flush()  # matérialise les crew avant l'enrichissement passeport
+    # Passeports : endpoint séparé (GetPassportDetails, batch de GUID, 15 req/min).
+    # Non destructeur — n'écrit passport_number / passport_expires_at que si Marad
+    # fournit une valeur. Dégradation gracieuse si l'appel échoue (0 appliqué).
+    passports = await _sync_passports(db, seen_ids)
+    await db.flush()
     result = {
         "configured": True,
         "fetched": len(records),
@@ -243,6 +307,7 @@ async def sync_crew(db: AsyncSession) -> dict:
         "updated": updated,
         "skipped": skipped,
         "errors": errors,
+        "passports": passports,
         "note": "Sync read-only Marad → crew_members (clé marad_id, non destructeur).",
     }
     logger.info("Marad sync: %s", result)
@@ -688,6 +753,7 @@ async def sync_all(db: AsyncSession, *, schedule_retry_wait: float = 0.0) -> dic
         "sched_created": sched.get("created", 0),
         "sched_updated": sched.get("updated", 0),
         "sched_fetched": sched.get("fetched", 0),
+        "passports_applied": crew.get("passports", 0),
         "errors": crew.get("errors", 0) + sched.get("errors", 0),
         "diagnostic": diagnostic,
         "crew": crew,
