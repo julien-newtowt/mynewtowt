@@ -656,6 +656,67 @@ def test_sync_schedules_real_tenant_shape_with_guids_and_leave(monkeypatch) -> N
     _run_with_db(_check)
 
 
+def test_refresh_endpoint_only_param_decouples_crew_and_schedules(monkeypatch) -> None:
+    """Le endpoint cron dispatche selon ?only= : crew seul / plannings seuls /
+    les deux. C'est ce découplage qui évite le 504 (Caddy coupe à 60 s) en
+    permettant deux appels courts espacés au lieu d'un long."""
+    from fastapi import FastAPI
+    from starlette.testclient import TestClient
+
+    from app.database import get_db
+    from app.routers.marad_router import api_router
+    from app.services import marad_sync as _svc
+
+    monkeypatch.setattr(marad.settings, "marad_sync_token", "tok-123")
+    calls: list[str] = []
+
+    def _res(**over):
+        base = {
+            "configured": True,
+            "fetched": 1,
+            "created": 1,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "note": "",
+        }
+        base.update(over)
+        return base
+
+    async def _crew(db):
+        calls.append("crew")
+        return _res()
+
+    async def _sched(db):
+        calls.append("schedules")
+        return _res()
+
+    async def _all(db, *, schedule_retry_wait=0.0):
+        calls.append(f"all:{schedule_retry_wait}")
+        return {"configured": True, "crew_fetched": 1, "sched_fetched": 0}
+
+    monkeypatch.setattr(_svc, "sync_crew", _crew)
+    monkeypatch.setattr(_svc, "sync_schedules", _sched)
+    monkeypatch.setattr(_svc, "sync_all", _all)
+
+    app = FastAPI()
+    app.include_router(api_router)
+    app.dependency_overrides[get_db] = lambda: object()
+    client = TestClient(app)
+    h = {"X-API-Token": "tok-123"}
+
+    r1 = client.post("/api/marad/refresh?only=crew", headers=h)
+    assert r1.status_code == 200 and r1.json()["part"] == "crew"
+    r2 = client.post("/api/marad/refresh?only=schedules", headers=h)
+    assert r2.status_code == 200 and r2.json()["part"] == "schedules"
+    r3 = client.post("/api/marad/refresh", headers=h)  # les deux
+    assert r3.status_code == 200
+
+    assert calls[0] == "crew" and calls[1] == "schedules" and calls[2].startswith("all")
+    # Auth toujours exigée.
+    assert client.post("/api/marad/refresh", headers={"X-API-Token": "x"}).status_code == 403
+
+
 def test_sync_all_retries_schedules_after_wait_on_429(monkeypatch) -> None:
     """Cron : /api/CrewingSchedule en 429 (appelé juste après /api/Crewing) →
     on patiente puis on retente UNE fois, et les plannings remontent alors.

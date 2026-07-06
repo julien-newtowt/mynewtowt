@@ -51,12 +51,43 @@
 
 ## 4. Cron Power Automate — sync Marad (toutes les 30–60 min)
 
-Créer un flux *planifié* (Scheduled cloud flow) :
+⚠️ **`/api/Crewing` et `/api/CrewingSchedule` sont à 1 req/min avec une fenêtre
+partagée** : les enchaîner dans un seul appel force un **429** sur les plannings,
+et l'attendre dépasse le timeout du reverse-proxy (**Caddy coupe à ~60 s → 504**).
+On **découple** donc en deux appels courts espacés, via le paramètre `?only=`.
 
-- **Déclencheur** : *Récurrence* — toutes les **30 minutes** (60 min convient
-  aussi). ⚠️ **Ne pas descendre sous ~5 min** : Marad plafonne `/api/Crewing`
-  et `/api/CrewingSchedule` à **1 requête/minute**.
-- **Action** : *HTTP*
+Créer un flux *planifié* (Scheduled cloud flow), toutes les **30 minutes** :
+
+1. **HTTP** — sync **crew** :
+   - Méthode `POST`, URI `https://my.towt.eu/api/marad/refresh?only=crew`
+   - En-tête `X-API-Token: <MARAD_SYNC_TOKEN>` (brut) — Corps vide.
+2. **Delay** — **90 secondes** (action *Delay* Power Automate ; > 60 s pour
+   libérer la fenêtre de quota du second endpoint).
+3. **HTTP** — sync **plannings** :
+   - Méthode `POST`, URI `https://my.towt.eu/api/marad/refresh?only=schedules`
+   - Mêmes en-têtes — Corps vide.
+
+> Chaque appel est **court** (un seul endpoint, pas d'attente) → jamais de 504.
+> Réponses `200` : `{"part":"crew", "fetched":146, "created":…}` puis
+> `{"part":"schedules", "fetched":…, "created":…}`.
+>
+> **Test manuel** (deux commandes espacées) :
+> ```bash
+> TOK=$(grep '^MARAD_SYNC_TOKEN=' .env | cut -d= -f2-)
+> curl -X POST "https://my.towt.eu/api/marad/refresh?only=crew"      -H "X-API-Token: $TOK"
+> sleep 90
+> curl -X POST "https://my.towt.eu/api/marad/refresh?only=schedules" -H "X-API-Token: $TOK"
+> ```
+
+### Variante (un seul appel) — uniquement si le proxy autorise les réponses > 60 s
+`POST /api/marad/refresh` (sans `?only=`) tente les deux et, si les plannings
+prennent un 429, patiente `MARAD_SCHEDULE_RETRY_WAIT` s (défaut 65) puis retente.
+Sur un proxy plafonné à 60 s (cas NEWTOWT/Caddy) **cet appel renvoie 504** :
+préférer le découplage ci-dessus, ou poser `MARAD_SCHEDULE_RETRY_WAIT=0` pour
+que l'appel unique réponde vite (crew OK, plannings éventuellement en 429 remonté).
+
+- **Ancienne configuration à un seul appel** (référence) :
+  - **Action** : *HTTP*
   - **Méthode** : `POST`
   - **URI** : `https://my.towt.eu/api/marad/refresh`
     *(remplacer par le domaine public réel de l'instance)*
