@@ -537,6 +537,23 @@ async def sync_all(db: AsyncSession) -> dict:
                 "utilisant la même clé API a consommé la minute. "
                 "Réessayez dans ~1 minute sans autre appel Marad."
             )
+
+    # Cas PARTIEL : le crew est passé mais /api/CrewingSchedule a pris un 429
+    # (quota 1 req/min propre à cet endpoint). Sans ça, le message de succès du
+    # crew masque le fait qu'aucun planning n'a pu être lu — c'est exactement ce
+    # qui donne « N marins, 0 planning » sans explication.
+    if (
+        diagnostic is None
+        and crew["configured"]
+        and sched.get("fetched", 0) == 0
+        and marad.last_status("/api/CrewingSchedule") == 429
+    ):
+        diagnostic = (
+            "Marins synchronisés, mais /api/CrewingSchedule a renvoyé 429 "
+            "(quota 1 req/min, distinct de /api/Crewing). Relancez la synchro "
+            "dans ~1 min sans autre appel Marad — les plannings remonteront."
+        )
+
     if (
         crew["configured"]
         and (crew.get("fetched", 0) + sched.get("fetched", 0)) == 0

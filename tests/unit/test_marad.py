@@ -600,6 +600,86 @@ def test_sync_all_crew_before_schedules_so_linkage_works(monkeypatch) -> None:
     _run_with_db(_check)
 
 
+def test_sync_schedules_real_tenant_shape_with_guids_and_leave(monkeypatch) -> None:
+    """Données RÉELLES external02 : le planning porte bien un ID et
+    crewMember.ID (le PBIX ne les affichait pas). Rattachement PAR GUID, clé =
+    l'ID réel (pas synthétique). Cas « Congés » : Vessel=null, ports vides →
+    ligne créée et rattachée au marin, sans navire ni voyage.
+    """
+    from datetime import date
+
+    from app.models.crew import CrewMember, MaradCrewSchedule
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        # Marin importé par la sync crew, clé = son GUID Marad.
+        member = CrewMember(
+            marad_id="09f0c439-74c5-467d-ad96-cc42e61fb9cd",
+            full_name="Ousseynou BOUSSO",
+            role="Chief Engineer",
+        )
+        s.add(member)
+        await s.flush()
+
+        rec = {
+            "ID": "cd82cd52-0c00-4979-ae03-544136753361",
+            "CrewMember": {
+                "ID": "09f0c439-74c5-467d-ad96-cc42e61fb9cd",
+                "FirstName": "Ousseynou",
+                "LastName": "BOUSSO",
+                "EmployeeNumber": "00080",
+                "IDNumber": "A02916306",
+            },
+            "Rank": "Chief Engineer (Migrated)",
+            "Status": "Congés",
+            "Vessel": None,
+            "StartInfo": {"DateTime": "2026-05-15T00:00:00", "Port": ""},
+            "EndInfo": {"DateTime": "2026-07-09T23:59:00", "Port": ""},
+        }
+        monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret([rec]))
+
+        r = await marad_sync.sync_schedules(s)
+        assert (r["fetched"], r["created"], r["skipped"]) == (1, 1, 0)
+        row = (await s.execute(select(MaradCrewSchedule))).scalar_one()
+        assert row.marad_schedule_id == "cd82cd52-0c00-4979-ae03-544136753361"  # id réel
+        assert row.crew_member_id == member.id  # rattaché PAR GUID
+        assert row.marad_crew_id == "09f0c439-74c5-467d-ad96-cc42e61fb9cd"
+        assert row.vessel_id is None and row.marad_vessel_name is None  # congé, pas d'embarquement
+        assert row.marad_voyage_ref is None  # ports vides
+        assert row.status == "Congés"
+        assert row.start_date == date(2026, 5, 15)
+        assert row.end_date == date(2026, 7, 9)
+
+    _run_with_db(_check)
+
+
+def test_sync_all_surfaces_schedule_429_on_partial_success(monkeypatch) -> None:
+    """Crew OK mais /api/CrewingSchedule en 429 → le message ne doit PAS masquer
+    l'absence de plannings derrière le succès du crew (le trou « N marins, 0
+    planning » sans explication)."""
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+    monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([_crew_record()]))
+    monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret(None))
+    monkeypatch.setattr(
+        marad, "last_status", lambda p: 429 if p == "/api/CrewingSchedule" else 200
+    )
+
+    async def _no_diagnose():
+        raise AssertionError("diagnose() ne doit pas être appelé (crew a réussi)")
+
+    monkeypatch.setattr(marad, "diagnose", _no_diagnose)
+
+    async def _check(s):
+        r = await marad_sync.sync_all(s)
+        assert r["crew_fetched"] == 1 and r["sched_fetched"] == 0
+        assert r["diagnostic"] and "CrewingSchedule a renvoyé 429" in r["diagnostic"]
+
+    _run_with_db(_check)
+
+
 def test_sync_schedules_name_match_ignores_accents_and_case(monkeypatch) -> None:
     """Le rapprochement par nom tolère casse et accents (« MÜLLER » ↔ « Müller »)."""
     from app.models.crew import CrewMember, MaradCrewSchedule
