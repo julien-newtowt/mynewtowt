@@ -8,17 +8,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=DM+Serif+Display&family=JetBrains+Mono:wght@400;500&display=swap" />
-  <link rel="stylesheet" href="/static/css/kairos.css" />
-  <link rel="icon" type="image/png" href="/static/img/favicon.png" />
+  <link rel="stylesheet" href="{{ asset('css/kairos.css') }}" />
+  <link rel="icon" type="image/png" href="{{ asset('img/favicon.png') }}" />
   <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
-  <script src="/static/js/csrf-htmx.js" defer></script>
-  <script src="/static/js/csrf-forms.js" defer></script>
-  <script src="/static/js/lucide-init.js" defer></script>
-  <script src="/static/js/toast.js" defer></script>
-  <script src="/static/js/modal.js" defer></script>
-  <script src="/static/js/forms.js" defer></script>
-  <script src="/static/js/towt-tz.js" defer></script>
+  <script src="{{ asset('js/csrf-htmx.js') }}" defer></script>
+  <script src="{{ asset('js/csrf-forms.js') }}" defer></script>
+  <script src="{{ asset('js/lucide-init.js') }}" defer></script>
+  <script src="{{ asset('js/toast.js') }}" defer></script>
+  <script src="{{ asset('js/modal.js') }}" defer></script>
+  <script src="{{ asset('js/forms.js') }}" defer></script>
+  <script src="{{ asset('js/towt-tz.js') }}" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body>

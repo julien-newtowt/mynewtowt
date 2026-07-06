@@ -49,32 +49,15 @@ async def _setup_leg(db):
 
 
 @pytest.mark.asyncio
-async def test_crew_create_full_then_edit(db, staff_user):
-    from app.routers.crew_router import crew_create, crew_edit
+async def test_crew_edit_updates_erp_fields(db, staff_user):
+    """Les marins sont créés par Marad (plus de route de création). L'édition des
+    champs ERP (visa, téléphone…) reste possible sur la fiche."""
+    from app.routers.crew_router import crew_edit
 
-    req = _Req(
-        form={
-            "full_name": "Jean Marin",
-            "role": "capitaine",
-            "nationality": "fr",
-            "date_of_birth": "1985-06-15",
-            "passport_number": "12AB34567",
-            "passport_expires_at": "2030-01-01",
-            "visa_us_expires_at": "2028-03-01",
-            "seaman_book_number": "SB-999",
-            "email": "jean@example.test",
-        }
-    )
-    resp = await crew_create(req, db=db, user=staff_user)
-    assert resp.status_code == 303
-    m = (await db.execute(CrewMember.__table__.select())).fetchone()
-    assert m.full_name == "Jean Marin"
-    assert m.nationality == "FR"
-    assert m.date_of_birth == date(1985, 6, 15)
-    assert m.visa_us_expires_at == date(2028, 3, 1)
-    assert m.seaman_book_number == "SB-999"
+    m = CrewMember(full_name="Jean Marin", role="capitaine")
+    db.add(m)
+    await db.flush()
 
-    # Édition : on corrige le visa BR + téléphone.
     resp = await crew_edit(
         m.id,
         _Req(form={"role": "capitaine", "visa_br_expires_at": "2029-09-09", "phone": "0102030405"}),
@@ -87,15 +70,13 @@ async def test_crew_create_full_then_edit(db, staff_user):
     assert member.phone == "0102030405"
 
 
-@pytest.mark.asyncio
-async def test_crew_create_invalid_role_rejected(db, staff_user):
-    from fastapi import HTTPException
+def test_crew_create_route_removed():
+    """La création de marin est désactivée (les marins proviennent de Marad)."""
+    import app.routers.crew_router as cr
 
-    from app.routers.crew_router import crew_create
-
-    with pytest.raises(HTTPException) as exc:
-        await crew_create(_Req(form={"full_name": "X", "role": "captain"}), db=db, user=staff_user)
-    assert exc.value.status_code == 400  # 'captain' n'est pas dans CREW_ROLES
+    assert not hasattr(cr, "crew_create")
+    assert not hasattr(cr, "crew_new_form")
+    assert not hasattr(cr, "crew_assign")  # création d'embarquement retirée aussi
 
 
 # ───────────────────────────── CREW-04 ─────────────────────────────
@@ -221,38 +202,6 @@ async def test_assignment_edit_rejects_overlap(db, staff_user):
             user=staff_user,
         )
     assert exc.value.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_crew_assign_success(db, staff_user):
-    """Parcours d'embarquement nominal (marin conforme, sans chevauchement)."""
-    from app.routers.crew_router import crew_assign
-
-    await _setup_leg(db)
-    db.add(
-        CrewMember(
-            id=1,
-            full_name="Jean Marin",
-            role="capitaine",
-            nationality="FR",
-            passport_expires_at=date(2030, 1, 1),
-        )
-    )
-    await db.flush()
-    resp = await crew_assign(
-        1,
-        _Req(),
-        leg_id=1,
-        role_on_board="capitaine",
-        embark_at="2026-04-01T00:00:00",
-        disembark_at="2026-04-20T00:00:00",
-        override_compliance=None,
-        db=db,
-        user=staff_user,
-    )
-    assert resp.status_code == 303
-    count = len((await db.execute(CrewAssignment.__table__.select())).fetchall())
-    assert count == 1
 
 
 # ───────────────────────────── CREW-02 ─────────────────────────────
