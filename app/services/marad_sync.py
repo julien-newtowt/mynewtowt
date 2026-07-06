@@ -28,7 +28,9 @@ ne jamais utiliser ``rec.get("...")`` directement sur un record Marad.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import unicodedata
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -258,6 +260,55 @@ _SCHED_RANK_KEYS = ("rank", "rankName", "position")
 _SCHED_STATUS_KEYS = ("status", "state")
 
 
+def _norm_name(value: str | None) -> str | None:
+    """Nom normalisé pour rapprochement (casse, espaces, accents ignorés).
+
+    Le planning Marad n'expose pas toujours le GUID du marin (les serveurs par
+    tenant renvoient ``crewMember`` = {FirstName, LastName, EmployeeNumber…} sans
+    ``id``). On rapproche alors par nom → normalisation robuste indispensable.
+    """
+    if not value:
+        return None
+    # Décompose les accents (é → e) puis retire les diacritiques.
+    stripped = "".join(
+        c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c)
+    )
+    collapsed = " ".join(stripped.split())
+    return collapsed.casefold() or None
+
+
+def _crew_identity(cm: dict) -> str | None:
+    """Identifiant le plus stable d'un marin dans un planning, ou None.
+
+    Ordre de préférence : GUID Marad > EmployeeNumber > nom normalisé. Utilisé
+    pour fabriquer une clé d'idempotence stable quand Marad ne fournit pas d'id
+    de planning.
+    """
+    return (
+        _clean(_field(cm, "id"))
+        or _clean(_field(cm, "employeeNumber"))
+        or _norm_name(_full_name(cm))
+    )
+
+
+def _synthetic_sched_key(cm: dict, vessel: str | None, start_raw: str | None) -> str | None:
+    """Clé d'idempotence déterministe pour un planning SANS id Marad.
+
+    Construite à partir des attributs identifiants **stables** (marin + navire +
+    début) — pas le statut ni le rang, qui peuvent évoluer sans que ce soit un
+    nouveau planning. Format ``syn-<sha1[:32]>`` (36 car., compatible avec la
+    colonne ``marad_schedule_id`` = String(36)). Renvoie None si trop peu
+    d'information pour distinguer le planning (→ le record est ignoré).
+    """
+    ident = _crew_identity(cm)
+    vessel_n = _norm_name(vessel)
+    start_n = (start_raw or "").strip()
+    if not any((ident, vessel_n, start_n)):
+        return None
+    basis = "|".join((ident or "", vessel_n or "", start_n))
+    return "syn-" + hashlib.sha1(basis.encode("utf-8")).hexdigest()[:32]
+
+
 def _pick(rec: dict, keys: tuple[str, ...]) -> str | None:
     """1re valeur exploitable parmi plusieurs clés candidates (placeholders ignorés)."""
     for k in keys:
@@ -310,9 +361,15 @@ async def sync_schedules(db: AsyncSession) -> dict:
     """Upsert idempotent des plannings Marad dans ``marad_crew_schedules``.
 
     Lecture seule côté Marad. Réconcilie :
-    - le marin via ``CrewMember.marad_id`` (objet imbriqué ``crewMember.id``) ;
+    - le marin via ``CrewMember.marad_id`` (GUID ``crewMember.id``) si présent,
+      **sinon par nom** (``crewMember.{FirstName,LastName}``) — les serveurs par
+      tenant ne renvoient pas de GUID dans le planning ;
     - le navire via son **nom** (champ ``vessel``) — repli ``MARAD_VESSEL_MAP`` ;
     - le **leg** via navire + fenêtre de dates (un « voyage » Marad = un leg).
+
+    Clé d'idempotence : id Marad du planning si fourni, sinon **clé synthétique
+    stable** (marin + navire + début) car ce endpoint ne renvoie pas toujours
+    d'id — sans ce repli, aucun planning ne serait importé.
     No-op propre si Marad n'est pas configuré.
     """
     if not marad.enabled():
@@ -331,12 +388,18 @@ async def sync_schedules(db: AsyncSession) -> dict:
 
     # Index de réconciliation (une seule requête chacun).
     vmap = marad.vessel_map()  # repli {marad_vessel_id|nom: vessel_id (str)}
+    # On charge TOUS les marins : le rapprochement par GUID ne suffit pas (les
+    # serveurs par tenant ne renvoient pas de GUID dans le planning), on ajoute
+    # donc un index par nom normalisé (repli quand le GUID manque).
     crew_rows = (
-        await db.execute(
-            select(CrewMember.id, CrewMember.marad_id).where(CrewMember.marad_id.is_not(None))
-        )
+        await db.execute(select(CrewMember.id, CrewMember.marad_id, CrewMember.full_name))
     ).all()
-    crew_by_marad = {marad_id: cid for cid, marad_id in crew_rows}
+    crew_by_marad = {mid: cid for cid, mid, _n in crew_rows if mid}
+    crew_by_name: dict[str, int] = {}
+    for cid, _mid, full_name in crew_rows:
+        key = _norm_name(full_name)
+        if key:
+            crew_by_name.setdefault(key, cid)  # 1er gagne en cas d'homonymie
     # Marad identifie un navire par {number, name} (cf. /api/vessels/getVessels) ;
     # le champ `vessel` du schedule peut porter l'un ou l'autre → on indexe nos
     # navires par nom ET par code (le nom prime en cas de collision).
@@ -360,13 +423,20 @@ async def sync_schedules(db: AsyncSession) -> dict:
 
     created = updated = skipped = errors = 0
     for rec in records:
-        sched_id = _clean(_field(rec, "id"))
+        cm = _subdict(rec, "crewMember")
+        crew_guid = _clean(_field(cm, "id"))
+        vessel_str = _clean(_field(rec, "vessel"))
+        si, ei = _subdict(rec, "startInfo"), _subdict(rec, "endInfo")
+        start_raw = _clean(_field(si, "dateTime")) or _clean(_field(si, "date"))
+
+        # Clé d'idempotence : id Marad si fourni, sinon clé synthétique stable
+        # (marin + navire + début). Les serveurs par tenant ne renvoient PAS d'id
+        # de planning → sans repli, tous les plannings seraient ignorés.
+        sched_id = _clean(_field(rec, "id")) or _synthetic_sched_key(cm, vessel_str, start_raw)
         if not sched_id:
-            skipped += 1
+            skipped += 1  # trop peu d'info pour distinguer le planning
             continue
         try:
-            crew_guid = _clean(_field(_subdict(rec, "crewMember"), "id"))
-            vessel_str = _clean(_field(rec, "vessel"))
             vessel_id = None
             if vessel_str:
                 vessel_id = vessel_by_key.get(vessel_str.strip().upper())
@@ -376,7 +446,6 @@ async def sync_schedules(db: AsyncSession) -> dict:
                     except ValueError:
                         vessel_id = None
 
-            si, ei = _subdict(rec, "startInfo"), _subdict(rec, "endInfo")
             start_dt = _parse_dt(_clean(_field(si, "dateTime")))
             end_dt = _parse_dt(_clean(_field(ei, "dateTime")))
             start_port, end_port = _clean(_field(si, "port")), _clean(_field(ei, "port"))
@@ -385,6 +454,12 @@ async def sync_schedules(db: AsyncSession) -> dict:
                 if (start_port or end_port)
                 else None
             )
+
+            # Rapprochement du marin : GUID d'abord, repli sur le nom normalisé
+            # (le planning porte crewMember.{FirstName,LastName} sans GUID).
+            crew_member_id = crew_by_marad.get(crew_guid) if crew_guid else None
+            if crew_member_id is None:
+                crew_member_id = crew_by_name.get(_norm_name(_full_name(cm)) or "")
 
             row = (
                 await db.execute(
@@ -397,7 +472,7 @@ async def sync_schedules(db: AsyncSession) -> dict:
                 created += 1
             else:
                 updated += 1
-            row.crew_member_id = crew_by_marad.get(crew_guid) if crew_guid else None
+            row.crew_member_id = crew_member_id
             row.marad_crew_id = crew_guid
             row.vessel_id = vessel_id
             row.marad_vessel_name = vessel_str
