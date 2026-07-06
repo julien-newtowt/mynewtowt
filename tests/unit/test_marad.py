@@ -437,6 +437,209 @@ def test_sync_schedules_resolves_vessel_and_leg(monkeypatch) -> None:
     _run_with_db(_check)
 
 
+def test_sync_schedules_tenant_shape_no_ids_matches_by_name(monkeypatch) -> None:
+    """Schéma RÉEL du tenant (external02) : ni id de planning, ni GUID marin.
+
+    Le planning porte ``CrewMember: {FirstName, LastName, EmployeeNumber, …}``
+    sans ``ID``, et pas d'``ID`` au niveau racine. Avant le correctif : 100 %
+    des plannings étaient « skipped » (pas d'id) et jamais rattachés à un marin
+    (pas de GUID). Après : clé synthétique stable + rapprochement par nom.
+    """
+    from datetime import date
+
+    from app.models.crew import CrewMember, MaradCrewSchedule
+    from app.models.vessel import Vessel
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        vessel = Vessel(code="CF", name="Anemos")
+        # Le marin existe côté ERP, importé sans GUID (marad_id NULL) mais nommé.
+        member = CrewMember(full_name="Jean Dupont", role="capitaine")
+        s.add_all([vessel, member])
+        await s.flush()
+
+        # Record tel que le renvoie external02 : PascalCase, aucun id, aucun GUID.
+        rec = {
+            "CrewMember": {
+                "FirstName": "Jean",
+                "LastName": "Dupont",
+                "EmployeeNumber": "EMP-42",
+                "IDNumber": "ID-999",
+            },
+            "Rank": "Capitaine",
+            "Status": "Confirmed",
+            "Vessel": "Anemos",
+            "StartInfo": {"DateTime": "2026-03-05T00:00:00Z", "Port": "Fécamp"},
+            "EndInfo": {"DateTime": "2026-03-09T00:00:00Z", "Port": "Fortaleza"},
+        }
+        monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret([rec]))
+
+        r = await marad_sync.sync_schedules(s)
+        assert (r["fetched"], r["created"], r["skipped"]) == (1, 1, 0)
+        row = (await s.execute(select(MaradCrewSchedule))).scalar_one()
+        assert row.crew_member_id == member.id  # rattaché PAR NOM (pas de GUID)
+        assert row.marad_crew_id is None  # aucun GUID fourni par ce tenant
+        assert row.vessel_id == vessel.id
+        assert row.rank_label == "Capitaine"
+        assert row.start_date == date(2026, 3, 5)
+        assert row.end_date == date(2026, 3, 9)
+        assert row.status == "Confirmed"
+        assert row.marad_schedule_id.startswith("syn-")  # clé synthétique
+
+        # 2e passage : clé synthétique stable → mise à jour, pas de doublon.
+        r2 = await marad_sync.sync_schedules(s)
+        assert (r2["created"], r2["updated"]) == (0, 1)
+        assert len((await s.execute(select(MaradCrewSchedule))).scalars().all()) == 1
+
+    _run_with_db(_check)
+
+
+def test_end_to_end_crew_then_schedules_links_activity_to_member(monkeypatch) -> None:
+    """Flux RÉEL de production : le marin est créé par la sync crew (Marad fournit
+    le GUID), PUIS le planning — qui n'a NI id NI GUID, seulement le nom — doit
+    se rattacher à ce marin.
+
+    C'est la garantie « liaison activité ↔ équipage » : aucun marin n'est créé
+    depuis l'appli, tous viennent de Marad ; la seule clé commune entre
+    /api/Crewing (avec GUID) et /api/CrewingSchedule (sans GUID) est le nom.
+    """
+    from datetime import date
+
+    from app.models.crew import CrewMember, MaradCrewSchedule
+    from app.models.vessel import Vessel
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        s.add(Vessel(code="CF", name="Anemos"))
+        await s.flush()
+
+        # 1) Sync crew — schéma réel /api/Crewing (PascalCase, AVEC GUID).
+        crew_rec = {
+            "ID": _GUID,
+            "FirstName": "Élise",
+            "LastName": "Le Goff",
+            "Ranks": ["Capitaine"],
+            "Nationality": "FR",
+        }
+        monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([crew_rec]))
+        rc = await marad_sync.sync_crew(s)
+        assert (rc["created"], rc["skipped"]) == (1, 0)
+        member = (await s.execute(select(CrewMember))).scalar_one()
+        assert member.marad_id == _GUID and member.full_name == "Élise Le Goff"
+
+        # 2) Sync schedules — schéma réel /api/CrewingSchedule (PascalCase, SANS
+        #    id de planning, SANS GUID marin ; le même nom, orthographié pareil).
+        sched_rec = {
+            "CrewMember": {
+                "FirstName": "Élise",
+                "LastName": "Le Goff",
+                "EmployeeNumber": "EMP-7",
+            },
+            "Rank": "Capitaine",
+            "Status": "Confirmed",
+            "Vessel": "Anemos",
+            "StartInfo": {"DateTime": "2026-05-02T00:00:00Z", "Port": "Fécamp"},
+            "EndInfo": {"DateTime": "2026-05-14T00:00:00Z", "Port": "Fortaleza"},
+        }
+        monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret([sched_rec]))
+        rs = await marad_sync.sync_schedules(s)
+        assert (rs["created"], rs["skipped"]) == (1, 0)
+
+        row = (await s.execute(select(MaradCrewSchedule))).scalar_one()
+        # LIAISON VÉRIFIÉE : le planning pointe sur le marin créé par la sync crew.
+        assert row.crew_member_id == member.id
+        assert row.start_date == date(2026, 5, 2)
+        assert row.end_date == date(2026, 5, 14)
+        assert row.rank_label == "Capitaine"
+
+    _run_with_db(_check)
+
+
+def test_sync_all_crew_before_schedules_so_linkage_works(monkeypatch) -> None:
+    """sync_all doit synchroniser le crew AVANT les plannings, sinon le
+    rapprochement par nom échouerait (le marin n'existerait pas encore)."""
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+
+    order: list[str] = []
+
+    async def _list_crew(modified_since=None):
+        order.append("crew")
+        return [{"ID": _GUID, "FirstName": "Ana", "LastName": "Silva", "Ranks": ["Second"]}]
+
+    async def _list_schedules(modified_since=None):
+        order.append("schedules")
+        return [
+            {
+                "CrewMember": {"FirstName": "Ana", "LastName": "Silva"},
+                "Vessel": "Anemos",
+                "StartInfo": {"DateTime": "2026-06-01T00:00:00Z"},
+            }
+        ]
+
+    monkeypatch.setattr(marad, "list_crew", _list_crew)
+    monkeypatch.setattr(marad, "list_schedules", _list_schedules)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        from app.models.crew import CrewMember, MaradCrewSchedule
+
+        r = await marad_sync.sync_all(s)
+        assert order == ["crew", "schedules"]  # ordre garant de la liaison
+        assert r["crew_created"] == 1 and r["sched_created"] == 1
+        member = (await s.execute(select(CrewMember))).scalar_one()
+        row = (await s.execute(select(MaradCrewSchedule))).scalar_one()
+        assert row.crew_member_id == member.id  # activité rattachée à l'équipe
+
+    _run_with_db(_check)
+
+
+def test_sync_schedules_name_match_ignores_accents_and_case(monkeypatch) -> None:
+    """Le rapprochement par nom tolère casse et accents (« MÜLLER » ↔ « Müller »)."""
+    from app.models.crew import CrewMember, MaradCrewSchedule
+
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+
+    async def _check(s):
+        from sqlalchemy import select
+
+        member = CrewMember(full_name="José Müller", role="second")
+        s.add(member)
+        await s.flush()
+        rec = {
+            "CrewMember": {"FirstName": "JOSE", "LastName": "MULLER"},
+            "Vessel": "Artemis",
+            "StartInfo": {"DateTime": "2026-04-01T00:00:00Z"},
+        }
+        monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret([rec]))
+        await marad_sync.sync_schedules(s)
+        row = (await s.execute(select(MaradCrewSchedule))).scalar_one()
+        assert row.crew_member_id == member.id
+
+    _run_with_db(_check)
+
+
+def test_synthetic_key_stable_and_distinct() -> None:
+    """La clé synthétique est déterministe (même entrée → même clé) et
+    discrimine marin/navire/début ; ≤ 36 car. (colonne marad_schedule_id)."""
+    cm = {"FirstName": "Jean", "LastName": "Dupont"}
+    k1 = marad_sync._synthetic_sched_key(cm, "Anemos", "2026-03-05T00:00:00Z")
+    k2 = marad_sync._synthetic_sched_key(cm, "Anemos", "2026-03-05T00:00:00Z")
+    assert k1 == k2 and len(k1) <= 36 and k1.startswith("syn-")
+    # Navire différent → clé différente.
+    assert k1 != marad_sync._synthetic_sched_key(cm, "Artemis", "2026-03-05T00:00:00Z")
+    # Début différent → clé différente.
+    assert k1 != marad_sync._synthetic_sched_key(cm, "Anemos", "2026-04-05T00:00:00Z")
+    # Record vide (aucun identifiant) → pas de clé (record ignoré en amont).
+    assert marad_sync._synthetic_sched_key({}, None, None) is None
+
+
 def test_sync_schedules_resolves_vessel_by_code(monkeypatch) -> None:
     """Le champ `vessel` peut porter le NUMÉRO Marad → match sur Vessel.code."""
     from app.models.crew import MaradCrewSchedule
@@ -703,6 +906,75 @@ def test_memorized_strategy_is_single_shot(monkeypatch) -> None:
     out = asyncio.run(marad.list_vessels())
     assert out == [{"ok": 1}]
     assert captured["client"].tried == ["ApiKey"]  # un seul essai (mémorisé)
+
+
+def test_prime_auth_noop_when_header_pinned(monkeypatch) -> None:
+    """Header épinglé → prime_auth n'appelle PAS getVessels (un appel économisé).
+
+    Il n'y a rien à découvrir (un seul schéma sera essayé partout), et chaque
+    appel compte quand la clé est partagée avec d'autres consommateurs.
+    """
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "ApiKey")
+    monkeypatch.setattr(marad, "_working_strategy", None)
+
+    def _no_http(*a, **k):
+        raise AssertionError("prime_auth ne doit faire AUCUN appel HTTP (header épinglé)")
+
+    monkeypatch.setattr(marad.httpx, "AsyncClient", _no_http)
+    assert asyncio.run(marad.prime_auth()) is None
+
+
+class _Fake429Client:
+    """Faux httpx.AsyncClient : renvoie systématiquement 429."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def request(self, method, url, params=None, json=None, headers=None):
+        return _FakeResp(429)
+
+
+def test_request_records_last_status_on_429(monkeypatch) -> None:
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "ApiKey")
+    monkeypatch.setattr(marad, "_working_strategy", None)
+    monkeypatch.setattr(marad, "_last_status", {})
+    monkeypatch.setattr(marad.httpx, "AsyncClient", lambda *a, **k: _Fake429Client())
+
+    assert asyncio.run(marad.list_crew()) is None
+    assert marad.last_status("/api/Crewing") == 429
+
+
+def test_sync_all_quota_diagnostic_without_probing(monkeypatch) -> None:
+    """429 sur les endpoints crew → diagnostic « quota » direct, SANS re-sonder
+    getVessels (diagnose ne doit pas être appelé : chaque appel coûte du quota)."""
+    monkeypatch.setattr(marad, "enabled", lambda: True)
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", "ApiKey")
+    monkeypatch.setattr(marad, "_working_strategy", None)
+    monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret(None))
+    monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret(None))
+    monkeypatch.setattr(marad, "last_status", lambda path: 429)
+
+    probed: list[str] = []
+
+    async def _diagnose():
+        probed.append("diagnose")
+        return {}
+
+    monkeypatch.setattr(marad, "diagnose", _diagnose)
+
+    async def _check(s):
+        r = await marad_sync.sync_all(s)
+        assert r["crew_fetched"] == 0 and r["sched_fetched"] == 0
+        assert "Quota Marad atteint" in r["diagnostic"]
+        assert "/api/Crewing et /api/CrewingSchedule" in r["diagnostic"]
+        assert probed == []  # pas d'appel getVessels supplémentaire
+
+    _run_with_db(_check)
 
 
 def test_rate_limited_endpoint_single_shot_when_auth_not_primed(monkeypatch) -> None:

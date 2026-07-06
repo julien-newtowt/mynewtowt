@@ -89,6 +89,17 @@ _working_strategy: str | None = None
 # Type d'une stratégie d'auth : (label, headers, query_params).
 _Strategy = tuple[str, dict[str, str], dict[str, str]]
 
+# Dernier statut observé par endpoint (200, 401, 429, "network"…) — purement
+# diagnostic : permet à sync_all d'expliquer un « 0 reçu » (ex. 429 = quota
+# consommé par un appel récent ou un refresh Power BI partageant la clé) SANS
+# re-sonder l'API, donc sans dépenser de quota supplémentaire.
+_last_status: dict[str, int | str | None] = {}
+
+
+def last_status(path: str) -> int | str | None:
+    """Dernier statut vu sur ``path`` lors d'un appel réel, ou None."""
+    return _last_status.get(path)
+
 
 def _auth_strategies() -> list[_Strategy]:
     """Schémas d'auth à essayer ``(label, headers, query_params)``.
@@ -157,9 +168,17 @@ async def prime_auth() -> str | None:
 
     À appeler AVANT les endpoints à quota serré (``/api/Crewing`` = 1 req/min) :
     on évite ainsi de gâcher leur quota en essayant plusieurs schémas dessus.
+
+    No-op quand un header est **épinglé** (``MARAD_API_KEY_HEADER``) : il n'y a
+    rien à découvrir (un seul schéma sera essayé partout) et l'appel getVessels
+    économisé compte — les quotas Marad réels se déclenchent parfois dès deux
+    appels rapprochés, surtout si la clé est partagée avec d'autres
+    consommateurs (refresh Power BI…).
     """
     if not enabled() or _working_strategy:
         return _working_strategy
+    if (settings.marad_api_key_header or "").strip():
+        return None  # schéma épinglé : pas d'amorçage, on économise un appel
     await _get("/api/vessels/getVessels")  # met à jour _working_strategy si succès
     return _working_strategy
 
@@ -200,6 +219,7 @@ async def _request(
                 r = await client.request(
                     method, url, params=merged_params or None, json=json, headers=headers
                 )
+                _last_status[path] = r.status_code
                 if r.status_code in (401, 403):
                     last_auth_status = r.status_code
                     if label == _working_strategy:
@@ -216,6 +236,7 @@ async def _request(
                     _working_strategy = label
                 return r.json() if r.content else None
     except httpx.HTTPError as e:
+        _last_status[path] = "network"
         logger.warning("marad %s %s failed: %s", method, path, e)
         return None
     logger.warning(

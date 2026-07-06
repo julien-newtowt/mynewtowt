@@ -302,16 +302,37 @@ async def crew_calendar(
     assigns = list((await db.execute(select(CrewAssignment))).scalars().all())
     # Build per-member day map
     days_by_member: dict[int, set[_date]] = defaultdict(set)
+
+    def _fill(member_id: int, d0: _date | None, d1: _date | None) -> None:
+        """Marque chaque jour de [d0, d1] (borné à l'année) comme embarqué."""
+        if member_id is None or d0 is None:
+            return
+        cur = max(d0, start)
+        last = min(d1 or _date.today(), end)
+        while cur <= last:
+            days_by_member[member_id].add(cur)
+            cur += timedelta(days=1)
+
     for a in assigns:
         if not a.embark_at:
             continue
-        d0 = a.embark_at.date()
-        d1 = (a.disembark_at or datetime.now(UTC)).date()
-        cur = max(d0, start)
-        last = min(d1, end)
-        while cur <= last:
-            days_by_member[a.crew_member_id].add(cur)
-            cur += timedelta(days=1)
+        _fill(
+            a.crew_member_id,
+            a.embark_at.date(),
+            (a.disembark_at or datetime.now(UTC)).date(),
+        )
+    # Activité importée de Marad (lecture seule) — plannings rattachés à un marin.
+    marad_scheds = list(
+        (
+            await db.execute(
+                select(MaradCrewSchedule).where(MaradCrewSchedule.crew_member_id.is_not(None))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for s in marad_scheds:
+        _fill(s.crew_member_id, s.start_date, s.end_date)
     return templates.TemplateResponse(
         "staff/crew/calendar.html",
         {
