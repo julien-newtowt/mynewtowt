@@ -168,18 +168,47 @@ async def crew_index(
 @router.post("/sync-marad")
 async def crew_sync_marad(
     request: Request,
+    only: str = Form(default=""),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("crew", "M")),
 ) -> RedirectResponse:
-    """Synchronise l'équipage et les plannings depuis Marad (LECTURE SEULE).
+    """Synchronise l'équipage et/ou les plannings depuis Marad (LECTURE SEULE).
 
-    Bouton « Synchroniser Marad » sur /crew : remonte les marins
-    (``crew_members``) et les plannings d'embarquement (``marad_crew_schedules``,
-    voyage↔leg). No-op si Marad n'est pas configuré.
+    ``only`` (champ de formulaire) : ``crew`` ou ``schedules`` pour ne remonter
+    qu'une partie, sinon les deux. On expose DEUX boutons distincts sur /crew car
+    ``/api/Crewing`` et ``/api/CrewingSchedule`` (1 req/min, fenêtre partagée) ne
+    peuvent être appelés coup sur coup : les enchaîner (bouton unique) force un
+    429 sur les plannings. Boutons séparés = un endpoint par clic, espaçables.
     """
-    from app.services.marad_sync import sync_all
+    from app.services.marad_sync import sync_all, sync_crew, sync_schedules
+    from app.utils import marad
 
-    result = await sync_all(db)
+    part = (only or "").strip().lower()
+    if part == "crew":
+        r = await sync_crew(db)
+        result = {
+            "configured": r["configured"],
+            "crew_created": r["created"], "crew_updated": r["updated"],
+            "crew_fetched": r["fetched"], "sched_created": 0, "sched_updated": 0,
+            "sched_fetched": 0, "errors": r["errors"], "diagnostic": None,
+        }
+    elif part in ("schedules", "plannings"):
+        r = await sync_schedules(db)
+        diag = None
+        if r["fetched"] == 0 and marad.last_status("/api/CrewingSchedule") == 429:
+            diag = (
+                "Plannings : /api/CrewingSchedule a renvoyé 429 (quota 1 req/min). "
+                "Attendez ~1 min APRÈS toute autre synchro Marad, puis recliquez "
+                "« Synchroniser plannings » (ne pas synchroniser l'équipage juste avant)."
+            )
+        result = {
+            "configured": r["configured"],
+            "crew_created": 0, "crew_updated": 0, "crew_fetched": 0,
+            "sched_created": r["created"], "sched_updated": r["updated"],
+            "sched_fetched": r["fetched"], "errors": r["errors"], "diagnostic": diag,
+        }
+    else:
+        result = await sync_all(db)
     if not result["configured"]:
         return RedirectResponse(url="/crew?marad=disabled", status_code=303)
     await activity_record(

@@ -13,8 +13,16 @@
     {% if marad_configured %}
     <form method="post" action="/crew/sync-marad" style="display:inline;">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-secondary" title="Remonter marins et plannings depuis Marad (lecture seule)">
-        <i data-lucide="refresh-cw"></i> Synchroniser Marad
+      <input type="hidden" name="only" value="crew" />
+      <button type="submit" class="btn btn-secondary" title="Remonter les marins depuis Marad (lecture seule)">
+        <i data-lucide="refresh-cw"></i> Synchroniser équipage
+      </button>
+    </form>
+    <form method="post" action="/crew/sync-marad" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <input type="hidden" name="only" value="schedules" />
+      <button type="submit" class="btn btn-secondary" title="Remonter les plannings depuis Marad (à faire ≥1 min après une synchro équipage — quota 1 req/min)">
+        <i data-lucide="calendar-clock"></i> Synchroniser plannings
       </button>
     </form>
     {% else %}
