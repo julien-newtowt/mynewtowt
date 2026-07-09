@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -302,10 +302,19 @@ def _distance_nm(prev: NavEvent, cur: NavEvent) -> Decimal | None:
     return Decimal(str(nm))
 
 
-def _duration_h(prev: NavEvent, cur: NavEvent) -> Decimal | None:
-    if prev.datetime_utc is None or cur.datetime_utc is None:
+def _utc(dt: datetime | None) -> datetime | None:
+    """Normalise en UTC aware — ``datetime_utc`` est UTC par contrat (§2.7),
+    mais les backends sans timezone (SQLite des tests) restituent du naïf."""
+    if dt is None:
         return None
-    seconds = (cur.datetime_utc - prev.datetime_utc).total_seconds()
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
+def _duration_h(prev: NavEvent, cur: NavEvent) -> Decimal | None:
+    prev_dt, cur_dt = _utc(prev.datetime_utc), _utc(cur.datetime_utc)
+    if prev_dt is None or cur_dt is None:
+        return None
+    seconds = (cur_dt - prev_dt).total_seconds()
     return Decimal(str(seconds)) / Decimal("3600")
 
 
@@ -368,14 +377,15 @@ def compute_interval(
     total_rh = sum(rh_values, Decimal("0")) if rh_values else None
 
     bunkered = Decimal("0")
-    if prev.datetime_utc is not None and cur.datetime_utc is not None:
-        bunkered = bunkered_t_lookup(prev.datetime_utc, cur.datetime_utc)
+    prev_dt, cur_dt = _utc(prev.datetime_utc), _utc(cur.datetime_utc)
+    if prev_dt is not None and cur_dt is not None:
+        bunkered = bunkered_t_lookup(prev_dt, cur_dt)
 
     return IntervalResult(
         from_event_id=prev.id,
         to_event_id=cur.id,
-        from_dt=prev.datetime_utc,
-        to_dt=cur.datetime_utc,
+        from_dt=prev_dt,
+        to_dt=cur_dt,
         distance_nm=distance,
         duration_h=duration,
         speed_kn=speed,
@@ -441,9 +451,10 @@ def anchoring_duration_h(
     begin: BeginAnchoringEvent, end: EndAnchoringEvent
 ) -> Decimal | None:
     """Durée d'un mouillage = End.datetime_utc − Begin.datetime_utc (heures)."""
-    if begin.datetime_utc is None or end.datetime_utc is None:
+    begin_dt, end_dt = _utc(begin.datetime_utc), _utc(end.datetime_utc)
+    if begin_dt is None or end_dt is None:
         return None
-    seconds = (end.datetime_utc - begin.datetime_utc).total_seconds()
+    seconds = (end_dt - begin_dt).total_seconds()
     return Decimal(str(seconds)) / Decimal("3600")
 
 
