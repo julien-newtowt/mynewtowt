@@ -43,6 +43,11 @@ from app.models.crew_ticket import CrewTicket
 from app.models.emission_factor import EmissionFactor
 from app.models.employee import Employee
 from app.models.employment_contract import EmploymentContract
+from app.models.env_report import (
+    EnvFieldModification,
+    EnvReport,
+    EnvReportEventLink,
+)
 from app.models.escale import DockerShift, EscaleOperation
 from app.models.feature_flag import FeatureFlag
 from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
@@ -159,6 +164,9 @@ __all__ = [
     "EmissionFactor",
     "Employee",
     "EmploymentContract",
+    "EnvFieldModification",
+    "EnvReport",
+    "EnvReportEventLink",
     "EscaleOperation",
     "EtaShift",
     "FeatureFlag",

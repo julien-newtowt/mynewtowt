@@ -1,0 +1,112 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('mrv_report_detail_title', lang) }} #{{ report.id }}{% endblock %}
+{% block content %}
+{% set st_pill = {'brouillon': 'pill-neutral', 'attente_validation_master': 'pill-warn', 'valide_master': 'pill-info', 'valide_siege': 'pill-ok'} %}
+<a href="/mrv/voyages/{{ report.leg_id }}" class="btn btn-ghost mb-3">← {{ t('mrv_report_voyage_title', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">{{ t('mrv_report_kicker', lang) }} · {{ report.report_type }}</span>
+  <h1 class="display">{{ t('mrv_report_detail_title', lang) }} #{{ report.id }}</h1>
+  <p>
+    <span class="pill {{ st_pill.get(report.status, 'pill-neutral') }}">{{ report.status }}</span>
+    {% if report.quality_status %}<span class="pill pill-warn">qualité : {{ report.quality_status }}</span>{% endif %}
+    <span class="text-muted small">{{ t('mrv_report_generated', lang) }} {{ report.generated_at.strftime('%d/%m/%Y %H:%M') if report.generated_at else '—' }}</span>
+  </p>
+</header>
+
+{# ───────────────────── Actions workflow ───────────────────── #}
+<section class="card mb-4">
+  <h2 class="h4">{{ t('mrv_report_actions', lang) }}</h2>
+  <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;">
+    <a class="btn btn-ghost btn-sm" href="/mrv/reports/{{ report.id }}.pdf">{{ t('mrv_report_pdf', lang) }} (PDF)</a>
+    {% if can_master and report.status in ('brouillon', 'attente_validation_master') %}
+    <form method="post" action="/mrv/reports/{{ report.id }}/validate-master">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button class="btn btn-primary btn-sm" type="submit">{{ t('mrv_report_validate_master', lang) }}</button>
+    </form>
+    {% endif %}
+    {% if can_siege and report.report_type == 'carbon' and report.status == 'valide_master' %}
+    <form method="post" action="/mrv/reports/{{ report.id }}/validate-siege">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button class="btn btn-primary btn-sm" type="submit">{{ t('mrv_report_validate_siege', lang) }}</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if report.validated_master_at %}
+  <p class="small text-muted mt-2">{{ t('mrv_report_validated_master', lang) }} : {{ report.validated_master_at.strftime('%d/%m/%Y %H:%M') }}</p>
+  {% endif %}
+  {% if report.validated_siege_at %}
+  <p class="small text-muted">{{ t('mrv_report_validated_siege', lang) }} : {{ report.validated_siege_at.strftime('%d/%m/%Y %H:%M') }}</p>
+  {% endif %}
+</section>
+
+{# ───────────────────── Correction tracée (R18) ───────────────────── #}
+{% if can_modify %}
+<section class="card mb-4">
+  <h2 class="h4">{{ t('mrv_report_modify', lang) }}</h2>
+  <p class="small text-muted">{{ t('mrv_report_modify_hint', lang) }}</p>
+  <form method="post" action="/mrv/reports/{{ report.id }}/fields/modify" class="stack">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">
+      <label>{{ t('mrv_report_field_name', lang) }}
+        <input class="input" type="text" name="field_name" required />
+      </label>
+      <label>{{ t('mrv_report_field_value', lang) }}
+        <input class="input" type="text" name="corrected_value" />
+      </label>
+    </div>
+    <label>{{ t('mrv_report_field_quality', lang) }}
+      <select class="input" name="resulting_quality_status" required>
+        <option value="corrected">corrected</option>
+        <option value="clarified">clarified</option>
+        <option value="conform">conform</option>
+        <option value="under_conformity">under_conformity</option>
+      </select>
+    </label>
+    <label>{{ t('mrv_report_field_justif', lang) }} *
+      <textarea class="input" name="justification" rows="2" required></textarea>
+    </label>
+    <button class="btn btn-primary btn-sm" type="submit">{{ t('mrv_report_field_submit', lang) }}</button>
+  </form>
+</section>
+{% endif %}
+
+{# ───────────────────── Historique des modifications ───────────────────── #}
+{% if modifications %}
+<section class="card mb-4">
+  <h2 class="h4">{{ t('mrv_report_modifs', lang) }} <span class="pill pill-neutral">{{ modifications|length }}</span></h2>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('mrv_report_field_name', lang) }}</th>
+        <th>{{ t('mrv_report_col_initial', lang) }}</th>
+        <th>{{ t('mrv_report_col_corrected', lang) }}</th>
+        <th>{{ t('mrv_report_field_justif', lang) }}</th>
+        <th>{{ t('mrv_report_col_quality', lang) }}</th>
+        <th>{{ t('mrv_report_col_datetime', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for mod in modifications %}
+      <tr>
+        <td class="mono small">{{ mod.field_name }}</td>
+        <td class="small">{{ mod.initial_value or '—' }}</td>
+        <td class="small">{{ mod.corrected_value or '—' }}</td>
+        <td class="small">{{ mod.justification_text }}</td>
+        <td><span class="pill pill-warn">{{ mod.resulting_quality_status }}</span></td>
+        <td class="small text-muted">{{ mod.timestamp_utc.strftime('%d/%m %H:%M') if mod.timestamp_utc else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+{# ───────────────────── Payload (snapshot d'audit) ───────────────────── #}
+<section class="card">
+  <h2 class="h4">{{ t('mrv_report_payload', lang) }}</h2>
+  <p class="small text-muted">{{ t('mrv_report_payload_hint', lang) }}</p>
+  <pre class="mono small" style="overflow-x:auto;white-space:pre-wrap;background:#F8F2E6;padding:.75rem;border-radius:.4rem;">{{ payload_json }}</pre>
+</section>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "pdf/_base.html" %}
+{% import "pdf/_mrv_report_macros.html" as m %}
+{% set p = payload %}
+{% set rc = p.rob_check %}
+{% block title %}MRV Stopover Report{% endblock %}
+{% block doc_kind %}MRV · Stopover Report (escale){% endblock %}
+{% block doc_ref %}{{ p.scope.arrival_leg_code or '—' }} → {{ p.scope.departure_leg_code or '—' }}{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Escale · Stopover</div>
+    <div class="value">
+      <strong>{{ p.scope.vessel.name or '—' }}</strong>{% if p.scope.vessel.imo %} · IMO {{ p.scope.vessel.imo }}{% endif %}<br/>
+      Arrivée voyage <span class="mono">{{ p.scope.arrival_leg_code or '—' }}</span> :
+      {{ m.dt(p.arrival.datetime_utc) }}<br/>
+      Départ voyage <span class="mono">{{ p.scope.departure_leg_code or '—' }}</span> :
+      {{ m.dt(p.departure.datetime_utc) }}<br/>
+      Durée escale : <strong>{{ m.fmt(p.duration_h, 1) }} h</strong>
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Consommation escale · Port consumption</div>
+    <div class="value">
+      <span class="c-teal">Total : <strong>{{ m.fmt(p.consumption.conso_escale_t, 3) }} t</strong></span><br/>
+      ME : {{ m.fmt(p.consumption.conso_me_t, 3) }} t · AE : {{ m.fmt(p.consumption.conso_ae_t, 3) }} t
+      {% if p.consumption.counter_anomaly %}<br/><span class="badge-imdg">compteur incohérent</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+<h2>Cohérence ROB · ROB reconciliation</h2>
+{% set cls_colors = {'conforme': '#87BD29', 'mineur': '#B47148', 'majeur': '#C4762E', 'critique': '#C44536', 'indetermine': '#6E6E6E'} %}
+<table>
+  <thead>
+    <tr>
+      <th class="text-right">ROB arrivée (déclaré)</th>
+      <th class="text-right">Soutages escale</th>
+      <th class="text-right">− Conso escale</th>
+      <th class="text-right">ROB départ théorique</th>
+      <th class="text-right">ROB départ (déclaré)</th>
+      <th class="text-right">Écart</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="text-right">{{ m.fmt(rc.declared_arrival_t, 3) }} t</td>
+      <td class="text-right">+ {{ m.fmt(rc.bunkered_t, 3) }} t</td>
+      <td class="text-right">− {{ m.fmt(p.consumption.conso_escale_t, 3) }} t</td>
+      <td class="text-right">{{ m.fmt(rc.theoretical_departure_t, 3) }} t</td>
+      <td class="text-right"><strong>{{ m.fmt(rc.declared_departure_t, 3) }} t</strong></td>
+      <td class="text-right"><strong>{{ m.fmt(rc.ecart_t, 3) }} t</strong></td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  Classement de l'écart (bornes R14) :
+  <span style="display:inline-block;padding:2pt 10pt;border-radius:2pt;color:white;font-weight:600;background:{{ cls_colors.get(rc.classification, '#6E6E6E') }};">{{ rc.classification|upper }}</span>
+  <span class="small c-gris">
+    (mineur ≤ {{ rc.thresholds.seuil_rob_ecart_mineur_t }} t ·
+    majeur ≤ {{ rc.thresholds.seuil_rob_ecart_majeur_t }} t ·
+    critique ≤ {{ rc.thresholds.seuil_rob_ecart_critique_t }} t)
+  </span>
+</p>
+
+{% if p.bunkers %}
+<h2>Soutages de la fenêtre · Bunkers in window</h2>
+<table>
+  <thead><tr><th>N° BDN</th><th>Port</th><th>Livraison UTC</th><th class="text-right">Masse (t)</th><th>Carburant</th></tr></thead>
+  <tbody>
+    {% for b in p.bunkers %}
+    <tr>
+      <td class="mono">{{ b.bdn_number }}</td>
+      <td class="mono">{{ b.port_locode }}</td>
+      <td class="mono small">{{ m.dt(b.delivery_datetime_utc) }}</td>
+      <td class="text-right">{{ m.fmt(b.mass_t, 3) }}</td>
+      <td>{{ b.fuel_type }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="small c-gris">Aucun soutage validé Master rattaché à cette fenêtre d'escale.</p>
+{% endif %}
+
+<p class="small c-gris">
+  Rapport d'escale généré depuis les événements Arrival/Departure — snapshot figé le
+  {{ issued_at.strftime("%d/%m/%Y %H:%M") }}. {{ brand.raison_sociale }}.
+</p>
+
+{% endblock %}
