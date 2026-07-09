@@ -1,0 +1,296 @@
+{% extends "staff/_layout.html" %}
+{% set is_edit = event is not none %}
+{% set is_noon = event_type == 'noon' %}
+{% set is_portcall = event_type in ('departure', 'arrival') %}
+{% set is_departure = event_type == 'departure' %}
+{% set is_arrival = event_type == 'arrival' %}
+{% set is_anchor = event_type in ('anchoring_begin', 'anchoring_end') %}
+{% set is_anchor_end = event_type == 'anchoring_end' %}
+{% block title %}{{ event_type_labels.get(event_type, event_type) }} — {{ brand.nom_court }}{% endblock %}
+{% block head %}
+{{ super() }}
+<link rel="manifest" href="/manifest.json" />
+<script src="/static/js/pwa-onboard.js" defer></script>
+<script src="/static/js/onboard-idb.js" defer></script>
+<script src="/static/js/onboard-offline.js" defer></script>
+<script src="{{ asset('js/event-autosave.js') }}" defer></script>
+{% endblock %}
+{% block content %}
+<a href="/onboard/events{% if leg %}?leg_id={{ leg.id }}{% endif %}" class="btn btn-ghost mb-3">{{ t('onb_event_back', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">📋 {{ t('onb_event_section', lang) }}{% if vessel %} · {{ vessel.name }}{% endif %}{% if leg %} · <span class="mono">{{ leg.leg_code }}</span>{% endif %}</span>
+  <h1 class="display">{{ event_type_labels.get(event_type, event_type) }}</h1>
+</header>
+
+{% if errors %}
+<div class="alert alert-warn mb-3">
+  <strong>Finalisation refusée — corrigez puis réessayez :</strong>
+  <ul style="margin:var(--space-2) 0 0;">{% for m in errors %}<li>{{ m }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if not leg or not vessel %}
+<div class="alert alert-warn">{{ t('onb_event_no_leg', lang) }}</div>
+{% else %}
+
+{% if locked %}
+<div class="alert mb-3">Cet événement est <strong>{{ event.status }}</strong> — lecture seule.</div>
+{% endif %}
+
+{# ── Valeurs courantes (édition) / préremplies (nouveau) ── #}
+{% set cur_lat = '' %}{% set cur_lon = '' %}
+{% set cur_dt = default_dt_local %}{% set cur_tz = 'UTC' %}
+{% set cur_src = 'thalos_auto' %}
+{% if is_edit %}
+  {% if event.lat_decimal is not none %}{% set cur_lat = event.lat_decimal %}{% endif %}
+  {% if event.lon_decimal is not none %}{% set cur_lon = event.lon_decimal %}{% endif %}
+  {% if event.datetime_local %}{% set cur_dt = event.datetime_local.strftime('%Y-%m-%dT%H:%M') %}{% endif %}
+  {% if event.timezone %}{% set cur_tz = event.timezone %}{% endif %}
+  {% if event.position_source %}{% set cur_src = event.position_source %}{% endif %}
+{% elif prefill_pos %}
+  {% set cur_lat = prefill_pos.lat_decimal %}{% set cur_lon = prefill_pos.lon_decimal %}
+{% endif %}
+
+<form method="post"
+      action="{{ '/onboard/events/' ~ event.id ~ '/edit' if is_edit else '/onboard/events' }}"
+      {% if is_edit and not locked %}data-autosave-url="/onboard/events/{{ event.id }}/autosave"{% endif %}
+      {% if is_noon and not is_edit %}data-offline-queue{% endif %}>
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+  <input type="hidden" name="leg_id" value="{{ leg.id }}" />
+  <input type="hidden" name="event_type" value="{{ event_type }}" />
+
+  {% if is_edit and not locked %}
+  <p class="text-muted text-sm" data-autosave-status data-autosave-state=""></p>
+  {% endif %}
+
+  {# ── Position + date/heure (commun à tous les types) ── #}
+  <article class="card mb-3">
+    <h2 class="h5">{{ t('onb_event_position', lang) }} &amp; {{ t('onb_event_when', lang) }}</h2>
+    <div class="field">
+      <label>{{ t('onb_event_when', lang) }}</label>
+      <div class="tz-input-wrap flex gap-2">
+        <input type="datetime-local" name="datetime_local" value="{{ cur_dt }}" required />
+        <select class="tz-select" name="timezone">
+          {% for tzval, tzlabel in tz_choices %}
+          <option value="{{ tzval }}" {% if tzval == cur_tz %}selected{% endif %}>{{ tzlabel }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <small class="tz-utc-hint text-muted"></small>
+    </div>
+    <div class="grid grid-2 gap-3">
+      <div class="field"><label>Latitude</label><input name="lat_decimal" type="number" step="0.000001" value="{{ cur_lat }}" /></div>
+      <div class="field"><label>Longitude</label><input name="lon_decimal" type="number" step="0.000001" value="{{ cur_lon }}" /></div>
+      <div class="field">
+        <label>{{ t('onb_event_pos_source', lang) }}</label>
+        <select name="position_source">
+          <option value="thalos_auto" {% if cur_src == 'thalos_auto' %}selected{% endif %}>{{ t('onb_event_pos_thalos', lang) }}</option>
+          <option value="manuel_justifie" {% if cur_src == 'manuel_justifie' %}selected{% endif %}>{{ t('onb_event_pos_manual', lang) }}</option>
+        </select>
+      </div>
+      {% if not is_anchor %}
+      <div class="field"><label>Cargo MRV (t)</label><input name="cargo_mrv_t" type="number" step="0.001" value="{{ event.cargo_mrv_t if is_edit and event.cargo_mrv_t is not none else '' }}" /></div>
+      {% endif %}
+    </div>
+    <div class="field">
+      <label>{{ t('onb_event_justif', lang) }}</label>
+      <textarea name="position_justification" rows="2">{{ event.position_justification if is_edit and event.position_justification else '' }}</textarea>
+    </div>
+    {% if prefill_pos and not is_edit %}
+    <p class="text-muted text-sm">Position Thalos préremplie ({{ prefill_pos.recorded_at|datetime }} UTC, source {{ prefill_pos.source }}) — corrigez si besoin (une saisie manuelle exige une justification, R05).</p>
+    {% elif not prefill_pos and not is_edit %}
+    <p class="text-muted text-sm">Position Thalos indisponible — saisie manuelle requise (justification obligatoire, R05).</p>
+    {% endif %}
+  </article>
+
+  {# ══════════════════════════ NOON ══════════════════════════ #}
+  {% if is_noon %}
+  <article class="card mb-3">
+    <h2 class="h5">Navigation (depuis SOSP)</h2>
+    <div class="grid grid-3 gap-3">
+      <div class="field"><label>Temps depuis SOSP (h)</label><input name="time_from_sosp_h" type="number" step="0.01" value="{{ event.time_from_sosp_h if is_edit and event.time_from_sosp_h is not none else '' }}" /></div>
+      <div class="field"><label>Distance depuis SOSP (NM)</label><input name="distance_from_sosp_nm" type="number" step="0.01" value="{{ event.distance_from_sosp_nm if is_edit and event.distance_from_sosp_nm is not none else '' }}" /></div>
+      <div class="field"><label>Distance to go (NM)</label><input name="distance_to_go_nm" type="number" step="0.01" value="{{ event.distance_to_go_nm if is_edit and event.distance_to_go_nm is not none else '' }}" /></div>
+      <div class="field"><label>ETA annoncée</label><input name="announced_eta" type="datetime-local" value="{{ event.announced_eta.strftime('%Y-%m-%dT%H:%M') if is_edit and event.announced_eta else '' }}" /></div>
+      <div class="field"><label>ETB</label><input name="etb" type="datetime-local" value="{{ event.etb.strftime('%Y-%m-%dT%H:%M') if is_edit and event.etb else '' }}" /></div>
+    </div>
+    <details class="mt-2">
+      <summary><strong>ETA par palier de vitesse</strong> (7,0 → 10,0 kt)</summary>
+      {% set eta_json = (event.eta_7_to_10kt or {}) if is_edit else {} %}
+      <div class="grid grid-3 gap-2 mt-2">
+        {% for i, spd in eta_paliers %}
+        <div class="field"><label>{{ spd }} kt</label><input name="eta_palier_{{ i }}" type="datetime-local" value="{{ (eta_json.get(spd) or '')[:16] }}" /></div>
+        {% endfor %}
+      </div>
+    </details>
+    <div class="field mt-2"><label>Commentaires</label><textarea name="comments" rows="2">{{ event.comments if is_edit and event.comments else '' }}</textarea></div>
+  </article>
+
+  <article class="card mb-3">
+    <h2 class="h5">Machine — relevés compteurs par moteur</h2>
+    {% if not engines %}
+    <div class="alert alert-warn">{{ t('onb_event_no_engines', lang) }}</div>
+    {% else %}
+    <div style="overflow-x:auto;">
+      <table class="data-table mt-2" style="font-size:var(--text-xs);">
+        <thead><tr><th>Moteur</th><th>Groupe</th><th>Heures (compteur)</th><th>Carburant (L, compteur)</th><th>Reset</th></tr></thead>
+        <tbody>
+          {% for eng in engines %}
+          {% set er = engine_values.get(eng.id) %}
+          <tr>
+            <td class="mono">{{ eng.engine_role }}</td>
+            <td>{{ eng.engine_group or '—' }}</td>
+            <td><input name="eng_hours_{{ eng.id }}" type="number" step="0.001" style="width:7rem;" value="{{ er.running_hours_counter_h if er and er.running_hours_counter_h is not none else '' }}" /></td>
+            <td><input name="eng_fuel_{{ eng.id }}" type="number" step="0.001" style="width:8rem;" value="{{ er.fuel_counter_l if er and er.fuel_counter_l is not none else '' }}" /></td>
+            <td><input type="checkbox" name="eng_reset_{{ eng.id }}" value="1" {% if er and er.is_counter_reset %}checked{% endif %} /></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted text-xs mt-1">Compteurs bruts machine (litres, heures) — la consommation est dérivée par deltas (jamais ressaisie).</p>
+    {% endif %}
+  </article>
+
+  <article class="card mb-3">
+    <h2 class="h5">Météo — relevés 4 h</h2>
+    <div style="overflow-x:auto;">
+      <table class="data-table mt-2" style="font-size:var(--text-xs);">
+        <thead><tr><th>Heure</th><th>TWS (kn)</th><th>AWA (°)</th><th>AWS (kn)</th><th>État mer</th><th>Dir. mer (°)</th><th>Vitesse (kn)</th></tr></thead>
+        <tbody>
+          {% for slot in time_slots %}
+          {% set wr = weather_by_slot.get(slot) %}
+          <tr>
+            <td class="mono">{{ slot }}</td>
+            <td><input name="w_tws_{{ loop.index0 }}" type="number" step="0.1" style="width:4.5rem;" value="{{ wr.tws_kn if wr and wr.tws_kn is not none else '' }}" /></td>
+            <td><input name="w_awa_{{ loop.index0 }}" type="number" step="1" style="width:4.5rem;" value="{{ wr.awa_deg if wr and wr.awa_deg is not none else '' }}" /></td>
+            <td><input name="w_aws_{{ loop.index0 }}" type="number" step="0.1" style="width:4.5rem;" value="{{ wr.aws_kn if wr and wr.aws_kn is not none else '' }}" /></td>
+            <td><input name="w_ss_{{ loop.index0 }}" type="number" min="0" max="12" style="width:4rem;" value="{{ wr.sea_state if wr and wr.sea_state is not none else '' }}" /></td>
+            <td><input name="w_sd_{{ loop.index0 }}" type="number" step="1" style="width:4.5rem;" value="{{ wr.sea_direction_deg if wr and wr.sea_direction_deg is not none else '' }}" /></td>
+            <td><input name="w_spd_{{ loop.index0 }}" type="number" step="0.1" style="width:4.5rem;" value="{{ wr.ship_speed_kn if wr and wr.ship_speed_kn is not none else '' }}" /></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <article class="card mb-3">
+    <h2 class="h5">Voilure — relevés 4 h (ON = coché)</h2>
+    <div style="overflow-x:auto;">
+      <table class="data-table mt-2" style="font-size:var(--text-xs);">
+        <thead><tr><th>Heure</th><th>J0</th><th>FWD J1</th><th>FWD MS</th><th>AFT J1</th><th>AFT MS</th><th>Boost %</th><th>ME PS %</th><th>ME SB %</th></tr></thead>
+        <tbody>
+          {% for slot in time_slots %}
+          {% set sr = sail_by_slot.get(slot) %}
+          <tr>
+            <td class="mono">{{ slot }}</td>
+            <td><input type="checkbox" name="s_j0_{{ loop.index0 }}" value="1" {% if sr and sr.j0 %}checked{% endif %} /></td>
+            <td><input type="checkbox" name="s_fwdj1_{{ loop.index0 }}" value="1" {% if sr and sr.fwd_j1 %}checked{% endif %} /></td>
+            <td><input type="checkbox" name="s_fwdms_{{ loop.index0 }}" value="1" {% if sr and sr.fwd_ms %}checked{% endif %} /></td>
+            <td><input type="checkbox" name="s_aftj1_{{ loop.index0 }}" value="1" {% if sr and sr.aft_j1 %}checked{% endif %} /></td>
+            <td><input type="checkbox" name="s_aftms_{{ loop.index0 }}" value="1" {% if sr and sr.aft_ms %}checked{% endif %} /></td>
+            <td><input name="s_boost_{{ loop.index0 }}" type="number" step="0.1" style="width:4rem;" value="{{ sr.sail_boost_pct if sr and sr.sail_boost_pct is not none else '' }}" /></td>
+            <td><input name="s_psload_{{ loop.index0 }}" type="number" step="0.01" style="width:4rem;" value="{{ sr.me_ps_load_pct if sr and sr.me_ps_load_pct is not none else '' }}" /></td>
+            <td><input name="s_sbload_{{ loop.index0 }}" type="number" step="0.01" style="width:4rem;" value="{{ sr.me_sb_load_pct if sr and sr.me_sb_load_pct is not none else '' }}" /></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <article class="card mb-3">
+    <h2 class="h5">Cales — T° (°C) &amp; HR (%) à minuit / midi</h2>
+    <div style="overflow-x:auto;">
+      <table class="data-table mt-2" style="font-size:var(--text-xs);">
+        <thead>
+          <tr><th rowspan="2">Zone</th><th colspan="2" style="text-align:center;">Minuit</th><th colspan="2" style="text-align:center;">Midi</th></tr>
+          <tr><th>T° (°C)</th><th>HR (%)</th><th>T° (°C)</th><th>HR (%)</th></tr>
+        </thead>
+        <tbody>
+          {% for i, zone in hold_zones %}
+          {% set hz = hold_by_zone.get(zone, {}) %}
+          {% set hmin = hz.get('minuit') %}{% set hmid = hz.get('midi') %}
+          {% set rh_ok = zone not in hold_zones_without_rh %}
+          <tr>
+            <td class="mono">{{ zone }}</td>
+            <td><input name="hold_{{ i }}_min_t" type="number" step="0.1" style="width:4.5rem;" value="{{ hmin.temp_c if hmin and hmin.temp_c is not none else '' }}" /></td>
+            <td>{% if rh_ok %}<input name="hold_{{ i }}_min_rh" type="number" step="0.1" min="0" max="100" style="width:4.5rem;" value="{{ hmin.rh_pct if hmin and hmin.rh_pct is not none else '' }}" />{% else %}<span class="text-muted">n/a</span>{% endif %}</td>
+            <td><input name="hold_{{ i }}_mid_t" type="number" step="0.1" style="width:4.5rem;" value="{{ hmid.temp_c if hmid and hmid.temp_c is not none else '' }}" /></td>
+            <td>{% if rh_ok %}<input name="hold_{{ i }}_mid_rh" type="number" step="0.1" min="0" max="100" style="width:4.5rem;" value="{{ hmid.rh_pct if hmid and hmid.rh_pct is not none else '' }}" />{% else %}<span class="text-muted">n/a</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+  {% endif %}
+
+  {# ══════════════════════ DEPARTURE / ARRIVAL ══════════════════════ #}
+  {% if is_portcall %}
+  <article class="card mb-3">
+    <h2 class="h5">Escale — {{ event_type_labels.get(event_type, event_type) }}</h2>
+    <p class="text-muted text-sm">
+      {% if pol and is_departure %}Port de départ : <span class="mono">{{ pol.locode }}</span> — {{ pol.name }}{% endif %}
+      {% if pod and is_arrival %}Port d'arrivée : <span class="mono">{{ pod.locode }}</span> — {{ pod.name }}{% endif %}
+    </p>
+    <div class="grid grid-3 gap-3">
+      <div class="field"><label>Tirant AV (m)</label><input name="draft_fwd_m" type="number" step="0.001" value="{{ event.draft_fwd_m if is_edit and event.draft_fwd_m is not none else '' }}" /></div>
+      <div class="field"><label>Tirant AR (m)</label><input name="draft_aft_m" type="number" step="0.001" value="{{ event.draft_aft_m if is_edit and event.draft_aft_m is not none else '' }}" /></div>
+      <div class="field"><label>Trim (m)</label><input name="trim_m" type="number" step="0.001" value="{{ event.trim_m if is_edit and event.trim_m is not none else '' }}" /></div>
+      <div class="field">
+        <label>Condition</label>
+        <select name="vessel_condition">
+          <option value="">—</option>
+          {% for vc in vessel_conditions %}<option value="{{ vc }}" {% if is_edit and event.vessel_condition == vc %}selected{% endif %}>{{ vc }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label>ROB de référence (t)</label><input name="rob_t" type="number" step="0.001" value="{{ event.rob_t if is_edit and event.rob_t is not none else '' }}" /></div>
+      {% if is_departure %}
+      <div class="field"><label>Cargaison B/L (t)</label><input name="cargo_bl_t" type="number" step="0.001" value="{{ event.cargo_bl_t if is_edit and event.cargo_bl_t is not none else '' }}" /></div>
+      <div class="field"><label>ETD confirmé</label><input name="etd_confirmed" type="datetime-local" value="{{ event.etd_confirmed.strftime('%Y-%m-%dT%H:%M') if is_edit and event.etd_confirmed else default_portcall_dt }}" /></div>
+      {% else %}
+      <div class="field"><label>ETA annoncée</label><input name="eta_announced" type="datetime-local" value="{{ event.eta_announced.strftime('%Y-%m-%dT%H:%M') if is_edit and event.eta_announced else default_portcall_dt }}" /></div>
+      <div class="field"><label>ETB</label><input name="etb" type="datetime-local" value="{{ event.etb.strftime('%Y-%m-%dT%H:%M') if is_edit and event.etb else '' }}" /></div>
+      {% endif %}
+    </div>
+  </article>
+  {% endif %}
+
+  {# ══════════════════════ ANCHORING ══════════════════════ #}
+  {% if is_anchor %}
+  <article class="card mb-3">
+    <h2 class="h5">Mouillage — {{ event_type_labels.get(event_type, event_type) }}</h2>
+    <div class="grid grid-2 gap-3">
+      <div class="field"><label>Séquence (1..4)</label><input name="sequence_no" type="number" min="1" max="4" value="{{ event.sequence_no if is_edit and event.sequence_no is not none else '' }}" /></div>
+      {% if is_anchor_end %}
+      <div class="field">
+        <label>Mouillage d'origine (Begin)</label>
+        <select name="paired_event_id">
+          <option value="">—</option>
+          {% for b in open_begins %}
+          <option value="{{ b.id }}" {% if is_edit and event.paired_event_id == b.id %}selected{% endif %}>
+            #{{ b.id }} — {{ b.datetime_utc|datetime if b.datetime_utc else 'brouillon' }}{% if b.reason %} ({{ b.reason }}){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <div class="field" style="grid-column:span 2;"><label>Raison du mouillage</label><textarea name="reason" rows="2">{{ event.reason if is_edit and event.reason else '' }}</textarea></div>
+      {% endif %}
+    </div>
+  </article>
+  {% endif %}
+
+  {% if not locked %}
+  <div class="flex gap-2">
+    <button type="submit" class="btn btn-secondary">{{ t('onb_event_save', lang) }}</button>
+    {% if is_edit %}
+    <button type="submit" formaction="/onboard/events/{{ event.id }}/finalize" class="btn btn-primary">{{ t('onb_event_finalize', lang) }}</button>
+    {% endif %}
+  </div>
+  {% endif %}
+</form>
+{% endif %}
+{% endblock %}

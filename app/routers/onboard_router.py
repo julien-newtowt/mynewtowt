@@ -13,16 +13,34 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets as _secrets
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.bunker import BUNKER_STATUSES, BunkerOperation, BunkerTankAllocation
 from app.models.leg import Leg
+from app.models.nav_event import (
+    EVENT_TYPES,
+    HOLD_PERIODS,
+    HOLD_ZONES,
+    HOLD_ZONES_WITHOUT_RH,
+    NAV_TIME_SLOTS,
+    POSITION_SOURCES,
+    VESSEL_CONDITIONS,
+    NavEvent,
+    NavEventEngineReading,
+    NavEventHoldReading,
+    NavEventSailReading,
+    NavEventWeatherReading,
+    NoonEvent,
+)
 from app.models.noon_report import (
     NOON_ENGINES,
     NOON_HOLD_LOCATIONS,
@@ -39,15 +57,20 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 from app.permissions import require_permission
-from app.services import bunkering, mrv_sync, referential_env
+from app.services import bunkering, draft_reminders, event_capture, mrv_sync, referential_env
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.vessel_position import get_latest_position
 from app.templating import templates
+from app.utils.timezones import TIMEZONE_CHOICES, to_utc
 
 logger = logging.getLogger("onboard")
 
 router = APIRouter(prefix="/onboard", tags=["onboard"])
+# LOT 4 — router SANS préfixe pour l'endpoint cron ``/api/mrv/draft-reminders``
+# (l'endpoint ne peut pas vivre sous le préfixe ``/onboard`` du router bord ;
+# même convention que ``navigation_router.api_router`` / ``tickets_router``).
+api_router = APIRouter(tags=["mrv-drafts"])
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -161,6 +184,9 @@ async def onboard_landing(
         pod = await db.get(Port, selected_leg.arrival_port_id)
         vessel_status = "en_mer" if (selected_leg.atd and not selected_leg.ata) else "a_quai"
 
+    # LOT 4 — brouillons d'événements en cours de l'utilisateur (bloc landing).
+    my_drafts = await _my_event_drafts(db, user)
+
     response = templates.TemplateResponse(
         "staff/onboard/landing.html",
         {
@@ -173,6 +199,7 @@ async def onboard_landing(
             "pol": pol,
             "pod": pod,
             "vessel_status": vessel_status,
+            "my_drafts": my_drafts,
         },
     )
     set_leg_filter_cookie(response, f)
@@ -1372,3 +1399,684 @@ async def onboard_bunkering_validate(
         entity_label=bunker.bdn_number,
     )
     return RedirectResponse(url=f"/onboard/bunkering/{bunker.id}", status_code=303)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# === LOT 4 — capture d'événements ===
+# ══════════════════════════════════════════════════════════════════════════
+# Saisie bord DÉCLARATIVE des événements MRV (Noon / Departure / Arrival /
+# Begin|End Anchoring). Perm ``captain:M`` sur TOUT l'espace (donnée
+# réglementaire). Cycle Brouillon → Finalisé (via ``services.event_capture``,
+# lot 3) : préremplissage Thalos/planning/SOF **modifiable** (position manuelle
+# ⇒ justification R05), autosave, reprise réservée à l'auteur, parité offline
+# NoonEvent (mécanisme générique ``data-offline-queue`` + client_uuid, lot 3
+# dédoublonne côté serveur).
+
+# 7 paliers ETA du Noon (7,0 → 10,0 kt) — clés du JSON ``eta_7_to_10kt``.
+NAV_ETA_PALIERS: tuple[str, ...] = ("7.0", "7.5", "8.0", "8.5", "9.0", "9.5", "10.0")
+
+
+def _dec(v) -> Decimal | None:
+    """Parse tolérant d'un champ numérique en Decimal (None si vide/invalide)."""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    try:
+        return Decimal(s)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _clean_str(v) -> str | None:
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s or None
+
+
+def _dt_local(v) -> datetime | None:
+    """Parse un ``datetime-local`` en datetime NAÏF (heure murale du fuseau saisi)."""
+    if v is None or not str(v).strip():
+        return None
+    try:
+        return datetime.fromisoformat(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _event_sort_key(e: NavEvent) -> datetime:
+    """Clé de tri chronologique (UTC calculé sinon création), robuste naïf/aware."""
+    dt = e.datetime_utc or e.created_at
+    if dt is None:
+        return datetime.max.replace(tzinfo=None)
+    return dt if dt.tzinfo is None else dt.astimezone(UTC).replace(tzinfo=None)
+
+
+def _build_eta_paliers(f) -> dict | None:
+    """Assemble le JSON des 7 paliers ETA depuis ``eta_palier_{i}`` (ISO, non vides)."""
+    out: dict[str, str] = {}
+    for i, spd in enumerate(NAV_ETA_PALIERS):
+        dt = _maybe_dt(f.get(f"eta_palier_{i}"))
+        if dt is not None:
+            out[spd] = dt.isoformat()
+    return out or None
+
+
+def _build_event_payload(event_type: str, f) -> dict:
+    """Construit le payload de champs scalaires selon le type (champs autorisés
+    filtrés ensuite par ``event_capture._apply_payload``)."""
+    src = f.get("position_source")
+    payload: dict = {
+        "datetime_local": _dt_local(f.get("datetime_local")),
+        "timezone": _clean_str(f.get("timezone")),
+        "lat_decimal": _dec(f.get("lat_decimal")),
+        "lon_decimal": _dec(f.get("lon_decimal")),
+        "position_source": (src if src in POSITION_SOURCES else None),
+        "position_justification": _clean_str(f.get("position_justification")),
+        "cargo_mrv_t": _dec(f.get("cargo_mrv_t")),
+    }
+    if event_type == "noon":
+        payload.update(
+            {
+                "time_from_sosp_h": _dec(f.get("time_from_sosp_h")),
+                "distance_from_sosp_nm": _dec(f.get("distance_from_sosp_nm")),
+                "distance_to_go_nm": _dec(f.get("distance_to_go_nm")),
+                "announced_eta": _maybe_dt(f.get("announced_eta")),
+                "etb": _maybe_dt(f.get("etb")),
+                "eta_7_to_10kt": _build_eta_paliers(f),
+                "comments": _clean_str(f.get("comments")),
+            }
+        )
+    elif event_type in ("departure", "arrival"):
+        cond = f.get("vessel_condition")
+        payload.update(
+            {
+                "draft_fwd_m": _dec(f.get("draft_fwd_m")),
+                "draft_aft_m": _dec(f.get("draft_aft_m")),
+                "trim_m": _dec(f.get("trim_m")),
+                "vessel_condition": (cond if cond in VESSEL_CONDITIONS else None),
+                "rob_t": _dec(f.get("rob_t")),
+            }
+        )
+        if event_type == "departure":
+            payload["cargo_bl_t"] = _dec(f.get("cargo_bl_t"))
+            payload["etd_confirmed"] = _maybe_dt(f.get("etd_confirmed"))
+        else:
+            payload["eta_announced"] = _maybe_dt(f.get("eta_announced"))
+            payload["etb"] = _maybe_dt(f.get("etb"))
+    elif event_type in ("anchoring_begin", "anchoring_end"):
+        payload["sequence_no"] = _maybe_int(f.get("sequence_no"))
+        if event_type == "anchoring_begin":
+            payload["reason"] = _clean_str(f.get("reason"))
+        else:
+            payload["paired_event_id"] = _maybe_int(f.get("paired_event_id"))
+    return payload
+
+
+async def _sync_event_readings(db: AsyncSession, event: NavEvent, f, engines) -> None:
+    """Reconstruit les relevés fins d'un NoonEvent depuis le formulaire.
+
+    Relevés machine (1 ligne/moteur du référentiel), météo/voilure (créneaux
+    4 h) et cales (2 périodes × zones). Les collections sont vidées puis
+    reconstruites (delete-orphan) → autosave idempotent. Sans effet sur les
+    autres types (leurs données vivent dans les champs scalaires).
+
+    Les collections (``lazy="selectin"``) sont d'abord chargées dans le
+    contexte async (``db.refresh``) : sur un objet fraîchement créé ou repris
+    depuis l'identity-map, y accéder en contexte synchrone déclencherait une
+    IO paresseuse (``MissingGreenlet``)."""
+    if not isinstance(event, NoonEvent):
+        return
+
+    await db.refresh(
+        event, ["engine_readings", "weather_readings", "sail_readings", "hold_readings"]
+    )
+    event.engine_readings.clear()
+    for eng in engines:
+        hours = _dec(f.get(f"eng_hours_{eng.id}"))
+        fuel = _dec(f.get(f"eng_fuel_{eng.id}"))
+        reset = _maybe_bool(f.get(f"eng_reset_{eng.id}"))
+        if hours is None and fuel is None and not reset:
+            continue
+        event.engine_readings.append(
+            NavEventEngineReading(
+                engine_id=eng.id,
+                running_hours_counter_h=hours,
+                fuel_counter_l=fuel,
+                is_counter_reset=reset,
+            )
+        )
+
+    event.weather_readings.clear()
+    for i, slot in enumerate(NAV_TIME_SLOTS):
+        vals = (
+            _dec(f.get(f"w_tws_{i}")),
+            _dec(f.get(f"w_awa_{i}")),
+            _dec(f.get(f"w_aws_{i}")),
+            _maybe_int(f.get(f"w_ss_{i}")),
+            _dec(f.get(f"w_sd_{i}")),
+            _dec(f.get(f"w_spd_{i}")),
+        )
+        if all(v is None for v in vals):
+            continue
+        event.weather_readings.append(
+            NavEventWeatherReading(
+                slot_time=slot, tws_kn=vals[0], awa_deg=vals[1], aws_kn=vals[2],
+                sea_state=vals[3], sea_direction_deg=vals[4], ship_speed_kn=vals[5],
+            )
+        )
+
+    event.sail_readings.clear()
+    for i, slot in enumerate(NAV_TIME_SLOTS):
+        j0 = _maybe_bool(f.get(f"s_j0_{i}"))
+        fj1 = _maybe_bool(f.get(f"s_fwdj1_{i}"))
+        fms = _maybe_bool(f.get(f"s_fwdms_{i}"))
+        aj1 = _maybe_bool(f.get(f"s_aftj1_{i}"))
+        ams = _maybe_bool(f.get(f"s_aftms_{i}"))
+        boost = _dec(f.get(f"s_boost_{i}"))
+        ps = _dec(f.get(f"s_psload_{i}"))
+        sb = _dec(f.get(f"s_sbload_{i}"))
+        if not (j0 or fj1 or fms or aj1 or ams) and boost is None and ps is None and sb is None:
+            continue
+        event.sail_readings.append(
+            NavEventSailReading(
+                slot_time=slot, j0=j0, fwd_j1=fj1, fwd_ms=fms, aft_j1=aj1, aft_ms=ams,
+                sail_boost_pct=boost, me_ps_load_pct=ps, me_sb_load_pct=sb,
+            )
+        )
+
+    event.hold_readings.clear()
+    for i, zone in enumerate(HOLD_ZONES):
+        rh_ok = zone not in HOLD_ZONES_WITHOUT_RH
+        min_t = _dec(f.get(f"hold_{i}_min_t"))
+        min_rh = _dec(f.get(f"hold_{i}_min_rh")) if rh_ok else None
+        mid_t = _dec(f.get(f"hold_{i}_mid_t"))
+        mid_rh = _dec(f.get(f"hold_{i}_mid_rh")) if rh_ok else None
+        if min_t is not None or min_rh is not None:
+            event.hold_readings.append(
+                NavEventHoldReading(period="minuit", zone=zone, temp_c=min_t, rh_pct=min_rh)
+            )
+        if mid_t is not None or mid_rh is not None:
+            event.hold_readings.append(
+                NavEventHoldReading(period="midi", zone=zone, temp_c=mid_t, rh_pct=mid_rh)
+            )
+
+
+async def _apply_form_to_draft(db: AsyncSession, event: NavEvent, user, f, engines) -> None:
+    """Applique le formulaire à un brouillon : scalaires (garde auteur-seul du
+    service) + relevés. Lève ``DraftAuthorError``/``EventStateError`` (service)."""
+    payload = _build_event_payload(event.event_type, f)
+    await event_capture.update_draft(db, event, user, payload)  # garde + scalaires + flush
+    await _sync_event_readings(db, event, f, engines)
+    await db.flush()
+
+
+async def _my_event_drafts(db: AsyncSession, user) -> list[dict]:
+    """Brouillons d'événements de l'utilisateur (les plus anciens d'abord)."""
+    if user is None or getattr(user, "id", None) is None:
+        return []
+    now = datetime.now(UTC)
+    rows = list(
+        (
+            await db.execute(
+                select(NavEvent).where(
+                    NavEvent.status == "brouillon",
+                    NavEvent.author_user_id == user.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    out = [
+        {"event": e, "age_h": int(draft_reminders._age_hours(e.created_at, now))}
+        for e in rows
+    ]
+    out.sort(key=lambda d: d["age_h"], reverse=True)
+    return out
+
+
+async def _resolve_leg_and_vessel(db: AsyncSession, user, vessel_id, leg_id):
+    """Résout (leg, vessel) : leg explicite prioritaire, sinon leg actif du
+    navire (ATD posé, ATA vide), sinon dernier leg connu du navire."""
+    if leg_id:
+        leg = await db.get(Leg, leg_id)
+        if leg is not None:
+            return leg, await db.get(Vessel, leg.vessel_id)
+    vessel = await _resolve_bunkering_vessel(db, user, vessel_id)
+    leg = None
+    if vessel is not None:
+        leg = (
+            await db.execute(
+                select(Leg)
+                .where(Leg.vessel_id == vessel.id, Leg.atd.is_not(None), Leg.ata.is_(None))
+                .order_by(Leg.etd.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if leg is None:
+            leg = (
+                await db.execute(
+                    select(Leg).where(Leg.vessel_id == vessel.id).order_by(Leg.etd.desc()).limit(1)
+                )
+            ).scalar_one_or_none()
+    return leg, vessel
+
+
+async def _event_form_context(
+    db: AsyncSession,
+    *,
+    event_type: str,
+    event: NavEvent | None,
+    leg: Leg | None,
+    vessel: Vessel | None,
+    errors: list[str] | None = None,
+    locked: bool = False,
+) -> dict:
+    """Contexte commun du wizard (new / edit / réaffichage post-erreur)."""
+    from app.models.port import Port
+
+    now = datetime.now(UTC)
+    engines = await referential_env.get_vessel_engines(db, vessel.id) if vessel else []
+
+    prefill_pos = None
+    if event is None and vessel is not None:
+        prefill_pos = await event_capture.prefill_position(db, vessel, now)
+
+    pol = pod = None
+    if leg is not None:
+        pol = await db.get(Port, leg.departure_port_id)
+        pod = await db.get(Port, leg.arrival_port_id)
+
+    engine_values: dict[int, NavEventEngineReading] = {}
+    weather_by_slot: dict[str, NavEventWeatherReading] = {}
+    sail_by_slot: dict[str, NavEventSailReading] = {}
+    hold_by_zone: dict[str, dict[str, NavEventHoldReading]] = {}
+    if isinstance(event, NoonEvent):
+        engine_values = {r.engine_id: r for r in event.engine_readings}
+        weather_by_slot = {r.slot_time: r for r in event.weather_readings}
+        sail_by_slot = {r.slot_time: r for r in event.sail_readings}
+        for r in event.hold_readings:
+            hold_by_zone.setdefault(r.zone, {})[r.period] = r
+
+    open_begins: list[NavEvent] = []
+    if event_type == "anchoring_end" and leg is not None:
+        anchorings = list(
+            (
+                await db.execute(
+                    select(NavEvent).where(
+                        NavEvent.leg_id == leg.id,
+                        NavEvent.event_type.in_(("anchoring_begin", "anchoring_end")),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        paired = {
+            getattr(a, "paired_event_id", None)
+            for a in anchorings
+            if getattr(a, "paired_event_id", None)
+        }
+        open_begins = [
+            a for a in anchorings if a.event_type == "anchoring_begin" and a.id not in paired
+        ]
+
+    # Défaut départ/arrivée : dates planning (prériempli, modifiable).
+    default_portcall_dt = ""
+    if event_type == "departure" and leg is not None:
+        d = leg.atd or leg.etd
+        default_portcall_dt = d.strftime("%Y-%m-%dT%H:%M") if d else ""
+    elif event_type == "arrival" and leg is not None:
+        d = leg.ata or leg.eta
+        default_portcall_dt = d.strftime("%Y-%m-%dT%H:%M") if d else ""
+
+    return {
+        "mode": "edit" if event is not None else "new",
+        "event_type": event_type,
+        "event": event,
+        "leg": leg,
+        "vessel": vessel,
+        "pol": pol,
+        "pod": pod,
+        "engines": engines,
+        "engine_values": engine_values,
+        "weather_by_slot": weather_by_slot,
+        "sail_by_slot": sail_by_slot,
+        "hold_by_zone": hold_by_zone,
+        "open_begins": open_begins,
+        "prefill_pos": prefill_pos,
+        "default_dt_local": now.strftime("%Y-%m-%dT%H:%M"),
+        "default_portcall_dt": default_portcall_dt,
+        "tz_choices": TIMEZONE_CHOICES,
+        "time_slots": NAV_TIME_SLOTS,
+        "hold_zones": list(enumerate(HOLD_ZONES)),
+        "hold_zones_without_rh": HOLD_ZONES_WITHOUT_RH,
+        "hold_periods": HOLD_PERIODS,
+        "vessel_conditions": VESSEL_CONDITIONS,
+        "position_sources": POSITION_SOURCES,
+        "eta_paliers": list(enumerate(NAV_ETA_PALIERS)),
+        "errors": errors or [],
+        "locked": locked,
+        "autosave_url": (f"/onboard/events/{event.id}/autosave" if event is not None else None),
+        "event_type_labels": _EVENT_TYPE_LABELS,
+    }
+
+
+# Libellés courts par type (affichage listes/wizard).
+_EVENT_TYPE_LABELS: dict[str, str] = {
+    "noon": "Noon report",
+    "departure": "Départ (Departure)",
+    "arrival": "Arrivée (Arrival)",
+    "anchoring_begin": "Début de mouillage",
+    "anchoring_end": "Fin de mouillage",
+}
+
+
+async def _render_event_form(
+    request: Request,
+    user,
+    db: AsyncSession,
+    *,
+    event_type: str,
+    event: NavEvent | None,
+    leg: Leg | None,
+    vessel: Vessel | None,
+    errors: list[str] | None = None,
+    locked: bool = False,
+    status_code: int = 200,
+) -> HTMLResponse:
+    ctx = await _event_form_context(
+        db, event_type=event_type, event=event, leg=leg, vessel=vessel,
+        errors=errors, locked=locked,
+    )
+    ctx.update({"request": request, "user": user})
+    return templates.TemplateResponse("staff/onboard/event_form.html", ctx, status_code=status_code)
+
+
+# ─────────────────────────────── Écrans ────────────────────────────────────
+
+
+@router.get("/events", response_class=HTMLResponse)
+async def onboard_events_index(
+    request: Request,
+    vessel_id: int | None = None,
+    leg_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> HTMLResponse:
+    """Chaîne chronologique des événements du leg actif + brouillons du user."""
+    leg, vessel = await _resolve_leg_and_vessel(db, user, vessel_id, leg_id)
+    events: list[NavEvent] = []
+    if leg is not None:
+        rows = list(
+            (await db.execute(select(NavEvent).where(NavEvent.leg_id == leg.id))).scalars().all()
+        )
+        events = sorted(rows, key=_event_sort_key)
+    my_drafts = await _my_event_drafts(db, user)
+    vessels = list(
+        (
+            await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code))
+        )
+        .scalars()
+        .all()
+    )
+    return templates.TemplateResponse(
+        "staff/onboard/events_list.html",
+        {
+            "request": request,
+            "user": user,
+            "leg": leg,
+            "vessel": vessel,
+            "vessels": vessels,
+            "events": events,
+            "my_drafts": my_drafts,
+            "event_types": EVENT_TYPES,
+            "event_type_labels": _EVENT_TYPE_LABELS,
+        },
+    )
+
+
+@router.get("/events/new/{event_type}", response_class=HTMLResponse)
+async def onboard_event_new_form(
+    event_type: str,
+    request: Request,
+    vessel_id: int | None = None,
+    leg_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> HTMLResponse:
+    """Wizard mobile-first de déclaration d'un événement (5 types)."""
+    if event_type not in EVENT_TYPES:
+        raise HTTPException(status_code=404, detail="Type d'événement inconnu.")
+    leg, vessel = await _resolve_leg_and_vessel(db, user, vessel_id, leg_id)
+    return await _render_event_form(
+        request, user, db, event_type=event_type, event=None, leg=leg, vessel=vessel
+    )
+
+
+@router.post("/events")
+async def onboard_event_create(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """Création d'un brouillon d'événement (+ dédoublonnage PWA par client_uuid)."""
+    f = await request.form()
+    event_type = str(f.get("event_type") or "")
+    if event_type not in EVENT_TYPES:
+        raise HTTPException(status_code=400, detail="Type d'événement inconnu.")
+
+    client_uuid = _clean_client_uuid(f.get("client_uuid"))
+    if client_uuid:
+        existing = (
+            await db.execute(select(NavEvent).where(NavEvent.client_uuid == client_uuid))
+        ).scalar_one_or_none()
+        if existing is not None:
+            # Rejeu file offline — déjà enregistré, on ne duplique pas (lot 3).
+            return RedirectResponse(url=f"/onboard/events/{existing.id}/edit", status_code=303)
+
+    leg_id = _int_or_400(f.get("leg_id"), "leg_id")
+    if leg_id is None:
+        raise HTTPException(status_code=400, detail="Voyage (leg) obligatoire.")
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=400, detail="Voyage introuvable.")
+    vessel = await db.get(Vessel, leg.vessel_id)
+
+    payload = _build_event_payload(event_type, f)
+    try:
+        event = await event_capture.create_draft(
+            db,
+            leg=leg,
+            vessel=vessel,
+            event_type=event_type,
+            author=user,
+            payload=payload,
+            client_uuid=client_uuid,
+        )
+    except event_capture.EventCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    engines = await referential_env.get_vessel_engines(db, vessel.id) if vessel else []
+    await _sync_event_readings(db, event, f, engines)
+    await db.flush()
+
+    await activity_record(
+        db,
+        action="nav_event_draft_create",
+        user_id=user.id,
+        user_name=user.username,
+        module="captain",
+        entity_type="nav_event",
+        entity_id=event.id,
+        entity_label=event.event_type,
+    )
+    return RedirectResponse(url=f"/onboard/events/{event.id}/edit", status_code=303)
+
+
+@router.get("/events/{event_id}/edit", response_class=HTMLResponse)
+async def onboard_event_edit_form(
+    event_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> HTMLResponse:
+    """Reprise d'un brouillon — réservée à son auteur (garde D11 → 403 clair)."""
+    event = await db.get(NavEvent, event_id)
+    if event is None:
+        raise HTTPException(status_code=404)
+    if event.author_user_id is not None and event.author_user_id != user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Seul l'auteur du brouillon peut le reprendre.",
+        )
+    leg = await db.get(Leg, event.leg_id)
+    vessel = await db.get(Vessel, event.vessel_id) if event.vessel_id else None
+    return await _render_event_form(
+        request, user, db,
+        event_type=event.event_type, event=event, leg=leg, vessel=vessel,
+        locked=(event.status != "brouillon"),
+    )
+
+
+@router.post("/events/{event_id}/edit")
+async def onboard_event_edit_post(
+    event_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """Sauvegarde d'un brouillon (garde auteur-seul du service → 403)."""
+    event = await db.get(NavEvent, event_id)
+    if event is None:
+        raise HTTPException(status_code=404)
+    f = await request.form()
+    vessel = await db.get(Vessel, event.vessel_id) if event.vessel_id else None
+    engines = await referential_env.get_vessel_engines(db, vessel.id) if vessel else []
+    try:
+        await _apply_form_to_draft(db, event, user, f, engines)
+    except event_capture.DraftAuthorError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except event_capture.EventStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    await activity_record(
+        db,
+        action="nav_event_draft_update",
+        user_id=user.id,
+        user_name=user.username,
+        module="captain",
+        entity_type="nav_event",
+        entity_id=event.id,
+        entity_label=event.event_type,
+    )
+    return RedirectResponse(url=f"/onboard/events/{event.id}/edit", status_code=303)
+
+
+@router.post("/events/{event_id}/autosave")
+async def onboard_event_autosave(
+    event_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> Response:
+    """Autosave léger (appelé par ``event-autosave.js``) : met à jour le
+    brouillon + ``last_saved_at``, répond 204 (aucun rendu). Même garde
+    auteur-seul (403) et garde d'état (409)."""
+    event = await db.get(NavEvent, event_id)
+    if event is None:
+        return Response(status_code=404)
+    f = await request.form()
+    vessel = await db.get(Vessel, event.vessel_id) if event.vessel_id else None
+    engines = await referential_env.get_vessel_engines(db, vessel.id) if vessel else []
+    try:
+        await _apply_form_to_draft(db, event, user, f, engines)
+    except event_capture.DraftAuthorError:
+        return Response(status_code=403)
+    except event_capture.EventStateError:
+        return Response(status_code=409)
+    return Response(status_code=204)
+
+
+@router.post("/events/{event_id}/finalize")
+async def onboard_event_finalize(
+    event_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """Finalisation d'un événement : applique les dernières saisies puis
+    ``event_capture.finalize`` (moteur de règles). Un refus (règle bloquante ou
+    position manuelle sans justification, R05) réaffiche le formulaire avec les
+    messages (200) — jamais de 500."""
+    event = await db.get(NavEvent, event_id)
+    if event is None:
+        raise HTTPException(status_code=404)
+    f = await request.form()
+    vessel = await db.get(Vessel, event.vessel_id) if event.vessel_id else None
+    engines = await referential_env.get_vessel_engines(db, vessel.id) if vessel else []
+
+    try:
+        await _apply_form_to_draft(db, event, user, f, engines)
+    except event_capture.DraftAuthorError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except event_capture.EventStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    try:
+        await event_capture.finalize(db, event, user)
+    except event_capture.EventFinalizationError as exc:
+        leg = await db.get(Leg, event.leg_id)
+        return await _render_event_form(
+            request, user, db,
+            event_type=event.event_type, event=event, leg=leg, vessel=vessel,
+            errors=exc.messages, status_code=200,
+        )
+    except event_capture.DraftAuthorError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    await activity_record(
+        db,
+        action="nav_event_finalize",
+        user_id=user.id,
+        user_name=user.username,
+        module="captain",
+        entity_type="nav_event",
+        entity_id=event.id,
+        entity_label=event.event_type,
+    )
+    return RedirectResponse(url=f"/onboard/events?leg_id={event.leg_id}", status_code=303)
+
+
+# ───────────────────── Cron R19 — brouillons dormants ───────────────────────
+
+
+@api_router.post("/api/mrv/draft-reminders")
+async def mrv_draft_reminders_cron(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cron externe (Power Automate) — alerte R19 des brouillons dormants.
+
+    Auth ``X-API-Token`` (temps constant) ; 503 si ``MRV_DRAFTS_API_TOKEN``
+    non configuré. Rappel Master (1er seuil) + alerte siège (2e seuil),
+    idempotents (cf. ``services.draft_reminders``)."""
+    expected = (settings.mrv_drafts_api_token or "").strip() or None
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MRV_DRAFTS_API_TOKEN non configuré dans .env",
+        )
+    received = request.headers.get("x-api-token") or ""
+    if not _secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
+
+    summary = await draft_reminders.run_draft_reminders(db)
+    logger.info(
+        "R19 draft reminders (API cron): scanned=%d master=%d siege=%d",
+        summary["scanned"], summary["master"], summary["siege"],
+    )
+    return JSONResponse(summary)

@@ -163,6 +163,10 @@ THRESHOLD_SEED: tuple[tuple[str, str, str, str, bool, str], ...] = (
      "Seuil de consommation de référence (SMS) — déjà en usage."),
     ("R19", "delai_rappel_brouillon_h", "24", "h", False,
      "Délai de rappel d'un brouillon non finalisé."),
+    # LOT 4 — second seuil R19 : au-delà, alerte au siège (Environmental
+    # Manager) en plus du rappel Master. Provisoire (calibrage voyage pilote).
+    ("R19", "delai_alerte_siege_brouillon_h", "48", "h", True,
+     "Délai d'alerte siège d'un brouillon non finalisé (2e seuil R19, proposition)."),
     ("R14", "seuil_rob_ecart_mineur_t", "0.5", "t", True,
      "Borne d'écart ROB mineur (proposition Q8/D6, à confirmer métier)."),
     ("R14", "seuil_rob_ecart_majeur_t", "2", "t", True,
