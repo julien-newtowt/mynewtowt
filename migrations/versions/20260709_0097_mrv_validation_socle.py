@@ -14,13 +14,8 @@ dashboard. Les valeurs et le catalogue sont importés depuis
 utilisée par le seed idempotent du boot dev et l'action d'init admin).
 
 Revision ID: 20260709_0097
-Revises: 20260702_0093
+Revises: 20260709_0096
 Create Date: 2026-07-09 00:00:00.000000
-
-NOTE (rechaînage) : ``down_revision`` est PROVISOIREMENT posé sur la tête
-locale de ce worktree (``20260702_0093``). Un lot parallèle (LOT 1) crée
-``20260709_0096`` dans sa branche ; l'orchestrateur rechaînera ce
-``down_revision`` vers ``20260709_0096`` au moment du merge.
 """
 
 from __future__ import annotations
@@ -31,7 +26,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "20260709_0097"
-down_revision = "20260702_0093"
+down_revision = "20260709_0096"
 branch_labels = None
 depends_on = None
 
