@@ -1,11 +1,15 @@
-"""Marad — endpoint machine de synchronisation crew (LECTURE SEULE).
+"""Marad — endpoints machine de synchronisation (LECTURE SEULE).
 
 ``POST /api/marad/refresh`` — header ``X-API-Token: <MARAD_SYNC_TOKEN>`` :
 cron Power Automate (périodique, ≥ 30 min vu le rate limit 1 req/min de Marad)
 qui déclenche la lecture des données crew Marad. Read-only : ne modifie jamais
 Marad. cf. docs/integrations/marad-crew-readonly.md.
 
-Retourne 503 si ``MARAD_SYNC_TOKEN`` n'est pas configuré.
+``POST /api/marad/flgo-refresh`` — header ``X-API-Token: <MARAD_FLGO_TOKEN>``
+(token dédié, distinct de ``MARAD_SYNC_TOKEN``) : cron FLGO (MRV LOT 7,
+lecture seule, cf. ``app/services/flgo_sync.py``).
+
+Retourne 503 si le token dédié de l'endpoint appelé n'est pas configuré.
 """
 
 from __future__ import annotations
@@ -19,7 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.services import marad_sync
+from app.services import flgo_sync, marad_sync
+from app.services.activity import record as activity_record
 
 logger = logging.getLogger("marad")
 
@@ -73,4 +78,60 @@ async def marad_refresh_api(
             db, schedule_retry_wait=settings.marad_schedule_retry_wait
         )
     logger.info("Marad refresh (API, only=%s): %s", part or "all", result)
+    return JSONResponse(result)
+
+
+# ══════════════════════════════ LOT 7 — FLGO (Marad, lecture seule) ══════════
+
+
+def _expected_flgo_token() -> str | None:
+    return (settings.marad_flgo_token or "").strip() or None
+
+
+@api_router.post("/flgo-refresh")
+async def marad_flgo_refresh_api(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Cron externe FLGO (Power Automate). Auth par X-API-Token dédié. Lecture seule.
+
+    Patron du refresh crew ci-dessus : comparaison à temps constant, 503 si
+    ``MARAD_FLGO_TOKEN`` n'est pas configuré. Une panne du client API Marad
+    (exception non gérée par ``app.services.flgo_sync`` — ex. simulée en
+    test par un mock qui lève) est traduite en 502, jamais en 500 nu :
+    l'endpoint ne doit jamais planter la boucle du cron externe.
+    """
+    expected = _expected_flgo_token()
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MARAD_FLGO_TOKEN non configuré dans .env",
+        )
+    received = request.headers.get("x-api-token") or ""
+    if not _secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="X-API-Token invalide ou absent"
+        )
+
+    try:
+        result = await flgo_sync.sync_flgo_from_api(db)
+    except Exception as exc:
+        logger.exception("Marad FLGO refresh: échec de synchronisation")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Synchronisation FLGO Marad indisponible (panne API amont)",
+        ) from exc
+
+    await activity_record(
+        db,
+        action="sync",
+        module="mrv",
+        entity_type="flgo_reading",
+        entity_label="cron flgo-refresh",
+        detail=(
+            f"imported={result.get('imported')} updated={result.get('updated')} "
+            f"skipped={result.get('skipped')} errors={result.get('errors')}"
+        ),
+    )
+    logger.info("Marad FLGO refresh (API): %s", result)
     return JSONResponse(result)

@@ -1,0 +1,108 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('mrv_flgo_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/mrv" class="btn btn-ghost mb-3">{{ t('btn_back', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">{{ t('mrv_flgo_kicker', lang) }}</span>
+  <h1 class="display">{{ t('mrv_flgo_title', lang) }}</h1>
+  <p class="text-muted">{{ t('mrv_flgo_intro', lang) }}</p>
+</header>
+
+<article class="card mb-3">
+  <h2>{{ t('mrv_flgo_import_title', lang) }}</h2>
+  <p class="text-muted text-sm">{{ t('mrv_flgo_import_intro', lang) }}</p>
+  <form method="post" action="/mrv/flgo/import" enctype="multipart/form-data" class="flex gap-2 items-end flex-wrap">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="field">
+      <label>{{ t('mrv_flgo_import_vessel', lang) }}</label>
+      <select name="vessel_id" required>
+        {% for v in vessels %}
+        <option value="{{ v.id }}">{{ v.name }} ({{ v.code }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>{{ t('mrv_flgo_import_file', lang) }}</label>
+      <input type="file" name="file" accept=".xlsx,.xls" required />
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">{{ t('mrv_flgo_import_submit', lang) }}</button>
+  </form>
+</article>
+
+<form method="get" action="/mrv/flgo" class="card mb-3 grid grid-4 gap-2" style="align-items:end;">
+  <div class="field">
+    <label>{{ t('mrv_flgo_filter_vessel', lang) }}</label>
+    <select name="vessel_id">
+      <option value="">{{ t('bunker_filter_all', lang) }}</option>
+      {% for v in vessels %}
+      <option value="{{ v.id }}" {% if filter_vessel_id == v.id %}selected{% endif %}>{{ v.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>{{ t('mrv_flgo_filter_type', lang) }}</label>
+    <select name="action_type">
+      <option value="">{{ t('bunker_filter_all', lang) }}</option>
+      {% for at in action_types %}
+      <option value="{{ at }}" {% if filter_action_type == at %}selected{% endif %}>{{ t('mrv_flgo_type_' + at, lang) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>{{ t('mrv_flgo_filter_source', lang) }}</label>
+    <select name="source">
+      <option value="">{{ t('bunker_filter_all', lang) }}</option>
+      {% for s in sources %}
+      <option value="{{ s }}" {% if filter_source == s %}selected{% endif %}>{{ t('mrv_flgo_source_' + s, lang) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>{{ t('mrv_flgo_filter_period', lang) }}</label>
+    <div class="flex gap-1">
+      <input type="date" name="date_from" value="{{ filter_date_from }}" />
+      <input type="date" name="date_to" value="{{ filter_date_to }}" />
+    </div>
+  </div>
+  <div><button type="submit" class="btn btn-secondary btn-sm">{{ t('btn_filter', lang) }}</button></div>
+</form>
+
+<article class="card">
+  {% if rows %}
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead><tr>
+      <th>{{ t('mrv_flgo_col_vessel', lang) }}</th>
+      <th>{{ t('mrv_flgo_col_datetime', lang) }}</th>
+      <th>{{ t('mrv_flgo_col_product', lang) }}</th>
+      <th>{{ t('mrv_flgo_col_type', lang) }}</th>
+      <th>{{ t('mrv_flgo_col_volume', lang) }}</th>
+      <th>{{ t('mrv_flgo_col_rob', lang) }}</th>
+      <th>{{ t('mrv_flgo_col_source', lang) }}</th>
+      <th>{{ t('mrv_flgo_col_consistency', lang) }}</th>
+    </tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.vessel.code if row.vessel else '—' }}</td>
+        <td class="mono text-sm">{{ row.reading.reading_datetime|datetime }}</td>
+        <td>{{ row.reading.product_name }}</td>
+        <td><span class="pill pill-neutral">{{ t('mrv_flgo_type_' + row.reading.action_type, lang) }}</span></td>
+        <td class="mono">{{ row.reading.total_volume_m3 }}</td>
+        <td class="mono">{{ row.reading.total_rob_m3 if row.reading.total_rob_m3 is not none else '—' }}</td>
+        <td><span class="badge">{{ t('mrv_flgo_source_' + row.reading.source, lang) }}</span></td>
+        <td>
+          {% if row.check.flagged %}
+          <span class="pill pill-warn" title="Σ{{ row.check.total_compartments_m3 }} vs {{ row.check.total_declared_m3 }} (écart {{ row.check.delta_m3 }} > {{ row.check.tolerance_m3 }})">{{ t('mrv_flgo_consistency_flagged', lang) }}</span>
+          {% else %}
+          <span class="pill pill-ok">{{ t('mrv_flgo_consistency_ok', lang) }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="text-muted">{{ t('mrv_flgo_empty', lang) }}</p>{% endif %}
+</article>
+{% endblock %}

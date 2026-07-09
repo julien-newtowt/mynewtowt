@@ -46,6 +46,7 @@ from app.models.employment_contract import EmploymentContract
 from app.models.escale import DockerShift, EscaleOperation
 from app.models.feature_flag import FeatureFlag
 from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
+from app.models.flgo import FlgoReading, FlgoTankCompartmentVolume, FlgoVoyageConsumptionRef
 from app.models.hr_absence import HrAbsence
 from app.models.hr_review import HrReview
 from app.models.insurance import InsuranceContract
@@ -162,6 +163,9 @@ __all__ = [
     "EscaleOperation",
     "EtaShift",
     "FeatureFlag",
+    "FlgoReading",
+    "FlgoTankCompartmentVolume",
+    "FlgoVoyageConsumptionRef",
     "HrAbsence",
     "HrReview",
     "InsuranceContract",

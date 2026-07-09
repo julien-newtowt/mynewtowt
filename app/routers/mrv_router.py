@@ -11,19 +11,21 @@ import contextlib
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.bunker import BUNKER_STATUSES, BunkerOperation
+from app.models.flgo import FLGO_ACTION_TYPES, FLGO_SOURCES, FlgoReading
 from app.models.leg import Leg
 from app.models.mrv import MRVEvent, MRVParameter
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.permissions import require_permission
-from app.services import bunkering
+from app.services import bunkering, flgo_sync
 from app.services.activity import record as activity_record
 from app.services.mrv_compute import recompute_leg
 from app.services.mrv_export import (
@@ -32,7 +34,9 @@ from app.services.mrv_export import (
     carbon_report_summary,
     dnv_csv_18,
 )
+from app.services.safe_files import content_length_exceeds_max
 from app.templating import brand_for_lang, templates
+from app.utils.file_validation import validate_filename, validate_size
 
 # MRV — typage des champs d'événement pour la coercition des formulaires.
 _EVENT_DECIMAL_FIELDS = (
@@ -1035,3 +1039,130 @@ async def mrv_bunkering_edit(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/mrv/bunkering/{bunker.id}", status_code=303)
+
+
+# === LOT 7 — FLGO ===
+# Intégration FLGO (Marad, LECTURE SEULE) : écran de consultation + import
+# xlsx de repli. Câblage API + parsing : app/services/flgo_sync.py. Aucune
+# écriture vers BunkerOperation/bunker.py depuis cet écran (rapprochements
+# service-level, jamais wired ici — cf. flgo_sync.flgo_matches_for_bunker).
+
+
+@router.get("/flgo", response_class=HTMLResponse)
+async def mrv_flgo_index(
+    request: Request,
+    vessel_id: int | None = None,
+    action_type: str | None = None,
+    source: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """LOT 7 — liste des relevés FLGO (Marad), filtrable navire/période/type/
+    source, avec indicateur de cohérence interne (R25 — signalé, jamais
+    corrigé, cf. ``flgo_sync.check_internal_consistency``)."""
+    stmt = (
+        select(FlgoReading)
+        .options(selectinload(FlgoReading.compartments))
+        .order_by(FlgoReading.reading_datetime.desc())
+    )
+    if vessel_id:
+        stmt = stmt.where(FlgoReading.vessel_id == vessel_id)
+    if action_type:
+        stmt = stmt.where(FlgoReading.action_type == action_type)
+    if source:
+        stmt = stmt.where(FlgoReading.source == source)
+    if date_from:
+        with contextlib.suppress(ValueError):
+            stmt = stmt.where(
+                FlgoReading.reading_datetime
+                >= datetime.fromisoformat(date_from).replace(tzinfo=UTC)
+            )
+    if date_to:
+        with contextlib.suppress(ValueError):
+            stmt = stmt.where(
+                FlgoReading.reading_datetime
+                <= datetime.fromisoformat(date_to).replace(tzinfo=UTC)
+            )
+    readings = list((await db.execute(stmt.limit(200))).scalars().all())
+
+    vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    vessel_map = {v.id: v for v in vessels}
+
+    rows = []
+    for r in readings:
+        check = await flgo_sync.check_internal_consistency(db, r, compartments=r.compartments)
+        rows.append({"reading": r, "vessel": vessel_map.get(r.vessel_id), "check": check})
+
+    return templates.TemplateResponse(
+        "staff/mrv/flgo_index.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": rows,
+            "vessels": vessels,
+            "action_types": FLGO_ACTION_TYPES,
+            "sources": FLGO_SOURCES,
+            "filter_vessel_id": vessel_id,
+            "filter_action_type": action_type,
+            "filter_source": source,
+            "filter_date_from": date_from,
+            "filter_date_to": date_to,
+            "audience": "mrv",
+        },
+    )
+
+
+@router.post("/flgo/import", response_class=HTMLResponse)
+async def mrv_flgo_import(
+    request: Request,
+    vessel_id: int = Form(...),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "M")),
+) -> HTMLResponse:
+    """LOT 7 — import xlsx de repli (export IHM Marad FLGO), upsert idempotent.
+
+    Restitue un rapport (importés/mis à jour/ignorés/erreurs) — jamais une
+    exception non gérée sur un contenu malformé (cellule composite illisible,
+    date illisible…) : ces anomalies sont collectées dans le rapport.
+    """
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        raise HTTPException(status_code=404, detail="navire introuvable")
+
+    name_check = validate_filename(file.filename or "")
+    if not name_check.ok:
+        raise HTTPException(status_code=400, detail=name_check.reason)
+    content = await file.read()
+    size_check = validate_size(content)
+    if not size_check.ok:
+        raise HTTPException(status_code=413, detail=size_check.reason)
+
+    try:
+        report = await flgo_sync.import_flgo_xlsx(db, vessel, content)
+    except flgo_sync.FlgoSyncError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await activity_record(
+        db,
+        action="import",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="flgo_reading",
+        entity_label=f"xlsx {vessel.code}",
+        detail=(
+            f"import={report.imported} maj={report.updated} "
+            f"ignorés={report.skipped} erreurs={len(report.errors)}"
+        ),
+        ip_address=_client_ip(request),
+    )
+    return templates.TemplateResponse(
+        "staff/mrv/flgo_import_result.html",
+        {"request": request, "user": user, "report": report, "vessel": vessel, "audience": "mrv"},
+    )
