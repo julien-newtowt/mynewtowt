@@ -533,3 +533,299 @@ def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
     )
+
+
+# ══════════════════ LOT 2 — Paramètres & moteur de règles de validation ══════
+
+_MAX_THRESHOLD = Decimal("1000000000")  # borne Numeric(15,6)
+
+
+def _parse_threshold_value(raw: str) -> Decimal:
+    """Coerce une saisie de seuil en Decimal validé (sinon HTTP 400)."""
+    from decimal import InvalidOperation
+
+    try:
+        value = Decimal(str(raw).strip().replace(",", "."))
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="valeur numérique invalide") from exc
+    if not value.is_finite() or value < 0 or abs(value) >= _MAX_THRESHOLD:
+        raise HTTPException(status_code=400, detail="valeur hors plage (0 ≤ x < 1e9)")
+    return value
+
+
+def _sorted_rules(rules: list) -> list:
+    """R01-R26 d'abord, IR01-IR05 ensuite (tri lisible)."""
+    return sorted(rules, key=lambda r: (r.rule_id.startswith("IR"), r.rule_id))
+
+
+@router.get("/parametres", response_class=HTMLResponse)
+async def mrv_parametres(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """Écran d'administration des règles, seuils et paramètres dashboard (LOT 2)."""
+    from app.models.validation import (
+        DashboardParameter,
+        ValidationRule,
+        ValidationRuleThreshold,
+    )
+
+    rules = list((await db.execute(select(ValidationRule))).scalars().all())
+    thresholds = list(
+        (await db.execute(select(ValidationRuleThreshold))).scalars().all()
+    )
+    dashboard_params = list(
+        (
+            await db.execute(
+                select(DashboardParameter).order_by(DashboardParameter.parameter_name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    vessels = list(
+        (
+            await db.execute(
+                select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    rule_by_id = {r.rule_id: r for r in rules}
+    vessel_by_id = {v.id: v for v in vessels}
+    thr_global = sorted(
+        (t for t in thresholds if t.vessel_id is None),
+        key=lambda t: (t.rule_id.startswith("IR"), t.rule_id, t.parameter_name),
+    )
+    thr_overrides = sorted(
+        (t for t in thresholds if t.vessel_id is not None),
+        key=lambda t: (t.rule_id, t.parameter_name, t.vessel_id or 0),
+    )
+    dash_global = [d for d in dashboard_params if d.vessel_id is None]
+    dash_overrides = [d for d in dashboard_params if d.vessel_id is not None]
+
+    return templates.TemplateResponse(
+        "staff/mrv/parametres.html",
+        {
+            "request": request,
+            "user": user,
+            "rules": _sorted_rules(rules),
+            "rule_by_id": rule_by_id,
+            "thr_global": thr_global,
+            "thr_overrides": thr_overrides,
+            "dash_global": dash_global,
+            "dash_overrides": dash_overrides,
+            "vessels": vessels,
+            "vessel_by_id": vessel_by_id,
+            "seeded": bool(rules),
+            "provisional_count": sum(1 for t in thr_global if t.provisional),
+        },
+    )
+
+
+@router.post("/parametres/init")
+async def mrv_parametres_init(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "S")),
+):
+    """Initialise (idempotent) le référentiel de validation depuis le catalogue codé."""
+    from app.services.validation_engine import seed_reference_data
+
+    created = await seed_reference_data(db, updated_by=user.id)
+    total = sum(len(v) for v in created.values())
+    if total:
+        await activity_record(
+            db,
+            action="mrv_validation_seed",
+            user_id=user.id,
+            user_name=user.full_name or user.username,
+            user_role=user.role,
+            module="mrv",
+            entity_type="validation_rule",
+            entity_label="init référentiel validation",
+            detail=(
+                f"rules={len(created['rules'])} thresholds={len(created['thresholds'])} "
+                f"dashboard={len(created['dashboard'])}"
+            ),
+            ip_address=_client_ip(request),
+        )
+    return RedirectResponse(url="/mrv/parametres", status_code=303)
+
+
+@router.post("/parametres/rules/{rule_id}/toggle")
+async def mrv_parametres_rule_toggle(
+    rule_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "S")),
+):
+    """Active/désactive une règle du moteur de validation."""
+    from app.models.validation import ValidationRule
+
+    rule = await db.get(ValidationRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="règle inconnue")
+    rule.active = not rule.active
+    await db.flush()
+    await activity_record(
+        db,
+        action="mrv_validation_rule_toggle",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="validation_rule",
+        entity_label=rule_id,
+        detail=f"active={rule.active}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/mrv/parametres", status_code=303)
+
+
+@router.post("/parametres/thresholds/{threshold_id}/update")
+async def mrv_parametres_threshold_update(
+    threshold_id: int,
+    request: Request,
+    value: str = Form(...),
+    note: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "S")),
+):
+    """Édite la valeur (et la note) d'un seuil — global ou override navire."""
+    from app.models.validation import ValidationRuleThreshold
+    from app.services.validation_engine import invalidate_cache
+
+    thr = await db.get(ValidationRuleThreshold, threshold_id)
+    if thr is None:
+        raise HTTPException(status_code=404, detail="seuil inconnu")
+    thr.value = _parse_threshold_value(value)
+    note_clean = note.strip()
+    if note_clean:
+        thr.note = note_clean[:500]
+    thr.updated_by = user.id
+    await db.flush()
+    invalidate_cache()
+    await activity_record(
+        db,
+        action="mrv_validation_threshold_update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="validation_rule_threshold",
+        entity_id=thr.id,
+        entity_label=f"{thr.rule_id}:{thr.parameter_name}",
+        detail=f"value={thr.value} vessel={thr.vessel_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/mrv/parametres", status_code=303)
+
+
+@router.post("/parametres/thresholds/override")
+async def mrv_parametres_threshold_override(
+    request: Request,
+    rule_id: str = Form(...),
+    parameter_name: str = Form(...),
+    vessel_id: int = Form(...),
+    value: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "S")),
+):
+    """Crée (ou met à jour) un override de seuil pour un navire donné."""
+    from app.models.validation import ValidationRuleThreshold
+    from app.services.validation_engine import invalidate_cache
+
+    # Le seuil global sert de gabarit (unité, provisoire) pour l'override.
+    base = (
+        await db.execute(
+            select(ValidationRuleThreshold).where(
+                ValidationRuleThreshold.rule_id == rule_id,
+                ValidationRuleThreshold.parameter_name == parameter_name,
+                ValidationRuleThreshold.vessel_id.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if base is None:
+        raise HTTPException(status_code=404, detail="seuil global introuvable")
+    if await db.get(Vessel, vessel_id) is None:
+        raise HTTPException(status_code=404, detail="navire inconnu")
+    parsed = _parse_threshold_value(value)
+
+    existing = (
+        await db.execute(
+            select(ValidationRuleThreshold).where(
+                ValidationRuleThreshold.rule_id == rule_id,
+                ValidationRuleThreshold.parameter_name == parameter_name,
+                ValidationRuleThreshold.vessel_id == vessel_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.value = parsed
+        existing.updated_by = user.id
+        target = existing
+    else:
+        target = ValidationRuleThreshold(
+            rule_id=rule_id,
+            vessel_id=vessel_id,
+            parameter_name=parameter_name,
+            value=parsed,
+            unit=base.unit,
+            provisional=base.provisional,
+            note=f"Override navire de {base.rule_id}:{base.parameter_name}",
+            updated_by=user.id,
+        )
+        db.add(target)
+    await db.flush()
+    invalidate_cache()
+    await activity_record(
+        db,
+        action="mrv_validation_threshold_override",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="validation_rule_threshold",
+        entity_id=target.id,
+        entity_label=f"{rule_id}:{parameter_name}@vessel{vessel_id}",
+        detail=f"value={parsed}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/mrv/parametres", status_code=303)
+
+
+@router.post("/parametres/dashboard/{param_id}/update")
+async def mrv_parametres_dashboard_update(
+    param_id: int,
+    request: Request,
+    value: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "S")),
+):
+    """Édite la valeur d'un paramètre du dashboard Performance Environnementale."""
+    from app.models.validation import DashboardParameter
+
+    param = await db.get(DashboardParameter, param_id)
+    if param is None:
+        raise HTTPException(status_code=404, detail="paramètre inconnu")
+    param.value = _parse_threshold_value(value)
+    param.updated_by = user.id
+    await db.flush()
+    await activity_record(
+        db,
+        action="mrv_dashboard_parameter_update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="dashboard_parameter",
+        entity_id=param.id,
+        entity_label=param.parameter_name,
+        detail=f"value={param.value} vessel={param.vessel_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/mrv/parametres", status_code=303)

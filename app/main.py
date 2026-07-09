@@ -214,6 +214,20 @@ def create_app() -> FastAPI:
 
         enforce_production_safety()
         await init_db()
+        # LOT 2 — seed idempotent du référentiel de validation MRV. En dev,
+        # ``init_db`` crée le schéma via ``create_all`` (sans migration) : sans
+        # ce seed, les tables validation_* seraient vides. En staging/prod, le
+        # seed vit dans la migration 0097 (ceci est alors un no-op idempotent).
+        if settings.app_env == "development":
+            try:
+                from app.database import SessionLocal
+                from app.services.validation_engine import seed_reference_data
+
+                async with SessionLocal() as _seed_session:
+                    await seed_reference_data(_seed_session)
+                    await _seed_session.commit()
+            except Exception:  # pragma: no cover - best effort, jamais bloquant
+                logger.warning("seed référentiel validation MRV ignoré (non bloquant)")
         logger.info("mynewtowt %s started (env=%s)", __version__, settings.app_env)
 
     return app

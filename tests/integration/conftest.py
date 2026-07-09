@@ -77,6 +77,14 @@ class FakeRequest:
         self._form = dict(form or {})
         self.headers: dict[str, str] = {}
         self.client = SimpleNamespace(host="127.0.0.1")
+        # Accessoires lus par les context processors Jinja (i18n / layout staff)
+        # au rendu d'un TemplateResponse : sans eux, toute route qui rend un
+        # gabarit staff lève ``AttributeError`` (``request.state`` absent). Les
+        # doter ici rend ``FakeRequest`` utilisable pour les écrans SSR.
+        self.state = SimpleNamespace()
+        self.cookies: dict[str, str] = {}
+        self.query_params: dict[str, str] = {}
+        self.url = SimpleNamespace(path="/")
 
     async def form(self):
         return self._form

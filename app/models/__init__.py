@@ -97,6 +97,12 @@ from app.models.sof_event import (
 from app.models.stowage import StowageItem, StowagePlan, StowageZoneSpec
 from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
+from app.models.validation import (
+    DashboardParameter,
+    QualityCheckResult,
+    ValidationRule,
+    ValidationRuleThreshold,
+)
 from app.models.vessel import Vessel
 from app.models.vessel_env import VesselEngine, VesselHydrostatics, VesselTank
 from app.models.voyage_highlight import VoyageHighlight
@@ -131,6 +137,7 @@ __all__ = [
     "CrewLeave",
     "CrewMember",
     "CrewTicket",
+    "DashboardParameter",
     "DockerShift",
     "EmissionFactor",
     "Employee",
@@ -178,6 +185,7 @@ __all__ = [
     "PortConfig",
     "PortalAccessLog",
     "PortalMessage",
+    "QualityCheckResult",
     "Quote",
     "QuoteLine",
     "RateGrid",
@@ -196,6 +204,8 @@ __all__ = [
     "Ticket",
     "TicketComment",
     "User",
+    "ValidationRule",
+    "ValidationRuleThreshold",
     "Vessel",
     "VesselEngine",
     "VesselHydrostatics",
