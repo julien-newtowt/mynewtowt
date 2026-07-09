@@ -1,0 +1,29 @@
+{#
+  LOT 12 — onglets de navigation internes du dashboard environnemental.
+  Reçoit `dashenv_active` ∈ {'fleet','vessel','quality','params'} et, du
+  contexte, `vessels` (liste des navires actifs) + éventuellement
+  `tab_vessel_id`. Gating par `can_access` (matrice par défaut, affichage) —
+  le niveau réel (C/S) reste imposé par la route.
+#}
+{% set _role = user.role if (user is defined and user) else '' %}
+{% set _tv = (tab_vessel_id if (tab_vessel_id is defined and tab_vessel_id) else (vessels[0].id if (vessels is defined and vessels) else None)) %}
+<nav class="dashenv-tabs flex gap-1 mb-4" style="flex-wrap:wrap;border-bottom:1px solid var(--sable,#EFE6D6);padding-bottom:8px;">
+  {% if can_access(_role, 'kpi') %}
+  <a href="/dashboard-env" class="btn btn-sm {% if dashenv_active == 'fleet' %}btn-primary{% else %}btn-ghost{% endif %}">
+    <i data-lucide="compass"></i> {{ t('dashenv_tab_fleet', lang) }}
+  </a>
+  {% if _tv %}
+  <a href="/dashboard-env/vessels/{{ _tv }}" class="btn btn-sm {% if dashenv_active == 'vessel' %}btn-primary{% else %}btn-ghost{% endif %}">
+    <i data-lucide="ship"></i> {{ t('dashenv_tab_vessel', lang) }}
+  </a>
+  {% endif %}
+  {% endif %}
+  {% if can_access(_role, 'mrv') %}
+  <a href="/dashboard-env/quality" class="btn btn-sm {% if dashenv_active == 'quality' %}btn-primary{% else %}btn-ghost{% endif %}">
+    <i data-lucide="shield-check"></i> {{ t('dashenv_tab_quality', lang) }}
+  </a>
+  <a href="/dashboard-env/parameters" class="btn btn-sm {% if dashenv_active == 'params' %}btn-primary{% else %}btn-ghost{% endif %}">
+    <i data-lucide="sliders-horizontal"></i> {{ t('dashenv_tab_params', lang) }}
+  </a>
+  {% endif %}
+</nav>

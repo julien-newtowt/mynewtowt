@@ -155,6 +155,11 @@
         <span class="stat-card-label">{{ t('dashenv_legs_suffix', lang) }}</span>
       </div></div>
     </div>
+    {% if block.vessel_id %}
+    <a href="/dashboard-env/vessels/{{ block.vessel_id }}?year={{ year }}&method={{ m }}" class="btn btn-ghost btn-sm mt-2">
+      <i data-lucide="ship"></i> {{ t('dashenv_tab_vessel', lang) }} <i data-lucide="chevron-right"></i>
+    </a>
+    {% endif %}
   </article>
   {% else %}
   <p class="text-muted">{{ t('dashenv_empty_period', lang) }}</p>

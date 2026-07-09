@@ -272,3 +272,224 @@ async def test_unknown_method_falls_back_to_a(db):
     )
     assert resp.status_code == 200
     assert resp.context["method"] == "A"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LOT 12 — pages 2 (suivi opérationnel) & 3 (qualité) + drill-down + exports
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _commercial_user():
+    """A ``kpi:C`` mais PAS ``mrv:C`` — voit la page 2 navire, pas le détail voyage."""
+    return SimpleNamespace(id=4, full_name="Commercial", username="com1", role="commercial")
+
+
+def _req_csrf():
+    """FakeRequest doté d'un jeton CSRF (templates avec formulaires — page 3)."""
+    req = FakeRequest()
+    req.state.csrf_token = "test-csrf"
+    return req
+
+
+async def _load_1egb5(db):
+    """Voyage golden réaliste (mouillage + soutage) — fixtures lot 13."""
+    from tests.fixtures.mrv_2025.loader import load_voyage
+
+    return await load_voyage(db, "1EGB5")
+
+
+# ── Page 2 — navire : gate kpi:C ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_vessel_page_requires_kpi_c(db):
+    checker = require_permission("kpi", "C")
+    with pytest.raises(HTTPException) as exc:
+        await checker(FakeRequest(), user=_rh_user(), db=db)
+    assert exc.value.status_code == 403
+    admin = _admin_user()
+    assert await checker(FakeRequest(), user=admin, db=db) is admin
+
+
+@pytest.mark.asyncio
+async def test_vessel_page_renders_and_lists_voyages(db):
+    from app.routers.dashboard_env_router import dashboard_env_vessel
+
+    fixture = await _load_1egb5(db)
+    resp = await dashboard_env_vessel(
+        fixture.vessel.id, _req_csrf(), year=2025, method="A", db=db, user=_admin_user()
+    )
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/dashboard_env/vessel.html"
+    op = resp.context["op"]
+    assert op.vessel_id == fixture.vessel.id
+    assert op.leg_count >= 1
+    assert any(v.leg_code == "1EGB5" for v in op.voyages)
+
+
+@pytest.mark.asyncio
+async def test_vessel_page_unknown_vessel_404(db):
+    from app.routers.dashboard_env_router import dashboard_env_vessel
+
+    with pytest.raises(HTTPException) as exc:
+        await dashboard_env_vessel(
+            999999, FakeRequest(), year=2025, method="A", db=db, user=_admin_user()
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_vessel_htmx_returns_fragment(db):
+    from app.routers.dashboard_env_router import dashboard_env_vessel
+
+    fixture = await _load_1egb5(db)
+    req = _req_csrf()
+    req.headers["hx-request"] = "true"
+    resp = await dashboard_env_vessel(
+        fixture.vessel.id, req, year=2025, method="A", db=db, user=_admin_user()
+    )
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/dashboard_env/_vessel_fragment.html"
+
+
+# ── Page 2 — drill-down voyage : gate mrv:C ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_voyage_detail_requires_mrv_c(db):
+    checker = require_permission("mrv", "C")
+    # commercial a kpi:C (voit la page navire) mais PAS mrv:C (pas le détail).
+    with pytest.raises(HTTPException) as exc:
+        await checker(FakeRequest(), user=_commercial_user(), db=db)
+    assert exc.value.status_code == 403
+    admin = _admin_user()
+    assert await checker(FakeRequest(), user=admin, db=db) is admin
+
+
+@pytest.mark.asyncio
+async def test_voyage_detail_renders(db):
+    from app.routers.dashboard_env_router import dashboard_env_voyage
+
+    fixture = await _load_1egb5(db)
+    resp = await dashboard_env_voyage(fixture.leg.id, _req_csrf(), db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/dashboard_env/voyage.html"
+    assert resp.context["d"].leg_code == "1EGB5"
+    # La géométrie ROB + les segments carte sont prêts pour l'affichage.
+    assert resp.context["rob"]["has_data"] is True
+    assert isinstance(resp.context["map_segments"], list)
+
+
+@pytest.mark.asyncio
+async def test_voyage_detail_unknown_404(db):
+    from app.routers.dashboard_env_router import dashboard_env_voyage
+
+    with pytest.raises(HTTPException) as exc:
+        await dashboard_env_voyage(999999, FakeRequest(), db=db, user=_admin_user())
+    assert exc.value.status_code == 404
+
+
+# ── Page 3 — qualité : gate mrv:C + action confirm-reset (route LOT 8) ──────
+
+
+@pytest.mark.asyncio
+async def test_quality_page_requires_mrv_c(db):
+    checker = require_permission("mrv", "C")
+    with pytest.raises(HTTPException) as exc:
+        await checker(FakeRequest(), user=_rh_user(), db=db)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_quality_page_renders(db):
+    from app.routers.dashboard_env_router import dashboard_env_quality
+
+    await _load_1egb5(db)
+    resp = await dashboard_env_quality(_req_csrf(), vessel_id=None, db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/dashboard_env/quality.html"
+    assert "o" in resp.context
+
+
+@pytest.mark.asyncio
+async def test_confirm_reset_from_page3_reaches_lot8_and_traces(db):
+    """La page 3 liste un reset en attente et son formulaire POST atteint la
+    route LOT 8 (``mrv_router``) — l'action confirme + trace (activity_log)."""
+    from sqlalchemy import select
+
+    from app.models.nav_event import NavEventEngineReading
+    from app.models.vessel_env import VesselEngine
+    from app.routers.dashboard_env_router import dashboard_env_quality
+    from app.routers.mrv_router import mrv_qualite_confirm_reset
+    from app.services.kpi_env import quality_overview
+
+    fixture = await _load_1egb5(db)
+    engine = (
+        await db.execute(select(VesselEngine).where(VesselEngine.vessel_id == fixture.vessel.id))
+    ).scalars().first()
+    reading = NavEventEngineReading(
+        event_id=fixture.events[0].id,
+        engine_id=engine.id,
+        fuel_counter_l=Decimal("1000"),
+        is_counter_reset=True,  # posé par le bord, pas encore confirmé
+    )
+    db.add(reading)
+    await db.flush()
+
+    # La page 3 (quality_overview) surface le reset en attente.
+    overview = await quality_overview(db)
+    assert any(pr.reading_id == reading.id for pr in overview.pending_resets)
+
+    # Rendu de la page 3 (le formulaire de confirmation pointe vers la route LOT 8).
+    resp = await dashboard_env_quality(_req_csrf(), vessel_id=None, db=db, user=_admin_user())
+    assert resp.status_code == 200
+
+    # Le POST atteint la route LOT 8 : reset confirmé + tracé.
+    admin = _admin_user()
+    r = await mrv_qualite_confirm_reset(reading.id, FakeRequest(), db=db, user=admin)
+    assert r.status_code == 303
+    refreshed = await db.get(NavEventEngineReading, reading.id)
+    assert refreshed.reset_confirmed_by == admin.id
+    logs = list(
+        (
+            await db.execute(
+                select(ActivityLog).where(ActivityLog.action == "mrv_counter_reset_confirm")
+            )
+        ).scalars().all()
+    )
+    assert len(logs) == 1
+
+
+# ── Exports voyage — PDF / DOCX (perm mrv:C) ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_voyage_export_pdf(db):
+    from app.routers.dashboard_env_router import dashboard_env_voyage_pdf
+
+    fixture = await _load_1egb5(db)
+    resp = await dashboard_env_voyage_pdf(fixture.leg.id, db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert resp.media_type == "application/pdf"
+    assert bytes(resp.body).startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
+async def test_voyage_export_docx(db):
+    from app.routers.dashboard_env_router import dashboard_env_voyage_docx
+
+    fixture = await _load_1egb5(db)
+    resp = await dashboard_env_voyage_docx(fixture.leg.id, db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert "wordprocessingml" in resp.media_type
+    # Un .docx est un ZIP (signature "PK").
+    assert bytes(resp.body).startswith(b"PK")
+
+
+@pytest.mark.asyncio
+async def test_voyage_export_pdf_unknown_404(db):
+    from app.routers.dashboard_env_router import dashboard_env_voyage_pdf
+
+    with pytest.raises(HTTPException) as exc:
+        await dashboard_env_voyage_pdf(999999, db=db, user=_admin_user())
+    assert exc.value.status_code == 404
