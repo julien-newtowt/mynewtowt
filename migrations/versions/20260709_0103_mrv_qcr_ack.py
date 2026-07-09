@@ -10,15 +10,8 @@ Un fail acquitté ne re-déclenche plus d'alerte (dédup du routage,
 cf. ``services.validation_rules_catalog.route_alerts``) ; le journal reste
 append-only, seule l'action de traitement est datée/attribuée.
 
-⚠ ``down_revision`` PROVISOIRE : un lot parallèle (lot 9) crée la révision
-``20260709_0102`` dans SA branche ; la chaîne locale de CE worktree s'arrête à
-``20260709_0101``, donc cette migration pointe PROVISOIREMENT sur 0101.
-L'orchestrateur rechaînera ``down_revision = "20260709_0102"`` au merge des
-deux branches (aucun autre changement requis — la migration ne touche que
-``quality_check_results``).
-
 Revision ID: 20260709_0103
-Revises: 20260709_0101 (provisoire — 20260709_0102 après merge, cf. ci-dessus)
+Revises: 20260709_0102
 Create Date: 2026-07-09
 """
 
@@ -29,7 +22,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260709_0103"
-down_revision = "20260709_0101"  # PROVISOIRE — rechaîner sur "20260709_0102" au merge (lot 9)
+down_revision = "20260709_0102"
 branch_labels = None
 depends_on = None
 

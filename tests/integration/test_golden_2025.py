@@ -206,8 +206,9 @@ async def test_bunker_433421_stays_unmatched(db):
 
 
 @pytest.mark.skipif(
-    len(validation_engine.RULES) < 31,
-    reason="règles complètes du lot 8 requises (registre RULES incomplet)",
+    len(validation_engine.RULES) < 30,
+    reason="règles complètes du lot 8 requises (registre RULES incomplet — "
+    "30 règles au registre, R19 portée par draft_reminders hors registre)",
 )
 async def test_qc_replay_2025(db):
     """Rejeu du journal ``Controles_Qualite`` sur les fixtures (scope bunker).
