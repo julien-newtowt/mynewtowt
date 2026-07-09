@@ -60,6 +60,7 @@ from app.models.leg import Leg
 from app.models.leg_attachment import LegAttachment
 from app.models.mfa_recovery_code import MfaRecoveryCode
 from app.models.mrv import MRVEvent, MRVParameter
+from app.models.mrv_dataset import MrvBunkeringEntry, MrvLogAbstractEntry
 from app.models.nav_event import (
     AnchoringEvent,
     ArrivalEvent,
@@ -185,6 +186,8 @@ __all__ = [
     "LegKPI",
     "MRVEvent",
     "MRVParameter",
+    "MrvBunkeringEntry",
+    "MrvLogAbstractEntry",
     "MaradCrewSchedule",
     "AnchoringEvent",
     "ArrivalEvent",

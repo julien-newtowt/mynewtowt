@@ -133,6 +133,14 @@ async def mrv_index(
     from app.services.leg_filter import leg_select_options
 
     leg_options = await leg_select_options(db)
+    # LOT 10 — dépréciation du CSV 18 col. derrière le flag ``mrv_v2_exports``
+    # (OFF par défaut = comportement actuel intact ; ON = bandeau + datasets
+    # deviennent la voie principale). N'inverse PAS le défaut (bascule = lot 14).
+    from app.services import feature_flags as _ff
+
+    mrv_v2_exports_on = await _ff.is_enabled(
+        db, "mrv_v2_exports", user_role=getattr(user, "role", None), user_id=getattr(user, "id", None)
+    )
     response = templates.TemplateResponse(
         "staff/mrv/index.html",
         {
@@ -146,6 +154,7 @@ async def mrv_index(
             "leg_map": leg_map,
             "summary": summary,
             "co2_factor": CO2_EMISSION_FACTOR_MDO,
+            "mrv_v2_exports_on": mrv_v2_exports_on,
         },
     )
     set_leg_filter_cookie(response, f)
@@ -414,7 +423,7 @@ async def mrv_params_save(
 
 
 class _AdapterMRV:
-    """Adapt MRVEvent to mrv_export.to_dnv_csv expectations."""
+    """Adapte un MRVEvent au shape attendu par mrv_export.carbon_report_summary."""
 
     def __init__(self, ev: MRVEvent, leg: Leg | None = None, vessel_imo: str = ""):
         self._ev = ev
@@ -1846,6 +1855,202 @@ async def mrv_qualite_acknowledge(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/mrv/qualite", status_code=303)
+
+
+# === LOT 10 — datasets ===
+# Sorties réglementaires OVDLA / OVDBR déposées chez DNV (remplacent le CSV
+# 18 colonnes, déprécié derrière le flag ``mrv_v2_exports``). Génération +
+# aperçu des lignes (statut/exclusions motivées) + snapshot gelé + exports
+# xlsx/csv. Toute la logique (deltas, portes, gel) vit dans
+# ``services.mrv_dataset`` — ces routes n'orchestrent que la sélection + le rendu.
+
+from app.services import feature_flags as _feature_flags  # noqa: E402
+from app.services import mrv_dataset as _mrv_ds  # noqa: E402
+
+
+def _dataset_period(year: int | None) -> tuple[datetime | None, datetime | None]:
+    """Année de reporting → (début, fin UTC) ; ``None`` = tout l'historique."""
+    if year is None:
+        return None, None
+    start = datetime(year, 1, 1, 0, 0, tzinfo=UTC)
+    end = datetime(year, 12, 31, 23, 59, 59, tzinfo=UTC)
+    return start, end
+
+
+async def _dataset_years(db: AsyncSession, vessel_id: int | None) -> list[int]:
+    """Années couvertes par les événements de navigation (pour le sélecteur)."""
+    from app.models.nav_event import NavEvent
+
+    stmt = select(NavEvent.datetime_utc).where(NavEvent.datetime_utc.isnot(None))
+    if vessel_id:
+        stmt = stmt.where(NavEvent.vessel_id == vessel_id)
+    dts = [d for d in (await db.execute(stmt)).scalars().all() if d is not None]
+    return sorted({d.year for d in dts}, reverse=True)
+
+
+async def _build_dataset_rows(
+    db: AsyncSession, vessel: Vessel, year: int | None, *, alert: bool
+) -> tuple[list, list]:
+    start, end = _dataset_period(year)
+    ovdla = await _mrv_ds.build_ovdla_rows(db, vessel, start, end, alert=alert)
+    ovdbr = await _mrv_ds.build_ovdbr_rows(db, vessel, (start, end), alert=alert)
+    return ovdla, ovdbr
+
+
+@router.get("/datasets", response_class=HTMLResponse)
+async def mrv_datasets(
+    request: Request,
+    vessel_id: int | None = None,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """LOT 10 — écran datasets : sélection navire+période, aperçu OVDLA/OVDBR
+    (statut + exclusions motivées). Génération/téléchargements séparés."""
+    vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    vessel = None
+    if vessel_id:
+        vessel = await db.get(Vessel, vessel_id)
+    elif vessels:
+        vessel = vessels[0]
+
+    years = await _dataset_years(db, vessel.id if vessel else None)
+    ovdla_rows: list = []
+    ovdbr_rows: list = []
+    if vessel is not None:
+        ovdla_rows, ovdbr_rows = await _build_dataset_rows(db, vessel, year, alert=False)
+
+    def _counts(rows: list) -> dict:
+        included = [r for r in rows if r.included]
+        return {
+            "total": len(rows),
+            "included": len(included),
+            "excluded": len(rows) - len(included),
+        }
+
+    flag_on = await _feature_flags.is_enabled(
+        db, "mrv_v2_exports", user_role=getattr(user, "role", None), user_id=getattr(user, "id", None)
+    )
+    return templates.TemplateResponse(
+        "staff/mrv/datasets.html",
+        {
+            "request": request,
+            "user": user,
+            "vessels": vessels,
+            "vessel": vessel,
+            "years": years,
+            "year": year,
+            "ovdla_rows": ovdla_rows,
+            "ovdbr_rows": ovdbr_rows,
+            "ovdla_counts": _counts(ovdla_rows),
+            "ovdbr_counts": _counts(ovdbr_rows),
+            "ovdla_columns": _mrv_ds.OVDLA_COLUMNS,
+            "ovdbr_columns": _mrv_ds.OVDBR_COLUMNS,
+            "mrv_v2_exports_on": flag_on,
+        },
+    )
+
+
+@router.post("/datasets/generate")
+async def mrv_datasets_generate(
+    request: Request,
+    vessel_id: int = Form(...),
+    year: int | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "M")),
+):
+    """LOT 10 — génère + GÈLE (snapshot) les entrées OVDLA/OVDBR du navire.
+
+    Les exclusions ``under_conformity`` déclenchent une alerte admin
+    (``alert=True``, pattern lot 8). Idempotent (upsert des payloads gelés)."""
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        raise HTTPException(status_code=404, detail="Navire inconnu")
+    ovdla, ovdbr = await _build_dataset_rows(db, vessel, year, alert=True)
+    snap = await _mrv_ds.snapshot_entries(db, ovdla + ovdbr)
+    await activity_record(
+        db,
+        action="mrv_dataset_generate",
+        user_id=getattr(user, "id", None),
+        user_name=getattr(user, "full_name", None) or getattr(user, "username", None),
+        user_role=getattr(user, "role", None),
+        module="mrv",
+        entity_type="mrv_dataset",
+        entity_id=vessel.id,
+        entity_label=f"OVDLA/OVDBR {vessel.code} {year or 'all'}",
+        detail=f"gel: créés={snap['created']}, maj={snap['updated']}",
+        ip_address=_client_ip(request),
+    )
+    dest = f"/mrv/datasets?vessel_id={vessel.id}" + (f"&year={year}" if year else "")
+    return RedirectResponse(url=dest, status_code=303)
+
+
+_XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+async def _dataset_download(
+    db: AsyncSession, vessel_id: int, year: int | None, dataset: str, fmt: str
+) -> Response:
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        raise HTTPException(status_code=404, detail="Navire inconnu")
+    ovdla, ovdbr = await _build_dataset_rows(db, vessel, year, alert=False)
+    rows = ovdla if dataset == "ovdla" else ovdbr
+    stamp = str(year) if year else datetime.now().strftime("%Y%m%d")
+    base = f"{dataset.upper()}_{vessel.code}_{stamp}"
+    if fmt == "xlsx":
+        content = _mrv_ds.export_xlsx(rows, kind=dataset)
+        return Response(
+            content=content,
+            media_type=_XLSX_MEDIA,
+            headers={"Content-Disposition": f'attachment; filename="{base}.xlsx"'},
+        )
+    csv_text = _mrv_ds.export_csv(rows, kind=dataset)
+    return Response(
+        content=csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{base}.csv"'},
+    )
+
+
+@router.get("/datasets/ovdla.xlsx")
+async def mrv_datasets_ovdla_xlsx(
+    vessel_id: int,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+):
+    return await _dataset_download(db, vessel_id, year, "ovdla", "xlsx")
+
+
+@router.get("/datasets/ovdla.csv")
+async def mrv_datasets_ovdla_csv(
+    vessel_id: int,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+):
+    return await _dataset_download(db, vessel_id, year, "ovdla", "csv")
+
+
+@router.get("/datasets/ovdbr.xlsx")
+async def mrv_datasets_ovdbr_xlsx(
+    vessel_id: int,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+):
+    return await _dataset_download(db, vessel_id, year, "ovdbr", "xlsx")
+
+
+@router.get("/datasets/ovdbr.csv")
+async def mrv_datasets_ovdbr_csv(
+    vessel_id: int,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+):
+    return await _dataset_download(db, vessel_id, year, "ovdbr", "csv")
 
 
 @api_router.post("/api/mrv/quality-run")

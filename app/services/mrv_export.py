@@ -32,42 +32,11 @@ def map_sof_to_mrv_type(sof_event_type: str) -> str | None:
     return SOF_TO_MRV_MAP.get(sof_event_type)
 
 
-def to_dnv_csv(events: Iterable[MRVEvent]) -> str:
-    """Generate a DNV-compatible CSV blob from MRVEvent rows.
-
-    Columns are the minimum subset accepted by the DNV MRV ingestion UI.
-    """
-    buf = io.StringIO()
-    writer = csv.writer(buf, delimiter=";")
-    writer.writerow(
-        [
-            "vessel_imo",
-            "leg_code",
-            "event_type",
-            "occurred_at_utc",
-            "fuel_type",
-            "rob_t",
-            "consumed_t",
-            "co2_t",
-            "notes",
-        ]
-    )
-    for ev in events:
-        co2 = (ev.consumed_t or 0) * CO2_EMISSION_FACTOR_MDO
-        writer.writerow(
-            [
-                getattr(ev, "vessel_imo", "") or "",
-                getattr(ev, "leg_code", "") or "",
-                getattr(ev, "event_type", "") or "",
-                (ev.occurred_at.isoformat() if getattr(ev, "occurred_at", None) else ""),
-                getattr(ev, "fuel_type", "MDO") or "MDO",
-                f"{ev.rob_t:.3f}" if getattr(ev, "rob_t", None) is not None else "",
-                f"{ev.consumed_t:.3f}" if getattr(ev, "consumed_t", None) is not None else "",
-                f"{co2:.3f}",
-                (getattr(ev, "notes", "") or "").replace("\n", " ").replace(";", ","),
-            ]
-        )
-    return buf.getvalue()
+# NB (lot 10) : ``to_dnv_csv`` (export DNV 9 colonnes) était du CODE MORT
+# (attributs ``vessel_imo``/``leg_code``/``event_type``/``consumed_t`` inexistants
+# sur ``MRVEvent``) — SUPPRIMÉ. Les sorties réglementaires vivent désormais dans
+# ``services.mrv_dataset`` (OVDLA/OVDBR). ``dnv_csv_18`` reste (déprécié derrière
+# le flag ``mrv_v2_exports``, retrait prévu lot 14, Q3).
 
 
 # MRV-01 — export DNV Veracity : 18 colonnes exactes attendues par l'ingestion.

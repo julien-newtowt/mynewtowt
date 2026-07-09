@@ -10,13 +10,26 @@
     <p class="text-muted">Règlement UE 2015/757 — collecte fuel/distance/cargo pour reporting annuel vérifié.</p>
   </div>
   <div class="flex gap-2">
+    {% if mrv_v2_exports_on %}
+    <a href="/mrv/datasets" class="btn btn-primary" hx-boost="false">↓ OVDLA / OVDBR</a>
+    <a href="/mrv/export/dnv.csv" class="btn btn-ghost" hx-boost="false" title="{{ t('mrv_ds_dnv18_deprecated', lang) }}">↓ DNV CSV ⚠</a>
+    {% else %}
     <a href="/mrv/export/dnv.csv" class="btn btn-secondary" hx-boost="false">↓ DNV CSV</a>
+    {% endif %}
     <a href="/mrv/export/carbon-report.pdf" class="btn btn-ghost" hx-boost="false" target="_blank">↓ Carbon Report PDF</a>
     <a href="/mrv/params" class="btn btn-ghost">⚙ Paramètres</a>
     <a href="/static/reference/towt_carbon_report_template.xlsx" download class="btn btn-ghost" hx-boost="false" title="Modèle officiel TOWT (xlsx)">📥 Modèle Carbon Report</a>
     <a href="/static/reference/towt_noon_report_template.xlsx" download class="btn btn-ghost" hx-boost="false" title="Modèle officiel TOWT (xlsx)">📥 Modèle Noon Report</a>
   </div>
 </header>
+
+{% if mrv_v2_exports_on %}
+<div class="alert alert-warn mb-4" role="status">
+  <strong>{{ t('mrv_ds_dnv18_banner_title', lang) }}</strong> —
+  {{ t('mrv_ds_dnv18_banner_body', lang) }}
+  <a href="/mrv/datasets">/mrv/datasets</a>.
+</div>
+{% endif %}
 
 {{ leg_filter(leg_filter_ctx, "/mrv", leg_href="/mrv/legs/", leg_href_suffix="/carbon") }}
 
