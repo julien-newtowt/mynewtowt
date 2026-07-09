@@ -8,23 +8,8 @@ Crée :
 - ``bunker_tank_allocations`` — répartition par cuve (``vessel_tanks``, lot 1)
   d'un soutage, UNIQUE(bunker_id, tank_id).
 
-NOTE ORCHESTRATION — ``down_revision`` provisoire
---------------------------------------------------
-Ce lot (L6 — soutage) a été développé **en parallèle** du lot 3 (modèle
-événementiel ``nav_events``) sur une branche isolée. Le lot 3 crée la
-migration ``20260709_0098`` sur SA branche ; dans CE worktree, cette
-migration n'existe pas encore, donc ``down_revision`` pointe directement sur
-``20260709_0097`` (dernière migration visible ici, lot 2 — socle du moteur de
-règles). **Au merge des deux lots**, l'orchestrateur doit rechaîner cette
-migration 0099 pour qu'elle *revise* ``20260709_0098`` (pas ``0097``) — sans
-quoi Alembic verrait deux têtes (``0098`` et ``0099`` toutes deux filles de
-``0097``). Aucune autre modification n'est nécessaire pour ce rechaînage
-(``bunker_operations``/``bunker_tank_allocations`` ne référencent aucune
-table du lot 3). Dans ce worktree isolé, la chaîne locale reste 0096→0097→
-0099 : c'est attendu (cf. consigne de tâche).
-
 Revision ID: 20260709_0099
-Revises: 20260709_0097
+Revises: 20260709_0098
 Create Date: 2026-07-09
 """
 
@@ -35,7 +20,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260709_0099"
-down_revision = "20260709_0097"
+down_revision = "20260709_0098"
 branch_labels = None
 depends_on = None
 
