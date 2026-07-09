@@ -7,8 +7,9 @@ fixes du navire (rfrentiel - REF).
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -103,6 +104,30 @@ class Vessel(Base):
     )
     crew_description: Mapped[str | None] = mapped_column(
         Text, comment="Description de l'quipage type pour ce navire"
+    )
+
+    # =========================================================================
+    # Référentiel environnemental (MRV lot 1) — socle multi-GES
+    # =========================================================================
+
+    # Poids lège (tonnes) — nécessaire à la formule Cargo MRV (EU 2016/1928)
+    # une fois les hydrostatiques renseignées (app.models.vessel_env).
+    lightweight_t: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 3), comment="Poids lège (lightweight) en tonnes"
+    )
+    # Carburant par défaut du navire — résout app.models.emission_factor
+    # (fuel_type) tant qu'aucun choix explicite n'est fait à la saisie.
+    default_fuel_type: Mapped[str] = mapped_column(
+        String(20),
+        default="MDO",
+        server_default="MDO",
+        nullable=False,
+        comment="Carburant par défaut (référentiel emission_factors)",
+    )
+    # Densité de l'eau par défaut (t/m³, ~1,025 pour l'eau de mer) — dénominateur
+    # de la formule de déplacement ; NULL tant que non renseignée par navire.
+    water_density_default_t_m3: Mapped[Decimal | None] = mapped_column(
+        Numeric(8, 4), comment="Densité de l'eau par défaut (t/m³)"
     )
 
     def __repr__(self) -> str:  # pragma: no cover

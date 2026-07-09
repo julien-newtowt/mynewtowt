@@ -39,6 +39,7 @@ from app.models.crew import (
     MaradCrewSchedule,
 )
 from app.models.crew_ticket import CrewTicket
+from app.models.emission_factor import EmissionFactor
 from app.models.employee import Employee
 from app.models.employment_contract import EmploymentContract
 from app.models.escale import DockerShift, EscaleOperation
@@ -97,6 +98,7 @@ from app.models.stowage import StowageItem, StowagePlan, StowageZoneSpec
 from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
 from app.models.vessel import Vessel
+from app.models.vessel_env import VesselEngine, VesselHydrostatics, VesselTank
 from app.models.voyage_highlight import VoyageHighlight
 from app.models.voyage_photo import VoyagePhoto
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
@@ -130,6 +132,7 @@ __all__ = [
     "CrewMember",
     "CrewTicket",
     "DockerShift",
+    "EmissionFactor",
     "Employee",
     "EmploymentContract",
     "EscaleOperation",
@@ -194,7 +197,10 @@ __all__ = [
     "TicketComment",
     "User",
     "Vessel",
+    "VesselEngine",
+    "VesselHydrostatics",
     "VesselPosition",
+    "VesselTank",
     "VesselWeather",
     "VisitorLog",
     "VoyageHighlight",

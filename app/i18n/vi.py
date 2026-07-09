@@ -451,6 +451,8 @@ CATALOG: dict[str, str] = {
     "s_nav_analytics": "Phân tích",
     "s_nav_config": "Cấu hình",
     "s_nav_ports": "Danh mục cảng",
+    "s_nav_flotte_env": "Đội tàu — dữ liệu tham chiếu môi trường",
+    "s_nav_emission_factors": "Hệ số phát thải",
     "s_nav_security": "Bảo mật (MFA)",
     "s_nav_integrations": "Tích hợp",
     "s_logout": "Đăng xuất",

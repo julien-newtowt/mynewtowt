@@ -472,6 +472,8 @@ CATALOG: dict[str, str] = {
     "s_nav_analytics": "Analítica",
     "s_nav_config": "Configuración",
     "s_nav_ports": "Referencia de puertos",
+    "s_nav_flotte_env": "Flota — referencial ambiental",
+    "s_nav_emission_factors": "Factores de emisión",
     "s_nav_security": "Seguridad (MFA)",
     "s_nav_integrations": "Integraciones",
     "s_logout": "Cerrar sesión",
