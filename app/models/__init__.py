@@ -126,6 +126,7 @@ from app.models.validation import (
 )
 from app.models.vessel import Vessel
 from app.models.vessel_env import VesselEngine, VesselHydrostatics, VesselTank
+from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.models.voyage_highlight import VoyageHighlight
 from app.models.voyage_photo import VoyagePhoto
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
@@ -254,6 +255,7 @@ __all__ = [
     "VesselTank",
     "VesselWeather",
     "VisitorLog",
+    "VoyageEmissionSummary",
     "VoyageHighlight",
     "VoyagePhoto",
     "WatchLog",

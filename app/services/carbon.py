@@ -1,16 +1,19 @@
-"""Carbon Report — calcul auto des émissions CO₂ d'un leg (CFOTE_09).
+"""Carbon Report — adaptateur legacy sur le grand livre d'émissions (lot 9).
 
-Aligne l'ERP sur le *Carbon Report officiel TOWT* (CFOTE_09) tout en
-**générant les calculs automatiquement** depuis les données déjà saisies :
+Depuis le lot 9, ce module ne calcule plus rien lui-même : il **adapte** le
+grand livre unique (``services.emission_ledger``) vers la dataclass historique
+``CarbonResult`` (mêmes champs, mêmes arrondis) consommée par
+``services.kpi.compute_for_leg`` (persistance ``LegKPI``) et les vues
+``/mrv/legs/{id}/carbon`` + ``/mrv/legs/{id}``.
 
-- **Consommation DO** : agrégée depuis les noon reports du leg
-  (``total_consumption_t`` par report, ou somme des moteurs à défaut).
-- **Distance berth-to-berth** : ``leg.distance_nm`` (haversine).
-- **Cargo** : tonnage des bookings confirmés du leg.
-- **Facteur d'émission** : MEPC.391(81) — 3,206 tCO₂/tDO (éditable /admin/co2).
+Le grand livre lit les **événements** (``nav_events``) quand ils existent, sinon
+retombe sur les ``noon_reports`` legacy (source ``legacy_noon``) — pour un leg
+sans événement, les chiffres sont **strictement identiques** à l'ancien calcul
+(cf. ``tests/unit/test_carbon.py``, gelé dans la suite de non-régression du lot 9).
 
-Résultats (mêmes intensités que le formulaire) : CO₂ total, par mille, par
-tonne, par tonne·mille (EU MRV). Lecture seule, pur calcul — aucune écriture.
+Résultats (mêmes intensités que le formulaire CFOTE_09) : CO₂ total, par mille,
+par tonne, par tonne·mille (EU MRV). Lecture seule — aucune multiplication
+conso × facteur ici (règle d'or : elle vit dans ``emission_ledger``).
 """
 
 from __future__ import annotations
@@ -18,14 +21,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.booking import Booking
 from app.models.leg import Leg
-from app.models.noon_report import NoonReport, NoonReportEngine
-
-_ACTIVE_BOOKING = ("confirmed", "loaded", "at_sea", "discharged", "delivered")
 
 
 @dataclass(frozen=True)
@@ -47,54 +45,6 @@ def _q(value: Decimal, places: str) -> Decimal:
     return value.quantize(Decimal(places))
 
 
-async def _do_consumed_t(db: AsyncSession, leg_id: int) -> Decimal:
-    """Consommation DO totale (t) d'un leg, agrégée depuis les noon reports.
-
-    Pour chaque noon report : ``total_consumption_t`` si renseigné, sinon
-    somme des ``do_consumption_t`` de ses moteurs.
-    """
-    reports = list(
-        (await db.execute(select(NoonReport).where(NoonReport.leg_id == leg_id))).scalars().all()
-    )
-    total = Decimal("0")
-    for nr in reports:
-        if nr.total_consumption_t is not None:
-            total += Decimal(str(nr.total_consumption_t))
-            continue
-        engine_sum = (
-            (
-                await db.execute(
-                    select(NoonReportEngine).where(NoonReportEngine.noon_report_id == nr.id)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        total += sum(
-            (
-                Decimal(str(e.do_consumption_t))
-                for e in engine_sum
-                if e.do_consumption_t is not None
-            ),
-            Decimal("0"),
-        )
-    return total
-
-
-async def _cargo_t(db: AsyncSession, leg_id: int) -> Decimal:
-    bookings = list(
-        (
-            await db.execute(
-                select(Booking).where(Booking.leg_id == leg_id, Booking.status.in_(_ACTIVE_BOOKING))
-            )
-        )
-        .scalars()
-        .all()
-    )
-    total_kg = sum((b.total_weight_kg or Decimal(0)) for b in bookings)
-    return (Decimal(str(total_kg)) / Decimal("1000")).quantize(Decimal("0.001"))
-
-
 async def compute_carbon_for_leg(
     db: AsyncSession,
     leg: Leg,
@@ -102,20 +52,30 @@ async def compute_carbon_for_leg(
     cargo_t: Decimal | None = None,
     distance_nm: Decimal | None = None,
 ) -> CarbonResult:
-    """Calcule les indicateurs carbone d'un leg (auto, lecture seule).
+    """Indicateurs carbone d'un leg (adaptateur du grand livre, lecture seule).
 
     ``cargo_t`` / ``distance_nm`` peuvent être passés pour éviter de requêter
-    deux fois (ex. depuis ``services.kpi.compute_for_leg``).
+    deux fois (ex. depuis ``services.kpi.compute_for_leg``) — ils sont transmis
+    au grand livre comme overrides.
+
+    Mapping vers ``CarbonResult`` À L'IDENTIQUE (mêmes champs, mêmes arrondis
+    ``0.001`` qu'avant le lot 9) : le CO₂ brut vient du grand livre (seule
+    multiplication conso × facteur), les intensités en dérivent par arrondi.
     """
-    from app.services.co2 import estimate as co2_estimate
-    from app.services.co2 import get_do_co2_factor, get_factors
+    from app.services.emission_ledger import compute_for_leg as ledger_compute
 
-    do_t = await _do_consumed_t(db, leg.id)
-    dist = distance_nm if distance_nm is not None else leg.distance_nm
-    cargo = cargo_t if cargo_t is not None else await _cargo_t(db, leg.id)
+    result = await ledger_compute(db, leg, cargo_t=cargo_t, distance_nm=distance_nm)
 
-    factor = await get_do_co2_factor(db)
-    co2_t = _q(do_t * factor, "0.001")
+    do_t = result.do_consumed_t if result.do_consumed_t is not None else Decimal("0")
+    dist = result.distance_nm
+    cargo = result.cargo_bl_t if result.cargo_bl_t is not None else Decimal("0")
+    factor = result.do_co2_factor
+
+    # CO₂ (t) : le grand livre a déjà fait la multiplication ; on ne fait
+    # qu'arrondir (règle d'or). None (assiette absente) ⇒ 0,000 comme avant.
+    co2_t = _q(result.co2_emitted_t, "0.001") if result.co2_emitted_t is not None else _q(
+        Decimal("0"), "0.001"
+    )
 
     co2_per_nm_kg = None
     co2_per_t_kg = None
@@ -127,16 +87,6 @@ async def compute_carbon_for_leg(
     if dist and Decimal(str(dist)) > 0 and cargo and cargo > 0:
         co2_per_tnm_g = _q(co2_t * Decimal("1000000") / (cargo * Decimal(str(dist))), "0.001")
 
-    avoided = None
-    if dist and Decimal(str(dist)) > 0 and cargo and cargo > 0:
-        try:
-            factors = await get_factors(db)
-            avoided = co2_estimate(
-                distance_nm=Decimal(str(dist)), tonnage_t=cargo, factors=factors
-            ).avoided_co2_kg
-        except Exception:
-            avoided = None
-
     return CarbonResult(
         do_consumed_t=_q(do_t, "0.001"),
         distance_nm=Decimal(str(dist)) if dist else None,
@@ -145,6 +95,6 @@ async def compute_carbon_for_leg(
         co2_per_nm_kg=co2_per_nm_kg,
         co2_per_t_kg=co2_per_t_kg,
         co2_per_tnm_g=co2_per_tnm_g,
-        avoided_co2_kg=avoided,
+        avoided_co2_kg=result.avoided_co2_kg,
         do_co2_factor=factor,
     )

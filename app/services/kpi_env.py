@@ -34,17 +34,18 @@ Ce module implémente les formules de
 Unités : Decimal partout ; conversion t·nm → t·km via ``× 1,852``
 (``app.services.co2.NM_TO_KM`` — cohérent avec le reste de l'application).
 
-SOURCE ACTUELLE DES ÉMISSIONS — ``_emissions_provider()``
+SOURCE DES ÉMISSIONS — ``_emissions_provider()`` (rebranchée lot 9)
 -----------------------------------------------------------
 Toute la donnée d'émission consommée par ce module transite par
-``_emissions_provider()``, qui lit les agrégats **legacy** déjà calculés par
-``services.kpi.compute_for_leg`` / ``services.carbon.compute_carbon_for_leg``
-(table ``leg_kpis``) — **lecture pure, aucune écriture** (ce module ne
-réalimente jamais ``LegKPI``, à la différence de ``/kpi`` ; même posture que
-``services.kpi_consolidated.consolidated_kpis``). C'est **l'unique** fonction
-qui devra être rebranchée sur ``services/emission_ledger`` au **lot 9** —
-aucun autre code de ce module ne doit être modifié pour cette bascule (même
-forme de sortie attendue : liste de ``LegEmissionRecord``). Aucun nouveau
+``_emissions_provider()``, rebranché au **lot 9** sur le **grand livre**
+(``voyage_emission_summaries``, matérialisation de ``services.emission_ledger``)
+avec repli sur ``leg_kpis`` (legacy) pour les voyages sans résumé encore
+calculé — **lecture pure, aucune écriture** (ce module ne réalimente ni
+``LegKPI`` ni le summary, à la différence de ``/kpi`` ; même posture que
+``services.kpi_consolidated.consolidated_kpis``). La forme de sortie est
+inchangée (liste de ``LegEmissionRecord``) : le reste du module n'a pas bougé.
+Le record porte désormais ``cargo_mrv_t`` → la **méthode C** devient réelle dès
+qu'un résumé événementiel fournit le cargo MRV (N/A sinon, comme avant). Aucun
 moteur de calcul carbone n'est créé ici.
 """
 
@@ -61,6 +62,7 @@ from app.models.finance import LegKPI
 from app.models.leg import Leg
 from app.models.validation import DashboardParameter
 from app.models.vessel import Vessel
+from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.services.co2 import NM_TO_KM
 
 # ─────────────────────────────────────────────────────────── Constantes
@@ -68,8 +70,9 @@ from app.services.co2 import NM_TO_KM
 EF_METHODS: tuple[str, ...] = ("A", "B", "C")
 
 # Motifs N/A (jamais de valeur fabriquée — cf. UX §1 « Jamais de valeur
-# fabriquée »). Le libellé de la méthode C reprend le vocabulaire du LOT 11.
-NA_CARGO_MRV = "nécessite cargo MRV — lot 9"
+# fabriquée »). La méthode C est réelle dès qu'un résumé événementiel fournit le
+# cargo MRV (lot 9) ; N/A sinon (voyages legacy / sans capture événementielle).
+NA_CARGO_MRV = "cargo MRV indisponible (voyage sans capture événementielle)"
 NA_BALLAST = "voyage sur lest (cargo nul) — non calculable en méthode réelle"
 NA_NO_LADEN_VOYAGE = "aucun voyage chargé sur la période sélectionnée"
 NA_NO_DISTANCE = "aucune distance enregistrée sur la période sélectionnée"
@@ -116,10 +119,11 @@ def _check_method(method: str) -> None:
 class LegEmissionRecord:
     """Émissions/cargo/distance d'un leg — forme de sortie de ``_emissions_provider``.
 
-    Cette forme est le contrat que le lot 9 devra respecter en rebranchant
-    ``_emissions_provider`` sur ``services/emission_ledger`` : tant qu'une
-    fonction renvoie une liste de ``LegEmissionRecord``, rien d'autre dans ce
-    module n'a besoin de changer.
+    Forme rebranchée au lot 9 sur le grand livre (``voyage_emission_summaries``,
+    repli ``LegKPI``) : tant qu'une fonction renvoie une liste de
+    ``LegEmissionRecord``, rien d'autre dans ce module ne change. ``cargo_mrv_t``
+    (ajout lot 9, ``None`` par défaut) alimente la **méthode C** (réelle dès
+    qu'un résumé événementiel le fournit).
     """
 
     leg_id: int
@@ -130,7 +134,8 @@ class LegEmissionRecord:
     distance_nm: Decimal
     etd: datetime | None
     ata: datetime | None
-    has_kpi: bool  # LegKPI existe et porte un co2_emitted_kg renseigné
+    has_kpi: bool  # émission connue (résumé grand livre ou LegKPI co2 renseigné)
+    cargo_mrv_t: Decimal | None = None  # cargo MRV (méthode C) — None si indispo
 
 
 @dataclass(frozen=True)
@@ -251,42 +256,66 @@ async def get_dashboard_parameters(
     return resolved
 
 
-# ──────────────────────────────────────────── Source des émissions (legacy)
+# ─────────────────────────── Source des émissions (grand livre, lot 9)
 
 
 async def _emissions_provider(
     db: AsyncSession, *, vessel_id: int | None = None
 ) -> list[LegEmissionRecord]:
-    """Legacy — agrège les ``LegKPI`` déjà calculés (aucun recalcul, aucune écriture).
+    """Grand livre → ``LegEmissionRecord`` (aucun recalcul, aucune écriture).
 
-    À REBRANCHER SUR ``services/emission_ledger`` AU LOT 9 : c'est la SEULE
-    fonction de ce module qui touche la donnée d'émission brute. Le lot 9
-    n'a qu'à réécrire son corps (même signature, même forme de sortie —
-    ``list[LegEmissionRecord]``) pour que tout ``kpi_env.py`` (formules EF,
-    CO2 évité, tendance, complétude) bascule sur le grand livre sans autre
-    modification.
+    Rebranché au lot 9 : lit d'abord ``voyage_emission_summaries`` (cache du
+    grand livre ``services.emission_ledger`` — CO₂ TtW, cargo B/L, distance,
+    cargo MRV), avec **repli sur ``LegKPI``** (legacy) pour les voyages sans
+    résumé encore matérialisé. Le repli reproduit à l'identique l'ancien
+    comportement (co2/tonnage LegKPI, distance leg) : un voyage sans résumé
+    donne exactement le même ``LegEmissionRecord`` qu'avant la bascule.
 
-    Ne déclenche jamais ``services.kpi.compute_for_leg`` (contrairement à
-    ``GET /kpi`` qui auto-alimente ``LegKPI`` à la visite) : ce module lit
-    ce qui est déjà calculé, à l'image de ``services.kpi_consolidated``.
+    Ne déclenche jamais ``services.kpi.compute_for_leg`` ni ``refresh_summary``
+    (contrairement à ``GET /kpi``) : lecture pure, comme ``kpi_consolidated``.
+    Fail-closed : si la table des résumés est inaccessible, on retombe
+    intégralement sur ``LegKPI``.
     """
     stmt = select(Leg)
     if vessel_id is not None:
         stmt = stmt.where(Leg.vessel_id == vessel_id)
     legs = list((await db.execute(stmt)).scalars().all())
     kpi_by_leg = {k.leg_id: k for k in (await db.execute(select(LegKPI))).scalars().all()}
+    try:
+        summary_by_leg = {
+            s.leg_id: s
+            for s in (await db.execute(select(VoyageEmissionSummary))).scalars().all()
+        }
+    except Exception:
+        summary_by_leg = {}
 
     records: list[LegEmissionRecord] = []
     for leg in legs:
-        k = kpi_by_leg.get(leg.id)
-        has_kpi = k is not None and k.co2_emitted_kg is not None
-        co2_t = (
-            (k.co2_emitted_kg / Decimal(1000))
-            if (k and k.co2_emitted_kg is not None)
-            else Decimal(0)
-        )
-        cargo_t = (k.tonnage_kg / Decimal(1000)) if (k and k.tonnage_kg is not None) else Decimal(0)
-        distance_nm = leg.distance_nm if leg.distance_nm is not None else Decimal(0)
+        summary = summary_by_leg.get(leg.id)
+        if summary is not None:
+            # Source de vérité env. : le résumé du grand livre.
+            has_kpi = summary.co2_t is not None
+            co2_t = summary.co2_t if summary.co2_t is not None else Decimal(0)
+            cargo_t = summary.cargo_bl_t if summary.cargo_bl_t is not None else Decimal(0)
+            distance_src = (
+                summary.distance_nm if summary.distance_nm is not None else leg.distance_nm
+            )
+            cargo_mrv_t = summary.cargo_mrv_t
+        else:
+            # Repli legacy — identique à l'avant-lot-9 (aucune régression).
+            k = kpi_by_leg.get(leg.id)
+            has_kpi = k is not None and k.co2_emitted_kg is not None
+            co2_t = (
+                (k.co2_emitted_kg / Decimal(1000))
+                if (k and k.co2_emitted_kg is not None)
+                else Decimal(0)
+            )
+            cargo_t = (
+                (k.tonnage_kg / Decimal(1000)) if (k and k.tonnage_kg is not None) else Decimal(0)
+            )
+            distance_src = leg.distance_nm
+            cargo_mrv_t = None
+        distance_nm = distance_src if distance_src is not None else Decimal(0)
         records.append(
             LegEmissionRecord(
                 leg_id=leg.id,
@@ -298,6 +327,7 @@ async def _emissions_provider(
                 etd=leg.etd,
                 ata=leg.ata,
                 has_kpi=has_kpi,
+                cargo_mrv_t=cargo_mrv_t,
             )
         )
     return records
@@ -316,12 +346,12 @@ def leg_ef(
     """EF (gCO2/t.km) d'UN voyage — méthode A/B/C, jamais mélangées (spec §5.1).
 
     Renvoie ``value_gco2_tkm=None`` + ``na_reason`` quand non calculable :
-    méthode C toujours (Cargo MRV indisponible sur le legacy), méthode A sur
-    un voyage sur lest (cargo nul — pas de valeur fabriquée), ou distance
-    nulle (les deux méthodes).
+    méthode C sans ``cargo_mrv_t`` (voyage legacy/sans capture événementielle
+    — **réelle** sinon, depuis le grand livre, lot 9), méthode A ou C sur un
+    voyage sur lest (cargo nul — pas de valeur fabriquée), ou distance nulle.
     """
     _check_method(method)
-    if method == "C":
+    if method == "C" and record.cargo_mrv_t is None:
         return EfResult(method="C", value_gco2_tkm=None, na_reason=NA_CARGO_MRV)
     if record.distance_nm <= 0:
         return EfResult(method=method, value_gco2_tkm=None, na_reason=NA_ZERO_DISTANCE)
@@ -331,6 +361,10 @@ def leg_ef(
         if record.cargo_t <= 0:
             return EfResult(method="A", value_gco2_tkm=None, na_reason=NA_BALLAST)
         denom = record.cargo_t * distance_km
+    elif method == "C":  # cargo MRV réglementaire (grand livre — lot 9)
+        if record.cargo_mrv_t <= 0:
+            return EfResult(method="C", value_gco2_tkm=None, na_reason=NA_BALLAST)
+        denom = record.cargo_mrv_t * distance_km
     else:  # "B" — standardisé, ballast inclus (hypothèse de remplissage fixe)
         denom = capacity_ref_t * (occupancy_pct / Decimal(100)) * distance_km
 
@@ -360,12 +394,16 @@ def aggregate_ef(
       voyages (la méthode standardise le taux de remplissage : elle ne
       dépend pas du chargement réel, donc les voyages sur lest sont inclus
       au même titre que les autres).
-    - **C** — toujours N/A (Cargo MRV indisponible sur le legacy — lot 9).
+    - **C** — ``Σ(cargo_mrv × distance_km)`` sur les voyages disposant d'un
+      cargo MRV **chargé** (> 0) — réelle depuis le grand livre (lot 9) ;
+      N/A motivé si aucun voyage de la période ne porte de cargo MRV
+      (legacy/sans capture événementielle) ; les voyages sur lest
+      (cargo MRV = 0) restent au numérateur, exclus du dénominateur.
     """
     _check_method(method)
     total_co2_t = sum((r.co2_emitted_t for r in records), Decimal(0))
 
-    if method == "C":
+    if method == "C" and not any(r.cargo_mrv_t is not None for r in records):
         return EfResult(method="C", value_gco2_tkm=None, na_reason=NA_CARGO_MRV), Decimal(0)
 
     if method == "A":
@@ -374,6 +412,16 @@ def aggregate_ef(
                 r.cargo_t * r.distance_nm * NM_TO_KM
                 for r in records
                 if r.cargo_t > 0 and r.distance_nm > 0
+            ),
+            Decimal(0),
+        )
+        na_reason = NA_NO_LADEN_VOYAGE
+    elif method == "C":
+        denom = sum(
+            (
+                r.cargo_mrv_t * r.distance_nm * NM_TO_KM
+                for r in records
+                if r.cargo_mrv_t is not None and r.cargo_mrv_t > 0 and r.distance_nm > 0
             ),
             Decimal(0),
         )

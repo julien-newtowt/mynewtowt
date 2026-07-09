@@ -19,10 +19,11 @@ Cycle de vie (CDC §9) :
 - ``validate_master`` (Master, bord — tout type) puis ``validate_siege``
   (siège — Carbon **uniquement**).
 
-⚠ Les formules d'émission vivent dans la fonction interne ``_compute_emissions``
-(CFOTE_09 multi-GES). Elles seront **déplacées dans ``services/emission_ledger``
-au lot 9** (grand livre unique) : ne pas les étendre ici, ne pas les dupliquer
-ailleurs. Ce module ne touche pas ``services/carbon.py`` (adaptateur legacy).
+⚠ Les formules d'émission ont été **déplacées dans ``services/emission_ledger``
+au lot 9** (grand livre unique, règle d'or) : ce module appelle désormais
+``emission_ledger.emissions_breakdown`` (CFOTE_09 multi-GES) — ne jamais
+réintroduire ici une multiplication conso × facteur. Ce module ne touche pas
+``services/carbon.py`` (adaptateur legacy).
 """
 
 from __future__ import annotations
@@ -46,16 +47,13 @@ from app.models.env_report import (
 from app.models.leg import Leg
 from app.models.nav_event import DepartureEvent, NavEvent, PortCallEvent
 from app.models.vessel import Vessel
+from app.services import emission_ledger, referential_env
 from app.services import inter_event_compute as iec
-from app.services import referential_env
 from app.services.activity import record as activity_record
 from app.services.referential_env import ResolvedEmissionFactor
 from app.services.validation_engine import get_threshold
 
 _MILLION = Decimal("1000000")
-# Pouvoir calorifique inférieur du MDO (MJ/t ≡ 42,7 MJ/kg) — base énergie du
-# WtT FuelEU. Repli documenté ; à déplacer dans ``emission_factors`` au lot 9.
-MDO_LHV_MJ_PER_T = Decimal("42700")
 
 
 # ════════════════════════════════════════════════════════════ Exceptions
@@ -105,48 +103,8 @@ def _naive_utc(dt: datetime | None) -> datetime | None:
 
 
 # ════════════════════════════════════════════════════════════ Émissions (CFOTE_09)
-
-
-def _compute_emissions(conso_t: Decimal | None, factor: ResolvedEmissionFactor) -> dict[str, Any]:
-    """Émissions multi-GES d'une assiette de consommation (CFOTE_09).
-
-    ⚠ **Logique déplacée dans ``services/emission_ledger`` au lot 9 (grand livre
-    unique) — NE PAS ÉTENDRE ici, ne pas la dupliquer ailleurs.**
-
-    - CO₂ (TtW) [t] = ``conso_t × ef_co2`` (facteur sans dimension g/g ≡ t/t) ;
-    - CH₄ / N₂O [g] = ``conso_t × ef × 1e6`` (tonnes de GES → grammes) ;
-    - WtT (Well-to-Tank, FuelEU) = ``conso_t × PCI × wtt_gco2eq_per_mj / 1e6`` —
-      **distinct du TtW, jamais sommé** au CO₂ TtW sans l'expliciter.
-    """
-    wtt_intensity = factor.wtt_gco2eq_per_mj
-    if conso_t is None:
-        return {
-            "conso_t": None,
-            "co2_t": None,
-            "ch4_g": None,
-            "n2o_g": None,
-            "wtt_gco2eq_per_mj": _num(wtt_intensity),
-            "wtt_co2eq_t": None,
-            "ef_co2_kg_per_kg": _num(factor.ef_co2_kg_per_kg),
-            "ef_ch4_kg_per_kg": _num(factor.ef_ch4_kg_per_kg),
-            "ef_n2o_kg_per_kg": _num(factor.ef_n2o_kg_per_kg),
-        }
-    co2_t = conso_t * factor.ef_co2_kg_per_kg
-    ch4_g = conso_t * factor.ef_ch4_kg_per_kg * _MILLION
-    n2o_g = conso_t * factor.ef_n2o_kg_per_kg * _MILLION
-    # WtT : énergie du carburant × intensité amont, converti g → t. DISTINCT.
-    wtt_co2eq_t = conso_t * MDO_LHV_MJ_PER_T * wtt_intensity / _MILLION
-    return {
-        "conso_t": _num(conso_t),
-        "co2_t": _num(co2_t),
-        "ch4_g": _num(ch4_g),
-        "n2o_g": _num(n2o_g),
-        "wtt_gco2eq_per_mj": _num(wtt_intensity),
-        "wtt_co2eq_t": _num(wtt_co2eq_t),
-        "ef_co2_kg_per_kg": _num(factor.ef_co2_kg_per_kg),
-        "ef_ch4_kg_per_kg": _num(factor.ef_ch4_kg_per_kg),
-        "ef_n2o_kg_per_kg": _num(factor.ef_n2o_kg_per_kg),
-    }
+# La multiplication conso × facteur vit désormais UNIQUEMENT dans
+# ``emission_ledger.emissions_breakdown`` (règle d'or, lot 9). Ce module l'appelle.
 
 
 def _factor_meta(factor: ResolvedEmissionFactor) -> dict[str, Any]:
@@ -170,21 +128,11 @@ def _intensity(value: Decimal | None, denom: Decimal | None, scale: Decimal) -> 
 
 async def _build_bunker_lookup(db: AsyncSession, leg_id: int) -> iec.BunkerLookup:
     """Ferme une fonction ``(from, to] → tonnes soutées`` sur les soutages
-    **validés Master** du voyage (ROB chaîné, lot 6)."""
-    rows = (
-        await db.execute(
-            select(BunkerOperation.delivery_datetime_utc, BunkerOperation.mass_t)
-            .where(BunkerOperation.leg_id == leg_id)
-            .where(BunkerOperation.status == "valide_master")
-        )
-    ).all()
-    ops = [(_naive_utc(dt), m) for dt, m in rows if dt is not None and m is not None]
+    **validés Master** du voyage (ROB chaîné, lot 6).
 
-    def lookup(frm: datetime, to: datetime) -> Decimal:
-        f, t = _naive_utc(frm), _naive_utc(to)
-        return sum((m for (dt, m) in ops if dt is not None and f < dt <= t), Decimal("0"))
-
-    return lookup
+    Logique déplacée dans ``emission_ledger.build_bunker_lookup`` (lot 9) —
+    délégation conservée ici pour les appelants existants (``mrv_router``)."""
+    return await emission_ledger.build_bunker_lookup(db, leg_id)
 
 
 async def _engines_map(db: AsyncSession, vessel_id: int | None) -> dict[int, Any]:
@@ -458,8 +406,8 @@ async def generate_carbon_report(
     cargo_mrv = dep_cargo.cargo_mrv_t if dep_cargo is not None else None
 
     # Règle d'or : la seule multiplication conso × facteur vit dans
-    # ``_compute_emissions`` ; les intensités relisent son résultat.
-    emissions = _compute_emissions(conso_hors, factor)
+    # ``emission_ledger.emissions_breakdown`` ; les intensités relisent son résultat.
+    emissions = emission_ledger.emissions_breakdown(conso_hors, factor)
     co2_t = Decimal(emissions["co2_t"]) if emissions["co2_t"] is not None else None
 
     vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id is not None else None

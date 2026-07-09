@@ -264,6 +264,7 @@ async def finalize(db: AsyncSession, event: NavEvent, author) -> NavEvent:
     event.status = "finalise"
     event.finalized_at = datetime.now(UTC)
     await db.flush()
+    await _refresh_emission_summary(db, event.leg_id)
     return event
 
 
@@ -277,7 +278,30 @@ async def validate(db: AsyncSession, event: NavEvent, validator) -> NavEvent:
     event.validated_at = datetime.now(UTC)
     event.validated_by = validator.id if validator is not None else None
     await db.flush()
+    await _refresh_emission_summary(db, event.leg_id)
     return event
+
+
+async def _refresh_emission_summary(db: AsyncSession, leg_id: int | None) -> None:
+    """Hook lot 9 : rematérialise ``voyage_emission_summaries`` du voyage.
+
+    Import tardif de ``services.emission_ledger`` (le ledger importe
+    ``inter_event_compute`` qui partage des modèles avec ce module — l'import
+    au niveau fonction évite tout cycle). **Best-effort** : le summary est un
+    cache recalculable, jamais source de vérité — son échec ne doit jamais
+    bloquer la finalisation/validation d'un événement à bord (même posture
+    no-op silencieuse que ``services.security_alerts`` sans SMTP).
+    """
+    if leg_id is None:
+        return
+    try:
+        from app.services.emission_ledger import refresh_summary
+
+        leg = await db.get(Leg, leg_id)
+        if leg is not None:
+            await refresh_summary(db, leg)
+    except Exception:  # pragma: no cover — cache best-effort, jamais bloquant
+        pass
 
 
 # ════════════════════════════════════════════════════════════ Préremplissage position
