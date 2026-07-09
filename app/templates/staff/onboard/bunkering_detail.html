@@ -1,0 +1,29 @@
+{% extends "staff/_layout.html" %}
+{% from "staff/_bunker_shared.html" import bunker_summary %}
+{% block title %}{{ bunker.bdn_number }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/onboard/bunkering?vessel_id={{ vessel.id if vessel else '' }}" class="btn btn-ghost mb-3">{{ t('bunker_back_list', lang) }}</a>
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">{{ t('bunker_kicker', lang) }}</span>
+    <h1 class="display mono">{{ bunker.bdn_number }}</h1>
+  </div>
+  <div class="flex gap-2">
+    {% if can_edit %}
+    <a href="/onboard/bunkering/{{ bunker.id }}/edit" class="btn btn-secondary">{{ t('btn_edit', lang) }}</a>
+    <form method="post" action="/onboard/bunkering/{{ bunker.id }}/validate" data-confirm="{{ t('bunker_action_validate_confirm', lang) }}">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-primary">{{ t('bunker_action_validate', lang) }}</button>
+    </form>
+    {% endif %}
+  </div>
+</header>
+
+{% if bunker.status == 'valide_master' %}
+<div class="alert alert-info mb-3">{{ t('bunker_locked_notice', lang) }}</div>
+{% elif not can_edit %}
+<div class="alert alert-warn mb-3">{{ t('bunker_author_only', lang) }}</div>
+{% endif %}
+
+{{ bunker_summary(bunker, vessel, leg, allocations, tanks_by_id, checks, lang, validated_by_name) }}
+{% endblock %}

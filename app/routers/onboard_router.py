@@ -15,12 +15,13 @@ import json
 import logging
 from datetime import UTC, date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.bunker import BUNKER_STATUSES, BunkerOperation, BunkerTankAllocation
 from app.models.leg import Leg
 from app.models.noon_report import (
     NOON_ENGINES,
@@ -34,10 +35,11 @@ from app.models.noon_report import (
     NoonReportSail,
     NoonReportWeather,
 )
+from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 from app.permissions import require_permission
-from app.services import mrv_sync
+from app.services import bunkering, mrv_sync, referential_env
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.vessel_position import get_latest_position
@@ -984,3 +986,389 @@ def _attach_noon_children(nr: NoonReport, f) -> None:
                 humidity_midday_pct=hmd,
             )
         )
+
+
+# ────────────────────────────────────────────────────────────────────
+#   LOT 6 — Soutage (Bunker Report / BDN) : /onboard/bunkering
+# ────────────────────────────────────────────────────────────────────
+# Perm ``captain:M`` sur TOUT l'espace (y compris consultation) — les
+# soutages sont une donnée réglementaire, pas un simple journal de bord.
+
+
+def _int_or_400(raw: str | None, field: str) -> int | None:
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{field} invalide") from exc
+
+
+async def _resolve_bunkering_vessel(
+    db: AsyncSession, user, vessel_id_param: int | None
+) -> Vessel | None:
+    """Résout le navire courant des écrans de soutage bord.
+
+    Priorité : ``vessel_id`` explicite (query/form) > navire assigné à
+    l'utilisateur (cas courant, 1 commandant = 1 navire) > premier navire
+    actif (repli pour les rôles multi-navires : opération/technique/manager).
+    """
+    if vessel_id_param:
+        v = await db.get(Vessel, vessel_id_param)
+        if v is not None:
+            return v
+    assigned_id = getattr(user, "assigned_vessel_id", None)
+    if assigned_id:
+        v = await db.get(Vessel, assigned_id)
+        if v is not None:
+            return v
+    return (
+        await db.execute(
+            select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code).limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def _bunker_allocations(db: AsyncSession, bunker_id: int) -> list[BunkerTankAllocation]:
+    return list(
+        (
+            await db.execute(
+                select(BunkerTankAllocation)
+                .where(BunkerTankAllocation.bunker_id == bunker_id)
+                .order_by(BunkerTankAllocation.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+@router.get("/bunkering", response_class=HTMLResponse)
+async def onboard_bunkering_index(
+    request: Request,
+    vessel_id: int | None = None,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> HTMLResponse:
+    """LOT 6 — liste des soutages (BDN) du navire courant."""
+    vessel = await _resolve_bunkering_vessel(db, user, vessel_id)
+    vessels = list(
+        (
+            await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code))
+        )
+        .scalars()
+        .all()
+    )
+    bunkers: list[BunkerOperation] = []
+    if vessel is not None:
+        stmt = select(BunkerOperation).where(BunkerOperation.vessel_id == vessel.id)
+        if status:
+            stmt = stmt.where(BunkerOperation.status == status)
+        stmt = stmt.order_by(BunkerOperation.delivery_datetime_utc.desc())
+        bunkers = list((await db.execute(stmt)).scalars().all())
+    leg_map: dict[int, Leg] = {}
+    for b in bunkers:
+        if b.leg_id and b.leg_id not in leg_map:
+            leg = await db.get(Leg, b.leg_id)
+            if leg:
+                leg_map[b.leg_id] = leg
+    return templates.TemplateResponse(
+        "staff/onboard/bunkering_index.html",
+        {
+            "request": request,
+            "user": user,
+            "vessel": vessel,
+            "vessels": vessels,
+            "bunkers": bunkers,
+            "leg_map": leg_map,
+            "filter_status": status,
+            "bunker_statuses": BUNKER_STATUSES,
+        },
+    )
+
+
+@router.get("/bunkering/new", response_class=HTMLResponse)
+async def onboard_bunkering_new_form(
+    request: Request,
+    vessel_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> HTMLResponse:
+    """LOT 6 — formulaire de saisie d'un nouveau soutage (en-tête + cuves)."""
+    vessel = await _resolve_bunkering_vessel(db, user, vessel_id)
+    vessels = list(
+        (
+            await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code))
+        )
+        .scalars()
+        .all()
+    )
+    tanks = await referential_env.get_vessel_tanks(db, vessel.id) if vessel else []
+    from app.services.leg_filter import leg_select_options
+
+    leg_options = await leg_select_options(db, vessel_id=vessel.id) if vessel else []
+    return templates.TemplateResponse(
+        "staff/onboard/bunkering_form.html",
+        {
+            "request": request,
+            "user": user,
+            "vessel": vessel,
+            "vessels": vessels,
+            "tanks": tanks,
+            "leg_options": leg_options,
+            "bunker": None,
+            "allocations_by_tank": {},
+            # Un commandant rattaché à un seul navire n'a pas besoin du sélecteur
+            # (cas courant) ; les rôles multi-navires (opération/technique/manager)
+            # peuvent choisir explicitement.
+            "can_pick_vessel": getattr(user, "assigned_vessel_id", None) is None,
+        },
+    )
+
+
+@router.post("/bunkering/new")
+async def onboard_bunkering_create(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """LOT 6 — création d'un brouillon de soutage (en-tête + allocations cuves)."""
+    form = dict(await request.form())
+    vessel = await _resolve_bunkering_vessel(db, user, _int_or_400(form.get("vessel_id"), "vessel_id"))
+    if vessel is None:
+        raise HTTPException(status_code=400, detail="Navire introuvable.")
+
+    delivery_raw = (form.get("delivery_datetime_utc") or "").strip()
+    if not delivery_raw:
+        raise HTTPException(status_code=400, detail="Date de livraison obligatoire.")
+    try:
+        delivery_dt = datetime.fromisoformat(delivery_raw).replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Date de livraison invalide.") from exc
+
+    manual_leg_id = _int_or_400(form.get("leg_id"), "leg_id")
+    if manual_leg_id is not None:
+        leg = await db.get(Leg, manual_leg_id)
+        if leg is None or leg.vessel_id != vessel.id:
+            raise HTTPException(status_code=400, detail="Leg invalide pour ce navire.")
+
+    tanks = await referential_env.get_vessel_tanks(db, vessel.id)
+    try:
+        density = bunkering.parse_decimal(
+            form.get("density_15c_t_m3"), "density_15c_t_m3", required=True
+        )
+        mass_t = bunkering.parse_decimal(form.get("mass_t"), "mass_t", required=True)
+        allocations = bunkering.parse_allocation_rows(form, tanks, default_density=density)
+        bunker = await bunkering.create_draft(
+            db,
+            vessel=vessel,
+            author_user_id=user.id,
+            bdn_number=form.get("bdn_number") or "",
+            port_locode=form.get("port_locode") or "",
+            delivery_datetime_utc=delivery_dt,
+            mass_t=mass_t,
+            density_15c_t_m3=density,
+            fuel_type=form.get("fuel_type") or "MDO",
+            sulfur_content_pct=bunkering.parse_decimal(
+                form.get("sulfur_content_pct"), "sulfur_content_pct"
+            ),
+            viscosity_cst=bunkering.parse_decimal(form.get("viscosity_cst"), "viscosity_cst"),
+            water_content_pct=bunkering.parse_decimal(
+                form.get("water_content_pct"), "water_content_pct"
+            ),
+            lower_heating_value=bunkering.parse_decimal(
+                form.get("lower_heating_value"), "lower_heating_value"
+            ),
+            higher_heating_value=bunkering.parse_decimal(
+                form.get("higher_heating_value"), "higher_heating_value"
+            ),
+            ef_ttw_co2=bunkering.parse_decimal(form.get("ef_ttw_co2"), "ef_ttw_co2"),
+            supplier_name=form.get("supplier_name"),
+            leg_id=manual_leg_id,
+            allocations=allocations,
+        )
+    except bunkering.BunkerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await activity_record(
+        db,
+        action="bunker_create",
+        user_id=user.id,
+        user_name=user.username,
+        module="captain",
+        entity_type="bunker_operation",
+        entity_id=bunker.id,
+        entity_label=bunker.bdn_number,
+    )
+    return RedirectResponse(url=f"/onboard/bunkering/{bunker.id}", status_code=303)
+
+
+@router.get("/bunkering/{bunker_id}", response_class=HTMLResponse)
+async def onboard_bunkering_detail(
+    bunker_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> HTMLResponse:
+    """LOT 6 — détail d'un soutage : en-tête, cuves, contrôles structurels."""
+    bunker = await db.get(BunkerOperation, bunker_id)
+    if bunker is None:
+        raise HTTPException(status_code=404)
+    vessel = await db.get(Vessel, bunker.vessel_id)
+    leg = await db.get(Leg, bunker.leg_id) if bunker.leg_id else None
+    allocations = await _bunker_allocations(db, bunker.id)
+    tanks_by_id = await bunkering.vessel_tanks_by_id(db, bunker.vessel_id)
+    checks = await bunkering.evaluate_bunker(db, bunker, allocations, tanks_by_id)
+    is_author = bunker.author_user_id is None or bunker.author_user_id == user.id
+    can_edit = bunker.status == "brouillon" and is_author
+    validated_by_name = None
+    if bunker.validated_master_by:
+        validator = await db.get(User, bunker.validated_master_by)
+        validated_by_name = (validator.full_name or validator.username) if validator else None
+    return templates.TemplateResponse(
+        "staff/onboard/bunkering_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "bunker": bunker,
+            "vessel": vessel,
+            "leg": leg,
+            "allocations": allocations,
+            "tanks_by_id": tanks_by_id,
+            "checks": checks,
+            "can_edit": can_edit,
+            "validated_by_name": validated_by_name,
+            "audience": "onboard",
+        },
+    )
+
+
+@router.get("/bunkering/{bunker_id}/edit", response_class=HTMLResponse)
+async def onboard_bunkering_edit_form(
+    bunker_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> HTMLResponse:
+    """LOT 6 — formulaire d'édition d'un brouillon — réservé à son auteur."""
+    bunker = await db.get(BunkerOperation, bunker_id)
+    if bunker is None:
+        raise HTTPException(status_code=404)
+    if bunker.status != "brouillon":
+        raise HTTPException(status_code=409, detail="Ce soutage est déjà validé Master.")
+    if bunker.author_user_id is not None and bunker.author_user_id != user.id:
+        raise HTTPException(
+            status_code=403, detail="Seul l'auteur du brouillon peut le modifier."
+        )
+    vessel = await db.get(Vessel, bunker.vessel_id)
+    tanks = await referential_env.get_vessel_tanks(db, bunker.vessel_id)
+    allocations = await _bunker_allocations(db, bunker.id)
+    allocations_by_tank = {a.tank_id: a for a in allocations}
+    from app.services.leg_filter import leg_select_options
+
+    leg_options = await leg_select_options(db, vessel_id=bunker.vessel_id)
+    return templates.TemplateResponse(
+        "staff/onboard/bunkering_form.html",
+        {
+            "request": request,
+            "user": user,
+            "vessel": vessel,
+            "vessels": [vessel] if vessel else [],
+            "tanks": tanks,
+            "leg_options": leg_options,
+            "bunker": bunker,
+            "allocations_by_tank": allocations_by_tank,
+            "can_pick_vessel": False,
+        },
+    )
+
+
+@router.post("/bunkering/{bunker_id}/edit")
+async def onboard_bunkering_edit_post(
+    bunker_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """LOT 6 — sauvegarde d'un brouillon — garde auteur-seul (service)."""
+    bunker = await db.get(BunkerOperation, bunker_id)
+    if bunker is None:
+        raise HTTPException(status_code=404)
+    form = dict(await request.form())
+    vessel = await db.get(Vessel, bunker.vessel_id)
+    tanks = await referential_env.get_vessel_tanks(db, bunker.vessel_id)
+
+    manual_leg_raw = (form.pop("leg_id", "") or "").strip()
+    manual_leg_id: int | None = None
+    auto_leg_vessel = None
+    if manual_leg_raw:
+        manual_leg_id = _int_or_400(manual_leg_raw, "leg_id")
+        leg = await db.get(Leg, manual_leg_id)
+        if leg is None or leg.vessel_id != bunker.vessel_id:
+            raise HTTPException(status_code=400, detail="Leg invalide pour ce navire.")
+    else:
+        auto_leg_vessel = vessel
+
+    try:
+        density_raw = (form.get("density_15c_t_m3") or "").strip()
+        default_density = (
+            bunkering.parse_decimal(density_raw, "density_15c_t_m3")
+            if density_raw
+            else bunker.density_15c_t_m3
+        )
+        allocations = bunkering.parse_allocation_rows(form, tanks, default_density=default_density)
+        await bunkering.update_draft(
+            db,
+            bunker,
+            user_id=user.id,
+            form=form,
+            allocations=allocations,
+            manual_leg_id=manual_leg_id,
+            auto_leg_vessel=auto_leg_vessel,
+        )
+    except bunkering.AuthorOnlyError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except bunkering.BunkerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await activity_record(
+        db,
+        action="bunker_update",
+        user_id=user.id,
+        user_name=user.username,
+        module="captain",
+        entity_type="bunker_operation",
+        entity_id=bunker.id,
+        entity_label=bunker.bdn_number,
+    )
+    return RedirectResponse(url=f"/onboard/bunkering/{bunker.id}", status_code=303)
+
+
+@router.post("/bunkering/{bunker_id}/validate")
+async def onboard_bunkering_validate(
+    bunker_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """LOT 6 — validation Master : verrouille le soutage côté bord."""
+    bunker = await db.get(BunkerOperation, bunker_id)
+    if bunker is None:
+        raise HTTPException(status_code=404)
+    try:
+        await bunkering.validate_master(db, bunker, user)
+    except bunkering.BunkerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await activity_record(
+        db,
+        action="bunker_validate_master",
+        user_id=user.id,
+        user_name=user.username,
+        module="captain",
+        entity_type="bunker_operation",
+        entity_id=bunker.id,
+        entity_label=bunker.bdn_number,
+    )
+    return RedirectResponse(url=f"/onboard/bunkering/{bunker.id}", status_code=303)

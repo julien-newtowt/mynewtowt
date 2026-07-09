@@ -10,6 +10,7 @@ from app.models.anemos_certificate import AnemosCertificate
 from app.models.blog_post import BlogPost
 from app.models.booking import Booking, BookingItem
 from app.models.booking_message import BookingMessage
+from app.models.bunker import BunkerOperation, BunkerTankAllocation
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.claim import (
     Claim,
@@ -132,6 +133,8 @@ __all__ = [
     "Booking",
     "BookingItem",
     "BookingMessage",
+    "BunkerOperation",
+    "BunkerTankAllocation",
     "CargoDocument",
     "CashboxClosure",
     "CashboxMovement",

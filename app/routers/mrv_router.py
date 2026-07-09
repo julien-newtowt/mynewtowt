@@ -7,7 +7,8 @@ event est créé (à brancher en Phase 5 si besoin).
 
 from __future__ import annotations
 
-from datetime import datetime
+import contextlib
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -16,11 +17,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.bunker import BUNKER_STATUSES, BunkerOperation
 from app.models.leg import Leg
 from app.models.mrv import MRVEvent, MRVParameter
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.permissions import require_permission
+from app.services import bunkering
 from app.services.activity import record as activity_record
 from app.services.mrv_compute import recompute_leg
 from app.services.mrv_export import (
@@ -829,3 +832,206 @@ async def mrv_parametres_dashboard_update(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/mrv/parametres", status_code=303)
+
+
+# ══════════════════════════ LOT 6 — Soutage (Bunker Report / BDN), vue siège ══
+
+
+def _int_or_400(raw: str | None, field: str) -> int | None:
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{field} invalide") from exc
+
+
+async def _mrv_bunker_allocations(db: AsyncSession, bunker_id: int):
+    from app.models.bunker import BunkerTankAllocation
+
+    return list(
+        (
+            await db.execute(
+                select(BunkerTankAllocation)
+                .where(BunkerTankAllocation.bunker_id == bunker_id)
+                .order_by(BunkerTankAllocation.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+@router.get("/bunkering", response_class=HTMLResponse)
+async def mrv_bunkering_index(
+    request: Request,
+    vessel_id: int | None = None,
+    status: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    ecart: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """LOT 6 — liste des soutages (BDN), filtrable navire/période/statut/écarts.
+
+    L'écart (masse déclarée vs Σ volume×densité, R23) n'est pas une colonne
+    persistée — il est recalculé à l'affichage (``bunkering.evaluate_bunker``),
+    conforme au principe « aucune nouvelle règle codée dans ce lot ».
+    """
+    stmt = select(BunkerOperation).order_by(BunkerOperation.delivery_datetime_utc.desc())
+    if vessel_id:
+        stmt = stmt.where(BunkerOperation.vessel_id == vessel_id)
+    if status:
+        stmt = stmt.where(BunkerOperation.status == status)
+    if date_from:
+        with contextlib.suppress(ValueError):
+            stmt = stmt.where(
+                BunkerOperation.delivery_datetime_utc
+                >= datetime.fromisoformat(date_from).replace(tzinfo=UTC)
+            )
+    if date_to:
+        with contextlib.suppress(ValueError):
+            stmt = stmt.where(
+                BunkerOperation.delivery_datetime_utc
+                <= datetime.fromisoformat(date_to).replace(tzinfo=UTC)
+            )
+    bunkers = list((await db.execute(stmt)).scalars().all())
+
+    vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    vessel_map = {v.id: v for v in vessels}
+    leg_map: dict[int, Leg] = {}
+    for b in bunkers:
+        if b.leg_id and b.leg_id not in leg_map:
+            leg = await db.get(Leg, b.leg_id)
+            if leg:
+                leg_map[b.leg_id] = leg
+
+    rows = []
+    for b in bunkers:
+        allocations = await _mrv_bunker_allocations(db, b.id)
+        tanks_by_id = await bunkering.vessel_tanks_by_id(db, b.vessel_id)
+        checks = await bunkering.evaluate_bunker(db, b, allocations, tanks_by_id)
+        if ecart and checks.mass.status != ecart:
+            continue
+        rows.append(
+            {
+                "bunker": b,
+                "vessel": vessel_map.get(b.vessel_id),
+                "leg": leg_map.get(b.leg_id),
+                "checks": checks,
+            }
+        )
+
+    return templates.TemplateResponse(
+        "staff/mrv/bunkering_index.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": rows,
+            "vessels": vessels,
+            "filter_vessel_id": vessel_id,
+            "filter_status": status,
+            "filter_date_from": date_from or "",
+            "filter_date_to": date_to or "",
+            "filter_ecart": ecart or "",
+            "bunker_statuses": BUNKER_STATUSES,
+        },
+    )
+
+
+@router.get("/bunkering/{bunker_id}", response_class=HTMLResponse)
+async def mrv_bunkering_detail(
+    bunker_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """LOT 6 — détail siège d'un soutage + formulaire de correction (mrv:M)."""
+    bunker = await db.get(BunkerOperation, bunker_id)
+    if bunker is None:
+        raise HTTPException(status_code=404)
+    vessel = await db.get(Vessel, bunker.vessel_id)
+    leg = await db.get(Leg, bunker.leg_id) if bunker.leg_id else None
+    allocations = await _mrv_bunker_allocations(db, bunker.id)
+    tanks_by_id = await bunkering.vessel_tanks_by_id(db, bunker.vessel_id)
+    checks = await bunkering.evaluate_bunker(db, bunker, allocations, tanks_by_id)
+    from app.models.user import User
+    from app.services.leg_filter import leg_select_options
+
+    leg_options = await leg_select_options(db, vessel_id=bunker.vessel_id)
+    validated_by_name = None
+    if bunker.validated_master_by:
+        validator = await db.get(User, bunker.validated_master_by)
+        validated_by_name = (validator.full_name or validator.username) if validator else None
+    # N'affiche le formulaire de correction qu'aux rôles qui pourront
+    # effectivement le soumettre (POST gardé par mrv:M) — évite d'exposer une
+    # action qui échouerait en 403 (matrice EFFECTIVE, overrides ARC-04 inclus).
+    from app.permissions import has_permission_effective
+
+    can_correct = await has_permission_effective(db, user.role, "mrv", "M")
+    return templates.TemplateResponse(
+        "staff/mrv/bunkering_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "bunker": bunker,
+            "vessel": vessel,
+            "leg": leg,
+            "allocations": allocations,
+            "tanks_by_id": tanks_by_id,
+            "checks": checks,
+            "can_correct": can_correct,
+            "leg_options": leg_options,
+            "validated_by_name": validated_by_name,
+            "audience": "mrv",
+        },
+    )
+
+
+@router.post("/bunkering/{bunker_id}/edit")
+async def mrv_bunkering_edit(
+    bunker_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "M")),
+):
+    """LOT 6 — correction siège : possible même après validation Master,
+    toujours tracée (``services.activity``) — jamais silencieuse."""
+    bunker = await db.get(BunkerOperation, bunker_id)
+    if bunker is None:
+        raise HTTPException(status_code=404)
+    form = dict(await request.form())
+    was_validated = bunker.status == "valide_master"
+    clear_leg = (form.pop("clear_leg", "") or "").strip() == "1"
+    manual_leg_raw = (form.pop("leg_id", "") or "").strip()
+    manual_leg_id = _int_or_400(manual_leg_raw, "leg_id") if manual_leg_raw else None
+    if manual_leg_id is not None:
+        leg = await db.get(Leg, manual_leg_id)
+        if leg is None or leg.vessel_id != bunker.vessel_id:
+            raise HTTPException(status_code=400, detail="Leg invalide pour ce navire.")
+
+    try:
+        await bunkering.apply_review_correction(
+            db, bunker, form=form, manual_leg_id=manual_leg_id, clear_leg=clear_leg
+        )
+    except bunkering.BunkerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await activity_record(
+        db,
+        action="bunker_review_correction",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="bunker_operation",
+        entity_id=bunker.id,
+        entity_label=bunker.bdn_number,
+        detail=(
+            "Correction post-validation Master" if was_validated else "Correction brouillon (siège)"
+        ),
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/mrv/bunkering/{bunker.id}", status_code=303)
