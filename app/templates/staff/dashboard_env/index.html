@@ -1,6 +1,8 @@
 {% extends "staff/_layout.html" %}
 {% block title %}{{ t('dashenv_fleet_title', lang) }}{% endblock %}
 {% block content %}
+{% set dashenv_active = 'fleet' %}
+{% include "staff/dashboard_env/_tabs.html" %}
 <header class="flex justify-between items-center mb-4">
   <div>
     <span class="kicker">{{ t('dashenv_kicker', lang) }}</span>

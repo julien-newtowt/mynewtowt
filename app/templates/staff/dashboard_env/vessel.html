@@ -1,0 +1,29 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('dashenv_vessel_title', lang) }} — {{ op.vessel_name }}{% endblock %}
+{% block content %}
+{% set dashenv_active = 'vessel' %}
+{% set tab_vessel_id = op.vessel_id %}
+{% include "staff/dashboard_env/_tabs.html" %}
+
+<header class="flex justify-between items-center mb-3" style="flex-wrap:wrap;gap:8px;">
+  <div>
+    <span class="kicker">{{ t('dashenv_kicker', lang) }}</span>
+    <h1 class="display">{{ t('dashenv_vessel_title', lang) }}</h1>
+    <p class="text-muted">{{ t('dashenv_vessel_subtitle', lang) }}</p>
+  </div>
+  <a href="/dashboard-env/quality" class="btn btn-ghost">
+    <i data-lucide="shield-check"></i> {{ t('dashenv_vessel_quality_link', lang) }}
+  </a>
+</header>
+
+<div class="breadcrumb text-sm text-muted mb-3">
+  <a href="/dashboard-env">{{ t('dashenv_tab_fleet', lang) }}</a>
+  <span> › </span>
+  <strong>{{ op.vessel_name }}</strong>
+  {% if op.vessel_code %}<span class="pill pill-neutral mono">{{ op.vessel_code }}</span>{% endif %}
+</div>
+
+<div id="dashenv-vessel-content">
+  {% include "staff/dashboard_env/_vessel_fragment.html" %}
+</div>
+{% endblock %}

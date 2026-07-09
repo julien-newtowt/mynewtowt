@@ -1,0 +1,112 @@
+{% extends "pdf/_base.html" %}
+{% set L = d.ledger %}
+{% block title %}Synthèse voyage {{ d.leg_code }}{% endblock %}
+{% block doc_kind %}Dashboard environnemental · Synthèse voyage{% endblock %}
+{% block doc_ref %}{{ d.leg_code }}{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Périmètre · Scope</div>
+    <div class="value">
+      <strong>{{ d.vessel_name or '—' }}</strong>{% if d.vessel_code %} · {{ d.vessel_code }}{% endif %}<br/>
+      Voyage · Leg : <span class="mono">{{ d.leg_code }}</span><br/>
+      {% if d.dep_port and d.arr_port %}Route : {{ d.dep_port.locode }} → {{ d.arr_port.locode }}<br/>{% endif %}
+      Source : <strong>{{ 'événements' if d.source == 'events' else 'noon legacy' }}</strong>
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Consommation · Fuel (t)</div>
+    <div class="value">
+      Total voyage : <strong>{% if L.conso_total_t is not none %}{{ "%.3f"|format(L.conso_total_t) }}{% else %}—{% endif %} t</strong><br/>
+      ME : {% if L.conso_me_t is not none %}{{ "%.3f"|format(L.conso_me_t) }}{% else %}—{% endif %} ·
+      AE : {% if L.conso_ae_t is not none %}{{ "%.3f"|format(L.conso_ae_t) }}{% else %}—{% endif %}<br/>
+      <span class="c-teal">CO₂ (TtW) : <strong>{% if L.co2_emitted_t is not none %}{{ "%.3f"|format(L.co2_emitted_t) }}{% else %}—{% endif %} t</strong></span>
+    </div>
+  </div>
+</div>
+
+<h2>Indicateurs · KPI</h2>
+<table>
+  <thead><tr><th>Indicateur</th><th class="text-right">Valeur</th></tr></thead>
+  <tbody>
+    <tr><td>Distance</td><td class="text-right mono">{% if L.distance_nm is not none %}{{ "%.0f"|format(L.distance_nm) }} NM{% else %}—{% endif %}</td></tr>
+    <tr><td>Cargo B/L</td><td class="text-right mono">{% if L.cargo_bl_t is not none %}{{ "%.1f"|format(L.cargo_bl_t) }} t{% else %}—{% endif %}</td></tr>
+    <tr><td>Cargo MRV</td><td class="text-right mono">{% if L.cargo_mrv_t is not none %}{{ "%.1f"|format(L.cargo_mrv_t) }} t{% else %}N/A{% endif %}</td></tr>
+    <tr><td>EF méthode A (réel)</td><td class="text-right mono">{% if L.ef_method_a is not none %}{{ "%.2f"|format(L.ef_method_a) }} gCO₂/t·km{% else %}N/A{% endif %}</td></tr>
+    <tr><td>EF méthode B (standardisé)</td><td class="text-right mono">{% if L.ef_method_b is not none %}{{ "%.2f"|format(L.ef_method_b) }} gCO₂/t·km{% else %}N/A{% endif %}</td></tr>
+    <tr><td>EF méthode C (cargo MRV)</td><td class="text-right mono">{% if L.ef_method_c is not none %}{{ "%.2f"|format(L.ef_method_c) }} gCO₂/t·km{% else %}N/A{% endif %}</td></tr>
+  </tbody>
+</table>
+
+<h2>Consommation vs cible</h2>
+<p>
+  {% if d.conso.daily_l_j is not none %}
+  Consommation journalière : <strong>{{ "%.0f"|format(d.conso.daily_l_j) }} L/j</strong> —
+  cible {{ "%.0f"|format(d.conso.target_l_j) }} L/j
+  ({% if d.conso.over_target %}<span style="color:#B47148;">+{{ "%.1f"|format(d.conso.delta_pct) }} % au-dessus{% else %}<span style="color:#4a7a1e;">−{{ "%.1f"|format(d.conso.delta_pct) }} % en dessous{% endif %} du seuil</span>).
+  {% else %}
+  N/A — {{ d.conso.na_reason }}
+  {% endif %}
+</p>
+
+<h2>Profil de propulsion (tranches de 4 h)</h2>
+{% if prop_bar.has_data %}
+<svg viewBox="0 0 {{ prop_bar.width }} {{ prop_bar.height }}" width="100%" height="26" preserveAspectRatio="none">
+  {% for s in prop_bar.segments %}
+  <rect x="{{ s.x }}" y="0" width="{{ s.width }}" height="{{ prop_bar.height }}" fill="{{ s.color }}"></rect>
+  {% endfor %}
+</svg>
+<table>
+  <thead><tr><th>Catégorie</th><th class="text-right">Tranches</th><th class="text-right">% (des renseignées)</th></tr></thead>
+  <tbody>
+    {% set labels = {'velique_pur':'Vélique pur','hybride':'Hybride (assistance)','mecanique':'Mécanique pur','statique':'Statique / dérive'} %}
+    {% for s in d.propulsion.segments %}
+    <tr>
+      <td><span style="display:inline-block;width:9px;height:9px;background:{{ s.color }};"></span> {{ labels.get(s.category, s.category) }}</td>
+      <td class="text-right mono">{{ s.count }}</td>
+      <td class="text-right mono">{% if s.pct is not none %}{{ "%.1f"|format(s.pct) }} %{% else %}N/A{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="small">Complétude : {{ d.propulsion.filled_slots }} tranches renseignées / {{ d.propulsion.theoretical_slots }} théoriques{% if d.propulsion.completeness_pct is not none %} ({{ "%.1f"|format(d.propulsion.completeness_pct) }} %){% endif %} — les tranches sans relevé sont exclues du dénominateur (spec §5.4).</p>
+{% else %}
+<p class="small">Aucun relevé de voilure exploitable sur ce voyage.</p>
+{% endif %}
+
+<h2>ROB dans le temps</h2>
+{% if rob.has_data %}
+<svg viewBox="0 0 {{ rob.width }} {{ rob.height }}" width="100%" height="220" preserveAspectRatio="xMidYMid meet">
+  {% for tick in rob.y_ticks %}
+  <line x1="{{ rob.left }}" y1="{{ tick.y }}" x2="{{ rob.right_x }}" y2="{{ tick.y }}" stroke="#EFE6D6" stroke-width="1"></line>
+  <text x="{{ rob.left - 6 }}" y="{{ tick.y + 3 }}" font-size="9" text-anchor="end" fill="#6E6E6E">{{ tick.label }}</text>
+  {% endfor %}
+  <polyline points="{{ rob.polyline }}" fill="none" stroke="#0D5966" stroke-width="2"></polyline>
+  {% for p in rob.points %}
+  <circle cx="{{ p.x }}" cy="{{ p.y }}" r="{{ 4 if p.is_ref else 2.5 }}" fill="{{ '#B47148' if p.is_ref else '#0D5966' }}" stroke="#fff" stroke-width="1"></circle>
+  {% endfor %}
+  {% for b in rob.bunker_markers %}
+  <path d="M {{ b.x - 5 }},{{ b.baseline_y }} L {{ b.x + 5 }},{{ b.baseline_y }} L {{ b.x }},{{ b.baseline_y - 9 }} Z" fill="#B47148"></path>
+  {% endfor %}
+</svg>
+<p class="small">Points cuivrés = ROB de référence (Departure/Arrival, R14-v2) ; points teal = ROB chaîné calculé ; triangles = soutages.</p>
+{% else %}
+<p class="small">Timeline ROB indisponible (voyage sans capture événementielle).</p>
+{% endif %}
+
+<h2>Anomalies qualité (R14 / R22)</h2>
+{% if d.quality %}
+<table>
+  <thead><tr><th>Règle</th><th>Sévérité</th><th>Message</th></tr></thead>
+  <tbody>
+    {% for q in d.quality %}
+    <tr><td class="mono">{{ q.rule_id }}</td><td>{{ q.severity_applied or '—' }}</td><td class="small">{{ q.message or '—' }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="small">Aucune anomalie R14/R22 ouverte sur ce voyage.</p>
+{% endif %}
+
+{% endblock %}

@@ -1,6 +1,8 @@
 {% extends "staff/_layout.html" %}
 {% block title %}{{ t('dashenv_admin_title', lang) }}{% endblock %}
 {% block content %}
+{% set dashenv_active = 'params' %}
+{% include "staff/dashboard_env/_tabs.html" %}
 <a href="/dashboard-env" class="btn btn-ghost mb-3">{{ t('dashenv_admin_back', lang) }}</a>
 
 <header class="mb-4">
