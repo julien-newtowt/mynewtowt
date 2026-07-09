@@ -11,18 +11,9 @@ Crée :
 - ``flgo_voyage_consumption_refs`` — contrôle croisé indépendant conso ME/AE
   par voyage (schéma seul dans ce lot, cf. app/models/flgo.py).
 
-⚠️ NOTE PROVISOIRE (down_revision) : cette révision chaîne sur
-``20260709_0099`` (dernière migration MRV fusionnée dans ce worktree au
-moment du lot 7 — lots 1/2/3/6). Le lot 5 (rapports/workflow, en parallèle)
-crée sa propre migration ``20260709_0100``. L'orchestrateur du chantier
-**rechaînera** cette révision 0101 sur 0100 (``down_revision =
-"20260709_0100"``) au moment de fusionner les deux branches — exactement le
-même geste déjà appliqué à 0097 (rechaîné après merge lots 1+2) et à 0099
-(rechaîné après merge lots 3+6, cf. commit ``cfe78ee``). Aucune donnée
-FLGO ne dépend du contenu de 0100 : le rechaînage est purement mécanique.
 
 Revision ID: 20260709_0101
-Revises: 20260709_0099
+Revises: 20260709_0100
 Create Date: 2026-07-09
 """
 
@@ -33,7 +24,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260709_0101"
-down_revision = "20260709_0099"  # PROVISOIRE — cf. note ci-dessus (rechaînage orchestrateur)
+down_revision = "20260709_0100"
 branch_labels = None
 depends_on = None
 
