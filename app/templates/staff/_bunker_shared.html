@@ -1,0 +1,96 @@
+{#
+  Soutage (Bunker Report / BDN) — bloc de restitution partagé bord/siège
+  (MRV lot 6). Contexte attendu par ``bunker_summary`` :
+    bunker       : app.models.bunker.BunkerOperation
+    vessel       : app.models.vessel.Vessel | None
+    leg          : app.models.leg.Leg | None
+    allocations  : list[BunkerTankAllocation]
+    tanks_by_id  : dict[int, VesselTank]
+    checks       : app.services.bunkering.BunkerChecks
+    lang         : code langue courant (injecté par le context processor)
+
+  CSP-safe : aucun script inline, classes Kairos (.card, .pill, .data-table).
+#}
+
+{% macro bunker_summary(bunker, vessel, leg, allocations, tanks_by_id, checks, lang, validated_by_name=none) %}
+<section class="card mb-4">
+  <header class="flex justify-between items-center mb-2">
+    <h2 class="h4 mono">{{ bunker.bdn_number }}</h2>
+    {% if bunker.status == 'valide_master' %}
+      <span class="pill pill-ok">{{ t('bunker_status_valide_master', lang) }}</span>
+    {% else %}
+      <span class="pill pill-neutral">{{ t('status_draft', lang) }}</span>
+    {% endif %}
+  </header>
+
+  <div class="grid grid-3 gap-2 mb-3">
+    <div><small class="text-muted">{{ t('bunker_col_vessel', lang) }}</small><br />{{ vessel.name if vessel else '—' }}</div>
+    <div><small class="text-muted">{{ t('bunker_form_port_locode', lang) }}</small><br /><span class="mono">{{ bunker.port_locode }}</span></div>
+    <div><small class="text-muted">{{ t('bunker_col_delivery', lang) }}</small><br />{{ bunker.delivery_datetime_utc|datetime }}</div>
+    <div><small class="text-muted">{{ t('bunker_form_fuel_type', lang) }}</small><br />{{ bunker.fuel_type }}</div>
+    <div><small class="text-muted">{{ t('bunker_form_mass', lang) }}</small><br /><span class="mono">{{ bunker.mass_t }} t</span></div>
+    <div><small class="text-muted">{{ t('bunker_form_density', lang) }}</small><br /><span class="mono">{{ bunker.density_15c_t_m3 }}</span></div>
+    {% if bunker.sulfur_content_pct is not none %}<div><small class="text-muted">{{ t('bunker_form_sulfur', lang) }}</small><br />{{ bunker.sulfur_content_pct }}</div>{% endif %}
+    {% if bunker.viscosity_cst is not none %}<div><small class="text-muted">{{ t('bunker_form_viscosity', lang) }}</small><br />{{ bunker.viscosity_cst }}</div>{% endif %}
+    {% if bunker.water_content_pct is not none %}<div><small class="text-muted">{{ t('bunker_form_water', lang) }}</small><br />{{ bunker.water_content_pct }}</div>{% endif %}
+    {% if bunker.lower_heating_value is not none %}<div><small class="text-muted">{{ t('bunker_form_lhv', lang) }}</small><br />{{ bunker.lower_heating_value }}</div>{% endif %}
+    {% if bunker.higher_heating_value is not none %}<div><small class="text-muted">{{ t('bunker_form_hhv', lang) }}</small><br />{{ bunker.higher_heating_value }}</div>{% endif %}
+    {% if bunker.ef_ttw_co2 is not none %}<div><small class="text-muted">{{ t('bunker_form_ef', lang) }}</small><br />{{ bunker.ef_ttw_co2 }}</div>{% endif %}
+    {% if bunker.supplier_name %}<div><small class="text-muted">{{ t('bunker_form_supplier', lang) }}</small><br />{{ bunker.supplier_name }}</div>{% endif %}
+    <div>
+      <small class="text-muted">{{ t('bunker_col_leg', lang) }}</small><br />
+      {% if leg %}<a href="/mrv/legs/{{ leg.id }}" class="mono">{{ leg.leg_code }}</a>{% else %}<span class="text-muted">—</span>{% endif %}
+    </div>
+  </div>
+
+  {% if bunker.status == 'valide_master' %}
+  <p class="text-muted text-sm mb-3">
+    {{ t('bunker_validated_by', lang, date=(bunker.validated_master_at|datetime if bunker.validated_master_at else '—'), name=(validated_by_name or ('#' ~ bunker.validated_master_by) if bunker.validated_master_by else '—')) }}
+  </p>
+  {% endif %}
+
+  <h3 class="h5">{{ t('bunker_form_allocations', lang) }}</h3>
+  {% if allocations %}
+  <div style="overflow-x:auto;">
+  <table class="data-table mb-3">
+    <thead><tr>
+      <th>{{ t('bunker_form_tank', lang) }}</th>
+      <th>{{ t('bunker_form_volume', lang) }}</th>
+      <th>{{ t('bunker_form_density', lang) }}</th>
+      <th>{{ t('bunker_allocated_mass', lang) }}</th>
+    </tr></thead>
+    <tbody>
+      {% for a in allocations %}
+      {% set tank = tanks_by_id.get(a.tank_id) %}
+      <tr>
+        <td>{{ tank.tank_code if tank else a.tank_id }}</td>
+        <td class="mono">{{ a.volume_m3 }}</td>
+        <td class="mono">{{ a.density_t_m3 }}</td>
+        <td class="mono">{{ (a.volume_m3 * a.density_t_m3)|round(3) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="text-muted mb-3">—</p>{% endif %}
+
+  <h3 class="h5">Contrôles</h3>
+  <div class="flex gap-2" style="flex-wrap:wrap;">
+    {% set mass_pill = {'ok': 'pill-ok', 'ecart_mineur': 'pill-warn', 'ecart_majeur': 'pill-error'} %}
+    <span class="pill {{ mass_pill.get(checks.mass.status, 'pill-neutral') }}"
+          title="{{ t('bunker_declared_mass', lang) }} {{ checks.mass.declared_mass_t }} t · {{ t('bunker_allocated_mass', lang) }} {{ checks.mass.allocated_mass_t }} t · Δ {{ checks.mass.delta_t }} t (tolérance {{ checks.mass.tolerance_t }} t)">
+      {{ t('bunker_ecart_' + checks.mass.status, lang) }}
+    </span>
+    {% if checks.density.flagged %}
+    <span class="pill pill-warn" title="[{{ checks.density.low }} ; {{ checks.density.high }}]">{{ t('bunker_density_flag', lang) }}</span>
+    {% else %}
+    <span class="pill pill-ok">{{ t('bunker_density_ok', lang) }}</span>
+    {% endif %}
+    {% if checks.capacity.total_capacity_m3 is not none %}
+    <span class="pill {{ 'pill-warn' if checks.capacity.exceeds else 'pill-info' }}" title="{{ t('bunker_capacity_info', lang) }}">
+      {{ checks.capacity.total_volume_m3 }} / {{ checks.capacity.total_capacity_m3 }} m³
+    </span>
+    {% endif %}
+  </div>
+</section>
+{% endmacro %}

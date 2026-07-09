@@ -187,6 +187,15 @@ THRESHOLD_SEED: tuple[tuple[str, str, str, str, bool, str], ...] = (
      "Écart max masse BDN vs variation FLGO (proposition)."),
     ("R24", "delai_flgo_bunkering_j", "5", "j", True,
      "Fenêtre de recoupement soutage BDN ↔ FLGO 'Received' (défaut 5 j)."),
+    # LOT 6 — rattachement automatique du soutage au voyage suivant l'escale
+    # de livraison (services.bunkering.resolve_leg_for_bunker). Ajouté au
+    # catalogue existant (seed idempotent, cf. seed_reference_data) SANS
+    # toucher aux seuils ci-dessus. 25 j = fenêtre observée sur le dataset
+    # 2025 (inventaire) ; à confirmer métier (cf. Q8, même statut que les
+    # autres seuils provisoires de ce catalogue).
+    ("R24", "fenetre_rattachement_bunker_j", "25", "j", True,
+     "Fenêtre de rattachement automatique du soutage au voyage suivant "
+     "(au-delà : leg_id NULL, choix manuel possible)."),
     ("R25", "tolerance_flgo_interne_m3", "2", "m3", True,
      "Écart max entre lectures FLGO consécutives (proposition)."),
     ("R21", "tolerance_duree_rapport_h", "2", "h", True,

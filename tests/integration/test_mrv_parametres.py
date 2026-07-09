@@ -57,9 +57,11 @@ async def test_get_renders_after_seed(db, staff_user):
     assert resp.template.name == "staff/mrv/parametres.html"
     ctx = resp.context
     assert len(ctx["rules"]) == 31
-    assert len(ctx["thr_global"]) == 20
+    # 20 (lot 2) + 1 (lot 6 : R24:fenetre_rattachement_bunker_j, ajouté au
+    # catalogue existant par le mécanisme de seed idempotent — cf. bunkering.py).
+    assert len(ctx["thr_global"]) == 21
     assert len(ctx["dash_global"]) == 4
-    assert ctx["provisional_count"] == 14
+    assert ctx["provisional_count"] == 15  # 14 (lot 2) + 1 (lot 6, provisoire aussi)
 
 
 # ──────────────────────────── init idempotent ────────────────────────────
