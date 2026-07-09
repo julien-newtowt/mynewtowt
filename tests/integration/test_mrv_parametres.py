@@ -58,10 +58,13 @@ async def test_get_renders_after_seed(db, staff_user):
     ctx = resp.context
     assert len(ctx["rules"]) == 31
     # 20 (lot 2) + 1 (lot 6 : R24:fenetre_rattachement_bunker_j) + 1 (lot 4 :
-    # R19:delai_alerte_siege_brouillon_h, 2e seuil de l'alerte brouillon dormant).
-    assert len(ctx["thr_global"]) == 22
+    # R19:delai_alerte_siege_brouillon_h) + 5 (lot 8 : R04:tolerance_datetime_futur_h,
+    # R10:delai_confirmation_reset_j, IR03:ir03_min_reports_figes,
+    # IR03:ir03_conso_min_t, IR05:ir05_min_reports_figes).
+    assert len(ctx["thr_global"]) == 27
     assert len(ctx["dash_global"]) == 4
-    assert ctx["provisional_count"] == 16  # 14 (lot 2) + 1 (lot 6) + 1 (lot 4, provisoire)
+    # 14 (lot 2) + 1 (lot 6) + 1 (lot 4) + 5 (lot 8) — tous provisoires (Q8).
+    assert ctx["provisional_count"] == 21
 
 
 # ──────────────────────────── init idempotent ────────────────────────────

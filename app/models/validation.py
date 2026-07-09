@@ -202,6 +202,14 @@ class QualityCheckResult(Base):
     executed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # LOT 8 — acquittement d'un ``fail`` par le siège (écran /mrv/qualite).
+    # Un fail acquitté ne re-déclenche plus d'alerte (dédup 24 h, cf.
+    # ``services.validation_rules_catalog.route_alerts``) — la ligne QCR reste
+    # (journal append-only) ; seule l'action de traitement est tracée + datée.
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acknowledged_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     def __repr__(self) -> str:  # pragma: no cover
         return (

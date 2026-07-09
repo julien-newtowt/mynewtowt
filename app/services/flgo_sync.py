@@ -521,6 +521,19 @@ async def sync_flgo_from_api(
             except Exception:  # un enregistrement fautif ne stoppe pas le batch
                 result.errors += 1
 
+    # LOT 8 — déclencheur qualité : exécute les règles scope ``flgo`` (R25,
+    # 2 volets) sur chaque navire qui vient d'être synchronisé. Best-effort :
+    # un échec du contrôle qualité ne fait JAMAIS échouer la sync (D8) ; sans
+    # catalogue seedé (dev nu, tests unitaires), le déclencheur est un no-op.
+    try:
+        from app.services import validation_rules_catalog as _vrc
+
+        for vessel in vessels:
+            if vessel.code in result.vessels_synced:
+                await _vrc.run_flgo_rules_and_route(db, vessel.id)
+    except Exception:
+        pass
+
     result.note = "Sync read-only Marad → flgo_readings (clé naturelle, non destructeur)."
     return result.as_dict()
 
@@ -908,4 +921,74 @@ async def check_internal_consistency(
         total_compartments_m3=total_compartments,
         delta_m3=delta,
         tolerance_m3=tolerance,
+    )
+
+
+@dataclass(frozen=True)
+class FlgoSequenceCheck:
+    """R25 (volet 2) — cohérence de progression entre deux relevés FLGO
+    consécutifs du même navire.
+
+    ``FlgoReading(t2).total_rob_m3`` doit être cohérent avec
+    ``FlgoReading(t1).total_rob_m3`` ajusté des réceptions intermédiaires
+    (Matrice §5, R25) :
+
+    - relevé **received** (soutage) : le ROB doit AUGMENTER d'environ le
+      volume reçu (``total_volume_m3``) ;
+    - relevé **measurement** (jaugeage) : le ROB ne peut pas augmenter sans
+      réception → toute hausse au-delà de la tolérance est incohérente.
+
+    ``flagged=True`` = incohérence — **signalée, jamais corrigée** (FLGO reste
+    en lecture seule). Cas réels du dossier : Anemos 14/06/2025 (§2.7) ;
+    Artemis Received 38,8 m³/ROB 54,8 vs Measurement 28,6/ROB 28,6 (§3.2)."""
+
+    flagged: bool
+    reason: str  # "" | "rob_hausse_sans_reception" | "reception_incoherente"
+    prev_rob_m3: Decimal | None
+    cur_rob_m3: Decimal | None
+    delta_rob_m3: Decimal | None
+    received_m3: Decimal | None
+    tolerance_m3: Decimal
+
+
+async def check_consecutive_consistency(
+    db: AsyncSession,
+    prev: FlgoReading,
+    cur: FlgoReading,
+) -> FlgoSequenceCheck:
+    """Cohérence de progression ROB entre deux relevés consécutifs — R25 v2.
+
+    Ne modifie jamais les relevés (lecture seule) : renvoie un verdict
+    exploité par le moteur de règles (``validation_rules_catalog`` R25) et
+    l'écran FLGO. Tolérance ``tolerance_flgo_interne_m3`` (override navire)."""
+    tv = await get_threshold(db, "R25", "tolerance_flgo_interne_m3", vessel_id=cur.vessel_id)
+    tolerance = tv.value if tv is not None else _DEFAULT_TOLERANCE_FLGO_INTERNE_M3
+
+    prev_rob = prev.total_rob_m3
+    cur_rob = cur.total_rob_m3
+    if prev_rob is None or cur_rob is None:
+        # ROB non renseigné sur l'un des deux → rapprochement impossible.
+        return FlgoSequenceCheck(
+            flagged=False, reason="", prev_rob_m3=prev_rob, cur_rob_m3=cur_rob,
+            delta_rob_m3=None, received_m3=None, tolerance_m3=tolerance,
+        )
+
+    delta = cur_rob - prev_rob
+    if (cur.action_type or "").lower() == "received":
+        received = cur.total_volume_m3
+        # La hausse de ROB doit ≈ le volume reçu.
+        flagged = received is not None and abs(delta - received) > tolerance
+        reason = "reception_incoherente" if flagged else ""
+        return FlgoSequenceCheck(
+            flagged=flagged, reason=reason, prev_rob_m3=prev_rob, cur_rob_m3=cur_rob,
+            delta_rob_m3=delta, received_m3=received, tolerance_m3=tolerance,
+        )
+
+    # measurement : le ROB ne peut pas monter sans réception intercalée.
+    flagged = delta > tolerance
+    return FlgoSequenceCheck(
+        flagged=flagged,
+        reason=("rob_hausse_sans_reception" if flagged else ""),
+        prev_rob_m3=prev_rob, cur_rob_m3=cur_rob,
+        delta_rob_m3=delta, received_m3=None, tolerance_m3=tolerance,
     )

@@ -125,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(stowage_router.router)
     app.include_router(claims_router.router)
     app.include_router(mrv_router.router)
+    app.include_router(mrv_router.api_router)  # LOT 8 — cron /api/mrv/quality-run
     # ─── Phase 4 ERP : kpi / finance ───
     app.include_router(kpi_router.router)
     # LOT 11 — dashboard performance environnementale

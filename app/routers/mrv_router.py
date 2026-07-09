@@ -8,7 +8,7 @@ event est créé (à brancher en Phase 5 si besoin).
 from __future__ import annotations
 
 import contextlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -1025,6 +1025,11 @@ async def mrv_bunkering_edit(
     except bunkering.BunkerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # LOT 8 — une correction siège d'un soutage DÉJÀ validé Master rejoue les
+    # règles scope ``bunker`` (R16/R23/R24) sur la donnée corrigée.
+    if was_validated:
+        await _vrc.run_bunker_rules_and_route(db, bunker)
+
     await activity_record(
         db,
         action="bunker_review_correction",
@@ -1364,6 +1369,10 @@ async def mrv_report_validate_master(
     except _rg.ReportGenerationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await db.flush()
+    # LOT 8 — déclencheur qualité : règles scope ``report`` (R18/R22) à la
+    # validation Master. Signale (QCR + alertes routées), ne bloque jamais
+    # une validation déjà actée.
+    await _vrc.run_report_rules_and_route(db, report)
     await activity_record(
         db,
         action="mrv_report_validate_master",
@@ -1397,6 +1406,8 @@ async def mrv_report_validate_siege(
     except _rg.ReportGenerationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await db.flush()
+    # LOT 8 — déclencheur qualité : scope ``report`` aussi à la validation siège.
+    await _vrc.run_report_rules_and_route(db, report)
     await activity_record(
         db,
         action="mrv_report_validate_siege",
@@ -1550,6 +1561,11 @@ async def mrv_flgo_import(
     except flgo_sync.FlgoSyncError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # LOT 8 — déclencheur qualité : règles scope ``flgo`` (R25, 2 volets) sur
+    # les lectures du navire fraîchement importées. No-op sans catalogue seedé.
+    if report.imported or report.updated:
+        await _vrc.run_flgo_rules_and_route(db, vessel.id)
+
     await activity_record(
         db,
         action="import",
@@ -1569,3 +1585,291 @@ async def mrv_flgo_import(
         "staff/mrv/flgo_import_result.html",
         {"request": request, "user": user, "report": report, "vessel": vessel, "audience": "mrv"},
     )
+
+
+# === LOT 8 — qualité ===
+#
+# Écran /mrv/qualite : journal filtrable des QualityCheckResult (règle,
+# sévérité, navire, leg, résultat, période) + compteurs de fails par sévérité +
+# actions de traitement (mrv:M) : confirmation d'un reset compteur (R10) et
+# acquittement d'un fail (stoppe la re-notification, cf.
+# ``validation_rules_catalog.route_alerts``). Cron nocturne
+# POST /api/mrv/quality-run (patron des crons Power Automate :
+# X-API-Token temps constant, 503 non configuré).
+
+import secrets as _secrets_l8  # noqa: E402
+
+from fastapi.responses import JSONResponse  # noqa: E402
+
+from app.config import settings  # noqa: E402
+from app.models.nav_event import NavEventEngineReading  # noqa: E402
+from app.models.validation import QualityCheckResult, ValidationRule  # noqa: E402
+from app.services import validation_rules_catalog as _vrc  # noqa: E402
+
+api_router = APIRouter(tags=["mrv-quality"])
+
+_QUAL_SEVERITIES: tuple[str, ...] = ("bloquant", "warning", "info")
+_QUAL_RESULTS: tuple[str, ...] = ("pass", "fail")
+_QUAL_ROWS_LIMIT = 200
+
+
+def _qual_parse_date(raw: str | None):
+    """'YYYY-MM-DD' → datetime UTC (None si vide/invalide — filtre ignoré)."""
+    cleaned = (raw or "").strip()
+    if not cleaned:
+        return None
+    try:
+        return datetime.fromisoformat(cleaned).replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+@router.get("/qualite", response_class=HTMLResponse)
+async def mrv_qualite(
+    request: Request,
+    rule: str | None = None,
+    severity: str | None = None,
+    vessel_id: int | None = None,
+    leg_id: int | None = None,
+    result: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """LOT 8 — journal qualité filtrable + compteurs par sévérité.
+
+    Filtre navire = jointure ``legs.vessel_id`` (les résultats sans leg —
+    lectures FLGO par ex. — sortent du filtre navire, comportement documenté).
+    """
+    from sqlalchemy import func as _f
+
+    filters = []
+    rule = (rule or "").strip() or None
+    if rule:
+        filters.append(QualityCheckResult.rule_id == rule)
+    severity = (severity or "").strip() or None
+    if severity in _QUAL_SEVERITIES:
+        filters.append(QualityCheckResult.severity_applied == severity)
+    result = (result or "").strip() or None
+    if result in _QUAL_RESULTS:
+        filters.append(QualityCheckResult.result == result)
+    if leg_id is not None:
+        filters.append(QualityCheckResult.leg_id == leg_id)
+    dt_from = _qual_parse_date(date_from)
+    if dt_from is not None:
+        filters.append(QualityCheckResult.executed_at >= dt_from)
+    dt_to = _qual_parse_date(date_to)
+    if dt_to is not None:
+        filters.append(QualityCheckResult.executed_at < dt_to + timedelta(days=1))
+
+    stmt = select(QualityCheckResult)
+    count_stmt = select(
+        QualityCheckResult.severity_applied, _f.count(QualityCheckResult.id)
+    ).where(QualityCheckResult.result == "fail")
+    if vessel_id is not None:
+        stmt = stmt.join(Leg, Leg.id == QualityCheckResult.leg_id).where(
+            Leg.vessel_id == vessel_id
+        )
+        count_stmt = count_stmt.join(Leg, Leg.id == QualityCheckResult.leg_id).where(
+            Leg.vessel_id == vessel_id
+        )
+    for f in filters:
+        stmt = stmt.where(f)
+        count_stmt = count_stmt.where(f)
+
+    rows_qcr = list(
+        (
+            await db.execute(
+                stmt.order_by(
+                    QualityCheckResult.executed_at.desc(), QualityCheckResult.id.desc()
+                ).limit(_QUAL_ROWS_LIMIT)
+            )
+        ).scalars().all()
+    )
+    severity_counts = dict.fromkeys(_QUAL_SEVERITIES, 0)
+    for sev, n in (await db.execute(count_stmt.group_by(QualityCheckResult.severity_applied))).all():
+        if sev in severity_counts:
+            severity_counts[sev] = int(n)
+
+    # Décor : legs + navires des lignes affichées (2 requêtes groupées).
+    leg_ids = {r.leg_id for r in rows_qcr if r.leg_id is not None}
+    legs_by_id: dict[int, Leg] = {}
+    if leg_ids:
+        legs_by_id = {
+            leg.id: leg
+            for leg in (await db.execute(select(Leg).where(Leg.id.in_(leg_ids)))).scalars().all()
+        }
+    v_ids = {leg.vessel_id for leg in legs_by_id.values() if leg.vessel_id is not None}
+    vessels_by_id: dict[int, Vessel] = {}
+    if v_ids:
+        vessels_by_id = {
+            v.id: v
+            for v in (await db.execute(select(Vessel).where(Vessel.id.in_(v_ids)))).scalars().all()
+        }
+
+    rows = []
+    for r in rows_qcr:
+        leg = legs_by_id.get(r.leg_id) if r.leg_id is not None else None
+        reading_ids = []
+        if isinstance(r.details, dict):
+            reading_ids = [i for i in (r.details.get("reading_ids") or []) if isinstance(i, int)]
+        rows.append(
+            {
+                "qcr": r,
+                "leg": leg,
+                "vessel": (
+                    vessels_by_id.get(leg.vessel_id) if leg is not None and leg.vessel_id else None
+                ),
+                "reading_ids": reading_ids,
+            }
+        )
+
+    # Resets compteur en attente de confirmation (R10) — panneau d'action.
+    pending_resets = list(
+        (
+            await db.execute(
+                select(NavEventEngineReading)
+                .where(
+                    NavEventEngineReading.is_counter_reset.is_(True),
+                    NavEventEngineReading.reset_confirmed_by.is_(None),
+                )
+                .order_by(NavEventEngineReading.id.desc())
+                .limit(50)
+            )
+        ).scalars().all()
+    )
+
+    rules = list(
+        (await db.execute(select(ValidationRule).order_by(ValidationRule.rule_id))).scalars().all()
+    )
+    vessels = list(
+        (
+            await db.execute(
+                select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code)
+            )
+        ).scalars().all()
+    )
+
+    return templates.TemplateResponse(
+        "staff/mrv/qualite.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": rows,
+            "severity_counts": severity_counts,
+            "pending_resets": pending_resets,
+            "rules": rules,
+            "vessels": vessels,
+            "can_act": await has_permission_effective(db, user.role, "mrv", "M"),
+            "filter_rule": rule or "",
+            "filter_severity": severity or "",
+            "filter_vessel_id": vessel_id,
+            "filter_leg_id": leg_id,
+            "filter_result": result or "",
+            "filter_date_from": (date_from or "").strip(),
+            "filter_date_to": (date_to or "").strip(),
+        },
+    )
+
+
+@router.post("/qualite/engine-readings/{reading_id}/confirm-reset")
+async def mrv_qualite_confirm_reset(
+    reading_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "M")),
+):
+    """LOT 8 — R10 : confirmation d'une réinitialisation de compteur légitime.
+
+    Renseigne ``reset_confirmed_by``/``reset_confirmed_at`` (et pose
+    ``is_counter_reset`` si le bord ne l'avait pas déclaré) → la couche de
+    calcul (``inter_event_compute``) reprend une nouvelle base de référence et
+    R10/IR04 passent au prochain run. Tracé dans l'activity trail.
+    """
+    reading = await db.get(NavEventEngineReading, reading_id)
+    if reading is None:
+        raise HTTPException(status_code=404, detail="Relevé compteur introuvable")
+    if reading.reset_confirmed_by is not None:
+        raise HTTPException(status_code=409, detail="Reset déjà confirmé")
+    reading.is_counter_reset = True
+    reading.reset_confirmed_by = user.id
+    reading.reset_confirmed_at = datetime.now(UTC)
+    await db.flush()
+    await activity_record(
+        db,
+        action="mrv_counter_reset_confirm",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="nav_event_engine_reading",
+        entity_id=reading.id,
+        entity_label=f"event #{reading.event_id} · engine #{reading.engine_id}",
+        detail="Réinitialisation compteur confirmée (R10) — nouvelle base de référence.",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/mrv/qualite", status_code=303)
+
+
+@router.post("/qualite/{qcr_id}/acknowledge")
+async def mrv_qualite_acknowledge(
+    qcr_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "M")),
+):
+    """LOT 8 — acquittement d'un ``fail`` : stoppe la re-notification (dédup
+    ``route_alerts``). Le journal reste intact (append-only) — seule l'action
+    de traitement est datée/attribuée. Tracé dans l'activity trail."""
+    qcr = await db.get(QualityCheckResult, qcr_id)
+    if qcr is None:
+        raise HTTPException(status_code=404, detail="Résultat de contrôle introuvable")
+    if qcr.result != "fail":
+        raise HTTPException(status_code=400, detail="Seul un contrôle en échec s'acquitte")
+    if qcr.acknowledged_at is not None:
+        raise HTTPException(status_code=409, detail="Déjà acquitté")
+    qcr.acknowledged_at = datetime.now(UTC)
+    qcr.acknowledged_by = user.id
+    await db.flush()
+    await activity_record(
+        db,
+        action="mrv_quality_acknowledge",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="quality_check_result",
+        entity_id=qcr.id,
+        entity_label=f"{qcr.rule_id} · {qcr.subject_type}#{qcr.subject_id}",
+        detail=(qcr.message or "")[:200],
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/mrv/qualite", status_code=303)
+
+
+@api_router.post("/api/mrv/quality-run")
+async def mrv_quality_run_cron(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """LOT 8 — cron externe (Power Automate) : run nocturne du moteur de règles.
+
+    Exécute les scopes ``event`` (dont IR01-IR05 sur séquences) + ``voyage``
+    sur les legs ACTIFS (non clôturés, non annulés) de chaque navire, route
+    les alertes (idempotent) et renvoie ``{legs_scanned, checks, fails}``.
+    Auth ``X-API-Token`` (temps constant) ; 503 si ``MRV_QUALITY_API_TOKEN``
+    n'est pas configuré — patron des crons existants.
+    """
+    expected = (settings.mrv_quality_api_token or "").strip() or None
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="MRV_QUALITY_API_TOKEN non configuré dans .env",
+        )
+    received = request.headers.get("x-api-token") or ""
+    if not _secrets_l8.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
+
+    summary = await _vrc.run_nightly_quality(db)
+    return JSONResponse(summary)
