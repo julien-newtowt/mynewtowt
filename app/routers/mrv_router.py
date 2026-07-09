@@ -33,14 +33,12 @@ from app.services.mrv_export import (
     dnv_csv_18,
 )
 from app.templating import brand_for_lang, templates
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.orm import selectinload
+
 from app.models.flgo import FLGO_ACTION_TYPES, FLGO_SOURCES, FlgoReading
 from app.services import flgo_sync
 from app.services.safe_files import content_length_exceeds_max
 from app.utils.file_validation import validate_filename, validate_size
-
-
 
 # MRV — typage des champs d'événement pour la coercition des formulaires.
 _EVENT_DECIMAL_FIELDS = (
