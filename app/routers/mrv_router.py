@@ -1035,3 +1035,404 @@ async def mrv_bunkering_edit(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url=f"/mrv/bunkering/{bunker.id}", status_code=303)
+
+
+# === LOT 5 — voyages & rapports générés ===
+#
+# Vues siège de la chaîne événementielle → rapports générés (Noon/Carbon/
+# Stopover) + workflow de validation deux niveaux (Master bord → siège Carbon).
+# Section purement additive (aucun réagencement de l'existant). Le rendu PDF est
+# fait depuis le snapshot ``payload`` (reproductibilité d'audit), jamais recalculé.
+
+from app.models.env_report import EnvFieldModification, EnvReport  # noqa: E402
+from app.models.nav_event import NavEvent  # noqa: E402
+from app.permissions import has_permission_effective  # noqa: E402
+from app.services import inter_event_compute as _iec  # noqa: E402
+from app.services import report_generation as _rg  # noqa: E402
+
+_LOT5_REPORT_TYPES: tuple[str, ...] = ("noon", "carbon", "stopover")
+_LOT5_PDF_TEMPLATES: dict[str, str] = {
+    "noon": "pdf/noon_report_generated.html",
+    "carbon": "pdf/carbon_report_v2.html",
+    "stopover": "pdf/stopover_report.html",
+}
+
+
+async def _lot5_event_counts(db: AsyncSession, leg_id: int) -> dict[str, int]:
+    """Compte des événements d'un voyage par statut (brouillon/finalisé/validé)."""
+    rows = (
+        await db.execute(select(NavEvent.status).where(NavEvent.leg_id == leg_id))
+    ).scalars().all()
+    return {
+        "brouillon": sum(1 for s in rows if s == "brouillon"),
+        "finalise": sum(1 for s in rows if s == "finalise"),
+        "valide": sum(1 for s in rows if s == "valide"),
+    }
+
+
+@router.get("/voyages", response_class=HTMLResponse)
+async def mrv_voyages(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """LOT 5 — liste des voyages avec compteurs d'événements et de rapports."""
+    legs = list(
+        (await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(40))).scalars().all()
+    )
+    vessel_ids = {leg.vessel_id for leg in legs if leg.vessel_id is not None}
+    vessels: dict[int, Vessel] = {}
+    if vessel_ids:
+        vessels = {
+            v.id: v
+            for v in (
+                await db.execute(select(Vessel).where(Vessel.id.in_(vessel_ids)))
+            ).scalars().all()
+        }
+    rows = []
+    for leg in legs:
+        report_statuses = (
+            await db.execute(select(EnvReport.status).where(EnvReport.leg_id == leg.id))
+        ).scalars().all()
+        by_status: dict[str, int] = {}
+        for s in report_statuses:
+            by_status[s] = by_status.get(s, 0) + 1
+        rows.append(
+            {
+                "leg": leg,
+                "vessel": vessels.get(leg.vessel_id),
+                "events": await _lot5_event_counts(db, leg.id),
+                "reports_total": len(report_statuses),
+                "reports_by_status": by_status,
+            }
+        )
+    return templates.TemplateResponse(
+        "staff/mrv/voyages.html", {"request": request, "user": user, "rows": rows}
+    )
+
+
+@router.get("/voyages/{leg_id}", response_class=HTMLResponse)
+async def mrv_voyage_detail(
+    leg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """LOT 5 — chaîne d'événements (calculs inter-événements) + rapports + génération."""
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404, detail="Voyage introuvable")
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
+    pol = await db.get(Port, leg.departure_port_id) if leg.departure_port_id else None
+    pod = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
+
+    lookup = await _rg._build_bunker_lookup(db, leg.id)
+    comp = await _iec.compute_leg(db, leg, bunkered_t_lookup=lookup)
+    windows = _rg._anchoring_windows(comp.events)
+    event_rows = []
+    for i, ev in enumerate(comp.events):
+        interval = comp.intervals[i - 1] if i > 0 else None
+        rob = comp.rob_chain[i] if i < len(comp.rob_chain) else None
+        event_rows.append(
+            {
+                "event": ev,
+                "distance_nm": interval.distance_nm if interval else None,
+                "conso_total_t": interval.total_conso_t if interval else None,
+                "rob_calculated_t": rob.rob_calculated_t if rob else None,
+                "in_anchoring": bool(interval and _rg._interval_in_anchoring(interval, windows)),
+            }
+        )
+    noon_events = [e for e in comp.events if e.event_type == "noon"]
+
+    # Rattachement Stopover : Arrivée de CE voyage + Départ du voyage suivant.
+    arrival = next((e for e in comp.events if e.event_type == "arrival"), None)
+    next_leg = None
+    departure_event = None
+    if leg.vessel_id is not None and leg.etd is not None:
+        next_leg = (
+            await db.execute(
+                select(Leg)
+                .where(Leg.vessel_id == leg.vessel_id, Leg.etd > leg.etd)
+                .order_by(Leg.etd.asc())
+                .limit(1)
+            )
+        ).scalars().first()
+        if next_leg is not None:
+            next_events = await _iec.finalized_events_for_leg(db, next_leg.id)
+            departure_event = next(
+                (e for e in next_events if e.event_type == "departure"), None
+            )
+
+    reports = list(
+        (
+            await db.execute(
+                select(EnvReport)
+                .where(EnvReport.leg_id == leg_id)
+                .order_by(EnvReport.report_type, EnvReport.id)
+            )
+        ).scalars().all()
+    )
+    can_generate = await has_permission_effective(db, user.role, "mrv", "M")
+    can_master = await has_permission_effective(db, user.role, "captain", "M")
+
+    return templates.TemplateResponse(
+        "staff/mrv/voyage_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "leg": leg,
+            "vessel": vessel,
+            "pol": pol,
+            "pod": pod,
+            "event_rows": event_rows,
+            "noon_events": noon_events,
+            "reports": reports,
+            "next_leg": next_leg,
+            "arrival_event_id": arrival.id if arrival else None,
+            "departure_event_id": departure_event.id if departure_event else None,
+            "can_generate": can_generate,
+            "can_master": can_master,
+        },
+    )
+
+
+@router.post("/voyages/{leg_id}/reports/{report_type}/generate")
+async def mrv_generate_report(
+    leg_id: int,
+    report_type: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "M")),
+):
+    """LOT 5 — génération (ou regénération) d'un rapport depuis les événements."""
+    if report_type not in _LOT5_REPORT_TYPES:
+        raise HTTPException(status_code=400, detail="type de rapport inconnu")
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404, detail="Voyage introuvable")
+    form = dict(await request.form())
+
+    try:
+        if report_type == "carbon":
+            report = await _rg.generate_carbon_report(db, leg, author_user_id=user.id)
+        elif report_type == "noon":
+            event_id = _int_or_400(form.get("event_id"), "event_id")
+            if event_id is None:
+                raise HTTPException(status_code=400, detail="event_id requis")
+            ev = await db.get(NavEvent, event_id)
+            if ev is None or ev.leg_id != leg_id or ev.event_type != "noon":
+                raise HTTPException(status_code=400, detail="événement Noon invalide")
+            report = await _rg.generate_noon_report(db, leg, ev, author_user_id=user.id)
+        else:  # stopover
+            arr_id = _int_or_400(form.get("arrival_event_id"), "arrival_event_id")
+            dep_id = _int_or_400(form.get("departure_event_id"), "departure_event_id")
+            if arr_id is None or dep_id is None:
+                raise HTTPException(
+                    status_code=400, detail="arrival_event_id et departure_event_id requis"
+                )
+            arr = await db.get(NavEvent, arr_id)
+            dep = await db.get(NavEvent, dep_id)
+            if arr is None or dep is None:
+                raise HTTPException(status_code=404, detail="événement d'escale introuvable")
+            report = await _rg.generate_stopover_report(db, arr, dep, author_user_id=user.id)
+    except _rg.ReportImmutableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except _rg.ReportGenerationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await db.flush()
+    await activity_record(
+        db,
+        action="mrv_report_generate",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="env_report",
+        entity_id=report.id,
+        entity_label=f"{report_type} leg={leg_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/mrv/reports/{report.id}", status_code=303)
+
+
+@router.get("/reports/{report_id}", response_class=HTMLResponse)
+async def mrv_report_detail(
+    report_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """LOT 5 — payload lisible (snapshot) + historique des modifications tracées."""
+    import json
+
+    report = await db.get(EnvReport, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Rapport introuvable")
+    modifications = list(
+        (
+            await db.execute(
+                select(EnvFieldModification)
+                .where(EnvFieldModification.report_id == report_id)
+                .order_by(EnvFieldModification.timestamp_utc)
+            )
+        ).scalars().all()
+    )
+    payload_json = json.dumps(report.payload, indent=2, ensure_ascii=False)
+    can_master = await has_permission_effective(db, user.role, "captain", "M")
+    can_siege = await has_permission_effective(db, user.role, "mrv", "M")
+    can_modify = await has_permission_effective(db, user.role, "mrv", "M")
+    return templates.TemplateResponse(
+        "staff/mrv/report_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "report": report,
+            "modifications": modifications,
+            "payload_json": payload_json,
+            "can_master": can_master,
+            "can_siege": can_siege,
+            "can_modify": can_modify,
+        },
+    )
+
+
+@router.get("/reports/{report_id}.pdf")
+async def mrv_report_pdf(
+    report_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+):
+    """LOT 5 — PDF WeasyPrint rendu depuis le snapshot payload (jamais recalculé)."""
+    from weasyprint import HTML
+
+    from app.config import settings
+
+    report = await db.get(EnvReport, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Rapport introuvable")
+    tpl_name = _LOT5_PDF_TEMPLATES.get(report.report_type)
+    if tpl_name is None:
+        raise HTTPException(status_code=400, detail="type de rapport sans rendu PDF")
+    modifications = list(
+        (
+            await db.execute(
+                select(EnvFieldModification)
+                .where(EnvFieldModification.report_id == report_id)
+                .order_by(EnvFieldModification.timestamp_utc)
+            )
+        ).scalars().all()
+    )
+    tpl = templates.get_template(tpl_name)
+    html = tpl.render(
+        report=report,
+        payload=report.payload,
+        modifications=modifications,
+        issued_at=datetime.now(UTC),
+        brand=brand_for_lang("fr"),
+        site_url=settings.site_url,
+    )
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="MRV_{report.report_type}_{report.id}.pdf"'
+        },
+    )
+
+
+@router.post("/reports/{report_id}/validate-master")
+async def mrv_report_validate_master(
+    report_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """LOT 5 — validation Master (bord) : le commandant valide le rapport."""
+    report = await db.get(EnvReport, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Rapport introuvable")
+    try:
+        await _rg.validate_master(db, report, user)
+    except _rg.ReportGenerationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await db.flush()
+    await activity_record(
+        db,
+        action="mrv_report_validate_master",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="env_report",
+        entity_id=report.id,
+        entity_label=f"{report.report_type} #{report.id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/mrv/reports/{report.id}", status_code=303)
+
+
+@router.post("/reports/{report_id}/validate-siege")
+async def mrv_report_validate_siege(
+    report_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "M")),
+):
+    """LOT 5 — validation siège : 2ᵉ niveau, RÉSERVÉ au Carbon (refus propre sinon)."""
+    report = await db.get(EnvReport, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Rapport introuvable")
+    try:
+        await _rg.validate_siege(db, report, user)
+    except _rg.SiegeValidationNotAllowedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except _rg.ReportGenerationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await db.flush()
+    await activity_record(
+        db,
+        action="mrv_report_validate_siege",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="env_report",
+        entity_id=report.id,
+        entity_label=f"{report.report_type} #{report.id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url=f"/mrv/reports/{report.id}", status_code=303)
+
+
+@router.post("/reports/{report_id}/fields/modify")
+async def mrv_report_field_modify(
+    report_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "M")),
+):
+    """LOT 5 — correction tracée d'un champ (R18) : justification obligatoire.
+
+    ``apply_field_modification`` écrit la trace, met à jour le payload et
+    enregistre l'audit (``services.activity``) — la route se contente du
+    Redirect 303.
+    """
+    report = await db.get(EnvReport, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Rapport introuvable")
+    form = dict(await request.form())
+    field_name = (form.get("field_name") or "").strip()
+    if not field_name:
+        raise HTTPException(status_code=400, detail="field_name requis")
+    corrected_value = form.get("corrected_value")
+    justification = form.get("justification") or ""
+    quality = (form.get("resulting_quality_status") or "").strip()
+    try:
+        await _rg.apply_field_modification(
+            db, report, field_name, corrected_value, justification, user, quality
+        )
+    except _rg.ReportGenerationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url=f"/mrv/reports/{report.id}", status_code=303)

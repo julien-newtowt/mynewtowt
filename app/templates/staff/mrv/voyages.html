@@ -1,0 +1,51 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('mrv_report_voyages_title', lang) }}{% endblock %}
+{% block content %}
+{% set st_pill = {'brouillon': 'pill-neutral', 'attente_validation_master': 'pill-warn', 'valide_master': 'pill-info', 'valide_siege': 'pill-ok'} %}
+<header class="mb-4">
+  <span class="kicker">{{ t('mrv_report_kicker', lang) }}</span>
+  <h1 class="display">{{ t('mrv_report_voyages_title', lang) }}</h1>
+  <p class="text-muted">{{ t('mrv_report_voyages_intro', lang) }}</p>
+</header>
+
+<section class="card">
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('mrv_report_col_leg', lang) }}</th>
+        <th>{{ t('mrv_report_col_vessel', lang) }}</th>
+        <th>{{ t('mrv_report_col_period', lang) }}</th>
+        <th class="text-center">{{ t('mrv_report_col_events', lang) }}</th>
+        <th class="text-center">{{ t('mrv_report_col_reports', lang) }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><code>{{ row.leg.leg_code }}</code></td>
+        <td>{{ row.vessel.name if row.vessel else '—' }}</td>
+        <td class="small text-muted">{{ row.leg.etd.strftime('%d/%m/%Y') if row.leg.etd else '—' }} → {{ row.leg.eta.strftime('%d/%m/%Y') if row.leg.eta else '—' }}</td>
+        <td class="text-center">
+          <span class="pill pill-neutral" title="brouillon">{{ row.events.brouillon }}</span>
+          <span class="pill pill-info" title="finalisé">{{ row.events.finalise }}</span>
+          <span class="pill pill-ok" title="validé">{{ row.events.valide }}</span>
+        </td>
+        <td class="text-center">
+          {% if row.reports_total %}
+            {% for status, n in row.reports_by_status.items() %}
+              <span class="pill {{ st_pill.get(status, 'pill-neutral') }}">{{ n }}</span>
+            {% endfor %}
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td class="text-right"><a class="btn btn-sm btn-ghost" href="/mrv/voyages/{{ row.leg.id }}">{{ t('mrv_report_open', lang) }} →</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted">{{ t('mrv_report_voyages_empty', lang) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

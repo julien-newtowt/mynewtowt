@@ -1,0 +1,112 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('mrv_report_voyage_title', lang) }} · {{ leg.leg_code }}{% endblock %}
+{% block content %}
+{% set st_pill = {'brouillon': 'pill-neutral', 'attente_validation_master': 'pill-warn', 'valide_master': 'pill-info', 'valide_siege': 'pill-ok'} %}
+{% set ev_pill = {'brouillon': 'pill-neutral', 'finalise': 'pill-info', 'valide': 'pill-ok'} %}
+<a href="/mrv/voyages" class="btn btn-ghost mb-3">← {{ t('mrv_report_voyages_title', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">{{ t('mrv_report_kicker', lang) }}</span>
+  <h1 class="display">{{ leg.leg_code }}</h1>
+  <p class="text-muted">
+    {{ vessel.name if vessel else '—' }} ·
+    {{ pol.locode if pol else '?' }} → {{ pod.locode if pod else '?' }}
+  </p>
+</header>
+
+{# ───────────────────── Chaîne d'événements ───────────────────── #}
+<section class="card mb-4">
+  <h2 class="h4">{{ t('mrv_report_events_chain', lang) }} <span class="pill pill-neutral">{{ event_rows|length }}</span></h2>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('mrv_report_col_datetime', lang) }}</th>
+        <th>{{ t('mrv_report_col_type', lang) }}</th>
+        <th>{{ t('mrv_report_col_status', lang) }}</th>
+        <th class="text-right">{{ t('mrv_report_col_distance', lang) }}</th>
+        <th class="text-right">{{ t('mrv_report_col_conso', lang) }}</th>
+        <th class="text-right">{{ t('mrv_report_col_rob', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in event_rows %}
+      <tr>
+        <td class="mono small">{{ r.event.datetime_utc.strftime('%d/%m %H:%M') if r.event.datetime_utc else '—' }}</td>
+        <td>{{ r.event.event_type }}{% if r.in_anchoring %} ⚓{% endif %}</td>
+        <td><span class="pill {{ ev_pill.get(r.event.status, 'pill-neutral') }}">{{ r.event.status }}</span></td>
+        <td class="text-right">{{ '%.2f'|format(r.distance_nm) if r.distance_nm is not none else '—' }}</td>
+        <td class="text-right">{{ '%.3f'|format(r.conso_total_t) if r.conso_total_t is not none else '—' }}</td>
+        <td class="text-right">{{ '%.3f'|format(r.rob_calculated_t) if r.rob_calculated_t is not none else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted">{{ t('mrv_report_no_events', lang) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+{# ───────────────────── Génération de rapports ───────────────────── #}
+{% if can_generate %}
+<section class="card mb-4">
+  <h2 class="h4">{{ t('mrv_report_generate', lang) }}</h2>
+  <div class="mb-3">
+    <form method="post" action="/mrv/voyages/{{ leg.id }}/reports/carbon/generate" style="display:inline-block;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button class="btn btn-primary btn-sm" type="submit">{{ t('mrv_report_gen_carbon', lang) }}</button>
+    </form>
+    {% if next_leg and arrival_event_id and departure_event_id %}
+    <form method="post" action="/mrv/voyages/{{ leg.id }}/reports/stopover/generate" style="display:inline-block;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <input type="hidden" name="arrival_event_id" value="{{ arrival_event_id }}" />
+      <input type="hidden" name="departure_event_id" value="{{ departure_event_id }}" />
+      <button class="btn btn-primary btn-sm" type="submit">{{ t('mrv_report_gen_stopover', lang) }} → {{ next_leg.leg_code }}</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if noon_events %}
+  <p class="small text-muted">{{ t('mrv_report_gen_noon_hint', lang) }}</p>
+  <div style="display:flex;flex-wrap:wrap;gap:.4rem;">
+    {% for ne in noon_events %}
+    <form method="post" action="/mrv/voyages/{{ leg.id }}/reports/noon/generate">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <input type="hidden" name="event_id" value="{{ ne.id }}" />
+      <button class="btn btn-ghost btn-sm" type="submit">Noon {{ ne.datetime_utc.strftime('%d/%m %H:%M') if ne.datetime_utc else ne.id }}</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{# ───────────────────── Rapports du voyage ───────────────────── #}
+<section class="card">
+  <h2 class="h4">{{ t('mrv_report_reports', lang) }} <span class="pill pill-neutral">{{ reports|length }}</span></h2>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('mrv_report_col_type', lang) }}</th>
+        <th>{{ t('mrv_report_col_status', lang) }}</th>
+        <th>{{ t('mrv_report_col_quality', lang) }}</th>
+        <th>{{ t('mrv_report_col_generated', lang) }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for rep in reports %}
+      <tr>
+        <td><strong>{{ rep.report_type }}</strong></td>
+        <td><span class="pill {{ st_pill.get(rep.status, 'pill-neutral') }}">{{ rep.status }}</span></td>
+        <td>{% if rep.quality_status %}<span class="pill pill-warn">{{ rep.quality_status }}</span>{% else %}—{% endif %}</td>
+        <td class="small text-muted">{{ rep.generated_at.strftime('%d/%m/%Y %H:%M') if rep.generated_at else '—' }}</td>
+        <td class="text-right"><a class="btn btn-sm btn-ghost" href="/mrv/reports/{{ rep.id }}">{{ t('mrv_report_open', lang) }} →</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted">{{ t('mrv_report_no_reports', lang) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "pdf/_base.html" %}
+{% import "pdf/_mrv_report_macros.html" as m %}
+{% set p = payload %}
+{% set iv = p.interval %}
+{% block title %}MRV Noon Report{% endblock %}
+{% block doc_kind %}MRV · Noon Report (généré){% endblock %}
+{% block doc_ref %}{{ p.scope.leg_code or '—' }}{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Événement · Event</div>
+    <div class="value">
+      <strong>{{ p.scope.vessel.name or '—' }}</strong> · <span class="mono">{{ p.scope.leg_code or '—' }}</span><br/>
+      Noon UTC : {{ m.dt(p.scope.datetime_utc) }}
+      {% if p.scope.timezone %}<span class="small">(local {{ m.dt(p.scope.datetime_local) }} {{ p.scope.timezone }})</span>{% endif %}<br/>
+      Position : {{ m.fmt(p.scope.lat_decimal, 4) }}, {{ m.fmt(p.scope.lon_decimal, 4) }}
+      <span class="small">({{ p.scope.position_source or 'n/a' }})</span>
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Intervalle depuis le rapport précédent</div>
+    <div class="value">
+      Distance : <strong>{{ m.fmt(iv.distance_nm, 2) }} nm</strong> ·
+      Durée : {{ m.fmt(iv.duration_h, 2) }} h ·
+      Vitesse : <strong>{{ m.fmt(iv.speed_kn, 2) }} kt</strong><br/>
+      Conso ME : {{ m.fmt(iv.conso_me_t, 3) }} t · AE : {{ m.fmt(iv.conso_ae_t, 3) }} t<br/>
+      <span class="c-teal">Total : <strong>{{ m.fmt(iv.conso_total_t, 3) }} t</strong></span>
+      {% if iv.counter_anomaly %}<span class="badge-imdg">compteur incohérent</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+<h2>Consommation par moteur · Per-engine consumption</h2>
+<table>
+  <thead>
+    <tr><th>Moteur · Engine</th><th>Groupe</th><th class="text-right">Conso (t)</th><th class="text-right">Heures (h)</th><th>Statut</th></tr>
+  </thead>
+  <tbody>
+    {% for e in iv.engines %}
+    <tr>
+      <td>{{ e.engine_role or '—' }}</td>
+      <td>{{ e.engine_group or '—' }}</td>
+      <td class="text-right">{{ m.fmt(e.conso_t, 4) }}</td>
+      <td class="text-right">{{ m.fmt(e.running_hours_h, 2) }}</td>
+      <td class="small">{% if e.counter_anomaly %}anomalie{% elif e.reset_applied %}reset{% else %}ok{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="c-gris">Aucun relevé de compteur.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">ROB (t)</div>
+    <div class="value">
+      Calculé (chaîné) : <strong>{{ m.fmt(p.rob.calculated_t, 3) }}</strong> t<br/>
+      {% if p.rob.declared_t %}Déclaré (escale) : {{ m.fmt(p.rob.declared_t, 3) }} t<br/>{% endif %}
+      Cargo MRV : {{ m.fmt(p.cargo_mrv.cargo_mrv_t, 3) }} t
+      {% if p.cargo_mrv.method %}<span class="small">({{ p.cargo_mrv.method }})</span>{% endif %}
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Prévisions · Forecast</div>
+    <div class="value">
+      Distance to go : {{ m.fmt(p.noon.distance_to_go_nm, 1) }} nm<br/>
+      Temps depuis SOSP : {{ m.fmt(p.noon.time_from_sosp_h, 1) }} h ·
+      Dist. depuis SOSP : {{ m.fmt(p.noon.distance_from_sosp_nm, 1) }} nm<br/>
+      ETA annoncée : {{ m.dt(p.noon.announced_eta) }} · ETB : {{ m.dt(p.noon.etb) }}
+    </div>
+  </div>
+</div>
+
+{% if p.noon.comments %}
+<div class="footer-mention">Commentaires · Comments : {{ p.noon.comments }}</div>
+{% endif %}
+
+<p class="small c-gris">
+  Noon report généré depuis le magasin d'événements (CFOTE_05) — snapshot figé le
+  {{ issued_at.strftime("%d/%m/%Y %H:%M") }}. {{ brand.raison_sociale }}.
+</p>
+
+{% endblock %}
