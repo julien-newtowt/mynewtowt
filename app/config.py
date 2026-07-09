@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     # Automate : alerte R19 des brouillons d'événements MRV dormants — rappel
     # Master au 1er seuil, alerte siège au 2e). 503 si non configuré.
     mrv_drafts_api_token: str | None = None
+    # LOT 8 — Token X-API-Token pour POST /api/mrv/quality-run (cron Power
+    # Automate : run nocturne du moteur de règles — event + voyage +
+    # inter-rapports sur les legs actifs de chaque navire). 503 si non configuré.
+    mrv_quality_api_token: str | None = None
 
     # Marad (MaraSoft « Generic API ») — ship & crew management. Intégration
     # LECTURE SEULE des données crew (cf. docs/integrations/marad-crew-readonly.md).

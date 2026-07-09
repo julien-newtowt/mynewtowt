@@ -485,6 +485,18 @@ async def validate_master(db: AsyncSession, bunker: BunkerOperation, validator) 
     bunker.validated_master_at = datetime.now(UTC)
     bunker.validated_master_by = getattr(validator, "id", None)
     await db.flush()
+
+    # LOT 8 — déclencheur qualité : la validation Master exécute les règles
+    # scope ``bunker`` (R16/R23/R24) et route les alertes (R24 → admin).
+    # Best-effort : un échec du contrôle ne bloque JAMAIS la validation d'un
+    # soutage (les règles signalent, elles n'empêchent pas l'acte de bord) ;
+    # sans catalogue seedé (tests unitaires, dev nu), no-op propre.
+    try:
+        from app.services import validation_rules_catalog as _vrc
+
+        await _vrc.run_bunker_rules_and_route(db, bunker)
+    except Exception:
+        pass
     return bunker
 
 

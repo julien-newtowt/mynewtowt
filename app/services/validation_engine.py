@@ -204,6 +204,23 @@ THRESHOLD_SEED: tuple[tuple[str, str, str, str, bool, str], ...] = (
      "Écart max entre lectures FLGO consécutives (proposition)."),
     ("R21", "tolerance_duree_rapport_h", "2", "h", True,
      "Écart max durée déclarée vs écart réel entre rapports (proposition)."),
+    # ─── LOT 8 — seuils manquants au catalogue (tous provisoires, Q8) ───
+    # Ajoutés par le moteur de règles complet ; à confirmer métier au
+    # calibrage (voyage pilote). Consommés EXCLUSIVEMENT via get_threshold.
+    ("R04", "tolerance_datetime_futur_h", "24", "h", True,
+     "Tolérance d'un horodatage dans le futur avant alerte de plausibilité (R04)."),
+    ("R10", "delai_confirmation_reset_j", "3", "j", True,
+     "Délai au-delà duquel une régression compteur non confirmée passe "
+     "de warning (→ admin) à bloquant (escalade R10, Matrice §3)."),
+    ("IR03", "ir03_min_reports_figes", "3", "reports", True,
+     "Nombre de relevés consécutifs à ROB strictement figé avant alerte "
+     "(IR03 ; cas réel dossier : figé 4 j)."),
+    ("IR03", "ir03_conso_min_t", "0.05", "t", True,
+     "Consommation minimale entre relevés au-delà de laquelle un ROB figé "
+     "est incohérent (IR03 ; valeur notebook QC)."),
+    ("IR05", "ir05_min_reports_figes", "3", "reports", True,
+     "Nombre de relevés consécutifs à position strictement figée en mer "
+     "avant alerte (IR05)."),
     ("R16", "densite_defaut_t_m3", "0.845", "t/m3", False,
      "Densité MDO par défaut (SMS) — absorbée de mrv_parameters."),
     ("R16", "densite_tolerance_t_m3", "0.015", "t/m3", False,
@@ -426,12 +443,22 @@ class RuleContext:
 @dataclass
 class CheckOutcome:
     """Verdict d'une règle pour un sujet. ``subject`` peut cibler un autre
-    sujet que le courant (défaut = sujet courant)."""
+    sujet que le courant (défaut = sujet courant).
+
+    LOT 8 — ``severity`` permet à une règle d'imposer la sévérité de CE
+    verdict (par ex. R06 « ROB manquant » = bloquant mais « ROB=0 » = warning,
+    R14 mineur/majeur → warning et critique → bloquant, IR04 régression =
+    bloquant). Laisser ``None`` → la sévérité par défaut de la règle
+    (``ValidationRule.default_severity``) s'applique, préservant la sémantique
+    du lot 2 (une règle = une sévérité). La Matrice grade explicitement la
+    sévérité par condition ; ce hook rend cette graduation exprimable sans
+    dupliquer les règles."""
 
     result: str  # "pass" | "fail"
     message: str = ""
     details: dict | None = None
     subject: Any = None
+    severity: str | None = None  # override par verdict (cf. docstring)
 
 
 @dataclass
@@ -500,19 +527,33 @@ async def _r01_required_fields(ctx: RuleContext) -> list[CheckOutcome]:
 
 @rule("R02")
 async def _r02_voyage_binding(ctx: RuleContext) -> list[CheckOutcome]:
-    """R02 — rattachement voyage (leg_id) + format leg_code (7 caractères)."""
+    """R02 — rattachement voyage (leg_id) + format leg_code (7 caractères).
+
+    LOT 8 (réconciliation retex — fiche AV-001) : quand le contexte voyage
+    est chargé (``ctx.leg``), vérifie AUSSI la cohérence des segments PAYS du
+    leg_code (caractères 3-4 = pays de départ, 5-6 = pays d'arrivée) avec les
+    ports réels du leg. Le cas réel ``1AFRBZ6`` (« BZ » Belize au lieu de
+    « BR » Brésil sur BRSSO/Santos) passe le contrôle de FORMAT (1 chiffre +
+    5 lettres + 1 chiffre) mais pas cette cohérence — c'était l'angle mort du
+    lot 2. Sévérité **warning** pour ce volet : anomalie de codification du
+    voyage (donnée leg), qui ne doit pas bloquer la finalisation d'un
+    événement de bord (le format invalide / voyage absent restent bloquants
+    via la sévérité par défaut de la règle).
+    """
     leg_present = _present(_first(ctx.subject, ("leg_id", "leg")))
     leg_code = _get(ctx.subject, "leg_code")
     if leg_code is None:
         leg_obj = _get(ctx.subject, "leg")
         if leg_obj is not None:
             leg_code = _get(leg_obj, "leg_code")
+    if leg_code is None and ctx.leg is not None:
+        leg_code = _get(ctx.leg, "leg_code")
 
     if not leg_present:
         return [CheckOutcome("fail", "Aucun voyage rattaché (leg_id manquant).",
                              {"leg_id": None})]
-    if _present(leg_code):
-        code = str(leg_code).strip()
+    code = str(leg_code).strip() if _present(leg_code) else ""
+    if code:
         if len(code) != 7 or not _LEG_CODE_RE.match(code):
             return [CheckOutcome(
                 "fail",
@@ -520,6 +561,36 @@ async def _r02_voyage_binding(ctx: RuleContext) -> list[CheckOutcome]:
                 "1 chiffre + 5 lettres + 1 chiffre).",
                 {"leg_code": code, "length": len(code)},
             )]
+        # Volet pays (AV-001) — seulement si le voyage réel est en contexte.
+        if ctx.leg is not None:
+            mismatches: list[str] = []
+            try:
+                from app.models.port import Port
+
+                for pid_attr, seg, label in (
+                    ("departure_port_id", code[2:4], "départ"),
+                    ("arrival_port_id", code[4:6], "arrivée"),
+                ):
+                    pid = _get(ctx.leg, pid_attr)
+                    if pid is None:
+                        continue
+                    port = await ctx.db.get(Port, pid)
+                    country = (str(_get(port, "country") or "").strip().upper()
+                               if port is not None else "")
+                    if country and seg != country:
+                        mismatches.append(
+                            f"pays {label} {seg!r} ≠ port réel {country!r}"
+                        )
+            except Exception:
+                mismatches = []  # contexte non requêtable → volet non évalué
+            if mismatches:
+                return [CheckOutcome(
+                    "fail",
+                    f"leg_code {code!r} incohérent avec les ports du voyage : "
+                    + " ; ".join(mismatches) + " (cas type AV-001 « 1AFRBZ6 »).",
+                    {"leg_code": code, "mismatches": mismatches},
+                    severity="warning",
+                )]
     return [CheckOutcome("pass", "Voyage rattaché, leg_code conforme.")]
 
 
@@ -745,7 +816,10 @@ async def run_rules(
                 details = dict(oc.details or {})
                 if snapshot:
                     details.setdefault("thresholds_used", snapshot)
-                _persist(rid, target, oc.result, severity, oc.message, details or None)
+                # LOT 8 — la règle peut imposer la sévérité de ce verdict
+                # (graduation Matrice) ; sinon défaut de la règle.
+                applied = oc.severity or severity
+                _persist(rid, target, oc.result, applied, oc.message, details or None)
 
     await db.flush()
     return RunSummary(
@@ -825,3 +899,25 @@ async def seed_reference_data(db: AsyncSession, *, updated_by: int | None = None
         await db.flush()
         invalidate_cache()
     return created
+
+
+# ════════════════════════════════════════════════════════════ LOT 8 — catalogue
+#
+# Enregistrement des règles complètes (R03-R10, R14-R26, IR01-IR05) : leur
+# module s'importe EN FIN de fichier pour peupler ``RULES`` via ``@rule`` sans
+# cycle d'import (il ne consomme que des noms déjà définis ci-dessus :
+# ``rule``, ``RuleContext``, ``CheckOutcome``, ``get_threshold``, helpers).
+#
+# RÉCONCILIATIONS de sémantique lot 2 → Matrice (documentées, cf. le catalogue) :
+# - **R11** : la Matrice décrit « ROB annexes urée/eau douce manquants
+#   (Warning) ». Le lot 2 a recentré R11 sur des *bornes de plausibilité*
+#   paramétrées (conso ≤ seuil, ROB ≤ borne) — conservé tel quel (guard générique
+#   utile, tests dépendants). Les annexes urée/eau douce ne sont pas portées par
+#   le modèle ``nav_events`` (pas de colonne) → volet Matrice N/A sur ce modèle ;
+#   le ROB principal est couvert par R06 (lot 8) et la conso par R08/R15.
+# - **R13** : la Matrice décrit une *complétude de champs* (voilure/T°/tirants…,
+#   Informatif). Le lot 2 a recentré R13 sur la *chronologie stricte* d'une
+#   séquence (doublon/antériorité). Conservé ; le volet doublon/antériorité est
+#   désormais porté rigoureusement par **IR01** (scope séquence). La complétude
+#   reste couverte de fait par les présences R05/R06/R07.
+from app.services import validation_rules_catalog as _catalog  # noqa: E402,F401
