@@ -109,6 +109,18 @@ class Settings(BaseSettings):
     # table Vessel, puis via cette map "marad_number_ou_nom=vessel_id,...".
     marad_vessel_map: str = ""
 
+    # FLGO (Marad) — relevés fuel/lube/gas-oil, LECTURE SEULE (MRV LOT 7).
+    # Même socle que le crew ci-dessus : MARAD_BASE_URL / MARAD_API_TOKEN /
+    # MARAD_API_KEY_HEADER sont réutilisés tels quels (endpoint confirmé
+    # ``GET /api/FlgoAction``, cf. app/utils/marad.py::list_flgo — aucun
+    # nouveau secret d'API n'est nécessaire). Repli import xlsx manuel actif
+    # dans tous les cas (cf. services.flgo_sync.import_flgo_xlsx).
+    marad_flgo_token: str | None = None  # X-API-Token du cron dédié POST /api/marad/flgo-refresh
+    # Fenêtre de repli (jours) pour la sync API FLGO — Marad ne documente pas
+    # de curseur de delta confirmé pour cet endpoint ; chaque appel resynchronise
+    # cette fenêtre glissante (upsert idempotent, donc sans risque de doublon).
+    marad_flgo_lookback_days: float = 400.0
+
     # Veille d'actualité — agrégateur NewsData.io + token de rafraîchissement
     # (POST /api/veille/refresh, déclenché en cron par Power Automate).
     newsdata_api_key: str | None = None

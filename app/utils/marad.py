@@ -54,6 +54,10 @@ READ_ENDPOINTS: frozenset[str] = frozenset(
         "/api/ranks/getranks",
         "/api/vessels/getVessels",
         "/api/Synchronization/getSyncDetails",
+        # FLGO (fuel/lube/gas-oil, MRV LOT 7) — GET pur, schéma confirmé (cf.
+        # list_flgo ci-dessous : code M Power Query retrouvé dans le classeur
+        # de travail client, PAS depuis la doc Swagger inaccessible d'ici).
+        "/api/FlgoAction",
     }
 )
 
@@ -317,6 +321,51 @@ async def get_sync_details() -> Any | None:
     """GET /api/Synchronization/getSyncDetails — métadonnées de compte/synchro
     (utile pour diagnostiquer un compte/tenant vide ou mal provisionné)."""
     return await _get("/api/Synchronization/getSyncDetails")
+
+
+async def list_flgo(vessel_name: str, date_from: str, date_to: str) -> Any | None:
+    """GET /api/FlgoAction — relevés FLGO (fuel/lube/gas-oil), MRV LOT 7.
+
+    Endpoint absent des « HighProcessing » listées par les release notes
+    (§ crew) → classé 15 req/min par défaut, pas de garde spécifique.
+
+    Schéma **confirmé** — retrouvé dans le code M (Power Query) intégré au
+    classeur de travail client ``FLGO API.xlsx`` (feuilles « FLGO
+    Anemos »/« FLGO Artemis »), PAS depuis la doc Swagger (inaccessible
+    depuis cet environnement, comme pour le crew) :
+
+    ``GET https://external02.marad.ms/api/FlgoAction?apikey=<clé>
+    &vesselName=<nom>&dateFrom=<ISO8601>&dateTo=<ISO8601>``
+
+    → JSON = **liste brute** de records (pas d'enveloppe ``{data:[...]}``) :
+    ``{ProductName, CategoryName, ActionType, Date, TotalVolumeMeasuredM3,
+    TotalROBM3, ActionPerContainers, TotalVolumeReceivedM3,
+    TotalVolumeDeliveredM3}``. **Pas de champ ``Vessel``** dans la réponse :
+    le filtrage par navire se fait uniquement via ``vesselName`` (un appel
+    par navire — le classeur source observé filtre un seul produit/navire
+    par requête, confirmant qu'il n'y a pas de moyen de tout récupérer en un
+    appel). ``ActionPerContainers`` = détail par compartiment ; son schéma
+    interne **n'est pas confirmé** (la requête M ne l'a jamais développé —
+    il apparaît ``"[List]"`` une fois figé en Excel) : ``services.flgo_sync``
+    le lit de façon tolérante (plusieurs noms de clé candidats, jamais
+    d'exception si la forme diffère) et le repli import xlsx manuel (mêmes
+    granularités par cuve, cellules composites) reste disponible dans tous
+    les cas si cette hypothèse s'avère fausse.
+
+    Auth : réutilise le même mécanisme que les autres endpoints de ce module
+    (``_auth_strategies``/schéma mémorisé) — le classeur source authentifie
+    via ``apikey=`` en query string, déjà l'une des stratégies de repli
+    essayées ici (compat pré-v5.5.24). **Aucun nouveau secret d'API** : ce
+    sont ``MARAD_API_TOKEN``/``MARAD_BASE_URL`` (identiques au crew) qui
+    portent l'authentification.
+
+    ``vessel_name`` : observé en minuscules (``anemos``, ``artemis``) —
+    ``services.flgo_sync`` passe le nom du navire mynewtowt normalisé en
+    minuscule. ``date_from``/``date_to`` : ISO 8601 UTC, ex.
+    ``"2024-08-01T09:00:00Z"``.
+    """
+    params = {"vesselName": vessel_name, "dateFrom": date_from, "dateTo": date_to}
+    return await _get("/api/FlgoAction", params=params)
 
 
 async def diagnose() -> dict:
