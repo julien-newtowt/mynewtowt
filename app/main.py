@@ -37,6 +37,7 @@ from app.routers import (
     client_dashboard_router,
     commercial_router,
     crew_router,
+    dashboard_env_router,
     devis_router,
     escale_router,
     finance_router,
@@ -126,6 +127,8 @@ def create_app() -> FastAPI:
     app.include_router(mrv_router.router)
     # ─── Phase 4 ERP : kpi / finance ───
     app.include_router(kpi_router.router)
+    # LOT 11 — dashboard performance environnementale
+    app.include_router(dashboard_env_router.router)
     app.include_router(navigation_router.router)
     app.include_router(navigation_router.api_router)
     app.include_router(marad_router.api_router)
