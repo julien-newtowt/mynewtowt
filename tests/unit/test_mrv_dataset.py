@@ -84,7 +84,9 @@ async def db():
 
 def _readings(engines, fuel_map):
     return [
-        NavEventEngineReading(engine_id=engines[r].id, fuel_counter_l=Decimal(str(v)), is_counter_reset=False)
+        NavEventEngineReading(
+            engine_id=engines[r].id, fuel_counter_l=Decimal(str(v)), is_counter_reset=False
+        )
         for r, v in fuel_map.items()
     ]
 
@@ -101,33 +103,59 @@ async def _chain(db, *, arrival_status: str = "valide"):
     db.add_all([p1, p2])
     await db.flush()
     leg = Leg(
-        leg_code="1AFRBR6", vessel_id=vessel.id, departure_port_id=p1.id, arrival_port_id=p2.id,
-        etd_ref=T0, eta_ref=T0 + timedelta(days=3), etd=T0, eta=T0 + timedelta(days=3),
+        leg_code="1AFRBR6",
+        vessel_id=vessel.id,
+        departure_port_id=p1.id,
+        arrival_port_id=p2.id,
+        etd_ref=T0,
+        eta_ref=T0 + timedelta(days=3),
+        etd=T0,
+        eta=T0 + timedelta(days=3),
     )
     db.add(leg)
     await db.flush()
 
     dep = DepartureEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="valide", datetime_utc=T0,
-        lat_decimal=Decimal("47.8167"), lon_decimal=Decimal("-3.9333"),
-        rob_t=Decimal("100.000"), vessel_condition="laden", cargo_bl_t=Decimal("500.000"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="valide",
+        datetime_utc=T0,
+        lat_decimal=Decimal("47.8167"),
+        lon_decimal=Decimal("-3.9333"),
+        rob_t=Decimal("100.000"),
+        vessel_condition="laden",
+        cargo_bl_t=Decimal("500.000"),
         cargo_mrv_t=Decimal("540.000"),
     )
     dep.engine_readings = _readings(engines, DEP_FUEL)
     n1 = NoonEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="valide", datetime_utc=T0 + timedelta(hours=24),
-        lat_decimal=Decimal("45.0"), lon_decimal=Decimal("-10.0"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="valide",
+        datetime_utc=T0 + timedelta(hours=24),
+        lat_decimal=Decimal("45.0"),
+        lon_decimal=Decimal("-10.0"),
     )
     n1.engine_readings = _readings(engines, N1_FUEL)
     n2 = NoonEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="valide", datetime_utc=T0 + timedelta(hours=48),
-        lat_decimal=Decimal("40.0"), lon_decimal=Decimal("-20.0"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="valide",
+        datetime_utc=T0 + timedelta(hours=48),
+        lat_decimal=Decimal("40.0"),
+        lon_decimal=Decimal("-20.0"),
     )
     n2.engine_readings = _readings(engines, N2_FUEL)
     arr = ArrivalEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status=arrival_status, datetime_utc=T0 + timedelta(hours=72),
-        lat_decimal=Decimal("35.0"), lon_decimal=Decimal("-30.0"),
-        rob_t=Decimal("96.000"), vessel_condition="laden", cargo_mrv_t=Decimal("540.000"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status=arrival_status,
+        datetime_utc=T0 + timedelta(hours=72),
+        lat_decimal=Decimal("35.0"),
+        lon_decimal=Decimal("-30.0"),
+        rob_t=Decimal("96.000"),
+        vessel_condition="laden",
+        cargo_mrv_t=Decimal("540.000"),
     )
     arr.engine_readings = _readings(engines, ARR_FUEL)
     db.add_all([dep, n1, n2, arr])
@@ -170,8 +198,16 @@ async def test_ovdla_dms_exact(db):
     rows = await md.build_ovdla_rows(db, vessel)
     dep = rows[0].values
     # 47,8167 → 47°49'N ; -3,9333 → 3°56'W (minutes ENTIÈRES, cf. échantillons).
-    assert (dep["Latitude_North_South"], dep["Latitude_Degree"], dep["Latitude_Minutes"]) == ("N", 47, 49)
-    assert (dep["Longitude_East_West"], dep["Longitude_Degree"], dep["Longitude_Minutes"]) == ("W", 3, 56)
+    assert (dep["Latitude_North_South"], dep["Latitude_Degree"], dep["Latitude_Minutes"]) == (
+        "N",
+        47,
+        49,
+    )
+    assert (dep["Longitude_East_West"], dep["Longitude_Degree"], dep["Longitude_Minutes"]) == (
+        "W",
+        3,
+        56,
+    )
 
 
 async def test_ovdla_source_system_is_mytowt(db):
@@ -219,7 +255,9 @@ async def test_gate_under_conformity_excluded_and_alerts(db):
     db.add(EnvReportEventLink(report_id=report.id, event_id=arr.id))
     db.add(
         EnvFieldModification(
-            report_id=report.id, field_name="rob_t", justification_text="écart",
+            report_id=report.id,
+            field_name="rob_t",
+            justification_text="écart",
             resulting_quality_status="under_conformity",
         )
     )
@@ -233,8 +271,10 @@ async def test_gate_under_conformity_excluded_and_alerts(db):
 
     # Alerte admin émise (pattern lot 8).
     notifs = (
-        await db.execute(select(Notification).where(Notification.target_role == "administrateur"))
-    ).scalars().all()
+        (await db.execute(select(Notification).where(Notification.target_role == "administrateur")))
+        .scalars()
+        .all()
+    )
     assert any("OVDLA" in (n.title or "") for n in notifs)
 
 
@@ -243,9 +283,15 @@ async def test_gate_under_conformity_excluded_and_alerts(db):
 
 async def _bunker(db, vessel, leg, bdn, status, mass="30.000", when=None):
     b = BunkerOperation(
-        leg_id=leg.id, vessel_id=vessel.id, bdn_number=bdn, port_locode="FRFEC",
-        delivery_datetime_utc=(when or (T0 - timedelta(days=1))), fuel_type="MDO",
-        mass_t=Decimal(mass), density_15c_t_m3=Decimal("0.845"), status=status,
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        bdn_number=bdn,
+        port_locode="FRFEC",
+        delivery_datetime_utc=(when or (T0 - timedelta(days=1))),
+        fuel_type="MDO",
+        mass_t=Decimal(mass),
+        density_15c_t_m3=Decimal("0.845"),
+        status=status,
     )
     db.add(b)
     await db.flush()
@@ -283,9 +329,7 @@ async def test_snapshot_idempotent_preserves_verification_status(db):
 
     # Une vérification manuelle fige le statut d'une entrée…
     entry = (
-        await db.execute(
-            select(MrvLogAbstractEntry).where(MrvLogAbstractEntry.event_id == arr.id)
-        )
+        await db.execute(select(MrvLogAbstractEntry).where(MrvLogAbstractEntry.event_id == arr.id))
     ).scalar_one()
     entry.verification_status = "corrected"
     await db.flush()
@@ -298,9 +342,7 @@ async def test_snapshot_idempotent_preserves_verification_status(db):
     all_entries = (await db.execute(select(MrvLogAbstractEntry))).scalars().all()
     assert len(all_entries) == 2  # pas de doublon (event_id UNIQUE)
     refreshed = (
-        await db.execute(
-            select(MrvLogAbstractEntry).where(MrvLogAbstractEntry.event_id == arr.id)
-        )
+        await db.execute(select(MrvLogAbstractEntry).where(MrvLogAbstractEntry.event_id == arr.id))
     ).scalar_one()
     assert refreshed.verification_status == "corrected"
 
@@ -354,9 +396,7 @@ async def test_export_neutralises_formula_injection(db):
     assert data_row[bdn_idx] == "'" + payload
 
     # XLSX : chaîne littérale (data_type 's'), jamais une formule ('f').
-    wb = openpyxl.load_workbook(
-        io.BytesIO(md.export_xlsx(rows, kind="ovdbr")), data_only=True
-    )
+    wb = openpyxl.load_workbook(io.BytesIO(md.export_xlsx(rows, kind="ovdbr")), data_only=True)
     cell = wb.active.cell(row=2, column=bdn_idx + 1)
     assert cell.data_type == "s"
     assert str(cell.value).startswith("'")

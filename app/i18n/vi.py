@@ -1322,7 +1322,6 @@ CATALOG: dict[str, str] = {
     "dashenv_admin_history_toggle": "Lịch sử",
     "dashenv_admin_history_empty": "Chưa có thay đổi",
     "dashenv_admin_empty": "Chưa có tham số — khởi tạo dữ liệu tham chiếu từ /mrv/parametres.",
-
     # ── Bảng điều khiển môi trường — Theo dõi vận hành & Chất lượng (LOT 12) ──
     "dashenv_tab_fleet": "Tổng quan đội tàu",
     "dashenv_tab_vessel": "Theo dõi vận hành",
@@ -1417,7 +1416,6 @@ CATALOG: dict[str, str] = {
     "dashenv_quality_noon_expected": "Kỳ vọng",
     "dashenv_quality_noon_pct": "Độ đầy đủ",
     "dashenv_quality_noon_none": "Không có chuyến đang hoạt động để theo dõi.",
-
     # LOT 8 — màn hình chất lượng MRV (/mrv/qualite)
     "s_nav_mrv_qualite": "Chất lượng MRV",
     "mrv_qual_title": "Chất lượng dữ liệu MRV",

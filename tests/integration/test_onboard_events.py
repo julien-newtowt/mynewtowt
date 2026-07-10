@@ -32,8 +32,12 @@ from tests.integration.conftest import FakeRequest
 
 async def _captain(db, user_id: int = 10, assigned_vessel_id: int | None = None) -> User:
     u = User(
-        id=user_id, username=f"cdt{user_id}", email=f"cdt{user_id}@ex.test",
-        hashed_password="x", full_name="Cdt Test", role="manager_maritime",
+        id=user_id,
+        username=f"cdt{user_id}",
+        email=f"cdt{user_id}@ex.test",
+        hashed_password="x",
+        full_name="Cdt Test",
+        role="manager_maritime",
         assigned_vessel_id=assigned_vessel_id,
     )
     db.add(u)
@@ -56,10 +60,16 @@ async def _leg(db, vessel: Vessel, *, active: bool = True, leg_code: str = "1AFR
     await db.flush()
     base = datetime(2026, 4, 1, tzinfo=UTC)
     leg = Leg(
-        leg_code=leg_code, vessel_id=vessel.id,
-        departure_port_id=pol.id, arrival_port_id=pod.id,
-        etd=base, eta=base + timedelta(days=20), etd_ref=base, eta_ref=base + timedelta(days=20),
-        atd=(base if active else None), ata=None,
+        leg_code=leg_code,
+        vessel_id=vessel.id,
+        departure_port_id=pol.id,
+        arrival_port_id=pod.id,
+        etd=base,
+        eta=base + timedelta(days=20),
+        etd_ref=base,
+        eta_ref=base + timedelta(days=20),
+        atd=(base if active else None),
+        ata=None,
     )
     db.add(leg)
     await db.flush()
@@ -164,10 +174,16 @@ async def test_create_departure_draft(db):
     leg = await _leg(db, v)
     user = await _captain(db, assigned_vessel_id=v.id)
     form = {
-        "event_type": "departure", "leg_id": str(leg.id),
-        "datetime_local": "2026-04-01T06:00", "timezone": "UTC",
-        "lat_decimal": "49.76", "lon_decimal": "0.37", "position_source": "thalos_auto",
-        "vessel_condition": "laden", "rob_t": "42.5", "cargo_bl_t": "900",
+        "event_type": "departure",
+        "leg_id": str(leg.id),
+        "datetime_local": "2026-04-01T06:00",
+        "timezone": "UTC",
+        "lat_decimal": "49.76",
+        "lon_decimal": "0.37",
+        "position_source": "thalos_auto",
+        "vessel_condition": "laden",
+        "rob_t": "42.5",
+        "cargo_bl_t": "900",
     }
     resp = await onboard_event_create(FakeRequest(form), db=db, user=user)
     assert resp.status_code == 303
@@ -334,18 +350,16 @@ async def test_finalize_ok(db):
     resp = await onboard_event_create(FakeRequest(_noon_form(leg.id)), db=db, user=author)
     event_id = int(resp.headers["location"].rstrip("/").split("/")[-2])
 
-    r = await onboard_event_finalize(
-        event_id, FakeRequest(_noon_form(leg.id)), db=db, user=author
-    )
+    r = await onboard_event_finalize(event_id, FakeRequest(_noon_form(leg.id)), db=db, user=author)
     assert r.status_code == 303  # succès → redirection liste
     ev = await db.get(NavEvent, event_id)
     assert ev.status == "finalise"
     assert ev.finalized_at is not None
     qcr = (
         await db.execute(
-            select(func.count()).select_from(QualityCheckResult).where(
-                QualityCheckResult.subject_id == event_id
-            )
+            select(func.count())
+            .select_from(QualityCheckResult)
+            .where(QualityCheckResult.subject_id == event_id)
         )
     ).scalar_one()
     assert qcr > 0  # le moteur de règles a persisté ses verdicts
@@ -360,8 +374,11 @@ async def test_finalize_incomplete_shows_errors_not_500(db):
     author = await _captain(db, assigned_vessel_id=v.id)
     # brouillon SANS date/heure → R01 (date manquante, bloquant).
     incomplete = {
-        "event_type": "noon", "leg_id": str(leg.id),
-        "datetime_local": "", "timezone": "UTC", "position_source": "thalos_auto",
+        "event_type": "noon",
+        "leg_id": str(leg.id),
+        "datetime_local": "",
+        "timezone": "UTC",
+        "position_source": "thalos_auto",
     }
     resp = await onboard_event_create(FakeRequest(dict(incomplete)), db=db, user=author)
     event_id = int(resp.headers["location"].rstrip("/").split("/")[-2])
@@ -466,8 +483,8 @@ async def test_noon_event_replay_is_idempotent(db):
 
 @pytest.mark.asyncio
 async def test_draft_reminders_cron_503_without_token(db, monkeypatch):
-    from app.routers.onboard_router import mrv_draft_reminders_cron
     from app.routers import onboard_router
+    from app.routers.onboard_router import mrv_draft_reminders_cron
 
     monkeypatch.setattr(onboard_router.settings, "mrv_drafts_api_token", None)
     with pytest.raises(HTTPException) as exc:
@@ -477,8 +494,8 @@ async def test_draft_reminders_cron_503_without_token(db, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_draft_reminders_cron_rejects_bad_token(db, monkeypatch):
-    from app.routers.onboard_router import mrv_draft_reminders_cron
     from app.routers import onboard_router
+    from app.routers.onboard_router import mrv_draft_reminders_cron
 
     monkeypatch.setattr(onboard_router.settings, "mrv_drafts_api_token", "s3cret")
     req = FakeRequest()
@@ -490,8 +507,8 @@ async def test_draft_reminders_cron_rejects_bad_token(db, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_draft_reminders_cron_ok_with_token(db, monkeypatch):
-    from app.routers.onboard_router import mrv_draft_reminders_cron
     from app.routers import onboard_router
+    from app.routers.onboard_router import mrv_draft_reminders_cron
 
     monkeypatch.setattr(onboard_router.settings, "mrv_drafts_api_token", "s3cret")
     req = FakeRequest()

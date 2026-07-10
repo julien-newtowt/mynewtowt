@@ -74,8 +74,10 @@ async def compute_carbon_for_leg(
 
     # CO₂ (t) : le grand livre a déjà fait la multiplication ; on ne fait
     # qu'arrondir (règle d'or). None (assiette absente) ⇒ 0,000 comme avant.
-    co2_t = _q(result.co2_emitted_t, "0.001") if result.co2_emitted_t is not None else _q(
-        Decimal("0"), "0.001"
+    co2_t = (
+        _q(result.co2_emitted_t, "0.001")
+        if result.co2_emitted_t is not None
+        else _q(Decimal("0"), "0.001")
     )
 
     co2_per_nm_kg = None

@@ -240,9 +240,7 @@ class OnboardSaleLine(Base):
 
     sale: Mapped[OnboardSale] = relationship(back_populates="lines")
 
-    __table_args__ = (
-        UniqueConstraint("sale_id", "product_id", name="uq_sale_line_product"),
-    )
+    __table_args__ = (UniqueConstraint("sale_id", "product_id", name="uq_sale_line_product"),)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<OnboardSaleLine sale={self.sale_id} {self.label!r} x{self.qty}>"

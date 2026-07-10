@@ -51,6 +51,7 @@ moteur de calcul carbone n'est créé ici.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -289,8 +290,7 @@ async def _emissions_provider(
     kpi_by_leg = {k.leg_id: k for k in (await db.execute(select(LegKPI))).scalars().all()}
     try:
         summary_by_leg = {
-            s.leg_id: s
-            for s in (await db.execute(select(VoyageEmissionSummary))).scalars().all()
+            s.leg_id: s for s in (await db.execute(select(VoyageEmissionSummary))).scalars().all()
         }
     except Exception:
         summary_by_leg = {}
@@ -866,12 +866,7 @@ def _daily_conso_l_j(
     conso_total_t: Decimal | None, density_t_m3: Decimal, duration_days: Decimal | None
 ) -> Decimal | None:
     """Conso totale (t) → L/j : ``t / densité × 1000 / jours`` (densité t/m³ ≡ kg/L)."""
-    if (
-        conso_total_t is None
-        or duration_days is None
-        or duration_days <= 0
-        or density_t_m3 <= 0
-    ):
+    if conso_total_t is None or duration_days is None or duration_days <= 0 or density_t_m3 <= 0:
         return None
     volume_l = conso_total_t / density_t_m3 * Decimal(1000)
     return volume_l / duration_days
@@ -1013,7 +1008,7 @@ async def voyage_detail(
     # la tranche 4 h de l'événement d'arrivée (sinon celle du départ), spec §5.4.
     positioned = [e for e in comp.events if e.lat_decimal is not None and e.lon_decimal is not None]
     map_segments: list[dict] = []
-    for a, b in zip(positioned, positioned[1:]):
+    for a, b in itertools.pairwise(positioned):
         cat = _event_dominant_category(b) or _event_dominant_category(a)
         map_segments.append(
             {
@@ -1160,21 +1155,14 @@ async def vessel_operational(
         return None
 
     legs = list(
-        (
-            await db.execute(
-                select(Leg).where(Leg.vessel_id == vessel_id).order_by(Leg.etd.asc())
-            )
-        )
+        (await db.execute(select(Leg).where(Leg.vessel_id == vessel_id).order_by(Leg.etd.asc())))
         .scalars()
         .all()
     )
     summary_by_leg: dict[int, VoyageEmissionSummary] = {}
     try:
         summary_by_leg = {
-            s.leg_id: s
-            for s in (
-                await db.execute(select(VoyageEmissionSummary))
-            ).scalars().all()
+            s.leg_id: s for s in (await db.execute(select(VoyageEmissionSummary))).scalars().all()
         }
     except Exception:
         summary_by_leg = {}
@@ -1227,9 +1215,7 @@ async def vessel_operational(
         else:
             k = kpi_by_leg.get(leg.id)
             co2_t = (
-                (k.co2_emitted_kg / Decimal(1000))
-                if (k and k.co2_emitted_kg is not None)
-                else None
+                (k.co2_emitted_kg / Decimal(1000)) if (k and k.co2_emitted_kg is not None) else None
             )
             cargo_bl = (
                 (k.tonnage_kg / Decimal(1000)) if (k and k.tonnage_kg is not None) else Decimal(0)
@@ -1407,11 +1393,7 @@ async def quality_overview(
 
     # QCR fails.
     qcr_rows = list(
-        (
-            await db.execute(
-                select(QualityCheckResult).where(QualityCheckResult.result == "fail")
-            )
-        )
+        (await db.execute(select(QualityCheckResult).where(QualityCheckResult.result == "fail")))
         .scalars()
         .all()
     )
@@ -1463,9 +1445,7 @@ async def quality_overview(
 
         events_by_id = {
             e.id: e
-            for e in (
-                await db.execute(select(NavEvent).where(NavEvent.id.in_(reset_event_ids)))
-            )
+            for e in (await db.execute(select(NavEvent).where(NavEvent.id.in_(reset_event_ids))))
             .scalars()
             .all()
         }

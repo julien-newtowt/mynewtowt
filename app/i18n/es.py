@@ -1322,7 +1322,6 @@ CATALOG: dict[str, str] = {
     "dashenv_admin_history_toggle": "Historial",
     "dashenv_admin_history_empty": "Sin modificaciones",
     "dashenv_admin_empty": "Sin parámetros — inicialice el referencial desde /mrv/parametres.",
-
     # ── Panel ambiental — Seguimiento operativo & Calidad (LOT 12) ──
     "dashenv_tab_fleet": "Vista de flota",
     "dashenv_tab_vessel": "Seguimiento operativo",
@@ -1417,7 +1416,6 @@ CATALOG: dict[str, str] = {
     "dashenv_quality_noon_expected": "Esperados",
     "dashenv_quality_noon_pct": "Completitud",
     "dashenv_quality_noon_none": "Ningún viaje activo que seguir.",
-
     # LOT 8 — pantalla calidad MRV (/mrv/qualite)
     "s_nav_mrv_qualite": "Calidad MRV",
     "mrv_qual_title": "Calidad de los datos MRV",

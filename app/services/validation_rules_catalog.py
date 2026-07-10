@@ -192,7 +192,8 @@ def _engine_fuel_map(subject: Any) -> dict[Any, tuple[Decimal | None, bool, bool
         out[0] = (
             _as_decimal(_get(subject, "fuel_counter_l")),
             bool(_get(subject, "is_counter_reset")),
-            _get(subject, "reset_confirmed_by") is not None or bool(_get(subject, "reset_confirmed")),
+            _get(subject, "reset_confirmed_by") is not None
+            or bool(_get(subject, "reset_confirmed")),
             None,
         )
     return out
@@ -237,11 +238,23 @@ async def _r03_event_type(ctx: RuleContext) -> list[CheckOutcome]:
         return []  # sujet non événementiel → hors périmètre
     et = _event_type(ctx.subject)
     if not _present(et):
-        return [CheckOutcome("fail", "R03 — type d'événement manquant.", {"event_type": None},
-                             severity="bloquant")]
+        return [
+            CheckOutcome(
+                "fail",
+                "R03 — type d'événement manquant.",
+                {"event_type": None},
+                severity="bloquant",
+            )
+        ]
     if et not in EVENT_TYPES:
-        return [CheckOutcome("fail", f"R03 — type d'événement non reconnu : {et!r}.",
-                             {"event_type": et, "allowed": list(EVENT_TYPES)}, severity="bloquant")]
+        return [
+            CheckOutcome(
+                "fail",
+                f"R03 — type d'événement non reconnu : {et!r}.",
+                {"event_type": et, "allowed": list(EVENT_TYPES)},
+                severity="bloquant",
+            )
+        ]
     return _ok("R03 — type d'événement valide.")
 
 
@@ -253,16 +266,25 @@ async def _r04_datetime(ctx: RuleContext) -> list[CheckOutcome]:
         return []
     dt = _dt(ctx.subject)
     if dt is None:
-        return [CheckOutcome("fail", "R04 — date manquante (obligatoire MRV).", {"datetime": None},
-                             severity="bloquant")]
+        return [
+            CheckOutcome(
+                "fail",
+                "R04 — date manquante (obligatoire MRV).",
+                {"datetime": None},
+                severity="bloquant",
+            )
+        ]
     tol_h = await _thr(ctx, "tolerance_datetime_futur_h")
     now = _norm_dt(ctx.now) or datetime.now(UTC).replace(tzinfo=None)
     if dt > now + timedelta(hours=float(tol_h)):
-        return [CheckOutcome(
-            "fail",
-            f"R04 — horodatage dans le futur ({dt.isoformat()} > maintenant + {tol_h} h).",
-            {"datetime": dt.isoformat(), "now": now.isoformat()}, severity="warning",
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"R04 — horodatage dans le futur ({dt.isoformat()} > maintenant + {tol_h} h).",
+                {"datetime": dt.isoformat(), "now": now.isoformat()},
+                severity="warning",
+            )
+        ]
     return _ok("R04 — date présente et plausible.")
 
 
@@ -271,25 +293,43 @@ async def _r05_position(ctx: RuleContext) -> list[CheckOutcome]:
     """R05 — Position dans les bornes (bloquant hors plage) ; position manuelle
     ⇒ justification obligatoire (bloquant). Formalise la garde du finalize.
     Matrice §1."""
-    if not _has_any(ctx.subject, ("lat_decimal", "lon_decimal", "latitude", "longitude", "position_source")):
+    if not _has_any(
+        ctx.subject, ("lat_decimal", "lon_decimal", "latitude", "longitude", "position_source")
+    ):
         return []
     lat = _as_decimal(_first(ctx.subject, ("lat_decimal", "latitude", "lat")))
     lon = _as_decimal(_first(ctx.subject, ("lon_decimal", "longitude", "lon")))
     src = _get(ctx.subject, "position_source")
     outs: list[CheckOutcome] = []
     if lat is not None and not (_LAT_MIN <= lat <= _LAT_MAX):
-        outs.append(CheckOutcome("fail", f"R05 — latitude hors plage : {lat}.",
-                                 {"lat": str(lat)}, severity="bloquant"))
+        outs.append(
+            CheckOutcome(
+                "fail",
+                f"R05 — latitude hors plage : {lat}.",
+                {"lat": str(lat)},
+                severity="bloquant",
+            )
+        )
     if lon is not None and not (_LON_MIN <= lon <= _LON_MAX):
-        outs.append(CheckOutcome("fail", f"R05 — longitude hors plage : {lon}.",
-                                 {"lon": str(lon)}, severity="bloquant"))
+        outs.append(
+            CheckOutcome(
+                "fail",
+                f"R05 — longitude hors plage : {lon}.",
+                {"lon": str(lon)},
+                severity="bloquant",
+            )
+        )
     if src == "manuel_justifie" and (lat is not None or lon is not None):
         just = _get(ctx.subject, "position_justification")
         if not (just and str(just).strip()):
-            outs.append(CheckOutcome(
-                "fail", "R05 — position saisie manuellement sans justification.",
-                {"position_source": src}, severity="bloquant",
-            ))
+            outs.append(
+                CheckOutcome(
+                    "fail",
+                    "R05 — position saisie manuellement sans justification.",
+                    {"position_source": src},
+                    severity="bloquant",
+                )
+            )
     return outs or _ok("R05 — position valide.")
 
 
@@ -308,19 +348,37 @@ async def _r06_rob(ctx: RuleContext) -> list[CheckOutcome]:
         return []
     rob = _as_decimal(_get(ctx.subject, "rob_t"))
     if rob is None:
-        return [CheckOutcome("fail", "R06 — ROB de référence manquant à l'escale.", {"rob_t": None},
-                             severity="bloquant")]
+        return [
+            CheckOutcome(
+                "fail",
+                "R06 — ROB de référence manquant à l'escale.",
+                {"rob_t": None},
+                severity="bloquant",
+            )
+        ]
     if rob < 0:
-        return [CheckOutcome("fail", f"R06 — ROB négatif : {rob} t.", {"rob_t": str(rob)},
-                             severity="bloquant")]
+        return [
+            CheckOutcome(
+                "fail", f"R06 — ROB négatif : {rob} t.", {"rob_t": str(rob)}, severity="bloquant"
+            )
+        ]
     outs: list[CheckOutcome] = []
     if rob == 0:
-        outs.append(CheckOutcome("fail", "R06 — ROB déclaré nul à l'escale.", {"rob_t": "0"},
-                                 severity="warning"))
+        outs.append(
+            CheckOutcome(
+                "fail", "R06 — ROB déclaré nul à l'escale.", {"rob_t": "0"}, severity="warning"
+            )
+        )
     borne = await _thr(ctx, "borne_max_rob_t")
     if rob > borne:
-        outs.append(CheckOutcome("fail", f"R06 — ROB {rob} t > borne plausible {borne} t.",
-                                 {"rob_t": str(rob), "borne": str(borne)}, severity="warning"))
+        outs.append(
+            CheckOutcome(
+                "fail",
+                f"R06 — ROB {rob} t > borne plausible {borne} t.",
+                {"rob_t": str(rob), "borne": str(borne)},
+                severity="warning",
+            )
+        )
     return outs or _ok("R06 — ROB de référence plausible.")
 
 
@@ -342,7 +400,9 @@ async def _r07_ports(ctx: RuleContext) -> list[CheckOutcome]:
         if len(str(locode).strip()) != _LOCODE_LEN:
             bad.append(f"LOCODE {label} non conforme ({locode!r})")
     if bad:
-        return [CheckOutcome("fail", "R07 — " + " ; ".join(bad), {"issues": bad}, severity="warning")]
+        return [
+            CheckOutcome("fail", "R07 — " + " ; ".join(bad), {"issues": bad}, severity="warning")
+        ]
     return _ok("R07 — LOCODE des ports conformes.")
 
 
@@ -360,8 +420,14 @@ async def _r08_consumption(ctx: RuleContext) -> list[CheckOutcome]:
         return []
     outs: list[CheckOutcome] = []
     if delta_l < 0:
-        outs.append(CheckOutcome("fail", f"R08 — consommation négative ({delta_l} L).",
-                                 {"delta_l": str(delta_l)}, severity="bloquant"))
+        outs.append(
+            CheckOutcome(
+                "fail",
+                f"R08 — consommation négative ({delta_l} L).",
+                {"delta_l": str(delta_l)},
+                severity="bloquant",
+            )
+        )
         return outs
     et = _event_type(ctx.subject)
     dur_h = _duration_h(prev, ctx.subject)
@@ -372,26 +438,42 @@ async def _r08_consumption(ctx: RuleContext) -> list[CheckOutcome]:
         if days > seuil_j and delta_l == 0:
             defaut = await _thr(ctx, "conso_estimee_defaut_t_j")
             estimee = defaut * days
-            outs.append(CheckOutcome(
-                "fail",
-                f"R08 — conso d'escale absente sur {days:.1f} j (> {seuil_j} j) : "
-                f"estimation par défaut {estimee:.3f} t tracée.",
-                {"escale_jours": str(days), "conso_estimee_defaut_t_j": str(defaut),
-                 "conso_estimee_t": str(estimee), "traced": True},
-                severity="warning",
-            ))
+            outs.append(
+                CheckOutcome(
+                    "fail",
+                    f"R08 — conso d'escale absente sur {days:.1f} j (> {seuil_j} j) : "
+                    f"estimation par défaut {estimee:.3f} t tracée.",
+                    {
+                        "escale_jours": str(days),
+                        "conso_estimee_defaut_t_j": str(defaut),
+                        "conso_estimee_t": str(estimee),
+                        "traced": True,
+                    },
+                    severity="warning",
+                )
+            )
             return outs
     if delta_l == 0 and et == "noon":
-        outs.append(CheckOutcome("fail", "R08 — consommation nulle sur un Noon (en mer).",
-                                 {"delta_l": "0"}, severity="warning"))
+        outs.append(
+            CheckOutcome(
+                "fail",
+                "R08 — consommation nulle sur un Noon (en mer).",
+                {"delta_l": "0"},
+                severity="warning",
+            )
+        )
     if dur_h is not None and dur_h > 0:
         per_day = delta_l / dur_h * _HOURS_PER_DAY
         seuil = await _thr(ctx, "seuil_conso_ref_l_j")
         if per_day > seuil:
-            outs.append(CheckOutcome(
-                "fail", f"R08 — consommation {per_day:.0f} L/j > seuil cible {seuil} L/j.",
-                {"conso_l_j": str(per_day), "seuil_l_j": str(seuil)}, severity="warning",
-            ))
+            outs.append(
+                CheckOutcome(
+                    "fail",
+                    f"R08 — consommation {per_day:.0f} L/j > seuil cible {seuil} L/j.",
+                    {"conso_l_j": str(per_day), "seuil_l_j": str(seuil)},
+                    severity="warning",
+                )
+            )
     return outs or _ok("R08 — consommation plausible.")
 
 
@@ -417,12 +499,18 @@ async def _r09_distance_datetime(ctx: RuleContext) -> list[CheckOutcome]:
         if calc is not None:
             tol = await _thr(ctx, "tolerance_distance_manuelle_nm")
             if abs(declared - calc) > tol:
-                outs.append(CheckOutcome(
-                    "fail",
-                    f"R09 — distance déclarée {declared} nm vs calculée {calc:.1f} nm (> {tol} nm).",
-                    {"declared_nm": str(declared), "calculated_nm": str(calc), "tolerance_nm": str(tol)},
-                    severity="warning",
-                ))
+                outs.append(
+                    CheckOutcome(
+                        "fail",
+                        f"R09 — distance déclarée {declared} nm vs calculée {calc:.1f} nm (> {tol} nm).",
+                        {
+                            "declared_nm": str(declared),
+                            "calculated_nm": str(calc),
+                            "tolerance_nm": str(tol),
+                        },
+                        severity="warning",
+                    )
+                )
     # v2 — datetime d'escale vs référence du leg (ATD/ETD, ATA/ETA).
     et = _event_type(ctx.subject)
     if et in _PORTCALL_TYPES and ctx.leg is not None:
@@ -435,11 +523,14 @@ async def _r09_distance_datetime(ctx: RuleContext) -> list[CheckOutcome]:
             tol_h = await _thr(ctx, "tolerance_datetime_escale_h")
             gap_h = abs((dt - ref).total_seconds()) / 3600
             if Decimal(str(gap_h)) > tol_h:
-                outs.append(CheckOutcome(
-                    "fail",
-                    f"R09 — datetime d'escale à {gap_h:.1f} h de la référence AIS/SOF (> {tol_h} h).",
-                    {"gap_h": str(gap_h), "tolerance_h": str(tol_h)}, severity="warning",
-                ))
+                outs.append(
+                    CheckOutcome(
+                        "fail",
+                        f"R09 — datetime d'escale à {gap_h:.1f} h de la référence AIS/SOF (> {tol_h} h).",
+                        {"gap_h": str(gap_h), "tolerance_h": str(tol_h)},
+                        severity="warning",
+                    )
+                )
     return outs or _ok("R09 — cohérence distance/horodatage conforme.")
 
 
@@ -473,15 +564,25 @@ async def _r10_counter(ctx: RuleContext) -> list[CheckOutcome]:
     now = _norm_dt(ctx.now) or datetime.now(UTC).replace(tzinfo=None)
     stale = cur_dt is not None and (now - cur_dt) > timedelta(days=float(delai_j))
     severity = "bloquant" if stale else "warning"
-    return [CheckOutcome(
-        "fail",
-        f"R10 — régression de compteur non confirmée (moteurs {regressed})"
-        + (" — escalade bloquante (délai dépassé)." if stale else " — à confirmer par l'Administrateur."),
-        {"engines": [str(e) for e in regressed], "reading_ids": reading_ids,
-         "route_roles": ["administrateur"],
-         "escalated": stale, "delai_confirmation_reset_j": str(delai_j)},
-        severity=severity,
-    )]
+    return [
+        CheckOutcome(
+            "fail",
+            f"R10 — régression de compteur non confirmée (moteurs {regressed})"
+            + (
+                " — escalade bloquante (délai dépassé)."
+                if stale
+                else " — à confirmer par l'Administrateur."
+            ),
+            {
+                "engines": [str(e) for e in regressed],
+                "reading_ids": reading_ids,
+                "route_roles": ["administrateur"],
+                "escalated": stale,
+                "delai_confirmation_reset_j": str(delai_j),
+            },
+            severity=severity,
+        )
+    ]
 
 
 @rule("R21")
@@ -507,12 +608,14 @@ async def _r21_report_duration(ctx: RuleContext) -> list[CheckOutcome]:
         return []
     tol = await _thr(ctx, "tolerance_duree_rapport_h")
     if abs(declared - real) > tol:
-        return [CheckOutcome(
-            "fail",
-            f"R21 — durée déclarée {declared} h vs réelle {real:.1f} h (> {tol} h).",
-            {"declared_h": str(declared), "real_h": str(real), "tolerance_h": str(tol)},
-            severity="warning",
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"R21 — durée déclarée {declared} h vs réelle {real:.1f} h (> {tol} h).",
+                {"declared_h": str(declared), "real_h": str(real), "tolerance_h": str(tol)},
+                severity="warning",
+            )
+        ]
     return _ok("R21 — durée entre rapports cohérente.")
 
 
@@ -533,11 +636,14 @@ async def _ir01_duplicate(ctx: RuleContext) -> list[CheckOutcome]:
         other = ctx.subjects[j]
         odt = _dt(other)
         if _event_type(other) == et and odt is not None and odt.date() == day:
-            return [CheckOutcome(
-                "fail",
-                f"IR01 — doublon de date+type ({et} au {day.isoformat()}).",
-                {"event_type": et, "date": day.isoformat()}, severity="bloquant",
-            )]
+            return [
+                CheckOutcome(
+                    "fail",
+                    f"IR01 — doublon de date+type ({et} au {day.isoformat()}).",
+                    {"event_type": et, "date": day.isoformat()},
+                    severity="bloquant",
+                )
+            ]
     return _ok("IR01 — pas de doublon date+type.")
 
 
@@ -582,14 +688,31 @@ async def _ir02_rob_continuity(ctx: RuleContext) -> list[CheckOutcome]:
     ecart = abs(cur_rob - expected)
     mineur = await _thr(ctx, "seuil_rob_ecart_mineur_t")
     critique = await _thr(ctx, "seuil_rob_ecart_critique_t")
-    details = {"rob_declared_t": str(cur_rob), "rob_expected_t": str(expected),
-               "ecart_t": str(ecart), "seuil_mineur_t": str(mineur), "seuil_critique_t": str(critique)}
+    details = {
+        "rob_declared_t": str(cur_rob),
+        "rob_expected_t": str(expected),
+        "ecart_t": str(ecart),
+        "seuil_mineur_t": str(mineur),
+        "seuil_critique_t": str(critique),
+    }
     if ecart > critique:
-        return [CheckOutcome("fail", f"IR02 — écart ROB {ecart} t > critique {critique} t.",
-                             details, severity="bloquant")]
+        return [
+            CheckOutcome(
+                "fail",
+                f"IR02 — écart ROB {ecart} t > critique {critique} t.",
+                details,
+                severity="bloquant",
+            )
+        ]
     if ecart > mineur:
-        return [CheckOutcome("fail", f"IR02 — écart ROB {ecart} t > mineur {mineur} t.",
-                             details, severity="warning")]
+        return [
+            CheckOutcome(
+                "fail",
+                f"IR02 — écart ROB {ecart} t > mineur {mineur} t.",
+                details,
+                severity="warning",
+            )
+        ]
     return _ok("IR02 — continuité ROB cohérente.")
 
 
@@ -626,15 +749,21 @@ async def _ir03_rob_frozen(ctx: RuleContext) -> list[CheckOutcome]:
     span_conso = sum(known, Decimal("0")) if known else None
     # Flag une seule fois, au moment où le palier atteint exactement le seuil.
     if run == n_min and (span_conso is None or span_conso > conso_min):
-        return [CheckOutcome(
-            "fail",
-            f"IR03 — ROB figé à {cur_rob} t sur {run} relevés consécutifs "
-            f"(conso cumulée {span_conso if span_conso is not None else 'inconnue'}).",
-            {"rob_t": str(cur_rob), "reports": run,
-             "span_conso_t": (str(span_conso) if span_conso is not None else None),
-             "seuil_reports": n_min, "ir03_conso_min_t": str(conso_min)},
-            severity="warning",
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"IR03 — ROB figé à {cur_rob} t sur {run} relevés consécutifs "
+                f"(conso cumulée {span_conso if span_conso is not None else 'inconnue'}).",
+                {
+                    "rob_t": str(cur_rob),
+                    "reports": run,
+                    "span_conso_t": (str(span_conso) if span_conso is not None else None),
+                    "seuil_reports": n_min,
+                    "ir03_conso_min_t": str(conso_min),
+                },
+                severity="warning",
+            )
+        ]
     return _ok("IR03 — ROB non figé.")
 
 
@@ -654,14 +783,20 @@ async def _ir04_counter_regress(ctx: RuleContext) -> list[CheckOutcome]:
         if pf is None or cf is None:
             continue
         if cf < pf and not is_reset:
-            return [CheckOutcome(
-                "fail",
-                f"IR04 — compteur carburant régressant sans reset documenté "
-                f"(moteur {eid} : {pf} → {cf} L).",
-                {"engine_id": str(eid), "prev_l": str(pf), "cur_l": str(cf),
-                 "reading_ids": ([rid] if rid is not None else [])},
-                severity="bloquant",
-            )]
+            return [
+                CheckOutcome(
+                    "fail",
+                    f"IR04 — compteur carburant régressant sans reset documenté "
+                    f"(moteur {eid} : {pf} → {cf} L).",
+                    {
+                        "engine_id": str(eid),
+                        "prev_l": str(pf),
+                        "cur_l": str(cf),
+                        "reading_ids": ([rid] if rid is not None else []),
+                    },
+                    severity="bloquant",
+                )
+            ]
     return _ok("IR04 — compteurs non régressants (ou reset documenté).")
 
 
@@ -689,12 +824,14 @@ async def _ir05_position_frozen(ctx: RuleContext) -> list[CheckOutcome]:
         run += 1
         j -= 1
     if run == n_min:
-        return [CheckOutcome(
-            "fail",
-            f"IR05 — position figée ({cur[0]}, {cur[1]}) sur {run} relevés consécutifs en mer.",
-            {"lat": str(cur[0]), "lon": str(cur[1]), "reports": run, "seuil_reports": n_min},
-            severity="warning",
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"IR05 — position figée ({cur[0]}, {cur[1]}) sur {run} relevés consécutifs en mer.",
+                {"lat": str(cur[0]), "lon": str(cur[1]), "reports": run, "seuil_reports": n_min},
+                severity="warning",
+            )
+        ]
     return _ok("IR05 — position non figée.")
 
 
@@ -745,7 +882,9 @@ async def _compute_leg(ctx: RuleContext):
     return comp
 
 
-def _classify_rob(ecart: Decimal, mineur: Decimal, majeur: Decimal, critique: Decimal) -> tuple[str, str]:
+def _classify_rob(
+    ecart: Decimal, mineur: Decimal, majeur: Decimal, critique: Decimal
+) -> tuple[str, str]:
     """(classe, sévérité) d'un écart ROB selon les 3 bornes R14."""
     if ecart <= mineur:
         return "conforme", "info"
@@ -782,15 +921,27 @@ async def _r14_rob_continuity(ctx: RuleContext) -> list[CheckOutcome]:
         klass, sev = _classify_rob(ecart, mineur, majeur, critique)
         if klass == "conforme":
             continue
-        outs.append(CheckOutcome(
-            "fail",
-            f"R14 — écart ROB {klass} ({ecart} t) à l'événement {point.event_type} "
-            f"#{point.event_id} : déclaré {point.rob_declared_t} vs calculé {point.rob_calculated_t}.",
-            {"event_id": point.event_id, "classification": klass, "ecart_t": str(ecart),
-             "rob_declared_t": str(point.rob_declared_t), "rob_calculated_t": str(point.rob_calculated_t),
-             "seuils": {"mineur": str(mineur), "majeur": str(majeur), "critique": str(critique)}},
-            subject=ctx.leg, severity=sev,
-        ))
+        outs.append(
+            CheckOutcome(
+                "fail",
+                f"R14 — écart ROB {klass} ({ecart} t) à l'événement {point.event_type} "
+                f"#{point.event_id} : déclaré {point.rob_declared_t} vs calculé {point.rob_calculated_t}.",
+                {
+                    "event_id": point.event_id,
+                    "classification": klass,
+                    "ecart_t": str(ecart),
+                    "rob_declared_t": str(point.rob_declared_t),
+                    "rob_calculated_t": str(point.rob_calculated_t),
+                    "seuils": {
+                        "mineur": str(mineur),
+                        "majeur": str(majeur),
+                        "critique": str(critique),
+                    },
+                },
+                subject=ctx.leg,
+                severity=sev,
+            )
+        )
     return outs or _ok("R14 — continuité ROB conforme.")
 
 
@@ -804,24 +955,40 @@ async def _r15_consumption_reference(ctx: RuleContext) -> list[CheckOutcome]:
     comp = await _compute_leg(ctx)
     outs: list[CheckOutcome] = []
     totals = comp.totals
-    if totals is not None and totals.conso_total_t is not None and totals.duration_h and totals.duration_h > 0:
+    if (
+        totals is not None
+        and totals.conso_total_t is not None
+        and totals.duration_h
+        and totals.duration_h > 0
+    ):
         density = await _thr(ctx, "densite_defaut_t_m3") or Decimal("0.845")
         total_l = totals.conso_total_t * Decimal("1000") / density
         per_day_l = total_l / (totals.duration_h / _HOURS_PER_DAY)
         seuil = await _thr(ctx, "seuil_conso_ref_l_j")
         if per_day_l > seuil:
-            outs.append(CheckOutcome(
-                "fail", f"R15 — conso voyage {per_day_l:.0f} L/j > cible {seuil} L/j.",
-                {"conso_l_j": str(per_day_l), "seuil_l_j": str(seuil)}, subject=ctx.leg, severity="warning",
-            ))
+            outs.append(
+                CheckOutcome(
+                    "fail",
+                    f"R15 — conso voyage {per_day_l:.0f} L/j > cible {seuil} L/j.",
+                    {"conso_l_j": str(per_day_l), "seuil_l_j": str(seuil)},
+                    subject=ctx.leg,
+                    severity="warning",
+                )
+            )
     # Contrôle croisé référence FLGO (CheckConsumption).
     from app.models.flgo import FlgoVoyageConsumptionRef
 
     ref = (
-        await ctx.db.execute(
-            select(FlgoVoyageConsumptionRef).where(FlgoVoyageConsumptionRef.leg_id == ctx.leg.id)
+        (
+            await ctx.db.execute(
+                select(FlgoVoyageConsumptionRef).where(
+                    FlgoVoyageConsumptionRef.leg_id == ctx.leg.id
+                )
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if ref is not None and totals is not None:
         me = totals.conso_me_t or Decimal("0")
         ae = totals.conso_ae_t or Decimal("0")
@@ -829,12 +996,19 @@ async def _r15_consumption_reference(ctx: RuleContext) -> list[CheckOutcome]:
         ecart = abs((me + ae) - ref_total)
         seuil = await _thr(ctx, "seuil_rob_ecart_majeur_t")
         if ecart > seuil:
-            outs.append(CheckOutcome(
-                "fail",
-                f"R15 — conso calculée {me + ae} t vs référence FLGO {ref_total} t (écart {ecart} t).",
-                {"conso_calc_t": str(me + ae), "conso_flgo_t": str(ref_total), "ecart_t": str(ecart)},
-                subject=ctx.leg, severity="warning",
-            ))
+            outs.append(
+                CheckOutcome(
+                    "fail",
+                    f"R15 — conso calculée {me + ae} t vs référence FLGO {ref_total} t (écart {ecart} t).",
+                    {
+                        "conso_calc_t": str(me + ae),
+                        "conso_flgo_t": str(ref_total),
+                        "ecart_t": str(ecart),
+                    },
+                    subject=ctx.leg,
+                    severity="warning",
+                )
+            )
     return outs or _ok("R15 — conso voyage cohérente avec la référence.")
 
 
@@ -866,16 +1040,28 @@ async def _r17_rob_vs_flgo(ctx: RuleContext) -> list[CheckOutcome]:
             continue
         # Au-delà de la tolérance temporelle → rapprochement peu significatif → Info.
         sev = "warning" if match.within_tolerance else "info"
-        outs.append(CheckOutcome(
-            "fail",
-            f"R17 — ROB déclaré {point.rob_declared_t} t vs FLGO {flgo_rob_t:.2f} t "
-            f"(écart {ecart:.2f} t, Δt {match.delta_hours} h)"
-            + ("" if match.within_tolerance else " — déclassé Info (lecture FLGO trop éloignée)."),
-            {"event_id": point.event_id, "rob_declared_t": str(point.rob_declared_t),
-             "rob_flgo_t": str(flgo_rob_t), "ecart_t": str(ecart),
-             "delta_h": str(match.delta_hours), "within_tolerance": match.within_tolerance},
-            subject=ctx.leg, severity=sev,
-        ))
+        outs.append(
+            CheckOutcome(
+                "fail",
+                f"R17 — ROB déclaré {point.rob_declared_t} t vs FLGO {flgo_rob_t:.2f} t "
+                f"(écart {ecart:.2f} t, Δt {match.delta_hours} h)"
+                + (
+                    ""
+                    if match.within_tolerance
+                    else " — déclassé Info (lecture FLGO trop éloignée)."
+                ),
+                {
+                    "event_id": point.event_id,
+                    "rob_declared_t": str(point.rob_declared_t),
+                    "rob_flgo_t": str(flgo_rob_t),
+                    "ecart_t": str(ecart),
+                    "delta_h": str(match.delta_hours),
+                    "within_tolerance": match.within_tolerance,
+                },
+                subject=ctx.leg,
+                severity=sev,
+            )
+        )
     return outs or _ok("R17 — ROB cohérent avec FLGO.")
 
 
@@ -901,13 +1087,20 @@ async def _r20_cargo_mrv(ctx: RuleContext) -> list[CheckOutcome]:
         return []
     seuil = await _thr(ctx, "seuil_cargo_mrv_ecart_t")
     if Decimal(cargo_mrv) + seuil < cargo_bl:
-        return [CheckOutcome(
-            "fail",
-            f"R20 — Cargo MRV {cargo_mrv} t < cargaison B/L {cargo_bl} t (Info, D10 non résolu).",
-            {"cargo_mrv_t": str(cargo_mrv), "cargo_bl_t": str(cargo_bl), "seuil_t": str(seuil),
-             "d10_pending": True},
-            subject=ctx.leg, severity="info",
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"R20 — Cargo MRV {cargo_mrv} t < cargaison B/L {cargo_bl} t (Info, D10 non résolu).",
+                {
+                    "cargo_mrv_t": str(cargo_mrv),
+                    "cargo_bl_t": str(cargo_bl),
+                    "seuil_t": str(seuil),
+                    "d10_pending": True,
+                },
+                subject=ctx.leg,
+                severity="info",
+            )
+        ]
     return _ok("R20 — Cargo MRV ≥ B/L (Info).")
 
 
@@ -919,13 +1112,17 @@ async def _r26_voyage_chaining(ctx: RuleContext) -> list[CheckOutcome]:
         return []
     leg = ctx.leg
     nxt = (
-        await ctx.db.execute(
-            select(Leg)
-            .where(Leg.vessel_id == leg.vessel_id, Leg.etd > leg.etd, Leg.status != "cancelled")
-            .order_by(Leg.etd.asc())
-            .limit(1)
+        (
+            await ctx.db.execute(
+                select(Leg)
+                .where(Leg.vessel_id == leg.vessel_id, Leg.etd > leg.etd, Leg.status != "cancelled")
+                .order_by(Leg.etd.asc())
+                .limit(1)
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if nxt is None:
         return _ok("R26 — pas de voyage suivant (chaînage non applicable).")
     arr = await ctx.db.get(Port, leg.arrival_port_id)
@@ -933,13 +1130,21 @@ async def _r26_voyage_chaining(ctx: RuleContext) -> list[CheckOutcome]:
     arr_code = (_get(arr, "locode") if arr else None) or ""
     dep_code = (_get(dep, "locode") if dep else None) or ""
     if arr_code and dep_code and arr_code != dep_code:
-        return [CheckOutcome(
-            "fail",
-            f"R26 — rupture de chaînage : arrivée {arr_code} ({leg.leg_code}) ≠ "
-            f"départ {dep_code} ({nxt.leg_code}).",
-            {"arr_locode": arr_code, "dep_locode": dep_code,
-             "leg": leg.leg_code, "next_leg": nxt.leg_code}, subject=ctx.leg, severity="warning",
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"R26 — rupture de chaînage : arrivée {arr_code} ({leg.leg_code}) ≠ "
+                f"départ {dep_code} ({nxt.leg_code}).",
+                {
+                    "arr_locode": arr_code,
+                    "dep_locode": dep_code,
+                    "leg": leg.leg_code,
+                    "next_leg": nxt.leg_code,
+                },
+                subject=ctx.leg,
+                severity="warning",
+            )
+        ]
     return _ok("R26 — chaînage des voyages conforme.")
 
 
@@ -957,14 +1162,22 @@ async def _r16_density(ctx: RuleContext) -> list[CheckOutcome]:
 
     check = await bunkering.check_density(ctx.db, ctx.subject)
     if check.flagged:
-        return [CheckOutcome(
-            "fail",
-            f"R16 — densité BDN {check.density_t_m3} hors plage [{check.low}, {check.high}] t/m³.",
-            {"density_t_m3": (str(check.density_t_m3) if check.density_t_m3 is not None else None),
-             "low": str(check.low), "high": str(check.high),
-             "defaut": str(check.default_t_m3), "tolerance": str(check.tolerance_t_m3)},
-            severity="warning",
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"R16 — densité BDN {check.density_t_m3} hors plage [{check.low}, {check.high}] t/m³.",
+                {
+                    "density_t_m3": (
+                        str(check.density_t_m3) if check.density_t_m3 is not None else None
+                    ),
+                    "low": str(check.low),
+                    "high": str(check.high),
+                    "defaut": str(check.default_t_m3),
+                    "tolerance": str(check.tolerance_t_m3),
+                },
+                severity="warning",
+            )
+        ]
     return _ok("R16 — densité BDN dans la plage.")
 
 
@@ -988,31 +1201,46 @@ async def _r23_bunker_consistency(ctx: RuleContext) -> list[CheckOutcome]:
             await ctx.db.execute(
                 select(BunkerTankAllocation).where(BunkerTankAllocation.bunker_id == bunker.id)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     outs: list[CheckOutcome] = []
     mass = await bunkering.check_mass_consistency(ctx.db, bunker, allocations)
     if mass.status != "ok":
-        outs.append(CheckOutcome(
-            "fail",
-            f"R23 — masse déclarée {mass.declared_mass_t} t vs Σ(vol×dens) "
-            f"{mass.allocated_mass_t} t (écart {mass.delta_t} t, {mass.status}).",
-            {"declared_mass_t": str(mass.declared_mass_t), "allocated_mass_t": str(mass.allocated_mass_t),
-             "delta_t": str(mass.delta_t), "tolerance_t": str(mass.tolerance_t), "status": mass.status},
-            severity="warning",
-        ))
+        outs.append(
+            CheckOutcome(
+                "fail",
+                f"R23 — masse déclarée {mass.declared_mass_t} t vs Σ(vol×dens) "
+                f"{mass.allocated_mass_t} t (écart {mass.delta_t} t, {mass.status}).",
+                {
+                    "declared_mass_t": str(mass.declared_mass_t),
+                    "allocated_mass_t": str(mass.allocated_mass_t),
+                    "delta_t": str(mass.delta_t),
+                    "tolerance_t": str(mass.tolerance_t),
+                    "status": mass.status,
+                },
+                severity="warning",
+            )
+        )
     tanks_by_id = await bunkering.vessel_tanks_by_id(ctx.db, bunker.vessel_id)
     cap = bunkering.check_capacity(allocations, tanks_by_id)
     if cap.exceeds:
-        outs.append(CheckOutcome(
-            "fail",
-            f"R23 — Σ volumes {cap.total_volume_m3} m³ > Σ capacités {cap.total_capacity_m3} m³ "
-            "(Info tant que capacités non officielles, Q11).",
-            {"total_volume_m3": str(cap.total_volume_m3),
-             "total_capacity_m3": (str(cap.total_capacity_m3) if cap.total_capacity_m3 is not None else None),
-             "q11_pending": True},
-            severity="info",
-        ))
+        outs.append(
+            CheckOutcome(
+                "fail",
+                f"R23 — Σ volumes {cap.total_volume_m3} m³ > Σ capacités {cap.total_capacity_m3} m³ "
+                "(Info tant que capacités non officielles, Q11).",
+                {
+                    "total_volume_m3": str(cap.total_volume_m3),
+                    "total_capacity_m3": (
+                        str(cap.total_capacity_m3) if cap.total_capacity_m3 is not None else None
+                    ),
+                    "q11_pending": True,
+                },
+                severity="info",
+            )
+        )
     return outs or _ok("R23 — soutage cohérent (masse/volumes).")
 
 
@@ -1027,14 +1255,19 @@ async def _r24_bunker_flgo(ctx: RuleContext) -> list[CheckOutcome]:
 
     match = await flgo_sync.flgo_matches_for_bunker(ctx.db, ctx.subject)
     if not match.matched:
-        return [CheckOutcome(
-            "fail",
-            f"R24 — soutage {ctx.subject.bdn_number} sans lecture FLGO 'Received' "
-            f"sous {match.window_days} j — complétude Marad à vérifier.",
-            {"bdn_number": ctx.subject.bdn_number, "window_days": str(match.window_days),
-             "route_roles": ["administrateur"]},
-            severity="warning",
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"R24 — soutage {ctx.subject.bdn_number} sans lecture FLGO 'Received' "
+                f"sous {match.window_days} j — complétude Marad à vérifier.",
+                {
+                    "bdn_number": ctx.subject.bdn_number,
+                    "window_days": str(match.window_days),
+                    "route_roles": ["administrateur"],
+                },
+                severity="warning",
+            )
+        ]
     return _ok("R24 — soutage recoupé dans FLGO.")
 
 
@@ -1062,36 +1295,53 @@ async def _r25_flgo_consistency(ctx: RuleContext) -> list[CheckOutcome]:
                     FlgoTankCompartmentVolume.flgo_reading_id == ctx.subject.id
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     internal = await flgo_sync.check_internal_consistency(
         ctx.db, ctx.subject, compartments=compartments
     )
     if compartments and internal.flagged:
-        outs.append(CheckOutcome(
-            "fail",
-            f"R25 — Σ compartiments {internal.total_compartments_m3} m³ ≠ total déclaré "
-            f"{internal.total_declared_m3} m³ (écart {internal.delta_m3} m³).",
-            {"volet": "interne", "total_declared_m3": str(internal.total_declared_m3),
-             "total_compartments_m3": str(internal.total_compartments_m3),
-             "delta_m3": str(internal.delta_m3), "tolerance_m3": str(internal.tolerance_m3)},
-            severity="warning",
-        ))
+        outs.append(
+            CheckOutcome(
+                "fail",
+                f"R25 — Σ compartiments {internal.total_compartments_m3} m³ ≠ total déclaré "
+                f"{internal.total_declared_m3} m³ (écart {internal.delta_m3} m³).",
+                {
+                    "volet": "interne",
+                    "total_declared_m3": str(internal.total_declared_m3),
+                    "total_compartments_m3": str(internal.total_compartments_m3),
+                    "delta_m3": str(internal.delta_m3),
+                    "tolerance_m3": str(internal.tolerance_m3),
+                },
+                severity="warning",
+            )
+        )
     prev = ctx.prev
     if prev is not None and _get(prev, "vessel_id") == _get(ctx.subject, "vessel_id"):
         seq = await flgo_sync.check_consecutive_consistency(ctx.db, prev, ctx.subject)
         if seq.flagged:
-            outs.append(CheckOutcome(
-                "fail",
-                f"R25 — progression ROB incohérente entre lectures consécutives "
-                f"({seq.reason} : {seq.prev_rob_m3} → {seq.cur_rob_m3} m³).",
-                {"volet": "consecutif", "reason": seq.reason,
-                 "prev_rob_m3": (str(seq.prev_rob_m3) if seq.prev_rob_m3 is not None else None),
-                 "cur_rob_m3": (str(seq.cur_rob_m3) if seq.cur_rob_m3 is not None else None),
-                 "delta_rob_m3": (str(seq.delta_rob_m3) if seq.delta_rob_m3 is not None else None),
-                 "tolerance_m3": str(seq.tolerance_m3)},
-                severity="warning",
-            ))
+            outs.append(
+                CheckOutcome(
+                    "fail",
+                    f"R25 — progression ROB incohérente entre lectures consécutives "
+                    f"({seq.reason} : {seq.prev_rob_m3} → {seq.cur_rob_m3} m³).",
+                    {
+                        "volet": "consecutif",
+                        "reason": seq.reason,
+                        "prev_rob_m3": (
+                            str(seq.prev_rob_m3) if seq.prev_rob_m3 is not None else None
+                        ),
+                        "cur_rob_m3": (str(seq.cur_rob_m3) if seq.cur_rob_m3 is not None else None),
+                        "delta_rob_m3": (
+                            str(seq.delta_rob_m3) if seq.delta_rob_m3 is not None else None
+                        ),
+                        "tolerance_m3": str(seq.tolerance_m3),
+                    },
+                    severity="warning",
+                )
+            )
     return outs or _ok("R25 — lecture FLGO cohérente (interne + progression).")
 
 
@@ -1110,16 +1360,20 @@ async def _r18_modification_justified(ctx: RuleContext) -> list[CheckOutcome]:
             await ctx.db.execute(
                 select(EnvFieldModification).where(EnvFieldModification.report_id == ctx.subject.id)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     unjustified = [m for m in mods if not (m.justification_text and m.justification_text.strip())]
     if unjustified:
-        return [CheckOutcome(
-            "fail",
-            f"R18 — {len(unjustified)} modification(s) sans justification.",
-            {"count": len(unjustified), "fields": [m.field_name for m in unjustified]},
-            severity="bloquant",
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"R18 — {len(unjustified)} modification(s) sans justification.",
+                {"count": len(unjustified), "fields": [m.field_name for m in unjustified]},
+                severity="bloquant",
+            )
+        ]
     return _ok("R18 — modifications justifiées.")
 
 
@@ -1143,7 +1397,9 @@ async def _r22_carbon_vs_noon(ctx: RuleContext) -> list[CheckOutcome]:
                     EnvReport.leg_id == report.leg_id, EnvReport.report_type == "noon"
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     noon_conso: list[Decimal] = []
     for nr in noon_reports:
@@ -1157,14 +1413,21 @@ async def _r22_carbon_vs_noon(ctx: RuleContext) -> list[CheckOutcome]:
     tol = await _thr(ctx, "tolerance_carbon_noon_conso_t")
     ecart = abs(carbon_total - noon_sum)
     if ecart > tol:
-        return [CheckOutcome(
-            "fail",
-            f"R22 — conso Carbon {carbon_total} t vs Σ Noon {noon_sum} t (écart {ecart} t > {tol} t) "
-            "— signalé (le Carbon n'est jamais correcteur).",
-            {"carbon_conso_t": str(carbon_total), "noon_sum_t": str(noon_sum),
-             "ecart_t": str(ecart), "tolerance_t": str(tol), "carbon_corrector": False},
-            severity="warning",
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"R22 — conso Carbon {carbon_total} t vs Σ Noon {noon_sum} t (écart {ecart} t > {tol} t) "
+                "— signalé (le Carbon n'est jamais correcteur).",
+                {
+                    "carbon_conso_t": str(carbon_total),
+                    "noon_sum_t": str(noon_sum),
+                    "ecart_t": str(ecart),
+                    "tolerance_t": str(tol),
+                    "carbon_corrector": False,
+                },
+                severity="warning",
+            )
+        ]
     return _ok("R22 — Carbon cohérent avec les Noon.")
 
 
@@ -1217,14 +1480,11 @@ async def _already_alerted(db: AsyncSession, r: QualityCheckResult) -> bool:
     acquitté OU dans les 24 h — bloque une nouvelle notification. L'acquittement
     stoppe donc la re-notification ; sinon, une seule alerte par 24 h."""
     horizon = (r.executed_at or datetime.now(UTC)) - timedelta(hours=24)
-    stmt = (
-        select(QualityCheckResult.id)
-        .where(
-            QualityCheckResult.rule_id == r.rule_id,
-            QualityCheckResult.subject_type == r.subject_type,
-            QualityCheckResult.result == "fail",
-            QualityCheckResult.id != r.id,
-        )
+    stmt = select(QualityCheckResult.id).where(
+        QualityCheckResult.rule_id == r.rule_id,
+        QualityCheckResult.subject_type == r.subject_type,
+        QualityCheckResult.result == "fail",
+        QualityCheckResult.id != r.id,
     )
     if r.subject_id is None:
         stmt = stmt.where(QualityCheckResult.subject_id.is_(None))
@@ -1294,7 +1554,9 @@ async def run_report_rules_and_route(db: AsyncSession, report: EnvReport) -> Qua
     """Scope ``report`` (R18/R22) — déclenché à la validation Master/siège."""
     if not await _catalog_seeded(db):
         return QualityRunResult()
-    summary = await run_rules(db, "report", [report], leg=await _leg_of(db, report.leg_id), persist_passes=False)
+    summary = await run_rules(
+        db, "report", [report], leg=await _leg_of(db, report.leg_id), persist_passes=False
+    )
     fails = [r for r in summary.results if r.result == "fail"]
     await route_alerts(db, fails)
     return QualityRunResult(checks=summary.total, fails=summary.failed, fail_results=fails)
@@ -1304,7 +1566,9 @@ async def run_bunker_rules_and_route(db: AsyncSession, bunker: BunkerOperation) 
     """Scope ``bunker`` (R16/R23/R24) — déclenché à la validation/correction d'un soutage."""
     if not await _catalog_seeded(db):
         return QualityRunResult()
-    summary = await run_rules(db, "bunker", [bunker], leg=await _leg_of(db, bunker.leg_id), persist_passes=False)
+    summary = await run_rules(
+        db, "bunker", [bunker], leg=await _leg_of(db, bunker.leg_id), persist_passes=False
+    )
     fails = [r for r in summary.results if r.result == "fail"]
     await route_alerts(db, fails)
     return QualityRunResult(checks=summary.total, fails=summary.failed, fail_results=fails)
@@ -1324,7 +1588,9 @@ async def run_flgo_rules_and_route(db: AsyncSession, vessel_id: int) -> QualityR
                 .where(FlgoReading.vessel_id == vessel_id)
                 .order_by(FlgoReading.reading_datetime.asc(), FlgoReading.id.asc())
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     if not readings:
         return QualityRunResult()
@@ -1359,9 +1625,7 @@ async def run_nightly_quality(db: AsyncSession, now: datetime | None = None) -> 
     from app.services import inter_event_compute as iec
 
     legs = list(
-        (
-            await db.execute(select(Leg).order_by(Leg.vessel_id.asc(), Leg.etd.asc()))
-        ).scalars().all()
+        (await db.execute(select(Leg).order_by(Leg.vessel_id.asc(), Leg.etd.asc()))).scalars().all()
     )
     legs_scanned = checks = fails = 0
     all_fails: list[QualityCheckResult] = []

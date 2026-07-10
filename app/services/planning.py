@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -710,7 +710,9 @@ async def update_leg(
     resolved_speed, resolved_elongation = await _resolved_navigation_params(
         db,
         vessel_id=new_vessel_id,
-        transit_speed_kn=(transit_speed_kn if transit_speed_kn is not None else leg.transit_speed_kn),
+        transit_speed_kn=(
+            transit_speed_kn if transit_speed_kn is not None else leg.transit_speed_kn
+        ),
         elongation_coef=(elongation_coef if elongation_coef is not None else leg.elongation_coef),
     )
 

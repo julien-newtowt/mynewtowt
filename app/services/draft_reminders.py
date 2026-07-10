@@ -164,20 +164,23 @@ async def run_draft_reminders(db: AsyncSession, now: datetime | None = None) -> 
         age_h = int(d.age_hours)
 
         # 1er seuil — rappel Master (auteur nominatif).
-        if d.over_master and ev.author_user_id is not None:
-            if not await _notification_exists(db, link=link, target_user_id=ev.author_user_id):
-                await notifications.create(
-                    db,
-                    type="info",
-                    title=f"Brouillon d'événement à finaliser ({_draft_label(ev)})",
-                    detail=(
-                        f"Ce brouillon n'est pas finalisé depuis ~{age_h} h "
-                        "(rappel R19). Reprenez-le pour le finaliser."
-                    ),
-                    link=link,
-                    target_user_id=ev.author_user_id,
-                )
-                created_master += 1
+        if (
+            d.over_master
+            and ev.author_user_id is not None
+            and not await _notification_exists(db, link=link, target_user_id=ev.author_user_id)
+        ):
+            await notifications.create(
+                db,
+                type="info",
+                title=f"Brouillon d'événement à finaliser ({_draft_label(ev)})",
+                detail=(
+                    f"Ce brouillon n'est pas finalisé depuis ~{age_h} h "
+                    "(rappel R19). Reprenez-le pour le finaliser."
+                ),
+                link=link,
+                target_user_id=ev.author_user_id,
+            )
+            created_master += 1
 
         # 2e seuil — alerte siège (par rôle).
         if d.over_siege:
@@ -189,8 +192,7 @@ async def run_draft_reminders(db: AsyncSession, now: datetime | None = None) -> 
                     type="info",
                     title=f"Brouillon MRV dormant côté bord ({_draft_label(ev)})",
                     detail=(
-                        f"Brouillon non finalisé depuis ~{age_h} h "
-                        "(alerte siège R19, 2e seuil)."
+                        f"Brouillon non finalisé depuis ~{age_h} h " "(alerte siège R19, 2e seuil)."
                     ),
                     link=link,
                     target_role=role,

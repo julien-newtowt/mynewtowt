@@ -97,9 +97,7 @@ class ValidationRuleThreshold(Base):
 
     __tablename__ = "validation_rule_thresholds"
     __table_args__ = (
-        UniqueConstraint(
-            "rule_id", "vessel_id", "parameter_name", name="uq_vrt_rule_vessel_param"
-        ),
+        UniqueConstraint("rule_id", "vessel_id", "parameter_name", name="uq_vrt_rule_vessel_param"),
         Index("ix_vrt_rule", "rule_id"),
         Index("ix_vrt_vessel", "vessel_id"),
     )
@@ -130,7 +128,9 @@ class ValidationRuleThreshold(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         scope = f"vessel={self.vessel_id}" if self.vessel_id else "global"
-        return f"<ValidationRuleThreshold {self.rule_id}:{self.parameter_name}={self.value} {scope}>"
+        return (
+            f"<ValidationRuleThreshold {self.rule_id}:{self.parameter_name}={self.value} {scope}>"
+        )
 
 
 class DashboardParameter(Base):
@@ -138,9 +138,7 @@ class DashboardParameter(Base):
 
     __tablename__ = "dashboard_parameters"
     __table_args__ = (
-        UniqueConstraint(
-            "parameter_name", "vessel_id", name="uq_dashparam_name_vessel"
-        ),
+        UniqueConstraint("parameter_name", "vessel_id", name="uq_dashparam_name_vessel"),
         Index("ix_dashparam_vessel", "vessel_id"),
     )
 

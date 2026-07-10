@@ -452,13 +452,13 @@ async def embarked_days_by_member(
 
 
 async def current_embarkations(
-    db: AsyncSession, *, on: _date | None = None
+    db: AsyncSession, *, on: date | None = None
 ) -> list[MaradCrewSchedule]:
     """Plannings Marad **en cours** (embarquements dont la fenêtre contient ``on``).
 
     Sert à la bordée actuelle par navire et à l'indicateur « En activité ».
     """
-    on = on or _date.today()
+    on = on or date.today()
     rows = (
         (
             await db.execute(
@@ -498,8 +498,8 @@ async def crew_for_leg(
     vid = vessel_id if vessel_id is not None else leg.vessel_id
     if vid is None:
         return []
-    lo = (leg.atd or leg.etd)
-    hi = (leg.ata or leg.eta)
+    lo = leg.atd or leg.etd
+    hi = leg.ata or leg.eta
     lo_d = lo.date() if lo else None
     hi_d = hi.date() if hi else None
     stmt = (

@@ -127,8 +127,12 @@ async def test_threshold_update_flips_rule_verdict(db, staff_user):
         )
     ).scalar_one()
     resp = await mrv_parametres_threshold_update(
-        row.id, FakeRequest(), value="800", note="calibrage voyage pilote",
-        db=db, user=staff_user,
+        row.id,
+        FakeRequest(),
+        value="800",
+        note="calibrage voyage pilote",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
 
@@ -140,9 +144,7 @@ async def test_threshold_update_flips_rule_verdict(db, staff_user):
     logs = list(
         (
             await db.execute(
-                select(ActivityLog).where(
-                    ActivityLog.action == "mrv_validation_threshold_update"
-                )
+                select(ActivityLog).where(ActivityLog.action == "mrv_validation_threshold_update")
             )
         )
         .scalars()
@@ -165,8 +167,13 @@ async def test_vessel_override_created_and_used(db, staff_user):
     invalidate_cache()
 
     resp = await mrv_parametres_threshold_override(
-        FakeRequest(), rule_id="R11", parameter_name="seuil_conso_ref_l_j",
-        vessel_id=1, value="900", db=db, user=staff_user,
+        FakeRequest(),
+        rule_id="R11",
+        parameter_name="seuil_conso_ref_l_j",
+        vessel_id=1,
+        value="900",
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     invalidate_cache()
@@ -218,10 +225,12 @@ async def test_threshold_update_rejects_invalid_value(db, staff_user):
     await seed_reference_data(db)
     row = (
         await db.execute(
-            select(ValidationRuleThreshold).where(
+            select(ValidationRuleThreshold)
+            .where(
                 ValidationRuleThreshold.parameter_name == "seuil_conso_ref_l_j",
                 ValidationRuleThreshold.vessel_id.is_(None),
-            ).limit(1)
+            )
+            .limit(1)
         )
     ).scalar_one()
     with pytest.raises(HTTPException) as exc:

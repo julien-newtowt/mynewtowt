@@ -65,15 +65,15 @@ async def _make_vessel_with_tanks(s, code: str = "ANE") -> Vessel:
 async def _tanks_of(s, vessel_id: int) -> dict[str, VesselTank]:
     """Cuves d'un navire indexées par ``tank_code`` (objets ORM)."""
     rows = (
-        await s.execute(select(VesselTank).where(VesselTank.vessel_id == vessel_id))
-    ).scalars().all()
+        (await s.execute(select(VesselTank).where(VesselTank.vessel_id == vessel_id)))
+        .scalars()
+        .all()
+    )
     return {t.tank_code: t for t in rows}
 
 
 async def _get_or_create_port(s, locode: str, name: str, country: str) -> Port:
-    existing = (
-        await s.execute(select(Port).where(Port.locode == locode))
-    ).scalar_one_or_none()
+    existing = (await s.execute(select(Port).where(Port.locode == locode))).scalar_one_or_none()
     if existing is not None:
         return existing
     p = Port(locode=locode, name=name, country=country)
@@ -129,8 +129,12 @@ def test_set_allocations_multi_tank():
             density_15c_t_m3=Decimal("0.845"),
         )
         rows = [
-            bunkering.AllocationInput(tank_id=tanks["14"].id, volume_m3=Decimal("10"), density_t_m3=Decimal("0.845")),
-            bunkering.AllocationInput(tank_id=tanks["15"].id, volume_m3=Decimal("13.6"), density_t_m3=Decimal("0.845")),
+            bunkering.AllocationInput(
+                tank_id=tanks["14"].id, volume_m3=Decimal("10"), density_t_m3=Decimal("0.845")
+            ),
+            bunkering.AllocationInput(
+                tank_id=tanks["15"].id, volume_m3=Decimal("13.6"), density_t_m3=Decimal("0.845")
+            ),
         ]
         created = await bunkering.set_allocations(s, bunker, rows)
         return created, bunker.id
@@ -146,13 +150,22 @@ def test_set_allocations_rejects_duplicate_tank_in_same_call():
         v = await _make_vessel_with_tanks(s)
         tank = next(iter((await _tanks_of(s, v.id)).values()))
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-002", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-002",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         rows = [
-            bunkering.AllocationInput(tank_id=tank.id, volume_m3=Decimal("5"), density_t_m3=Decimal("0.845")),
-            bunkering.AllocationInput(tank_id=tank.id, volume_m3=Decimal("5"), density_t_m3=Decimal("0.845")),
+            bunkering.AllocationInput(
+                tank_id=tank.id, volume_m3=Decimal("5"), density_t_m3=Decimal("0.845")
+            ),
+            bunkering.AllocationInput(
+                tank_id=tank.id, volume_m3=Decimal("5"), density_t_m3=Decimal("0.845")
+            ),
         ]
         with pytest.raises(bunkering.BunkerError):
             await bunkering.set_allocations(s, bunker, rows)
@@ -167,14 +180,26 @@ def test_set_allocations_rejects_tank_from_another_vessel():
         v2 = await _make_vessel_with_tanks(s, code="ART")
         foreign_tank = next(iter((await _tanks_of(s, v2.id)).values()))
         bunker = await bunkering.create_draft(
-            s, vessel=v1, author_user_id=1, bdn_number="BDN-003", port_locode="FRFEC",
+            s,
+            vessel=v1,
+            author_user_id=1,
+            bdn_number="BDN-003",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         with pytest.raises(bunkering.BunkerError):
             await bunkering.set_allocations(
-                s, bunker,
-                [bunkering.AllocationInput(tank_id=foreign_tank.id, volume_m3=Decimal("5"), density_t_m3=Decimal("0.845"))],
+                s,
+                bunker,
+                [
+                    bunkering.AllocationInput(
+                        tank_id=foreign_tank.id,
+                        volume_m3=Decimal("5"),
+                        density_t_m3=Decimal("0.845"),
+                    )
+                ],
             )
         return True
 
@@ -188,16 +213,26 @@ def test_mass_consistency_ok_within_tolerance():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-010", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-010",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("20.0"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("20.0"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         tank = next(iter((await _tanks_of(s, v.id)).values()))
         # 20 m3 * 0.845 = 16.9 t declared vs volume*density -> use volume so
         # that allocated mass = 20.0 t exactly (delta = 0 <= tolerance).
         allocs = await bunkering.set_allocations(
-            s, bunker,
-            [bunkering.AllocationInput(tank_id=tank.id, volume_m3=Decimal("20"), density_t_m3=Decimal("1.0"))],
+            s,
+            bunker,
+            [
+                bunkering.AllocationInput(
+                    tank_id=tank.id, volume_m3=Decimal("20"), density_t_m3=Decimal("1.0")
+                )
+            ],
         )
         check = await bunkering.check_mass_consistency(s, bunker, allocs)
         return check
@@ -213,14 +248,24 @@ def test_mass_consistency_ecart_mineur():
         v = await _make_vessel_with_tanks(s)
         # tolérance codée = 2 t -> écart mineur entre ]2, 4] t.
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-011", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-011",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("23.0"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("23.0"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         tank = next(iter((await _tanks_of(s, v.id)).values()))
         allocs = await bunkering.set_allocations(
-            s, bunker,
-            [bunkering.AllocationInput(tank_id=tank.id, volume_m3=Decimal("20"), density_t_m3=Decimal("1.0"))],
+            s,
+            bunker,
+            [
+                bunkering.AllocationInput(
+                    tank_id=tank.id, volume_m3=Decimal("20"), density_t_m3=Decimal("1.0")
+                )
+            ],
         )
         return await bunkering.check_mass_consistency(s, bunker, allocs)
 
@@ -233,14 +278,24 @@ def test_mass_consistency_ecart_majeur():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-012", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-012",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("30.0"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("30.0"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         tank = next(iter((await _tanks_of(s, v.id)).values()))
         allocs = await bunkering.set_allocations(
-            s, bunker,
-            [bunkering.AllocationInput(tank_id=tank.id, volume_m3=Decimal("20"), density_t_m3=Decimal("1.0"))],
+            s,
+            bunker,
+            [
+                bunkering.AllocationInput(
+                    tank_id=tank.id, volume_m3=Decimal("20"), density_t_m3=Decimal("1.0")
+                )
+            ],
         )
         return await bunkering.check_mass_consistency(s, bunker, allocs)
 
@@ -256,9 +311,14 @@ def test_density_within_range_not_flagged():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-020", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-020",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.850"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.850"),
         )
         return await bunkering.check_density(s, bunker)
 
@@ -272,9 +332,14 @@ def test_density_out_of_range_flagged():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-021", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-021",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.900"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.900"),
         )
         return await bunkering.check_density(s, bunker)
 
@@ -289,14 +354,24 @@ def test_capacity_check_is_info_only_never_blocking():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-030", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-030",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         tank = next(iter((await _tanks_of(s, v.id)).values()))
         allocs = await bunkering.set_allocations(
-            s, bunker,
-            [bunkering.AllocationInput(tank_id=tank.id, volume_m3=Decimal("999"), density_t_m3=Decimal("0.845"))],
+            s,
+            bunker,
+            [
+                bunkering.AllocationInput(
+                    tank_id=tank.id, volume_m3=Decimal("999"), density_t_m3=Decimal("0.845")
+                )
+            ],
         )
         tanks_by_id = await bunkering.vessel_tanks_by_id(s, v.id)
         return bunkering.check_capacity(allocs, tanks_by_id)
@@ -342,7 +417,10 @@ def test_resolve_leg_for_bunker_prefers_atd_over_etd_when_known():
         # ETD planifié dans la fenêtre, mais ATD réel (départ réel) hors
         # fenêtre -> doit retomber sur None (ATD prioritaire sur ETD).
         await _make_leg(
-            s, v, etd=delivery + timedelta(days=5), atd=delivery + timedelta(days=40),
+            s,
+            v,
+            etd=delivery + timedelta(days=5),
+            atd=delivery + timedelta(days=40),
         )
         return await bunkering.resolve_leg_for_bunker(s, v, delivery)
 
@@ -376,8 +454,14 @@ def test_create_draft_auto_attaches_leg_within_window():
         delivery = datetime(2026, 1, 10, tzinfo=UTC)
         leg = await _make_leg(s, v, etd=delivery + timedelta(days=2))
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-040", port_locode="FRFEC",
-            delivery_datetime_utc=delivery, mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-040",
+            port_locode="FRFEC",
+            delivery_datetime_utc=delivery,
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         return bunker.leg_id, leg.id
 
@@ -391,8 +475,14 @@ def test_create_draft_manual_leg_override_bypasses_auto_resolution():
         delivery = datetime(2026, 1, 10, tzinfo=UTC)
         far_leg = await _make_leg(s, v, etd=delivery + timedelta(days=200), leg_code="1AFRBR9")
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-041", port_locode="FRFEC",
-            delivery_datetime_utc=delivery, mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-041",
+            port_locode="FRFEC",
+            delivery_datetime_utc=delivery,
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
             leg_id=far_leg.id,
         )
         return bunker.leg_id, far_leg.id
@@ -408,15 +498,25 @@ def test_duplicate_bdn_number_rejected():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-DUP", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-DUP",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         with pytest.raises(bunkering.DuplicateBdnError):
             await bunkering.create_draft(
-                s, vessel=v, author_user_id=2, bdn_number="BDN-DUP", port_locode="FRFEC",
+                s,
+                vessel=v,
+                author_user_id=2,
+                bdn_number="BDN-DUP",
+                port_locode="FRFEC",
                 delivery_datetime_utc=datetime(2026, 1, 11, tzinfo=UTC),
-                mass_t=Decimal("12"), density_15c_t_m3=Decimal("0.845"),
+                mass_t=Decimal("12"),
+                density_15c_t_m3=Decimal("0.845"),
             )
         return True
 
@@ -428,9 +528,14 @@ def test_create_draft_requires_bdn_number():
         v = await _make_vessel_with_tanks(s)
         with pytest.raises(bunkering.BunkerError):
             await bunkering.create_draft(
-                s, vessel=v, author_user_id=1, bdn_number="   ", port_locode="FRFEC",
+                s,
+                vessel=v,
+                author_user_id=1,
+                bdn_number="   ",
+                port_locode="FRFEC",
                 delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-                mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+                mass_t=Decimal("10"),
+                density_15c_t_m3=Decimal("0.845"),
             )
         return True
 
@@ -444,9 +549,14 @@ def test_update_draft_rejects_non_author():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-050", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-050",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         with pytest.raises(bunkering.AuthorOnlyError):
             await bunkering.update_draft(s, bunker, user_id=2, form={"supplier_name": "Total"})
@@ -459,9 +569,14 @@ def test_update_draft_allows_author():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-051", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-051",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         updated = await bunkering.update_draft(
             s, bunker, user_id=1, form={"supplier_name": "Total Energies"}
@@ -475,9 +590,14 @@ def test_update_draft_rejects_once_validated_master():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-052", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-052",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         from types import SimpleNamespace
 
@@ -493,9 +613,14 @@ def test_validate_master_sets_validation_fields_and_is_idempotent_guarded():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-053", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-053",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         from types import SimpleNamespace
 
@@ -518,9 +643,14 @@ def test_apply_review_correction_bypasses_author_guard_after_validation():
     async def scenario(s):
         v = await _make_vessel_with_tanks(s)
         bunker = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-054", port_locode="FRFEC",
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-054",
+            port_locode="FRFEC",
             delivery_datetime_utc=datetime(2026, 1, 10, tzinfo=UTC),
-            mass_t=Decimal("10"), density_15c_t_m3=Decimal("0.845"),
+            mass_t=Decimal("10"),
+            density_15c_t_m3=Decimal("0.845"),
         )
         from types import SimpleNamespace
 
@@ -546,8 +676,14 @@ def test_bunkered_t_lookup_sums_only_validated_master():
         leg = await _make_leg(s, v, etd=delivery + timedelta(days=2))
 
         validated = await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-060", port_locode="FRFEC",
-            delivery_datetime_utc=delivery, mass_t=Decimal("12.5"), density_15c_t_m3=Decimal("0.845"),
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-060",
+            port_locode="FRFEC",
+            delivery_datetime_utc=delivery,
+            mass_t=Decimal("12.5"),
+            density_15c_t_m3=Decimal("0.845"),
             leg_id=leg.id,
         )
         from types import SimpleNamespace
@@ -556,8 +692,14 @@ def test_bunkered_t_lookup_sums_only_validated_master():
 
         # Brouillon rattaché au même leg : ne doit PAS compter (pas fiable).
         await bunkering.create_draft(
-            s, vessel=v, author_user_id=1, bdn_number="BDN-061", port_locode="FRFEC",
-            delivery_datetime_utc=delivery, mass_t=Decimal("99"), density_15c_t_m3=Decimal("0.845"),
+            s,
+            vessel=v,
+            author_user_id=1,
+            bdn_number="BDN-061",
+            port_locode="FRFEC",
+            delivery_datetime_utc=delivery,
+            mass_t=Decimal("99"),
+            density_15c_t_m3=Decimal("0.845"),
             leg_id=leg.id,
         )
         return await bunkering.bunkered_t_lookup(s, leg.id)

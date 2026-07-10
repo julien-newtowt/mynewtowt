@@ -47,14 +47,38 @@ from app.services.validation_engine import invalidate_cache, seed_reference_data
 FACTOR = Decimal("0.001") * Decimal("0.845")  # litres → tonnes @ densité 0,845
 T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
-DEP_FUEL = {"PME": 10000, "SME": 8000, "FWD_GEN": 5000, "AFT_GEN": 4000,
-            "PORT_SHAFT_GEN": 2000, "STBD_SHAFT_GEN": 2000}
-N1_FUEL = {"PME": 11000, "SME": 8600, "FWD_GEN": 5300, "AFT_GEN": 4200,
-           "PORT_SHAFT_GEN": 2100, "STBD_SHAFT_GEN": 2100}
-N2_FUEL = {"PME": 12000, "SME": 9200, "FWD_GEN": 5600, "AFT_GEN": 4400,
-           "PORT_SHAFT_GEN": 2200, "STBD_SHAFT_GEN": 2200}
-ARR_FUEL = {"PME": 12500, "SME": 9500, "FWD_GEN": 5750, "AFT_GEN": 4500,
-            "PORT_SHAFT_GEN": 2250, "STBD_SHAFT_GEN": 2250}
+DEP_FUEL = {
+    "PME": 10000,
+    "SME": 8000,
+    "FWD_GEN": 5000,
+    "AFT_GEN": 4000,
+    "PORT_SHAFT_GEN": 2000,
+    "STBD_SHAFT_GEN": 2000,
+}
+N1_FUEL = {
+    "PME": 11000,
+    "SME": 8600,
+    "FWD_GEN": 5300,
+    "AFT_GEN": 4200,
+    "PORT_SHAFT_GEN": 2100,
+    "STBD_SHAFT_GEN": 2100,
+}
+N2_FUEL = {
+    "PME": 12000,
+    "SME": 9200,
+    "FWD_GEN": 5600,
+    "AFT_GEN": 4400,
+    "PORT_SHAFT_GEN": 2200,
+    "STBD_SHAFT_GEN": 2200,
+}
+ARR_FUEL = {
+    "PME": 12500,
+    "SME": 9500,
+    "FWD_GEN": 5750,
+    "AFT_GEN": 4500,
+    "PORT_SHAFT_GEN": 2250,
+    "STBD_SHAFT_GEN": 2250,
+}
 
 AUTHOR = SimpleNamespace(id=1, full_name="Master Test", username="master", role="marins")
 
@@ -100,9 +124,14 @@ async def _base(db):
     db.add_all([p1, p2])
     await db.flush()
     leg = Leg(
-        leg_code="1AFRBR6", vessel_id=vessel.id,
-        departure_port_id=p1.id, arrival_port_id=p2.id,
-        etd_ref=T0, eta_ref=T0 + timedelta(days=5), etd=T0, eta=T0 + timedelta(days=5),
+        leg_code="1AFRBR6",
+        vessel_id=vessel.id,
+        departure_port_id=p1.id,
+        arrival_port_id=p2.id,
+        etd_ref=T0,
+        eta_ref=T0 + timedelta(days=5),
+        etd=T0,
+        eta=T0 + timedelta(days=5),
     )
     db.add(leg)
     await db.flush()
@@ -125,25 +154,47 @@ def _readings(engines, fuel_map):
 async def _reference_chain(db, vessel, leg, engines):
     """Dep(rob 100, laden) + 2 Noon + Arr — chaîne CFOTE_05 de référence."""
     dep = DepartureEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="finalise", datetime_utc=T0,
-        lat_decimal=Decimal("50.0"), lon_decimal=Decimal("-5.0"),
-        rob_t=Decimal("100.000"), vessel_condition="laden",
-        cargo_bl_t=Decimal("900.000"), cargo_mrv_t=Decimal("950.000"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        lat_decimal=Decimal("50.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("100.000"),
+        vessel_condition="laden",
+        cargo_bl_t=Decimal("900.000"),
+        cargo_mrv_t=Decimal("950.000"),
     )
     dep.engine_readings = _readings(engines, DEP_FUEL)
-    n1 = NoonEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                   datetime_utc=T0 + timedelta(hours=24),
-                   lat_decimal=Decimal("47.0"), lon_decimal=Decimal("-5.0"),
-                   distance_to_go_nm=Decimal("2000"))
+    n1 = NoonEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=24),
+        lat_decimal=Decimal("47.0"),
+        lon_decimal=Decimal("-5.0"),
+        distance_to_go_nm=Decimal("2000"),
+    )
     n1.engine_readings = _readings(engines, N1_FUEL)
-    n2 = NoonEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                   datetime_utc=T0 + timedelta(hours=48),
-                   lat_decimal=Decimal("44.0"), lon_decimal=Decimal("-5.0"))
+    n2 = NoonEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=48),
+        lat_decimal=Decimal("44.0"),
+        lon_decimal=Decimal("-5.0"),
+    )
     n2.engine_readings = _readings(engines, N2_FUEL)
-    arr = ArrivalEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                       datetime_utc=T0 + timedelta(hours=60),
-                       lat_decimal=Decimal("42.0"), lon_decimal=Decimal("-5.0"),
-                       rob_t=Decimal("95.564"), vessel_condition="laden")
+    arr = ArrivalEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=60),
+        lat_decimal=Decimal("42.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("95.564"),
+        vessel_condition="laden",
+    )
     arr.engine_readings = _readings(engines, ARR_FUEL)
     db.add_all([dep, n1, n2, arr])
     await db.flush()
@@ -211,30 +262,63 @@ async def test_generate_carbon_multi_ghg_exact(db):
 async def test_carbon_assiette_excludes_anchoring(db):
     vessel, leg, engines = await _base(db)
     # Dep → Noon → Begin → End → Arr ; seul PME consomme (ME).
-    dep = DepartureEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise", datetime_utc=T0,
-                         lat_decimal=Decimal("50.0"), lon_decimal=Decimal("-5.0"),
-                         rob_t=Decimal("100"), vessel_condition="laden")
-    dep.engine_readings = [NavEventEngineReading(engine_id=engines["PME"].id,
-                                                 fuel_counter_l=Decimal("10000"))]
-    noon = NoonEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                     datetime_utc=T0 + timedelta(hours=24),
-                     lat_decimal=Decimal("48.0"), lon_decimal=Decimal("-5.0"))
-    noon.engine_readings = [NavEventEngineReading(engine_id=engines["PME"].id,
-                                                  fuel_counter_l=Decimal("11000"))]  # Δ1000
-    begin = BeginAnchoringEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                                datetime_utc=T0 + timedelta(hours=30), sequence_no=1)
-    begin.engine_readings = [NavEventEngineReading(engine_id=engines["PME"].id,
-                                                   fuel_counter_l=Decimal("11500"))]  # Δ500
-    end = EndAnchoringEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                            datetime_utc=T0 + timedelta(hours=36), sequence_no=1)
-    end.engine_readings = [NavEventEngineReading(engine_id=engines["PME"].id,
-                                                 fuel_counter_l=Decimal("11800"))]  # Δ300 (mouillage)
-    arr = ArrivalEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                       datetime_utc=T0 + timedelta(hours=48),
-                       lat_decimal=Decimal("42.0"), lon_decimal=Decimal("-5.0"),
-                       rob_t=Decimal("98"), vessel_condition="laden")
-    arr.engine_readings = [NavEventEngineReading(engine_id=engines["PME"].id,
-                                                 fuel_counter_l=Decimal("12000"))]  # Δ200
+    dep = DepartureEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        lat_decimal=Decimal("50.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("100"),
+        vessel_condition="laden",
+    )
+    dep.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("10000"))
+    ]
+    noon = NoonEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=24),
+        lat_decimal=Decimal("48.0"),
+        lon_decimal=Decimal("-5.0"),
+    )
+    noon.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("11000"))
+    ]  # Δ1000
+    begin = BeginAnchoringEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=30),
+        sequence_no=1,
+    )
+    begin.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("11500"))
+    ]  # Δ500
+    end = EndAnchoringEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=36),
+        sequence_no=1,
+    )
+    end.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("11800"))
+    ]  # Δ300 (mouillage)
+    arr = ArrivalEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=48),
+        lat_decimal=Decimal("42.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("98"),
+        vessel_condition="laden",
+    )
+    arr.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("12000"))
+    ]  # Δ200
     db.add_all([dep, noon, begin, end, arr])
     await db.flush()
     end.paired_event_id = begin.id
@@ -247,7 +331,9 @@ async def test_carbon_assiette_excludes_anchoring(db):
     assert Decimal(totals["conso_mouillage_t"]) == Decimal("300") * FACTOR
     assert Decimal(totals["conso_hors_mouillage_t"]) == Decimal("1700") * FACTOR
     # CO₂ calculé sur l'assiette HORS mouillage.
-    assert Decimal(report.payload["emissions"]["co2_t"]) == (Decimal("1700") * FACTOR) * Decimal("3.206")
+    assert Decimal(report.payload["emissions"]["co2_t"]) == (Decimal("1700") * FACTOR) * Decimal(
+        "3.206"
+    )
     assert any(a["sequence_no"] == 1 for a in report.payload["anchorings"])
 
 
@@ -255,30 +341,51 @@ async def test_carbon_assiette_excludes_anchoring(db):
 
 
 async def _portcall(cls, leg, vessel, engines, *, dt, rob, fuel_pme):
-    ev = cls(leg_id=leg.id, vessel_id=vessel.id, status="finalise", datetime_utc=dt,
-             rob_t=rob, vessel_condition="laden")
-    ev.engine_readings = [NavEventEngineReading(engine_id=engines["PME"].id,
-                                                fuel_counter_l=Decimal(str(fuel_pme)))]
+    ev = cls(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=dt,
+        rob_t=rob,
+        vessel_condition="laden",
+    )
+    ev.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal(str(fuel_pme)))
+    ]
     return ev
 
 
 @pytest.mark.parametrize(
     "rob_departure,expected",
     [
-        (Decimal("49.831"), "conforme"),   # écart 0
-        (Decimal("48.831"), "mineur"),     # écart 1,0 (0,5 < e ≤ 2)
-        (Decimal("46.831"), "majeur"),     # écart 3,0 (2 < e ≤ 5)
-        (Decimal("39.831"), "critique"),   # écart 10,0 (> 5)
+        (Decimal("49.831"), "conforme"),  # écart 0
+        (Decimal("48.831"), "mineur"),  # écart 1,0 (0,5 < e ≤ 2)
+        (Decimal("46.831"), "majeur"),  # écart 3,0 (2 < e ≤ 5)
+        (Decimal("39.831"), "critique"),  # écart 10,0 (> 5)
     ],
 )
 async def test_stopover_ecart_four_levels(db, rob_departure, expected):
     vessel, leg, engines = await _base(db)
     # conso escale = 200 L × 0,000845 = 0,169 t ; ROB théorique départ = 50 − 0,169 = 49,831.
     hour = {"conforme": 1, "mineur": 2, "majeur": 3, "critique": 4}[expected]
-    arr = await _portcall(ArrivalEvent, leg, vessel, engines,
-                          dt=T0 + timedelta(hours=hour), rob=Decimal("50.000"), fuel_pme=1000)
-    dep = await _portcall(DepartureEvent, leg, vessel, engines,
-                          dt=T0 + timedelta(hours=hour + 12), rob=rob_departure, fuel_pme=1200)
+    arr = await _portcall(
+        ArrivalEvent,
+        leg,
+        vessel,
+        engines,
+        dt=T0 + timedelta(hours=hour),
+        rob=Decimal("50.000"),
+        fuel_pme=1000,
+    )
+    dep = await _portcall(
+        DepartureEvent,
+        leg,
+        vessel,
+        engines,
+        dt=T0 + timedelta(hours=hour + 12),
+        rob=rob_departure,
+        fuel_pme=1200,
+    )
     db.add_all([arr, dep])
     await db.flush()
 

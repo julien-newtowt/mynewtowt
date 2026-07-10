@@ -109,8 +109,12 @@ async def _get_or_create_ports(db: AsyncSession, payloads: list[dict]) -> dict[s
         ).scalar_one_or_none()
         if port is None:
             port = Port(
-                locode=p["locode"], name=p["name"], country=p["country"],
-                latitude=p.get("latitude"), longitude=p.get("longitude"), source="user",
+                locode=p["locode"],
+                name=p["name"],
+                country=p["country"],
+                latitude=p.get("latitude"),
+                longitude=p.get("longitude"),
+                source="user",
             )
             db.add(port)
             await db.flush()
@@ -133,8 +137,12 @@ async def _get_or_create_leg(
         vessel_id=vessel.id,
         departure_port_id=ports[payload["dep_locode"]].id,
         arrival_port_id=ports[payload["arr_locode"]].id,
-        etd_ref=dep_dt, eta_ref=arr_dt, etd=dep_dt, eta=arr_dt,
-        atd=dep_dt, ata=arr_dt,
+        etd_ref=dep_dt,
+        eta_ref=arr_dt,
+        etd=dep_dt,
+        eta=arr_dt,
+        atd=dep_dt,
+        ata=arr_dt,
         status="completed",
         is_bookable=False,
         closure_submitted_at=arr_dt,
@@ -334,9 +342,7 @@ async def _create_bunkers(
     return out
 
 
-async def _create_flgo(
-    db: AsyncSession, payloads: list[dict], vessel: Vessel
-) -> list[FlgoReading]:
+async def _create_flgo(db: AsyncSession, payloads: list[dict], vessel: Vessel) -> list[FlgoReading]:
     from app.services.flgo_sync import derive_tank_code
 
     out: list[FlgoReading] = []
@@ -392,9 +398,7 @@ async def load_voyage(db: AsyncSession, name: str) -> LoadedFixture:
     try:
         path = _FIXTURE_DIR / _FIXTURE_FILES[name]
     except KeyError as exc:
-        raise ValueError(
-            f"Fixture inconnue : {name!r} (choix : {sorted(_FIXTURE_FILES)})"
-        ) from exc
+        raise ValueError(f"Fixture inconnue : {name!r} (choix : {sorted(_FIXTURE_FILES)})") from exc
     payload = json.loads(path.read_text(encoding="utf-8"))
 
     vessel = await _get_or_create_vessel(db, payload["vessel"])

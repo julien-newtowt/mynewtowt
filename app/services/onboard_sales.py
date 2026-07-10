@@ -280,8 +280,10 @@ async def settle_sale(
 
     # 4. Sorties de stock (registre) pour les produits suivis en stock.
     lines = (
-        await db.execute(select(OnboardSaleLine).where(OnboardSaleLine.sale_id == sale.id))
-    ).scalars().all()
+        (await db.execute(select(OnboardSaleLine).where(OnboardSaleLine.sale_id == sale.id)))
+        .scalars()
+        .all()
+    )
     for line in lines:
         if line.product_id is None:
             continue
@@ -328,17 +330,18 @@ async def revert_to_draft(db: AsyncSession, sale: OnboardSale) -> None:
 async def current_inventory(db: AsyncSession, vessel_id: int) -> list[dict]:
     """Inventaire courant : produits suivis + solde de stock sur le navire."""
     products = (
-        await db.execute(
-            select(OnboardProduct)
-            .where(OnboardProduct.tracks_stock.is_(True))
-            .order_by(OnboardProduct.label)
+        (
+            await db.execute(
+                select(OnboardProduct)
+                .where(OnboardProduct.tracks_stock.is_(True))
+                .order_by(OnboardProduct.label)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     smap = await stock_map(db, vessel_id)
-    return [
-        {"product": p, "on_hand": smap.get(p.id, Decimal("0"))}
-        for p in products
-    ]
+    return [{"product": p, "on_hand": smap.get(p.id, Decimal("0"))} for p in products]
 
 
 async def register_rows(

@@ -101,9 +101,14 @@ async def _base(db):
     db.add_all([p1, p2])
     await db.flush()
     leg = Leg(
-        leg_code="1AFRBR6", vessel_id=vessel.id,
-        departure_port_id=p1.id, arrival_port_id=p2.id,
-        etd_ref=T0, eta_ref=T0 + timedelta(days=5), etd=T0, eta=T0 + timedelta(days=5),
+        leg_code="1AFRBR6",
+        vessel_id=vessel.id,
+        departure_port_id=p1.id,
+        arrival_port_id=p2.id,
+        etd_ref=T0,
+        eta_ref=T0 + timedelta(days=5),
+        etd=T0,
+        eta=T0 + timedelta(days=5),
         distance_nm=Decimal("200"),
     )
     db.add(leg)
@@ -112,10 +117,18 @@ async def _base(db):
 
 
 async def _legacy_noons(db, leg):
-    db.add(NoonReport(leg_id=leg.id, recorded_at=T0, latitude=0, longitude=0,
-                      total_consumption_t=1.3))
-    db.add(NoonReport(leg_id=leg.id, recorded_at=T0 + timedelta(days=1),
-                      latitude=0, longitude=0, total_consumption_t=0.7))
+    db.add(
+        NoonReport(leg_id=leg.id, recorded_at=T0, latitude=0, longitude=0, total_consumption_t=1.3)
+    )
+    db.add(
+        NoonReport(
+            leg_id=leg.id,
+            recorded_at=T0 + timedelta(days=1),
+            latitude=0,
+            longitude=0,
+            total_consumption_t=0.7,
+        )
+    )
     await db.flush()
 
 
@@ -124,18 +137,31 @@ async def _events_chain(db, vessel, leg):
     await ensure_vessel_env_defaults(db, vessel)
     engines = {e.engine_role: e for e in await get_vessel_engines(db, vessel.id)}
     dep = DepartureEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="finalise", datetime_utc=T0,
-        lat_decimal=Decimal("50.0"), lon_decimal=Decimal("-5.0"),
-        rob_t=Decimal("100.000"), vessel_condition="laden",
-        cargo_bl_t=Decimal("900.000"), cargo_mrv_t=Decimal("950.000"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        lat_decimal=Decimal("50.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("100.000"),
+        vessel_condition="laden",
+        cargo_bl_t=Decimal("900.000"),
+        cargo_mrv_t=Decimal("950.000"),
     )
-    dep.engine_readings = [NavEventEngineReading(engine_id=engines["PME"].id,
-                                                 fuel_counter_l=Decimal("10000"))]
-    noon = NoonEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                     datetime_utc=T0 + timedelta(hours=24),
-                     lat_decimal=Decimal("47.0"), lon_decimal=Decimal("-5.0"))
-    noon.engine_readings = [NavEventEngineReading(engine_id=engines["PME"].id,
-                                                  fuel_counter_l=Decimal("11000"))]
+    dep.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("10000"))
+    ]
+    noon = NoonEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=24),
+        lat_decimal=Decimal("47.0"),
+        lon_decimal=Decimal("-5.0"),
+    )
+    noon.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("11000"))
+    ]
     db.add_all([dep, noon])
     await db.flush()
     return dep, noon
@@ -176,8 +202,11 @@ async def test_do_co2_ef_variable_chain_preserved(db):
     """Chaîne /admin/co2 : sans emission_factors, ``do_co2_ef`` versionné prime."""
     _vessel, leg = await _base(db)
     await _legacy_noons(db, leg)
-    db.add(Co2Variable(name="do_co2_ef", value=Decimal("3.5"),
-                       effective_date=date(2026, 1, 1), is_current=True))
+    db.add(
+        Co2Variable(
+            name="do_co2_ef", value=Decimal("3.5"), effective_date=date(2026, 1, 1), is_current=True
+        )
+    )
     await db.flush()
     referential_env.invalidate_emission_factor_cache()
 
@@ -200,10 +229,14 @@ async def test_refresh_summary_idempotent_upsert(db):
     s2 = await emission_ledger.refresh_summary(db, leg)
 
     rows = (
-        await db.execute(select(VoyageEmissionSummary).where(
-            VoyageEmissionSummary.leg_id == leg.id
-        ))
-    ).scalars().all()
+        (
+            await db.execute(
+                select(VoyageEmissionSummary).where(VoyageEmissionSummary.leg_id == leg.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1  # deux appels → UNE ligne (upsert)
     assert s2.id == s1.id
     assert _naive(s2.computed_at) >= _naive(first_computed_at)
@@ -227,9 +260,7 @@ async def test_refresh_summary_follows_source_switch(db):
     # Δ 1000 L × 0,000845 = 0,845 t (PME/ME) — l'assiette vient des événements.
     assert s.conso_total_t == Decimal("0.845000")
     assert s.cargo_mrv_t == Decimal("950.000")
-    rows = (
-        await db.execute(select(func.count()).select_from(VoyageEmissionSummary))
-    ).scalar_one()
+    rows = (await db.execute(select(func.count()).select_from(VoyageEmissionSummary))).scalar_one()
     assert rows == 1
 
 
@@ -239,35 +270,36 @@ async def test_refresh_summary_follows_source_switch(db):
 async def test_finalize_and_validate_hooks_refresh_summary(db):
     vessel, leg = await _base(db)
     author = User(username="master", email="m@t.test", hashed_password="x", role="marins")
-    validator = User(username="siege", email="s@t.test", hashed_password="x",
-                     role="administrateur")
+    validator = User(username="siege", email="s@t.test", hashed_password="x", role="administrateur")
     db.add_all([author, validator])
     await db.flush()
 
     ev = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
         payload={"datetime_local": datetime(2026, 1, 2, 12), "timezone": "UTC"},
     )
     # Brouillon : aucun summary (les brouillons sont exclus de tout calcul).
-    count = (
-        await db.execute(select(func.count()).select_from(VoyageEmissionSummary))
-    ).scalar_one()
+    count = (await db.execute(select(func.count()).select_from(VoyageEmissionSummary))).scalar_one()
     assert count == 0
 
     await event_capture.finalize(db, ev, author)
     summary = (
-        await db.execute(select(VoyageEmissionSummary).where(
-            VoyageEmissionSummary.leg_id == leg.id
-        ))
+        await db.execute(
+            select(VoyageEmissionSummary).where(VoyageEmissionSummary.leg_id == leg.id)
+        )
     ).scalar_one()
     assert summary.source == "events"
     first_computed_at = summary.computed_at
 
     await event_capture.validate(db, ev, validator)
     summary2 = (
-        await db.execute(select(VoyageEmissionSummary).where(
-            VoyageEmissionSummary.leg_id == leg.id
-        ))
+        await db.execute(
+            select(VoyageEmissionSummary).where(VoyageEmissionSummary.leg_id == leg.id)
+        )
     ).scalar_one()
     assert summary2.id == summary.id  # toujours une seule ligne
     assert _naive(summary2.computed_at) >= _naive(first_computed_at)
@@ -278,11 +310,16 @@ async def test_finalize_and_validate_hooks_refresh_summary(db):
 
 def test_leg_ef_method_c_real_when_cargo_mrv_present():
     record = LegEmissionRecord(
-        leg_id=1, leg_code="1AFRBR6", vessel_id=1,
-        co2_emitted_t=Decimal("50"), cargo_t=Decimal("500"),
+        leg_id=1,
+        leg_code="1AFRBR6",
+        vessel_id=1,
+        co2_emitted_t=Decimal("50"),
+        cargo_t=Decimal("500"),
         distance_nm=Decimal("1000"),
-        etd=datetime(2026, 1, 5, tzinfo=UTC), ata=datetime(2026, 1, 25, tzinfo=UTC),
-        has_kpi=True, cargo_mrv_t=Decimal("950"),
+        etd=datetime(2026, 1, 5, tzinfo=UTC),
+        ata=datetime(2026, 1, 25, tzinfo=UTC),
+        has_kpi=True,
+        cargo_mrv_t=Decimal("950"),
     )
     result = leg_ef(record, method="C", occupancy_pct=OCC, capacity_ref_t=CAP)
     assert result.na_reason is None
@@ -292,11 +329,16 @@ def test_leg_ef_method_c_real_when_cargo_mrv_present():
 
 def test_leg_ef_method_c_ballast_mrv_is_na():
     record = LegEmissionRecord(
-        leg_id=2, leg_code="1BBRFR6", vessel_id=1,
-        co2_emitted_t=Decimal("30"), cargo_t=Decimal("0"),
+        leg_id=2,
+        leg_code="1BBRFR6",
+        vessel_id=1,
+        co2_emitted_t=Decimal("30"),
+        cargo_t=Decimal("0"),
         distance_nm=Decimal("800"),
-        etd=datetime(2026, 2, 1, tzinfo=UTC), ata=None,
-        has_kpi=True, cargo_mrv_t=Decimal("0"),  # ballast ⇒ cargo MRV = 0
+        etd=datetime(2026, 2, 1, tzinfo=UTC),
+        ata=None,
+        has_kpi=True,
+        cargo_mrv_t=Decimal("0"),  # ballast ⇒ cargo MRV = 0
     )
     result = leg_ef(record, method="C", occupancy_pct=OCC, capacity_ref_t=CAP)
     assert result.value_gco2_tkm is None
@@ -307,20 +349,29 @@ def test_aggregate_ef_method_c_mixed_records():
     """Voyage avec cargo MRV + voyage legacy (None) : dénominateur = MRV seul,
     numérateur = tout le CO₂ (le legacy émet aussi)."""
     with_mrv = LegEmissionRecord(
-        leg_id=1, leg_code="1AFRBR6", vessel_id=1,
-        co2_emitted_t=Decimal("50"), cargo_t=Decimal("500"),
-        distance_nm=Decimal("1000"), etd=None, ata=None,
-        has_kpi=True, cargo_mrv_t=Decimal("950"),
+        leg_id=1,
+        leg_code="1AFRBR6",
+        vessel_id=1,
+        co2_emitted_t=Decimal("50"),
+        cargo_t=Decimal("500"),
+        distance_nm=Decimal("1000"),
+        etd=None,
+        ata=None,
+        has_kpi=True,
+        cargo_mrv_t=Decimal("950"),
     )
     legacy = LegEmissionRecord(
-        leg_id=2, leg_code="1BBRFR6", vessel_id=1,
-        co2_emitted_t=Decimal("30"), cargo_t=Decimal("400"),
-        distance_nm=Decimal("800"), etd=None, ata=None,
+        leg_id=2,
+        leg_code="1BBRFR6",
+        vessel_id=1,
+        co2_emitted_t=Decimal("30"),
+        cargo_t=Decimal("400"),
+        distance_nm=Decimal("800"),
+        etd=None,
+        ata=None,
         has_kpi=True,  # cargo_mrv_t=None (défaut) — legacy
     )
-    ef, denom = aggregate_ef(
-        [with_mrv, legacy], method="C", occupancy_pct=OCC, capacity_ref_t=CAP
-    )
+    ef, denom = aggregate_ef([with_mrv, legacy], method="C", occupancy_pct=OCC, capacity_ref_t=CAP)
     assert ef.na_reason is None
     # Dénominateur : 950 × 1852 = 1 759 400 t·km (le legacy est exclu).
     assert denom == Decimal("1759400.000")
@@ -328,9 +379,7 @@ def test_aggregate_ef_method_c_mixed_records():
     assert ef.value_gco2_tkm == Decimal("45.47")
 
     # Aucun voyage avec cargo MRV → N/A motivé (comportement legacy conservé).
-    ef_na, denom_na = aggregate_ef(
-        [legacy], method="C", occupancy_pct=OCC, capacity_ref_t=CAP
-    )
+    ef_na, denom_na = aggregate_ef([legacy], method="C", occupancy_pct=OCC, capacity_ref_t=CAP)
     assert ef_na.value_gco2_tkm is None
     assert ef_na.na_reason == NA_CARGO_MRV
     assert denom_na == Decimal(0)
@@ -346,7 +395,7 @@ async def test_ledger_ef_method_c_from_events(db):
     assert r.ef_method_c is not None
     # EF C = co2 × 1e6 / (cargo_mrv × distance_km) — vérifié par recomposition.
     distance_km = r.distance_nm * Decimal("1.852")
-    expected = (r.co2_emitted_t * Decimal("1000000") / (Decimal("950.000") * distance_km))
+    expected = r.co2_emitted_t * Decimal("1000000") / (Decimal("950.000") * distance_km)
     assert r.ef_method_c == expected.quantize(Decimal("0.0001"))
     # A (cargo B/L 900) et B (1100 × 70 %) également posés.
     assert r.ef_method_a is not None
@@ -363,15 +412,19 @@ async def test_kpi_env_provider_reads_summary_with_legkpi_fallback(db):
     await _legacy_noons(db, leg)
     # Un second leg SANS summary, couvert par un LegKPI legacy.
     leg2 = Leg(
-        leg_code="1BBRFR6", vessel_id=vessel.id,
-        departure_port_id=leg.arrival_port_id, arrival_port_id=leg.departure_port_id,
-        etd_ref=T0, eta_ref=T0 + timedelta(days=5), etd=T0, eta=T0 + timedelta(days=5),
+        leg_code="1BBRFR6",
+        vessel_id=vessel.id,
+        departure_port_id=leg.arrival_port_id,
+        arrival_port_id=leg.departure_port_id,
+        etd_ref=T0,
+        eta_ref=T0 + timedelta(days=5),
+        etd=T0,
+        eta=T0 + timedelta(days=5),
         distance_nm=Decimal("800"),
     )
     db.add(leg2)
     await db.flush()
-    db.add(LegKPI(leg_id=leg2.id, tonnage_kg=Decimal("400000"),
-                  co2_emitted_kg=Decimal("30000")))
+    db.add(LegKPI(leg_id=leg2.id, tonnage_kg=Decimal("400000"), co2_emitted_kg=Decimal("30000")))
     await db.flush()
 
     await emission_ledger.refresh_summary(db, leg)  # summary pour leg 1 seulement

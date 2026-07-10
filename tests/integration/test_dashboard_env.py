@@ -425,8 +425,10 @@ async def test_confirm_reset_from_page3_reaches_lot8_and_traces(db):
 
     fixture = await _load_1egb5(db)
     engine = (
-        await db.execute(select(VesselEngine).where(VesselEngine.vessel_id == fixture.vessel.id))
-    ).scalars().first()
+        (await db.execute(select(VesselEngine).where(VesselEngine.vessel_id == fixture.vessel.id)))
+        .scalars()
+        .first()
+    )
     reading = NavEventEngineReading(
         event_id=fixture.events[0].id,
         engine_id=engine.id,
@@ -455,7 +457,9 @@ async def test_confirm_reset_from_page3_reaches_lot8_and_traces(db):
             await db.execute(
                 select(ActivityLog).where(ActivityLog.action == "mrv_counter_reset_confirm")
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     assert len(logs) == 1
 

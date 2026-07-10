@@ -44,30 +44,34 @@ _TOKEN_RE = re.compile("|".join(FACTOR_TOKENS))
 # (NOx/SOx via ``co2_variables`` — ne porte AUCUN jeton facteur CO₂/multi-GES)
 # en sont sortis. Étendre exige une justification d'architecte ; retirer, la
 # preuve qu'une purge a bien eu lieu (lots 10/14).
-FACTOR_WHITELIST: frozenset[str] = frozenset({
-    # Le grand livre : L'UNIQUE implémentation des formules (lot 9).
-    "app/services/emission_ledger.py",
-    # Comparateur / référentiels officiels.
-    "app/services/co2.py",  # forfait 1,5/13,7 + chaîne do_co2_ef (/admin/co2)
-    "app/services/referential_env.py",  # référentiel emission_factors + replis codés
-    "app/models/emission_factor.py",  # schéma du référentiel multi-GES
-    # Écran d'administration du référentiel (affichage/saisie, pas de calcul).
-    "app/routers/admin_router.py",
-    # LEGACY résiduel (lot 14) : ``carbon_report_summary`` (agrégat historique)
-    # porte encore ``CO2_EMISSION_FACTOR_MDO`` ; le CSV DNV 18/9 col. a été retiré.
-    "app/services/mrv_export.py",
-})
+FACTOR_WHITELIST: frozenset[str] = frozenset(
+    {
+        # Le grand livre : L'UNIQUE implémentation des formules (lot 9).
+        "app/services/emission_ledger.py",
+        # Comparateur / référentiels officiels.
+        "app/services/co2.py",  # forfait 1,5/13,7 + chaîne do_co2_ef (/admin/co2)
+        "app/services/referential_env.py",  # référentiel emission_factors + replis codés
+        "app/models/emission_factor.py",  # schéma du référentiel multi-GES
+        # Écran d'administration du référentiel (affichage/saisie, pas de calcul).
+        "app/routers/admin_router.py",
+        # LEGACY résiduel (lot 14) : ``carbon_report_summary`` (agrégat historique)
+        # porte encore ``CO2_EMISSION_FACTOR_MDO`` ; le CSV DNV 18/9 col. a été retiré.
+        "app/services/mrv_export.py",
+    }
+)
 
 # Fichiers dont le lot 9 a PROUVÉ la consolidation : ils ne doivent JAMAIS
 # référencer un facteur (ils consomment le grand livre).
-CONSOLIDATED_CONSUMERS: frozenset[str] = frozenset({
-    "app/services/carbon.py",
-    "app/services/anemos.py",
-    "app/services/report_generation.py",
-    "app/services/kpi.py",
-    "app/services/kpi_env.py",
-    "app/services/kpi_consolidated.py",
-})
+CONSOLIDATED_CONSUMERS: frozenset[str] = frozenset(
+    {
+        "app/services/carbon.py",
+        "app/services/anemos.py",
+        "app/services/report_generation.py",
+        "app/services/kpi.py",
+        "app/services/kpi_env.py",
+        "app/services/kpi_consolidated.py",
+    }
+)
 
 
 def _files_referencing_factors() -> set[str]:

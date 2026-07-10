@@ -429,7 +429,11 @@ def build_dashboard_voyage_docx(*, detail) -> DocxBytes:
     doc.add_paragraph(
         f"Complétude : {prop.filled_slots} tranches renseignées / "
         f"{prop.theoretical_slots} théoriques"
-        + (f" ({_fmt_num(prop.completeness_pct, 1)} %)" if prop.completeness_pct is not None else "")
+        + (
+            f" ({_fmt_num(prop.completeness_pct, 1)} %)"
+            if prop.completeness_pct is not None
+            else ""
+        )
         + ". Les tranches sans relevé sont exclues du dénominateur des pourcentages."
     )
     prop_table = doc.add_table(rows=1, cols=3)

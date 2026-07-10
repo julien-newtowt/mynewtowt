@@ -64,7 +64,11 @@ async def test_loader_structure_1cla5(db):
     assert len(fixture.events) == fixture.expected["events_count"] == 5
     assert {e.status for e in fixture.events} == {"valide"}
     assert [e.event_type for e in fixture.events] == [
-        "departure", "noon", "arrival", "noon", "noon",
+        "departure",
+        "noon",
+        "arrival",
+        "noon",
+        "noon",
     ]  # les 2 noons post-arrivée sont une réalité ASSUMÉE du dataset (README)
 
     # Rechargement par le chemin de PRODUCTION (polymorphe + relevés selectin).
@@ -238,9 +242,7 @@ async def test_qc_replay_2025(db):
         db, "bunker", subjects, vessel=voyage_fixture.vessel
     )
 
-    r24_fails = [
-        r for r in summary.results if r.rule_id == "R24" and r.result == "fail"
-    ]
+    r24_fails = [r for r in summary.results if r.rule_id == "R24" and r.result == "fail"]
     assert [r.subject_id for r in r24_fails] == [unmatched.id], (
         "R24 doit signaler exactement le BDN 433421 (journal QC) : "
         f"obtenu {[(r.rule_id, r.subject_id, r.message) for r in r24_fails]}"

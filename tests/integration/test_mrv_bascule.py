@@ -141,7 +141,9 @@ async def test_post_noon_ok_when_v2_off(db, staff_user):
     resp = await post_noon_report(FakeRequest(form), db=db, user=staff_user)
     assert resp.status_code == 303
     cnt = (
-        await db.execute(select(func.count()).select_from(NoonReport).where(NoonReport.leg_id == leg.id))
+        await db.execute(
+            select(func.count()).select_from(NoonReport).where(NoonReport.leg_id == leg.id)
+        )
     ).scalar_one()
     assert cnt == 1
 

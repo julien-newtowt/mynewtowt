@@ -92,18 +92,40 @@ FROZEN_EVENTS_CO2_T = Decimal("4.43625") * Decimal("3.206")  # = 14,2226175 t
 FROZEN_EVENTS_CH4_G = Decimal("4.43625") * Decimal("0.00005") * Decimal("1000000")
 FROZEN_EVENTS_N2O_G = Decimal("4.43625") * Decimal("0.00018") * Decimal("1000000")
 # WtT = conso × PCI (42 700 MJ/t) × 17,7 gCO₂eq/MJ / 1e6.
-FROZEN_EVENTS_WTT_T = (
-    Decimal("4.43625") * Decimal("42700") * Decimal("17.7") / Decimal("1000000")
-)
+FROZEN_EVENTS_WTT_T = Decimal("4.43625") * Decimal("42700") * Decimal("17.7") / Decimal("1000000")
 
-DEP_FUEL = {"PME": 10000, "SME": 8000, "FWD_GEN": 5000, "AFT_GEN": 4000,
-            "PORT_SHAFT_GEN": 2000, "STBD_SHAFT_GEN": 2000}
-N1_FUEL = {"PME": 11000, "SME": 8600, "FWD_GEN": 5300, "AFT_GEN": 4200,
-           "PORT_SHAFT_GEN": 2100, "STBD_SHAFT_GEN": 2100}
-N2_FUEL = {"PME": 12000, "SME": 9200, "FWD_GEN": 5600, "AFT_GEN": 4400,
-           "PORT_SHAFT_GEN": 2200, "STBD_SHAFT_GEN": 2200}
-ARR_FUEL = {"PME": 12500, "SME": 9500, "FWD_GEN": 5750, "AFT_GEN": 4500,
-            "PORT_SHAFT_GEN": 2250, "STBD_SHAFT_GEN": 2250}
+DEP_FUEL = {
+    "PME": 10000,
+    "SME": 8000,
+    "FWD_GEN": 5000,
+    "AFT_GEN": 4000,
+    "PORT_SHAFT_GEN": 2000,
+    "STBD_SHAFT_GEN": 2000,
+}
+N1_FUEL = {
+    "PME": 11000,
+    "SME": 8600,
+    "FWD_GEN": 5300,
+    "AFT_GEN": 4200,
+    "PORT_SHAFT_GEN": 2100,
+    "STBD_SHAFT_GEN": 2100,
+}
+N2_FUEL = {
+    "PME": 12000,
+    "SME": 9200,
+    "FWD_GEN": 5600,
+    "AFT_GEN": 4400,
+    "PORT_SHAFT_GEN": 2200,
+    "STBD_SHAFT_GEN": 2200,
+}
+ARR_FUEL = {
+    "PME": 12500,
+    "SME": 9500,
+    "FWD_GEN": 5750,
+    "AFT_GEN": 4500,
+    "PORT_SHAFT_GEN": 2250,
+    "STBD_SHAFT_GEN": 2250,
+}
 
 
 def _reset_module_caches() -> None:
@@ -160,21 +182,34 @@ async def _legacy_leg(db, *, with_booking: bool = True):
         vessel_id=vessel.id,
         departure_port_id=p1.id,
         arrival_port_id=p2.id,
-        etd_ref=T0, eta_ref=T0 + timedelta(days=20),
-        etd=T0, eta=T0 + timedelta(days=20),
+        etd_ref=T0,
+        eta_ref=T0 + timedelta(days=20),
+        etd=T0,
+        eta=T0 + timedelta(days=20),
         distance_nm=Decimal("200"),
     )
     db.add(leg)
     await db.flush()
-    db.add(NoonReport(leg_id=leg.id, recorded_at=T0, latitude=0, longitude=0,
-                      total_consumption_t=1.3))
-    db.add(NoonReport(leg_id=leg.id, recorded_at=T0 + timedelta(days=1),
-                      latitude=0, longitude=0, total_consumption_t=0.7))
+    db.add(
+        NoonReport(leg_id=leg.id, recorded_at=T0, latitude=0, longitude=0, total_consumption_t=1.3)
+    )
+    db.add(
+        NoonReport(
+            leg_id=leg.id,
+            recorded_at=T0 + timedelta(days=1),
+            latitude=0,
+            longitude=0,
+            total_consumption_t=0.7,
+        )
+    )
     booking = None
     if with_booking:
         booking = Booking(
-            reference="TUAW_REG1", leg_id=leg.id, status="confirmed",
-            total_palettes=10, total_weight_kg=Decimal("100000"),
+            reference="TUAW_REG1",
+            leg_id=leg.id,
+            status="confirmed",
+            total_palettes=10,
+            total_weight_kg=Decimal("100000"),
         )
         db.add(booking)
     await db.flush()
@@ -195,9 +230,14 @@ async def _events_leg(db):
     db.add_all([p1, p2])
     await db.flush()
     leg = Leg(
-        leg_code="2AFRBR6", vessel_id=vessel.id,
-        departure_port_id=p1.id, arrival_port_id=p2.id,
-        etd_ref=T0, eta_ref=T0 + timedelta(days=5), etd=T0, eta=T0 + timedelta(days=5),
+        leg_code="2AFRBR6",
+        vessel_id=vessel.id,
+        departure_port_id=p1.id,
+        arrival_port_id=p2.id,
+        etd_ref=T0,
+        eta_ref=T0 + timedelta(days=5),
+        etd=T0,
+        eta=T0 + timedelta(days=5),
     )
     db.add(leg)
     await db.flush()
@@ -213,24 +253,46 @@ async def _events_leg(db):
         ]
 
     dep = DepartureEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="finalise", datetime_utc=T0,
-        lat_decimal=Decimal("50.0"), lon_decimal=Decimal("-5.0"),
-        rob_t=Decimal("100.000"), vessel_condition="laden",
-        cargo_bl_t=Decimal("900.000"), cargo_mrv_t=Decimal("950.000"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        lat_decimal=Decimal("50.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("100.000"),
+        vessel_condition="laden",
+        cargo_bl_t=Decimal("900.000"),
+        cargo_mrv_t=Decimal("950.000"),
     )
     dep.engine_readings = _readings(DEP_FUEL)
-    n1 = NoonEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                   datetime_utc=T0 + timedelta(hours=24),
-                   lat_decimal=Decimal("47.0"), lon_decimal=Decimal("-5.0"))
+    n1 = NoonEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=24),
+        lat_decimal=Decimal("47.0"),
+        lon_decimal=Decimal("-5.0"),
+    )
     n1.engine_readings = _readings(N1_FUEL)
-    n2 = NoonEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                   datetime_utc=T0 + timedelta(hours=48),
-                   lat_decimal=Decimal("44.0"), lon_decimal=Decimal("-5.0"))
+    n2 = NoonEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=48),
+        lat_decimal=Decimal("44.0"),
+        lon_decimal=Decimal("-5.0"),
+    )
     n2.engine_readings = _readings(N2_FUEL)
-    arr = ArrivalEvent(leg_id=leg.id, vessel_id=vessel.id, status="finalise",
-                       datetime_utc=T0 + timedelta(hours=60),
-                       lat_decimal=Decimal("42.0"), lon_decimal=Decimal("-5.0"),
-                       rob_t=Decimal("95.564"), vessel_condition="laden")
+    arr = ArrivalEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=60),
+        lat_decimal=Decimal("42.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("95.564"),
+        vessel_condition="laden",
+    )
     arr.engine_readings = _readings(ARR_FUEL)
     db.add_all([dep, n1, n2, arr])
     await db.flush()
@@ -281,9 +343,7 @@ async def test_b_issued_certificate_is_never_recalculated(db):
     from app.services.anemos import issue_for_booking
 
     _vessel, leg, booking = await _legacy_leg(db)
-    client = ClientAccount(
-        email="client@reg.test", hashed_password="x", company_name="Reg Co"
-    )
+    client = ClientAccount(email="client@reg.test", hashed_password="x", company_name="Reg Co")
     db.add(client)
     await db.flush()
     booking.client_account_id = client.id
@@ -314,9 +374,7 @@ async def test_b_issued_certificate_is_never_recalculated(db):
     assert cert.co2_conventional_kg == Decimal("999.999")
     assert cert.distance_nm == Decimal("1234.56")
     assert cert.method == "declared"
-    count = (
-        await db.execute(select(func.count()).select_from(AnemosCertificate))
-    ).scalar_one()
+    count = (await db.execute(select(func.count()).select_from(AnemosCertificate))).scalar_one()
     assert count == 1
 
 
@@ -324,9 +382,7 @@ def test_b_certificate_template_prefers_stored_record():
     """Le template PDF privilégie ``certificate.*`` (le recalcul n'est qu'un fallback)."""
     from app.templating import templates
 
-    src = templates.env.loader.get_source(
-        templates.env, "pdf/anemos_certificate.html"
-    )[0]
+    src = templates.env.loader.get_source(templates.env, "pdf/anemos_certificate.html")[0]
     assert "certificate.co2_avoided_kg if certificate" in src
     assert "certificate.co2_emitted_kg if certificate" in src
     assert "certificate.distance_nm if certificate" in src
@@ -336,23 +392,31 @@ def test_b_certificate_template_prefers_stored_record():
 
 
 async def test_c_landing_counter_is_sum_of_certificates(db):
-    client = ClientAccount(
-        email="client2@reg.test", hashed_password="x", company_name="Reg Co 2"
-    )
+    client = ClientAccount(email="client2@reg.test", hashed_password="x", company_name="Reg Co 2")
     db.add(client)
     await db.flush()
-    db.add(AnemosCertificate(
-        reference="ANEMOS-REG-A", client_account_id=client.id,
-        tonnage_transported_t=Decimal("10"), distance_nm=Decimal("100"),
-        co2_emitted_kg=Decimal("1"), co2_conventional_kg=Decimal("2"),
-        co2_avoided_kg=Decimal("1000.500"),
-    ))
-    db.add(AnemosCertificate(
-        reference="ANEMOS-REG-B", client_account_id=client.id,
-        tonnage_transported_t=Decimal("20"), distance_nm=Decimal("200"),
-        co2_emitted_kg=Decimal("2"), co2_conventional_kg=Decimal("4"),
-        co2_avoided_kg=Decimal("2000.250"),
-    ))
+    db.add(
+        AnemosCertificate(
+            reference="ANEMOS-REG-A",
+            client_account_id=client.id,
+            tonnage_transported_t=Decimal("10"),
+            distance_nm=Decimal("100"),
+            co2_emitted_kg=Decimal("1"),
+            co2_conventional_kg=Decimal("2"),
+            co2_avoided_kg=Decimal("1000.500"),
+        )
+    )
+    db.add(
+        AnemosCertificate(
+            reference="ANEMOS-REG-B",
+            client_account_id=client.id,
+            tonnage_transported_t=Decimal("20"),
+            distance_nm=Decimal("200"),
+            co2_emitted_kg=Decimal("2"),
+            co2_conventional_kg=Decimal("4"),
+            co2_avoided_kg=Decimal("2000.250"),
+        )
+    )
     await db.flush()
 
     social_proof.invalidate_counters_cache()
@@ -388,9 +452,7 @@ async def test_e_carbon_intensities_frozen(db):
     from app.services.carbon import compute_carbon_for_leg
 
     _vessel, leg, _booking = await _legacy_leg(db, with_booking=False)
-    r = await compute_carbon_for_leg(
-        db, leg, cargo_t=Decimal("100"), distance_nm=Decimal("200")
-    )
+    r = await compute_carbon_for_leg(db, leg, cargo_t=Decimal("100"), distance_nm=Decimal("200"))
     assert r.do_consumed_t == FROZEN_LEGACY_DO_T
     assert r.co2_emitted_t == FROZEN_LEGACY_CO2_T
     assert r.co2_per_nm_kg == FROZEN_LEGACY_CO2_PER_NM_KG
@@ -450,7 +512,5 @@ async def test_g_source_flag_and_summary_both_modes(db):
     # Le summary matérialise fidèlement le ledger (cache, jamais source de vérité).
     assert s_legacy.co2_t == legacy.co2_emitted_t
     assert s_events.co2_t == events.co2_emitted_t
-    rows = (
-        await db.execute(select(func.count()).select_from(VoyageEmissionSummary))
-    ).scalar_one()
+    rows = (await db.execute(select(func.count()).select_from(VoyageEmissionSummary))).scalar_one()
     assert rows == 2

@@ -20,10 +20,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.bunker import BUNKER_STATUSES, BunkerOperation
+from app.models.flgo import FLGO_ACTION_TYPES, FLGO_SOURCES, FlgoReading
 from app.models.leg import Leg
+
 # LOT 14 — ``mrv_events`` en archive lecture seule (plus de CRUD/sync/recompute).
 # ``MRVEvent`` reste importé pour l'écran d'archive ; ``MRVParameter``,
 # ``recompute_leg`` et le module ``mrv_export`` (CSV DNV) ne sont plus consommés.
@@ -31,14 +34,10 @@ from app.models.mrv import MRVEvent
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.permissions import require_permission
-from app.services import bunkering
+from app.services import bunkering, flgo_sync
 from app.services.activity import record as activity_record
-from app.templating import brand_for_lang, templates
-from sqlalchemy.orm import selectinload
-
-from app.models.flgo import FLGO_ACTION_TYPES, FLGO_SOURCES, FlgoReading
-from app.services import flgo_sync
 from app.services.safe_files import content_length_exceeds_max
+from app.templating import brand_for_lang, templates
 from app.utils.file_validation import validate_filename, validate_size
 
 router = APIRouter(prefix="/mrv", tags=["mrv"])
@@ -59,9 +58,7 @@ async def mrv_index(
 ) -> HTMLResponse:
     """Hub MRV — points d'entrée des écrans v2 (voyages, soutages, FLGO,
     qualité, datasets, paramètres) + compteur d'archive des événements legacy."""
-    archived_events = (
-        await db.execute(select(func.count()).select_from(MRVEvent))
-    ).scalar_one()
+    archived_events = (await db.execute(select(func.count()).select_from(MRVEvent))).scalar_one()
     return templates.TemplateResponse(
         "staff/mrv/index.html",
         {"request": request, "user": user, "archived_events": archived_events},
@@ -162,24 +159,14 @@ async def mrv_parametres(
     )
 
     rules = list((await db.execute(select(ValidationRule))).scalars().all())
-    thresholds = list(
-        (await db.execute(select(ValidationRuleThreshold))).scalars().all()
-    )
+    thresholds = list((await db.execute(select(ValidationRuleThreshold))).scalars().all())
     dashboard_params = list(
-        (
-            await db.execute(
-                select(DashboardParameter).order_by(DashboardParameter.parameter_name)
-            )
-        )
+        (await db.execute(select(DashboardParameter).order_by(DashboardParameter.parameter_name)))
         .scalars()
         .all()
     )
     vessels = list(
-        (
-            await db.execute(
-                select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code)
-            )
-        )
+        (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code)))
         .scalars()
         .all()
     )
@@ -653,8 +640,8 @@ _LOT5_PDF_TEMPLATES: dict[str, str] = {
 async def _lot5_event_counts(db: AsyncSession, leg_id: int) -> dict[str, int]:
     """Compte des événements d'un voyage par statut (brouillon/finalisé/validé)."""
     rows = (
-        await db.execute(select(NavEvent.status).where(NavEvent.leg_id == leg_id))
-    ).scalars().all()
+        (await db.execute(select(NavEvent.status).where(NavEvent.leg_id == leg_id))).scalars().all()
+    )
     return {
         "brouillon": sum(1 for s in rows if s == "brouillon"),
         "finalise": sum(1 for s in rows if s == "finalise"),
@@ -669,23 +656,23 @@ async def mrv_voyages(
     user=Depends(require_permission("mrv", "C")),
 ) -> HTMLResponse:
     """LOT 5 — liste des voyages avec compteurs d'événements et de rapports."""
-    legs = list(
-        (await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(40))).scalars().all()
-    )
+    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(40))).scalars().all())
     vessel_ids = {leg.vessel_id for leg in legs if leg.vessel_id is not None}
     vessels: dict[int, Vessel] = {}
     if vessel_ids:
         vessels = {
             v.id: v
-            for v in (
-                await db.execute(select(Vessel).where(Vessel.id.in_(vessel_ids)))
-            ).scalars().all()
+            for v in (await db.execute(select(Vessel).where(Vessel.id.in_(vessel_ids))))
+            .scalars()
+            .all()
         }
     rows = []
     for leg in legs:
         report_statuses = (
-            await db.execute(select(EnvReport.status).where(EnvReport.leg_id == leg.id))
-        ).scalars().all()
+            (await db.execute(select(EnvReport.status).where(EnvReport.leg_id == leg.id)))
+            .scalars()
+            .all()
+        )
         by_status: dict[str, int] = {}
         for s in report_statuses:
             by_status[s] = by_status.get(s, 0) + 1
@@ -742,18 +729,20 @@ async def mrv_voyage_detail(
     departure_event = None
     if leg.vessel_id is not None and leg.etd is not None:
         next_leg = (
-            await db.execute(
-                select(Leg)
-                .where(Leg.vessel_id == leg.vessel_id, Leg.etd > leg.etd)
-                .order_by(Leg.etd.asc())
-                .limit(1)
+            (
+                await db.execute(
+                    select(Leg)
+                    .where(Leg.vessel_id == leg.vessel_id, Leg.etd > leg.etd)
+                    .order_by(Leg.etd.asc())
+                    .limit(1)
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if next_leg is not None:
             next_events = await _iec.finalized_events_for_leg(db, next_leg.id)
-            departure_event = next(
-                (e for e in next_events if e.event_type == "departure"), None
-            )
+            departure_event = next((e for e in next_events if e.event_type == "departure"), None)
 
     reports = list(
         (
@@ -762,7 +751,9 @@ async def mrv_voyage_detail(
                 .where(EnvReport.leg_id == leg_id)
                 .order_by(EnvReport.report_type, EnvReport.id)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     can_generate = await has_permission_effective(db, user.role, "mrv", "M")
     can_master = await has_permission_effective(db, user.role, "captain", "M")
@@ -868,7 +859,9 @@ async def mrv_report_detail(
                 .where(EnvFieldModification.report_id == report_id)
                 .order_by(EnvFieldModification.timestamp_utc)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     payload_json = json.dumps(report.payload, indent=2, ensure_ascii=False)
     can_master = await has_permission_effective(db, user.role, "captain", "M")
@@ -913,7 +906,9 @@ async def mrv_report_pdf(
                 .where(EnvFieldModification.report_id == report_id)
                 .order_by(EnvFieldModification.timestamp_utc)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     tpl = templates.get_template(tpl_name)
     html = tpl.render(
@@ -1077,8 +1072,7 @@ async def mrv_flgo_index(
     if date_to:
         with contextlib.suppress(ValueError):
             stmt = stmt.where(
-                FlgoReading.reading_datetime
-                <= datetime.fromisoformat(date_to).replace(tzinfo=UTC)
+                FlgoReading.reading_datetime <= datetime.fromisoformat(date_to).replace(tzinfo=UTC)
             )
     readings = list((await db.execute(stmt.limit(200))).scalars().all())
 
@@ -1245,13 +1239,11 @@ async def mrv_qualite(
         filters.append(QualityCheckResult.executed_at < dt_to + timedelta(days=1))
 
     stmt = select(QualityCheckResult)
-    count_stmt = select(
-        QualityCheckResult.severity_applied, _f.count(QualityCheckResult.id)
-    ).where(QualityCheckResult.result == "fail")
+    count_stmt = select(QualityCheckResult.severity_applied, _f.count(QualityCheckResult.id)).where(
+        QualityCheckResult.result == "fail"
+    )
     if vessel_id is not None:
-        stmt = stmt.join(Leg, Leg.id == QualityCheckResult.leg_id).where(
-            Leg.vessel_id == vessel_id
-        )
+        stmt = stmt.join(Leg, Leg.id == QualityCheckResult.leg_id).where(Leg.vessel_id == vessel_id)
         count_stmt = count_stmt.join(Leg, Leg.id == QualityCheckResult.leg_id).where(
             Leg.vessel_id == vessel_id
         )
@@ -1266,10 +1258,14 @@ async def mrv_qualite(
                     QualityCheckResult.executed_at.desc(), QualityCheckResult.id.desc()
                 ).limit(_QUAL_ROWS_LIMIT)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     severity_counts = dict.fromkeys(_QUAL_SEVERITIES, 0)
-    for sev, n in (await db.execute(count_stmt.group_by(QualityCheckResult.severity_applied))).all():
+    for sev, n in (
+        await db.execute(count_stmt.group_by(QualityCheckResult.severity_applied))
+    ).all():
         if sev in severity_counts:
             severity_counts[sev] = int(n)
 
@@ -1318,18 +1314,18 @@ async def mrv_qualite(
                 .order_by(NavEventEngineReading.id.desc())
                 .limit(50)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
 
     rules = list(
         (await db.execute(select(ValidationRule).order_by(ValidationRule.rule_id))).scalars().all()
     )
     vessels = list(
-        (
-            await db.execute(
-                select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code)
-            )
-        ).scalars().all()
+        (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code)))
+        .scalars()
+        .all()
     )
 
     return templates.TemplateResponse(

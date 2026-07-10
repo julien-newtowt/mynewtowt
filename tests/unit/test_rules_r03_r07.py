@@ -57,8 +57,14 @@ async def db():
 
 def _ctx(db, rid, subjects, index, *, vessel=None, leg=None, now=NOW) -> RuleContext:
     return RuleContext(
-        db=db, rule_id=rid, subject=subjects[index], subjects=list(subjects),
-        index=index, now=now, vessel=vessel, leg=leg,
+        db=db,
+        rule_id=rid,
+        subject=subjects[index],
+        subjects=list(subjects),
+        index=index,
+        now=now,
+        vessel=vessel,
+        leg=leg,
     )
 
 
@@ -75,7 +81,7 @@ async def _run(db, rid, subjects, index=0, **kw):
     [
         (SimpleNamespace(event_type="noon"), "pass", None),
         (SimpleNamespace(event_type="departure"), "pass", None),
-        (SimpleNamespace(event_type=""), "fail", "bloquant"),        # manquant
+        (SimpleNamespace(event_type=""), "fail", "bloquant"),  # manquant
         (SimpleNamespace(event_type="banquet"), "fail", "bloquant"),  # non reconnu
     ],
 )
@@ -104,9 +110,9 @@ async def test_r04_missing_datetime_is_blocking(db):
 @pytest.mark.parametrize(
     "dt,result",
     [
-        (NOW - timedelta(days=1), "pass"),                       # passé
-        (NOW + timedelta(hours=24), "pass"),                     # limite exacte (= tol)
-        (NOW + timedelta(hours=24, seconds=1), "fail"),          # au-delà
+        (NOW - timedelta(days=1), "pass"),  # passé
+        (NOW + timedelta(hours=24), "pass"),  # limite exacte (= tol)
+        (NOW + timedelta(hours=24, seconds=1), "fail"),  # au-delà
     ],
 )
 async def test_r04_future_tolerance_exact_boundary(db, dt, result):
@@ -141,14 +147,36 @@ async def test_r04_snapshot_thresholds_in_details(db):
     "subject,result,severity",
     [
         (SimpleNamespace(lat_decimal=Decimal("48.5"), lon_decimal=Decimal("-5.1")), "pass", None),
-        (SimpleNamespace(lat_decimal=Decimal("90"), lon_decimal=Decimal("180")), "pass", None),  # bornes incluses
+        (
+            SimpleNamespace(lat_decimal=Decimal("90"), lon_decimal=Decimal("180")),
+            "pass",
+            None,
+        ),  # bornes incluses
         (SimpleNamespace(lat_decimal=Decimal("91"), lon_decimal=Decimal("0")), "fail", "bloquant"),
-        (SimpleNamespace(lat_decimal=Decimal("0"), lon_decimal=Decimal("-181")), "fail", "bloquant"),
-        (SimpleNamespace(lat_decimal=Decimal("48"), lon_decimal=Decimal("-5"),
-                         position_source="manuel_justifie"), "fail", "bloquant"),  # sans justification
-        (SimpleNamespace(lat_decimal=Decimal("48"), lon_decimal=Decimal("-5"),
-                         position_source="manuel_justifie",
-                         position_justification="Thalos HS, point sextant"), "pass", None),
+        (
+            SimpleNamespace(lat_decimal=Decimal("0"), lon_decimal=Decimal("-181")),
+            "fail",
+            "bloquant",
+        ),
+        (
+            SimpleNamespace(
+                lat_decimal=Decimal("48"),
+                lon_decimal=Decimal("-5"),
+                position_source="manuel_justifie",
+            ),
+            "fail",
+            "bloquant",
+        ),  # sans justification
+        (
+            SimpleNamespace(
+                lat_decimal=Decimal("48"),
+                lon_decimal=Decimal("-5"),
+                position_source="manuel_justifie",
+                position_justification="Thalos HS, point sextant",
+            ),
+            "pass",
+            None,
+        ),
     ],
 )
 async def test_r05_position(db, subject, result, severity):
@@ -170,10 +198,10 @@ async def test_r05_abstains_without_position_fields(db):
     "rob,result,severity",
     [
         (Decimal("100"), "pass", None),
-        (Decimal("300"), "pass", None),          # limite exacte borne_max_rob_t
-        (None, "fail", "bloquant"),               # manquant
-        (Decimal("-1"), "fail", "bloquant"),      # négatif
-        (Decimal("0"), "fail", "warning"),        # nul → warning
+        (Decimal("300"), "pass", None),  # limite exacte borne_max_rob_t
+        (None, "fail", "bloquant"),  # manquant
+        (Decimal("-1"), "fail", "bloquant"),  # négatif
+        (Decimal("0"), "fail", "warning"),  # nul → warning
         (Decimal("300.001"), "fail", "warning"),  # > borne plausible
     ],
 )
@@ -194,14 +222,14 @@ async def test_r06_only_applies_to_portcalls(db):
 # ═════════════════════════════════════════════ R07 — ports du voyage (LOCODE)
 
 
-async def _ports_leg(db, *, dep_locode="FRFEC", arr_locode="BRBEL",
-                     dep_country="FR", arr_country="BR"):
+async def _ports_leg(
+    db, *, dep_locode="FRFEC", arr_locode="BRBEL", dep_country="FR", arr_country="BR"
+):
     p1 = Port(name="Dep", country=dep_country, locode=dep_locode)
     p2 = Port(name="Arr", country=arr_country, locode=arr_locode)
     db.add_all([p1, p2])
     await db.flush()
-    return SimpleNamespace(id=1, departure_port_id=p1.id, arrival_port_id=p2.id,
-                           leg_code="1AFRBR6")
+    return SimpleNamespace(id=1, departure_port_id=p1.id, arrival_port_id=p2.id, leg_code="1AFRBR6")
 
 
 @pytest.mark.asyncio
@@ -270,13 +298,22 @@ async def test_r02_format_only_without_leg_context(db):
 async def test_event_scope_persists_severity_overrides(db):
     """Un même run persiste des sévérités graduées PAR VERDICT (hook lot 8) :
     R06 ROB=0 → warning alors que la sévérité par défaut de R06 est bloquant."""
-    subj = SimpleNamespace(event_type="departure", rob_t=Decimal("0"), leg_id=1,
-                           datetime_utc=NOW - timedelta(days=1))
+    subj = SimpleNamespace(
+        event_type="departure", rob_t=Decimal("0"), leg_id=1, datetime_utc=NOW - timedelta(days=1)
+    )
     summary = await run_rules(db, "event", [subj], run_id="sevgrad")
     r06 = next(r for r in summary.results if r.rule_id == "R06")
     assert r06.result == "fail"
     assert r06.severity_applied == "warning"  # gradué, pas le défaut bloquant
-    rows = (await db.execute(select(QualityCheckResult).where(
-        QualityCheckResult.run_id == "sevgrad", QualityCheckResult.rule_id == "R06"
-    ))).scalars().all()
+    rows = (
+        (
+            await db.execute(
+                select(QualityCheckResult).where(
+                    QualityCheckResult.run_id == "sevgrad", QualityCheckResult.rule_id == "R06"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert rows and rows[0].severity_applied == "warning"

@@ -65,10 +65,14 @@ async def _base(db):
     db.add_all([p1, p2])
     await db.flush()
     leg = Leg(
-        leg_code="1AFRBR6", vessel_id=vessel.id,
-        departure_port_id=p1.id, arrival_port_id=p2.id,
-        etd=datetime(2026, 4, 1, tzinfo=UTC), eta=datetime(2026, 4, 20, tzinfo=UTC),
-        etd_ref=datetime(2026, 4, 1, tzinfo=UTC), eta_ref=datetime(2026, 4, 20, tzinfo=UTC),
+        leg_code="1AFRBR6",
+        vessel_id=vessel.id,
+        departure_port_id=p1.id,
+        arrival_port_id=p2.id,
+        etd=datetime(2026, 4, 1, tzinfo=UTC),
+        eta=datetime(2026, 4, 20, tzinfo=UTC),
+        etd_ref=datetime(2026, 4, 1, tzinfo=UTC),
+        eta_ref=datetime(2026, 4, 20, tzinfo=UTC),
     )
     db.add(leg)
     await db.flush()
@@ -77,8 +81,11 @@ async def _base(db):
 
 async def _draft(db, leg, vessel, author, *, hours_old, now):
     ev = NoonEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="brouillon",
-        author_user_id=author.id, created_at=now - timedelta(hours=hours_old),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="brouillon",
+        author_user_id=author.id,
+        created_at=now - timedelta(hours=hours_old),
     )
     db.add(ev)
     await db.flush()
@@ -114,9 +121,7 @@ async def test_run_reminders_notifies_and_is_idempotent(db):
     assert summary["siege"] == len(SIEGE_MRV_ROLES)  # seul le 60 h, 1 notif/rôle siège
 
     async def _count():
-        return (
-            await db.execute(select(func.count()).select_from(Notification))
-        ).scalar_one()
+        return (await db.execute(select(func.count()).select_from(Notification))).scalar_one()
 
     total_after_first = await _count()
     assert total_after_first == 2 + len(SIEGE_MRV_ROLES)
@@ -136,9 +141,7 @@ async def test_master_notification_targets_author(db):
 
     await draft_reminders.run_draft_reminders(db, now)
     notif = (
-        await db.execute(
-            select(Notification).where(Notification.target_user_id == author.id)
-        )
+        await db.execute(select(Notification).where(Notification.target_user_id == author.id))
     ).scalar_one()
     assert notif.link == f"/onboard/events/{ev.id}/edit"
     assert notif.type == "info"
@@ -152,6 +155,4 @@ async def test_no_reminder_below_first_threshold(db):
 
     summary = await draft_reminders.run_draft_reminders(db, now)
     assert summary == {"scanned": 0, "master": 0, "siege": 0}
-    assert (
-        await db.execute(select(func.count()).select_from(Notification))
-    ).scalar_one() == 0
+    assert (await db.execute(select(func.count()).select_from(Notification))).scalar_one() == 0

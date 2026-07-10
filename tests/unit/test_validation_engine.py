@@ -64,8 +64,14 @@ def _clear_threshold_cache():
 
 def _ctx(db, rid, subjects, index, *, vessel=None, leg=None) -> RuleContext:
     return RuleContext(
-        db=db, rule_id=rid, subject=subjects[index], subjects=list(subjects),
-        index=index, now=datetime.now(UTC), vessel=vessel, leg=leg,
+        db=db,
+        rule_id=rid,
+        subject=subjects[index],
+        subjects=list(subjects),
+        index=index,
+        now=datetime.now(UTC),
+        vessel=vessel,
+        leg=leg,
     )
 
 
@@ -85,10 +91,16 @@ async def test_threshold_resolution_vessel_over_global_over_coded(db):
     assert tv is not None and tv.value == Decimal("750") and tv.source == "global"
 
     # Override navire = 900 (prime sur le global).
-    db.add(ValidationRuleThreshold(
-        rule_id="R08", vessel_id=1, parameter_name="seuil_conso_ref_l_j",
-        value=Decimal("900"), unit="L/j", provisional=False,
-    ))
+    db.add(
+        ValidationRuleThreshold(
+            rule_id="R08",
+            vessel_id=1,
+            parameter_name="seuil_conso_ref_l_j",
+            value=Decimal("900"),
+            unit="L/j",
+            provisional=False,
+        )
+    )
     await db.flush()
     invalidate_cache()
     tv_v = await get_threshold(db, "R08", "seuil_conso_ref_l_j", vessel_id=1)
@@ -155,7 +167,10 @@ async def test_cache_holds_until_invalidation(db):
         (SimpleNamespace(vessel_id=1, recorded_at=datetime(2026, 4, 1, tzinfo=UTC)), "pass"),
         (SimpleNamespace(vessel_id=None, recorded_at=datetime(2026, 4, 1, tzinfo=UTC)), "fail"),
         (SimpleNamespace(vessel_id=1, recorded_at=None), "fail"),
-        (SimpleNamespace(vessel_name="Anemos", datetime_utc=datetime(2026, 4, 1, tzinfo=UTC)), "pass"),
+        (
+            SimpleNamespace(vessel_name="Anemos", datetime_utc=datetime(2026, 4, 1, tzinfo=UTC)),
+            "pass",
+        ),
     ],
 )
 async def test_r01_required_fields(db, subject, expected):
@@ -167,11 +182,11 @@ async def test_r01_required_fields(db, subject, expected):
 @pytest.mark.parametrize(
     "subject,expected",
     [
-        (SimpleNamespace(leg_id=1, leg_code="1CFRBR6"), "pass"),   # bien formé
-        (SimpleNamespace(leg_id=1, leg_code="1CFRBR"), "fail"),    # 6 caractères
-        (SimpleNamespace(leg_id=1, leg_code="ABCDEFG"), "fail"),   # pas de chiffre en tête
+        (SimpleNamespace(leg_id=1, leg_code="1CFRBR6"), "pass"),  # bien formé
+        (SimpleNamespace(leg_id=1, leg_code="1CFRBR"), "fail"),  # 6 caractères
+        (SimpleNamespace(leg_id=1, leg_code="ABCDEFG"), "fail"),  # pas de chiffre en tête
         (SimpleNamespace(leg_id=None, leg_code="1CFRBR6"), "fail"),  # pas de voyage
-        (SimpleNamespace(leg_id=1), "pass"),                       # leg_code absent → OK
+        (SimpleNamespace(leg_id=1), "pass"),  # leg_code absent → OK
     ],
 )
 async def test_r02_voyage_binding(db, subject, expected):
@@ -183,10 +198,10 @@ async def test_r02_voyage_binding(db, subject, expected):
 @pytest.mark.parametrize(
     "conso,expected",
     [
-        (Decimal("700"), "pass"),   # < 750
-        (Decimal("750"), "pass"),   # == 750 (borne incluse)
-        (Decimal("800"), "fail"),   # > 750
-        (Decimal("-1"), "fail"),    # négatif
+        (Decimal("700"), "pass"),  # < 750
+        (Decimal("750"), "pass"),  # == 750 (borne incluse)
+        (Decimal("800"), "fail"),  # > 750
+        (Decimal("-1"), "fail"),  # négatif
     ],
 )
 async def test_r11_conso_bounds(db, conso, expected):
@@ -200,15 +215,19 @@ async def test_r11_conso_bounds(db, conso, expected):
 async def test_r11_rob_bound(db):
     await seed_reference_data(db)
     invalidate_cache()
-    assert (await _run_rule(db, "R11", [SimpleNamespace(rob_t=Decimal("350"))], 0))[0].result == "fail"
-    assert (await _run_rule(db, "R11", [SimpleNamespace(rob_t=Decimal("120"))], 0))[0].result == "pass"
+    assert (await _run_rule(db, "R11", [SimpleNamespace(rob_t=Decimal("350"))], 0))[
+        0
+    ].result == "fail"
+    assert (await _run_rule(db, "R11", [SimpleNamespace(rob_t=Decimal("120"))], 0))[
+        0
+    ].result == "pass"
 
 
 @pytest.mark.asyncio
 async def test_r12_copy_paste(db):
     a = SimpleNamespace(latitude=49.0, longitude=-1.0, rob_t=Decimal("100"))
     b = SimpleNamespace(latitude=49.0, longitude=-1.0, rob_t=Decimal("100"))  # identique
-    c = SimpleNamespace(latitude=48.0, longitude=-2.0, rob_t=Decimal("95"))   # différent
+    c = SimpleNamespace(latitude=48.0, longitude=-2.0, rob_t=Decimal("95"))  # différent
     seq = [a, b, c]
     assert (await _run_rule(db, "R12", seq, 0))[0].result == "pass"  # premier
     assert (await _run_rule(db, "R12", seq, 1))[0].result == "fail"  # copié
@@ -220,9 +239,9 @@ async def test_r13_chronology(db):
     t0 = datetime(2026, 4, 1, 12, tzinfo=UTC)
     seq = [
         SimpleNamespace(recorded_at=t0),
-        SimpleNamespace(recorded_at=t0 + timedelta(days=1)),   # croissant vs [0]
-        SimpleNamespace(recorded_at=t0),                       # antériorité vs [1]
-        SimpleNamespace(recorded_at=t0),                       # égal (doublon) vs [2]
+        SimpleNamespace(recorded_at=t0 + timedelta(days=1)),  # croissant vs [0]
+        SimpleNamespace(recorded_at=t0),  # antériorité vs [1]
+        SimpleNamespace(recorded_at=t0),  # égal (doublon) vs [2]
     ]
     assert (await _run_rule(db, "R13", seq, 0))[0].result == "pass"
     assert (await _run_rule(db, "R13", seq, 1))[0].result == "pass"
@@ -238,8 +257,13 @@ async def test_run_rules_persists_with_threshold_snapshot(db):
     await seed_reference_data(db)
     invalidate_cache()
     subjects = [
-        SimpleNamespace(vessel_id=1, recorded_at=datetime(2026, 4, 1, tzinfo=UTC),
-                        leg_id=1, leg_code="1CFRBR6", conso_l_j=Decimal("800")),
+        SimpleNamespace(
+            vessel_id=1,
+            recorded_at=datetime(2026, 4, 1, tzinfo=UTC),
+            leg_id=1,
+            leg_code="1CFRBR6",
+            conso_l_j=Decimal("800"),
+        ),
     ]
     summary = await run_rules(db, "event", subjects, run_id="run_test_1")
     rows = list((await db.execute(select(QualityCheckResult))).scalars().all())
@@ -320,8 +344,11 @@ async def test_run_rules_rule_exception_is_fail_info(db, monkeypatch):
 async def test_run_rules_pass_not_persisted_when_disabled(db):
     await seed_reference_data(db)
     invalidate_cache()
-    subj = [SimpleNamespace(vessel_id=1, recorded_at=datetime(2026, 4, 1, tzinfo=UTC),
-                            leg_id=1, leg_code="1CFRBR6")]
+    subj = [
+        SimpleNamespace(
+            vessel_id=1, recorded_at=datetime(2026, 4, 1, tzinfo=UTC), leg_id=1, leg_code="1CFRBR6"
+        )
+    ]
     summary = await run_rules(db, "event", subj, run_id="np", persist_passes=False)
     rows = list((await db.execute(select(QualityCheckResult))).scalars().all())
     # Tous les contrôles passent → aucune ligne persistée, mais comptés.

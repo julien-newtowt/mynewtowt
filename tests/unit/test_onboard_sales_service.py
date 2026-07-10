@@ -7,11 +7,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.models.onboard_sales import (
-    PAYMENT_METHODS,
     PAYMENT_METHOD_LABELS,
+    PAYMENT_METHODS,
     REGIME_FRANCHISE,
-    SALE_STATUSES,
     SALE_STATUS_LABELS,
+    SALE_STATUSES,
     STOCK_REASON_LABELS,
     STOCK_REASONS,
 )

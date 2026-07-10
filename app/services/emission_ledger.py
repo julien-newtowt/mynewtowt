@@ -89,9 +89,7 @@ def _num(value: Decimal | int | float | None) -> str | None:
 # ════════════════════════════════ Émissions multi-GES (déplacé de report_generation)
 
 
-def emissions_breakdown(
-    conso_t: Decimal | None, factor: ResolvedEmissionFactor
-) -> dict[str, Any]:
+def emissions_breakdown(conso_t: Decimal | None, factor: ResolvedEmissionFactor) -> dict[str, Any]:
     """Émissions multi-GES d'une assiette de consommation (CFOTE_09).
 
     ⚠ **Unique implémentation** de la multiplication conso × facteur (règle
@@ -307,13 +305,17 @@ async def _dashboard_param(db: AsyncSession, name: str, default: Decimal) -> Dec
     """Paramètre dashboard global (méthode B) — fail-closed sur ``default``."""
     try:
         row = (
-            await db.execute(
-                select(DashboardParameter).where(
-                    DashboardParameter.parameter_name == name,
-                    DashboardParameter.vessel_id.is_(None),
+            (
+                await db.execute(
+                    select(DashboardParameter).where(
+                        DashboardParameter.parameter_name == name,
+                        DashboardParameter.vessel_id.is_(None),
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if row is not None:
             return Decimal(row.value)
     except Exception:
@@ -328,13 +330,7 @@ def _ef_method(
     co2_t: Decimal | None, denom_t: Decimal | None, distance_km: Decimal | None
 ) -> Decimal | None:
     """EF (gCO₂/t·km) = co2_t × 1e6 / (denom_t × distance_km) — None si non calculable."""
-    if (
-        co2_t is None
-        or denom_t is None
-        or denom_t <= 0
-        or distance_km is None
-        or distance_km <= 0
-    ):
+    if co2_t is None or denom_t is None or denom_t <= 0 or distance_km is None or distance_km <= 0:
         return None
     return (co2_t * _MILLION / (denom_t * distance_km)).quantize(_EF_QUANT)
 
@@ -342,9 +338,7 @@ def _ef_method(
 # ════════════════════════════════════════════════════════════ Facteur
 
 
-async def _resolve_factor(
-    db: AsyncSession, fuel_type: str, at_date: Any
-) -> ResolvedEmissionFactor:
+async def _resolve_factor(db: AsyncSession, fuel_type: str, at_date: Any) -> ResolvedEmissionFactor:
     """Facteur multi-GES applicable — même chaîne que l'existant, unifiée.
 
     1. ``emission_factors`` daté/courant (``referential_env`` — chemin de
@@ -455,9 +449,7 @@ async def compute_for_leg(
     occupancy = await _dashboard_param(db, "occupancy_rate_pct", _OCCUPANCY_DEFAULT)
     capacity_ref = await _dashboard_param(db, "vessel_capacity_ref_t", _CAPACITY_REF_DEFAULT)
     ef_a = _ef_method(co2_emitted_t, cargo_bl, distance_km)
-    ef_b = _ef_method(
-        co2_emitted_t, capacity_ref * (occupancy / Decimal("100")), distance_km
-    )
+    ef_b = _ef_method(co2_emitted_t, capacity_ref * (occupancy / Decimal("100")), distance_km)
     ef_c = _ef_method(co2_emitted_t, cargo_mrv, distance_km)
 
     return LedgerResult(
@@ -513,9 +505,7 @@ async def _avoided_co2_kg(
 # ════════════════════════════════════════════════════════ Matérialisation
 
 
-async def _resolve_factor_row_id(
-    db: AsyncSession, fuel_type: str, at_date: Any
-) -> int | None:
+async def _resolve_factor_row_id(db: AsyncSession, fuel_type: str, at_date: Any) -> int | None:
     """Id (best-effort) de la ligne ``emission_factors`` appliquée — même ordre
     de résolution que ``referential_env.resolve_emission_factor``. None si repli."""
     try:

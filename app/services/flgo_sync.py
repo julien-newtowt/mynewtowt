@@ -969,8 +969,13 @@ async def check_consecutive_consistency(
     if prev_rob is None or cur_rob is None:
         # ROB non renseigné sur l'un des deux → rapprochement impossible.
         return FlgoSequenceCheck(
-            flagged=False, reason="", prev_rob_m3=prev_rob, cur_rob_m3=cur_rob,
-            delta_rob_m3=None, received_m3=None, tolerance_m3=tolerance,
+            flagged=False,
+            reason="",
+            prev_rob_m3=prev_rob,
+            cur_rob_m3=cur_rob,
+            delta_rob_m3=None,
+            received_m3=None,
+            tolerance_m3=tolerance,
         )
 
     delta = cur_rob - prev_rob
@@ -980,8 +985,13 @@ async def check_consecutive_consistency(
         flagged = received is not None and abs(delta - received) > tolerance
         reason = "reception_incoherente" if flagged else ""
         return FlgoSequenceCheck(
-            flagged=flagged, reason=reason, prev_rob_m3=prev_rob, cur_rob_m3=cur_rob,
-            delta_rob_m3=delta, received_m3=received, tolerance_m3=tolerance,
+            flagged=flagged,
+            reason=reason,
+            prev_rob_m3=prev_rob,
+            cur_rob_m3=cur_rob,
+            delta_rob_m3=delta,
+            received_m3=received,
+            tolerance_m3=tolerance,
         )
 
     # measurement : le ROB ne peut pas monter sans réception intercalée.
@@ -989,6 +999,9 @@ async def check_consecutive_consistency(
     return FlgoSequenceCheck(
         flagged=flagged,
         reason=("rob_hausse_sans_reception" if flagged else ""),
-        prev_rob_m3=prev_rob, cur_rob_m3=cur_rob,
-        delta_rob_m3=delta, received_m3=None, tolerance_m3=tolerance,
+        prev_rob_m3=prev_rob,
+        cur_rob_m3=cur_rob,
+        delta_rob_m3=delta,
+        received_m3=None,
+        tolerance_m3=tolerance,
     )

@@ -40,8 +40,6 @@ from app.services.crew_compliance import (
     embarked_days_by_member,
     is_non_schengen_national,
     normalize_role,
-    passport_blocking_reason,
-    refresh_member_schengen,
     refresh_schengen_for_members,
     vessel_readiness,
 )
@@ -225,9 +223,14 @@ async def crew_sync_marad(
         r = await sync_crew(db)
         result = {
             "configured": r["configured"],
-            "crew_created": r["created"], "crew_updated": r["updated"],
-            "crew_fetched": r["fetched"], "sched_created": 0, "sched_updated": 0,
-            "sched_fetched": 0, "errors": r["errors"], "diagnostic": None,
+            "crew_created": r["created"],
+            "crew_updated": r["updated"],
+            "crew_fetched": r["fetched"],
+            "sched_created": 0,
+            "sched_updated": 0,
+            "sched_fetched": 0,
+            "errors": r["errors"],
+            "diagnostic": None,
         }
     elif part in ("schedules", "plannings"):
         r = await sync_schedules(db)
@@ -240,9 +243,14 @@ async def crew_sync_marad(
             )
         result = {
             "configured": r["configured"],
-            "crew_created": 0, "crew_updated": 0, "crew_fetched": 0,
-            "sched_created": r["created"], "sched_updated": r["updated"],
-            "sched_fetched": r["fetched"], "errors": r["errors"], "diagnostic": diag,
+            "crew_created": 0,
+            "crew_updated": 0,
+            "crew_fetched": 0,
+            "sched_created": r["created"],
+            "sched_updated": r["updated"],
+            "sched_fetched": r["fetched"],
+            "errors": r["errors"],
+            "diagnostic": diag,
         }
     else:
         result = await sync_all(db)

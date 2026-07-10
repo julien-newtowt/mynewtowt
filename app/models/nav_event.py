@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import ClassVar
 
 from sqlalchemy import (
     JSON,
@@ -105,9 +106,7 @@ class NavEvent(Base):
         # Garde anti-doublon souple (IR01) : un seul événement d'un type donné
         # à un instant UTC donné sur un voyage. ``datetime_utc`` NULL (brouillon
         # pas encore finalisé) n'entre pas en conflit (NULLs distincts en PG).
-        UniqueConstraint(
-            "leg_id", "event_type", "datetime_utc", name="uq_nav_event_leg_type_dt"
-        ),
+        UniqueConstraint("leg_id", "event_type", "datetime_utc", name="uq_nav_event_leg_type_dt"),
         Index("ix_nav_events_vessel_dt", "vessel_id", "datetime_utc"),
         Index("ix_nav_events_leg", "leg_id"),
         Index("ix_nav_events_status", "status"),
@@ -117,9 +116,7 @@ class NavEvent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
     # R02 — voyage obligatoire (= Leg existant, consommé jamais recréé).
-    leg_id: Mapped[int] = mapped_column(
-        ForeignKey("legs.id", ondelete="CASCADE"), nullable=False
-    )
+    leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id", ondelete="CASCADE"), nullable=False)
     # Navire : nullable au niveau schéma ; la PRÉSENCE est imposée à la
     # finalisation par la règle R01 (bloquant) — un brouillon peut être
     # incomplet, un événement finalisé non (gate déclaratif).
@@ -148,15 +145,11 @@ class NavEvent(Base):
     status: Mapped[str] = mapped_column(
         String(12), nullable=False, default="brouillon", server_default="brouillon"
     )
-    author_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    author_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     last_saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    validated_by: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    validated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     # Dédoublonnage PWA offline — UUID généré côté navigateur (idempotence).
     client_uuid: Mapped[str | None] = mapped_column(String(36), unique=True)
@@ -173,7 +166,7 @@ class NavEvent(Base):
         order_by="NavEventEngineReading.id",
     )
 
-    __mapper_args__ = {
+    __mapper_args__: ClassVar[dict] = {
         "polymorphic_on": event_type,
         # Une seule requête LEFT JOIN sur les 3 tables filles (pas de N+1).
         "with_polymorphic": "*",
@@ -222,7 +215,7 @@ class NoonEvent(NavEvent):
         order_by="NavEventHoldReading.id",
     )
 
-    __mapper_args__ = {"polymorphic_identity": "noon"}
+    __mapper_args__: ClassVar[dict] = {"polymorphic_identity": "noon"}
 
 
 # ════════════════════════════════════════════════════════════ PortCallEvent
@@ -253,19 +246,19 @@ class PortCallEvent(NavEvent):
     eta_announced: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     etb: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    __mapper_args__ = {"polymorphic_abstract": True}
+    __mapper_args__: ClassVar[dict] = {"polymorphic_abstract": True}
 
 
 class DepartureEvent(PortCallEvent):
     """Départ d'escale (identité ``departure``) — pas de table propre."""
 
-    __mapper_args__ = {"polymorphic_identity": "departure"}
+    __mapper_args__: ClassVar[dict] = {"polymorphic_identity": "departure"}
 
 
 class ArrivalEvent(PortCallEvent):
     """Arrivée à l'escale (identité ``arrival``) — pas de table propre."""
 
-    __mapper_args__ = {"polymorphic_identity": "arrival"}
+    __mapper_args__: ClassVar[dict] = {"polymorphic_identity": "arrival"}
 
 
 # ════════════════════════════════════════════════════════════ AnchoringEvent
@@ -287,7 +280,7 @@ class AnchoringEvent(NavEvent):
     )
     duration_h: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))  # end (calculé)
 
-    __mapper_args__ = {
+    __mapper_args__: ClassVar[dict] = {
         "polymorphic_abstract": True,
         # ``paired_event_id`` référence aussi ``nav_events.id`` → il faut
         # désambiguïser la condition de jointure d'héritage.
@@ -298,13 +291,13 @@ class AnchoringEvent(NavEvent):
 class BeginAnchoringEvent(AnchoringEvent):
     """Début de mouillage (identité ``anchoring_begin``)."""
 
-    __mapper_args__ = {"polymorphic_identity": "anchoring_begin"}
+    __mapper_args__: ClassVar[dict] = {"polymorphic_identity": "anchoring_begin"}
 
 
 class EndAnchoringEvent(AnchoringEvent):
     """Fin de mouillage (identité ``anchoring_end``) — porte ``duration_h``."""
 
-    __mapper_args__ = {"polymorphic_identity": "anchoring_end"}
+    __mapper_args__: ClassVar[dict] = {"polymorphic_identity": "anchoring_end"}
 
 
 # Résolution ``event_type`` → classe concrète (utilisée par event_capture).

@@ -27,7 +27,24 @@ from app.config import settings
 # Devises Stripe sans sous-unité (le montant est l'entier tel quel).
 # Référence Stripe « zero-decimal currencies » (sous-ensemble utile ici).
 ZERO_DECIMAL_CURRENCIES: frozenset[str] = frozenset(
-    {"BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"}
+    {
+        "BIF",
+        "CLP",
+        "DJF",
+        "GNF",
+        "JPY",
+        "KMF",
+        "KRW",
+        "MGA",
+        "PYG",
+        "RWF",
+        "UGX",
+        "VND",
+        "VUV",
+        "XAF",
+        "XOF",
+        "XPF",
+    }
 )
 
 
@@ -157,8 +174,6 @@ def construct_event(payload: bytes, sig_header: str) -> Any:
     if not webhook_configured():
         raise StripeNotConfigured("STRIPE_WEBHOOK_SECRET manquant.")
     try:
-        return stripe.Webhook.construct_event(
-            payload, sig_header, settings.stripe_webhook_secret
-        )
+        return stripe.Webhook.construct_event(payload, sig_header, settings.stripe_webhook_secret)
     except (ValueError, stripe.SignatureVerificationError) as e:  # type: ignore[attr-defined]
         raise StripeCheckoutError(f"Webhook Stripe invalide : {e}") from e

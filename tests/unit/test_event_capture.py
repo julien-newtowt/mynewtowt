@@ -96,7 +96,11 @@ async def _base(db):
 async def test_create_draft_sets_defaults(db):
     author, vessel, leg = await _base(db)
     ev = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
         payload={"datetime_local": datetime(2026, 1, 2, 12, 0), "timezone": "UTC"},
     )
     assert isinstance(ev, NoonEvent)
@@ -110,12 +114,22 @@ async def test_create_draft_sets_defaults(db):
 async def test_create_draft_client_uuid_idempotent(db):
     author, vessel, leg = await _base(db)
     e1 = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
-        payload={"timezone": "UTC"}, client_uuid="abc-123",
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
+        payload={"timezone": "UTC"},
+        client_uuid="abc-123",
     )
     e2 = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
-        payload={"timezone": "UTC"}, client_uuid="abc-123",
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
+        payload={"timezone": "UTC"},
+        client_uuid="abc-123",
     )
     assert e1.id == e2.id
     count = (await db.execute(select(func.count()).select_from(NavEvent))).scalar_one()
@@ -126,7 +140,12 @@ async def test_create_draft_rejects_unknown_type(db):
     author, vessel, leg = await _base(db)
     with pytest.raises(event_capture.EventCaptureError):
         await event_capture.create_draft(
-            db, leg=leg, vessel=vessel, event_type="banquet", author=author, payload={},
+            db,
+            leg=leg,
+            vessel=vessel,
+            event_type="banquet",
+            author=author,
+            payload={},
         )
 
 
@@ -139,7 +158,12 @@ async def test_update_draft_author_only(db):
     db.add(other)
     await db.flush()
     ev = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author, payload={"timezone": "UTC"},
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
+        payload={"timezone": "UTC"},
     )
     # L'auteur peut modifier.
     await event_capture.update_draft(db, ev, author, {"comments": "ok"})
@@ -152,7 +176,11 @@ async def test_update_draft_author_only(db):
 async def test_update_draft_refused_when_not_draft(db):
     author, vessel, leg = await _base(db)
     ev = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
         payload={"datetime_local": datetime(2026, 1, 2, 12), "timezone": "UTC"},
     )
     await event_capture.finalize(db, ev, author)
@@ -167,27 +195,43 @@ async def test_finalize_computes_utc_across_dst_spring_forward(db):
     """Europe/Paris 2026-03-29 : +01:00 avant, +02:00 après le changement d'heure."""
     author, vessel, leg = await _base(db)
     before = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
         payload={"datetime_local": datetime(2026, 3, 29, 1, 30), "timezone": "Europe/Paris"},
     )
     after = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
         payload={"datetime_local": datetime(2026, 3, 29, 3, 30), "timezone": "Europe/Paris"},
     )
     await event_capture.finalize(db, before, author)
     await event_capture.finalize(db, after, author)
     assert before.datetime_utc == datetime(2026, 3, 29, 0, 30, tzinfo=UTC)  # CET +01:00
-    assert after.datetime_utc == datetime(2026, 3, 29, 1, 30, tzinfo=UTC)   # CEST +02:00
+    assert after.datetime_utc == datetime(2026, 3, 29, 1, 30, tzinfo=UTC)  # CEST +02:00
 
 
 async def test_datetime_utc_mixed_timezones(db):
     author, vessel, leg = await _base(db)
     paris = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
         payload={"datetime_local": datetime(2026, 1, 2, 13, 0), "timezone": "Europe/Paris"},
     )
     saigon = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
         payload={"datetime_local": datetime(2026, 1, 2, 13, 0), "timezone": "Asia/Ho_Chi_Minh"},
     )
     # Paris +01:00 → 12:00 UTC ; Saigon +07:00 → 06:00 UTC.
@@ -203,7 +247,11 @@ async def test_finalize_blocked_by_blocking_rule_r01(db):
     """Identité incomplète (pas de navire sur l'événement) → R01 bloquant → refus."""
     author, _vessel, leg = await _base(db)
     ev = await event_capture.create_draft(
-        db, leg=leg, vessel=None, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=None,
+        event_type="noon",
+        author=author,
         payload={"datetime_local": datetime(2026, 1, 2, 12), "timezone": "UTC"},
     )
     with pytest.raises(event_capture.EventFinalizationError) as exc:
@@ -217,7 +265,11 @@ async def test_finalize_blocked_by_blocking_rule_r01(db):
 async def test_finalize_ok_persists_quality_results(db):
     author, vessel, leg = await _base(db)
     ev = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
         payload={"datetime_local": datetime(2026, 1, 2, 12), "timezone": "UTC"},
     )
     out = await event_capture.finalize(db, ev, author)
@@ -230,10 +282,16 @@ async def test_finalize_ok_persists_quality_results(db):
 async def test_finalize_blocked_when_manual_position_unjustified(db):
     author, vessel, leg = await _base(db)
     ev = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
         payload={
-            "datetime_local": datetime(2026, 1, 2, 12), "timezone": "UTC",
-            "lat_decimal": Decimal("49.5"), "lon_decimal": Decimal("-3.0"),
+            "datetime_local": datetime(2026, 1, 2, 12),
+            "timezone": "UTC",
+            "lat_decimal": Decimal("49.5"),
+            "lon_decimal": Decimal("-3.0"),
             "position_source": "manuel_justifie",  # sans justification
         },
     )
@@ -248,7 +306,11 @@ async def test_validate_only_after_finalize(db):
     db.add(validator)
     await db.flush()
     ev = await event_capture.create_draft(
-        db, leg=leg, vessel=vessel, event_type="noon", author=author,
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
         payload={"datetime_local": datetime(2026, 1, 2, 12), "timezone": "UTC"},
     )
     # Impossible de valider un brouillon.
@@ -266,14 +328,28 @@ async def test_validate_only_after_finalize(db):
 
 async def test_prefill_position_picks_nearest(db):
     author, vessel, leg = await _base(db)
-    db.add_all([
-        VesselPosition(vessel_id=vessel.id, recorded_at=datetime(2026, 1, 2, 6, tzinfo=UTC),
-                       latitude=48.0, longitude=-4.0),
-        VesselPosition(vessel_id=vessel.id, recorded_at=datetime(2026, 1, 2, 11, tzinfo=UTC),
-                       latitude=47.0, longitude=-5.0),
-        VesselPosition(vessel_id=vessel.id, recorded_at=datetime(2026, 1, 2, 20, tzinfo=UTC),
-                       latitude=45.0, longitude=-6.0),
-    ])
+    db.add_all(
+        [
+            VesselPosition(
+                vessel_id=vessel.id,
+                recorded_at=datetime(2026, 1, 2, 6, tzinfo=UTC),
+                latitude=48.0,
+                longitude=-4.0,
+            ),
+            VesselPosition(
+                vessel_id=vessel.id,
+                recorded_at=datetime(2026, 1, 2, 11, tzinfo=UTC),
+                latitude=47.0,
+                longitude=-5.0,
+            ),
+            VesselPosition(
+                vessel_id=vessel.id,
+                recorded_at=datetime(2026, 1, 2, 20, tzinfo=UTC),
+                latitude=45.0,
+                longitude=-6.0,
+            ),
+        ]
+    )
     await db.flush()
     pre = await event_capture.prefill_position(db, vessel, datetime(2026, 1, 2, 12, tzinfo=UTC))
     assert pre is not None
