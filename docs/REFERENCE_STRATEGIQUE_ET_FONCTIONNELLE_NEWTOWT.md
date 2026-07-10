@@ -1,5 +1,5 @@
 # Document de référence — Plateforme NEWTOWT `mynewtowt`
-## Contexte, comportements, stratégie & alignement sectoriel (v3.0.0)
+## Contexte, comportements, stratégie & alignement sectoriel (v3.11.0)
 
 > **Nature.** Document de référence maître, **autoportant**, destiné à être **ingéré
 > par des IA** (outils d'analyse, de conception, de revue, d'aide au développement)
@@ -13,13 +13,22 @@
 > **compréhension du spectre sectoriel et concurrentiel** ; (d) cartographier les
 > **outils et fonctionnalités déjà en place**.
 >
-> **Périmètre & date.** Branche `claude/app-reference-docs-q4vx4g`, dérivé du code
-> au **2026‑06‑29**. Version applicative **3.0.0**.
+> **Périmètre & date.** Rédigé au **2026‑06‑29** (branche
+> `claude/app-reference-docs-q4vx4g`), **récupéré et rafraîchi le 2026‑07‑10**
+> (rattrapage R2 — cf. `docs/audit/ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md`) pour
+> intégrer **MRV v2** et la **vente à bord**. Version applicative **3.11.0**
+> (NB : `pyproject.toml`/`app/config.py` déclarent encore `3.0.0` — métadonnées à
+> aligner, cf. phase 4 du plan de rattrapage).
 >
-> **Hiérarchie de vérité.** En cas de divergence : le **code** prime, puis ce
-> document, puis les autres docs, puis `CLAUDE.md` (qui comporte des inexactitudes
-> historiques signalées au §16). Documents jumeaux à lire en complément :
-> `docs/audit/DOCUMENT_REFERENCE_CONTEXTE_APPLICATION.md` (réf. factuelle code),
+> **Rôles respectifs des deux documents de référence.** Celui‑ci porte la couche
+> **stratégique / business / sectorielle** (vision, concurrence, personas, gaps,
+> roadmap) ; `docs/audit/DOCUMENT_REFERENCE_CONTEXTE_APPLICATION.md` porte le
+> **contrat technique factuel** (patterns, comportements par module, config). En
+> cas de recouvrement, le second fait foi sur le code, celui‑ci sur la stratégie.
+>
+> **Hiérarchie de vérité.** En cas de divergence : le **code** prime, puis
+> `docs/audit/DOCUMENT_REFERENCE_CONTEXTE_APPLICATION.md`, puis ce document, puis
+> `CLAUDE.md` (remis à niveau v3.11.0 le 2026‑07‑03, PR #133). Compléments :
 > `docs/strategy/00-vision.md`, `docs/audit/2026-06-12-audit-360/*` (audit 360°),
 > `docs/personas/01-personas.md`.
 
@@ -35,10 +44,11 @@
   (données), §9 (sécurité/RBAC), §10 (intégrations), §15 (arbitrages).
 - **Invariants de comportement à supposer vrais :** §7.4 (patterns). Tout nouveau
   code doit les respecter.
-- **Chiffres-clés vérifiés sur le code** (à utiliser comme référence) : 9 rôles ·
-  17 modules de permission · ~95 tables (≈52 modules de modèles) · 90 migrations
-  Alembic (dernière `20260629_0084`) · ~40 routers · ~90 services · ~230 templates
-  Jinja · 5 langues · 126 fichiers de test.
+- **Chiffres-clés vérifiés sur le code** (recomptés au **2026‑07‑10**) : 9 rôles ·
+  17 modules de permission · **129 tables** · **112 migrations** Alembic (dernière
+  `20260709_0105_mrv_bascule_nettoyage`) · **43 routers** · **108 services** ·
+  **282 templates** Jinja · 5 langues · **187 fichiers de test**. (La croissance
+  depuis le 06‑29 — ~95 tables, 90 migrations — vient pour l'essentiel de MRV v2.)
 
 ---
 
@@ -149,7 +159,7 @@ distingue par **15 ans d'exploitation** et des **données opérationnelles longu
 | Devis instantané **sans compte** (Hapag Quick Quotes, Maersk Spot) | ❌ compte obligatoire dès l'étape 1 du wizard |
 | Prix ferme + garantie de chargement (Maersk Spot) | 🟡 prix indicatif, confirmation manuelle « < 4 h » non mesurée |
 | Recherche routes/horaires publique | ✅ **au‑dessus du standard** : montre la **capacité restante** |
-| Paiement en ligne / compte courant | ❌ facture PDF + virement non suivi (Stripe retiré en V3.1) |
+| Paiement en ligne / compte courant | ❌ facture PDF + virement non suivi pour le **fret** (Stripe réintroduit en 07‑2026 **uniquement** pour la vente à bord équipage, `/captain/ventes`) |
 | Tracking conteneur temps réel (myMSC, Maersk Hub) | 🟡 carte navire réelle ✅, mais **jalons booking avancés à la main** |
 | Dashboard émissions (Maersk Emissions Studio, ISO 14083) | 🟡 cumul + certificats ✅ ; **pas d'export annuel consolidé**, ISO 14083 absent |
 | API B2B + webhooks (EDI/API) | ❌ API v1 **lecture seule**, pas de création de booking, pas de webhooks |
@@ -208,11 +218,11 @@ lisibilité réglementaire (mono), vert = signal environnemental.
   collectées mais **non utilisées** par le certificat.
 - **Référentiels manquants** : ISO 14083 / GLEC non cités ; périmètre **WtW/TtW** non
   précisé ; tout en **CO₂**, jamais **CO₂e**.
-- **« Label » sans tiers** : pas de vérificateur nommé, ni n° vérifiable, ni
-  registre → renommer en « certificat d'émissions évitées » **ou** constituer le
-  label (référentiel publié + audit tiers).
-- **Pas d'export RSE annuel consolidé** (la North Star « rapport CO₂ téléchargé »
-  n'a pas d'objet annuel à télécharger).
+- **« Label » sans tiers** : pas de vérificateur nommé → *partiellement traité
+  depuis (07‑2026)* : registre vérifiable public `/verify/{cert_ref}` + page
+  `/preuves` livrés ; **reste** le vérificateur tiers nommé / audit externe.
+- ~~Pas d'export RSE annuel consolidé~~ → **résolu** :
+  `/me/anemos/report/{year}.pdf|.csv` (mention Bilan Carbone® scope 3 cat. 4).
 
 ### 4.3 Stratégie data / analytics (source : `docs/analytics/01-data-strategy.md`)
 - **Volumétrie** : legs ~200/an ; positions navires ~500 k points/an ; bookings
@@ -394,13 +404,25 @@ lisibilité réglementaire (mono), vert = signal environnemental.
    `CLAIM_DECLARED` + notification gestionnaire ; auto‑résolution de la position cale.
    *Entités :* `claims`, `claim_documents/_timeline_entry/_provision_history`.
 
-9. **MRV `/mrv`** (émissions UE) — **hybride** (arbitrage A1) : noon auto **+ 4
-   compteurs DO** de contrôle ; calcul ME/AE/**ROB chaîné** ; **contrôle qualité
-   multi‑règles** (verrouillé par tests) ; **export DNV Veracity 18 colonnes** ;
-   **Carbon Report PDF** par leg (intensités /NM, /t, /t·nm, CO₂ évité) avec blocage
-   qualité ; position **DMS** auto depuis GPS ; **facteur CO₂ versionné** (`/admin/co2`,
-   facteur MDO ≈ 3,15 t CO₂/t). *Entités :* `mrv_events`, `mrv_parameters`,
-   `co2_variable`.
+9. **MRV `/mrv` + `/onboard/events`** (émissions UE) — **refonte v2 (07‑2026,
+   lots 1‑14, migrations 0096‑0105)** : architecture **événementielle
+   déclarative** — le bord déclare des **événements** (Noon/Departure/Arrival/
+   Anchoring, machine à états `brouillon` auteur‑seul → `finalisé` → `validé`
+   siège) et des **soutages BDN** ; tout le reste est **dérivé**
+   (`inter_event_compute`, **grand livre unique `emission_ledger`** multi‑GES —
+   seul endroit du code où conso × facteur, sentinelle de test) ; **moteur de
+   règles R01‑R26 + IR01‑IR05** (seuils **en base**, fail‑closed, jamais de
+   littéral) ; datasets **OVDLA/OVDBR** (remplacent l'export DNV CSV 18 col.,
+   décommissionné) ; FLGO Marad lecture seule ; **Carbon Report** par leg ;
+   facteurs d'émission **versionnés** (`/admin/emission-factors`, `/admin/co2`) ;
+   dashboard dédié `/dashboard-env` (4 pages : flotte, suivi opérationnel,
+   qualité, administration). Double‑run pilote par navire via feature flag
+   `mrv_v2_capture` (défaut ON, fail‑open). L'ancien hybride noon (arbitrage A1)
+   reste consultable en archive (`/mrv/archive/events`). *Entités :*
+   `nav_events`, `bunker_operations`, `emission_ledger`, `validation_rule_
+   thresholds`, `emission_factors`, `mrv_events` (legacy lecture seule). *Réf. :*
+   `docs/strategy/REGLES_GESTION_DONNEES_EMISSIONS.md`, runbook
+   `docs/operations/05-mrv-evenementiel-runbook.md`.
 
 10. **Navigation `/performance/navigation`** — multi‑legs/multi‑navires : carte (1
     couleur/leg, points GPS + trait + route théorique), **tableau comparatif**
@@ -453,8 +475,22 @@ lisibilité réglementaire (mono), vert = signal environnemental.
 18. **Admin `/admin`** — users (CRUD, rôles, `must_change_password`, import Excel),
     **éditeur de matrice de permissions** (overrides DB), maintenance, **activity
     logs**, **CO₂** (facteur versionné, NOx/SOx), OPEX, assurance, navires,
-    **exports/purges DB whitelistés**, dashboard sécurité. *Entités :* `users`,
-    `role_permission`, `activity_log`, `feature_flag`, `insurance_contract`, …
+    **exports/purges DB whitelistés**, dashboard sécurité, **flotte‑env**
+    (référentiels cuves/moteurs) + **emission‑factors** (multi‑GES versionnés).
+    *Entités :* `users`, `role_permission`, `activity_log`, `feature_flag`,
+    `insurance_contract`, …
+
+> **Ajouts 07‑2026 (postérieurs à la rédaction initiale)** :
+> **Vente à bord `/captain/ventes`** — catalogue biens/services, inventaire par
+> navire, encaissement **espèces** (caisse `vente_a_bord`) ou **CB Stripe
+> Checkout** (lien + QR, webhook `/webhooks/stripe` signé et idempotent,
+> secure‑by‑default : 503 sans `STRIPE_SECRET_KEY`), registre douanier détaxe +
+> export CSV — seule exception au « zéro paiement dans l'app », limitée aux
+> collaborateurs embarqués. **Dashboard environnemental `/dashboard-env`** —
+> 4 pages (flotte, suivi opérationnel navire→voyage→événements avec ROB timeline
+> et profil de propulsion 4 h, qualité des données, administration des
+> paramètres), exports PDF/DOCX. Détail des deux modules dans `CLAUDE.md`
+> (tableau « Domaines fonctionnels »).
 
 ---
 
@@ -502,8 +538,10 @@ puis `init_db()` (`create_all` **dev seulement** ; prod = Alembic).
 | `SENTRY_DSN`, `OTEL_…`, `PROMETHEUS_METRICS` | — / — / True | observabilité |
 
 > **Secure‑by‑default :** tous les endpoints cron renvoient **503** quand leur token
-> n'est pas configuré. **Stripe retiré (V3.1)** — facturation par **virement**,
-> aucun paiement traité par l'app.
+> n'est pas configuré. Facturation **fret** par **virement** uniquement (Stripe
+> retiré de ce circuit en V3.1). **Exception ciblée 07‑2026 :** Stripe Checkout
+> pour la **vente à bord** (`/captain/ventes`, webhook signé `/webhooks/stripe`) —
+> 503 sans `STRIPE_SECRET_KEY`, seule l'espèce reste alors disponible.
 
 ### 7.4 Patterns & invariants de comportement (contrats — à supposer vrais)
 - **DB** : `get_db()` = **auto‑commit en succès / rollback en exception**. Une route
@@ -687,8 +725,9 @@ persona capitaine (satcom intermittent).
 - **CI** (`.github/workflows/ci.yml`) : **lint** (ruff, black, mypy informatif),
   **test** (pytest + couverture, service Postgres 16), **security** (bandit,
   pip‑audit, gitleaks), **build** Docker sur `main`.
-- **Migrations** : **90** révisions Alembic (`YYYYMMDD_00XX_…`, dernière
-  `20260629_0084_news_ai_layer`), toutes **additives**.
+- **Migrations** : **112** révisions Alembic (`YYYYMMDD_00XX_…`, dernière
+  `20260709_0105_mrv_bascule_nettoyage` — chaîne MRV v2 = 0096‑0105), toutes
+  **additives**.
 - **Déploiement** : Docker Compose (app Python 3.12‑slim + Postgres 16 + **Caddy**
   TLS Let's Encrypt) ; volumes `pgdata`/`uploads`/`caddy_*` ; `FORWARDED_ALLOW_IPS`.
 - **Process qualité** : implémenter → tester → `/code-review` → `/security-review` →
@@ -716,8 +755,9 @@ persona capitaine (satcom intermittent).
 ## 16. Écarts connus, dette & gap competitif (pour outils d'analyse)
 
 ### 16.1 Gaps commerciaux prioritaires (audit 2026‑06‑12, IDs `COM‑xx`)
-- **COM‑01/02** : compte obligatoire dès l'étape 1 ; **aucun devis instantané
-  public** (le calcul existe pourtant) → friction de conversion.
+- ~~**COM‑01/02** : compte obligatoire dès l'étape 1 ; aucun devis instantané
+  public~~ → **résolus (07‑2026)** : tunnel devis public `/devis` (+ PDF) et
+  wizard booking **en session invité** (compte autocréé à la validation).
 - **COM‑03** : **tarif par défaut 38 €/palette** appliqué silencieusement si le prix
   public d'un leg est absent (risque de vendre une transatlantique à 38 €/pal.).
 - **COM‑04** : leads `/contact` **best‑effort** (Pipedrive/email/notif), SLA « 4 h »
@@ -727,9 +767,11 @@ persona capitaine (satcom intermittent).
 - **COM‑06** : **deux pipelines** parallèles (orders vs bookings) — pas de vue
   unifiée du remplissage/CA par leg.
 - **COM‑07** : **vitrine monolingue FR de fait** ; EN/ES/PT‑BR squelettiques.
-- **COM‑08/09/10/12** : politique d'annulation absente ; drafts ne gèlent pas la
-  capacité ; aucun nurturing ; **zéro preuve sociale** (témoignages/références/blog
-  vide).
+- **COM‑08/09/10/12** : ~~politique d'annulation absente~~ → **COM‑08 résolu**
+  (grille 0/25/50/100 %) ; nurturing entamé (relance **J+1** sur devis non
+  converti) ; **restent** : drafts ne gèlent pas la capacité (COM‑09), nurturing
+  complet (COM‑10), **preuve sociale** (COM‑12 — le carnet `/carnet` + actualités
+  sont désormais en place mais restent à alimenter en références clients).
 
 ### 16.2 Gaps preuve RSE (IDs `ENV‑xx`)
 - **ENV‑01** : `−95 %` vs `−89 %` coexistent publiquement → une seule vérité, sourcée.
@@ -743,9 +785,11 @@ persona capitaine (satcom intermittent).
   label (registre + tiers).
 
 ### 16.3 Dette technique & points d'attention
-- `CLAUDE.md` partiellement inexact (Cargo audit/lock, Insurance « V3‑only », statuts
-  Finance/KPI ; il déclare encore **8 rôles / 16 modules** alors que le **code en a 9
-  et 17** — `rh` et `veille` ajoutés). À recouper avec ce document.
+- ~~`CLAUDE.md` partiellement inexact (8 rôles / 16 modules déclarés)~~ →
+  **résolu** : `CLAUDE.md` remis à niveau v3.11.0 (PR #133, 2026‑07‑03) — 9 rôles,
+  17 modules, décisions actées à jour.
+- **Métadonnées de version** : `pyproject.toml` et `app/config.py` déclarent
+  encore `3.0.0` (réalité : 3.11.0) — à aligner.
 - Modules **dormants/à consolider** : `client_invoice`/`invoicing` ; contrat **API
   tracking** lecture (GET) rompu vs V2 (à versionner) ; PWA offline étendu aux SOF
   (backlog).
@@ -757,20 +801,36 @@ persona capitaine (satcom intermittent).
 ## 17. Roadmap & priorités
 
 ### 17.1 Priorités court terme (6–12 mois) — pour tenir la comparaison « grands acteurs »
-1. **Fermer le tunnel** : devis instantané sans compte (COM‑02), inscription à
-   l'étape 3 (COM‑01), refus d'ouverture booking sans prix public (COM‑03),
-   encaissement + suivi (COM‑05).
-2. **Robustifier la preuve RSE** : méthode honnête sur le PDF, export annuel
-   consolidé (ENV‑06), vérificateur nommé + ISO 14083 (ENV‑04/05), page « Preuves ».
-3. **Instrumenter le funnel** (analytics public) : cible conversion landing→booking
-   ≥ 5 %, submitted→confirmed < 4 h, self‑service ≥ 30 % à 6 mois.
-4. **Localiser EN puis PT‑BR** (routes US/BR).
+*(statuts revus au 2026‑07‑10 — la vitrine P3‑P12 a soldé une partie de la liste)*
+1. **Fermer le tunnel** — ⏳ **largement entamé** : tunnel devis public `/devis`
+   (+ PDF + relance J+1) ✅, wizard booking **en session invité** avec
+   autocréation de compte à la validation (COM‑01/02) ✅, grille d'annulation
+   (COM‑08) ✅. **Restent** : refus d'ouverture sans prix public (COM‑03) et
+   surtout **encaissement fret + suivi de paiement** (COM‑05).
+2. **Robustifier la preuve RSE** — ⏳ **partiel** : page `/preuves` (méthodo +
+   registre vérifiable) ✅, vérification de certificats `/verify` ✅, export RSE
+   annuel `/me/anemos/report/{year}` (ENV‑06) ✅. **Restent** : vérificateur
+   tiers nommé, ISO 14083/GLEC, périmètre WtW/TtW & CO₂e affichés — le sourcing
+   formel CH₄/N₂O/WtT (Q12) est un préalable acté avant toute communication
+   externe.
+3. ~~**Instrumenter le funnel**~~ — ✅ **livré** : `analytics_events` (17 types)
+   + funnel commercial `/dashboard/analytics/commercial` (7 étapes + B2B2C).
+   Reste à exploiter (revue des cibles : conversion ≥ 5 %, < 4 h, self‑service
+   ≥ 30 %). Gap mineur : classement « top routes » (option R3 du plan de
+   rattrapage).
+4. **Localiser EN puis PT‑BR** — ⏳ **partiel** : i18n stratégique vitrine livré
+   (PT‑BR en tête, hreflang honnête) ; le fond éditorial multilingue reste à
+   compléter.
 5. **Unifier orders/bookings** (COM‑06) et **automatiser les jalons** de suivi
-   (FLX‑02 : SOF réels → statuts client).
+   (FLX‑02 : SOF réels → statuts client) — inchangé.
 
 ### 17.2 Backlog soldé (rappel — déjà livré)
 DOCX BL + offre ; stowage SVG ; exports/purges DB whitelistés ; congés unifiés
-(EVO‑02) ; veille IA (EVO‑04) ; PWA offline IndexedDB + Background Sync (EVO‑05).
+(EVO‑02) ; veille IA (EVO‑04) ; PWA offline IndexedDB + Background Sync (EVO‑05) ;
+vitrine marketing P3‑P12 (preuves, verticales café/cacao, carnet, presse, devis,
+`/voyage/{ref}`) ; sync Marad lecture seule ; scénarios de planning what‑if ;
+API publique v1 read‑only ; **MRV v2** (architecture événementielle complète) ;
+**vente à bord** (espèces + CB Stripe ciblé).
 
 ### 17.3 Cap produit (horizon, source vision/cycle 3)
 Onboard 4 espaces étendu (check‑lists ISM/ISPS offline) ; analytics cumul + RAG
@@ -809,7 +869,8 @@ nautique) · **Anemos** (label/certificat CO₂ évité + navire).
 
 ---
 
-*Document de référence stratégique & fonctionnel — dérivé du code et des docs au
-2026‑06‑29 (branche `claude/app-reference-docs-q4vx4g`). À régénérer après toute
-évolution majeure de schéma, de matrice RBAC, d'intégration externe ou de
-positionnement commercial.*
+*Document de référence stratégique & fonctionnel — rédigé au 2026‑06‑29 (branche
+`claude/app-reference-docs-q4vx4g`), récupéré et rafraîchi le 2026‑07‑10
+(rattrapage R2 : chiffres recomptés, MRV v2 + vente à bord intégrés, statuts
+17.1/16.x revus). À régénérer après toute évolution majeure de schéma, de
+matrice RBAC, d'intégration externe ou de positionnement commercial.*
