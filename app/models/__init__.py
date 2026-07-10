@@ -91,6 +91,12 @@ from app.models.onboard_cashbox import (
     CashboxMovement,
     OnboardCashbox,
 )
+from app.models.onboard_sales import (
+    OnboardProduct,
+    OnboardSale,
+    OnboardSaleLine,
+    OnboardStockMovement,
+)
 from app.models.packing_list import (
     PackingList,
     PackingListAudit,
@@ -215,6 +221,10 @@ __all__ = [
     "OnboardChecklist",
     "OnboardMessage",
     "OnboardMessageMention",
+    "OnboardProduct",
+    "OnboardSale",
+    "OnboardSaleLine",
+    "OnboardStockMovement",
     "OpexParameter",
     "Order",
     "OrderAssignment",

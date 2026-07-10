@@ -1,0 +1,47 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Paiement CB — {{ sale.reference }}{% endblock %}
+{% block content %}
+<a href="/captain/ventes/vente/{{ sale.reference }}" class="btn btn-ghost mb-3">← Vente {{ sale.reference }}</a>
+<header class="mb-4">
+  <span class="kicker">À bord · Vente · Paiement carte</span>
+  <h1 class="display">Lien de paiement CB</h1>
+  <p class="text-muted">
+    Le collaborateur scanne le QR code (ou ouvre le lien) sur son téléphone et
+    paie par carte. Le règlement est confirmé automatiquement (webhook Stripe)
+    puis enregistré en caisse.
+  </p>
+</header>
+
+<div class="grid grid-2 gap-4">
+  <article class="card text-center">
+    <h2>Scanner pour payer</h2>
+    <div style="max-width:280px;margin:1rem auto;">
+      {{ qr_svg|safe }}
+    </div>
+    <p class="mono">{{ "%.2f"|format(sale.total|float) }} {{ sale.currency }}</p>
+  </article>
+
+  <article class="card">
+    <h2>Ou ouvrir le lien</h2>
+    <p class="text-muted">Lien de paiement hébergé par Stripe (valable ~24 h) :</p>
+    <p><a href="{{ pay_url }}" target="_blank" rel="noopener" class="btn btn-primary">Ouvrir la page de paiement →</a></p>
+    <div class="field mt-3">
+      <label for="pay_url">URL</label>
+      <input id="pay_url" type="text" value="{{ pay_url }}" readonly onclick="this.select();" />
+    </div>
+    <hr class="my-4" />
+    <p class="text-muted text-sm">
+      Statut : <span class="pill pill-warn">En attente de paiement</span><br />
+      Cette page se met à jour après paiement. Rechargez la vente pour voir le
+      statut « Payée ».
+    </p>
+    <div class="flex gap-2 mt-3">
+      <form method="post" action="/captain/ventes/vente/{{ sale.reference }}/checkout">
+        <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+        <button type="submit" class="btn btn-ghost btn-sm">Régénérer un lien</button>
+      </form>
+      <a href="/captain/ventes/vente/{{ sale.reference }}" class="btn btn-ghost btn-sm">Retour à la vente</a>
+    </div>
+  </article>
+</div>
+{% endblock %}

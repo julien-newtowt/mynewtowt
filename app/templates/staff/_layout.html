@@ -90,7 +90,8 @@
         <ul class="nav-group-list">
           {% if v_escale %}<li><a href="/escale"><i data-lucide="anchor"></i><span>{{ t('s_nav_escale', lang) }}</span></a></li>{% endif %}
           {% if v_captain %}<li><a href="/onboard"><i data-lucide="ship"></i><span>{{ t('s_nav_onboard', lang) }}</span></a></li>
-          <li><a href="/cashbox"><i data-lucide="euro"></i><span>{{ t('s_nav_cashbox', lang) }}</span></a></li>{% endif %}
+          <li><a href="/cashbox"><i data-lucide="euro"></i><span>{{ t('s_nav_cashbox', lang) }}</span></a></li>
+          <li><a href="/captain/ventes"><i data-lucide="shopping-cart"></i><span>{{ t('s_nav_ventes_bord', lang) }}</span></a></li>{% endif %}
           {% if v_tickets %}<li><a href="/tickets"><i data-lucide="ticket"></i><span>{{ t('s_nav_tickets', lang) }}</span></a></li>{% endif %}
           {% if v_planning %}<li><a href="/tracking"><i data-lucide="map"></i><span>{{ t('s_nav_tracking', lang) }}</span></a></li>{% endif %}
         </ul>

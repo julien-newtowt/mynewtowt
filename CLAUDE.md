@@ -21,9 +21,16 @@ Transport) — pionnier du transport maritime décarboné à la voile depuis
 - **Le portail expéditeur** par token (`/p/{token}`) : packing list,
   messagerie sécurisée, documents, suivi.
 
-> ⚠️ Stripe a été retiré (V3.1) : NEWTOWT facture **par virement bancaire
-> uniquement**. Aucun paiement n'est traité par l'application ; l'équipe
-> commerciale confirme les bookings sous 4 h.
+> ⚠️ Facturation **fret** : NEWTOWT facture **par virement bancaire
+> uniquement** (l'équipe commerciale confirme les bookings sous 4 h). Stripe
+> avait été retiré en V3.1 de ce circuit.
+>
+> 💳 **Exception — « Vente à bord »** : Stripe est réintroduit de façon
+> **ciblée** pour l'encaissement CB des collaborateurs embarqués (module
+> `captain`, route `/captain/ventes`). Stripe **Checkout** (page hébergée,
+> lien + QR) + **webhook** `/webhooks/stripe`. Secure-by-default : sans
+> `STRIPE_SECRET_KEY`, la voie carte renvoie 503 et seule reste l'espèce.
+> Aucun autre circuit de paiement n'est concerné.
 
 ## Stack technique
 
@@ -43,7 +50,7 @@ Transport) — pionnier du transport maritime décarboné à la voile depuis
 | DOCX | `python-docx` (BL + offre commerciale) |
 | Crew (lecture) | Marad / MaraSoft (sync read-only) |
 | Reverse proxy / TLS | Caddy (Let's Encrypt auto) |
-| Paiement | ❌ aucun (virement bancaire hors app — Stripe retiré) |
+| Paiement | Fret : virement bancaire hors app. **Vente à bord** : Stripe Checkout + webhook (segno pour le QR), ciblé, secure-by-default |
 | Containers | Docker + docker-compose |
 
 ## Identité visuelle — charte « Nouvelle Étoile »
@@ -244,6 +251,7 @@ mynewtowt/
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
 | Cashbox | `/cashbox` | ✅ EUR/USD/VND |
+| Vente à bord | `/captain/ventes` | ✅ catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe (avitaillement/franchise) + export CSV. Webhook `/webhooks/stripe` (signature + idempotent). Perm. `captain` (marins → CM via override) |
 | RH (SIRH) | `/rh` | ✅ congés marins + SIRH sédentaires : dossier/CRUD/import, contrats & avenants + alertes, congés/absences + self-service `/rh/moi`, EVP + verrouillage période, export Silae CSV + journal des lots, coffre-fort bulletins + entretiens + reporting RH (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |
 | Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |

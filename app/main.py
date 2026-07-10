@@ -48,6 +48,7 @@ from app.routers import (
     navigation_router,
     notifications_router,
     onboard_router,
+    onboard_sales_router,
     planning_router,
     public_router,
     pwa_router,
@@ -151,6 +152,8 @@ def create_app() -> FastAPI:
     app.include_router(modules_router.router)
     app.include_router(onboard_router.router)
     app.include_router(onboard_router.api_router)  # LOT 4 — cron /api/mrv/draft-reminders
+    app.include_router(onboard_sales_router.router)
+    app.include_router(onboard_sales_router.webhook_router)
     app.include_router(chat_router.router)
     app.include_router(client_auth_router.router)
     app.include_router(client_dashboard_router.router)

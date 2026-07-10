@@ -451,6 +451,7 @@ CATALOG: dict[str, str] = {
     "s_nav_onboard": "Onboard 4 espaces",
     "s_nav_tickets": "Tickets escale",
     "s_nav_cashbox": "Caisse de bord",
+    "s_nav_ventes_bord": "Vente à bord",
     "s_nav_tracking": "Tracking flotte",
     "s_nav_crew": "Équipage",
     "s_nav_rh": "Ressources humaines",

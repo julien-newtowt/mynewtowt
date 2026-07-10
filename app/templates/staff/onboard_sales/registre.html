@@ -1,0 +1,65 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Registre douanier — {{ vessel.name }}{% endblock %}
+{% block content %}
+<a href="/captain/ventes/{{ vessel.id }}" class="btn btn-ghost mb-3">← {{ vessel.code }}</a>
+<header class="mb-4">
+  <span class="kicker">À bord · Vente · Douane</span>
+  <h1 class="display">Registre des mouvements — vente détaxée</h1>
+  <p class="text-muted">
+    <span class="mono">{{ vessel.code }}</span> {{ vessel.name }} · régime d'avitaillement
+    (franchise). Registre append-only : entrées (avitaillement) et sorties (ventes).
+  </p>
+</header>
+
+<article class="card mb-4">
+  <form method="get" action="/captain/ventes/{{ vessel.id }}/registre" class="grid grid-3 gap-3" style="align-items:end;">
+    <div class="field">
+      <label for="date_from">Du</label>
+      <input id="date_from" name="date_from" type="date" value="{{ date_from }}" />
+    </div>
+    <div class="field">
+      <label for="date_to">Au</label>
+      <input id="date_to" name="date_to" type="date" value="{{ date_to }}" />
+    </div>
+    <div class="field flex gap-2">
+      <button type="submit" class="btn btn-secondary">Filtrer</button>
+      <a class="btn btn-ghost"
+         href="/captain/ventes/{{ vessel.id }}/registre/export.csv?date_from={{ date_from }}&date_to={{ date_to }}">
+        Exporter CSV
+      </a>
+    </div>
+  </form>
+</article>
+
+<article class="card">
+  <h2>Mouvements</h2>
+  {% if rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>SKU</th><th>Désignation</th><th>Mouvement</th>
+          <th class="text-right">Entrée</th><th class="text-right">Sortie</th>
+          <th>Vente réf.</th><th>Régime</th><th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td class="mono text-sm">{{ r.occurred_at|datetime }}</td>
+            <td class="mono">{{ r.sku }}</td>
+            <td>{{ r.label }}</td>
+            <td>{{ reason_labels.get(r.reason, r.reason) }}</td>
+            <td class="text-right mono text-success">{{ "%.3f"|format(r.qty_in|float) if r.qty_in else "" }}</td>
+            <td class="text-right mono text-error">{{ "%.3f"|format(r.qty_out|float) if r.qty_out else "" }}</td>
+            <td class="mono text-sm">{{ r.sale_reference }}</td>
+            <td><span class="pill pill-neutral">{{ r.regime }}</span></td>
+            <td class="text-sm text-muted">{{ r.note }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted">Aucun mouvement sur la période.</p>
+  {% endif %}
+</article>
+{% endblock %}

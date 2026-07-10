@@ -135,9 +135,24 @@ class Settings(BaseSettings):
     # externe (POST /api/quotes/followup, déclenché par Power Automate).
     quote_followup_api_token: str | None = None
 
-    # Note V3.1 — Stripe retiré : NEWTOWT facture par virement bancaire
-    # uniquement (cf. pdf/invoice.html). L'équipe commerciale confirme les
-    # bookings sous 4h, aucun paiement n'est traité par l'app.
+    # Note V3.1 — Stripe retiré de la facturation FRET : NEWTOWT facture le
+    # fret par virement bancaire (cf. pdf/invoice.html), l'équipe commerciale
+    # confirme les bookings sous 4h.
+    #
+    # Réintroduit de façon CIBLÉE pour la « vente à bord » (encaissement CB des
+    # collaborateurs embarqués) via Stripe Checkout + webhook. Secure-by-default :
+    # sans STRIPE_SECRET_KEY, la génération de lien CB renvoie 503 (l'app tourne
+    # normalement, seule la voie carte est indisponible ; l'encaissement espèces
+    # reste actif). Le webhook exige STRIPE_WEBHOOK_SECRET pour vérifier la
+    # signature ; sans lui, il renvoie 503.
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    stripe_publishable_key: str | None = None
+
+    @property
+    def stripe_enabled(self) -> bool:
+        """Vrai si l'encaissement carte (Stripe Checkout) est configuré."""
+        return bool(self.stripe_secret_key)
 
     @property
     def map_token(self) -> str:
