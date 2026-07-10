@@ -1,0 +1,26 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Vente à bord — {{ brand.nom_court }} ERP{% endblock %}
+{% block content %}
+<header class="mb-4">
+  <span class="kicker">À bord · Vente</span>
+  <h1 class="display">Vente à bord</h1>
+  <p class="text-muted">
+    Catalogue, inventaire, encaissement (espèces ou carte) et registre douanier
+    (avitaillement / franchise). Choisissez un navire.
+  </p>
+  <a href="/captain/ventes/catalogue" class="btn btn-secondary mt-2">Gérer le catalogue</a>
+</header>
+
+<div class="grid grid-2 gap-4">
+  {% for v in vessels %}
+    <article class="card card-interactive" onclick="window.location='/captain/ventes/{{ v.id }}';">
+      <div class="flex justify-between items-center">
+        <h2 style="margin:0;"><span class="mono text-muted">{{ v.code }}</span> {{ v.name }}</h2>
+        <a href="/captain/ventes/{{ v.id }}" class="btn btn-ghost text-sm">Ouvrir →</a>
+      </div>
+    </article>
+  {% else %}
+    <p class="text-muted">Aucun navire.</p>
+  {% endfor %}
+</div>
+{% endblock %}
