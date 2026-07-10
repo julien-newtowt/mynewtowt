@@ -3,8 +3,9 @@
 Depuis le lot 9, ce module ne calcule plus rien lui-même : il **adapte** le
 grand livre unique (``services.emission_ledger``) vers la dataclass historique
 ``CarbonResult`` (mêmes champs, mêmes arrondis) consommée par
-``services.kpi.compute_for_leg`` (persistance ``LegKPI``) et les vues
-``/mrv/legs/{id}/carbon`` + ``/mrv/legs/{id}``.
+``services.kpi.compute_for_leg`` (persistance ``LegKPI``) et la vue voyage
+``/mrv/voyages/{id}`` (lot 5 ; les anciennes vues ``/mrv/legs/{id}`` ont été
+retirées à la bascule, lot 14).
 
 Le grand livre lit les **événements** (``nav_events``) quand ils existent, sinon
 retombe sur les ``noon_reports`` legacy (source ``legacy_noon``) — pour un leg

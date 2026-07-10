@@ -1,9 +1,15 @@
 """MRV — calcul de consommation (compteurs DO) + contrôle qualité (A1 hybride).
 
-Paradigme V2 réintroduit : la consommation ME/AE d'un événement se déduit des
-**deltas de compteurs DO** entre événements consécutifs d'un même leg (×
-densité MDO), et le ROB calculé se chaîne (ROB précédent + soutage − conso). Le
-contrôle qualité applique plusieurs règles et pose un statut ``error`` bloquant.
+LOT 14 — module LEGACY conservé pour ``decimal_to_dms`` (consommé par
+``services.mrv_dataset``) et le chemin inerte de ``mrv_sync``. Plus aucun
+appelant actif de ``recompute_leg`` côté routes (CRUD ``mrv_events`` retiré) :
+les fonctions restent importables (tests de reprise + parité V2). L'ancienne
+constante de facteur CO₂ (morte) a été retirée : ce module ne multiplie plus
+aucun facteur d'émission, il sort donc de la liste blanche facteurs (lot 9).
+
+Paradigme V2 : la consommation ME/AE d'un événement se déduit des **deltas de
+compteurs DO** entre événements consécutifs d'un même leg (× densité MDO), et le
+ROB calculé se chaîne (ROB précédent + soutage − conso).
 
 Compteurs exprimés en m³ ; densité en t/m³ → consommation en tonnes.
 """
@@ -19,7 +25,6 @@ from app.models.mrv import MRVEvent, MRVParameter
 
 DEFAULT_DENSITY_T_M3 = Decimal("0.845")
 DEFAULT_DEVIATION_T = Decimal("2.0")
-DEFAULT_CO2_FACTOR = Decimal("3.206")
 
 _COUNTERS = ("port_me_do_counter", "stbd_me_do_counter", "fwd_gen_do_counter", "aft_gen_do_counter")
 

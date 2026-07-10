@@ -57,7 +57,7 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 from app.permissions import require_permission
-from app.services import bunkering, draft_reminders, event_capture, mrv_sync, referential_env
+from app.services import bunkering, draft_reminders, event_capture, feature_flags, referential_env
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.vessel_position import get_latest_position
@@ -389,6 +389,13 @@ async def onboard_navigation(
     # Le leg réellement affiché devient la sélection mémorisée.
     f["leg_id"] = selected.id if selected else f["leg_id"]
     f["selected_leg"] = selected
+    # LOT 14 — bascule : sur un navire à capture v2 active, l'ancien formulaire
+    # noon est gelé (remplacé par un renvoi vers la déclaration d'événements).
+    # Le journal de quart et les listes restent affichés (double garde côté POST).
+    selected_vessel = (
+        await db.get(Vessel, selected.vessel_id) if (selected and selected.vessel_id) else None
+    )
+    capture_v2 = await feature_flags.capture_v2_enabled(db, selected_vessel)
     response = templates.TemplateResponse(
         "staff/onboard/navigation.html",
         {
@@ -397,6 +404,7 @@ async def onboard_navigation(
             "leg_filter_ctx": f,
             "legs": legs,
             "leg": selected,
+            "capture_v2": capture_v2,
             "noon_reports": noon_reports,
             "noon_prefill": noon_prefill,
             "weather_slots": noon_prefill.get("weather_slots", []),
@@ -418,6 +426,29 @@ async def onboard_navigation(
     return response
 
 
+@router.get("/navigation/noon-report")
+async def get_noon_report_form(
+    request: Request,
+    vessel_id: int | None = None,
+    leg_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> RedirectResponse:
+    """LOT 14 — point d'entrée de l'ancien formulaire noon.
+
+    Navire à capture v2 active → renvoi 303 vers la déclaration d'événements
+    (``/onboard/events/new/noon``, message flash via ``?notice=capture_v2``).
+    Navire en opt-out (double-run) → renvoi vers ``/onboard/navigation`` qui
+    porte encore le formulaire noon legacy.
+    """
+    leg, vessel = await _resolve_leg_and_vessel(db, user, vessel_id, leg_id)
+    if await feature_flags.capture_v2_enabled(db, vessel):
+        suffix = f"?notice=capture_v2&leg_id={leg.id}" if leg else "?notice=capture_v2"
+        return RedirectResponse(url=f"/onboard/events/new/noon{suffix}", status_code=303)
+    dest = f"/onboard/navigation?leg_id={leg.id}" if leg else "/onboard/navigation"
+    return RedirectResponse(url=dest, status_code=303)
+
+
 @router.post("/navigation/noon-report")
 async def post_noon_report(
     request: Request,
@@ -425,6 +456,21 @@ async def post_noon_report(
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
     f = await request.form()
+    # LOT 14 — garde de bascule (AVANT le dédoublonnage) : sur un navire à
+    # capture v2 active, l'ancien noon — saisie directe ET rejeu de la file
+    # offline — est refusé 409 avec un message explicite (jamais de perte
+    # silencieuse : le client offline voit l'échec au lieu d'un faux succès).
+    _leg_id = _int_or_400(f.get("leg_id"), "leg_id")
+    _leg = await db.get(Leg, _leg_id) if _leg_id is not None else None
+    _vessel = await db.get(Vessel, _leg.vessel_id) if (_leg and _leg.vessel_id) else None
+    if await feature_flags.capture_v2_enabled(db, _vessel):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "capture v2 active — utilisez la déclaration d'événements "
+                "(/onboard/events/new/noon)."
+            ),
+        )
     client_uuid = _clean_client_uuid(f.get("client_uuid"))
     if client_uuid:
         existing = (
@@ -495,14 +541,10 @@ async def post_noon_report(
         entity_type="noon_report",
         entity_id=nr.id,
     )
-    # FLX-03 — le noon report est la référence n°1 du MRV : génération
-    # best-effort de l'événement MRV lié (idempotent ; le rejeu offline
-    # dédoublonné plus haut ne repasse pas ici). Donnée réglementaire :
-    # on logge fort mais on ne bloque jamais la saisie du bord.
-    try:
-        await mrv_sync.ensure_from_noon(db, nr)
-    except Exception:
-        logger.exception("MRV sync failed for noon report %s", nr.id)
+    # LOT 14 — la synchro noon→MRVEvent (``mrv_sync``) est éteinte : les navires
+    # en double-run (capture v2 OFF) écrivent encore ``noon_reports`` (audit,
+    # signature, fallback ledger ``legacy_noon``) mais ne génèrent plus de
+    # ``mrv_events`` (module archivé). La capture v2 est la voie unique.
     return RedirectResponse(url=f"/onboard/navigation?leg_id={nr.leg_id}", status_code=303)
 
 
@@ -1787,12 +1829,13 @@ async def _render_event_form(
     errors: list[str] | None = None,
     locked: bool = False,
     status_code: int = 200,
+    notice: str | None = None,
 ) -> HTMLResponse:
     ctx = await _event_form_context(
         db, event_type=event_type, event=event, leg=leg, vessel=vessel,
         errors=errors, locked=locked,
     )
-    ctx.update({"request": request, "user": user})
+    ctx.update({"request": request, "user": user, "notice": notice})
     return templates.TemplateResponse("staff/onboard/event_form.html", ctx, status_code=status_code)
 
 
@@ -1845,15 +1888,21 @@ async def onboard_event_new_form(
     request: Request,
     vessel_id: int | None = None,
     leg_id: int | None = None,
+    notice: str | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> HTMLResponse:
-    """Wizard mobile-first de déclaration d'un événement (5 types)."""
+    """Wizard mobile-first de déclaration d'un événement (5 types).
+
+    ``notice=capture_v2`` (LOT 14) → bandeau informant que l'ancien formulaire
+    noon a été remplacé par cette déclaration d'événements.
+    """
     if event_type not in EVENT_TYPES:
         raise HTTPException(status_code=404, detail="Type d'événement inconnu.")
     leg, vessel = await _resolve_leg_and_vessel(db, user, vessel_id, leg_id)
     return await _render_event_form(
-        request, user, db, event_type=event_type, event=None, leg=leg, vessel=vessel
+        request, user, db, event_type=event_type, event=None, leg=leg, vessel=vessel,
+        notice=notice,
     )
 
 

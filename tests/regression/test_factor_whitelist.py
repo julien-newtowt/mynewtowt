@@ -36,21 +36,26 @@ FACTOR_TOKENS: tuple[str, ...] = (
 )
 _TOKEN_RE = re.compile("|".join(FACTOR_TOKENS))
 
-# Liste blanche FIGÉE — chemins relatifs à la racine du dépôt (posix).
+# Liste blanche — chemins relatifs à la racine du dépôt (posix). Elle REFLÈTE
+# LE RÉEL : chaque entrée doit encore référencer un jeton facteur (prouvé par
+# ``test_no_obsolete_whitelist_entry``). Le lot 14 l'a RÉDUITE en purgeant le
+# legacy : ``mrv_compute.py`` (constante CO₂ morte retirée), ``mrv_router.py``
+# (CRUD/exports legacy retirés — plus de facteur affiché) et ``emissions.py``
+# (NOx/SOx via ``co2_variables`` — ne porte AUCUN jeton facteur CO₂/multi-GES)
+# en sont sortis. Étendre exige une justification d'architecte ; retirer, la
+# preuve qu'une purge a bien eu lieu (lots 10/14).
 FACTOR_WHITELIST: frozenset[str] = frozenset({
     # Le grand livre : L'UNIQUE implémentation des formules (lot 9).
     "app/services/emission_ledger.py",
-    # Comparateurs / référentiels officiels.
+    # Comparateur / référentiels officiels.
     "app/services/co2.py",  # forfait 1,5/13,7 + chaîne do_co2_ef (/admin/co2)
-    "app/services/emissions.py",  # NOx/SOx évités (comparateur officiel)
     "app/services/referential_env.py",  # référentiel emission_factors + replis codés
     "app/models/emission_factor.py",  # schéma du référentiel multi-GES
-    # Écrans d'administration du référentiel (affichage/saisie, pas de calcul).
+    # Écran d'administration du référentiel (affichage/saisie, pas de calcul).
     "app/routers/admin_router.py",
-    # LEGACY — condamnés par le plan (purge lots 10/14), pas des extensions :
-    "app/services/mrv_export.py",  # CSV DNV 18/9 col. — retiré lot 10
-    "app/services/mrv_compute.py",  # deltas MRVEvent — absorbé/déprécié lot 14
-    "app/routers/mrv_router.py",  # affiche le facteur legacy — refonte lots 5/14
+    # LEGACY résiduel (lot 14) : ``carbon_report_summary`` (agrégat historique)
+    # porte encore ``CO2_EMISSION_FACTOR_MDO`` ; le CSV DNV 18/9 col. a été retiré.
+    "app/services/mrv_export.py",
 })
 
 # Fichiers dont le lot 9 a PROUVÉ la consolidation : ils ne doivent JAMAIS
@@ -114,4 +119,19 @@ def test_consolidated_consumers_are_factor_free():
         f"Régression règle d'or : {sorted(regressed)} référencent à nouveau un "
         "facteur d'émission — ils doivent consommer le grand livre "
         "(services/emission_ledger), jamais multiplier eux-mêmes."
+    )
+
+
+def test_no_obsolete_whitelist_entry():
+    """Sens « entrée obsolète » (lot 14) : la liste blanche REFLÈTE le réel.
+
+    Toute entrée listée qui ne référence PLUS aucun jeton facteur est une
+    trace de code purgé (lots 10/14) laissée par erreur → elle doit être
+    retirée de ``FACTOR_WHITELIST``. Ce test échoue tant que la liste n'a pas
+    été mise à jour, garantissant qu'on ne blanchit pas des fichiers fantômes.
+    """
+    obsolete = FACTOR_WHITELIST - _files_referencing_factors()
+    assert not obsolete, (
+        "Entrées obsolètes dans FACTOR_WHITELIST (ne référencent plus aucun "
+        f"facteur — purge effectuée, liste à jour requise) : {sorted(obsolete)}."
     )

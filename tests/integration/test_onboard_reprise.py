@@ -42,11 +42,15 @@ async def _setup_leg(db):
 
 
 @pytest.mark.asyncio
-async def test_edit_unsigned_sof_updates_and_resyncs_mrv(db, staff_user):
+async def test_edit_unsigned_sof_updates_without_mrv_sync_lot14(db, staff_user):
+    """LOT 14 — la synchro SOF→MRVEvent est ÉTEINTE (module ``mrv_sync`` archivé).
+
+    L'ajout et l'édition d'un SOF non signé fonctionnent toujours sur le SOF
+    lui-même, mais ne génèrent/réalignent plus aucun ``mrv_events``.
+    """
     from app.routers.captain_router import add_sof_event, edit_sof_event
 
     await _setup_leg(db)
-    # SOSP (départ) → génère un MRVEvent dérivé.
     await add_sof_event(
         1,
         _Req(),
@@ -60,10 +64,10 @@ async def test_edit_unsigned_sof_updates_and_resyncs_mrv(db, staff_user):
         user=staff_user,
     )
     sof = (await db.execute(SofEvent.__table__.select())).fetchone()
-    mrv = (await db.execute(MRVEvent.__table__.select())).fetchone()
-    assert mrv is not None and mrv.event_kind == "departure"
+    # Plus de MRVEvent dérivé (sync éteinte).
+    assert (await db.execute(MRVEvent.__table__.select())).fetchone() is None
 
-    # Correction de l'heure → le MRVEvent dérivé suit.
+    # Correction de l'heure → le SOF suit, aucun MRVEvent créé.
     resp = await edit_sof_event(
         sof.id,
         _Req(),
@@ -79,8 +83,7 @@ async def test_edit_unsigned_sof_updates_and_resyncs_mrv(db, staff_user):
     assert resp.status_code == 303
     refreshed = await db.get(SofEvent, sof.id)
     assert refreshed.occurred_at.hour == 9 and refreshed.label == "Départ corrigé"
-    mrv2 = await db.get(MRVEvent, mrv.id)
-    assert mrv2.recorded_at.hour == 9  # recordé_at réaligné
+    assert (await db.execute(MRVEvent.__table__.select())).fetchone() is None
 
 
 @pytest.mark.asyncio
@@ -116,7 +119,9 @@ async def test_edit_signed_sof_rejected(db, staff_user):
 
 
 @pytest.mark.asyncio
-async def test_delete_unsigned_sof_cleans_mrv(db, staff_user):
+async def test_delete_unsigned_sof_without_mrv_sync_lot14(db, staff_user):
+    """LOT 14 — suppression d'un SOF non signé : plus de nettoyage MRV dérivé
+    (aucun n'est généré, sync ``mrv_sync`` archivée)."""
     from app.routers.captain_router import add_sof_event, delete_sof_event
 
     await _setup_leg(db)
@@ -133,12 +138,12 @@ async def test_delete_unsigned_sof_cleans_mrv(db, staff_user):
         user=staff_user,
     )
     sof = (await db.execute(SofEvent.__table__.select())).fetchone()
-    assert (await db.execute(MRVEvent.__table__.select())).fetchone() is not None
+    # Aucun MRVEvent généré (sync éteinte).
+    assert (await db.execute(MRVEvent.__table__.select())).fetchone() is None
 
     resp = await delete_sof_event(sof.id, _Req(), db=db, user=staff_user)
     assert resp.status_code == 303
     assert (await db.get(SofEvent, sof.id)) is None
-    # Le MRVEvent dérivé est nettoyé.
     assert (await db.execute(MRVEvent.__table__.select())).fetchone() is None
 
 

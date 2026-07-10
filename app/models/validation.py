@@ -180,6 +180,10 @@ class QualityCheckResult(Base):
         Index("ix_qcr_subject", "subject_type", "subject_id"),
         Index("ix_qcr_leg", "leg_id"),
         Index("ix_qcr_run", "run_id"),
+        # LOT 14 — accélère la file « anomalies non acquittées » (tour de contrôle
+        # qualité de la bascule) : filtres ``acknowledged_at IS NULL`` (dashboard
+        # qualité, digest, resets en attente). Migration 20260709_0105.
+        Index("ix_qcr_acknowledged_at", "acknowledged_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

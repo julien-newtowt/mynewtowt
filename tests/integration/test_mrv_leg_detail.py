@@ -1,8 +1,10 @@
-"""MRV-08 — vue détail d'un leg : table d'événements, badges qualité, agrégats.
+"""LOT 14 — archive lecture seule des ``mrv_events`` (remplace l'ancien détail leg).
 
-Vérifie que `/mrv/legs/{leg_id}` agrège la consommation, le bunkering, la
-distance et le cargo des événements du leg, compte les statuts qualité, et que
-le gabarit expose ces éléments (bunkering / cargo / badges qualité).
+L'ancien écran ``/mrv/legs/{leg_id}`` (``mrv_leg_detail``, table d'événements
+éditable) a été RETIRÉ à la bascule. La consultation historique passe désormais
+par ``/mrv/archive/events`` : paginée, lecture seule, bandeau explicite, aucune
+action d'écriture. Ce fichier (jadis ``test_mrv_leg_detail``) vérifie la
+nouvelle archive et l'absence de la route legacy.
 """
 
 from __future__ import annotations
@@ -16,26 +18,30 @@ from tests.integration.conftest import FakeRequest
 from tests.integration.test_mrv_reprise import _ev, _setup_leg
 
 
-def test_leg_detail_template_has_aggregates_and_quality():
-    from app.templating import templates
-
-    src = templates.env.loader.get_source(templates.env, "staff/mrv/leg_detail.html")[0]
-    assert "Bunkering cumulé" in src
-    assert "Cargo" in src
-    for cls in ("pill-ok", "pill-warn", "pill-error"):
-        assert cls in src
-
-
-def test_leg_detail_route_registered():
+def test_legacy_leg_detail_route_removed_archive_present():
     from app.routers import mrv_router
 
     paths = {r.path for r in mrv_router.router.routes}
-    assert "/mrv/legs/{leg_id}" in paths
+    assert "/mrv/legs/{leg_id}" not in paths  # détail legacy retiré (lot 14)
+    assert "/mrv/legs/{leg_id}/carbon" not in paths
+    assert "/mrv/archive/events" in paths  # archive lecture seule
+
+
+def test_archive_template_is_readonly_with_banner():
+    from app.templating import templates
+
+    src = templates.env.loader.get_source(templates.env, "staff/mrv/archive_events.html")[0]
+    # Bandeau « archive — remplacé par la capture d'événements ».
+    assert "mrv_archive_banner_title" in src
+    assert "mrv_archive_banner_body" in src
+    # Lecture seule : aucun formulaire d'écriture (pas de suppression legacy).
+    assert "<form" not in src
+    assert "/mrv/events/" not in src
 
 
 @pytest.mark.asyncio
-async def test_leg_detail_aggregates(db, staff_user):
-    from app.routers.mrv_router import mrv_leg_detail
+async def test_archive_lists_events_readonly(db, staff_user):
+    from app.routers.mrv_router import mrv_archive_events
 
     await _setup_leg(db)
     t = datetime(2026, 4, 2, 12, tzinfo=UTC)
@@ -61,17 +67,14 @@ async def test_leg_detail_aggregates(db, staff_user):
     )
     await db.flush()
 
-    resp = await mrv_leg_detail(1, FakeRequest(), db=db, user=staff_user)
+    resp = await mrv_archive_events(FakeRequest(), page=1, db=db, user=staff_user)
     assert resp.status_code == 200
-    assert resp.template.name == "staff/mrv/leg_detail.html"
-
-    totals = resp.context["totals"]
-    assert totals["consumption_t"] == Decimal("3.500")
-    assert totals["bunkering_t"] == Decimal("5.000")
-    assert totals["distance_nm"] == Decimal("150")
-    assert totals["cargo_t"] == Decimal("900")
-
-    quality = resp.context["quality"]
-    assert quality["error"] == 1
-    assert quality["ok"] == 2  # bunkering + 1er event (quality_status None)
+    assert resp.template.name == "staff/mrv/archive_events.html"
+    assert resp.context["total"] == 3
     assert len(resp.context["events"]) == 3
+    # Leg résolu pour l'affichage du code voyage.
+    assert 1 in resp.context["leg_map"]
+    assert resp.context["leg_map"][1].leg_code == "1CFRBR6"
+    # Pagination : une seule page.
+    assert resp.context["has_prev"] is False
+    assert resp.context["has_next"] is False

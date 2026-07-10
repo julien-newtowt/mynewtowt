@@ -39,7 +39,7 @@
     {% if bunker.supplier_name %}<div><small class="text-muted">{{ t('bunker_form_supplier', lang) }}</small><br />{{ bunker.supplier_name }}</div>{% endif %}
     <div>
       <small class="text-muted">{{ t('bunker_col_leg', lang) }}</small><br />
-      {% if leg %}<a href="/mrv/legs/{{ leg.id }}" class="mono">{{ leg.leg_code }}</a>{% else %}<span class="text-muted">—</span>{% endif %}
+      {% if leg %}<a href="/mrv/voyages/{{ leg.id }}" class="mono">{{ leg.leg_code }}</a>{% else %}<span class="text-muted">—</span>{% endif %}
     </div>
   </div>
 

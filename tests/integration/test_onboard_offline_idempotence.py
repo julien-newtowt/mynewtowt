@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models.noon_report import NoonReport
-from tests.integration.conftest import FakeRequest
+from tests.integration.conftest import FakeRequest, disable_capture_v2
 from tests.integration.test_mrv_reprise import _setup_leg
 
 
@@ -29,6 +29,9 @@ async def test_noon_report_replay_is_idempotent(db, staff_user):
     from app.routers.onboard_router import post_noon_report
 
     leg = await _setup_leg(db)
+    # LOT 14 — flux noon legacy testé sous flag OFF (double-run préservé) : le
+    # navire ANE est en opt-out de la capture v2, l'ancien POST noon reste actif.
+    await disable_capture_v2(db, "ANE")
     uuid = "11111111-2222-3333-4444-555555555555"
 
     # Premier POST (saisie) puis rejeu offline du même client_uuid.
@@ -50,6 +53,7 @@ async def test_distinct_uuids_create_distinct_rows(db, staff_user):
     from app.routers.onboard_router import post_noon_report
 
     leg = await _setup_leg(db)
+    await disable_capture_v2(db, "ANE")  # LOT 14 — double-run : ancien flux actif
     await post_noon_report(FakeRequest(_noon_form(leg.id, "uuid-aaa")), db=db, user=staff_user)
     await post_noon_report(FakeRequest(_noon_form(leg.id, "uuid-bbb")), db=db, user=staff_user)
 

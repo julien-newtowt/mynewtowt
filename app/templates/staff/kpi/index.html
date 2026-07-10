@@ -55,7 +55,7 @@
     <table>
       <thead><tr><th>Leg</th><th>{{ t('kpi_palettes', lang) }}</th><th>{{ t('kpi_tonnage', lang) }}</th><th>Distance</th><th>{{ t('kpi_avg_speed', lang) }}</th><th>{{ t('kpi_occupancy', lang) }}</th><th>DO (t)</th><th>{{ t('kpi_co2_emitted_short', lang) }}</th><th>CO₂/t·nm</th><th>{{ t('kpi_co2_avoided_short', lang) }}</th><th>NOx évité</th><th>SOx évité</th><th>On-time</th><th>{{ t('kpi_source', lang) }}</th>{% if user.role == 'administrateur' %}<th></th>{% endif %}</tr></thead>
       <tbody>{% for k in kpis %}<tr>
-        <td class="mono">{% if leg_map.get(k.leg_id) %}<a href="/mrv/legs/{{ k.leg_id }}/carbon">{{ leg_map[k.leg_id].leg_code }}</a>{% else %}#{{ k.leg_id }}{% endif %}</td>
+        <td class="mono">{% if leg_map.get(k.leg_id) %}<a href="/mrv/voyages/{{ k.leg_id }}">{{ leg_map[k.leg_id].leg_code }}</a>{% else %}#{{ k.leg_id }}{% endif %}</td>
         <td>{{ k.palettes_carried }}</td>
         <td>{{ "%.1f"|format(k.tonnage_kg / 1000) if k.tonnage_kg else 0 }} t</td>
         <td>{{ k.distance_nm or '—' }} {% if k.distance_nm %}NM{% endif %}</td>

@@ -22,6 +22,12 @@
   <h1 class="display">{{ event_type_labels.get(event_type, event_type) }}</h1>
 </header>
 
+{% if notice == 'capture_v2' %}
+<div class="alert alert-info mb-3" role="status">
+  <strong>{{ t('mrv_bascule_noon_frozen_title', lang) }}</strong> — {{ t('mrv_bascule_noon_frozen_body', lang) }}
+</div>
+{% endif %}
+
 {% if errors %}
 <div class="alert alert-warn mb-3">
   <strong>Finalisation refusée — corrigez puis réessayez :</strong>
