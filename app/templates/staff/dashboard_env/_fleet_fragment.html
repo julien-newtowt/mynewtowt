@@ -1,0 +1,202 @@
+{#
+  LOT 11 — fragment HTMX de la page 1 (Vue flotte). Contient AUSSI les
+  filtres (navire / période / méthode) : le fragment entier est ré-émis à
+  chaque changement de filtre (cf. dashboard_env_router.dashboard_env_fleet)
+  afin que l'état actif des pastilles reste synchronisé avec le contenu —
+  jamais de recalcul côté client, uniquement de l'affichage de HTML déjà
+  calculé côté serveur.
+#}
+{% set m = summary.method %}
+{% set sel = summary.selected %}
+
+{% if provisional_params %}
+<div class="alert alert-warn mb-3">
+  <p>
+    {{ t('dashenv_provisional_banner', lang) }}
+    {% if can_admin_params %}<a href="/dashboard-env/parameters">{{ t('dashenv_admin_link', lang) }}</a>{% endif %}
+  </p>
+</div>
+{% endif %}
+
+{# ───────────────────────────── Filtres ───────────────────────────── #}
+<div class="flex items-center gap-2 mb-2" style="flex-wrap:wrap;">
+  <span class="text-muted text-sm">{{ t('dashenv_filter_vessel', lang) }}</span>
+  <div class="flex gap-1" style="flex-wrap:wrap;">
+    <a href="/dashboard-env?year={{ year }}&method={{ m }}"
+       hx-get="/dashboard-env?year={{ year }}&method={{ m }}"
+       hx-target="#dashenv-fleet-content" hx-swap="innerHTML" hx-push-url="true"
+       class="btn btn-sm {% if not selected_vessel_code %}btn-primary{% else %}btn-ghost{% endif %}">
+      <i data-lucide="layers"></i> {{ t('dashenv_fleet_all', lang) }}
+    </a>
+    {% for v in vessels %}
+    <a href="/dashboard-env?year={{ year }}&method={{ m }}&vessel={{ v.code }}"
+       hx-get="/dashboard-env?year={{ year }}&method={{ m }}&vessel={{ v.code }}"
+       hx-target="#dashenv-fleet-content" hx-swap="innerHTML" hx-push-url="true"
+       class="btn btn-sm {% if selected_vessel_code == v.code %}btn-primary{% else %}btn-ghost{% endif %}">
+      <i data-lucide="ship"></i> {{ v.name }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="flex items-center gap-2 mb-2" style="flex-wrap:wrap;">
+  <span class="text-muted text-sm">{{ t('dashenv_filter_period', lang) }}</span>
+  <div class="year-selector">
+    {% for y in years %}
+    <a href="/dashboard-env?year={{ y }}&method={{ m }}&vessel={{ selected_vessel_code }}"
+       hx-get="/dashboard-env?year={{ y }}&method={{ m }}&vessel={{ selected_vessel_code }}"
+       hx-target="#dashenv-fleet-content" hx-swap="innerHTML" hx-push-url="true"
+       class="year-btn {% if year == y %}active{% endif %}">{{ y }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="flex items-center gap-2 mb-4" style="flex-wrap:wrap;">
+  <span class="text-muted text-sm">{{ t('dashenv_filter_method', lang) }}</span>
+  <div class="flex gap-1" style="flex-wrap:wrap;">
+    {% for meth in ef_methods %}
+    <a href="/dashboard-env?year={{ year }}&method={{ meth }}&vessel={{ selected_vessel_code }}"
+       hx-get="/dashboard-env?year={{ year }}&method={{ meth }}&vessel={{ selected_vessel_code }}"
+       hx-target="#dashenv-fleet-content" hx-swap="innerHTML" hx-push-url="true"
+       class="btn btn-sm {% if m == meth %}btn-primary{% else %}btn-ghost{% endif %}">
+      {{ t('dashenv_method_' ~ meth|lower, lang) }}
+    </a>
+    {% endfor %}
+  </div>
+  <span class="text-muted text-sm"><i data-lucide="info"></i> {{ t('dashenv_method_hint', lang) }}</span>
+</div>
+
+{% if sel.leg_count == 0 %}
+<div class="alert alert-info mb-3">{{ t('dashenv_empty_period', lang) }}</div>
+{% endif %}
+
+{# ───────────────────────────── Bandeau KPI ───────────────────────────── #}
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">{{ t('dashenv_kpi_co2_emitted', lang) }}</div>
+    <div class="value">{{ "%.1f"|format(sel.co2_emitted_t) }} t</div>
+    <div class="delta text-muted">{{ sel.leg_count }} {{ t('dashenv_legs_suffix', lang) }}</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="label">
+      {{ t('dashenv_kpi_avoided_container', lang) }}
+      {% if 'ef_container_ship_gco2_tkm' in provisional_params %}<span class="badge badge-draft">{{ t('dashenv_provisional_short', lang) }}</span>{% endif %}
+    </div>
+    {% if sel.avoided_container.avoided_t is not none %}
+    <div class="value text-success">{{ "%.1f"|format(sel.avoided_container.avoided_t) }} t</div>
+    <div class="delta up">{{ "%.1f"|format(sel.avoided_container.avoided_pct) }} %</div>
+    {% else %}
+    <div class="value text-muted">{{ t('dashenv_na', lang) }}</div>
+    <div class="delta text-muted">{{ sel.avoided_container.na_reason }}</div>
+    {% endif %}
+  </div>
+
+  <div class="kpi-card">
+    <div class="label">
+      {{ t('dashenv_kpi_avoided_airfreight', lang) }}
+      {% if 'ef_airfreight_gco2_tkm' in provisional_params %}<span class="badge badge-draft">{{ t('dashenv_provisional_short', lang) }}</span>{% endif %}
+    </div>
+    {% if sel.avoided_airfreight.avoided_t is not none %}
+    <div class="value text-success">{{ "%.1f"|format(sel.avoided_airfreight.avoided_t) }} t</div>
+    <div class="delta up">{{ "%.1f"|format(sel.avoided_airfreight.avoided_pct) }} %</div>
+    {% else %}
+    <div class="value text-muted">{{ t('dashenv_na', lang) }}</div>
+    <div class="delta text-muted">{{ sel.avoided_airfreight.na_reason }}</div>
+    {% endif %}
+  </div>
+
+  <div class="kpi-card">
+    <div class="label">{{ t('dashenv_kpi_distance', lang) }}</div>
+    <div class="value">{{ "%.0f"|format(sel.distance_nm) }} NM</div>
+    <div class="delta text-muted">{{ sel.laden_leg_count }}/{{ sel.leg_count }} {{ t('dashenv_laden_suffix', lang) }}</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="label">{{ t('dashenv_kpi_ef', lang) }} · {{ t('dashenv_method_' ~ m|lower, lang) }}</div>
+    {% if sel.ef.value_gco2_tkm is not none %}
+    <div class="value">{{ "%.2f"|format(sel.ef.value_gco2_tkm) }} g/t.km</div>
+    <div class="delta text-muted">CO2/t·km</div>
+    {% else %}
+    <div class="value text-muted">{{ t('dashenv_na', lang) }}</div>
+    <div class="delta text-muted">{{ sel.ef.na_reason }}</div>
+    {% endif %}
+  </div>
+</section>
+
+{# ───────────────────────────── Cartes par navire ───────────────────────────── #}
+<h2 class="mt-4 mb-2">{{ t('dashenv_vessels_title', lang) }}</h2>
+<div class="grid grid-2 gap-3 mb-4">
+  {% for block in summary.vessels %}
+  <article class="card">
+    <div class="flex justify-between items-center mb-2">
+      <h3 style="margin:0;"><i data-lucide="ship"></i> {{ block.label }}</h3>
+      {% if block.vessel_code %}<span class="pill pill-neutral mono">{{ block.vessel_code }}</span>{% endif %}
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ "%.1f"|format(block.co2_emitted_t) }} t</span>
+        <span class="stat-card-label">{{ t('dashenv_kpi_co2_emitted', lang) }}</span>
+      </div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        {% if block.ef.value_gco2_tkm is not none %}
+        <span class="stat-card-value">{{ "%.2f"|format(block.ef.value_gco2_tkm) }}</span>
+        {% else %}
+        <span class="stat-card-value text-muted">{{ t('dashenv_na', lang) }}</span>
+        {% endif %}
+        <span class="stat-card-label">EF g/t.km ({{ m }})</span>
+      </div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ "%.0f"|format(block.distance_nm) }}</span>
+        <span class="stat-card-label">{{ t('dashenv_kpi_distance', lang) }} (NM)</span>
+      </div></div>
+      <div class="stat-card"><div class="stat-card-body">
+        <span class="stat-card-value">{{ block.leg_count }}</span>
+        <span class="stat-card-label">{{ t('dashenv_legs_suffix', lang) }}</span>
+      </div></div>
+    </div>
+    {% if block.vessel_id %}
+    <a href="/dashboard-env/vessels/{{ block.vessel_id }}?year={{ year }}&method={{ m }}" class="btn btn-ghost btn-sm mt-2">
+      <i data-lucide="ship"></i> {{ t('dashenv_tab_vessel', lang) }} <i data-lucide="chevron-right"></i>
+    </a>
+    {% endif %}
+  </article>
+  {% else %}
+  <p class="text-muted">{{ t('dashenv_empty_period', lang) }}</p>
+  {% endfor %}
+</div>
+
+{# ───────────────────── Tendance 12 mois + Complétude ───────────────────── #}
+<div class="grid grid-2 gap-3">
+  <article class="card">
+    <div class="card-title">{{ t('dashenv_trend_title', lang) }}</div>
+    <p class="text-muted text-sm">{{ t('dashenv_trend_subtitle', lang) }}</p>
+    <div style="overflow-x:auto;">
+      <svg viewBox="0 0 {{ trend_chart.width }} {{ trend_chart.height }}" width="100%" height="180"
+           preserveAspectRatio="xMidYMid meet" role="img" aria-label="{{ t('dashenv_trend_title', lang) }}">
+        <line x1="8" y1="{{ trend_chart.baseline_y }}" x2="{{ trend_chart.width - 8 }}" y2="{{ trend_chart.baseline_y }}"
+              stroke="#D8CBB0" stroke-width="1"></line>
+        {% for bar in trend_bars %}
+        <rect x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" fill="#0D5966" rx="2">
+          <title>{{ bar.label }} — {{ "%.1f"|format(bar.value) }} t CO2</title>
+        </rect>
+        <text x="{{ bar.label_x }}" y="{{ trend_chart.label_y }}" font-size="8" text-anchor="middle" fill="#6E6E6E">{{ bar.label[:2] }}</text>
+        {% endfor %}
+      </svg>
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="card-title">{{ t('dashenv_completeness_title', lang) }}</div>
+    <p class="text-muted text-sm">{{ t('dashenv_completeness_subtitle', lang) }}</p>
+    <div class="progress-bar {% if sel.completeness.legs_without_data %}warn{% endif %}">
+      <div class="progress-bar-fill" style="width:{{ ((100 * sel.completeness.legs_with_data / sel.completeness.legs_total) if sel.completeness.legs_total else 0)|round(1) }}%"></div>
+    </div>
+    <p class="text-sm mt-2">
+      <strong>{{ sel.completeness.legs_with_data }}</strong>/{{ sel.completeness.legs_total }} {{ t('dashenv_completeness_text', lang) }}
+      {% if sel.completeness.legs_without_data %}
+      <span class="pill pill-warn">{{ sel.completeness.legs_without_data }} {{ t('dashenv_completeness_missing', lang) }}</span>
+      {% endif %}
+    </p>
+  </article>
+</div>

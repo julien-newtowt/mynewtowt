@@ -1,0 +1,136 @@
+{% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_option_tags %}
+{% block title %}{{ t('bunker_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/onboard/bunkering{% if vessel %}?vessel_id={{ vessel.id }}{% endif %}" class="btn btn-ghost mb-3">{{ t('bunker_back_list', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">{{ t('bunker_kicker', lang) }}</span>
+  <h1 class="display">{{ bunker.bdn_number if bunker else t('bunker_new', lang) }}</h1>
+</header>
+
+{% if can_pick_vessel and not bunker %}
+<form method="get" action="/onboard/bunkering/new" class="card mb-3 flex gap-2" style="align-items:end;">
+  <div class="field">
+    <label>{{ t('bunker_form_vessel', lang) }}</label>
+    <select name="vessel_id">
+      {% for v in vessels %}
+      <option value="{{ v.id }}" {% if vessel and vessel.id == v.id %}selected{% endif %}>{{ v.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="btn btn-secondary btn-sm">{{ t('bunker_form_vessel_load', lang) }}</button>
+</form>
+{% endif %}
+
+{% if not vessel %}
+<div class="alert alert-warn">{{ t('bunker_no_vessel', lang) }}</div>
+{% elif not tanks %}
+<div class="alert alert-warn">
+  {{ t('bunker_no_tanks', lang) }}
+  <a href="/admin/flotte-env">{{ t('bunker_no_tanks_link', lang) }}</a>
+</div>
+{% else %}
+<form method="post" action="{{ '/onboard/bunkering/' ~ bunker.id ~ '/edit' if bunker else '/onboard/bunkering/new' }}">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+  {% if not can_pick_vessel or bunker %}<input type="hidden" name="vessel_id" value="{{ vessel.id }}" />{% endif %}
+
+  <article class="card mb-3">
+    <h2 class="h5">{{ t('bunker_form_header', lang) }}</h2>
+    <div class="grid grid-3 gap-2">
+      <div class="field">
+        <label>{{ t('bunker_form_bdn_number', lang) }}</label>
+        {% if bunker %}
+        <input type="text" value="{{ bunker.bdn_number }}" disabled />
+        {% else %}
+        <input type="text" name="bdn_number" maxlength="40" required />
+        {% endif %}
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_port_locode', lang) }}</label>
+        <input type="text" name="port_locode" maxlength="5" style="text-transform:uppercase;"
+               value="{{ bunker.port_locode if bunker else '' }}" required />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_delivery', lang) }}</label>
+        <input type="datetime-local" name="delivery_datetime_utc"
+               value="{{ bunker.delivery_datetime_utc.strftime('%Y-%m-%dT%H:%M') if bunker else '' }}" required />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_fuel_type', lang) }}</label>
+        <input type="text" name="fuel_type" maxlength="20" value="{{ bunker.fuel_type if bunker else 'MDO' }}" required />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_mass', lang) }}</label>
+        <input type="number" step="0.001" name="mass_t" value="{{ bunker.mass_t if bunker else '' }}" required />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_density', lang) }}</label>
+        <input type="number" step="0.0001" name="density_15c_t_m3" value="{{ bunker.density_15c_t_m3 if bunker else '0.845' }}" required />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_sulfur', lang) }}</label>
+        <input type="number" step="0.001" name="sulfur_content_pct" value="{{ bunker.sulfur_content_pct if bunker and bunker.sulfur_content_pct is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_viscosity', lang) }}</label>
+        <input type="number" step="0.01" name="viscosity_cst" value="{{ bunker.viscosity_cst if bunker and bunker.viscosity_cst is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_water', lang) }}</label>
+        <input type="number" step="0.001" name="water_content_pct" value="{{ bunker.water_content_pct if bunker and bunker.water_content_pct is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_lhv', lang) }}</label>
+        <input type="number" step="0.0001" name="lower_heating_value" value="{{ bunker.lower_heating_value if bunker and bunker.lower_heating_value is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_hhv', lang) }}</label>
+        <input type="number" step="0.0001" name="higher_heating_value" value="{{ bunker.higher_heating_value if bunker and bunker.higher_heating_value is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_ef', lang) }}</label>
+        <input type="number" step="0.000001" name="ef_ttw_co2" value="{{ bunker.ef_ttw_co2 if bunker and bunker.ef_ttw_co2 is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_supplier', lang) }}</label>
+        <input type="text" name="supplier_name" maxlength="200" value="{{ bunker.supplier_name if bunker and bunker.supplier_name else '' }}" />
+      </div>
+      <div class="field">
+        <label>{{ t('bunker_form_leg', lang) }}</label>
+        <select name="leg_id">
+          {{ leg_option_tags(leg_options, (bunker.leg_id if bunker else none), blank=True, blank_label=t('bunker_form_leg_auto', lang)) }}
+        </select>
+      </div>
+    </div>
+  </article>
+
+  <article class="card mb-3">
+    <h2 class="h5">{{ t('bunker_form_allocations', lang) }}</h2>
+    <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead><tr>
+        <th>{{ t('bunker_form_tank', lang) }}</th>
+        <th>{{ t('bunker_form_volume', lang) }}</th>
+        <th>{{ t('bunker_form_density', lang) }}</th>
+      </tr></thead>
+      <tbody>
+        {% for tank in tanks %}
+        {% set existing = allocations_by_tank.get(tank.id) %}
+        <tr>
+          <td>{{ tank.tank_code }}</td>
+          <td><input type="number" step="0.001" name="volume_m3__{{ tank.id }}" value="{{ existing.volume_m3 if existing else '' }}" style="max-width:10rem;" /></td>
+          <td><input type="number" step="0.0001" name="density_t_m3__{{ tank.id }}" value="{{ existing.density_t_m3 if existing else '' }}" placeholder="{{ bunker.density_15c_t_m3 if bunker else '0.845' }}" style="max-width:10rem;" /></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </article>
+
+  <div class="flex gap-2">
+    <button type="submit" class="btn btn-primary">{{ t('bunker_form_save', lang) }}</button>
+    <a href="/onboard/bunkering{% if vessel %}?vessel_id={{ vessel.id }}{% endif %}" class="btn btn-ghost">{{ t('btn_cancel', lang) }}</a>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,61 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('mrv_archive_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">{{ t('mrv_hub_kicker', lang) }}</span>
+  <h1 class="display">{{ t('mrv_archive_title', lang) }}</h1>
+</header>
+
+<div class="alert alert-info mb-4" role="status">
+  <strong>{{ t('mrv_archive_banner_title', lang) }}</strong> — {{ t('mrv_archive_banner_body', lang) }}
+</div>
+
+<article class="card">
+  <h2>{{ t('mrv_archive_events_h', lang) }} ({{ total }})</h2>
+  {% if events %}
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('mrv_archive_col_date', lang) }}</th>
+        <th>{{ t('mrv_archive_col_type', lang) }}</th>
+        <th>{{ t('mrv_archive_col_leg', lang) }}</th>
+        <th class="text-right">{{ t('mrv_archive_col_conso', lang) }}</th>
+        <th class="text-right">{{ t('mrv_archive_col_rob', lang) }}</th>
+        <th class="text-right">{{ t('mrv_archive_col_dist', lang) }}</th>
+        <th>{{ t('mrv_archive_col_quality', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      {% set l = leg_map.get(e.leg_id) %}
+      <tr>
+        <td class="mono text-sm">{{ e.recorded_at|datetime }}</td>
+        <td><span class="badge">{{ e.event_kind }}</span></td>
+        <td class="mono">{{ l.leg_code if l else e.leg_id }}</td>
+        <td class="mono text-right">{{ e.total_consumption_t if e.total_consumption_t is not none else (e.fuel_mass_t if e.fuel_mass_t is not none else '—') }}</td>
+        <td class="mono text-right">{{ e.rob_calculated_t if e.rob_calculated_t is not none else '—' }}</td>
+        <td class="mono text-right">{{ e.distance_nm if e.distance_nm is not none else '—' }}</td>
+        <td>
+          {% if e.quality_status == 'error' %}<span class="pill pill-error" title="{{ e.quality_notes }}">{{ t('mrv_archive_q_error', lang) }}</span>
+          {% elif e.quality_status == 'warning' %}<span class="pill pill-warn" title="{{ e.quality_notes }}">{{ t('mrv_archive_q_warning', lang) }}</span>
+          {% else %}<span class="pill pill-ok">{{ t('mrv_archive_q_ok', lang) }}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="flex justify-between items-center mt-4">
+    {% if has_prev %}<a class="btn btn-ghost" href="/mrv/archive/events?page={{ page - 1 }}">← {{ t('mrv_archive_prev', lang) }}</a>{% else %}<span></span>{% endif %}
+    <span class="small text-muted">{{ t('mrv_archive_page', lang) }} {{ page }}</span>
+    {% if has_next %}<a class="btn btn-ghost" href="/mrv/archive/events?page={{ page + 1 }}">{{ t('mrv_archive_next', lang) }} →</a>{% else %}<span></span>{% endif %}
+  </div>
+  {% else %}
+  <p class="text-muted">{{ t('mrv_archive_empty', lang) }}</p>
+  {% endif %}
+</article>
+
+{% endblock %}

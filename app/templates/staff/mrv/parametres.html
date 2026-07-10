@@ -1,0 +1,191 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('mrv_param_title', lang) }}{% endblock %}
+{% block content %}
+{% set sev_pill = {'bloquant': 'pill-error', 'warning': 'pill-warn', 'info': 'pill-info'} %}
+<a href="/mrv" class="btn btn-ghost mb-3">{{ t('mrv_param_back', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">{{ t('mrv_param_kicker', lang) }}</span>
+  <h1 class="display">{{ t('mrv_param_title', lang) }}</h1>
+  <p class="text-muted">{{ t('mrv_param_intro', lang) }}</p>
+</header>
+
+{% if not seeded %}
+<div class="alert alert-warn mb-4">
+  <p>{{ t('mrv_param_empty', lang) }}</p>
+  <form method="post" action="/mrv/parametres/init" class="mt-2">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <button class="btn btn-primary" type="submit">{{ t('mrv_param_init', lang) }}</button>
+  </form>
+</div>
+{% endif %}
+
+{# ───────────────────────────── Règles ───────────────────────────── #}
+<section class="card mb-4">
+  <h2 class="h4">{{ t('mrv_param_rules', lang) }} <span class="pill pill-neutral">{{ rules|length }}</span></h2>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('mrv_param_col_rule', lang) }}</th>
+        <th>{{ t('mrv_param_col_domain', lang) }}</th>
+        <th>{{ t('mrv_param_col_desc', lang) }}</th>
+        <th>{{ t('mrv_param_col_scope', lang) }}</th>
+        <th>{{ t('mrv_param_col_severity', lang) }}</th>
+        <th>{{ t('mrv_param_col_active', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rules %}
+      <tr>
+        <td><code>{{ r.rule_id }}</code></td>
+        <td>{{ r.domain }}</td>
+        <td class="text-muted" style="max-width:34rem;">{{ r.description }}</td>
+        <td><span class="pill pill-neutral">{{ r.scope }}</span></td>
+        <td><span class="pill {{ sev_pill.get(r.default_severity, 'pill-neutral') }}">{{ r.default_severity }}</span></td>
+        <td>
+          <form method="post" action="/mrv/parametres/rules/{{ r.rule_id }}/toggle">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            {% if r.active %}
+              <button class="btn btn-sm btn-ghost" type="submit">{{ t('mrv_param_deactivate', lang) }}</button>
+            {% else %}
+              <span class="pill pill-neutral">off</span>
+              <button class="btn btn-sm" type="submit">{{ t('mrv_param_activate', lang) }}</button>
+            {% endif %}
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+{# ─────────────────────────── Seuils globaux ─────────────────────────── #}
+<section class="card mb-4">
+  <h2 class="h4">{{ t('mrv_param_thresholds', lang) }}
+    <span class="pill pill-neutral">{{ thr_global|length }}</span>
+    {% if provisional_count %}<span class="pill pill-warn">{{ provisional_count }} {{ t('mrv_param_provisional', lang) }}</span>{% endif %}
+  </h2>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('mrv_param_col_rule', lang) }}</th>
+        <th>{{ t('mrv_param_col_param', lang) }}</th>
+        <th>{{ t('mrv_param_col_value', lang) }}</th>
+        <th>{{ t('mrv_param_col_unit', lang) }}</th>
+        <th>{{ t('mrv_param_col_override', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tv in thr_global %}
+      <tr>
+        <td><code>{{ tv.rule_id }}</code></td>
+        <td>
+          <code>{{ tv.parameter_name }}</code>
+          {% if tv.provisional %}<span class="pill pill-warn">{{ t('mrv_param_provisional', lang) }}</span>{% endif %}
+          {% if tv.note %}<br /><small class="text-muted">{{ tv.note }}</small>{% endif %}
+        </td>
+        <td>
+          <form method="post" action="/mrv/parametres/thresholds/{{ tv.id }}/update" class="row" style="gap:.4rem;align-items:center;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <input name="value" type="number" step="0.000001" min="0" required
+                   value="{{ tv.value }}" style="max-width:9rem;" />
+            <input name="note" type="text" placeholder="{{ t('mrv_param_col_note', lang) }}"
+                   value="{{ tv.note or '' }}" style="max-width:14rem;" />
+            <button class="btn btn-sm btn-primary" type="submit">{{ t('mrv_param_save', lang) }}</button>
+          </form>
+        </td>
+        <td>{{ tv.unit or '—' }}</td>
+        <td>
+          {% if vessels %}
+          <form method="post" action="/mrv/parametres/thresholds/override" class="row" style="gap:.4rem;align-items:center;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <input type="hidden" name="rule_id" value="{{ tv.rule_id }}" />
+            <input type="hidden" name="parameter_name" value="{{ tv.parameter_name }}" />
+            <select name="vessel_id" required>
+              {% for v in vessels %}<option value="{{ v.id }}">{{ v.code }}</option>{% endfor %}
+            </select>
+            <input name="value" type="number" step="0.000001" min="0" required
+                   placeholder="{{ tv.value }}" style="max-width:8rem;" />
+            <button class="btn btn-sm" type="submit">{{ t('mrv_param_add_override', lang) }}</button>
+          </form>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+{# ─────────────────────── Overrides par navire ─────────────────────── #}
+{% if thr_overrides %}
+<section class="card mb-4">
+  <h2 class="h4">{{ t('mrv_param_overrides', lang) }} <span class="pill pill-neutral">{{ thr_overrides|length }}</span></h2>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('mrv_param_col_vessel', lang) }}</th>
+        <th>{{ t('mrv_param_col_rule', lang) }}</th>
+        <th>{{ t('mrv_param_col_param', lang) }}</th>
+        <th>{{ t('mrv_param_col_value', lang) }}</th>
+        <th>{{ t('mrv_param_col_unit', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tv in thr_overrides %}
+      <tr>
+        <td>{% set v = vessel_by_id.get(tv.vessel_id) %}{{ v.code if v else tv.vessel_id }}</td>
+        <td><code>{{ tv.rule_id }}</code></td>
+        <td><code>{{ tv.parameter_name }}</code></td>
+        <td>
+          <form method="post" action="/mrv/parametres/thresholds/{{ tv.id }}/update" class="row" style="gap:.4rem;align-items:center;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <input name="value" type="number" step="0.000001" min="0" required
+                   value="{{ tv.value }}" style="max-width:9rem;" />
+            <button class="btn btn-sm btn-primary" type="submit">{{ t('mrv_param_save', lang) }}</button>
+          </form>
+        </td>
+        <td>{{ tv.unit or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+{# ──────────────────────── Paramètres dashboard ─────────────────────── #}
+<section class="card mb-4">
+  <h2 class="h4">{{ t('mrv_param_dashboard', lang) }} <span class="pill pill-neutral">{{ dash_global|length }}</span></h2>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('mrv_param_col_param', lang) }}</th>
+        <th>{{ t('mrv_param_col_value', lang) }}</th>
+        <th>{{ t('mrv_param_col_unit', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in dash_global %}
+      <tr>
+        <td><code>{{ d.parameter_name }}</code></td>
+        <td>
+          <form method="post" action="/mrv/parametres/dashboard/{{ d.id }}/update" class="row" style="gap:.4rem;align-items:center;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <input name="value" type="number" step="0.000001" min="0" required
+                   value="{{ d.value }}" style="max-width:9rem;" />
+            <button class="btn btn-sm btn-primary" type="submit">{{ t('mrv_param_save', lang) }}</button>
+          </form>
+        </td>
+        <td>{{ d.unit or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

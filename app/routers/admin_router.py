@@ -33,6 +33,7 @@ from app.database import get_db
 from app.i18n import SUPPORTED as SUPPORTED_LANGS
 from app.models.activity_log import ActivityLog
 from app.models.co2_variable import Co2Variable
+from app.models.emission_factor import EmissionFactor
 from app.models.finance import OpexParameter
 from app.models.insurance import INSURANCE_KINDS, InsuranceContract
 from app.models.role_permission import RolePermission
@@ -49,6 +50,7 @@ from app.permissions import (
 )
 from app.services import co2 as co2_service
 from app.services import emissions as emissions_service
+from app.services import referential_env
 from app.services.activity import record as activity_record
 from app.templating import templates
 from app.utils import marad, pipedrive
@@ -1596,6 +1598,280 @@ async def co2_variables_update(
         ip_address=_client_ip(request),
     )
     return RedirectResponse(url="/admin/co2", status_code=303)
+
+
+# ────────────────────────────────────────────── Flotte — référentiel environnemental (MRV lot 1)
+# Cuves / moteurs / hydrostatiques par navire (app.models.vessel_env) + les 3
+# champs référentiel portés par Vessel. Patron : la page /admin/co2 ci-dessus.
+def _parse_decimal_or_none(value: str | None) -> Decimal | None:
+    raw = (value or "").strip().replace(",", ".")
+    if not raw:
+        return None
+    try:
+        parsed = Decimal(raw)
+    except InvalidOperation:
+        raise HTTPException(status_code=400, detail="valeur numérique invalide") from None
+    if not parsed.is_finite():
+        raise HTTPException(status_code=400, detail="valeur numérique invalide")
+    return parsed
+
+
+@router.get("/flotte-env", response_class=HTMLResponse)
+async def flotte_env_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> HTMLResponse:
+    vessels = await _vessels_for_form(db)
+    tanks_by_vessel = {}
+    engines_by_vessel = {}
+    hydro_by_vessel = {}
+    for v in vessels:
+        tanks_by_vessel[v.id] = await referential_env.get_vessel_tanks(db, v.id)
+        engines_by_vessel[v.id] = await referential_env.get_vessel_engines(db, v.id)
+        hydro_by_vessel[v.id] = await referential_env.get_vessel_hydrostatics(db, v.id)
+    return templates.TemplateResponse(
+        "staff/admin/flotte_env.html",
+        {
+            "request": request,
+            "user": user,
+            "vessels": vessels,
+            "tanks_by_vessel": tanks_by_vessel,
+            "engines_by_vessel": engines_by_vessel,
+            "hydro_by_vessel": hydro_by_vessel,
+        },
+    )
+
+
+@router.post("/flotte-env/{vessel_id}/init")
+async def flotte_env_init(
+    vessel_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    """Initialise les cuves/moteurs par défaut d'un navire — idempotent (lot 1).
+
+    N'écrit que ce qui manque encore (aucun doublon, aucune ligne existante
+    modifiée) : rejouable sans risque, y compris sur un navire déjà complet.
+    """
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        raise HTTPException(status_code=404)
+    result = await referential_env.ensure_vessel_env_defaults(db, vessel)
+    if result.changed:
+        await activity_record(
+            db,
+            action="vessel_env_init",
+            user_id=user.id,
+            user_name=user.full_name or user.username,
+            user_role=user.role,
+            module="admin",
+            entity_type="vessel",
+            entity_id=vessel.id,
+            entity_label=vessel.code,
+            detail=(
+                f"cuves créées: {', '.join(result.tanks_created) or 'aucune'} ; "
+                f"moteurs créés: {', '.join(result.engines_created) or 'aucun'}"
+            ),
+            ip_address=_client_ip(request),
+        )
+    return RedirectResponse(url="/admin/flotte-env", status_code=303)
+
+
+@router.post("/flotte-env/{vessel_id}/update")
+async def flotte_env_update(
+    vessel_id: int,
+    request: Request,
+    lightweight_t: str | None = Form(None),
+    default_fuel_type: str = Form("MDO"),
+    water_density_default_t_m3: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    """Édite les 3 champs référentiel environnemental portés par ``Vessel`` (lot 1)."""
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        raise HTTPException(status_code=404)
+    fuel_clean = (default_fuel_type or "MDO").strip().upper()[:20] or "MDO"
+    vessel.lightweight_t = _parse_decimal_or_none(lightweight_t)
+    vessel.default_fuel_type = fuel_clean
+    vessel.water_density_default_t_m3 = _parse_decimal_or_none(water_density_default_t_m3)
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="vessel_env",
+        entity_id=vessel.id,
+        entity_label=vessel.code,
+        detail=(
+            f"lightweight_t={vessel.lightweight_t}; fuel={fuel_clean}; "
+            f"water_density_t_m3={vessel.water_density_default_t_m3}"
+        ),
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/admin/flotte-env", status_code=303)
+
+
+# ────────────────────────────────────────────── Facteurs d'émission multi-GES (MRV lot 1)
+# Référentiel emission_factors (app.models.emission_factor) — 1 ligne par
+# carburant, append-only versionné. Patron : la page /admin/co2 ci-dessus,
+# adapté au multi-GES (CO₂/CH₄/N₂O + WtT) et à la fenêtre de validité datée.
+@router.get("/emission-factors", response_class=HTMLResponse)
+async def emission_factors_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "C")),
+) -> HTMLResponse:
+    rows = list(
+        (
+            await db.execute(
+                select(EmissionFactor).order_by(
+                    EmissionFactor.fuel_type,
+                    EmissionFactor.valid_from.desc(),
+                    EmissionFactor.id.desc(),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    current_by_fuel = {r.fuel_type: r for r in rows if r.is_current}
+    author_ids = {r.created_by_id for r in rows if r.created_by_id is not None}
+    author_names: dict[int, str] = {}
+    if author_ids:
+        authors = (await db.execute(select(User).where(User.id.in_(author_ids)))).scalars().all()
+        author_names = {a.id: (a.full_name or a.username) for a in authors}
+    return templates.TemplateResponse(
+        "staff/admin/emission_factors.html",
+        {
+            "request": request,
+            "user": user,
+            "history": rows,
+            "current_by_fuel": current_by_fuel,
+            "author_names": author_names,
+            "today": date.today().isoformat(),
+        },
+    )
+
+
+@router.post("/emission-factors/create")
+async def emission_factors_create(
+    request: Request,
+    fuel_type: str = Form("MDO"),
+    ef_co2_kg_per_kg: str = Form(...),
+    ef_ch4_kg_per_kg: str = Form(...),
+    ef_n2o_kg_per_kg: str = Form(...),
+    wtt_gco2eq_per_mj: str = Form(...),
+    source_reference: str = Form(""),
+    valid_from: str = Form(...),
+    valid_to: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+):
+    """Nouvelle version d'un facteur d'émission — append-only (lot 1).
+
+    L'ancienne ligne ``is_current`` du même carburant bascule à ``False`` ;
+    l'historique n'est jamais supprimé ni modifié (même pattern que
+    ``/admin/co2/update`` pour ``co2_variables``).
+    """
+    fuel_clean = (fuel_type or "MDO").strip().upper()[:20] or "MDO"
+
+    def _req_decimal(raw: str, field: str) -> Decimal:
+        try:
+            value = Decimal(raw.strip().replace(",", "."))
+        except InvalidOperation:
+            raise HTTPException(
+                status_code=400, detail=f"{field} : valeur numérique invalide"
+            ) from None
+        if not value.is_finite():
+            raise HTTPException(status_code=400, detail=f"{field} : valeur numérique invalide")
+        return value
+
+    ef_co2 = _req_decimal(ef_co2_kg_per_kg, "ef_co2_kg_per_kg")
+    ef_ch4 = _req_decimal(ef_ch4_kg_per_kg, "ef_ch4_kg_per_kg")
+    ef_n2o = _req_decimal(ef_n2o_kg_per_kg, "ef_n2o_kg_per_kg")
+    wtt = _req_decimal(wtt_gco2eq_per_mj, "wtt_gco2eq_per_mj")
+    for value, field in (
+        (ef_co2, "ef_co2_kg_per_kg"),
+        (ef_ch4, "ef_ch4_kg_per_kg"),
+        (ef_n2o, "ef_n2o_kg_per_kg"),
+        (wtt, "wtt_gco2eq_per_mj"),
+    ):
+        if value < 0:
+            raise HTTPException(status_code=400, detail=f"{field} doit être positif ou nul")
+
+    try:
+        valid_from_date = date.fromisoformat(valid_from)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date de début de validité invalide") from None
+    valid_to_clean = valid_to.strip()
+    valid_to_date = None
+    if valid_to_clean:
+        try:
+            valid_to_date = date.fromisoformat(valid_to_clean)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="date de fin de validité invalide"
+            ) from None
+        if valid_to_date < valid_from_date:
+            raise HTTPException(
+                status_code=400, detail="la date de fin doit suivre la date de début"
+            )
+
+    source_clean = source_reference.strip()[:200] or None
+
+    previous_current = (
+        (
+            await db.execute(
+                select(EmissionFactor).where(
+                    EmissionFactor.fuel_type == fuel_clean,
+                    EmissionFactor.is_current.is_(True),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for prev in previous_current:
+        prev.is_current = False
+
+    db.add(
+        EmissionFactor(
+            fuel_type=fuel_clean,
+            ef_co2_kg_per_kg=ef_co2,
+            ef_ch4_kg_per_kg=ef_ch4,
+            ef_n2o_kg_per_kg=ef_n2o,
+            wtt_gco2eq_per_mj=wtt,
+            source_reference=source_clean,
+            valid_from=valid_from_date,
+            valid_to=valid_to_date,
+            is_current=True,
+            created_by_id=user.id,
+        )
+    )
+    await db.flush()
+    referential_env.invalidate_emission_factor_cache()
+    await activity_record(
+        db,
+        action="emission_factor_create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="emission_factor",
+        entity_label=fuel_clean,
+        detail=(
+            f"{fuel_clean}: co2={ef_co2} ch4={ef_ch4} n2o={ef_n2o} wtt={wtt} "
+            f"({source_clean or 'sans source'})"
+        ),
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/admin/emission-factors", status_code=303)
 
 
 # ────────────────────────────────────────────── Permissions matrix (ARC-04)

@@ -13,10 +13,11 @@ ENV-03 — régularisation sur le réel déclaré :
   2. haversine depuis les coordonnées POL/POD (et on persiste le résultat
      sur le leg pour les fois suivantes) ;
   3. table de paires de ports en dur (fallback historique V3.0).
-- **émissions NEWTOWT** : consommations déclarées à bord (Σ fuel noon
-  reports × densité MDO × 3.206) allouées au booking pro-rata tonnage
-  (``method = 'declared'``), sinon facteur forfaitaire 1,5 g/t·km
-  (``method = 'theoretical'``).
+- **émissions NEWTOWT** : CO₂ réel du voyage lu dans le **grand livre**
+  (``services.emission_ledger`` — events sinon noon legacy ; lot 9) et alloué
+  au booking pro-rata tonnage (``method = 'declared'``), sinon facteur
+  forfaitaire 1,5 g/t·km (``method = 'theoretical'``). Anemos ne multiplie
+  plus lui-même une conso par un facteur (règle d'or).
 - **référence conventionnelle** : toujours 13,7 g/t·km sur la même
   distance ; CO₂ évité = conventionnel − NEWTOWT, plancher à 0.
 """
@@ -35,8 +36,6 @@ from app.models.noon_report import NoonReport
 from app.models.port import Port
 from app.services.activity import record as activity_record
 from app.services.co2 import estimate as estimate_co2
-from app.services.mrv_export import CO2_EMISSION_FACTOR_MDO
-from app.services.mrv_sync import resolve_mdo_density
 from app.services.ports import haversine_nm
 
 # Statuts comptant dans la cargaison effective d'un leg (allocation pro-rata).
@@ -175,14 +174,19 @@ async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertifi
     factors = await get_factors(db)
     emission = estimate_co2(distance_nm=distance, tonnage_t=tonnage, factors=factors)
 
-    # b) Émissions NEWTOWT — réel déclaré à bord si disponible.
-    fuel_l = await _noon_total(db, booking.leg_id, NoonReport.fuel_consumed_24h_l)
-    if fuel_l > 0:
-        density = await resolve_mdo_density(db)  # t/m³
-        # litres × densité/1000 → tonnes fuel ; × 3.206 → t CO₂ ; × 1000 → kg.
-        leg_co2_kg = fuel_l * density * Decimal(str(CO2_EMISSION_FACTOR_MDO))
+    # b) Émissions NEWTOWT — CO₂ réel du voyage lu dans le GRAND LIVRE (lot 9).
+    # Le grand livre (events sinon noon legacy) est la SEULE source du CO₂ réel ;
+    # anemos ne multiplie plus lui-même conso × facteur (règle d'or). Le total
+    # voyage est alloué au booking pro-rata tonnage.
+    leg_co2_t: Decimal | None = None
+    if leg is not None:
+        from app.services.emission_ledger import compute_for_leg as ledger_compute
+
+        ledger_result = await ledger_compute(db, leg)
+        leg_co2_t = ledger_result.co2_emitted_t
+    if leg_co2_t is not None and leg_co2_t > 0:
         share = await _booking_share(db, booking)
-        towt_kg = (leg_co2_kg * share).quantize(Decimal("0.001"))
+        towt_kg = (leg_co2_t * Decimal("1000") * share).quantize(Decimal("0.001"))
         method = "declared"
     else:
         towt_kg = emission.towt_co2_kg

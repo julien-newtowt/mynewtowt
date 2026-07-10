@@ -1,0 +1,109 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Facteurs d'émission — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Admin · MRV</span>
+  <h1 class="display">Facteurs d'émission multi-GES</h1>
+  <p class="text-muted">Référentiel <span class="mono">emission_factors</span> — CO₂/CH₄/N₂O (tank-to-wake, MEPC.391(81)) + WtT FuelEU (well-to-tank, affiché séparément, jamais sommé au TtW). Chaque modification crée une nouvelle version : l'historique n'est jamais supprimé. Consommé par le Carbon Report (<a href="/mrv">/mrv</a>) et, par délégation, par <span class="mono">services.co2.get_do_co2_factor</span>.</p>
+</header>
+
+{% if not current_by_fuel %}
+<article class="card mb-4">
+  <div class="alert alert-warn">Aucun facteur en base — l'application utilise les <strong>constantes codées (repli)</strong> : CO₂ 3,206 / CH₄ 0,00005 / N₂O 0,00018 kg/kg, WtT 17,7 gCO₂eq/MJ (MEPC.391(81) + CFOTE_09 Rev02).</div>
+</article>
+{% endif %}
+
+<article class="card mb-4">
+  <h2>Facteurs en vigueur</h2>
+  <table class="data-table">
+    <thead><tr><th>Carburant</th><th>CO₂ (kg/kg)</th><th>CH₄ (kg/kg)</th><th>N₂O (kg/kg)</th><th>WtT (gCO₂eq/MJ)</th><th>Source</th><th>Valide depuis</th></tr></thead>
+    <tbody>
+      {% for fuel, cur in current_by_fuel.items() %}
+      <tr>
+        <td class="mono">{{ fuel }}</td>
+        <td class="mono">{{ cur.ef_co2_kg_per_kg }}</td>
+        <td class="mono">{{ cur.ef_ch4_kg_per_kg }}</td>
+        <td class="mono">{{ cur.ef_n2o_kg_per_kg }}</td>
+        <td class="mono">{{ cur.wtt_gco2eq_per_mj }}</td>
+        <td>{{ cur.source_reference or '—' }}</td>
+        <td>{{ cur.valid_from|date("%d/%m/%Y") }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-muted text-center">Aucun facteur versionné — créez la première version ci-dessous.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+<article class="card mb-4">
+  <h2>Nouvelle version</h2>
+  <p class="text-muted text-sm">Enregistrer crée une <strong>nouvelle ligne</strong> pour ce carburant ; l'ancienne version « en vigueur » du même carburant bascule automatiquement en historique. Prise en compte sous 60 secondes (cache).</p>
+  <form method="post" action="/admin/emission-factors/create" class="grid grid-3 gap-3">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="field">
+      <label for="fuel_type">Carburant</label>
+      <input id="fuel_type" name="fuel_type" type="text" maxlength="20" required value="MDO" list="fuel-types" />
+      <datalist id="fuel-types">{% for fuel in current_by_fuel.keys() %}<option value="{{ fuel }}"></option>{% endfor %}<option value="MDO"></option></datalist>
+    </div>
+    <div class="field">
+      <label for="ef_co2_kg_per_kg">CO₂ (kg/kg, TtW)</label>
+      <input id="ef_co2_kg_per_kg" name="ef_co2_kg_per_kg" type="number" step="any" min="0" required value="3.206" />
+    </div>
+    <div class="field">
+      <label for="ef_ch4_kg_per_kg">CH₄ (kg/kg, TtW)</label>
+      <input id="ef_ch4_kg_per_kg" name="ef_ch4_kg_per_kg" type="number" step="any" min="0" required value="0.00005" />
+    </div>
+    <div class="field">
+      <label for="ef_n2o_kg_per_kg">N₂O (kg/kg, TtW)</label>
+      <input id="ef_n2o_kg_per_kg" name="ef_n2o_kg_per_kg" type="number" step="any" min="0" required value="0.00018" />
+    </div>
+    <div class="field">
+      <label for="wtt_gco2eq_per_mj">WtT (gCO₂eq/MJ, FuelEU)</label>
+      <input id="wtt_gco2eq_per_mj" name="wtt_gco2eq_per_mj" type="number" step="any" min="0" required value="17.7" />
+    </div>
+    <div class="field">
+      <label for="source_reference">Source / référence</label>
+      <input id="source_reference" name="source_reference" type="text" maxlength="200" placeholder="ex. MEPC.391(81) + CFOTE_09 Rev02" />
+    </div>
+    <div class="field">
+      <label for="valid_from">Valide à partir du</label>
+      <input id="valid_from" name="valid_from" type="date" required value="{{ today }}" />
+    </div>
+    <div class="field">
+      <label for="valid_to">Valide jusqu'au (optionnel)</label>
+      <input id="valid_to" name="valid_to" type="date" />
+      <small class="text-muted">Laisser vide pour une fenêtre ouverte.</small>
+    </div>
+    <div style="grid-column: 1 / -1;">
+      <button type="submit" class="btn btn-primary">Enregistrer une nouvelle version</button>
+    </div>
+  </form>
+</article>
+
+<article class="card">
+  <h2>Historique complet</h2>
+  <table class="data-table">
+    <thead><tr><th>Carburant</th><th>CO₂</th><th>CH₄</th><th>N₂O</th><th>WtT</th><th>Source</th><th>Validité</th><th>Statut</th><th>Créé par</th><th>Créé le</th></tr></thead>
+    <tbody>
+      {% for f in history %}
+      <tr>
+        <td class="mono">{{ f.fuel_type }}</td>
+        <td class="mono">{{ f.ef_co2_kg_per_kg }}</td>
+        <td class="mono">{{ f.ef_ch4_kg_per_kg }}</td>
+        <td class="mono">{{ f.ef_n2o_kg_per_kg }}</td>
+        <td class="mono">{{ f.wtt_gco2eq_per_mj }}</td>
+        <td class="text-sm">{{ f.source_reference or '—' }}</td>
+        <td class="text-sm">{{ f.valid_from|date("%d/%m/%Y") }} → {{ f.valid_to|date("%d/%m/%Y") if f.valid_to else '…' }}</td>
+        <td>{% if f.is_current %}<span class="pill pill-ok">en vigueur</span>{% else %}<span class="pill pill-neutral">archivée</span>{% endif %}</td>
+        <td>{{ author_names.get(f.created_by_id, '—') }}</td>
+        <td class="text-muted text-xs">{{ f.created_at|datetime("%d/%m/%Y %H:%M") }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" class="text-muted text-center">Aucune version enregistrée.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{% endblock %}

@@ -1,0 +1,153 @@
+{% extends "pdf/_base.html" %}
+{% import "pdf/_mrv_report_macros.html" as m %}
+{% set p = payload %}
+{% block title %}MRV Carbon Report v2{% endblock %}
+{% block doc_kind %}MRV · Carbon Report (v2){% endblock %}
+{% block doc_ref %}{{ p.scope.leg_code or '—' }}{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Périmètre · Scope</div>
+    <div class="value">
+      <strong>{{ p.scope.vessel.name or '—' }}</strong>{% if p.scope.vessel.imo %} · IMO {{ p.scope.vessel.imo }}{% endif %}<br/>
+      Voyage · Leg : <span class="mono">{{ p.scope.leg_code or '—' }}</span><br/>
+      ETD {{ m.dt(p.scope.etd) }} → ETA {{ m.dt(p.scope.eta) }}<br/>
+      Événements · Events : <strong>{{ p.scope.event_count }}</strong>
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Consommation · Fuel (t)</div>
+    <div class="value">
+      Total voyage : <strong>{{ m.fmt(p.totals.conso_total_t, 3) }} t</strong><br/>
+      dont mouillage · anchoring : {{ m.fmt(p.totals.conso_mouillage_t, 3) }} t<br/>
+      <span class="c-teal">Assiette MRV (hors mouillage) : <strong>{{ m.fmt(p.totals.conso_hors_mouillage_t, 3) }} t</strong></span><br/>
+      ME : {{ m.fmt(p.totals.conso_me_t, 3) }} · AE : {{ m.fmt(p.totals.conso_ae_t, 3) }}
+    </div>
+  </div>
+</div>
+
+<h2>Émissions multi-GES · Multi-GHG emissions</h2>
+<table>
+  <thead>
+    <tr><th>Gaz · Gas</th><th class="text-right">Valeur · Value</th><th>Facteur · Factor</th><th>Périmètre</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>CO₂ (Tank-to-Wake)</td>
+      <td class="text-right"><strong>{{ m.fmt(p.emissions.co2_t, 4) }}</strong> t</td>
+      <td class="mono small">{{ p.emissions.ef_co2_kg_per_kg }} t/t</td>
+      <td class="small">MRV / ETS (TtW)</td>
+    </tr>
+    <tr>
+      <td>CH₄</td>
+      <td class="text-right"><strong>{{ m.fmt(p.emissions.ch4_g, 2) }}</strong> g</td>
+      <td class="mono small">{{ p.emissions.ef_ch4_kg_per_kg }}</td>
+      <td class="small">TtW</td>
+    </tr>
+    <tr>
+      <td>N₂O</td>
+      <td class="text-right"><strong>{{ m.fmt(p.emissions.n2o_g, 2) }}</strong> g</td>
+      <td class="mono small">{{ p.emissions.ef_n2o_kg_per_kg }}</td>
+      <td class="small">TtW</td>
+    </tr>
+    <tr class="total-row">
+      <td>WtT (Well-to-Tank, FuelEU) — <em>distinct, non sommé au TtW</em></td>
+      <td class="text-right"><strong>{{ m.fmt(p.emissions.wtt_co2eq_t, 4) }}</strong> t CO₂eq</td>
+      <td class="mono small">{{ p.emissions.wtt_gco2eq_per_mj }} gCO₂eq/MJ</td>
+      <td class="small">Amont · Well-to-Tank</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="grid-2">
+  <div class="box">
+    <div class="label">Cargo</div>
+    <div class="value">
+      B/L (commercial) : {{ m.fmt(p.cargo.cargo_bl_t, 3) }} t<br/>
+      MRV « DWT carried » : {{ m.fmt(p.cargo.cargo_mrv_t, 3) }} t
+      {% if p.cargo.cargo_mrv_method %}<span class="small">({{ p.cargo.cargo_mrv_method }})</span>{% endif %}<br/>
+      Distance B2B : {{ m.fmt(p.totals.distance_nm, 2) }} nm
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Intensités · Intensities</div>
+    <div class="value">
+      CO₂ / nm : {{ m.fmt(p.intensities.co2_per_nm_kg, 2) }} kg/nm<br/>
+      CO₂ / t B/L : {{ m.fmt(p.intensities.co2_per_t_bl_kg, 2) }} kg/t<br/>
+      CO₂ EU MRV : {{ m.fmt(p.intensities.co2_eu_mrv_g_per_tnm, 3) }} g/(t·nm)
+    </div>
+  </div>
+</div>
+
+<h2>Événements · Events</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Date UTC</th><th>Type</th>
+      <th class="text-right">Distance (nm)</th>
+      <th class="text-right">Conso (t)</th>
+      <th class="text-right">ROB calc. (t)</th>
+      <th>Mouillage</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in p.events %}
+    <tr>
+      <td class="mono small">{{ m.dt(e.datetime_utc) }}</td>
+      <td>{{ e.event_type }}</td>
+      <td class="text-right">{{ m.fmt(e.distance_nm, 2) }}</td>
+      <td class="text-right">{{ m.fmt(e.conso_total_t, 3) }}</td>
+      <td class="text-right">{{ m.fmt(e.rob_calculated_t, 3) }}</td>
+      <td>{% if e.in_anchoring %}⚓{% else %}—{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="c-gris">Aucun événement finalisé.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if p.anchorings %}
+<h2>Mouillages · Anchorings</h2>
+<table>
+  <thead><tr><th>Séq.</th><th>Début UTC</th><th>Fin UTC</th><th class="text-right">Durée (h)</th><th class="text-right">Conso (t)</th></tr></thead>
+  <tbody>
+    {% for a in p.anchorings %}
+    <tr>
+      <td>{{ a.sequence_no or '—' }}</td>
+      <td class="mono small">{{ m.dt(a.begin_datetime_utc) }}</td>
+      <td class="mono small">{{ m.dt(a.end_datetime_utc) }}</td>
+      <td class="text-right">{{ m.fmt(a.duration_h, 2) }}</td>
+      <td class="text-right">{{ m.fmt(a.conso_t, 3) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if modifications %}
+<h2>Corrections tracées · Field modifications (R18)</h2>
+<table>
+  <thead><tr><th>Champ</th><th>Initial</th><th>Corrigé</th><th>Justification</th><th>Statut qualité</th></tr></thead>
+  <tbody>
+    {% for mod in modifications %}
+    <tr>
+      <td class="mono small">{{ mod.field_name }}</td>
+      <td class="small">{{ mod.initial_value or '—' }}</td>
+      <td class="small">{{ mod.corrected_value or '—' }}</td>
+      <td class="small">{{ mod.justification_text }}</td>
+      <td>{{ m.quality_badge(mod.resulting_quality_status) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<p class="small c-gris">
+  Rapport conforme à la réglementation UE MRV / FuelEU Maritime — snapshot figé le
+  {{ issued_at.strftime("%d/%m/%Y %H:%M") }} (rendu depuis le payload, non recalculé).
+  Facteur : {{ p.factor.source_reference }}{% if p.factor.is_fallback %} (repli codé){% endif %}.
+  {{ brand.raison_sociale }}.
+</p>
+
+{% endblock %}

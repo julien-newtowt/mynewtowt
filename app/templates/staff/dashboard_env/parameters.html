@@ -1,0 +1,93 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('dashenv_admin_title', lang) }}{% endblock %}
+{% block content %}
+{% set dashenv_active = 'params' %}
+{% include "staff/dashboard_env/_tabs.html" %}
+<a href="/dashboard-env" class="btn btn-ghost mb-3">{{ t('dashenv_admin_back', lang) }}</a>
+
+<header class="mb-4">
+  <span class="kicker">{{ t('dashenv_admin_kicker', lang) }}</span>
+  <h1 class="display">{{ t('dashenv_admin_title', lang) }}</h1>
+  <p class="text-muted">{{ t('dashenv_admin_intro', lang) }}</p>
+</header>
+
+<div class="alert alert-warn mb-4">
+  <p>{{ t('dashenv_admin_provisional_banner', lang) }}</p>
+</div>
+
+<div class="flex gap-2 items-center mb-4" style="flex-wrap:wrap;">
+  <a href="/mrv/parametres" class="btn btn-secondary">
+    <i data-lucide="sliders-horizontal"></i> {{ t('dashenv_admin_link_mrv', lang) }}
+  </a>
+  <a href="/admin/emission-factors" class="btn btn-secondary">
+    <i data-lucide="flame"></i> {{ t('dashenv_admin_link_ef', lang) }}
+  </a>
+</div>
+
+<section class="card">
+  <h2 class="mb-2">{{ t('dashenv_admin_table_title', lang) }} <span class="pill pill-neutral">{{ params|length }}</span></h2>
+  <p class="text-muted text-sm">{{ t('dashenv_admin_table_subtitle', lang) }}</p>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('dashenv_admin_col_param', lang) }}</th>
+        <th>{{ t('dashenv_admin_col_vessel', lang) }}</th>
+        <th>{{ t('dashenv_admin_col_value', lang) }}</th>
+        <th>{{ t('dashenv_admin_col_unit', lang) }}</th>
+        <th>{{ t('dashenv_admin_col_updated', lang) }}</th>
+        <th class="text-right">{{ t('dashenv_admin_col_history', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in params %}
+      <tr>
+        <td>
+          <code>{{ p.parameter_name }}</code>
+          {% if p.parameter_name in provisional_params %}<span class="pill pill-warn">{{ t('dashenv_provisional_short', lang) }}</span>{% endif %}
+        </td>
+        <td class="text-muted">
+          {% if p.vessel_id %}
+            {{ vessel_by_id[p.vessel_id].code if p.vessel_id in vessel_by_id else p.vessel_id }}
+          {% else %}
+            {{ t('dashenv_admin_vessel_none', lang) }}
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/dashboard-env/parameters/{{ p.id }}/update" class="flex gap-2 items-center">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <input name="value" type="number" step="0.000001" min="0" required
+                   value="{{ p.value }}" style="max-width:9rem;" />
+            <input name="unit" type="text" value="{{ p.unit or '' }}" style="max-width:7rem;"
+                   placeholder="{{ t('dashenv_admin_col_unit', lang) }}" />
+            <button class="btn btn-sm btn-primary" type="submit">{{ t('dashenv_admin_save', lang) }}</button>
+          </form>
+        </td>
+        <td>{{ p.unit or '—' }}</td>
+        <td class="text-muted text-sm">
+          {% if p.updated_by %}{{ p.updated_at|datetime("%d/%m/%Y %H:%M") }}{% else %}{{ t('dashenv_admin_never_edited', lang) }}{% endif %}
+        </td>
+        <td class="text-right">
+          {% set hist = history_by_param.get(p.id, []) %}
+          {% if hist %}
+          <details>
+            <summary class="text-sm">{{ t('dashenv_admin_history_toggle', lang) }} ({{ hist|length }})</summary>
+            <ul class="text-sm text-muted">
+              {% for h in hist %}
+              <li>{{ h.created_at|datetime("%d/%m/%Y %H:%M") }} — {{ h.user_name or '—' }} : {{ h.detail or '—' }}</li>
+              {% endfor %}
+            </ul>
+          </details>
+          {% else %}
+          <span class="text-muted text-sm">{{ t('dashenv_admin_history_empty', lang) }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted text-center">{{ t('dashenv_admin_empty', lang) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

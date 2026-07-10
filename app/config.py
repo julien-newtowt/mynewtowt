@@ -82,6 +82,14 @@ class Settings(BaseSettings):
     # toutes les 30 min : snapshot météo Windy du dernier point GPS de chaque
     # navire, historisé pour consultation ultérieure des legs réalisés).
     weather_api_token: str | None = None
+    # LOT 4 — Token X-API-Token pour POST /api/mrv/draft-reminders (cron Power
+    # Automate : alerte R19 des brouillons d'événements MRV dormants — rappel
+    # Master au 1er seuil, alerte siège au 2e). 503 si non configuré.
+    mrv_drafts_api_token: str | None = None
+    # LOT 8 — Token X-API-Token pour POST /api/mrv/quality-run (cron Power
+    # Automate : run nocturne du moteur de règles — event + voyage +
+    # inter-rapports sur les legs actifs de chaque navire). 503 si non configuré.
+    mrv_quality_api_token: str | None = None
 
     # Marad (MaraSoft « Generic API ») — ship & crew management. Intégration
     # LECTURE SEULE des données crew (cf. docs/integrations/marad-crew-readonly.md).
@@ -104,6 +112,18 @@ class Settings(BaseSettings):
     # (/api/vessels/getVessels) ; la sync résout d'abord par nom/code de notre
     # table Vessel, puis via cette map "marad_number_ou_nom=vessel_id,...".
     marad_vessel_map: str = ""
+
+    # FLGO (Marad) — relevés fuel/lube/gas-oil, LECTURE SEULE (MRV LOT 7).
+    # Même socle que le crew ci-dessus : MARAD_BASE_URL / MARAD_API_TOKEN /
+    # MARAD_API_KEY_HEADER sont réutilisés tels quels (endpoint confirmé
+    # ``GET /api/FlgoAction``, cf. app/utils/marad.py::list_flgo — aucun
+    # nouveau secret d'API n'est nécessaire). Repli import xlsx manuel actif
+    # dans tous les cas (cf. services.flgo_sync.import_flgo_xlsx).
+    marad_flgo_token: str | None = None  # X-API-Token du cron dédié POST /api/marad/flgo-refresh
+    # Fenêtre de repli (jours) pour la sync API FLGO — Marad ne documente pas
+    # de curseur de delta confirmé pour cet endpoint ; chaque appel resynchronise
+    # cette fenêtre glissante (upsert idempotent, donc sans risque de doublon).
+    marad_flgo_lookback_days: float = 400.0
 
     # Veille d'actualité — agrégateur NewsData.io + token de rafraîchissement
     # (POST /api/veille/refresh, déclenché en cron par Power Automate).

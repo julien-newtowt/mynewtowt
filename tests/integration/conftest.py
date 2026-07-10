@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -77,6 +78,50 @@ class FakeRequest:
         self._form = dict(form or {})
         self.headers: dict[str, str] = {}
         self.client = SimpleNamespace(host="127.0.0.1")
+        # Accessoires lus par les context processors Jinja (i18n / layout staff)
+        # au rendu d'un TemplateResponse : sans eux, toute route qui rend un
+        # gabarit staff lève ``AttributeError`` (``request.state`` absent). Les
+        # doter ici rend ``FakeRequest`` utilisable pour les écrans SSR.
+        self.state = SimpleNamespace()
+        self.cookies: dict[str, str] = {}
+        self.query_params: dict[str, str] = {}
+        self.url = SimpleNamespace(path="/")
 
     async def form(self):
         return self._form
+
+
+# ─────────────────────────── LOT 14 — bascule capture v2 ─────────────────────
+@pytest.fixture(autouse=True)
+def _reset_capture_v2_cache():
+    """Vide le cache module de la garde de bascule entre chaque test.
+
+    ``capture_v2_enabled`` met en cache (par navire) l'état du flag ; le cache
+    est global au process → sans reset, un état posé par un test fuiterait sur
+    le suivant (la base SQLite est neuve à chaque test, pas le cache Python)."""
+    from app.services.feature_flags import reset_capture_v2_cache
+
+    reset_capture_v2_cache()
+    yield
+    reset_capture_v2_cache()
+
+
+async def disable_capture_v2(db, *vessel_codes):
+    """Pose ``mrv_v2_capture`` en opt-out PAR NAVIRE (double-run inversé).
+
+    Rend l'ancien formulaire noon actif (capture v2 OFF) pour ces navires —
+    utilisé par les tests du flux noon legacy. Sans code → coupe globalement.
+    """
+    from app.models.feature_flag import FeatureFlag
+    from app.services.feature_flags import reset_capture_v2_cache
+
+    db.add(
+        FeatureFlag(
+            key="mrv_v2_capture",
+            enabled=True,
+            audience={"vessels_off": list(vessel_codes)},
+            description="test — opt-out double-run",
+        )
+    )
+    await db.flush()
+    reset_capture_v2_cache()

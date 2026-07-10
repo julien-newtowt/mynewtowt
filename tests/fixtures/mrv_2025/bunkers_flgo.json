@@ -1,0 +1,183 @@
+{
+  "_meta": {
+    "source": "Sample_Dataset_Architecture_Evenementielle_2025.xlsx",
+    "generated_by": "python scripts/import_mrv_2025.py --emit-fixtures",
+    "note": "2 soutages ANEMOS appariés à leur lecture FLGO 'Received' (écarts 0,11 j et 0,55 j — fenêtre R24 = 5 j)."
+  },
+  "vessel": {
+    "dataset_vessel_id": "ANEMOS",
+    "code": "1",
+    "name": "Anemos",
+    "imo_number": "9982938"
+  },
+  "ports": [],
+  "leg": null,
+  "events": [],
+  "bunkers": [
+    {
+      "dataset_bunker_id": "BUNK-0002",
+      "bdn_number": "2691",
+      "port_locode": "FRLEH",
+      "delivery_datetime_utc": "2025-03-10T11:15:00+00:00",
+      "fuel_type": "MDO",
+      "mass_t": "21.38",
+      "status": "valide_master",
+      "allocations": [
+        {
+          "tank_code": "14",
+          "volume_m3": "11.8",
+          "density_t_m3": "0.8483"
+        },
+        {
+          "tank_code": "15",
+          "volume_m3": "14.12",
+          "density_t_m3": "0.8484"
+        },
+        {
+          "tank_code": "16",
+          "volume_m3": "23.2",
+          "density_t_m3": "0.8487"
+        }
+      ]
+    },
+    {
+      "dataset_bunker_id": "BUNK-0004",
+      "bdn_number": "3891",
+      "port_locode": "FRFEC",
+      "delivery_datetime_utc": "2025-04-24T18:45:00+00:00",
+      "fuel_type": "MDO",
+      "mass_t": "25.06",
+      "status": "valide_master",
+      "allocations": [
+        {
+          "tank_code": "16",
+          "volume_m3": "27.5",
+          "density_t_m3": "0.8484"
+        },
+        {
+          "tank_code": "17",
+          "volume_m3": "3.5",
+          "density_t_m3": "0.8286"
+        }
+      ]
+    }
+  ],
+  "flgo_readings": [
+    {
+      "dataset_flgo_id": "FLGO-ANEMOS-00075",
+      "action_type": "received",
+      "product_name": "Diesel Oil",
+      "reading_datetime": "2025-03-10T14:00:00+00:00",
+      "total_volume_m3": "49.12",
+      "total_rob_m3": null,
+      "remarks": null,
+      "compartments": [
+        {
+          "compartment_code": "14 - GO DB B",
+          "volume_m3": "11.8",
+          "mass_t": "10.01"
+        },
+        {
+          "compartment_code": "15 - GO DB T",
+          "volume_m3": "14.12",
+          "mass_t": "11.98"
+        },
+        {
+          "compartment_code": "16 - GO B",
+          "volume_m3": "23.2",
+          "mass_t": "19.69"
+        },
+        {
+          "compartment_code": "17 - GO T",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "19 - GO Overflow",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "22 - GO Settling",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "29 - GO DT B",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "30 - GO DT T",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "35 - GO EM",
+          "volume_m3": "0",
+          "mass_t": "0"
+        }
+      ]
+    },
+    {
+      "dataset_flgo_id": "FLGO-ANEMOS-00068",
+      "action_type": "received",
+      "product_name": "Diesel Oil",
+      "reading_datetime": "2025-04-25T08:00:00+00:00",
+      "total_volume_m3": "31",
+      "total_rob_m3": null,
+      "remarks": null,
+      "compartments": [
+        {
+          "compartment_code": "14 - GO DB B",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "15 - GO DB T",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "16 - GO B",
+          "volume_m3": "27.5",
+          "mass_t": "23.33"
+        },
+        {
+          "compartment_code": "17 - GO T",
+          "volume_m3": "3.5",
+          "mass_t": "2.9"
+        },
+        {
+          "compartment_code": "19 - GO Overflow",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "22 - GO Settling",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "29 - GO DT B",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "30 - GO DT T",
+          "volume_m3": "0",
+          "mass_t": "0"
+        },
+        {
+          "compartment_code": "35 - GO EM",
+          "volume_m3": "0",
+          "mass_t": "0"
+        }
+      ]
+    }
+  ],
+  "qc_expected": [],
+  "expected": {
+    "matched_bunkers": 2
+  }
+}

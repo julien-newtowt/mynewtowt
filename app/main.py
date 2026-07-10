@@ -37,6 +37,7 @@ from app.routers import (
     client_dashboard_router,
     commercial_router,
     crew_router,
+    dashboard_env_router,
     devis_router,
     escale_router,
     finance_router,
@@ -125,8 +126,11 @@ def create_app() -> FastAPI:
     app.include_router(stowage_router.router)
     app.include_router(claims_router.router)
     app.include_router(mrv_router.router)
+    app.include_router(mrv_router.api_router)  # LOT 8 — cron /api/mrv/quality-run
     # ─── Phase 4 ERP : kpi / finance ───
     app.include_router(kpi_router.router)
+    # LOT 11 — dashboard performance environnementale
+    app.include_router(dashboard_env_router.router)
     app.include_router(navigation_router.router)
     app.include_router(navigation_router.api_router)
     app.include_router(marad_router.api_router)
@@ -147,6 +151,7 @@ def create_app() -> FastAPI:
     app.include_router(rh_router.router)
     app.include_router(modules_router.router)
     app.include_router(onboard_router.router)
+    app.include_router(onboard_router.api_router)  # LOT 4 — cron /api/mrv/draft-reminders
     app.include_router(onboard_sales_router.router)
     app.include_router(onboard_sales_router.webhook_router)
     app.include_router(chat_router.router)
@@ -217,6 +222,20 @@ def create_app() -> FastAPI:
 
         enforce_production_safety()
         await init_db()
+        # LOT 2 — seed idempotent du référentiel de validation MRV. En dev,
+        # ``init_db`` crée le schéma via ``create_all`` (sans migration) : sans
+        # ce seed, les tables validation_* seraient vides. En staging/prod, le
+        # seed vit dans la migration 0097 (ceci est alors un no-op idempotent).
+        if settings.app_env == "development":
+            try:
+                from app.database import SessionLocal
+                from app.services.validation_engine import seed_reference_data
+
+                async with SessionLocal() as _seed_session:
+                    await seed_reference_data(_seed_session)
+                    await _seed_session.commit()
+            except Exception:  # pragma: no cover - best effort, jamais bloquant
+                logger.warning("seed référentiel validation MRV ignoré (non bloquant)")
         logger.info("mynewtowt %s started (env=%s)", __version__, settings.app_env)
 
     return app

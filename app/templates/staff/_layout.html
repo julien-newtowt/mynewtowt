@@ -121,8 +121,16 @@
         <ul class="nav-group-list">
           {% if v_finance %}<li><a href="/finance"><i data-lucide="euro"></i><span>{{ t('s_nav_finance', lang) }}</span></a></li>{% endif %}
           {% if v_kpi %}<li><a href="/kpi"><i data-lucide="bar-chart-3"></i><span>{{ t('s_nav_kpi', lang) }}</span></a></li>{% endif %}
+          {% if v_kpi %}<li><a href="/dashboard-env"><i data-lucide="leaf"></i><span>{{ t('dashenv_nav_title', lang) }}</span></a></li>{% endif %} <!-- LOT 11 -->
           {% if v_planning %}<li><a href="/performance/navigation"><i data-lucide="compass"></i><span>{{ t('s_nav_navigation', lang) }}</span></a></li>{% endif %}
           {% if v_mrv %}<li><a href="/mrv"><i data-lucide="fuel"></i><span>{{ t('s_nav_mrv', lang) }}</span></a></li>{% endif %}
+          {% if v_mrv %}<li><a href="/mrv/voyages"><i data-lucide="route"></i><span>{{ t('s_nav_mrv_voyages', lang) }}</span></a></li>{% endif %}<!-- LOT 5 -->
+          {% if v_mrv %}<li><a href="/mrv/bunkering"><i data-lucide="droplets"></i><span>{{ t('s_nav_mrv_bunkering', lang) }}</span></a></li>{% endif %}
+          {% if v_mrv %}<li><a href="/mrv/parametres"><i data-lucide="sliders-horizontal"></i><span>{{ t('s_nav_mrv_param', lang) }}</span></a></li>{% endif %}
+          <!-- LOT 7 -->{% if v_mrv %}<li><a href="/mrv/flgo"><i data-lucide="gauge"></i><span>{{ t('s_nav_mrv_flgo', lang) }}</span></a></li>{% endif %}
+          <!-- LOT 8 -->{% if v_mrv %}<li><a href="/mrv/qualite"><i data-lucide="shield-check"></i><span>{{ t('s_nav_mrv_qualite', lang) }}</span></a></li>{% endif %}
+          <!-- LOT 10 -->{% if v_mrv %}<li><a href="/mrv/datasets"><i data-lucide="file-spreadsheet"></i><span>{{ t('s_nav_mrv_datasets', lang) }}</span></a></li>{% endif %}
+          <!-- LOT 14 -->{% if v_mrv %}<li><a href="/mrv/archive/events"><i data-lucide="archive"></i><span>{{ t('s_nav_mrv_archive', lang) }}</span></a></li>{% endif %}
           {% if v_claims %}<li><a href="/claims"><i data-lucide="shield-alert"></i><span>{{ t('s_nav_claims', lang) }}</span></a></li>{% endif %}
           {% if v_analytics %}<li><a href="/dashboard/analytics"><i data-lucide="bar-chart"></i><span>{{ t('s_nav_analytics', lang) }}</span></a></li>{% endif %}
         </ul>
@@ -138,6 +146,8 @@
         <ul class="nav-group-list">
           <li><a href="/admin"><i data-lucide="settings"></i><span>{{ t('s_nav_config', lang) }}</span></a></li>
           <li><a href="/admin/ports"><i data-lucide="map-pin"></i><span>{{ t('s_nav_ports', lang) }}</span></a></li>
+          <li><a href="/admin/flotte-env"><i data-lucide="ship"></i><span>{{ t('s_nav_flotte_env', lang) }}</span></a></li>
+          <li><a href="/admin/emission-factors"><i data-lucide="flame"></i><span>{{ t('s_nav_emission_factors', lang) }}</span></a></li>
           <li><a href="/admin/security"><i data-lucide="shield-check"></i><span>{{ t('s_nav_security', lang) }}</span></a></li>
           <li><a href="/admin/integrations"><i data-lucide="git-branch-plus"></i><span>{{ t('s_nav_integrations', lang) }}</span></a></li>
         </ul>

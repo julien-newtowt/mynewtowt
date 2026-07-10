@@ -1,28 +1,26 @@
-"""Tests for app.services.mrv_export — DNV CSV generation, SOF→MRV mapping."""
+"""Tests for app.services.mrv_export — SOF→MRV mapping + carbon summary.
+
+LOT 14 : les exports CSV DNV (9 col. code mort dès lot 10, puis 18 col.
+``dnv_csv_18``/``build_dnv_rows``/``DNV_18_HEADERS``) ont été RETIRÉS (Q3) — la
+voie unique est ``services.mrv_dataset`` (OVDLA/OVDBR, testé séparément). Ne
+subsistent ici que le mapping SOF→MRV (consommé par ``voyage_events``) et
+l'agrégat ``carbon_report_summary`` (référencé par la sentinelle facteurs).
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from app.services.mrv_export import (
     CO2_EMISSION_FACTOR_MDO,
     carbon_report_summary,
     map_sof_to_mrv_type,
-    to_dnv_csv,
 )
 
 
 @dataclass
 class FakeEvent:
-    vessel_imo: str = "9876543"
-    leg_code: str = "1CFRBR6"
-    event_type: str = "departure"
-    occurred_at: datetime = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
-    fuel_type: str = "MDO"
-    rob_t: float | None = 12.5
     consumed_t: float | None = 0.8
-    notes: str | None = "noon report"
 
 
 def test_co2_factor_is_3206():
@@ -39,18 +37,23 @@ def test_sof_to_mrv_map_unknown_returns_none():
     assert map_sof_to_mrv_type("UNKNOWN_TYPE") is None
 
 
-def test_to_dnv_csv_header_present():
-    csv = to_dnv_csv([FakeEvent()])
-    first_line = csv.splitlines()[0]
-    assert "vessel_imo" in first_line
-    assert "co2_t" in first_line
-    assert ";" in first_line
+def test_to_dnv_csv_removed():
+    """Le code mort ``to_dnv_csv`` (9 colonnes) a bien été purgé (lot 10)."""
+    import app.services.mrv_export as me
+
+    assert not hasattr(me, "to_dnv_csv")
 
 
-def test_to_dnv_csv_computes_co2():
-    csv = to_dnv_csv([FakeEvent(consumed_t=1.0)])
-    # CO₂ = 1.0 * 3.206 = 3.206
-    assert "3.206" in csv
+def test_dnv_18_columns_export_removed_lot14():
+    """LOT 14 (Q3) — l'export DNV 18 colonnes est RETIRÉ (OVDLA/OVDBR unique)."""
+    import app.services.mrv_export as me
+
+    assert not hasattr(me, "DNV_18_HEADERS")
+    assert not hasattr(me, "dnv_csv_18")
+    assert not hasattr(me, "build_dnv_rows")
+
+
+# ─────────────────────────────── Carbon summary ─────────────────────────────
 
 
 def test_carbon_report_summary_aggregates():

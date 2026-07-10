@@ -1,0 +1,226 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('dashenv_voyage_title', lang) }} — {{ d.leg_code }}{% endblock %}
+{% block head %}{{ super() }}
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
+<script src="{{ asset('js/dashenv-voyage-map.js') }}" defer></script>
+{% endblock %}
+{% block content %}
+{% set L = d.ledger %}
+
+<div class="breadcrumb text-sm text-muted mb-3">
+  <a href="/dashboard-env">{{ t('dashenv_tab_fleet', lang) }}</a><span> › </span>
+  {% if d.vessel_id %}<a href="/dashboard-env/vessels/{{ d.vessel_id }}">{{ d.vessel_name or d.vessel_code }}</a>{% else %}{{ d.vessel_name or '—' }}{% endif %}
+  <span> › </span><strong class="mono">{{ d.leg_code }}</strong>
+</div>
+
+<header class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:8px;">
+  <div>
+    <span class="kicker">{{ t('dashenv_kicker', lang) }}</span>
+    <h1 class="display">{{ t('dashenv_voyage_title', lang) }} · <span class="mono">{{ d.leg_code }}</span></h1>
+    <p class="text-muted">
+      {% if d.dep_port and d.arr_port %}{{ d.dep_port.country|flag }} {{ d.dep_port.name }} → {{ d.arr_port.country|flag }} {{ d.arr_port.name }}{% endif %}
+      · <span class="pill pill-neutral text-xs">{{ t('dashenv_source_' ~ d.source, lang) }}</span>
+    </p>
+  </div>
+  <div class="flex gap-2" style="flex-wrap:wrap;">
+    <a href="/dashboard-env/voyages/{{ d.leg_id }}/export.pdf" class="btn btn-ghost"><i data-lucide="file-text"></i> PDF</a>
+    <a href="/dashboard-env/voyages/{{ d.leg_id }}/export.docx" class="btn btn-ghost"><i data-lucide="file-down"></i> DOCX</a>
+  </div>
+</header>
+
+{# ───────────────────────────── Bandeau KPI ───────────────────────────── #}
+<section class="kpi-strip mb-4">
+  <div class="kpi-card">
+    <div class="label">{{ t('dashenv_kpi_co2_emitted', lang) }}</div>
+    <div class="value">{{ "%.2f"|format(L.co2_emitted_t) if L.co2_emitted_t is not none else t('dashenv_na', lang) }} t</div>
+    <div class="delta text-muted">TtW</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('dashenv_vessel_conso_total', lang) }}</div>
+    <div class="value">{{ "%.2f"|format(L.conso_total_t) if L.conso_total_t is not none else t('dashenv_na', lang) }} t</div>
+    <div class="delta text-muted">ME {{ "%.2f"|format(L.conso_me_t) if L.conso_me_t is not none else '—' }} · AE {{ "%.2f"|format(L.conso_ae_t) if L.conso_ae_t is not none else '—' }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('dashenv_kpi_distance', lang) }}</div>
+    <div class="value">{{ "%.0f"|format(L.distance_nm) if L.distance_nm is not none else t('dashenv_na', lang) }} NM</div>
+    <div class="delta text-muted">{{ t('dashenv_col_cargo', lang) }} {{ "%.0f"|format(L.cargo_bl_t) if L.cargo_bl_t is not none else '0' }} t</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('dashenv_kpi_ef', lang) }}</div>
+    <div class="value text-sm" style="line-height:1.5;">
+      A {{ "%.2f"|format(L.ef_method_a) if L.ef_method_a is not none else 'N/A' }}<br>
+      B {{ "%.2f"|format(L.ef_method_b) if L.ef_method_b is not none else 'N/A' }}<br>
+      C {{ "%.2f"|format(L.ef_method_c) if L.ef_method_c is not none else 'N/A' }}
+    </div>
+    <div class="delta text-muted">gCO₂/t·km</div>
+  </div>
+</section>
+
+{# ─────────────────────── ROB timeline + conso vs cible ─────────────────────── #}
+<div class="grid grid-2 gap-3 mb-4">
+  <article class="card">
+    <div class="card-title">{{ t('dashenv_rob_title', lang) }}</div>
+    <p class="text-muted text-sm">{{ t('dashenv_rob_subtitle', lang) }}</p>
+    {% if rob.has_data %}
+    <div style="overflow-x:auto;">
+      <svg viewBox="0 0 {{ rob.width }} {{ rob.height }}" width="100%" height="260"
+           preserveAspectRatio="xMidYMid meet" role="img" aria-label="{{ t('dashenv_rob_title', lang) }}">
+        {% for tick in rob.y_ticks %}
+        <line x1="{{ rob.left }}" y1="{{ tick.y }}" x2="{{ rob.right_x }}" y2="{{ tick.y }}" stroke="#EFE6D6" stroke-width="1"></line>
+        <text x="{{ rob.left - 6 }}" y="{{ tick.y + 3 }}" font-size="9" text-anchor="end" fill="#6E6E6E">{{ tick.label }}</text>
+        {% endfor %}
+        <polyline points="{{ rob.polyline }}" fill="none" stroke="#0D5966" stroke-width="2"></polyline>
+        {% for p in rob.points %}
+        <circle cx="{{ p.x }}" cy="{{ p.y }}" r="{{ 4.5 if p.is_ref else 2.5 }}"
+                fill="{{ '#B47148' if p.is_ref else '#0D5966' }}" stroke="#fff" stroke-width="1">
+          <title>{{ p.type }} — {{ "%.2f"|format(p.val) }} t ({{ p.dt|datetime }})</title>
+        </circle>
+        {% endfor %}
+        {% for b in rob.bunker_markers %}
+        <path d="M {{ b.x - 5 }},{{ b.baseline_y }} L {{ b.x + 5 }},{{ b.baseline_y }} L {{ b.x }},{{ b.baseline_y - 9 }} Z" fill="#B47148">
+          <title>{{ t('dashenv_bunker', lang) }} BDN {{ b.bdn }} — {{ "%.2f"|format(b.mass) }} t @ {{ b.port }}</title>
+        </path>
+        {% endfor %}
+      </svg>
+    </div>
+    <div class="flex gap-3 text-xs text-muted mt-2" style="flex-wrap:wrap;">
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#B47148;"></span> {{ t('dashenv_rob_ref', lang) }}</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#0D5966;"></span> {{ t('dashenv_rob_chained', lang) }}</span>
+      <span><span style="display:inline-block;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid #B47148;"></span> {{ t('dashenv_bunker', lang) }}</span>
+    </div>
+    {% else %}
+    <div class="alert alert-info">{{ t('dashenv_rob_empty', lang) }}</div>
+    {% endif %}
+  </article>
+
+  <div>
+    <article class="card mb-3" {% if d.conso.over_target %}style="border-left:4px solid var(--warn,#B47148);"{% endif %}>
+      <div class="card-title">{{ t('dashenv_conso_title', lang) }}</div>
+      {% if d.conso.daily_l_j is not none %}
+      <div class="kpi-value" style="font-size:2rem;">{{ "%.0f"|format(d.conso.daily_l_j) }} <span class="text-muted text-sm">L/j</span></div>
+      <p class="text-sm mt-2">
+        {{ t('dashenv_conso_target', lang) }} : {{ "%.0f"|format(d.conso.target_l_j) }} L/j —
+        {% if d.conso.over_target %}
+        <strong class="text-warn">+{{ "%.1f"|format(d.conso.delta_pct) }} % {{ t('dashenv_conso_over', lang) }}</strong>
+        {% else %}
+        <strong class="text-success">−{{ "%.1f"|format(d.conso.delta_pct) }} % {{ t('dashenv_conso_under', lang) }}</strong>
+        {% endif %}
+      </p>
+      {% else %}
+      <div class="value text-muted">{{ t('dashenv_na', lang) }}</div>
+      <p class="text-muted text-sm">{{ d.conso.na_reason }}</p>
+      {% endif %}
+    </article>
+
+    <article class="card">
+      <div class="card-title">{{ t('dashenv_meae_title', lang) }}</div>
+      {% if d.me_pct is not none %}
+      <div style="display:flex;height:28px;border-radius:6px;overflow:hidden;margin-top:8px;">
+        <div style="width:{{ d.me_pct }}%;background:var(--teal,#0D5966);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;">ME {{ "%.1f"|format(d.me_pct) }} %</div>
+        <div style="width:{{ d.ae_pct }}%;background:#87BD29;color:#0b2e12;display:flex;align-items:center;justify-content:center;font-size:.8rem;">AE {{ "%.1f"|format(d.ae_pct) }} %</div>
+      </div>
+      <p class="text-muted text-xs mt-2">{{ t('dashenv_meae_hint', lang) }}</p>
+      {% else %}
+      <p class="text-muted text-sm">{{ t('dashenv_meae_na', lang) }}</p>
+      {% endif %}
+    </article>
+  </div>
+</div>
+
+{# ─────────────────────── Profil de propulsion + carte ─────────────────────── #}
+<div class="grid grid-2 gap-3 mb-4">
+  <article class="card">
+    <div class="card-title">{{ t('dashenv_prop_title', lang) }}</div>
+    {% if prop_bar.has_data %}
+    <div style="overflow-x:auto;">
+      <svg viewBox="0 0 {{ prop_bar.width }} {{ prop_bar.height }}" width="100%" height="30" preserveAspectRatio="none" role="img" aria-label="{{ t('dashenv_prop_title', lang) }}">
+        {% for s in prop_bar.segments %}
+        <rect x="{{ s.x }}" y="0" width="{{ s.width }}" height="{{ prop_bar.height }}" fill="{{ s.color }}">
+          <title>{{ t(s.label_key, lang) }} — {{ s.count }} ({{ "%.1f"|format(s.pct) }} %)</title>
+        </rect>
+        {% endfor %}
+      </svg>
+    </div>
+    <div class="flex gap-3 text-xs mt-2" style="flex-wrap:wrap;">
+      {% for s in d.propulsion.segments %}
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:{{ s.color }};"></span>
+        {{ t(s.label_key, lang) }} : <strong>{{ "%.1f"|format(s.pct) if s.pct is not none else '0' }} %</strong> ({{ s.count }})</span>
+      {% endfor %}
+    </div>
+    <p class="text-muted text-xs mt-2">
+      <i data-lucide="info"></i>
+      {{ t('dashenv_prop_completeness', lang) }} :
+      <strong>{{ d.propulsion.filled_slots }}</strong>/{{ d.propulsion.theoretical_slots }}
+      {% if d.propulsion.completeness_pct is not none %}({{ "%.1f"|format(d.propulsion.completeness_pct) }} %){% endif %}
+      — {{ t('dashenv_prop_excluded', lang) }}
+    </p>
+    {% else %}
+    <div class="alert alert-info">{{ t('dashenv_prop_empty', lang) }}</div>
+    {% endif %}
+  </article>
+
+  <article class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:14px 16px 0;"><div class="card-title">{{ t('dashenv_map_title', lang) }}</div></div>
+    <div id="dashenv-voyage-map" class="js-dashenv-voyage-map"
+         style="width:100%;height:340px;background:var(--sable-light,#F7F2E8);position:relative;"
+         data-maptiler-token="{{ maptiler_token }}"
+         data-points='{{ map_points|tojson }}'
+         data-segments='{{ map_segments|tojson }}'
+         data-no-position-text="{{ t('dashenv_map_empty', lang) }}"></div>
+    <div class="flex gap-3 text-xs text-muted" style="flex-wrap:wrap;padding:10px 16px;">
+      {% for s in d.propulsion.segments %}
+      <span><span style="display:inline-block;width:16px;height:3px;background:{{ s.color }};vertical-align:middle;"></span> {{ t(s.label_key, lang) }}</span>
+      {% endfor %}
+    </div>
+  </article>
+</div>
+
+{# ─────────────────────── Écarts R14/R22 + chaîne d'événements ─────────────────────── #}
+<div class="grid grid-2 gap-3">
+  <article class="card">
+    <div class="card-title">{{ t('dashenv_anomalies_title', lang) }}</div>
+    {% if d.quality %}
+    <table class="data-table" style="margin-top:8px;">
+      <thead><tr><th>{{ t('dashenv_col_rule', lang) }}</th><th>{{ t('dashenv_col_severity', lang) }}</th><th>{{ t('dashenv_col_message', lang) }}</th></tr></thead>
+      <tbody>
+        {% for q in d.quality %}
+        <tr>
+          <td><code>{{ q.rule_id }}</code></td>
+          <td><span class="pill {{ {'bloquant':'pill-error','warning':'pill-warn','info':'pill-info'}.get(q.severity_applied,'pill-neutral') }}">{{ q.severity_applied or '—' }}</span></td>
+          <td class="text-sm">{{ q.message or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <a href="/mrv/qualite?leg_id={{ d.leg_id }}" class="btn btn-ghost btn-sm mt-2"><i data-lucide="shield-check"></i> {{ t('dashenv_anomalies_journal', lang) }}</a>
+    {% else %}
+    <div class="alert alert-success">{{ t('dashenv_anomalies_none', lang) }}</div>
+    {% endif %}
+  </article>
+
+  <article class="card" style="overflow-x:auto;">
+    <div class="card-title">{{ t('dashenv_chain_title', lang) }}</div>
+    <table class="data-table" style="margin-top:8px;">
+      <thead><tr>
+        <th>{{ t('dashenv_col_event', lang) }}</th><th>{{ t('dashenv_col_date', lang) }}</th>
+        <th>{{ t('dashenv_col_status', lang) }}</th><th class="text-right">{{ t('dashenv_col_rob_decl', lang) }}</th>
+        <th class="text-right">{{ t('dashenv_col_rob_calc', lang) }}</th>
+      </tr></thead>
+      <tbody>
+        {% for e in d.events %}
+        <tr>
+          <td>{{ t('dashenv_event_' ~ e.event_type, lang) }}</td>
+          <td class="text-muted text-sm">{{ e.datetime_utc|datetime if e.datetime_utc else '—' }}</td>
+          <td><span class="pill pill-neutral text-xs">{{ e.status }}</span></td>
+          <td class="text-right mono">{{ "%.2f"|format(e.rob_declared_t) if e.rob_declared_t is not none else '—' }}</td>
+          <td class="text-right mono">{{ "%.2f"|format(e.rob_calculated_t) if e.rob_calculated_t is not none else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted text-center">{{ t('dashenv_chain_empty', lang) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</div>
+{% endblock %}

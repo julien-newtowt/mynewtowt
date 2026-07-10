@@ -1,0 +1,99 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('onb_event_list', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/onboard" class="btn btn-ghost mb-3">← Onboard</a>
+<header class="mb-4">
+  <span class="kicker">📋 {{ t('onb_event_section', lang) }}</span>
+  <h1 class="display">{{ t('onb_event_list', lang) }}</h1>
+  {% if vessel and leg %}
+  <p class="text-muted">
+    <strong>{{ vessel.name }}</strong> ·
+    <span class="mono">{{ leg.leg_code }}</span>
+  </p>
+  {% endif %}
+</header>
+
+{% if not leg %}
+<div class="alert alert-warn">{{ t('onb_event_no_leg', lang) }}</div>
+{% else %}
+
+{# ── Déclarer un événement (5 types) ── #}
+<section class="card mb-4">
+  <h2 class="h5">{{ t('onb_event_declare', lang) }}</h2>
+  <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+    {% for et in event_types %}
+    <a href="/onboard/events/new/{{ et }}?leg_id={{ leg.id }}" class="btn btn-secondary btn-sm">
+      + {{ event_type_labels.get(et, et) }}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+{# ── Chaîne chronologique des événements du voyage ── #}
+<article class="card mb-4">
+  <h2 class="h5">{{ t('onb_event_list', lang) }} ({{ events|length }})</h2>
+  {% if events %}
+  <div style="overflow-x:auto;">
+    <table class="data-table mt-2">
+      <thead><tr>
+        <th>Type</th>
+        <th>Date/heure (UTC)</th>
+        <th>{{ t('onb_event_position', lang) }}</th>
+        <th>{{ t('onb_event_status', lang) }}</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        {% for e in events %}
+        <tr>
+          <td>{{ event_type_labels.get(e.event_type, e.event_type) }}</td>
+          <td class="mono text-sm">{{ e.datetime_utc|datetime if e.datetime_utc else '—' }}</td>
+          <td class="mono text-sm">
+            {% if e.lat_decimal is not none and e.lon_decimal is not none %}
+              {{ "%.4f"|format(e.lat_decimal) }}, {{ "%.4f"|format(e.lon_decimal) }}
+              {% if e.position_source == 'manuel_justifie' %}<span title="Position manuelle justifiée">✍️</span>{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if e.status == 'brouillon' %}
+              <span class="badge">{{ t('onb_event_st_brouillon', lang) }}</span>
+            {% elif e.status == 'finalise' %}
+              <span class="badge badge-success">{{ t('onb_event_st_finalise', lang) }}</span>
+            {% else %}
+              <span class="badge badge-success">🔒 {{ t('onb_event_st_valide', lang) }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if e.status == 'brouillon' %}
+              <a href="/onboard/events/{{ e.id }}/edit" class="btn btn-xs btn-cuivre">{{ t('onb_event_edit', lang) }}</a>
+            {% else %}
+              <a href="/onboard/events/{{ e.id }}/edit" class="btn btn-xs btn-ghost">👁</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted">{{ t('onb_event_no_events', lang) }}</p>
+  {% endif %}
+</article>
+{% endif %}
+
+{# ── Brouillons en cours de l'utilisateur ── #}
+<article class="card">
+  <h2 class="h5">{{ t('onb_event_drafts', lang) }} ({{ my_drafts|length }})</h2>
+  {% if my_drafts %}
+  <ul class="mt-2" style="list-style:none; padding:0; margin:0;">
+    {% for d in my_drafts %}
+    <li style="padding:var(--space-2) 0; border-bottom:1px solid var(--sable);">
+      <a href="/onboard/events/{{ d.event.id }}/edit" class="mono">{{ d.event.event_type }} · #{{ d.event.id }}</a>
+      <span class="text-muted text-sm"> — {{ t('onb_event_saved_ago', lang, hours=d.age_h) }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-muted">{{ t('onb_event_no_drafts', lang) }}</p>
+  {% endif %}
+</article>
+{% endblock %}

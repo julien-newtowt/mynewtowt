@@ -1,0 +1,735 @@
+{
+  "_meta": {
+    "source": "Sample_Dataset_Architecture_Evenementielle_2025.xlsx",
+    "generated_by": "python scripts/import_mrv_2025.py --emit-fixtures",
+    "voyage": "1CLA5",
+    "note": "Compteurs moteurs = cumuls SYNTHÉTIQUES reconstruits depuis les deltas périodiques du dataset (densité 0,845, base 0 au premier événement) — cf. README.md du dossier."
+  },
+  "vessel": {
+    "dataset_vessel_id": "ANEMOS",
+    "code": "1",
+    "name": "Anemos",
+    "imo_number": "9982938"
+  },
+  "ports": [
+    {
+      "locode": "FRCOC",
+      "name": "Concarneau",
+      "country": "FR",
+      "latitude": 47.871,
+      "longitude": -3.919
+    },
+    {
+      "locode": "FRLEH",
+      "name": "Le Havre",
+      "country": "FR",
+      "latitude": 49.4944,
+      "longitude": 0.1079
+    }
+  ],
+  "leg": {
+    "leg_code": "1CLA5",
+    "dep_locode": "FRCOC",
+    "arr_locode": "FRLEH",
+    "dep_datetime_utc": "2025-03-04T11:00:00+00:00",
+    "arr_datetime_utc": "2025-03-07T10:00:00+00:00"
+  },
+  "events": [
+    {
+      "dataset_event_id": "EVT00001",
+      "event_type": "departure",
+      "datetime_utc": "2025-03-04T11:00:00+00:00",
+      "lat_decimal": "47.8167",
+      "lon_decimal": "-3.9333",
+      "position_source": "thalos_auto",
+      "cargo_mrv_t": "0",
+      "status": "valide",
+      "detail": {
+        "draft_fwd_m": null,
+        "draft_aft_m": null,
+        "trim_m": null,
+        "vessel_condition": "ballast",
+        "cargo_bl_t": "0",
+        "rob_t": "34.7088",
+        "etd_confirmed": null
+      },
+      "engine_readings": [
+        {
+          "engine_role": "AFT_GEN",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": "0"
+        },
+        {
+          "engine_role": "FWD_GEN",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": "0"
+        },
+        {
+          "engine_role": "PME",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": "0"
+        },
+        {
+          "engine_role": "PORT_SHAFT_GEN",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": null
+        },
+        {
+          "engine_role": "SME",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": "0"
+        }
+      ],
+      "weather_readings": [],
+      "sail_readings": [],
+      "hold_readings": []
+    },
+    {
+      "dataset_event_id": "EVT00231",
+      "event_type": "noon",
+      "datetime_utc": "2025-03-05T11:00:00+00:00",
+      "lat_decimal": "48.15",
+      "lon_decimal": "-5.7333",
+      "position_source": "thalos_auto",
+      "cargo_mrv_t": null,
+      "status": "valide",
+      "detail": {},
+      "engine_readings": [
+        {
+          "engine_role": "AFT_GEN",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": "0"
+        },
+        {
+          "engine_role": "FWD_GEN",
+          "running_hours_counter_h": "23",
+          "fuel_counter_l": "710.1656804733726627218934911"
+        },
+        {
+          "engine_role": "PME",
+          "running_hours_counter_h": "1",
+          "fuel_counter_l": "9.822485207100591715976331361"
+        },
+        {
+          "engine_role": "PORT_SHAFT_GEN",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": null
+        },
+        {
+          "engine_role": "SME",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": "0"
+        }
+      ],
+      "weather_readings": [
+        {
+          "slot_time": "16:00",
+          "tws_kn": "12",
+          "awa_deg": "100",
+          "aws_kn": "11",
+          "sea_state": 2,
+          "sea_direction_deg": "140",
+          "ship_speed_kn": "6.3"
+        },
+        {
+          "slot_time": "20:00",
+          "tws_kn": "13",
+          "awa_deg": "90",
+          "aws_kn": "13",
+          "sea_state": 2,
+          "sea_direction_deg": "140",
+          "ship_speed_kn": "8.2"
+        },
+        {
+          "slot_time": "00:00",
+          "tws_kn": "11",
+          "awa_deg": "120",
+          "aws_kn": "8",
+          "sea_state": 3,
+          "sea_direction_deg": "140",
+          "ship_speed_kn": "7"
+        },
+        {
+          "slot_time": "04:00",
+          "tws_kn": "11",
+          "awa_deg": "110",
+          "aws_kn": "13",
+          "sea_state": 3,
+          "sea_direction_deg": "140",
+          "ship_speed_kn": "9"
+        },
+        {
+          "slot_time": "08:00",
+          "tws_kn": "10",
+          "awa_deg": "85",
+          "aws_kn": "10",
+          "sea_state": 3,
+          "sea_direction_deg": "140",
+          "ship_speed_kn": "7"
+        },
+        {
+          "slot_time": "12:00",
+          "tws_kn": "11",
+          "awa_deg": "110",
+          "aws_kn": "12",
+          "sea_state": 3,
+          "sea_direction_deg": "140",
+          "ship_speed_kn": "7.5"
+        }
+      ],
+      "sail_readings": [
+        {
+          "slot_time": "16:00",
+          "j0": true,
+          "fwd_j1": false,
+          "fwd_ms": true,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "20:00",
+          "j0": true,
+          "fwd_j1": false,
+          "fwd_ms": true,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "44",
+          "me_ps_load_pct": "0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "00:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": true,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "59",
+          "me_ps_load_pct": "0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "04:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": true,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "59",
+          "me_ps_load_pct": "0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "08:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": true,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "59",
+          "me_ps_load_pct": "0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "12:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": true,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "60",
+          "me_ps_load_pct": "0",
+          "me_sb_load_pct": "0"
+        }
+      ],
+      "hold_readings": [
+        {
+          "period": "minuit",
+          "zone": "air",
+          "temp_c": "14",
+          "rh_pct": null
+        },
+        {
+          "period": "minuit",
+          "zone": "cellar",
+          "temp_c": "19",
+          "rh_pct": "0"
+        },
+        {
+          "period": "midi",
+          "zone": "sea_water",
+          "temp_c": "18",
+          "rh_pct": null
+        },
+        {
+          "period": "midi",
+          "zone": "air",
+          "temp_c": "18",
+          "rh_pct": null
+        },
+        {
+          "period": "midi",
+          "zone": "cellar",
+          "temp_c": "17",
+          "rh_pct": "57.00"
+        }
+      ]
+    },
+    {
+      "dataset_event_id": "EVT00002",
+      "event_type": "arrival",
+      "datetime_utc": "2025-03-07T10:00:00+00:00",
+      "lat_decimal": "49.4833",
+      "lon_decimal": "-0.1333",
+      "position_source": "thalos_auto",
+      "cargo_mrv_t": "0",
+      "status": "valide",
+      "detail": {
+        "draft_fwd_m": null,
+        "draft_aft_m": null,
+        "trim_m": null,
+        "vessel_condition": "ballast",
+        "rob_t": "34.0032"
+      },
+      "engine_readings": [
+        {
+          "engine_role": "AFT_GEN",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": "0"
+        },
+        {
+          "engine_role": "FWD_GEN",
+          "running_hours_counter_h": "23",
+          "fuel_counter_l": "710.1656804733726627218934911"
+        },
+        {
+          "engine_role": "PME",
+          "running_hours_counter_h": "1",
+          "fuel_counter_l": "9.822485207100591715976331361"
+        },
+        {
+          "engine_role": "PORT_SHAFT_GEN",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": null
+        },
+        {
+          "engine_role": "SME",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": "0"
+        }
+      ],
+      "weather_readings": [],
+      "sail_readings": [],
+      "hold_readings": []
+    },
+    {
+      "dataset_event_id": "EVT00251",
+      "event_type": "noon",
+      "datetime_utc": "2025-03-08T12:00:00+00:00",
+      "lat_decimal": "49.8333",
+      "lon_decimal": "-1.5667",
+      "position_source": "thalos_auto",
+      "cargo_mrv_t": null,
+      "status": "valide",
+      "detail": {},
+      "engine_readings": [
+        {
+          "engine_role": "AFT_GEN",
+          "running_hours_counter_h": "3",
+          "fuel_counter_l": "71.00591715976331360946745562"
+        },
+        {
+          "engine_role": "FWD_GEN",
+          "running_hours_counter_h": "47",
+          "fuel_counter_l": "1136.201183431952544378698225"
+        },
+        {
+          "engine_role": "PME",
+          "running_hours_counter_h": "4",
+          "fuel_counter_l": "329.3491124260355029585798817"
+        },
+        {
+          "engine_role": "PORT_SHAFT_GEN",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": null
+        },
+        {
+          "engine_role": "SME",
+          "running_hours_counter_h": "3",
+          "fuel_counter_l": "319.5266272189349112426035503"
+        }
+      ],
+      "weather_readings": [
+        {
+          "slot_time": "16:00",
+          "tws_kn": "15",
+          "awa_deg": "100",
+          "aws_kn": "14",
+          "sea_state": 3,
+          "sea_direction_deg": "180",
+          "ship_speed_kn": "8.7"
+        },
+        {
+          "slot_time": "20:00",
+          "tws_kn": "17",
+          "awa_deg": "60",
+          "aws_kn": "23",
+          "sea_state": 3,
+          "sea_direction_deg": "180",
+          "ship_speed_kn": "10"
+        },
+        {
+          "slot_time": "00:00",
+          "tws_kn": "23",
+          "awa_deg": "55",
+          "aws_kn": "26",
+          "sea_state": 3,
+          "sea_direction_deg": "180",
+          "ship_speed_kn": "9"
+        },
+        {
+          "slot_time": "04:00",
+          "tws_kn": "20",
+          "awa_deg": "55",
+          "aws_kn": "24",
+          "sea_state": 3,
+          "sea_direction_deg": "180",
+          "ship_speed_kn": "8"
+        },
+        {
+          "slot_time": "08:00",
+          "tws_kn": "27",
+          "awa_deg": "50",
+          "aws_kn": "30",
+          "sea_state": 3,
+          "sea_direction_deg": "180",
+          "ship_speed_kn": "9.1"
+        },
+        {
+          "slot_time": "12:00",
+          "tws_kn": "30",
+          "awa_deg": "30",
+          "aws_kn": "33",
+          "sea_state": 3,
+          "sea_direction_deg": "180",
+          "ship_speed_kn": "10.5"
+        }
+      ],
+      "sail_readings": [
+        {
+          "slot_time": "16:00",
+          "j0": true,
+          "fwd_j1": false,
+          "fwd_ms": false,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "70.0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "20:00",
+          "j0": true,
+          "fwd_j1": false,
+          "fwd_ms": false,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "50.0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "00:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": false,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "50.0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "04:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": false,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "50.0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "08:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": false,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "60.0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "12:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": false,
+          "aft_j1": true,
+          "aft_ms": false,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "70.0",
+          "me_sb_load_pct": "0"
+        }
+      ],
+      "hold_readings": [
+        {
+          "period": "minuit",
+          "zone": "air",
+          "temp_c": "6",
+          "rh_pct": null
+        },
+        {
+          "period": "minuit",
+          "zone": "cellar",
+          "temp_c": "13",
+          "rh_pct": "54.00"
+        },
+        {
+          "period": "midi",
+          "zone": "air",
+          "temp_c": "6",
+          "rh_pct": null
+        },
+        {
+          "period": "midi",
+          "zone": "cellar",
+          "temp_c": "14",
+          "rh_pct": "55.00"
+        }
+      ]
+    },
+    {
+      "dataset_event_id": "EVT00269",
+      "event_type": "noon",
+      "datetime_utc": "2025-03-09T12:00:00+00:00",
+      "lat_decimal": "47.75",
+      "lon_decimal": "-4.1833",
+      "position_source": "thalos_auto",
+      "cargo_mrv_t": null,
+      "status": "valide",
+      "detail": {},
+      "engine_readings": [
+        {
+          "engine_role": "AFT_GEN",
+          "running_hours_counter_h": "3",
+          "fuel_counter_l": "71.00591715976331360946745562"
+        },
+        {
+          "engine_role": "FWD_GEN",
+          "running_hours_counter_h": "71",
+          "fuel_counter_l": "1562.236686390532426035502959"
+        },
+        {
+          "engine_role": "PME",
+          "running_hours_counter_h": "12",
+          "fuel_counter_l": "1181.420118343195266272189349"
+        },
+        {
+          "engine_role": "PORT_SHAFT_GEN",
+          "running_hours_counter_h": "0",
+          "fuel_counter_l": null
+        },
+        {
+          "engine_role": "SME",
+          "running_hours_counter_h": "12",
+          "fuel_counter_l": "1278.106508875739644970414201"
+        }
+      ],
+      "weather_readings": [
+        {
+          "slot_time": "16:00",
+          "tws_kn": "30",
+          "awa_deg": "120",
+          "aws_kn": "23",
+          "sea_state": 4,
+          "sea_direction_deg": "200",
+          "ship_speed_kn": "7.1"
+        },
+        {
+          "slot_time": "20:00",
+          "tws_kn": "32",
+          "awa_deg": "90",
+          "aws_kn": "25",
+          "sea_state": 4,
+          "sea_direction_deg": "200",
+          "ship_speed_kn": "10.2"
+        },
+        {
+          "slot_time": "00:00",
+          "tws_kn": "28",
+          "awa_deg": "90",
+          "aws_kn": "22",
+          "sea_state": 4,
+          "sea_direction_deg": "200",
+          "ship_speed_kn": "5.5"
+        },
+        {
+          "slot_time": "04:00",
+          "tws_kn": "30",
+          "awa_deg": "135",
+          "aws_kn": "22",
+          "sea_state": 4,
+          "sea_direction_deg": "190",
+          "ship_speed_kn": "6.4"
+        },
+        {
+          "slot_time": "08:00",
+          "tws_kn": "27",
+          "awa_deg": "120",
+          "aws_kn": "19",
+          "sea_state": 4,
+          "sea_direction_deg": "190",
+          "ship_speed_kn": "9.2"
+        },
+        {
+          "slot_time": "12:00",
+          "tws_kn": "18",
+          "awa_deg": "90",
+          "aws_kn": "9",
+          "sea_state": 4,
+          "sea_direction_deg": "190",
+          "ship_speed_kn": "10.3"
+        }
+      ],
+      "sail_readings": [
+        {
+          "slot_time": "16:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": false,
+          "aft_j1": true,
+          "aft_ms": false,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "20:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": false,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "00:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": false,
+          "aft_j1": true,
+          "aft_ms": true,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "04:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": false,
+          "aft_j1": true,
+          "aft_ms": false,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "0",
+          "me_sb_load_pct": "0"
+        },
+        {
+          "slot_time": "08:00",
+          "j0": false,
+          "fwd_j1": true,
+          "fwd_ms": false,
+          "aft_j1": false,
+          "aft_ms": false,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "60.0",
+          "me_sb_load_pct": "60.0"
+        },
+        {
+          "slot_time": "12:00",
+          "j0": false,
+          "fwd_j1": false,
+          "fwd_ms": false,
+          "aft_j1": false,
+          "aft_ms": false,
+          "sail_boost_pct": "0",
+          "me_ps_load_pct": "80.0",
+          "me_sb_load_pct": "80.0"
+        }
+      ],
+      "hold_readings": [
+        {
+          "period": "minuit",
+          "zone": "air",
+          "temp_c": "6",
+          "rh_pct": null
+        },
+        {
+          "period": "minuit",
+          "zone": "cellar",
+          "temp_c": "13",
+          "rh_pct": "54.00"
+        },
+        {
+          "period": "midi",
+          "zone": "air",
+          "temp_c": "6",
+          "rh_pct": null
+        },
+        {
+          "period": "midi",
+          "zone": "cellar",
+          "temp_c": "14",
+          "rh_pct": "55.00"
+        }
+      ]
+    }
+  ],
+  "bunkers": [
+    {
+      "dataset_bunker_id": "BUNK-0001",
+      "bdn_number": "433421",
+      "port_locode": "FRCOC",
+      "delivery_datetime_utc": "2025-02-17T12:00:00+00:00",
+      "fuel_type": "MDO",
+      "mass_t": "30.054",
+      "status": "valide_master",
+      "allocations": []
+    }
+  ],
+  "flgo_readings": [],
+  "qc_expected": [
+    {
+      "regle": "R24",
+      "objet": "BDN 433421 (ANEMOS)",
+      "detail": "Aucune FlgoReading(Received) correspondante sous 5j — a completer dans Marad/FLGO."
+    }
+  ],
+  "expected": {
+    "conso_me_t": "2.078300000000000000000000000",
+    "conso_ae_t": "1.380089999999999900000000000",
+    "conso_total_t": "3.458389999999999900000000000",
+    "density_t_m3": "0.845",
+    "rob_departure_t": "34.7088",
+    "rob_arrival_declared_t": "34.0032",
+    "rob_last_calculated_t": "31.25041000000000010000000000",
+    "events_count": 5
+  }
+}

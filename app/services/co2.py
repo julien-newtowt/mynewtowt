@@ -38,12 +38,29 @@ DO_CO2_EF_VARIABLE = "do_co2_ef"
 
 
 async def get_do_co2_factor(db: AsyncSession) -> Decimal:
-    """Facteur CO₂ par tonne de DO (tCO₂/tDO) — DB versionnée → fallback.
+    """Facteur CO₂ par tonne de DO (tCO₂/tDO) — référentiel multi-GES → fallbacks.
 
-    Lit la variable ``do_co2_ef`` (``co2_variables``, écran /admin/co2) si
-    présente, sinon retombe sur la constante MEPC.391(81) (3,206). Lecture
-    seule, tolérante (toute erreur DB → constante).
+    Chaîne de résolution (MRV lot 1 — référentiel ``emission_factors``
+    versionné par carburant, cf. ``services.referential_env``) :
+
+    1. ``emission_factors`` (fuel_type=MDO, écran /admin/emission-factors) —
+       source de vérité cible, multi-GES et datée.
+    2. Repli : variable ``do_co2_ef`` (``co2_variables``, écran /admin/co2) —
+       ancien référentiel, conservé pour compatibilité tant qu'il est utilisé.
+    3. Repli final : constante MEPC.391(81) (3,206).
+
+    Lecture seule, tolérante à chaque étage (toute erreur DB → étage suivant).
+    Signature et valeur de retour inchangées pour les appelants existants
+    (``carbon.compute_carbon_for_leg``, ``mrv_router``).
     """
+    try:
+        from app.services.referential_env import resolve_emission_factor
+
+        resolved = await resolve_emission_factor(db, fuel_type="MDO")
+        if not resolved.is_fallback:
+            return Decimal(resolved.ef_co2_kg_per_kg)
+    except Exception:
+        pass
     try:
         from app.models.co2_variable import Co2Variable
 

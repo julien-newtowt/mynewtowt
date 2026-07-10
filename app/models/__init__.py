@@ -10,6 +10,7 @@ from app.models.anemos_certificate import AnemosCertificate
 from app.models.blog_post import BlogPost
 from app.models.booking import Booking, BookingItem
 from app.models.booking_message import BookingMessage
+from app.models.bunker import BunkerOperation, BunkerTankAllocation
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.claim import (
     Claim,
@@ -39,11 +40,18 @@ from app.models.crew import (
     MaradCrewSchedule,
 )
 from app.models.crew_ticket import CrewTicket
+from app.models.emission_factor import EmissionFactor
 from app.models.employee import Employee
 from app.models.employment_contract import EmploymentContract
+from app.models.env_report import (
+    EnvFieldModification,
+    EnvReport,
+    EnvReportEventLink,
+)
 from app.models.escale import DockerShift, EscaleOperation
 from app.models.feature_flag import FeatureFlag
 from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
+from app.models.flgo import FlgoReading, FlgoTankCompartmentVolume, FlgoVoyageConsumptionRef
 from app.models.hr_absence import HrAbsence
 from app.models.hr_review import HrReview
 from app.models.insurance import InsuranceContract
@@ -52,6 +60,21 @@ from app.models.leg import Leg
 from app.models.leg_attachment import LegAttachment
 from app.models.mfa_recovery_code import MfaRecoveryCode
 from app.models.mrv import MRVEvent, MRVParameter
+from app.models.mrv_dataset import MrvBunkeringEntry, MrvLogAbstractEntry
+from app.models.nav_event import (
+    AnchoringEvent,
+    ArrivalEvent,
+    BeginAnchoringEvent,
+    DepartureEvent,
+    EndAnchoringEvent,
+    NavEvent,
+    NavEventEngineReading,
+    NavEventHoldReading,
+    NavEventSailReading,
+    NavEventWeatherReading,
+    NoonEvent,
+    PortCallEvent,
+)
 from app.models.news_digest import NewsDigest
 from app.models.news_item import NewsItem
 from app.models.news_source import NewsSource
@@ -102,7 +125,15 @@ from app.models.sof_event import (
 from app.models.stowage import StowageItem, StowagePlan, StowageZoneSpec
 from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
+from app.models.validation import (
+    DashboardParameter,
+    QualityCheckResult,
+    ValidationRule,
+    ValidationRuleThreshold,
+)
 from app.models.vessel import Vessel
+from app.models.vessel_env import VesselEngine, VesselHydrostatics, VesselTank
+from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.models.voyage_highlight import VoyageHighlight
 from app.models.voyage_photo import VoyagePhoto
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
@@ -116,6 +147,8 @@ __all__ = [
     "Booking",
     "BookingItem",
     "BookingMessage",
+    "BunkerOperation",
+    "BunkerTankAllocation",
     "CargoDocument",
     "CashboxClosure",
     "CashboxMovement",
@@ -135,12 +168,20 @@ __all__ = [
     "CrewLeave",
     "CrewMember",
     "CrewTicket",
+    "DashboardParameter",
     "DockerShift",
+    "EmissionFactor",
     "Employee",
     "EmploymentContract",
+    "EnvFieldModification",
+    "EnvReport",
+    "EnvReportEventLink",
     "EscaleOperation",
     "EtaShift",
     "FeatureFlag",
+    "FlgoReading",
+    "FlgoTankCompartmentVolume",
+    "FlgoVoyageConsumptionRef",
     "HrAbsence",
     "HrReview",
     "InsuranceContract",
@@ -151,7 +192,21 @@ __all__ = [
     "LegKPI",
     "MRVEvent",
     "MRVParameter",
+    "MrvBunkeringEntry",
+    "MrvLogAbstractEntry",
     "MaradCrewSchedule",
+    "AnchoringEvent",
+    "ArrivalEvent",
+    "BeginAnchoringEvent",
+    "DepartureEvent",
+    "EndAnchoringEvent",
+    "NavEvent",
+    "NavEventEngineReading",
+    "NavEventHoldReading",
+    "NavEventSailReading",
+    "NavEventWeatherReading",
+    "NoonEvent",
+    "PortCallEvent",
     "MfaRecoveryCode",
     "NewsDigest",
     "NewsItem",
@@ -185,6 +240,7 @@ __all__ = [
     "PortConfig",
     "PortalAccessLog",
     "PortalMessage",
+    "QualityCheckResult",
     "Quote",
     "QuoteLine",
     "RateGrid",
@@ -203,10 +259,16 @@ __all__ = [
     "Ticket",
     "TicketComment",
     "User",
+    "ValidationRule",
+    "ValidationRuleThreshold",
     "Vessel",
+    "VesselEngine",
+    "VesselHydrostatics",
     "VesselPosition",
+    "VesselTank",
     "VesselWeather",
     "VisitorLog",
+    "VoyageEmissionSummary",
     "VoyageHighlight",
     "VoyagePhoto",
     "WatchLog",

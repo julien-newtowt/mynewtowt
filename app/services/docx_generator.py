@@ -330,3 +330,159 @@ def build_bill_of_lading_docx(
 
     _footer(doc)
     return _serialize(doc, f"{bl_number}.docx")
+
+
+# ---------------------------------------------------------------------------
+# Dashboard environnemental — synthèse d'un voyage (LOT 12)
+# ---------------------------------------------------------------------------
+
+_PROP_LABELS_FR: dict[str, str] = {
+    "velique_pur": "Vélique pur",
+    "hybride": "Hybride (assistance vélique)",
+    "mecanique": "Mécanique pur",
+    "statique": "Statique / dérive",
+}
+_EVENT_LABELS_FR: dict[str, str] = {
+    "departure": "Départ",
+    "arrival": "Arrivée",
+    "noon": "Noon",
+    "anchoring_begin": "Début mouillage",
+    "anchoring_end": "Fin mouillage",
+}
+
+
+def _fmt_num(value, dp: int = 2) -> str:
+    if value is None:
+        return "—"
+    return f"{float(value):,.{dp}f}".replace(",", " ")
+
+
+def _fmt_dt(value) -> str:
+    if value is None:
+        return "—"
+    return value.strftime("%d/%m/%Y %H:%M")
+
+
+def build_dashboard_voyage_docx(*, detail) -> DocxBytes:
+    """Synthèse environnementale Word d'un voyage (``kpi_env.VoyageDetail``).
+
+    Mêmes sections que l'export PDF : KPI conso/émissions, consommation vs
+    cible, profil de propulsion (4 catégories + complétude), ROB (points de
+    référence + chaîné + soutages), anomalies R14/R22. Calcul serveur
+    exclusivement — ce générateur ne fait que restituer ``detail``."""
+    ledger = detail.ledger
+    doc = _new_document()
+
+    _title(doc, "SYNTHÈSE ENVIRONNEMENTALE — VOYAGE")
+    _ref_centered(doc, f"{detail.leg_code} · {detail.vessel_name or '—'}")
+    doc.add_paragraph()
+
+    _section(doc, "Voyage")
+    route = "—"
+    if detail.dep_port is not None and detail.arr_port is not None:
+        route = f"{detail.dep_port.name} ({detail.dep_port.locode}) → {detail.arr_port.name} ({detail.arr_port.locode})"
+    _kv_table(
+        doc,
+        [
+            ("Navire", f"{detail.vessel_name or '—'} ({detail.vessel_code or '—'})"),
+            ("Voyage · Leg", detail.leg_code),
+            ("Route", route),
+            ("Source des données", "événements" if detail.source == "events" else "noon legacy"),
+            ("Durée (jours)", _fmt_num(detail.duration_days, 1)),
+        ],
+    )
+    doc.add_paragraph()
+
+    _section(doc, "Consommation & émissions")
+    _kv_table(
+        doc,
+        [
+            ("Consommation totale (t)", _fmt_num(ledger.conso_total_t, 3)),
+            ("dont ME (t)", _fmt_num(ledger.conso_me_t, 3)),
+            ("dont AE (t)", _fmt_num(ledger.conso_ae_t, 3)),
+            ("CO₂ émis (t, TtW)", _fmt_num(ledger.co2_emitted_t, 3)),
+            ("Distance (NM)", _fmt_num(ledger.distance_nm, 0)),
+            ("Cargo B/L (t)", _fmt_num(ledger.cargo_bl_t, 1)),
+            ("Cargo MRV (t)", _fmt_num(ledger.cargo_mrv_t, 1)),
+            ("EF méthode A (gCO₂/t·km)", _fmt_num(ledger.ef_method_a, 2)),
+            ("EF méthode B (gCO₂/t·km)", _fmt_num(ledger.ef_method_b, 2)),
+            ("EF méthode C (gCO₂/t·km)", _fmt_num(ledger.ef_method_c, 2)),
+        ],
+    )
+    doc.add_paragraph()
+
+    _section(doc, "Consommation vs cible")
+    conso = detail.conso
+    if conso.daily_l_j is None:
+        doc.add_paragraph(f"Consommation journalière : N/A — {conso.na_reason or ''}")
+    else:
+        verdict = "au-dessus" if conso.over_target else "en dessous ou égale"
+        doc.add_paragraph(
+            f"Consommation journalière : {_fmt_num(conso.daily_l_j, 0)} L/j "
+            f"(cible {_fmt_num(conso.target_l_j, 0)} L/j — {verdict} du seuil, "
+            f"écart {_fmt_num(conso.delta_pct, 1)} %)."
+        )
+    doc.add_paragraph()
+
+    _section(doc, "Profil de propulsion (tranches de 4 h)")
+    prop = detail.propulsion
+    doc.add_paragraph(
+        f"Complétude : {prop.filled_slots} tranches renseignées / "
+        f"{prop.theoretical_slots} théoriques"
+        + (f" ({_fmt_num(prop.completeness_pct, 1)} %)" if prop.completeness_pct is not None else "")
+        + ". Les tranches sans relevé sont exclues du dénominateur des pourcentages."
+    )
+    prop_table = doc.add_table(rows=1, cols=3)
+    prop_table.style = "Table Grid"
+    for idx, label in enumerate(["Catégorie", "Tranches", "% (des renseignées)"]):
+        prop_table.rows[0].cells[idx].text = label
+        if prop_table.rows[0].cells[idx].paragraphs[0].runs:
+            prop_table.rows[0].cells[idx].paragraphs[0].runs[0].bold = True
+    for seg in prop.segments:
+        cells = prop_table.add_row().cells
+        cells[0].text = _PROP_LABELS_FR.get(seg.category, seg.category)
+        cells[1].text = str(seg.count)
+        cells[2].text = f"{_fmt_num(seg.pct, 1)} %" if seg.pct is not None else "N/A"
+    doc.add_paragraph()
+
+    _section(doc, "ROB — points de référence & chaîné")
+    rob_table = doc.add_table(rows=1, cols=4)
+    rob_table.style = "Table Grid"
+    for idx, label in enumerate(["Date (UTC)", "Événement", "ROB déclaré (t)", "ROB chaîné (t)"]):
+        rob_table.rows[0].cells[idx].text = label
+        if rob_table.rows[0].cells[idx].paragraphs[0].runs:
+            rob_table.rows[0].cells[idx].paragraphs[0].runs[0].bold = True
+    for p in detail.rob_chain:
+        cells = rob_table.add_row().cells
+        cells[0].text = _fmt_dt(p.datetime_utc)
+        cells[1].text = _EVENT_LABELS_FR.get(p.event_type, p.event_type)
+        cells[2].text = _fmt_num(p.rob_declared_t, 3)
+        cells[3].text = _fmt_num(p.rob_calculated_t, 3)
+    if detail.bunkers:
+        doc.add_paragraph("Soutages (marqueurs) :")
+        for b in detail.bunkers:
+            doc.add_paragraph(
+                f"  • BDN {b.bdn_number} — {_fmt_dt(b.delivery_datetime_utc)} — "
+                f"{_fmt_num(b.mass_t, 3)} t @ {b.port_locode}",
+                style="List Bullet",
+            )
+    doc.add_paragraph()
+
+    _section(doc, "Anomalies qualité (R14 / R22)")
+    if detail.quality:
+        anom = doc.add_table(rows=1, cols=3)
+        anom.style = "Table Grid"
+        for idx, label in enumerate(["Règle", "Sévérité", "Message"]):
+            anom.rows[0].cells[idx].text = label
+            if anom.rows[0].cells[idx].paragraphs[0].runs:
+                anom.rows[0].cells[idx].paragraphs[0].runs[0].bold = True
+        for q in detail.quality:
+            cells = anom.add_row().cells
+            cells[0].text = q.rule_id
+            cells[1].text = q.severity_applied or "—"
+            cells[2].text = (q.message or "—")[:300]
+    else:
+        doc.add_paragraph("Aucune anomalie R14/R22 ouverte sur ce voyage.")
+
+    _footer(doc)
+    return _serialize(doc, f"dashboard_voyage_{detail.leg_code}.docx")

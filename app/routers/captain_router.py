@@ -43,7 +43,7 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import WatchLog
 from app.permissions import require_permission
-from app.services import mrv_sync, notifications
+from app.services import notifications
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.signature import (
@@ -259,11 +259,8 @@ async def add_sof_event(
         entity_label=f"{event_type}@{occurred_at}",
         ip_address=_client_ip(request),
     )
-    # FLX-03 — le SOF mappé génère son événement MRV (best-effort, idempotent).
-    try:
-        await mrv_sync.ensure_from_sof(db, e)
-    except Exception:
-        logger.exception("MRV sync failed for SOF event %s (%s)", e.id, event_type)
+    # LOT 14 — la synchro SOF→MRVEvent (``mrv_sync``) est éteinte (module archivé).
+    # Les Departure/Arrival de la capture v2 se pré-remplissent depuis le SOF.
     # FLX-02 — les événements réels du bord pilotent les statuts (ATD/ATA + bookings).
     try:
         if event_type in DEPARTURE_SOF_TYPES:
@@ -871,10 +868,7 @@ async def edit_sof_event(
     e.longitude = longitude
     e.notes = (notes or "").strip() or None
     await db.flush()
-    try:
-        await mrv_sync.resync_from_sof(db, e)
-    except Exception:
-        logger.exception("MRV resync failed for SOF edit %s (%s)", e.id, event_type)
+    # LOT 14 — synchro SOF→MRVEvent éteinte (module ``mrv_sync`` archivé).
     await activity_record(
         db,
         action="update",
@@ -897,20 +891,14 @@ async def delete_sof_event(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "S")),
 ):
-    """ONB-01 — supprime un SOF **non signé** (faute de saisie). 409 si signé.
-
-    Retire aussi l'éventuel MRVEvent dérivé (best-effort).
-    """
+    """ONB-01 — supprime un SOF **non signé** (faute de saisie). 409 si signé."""
     e = await db.get(SofEvent, event_id)
     if e is None:
         raise HTTPException(status_code=404)
     ensure_unlocked(e)
     leg_id = e.leg_id
     label = f"{e.event_type}@{e.occurred_at.isoformat()}"
-    try:
-        await mrv_sync.remove_for_sof(db, e.id)
-    except Exception:
-        logger.exception("MRV cleanup failed for SOF delete %s", e.id)
+    # LOT 14 — plus de nettoyage MRVEvent dérivé (module ``mrv_sync`` archivé).
     await db.delete(e)
     await db.flush()
     await activity_record(
@@ -1116,12 +1104,9 @@ async def sign_noon_report(
         detail=n.signature_hash[:12] if n.signature_hash else None,
         ip_address=_client_ip(request),
     )
-    # FLX-03 — backstop idempotent : le noon report signé est la référence
-    # n°1 du MRV (déjà généré à la saisie — sans effet si déjà présent).
-    try:
-        await mrv_sync.ensure_from_noon(db, n)
-    except Exception:
-        logger.exception("MRV sync failed for noon report %s", n.id)
+    # LOT 14 — synchro noon→MRVEvent éteinte (module ``mrv_sync`` archivé) : le
+    # noon report signé reste immuable (audit/signature) et alimente le fallback
+    # ledger ``legacy_noon``, mais ne génère plus de ``mrv_events``.
     return RedirectResponse(url=f"/onboard/navigation?leg_id={n.leg_id}", status_code=303)
 
 

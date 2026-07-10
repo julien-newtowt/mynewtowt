@@ -1,0 +1,12 @@
+{#- Macros partagées des PDF MRV générés (LOT 5). Le payload porte des chaînes
+    (précision Decimal préservée) ; on formate uniquement à l'affichage. -#}
+{% macro fmt(value, dp=2) -%}
+{%- if value is not none and value != '' -%}{{ ('%.' ~ dp ~ 'f')|format(value|float) }}{%- else -%}—{%- endif -%}
+{%- endmacro %}
+{% macro dt(value) -%}
+{%- if value -%}{{ (value|replace('T', ' '))[:16] }}{%- else -%}—{%- endif -%}
+{%- endmacro %}
+{% macro quality_badge(status) -%}
+{%- set colors = {'conform': '#87BD29', 'corrected': '#B47148', 'clarified': '#0D5966', 'under_conformity': '#C44536'} -%}
+<span style="display:inline-block;padding:1pt 6pt;border-radius:2pt;font-size:7.5pt;color:white;background:{{ colors.get(status, '#6E6E6E') }};">{{ status }}</span>
+{%- endmacro %}

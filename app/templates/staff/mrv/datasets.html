@@ -1,0 +1,140 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('mrv_ds_title', lang) }}{% endblock %}
+{% block content %}
+{% set qs = '?vessel_id=' ~ vessel.id ~ ('&year=' ~ year if year else '') if vessel else '' %}
+
+<header class="mb-4">
+  <span class="kicker">{{ t('mrv_ds_kicker', lang) }}</span>
+  <h1 class="display">{{ t('mrv_ds_title', lang) }}</h1>
+  <p class="text-muted">{{ t('mrv_ds_intro', lang) }}</p>
+</header>
+
+<div class="alert alert-info mb-4" role="status">{{ t('mrv_ds_primary_banner', lang) }}</div>
+
+<section class="card mb-4">
+  <form method="get" action="/mrv/datasets" class="flex gap-2 items-end flex-wrap">
+    <div class="field">
+      <label>{{ t('mrv_ds_vessel', lang) }}</label>
+      <select name="vessel_id">
+        {% for v in vessels %}
+        <option value="{{ v.id }}" {% if vessel and v.id == vessel.id %}selected{% endif %}>{{ v.name }} ({{ v.imo_number or '—' }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>{{ t('mrv_ds_period', lang) }}</label>
+      <select name="year">
+        <option value="">{{ t('mrv_ds_all_years', lang) }}</option>
+        {% for y in years %}
+        <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-secondary">{{ t('mrv_ds_view', lang) }}</button>
+  </form>
+</section>
+
+{% if vessel %}
+<div class="flex gap-2 mb-4 flex-wrap">
+  <form method="post" action="/mrv/datasets/generate" style="display:inline;">
+    <input type="hidden" name="vessel_id" value="{{ vessel.id }}" />
+    {% if year %}<input type="hidden" name="year" value="{{ year }}" />{% endif %}
+    <button type="submit" class="btn btn-primary">{{ t('mrv_ds_generate', lang) }}</button>
+  </form>
+  <a class="btn btn-ghost" hx-boost="false" href="/mrv/datasets/ovdla.xlsx{{ qs }}">↓ OVDLA .xlsx</a>
+  <a class="btn btn-ghost" hx-boost="false" href="/mrv/datasets/ovdla.csv{{ qs }}">↓ OVDLA .csv</a>
+  <a class="btn btn-ghost" hx-boost="false" href="/mrv/datasets/ovdbr.xlsx{{ qs }}">↓ OVDBR .xlsx</a>
+  <a class="btn btn-ghost" hx-boost="false" href="/mrv/datasets/ovdbr.csv{{ qs }}">↓ OVDBR .csv</a>
+</div>
+
+<!-- OVDLA -->
+<section class="card mb-4">
+  <div class="flex justify-between items-center mb-2">
+    <h2>{{ t('mrv_ds_ovdla_title', lang) }}</h2>
+    <div class="flex gap-1">
+      <span class="pill pill-ok">{{ ovdla_counts.included }} {{ t('mrv_ds_included', lang) }}</span>
+      {% if ovdla_counts.excluded %}<span class="pill pill-error">{{ ovdla_counts.excluded }} {{ t('mrv_ds_excluded', lang) }}</span>{% endif %}
+    </div>
+  </div>
+  <p class="small text-muted">{{ t('mrv_ds_ovdla_hint', lang) }}</p>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date_UTC</th><th>Time_UTC</th><th>Event</th>
+        <th>From → To</th><th class="text-right">Cargo_Mt</th>
+        <th class="text-right">ME</th><th class="text-right">AE</th><th class="text-right">MDO_ROB</th>
+        <th>{{ t('mrv_ds_col_status', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in ovdla_rows %}
+      {% set v = r.values %}
+      <tr>
+        <td class="mono small">{{ v.Date_UTC }}</td>
+        <td class="mono small">{{ v.Time_UTC }}</td>
+        <td><span class="badge">{{ v.Event }}</span>{% if r.synthetic %} <span class="pill pill-neutral">{{ t('mrv_ds_synthetic', lang) }}</span>{% endif %}</td>
+        <td class="mono small">{{ v.Voyage_From or '—' }} → {{ v.Voyage_To or '—' }}</td>
+        <td class="mono text-right">{{ v.Cargo_Mt if v.Cargo_Mt is not none else '—' }}</td>
+        <td class="mono text-right">{{ v.ME_Consumption_MDO }}</td>
+        <td class="mono text-right">{{ v.AE_Consumption_MDO }}</td>
+        <td class="mono text-right">{{ v.MDO_ROB if v.MDO_ROB is not none else '—' }}</td>
+        <td>
+          {% if r.included %}<span class="pill pill-ok">{{ t('mrv_ds_ok', lang) }}</span>
+          {% else %}<span class="pill pill-error" title="{{ r.exclusion_reason }}">{{ t('mrv_ds_excl', lang) }}</span>
+          <span class="small text-muted">{{ r.exclusion_reason }}</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="text-muted">{{ t('mrv_ds_empty', lang) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- OVDBR -->
+<section class="card">
+  <div class="flex justify-between items-center mb-2">
+    <h2>{{ t('mrv_ds_ovdbr_title', lang) }}</h2>
+    <div class="flex gap-1">
+      <span class="pill pill-ok">{{ ovdbr_counts.included }} {{ t('mrv_ds_included', lang) }}</span>
+      {% if ovdbr_counts.excluded %}<span class="pill pill-error">{{ ovdbr_counts.excluded }} {{ t('mrv_ds_excluded', lang) }}</span>{% endif %}
+    </div>
+  </div>
+  <p class="small text-muted">{{ t('mrv_ds_ovdbr_hint', lang) }}</p>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>BDN_Number</th><th>Date</th><th>Time</th><th>Port</th>
+        <th>Fuel</th><th class="text-right">Mass</th><th>{{ t('mrv_ds_col_status', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in ovdbr_rows %}
+      {% set v = r.values %}
+      <tr>
+        <td class="mono">{{ v.BDN_Number }}</td>
+        <td class="mono small">{{ v.Bunker_Delivery_Date }}</td>
+        <td class="mono small">{{ v.Bunker_Delivery_Time }}</td>
+        <td class="mono">{{ v.Bunker_Port }}</td>
+        <td>{{ v.Fuel_Type }}</td>
+        <td class="mono text-right">{{ v.Mass }}</td>
+        <td>
+          {% if r.included %}<span class="pill pill-ok">{{ t('mrv_ds_ok', lang) }}</span>
+          {% else %}<span class="pill pill-error" title="{{ r.exclusion_reason }}">{{ t('mrv_ds_excl', lang) }}</span>
+          <span class="small text-muted">{{ r.exclusion_reason }}</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-muted">{{ t('mrv_ds_empty', lang) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% else %}
+<section class="card"><p class="text-muted">{{ t('mrv_ds_no_vessel', lang) }}</p></section>
+{% endif %}
+{% endblock %}

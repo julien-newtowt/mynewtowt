@@ -135,7 +135,7 @@ pour chaque leg (`app/services/carbon.py` → `compute_carbon_for_leg`) :
 | Consommation DO (ME/AE/total) | somme des noon reports du leg (`total_consumption_t`, sinon moteurs) |
 | Distance berth-to-berth | `leg.distance_nm` (haversine) |
 | Cargo (B/L) | tonnage des bookings confirmés |
-| Facteur CO₂ DO | `do_co2_ef` (≈ 3,206 tCO₂/tDO, MEPC.391(81)) — éditable `/admin/co2` |
+| Facteur CO₂ DO | chaîne `co2.get_do_co2_factor` : `emission_factors` daté/courant (fuel MDO, écran `/admin/emission-factors`) → repli `co2_variables.do_co2_ef` (`/admin/co2`) → constante codée **3,206** tCO₂/tDO (MEPC.391(81)). Chaque étage est lu best-effort ; toute erreur retombe sur l'étage suivant |
 | CO₂ total / par mille / par tonne / par t·nm (EU MRV) | calculés et persistés dans `LegKPI` |
 
 - **Vue par leg** : `/mrv/legs/{leg_id}/carbon` (résultats CFOTE_09 calculés) ;
@@ -143,13 +143,22 @@ pour chaque leg (`app/services/carbon.py` → `compute_carbon_for_leg`) :
 - **KPI auto-alimentés** : `/kpi` calcule le `LegKPI` de **chaque** leg à
   l'ouverture (sauf KPI verrouillé `is_manual`). CO₂ émis + évité, DO consommé,
   intensité t·nm affichés par leg.
-- Exports MRV historiques conservés : **DNV CSV** (`/mrv/export/dnv.csv`) et
-  **Carbon Report texte** (`/mrv/export/carbon-report.txt`).
+- **Exports réglementaires (MRV v2)** : le CSV DNV 18 colonnes est **retiré**
+  (lot 14, décision Q3) — remplacé par les datasets **OVDLA** et **OVDBR** déposés
+  chez DNV (`/mrv/datasets`, formats `.xlsx` et `.csv`). Les anciennes routes
+  `/mrv/export/dnv.csv` et `/mrv/export/carbon-report.*` n'existent plus. Procédure :
+  `docs/operations/05-mrv-evenementiel-runbook.md`.
 
-> **Écart connu** : la granularité réservoir-par-réservoir et compteur moteur du
-> formulaire n'est pas modélisée (mesures opérationnelles) ; l'ERP calcule à
-> partir de la consommation agrégée des noon reports. Le xlsx reste la référence
-> de saisie terrain détaillée.
+> **MRV v2 (migrations 0096-0105)** : la granularité réservoir-par-réservoir et
+> compteur moteur du formulaire CFOTE_05 est désormais **modélisée** — relevés
+> `nav_event_engine_readings` (compteurs en litres bruts par moteur), cuves
+> `vessel_tanks`, soutages `bunker_operations`. Le Carbon Report généré
+> (`report_generation.py`) et le grand livre `emission_ledger` calculent depuis
+> ces événements ; le calcul agrégé depuis les noon reports legacy
+> (`carbon.compute_carbon_for_leg`) reste le **repli `legacy_noon`** pour les
+> voyages sans capture v2. Le xlsx reste la référence de saisie terrain.
+> Fonctionnement et règles de gestion :
+> `docs/strategy/REGLES_GESTION_DONNEES_EMISSIONS.md`.
 
 ---
 

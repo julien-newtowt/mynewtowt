@@ -1,0 +1,70 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('bunker_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">{{ t('bunker_kicker', lang) }}</span>
+    <h1 class="display">{{ t('bunker_title', lang) }}</h1>
+    <p class="text-muted">{{ vessel.name if vessel else t('bunker_no_vessel', lang) }}</p>
+  </div>
+  <a href="/onboard/bunkering/new{% if vessel %}?vessel_id={{ vessel.id }}{% endif %}" class="btn btn-primary">{{ t('bunker_new', lang) }}</a>
+</header>
+
+{% if vessels|length > 1 %}
+<div class="vessel-tabs mb-3">
+  {% for v in vessels %}
+  <a href="/onboard/bunkering?vessel_id={{ v.id }}" class="vessel-tab {% if vessel and vessel.id == v.id %}active{% endif %}">
+    <i data-lucide="ship"></i> {{ v.code }}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form method="get" action="/onboard/bunkering" class="flex gap-2 mb-3" style="flex-wrap:wrap; align-items:end;">
+  {% if vessel %}<input type="hidden" name="vessel_id" value="{{ vessel.id }}" />{% endif %}
+  <div class="field">
+    <label>{{ t('bunker_filter_status', lang) }}</label>
+    <select name="status">
+      <option value="">{{ t('bunker_filter_all', lang) }}</option>
+      {% for s in bunker_statuses %}
+      <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>{{ t('status_draft', lang) if s == 'brouillon' else t('bunker_status_valide_master', lang) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="btn btn-secondary btn-sm">{{ t('btn_filter', lang) }}</button>
+</form>
+
+<article class="card">
+  {% if bunkers %}
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead><tr>
+      <th>{{ t('bunker_col_bdn', lang) }}</th>
+      <th>{{ t('bunker_col_delivery', lang) }}</th>
+      <th>{{ t('bunker_col_port', lang) }}</th>
+      <th>{{ t('bunker_col_mass', lang) }}</th>
+      <th>{{ t('bunker_col_leg', lang) }}</th>
+      <th>{{ t('bunker_col_status', lang) }}</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      {% for b in bunkers %}
+      <tr>
+        <td class="mono">{{ b.bdn_number }}</td>
+        <td class="mono text-sm">{{ b.delivery_datetime_utc|datetime }}</td>
+        <td class="mono">{{ b.port_locode }}</td>
+        <td class="mono">{{ b.mass_t }} t</td>
+        <td class="mono">{% set l = leg_map.get(b.leg_id) %}{{ l.leg_code if l else '—' }}</td>
+        <td>
+          {% if b.status == 'valide_master' %}<span class="pill pill-ok">{{ t('bunker_status_valide_master', lang) }}</span>
+          {% else %}<span class="pill pill-neutral">{{ t('status_draft', lang) }}</span>{% endif %}
+        </td>
+        <td class="text-right"><a href="/onboard/bunkering/{{ b.id }}" class="btn btn-ghost btn-sm">{{ t('btn_view', lang) }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="text-muted">{{ t('bunker_empty_list', lang) }}</p>{% endif %}
+</article>
+{% endblock %}

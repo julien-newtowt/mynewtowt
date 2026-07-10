@@ -64,6 +64,69 @@ async def set_newtowt_agent(db: AsyncSession, enabled: bool, *, user_id: int | N
     _agent_cache["exp"] = time.monotonic() + _AGENT_CACHE_TTL_S
 
 
+# ─────────────────── Bascule capture événementielle (LOT 14) ──────────────────
+# ``mrv_v2_capture`` : la capture d'événements v2 (``/onboard/events``) remplace
+# la saisie noon legacy. **DÉFAUT ON GLOBAL** (flag absent ⇒ actif). Désactivable
+# **PAR NAVIRE** via ``audience.vessels_off`` (liste de codes navire et/ou d'ids)
+# pour le double-run inversé du pilote : un navire en opt-out garde l'ancien
+# formulaire noon actif. Lecture en cache court (le bord interroge la garde à
+# chaque saisie). **FAIL-OPEN vers ON** : une panne DB ne doit jamais rouvrir le
+# legacy en douce (ON = legacy bloqué = capture v2 imposée).
+MRV_V2_CAPTURE_KEY = "mrv_v2_capture"
+_CAPTURE_CACHE_TTL_S = 20.0
+_capture_cache: dict[str, tuple[float, bool]] = {}
+
+
+def _capture_vessel_key(vessel) -> str:
+    if vessel is None:
+        return "__none__"
+    return f"id:{getattr(vessel, 'id', None)}|code:{getattr(vessel, 'code', None)}"
+
+
+def reset_capture_v2_cache() -> None:
+    """Vide le cache de la garde de bascule (tests / après édition du flag)."""
+    _capture_cache.clear()
+
+
+async def capture_v2_enabled(db: AsyncSession, vessel, *, use_cache: bool = True) -> bool:
+    """La capture d'événements v2 est-elle active pour ce navire ?
+
+    - flag absent → ``True`` (défaut ON global) ;
+    - ``enabled=False`` → ``False`` (coupé globalement, tous navires en legacy) ;
+    - ``enabled=True`` + navire dans ``audience.vessels_off`` → ``False`` (opt-out
+      double-run) ; sinon ``True``.
+    Fail-open vers ``True`` si le flag est illisible (jamais rouvrir le legacy).
+    """
+    key = _capture_vessel_key(vessel)
+    now = time.monotonic()
+    if use_cache:
+        cached = _capture_cache.get(key)
+        if cached is not None and now < cached[0]:
+            return cached[1]
+    try:
+        flag = (
+            await db.execute(select(FeatureFlag).where(FeatureFlag.key == MRV_V2_CAPTURE_KEY))
+        ).scalar_one_or_none()
+        if flag is None:
+            value = True  # défaut ON global
+        elif not flag.enabled:
+            value = False  # coupé globalement
+        else:
+            audience = flag.audience or {}
+            off = audience.get("vessels_off") or []
+            codes_off = {str(x).strip().upper() for x in off}
+            ids_off = {str(x).strip() for x in off}
+            code = (getattr(vessel, "code", None) or "").upper() if vessel is not None else ""
+            vid = str(getattr(vessel, "id", "")) if vessel is not None else ""
+            opted_out = bool(code and code in codes_off) or bool(vid and vid in ids_off)
+            value = not opted_out
+    except Exception:  # fail-open : ne jamais rouvrir le legacy en douce sur erreur DB
+        value = True
+    if use_cache:
+        _capture_cache[key] = (now + _CAPTURE_CACHE_TTL_S, value)
+    return value
+
+
 def _bucket(identifier: str, flag_key: str) -> int:
     h = hashlib.sha256(f"{flag_key}:{identifier}".encode()).hexdigest()
     return int(h[:8], 16) % 100

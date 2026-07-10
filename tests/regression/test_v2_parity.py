@@ -401,24 +401,39 @@ def test_v2_pipedrive_deal_push_restored():
 # ───────────────────────────── MRV (V2 parité) ─────────────────────────────
 
 
-def test_v2_mrv_routes_restored():
-    """V2 : edit/delete event, export DNV, Carbon Report PDF, params."""
+def test_v2_mrv_routes_decommissioned_lot14():
+    """LOT 14 — les routes legacy V2 restaurées jadis sont RETIRÉES à la bascule.
+
+    Décision client (GO) : le CRUD manuel ``mrv_events``, l'export CSV DNV et
+    l'écran ``/params`` disparaissent ; la capture d'événements v2 + les datasets
+    OVDLA/OVDBR sont la voie unique. Les ``mrv_events`` restent en archive
+    lecture seule (``/mrv/archive/events``). Ce test remplace l'ancien
+    ``test_v2_mrv_routes_restored`` (obsolété par le décommissionnement).
+    """
     from app.routers.mrv_router import router
 
     m = _methods(router)
-    assert ("POST", "/mrv/events/{event_id}/edit") in m  # MRV-03
-    assert ("POST", "/mrv/events/{event_id}/delete") in m
-    assert ("GET", "/mrv/export/dnv.csv") in m  # MRV-01
-    assert ("GET", "/mrv/export/carbon-report.pdf") in m  # MRV-02
-    assert ("POST", "/mrv/params") in m  # MRV-06
+    paths = _paths(router)
+    # Retirés (CRUD MRVEvent, exports legacy, params) :
+    assert ("POST", "/mrv/legs/{leg_id}/events") not in m
+    assert ("POST", "/mrv/events/{event_id}/edit") not in m
+    assert ("POST", "/mrv/events/{event_id}/delete") not in m
+    assert ("GET", "/mrv/export/dnv.csv") not in m
+    assert ("GET", "/mrv/export/carbon-report.pdf") not in m
+    assert ("POST", "/mrv/params") not in m
+    assert "/mrv/legs/{leg_id}" not in paths  # détail legacy retiré
+    # Voie unique + archive :
+    assert "/mrv/archive/events" in paths
+    assert "/mrv/datasets" in paths
 
 
-def test_v2_dnv_export_is_18_columns():
-    """MRV-01 : l'export DNV Veracity a bien 18 colonnes nommées."""
-    from app.services.mrv_export import DNV_18_HEADERS
+def test_v2_dnv_18col_export_removed_lot14():
+    """LOT 14 (Q3) — l'export CSV DNV 18 colonnes est RETIRÉ (OVDLA/OVDBR unique)."""
+    import app.services.mrv_export as me
 
-    assert len(DNV_18_HEADERS) == 18
-    assert DNV_18_HEADERS[0] == "IMO"
+    assert not hasattr(me, "DNV_18_HEADERS")
+    assert not hasattr(me, "dnv_csv_18")
+    assert not hasattr(me, "build_dnv_rows")
 
 
 def test_v2_mrv_do_counters_present():
@@ -470,11 +485,11 @@ def test_v2_mrv_multirule_quality_restored():
     validate_event(cur, prev, density=Decimal("0.845"), deviation=Decimal("2"))
     assert cur.quality_status == "error"
     assert "baisse" in (cur.quality_notes or "")
-    # Le blocage qualité (export Carbon Report) s'appuie sur ce statut error.
-    from pathlib import Path
-
-    mrv_src = Path("app/routers/mrv_router.py").read_text(encoding="utf-8")
-    assert 'quality_status == "error"' in mrv_src
+    # LOT 14 — le moteur qualité legacy (``mrv_compute``) reste importable pour
+    # l'archive et le chemin inerte de ``mrv_sync`` ; l'ancien blocage porté par
+    # l'export Carbon Report legacy a disparu (route retirée). Le contrôle qualité
+    # vivant est désormais le moteur de règles v2 (``QualityCheckResult``,
+    # écran ``/mrv/qualite``, lot 8) — hors périmètre de cette parité V2.
 
 
 # ───────────────────────────── Commercial (V2 parité) ────────────────────────
@@ -993,17 +1008,24 @@ def test_v2_claims_insurance_exposure_restored():
 
 
 def test_v2_mrv_editable_params_drive_quality():
-    """MRV-06 : densité MDO + seuil de déviation éditables (UI) pilotent la qualité."""
+    """MRV-06 : densité MDO + seuil de déviation éditables pilotent la qualité.
+
+    LOT 14 — l'écran legacy ``/mrv/params`` (MRVParameter) est RETIRÉ : la
+    configuration des seuils vit désormais dans le moteur de règles v2
+    (``/mrv/parametres`` : ``validation_rule_thresholds``, override par navire).
+    Les résolveurs canoniques legacy restent importables (archive + chemin
+    inerte de ``mrv_sync``) ; le paramétrage vivant passe par l'écran v2.
+    """
     from app.routers.mrv_router import router
     from app.services.mrv_compute import resolve_density, resolve_deviation
 
-    # UI d'édition des paramètres MRV présente (form GET + save POST).
     m = _methods(router)
-    assert ("GET", "/mrv/params") in m and ("POST", "/mrv/params") in m
-    # Résolveurs canoniques des paramètres éditables (densité + seuil déviation).
+    paths = _paths(router)
+    # Écran legacy retiré ; écran de paramétrage v2 présent.
+    assert ("GET", "/mrv/params") not in m and ("POST", "/mrv/params") not in m
+    assert "/mrv/parametres" in paths
+    # Résolveurs canoniques des paramètres legacy toujours importables (archive).
     assert callable(resolve_density) and callable(resolve_deviation)
-    # Le contrôle qualité du chemin de sync s'appuie bien sur ces résolveurs
-    # (le comportement « seuil éditable → statut » est couvert en intégration).
 
 
 def test_v2_stowage_capacity_format_stacking_restored():

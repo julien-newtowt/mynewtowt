@@ -38,6 +38,7 @@ var PRECACHE = [
   "/static/js/pwa-onboard.js",
   "/static/js/onboard-offline.js",
   "/static/js/onboard-idb.js",
+  "/static/js/event-autosave.js",
   "/static/img/logo_NEWTOWT_web_white.png",
   "/static/offline.html"
 ];

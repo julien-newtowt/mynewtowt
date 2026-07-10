@@ -27,6 +27,24 @@
   <button type="button" class="btn btn-ghost" disabled title="Bientôt disponible"><i data-lucide="leaf"></i> Saisir carbon report (prochainement)</button>
 </div>
 <div class="grid grid-2 gap-4">
+  {# LOT 14 — bascule : navire à capture v2 active → l'ancien formulaire noon
+     est gelé (renvoi vers la déclaration d'événements). Le journal de quart
+     ci-dessous reste disponible. Navire en opt-out (double-run) → formulaire
+     noon legacy intact. La garde serveur (409 sur POST) double celle-ci. #}
+  {% if capture_v2 %}
+  <article class="card" id="noon-form">
+    <div class="flex justify-between items-center">
+      <h2 style="margin:0;">Saisir un noon report</h2>
+    </div>
+    <div class="alert alert-info mt-3" role="status">
+      <strong>{{ t('mrv_bascule_noon_frozen_title', lang) }}</strong> —
+      {{ t('mrv_bascule_noon_frozen_body', lang) }}
+    </div>
+    <a href="/onboard/events/new/noon?leg_id={{ leg.id }}" class="btn btn-primary mt-2">
+      <i data-lucide="clipboard-list"></i> {{ t('mrv_bascule_goto_events', lang) }}
+    </a>
+  </article>
+  {% else %}
   <article class="card" id="noon-form">
     <div class="flex justify-between items-center">
       <h2 style="margin:0;">Saisir un noon report</h2>
@@ -204,6 +222,7 @@
       <button type="submit" class="btn btn-primary mt-3">Enregistrer</button>
     </form>
   </article>
+  {% endif %}
 
   <article class="card" id="watch-form">
     <h2>Saisir une entrée de quart</h2>

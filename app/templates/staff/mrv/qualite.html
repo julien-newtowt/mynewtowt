@@ -1,0 +1,182 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('mrv_qual_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+{% set sev_pill = {'bloquant': 'pill-error', 'warning': 'pill-warn', 'info': 'pill-info'} %}
+<a href="/mrv" class="btn btn-ghost mb-3">{{ t('btn_back', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">{{ t('mrv_qual_kicker', lang) }}</span>
+  <h1 class="display">{{ t('mrv_qual_title', lang) }}</h1>
+  <p class="text-muted">{{ t('mrv_qual_intro', lang) }}</p>
+</header>
+
+{# ─────────────────────── Compteurs de fails par sévérité ─────────────────────── #}
+<div class="grid grid-3 gap-3 mb-4">
+  <div class="kpi-card">
+    <div class="label">{{ t('mrv_qual_sev_bloquant', lang) }}</div>
+    <div class="value{% if severity_counts.get('bloquant') %} text-error{% endif %}">{{ severity_counts.get('bloquant', 0) }}</div>
+    <div class="delta text-muted">{{ t('mrv_qual_fails_suffix', lang) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('mrv_qual_sev_warning', lang) }}</div>
+    <div class="value">{{ severity_counts.get('warning', 0) }}</div>
+    <div class="delta text-muted">{{ t('mrv_qual_fails_suffix', lang) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('mrv_qual_sev_info', lang) }}</div>
+    <div class="value">{{ severity_counts.get('info', 0) }}</div>
+    <div class="delta text-muted">{{ t('mrv_qual_fails_suffix', lang) }}</div>
+  </div>
+</div>
+
+{# ─────────────────────────────── Filtres ─────────────────────────────── #}
+<form method="get" action="/mrv/qualite" class="card mb-3 grid grid-4 gap-2" style="align-items:end;">
+  <div class="field">
+    <label>{{ t('mrv_qual_filter_rule', lang) }}</label>
+    <select name="rule">
+      <option value="">{{ t('mrv_qual_filter_all', lang) }}</option>
+      {% for r in rules %}
+      <option value="{{ r.rule_id }}" {% if filter_rule == r.rule_id %}selected{% endif %}>{{ r.rule_id }} — {{ r.domain }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>{{ t('mrv_qual_filter_severity', lang) }}</label>
+    <select name="severity">
+      <option value="">{{ t('mrv_qual_filter_all', lang) }}</option>
+      {% for s in ('bloquant', 'warning', 'info') %}
+      <option value="{{ s }}" {% if filter_severity == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>{{ t('mrv_qual_filter_vessel', lang) }}</label>
+    <select name="vessel_id">
+      <option value="">{{ t('mrv_qual_filter_all', lang) }}</option>
+      {% for v in vessels %}
+      <option value="{{ v.id }}" {% if filter_vessel_id == v.id %}selected{% endif %}>{{ v.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>{{ t('mrv_qual_filter_result', lang) }}</label>
+    <select name="result">
+      <option value="">{{ t('mrv_qual_filter_all', lang) }}</option>
+      <option value="fail" {% if filter_result == 'fail' %}selected{% endif %}>{{ t('mrv_qual_result_fail', lang) }}</option>
+      <option value="pass" {% if filter_result == 'pass' %}selected{% endif %}>{{ t('mrv_qual_result_pass', lang) }}</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>{{ t('mrv_qual_filter_leg', lang) }}</label>
+    <input type="number" name="leg_id" min="1" value="{{ filter_leg_id if filter_leg_id is not none else '' }}" />
+  </div>
+  <div class="field">
+    <label>{{ t('mrv_qual_filter_period', lang) }}</label>
+    <div class="flex gap-1">
+      <input type="date" name="date_from" value="{{ filter_date_from }}" />
+      <input type="date" name="date_to" value="{{ filter_date_to }}" />
+    </div>
+  </div>
+  <div><button type="submit" class="btn btn-secondary btn-sm">{{ t('btn_filter', lang) }}</button></div>
+</form>
+
+{# ─────────────────── Resets compteur en attente (R10) ─────────────────── #}
+{% if pending_resets %}
+<section class="card mb-3">
+  <h2 class="h4">{{ t('mrv_qual_resets_title', lang) }} <span class="pill pill-warn">{{ pending_resets|length }}</span></h2>
+  <p class="text-muted">{{ t('mrv_qual_resets_intro', lang) }}</p>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead><tr>
+      <th>{{ t('mrv_qual_col_reading', lang) }}</th>
+      <th>{{ t('mrv_qual_col_event', lang) }}</th>
+      <th>{{ t('mrv_qual_col_engine', lang) }}</th>
+      <th>{{ t('mrv_qual_col_counter', lang) }}</th>
+      {% if can_act %}<th></th>{% endif %}
+    </tr></thead>
+    <tbody>
+      {% for rd in pending_resets %}
+      <tr>
+        <td><code>#{{ rd.id }}</code></td>
+        <td>#{{ rd.event_id }}</td>
+        <td>#{{ rd.engine_id }}</td>
+        <td>{{ rd.fuel_counter_l or '—' }} L</td>
+        {% if can_act %}
+        <td>
+          <form method="post" action="/mrv/qualite/engine-readings/{{ rd.id }}/confirm-reset">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-primary btn-sm">{{ t('mrv_qual_confirm_reset_btn', lang) }}</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+{# ─────────────────────────────── Journal ─────────────────────────────── #}
+<article class="card">
+  <h2 class="h4">{{ t('mrv_qual_journal_title', lang) }} <span class="pill pill-neutral">{{ rows|length }}</span></h2>
+  {% if rows %}
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead><tr>
+      <th>{{ t('mrv_qual_col_date', lang) }}</th>
+      <th>{{ t('mrv_qual_col_rule', lang) }}</th>
+      <th>{{ t('mrv_qual_col_severity', lang) }}</th>
+      <th>{{ t('mrv_qual_col_result', lang) }}</th>
+      <th>{{ t('mrv_qual_col_subject', lang) }}</th>
+      <th>{{ t('mrv_qual_col_leg', lang) }}</th>
+      <th>{{ t('mrv_qual_col_message', lang) }}</th>
+      <th>{{ t('mrv_qual_col_actions', lang) }}</th>
+    </tr></thead>
+    <tbody>
+      {% for row in rows %}
+      {% set q = row.qcr %}
+      <tr>
+        <td class="text-muted" style="white-space:nowrap;">{{ q.executed_at|datetime }}</td>
+        <td><code>{{ q.rule_id }}</code></td>
+        <td><span class="pill {{ sev_pill.get(q.severity_applied, 'pill-neutral') }}">{{ q.severity_applied or '—' }}</span></td>
+        <td>
+          {% if q.result == 'fail' %}<span class="pill pill-error">{{ t('mrv_qual_result_fail', lang) }}</span>
+          {% else %}<span class="pill pill-success">{{ t('mrv_qual_result_pass', lang) }}</span>{% endif %}
+        </td>
+        <td class="text-muted"><code>{{ q.subject_type }}{% if q.subject_id %}#{{ q.subject_id }}{% endif %}</code></td>
+        <td>
+          {% if row.leg %}<code>{{ row.leg.leg_code }}</code>
+            {% if row.vessel %}<span class="text-muted">· {{ row.vessel.name }}</span>{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td style="max-width:30rem;">{{ q.message or '—' }}</td>
+        <td style="white-space:nowrap;">
+          {% if q.result == 'fail' %}
+            {% if q.acknowledged_at %}
+              <span class="pill pill-success">{{ t('mrv_qual_acked', lang) }}</span>
+            {% elif can_act %}
+              <form method="post" action="/mrv/qualite/{{ q.id }}/acknowledge" style="display:inline;">
+                <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                <button type="submit" class="btn btn-ghost btn-sm">{{ t('mrv_qual_ack_btn', lang) }}</button>
+              </form>
+            {% endif %}
+            {% if can_act and row.reading_ids %}
+              {% for rid in row.reading_ids %}
+              <form method="post" action="/mrv/qualite/engine-readings/{{ rid }}/confirm-reset" style="display:inline;">
+                <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                <button type="submit" class="btn btn-secondary btn-sm">{{ t('mrv_qual_confirm_reset_btn', lang) }}</button>
+              </form>
+              {% endfor %}
+            {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="text-muted">{{ t('mrv_qual_empty', lang) }}</p>
+  {% endif %}
+</article>
+{% endblock %}
