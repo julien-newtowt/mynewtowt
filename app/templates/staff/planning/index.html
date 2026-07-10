@@ -44,6 +44,41 @@
   {% endif %}
 </div>
 
+<section class="grid grid-4 gap-3 mb-3">
+  <div class="stat-card">
+    <span class="kicker">Respect calendrier</span>
+    <strong style="font-size:var(--text-2xl);">{{ planning_kpis.calendar_respect_pct }} %</strong>
+    <small class="text-muted">{{ planning_kpis.total_legs }} leg(s) sur {{ selected_year }}</small>
+  </div>
+  <div class="stat-card">
+    <span class="kicker">En navigation</span>
+    <strong style="font-size:var(--text-2xl);">{{ planning_kpis.in_navigation }}</strong>
+    <small class="text-muted">ATD posé ou statut en cours</small>
+  </div>
+  <div class="stat-card">
+    <span class="kicker">Retards</span>
+    <strong style="font-size:var(--text-2xl);">{{ planning_kpis.delayed_legs }}</strong>
+    <small class="text-muted">max {{ planning_kpis.max_delay_hours }} h · moy. {{ planning_kpis.average_delay_hours }} h</small>
+  </div>
+  <div class="stat-card">
+    <span class="kicker">Incohérences</span>
+    <strong style="font-size:var(--text-2xl);">{{ planning_kpis.critical_issues }}</strong>
+    <small class="text-muted">{{ planning_kpis.warning_issues }} alerte(s) à surveiller</small>
+  </div>
+</section>
+
+{% set critical_issues = planning_issues | selectattr("severity", "equalto", "critical") | list %}
+{% if critical_issues %}
+<div class="alert alert-error mb-3">
+  <strong>{{ critical_issues|length }} incohérence(s) bloquante(s)</strong>
+  <ul style="margin:var(--space-1) 0 0 var(--space-4);">
+    {% for issue in critical_issues[:5] %}
+      <li class="text-sm">{{ issue.message }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {% if continuity_alerts %}
 <div class="alert alert-warn mb-3">
   <strong>⚠ Ruptures de continuité géographique</strong>

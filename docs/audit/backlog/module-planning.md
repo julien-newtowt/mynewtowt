@@ -77,3 +77,28 @@ Cible V3 : `app/routers/{planning_router,scenario_router}.py`, `app/models/{plan
 Scénarios what‑if (drag‑drop Gantt, comparaison au réel) · validation d'intégrité renforcée ·
 conflits serveur sur intervalles · cascade élargie (escale/dockers/notif clients) · jours
 ouvrés portuaires · création depuis carte · partage avec période/expiration/compteur.
+
+---
+
+## Audit 2026-07 — règles NEWTOWT V3
+
+Constats traités dans cette passe :
+- La distance de planning est désormais persistée à la création/édition du leg
+  selon `orthodromie × coefficient d'élongation`, avec repli sur les paramètres
+  navire quand le champ leg est vide.
+- Le recalcul aval tient compte de la disponibilité du navire après escale
+  (`ETA + port_stay_planned_hours`) et pas seulement de l'ETA/ETD du leg.
+- La vue planning actif expose des indicateurs manager : respect calendrier,
+  legs en navigation, retards, incohérences critiques et warnings.
+- Les scénarios clonés peuvent être appliqués au planning actif via une action
+  explicite, bloquée si les labels ne correspondent pas à des `leg_code` réels
+  ou si des incohérences subsistent.
+
+Écarts encore structurels :
+- L'escale commerciale/technique n'est pas une entité planning indépendante :
+  elle reste modélisée par `port_stay_planned_hours` + opérations escale.
+- Le planning actif est toujours implicite : table `legs` = référence ERP. Une
+  vraie version `active_plan` demanderait une migration fonctionnelle.
+- L'historisation existe (`activity_logs`, `schedule_revisions`) mais pas encore
+  comme journal métier complet avant/après/cause/impacts consultable depuis la
+  fiche planning.

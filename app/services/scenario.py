@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import io
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,12 +30,21 @@ from app.services.geo import leg_trade_category
 from app.services.planning import (
     MAX_PLAUSIBLE_SPEED_KN,
     InvalidLegDates,
+    compute_effective_distance_nm,
+    renumber_vessel_year,
     validate_dates,
 )
 
 
 class ScenarioError(Exception):
     """Erreur métier scénario."""
+
+
+@dataclass(frozen=True)
+class ScenarioApplyResult:
+    updated_legs: int
+    changed_legs: int
+    renumbered: list[tuple[int, str, str]]
 
 
 # ---------------------------------------------------------------------------
@@ -507,6 +517,146 @@ async def compare_to_real(
         real_legs=len(real_legs),
         scenario_sea_days=_sea_days(in_window),
         real_sea_days=_sea_days(real_legs),
+    )
+
+
+async def apply_to_active_planning(
+    db: AsyncSession,
+    scenario: PlanningScenario,
+    *,
+    user_id: int | None = None,
+    user_name: str | None = None,
+) -> ScenarioApplyResult:
+    """Applique un scénario cloné au planning actif (`legs`).
+
+    Garde-fous :
+      - scénario non archivé ;
+      - chaque ScenarioLeg doit porter un label correspondant à un leg_code réel ;
+      - aucun avertissement de cohérence sur le scénario complet ;
+      - prévalidation complète avant la première écriture.
+    """
+    if scenario.status == "archived":
+        raise ScenarioError("Un scénario archivé ne peut pas être appliqué au planning actif.")
+
+    legs = await list_scenario_legs(db, scenario.id)
+    if not legs:
+        raise ScenarioError("Le scénario ne contient aucune traversée à appliquer.")
+
+    labels = [(leg.label or "").strip() for leg in legs]
+    if any(not label for label in labels):
+        raise ScenarioError(
+            "Chaque traversée doit porter le code du leg réel à mettre à jour."
+        )
+    duplicates = {label for label in labels if labels.count(label) > 1}
+    if duplicates:
+        raise ScenarioError("Labels dupliqués dans le scénario : " + ", ".join(sorted(duplicates)))
+
+    real_legs = {
+        leg.leg_code: leg
+        for leg in (await db.execute(select(Leg).where(Leg.leg_code.in_(labels)))).scalars().all()
+    }
+    missing = sorted(set(labels) - set(real_legs))
+    if missing:
+        raise ScenarioError(
+            "Application impossible : aucun leg actif ne correspond à "
+            + ", ".join(missing)
+        )
+
+    port_ids = {leg.departure_port_id for leg in legs} | {leg.arrival_port_id for leg in legs}
+    ports = (
+        {
+            p.id: p
+            for p in (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()
+        }
+        if port_ids
+        else {}
+    )
+    warnings = scenario_warnings(legs, ports)
+    if warnings:
+        raise ScenarioError(
+            "Le scénario contient encore des incohérences : " + " | ".join(warnings[:5])
+        )
+
+    # Prévalidation dure : dates et ports identiques.
+    for sc_leg in legs:
+        _validate_leg_inputs(
+            departure_port_id=sc_leg.departure_port_id,
+            arrival_port_id=sc_leg.arrival_port_id,
+            etd=sc_leg.etd,
+            eta=sc_leg.eta,
+        )
+
+    from app.services import schedule_history
+
+    batch_id = uuid.uuid4().hex[:12]
+    changed = 0
+    touched_pairs: set[tuple[int, int]] = set()
+    for sc_leg in sorted(legs, key=lambda li: li.etd):
+        label = (sc_leg.label or "").strip()
+        real = real_legs[label]
+        old_etd, old_eta = real.etd, real.eta
+        old_vessel, old_year = real.vessel_id, real.etd.year
+        fields_changed = (
+            real.vessel_id != sc_leg.vessel_id
+            or real.departure_port_id != sc_leg.departure_port_id
+            or real.arrival_port_id != sc_leg.arrival_port_id
+            or real.etd != sc_leg.etd
+            or real.eta != sc_leg.eta
+            or real.port_stay_planned_hours != sc_leg.port_stay_planned_hours
+            or real.transit_speed_kn != sc_leg.transit_speed_kn
+            or real.elongation_coef != sc_leg.elongation_coef
+        )
+        if not fields_changed:
+            continue
+
+        real.vessel_id = sc_leg.vessel_id
+        real.departure_port_id = sc_leg.departure_port_id
+        real.arrival_port_id = sc_leg.arrival_port_id
+        etd_delta = sc_leg.etd - real.etd
+        real.etd = sc_leg.etd
+        real.eta = sc_leg.eta
+        if real.booking_close_at and etd_delta:
+            real.booking_close_at = real.booking_close_at + etd_delta
+        real.port_stay_planned_hours = sc_leg.port_stay_planned_hours
+        real.transit_speed_kn = sc_leg.transit_speed_kn
+        real.elongation_coef = sc_leg.elongation_coef
+        vessel = await db.get(Vessel, real.vessel_id)
+        effective_elongation = (
+            real.elongation_coef
+            if real.elongation_coef is not None
+            else (vessel.default_elongation if vessel else None)
+        )
+        real.distance_nm = await compute_effective_distance_nm(
+            db,
+            departure_port_id=real.departure_port_id,
+            arrival_port_id=real.arrival_port_id,
+            elongation_coef=effective_elongation,
+        )
+        await schedule_history.record(
+            db,
+            leg=real,
+            old_etd=old_etd,
+            new_etd=real.etd,
+            old_eta=old_eta,
+            new_eta=real.eta,
+            source="scenario_apply",
+            batch_id=batch_id,
+            user_id=user_id,
+            user_name=user_name,
+        )
+        touched_pairs.add((old_vessel, old_year))
+        touched_pairs.add((real.vessel_id, real.etd.year))
+        changed += 1
+
+    await db.flush()
+    renumbered: list[tuple[int, str, str]] = []
+    for vessel_id, year in sorted(touched_pairs):
+        renumbered += await renumber_vessel_year(db, vessel_id, year)
+    await db.flush()
+    return ScenarioApplyResult(
+        updated_legs=len(legs),
+        changed_legs=changed,
+        renumbered=renumbered,
     )
 
 

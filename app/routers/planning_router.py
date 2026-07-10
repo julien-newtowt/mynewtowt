@@ -24,6 +24,7 @@ from app.services.geo import leg_trade_category
 from app.services.planning import (
     InvalidLegDates,
     PlanningError,
+    audit_planning_sequence,
     closed_weekdays_for_port,
     continuity_warnings,
     create_leg,
@@ -37,6 +38,7 @@ from app.services.planning import (
     next_working_departure,
     parse_form_datetime,
     revoke_share,
+    schedule_kpis,
     update_leg,
 )
 from app.templating import templates
@@ -105,6 +107,8 @@ async def gantt_index(
     # on l'affiche en bandeau plutôt que de le laisser invisible.
     vessels_by_id = {v.id: v for v in vessels}
     continuity_alerts = continuity_warnings(legs, ports, vessels_by_id)
+    planning_issues = audit_planning_sequence(legs, ports=ports, vessels=vessels_by_id)
+    planning_kpis = schedule_kpis(legs, planning_issues)
 
     # Build Gantt rows (one per vessel) with positioned bars
     gantt_rows = _build_gantt_rows(
@@ -151,6 +155,8 @@ async def gantt_index(
             "window_end_ms": int(window_end.timestamp() * 1000),
             "conflict_count": len(conflicts),
             "continuity_alerts": continuity_alerts,
+            "planning_issues": planning_issues,
+            "planning_kpis": planning_kpis,
             # Drag-drop : purement cosmétique côté template (le serveur
             # ré-applique require_permission sur /legs/{id}/move).
             "can_move": has_permission(user.role, "planning", "M"),

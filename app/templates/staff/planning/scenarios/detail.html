@@ -27,14 +27,22 @@
     {% if scenario.description %}<p class="text-muted">{{ scenario.description }}</p>{% endif %}
   </div>
   <div class="flex gap-2">
+    {% if scenario.status != 'archived' %}
+    <form method="post" action="/planning/scenarios/{{ scenario.id }}/apply"
+          onsubmit="return confirm('Appliquer ce scénario au planning actif ? Les legs réels portant les mêmes codes seront mis à jour.');">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-secondary">Appliquer au planning actif</button>
+    </form>
+    {% endif %}
     <a href="/planning/scenarios/{{ scenario.id }}/export.csv" class="btn btn-ghost">⬇ Export CSV</a>
     <a href="/planning/scenarios/{{ scenario.id }}/legs/new" class="btn btn-primary">+ Traversée</a>
   </div>
 </header>
 
 <div class="alert alert-info mb-4">
-  <strong>Outil consultatif :</strong> ce scénario est totalement isolé — modifier ou supprimer
-  ses traversées n'a <strong>aucun impact</strong> sur la planification en cours.
+  <strong>Prévisionnel :</strong> ce scénario reste isolé tant qu'il n'est pas appliqué.
+  L'application au planning actif est bloquée si une traversée n'est pas rattachée à un leg réel
+  ou si une incohérence subsiste.
 </div>
 
 {% if warnings %}

@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -121,6 +121,71 @@ class CascadeReport:
     @property
     def delta_hours(self) -> float:
         return self.delta.total_seconds() / 3600.0
+
+
+@dataclass(frozen=True)
+class PlanningIssue:
+    severity: str
+    code: str
+    message: str
+    leg_id: int | None = None
+    vessel_id: int | None = None
+
+
+@dataclass(frozen=True)
+class ScheduleKpi:
+    total_legs: int
+    delayed_legs: int
+    critical_issues: int
+    warning_issues: int
+    in_navigation: int
+    max_delay_hours: float
+    average_delay_hours: float
+    calendar_respect_pct: float
+
+
+async def _resolved_navigation_params(
+    db: AsyncSession,
+    *,
+    vessel_id: int,
+    transit_speed_kn: float | None,
+    elongation_coef: float | None,
+) -> tuple[float | None, float | None]:
+    from app.models.vessel import Vessel
+
+    vessel = await db.get(Vessel, vessel_id)
+    if vessel is None:
+        return transit_speed_kn, elongation_coef
+    speed = transit_speed_kn if transit_speed_kn is not None else vessel.default_speed_kn
+    elongation = elongation_coef if elongation_coef is not None else vessel.default_elongation
+    return speed, elongation
+
+
+async def compute_effective_distance_nm(
+    db: AsyncSession,
+    *,
+    departure_port_id: int,
+    arrival_port_id: int,
+    elongation_coef: float | None,
+) -> Decimal | None:
+    """Distance de planning POL→POD : orthodromie × coefficient d'élongation."""
+    from app.models.port import Port
+    from app.services.ports import haversine_nm
+
+    pol = await db.get(Port, departure_port_id)
+    pod = await db.get(Port, arrival_port_id)
+    if (
+        not pol
+        or not pod
+        or pol.latitude is None
+        or pol.longitude is None
+        or pod.latitude is None
+        or pod.longitude is None
+    ):
+        return None
+    nm = haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude)
+    effective = Decimal(str(nm * (elongation_coef or 1.0)))
+    return effective.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +487,13 @@ async def create_leg(
     if departure_port_id == arrival_port_id:
         raise InvalidLegDates("Departure and arrival ports must differ")
 
+    resolved_speed, resolved_elongation = await _resolved_navigation_params(
+        db,
+        vessel_id=vessel_id,
+        transit_speed_kn=transit_speed_kn,
+        elongation_coef=elongation_coef,
+    )
+
     # Contrôles d'intégrité : chevauchement navire, continuité ports,
     # cohérence vitesse/distance (lève PlanningError si violation dure).
     await validate_leg_schedule(
@@ -431,8 +503,8 @@ async def create_leg(
         arrival_port_id=arrival_port_id,
         etd=etd,
         eta=eta,
-        transit_speed_kn=transit_speed_kn,
-        elongation_coef=elongation_coef,
+        transit_speed_kn=resolved_speed,
+        elongation_coef=resolved_elongation,
     )
 
     # Auto-cloture des réservations à ETD - 48h si non précisé par le staff.
@@ -463,6 +535,13 @@ async def create_leg(
             raise PlanningError("Invalid vessel/port references")
         leg_code = f"~new{uuid.uuid4().hex[:8]}"
 
+    distance_nm = await compute_effective_distance_nm(
+        db,
+        departure_port_id=departure_port_id,
+        arrival_port_id=arrival_port_id,
+        elongation_coef=resolved_elongation,
+    )
+
     leg = Leg(
         leg_code=leg_code,
         vessel_id=vessel_id,
@@ -480,6 +559,7 @@ async def create_leg(
         transit_speed_kn=transit_speed_kn,
         elongation_coef=elongation_coef,
         port_stay_planned_hours=port_stay_planned_hours,
+        distance_nm=distance_nm,
     )
     db.add(leg)
     await db.flush()
@@ -607,17 +687,32 @@ async def update_leg(
     new_vessel_id = vessel_id if vessel_id is not None else leg.vessel_id
     new_pol_id = departure_port_id if departure_port_id is not None else leg.departure_port_id
     new_pod_id = arrival_port_id if arrival_port_id is not None else leg.arrival_port_id
+    new_stay = (
+        port_stay_planned_hours
+        if port_stay_planned_hours is not None
+        else leg.port_stay_planned_hours
+    )
     if new_pol_id == new_pod_id:
         raise InvalidLegDates("Departure and arrival ports must differ")
 
     old_etd = ensure_utc(leg.etd)
     old_eta = ensure_utc(leg.eta)
+    old_stay = leg.port_stay_planned_hours
+    old_ready_at = old_eta + timedelta(hours=old_stay or DEFAULT_PORT_STAY_HOURS)
+    new_ready_at = new_eta + timedelta(hours=new_stay or DEFAULT_PORT_STAY_HOURS)
     old_vessel_id = leg.vessel_id
     old_year = leg.etd.year
     delta = new_etd - old_etd
     dates_changed = (new_etd != old_etd) or (new_eta != old_eta)
+    ready_changed = new_ready_at != old_ready_at
     vessel_changed = new_vessel_id != old_vessel_id
-    do_cascade = cascade and dates_changed and not vessel_changed
+    do_cascade = cascade and (dates_changed or ready_changed) and not vessel_changed
+    resolved_speed, resolved_elongation = await _resolved_navigation_params(
+        db,
+        vessel_id=new_vessel_id,
+        transit_speed_kn=(transit_speed_kn if transit_speed_kn is not None else leg.transit_speed_kn),
+        elongation_coef=(elongation_coef if elongation_coef is not None else leg.elongation_coef),
+    )
 
     # ── 1. Simulation de la cascade (état final) ──────────────────────
     moved_ids: set[int] = set()
@@ -625,7 +720,7 @@ async def update_leg(
         lane = await _lane_after(
             db, vessel_id=new_vessel_id, after_etd=old_etd, exclude_leg_id=leg.id
         )
-        planned = plan_downstream_shifts(lane, delta=delta, source_eta=new_eta)
+        planned = plan_downstream_shifts(lane, delta=delta, source_eta=new_ready_at)
         moved_ids = {
             lg.id for lg in lane if planned[lg.id] != (ensure_utc(lg.etd), ensure_utc(lg.eta))
         }
@@ -638,10 +733,8 @@ async def update_leg(
         arrival_port_id=new_pod_id,
         etd=new_etd,
         eta=new_eta,
-        transit_speed_kn=(
-            transit_speed_kn if transit_speed_kn is not None else leg.transit_speed_kn
-        ),
-        elongation_coef=(elongation_coef if elongation_coef is not None else leg.elongation_coef),
+        transit_speed_kn=resolved_speed,
+        elongation_coef=resolved_elongation,
         exclude_leg_id=leg.id,
         ignore_overlap_leg_ids=moved_ids,
     )
@@ -673,6 +766,12 @@ async def update_leg(
         leg.elongation_coef = elongation_coef
     if port_stay_planned_hours is not None:
         leg.port_stay_planned_hours = port_stay_planned_hours
+    leg.distance_nm = await compute_effective_distance_nm(
+        db,
+        departure_port_id=leg.departure_port_id,
+        arrival_port_id=leg.arrival_port_id,
+        elongation_coef=resolved_elongation,
+    )
     await db.flush()
 
     # ── 4. Historisation + cascade effective ──────────────────────────
@@ -701,6 +800,8 @@ async def update_leg(
             leg,
             old_etd=old_etd,
             old_eta=old_eta,
+            old_ready_at=old_ready_at,
+            source_ready_at=new_ready_at,
             source=source,
             batch_id=batch_id,
             actor_id=actor_id,
@@ -724,7 +825,10 @@ async def update_leg(
     # CascadeReport.impacted_leg_ids = legs AVAL décalés (hors leg source).
     downstream_ids = [lid for lid in summary.get("impacted_leg_ids", []) if lid != leg.id]
     return CascadeReport(
-        leg_id=leg.id, delta=delta, impacted_leg_ids=downstream_ids, renumbered=renumbered
+        leg_id=leg.id,
+        delta=(new_ready_at - old_ready_at),
+        impacted_leg_ids=downstream_ids,
+        renumbered=renumbered,
     )
 
 
@@ -1017,6 +1121,127 @@ def continuity_warnings(
                     f"(départ {getattr(pol, 'locode', '?')})."
                 )
     return warnings
+
+
+def audit_planning_sequence(
+    legs: Sequence[Leg],
+    *,
+    ports: dict[int, object] | None = None,
+    vessels: dict[int, object] | None = None,
+    default_stay_hours: int = DEFAULT_PORT_STAY_HOURS,
+) -> list[PlanningIssue]:
+    """Audit métier du planning actif, groupé par navire et trié ETD."""
+    issues: list[PlanningIssue] = []
+    by_vessel: dict[int, list[Leg]] = {}
+    for leg in legs:
+        by_vessel.setdefault(leg.vessel_id, []).append(leg)
+        if leg.status not in LEG_STATUSES and leg.status != "inprogress":
+            issues.append(
+                PlanningIssue(
+                    "warning",
+                    "status_unknown",
+                    f"{leg.leg_code} porte un statut non standard : {leg.status}.",
+                    leg_id=leg.id,
+                    vessel_id=leg.vessel_id,
+                )
+            )
+        if leg.distance_nm is None:
+            issues.append(
+                PlanningIssue(
+                    "warning",
+                    "distance_missing",
+                    f"{leg.leg_code} n'a pas de distance de planning persistée.",
+                    leg_id=leg.id,
+                    vessel_id=leg.vessel_id,
+                )
+            )
+        if is_delayed(leg):
+            issues.append(
+                PlanningIssue(
+                    "warning",
+                    "delay",
+                    f"{leg.leg_code} dérive de {leg_delay_hours(leg):.1f} h vs référence.",
+                    leg_id=leg.id,
+                    vessel_id=leg.vessel_id,
+                )
+            )
+
+    for vessel_id, vessel_legs in by_vessel.items():
+        ordered = sorted(vessel_legs, key=lambda lg: (ensure_utc(lg.etd), lg.id))
+        vessel = (vessels or {}).get(vessel_id)
+        vessel_label = getattr(vessel, "name", None) or f"Navire #{vessel_id}"
+        for idx, leg in enumerate(ordered):
+            if idx == 0:
+                continue
+            prev = ordered[idx - 1]
+            if prev.status == "cancelled" or leg.status == "cancelled":
+                continue
+            if prev.arrival_port_id != leg.departure_port_id:
+                prev_pod = (ports or {}).get(prev.arrival_port_id)
+                pol = (ports or {}).get(leg.departure_port_id)
+                issues.append(
+                    PlanningIssue(
+                        "critical",
+                        "continuity_break",
+                        f"{vessel_label} : {prev.leg_code} arrive à "
+                        f"{getattr(prev_pod, 'locode', prev.arrival_port_id)} mais "
+                        f"{leg.leg_code} repart de {getattr(pol, 'locode', leg.departure_port_id)}.",
+                        leg_id=leg.id,
+                        vessel_id=vessel_id,
+                    )
+                )
+            ready_at = ensure_utc(prev.eta) + timedelta(
+                hours=prev.port_stay_planned_hours or default_stay_hours
+            )
+            next_etd = ensure_utc(leg.etd)
+            if next_etd < ready_at:
+                issues.append(
+                    PlanningIssue(
+                        "critical",
+                        "port_stay_overlap",
+                        f"{vessel_label} : {leg.leg_code} démarre avant la fin de l'escale "
+                        f"prévue après {prev.leg_code}.",
+                        leg_id=leg.id,
+                        vessel_id=vessel_id,
+                    )
+                )
+            elif next_etd == ensure_utc(prev.eta):
+                issues.append(
+                    PlanningIssue(
+                        "warning",
+                        "missing_escale_gap",
+                        f"{vessel_label} : aucune escale planifiée entre "
+                        f"{prev.leg_code} et {leg.leg_code}.",
+                        leg_id=leg.id,
+                        vessel_id=vessel_id,
+                    )
+                )
+    return issues
+
+
+def schedule_kpis(legs: Sequence[Leg], issues: Sequence[PlanningIssue]) -> ScheduleKpi:
+    total = len(legs)
+    delayed = [leg for leg in legs if is_delayed(leg)]
+    delays = [max(0.0, leg_delay_hours(leg)) for leg in legs]
+    critical = sum(1 for issue in issues if issue.severity == "critical")
+    warnings = sum(1 for issue in issues if issue.severity == "warning")
+    in_navigation = sum(
+        1
+        for leg in legs
+        if leg.status in {"in_progress", "inprogress"} or (leg.atd is not None and leg.ata is None)
+    )
+    healthy = max(0, total - len(delayed) - critical)
+    respect = round((healthy / total) * 100, 1) if total else 100.0
+    return ScheduleKpi(
+        total_legs=total,
+        delayed_legs=len(delayed),
+        critical_issues=critical,
+        warning_issues=warnings,
+        in_navigation=in_navigation,
+        max_delay_hours=round(max(delays) if delays else 0.0, 1),
+        average_delay_hours=round(sum(delays) / total, 1) if total else 0.0,
+        calendar_respect_pct=respect,
+    )
 
 
 def detect_port_conflicts(

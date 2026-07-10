@@ -14,7 +14,10 @@ import pytest
 from app.services.planning import (
     InvalidLegDates,
     _leg_code_for,
+    audit_planning_sequence,
     detect_port_conflicts,
+    plan_downstream_shifts,
+    schedule_kpis,
     validate_dates,
 )
 
@@ -115,3 +118,67 @@ def test_detect_port_conflicts_ignores_different_ports() -> None:
     leg_a = _leg_ns(1, 10, 42, base_eta, stay=24)
     leg_b = _leg_ns(2, 11, 43, base_eta, stay=24)
     assert detect_port_conflicts([leg_a, leg_b]) == []
+
+
+def _planning_leg(
+    id,
+    vessel_id,
+    dep,
+    arr,
+    etd,
+    eta,
+    *,
+    code=None,
+    stay=24,
+    status="planned",
+    distance=100,
+):
+    return SimpleNamespace(
+        id=id,
+        vessel_id=vessel_id,
+        departure_port_id=dep,
+        arrival_port_id=arr,
+        etd=etd,
+        eta=eta,
+        etd_ref=etd,
+        eta_ref=eta,
+        atd=None,
+        ata=None,
+        leg_code=code or f"L{id}",
+        port_stay_planned_hours=stay,
+        status=status,
+        distance_nm=distance,
+    )
+
+
+def test_audit_flags_leg_before_previous_port_stay_finishes() -> None:
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    a = _planning_leg(1, 1, 10, 20, base, base + timedelta(days=5), stay=72, code="1AFRBR6")
+    b = _planning_leg(
+        2,
+        1,
+        20,
+        30,
+        base + timedelta(days=6),
+        base + timedelta(days=10),
+        code="1BBRUS6",
+    )
+    issues = audit_planning_sequence([a, b])
+    assert any(issue.code == "port_stay_overlap" for issue in issues)
+    kpis = schedule_kpis([a, b], issues)
+    assert kpis.critical_issues == 1
+    assert kpis.calendar_respect_pct == 50.0
+
+
+def test_plan_downstream_shifts_uses_source_availability() -> None:
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    downstream = [
+        _planning_leg(2, 1, 20, 30, base + timedelta(days=6), base + timedelta(days=10))
+    ]
+    planned = plan_downstream_shifts(
+        downstream,
+        delta=timedelta(0),
+        source_eta=base + timedelta(days=7),
+    )
+    assert planned[2][0] == base + timedelta(days=7)
+    assert planned[2][1] == base + timedelta(days=11)

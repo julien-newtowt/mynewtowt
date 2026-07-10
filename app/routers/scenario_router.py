@@ -352,6 +352,40 @@ async def delete_scenario_action(
     return RedirectResponse(url="/planning/scenarios", status_code=303)
 
 
+@router.post("/{scenario_id}/apply")
+async def apply_scenario_action(
+    scenario_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("planning", "M")),
+) -> RedirectResponse:
+    scenario = await _get_scenario_or_404(db, scenario_id)
+    try:
+        result = await svc.apply_to_active_planning(
+            db,
+            scenario,
+            user_id=user.id,
+            user_name=user.full_name or user.username,
+        )
+    except svc.ScenarioError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    await activity_record(
+        db,
+        action="scenario_apply",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="planning",
+        entity_type="planning_scenario",
+        entity_id=scenario.id,
+        entity_label=scenario.name,
+        detail=(
+            f"updated={result.updated_legs} changed={result.changed_legs} "
+            f"renumbered={len(result.renumbered)}"
+        ),
+    )
+    return RedirectResponse(url="/planning", status_code=303)
+
+
 # ---------------------------------------------------------------------------
 # Export CSV
 # ---------------------------------------------------------------------------

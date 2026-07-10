@@ -60,6 +60,8 @@ async def cascade_from_leg(
     *,
     old_etd: datetime,
     old_eta: datetime,
+    old_ready_at: datetime | None = None,
+    source_ready_at: datetime | None = None,
     source: str = "cascade",
     batch_id: str | None = None,
     actor_id: int | None = None,
@@ -93,6 +95,8 @@ async def cascade_from_leg(
     old_eta = ensure_utc(old_eta)
     new_etd = ensure_utc(leg.etd)
     new_eta = ensure_utc(leg.eta)
+    old_ready = ensure_utc(old_ready_at) or old_eta
+    source_ready = ensure_utc(source_ready_at) or new_eta
     delta = new_etd - old_etd
     batch_id = batch_id or uuid.uuid4().hex[:12]
 
@@ -109,7 +113,7 @@ async def cascade_from_leg(
     }
 
     # Rien n'a bougé → rien à propager (rapport cohérent quand même).
-    if delta == timedelta(0) and new_eta == old_eta:
+    if delta == timedelta(0) and new_eta == old_eta and source_ready == old_ready:
         return summary
 
     # ── 1. Legs aval du même navire (2 passes : rigide + anti-chevauchement)
@@ -124,7 +128,7 @@ async def cascade_from_leg(
             db, vessel_id=leg.vessel_id, after_etd=old_etd, exclude_leg_id=leg.id
         )
         try:
-            planned = plan_downstream_shifts(lane, delta=delta, source_eta=new_eta)
+            planned = plan_downstream_shifts(lane, delta=delta, source_eta=source_ready)
         except LegOverlap as e:
             # Un leg déjà appareillé bloque la résolution : on ne touche à
             # rien en aval, on le signale (l'opérateur arbitre manuellement).
