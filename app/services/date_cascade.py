@@ -58,7 +58,6 @@ async def cascade_from_leg(
     db: AsyncSession,
     leg: Leg,
     *,
-<<<<<<< Updated upstream
     old_etd: datetime,
     old_eta: datetime,
     old_ready_at: datetime | None = None,
@@ -67,10 +66,6 @@ async def cascade_from_leg(
     batch_id: str | None = None,
     actor_id: int | None = None,
     actor_name: str | None = None,
-=======
-    delta: timedelta,
-    previous_etd=None,
->>>>>>> Stashed changes
 ) -> dict:
     """Re-challenge toutes les dates dépendantes d'un ``leg`` dont les dates
     ont bougé. ``leg`` porte DÉJÀ les nouvelles valeurs ; ``old_etd`` /
@@ -121,7 +116,6 @@ async def cascade_from_leg(
     if delta == timedelta(0) and new_eta == old_eta and source_ready == old_ready:
         return summary
 
-<<<<<<< Updated upstream
     # ── 1. Legs aval du même navire (2 passes : rigide + anti-chevauchement)
     # eta_deltas mémorise, PAR leg, l'écart d'ETA appliqué — il pilote le
     # recalage des opérations escale / dockers et la notification client.
@@ -132,23 +126,6 @@ async def cascade_from_leg(
     try:
         lane = await _lane_after(
             db, vessel_id=leg.vessel_id, after_etd=old_etd, exclude_leg_id=leg.id
-=======
-    # ── 1. Legs aval du même navire ───────────────────────────────────────
-    # Frontière = ancien ETD du leg (avant édition). Historiquement on la
-    # reconstituait avec ``leg.etd - delta`` ; c'est insuffisant quand seul
-    # l'ETA ou la durée d'escale change, car le delta ne porte plus sur l'ETD.
-    # Les appelants récents passent donc ``previous_etd`` explicitement.
-    impacted_legs: list[Leg] = [leg]
-    try:
-        old_etd = previous_etd or (leg.etd - delta)
-        stmt = (
-            select(Leg)
-            .where(Leg.vessel_id == leg.vessel_id)
-            .where(Leg.id != leg.id)
-            .where(Leg.etd > old_etd)
-            .where(Leg.atd.is_(None))
-            .order_by(Leg.etd.asc())
->>>>>>> Stashed changes
         )
         try:
             planned = plan_downstream_shifts(lane, delta=delta, source_eta=source_ready)
