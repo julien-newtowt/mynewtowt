@@ -4,8 +4,14 @@ CSP restrictive : seuls Mapbox / MapTiler / OSM Nominatim et les fonts
 Google sont autorisés cross-origin. Pas de scripts inline (HTMX utilise
 des attributs d'événement). Styles inline tolérés (CSS runtime Mapbox).
 
-V3.1 : Stripe retiré — NEWTOWT ne traite plus de paiement dans l'app
-(facturation par virement bancaire post-confirmation commerciale).
+V3.1 : Stripe retiré de la facturation fret — NEWTOWT facture le fret par
+virement bancaire. Réintroduit de façon **ciblée** pour la « vente à bord »
+(encaissement CB des collaborateurs embarqués) : Stripe Checkout est une page
+**hébergée** ouverte par le client sur son propre appareil, et le QR affiché
+côté commandant est un SVG inline (segno). Aucune ressource Stripe n'est donc
+embarquée dans nos pages → la CSP ci-dessous reste inchangée. (Si un jour on
+intègre Stripe.js/Elements en direct, whitelister js.stripe.com / api.stripe.com
+et le frame checkout.stripe.com.)
 """
 
 from __future__ import annotations

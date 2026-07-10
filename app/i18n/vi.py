@@ -430,6 +430,7 @@ CATALOG: dict[str, str] = {
     "s_nav_onboard": "Trên tàu 4 khu vực",
     "s_nav_tickets": "Phiếu ghé cảng",
     "s_nav_cashbox": "Két tiền trên tàu",
+    "s_nav_ventes_bord": "Bán hàng trên tàu",
     "s_nav_tracking": "Theo dõi đội tàu",
     "s_nav_crew": "Thuyền viên",
     "s_nav_rh": "Nhân sự",

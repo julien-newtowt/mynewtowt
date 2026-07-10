@@ -1,0 +1,118 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Vente à bord — {{ vessel.name }}{% endblock %}
+{% block content %}
+<a href="/captain/ventes" class="btn btn-ghost mb-3">← Navires</a>
+<header class="mb-4">
+  <span class="kicker">À bord · Vente</span>
+  <h1 class="display"><span class="mono text-muted">{{ vessel.code }}</span> {{ vessel.name }}</h1>
+  <div class="flex gap-2 mt-2">
+    <a href="/captain/ventes/catalogue" class="btn btn-ghost btn-sm">Catalogue</a>
+    <a href="/captain/ventes/{{ vessel.id }}/registre" class="btn btn-ghost btn-sm">Registre douanier</a>
+    <a href="/cashbox/{{ vessel.id }}" class="btn btn-ghost btn-sm">Caisse de bord</a>
+  </div>
+</header>
+
+{# ─────────────────────────── Nouvelle vente ─────────────────────────── #}
+<article class="card mb-4">
+  <h2>Nouvelle vente</h2>
+  <form method="post" action="/captain/ventes/{{ vessel.id }}/vente" class="grid grid-3 gap-3" style="align-items:end;">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="field" style="grid-column: span 2;">
+      <label for="buyer_name">Acheteur (collaborateur embarqué)</label>
+      <input id="buyer_name" name="buyer_name" placeholder="Nom / fonction" />
+    </div>
+    <div class="field">
+      <label for="currency">Devise</label>
+      <select id="currency" name="currency" required>
+        {% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <button type="submit" class="btn btn-primary">Ouvrir la vente</button>
+    </div>
+  </form>
+</article>
+
+{# ─────────────────────────── Inventaire ─────────────────────────── #}
+<article class="card mb-4">
+  <h2>Inventaire du bord</h2>
+  {% if inventory %}
+    <table>
+      <thead><tr><th>SKU</th><th>Désignation</th><th class="text-right">En stock</th><th>Unité</th></tr></thead>
+      <tbody>
+        {% for it in inventory %}
+          <tr>
+            <td class="mono">{{ it.product.sku }}</td>
+            <td>{{ it.product.label }}</td>
+            <td class="text-right mono {% if it.on_hand < 0 %}text-error{% endif %}">{{ "%.3f"|format(it.on_hand|float) }}</td>
+            <td>{{ it.product.unit }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted">Aucun produit suivi en stock. Ajoutez des produits au <a href="/captain/ventes/catalogue">catalogue</a>.</p>
+  {% endif %}
+
+  <h3 class="mt-4">Mouvement de stock (avitaillement / ajustement)</h3>
+  <form method="post" action="/captain/ventes/{{ vessel.id }}/stock" class="grid grid-3 gap-3" style="align-items:end;">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="field">
+      <label for="product_id">Produit</label>
+      <select id="product_id" name="product_id" required>
+        {% for p in stock_products %}<option value="{{ p.id }}">{{ p.sku }} — {{ p.label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="qty">Quantité (signée)</label>
+      <input id="qty" name="qty" type="text" inputmode="decimal" placeholder="+24 ou -3" required />
+    </div>
+    <div class="field">
+      <label for="reason">Motif</label>
+      <select id="reason" name="reason" required>
+        {% for r in stock_reasons %}<option value="{{ r }}">{{ stock_reason_labels[r] }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field" style="grid-column: span 2;">
+      <label for="note">Note (facultatif)</label>
+      <input id="note" name="note" placeholder="Bon d'avitaillement n°…" />
+    </div>
+    <div class="field">
+      <button type="submit" class="btn btn-secondary">Enregistrer</button>
+    </div>
+  </form>
+  <p class="form-hint">Entrée = quantité positive (ex. +24). Sortie/correction = quantité négative (ex. −3).</p>
+</article>
+
+{# ─────────────────────────── Ventes récentes ─────────────────────────── #}
+<article class="card">
+  <h2>Ventes récentes</h2>
+  {% if sales %}
+    <table>
+      <thead>
+        <tr><th>Référence</th><th>Date</th><th>Acheteur</th><th class="text-right">Total</th><th>Règlement</th><th>Statut</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for s in sales %}
+          <tr>
+            <td class="mono">{{ s.reference }}</td>
+            <td class="text-sm text-muted">{{ s.created_at|datetime }}</td>
+            <td>{{ s.buyer_name or "—" }}</td>
+            <td class="text-right mono">{{ "%.2f"|format(s.total|float) }} {{ s.currency }}</td>
+            <td>{{ payment_labels.get(s.payment_method, "—") }}</td>
+            <td>
+              {% if s.status == "paid" %}<span class="pill pill-ok">{{ status_labels[s.status] }}</span>
+              {% elif s.status == "pending_payment" %}<span class="pill pill-warn">{{ status_labels[s.status] }}</span>
+              {% elif s.status in ("cancelled", "refunded") %}<span class="pill pill-neutral">{{ status_labels[s.status] }}</span>
+              {% else %}<span class="pill">{{ status_labels[s.status] }}</span>{% endif %}
+            </td>
+            <td><a href="/captain/ventes/vente/{{ s.reference }}" class="btn btn-ghost btn-sm">Ouvrir →</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted">Aucune vente enregistrée.</p>
+  {% endif %}
+</article>
+{% endblock %}
