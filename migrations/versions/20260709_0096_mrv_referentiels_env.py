@@ -19,7 +19,7 @@ Socle paramétrable (H2/H3) de la refonte du reporting environnemental :
    ``MDO``), ``water_density_default_t_m3``.
 
 Revision ID: 20260709_0096
-Revises: 20260706_0095
+Revises: 20260706_0096
 Create Date: 2026-07-09
 """
 
@@ -32,7 +32,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260709_0096"
-down_revision = "20260706_0095"
+down_revision = "20260706_0096"
 branch_labels = None
 depends_on = None
 
