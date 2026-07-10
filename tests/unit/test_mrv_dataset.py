@@ -332,3 +332,35 @@ async def test_export_csv_headers_and_rows(db):
     lines = csv_text.splitlines()
     assert lines[0].split(",") == list(md.OVDLA_COLUMNS)
     assert len([ln for ln in lines if ln]) == 3  # header + 2 rows
+
+
+# ═══════════════════════════════════════════════ Anti-injection de formule
+
+
+async def test_export_neutralises_formula_injection(db):
+    """Un BDN texte commençant par ``=`` ne doit JAMAIS ressortir en formule
+    vive dans le fichier déposé chez DNV — ni en CSV ni en XLSX (openpyxl
+    classerait sinon la chaîne en ``data_type='f'``)."""
+    import csv as _csv
+
+    vessel, leg, *_ = await _chain(db)
+    payload = '=HYPERLINK("http://evil")'  # 25 car. < String(40)
+    await _bunker(db, vessel, leg, payload, "valide_master", mass="30.000")
+    rows = await md.build_ovdbr_rows(db, vessel)
+    bdn_idx = list(md.OVDBR_COLUMNS).index("BDN_Number")
+
+    # CSV : cellule préfixée d'une apostrophe (neutralisée).
+    data_row = list(_csv.reader(md.export_csv(rows, kind="ovdbr").splitlines()))[1]
+    assert data_row[bdn_idx] == "'" + payload
+
+    # XLSX : chaîne littérale (data_type 's'), jamais une formule ('f').
+    wb = openpyxl.load_workbook(
+        io.BytesIO(md.export_xlsx(rows, kind="ovdbr")), data_only=True
+    )
+    cell = wb.active.cell(row=2, column=bdn_idx + 1)
+    assert cell.data_type == "s"
+    assert str(cell.value).startswith("'")
+
+    # Un nombre négatif (Mass) ne doit PAS être corrompu par la neutralisation.
+    mass_idx = list(md.OVDBR_COLUMNS).index("Mass")
+    assert data_row[mass_idx] == "30.000"

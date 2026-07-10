@@ -65,6 +65,7 @@ from app.models.vessel_env import VesselEngine
 from app.services import inter_event_compute as iec
 from app.services import notifications
 from app.services.mrv_compute import decimal_to_dms
+from app.utils.csv_safe import sanitize_cell
 
 # ════════════════════════════════════════════════════════════ Colonnes / labels
 
@@ -725,12 +726,18 @@ def _columns_for(kind: str) -> tuple[str, ...]:
 
 
 def _cell(value: Any) -> Any:
-    """Valeur cellule xlsx : Decimal→float, date/datetime tels quels, None→''."""
+    """Valeur cellule xlsx : Decimal→float, date/datetime tels quels, None→''.
+
+    Anti-injection de formule : une cellule texte (BDN, port, type de
+    carburant) commençant par ``= + - @`` serait interprétée comme une formule
+    à l'ouverture du fichier déposé chez DNV — ``sanitize_cell`` la neutralise
+    (les nombres/dates, non-``str``, passent intacts). Cf. ``app/utils/csv_safe``.
+    """
     if value is None:
         return None
     if isinstance(value, Decimal):
         return float(value)
-    return value
+    return sanitize_cell(value)
 
 
 def _csv_cell(value: Any) -> str:
@@ -740,7 +747,8 @@ def _csv_cell(value: Any) -> str:
         return value.isoformat()
     if isinstance(value, datetime):
         return value.strftime("%Y-%m-%d %H:%M")
-    return str(value)
+    # Anti-injection de formule (cf. _cell) sur la valeur texte sérialisée.
+    return sanitize_cell(str(value))
 
 
 def export_xlsx(rows: list[DatasetRow], *, kind: str | None = None) -> bytes:
