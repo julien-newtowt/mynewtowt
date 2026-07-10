@@ -248,6 +248,15 @@ git push origin --delete \
 4. **Périodicité** : re‑dérouler cet inventaire (§2) trimestriellement ou après
    toute campagne multi‑branches ; le présent document fait foi et se met à
    jour en place.
+5. **Protéger `main` (leçon du 2026‑07‑10)** : les merges directs sans PR
+   (MRV v2, vente à bord, puis les commits « m » / « planning ajust ») ont
+   contourné la CI et laissé main **rouge et syntaxiquement cassée** —
+   marqueurs de conflit committés dans `app/services/date_cascade.py`
+   (SyntaxError à l'import), 74 erreurs ruff, 66 fichiers non formatés,
+   1 finding bandit High, un `NameError` latent dans `crew_compliance`.
+   Réparé par la PR #143 (commits `6347b6a`, `7750e45`). Activer la
+   protection de branche : PR obligatoire + checks `lint`/`test`/`security`
+   requis avant merge.
 
 ### Phase 4 — Ménage connexe (constaté au passage)
 
