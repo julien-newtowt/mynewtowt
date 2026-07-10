@@ -1,6 +1,6 @@
 [project]
 name = "mynewtowt"
-version = "3.0.0"
+version = "3.11.0"
 description = "NEWTOWT ERP & customer platform"
 requires-python = ">=3.12"
 

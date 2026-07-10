@@ -174,8 +174,17 @@ vérifié branche par branche le 2026‑07‑10).
 
 ### Phase 2 — Archivage puis purge (après validation humaine)
 
-La purge est **sans risque côté PR** (zéro PR ouverte sur le dépôt). Par
-prudence, poser d'abord des tags d'archive sur les 8 têtes porteuses de
+> **Statut 2026‑07‑10 :** exécution tentée depuis la session d'étude et
+> **bloquée à juste titre** — (a) le credential de session est restreint à la
+> branche de travail (HTTP 403 sur `git push origin <tags>`), (b) le garde‑fou
+> d'exécution refuse une suppression de branches sans validation nommée.
+> **À exécuter par un humain** (poste avec droits push complets) : les blocs de
+> commandes ci‑dessous sont prêts à copier‑coller, dans cet ordre (tags
+> d'abord — ils rendent la purge réversible).
+
+La purge est **sans risque côté PR** (la seule PR ouverte est la **#143**,
+portée par `claude/branch-gap-analysis-plan-jkuqva`, hors périmètre de purge).
+Par prudence, poser d'abord des tags d'archive sur les 8 têtes porteuses de
 commits uniques (les commits restent atteignables, la purge devient
 réversible) :
 
@@ -242,9 +251,9 @@ git push origin --delete \
 
 ### Phase 4 — Ménage connexe (constaté au passage)
 
-- `pyproject.toml` et `app/config.py` déclarent encore `version = "3.0.0"`
-  alors que CLAUDE.md annonce **3.11.0** — aligner les métadonnées de version
-  (S).
+- ✅ **Réalisé (2026‑07‑10)** : `pyproject.toml` et `app/config.py` alignés sur
+  `version = "3.11.0"` (seul consommateur : le global Jinja `app_version` —
+  aucun test ne figeait l'ancienne valeur).
 
 ## 5. Synthèse exécutive
 

@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "mynewtowt"
-    app_version: str = "3.0.0"
+    app_version: str = "3.11.0"
     app_env: Literal["development", "staging", "production"] = "development"
     debug: bool = False
     site_url: str = "http://localhost:8000"

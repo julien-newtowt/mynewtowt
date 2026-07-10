@@ -17,8 +17,8 @@
 > `claude/app-reference-docs-q4vx4g`), **récupéré et rafraîchi le 2026‑07‑10**
 > (rattrapage R2 — cf. `docs/audit/ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md`) pour
 > intégrer **MRV v2** et la **vente à bord**. Version applicative **3.11.0**
-> (NB : `pyproject.toml`/`app/config.py` déclarent encore `3.0.0` — métadonnées à
-> aligner, cf. phase 4 du plan de rattrapage).
+> (métadonnées `pyproject.toml`/`app/config.py` alignées le 2026‑07‑10, phase 4
+> du plan de rattrapage).
 >
 > **Rôles respectifs des deux documents de référence.** Celui‑ci porte la couche
 > **stratégique / business / sectorielle** (vision, concurrence, personas, gaps,
@@ -788,8 +788,8 @@ persona capitaine (satcom intermittent).
 - ~~`CLAUDE.md` partiellement inexact (8 rôles / 16 modules déclarés)~~ →
   **résolu** : `CLAUDE.md` remis à niveau v3.11.0 (PR #133, 2026‑07‑03) — 9 rôles,
   17 modules, décisions actées à jour.
-- **Métadonnées de version** : `pyproject.toml` et `app/config.py` déclarent
-  encore `3.0.0` (réalité : 3.11.0) — à aligner.
+- ~~Métadonnées de version `3.0.0`~~ → **résolu (2026‑07‑10)** :
+  `pyproject.toml` et `app/config.py` alignés sur `3.11.0`.
 - Modules **dormants/à consolider** : `client_invoice`/`invoicing` ; contrat **API
   tracking** lecture (GET) rompu vs V2 (à versionner) ; PWA offline étendu aux SOF
   (backlog).
