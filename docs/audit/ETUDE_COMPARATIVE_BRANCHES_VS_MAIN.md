@@ -167,8 +167,8 @@ vérifié branche par branche le 2026‑07‑10).
 
 | # | Action | Détail | Effort |
 |---|---|---|---|
-| **R1** | **Ré‑implémenter le fix Marad `07fa395`** (ne pas cherry‑picker : conflit certain) | Dans `app/utils/marad.py::diagnose()`, après auth réussie, sonder l'équipage (`GET /api/Crewing`, réutiliser `list_crew()` déjà présent) avec un compteur tolérant aux enveloppes de réponse ; exposer `crew_count` ; adapter le badge `app/templates/staff/admin/_marad_test_result.html` pour distinguer « équipage visible (N) » / « compte vide » / « navires seuls » ; compléter `tests/unit/test_marad.py`. Le commit `07fa395` sert de spécification. | **M** |
-| **R2** | **Récupérer la doc de référence stratégique `4efb19a`** | `git cherry-pick 4efb19a` (fichier neuf, aucun conflit de chemin) puis passe de rafraîchissement : version 3.11.0, 112 migrations, intégrer MRV v2/vente à bord, et clarifier la frontière avec `docs/audit/DOCUMENT_REFERENCE_CONTEXTE_APPLICATION.md` (business ↔ contrat technique) pour éviter deux « documents maîtres » concurrents. | **M** |
+| **R1** | ✅ **Réalisé (2026‑07‑10)** — fix Marad ré‑implémenté (commit `531e823` sur la branche d'étude ; `07fa395` a servi de spécification, cherry‑pick impossible pour cause de conflit) | `diagnose()` sonde l'équipage après auth réussie (`crew_count`, `_count_records` tolérant aux enveloppes, schéma d'auth mémorisé → single‑shot) ; badge 3 états (équipage visible / compte vide / repli navires‑quota) ; tests unit + rendu (46 verts). | ~~M~~ |
+| **R2** | ✅ **Réalisé (2026‑07‑10)** — doc de référence stratégique récupérée (cherry‑pick `771aa83` + rafraîchissement `6a6c8fa` sur la branche d'étude) | Chiffres recomptés (129 tables, 112 migrations, 43 routers…), version 3.11.0, MRV v2 + vente à bord intégrés, statuts 16.x/17.1 revus, frontière explicitée avec `DOCUMENT_REFERENCE_CONTEXTE_APPLICATION.md`. | ~~M~~ |
 | R3 | *(Optionnel)* Classement « top routes » du funnel | Petit ajout ciblé à `modules_router.py::analytics_commercial` (seule idée de `f947694` sans équivalent dans `main`). | S |
 | R4 | *(Optionnel)* Outil de purge de branches | Reprendre isolément `190a171:scripts/git-cleanup.sh` (retirer les références à `staging`). Aucun besoin exprimé au backlog — ne le faire que si l'hygiène de branches devient récurrente. | S |
 
@@ -213,8 +213,10 @@ git push origin --delete \
   vibe/anemos-carnet-bord-88bf9d
 ```
 
-Purge différée — les 3 branches restantes, **une fois la phase 1 exécutée**
-(R1 livré, R2 mergé) et la présente étude mergée :
+Purge différée — les 3 branches restantes, **une fois la présente étude mergée
+dans `main`** (la phase 1 — R1 + R2 — est exécutée et vit sur la même branche ;
+tant qu'elle n'est pas mergée, ces 3 branches restent le seul refuge de leur
+contenu) :
 
 ```bash
 git push origin --delete \
@@ -249,10 +251,10 @@ git push origin --delete \
 - **`main` est un sur‑ensemble strict de 30 des 32 branches distantes.**
   L'écart réel total du dépôt tient en **12 commits uniques**, dont **10 sont
   absorbés ou périmés** (vérifiés sur pièce, preuves en §3).
-- **Deux récupérations seulement** justifient le « rattrapage » : le fix du
-  test de connexion Marad (`07fa395`, à ré‑implémenter — R1) et le document de
-  référence stratégique (`4efb19a`, cherry‑pick + rafraîchissement — R2). Deux
-  options mineures en plus (R3, R4).
+- **Deux récupérations seulement** justifiaient le « rattrapage » : le fix du
+  test de connexion Marad (R1) et le document de référence stratégique (R2) —
+  **toutes deux exécutées le 2026‑07‑10** sur la branche d'étude (commits
+  `531e823`, `771aa83`+`6a6c8fa`). Restent deux options mineures (R3, R4).
 - **Purge possible de 29 branches immédiatement** (après tags d'archive), 3 de
   plus après la phase 1. Zéro PR ouverte : aucun travail en vol n'est menacé.
 - **Les écarts « spectaculaires » n'existaient pas** : 235/222/183/154 commits
