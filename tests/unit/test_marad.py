@@ -889,9 +889,7 @@ def test_sync_all_surfaces_schedule_429_on_partial_success(monkeypatch) -> None:
     monkeypatch.setattr(marad, "enabled", lambda: True)
     monkeypatch.setattr(marad, "list_crew", lambda modified_since=None: _ret([_crew_record()]))
     monkeypatch.setattr(marad, "list_schedules", lambda modified_since=None: _ret(None))
-    monkeypatch.setattr(
-        marad, "last_status", lambda p: 429 if p == "/api/CrewingSchedule" else 200
-    )
+    monkeypatch.setattr(marad, "last_status", lambda p: 429 if p == "/api/CrewingSchedule" else 200)
 
     async def _no_diagnose():
         raise AssertionError("diagnose() ne doit pas être appelé (crew a réussi)")
@@ -1302,3 +1300,88 @@ def test_rate_limited_endpoint_single_shot_when_auth_not_primed(monkeypatch) -> 
     monkeypatch.setattr(marad.httpx, "AsyncClient", lambda *a, **k: vessels_client)
     assert asyncio.run(marad.list_vessels()) is None
     assert len(vessels_client.tried) > 1  # getVessels : cascade complète autorisée
+
+
+# ───────────────────────── diagnose : sonde équipage ─────────────────────────
+
+
+def test_count_records_is_shape_tolerant() -> None:
+    assert marad._count_records([{"a": 1}, {"b": 2}, "x"]) == 2  # ignore non-dicts
+    assert marad._count_records({"data": [{"a": 1}]}) == 1  # enveloppe usuelle
+    assert marad._count_records({"crewMembers": [{"i": 1}, {"i": 2}]}) == 2
+    assert marad._count_records([]) == 0
+    assert marad._count_records(None) == 0
+    assert marad._count_records({"meta": "x"}) == 0
+
+
+class _DiagClient:
+    """Faux client pour diagnose() : route par URL (getVessels vs Crewing),
+    authentifie tout schéma (200). ``vessels``/``crew`` = payloads renvoyés."""
+
+    def __init__(self, vessels, crew) -> None:
+        self.vessels = vessels
+        self.crew = crew
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    def _resp_for(self, url):
+        if "getVessels" in url:
+            return _FakeResp(200, self.vessels)
+        if "Crewing" in url:
+            return _FakeResp(200, self.crew)
+        return _FakeResp(404)
+
+    async def get(self, url, params=None, headers=None):
+        return self._resp_for(url)
+
+    async def request(self, method, url, params=None, json=None, headers=None):
+        return self._resp_for(url)
+
+
+def test_diagnose_probes_crew_when_authed(monkeypatch) -> None:
+    """Authentifié : diagnose sonde l'équipage (vraie cible) → crew_count."""
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", None)
+    monkeypatch.setattr(marad, "_working_strategy", None)
+    monkeypatch.setattr(
+        marad.httpx,
+        "AsyncClient",
+        lambda *a, **k: _DiagClient(vessels=[], crew=[{"id": 1}, {"id": 2}, {"id": 3}]),
+    )
+    diag = asyncio.run(marad.diagnose())
+    assert diag["classification"] == "ok"
+    assert diag["vessels_count"] == 0  # compte sans navires…
+    assert diag["crew_count"] == 3  # …mais avec équipage : intégration OK
+    assert diag["working_strategy"]  # schéma mémorisé (single-shot ensuite)
+
+
+def test_diagnose_reports_empty_tenant(monkeypatch) -> None:
+    """Connecté mais 0 navire ET 0 équipage → compte vide (crew_count 0)."""
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", None)
+    monkeypatch.setattr(marad, "_working_strategy", None)
+    monkeypatch.setattr(
+        marad.httpx, "AsyncClient", lambda *a, **k: _DiagClient(vessels=[], crew=[])
+    )
+    diag = asyncio.run(marad.diagnose())
+    assert diag["classification"] == "ok"
+    assert diag["vessels_count"] == 0
+    assert diag["crew_count"] == 0
+
+
+def test_diagnose_counts_wrapped_vessels(monkeypatch) -> None:
+    """getVessels renvoyant une enveloppe {vessels:[...]} est bien compté."""
+    monkeypatch.setattr(marad.settings, "marad_api_token", "secret")
+    monkeypatch.setattr(marad.settings, "marad_api_key_header", None)
+    monkeypatch.setattr(marad, "_working_strategy", None)
+    monkeypatch.setattr(
+        marad.httpx,
+        "AsyncClient",
+        lambda *a, **k: _DiagClient(vessels={"vessels": [{"n": 1}, {"n": 2}]}, crew=[]),
+    )
+    diag = asyncio.run(marad.diagnose())
+    assert diag["vessels_count"] == 2  # enveloppe correctement dénombrée
