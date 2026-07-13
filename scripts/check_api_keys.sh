@@ -124,6 +124,49 @@ for entry in "${FEATURES[@]}"; do
   else warng "$key" "absent → $cons"; opt_missing=1; fi
 done
 
+# --- 3a-bis. Vente à bord — paiement carte (Stripe), secure-by-default -------
+# Optionnel : sans STRIPE_SECRET_KEY la voie carte renvoie 503 (l'espèce reste
+# disponible), donc NON bloquant. Mais on signale les incohérences qui font
+# « échouer silencieusement » l'encaissement CB — pièges vécus en prod :
+#   - clé de TEST (sk_test_) déployée en PRODUCTION → aucun paiement réel ;
+#   - webhook non configuré → POST /webhooks/stripe = 503 : une vente CB payée
+#     ne bascule jamais « Payée » automatiquement ;
+#   - format de clé inattendu.
+# Ne révèle jamais la valeur : uniquement présence + mode (live/test) + longueur.
+head_ "Vente à bord — paiement carte (Stripe)"
+stripe_sk="$(env_get STRIPE_SECRET_KEY)"
+stripe_wh="$(env_get STRIPE_WEBHOOK_SECRET)"
+stripe_app_env="$(env_get APP_ENV)"
+if [[ -z "$stripe_sk" ]]; then
+  warng "STRIPE_SECRET_KEY" "absent → encaissement carte indisponible (503) ; seul l'espèce fonctionne"
+  opt_missing=1
+else
+  case "$stripe_sk" in
+    sk_live_*|rk_live_*)
+      ok "STRIPE_SECRET_KEY" "$(masked "$stripe_sk") · live" ;;
+    sk_test_*|rk_test_*)
+      if [[ "$stripe_app_env" == "production" ]]; then
+        warng "STRIPE_SECRET_KEY" "clé de TEST en PRODUCTION → aucun paiement réel encaissé"
+        opt_missing=1
+      else
+        ok "STRIPE_SECRET_KEY" "$(masked "$stripe_sk") · test"
+      fi ;;
+    *)
+      warng "STRIPE_SECRET_KEY" "$(masked "$stripe_sk") — format inattendu (attendu sk_live_/sk_test_)"
+      opt_missing=1 ;;
+  esac
+  # Le webhook de règlement n'a de sens que si la voie carte est active.
+  if [[ -z "$stripe_wh" ]]; then
+    warng "STRIPE_WEBHOOK_SECRET" "absent → POST /webhooks/stripe = 503 : la vente CB payée ne bascule pas « Payée » (endpoint = /webhooks/stripe, événement checkout.session.completed)"
+    opt_missing=1
+  elif [[ "$stripe_wh" != whsec_* ]]; then
+    warng "STRIPE_WEBHOOK_SECRET" "$(masked "$stripe_wh") — format inattendu (attendu whsec_…)"
+    opt_missing=1
+  else
+    ok "STRIPE_WEBHOOK_SECRET" "$(masked "$stripe_wh")"
+  fi
+fi
+
 # --- 3b. Exhaustivité : toute clé ACTIVE de .env.example doit exister dans .env
 # Garantit qu'aucune clé nouvellement déclarée (ex. MARAD_API_TOKEN /
 # MARAD_SYNC_TOKEN) n'est oubliée au déploiement, même si elle n'est pas listée
