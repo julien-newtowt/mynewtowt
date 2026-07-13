@@ -30,13 +30,13 @@ navires ; **cliquez sur le vôtre** pour ouvrir son espace (écran
 ## 2. Le catalogue (ce qui est vendable)
 
 Le **Catalogue des biens & services** (bouton *« Gérer le catalogue »*)
-regroupe les articles vendables : chaque produit a une **référence (SKU)**, un
-**libellé**, un **prix unitaire**, une **devise**, une **unité** (pièce,
-paquet…) et le **type** *Bien* ou *Service*. Un produit peut suivre ou non son
-**stock**.
+regroupe les articles vendables. Chaque produit a un **libellé**, un **prix
+unitaire**, une **devise**, une **unité** (pièce, paquet…) et le **type**
+*Bien* ou *Service* ; il peut suivre ou non son **stock**. Sa **référence
+(SKU)** est **attribuée automatiquement** à la création — vous n'avez pas à la
+saisir.
 
-> Le catalogue est en général préparé par le siège. Vous pouvez y ajouter un
-> produit (bouton *« Nouveau produit »*) si besoin ; un produit désactivé
+> Ajoutez un produit avec **« Nouveau produit »**. Un produit désactivé
 > n'apparaît plus à la vente mais reste dans l'historique.
 
 ## 3. Avitailler : entrer le stock à bord

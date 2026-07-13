@@ -236,3 +236,41 @@ def test_qr_svg_is_responsive():
     svg = _qr_svg("https://checkout.stripe.com/pay/cs_test_abc")
     assert "viewBox" in svg
     assert "width=" not in svg
+
+
+@pytest.mark.asyncio
+async def test_create_product_autogenerates_sku(db, staff_user):
+    """Le SKU est attribué automatiquement (ART-XXXX), jamais saisi ; unique."""
+    from app.routers.onboard_sales_router import create_product
+
+    resp = await create_product(
+        label="Café moulu 250 g",
+        kind="bien",
+        unit_price="6.50",
+        currency="EUR",
+        unit="pièce",
+        tracks_stock="on",
+        notes="",
+        db=db,
+        user=staff_user,
+    )
+    assert resp.status_code == 303
+    prods = (await db.execute(select(OnboardProduct))).scalars().all()
+    assert len(prods) == 1
+    assert prods[0].sku == f"ART-{prods[0].id:04d}"
+    assert not prods[0].sku.startswith("__pending")
+
+    # 2e produit → SKU distinct (pas de collision, pas de saisie).
+    await create_product(
+        label="Thé vert",
+        kind="bien",
+        unit_price="4.00",
+        currency="EUR",
+        unit="pièce",
+        tracks_stock="on",
+        notes="",
+        db=db,
+        user=staff_user,
+    )
+    skus = [p.sku for p in (await db.execute(select(OnboardProduct))).scalars().all()]
+    assert len(set(skus)) == 2
