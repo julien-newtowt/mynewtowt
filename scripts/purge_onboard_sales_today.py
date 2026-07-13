@@ -19,10 +19,10 @@ SÉCURITÉ : DRY-RUN par défaut (n'écrit rien). Il faut ``--commit`` pour
 supprimer réellement. « Aujourd'hui » = depuis minuit dans le fuseau ``--tz``
 (défaut Europe/Paris) ; surchargeable par ``--since AAAA-MM-JJ[THH:MM]``.
 
-Usage (sur le serveur, dans le conteneur app) :
-  docker compose exec app python scripts/purge_onboard_sales_today.py             # aperçu
-  docker compose exec app python scripts/purge_onboard_sales_today.py --commit     # supprime
-  docker compose exec app python scripts/purge_onboard_sales_today.py --vessel ANEM --with-cashbox --commit
+Usage (sur le serveur ; invocation via ``-m``, comme les autres scripts) :
+  docker compose exec app python -m scripts.purge_onboard_sales_today             # aperçu
+  docker compose exec app python -m scripts.purge_onboard_sales_today --commit     # supprime
+  docker compose exec app python -m scripts.purge_onboard_sales_today --vessel ANEM --with-cashbox --commit
 """
 
 from __future__ import annotations
