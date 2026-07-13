@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from uuid import uuid4
 
 import segno
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -121,7 +122,6 @@ async def catalogue(
 
 @router.post("/catalogue/products")
 async def create_product(
-    sku: str = Form(...),
     label: str = Form(...),
     kind: str = Form("bien"),
     unit_price: str = Form(...),
@@ -132,16 +132,15 @@ async def create_product(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
-    sku = sku.strip()
-    if not sku or not label.strip():
-        raise HTTPException(status_code=400, detail="SKU et libellé requis")
+    # La référence (SKU) est attribuée AUTOMATIQUEMENT (format ART-XXXX dérivé
+    # de l'id), jamais saisie par l'utilisateur. On insère avec un placeholder
+    # unique le temps d'obtenir l'id, puis on fige le SKU définitif.
+    if not label.strip():
+        raise HTTPException(status_code=400, detail="Désignation requise")
     if currency.upper() not in SUPPORTED_CURRENCIES:
         raise HTTPException(status_code=400, detail="Devise non supportée")
-    exists = await db.scalar(select(OnboardProduct.id).where(OnboardProduct.sku == sku))
-    if exists:
-        raise HTTPException(status_code=400, detail=f"SKU déjà utilisé : {sku}")
     product = OnboardProduct(
-        sku=sku,
+        sku=f"__pending_{uuid4().hex[:16]}",  # placeholder unique, remplacé après flush
         label=label.strip(),
         kind=kind if kind in ("bien", "service") else "bien",
         unit_price=_parse_decimal(unit_price),
@@ -151,6 +150,8 @@ async def create_product(
         notes=notes.strip() or None,
     )
     db.add(product)
+    await db.flush()  # id attribué
+    product.sku = f"ART-{product.id:04d}"  # référence auto, stable et unique
     await db.flush()
     await activity_record(
         db,
@@ -161,7 +162,7 @@ async def create_product(
         module="captain",
         entity_type="onboard_product",
         entity_id=product.id,
-        detail=f"{sku} {product.label}",
+        detail=f"{product.sku} {product.label}",
     )
     return RedirectResponse(url="/captain/ventes/catalogue", status_code=303)
 

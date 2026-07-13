@@ -145,10 +145,12 @@ preflight() {
   # Vérification EXHAUSTIVE des clés / API tokens (.env) à chaque déploiement.
   # Bloque si une clé OBLIGATOIRE manque ou reste par défaut ; n'avertit (non
   # bloquant) que pour les intégrations optionnelles — dont WEATHER_API_TOKEN
-  # (snapshot météo 30 min), WINDY_API_KEY (repli Open-Meteo) et MARAD_API_TOKEN
-  # / MARAD_SYNC_TOKEN (sync crew + plannings Marad, lecture seule). Le script
-  # contrôle aussi que TOUTE clé active de .env.example existe dans .env
-  # (exhaustivité) → installez les clés manquantes signalées (ex. Marad).
+  # (snapshot météo 30 min), WINDY_API_KEY (repli Open-Meteo), MARAD_API_TOKEN
+  # / MARAD_SYNC_TOKEN (sync crew + plannings Marad, lecture seule) et les clés
+  # STRIPE (vente à bord : STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET — cohérence
+  # live/test + webhook de règlement). Le script contrôle aussi que TOUTE clé
+  # active de .env.example existe dans .env (exhaustivité) → installez les clés
+  # manquantes signalées (ex. Marad).
   # Cf. scripts/check_api_keys.sh et docs/operations/03-tracking-meteo-runbook.md.
   if [[ -x "${SCRIPT_DIR}/check_api_keys.sh" ]]; then
     if ! ENV_FILE="${PROJECT_ROOT}/.env" COMPOSE_FILE="${COMPOSE_FILE}" \
