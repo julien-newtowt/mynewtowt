@@ -359,6 +359,7 @@ async def sale_detail(
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
     sale = await _get_sale_or_404(db, reference)
+    await _reconcile_pending_card_payment(db, sale, recorded_by_id=user.id)
     vessel = await db.get(Vessel, sale.vessel_id)
     lines = list(
         (
@@ -491,6 +492,7 @@ async def create_checkout(
         .scalars()
         .all()
     )
+    sku_by_product_id = await _sku_map_for_lines(db, lines)
     base = settings.site_url.rstrip("/")
     try:
         session = await stripe_svc.create_session(
@@ -498,6 +500,7 @@ async def create_checkout(
             list(lines),
             success_url=f"{base}/captain/ventes/vente/{sale.reference}?paid=1",
             cancel_url=f"{base}/captain/ventes/vente/{sale.reference}",
+            sku_by_product_id=sku_by_product_id,
         )
     except stripe_svc.StripeNotConfigured as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -542,6 +545,18 @@ async def checkout_page(
         return RedirectResponse(url=f"/captain/ventes/vente/{sale.reference}", status_code=303)
     qr_svg = _qr_svg(pay_url)
     vessel = await db.get(Vessel, sale.vessel_id)
+    lines = list(
+        (
+            await db.execute(
+                select(OnboardSaleLine)
+                .where(OnboardSaleLine.sale_id == sale.id)
+                .order_by(OnboardSaleLine.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    sku_by_product_id = await _sku_map_for_lines(db, lines)
     return templates.TemplateResponse(
         "staff/onboard_sales/checkout.html",
         {
@@ -551,6 +566,8 @@ async def checkout_page(
             "vessel": vessel,
             "pay_url": pay_url,
             "qr_svg": qr_svg,
+            "lines": lines,
+            "sku_by_product_id": sku_by_product_id,
         },
     )
 
@@ -654,8 +671,84 @@ def _parse_date(raw: str, *, end_of_day: bool = False) -> datetime | None:
 
 
 def _qr_svg(data: str) -> str:
-    """QR code d'une URL → SVG inline (segno, pur-Python, sans JS externe)."""
-    return segno.make(data, error="m").svg_inline(scale=5, border=2)
+    """QR code d'une URL → SVG inline (segno, pur-Python, sans JS externe).
+
+    ``omitsize`` retire les attributs ``width``/``height`` fixes : le SVG épouse
+    alors la largeur de son conteneur (``.qr-frame``, cf. kairos.css) au lieu de
+    déborder — le ``viewBox`` préserve le ratio carré.
+    """
+    return segno.make(data, error="m").svg_inline(scale=5, border=2, omitsize=True)
+
+
+async def _sku_map_for_lines(db: AsyncSession, lines) -> dict[int, str]:
+    """Mappe ``product_id`` → SKU pour des lignes de vente (référence produit).
+
+    Une ligne peut ne pas être rattachée au catalogue (``product_id`` NULL,
+    vente libre) : elle est simplement absente du mapping.
+    """
+    product_ids = {ln.product_id for ln in lines if ln.product_id is not None}
+    if not product_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(OnboardProduct.id, OnboardProduct.sku).where(OnboardProduct.id.in_(product_ids))
+        )
+    ).all()
+    return dict(rows)
+
+
+async def _reconcile_pending_card_payment(
+    db: AsyncSession, sale: OnboardSale, *, recorded_by_id: int | None = None
+) -> None:
+    """Réconcilie une vente CB en attente avec Stripe, à l'affichage du détail.
+
+    Le webhook ``checkout.session.completed`` est la voie primaire de règlement.
+    S'il n'aboutit pas (endpoint mal déclaré, mauvais type d'événement souscrit,
+    indisponibilité temporaire), une vente pourtant payée resterait « en
+    attente ». À l'ouverture d'une vente en attente on interroge donc Stripe :
+    si le paiement est confirmé, on solde immédiatement. **Idempotent**
+    (``settle_sale`` ignore un règlement déjà posé) → jamais de double
+    encaissement avec le webhook. Best-effort : toute erreur Stripe/caisse est
+    journalisée sans casser l'affichage.
+    """
+    if not (
+        stripe_svc.is_configured()
+        and sale.status == "pending_payment"
+        and sale.stripe_checkout_session_id
+    ):
+        return
+    try:
+        session = await stripe_svc.retrieve_session(sale.stripe_checkout_session_id)
+    except (stripe_svc.StripeNotConfigured, stripe_svc.StripeCheckoutError) as e:
+        logger.info("Réconciliation Stripe ignorée (%s) : %s", sale.reference, e)
+        return
+    if getattr(session, "payment_status", None) not in ("paid", "no_payment_required"):
+        return
+    payment_intent = getattr(session, "payment_intent", None)
+    if isinstance(payment_intent, dict):
+        payment_intent = payment_intent.get("id")
+    try:
+        settled = await svc.settle_sale(
+            db,
+            sale,
+            payment_method="card",
+            payment_intent_id=payment_intent,
+            recorded_by_id=recorded_by_id,
+        )
+    except (svc.OnboardSalesError, CashboxError) as e:
+        logger.error("Réconciliation : règlement échoué %s : %s", sale.reference, e)
+        return
+    if settled:
+        await activity_record(
+            db,
+            action="onboard_sale_paid_card",
+            user_id=recorded_by_id,
+            user_name="stripe-reconcile",
+            module="captain",
+            entity_type="onboard_sale",
+            entity_id=sale.id,
+            detail=f"{sale.reference} (réconcilié à l'affichage)",
+        )
 
 
 # ───────────────────────────────────────────────────────────── Webhook Stripe

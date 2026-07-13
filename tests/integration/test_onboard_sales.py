@@ -135,3 +135,104 @@ async def test_webhook_settle_idempotent(db, staff_user):
     # Rejeu du même event (Stripe redélivre) : aucun doublon.
     await _settle_from_session(db, session_obj)
     assert await _count_vente_movements(db) == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_settles_paid_pending_sale(db, staff_user, monkeypatch):
+    """Réconciliation à l'affichage : une vente en attente dont Stripe confirme
+    le paiement est soldée, même sans webhook. Idempotent avec le webhook."""
+    from types import SimpleNamespace
+
+    from app.routers import onboard_sales_router as r
+
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.status = "pending_payment"
+    sale.stripe_checkout_session_id = "cs_test_ret"
+    await db.flush()
+
+    monkeypatch.setattr(r.stripe_svc, "is_configured", lambda: True)
+
+    async def fake_retrieve(session_id):
+        assert session_id == "cs_test_ret"
+        return SimpleNamespace(payment_status="paid", payment_intent="pi_ret_1")
+
+    monkeypatch.setattr(r.stripe_svc, "retrieve_session", fake_retrieve)
+
+    await r._reconcile_pending_card_payment(db, sale, recorded_by_id=staff_user.id)
+    assert sale.status == "paid"
+    assert sale.payment_method == "card"
+    assert sale.stripe_payment_intent_id == "pi_ret_1"
+    assert await _count_vente_movements(db) == 1
+
+    # Webhook tardif / ré-affichage : pas de second encaissement.
+    await r._reconcile_pending_card_payment(db, sale, recorded_by_id=staff_user.id)
+    assert await _count_vente_movements(db) == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_noop_when_unpaid(db, staff_user, monkeypatch):
+    """Session non payée → la vente reste en attente, aucun encaissement."""
+    from types import SimpleNamespace
+
+    from app.routers import onboard_sales_router as r
+
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.status = "pending_payment"
+    sale.stripe_checkout_session_id = "cs_test_unpaid"
+    await db.flush()
+
+    monkeypatch.setattr(r.stripe_svc, "is_configured", lambda: True)
+
+    async def fake_retrieve(session_id):
+        return SimpleNamespace(payment_status="unpaid", payment_intent=None)
+
+    monkeypatch.setattr(r.stripe_svc, "retrieve_session", fake_retrieve)
+
+    await r._reconcile_pending_card_payment(db, sale, recorded_by_id=staff_user.id)
+    assert sale.status == "pending_payment"
+    assert await _count_vente_movements(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_create_session_prefixes_sku(monkeypatch):
+    """La référence produit (SKU) préfixe le libellé envoyé à Stripe ; une ligne
+    sans produit du catalogue garde son libellé nu."""
+    from types import SimpleNamespace
+
+    from app.services import stripe_checkout as sc
+
+    monkeypatch.setattr(sc.settings, "stripe_secret_key", "sk_test_x")
+    captured: dict = {}
+
+    def fake_sync(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(id="cs_test", url="https://checkout.stripe.com/x")
+
+    monkeypatch.setattr(sc, "_create_session_sync", fake_sync)
+
+    sale = SimpleNamespace(id=1, reference="VB-2026-0001", currency="EUR")
+    line_known = SimpleNamespace(
+        product_id=7, label="Café moulu 250 g", qty=Decimal("2"), line_total=Decimal("13.00")
+    )
+    line_free = SimpleNamespace(
+        product_id=None, label="Service divers", qty=Decimal("1"), line_total=Decimal("5.00")
+    )
+    await sc.create_session(
+        sale,
+        [line_known, line_free],
+        success_url="s",
+        cancel_url="c",
+        sku_by_product_id={7: "CAF-250"},
+    )
+    names = [li["price_data"]["product_data"]["name"] for li in captured["line_items"]]
+    assert names[0] == "[CAF-250] Café moulu 250 g ×2"
+    assert names[1] == "Service divers ×1"
+
+
+def test_qr_svg_is_responsive():
+    """Le QR n'a plus de dimension fixe (omitsize) → il épouse son conteneur."""
+    from app.routers.onboard_sales_router import _qr_svg
+
+    svg = _qr_svg("https://checkout.stripe.com/pay/cs_test_abc")
+    assert "viewBox" in svg
+    assert "width=" not in svg

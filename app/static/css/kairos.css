@@ -1883,3 +1883,9 @@ form textarea {
 @media (max-width: 640px) {
   .emb-row { grid-template-columns: 100px 1fr; }
 }
+
+/* Cadre du QR de paiement (vente à bord) : contraint le SVG segno — généré
+   sans width/height fixes (omitsize) — à la largeur du cadre, centré. Sans
+   cela le SVG déborde de sa carte. */
+.qr-frame { max-width: 260px; margin: 1rem auto; }
+.qr-frame svg { display: block; width: 100%; height: auto; }

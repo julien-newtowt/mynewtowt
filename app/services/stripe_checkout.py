@@ -104,27 +104,35 @@ async def create_session(
     *,
     success_url: str,
     cancel_url: str,
+    sku_by_product_id: dict[int, str] | None = None,
 ) -> Any:
     """Crée une Checkout Session pour une vente. Montants recalculés serveur.
 
     Chaque ligne de vente devient un ``line_item`` à quantité 1 dont le montant
     est le **total de ligne** (évite les quantités fractionnaires non gérées par
     Stripe et garantit que le total Stripe == total serveur).
+
+    ``sku_by_product_id`` (optionnel) : mappe ``product_id`` → référence produit
+    (SKU). Quand une ligne y correspond, le SKU préfixe le libellé affiché sur
+    la page de paiement Stripe et le reçu — traçabilité de l'article vendu.
     """
     if not is_configured():
         raise StripeNotConfigured("Stripe non configuré (STRIPE_SECRET_KEY manquant).")
+    skus = sku_by_product_id or {}
     currency = sale.currency.lower()
     line_items: list[dict] = []
     for line in lines:
         qty = Decimal(line.qty)
         qty_txt = f"{qty.normalize():f}"
+        sku = skus.get(line.product_id) if line.product_id is not None else None
+        name = f"[{sku}] {line.label} ×{qty_txt}" if sku else f"{line.label} ×{qty_txt}"
         line_items.append(
             {
                 "quantity": 1,
                 "price_data": {
                     "currency": currency,
                     "unit_amount": amount_to_minor(Decimal(line.line_total), sale.currency),
-                    "product_data": {"name": f"{line.label} ×{qty_txt}"},
+                    "product_data": {"name": name},
                 },
             }
         )
