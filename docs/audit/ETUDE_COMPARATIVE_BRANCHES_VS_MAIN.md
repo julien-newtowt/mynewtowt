@@ -169,7 +169,7 @@ vérifié branche par branche le 2026‑07‑10).
 |---|---|---|---|
 | **R1** | ✅ **Réalisé (2026‑07‑10)** — fix Marad ré‑implémenté (commit `531e823` sur la branche d'étude ; `07fa395` a servi de spécification, cherry‑pick impossible pour cause de conflit) | `diagnose()` sonde l'équipage après auth réussie (`crew_count`, `_count_records` tolérant aux enveloppes, schéma d'auth mémorisé → single‑shot) ; badge 3 états (équipage visible / compte vide / repli navires‑quota) ; tests unit + rendu (46 verts). | ~~M~~ |
 | **R2** | ✅ **Réalisé (2026‑07‑10)** — doc de référence stratégique récupérée (cherry‑pick `771aa83` + rafraîchissement `6a6c8fa` sur la branche d'étude) | Chiffres recomptés (129 tables, 112 migrations, 43 routers…), version 3.11.0, MRV v2 + vente à bord intégrés, statuts 16.x/17.1 revus, frontière explicitée avec `DOCUMENT_REFERENCE_CONTEXTE_APPLICATION.md`. | ~~M~~ |
-| R3 | *(Optionnel)* Classement « top routes » du funnel | Petit ajout ciblé à `modules_router.py::analytics_commercial` (seule idée de `f947694` sans équivalent dans `main`). | S |
+| R3 | ✅ **Réalisé (2026‑07‑13)** — classement « top routes » livré (commit `08279fd` sur la branche d'étude) | Carte « Top routes » (POL→POD × volume de bookings, top 8, année en cours) dans `/dashboard/analytics/commercial` + test d'intégration. Seule idée de `f947694` restée sans équivalent — le gap COM‑13 est soldé. | ~~S~~ |
 | R4 | *(Optionnel)* Outil de purge de branches | Reprendre isolément `190a171:scripts/git-cleanup.sh` (retirer les références à `staging`). Aucun besoin exprimé au backlog — ne le faire que si l'hygiène de branches devient récurrente. | S |
 
 ### Phase 2 — Archivage puis purge (après validation humaine)
