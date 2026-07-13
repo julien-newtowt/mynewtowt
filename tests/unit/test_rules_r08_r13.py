@@ -57,8 +57,14 @@ async def db():
 
 def _ctx(db, rid, subjects, index, *, vessel=None, leg=None, now=NOW) -> RuleContext:
     return RuleContext(
-        db=db, rule_id=rid, subject=subjects[index], subjects=list(subjects),
-        index=index, now=now, vessel=vessel, leg=leg,
+        db=db,
+        rule_id=rid,
+        subject=subjects[index],
+        subjects=list(subjects),
+        index=index,
+        now=now,
+        vessel=vessel,
+        leg=leg,
     )
 
 
@@ -97,9 +103,9 @@ async def test_r08_zero_consumption_on_noon_warns(db):
 @pytest.mark.parametrize(
     "fuel_cur,result",
     [
-        (700, "pass"),   # 700 L/j < 750
-        (750, "pass"),   # limite exacte == seuil (borne incluse)
-        (751, "fail"),   # > seuil cible
+        (700, "pass"),  # 700 L/j < 750
+        (750, "pass"),  # limite exacte == seuil (borne incluse)
+        (751, "fail"),  # > seuil cible
     ],
 )
 async def test_r08_daily_threshold_exact_boundary(db, fuel_cur, result):
@@ -140,8 +146,10 @@ async def test_r08_short_port_stay_without_conso_passes(db):
 @pytest.mark.asyncio
 async def test_r08_abstains_without_counters_or_prev(db):
     assert await _run(db, "R08", [_ev("noon", T0, fuel=100)], 0) == []
-    seq = [SimpleNamespace(event_type="noon", datetime_utc=T0),
-           SimpleNamespace(event_type="noon", datetime_utc=T0 + timedelta(hours=24))]
+    seq = [
+        SimpleNamespace(event_type="noon", datetime_utc=T0),
+        SimpleNamespace(event_type="noon", datetime_utc=T0 + timedelta(hours=24)),
+    ]
     assert await _run(db, "R08", seq, 1) == []
 
 
@@ -153,7 +161,7 @@ async def test_r08_abstains_without_counters_or_prev(db):
     "declared,result",
     [
         (Decimal("5"), "pass"),
-        (Decimal("20"), "pass"),    # limite exacte == tolérance (calc = 0 nm)
+        (Decimal("20"), "pass"),  # limite exacte == tolérance (calc = 0 nm)
         (Decimal("20.1"), "fail"),  # au-delà
     ],
 )
@@ -161,9 +169,13 @@ async def test_r09_v1_declared_vs_computed_distance(db, declared, result):
     """v1 — distance déclarée vs trajectoire calculée (positions identiques →
     distance calculée = 0 nm exactement, la tolérance devient la borne)."""
     prev = _ev("noon", T0, lat_decimal=Decimal("10"), lon_decimal=Decimal("10"))
-    cur = _ev("noon", T0 + timedelta(hours=24),
-              lat_decimal=Decimal("10"), lon_decimal=Decimal("10"),
-              distance_nm=declared)
+    cur = _ev(
+        "noon",
+        T0 + timedelta(hours=24),
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_nm=declared,
+    )
     out = await _run(db, "R09", [prev, cur], 1)
     assert out[0].result == result
     if result == "fail":
@@ -174,11 +186,20 @@ async def test_r09_v1_declared_vs_computed_distance(db, declared, result):
 async def test_r09_v1_derives_declared_from_sosp_cumulative(db):
     """NoonEvent réel : pas de ``distance_nm`` direct — la distance déclarée
     de l'intervalle dérive du delta de ``distance_from_sosp_nm`` (cumul)."""
-    prev = _ev("noon", T0, lat_decimal=Decimal("10"), lon_decimal=Decimal("10"),
-               distance_from_sosp_nm=Decimal("100"))
-    cur = _ev("noon", T0 + timedelta(hours=24),
-              lat_decimal=Decimal("10"), lon_decimal=Decimal("10"),
-              distance_from_sosp_nm=Decimal("150"))  # Δ déclaré 50 nm vs calc 0
+    prev = _ev(
+        "noon",
+        T0,
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_from_sosp_nm=Decimal("100"),
+    )
+    cur = _ev(
+        "noon",
+        T0 + timedelta(hours=24),
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_from_sosp_nm=Decimal("150"),
+    )  # Δ déclaré 50 nm vs calc 0
     out = await _run(db, "R09", [prev, cur], 1)
     assert out[0].result == "fail" and out[0].severity == "warning"
 
@@ -188,8 +209,8 @@ async def test_r09_v1_derives_declared_from_sosp_cumulative(db):
     "gap_h,result",
     [
         (5, "pass"),
-        (6, "pass"),   # limite exacte == tolérance
-        (7, "fail"),   # au-delà
+        (6, "pass"),  # limite exacte == tolérance
+        (7, "fail"),  # au-delà
     ],
 )
 async def test_r09_v2_portcall_datetime_vs_reference(db, gap_h, result):
@@ -207,8 +228,10 @@ async def test_r09_v2_portcall_datetime_vs_reference(db, gap_h, result):
 
 @pytest.mark.asyncio
 async def test_r10_monotonic_passes(db):
-    seq = [_ev("noon", NOW - timedelta(hours=25), fuel=1000),
-           _ev("noon", NOW - timedelta(hours=1), fuel=1000)]  # Δ = 0 : limite incluse
+    seq = [
+        _ev("noon", NOW - timedelta(hours=25), fuel=1000),
+        _ev("noon", NOW - timedelta(hours=1), fuel=1000),
+    ]  # Δ = 0 : limite incluse
     out = await _run(db, "R10", seq, 1)
     assert out[0].result == "pass"
 
@@ -217,8 +240,10 @@ async def test_r10_monotonic_passes(db):
 async def test_r10_unconfirmed_regression_warns_and_routes_admin(db):
     """Cas réel : compteur régressant NON confirmé → warning ROUTÉ
     Administrateur (Matrice §3, amendement R10) — plus de blocage automatique."""
-    seq = [_ev("noon", NOW - timedelta(hours=25), fuel=1000),
-           _ev("noon", NOW - timedelta(hours=1), fuel=900)]
+    seq = [
+        _ev("noon", NOW - timedelta(hours=25), fuel=1000),
+        _ev("noon", NOW - timedelta(hours=1), fuel=900),
+    ]
     out = await _run(db, "R10", seq, 1)
     assert out[0].result == "fail" and out[0].severity == "warning"
     assert out[0].details["route_roles"] == ["administrateur"]
@@ -239,15 +264,14 @@ async def test_r10_confirmed_reset_passes(db):
 @pytest.mark.parametrize(
     "age_days,expected_severity",
     [
-        (1, "warning"),    # < délai de confirmation (3 j)
-        (3, "warning"),    # limite exacte == délai (pas encore escaladé)
-        (4, "bloquant"),   # au-delà → escalade (Matrice §3, point 4)
+        (1, "warning"),  # < délai de confirmation (3 j)
+        (3, "warning"),  # limite exacte == délai (pas encore escaladé)
+        (4, "bloquant"),  # au-delà → escalade (Matrice §3, point 4)
     ],
 )
 async def test_r10_escalation_after_confirmation_delay(db, age_days, expected_severity):
     dt_cur = NOW - timedelta(days=age_days)
-    seq = [_ev("noon", dt_cur - timedelta(hours=24), fuel=1000),
-           _ev("noon", dt_cur, fuel=900)]
+    seq = [_ev("noon", dt_cur - timedelta(hours=24), fuel=1000), _ev("noon", dt_cur, fuel=900)]
     out = await _run(db, "R10", seq, 1)
     assert out[0].result == "fail"
     assert out[0].severity == expected_severity
@@ -262,7 +286,9 @@ async def test_r11_r12_r13_still_registered_with_lot2_semantics(db):
     """Réconciliation documentée : R11 = bornes plausibles paramétrées, R12 =
     copier-coller, R13 = chronologie — la couverture table-driven vit dans
     ``test_validation_engine.py`` (lot 2). Ici : sanity de non-régression."""
-    assert (await _run(db, "R11", [SimpleNamespace(conso_l_j=Decimal("800"))], 0))[0].result == "fail"
+    assert (await _run(db, "R11", [SimpleNamespace(conso_l_j=Decimal("800"))], 0))[
+        0
+    ].result == "fail"
     a = SimpleNamespace(latitude=49.0, longitude=-1.0)
     b = SimpleNamespace(latitude=49.0, longitude=-1.0)
     assert (await _run(db, "R12", [a, b], 1))[0].result == "fail"
@@ -276,14 +302,21 @@ async def test_r11_r12_r13_still_registered_with_lot2_semantics(db):
 @pytest.mark.asyncio
 async def test_run_rules_sequence_snapshots_r08_thresholds(db):
     seq = [
-        SimpleNamespace(event_type="noon", datetime_utc=T0, fuel_counter_l=Decimal("0"),
-                        leg_id=1, vessel_id=1),
-        SimpleNamespace(event_type="noon", datetime_utc=T0 + timedelta(hours=24),
-                        fuel_counter_l=Decimal("800"), leg_id=1, vessel_id=1),
+        SimpleNamespace(
+            event_type="noon", datetime_utc=T0, fuel_counter_l=Decimal("0"), leg_id=1, vessel_id=1
+        ),
+        SimpleNamespace(
+            event_type="noon",
+            datetime_utc=T0 + timedelta(hours=24),
+            fuel_counter_l=Decimal("800"),
+            leg_id=1,
+            vessel_id=1,
+        ),
     ]
     summary = await run_rules(db, "event", seq, run_id="r08seq")
     r08 = [r for r in summary.results if r.rule_id == "R08" and r.result == "fail"]
     assert r08 and r08[0].severity_applied == "warning"
     used = (r08[0].details or {}).get("thresholds_used") or []
-    assert any(u["parameter_name"] == "seuil_conso_ref_l_j" and Decimal(u["value"]) == 750
-               for u in used)
+    assert any(
+        u["parameter_name"] == "seuil_conso_ref_l_j" and Decimal(u["value"]) == 750 for u in used
+    )

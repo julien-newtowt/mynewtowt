@@ -30,6 +30,7 @@ TODO lots aval :
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -212,9 +213,7 @@ def _readings_by_engine(event: NavEvent) -> dict[int, NavEventEngineReading]:
 def _reset_confirmed(reading: NavEventEngineReading | None) -> bool:
     """R10 : reset légitime = drapeau posé ET confirmé par l'Administrateur."""
     return bool(
-        reading is not None
-        and reading.is_counter_reset
-        and reading.reset_confirmed_by is not None
+        reading is not None and reading.is_counter_reset and reading.reset_confirmed_by is not None
     )
 
 
@@ -276,7 +275,9 @@ def engine_consumptions(
             engine_group=(engine.engine_group if engine is not None else None),
             fuel_l_prev=fuel_prev,
             fuel_l_cur=fuel_cur,
-            delta_l=(fuel_cur - fuel_prev) if (fuel_prev is not None and fuel_cur is not None) else None,
+            delta_l=(
+                (fuel_cur - fuel_prev) if (fuel_prev is not None and fuel_cur is not None) else None
+            ),
             conso_t=conso_t,
             running_hours_prev=rh_prev,
             running_hours_cur=rh_cur,
@@ -406,9 +407,7 @@ def _declared_rob(event: NavEvent) -> Decimal | None:
     return event.rob_t if isinstance(event, PortCallEvent) else None
 
 
-def compute_rob_chain(
-    events: list[NavEvent], intervals: list[IntervalResult]
-) -> list[RobPoint]:
+def compute_rob_chain(events: list[NavEvent], intervals: list[IntervalResult]) -> list[RobPoint]:
     """ROB chaîné forward, ancré sur le 1er ROB de référence (PortCall).
 
     ``ROB(evt) = ROB(précédent) − conso_totale(intervalle) + soutages(intervalle)``.
@@ -447,9 +446,7 @@ def compute_rob_chain(
 # ════════════════════════════════════════════════════════════ Mouillages
 
 
-def anchoring_duration_h(
-    begin: BeginAnchoringEvent, end: EndAnchoringEvent
-) -> Decimal | None:
+def anchoring_duration_h(begin: BeginAnchoringEvent, end: EndAnchoringEvent) -> Decimal | None:
     """Durée d'un mouillage = End.datetime_utc − Begin.datetime_utc (heures)."""
     begin_dt, end_dt = _utc(begin.datetime_utc), _utc(end.datetime_utc)
     if begin_dt is None or end_dt is None:
@@ -507,7 +504,7 @@ def _interpolate_displacement(
         return Decimal(pts[0].displacement_m3)
     if draft_m >= pts[-1].draft_m:
         return Decimal(pts[-1].displacement_m3)
-    for lo, hi in zip(pts, pts[1:]):
+    for lo, hi in itertools.pairwise(pts):
         if lo.draft_m <= draft_m <= hi.draft_m:
             d_lo, d_hi = Decimal(lo.draft_m), Decimal(hi.draft_m)
             v_lo, v_hi = Decimal(lo.displacement_m3), Decimal(hi.displacement_m3)
@@ -554,8 +551,11 @@ def compute_cargo_mrv(
                 displacement_t = displacement_m3 * water_density
                 cargo = displacement_t - Decimal(vessel.lightweight_t) - consumables_t
                 return CargoMrvResult(
-                    event.id, cargo, "hydrostatics",
-                    mean_draft_m=mean_draft, displacement_m3=displacement_m3,
+                    event.id,
+                    cargo,
+                    "hydrostatics",
+                    mean_draft_m=mean_draft,
+                    displacement_m3=displacement_m3,
                 )
 
     # Repli : valeur saisie (ou None si absente).
@@ -586,7 +586,7 @@ async def compute_leg(
     hydrostatics = list(hydro_rows.scalars().all())
 
     intervals: list[IntervalResult] = []
-    for prev, cur in zip(events, events[1:]):
+    for prev, cur in itertools.pairwise(events):
         intervals.append(
             compute_interval(prev, cur, engines, density, bunkered_t_lookup=bunkered_t_lookup)
         )

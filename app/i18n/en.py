@@ -1305,7 +1305,7 @@ CATALOG: dict[str, str] = {
     "dashenv_admin_kicker": "Environmental performance",
     "dashenv_admin_intro": "Dashboard calculation parameters (dashboard_parameters) — editable without a deployment; history tracked for MRV/EU ETS compliance.",
     "dashenv_admin_back": "← Fleet view",
-    "dashenv_admin_provisional_banner": "Parameters marked \"provisional\" (container-ship / airfreight comparators) are sector benchmarks not yet formally sourced (ADEME, Clean Cargo, ICCT…) — to be finalised before any external communication use.",
+    "dashenv_admin_provisional_banner": 'Parameters marked "provisional" (container-ship / airfreight comparators) are sector benchmarks not yet formally sourced (ADEME, Clean Cargo, ICCT…) — to be finalised before any external communication use.',
     "dashenv_admin_link_mrv": "MRV rule thresholds",
     "dashenv_admin_link_ef": "Fuel emission factors",
     "dashenv_admin_table_title": "Calculation parameters",
@@ -1322,7 +1322,6 @@ CATALOG: dict[str, str] = {
     "dashenv_admin_history_toggle": "History",
     "dashenv_admin_history_empty": "No changes",
     "dashenv_admin_empty": "No parameters — initialise the reference data from /mrv/parametres.",
-
     # ── Environmental dashboard — Operational tracking & Data quality (LOT 12) ──
     "dashenv_tab_fleet": "Fleet view",
     "dashenv_tab_vessel": "Operational tracking",
@@ -1408,7 +1407,7 @@ CATALOG: dict[str, str] = {
     "dashenv_quality_resets_hint": "Confirm a legitimate reset — the action is audited and rebases the fuel calculation (LOT 8 route).",
     "dashenv_quality_resets_none": "No pending counter reset.",
     "dashenv_quality_bunkers": "Bunkering not reconciled with FLGO (R24)",
-    "dashenv_quality_bunkers_hint": "Validated bunkering with no FLGO \"Received\" reading within the window — to complete in Marad/FLGO.",
+    "dashenv_quality_bunkers_hint": 'Validated bunkering with no FLGO "Received" reading within the window — to complete in Marad/FLGO.',
     "dashenv_quality_bunkers_none": "All validated bunkering is reconciled with FLGO.",
     "dashenv_quality_window": "Window",
     "dashenv_quality_noon": "Noon completeness (active voyages)",
@@ -1417,7 +1416,6 @@ CATALOG: dict[str, str] = {
     "dashenv_quality_noon_expected": "Expected",
     "dashenv_quality_noon_pct": "Completeness",
     "dashenv_quality_noon_none": "No active voyage to track.",
-
     # LOT 8 — MRV quality screen (/mrv/qualite)
     "s_nav_mrv_qualite": "MRV Quality",
     "mrv_qual_title": "MRV data quality",

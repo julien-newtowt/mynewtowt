@@ -38,7 +38,10 @@ async def _setup_sale(db, staff_user, *, stock=Decimal("10"), qty=Decimal("2")):
         recorded_by_id=staff_user.id,
     )
     sale = await svc.create_sale(
-        db, vessel_id=vessel.id, currency="EUR", buyer_name="Marin X",
+        db,
+        vessel_id=vessel.id,
+        currency="EUR",
+        buyer_name="Marin X",
         recorded_by_id=staff_user.id,
     )
     await svc.add_line(db, sale, product=product, qty=qty)

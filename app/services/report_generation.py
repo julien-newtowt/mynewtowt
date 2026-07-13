@@ -142,7 +142,9 @@ async def _engines_map(db: AsyncSession, vessel_id: int | None) -> dict[int, Any
     return {e.id: e for e in engines}
 
 
-async def _leg_context(db: AsyncSession, leg: Leg) -> tuple[iec.LegComputation, ResolvedEmissionFactor]:
+async def _leg_context(
+    db: AsyncSession, leg: Leg
+) -> tuple[iec.LegComputation, ResolvedEmissionFactor]:
     """Chaîne dérivée du voyage + facteur d'émission applicable (daté sur ETD)."""
     bunker_lookup = await _build_bunker_lookup(db, leg.id)
     comp = await iec.compute_leg(db, leg, bunkered_t_lookup=bunker_lookup)
@@ -332,17 +334,28 @@ async def generate_noon_report(
     }
     link_ids = [noon_event.id] + ([prev_event.id] if prev_event is not None else [])
     return await _store_report(
-        db, existing, leg_id=leg.id, report_type="noon", payload=payload,
-        link_event_ids=link_ids, author_user_id=author_user_id,
+        db,
+        existing,
+        leg_id=leg.id,
+        report_type="noon",
+        payload=payload,
+        link_event_ids=link_ids,
+        author_user_id=author_user_id,
     )
 
 
 def _interval_payload(interval: iec.IntervalResult | None) -> dict[str, Any]:
     if interval is None:
         return {
-            "distance_nm": None, "duration_h": None, "speed_kn": None,
-            "conso_me_t": None, "conso_ae_t": None, "conso_total_t": None,
-            "bunkered_t": None, "counter_anomaly": False, "engines": [],
+            "distance_nm": None,
+            "duration_h": None,
+            "speed_kn": None,
+            "conso_me_t": None,
+            "conso_ae_t": None,
+            "conso_total_t": None,
+            "bunkered_t": None,
+            "counter_anomaly": False,
+            "engines": [],
         }
     return {
         "from_event_id": interval.from_event_id,
@@ -441,7 +454,11 @@ async def generate_carbon_report(
             "co2_per_t_bl_kg": _intensity(co2_t, cargo_bl, Decimal("1000")),
             "co2_eu_mrv_g_per_tnm": _intensity(
                 co2_t,
-                (distance * cargo_mrv) if (distance is not None and cargo_mrv is not None) else None,
+                (
+                    (distance * cargo_mrv)
+                    if (distance is not None and cargo_mrv is not None)
+                    else None
+                ),
                 _MILLION,
             ),
         },
@@ -450,8 +467,13 @@ async def generate_carbon_report(
         "anchorings": _anchoring_rows(comp, events),
     }
     return await _store_report(
-        db, existing, leg_id=leg.id, report_type="carbon", payload=payload,
-        link_event_ids=[e.id for e in events], author_user_id=author_user_id,
+        db,
+        existing,
+        leg_id=leg.id,
+        report_type="carbon",
+        payload=payload,
+        link_event_ids=[e.id for e in events],
+        author_user_id=author_user_id,
     )
 
 
@@ -480,7 +502,11 @@ def _anchoring_rows(comp: iec.LegComputation, events: list[NavEvent]) -> list[di
     rows: list[dict[str, Any]] = []
     for pair in iec.pair_anchorings(events):
         interval = interval_by_from.get(pair.begin_event_id)
-        conso = interval.total_conso_t if (interval and interval.to_event_id == pair.end_event_id) else None
+        conso = (
+            interval.total_conso_t
+            if (interval and interval.to_event_id == pair.end_event_id)
+            else None
+        )
         begin = by_id.get(pair.begin_event_id)
         end = by_id.get(pair.end_event_id)
         rows.append(
@@ -592,8 +618,13 @@ async def generate_stopover_report(
         ],
     }
     return await _store_report(
-        db, existing, leg_id=leg_id, report_type="stopover", payload=payload,
-        link_event_ids=[arrival_event.id, departure_event.id], author_user_id=author_user_id,
+        db,
+        existing,
+        leg_id=leg_id,
+        report_type="stopover",
+        payload=payload,
+        link_event_ids=[arrival_event.id, departure_event.id],
+        author_user_id=author_user_id,
     )
 
 
@@ -602,13 +633,17 @@ async def _bunkers_in_window(
 ) -> list[BunkerOperation]:
     """Soutages validés Master du navire livrés dans la fenêtre (arrivée, départ]."""
     rows = (
-        await db.execute(
-            select(BunkerOperation)
-            .where(BunkerOperation.vessel_id == vessel_id)
-            .where(BunkerOperation.status == "valide_master")
-            .order_by(BunkerOperation.delivery_datetime_utc)
+        (
+            await db.execute(
+                select(BunkerOperation)
+                .where(BunkerOperation.vessel_id == vessel_id)
+                .where(BunkerOperation.status == "valide_master")
+                .order_by(BunkerOperation.delivery_datetime_utc)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     f, t = _naive_utc(frm), _naive_utc(to)
     out: list[BunkerOperation] = []
     for b in rows:
@@ -727,9 +762,7 @@ async def validate_siege(db: AsyncSession, report: EnvReport, user: Any) -> EnvR
             f"Validation siège réservée au Carbon (type reçu : {report.report_type})."
         )
     if report.status != "valide_master":
-        raise ReportWorkflowError(
-            "Le rapport doit être validé Master avant la validation siège."
-        )
+        raise ReportWorkflowError("Le rapport doit être validé Master avant la validation siège.")
     report.status = "valide_siege"
     report.validated_siege_at = datetime.now(UTC)
     report.validated_siege_by = getattr(user, "id", None)
@@ -743,10 +776,14 @@ async def report_quality_status(db: AsyncSession, report_id: int) -> str | None:
     Point de consommation documenté pour le lot 10 (porte de consolidation :
     ``under_conformity`` exclut le rapport du dataset réglementaire)."""
     rows = (
-        await db.execute(
-            select(EnvFieldModification.resulting_quality_status).where(
-                EnvFieldModification.report_id == report_id
+        (
+            await db.execute(
+                select(EnvFieldModification.resulting_quality_status).where(
+                    EnvFieldModification.report_id == report_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return worst_quality_status(rows)

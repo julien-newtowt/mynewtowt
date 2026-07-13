@@ -41,8 +41,12 @@ async def _captain_user(db, assigned_vessel_id: int | None = None, user_id: int 
     à l'équipage seul.
     """
     u = User(
-        id=user_id, username=f"cdt{user_id}", email=f"cdt{user_id}@example.test",
-        hashed_password="x", full_name="Cdt Test", role="manager_maritime",
+        id=user_id,
+        username=f"cdt{user_id}",
+        email=f"cdt{user_id}@example.test",
+        hashed_password="x",
+        full_name="Cdt Test",
+        role="manager_maritime",
         assigned_vessel_id=assigned_vessel_id,
     )
     db.add(u)
@@ -73,9 +77,14 @@ async def _make_leg(db, vessel: Vessel, etd: datetime, leg_code: str = "1AFRBR6"
     db.add_all([pol, pod])
     await db.flush()
     leg = Leg(
-        leg_code=leg_code, vessel_id=vessel.id,
-        departure_port_id=pol.id, arrival_port_id=pod.id,
-        etd=etd, eta=etd + timedelta(days=20), etd_ref=etd, eta_ref=etd + timedelta(days=20),
+        leg_code=leg_code,
+        vessel_id=vessel.id,
+        departure_port_id=pol.id,
+        arrival_port_id=pod.id,
+        etd=etd,
+        eta=etd + timedelta(days=20),
+        etd_ref=etd,
+        eta_ref=etd + timedelta(days=20),
     )
     db.add(leg)
     await db.flush()
@@ -224,11 +233,7 @@ async def test_onboard_bunkering_create_then_validate_master_flow(db):
 
     # Trace de la création.
     logs = list(
-        (
-            await db.execute(
-                select(ActivityLog).where(ActivityLog.action == "bunker_create")
-            )
-        )
+        (await db.execute(select(ActivityLog).where(ActivityLog.action == "bunker_create")))
         .scalars()
         .all()
     )
@@ -394,15 +399,27 @@ async def test_mrv_bunkering_index_filters_by_ecart(db):
     )
 
     resp = await mrv_bunkering_index(
-        FakeRequest(), vessel_id=None, status=None, date_from=None, date_to=None,
-        ecart=None, db=db, user=_mrv_editor_user(),
+        FakeRequest(),
+        vessel_id=None,
+        status=None,
+        date_from=None,
+        date_to=None,
+        ecart=None,
+        db=db,
+        user=_mrv_editor_user(),
     )
     assert resp.status_code == 200
     assert len(resp.context["rows"]) == 2
 
     resp_majeur = await mrv_bunkering_index(
-        FakeRequest(), vessel_id=None, status=None, date_from=None, date_to=None,
-        ecart="ecart_majeur", db=db, user=_mrv_editor_user(),
+        FakeRequest(),
+        vessel_id=None,
+        status=None,
+        date_from=None,
+        date_to=None,
+        ecart="ecart_majeur",
+        db=db,
+        user=_mrv_editor_user(),
     )
     bdns = {row["bunker"].bdn_number for row in resp_majeur.context["rows"]}
     assert bdns == {"BDN-ECART"}

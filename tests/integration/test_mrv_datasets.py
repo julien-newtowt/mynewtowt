@@ -49,8 +49,14 @@ async def _setup(db):
     db.add_all([p1, p2])
     await db.flush()
     leg = Leg(
-        leg_code="1AFRBR6", vessel_id=vessel.id, departure_port_id=p1.id, arrival_port_id=p2.id,
-        etd_ref=T0, eta_ref=T0 + timedelta(days=3), etd=T0, eta=T0 + timedelta(days=3),
+        leg_code="1AFRBR6",
+        vessel_id=vessel.id,
+        departure_port_id=p1.id,
+        arrival_port_id=p2.id,
+        etd_ref=T0,
+        eta_ref=T0 + timedelta(days=3),
+        etd=T0,
+        eta=T0 + timedelta(days=3),
     )
     db.add(leg)
     await db.flush()
@@ -59,27 +65,64 @@ async def _setup(db):
         return NavEventEngineReading(engine_id=engines[role].id, fuel_counter_l=Decimal(str(fuel)))
 
     dep = DepartureEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="valide", datetime_utc=T0,
-        lat_decimal=Decimal("47.8167"), lon_decimal=Decimal("-3.9333"),
-        rob_t=Decimal("100.000"), vessel_condition="laden", cargo_mrv_t=Decimal("540.000"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="valide",
+        datetime_utc=T0,
+        lat_decimal=Decimal("47.8167"),
+        lon_decimal=Decimal("-3.9333"),
+        rob_t=Decimal("100.000"),
+        vessel_condition="laden",
+        cargo_mrv_t=Decimal("540.000"),
     )
-    dep.engine_readings = [_rd("PME", 10000), _rd("SME", 8000), _rd("FWD_GEN", 5000), _rd("AFT_GEN", 4000)]
+    dep.engine_readings = [
+        _rd("PME", 10000),
+        _rd("SME", 8000),
+        _rd("FWD_GEN", 5000),
+        _rd("AFT_GEN", 4000),
+    ]
     noon = NoonEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="valide", datetime_utc=T0 + timedelta(hours=24),
-        lat_decimal=Decimal("45.0"), lon_decimal=Decimal("-10.0"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="valide",
+        datetime_utc=T0 + timedelta(hours=24),
+        lat_decimal=Decimal("45.0"),
+        lon_decimal=Decimal("-10.0"),
     )
-    noon.engine_readings = [_rd("PME", 11000), _rd("SME", 8600), _rd("FWD_GEN", 5300), _rd("AFT_GEN", 4200)]
+    noon.engine_readings = [
+        _rd("PME", 11000),
+        _rd("SME", 8600),
+        _rd("FWD_GEN", 5300),
+        _rd("AFT_GEN", 4200),
+    ]
     arr = ArrivalEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="valide", datetime_utc=T0 + timedelta(hours=48),
-        lat_decimal=Decimal("40.0"), lon_decimal=Decimal("-20.0"),
-        rob_t=Decimal("96.000"), vessel_condition="laden", cargo_mrv_t=Decimal("540.000"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="valide",
+        datetime_utc=T0 + timedelta(hours=48),
+        lat_decimal=Decimal("40.0"),
+        lon_decimal=Decimal("-20.0"),
+        rob_t=Decimal("96.000"),
+        vessel_condition="laden",
+        cargo_mrv_t=Decimal("540.000"),
     )
-    arr.engine_readings = [_rd("PME", 12000), _rd("SME", 9200), _rd("FWD_GEN", 5600), _rd("AFT_GEN", 4400)]
+    arr.engine_readings = [
+        _rd("PME", 12000),
+        _rd("SME", 9200),
+        _rd("FWD_GEN", 5600),
+        _rd("AFT_GEN", 4400),
+    ]
     db.add_all([dep, noon, arr])
     bunker = BunkerOperation(
-        leg_id=leg.id, vessel_id=vessel.id, bdn_number="433421", port_locode="FRFEC",
-        delivery_datetime_utc=T0 - timedelta(days=1), fuel_type="MDO",
-        mass_t=Decimal("30.054"), density_15c_t_m3=Decimal("0.845"), status="valide_master",
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        bdn_number="433421",
+        port_locode="FRFEC",
+        delivery_datetime_utc=T0 - timedelta(days=1),
+        fuel_type="MDO",
+        mass_t=Decimal("30.054"),
+        density_15c_t_m3=Decimal("0.845"),
+        status="valide_master",
     )
     db.add(bunker)
     await db.flush()
@@ -88,7 +131,9 @@ async def _setup(db):
 
 async def test_datasets_screen_renders(db, staff_user):
     vessel, _ = await _setup(db)
-    resp = await mr.mrv_datasets(FakeRequest(), vessel_id=vessel.id, year=None, db=db, user=staff_user)
+    resp = await mr.mrv_datasets(
+        FakeRequest(), vessel_id=vessel.id, year=None, db=db, user=staff_user
+    )
     assert resp.status_code == 200
 
 
@@ -122,12 +167,16 @@ async def test_generate_snapshots_and_audits(db, staff_user):
     assert all(e.source_system == "MyTOWT" for e in la)
 
     logs = (
-        await db.execute(select(ActivityLog).where(ActivityLog.action == "mrv_dataset_generate"))
-    ).scalars().all()
+        (await db.execute(select(ActivityLog).where(ActivityLog.action == "mrv_dataset_generate")))
+        .scalars()
+        .all()
+    )
     assert len(logs) == 1
 
     # Idempotent : re-générer ne crée pas de doublon.
-    await mr.mrv_datasets_generate(FakeRequest(), vessel_id=vessel.id, year=None, db=db, user=staff_user)
+    await mr.mrv_datasets_generate(
+        FakeRequest(), vessel_id=vessel.id, year=None, db=db, user=staff_user
+    )
     la2 = (await db.execute(select(MrvLogAbstractEntry))).scalars().all()
     assert len(la2) == 2
 
@@ -143,7 +192,9 @@ async def test_downloads_content_types(db, staff_user):
     body = csv.body.decode()
     assert body.splitlines()[0].split(",")[0] == "IMO"
 
-    br_xls = await mr.mrv_datasets_ovdbr_xlsx(vessel_id=vessel.id, year=None, db=db, user=staff_user)
+    br_xls = await mr.mrv_datasets_ovdbr_xlsx(
+        vessel_id=vessel.id, year=None, db=db, user=staff_user
+    )
     assert br_xls.media_type == _XLSX
     br_csv = await mr.mrv_datasets_ovdbr_csv(vessel_id=vessel.id, year=None, db=db, user=staff_user)
     assert "BDN_Number" in br_csv.body.decode()
@@ -152,8 +203,12 @@ async def test_downloads_content_types(db, staff_user):
 async def test_year_filter(db, staff_user):
     vessel, _ = await _setup(db)
     # Année 2026 : toutes les lignes tombent dedans.
-    resp = await mr.mrv_datasets(FakeRequest(), vessel_id=vessel.id, year=2026, db=db, user=staff_user)
+    resp = await mr.mrv_datasets(
+        FakeRequest(), vessel_id=vessel.id, year=2026, db=db, user=staff_user
+    )
     assert resp.status_code == 200
     # Année 2020 : aucune ligne → écran rendu, aperçu vide.
-    resp2 = await mr.mrv_datasets(FakeRequest(), vessel_id=vessel.id, year=2020, db=db, user=staff_user)
+    resp2 = await mr.mrv_datasets(
+        FakeRequest(), vessel_id=vessel.id, year=2020, db=db, user=staff_user
+    )
     assert resp2.status_code == 200

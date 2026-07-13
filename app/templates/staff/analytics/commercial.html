@@ -168,6 +168,29 @@
   </article>
 </div>
 
+<div class="grid grid-2 gap-4 mt-4">
+  {# Top routes (COM-13) : liaisons POL→POD par volume de réservations #}
+  <article class="card">
+    <h2>Top routes {{ year }}</h2>
+    {% if top_routes %}
+    <table class="data-table">
+      <thead><tr><th>Liaison</th><th>Bookings</th></tr></thead>
+      <tbody>
+        {% for row in top_routes %}
+        <tr>
+          <td><span class="leg-code">{{ row.pol }}</span> → <span class="leg-code">{{ row.pod }}</span></td>
+          <td><strong>{{ row.n }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">Aucun booking rattaché à un leg cette année.</p>
+    {% endif %}
+    <div class="mt-3"><a href="/routes" class="btn btn-secondary btn-sm">Voir le catalogue de routes</a></div>
+  </article>
+</div>
+
 {# Facturation par statut #}
 <article class="card mt-4">
   <h2>Facturation {{ year }} — par statut</h2>

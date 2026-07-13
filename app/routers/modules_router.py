@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.database import get_db
 from app.models.claim import VesselPosition
@@ -374,6 +375,28 @@ async def analytics_commercial(
         )
     ).all()
 
+    # Top routes par volume de réservations (COM-13, dernier gap — R3) :
+    # classement des liaisons POL→POD les plus réservées de l'année.
+    pol_port = aliased(Port)
+    pod_port = aliased(Port)
+    top_routes_rows = (
+        await db.execute(
+            select(
+                pol_port.locode.label("pol"),
+                pod_port.locode.label("pod"),
+                func.count(Booking.id).label("n"),
+            )
+            .select_from(Booking)
+            .join(Leg, Leg.id == Booking.leg_id)
+            .join(pol_port, pol_port.id == Leg.departure_port_id)
+            .join(pod_port, pod_port.id == Leg.arrival_port_id)
+            .where(Booking.created_at >= year_start)
+            .group_by(pol_port.locode, pod_port.locode)
+            .order_by(func.count(Booking.id).desc())
+            .limit(8)
+        )
+    ).all()
+
     # Invoices by status
     inv_rows = (
         await db.execute(
@@ -481,6 +504,7 @@ async def analytics_commercial(
             "funnel_statuses": funnel_statuses,
             "funnel_max": funnel_max,
             "top_clients": top_clients_rows,
+            "top_routes": top_routes_rows,
             "inv_by_status": inv_by_status,
             "total_revenue": total_revenue,
             "conversion_pct": conversion_pct,

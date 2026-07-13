@@ -40,195 +40,490 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # (rule_id, domain, description, default_severity, scope, active)
 RULE_SEED: tuple[tuple[str, str, str, str, str, bool], ...] = (
-    ("R01", "Identité",
-     "Nom/identité du navire manquant (bloquant) ou navire non reconnu (warning).",
-     "bloquant", "event", True),
-    ("R02", "Voyage",
-     "Aucun voyage rattaché (leg_id) ; contrôle de format du leg_code (7 caractères).",
-     "bloquant", "event", True),
-    ("R03", "Type",
-     "Type d'événement/rapport manquant ou non reconnu.",
-     "bloquant", "event", True),
-    ("R04", "Date",
-     "Date manquante — obligatoire MRV.",
-     "bloquant", "event", True),
-    ("R05", "Position",
-     "Position GPS manquante/hors plage ou indicateur N/S/E/W absent ; "
-     "Thalos indisponible → saisie manuelle justifiée.",
-     "bloquant", "event", True),
-    ("R06", "ROB",
-     "ROB manquant ou négatif (bloquant) ; =0 en Noon ou >300 t (warning).",
-     "bloquant", "event", True),
-    ("R07", "Ports",
-     "UNLOCODE de port absent ou non conforme (5 caractères).",
-     "warning", "event", True),
-    ("R08", "Consommation",
-     "Consommation négative (bloquant), =0 en Noon (warning), hors seuil cible "
-     "(seuil_conso_ref_l_j) ; complétude de la conso d'escale.",
-     "warning", "event", True),
-    ("R09", "Distance/Vitesse",
-     "Distance=0 en Noon ou vitesse implicite hors bornes ; cohérence de la position "
-     "manuelle et des horodatages d'escale vs AIS/ShoreManager.",
-     "warning", "event", True),
-    ("R10", "Compteurs moteur",
-     "Monotonie des compteurs moteur ; réinitialisation légitime confirmée par "
-     "l'Administrateur (sinon escalade bloquante).",
-     "warning", "event", True),
-    ("R11", "Bornes plausibles",
-     "Valeurs numériques (ROB annexes urée/eau douce, mesures) dans des bornes "
-     "plausibles paramétrées.",
-     "warning", "event", True),
-    ("R12", "Météo/relevés",
-     "Moins de 3 relevés par jour, ou valeurs identiques sur des relevés consécutifs "
-     "(copier-coller).",
-     "warning", "event", True),
-    ("R13", "Cohérence séquence",
-     "Complétude des champs (voilure/températures/tirants) et cohérence chronologique "
-     "de la séquence d'événements (datetime strictement croissant).",
-     "info", "event", True),
-    ("R14", "Cohérence ROB",
-     "Continuité du ROB en traversée (R14a) et en escale (R14b) : ROB théorique vs "
-     "déclaré, écart mineur/majeur/critique.",
-     "bloquant", "voyage", True),
-    ("R15", "Écart consommation",
-     "Écart entre conso calculée (compteurs), déclarée (delta ROB) et cible "
-     "(seuil_conso_ref_l_j).",
-     "warning", "voyage", True),
-    ("R16", "Densité",
-     "Écart de densité volume/masse entre soutage, cuves et compteurs "
-     "(densite_defaut_t_m3 ± tolérance).",
-     "warning", "bunker", True),
-    ("R17", "ROB vs FLGO",
-     "Écart entre ROB déclaré MyTOWT et ROB FLGO (Marad) au Departure/Arrival, "
-     "jointure par date la plus proche.",
-     "warning", "voyage", True),
-    ("R18", "Traçabilité",
-     "Toute donnée pré-remplie modifiée doit être confirmée et justifiée (pop-up).",
-     "bloquant", "report", True),
-    ("R19", "Brouillon",
-     "Événement non finalisé au-delà de delai_rappel_brouillon_h (rappel Master ; "
-     "second seuil → Environmental Manager).",
-     "warning", "event", True),
-    ("R20", "Cargo",
-     "Cargo MRV (DWT carried) ≥ cargaison déclarée (B/L) pour un voyage chargé "
-     "(Info tant que D10 non résolu).",
-     "info", "voyage", True),
-    ("R21", "Durée entre rapports",
-     "Durée déclarée depuis le dernier rapport cohérente avec l'écart réel entre "
-     "horodatages (tolerance_duree_rapport_h).",
-     "warning", "event", True),
-    ("R22", "Carbon vs Noon",
-     "Consommation totale Carbon (Departure/Arrival) cohérente avec la somme des Noon "
-     "(tolerance_carbon_noon_conso_t).",
-     "warning", "report", True),
-    ("R23", "Soutage",
-     "Soutage BDN cohérent avec la variation FLGO (tolerance_bdn_flgo_t) ; volumes "
-     "alloués ≤ capacité physique des cuves (bloquant).",
-     "warning", "bunker", True),
-    ("R24", "Complétude soutage",
-     "Chaque soutage BDN a une lecture FLGO 'Received' correspondante sous "
-     "delai_flgo_bunkering_j.",
-     "warning", "bunker", True),
-    ("R25", "Cohérence FLGO",
-     "Deux lectures FLGO consécutives cohérentes entre elles (tolerance_flgo_interne_m3) "
-     "— signale sans corriger.",
-     "warning", "flgo", True),
-    ("R26", "Chaînage voyages",
-     "Port d'arrivée du voyage N = port de départ du voyage N+1 (sauf repositionnement "
-     "codifié).",
-     "warning", "voyage", True),
-    ("IR01", "Séquence dates",
-     "Doublon (même date+type, bloquant), saut >2 jours (warning), date antérieure au "
-     "rapport précédent (bloquant).",
-     "bloquant", "event", True),
-    ("IR02", "Séquence ROB",
-     "ROB(J) vs ROB(J-1) − conso ± bunkering : écart >5 t bloquant, >0,5 t warning.",
-     "bloquant", "event", True),
-    ("IR03", "ROB figé",
-     "ROB figé malgré une consommation >0,05 t.",
-     "warning", "event", True),
-    ("IR04", "Compteur carburant",
-     "Compteur carburant (L) régressant d'un rapport à l'autre (sauf reset documenté).",
-     "bloquant", "event", True),
-    ("IR05", "Position figée",
-     "Position identique au rapport précédent malgré une distance déclarée >5 nm.",
-     "warning", "event", True),
+    (
+        "R01",
+        "Identité",
+        "Nom/identité du navire manquant (bloquant) ou navire non reconnu (warning).",
+        "bloquant",
+        "event",
+        True,
+    ),
+    (
+        "R02",
+        "Voyage",
+        "Aucun voyage rattaché (leg_id) ; contrôle de format du leg_code (7 caractères).",
+        "bloquant",
+        "event",
+        True,
+    ),
+    ("R03", "Type", "Type d'événement/rapport manquant ou non reconnu.", "bloquant", "event", True),
+    ("R04", "Date", "Date manquante — obligatoire MRV.", "bloquant", "event", True),
+    (
+        "R05",
+        "Position",
+        "Position GPS manquante/hors plage ou indicateur N/S/E/W absent ; "
+        "Thalos indisponible → saisie manuelle justifiée.",
+        "bloquant",
+        "event",
+        True,
+    ),
+    (
+        "R06",
+        "ROB",
+        "ROB manquant ou négatif (bloquant) ; =0 en Noon ou >300 t (warning).",
+        "bloquant",
+        "event",
+        True,
+    ),
+    (
+        "R07",
+        "Ports",
+        "UNLOCODE de port absent ou non conforme (5 caractères).",
+        "warning",
+        "event",
+        True,
+    ),
+    (
+        "R08",
+        "Consommation",
+        "Consommation négative (bloquant), =0 en Noon (warning), hors seuil cible "
+        "(seuil_conso_ref_l_j) ; complétude de la conso d'escale.",
+        "warning",
+        "event",
+        True,
+    ),
+    (
+        "R09",
+        "Distance/Vitesse",
+        "Distance=0 en Noon ou vitesse implicite hors bornes ; cohérence de la position "
+        "manuelle et des horodatages d'escale vs AIS/ShoreManager.",
+        "warning",
+        "event",
+        True,
+    ),
+    (
+        "R10",
+        "Compteurs moteur",
+        "Monotonie des compteurs moteur ; réinitialisation légitime confirmée par "
+        "l'Administrateur (sinon escalade bloquante).",
+        "warning",
+        "event",
+        True,
+    ),
+    (
+        "R11",
+        "Bornes plausibles",
+        "Valeurs numériques (ROB annexes urée/eau douce, mesures) dans des bornes "
+        "plausibles paramétrées.",
+        "warning",
+        "event",
+        True,
+    ),
+    (
+        "R12",
+        "Météo/relevés",
+        "Moins de 3 relevés par jour, ou valeurs identiques sur des relevés consécutifs "
+        "(copier-coller).",
+        "warning",
+        "event",
+        True,
+    ),
+    (
+        "R13",
+        "Cohérence séquence",
+        "Complétude des champs (voilure/températures/tirants) et cohérence chronologique "
+        "de la séquence d'événements (datetime strictement croissant).",
+        "info",
+        "event",
+        True,
+    ),
+    (
+        "R14",
+        "Cohérence ROB",
+        "Continuité du ROB en traversée (R14a) et en escale (R14b) : ROB théorique vs "
+        "déclaré, écart mineur/majeur/critique.",
+        "bloquant",
+        "voyage",
+        True,
+    ),
+    (
+        "R15",
+        "Écart consommation",
+        "Écart entre conso calculée (compteurs), déclarée (delta ROB) et cible "
+        "(seuil_conso_ref_l_j).",
+        "warning",
+        "voyage",
+        True,
+    ),
+    (
+        "R16",
+        "Densité",
+        "Écart de densité volume/masse entre soutage, cuves et compteurs "
+        "(densite_defaut_t_m3 ± tolérance).",
+        "warning",
+        "bunker",
+        True,
+    ),
+    (
+        "R17",
+        "ROB vs FLGO",
+        "Écart entre ROB déclaré MyTOWT et ROB FLGO (Marad) au Departure/Arrival, "
+        "jointure par date la plus proche.",
+        "warning",
+        "voyage",
+        True,
+    ),
+    (
+        "R18",
+        "Traçabilité",
+        "Toute donnée pré-remplie modifiée doit être confirmée et justifiée (pop-up).",
+        "bloquant",
+        "report",
+        True,
+    ),
+    (
+        "R19",
+        "Brouillon",
+        "Événement non finalisé au-delà de delai_rappel_brouillon_h (rappel Master ; "
+        "second seuil → Environmental Manager).",
+        "warning",
+        "event",
+        True,
+    ),
+    (
+        "R20",
+        "Cargo",
+        "Cargo MRV (DWT carried) ≥ cargaison déclarée (B/L) pour un voyage chargé "
+        "(Info tant que D10 non résolu).",
+        "info",
+        "voyage",
+        True,
+    ),
+    (
+        "R21",
+        "Durée entre rapports",
+        "Durée déclarée depuis le dernier rapport cohérente avec l'écart réel entre "
+        "horodatages (tolerance_duree_rapport_h).",
+        "warning",
+        "event",
+        True,
+    ),
+    (
+        "R22",
+        "Carbon vs Noon",
+        "Consommation totale Carbon (Departure/Arrival) cohérente avec la somme des Noon "
+        "(tolerance_carbon_noon_conso_t).",
+        "warning",
+        "report",
+        True,
+    ),
+    (
+        "R23",
+        "Soutage",
+        "Soutage BDN cohérent avec la variation FLGO (tolerance_bdn_flgo_t) ; volumes "
+        "alloués ≤ capacité physique des cuves (bloquant).",
+        "warning",
+        "bunker",
+        True,
+    ),
+    (
+        "R24",
+        "Complétude soutage",
+        "Chaque soutage BDN a une lecture FLGO 'Received' correspondante sous "
+        "delai_flgo_bunkering_j.",
+        "warning",
+        "bunker",
+        True,
+    ),
+    (
+        "R25",
+        "Cohérence FLGO",
+        "Deux lectures FLGO consécutives cohérentes entre elles (tolerance_flgo_interne_m3) "
+        "— signale sans corriger.",
+        "warning",
+        "flgo",
+        True,
+    ),
+    (
+        "R26",
+        "Chaînage voyages",
+        "Port d'arrivée du voyage N = port de départ du voyage N+1 (sauf repositionnement "
+        "codifié).",
+        "warning",
+        "voyage",
+        True,
+    ),
+    (
+        "IR01",
+        "Séquence dates",
+        "Doublon (même date+type, bloquant), saut >2 jours (warning), date antérieure au "
+        "rapport précédent (bloquant).",
+        "bloquant",
+        "event",
+        True,
+    ),
+    (
+        "IR02",
+        "Séquence ROB",
+        "ROB(J) vs ROB(J-1) − conso ± bunkering : écart >5 t bloquant, >0,5 t warning.",
+        "bloquant",
+        "event",
+        True,
+    ),
+    ("IR03", "ROB figé", "ROB figé malgré une consommation >0,05 t.", "warning", "event", True),
+    (
+        "IR04",
+        "Compteur carburant",
+        "Compteur carburant (L) régressant d'un rapport à l'autre (sauf reset documenté).",
+        "bloquant",
+        "event",
+        True,
+    ),
+    (
+        "IR05",
+        "Position figée",
+        "Position identique au rapport précédent malgré une distance déclarée >5 nm.",
+        "warning",
+        "event",
+        True,
+    ),
 )
 
 # (rule_id, parameter_name, value, unit, provisional, note) — vessel_id = NULL.
 # 16 paramètres de la Matrice §6 + 2 densité (R16, absorbés de mrv_parameters)
 # + 2 bornes de plausibilité R11 (vecteurs du contrôle paramétrable en lot 2).
 THRESHOLD_SEED: tuple[tuple[str, str, str, str, bool, str], ...] = (
-    ("R08", "seuil_conso_ref_l_j", "750", "L/j", False,
-     "Seuil de consommation de référence (SMS) — déjà en usage."),
-    ("R19", "delai_rappel_brouillon_h", "24", "h", False,
-     "Délai de rappel d'un brouillon non finalisé."),
+    (
+        "R08",
+        "seuil_conso_ref_l_j",
+        "750",
+        "L/j",
+        False,
+        "Seuil de consommation de référence (SMS) — déjà en usage.",
+    ),
+    (
+        "R19",
+        "delai_rappel_brouillon_h",
+        "24",
+        "h",
+        False,
+        "Délai de rappel d'un brouillon non finalisé.",
+    ),
     # LOT 4 — second seuil R19 : au-delà, alerte au siège (Environmental
     # Manager) en plus du rappel Master. Provisoire (calibrage voyage pilote).
-    ("R19", "delai_alerte_siege_brouillon_h", "48", "h", True,
-     "Délai d'alerte siège d'un brouillon non finalisé (2e seuil R19, proposition)."),
-    ("R14", "seuil_rob_ecart_mineur_t", "0.5", "t", True,
-     "Borne d'écart ROB mineur (proposition Q8/D6, à confirmer métier)."),
-    ("R14", "seuil_rob_ecart_majeur_t", "2", "t", True,
-     "Borne d'écart ROB majeur (proposition Q8/D6, à confirmer métier)."),
-    ("R14", "seuil_rob_ecart_critique_t", "5", "t", True,
-     "Borne d'écart ROB critique — bloquant (proposition Q8/D6, à confirmer métier)."),
-    ("R09", "tolerance_distance_manuelle_nm", "20", "nm", True,
-     "Tolérance distance position manuelle vs trajectoire Thalos (proposition)."),
-    ("R17", "tolerance_flgo_ecart_temps_h", "120", "h", True,
-     "Écart temporel max avant déclassement du rapprochement FLGO en Info (≈5 j)."),
-    ("R20", "seuil_cargo_mrv_ecart_t", "5", "t", True,
-     "Tolérance Cargo MRV vs B/L — bloqué par D10 (proposition)."),
-    ("R08", "duree_escale_alerte_conso_manquante_j", "2", "j", True,
-     "Durée d'escale au-delà de laquelle une conso nulle/absente alerte (proposition)."),
-    ("R08", "conso_estimee_defaut_t_j", "0.21", "t/j", True,
-     "Conso d'escale estimée par défaut — valeur constatée 2025, à valider."),
-    ("R09", "tolerance_datetime_escale_h", "6", "h", True,
-     "Écart max entre horodatages d'escale déclarés et AIS/ShoreManager (proposition)."),
-    ("R22", "tolerance_carbon_noon_conso_t", "1", "t", True,
-     "Écart max conso Carbon vs somme Noon (proposition)."),
-    ("R23", "tolerance_bdn_flgo_t", "2", "t", True,
-     "Écart max masse BDN vs variation FLGO (proposition)."),
-    ("R24", "delai_flgo_bunkering_j", "5", "j", True,
-     "Fenêtre de recoupement soutage BDN ↔ FLGO 'Received' (défaut 5 j)."),
+    (
+        "R19",
+        "delai_alerte_siege_brouillon_h",
+        "48",
+        "h",
+        True,
+        "Délai d'alerte siège d'un brouillon non finalisé (2e seuil R19, proposition).",
+    ),
+    (
+        "R14",
+        "seuil_rob_ecart_mineur_t",
+        "0.5",
+        "t",
+        True,
+        "Borne d'écart ROB mineur (proposition Q8/D6, à confirmer métier).",
+    ),
+    (
+        "R14",
+        "seuil_rob_ecart_majeur_t",
+        "2",
+        "t",
+        True,
+        "Borne d'écart ROB majeur (proposition Q8/D6, à confirmer métier).",
+    ),
+    (
+        "R14",
+        "seuil_rob_ecart_critique_t",
+        "5",
+        "t",
+        True,
+        "Borne d'écart ROB critique — bloquant (proposition Q8/D6, à confirmer métier).",
+    ),
+    (
+        "R09",
+        "tolerance_distance_manuelle_nm",
+        "20",
+        "nm",
+        True,
+        "Tolérance distance position manuelle vs trajectoire Thalos (proposition).",
+    ),
+    (
+        "R17",
+        "tolerance_flgo_ecart_temps_h",
+        "120",
+        "h",
+        True,
+        "Écart temporel max avant déclassement du rapprochement FLGO en Info (≈5 j).",
+    ),
+    (
+        "R20",
+        "seuil_cargo_mrv_ecart_t",
+        "5",
+        "t",
+        True,
+        "Tolérance Cargo MRV vs B/L — bloqué par D10 (proposition).",
+    ),
+    (
+        "R08",
+        "duree_escale_alerte_conso_manquante_j",
+        "2",
+        "j",
+        True,
+        "Durée d'escale au-delà de laquelle une conso nulle/absente alerte (proposition).",
+    ),
+    (
+        "R08",
+        "conso_estimee_defaut_t_j",
+        "0.21",
+        "t/j",
+        True,
+        "Conso d'escale estimée par défaut — valeur constatée 2025, à valider.",
+    ),
+    (
+        "R09",
+        "tolerance_datetime_escale_h",
+        "6",
+        "h",
+        True,
+        "Écart max entre horodatages d'escale déclarés et AIS/ShoreManager (proposition).",
+    ),
+    (
+        "R22",
+        "tolerance_carbon_noon_conso_t",
+        "1",
+        "t",
+        True,
+        "Écart max conso Carbon vs somme Noon (proposition).",
+    ),
+    (
+        "R23",
+        "tolerance_bdn_flgo_t",
+        "2",
+        "t",
+        True,
+        "Écart max masse BDN vs variation FLGO (proposition).",
+    ),
+    (
+        "R24",
+        "delai_flgo_bunkering_j",
+        "5",
+        "j",
+        True,
+        "Fenêtre de recoupement soutage BDN ↔ FLGO 'Received' (défaut 5 j).",
+    ),
     # LOT 6 — rattachement automatique du soutage au voyage suivant l'escale
     # de livraison (services.bunkering.resolve_leg_for_bunker). Ajouté au
     # catalogue existant (seed idempotent, cf. seed_reference_data) SANS
     # toucher aux seuils ci-dessus. 25 j = fenêtre observée sur le dataset
     # 2025 (inventaire) ; à confirmer métier (cf. Q8, même statut que les
     # autres seuils provisoires de ce catalogue).
-    ("R24", "fenetre_rattachement_bunker_j", "25", "j", True,
-     "Fenêtre de rattachement automatique du soutage au voyage suivant "
-     "(au-delà : leg_id NULL, choix manuel possible)."),
-    ("R25", "tolerance_flgo_interne_m3", "2", "m3", True,
-     "Écart max entre lectures FLGO consécutives (proposition)."),
-    ("R21", "tolerance_duree_rapport_h", "2", "h", True,
-     "Écart max durée déclarée vs écart réel entre rapports (proposition)."),
+    (
+        "R24",
+        "fenetre_rattachement_bunker_j",
+        "25",
+        "j",
+        True,
+        "Fenêtre de rattachement automatique du soutage au voyage suivant "
+        "(au-delà : leg_id NULL, choix manuel possible).",
+    ),
+    (
+        "R25",
+        "tolerance_flgo_interne_m3",
+        "2",
+        "m3",
+        True,
+        "Écart max entre lectures FLGO consécutives (proposition).",
+    ),
+    (
+        "R21",
+        "tolerance_duree_rapport_h",
+        "2",
+        "h",
+        True,
+        "Écart max durée déclarée vs écart réel entre rapports (proposition).",
+    ),
     # ─── LOT 8 — seuils manquants au catalogue (tous provisoires, Q8) ───
     # Ajoutés par le moteur de règles complet ; à confirmer métier au
     # calibrage (voyage pilote). Consommés EXCLUSIVEMENT via get_threshold.
-    ("R04", "tolerance_datetime_futur_h", "24", "h", True,
-     "Tolérance d'un horodatage dans le futur avant alerte de plausibilité (R04)."),
-    ("R10", "delai_confirmation_reset_j", "3", "j", True,
-     "Délai au-delà duquel une régression compteur non confirmée passe "
-     "de warning (→ admin) à bloquant (escalade R10, Matrice §3)."),
-    ("IR03", "ir03_min_reports_figes", "3", "reports", True,
-     "Nombre de relevés consécutifs à ROB strictement figé avant alerte "
-     "(IR03 ; cas réel dossier : figé 4 j)."),
-    ("IR03", "ir03_conso_min_t", "0.05", "t", True,
-     "Consommation minimale entre relevés au-delà de laquelle un ROB figé "
-     "est incohérent (IR03 ; valeur notebook QC)."),
-    ("IR05", "ir05_min_reports_figes", "3", "reports", True,
-     "Nombre de relevés consécutifs à position strictement figée en mer "
-     "avant alerte (IR05)."),
-    ("R16", "densite_defaut_t_m3", "0.845", "t/m3", False,
-     "Densité MDO par défaut (SMS) — absorbée de mrv_parameters."),
-    ("R16", "densite_tolerance_t_m3", "0.015", "t/m3", False,
-     "Tolérance densité MDO (SMS) — absorbée de mrv_parameters."),
-    ("R11", "seuil_conso_ref_l_j", "750", "L/j", False,
-     "Borne haute de plausibilité de la conso journalière (aligné SMS 750 L/j)."),
-    ("R11", "borne_max_rob_t", "300", "t", False,
-     "Borne haute de plausibilité du ROB (aligné R06 >300 t)."),
+    (
+        "R04",
+        "tolerance_datetime_futur_h",
+        "24",
+        "h",
+        True,
+        "Tolérance d'un horodatage dans le futur avant alerte de plausibilité (R04).",
+    ),
+    (
+        "R10",
+        "delai_confirmation_reset_j",
+        "3",
+        "j",
+        True,
+        "Délai au-delà duquel une régression compteur non confirmée passe "
+        "de warning (→ admin) à bloquant (escalade R10, Matrice §3).",
+    ),
+    (
+        "IR03",
+        "ir03_min_reports_figes",
+        "3",
+        "reports",
+        True,
+        "Nombre de relevés consécutifs à ROB strictement figé avant alerte "
+        "(IR03 ; cas réel dossier : figé 4 j).",
+    ),
+    (
+        "IR03",
+        "ir03_conso_min_t",
+        "0.05",
+        "t",
+        True,
+        "Consommation minimale entre relevés au-delà de laquelle un ROB figé "
+        "est incohérent (IR03 ; valeur notebook QC).",
+    ),
+    (
+        "IR05",
+        "ir05_min_reports_figes",
+        "3",
+        "reports",
+        True,
+        "Nombre de relevés consécutifs à position strictement figée en mer " "avant alerte (IR05).",
+    ),
+    (
+        "R16",
+        "densite_defaut_t_m3",
+        "0.845",
+        "t/m3",
+        False,
+        "Densité MDO par défaut (SMS) — absorbée de mrv_parameters.",
+    ),
+    (
+        "R16",
+        "densite_tolerance_t_m3",
+        "0.015",
+        "t/m3",
+        False,
+        "Tolérance densité MDO (SMS) — absorbée de mrv_parameters.",
+    ),
+    (
+        "R11",
+        "seuil_conso_ref_l_j",
+        "750",
+        "L/j",
+        False,
+        "Borne haute de plausibilité de la conso journalière (aligné SMS 750 L/j).",
+    ),
+    (
+        "R11",
+        "borne_max_rob_t",
+        "300",
+        "t",
+        False,
+        "Borne haute de plausibilité du ROB (aligné R06 >300 t).",
+    ),
 )
 
 # (parameter_name, value, unit) — vessel_id = NULL.
@@ -431,8 +726,13 @@ class RuleContext:
         tv = await get_threshold(self.db, self.rule_id, parameter_name, self.vessel_id)
         if tv is None and coded_default is not None:
             tv = ThresholdValue(
-                self.rule_id, parameter_name, None, Decimal(str(coded_default)),
-                None, "coded_default_inline", False,
+                self.rule_id,
+                parameter_name,
+                None,
+                Decimal(str(coded_default)),
+                None,
+                "coded_default_inline",
+                False,
             )
         if tv is None:
             return None
@@ -490,13 +790,30 @@ def rule(rule_id: str) -> Callable[[RuleFn], RuleFn]:
 # Jeux de candidats (sujets duck-typés — noms possibles selon la source).
 _VESSEL_ATTRS = ("vessel_id", "vessel_name", "vessel", "vessel_code")
 _DATETIME_ATTRS = (
-    "datetime_utc", "datetime_local", "recorded_at", "occurred_at",
-    "event_datetime", "datetime", "date",
+    "datetime_utc",
+    "datetime_local",
+    "recorded_at",
+    "occurred_at",
+    "event_datetime",
+    "datetime",
+    "date",
 )
 _MEASUREMENT_ATTRS = (
-    "latitude", "longitude", "lat", "lon", "lat_decimal", "lon_decimal",
-    "rob_t", "rob_l", "conso_l_j", "fuel_consumed_24h_l", "distance_nm",
-    "tws_kn", "aws_kn", "ship_speed_kn", "speed_kn",
+    "latitude",
+    "longitude",
+    "lat",
+    "lon",
+    "lat_decimal",
+    "lon_decimal",
+    "rob_t",
+    "rob_l",
+    "conso_l_j",
+    "fuel_consumed_24h_l",
+    "distance_nm",
+    "tws_kn",
+    "aws_kn",
+    "ship_speed_kn",
+    "speed_kn",
 )
 _CONSO_ATTRS = ("conso_l_j", "fuel_consumed_24h_l", "conso_journaliere_l")
 
@@ -520,8 +837,13 @@ async def _r01_required_fields(ctx: RuleContext) -> list[CheckOutcome]:
     if not _present(_first(ctx.subject, _DATETIME_ATTRS)):
         missing.append("date")
     if missing:
-        return [CheckOutcome("fail", f"Champs obligatoires manquants : {', '.join(missing)}.",
-                             {"missing": missing})]
+        return [
+            CheckOutcome(
+                "fail",
+                f"Champs obligatoires manquants : {', '.join(missing)}.",
+                {"missing": missing},
+            )
+        ]
     return [CheckOutcome("pass", "Champs obligatoires présents.")]
 
 
@@ -550,17 +872,18 @@ async def _r02_voyage_binding(ctx: RuleContext) -> list[CheckOutcome]:
         leg_code = _get(ctx.leg, "leg_code")
 
     if not leg_present:
-        return [CheckOutcome("fail", "Aucun voyage rattaché (leg_id manquant).",
-                             {"leg_id": None})]
+        return [CheckOutcome("fail", "Aucun voyage rattaché (leg_id manquant).", {"leg_id": None})]
     code = str(leg_code).strip() if _present(leg_code) else ""
     if code:
         if len(code) != 7 or not _LEG_CODE_RE.match(code):
-            return [CheckOutcome(
-                "fail",
-                f"Format de leg_code invalide : {code!r} (attendu 7 caractères, "
-                "1 chiffre + 5 lettres + 1 chiffre).",
-                {"leg_code": code, "length": len(code)},
-            )]
+            return [
+                CheckOutcome(
+                    "fail",
+                    f"Format de leg_code invalide : {code!r} (attendu 7 caractères, "
+                    "1 chiffre + 5 lettres + 1 chiffre).",
+                    {"leg_code": code, "length": len(code)},
+                )
+            ]
         # Volet pays (AV-001) — seulement si le voyage réel est en contexte.
         if ctx.leg is not None:
             mismatches: list[str] = []
@@ -575,22 +898,24 @@ async def _r02_voyage_binding(ctx: RuleContext) -> list[CheckOutcome]:
                     if pid is None:
                         continue
                     port = await ctx.db.get(Port, pid)
-                    country = (str(_get(port, "country") or "").strip().upper()
-                               if port is not None else "")
+                    country = (
+                        str(_get(port, "country") or "").strip().upper() if port is not None else ""
+                    )
                     if country and seg != country:
-                        mismatches.append(
-                            f"pays {label} {seg!r} ≠ port réel {country!r}"
-                        )
+                        mismatches.append(f"pays {label} {seg!r} ≠ port réel {country!r}")
             except Exception:
                 mismatches = []  # contexte non requêtable → volet non évalué
             if mismatches:
-                return [CheckOutcome(
-                    "fail",
-                    f"leg_code {code!r} incohérent avec les ports du voyage : "
-                    + " ; ".join(mismatches) + " (cas type AV-001 « 1AFRBZ6 »).",
-                    {"leg_code": code, "mismatches": mismatches},
-                    severity="warning",
-                )]
+                return [
+                    CheckOutcome(
+                        "fail",
+                        f"leg_code {code!r} incohérent avec les ports du voyage : "
+                        + " ; ".join(mismatches)
+                        + " (cas type AV-001 « 1AFRBZ6 »).",
+                        {"leg_code": code, "mismatches": mismatches},
+                        severity="warning",
+                    )
+                ]
     return [CheckOutcome("pass", "Voyage rattaché, leg_code conforme.")]
 
 
@@ -611,8 +936,14 @@ async def _r11_plausible_bounds(ctx: RuleContext) -> list[CheckOutcome]:
     if conso is not None:
         ceil = await ctx.threshold("seuil_conso_ref_l_j", coded_default=750)
         ok = conso >= 0 and (ceil is None or conso <= ceil)
-        checks.append({"field": "conso_l_j", "value": str(conso),
-                       "max": (str(ceil) if ceil is not None else None), "ok": ok})
+        checks.append(
+            {
+                "field": "conso_l_j",
+                "value": str(conso),
+                "max": (str(ceil) if ceil is not None else None),
+                "ok": ok,
+            }
+        )
         if not ok:
             violations.append(f"conso {conso} hors [0, {ceil}] L/j")
 
@@ -621,19 +952,30 @@ async def _r11_plausible_bounds(ctx: RuleContext) -> list[CheckOutcome]:
     if rob is not None:
         ceil = await ctx.threshold("borne_max_rob_t", coded_default=300)
         ok = rob >= 0 and (ceil is None or rob <= ceil)
-        checks.append({"field": "rob_t", "value": str(rob),
-                       "max": (str(ceil) if ceil is not None else None), "ok": ok})
+        checks.append(
+            {
+                "field": "rob_t",
+                "value": str(rob),
+                "max": (str(ceil) if ceil is not None else None),
+                "ok": ok,
+            }
+        )
         if not ok:
             violations.append(f"ROB {rob} hors [0, {ceil}] t")
 
     if not checks:
-        return [CheckOutcome("pass", "Aucune valeur numérique bornée à contrôler.",
-                             {"checks": []})]
+        return [CheckOutcome("pass", "Aucune valeur numérique bornée à contrôler.", {"checks": []})]
     if violations:
-        return [CheckOutcome("fail", "Valeur(s) hors bornes plausibles : " + " ; ".join(violations),
-                             {"checks": checks})]
-    return [CheckOutcome("pass", "Valeurs numériques dans les bornes plausibles.",
-                         {"checks": checks})]
+        return [
+            CheckOutcome(
+                "fail",
+                "Valeur(s) hors bornes plausibles : " + " ; ".join(violations),
+                {"checks": checks},
+            )
+        ]
+    return [
+        CheckOutcome("pass", "Valeurs numériques dans les bornes plausibles.", {"checks": checks})
+    ]
 
 
 @rule("R12")
@@ -653,14 +995,21 @@ async def _r12_copy_paste(ctx: RuleContext) -> list[CheckOutcome]:
         if str(cur_v) == str(prev_v):
             identical.append(f)
     if compared >= _R12_MIN_IDENTICAL_FIELDS and len(identical) == compared:
-        return [CheckOutcome(
-            "fail",
-            f"Valeurs identiques au relevé précédent sur {len(identical)} champ(s) de mesure "
-            "(copier-coller ?).",
+        return [
+            CheckOutcome(
+                "fail",
+                f"Valeurs identiques au relevé précédent sur {len(identical)} champ(s) de mesure "
+                "(copier-coller ?).",
+                {"identical_fields": identical, "compared": compared},
+            )
+        ]
+    return [
+        CheckOutcome(
+            "pass",
+            "Relevé distinct du précédent.",
             {"identical_fields": identical, "compared": compared},
-        )]
-    return [CheckOutcome("pass", "Relevé distinct du précédent.",
-                         {"identical_fields": identical, "compared": compared})]
+        )
+    ]
 
 
 @rule("R13")
@@ -679,12 +1028,14 @@ async def _r13_chronology(ctx: RuleContext) -> list[CheckOutcome]:
     if cur_dt is None or prev_dt is None:
         return [CheckOutcome("pass", "Horodatage indisponible (présence traitée par R01/R04).")]
     if cur_dt <= prev_dt:
-        return [CheckOutcome(
-            "fail",
-            f"Horodatage non strictement croissant : {cur_dt.isoformat()} ≤ {prev_dt.isoformat()} "
-            "(doublon ou antériorité).",
-            {"current": cur_dt.isoformat(), "previous": prev_dt.isoformat()},
-        )]
+        return [
+            CheckOutcome(
+                "fail",
+                f"Horodatage non strictement croissant : {cur_dt.isoformat()} ≤ {prev_dt.isoformat()} "
+                "(doublon ou antériorité).",
+                {"current": cur_dt.isoformat(), "previous": prev_dt.isoformat()},
+            )
+        ]
     return [CheckOutcome("pass", "Chronologie croissante.")]
 
 
@@ -722,8 +1073,9 @@ async def _active_rules_for_scope(db: AsyncSession, scope: str) -> list[tuple[st
 
         rows = (
             await db.execute(
-                select(ValidationRule.rule_id, ValidationRule.default_severity)
-                .where(ValidationRule.scope == scope, ValidationRule.active.is_(True))
+                select(ValidationRule.rule_id, ValidationRule.default_severity).where(
+                    ValidationRule.scope == scope, ValidationRule.active.is_(True)
+                )
             )
         ).all()
         if rows:
@@ -792,15 +1144,24 @@ async def run_rules(
             continue
         for i, subj in enumerate(subjects):
             ctx = RuleContext(
-                db=db, rule_id=rid, subject=subj, subjects=subjects, index=i,
-                now=now, vessel=vessel, leg=leg,
+                db=db,
+                rule_id=rid,
+                subject=subj,
+                subjects=subjects,
+                index=i,
+                now=now,
+                vessel=vessel,
+                leg=leg,
             )
             try:
                 outcomes = await fn(ctx)
             except Exception as exc:  # une règle ne doit jamais casser le run
                 snap = [tv.as_dict() for tv in ctx._consumed]
                 _persist(
-                    rid, subj, "fail", "info",
+                    rid,
+                    subj,
+                    "fail",
+                    "info",
                     f"Erreur technique dans la règle {rid} : {exc}",
                     {"error": repr(exc), "thresholds_used": snap} if snap else {"error": repr(exc)},
                 )
@@ -835,7 +1196,9 @@ async def run_rules(
 # ════════════════════════════════════════════════════════════ Seed (dev/admin)
 
 
-async def seed_reference_data(db: AsyncSession, *, updated_by: int | None = None) -> dict[str, list[str]]:
+async def seed_reference_data(
+    db: AsyncSession, *, updated_by: int | None = None
+) -> dict[str, list[str]]:
     """Seed idempotent du référentiel de validation.
 
     N'insère que les lignes manquantes (rules / thresholds globaux /
@@ -850,49 +1213,69 @@ async def seed_reference_data(db: AsyncSession, *, updated_by: int | None = None
 
     created: dict[str, list[str]] = {"rules": [], "thresholds": [], "dashboard": []}
 
-    existing_rules = set(
-        (await db.execute(select(ValidationRule.rule_id))).scalars().all()
-    )
+    existing_rules = set((await db.execute(select(ValidationRule.rule_id))).scalars().all())
     for rid, domain, desc, severity, scope, active in RULE_SEED:
         if rid in existing_rules:
             continue
-        db.add(ValidationRule(
-            rule_id=rid, domain=domain, description=desc,
-            default_severity=severity, scope=scope, active=active,
-        ))
+        db.add(
+            ValidationRule(
+                rule_id=rid,
+                domain=domain,
+                description=desc,
+                default_severity=severity,
+                scope=scope,
+                active=active,
+            )
+        )
         created["rules"].append(rid)
 
     existing_thr = set(
-        (await db.execute(
-            select(
-                ValidationRuleThreshold.rule_id,
-                ValidationRuleThreshold.vessel_id,
-                ValidationRuleThreshold.parameter_name,
+        (
+            await db.execute(
+                select(
+                    ValidationRuleThreshold.rule_id,
+                    ValidationRuleThreshold.vessel_id,
+                    ValidationRuleThreshold.parameter_name,
+                )
             )
-        )).all()
+        ).all()
     )
     for rid, param, value, unit, provisional, note in THRESHOLD_SEED:
         if (rid, None, param) in existing_thr:
             continue
-        db.add(ValidationRuleThreshold(
-            rule_id=rid, vessel_id=None, parameter_name=param,
-            value=Decimal(value), unit=unit, provisional=provisional,
-            note=note, updated_by=updated_by,
-        ))
+        db.add(
+            ValidationRuleThreshold(
+                rule_id=rid,
+                vessel_id=None,
+                parameter_name=param,
+                value=Decimal(value),
+                unit=unit,
+                provisional=provisional,
+                note=note,
+                updated_by=updated_by,
+            )
+        )
         created["thresholds"].append(f"{rid}:{param}={value}")
 
     existing_dash = set(
-        (await db.execute(
-            select(DashboardParameter.parameter_name, DashboardParameter.vessel_id)
-        )).all()
+        (
+            await db.execute(
+                select(DashboardParameter.parameter_name, DashboardParameter.vessel_id)
+            )
+        ).all()
     )
     for param, value, unit in DASHBOARD_SEED:
         if (param, None) in existing_dash:
             continue
-        db.add(DashboardParameter(
-            parameter_name=param, vessel_id=None, value=Decimal(value),
-            unit=unit, updated_by=updated_by,
-        ))
+        db.add(
+            DashboardParameter(
+                parameter_name=param,
+                vessel_id=None,
+                value=Decimal(value),
+                unit=unit,
+                updated_by=updated_by,
+            )
+        )
         created["dashboard"].append(f"{param}={value}")
 
     if created["rules"] or created["thresholds"] or created["dashboard"]:

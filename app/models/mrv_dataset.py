@@ -66,8 +66,10 @@ class MrvLogAbstractEntry(Base):
         ForeignKey("nav_events.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     source_system: Mapped[str] = mapped_column(
-        String(40), nullable=False,
-        default=SOURCE_SYSTEM_DEFAULT, server_default=SOURCE_SYSTEM_DEFAULT,
+        String(40),
+        nullable=False,
+        default=SOURCE_SYSTEM_DEFAULT,
+        server_default=SOURCE_SYSTEM_DEFAULT,
     )
     verification_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="conform", server_default="conform"
@@ -99,8 +101,10 @@ class MrvBunkeringEntry(Base):
         ForeignKey("bunker_operations.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     source_system: Mapped[str] = mapped_column(
-        String(40), nullable=False,
-        default=SOURCE_SYSTEM_DEFAULT, server_default=SOURCE_SYSTEM_DEFAULT,
+        String(40),
+        nullable=False,
+        default=SOURCE_SYSTEM_DEFAULT,
+        server_default=SOURCE_SYSTEM_DEFAULT,
     )
     verification_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="conform", server_default="conform"

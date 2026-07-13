@@ -372,7 +372,7 @@ def _synthetic_sched_key(cm: dict, vessel: str | None, start_raw: str | None) ->
     if not any((ident, vessel_n, start_n)):
         return None
     basis = "|".join((ident or "", vessel_n or "", start_n))
-    return "syn-" + hashlib.sha1(basis.encode("utf-8")).hexdigest()[:32]
+    return "syn-" + hashlib.sha1(basis.encode("utf-8"), usedforsecurity=False).hexdigest()[:32]
 
 
 def _pick(rec: dict, keys: tuple[str, ...]) -> str | None:
@@ -614,9 +614,7 @@ async def sync_all(db: AsyncSession, *, schedule_retry_wait: float = 0.0) -> dic
         # Power BI partageant la clé). Sonder getVessels n'apporterait rien et
         # dépenserait du quota en plus.
         throttled = [
-            p
-            for p in ("/api/Crewing", "/api/CrewingSchedule")
-            if marad.last_status(p) == 429
+            p for p in ("/api/Crewing", "/api/CrewingSchedule") if marad.last_status(p) == 429
         ]
         if throttled:
             diagnostic = (

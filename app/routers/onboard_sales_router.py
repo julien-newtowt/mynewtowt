@@ -11,10 +11,9 @@ Permissions : lecture ``captain/C`` ; mutations ``captain/M``. Le rôle
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-
-import logging
 
 import segno
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -234,7 +233,9 @@ async def vessel_dashboard(
                 .where(OnboardProduct.is_active.is_(True))
                 .order_by(OnboardProduct.label)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     sales = list(
         (
@@ -244,7 +245,9 @@ async def vessel_dashboard(
                 .order_by(OnboardSale.created_at.desc())
                 .limit(50)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     return templates.TemplateResponse(
         "staff/onboard_sales/vessel.html",
@@ -364,7 +367,9 @@ async def sale_detail(
                 .where(OnboardSaleLine.sale_id == sale.id)
                 .order_by(OnboardSaleLine.id)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     # Produits sélectionnables : actifs, même devise que la vente.
     products = list(
@@ -377,7 +382,9 @@ async def sale_detail(
                 )
                 .order_by(OnboardProduct.label)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     return templates.TemplateResponse(
         "staff/onboard_sales/sale.html",
@@ -480,8 +487,10 @@ async def create_checkout(
     if sale.total <= 0:
         raise HTTPException(status_code=400, detail="Vente sans montant.")
     lines = (
-        await db.execute(select(OnboardSaleLine).where(OnboardSaleLine.sale_id == sale.id))
-    ).scalars().all()
+        (await db.execute(select(OnboardSaleLine).where(OnboardSaleLine.sale_id == sale.id)))
+        .scalars()
+        .all()
+    )
     base = settings.site_url.rstrip("/")
     try:
         session = await stripe_svc.create_session(
@@ -625,9 +634,7 @@ async def registre_csv(
         content=csv_text,
         media_type="text/csv",
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="registre-vente-bord-{vessel.code}.csv"'
-            )
+            "Content-Disposition": (f'attachment; filename="registre-vente-bord-{vessel.code}.csv"')
         },
     )
 
@@ -702,9 +709,7 @@ async def _find_sale_from_session(db: AsyncSession, obj) -> OnboardSale | None:
     if session_id:
         return (
             await db.execute(
-                select(OnboardSale).where(
-                    OnboardSale.stripe_checkout_session_id == session_id
-                )
+                select(OnboardSale).where(OnboardSale.stripe_checkout_session_id == session_id)
             )
         ).scalar_one_or_none()
     return None

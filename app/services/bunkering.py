@@ -308,7 +308,9 @@ _DECIMAL_FIELDS: tuple[str, ...] = (
 )
 # Champs obligatoires : une valeur vide soumise est ignorée (ne vide jamais
 # le champ) plutôt que de casser l'intégrité du BDN.
-_REQUIRED_FIELDS: frozenset[str] = frozenset({"mass_t", "density_15c_t_m3", "port_locode", "fuel_type"})
+_REQUIRED_FIELDS: frozenset[str] = frozenset(
+    {"mass_t", "density_15c_t_m3", "port_locode", "fuel_type"}
+)
 
 
 def apply_header_form(bunker: BunkerOperation, form: Mapping[str, str]) -> None:
@@ -405,8 +407,8 @@ async def create_draft(
         raise DuplicateBdnError(f"Un soutage avec le numéro de BDN {bdn_clean!r} existe déjà.")
 
     delivery_dt = _ensure_utc(delivery_datetime_utc)
-    resolved_leg_id = leg_id if leg_id is not None else await resolve_leg_for_bunker(
-        db, vessel, delivery_dt
+    resolved_leg_id = (
+        leg_id if leg_id is not None else await resolve_leg_for_bunker(db, vessel, delivery_dt)
     )
 
     bunker = BunkerOperation(
@@ -433,7 +435,9 @@ async def create_draft(
             db.add(bunker)
             await db.flush()
     except IntegrityError as exc:
-        raise DuplicateBdnError(f"Un soutage avec le numéro de BDN {bdn_clean!r} existe déjà.") from exc
+        raise DuplicateBdnError(
+            f"Un soutage avec le numéro de BDN {bdn_clean!r} existe déjà."
+        ) from exc
 
     if allocations:
         await set_allocations(db, bunker, list(allocations))
@@ -543,8 +547,11 @@ async def check_mass_consistency(
     else:
         status = "ecart_majeur"
     return MassConsistencyCheck(
-        status=status, declared_mass_t=declared, allocated_mass_t=allocated,
-        delta_t=delta, tolerance_t=tolerance,
+        status=status,
+        declared_mass_t=declared,
+        allocated_mass_t=allocated,
+        delta_t=delta,
+        tolerance_t=tolerance,
     )
 
 
@@ -558,8 +565,12 @@ async def check_density(db: AsyncSession, bunker: BunkerOperation) -> DensityChe
     density = bunker.density_15c_t_m3
     flagged = density is None or not (low <= density <= high)
     return DensityCheck(
-        flagged=flagged, density_t_m3=density, default_t_m3=default,
-        tolerance_t_m3=tolerance, low=low, high=high,
+        flagged=flagged,
+        density_t_m3=density,
+        default_t_m3=default,
+        tolerance_t_m3=tolerance,
+        low=low,
+        high=high,
     )
 
 
@@ -575,7 +586,9 @@ def check_capacity(
     ]
     total_capacity = sum(capacities, Decimal("0")) if capacities else None
     exceeds = total_capacity is not None and total_volume > total_capacity
-    return CapacityCheck(total_volume_m3=total_volume, total_capacity_m3=total_capacity, exceeds=exceeds)
+    return CapacityCheck(
+        total_volume_m3=total_volume, total_capacity_m3=total_capacity, exceeds=exceeds
+    )
 
 
 async def evaluate_bunker(
@@ -613,10 +626,14 @@ async def bunkered_t_lookup(db: AsyncSession, leg_id: int) -> Decimal:
     appelant).
     """
     rows = (
-        await db.execute(
-            select(BunkerOperation.mass_t)
-            .where(BunkerOperation.leg_id == leg_id)
-            .where(BunkerOperation.status == "valide_master")
+        (
+            await db.execute(
+                select(BunkerOperation.mass_t)
+                .where(BunkerOperation.leg_id == leg_id)
+                .where(BunkerOperation.status == "valide_master")
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return sum((m for m in rows if m is not None), Decimal("0"))

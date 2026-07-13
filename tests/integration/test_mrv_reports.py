@@ -58,15 +58,24 @@ async def _setup(db):
     db.add_all([p1, p2])
     await db.flush()
     leg = Leg(
-        leg_code="1AFRBR6", vessel_id=vessel.id,
-        departure_port_id=p1.id, arrival_port_id=p2.id,
-        etd_ref=T0, eta_ref=T0 + timedelta(days=5), etd=T0, eta=T0 + timedelta(days=5),
+        leg_code="1AFRBR6",
+        vessel_id=vessel.id,
+        departure_port_id=p1.id,
+        arrival_port_id=p2.id,
+        etd_ref=T0,
+        eta_ref=T0 + timedelta(days=5),
+        etd=T0,
+        eta=T0 + timedelta(days=5),
     )
     leg2 = Leg(
-        leg_code="1BBRFR6", vessel_id=vessel.id,
-        departure_port_id=p2.id, arrival_port_id=p1.id,
-        etd_ref=T0 + timedelta(days=3), eta_ref=T0 + timedelta(days=8),
-        etd=T0 + timedelta(days=3), eta=T0 + timedelta(days=8),
+        leg_code="1BBRFR6",
+        vessel_id=vessel.id,
+        departure_port_id=p2.id,
+        arrival_port_id=p1.id,
+        etd_ref=T0 + timedelta(days=3),
+        eta_ref=T0 + timedelta(days=8),
+        etd=T0 + timedelta(days=3),
+        eta=T0 + timedelta(days=8),
     )
     db.add_all([leg, leg2])
     await db.flush()
@@ -75,31 +84,63 @@ async def _setup(db):
         return NavEventEngineReading(engine_id=engines[role].id, fuel_counter_l=Decimal(str(fuel)))
 
     dep = DepartureEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="finalise", datetime_utc=T0,
-        lat_decimal=Decimal("50.0"), lon_decimal=Decimal("-5.0"),
-        rob_t=Decimal("100.000"), vessel_condition="laden",
-        cargo_bl_t=Decimal("900.000"), cargo_mrv_t=Decimal("950.000"),
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        lat_decimal=Decimal("50.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("100.000"),
+        vessel_condition="laden",
+        cargo_bl_t=Decimal("900.000"),
+        cargo_mrv_t=Decimal("950.000"),
     )
-    dep.engine_readings = [_rd("PME", 10000), _rd("SME", 8000), _rd("FWD_GEN", 5000), _rd("AFT_GEN", 4000)]
+    dep.engine_readings = [
+        _rd("PME", 10000),
+        _rd("SME", 8000),
+        _rd("FWD_GEN", 5000),
+        _rd("AFT_GEN", 4000),
+    ]
     noon = NoonEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="finalise",
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
         datetime_utc=T0 + timedelta(hours=24),
-        lat_decimal=Decimal("47.0"), lon_decimal=Decimal("-5.0"),
+        lat_decimal=Decimal("47.0"),
+        lon_decimal=Decimal("-5.0"),
     )
-    noon.engine_readings = [_rd("PME", 11000), _rd("SME", 8600), _rd("FWD_GEN", 5300), _rd("AFT_GEN", 4200)]
+    noon.engine_readings = [
+        _rd("PME", 11000),
+        _rd("SME", 8600),
+        _rd("FWD_GEN", 5300),
+        _rd("AFT_GEN", 4200),
+    ]
     arr = ArrivalEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="finalise",
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
         datetime_utc=T0 + timedelta(hours=48),
-        lat_decimal=Decimal("44.0"), lon_decimal=Decimal("-5.0"),
-        rob_t=Decimal("96.000"), vessel_condition="laden",
+        lat_decimal=Decimal("44.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("96.000"),
+        vessel_condition="laden",
     )
-    arr.engine_readings = [_rd("PME", 12000), _rd("SME", 9200), _rd("FWD_GEN", 5600), _rd("AFT_GEN", 4400)]
+    arr.engine_readings = [
+        _rd("PME", 12000),
+        _rd("SME", 9200),
+        _rd("FWD_GEN", 5600),
+        _rd("AFT_GEN", 4400),
+    ]
     # Départ du voyage suivant (pour le rapport d'escale).
     dep2 = DepartureEvent(
-        leg_id=leg2.id, vessel_id=vessel.id, status="finalise",
+        leg_id=leg2.id,
+        vessel_id=vessel.id,
+        status="finalise",
         datetime_utc=T0 + timedelta(hours=72),
-        lat_decimal=Decimal("44.0"), lon_decimal=Decimal("-5.0"),
-        rob_t=Decimal("95.500"), vessel_condition="laden",
+        lat_decimal=Decimal("44.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("95.500"),
+        vessel_condition="laden",
     )
     dep2.engine_readings = [_rd("PME", 12300)]
     db.add_all([dep, noon, arr, dep2])
@@ -111,12 +152,16 @@ async def _setup(db):
 
 async def _get_report(db, leg_id, report_type):
     return (
-        await db.execute(
-            select(EnvReport).where(
-                EnvReport.leg_id == leg_id, EnvReport.report_type == report_type
+        (
+            await db.execute(
+                select(EnvReport).where(
+                    EnvReport.leg_id == leg_id, EnvReport.report_type == report_type
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
 
 
 # ════════════════════════════════════════════════════════════ Workflow
@@ -189,9 +234,11 @@ async def test_pdf_smoke_three_types(db, staff_user):
         s.leg.id, "noon", FakeRequest(form={"event_id": str(s.noon.id)}), db=db, user=staff_user
     )
     await mr.mrv_generate_report(
-        s.leg.id, "stopover",
+        s.leg.id,
+        "stopover",
         FakeRequest(form={"arrival_event_id": str(s.arr.id), "departure_event_id": str(s.dep2.id)}),
-        db=db, user=staff_user,
+        db=db,
+        user=staff_user,
     )
 
     for rtype in ("carbon", "noon", "stopover"):
@@ -217,18 +264,32 @@ async def test_field_modify_requires_justification_and_records(db, staff_user):
     with pytest.raises(HTTPException) as ei:
         await mr.mrv_report_field_modify(
             report.id,
-            FakeRequest(form={"field_name": "cargo_bl_t", "corrected_value": "910",
-                              "justification": "  ", "resulting_quality_status": "corrected"}),
-            db=db, user=staff_user,
+            FakeRequest(
+                form={
+                    "field_name": "cargo_bl_t",
+                    "corrected_value": "910",
+                    "justification": "  ",
+                    "resulting_quality_status": "corrected",
+                }
+            ),
+            db=db,
+            user=staff_user,
         )
     assert ei.value.status_code == 400
 
     # Correction valide → 303 + audit + snapshot mis à jour.
     resp = await mr.mrv_report_field_modify(
         report.id,
-        FakeRequest(form={"field_name": "cargo_bl_t", "corrected_value": "910",
-                          "justification": "Correction B/L", "resulting_quality_status": "corrected"}),
-        db=db, user=staff_user,
+        FakeRequest(
+            form={
+                "field_name": "cargo_bl_t",
+                "corrected_value": "910",
+                "justification": "Correction B/L",
+                "resulting_quality_status": "corrected",
+            }
+        ),
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
     assert report.payload["cargo_bl_t"] == "910"

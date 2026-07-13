@@ -55,9 +55,7 @@ REPORT_STATUSES: tuple[str, ...] = (
 )
 
 # Statuts encore régénérables (le payload est remplacé) ; au-delà, immuable.
-MUTABLE_STATUSES: frozenset[str] = frozenset(
-    {"brouillon", "attente_validation_master"}
-)
+MUTABLE_STATUSES: frozenset[str] = frozenset({"brouillon", "attente_validation_master"})
 
 # Taxonomie qualité transverse (dictionnaire §2.2, CFOTE_09 C143:C162).
 QUALITY_STATUSES: tuple[str, ...] = (
@@ -106,9 +104,7 @@ class EnvReport(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Voyage rattaché (= Leg existant). Pour un Stopover, c'est le voyage
     # d'arrivée (l'escale conclut ce voyage) ; les deux événements sont liés.
-    leg_id: Mapped[int] = mapped_column(
-        ForeignKey("legs.id", ondelete="CASCADE"), nullable=False
-    )
+    leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id", ondelete="CASCADE"), nullable=False)
     report_type: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(
         String(30), nullable=False, default="brouillon", server_default="brouillon"
@@ -129,9 +125,7 @@ class EnvReport(Base):
     validated_siege_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
-    author_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    author_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -201,19 +195,13 @@ class EnvFieldModification(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Double FK nullable : la modification cible un rapport OU un événement
     # (position manuelle R05) — au moins l'un des deux est renseigné.
-    report_id: Mapped[int | None] = mapped_column(
-        ForeignKey("env_reports.id", ondelete="CASCADE")
-    )
-    event_id: Mapped[int | None] = mapped_column(
-        ForeignKey("nav_events.id", ondelete="SET NULL")
-    )
+    report_id: Mapped[int | None] = mapped_column(ForeignKey("env_reports.id", ondelete="CASCADE"))
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("nav_events.id", ondelete="SET NULL"))
     field_name: Mapped[str] = mapped_column(String(120), nullable=False)
     initial_value: Mapped[str | None] = mapped_column(Text)
     corrected_value: Mapped[str | None] = mapped_column(Text)
     justification_text: Mapped[str] = mapped_column(Text, nullable=False)
-    author_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    author_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     timestamp_utc: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -222,4 +210,6 @@ class EnvFieldModification(Base):
     report: Mapped[EnvReport | None] = relationship(back_populates="modifications")
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"<EnvFieldModification#{self.id} {self.field_name} → {self.resulting_quality_status}>"
+        return (
+            f"<EnvFieldModification#{self.id} {self.field_name} → {self.resulting_quality_status}>"
+        )

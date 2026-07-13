@@ -172,9 +172,7 @@ def test_audit_flags_leg_before_previous_port_stay_finishes() -> None:
 
 def test_plan_downstream_shifts_uses_source_availability() -> None:
     base = datetime(2026, 1, 1, tzinfo=UTC)
-    downstream = [
-        _planning_leg(2, 1, 20, 30, base + timedelta(days=6), base + timedelta(days=10))
-    ]
+    downstream = [_planning_leg(2, 1, 20, 30, base + timedelta(days=6), base + timedelta(days=10))]
     planned = plan_downstream_shifts(
         downstream,
         delta=timedelta(0),

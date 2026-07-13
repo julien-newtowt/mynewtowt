@@ -366,9 +366,7 @@ def _rob_timeline(rob_chain, bunkers) -> dict:
     bunker_pts = [(ts, b) for ts, b in bunker_pts if ts is not None]
 
     all_ts = [p["ts"] for p in pts] + [ts for ts, _ in bunker_pts]
-    all_vals = [p["val"] for p in pts] + [
-        p["declared"] for p in pts if p["declared"] is not None
-    ]
+    all_vals = [p["val"] for p in pts] + [p["declared"] for p in pts if p["declared"] is not None]
     tmin, tmax = min(all_ts), max(all_ts)
     vmax = max(all_vals) if all_vals else 1.0
     vmax = vmax * 1.12 if vmax > 0 else 1.0

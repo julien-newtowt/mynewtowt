@@ -544,9 +544,7 @@ async def apply_to_active_planning(
 
     labels = [(leg.label or "").strip() for leg in legs]
     if any(not label for label in labels):
-        raise ScenarioError(
-            "Chaque traversée doit porter le code du leg réel à mettre à jour."
-        )
+        raise ScenarioError("Chaque traversée doit porter le code du leg réel à mettre à jour.")
     duplicates = {label for label in labels if labels.count(label) > 1}
     if duplicates:
         raise ScenarioError("Labels dupliqués dans le scénario : " + ", ".join(sorted(duplicates)))
@@ -558,8 +556,7 @@ async def apply_to_active_planning(
     missing = sorted(set(labels) - set(real_legs))
     if missing:
         raise ScenarioError(
-            "Application impossible : aucun leg actif ne correspond à "
-            + ", ".join(missing)
+            "Application impossible : aucun leg actif ne correspond à " + ", ".join(missing)
         )
 
     port_ids = {leg.departure_port_id for leg in legs} | {leg.arrival_port_id for leg in legs}

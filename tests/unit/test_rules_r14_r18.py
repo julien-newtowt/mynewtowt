@@ -89,13 +89,17 @@ async def _base(db):
     p1 = Port(name="Fecamp", country="FR", locode="FRFEC")
     p2 = Port(name="Belem", country="BR", locode="BRBEL")
     db.add_all([p1, p2])
-    db.add(User(id=1, username="adm", email="a@t.test", hashed_password="x",
-                role="administrateur"))
+    db.add(User(id=1, username="adm", email="a@t.test", hashed_password="x", role="administrateur"))
     await db.flush()
     leg = Leg(
-        leg_code="1AFRBR6", vessel_id=vessel.id,
-        departure_port_id=p1.id, arrival_port_id=p2.id,
-        etd_ref=T0, eta_ref=T0 + timedelta(days=5), etd=T0, eta=T0 + timedelta(days=5),
+        leg_code="1AFRBR6",
+        vessel_id=vessel.id,
+        departure_port_id=p1.id,
+        arrival_port_id=p2.id,
+        etd_ref=T0,
+        eta_ref=T0 + timedelta(days=5),
+        etd=T0,
+        eta=T0 + timedelta(days=5),
     )
     db.add(leg)
     await db.flush()
@@ -108,29 +112,42 @@ async def _chain(db, vessel, leg, engines, *, dep_rob, arr_rob, delta_l=1000):
     conso = Δ × 0,001 × 0,845 ; ROB calculé arrivée = dep_rob − conso.
     """
     dep = DepartureEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="finalise", datetime_utc=T0,
-        lat_decimal=Decimal("50"), lon_decimal=Decimal("-5"),
-        rob_t=Decimal(str(dep_rob)), vessel_condition="laden",
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        lat_decimal=Decimal("50"),
+        lon_decimal=Decimal("-5"),
+        rob_t=Decimal(str(dep_rob)),
+        vessel_condition="laden",
     )
-    dep.engine_readings = [NavEventEngineReading(
-        engine_id=engines["PME"].id, fuel_counter_l=Decimal("10000"))]
+    dep.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("10000"))
+    ]
     arr = ArrivalEvent(
-        leg_id=leg.id, vessel_id=vessel.id, status="finalise",
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
         datetime_utc=T0 + timedelta(hours=24),
-        lat_decimal=Decimal("45"), lon_decimal=Decimal("-5"),
+        lat_decimal=Decimal("45"),
+        lon_decimal=Decimal("-5"),
         rob_t=(Decimal(str(arr_rob)) if arr_rob is not None else None),
         vessel_condition="laden",
     )
-    arr.engine_readings = [NavEventEngineReading(
-        engine_id=engines["PME"].id, fuel_counter_l=Decimal(str(10000 + delta_l)))]
+    arr.engine_readings = [
+        NavEventEngineReading(
+            engine_id=engines["PME"].id, fuel_counter_l=Decimal(str(10000 + delta_l))
+        )
+    ]
     db.add_all([dep, arr])
     await db.flush()
     return dep, arr
 
 
 def _ctx(db, rid, leg, *, vessel=None, now=NOW) -> RuleContext:
-    return RuleContext(db=db, rule_id=rid, subject=leg, subjects=[leg], index=0,
-                       now=now, vessel=vessel, leg=leg)
+    return RuleContext(
+        db=db, rule_id=rid, subject=leg, subjects=[leg], index=0, now=now, vessel=vessel, leg=leg
+    )
 
 
 # ═════════════════════════════════════════════ R14 — continuité ROB
@@ -141,11 +158,11 @@ def _ctx(db, rid, leg, *, vessel=None, now=NOW) -> RuleContext:
 @pytest.mark.parametrize(
     "arr_rob,expected_class,expected_severity",
     [
-        (Decimal("99.155"), None, None),                 # écart 0 → conforme
-        (Decimal("98.655"), None, None),                 # écart 0,5 == mineur → conforme (limite)
-        (Decimal("98.155"), "mineur", "warning"),        # écart 1,0
-        (Decimal("96.000"), "majeur", "warning"),        # écart 3,155
-        (Decimal("90.000"), "critique", "bloquant"),     # écart 9,155 → bloquant
+        (Decimal("99.155"), None, None),  # écart 0 → conforme
+        (Decimal("98.655"), None, None),  # écart 0,5 == mineur → conforme (limite)
+        (Decimal("98.155"), "mineur", "warning"),  # écart 1,0
+        (Decimal("96.000"), "majeur", "warning"),  # écart 3,155
+        (Decimal("90.000"), "critique", "bloquant"),  # écart 9,155 → bloquant
     ],
 )
 async def test_r14_rob_classification(db, arr_rob, expected_class, expected_severity):
@@ -183,8 +200,11 @@ async def test_r14_persists_with_threshold_snapshot(db):
     assert r14 and r14[0].severity_applied == "warning"
     used = (r14[0].details or {}).get("thresholds_used") or []
     names = {u["parameter_name"] for u in used}
-    assert {"seuil_rob_ecart_mineur_t", "seuil_rob_ecart_majeur_t",
-            "seuil_rob_ecart_critique_t"} <= names
+    assert {
+        "seuil_rob_ecart_mineur_t",
+        "seuil_rob_ecart_majeur_t",
+        "seuil_rob_ecart_critique_t",
+    } <= names
 
 
 # ═════════════════════════════════════════════ R15 — conso vs référence
@@ -195,7 +215,7 @@ async def test_r14_persists_with_threshold_snapshot(db):
     "delta_l,result",
     [
         (700, "pass"),
-        (750, "pass"),   # limite exacte == 750 L/j
+        (750, "pass"),  # limite exacte == 750 L/j
         (751, "fail"),
     ],
 )
@@ -214,8 +234,11 @@ async def test_r15_flgo_reference_crosscheck(db):
     vessel, leg, engines = await _base(db)
     await _chain(db, vessel, leg, engines, dep_rob=100, arr_rob=None, delta_l=700)
     # conso calculée = 0,5915 t (ME) ; référence 5 t → écart 4,4085 > 2 t.
-    db.add(FlgoVoyageConsumptionRef(leg_id=leg.id, me_consumption_t=Decimal("5"),
-                                    ae_consumption_t=Decimal("0")))
+    db.add(
+        FlgoVoyageConsumptionRef(
+            leg_id=leg.id, me_consumption_t=Decimal("5"), ae_consumption_t=Decimal("0")
+        )
+    )
     await db.flush()
     out = await RULES["R15"](_ctx(db, "R15", leg, vessel=vessel))
     fails = [o for o in out if o.result == "fail"]
@@ -228,9 +251,13 @@ async def test_r15_flgo_reference_crosscheck(db):
 
 async def _bunker(db, vessel, density, bdn="BDN-1"):
     b = BunkerOperation(
-        vessel_id=vessel.id, bdn_number=bdn, port_locode="FRFEC",
-        delivery_datetime_utc=T0, fuel_type="MDO",
-        mass_t=Decimal("20"), density_15c_t_m3=density,
+        vessel_id=vessel.id,
+        bdn_number=bdn,
+        port_locode="FRFEC",
+        delivery_datetime_utc=T0,
+        fuel_type="MDO",
+        mass_t=Decimal("20"),
+        density_15c_t_m3=density,
         status="brouillon",
     )
     db.add(b)
@@ -243,16 +270,17 @@ async def _bunker(db, vessel, density, bdn="BDN-1"):
     "density,result",
     [
         (Decimal("0.845"), "pass"),
-        (Decimal("0.860"), "pass"),   # limite exacte == borne haute (0,845 + 0,015)
+        (Decimal("0.860"), "pass"),  # limite exacte == borne haute (0,845 + 0,015)
         (Decimal("0.861"), "fail"),
-        (Decimal("0.829"), "fail"),   # sous la borne basse (0,830)
+        (Decimal("0.829"), "fail"),  # sous la borne basse (0,830)
     ],
 )
 async def test_r16_density_bounds(db, density, result):
     vessel, _leg, _engines = await _base(db)
     bunker = await _bunker(db, vessel, density)
-    ctx = RuleContext(db=db, rule_id="R16", subject=bunker, subjects=[bunker],
-                      index=0, now=NOW, vessel=vessel)
+    ctx = RuleContext(
+        db=db, rule_id="R16", subject=bunker, subjects=[bunker], index=0, now=NOW, vessel=vessel
+    )
     out = await RULES["R16"](ctx)
     assert out[0].result == result
     if result == "fail":
@@ -264,10 +292,10 @@ async def test_r16_missing_density_flagged(db):
     """Densité absente (sujet transitoire — la colonne DB est NOT NULL) →
     flaggé par ``check_density`` et donc par R16."""
     vessel, _leg, _engines = await _base(db)
-    ghost = SimpleNamespace(bdn_number="BDN-X", vessel_id=vessel.id,
-                            density_15c_t_m3=None)
-    ctx = RuleContext(db=db, rule_id="R16", subject=ghost, subjects=[ghost],
-                      index=0, now=NOW, vessel=vessel)
+    ghost = SimpleNamespace(bdn_number="BDN-X", vessel_id=vessel.id, density_15c_t_m3=None)
+    ctx = RuleContext(
+        db=db, rule_id="R16", subject=ghost, subjects=[ghost], index=0, now=NOW, vessel=vessel
+    )
     out = await RULES["R16"](ctx)
     assert out[0].result == "fail" and out[0].severity == "warning"
 
@@ -277,8 +305,13 @@ async def test_r16_missing_density_flagged(db):
 
 async def _flgo(db, vessel, *, rob_m3, at):
     r = FlgoReading(
-        vessel_id=vessel.id, action_type="measurement", product_name="Diesel Oil",
-        reading_datetime=at, total_volume_m3=rob_m3, total_rob_m3=rob_m3, source="api",
+        vessel_id=vessel.id,
+        action_type="measurement",
+        product_name="Diesel Oil",
+        reading_datetime=at,
+        total_volume_m3=rob_m3,
+        total_rob_m3=rob_m3,
+        source="api",
     )
     db.add(r)
     await db.flush()
@@ -289,9 +322,9 @@ async def _flgo(db, vessel, *, rob_m3, at):
 @pytest.mark.parametrize(
     "declared_rob,result",
     [
-        (Decimal("84.500"), "pass"),   # 100 m³ × 0,845 = 84,5 t — écart 0
-        (Decimal("85.000"), "pass"),   # écart 0,5 == mineur (limite incluse)
-        (Decimal("86.000"), "fail"),   # écart 1,5 > mineur
+        (Decimal("84.500"), "pass"),  # 100 m³ × 0,845 = 84,5 t — écart 0
+        (Decimal("85.000"), "pass"),  # écart 0,5 == mineur (limite incluse)
+        (Decimal("86.000"), "fail"),  # écart 1,5 > mineur
     ],
 )
 async def test_r17_rob_vs_flgo_exact_boundary(db, declared_rob, result):
@@ -334,8 +367,9 @@ async def test_r17_no_flgo_passes(db):
 
 
 async def _report(db, leg, payload=None):
-    r = EnvReport(leg_id=leg.id, report_type="carbon", status="valide_master",
-                  payload=payload or {})
+    r = EnvReport(
+        leg_id=leg.id, report_type="carbon", status="valide_master", payload=payload or {}
+    )
     db.add(r)
     await db.flush()
     return r
@@ -345,8 +379,7 @@ async def _report(db, leg, payload=None):
 async def test_r18_no_modification_passes(db):
     _vessel, leg, _engines = await _base(db)
     report = await _report(db, leg)
-    ctx = RuleContext(db=db, rule_id="R18", subject=report, subjects=[report],
-                      index=0, now=NOW)
+    ctx = RuleContext(db=db, rule_id="R18", subject=report, subjects=[report], index=0, now=NOW)
     assert (await RULES["R18"](ctx))[0].result == "pass"
 
 
@@ -354,12 +387,16 @@ async def test_r18_no_modification_passes(db):
 async def test_r18_justified_modification_passes(db):
     _vessel, leg, _engines = await _base(db)
     report = await _report(db, leg)
-    db.add(EnvFieldModification(report_id=report.id, field_name="cargo_bl_t",
-                                justification_text="Correction B/L",
-                                resulting_quality_status="corrected"))
+    db.add(
+        EnvFieldModification(
+            report_id=report.id,
+            field_name="cargo_bl_t",
+            justification_text="Correction B/L",
+            resulting_quality_status="corrected",
+        )
+    )
     await db.flush()
-    ctx = RuleContext(db=db, rule_id="R18", subject=report, subjects=[report],
-                      index=0, now=NOW)
+    ctx = RuleContext(db=db, rule_id="R18", subject=report, subjects=[report], index=0, now=NOW)
     assert (await RULES["R18"](ctx))[0].result == "pass"
 
 
@@ -370,12 +407,16 @@ async def test_r18_unjustified_modification_blocking(db):
     la règle persistée — la garde applicative (R18 service) reste en place."""
     _vessel, leg, _engines = await _base(db)
     report = await _report(db, leg)
-    db.add(EnvFieldModification(report_id=report.id, field_name="distance_nm",
-                                justification_text="   ",
-                                resulting_quality_status="corrected"))
+    db.add(
+        EnvFieldModification(
+            report_id=report.id,
+            field_name="distance_nm",
+            justification_text="   ",
+            resulting_quality_status="corrected",
+        )
+    )
     await db.flush()
-    ctx = RuleContext(db=db, rule_id="R18", subject=report, subjects=[report],
-                      index=0, now=NOW)
+    ctx = RuleContext(db=db, rule_id="R18", subject=report, subjects=[report], index=0, now=NOW)
     out = await RULES["R18"](ctx)
     assert out[0].result == "fail" and out[0].severity == "bloquant"
     assert out[0].details["fields"] == ["distance_nm"]
@@ -383,6 +424,12 @@ async def test_r18_unjustified_modification_blocking(db):
 
 @pytest.mark.asyncio
 async def test_r18_abstains_on_non_report_subject(db):
-    ctx = RuleContext(db=db, rule_id="R18", subject=SimpleNamespace(mass_t=1),
-                      subjects=[SimpleNamespace(mass_t=1)], index=0, now=NOW)
+    ctx = RuleContext(
+        db=db,
+        rule_id="R18",
+        subject=SimpleNamespace(mass_t=1),
+        subjects=[SimpleNamespace(mass_t=1)],
+        index=0,
+        now=NOW,
+    )
     assert await RULES["R18"](ctx) == []

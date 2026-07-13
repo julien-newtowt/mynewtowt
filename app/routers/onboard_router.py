@@ -62,7 +62,7 @@ from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.vessel_position import get_latest_position
 from app.templating import templates
-from app.utils.timezones import TIMEZONE_CHOICES, to_utc
+from app.utils.timezones import TIMEZONE_CHOICES
 
 logger = logging.getLogger("onboard")
 
@@ -1124,9 +1124,7 @@ async def onboard_bunkering_index(
     """LOT 6 — liste des soutages (BDN) du navire courant."""
     vessel = await _resolve_bunkering_vessel(db, user, vessel_id)
     vessels = list(
-        (
-            await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code))
-        )
+        (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code)))
         .scalars()
         .all()
     )
@@ -1168,9 +1166,7 @@ async def onboard_bunkering_new_form(
     """LOT 6 — formulaire de saisie d'un nouveau soutage (en-tête + cuves)."""
     vessel = await _resolve_bunkering_vessel(db, user, vessel_id)
     vessels = list(
-        (
-            await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code))
-        )
+        (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code)))
         .scalars()
         .all()
     )
@@ -1205,7 +1201,9 @@ async def onboard_bunkering_create(
 ):
     """LOT 6 — création d'un brouillon de soutage (en-tête + allocations cuves)."""
     form = dict(await request.form())
-    vessel = await _resolve_bunkering_vessel(db, user, _int_or_400(form.get("vessel_id"), "vessel_id"))
+    vessel = await _resolve_bunkering_vessel(
+        db, user, _int_or_400(form.get("vessel_id"), "vessel_id")
+    )
     if vessel is None:
         raise HTTPException(status_code=400, detail="Navire introuvable.")
 
@@ -1328,9 +1326,7 @@ async def onboard_bunkering_edit_form(
     if bunker.status != "brouillon":
         raise HTTPException(status_code=409, detail="Ce soutage est déjà validé Master.")
     if bunker.author_user_id is not None and bunker.author_user_id != user.id:
-        raise HTTPException(
-            status_code=403, detail="Seul l'auteur du brouillon peut le modifier."
-        )
+        raise HTTPException(status_code=403, detail="Seul l'auteur du brouillon peut le modifier.")
     vessel = await db.get(Vessel, bunker.vessel_id)
     tanks = await referential_env.get_vessel_tanks(db, bunker.vessel_id)
     allocations = await _bunker_allocations(db, bunker.id)
@@ -1605,8 +1601,13 @@ async def _sync_event_readings(db: AsyncSession, event: NavEvent, f, engines) ->
             continue
         event.weather_readings.append(
             NavEventWeatherReading(
-                slot_time=slot, tws_kn=vals[0], awa_deg=vals[1], aws_kn=vals[2],
-                sea_state=vals[3], sea_direction_deg=vals[4], ship_speed_kn=vals[5],
+                slot_time=slot,
+                tws_kn=vals[0],
+                awa_deg=vals[1],
+                aws_kn=vals[2],
+                sea_state=vals[3],
+                sea_direction_deg=vals[4],
+                ship_speed_kn=vals[5],
             )
         )
 
@@ -1624,8 +1625,15 @@ async def _sync_event_readings(db: AsyncSession, event: NavEvent, f, engines) ->
             continue
         event.sail_readings.append(
             NavEventSailReading(
-                slot_time=slot, j0=j0, fwd_j1=fj1, fwd_ms=fms, aft_j1=aj1, aft_ms=ams,
-                sail_boost_pct=boost, me_ps_load_pct=ps, me_sb_load_pct=sb,
+                slot_time=slot,
+                j0=j0,
+                fwd_j1=fj1,
+                fwd_ms=fms,
+                aft_j1=aj1,
+                aft_ms=ams,
+                sail_boost_pct=boost,
+                me_ps_load_pct=ps,
+                me_sb_load_pct=sb,
             )
         )
 
@@ -1672,10 +1680,7 @@ async def _my_event_drafts(db: AsyncSession, user) -> list[dict]:
         .scalars()
         .all()
     )
-    out = [
-        {"event": e, "age_h": int(draft_reminders._age_hours(e.created_at, now))}
-        for e in rows
-    ]
+    out = [{"event": e, "age_h": int(draft_reminders._age_hours(e.created_at, now))} for e in rows]
     out.sort(key=lambda d: d["age_h"], reverse=True)
     return out
 
@@ -1832,8 +1837,13 @@ async def _render_event_form(
     notice: str | None = None,
 ) -> HTMLResponse:
     ctx = await _event_form_context(
-        db, event_type=event_type, event=event, leg=leg, vessel=vessel,
-        errors=errors, locked=locked,
+        db,
+        event_type=event_type,
+        event=event,
+        leg=leg,
+        vessel=vessel,
+        errors=errors,
+        locked=locked,
     )
     ctx.update({"request": request, "user": user, "notice": notice})
     return templates.TemplateResponse("staff/onboard/event_form.html", ctx, status_code=status_code)
@@ -1860,9 +1870,7 @@ async def onboard_events_index(
         events = sorted(rows, key=_event_sort_key)
     my_drafts = await _my_event_drafts(db, user)
     vessels = list(
-        (
-            await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code))
-        )
+        (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.code)))
         .scalars()
         .all()
     )
@@ -1901,7 +1909,13 @@ async def onboard_event_new_form(
         raise HTTPException(status_code=404, detail="Type d'événement inconnu.")
     leg, vessel = await _resolve_leg_and_vessel(db, user, vessel_id, leg_id)
     return await _render_event_form(
-        request, user, db, event_type=event_type, event=None, leg=leg, vessel=vessel,
+        request,
+        user,
+        db,
+        event_type=event_type,
+        event=None,
+        leg=leg,
+        vessel=vessel,
         notice=notice,
     )
 
@@ -1985,8 +1999,13 @@ async def onboard_event_edit_form(
     leg = await db.get(Leg, event.leg_id)
     vessel = await db.get(Vessel, event.vessel_id) if event.vessel_id else None
     return await _render_event_form(
-        request, user, db,
-        event_type=event.event_type, event=event, leg=leg, vessel=vessel,
+        request,
+        user,
+        db,
+        event_type=event.event_type,
+        event=event,
+        leg=leg,
+        vessel=vessel,
         locked=(event.status != "brouillon"),
     )
 
@@ -2080,9 +2099,15 @@ async def onboard_event_finalize(
     except event_capture.EventFinalizationError as exc:
         leg = await db.get(Leg, event.leg_id)
         return await _render_event_form(
-            request, user, db,
-            event_type=event.event_type, event=event, leg=leg, vessel=vessel,
-            errors=exc.messages, status_code=200,
+            request,
+            user,
+            db,
+            event_type=event.event_type,
+            event=event,
+            leg=leg,
+            vessel=vessel,
+            errors=exc.messages,
+            status_code=200,
         )
     except event_capture.DraftAuthorError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -2126,6 +2151,8 @@ async def mrv_draft_reminders_cron(
     summary = await draft_reminders.run_draft_reminders(db)
     logger.info(
         "R19 draft reminders (API cron): scanned=%d master=%d siege=%d",
-        summary["scanned"], summary["master"], summary["siege"],
+        summary["scanned"],
+        summary["master"],
+        summary["siege"],
     )
     return JSONResponse(summary)

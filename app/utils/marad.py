@@ -368,6 +368,22 @@ async def list_flgo(vessel_name: str, date_from: str, date_to: str) -> Any | Non
     return await _get("/api/FlgoAction", params=params)
 
 
+def _count_records(payload: Any) -> int:
+    """Compte les enregistrements d'une réponse Marad, tolérant aux enveloppes.
+
+    Une liste → sa longueur ; un dict enveloppe → la 1re liste qu'il contient
+    (``data``/``vessels``/…). Sert au diagnostic pour ne pas rapporter « 0 »
+    quand la réponse est un wrapper ``{...: [...]}`` plutôt qu'une liste nue.
+    """
+    if isinstance(payload, list):
+        return sum(1 for r in payload if isinstance(r, dict))
+    if isinstance(payload, dict):
+        for v in payload.values():
+            if isinstance(v, list):
+                return sum(1 for r in v if isinstance(r, dict))
+    return 0
+
+
 async def diagnose() -> dict:
     """Sonde détaillée pour expliquer un « rien ne remonte ».
 
@@ -376,9 +392,16 @@ async def diagnose() -> dict:
     distinguer : hôte injoignable (DNS/firewall/URL), authentification refusée
     (401/403 partout), chemin inexistant (404), ou succès.
 
+    En cas de succès, sonde aussi l'**équipage** (``/api/Crewing``, la vraie
+    cible de l'intégration) pour distinguer « connecté mais compte vide » de
+    « connecté avec données » : un compte peut exposer 0 navire et pourtant
+    des marins.
+
     Renvoie ``{configured, reachable, authenticated, classification, base_url,
-    working_strategy, attempts: [{strategy, status|error}], vessels_count}``.
+    working_strategy, attempts: [{strategy, status|error}], vessels_count,
+    crew_count}`` (``crew_count`` = None si non vérifiable, 0 si vide, N sinon).
     """
+    global _working_strategy
     if not enabled():
         return {
             "configured": False,
@@ -439,14 +462,26 @@ async def diagnose() -> dict:
                         break
                     if r.status_code < 400:
                         authed = True
+                        # Mémorise le schéma gagnant → les sondes suivantes
+                        # (équipage) sont single-shot, sans re-cascade de 429.
+                        _working_strategy = label
                         data = r.json() if r.content else None
-                        if isinstance(data, list):
-                            vessels_count = len(data)
+                        vessels_count = _count_records(data)
                         break
                 except httpx.HTTPError as e:
                     attempts.append({"strategy": label, "error": type(e).__name__})
     except Exception as e:  # pragma: no cover - garde-fou
         attempts.append({"strategy": "*", "error": type(e).__name__})
+
+    # Sonde « équipage » (la vraie cible de l'intégration) : getVessels ne sert
+    # que de test de connectivité. Un compte peut exposer 0 navire mais des
+    # marins — ou être vide des deux. crew_count = None si non vérifiable
+    # (quota/err), 0 si compte vide, N sinon. Single-shot (schéma mémorisé).
+    crew_count: int | None = None
+    if authed:
+        crew_payload = await list_crew()
+        if crew_payload is not None:
+            crew_count = _count_records(crew_payload)
 
     if authed:
         classification = "ok"
@@ -474,6 +509,7 @@ async def diagnose() -> dict:
         "attempts": attempts,
         "tried_strategies": [a.get("strategy") for a in attempts],
         "vessels_count": vessels_count,
+        "crew_count": crew_count,
         "auth_error_body": auth_error_body,
         "www_authenticate": www_authenticate,
         "rate_limit_body": rate_limit_body,

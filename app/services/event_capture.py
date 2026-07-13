@@ -244,13 +244,10 @@ async def finalize(db: AsyncSession, event: NavEvent, author) -> NavEvent:
     leg = await db.get(Leg, event.leg_id)
     vessel = await db.get(Vessel, event.vessel_id) if event.vessel_id is not None else None
     run_id = _uuid.uuid4().hex
-    summary = await run_rules(
-        db, "event", [event], vessel=vessel, leg=leg, run_id=run_id
-    )
+    summary = await run_rules(db, "event", [event], vessel=vessel, leg=leg, run_id=run_id)
 
     blocking = [
-        r for r in summary.results
-        if r.result == "fail" and r.severity_applied == "bloquant"
+        r for r in summary.results if r.result == "fail" and r.severity_applied == "bloquant"
     ]
     messages = [f"{r.rule_id} : {r.message}" for r in blocking]
     if not _manual_position_ok(event):
@@ -353,7 +350,11 @@ async def prefill_position(
     def _abs_seconds(recorded_at: datetime) -> float:
         # Robuste au mélange naïf (SQLite) / aware (Postgres) : normalise en
         # UTC-naïf avant la soustraction.
-        a = recorded_at if recorded_at.tzinfo is None else recorded_at.astimezone(UTC).replace(tzinfo=None)
+        a = (
+            recorded_at
+            if recorded_at.tzinfo is None
+            else recorded_at.astimezone(UTC).replace(tzinfo=None)
+        )
         b = at_dt if at_dt.tzinfo is None else at_dt.astimezone(UTC).replace(tzinfo=None)
         return abs((a - b).total_seconds())
 

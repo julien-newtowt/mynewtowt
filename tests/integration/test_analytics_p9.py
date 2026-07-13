@@ -182,3 +182,64 @@ async def test_commercial_dashboard_renders_b2b2c_and_targets(db, staff_user):
     # Cibles affichées (conversion ≥ 5 %, self-service ≥ 30 %).
     assert "cible ≥ 5.0 %" in body
     assert "cible ≥ 30.0 %" in body
+
+
+@pytest.mark.asyncio
+async def test_commercial_dashboard_ranks_top_routes(db, staff_user):
+    """COM-13 (dernier gap, R3) : classement des liaisons POL→POD par volume."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.booking import Booking
+    from app.models.leg import Leg
+    from app.models.port import Port
+    from app.models.vessel import Vessel
+    from app.routers.modules_router import analytics_commercial
+
+    vessel = Vessel(code="ANEM", name="Anemos")
+    fec = Port(locode="FRFEC", name="Fécamp", country="FR", latitude=49.76, longitude=0.37)
+    sso = Port(locode="BRSSO", name="São Sebastião", country="BR", latitude=-23.8, longitude=-45.4)
+    nyc = Port(locode="USNYC", name="New York", country="US", latitude=40.7, longitude=-74.0)
+    db.add_all([vessel, fec, sso, nyc])
+    await db.flush()
+    # Legs de l'année courante (le classement filtre sur created_at >= 1ᵉʳ janvier).
+    base = datetime(datetime.now(UTC).year, 3, 1, tzinfo=UTC)
+    leg_a = Leg(
+        leg_code="1AFRBR6",
+        vessel_id=vessel.id,
+        departure_port_id=fec.id,
+        arrival_port_id=sso.id,
+        etd_ref=base,
+        eta_ref=base + timedelta(days=18),
+        etd=base,
+        eta=base + timedelta(days=18),
+    )
+    leg_b = Leg(
+        leg_code="1BFRUS6",
+        vessel_id=vessel.id,
+        departure_port_id=fec.id,
+        arrival_port_id=nyc.id,
+        etd_ref=base + timedelta(days=30),
+        eta_ref=base + timedelta(days=45),
+        etd=base + timedelta(days=30),
+        eta=base + timedelta(days=45),
+    )
+    db.add_all([leg_a, leg_b])
+    await db.flush()
+    db.add_all(
+        [
+            Booking(reference="BK-R3-1", leg_id=leg_a.id, status="submitted"),
+            Booking(reference="BK-R3-2", leg_id=leg_a.id, status="confirmed"),
+            Booking(reference="BK-R3-3", leg_id=leg_b.id, status="submitted"),
+        ]
+    )
+    await db.flush()
+
+    resp = await analytics_commercial(
+        _req(path="/dashboard/analytics/commercial"), db=db, user=staff_user
+    )
+    assert resp.status_code == 200
+    top = [(r.pol, r.pod, r.n) for r in resp.context["top_routes"]]
+    assert top[:2] == [("FRFEC", "BRSSO", 2), ("FRFEC", "USNYC", 1)]
+    body = resp.body.decode()
+    assert "Top routes" in body
+    assert "FRFEC" in body and "BRSSO" in body

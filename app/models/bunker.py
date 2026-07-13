@@ -73,9 +73,7 @@ class BunkerOperation(Base):
     )
     bdn_number: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     port_locode: Mapped[str] = mapped_column(String(5), nullable=False)
-    delivery_datetime_utc: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    delivery_datetime_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     fuel_type: Mapped[str] = mapped_column(
         String(20), default=DEFAULT_FUEL_TYPE, server_default=DEFAULT_FUEL_TYPE, nullable=False
     )
@@ -139,9 +137,7 @@ class BunkerTankAllocation(Base):
     volume_m3: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
     density_t_m3: Mapped[Decimal] = mapped_column(Numeric(8, 4), nullable=False)
 
-    bunker: Mapped[BunkerOperation] = relationship(
-        "BunkerOperation", back_populates="allocations"
-    )
+    bunker: Mapped[BunkerOperation] = relationship("BunkerOperation", back_populates="allocations")
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<BunkerTankAllocation bunker={self.bunker_id} tank={self.tank_id} vol={self.volume_m3}>"

@@ -1322,7 +1322,6 @@ CATALOG: dict[str, str] = {
     "dashenv_admin_history_toggle": "Historique",
     "dashenv_admin_history_empty": "Aucune modification",
     "dashenv_admin_empty": "Aucun paramètre — initialisez le référentiel depuis /mrv/parametres.",
-
     # ── Dashboard environnemental — Suivi opérationnel & Qualité (LOT 12) ──
     "dashenv_tab_fleet": "Vue flotte",
     "dashenv_tab_vessel": "Suivi opérationnel",
@@ -1417,7 +1416,6 @@ CATALOG: dict[str, str] = {
     "dashenv_quality_noon_expected": "Attendus",
     "dashenv_quality_noon_pct": "Complétude",
     "dashenv_quality_noon_none": "Aucun voyage actif à suivre.",
-
     # LOT 8 — écran qualité MRV (/mrv/qualite)
     "s_nav_mrv_qualite": "Qualité MRV",
     "mrv_qual_title": "Qualité des données MRV",

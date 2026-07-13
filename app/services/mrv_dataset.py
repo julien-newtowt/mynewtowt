@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import csv
 import io
+import itertools
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
@@ -56,7 +57,6 @@ from app.models.mrv_dataset import (
 )
 from app.models.nav_event import (
     NavEvent,
-    NavEventEngineReading,
     PortCallEvent,
 )
 from app.models.port import Port
@@ -161,16 +161,18 @@ def _in_period(dt: datetime | None, start: datetime | None, end: datetime | None
         return False
     if start is not None and d < _naive_utc(start):
         return False
-    if end is not None and d > _naive_utc(end):
-        return False
-    return True
+    return not (end is not None and d > _naive_utc(end))
 
 
 def _dms_row(lat: Decimal | None, lon: Decimal | None) -> dict[str, Any]:
     """Position décimale → colonnes DMS de l'OVDLA (minutes ENTIÈRES, cf. échantillons)."""
     out: dict[str, Any] = {
-        "Latitude_North_South": None, "Latitude_Degree": None, "Latitude_Minutes": None,
-        "Longitude_East_West": None, "Longitude_Degree": None, "Longitude_Minutes": None,
+        "Latitude_North_South": None,
+        "Latitude_Degree": None,
+        "Latitude_Minutes": None,
+        "Longitude_East_West": None,
+        "Longitude_Degree": None,
+        "Longitude_Minutes": None,
     }
     if lat is not None:
         deg, minutes, hemi = decimal_to_dms(float(lat), is_lat=True)
@@ -231,13 +233,13 @@ async def _load_engines(db: AsyncSession, vessel_id: int) -> dict[int, VesselEng
     return {e.id: e for e in rows.scalars().all()}
 
 
-async def _leg_port_map(db: AsyncSession, leg_ids: set[int]) -> dict[int, tuple[str | None, str | None]]:
+async def _leg_port_map(
+    db: AsyncSession, leg_ids: set[int]
+) -> dict[int, tuple[str | None, str | None]]:
     """{leg_id: (locode_départ, locode_arrivée)} — Voyage_From / Voyage_To."""
     if not leg_ids:
         return {}
-    legs = list(
-        (await db.execute(select(Leg).where(Leg.id.in_(leg_ids)))).scalars().all()
-    )
+    legs = list((await db.execute(select(Leg).where(Leg.id.in_(leg_ids)))).scalars().all())
     port_ids = {p for leg in legs for p in (leg.departure_port_id, leg.arrival_port_id) if p}
     ports: dict[int, Port] = {}
     if port_ids:
@@ -297,7 +299,7 @@ def _rob_by_event(
     for leg_events in by_leg.values():
         intervals = [
             iec.compute_interval(prev, cur, engines, density)
-            for prev, cur in zip(leg_events, leg_events[1:])
+            for prev, cur in itertools.pairwise(leg_events)
         ]
         for point in iec.compute_rob_chain(leg_events, intervals):
             out[point.event_id] = point.rob_calculated_t
@@ -371,9 +373,7 @@ async def build_ovdla_rows(
     # (mouillages inclus, comme l'échantillon garde le cargo constant/voyage).
     from app.models.vessel_env import VesselHydrostatics as _VH
 
-    hydro = list(
-        (await db.execute(select(_VH).where(_VH.vessel_id == vessel.id))).scalars().all()
-    )
+    hydro = list((await db.execute(select(_VH).where(_VH.vessel_id == vessel.id))).scalars().all())
     leg_cargo: dict[int, Decimal | None] = {}
     for ev in chain:
         if ev.event_type == "departure" and isinstance(ev, PortCallEvent):
@@ -391,8 +391,7 @@ async def build_ovdla_rows(
     imo = vessel.imo_number or ""
     now = datetime.now(UTC)
     intervals = [
-        iec.compute_interval(prev, cur, engines, density)
-        for prev, cur in zip(chain, chain[1:])
+        iec.compute_interval(prev, cur, engines, density) for prev, cur in itertools.pairwise(chain)
     ]
 
     rows: list[DatasetRow] = []
@@ -422,9 +421,7 @@ async def build_ovdla_rows(
             vstatus = "under_conformity"
 
         if in_period:
-            values = _ovdla_values(
-                ev, imo, window, last_row_dt, port_map, rob_map, leg_cargo, now
-            )
+            values = _ovdla_values(ev, imo, window, last_row_dt, port_map, rob_map, leg_cargo, now)
             row = DatasetRow(
                 kind="ovdla",
                 values=values,
@@ -462,14 +459,24 @@ async def build_ovdla_rows(
         if tail and not last_row_is_at_end:
             marker = tail[-1]
             values = _ovdla_values(
-                marker, imo, window, last_row_dt, port_map, rob_map, leg_cargo, now,
+                marker,
+                imo,
+                window,
+                last_row_dt,
+                port_map,
+                rob_map,
+                leg_cargo,
+                now,
                 event_label=PERIOD_LAST_EVENT_LABEL,
                 override_dt=period_end,
             )
             rows.append(
                 DatasetRow(
-                    kind="ovdla", values=values, event_id=None,
-                    synthetic=True, included=True,
+                    kind="ovdla",
+                    values=values,
+                    event_id=None,
+                    synthetic=True,
+                    included=True,
                 )
             )
 
@@ -558,7 +565,6 @@ async def build_ovdbr_rows(
     frozen = await _frozen_bunker_status_map(db)
     imo = vessel.imo_number or ""
     now = datetime.now(UTC).replace(microsecond=0, tzinfo=None)
-    port_map = await _leg_port_map(db, {b.leg_id for b in bunkers if b.leg_id})
 
     rows: list[DatasetRow] = []
     for b in bunkers:
@@ -606,16 +612,14 @@ async def _frozen_status_map(db: AsyncSession) -> dict[int, str]:
             select(MrvLogAbstractEntry.event_id, MrvLogAbstractEntry.verification_status)
         )
     ).all()
-    return {eid: st for eid, st in rows}
+    return dict(rows)
 
 
 async def _frozen_bunker_status_map(db: AsyncSession) -> dict[int, str]:
     rows = (
-        await db.execute(
-            select(MrvBunkeringEntry.bunker_id, MrvBunkeringEntry.verification_status)
-        )
+        await db.execute(select(MrvBunkeringEntry.bunker_id, MrvBunkeringEntry.verification_status))
     ).all()
-    return {bid: st for bid, st in rows}
+    return dict(rows)
 
 
 # ════════════════════════════════════════════════════════════ Alerte (lot 8)
@@ -673,9 +677,7 @@ async def snapshot_entries(db: AsyncSession, rows: list[DatasetRow]) -> dict[str
         if row.kind == "ovdla" and row.event_id is not None:
             existing = (
                 await db.execute(
-                    select(MrvLogAbstractEntry).where(
-                        MrvLogAbstractEntry.event_id == row.event_id
-                    )
+                    select(MrvLogAbstractEntry).where(MrvLogAbstractEntry.event_id == row.event_id)
                 )
             ).scalar_one_or_none()
             if existing is not None:
@@ -695,9 +697,7 @@ async def snapshot_entries(db: AsyncSession, rows: list[DatasetRow]) -> dict[str
         elif row.kind == "ovdbr" and row.bunker_id is not None:
             existing_b = (
                 await db.execute(
-                    select(MrvBunkeringEntry).where(
-                        MrvBunkeringEntry.bunker_id == row.bunker_id
-                    )
+                    select(MrvBunkeringEntry).where(MrvBunkeringEntry.bunker_id == row.bunker_id)
                 )
             ).scalar_one_or_none()
             if existing_b is not None:

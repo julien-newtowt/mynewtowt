@@ -59,8 +59,9 @@ async def db():
 
 
 def _ctx(db, rid, subjects, index, now=NOW) -> RuleContext:
-    return RuleContext(db=db, rule_id=rid, subject=subjects[index],
-                       subjects=list(subjects), index=index, now=now)
+    return RuleContext(
+        db=db, rule_id=rid, subject=subjects[index], subjects=list(subjects), index=index, now=now
+    )
 
 
 async def _run(db, rid, subjects, index):
@@ -68,8 +69,7 @@ async def _run(db, rid, subjects, index):
 
 
 def _noon(day_offset, **extra):
-    return SimpleNamespace(event_type="noon",
-                           datetime_utc=T0 + timedelta(days=day_offset), **extra)
+    return SimpleNamespace(event_type="noon", datetime_utc=T0 + timedelta(days=day_offset), **extra)
 
 
 # ═════════════════════════════════════════════ IR01 — doublon de date+type
@@ -80,8 +80,7 @@ async def test_ir01_duplicate_same_day_same_type_blocking(db):
     """Cas réel : deux Noon à la même DATE (BDD Noon Reports) → bloquant."""
     seq = [
         _noon(0),
-        SimpleNamespace(event_type="noon",
-                        datetime_utc=T0 + timedelta(hours=6)),  # même jour
+        SimpleNamespace(event_type="noon", datetime_utc=T0 + timedelta(hours=6)),  # même jour
     ]
     out = await _run(db, "IR01", seq, 1)
     assert out[0].result == "fail" and out[0].severity == "bloquant"
@@ -116,10 +115,10 @@ async def test_ir01_distinct_days_pass_and_abstains_without_dt(db):
 @pytest.mark.parametrize(
     "cur_rob,result,severity",
     [
-        (Decimal("99"), "pass", None),          # 100 − 1 = 99 → écart 0
-        (Decimal("98.5"), "pass", None),        # limite : écart 0,5 == mineur
-        (Decimal("98"), "fail", "warning"),     # écart 1 > mineur
-        (Decimal("93"), "fail", "bloquant"),    # écart 6 > critique (5)
+        (Decimal("99"), "pass", None),  # 100 − 1 = 99 → écart 0
+        (Decimal("98.5"), "pass", None),  # limite : écart 0,5 == mineur
+        (Decimal("98"), "fail", "warning"),  # écart 1 > mineur
+        (Decimal("93"), "fail", "bloquant"),  # écart 6 > critique (5)
     ],
 )
 async def test_ir02_rob_continuity_r14_bounds(db, cur_rob, result, severity):
@@ -174,12 +173,12 @@ async def test_ir03_real_case_rob_frozen_4_days(db):
     ``ir03_min_reports_figes`` = 3), UNE seule fois (pas au 4ᵉ — anti-bruit)."""
     seq = _anemos_frozen_sequence()
     assert (await _run(db, "IR03", seq, 0))[0].result == "pass"
-    assert (await _run(db, "IR03", seq, 1))[0].result == "pass"   # 2 relevés figés
-    out3 = await _run(db, "IR03", seq, 2)                          # 3ᵉ → alerte
+    assert (await _run(db, "IR03", seq, 1))[0].result == "pass"  # 2 relevés figés
+    out3 = await _run(db, "IR03", seq, 2)  # 3ᵉ → alerte
     assert out3[0].result == "fail" and out3[0].severity == "warning"
     assert out3[0].details["reports"] == 3
     assert Decimal(out3[0].details["rob_t"]) == Decimal("72.3")
-    assert (await _run(db, "IR03", seq, 3))[0].result == "pass"   # 4ᵉ : déjà signalé
+    assert (await _run(db, "IR03", seq, 3))[0].result == "pass"  # 4ᵉ : déjà signalé
 
 
 @pytest.mark.asyncio
@@ -259,21 +258,24 @@ async def test_ir04_monotonic_and_flat_pass(db):
 
 
 def _pos(day, lat, lon, et="noon"):
-    return SimpleNamespace(event_type=et, datetime_utc=T0 + timedelta(days=day),
-                           lat_decimal=Decimal(str(lat)), lon_decimal=Decimal(str(lon)))
+    return SimpleNamespace(
+        event_type=et,
+        datetime_utc=T0 + timedelta(days=day),
+        lat_decimal=Decimal(str(lat)),
+        lon_decimal=Decimal(str(lon)),
+    )
 
 
 @pytest.mark.asyncio
 async def test_ir05_real_case_position_frozen_at_sea(db):
     """Cas réel : position STRICTEMENT identique sur 3 Noon consécutifs en
     mer → warning au 3ᵉ (une fois, anti-bruit)."""
-    seq = [_pos(0, 48.5, -5.1), _pos(1, 48.5, -5.1), _pos(2, 48.5, -5.1),
-           _pos(3, 48.5, -5.1)]
-    assert (await _run(db, "IR05", seq, 1))[0].result == "pass"   # 2 relevés
-    out = await _run(db, "IR05", seq, 2)                           # 3ᵉ → alerte
+    seq = [_pos(0, 48.5, -5.1), _pos(1, 48.5, -5.1), _pos(2, 48.5, -5.1), _pos(3, 48.5, -5.1)]
+    assert (await _run(db, "IR05", seq, 1))[0].result == "pass"  # 2 relevés
+    out = await _run(db, "IR05", seq, 2)  # 3ᵉ → alerte
     assert out[0].result == "fail" and out[0].severity == "warning"
     assert out[0].details["reports"] == 3
-    assert (await _run(db, "IR05", seq, 3))[0].result == "pass"   # déjà signalé
+    assert (await _run(db, "IR05", seq, 3))[0].result == "pass"  # déjà signalé
 
 
 @pytest.mark.asyncio
@@ -290,8 +292,12 @@ async def test_ir05_portcall_out_of_scope_breaks_run(db):
     seq_pc = [_pos(0, 48.5, -5.1), _pos(1, 48.5, -5.1, et="arrival")]
     assert await _run(db, "IR05", seq_pc, 1) == []
     # Un PortCall intercalé casse la série des Noon figés.
-    seq = [_pos(0, 48.5, -5.1), _pos(1, 48.5, -5.1, et="arrival"),
-           _pos(2, 48.5, -5.1), _pos(3, 48.5, -5.1)]
+    seq = [
+        _pos(0, 48.5, -5.1),
+        _pos(1, 48.5, -5.1, et="arrival"),
+        _pos(2, 48.5, -5.1),
+        _pos(3, 48.5, -5.1),
+    ]
     assert (await _run(db, "IR05", seq, 3))[0].result == "pass"  # série = 2 Noon
 
 
@@ -304,16 +310,20 @@ async def test_full_sequence_run_reproduces_dossier_anomalies(db):
     → IR03 (figé) ET IR02 bloquant (saut) persistés dans le journal, avec le
     snapshot des seuils consommés (reproductibilité d'audit)."""
     seq = [
-        SimpleNamespace(event_type="noon", vessel_id=1, leg_id=1,
-                        datetime_utc=s.datetime_utc, rob_t=s.rob_t,
-                        conso_t=getattr(s, "conso_t", None))
+        SimpleNamespace(
+            event_type="noon",
+            vessel_id=1,
+            leg_id=1,
+            datetime_utc=s.datetime_utc,
+            rob_t=s.rob_t,
+            conso_t=getattr(s, "conso_t", None),
+        )
         for s in _anemos_frozen_sequence()
     ]
     summary = await run_rules(db, "event", seq, run_id="anemos2026")
     fails = {(r.rule_id, r.severity_applied) for r in summary.results if r.result == "fail"}
     assert ("IR03", "warning") in fails
     assert ("IR02", "bloquant") in fails
-    ir02 = next(r for r in summary.results
-                if r.rule_id == "IR02" and r.result == "fail")
+    ir02 = next(r for r in summary.results if r.rule_id == "IR02" and r.result == "fail")
     used = {u["parameter_name"] for u in ir02.details["thresholds_used"]}
     assert "seuil_rob_ecart_critique_t" in used

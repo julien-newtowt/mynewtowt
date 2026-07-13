@@ -45,10 +45,15 @@ from app.services.kpi_env import (
 
 def _slot(**kw) -> SimpleNamespace:
     """Relevé de voilure duck-typé (attributs de NavEventSailReading)."""
-    base = dict(
-        j0=False, fwd_j1=False, fwd_ms=False, aft_j1=False, aft_ms=False,
-        me_ps_load_pct=Decimal("0"), me_sb_load_pct=Decimal("0"),
-    )
+    base = {
+        "j0": False,
+        "fwd_j1": False,
+        "fwd_ms": False,
+        "aft_j1": False,
+        "aft_ms": False,
+        "me_ps_load_pct": Decimal("0"),
+        "me_sb_load_pct": Decimal("0"),
+    }
     base.update(kw)
     return SimpleNamespace(**base)
 
@@ -85,18 +90,16 @@ def test_propulsion_missing_slots_excluded_from_denominator():
     gonflent pas le dénominateur — un trou de saisie ne fait pas chuter le %
     de vélique."""
     readings = [
-        _slot(j0=True),                                       # vélique pur
-        _slot(aft_j1=True, me_ps_load_pct=Decimal("40")),     # hybride
-        _slot(me_ps_load_pct=Decimal("80")),                  # mécanique
-        _slot(),                                              # statique (relevé présent)
+        _slot(j0=True),  # vélique pur
+        _slot(aft_j1=True, me_ps_load_pct=Decimal("40")),  # hybride
+        _slot(me_ps_load_pct=Decimal("80")),  # mécanique
+        _slot(),  # statique (relevé présent)
     ]
     profile = build_propulsion_profile(readings, theoretical_slots=6)
 
     assert profile.filled_slots == 4  # dénominateur = tranches RENSEIGNÉES
     assert profile.theoretical_slots == 6
-    assert profile.counts == {
-        "velique_pur": 1, "hybride": 1, "mecanique": 1, "statique": 1
-    }
+    assert profile.counts == {"velique_pur": 1, "hybride": 1, "mecanique": 1, "statique": 1}
     # Chaque catégorie = 1/4 = 25,0 % (dénominateur 4, pas 6).
     by_cat = {s.category: s.pct for s in profile.segments}
     for cat in PROPULSION_CATEGORIES:
@@ -182,16 +185,22 @@ def _qcr(rule_id, severity, *, ack=False):
 
 @pytest.mark.asyncio
 async def test_quality_overview_counters(db):
-    db.add_all([
-        _qcr("R14", "warning"),               # non acquitté
-        _qcr("R14", "warning", ack=True),     # acquitté
-        _qcr("R10", "bloquant"),              # non acquitté
-        QualityCheckResult(                    # pass → ignoré
-            rule_id="R08", subject_type="event", subject_id=2, run_id="r",
-            result="pass", severity_applied="info",
-            executed_at=datetime(2026, 6, 1, tzinfo=UTC),
-        ),
-    ])
+    db.add_all(
+        [
+            _qcr("R14", "warning"),  # non acquitté
+            _qcr("R14", "warning", ack=True),  # acquitté
+            _qcr("R10", "bloquant"),  # non acquitté
+            QualityCheckResult(  # pass → ignoré
+                rule_id="R08",
+                subject_type="event",
+                subject_id=2,
+                run_id="r",
+                result="pass",
+                severity_applied="info",
+                executed_at=datetime(2026, 6, 1, tzinfo=UTC),
+            ),
+        ]
+    )
     await db.flush()
 
     o = await quality_overview(db, now=datetime(2026, 7, 1, tzinfo=UTC))

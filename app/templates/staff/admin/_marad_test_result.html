@@ -2,8 +2,20 @@
    `diag` = sortie de marad.diagnose() (jeton masqué). #}
 {% set c = diag.classification %}
 {% if c == "ok" %}
-<span class="pill pill-ok"><i data-lucide="check-circle"></i>
-  Connexion Marad établie{% if diag.vessels_count is not none %} — {{ diag.vessels_count }} navire(s) visibles{% endif %}</span>
+  {% if diag.crew_count and diag.crew_count > 0 %}
+  {# Succès réel : l'intégration a bien accès aux données équipage. #}
+  <span class="pill pill-ok"><i data-lucide="check-circle"></i>
+    Connexion Marad établie — {{ diag.crew_count }} membre(s) d'équipage visibles</span>
+  {% elif (diag.crew_count == 0) and (diag.vessels_count == 0) %}
+  {# Authentifié mais compte vide des deux côtés → provisionnement / périmètre clé. #}
+  <span class="pill pill-warn"><i data-lucide="alert-triangle"></i>
+    Connexion établie mais compte Marad vide (0 navire, 0 équipage) — vérifier
+    le provisionnement du compte et le périmètre de la clé côté MaraSoft</span>
+  {% else %}
+  {# Authentifié ; équipage non vérifié (quota/err) ou navires seuls. #}
+  <span class="pill pill-ok"><i data-lucide="check-circle"></i>
+    Connexion Marad établie{% if diag.crew_count is none %} (équipage non vérifié — quota){% elif diag.vessels_count is not none %} — {{ diag.vessels_count }} navire(s){% endif %}</span>
+  {% endif %}
 {% elif c == "not_configured" %}
 <span class="pill pill-warn"><i data-lucide="alert-triangle"></i>
   Jeton non configuré — définir <code>MARAD_API_TOKEN</code></span>
