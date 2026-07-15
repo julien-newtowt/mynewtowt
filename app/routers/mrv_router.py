@@ -408,6 +408,64 @@ async def mrv_parametres_dashboard_update(
     return RedirectResponse(url="/mrv/parametres", status_code=303)
 
 
+@router.post("/parametres/dashboard/eedi/save")
+async def mrv_parametres_eedi_save(
+    request: Request,
+    vessel_id: int = Form(...),
+    value: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "S")),
+):
+    """Crée ou met à jour l'EEDI de conception d'un navire (G15, spec dashboard
+    §5.6/§7.1) : ``DashboardParameter(parameter_name="eedi_design")``, scope
+    **navire uniquement** — contrairement aux autres paramètres dashboard,
+    il n'existe volontairement **jamais** de ligne ``vessel_id=NULL`` pour
+    ``eedi_design`` (une valeur de conception chantier n'a pas de sens comme
+    « défaut flotte »)."""
+    from app.models.validation import DashboardParameter
+
+    if await db.get(Vessel, vessel_id) is None:
+        raise HTTPException(status_code=404, detail="navire inconnu")
+    parsed = _parse_threshold_value(value)
+
+    existing = (
+        await db.execute(
+            select(DashboardParameter).where(
+                DashboardParameter.parameter_name == "eedi_design",
+                DashboardParameter.vessel_id == vessel_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.value = parsed
+        existing.updated_by = user.id
+        target = existing
+    else:
+        target = DashboardParameter(
+            parameter_name="eedi_design",
+            vessel_id=vessel_id,
+            value=parsed,
+            unit="gCO2/t.nm",
+            updated_by=user.id,
+        )
+        db.add(target)
+    await db.flush()
+    await activity_record(
+        db,
+        action="mrv_dashboard_parameter_update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="mrv",
+        entity_type="dashboard_parameter",
+        entity_id=target.id,
+        entity_label="eedi_design",
+        detail=f"value={target.value} vessel={vessel_id}",
+        ip_address=_client_ip(request),
+    )
+    return RedirectResponse(url="/mrv/parametres", status_code=303)
+
+
 # ══════════════════════════ LOT 6 — Soutage (Bunker Report / BDN), vue siège ══
 
 

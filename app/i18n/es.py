@@ -1125,6 +1125,8 @@ CATALOG: dict[str, str] = {
     "mrv_param_thresholds": "Umbrales configurables",
     "mrv_param_overrides": "Anulaciones por buque",
     "mrv_param_dashboard": "Parámetros del panel",
+    "mrv_param_eedi": "EEDI por buque (diseño)",
+    "mrv_param_eedi_hint": "Solo por buque — sin valor por defecto de flota.",
     "mrv_param_col_rule": "Regla",
     "mrv_param_col_domain": "Dominio",
     "mrv_param_col_desc": "Descripción",

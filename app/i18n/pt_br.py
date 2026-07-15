@@ -1125,6 +1125,8 @@ CATALOG: dict[str, str] = {
     "mrv_param_thresholds": "Limiares configuráveis",
     "mrv_param_overrides": "Substituições por navio",
     "mrv_param_dashboard": "Parâmetros do painel",
+    "mrv_param_eedi": "EEDI por navio (projeto)",
+    "mrv_param_eedi_hint": "Somente por navio — sem valor padrão de frota.",
     "mrv_param_col_rule": "Regra",
     "mrv_param_col_domain": "Domínio",
     "mrv_param_col_desc": "Descrição",

@@ -1125,6 +1125,8 @@ CATALOG: dict[str, str] = {
     "mrv_param_thresholds": "Seuils paramétrables",
     "mrv_param_overrides": "Overrides par navire",
     "mrv_param_dashboard": "Paramètres dashboard",
+    "mrv_param_eedi": "EEDI par navire (conception)",
+    "mrv_param_eedi_hint": "Scope navire uniquement — pas de valeur par défaut flotte.",
     "mrv_param_col_rule": "Règle",
     "mrv_param_col_domain": "Domaine",
     "mrv_param_col_desc": "Description",

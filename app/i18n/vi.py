@@ -1125,6 +1125,8 @@ CATALOG: dict[str, str] = {
     "mrv_param_thresholds": "Ngưỡng có thể cấu hình",
     "mrv_param_overrides": "Ghi đè theo tàu",
     "mrv_param_dashboard": "Tham số bảng điều khiển",
+    "mrv_param_eedi": "EEDI theo tàu (thiết kế)",
+    "mrv_param_eedi_hint": "Chỉ theo tàu — không có giá trị mặc định cho đội tàu.",
     "mrv_param_col_rule": "Quy tắc",
     "mrv_param_col_domain": "Lĩnh vực",
     "mrv_param_col_desc": "Mô tả",

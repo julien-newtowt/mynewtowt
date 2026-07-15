@@ -223,6 +223,84 @@ async def test_dashboard_parameter_update(db, staff_user):
 
 
 @pytest.mark.asyncio
+async def test_eedi_save_creates_then_updates_vessel_only_row(db, staff_user):
+    """G15 — EEDI(conception) : DashboardParameter scope navire uniquement,
+    jamais de ligne vessel_id=NULL (architecture §7.1)."""
+    from app.routers.mrv_router import mrv_parametres_eedi_save
+
+    db.add(Vessel(id=1, code="ANE", name="Anemos", imo_number="9876543", flag="FR"))
+    await db.flush()
+    await seed_reference_data(db)
+
+    resp = await mrv_parametres_eedi_save(
+        FakeRequest(), vessel_id=1, value="20.1", db=db, user=staff_user
+    )
+    assert resp.status_code == 303
+    row = (
+        await db.execute(
+            select(DashboardParameter).where(
+                DashboardParameter.parameter_name == "eedi_design",
+                DashboardParameter.vessel_id == 1,
+            )
+        )
+    ).scalar_one()
+    assert row.value == Decimal("20.1")
+
+    # Aucun override global (vessel_id=NULL) n'a jamais existé pour ce paramètre.
+    global_row = (
+        await db.execute(
+            select(DashboardParameter).where(
+                DashboardParameter.parameter_name == "eedi_design",
+                DashboardParameter.vessel_id.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    assert global_row is None
+
+    # Deuxième appel = met à jour la MÊME ligne (pas de doublon).
+    await mrv_parametres_eedi_save(FakeRequest(), vessel_id=1, value="21.5", db=db, user=staff_user)
+    rows = list(
+        (
+            await db.execute(
+                select(DashboardParameter).where(DashboardParameter.parameter_name == "eedi_design")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].value == Decimal("21.5")
+
+
+@pytest.mark.asyncio
+async def test_eedi_row_surfaced_in_dash_overrides_context(db, staff_user):
+    from app.routers.mrv_router import mrv_parametres, mrv_parametres_eedi_save
+
+    db.add(Vessel(id=1, code="ANE", name="Anemos", imo_number="9876543", flag="FR"))
+    await db.flush()
+    await seed_reference_data(db)
+    await mrv_parametres_eedi_save(FakeRequest(), vessel_id=1, value="20.1", db=db, user=staff_user)
+
+    resp = await mrv_parametres(FakeRequest(), db=db, user=staff_user)
+    overrides = resp.context["dash_overrides"]
+    assert len(overrides) == 1
+    assert overrides[0].parameter_name == "eedi_design"
+    assert overrides[0].vessel_id == 1
+
+
+@pytest.mark.asyncio
+async def test_eedi_save_rejects_unknown_vessel(db, staff_user):
+    from app.routers.mrv_router import mrv_parametres_eedi_save
+
+    await seed_reference_data(db)
+    with pytest.raises(HTTPException) as exc:
+        await mrv_parametres_eedi_save(
+            FakeRequest(), vessel_id=999, value="20.1", db=db, user=staff_user
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_threshold_update_rejects_invalid_value(db, staff_user):
     from app.routers.mrv_router import mrv_parametres_threshold_update
 
