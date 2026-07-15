@@ -346,7 +346,7 @@ speed_kn    = distance_nm / duration_h                # si durée > 0
 | **Totale voyage** | Σ des consos d'intervalle du leg |
 | **Mouillage** | Σ des intervalles **entièrement contenus** dans une fenêtre Begin→End Anchoring |
 | **Hors mouillage** | totale − mouillage — **c'est l'assiette d'émission** (MRV) |
-| **Escale** | Arrival (leg N) → Departure (leg N+1) du même navire — portée par le rapport **Stopover** (deltas de compteurs pendant l'escale) ; non matérialisée dans le summary (`conso_escale_t = None`) |
+| **Escale** | Arrival (leg N) → Departure (leg N+1) du même navire — formule R14b résolue pour `Consommation_escale` (ROB déclarés + soutages, G12), repli deltas de compteurs (G2) si un ROB manque ; `None` tant que le Departure suivant n'est pas finalisé |
 
 En repli `legacy_noon` (voyage sans événements v2), tout est « hors mouillage » :
 l'assiette = Σ `total_consumption_t` des noon reports (sinon Σ moteurs) —
@@ -696,9 +696,11 @@ tonnage) — sinon **`theoretical`** (forfait 1,5 g/t·km). `resolve_distance_nm
    source `CheckConsumption` du dossier client est cassée (`#REF!`) ; R15 ne
    croise cette référence que si elle est peuplée à la main / via l'import 2025.
    <!-- source: flgo.py:24-29 -->
-10. **`conso_escale_t` non matérialisée** dans `voyage_emission_summaries`
-    (None) : l'assiette escale vit dans le rapport Stopover.
-    <!-- source: emission_ledger.py:471 -->
+10. **`conso_escale_t` calculée (G12)** : formule R14b résolue pour
+    `Consommation_escale` (ROB déclarés + soutages), repli compteurs (G2) si
+    un ROB manque. Reste `None` tant que le Departure du leg suivant n'est
+    pas finalisé (escale en cours).
+    <!-- source: emission_ledger.py -->
 
 ---
 

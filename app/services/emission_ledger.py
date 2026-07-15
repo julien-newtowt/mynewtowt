@@ -46,7 +46,7 @@ from app.models.booking import Booking
 from app.models.bunker import BunkerOperation
 from app.models.emission_factor import EmissionFactor
 from app.models.leg import Leg
-from app.models.nav_event import DepartureEvent, NavEvent
+from app.models.nav_event import ArrivalEvent, DepartureEvent, NavEvent, PortCallEvent
 from app.models.noon_report import NoonReport, NoonReportEngine
 from app.models.validation import DashboardParameter
 from app.models.vessel import Vessel
@@ -217,6 +217,83 @@ async def build_bunker_lookup(db: AsyncSession, leg_id: int) -> iec.BunkerLookup
         return sum((m for (dt, m) in ops if dt is not None and f < dt <= t), Decimal("0"))
 
     return lookup
+
+
+# ════════════════════════════════════════════════════ Conso d'escale (G12)
+
+
+async def _next_departure_event(
+    db: AsyncSession, vessel_id: int, after: datetime
+) -> NavEvent | None:
+    """Premier Departure finalisé du navire après ``after`` (chronologique,
+    tous legs confondus) — borne de fin de l'escale qui suit une Arrival."""
+    after_naive = _naive_utc(after)
+    rows = await db.execute(
+        select(NavEvent)
+        .where(
+            NavEvent.vessel_id == vessel_id,
+            NavEvent.event_type == "departure",
+            NavEvent.status.in_(iec.FINALIZED_STATUSES),
+        )
+        .order_by(NavEvent.datetime_utc.asc())
+    )
+    for ev in rows.scalars().all():
+        if _naive_utc(ev.datetime_utc) is not None and _naive_utc(ev.datetime_utc) > after_naive:
+            return ev
+    return None
+
+
+async def _bunkered_t_between(
+    db: AsyncSession, vessel_id: int, frm: datetime | None, to: datetime | None
+) -> Decimal:
+    """Soutages validés Master du navire livrés dans la fenêtre (``frm``, ``to``]."""
+    rows = (
+        await db.execute(
+            select(BunkerOperation.delivery_datetime_utc, BunkerOperation.mass_t).where(
+                BunkerOperation.vessel_id == vessel_id,
+                BunkerOperation.status == "valide_master",
+            )
+        )
+    ).all()
+    f, t = _naive_utc(frm), _naive_utc(to)
+    total = Decimal("0")
+    for dt, mass in rows:
+        d = _naive_utc(dt)
+        if d is not None and mass is not None and f is not None and t is not None and f < d <= t:
+            total += mass
+    return total
+
+
+async def _escale_consumption(
+    db: AsyncSession, vessel_id: int, arrival: NavEvent
+) -> Decimal | None:
+    """Conso d'escale — formule R14b résolue pour ``Consommation_escale``
+    (architecture §2.4, second usage de la formule de continuité ROB) : port
+    stay qui suit l'Arrival d'un leg jusqu'au prochain Departure finalisé du
+    même navire.
+
+    ``Consommation_escale = ROB_arrivée + Σ soutage − ROB_départ`` — méthode
+    du dashboard tant que la méthode par compteurs n'est pas systématiquement
+    peuplée en prod (repli sur le delta de compteurs moteur, désormais fiable
+    depuis G2, si le ROB déclaré manque à l'une des deux bornes). ``None`` si
+    le prochain Departure n'est pas encore finalisé (escale en cours) ou si
+    aucune des deux méthodes n'est calculable."""
+    departure = await _next_departure_event(db, vessel_id, arrival.datetime_utc)
+    if departure is None:
+        return None
+
+    rob_arrival = arrival.rob_t if isinstance(arrival, PortCallEvent) else None
+    rob_departure = departure.rob_t if isinstance(departure, PortCallEvent) else None
+    if rob_arrival is not None and rob_departure is not None:
+        bunkered_t = await _bunkered_t_between(
+            db, vessel_id, arrival.datetime_utc, departure.datetime_utc
+        )
+        return Decimal(rob_arrival) + bunkered_t - Decimal(rob_departure)
+
+    engines = {e.id: e for e in await referential_env.get_vessel_engines(db, vessel_id)}
+    density = await iec.resolve_density(db, vessel_id)
+    interval = iec.compute_interval(arrival, departure, engines, density)
+    return interval.total_conso_t
 
 
 # ════════════════════════════════════════════════════ Repli legacy (noon_reports)
@@ -392,6 +469,7 @@ async def compute_for_leg(
     events = await iec.finalized_events_for_leg(db, leg.id)
 
     conso_me = conso_ae = conso_total = conso_mouillage = conso_hors = None
+    conso_escale: Decimal | None = None
     cargo_bl_canonical: Decimal | None = None
     cargo_mrv: Decimal | None = None
     distance_canonical: Decimal | None = None
@@ -421,6 +499,12 @@ async def compute_for_leg(
         dep_cargo = comp.cargo_mrv.get(dep.id) if dep is not None else None
         cargo_mrv = dep_cargo.cargo_mrv_t if dep_cargo is not None else None
         do_consumed = conso_hors
+        # Conso d'escale (G12) : port stay qui suit l'Arrival de CE leg,
+        # jusqu'au prochain Departure du même navire (peut appartenir au leg
+        # suivant) — None tant que ce voyage n'est pas encore arrivé.
+        arr = comp.events[-1] if comp.events else None
+        if isinstance(arr, ArrivalEvent) and leg.vessel_id is not None:
+            conso_escale = await _escale_consumption(db, leg.vessel_id, arr)
     else:
         source = "legacy_noon"
         do_consumed = await _legacy_do_consumed_t(db, leg.id)
@@ -460,7 +544,7 @@ async def compute_for_leg(
         conso_total_t=conso_total,
         conso_mouillage_t=conso_mouillage,
         conso_hors_mouillage_t=conso_hors,
-        conso_escale_t=None,
+        conso_escale_t=conso_escale,
         do_consumed_t=do_consumed,
         distance_nm=distance,
         cargo_bl_t=cargo_bl,
