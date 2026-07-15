@@ -541,10 +541,11 @@ async def post_noon_report(
         entity_type="noon_report",
         entity_id=nr.id,
     )
-    # LOT 14 — la synchro noon→MRVEvent (``mrv_sync``) est éteinte : les navires
+    # La synchro noon→MRVEvent (``mrv_sync``) a été supprimée : les navires
     # en double-run (capture v2 OFF) écrivent encore ``noon_reports`` (audit,
     # signature, fallback ledger ``legacy_noon``) mais ne génèrent plus de
-    # ``mrv_events`` (module archivé). La capture v2 est la voie unique.
+    # ``mrv_events`` (table elle-même supprimée). La capture v2 est la voie
+    # unique.
     return RedirectResponse(url=f"/onboard/navigation?leg_id={nr.leg_id}", status_code=303)
 
 

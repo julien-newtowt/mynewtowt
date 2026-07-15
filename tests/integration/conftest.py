@@ -17,6 +17,7 @@ ciblé dans ``pyproject.toml`` (et uniquement celui-là).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -27,7 +28,10 @@ from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401 — enregistre tous les modèles sur Base.metadata
 from app.database import Base
+from app.models.leg import Leg
+from app.models.port import Port
 from app.models.user import User
+from app.models.vessel import Vessel
 
 
 @pytest_asyncio.fixture
@@ -89,6 +93,35 @@ class FakeRequest:
 
     async def form(self):
         return self._form
+
+
+async def _setup_leg(db):
+    """Vessel + 2 ports + un leg de référence (voyage FR→BR, navire ANE).
+
+    Relocalisé depuis l'ex-``tests/integration/test_mrv_reprise.py`` (legacy
+    MRV supprimé) — partagé par de nombreuses suites qui n'ont aucun rapport
+    avec le MRV, d'où son emplacement ici plutôt que dans un fichier de test
+    spécifique.
+    """
+    db.add(Vessel(id=1, code="ANE", name="Anemos", imo_number="9876543", flag="FR"))
+    db.add(Port(id=1, locode="FRFEC", name="Fécamp", country="FR"))
+    db.add(Port(id=2, locode="BRSSO", name="Santos", country="BR"))
+    await db.flush()
+    base = datetime(2026, 4, 1, tzinfo=UTC)
+    leg = Leg(
+        id=1,
+        leg_code="1CFRBR6",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd_ref=base,
+        eta_ref=base + timedelta(days=20),
+        etd=base,
+        eta=base + timedelta(days=20),
+    )
+    db.add(leg)
+    await db.flush()
+    return leg
 
 
 # ─────────────────────────── LOT 14 — bascule capture v2 ─────────────────────

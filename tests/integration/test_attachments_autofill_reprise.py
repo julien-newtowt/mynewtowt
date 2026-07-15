@@ -9,11 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.models.claim import VesselPosition
 from app.models.commercial import Client, Order
 from app.models.crew import CrewAssignment, CrewMember
 from app.models.leg import Leg
-from app.models.mrv import MRVEvent
 from app.models.port import Port
 from app.models.vessel import Vessel
 
@@ -115,7 +113,7 @@ async def test_order_attachment_upload_download_delete(db, staff_user, _upload_r
 
 
 def test_decimal_to_dms():
-    from app.services.mrv_compute import decimal_to_dms
+    from app.utils.geo import decimal_to_dms
 
     deg, minutes, hemi = decimal_to_dms(49.5, is_lat=True)
     assert (deg, hemi) == (49, "N")
@@ -123,63 +121,6 @@ def test_decimal_to_dms():
     deg, minutes, hemi = decimal_to_dms(-0.25, is_lat=False)
     assert (deg, hemi) == (0, "W")
     assert minutes == Decimal("15.000")
-
-
-# LOT 14 — le CRUD ``mrv_router.add_event`` est retiré (bascule) ; la logique
-# d'auto-remplissage GPS→DMS (MRV-07) vit toujours dans ``mrv_compute`` (module
-# archivé). Ces tests exercent désormais directement ``autofill_event_position``.
-@pytest.mark.asyncio
-async def test_mrv_autofill_dms_from_last_position(db):
-    from app.services.mrv_compute import autofill_event_position
-
-    leg = await _setup_leg(db)
-    db.add(
-        VesselPosition(
-            vessel_id=1,
-            recorded_at=datetime(2026, 4, 2, 6, tzinfo=UTC),
-            latitude=49.5,
-            longitude=-0.25,
-        )
-    )
-    await db.flush()
-
-    ev = MRVEvent(
-        leg_id=1,
-        event_kind="noon_consumption",
-        recorded_at=datetime(2026, 4, 2, 12, tzinfo=UTC),
-        fuel_type="MDO",
-    )
-    filled = await autofill_event_position(db, leg, ev)
-    assert filled is True
-    assert ev.lat_deg == 49 and ev.lat_ns == "N"
-    assert ev.lon_deg == 0 and ev.lon_ew == "W"
-
-
-@pytest.mark.asyncio
-async def test_mrv_autofill_does_not_override_manual_position(db):
-    from app.services.mrv_compute import autofill_event_position
-
-    leg = await _setup_leg(db)
-    db.add(
-        VesselPosition(
-            vessel_id=1,
-            recorded_at=datetime(2026, 4, 2, 6, tzinfo=UTC),
-            latitude=49.5,
-            longitude=-0.25,
-        )
-    )
-    await db.flush()
-    ev = MRVEvent(
-        leg_id=1,
-        event_kind="noon_consumption",
-        recorded_at=datetime(2026, 4, 2, 12, tzinfo=UTC),
-        fuel_type="MDO",
-        lat_deg=10,
-        lat_ns="S",
-    )
-    filled = await autofill_event_position(db, leg, ev)
-    assert filled is False  # saisie manuelle présente → pas d'écrasement
-    assert ev.lat_deg == 10 and ev.lat_ns == "S"
 
 
 # ─────────────────────────── CREW-04 / CREW-05 ───────────────────────────

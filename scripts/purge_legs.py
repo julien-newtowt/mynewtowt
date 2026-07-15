@@ -15,8 +15,9 @@ Ordre FK-safe :
   2. Supprimer les bookings (booking_items en CASCADE DB).
   3. Supprimer les données opérationnelles propres au leg (escale,
      dockers, SOF, ETA shifts, messages, docs cargo, noon reports,
-     quarts, checklists, visiteurs, MRV, finance, KPI, affectations
-     équipage, assignations commande, plans d'arrimage).
+     quarts, checklists, visiteurs, finance, KPI, affectations
+     équipage, assignations commande, plans d'arrimage). Les événements
+     événementiels (``nav_events``) sont supprimés en CASCADE DB.
   4. Délier (set NULL) les FK nullables qui doivent survivre (claims,
      tickets, mouvements caisse, tickets équipage, certificats Anemos,
      commandes, offres tarifaires).
@@ -45,7 +46,6 @@ from app.models.crew_ticket import CrewTicket
 from app.models.escale import DockerShift, EscaleOperation
 from app.models.finance import LegFinance, LegKPI
 from app.models.leg import Leg
-from app.models.mrv import MRVEvent
 from app.models.noon_report import NoonReport
 from app.models.onboard_cashbox import CashboxMovement
 from app.models.sof_event import CargoDocument, EtaShift, OnboardMessage, SofEvent
@@ -67,7 +67,6 @@ LEG_OWNED_DELETE = [
     WatchLog,
     OnboardChecklist,
     VisitorLog,
-    MRVEvent,
     LegFinance,
     LegKPI,
     CrewAssignment,
