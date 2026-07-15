@@ -18,6 +18,7 @@ from fastapi import HTTPException
 
 from app.models.finance import LegKPI
 from app.models.leg import Leg
+from app.models.noon_report import NoonReport
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.models.voyage_emission_summary import VoyageEmissionSummary
@@ -326,3 +327,114 @@ async def test_vessel_strict_totals_exclude_legacy_but_list_keeps_both(db):
     assert op.co2_total_t == Decimal("50.00")
     assert op.conso_total_t == Decimal("5.00")
     assert op.excluded_non_event_count == 1
+
+
+# ═══════════════════════════════════════ Page 3 — détail voyage (mrv:C) ═══════════════════════════════════════
+
+
+def _commercial_user():
+    """A ``kpi:C`` mais PAS ``mrv:C`` — voit la page 2, pas le détail voyage."""
+    return SimpleNamespace(id=4, full_name="Commercial", username="com1", role="commercial")
+
+
+async def _seed_legacy_noon_leg(db):
+    """1 leg avec seulement 2 NoonReport (aucun NavEvent) — emission_ledger
+    bascule sur ``source="legacy_noon"`` (cf. tests/unit/test_emission_ledger.py)."""
+    db.add(Vessel(id=1, code="ANE", name="Anemos", is_active=True))
+    db.add(Port(id=1, locode="FRLEH", name="Le Havre", country="FR"))
+    db.add(Port(id=2, locode="BRSSZ", name="Santos", country="BR"))
+    await db.flush()
+    now = datetime(2026, 3, 1, tzinfo=UTC)
+    db.add(
+        Leg(
+            id=1,
+            leg_code="1AFRBR6",
+            vessel_id=1,
+            departure_port_id=1,
+            arrival_port_id=2,
+            etd_ref=now,
+            eta_ref=now,
+            etd=now,
+            eta=now,
+            ata=now,
+            distance_nm=Decimal("1000"),
+        )
+    )
+    await db.flush()
+    db.add(
+        NoonReport(
+            leg_id=1, recorded_at=now, latitude=0, longitude=0, total_consumption_t=Decimal("1.3")
+        )
+    )
+    db.add(
+        NoonReport(
+            leg_id=1,
+            recorded_at=now,
+            latitude=0,
+            longitude=0,
+            total_consumption_t=Decimal("0.7"),
+        )
+    )
+    await db.flush()
+
+
+async def _load_1egb5(db):
+    """Voyage golden event-sourcé réaliste (mouillage + soutage) — fixtures lot 13."""
+    from tests.fixtures.mrv_2025.loader import load_voyage
+
+    return await load_voyage(db, "1EGB5")
+
+
+def test_voyage_routes_registered():
+    from app.routers import dashboard_perf_router
+
+    paths = {r.path for r in dashboard_perf_router.router.routes}
+    assert "/dashboard-perf/voyages/{leg_id}" in paths
+
+
+@pytest.mark.asyncio
+async def test_voyage_detail_requires_mrv_c(db):
+    checker = require_permission("mrv", "C")
+    # commercial a kpi:C (voit la page navire) mais PAS mrv:C (pas le détail).
+    with pytest.raises(HTTPException) as exc:
+        await checker(FakeRequest(), user=_commercial_user(), db=db)
+    assert exc.value.status_code == 403
+    admin = _admin_user()
+    assert await checker(FakeRequest(), user=admin, db=db) is admin
+
+
+@pytest.mark.asyncio
+async def test_voyage_detail_unknown_404(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_voyage
+
+    with pytest.raises(HTTPException) as exc:
+        await dashboard_perf_voyage(999999, FakeRequest(), db=db, user=_admin_user())
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_voyage_detail_renders_event_sourced(db):
+    """Voyage golden event-sourcé : is_event_sourced=True, géométrie ROB prête."""
+    from app.routers.dashboard_perf_router import dashboard_perf_voyage
+
+    fixture = await _load_1egb5(db)
+    resp = await dashboard_perf_voyage(fixture.leg.id, FakeRequest(), db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/dashboard_perf/voyage.html"
+    assert resp.context["d"].leg_code == "1EGB5"
+    assert resp.context["d"].source == "events"
+    assert resp.context["is_event_sourced"] is True
+    assert resp.context["rob"]["has_data"] is True
+
+
+@pytest.mark.asyncio
+async def test_voyage_detail_legacy_noon_flags_not_event_sourced(db):
+    """NC-04 : un voyage sans capture événementielle (repli legacy_noon) est
+    explicitement signalé — jamais présenté comme une donnée event-driven normale."""
+    from app.routers.dashboard_perf_router import dashboard_perf_voyage
+
+    await _seed_legacy_noon_leg(db)
+    resp = await dashboard_perf_voyage(1, FakeRequest(), db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert resp.context["d"].source == "legacy_noon"
+    assert resp.context["is_event_sourced"] is False
