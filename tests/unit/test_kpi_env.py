@@ -32,6 +32,7 @@ from app.models.leg import Leg
 from app.models.port import Port
 from app.models.validation import DashboardParameter
 from app.models.vessel import Vessel
+from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.services.kpi_env import (
     DASHBOARD_PARAM_DEFAULTS,
     NA_BALLAST,
@@ -46,6 +47,7 @@ from app.services.kpi_env import (
     get_dashboard_parameters,
     leg_ef,
     monthly_trend,
+    vessel_operational,
 )
 
 OCC = Decimal("70")  # occupancy_rate_pct défaut
@@ -477,3 +479,74 @@ async def test_emissions_provider_marks_legs_without_kpi():
     finally:
         await db.close()
         await engine.dispose()
+
+
+# ═══════════════════════════════════════ NC-04 — mode strict (repli legacy)
+
+
+@pytest.mark.asyncio
+async def test_fleet_summary_strict_excludes_legacy_kpi_legs(db):
+    """Aucun ``VoyageEmissionSummary`` pour ces 2 legs (source ``legacy_kpi``) :
+    le mode strict doit tout exclure des totaux, jamais les compter en silence."""
+    await _seed_two_legs(db)
+    now = datetime(2026, 7, 9, tzinfo=UTC)
+
+    lenient = await fleet_summary(db, period=2026, method="A", now=now, strict=False)
+    assert lenient.fleet.leg_count == 2  # comportement inchangé par défaut
+
+    strict = await fleet_summary(db, period=2026, method="A", now=now, strict=True)
+    assert strict.fleet.leg_count == 0
+    assert strict.fleet.co2_emitted_t == Decimal("0.00")
+    assert strict.fleet.legs_excluded_non_event == 2
+
+
+@pytest.mark.asyncio
+async def test_fleet_summary_strict_includes_only_event_sourced_legs(db):
+    """1 leg event-sourced + 1 leg en repli legacy : le mode strict ne garde
+    que le premier dans les totaux, et compte le second comme exclu."""
+    await _seed_two_legs(db)
+    db.add(
+        VoyageEmissionSummary(
+            leg_id=1,
+            source="events",
+            co2_t=Decimal("42"),
+            cargo_bl_t=Decimal("500"),
+            distance_nm=Decimal("1000"),
+        )
+    )
+    await db.flush()
+    now = datetime(2026, 7, 9, tzinfo=UTC)
+
+    strict = await fleet_summary(db, period=2026, method="A", now=now, strict=True)
+    assert strict.fleet.leg_count == 1
+    assert strict.fleet.co2_emitted_t == Decimal("42.00")
+    assert strict.fleet.legs_excluded_non_event == 1
+
+
+@pytest.mark.asyncio
+async def test_vessel_operational_strict_keeps_rows_but_excludes_from_totals(db):
+    """Le mode strict n'agrège que la donnée event-sourcée dans les totaux,
+    mais n'escamote aucun voyage de la liste — chacun garde son ``source``."""
+    await _seed_two_legs(db)
+    db.add(
+        VoyageEmissionSummary(
+            leg_id=1,
+            source="events",
+            co2_t=Decimal("42"),
+            cargo_bl_t=Decimal("500"),
+            distance_nm=Decimal("1000"),
+            conso_total_t=Decimal("5"),
+        )
+    )
+    await db.flush()
+
+    lenient = await vessel_operational(db, 1, period=2026, method="A", strict=False)
+    assert len(lenient.voyages) == 2
+    assert lenient.leg_count == 2  # comportement inchangé par défaut
+
+    strict = await vessel_operational(db, 1, period=2026, method="A", strict=True)
+    assert len(strict.voyages) == 2  # aucun voyage caché
+    assert {r.source for r in strict.voyages} == {"events", "legacy_kpi"}
+    assert strict.leg_count == 1
+    assert strict.co2_total_t == Decimal("42.00")
+    assert strict.excluded_non_event_count == 1
