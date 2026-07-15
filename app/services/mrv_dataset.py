@@ -17,7 +17,7 @@ au rapport §OVDLA/OVDBR) : minutes DMS **entières**, ``Time_UTC`` en ``HH:MM``
 ``Date_UTC`` date seule, consommations en tonnes. ``Source_System = "MyTOWT"``
 (Q10, l'émetteur du format est MyTOWT — « OVDAdmin » observé venait de l'ancien
 outil). Calculs délégués à ``inter_event_compute`` (deltas de compteurs, ROB
-chaîné) et ``mrv_compute.decimal_to_dms`` (positions).
+chaîné) et ``app.utils.geo.decimal_to_dms`` (positions).
 
 **Portes de génération** (la qualité est une PORTE, pas un rapport a posteriori) :
 
@@ -64,8 +64,8 @@ from app.models.vessel import Vessel
 from app.models.vessel_env import VesselEngine
 from app.services import inter_event_compute as iec
 from app.services import notifications
-from app.services.mrv_compute import decimal_to_dms
 from app.utils.csv_safe import sanitize_cell
+from app.utils.geo import decimal_to_dms
 
 # ════════════════════════════════════════════════════════════ Colonnes / labels
 
