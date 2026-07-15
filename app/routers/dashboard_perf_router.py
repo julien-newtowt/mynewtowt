@@ -19,6 +19,7 @@ Expose pour l'instant :
     GET /dashboard-perf, /dashboard-perf/         page 1 — Vue flotte (perm kpi:C)
     GET /dashboard-perf/vessels/{vessel_id}       page 2 — Suivi opérationnel (perm kpi:C)
     GET /dashboard-perf/voyages/{leg_id}          page 3 — Détail voyage (perm mrv:C)
+    GET /dashboard-perf/quality                   page 4 — Qualité des données (perm mrv:C)
 
 ``voyage_detail`` (contrairement à ``fleet_summary``/``vessel_operational``)
 n'a pas de paramètre ``strict`` : il porte un seul voyage, pas un agrégat à
@@ -27,8 +28,18 @@ filtrer. Le détail expose directement ``source`` (``events``/``legacy_noon``)
 explicite plutôt que de présenter une donnée de repli comme si elle était
 événementielle (NC-04, cf. docstring de ``voyage_detail``).
 
-Les exports PDF/DOCX du voyage et la page qualité/administration suivront
-dans des commits ultérieurs, sur le même modèle.
+``quality_overview`` n'a pas non plus de paramètre ``strict`` : il n'en a
+jamais eu besoin — il ne lit que des tables exclusivement event-sourcées
+(``QualityCheckResult``, ``NavEvent*``, ``BunkerOperation``), jamais
+``NoonReport``/``LegKPI``. La page 4 est donc, par construction, déjà
+alignée sur NC-04 sans aucun traitement particulier.
+
+Aucune route d'action ici (page 4) : les formulaires POST pointent vers
+``mrv_router`` (LOT 8, ``/mrv/qualite/...``) et les deep-links vers
+``/mrv/qualite`` filtré — même principe que l'ancien dashboard.
+
+Les exports PDF/DOCX du voyage et la page d'administration suivront dans
+des commits ultérieurs, sur le même modèle.
 
 Calcul serveur exclusivement (même posture que ``dashboard_env_router``) :
 ce routeur résout les paramètres HTTP (période/méthode/navire) + la
@@ -55,6 +66,7 @@ from app.services.kpi_env import (
     PROVISIONAL_DASHBOARD_PARAMS,
     TrendPoint,
     fleet_summary,
+    quality_overview,
     vessel_operational,
     voyage_detail,
 )
@@ -243,6 +255,38 @@ def _propulsion_bar(profile) -> dict:
     return {"has_data": True, "segments": segments, "width": _PROP_W, "height": _PROP_H}
 
 
+def _quality_trend_bars(trend, trend_max: int) -> tuple[list[dict], dict]:
+    """Barres de tendance des anomalies (12 mois) — même patron que ``_trend_bars``."""
+    n = len(trend)
+    plot_h = _CHART_HEIGHT - _CHART_TOP - _CHART_BOTTOM
+    plot_w = _CHART_WIDTH - 2 * _CHART_SIDE
+    bar_w = ((plot_w - _CHART_GAP * (n - 1)) / n) if n else 0.0
+    max_f = float(trend_max) if trend_max else 1.0
+    bars = []
+    for i, point in enumerate(trend):
+        bar_h = (point.count / max_f) * plot_h if max_f > 0 else 0.0
+        x = _CHART_SIDE + i * (bar_w + _CHART_GAP)
+        y = _CHART_TOP + (plot_h - bar_h)
+        bars.append(
+            {
+                "x": round(x, 1),
+                "y": round(y, 1),
+                "width": round(max(bar_w, 0.0), 1),
+                "height": round(max(bar_h, 0.0), 1),
+                "label": point.label,
+                "value": point.count,
+                "label_x": round(x + bar_w / 2, 1),
+            }
+        )
+    meta = {
+        "width": _CHART_WIDTH,
+        "height": _CHART_HEIGHT,
+        "baseline_y": _CHART_TOP + plot_h,
+        "label_y": _CHART_HEIGHT - 8,
+    }
+    return bars, meta
+
+
 async def _active_vessels(db: AsyncSession) -> list[Vessel]:
     return list(
         (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.name)))
@@ -409,5 +453,45 @@ async def dashboard_perf_voyage(
             "maptiler_token": settings.maptiler_token,
             "map_points": detail.map_points,
             "map_segments": detail.map_segments,
+        },
+    )
+
+
+# ═══════════════════════════════════════ Page 4 — Qualité des données (mrv:C)
+
+
+@router.get("/quality", response_class=HTMLResponse)
+async def dashboard_perf_quality(
+    request: Request,
+    vessel_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """Page 4 — tour de contrôle qualité : anomalies par sévérité/règle,
+    resets compteur en attente (action ``/mrv/qualite/.../confirm-reset`` du
+    LOT 8), soutages non recoupés FLGO, complétude noon, tendance.
+
+    Aucune route d'action ici : les formulaires POST pointent vers
+    ``mrv_router`` (LOT 8) et les deep-links vers ``/mrv/qualite`` filtré.
+    Pas de paramètre ``strict`` : ``quality_overview`` ne lit que des tables
+    exclusivement event-sourcées (cf. docstring du module) — déjà aligné
+    sur NC-04 par construction.
+    """
+    overview = await quality_overview(db, vessel_id=vessel_id)
+    vessels = await _active_vessels(db)
+    can_act = await has_permission_effective(db, user.role, "mrv", "M")
+    trend_bars, trend_chart = _quality_trend_bars(overview.trend, overview.trend_max)
+
+    return templates.TemplateResponse(
+        "staff/dashboard_perf/quality.html",
+        {
+            "request": request,
+            "user": user,
+            "o": overview,
+            "vessels": vessels,
+            "filter_vessel_id": vessel_id,
+            "can_act": can_act,
+            "trend_bars": trend_bars,
+            "trend_chart": trend_chart,
         },
     )
