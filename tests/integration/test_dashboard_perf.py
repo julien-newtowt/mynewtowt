@@ -198,3 +198,131 @@ async def test_event_sourced_leg_included_in_totals(db):
     assert fleet.leg_count == 1
     assert fleet.co2_emitted_t == Decimal("50.00")
     assert fleet.legs_excluded_non_event == 0
+
+
+# ═══════════════════════════════════════ Page 2 — suivi opérationnel (kpi:C) ═══════════════════════════════════════
+
+
+async def _seed_two_legs_mixed_source(db):
+    """2 voyages du même navire : leg 1 event-sourcé, leg 2 legacy-only (LegKPI
+    seul) — pour vérifier que le mode strict n'agrège que le premier tout en
+    gardant les deux dans la liste des voyages."""
+    db.add(Vessel(id=1, code="ANE", name="Anemos", is_active=True))
+    db.add(Port(id=1, locode="FRLEH", name="Le Havre", country="FR"))
+    db.add(Port(id=2, locode="BRSSZ", name="Santos", country="BR"))
+    await db.flush()
+    now = datetime(2026, 3, 1, tzinfo=UTC)
+    db.add(
+        Leg(
+            id=1,
+            leg_code="1AFRBR6",
+            vessel_id=1,
+            departure_port_id=1,
+            arrival_port_id=2,
+            etd_ref=now,
+            eta_ref=now,
+            etd=now,
+            eta=now,
+            ata=now,
+            distance_nm=Decimal("1000"),
+        )
+    )
+    db.add(
+        Leg(
+            id=2,
+            leg_code="1BBRFR6",
+            vessel_id=1,
+            departure_port_id=2,
+            arrival_port_id=1,
+            etd_ref=now,
+            eta_ref=now,
+            etd=now,
+            eta=now,
+            ata=now,
+            distance_nm=Decimal("800"),
+        )
+    )
+    await db.flush()
+    db.add(
+        VoyageEmissionSummary(
+            leg_id=1,
+            source="events",
+            co2_t=Decimal("50"),
+            cargo_bl_t=Decimal("500"),
+            distance_nm=Decimal("1000"),
+            conso_total_t=Decimal("5"),
+        )
+    )
+    db.add(LegKPI(leg_id=2, tonnage_kg=Decimal("0"), co2_emitted_kg=Decimal("30000")))
+    await db.flush()
+
+
+def test_vessel_routes_registered():
+    from app.routers import dashboard_perf_router
+
+    paths = {r.path for r in dashboard_perf_router.router.routes}
+    assert "/dashboard-perf/vessels/{vessel_id}" in paths
+
+
+@pytest.mark.asyncio
+async def test_vessel_page_requires_kpi_c(db):
+    checker = require_permission("kpi", "C")
+
+    with pytest.raises(HTTPException) as exc:
+        await checker(FakeRequest(), user=_rh_user(), db=db)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_vessel_page_unknown_vessel_404(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_vessel
+
+    with pytest.raises(HTTPException) as exc:
+        await dashboard_perf_vessel(
+            999, FakeRequest(), year=2026, method="A", db=db, user=_admin_user()
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_vessel_page_renders_200(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_vessel
+
+    await _seed_two_legs_mixed_source(db)
+    resp = await dashboard_perf_vessel(
+        1, FakeRequest(), year=2026, method="A", db=db, user=_admin_user()
+    )
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/dashboard_perf/vessel.html"
+
+
+@pytest.mark.asyncio
+async def test_vessel_htmx_returns_fragment(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_vessel
+
+    await _seed_two_legs_mixed_source(db)
+    req = FakeRequest()
+    req.headers["hx-request"] = "true"
+    resp = await dashboard_perf_vessel(1, req, year=2026, method="A", db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/dashboard_perf/_vessel_fragment.html"
+
+
+@pytest.mark.asyncio
+async def test_vessel_strict_totals_exclude_legacy_but_list_keeps_both(db):
+    """NC-04 : les totaux n'agrègent que le voyage event-sourcé, mais les
+    2 voyages restent listés — chacun avec son ``source`` explicite."""
+    from app.routers.dashboard_perf_router import dashboard_perf_vessel
+
+    await _seed_two_legs_mixed_source(db)
+    resp = await dashboard_perf_vessel(
+        1, FakeRequest(), year=2026, method="A", db=db, user=_admin_user()
+    )
+    op = resp.context["op"]
+
+    assert len(op.voyages) == 2
+    assert {r.source for r in op.voyages} == {"events", "legacy_kpi"}
+    assert op.leg_count == 1
+    assert op.co2_total_t == Decimal("50.00")
+    assert op.conso_total_t == Decimal("5.00")
+    assert op.excluded_non_event_count == 1

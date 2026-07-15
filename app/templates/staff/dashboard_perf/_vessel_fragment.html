@@ -1,0 +1,133 @@
+{#
+  Fragment HTMX de la page 2 (suivi opérationnel, v2 — NC-01/NC-04). Contient
+  les filtres (navire / période / méthode) : le fragment entier est ré-émis à
+  chaque changement (cf. dashboard_perf_router.dashboard_perf_vessel) pour
+  garder l'état actif des pastilles synchrone avec le contenu. Calcul serveur
+  exclusivement — jamais de recalcul côté client.
+#}
+{% set m = op.method %}
+
+{% if op.excluded_non_event_count %}
+<div class="alert alert-warn mb-3">
+  <p><strong>{{ op.excluded_non_event_count }}</strong> {{ t('dashperf_excluded_banner', lang) }}</p>
+</div>
+{% endif %}
+
+{# ───────────────────────────── Filtres ───────────────────────────── #}
+<div class="flex items-center gap-2 mb-2" style="flex-wrap:wrap;">
+  <span class="text-muted text-sm">{{ t('dashperf_filter_vessel', lang) }}</span>
+  <div class="flex gap-1" style="flex-wrap:wrap;">
+    {% for v in vessels %}
+    <a href="/dashboard-perf/vessels/{{ v.id }}?year={{ year }}&method={{ m }}"
+       hx-get="/dashboard-perf/vessels/{{ v.id }}?year={{ year }}&method={{ m }}"
+       hx-target="#dashperf-vessel-content" hx-swap="innerHTML" hx-push-url="true"
+       class="btn btn-sm {% if v.id == op.vessel_id %}btn-primary{% else %}btn-ghost{% endif %}">
+      <i data-lucide="ship"></i> {{ v.name }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="flex items-center gap-2 mb-2" style="flex-wrap:wrap;">
+  <span class="text-muted text-sm">{{ t('dashperf_filter_period', lang) }}</span>
+  <div class="year-selector">
+    {% for y in years %}
+    <a href="/dashboard-perf/vessels/{{ op.vessel_id }}?year={{ y }}&method={{ m }}"
+       hx-get="/dashboard-perf/vessels/{{ op.vessel_id }}?year={{ y }}&method={{ m }}"
+       hx-target="#dashperf-vessel-content" hx-swap="innerHTML" hx-push-url="true"
+       class="year-btn {% if year == y %}active{% endif %}">{{ y }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="flex items-center gap-2 mb-4" style="flex-wrap:wrap;">
+  <span class="text-muted text-sm">{{ t('dashperf_filter_method', lang) }}</span>
+  <div class="flex gap-1" style="flex-wrap:wrap;">
+    {% for meth in ef_methods %}
+    <a href="/dashboard-perf/vessels/{{ op.vessel_id }}?year={{ year }}&method={{ meth }}"
+       hx-get="/dashboard-perf/vessels/{{ op.vessel_id }}?year={{ year }}&method={{ meth }}"
+       hx-target="#dashperf-vessel-content" hx-swap="innerHTML" hx-push-url="true"
+       class="btn btn-sm {% if m == meth %}btn-primary{% else %}btn-ghost{% endif %}">
+      {{ t('dashperf_method_' ~ meth|lower, lang) }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if op.leg_count == 0 %}
+<div class="alert alert-info mb-3">{{ t('dashperf_empty_period', lang) }}</div>
+{% endif %}
+
+{# ───────────────────────── Bandeau KPI agrégé ───────────────────────── #}
+<section class="kpi-strip mb-4">
+  <div class="kpi-card">
+    <div class="label">{{ t('dashperf_kpi_co2_emitted', lang) }}</div>
+    <div class="value">{{ "%.1f"|format(op.co2_total_t) }} t</div>
+    <div class="delta text-muted">{{ op.leg_count }} {{ t('dashperf_legs_suffix', lang) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('dashperf_vessel_conso_total', lang) }}</div>
+    <div class="value">{{ "%.1f"|format(op.conso_total_t) }} t</div>
+    <div class="delta text-muted">ME + AE</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('dashperf_kpi_distance', lang) }}</div>
+    <div class="value">{{ "%.0f"|format(op.distance_total_nm) }} NM</div>
+    <div class="delta text-muted">{{ op.laden_count }}/{{ op.leg_count }} {{ t('dashperf_laden_suffix', lang) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('dashperf_vessel_ballast', lang) }}</div>
+    <div class="value">{{ op.ballast_count }}</div>
+    <div class="delta text-muted">{{ t('dashperf_vessel_ballast_hint', lang) }}</div>
+  </div>
+</section>
+
+{# ───────────────────────────── Table des voyages ───────────────────────────── #}
+<article class="card" style="overflow-x:auto;">
+  <div class="card-title">{{ t('dashperf_vessel_voyages_title', lang) }} <span class="pill pill-neutral">{{ op.voyages|length }}</span></div>
+  <table class="data-table" style="margin-top:12px;">
+    <thead>
+      <tr>
+        <th>{{ t('dashperf_col_voyage', lang) }}</th>
+        <th>{{ t('dashperf_col_route', lang) }}</th>
+        <th>{{ t('dashperf_col_etd', lang) }}</th>
+        <th>{{ t('dashperf_col_status', lang) }}</th>
+        <th class="text-right">{{ t('dashperf_col_conso_me', lang) }}</th>
+        <th class="text-right">{{ t('dashperf_col_conso_ae', lang) }}</th>
+        <th class="text-right">{{ t('dashperf_col_conso_total', lang) }}</th>
+        <th class="text-right">{{ t('dashperf_col_co2', lang) }}</th>
+        <th class="text-right">{{ t('dashperf_col_cargo', lang) }}</th>
+        <th class="text-right">EF ({{ m }})</th>
+        <th>{{ t('dashperf_col_source', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in op.voyages %}
+      <tr {% if r.source != 'events' %}class="text-muted"{% endif %}>
+        <td><strong class="mono">{{ r.leg_code }}</strong></td>
+        <td class="text-sm">
+          {% if r.dep_country %}{{ r.dep_country|flag }}{% endif %} {{ r.dep_locode or '—' }}
+          → {% if r.arr_country %}{{ r.arr_country|flag }}{% endif %} {{ r.arr_locode or '—' }}
+        </td>
+        <td class="text-muted text-sm">{{ r.etd|date if r.etd else '—' }}</td>
+        <td>
+          {% if r.is_ballast %}<span class="pill pill-neutral">{{ t('dashperf_ballast', lang) }}</span>
+          {% else %}<span class="pill pill-info">{{ t('dashperf_laden', lang) }}</span>{% endif %}
+        </td>
+        <td class="text-right mono">{{ "%.2f"|format(r.conso_me_t) if r.conso_me_t is not none else t('dashperf_na', lang) }}</td>
+        <td class="text-right mono">{{ "%.2f"|format(r.conso_ae_t) if r.conso_ae_t is not none else t('dashperf_na', lang) }}</td>
+        <td class="text-right mono">{{ "%.2f"|format(r.conso_total_t) if r.conso_total_t is not none else t('dashperf_na', lang) }}</td>
+        <td class="text-right mono">{{ "%.2f"|format(r.co2_t) if r.co2_t is not none else t('dashperf_na', lang) }}</td>
+        <td class="text-right mono">{{ "%.0f"|format(r.cargo_bl_t) if r.cargo_bl_t is not none else '0' }}</td>
+        <td class="text-right mono">{{ "%.2f"|format(r.ef_gco2_tkm) if r.ef_gco2_tkm is not none else t('dashperf_na', lang) }}</td>
+        <td>
+          {% if r.source == 'events' %}<span class="pill pill-success text-xs">{{ t('dashperf_source_events', lang) }}</span>
+          {% else %}<span class="pill pill-warn text-xs">{{ t('dashperf_source_' ~ r.source, lang) }}</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="11" class="text-muted text-center">{{ t('dashperf_empty_period', lang) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
