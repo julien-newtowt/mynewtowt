@@ -74,6 +74,20 @@ from app.services.validation_engine import get_threshold
 
 # ─────────────────────────────────────────────────────────── Constantes
 
+# NC-01 — contrat d'interface Dashboard (import Python direct, décision
+# actée le 15/07/2026 : pas d'API HTTP séparée). Couvre les signatures et
+# dataclasses de fleet_summary/vessel_operational/voyage_detail/
+# quality_overview + emission_ledger.emissions_breakdown, figées et testées
+# dans tests/regression/test_dashboard_contract.py (SUITE GELÉE).
+#
+# Politique de dépréciation :
+#   - Ajouter un champ avec une valeur par défaut = extension compatible ;
+#     mettre à jour le gabarit correspondant dans le même commit.
+#   - Renommer/retirer/retyper un champ existant, ou changer une signature
+#     de fonction couverte = changement CASSANT : revue explicite avec le
+#     porteur du Dashboard avant fusion, et incrément de cette constante.
+DASHBOARD_CONTRACT_VERSION = 1
+
 EF_METHODS: tuple[str, ...] = ("A", "B", "C")
 
 # Motifs N/A (jamais de valeur fabriquée — cf. UX §1 « Jamais de valeur
