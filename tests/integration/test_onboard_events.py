@@ -620,6 +620,9 @@ async def test_events_index_renders(db):
     assert resp.template.name == "staff/onboard/events_list.html"
     assert len(resp.context["events"]) == 1
     assert len(resp.context["my_drafts"]) == 1
+    # G9 — indicateur de complétion (CDC §9.1 : « champs restants »).
+    filled, total = resp.context["my_drafts"][0]["completion"]
+    assert 0 <= filled <= total and total > 0
 
 
 @pytest.mark.asyncio

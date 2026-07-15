@@ -88,7 +88,8 @@
     {% for d in my_drafts %}
     <li style="padding:var(--space-2) 0; border-bottom:1px solid var(--sable);">
       <a href="/onboard/events/{{ d.event.id }}/edit" class="mono">{{ d.event.event_type }} · #{{ d.event.id }}</a>
-      <span class="text-muted text-sm"> — {{ t('onb_event_saved_ago', lang, hours=d.age_h) }}</span>
+      <span class="text-muted text-sm"> — {{ t('onb_event_saved_ago', lang, hours=d.age_h) }}
+        · {{ t('onb_event_completion', lang, filled=d.completion[0], total=d.completion[1]) }}</span>
     </li>
     {% endfor %}
   </ul>

@@ -1213,6 +1213,7 @@ CATALOG: dict[str, str] = {
     "onb_event_drafts": "Brouillons en cours",
     "onb_event_no_drafts": "Aucun brouillon en cours.",
     "onb_event_saved_ago": "enregistré il y a {hours} h",
+    "onb_event_completion": "{filled}/{total} champs renseignés",
     "onb_event_list": "Événements du voyage",
     "onb_event_no_events": "Aucun événement sur ce voyage.",
     "onb_event_no_leg": "Aucun voyage actif — sélectionnez d'abord un voyage.",

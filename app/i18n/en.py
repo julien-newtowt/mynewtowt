@@ -1213,6 +1213,7 @@ CATALOG: dict[str, str] = {
     "onb_event_drafts": "Drafts in progress",
     "onb_event_no_drafts": "No draft in progress.",
     "onb_event_saved_ago": "saved {hours} h ago",
+    "onb_event_completion": "{filled}/{total} fields filled",
     "onb_event_list": "Voyage events",
     "onb_event_no_events": "No event on this voyage.",
     "onb_event_no_leg": "No active voyage — select a voyage first.",

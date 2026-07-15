@@ -136,6 +136,39 @@ async def test_create_draft_client_uuid_idempotent(db):
     assert count == 1
 
 
+async def test_draft_completion_counts_filled_allowed_fields(db):
+    """G9 — indicateur de complétion (CDC §9.1 : « champs restants ») : compte
+    les champs renseignés parmi les champs autorisés du sous-type (même
+    référentiel que la sérialisation du payload, pas une nouvelle taxonomie)."""
+    author, vessel, leg = await _base(db)
+    ev = await event_capture.create_draft(
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
+        payload={
+            "datetime_local": datetime(2026, 1, 2, 12, 0),
+            "timezone": "UTC",
+            "lat_decimal": Decimal("10"),
+            "lon_decimal": Decimal("10"),
+        },
+    )
+    filled, total = event_capture.draft_completion(ev)
+    assert total == len(event_capture._COMMON_FIELDS) + len(event_capture._NOON_FIELDS)
+    assert filled == 4  # datetime_local, timezone, lat_decimal, lon_decimal
+
+
+async def test_draft_completion_empty_draft(db):
+    author, vessel, leg = await _base(db)
+    ev = await event_capture.create_draft(
+        db, leg=leg, vessel=vessel, event_type="noon", author=author, payload={}
+    )
+    filled, total = event_capture.draft_completion(ev)
+    assert filled == 0
+    assert total > 0
+
+
 async def test_create_draft_rejects_unknown_type(db):
     author, vessel, leg = await _base(db)
     with pytest.raises(event_capture.EventCaptureError):

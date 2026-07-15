@@ -125,6 +125,20 @@ def _allowed_fields(event: NavEvent) -> tuple[str, ...]:
     return fields
 
 
+def draft_completion(event: NavEvent) -> tuple[int, int]:
+    """(champs renseignés, champs attendus) d'un brouillon — indicateur de
+    complétion pour la liste des brouillons du Master (CDC §9.1 : « indication
+    de complétion, ex. champs restants »).
+
+    Réutilise ``_allowed_fields`` (même référentiel que la sérialisation du
+    payload) plutôt qu'une nouvelle taxonomie de « champs requis » : c'est un
+    indicateur de progression, pas une vérification bloquante (celle-ci reste
+    le rôle de R01 à la finalisation)."""
+    fields = _allowed_fields(event)
+    filled = sum(1 for f in fields if getattr(event, f, None) not in (None, ""))
+    return filled, len(fields)
+
+
 def _apply_payload(event: NavEvent, payload: dict | None) -> None:
     """Applique les seuls champs autorisés du sous-type (``datetime_utc`` jamais)."""
     if not payload:

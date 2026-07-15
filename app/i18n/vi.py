@@ -1213,6 +1213,7 @@ CATALOG: dict[str, str] = {
     "onb_event_drafts": "Bản nháp đang xử lý",
     "onb_event_no_drafts": "Không có bản nháp nào.",
     "onb_event_saved_ago": "đã lưu {hours} giờ trước",
+    "onb_event_completion": "{filled}/{total} trường đã điền",
     "onb_event_list": "Sự kiện của hành trình",
     "onb_event_no_events": "Không có sự kiện nào cho hành trình này.",
     "onb_event_no_leg": "Không có hành trình đang hoạt động — hãy chọn một hành trình trước.",

@@ -1699,7 +1699,11 @@ async def _my_event_drafts(db: AsyncSession, user) -> list[dict]:
         .all()
     )
     out = [
-        {"event": e, "age_h": int(draft_reminders._age_hours(draft_reminders._last_saved(e), now))}
+        {
+            "event": e,
+            "age_h": int(draft_reminders._age_hours(draft_reminders._last_saved(e), now)),
+            "completion": event_capture.draft_completion(e),
+        }
         for e in rows
     ]
     out.sort(key=lambda d: d["age_h"], reverse=True)
