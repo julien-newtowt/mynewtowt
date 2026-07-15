@@ -16,6 +16,8 @@ Couvre ``app.services.emission_ledger`` :
 - **conso d'escale (G12)** : formule R14b résolue pour ``Consommation_escale``
   (ROB déclarés + soutages), repli compteurs (G2) si un ROB manque, ``None``
   tant que le Departure suivant n'est pas finalisé ;
+- **CO2eq GWP-100 (G13)** : ``emissions_breakdown`` calcule désormais le TtW
+  en équivalent CO₂ (Annexe I EU 2015/757), distinct du WtT ;
 - **provider kpi_env** : lit le summary quand il existe, repli ``LegKPI`` sinon.
 """
 
@@ -50,7 +52,11 @@ from app.services.kpi_env import (
     aggregate_ef,
     leg_ef,
 )
-from app.services.referential_env import ensure_vessel_env_defaults, get_vessel_engines
+from app.services.referential_env import (
+    ResolvedEmissionFactor,
+    ensure_vessel_env_defaults,
+    get_vessel_engines,
+)
 from app.services.validation_engine import invalidate_cache, seed_reference_data
 
 T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -196,6 +202,11 @@ async def test_legacy_fallback_matches_pre_lot9_figures(db):
     assert r.ch4_g == Decimal("2.0") * Decimal("0.00005") * Decimal("1000000")
     assert r.n2o_g == Decimal("2.0") * Decimal("0.00018") * Decimal("1000000")
     assert r.wtt_co2eq_t == Decimal("2.0") * Decimal("42700") * Decimal("17.7") / Decimal("1000000")
+    # G13 — CO2eq GWP-100 (Annexe I EU 2015/757 : CH4=25, N2O=298), distinct du WtT.
+    assert r.co2eq_t == Decimal("2.0") * (
+        Decimal("3.206") + Decimal("0.00005") * Decimal("25") + Decimal("0.00018") * Decimal("298")
+    )
+    assert r.co2eq_t != r.wtt_co2eq_t
     # Distance canonique = leg.distance_nm ; cargo B/L = bookings (aucun → 0).
     assert r.distance_nm == Decimal("200")
     assert r.cargo_bl_t == Decimal("0.000")
@@ -219,6 +230,39 @@ async def test_do_co2_ef_variable_chain_preserved(db):
     assert r.co2_emitted_t == Decimal("2.0") * Decimal("3.5")
     # Le reste du multi-GES garde les replis codés (CH₄/N₂O/WtT).
     assert r.factor.ef_ch4_kg_per_kg == Decimal("0.00005")
+
+
+# ══════════════════════════════ CO2eq GWP-100 (G13) ══════════════════════════════
+
+_MDO_FACTOR = ResolvedEmissionFactor(
+    fuel_type="MDO",
+    ef_co2_kg_per_kg=Decimal("3.206"),
+    ef_ch4_kg_per_kg=Decimal("0.00005"),
+    ef_n2o_kg_per_kg=Decimal("0.00018"),
+    wtt_gco2eq_per_mj=Decimal("17.7"),
+    source_reference="test",
+    valid_from=None,
+    valid_to=None,
+    is_current=True,
+    is_fallback=True,
+)
+
+
+def test_emissions_breakdown_computes_co2eq_gwp100():
+    """G13 — CO2eq GWP-100 tank-to-wake (Annexe I EU 2015/757 : CH4=25, N2O=298)
+    ≈ 3,261 kgCO2eq/kgFuel pour le MDO (architecture §2.1), distinct du WtT."""
+    em = emission_ledger.emissions_breakdown(Decimal("10"), _MDO_FACTOR)
+    expected_per_kg = (
+        Decimal("3.206") + Decimal("0.00005") * Decimal("25") + Decimal("0.00018") * Decimal("298")
+    )
+    assert expected_per_kg.quantize(Decimal("0.001")) == Decimal("3.261")
+    assert Decimal(em["co2eq_t"]) == Decimal("10") * expected_per_kg
+    assert em["co2eq_t"] != em["wtt_co2eq_t"]
+
+
+def test_emissions_breakdown_co2eq_none_without_conso():
+    em = emission_ledger.emissions_breakdown(None, _MDO_FACTOR)
+    assert em["co2eq_t"] is None
 
 
 # ═══════════════════════════════════════ refresh_summary (cache, idempotent)
@@ -249,6 +293,11 @@ async def test_refresh_summary_idempotent_upsert(db):
     assert s2.conso_total_t == Decimal("2.0")
     assert s2.distance_nm == Decimal("200")
     assert s2.factors_ref is None  # repli codé → aucune ligne emission_factors
+    # G13 — CO2eq GWP-100 (Annexe I EU 2015/757), persisté et distinct du WtT.
+    assert s2.co2eq_t == Decimal("2.0") * (
+        Decimal("3.206") + Decimal("0.00005") * Decimal("25") + Decimal("0.00018") * Decimal("298")
+    )
+    assert s2.co2eq_t != s2.wtt_co2eq_t
 
 
 async def test_refresh_summary_follows_source_switch(db):

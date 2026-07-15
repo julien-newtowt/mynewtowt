@@ -80,6 +80,14 @@ _CAPACITY_REF_DEFAULT = Decimal("1100")
 
 _EF_QUANT = Decimal("0.0001")  # gCO₂/t·km (méthodes A/B/C matérialisées)
 
+# GWP-100 (Annexe I, règlement EU 2015/757) — CH₄ = 25, N₂O = 298 (G13).
+# Constantes réglementaires stables (pas des seuils métier à calibrer par
+# voyage pilote, contrairement à ``ValidationRuleThreshold``) — même posture
+# que ``MDO_LHV_MJ_PER_T`` ci-dessus : à réviser uniquement si le règlement
+# change son horizon GWP, pas un paramètre par carburant (``EmissionFactor``).
+GWP_CH4 = Decimal("25")
+GWP_N2O = Decimal("298")
+
 
 def _num(value: Decimal | int | float | None) -> str | None:
     """Decimal → str (précision préservée, JSON-safe)."""
@@ -99,7 +107,10 @@ def emissions_breakdown(conso_t: Decimal | None, factor: ResolvedEmissionFactor)
     - CO₂ (TtW) [t] = ``conso_t × ef_co2`` (facteur sans dimension g/g ≡ t/t) ;
     - CH₄ / N₂O [g] = ``conso_t × ef × 1e6`` (tonnes de GES → grammes) ;
     - WtT (Well-to-Tank, FuelEU) = ``conso_t × PCI × wtt_gco2eq_per_mj / 1e6`` —
-      **distinct du TtW, jamais sommé** au CO₂ TtW sans l'expliciter.
+      **distinct du TtW, jamais sommé** au CO₂ TtW sans l'expliciter ;
+    - CO₂eq (GWP-100, tank-to-wake, G13) = ``conso_t × (ef_co2 + ef_ch4 × 25 +
+      ef_n2o × 298)`` (Annexe I, EU 2015/757) — additionne les 3 GES TtW en
+      équivalent CO₂ ; **distinct du WtT** (qui reste hors périmètre TtW).
     """
     wtt_intensity = factor.wtt_gco2eq_per_mj
     if conso_t is None:
@@ -108,6 +119,7 @@ def emissions_breakdown(conso_t: Decimal | None, factor: ResolvedEmissionFactor)
             "co2_t": None,
             "ch4_g": None,
             "n2o_g": None,
+            "co2eq_t": None,
             "wtt_gco2eq_per_mj": _num(wtt_intensity),
             "wtt_co2eq_t": None,
             "ef_co2_kg_per_kg": _num(factor.ef_co2_kg_per_kg),
@@ -119,11 +131,19 @@ def emissions_breakdown(conso_t: Decimal | None, factor: ResolvedEmissionFactor)
     n2o_g = conso_t * factor.ef_n2o_kg_per_kg * _MILLION
     # WtT : énergie du carburant × intensité amont, converti g → t. DISTINCT.
     wtt_co2eq_t = conso_t * MDO_LHV_MJ_PER_T * wtt_intensity / _MILLION
+    # CO₂eq TtW (GWP-100) : les 3 GES en équivalent CO₂, DISTINCT du WtT.
+    co2eq_kg_per_kg = (
+        factor.ef_co2_kg_per_kg
+        + factor.ef_ch4_kg_per_kg * GWP_CH4
+        + factor.ef_n2o_kg_per_kg * GWP_N2O
+    )
+    co2eq_t = conso_t * co2eq_kg_per_kg
     return {
         "conso_t": _num(conso_t),
         "co2_t": _num(co2_t),
         "ch4_g": _num(ch4_g),
         "n2o_g": _num(n2o_g),
+        "co2eq_t": _num(co2eq_t),
         "wtt_gco2eq_per_mj": _num(wtt_intensity),
         "wtt_co2eq_t": _num(wtt_co2eq_t),
         "ef_co2_kg_per_kg": _num(factor.ef_co2_kg_per_kg),
@@ -142,9 +162,10 @@ class LedgerResult:
     ``source`` ∈ {``events``, ``legacy_noon``}. Les consommations sont en
     tonnes ; ``co2_emitted_t`` est **brut** (non arrondi — l'adaptateur carbone
     applique ses propres arrondis) ; ``ch4_g``/``n2o_g`` en grammes ;
-    ``wtt_co2eq_t`` distinct du TtW. Les méthodes EF sont en gCO₂/t·km (None si
-    N/A). ``do_consumed_t`` est l'assiette d'émission (legacy : total noon ;
-    events : hors mouillage).
+    ``co2eq_t`` (GWP-100 tank-to-wake, G13) et ``wtt_co2eq_t`` (Well-to-Tank)
+    sont deux grandeurs **distinctes**, jamais sommées entre elles. Les
+    méthodes EF sont en gCO₂/t·km (None si N/A). ``do_consumed_t`` est
+    l'assiette d'émission (legacy : total noon ; events : hors mouillage).
     """
 
     leg_id: int
@@ -175,6 +196,7 @@ class LedgerResult:
     co2_emitted_t: Decimal | None
     ch4_g: Decimal | None
     n2o_g: Decimal | None
+    co2eq_t: Decimal | None  # GWP-100 tank-to-wake (G13) — DISTINCT du WtT.
     wtt_co2eq_t: Decimal | None
 
     # CO₂ évité (kg) vs comparateur conventionnel (``co2.estimate``).
@@ -523,6 +545,7 @@ async def compute_for_leg(
     co2_emitted_t = Decimal(em["co2_t"]) if em["co2_t"] is not None else None
     ch4_g = Decimal(em["ch4_g"]) if em["ch4_g"] is not None else None
     n2o_g = Decimal(em["n2o_g"]) if em["n2o_g"] is not None else None
+    co2eq_t = Decimal(em["co2eq_t"]) if em["co2eq_t"] is not None else None
     wtt_co2eq_t = Decimal(em["wtt_co2eq_t"]) if em["wtt_co2eq_t"] is not None else None
 
     # CO₂ évité : comparateur conventionnel ``co2.estimate`` (mêmes valeurs).
@@ -555,6 +578,7 @@ async def compute_for_leg(
         co2_emitted_t=co2_emitted_t,
         ch4_g=ch4_g,
         n2o_g=n2o_g,
+        co2eq_t=co2eq_t,
         wtt_co2eq_t=wtt_co2eq_t,
         avoided_co2_kg=avoided,
         ef_method_a=ef_a,
@@ -648,6 +672,7 @@ async def refresh_summary(db: AsyncSession, leg: Leg) -> VoyageEmissionSummary:
         "co2_t": result.co2_emitted_t,
         "ch4_g": result.ch4_g,
         "n2o_g": result.n2o_g,
+        "co2eq_t": result.co2eq_t,
         "wtt_co2eq_t": result.wtt_co2eq_t,
         "distance_nm": result.distance_nm,
         "cargo_bl_t": result.cargo_bl_t,

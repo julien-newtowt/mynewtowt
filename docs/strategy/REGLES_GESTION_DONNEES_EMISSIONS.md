@@ -362,14 +362,17 @@ chiffres **identiques** à l'ancien `services.carbon`.
 CO₂ (TtW)  [t]      = conso_t × ef_co2                    # 3,206 (sans dimension t/t)
 CH₄ (TtW)  [g]      = conso_t × ef_ch4 × 1 000 000        # tonnes de GES → grammes
 N₂O (TtW)  [g]      = conso_t × ef_n2o × 1 000 000
+CO₂eq (TtW, GWP-100) [t] = conso_t × (ef_co2 + ef_ch4 × 25 + ef_n2o × 298)
+                      # Annexe I EU 2015/757 ; ≈ 3,26089 kgCO₂eq/kgFuel pour le MDO (G13)
 WtT [tCO₂eq]        = conso_t × 42 700 × wtt_gco2eq_per_mj / 1 000 000
                       # PCI MDO = 42 700 MJ/t ; intensité amont 17,7 gCO₂eq/MJ
 ```
 
-**Le WtT (well-to-tank, FuelEU) est une grandeur DISTINCTE, jamais sommée au
-CO₂ TtW.** CH₄/N₂O sont stockés et affichés **en grammes, à part** — jamais
-agrégés au CO₂ en tonnes (décision Q12 : calculés et affichés distinctement).
-<!-- source: emission_ledger.py:103-104,123 ; voyage_emission_summary.py:53-59 -->
+**Le WtT (well-to-tank, FuelEU) et le CO₂eq (TtW, GWP-100) sont deux grandeurs
+DISTINCTES, jamais sommées entre elles ni avec le CO₂ TtW seul.** CH₄/N₂O sont
+en outre stockés et affichés **en grammes, à part** — jamais agrégés au CO₂ en
+tonnes (décision Q12 : calculés et affichés distinctement).
+<!-- source: emission_ledger.py ; voyage_emission_summary.py -->
 
 ### 4.9 Intensités (adaptateur Carbon, CFOTE_09)
 
