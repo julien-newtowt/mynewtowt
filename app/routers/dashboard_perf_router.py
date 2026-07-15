@@ -15,13 +15,15 @@ l'ancien dashboard :
   (``tests/regression/test_dashboard_contract.py``,
   ``kpi_env.DASHBOARD_CONTRACT_VERSION``).
 
-Expose pour l'instant :
-    GET  /dashboard-perf, /dashboard-perf/         page 1 — Vue flotte (perm kpi:C)
-    GET  /dashboard-perf/vessels/{vessel_id}       page 2 — Suivi opérationnel (perm kpi:C)
-    GET  /dashboard-perf/voyages/{leg_id}          page 3 — Détail voyage (perm mrv:C)
-    GET  /dashboard-perf/quality                   page 4 — Qualité des données (perm mrv:C)
-    GET  /dashboard-perf/parameters                page 5 — Administration (perm mrv:S)
-    POST /dashboard-perf/parameters/{id}/update    édition d'un DashboardParameter (perm mrv:S)
+Expose :
+    GET  /dashboard-perf, /dashboard-perf/              page 1 — Vue flotte (perm kpi:C)
+    GET  /dashboard-perf/vessels/{vessel_id}            page 2 — Suivi opérationnel (perm kpi:C)
+    GET  /dashboard-perf/voyages/{leg_id}               page 3 — Détail voyage (perm mrv:C)
+    GET  /dashboard-perf/voyages/{leg_id}/export.pdf     synthèse voyage PDF (perm mrv:C)
+    GET  /dashboard-perf/voyages/{leg_id}/export.docx    synthèse voyage DOCX (perm mrv:C)
+    GET  /dashboard-perf/quality                        page 4 — Qualité des données (perm mrv:C)
+    GET  /dashboard-perf/parameters                      page 5 — Administration (perm mrv:S)
+    POST /dashboard-perf/parameters/{id}/update          édition d'un DashboardParameter (perm mrv:S)
 
 ``voyage_detail`` (contrairement à ``fleet_summary``/``vessel_operational``)
 n'a pas de paramètre ``strict`` : il porte un seul voyage, pas un agrégat à
@@ -47,7 +49,12 @@ LOT 2 existant, ``/mrv/parametres``, et les facteurs carburant par
 Aucun paramètre ``strict`` : ce n'est pas un agrégat KPI, NC-04 ne s'y
 applique pas.
 
-Les exports PDF/DOCX du voyage suivront dans un commit ultérieur.
+Exports voyage (PDF/DOCX) : portage direct de ``dashboard_env_router`` —
+mêmes gabarits (``pdf/dashboard_voyage.html``, ``services.docx_generator``),
+génériques et indépendants de l'ancien routeur. Avec cette brique, la
+couverture fonctionnelle de ``dashboard_perf_router`` est désormais
+équivalente à celle de ``dashboard_env_router`` (action 6/NC-05 peut être
+engagée).
 
 Calcul serveur exclusivement (même posture que ``dashboard_env_router``) :
 ce routeur résout les paramètres HTTP (période/méthode/navire) + la
@@ -81,7 +88,7 @@ from app.services.kpi_env import (
     vessel_operational,
     voyage_detail,
 )
-from app.templating import templates
+from app.templating import brand_for_lang, templates
 
 router = APIRouter(prefix="/dashboard-perf", tags=["dashboard-perf"])
 
@@ -487,6 +494,68 @@ async def dashboard_perf_voyage(
             "map_points": detail.map_points,
             "map_segments": detail.map_segments,
         },
+    )
+
+
+# ═══════════════════════════════════════ Exports voyage — PDF / DOCX (mrv:C)
+# Portage direct de dashboard_env_router (mêmes gabarits ``pdf/dashboard_voyage.html``
+# et ``services.docx_generator``, génériques — ils ne dépendent d'aucune route de
+# l'ancien routeur) ; dernière brique avant le décommissionnement (action 6, NC-05).
+
+
+@router.get("/voyages/{leg_id}/export.pdf")
+async def dashboard_perf_voyage_pdf(
+    leg_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+):
+    """Synthèse voyage PDF (WeasyPrint) : KPI, ROB timeline simplifiée, profil
+    de propulsion, anomalies. Rendu depuis les mêmes données que l'écran."""
+    from weasyprint import HTML
+
+    detail = await voyage_detail(db, leg_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="voyage inconnu")
+    rob = _rob_timeline(detail.rob_chain, detail.bunkers)
+    prop_bar = _propulsion_bar(detail.propulsion)
+
+    html = templates.get_template("pdf/dashboard_voyage.html").render(
+        d=detail,
+        rob=rob,
+        prop_bar=prop_bar,
+        brand=brand_for_lang("fr"),
+        site_url=settings.site_url,
+        issued_at=datetime.now(UTC),
+        lang="fr",
+        t=templates.env.globals["t"],
+    )
+    pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="dashboard_voyage_{detail.leg_code}.pdf"'
+        },
+    )
+
+
+@router.get("/voyages/{leg_id}/export.docx")
+async def dashboard_perf_voyage_docx(
+    leg_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+):
+    """Synthèse voyage DOCX (python-docx) — mêmes sections que le PDF."""
+    from app.services.docx_generator import build_dashboard_voyage_docx
+
+    detail = await voyage_detail(db, leg_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="voyage inconnu")
+    out = build_dashboard_voyage_docx(detail=detail)
+    return Response(
+        content=out.docx,
+        media_type=out.mime,
+        headers={"Content-Disposition": f'attachment; filename="{out.filename}"'},
     )
 
 
