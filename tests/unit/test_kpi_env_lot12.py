@@ -262,7 +262,7 @@ async def test_voyage_detail_rob_timeline_with_bunker(db):
     assert (detail.me_pct + detail.ae_pct) == Decimal("100.0")
 
     # La géométrie SVG de la timeline (helper routeur) inclut le soutage.
-    from app.routers.dashboard_env_router import _rob_timeline
+    from app.routers.dashboard_perf_router import _rob_timeline
 
     rob = _rob_timeline(detail.rob_chain, detail.bunkers)
     assert rob["has_data"] is True

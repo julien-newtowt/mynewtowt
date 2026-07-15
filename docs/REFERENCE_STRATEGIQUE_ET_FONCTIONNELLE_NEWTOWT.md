@@ -415,12 +415,15 @@ lisibilité réglementaire (mono), vert = signal environnemental.
    littéral) ; datasets **OVDLA/OVDBR** (remplacent l'export DNV CSV 18 col.,
    décommissionné) ; FLGO Marad lecture seule ; **Carbon Report** par leg ;
    facteurs d'émission **versionnés** (`/admin/emission-factors`, `/admin/co2`) ;
-   dashboard dédié `/dashboard-env` (4 pages : flotte, suivi opérationnel,
-   qualité, administration). Double‑run pilote par navire via feature flag
-   `mrv_v2_capture` (défaut ON, fail‑open). L'ancien hybride noon (arbitrage A1)
-   reste consultable en archive (`/mrv/archive/events`). *Entités :*
-   `nav_events`, `bunker_operations`, `emission_ledger`, `validation_rule_
-   thresholds`, `emission_factors`, `mrv_events` (legacy lecture seule). *Réf. :*
+   dashboard dédié `/dashboard-perf` (5 pages : flotte, suivi opérationnel,
+   détail voyage, qualité, administration ; mode `strict` NC-04, jamais de
+   repli legacy mélangé en silence). Double‑run pilote par navire via feature
+   flag `mrv_v2_capture` (défaut ON, fail‑open). Le modèle `MRVEvent`/
+   `MRVParameter` (ancien hybride noon) a été **supprimé** (tables et écran
+   d'archive `/mrv/archive/events` décommissionnés) après vérification qu'il
+   n'a jamais servi à une déclaration réglementaire réellement soumise.
+   *Entités :* `nav_events`, `bunker_operations`, `emission_ledger`,
+   `validation_rule_thresholds`, `emission_factors`. *Réf. :*
    `docs/strategy/REGLES_GESTION_DONNEES_EMISSIONS.md`, runbook
    `docs/operations/05-mrv-evenementiel-runbook.md`.
 
@@ -486,10 +489,10 @@ lisibilité réglementaire (mono), vert = signal environnemental.
 > Checkout** (lien + QR, webhook `/webhooks/stripe` signé et idempotent,
 > secure‑by‑default : 503 sans `STRIPE_SECRET_KEY`), registre douanier détaxe +
 > export CSV — seule exception au « zéro paiement dans l'app », limitée aux
-> collaborateurs embarqués. **Dashboard environnemental `/dashboard-env`** —
-> 4 pages (flotte, suivi opérationnel navire→voyage→événements avec ROB timeline
-> et profil de propulsion 4 h, qualité des données, administration des
-> paramètres), exports PDF/DOCX. Détail des deux modules dans `CLAUDE.md`
+> collaborateurs embarqués. **Dashboard environnemental `/dashboard-perf`** —
+> 5 pages (flotte, suivi opérationnel navire→voyage→événements avec ROB timeline
+> et profil de propulsion 4 h, détail voyage, qualité des données, administration
+> des paramètres), exports PDF/DOCX. Détail des deux modules dans `CLAUDE.md`
 > (tableau « Domaines fonctionnels »).
 
 ---

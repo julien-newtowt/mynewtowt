@@ -1,9 +1,8 @@
 """Dashboard Performance Environnementale v2 — reconstruction NC-01/NC-04.
 
-Remplace progressivement ``dashboard_env_router.py`` (décommissionnement
-prévu, action 6 du plan d'audit — non encore engagé, les deux coexistent
-pour l'instant sans se toucher). Deux différences structurantes avec
-l'ancien dashboard :
+Remplace ``dashboard_env_router.py`` (LOT 11/12), décommissionné action 6
+du plan d'audit une fois la parité fonctionnelle atteinte (5 pages + exports
+voyage). Deux différences structurantes avec l'ancien dashboard :
 
 - ``kpi_env.fleet_summary`` est appelé avec ``strict=True`` : les voyages
   dont la donnée n'est pas ``source="events"`` (repli ``legacy_noon``/
