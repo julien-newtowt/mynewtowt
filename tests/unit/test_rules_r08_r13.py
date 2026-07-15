@@ -153,6 +153,76 @@ async def test_r08_abstains_without_counters_or_prev(db):
     assert await _run(db, "R08", seq, 1) == []
 
 
+# ══════════════════ R08 (G2) — compteurs moteur obligatoires hors Noon ══════════════════
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("etype", ["departure", "arrival", "anchoring_begin", "anchoring_end"])
+async def test_r08_missing_engine_readings_blocks_portcall_and_anchoring(db, etype):
+    """G2 — compteurs moteur manquants à Departure/Arrival/Anchoring : bloquant
+    dès lors que le navire a des moteurs référencés (sans quoi l'intervalle
+    produirait une consommation silencieusement vide, jamais détectée)."""
+    from app.models.vessel import Vessel
+    from app.models.vessel_env import VesselEngine
+
+    vessel = Vessel(id=1, code="ANE", name="Anemos")
+    db.add(vessel)
+    await db.flush()
+    db.add(VesselEngine(vessel_id=1, engine_role="PME", engine_group="ME"))
+    await db.flush()
+
+    subject = SimpleNamespace(event_type=etype, datetime_utc=T0, engine_readings=[])
+    out = await _run(db, "R08", [subject], 0, vessel=vessel)
+    assert len(out) == 1
+    assert out[0].result == "fail" and out[0].severity == "bloquant"
+    assert "compteurs moteur" in out[0].message
+
+
+@pytest.mark.asyncio
+async def test_r08_engine_readings_present_lifts_the_gate(db):
+    """Des relevés présents lèvent le garde G2 — la règle retombe ensuite sur
+    les volets delta habituels (abstention ici, faute de ``prev``)."""
+    from app.models.nav_event import NavEventEngineReading
+    from app.models.vessel import Vessel
+    from app.models.vessel_env import VesselEngine
+
+    vessel = Vessel(id=2, code="ART", name="Artemis")
+    db.add(vessel)
+    await db.flush()
+    engine = VesselEngine(vessel_id=2, engine_role="PME", engine_group="ME")
+    db.add(engine)
+    await db.flush()
+
+    subject = SimpleNamespace(
+        event_type="departure",
+        datetime_utc=T0,
+        engine_readings=[
+            NavEventEngineReading(
+                engine_id=engine.id,
+                fuel_counter_l=Decimal("1000"),
+                running_hours_counter_h=Decimal("500"),
+            )
+        ],
+    )
+    assert await _run(db, "R08", [subject], 0, vessel=vessel) == []
+
+
+@pytest.mark.asyncio
+async def test_r08_missing_engine_readings_abstains_without_vessel_or_engines(db):
+    """Règle duck-typée (cf. principes du catalogue) : s'abstient si le
+    contexte ne permet pas de trancher — pas de navire, ou navire sans aucun
+    moteur référencé."""
+    from app.models.vessel import Vessel
+
+    subject = SimpleNamespace(event_type="departure", datetime_utc=T0)
+    assert await _run(db, "R08", [subject], 0) == []  # pas de vessel dans le contexte
+
+    vessel = Vessel(id=3, code="NOENG", name="No Engine")
+    db.add(vessel)
+    await db.flush()
+    assert await _run(db, "R08", [subject], 0, vessel=vessel) == []  # 0 moteur référencé
+
+
 # ═════════════════════════════════════════════ R09 — distance / datetime escale
 
 

@@ -1554,23 +1554,18 @@ def _build_event_payload(event_type: str, f) -> dict:
 
 
 async def _sync_event_readings(db: AsyncSession, event: NavEvent, f, engines) -> None:
-    """Reconstruit les relevés fins d'un NoonEvent depuis le formulaire.
+    """Reconstruit les relevés fins d'un événement depuis le formulaire.
 
-    Relevés machine (1 ligne/moteur du référentiel), météo/voilure (créneaux
-    4 h) et cales (2 périodes × zones). Les collections sont vidées puis
-    reconstruites (delete-orphan) → autosave idempotent. Sans effet sur les
-    autres types (leurs données vivent dans les champs scalaires).
+    Relevés machine (1 ligne/moteur du référentiel) : rattachables à **tout**
+    type d'événement (``NavEvent.engine_readings``, cf. modèle) — reconstruits
+    ici quel que soit le type. Météo/voilure/cales (créneaux 4 h, 2 périodes ×
+    zones) restent propres au ``NoonEvent`` (champs scalaires du Noon).
 
     Les collections (``lazy="selectin"``) sont d'abord chargées dans le
     contexte async (``db.refresh``) : sur un objet fraîchement créé ou repris
     depuis l'identity-map, y accéder en contexte synchrone déclencherait une
     IO paresseuse (``MissingGreenlet``)."""
-    if not isinstance(event, NoonEvent):
-        return
-
-    await db.refresh(
-        event, ["engine_readings", "weather_readings", "sail_readings", "hold_readings"]
-    )
+    await db.refresh(event, ["engine_readings"])
     event.engine_readings.clear()
     for eng in engines:
         hours = _dec(f.get(f"eng_hours_{eng.id}"))
@@ -1587,6 +1582,10 @@ async def _sync_event_readings(db: AsyncSession, event: NavEvent, f, engines) ->
             )
         )
 
+    if not isinstance(event, NoonEvent):
+        return
+
+    await db.refresh(event, ["weather_readings", "sail_readings", "hold_readings"])
     event.weather_readings.clear()
     for i, slot in enumerate(NAV_TIME_SLOTS):
         vals = (
@@ -1737,12 +1736,16 @@ async def _event_form_context(
         pol = await db.get(Port, leg.departure_port_id)
         pod = await db.get(Port, leg.arrival_port_id)
 
+    # Relevés machine : rattachables à tout type d'événement (cf. modèle) —
+    # préremplis quel que soit le type, pas seulement pour le Noon.
     engine_values: dict[int, NavEventEngineReading] = {}
+    if event is not None:
+        engine_values = {r.engine_id: r for r in event.engine_readings}
+
     weather_by_slot: dict[str, NavEventWeatherReading] = {}
     sail_by_slot: dict[str, NavEventSailReading] = {}
     hold_by_zone: dict[str, dict[str, NavEventHoldReading]] = {}
     if isinstance(event, NoonEvent):
-        engine_values = {r.engine_id: r for r in event.engine_readings}
         weather_by_slot = {r.slot_time: r for r in event.weather_readings}
         sail_by_slot = {r.slot_time: r for r in event.sail_readings}
         for r in event.hold_readings:

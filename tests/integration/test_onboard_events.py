@@ -12,6 +12,7 @@ landing affichant les brouillons, cron R19 (503/403/OK).
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -91,6 +92,27 @@ def _noon_form(leg_id, **extra):
         "lon_decimal": "-5.1",
         "position_source": "thalos_auto",
     }
+    f.update(extra)
+    return f
+
+
+def _event_form_for(event_type, leg_id, **extra):
+    """Formulaire minimal valide pour n'importe quel type d'événement (G2 —
+    compteurs moteur attendus aussi à Departure/Arrival/Anchoring, pas
+    seulement Noon)."""
+    f = {
+        "event_type": event_type,
+        "leg_id": str(leg_id),
+        "datetime_local": "2026-04-02T12:00",
+        "timezone": "UTC",
+        "lat_decimal": "48.5",
+        "lon_decimal": "-5.1",
+        "position_source": "thalos_auto",
+    }
+    if event_type in ("departure", "arrival"):
+        f["rob_t"] = "40"  # R06 — ROB de référence requis à l'escale.
+    elif event_type in ("anchoring_begin", "anchoring_end"):
+        f["sequence_no"] = "1"
     f.update(extra)
     return f
 
@@ -239,6 +261,80 @@ async def test_create_with_engine_readings(db):
     ev = await db.get(NoonEvent, event_id)
     assert len(ev.engine_readings) == 1
     assert ev.engine_readings[0].engine_id == e0.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("etype", ["departure", "arrival", "anchoring_begin", "anchoring_end"])
+async def test_engine_readings_persist_for_all_event_types(db, etype):
+    """G2 — les compteurs moteur sont désormais persistés aussi à
+    Departure/Arrival/Anchoring (pas seulement Noon, cf. ``_sync_event_readings``)."""
+    from app.routers.onboard_router import onboard_event_create
+
+    v = await _vessel_with_engines(db)
+    leg = await _leg(db, v)
+    user = await _captain(db, assigned_vessel_id=v.id)
+    engines = await referential_env.get_vessel_engines(db, v.id)
+    e0 = engines[0]
+    form = _event_form_for(
+        etype, leg.id, **{f"eng_hours_{e0.id}": "1200.5", f"eng_fuel_{e0.id}": "34000"}
+    )
+    resp = await onboard_event_create(FakeRequest(form), db=db, user=user)
+    event_id = int(resp.headers["location"].rstrip("/").split("/")[-2])
+    ev = await db.get(NavEvent, event_id)
+    assert len(ev.engine_readings) == 1
+    assert ev.engine_readings[0].engine_id == e0.id
+
+
+@pytest.mark.asyncio
+async def test_engine_readings_prefilled_on_edit_form_for_departure(db):
+    """G2 (garde de réaffichage) — l'édition d'un Departure doit representer les
+    compteurs déjà saisis (``engine_values``), pas seulement pour Noon. Sans ce
+    correctif, une seconde sauvegarde effacerait silencieusement les relevés
+    (la table ``engine_readings`` est reconstruite depuis le formulaire soumis)."""
+    from app.routers.onboard_router import onboard_event_create, onboard_event_edit_form
+
+    v = await _vessel_with_engines(db)
+    leg = await _leg(db, v)
+    user = await _captain(db, assigned_vessel_id=v.id)
+    engines = await referential_env.get_vessel_engines(db, v.id)
+    e0 = engines[0]
+    form = _event_form_for(
+        "departure", leg.id, **{f"eng_hours_{e0.id}": "1200.5", f"eng_fuel_{e0.id}": "34000"}
+    )
+    resp = await onboard_event_create(FakeRequest(form), db=db, user=user)
+    event_id = int(resp.headers["location"].rstrip("/").split("/")[-2])
+
+    edit_resp = await onboard_event_edit_form(event_id, FakeRequest(), db=db, user=user)
+    engine_values = edit_resp.context["engine_values"]
+    assert e0.id in engine_values
+    assert engine_values[e0.id].fuel_counter_l == Decimal("34000")
+
+
+@pytest.mark.asyncio
+async def test_engine_readings_survive_second_edit(db):
+    """Régression — un second POST d'édition qui ré-soumet les mêmes valeurs
+    (ce que fait un vrai navigateur, puisque le formulaire les préremplit
+    désormais) ne doit pas effacer les relevés déjà persistés."""
+    from app.routers.onboard_router import onboard_event_create, onboard_event_edit_post
+
+    v = await _vessel_with_engines(db)
+    leg = await _leg(db, v)
+    user = await _captain(db, assigned_vessel_id=v.id)
+    engines = await referential_env.get_vessel_engines(db, v.id)
+    e0 = engines[0]
+    form = _event_form_for(
+        "departure", leg.id, **{f"eng_hours_{e0.id}": "1200.5", f"eng_fuel_{e0.id}": "34000"}
+    )
+    resp = await onboard_event_create(FakeRequest(form), db=db, user=user)
+    event_id = int(resp.headers["location"].rstrip("/").split("/")[-2])
+
+    # Deuxième sauvegarde : mêmes compteurs re-soumis (comme un vrai navigateur
+    # le ferait depuis les valeurs préremplies), rien d'autre ne change.
+    resp2 = await onboard_event_edit_post(event_id, FakeRequest(dict(form)), db=db, user=user)
+    assert resp2.status_code == 303
+    ev = await db.get(NavEvent, event_id)
+    assert len(ev.engine_readings) == 1
+    assert ev.engine_readings[0].fuel_counter_l == Decimal("34000")
 
 
 # ════════════════════════════════════ Reprise / garde auteur-seul
@@ -415,6 +511,52 @@ async def test_finalize_manual_position_without_justification_refused(db):
     r2 = await onboard_event_finalize(event_id, FakeRequest(ok_form), db=db, user=author)
     assert r2.status_code == 303
     await db.refresh(ev)
+    assert ev.status == "finalise"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("etype", ["departure", "arrival", "anchoring_begin", "anchoring_end"])
+async def test_finalize_blocked_without_engine_readings(db, etype):
+    """G2 — compteurs moteur obligatoires (R08, bloquant) à la finalisation de
+    Departure/Arrival/Anchoring : sans eux, l'intervalle produirait une
+    consommation silencieusement vide (jamais détectée sinon)."""
+    from app.routers.onboard_router import onboard_event_create, onboard_event_finalize
+
+    v = await _vessel_with_engines(db)
+    leg = await _leg(db, v)
+    author = await _captain(db, assigned_vessel_id=v.id)
+    form = _event_form_for(etype, leg.id)
+    resp = await onboard_event_create(FakeRequest(form), db=db, user=author)
+    event_id = int(resp.headers["location"].rstrip("/").split("/")[-2])
+
+    r = await onboard_event_finalize(event_id, FakeRequest(dict(form)), db=db, user=author)
+    assert r.status_code == 200
+    assert any("R08" in m for m in r.context["errors"])
+    ev = await db.get(NavEvent, event_id)
+    assert ev.status == "brouillon"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("etype", ["departure", "arrival", "anchoring_begin", "anchoring_end"])
+async def test_finalize_ok_with_engine_readings(db, etype):
+    """Contrepartie du test précédent : les compteurs présents suffisent à
+    lever le blocage R08 (aucune autre régression introduite par G2)."""
+    from app.routers.onboard_router import onboard_event_create, onboard_event_finalize
+
+    v = await _vessel_with_engines(db)
+    leg = await _leg(db, v)
+    author = await _captain(db, assigned_vessel_id=v.id)
+    engines = await referential_env.get_vessel_engines(db, v.id)
+    e0 = engines[0]
+    form = _event_form_for(
+        etype, leg.id, **{f"eng_hours_{e0.id}": "1200.5", f"eng_fuel_{e0.id}": "34000"}
+    )
+    resp = await onboard_event_create(FakeRequest(form), db=db, user=author)
+    event_id = int(resp.headers["location"].rstrip("/").split("/")[-2])
+
+    r = await onboard_event_finalize(event_id, FakeRequest(dict(form)), db=db, user=author)
+    assert r.status_code == 303
+    ev = await db.get(NavEvent, event_id)
     assert ev.status == "finalise"
 
 

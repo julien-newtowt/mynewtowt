@@ -69,6 +69,7 @@ from app.models.nav_event import EVENT_TYPES
 from app.models.port import Port
 from app.models.validation import QualityCheckResult, ValidationRule
 from app.models.vessel import Vessel
+from app.services import referential_env
 from app.services.validation_engine import (
     _DATETIME_ATTRS,
     CheckOutcome,
@@ -89,6 +90,7 @@ _LON_MIN, _LON_MAX = Decimal("-180"), Decimal("180")
 _LOCODE_LEN = 5
 _HOURS_PER_DAY = Decimal("24")
 _PORTCALL_TYPES: tuple[str, ...] = ("departure", "arrival")
+_ANCHORING_TYPES: tuple[str, ...] = ("anchoring_begin", "anchoring_end")
 
 # Défauts codés (repli ultime si get_threshold renvoie None — ne devrait pas
 # arriver, tous ces paramètres sont seedés).
@@ -217,6 +219,31 @@ def _fuel_delta_l(prev: Any, cur: Any) -> tuple[Decimal | None, bool]:
             regressed = True
         total += d
     return (total if seen else None), regressed
+
+
+async def _r08_missing_engine_readings(ctx: RuleContext) -> list[CheckOutcome]:
+    """G2 — compteurs moteur obligatoires à la finalisation de Departure/
+    Arrival/Anchoring (le Noon les demande déjà et reste couvert par les
+    volets « conso nulle »/« conso hors seuil » ci-dessous).
+
+    S'abstient (règle duck-typée, cf. principes en tête de fichier) si le
+    contexte ne permet pas de trancher : pas de navire connu, ou navire sans
+    aucun moteur référencé (rien à contrôler)."""
+    if ctx.vessel_id is None:
+        return []
+    engines = await referential_env.get_vessel_engines(ctx.db, ctx.vessel_id)
+    if not engines:
+        return []
+    if _engine_fuel_map(ctx.subject):
+        return []
+    return [
+        CheckOutcome(
+            "fail",
+            "R08 — compteurs moteur manquants (aucun relevé saisi à cet événement).",
+            {"engines_attendus": len(engines)},
+            severity="bloquant",
+        )
+    ]
 
 
 def _bunker_t(subject: Any) -> Decimal:
@@ -411,7 +438,16 @@ async def _r08_consumption(ctx: RuleContext) -> list[CheckOutcome]:
     """R08 — Consommation : négative → bloquant ; nulle en Noon → warning ;
     hors seuil cible (``seuil_conso_ref_l_j``) → warning ; complétude escale
     (amendement : conso escale absente > seuil jours ⇒ estimation défaut
-    ``conso_estimee_defaut_t_j`` = 0,21 t/j TRACÉE). Matrice §1 + §5."""
+    ``conso_estimee_defaut_t_j`` = 0,21 t/j TRACÉE) ; compteurs moteur
+    manquants à Departure/Arrival/Anchoring → bloquant (G2, cf.
+    ``_r08_missing_engine_readings`` — sans ça, l'intervalle produirait une
+    conso silencieusement vide, jamais détectée par les volets ci-dessous).
+    Matrice §1 + §5."""
+    et0 = _event_type(ctx.subject)
+    if et0 in _PORTCALL_TYPES + _ANCHORING_TYPES:
+        missing = await _r08_missing_engine_readings(ctx)
+        if missing:
+            return missing
     prev = ctx.prev
     if prev is None:
         return []
@@ -429,7 +465,7 @@ async def _r08_consumption(ctx: RuleContext) -> list[CheckOutcome]:
             )
         )
         return outs
-    et = _event_type(ctx.subject)
+    et = et0
     dur_h = _duration_h(prev, ctx.subject)
     # Complétude conso escale : Arrival → Departure (adjacents dans la séquence).
     if et == "departure" and _event_type(prev) == "arrival" and dur_h is not None and dur_h > 0:
