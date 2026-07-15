@@ -337,6 +337,94 @@ async def test_carbon_assiette_excludes_anchoring(db):
     assert any(a["sequence_no"] == 1 for a in report.payload["anchorings"])
 
 
+# ═══════════════════════════════════ Carbon — scission au Cut-off (G1) ═══════════════════════════════════
+
+CUTOFF_FUEL = {
+    "PME": 11500,
+    "SME": 8900,
+    "FWD_GEN": 5450,
+    "AFT_GEN": 4300,
+    "PORT_SHAFT_GEN": 2150,
+    "STBD_SHAFT_GEN": 2150,
+}
+
+
+async def test_carbon_report_splits_at_cutoff(db):
+    """G1 — un Cut-off finalisé entre Noon1 et Noon2 scinde le Carbon Report
+    en 2 rapports indépendants dont la somme réconcilie exactement avec le
+    total non scindé (même chaîne d'intervalles, juste partitionnée)."""
+    from app.models.nav_event import CutoffEvent
+
+    vessel, leg, engines = await _base(db)
+    dep, n1, n2, arr = await _reference_chain(db, vessel, leg, engines)
+
+    cutoff = CutoffEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=n1.datetime_utc + timedelta(hours=12),
+    )
+    cutoff.engine_readings = _readings(engines, CUTOFF_FUEL)
+    db.add(cutoff)
+    await db.flush()
+
+    whole = await rg.generate_carbon_report(db, leg, author_user_id=1)
+    whole_total = Decimal(whole.payload["totals"]["conso_total_t"])
+
+    r1, r2 = await rg.generate_carbon_reports_split(db, leg, cutoff, author_user_id=1)
+    assert r1.period_seq == 1
+    assert r2.period_seq == 2
+    t1 = Decimal(r1.payload["totals"]["conso_total_t"])
+    t2 = Decimal(r2.payload["totals"]["conso_total_t"])
+    assert t1 + t2 == whole_total  # réconciliation : somme des 2 périodes == total non scindé
+
+    # Même cargo physique dans les deux moitiés (le B/L ne change pas au Cut-off).
+    assert Decimal(r1.payload["cargo"]["cargo_bl_t"]) == Decimal("900.000")
+    assert Decimal(r2.payload["cargo"]["cargo_bl_t"]) == Decimal("900.000")
+
+    # Événements liés : période 1 = Dep..Cutoff ; période 2 = Cutoff..Arr —
+    # le Cut-off appartient aux deux (point de jonction).
+    assert {lk.event_id for lk in r1.event_links} == {dep.id, n1.id, cutoff.id}
+    assert {lk.event_id for lk in r2.event_links} == {cutoff.id, n2.id, arr.id}
+
+
+async def test_carbon_reports_for_leg_detects_cutoff_and_is_idempotent(db):
+    """``carbon_reports_for_leg`` scinde automatiquement (pas besoin d'appeler
+    ``generate_carbon_reports_split`` explicitement) et régénère sans doublon."""
+    from app.models.nav_event import CutoffEvent
+
+    vessel, leg, engines = await _base(db)
+    await _reference_chain(db, vessel, leg, engines)
+    cutoff = CutoffEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=36),
+    )
+    cutoff.engine_readings = _readings(engines, CUTOFF_FUEL)
+    db.add(cutoff)
+    await db.flush()
+
+    reports = await rg.carbon_reports_for_leg(db, leg, author_user_id=1)
+    assert len(reports) == 2
+    assert {r.period_seq for r in reports} == {1, 2}
+
+    # Régénération : mêmes 2 lignes (pas de doublon), pas 4.
+    again = await rg.carbon_reports_for_leg(db, leg, author_user_id=1)
+    assert {r.id for r in again} == {r.id for r in reports}
+
+
+async def test_carbon_reports_for_leg_without_cutoff_returns_single_report(db):
+    """Sans Cut-off finalisé, comportement historique inchangé : 1 seul rapport,
+    ``period_seq`` None."""
+    vessel, leg, engines = await _base(db)
+    await _reference_chain(db, vessel, leg, engines)
+
+    reports = await rg.carbon_reports_for_leg(db, leg, author_user_id=1)
+    assert len(reports) == 1
+    assert reports[0].period_seq is None
+
+
 # ════════════════════════════════════════════════════════════ Stopover
 
 

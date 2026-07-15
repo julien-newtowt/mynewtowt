@@ -112,6 +112,13 @@ class EnvReport(Base):
     # Snapshot des champs générés — source unique du rendu PDF (audit).
     payload: Mapped[dict | list | None] = mapped_column(JSON, nullable=False)
 
+    # G1 — scission réglementaire du Carbon Report au Cut-off (CDC v0.7 §9.2) :
+    # NULL pour un rapport non scindé (comportement historique, tous types) ;
+    # 1 = période avant le Cut-off, 2 = période après, pour un Carbon Report
+    # dont le voyage a un événement Cut-off finalisé. Permet 2 EnvReport
+    # indépendants (statuts/validations distincts) pour le même leg_id.
+    period_seq: Mapped[int | None] = mapped_column(Integer)
+
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

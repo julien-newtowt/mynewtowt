@@ -797,7 +797,10 @@ async def mrv_generate_report(
 
     try:
         if report_type == "carbon":
-            report = await _rg.generate_carbon_report(db, leg, author_user_id=user.id)
+            # G1 — scinde automatiquement en 2 rapports si le voyage a un
+            # événement Cut-off finalisé (CDC v0.7 §9.2) ; sinon 1 seul,
+            # comportement historique inchangé.
+            reports = await _rg.carbon_reports_for_leg(db, leg, author_user_id=user.id)
         elif report_type == "noon":
             event_id = _int_or_400(form.get("event_id"), "event_id")
             if event_id is None:
@@ -805,7 +808,7 @@ async def mrv_generate_report(
             ev = await db.get(NavEvent, event_id)
             if ev is None or ev.leg_id != leg_id or ev.event_type != "noon":
                 raise HTTPException(status_code=400, detail="événement Noon invalide")
-            report = await _rg.generate_noon_report(db, leg, ev, author_user_id=user.id)
+            reports = [await _rg.generate_noon_report(db, leg, ev, author_user_id=user.id)]
         else:  # stopover
             arr_id = _int_or_400(form.get("arrival_event_id"), "arrival_event_id")
             dep_id = _int_or_400(form.get("departure_event_id"), "departure_event_id")
@@ -817,26 +820,30 @@ async def mrv_generate_report(
             dep = await db.get(NavEvent, dep_id)
             if arr is None or dep is None:
                 raise HTTPException(status_code=404, detail="événement d'escale introuvable")
-            report = await _rg.generate_stopover_report(db, arr, dep, author_user_id=user.id)
+            reports = [await _rg.generate_stopover_report(db, arr, dep, author_user_id=user.id)]
     except _rg.ReportImmutableError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except _rg.ReportGenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     await db.flush()
-    await activity_record(
-        db,
-        action="mrv_report_generate",
-        user_id=user.id,
-        user_name=user.full_name or user.username,
-        user_role=user.role,
-        module="mrv",
-        entity_type="env_report",
-        entity_id=report.id,
-        entity_label=f"{report_type} leg={leg_id}",
-        ip_address=_client_ip(request),
-    )
-    return RedirectResponse(url=f"/mrv/reports/{report.id}", status_code=303)
+    for report in reports:
+        label = f"{report_type} leg={leg_id}"
+        if report.period_seq is not None:
+            label += f" période {report.period_seq}"
+        await activity_record(
+            db,
+            action="mrv_report_generate",
+            user_id=user.id,
+            user_name=user.full_name or user.username,
+            user_role=user.role,
+            module="mrv",
+            entity_type="env_report",
+            entity_id=report.id,
+            entity_label=label,
+            ip_address=_client_ip(request),
+        )
+    return RedirectResponse(url=f"/mrv/reports/{reports[0].id}", status_code=303)
 
 
 @router.get("/reports/{report_id}", response_class=HTMLResponse)

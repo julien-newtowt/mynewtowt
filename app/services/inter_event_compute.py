@@ -621,3 +621,52 @@ def _leg_totals(intervals: list[IntervalResult]) -> LegTotals:
         distance_nm=(sum(dist, Decimal("0")) if dist else None),
         duration_h=(sum(dur, Decimal("0")) if dur else None),
     )
+
+
+def split_at_event(
+    comp: LegComputation, split_event_id: int
+) -> tuple[LegComputation, LegComputation]:
+    """Scinde une ``LegComputation`` en deux périodes de part et d'autre de
+    ``split_event_id`` (G1 — le Cut-off, CDC v0.7 §9.2) : l'événement pivot
+    appartient aux DEUX périodes (point de jonction — clôture de la période 1,
+    ouverture de la période 2), exactement comme un Departure/Arrival ancre à
+    la fois la fin d'un voyage et le début du suivant.
+
+    Réutilise ``_leg_totals`` sur chaque sous-liste d'intervalles — même
+    formule que le calcul non scindé, jamais dupliquée.
+
+    Limite connue (acceptée, cf. hypothèse « une seule bascule par voyage ») :
+    un mouillage Begin/End qui chevaucherait exactement l'instant du Cut-off
+    (cas non observé en pratique) se retrouverait non apparié dans l'une des
+    deux moitiés — silencieusement exclu des fenêtres de mouillage de cette
+    période, pas une erreur bloquante.
+    """
+    idx = next((i for i, e in enumerate(comp.events) if e.id == split_event_id), None)
+    if idx is None:
+        raise ValueError(f"Événement #{split_event_id} absent de la séquence du leg.")
+
+    events1, events2 = comp.events[: idx + 1], comp.events[idx:]
+    intervals1, intervals2 = comp.intervals[:idx], comp.intervals[idx:]
+    rob1, rob2 = comp.rob_chain[: idx + 1], comp.rob_chain[idx:]
+    ids1 = {e.id for e in events1}
+    ids2 = {e.id for e in events2}
+    cargo1 = {eid: v for eid, v in comp.cargo_mrv.items() if eid in ids1}
+    cargo2 = {eid: v for eid, v in comp.cargo_mrv.items() if eid in ids2}
+
+    period1 = LegComputation(
+        leg_id=comp.leg_id,
+        events=events1,
+        intervals=intervals1,
+        rob_chain=rob1,
+        cargo_mrv=cargo1,
+        totals=_leg_totals(intervals1),
+    )
+    period2 = LegComputation(
+        leg_id=comp.leg_id,
+        events=events2,
+        intervals=intervals2,
+        rob_chain=rob2,
+        cargo_mrv=cargo2,
+        totals=_leg_totals(intervals2),
+    )
+    return period1, period2
