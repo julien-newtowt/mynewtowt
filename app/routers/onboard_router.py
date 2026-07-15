@@ -1698,7 +1698,10 @@ async def _my_event_drafts(db: AsyncSession, user) -> list[dict]:
         .scalars()
         .all()
     )
-    out = [{"event": e, "age_h": int(draft_reminders._age_hours(e.created_at, now))} for e in rows]
+    out = [
+        {"event": e, "age_h": int(draft_reminders._age_hours(draft_reminders._last_saved(e), now))}
+        for e in rows
+    ]
     out.sort(key=lambda d: d["age_h"], reverse=True)
     return out
 

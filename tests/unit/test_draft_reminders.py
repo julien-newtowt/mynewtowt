@@ -2,8 +2,10 @@
 
 Couvre ``app.services.draft_reminders`` : sélection des brouillons par âge vs
 les deux seuils R19 (rappel Master 24 h, alerte siège 48 h — défauts codés
-sans ligne en base) et **idempotence** (un 2e passage ne recrée aucune
-notification). Moteur SQLite en mémoire (FK activées).
+sans ligne en base), **idempotence** (un 2e passage ne recrée aucune
+notification), et (G3) l'âge mesuré depuis ``last_saved_at`` — pas
+``created_at`` seul, sans quoi un brouillon repris sur plusieurs sessions
+déclencherait une fausse alerte. Moteur SQLite en mémoire (FK activées).
 """
 
 from __future__ import annotations
@@ -79,13 +81,18 @@ async def _base(db):
     return author, vessel, leg
 
 
-async def _draft(db, leg, vessel, author, *, hours_old, now):
+async def _draft(db, leg, vessel, author, *, hours_old, now, last_saved_hours_old=None):
     ev = NoonEvent(
         leg_id=leg.id,
         vessel_id=vessel.id,
         status="brouillon",
         author_user_id=author.id,
         created_at=now - timedelta(hours=hours_old),
+        last_saved_at=(
+            now - timedelta(hours=last_saved_hours_old)
+            if last_saved_hours_old is not None
+            else None
+        ),
     )
     db.add(ev)
     await db.flush()
@@ -156,3 +163,34 @@ async def test_no_reminder_below_first_threshold(db):
     summary = await draft_reminders.run_draft_reminders(db, now)
     assert summary == {"scanned": 0, "master": 0, "siege": 0}
     assert (await db.execute(select(func.count()).select_from(Notification))).scalar_one() == 0
+
+
+# ═══════════════════ G3 — âge mesuré depuis last_saved_at (pas created_at) ═══════════════════
+
+
+@pytest.mark.asyncio
+async def test_recently_resaved_draft_is_not_dormant(db):
+    """Créé il y a 100 h mais resauvegardé il y a 2 h (reprise multi-session
+    du Master) → sous le 1er seuil, aucune alerte. C'est exactement le
+    scénario que l'autosave est censé couvrir (bug G3 : mesurer depuis
+    ``created_at`` aurait déclenché une fausse alerte ici)."""
+    author, vessel, leg = await _base(db)
+    now = datetime(2026, 4, 10, 12, 0, tzinfo=UTC)
+    await _draft(db, leg, vessel, author, hours_old=100, now=now, last_saved_hours_old=2)
+
+    dormant = await draft_reminders.select_dormant_drafts(db, now)
+    assert dormant == []
+
+
+@pytest.mark.asyncio
+async def test_dormant_draft_without_last_saved_at_falls_back_to_created_at(db):
+    """``last_saved_at`` jamais posé (ne devrait pas arriver en pratique,
+    ``event_capture.create_draft`` l'initialise à la création) → repli
+    ``created_at``, comportement historique préservé."""
+    author, vessel, leg = await _base(db)
+    now = datetime(2026, 4, 10, 12, 0, tzinfo=UTC)
+    await _draft(db, leg, vessel, author, hours_old=30, now=now)  # last_saved_at=None
+
+    dormant = await draft_reminders.select_dormant_drafts(db, now)
+    assert len(dormant) == 1
+    assert dormant[0].over_master and not dormant[0].over_siege
