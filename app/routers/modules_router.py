@@ -729,6 +729,35 @@ def request_ports_back_url() -> str:
     return "/admin/ports"
 
 
+@router.post("/admin/ports/{port_id}/toggle-mrv-scope")
+async def admin_port_toggle_mrv_scope(
+    port_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("admin", "M")),
+) -> RedirectResponse:
+    """G14 — bascule le périmètre MRV UE (RUP incluses) d'un port. Attribut
+    éditable sans cycle de développement (architecture §7.3) : jamais dérivé
+    d'une liste de préfixes pays codée en dur, le périmètre réglementaire
+    évoluant (ex. extension RUP 2024)."""
+    port = await db.get(Port, port_id)
+    if not port:
+        raise HTTPException(status_code=404, detail="Port not found")
+    port.mrv_scope = not port.mrv_scope
+    await activity_record(
+        db,
+        action="port_mrv_scope_toggle",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="admin",
+        entity_type="port",
+        entity_id=port.id,
+        entity_label=port.locode,
+        detail=f"mrv_scope={port.mrv_scope}",
+    )
+    return RedirectResponse(url=request_ports_back_url(), status_code=303)
+
+
 @router.post("/admin/ports/{port_id}/toggle-shortcut")
 async def admin_port_toggle_shortcut(
     port_id: int,

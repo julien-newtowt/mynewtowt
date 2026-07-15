@@ -32,6 +32,11 @@ class Port(Base):
     # PLN-07 — port « raccourci » proposé en un clic dans le formulaire de leg
     # (remplace la liste de LOCODE codée en dur ; repli sur celle-ci si aucun).
     is_shortcut: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Port sous juridiction MRV UE (RUP incluses, G14) — attribut éditable en
+    # admin, JAMAIS dérivé d'une liste de préfixes pays codée en dur (le
+    # périmètre réglementaire évolue, ex. extension RUP 2024). Défaut False :
+    # un port nouvellement importé n'est pas présumé dans le périmètre.
+    mrv_scope: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # =========================================================================
     # Champs pour le Carnet de Bord ANEMOS (MAN - curation humaine)
