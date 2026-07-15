@@ -12,8 +12,7 @@ from datetime import UTC, datetime
 import pytest
 from fastapi import HTTPException
 
-from tests.integration.conftest import FakeRequest
-from tests.integration.test_mrv_reprise import _setup_leg
+from tests.integration.conftest import FakeRequest, _setup_leg
 
 
 @pytest.mark.asyncio

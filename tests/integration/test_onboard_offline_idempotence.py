@@ -11,8 +11,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models.noon_report import NoonReport
-from tests.integration.conftest import FakeRequest, disable_capture_v2
-from tests.integration.test_mrv_reprise import _setup_leg
+from tests.integration.conftest import FakeRequest, _setup_leg, disable_capture_v2
 
 
 def _noon_form(leg_id, client_uuid):
