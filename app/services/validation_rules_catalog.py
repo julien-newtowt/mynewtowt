@@ -522,32 +522,39 @@ async def _r09_distance_datetime(ctx: RuleContext) -> list[CheckOutcome]:
 
     Distance déclarée : attribut direct ``distance_nm`` (sujets synthétiques /
     legacy) OU delta du cumul ``distance_from_sosp_nm`` (NoonEvent réel —
-    même dérivation que R21 pour la durée)."""
+    même dérivation que R21 pour la durée).
+
+    G16 : le volet v1 est scopé (Matrice §3) à la position **manuellement
+    justifiée** (``position_source == "manuel_justifie"``, R05) — pas une
+    route normale (louvoyage/dérive météo d'une flotte vélique). Recouvrement
+    connu et assumé avec R28 (même dérivation de distance déclarée/calculée,
+    seuil distinct) une fois ce scope resserré."""
     outs: list[CheckOutcome] = []
     # v1 — distance déclarée vs calculée haversine depuis le point précédent.
-    declared = _as_decimal(_get(ctx.subject, "distance_nm"))
-    if declared is None and ctx.prev is not None:
-        cur_s = _as_decimal(_get(ctx.subject, "distance_from_sosp_nm"))
-        prev_s = _as_decimal(_get(ctx.prev, "distance_from_sosp_nm"))
-        if cur_s is not None and prev_s is not None:
-            declared = cur_s - prev_s
-    if declared is not None and ctx.prev is not None:
-        calc = _distance_nm(ctx.prev, ctx.subject)
-        if calc is not None:
-            tol = await _thr(ctx, "tolerance_distance_manuelle_nm")
-            if abs(declared - calc) > tol:
-                outs.append(
-                    CheckOutcome(
-                        "fail",
-                        f"R09 — distance déclarée {declared} nm vs calculée {calc:.1f} nm (> {tol} nm).",
-                        {
-                            "declared_nm": str(declared),
-                            "calculated_nm": str(calc),
-                            "tolerance_nm": str(tol),
-                        },
-                        severity="warning",
+    if _get(ctx.subject, "position_source") == "manuel_justifie":
+        declared = _as_decimal(_get(ctx.subject, "distance_nm"))
+        if declared is None and ctx.prev is not None:
+            cur_s = _as_decimal(_get(ctx.subject, "distance_from_sosp_nm"))
+            prev_s = _as_decimal(_get(ctx.prev, "distance_from_sosp_nm"))
+            if cur_s is not None and prev_s is not None:
+                declared = cur_s - prev_s
+        if declared is not None and ctx.prev is not None:
+            calc = _distance_nm(ctx.prev, ctx.subject)
+            if calc is not None:
+                tol = await _thr(ctx, "tolerance_distance_manuelle_nm")
+                if abs(declared - calc) > tol:
+                    outs.append(
+                        CheckOutcome(
+                            "fail",
+                            f"R09 — distance déclarée {declared} nm vs calculée {calc:.1f} nm (> {tol} nm).",
+                            {
+                                "declared_nm": str(declared),
+                                "calculated_nm": str(calc),
+                                "tolerance_nm": str(tol),
+                            },
+                            severity="warning",
+                        )
                     )
-                )
     # v2 — datetime d'escale vs référence du leg (ATD/ETD, ATA/ETA).
     et = _event_type(ctx.subject)
     if et in _PORTCALL_TYPES and ctx.leg is not None:

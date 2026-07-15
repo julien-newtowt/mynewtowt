@@ -1,8 +1,9 @@
 """LOT 8 — règles R08-R13 (scope event, mesures) : tests table-driven.
 
 R08 (consommation + complétude escale amendée), R09 v1/v2 (distance vs
-trajectoire, datetime d'escale vs référence), R28 (G4 — distance haversine
-vs distance loguée SOSP, Matrice §8), R10 complet (régression compteur :
+trajectoire — v1 scopé à la position manuellement justifiée depuis G16 —,
+datetime d'escale vs référence), R28 (G4 — distance haversine vs distance
+loguée SOSP, Matrice §8), R10 complet (régression compteur :
 warning routé admin / reset confirmé / escalade bloquante) — ≥ 3 cas chacun
 (pass / fail / limite exacte au seuil). R11/R12/R13 sont déjà couverts
 table-driven dans ``tests/unit/test_validation_engine.py`` (lot 2) — leur
@@ -237,8 +238,9 @@ async def test_r08_missing_engine_readings_abstains_without_vessel_or_engines(db
     ],
 )
 async def test_r09_v1_declared_vs_computed_distance(db, declared, result):
-    """v1 — distance déclarée vs trajectoire calculée (positions identiques →
-    distance calculée = 0 nm exactement, la tolérance devient la borne)."""
+    """v1 — distance déclarée vs trajectoire calculée, position COURANTE
+    manuellement justifiée (G16, Matrice §3) : positions identiques →
+    distance calculée = 0 nm exactement, la tolérance devient la borne."""
     prev = _ev("noon", T0, lat_decimal=Decimal("10"), lon_decimal=Decimal("10"))
     cur = _ev(
         "noon",
@@ -246,6 +248,7 @@ async def test_r09_v1_declared_vs_computed_distance(db, declared, result):
         lat_decimal=Decimal("10"),
         lon_decimal=Decimal("10"),
         distance_nm=declared,
+        position_source="manuel_justifie",
     )
     out = await _run(db, "R09", [prev, cur], 1)
     assert out[0].result == result
@@ -270,9 +273,28 @@ async def test_r09_v1_derives_declared_from_sosp_cumulative(db):
         lat_decimal=Decimal("10"),
         lon_decimal=Decimal("10"),
         distance_from_sosp_nm=Decimal("150"),
+        position_source="manuel_justifie",
     )  # Δ déclaré 50 nm vs calc 0
     out = await _run(db, "R09", [prev, cur], 1)
     assert out[0].result == "fail" and out[0].severity == "warning"
+
+
+@pytest.mark.asyncio
+async def test_r09_v1_abstains_without_manual_position_source(db):
+    """G16 — hors position manuellement justifiée (route normale, y compris
+    louvoiement/dérive météo d'une flotte vélique), le volet v1 ne s'applique
+    plus (Matrice §3) : aucun faux positif, même avec un écart énorme."""
+    prev = _ev("noon", T0, lat_decimal=Decimal("10"), lon_decimal=Decimal("10"))
+    cur = _ev(
+        "noon",
+        T0 + timedelta(hours=24),
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_nm=Decimal("500"),  # écart énorme vs calc = 0 nm
+        position_source="thalos_auto",
+    )
+    out = await _run(db, "R09", [prev, cur], 1)
+    assert out[0].result == "pass"
 
 
 @pytest.mark.asyncio
