@@ -37,6 +37,7 @@ from app.models.nav_event import (
     EVENT_CLASS_BY_TYPE,
     EVENT_TYPES,
     AnchoringEvent,
+    CutoffEvent,
     NavEvent,
     NoonEvent,
     PortCallEvent,
@@ -134,10 +135,29 @@ def _apply_payload(event: NavEvent, payload: dict | None) -> None:
             setattr(event, key, value)
 
 
+def _pin_cutoff_datetime_utc(raw_utc: datetime) -> datetime:
+    """Fige un horodatage brut sur l'instant réglementaire exact le plus proche
+    (31/12 24:00 UTC ⇔ 01/01 00:00 UTC — CDC v0.7 §9.2). Décision produit :
+    le Cut-off n'est pas une observation de terrain comme les autres types,
+    c'est une règle fixe — le local/tz saisi par le Master ne sert qu'à
+    indiquer QUELLE bascule d'année il vise, jamais à décaler l'instant."""
+    candidates = (
+        datetime(raw_utc.year, 1, 1, tzinfo=UTC),
+        datetime(raw_utc.year + 1, 1, 1, tzinfo=UTC),
+    )
+    return min(candidates, key=lambda c: abs((c - raw_utc).total_seconds()))
+
+
 def _compute_datetime_utc(event: NavEvent) -> datetime | None:
-    """UTC calculé depuis ``datetime_local`` + ``timezone`` (DST-aware via zoneinfo)."""
+    """UTC calculé depuis ``datetime_local`` + ``timezone`` (DST-aware via zoneinfo).
+
+    Pour un ``CutoffEvent``, le résultat est ensuite figé sur l'instant
+    réglementaire exact (cf. ``_pin_cutoff_datetime_utc``)."""
     if event.datetime_local is not None and event.timezone:
-        return to_utc(event.datetime_local, event.timezone)
+        raw = to_utc(event.datetime_local, event.timezone)
+        if isinstance(event, CutoffEvent):
+            return _pin_cutoff_datetime_utc(raw)
+        return raw
     return None
 
 
