@@ -629,9 +629,12 @@ async def generate_stopover_report(
     author_user_id: int | None = None,
 ) -> EnvReport:
     """Rapport d'escale (NOUVEAU) : entre l'Arrival du leg N et le Departure du
-    leg N+1 du même navire — durée escale, conso escale par deltas de compteurs,
-    ROB déclaré arrivée vs départ, soutages de la fenêtre, **écart classé** via
-    les bornes R14 → {conforme, mineur, majeur, critique}."""
+    leg N+1 du même navire — les 8 blocs proposés au CDC §12.4 : identité
+    escale, ROB déclaré arrivée/départ, conso escale par deltas de compteurs
+    ET par ROB, **écart classé** via les bornes R14 (conforme/mineur/majeur/
+    critique), soutages de la fenêtre, cargaison chargée/déchargée (delta
+    B/L déclaré, G8) et ancrage/dérive rattaché (Begin/End anchoring de la
+    fenêtre, hors temps MRV, G8)."""
     if arrival_event.vessel_id != departure_event.vessel_id:
         raise StopoverError("Arrival et Departure doivent concerner le même navire.")
     if not isinstance(arrival_event, PortCallEvent) or not isinstance(
@@ -656,6 +659,21 @@ async def generate_stopover_report(
         db, vessel_id, arrival_event.datetime_utc, departure_event.datetime_utc
     )
     bunkered_t = sum((b.mass_t for b in bunkers if b.mass_t is not None), Decimal("0"))
+
+    # Cargaison chargée/déchargée pendant l'escale (G8, CDC §12.4 bloc 7) : delta
+    # du B/L déclaré entre l'Arrival et le Departure suivant (positif = chargée,
+    # négatif = déchargée) — même convention que ROB/conso (valeurs déclarées
+    # aux deux bornes de l'escale, jamais une nouvelle saisie/import).
+    cargo_bl_arrival = getattr(arrival_event, "cargo_bl_t", None)
+    cargo_bl_departure = getattr(departure_event, "cargo_bl_t", None)
+    cargo_delta_t: Decimal | None = None
+    if cargo_bl_arrival is not None and cargo_bl_departure is not None:
+        cargo_delta_t = Decimal(cargo_bl_departure) - Decimal(cargo_bl_arrival)
+
+    # Ancrage/dérive rattaché pendant l'escale (G8, CDC §12.4 bloc 8).
+    anchorings = await _anchorings_in_window(
+        db, vessel_id, arrival_event.datetime_utc, departure_event.datetime_utc
+    )
 
     rob_theo: Decimal | None = None
     ecart: Decimal | None = None
@@ -713,6 +731,12 @@ async def generate_stopover_report(
             }
             for b in bunkers
         ],
+        "cargo": {
+            "declared_arrival_t": _num(cargo_bl_arrival),
+            "declared_departure_t": _num(cargo_bl_departure),
+            "delta_t": _num(cargo_delta_t),
+        },
+        "anchorings": anchorings,
     }
     return await _store_report(
         db,
@@ -749,6 +773,52 @@ async def _bunkers_in_window(
             continue
         if (f is None or f < d) and (t is None or d <= t):
             out.append(b)
+    return out
+
+
+async def _anchorings_in_window(
+    db: AsyncSession, vessel_id: int, frm: datetime | None, to: datetime | None
+) -> list[dict[str, Any]]:
+    """Mouillages (Begin/End appariés) du navire survenus dans la fenêtre
+    (arrivée, départ] de l'escale — bloc « Ancrage/dérive rattaché » (CDC
+    §12.4 bloc 8, G8) : ces périodes sont hors temps MRV (cf. Carbon Report),
+    référencées ici pour information, pas recalculées."""
+    rows = (
+        (
+            await db.execute(
+                select(NavEvent)
+                .where(
+                    NavEvent.vessel_id == vessel_id,
+                    NavEvent.event_type.in_(("anchoring_begin", "anchoring_end")),
+                    NavEvent.status.in_(iec.FINALIZED_STATUSES),
+                )
+                .order_by(NavEvent.datetime_utc.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    f, t = _naive_utc(frm), _naive_utc(to)
+    windowed = []
+    for e in rows:
+        d = _naive_utc(e.datetime_utc)
+        if d is None:
+            continue
+        if (f is None or f < d) and (t is None or d <= t):
+            windowed.append(e)
+    by_id = {e.id: e for e in windowed}
+    out: list[dict[str, Any]] = []
+    for pair in iec.pair_anchorings(windowed):
+        begin = by_id.get(pair.begin_event_id)
+        end = by_id.get(pair.end_event_id)
+        out.append(
+            {
+                "sequence_no": pair.sequence_no,
+                "begin_datetime_utc": _iso(begin.datetime_utc) if begin else None,
+                "end_datetime_utc": _iso(end.datetime_utc) if end else None,
+                "duration_h": _num(pair.duration_h),
+            }
+        )
     return out
 
 

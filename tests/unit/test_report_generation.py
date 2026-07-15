@@ -7,7 +7,9 @@ Couvre ``app.services.report_generation`` sur un moteur SQLite en mémoire
   (chaîne de 2 événements) ;
 - **Carbon** : assiette « hors mouillage » (cas avec 1 mouillage) et multi-GES
   exact (4,43625 t DO × 3,206 = 14,2226175 tCO₂) ;
-- **Stopover** : écart ROB classé sur 4 niveaux via les bornes R14 ;
+- **Stopover** : écart ROB classé sur 4 niveaux via les bornes R14 ; cargaison
+  chargée/déchargée (delta B/L déclaré) et ancrage/dérive rattaché à la
+  fenêtre d'escale (G8, CDC §12.4 blocs 7/8) ;
 - **cycle de vie** : regénération brouillon OK / validé refusée ;
 - **field modification** : R18 (justification vide refusée) + statut dérivé
   (pire cas ``under_conformity``).
@@ -482,6 +484,130 @@ async def test_stopover_ecart_four_levels(db, rob_departure, expected):
     assert Decimal(report.payload["consumption"]["conso_escale_t"]) == Decimal("200") * FACTOR
     assert Decimal(rc["theoretical_departure_t"]) == Decimal("50.000") - Decimal("200") * FACTOR
     assert rc["classification"] == expected
+
+
+async def test_stopover_report_includes_cargo_delta(db):
+    """G8 (CDC §12.4 bloc 7) : cargaison chargée/déchargée pendant l'escale =
+    delta du B/L déclaré entre Arrival et Departure."""
+    vessel, leg, engines = await _base(db)
+    arr = await _portcall(
+        ArrivalEvent, leg, vessel, engines, dt=T0, rob=Decimal("50.000"), fuel_pme=1000
+    )
+    arr.cargo_bl_t = Decimal("500.000")
+    dep = await _portcall(
+        DepartureEvent,
+        leg,
+        vessel,
+        engines,
+        dt=T0 + timedelta(hours=12),
+        rob=Decimal("49.831"),
+        fuel_pme=1200,
+    )
+    dep.cargo_bl_t = Decimal("650.000")
+    db.add_all([arr, dep])
+    await db.flush()
+
+    report = await rg.generate_stopover_report(db, arr, dep, author_user_id=1)
+    cargo = report.payload["cargo"]
+    assert Decimal(cargo["declared_arrival_t"]) == Decimal("500.000")
+    assert Decimal(cargo["declared_departure_t"]) == Decimal("650.000")
+    assert Decimal(cargo["delta_t"]) == Decimal("150.000")  # chargée pendant l'escale
+
+
+async def test_stopover_report_cargo_delta_none_when_undeclared(db):
+    vessel, leg, engines = await _base(db)
+    arr = await _portcall(
+        ArrivalEvent, leg, vessel, engines, dt=T0, rob=Decimal("50.000"), fuel_pme=1000
+    )
+    dep = await _portcall(
+        DepartureEvent,
+        leg,
+        vessel,
+        engines,
+        dt=T0 + timedelta(hours=12),
+        rob=Decimal("49.831"),
+        fuel_pme=1200,
+    )
+    db.add_all([arr, dep])
+    await db.flush()
+
+    report = await rg.generate_stopover_report(db, arr, dep, author_user_id=1)
+    assert report.payload["cargo"]["delta_t"] is None
+
+
+async def test_stopover_report_includes_anchoring_in_window(db):
+    """G8 (CDC §12.4 bloc 8) : mouillage Begin/End survenu pendant l'escale,
+    apparié et référencé (hors temps MRV, pour information)."""
+    vessel, leg, engines = await _base(db)
+    arr = await _portcall(
+        ArrivalEvent, leg, vessel, engines, dt=T0, rob=Decimal("50.000"), fuel_pme=1000
+    )
+    dep = await _portcall(
+        DepartureEvent,
+        leg,
+        vessel,
+        engines,
+        dt=T0 + timedelta(hours=24),
+        rob=Decimal("49.831"),
+        fuel_pme=1200,
+    )
+    begin = BeginAnchoringEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=6),
+        sequence_no=1,
+    )
+    end = EndAnchoringEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=10),
+        sequence_no=1,
+    )
+    db.add_all([arr, dep, begin, end])
+    await db.flush()
+
+    report = await rg.generate_stopover_report(db, arr, dep, author_user_id=1)
+    anchorings = report.payload["anchorings"]
+    assert len(anchorings) == 1
+    assert Decimal(anchorings[0]["duration_h"]) == Decimal("4")
+
+
+async def test_stopover_report_excludes_anchoring_outside_window(db):
+    vessel, leg, engines = await _base(db)
+    arr = await _portcall(
+        ArrivalEvent, leg, vessel, engines, dt=T0, rob=Decimal("50.000"), fuel_pme=1000
+    )
+    dep = await _portcall(
+        DepartureEvent,
+        leg,
+        vessel,
+        engines,
+        dt=T0 + timedelta(hours=12),
+        rob=Decimal("49.831"),
+        fuel_pme=1200,
+    )
+    # Mouillage AVANT l'arrivée — hors fenêtre d'escale.
+    begin = BeginAnchoringEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 - timedelta(hours=6),
+        sequence_no=1,
+    )
+    end = EndAnchoringEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 - timedelta(hours=2),
+        sequence_no=1,
+    )
+    db.add_all([arr, dep, begin, end])
+    await db.flush()
+
+    report = await rg.generate_stopover_report(db, arr, dep, author_user_id=1)
+    assert report.payload["anchorings"] == []
 
 
 # ════════════════════════════════════════════════════════════ Cycle de vie
