@@ -15,11 +15,14 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
+from app.models.activity_log import ActivityLog
 from app.models.finance import LegKPI
 from app.models.leg import Leg
 from app.models.noon_report import NoonReport
 from app.models.port import Port
+from app.models.validation import DashboardParameter
 from app.models.vessel import Vessel
 from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.permissions import require_permission
@@ -486,4 +489,136 @@ async def test_quality_page_renders_with_golden_voyage(db):
     await _load_1egb5(db)
     resp = await dashboard_perf_quality(_req_csrf(), vessel_id=None, db=db, user=_admin_user())
     assert resp.status_code == 200
+    assert "o" in resp.context
+
+
+# ═══════════════════════════════════════ Page 5 — administration (mrv:S) ═══════════════════════════════════════
+
+
+def _data_analyst_user():
+    """A ``mrv: CM`` (pas de S) — doit échouer sur la page 5, comme sur l'ancien dashboard."""
+    return SimpleNamespace(id=3, full_name="Data Analyst", username="da1", role="data_analyst")
+
+
+def test_parameters_routes_registered():
+    from app.routers import dashboard_perf_router
+
+    paths = {r.path for r in dashboard_perf_router.router.routes}
+    assert "/dashboard-perf/parameters" in paths
+    assert "/dashboard-perf/parameters/{param_id}/update" in paths
+
+
+@pytest.mark.asyncio
+async def test_parameters_page_requires_mrv_s(db):
+    checker = require_permission("mrv", "S")
+
+    with pytest.raises(HTTPException) as exc:
+        await checker(FakeRequest(), user=_data_analyst_user(), db=db)
+    assert exc.value.status_code == 403
+
+    admin = _admin_user()
+    assert await checker(FakeRequest(), user=admin, db=db) is admin
+
+
+@pytest.mark.asyncio
+async def test_parameters_page_renders_200_and_lists_parameters(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_parameters
+    from app.services.validation_engine import seed_reference_data
+
+    await seed_reference_data(db)
+    resp = await dashboard_perf_parameters(FakeRequest(), db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/dashboard_perf/parameters.html"
+    names = {p.parameter_name for p in resp.context["params"]}
+    assert "occupancy_rate_pct" in names
+    assert "ef_container_ship_gco2_tkm" in names
+    assert "ef_container_ship_gco2_tkm" in resp.context["provisional_params"]
+
+
+@pytest.mark.asyncio
+async def test_update_parameter_changes_value_and_records_activity(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_parameters_update
+    from app.services.validation_engine import seed_reference_data
+
+    await seed_reference_data(db)
+    param = (
+        await db.execute(
+            select(DashboardParameter).where(
+                DashboardParameter.parameter_name == "ef_container_ship_gco2_tkm"
+            )
+        )
+    ).scalar_one()
+    assert param.value == Decimal("16")
+
+    admin = _admin_user()
+    resp = await dashboard_perf_parameters_update(
+        param.id, FakeRequest(), value="20", unit="gCO2/t.km", db=db, user=admin
+    )
+    assert resp.status_code == 303
+
+    refreshed = await db.get(DashboardParameter, param.id)
+    assert refreshed.value == Decimal("20")
+    assert refreshed.updated_by == admin.id
+
+    logs = list(
+        (
+            await db.execute(
+                select(ActivityLog).where(ActivityLog.action == "dashenv_parameter_update")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(logs) == 1
+    assert logs[0].module == "dashboard_env"
+    assert logs[0].entity_type == "dashboard_parameter"
+    assert logs[0].entity_id == param.id
+    assert "16" in logs[0].detail and "20" in logs[0].detail
+
+
+@pytest.mark.asyncio
+async def test_update_parameter_rejects_invalid_value(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_parameters_update
+    from app.services.validation_engine import seed_reference_data
+
+    await seed_reference_data(db)
+    param = (
+        await db.execute(
+            select(DashboardParameter).where(
+                DashboardParameter.parameter_name == "occupancy_rate_pct"
+            )
+        )
+    ).scalar_one()
+
+    with pytest.raises(HTTPException) as exc:
+        await dashboard_perf_parameters_update(
+            param.id, FakeRequest(), value="pas-un-nombre", unit="", db=db, user=_admin_user()
+        )
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_update_parameter_unknown_id_404(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_parameters_update
+
+    with pytest.raises(HTTPException) as exc:
+        await dashboard_perf_parameters_update(
+            999999, FakeRequest(), value="10", unit="", db=db, user=_admin_user()
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_quality_page_admin_link_gated_by_mrv_s(db):
+    """``can_admin_params`` (lien croisé vers la page 5) reflète la
+    permission réelle de l'utilisateur, pas une simple présence de la page."""
+    from app.routers.dashboard_perf_router import dashboard_perf_quality
+
+    resp = await dashboard_perf_quality(_req_csrf(), vessel_id=None, db=db, user=_admin_user())
+    assert resp.context["can_admin_params"] is True
+
+    resp_da = await dashboard_perf_quality(
+        _req_csrf(), vessel_id=None, db=db, user=_data_analyst_user()
+    )
+    assert resp_da.context["can_admin_params"] is False
     assert "o" in resp.context

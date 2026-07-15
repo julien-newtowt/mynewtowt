@@ -16,6 +16,9 @@
   </div>
   <div class="flex gap-2" style="flex-wrap:wrap;">
     <a href="/mrv/qualite" class="btn btn-ghost"><i data-lucide="list"></i> {{ t('dashperf_quality_journal', lang) }}</a>
+    {% if can_admin_params %}
+    <a href="/dashboard-perf/parameters" class="btn btn-ghost"><i data-lucide="sliders-horizontal"></i> {{ t('dashperf_quality_thresholds', lang) }}</a>
+    {% endif %}
   </div>
 </header>
 

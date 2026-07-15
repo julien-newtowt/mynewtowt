@@ -16,10 +16,12 @@ l'ancien dashboard :
   ``kpi_env.DASHBOARD_CONTRACT_VERSION``).
 
 Expose pour l'instant :
-    GET /dashboard-perf, /dashboard-perf/         page 1 — Vue flotte (perm kpi:C)
-    GET /dashboard-perf/vessels/{vessel_id}       page 2 — Suivi opérationnel (perm kpi:C)
-    GET /dashboard-perf/voyages/{leg_id}          page 3 — Détail voyage (perm mrv:C)
-    GET /dashboard-perf/quality                   page 4 — Qualité des données (perm mrv:C)
+    GET  /dashboard-perf, /dashboard-perf/         page 1 — Vue flotte (perm kpi:C)
+    GET  /dashboard-perf/vessels/{vessel_id}       page 2 — Suivi opérationnel (perm kpi:C)
+    GET  /dashboard-perf/voyages/{leg_id}          page 3 — Détail voyage (perm mrv:C)
+    GET  /dashboard-perf/quality                   page 4 — Qualité des données (perm mrv:C)
+    GET  /dashboard-perf/parameters                page 5 — Administration (perm mrv:S)
+    POST /dashboard-perf/parameters/{id}/update    édition d'un DashboardParameter (perm mrv:S)
 
 ``voyage_detail`` (contrairement à ``fleet_summary``/``vessel_operational``)
 n'a pas de paramètre ``strict`` : il porte un seul voyage, pas un agrégat à
@@ -38,8 +40,14 @@ Aucune route d'action ici (page 4) : les formulaires POST pointent vers
 ``mrv_router`` (LOT 8, ``/mrv/qualite/...``) et les deep-links vers
 ``/mrv/qualite`` filtré — même principe que l'ancien dashboard.
 
-Les exports PDF/DOCX du voyage et la page d'administration suivront dans
-des commits ultérieurs, sur le même modèle.
+Page 5 (Administration, ``mrv:S``) : édition des ``dashboard_parameters``
+uniquement (les seuils du moteur de règles restent administrés par l'écran
+LOT 2 existant, ``/mrv/parametres``, et les facteurs carburant par
+``/admin/emission-factors`` — non dupliqués ici, seulement liés en croisé).
+Aucun paramètre ``strict`` : ce n'est pas un agrégat KPI, NC-04 ne s'y
+applique pas.
+
+Les exports PDF/DOCX du voyage suivront dans un commit ultérieur.
 
 Calcul serveur exclusivement (même posture que ``dashboard_env_router``) :
 ce routeur résout les paramètres HTTP (période/méthode/navire) + la
@@ -50,17 +58,20 @@ géométrie SVG de la tendance (server-rendered, pas de lib CDN) et appelle
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.models.activity_log import ActivityLog
+from app.models.validation import DashboardParameter
 from app.models.vessel import Vessel
 from app.permissions import has_permission_effective, require_permission
+from app.services.activity import record as activity_record
 from app.services.kpi_env import (
     EF_METHODS,
     PROVISIONAL_DASHBOARD_PARAMS,
@@ -73,6 +84,28 @@ from app.services.kpi_env import (
 from app.templating import templates
 
 router = APIRouter(prefix="/dashboard-perf", tags=["dashboard-perf"])
+
+# Borne défensive identique à dashboard_env_router (dashboard_parameters.value
+# est un Numeric(15, 6)).
+_MAX_PARAM_VALUE = Decimal("1000000000")
+
+
+def _client_ip(request: Request) -> str | None:
+    return request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else None
+    )
+
+
+def _parse_param_value(raw: str) -> Decimal:
+    """Coerce une saisie de paramètre en Decimal validé (sinon HTTP 400)."""
+    try:
+        value = Decimal(str(raw).strip().replace(",", "."))
+    except (InvalidOperation, ValueError, AttributeError) as exc:
+        raise HTTPException(status_code=400, detail="valeur numérique invalide") from exc
+    if not value.is_finite() or value < 0 or abs(value) >= _MAX_PARAM_VALUE:
+        raise HTTPException(status_code=400, detail="valeur hors plage (0 ≤ x < 1e9)")
+    return value
+
 
 # Géométrie SVG identique à celle de dashboard_env_router._trend_bars — même
 # convention (server-rendered, pas de lib CDN), dupliquée volontairement ici
@@ -482,6 +515,8 @@ async def dashboard_perf_quality(
     can_act = await has_permission_effective(db, user.role, "mrv", "M")
     trend_bars, trend_chart = _quality_trend_bars(overview.trend, overview.trend_max)
 
+    can_admin_params = await has_permission_effective(db, user.role, "mrv", "S")
+
     return templates.TemplateResponse(
         "staff/dashboard_perf/quality.html",
         {
@@ -491,7 +526,130 @@ async def dashboard_perf_quality(
             "vessels": vessels,
             "filter_vessel_id": vessel_id,
             "can_act": can_act,
+            "can_admin_params": can_admin_params,
             "trend_bars": trend_bars,
             "trend_chart": trend_chart,
         },
     )
+
+
+# ═══════════════════════════════════════════════ Page 5 — Administration (mrv:S)
+
+
+async def _history_for_params(
+    db: AsyncSession, param_ids: list[int]
+) -> dict[int, list[ActivityLog]]:
+    """Historique des modifications par paramètre (journal ``activity_logs``).
+
+    Même source que ``dashboard_env_router`` (pas de table dédiée) : l'audit
+    trail append-only existant (``services.activity.record``) sert de source
+    d'historique, sans nouveau schéma.
+    """
+    if not param_ids:
+        return {}
+    rows = (
+        (
+            await db.execute(
+                select(ActivityLog)
+                .where(
+                    ActivityLog.module == "dashboard_env",
+                    ActivityLog.entity_type == "dashboard_parameter",
+                    ActivityLog.entity_id.in_(param_ids),
+                )
+                .order_by(ActivityLog.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_param: dict[int, list[ActivityLog]] = {}
+    for row in rows:
+        if row.entity_id is None:
+            continue
+        by_param.setdefault(row.entity_id, []).append(row)
+    return by_param
+
+
+@router.get("/parameters", response_class=HTMLResponse)
+async def dashboard_perf_parameters(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "S")),
+) -> HTMLResponse:
+    """Page 5 — Administration : édition des ``dashboard_parameters``.
+
+    Périmètre volontairement restreint à cette seule table (les seuils du
+    moteur de règles ``ValidationRuleThreshold`` sont administrés par l'écran
+    LOT 2 existant, ``/mrv/parametres`` — non dupliqué ici, seulement lié en
+    croisé, de même que ``/admin/emission-factors`` pour les facteurs
+    carburant, LOT 1). Pas de mode ``strict`` : ce n'est pas un agrégat KPI.
+    """
+    params = list(
+        (await db.execute(select(DashboardParameter).order_by(DashboardParameter.parameter_name)))
+        .scalars()
+        .all()
+    )
+    history_by_param = await _history_for_params(db, [p.id for p in params])
+    vessels = await _active_vessels(db)
+    vessel_by_id = {v.id: v for v in vessels}
+
+    return templates.TemplateResponse(
+        "staff/dashboard_perf/parameters.html",
+        {
+            "request": request,
+            "user": user,
+            "params": params,
+            "history_by_param": history_by_param,
+            "vessel_by_id": vessel_by_id,
+            "provisional_params": PROVISIONAL_DASHBOARD_PARAMS,
+        },
+    )
+
+
+@router.post("/parameters/{param_id}/update")
+async def dashboard_perf_parameters_update(
+    param_id: int,
+    request: Request,
+    value: str = Form(...),
+    unit: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "S")),
+):
+    """Édite la valeur (et l'unité) d'un ``DashboardParameter`` — tracé en activity_log.
+
+    Le journal réutilise le même ``module="dashboard_env"`` que l'ancien
+    routeur : c'est le même ``DashboardParameter``, la même table
+    ``activity_logs`` — pas une nouvelle catégorie d'événement, juste un
+    second point d'entrée pour l'éditer.
+    """
+    param = await db.get(DashboardParameter, param_id)
+    if param is None:
+        raise HTTPException(status_code=404, detail="paramètre inconnu")
+
+    new_value = _parse_param_value(value)
+    old_value, old_unit = param.value, param.unit
+    param.value = new_value
+    unit_clean = unit.strip()
+    if unit_clean:
+        param.unit = unit_clean[:20]
+    param.updated_by = user.id
+    await db.flush()
+
+    await activity_record(
+        db,
+        action="dashenv_parameter_update",
+        user_id=user.id,
+        user_name=getattr(user, "full_name", None) or user.username,
+        user_role=user.role,
+        module="dashboard_env",
+        entity_type="dashboard_parameter",
+        entity_id=param.id,
+        entity_label=param.parameter_name,
+        detail=f"{old_value} {old_unit or ''} → {param.value} {param.unit or ''}".strip(),
+        ip_address=_client_ip(request),
+    )
+
+    target = "/dashboard-perf/parameters"
+    if request.headers.get("hx-request"):
+        return Response(status_code=200, headers={"HX-Redirect": target})
+    return RedirectResponse(url=target, status_code=303)
