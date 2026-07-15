@@ -453,9 +453,10 @@ actifs) ; cron `POST /api/mrv/draft-reminders` (R19).
 <!-- source: validation_rules_catalog.py:39-46,1290-1393 -->
 
 **Routage des alertes** (`route_alerts`, idempotent — dédup 24 h +
-acquittement) : R10 et R24 → `administrateur` ; R14 **critique** →
+acquittement) : R10 et R24 → `administrateur` ; R14 **critique** et R27 →
 `manager_maritime` + `administrateur` ; R19 → auteur du brouillon (1ᵉʳ seuil)
-puis `manager_maritime` + `administrateur` (2ᵉ seuil).
+puis `manager_maritime` + `administrateur` (2ᵉ seuil). R28 (warning) n'a pas
+de routage dédié — visible via le run de règles standard, comme R08/R09/R11.
 <!-- source: validation_rules_catalog.py:1197-1287 ; draft_reminders.py:43 -->
 
 Légende seuils : ° = **provisoire** (`provisional=True`, à calibrer post-pilote).
@@ -488,15 +489,17 @@ Légende seuils : ° = **provisoire** (`provisional=True`, à calibrer post-pilo
 | R24 | Chaque soutage BDN a une lecture FLGO « Received » sous N jours (cas réel : BDN 36039 non recoupé) | bunker | warning | `delai_flgo_bunkering_j` = 5° | **administrateur** |
 | R25 | Cohérence FLGO, 2 volets — Σ compartiments vs total déclaré (si détail présent) ; progression cohérente entre lectures consécutives. **Signale, ne corrige jamais** | flgo | warning | `tolerance_flgo_interne_m3` = 2° | — |
 | R26 | Chaînage : port d'arrivée du voyage N = port de départ du voyage N+1 (même navire) | voyage | warning | — | — |
+| R27 | Voyage en cours à la bascule d'année civile (31/12 24:00 UTC) sans événement Cut-off finalisé (G1, CDC v0.7 §9.2/§14.1) | voyage | warning → bloquant (escalade) | `tolerance_cutoff_h` = 24° ; `rappel_cutoff_avant_j` = 7° | **manager_maritime + administrateur** |
+| R28 | Distance haversine calculée (entre 2 Noon consécutifs) vs distance loguée par le bord (delta `distance_from_sosp_nm`) — sous-estimation systématique possible en flotte vélique, dégrade artificiellement l'EF_MRV affiché (G4, Matrice §8). Ne corrige jamais la distance utilisée pour Transport Work/EF_MRV | event | warning | `tolerance_distance_haversine_nm` = 20° | — |
 | IR01 | Doublon de **jour** + type d'événement dans la séquence | event | bloquant | — | — |
 | IR02 | ROB(J) ≈ ROB(J−1) − conso ± soutage : écart > critique → bloquant ; > mineur → warning ; conso inconnue ⇒ abstention (relayé par R14) | event | bloquant / warning | bornes R14 (`mineur` 0,5° / `critique` 5°) ; `densite_defaut_t_m3` | — |
 | IR03 | ROB strictement **figé** sur ≥ N relevés consécutifs malgré une conso (cas réel : figé 4 j puis saut −7,6 t) ; conso totalement inconnue = suspect aussi | event | warning | `ir03_min_reports_figes` = 3° ; `ir03_conso_min_t` = 0,05° | — |
 | IR04 | Compteur carburant **régressant** sans reset documenté (`is_counter_reset`). Distinct de R10 : IR04 accepte un reset documenté, R10 exige la **confirmation** Administrateur | event | bloquant | — | — |
 | IR05 | Position strictement figée sur ≥ N relevés consécutifs **en mer** (Noon) malgré la marche | event | warning | `ir05_min_reports_figes` = 3° | — |
 
-Récapitulatif des seuils : **27 lignes** seedées, dont **21 provisoires** (°)
+Récapitulatif des seuils : **30 lignes** seedées, dont **24 provisoires** (°)
 et 6 confirmées (750 L/j ×2, 24 h, 0,845, 0,015, 300 t).
-<!-- source: validation_engine.py:161-232 -->
+<!-- source: validation_engine.py -->
 
 ### 5.1 Taxonomie qualité transverse
 
@@ -675,8 +678,10 @@ tonnage) — sinon **`theoretical`** (forfait 1,5 g/t·km). `resolve_distance_nm
    calibrer après le voyage pilote (écran `/mrv/parametres`). Les sévérités ont
    été choisies prudentes en attendant.
 3. **Distance OVDLA = haversine entre événements** (positions déclarées), pas la
-   distance loguée réelle. Amélioration identifiée au lot 10 : brancher une
-   distance journalisée (log/`voyage_track`).
+   distance loguée réelle — sous-estimation possible en flotte vélique
+   (louvoiement), jamais corrigée automatiquement mais désormais **visible**
+   (R28, G4 : écart vs `distance_from_sosp_nm` loguée par le bord). Amélioration
+   identifiée au lot 10 : brancher une distance journalisée (log/`voyage_track`).
 4. **Sourcing CH₄/N₂O/WtT non formalisé (Q12)** : les valeurs (5·10⁻⁵ /
    1,8·10⁻⁴ / 17,7) reprennent le template CFOTE_09 et le PDF DNV, sans
    référence réglementaire tracée ligne à ligne. À sourcer avant toute

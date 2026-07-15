@@ -100,6 +100,7 @@ _D = {
     "seuil_conso_ref_l_j": Decimal("750"),
     "borne_max_rob_t": Decimal("300"),
     "tolerance_distance_manuelle_nm": Decimal("20"),
+    "tolerance_distance_haversine_nm": Decimal("20"),
     "tolerance_datetime_escale_h": Decimal("6"),
     "tolerance_duree_rapport_h": Decimal("2"),
     "seuil_rob_ecart_mineur_t": Decimal("0.5"),
@@ -568,6 +569,53 @@ async def _r09_distance_datetime(ctx: RuleContext) -> list[CheckOutcome]:
                     )
                 )
     return outs or _ok("R09 — cohérence distance/horodatage conforme.")
+
+
+@rule("R28")
+async def _r28_haversine_vs_logged_distance(ctx: RuleContext) -> list[CheckOutcome]:
+    """R28 — cohérence distance haversine calculée vs distance loguée par le
+    bord (revue technique 09/07, Matrice §8) : le calcul haversine sur les
+    positions Event sous-estime systématiquement la distance parcourue dès
+    que le navire louvoie/dévie pour raison météo (mode d'exploitation
+    normal d'une flotte vélique) — la distance alimentant directement le
+    Transport Work (dénominateur EF_MRV), cet écart doit rester **visible**
+    même s'il n'est jamais corrigé automatiquement (la distance haversine
+    reste la valeur utilisée pour Transport Work/EF_MRV). Warning.
+
+    Distance loguée : delta de ``NoonEvent.distance_from_sosp_nm`` (cumul
+    déclaratif par le bord, indépendant du calcul positionnel) entre deux
+    Noon consécutifs. Recouvrement connu et assumé avec le repli v1 de R09
+    (même dérivation, seuil ``tolerance_distance_manuelle_nm`` différent) —
+    à résorber par G16 (recentrage de R09 sur les positions manuelles
+    ``Manuel_justifie`` uniquement, Matrice §3)."""
+    if _event_type(ctx.subject) != "noon" or ctx.prev is None:
+        return _ok("R28 — non applicable (pas un Noon, ou premier relevé de la séquence).")
+    cur_s = _as_decimal(_get(ctx.subject, "distance_from_sosp_nm"))
+    prev_s = _as_decimal(_get(ctx.prev, "distance_from_sosp_nm"))
+    if cur_s is None or prev_s is None:
+        return _ok("R28 — distance loguée (SOSP) indisponible.")
+    logged = cur_s - prev_s
+    calc = _distance_nm(ctx.prev, ctx.subject)
+    if calc is None:
+        return _ok("R28 — position(s) indisponible(s) pour le calcul haversine.")
+    tol = await _thr(ctx, "tolerance_distance_haversine_nm")
+    ecart = abs(logged - calc)
+    if ecart > tol:
+        return [
+            CheckOutcome(
+                "fail",
+                f"R28 — distance haversine {calc:.1f} nm vs loguée (SOSP) {logged} nm "
+                f"(écart {ecart:.1f} nm > {tol} nm).",
+                {
+                    "haversine_nm": str(calc),
+                    "logged_nm": str(logged),
+                    "ecart_nm": str(ecart),
+                    "tolerance_nm": str(tol),
+                },
+                severity="warning",
+            )
+        ]
+    return _ok("R28 — distance haversine cohérente avec la distance loguée.")
 
 
 @rule("R10")

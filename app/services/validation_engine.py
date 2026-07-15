@@ -2,7 +2,7 @@
 
 Ce module fournit :
 
-1. **Le catalogue seedé** (``RULE_SEED`` = 31 règles, ``THRESHOLD_SEED`` =
+1. **Le catalogue seedé** (``RULE_SEED`` = 33 règles, ``THRESHOLD_SEED`` =
    seuils paramétrables, ``DASHBOARD_SEED`` = paramètres dashboard) et une
    fonction de seed idempotente (``seed_reference_data``) utilisée par le
    boot dev (``create_all`` sans migration) et par l'action d'init admin.
@@ -260,6 +260,17 @@ RULE_SEED: tuple[tuple[str, str, str, str, str, bool], ...] = (
         "Cut-off finalisé — bloque la consolidation MRV au-delà de tolerance_cutoff_h.",
         "warning",
         "voyage",
+        True,
+    ),
+    (
+        "R28",
+        "Distance haversine vs loguée (SOSP)",
+        "Distance haversine calculée entre deux Noon consécutifs vs distance loguée par "
+        "le bord (delta distance_from_sosp_nm) — sous-estimation systématique possible "
+        "en flotte vélique (louvoiement), dégrade artificiellement l'EF_MRV affiché "
+        "(Matrice §8, revue technique 09/07). N'est jamais corrigée automatiquement.",
+        "warning",
+        "event",
         True,
     ),
     (
@@ -551,6 +562,17 @@ THRESHOLD_SEED: tuple[tuple[str, str, str, str, bool, str], ...] = (
         "Fenêtre de rappel au Master avant l'approche de la bascule d'année "
         "(CDC v0.7 §9.2 : « rappel système au Master à l'approche de "
         "l'échéance »), proposition.",
+    ),
+    (
+        "R28",
+        "tolerance_distance_haversine_nm",
+        "20",
+        "nm",
+        True,
+        "Écart acceptable entre distance haversine calculée et distance loguée "
+        "(SOSP) — aucune valeur proposée par la Matrice §8 (« à confirmer avec "
+        "le métier, nouveau »), alignée sur tolerance_distance_manuelle_nm (R09) "
+        "à défaut d'un chiffre métier.",
     ),
 )
 

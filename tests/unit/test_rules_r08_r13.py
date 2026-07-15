@@ -1,11 +1,12 @@
 """LOT 8 — règles R08-R13 (scope event, mesures) : tests table-driven.
 
 R08 (consommation + complétude escale amendée), R09 v1/v2 (distance vs
-trajectoire, datetime d'escale vs référence), R10 complet (régression
-compteur : warning routé admin / reset confirmé / escalade bloquante) — ≥ 3
-cas chacun (pass / fail / limite exacte au seuil). R11/R12/R13 sont déjà
-couverts table-driven dans ``tests/unit/test_validation_engine.py`` (lot 2) —
-leur sémantique lot 2 est CONSERVÉE (réconciliation documentée dans
+trajectoire, datetime d'escale vs référence), R28 (G4 — distance haversine
+vs distance loguée SOSP, Matrice §8), R10 complet (régression compteur :
+warning routé admin / reset confirmé / escalade bloquante) — ≥ 3 cas chacun
+(pass / fail / limite exacte au seuil). R11/R12/R13 sont déjà couverts
+table-driven dans ``tests/unit/test_validation_engine.py`` (lot 2) — leur
+sémantique lot 2 est CONSERVÉE (réconciliation documentée dans
 ``validation_engine`` et ``validation_rules_catalog``).
 """
 
@@ -291,6 +292,82 @@ async def test_r09_v2_portcall_datetime_vs_reference(db, gap_h, result):
     assert out[0].result == result
     if result == "fail":
         assert out[0].severity == "warning"
+
+
+# ═════════════════════════════════════ R28 — haversine vs distance loguée (SOSP)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sosp_delta,result",
+    [
+        (Decimal("5"), "pass"),
+        (Decimal("20"), "pass"),  # limite exacte == tolérance (calc = 0 nm)
+        (Decimal("20.1"), "fail"),  # au-delà
+    ],
+)
+async def test_r28_haversine_vs_logged_distance(db, sosp_delta, result):
+    """Positions identiques → distance haversine = 0 nm exactement, la
+    tolérance devient la borne (même patron que R09 v1, seuil distinct)."""
+    prev = _ev(
+        "noon",
+        T0,
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_from_sosp_nm=Decimal("100"),
+    )
+    cur = _ev(
+        "noon",
+        T0 + timedelta(hours=24),
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_from_sosp_nm=Decimal("100") + sosp_delta,
+    )
+    out = await _run(db, "R28", [prev, cur], 1)
+    assert out[0].result == result
+    if result == "fail":
+        assert out[0].severity == "warning"
+
+
+@pytest.mark.asyncio
+async def test_r28_abstains_on_non_noon_event(db):
+    """Champ ``distance_from_sosp_nm`` propre au Noon — pas de contrôle sur
+    un Departure/Arrival/Anchoring."""
+    prev = _ev(
+        "noon",
+        T0,
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_from_sosp_nm=Decimal("0"),
+    )
+    cur = _ev(
+        "departure", T0 + timedelta(hours=24), lat_decimal=Decimal("10"), lon_decimal=Decimal("10")
+    )
+    out = await _run(db, "R28", [prev, cur], 1)
+    assert out[0].result == "pass"
+
+
+@pytest.mark.asyncio
+async def test_r28_abstains_on_first_event_in_sequence(db):
+    cur = _ev(
+        "noon",
+        T0,
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_from_sosp_nm=Decimal("0"),
+    )
+    out = await _run(db, "R28", [cur], 0)
+    assert out[0].result == "pass"
+
+
+@pytest.mark.asyncio
+async def test_r28_abstains_without_logged_sosp_distance(db):
+    prev = _ev("noon", T0, lat_decimal=Decimal("10"), lon_decimal=Decimal("10"))
+    cur = _ev(
+        "noon", T0 + timedelta(hours=24), lat_decimal=Decimal("10"), lon_decimal=Decimal("10")
+    )
+    out = await _run(db, "R28", [prev, cur], 1)
+    assert out[0].result == "pass"
 
 
 # ═════════════════════════════════════════════ R10 — compteurs (amendé)
