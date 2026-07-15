@@ -56,15 +56,16 @@ async def test_get_renders_after_seed(db, staff_user):
     assert resp.status_code == 200
     assert resp.template.name == "staff/mrv/parametres.html"
     ctx = resp.context
-    assert len(ctx["rules"]) == 31
+    assert len(ctx["rules"]) == 32
     # 20 (lot 2) + 1 (lot 6 : R24:fenetre_rattachement_bunker_j) + 1 (lot 4 :
     # R19:delai_alerte_siege_brouillon_h) + 5 (lot 8 : R04:tolerance_datetime_futur_h,
     # R10:delai_confirmation_reset_j, IR03:ir03_min_reports_figes,
-    # IR03:ir03_conso_min_t, IR05:ir05_min_reports_figes).
-    assert len(ctx["thr_global"]) == 27
+    # IR03:ir03_conso_min_t, IR05:ir05_min_reports_figes) + 1 (G1 :
+    # R27:tolerance_cutoff_h).
+    assert len(ctx["thr_global"]) == 28
     assert len(ctx["dash_global"]) == 4
-    # 14 (lot 2) + 1 (lot 6) + 1 (lot 4) + 5 (lot 8) — tous provisoires (Q8).
-    assert ctx["provisional_count"] == 21
+    # 14 (lot 2) + 1 (lot 6) + 1 (lot 4) + 5 (lot 8) + 1 (G1) — tous provisoires (Q8).
+    assert ctx["provisional_count"] == 22
 
 
 # ──────────────────────────── init idempotent ────────────────────────────
@@ -77,11 +78,11 @@ async def test_init_route_seeds_idempotently(db, staff_user):
     r1 = await mrv_parametres_init(FakeRequest(), db=db, user=staff_user)
     assert r1.status_code == 303
     n1 = len((await db.execute(select(ValidationRule))).scalars().all())
-    assert n1 == 31
+    assert n1 == 32
     # Deuxième appel = no-op (pas de doublon).
     await mrv_parametres_init(FakeRequest(), db=db, user=staff_user)
     n2 = len((await db.execute(select(ValidationRule))).scalars().all())
-    assert n2 == 31
+    assert n2 == 32
 
 
 # ───────────────────────── gate de permission S ─────────────────────────

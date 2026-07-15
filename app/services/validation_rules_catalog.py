@@ -1184,6 +1184,63 @@ async def _r26_voyage_chaining(ctx: RuleContext) -> list[CheckOutcome]:
     return _ok("R26 — chaînage des voyages conforme.")
 
 
+@rule("R27")
+async def _r27_year_end_cutoff(ctx: RuleContext) -> list[CheckOutcome]:
+    """R27 — Coupure d'exercice MRV (Year-End Cut-off, G1/CDC v0.7 §9.2/§10.1/
+    §14.1) : un voyage en cours à la bascule d'année civile (31/12 24:00 UTC
+    ⇔ 01/01 00:00 UTC) doit porter un événement ``cutoff`` finalisé
+    exactement à cet instant. Warning avant ``tolerance_cutoff_h``, bloquant
+    au-delà — bloque la consolidation MRV (génération des Carbon Reports
+    scindés, commit 5/6) tant que non résolu.
+
+    Hypothèse simplificatrice actée avec le porteur du projet : au plus une
+    bascule d'année par voyage (rotations de la flotte 3-5 semaines, jamais
+    deux 31/12 sur le même voyage en pratique)."""
+    if ctx.leg is None:
+        return []
+    leg = ctx.leg
+    start = _norm_dt(_get(leg, "atd"))
+    if start is None:
+        return []  # voyage pas encore parti — rien à borner
+    now = _norm_dt(ctx.now) or datetime.now(UTC).replace(tzinfo=None)
+    end = _norm_dt(_get(leg, "ata")) or now
+    boundary = datetime(start.year + 1, 1, 1)
+    if not (start <= boundary <= end):
+        return _ok("R27 — voyage sans bascule d'année civile.")
+    if boundary > now:
+        return _ok("R27 — bascule d'année à venir, hors fenêtre de contrôle.")
+
+    from app.services import inter_event_compute as iec
+
+    events = await iec.finalized_events_for_leg(ctx.db, leg.id)
+    has_cutoff = any(_event_type(e) == "cutoff" and _dt(e) == boundary for e in events)
+    if has_cutoff:
+        return _ok("R27 — événement Cut-off finalisé à la bascule d'année.")
+
+    tol_h = await _thr(ctx, "tolerance_cutoff_h")
+    late_h = Decimal(str((now - boundary).total_seconds() / 3600))
+    stale = late_h > tol_h
+    return [
+        CheckOutcome(
+            "fail",
+            f"R27 — voyage {leg.leg_code} en cours à la bascule d'année civile "
+            f"({boundary.date()}) sans événement Cut-off finalisé"
+            + (
+                " — bloque la consolidation MRV (délai de tolérance dépassé)."
+                if stale
+                else f" — tolérance {tol_h} h avant escalade."
+            ),
+            {
+                "boundary": boundary.isoformat(),
+                "late_h": str(late_h),
+                "tolerance_h": str(tol_h),
+            },
+            subject=leg,
+            severity="bloquant" if stale else "warning",
+        )
+    ]
+
+
 # ════════════════════════════════════════════════════════════ Scope BUNKER
 
 
@@ -1507,6 +1564,14 @@ def _alert_roles(r: QualityCheckResult) -> tuple[str, ...]:
     if r.rule_id == "R24":
         return _ADMIN
     if r.rule_id == "R14" and r.severity_applied == "bloquant":
+        return _R14_CRITIQUE
+    if r.rule_id == "R27":
+        # Notifie l'Environmental Manager dès le warning (pas seulement à
+        # l'escalade bloquante) — CDC v0.7 §14.1 : « rappel système au Master
+        # à l'approche de l'échéance » complété ici par une alerte siège dès
+        # que la bascule est franchie sans Cut-off. Pas de rôle « Environmental
+        # Manager » dédié dans app/permissions.py — mappé sur manager_maritime,
+        # déjà utilisé pour R14 critique/R19 2ᵉ palier (même patron).
         return _R14_CRITIQUE
     return ()
 

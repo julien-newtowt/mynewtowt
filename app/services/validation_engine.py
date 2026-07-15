@@ -254,6 +254,15 @@ RULE_SEED: tuple[tuple[str, str, str, str, str, bool], ...] = (
         True,
     ),
     (
+        "R27",
+        "Cut-off fin d'année",
+        "Voyage en cours à la bascule d'année civile (31/12 24:00 UTC) sans événement "
+        "Cut-off finalisé — bloque la consolidation MRV au-delà de tolerance_cutoff_h.",
+        "warning",
+        "voyage",
+        True,
+    ),
+    (
         "IR01",
         "Séquence dates",
         "Doublon (même date+type, bloquant), saut >2 jours (warning), date antérieure au "
@@ -523,6 +532,15 @@ THRESHOLD_SEED: tuple[tuple[str, str, str, str, bool, str], ...] = (
         "t",
         False,
         "Borne haute de plausibilité du ROB (aligné R06 >300 t).",
+    ),
+    (
+        "R27",
+        "tolerance_cutoff_h",
+        "24",
+        "h",
+        True,
+        "Délai de tolérance après la bascule d'année avant escalade bloquante "
+        "de R27 (CDC v0.7 §14.1, proposition).",
     ),
 )
 

@@ -9,6 +9,9 @@
   capacités en Info Q11), **R24** (soutage sans FLGO Received → warning routé
   admin), **R25** (2 volets FLGO), **R26** (chaînage des voyages) — ≥ 3 cas
   chacun (pass / fail / limite exacte).
+- **R27** (Cut-off fin d'année, G1) : voyage sans bascule d'année (pass),
+  bascule à venir (pass), bascule franchie sans Cut-off (warning puis
+  bloquant après tolérance), Cut-off finalisé présent (pass).
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ from app.models.bunker import BunkerOperation, BunkerTankAllocation
 from app.models.env_report import EnvReport
 from app.models.flgo import FlgoReading
 from app.models.leg import Leg
-from app.models.nav_event import DepartureEvent
+from app.models.nav_event import CutoffEvent, DepartureEvent
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.models.vessel_env import VesselTank
@@ -108,6 +111,8 @@ async def _leg(
     arr_c="BR",
     etd=T0,
     status="planned",
+    atd=None,
+    ata=None,
 ):
     from sqlalchemy import select
 
@@ -134,6 +139,8 @@ async def _leg(
         etd=etd,
         eta=etd + timedelta(days=5),
         status=status,
+        atd=atd,
+        ata=ata,
     )
     db.add(leg)
     await db.flush()
@@ -608,3 +615,110 @@ async def test_r26_no_next_or_cancelled_next_passes(db):
     )
     out2 = await _run(db, "R26", [leg1], vessel=vessel, leg=leg1)
     assert out2[0].result == "pass"
+
+
+# ═════════════════════════════════════════════ R27 — Cut-off fin d'année (G1)
+
+
+@pytest.mark.asyncio
+async def test_r27_voyage_without_boundary_passes(db):
+    """Voyage entièrement dans une même année civile — R27 non applicable."""
+    vessel = await _vessel(db)
+    leg = await _leg(
+        db,
+        vessel,
+        etd=datetime(2026, 3, 1, tzinfo=UTC),
+        atd=datetime(2026, 3, 1, tzinfo=UTC),
+        ata=datetime(2026, 3, 20, tzinfo=UTC),
+    )
+    out = await _run(db, "R27", [leg], vessel=vessel, leg=leg, now=datetime(2026, 4, 1, tzinfo=UTC))
+    assert out[0].result == "pass"
+
+
+@pytest.mark.asyncio
+async def test_r27_abstains_without_departure(db):
+    """Voyage pas encore parti (``atd`` absent) — rien à borner."""
+    vessel = await _vessel(db)
+    leg = await _leg(db, vessel, etd=datetime(2026, 12, 20, tzinfo=UTC), atd=None, ata=None)
+    out = await _run(db, "R27", [leg], vessel=vessel, leg=leg, now=datetime(2027, 1, 5, tzinfo=UTC))
+    assert out == []
+
+
+@pytest.mark.asyncio
+async def test_r27_future_boundary_passes(db):
+    """Voyage en cours mais la bascule d'année n'est pas encore atteinte —
+    hors fenêtre de contrôle (le rappel avant échéance est un service séparé,
+    commit 6/6)."""
+    vessel = await _vessel(db)
+    leg = await _leg(
+        db,
+        vessel,
+        etd=datetime(2026, 12, 20, tzinfo=UTC),
+        atd=datetime(2026, 12, 20, tzinfo=UTC),
+        ata=None,
+    )
+    out = await _run(
+        db, "R27", [leg], vessel=vessel, leg=leg, now=datetime(2026, 12, 30, tzinfo=UTC)
+    )
+    assert out[0].result == "pass"
+
+
+@pytest.mark.asyncio
+async def test_r27_missing_cutoff_warns_within_tolerance(db):
+    """Bascule franchie, aucun Cut-off finalisé, mais dans la fenêtre de
+    tolérance (24 h) — warning, pas encore bloquant."""
+    vessel = await _vessel(db)
+    leg = await _leg(
+        db,
+        vessel,
+        etd=datetime(2026, 12, 20, tzinfo=UTC),
+        atd=datetime(2026, 12, 20, tzinfo=UTC),
+        ata=None,
+    )
+    out = await _run(
+        db, "R27", [leg], vessel=vessel, leg=leg, now=datetime(2027, 1, 1, 12, 0, tzinfo=UTC)
+    )
+    assert out[0].result == "fail" and out[0].severity == "warning"
+    assert "Cut-off" in out[0].message
+
+
+@pytest.mark.asyncio
+async def test_r27_missing_cutoff_blocks_after_tolerance(db):
+    """Au-delà de la tolérance (24 h) sans Cut-off finalisé — bloquant,
+    bloque la consolidation MRV (scission Carbon Report, commit 5/6)."""
+    vessel = await _vessel(db)
+    leg = await _leg(
+        db,
+        vessel,
+        etd=datetime(2026, 12, 20, tzinfo=UTC),
+        atd=datetime(2026, 12, 20, tzinfo=UTC),
+        ata=None,
+    )
+    out = await _run(db, "R27", [leg], vessel=vessel, leg=leg, now=datetime(2027, 1, 3, tzinfo=UTC))
+    assert out[0].result == "fail" and out[0].severity == "bloquant"
+
+
+@pytest.mark.asyncio
+async def test_r27_finalized_cutoff_passes(db):
+    """Un événement Cut-off finalisé exactement à la bascule d'année lève
+    l'alerte, même largement après la tolérance."""
+    vessel = await _vessel(db)
+    leg = await _leg(
+        db,
+        vessel,
+        etd=datetime(2026, 12, 20, tzinfo=UTC),
+        atd=datetime(2026, 12, 20, tzinfo=UTC),
+        ata=None,
+    )
+    cutoff = CutoffEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=datetime(2027, 1, 1, tzinfo=UTC),
+    )
+    db.add(cutoff)
+    await db.flush()
+    out = await _run(
+        db, "R27", [leg], vessel=vessel, leg=leg, now=datetime(2027, 1, 10, tzinfo=UTC)
+    )
+    assert out[0].result == "pass"
