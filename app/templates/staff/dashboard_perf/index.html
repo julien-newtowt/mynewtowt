@@ -1,0 +1,13 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('dashperf_fleet_title', lang) }}{% endblock %}
+{% block content %}
+<header class="mb-4">
+  <span class="kicker">{{ t('dashperf_kicker', lang) }}</span>
+  <h1 class="display">{{ t('dashperf_fleet_title', lang) }}</h1>
+  <p class="text-muted">{{ t('dashperf_fleet_subtitle', lang) }}</p>
+</header>
+
+<div id="dashperf-fleet-content">
+  {% include "staff/dashboard_perf/_fleet_fragment.html" %}
+</div>
+{% endblock %}
