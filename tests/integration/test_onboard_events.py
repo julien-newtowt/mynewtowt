@@ -171,9 +171,11 @@ async def test_new_form_renders(db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("etype", ["departure", "arrival", "anchoring_begin", "anchoring_end"])
+@pytest.mark.parametrize(
+    "etype", ["departure", "arrival", "anchoring_begin", "anchoring_end", "cutoff"]
+)
 async def test_new_form_renders_all_types(db, etype):
-    """Le wizard rend chaque type (branches portcall/anchoring du gabarit)."""
+    """Le wizard rend chaque type (branches portcall/anchoring/cutoff du gabarit)."""
     from app.routers.onboard_router import onboard_event_new_form
 
     v = await _vessel_with_engines(db)
@@ -264,10 +266,13 @@ async def test_create_with_engine_readings(db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("etype", ["departure", "arrival", "anchoring_begin", "anchoring_end"])
+@pytest.mark.parametrize(
+    "etype", ["departure", "arrival", "anchoring_begin", "anchoring_end", "cutoff"]
+)
 async def test_engine_readings_persist_for_all_event_types(db, etype):
     """G2 — les compteurs moteur sont désormais persistés aussi à
-    Departure/Arrival/Anchoring (pas seulement Noon, cf. ``_sync_event_readings``)."""
+    Departure/Arrival/Anchoring/Cut-off (pas seulement Noon, cf.
+    ``_sync_event_readings``)."""
     from app.routers.onboard_router import onboard_event_create
 
     v = await _vessel_with_engines(db)
@@ -335,6 +340,39 @@ async def test_engine_readings_survive_second_edit(db):
     ev = await db.get(NavEvent, event_id)
     assert len(ev.engine_readings) == 1
     assert ev.engine_readings[0].fuel_counter_l == Decimal("34000")
+
+
+@pytest.mark.asyncio
+async def test_cutoff_rob_by_fuel_persists_and_prefills(db):
+    """G1 — le ROB par carburant saisi au Cut-off est persisté
+    (``NavEventRobByFuel``) et préremplis à la réédition, comme les
+    compteurs moteur. Une ligne laissée vide (MGO) est ignorée."""
+    from app.routers.onboard_router import onboard_event_create, onboard_event_edit_form
+
+    v = await _vessel_with_engines(db)
+    leg = await _leg(db, v)
+    user = await _captain(db, assigned_vessel_id=v.id)
+    form = _event_form_for(
+        "cutoff",
+        leg.id,
+        robfuel_type_0="MDO",
+        robfuel_val_0="120.5",
+        robfuel_type_2="VLSFO",
+        robfuel_val_2="30",
+    )
+    resp = await onboard_event_create(FakeRequest(form), db=db, user=user)
+    event_id = int(resp.headers["location"].rstrip("/").split("/")[-2])
+    ev = await db.get(NavEvent, event_id)
+    assert len(ev.rob_by_fuel_readings) == 2
+    by_fuel = {r.fuel_type: r.rob_t for r in ev.rob_by_fuel_readings}
+    assert by_fuel == {"MDO": Decimal("120.5"), "VLSFO": Decimal("30")}
+
+    edit_resp = await onboard_event_edit_form(event_id, FakeRequest(), db=db, user=user)
+    rob_values = edit_resp.context["rob_by_fuel_values"]
+    assert rob_values[0].fuel_type == "MDO"
+    assert rob_values[0].rob_t == Decimal("120.5")
+    assert rob_values[1] is None  # MGO laissé vide
+    assert rob_values[2].fuel_type == "VLSFO"
 
 
 # ════════════════════════════════════ Reprise / garde auteur-seul
@@ -515,11 +553,13 @@ async def test_finalize_manual_position_without_justification_refused(db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("etype", ["departure", "arrival", "anchoring_begin", "anchoring_end"])
+@pytest.mark.parametrize(
+    "etype", ["departure", "arrival", "anchoring_begin", "anchoring_end", "cutoff"]
+)
 async def test_finalize_blocked_without_engine_readings(db, etype):
     """G2 — compteurs moteur obligatoires (R08, bloquant) à la finalisation de
-    Departure/Arrival/Anchoring : sans eux, l'intervalle produirait une
-    consommation silencieusement vide (jamais détectée sinon)."""
+    Departure/Arrival/Anchoring/Cut-off : sans eux, l'intervalle produirait
+    une consommation silencieusement vide (jamais détectée sinon)."""
     from app.routers.onboard_router import onboard_event_create, onboard_event_finalize
 
     v = await _vessel_with_engines(db)
@@ -537,7 +577,9 @@ async def test_finalize_blocked_without_engine_readings(db, etype):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("etype", ["departure", "arrival", "anchoring_begin", "anchoring_end"])
+@pytest.mark.parametrize(
+    "etype", ["departure", "arrival", "anchoring_begin", "anchoring_end", "cutoff"]
+)
 async def test_finalize_ok_with_engine_readings(db, etype):
     """Contrepartie du test précédent : les compteurs présents suffisent à
     lever le blocage R08 (aucune autre régression introduite par G2)."""

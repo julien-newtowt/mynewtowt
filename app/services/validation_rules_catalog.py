@@ -223,8 +223,8 @@ def _fuel_delta_l(prev: Any, cur: Any) -> tuple[Decimal | None, bool]:
 
 async def _r08_missing_engine_readings(ctx: RuleContext) -> list[CheckOutcome]:
     """G2 — compteurs moteur obligatoires à la finalisation de Departure/
-    Arrival/Anchoring (le Noon les demande déjà et reste couvert par les
-    volets « conso nulle »/« conso hors seuil » ci-dessous).
+    Arrival/Anchoring/Cut-off (le Noon les demande déjà et reste couvert par
+    les volets « conso nulle »/« conso hors seuil » ci-dessous).
 
     S'abstient (règle duck-typée, cf. principes en tête de fichier) si le
     contexte ne permet pas de trancher : pas de navire connu, ou navire sans
@@ -439,12 +439,12 @@ async def _r08_consumption(ctx: RuleContext) -> list[CheckOutcome]:
     hors seuil cible (``seuil_conso_ref_l_j``) → warning ; complétude escale
     (amendement : conso escale absente > seuil jours ⇒ estimation défaut
     ``conso_estimee_defaut_t_j`` = 0,21 t/j TRACÉE) ; compteurs moteur
-    manquants à Departure/Arrival/Anchoring → bloquant (G2, cf.
+    manquants à Departure/Arrival/Anchoring/Cut-off → bloquant (G2, cf.
     ``_r08_missing_engine_readings`` — sans ça, l'intervalle produirait une
     conso silencieusement vide, jamais détectée par les volets ci-dessous).
     Matrice §1 + §5."""
     et0 = _event_type(ctx.subject)
-    if et0 in _PORTCALL_TYPES + _ANCHORING_TYPES:
+    if et0 in _PORTCALL_TYPES + _ANCHORING_TYPES + ("cutoff",):
         missing = await _r08_missing_engine_readings(ctx)
         if missing:
             return missing

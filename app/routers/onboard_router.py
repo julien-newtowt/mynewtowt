@@ -34,9 +34,11 @@ from app.models.nav_event import (
     NAV_TIME_SLOTS,
     POSITION_SOURCES,
     VESSEL_CONDITIONS,
+    CutoffEvent,
     NavEvent,
     NavEventEngineReading,
     NavEventHoldReading,
+    NavEventRobByFuel,
     NavEventSailReading,
     NavEventWeatherReading,
     NoonEvent,
@@ -1582,6 +1584,16 @@ async def _sync_event_readings(db: AsyncSession, event: NavEvent, f, engines) ->
             )
         )
 
+    if isinstance(event, CutoffEvent):
+        await db.refresh(event, ["rob_by_fuel_readings"])
+        event.rob_by_fuel_readings.clear()
+        for i in range(len(_CUTOFF_FUEL_TYPES)):
+            fuel_type = _clean_str(f.get(f"robfuel_type_{i}"))
+            rob = _dec(f.get(f"robfuel_val_{i}"))
+            if not fuel_type or rob is None:
+                continue
+            event.rob_by_fuel_readings.append(NavEventRobByFuel(fuel_type=fuel_type, rob_t=rob))
+
     if not isinstance(event, NoonEvent):
         return
 
@@ -1751,6 +1763,14 @@ async def _event_form_context(
         for r in event.hold_readings:
             hold_by_zone.setdefault(r.zone, {})[r.period] = r
 
+    # ROB par carburant (CutoffEvent uniquement, G1) — préremplissage par
+    # index de ligne (fuel_type est du texte libre, pas une clé référentielle
+    # comme engine_id).
+    rob_by_fuel_values: list[NavEventRobByFuel | None] = [None] * len(_CUTOFF_FUEL_TYPES)
+    if isinstance(event, CutoffEvent):
+        by_fuel = {r.fuel_type: r for r in event.rob_by_fuel_readings}
+        rob_by_fuel_values = [by_fuel.get(ft) for ft in _CUTOFF_FUEL_TYPES]
+
     open_begins: list[NavEvent] = []
     if event_type == "anchoring_end" and leg is not None:
         anchorings = list(
@@ -1796,6 +1816,8 @@ async def _event_form_context(
         "weather_by_slot": weather_by_slot,
         "sail_by_slot": sail_by_slot,
         "hold_by_zone": hold_by_zone,
+        "cutoff_fuel_types": list(enumerate(_CUTOFF_FUEL_TYPES)),
+        "rob_by_fuel_values": rob_by_fuel_values,
         "open_begins": open_begins,
         "prefill_pos": prefill_pos,
         "default_dt_local": now.strftime("%Y-%m-%dT%H:%M"),
@@ -1822,7 +1844,14 @@ _EVENT_TYPE_LABELS: dict[str, str] = {
     "arrival": "Arrivée (Arrival)",
     "anchoring_begin": "Début de mouillage",
     "anchoring_end": "Fin de mouillage",
+    "cutoff": "Cut-off de fin d'année (Year-End Cut-off)",
 }
+
+# Carburants proposés au formulaire Cut-off (ROB par carburant, G1) — texte
+# libre côté modèle (cf. NavEventRobByFuel.fuel_type), mais un nombre fixe de
+# lignes préremplies suffit en pratique (flotte actuelle très majoritairement
+# MDO — cf. referential_env.py, note V1). Lignes laissées vides ignorées.
+_CUTOFF_FUEL_TYPES: tuple[str, ...] = ("MDO", "MGO", "VLSFO")
 
 
 async def _render_event_form(
