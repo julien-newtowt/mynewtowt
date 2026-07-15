@@ -443,6 +443,58 @@ async def test_voyage_detail_legacy_noon_flags_not_event_sourced(db):
     assert resp.context["is_event_sourced"] is False
 
 
+# ═══════════════════════════════════════ Exports voyage — PDF / DOCX (mrv:C) ═══════════════════════════════════════
+
+
+def test_voyage_export_routes_registered():
+    from app.routers import dashboard_perf_router
+
+    paths = {r.path for r in dashboard_perf_router.router.routes}
+    assert "/dashboard-perf/voyages/{leg_id}/export.pdf" in paths
+    assert "/dashboard-perf/voyages/{leg_id}/export.docx" in paths
+
+
+@pytest.mark.asyncio
+async def test_voyage_export_pdf(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_voyage_pdf
+
+    fixture = await _load_1egb5(db)
+    resp = await dashboard_perf_voyage_pdf(fixture.leg.id, db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert resp.media_type == "application/pdf"
+    assert bytes(resp.body).startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
+async def test_voyage_export_docx(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_voyage_docx
+
+    fixture = await _load_1egb5(db)
+    resp = await dashboard_perf_voyage_docx(fixture.leg.id, db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert "wordprocessingml" in resp.media_type
+    # Un .docx est un ZIP (signature "PK").
+    assert bytes(resp.body).startswith(b"PK")
+
+
+@pytest.mark.asyncio
+async def test_voyage_export_pdf_unknown_404(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_voyage_pdf
+
+    with pytest.raises(HTTPException) as exc:
+        await dashboard_perf_voyage_pdf(999999, db=db, user=_admin_user())
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_voyage_export_docx_unknown_404(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_voyage_docx
+
+    with pytest.raises(HTTPException) as exc:
+        await dashboard_perf_voyage_docx(999999, db=db, user=_admin_user())
+    assert exc.value.status_code == 404
+
+
 # ═══════════════════════════════════════ Page 4 — qualité des données (mrv:C) ═══════════════════════════════════════
 
 

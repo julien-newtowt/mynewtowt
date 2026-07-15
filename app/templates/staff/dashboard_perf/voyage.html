@@ -14,15 +14,21 @@
   <span> › </span><strong class="mono">{{ d.leg_code }}</strong>
 </div>
 
-<header class="mb-4">
-  <span class="kicker">{{ t('dashperf_kicker', lang) }}</span>
-  <h1 class="display">{{ t('dashperf_voyage_title', lang) }} · <span class="mono">{{ d.leg_code }}</span></h1>
-  <p class="text-muted">
-    {% if d.dep_port and d.arr_port %}{{ d.dep_port.country|flag }} {{ d.dep_port.name }} → {{ d.arr_port.country|flag }} {{ d.arr_port.name }}{% endif %}
-    ·
-    {% if is_event_sourced %}<span class="pill pill-success text-xs">{{ t('dashperf_source_events', lang) }}</span>
-    {% else %}<span class="pill pill-warn text-xs">{{ t('dashperf_source_' ~ d.source, lang) }}</span>{% endif %}
-  </p>
+<header class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:8px;">
+  <div>
+    <span class="kicker">{{ t('dashperf_kicker', lang) }}</span>
+    <h1 class="display">{{ t('dashperf_voyage_title', lang) }} · <span class="mono">{{ d.leg_code }}</span></h1>
+    <p class="text-muted">
+      {% if d.dep_port and d.arr_port %}{{ d.dep_port.country|flag }} {{ d.dep_port.name }} → {{ d.arr_port.country|flag }} {{ d.arr_port.name }}{% endif %}
+      ·
+      {% if is_event_sourced %}<span class="pill pill-success text-xs">{{ t('dashperf_source_events', lang) }}</span>
+      {% else %}<span class="pill pill-warn text-xs">{{ t('dashperf_source_' ~ d.source, lang) }}</span>{% endif %}
+    </p>
+  </div>
+  <div class="flex gap-2" style="flex-wrap:wrap;">
+    <a href="/dashboard-perf/voyages/{{ d.leg_id }}/export.pdf" class="btn btn-ghost"><i data-lucide="file-text"></i> PDF</a>
+    <a href="/dashboard-perf/voyages/{{ d.leg_id }}/export.docx" class="btn btn-ghost"><i data-lucide="file-down"></i> DOCX</a>
+  </div>
 </header>
 
 {% if not is_event_sourced %}
