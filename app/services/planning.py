@@ -850,7 +850,6 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
     from app.models.crew import CrewAssignment
     from app.models.escale import DockerShift, EscaleOperation
     from app.models.finance import LegFinance, LegKPI
-    from app.models.mrv import MRVEvent
     from app.models.noon_report import NoonReport
     from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 
@@ -873,7 +872,6 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
         (WatchLog, "entrées de quart"),
         (OnboardChecklist, "check-lists onboard"),
         (VisitorLog, "registre visiteurs ISPS"),
-        (MRVEvent, "événements MRV"),
         (CrewAssignment, "affectations équipage"),
         (OrderAssignment, "assignations commande"),
         (RateOffer, "offres tarifaires"),
