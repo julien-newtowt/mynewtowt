@@ -3,11 +3,11 @@
 Écrans siège : hub ``/mrv``, voyages, soutages (BDN), FLGO, qualité,
 paramètres/règles de validation, datasets réglementaires OVDLA/OVDBR.
 
-LOT 14 — décommissionnement du legacy : le CRUD manuel ``mrv_events``, les
-exports CSV DNV (9 et 18 col.) et l'écran ``/params`` (MRVParameter) ont été
-retirés. Les ``mrv_events`` historiques restent consultables en **archive
-lecture seule** (``/mrv/archive/events``) ; la capture d'événements v2 (bord)
-et les datasets OVDLA/OVDBR (siège) sont la voie unique.
+Suppression totale du legacy (CRUD manuel ``mrv_events``, exports CSV DNV 9 et
+18 col., écran ``/params`` MRVParameter — retirés au LOT 14 ; table
+``mrv_events``/``mrv_parameters`` et écran d'archive retirés ensuite, cf.
+migration de suppression). La capture d'événements v2 (bord) et les datasets
+OVDLA/OVDBR (siège) sont la voie unique.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,11 +26,6 @@ from app.database import get_db
 from app.models.bunker import BUNKER_STATUSES, BunkerOperation
 from app.models.flgo import FLGO_ACTION_TYPES, FLGO_SOURCES, FlgoReading
 from app.models.leg import Leg
-
-# LOT 14 — ``mrv_events`` en archive lecture seule (plus de CRUD/sync/recompute).
-# ``MRVEvent`` reste importé pour l'écran d'archive ; ``MRVParameter``,
-# ``recompute_leg`` et le module ``mrv_export`` (CSV DNV) ne sont plus consommés.
-from app.models.mrv import MRVEvent
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.permissions import require_permission
@@ -43,12 +38,9 @@ from app.utils.file_validation import validate_filename, validate_size
 router = APIRouter(prefix="/mrv", tags=["mrv"])
 
 
-# ══════════════════════════════ LOT 14 — hub MRV ════════════════════════════
-# L'ancien ``/mrv`` (table ``mrv_events`` + CRUD manuel + exports DNV 18 col. +
-# écran ``/params``) est décommissionné : la capture d'événements v2 côté bord
-# (``/onboard/events``) et les datasets OVDLA/OVDBR côté siège sont la voie
-# UNIQUE. ``/mrv`` devient un hub de liens ; les ``mrv_events`` historiques
-# restent consultables en archive lecture seule (``/mrv/archive/events``).
+# ══════════════════════════════ hub MRV ════════════════════════════
+# La capture d'événements v2 côté bord (``/onboard/events``) et les datasets
+# OVDLA/OVDBR côté siège sont la voie UNIQUE. ``/mrv`` est un hub de liens.
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 async def mrv_index(
@@ -57,62 +49,10 @@ async def mrv_index(
     user=Depends(require_permission("mrv", "C")),
 ) -> HTMLResponse:
     """Hub MRV — points d'entrée des écrans v2 (voyages, soutages, FLGO,
-    qualité, datasets, paramètres) + compteur d'archive des événements legacy."""
-    archived_events = (await db.execute(select(func.count()).select_from(MRVEvent))).scalar_one()
+    qualité, datasets, paramètres)."""
     return templates.TemplateResponse(
         "staff/mrv/index.html",
-        {"request": request, "user": user, "archived_events": archived_events},
-    )
-
-
-_ARCHIVE_PAGE_SIZE = 50
-
-
-@router.get("/archive/events", response_class=HTMLResponse)
-async def mrv_archive_events(
-    request: Request,
-    page: int = 1,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("mrv", "C")),
-) -> HTMLResponse:
-    """LOT 14 — archive **lecture seule** des ``mrv_events`` legacy.
-
-    Aucune écriture possible (CRUD retiré, sync éteinte) : la table est gelée,
-    conservée pour l'audit et le fallback ledger. Paginée, bandeau explicite.
-    """
-    page = max(1, page)
-    total = (await db.execute(select(func.count()).select_from(MRVEvent))).scalar_one()
-    offset = (page - 1) * _ARCHIVE_PAGE_SIZE
-    events = list(
-        (
-            await db.execute(
-                select(MRVEvent)
-                .order_by(MRVEvent.recorded_at.desc(), MRVEvent.id.desc())
-                .offset(offset)
-                .limit(_ARCHIVE_PAGE_SIZE)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    leg_map: dict[int, Leg] = {}
-    for lid in {e.leg_id for e in events}:
-        leg = await db.get(Leg, lid)
-        if leg is not None:
-            leg_map[lid] = leg
-    has_next = offset + len(events) < total
-    return templates.TemplateResponse(
-        "staff/mrv/archive_events.html",
-        {
-            "request": request,
-            "user": user,
-            "events": events,
-            "leg_map": leg_map,
-            "total": total,
-            "page": page,
-            "has_prev": page > 1,
-            "has_next": has_next,
-        },
+        {"request": request, "user": user},
     )
 
 

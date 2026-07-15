@@ -1,11 +1,13 @@
-"""LOT 14 — bascule capture événementielle & décommissionnement du legacy.
+"""Bascule capture événementielle & décommissionnement du legacy MRV.
 
 Couvre :
 - le helper ``capture_v2_enabled`` (défaut ON, coupure globale, opt-out par
   navire code/id, fail-open) ;
 - la garde du formulaire noon legacy : GET redirige (v2 ON) / renvoie à la page
   navigation (v2 OFF) ; POST refusé 409 (v2 ON) ; rejeu offline 409 explicite ;
-- le décommissionnement des routes/symbols legacy MRV (404/405) + l'archive.
+- le décommissionnement des routes/symbols legacy MRV (404/405). L'ancienne
+  archive lecture seule (``/mrv/archive/events``) a elle-même été supprimée
+  (table ``mrv_events`` DROP) — plus rien à couvrir de ce côté.
 """
 
 from __future__ import annotations
@@ -19,8 +21,7 @@ from sqlalchemy import func, select
 from app.models.feature_flag import FeatureFlag
 from app.models.noon_report import NoonReport
 from app.services import feature_flags as ff
-from tests.integration.conftest import FakeRequest, disable_capture_v2
-from tests.integration.test_mrv_reprise import _setup_leg
+from tests.integration.conftest import FakeRequest, _setup_leg, disable_capture_v2
 
 
 def _vessel(code="ANE", vid=1):
@@ -187,22 +188,14 @@ def test_legacy_crud_symbols_removed():
         "mrv_carbon_report",
         "_apply_event_form",
         "_AdapterMRV",
+        "mrv_archive_events",
     ):
         assert not hasattr(mrv, name), name
 
 
-def test_archive_route_registered():
+def test_archive_route_removed():
+    """La table ``mrv_events`` a été supprimée (DROP) : plus d'archive à servir."""
     from app.routers.mrv_router import router
 
     paths = {r.path for r in router.routes}
-    assert "/mrv/archive/events" in paths
-
-
-@pytest.mark.asyncio
-async def test_archive_screen_renders_readonly(db, staff_user):
-    from app.routers.mrv_router import mrv_archive_events
-
-    resp = await mrv_archive_events(FakeRequest(), page=1, db=db, user=staff_user)
-    assert resp.status_code == 200
-    assert resp.template.name == "staff/mrv/archive_events.html"
-    assert resp.context["total"] == 0
+    assert "/mrv/archive/events" not in paths
