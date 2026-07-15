@@ -134,6 +134,7 @@ def test_event_routes_registered():
         assert p in paths
     api_paths = {r.path for r in onboard_router.api_router.routes}
     assert "/api/mrv/draft-reminders" in api_paths
+    assert "/api/mrv/cutoff-reminders" in api_paths
 
 
 # ════════════════════════════════════ Gate de permission captain:M
@@ -698,4 +699,43 @@ async def test_draft_reminders_cron_ok_with_token(db, monkeypatch):
     req = FakeRequest()
     req.headers = {"x-api-token": "s3cret"}
     resp = await mrv_draft_reminders_cron(req, db=db)
+    assert resp.status_code == 200
+
+
+# ════════════════════════════════════ Cron R27 — approche bascule d'année (G1)
+
+
+@pytest.mark.asyncio
+async def test_cutoff_reminders_cron_503_without_token(db, monkeypatch):
+    from app.routers import onboard_router
+    from app.routers.onboard_router import mrv_cutoff_reminders_cron
+
+    monkeypatch.setattr(onboard_router.settings, "mrv_cutoff_api_token", None)
+    with pytest.raises(HTTPException) as exc:
+        await mrv_cutoff_reminders_cron(FakeRequest(), db=db)
+    assert exc.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_cutoff_reminders_cron_rejects_bad_token(db, monkeypatch):
+    from app.routers import onboard_router
+    from app.routers.onboard_router import mrv_cutoff_reminders_cron
+
+    monkeypatch.setattr(onboard_router.settings, "mrv_cutoff_api_token", "s3cret")
+    req = FakeRequest()
+    req.headers = {"x-api-token": "wrong"}
+    with pytest.raises(HTTPException) as exc:
+        await mrv_cutoff_reminders_cron(req, db=db)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_cutoff_reminders_cron_ok_with_token(db, monkeypatch):
+    from app.routers import onboard_router
+    from app.routers.onboard_router import mrv_cutoff_reminders_cron
+
+    monkeypatch.setattr(onboard_router.settings, "mrv_cutoff_api_token", "s3cret")
+    req = FakeRequest()
+    req.headers = {"x-api-token": "s3cret"}
+    resp = await mrv_cutoff_reminders_cron(req, db=db)
     assert resp.status_code == 200

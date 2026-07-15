@@ -59,7 +59,14 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 from app.permissions import require_permission
-from app.services import bunkering, draft_reminders, event_capture, feature_flags, referential_env
+from app.services import (
+    bunkering,
+    cutoff_reminders,
+    draft_reminders,
+    event_capture,
+    feature_flags,
+    referential_env,
+)
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.vessel_position import get_latest_position
@@ -2186,5 +2193,38 @@ async def mrv_draft_reminders_cron(
         summary["scanned"],
         summary["master"],
         summary["siege"],
+    )
+    return JSONResponse(summary)
+
+
+# ─────────────────── Cron R27 — approche bascule d'année (G1) ──────────────
+
+
+@api_router.post("/api/mrv/cutoff-reminders")
+async def mrv_cutoff_reminders_cron(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cron externe (Power Automate) — rappel R27 d'approche de bascule
+    d'année civile sans événement Cut-off finalisé (CDC v0.7 §9.2).
+
+    Auth ``X-API-Token`` (temps constant) ; 503 si ``MRV_CUTOFF_API_TOKEN``
+    non configuré. Rappel nominatif à chaque utilisateur assigné au navire
+    (idempotent, cf. ``services.cutoff_reminders``)."""
+    expected = (settings.mrv_cutoff_api_token or "").strip() or None
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MRV_CUTOFF_API_TOKEN non configuré dans .env",
+        )
+    received = request.headers.get("x-api-token") or ""
+    if not _secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
+
+    summary = await cutoff_reminders.run_cutoff_reminders(db)
+    logger.info(
+        "R27 cutoff reminders (API cron): scanned=%d notified=%d",
+        summary["scanned"],
+        summary["notified"],
     )
     return JSONResponse(summary)

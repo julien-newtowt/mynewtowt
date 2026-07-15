@@ -542,6 +542,16 @@ THRESHOLD_SEED: tuple[tuple[str, str, str, str, bool, str], ...] = (
         "Délai de tolérance après la bascule d'année avant escalade bloquante "
         "de R27 (CDC v0.7 §14.1, proposition).",
     ),
+    (
+        "R27",
+        "rappel_cutoff_avant_j",
+        "7",
+        "j",
+        True,
+        "Fenêtre de rappel au Master avant l'approche de la bascule d'année "
+        "(CDC v0.7 §9.2 : « rappel système au Master à l'approche de "
+        "l'échéance »), proposition.",
+    ),
 )
 
 # (parameter_name, value, unit) — vessel_id = NULL.

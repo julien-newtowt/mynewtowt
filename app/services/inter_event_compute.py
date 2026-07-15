@@ -42,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.leg import Leg
 from app.models.nav_event import (
     BeginAnchoringEvent,
+    CutoffEvent,
     EndAnchoringEvent,
     NavEvent,
     NavEventEngineReading,
@@ -403,8 +404,19 @@ def compute_interval(
 
 
 def _declared_rob(event: NavEvent) -> Decimal | None:
-    """ROB de référence déclaré — porté UNIQUEMENT par les PortCallEvent (R14-v2)."""
-    return event.rob_t if isinstance(event, PortCallEvent) else None
+    """ROB de référence déclaré — porté par les PortCallEvent (``rob_t``,
+    R14-v2) et, depuis G1, par le CutoffEvent (somme du ROB par carburant
+    ``rob_by_fuel_readings`` — nouvel ancrage de la chaîne ROB, décision
+    produit actée : au même titre qu'un Departure/Arrival, pas une donnée
+    simplement informative)."""
+    if isinstance(event, PortCallEvent):
+        return event.rob_t
+    if isinstance(event, CutoffEvent):
+        readings = [r for r in event.rob_by_fuel_readings if r.rob_t is not None]
+        if not readings:
+            return None
+        return sum((r.rob_t for r in readings), Decimal("0"))
+    return None
 
 
 def compute_rob_chain(events: list[NavEvent], intervals: list[IntervalResult]) -> list[RobPoint]:

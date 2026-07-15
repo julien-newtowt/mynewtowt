@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # Automate : run nocturne du moteur de règles — event + voyage +
     # inter-rapports sur les legs actifs de chaque navire). 503 si non configuré.
     mrv_quality_api_token: str | None = None
+    # G1 — Token X-API-Token pour POST /api/mrv/cutoff-reminders (cron Power
+    # Automate : rappel Master à l'approche d'une bascule d'année civile sans
+    # événement Cut-off finalisé, CDC v0.7 §9.2). 503 si non configuré.
+    mrv_cutoff_api_token: str | None = None
 
     # Marad (MaraSoft « Generic API ») — ship & crew management. Intégration
     # LECTURE SEULE des données crew (cf. docs/integrations/marad-crew-readonly.md).

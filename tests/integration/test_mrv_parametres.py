@@ -60,12 +60,12 @@ async def test_get_renders_after_seed(db, staff_user):
     # 20 (lot 2) + 1 (lot 6 : R24:fenetre_rattachement_bunker_j) + 1 (lot 4 :
     # R19:delai_alerte_siege_brouillon_h) + 5 (lot 8 : R04:tolerance_datetime_futur_h,
     # R10:delai_confirmation_reset_j, IR03:ir03_min_reports_figes,
-    # IR03:ir03_conso_min_t, IR05:ir05_min_reports_figes) + 1 (G1 :
-    # R27:tolerance_cutoff_h).
-    assert len(ctx["thr_global"]) == 28
+    # IR03:ir03_conso_min_t, IR05:ir05_min_reports_figes) + 2 (G1 :
+    # R27:tolerance_cutoff_h, R27:rappel_cutoff_avant_j).
+    assert len(ctx["thr_global"]) == 29
     assert len(ctx["dash_global"]) == 4
-    # 14 (lot 2) + 1 (lot 6) + 1 (lot 4) + 5 (lot 8) + 1 (G1) — tous provisoires (Q8).
-    assert ctx["provisional_count"] == 22
+    # 14 (lot 2) + 1 (lot 6) + 1 (lot 4) + 5 (lot 8) + 2 (G1) — tous provisoires (Q8).
+    assert ctx["provisional_count"] == 23
 
 
 # ──────────────────────────── init idempotent ────────────────────────────
