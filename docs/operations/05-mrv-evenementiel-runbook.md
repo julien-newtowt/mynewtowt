@@ -25,7 +25,7 @@ tous les seuils vivent en base (`validation_rule_thresholds`), zéro littéral. 
 **rapports générés** (Noon/Carbon/Stopover) suivent un workflow brouillon →
 validé Master → validé siège (Carbon). Les sorties réglementaires **OVDLA/OVDBR**
 (`services/mrv_dataset.py`) remplacent le CSV DNV 18 colonnes. Un **dashboard**
-4 pages (`/dashboard-env`) restitue le tout. La bascule est pilotée par le
+5 pages (`/dashboard-perf`) restitue le tout. La bascule est pilotée par le
 feature flag `mrv_v2_capture` (défaut ON, opt-out par navire).
 
 ## 2. Les 3 crons Power Automate

@@ -37,7 +37,6 @@ from app.routers import (
     client_dashboard_router,
     commercial_router,
     crew_router,
-    dashboard_env_router,
     dashboard_perf_router,
     devis_router,
     escale_router,
@@ -130,11 +129,8 @@ def create_app() -> FastAPI:
     app.include_router(mrv_router.api_router)  # LOT 8 — cron /api/mrv/quality-run
     # ─── Phase 4 ERP : kpi / finance ───
     app.include_router(kpi_router.router)
-    # LOT 11 — dashboard performance environnementale
-    app.include_router(dashboard_env_router.router)
-    # NC-01/NC-04 — reconstruction v2 du dashboard, exclusivement event-driven
-    # (coexiste avec dashboard_env_router tant que l'action 6 du plan d'audit,
-    # décommissionnement, n'est pas engagée)
+    # NC-01/NC-04 — dashboard performance environnementale, exclusivement event-driven.
+    # Remplace dashboard_env_router (LOT 11/12), décommissionné action 6 du plan d'audit.
     app.include_router(dashboard_perf_router.router)
     app.include_router(navigation_router.router)
     app.include_router(navigation_router.api_router)

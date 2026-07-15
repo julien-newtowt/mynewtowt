@@ -172,11 +172,11 @@ Application par fonction (mapping Q4, décision actée) :
 | **Master (bord)** : déclarer/finaliser événements, soutages, valider Master | `captain:M` (`/onboard/events`, `POST /onboard/events` etc.) + garde applicative « auteur seul » sur les brouillons |
 | **Environmental Manager / DPA (siège)** : revue, validation siège du Carbon, qualité, datasets | `mrv:C` (revue) / `mrv:M` (validation, génération datasets, acquittements, confirm-reset R10) |
 | **Administrateur / QHSE** : seuils, paramètres dashboard, init référentiel | `mrv:S` (`/mrv/parametres`) + écrans `/admin/flotte-env`, `/admin/emission-factors` (module `admin`) |
-| **Tout utilisateur** : dashboard page 1 | `kpi:C` (`/dashboard-env`) |
+| **Tout utilisateur** : dashboard page 1 | `kpi:C` (`/dashboard-perf`) |
 
 <!-- source: onboard_router.py:1909-1914 (captain:M) ; mrv_router.py:151-157
-     (parametres mrv:S), 937-1007 (validations mrv:M) ; dashboard_env_router.py:133
-     (kpi:C), 554/592 (mrv:C), 237 (mrv:S) -->
+     (parametres mrv:S), 937-1007 (validations mrv:M) ; dashboard_perf_router.py
+     (kpi:C page 1, mrv:C pages 2-4, mrv:S page 5) -->
 
 > Note : `operation`, `technique` et `manager_maritime` détiennent `mrv:M` par
 > défaut — la validation siège leur est donc accessible. Resserrable **en base**
@@ -624,16 +624,26 @@ tonnage) — sinon **`theoretical`** (forfait 1,5 g/t·km). `resolve_distance_nm
 (Σ `co2_avoided_kg`) est inchangé (suite de non-régression gelée).
 <!-- source: anemos.py:17-19,183-209 ; test_emission_nonregression.py -->
 
-### 7.4 Dashboard Performance Environnementale (`/dashboard-env`)
+### 7.4 Dashboard Performance Environnementale (`/dashboard-perf`)
+
+Reconstruit sur le contrat d'interface figé de `kpi_env`
+(`DASHBOARD_CONTRACT_VERSION`, `tests/regression/test_dashboard_contract.py`) ;
+remplace `dashboard-env` (LOT 11/12), décommissionné une fois la parité
+fonctionnelle atteinte. Différence structurante : les pages 1/2 sont
+appelées en mode `strict=True` (NC-04) — un voyage dont la donnée n'est pas
+`source="events"` (repli `legacy_noon`/`legacy_kpi`) est exclu des totaux,
+jamais mélangé en silence ; son décompte (`legs_excluded_non_event`) est
+affiché explicitement.
 
 | Page | Route | Permission | Contenu |
 |---|---|---|---|
-| 1. Vue flotte | `GET /dashboard-env` | `kpi:C` | CO₂ émis / évité (×2 comparateurs), distance, EF moyen — **sélecteur de méthode A/B/C explicite**, tendance 12 mois |
-| 2. Suivi opérationnel | `GET /dashboard-env/vessels/{id}` (`kpi:C`) → `GET /dashboard-env/voyages/{leg_id}` (`mrv:C`) | `kpi:C` / `mrv:C` | drill-down navire → voyage → événements : ROB timeline (sources Departure/Arrival + marqueurs soutage), conso vs cible, répartition ME/AE, **profil de propulsion 4 h** (+ complétude), carte |
-| 3. Qualité | `GET /dashboard-env/quality` | `mrv:C` | anomalies par sévérité/règle, resets en attente, soutages non recoupés, complétude |
-| 4. Administration | `GET /dashboard-env/parameters` (+ `POST …/{id}/update`) | `mrv:S` | paramètres dashboard (occupancy, capacité, EF comparateurs) |
-| Exports | `GET /dashboard-env/voyages/{leg_id}/export.pdf` / `.docx` | `mrv:C` | dossier voyage (WeasyPrint / python-docx) |
-<!-- source: dashboard_env_router.py:125-133,233-280,501-663 -->
+| 1. Vue flotte | `GET /dashboard-perf` | `kpi:C` | CO₂ émis / évité (×2 comparateurs), distance, EF moyen — **sélecteur de méthode A/B/C explicite**, tendance 12 mois, totaux `strict` |
+| 2. Suivi opérationnel | `GET /dashboard-perf/vessels/{id}` (`kpi:C`) → `GET /dashboard-perf/voyages/{leg_id}` (`mrv:C`) | `kpi:C` / `mrv:C` | drill-down navire → voyage → événements : ROB timeline (sources Departure/Arrival + marqueurs soutage), conso vs cible, répartition ME/AE, **profil de propulsion 4 h** (+ complétude), carte ; totaux `strict`, liste des voyages complète avec `source` par ligne |
+| 3. Détail voyage | `GET /dashboard-perf/voyages/{leg_id}` | `mrv:C` | bandeau explicite si `source != "events"` (pas d'agrégat à filtrer, rien de silencieux) |
+| 4. Qualité | `GET /dashboard-perf/quality` | `mrv:C` | anomalies par sévérité/règle, resets en attente, soutages non recoupés, complétude — aucun traitement NC-04 (tables déjà exclusivement event-sourcées) |
+| 5. Administration | `GET /dashboard-perf/parameters` (+ `POST …/{id}/update`) | `mrv:S` | paramètres dashboard (occupancy, capacité, EF comparateurs) |
+| Exports | `GET /dashboard-perf/voyages/{leg_id}/export.pdf` / `.docx` | `mrv:C` | dossier voyage (WeasyPrint / python-docx) |
+<!-- source: dashboard_perf_router.py -->
 
 ---
 
