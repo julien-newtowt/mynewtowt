@@ -1,0 +1,20 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('dashperf_vessel_title', lang) }} — {{ op.vessel_name }}{% endblock %}
+{% block content %}
+<header class="mb-3">
+  <span class="kicker">{{ t('dashperf_kicker', lang) }}</span>
+  <h1 class="display">{{ t('dashperf_vessel_title', lang) }}</h1>
+  <p class="text-muted">{{ t('dashperf_vessel_subtitle', lang) }}</p>
+</header>
+
+<div class="breadcrumb text-sm text-muted mb-3">
+  <a href="/dashboard-perf">{{ t('dashperf_fleet_title', lang) }}</a>
+  <span> › </span>
+  <strong>{{ op.vessel_name }}</strong>
+  {% if op.vessel_code %}<span class="pill pill-neutral mono">{{ op.vessel_code }}</span>{% endif %}
+</div>
+
+<div id="dashperf-vessel-content">
+  {% include "staff/dashboard_perf/_vessel_fragment.html" %}
+</div>
+{% endblock %}

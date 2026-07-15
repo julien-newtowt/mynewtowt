@@ -169,6 +169,11 @@
       <i data-lucide="info"></i> {{ block.legs_excluded_non_event }} {{ t('dashperf_excluded_banner', lang) }}
     </p>
     {% endif %}
+    {% if block.vessel_id %}
+    <a href="/dashboard-perf/vessels/{{ block.vessel_id }}?year={{ year }}&method={{ m }}" class="btn btn-ghost btn-sm mt-2">
+      <i data-lucide="ship"></i> {{ t('dashperf_tab_vessel', lang) }} <i data-lucide="chevron-right"></i>
+    </a>
+    {% endif %}
   </article>
   {% else %}
   <p class="text-muted">{{ t('dashperf_empty_period', lang) }}</p>

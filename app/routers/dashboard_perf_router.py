@@ -15,11 +15,12 @@ l'ancien dashboard :
   (``tests/regression/test_dashboard_contract.py``,
   ``kpi_env.DASHBOARD_CONTRACT_VERSION``).
 
-Expose pour l'instant uniquement :
-    GET /dashboard-perf, /dashboard-perf/   page 1 — Vue flotte (perm kpi:C)
+Expose pour l'instant :
+    GET /dashboard-perf, /dashboard-perf/         page 1 — Vue flotte (perm kpi:C)
+    GET /dashboard-perf/vessels/{vessel_id}       page 2 — Suivi opérationnel (perm kpi:C)
 
-Les pages suivantes (suivi opérationnel, détail voyage, qualité,
-administration) suivront dans des commits ultérieurs, sur le même modèle.
+Les pages suivantes (détail voyage, qualité, administration) suivront dans
+des commits ultérieurs, sur le même modèle.
 
 Calcul serveur exclusivement (même posture que ``dashboard_env_router``) :
 ce routeur résout les paramètres HTTP (période/méthode/navire) + la
@@ -32,7 +33,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,7 +41,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.vessel import Vessel
 from app.permissions import require_permission
-from app.services.kpi_env import EF_METHODS, PROVISIONAL_DASHBOARD_PARAMS, TrendPoint, fleet_summary
+from app.services.kpi_env import (
+    EF_METHODS,
+    PROVISIONAL_DASHBOARD_PARAMS,
+    TrendPoint,
+    fleet_summary,
+    vessel_operational,
+)
 from app.templating import templates
 
 router = APIRouter(prefix="/dashboard-perf", tags=["dashboard-perf"])
@@ -90,6 +97,14 @@ def _trend_bars(trend: list[TrendPoint], trend_max_t: Decimal) -> tuple[list[dic
     return bars, meta
 
 
+async def _active_vessels(db: AsyncSession) -> list[Vessel]:
+    return list(
+        (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.name)))
+        .scalars()
+        .all()
+    )
+
+
 # ═══════════════════════════════════════════════ Page 1 — Vue flotte (kpi:C)
 
 
@@ -116,11 +131,7 @@ async def dashboard_perf_fleet(
     now = datetime.now(UTC)
     period = year or now.year
 
-    vessels = list(
-        (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.name)))
-        .scalars()
-        .all()
-    )
+    vessels = await _active_vessels(db)
     selected_vessel = None
     if vessel:
         selected_vessel = next((v for v in vessels if v.code == vessel), None)
@@ -155,5 +166,56 @@ async def dashboard_perf_fleet(
         "staff/dashboard_perf/_fleet_fragment.html"
         if request.headers.get("hx-request")
         else "staff/dashboard_perf/index.html"
+    )
+    return templates.TemplateResponse(template_name, ctx)
+
+
+# ═══════════════════════════════════════ Page 2 — Suivi opérationnel (kpi:C)
+
+
+@router.get("/vessels/{vessel_id}", response_class=HTMLResponse)
+async def dashboard_perf_vessel(
+    vessel_id: int,
+    request: Request,
+    year: int | None = None,
+    method: str = "A",
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("kpi", "C")),
+) -> HTMLResponse:
+    """Page 2 — suivi opérationnel d'un navire, exclusivement event-driven
+    (NC-04 : ``strict=True``).
+
+    Les totaux agrégés (conso/CO2/distance/décompte) n'incluent que les
+    voyages ``source="events"`` ; la liste ``op.voyages`` reste complète —
+    chaque ligne porte son propre ``source``, affiché explicitement (jamais
+    un voyage legacy présenté comme une donnée événementielle normale).
+    """
+    if method not in EF_METHODS:
+        method = "A"
+    now = datetime.now(UTC)
+    period = year or now.year
+
+    op = await vessel_operational(db, vessel_id, period=period, method=method, strict=True)
+    if op is None:
+        raise HTTPException(status_code=404, detail="navire inconnu")
+
+    vessels = await _active_vessels(db)
+    years = sorted(set(op.years) | {period, now.year}, reverse=True)
+
+    ctx = {
+        "request": request,
+        "user": user,
+        "op": op,
+        "vessels": vessels,
+        "vessel_id": vessel_id,
+        "method": method,
+        "ef_methods": EF_METHODS,
+        "year": period,
+        "years": years,
+    }
+    template_name = (
+        "staff/dashboard_perf/_vessel_fragment.html"
+        if request.headers.get("hx-request")
+        else "staff/dashboard_perf/vessel.html"
     )
     return templates.TemplateResponse(template_name, ctx)
