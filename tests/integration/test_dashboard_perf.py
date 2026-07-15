@@ -438,3 +438,52 @@ async def test_voyage_detail_legacy_noon_flags_not_event_sourced(db):
     assert resp.status_code == 200
     assert resp.context["d"].source == "legacy_noon"
     assert resp.context["is_event_sourced"] is False
+
+
+# ═══════════════════════════════════════ Page 4 — qualité des données (mrv:C) ═══════════════════════════════════════
+
+
+def _req_csrf():
+    """FakeRequest doté d'un jeton CSRF (formulaire confirm-reset, page 4)."""
+    req = FakeRequest()
+    req.state.csrf_token = "test-csrf"
+    return req
+
+
+def test_quality_routes_registered():
+    from app.routers import dashboard_perf_router
+
+    paths = {r.path for r in dashboard_perf_router.router.routes}
+    assert "/dashboard-perf/quality" in paths
+
+
+@pytest.mark.asyncio
+async def test_quality_page_requires_mrv_c(db):
+    checker = require_permission("mrv", "C")
+    with pytest.raises(HTTPException) as exc:
+        await checker(FakeRequest(), user=_rh_user(), db=db)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_quality_page_renders_empty_db_no_error(db):
+    """quality_overview ne lit que des tables event-sourcées : aucune donnée
+    en base ne doit jamais faire planter la page (fail-safe, pas de NC-04
+    à traiter ici — déjà exclusivement event-driven par construction)."""
+    from app.routers.dashboard_perf_router import dashboard_perf_quality
+
+    resp = await dashboard_perf_quality(_req_csrf(), vessel_id=None, db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/dashboard_perf/quality.html"
+    assert resp.context["o"].by_rule == []
+    assert resp.context["o"].pending_resets == []
+
+
+@pytest.mark.asyncio
+async def test_quality_page_renders_with_golden_voyage(db):
+    from app.routers.dashboard_perf_router import dashboard_perf_quality
+
+    await _load_1egb5(db)
+    resp = await dashboard_perf_quality(_req_csrf(), vessel_id=None, db=db, user=_admin_user())
+    assert resp.status_code == 200
+    assert "o" in resp.context

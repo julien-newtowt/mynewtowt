@@ -1,10 +1,15 @@
 {% extends "staff/_layout.html" %}
 {% block title %}{{ t('dashperf_vessel_title', lang) }} — {{ op.vessel_name }}{% endblock %}
 {% block content %}
-<header class="mb-3">
-  <span class="kicker">{{ t('dashperf_kicker', lang) }}</span>
-  <h1 class="display">{{ t('dashperf_vessel_title', lang) }}</h1>
-  <p class="text-muted">{{ t('dashperf_vessel_subtitle', lang) }}</p>
+<header class="flex justify-between items-center mb-3" style="flex-wrap:wrap;gap:8px;">
+  <div>
+    <span class="kicker">{{ t('dashperf_kicker', lang) }}</span>
+    <h1 class="display">{{ t('dashperf_vessel_title', lang) }}</h1>
+    <p class="text-muted">{{ t('dashperf_vessel_subtitle', lang) }}</p>
+  </div>
+  <a href="/dashboard-perf/quality" class="btn btn-ghost">
+    <i data-lucide="shield-check"></i> {{ t('dashperf_quality_title', lang) }}
+  </a>
 </header>
 
 <div class="breadcrumb text-sm text-muted mb-3">
