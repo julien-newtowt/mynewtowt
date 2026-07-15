@@ -342,6 +342,13 @@ mynewtowt/
   est une **intention commerciale assumée** (P4) : page vitrine `/passagers`
   (12 couchettes/navire, champ `Vessel.capacity_pax`), sans logique ERP. Ne
   pas recréer de module ERP passagers ; ne pas dépublier la page marketing.
+- **Jamais ouvrir de Pull Request sans demande explicite de l'utilisateur**,
+  même après avoir poussé une branche de travail sur GitHub. Une branche
+  publiée reste isolée de `main` tant qu'aucune PR n'existe ; c'est l'état
+  attendu pendant un travail d'intégration en cours (ex. `feature/dashboard-env-integration`).
+  Créer une PR est une décision de gouvernance qui revient au porteur du
+  projet — il l'ouvrira lui-même quand il sera prêt à faire réviser/merger
+  vers `main`.
 
 ## Décisions actées & ré-absorptions (à ne pas recompter comme régressions)
 
