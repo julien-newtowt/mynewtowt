@@ -18,9 +18,17 @@ l'ancien dashboard :
 Expose pour l'instant :
     GET /dashboard-perf, /dashboard-perf/         page 1 — Vue flotte (perm kpi:C)
     GET /dashboard-perf/vessels/{vessel_id}       page 2 — Suivi opérationnel (perm kpi:C)
+    GET /dashboard-perf/voyages/{leg_id}          page 3 — Détail voyage (perm mrv:C)
 
-Les pages suivantes (détail voyage, qualité, administration) suivront dans
-des commits ultérieurs, sur le même modèle.
+``voyage_detail`` (contrairement à ``fleet_summary``/``vessel_operational``)
+n'a pas de paramètre ``strict`` : il porte un seul voyage, pas un agrégat à
+filtrer. Le détail expose directement ``source`` (``events``/``legacy_noon``)
+— quand il vaut autre chose que ``events``, la page affiche un bandeau
+explicite plutôt que de présenter une donnée de repli comme si elle était
+événementielle (NC-04, cf. docstring de ``voyage_detail``).
+
+Les exports PDF/DOCX du voyage et la page qualité/administration suivront
+dans des commits ultérieurs, sur le même modèle.
 
 Calcul serveur exclusivement (même posture que ``dashboard_env_router``) :
 ce routeur résout les paramètres HTTP (période/méthode/navire) + la
@@ -38,15 +46,17 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.vessel import Vessel
-from app.permissions import require_permission
+from app.permissions import has_permission_effective, require_permission
 from app.services.kpi_env import (
     EF_METHODS,
     PROVISIONAL_DASHBOARD_PARAMS,
     TrendPoint,
     fleet_summary,
     vessel_operational,
+    voyage_detail,
 )
 from app.templating import templates
 
@@ -95,6 +105,142 @@ def _trend_bars(trend: list[TrendPoint], trend_max_t: Decimal) -> tuple[list[dic
         "label_y": _CHART_HEIGHT - 8,
     }
     return bars, meta
+
+
+# Géométrie ROB/propulsion — même patron que ``dashboard_env_router``,
+# dupliquée volontairement plutôt qu'importée depuis un module voué au
+# décommissionnement (NC-05).
+_ROB_W = 720
+_ROB_H = 260
+_ROB_TOP = 16
+_ROB_BOTTOM = 42
+_ROB_LEFT = 46
+_ROB_RIGHT = 14
+_PROP_W = 640
+_PROP_H = 30
+
+
+def _epoch(dt: datetime | None) -> float | None:
+    """Datetime → epoch (s). Naïf supposé UTC (backends sans tz — SQLite tests)."""
+    if dt is None:
+        return None
+    d = dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+    return d.timestamp()
+
+
+def _rob_timeline(rob_chain, bunkers) -> dict:
+    """Géométrie de la timeline ROB (SVG server-rendered).
+
+    Points = ROB chaîné calculé (avec marquage des points de RÉFÉRENCE
+    Departure/Arrival, seule source ROB déclarée R14-v2) ; marqueurs de
+    soutage superposés à leur date de livraison. x = temps, y = ROB (t)."""
+    pts = []
+    for p in rob_chain:
+        ts = _epoch(p.datetime_utc)
+        val = p.rob_calculated_t
+        if ts is None or val is None:
+            continue
+        pts.append(
+            {
+                "ts": ts,
+                "val": float(val),
+                "type": p.event_type,
+                "is_ref": p.event_type in ("departure", "arrival"),
+                "declared": (float(p.rob_declared_t) if p.rob_declared_t is not None else None),
+                "dt": p.datetime_utc,
+            }
+        )
+    if not pts:
+        return {"has_data": False}
+
+    bunker_pts = [(_epoch(b.delivery_datetime_utc), b) for b in bunkers]
+    bunker_pts = [(ts, b) for ts, b in bunker_pts if ts is not None]
+
+    all_ts = [p["ts"] for p in pts] + [ts for ts, _ in bunker_pts]
+    all_vals = [p["val"] for p in pts] + [p["declared"] for p in pts if p["declared"] is not None]
+    tmin, tmax = min(all_ts), max(all_ts)
+    vmax = max(all_vals) if all_vals else 1.0
+    vmax = vmax * 1.12 if vmax > 0 else 1.0
+    span = (tmax - tmin) or 1.0
+    plot_w = _ROB_W - _ROB_LEFT - _ROB_RIGHT
+    plot_h = _ROB_H - _ROB_TOP - _ROB_BOTTOM
+
+    def _x(ts: float) -> float:
+        return _ROB_LEFT + (ts - tmin) / span * plot_w
+
+    def _y(v: float) -> float:
+        return _ROB_TOP + (1 - v / vmax) * plot_h
+
+    points = []
+    for p in pts:
+        points.append(
+            {
+                "x": round(_x(p["ts"]), 1),
+                "y": round(_y(p["val"]), 1),
+                "val": round(p["val"], 2),
+                "type": p["type"],
+                "is_ref": p["is_ref"],
+                "dt": p["dt"],
+            }
+        )
+    polyline = " ".join(f"{pt['x']},{pt['y']}" for pt in points)
+
+    baseline_y = _ROB_TOP + plot_h
+    bunker_markers = []
+    for ts, b in bunker_pts:
+        bunker_markers.append(
+            {
+                "x": round(_x(ts), 1),
+                "baseline_y": baseline_y,
+                "bdn": b.bdn_number,
+                "mass": float(b.mass_t),
+                "port": b.port_locode,
+            }
+        )
+
+    y_ticks = [
+        {"y": round(_y(0.0), 1), "label": "0"},
+        {"y": round(_y(vmax / 2), 1), "label": f"{vmax / 2:.0f}"},
+        {"y": round(_y(vmax * 0.99), 1), "label": f"{vmax:.0f}"},
+    ]
+    return {
+        "has_data": True,
+        "width": _ROB_W,
+        "height": _ROB_H,
+        "left": _ROB_LEFT,
+        "right_x": _ROB_W - _ROB_RIGHT,
+        "baseline_y": baseline_y,
+        "points": points,
+        "polyline": polyline,
+        "bunker_markers": bunker_markers,
+        "y_ticks": y_ticks,
+        "x_start": pts[0]["dt"],
+        "x_end": pts[-1]["dt"],
+    }
+
+
+def _propulsion_bar(profile) -> dict:
+    """Barre horizontale empilée (SVG) du profil de propulsion (4 catégories)."""
+    filled = profile.filled_slots
+    if not filled:
+        return {"has_data": False, "segments": [], "width": _PROP_W, "height": _PROP_H}
+    segments = []
+    x = 0.0
+    for s in profile.segments:
+        w = (s.count / filled) * _PROP_W
+        segments.append(
+            {
+                "x": round(x, 1),
+                "width": round(w, 1),
+                "color": s.color,
+                "category": s.category,
+                "label_key": s.label_key,
+                "count": s.count,
+                "pct": (float(s.pct) if s.pct is not None else 0.0),
+            }
+        )
+        x += w
+    return {"has_data": True, "segments": segments, "width": _PROP_W, "height": _PROP_H}
 
 
 async def _active_vessels(db: AsyncSession) -> list[Vessel]:
@@ -201,6 +347,8 @@ async def dashboard_perf_vessel(
 
     vessels = await _active_vessels(db)
     years = sorted(set(op.years) | {period, now.year}, reverse=True)
+    # Le drill-down vers le détail d'un voyage exige mrv:C — lien conditionnel.
+    can_voyage_detail = await has_permission_effective(db, user.role, "mrv", "C")
 
     ctx = {
         "request": request,
@@ -212,6 +360,7 @@ async def dashboard_perf_vessel(
         "ef_methods": EF_METHODS,
         "year": period,
         "years": years,
+        "can_voyage_detail": can_voyage_detail,
     }
     template_name = (
         "staff/dashboard_perf/_vessel_fragment.html"
@@ -219,3 +368,46 @@ async def dashboard_perf_vessel(
         else "staff/dashboard_perf/vessel.html"
     )
     return templates.TemplateResponse(template_name, ctx)
+
+
+# ═══════════════════════════════════════ Page 3 — Détail voyage (mrv:C)
+
+
+@router.get("/voyages/{leg_id}", response_class=HTMLResponse)
+async def dashboard_perf_voyage(
+    leg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """Page 3 — détail d'un voyage : chaîne d'événements, ROB timeline (SVG),
+    conso vs cible, ME/AE, écarts R14/R22, profil de propulsion, carte
+    MapLibre colorée par catégorie de propulsion.
+
+    NC-04 : ``voyage_detail`` n'a pas de mode strict (rien à agréger/filtrer
+    pour un seul voyage) — ``is_event_sourced`` (dérivé de ``d.source``) est
+    calculé ici pour que le template affiche un bandeau explicite quand ce
+    voyage provient du repli legacy, plutôt que de présenter ses chiffres
+    comme une donnée événementielle normale.
+    """
+    detail = await voyage_detail(db, leg_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="voyage inconnu")
+
+    rob = _rob_timeline(detail.rob_chain, detail.bunkers)
+    prop_bar = _propulsion_bar(detail.propulsion)
+
+    return templates.TemplateResponse(
+        "staff/dashboard_perf/voyage.html",
+        {
+            "request": request,
+            "user": user,
+            "d": detail,
+            "rob": rob,
+            "prop_bar": prop_bar,
+            "is_event_sourced": detail.source == "events",
+            "maptiler_token": settings.maptiler_token,
+            "map_points": detail.map_points,
+            "map_segments": detail.map_segments,
+        },
+    )

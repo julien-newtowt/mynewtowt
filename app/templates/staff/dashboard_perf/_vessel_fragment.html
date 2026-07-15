@@ -99,6 +99,7 @@
         <th class="text-right">{{ t('dashperf_col_cargo', lang) }}</th>
         <th class="text-right">EF ({{ m }})</th>
         <th>{{ t('dashperf_col_source', lang) }}</th>
+        {% if can_voyage_detail %}<th></th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -124,9 +125,16 @@
           {% if r.source == 'events' %}<span class="pill pill-success text-xs">{{ t('dashperf_source_events', lang) }}</span>
           {% else %}<span class="pill pill-warn text-xs">{{ t('dashperf_source_' ~ r.source, lang) }}</span>{% endif %}
         </td>
+        {% if can_voyage_detail %}
+        <td>
+          <a href="/dashboard-perf/voyages/{{ r.leg_id }}" class="btn btn-ghost btn-sm">
+            {{ t('dashperf_detail', lang) }} <i data-lucide="chevron-right"></i>
+          </a>
+        </td>
+        {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="11" class="text-muted text-center">{{ t('dashperf_empty_period', lang) }}</td></tr>
+      <tr><td colspan="{{ 12 if can_voyage_detail else 11 }}" class="text-muted text-center">{{ t('dashperf_empty_period', lang) }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
