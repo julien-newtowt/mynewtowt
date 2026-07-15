@@ -62,12 +62,13 @@ async def test_get_renders_after_seed(db, staff_user):
     # R10:delai_confirmation_reset_j, IR03:ir03_min_reports_figes,
     # IR03:ir03_conso_min_t, IR05:ir05_min_reports_figes) + 2 (G1 :
     # R27:tolerance_cutoff_h, R27:rappel_cutoff_avant_j) + 1 (G4 :
-    # R28:tolerance_distance_haversine_nm).
-    assert len(ctx["thr_global"]) == 30
+    # R28:tolerance_distance_haversine_nm) + 1 (G7 :
+    # R12:min_releves_meteo_jour).
+    assert len(ctx["thr_global"]) == 31
     assert len(ctx["dash_global"]) == 4
-    # 14 (lot 2) + 1 (lot 6) + 1 (lot 4) + 5 (lot 8) + 2 (G1) + 1 (G4) —
-    # tous provisoires (Q8).
-    assert ctx["provisional_count"] == 24
+    # 14 (lot 2) + 1 (lot 6) + 1 (lot 4) + 5 (lot 8) + 2 (G1) + 1 (G4) + 1 (G7)
+    # — tous provisoires (Q8).
+    assert ctx["provisional_count"] == 25
 
 
 # ──────────────────────────── init idempotent ────────────────────────────

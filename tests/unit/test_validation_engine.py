@@ -2,9 +2,10 @@
 
 Couvre : résolution de seuils (override navire > global > défaut codé,
 fail-closed sur DB en erreur), cache + invalidation, chaque règle codée
-(R01/R02/R11/R12/R13, table-driven pass/fail/limite), persistance de
-``run_rules`` avec snapshot des seuils, et la robustesse d'une règle qui
-lève une exception (fail/info sans crash).
+(R01/R02/R11/R12/R13, table-driven pass/fail/limite — R12 inclut désormais
+son volet fréquence météo, G7), persistance de ``run_rules`` avec snapshot
+des seuils, et la robustesse d'une règle qui lève une exception (fail/info
+sans crash).
 """
 
 from __future__ import annotations
@@ -232,6 +233,37 @@ async def test_r12_copy_paste(db):
     assert (await _run_rule(db, "R12", seq, 0))[0].result == "pass"  # premier
     assert (await _run_rule(db, "R12", seq, 1))[0].result == "fail"  # copié
     assert (await _run_rule(db, "R12", seq, 2))[0].result == "pass"  # distinct
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "n_readings,result",
+    [
+        (2, "fail"),  # < 3 attendus/jour
+        (3, "pass"),  # limite exacte == seuil (borne incluse)
+        (6, "pass"),  # tous les créneaux (16/20/00/04/08/12h)
+    ],
+)
+async def test_r12_weather_frequency_below_threshold(db, n_readings, result):
+    """G7 — volet fréquence : NoonEvent avec moins de 3 relevés météo
+    horodatés (créneau 4 h) sur le jour → warning."""
+    subject = SimpleNamespace(weather_readings=[object()] * n_readings)
+    out = await _run_rule(db, "R12", [subject], 0)
+    assert out[0].result == result
+    if result == "fail":
+        assert out[0].severity == "warning"
+        assert out[0].details["releves_meteo"] == n_readings
+
+
+@pytest.mark.asyncio
+async def test_r12_weather_frequency_abstains_without_attribute(db):
+    """Duck-typé : un sujet sans ``weather_readings`` (pas un NoonEvent) ne
+    déclenche pas le volet fréquence — retombe sur le copier-coller usuel."""
+    a = SimpleNamespace(latitude=49.0, longitude=-1.0)
+    b = SimpleNamespace(latitude=49.0, longitude=-1.0)  # identique → copier-coller
+    out = await _run_rule(db, "R12", [a, b], 1)
+    assert out[0].result == "fail"
+    assert "identical_fields" in out[0].details
 
 
 @pytest.mark.asyncio
