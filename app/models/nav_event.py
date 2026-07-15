@@ -62,8 +62,18 @@ from app.database import Base
 
 # ════════════════════════════════════════════════════ Vocabulaires (documentés)
 
-# Discriminant polymorphe (dictionnaire §2.3).
-EVENT_TYPES: tuple[str, ...] = ("noon", "departure", "arrival", "anchoring_begin", "anchoring_end")
+# Discriminant polymorphe (dictionnaire §2.3). ``cutoff`` (CDC v0.7, §9.2/§10.1)
+# = Year-End Cut-off, requis quand un voyage est en cours au changement
+# d'année civile (31/12 24:00 UTC ⇔ 01/01 00:00 UTC) — le règlement MRV impose
+# une déclaration bornée par exercice.
+EVENT_TYPES: tuple[str, ...] = (
+    "noon",
+    "departure",
+    "arrival",
+    "anchoring_begin",
+    "anchoring_end",
+    "cutoff",
+)
 
 # Machine à états déclarative (dictionnaire §2.3, CDC §9.1) — un brouillon est
 # EXCLU de tout calcul inter-événements.
@@ -164,6 +174,15 @@ class NavEvent(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
         order_by="NavEventEngineReading.id",
+    )
+
+    # ROB par carburant — rattachable à TOUT type d'événement (comme les
+    # relevés moteur) ; pour l'instant saisi uniquement au CutoffEvent.
+    rob_by_fuel_readings: Mapped[list[NavEventRobByFuel]] = relationship(
+        back_populates="event",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="NavEventRobByFuel.id",
     )
 
     __mapper_args__: ClassVar[dict] = {
@@ -300,6 +319,25 @@ class EndAnchoringEvent(AnchoringEvent):
     __mapper_args__: ClassVar[dict] = {"polymorphic_identity": "anchoring_end"}
 
 
+# ════════════════════════════════════════════════════════════ CutoffEvent
+
+
+class CutoffEvent(NavEvent):
+    """Coupure d'exercice MRV — Year-End Cut-off (identité ``cutoff``).
+
+    CDC v0.7 §9.2/§10.1 : requis quand un voyage est en cours au changement
+    d'année civile. Aucune colonne propre — pas de table fille : la position
+    et le ``datetime_utc`` communs suffisent, le ROB par carburant vit dans
+    ``NavEventRobByFuel`` (rattachable à tout type d'événement, comme les
+    relevés moteur). ``datetime_utc`` est **figé côté serveur** exactement à
+    l'instant réglementaire (31/12 24:00 UTC ⇔ 01/01 00:00 UTC), jamais dérivé
+    du local/tz saisi par le Master — cf. ``event_capture._compute_datetime_utc``,
+    qui pin cette valeur pour ce type précisément parce que c'est une règle
+    réglementaire fixe, pas une observation de terrain."""
+
+    __mapper_args__: ClassVar[dict] = {"polymorphic_identity": "cutoff"}
+
+
 # Résolution ``event_type`` → classe concrète (utilisée par event_capture).
 EVENT_CLASS_BY_TYPE: dict[str, type[NavEvent]] = {
     "noon": NoonEvent,
@@ -307,6 +345,7 @@ EVENT_CLASS_BY_TYPE: dict[str, type[NavEvent]] = {
     "arrival": ArrivalEvent,
     "anchoring_begin": BeginAnchoringEvent,
     "anchoring_end": EndAnchoringEvent,
+    "cutoff": CutoffEvent,
 }
 
 
@@ -350,6 +389,31 @@ class NavEventEngineReading(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<NavEventEngineReading event={self.event_id} engine={self.engine_id}>"
+
+
+class NavEventRobByFuel(Base):
+    """ROB déclaré par type de carburant à un événement.
+
+    Rattachable à tout type d'événement (même patron que
+    ``NavEventEngineReading``), utilisé pour l'instant uniquement au
+    ``CutoffEvent`` (G1) — ancrage de la chaîne ROB (R14/IR02) au même titre
+    qu'un ``rob_t`` de Departure/Arrival. ``fuel_type`` reste un texte libre
+    (pas d'enum), cohérent avec ``BunkerOperation.fuel_type``."""
+
+    __tablename__ = "nav_event_rob_by_fuel_readings"
+    __table_args__ = (Index("ix_nav_rob_by_fuel_event", "event_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("nav_events.id", ondelete="CASCADE"), nullable=False
+    )
+    fuel_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    rob_t: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+
+    event: Mapped[NavEvent] = relationship(back_populates="rob_by_fuel_readings")
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<NavEventRobByFuel event={self.event_id} fuel={self.fuel_type}>"
 
 
 class NavEventWeatherReading(Base):

@@ -364,3 +364,16 @@ async def test_prefill_position_none_when_no_data(db):
     author, vessel, leg = await _base(db)
     pre = await event_capture.prefill_position(db, vessel, datetime(2026, 1, 2, 12, tzinfo=UTC))
     assert pre is None
+
+
+# ════════════════════════════════════ G1 — 6ᵉ type d'événement Year-End Cut-off
+
+
+def test_cutoff_event_type_registered():
+    """CDC v0.7 §9.2/§10.1 — le type ``cutoff`` doit exister au même titre que
+    les 5 autres, résolu vers ``CutoffEvent`` (pas de table propre — cf.
+    docstring du modèle)."""
+    from app.models.nav_event import EVENT_CLASS_BY_TYPE, EVENT_TYPES, CutoffEvent
+
+    assert "cutoff" in EVENT_TYPES
+    assert EVENT_CLASS_BY_TYPE["cutoff"] is CutoffEvent
