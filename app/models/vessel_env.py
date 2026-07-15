@@ -1,9 +1,11 @@
-"""Référentiel navire — cuves, moteurs, hydrostatiques (MRV lot 1).
+"""Référentiel navire — cuves, moteurs (MRV lot 1).
 
 Socle paramétrable de la refonte du reporting environnemental (H2/H3) :
-chaque navire porte son propre référentiel de cuves de soutage, de moteurs
-(avec groupe d'agrégation ME/AE) et — à terme — sa courbe hydrostatique
-(tirant d'eau ↔ déplacement, formule Cargo MRV EU 2016/1928).
+chaque navire porte son propre référentiel de cuves de soutage et de moteurs
+(avec groupe d'agrégation ME/AE). Le Cargo MRV (« deadweight carried », EU
+2016/1928) est saisi directement par le Master (décision CDC v0.7 du
+09/07/2026) — MyTOWT n'a plus vocation à le calculer par interpolation
+hydrostatique (G10, table ``vessel_hydrostatics`` retirée en conséquence).
 
 Ces tables sont volontairement **vessel-agnostic dans leur schéma** mais
 **seedées par navire** via ``services.referential_env.ensure_vessel_env_defaults``
@@ -89,27 +91,3 @@ class VesselEngine(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<VesselEngine vessel={self.vessel_id} role={self.engine_role} group={self.engine_group}>"
-
-
-class VesselHydrostatics(Base):
-    """Point de courbe hydrostatique (tirant d'eau ↔ déplacement).
-
-    Table vide pour l'instant (données navire officielles à fournir, Q11) ;
-    alimentera l'interpolation linéaire de la formule Cargo MRV (EU 2016/1928)
-    dans un lot ultérieur (calculs inter-événements).
-    """
-
-    __tablename__ = "vessel_hydrostatics"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    vessel_id: Mapped[int] = mapped_column(
-        ForeignKey("vessels.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    draft_m: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
-    displacement_m3: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-
-    def __repr__(self) -> str:  # pragma: no cover
-        return f"<VesselHydrostatics vessel={self.vessel_id} draft={self.draft_m}>"

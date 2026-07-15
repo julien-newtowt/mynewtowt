@@ -132,7 +132,7 @@ from app.models.validation import (
     ValidationRuleThreshold,
 )
 from app.models.vessel import Vessel
-from app.models.vessel_env import VesselEngine, VesselHydrostatics, VesselTank
+from app.models.vessel_env import VesselEngine, VesselTank
 from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.models.voyage_highlight import VoyageHighlight
 from app.models.voyage_photo import VoyagePhoto
@@ -263,7 +263,6 @@ __all__ = [
     "ValidationRuleThreshold",
     "Vessel",
     "VesselEngine",
-    "VesselHydrostatics",
     "VesselPosition",
     "VesselTank",
     "VesselWeather",

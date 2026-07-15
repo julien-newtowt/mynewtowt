@@ -2,10 +2,9 @@
 
 Deux responsabilités distinctes :
 
-1. **Référentiel navire** (cuves/moteurs/hydrostatiques) : lecture par navire
-   + initialisation idempotente (``ensure_vessel_env_defaults``) — 5 cuves et
-   6 moteurs par navire, appelée depuis l'écran ``/admin/flotte-env``. Les
-   hydrostatiques restent vides (données officielles à fournir, Q11).
+1. **Référentiel navire** (cuves/moteurs) : lecture par navire +
+   initialisation idempotente (``ensure_vessel_env_defaults``) — 5 cuves et
+   6 moteurs par navire, appelée depuis l'écran ``/admin/flotte-env``.
 
 2. **Facteurs d'émission** (``emission_factors``) : résolution du facteur
    applicable pour un carburant/une date (``resolve_emission_factor``), avec
@@ -31,7 +30,6 @@ from app.models.vessel_env import (
     ENGINE_ROLES,
     TANK_CODES,
     VesselEngine,
-    VesselHydrostatics,
     VesselTank,
 )
 
@@ -65,15 +63,6 @@ async def get_vessel_engines(db: AsyncSession, vessel_id: int) -> list[VesselEng
     return list(rows.scalars().all())
 
 
-async def get_vessel_hydrostatics(db: AsyncSession, vessel_id: int) -> list[VesselHydrostatics]:
-    rows = await db.execute(
-        select(VesselHydrostatics)
-        .where(VesselHydrostatics.vessel_id == vessel_id)
-        .order_by(VesselHydrostatics.draft_m)
-    )
-    return list(rows.scalars().all())
-
-
 @dataclass(frozen=True)
 class VesselEnvInitResult:
     """Résultat d'``ensure_vessel_env_defaults`` — ce qui a été créé (si rien, no-op)."""
@@ -95,9 +84,6 @@ async def ensure_vessel_env_defaults(db: AsyncSession, vessel: Vessel) -> Vessel
     navire : un appel répété (navire déjà initialisé, ou partiellement) ne
     crée jamais de doublon et ne modifie aucune ligne existante — un navire
     s'ajoute donc en admin sans écrire de code (acceptation lot 1).
-
-    Ne crée jamais de ligne ``vessel_hydrostatics`` (table vide par
-    conception tant que les données officielles ne sont pas fournies, Q11).
     """
     existing_tanks = set(
         (await db.execute(select(VesselTank.tank_code).where(VesselTank.vessel_id == vessel.id)))

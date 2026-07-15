@@ -204,9 +204,6 @@ sans code) : <!-- source: referential_env.py:89-141 ; vessel_env.py -->
   | `FWD_GEN`, `AFT_GEN` (groupes électrogènes) | `AE` | oui |
   | `PORT_SHAFT_GEN`, `STBD_SHAFT_GEN` (lignes d'arbre) | `NULL` | **non — exclus** |
 
-- **hydrostatiques** (`vessel_hydrostatics` : tirant d'eau ↔ déplacement m³) :
-  table **vide par conception** (Q11, données officielles à fournir) —
-  l'interpolation Cargo MRV est prête, le repli « valeur saisie » est actif.
 - évolution `vessels` : `lightweight_t`, `default_fuel_type` (défaut `MDO`),
   `water_density_default_t_m3` (repli 1,025 t/m³).
   <!-- source: vessel.py:115-129 ; inter_event_compute.py:61 -->
@@ -334,20 +331,13 @@ speed_kn    = distance_nm / duration_h                # si durée > 0
 
 ### 4.6 Cargo MRV (EU 2016/1928)
 
-`compute_cargo_mrv` sur un PortCall : <!-- source: inter_event_compute.py:496-565 -->
+`compute_cargo_mrv` sur un PortCall : <!-- source: inter_event_compute.py -->
 
 1. `vessel_condition = "ballast"` ⇒ **cargo MRV = 0** (méthode `ballast_zero`) ;
-2. laden + tirants d'eau AV/AR + hydrostatiques + `lightweight_t` connus ⇒
-   ```
-   tirant_moyen_m     = (draft_fwd_m + draft_aft_m) / 2
-   déplacement_m3     = interpolation linéaire de la courbe hydrostatique
-                        (clamp aux points extrêmes hors bornes)
-   cargo_mrv_t        = déplacement_m3 × densité_eau − lightweight_t − consommables_t
-   ```
-   (densité d'eau : `vessels.water_density_default_t_m3`, repli 1,025 t/m³) ;
-3. sinon ⇒ **repli sur la valeur saisie** `cargo_mrv_t` (méthode
-   `declared_fallback`) — c'est le mode effectif actuel, hydrostatiques
-   absentes (Q11).
+2. sinon ⇒ **valeur saisie directement par le Master**, `cargo_mrv_t` (méthode
+   `declared_fallback`) — décision CDC v0.7 du 09/07/2026 : MyTOWT n'a plus
+   vocation à recalculer cette valeur par interpolation hydrostatique (G10,
+   table `vessel_hydrostatics` retirée en conséquence).
 
 ### 4.7 Assiettes de consommation
 
@@ -676,12 +666,11 @@ tonnage) — sinon **`theoretical`** (forfait 1,5 g/t·km). `resolve_distance_nm
 
 ## 9. Limites connues & backlog (honnête)
 
-1. **Hydrostatiques et capacités de cuves absentes (Q11).** `vessel_hydrostatics`
-   est vide et `vessel_tanks.capacity_m3` est NULL (plans officiels à obtenir).
-   Conséquences : le **cargo MRV est saisi** (repli `declared_fallback`, jamais
-   de calcul EU 2016/1928 effectif) et le volet « capacités » de **R23 est en
-   Info** (spécifié Bloquant en cible). Bascule automatique dès chargement des
-   données.
+1. **Capacités de cuves absentes (Q11).** `vessel_tanks.capacity_m3` est NULL
+   (plans officiels à obtenir). Conséquence : le volet « capacités » de
+   **R23 est en Info** (spécifié Bloquant en cible). Bascule automatique dès
+   chargement des données. (Le cargo MRV n'est, lui, plus concerné : il est
+   saisi directement par le Master depuis CDC v0.7, G10 — cf. §4.6.)
 2. **21 seuils provisoires sur 27** (`provisional=True`) — propositions Q8 à
    calibrer après le voyage pilote (écran `/mrv/parametres`). Les sévérités ont
    été choisies prudentes en attendant.
@@ -721,7 +710,7 @@ tonnage) — sinon **`theoretical`** (forfait 1,5 g/t·km). `resolve_distance_nm
 | **BDN** | Bunker Delivery Note — note de livraison d'un soutage (n° unique, propriétés carburant) |
 | **Brouillon** | Événement/rapport en cours de saisie — exclu de tout calcul, repris par son auteur seul |
 | **Cargo B/L** | Cargaison commerciale au connaissement (Bill of Lading), en tonnes |
-| **Cargo MRV** | « Deadweight carried » réglementaire (EU 2016/1928) — calculé par hydrostatiques ou saisi (Q11) |
+| **Cargo MRV** | « Deadweight carried » réglementaire (EU 2016/1928) — saisi directement par le Master (CDC v0.7, G10) |
 | **CFOTE_05 / CFOTE_09** | Formulaires officiels TOWT : Noon Report / Carbon Report (cf. `docs/operations/reporting-templates.md`) |
 | **DMS** | Degrés-Minutes-Secondes — format de position exigé par l'OVDLA (interne : décimal) |
 | **DNV** | Société de classification / vérificateur MRV destinataire des datasets OVDLA/OVDBR |

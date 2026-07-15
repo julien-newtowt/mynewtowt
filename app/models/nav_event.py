@@ -147,8 +147,8 @@ class NavEvent(Base):
     position_source: Mapped[str | None] = mapped_column(String(20))
     position_justification: Mapped[str | None] = mapped_column(Text)
 
-    # Cargo MRV « deadweight carried » (EU 2016/1928) : calculé si
-    # hydrostatiques dispo, sinon valeur saisie de repli (Q11).
+    # Cargo MRV « deadweight carried » (EU 2016/1928) : saisi directement par
+    # le Master (CDC v0.7, G10).
     cargo_mrv_t: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
 
     # Cycle de vie (brouillon → finalise → valide).

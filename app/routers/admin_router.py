@@ -1601,8 +1601,8 @@ async def co2_variables_update(
 
 
 # ────────────────────────────────────────────── Flotte — référentiel environnemental (MRV lot 1)
-# Cuves / moteurs / hydrostatiques par navire (app.models.vessel_env) + les 3
-# champs référentiel portés par Vessel. Patron : la page /admin/co2 ci-dessus.
+# Cuves / moteurs par navire (app.models.vessel_env) + les 3 champs
+# référentiel portés par Vessel. Patron : la page /admin/co2 ci-dessus.
 def _parse_decimal_or_none(value: str | None) -> Decimal | None:
     raw = (value or "").strip().replace(",", ".")
     if not raw:
@@ -1625,11 +1625,9 @@ async def flotte_env_page(
     vessels = await _vessels_for_form(db)
     tanks_by_vessel = {}
     engines_by_vessel = {}
-    hydro_by_vessel = {}
     for v in vessels:
         tanks_by_vessel[v.id] = await referential_env.get_vessel_tanks(db, v.id)
         engines_by_vessel[v.id] = await referential_env.get_vessel_engines(db, v.id)
-        hydro_by_vessel[v.id] = await referential_env.get_vessel_hydrostatics(db, v.id)
     return templates.TemplateResponse(
         "staff/admin/flotte_env.html",
         {
@@ -1638,7 +1636,6 @@ async def flotte_env_page(
             "vessels": vessels,
             "tanks_by_vessel": tanks_by_vessel,
             "engines_by_vessel": engines_by_vessel,
-            "hydro_by_vessel": hydro_by_vessel,
         },
     )
 

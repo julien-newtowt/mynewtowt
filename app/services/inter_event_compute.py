@@ -16,15 +16,14 @@ Opère sur la **chaîne d'événements FINALISÉS/VALIDÉS** d'un leg, ordonnée
 - **ROB chaîné** ancré sur le dernier ROB de référence (``rob_t`` d'un
   PortCallEvent) : ``ROB(evt) = ROB(précédent) − conso_totale + soutages`` ;
   les soutages (lot 6) sont injectés via ``bunkered_t_lookup`` (défaut → 0) ;
-- **cargo MRV** (EU 2016/1928) : interpolation hydrostatique si dispo, sinon
-  repli sur la valeur saisie ``cargo_mrv_t`` (Q11) ; ballast ⇒ 0.
+- **cargo MRV** (EU 2016/1928) : valeur saisie directement par le Master
+  (``cargo_mrv_t``, décision CDC v0.7 du 09/07/2026 — G10) ; ballast ⇒ 0.
 
 Convention (plan §2.7) : Decimal partout, unités suffixées, UTC partout.
 
 TODO lots aval :
 - ``bunkered_t_lookup`` : interface prête pour le lot 6 (soutages/BDN) et le
   lot 9 (grand livre) — brancher ``bunker_operations`` sur l'escale.
-- ``consumables_t`` (cargo MRV) : ROB/eau douce/urée précis — affiné au lot 9.
 - persistance des résultats dans ``voyage_emission_summaries`` — lot 9.
 """
 
@@ -48,8 +47,7 @@ from app.models.nav_event import (
     NavEventEngineReading,
     PortCallEvent,
 )
-from app.models.vessel import Vessel
-from app.models.vessel_env import VesselEngine, VesselHydrostatics
+from app.models.vessel_env import VesselEngine
 from app.services.ports import haversine_nm
 from app.services.validation_engine import get_threshold
 
@@ -132,9 +130,7 @@ class CargoMrvResult:
 
     event_id: int
     cargo_mrv_t: Decimal | None
-    method: str  # hydrostatics | declared_fallback | ballast_zero | none
-    mean_draft_m: Decimal | None = None
-    displacement_m3: Decimal | None = None
+    method: str  # declared_fallback | ballast_zero | none
 
 
 @dataclass
@@ -502,75 +498,16 @@ def pair_anchorings(events: list[NavEvent]) -> list[AnchoringPair]:
 # ════════════════════════════════════════════════════════════ Cargo MRV
 
 
-def _interpolate_displacement(
-    hydrostatics: list[VesselHydrostatics], draft_m: Decimal
-) -> Decimal | None:
-    """Déplacement (m³) interpolé linéairement pour un tirant d'eau moyen.
+def compute_cargo_mrv(event: NavEvent) -> CargoMrvResult:
+    """Cargo MRV (EU 2016/1928) « deadweight carried » : saisi directement
+    par le Master (décision CDC v0.7 du 09/07/2026 — MyTOWT n'a plus vocation
+    à recalculer cette valeur par interpolation hydrostatique, G10).
 
-    Points hors bornes : bornés (clamp) au point extrême le plus proche.
-    """
-    if not hydrostatics:
-        return None
-    pts = sorted(hydrostatics, key=lambda h: h.draft_m)
-    if draft_m <= pts[0].draft_m:
-        return Decimal(pts[0].displacement_m3)
-    if draft_m >= pts[-1].draft_m:
-        return Decimal(pts[-1].displacement_m3)
-    for lo, hi in itertools.pairwise(pts):
-        if lo.draft_m <= draft_m <= hi.draft_m:
-            d_lo, d_hi = Decimal(lo.draft_m), Decimal(hi.draft_m)
-            v_lo, v_hi = Decimal(lo.displacement_m3), Decimal(hi.displacement_m3)
-            if d_hi == d_lo:
-                return v_lo
-            ratio = (draft_m - d_lo) / (d_hi - d_lo)
-            return v_lo + ratio * (v_hi - v_lo)
-    return None
+    - PortCall ballast ⇒ 0 (toujours dérivé, jamais une saisie) ;
+    - sinon ⇒ valeur saisie ``cargo_mrv_t`` (ou ``None`` si absente)."""
+    if isinstance(event, PortCallEvent) and event.vessel_condition == "ballast":
+        return CargoMrvResult(event.id, Decimal("0"), "ballast_zero")
 
-
-def compute_cargo_mrv(
-    event: NavEvent,
-    vessel: Vessel | None,
-    hydrostatics: list[VesselHydrostatics],
-    *,
-    consumables_t: Decimal = Decimal("0"),
-) -> CargoMrvResult:
-    """Cargo MRV (EU 2016/1928) : hydrostatiques si dispo, sinon repli saisie.
-
-    - PortCall ballast ⇒ 0 ;
-    - PortCall laden + drafts + hydrostatiques + lightweight ⇒
-      ``déplacement(m³) × densité_eau − lightweight − consommables`` ;
-    - sinon ⇒ repli sur ``cargo_mrv_t`` saisi (Q11 : hydrostatiques absentes).
-    """
-    if isinstance(event, PortCallEvent):
-        if event.vessel_condition == "ballast":
-            return CargoMrvResult(event.id, Decimal("0"), "ballast_zero")
-
-        if (
-            event.draft_fwd_m is not None
-            and event.draft_aft_m is not None
-            and hydrostatics
-            and vessel is not None
-            and vessel.lightweight_t is not None
-        ):
-            mean_draft = (Decimal(event.draft_fwd_m) + Decimal(event.draft_aft_m)) / Decimal("2")
-            displacement_m3 = _interpolate_displacement(hydrostatics, mean_draft)
-            if displacement_m3 is not None:
-                water_density = (
-                    Decimal(vessel.water_density_default_t_m3)
-                    if vessel.water_density_default_t_m3 is not None
-                    else DEFAULT_WATER_DENSITY_T_M3
-                )
-                displacement_t = displacement_m3 * water_density
-                cargo = displacement_t - Decimal(vessel.lightweight_t) - consumables_t
-                return CargoMrvResult(
-                    event.id,
-                    cargo,
-                    "hydrostatics",
-                    mean_draft_m=mean_draft,
-                    displacement_m3=displacement_m3,
-                )
-
-    # Repli : valeur saisie (ou None si absente).
     declared = event.cargo_mrv_t
     if declared is None:
         return CargoMrvResult(event.id, None, "none")
@@ -585,17 +522,11 @@ async def compute_leg(
     leg: Leg,
     *,
     bunkered_t_lookup: BunkerLookup = _zero_bunker,
-    consumables_t: Decimal = Decimal("0"),
 ) -> LegComputation:
     """Calcule toute la chaîne dérivée d'un leg (événements finalisés/validés)."""
     events = await finalized_events_for_leg(db, leg.id)
     engines = await _load_engines(db, leg.vessel_id)
     density = await resolve_density(db, leg.vessel_id)
-    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id is not None else None
-    hydro_rows = await db.execute(
-        select(VesselHydrostatics).where(VesselHydrostatics.vessel_id == leg.vessel_id)
-    )
-    hydrostatics = list(hydro_rows.scalars().all())
 
     intervals: list[IntervalResult] = []
     for prev, cur in itertools.pairwise(events):
@@ -604,10 +535,7 @@ async def compute_leg(
         )
 
     rob_chain = compute_rob_chain(events, intervals)
-    cargo_mrv = {
-        ev.id: compute_cargo_mrv(ev, vessel, hydrostatics, consumables_t=consumables_t)
-        for ev in events
-    }
+    cargo_mrv = {ev.id: compute_cargo_mrv(ev) for ev in events}
     totals = _leg_totals(intervals)
 
     return LegComputation(
