@@ -94,6 +94,8 @@ _NOON_FIELDS: tuple[str, ...] = (
     "etb",
     "eta_7_to_10kt",
     "comments",
+    "rob_uree_t",
+    "rob_eau_douce_t",
 )
 _PORTCALL_FIELDS: tuple[str, ...] = (
     "draft_fwd_m",

@@ -1534,6 +1534,9 @@ def _build_event_payload(event_type: str, f) -> dict:
                 "etb": _maybe_dt(f.get("etb")),
                 "eta_7_to_10kt": _build_eta_paliers(f),
                 "comments": _clean_str(f.get("comments")),
+                # ROB annexes (G5) — exigés au Noon, indépendants du calcul carburant.
+                "rob_uree_t": _dec(f.get("rob_uree_t")),
+                "rob_eau_douce_t": _dec(f.get("rob_eau_douce_t")),
             }
         )
     elif event_type in ("departure", "arrival"):

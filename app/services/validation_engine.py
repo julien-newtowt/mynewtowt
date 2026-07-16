@@ -2,7 +2,7 @@
 
 Ce module fournit :
 
-1. **Le catalogue seedé** (``RULE_SEED`` = 33 règles, ``THRESHOLD_SEED`` =
+1. **Le catalogue seedé** (``RULE_SEED`` = 35 règles, ``THRESHOLD_SEED`` =
    seuils paramétrables, ``DASHBOARD_SEED`` = paramètres dashboard) et une
    fonction de seed idempotente (``seed_reference_data``) utilisée par le
    boot dev (``create_all`` sans migration) et par l'action d'init admin.
@@ -269,6 +269,26 @@ RULE_SEED: tuple[tuple[str, str, str, str, str, bool], ...] = (
         "le bord (delta distance_from_sosp_nm) — sous-estimation systématique possible "
         "en flotte vélique (louvoiement), dégrade artificiellement l'EF_MRV affiché "
         "(Matrice §8, revue technique 09/07). N'est jamais corrigée automatiquement.",
+        "warning",
+        "event",
+        True,
+    ),
+    (
+        "R29",
+        "Complétude relevés Noon (voilure/température)",
+        "Voilure (sail_readings) et températures air/mer (hold_readings) manquantes sur un "
+        "Noon — utiles à l'étude des conditions de transport et au calcul du profil de "
+        "propulsion (G6, volet complétude originalement porté par R13, jamais codé).",
+        "info",
+        "event",
+        True,
+    ),
+    (
+        "R30",
+        "ROB annexes Noon (urée/eau douce)",
+        "ROB urée/eau douce manquants sur un Noon — indépendants du calcul carburant, "
+        "purement informatifs (G5, originalement porté par R11, jamais codé pour le "
+        "nouveau modèle événementiel).",
         "warning",
         "event",
         True,
@@ -1140,6 +1160,44 @@ async def _r13_chronology(ctx: RuleContext) -> list[CheckOutcome]:
             )
         ]
     return [CheckOutcome("pass", "Chronologie croissante.")]
+
+
+@rule("R29")
+async def _r29_noon_completeness(ctx: RuleContext) -> list[CheckOutcome]:
+    """R29 — complétude des relevés Noon : voilure et températures (G6,
+    volet complétude originalement porté par R13, jamais codé — cf. R13
+    ci-dessus, "la complétude des champs arrive au lot 8").
+
+    Ces données alimentent l'étude des conditions de transport et le calcul
+    du profil de propulsion (``kpi_env.build_propulsion_profile`` — vélique
+    pur / hybride / mécanique / statique) : leur absence n'est jamais
+    bloquante mais doit être visible. Informatif.
+
+    Duck-typé : s'abstient si le sujet n'expose pas ``sail_readings`` (pas un
+    NoonEvent) ou si la relation n'est pas chargée (``_get_loaded``, jamais de
+    lazy-load synchrone incompatible avec une session async, cf. R12/G7)."""
+    sail_readings = _get_loaded(ctx.subject, "sail_readings")
+    if sail_readings is None:
+        return [CheckOutcome("pass", "R29 — non applicable (pas un Noon).")]
+    hold_readings = _get_loaded(ctx.subject, "hold_readings") or []
+    missing: list[str] = []
+    if not sail_readings:
+        missing.append("voilure")
+    temp_zones = {r.zone for r in hold_readings if r.temp_c is not None}
+    if "air" not in temp_zones:
+        missing.append("température air")
+    if "sea_water" not in temp_zones:
+        missing.append("température mer")
+    if missing:
+        return [
+            CheckOutcome(
+                "fail",
+                f"R29 — relevés manquants sur ce Noon : {', '.join(missing)}.",
+                {"missing": missing},
+                severity="info",
+            )
+        ]
+    return [CheckOutcome("pass", "R29 — relevés voilure/température complets.")]
 
 
 # ════════════════════════════════════════════════════════════ Exécuteur

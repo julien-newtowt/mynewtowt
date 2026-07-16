@@ -3,9 +3,9 @@
 Couvre : résolution de seuils (override navire > global > défaut codé,
 fail-closed sur DB en erreur), cache + invalidation, chaque règle codée
 (R01/R02/R11/R12/R13, table-driven pass/fail/limite — R12 inclut désormais
-son volet fréquence météo, G7), persistance de ``run_rules`` avec snapshot
-des seuils, et la robustesse d'une règle qui lève une exception (fail/info
-sans crash).
+son volet fréquence météo, G7 ; R29 complétude voilure/température Noon,
+G6), persistance de ``run_rules`` avec snapshot des seuils, et la
+robustesse d'une règle qui lève une exception (fail/info sans crash).
 """
 
 from __future__ import annotations
@@ -279,6 +279,50 @@ async def test_r13_chronology(db):
     assert (await _run_rule(db, "R13", seq, 1))[0].result == "pass"
     assert (await _run_rule(db, "R13", seq, 2))[0].result == "fail"
     assert (await _run_rule(db, "R13", seq, 3))[0].result == "fail"
+
+
+def _hold(zone, temp_c):
+    return SimpleNamespace(zone=zone, temp_c=temp_c)
+
+
+@pytest.mark.asyncio
+async def test_r29_complete_noon_passes(db):
+    """G6 — voilure + températures air/mer présentes → conforme."""
+    subject = SimpleNamespace(
+        sail_readings=[SimpleNamespace()],
+        hold_readings=[_hold("air", Decimal("22.5")), _hold("sea_water", Decimal("18.0"))],
+    )
+    out = await _run_rule(db, "R29", [subject], 0)
+    assert out[0].result == "pass"
+
+
+@pytest.mark.asyncio
+async def test_r29_missing_sail_and_temperatures_flags_info(db):
+    """G6 — aucune voilure ni température → info, jamais bloquant."""
+    subject = SimpleNamespace(sail_readings=[], hold_readings=[])
+    out = await _run_rule(db, "R29", [subject], 0)
+    assert out[0].result == "fail" and out[0].severity == "info"
+    assert set(out[0].details["missing"]) == {"voilure", "température air", "température mer"}
+
+
+@pytest.mark.asyncio
+async def test_r29_missing_only_sea_temperature(db):
+    """G6 — voilure et air renseignés, température mer absente → info ciblé."""
+    subject = SimpleNamespace(
+        sail_readings=[SimpleNamespace()],
+        hold_readings=[_hold("air", Decimal("22.5"))],
+    )
+    out = await _run_rule(db, "R29", [subject], 0)
+    assert out[0].result == "fail"
+    assert out[0].details["missing"] == ["température mer"]
+
+
+@pytest.mark.asyncio
+async def test_r29_abstains_on_non_noon_subject(db):
+    """Duck-typé : un sujet sans ``sail_readings`` (pas un Noon) s'abstient."""
+    subject = SimpleNamespace(event_type="departure")
+    out = await _run_rule(db, "R29", [subject], 0)
+    assert out[0].result == "pass"
 
 
 # ─────────────────────────── run_rules & snapshot ────────────────────────

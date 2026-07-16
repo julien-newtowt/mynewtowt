@@ -3,7 +3,8 @@
 R08 (consommation + complétude escale amendée), R09 v1/v2 (distance vs
 trajectoire — v1 scopé à la position manuellement justifiée depuis G16 —,
 datetime d'escale vs référence), R28 (G4 — distance haversine vs distance
-loguée SOSP, Matrice §8), R10 complet (régression compteur :
+loguée SOSP, Matrice §8), R30 (G5 — ROB annexes urée/eau douce sur Noon),
+R10 complet (régression compteur :
 warning routé admin / reset confirmé / escalade bloquante) — ≥ 3 cas chacun
 (pass / fail / limite exacte au seuil). R11/R12/R13 sont déjà couverts
 table-driven dans ``tests/unit/test_validation_engine.py`` (lot 2) — leur
@@ -389,6 +390,39 @@ async def test_r28_abstains_without_logged_sosp_distance(db):
         "noon", T0 + timedelta(hours=24), lat_decimal=Decimal("10"), lon_decimal=Decimal("10")
     )
     out = await _run(db, "R28", [prev, cur], 1)
+    assert out[0].result == "pass"
+
+
+# ═════════════════════════════════════ R30 — ROB annexes Noon (urée/eau douce)
+
+
+@pytest.mark.asyncio
+async def test_r30_complete_rob_annexes_passes(db):
+    subject = _ev("noon", T0, rob_uree_t=Decimal("2.5"), rob_eau_douce_t=Decimal("18.0"))
+    out = await _run(db, "R30", [subject], 0)
+    assert out[0].result == "pass"
+
+
+@pytest.mark.asyncio
+async def test_r30_missing_both_rob_annexes_warns(db):
+    subject = _ev("noon", T0)
+    out = await _run(db, "R30", [subject], 0)
+    assert out[0].result == "fail" and out[0].severity == "warning"
+    assert set(out[0].details["missing"]) == {"ROB urée", "ROB eau douce"}
+
+
+@pytest.mark.asyncio
+async def test_r30_missing_only_one_rob_annexe(db):
+    subject = _ev("noon", T0, rob_uree_t=Decimal("2.5"))
+    out = await _run(db, "R30", [subject], 0)
+    assert out[0].result == "fail"
+    assert out[0].details["missing"] == ["ROB eau douce"]
+
+
+@pytest.mark.asyncio
+async def test_r30_abstains_on_non_noon_event(db):
+    subject = _ev("departure", T0)
+    out = await _run(db, "R30", [subject], 0)
     assert out[0].result == "pass"
 
 

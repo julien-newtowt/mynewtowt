@@ -625,6 +625,37 @@ async def _r28_haversine_vs_logged_distance(ctx: RuleContext) -> list[CheckOutco
     return _ok("R28 — distance haversine cohérente avec la distance loguée.")
 
 
+@rule("R30")
+async def _r30_noon_rob_annexes(ctx: RuleContext) -> list[CheckOutcome]:
+    """R30 — ROB annexes (urée/eau douce) exigés à la déclaration d'un Noon,
+    indépendants du calcul carburant (G5 — originalement porté par R11,
+    jamais codé pour le nouveau modèle événementiel : ``nav_events`` n'a
+    aucune colonne pour ces ROB annexes avant G5, régression vs le modèle
+    legacy ``noon_report.py``). Purement informatifs (jamais lus par
+    ``inter_event_compute``/``emission_ledger``, ni par la chaîne ROB
+    R14/IR02) : absence signalée en warning (sévérité CDC d'origine),
+    jamais bloquant.
+
+    Duck-typé : s'abstient si le sujet n'est pas un Noon."""
+    if _event_type(ctx.subject) != "noon":
+        return _ok("R30 — non applicable (pas un Noon).")
+    missing: list[str] = []
+    if _get(ctx.subject, "rob_uree_t") is None:
+        missing.append("ROB urée")
+    if _get(ctx.subject, "rob_eau_douce_t") is None:
+        missing.append("ROB eau douce")
+    if missing:
+        return [
+            CheckOutcome(
+                "fail",
+                f"R30 — ROB annexes manquants sur ce Noon : {', '.join(missing)}.",
+                {"missing": missing},
+                severity="warning",
+            )
+        ]
+    return _ok("R30 — ROB annexes complets.")
+
+
 @rule("R10")
 async def _r10_counter(ctx: RuleContext) -> list[CheckOutcome]:
     """R10 amendé — monotonie des compteurs moteur. Une régression NON confirmée

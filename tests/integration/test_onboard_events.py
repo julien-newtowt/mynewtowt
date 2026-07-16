@@ -267,6 +267,23 @@ async def test_create_with_engine_readings(db):
 
 
 @pytest.mark.asyncio
+async def test_create_persists_rob_annexes(db):
+    """G5 — ROB urée/eau douce, indépendants du calcul carburant, se
+    persistent comme les autres champs Noon scalaires."""
+    from app.routers.onboard_router import onboard_event_create
+
+    v = await _vessel_with_engines(db)
+    leg = await _leg(db, v)
+    user = await _captain(db, assigned_vessel_id=v.id)
+    form = _noon_form(leg.id, rob_uree_t="2.500", rob_eau_douce_t="18.000")
+    resp = await onboard_event_create(FakeRequest(form), db=db, user=user)
+    event_id = int(resp.headers["location"].rstrip("/").split("/")[-2])
+    ev = await db.get(NoonEvent, event_id)
+    assert ev.rob_uree_t == Decimal("2.500")
+    assert ev.rob_eau_douce_t == Decimal("18.000")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "etype", ["departure", "arrival", "anchoring_begin", "anchoring_end", "cutoff"]
 )

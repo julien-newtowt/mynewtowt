@@ -213,6 +213,11 @@ class NoonEvent(NavEvent):
     etb: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # 7 paliers ETA (7,0 → 10,0 kt) en JSON — évite 21 colonnes.
     eta_7_to_10kt: Mapped[dict | list | None] = mapped_column(JSON)
+    # ROB annexes (G5) — exigés au Noon, mais indépendants du calcul carburant
+    # (jamais lus par inter_event_compute/emission_ledger, R14/IR02) : purement
+    # informatifs, contrairement au ROB de référence (PortCallEvent.rob_t).
+    rob_uree_t: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    rob_eau_douce_t: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
     comments: Mapped[str | None] = mapped_column(Text)
 
     weather_readings: Mapped[list[NavEventWeatherReading]] = relationship(
