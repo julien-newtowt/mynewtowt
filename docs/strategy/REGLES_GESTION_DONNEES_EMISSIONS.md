@@ -178,9 +178,13 @@ Application par fonction (mapping Q4, décision actée) :
      (parametres mrv:S), 937-1007 (validations mrv:M) ; dashboard_env_router.py:133
      (kpi:C), 554/592 (mrv:C), 237 (mrv:S) -->
 
-> Note : `operation`, `technique` et `manager_maritime` détiennent `mrv:M` par
-> défaut — la validation siège leur est donc accessible. Resserrable **en base**
-> (overrides ARC-04) sans changement de code, au choix du client.
+> **Choix assumé, confirmé (G11)** : le CDC ne prévoit que 3 profils habilités à
+> la validation siège du Carbon Report (Master / Environmental Manager-DPA /
+> Administrateur), mais `operation`, `technique` et `manager_maritime`
+> détiennent tous `mrv:M` par défaut — un périmètre plus large que le modèle
+> CDC. Ce n'est **pas un oubli de configuration** : c'est un choix produit
+> délibéré, confirmé explicitement par le porteur du projet. Resserrable **en
+> base** (overrides ARC-04) sans changement de code si le besoin évolue.
 
 ---
 
