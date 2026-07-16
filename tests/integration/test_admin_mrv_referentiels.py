@@ -137,7 +137,9 @@ async def test_flotte_env_init_unknown_vessel_404(db, staff_user):
 
 
 @pytest.mark.asyncio
-async def test_flotte_env_update_persists_the_3_fields(db, staff_user):
+async def test_flotte_env_update_persists_the_4_fields(db, staff_user):
+    """G17 — deadweight_t (symétrique de lightweight_t) rejoint les champs
+    référentiel environnemental édités par cet écran."""
     from app.models.vessel import Vessel
     from app.routers.admin_router import flotte_env_update
 
@@ -149,6 +151,7 @@ async def test_flotte_env_update_persists_the_3_fields(db, staff_user):
         v.id,
         FakeRequest(),
         lightweight_t="612.500",
+        deadweight_t="1200.000",
         default_fuel_type="mdo",
         water_density_default_t_m3="1.0250",
         db=db,
@@ -157,6 +160,7 @@ async def test_flotte_env_update_persists_the_3_fields(db, staff_user):
     assert resp.status_code == 303
     await db.refresh(v)
     assert v.lightweight_t == Decimal("612.500")
+    assert v.deadweight_t == Decimal("1200.000")
     assert v.default_fuel_type == "MDO"  # normalisé en majuscules
     assert v.water_density_default_t_m3 == Decimal("1.0250")
 

@@ -204,9 +204,12 @@ sans code) : <!-- source: referential_env.py:89-141 ; vessel_env.py -->
   | `FWD_GEN`, `AFT_GEN` (groupes électrogènes) | `AE` | oui |
   | `PORT_SHAFT_GEN`, `STBD_SHAFT_GEN` (lignes d'arbre) | `NULL` | **non — exclus** |
 
-- évolution `vessels` : `lightweight_t`, `default_fuel_type` (défaut `MDO`),
-  `water_density_default_t_m3` (repli 1,025 t/m³).
-  <!-- source: vessel.py:115-129 ; inter_event_compute.py:61 -->
+- évolution `vessels` : `lightweight_t`, `deadweight_t` (G17, symétrique de
+  `lightweight_t` — distinct du `dwt` commercial pré-existant, hors périmètre
+  MRV), `default_fuel_type` (défaut `MDO`), `water_density_default_t_m3`
+  (repli 1,025 t/m³). Les deux poids sont purement informatifs, aucun n'est
+  lu par `compute_cargo_mrv` (G10).
+  <!-- source: vessel.py ; inter_event_compute.py -->
 
 ### 3.2 Facteurs d'émission multi-GES versionnés
 

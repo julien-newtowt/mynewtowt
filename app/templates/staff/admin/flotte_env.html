@@ -21,12 +21,17 @@
     </form>
   </div>
 
-  <form method="post" action="/admin/flotte-env/{{ v.id }}/update" class="grid grid-3 gap-3 mb-4">
+  <form method="post" action="/admin/flotte-env/{{ v.id }}/update" class="grid grid-4 gap-3 mb-4">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     <div class="field">
       <label for="lightweight_t-{{ v.id }}">Poids lège (t)</label>
       <input id="lightweight_t-{{ v.id }}" name="lightweight_t" type="number" step="any" min="0"
              value="{{ v.lightweight_t if v.lightweight_t is not none else '' }}" />
+    </div>
+    <div class="field">
+      <label for="deadweight_t-{{ v.id }}">Port en lourd (t)</label>
+      <input id="deadweight_t-{{ v.id }}" name="deadweight_t" type="number" step="any" min="0"
+             value="{{ v.deadweight_t if v.deadweight_t is not none else '' }}" />
     </div>
     <div class="field">
       <label for="default_fuel_type-{{ v.id }}">Carburant par défaut</label>

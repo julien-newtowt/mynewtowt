@@ -116,6 +116,13 @@ class Vessel(Base):
     lightweight_t: Mapped[Decimal | None] = mapped_column(
         Numeric(10, 3), comment="Poids lège (lightweight) en tonnes"
     )
+    # Port en lourd MRV (tonnes) — attribut informatif optionnel, symétrique de
+    # lightweight_t (architecture §2.1, G17). Distinct du `dwt` commercial
+    # ci-dessus (référentiel stowage/booking, hors périmètre MRV) : ce champ
+    # n'est ni lu ni calculé par compute_cargo_mrv (G10), purement informatif.
+    deadweight_t: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 3), comment="Port en lourd (deadweight) MRV en tonnes"
+    )
     # Carburant par défaut du navire — résout app.models.emission_factor
     # (fuel_type) tant qu'aucun choix explicite n'est fait à la saisie.
     default_fuel_type: Mapped[str] = mapped_column(
