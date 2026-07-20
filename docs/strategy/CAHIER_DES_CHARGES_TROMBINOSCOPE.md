@@ -1,6 +1,6 @@
 # Cahier des charges — Trombinoscope Armement (module `crew`)
 
-> Statut : v1 — cadrage quasi finalisé (rédaction du 2026-07-17, mise à jour du 2026-07-17 après réception du gabarit réel et arrêt du mapping de taxonomie). **En attente du go du service Armement (rencontre prévue le 2026-07-20)**, puis de la validation explicite avant Phase 4 — création de branche et développement.
+> Statut : v1 — **développement fonctionnel complet (L1-L7)** sur la branche `feature/crewing-monthly-yearbook` (cadrage validé par le service Armement le 2026-07-20). Reste L8 (tests d'intégration bout-en-bout + validation CI) avant Pull Request. Le flux Power Automate de déclenchement automatique (hors code) reste à créer côté IT — cf. `docs/operations/07-trombinoscope-generation-runbook.md`.
 > Source de vérité fonctionnelle : ce document. Source de vérité technique au runtime : `app/permissions.py`, `app/models/crew.py`, `app/routers/crew_router.py`.
 > Document compagnon : `docs/audit/2026-07-17-analyse-faisabilite-trombinoscope.md` (analyse détaillée de l'existant et étude de faisabilité, incluant l'analyse du gabarit réel `TROMBINOSCOPE NAVIGANTS_10032026.pdf` §5).
 
@@ -251,14 +251,14 @@ Rôle | Module `crew` (existant) | Justification
 
 Lot | Contenu | Dépendances | État
 ---|---|---|---
-L1 | Migration `first_name`/`last_name` + `agency` (décidé, §11) + extension de `CREW_ROLES` (`electricien`/`ajusteur`/`matelot_cuisinier`, décidé, §11) + reprise de données | — | ⏳ à planifier, sous réserve du go Armement du 2026-07-20
-L2 | Service `crew_directory.py` (regroupement par fonction et par agence, cache, encodage photo) | L1 | ⏳
-L3 | Gabarit PDF `crew_directory.html` (gabarit confirmé, cf. TRB-2) | L2 | ⏳
-L4 | Routes de génération manuelle + permission + audit | L2, L3 | ⏳
-L5 | Endpoint automatique + token + flux Power Automate | L2, L3 | ⏳
-L6 | Modèle + stockage d'archivage (`generated_reports`) + consultation d'historique | L2 | ⏳
-L7 | Notification in-app | L4, L5 | ⏳
-L8 | Tests unitaires/intégration + documentation (runbook, README) | L1-L7 | ⏳
+L1 | Migration `first_name`/`last_name` + `agency` (décidé, §11) + extension de `CREW_ROLES` (`electricien`/`ajusteur`/`matelot_cuisinier`, décidé, §11) + reprise de données | — | ✅ (migration `20260720_0106`)
+L2 | Service `crew_directory.py` (regroupement par fonction et par agence, cache, encodage photo) | L1 | ✅
+L3 | Gabarit PDF `crew_directory.html` (gabarit confirmé, cf. TRB-2) | L2 | ✅ (vérifié par rendu WeasyPrint réel — bug CSS `inset` trouvé et corrigé)
+L4 | Route de génération manuelle + permission + audit | L2, L3 | ✅ (`GET /crew/trombinoscope.pdf`)
+L5 | Endpoint automatique + token + flux Power Automate | L2, L3 | ✅ code (`POST /api/trombinoscope/generate`, `TROMBINOSCOPE_API_TOKEN`) — ⏳ flux Power Automate à créer côté IT (hors code)
+L6 | Modèle + stockage d'archivage (`generated_reports`) | L2 | ✅ — ⏳ écran de consultation de l'historique (non bloquant v1, cf. §13)
+L7 | Notification in-app | L4, L5 | ✅ (`target_role="armement"`)
+L8 | Tests unitaires/intégration + documentation (runbook, README) | L1-L7 | ⏳ tests unitaires/service faits au fil des lots ; tests d'intégration HTTP bout-en-bout et validation CI restants (non exécutables dans l'environnement de développement local, cf. journal de la branche `feature/crewing-monthly-yearbook`)
 
 ## 10. Glossaire
 
