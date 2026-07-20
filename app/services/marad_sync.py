@@ -176,6 +176,17 @@ def _apply(member: CrewMember, rec: dict, *, creating: bool) -> None:
     elif creating:
         member.full_name = "(sans nom)"
 
+    # Trombinoscope Armement (cf. CAHIER_DES_CHARGES_TROMBINOSCOPE.md §4.1) :
+    # first_name/last_name mappés explicitement depuis Marad plutôt que
+    # dérivés de full_name — évite l'heuristique de découpe pour les fiches
+    # synchronisées.
+    first = _clean(_field(rec, "firstName"))
+    if first:
+        member.first_name = first[:100]
+    last = _clean(_field(rec, "lastName"))
+    if last:
+        member.last_name = last[:100]
+
     rank = _first_rank(rec)
     if rank:
         member.role = rank

@@ -57,6 +57,12 @@ CREW_ROLES = (
     "bosco",
     "marin",
     "eleve_officier",
+    # Ajoutés pour le trombinoscope Armement (cf.
+    # docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md §11) — fonctions
+    # observées sur le gabarit réel sans équivalent jusqu'ici.
+    "electricien",
+    "ajusteur",
+    "matelot_cuisinier",
 )
 # REQUIRED_ROLES (armement réglementaire) : source unique dans
 # services.crew_compliance — importé ci-dessus (FLX-06).

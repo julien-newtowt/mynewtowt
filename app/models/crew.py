@@ -26,6 +26,13 @@ class CrewMember(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Nom/prénom séparés (trombinoscope Armement — cf.
+    # docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md). full_name reste la
+    # source d'affichage historique ; first_name/last_name sont additifs,
+    # repris par heuristique sur les lignes existantes (migration 20260720_0106)
+    # et alimentés explicitement par la sync Marad pour les nouvelles fiches.
+    first_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
     role: Mapped[str] = mapped_column(
         String(60), nullable=False
     )  # captain, chief_mate, ab, cook, ...
@@ -51,6 +58,10 @@ class CrewMember(Base):
     photo_path: Mapped[str | None] = mapped_column(String(500))
     photo_filename: Mapped[str | None] = mapped_column(String(255))
     photo_mime: Mapped[str | None] = mapped_column(String(80))
+    # Agence / prestataire de sous-traitance (ex. "Pelican Marine Services").
+    # Enrichissement ERP local comme la photo — jamais alimenté par la sync
+    # Marad tant que celle-ci ne l'expose pas. NULL = employé directement.
+    agency: Mapped[str | None] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Clé externe de réconciliation pour l'import LECTURE SEULE depuis Marad
     # (cf. docs/integrations/marad-crew-readonly.md). NULL = saisi dans l'ERP.
