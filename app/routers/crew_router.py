@@ -1220,7 +1220,8 @@ async def crew_directory_pdf(
     """
     from fastapi.responses import Response
 
-    from app.services import crew_directory as directory_svc, notifications, report_archive
+    from app.services import crew_directory as directory_svc
+    from app.services import notifications, report_archive
     from app.services.pdf_generator import render_crew_directory
 
     directory_svc.invalidate_cache()  # génération manuelle = données fraîches
@@ -1276,7 +1277,8 @@ async def trombinoscope_generate_api(
     if not secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
 
-    from app.services import crew_directory as directory_svc, notifications, report_archive
+    from app.services import crew_directory as directory_svc
+    from app.services import notifications, report_archive
     from app.services.pdf_generator import render_crew_directory
 
     directory_svc.invalidate_cache()

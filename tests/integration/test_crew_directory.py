@@ -13,7 +13,6 @@ import pytest
 from app.models.crew import CrewMember
 from app.services import crew_directory as directory_svc
 
-
 # ───────────────────── normalize_role_for_directory (pure) ─────────────────────
 
 
