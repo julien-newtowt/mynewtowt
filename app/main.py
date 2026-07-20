@@ -237,7 +237,17 @@ def create_app() -> FastAPI:
                     await _seed_session.commit()
             except Exception:  # pragma: no cover - best effort, jamais bloquant
                 logger.warning("seed référentiel validation MRV ignoré (non bloquant)")
+
+        from app.services import trombinoscope_scheduler
+
+        trombinoscope_scheduler.start()
         logger.info("mynewtowt %s started (env=%s)", __version__, settings.app_env)
+
+    @app.on_event("shutdown")
+    async def _on_shutdown() -> None:
+        from app.services import trombinoscope_scheduler
+
+        trombinoscope_scheduler.shutdown()
 
     return app
 
