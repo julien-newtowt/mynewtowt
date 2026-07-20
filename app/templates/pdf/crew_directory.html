@@ -90,7 +90,10 @@
   /* Double anneau décoratif (cf. gabarit réel analysé) — approximation en
      deux cercles concentriques semi-transparents plutôt que les arcs
      discontinus exacts du visuel d'origine (non reproductibles simplement
-     en CSS box-model WeasyPrint). */
+     en CSS box-model WeasyPrint).
+     NB : le raccourci CSS `inset` n'est PAS supporté par WeasyPrint 63.1
+     (vérifié empiriquement : produit un point de la taille de la bordure
+     au lieu d'un anneau) — top/right/bottom/left explicites à la place. */
   .tromb-photo-wrap::before,
   .tromb-photo-wrap::after {
     content: "";
@@ -98,8 +101,8 @@
     border-radius: 50%;
     border: 1pt solid #87BD29; /* vert NEWTOWT */
   }
-  .tromb-photo-wrap::before { inset: -3mm; opacity: 0.55; }
-  .tromb-photo-wrap::after { inset: -6mm; opacity: 0.3; }
+  .tromb-photo-wrap::before { top: -3mm; right: -3mm; bottom: -3mm; left: -3mm; opacity: 0.55; }
+  .tromb-photo-wrap::after { top: -6mm; right: -6mm; bottom: -6mm; left: -6mm; opacity: 0.3; }
 
   .tromb-photo {
     width: 30mm;
