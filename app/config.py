@@ -135,6 +135,12 @@ class Settings(BaseSettings):
     # externe (POST /api/quotes/followup, déclenché par Power Automate).
     quote_followup_api_token: str | None = None
 
+    # Trombinoscope Armement — génération automatique fin de mois (cf.
+    # docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md). Token du cron externe
+    # (POST /api/trombinoscope/generate, déclenché par Power Automate), même
+    # patron que MARAD_SYNC_TOKEN/WEATHER_API_TOKEN.
+    trombinoscope_api_token: str | None = None
+
     # Note V3.1 — Stripe retiré de la facturation FRET : NEWTOWT facture le
     # fret par virement bancaire (cf. pdf/invoice.html), l'équipe commerciale
     # confirme les bookings sous 4h.

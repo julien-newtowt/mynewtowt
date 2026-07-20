@@ -119,6 +119,7 @@ def create_app() -> FastAPI:
     app.include_router(commercial_router.router)
     app.include_router(cargo_packing_router.router)
     app.include_router(crew_router.router)
+    app.include_router(crew_router.trombinoscope_api_router)
     app.include_router(escale_router.router)
     # ─── Phase 3 ERP : captain / stowage / claims / mrv ───
     app.include_router(captain_router.router)

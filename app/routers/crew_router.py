@@ -11,12 +11,14 @@ Reprise des écrans riches de la V3.0.0 :
 from __future__ import annotations
 
 import contextlib
+import logging
+import secrets
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from datetime import date as _date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +46,8 @@ from app.services.crew_compliance import (
     vessel_readiness,
 )
 from app.templating import brand_for_lang, templates
+
+logger = logging.getLogger("crew")
 
 router = APIRouter(prefix="/crew", tags=["crew"])
 
@@ -1209,21 +1213,88 @@ async def crew_directory_pdf(
     """Trombinoscope Armement — génération manuelle à la demande.
 
     Marins actifs regroupés par fonction (ou par agence de sous-traitance),
-    à partir des données les plus récentes disponibles. Cf.
-    docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-3).
+    à partir des données les plus récentes disponibles. Archive une ligne
+    ``generated_reports`` (``generated_by`` = utilisateur courant) avant de
+    renvoyer le PDF. Cf. docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md
+    (module TRB-3).
     """
     from fastapi.responses import Response
 
-    from app.services import crew_directory as directory_svc
+    from app.services import crew_directory as directory_svc, report_archive
     from app.services.pdf_generator import render_crew_directory
 
     directory_svc.invalidate_cache()  # génération manuelle = données fraîches
     directory = await directory_svc.build_directory(db)
-    doc = render_crew_directory(directory=directory, period=datetime.now(UTC).date())
+    period = datetime.now(UTC).date()
+    doc = render_crew_directory(directory=directory, period=period)
+    await report_archive.save_report(
+        db,
+        pdf_bytes=doc.pdf,
+        report_type="trombinoscope",
+        period=f"{period.year:04d}-{period.month:02d}",
+        generated_by=user.id,
+    )
     return Response(
         content=doc.pdf,
         media_type=doc.mime,
         headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
+    )
+
+
+trombinoscope_api_router = APIRouter(prefix="/api/trombinoscope", tags=["trombinoscope-api"])
+
+
+def _trombinoscope_expected_token() -> str | None:
+    from app.config import settings
+
+    return (settings.trombinoscope_api_token or "").strip() or None
+
+
+@trombinoscope_api_router.post("/generate")
+async def trombinoscope_generate_api(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Cron externe (Power Automate, dernier jour du mois). Auth X-API-Token.
+
+    Même patron que ``POST /api/marad/refresh`` : 503 si le token n'est pas
+    configuré, 403 si invalide. Génère le trombinoscope à partir des données
+    les plus récentes, l'archive (``generated_reports``, ``generated_by``
+    NULL), et ne renvoie qu'un résumé JSON — le fichier est ensuite
+    consultable via l'archive, pas streamé dans la réponse du cron. Cf.
+    docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-4).
+    """
+    expected = _trombinoscope_expected_token()
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="TROMBINOSCOPE_API_TOKEN non configuré dans .env",
+        )
+    received = request.headers.get("x-api-token") or ""
+    if not secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
+
+    from app.services import crew_directory as directory_svc, report_archive
+    from app.services.pdf_generator import render_crew_directory
+
+    directory_svc.invalidate_cache()
+    directory = await directory_svc.build_directory(db)
+    period = datetime.now(UTC).date()
+    doc = render_crew_directory(directory=directory, period=period)
+    report = await report_archive.save_report(
+        db,
+        pdf_bytes=doc.pdf,
+        report_type="trombinoscope",
+        period=f"{period.year:04d}-{period.month:02d}",
+        generated_by=None,
+    )
+    logger.info("Trombinoscope généré automatiquement (report_id=%s)", report.id)
+    return JSONResponse(
+        {
+            "report_id": report.id,
+            "period": report.period,
+            "member_count": directory.member_count,
+        }
     )
 
 
