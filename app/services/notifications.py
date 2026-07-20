@@ -307,11 +307,16 @@ async def notify_trombinoscope_generated(db: AsyncSession, *, period: str) -> No
 
     Cible le rôle ``armement`` (destinataires exacts non figés en v1 — le
     ciblage par rôle reste facilement extensible vers une liste explicite
-    sans redéveloppement, cf. cahier des charges §13)."""
+    sans redéveloppement, cf. cahier des charges §13).
+
+    ``link`` pointe vers ``/crew`` (pas directement vers le PDF) : le centre
+    de notifications rend ``link`` en simple ``<a href>`` (GET), et la
+    génération du PDF est un ``POST`` protégé CSRF depuis le lot 4 (sécurité
+    2026-07-20) — un lien direct casserait (405) au clic."""
     return await create(
         db,
         type="trombinoscope_generated",
         title=f"Trombinoscope généré — {period}",
-        link="/crew/trombinoscope.pdf",
+        link="/crew",
         target_role="armement",
     )

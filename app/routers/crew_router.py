@@ -1205,7 +1205,7 @@ async def crew_border_police_pdf(
     )
 
 
-@router.get("/trombinoscope.pdf")
+@router.post("/trombinoscope.pdf")
 async def crew_directory_pdf(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("crew", "C")),
@@ -1214,9 +1214,13 @@ async def crew_directory_pdf(
 
     Marins actifs regroupés par fonction (ou par agence de sous-traitance),
     à partir des données les plus récentes disponibles. Archive une ligne
-    ``generated_reports`` (``generated_by`` = utilisateur courant) avant de
-    renvoyer le PDF. Cf. docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md
-    (module TRB-3).
+    ``generated_reports`` (``generated_by`` = utilisateur courant) et notifie
+    le rôle ``armement`` avant de renvoyer le PDF — **POST** (pas GET) car
+    cette route a des effets de bord (écriture + notification), protégée par
+    le token CSRF du formulaire comme toute mutation du projet (sécurité
+    2026-07-20 : un GET avec effets de bord contournait structurellement
+    CSRFMiddleware, qui ne valide jamais les méthodes sûres GET/HEAD/OPTIONS).
+    Cf. docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-3).
     """
     from fastapi.responses import Response
 

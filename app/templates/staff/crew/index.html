@@ -10,9 +10,12 @@
   <div class="flex gap-2 items-center">
     <a href="/crew/compliance" class="btn btn-ghost"><i data-lucide="shield-check"></i> Compliance</a>
     <a href="/crew/calendar" class="btn btn-ghost"><i data-lucide="calendar"></i> Calendrier</a>
-    <a href="/crew/trombinoscope.pdf" class="btn btn-ghost" target="_blank" title="Générer le trombinoscope des marins actifs (PDF)">
-      <i data-lucide="id-card"></i> Trombinoscope
-    </a>
+    <form method="post" action="/crew/trombinoscope.pdf" style="display:inline;" target="_blank">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-ghost" title="Générer le trombinoscope des marins actifs (PDF)">
+        <i data-lucide="id-card"></i> Trombinoscope
+      </button>
+    </form>
     {% if marad_configured %}
     <form method="post" action="/crew/sync-marad" style="display:inline;">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
