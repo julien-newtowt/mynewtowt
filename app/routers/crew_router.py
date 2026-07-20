@@ -1201,6 +1201,32 @@ async def crew_border_police_pdf(
     )
 
 
+@router.get("/trombinoscope.pdf")
+async def crew_directory_pdf(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "C")),
+):
+    """Trombinoscope Armement — génération manuelle à la demande.
+
+    Marins actifs regroupés par fonction (ou par agence de sous-traitance),
+    à partir des données les plus récentes disponibles. Cf.
+    docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-3).
+    """
+    from fastapi.responses import Response
+
+    from app.services import crew_directory as directory_svc
+    from app.services.pdf_generator import render_crew_directory
+
+    directory_svc.invalidate_cache()  # génération manuelle = données fraîches
+    directory = await directory_svc.build_directory(db)
+    doc = render_crew_directory(directory=directory, period=datetime.now(UTC).date())
+    return Response(
+        content=doc.pdf,
+        media_type=doc.mime,
+        headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
+    )
+
+
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
