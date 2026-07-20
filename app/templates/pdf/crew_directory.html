@@ -1,0 +1,192 @@
+{% extends "pdf/_base.html" %}
+
+{% block title %}Trombinoscope — {{ period_label }}{% endblock %}
+{% block doc_kind %}Trombinoscope{% endblock %}
+{% block doc_ref %}TROMBI-{{ period_token }}{% endblock %}
+
+{% block content %}
+{#
+  NB — ce <style> vit dans le contenu (body) plutôt que dans un bloc
+  "extra_css" : `pdf/_base.html` ne déclare pas de point d'insertion
+  `{% raw %}{% block extra_css %}{% endblock %}{% endraw %}` dans son <head>,
+  ce qui fait que les blocs `extra_css` définis par `pdf/carnet_bord.html`
+  et `pdf/anemos_annual_report.html` sont aujourd'hui silencieusement
+  ignorés par Jinja2 (vérifié empiriquement) — bug pré-existant, hors
+  périmètre du trombinoscope, à signaler séparément. On l'évite ici en
+  plaçant le <style> directement dans le corps, que WeasyPrint applique
+  normalement.
+#}
+<style>
+  @page {
+    size: A4 landscape;
+    margin: 0;
+    @bottom-left { content: none; }
+    @bottom-right { content: none; }
+  }
+
+  /* Le socle pdf/_base.html affiche un bandeau logo/référence (.header) et
+     une mention légale (.footer-mention) adaptés aux documents commerciaux
+     (facture, BL...). Le gabarit réel du trombinoscope n'a ni l'un ni
+     l'autre — pages pleine page, fond de marque uni. */
+  .header, .footer-mention { display: none !important; }
+  body { margin: 0; padding: 0; }
+
+  .tromb-page {
+    position: relative;
+    width: 297mm;
+    height: 210mm;
+    background: #0D5966; /* teal NEWTOWT */
+    color: #FFFFFF;
+    overflow: hidden;
+    page-break-after: always;
+  }
+  .tromb-page.tromb-page-last { page-break-after: avoid; }
+
+  /* Filigrane de marque — approximation à partir du logo blanc existant
+     (app/static/img/logo_NEWTOWT_web_white.png) ; le gabarit réel utilise un
+     graphisme dédié (rose des vents) non présent dans les assets du dépôt —
+     à remplacer si un fichier dédié est fourni par le service marque. */
+  .tromb-watermark {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 220mm;
+    transform: translate(-50%, -50%);
+    opacity: 0.08;
+  }
+
+  .tromb-title {
+    position: relative;
+    text-align: center;
+    font-family: "Manrope", "Helvetica", sans-serif;
+    font-weight: 800;
+    font-size: 26pt;
+    letter-spacing: 0.04em;
+    color: #FFFFFF;
+    margin: 18mm 0 12mm 0;
+  }
+
+  .tromb-grid {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: flex-start;
+    gap: 16mm 14mm;
+    padding: 0 20mm;
+  }
+
+  .tromb-card {
+    width: 44mm;
+    text-align: center;
+  }
+
+  .tromb-photo-wrap {
+    position: relative;
+    width: 30mm;
+    height: 30mm;
+    margin: 0 auto 6mm auto;
+  }
+  /* Double anneau décoratif (cf. gabarit réel analysé) — approximation en
+     deux cercles concentriques semi-transparents plutôt que les arcs
+     discontinus exacts du visuel d'origine (non reproductibles simplement
+     en CSS box-model WeasyPrint). */
+  .tromb-photo-wrap::before,
+  .tromb-photo-wrap::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    border: 1pt solid #87BD29; /* vert NEWTOWT */
+  }
+  .tromb-photo-wrap::before { inset: -3mm; opacity: 0.55; }
+  .tromb-photo-wrap::after { inset: -6mm; opacity: 0.3; }
+
+  .tromb-photo {
+    width: 30mm;
+    height: 30mm;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+  }
+  .tromb-photo-placeholder {
+    width: 30mm;
+    height: 30mm;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1pt solid rgba(255, 255, 255, 0.4);
+  }
+
+  .tromb-name {
+    font-family: "Manrope", "Helvetica", sans-serif;
+    font-weight: 700;
+    font-size: 9.5pt;
+    letter-spacing: 0.02em;
+    color: #FFFFFF;
+  }
+
+  .tromb-function {
+    font-family: "Manrope", "Helvetica", sans-serif;
+    font-size: 8pt;
+    color: rgba(255, 255, 255, 0.75);
+    margin-top: 1.5mm;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .tromb-footer {
+    position: absolute;
+    bottom: 14mm;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: "Manrope", "Helvetica", sans-serif;
+    font-size: 10pt;
+    font-weight: 600;
+    letter-spacing: 0.35em;
+    color: rgba(255, 255, 255, 0.45);
+    text-transform: uppercase;
+  }
+
+  .tromb-empty {
+    position: relative;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 11pt;
+    margin-top: 40mm;
+  }
+</style>
+
+{% if not directory.has_content %}
+<div class="tromb-page tromb-page-last">
+  <img class="tromb-watermark" src="{{ site_url }}/static/img/logo_NEWTOWT_web_white.png" alt="" />
+  <h1 class="tromb-title">TROMBINOSCOPE — {{ period_label|upper }}</h1>
+  <p class="tromb-empty">Aucun marin actif trouvé pour cette génération.</p>
+  <div class="tromb-footer">Transport à la voile</div>
+</div>
+{% else %}
+{% for group in directory.groups %}
+<div class="tromb-page{{ ' tromb-page-last' if loop.last else '' }}">
+  <img class="tromb-watermark" src="{{ site_url }}/static/img/logo_NEWTOWT_web_white.png" alt="" />
+  <h1 class="tromb-title">{{ group.title }}</h1>
+  <div class="tromb-grid">
+    {% for entry in group.entries %}
+    <div class="tromb-card">
+      <div class="tromb-photo-wrap">
+        {% if entry.photo_data_uri %}
+        <img class="tromb-photo" src="{{ entry.photo_data_uri }}" alt="" />
+        {% else %}
+        <div class="tromb-photo-placeholder"></div>
+        {% endif %}
+      </div>
+      <div class="tromb-name">{{ entry.display_name }}</div>
+      {% if group.is_agency %}
+      <div class="tromb-function">{{ entry.function_label }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="tromb-footer">Transport à la voile</div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}
