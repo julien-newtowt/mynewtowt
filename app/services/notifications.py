@@ -299,3 +299,19 @@ async def notify_new_booking_message(
         link=f"/staff/bookings/{booking_reference}",
         target_role="operation",
     )
+
+
+async def notify_trombinoscope_generated(db: AsyncSession, *, period: str) -> Notification:
+    """Trombinoscope Armement généré (auto ou manuel) — cf.
+    docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-5).
+
+    Cible le rôle ``armement`` (destinataires exacts non figés en v1 — le
+    ciblage par rôle reste facilement extensible vers une liste explicite
+    sans redéveloppement, cf. cahier des charges §13)."""
+    return await create(
+        db,
+        type="trombinoscope_generated",
+        title=f"Trombinoscope généré — {period}",
+        link="/crew/trombinoscope.pdf",
+        target_role="armement",
+    )

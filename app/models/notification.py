@@ -44,6 +44,7 @@ NOTIFICATION_TYPES = (
     "invoice_issued",
     "anemos_issued",
     "new_booking_message",
+    "trombinoscope_generated",
 )
 
 # Icônes par type (emoji)
@@ -67,6 +68,7 @@ NOTIFICATION_ICONS: dict[str, str] = {
     "invoice_issued": "🧾",
     "anemos_issued": "🌿",
     "new_booking_message": "💬",
+    "trombinoscope_generated": "🪪",
 }
 
 

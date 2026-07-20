@@ -1220,20 +1220,22 @@ async def crew_directory_pdf(
     """
     from fastapi.responses import Response
 
-    from app.services import crew_directory as directory_svc, report_archive
+    from app.services import crew_directory as directory_svc, notifications, report_archive
     from app.services.pdf_generator import render_crew_directory
 
     directory_svc.invalidate_cache()  # génération manuelle = données fraîches
     directory = await directory_svc.build_directory(db)
     period = datetime.now(UTC).date()
     doc = render_crew_directory(directory=directory, period=period)
+    period_token = f"{period.year:04d}-{period.month:02d}"
     await report_archive.save_report(
         db,
         pdf_bytes=doc.pdf,
         report_type="trombinoscope",
-        period=f"{period.year:04d}-{period.month:02d}",
+        period=period_token,
         generated_by=user.id,
     )
+    await notifications.notify_trombinoscope_generated(db, period=period_token)
     return Response(
         content=doc.pdf,
         media_type=doc.mime,
@@ -1274,20 +1276,22 @@ async def trombinoscope_generate_api(
     if not secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
 
-    from app.services import crew_directory as directory_svc, report_archive
+    from app.services import crew_directory as directory_svc, notifications, report_archive
     from app.services.pdf_generator import render_crew_directory
 
     directory_svc.invalidate_cache()
     directory = await directory_svc.build_directory(db)
     period = datetime.now(UTC).date()
     doc = render_crew_directory(directory=directory, period=period)
+    period_token = f"{period.year:04d}-{period.month:02d}"
     report = await report_archive.save_report(
         db,
         pdf_bytes=doc.pdf,
         report_type="trombinoscope",
-        period=f"{period.year:04d}-{period.month:02d}",
+        period=period_token,
         generated_by=None,
     )
+    await notifications.notify_trombinoscope_generated(db, period=period_token)
     logger.info("Trombinoscope généré automatiquement (report_id=%s)", report.id)
     return JSONResponse(
         {
