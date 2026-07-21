@@ -60,12 +60,20 @@ async def save_report(
 
 
 async def latest_report(db: AsyncSession, *, report_type: str) -> GeneratedReport | None:
-    """Dernière archive générée pour ce type (tous mois confondus)."""
+    """Dernière archive générée pour ce type (tous mois confondus).
+
+    Départage par ``id`` en plus de ``generated_at`` (bug trouvé en exécutant
+    réellement les tests le 2026-07-21) : deux rapports créés dans la même
+    transaction/seconde peuvent partager un ``generated_at`` identique
+    (résolution à la seconde de `CURRENT_TIMESTAMP`), rendant le tri par
+    date seule ambigu. ``id`` (auto-incrément) est un critère fiable et
+    monotone pour "le plus récemment créé".
+    """
     return (
         await db.execute(
             select(GeneratedReport)
             .where(GeneratedReport.type == report_type)
-            .order_by(GeneratedReport.generated_at.desc())
+            .order_by(GeneratedReport.generated_at.desc(), GeneratedReport.id.desc())
             .limit(1)
         )
     ).scalar_one_or_none()

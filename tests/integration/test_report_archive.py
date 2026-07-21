@@ -39,14 +39,17 @@ async def test_save_report_writes_file_and_row(db, tmp_path, monkeypatch):
 async def test_save_report_records_generated_by_user(db, tmp_path, monkeypatch):
     monkeypatch.setattr(report_archive.settings, "upload_dir", str(tmp_path))
 
+    # generated_by est une vraie FK vers users.id (bug de test trouvé en
+    # exécution réelle le 2026-07-21) : id=1 est l'utilisateur admin semé par
+    # tests/integration/conftest.py — un id arbitraire (42) viole la contrainte.
     report = await report_archive.save_report(
         db,
         pdf_bytes=b"content",
         report_type="trombinoscope",
         period="2026-08",
-        generated_by=42,
+        generated_by=1,
     )
-    assert report.generated_by == 42
+    assert report.generated_by == 1
 
 
 @pytest.mark.asyncio
