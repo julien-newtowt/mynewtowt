@@ -1210,22 +1210,29 @@ async def crew_directory_pdf(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("crew", "C")),
 ):
-    """Trombinoscope Armement — génération manuelle à la demande.
+    """Trombinoscope Armement — régénération manuelle à la demande.
 
     Marins actifs regroupés par fonction (ou par agence de sous-traitance),
     à partir des données les plus récentes disponibles. Archive une ligne
-    ``generated_reports`` (``generated_by`` = utilisateur courant) et notifie
-    le rôle ``armement`` avant de renvoyer le PDF — **POST** (pas GET) car
-    cette route a des effets de bord (écriture + notification), protégée par
-    le token CSRF du formulaire comme toute mutation du projet (sécurité
-    2026-07-20 : un GET avec effets de bord contournait structurellement
-    CSRFMiddleware, qui ne valide jamais les méthodes sûres GET/HEAD/OPTIONS).
-    Cf. docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-3).
+    ``generated_reports`` (``generated_by`` = utilisateur courant) avant de
+    renvoyer le PDF — **POST** (pas GET) car cette route a un effet de bord
+    (écriture), protégée par le token CSRF du formulaire comme toute mutation
+    du projet (sécurité 2026-07-20 : un GET avec effets de bord contournait
+    structurellement CSRFMiddleware, qui ne valide jamais les méthodes sûres
+    GET/HEAD/OPTIONS).
+
+    **Pas de notification ici** (review 2026-07-20) : l'utilisateur qui
+    déclenche cette régénération est déjà informé (il vient de cliquer) —
+    seule la génération automatique mensuelle (scheduler ou endpoint de
+    secours) notifie le rôle ``armement``, qui télécharge ensuite via
+    ``GET /crew/trombinoscope/latest.pdf`` pour diffusion (ex. par email) à
+    l'ensemble de la société. Cf.
+    docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-3).
     """
     from fastapi.responses import Response
 
     from app.services import crew_directory as directory_svc
-    from app.services import notifications, report_archive
+    from app.services import report_archive
     from app.services.pdf_generator import render_crew_directory
 
     directory_svc.invalidate_cache()  # génération manuelle = données fraîches
@@ -1233,18 +1240,57 @@ async def crew_directory_pdf(
     period = datetime.now(UTC).date()
     doc = render_crew_directory(directory=directory, period=period)
     period_token = f"{period.year:04d}-{period.month:02d}"
-    await report_archive.save_report(
-        db,
-        pdf_bytes=doc.pdf,
-        report_type="trombinoscope",
-        period=period_token,
-        generated_by=user.id,
-    )
-    await notifications.notify_trombinoscope_generated(db, period=period_token)
+    try:
+        await report_archive.save_report(
+            db,
+            pdf_bytes=doc.pdf,
+            report_type="trombinoscope",
+            period=period_token,
+            generated_by=user.id,
+        )
+    except Exception:
+        # L'archivage ne doit jamais priver l'utilisateur du PDF déjà rendu
+        # en mémoire (review 2026-07-20) — on logue et on continue.
+        logger.exception("Échec de l'archivage du trombinoscope (génération manuelle)")
     return Response(
         content=doc.pdf,
         media_type=doc.mime,
         headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
+    )
+
+
+@router.get("/trombinoscope/latest.pdf")
+async def crew_directory_latest_pdf(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "C")),
+):
+    """Télécharge le dernier trombinoscope déjà généré (auto ou manuel), sans
+    en régénérer un nouveau — lecture seule, donc **GET** légitime (pas
+    d'effet de bord, contrairement à ``crew_directory_pdf`` ci-dessus).
+
+    C'est la cible du lien de la notification ``trombinoscope_generated`` :
+    l'Armement reçoit la notification à la génération mensuelle, clique,
+    télécharge, puis diffuse le PDF (ex. par email) à l'ensemble de la
+    société — cf. docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-5).
+    """
+    from fastapi.responses import Response
+
+    from app.services import report_archive
+    from app.services.safe_files import resolve_path
+
+    report = await report_archive.latest_report(db, report_type="trombinoscope")
+    if report is None:
+        raise HTTPException(status_code=404, detail="Aucun trombinoscope n'a encore été généré")
+    try:
+        content = resolve_path(report.file_path).read_bytes()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Fichier introuvable") from exc
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="Trombinoscope_{report.period}.pdf"'
+        },
     )
 
 

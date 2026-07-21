@@ -24,6 +24,7 @@ incomplète (cf. ``app/services/fleet.py`` pour le même patron).
 from __future__ import annotations
 
 import base64
+import logging
 import time
 from dataclasses import dataclass
 
@@ -32,6 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.crew import CrewMember
 from app.services.safe_files import resolve_path
+
+logger = logging.getLogger("crew-directory")
 
 _CACHE_TTL_SECONDS = 300.0
 
@@ -231,8 +234,11 @@ async def build_directory(db: AsyncSession) -> CrewDirectory:
                 by_agency.setdefault(agency, []).append(m)
             else:
                 by_role.setdefault(normalize_role_for_directory(m.role), []).append(m)
-    except Exception:  # pragma: no cover — best-effort, le trombinoscope ne casse pas
-        pass
+    except Exception:
+        # Best-effort : un trombinoscope vide vaut mieux qu'une génération qui
+        # casse, mais l'échec doit rester diagnosticable (review 2026-07-20 —
+        # ce bloc avalait l'erreur sans aucune trace).
+        logger.exception("build_directory : échec de la requête crew_members")
 
     groups: list[CrewDirectoryGroup] = []
     for role_key in _ROLE_ORDER:

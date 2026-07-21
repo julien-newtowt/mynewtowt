@@ -3,10 +3,14 @@
 > Cf. `docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md` pour la conception.
 > Déclenchement **automatique principal** : scheduler interne (APScheduler,
 > `app/services/trombinoscope_scheduler.py`), le dernier jour de chaque mois
-> à 23:55 (Europe/Paris) — **aucun flux Power Automate à configurer**. Un
-> endpoint manuel token-protégé reste disponible en secours. Génération
-> manuelle à tout moment via `GET /crew/trombinoscope.pdf` (bouton staff,
-> permission `crew:C`).
+> à 23:55 (Europe/Paris) — **aucun flux Power Automate à configurer**, et ce
+> **quelle que soit une éventuelle régénération manuelle** survenue plus tôt
+> dans le mois (confirmé Armement 2026-07-20 — la génération mensuelle a
+> toujours lieu). Un endpoint manuel token-protégé reste disponible en
+> secours. Régénération manuelle à tout moment via `POST
+> /crew/trombinoscope.pdf` (bouton staff, permission `crew:C`) ; téléchargement
+> du dernier PDF déjà généré sans régénérer via `GET
+> /crew/trombinoscope/latest.pdf`.
 
 ## 1. Vue d'ensemble
 
@@ -14,9 +18,10 @@
 |---|---|
 | Déclencheur automatique | Scheduler interne APScheduler, `CronTrigger(day="last", hour=23, minute=55)`, timezone Europe/Paris |
 | Endpoint manuel de secours | `POST /api/trombinoscope/generate` (header `X-API-Token: <TROMBINOSCOPE_API_TOKEN>`) |
-| Action | Regroupe les marins actifs (fonction ou agence de sous-traitance), génère le PDF, l'archive, notifie le rôle `armement` |
+| Action | Regroupe les marins actifs (fonction ou agence de sous-traitance), génère le PDF, l'archive, notifie le rôle `armement` (**auto uniquement**, cf. §4) |
 | Cible interne | `generated_reports` (`type="trombinoscope"`) + fichier sous `var/uploads/generated_reports/` |
-| Génération manuelle staff | `GET /crew/trombinoscope.pdf` (streaming direct, archive aussi une ligne) |
+| Régénération manuelle staff | `POST /crew/trombinoscope.pdf` (streaming direct, archive une ligne, **ne notifie pas**) |
+| Téléchargement du dernier PDF | `GET /crew/trombinoscope/latest.pdf` (lecture seule, ne régénère rien — cible du lien de notification) |
 
 ## 2. Pourquoi un scheduler interne (et pas un cron externe comme les autres intégrations) ?
 
@@ -48,9 +53,14 @@ premier déclenchement du mois).
 - **Rien à configurer côté Power Automate/IT** pour l'automatique — le
   scheduler démarre avec l'application (`@app.on_event("startup")`) et
   s'arrête proprement à l'arrêt (`@app.on_event("shutdown")`).
-- Génération manuelle à tout moment : bouton staff sur `/crew` → `GET
-  /crew/trombinoscope.pdf` (données les plus récentes, aucune attente du
-  scheduler).
+- Régénération manuelle à tout moment : bouton "Régénérer trombinoscope" sur
+  `/crew` → `POST /crew/trombinoscope.pdf` (données les plus récentes, aucune
+  attente du scheduler, aucune notification envoyée).
+- Télécharger le dernier trombinoscope déjà généré sans en produire un
+  nouveau : bouton "Dernier trombinoscope" sur `/crew`, ou lien direct de la
+  notification mensuelle → `GET /crew/trombinoscope/latest.pdf`. Workflow visé :
+  l'Armement reçoit la notification, télécharge, puis diffuse elle-même (ex.
+  par email) à l'ensemble de la société — hors périmètre applicatif.
 - Forcer une génération automatique sans attendre le dernier jour du mois
   (tests, incident) : endpoint de secours —
   ```bash
