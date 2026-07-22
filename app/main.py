@@ -52,6 +52,7 @@ from app.routers import (
     planning_router,
     public_router,
     pwa_router,
+    qhse_router,
     rh_router,
     scenario_router,
     seo_router,
@@ -127,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(claims_router.router)
     app.include_router(mrv_router.router)
     app.include_router(mrv_router.api_router)  # LOT 8 — cron /api/mrv/quality-run
+    app.include_router(qhse_router.router)
     # ─── Phase 4 ERP : kpi / finance ───
     app.include_router(kpi_router.router)
     # LOT 11 — dashboard performance environnementale
