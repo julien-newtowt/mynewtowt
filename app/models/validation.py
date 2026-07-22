@@ -55,7 +55,7 @@ from app.database import Base
 # Valeurs autorisées (documentées ; non contraintes en base pour rester
 # tolérant à l'évolution — validées applicativement).
 RULE_SEVERITIES: tuple[str, ...] = ("bloquant", "warning", "info")
-RULE_SCOPES: tuple[str, ...] = ("event", "report", "bunker", "flgo", "voyage")
+RULE_SCOPES: tuple[str, ...] = ("event", "report", "bunker", "flgo", "voyage", "qhse")
 CHECK_RESULTS: tuple[str, ...] = ("pass", "fail")
 
 

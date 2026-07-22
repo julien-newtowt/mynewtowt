@@ -287,6 +287,35 @@ RULE_SEED: tuple[tuple[str, str, str, str, str, bool], ...] = (
         "event",
         True,
     ),
+    # ─────────────────────────── QHSE (Phase 0 — fondations) ───────────────
+    # Implémentées dans ``app.services.qhse_validation_rules`` (importé en fin
+    # de fichier, même patron que ``validation_rules_catalog``). Scope "qhse",
+    # sujets duck-typés (``QhseReport``-like : issued_date/closed_date/subject/
+    # vessel_id).
+    (
+        "RQ01",
+        "Cohérence dates",
+        "Date de clôture antérieure à la date d'émission — donnée de test/erreur de saisie.",
+        "bloquant",
+        "qhse",
+        True,
+    ),
+    (
+        "RQ02",
+        "Hygiène de saisie",
+        "Sujet/description correspondant à un motif de test (test/essai/demo).",
+        "warning",
+        "qhse",
+        True,
+    ),
+    (
+        "RQ03",
+        "Identité navire",
+        "Navire non résolu vers le référentiel MyTOWT existant lors de l'ingestion.",
+        "bloquant",
+        "qhse",
+        True,
+    ),
 )
 
 # (rule_id, parameter_name, value, unit, provisional, note) — vessel_id = NULL.
@@ -1303,4 +1332,7 @@ async def seed_reference_data(
 #   séquence (doublon/antériorité). Conservé ; le volet doublon/antériorité est
 #   désormais porté rigoureusement par **IR01** (scope séquence). La complétude
 #   reste couverte de fait par les présences R05/R06/R07.
+# QHSE (Phase 0) — même patron : le module s'importe en fin de fichier pour
+# peupler ``RULES`` (RQ01-RQ03) via ``@rule`` sans cycle d'import.
+from app.services import qhse_validation_rules as _qhse_rules  # noqa: E402,F401
 from app.services import validation_rules_catalog as _catalog  # noqa: E402,F401
