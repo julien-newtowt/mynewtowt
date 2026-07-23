@@ -69,6 +69,7 @@ from app.models.nav_event import EVENT_TYPES
 from app.models.port import Port
 from app.models.validation import QualityCheckResult, ValidationRule
 from app.models.vessel import Vessel
+from app.services import referential_env
 from app.services.validation_engine import (
     _DATETIME_ATTRS,
     CheckOutcome,
@@ -89,6 +90,7 @@ _LON_MIN, _LON_MAX = Decimal("-180"), Decimal("180")
 _LOCODE_LEN = 5
 _HOURS_PER_DAY = Decimal("24")
 _PORTCALL_TYPES: tuple[str, ...] = ("departure", "arrival")
+_ANCHORING_TYPES: tuple[str, ...] = ("anchoring_begin", "anchoring_end")
 
 # Défauts codés (repli ultime si get_threshold renvoie None — ne devrait pas
 # arriver, tous ces paramètres sont seedés).
@@ -98,6 +100,7 @@ _D = {
     "seuil_conso_ref_l_j": Decimal("750"),
     "borne_max_rob_t": Decimal("300"),
     "tolerance_distance_manuelle_nm": Decimal("20"),
+    "tolerance_distance_haversine_nm": Decimal("20"),
     "tolerance_datetime_escale_h": Decimal("6"),
     "tolerance_duree_rapport_h": Decimal("2"),
     "seuil_rob_ecart_mineur_t": Decimal("0.5"),
@@ -217,6 +220,31 @@ def _fuel_delta_l(prev: Any, cur: Any) -> tuple[Decimal | None, bool]:
             regressed = True
         total += d
     return (total if seen else None), regressed
+
+
+async def _r08_missing_engine_readings(ctx: RuleContext) -> list[CheckOutcome]:
+    """G2 — compteurs moteur obligatoires à la finalisation de Departure/
+    Arrival/Anchoring/Cut-off (le Noon les demande déjà et reste couvert par
+    les volets « conso nulle »/« conso hors seuil » ci-dessous).
+
+    S'abstient (règle duck-typée, cf. principes en tête de fichier) si le
+    contexte ne permet pas de trancher : pas de navire connu, ou navire sans
+    aucun moteur référencé (rien à contrôler)."""
+    if ctx.vessel_id is None:
+        return []
+    engines = await referential_env.get_vessel_engines(ctx.db, ctx.vessel_id)
+    if not engines:
+        return []
+    if _engine_fuel_map(ctx.subject):
+        return []
+    return [
+        CheckOutcome(
+            "fail",
+            "R08 — compteurs moteur manquants (aucun relevé saisi à cet événement).",
+            {"engines_attendus": len(engines)},
+            severity="bloquant",
+        )
+    ]
 
 
 def _bunker_t(subject: Any) -> Decimal:
@@ -411,7 +439,16 @@ async def _r08_consumption(ctx: RuleContext) -> list[CheckOutcome]:
     """R08 — Consommation : négative → bloquant ; nulle en Noon → warning ;
     hors seuil cible (``seuil_conso_ref_l_j``) → warning ; complétude escale
     (amendement : conso escale absente > seuil jours ⇒ estimation défaut
-    ``conso_estimee_defaut_t_j`` = 0,21 t/j TRACÉE). Matrice §1 + §5."""
+    ``conso_estimee_defaut_t_j`` = 0,21 t/j TRACÉE) ; compteurs moteur
+    manquants à Departure/Arrival/Anchoring/Cut-off → bloquant (G2, cf.
+    ``_r08_missing_engine_readings`` — sans ça, l'intervalle produirait une
+    conso silencieusement vide, jamais détectée par les volets ci-dessous).
+    Matrice §1 + §5."""
+    et0 = _event_type(ctx.subject)
+    if et0 in _PORTCALL_TYPES + _ANCHORING_TYPES + ("cutoff",):
+        missing = await _r08_missing_engine_readings(ctx)
+        if missing:
+            return missing
     prev = ctx.prev
     if prev is None:
         return []
@@ -429,7 +466,7 @@ async def _r08_consumption(ctx: RuleContext) -> list[CheckOutcome]:
             )
         )
         return outs
-    et = _event_type(ctx.subject)
+    et = et0
     dur_h = _duration_h(prev, ctx.subject)
     # Complétude conso escale : Arrival → Departure (adjacents dans la séquence).
     if et == "departure" and _event_type(prev) == "arrival" and dur_h is not None and dur_h > 0:
@@ -485,32 +522,39 @@ async def _r09_distance_datetime(ctx: RuleContext) -> list[CheckOutcome]:
 
     Distance déclarée : attribut direct ``distance_nm`` (sujets synthétiques /
     legacy) OU delta du cumul ``distance_from_sosp_nm`` (NoonEvent réel —
-    même dérivation que R21 pour la durée)."""
+    même dérivation que R21 pour la durée).
+
+    G16 : le volet v1 est scopé (Matrice §3) à la position **manuellement
+    justifiée** (``position_source == "manuel_justifie"``, R05) — pas une
+    route normale (louvoyage/dérive météo d'une flotte vélique). Recouvrement
+    connu et assumé avec R28 (même dérivation de distance déclarée/calculée,
+    seuil distinct) une fois ce scope resserré."""
     outs: list[CheckOutcome] = []
     # v1 — distance déclarée vs calculée haversine depuis le point précédent.
-    declared = _as_decimal(_get(ctx.subject, "distance_nm"))
-    if declared is None and ctx.prev is not None:
-        cur_s = _as_decimal(_get(ctx.subject, "distance_from_sosp_nm"))
-        prev_s = _as_decimal(_get(ctx.prev, "distance_from_sosp_nm"))
-        if cur_s is not None and prev_s is not None:
-            declared = cur_s - prev_s
-    if declared is not None and ctx.prev is not None:
-        calc = _distance_nm(ctx.prev, ctx.subject)
-        if calc is not None:
-            tol = await _thr(ctx, "tolerance_distance_manuelle_nm")
-            if abs(declared - calc) > tol:
-                outs.append(
-                    CheckOutcome(
-                        "fail",
-                        f"R09 — distance déclarée {declared} nm vs calculée {calc:.1f} nm (> {tol} nm).",
-                        {
-                            "declared_nm": str(declared),
-                            "calculated_nm": str(calc),
-                            "tolerance_nm": str(tol),
-                        },
-                        severity="warning",
+    if _get(ctx.subject, "position_source") == "manuel_justifie":
+        declared = _as_decimal(_get(ctx.subject, "distance_nm"))
+        if declared is None and ctx.prev is not None:
+            cur_s = _as_decimal(_get(ctx.subject, "distance_from_sosp_nm"))
+            prev_s = _as_decimal(_get(ctx.prev, "distance_from_sosp_nm"))
+            if cur_s is not None and prev_s is not None:
+                declared = cur_s - prev_s
+        if declared is not None and ctx.prev is not None:
+            calc = _distance_nm(ctx.prev, ctx.subject)
+            if calc is not None:
+                tol = await _thr(ctx, "tolerance_distance_manuelle_nm")
+                if abs(declared - calc) > tol:
+                    outs.append(
+                        CheckOutcome(
+                            "fail",
+                            f"R09 — distance déclarée {declared} nm vs calculée {calc:.1f} nm (> {tol} nm).",
+                            {
+                                "declared_nm": str(declared),
+                                "calculated_nm": str(calc),
+                                "tolerance_nm": str(tol),
+                            },
+                            severity="warning",
+                        )
                     )
-                )
     # v2 — datetime d'escale vs référence du leg (ATD/ETD, ATA/ETA).
     et = _event_type(ctx.subject)
     if et in _PORTCALL_TYPES and ctx.leg is not None:
@@ -532,6 +576,84 @@ async def _r09_distance_datetime(ctx: RuleContext) -> list[CheckOutcome]:
                     )
                 )
     return outs or _ok("R09 — cohérence distance/horodatage conforme.")
+
+
+@rule("R28")
+async def _r28_haversine_vs_logged_distance(ctx: RuleContext) -> list[CheckOutcome]:
+    """R28 — cohérence distance haversine calculée vs distance loguée par le
+    bord (revue technique 09/07, Matrice §8) : le calcul haversine sur les
+    positions Event sous-estime systématiquement la distance parcourue dès
+    que le navire louvoie/dévie pour raison météo (mode d'exploitation
+    normal d'une flotte vélique) — la distance alimentant directement le
+    Transport Work (dénominateur EF_MRV), cet écart doit rester **visible**
+    même s'il n'est jamais corrigé automatiquement (la distance haversine
+    reste la valeur utilisée pour Transport Work/EF_MRV). Warning.
+
+    Distance loguée : delta de ``NoonEvent.distance_from_sosp_nm`` (cumul
+    déclaratif par le bord, indépendant du calcul positionnel) entre deux
+    Noon consécutifs. Recouvrement connu et assumé avec le repli v1 de R09
+    (même dérivation, seuil ``tolerance_distance_manuelle_nm`` différent) —
+    à résorber par G16 (recentrage de R09 sur les positions manuelles
+    ``Manuel_justifie`` uniquement, Matrice §3)."""
+    if _event_type(ctx.subject) != "noon" or ctx.prev is None:
+        return _ok("R28 — non applicable (pas un Noon, ou premier relevé de la séquence).")
+    cur_s = _as_decimal(_get(ctx.subject, "distance_from_sosp_nm"))
+    prev_s = _as_decimal(_get(ctx.prev, "distance_from_sosp_nm"))
+    if cur_s is None or prev_s is None:
+        return _ok("R28 — distance loguée (SOSP) indisponible.")
+    logged = cur_s - prev_s
+    calc = _distance_nm(ctx.prev, ctx.subject)
+    if calc is None:
+        return _ok("R28 — position(s) indisponible(s) pour le calcul haversine.")
+    tol = await _thr(ctx, "tolerance_distance_haversine_nm")
+    ecart = abs(logged - calc)
+    if ecart > tol:
+        return [
+            CheckOutcome(
+                "fail",
+                f"R28 — distance haversine {calc:.1f} nm vs loguée (SOSP) {logged} nm "
+                f"(écart {ecart:.1f} nm > {tol} nm).",
+                {
+                    "haversine_nm": str(calc),
+                    "logged_nm": str(logged),
+                    "ecart_nm": str(ecart),
+                    "tolerance_nm": str(tol),
+                },
+                severity="warning",
+            )
+        ]
+    return _ok("R28 — distance haversine cohérente avec la distance loguée.")
+
+
+@rule("R30")
+async def _r30_noon_rob_annexes(ctx: RuleContext) -> list[CheckOutcome]:
+    """R30 — ROB annexes (urée/eau douce) exigés à la déclaration d'un Noon,
+    indépendants du calcul carburant (G5 — originalement porté par R11,
+    jamais codé pour le nouveau modèle événementiel : ``nav_events`` n'a
+    aucune colonne pour ces ROB annexes avant G5, régression vs le modèle
+    legacy ``noon_report.py``). Purement informatifs (jamais lus par
+    ``inter_event_compute``/``emission_ledger``, ni par la chaîne ROB
+    R14/IR02) : absence signalée en warning (sévérité CDC d'origine),
+    jamais bloquant.
+
+    Duck-typé : s'abstient si le sujet n'est pas un Noon."""
+    if _event_type(ctx.subject) != "noon":
+        return _ok("R30 — non applicable (pas un Noon).")
+    missing: list[str] = []
+    if _get(ctx.subject, "rob_uree_t") is None:
+        missing.append("ROB urée")
+    if _get(ctx.subject, "rob_eau_douce_t") is None:
+        missing.append("ROB eau douce")
+    if missing:
+        return [
+            CheckOutcome(
+                "fail",
+                f"R30 — ROB annexes manquants sur ce Noon : {', '.join(missing)}.",
+                {"missing": missing},
+                severity="warning",
+            )
+        ]
+    return _ok("R30 — ROB annexes complets.")
 
 
 @rule("R10")
@@ -1148,6 +1270,63 @@ async def _r26_voyage_chaining(ctx: RuleContext) -> list[CheckOutcome]:
     return _ok("R26 — chaînage des voyages conforme.")
 
 
+@rule("R27")
+async def _r27_year_end_cutoff(ctx: RuleContext) -> list[CheckOutcome]:
+    """R27 — Coupure d'exercice MRV (Year-End Cut-off, G1/CDC v0.7 §9.2/§10.1/
+    §14.1) : un voyage en cours à la bascule d'année civile (31/12 24:00 UTC
+    ⇔ 01/01 00:00 UTC) doit porter un événement ``cutoff`` finalisé
+    exactement à cet instant. Warning avant ``tolerance_cutoff_h``, bloquant
+    au-delà — bloque la consolidation MRV (génération des Carbon Reports
+    scindés, commit 5/6) tant que non résolu.
+
+    Hypothèse simplificatrice actée avec le porteur du projet : au plus une
+    bascule d'année par voyage (rotations de la flotte 3-5 semaines, jamais
+    deux 31/12 sur le même voyage en pratique)."""
+    if ctx.leg is None:
+        return []
+    leg = ctx.leg
+    start = _norm_dt(_get(leg, "atd"))
+    if start is None:
+        return []  # voyage pas encore parti — rien à borner
+    now = _norm_dt(ctx.now) or datetime.now(UTC).replace(tzinfo=None)
+    end = _norm_dt(_get(leg, "ata")) or now
+    boundary = datetime(start.year + 1, 1, 1)
+    if not (start <= boundary <= end):
+        return _ok("R27 — voyage sans bascule d'année civile.")
+    if boundary > now:
+        return _ok("R27 — bascule d'année à venir, hors fenêtre de contrôle.")
+
+    from app.services import inter_event_compute as iec
+
+    events = await iec.finalized_events_for_leg(ctx.db, leg.id)
+    has_cutoff = any(_event_type(e) == "cutoff" and _dt(e) == boundary for e in events)
+    if has_cutoff:
+        return _ok("R27 — événement Cut-off finalisé à la bascule d'année.")
+
+    tol_h = await _thr(ctx, "tolerance_cutoff_h")
+    late_h = Decimal(str((now - boundary).total_seconds() / 3600))
+    stale = late_h > tol_h
+    return [
+        CheckOutcome(
+            "fail",
+            f"R27 — voyage {leg.leg_code} en cours à la bascule d'année civile "
+            f"({boundary.date()}) sans événement Cut-off finalisé"
+            + (
+                " — bloque la consolidation MRV (délai de tolérance dépassé)."
+                if stale
+                else f" — tolérance {tol_h} h avant escalade."
+            ),
+            {
+                "boundary": boundary.isoformat(),
+                "late_h": str(late_h),
+                "tolerance_h": str(tol_h),
+            },
+            subject=leg,
+            severity="bloquant" if stale else "warning",
+        )
+    ]
+
+
 # ════════════════════════════════════════════════════════════ Scope BUNKER
 
 
@@ -1471,6 +1650,14 @@ def _alert_roles(r: QualityCheckResult) -> tuple[str, ...]:
     if r.rule_id == "R24":
         return _ADMIN
     if r.rule_id == "R14" and r.severity_applied == "bloquant":
+        return _R14_CRITIQUE
+    if r.rule_id == "R27":
+        # Notifie l'Environmental Manager dès le warning (pas seulement à
+        # l'escalade bloquante) — CDC v0.7 §14.1 : « rappel système au Master
+        # à l'approche de l'échéance » complété ici par une alerte siège dès
+        # que la bascule est franchie sans Cut-off. Pas de rôle « Environmental
+        # Manager » dédié dans app/permissions.py — mappé sur manager_maritime,
+        # déjà utilisé pour R14 critique/R19 2ᵉ palier (même patron).
         return _R14_CRITIQUE
     return ()
 

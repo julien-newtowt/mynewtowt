@@ -1,11 +1,14 @@
 """LOT 8 — règles R08-R13 (scope event, mesures) : tests table-driven.
 
 R08 (consommation + complétude escale amendée), R09 v1/v2 (distance vs
-trajectoire, datetime d'escale vs référence), R10 complet (régression
-compteur : warning routé admin / reset confirmé / escalade bloquante) — ≥ 3
-cas chacun (pass / fail / limite exacte au seuil). R11/R12/R13 sont déjà
-couverts table-driven dans ``tests/unit/test_validation_engine.py`` (lot 2) —
-leur sémantique lot 2 est CONSERVÉE (réconciliation documentée dans
+trajectoire — v1 scopé à la position manuellement justifiée depuis G16 —,
+datetime d'escale vs référence), R28 (G4 — distance haversine vs distance
+loguée SOSP, Matrice §8), R30 (G5 — ROB annexes urée/eau douce sur Noon),
+R10 complet (régression compteur :
+warning routé admin / reset confirmé / escalade bloquante) — ≥ 3 cas chacun
+(pass / fail / limite exacte au seuil). R11/R12/R13 sont déjà couverts
+table-driven dans ``tests/unit/test_validation_engine.py`` (lot 2) — leur
+sémantique lot 2 est CONSERVÉE (réconciliation documentée dans
 ``validation_engine`` et ``validation_rules_catalog``).
 """
 
@@ -153,6 +156,76 @@ async def test_r08_abstains_without_counters_or_prev(db):
     assert await _run(db, "R08", seq, 1) == []
 
 
+# ══════════════════ R08 (G2) — compteurs moteur obligatoires hors Noon ══════════════════
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("etype", ["departure", "arrival", "anchoring_begin", "anchoring_end"])
+async def test_r08_missing_engine_readings_blocks_portcall_and_anchoring(db, etype):
+    """G2 — compteurs moteur manquants à Departure/Arrival/Anchoring : bloquant
+    dès lors que le navire a des moteurs référencés (sans quoi l'intervalle
+    produirait une consommation silencieusement vide, jamais détectée)."""
+    from app.models.vessel import Vessel
+    from app.models.vessel_env import VesselEngine
+
+    vessel = Vessel(id=1, code="ANE", name="Anemos")
+    db.add(vessel)
+    await db.flush()
+    db.add(VesselEngine(vessel_id=1, engine_role="PME", engine_group="ME"))
+    await db.flush()
+
+    subject = SimpleNamespace(event_type=etype, datetime_utc=T0, engine_readings=[])
+    out = await _run(db, "R08", [subject], 0, vessel=vessel)
+    assert len(out) == 1
+    assert out[0].result == "fail" and out[0].severity == "bloquant"
+    assert "compteurs moteur" in out[0].message
+
+
+@pytest.mark.asyncio
+async def test_r08_engine_readings_present_lifts_the_gate(db):
+    """Des relevés présents lèvent le garde G2 — la règle retombe ensuite sur
+    les volets delta habituels (abstention ici, faute de ``prev``)."""
+    from app.models.nav_event import NavEventEngineReading
+    from app.models.vessel import Vessel
+    from app.models.vessel_env import VesselEngine
+
+    vessel = Vessel(id=2, code="ART", name="Artemis")
+    db.add(vessel)
+    await db.flush()
+    engine = VesselEngine(vessel_id=2, engine_role="PME", engine_group="ME")
+    db.add(engine)
+    await db.flush()
+
+    subject = SimpleNamespace(
+        event_type="departure",
+        datetime_utc=T0,
+        engine_readings=[
+            NavEventEngineReading(
+                engine_id=engine.id,
+                fuel_counter_l=Decimal("1000"),
+                running_hours_counter_h=Decimal("500"),
+            )
+        ],
+    )
+    assert await _run(db, "R08", [subject], 0, vessel=vessel) == []
+
+
+@pytest.mark.asyncio
+async def test_r08_missing_engine_readings_abstains_without_vessel_or_engines(db):
+    """Règle duck-typée (cf. principes du catalogue) : s'abstient si le
+    contexte ne permet pas de trancher — pas de navire, ou navire sans aucun
+    moteur référencé."""
+    from app.models.vessel import Vessel
+
+    subject = SimpleNamespace(event_type="departure", datetime_utc=T0)
+    assert await _run(db, "R08", [subject], 0) == []  # pas de vessel dans le contexte
+
+    vessel = Vessel(id=3, code="NOENG", name="No Engine")
+    db.add(vessel)
+    await db.flush()
+    assert await _run(db, "R08", [subject], 0, vessel=vessel) == []  # 0 moteur référencé
+
+
 # ═════════════════════════════════════════════ R09 — distance / datetime escale
 
 
@@ -166,8 +239,9 @@ async def test_r08_abstains_without_counters_or_prev(db):
     ],
 )
 async def test_r09_v1_declared_vs_computed_distance(db, declared, result):
-    """v1 — distance déclarée vs trajectoire calculée (positions identiques →
-    distance calculée = 0 nm exactement, la tolérance devient la borne)."""
+    """v1 — distance déclarée vs trajectoire calculée, position COURANTE
+    manuellement justifiée (G16, Matrice §3) : positions identiques →
+    distance calculée = 0 nm exactement, la tolérance devient la borne."""
     prev = _ev("noon", T0, lat_decimal=Decimal("10"), lon_decimal=Decimal("10"))
     cur = _ev(
         "noon",
@@ -175,6 +249,7 @@ async def test_r09_v1_declared_vs_computed_distance(db, declared, result):
         lat_decimal=Decimal("10"),
         lon_decimal=Decimal("10"),
         distance_nm=declared,
+        position_source="manuel_justifie",
     )
     out = await _run(db, "R09", [prev, cur], 1)
     assert out[0].result == result
@@ -199,9 +274,28 @@ async def test_r09_v1_derives_declared_from_sosp_cumulative(db):
         lat_decimal=Decimal("10"),
         lon_decimal=Decimal("10"),
         distance_from_sosp_nm=Decimal("150"),
+        position_source="manuel_justifie",
     )  # Δ déclaré 50 nm vs calc 0
     out = await _run(db, "R09", [prev, cur], 1)
     assert out[0].result == "fail" and out[0].severity == "warning"
+
+
+@pytest.mark.asyncio
+async def test_r09_v1_abstains_without_manual_position_source(db):
+    """G16 — hors position manuellement justifiée (route normale, y compris
+    louvoiement/dérive météo d'une flotte vélique), le volet v1 ne s'applique
+    plus (Matrice §3) : aucun faux positif, même avec un écart énorme."""
+    prev = _ev("noon", T0, lat_decimal=Decimal("10"), lon_decimal=Decimal("10"))
+    cur = _ev(
+        "noon",
+        T0 + timedelta(hours=24),
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_nm=Decimal("500"),  # écart énorme vs calc = 0 nm
+        position_source="thalos_auto",
+    )
+    out = await _run(db, "R09", [prev, cur], 1)
+    assert out[0].result == "pass"
 
 
 @pytest.mark.asyncio
@@ -221,6 +315,115 @@ async def test_r09_v2_portcall_datetime_vs_reference(db, gap_h, result):
     assert out[0].result == result
     if result == "fail":
         assert out[0].severity == "warning"
+
+
+# ═════════════════════════════════════ R28 — haversine vs distance loguée (SOSP)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sosp_delta,result",
+    [
+        (Decimal("5"), "pass"),
+        (Decimal("20"), "pass"),  # limite exacte == tolérance (calc = 0 nm)
+        (Decimal("20.1"), "fail"),  # au-delà
+    ],
+)
+async def test_r28_haversine_vs_logged_distance(db, sosp_delta, result):
+    """Positions identiques → distance haversine = 0 nm exactement, la
+    tolérance devient la borne (même patron que R09 v1, seuil distinct)."""
+    prev = _ev(
+        "noon",
+        T0,
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_from_sosp_nm=Decimal("100"),
+    )
+    cur = _ev(
+        "noon",
+        T0 + timedelta(hours=24),
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_from_sosp_nm=Decimal("100") + sosp_delta,
+    )
+    out = await _run(db, "R28", [prev, cur], 1)
+    assert out[0].result == result
+    if result == "fail":
+        assert out[0].severity == "warning"
+
+
+@pytest.mark.asyncio
+async def test_r28_abstains_on_non_noon_event(db):
+    """Champ ``distance_from_sosp_nm`` propre au Noon — pas de contrôle sur
+    un Departure/Arrival/Anchoring."""
+    prev = _ev(
+        "noon",
+        T0,
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_from_sosp_nm=Decimal("0"),
+    )
+    cur = _ev(
+        "departure", T0 + timedelta(hours=24), lat_decimal=Decimal("10"), lon_decimal=Decimal("10")
+    )
+    out = await _run(db, "R28", [prev, cur], 1)
+    assert out[0].result == "pass"
+
+
+@pytest.mark.asyncio
+async def test_r28_abstains_on_first_event_in_sequence(db):
+    cur = _ev(
+        "noon",
+        T0,
+        lat_decimal=Decimal("10"),
+        lon_decimal=Decimal("10"),
+        distance_from_sosp_nm=Decimal("0"),
+    )
+    out = await _run(db, "R28", [cur], 0)
+    assert out[0].result == "pass"
+
+
+@pytest.mark.asyncio
+async def test_r28_abstains_without_logged_sosp_distance(db):
+    prev = _ev("noon", T0, lat_decimal=Decimal("10"), lon_decimal=Decimal("10"))
+    cur = _ev(
+        "noon", T0 + timedelta(hours=24), lat_decimal=Decimal("10"), lon_decimal=Decimal("10")
+    )
+    out = await _run(db, "R28", [prev, cur], 1)
+    assert out[0].result == "pass"
+
+
+# ═════════════════════════════════════ R30 — ROB annexes Noon (urée/eau douce)
+
+
+@pytest.mark.asyncio
+async def test_r30_complete_rob_annexes_passes(db):
+    subject = _ev("noon", T0, rob_uree_t=Decimal("2.5"), rob_eau_douce_t=Decimal("18.0"))
+    out = await _run(db, "R30", [subject], 0)
+    assert out[0].result == "pass"
+
+
+@pytest.mark.asyncio
+async def test_r30_missing_both_rob_annexes_warns(db):
+    subject = _ev("noon", T0)
+    out = await _run(db, "R30", [subject], 0)
+    assert out[0].result == "fail" and out[0].severity == "warning"
+    assert set(out[0].details["missing"]) == {"ROB urée", "ROB eau douce"}
+
+
+@pytest.mark.asyncio
+async def test_r30_missing_only_one_rob_annexe(db):
+    subject = _ev("noon", T0, rob_uree_t=Decimal("2.5"))
+    out = await _run(db, "R30", [subject], 0)
+    assert out[0].result == "fail"
+    assert out[0].details["missing"] == ["ROB eau douce"]
+
+
+@pytest.mark.asyncio
+async def test_r30_abstains_on_non_noon_event(db):
+    subject = _ev("departure", T0)
+    out = await _run(db, "R30", [subject], 0)
+    assert out[0].result == "pass"
 
 
 # ═════════════════════════════════════════════ R10 — compteurs (amendé)

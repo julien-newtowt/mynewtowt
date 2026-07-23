@@ -34,9 +34,11 @@ from app.models.nav_event import (
     NAV_TIME_SLOTS,
     POSITION_SOURCES,
     VESSEL_CONDITIONS,
+    CutoffEvent,
     NavEvent,
     NavEventEngineReading,
     NavEventHoldReading,
+    NavEventRobByFuel,
     NavEventSailReading,
     NavEventWeatherReading,
     NoonEvent,
@@ -57,7 +59,14 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 from app.permissions import require_permission
-from app.services import bunkering, draft_reminders, event_capture, feature_flags, referential_env
+from app.services import (
+    bunkering,
+    cutoff_reminders,
+    draft_reminders,
+    event_capture,
+    feature_flags,
+    referential_env,
+)
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.vessel_position import get_latest_position
@@ -1525,6 +1534,9 @@ def _build_event_payload(event_type: str, f) -> dict:
                 "etb": _maybe_dt(f.get("etb")),
                 "eta_7_to_10kt": _build_eta_paliers(f),
                 "comments": _clean_str(f.get("comments")),
+                # ROB annexes (G5) — exigés au Noon, indépendants du calcul carburant.
+                "rob_uree_t": _dec(f.get("rob_uree_t")),
+                "rob_eau_douce_t": _dec(f.get("rob_eau_douce_t")),
             }
         )
     elif event_type in ("departure", "arrival"):
@@ -1554,23 +1566,18 @@ def _build_event_payload(event_type: str, f) -> dict:
 
 
 async def _sync_event_readings(db: AsyncSession, event: NavEvent, f, engines) -> None:
-    """Reconstruit les relevés fins d'un NoonEvent depuis le formulaire.
+    """Reconstruit les relevés fins d'un événement depuis le formulaire.
 
-    Relevés machine (1 ligne/moteur du référentiel), météo/voilure (créneaux
-    4 h) et cales (2 périodes × zones). Les collections sont vidées puis
-    reconstruites (delete-orphan) → autosave idempotent. Sans effet sur les
-    autres types (leurs données vivent dans les champs scalaires).
+    Relevés machine (1 ligne/moteur du référentiel) : rattachables à **tout**
+    type d'événement (``NavEvent.engine_readings``, cf. modèle) — reconstruits
+    ici quel que soit le type. Météo/voilure/cales (créneaux 4 h, 2 périodes ×
+    zones) restent propres au ``NoonEvent`` (champs scalaires du Noon).
 
     Les collections (``lazy="selectin"``) sont d'abord chargées dans le
     contexte async (``db.refresh``) : sur un objet fraîchement créé ou repris
     depuis l'identity-map, y accéder en contexte synchrone déclencherait une
     IO paresseuse (``MissingGreenlet``)."""
-    if not isinstance(event, NoonEvent):
-        return
-
-    await db.refresh(
-        event, ["engine_readings", "weather_readings", "sail_readings", "hold_readings"]
-    )
+    await db.refresh(event, ["engine_readings"])
     event.engine_readings.clear()
     for eng in engines:
         hours = _dec(f.get(f"eng_hours_{eng.id}"))
@@ -1587,6 +1594,20 @@ async def _sync_event_readings(db: AsyncSession, event: NavEvent, f, engines) ->
             )
         )
 
+    if isinstance(event, CutoffEvent):
+        await db.refresh(event, ["rob_by_fuel_readings"])
+        event.rob_by_fuel_readings.clear()
+        for i in range(len(_CUTOFF_FUEL_TYPES)):
+            fuel_type = _clean_str(f.get(f"robfuel_type_{i}"))
+            rob = _dec(f.get(f"robfuel_val_{i}"))
+            if not fuel_type or rob is None:
+                continue
+            event.rob_by_fuel_readings.append(NavEventRobByFuel(fuel_type=fuel_type, rob_t=rob))
+
+    if not isinstance(event, NoonEvent):
+        return
+
+    await db.refresh(event, ["weather_readings", "sail_readings", "hold_readings"])
     event.weather_readings.clear()
     for i, slot in enumerate(NAV_TIME_SLOTS):
         vals = (
@@ -1680,7 +1701,14 @@ async def _my_event_drafts(db: AsyncSession, user) -> list[dict]:
         .scalars()
         .all()
     )
-    out = [{"event": e, "age_h": int(draft_reminders._age_hours(e.created_at, now))} for e in rows]
+    out = [
+        {
+            "event": e,
+            "age_h": int(draft_reminders._age_hours(draft_reminders._last_saved(e), now)),
+            "completion": event_capture.draft_completion(e),
+        }
+        for e in rows
+    ]
     out.sort(key=lambda d: d["age_h"], reverse=True)
     return out
 
@@ -1737,16 +1765,28 @@ async def _event_form_context(
         pol = await db.get(Port, leg.departure_port_id)
         pod = await db.get(Port, leg.arrival_port_id)
 
+    # Relevés machine : rattachables à tout type d'événement (cf. modèle) —
+    # préremplis quel que soit le type, pas seulement pour le Noon.
     engine_values: dict[int, NavEventEngineReading] = {}
+    if event is not None:
+        engine_values = {r.engine_id: r for r in event.engine_readings}
+
     weather_by_slot: dict[str, NavEventWeatherReading] = {}
     sail_by_slot: dict[str, NavEventSailReading] = {}
     hold_by_zone: dict[str, dict[str, NavEventHoldReading]] = {}
     if isinstance(event, NoonEvent):
-        engine_values = {r.engine_id: r for r in event.engine_readings}
         weather_by_slot = {r.slot_time: r for r in event.weather_readings}
         sail_by_slot = {r.slot_time: r for r in event.sail_readings}
         for r in event.hold_readings:
             hold_by_zone.setdefault(r.zone, {})[r.period] = r
+
+    # ROB par carburant (CutoffEvent uniquement, G1) — préremplissage par
+    # index de ligne (fuel_type est du texte libre, pas une clé référentielle
+    # comme engine_id).
+    rob_by_fuel_values: list[NavEventRobByFuel | None] = [None] * len(_CUTOFF_FUEL_TYPES)
+    if isinstance(event, CutoffEvent):
+        by_fuel = {r.fuel_type: r for r in event.rob_by_fuel_readings}
+        rob_by_fuel_values = [by_fuel.get(ft) for ft in _CUTOFF_FUEL_TYPES]
 
     open_begins: list[NavEvent] = []
     if event_type == "anchoring_end" and leg is not None:
@@ -1793,6 +1833,8 @@ async def _event_form_context(
         "weather_by_slot": weather_by_slot,
         "sail_by_slot": sail_by_slot,
         "hold_by_zone": hold_by_zone,
+        "cutoff_fuel_types": list(enumerate(_CUTOFF_FUEL_TYPES)),
+        "rob_by_fuel_values": rob_by_fuel_values,
         "open_begins": open_begins,
         "prefill_pos": prefill_pos,
         "default_dt_local": now.strftime("%Y-%m-%dT%H:%M"),
@@ -1819,7 +1861,14 @@ _EVENT_TYPE_LABELS: dict[str, str] = {
     "arrival": "Arrivée (Arrival)",
     "anchoring_begin": "Début de mouillage",
     "anchoring_end": "Fin de mouillage",
+    "cutoff": "Cut-off de fin d'année (Year-End Cut-off)",
 }
+
+# Carburants proposés au formulaire Cut-off (ROB par carburant, G1) — texte
+# libre côté modèle (cf. NavEventRobByFuel.fuel_type), mais un nombre fixe de
+# lignes préremplies suffit en pratique (flotte actuelle très majoritairement
+# MDO — cf. referential_env.py, note V1). Lignes laissées vides ignorées.
+_CUTOFF_FUEL_TYPES: tuple[str, ...] = ("MDO", "MGO", "VLSFO")
 
 
 async def _render_event_form(
@@ -2154,5 +2203,38 @@ async def mrv_draft_reminders_cron(
         summary["scanned"],
         summary["master"],
         summary["siege"],
+    )
+    return JSONResponse(summary)
+
+
+# ─────────────────── Cron R27 — approche bascule d'année (G1) ──────────────
+
+
+@api_router.post("/api/mrv/cutoff-reminders")
+async def mrv_cutoff_reminders_cron(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cron externe (Power Automate) — rappel R27 d'approche de bascule
+    d'année civile sans événement Cut-off finalisé (CDC v0.7 §9.2).
+
+    Auth ``X-API-Token`` (temps constant) ; 503 si ``MRV_CUTOFF_API_TOKEN``
+    non configuré. Rappel nominatif à chaque utilisateur assigné au navire
+    (idempotent, cf. ``services.cutoff_reminders``)."""
+    expected = (settings.mrv_cutoff_api_token or "").strip() or None
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MRV_CUTOFF_API_TOKEN non configuré dans .env",
+        )
+    received = request.headers.get("x-api-token") or ""
+    if not _secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
+
+    summary = await cutoff_reminders.run_cutoff_reminders(db)
+    logger.info(
+        "R27 cutoff reminders (API cron): scanned=%d notified=%d",
+        summary["scanned"],
+        summary["notified"],
     )
     return JSONResponse(summary)

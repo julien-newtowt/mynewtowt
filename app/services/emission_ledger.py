@@ -46,7 +46,7 @@ from app.models.booking import Booking
 from app.models.bunker import BunkerOperation
 from app.models.emission_factor import EmissionFactor
 from app.models.leg import Leg
-from app.models.nav_event import DepartureEvent, NavEvent
+from app.models.nav_event import ArrivalEvent, DepartureEvent, NavEvent, PortCallEvent
 from app.models.noon_report import NoonReport, NoonReportEngine
 from app.models.validation import DashboardParameter
 from app.models.vessel import Vessel
@@ -80,6 +80,14 @@ _CAPACITY_REF_DEFAULT = Decimal("1100")
 
 _EF_QUANT = Decimal("0.0001")  # gCO₂/t·km (méthodes A/B/C matérialisées)
 
+# GWP-100 (Annexe I, règlement EU 2015/757) — CH₄ = 25, N₂O = 298 (G13).
+# Constantes réglementaires stables (pas des seuils métier à calibrer par
+# voyage pilote, contrairement à ``ValidationRuleThreshold``) — même posture
+# que ``MDO_LHV_MJ_PER_T`` ci-dessus : à réviser uniquement si le règlement
+# change son horizon GWP, pas un paramètre par carburant (``EmissionFactor``).
+GWP_CH4 = Decimal("25")
+GWP_N2O = Decimal("298")
+
 
 def _num(value: Decimal | int | float | None) -> str | None:
     """Decimal → str (précision préservée, JSON-safe)."""
@@ -99,7 +107,10 @@ def emissions_breakdown(conso_t: Decimal | None, factor: ResolvedEmissionFactor)
     - CO₂ (TtW) [t] = ``conso_t × ef_co2`` (facteur sans dimension g/g ≡ t/t) ;
     - CH₄ / N₂O [g] = ``conso_t × ef × 1e6`` (tonnes de GES → grammes) ;
     - WtT (Well-to-Tank, FuelEU) = ``conso_t × PCI × wtt_gco2eq_per_mj / 1e6`` —
-      **distinct du TtW, jamais sommé** au CO₂ TtW sans l'expliciter.
+      **distinct du TtW, jamais sommé** au CO₂ TtW sans l'expliciter ;
+    - CO₂eq (GWP-100, tank-to-wake, G13) = ``conso_t × (ef_co2 + ef_ch4 × 25 +
+      ef_n2o × 298)`` (Annexe I, EU 2015/757) — additionne les 3 GES TtW en
+      équivalent CO₂ ; **distinct du WtT** (qui reste hors périmètre TtW).
     """
     wtt_intensity = factor.wtt_gco2eq_per_mj
     if conso_t is None:
@@ -108,6 +119,7 @@ def emissions_breakdown(conso_t: Decimal | None, factor: ResolvedEmissionFactor)
             "co2_t": None,
             "ch4_g": None,
             "n2o_g": None,
+            "co2eq_t": None,
             "wtt_gco2eq_per_mj": _num(wtt_intensity),
             "wtt_co2eq_t": None,
             "ef_co2_kg_per_kg": _num(factor.ef_co2_kg_per_kg),
@@ -119,11 +131,19 @@ def emissions_breakdown(conso_t: Decimal | None, factor: ResolvedEmissionFactor)
     n2o_g = conso_t * factor.ef_n2o_kg_per_kg * _MILLION
     # WtT : énergie du carburant × intensité amont, converti g → t. DISTINCT.
     wtt_co2eq_t = conso_t * MDO_LHV_MJ_PER_T * wtt_intensity / _MILLION
+    # CO₂eq TtW (GWP-100) : les 3 GES en équivalent CO₂, DISTINCT du WtT.
+    co2eq_kg_per_kg = (
+        factor.ef_co2_kg_per_kg
+        + factor.ef_ch4_kg_per_kg * GWP_CH4
+        + factor.ef_n2o_kg_per_kg * GWP_N2O
+    )
+    co2eq_t = conso_t * co2eq_kg_per_kg
     return {
         "conso_t": _num(conso_t),
         "co2_t": _num(co2_t),
         "ch4_g": _num(ch4_g),
         "n2o_g": _num(n2o_g),
+        "co2eq_t": _num(co2eq_t),
         "wtt_gco2eq_per_mj": _num(wtt_intensity),
         "wtt_co2eq_t": _num(wtt_co2eq_t),
         "ef_co2_kg_per_kg": _num(factor.ef_co2_kg_per_kg),
@@ -142,9 +162,10 @@ class LedgerResult:
     ``source`` ∈ {``events``, ``legacy_noon``}. Les consommations sont en
     tonnes ; ``co2_emitted_t`` est **brut** (non arrondi — l'adaptateur carbone
     applique ses propres arrondis) ; ``ch4_g``/``n2o_g`` en grammes ;
-    ``wtt_co2eq_t`` distinct du TtW. Les méthodes EF sont en gCO₂/t·km (None si
-    N/A). ``do_consumed_t`` est l'assiette d'émission (legacy : total noon ;
-    events : hors mouillage).
+    ``co2eq_t`` (GWP-100 tank-to-wake, G13) et ``wtt_co2eq_t`` (Well-to-Tank)
+    sont deux grandeurs **distinctes**, jamais sommées entre elles. Les
+    méthodes EF sont en gCO₂/t·km (None si N/A). ``do_consumed_t`` est
+    l'assiette d'émission (legacy : total noon ; events : hors mouillage).
     """
 
     leg_id: int
@@ -175,6 +196,7 @@ class LedgerResult:
     co2_emitted_t: Decimal | None
     ch4_g: Decimal | None
     n2o_g: Decimal | None
+    co2eq_t: Decimal | None  # GWP-100 tank-to-wake (G13) — DISTINCT du WtT.
     wtt_co2eq_t: Decimal | None
 
     # CO₂ évité (kg) vs comparateur conventionnel (``co2.estimate``).
@@ -217,6 +239,83 @@ async def build_bunker_lookup(db: AsyncSession, leg_id: int) -> iec.BunkerLookup
         return sum((m for (dt, m) in ops if dt is not None and f < dt <= t), Decimal("0"))
 
     return lookup
+
+
+# ════════════════════════════════════════════════════ Conso d'escale (G12)
+
+
+async def _next_departure_event(
+    db: AsyncSession, vessel_id: int, after: datetime
+) -> NavEvent | None:
+    """Premier Departure finalisé du navire après ``after`` (chronologique,
+    tous legs confondus) — borne de fin de l'escale qui suit une Arrival."""
+    after_naive = _naive_utc(after)
+    rows = await db.execute(
+        select(NavEvent)
+        .where(
+            NavEvent.vessel_id == vessel_id,
+            NavEvent.event_type == "departure",
+            NavEvent.status.in_(iec.FINALIZED_STATUSES),
+        )
+        .order_by(NavEvent.datetime_utc.asc())
+    )
+    for ev in rows.scalars().all():
+        if _naive_utc(ev.datetime_utc) is not None and _naive_utc(ev.datetime_utc) > after_naive:
+            return ev
+    return None
+
+
+async def _bunkered_t_between(
+    db: AsyncSession, vessel_id: int, frm: datetime | None, to: datetime | None
+) -> Decimal:
+    """Soutages validés Master du navire livrés dans la fenêtre (``frm``, ``to``]."""
+    rows = (
+        await db.execute(
+            select(BunkerOperation.delivery_datetime_utc, BunkerOperation.mass_t).where(
+                BunkerOperation.vessel_id == vessel_id,
+                BunkerOperation.status == "valide_master",
+            )
+        )
+    ).all()
+    f, t = _naive_utc(frm), _naive_utc(to)
+    total = Decimal("0")
+    for dt, mass in rows:
+        d = _naive_utc(dt)
+        if d is not None and mass is not None and f is not None and t is not None and f < d <= t:
+            total += mass
+    return total
+
+
+async def _escale_consumption(
+    db: AsyncSession, vessel_id: int, arrival: NavEvent
+) -> Decimal | None:
+    """Conso d'escale — formule R14b résolue pour ``Consommation_escale``
+    (architecture §2.4, second usage de la formule de continuité ROB) : port
+    stay qui suit l'Arrival d'un leg jusqu'au prochain Departure finalisé du
+    même navire.
+
+    ``Consommation_escale = ROB_arrivée + Σ soutage − ROB_départ`` — méthode
+    du dashboard tant que la méthode par compteurs n'est pas systématiquement
+    peuplée en prod (repli sur le delta de compteurs moteur, désormais fiable
+    depuis G2, si le ROB déclaré manque à l'une des deux bornes). ``None`` si
+    le prochain Departure n'est pas encore finalisé (escale en cours) ou si
+    aucune des deux méthodes n'est calculable."""
+    departure = await _next_departure_event(db, vessel_id, arrival.datetime_utc)
+    if departure is None:
+        return None
+
+    rob_arrival = arrival.rob_t if isinstance(arrival, PortCallEvent) else None
+    rob_departure = departure.rob_t if isinstance(departure, PortCallEvent) else None
+    if rob_arrival is not None and rob_departure is not None:
+        bunkered_t = await _bunkered_t_between(
+            db, vessel_id, arrival.datetime_utc, departure.datetime_utc
+        )
+        return Decimal(rob_arrival) + bunkered_t - Decimal(rob_departure)
+
+    engines = {e.id: e for e in await referential_env.get_vessel_engines(db, vessel_id)}
+    density = await iec.resolve_density(db, vessel_id)
+    interval = iec.compute_interval(arrival, departure, engines, density)
+    return interval.total_conso_t
 
 
 # ════════════════════════════════════════════════════ Repli legacy (noon_reports)
@@ -392,6 +491,7 @@ async def compute_for_leg(
     events = await iec.finalized_events_for_leg(db, leg.id)
 
     conso_me = conso_ae = conso_total = conso_mouillage = conso_hors = None
+    conso_escale: Decimal | None = None
     cargo_bl_canonical: Decimal | None = None
     cargo_mrv: Decimal | None = None
     distance_canonical: Decimal | None = None
@@ -421,6 +521,12 @@ async def compute_for_leg(
         dep_cargo = comp.cargo_mrv.get(dep.id) if dep is not None else None
         cargo_mrv = dep_cargo.cargo_mrv_t if dep_cargo is not None else None
         do_consumed = conso_hors
+        # Conso d'escale (G12) : port stay qui suit l'Arrival de CE leg,
+        # jusqu'au prochain Departure du même navire (peut appartenir au leg
+        # suivant) — None tant que ce voyage n'est pas encore arrivé.
+        arr = comp.events[-1] if comp.events else None
+        if isinstance(arr, ArrivalEvent) and leg.vessel_id is not None:
+            conso_escale = await _escale_consumption(db, leg.vessel_id, arr)
     else:
         source = "legacy_noon"
         do_consumed = await _legacy_do_consumed_t(db, leg.id)
@@ -439,6 +545,7 @@ async def compute_for_leg(
     co2_emitted_t = Decimal(em["co2_t"]) if em["co2_t"] is not None else None
     ch4_g = Decimal(em["ch4_g"]) if em["ch4_g"] is not None else None
     n2o_g = Decimal(em["n2o_g"]) if em["n2o_g"] is not None else None
+    co2eq_t = Decimal(em["co2eq_t"]) if em["co2eq_t"] is not None else None
     wtt_co2eq_t = Decimal(em["wtt_co2eq_t"]) if em["wtt_co2eq_t"] is not None else None
 
     # CO₂ évité : comparateur conventionnel ``co2.estimate`` (mêmes valeurs).
@@ -460,7 +567,7 @@ async def compute_for_leg(
         conso_total_t=conso_total,
         conso_mouillage_t=conso_mouillage,
         conso_hors_mouillage_t=conso_hors,
-        conso_escale_t=None,
+        conso_escale_t=conso_escale,
         do_consumed_t=do_consumed,
         distance_nm=distance,
         cargo_bl_t=cargo_bl,
@@ -471,6 +578,7 @@ async def compute_for_leg(
         co2_emitted_t=co2_emitted_t,
         ch4_g=ch4_g,
         n2o_g=n2o_g,
+        co2eq_t=co2eq_t,
         wtt_co2eq_t=wtt_co2eq_t,
         avoided_co2_kg=avoided,
         ef_method_a=ef_a,
@@ -564,6 +672,7 @@ async def refresh_summary(db: AsyncSession, leg: Leg) -> VoyageEmissionSummary:
         "co2_t": result.co2_emitted_t,
         "ch4_g": result.ch4_g,
         "n2o_g": result.n2o_g,
+        "co2eq_t": result.co2eq_t,
         "wtt_co2eq_t": result.wtt_co2eq_t,
         "distance_nm": result.distance_nm,
         "cargo_bl_t": result.cargo_bl_t,

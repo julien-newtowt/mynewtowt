@@ -8,7 +8,7 @@ Couvre ``app.services.inter_event_compute`` :
 - gestion reset compteur R10 (confirmé ⇒ conso = valeur aval ; non confirmé ⇒
   anomalie, conso None) ;
 - brouillon intercalé exclu de la chaîne (CDC §9.1) ;
-- cargo MRV (hydrostatiques/interpolation, repli saisie, ballast = 0) ;
+- cargo MRV (valeur saisie par le Master, ballast = 0) ;
 - appariement Begin/End mouillage + duration_h.
 
 Moteur SQLite en mémoire (FK activées) + seed du référentiel de validation
@@ -39,7 +39,6 @@ from app.models.nav_event import (
 from app.models.port import Port
 from app.models.user import User
 from app.models.vessel import Vessel
-from app.models.vessel_env import VesselHydrostatics
 from app.services import inter_event_compute as iec
 from app.services.ports import haversine_nm
 from app.services.referential_env import ensure_vessel_env_defaults, get_vessel_engines
@@ -368,40 +367,8 @@ async def test_draft_event_excluded_from_chain(db):
 # ════════════════════════════════════════════ Cargo MRV
 
 
-async def test_cargo_mrv_hydrostatics_interpolation(db):
+async def test_cargo_mrv_fallback_declared(db):
     vessel, leg, engines = await _base(db)
-    vessel.lightweight_t = Decimal("300")
-    vessel.water_density_default_t_m3 = Decimal("1.0")  # simplifie : m³ ≡ t
-    await db.flush()
-    hydro = [
-        VesselHydrostatics(
-            vessel_id=vessel.id, draft_m=Decimal("4.0"), displacement_m3=Decimal("900")
-        ),
-        VesselHydrostatics(
-            vessel_id=vessel.id, draft_m=Decimal("5.0"), displacement_m3=Decimal("1200")
-        ),
-    ]
-    dep = DepartureEvent(
-        leg_id=leg.id,
-        vessel_id=vessel.id,
-        status="finalise",
-        datetime_utc=T0,
-        vessel_condition="laden",
-        draft_fwd_m=Decimal("4.5"),
-        draft_aft_m=Decimal("4.5"),
-    )
-    res = iec.compute_cargo_mrv(dep, vessel, hydro)
-    # tirant moyen 4,5 → interpolation 900↔1200 = 1050 m³ ; ×1,0 − 300 = 750.
-    assert res.method == "hydrostatics"
-    assert res.mean_draft_m == Decimal("4.5")
-    assert res.displacement_m3 == Decimal("1050")
-    assert res.cargo_mrv_t == Decimal("750.0")
-
-
-async def test_cargo_mrv_fallback_declared_when_no_hydrostatics(db):
-    vessel, leg, engines = await _base(db)
-    vessel.lightweight_t = Decimal("300")
-    await db.flush()
     dep = DepartureEvent(
         leg_id=leg.id,
         vessel_id=vessel.id,
@@ -412,24 +379,13 @@ async def test_cargo_mrv_fallback_declared_when_no_hydrostatics(db):
         draft_aft_m=Decimal("4.5"),
         cargo_mrv_t=Decimal("512.5"),
     )
-    res = iec.compute_cargo_mrv(dep, vessel, [])  # pas d'hydrostatiques
+    res = iec.compute_cargo_mrv(dep)
     assert res.method == "declared_fallback"
     assert res.cargo_mrv_t == Decimal("512.5")
 
 
 async def test_cargo_mrv_ballast_is_zero(db):
     vessel, leg, engines = await _base(db)
-    vessel.lightweight_t = Decimal("300")
-    vessel.water_density_default_t_m3 = Decimal("1.0")
-    await db.flush()
-    hydro = [
-        VesselHydrostatics(
-            vessel_id=vessel.id, draft_m=Decimal("4.0"), displacement_m3=Decimal("900")
-        ),
-        VesselHydrostatics(
-            vessel_id=vessel.id, draft_m=Decimal("5.0"), displacement_m3=Decimal("1200")
-        ),
-    ]
     dep = DepartureEvent(
         leg_id=leg.id,
         vessel_id=vessel.id,
@@ -439,7 +395,7 @@ async def test_cargo_mrv_ballast_is_zero(db):
         draft_fwd_m=Decimal("4.5"),
         draft_aft_m=Decimal("4.5"),
     )
-    res = iec.compute_cargo_mrv(dep, vessel, hydro)
+    res = iec.compute_cargo_mrv(dep)
     assert res.method == "ballast_zero"
     assert res.cargo_mrv_t == Decimal("0")
 

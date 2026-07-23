@@ -187,13 +187,26 @@ def _interval_in_anchoring(
 
 
 async def _find_existing(
-    db: AsyncSession, report_type: str, leg_id: int, anchor_event_id: int | None
+    db: AsyncSession,
+    report_type: str,
+    leg_id: int,
+    anchor_event_id: int | None,
+    *,
+    period_seq: int | None = None,
 ) -> EnvReport | None:
-    """Rapport existant pour la clé d'upsert : Carbon = 1/leg ; Noon/Stopover =
-    ancré sur un événement (lien)."""
+    """Rapport existant pour la clé d'upsert : Carbon = 1/leg (ou 1/période,
+    G1 — ``period_seq`` distingue les 2 Carbon Reports d'un voyage scindé au
+    Cut-off) ; Noon/Stopover = ancré sur un événement (lien)."""
     if report_type == "carbon":
+        period_clause = (
+            EnvReport.period_seq.is_(None)
+            if period_seq is None
+            else EnvReport.period_seq == period_seq
+        )
         stmt = select(EnvReport).where(
-            EnvReport.leg_id == leg_id, EnvReport.report_type == report_type
+            EnvReport.leg_id == leg_id,
+            EnvReport.report_type == report_type,
+            period_clause,
         )
         return (await db.execute(stmt)).scalars().first()
     if anchor_event_id is None:
@@ -226,6 +239,7 @@ async def _store_report(
     payload: dict[str, Any],
     link_event_ids: list[int],
     author_user_id: int | None,
+    period_seq: int | None = None,
 ) -> EnvReport:
     """Crée ou remplace (regénération) un rapport au statut ``brouillon``.
 
@@ -233,6 +247,9 @@ async def _store_report(
     lorsqu'elles sont *chargées* : assignées à la construction pour un rapport
     neuf (objet transitoire, aucune I/O), diff-mutées pour un rapport existant
     (chargé en ``selectin``) — jamais d'accès paresseux (MissingGreenlet async).
+
+    ``period_seq`` (G1) : None pour un rapport non scindé (tous types, y
+    compris Carbon historique) ; 1/2 pour un Carbon Report scindé au Cut-off.
     """
     now = datetime.now(UTC)
     unique_ids = list(dict.fromkeys(e for e in link_event_ids if e is not None))
@@ -262,6 +279,7 @@ async def _store_report(
         generated_at=now,
         last_saved_at=now,
         author_user_id=author_user_id,
+        period_seq=period_seq,
         event_links=[EnvReportEventLink(event_id=eid) for eid in unique_ids],
         modifications=[],
     )
@@ -385,17 +403,20 @@ def _interval_payload(interval: iec.IntervalResult | None) -> dict[str, Any]:
 # ════════════════════════════════════════════════════════════ Carbon report
 
 
-async def generate_carbon_report(
-    db: AsyncSession, leg: Leg, *, author_user_id: int | None = None
-) -> EnvReport:
-    """Rapport Carbon (CFOTE_09) depuis TOUS les événements finalisés du voyage :
-    totaux conso ME/AE/total, **assiette hors mouillage** (exclut les intervalles
-    Begin→End), conso mouillage à part, distance, cargo (B/L + MRV), émissions
-    multi-GES."""
-    existing = await _find_existing(db, "carbon", leg.id, None)
-    _assert_regenerable(existing)
+def _carbon_payload(
+    leg: Leg,
+    comp: iec.LegComputation,
+    factor: ResolvedEmissionFactor,
+    vessel: Vessel | None,
+    dep: DepartureEvent | None,
+) -> dict[str, Any]:
+    """Construit le payload Carbon (CFOTE_09) depuis une ``LegComputation`` —
+    totale (voyage entier) ou une moitié issue de ``iec.split_at_event`` (G1).
 
-    comp, factor = await _leg_context(db, leg)
+    ``dep`` (pour le cargo B/L + MRV) est toujours résolu sur le Departure du
+    voyage ENTIER, jamais sur la moitié en cours : le cargo physique ne
+    change pas à un Cut-off (contrairement à Departure/Arrival), donc les
+    deux Carbon Reports scindés d'un même voyage portent le même cargo."""
     events = comp.events
     totals = comp.totals
 
@@ -412,10 +433,10 @@ async def generate_carbon_report(
     conso_hors = (conso_total - conso_mouillage) if conso_total is not None else None
     distance = totals.distance_nm if totals is not None else None
 
-    # Cargo : porté par le Departure du voyage (B/L commercial + MRV « DWT carried »).
-    dep = next((e for e in events if isinstance(e, DepartureEvent)), None)
     cargo_bl = getattr(dep, "cargo_bl_t", None) if dep is not None else None
-    dep_cargo = comp.cargo_mrv.get(dep.id) if dep is not None else None
+    dep_cargo = (
+        comp.cargo_mrv.get(dep.id) if (dep is not None and dep.id in comp.cargo_mrv) else None
+    )
     cargo_mrv = dep_cargo.cargo_mrv_t if dep_cargo is not None else None
 
     # Règle d'or : la seule multiplication conso × facteur vit dans
@@ -423,8 +444,7 @@ async def generate_carbon_report(
     emissions = emission_ledger.emissions_breakdown(conso_hors, factor)
     co2_t = Decimal(emissions["co2_t"]) if emissions["co2_t"] is not None else None
 
-    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id is not None else None
-    payload: dict[str, Any] = {
+    return {
         "report_type": "carbon",
         "scope": {
             "leg_code": leg.leg_code,
@@ -466,15 +486,92 @@ async def generate_carbon_report(
         "events": _carbon_event_rows(comp, windows),
         "anchorings": _anchoring_rows(comp, events),
     }
+
+
+async def generate_carbon_report(
+    db: AsyncSession, leg: Leg, *, author_user_id: int | None = None
+) -> EnvReport:
+    """Rapport Carbon (CFOTE_09) depuis TOUS les événements finalisés du voyage :
+    totaux conso ME/AE/total, **assiette hors mouillage** (exclut les intervalles
+    Begin→End), conso mouillage à part, distance, cargo (B/L + MRV), émissions
+    multi-GES.
+
+    Comportement historique inchangé (voyage entier, 1 seul rapport) — pour
+    un voyage avec un événement Cut-off finalisé (G1), préférer
+    ``carbon_reports_for_leg`` qui scinde automatiquement en 2 rapports."""
+    existing = await _find_existing(db, "carbon", leg.id, None)
+    _assert_regenerable(existing)
+
+    comp, factor = await _leg_context(db, leg)
+    dep = next((e for e in comp.events if isinstance(e, DepartureEvent)), None)
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id is not None else None
+    payload = _carbon_payload(leg, comp, factor, vessel, dep)
     return await _store_report(
         db,
         existing,
         leg_id=leg.id,
         report_type="carbon",
         payload=payload,
-        link_event_ids=[e.id for e in events],
+        link_event_ids=[e.id for e in comp.events],
         author_user_id=author_user_id,
     )
+
+
+async def _cutoff_event_for_leg(db: AsyncSession, leg: Leg) -> NavEvent | None:
+    """Événement Cut-off finalisé du voyage, s'il existe (au plus un en
+    pratique — cf. hypothèse simplificatrice de R27)."""
+    events = await iec.finalized_events_for_leg(db, leg.id)
+    return next((e for e in events if e.event_type == "cutoff"), None)
+
+
+async def generate_carbon_reports_split(
+    db: AsyncSession, leg: Leg, cutoff_event: NavEvent, *, author_user_id: int | None = None
+) -> tuple[EnvReport, EnvReport]:
+    """G1 — scinde le Carbon Report en 2 rapports indépendants de part et
+    d'autre du Cut-off (CDC v0.7 §9.2 : déclaration bornée par exercice
+    civil). ``period_seq=1`` (jusqu'au Cut-off inclus) et ``period_seq=2``
+    (à partir du Cut-off) sont deux ``EnvReport`` distincts pour le même
+    ``leg_id`` — statuts/validations indépendants, comme deux rapports
+    normaux. Le contrat gelé du Dashboard (``emission_ledger``) n'est PAS
+    affecté : cette scission ne touche que la couche rapport réglementaire,
+    pas le total unique réconciliant vu par le Dashboard."""
+    comp, factor = await _leg_context(db, leg)
+    period1, period2 = iec.split_at_event(comp, cutoff_event.id)
+    dep = next((e for e in comp.events if isinstance(e, DepartureEvent)), None)
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id is not None else None
+
+    reports: list[EnvReport] = []
+    for seq, period in ((1, period1), (2, period2)):
+        existing = await _find_existing(db, "carbon", leg.id, None, period_seq=seq)
+        _assert_regenerable(existing)
+        payload = _carbon_payload(leg, period, factor, vessel, dep)
+        reports.append(
+            await _store_report(
+                db,
+                existing,
+                leg_id=leg.id,
+                report_type="carbon",
+                payload=payload,
+                link_event_ids=[e.id for e in period.events],
+                author_user_id=author_user_id,
+                period_seq=seq,
+            )
+        )
+    return reports[0], reports[1]
+
+
+async def carbon_reports_for_leg(
+    db: AsyncSession, leg: Leg, *, author_user_id: int | None = None
+) -> list[EnvReport]:
+    """Point d'entrée recommandé (G1) : génère 1 Carbon Report (comportement
+    historique) si le voyage n'a pas de Cut-off, ou 2 (scindés) sinon.
+    ``generate_carbon_report`` reste directement appelable pour forcer le
+    rapport non scindé (tests existants, usages internes)."""
+    cutoff = await _cutoff_event_for_leg(db, leg)
+    if cutoff is None:
+        return [await generate_carbon_report(db, leg, author_user_id=author_user_id)]
+    r1, r2 = await generate_carbon_reports_split(db, leg, cutoff, author_user_id=author_user_id)
+    return [r1, r2]
 
 
 def _carbon_event_rows(comp: iec.LegComputation, windows) -> list[dict[str, Any]]:
@@ -532,9 +629,12 @@ async def generate_stopover_report(
     author_user_id: int | None = None,
 ) -> EnvReport:
     """Rapport d'escale (NOUVEAU) : entre l'Arrival du leg N et le Departure du
-    leg N+1 du même navire — durée escale, conso escale par deltas de compteurs,
-    ROB déclaré arrivée vs départ, soutages de la fenêtre, **écart classé** via
-    les bornes R14 → {conforme, mineur, majeur, critique}."""
+    leg N+1 du même navire — les 8 blocs proposés au CDC §12.4 : identité
+    escale, ROB déclaré arrivée/départ, conso escale par deltas de compteurs
+    ET par ROB, **écart classé** via les bornes R14 (conforme/mineur/majeur/
+    critique), soutages de la fenêtre, cargaison chargée/déchargée (delta
+    B/L déclaré, G8) et ancrage/dérive rattaché (Begin/End anchoring de la
+    fenêtre, hors temps MRV, G8)."""
     if arrival_event.vessel_id != departure_event.vessel_id:
         raise StopoverError("Arrival et Departure doivent concerner le même navire.")
     if not isinstance(arrival_event, PortCallEvent) or not isinstance(
@@ -559,6 +659,21 @@ async def generate_stopover_report(
         db, vessel_id, arrival_event.datetime_utc, departure_event.datetime_utc
     )
     bunkered_t = sum((b.mass_t for b in bunkers if b.mass_t is not None), Decimal("0"))
+
+    # Cargaison chargée/déchargée pendant l'escale (G8, CDC §12.4 bloc 7) : delta
+    # du B/L déclaré entre l'Arrival et le Departure suivant (positif = chargée,
+    # négatif = déchargée) — même convention que ROB/conso (valeurs déclarées
+    # aux deux bornes de l'escale, jamais une nouvelle saisie/import).
+    cargo_bl_arrival = getattr(arrival_event, "cargo_bl_t", None)
+    cargo_bl_departure = getattr(departure_event, "cargo_bl_t", None)
+    cargo_delta_t: Decimal | None = None
+    if cargo_bl_arrival is not None and cargo_bl_departure is not None:
+        cargo_delta_t = Decimal(cargo_bl_departure) - Decimal(cargo_bl_arrival)
+
+    # Ancrage/dérive rattaché pendant l'escale (G8, CDC §12.4 bloc 8).
+    anchorings = await _anchorings_in_window(
+        db, vessel_id, arrival_event.datetime_utc, departure_event.datetime_utc
+    )
 
     rob_theo: Decimal | None = None
     ecart: Decimal | None = None
@@ -616,6 +731,12 @@ async def generate_stopover_report(
             }
             for b in bunkers
         ],
+        "cargo": {
+            "declared_arrival_t": _num(cargo_bl_arrival),
+            "declared_departure_t": _num(cargo_bl_departure),
+            "delta_t": _num(cargo_delta_t),
+        },
+        "anchorings": anchorings,
     }
     return await _store_report(
         db,
@@ -652,6 +773,52 @@ async def _bunkers_in_window(
             continue
         if (f is None or f < d) and (t is None or d <= t):
             out.append(b)
+    return out
+
+
+async def _anchorings_in_window(
+    db: AsyncSession, vessel_id: int, frm: datetime | None, to: datetime | None
+) -> list[dict[str, Any]]:
+    """Mouillages (Begin/End appariés) du navire survenus dans la fenêtre
+    (arrivée, départ] de l'escale — bloc « Ancrage/dérive rattaché » (CDC
+    §12.4 bloc 8, G8) : ces périodes sont hors temps MRV (cf. Carbon Report),
+    référencées ici pour information, pas recalculées."""
+    rows = (
+        (
+            await db.execute(
+                select(NavEvent)
+                .where(
+                    NavEvent.vessel_id == vessel_id,
+                    NavEvent.event_type.in_(("anchoring_begin", "anchoring_end")),
+                    NavEvent.status.in_(iec.FINALIZED_STATUSES),
+                )
+                .order_by(NavEvent.datetime_utc.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    f, t = _naive_utc(frm), _naive_utc(to)
+    windowed = []
+    for e in rows:
+        d = _naive_utc(e.datetime_utc)
+        if d is None:
+            continue
+        if (f is None or f < d) and (t is None or d <= t):
+            windowed.append(e)
+    by_id = {e.id: e for e in windowed}
+    out: list[dict[str, Any]] = []
+    for pair in iec.pair_anchorings(windowed):
+        begin = by_id.get(pair.begin_event_id)
+        end = by_id.get(pair.end_event_id)
+        out.append(
+            {
+                "sequence_no": pair.sequence_no,
+                "begin_datetime_utc": _iso(begin.datetime_utc) if begin else None,
+                "end_datetime_utc": _iso(end.datetime_utc) if end else None,
+                "duration_h": _num(pair.duration_h),
+            }
+        )
     return out
 
 

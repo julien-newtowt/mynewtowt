@@ -136,6 +136,39 @@ async def test_create_draft_client_uuid_idempotent(db):
     assert count == 1
 
 
+async def test_draft_completion_counts_filled_allowed_fields(db):
+    """G9 — indicateur de complétion (CDC §9.1 : « champs restants ») : compte
+    les champs renseignés parmi les champs autorisés du sous-type (même
+    référentiel que la sérialisation du payload, pas une nouvelle taxonomie)."""
+    author, vessel, leg = await _base(db)
+    ev = await event_capture.create_draft(
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="noon",
+        author=author,
+        payload={
+            "datetime_local": datetime(2026, 1, 2, 12, 0),
+            "timezone": "UTC",
+            "lat_decimal": Decimal("10"),
+            "lon_decimal": Decimal("10"),
+        },
+    )
+    filled, total = event_capture.draft_completion(ev)
+    assert total == len(event_capture._COMMON_FIELDS) + len(event_capture._NOON_FIELDS)
+    assert filled == 4  # datetime_local, timezone, lat_decimal, lon_decimal
+
+
+async def test_draft_completion_empty_draft(db):
+    author, vessel, leg = await _base(db)
+    ev = await event_capture.create_draft(
+        db, leg=leg, vessel=vessel, event_type="noon", author=author, payload={}
+    )
+    filled, total = event_capture.draft_completion(ev)
+    assert filled == 0
+    assert total > 0
+
+
 async def test_create_draft_rejects_unknown_type(db):
     author, vessel, leg = await _base(db)
     with pytest.raises(event_capture.EventCaptureError):
@@ -364,3 +397,78 @@ async def test_prefill_position_none_when_no_data(db):
     author, vessel, leg = await _base(db)
     pre = await event_capture.prefill_position(db, vessel, datetime(2026, 1, 2, 12, tzinfo=UTC))
     assert pre is None
+
+
+# ════════════════════════════════════ G1 — 6ᵉ type d'événement Year-End Cut-off
+
+
+def test_cutoff_event_type_registered():
+    """CDC v0.7 §9.2/§10.1 — le type ``cutoff`` doit exister au même titre que
+    les 5 autres, résolu vers ``CutoffEvent`` (pas de table propre — cf.
+    docstring du modèle)."""
+    from app.models.nav_event import EVENT_CLASS_BY_TYPE, EVENT_TYPES, CutoffEvent
+
+    assert "cutoff" in EVENT_TYPES
+    assert EVENT_CLASS_BY_TYPE["cutoff"] is CutoffEvent
+
+
+async def test_create_cutoff_draft(db):
+    """Un brouillon Cut-off se crée comme les autres types (mêmes champs
+    communs — position, local/tz) ; seul son ``datetime_utc`` diffère."""
+    from app.models.nav_event import CutoffEvent
+
+    author, vessel, leg = await _base(db)
+    ev = await event_capture.create_draft(
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="cutoff",
+        author=author,
+        payload={
+            "datetime_local": datetime(2026, 12, 31, 23, 0),
+            "timezone": "UTC",
+            "lat_decimal": Decimal("10.0"),
+            "lon_decimal": Decimal("-30.0"),
+            "position_source": "thalos_auto",
+        },
+    )
+    assert isinstance(ev, CutoffEvent)
+    assert ev.lat_decimal == Decimal("10.0")  # champs communs appliqués normalement
+
+
+@pytest.mark.parametrize(
+    "local_dt,expected_pinned_utc",
+    [
+        # Saisie proche du 31/12 24:00 UTC (= 01/01 00:00 UTC) → fige sur
+        # l'année suivante (candidat le plus proche).
+        (datetime(2026, 12, 31, 22, 0), datetime(2027, 1, 1, tzinfo=UTC)),
+        (datetime(2026, 12, 31, 23, 59), datetime(2027, 1, 1, tzinfo=UTC)),
+        # Saisie juste après minuit UTC le 1er janvier → fige sur la même
+        # bascule (année N, pas N+1).
+        (datetime(2027, 1, 1, 0, 30), datetime(2027, 1, 1, tzinfo=UTC)),
+        # Saisie en milieu d'année (Master pressé/erreur de date) → fige quand
+        # même sur la bascule la plus proche, jamais une valeur arbitraire
+        # (1er juillet 12:00 est encore légèrement plus proche du 01/01 de la
+        # même année que du 01/01 suivant — 365 jours pairs, pas de bascule
+        # exactement à mi-année).
+        (datetime(2026, 7, 1, 12, 0), datetime(2026, 1, 1, tzinfo=UTC)),
+        (datetime(2026, 6, 29, 12, 0), datetime(2026, 1, 1, tzinfo=UTC)),
+    ],
+)
+async def test_cutoff_datetime_pinned_to_exact_boundary(db, local_dt, expected_pinned_utc):
+    """G1 — décision produit : le Cut-off est une règle fixe, pas une
+    observation de terrain. ``datetime_utc`` ne doit JAMAIS refléter la saisie
+    brute du Master, seulement l'instant réglementaire le plus proche."""
+    author, vessel, leg = await _base(db)
+    ev = await event_capture.create_draft(
+        db,
+        leg=leg,
+        vessel=vessel,
+        event_type="cutoff",
+        author=author,
+        payload={"datetime_local": local_dt, "timezone": "UTC"},
+    )
+    assert ev.datetime_utc == expected_pinned_utc
+    # Le local/tz saisi reste conservé tel quel (affichage informatif) —
+    # seul l'UTC dérivé est figé, jamais la saisie elle-même.
+    assert ev.datetime_local == local_dt

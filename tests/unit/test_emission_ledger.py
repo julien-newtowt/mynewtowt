@@ -13,6 +13,11 @@ Couvre ``app.services.emission_ledger`` :
   /admin/co2) reste honoré quand ``emission_factors`` est vide ;
 - **méthode C réelle** : ``cargo_mrv`` disponible (événements) ⇒ EF C calculé
   (``kpi_env.leg_ef``/``aggregate_ef`` + ``ef_method_c`` du ledger) ;
+- **conso d'escale (G12)** : formule R14b résolue pour ``Consommation_escale``
+  (ROB déclarés + soutages), repli compteurs (G2) si un ROB manque, ``None``
+  tant que le Departure suivant n'est pas finalisé ;
+- **CO2eq GWP-100 (G13)** : ``emissions_breakdown`` calcule désormais le TtW
+  en équivalent CO₂ (Annexe I EU 2015/757), distinct du WtT ;
 - **provider kpi_env** : lit le summary quand il existe, repli ``LegKPI`` sinon.
 """
 
@@ -28,10 +33,11 @@ from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401 — enregistre tous les modèles sur Base.metadata
 from app.database import Base
+from app.models.bunker import BunkerOperation
 from app.models.co2_variable import Co2Variable
 from app.models.finance import LegKPI
 from app.models.leg import Leg
-from app.models.nav_event import DepartureEvent, NavEventEngineReading, NoonEvent
+from app.models.nav_event import ArrivalEvent, DepartureEvent, NavEventEngineReading, NoonEvent
 from app.models.noon_report import NoonReport
 from app.models.port import Port
 from app.models.user import User
@@ -46,7 +52,11 @@ from app.services.kpi_env import (
     aggregate_ef,
     leg_ef,
 )
-from app.services.referential_env import ensure_vessel_env_defaults, get_vessel_engines
+from app.services.referential_env import (
+    ResolvedEmissionFactor,
+    ensure_vessel_env_defaults,
+    get_vessel_engines,
+)
 from app.services.validation_engine import invalidate_cache, seed_reference_data
 
 T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -192,6 +202,11 @@ async def test_legacy_fallback_matches_pre_lot9_figures(db):
     assert r.ch4_g == Decimal("2.0") * Decimal("0.00005") * Decimal("1000000")
     assert r.n2o_g == Decimal("2.0") * Decimal("0.00018") * Decimal("1000000")
     assert r.wtt_co2eq_t == Decimal("2.0") * Decimal("42700") * Decimal("17.7") / Decimal("1000000")
+    # G13 — CO2eq GWP-100 (Annexe I EU 2015/757 : CH4=25, N2O=298), distinct du WtT.
+    assert r.co2eq_t == Decimal("2.0") * (
+        Decimal("3.206") + Decimal("0.00005") * Decimal("25") + Decimal("0.00018") * Decimal("298")
+    )
+    assert r.co2eq_t != r.wtt_co2eq_t
     # Distance canonique = leg.distance_nm ; cargo B/L = bookings (aucun → 0).
     assert r.distance_nm == Decimal("200")
     assert r.cargo_bl_t == Decimal("0.000")
@@ -215,6 +230,39 @@ async def test_do_co2_ef_variable_chain_preserved(db):
     assert r.co2_emitted_t == Decimal("2.0") * Decimal("3.5")
     # Le reste du multi-GES garde les replis codés (CH₄/N₂O/WtT).
     assert r.factor.ef_ch4_kg_per_kg == Decimal("0.00005")
+
+
+# ══════════════════════════════ CO2eq GWP-100 (G13) ══════════════════════════════
+
+_MDO_FACTOR = ResolvedEmissionFactor(
+    fuel_type="MDO",
+    ef_co2_kg_per_kg=Decimal("3.206"),
+    ef_ch4_kg_per_kg=Decimal("0.00005"),
+    ef_n2o_kg_per_kg=Decimal("0.00018"),
+    wtt_gco2eq_per_mj=Decimal("17.7"),
+    source_reference="test",
+    valid_from=None,
+    valid_to=None,
+    is_current=True,
+    is_fallback=True,
+)
+
+
+def test_emissions_breakdown_computes_co2eq_gwp100():
+    """G13 — CO2eq GWP-100 tank-to-wake (Annexe I EU 2015/757 : CH4=25, N2O=298)
+    ≈ 3,261 kgCO2eq/kgFuel pour le MDO (architecture §2.1), distinct du WtT."""
+    em = emission_ledger.emissions_breakdown(Decimal("10"), _MDO_FACTOR)
+    expected_per_kg = (
+        Decimal("3.206") + Decimal("0.00005") * Decimal("25") + Decimal("0.00018") * Decimal("298")
+    )
+    assert expected_per_kg.quantize(Decimal("0.001")) == Decimal("3.261")
+    assert Decimal(em["co2eq_t"]) == Decimal("10") * expected_per_kg
+    assert em["co2eq_t"] != em["wtt_co2eq_t"]
+
+
+def test_emissions_breakdown_co2eq_none_without_conso():
+    em = emission_ledger.emissions_breakdown(None, _MDO_FACTOR)
+    assert em["co2eq_t"] is None
 
 
 # ═══════════════════════════════════════ refresh_summary (cache, idempotent)
@@ -245,6 +293,11 @@ async def test_refresh_summary_idempotent_upsert(db):
     assert s2.conso_total_t == Decimal("2.0")
     assert s2.distance_nm == Decimal("200")
     assert s2.factors_ref is None  # repli codé → aucune ligne emission_factors
+    # G13 — CO2eq GWP-100 (Annexe I EU 2015/757), persisté et distinct du WtT.
+    assert s2.co2eq_t == Decimal("2.0") * (
+        Decimal("3.206") + Decimal("0.00005") * Decimal("25") + Decimal("0.00018") * Decimal("298")
+    )
+    assert s2.co2eq_t != s2.wtt_co2eq_t
 
 
 async def test_refresh_summary_follows_source_switch(db):
@@ -400,6 +453,147 @@ async def test_ledger_ef_method_c_from_events(db):
     # A (cargo B/L 900) et B (1100 × 70 %) également posés.
     assert r.ef_method_a is not None
     assert r.ef_method_b is not None
+
+
+# ═══════════════════════════ Conso d'escale (G12 — formule R14b résolue)
+
+
+async def _second_leg(db, vessel, *, leg_code="2AFRBR6"):
+    p3 = Port(name="Belem2", locode="BRBE2", country="BR", latitude=-1.5, longitude=-48.6)
+    db.add(p3)
+    await db.flush()
+    leg2 = Leg(
+        leg_code=leg_code,
+        vessel_id=vessel.id,
+        departure_port_id=p3.id,
+        arrival_port_id=p3.id,
+        etd_ref=T0 + timedelta(days=3),
+        eta_ref=T0 + timedelta(days=5),
+        etd=T0 + timedelta(days=3),
+        eta=T0 + timedelta(days=5),
+        distance_nm=Decimal("100"),
+    )
+    db.add(leg2)
+    await db.flush()
+    return leg2
+
+
+async def test_escale_consumption_rob_solved(db):
+    """ROB_arrivée + Σ soutage − ROB_départ, entre l'Arrival de CE leg et le
+    Departure du leg suivant du même navire (architecture §2.4)."""
+    vessel, leg = await _base(db)
+    dep1 = DepartureEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        rob_t=Decimal("100.000"),
+    )
+    arr1 = ArrivalEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=48),
+        rob_t=Decimal("50.000"),
+    )
+    db.add_all([dep1, arr1])
+    await db.flush()
+
+    leg2 = await _second_leg(db, vessel)
+    dep2 = DepartureEvent(
+        leg_id=leg2.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=52),
+        rob_t=Decimal("55.000"),
+    )
+    db.add(dep2)
+    db.add(
+        BunkerOperation(
+            vessel_id=vessel.id,
+            bdn_number="BDN-ESCALE-1",
+            port_locode="BRBEL",
+            delivery_datetime_utc=T0 + timedelta(hours=50),
+            mass_t=Decimal("10.000"),
+            density_15c_t_m3=Decimal("0.845"),
+            status="valide_master",
+        )
+    )
+    await db.flush()
+
+    r = await emission_ledger.compute_for_leg(db, leg)
+    # 50,000 + 10,000 − 55,000 = 5,000.
+    assert r.conso_escale_t == Decimal("5.000")
+
+
+async def test_escale_consumption_falls_back_to_counters_without_declared_rob(db):
+    """ROB déclaré manquant à une des deux bornes → repli sur le delta de
+    compteurs moteur (méthode disponible depuis G2)."""
+    vessel, leg = await _base(db)
+    await ensure_vessel_env_defaults(db, vessel)
+    engines = {e.engine_role: e for e in await get_vessel_engines(db, vessel.id)}
+    dep1 = DepartureEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        rob_t=Decimal("100.000"),
+    )
+    arr1 = ArrivalEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=48),
+        rob_t=Decimal("50.000"),
+    )
+    arr1.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("5000"))
+    ]
+    db.add_all([dep1, arr1])
+    await db.flush()
+
+    leg2 = await _second_leg(db, vessel)
+    dep2 = DepartureEvent(
+        leg_id=leg2.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=52),
+        rob_t=None,  # ROB non déclaré au départ suivant → repli compteurs.
+    )
+    dep2.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("6000"))
+    ]
+    db.add(dep2)
+    await db.flush()
+
+    r = await emission_ledger.compute_for_leg(db, leg)
+    # Δ 1000 L × 0,000845 = 0,845 t (même densité de repli que les autres tests).
+    assert r.conso_escale_t == Decimal("1000") * Decimal("0.001") * Decimal("0.845")
+
+
+async def test_escale_consumption_none_while_next_departure_not_finalized(db):
+    """Escale en cours (pas encore de Departure suivant finalisé) → None,
+    jamais une estimation prématurée."""
+    vessel, leg = await _base(db)
+    dep1 = DepartureEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        rob_t=Decimal("100.000"),
+    )
+    arr1 = ArrivalEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=48),
+        rob_t=Decimal("50.000"),
+    )
+    db.add_all([dep1, arr1])
+    await db.flush()
+
+    r = await emission_ledger.compute_for_leg(db, leg)
+    assert r.conso_escale_t is None
 
 
 # ═══════════════════════ Provider kpi_env : summary d'abord, LegKPI en repli

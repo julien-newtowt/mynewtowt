@@ -110,10 +110,18 @@ class Vessel(Base):
     # Référentiel environnemental (MRV lot 1) — socle multi-GES
     # =========================================================================
 
-    # Poids lège (tonnes) — nécessaire à la formule Cargo MRV (EU 2016/1928)
-    # une fois les hydrostatiques renseignées (app.models.vessel_env).
+    # Poids lège (tonnes) — conservé comme attribut informatif optionnel
+    # (CDC v0.7) : le Cargo MRV (EU 2016/1928) est saisi directement par le
+    # Master, sans être recalculé à partir de ce champ (G10).
     lightweight_t: Mapped[Decimal | None] = mapped_column(
         Numeric(10, 3), comment="Poids lège (lightweight) en tonnes"
+    )
+    # Port en lourd MRV (tonnes) — attribut informatif optionnel, symétrique de
+    # lightweight_t (architecture §2.1, G17). Distinct du `dwt` commercial
+    # ci-dessus (référentiel stowage/booking, hors périmètre MRV) : ce champ
+    # n'est ni lu ni calculé par compute_cargo_mrv (G10), purement informatif.
+    deadweight_t: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 3), comment="Port en lourd (deadweight) MRV en tonnes"
     )
     # Carburant par défaut du navire — résout app.models.emission_factor
     # (fuel_type) tant qu'aucun choix explicite n'est fait à la saisie.
