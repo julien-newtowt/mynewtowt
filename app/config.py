@@ -139,6 +139,18 @@ class Settings(BaseSettings):
     # externe (POST /api/quotes/followup, déclenché par Power Automate).
     quote_followup_api_token: str | None = None
 
+    # Trombinoscope Armement — génération automatique fin de mois (cf.
+    # docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md). Déclenchement
+    # PRINCIPAL : scheduler interne (APScheduler, cf. services.trombinoscope_scheduler)
+    # — seul usage d'un scheduler in-process du projet, toutes les autres
+    # automatisations passant par un cron externe. Toggle utile en dev local
+    # pour désactiver le scheduler (mêmes raisons que REQUIRE_MFA_FOR_ADMIN).
+    trombinoscope_scheduler_enabled: bool = True
+    # Token du endpoint manuel de secours (POST /api/trombinoscope/generate),
+    # même patron que MARAD_SYNC_TOKEN/WEATHER_API_TOKEN — utile pour forcer
+    # une génération sans attendre le scheduler (tests, incident).
+    trombinoscope_api_token: str | None = None
+
     # Note V3.1 — Stripe retiré de la facturation FRET : NEWTOWT facture le
     # fret par virement bancaire (cf. pdf/invoice.html), l'équipe commerciale
     # confirme les bookings sous 4h.
