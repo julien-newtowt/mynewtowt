@@ -322,6 +322,35 @@ def render_methodology(*, factors, lang: str = "fr") -> DocumentBytes:
     )
 
 
+_TROMBI_MONTHS_FR = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)  # fmt: skip
+
+
+def render_crew_directory(*, directory, period) -> DocumentBytes:
+    """Trombinoscope Armement — cf. docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md.
+
+    ``directory`` est un ``crew_directory.CrewDirectory`` (déjà construit,
+    groupé par fonction/agence, photos encodées en data URI). ``period`` est
+    un ``date`` quelconque du mois concerné (le jour n'est pas utilisé).
+    """
+    from app.templating import brand_for_lang
+
+    period_label = f"{_TROMBI_MONTHS_FR[period.month - 1]} {period.year}"
+    period_token = f"{period.year:04d}-{period.month:02d}"
+    ctx = {
+        "directory": directory,
+        "period_label": period_label,
+        "period_token": period_token,
+        "issued_at": datetime.now(UTC),
+        "brand": brand_for_lang("fr"),
+        "site_url": settings.site_url,
+    }
+    html, pdf = _render_pdf("pdf/crew_directory.html", ctx)
+    return DocumentBytes(html=html, pdf=pdf, filename=f"Trombinoscope_{period_token}.pdf")
+
+
 def render_planning_brochure(*, groups, summary, meta, lang: str = "fr") -> DocumentBytes:
     """PLN-01 — brochure commerciale imprimable du planning.
 
