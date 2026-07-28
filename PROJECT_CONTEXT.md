@@ -229,3 +229,26 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
 ## 12. Journal de développement & ADR
 
 Pas encore initiés — seront créés (`docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md`, registre ADR) au premier développement significatif de cette fenêtre, conformément aux consignes de `CLAUDE.md`.
+
+## 13. Audit de cohérence métier (2026-07-28) — feedback logiciel vs compagnie maritime réelle
+
+Analyse ciblée du code (pas une relecture de doc) pour repérer des incohérences entre le modèle de données/permissions et la logique d'exploitation d'une compagnie maritime. Confirmé/recalibré avec Yasmin le même jour.
+
+### Confirmé non-problématique après clarification
+
+- **Certificats statutaires navire (ISM, classification, sécurité)** : `app/models/vessel.py` n'a aucun champ pour ça — **volontaire**, la donnée de référence vit dans **Marad (FMS)**, pas mynewtowt. Point de vigilance résiduel (non tranché) : aucune alerte croisée planning × expiration de certificat n'existe côté mynewtowt ; à évaluer si utile un jour.
+- **Coût carburant absent du P&L par voyage** (`finance_rollup.py` : OPEX mer = forfait `opex_daily_sea`, repli 12 000 €/jour ; `bunker.py` n'a aucun champ prix) : **volontaire**, le rapprochement facture réelle se fait dans **Pennylane** (comptabilité), pas dans le module "Finance" de mynewtowt qui reste un outil de pilotage opérationnel (prévisionnel/réel), pas la source de vérité comptable. Voir mémoire `reference_external_systems_marad_pennylane`.
+- **Armement en lecture seule (`C`) sur le module Escale**, alors que `escale.py` définit une catégorie d'opération "armement" (embarquement/débarquement/EOSP-SOSP/passage PAF) qui semblait taillée pour ce rôle : **volontaire**, Armement décide et saisit ces événements dans **Marad**, pas dans mynewtowt. Point de vigilance résiduel (non tranché) : pas de garde-fou vérifié contre une dérive entre la décision Marad et le module Crew de mynewtowt (sync lecture seule 30-60 min) ou le dossier d'escale saisi par Opérations.
+- **DPA (Designated Person Ashore, rôle statutaire Code ISM) = Manager Maritime** — confirme et justifie ses droits pleins (CMS) sur QHSE/Tickets/Captain dans la matrice de permissions ; ce n'est pas qu'un choix d'organigramme interne, c'est une exigence réglementaire.
+
+### Points restant ouverts (pas de trou de sécurité, mais à garder en tête)
+
+- **Vente à bord (`onboard_sales`/`cashbox`) non consolidée dans `LegFinance`** — revenu réel mais invisible dans la marge par leg ; montant faible, rapprochement manuel en compta probablement suffisant, à confirmer.
+- **`port_fees_eur` "réel" est une estimation tarifaire recalculée à chaque rollup** (`PortConfig` × opérations d'escale), pas la facture reçue de l'agent portuaire — et le rollup **écrase toute saisie manuelle** (la doc du code le dit explicitement, `other_costs_eur` est le seul champ vraiment manuel). Risque de divergence silencieuse entre "réel affiché" et "réel facturé".
+- **Transitions de statut des claims non verrouillées en code** (`claims_router.py`) — confirmé sans impact actuel : le process claims avec le P&I club/assureur **n'est pas encore formalisé côté métier** ("pas encore", réponse Yasmin 2026-07-28). À revisiter si ce process se formalise (le code devra alors appliquer les étapes obligatoires).
+
+### Points positifs notés (l'audit n'a pas cherché que des trous)
+
+- Claims ↔ Assurance bien lié en base (`insurance_contract_id` sur `Claim`, franchise/plafond/prime portés par `InsuranceContract`).
+- Conformité équipage (passeport, visas US/BR, livret marin, STCW/médical/GMDSS) modélisée avec dates d'expiration et statut "warning" calculé (`crew_compliance.py`), pas un champ texte oublié.
+- Escale/Technique cohérent : le rôle Technique a bien les droits d'écriture (`CMS`) correspondant à sa catégorie d'opération escale (soutage/avitaillement/inspection) — contrairement à Armement.
