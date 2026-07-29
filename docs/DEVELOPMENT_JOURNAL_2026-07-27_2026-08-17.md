@@ -459,3 +459,87 @@ de branche) une escalade externe.
 | `docker-compose.override.yml` | Local, **non versionné** (ajouté à `.gitignore`) |
 
 Aucune migration Alembic. Aucun secret. Aucun fichier temporaire/debug.
+
+---
+
+## 2026-07-29 — Phase 2, J2 : quick wins Operations
+
+**Objectif** : répondre au maximum de demandes Opérations pour un coût minimal,
+en s'appuyant sur le constat de l'analyse d'écart — **4 demandes sur 8 portaient
+sur des fonctionnalités existantes**, mal affichées ou rangées sur le mauvais
+écran.
+
+**Branche** : `feat/ops-quickwins` (empilée sur `chore/ci-integration-tests` —
+voir « dette de structure » ci-dessous).
+**Commit** : `d4b3937`.
+
+### Analyse d'impact — faite AVANT de coder cette fois
+
+Correction de l'écart §9 relevé au J1 (analyse rédigée rétrospectivement).
+
+| Cible | Consommateurs | Rayon d'action |
+|---|---|---|
+`dashboard_alerts` | `staff_dashboard_router.py` seul | 🟢 Faible |
+`sailing_hours` / `assisted_hours` / `motor_hours` | `chapitre_6_performance_navigation.html` seul | 🟢 Faible |
+BL du rail booking | **4 points d'appel, dont `client/booking_detail.html:199` — servi au CLIENT** | 🟠 Modéré ⇒ **sorti du lot** |
+
+### Livré
+
+**1. Alerte ETA dépassée en mer** (`services/dashboard_alerts.py`)
+La condition `if eta and not ata and not atd:` excluait les legs **déjà partis**,
+donc éliminait le seul cas opérationnel utile : navire en mer, ETA dépassée,
+arrivée non constatée. L'alerte ne se déclenchait que pour un leg jamais parti
+— un oubli de saisie, pas un retard. Corrigé en `if eta and not ata:`, avec un
+message distinguant « en mer » et « non appareillé ».
+
+**2. Liste cargo lisible** (`routers/cargo_router.py` + `staff/cargo/index.html`)
+Les colonnes *Client* et *Leg* existaient mais affichaient `#{{ client_account_id }}`
+et `{{ leg_id }}` — soit `#42` et `17`. Cause : le routeur ne chargeait que
+`Booking`, sans jointure. Ajout de **jointures externes** vers
+`ClientAccount.company_name` et `Leg.leg_code`. Externes délibérément :
+`client_account_id` est nullable (booking saisi côté staff pour un client non
+inscrit) ⇒ repli « Sans compte client » plutôt qu'une ligne qui disparaît.
+
+**3. Heures voile du Carnet de Bord** (`services/carnet_bord.py`)
+Le calcul ajoutait `24` par ligne de voilure, alors qu'une ligne couvre **un
+créneau de 4 h** (`NoonReportSail` = « relevé voilure horaire (4 h) », et
+`NOON_TIME_SLOTS` définit 6 créneaux/jour). **Surévaluation d'un facteur 6** :
+un voyage de 10 j tout sous voile imprimait **1 440 h au lieu de 240**, sous le
+libellé « Heures sous voile pure » du carnet remis au client. Les pourcentages
+restaient justes (le facteur se compensait au numérateur et au dénominateur) —
+c'était l'**absolu** qui mentait, et c'est lui qui est imprimé.
+Constante `SAIL_SLOT_HOURS = 24 // len(NOON_TIME_SLOTS)` plutôt qu'un littéral,
+pour rester juste si les créneaux évoluent.
+
+### Décisions de périmètre prises et assumées
+
+**L'unification des rails documentaires (décision D2) est reportée au lot
+workflow BL.** L'analyse d'impact a montré que le BL dégradé — celui **sans
+consignataire ni notify party** — est servi au **client** (`client/booking_detail.html:199`),
+pas seulement au staff. Or c'est exactement le périmètre que le workflow BL
+redéfinit (draft → validé → signé → final). Le corriger maintenant changerait
+l'interface client **deux fois en quinze jours**.
+
+**La journalisation des mutations du portail client reste à faire** — c'est le
+volet de la demande BL livrable sans migration (8 routes mutantes de
+`cargo_portal_router.py` sans aucun `activity.record()`).
+
+### Validation
+
+- Suite complète : **793 passés · 15 échecs · 1 skip** — les **mêmes 15** échecs
+  PDF/WeasyPrint qu'avant le lot. **Aucune régression.**
+- `ruff` ✅ · `black` ✅.
+- **Validation en application réelle** : rebuild de l'image, authentification
+  staff, `/cargo` `/dashboard` `/escale` `/planning` en 200. La liste cargo étant
+  vide sur la base de démo (aucun booking confirmé), deux bookings de test ont
+  été insérés pour exercer le **vrai** chemin de rendu — nom du client
+  (`Acme Wines SAS`), `leg_code` (`1AFRUS6`) et repli « Sans compte client » tous
+  affichés, **zéro identifiant brut résiduel** — puis supprimés
+  (`DELETE 2`, table `bookings` revenue à 0).
+
+### Dette de structure introduite (assumée, signalée)
+
+`feat/ops-quickwins` est **empilée sur `chore/ci-integration-tests`**, non mergée.
+Raison : le lot a besoin de la suite verte pour se valider. La pile est donc
+`main` → ci → quickwins. Elle se résorbe dès la fusion du lot CI. C'est le RAF R2
+qui reparaît sous une autre forme — signalé plutôt que laissé passer.
