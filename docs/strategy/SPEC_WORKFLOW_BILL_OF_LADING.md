@@ -74,7 +74,7 @@ pas réinventer : le décalquer.**
 |---|---|---|---|
 `aucun` | — | Packing list librement éditable | — |
 **`draft`** | Cargo/Opérations (`cargo:M`) | ✅ **Oui** — par le staff **et** par l'**expéditeur** via le portail `/p/{token}` (c'est lui qui remplit la packing list dont le draft est issu) | PDF **filigrané `DRAFT — NOT NEGOTIABLE`**, sans mention d'originaux |
-**`client_validated`** | **Le consignee** (client final/contractuel), depuis l'espace authentifié **`/me`** — *pas* le portail expéditeur `/p/{token}` | ⚠️ Oui, mais toute modification **repasse l'état à `draft`** et invalide la validation | PDF draft, mention « validé par le consignee le … » |
+**`client_validated`** | **Le client titulaire du booking**, depuis l'espace authentifié **`/me`** — *pas* le portail expéditeur `/p/{token}`. Repli : le staff valide **pour son compte**, tracé comme tel | ⚠️ Oui, mais toute modification **repasse l'état à `draft`** et invalide la validation | PDF draft, mention « validé par le consignee le … » |
 **`master_signed`** | Le commandant (`captain:M`) | ❌ **Non** — gel effectif | PDF signé, hash calculé |
 **`final`** | Émission au client (automatique à la signature, ou action explicite `cargo:M`) | ❌ Non | **BL final** avec numéro définitif et mentions d'originaux |
 
@@ -97,7 +97,9 @@ Sur `PackingListBatch` :
 `bl_draft_at` | `DateTime(tz)` | Génération du draft |
 `bl_issued_by_id` / `bl_issued_by_name` | FK users / `String(200)` | **Qui** a généré le draft (aujourd'hui inconnu) |
 `bl_client_validated_at` | `DateTime(tz)` | Validation client |
-`bl_client_validated_by_id` / `bl_client_validated_by` | FK `client_accounts` / `String(200)` | **Compte client (consignee) authentifié** ayant validé — pas l'expéditeur |
+`bl_client_validated_by_id` | FK `client_accounts`, nullable | Compte client ayant validé (cas normal) |
+`bl_validated_on_behalf_by_id` | FK `users`, nullable | Membre du staff ayant validé **pour le compte** du client (repli, booking sans compte). **Exactement une des deux FK est renseignée** |
+`bl_client_validated_by` | `String(200)` | Nom figé à la validation (instantané, survit à un renommage) |
 `bl_signed_at` / `bl_signed_by_id` / `bl_signed_by_name` | idem `SofEvent` | Signature commandant |
 `bl_signature_hash` | `String(64)` | SHA-256 du contenu signé — détecte l'altération |
 `bl_revision` | `Integer`, défaut 1 | Numéro de révision |
@@ -152,46 +154,26 @@ soft-delete avec motif obligatoire.
    les packing lists. Le rail booking (`/cargo/booking/{ref}/bl.pdf`) produit un
    BL **sans consignataire ni notify party** : à retirer dans le lot J2, avant
    ce lot-ci. À confirmer.
-2. ~~Qui valide côté client ?~~ ✅ **TRANCHÉ (Yasmin, 2026-07-29)** : c'est le
-   **consignee — le client final / contractuel** qui valide le draft. **Pas
-   l'expéditeur.**
+2. ~~Qui valide côté client ?~~ ✅ **TRANCHÉ (Yasmin, 2026-07-29)**
 
-   **Conséquence sur l'implémentation** : la validation se fait dans l'espace
-   client authentifié **`/me`**, pas sur le portail token `/p/{token}` (qui est
-   l'accès de l'expéditeur). Le socle existe déjà : `/me/bookings/{ref}/bl.pdf`
-   est une route *owner-only* (`routers/cargo_router.py:178`) — c'est là que
-   s'ajoutent l'affichage du draft et le bouton de validation. Reprendre la
-   vérification de propriété individuelle de chaque route `/me`
-   (`booking.client_account_id == client.id`) : il n'y a pas de middleware
-   central, chaque route la refait.
+   **C'est le client titulaire du booking qui valide le draft**, depuis l'espace
+   authentifié `/me`. La notion de **consignee reste séparée** : `consignee_name`
+   et les champs d'adresse demeurent des données du connaissement (texte libre
+   rempli par l'expéditeur), **sans lien avec le validateur**. On ne cherche donc
+   pas à relier le consignee à un compte — ce serait de la complexité inutile.
 
-   ⚠️ **Deux contraintes à lever avant de coder** (vérifiées dans le code) :
+   **Repli pour les bookings sans compte client** (`Booking.client_account_id`
+   est nullable — cas d'une réservation saisie côté staff pour un client non
+   inscrit) : **le staff valide pour le compte du client**, et la validation est
+   tracée **explicitement comme telle** (`bl_validated_on_behalf_by_id` +
+   `activity_logs`). Jamais de validation silencieuse présentée comme venant du
+   client.
 
-   **(a) Le consignee n'est pas relié au compte client.** `consignee_name`,
-   `consignee_address`, `consignee_city`, `consignee_country`
-   (`models/packing_list.py:47-50`) sont des champs **texte libre**, remplis par
-   l'expéditeur via le portail. Aucun lien avec `Booking.client_account_id`.
-   Donc « le consignee valide » ne peut être appliqué littéralement : le système
-   ne sait pas *quel compte* correspond au consignee nommé sur le BL.
-   Deux options :
-   - **Option 1 (simple, recommandée si consignee = celui qui a réservé)** : le
-     compte client titulaire du booking valide, et on considère qu'il *est* le
-     consignee. Valable dans le cas NEWTOWT courant (le torrefacteur/chocolatier
-     achète et réceptionne). Coût : nul.
-   - **Option 2 (nécessaire si le consignee peut différer de l'acheteur)** :
-     relier le consignee à un compte client (FK) ou lui ouvrir un accès dédié.
-     Cas classique du négoce : un transitaire réserve pour le compte d'un
-     acheteur qui est le consignee. Coût : plus élevé, nouveau chemin d'accès.
+   **Implémentation** : le socle existe — `/me/bookings/{ref}/bl.pdf` est déjà
+   une route *owner-only* (`routers/cargo_router.py:178`). Reprendre la
+   vérification de propriété individuelle (`booking.client_account_id ==
+   client.id`) : il n'y a pas de middleware central, chaque route `/me` la refait.
 
-     👉 **À confirmer** : chez NEWTOWT, le consignee est-il **toujours** le
-     titulaire du booking, ou peut-il être un tiers ?
-
-   **(b) `Booking.client_account_id` est nullable** (`models/booking.py:42`).
-   Un booking créé côté staff pour un client non inscrit n'a pas de compte ⇒
-   personne ne peut valider via `/me`. Prévoir un repli : validation par le
-   staff **pour le compte du client**, explicitement tracée comme telle dans
-   `activity_logs` (jamais silencieuse), ou émission d'un token de validation
-   dédié au consignee sur le modèle du portail expéditeur.
 3. **Nombre d'originaux.** Aujourd'hui `3` est codé en dur
    (`services/pdf_generator.py:99`) et imprimé « 3 OBL signés » même sur un
    document non signé. Doit-il être paramétrable par BL ? Et faut-il un registre
