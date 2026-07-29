@@ -231,6 +231,41 @@ notion de la documentation.
 valide ✅ · suite complète 2000/15 (15 = environnement) ✅ · documentation mise
 à jour ✅ · aucune migration ✅ · aucun secret ✅.
 
+### J1 — sauvegarde / rollback : procédure testée (et non supposée)
+
+Item de la DoD du J1 initialement **oublié**, exécuté et validé le 2026-07-29.
+
+**Sauvegarde** (le dump sort du dépôt — il contient des données) :
+```bash
+docker compose exec -T db pg_dump -U towt -d towt --format=custom > <hors-repo>/towt_pre-upgrade.dump
+```
+→ 525 Ko, 135 tables dans la base source.
+
+**Restauration testée dans une base jetable** (jamais sur `towt`) :
+```bash
+docker compose exec -T db psql -U towt -d postgres \
+  -c "DROP DATABASE IF EXISTS towt_restore_test;" \
+  -c "CREATE DATABASE towt_restore_test OWNER towt;"
+docker compose exec -T -i db pg_restore -U towt -d towt_restore_test --no-owner < <dump>
+```
+
+**Vérification** — schéma **et** données, pas seulement le schéma :
+
+| Contrôle | Source | Restaurée | |
+|---|---|---|---|
+| Tables (`information_schema`) | 135 | 135 | ✅ |
+| `vessels` | 6 | 6 | ✅ |
+| `ports` | 6 | 6 | ✅ |
+| `legs` | 6 | 6 | ✅ |
+| `users` | 2 | 2 | ✅ |
+
+Base de test supprimée après contrôle. **La procédure de rollback est donc
+prouvée, pas présumée.** Règle retenue : ne jamais restaurer directement sur
+`towt` — toujours valider dans une base jetable d'abord.
+
+⚠️ **Le dump ne doit jamais être committé** (données réelles). Stocké hors
+dépôt ; à refaire avant chaque migration, conformément au plan §9.
+
 **Prochaines étapes** :
 1. **J2 — quick wins** : alerte ETA en mer, nom client + `leg_code` sur la
    liste bookings, heures voile ×6, redirection BL vers le rail packing list,
