@@ -151,5 +151,9 @@ def test_docx_routes_registered():
     assert "/cargo/booking/{ref}/bl.docx" in cargo_paths
     assert "/me/bookings/{ref}/bl.docx" in cargo_paths
 
+    # ``router.routes`` expose les chemins **préfixés** : le router commercial
+    # est monté avec ``APIRouter(prefix="/commercial")``, l'assertion doit donc
+    # porter le préfixe (le test l'omettait et échouait en silence, faute de
+    # `tests/integration` en CI).
     com_paths = {r.path for r in commercial_router.router.routes}
-    assert "/offers/{offer_id}/export.docx" in com_paths
+    assert "/commercial/offers/{offer_id}/export.docx" in com_paths
