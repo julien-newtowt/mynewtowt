@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.claim import VesselPosition
+from app.services.planning import ensure_utc
 from app.models.leg import Leg
 from app.models.port import Port
 from app.services.ports import haversine_nm
@@ -63,13 +64,6 @@ def leg_window(leg: Leg, *, now: datetime | None = None) -> tuple[datetime, date
     - is_active = leg **réellement parti** (ATD posée) et **pas encore arrivé**
       (ATA absente). Un leg futur (sans ATD) n'est donc PAS « en mer ».
     """
-    # Normalisation naïf → aware UTC avant toute comparaison : les colonnes
-    # ``DateTime(timezone=True)`` reviennent naïves sous SQLite et les saisies
-    # ``datetime-local`` le sont aussi (cf. ``planning.ensure_utc``). Sans ça,
-    # la comparaison ``end < start`` lève un TypeError dès qu'une seule des
-    # deux bornes est naïve.
-    from app.services.planning import ensure_utc
-
     now = ensure_utc(now) or datetime.now(UTC)
     start = ensure_utc(leg.atd or leg.etd)
     is_active = leg.atd is not None and leg.ata is None
@@ -164,7 +158,9 @@ def compute_metrics(
         )
 
     # Durée depuis le départ : ATD/ETD → ATA si arrivé, sinon dernier point / maintenant.
-    end_ref = leg.ata or (positions[-1].recorded_at if positions else now)
+    # ``ensure_utc`` obligatoire : ``leg.ata`` et ``recorded_at`` reviennent
+    # naïfs sous SQLite alors que ``start`` (issu de ``leg_window``) est aware.
+    end_ref = ensure_utc(leg.ata) or ensure_utc(positions[-1].recorded_at if positions else now)
     duration_hours: float | None = None
     if end_ref and start:
         duration_hours = max((end_ref - start).total_seconds() / 3600.0, 0.0)
