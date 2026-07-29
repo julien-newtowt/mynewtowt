@@ -24,14 +24,15 @@ async def test_commercial_overview_lists_orders_and_packing_lists(db):
     db.add(Order(id=1, reference="CMD-1", client_id=1, leg_id=1, booked_palettes=10))
     db.add(Order(id=2, reference="CMD-OTHER", client_id=1, leg_id=None))  # hors leg
     await db.flush()
-    # ⚠️ Divergence relevée 2026-07-29 : la docstring de ce test (et de
-    # ``commercial_overview``) décrit une PL « épinglée au leg » — mais la
-    # contrainte ``ck_packing_lists_order_xor_booking`` impose qu'une PL
-    # appartienne à une commande **ou** à un booking. Une PL portant seulement
-    # ``leg_id`` est donc impossible en base depuis l'ajout de cette contrainte.
-    # On rattache ici un booking pour satisfaire l'invariant tout en conservant
-    # l'épinglage au leg. À arbitrer : soit assouplir la contrainte, soit
-    # retirer la notion de PL épinglée au leg seule de la documentation.
+    # Une PL appartient TOUJOURS à une commande ou à un booking (invariant
+    # ``ck_packing_lists_order_xor_booking``) ; ``leg_id`` est un champ
+    # **additionnel** servant à désigner le voyage concerné quand la commande
+    # est ventilée sur plusieurs legs. « Épinglée au leg » qualifie donc le
+    # chemin de recherche de ``commercial_overview`` (leg_id direct vs via la
+    # commande), pas une PL sans propriétaire.
+    # La fixture d'origine créait une PL avec le seul ``leg_id`` — un état
+    # invalide, correctement refusé par la contrainte. On lui donne ici son
+    # booking d'origine.
     from app.models.booking import Booking
 
     db.add(Booking(id=1, reference="BK-OV-1", leg_id=1, status="confirmed"))

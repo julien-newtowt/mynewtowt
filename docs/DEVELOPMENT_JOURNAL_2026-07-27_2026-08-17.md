@@ -143,13 +143,27 @@ Sans ce filet, cette régression partait en production.
   `crew_router.crew_assign`, **supprimée délibérément** par `9b752bd`
   (« retirer créations manuelles », doctrine Marad = source de vérité).
 
-**Divergence doc/code relevée au passage (à arbitrer)** : l'arbitrage **A4
-« embarquement hors leg autorisé »** figure toujours dans `CLAUDE.md` et
-`CrewAssignment.leg_id` est toujours nullable, mais le **seul** producteur de
-`CrewAssignment` est désormais `services/escale_crew.py:52`, appelé avec un
-leg. **Aucun chemin applicatif ne crée plus d'affectation hors leg** : la
-capacité existe en base, plus dans l'UI. Soit réactiver un chemin, soit
-retirer A4 des décisions actées.
+**Manque fonctionnel réel (requalifié le 2026-07-29 après confirmation
+métier)** : l'arbitrage **A4 « embarquement hors leg autorisé »** figure
+toujours dans `CLAUDE.md` et `CrewAssignment.leg_id` est toujours nullable,
+mais le **seul** producteur de `CrewAssignment` est désormais
+`services/escale_crew.py:52`, **appelé avec un leg**. Aucun chemin applicatif
+ne crée donc plus d'affectation hors leg.
+
+**Confirmation de Yasmin (2026-07-29)** : *« on peut embarquer des gens
+(changement d'équipage) pendant un arrêt technique sans forcément l'associer à
+un voyage »*. Le cas d'usage est donc **réel et courant** ⇒ ce n'est pas une
+divergence de documentation à trancher, c'est un **manque fonctionnel** :
+**il faut restaurer un chemin de saisie, pas retirer A4.**
+
+⚠️ **Conséquence non anticipée, qui aggrave le faux vert Schengen (§14.1)** :
+`refresh_schengen_for_members` **saute** les affectations sans leg
+(`crew_compliance.py:231-233`, `if leg is None: continue`). Donc même une fois
+la saisie restaurée, **les jours d'un embarquement d'arrêt technique ne
+seraient pas comptés dans le 90/180**. Les deux correctifs sont liés et
+doivent être traités ensemble : restaurer le chemin de saisie **et** faire
+lire ces affectations par le calcul Schengen (via `CrewAssignment.vessel_id`
+en repli, l'écart était déjà signalé dans `SPEC-CREW-reprise-P0.md:18`).
 
 **État de la suite** : **784 passés · 24 échecs · 1 skip** (contre 781/29/1 au
 départ). Ventilation des 24 restants :
@@ -220,12 +234,19 @@ pas la durée d'escale entre deux legs aval (`prev_eta = peta`). C'est exact,
 premier leg aval reçoit les 24 h ; leg aval N → leg aval N+1 ne les reçoit pas.
 Le constat reste valide, sa portée est plus étroite qu'écrit.
 
-**Deuxième divergence doc/code relevée** (après A4) : la docstring de
-`commercial_overview` et de son test décrivent une packing list « épinglée au
-leg », mais `ck_packing_lists_order_xor_booking` impose qu'une PL appartienne à
-une commande **ou** à un booking. **Une PL portant seulement `leg_id` est donc
-impossible en base.** À arbitrer : assouplir la contrainte, ou retirer cette
-notion de la documentation.
+**Fausse alerte, corrigée le 2026-07-29** — j'avais signalé une seconde
+divergence doc/code sur les packing lists (« PL épinglée au leg impossible en
+base »). **C'était une erreur d'analyse de ma part.** Après vérification :
+`PackingList` porte `order_id`, `booking_id` **et** `leg_id` ; la contrainte
+n'impose l'exclusivité qu'entre les deux premiers. `leg_id` est un champ
+**additionnel** désignant le voyage concerné quand une commande est ventilée
+sur plusieurs legs (cf. commentaire `models/packing_list.py:83-86`), et
+`commercial_overview` cherche les PL par `leg_id` direct **ou** via les
+commandes du leg (`services/leg_overview.py:123-125`). « Épinglée au leg »
+qualifie donc **le chemin de recherche**, pas une PL sans propriétaire.
+La fixture du test créait une PL avec le seul `leg_id` — un état réellement
+invalide, correctement refusé. Le correctif du test était bon ; sa
+justification était fausse. **Aucun arbitrage requis sur ce point.**
 
 **Quality Gate (partiel, lot CI)** : `ruff` ✅ · `black` ✅ · YAML `ci.yml`
 valide ✅ · suite complète 2000/15 (15 = environnement) ✅ · documentation mise
