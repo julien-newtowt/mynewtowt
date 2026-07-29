@@ -23,9 +23,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.claim import VesselPosition
-from app.services.planning import ensure_utc
 from app.models.leg import Leg
 from app.models.port import Port
+from app.services.planning import ensure_utc
 from app.services.ports import haversine_nm
 
 # Pas d'échantillon météo plus rapproché que cet intervalle (minutes).
