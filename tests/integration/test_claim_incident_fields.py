@@ -28,6 +28,17 @@ async def test_claim_create_sets_incident_fields(db, staff_user):
         description="desc",
         claim_type="other",
         occurred_at="2026-04-01T12:00:00",
+        # Tous les paramètres optionnels doivent être passés explicitement :
+        # appelée hors HTTP, la route reçoit sinon l'objet ``Form(None)`` par
+        # défaut, qui finit lié en paramètre SQL (« type 'Form' is not supported »).
+        leg_id=None,
+        booking_id=None,
+        crew_member_id=None,
+        provision_eur=None,
+        insurer=None,
+        insurer_claim_ref=None,
+        insurance_contract_id=None,
+        cargo_position=None,
         incident_location="Port de Fécamp",
         incident_context="Choc à quai pendant la manutention",
         db=db,

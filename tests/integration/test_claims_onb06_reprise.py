@@ -57,6 +57,11 @@ async def test_claim_on_leg_posts_sof_claim_declared(db, staff_user):
         insurer_claim_ref=None,
         insurance_contract_id=None,
         cargo_position=None,
+        # ONB-08 — ajoutés à la route après l'écriture de ces tests. Appelée en
+        # direct (hors HTTP), l'objet ``Form(None)`` par défaut fuit dans le
+        # corps de la fonction et casse ``(incident_location or "").strip()``.
+        incident_location=None,
+        incident_context=None,
         db=db,
         user=staff_user,
     )
@@ -86,6 +91,11 @@ async def test_claim_without_leg_has_no_sof(db, staff_user):
         insurer_claim_ref=None,
         insurance_contract_id=None,
         cargo_position=None,
+        # ONB-08 — ajoutés à la route après l'écriture de ces tests. Appelée en
+        # direct (hors HTTP), l'objet ``Form(None)`` par défaut fuit dans le
+        # corps de la fonction et casse ``(incident_location or "").strip()``.
+        incident_location=None,
+        incident_context=None,
         db=db,
         user=staff_user,
     )
@@ -111,6 +121,11 @@ async def test_crew_claim_links_crew_member(db, staff_user):
         insurer_claim_ref=None,
         insurance_contract_id=None,
         cargo_position=None,
+        # ONB-08 — ajoutés à la route après l'écriture de ces tests. Appelée en
+        # direct (hors HTTP), l'objet ``Form(None)`` par défaut fuit dans le
+        # corps de la fonction et casse ``(incident_location or "").strip()``.
+        incident_location=None,
+        incident_context=None,
         db=db,
         user=staff_user,
     )

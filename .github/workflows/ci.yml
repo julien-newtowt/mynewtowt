@@ -61,8 +61,23 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements-dev.txt
-      - name: Run unit tests with coverage
-        run: pytest tests/unit --cov=app --cov-report=term-missing --cov-report=xml
+      # WeasyPrint (génération PDF) s'appuie sur Pango/Cairo via des libs
+      # système : sans elles, tous les tests de rendu PDF échouent en
+      # OSError/cannot load library. Nécessaire depuis que `tests/integration`
+      # est exécuté ici (il contient ~15 tests de rendu réel).
+      - name: Install WeasyPrint system libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info
+      # tests/integration (110 fichiers) et tests/regression (4 fichiers, dont
+      # la sentinelle des facteurs d'émission et le filet de parité V2↔V3)
+      # n'étaient pas exécutés en CI : 29 échecs y vivaient invisibles, dont un
+      # vrai bug applicatif (voyage_track, normalisation de fuseau) et une
+      # régression introduite pendant sa correction. Voir
+      # docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md (J1).
+      - name: Run test suite with coverage
+        run: pytest tests/unit tests/integration tests/regression --cov=app --cov-report=term-missing --cov-report=xml
       - name: Upload coverage XML
         uses: actions/upload-artifact@v4
         with:

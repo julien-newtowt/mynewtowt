@@ -218,8 +218,15 @@ async def test_eta_extension_cascades_downstream(db):
     )
     await update_leg(db, leg1, eta=BASE + timedelta(days=25), cascade=True)
     await db.refresh(leg2)
-    assert ensure_utc(leg2.etd) == BASE + timedelta(days=25)  # repoussé
-    assert ensure_utc(leg2.eta) == BASE + timedelta(days=45)  # durée conservée
+    # Le leg aval repart après ETA + escale, pas à l'instant de l'ETA :
+    # ``new_ready_at = new_eta + (port_stay_planned_hours or DEFAULT_PORT_STAY_HOURS)``
+    # (planning.py:702, DEFAULT_PORT_STAY_HOURS = 24). Les legs de ce test ont
+    # ``port_stay_planned_hours`` à NULL → repli sur 24 h, donc J+25 → prêt à J+26.
+    # L'attente d'origine (J+25, soit une escale nulle) précédait l'introduction
+    # de cette sémantique et échouait depuis, invisible faute de
+    # `tests/integration` en CI.
+    assert ensure_utc(leg2.etd) == BASE + timedelta(days=26)  # repoussé (ETA + escale 24 h)
+    assert ensure_utc(leg2.eta) == BASE + timedelta(days=46)  # durée de transit conservée (20 j)
 
 
 @pytest.mark.asyncio
