@@ -63,9 +63,13 @@ et le filet de parité V2↔V3) **ne tournent jamais en CI**. Le « 710 passed �
 des rapports de déploiement provenait d'exécutions locales.
 
 **Travaux réalisés** :
-1. Environnement de test local remis en état — `docker-compose.override.yml`
-   (non versionné) étendu pour publier Postgres sur `localhost:5432`,
-   base `towt_test` créée. Miroir de la configuration du job CI.
+1. ~~Environnement de test local remis en état — `docker-compose.override.yml`
+   étendu pour publier Postgres sur `localhost:5432`, base `towt_test` créée.~~
+   **Correction (2026-07-29) : ce travail était inutile.** La suite de tests
+   n'utilise aucun Postgres (SQLite en mémoire — voir « limite majeure du
+   filet » plus bas). L'étape a bien été réalisée, mais elle n'était pas un
+   prérequis d'exécution comme écrit initialement. Le port publié reste utile
+   pour l'inspection manuelle de la base et le `pg_dump`.
 2. Passe de collecte : **811 tests collectés, zéro erreur d'import** — la
    suite est structurellement saine.
 3. Exécution complète de `tests/integration` + `tests/regression`.
@@ -114,6 +118,12 @@ l'avoir compris.
 | `d702678` | `fix(tracking)` — normalisation naïf/aware dans `leg_window` |
 | `93d1fda` | `fix(tracking)` — extension de la normalisation à `compute_metrics` |
 | `d309497` | `test` — correction de 4 tests périmés |
+| `45bfc55` | `docs` — plan d'upgrade phase 2 + création du journal |
+| `2eac739` | `ci` — exécution `integration`+`regression`, 7 tests périmés restants |
+| `b3c0835` | `docs(journal)` — clôture J1 (titre corrigé depuis : « filet configuré », pas « activé ») |
+| `34dc977` | `docs(journal)` — procédure backup/rollback testée (item DoD oublié) |
+| `8d972d2` | `docs` — fausse alerte PL corrigée, A4 requalifié en manque fonctionnel |
+| `26e4802` | `docs(CLAUDE)` — invariants `PackingList` / `CrewAssignment` |
 
 **Un vrai bug applicatif trouvé** (pas un test périmé) :
 `voyage_track.leg_window` comparait `end < start` **sans normaliser** les
@@ -173,7 +183,7 @@ départ). Ventilation des 24 restants :
 | ① | ~13 | Rendu PDF / WeasyPrint (GTK/Pango absents sur l'hôte Windows) | À valider sur runner Ubuntu — probablement verts en CI |
 | ② | ~6 | Fuite d'objet `Form` : tests appelant les fonctions de route **en direct** sans passer tous les paramètres (`admin_activity_logs`, `admin_data_reprise`, `claim_incident_fields`, `claims_onb06` ×3) | Passer les paramètres explicitement |
 | ③ | ~2 | Fixtures antérieures à `ck_packing_lists_order_xor_booking` (`escale_leg_overview`, `portal_messages_read`) | Même patron que `test_packing_list_delete` |
-| ④ | 1 | `trombinoscope_notification` | À diagnostiquer |
+| ④ | 1 | `trombinoscope_notification` | **Diagnostiqué le 2026-07-29 : échec WeasyPrint** (`libgobject-2.0-0.dll`), donc catégorie ① et non un cas à part — la docstring du test l'annonçait déjà (« nécessite WeasyPrint, non disponible en dev local sans GTK3 ») |
 | ⑤ | 1 | **`test_eta_extension_cascades_downstream`** — attendu `BASE + 25 j`, obtenu `BASE + 26 j` | **Investigation dédiée** (cf. `PROJECT_CONTEXT.md` §14.4) |
 
 **Décision : la CI n'est PAS encore activée sur integration+regression.** Elle
@@ -189,7 +199,7 @@ activer ensuite, valider ① sur le runner Ubuntu.**
 - L'écart cascade (⑤) tombe dans une zone déjà signalée par l'audit. **Ne pas
   ajuster l'attente du test à la valeur observée** pour obtenir du vert.
 
-### J1 — clôture : filet activé, suite verte
+### J1 — clôture : filet **configuré** (non encore exécuté), suite verte en local
 
 **Commit** : `2eac739` — `ci: executer integration+regression, corriger les 13
 tests perimes restants`.
@@ -198,11 +208,21 @@ tests perimes restants`.
 sont **tous** des tests de rendu PDF échouant faute de GTK/Pango sur l'hôte
 Windows — **aucun échec de code, aucun test périmé**.
 
-**CI activée** : `pytest tests/unit tests/integration tests/regression`,
-avec ajout des libs système Pango/Cairo au job `test` (WeasyPrint en a besoin
-pour les ~15 tests de rendu réel, sinon ils échoueraient aussi sur le runner).
+**CI configurée — pas encore exécutée une seule fois** :
+`.github/workflows/ci.yml` lance désormais
+`pytest tests/unit tests/integration tests/regression`, avec ajout des libs
+système Pango/Cairo au job `test` (WeasyPrint en a besoin pour les ~15 tests de
+rendu réel).
 
-**Les 13 tests périmés restants, par cause** :
+⚠️ **À ne pas surinterpréter** : le workflow ne se déclenche que sur
+`pull_request` ou `push` sur `main`. La branche n'est **pas poussée** et aucune
+PR n'existe ⇒ **le pipeline modifié n'a jamais tourné**. Restent donc
+hypothétiques : la validation des 15 tests PDF sur Ubuntu, et le fait que
+l'installation `apt` couvre bien `libglib2.0-0`/`libharfbuzz0b` (attendus par
+transitivité via `libpango`, non explicites) et les polices. Le filet est
+**configuré**, son activation effective aura lieu à la première PR.
+
+**Les tests périmés restants corrigés (11), par cause** :
 - **Fuite d'objet `Form` (6 tests)** — `claims_onb06` ×3, `claim_incident_fields`,
   `admin_data_reprise` : appelés en direct (hors HTTP), les paramètres non
   passés conservent leur défaut `Form(None)`, qui finit lié en paramètre SQL ou
@@ -248,9 +268,47 @@ La fixture du test créait une PL avec le seul `leg_id` — un état réellement
 invalide, correctement refusé. Le correctif du test était bon ; sa
 justification était fausse. **Aucun arbitrage requis sur ce point.**
 
-**Quality Gate (partiel, lot CI)** : `ruff` ✅ · `black` ✅ · YAML `ci.yml`
-valide ✅ · suite complète 2000/15 (15 = environnement) ✅ · documentation mise
-à jour ✅ · aucune migration ✅ · aucun secret ✅.
+**Quality Gate (partiel, lot CI)** : `ruff` ✅ · `black` ✅ · `bandit` ✅ (aucune
+remontée) · YAML `ci.yml` valide ✅ · suite complète 2000/15 (15 = environnement)
+✅ · documentation mise à jour ✅ · aucune migration ✅ · aucun secret ✅ ·
+`pip-audit` / `gitleaks` **non exécutés en local** (couverts par le job CI
+`security`, qui n'a pas tourné — cf. ci-dessus).
+
+### ⚠️ J1 — limite majeure du filet : la suite est **Postgres-free**
+
+Constat établi lors d'un contrôle de complétude indépendant (2026-07-29) et
+**vérifié directement** :
+
+- `tests/integration/conftest.py:35-38` crée le moteur avec
+  `create_async_engine("sqlite+aiosqlite://")` — **SQLite en mémoire**.
+- Preuve : la suite passe intégralement avec une URL Postgres inexistante
+  (`DATABASE_URL=postgresql+asyncpg://nobody:nopass@127.0.0.1:59999/nonexistent`
+  → 105 passés sur un échantillon integration+regression).
+- Corollaire : le service Postgres provisionné par le job CI
+  (`ci.yml:39-56`) **n'est utilisé par aucun test** — config morte.
+- Corollaire 2 : la publication de Postgres sur `localhost:5432` et la création
+  de `towt_test` faites en début de J1 étaient **inutiles** (décrites à tort
+  plus haut comme une remise en état nécessaire ; corrigé).
+
+**Ce que le filet ne couvre donc PAS** : tout comportement spécifique à
+Postgres — `TIMESTAMP WITH TIME ZONE`, types `Numeric`, sémantique asyncpg,
+et **les migrations Alembic** (la suite construit le schéma via
+`Base.metadata.create_all`, jamais via Alembic).
+
+**Ironie utile à noter** : le bug `voyage_track` corrigé ce jour a été révélé
+*grâce à* SQLite (qui renvoie des datetimes naïfs là où Postgres renvoie de
+l'aware). L'inverse est vrai aussi — **un bug Postgres-only resterait
+invisible**.
+
+**Impact direct sur le plan** :
+- **J9** — la contrainte `atd < ata` passera par une migration Alembic sur
+  Postgres : **non testable par cette suite**. Prévoir une validation manuelle
+  sur la base Docker (`upgrade` + `downgrade` réellement exécutés), et
+  éventuellement `testcontainers[postgres]` (déjà dans
+  `requirements-dev.txt:12`, non utilisé).
+- **J3** — Schengen manipule des dates ; les écarts naïf/aware se comportent
+  différemment selon le moteur. Vérifier le comportement sur Postgres, pas
+  seulement en test.
 
 ### J1 — sauvegarde / rollback : procédure testée (et non supposée)
 
@@ -294,7 +352,16 @@ dépôt ; à refaire avant chaque migration, conformément au plan §9.
 2. Faire tourner la CI sur une PR pour valider les 15 tests PDF sur Ubuntu.
 3. Arbitrer les deux divergences doc/code relevées (A4, PL épinglée au leg).
 
-**Fichiers applicatifs modifiés au J1** : `app/services/voyage_track.py`
-uniquement (2 correctifs de fuseau). `.github/workflows/ci.yml` (activation).
-`docker-compose.override.yml` étendu (local, non versionné) pour publier
-Postgres sur `localhost:5432` et créer la base `towt_test`.
+**Récapitulatif exhaustif des fichiers modifiés au J1** :
+
+| Fichier | Nature |
+|---|---|
+| `app/services/voyage_track.py` | **Seul fichier applicatif** — 2 correctifs de normalisation de fuseau |
+| `.github/workflows/ci.yml` | Exécution de `integration` + `regression` + libs système WeasyPrint |
+| `CLAUDE.md` | Invariants de rattachement `PackingList` / `CrewAssignment` (commit `26e4802`) |
+| 10 fichiers `tests/` | Correction des 11 tests périmés |
+| `docs/strategy/PLAN_UPGRADE_PHASE2_2026-08.md` | Création |
+| `docs/DEVELOPMENT_JOURNAL_…md` | Création + mises à jour |
+| `docker-compose.override.yml` | Local, **non versionné** (ajouté à `.gitignore`) |
+
+Aucune migration Alembic. Aucun secret. Aucun fichier temporaire/debug.
