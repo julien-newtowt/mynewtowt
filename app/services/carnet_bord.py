@@ -37,6 +37,7 @@ from app.models.client_account import ClientAccount
 from app.models.crew import CrewAssignment, CrewMember
 from app.models.leg import Leg
 from app.models.noon_report import (
+    NOON_TIME_SLOTS,
     NoonReport,
     NoonReportEngine,
     NoonReportSail,
@@ -49,6 +50,11 @@ from app.services import hold_conditions as hold_conditions_svc
 
 # Propulsion modes
 PROPULSION_MODES = ("sail", "assisted", "motor")
+
+# Durée couverte par UN relevé de voilure. ``NoonReportSail`` est un « relevé
+# voilure horaire (4 h) » et ``NOON_TIME_SLOTS`` définit 6 créneaux par jour
+# (16:00, 20:00, 00:00, 04:00, 08:00, 12:00) — d'où 24 / 6 = 4 h par ligne.
+SAIL_SLOT_HOURS = 24 // len(NOON_TIME_SLOTS)
 
 # ViewBox de la carte SVG du chapitre 1 (contrat du template
 # ``chapitre_1_traversee.html`` : trace ``svg_path`` + points/ports ``.x/.y``).
@@ -523,18 +529,23 @@ async def get_carnet_bord_data(
     sail_rows = sail_rows.scalars().all()
 
     if sail_rows:
-        # Compter les heures par mode (simplifié)
-        # En réalité, il faudrait analyser les données plus finement
+        # Chaque ligne de voilure couvre UN créneau de 4 h (``NoonReportSail`` —
+        # « relevé voilure horaire (4 h) », cf. ``NOON_TIME_SLOTS`` qui définit
+        # 6 créneaux par jour). Le code ajoutait auparavant 24 h par ligne, soit
+        # une **surévaluation d'un facteur 6** : un voyage de 10 j entièrement
+        # sous voile imprimait 1 440 h au lieu de 240, sous le libellé « Heures
+        # sous voile pure » du carnet remis au client. Les pourcentages restaient
+        # justes (le facteur se compensait), c'était l'absolu qui mentait.
         for row in sail_rows:
             # Si les voiles sont utilisées
             if row.j0 or row.fwd_j1 or row.aft_j1 or row.fwd_ms or row.aft_ms:
                 # Vérifier si les moteurs sont aussi utilisés
                 if row.me_ps_load_pct or row.me_sb_load_pct:
-                    data.assisted_hours += 24  # Approximation
+                    data.assisted_hours += SAIL_SLOT_HOURS
                 else:
-                    data.sailing_hours += 24
+                    data.sailing_hours += SAIL_SLOT_HOURS
             else:
-                data.motor_hours += 24
+                data.motor_hours += SAIL_SLOT_HOURS
 
         data.total_hours = data.sailing_hours + data.assisted_hours + data.motor_hours
 

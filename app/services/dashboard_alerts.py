@@ -96,10 +96,17 @@ async def compute_alerts(db: AsyncSession, year: int | None = None) -> list[dict
                     }
                 )
 
-        # 2. ETA dépassée (>24 h) sans ATA/ATD.
-        if eta and not ata and not atd:
+        # 2. ETA dépassée (>24 h) sans ATA — le navire n'est pas arrivé.
+        #
+        # La condition excluait auparavant les legs déjà partis (`not atd`), ce
+        # qui éliminait précisément le cas opérationnel utile : navire en mer,
+        # ETA dépassée, arrivée non constatée. L'alerte ne couvrait donc que le
+        # leg jamais parti — un oubli de saisie, pas un retard réel. C'est la
+        # question que les Opérations posent chaque matin.
+        if eta and not ata:
             overdue_h = (now - eta).total_seconds() / 3600
             if overdue_h > 24:
+                at_sea = atd is not None
                 alerts.append(
                     {
                         "family": "retard",
@@ -107,8 +114,10 @@ async def compute_alerts(db: AsyncSession, year: int | None = None) -> list[dict
                         "icon": "alert-triangle",
                         "title": f"ETA dépassée {leg.leg_code}",
                         "message": (
-                            f"{_vname(leg)} → {_pname(leg.arrival_port_id)} — ETA dépassée de "
-                            f"{_h((now - eta).total_seconds())} h, ATA non renseignée"
+                            f"{_vname(leg)} → {_pname(leg.arrival_port_id)} — "
+                            f"{'en mer, ' if at_sea else 'non appareillé, '}"
+                            f"ETA dépassée de {_h((now - eta).total_seconds())} h, "
+                            f"ATA non renseignée"
                         ),
                         "link": link,
                     }
