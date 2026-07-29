@@ -175,11 +175,70 @@ activer ensuite, valider ① sur le runner Ubuntu.**
 - L'écart cascade (⑤) tombe dans une zone déjà signalée par l'audit. **Ne pas
   ajuster l'attente du test à la valeur observée** pour obtenir du vert.
 
-**Prochaines étapes** :
-1. Corriger ② ③ ④ (~1-2 h), puis activer integration+regression en CI.
-2. Investiguer ⑤ (cascade) — à rapprocher du lot horodatage (#1).
-3. Enchaîner sur le J2 (quick wins).
+### J1 — clôture : filet activé, suite verte
 
-**Fichiers applicatifs modifiés** : `app/services/voyage_track.py` uniquement.
+**Commit** : `2eac739` — `ci: executer integration+regression, corriger les 13
+tests perimes restants`.
+
+**Résultat final : 2000 passés · 15 échecs · 1 skip.** Les 15 échecs restants
+sont **tous** des tests de rendu PDF échouant faute de GTK/Pango sur l'hôte
+Windows — **aucun échec de code, aucun test périmé**.
+
+**CI activée** : `pytest tests/unit tests/integration tests/regression`,
+avec ajout des libs système Pango/Cairo au job `test` (WeasyPrint en a besoin
+pour les ~15 tests de rendu réel, sinon ils échoueraient aussi sur le runner).
+
+**Les 13 tests périmés restants, par cause** :
+- **Fuite d'objet `Form` (6 tests)** — `claims_onb06` ×3, `claim_incident_fields`,
+  `admin_data_reprise` : appelés en direct (hors HTTP), les paramètres non
+  passés conservent leur défaut `Form(None)`, qui finit lié en paramètre SQL ou
+  comparé à un `int`. Cas typique : `incident_location`/`incident_context`
+  ajoutés par ONB-08 après l'écriture des tests.
+- **`admin_activity_logs`** — la route plafonne la taille de page à **10
+  minimum** (`limit = max(10, min(limit, 500))`, durcissement ADM-08) ; le test
+  paginait à 2 sur 3 lignes. Réécrit avec 15 lignes et `limit=10`, intention
+  préservée.
+- **`escale_leg_overview` / `portal_messages_read`** — fixtures antérieures à
+  `ck_packing_lists_order_xor_booking`, FK réellement appliquée.
+- **`planning_hardening` (la cascade, ⑤)** — **investigation conclusive**.
+
+**Investigation ⑤ (cascade) — conclusion** : l'attente du test (`leg2.etd =
+J+25`, soit **une escale nulle**) précédait l'introduction de la sémantique
+`ready_at`. Le code applique `new_ready_at = new_eta + (port_stay_planned_hours
+or DEFAULT_PORT_STAY_HOURS)` (`planning.py:702`, défaut **24 h**), et les legs
+du test ont `port_stay_planned_hours` à NULL → repli sur 24 h → J+25 devient
+J+26. Le commentaire du modèle confirme l'intention : *« le leg suivant du même
+navire commence après ETA + port_stay_planned_hours »* (`models/leg.py:60-61`).
+**Le code a raison, l'attente était périmée** — vérifié avant modification,
+pas ajusté à la valeur observée.
+
+**Affinement d'un constat d'audit** : ceci **précise** §14.4 de
+`PROJECT_CONTEXT.md`. L'audit signalait que le résolveur de cascade n'ajoute
+pas la durée d'escale entre deux legs aval (`prev_eta = peta`). C'est exact,
+**mais** le port stay **est** bien appliqué au **leg source** (via
+`source_ready_at`). L'asymétrie est donc précisément localisée : leg source →
+premier leg aval reçoit les 24 h ; leg aval N → leg aval N+1 ne les reçoit pas.
+Le constat reste valide, sa portée est plus étroite qu'écrit.
+
+**Deuxième divergence doc/code relevée** (après A4) : la docstring de
+`commercial_overview` et de son test décrivent une packing list « épinglée au
+leg », mais `ck_packing_lists_order_xor_booking` impose qu'une PL appartienne à
+une commande **ou** à un booking. **Une PL portant seulement `leg_id` est donc
+impossible en base.** À arbitrer : assouplir la contrainte, ou retirer cette
+notion de la documentation.
+
+**Quality Gate (partiel, lot CI)** : `ruff` ✅ · `black` ✅ · YAML `ci.yml`
+valide ✅ · suite complète 2000/15 (15 = environnement) ✅ · documentation mise
+à jour ✅ · aucune migration ✅ · aucun secret ✅.
+
+**Prochaines étapes** :
+1. **J2 — quick wins** : alerte ETA en mer, nom client + `leg_code` sur la
+   liste bookings, heures voile ×6, redirection BL vers le rail packing list,
+   2 micro-gardes BL.
+2. Faire tourner la CI sur une PR pour valider les 15 tests PDF sur Ubuntu.
+3. Arbitrer les deux divergences doc/code relevées (A4, PL épinglée au leg).
+
+**Fichiers applicatifs modifiés au J1** : `app/services/voyage_track.py`
+uniquement (2 correctifs de fuseau). `.github/workflows/ci.yml` (activation).
 `docker-compose.override.yml` étendu (local, non versionné) pour publier
 Postgres sur `localhost:5432` et créer la base `towt_test`.
