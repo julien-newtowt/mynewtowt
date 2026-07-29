@@ -392,9 +392,12 @@ dialecte PostgreSQL) plutôt que saisi à la main, en retirant les `NOT NULL`
 (une colonne ajoutée a posteriori doit être nullable). Non destructif, base de
 démo conservée.
 
-⚠️ **§7 de `PROJECT_CONTEXT.md` doit être corrigé** : la procédure telle
-qu'écrite produit une base subtilement fausse. C'est moi qui l'ai documentée le
-2026-07-28 — l'erreur est de mon fait.
+⚠️ **§7 de `PROJECT_CONTEXT.md` était erroné** : la procédure telle qu'écrite
+produit une base subtilement fausse. Documentée le 2026-07-28, l'erreur était
+de mon fait. **Corrigée** — mais le correctif est porté par le **lot découverte**
+(commit `e48847d` sur `docs/decouverte-fonctionnelle`), pas par le lot J1 :
+`PROJECT_CONTEXT.md` est un document du lot découverte, et l'y amender depuis le
+lot J1 créait une dépendance croisée entre les deux lots (cf. RAF R2, résolu).
 
 #### Découverte 2 — 🔴 `alembic upgrade head` est cassé (blocage de déploiement)
 
@@ -432,7 +435,7 @@ de branche) une escalade externe.
 **Prochaines étapes** :
 1. 🔴 **Escalader le problème des deux `head` Alembic** — blocage de
    déploiement, décision de fusion à valider (RAF R1).
-2. Corriger `PROJECT_CONTEXT.md` §7 (procédure de mise en route erronée).
+2. ~~Corriger `PROJECT_CONTEXT.md` §7~~ ✅ fait (commit `e48847d`, lot découverte).
 3. **J2 — quick wins** : alerte ETA en mer, nom client + `leg_code` sur la
    liste bookings, heures voile ×6, redirection BL vers le rail packing list,
    2 micro-gardes BL.
