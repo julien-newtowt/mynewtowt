@@ -345,12 +345,96 @@ prouvée, pas présumée.** Règle retenue : ne jamais restaurer directement sur
 ⚠️ **Le dump ne doit jamais être committé** (données réelles). Stocké hors
 dépôt ; à refaire avant chaque migration, conformément au plan §9.
 
+### J1 — validation en application réelle (item §9 initialement non fait)
+
+Écart 🔴 relevé par le contrôle indépendant : le seul fichier applicatif du lot
+(`voyage_track.py`) n'avait **jamais été exercé dans l'app** — l'image Docker
+précédait les commits de 28 h et le code n'est pas monté en volume. Corrigé.
+
+**Rebuild + smoke test** : `docker compose up -d --build app`, authentification
+staff réelle, puis appel des 15 écrans principaux.
+
+**Résultat final : 15/15 en HTTP 200**, dont les trois écrans alimentés par
+`leg_window` / `compute_metrics` — `/tracking`,
+`/performance/navigation`, `/performance/navigation/kpis`. **Le correctif est
+donc validé en conditions réelles, pas seulement par les tests.**
+
+#### Découverte 1 — dérive de schéma de la base de développement
+
+Au premier appel, `/tracking` renvoyait **500** :
+`asyncpg.UndefinedColumnError: column vessels.deadweight_t does not exist`.
+Diagnostic systématique (comparaison `Base.metadata` ↔ `information_schema`) :
+
+| Table | Colonnes manquantes en base |
+|---|---|
+| `vessels` | `deadweight_t` |
+| `crew_members` | `first_name`, `last_name`, `agency` |
+| `env_reports` | `period_seq` |
+| `nav_event_noon` | `rob_uree_t`, `rob_eau_douce_t` |
+| `ports` | `mrv_scope` |
+| `voyage_emission_summaries` | `co2eq_t` |
+
+Plus **7 tables présentes en base et absentes du modèle** (130 vs 137) —
+`create_all` ne supprime jamais.
+
+**Cause** : la procédure de mise en route locale documentée en
+`PROJECT_CONTEXT.md` §7 recommande `alembic stamp head` (parce que
+`alembic upgrade head` échoue sur base fraîche en `APP_ENV=development`, où
+`init_db()` a déjà exécuté `create_all`). Or **`stamp` marque l'historique
+comme appliqué sans exécuter le DDL** : toute migration ultérieure qui `ALTER`
+une table ne s'exécute jamais. La base était par ailleurs estampillée sur
+`20260722_0106` (`qhse_foundation`), révision qui **n'existe que sur la branche
+`feature/qhse-foundation`** — résidu d'un changement de branche.
+
+**Correctif local appliqué** : 8 colonnes ajoutées par `ALTER TABLE … ADD COLUMN
+IF NOT EXISTS`, DDL **généré depuis le modèle** (`CreateColumn` compilé sur le
+dialecte PostgreSQL) plutôt que saisi à la main, en retirant les `NOT NULL`
+(une colonne ajoutée a posteriori doit être nullable). Non destructif, base de
+démo conservée.
+
+⚠️ **§7 de `PROJECT_CONTEXT.md` doit être corrigé** : la procédure telle
+qu'écrite produit une base subtilement fausse. C'est moi qui l'ai documentée le
+2026-07-28 — l'erreur est de mon fait.
+
+#### Découverte 2 — 🔴 `alembic upgrade head` est cassé (blocage de déploiement)
+
+Constat le plus sérieux de la journée, **hors périmètre de mon poste** :
+
+```
+$ alembic upgrade head
+FAILED: Multiple head revisions are present for given argument 'head'
+```
+
+Deux chaînes de migration **divergentes** coexistent :
+- `20260716_0112_noon_rob_annexes.py` (chaîne MRV)
+- `20260720_0107_generated_reports.py` (chaîne rapports générés / trombinoscope)
+
+Deux branches de fonctionnalité ont chacune ajouté des migrations sans se
+rebaser l'une sur l'autre. **Aucun commit du J1 ne touche `migrations/`** ⇒
+`main` est dans le même état.
+
+**Pourquoi c'est grave** : `CLAUDE.md` indique que la production utilise
+**Alembic exclusivement**. Un déploiement par `alembic upgrade head` échoue donc
+en l'état. Il faut une **migration de fusion** (`alembic merge -m "…" <head1>
+<head2>`), à faire valider — c'est une décision qui touche l'historique de
+schéma, donc à signaler au manager plutôt qu'à improviser.
+
+**À vérifier avant tout déploiement** : quelle révision la base de production
+porte-t-elle réellement, et l'écart avec le modèle y est-il le même qu'en local ?
+
 **Prochaines étapes** :
-1. **J2 — quick wins** : alerte ETA en mer, nom client + `leg_code` sur la
+1. 🔴 **Escalader le problème des deux `head` Alembic** — blocage de
+   déploiement, décision de fusion à valider.
+2. Corriger `PROJECT_CONTEXT.md` §7 (procédure de mise en route erronée).
+3. **J2 — quick wins** : alerte ETA en mer, nom client + `leg_code` sur la
    liste bookings, heures voile ×6, redirection BL vers le rail packing list,
    2 micro-gardes BL.
-2. Faire tourner la CI sur une PR pour valider les 15 tests PDF sur Ubuntu.
-3. Arbitrer les deux divergences doc/code relevées (A4, PL épinglée au leg).
+4. Faire tourner la CI sur une PR pour valider les 15 tests PDF sur Ubuntu.
+5. Rebaser `chore/ci-integration-tests` sur `origin/main` pour rendre le lot
+   révocable indépendamment (§9) — **en attente d'arbitrage** : cela séparerait
+   le lot CI du lot découverte, qui partiraient alors en deux PR distinctes.
+6. Restaurer un chemin de saisie d'embarquement hors leg (A4) **et** faire lire
+   ces affectations par le calcul Schengen — les deux vont ensemble.
 
 **Récapitulatif exhaustif des fichiers modifiés au J1** :
 
