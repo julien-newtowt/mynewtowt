@@ -73,7 +73,7 @@ pas réinventer : le décalquer.**
 | État | Qui déclenche | Contenu modifiable ? | Document produit |
 |---|---|---|---|
 `aucun` | — | Packing list librement éditable | — |
-**`draft`** | Cargo/Opérations (`cargo:M`) | ✅ **Oui** — par le staff **et** par le client via le portail | PDF **filigrané `DRAFT — NOT NEGOTIABLE`**, sans mention d'originaux |
+**`draft`** | Cargo/Opérations (`cargo:M`) | ✅ **Oui** — par le staff **et** par l'**expéditeur** via le portail `/p/{token}` (c'est lui qui remplit la packing list dont le draft est issu) | PDF **filigrané `DRAFT — NOT NEGOTIABLE`**, sans mention d'originaux |
 **`client_validated`** | **Le consignee** (client final/contractuel), depuis l'espace authentifié **`/me`** — *pas* le portail expéditeur `/p/{token}` | ⚠️ Oui, mais toute modification **repasse l'état à `draft`** et invalide la validation | PDF draft, mention « validé par le consignee le … » |
 **`master_signed`** | Le commandant (`captain:M`) | ❌ **Non** — gel effectif | PDF signé, hash calculé |
 **`final`** | Émission au client (automatique à la signature, ou action explicite `cargo:M`) | ❌ Non | **BL final** avec numéro définitif et mentions d'originaux |
