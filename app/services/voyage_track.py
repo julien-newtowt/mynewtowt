@@ -63,12 +63,19 @@ def leg_window(leg: Leg, *, now: datetime | None = None) -> tuple[datetime, date
     - is_active = leg **réellement parti** (ATD posée) et **pas encore arrivé**
       (ATA absente). Un leg futur (sans ATD) n'est donc PAS « en mer ».
     """
-    now = now or datetime.now(UTC)
-    start = leg.atd or leg.etd
+    # Normalisation naïf → aware UTC avant toute comparaison : les colonnes
+    # ``DateTime(timezone=True)`` reviennent naïves sous SQLite et les saisies
+    # ``datetime-local`` le sont aussi (cf. ``planning.ensure_utc``). Sans ça,
+    # la comparaison ``end < start`` lève un TypeError dès qu'une seule des
+    # deux bornes est naïve.
+    from app.services.planning import ensure_utc
+
+    now = ensure_utc(now) or datetime.now(UTC)
+    start = ensure_utc(leg.atd or leg.etd)
     is_active = leg.atd is not None and leg.ata is None
-    end = leg.ata or now
+    end = ensure_utc(leg.ata) or now
     # Garde-fou : si l'horloge serveur est en amont du départ planifié.
-    if end < start:
+    if start is not None and end < start:
         end = start
     return start, end, is_active
 
