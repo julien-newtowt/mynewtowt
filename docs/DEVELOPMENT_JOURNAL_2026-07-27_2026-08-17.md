@@ -422,9 +422,16 @@ schéma, donc à signaler au manager plutôt qu'à improviser.
 **À vérifier avant tout déploiement** : quelle révision la base de production
 porte-t-elle réellement, et l'écart avec le modèle y est-il le même qu'en local ?
 
+**RAF ouvert** : les 8 éléments identifiés et non traités sont suivis dans
+`docs/strategy/PLAN_UPGRADE_PHASE2_2026-08.md` **§12 (RAF)**, avec pour chacun
+sa portée réelle. Synthèse : **aucun ne bloque le J2** ; **R1 (fusion Alembic)
+doit être traité avant le J9**, **R6 (embarquement hors leg + Schengen) avec le
+J3**. R2 (rebase) et R4 (1re PR) sont des décisions de Yasmin, R3 (protection
+de branche) une escalade externe.
+
 **Prochaines étapes** :
 1. 🔴 **Escalader le problème des deux `head` Alembic** — blocage de
-   déploiement, décision de fusion à valider.
+   déploiement, décision de fusion à valider (RAF R1).
 2. Corriger `PROJECT_CONTEXT.md` §7 (procédure de mise en route erronée).
 3. **J2 — quick wins** : alerte ETA en mer, nom client + `leg_code` sur la
    liste bookings, heures voile ×6, redirection BL vers le rail packing list,

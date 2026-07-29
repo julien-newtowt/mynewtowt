@@ -363,7 +363,28 @@ de Yasmin. Jamais de merge, jamais d'approbation.**
 
 ---
 
-## 12. Questions ouvertes
+## 12. RAF — reste à faire ouvert (suivi)
+
+Éléments identifiés, **non traités**, avec leur portée réelle. Mis à jour au fil
+de l'eau. Un item ne bloquant rien aujourd'hui peut bloquer un lot futur : la
+colonne « bloque quoi » est la seule qui compte pour l'ordonnancement.
+
+| # | Item | Bloque le J2 ? | Bloque quoi réellement | Échéance | Qui |
+|---|---|---|---|---|---|
+| R1 | 🔴 **`alembic upgrade head` cassé — deux `head` divergents** (`20260716_0112` MRV / `20260720_0107` rapports générés). Nécessite une migration de fusion (`alembic merge`). Présent sur `main`, pas introduit par la phase 2 | **Non** — le J2 ne comporte aucune migration | **Le J9** (contrainte `atd < ata`) et **tout travail de schéma** : avec deux `head`, `alembic revision` exige de préciser la cible. Et **tout déploiement**, la production utilisant Alembic exclusivement | Avant le J9 | Yasmin + validation manager (touche l'historique de schéma) |
+| R2 | 🟠 **Lot CI non révocable indépendamment** — `chore/ci-integration-tests` empilée sur les 3 commits non mergés de `docs/decouverte-fonctionnelle`. Violation §9 | **Non** | Rien techniquement. **Mais** chaque nouveau lot empilé aggrave la pile (`main` → docs → ci → j2 → …) et rend les PR interdépendantes. Décision de structure de PR | Idéalement avant le J2 | Yasmin (choix de structure de PR) |
+| R3 | 🟠 **Protection de branche absente sur `main`** — Yasmin n'est pas admin du dépôt. Un incident de merge direct a déjà cassé `main` par le passé | **Non** | Rien techniquement — **contrôle de risque pur**. D'autant plus pertinent qu'on produit beaucoup de commits sur cette période | Dès que possible | À escalader auprès de la personne admin |
+| R4 | 🟠 **CI jamais exécutée** — branche non poussée, aucune PR ; le workflow ne se déclenche que sur `pull_request`/`push:main`. Les 15 tests PDF sur Ubuntu et les paquets `apt` restent non validés | **Non** | La preuve que le filet fonctionne réellement. Tant qu'aucune PR n'existe, « filet en place » reste une affirmation locale | À la 1re PR | Yasmin (une PR ne se crée que sur sa demande explicite) |
+| R5 | 🟡 **Filet Postgres-free** — toute la suite tourne sur SQLite en mémoire ; ni `TIMESTAMP WITH TIME ZONE`, ni types `Numeric`, ni migrations Alembic ne sont couverts. Le service Postgres du job CI est de la config morte | **Non** | La **fiabilité du filet** sur les lots touchant les dates (J3 Schengen) et le schéma (J9). Piste : `testcontainers[postgres]`, déjà dans `requirements-dev.txt` | Avant J9 | — |
+| R6 | 🟠 **Embarquement hors leg (A4) non saisissable** — cas métier confirmé (changement d'équipage en arrêt technique) mais aucun chemin applicatif ne crée d'affectation sans leg. **Et** le calcul Schengen saute ces affectations ⇒ leurs jours ne seraient pas comptés | **Non** | Rien pour le J2. À traiter **avec** le J3 (faux verts Schengen) : restaurer la saisie sans corriger le calcul ne servirait à rien | J3 | — |
+| R7 | 🟡 **Dérive de schéma de la base de dev** rattrapée à la main le 2026-07-29 (8 colonnes ajoutées). La procédure §7 de `PROJECT_CONTEXT.md` est corrigée, mais **aucun garde-fou** n'empêche la dérive de réapparaître | **Non** | Rien. Confort et fiabilité des validations locales. Piste : un script de diagnostic `Base.metadata` ↔ `information_schema` à lancer au démarrage en dev | Opportuniste | — |
+| R8 | 🟡 **Hook du harnais lançant `alembic` depuis l'hôte** — échoue à chaque commit (`getaddrinfo failed`, le nom `db` n'est résoluble que dans Docker). Bruit permanent, aucun impact fonctionnel | **Non** | Rien | Opportuniste | Yasmin (config `settings.json`) |
+
+**Lecture d'ensemble** : aucun de ces items ne bloque le J2. **R1 doit être
+traité avant le J9**, et **R6 avec le J3**. R2 et R4 sont des décisions de
+Yasmin, R3 une escalade externe.
+
+## 13. Questions ouvertes
 
 1. **Écart cascade** (J1, catégorie ③) : attente de test périmée après un
    changement délibéré non documenté, ou off-by-one réel ? → investigation.
