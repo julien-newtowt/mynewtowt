@@ -74,7 +74,7 @@ pas réinventer : le décalquer.**
 |---|---|---|---|
 `aucun` | — | Packing list librement éditable | — |
 **`draft`** | Cargo/Opérations (`cargo:M`) | ✅ **Oui** — par le staff **et** par l'**expéditeur** via le portail `/p/{token}` (c'est lui qui remplit la packing list dont le draft est issu) | PDF **filigrané `DRAFT — NOT NEGOTIABLE`**, sans mention d'originaux |
-**`client_validated`** | **Le client titulaire du booking**, depuis l'espace authentifié **`/me`** — *pas* le portail expéditeur `/p/{token}`. Repli : le staff valide **pour son compte**, tracé comme tel | ⚠️ Oui, mais toute modification **repasse l'état à `draft`** et invalide la validation | PDF draft, mention « validé par le consignee le … » |
+**`client_validated`** | **Le client titulaire du booking**, depuis l'espace authentifié **`/me`** — *pas* le portail expéditeur `/p/{token}`. Repli : le staff valide **pour son compte**, tracé comme tel | ⚠️ Oui, mais toute modification **repasse l'état à `draft`** et invalide la validation | PDF draft, mention « validé par le client le … » (ou « validé par NEWTOWT pour le compte du client le … » en cas de repli) |
 **`master_signed`** | Le commandant (`captain:M`) | ❌ **Non** — gel effectif | PDF signé, hash calculé |
 **`final`** | Émission au client (automatique à la signature, ou action explicite `cargo:M`) | ❌ Non | **BL final** avec numéro définitif et mentions d'originaux |
 
