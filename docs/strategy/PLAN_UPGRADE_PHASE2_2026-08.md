@@ -39,6 +39,10 @@ de production de données non désirées pendant la période de développement.
 | D4 | **La capture MRV v2 reste ACTIVE** (pas d'opt-out `mrv_v2_capture.audience.vessels_off`) | Yasmin veut pouvoir tester la saisie événementielle elle-même ; aucun autre utilisateur n'a d'accès en écriture | ⚠️ Vigilance : un événement **finalisé** entre dans le grand livre et peut alimenter un certificat Anemos. Rester en brouillon en exploration, ou dédier un navire de test. |
 | D5 | **Filet CI : option A** — corriger les tests périmés puis activer `tests/integration` + `tests/regression` en CI | Un filet fiable vaut mieux qu'un filet bruyant ; 29 `xfail` risqueraient de noyer l'écart cascade à investiguer | J1 étendu de 0,5 j à ~1 j. |
 | D6 | **Décision du 2026-07-27 sur la CI rouverte** | Elle était raisonnable tant qu'on ne développait pas ; elle ne l'est plus dès lors qu'on touche capacité, horodatage et émission de connaissements | J1 = prérequis de tout le reste. |
+| D7 | **Fret dangereux : à intégrer plus tard** | NEWTOWT en acceptera, mais pas dans cette version | La ségrégation IMDG reste en **P3** — mais **cesse d'être hypothétique**. À cadrer *avant* d'accepter du DG en exploitation : aujourd'hui toutes les classes sont empilées dans les mêmes 3 zones et la cargaison de référence est **alimentaire** (café/cacao). |
+| D8 | **Marad est le logiciel principal des contrats d'engagement maritime — aucun module ni intégration prévu** | Marad fait déjà le travail | La **modélisation MLC sort définitivement du périmètre** (SEA, rapatriement, 11 mois, garantie d'abandon). Item P3 **supprimé**, pas reporté. La question « Marad porte-t-il les SEA ? » est close. |
+| D9 | **Un leg = 1 port de départ + 1 port d'arrivée. Mais une cargaison peut traverser plusieurs legs** — ex. chargement Belco en Colombie, déchargement d'un autre client au Canada, puis déchargement Belco en France (Belco = 2 legs CO-CA et CA-FR) | Réalité d'exploitation | 🔴 **Requalification majeure.** L'overstowage n'est plus une question ouverte : c'est un **risque confirmé**. Au port intermédiaire, la cargaison du client canadien doit être accessible — donc **pas sous** celle de Belco. Second effet : sur le leg CA→FR, les palettes Belco encore à bord sont **invisibles** du plan d'arrimage (`StowageItem` n'a aucun champ de port de déchargement — vérifié, zéro occurrence ; le plan est unique par leg et ne collecte que les commandes de ce leg) ⇒ **occupation sous-estimée**. ⏳ **Traitement décidé : après septembre** (Yasmin). |
+| D10 | **Le FMS est la source de vérité QHSE** ; il reste l'outil de saisie et le logiciel principal à bord. MyTOWT sert à **analyser la donnée, aider à la décision et piloter** | Répartition des rôles assumée | Tranche tout le design de la Phase 1 QHSE : mynewtowt est un **miroir en lecture, jamais une seconde source d'écriture**. Conséquence immédiate : le trou de **schéma** (aucune clé `source_code`/`import_batch_id` ⇒ import non réconciliable, dédoublonnage impossible sans migration) devient le **premier point à corriger** de ce module, avant tout tableau de bord. |
 
 ---
 
@@ -388,13 +392,8 @@ décision de Yasmin, R3 une escalade externe.
 
 1. **Écart cascade** (J1, catégorie ③) : attente de test périmée après un
    changement délibéré non documenté, ou off-by-one réel ? → investigation.
-2. **NEWTOWT accepte-t-il réellement du fret dangereux ?** Détermine la
-   priorité de la ségrégation IMDG (aujourd'hui inexistante : toutes classes
-   confondues dans les mêmes zones, café/cacao = denrées alimentaires).
-3. **Marad porte-t-il les contrats d'engagement maritime (SEA), certificats
-   de rapatriement et garantie financière d'abandon ?** Si oui → import
-   lecture seule ; si non → module. À répondre **avant** de coder.
-4. **Un leg peut-il avoir plusieurs ports de déchargement ?** Prérequis d'un
-   vrai contrôle d'overstowage.
-5. **Le FMS reste-t-il la source de vérité QHSE ?** Détermine tout le design
-   de la Phase 1 (miroir idempotent vs seconde source d'écriture).
+2. ✅ **Fret dangereux** — tranché (D7) : oui, à intégrer plus tard.
+3. ✅ **Contrats d'engagement maritime** — tranché (D8) : Marad, pas de module.
+4. ✅ **Multi-legs** — tranché (D9) : un leg = 1 POL + 1 POD, mais une cargaison
+   traverse plusieurs legs ⇒ overstowage confirmé, traitement après septembre.
+5. ✅ **Source de vérité QHSE** — tranché (D10) : le FMS.
