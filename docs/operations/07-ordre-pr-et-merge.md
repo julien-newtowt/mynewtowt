@@ -40,8 +40,20 @@ signaler dans la PR et fusionner dans l'ordre.
 
 | Branche | Raison |
 |---|---|
-| `feature/qhse-foundation` | 🔴 Contient deux défauts qui **détruisent des données** : un filtre par mot-clé (`test\|essai\|demo`) qui quarantaine et n'importe jamais des non-conformités ISM légitimes sans persister la perte, et un `rollback()` dans la boucle d'import qui annule les lignes déjà insérées tout en les comptant comme importées. Correctif de quelques heures, à faire **avant** tout merge. Voir `PROJECT_CONTEXT.md` §14.7 |
+| `feature/qhse-foundation` | 🔴 Contient deux défauts qui **détruisent des données** : un filtre par mot-clé (`test\|essai\|demo`) qui quarantaine et n'importe jamais des non-conformités ISM légitimes sans persister la perte, et un `rollback()` dans la boucle d'import qui annule les lignes déjà insérées tout en les comptant comme importées. Correctif de quelques heures, à faire **avant** tout merge. Voir `PROJECT_CONTEXT.md` §14.7.<br>ℹ️ Précisions du 2026-07-30 : **39 commits behind, 2 ahead**. Ses 2 commits ne touchent **que** les fichiers QHSE + i18n + `permissions.py` + `main.py` + `validation_engine.py` — **aucun recouvrement** avec les autres lots de la phase 2, et une fusion **ne supprimerait pas** le trombinoscope (vérifié par fusion à blanc). Le motif de blocage reste entier : ce sont les deux défauts de code, pas la divergence |
 | `feature/dashboard-env-integration`, `scratch/preintegration-rehearsal` | Divergentes de `main` (ahead/behind important). À arbitrer séparément, hors phase 2 |
+
+### Branches qui n'attendent plus rien
+
+| Branche | État |
+|---|---|
+| `feature/crewing-monthly-yearbook` | ✅ **0 commit d'avance sur `main`** — déjà entièrement fusionnée (PR #148). Une branche qui existe encore n'est pas une branche en attente : à supprimer après accord |
+
+> ⚠️ **Méthode** : évaluer un recouvrement avec `git diff main..branche` est
+> **faux** pour toute branche en retard — cela remonte ce que `main` a fait
+> évoluer, pas ce que la branche modifie. Toujours partir de
+> `git merge-base`, puis confirmer par une fusion à blanc
+> (`git merge-tree`). Cf. `PLAN_UPGRADE_PHASE2_2026-08.md` §11.
 
 ---
 

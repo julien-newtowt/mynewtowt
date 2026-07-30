@@ -376,6 +376,35 @@ passé sous silence.**
 6. **Recommandations d'ingénierie** : scinder la branche, PR multiples,
    rebase, squash, refactor préalable, report de fonctionnalités risquées…
 
+### ⚠️ Méthode de détection des recouvrements (erreur commise le 2026-07-30)
+
+**Toujours partir de la BASE COMMUNE, jamais de `main..branche`.**
+
+```bash
+# FAUX — pour une branche en retard, remonte tout ce que `main` a fait évoluer
+# depuis, et non ce que la branche modifie.
+git diff --name-only main..feature/x
+
+# JUSTE — ce que la branche modifie RÉELLEMENT depuis son point de départ.
+git diff --name-only $(git merge-base main feature/x)..feature/x
+```
+
+La méthode fautive a produit **deux constats faux** le même jour :
+`feature/qhse-foundation` (39 commits **behind**) semblait toucher
+`crew_router.py`, `crew/index.html` et `CLAUDE.md` — en réalité **aucun** : ses
+2 commits ne touchent que les fichiers QHSE, i18n, `permissions.py`, `main.py`
+et `validation_engine.py`. Et elle donnait l'illusion qu'une fusion de `qhse`
+**supprimerait le trombinoscope** (149 lignes) : faux, une fusion ne rejoue que
+les commits de la branche depuis la base commune — vérifié par `git merge-tree`,
+le trombinoscope survit et il n'y a aucun conflit.
+
+Corollaire : `feature/crewing-monthly-yearbook` est à **0 commit d'avance** —
+elle est **déjà entièrement fusionnée** dans `main` (PR #148). Une branche qui
+existe encore n'est pas une branche en attente.
+
+**Toujours confirmer un recouvrement supposé par une fusion à blanc**
+(`git merge-tree <base> <a> <b>`) avant de le présenter comme un risque.
+
 **Aucune PR proposée avant cet audit. Aucune PR créée sans demande explicite
 de Yasmin. Jamais de merge, jamais d'approbation.**
 
