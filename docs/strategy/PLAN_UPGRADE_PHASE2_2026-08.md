@@ -397,19 +397,51 @@ colonne « bloque quoi » est la seule qui compte pour l'ordonnancement.
 | R4b | 🟠 **Deux autres gardes de CI mentaient** — découvert au 1er run. **Gitleaks n'a jamais scanné une seule PR** (`GITHUB_TOKEN` devenu obligatoire ; `continue-on-error` masquait l'échec — vérifié identique sur le run du 23/07, donc préexistant). Et l'étape mypy annonçait « baseline 142 » pour **434** réelles. **Corrigés dans la PR #149** : token ajouté + cliquet bloquant anti-dérive du typage (plafond 371) | — | Plus rien. La 1re exécution réelle de gitleaks est le run suivant — **à surveiller**, il peut révéler des secrets historiques jamais détectés | Vérifier au prochain run | — |
 | R5 | 🟡 **Filet Postgres-free** — toute la suite tourne sur SQLite en mémoire ; ni `TIMESTAMP WITH TIME ZONE`, ni types `Numeric`, ni migrations Alembic ne sont couverts. Le service Postgres du job CI est de la config morte | **Non** | La **fiabilité du filet** sur les lots touchant les dates (J3 Schengen) et le schéma (J9). Piste : `testcontainers[postgres]`, déjà dans `requirements-dev.txt` | Avant J9 | — |
 | R6 | 🟠 **Embarquement hors leg (A4) non saisissable** — cas métier confirmé (changement d'équipage en arrêt technique) mais aucun chemin applicatif ne crée d'affectation sans leg (`EscaleOperation.leg_id` est NOT NULL, et c'est le **seul** point de création de l'app). **Et** le calcul Schengen saute ces affectations (`crew_compliance.py:231-233`) ⇒ leurs jours ne seraient pas comptés. **Même angle mort** sur `vessel_readiness` (l.311) | **Non** | Rien pour le J2. À traiter **avec** le J3 (faux verts Schengen) : restaurer la saisie sans corriger le calcul ne servirait à rien | J3 | — |
-| R9 | 🔴 **Deux registres d'embarquement parallèles qui ne se parlent pas** (analyse d'impact J3, 2026-07-30). `marad_crew_schedules` porte les embarquements décidés par l'**Armement dans Marad** (lecture seule) ; `crew_assignments` est alimenté **uniquement** par la saisie d'escale. **Le calcul Schengen ne lit que le second.** Conséquence : l'écran affiche une bordée complète venue de Marad pendant que le compteur Schengen dit « conforme / 0 jour » pour ces mêmes marins. Le registre où vit la décision est **invisible du calcul de conformité** | **Non** | **La justesse du Schengen elle-même** — le corriger sur le seul registre des Opérations ne le rend juste que si les Opérations saisissent systématiquement, ce qui n'est pas le cas aujourd'hui | **Arbitrage nécessaire avant de coder le J3** | Yasmin |
-| R10 | 🟠 **Décalage de permissions crew ↔ escale** — l'Armement décide les embarquements et a `crew: CMS`, mais seulement `escale: C`. Or **le seul point de création d'une affectation est dans `escale`**. Le service qui décide **ne peut pas saisir** ; ceux qui peuvent sont `operation`/`technique`/`manager_maritime` | **Non** | Rien techniquement (un override ARC-04 en base suffirait). **Question d'organisation** : qui saisit réellement l'embarquement dans MyTOWT ? | À trancher avec R9 | Yasmin |
+| R9 | 🟡 **Deux registres d'embarquement parallèles** (analyse d'impact J3, 2026-07-30). `marad_crew_schedules` porte les relèves décidées par l'Armement (lecture seule, **source de vérité**) ; `crew_assignments` est alimenté **uniquement** par la saisie d'escale. **Conséquences traitées le 2026-07-30** : le double comptage des jours en mer est corrigé (union d'ensembles de jours), et le statut Schengen dit désormais `indetermine` au lieu d'affirmer « conforme » sans données. **Invariant documenté dans `CLAUDE.md`** (§Équipage — deux registres) | — | **Plus la justesse des indicateurs** (corrigée). Reste : `vessel_readiness` et `crew_border_police_pdf` ne lisent toujours que les affectations rattachées à un leg ⇒ **la liste PAF est probablement incomplète en production** | Avec le lot relèves | — |
+| R10 | ✅ **TRANCHÉ 2026-07-30 — ce n'était pas un problème de permissions.** Le processus réel (recueilli auprès de l'Armement) : la décision de relève se prend **dans Excel**, pas dans MyTOWT ni dans Marad ; l'agent d'escale **ne décide rien**, il organise les RDV PAF à partir de ce que l'Armement lui transmet. La matrice est donc **cohérente avec l'organisation** : `armement` n'a pas besoin d'écrire dans `escale`. Ce qui manque n'est pas un droit, c'est **le processus de relève lui-même**, absent du logiciel | — | — | — | — |
+| R11 | 🟠 **Le processus de relèves d'équipage est hors du logiciel** — simulation Excel (jours en mer, périodes embarquées / à terre, anticipation), décision Excel (dates d'embarquement/débarquement), puis transmission PAF à l'agent d'escale → note d'escale. **C'est le vrai manque fonctionnel**, la conformité Schengen n'en étant qu'un sous-produit déjà couvert par Marad | **Non** | Le lot « relèves d'équipage ». **Bloqué en attente des fichiers Excel** (référence métier, non encore partagés). Piste : la moitié de la transmission PAF existe déjà (`/crew/border-police/{vessel_id}` + champs `CrewTicket` vol/train), branchée sur la mauvaise source | Dès réception des Excel | Yasmin (partage des fichiers) |
 | R7 | 🟡 **Dérive de schéma de la base de dev** rattrapée à la main le 2026-07-29 (8 colonnes ajoutées). La procédure §7 de `PROJECT_CONTEXT.md` est corrigée, mais **aucun garde-fou** n'empêche la dérive de réapparaître | **Non** | Rien. Confort et fiabilité des validations locales. Piste : un script de diagnostic `Base.metadata` ↔ `information_schema` à lancer au démarrage en dev | Opportuniste | — |
 | R8 | 🟡 **Hook du harnais lançant `alembic` depuis l'hôte** — échoue à chaque commit (`getaddrinfo failed`, le nom `db` n'est résoluble que dans Docker). Bruit permanent, aucun impact fonctionnel | **Non** | Rien | Opportuniste | Yasmin (config `settings.json`) |
+
+### Ordre de priorité imposé par Yasmin (2026-07-30) — à appliquer à toute analyse
+
+1. Comprendre les processus réels de l'entreprise.
+2. Les **reproduire fidèlement** dans MyTOWT.
+3. Valider que les équipes peuvent travailler efficacement avec le logiciel.
+4. **Ensuite** seulement : contrôles, conformité, qualité de données.
+
+> « La valeur métier doit toujours passer avant les contrôles de conformité ou les
+> fonctionnalités *nice to have*. »
+
+Elle demande **explicitement à être challengée** quand un risque opérationnel ou
+réglementaire majeur justifierait l'inverse. Deux endroits où la ligne se tient :
+le **MRV** (organisme accrédité, échéance réglementaire dure) et le **workflow
+BL** (titre de propriété, prescription Hague-Visby d'un an) — tous deux déjà
+priorisés.
+
+**Distinction retenue, qui a servi le 2026-07-30** : un indicateur qui **affirme
+quelque chose de faux** n'est pas un contrôle manquant, c'est un **défaut**. Le
+corriger peut consister à le faire **taire** plutôt qu'à le rendre intelligent —
+quelques heures au lieu de plusieurs jours. Et un chiffre dont dépendra une
+fonctionnalité métier future (les jours en mer pour la planification des relèves)
+n'est pas un « contrôle de phase 4 » : il est **absorbé** par la valeur métier.
 
 **Lecture d'ensemble (mise à jour 2026-07-30)** : **R1, R2 et R4 sont soldés** —
 la fusion Alembic débloque le lot workflow BL, le J9 et tout déploiement (reste
 la validation manager), et la CI a fait la preuve du filet.
 
-**Deux items nouveaux bloquent le démarrage du J3 et demandent un arbitrage de
-Yasmin, pas du code** : **R9** (deux registres d'embarquement parallèles — sur
-lequel le Schengen doit-il s'appuyer ?) et **R10** (le service qui décide les
-embarquements n'a pas le droit de les saisir). R6 reste à traiter **avec** le J3.
+**Le J3 a été repriorisé en cours de route** par le recueil du processus réel
+auprès de l'Armement : **R10 est tranché** (ce n'était pas un problème de
+permissions — la décision se prend dans Excel, la matrice est cohérente), **R9 est
+traité** sur ses deux conséquences mesurables, et le vrai manque est **R11** : le
+processus de relèves lui-même, absent du logiciel, en attente des fichiers Excel.
+
+**Abandonné au J3** : le recâblage du garde-fou passeport. Il aurait contraint
+l'agent d'escale, qui ne décide pas les embarquements — il transcrit une décision
+prise par l'Armement après vérification via les alertes Marad. Recommandation
+initiale erronée, corrigée dès réception du processus réel. R6 reste ouvert (le
+chemin de saisie hors leg n'existe toujours pas) mais n'est plus urgent : il sera
+traité par le lot relèves ou pas du tout.
 
 Restent sans échéance forte : R3 (escalade externe), R5 (avant le J9), R1b, R7,
 R8 (opportunistes).

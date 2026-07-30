@@ -137,7 +137,44 @@ mynewtowt/
     applicatif ne crée d'affectation hors leg (seul producteur :
     `services/escale_crew.py`, appelé avec un leg), et
     `crew_compliance.refresh_schengen_for_members` **saute** les affectations
-    sans leg — leurs jours ne sont donc pas comptés dans le 90/180.
+    sans leg — leurs jours ne sont donc pas comptés dans le 90/180. Depuis le
+    2026-07-30 ce saut n'est plus silencieux : il force le statut
+    `indetermine` (cf. ci-dessous).
+
+### Équipage — deux registres d'embarquement, à ne jamais confondre
+
+Règle d'or : **tout indicateur d'équipage doit dire de quel registre il parle.**
+Deux tables décrivent les embarquements, parfois **la même période**, et elles
+n'ont ni la même autorité ni la même couverture.
+
+| Registre | Alimenté par | Autorité |
+|---|---|---|
+| `marad_crew_schedules` | Cron Marad (`services/marad_sync.sync_schedules`), **lecture seule** | **Source de vérité des relèves** — c'est l'Armement qui décide, et sa décision se prend dans Excel puis atterrit dans Marad |
+| `crew_assignments` | **Uniquement** la saisie d'une opération d'escale `embarquement` (`services/escale_crew.couple_crew_assignment`, seul producteur de toute l'app) | Transcription par les Opérations. L'agent d'escale **ne décide rien** : il organise les RDV PAF à partir de ce que l'Armement lui transmet |
+
+Conséquences à connaître **avant** de toucher à un indicateur d'équipage :
+
+- **Ne jamais additionner des comptes de jours entre les deux registres** — ils se
+  recouvrent. Construire une **union d'ensembles de jours calendaires** (cf.
+  `embarked_days_by_member`, corrigé le 2026-07-30 : il doublait les jours en mer
+  dès qu'une escale était saisie pour un embarquement déjà connu de Marad).
+  Bornes **inclusives** des deux côtés : 1er → 10 = 10 jours.
+- **`schengen_status` a quatre valeurs** (`SCHENGEN_STATUSES`), dont
+  **`indetermine`** = « des embarquements existent hors de portée du calcul ».
+  Le calcul ne lit que `crew_assignments` : il est **structurellement incomplet**,
+  et `indetermine` le dit au lieu de le masquer derrière un `compliant` obtenu
+  par un décompte à zéro. Un **dépassement établi prime** sur l'incertitude.
+  `indetermine` n'est **pas une alerte** (absence d'information, et Marad notifie
+  déjà l'Armement en amont des expirations) : ne pas l'ajouter aux filtres
+  d'alerte de `crew_router`.
+- **Tout nouveau branchement d'un statut d'équipage doit couvrir le `{% else %}`
+  des templates** : `crew/index.html`, `crew/detail.html` et
+  `crew/compliance.html` y affichent « Non-compliant ». Un statut non traité
+  devient donc une **fausse alarme** — l'inverse du défaut qu'on corrige.
+- **Angles morts restants** (documentés, non corrigés) : `vessel_readiness` et
+  `crew_border_police_pdf` ne lisent que les affectations **rattachées à un leg**
+  — donc ni Marad, ni les embarquements hors voyage. La liste PAF est de ce fait
+  probablement incomplète en production.
 
 ### Routes
 - Mutations : `validate → modify → await db.flush() → RedirectResponse(303)`.
