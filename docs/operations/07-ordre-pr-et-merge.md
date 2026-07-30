@@ -43,13 +43,36 @@ signaler dans la PR et fusionner dans l'ordre.
 | `feature/qhse-foundation` | 🔴 Contient deux défauts qui **détruisent des données** : un filtre par mot-clé (`test\|essai\|demo`) qui quarantaine et n'importe jamais des non-conformités ISM légitimes sans persister la perte, et un `rollback()` dans la boucle d'import qui annule les lignes déjà insérées tout en les comptant comme importées. Correctif de quelques heures, à faire **avant** tout merge. Voir `PROJECT_CONTEXT.md` §14.7.<br>ℹ️ Précisions du 2026-07-30 : **39 commits behind, 2 ahead**. Ses 2 commits ne touchent **que** les fichiers QHSE + i18n + `permissions.py` + `main.py` + `validation_engine.py` — **aucun recouvrement** avec les autres lots de la phase 2, et une fusion **ne supprimerait pas** le trombinoscope (vérifié par fusion à blanc). Le motif de blocage reste entier : ce sont les deux défauts de code, pas la divergence |
 | `feature/dashboard-env-integration`, `scratch/preintegration-rehearsal` | Divergentes de `main` (ahead/behind important). À arbitrer séparément, hors phase 2 |
 
-### Branches qui n'attendent plus rien
+### Branches supprimées le 2026-07-30 (avec accord de Yasmin)
 
-| Branche | État |
-|---|---|
-| `feature/crewing-monthly-yearbook` | ✅ **0 commit d'avance sur `main`** — déjà entièrement fusionnée (PR #148). Une branche qui existe encore n'est pas une branche en attente : à supprimer après accord |
-| `feature/mrv-gaps-remediation` | ✅ **0 commit d'avance** — fusionnée (PR #147). La copie locale est périmée (18 commits behind) et diverge d'`origin` : sans valeur, à supprimer après accord |
-| `backup/ci-lot-avant-rebase` | 🗑️ Filet posé avant le rebase du lot 1 sur `main`. Le rebase a réussi et le lot 1 est poussé + couvert par la PR #149 ⇒ **ce filet n'a plus d'objet**. Local uniquement, à supprimer après accord |
+Empreintes conservées ici : une branche supprimée reste récupérable
+(`git reflog`, ou `git branch <nom> <sha>`) tant que le ramasse-miettes n'est
+pas passé.
+
+| Branche | SHA au moment de la suppression | Vérification faite avant |
+|---|---|---|
+| `feature/crewing-monthly-yearbook` | `e936675` | `git cherry main <branche>` ⇒ **0 commit absent de `main`** (fusionnée par la PR #148). Supprimée en local **et** sur `origin` |
+| `feature/mrv-gaps-remediation` | `14e42f9` | **0 commit absent de `main`**, y compris pour la version `origin` qui divergeait de la copie locale (fusionnée par la PR #147). Supprimée en local **et** sur `origin` |
+| `backup/ci-lot-avant-rebase` | `3ebb5f1` | Local uniquement. Filet posé avant le rebase du lot 1 ; le rebase a réussi et le lot 1 est poussé + couvert par la PR #149 |
+
+**Sur le backup, la vérification méritait d'être poussée** — et elle a servi.
+`git cherry` signalait **4 commits sans équivalent** dans le lot 1. Trois étaient
+les commits de découverte, retrouvés dans `docs/decouverte-fonctionnelle`. Le
+quatrième, `2c4c757`, n'avait d'équivalent **nulle part** : c'est celui qui avait
+provoqué le conflit de rebase, et il avait été **scindé** en deux (le journal
+vers le lot 1, la correction de `PROJECT_CONTEXT.md` §7 vers le lot découverte
+sous `e48847d`). Un commit scindé ne peut correspondre à aucune empreinte.
+
+Contrôle de contenu ligne à ligne : sur 69 lignes ajoutées au journal par
+`2c4c757`, toutes survivent sauf celles **réécrites** par la résolution du
+conflit (l'item « §7 à corriger » est devenu « ✅ fait, commit `e48847d` »). Les
+faits substantiels sont tous présents : les deux identifiants de tête Alembic,
+les deux noms de migration, la note « fusion à valider ».
+
+> 🧭 **Leçon réutilisable** : `git cherry` ne détecte pas les commits **scindés**
+> lors d'un rebase — leur empreinte ne correspond plus. Avant toute suppression
+> de branche de sauvegarde, vérifier le **contenu**, pas seulement les
+> empreintes.
 
 > ⚠️ **Méthode** : évaluer un recouvrement avec `git diff main..branche` est
 > **faux** pour toute branche en retard — cela remonte ce que `main` a fait
@@ -70,10 +93,15 @@ mesurés depuis la **base commune** avec `main`, jamais par `main..branche`
 | Branche | Ahead | Behind | GitHub | Base | Lot | Action attendue |
 |---|---|---|---|---|---|---|
 | `chore/ci-integration-tests` | 23 | 0 | ✅ à jour · **PR #149 (brouillon)** | `main` | **1** | Sortir du brouillon, faire relire, fusionner |
-| `docs/decouverte-fonctionnelle` | 4 | 0 | ⚠️ **non poussée** | `main` | **2** | **À pousser** (guide fonctionnel + `PROJECT_CONTEXT.md` §1-14 n'existent nulle part ailleurs), puis PR |
+| `docs/decouverte-fonctionnelle` | 4 | 0 | ✅ à jour | `main` | **2** | PR à créer |
 | `fix/alembic-merge-heads` | 1 | 0 | ✅ à jour | `main` | **3** | **Validation manager** (historique de schéma), puis PR |
 | `feat/ops-quickwins` | 21 | 0 | ✅ à jour | `main` | **4** | PR à créer |
 | `fix/crew-indicators-honest` | 27 | 0 | ✅ à jour | `main` | **6** | PR à créer **après** fusion du lot 1 (dont elle contient les 23 commits) |
+
+**Au 2026-07-30, les 5 lots de la phase 2 sont tous sauvegardés sur `origin`.**
+Plus aucun travail n'existe uniquement en local — 26 commits l'étaient encore le
+matin (`feat/ops-quickwins` 21, `docs/decouverte-fonctionnelle` 4,
+`fix/alembic-merge-heads` 1).
 
 > Les 27 commits de `fix/crew-indicators-honest` = les 23 du lot 1 + ses 4 propres.
 > C'est voulu : ses éditions de `CLAUDE.md`, du journal et du plan s'appuient sur
@@ -86,10 +114,10 @@ mesurés depuis la **base commune** avec `main`, jamais par `main..branche`
 |---|---|---|---|---|
 | `feature/qhse-foundation` | 2 | 39 | ⚠️ diverge d'`origin` | 🔴 Ne pas fusionner : deux défauts détruisant des données (cf. tableau ci-dessus) |
 | `feature/dashboard-env-integration` | 16 | 39 | ⚠️ diverge d'`origin` | À arbitrer hors phase 2 |
-| `scratch/preintegration-rehearsal` | 18 | 18 | ⚠️ **non poussée** | Répétition d'intégration. À arbitrer hors phase 2 |
-| `feature/crewing-monthly-yearbook` | 0 | 24 | ✅ à jour | Fusionnée (PR #148) — supprimable |
-| `feature/mrv-gaps-remediation` | 0 | 18 | ⚠️ diverge | Fusionnée (PR #147) — supprimable |
-| `backup/ci-lot-avant-rebase` | 15 | 0 | ⚠️ **non poussée** | Filet sans objet — supprimable |
+| `scratch/preintegration-rehearsal` | 18 | 18 | ⚠️ **non poussée** | Répétition d'intégration. **Seul travail restant en local uniquement.** À arbitrer hors phase 2 |
+
+Trois branches ont été **supprimées** le 2026-07-30 (cf. section dédiée
+ci-dessous) : les deux déjà fusionnées et le filet de rebase devenu sans objet.
 
 > ℹ️ `origin` porte aussi une dizaine de branches `claude/*` (archives de sessions
 > antérieures) et `fix/git-stabilization`, sans équivalent local. Hors périmètre
