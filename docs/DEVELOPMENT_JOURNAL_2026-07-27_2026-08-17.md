@@ -459,3 +459,172 @@ de branche) une escalade externe.
 | `docker-compose.override.yml` | Local, **non versionné** (ajouté à `.gitignore`) |
 
 Aucune migration Alembic. Aucun secret. Aucun fichier temporaire/debug.
+
+---
+
+## 2026-07-30 — J3 : fusion Alembic, 1re PR, et la CI se prend son propre audit
+
+### Fusion des deux têtes Alembic (RAF R1 — levé)
+
+Branche `fix/alembic-merge-heads`, issue directement de `main`.
+Migration **de fusion pure** `20260730_0113_merge_heads.py` : aucun DDL, son
+seul rôle est de raccorder les deux chaînes divergentes
+(`20260716_0112` MRV / `20260720_0107` rapports générés) en une tête unique.
+
+Écrite **à la main** plutôt que via `alembic merge` : le dossier `migrations/`
+n'est pas monté dans le conteneur, la sortie de la commande y serait restée.
+
+Vérifié : `alembic heads` → **une seule tête** ; `alembic history` affiche bien
+`20260716_0112, 20260720_0107 -> 20260730_0113 (head) (mergepoint)` ; fichier
+importable, `upgrade()`/`downgrade()` exécutables ; ruff + black verts.
+
+Sûreté de la fusion : les deux chaînes touchent des tables **disjointes**
+(`nav_event_noon` d'un côté, `generated_reports` de l'autre) — leur ordre
+d'application relatif est donc indifférent.
+
+> ⚠️ **À faire valider par le manager** : cela touche l'historique de schéma.
+
+**Limite préexistante découverte au passage, sans lien avec la fusion** :
+`alembic upgrade head --sql` (prévisualisation SQL hors-ligne) échoue sur
+`20260703_0094_planning_rules_hardening.py`, qui fait un `fetchall()` — le mode
+offline n'a pas de connexion. **On ne peut donc pas prévisualiser le DDL d'un
+déploiement sur ce dépôt.** À traiter si un jour on veut un déploiement en deux
+temps (revue du SQL puis application).
+
+### PR #149 — première PR du lot 1
+
+https://github.com/julien-newtowt/mynewtowt/pull/149 (brouillon).
+`gh pr create` avait été refusé par le contrôle de permissions de
+l'environnement la veille ; autorisation accordée par Yasmin, PR créée sans
+contournement. Corps rédigé avec Quality Gate + audit de compatibilité complets.
+
+### La CI a tourné — et elle valide la prémisse du lot
+
+**2015 passés · 1 ignoré** sur Ubuntu. Mes 2000 passés + 15 échecs locaux = 2015 :
+les 15 échecs étaient bien un **artefact WeasyPrint/GTK sous Windows**, comme
+annoncé au J1. L'hypothèse est désormais **confirmée, plus supposée**.
+
+⚠️ **Erreur de méthode de ma part** : mon premier guetteur interrogeait
+`gh pr checks 149`, qui ne renvoyait rien, et j'ai rapporté « aucun check après
+20 min ». Le run existait depuis le début, rattaché à la **branche**. Correction :
+interroger `/actions/runs?branch=…`, pas la PR.
+
+### Trois gardes de la CI affichaient vert sans rien garder
+
+Le thème du jour (« l'outil cesse de mentir ») s'est appliqué à nos propres
+outils avant de s'appliquer au métier.
+
+| Garde | Réalité constatée |
+|---|---|
+| Suites `integration` + `regression` | **Jamais exécutées** (114 fichiers) — corrigé au J1 |
+| Mypy « baseline 142 erreurs » | **434 en réalité** — dérive de 3× masquée par `continue-on-error` |
+| Gitleaks | **Échoue à chaque run, n'a jamais scanné une seule PR** |
+
+**1. Cette PR introduisait 1 erreur mypy** (434 → 435), dans le fichier même
+qu'elle corrigeait — invisible en local, masquée en CI. Mon Quality Gate
+affirmait « dette introduite : aucune » : **c'était faux**, et la cause est que
+mes contrôles locaux ne lançaient pas mypy.
+
+Et c'était un **vrai signal**, pas du bruit : `Leg.etd` est NOT NULL
+(`models/leg.py:40`), donc `leg.atd or leg.etd` vaut toujours un datetime et
+`start` ne peut jamais être `None` — le garde `if start is not None` que j'avais
+ajouté dans `leg_window` était du **code mort**, et l'annotation de retour
+`tuple[datetime, datetime, bool]` était violée.
+
+Corrigé **à la racine** plutôt qu'au point d'appel : `ensure_utc` est
+*préservante de nullité* (elle ne fabrique jamais une date, n'en supprime jamais
+une), ce que sa signature n'exprimait pas. Deux `@overload` le déclarent —
+purement statique, **aucun effet à l'exécution**.
+
+Mesuré : **435 → 371 erreurs, 61 → 59 fichiers**. La mienne **+ 63
+préexistantes**, aux 57 points d'appel du helper. Vérification : suite
+**complète** rejouée (helper partagé) → 2000/15/1, identique à la référence.
+Aucune régression. Commit `4363ea0`.
+
+**2. Gitleaks n'a jamais scanné une PR.** `gitleaks-action@v2` exige désormais
+`GITHUB_TOKEN` pour scanner une pull request ; sans lui l'étape échoue
+immédiatement et `continue-on-error: true` la faisait passer pour verte.
+**Vérifié sur le run du 23/07 (PR #147) : exactement la même erreur** — donc
+**préexistant**, pas introduit par ce lot. La détection de fuite de secret était
+décorative. Réparé (+ `pull-requests: read`, lecture seule).
+
+**3. Cliquet anti-dérive du typage.** L'étape mypy reste **non bloquante** (on ne
+bloque pas l'équipe sur 371 erreurs héritées) mais elle est désormais bornée par
+une étape **bloquante** : toute erreur *nouvelle* fait échouer la CI. Plafond
+posé à la valeur réelle mesurée (371), à baisser à chaque résorption. Commit
+`4293a96`.
+
+**Élargissement de périmètre assumé** : les points 2 et 3 dépassent le lot
+initial. Signalé explicitement à Yasmin et dans le corps de la PR plutôt que
+glissé discrètement — c'est le lot « filet de sécurité », et le filet ne tenait
+pas ses promesses.
+
+### Analyse d'impact J3 — découverte structurante : **deux registres d'embarquement parallèles**
+
+Analyse faite **avant** tout codage (§9 du plan). Aucune ligne de code J3
+écrite à ce stade. La découverte change le périmètre du lot.
+
+Il existe **deux registres d'embarquement qui ne se parlent pas** :
+
+| Registre | Alimenté par | Nature |
+|---|---|---|
+| `marad_crew_schedules` | Cron Marad (`sync_schedules`) | **Lecture seule.** C'est là que l'Armement décide réellement. |
+| `crew_assignments` | **Uniquement** la saisie d'escale | Le seul que lit le calcul Schengen. |
+
+**Un seul point de création dans toute l'application** : `escale_crew.py:52`,
+appelé depuis `escale_router.py:388` (opération d'escale
+`armement`/`embarquement`). Le module `/crew` **ne sait pas créer** une
+affectation — seulement éditer/supprimer (la route de création a été supprimée,
+la spec `SPEC-CREW-reprise-P0.md` qui la décrivait n'a jamais été appliquée).
+
+**Décalage de permissions** : l'Armement — qui décide les embarquements — a
+`crew: CMS` mais seulement `escale: C`. **Le service qui décide ne peut pas
+saisir.** Ceux qui peuvent sont `operation`/`technique` (CMS),
+`manager_maritime` (CM), `administrateur`.
+
+**Ce que chaque indicateur lit réellement** :
+
+| Indicateur | Source |
+|---|---|
+| Schengen 90/180 | `crew_assignments` **seul** |
+| Jours embarqués de l'année | `crew_assignments` **+** Marad |
+| Bordée du jour / « en activité » | Marad **seul** |
+| Équipage d'un leg (certificat Anemos) | Marad **seul** |
+| Armement réglementaire du navire | `crew_assignments` **seul**, et via `leg_id` uniquement |
+
+⇒ **L'écran peut afficher une bordée complète venue de Marad pendant que le
+compteur Schengen affiche « conforme / 0 jour » pour ces mêmes marins.** Le
+registre où vit la décision est **invisible du calcul de conformité**.
+
+**Défauts confirmés dans le code** :
+1. `crew_compliance.py:251-257` — présence vide donne 0 jour donne `compliant`.
+   Cumulé au défaut de colonne `compliant` (`models/crew.py:43`) : deux chemins
+   vers un affichage rassurant sans aucune donnée.
+2. `crew_compliance.py:231-233` — `if leg is None: continue` : toute affectation
+   sans leg est **ignorée**. L'arrêt technique à quai en zone Schengen — le cas
+   qui **consomme le plus de jours** — compte pour zéro.
+3. `EscaleOperation.leg_id` est **NOT NULL**, donc le seul point de création
+   impose un leg. Le modèle `CrewAssignment` autorise `leg_id = NULL` (arbitrage
+   A4) mais **aucun écran ne peut en produire une**.
+4. `vessel_readiness` (l.311) a le **même angle mort** (`leg_id.in_(…)`).
+5. `passport_blocking_reason` (l.277-294) est complète et correcte —
+   **zéro appelant**. La saisie d'escale crée l'affectation sans jamais regarder
+   passeport ni compteur Schengen.
+
+**Point d'honnêteté** : les ports enregistrés sur l'affectation sont déduits du
+leg de façon rigide, mais le calcul Schengen **ne les relit pas** (il repart des
+ports du leg). C'est une redondance douteuse, **pas un bug prouvé** — non compté
+comme défaut faute de démonstration.
+
+### 🟡 Décision en attente de Yasmin (bloque le démarrage du J3)
+
+Le calcul Schengen doit-il lire **le registre des Opérations seul** (périmètre
+annoncé) ou **les deux registres, Marad inclus** ? La seconde option est plus
+juste métier — c'est Marad qui porte la vérité des embarquements — mais elle
+sort du périmètre et demande plus de travail. **Rien n'est lancé avant arbitrage.**
+
+Également en attente : le recâblage du garde-fou passeport **bloquera une saisie
+d'escale** que les Opérations faisaient jusqu'ici sans contrainte (override
+tracé possible). Recommandation : le brancher en mode override-possible — le
+risque de ne rien faire est réglementaire (contrôle PAF, responsabilité
+armateur), le risque de le faire est une case à cocher de plus.
