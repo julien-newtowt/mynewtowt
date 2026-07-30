@@ -48,12 +48,76 @@ signaler dans la PR et fusionner dans l'ordre.
 | Branche | État |
 |---|---|
 | `feature/crewing-monthly-yearbook` | ✅ **0 commit d'avance sur `main`** — déjà entièrement fusionnée (PR #148). Une branche qui existe encore n'est pas une branche en attente : à supprimer après accord |
+| `feature/mrv-gaps-remediation` | ✅ **0 commit d'avance** — fusionnée (PR #147). La copie locale est périmée (18 commits behind) et diverge d'`origin` : sans valeur, à supprimer après accord |
+| `backup/ci-lot-avant-rebase` | 🗑️ Filet posé avant le rebase du lot 1 sur `main`. Le rebase a réussi et le lot 1 est poussé + couvert par la PR #149 ⇒ **ce filet n'a plus d'objet**. Local uniquement, à supprimer après accord |
 
 > ⚠️ **Méthode** : évaluer un recouvrement avec `git diff main..branche` est
 > **faux** pour toute branche en retard — cela remonte ce que `main` a fait
 > évoluer, pas ce que la branche modifie. Toujours partir de
 > `git merge-base`, puis confirmer par une fusion à blanc
 > (`git merge-tree`). Cf. `PLAN_UPGRADE_PHASE2_2026-08.md` §11.
+
+---
+
+## 2 bis. État des branches — relevé du 2026-07-30
+
+Inventaire factuel de **toutes** les branches locales. « Ahead » et « behind » sont
+mesurés depuis la **base commune** avec `main`, jamais par `main..branche`
+(cf. avertissement de méthode ci-dessus).
+
+### Lots de la phase 2
+
+| Branche | Ahead | Behind | GitHub | Base | Lot | Action attendue |
+|---|---|---|---|---|---|---|
+| `chore/ci-integration-tests` | 23 | 0 | ✅ à jour · **PR #149 (brouillon)** | `main` | **1** | Sortir du brouillon, faire relire, fusionner |
+| `docs/decouverte-fonctionnelle` | 4 | 0 | ⚠️ **non poussée** | `main` | **2** | **À pousser** (guide fonctionnel + `PROJECT_CONTEXT.md` §1-14 n'existent nulle part ailleurs), puis PR |
+| `fix/alembic-merge-heads` | 1 | 0 | ✅ à jour | `main` | **3** | **Validation manager** (historique de schéma), puis PR |
+| `feat/ops-quickwins` | 21 | 0 | ✅ à jour | `main` | **4** | PR à créer |
+| `fix/crew-indicators-honest` | 27 | 0 | ✅ à jour | `main` | **6** | PR à créer **après** fusion du lot 1 (dont elle contient les 23 commits) |
+
+> Les 27 commits de `fix/crew-indicators-honest` = les 23 du lot 1 + ses 4 propres.
+> C'est voulu : ses éditions de `CLAUDE.md`, du journal et du plan s'appuient sur
+> du contenu créé par le lot 1. Sa PR n'affichera ses 4 commits qu'une fois le
+> lot 1 fusionné.
+
+### Hors phase 2
+
+| Branche | Ahead | Behind | GitHub | Statut |
+|---|---|---|---|---|
+| `feature/qhse-foundation` | 2 | 39 | ⚠️ diverge d'`origin` | 🔴 Ne pas fusionner : deux défauts détruisant des données (cf. tableau ci-dessus) |
+| `feature/dashboard-env-integration` | 16 | 39 | ⚠️ diverge d'`origin` | À arbitrer hors phase 2 |
+| `scratch/preintegration-rehearsal` | 18 | 18 | ⚠️ **non poussée** | Répétition d'intégration. À arbitrer hors phase 2 |
+| `feature/crewing-monthly-yearbook` | 0 | 24 | ✅ à jour | Fusionnée (PR #148) — supprimable |
+| `feature/mrv-gaps-remediation` | 0 | 18 | ⚠️ diverge | Fusionnée (PR #147) — supprimable |
+| `backup/ci-lot-avant-rebase` | 15 | 0 | ⚠️ **non poussée** | Filet sans objet — supprimable |
+
+> ℹ️ `origin` porte aussi une dizaine de branches `claude/*` (archives de sessions
+> antérieures) et `fix/git-stabilization`, sans équivalent local. Hors périmètre
+> de la phase 2 ; à trier séparément.
+
+### Ordre de fusion conseillé — version courte
+
+```
+1. chore/ci-integration-tests     (PR #149)  ← le filet d'abord
+2. docs/decouverte-fonctionnelle              ← doc seule, parallélisable avec 1
+3. fix/alembic-merge-heads                    ← débloque toute migration + le déploiement
+4. feat/ops-quickwins                         ← sans migration, peut passer avant 3
+5. fix/crew-indicators-honest                 ← après 1 (elle en dérive)
+6. lot workflow BL                            ← après 3 (porte une migration)
+7. lot relèves d'équipage                     ← après réception des Excel
+8. J9 horodatage…                             ← après 3 (porte une migration)
+```
+
+**Deux règles qui ne se négocient pas** : rejouer la suite **complète** après
+chaque fusion (§3.3), et ne jamais fusionner `fix/alembic-merge-heads` sans
+validation manager. Tout lot portant une migration attend le lot 3.
+
+### Sauvegardes hors dépôt
+
+| Élément | État |
+|---|---|
+| Tag `pre-upgrade-2026-08` | ✅ poussé sur `origin` |
+| `pg_dump` de la base de dev | ✅ hors dépôt, **procédure de restauration testée** (135 tables, comptages vérifiés) |
 
 ---
 
