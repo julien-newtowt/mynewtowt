@@ -112,6 +112,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # OBLIGATOIRE pour gitleaks : l'action ignore l'`args` fourni et
+          # construit sa propre commande sur une PLAGE de commits
+          # (`--log-opts=--no-merges --first-parent <base>..<head>`). Avec le
+          # `fetch-depth: 1` par défaut, le clone ne contient qu'un commit : la
+          # plage est irrésoluble, gitleaks sort en ERREUR (code 1 — et non 2,
+          # qui signalerait des fuites) et écrit un rapport SARIF **vide**.
+          # « 0 détection » signifiait alors « rien n'a été scanné ».
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -132,11 +141,35 @@ jobs:
         # immédiatement — et `continue-on-error` la faisait passer pour verte :
         # aucune PR n'a jamais été scannée pour fuite de secret depuis ce
         # changement. Le token est fourni automatiquement par GitHub.
+        #
+        # L'`args: detect --no-banner --redact -v` qui figurait ici a été retiré :
+        # l'action l'IGNORE et construit sa propre commande
+        # (`--exit-code=2 --report-format=sarif --log-opts=…`). Le laisser
+        # donnait l'illusion d'une configuration active.
+        #
+        # Nécessite aussi `fetch-depth: 0` sur le checkout (cf. commentaire là-bas).
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: detect --no-banner --redact -v
         continue-on-error: true
+      - name: Verifier que gitleaks a REELLEMENT scanne (bloquant)
+        # Sans ce contrôle, les trois modes d'échec de gitleaks — token manquant,
+        # clone superficiel, plage de commits irrésoluble — produisent tous un
+        # rapport vide que `continue-on-error` présente comme un succès. On exige
+        # donc la preuve qu'un scan a eu lieu, pas seulement l'absence de
+        # détection. `exit-code=2` = fuites trouvées (le rapport le dira) ;
+        # toute autre anomalie = scan non concluant, et on le dit.
+        run: |
+          if [ ! -f results.sarif ]; then
+            echo "::error::gitleaks n'a produit aucun rapport — scan non effectue."
+            exit 1
+          fi
+          RUNS=$(python -c "import json;d=json.load(open('results.sarif'));print(len(d.get('runs',[])))")
+          if [ "$RUNS" = "0" ]; then
+            echo "::error::Rapport gitleaks sans aucune execution — scan non effectue."
+            exit 1
+          fi
+          N=$(python -c "import json;d=json.load(open('results.sarif'));print(sum(len(r.get('results',[])) for r in d['runs']))")
+          echo "gitleaks : scan effectue, $N detection(s)."
 
   build:
     runs-on: ubuntu-latest
