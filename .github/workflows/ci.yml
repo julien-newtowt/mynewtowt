@@ -135,6 +135,7 @@ jobs:
           pip install pip-audit
           pip-audit -r requirements.txt || true   # informational
       - name: Gitleaks scan
+        id: gitleaks
         uses: gitleaks/gitleaks-action@v2
         # GITHUB_TOKEN est devenu OBLIGATOIRE pour scanner une pull request
         # (breaking change de gitleaks-action v2). Sans lui, l'étape échouait
@@ -152,24 +153,32 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
       - name: Verifier que gitleaks a REELLEMENT scanne (bloquant)
-        # Sans ce contrôle, les trois modes d'échec de gitleaks — token manquant,
-        # clone superficiel, plage de commits irrésoluble — produisent tous un
-        # rapport vide que `continue-on-error` présente comme un succès. On exige
-        # donc la preuve qu'un scan a eu lieu, pas seulement l'absence de
-        # détection. `exit-code=2` = fuites trouvées (le rapport le dira) ;
-        # toute autre anomalie = scan non concluant, et on le dit.
+        # Les trois modes d'échec connus de gitleaks — token manquant, clone
+        # superficiel, plage de commits irrésoluble — produisent tous un rapport
+        # SARIF **vide mais bien formé** que `continue-on-error` présente comme
+        # un succès. Un rapport sans détection n'est donc PAS une preuve
+        # d'absence de secret : il faut prouver que le scan a abouti.
+        #
+        # Le discriminant fiable est `steps.gitleaks.outcome`, qui conserve le
+        # résultat RÉEL avant application de `continue-on-error` (là où
+        # `conclusion` vaut toujours `success`). Codes de sortie de l'action :
+        # 0 = scan propre · 2 = fuites trouvées · 1 = le scan a échoué.
+        # C'est ce dernier cas qui mentait, et qu'on refuse désormais.
         run: |
           if [ ! -f results.sarif ]; then
             echo "::error::gitleaks n'a produit aucun rapport — scan non effectue."
             exit 1
           fi
-          RUNS=$(python -c "import json;d=json.load(open('results.sarif'));print(len(d.get('runs',[])))")
-          if [ "$RUNS" = "0" ]; then
-            echo "::error::Rapport gitleaks sans aucune execution — scan non effectue."
+          N=$(python -c "import json;d=json.load(open('results.sarif'));print(sum(len(r.get('results',[])) for r in d.get('runs',[])))")
+          if [ "$N" -gt 0 ]; then
+            echo "::error::gitleaks a detecte $N fuite(s) potentielle(s). Voir l'artefact results.sarif. Faux positif : ajouter l'empreinte au fichier .gitleaksignore, jamais desactiver l'etape."
             exit 1
           fi
-          N=$(python -c "import json;d=json.load(open('results.sarif'));print(sum(len(r.get('results',[])) for r in d['runs']))")
-          echo "gitleaks : scan effectue, $N detection(s)."
+          if [ "${{ steps.gitleaks.outcome }}" = "failure" ]; then
+            echo "::error::gitleaks a echoue SANS produire de detection : le scan n'a pas abouti (token, profondeur de clone, plage de commits...). Un rapport vide n'est pas une preuve d'absence de secret."
+            exit 1
+          fi
+          echo "gitleaks : scan abouti et concluant, 0 detection."
 
   build:
     runs-on: ubuntu-latest
