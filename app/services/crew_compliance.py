@@ -85,6 +85,27 @@ SCHENGEN_WINDOW_DAYS = 180
 SCHENGEN_MAX_DAYS = 90
 SCHENGEN_WARNING_DAYS = 80
 
+# Valeurs possibles de ``CrewMember.schengen_status``.
+#
+# ``indetermine`` (ajouté le 2026-07-30) comble un mensonge : l'indicateur
+# affichait « conforme » dès que le décompte tombait à zéro, y compris quand
+# AUCUNE donnée exploitable n'existait. Deux chemins y menaient — le défaut de
+# colonne (`compliant`) et un ensemble de jours vide — et le résultat était le
+# même : l'outil affirmait la conformité sans rien savoir.
+#
+# ⚠️ La source de vérité de la conformité Schengen est **Marad**, qui notifie
+# l'Armement en amont des expirations (passeports, titres de séjour, 90/180).
+# Le calcul de mynewtowt ne lit QUE ``crew_assignments``, alimenté par la seule
+# saisie d'escale : il est structurellement incomplet. ``indetermine`` le dit,
+# au lieu de le masquer. Ce statut n'est **pas une alerte** — c'est une absence
+# d'information, et il ne remonte donc pas dans les alertes du module.
+SCHENGEN_STATUSES: tuple[str, ...] = (
+    "compliant",
+    "warning",
+    "non_compliant",
+    "indetermine",
+)
+
 # Armement réglementaire — règle métier : capitaine, second, chef
 # mécanicien, cuisinier, lieutenant, bosco. Mapping vers l'enum réel
 # CREW_ROLES de routers/crew_router.py (colonne libre String(60)) :
@@ -217,6 +238,29 @@ async def refresh_schengen_for_members(
     for a in assigns:
         assigns_by_member[a.crew_member_id].append(a)
 
+    # Marins dont Marad connaît des embarquements. Ce calcul ne sait PAS les
+    # exploiter (il n'a ni port ni fenêtre de voyage pour un planning Marad) : leur
+    # simple existence suffit donc à rendre le décompte non concluant. C'est le
+    # cas dominant en pratique, la décision de relève vivant côté Armement.
+    marad_embarked_members: set[int] = set()
+    if member_ids:
+        for s in (
+            (
+                await db.execute(
+                    select(MaradCrewSchedule).where(
+                        MaradCrewSchedule.crew_member_id.in_(member_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        ):
+            # `crew_member_id` est une FK NULLABLE (un planning Marad peut ne pas
+            # être rapproché d'un marin de l'ERP) : le filtre `in_` l'exclut en
+            # pratique, on le vérifie quand même plutôt que de le supposer.
+            if s.crew_member_id is not None and schedule_is_embarkation(s):
+                marad_embarked_members.add(s.crew_member_id)
+
     for member in members:
         nationality = (member.nationality or "").strip().upper()
         if nationality in SCHENGEN_COUNTRIES:
@@ -227,9 +271,15 @@ async def refresh_schengen_for_members(
             continue
 
         presence: set[date] = set()
+        # Toute source d'embarquement que ce calcul ne SAIT PAS exploiter rend le
+        # décompte incomplet — donc non concluant, jamais « conforme ».
+        incomplete = member.id in marad_embarked_members
         for a in assigns_by_member.get(member.id, ()):
             leg = legs.get(a.leg_id)
             if leg is None:
+                # `leg_id` absent (embarquement hors voyage, arbitrage A4) ou leg
+                # introuvable : l'affectation existe mais reste inexploitable ici.
+                incomplete = True
                 continue
             embark = _as_utc(a.embark_at)
             disembark = _as_utc(a.disembark_at) or now
@@ -250,9 +300,15 @@ async def refresh_schengen_for_members(
 
         days = len(presence)
         if days > SCHENGEN_MAX_DAYS:
+            # Dépassement établi sur les seules données exploitables : certain,
+            # et un dépassement certain prime sur l'incertitude du reste.
             status = "non_compliant"
         elif days > SCHENGEN_WARNING_DAYS:
             status = "warning"
+        elif incomplete:
+            # Des embarquements existent hors de portée de ce calcul : le
+            # décompte n'est qu'un plancher, on ne conclut pas.
+            status = "indetermine"
         else:
             status = "compliant"
 
@@ -403,39 +459,60 @@ def schedule_is_embarkation(s: MaradCrewSchedule) -> bool:
     return bool(s.vessel_id or s.marad_vessel_name) and s.start_date is not None
 
 
-def _marad_days_in_year(s: MaradCrewSchedule, year: int, *, now: datetime) -> int:
-    """Jours embarqués d'un planning Marad sur l'année (mêmes bornes inclusives
-    que ``assignment_days_in_year``)."""
-    start = datetime(s.start_date.year, s.start_date.month, s.start_date.day, tzinfo=UTC)
-    end = (
-        datetime(s.end_date.year, s.end_date.month, s.end_date.day, tzinfo=UTC)
-        if s.end_date
-        else None
-    )
-    return assignment_days_in_year(start, end, year, now=now)
+# ``_marad_days_in_year`` a été retiré le 2026-07-30 : il additionnait des
+# COMPTES de jours, ce qui rendait le double comptage inévitable dès que les deux
+# registres décrivaient la même période. ``embarked_days_by_member`` construit
+# désormais une union d'ensembles de jours et n'a plus besoin de ce helper.
 
 
 async def embarked_days_by_member(
     db: AsyncSession, year: int, *, now: datetime | None = None
 ) -> dict[int, int]:
-    """Total de jours embarqués par marin sur l'année.
+    """Total de jours embarqués par marin sur l'année, **sans double comptage**.
 
-    Additionne les affectations ERP (``CrewAssignment``) **et** les plannings
-    d'embarquement importés de Marad (``MaradCrewSchedule`` avec navire). Comme
-    les marins proviennent exclusivement de Marad (aucune saisie manuelle), la
-    donnée réelle vient des plannings Marad — sans eux, l'indicateur restait à 0.
+    Deux registres d'embarquement coexistent et **décrivent parfois la même
+    période** :
+
+    - ``MaradCrewSchedule`` — les relèves décidées par l'Armement, importées de
+      Marad en lecture seule. C'est la source de vérité des embarquements ;
+    - ``CrewAssignment`` — créé par la saisie d'une opération d'escale
+      ``embarquement`` (``services/escale_crew.couple_crew_assignment``).
+
+    ⚠️ **Correctif 2026-07-30** : cette fonction *additionnait* les jours des deux
+    registres. Sa version précédente supposait ``CrewAssignment`` vide (« les
+    marins proviennent exclusivement de Marad, aucune saisie manuelle ») — ce qui
+    est faux, la saisie d'escale en crée. Dès qu'une opération d'escale était
+    enregistrée pour un embarquement déjà connu de Marad, **les jours de ce marin
+    étaient comptés deux fois**.
+
+    L'indicateur est donc désormais construit sur une **union d'ensembles de jours
+    calendaires** (même approche que ``refresh_schengen_for_members``) : un jour
+    couvert par les deux registres compte **une fois**. C'est le chiffre dont
+    dépend la planification des relèves (jours en mer, périodes embarquées / à
+    terre), qui se fait aujourd'hui hors du logiciel.
+
+    Bornes **inclusives** des deux côtés, comme ``assignment_days_in_year`` :
+    un embarquement du 1er au 10 compte 10 jours. Une affectation encore en cours
+    (``disembark_at``/``end_date`` absent) est comptée jusqu'à ``now``.
     """
     now = now or datetime.now(UTC)
-    totals: dict[int, int] = defaultdict(int)
+    year_start, year_end = date(year, 1, 1), date(year, 12, 31)
+    days_by_member: dict[int, set[date]] = defaultdict(set)
+
     assigns = (
         (await db.execute(select(CrewAssignment).where(CrewAssignment.embark_at.is_not(None))))
         .scalars()
         .all()
     )
     for a in assigns:
-        totals[a.crew_member_id] += assignment_days_in_year(
-            a.embark_at, a.disembark_at, year, now=now
+        _add_presence_days(
+            days_by_member[a.crew_member_id],
+            _as_utc(a.embark_at),
+            _as_utc(a.disembark_at) or now,
+            year_start,
+            year_end,
         )
+
     scheds = (
         (
             await db.execute(
@@ -446,9 +523,19 @@ async def embarked_days_by_member(
         .all()
     )
     for s in scheds:
-        if schedule_is_embarkation(s):
-            totals[s.crew_member_id] += _marad_days_in_year(s, year, now=now)
-    return dict(totals)
+        if not schedule_is_embarkation(s):
+            continue
+        start = datetime(s.start_date.year, s.start_date.month, s.start_date.day, tzinfo=UTC)
+        end = (
+            datetime(s.end_date.year, s.end_date.month, s.end_date.day, tzinfo=UTC)
+            if s.end_date
+            else now
+        )
+        _add_presence_days(days_by_member[s.crew_member_id], start, end, year_start, year_end)
+
+    # Un marin sans aucun jour retenu (embarquement hors année) ne doit pas
+    # apparaître avec 0 — l'appelant distingue « absent » de « zéro jour ».
+    return {mid: len(days) for mid, days in days_by_member.items() if days}
 
 
 async def current_embarkations(

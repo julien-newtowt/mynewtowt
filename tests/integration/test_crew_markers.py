@@ -116,6 +116,83 @@ async def test_embarked_days_includes_marad_and_excludes_leave(db):
 
 
 @pytest.mark.asyncio
+async def test_embarked_days_no_double_count_across_registers(db):
+    """Un même embarquement décrit par les DEUX registres compte une seule fois.
+
+    Régression du 2026-07-30 : les jours étaient *additionnés* entre
+    ``MaradCrewSchedule`` (la relève décidée par l'Armement) et
+    ``CrewAssignment`` (créé par la saisie d'une opération d'escale). Dès qu'une
+    escale était saisie pour un embarquement déjà connu de Marad, les jours en
+    mer du marin doublaient — or c'est le chiffre dont dépend la planification
+    des relèves.
+    """
+    from datetime import date
+
+    from app.models.crew import CrewAssignment, CrewMember, MaradCrewSchedule
+    from app.services.crew_compliance import embarked_days_by_member
+
+    db.add(CrewMember(id=20, full_name="Double Compte", role="capitaine"))
+    await db.flush()
+    # La même relève, vue des deux côtés : 1er → 10 mars = 10 jours.
+    db.add(
+        MaradCrewSchedule(
+            marad_schedule_id="dup-1",
+            crew_member_id=20,
+            marad_vessel_name="Anemos",
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 10),
+        )
+    )
+    db.add(
+        CrewAssignment(
+            crew_member_id=20,
+            embark_at=datetime(2026, 3, 1, tzinfo=UTC),
+            disembark_at=datetime(2026, 3, 10, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+
+    days = await embarked_days_by_member(db, 2026, now=datetime(2026, 6, 30, tzinfo=UTC))
+    assert days.get(20) == 10  # et non 20
+
+
+@pytest.mark.asyncio
+async def test_embarked_days_partial_overlap_counts_union(db):
+    """Recouvrement partiel : l'union des jours, ni la somme ni le maximum.
+
+    Marad 1→10 mars (10 j) et escale 5→15 mars (11 j) : l'union couvre
+    1→15 mars = 15 jours. La somme donnerait 21, le maximum 11.
+    """
+    from datetime import date
+
+    from app.models.crew import CrewAssignment, CrewMember, MaradCrewSchedule
+    from app.services.crew_compliance import embarked_days_by_member
+
+    db.add(CrewMember(id=21, full_name="Recouvrement Partiel", role="marin"))
+    await db.flush()
+    db.add(
+        MaradCrewSchedule(
+            marad_schedule_id="ov-1",
+            crew_member_id=21,
+            marad_vessel_name="Anemos",
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 10),
+        )
+    )
+    db.add(
+        CrewAssignment(
+            crew_member_id=21,
+            embark_at=datetime(2026, 3, 5, tzinfo=UTC),
+            disembark_at=datetime(2026, 3, 15, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+
+    days = await embarked_days_by_member(db, 2026, now=datetime(2026, 6, 30, tzinfo=UTC))
+    assert days.get(21) == 15
+
+
+@pytest.mark.asyncio
 async def test_current_embarkations_window_and_leave_filter(db):
     from datetime import date
 
