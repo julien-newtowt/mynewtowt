@@ -148,12 +148,102 @@ soft-delete avec motif obligatoire.
 
 ---
 
-## 5. Points à trancher avant implémentation
+## 5. Points tranchés — réponses de Yasmin (2026-08-03)
 
-1. **Le rail booking.** Décision D2 acte que les documents sont générés depuis
-   les packing lists. Le rail booking (`/cargo/booking/{ref}/bl.pdf`) produit un
-   BL **sans consignataire ni notify party** : à retirer dans le lot J2, avant
-   ce lot-ci. À confirmer.
+Les cinq points sont désormais tranchés. Ce qui suit remplace les questions.
+
+### 5.0 Date « shipped on board » = dernier jour des opérations
+
+> « Dans la section des opérations, on voit la ligne du temps montrant le flux
+> daté. Le jour de *ship on board* devrait être le dernier jour des opérations.
+> Avec la possibilité d'être modifié par l'équipe opérations (sous
+> justification) et journal de modification en cas de contrôle. »
+
+**Source de vérité** : la timeline d'escale (`EscaleOperation`), pas l'instant du
+clic. La date retenue est celle de la **dernière opération** du leg — donc une
+valeur **dérivée**, pas saisie.
+
+**Motif à trois niveaux, identique à celui des durées de contrat du lot relèves**
+(cf. `REFERENCE_METIER_RELEVES_EQUIPAGE.md` §3.2) :
+
+| Niveau | Nature |
+|---|---|
+| 1. Dérivée | dernier jour des opérations d'escale |
+| 2. Override | l'équipe Opérations (`escale:M` ou `cargo:M`) peut la corriger |
+| 3. **Justification obligatoire** | **refuser l'enregistrement** d'un override sans motif |
+
+⇒ **Un seul mécanisme à construire pour les deux lots.** À implémenter une fois,
+réutilisable : *valeur dérivée + override tracé + justification exigée*.
+
+Enjeu : un BL antidaté est une **fraude documentaire** et une exclusion de
+garantie. Le journal est explicitement demandé « en cas de contrôle ».
+
+### 5.1 Nombre d'originaux : toujours 3 — **et suivi de réception**
+
+> « Toujours 3. Normalement, les BLs devraient être téléchargeables dans la
+> plateforme client. L'idéal serait de tracker le timestamp de cette action ou
+> ajouter une case de confirmation de réception côté client. Cette case devrait
+> aussi apparaître pour l'équipe opérations, en mode backup. Si les BLs sont
+> envoyés en papier par exemple, l'équipe opérations pourra confirmer la
+> réception côté client en ajoutant la date et heure de confirmation et moyen
+> (téléphone, mail, etc.) + PJ possible. »
+
+`3` reste donc **constant** — pas de paramétrage à prévoir.
+
+**Nouvelle exigence : un registre de remise.** C'est exactement le dispositif
+dont l'absence exclut la *misdelivery* de la couverture P&I. Deux voies, la
+seconde servant de repli :
+
+| Voie | Déclencheur | Données |
+|---|---|---|
+| **Numérique** | le client télécharge le BL depuis `/me` | horodatage automatique du téléchargement · **et/ou** case « réception confirmée » cochée par le client |
+| **Repli Opérations** | BL remis en papier / hors plateforme | date **et heure** de confirmation · **moyen** (téléphone, mail, courrier…) · **pièce jointe possible** · l'auteur côté staff |
+
+⇒ Nouvelle table `BlDeliveryReceipt` (ou champs dédiés) : `batch_id`, `channel`
+(`download` / `client_confirmed` / `ops_confirmed`), `confirmed_at`, `means`,
+`confirmed_by_client_id` **xor** `confirmed_by_user_id`, `attachment_path`,
+`notes`. Le repli staff est tracé **comme tel**, jamais présenté comme une
+confirmation du client — même principe que
+`bl_validated_on_behalf_by_id` au §4.2.
+
+### 5.2 Signature du commandant : **au choix, unitaire ou groupée**
+
+> « Donner le choix au commandant de tout signer ou signer un BL en
+> particulier. »
+
+Les deux modes, pas l'un ou l'autre : un écran listant les BL en attente sur son
+navire, avec signature individuelle **et** action « tout signer ». Chaque BL reçoit
+sa propre entrée de signature (`bl_signed_at`, `bl_signature_hash`) même en
+signature groupée — le groupage est une commodité d'interface, pas une signature
+unique portant sur un lot.
+
+### 5.3 Données du BL : marchandises depuis la packing list, **parties depuis le portail**
+
+> « Données marchandises pour BL générés à partir de packing list. Notify party
+> & consignee à saisir depuis le portail expéditeur de MyTOWT. »
+
+Confirme la décision D2 (rail packing list) **et** précise qui saisit les parties.
+
+⚠️ **État vérifié dans le code (2026-08-03) — l'exigence est à moitié satisfaite :**
+
+| Champ | Modèle | Formulaire portail | Formulaire staff |
+|---|---|---|---|
+| `shipper_*` | ✅ `PackingListBatch` | ✅ présent | ✅ |
+| `consignee_*` | ✅ `PackingListBatch` | ✅ présent | ✅ |
+| **`notify_*`** | ✅ `PackingListBatch` | ❌ **ABSENT** | ✅ |
+
+Les cinq champs `notify_name` / `notify_address` / `notify_postal` /
+`notify_city` / `notify_country` existent en base et figurent dans
+`AUDITABLE_FIELDS` — ils sont donc déjà audités **dès qu'ils sont remplis**. Il
+manque uniquement leur exposition dans `templates/portal/packing.html`.
+**Correctif court, à embarquer dans ce lot.**
+
+### 5.4 Le rail booking
+
+Décision D2 acte que les documents sont générés depuis les packing lists. Le rail
+booking (`/cargo/booking/{ref}/bl.pdf`) produit un BL **sans consignataire ni
+notify party** : à retirer. La réponse 5.3 le confirme indirectement — les parties
+se saisissent au portail, donc sur la packing list, pas sur le booking.
 2. ~~Qui valide côté client ?~~ ✅ **TRANCHÉ (Yasmin, 2026-07-29)**
 
    **C'est le client titulaire du booking qui valide le draft**, depuis l'espace
@@ -174,35 +264,42 @@ soft-delete avec motif obligatoire.
    vérification de propriété individuelle (`booking.client_account_id ==
    client.id`) : il n'y a pas de middleware central, chaque route `/me` la refait.
 
-3. **Nombre d'originaux.** Aujourd'hui `3` est codé en dur
-   (`services/pdf_generator.py:99`) et imprimé « 3 OBL signés » même sur un
-   document non signé. Doit-il être paramétrable par BL ? Et faut-il un registre
-   de remise des originaux (*surrender*) — sans lui, la livraison sans
-   présentation d'original (*misdelivery*) est **exclue de la couverture P&I** ?
-4. **Le commandant signe-t-il par batch ou par escale ?** Un navire chargeant
-   20 lots implique 20 signatures. Un écran de signature groupée est peut-être
-   nécessaire.
-5. **Date « shipped on board ».** Aujourd'hui la date d'émission est l'instant
-   du clic. Un BL antidaté est une fraude documentaire et une exclusion de
-   garantie. La date doit venir du chargement réel (`Booking.loaded_at`, qui
-   existe et n'est jamais utilisé) ou de l'ATD.
+   Note : `3` reste **constant** (réponse 5.1), donc
+   `services/pdf_generator.py:99` n'a pas besoin d'être paramétré — mais la
+   mention « 3 OBL signés » doit disparaître du **draft**, qui n'est pas signé.
 
 ---
 
 ## 6. Estimation et séquencement
 
-| Étape | Charge | Dépendance |
+| Étape | Charge | État / dépendance |
 |---|---|---|
-Journalisation du portail client (volet 1 du §4.3) | 0,5 j | aucune — **livrable dès le J2** |
-Fusion Alembic (RAF R1) | 0,5 j | validation manager |
+Journalisation des mutations du portail (volet 1 du §4.3) | 0,5 j | ✅ **FAIT** (2026-08-03, commit `1cb1d40`) — aucune migration |
+Fusion Alembic (RAF R1) | 0,5 j | ⏸️ **prête**, en attente de **Julien** (retour le 2026-08-17) |
+Notify party au formulaire du portail (§5.3) | 0,25 j | aucune — champs déjà en base et audités |
 Migration + machine à états + transitions tracées | 2 j | fusion Alembic |
-Écrans (génération draft, validation client, signature commandant) | 2 j | ci-dessus |
+Écrans (génération draft, validation client, signature) | 2 j | ci-dessus. Signature **unitaire + groupée** (§5.2) |
+Date *shipped on board* dérivée + override justifié (§5.0) | 1 j | ci-dessus. **Mécanisme partagé** avec le lot relèves |
+Registre de remise des originaux (§5.1) | 1,5 j | ci-dessus — table + écran client + repli Opérations avec PJ |
 Filigrane draft / BL final / révisions | 1 j | ci-dessus |
 Séquence non recyclable + upsert de l'import Excel | 1 j | ci-dessus |
 
-**Total ≈ 6,5 jours** hors décisions du §5. C'est un **lot structurant**, pas un
-quick win : il touche un document juridiquement opposable et mérite la revue du
-manager.
+**Total ≈ 10,25 jours**, dont **0,5 livré**. Révisé à la hausse depuis
+l'estimation initiale de 6,5 j : les réponses du §5 ajoutent le **registre de
+remise** (exigence nouvelle, non demandée initialement) et la **date dérivée avec
+override justifié**. Les deux sont des ajouts de valeur, pas des dérives de
+périmètre.
+
+C'est un **lot structurant**, pas un quick win : il touche un document
+juridiquement opposable (titre de propriété, prescription Hague-Visby d'un an) et
+mérite la revue de Julien.
+
+> 🔁 **Mutualisation à ne pas manquer** : le motif *valeur dérivée → override →
+> justification obligatoire* est demandé **deux fois**, ici pour la date
+> *shipped on board* (§5.0) et dans le lot relèves pour les durées de contrat
+> (`REFERENCE_METIER_RELEVES_EQUIPAGE.md` §3.2). À construire **une seule fois**.
+> Le dépôt porte déjà un précédent proche : `validation_engine.get_threshold`
+> (MRV v2, « zéro seuil en dur », résolution fail-closed + snapshot d'audit).
 
 **Ce qui est livrable immédiatement au J2, sans migration ni décision** : la
 journalisation des mutations du portail client (elle est de toute façon requise
