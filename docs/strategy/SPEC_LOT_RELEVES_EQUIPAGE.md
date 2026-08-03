@@ -222,8 +222,13 @@ Décalque de `ValidationRuleThreshold`, adapté à la clé `(poste, manning)`.
 Quatre vocabulaires coexistent dans les classeurs (anglais complet, abréviations,
 français, codes étoilés) plus l'énumération `CREW_ROLES` de MyTOWT.
 
-**Une liste canonique unique** — `CREW_ROLES` existant, étendu si nécessaire — avec
-une table d'alias d'affichage et d'import :
+✅ **LIVRÉ le 2026-08-03.** ⚠️ **Correction de cette spec** : le tableau ci-dessous
+proposait des valeurs canoniques **en anglais** (`master`, `chief_officer`…). C'est
+faux — l'enum canonique du projet est **en français** (`CREW_ROLES` :
+`capitaine`, `second`, `chef_mecanicien`…, avec `cook` pour seule exception).
+L'implémentation a donc **étendu l'existant** plutôt que d'introduire un cinquième
+vocabulaire. Table réelle : `crew_compliance.ROLE_SYNONYMS`, résolution par
+`parse_role_token`.
 
 | Canonique | Alias reconnus |
 |---|---|
