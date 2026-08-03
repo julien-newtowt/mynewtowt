@@ -628,3 +628,170 @@ d'escale** que les Opérations faisaient jusqu'ici sans contrainte (override
 tracé possible). Recommandation : le brancher en mode override-possible — le
 risque de ne rien faire est réglementaire (contrôle PAF, responsabilité
 armateur), le risque de le faire est une case à cocher de plus.
+
+---
+
+## 2026-08-03 — Lot workflow BL : ce qui est livrable sans migration
+
+Journée cadrée par une contrainte externe : **Julien est le seul à pouvoir valider
+une fusion** et il est absent jusqu'au 2026-08-17. Stratégie retenue avec Yasmin :
+**tout préparer, ne rien fusionner** (cf. `07-ordre-pr-et-merge.md` §1 bis).
+
+### Base de la branche — un choix contraint, pas une commodité
+
+`feat/bl-workflow` dérive de **deux** lots, et il le fallait :
+
+- **lot 3** (`fix/alembic-merge-heads`) : `alembic revision` exige une **tête
+  unique**. Brancher sur `main` produirait une migration rattachée à l'une des
+  deux têtes divergentes ⇒ migration à refaire après fusion.
+- **lot 1** (`chore/ci-integration-tests`) : il porte **la spec BL elle-même**
+  (absente de `main`) **et** les 11 corrections de tests périmés. Sans lui, la
+  référence de test compterait une vingtaine d'échecs connus — inacceptable pour
+  détecter une régression sur un lot qui touche un **titre de propriété**.
+
+Fusion à blanc testée : zéro conflit. Référence de test établie **avant** toute
+modification : **2000 passés / 15 échoués / 1 ignoré** (les 15 = rendus PDF
+WeasyPrint absents de l'hôte Windows).
+
+### 🔴 Une migration parasite était posée sur la migration de fusion
+
+`migrations/versions/4f4eeb7bfc89_.py` — créée le 2026-08-03 à 10:05:28, **non
+suivie par git**, `upgrade()` et `downgrade()` vides, intitulée « empty message »,
+révisant `20260730_0113`. Origine quasi certaine : le **hook du harnais qui lance
+`alembic`** (RAF R8).
+
+⚠️ **Cela requalifie R8** : ce hook ne produit pas seulement du bruit au commit,
+il **peut polluer la chaîne de migrations**. Si ce fichier avait été commité,
+toute migration ultérieure se serait enchaînée depuis une révision anonyme et
+vide, et le contrôle de tête aurait désigné la mauvaise.
+
+Fichier **déplacé** (non supprimé) vers le dossier de travail temporaire. Tête
+rétablie et vérifiée : 121 révisions, tête unique `20260730_0113`.
+
+### Deux défauts dans mes propres outils de vérification
+
+1. **Mon script de contrôle des têtes Alembic** ne gérait pas les déclarations
+   annotées (`down_revision: Union[str, None] = "…"`) et a annoncé **deux têtes**
+   là où il n'y en avait qu'une. Attrapé en recoupant avec le résultat réel
+   d'`alembic heads` obtenu la veille — sans ce recoupement, je signalais un faux
+   problème. Corrigé.
+2. **Deux de mes nouveaux tests passaient à vide** : sans aucune journalisation,
+   « le token n'apparaît pas dans le journal » est trivialement vrai sur zéro
+   ligne. Gardes anti-succès-à-vide ajoutées ⇒ **8 sur 8** échouent désormais sur
+   l'ancien code.
+
+### Volet livré 1 — journalisation des 8 mutations du portail (commit `1cb1d40`)
+
+**Correction d'un constat que j'avais énoncé trop fortement** : j'avais dit
+« aucun appel de journalisation ». Faux. Les opérations de batch alimentaient bien
+`PackingListAudit` (champ par champ, via `create_batch` / `apply_batch_update`).
+Ce qui manquait réellement :
+
+- **zéro entrée dans `activity_logs`** (le journal append-only de
+  `/admin/activity-logs`) — c'est pourtant la piste qu'un P&I club réclame ;
+- `actor_name=None` partout : la piste disait « client » sans jamais dire lequel ;
+- **deux routes tracées nulle part** : la soumission de la packing list (qui
+  change son état) et l'envoi d'un message.
+
+**Choix de conception — on ne nomme volontairement personne.** Le portail est
+**anonyme par conception** : quiconque détient le lien agit, et ce peut être un
+transitaire. Écrire un nom de société laisserait croire à une attribution que rien
+ne vérifie. Le libellé est `portal:PL<id>` (canal + dossier), l'IP est
+enregistrée, et l'expéditeur déclaré reste lisible sur chaque batch.
+
+**Erreur de ma conception, attrapée par les tests** : j'avais écrit
+`pl.shipper_name`. **`PackingList` ne porte aucun champ d'identité d'expéditeur** —
+les parties (shipper / notify / consignee) vivent sur `PackingListBatch`. Ce code
+aurait levé une `AttributeError` à **chaque mutation du portail** en production.
+La spécification suggérait ce champ : elle se trompait aussi. Un test fige
+désormais le constat (`assert not hasattr(pl, "shipper_name")`).
+
+Le corps d'un message n'est **pas** dupliqué dans le journal (longueur seulement) :
+il est déjà persisté dans `portal_messages`, et `/admin/activity-logs` a une
+surface de lecture plus large.
+
+**Durcissement, pas correction de bug** : `get_by_token` comparait
+`token_expires_at` (naïf sous SQLite) à `datetime.now(UTC)` (aware). En production
+la valeur vient toujours de `default_token_expiry()`, donc aware — **ce n'est pas
+un bug applicatif constaté**, c'est la limite Postgres-free de la suite (RAF R5).
+Mais l'expiration de token est un contrôle de sécurité : rendue **testable**
+plutôt que contournée en fixture, via `planning.ensure_utc`.
+
+Vérifié **par AST** (pas par grep) qu'aucun des 10 appels de journalisation ne
+reçoit le token sous quelque forme que ce soit.
+
+### Volet livré 2 — notify party au formulaire du portail
+
+Décision de Yasmin : « Notify party & consignee à saisir depuis le portail
+expéditeur ». État constaté : les cinq colonnes `notify_*` existaient **déjà** sur
+`PackingListBatch` **et** figuraient **déjà** dans `AUDITABLE_FIELDS`. Le backend
+les acceptait même déjà via `coerce_batch_form`. **Seule l'interface manquait** —
+si bien que tout BL issu d'une packing list remplie par l'expéditeur sortait
+**sans notify party**, sans que rien ne le signale.
+
+Ajoutés au formulaire d'édition **et** de création, avec les 4 libellés dans les
+**5 catalogues** i18n. « Notify party » reste en anglais partout, comme
+« Consignee » l'est déjà : c'est un terme du connaissement.
+
+9 tests, dont **7 échouent sur l'ancien code**. Les 2 qui passent des deux côtés
+vérifient un comportement **préexistant et correct** (couverture d'audit +
+acceptation backend) — ce sont des garde-fous contre une régression future, pas
+des tests de ce changement. Distinction consignée pour ne pas surestimer la
+couverture.
+
+### ⛔ Volet NON livré — le retrait du rail booking, et pourquoi
+
+La spec prévoyait de retirer le rail booking **avant** ce lot. **L'inventaire des
+routes invalide ce séquencement.**
+
+| Route | Public | Remplacement |
+|---|---|---|
+| `/cargo/packing-lists/{pl}/batches/{b}/bl.pdf` | staff | *(la cible)* |
+| `/cargo/booking/{ref}/bl.pdf` · `.docx` | staff | ✅ rail packing list |
+| `/me/bookings/{ref}/bl.pdf` · `.docx` | **client** | ❌ **AUCUN** |
+
+🔴 **Le rail packing list n'a aucune route côté client**, et
+`templates/client/booking_detail.html:199` expose un bouton visible
+« 📄 Bill of Lading » pointant vers la route booking.
+
+Retirer maintenant supprimerait **la seule façon pour un client d'obtenir son
+connaissement**, sans remplacement, pendant tout le délai d'attente. Régression
+fonctionnelle visible ⇒ **refusé**, en application de la méthode de développement
+prudent.
+
+Séquencement corrigé (dans le lot, pas avant) : créer les routes client du rail
+packing list → rebrancher le bouton client → **alors** retirer les 4 routes
+booking et leurs 3 entrées staff.
+
+Point de conception soulevé au passage : un booking peut porter **plusieurs
+batches**, donc plusieurs BL, alors que l'URL client est au niveau du booking. Le
+choix (lister les BL / un document par batch) appartient au lot.
+
+### Décisions métier obtenues de Yasmin (les 5 points de la spec sont tranchés)
+
+1. **Date « shipped on board » = dernier jour des opérations**, lu depuis la
+   timeline d'escale, modifiable par les Opérations **sous justification** avec
+   journal « en cas de contrôle ».
+2. **Toujours 3 originaux** — aucun paramétrage. **Mais** nouvelle exigence : un
+   **suivi de réception** (horodatage du téléchargement client et/ou case de
+   confirmation, **plus** un repli Opérations avec date, heure, moyen et pièce
+   jointe si le BL part en papier). C'est précisément le registre de remise dont
+   l'absence exclut la *misdelivery* de la couverture P&I.
+3. **Signature du commandant au choix** : unitaire **ou** groupée, les deux modes.
+4. **Marchandises** depuis la packing list, **parties** depuis le portail.
+
+🔁 **Mutualisation identifiée** : le motif *valeur dérivée → override →
+justification obligatoire* est demandé **deux fois** — ici pour la date *shipped
+on board*, et dans le lot relèves pour les durées de contrat. À construire **une
+seule fois**. Précédent proche dans le dépôt : `validation_engine.get_threshold`
+(MRV v2, « zéro seuil en dur », résolution fail-closed + snapshot d'audit).
+
+**Estimation révisée : 6,5 j → 10,25 j**, dont 0,75 livré. La hausse vient des
+deux ajouts du §5 (registre de remise, date dérivée avec override justifié) — des
+**ajouts de valeur**, pas des dérives de périmètre, et signalés comme tels.
+
+### Reste à faire sur ce lot
+
+Plus rien de livrable sans migration. La suite (machine à états, écrans, registre
+de remise, routes client, retrait du rail booking) attend **la fusion du lot 3 par
+Julien**.

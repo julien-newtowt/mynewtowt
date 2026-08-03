@@ -238,12 +238,50 @@ Les cinq champs `notify_name` / `notify_address` / `notify_postal` /
 manque uniquement leur exposition dans `templates/portal/packing.html`.
 **Correctif court, à embarquer dans ce lot.**
 
-### 5.4 Le rail booking
+### 5.4 Le rail booking — ⛔ le retrait **ne peut pas** précéder ce lot
 
 Décision D2 acte que les documents sont générés depuis les packing lists. Le rail
-booking (`/cargo/booking/{ref}/bl.pdf`) produit un BL **sans consignataire ni
-notify party** : à retirer. La réponse 5.3 le confirme indirectement — les parties
-se saisissent au portail, donc sur la packing list, pas sur le booking.
+booking produit un BL **sans consignataire ni notify party** : il doit disparaître.
+La réponse 5.3 le confirme — les parties se saisissent au portail, donc sur la
+packing list, pas sur le booking.
+
+**Mais l'inventaire des routes (fait le 2026-08-03) invalide le séquencement
+initialement prévu** (« à retirer dans le lot J2, avant ce lot-ci ») :
+
+| Route | Rail | Public | Remplacement disponible ? |
+|---|---|---|---|
+| `/cargo/packing-lists/{pl_id}/batches/{batch_id}/bl.pdf` | **packing list** | staff | — *(c'est la cible)* |
+| `/cargo/booking/{ref}/bl.pdf` | booking | staff | ✅ la route packing list |
+| `/cargo/booking/{ref}/bl.docx` | booking | staff | ✅ idem |
+| `/me/bookings/{ref}/bl.pdf` | booking | **client** | ❌ **AUCUN** |
+| `/me/bookings/{ref}/bl.docx` | booking | **client** | ❌ **AUCUN** |
+
+🔴 **Le rail packing list n'a aucune route côté client.** Et l'interface client
+expose un bouton visible « 📄 Bill of Lading »
+(`templates/client/booking_detail.html:199`) qui pointe vers la route booking.
+
+⇒ **Retirer le rail booking maintenant supprimerait la seule façon pour un client
+d'obtenir son connaissement**, sans remplacement, pour toute la durée d'attente
+(retour de Julien + implémentation). C'est une régression fonctionnelle
+visible — exactement ce que la méthode de développement prudent interdit.
+
+**Séquencement corrigé.** Le retrait n'est pas un préalable, c'est une
+**conséquence** : il se fait *dans* ce lot, une fois les routes client du rail
+packing list créées, et dans cet ordre :
+
+1. créer les routes client du rail packing list (draft filigrané / BL final selon
+   `bl_state`) ;
+2. **rebrancher** le bouton client `booking_detail.html:199` dessus ;
+3. **alors** retirer les 4 routes du rail booking et leurs 3 entrées staff
+   (`staff/cargo/booking_detail.html` ×2, `staff/cargo/index.html` ×1).
+
+**Point de conception à trancher en route** : un booking peut porter **plusieurs
+batches**, donc plusieurs BL, alors que l'URL client est au niveau du booking. Il
+faut choisir entre lister les BL du booking ou produire un document par batch —
+ce choix appartient à ce lot, pas à un correctif préalable.
+
+**Ce qui a été fait sans risque en attendant** : l'ajout du notify party au
+formulaire du portail (§5.3), pure addition sans retrait.
 2. ~~Qui valide côté client ?~~ ✅ **TRANCHÉ (Yasmin, 2026-07-29)**
 
    **C'est le client titulaire du booking qui valide le draft**, depuis l'espace
@@ -276,7 +314,8 @@ se saisissent au portail, donc sur la packing list, pas sur le booking.
 |---|---|---|
 Journalisation des mutations du portail (volet 1 du §4.3) | 0,5 j | ✅ **FAIT** (2026-08-03, commit `1cb1d40`) — aucune migration |
 Fusion Alembic (RAF R1) | 0,5 j | ⏸️ **prête**, en attente de **Julien** (retour le 2026-08-17) |
-Notify party au formulaire du portail (§5.3) | 0,25 j | aucune — champs déjà en base et audités |
+Notify party au formulaire du portail (§5.3) | 0,25 j | ✅ **FAIT** (2026-08-03) — champs déjà en base et audités, seule l'exposition manquait |
+Routes client du rail packing list, puis retrait du rail booking (§5.4) | 1 j | ⛔ **ne peut PAS précéder ce lot** — retirer maintenant priverait le client de tout BL |
 Migration + machine à états + transitions tracées | 2 j | fusion Alembic |
 Écrans (génération draft, validation client, signature) | 2 j | ci-dessus. Signature **unitaire + groupée** (§5.2) |
 Date *shipped on board* dérivée + override justifié (§5.0) | 1 j | ci-dessus. **Mécanisme partagé** avec le lot relèves |
