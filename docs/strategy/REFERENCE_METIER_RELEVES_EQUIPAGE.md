@@ -179,14 +179,30 @@ de paramétrage, pas un littéral dans le code.
 > que d'inventer un second mécanisme de paramétrage. La reproductibilité d'audit
 > y est d'autant plus nécessaire que le résultat part en paie (§3.1).
 
-**⏳ Question restée ouverte — ma formulation était ambiguë.** J'avais demandé
-« les élèves : 60 ou 90 ? » en parlant de la **durée de contrat** ; la réponse
-reçue (`0,3 / jour embarqué`) porte sur le **coefficient d'acquisition**, qui est
-bien confirmé. La contradiction sur la durée reste donc à trancher :
-`ANEMOS` F13/F14 = `90` **en dur**, `ARTEMIS` F13/F14 =
-`=SI(poste="DECK CADET";60;90)` ⇒ **60**. Les deux feuilles se contredisent. Si la
-durée est paramétrable par l'Armement, la question devient : **quelle valeur par
-défaut** pour un élève ?
+### ✅ Précision de Yasmin (2026-08-03) : override **avec justification obligatoire**
+
+> **« Paramétrable, avec possibilité de modif pour des cas en particulier avec
+> mot de justification. »**
+
+Le modèle attendu est donc à **trois niveaux**, et le troisième n'est pas
+optionnel :
+
+| Niveau | Nature | Qui |
+|---|---|---|
+| 1. Défaut paramétrable | durée par manning / par poste, en base | Armement (écran de paramétrage) |
+| 2. Override par cas | valeur différente sur une relève précise | Armement |
+| 3. **Justification textuelle** | **obligatoire** dès qu'un override est posé | l'auteur de l'override |
+
+⇒ **Refuser l'enregistrement d'un override sans justification.** C'est ce qui
+distingue les valeurs `60` / `70` / `90` saisies en dur dans Excel — aujourd'hui
+indiscernables d'une erreur — d'une décision assumée et lisible six mois plus
+tard. Le résultat partant en paie (§3.1), la justification est aussi la trace
+d'audit en cas de contestation.
+
+**⏳ Reste à préciser** : la **valeur par défaut** pour un élève.
+`ANEMOS` F13/F14 = `90` **en dur** contre `ARTEMIS` F13/F14 =
+`=SI(poste="DECK CADET";60;90)` ⇒ **60**. Les deux feuilles se contredisent ; le
+paramétrage doit bien partir d'une valeur.
 
 ### 3.3 Énumérations
 
@@ -223,10 +239,18 @@ Feuille `data`, colonne `Navire` : `ANEMOS`, `ARTEMIS`, `ATLANTIS`, `ATLAS`,
 annulés pour l'instant.** Ne pas les modéliser ; ne pas les supprimer de la
 référence pour autant — « pour l'instant » n'est pas « définitivement ».
 
-La feuille `VIETNAM` du classeur équipage n'est **pas** un navire : elle recense
-un équipage par poste (Master, Chief Officer, Mate, Chief Engineer, Fitter/Oiler,
-BOSUN, AB1, AB2, Cook, Deck Cadet) — vraisemblablement l'équipe de supervision de
-construction / livraison au Vietnam. À confirmer.
+✅ **La feuille `VIETNAM` n'est pas un navire** (confirmé par Yasmin le
+2026-08-03) : c'est le **personnel qui se trouve au Vietnam**, recensé par poste
+(Master, Chief Officer, Mate, Chief Engineer, Fitter/Oiler, BOSUN, AB1, AB2, Cook,
+Deck Cadet).
+
+⚠️ **Conséquence de modélisation** : une affectation peut donc être rattachée à un
+**lieu** et non à un navire. Cela recoupe l'arbitrage A4 (`CrewAssignment.leg_id`
+nullable pour l'embarquement hors voyage) mais va plus loin : ici il n'y a **ni
+leg, ni navire**. Un statut « à terre au Vietnam » n'est ni `embarqué` ni
+`débarqué` au sens des coefficients (§3.1) — reste à savoir lequel s'applique
+(`embarqué autre` ? `formation` ? `conduite` ?). À clarifier avec l'Armement lors
+du lot relèves.
 
 ### 3.5 Postes — **quatre vocabulaires** pour les mêmes fonctions
 
@@ -320,11 +344,11 @@ Réponses de Yasmin, transmises par l'Armement le **2026-08-03**.
 |---|---|---|
 | 1 | Les coefficients d'acquisition font-ils foi ? Alimentent-ils la paie ? | ✅ **« Fixé par la société et transmis à Silae pour la paie »** ⇒ normatifs, adjacents à la paie (cf. §3.1) |
 | 2 | Élèves : 60 ou 90 jours ? | 🟡 **Partiel** — le **coefficient** est confirmé à `0,3 / jour embarqué`. La **durée de contrat** reste à trancher (ma question était ambiguë, cf. §3.2) |
-| 3 | Les overrides de durée sont-ils volontaires ? | ✅ **« Paramétrable par l'Armement »** ⇒ paramètre en base + écran, jamais un littéral (cf. §3.2) |
+| 3 | Les overrides de durée sont-ils volontaires ? | ✅ **« Paramétrable, avec possibilité de modif pour des cas en particulier avec mot de justification »** ⇒ défaut en base + override par cas + **justification obligatoire** (cf. §3.2) |
 | 4 | Flotte | ✅ `ARIES` et `ATHENAIS` **annulés pour l'instant** |
 | 5 | `Db` = doublure ? `*` = poste obligatoire ? | ✅ **« Doublure et l'étoile, ça veut dire obligatoire »** ⇒ l'astérisque marque un **poste obligatoire**, et un poste `Db` signale une **doublure obligatoire**. Lecture à confirmer : un navire ne peut appareiller sans le poste étoilé pourvu **ni sans doublure désignée** là où elle est exigée |
 | 6 | `liste des marins` = vivier de CV externe ? | ✅ **« Annuaire à ne pas ajouter en MyTOWT »** ⇒ **hors périmètre**, définitivement. Les 1801 lignes ne sont pas importées |
-| 7 | Feuille `VIETNAM` = équipe de supervision de construction ? | ⏳ non répondu |
+| 7 | Feuille `VIETNAM` = équipe de supervision de construction ? | ✅ **« Personnel qui est au Vietnam »** ⇒ pas un navire, un **lieu**. Conséquence de modélisation en §3.4 |
 
 ### Ce que les réponses changent
 
