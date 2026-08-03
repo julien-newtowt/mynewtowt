@@ -12,10 +12,17 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_portal_unread_counts_and_mark_read(db):
+    # ``booking_id`` requis par ``ck_packing_lists_order_xor_booking`` (FK
+    # réellement appliquée) : la fixture précédait cette contrainte.
+    from app.models.booking import Booking
     from app.models.packing_list import PackingList, PortalMessage
     from app.services import messaging
+    from tests.integration.test_mrv_reprise import _setup_leg
 
-    db.add(PackingList(id=1))
+    await _setup_leg(db)  # leg id=1
+    db.add(Booking(id=1, reference="BK-PORTAL-1", leg_id=1, status="confirmed"))
+    await db.flush()
+    db.add(PackingList(id=1, booking_id=1))
     await db.flush()
     db.add(PortalMessage(packing_list_id=1, sender="client", body="bonjour de l'expéditeur"))
     db.add(PortalMessage(packing_list_id=1, sender="staff", body="réponse de l'armateur"))
