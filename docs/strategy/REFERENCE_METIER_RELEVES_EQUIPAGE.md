@@ -199,47 +199,61 @@ indiscernables d'une erreur — d'une décision assumée et lisible six mois plu
 tard. Le résultat partant en paie (§3.1), la justification est aussi la trace
 d'audit en cas de contestation.
 
-### 🟡 Valeurs par défaut — **une contradiction à lever avant implémentation**
+### ✅ Valeurs par défaut — **matrice (poste × manning)**, tranchée le 2026-08-03
 
-Deux réponses successives de Yasmin le 2026-08-03 s'opposent sur la durée d'un
-élève :
+> « Gardons **90 par défaut pour les élèves TOWT**. Pour les PMS, ça sera **une
+> autre valeur**. Idéalement il faudra **garder la structure**, car cela peut
+> évoluer et je préfère anticiper. »
 
-| # | Réponse | Élève |
+Une première réponse (« 60 ») avait été donnée puis **corrigée** par celle-ci, qui
+fait foi.
+
+| | **TOWT** | **PMS** |
 |---|---|---|
-| 1 | « **60** » (à la question « quelle valeur par défaut pour un élève ? ») | 60 j |
-| 2 | « Pour les marins embauché TOWT, **uniquement les élèves embarquent 90 jours**. Les autres embarquent 60 » | **90 j** |
+| Hors élève | **60 j** | **90 j** |
+| **Élève / Deck Cadet** | **90 j** | ⏳ **autre valeur, à préciser** |
 
-**Lecture retenue à titre provisoire : la réponse 2**, plus tardive, plus
-explicite et auto-cohérente. Elle donne :
-
-| Population | Durée par défaut |
-|---|---|
-| **TOWT** — hors élève | **60 j** |
-| **TOWT** — élève / Deck Cadet | **90 j** |
-| **PMS** | **90 j** |
-
-⚠️ **Cette lecture inverse l'arbitrage des classeurs** par rapport à la réponse 1 :
-- `ANEMOS` F13/F14 = `90` **en dur** pour les élèves ⇒ **CORRECT** ;
+⚠️ **Cet arbitrage inverse la lecture des classeurs qu'on aurait faite
+spontanément** :
+- `ANEMOS` F13/F14 = `90` **en dur** pour les élèves ⇒ **CORRECT** (ce n'était pas
+  une erreur de saisie) ;
 - `ARTEMIS` F13/F14 = `=SI(poste="DECK CADET";60;90)` ⇒ renvoie **60** pour un
   élève ⇒ **la formule est FAUSSE**.
 
-🔴 **À confirmer avant de coder** — le résultat part en paie (§3.1), et les deux
-réponses conduisent à des soldes de congés différents. Tant que ce n'est pas
-confirmé, **ne pas figer la valeur en base**.
+⛔ **Ne pas inventer la valeur PMS/élève.** Elle est annoncée comme différente mais
+n'est pas fournie : le paramétrage doit accepter la cellule **vide**, et la
+résolution retomber alors sur le niveau supérieur (PMS = 90 j) **en signalant** que
+la valeur spécifique manque — jamais en la présentant comme voulue.
 
-**Conséquence de modélisation, valable dans les deux lectures** : le défaut d'un
-élève dépend de son **poste**, pas seulement de sa société de manning. La règle
-`SI(manning="TOWT";60;90)` ne suffit donc pas — il faut une résolution en cascade
-**(poste, manning) → (manning) → défaut**, exactement la forme que
-`validation_engine.get_threshold` implémente déjà pour le MRV.
+### 🔑 Structure imposée : la cascade, même là où une exception suffirait
 
-Sous la lecture retenue, TOWT et PMS convergent d'ailleurs à 90 j pour les
-élèves — mais par deux chemins différents, ce qui ne dispense pas de la cascade
-(rien ne garantit que ça reste vrai après un changement de paramètre).
+Yasmin demande explicitement de **garder la structure** pour anticiper les
+évolutions. Ce n'est donc **pas** un cas particulier à coder en exception :
 
-C'est précisément le genre d'écart qu'un tableur exprime mal : les deux classeurs
-se contredisent, et **aucun des deux ne porte de justification** permettant de
-savoir lequel fait foi.
+```
+résolution d'une durée :
+    (poste, manning)     ← cellule la plus spécifique
+ →  (manning)            ← règle par société de manning
+ →  défaut codé          ← dernier recours, jamais silencieux
+```
+
+C'est **exactement** la forme de `validation_engine.get_threshold` (MRV v2 :
+`(règle, navire)` → `(règle, NULL)` → défaut, cache 60 s, **fail-closed**, avec
+**snapshot des valeurs consommées** pour la reproductibilité d'audit). Le lot
+relèves doit s'aligner sur ce mécanisme plutôt qu'en créer un second.
+
+Le snapshot d'audit n'est pas un luxe ici : le résultat part en paie (§3.1). Si un
+solde de congés est contesté six mois plus tard, il faut pouvoir dire **quelles
+valeurs étaient en vigueur ce jour-là** — d'autant que Yasmin annonce que la
+matrice va évoluer.
+
+À cette matrice s'ajoute, par-dessus, l'**override par cas avec justification
+obligatoire** (cf. bloc suivant). Trois niveaux au total : matrice paramétrable →
+override ponctuel → justification exigée.
+
+Cet écart à deux dimensions est précisément ce qu'un tableur exprime mal : les
+deux classeurs se contredisent, et **aucun des deux ne porte de justification**
+permettant de savoir lequel fait foi.
 
 ### 3.3 Énumérations
 
@@ -388,7 +402,7 @@ Réponses de Yasmin, transmises par l'Armement le **2026-08-03**.
 | # | Question | Réponse |
 |---|---|---|
 | 1 | Les coefficients d'acquisition font-ils foi ? Alimentent-ils la paie ? | ✅ **« Fixé par la société et transmis à Silae pour la paie »** ⇒ normatifs, adjacents à la paie (cf. §3.1) |
-| 2 | Élèves : 60 ou 90 jours ? | 🟡 **CONTRADICTOIRE** — deux réponses opposées le 2026-08-03 (« 60 », puis « uniquement les élèves embarquent 90 jours »). Lecture provisoire : **90 j**. **À confirmer avant de coder** (cf. §3.2). Le coefficient d'acquisition, lui, est confirmé à `0,3 / jour embarqué` |
+| 2 | Élèves : 60 ou 90 jours ? | ✅ **90 j pour un élève TOWT** (2026-08-03, après correction d'une première réponse « 60 »). PMS/élève = **autre valeur, non fournie**. La **structure en matrice (poste × manning) est imposée** pour anticiper les évolutions (cf. §3.2). Coefficient d'acquisition confirmé à `0,3 / jour embarqué` |
 | 3 | Les overrides de durée sont-ils volontaires ? | ✅ **« Paramétrable, avec possibilité de modif pour des cas en particulier avec mot de justification »** ⇒ défaut en base + override par cas + **justification obligatoire** (cf. §3.2) |
 | 4 | Flotte | ✅ `ARIES` et `ATHENAIS` **annulés pour l'instant** |
 | 5 | `Db` = doublure ? `*` = poste obligatoire ? | ✅ **« Doublure et l'étoile, ça veut dire obligatoire »** ⇒ l'astérisque marque un **poste obligatoire**, et un poste `Db` signale une **doublure obligatoire**. Lecture à confirmer : un navire ne peut appareiller sans le poste étoilé pourvu **ni sans doublure désignée** là où elle est exigée |
@@ -406,19 +420,19 @@ plus structurante : le résultat part en paie. Cela déplace le niveau d'exigenc
 explicitement exclu (réponse 6), et le planning navire existe déjà dans l'ERP
 (§2.3). Ce qui reste est plus étroit mais plus exigeant.
 
-**Les 7 questions ont reçu une réponse**, et le coefficient du personnel au
-Vietnam est également tranché (`embarqué`). La conception du lot n'est plus bloquée.
+✅ **Toutes les questions sont tranchées.** Le coefficient du personnel au Vietnam
+(`embarqué`) et la matrice des durées le sont également. **La conception du lot
+n'est plus bloquée par aucune question métier.**
 
-**Un seul point doit être levé avant d'écrire du code** :
+Reste **une valeur à fournir**, qui ne bloque pas la conception puisque la
+structure l'accueille déjà :
 
-🔴 **La durée par défaut d'un élève** — deux réponses contradictoires (cf. §3.2).
-Lecture provisoire retenue : **90 j**. Le résultat partant en paie, cette valeur ne
-sera pas figée en base sans confirmation.
+- ⏳ **PMS / élève** — annoncée comme différente de 90 j, non communiquée. Le
+  paramétrage acceptera la cellule vide et retombera sur PMS = 90 j **en le
+  signalant**, jamais en la présentant comme la valeur voulue.
 
-Et un point à confirmer **en cours d'implémentation** :
-
-- **La cascade `(poste, manning) → (manning) → défaut`** doit être validée sur
-  d'autres postes que l'élève. Y a-t-il d'autres fonctions dont la durée ne suit
-  pas la règle par société de manning ? Si l'élève est le seul cas, une exception
-  simple suffirait — mais il vaut mieux le savoir avant de choisir la structure de
-  paramétrage.
+**Instruction d'architecture à ne pas contourner** (Yasmin, 2026-08-03) : garder
+la **structure en cascade** même là où une exception suffirait aujourd'hui — « cela
+peut évoluer et je préfère anticiper ». La question « l'élève est-il le seul cas
+particulier ? » devient donc **sans objet** : la matrice les accueille tous, connus
+ou à venir.
