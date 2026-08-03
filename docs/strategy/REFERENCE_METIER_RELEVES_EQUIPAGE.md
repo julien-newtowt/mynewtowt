@@ -132,9 +132,27 @@ d'« anticiper les futures relèves ».
 `débarquement + 12`, `+ 55`, `+ 59` — durées apparemment arbitraires, en réalité
 **dérivées du solde acquis**.
 
-⚠️ **Portée** : ce n'est pas un indicateur de pilotage, c'est un **compteur de
-droits**, adjacent à la paie (la feuille `data` porte les **matricules**).
-À clarifier avant toute implémentation (cf. §5, question 1).
+### 🔴 Portée confirmée par Yasmin (2026-08-03) — ce n'est pas du pilotage
+
+> **« Fixé par la société et transmis à Silae pour la paie. »**
+
+Ces coefficients sont donc **normatifs et alimentent la paie**. Trois conséquences
+qui changent la nature du lot :
+
+1. **Ce n'est pas un indicateur, c'est un calcul de droits.** Une erreur ne
+   produit pas un écran faux — elle produit un **bulletin de paie faux**. Le
+   niveau d'exigence de test et de traçabilité est celui de la paie, pas celui
+   d'un tableau de bord.
+2. **La cible d'intégration existe déjà** dans MyTOWT : `SilaeExportBatch`,
+   `services/silae_export.build_evp_csv` (EVP = éléments variables de paie, CSV
+   `;` + BOM UTF-8), route et journal des lots dans `rh_router` (L5), avec le
+   cycle `generated` → `sent` → …
+3. **Le pont marin ↔ salarié existe** : `Employee.crew_member_id` (FK optionnelle
+   vers `crew_members`). Le chaînage
+   `relève → jours par statut → coefficient → EVP → Silae` est donc **plombé de
+   bout en bout sauf le maillon central**, qui est précisément celui qui manque.
+
+⚠️ **Le cadet est confirmé à `0,3` par jour embarqué** (réponse 2 de Yasmin).
 
 ### 3.2 Durée de contrat — un **défaut**, pas une règle
 
@@ -146,12 +164,29 @@ la contournent régulièrement :
 - `ANEMOS` G7/G8/G11/G12 et `Feuil7` F9 : **dates de fin due écrites à la main**,
   donc figées si la date de début change.
 
-⇒ Le modèle doit prévoir **valeur calculée par défaut + override explicite avec
-motif**, jamais l'application aveugle de la formule.
+### ✅ Réponse de Yasmin (2026-08-03) : **« Paramétrable par l'Armement »**
 
-**Contradiction non résolue sur les élèves** : `ANEMOS` F13/F14 = `90` en dur,
-`ARTEMIS` F13/F14 = `=SI(poste="DECK CADET";60;90)` ⇒ **60**. Les deux feuilles
-se contredisent (cf. §5, question 2).
+Les durées ne sont donc **pas** une constante métier à coder : ce sont des
+**paramètres dont l'Armement est propriétaire**. Le modèle doit exposer un écran
+de paramétrage, pas un littéral dans le code.
+
+> 🔁 **Motif déjà présent dans le dépôt, à réutiliser** : le MRV v2 applique
+> exactement cette règle (« **zéro seuil en dur** ») via
+> `validation_rule_thresholds` + `validation_engine.get_threshold` — cache 60 s,
+> résolution **fail-closed** `(règle, navire)` → `(règle, NULL)` → défaut codé,
+> avec override par navire et **snapshot des seuils consommés** pour la
+> reproductibilité d'audit. Le lot relèves devrait s'aligner sur ce motif plutôt
+> que d'inventer un second mécanisme de paramétrage. La reproductibilité d'audit
+> y est d'autant plus nécessaire que le résultat part en paie (§3.1).
+
+**⏳ Question restée ouverte — ma formulation était ambiguë.** J'avais demandé
+« les élèves : 60 ou 90 ? » en parlant de la **durée de contrat** ; la réponse
+reçue (`0,3 / jour embarqué`) porte sur le **coefficient d'acquisition**, qui est
+bien confirmé. La contradiction sur la durée reste donc à trancher :
+`ANEMOS` F13/F14 = `90` **en dur**, `ARTEMIS` F13/F14 =
+`=SI(poste="DECK CADET";60;90)` ⇒ **60**. Les deux feuilles se contredisent. Si la
+durée est paramétrable par l'Armement, la question devient : **quelle valeur par
+défaut** pour un élève ?
 
 ### 3.3 Énumérations
 
@@ -279,16 +314,29 @@ Les durées saisies en dur (60 / 70 / 90) et les dates de fin due manuelles
 
 ## 7. Questions ouvertes (Yasmin se renseigne auprès de l'Armement)
 
-| # | Question | Statut |
-|---|---|---|
-| 1 | **Les coefficients d'acquisition font-ils foi ?** Alimentent-ils la paie (Silae) ou restent-ils un outil de pilotage ? Qui en est propriétaire — Armement, RH, paie ? | ⏳ |
-| 2 | **Élèves : 60 ou 90 jours ?** Les feuilles se contredisent | ⏳ |
-| 3 | **Les overrides de durée** (60/70/90 en dur) sont-ils volontaires ? Faut-il un motif obligatoire ? | ⏳ |
-| 4 | **Flotte** | ✅ `ARIES` et `ATHENAIS` **annulés pour l'instant** |
-| 5 | **`Db` = doublure ? `*` = poste obligatoire ?** | ⏳ |
-| 6 | **`liste des marins`** = vivier de CV externe (navires BOURBON) et non des embarquements NEWTOWT ? | ⏳ |
-| 7 | **Feuille `VIETNAM`** = équipe de supervision de construction, et non un navire ? | ⏳ |
+Réponses de Yasmin, transmises par l'Armement le **2026-08-03**.
 
-**Aucune implémentation ne démarre avant les réponses 1 à 3** : elles déterminent
-si le lot est un outil de planification ou un compteur de droits — deux périmètres
-très différents.
+| # | Question | Réponse |
+|---|---|---|
+| 1 | Les coefficients d'acquisition font-ils foi ? Alimentent-ils la paie ? | ✅ **« Fixé par la société et transmis à Silae pour la paie »** ⇒ normatifs, adjacents à la paie (cf. §3.1) |
+| 2 | Élèves : 60 ou 90 jours ? | 🟡 **Partiel** — le **coefficient** est confirmé à `0,3 / jour embarqué`. La **durée de contrat** reste à trancher (ma question était ambiguë, cf. §3.2) |
+| 3 | Les overrides de durée sont-ils volontaires ? | ✅ **« Paramétrable par l'Armement »** ⇒ paramètre en base + écran, jamais un littéral (cf. §3.2) |
+| 4 | Flotte | ✅ `ARIES` et `ATHENAIS` **annulés pour l'instant** |
+| 5 | `Db` = doublure ? `*` = poste obligatoire ? | ✅ **« Doublure et l'étoile, ça veut dire obligatoire »** ⇒ l'astérisque marque un **poste obligatoire**, et un poste `Db` signale une **doublure obligatoire**. Lecture à confirmer : un navire ne peut appareiller sans le poste étoilé pourvu **ni sans doublure désignée** là où elle est exigée |
+| 6 | `liste des marins` = vivier de CV externe ? | ✅ **« Annuaire à ne pas ajouter en MyTOWT »** ⇒ **hors périmètre**, définitivement. Les 1801 lignes ne sont pas importées |
+| 7 | Feuille `VIETNAM` = équipe de supervision de construction ? | ⏳ non répondu |
+
+### Ce que les réponses changent
+
+**Le lot est un calcul de droits, pas un outil de pilotage.** La réponse 1 est la
+plus structurante : le résultat part en paie. Cela déplace le niveau d'exigence
+(tests, traçabilité, reproductibilité d'audit) et impose de s'aligner sur le motif
+`validation_engine` déjà en place pour le MRV.
+
+**Le périmètre se réduit sur deux fronts** : l'annuaire de 1801 lignes est
+explicitement exclu (réponse 6), et le planning navire existe déjà dans l'ERP
+(§2.3). Ce qui reste est plus étroit mais plus exigeant.
+
+**Une seule question bloque encore un détail** (la durée par défaut d'un élève,
+réponse 2), et une reste sans réponse (réponse 7, feuille `VIETNAM`). Ni l'une ni
+l'autre n'empêche de concevoir le lot.
