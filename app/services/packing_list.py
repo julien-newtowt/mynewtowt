@@ -30,6 +30,7 @@ from app.models.packing_list import (
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.services.activity import record as activity_record
+from app.services.planning import ensure_utc
 
 # CARGO-03 — champs de batch éditables soumis à l'audit field-by-field.
 AUDITABLE_FIELDS: tuple[str, ...] = (
@@ -82,7 +83,15 @@ async def get_by_token(db: AsyncSession, token: str) -> PackingList | None:
     ).scalar_one_or_none()
     if pl is None:
         return None
-    if pl.token_expires_at is not None and pl.token_expires_at < datetime.now(UTC):
+    # `ensure_utc` : les colonnes `DateTime(timezone=True)` reviennent aware sous
+    # Postgres mais NAÏVES sous SQLite, et comparer naïf à aware lève
+    # `TypeError`. En production la valeur vient toujours de
+    # `default_token_expiry()`, donc aware — ce n'est PAS un bug applicatif
+    # constaté, mais un durcissement : il rend l'expiration de token — un
+    # contrôle de sécurité — réellement testable, et immunise le chemin si une
+    # valeur naïve y arrivait un jour par une autre voie.
+    expires = ensure_utc(pl.token_expires_at)
+    if expires is not None and expires < datetime.now(UTC):
         return None
     return pl
 
