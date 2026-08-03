@@ -23,6 +23,67 @@ signaler dans la PR et fusionner dans l'ordre.
 
 ---
 
+## 1 bis. 🔴 Contrainte structurante — un seul valideur, absent jusqu'au 17 août
+
+**Julien est la seule personne compétente pour valider une fusion vers `main`**
+(confirmé par Yasmin le 2026-08-03). Ce n'est pas une question de droits GitHub :
+c'est la seule personne en mesure de juger techniquement un merge. Il est en
+congés **jusqu'au 2026-08-17**.
+
+**Conséquence : rien ne part sur `main` avant son retour.** Y compris la fusion
+Alembic, qui débloque pourtant tout lot portant une migration.
+
+### Stratégie retenue : tout préparer, ne rien fusionner
+
+Attendre passivement coûterait **2,5 semaines** sur une fenêtre qui se termine en
+septembre. On empile donc **délibérément**, en assumant l'exception au principe
+directeur ci-dessus :
+
+```
+main
+ └── fix/alembic-merge-heads          ← lot 3, tête unique Alembic (à valider en 1er)
+      ├── lot workflow BL             ← porte une migration ⇒ dérive du lot 3
+      ├── lot relèves d'équipage      ← portera une migration ⇒ dérive du lot 3
+      └── lot J9 horodatage           ← porte une migration ⇒ dérive du lot 3
+```
+
+**Pourquoi c'est acceptable ici** : `alembic revision` exige une tête unique. Un
+lot portant une migration et branché sur `main` produirait une révision rattachée
+à l'une des deux têtes divergentes — donc une migration **à refaire** après la
+fusion. Brancher sur le lot 3 évite ce travail perdu.
+
+**Ce que ça impose, sans exception** :
+
+1. **Chaque PR de lot dérivé mentionne explicitement sa dépendance** au lot 3 en
+   tête de description, avec la mention « ne pas fusionner avant le lot 3 ».
+2. **L'ordre de fusion du §2 devient impératif**, pas indicatif : fusionner un
+   lot dérivé avant le lot 3 emporterait la migration de fusion avec lui et
+   brouillerait l'historique de schéma.
+3. **Après la fusion du lot 3**, chaque lot dérivé est rebasé sur `main` avant sa
+   propre fusion (cf. §3.3), puis la suite complète est rejouée.
+4. Les lots **sans migration** continuent de partir de `main` directement et
+   restent indépendants — on n'empile que ce qui doit l'être.
+
+### Séquence prévue au retour de Julien (2026-08-17)
+
+| Ordre | Lot | Action |
+|---|---|---|
+| 1 | `chore/ci-integration-tests` (PR #149) | Sortir du brouillon → relecture → fusion. **Le filet d'abord**, il valide tous les suivants |
+| 2 | `docs/decouverte-fonctionnelle` | Doc seule, parallélisable |
+| 3 | `fix/alembic-merge-heads` | ⚠️ **Validation Julien indispensable** — touche l'historique de schéma. Débloque 4, 6, 7, 8 |
+| 4 | `feat/ops-quickwins` | Sans migration, peut passer avant le 3 |
+| 5 | `fix/crew-indicators-honest` | Dérive du lot 1 ⇒ après lui |
+| 6 | Lot workflow BL | Rebase sur `main` après le 3, puis fusion |
+| 7 | Lot relèves d'équipage | Idem — **et** en attente des réponses de l'Armement |
+| 8 | Lot J9 horodatage | Idem |
+
+> ⚠️ **À ne pas oublier au retour** : rejouer la suite **complète** après *chaque*
+> fusion (§3.3), et non une seule fois à la fin. Huit fusions d'affilée sans
+> revérification, c'est exactement la façon de casser `main` — l'incident que la
+> protection de branche absente (RAF R3) ne rattraperait pas.
+
+---
+
 ## 2. Ordre recommandé
 
 | # | Lot / branche | Contenu | Pourquoi à cette place | Risque |
