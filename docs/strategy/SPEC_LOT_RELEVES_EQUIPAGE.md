@@ -65,7 +65,24 @@ décision de relève  →  jours classés par statut  →  coefficient (matrice)
 
 ---
 
-## 3. 🔴 Décision d'architecture à prendre AVANT de coder
+## 3. ✅ Décision d'architecture — **option A retenue** (Yasmin, 2026-08-03)
+
+**MyTOWT planifie et simule ; Marad reste le registre des relèves décidées.**
+La synchro Marad demeure **en lecture seule**, et un écran de réconciliation
+affiche les écarts entre le plan MyTOWT et ce qui a réellement été saisi dans
+Marad. La double saisie est assumée comme le prix de l'absence de dépendance
+externe.
+
+Conséquence à tenir dans tout le lot : **trois registres coexistent**
+(`marad_crew_schedules`, `crew_assignments`, `CrewRotationPlan`). La règle d'or de
+`CLAUDE.md` — *tout indicateur d'équipage doit dire de quel registre il parle* —
+devient la contrainte structurante du lot, pas une recommandation. Voir R-D au §12.
+
+Le détail du choix est conservé ci-dessous pour mémoire.
+
+---
+
+## 3 bis. Le choix, pour mémoire
 
 **Qui détient la vérité d'une relève décidée ?** Le processus réel est :
 simulation Excel → décision Excel → **saisie dans Marad** → Marad resynchronise.
@@ -488,7 +505,7 @@ Julien autant que le workflow BL.
 
 | # | Risque / point | Portée |
 |---|---|---|
-R-A | **Décision §3 non prise** — coder sans trancher A/B exposerait à refaire le modèle | 🔴 bloquant |
+R-A | ✅ **LEVÉ 2026-08-03** — option A retenue : MyTOWT planifie et simule, Marad reste le registre, écran de réconciliation des écarts. Synchro Marad inchangée (lecture seule) | — |
 R-B | **Convention de comptage de l'acquisition non tranchée** (§6.1) — inclusive ou exclusive ? Effet direct sur la paie | 🟠 à trancher avec la paie avant le calcul |
 R-C | **Valeur PMS/élève absente** — la structure l'accueille, mais l'écran doit le signaler | 🟡 non bloquant |
 R-D | **Trois registres d'embarquement** — la règle d'or de `CLAUDE.md` devient critique. Tout nouvel indicateur doit dire de quel registre il parle | 🟠 discipline permanente |
