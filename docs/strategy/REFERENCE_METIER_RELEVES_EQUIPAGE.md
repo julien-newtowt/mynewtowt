@@ -199,10 +199,28 @@ indiscernables d'une erreur — d'une décision assumée et lisible six mois plu
 tard. Le résultat partant en paie (§3.1), la justification est aussi la trace
 d'audit en cas de contestation.
 
-**⏳ Reste à préciser** : la **valeur par défaut** pour un élève.
-`ANEMOS` F13/F14 = `90` **en dur** contre `ARTEMIS` F13/F14 =
-`=SI(poste="DECK CADET";60;90)` ⇒ **60**. Les deux feuilles se contredisent ; le
-paramétrage doit bien partir d'une valeur.
+### ✅ Valeurs par défaut — arbitrage complet (Yasmin, 2026-08-03)
+
+| Population | Durée par défaut |
+|---|---|
+| Personnel **TOWT** | **60 j** |
+| Personnel **PMS** | **90 j** |
+| **Élève / Deck Cadet** | **60 j** |
+
+La contradiction des classeurs est donc tranchée **en faveur d'ARTEMIS** :
+`ARTEMIS` F13/F14 = `=SI(poste="DECK CADET";60;90)` ⇒ 60 est la bonne règle ; le
+`90` **saisi en dur** dans `ANEMOS` F13/F14 est une **erreur**, pas un override
+assumé — aucune justification ne l'accompagne.
+
+⚠️ **Conséquence à retenir pour l'implémentation** : le défaut d'un élève dépend de
+son **poste**, pas de sa société de manning. La règle générale
+`SI(manning="TOWT";60;90)` ne suffit donc pas — il faut une résolution en cascade
+**(poste, manning) → (manning) → défaut**, exactement la forme que
+`validation_engine.get_threshold` implémente déjà pour le MRV. Un élève employé
+par PMS reste donc à **60 j**, alors que la règle par manning lui donnerait 90.
+
+C'est précisément le genre d'écart qu'un tableur ne peut pas exprimer proprement —
+et la raison pour laquelle `ANEMOS` a fini avec une valeur figée à la main.
 
 ### 3.3 Énumérations
 
@@ -343,7 +361,7 @@ Réponses de Yasmin, transmises par l'Armement le **2026-08-03**.
 | # | Question | Réponse |
 |---|---|---|
 | 1 | Les coefficients d'acquisition font-ils foi ? Alimentent-ils la paie ? | ✅ **« Fixé par la société et transmis à Silae pour la paie »** ⇒ normatifs, adjacents à la paie (cf. §3.1) |
-| 2 | Élèves : 60 ou 90 jours ? | 🟡 **Partiel** — le **coefficient** est confirmé à `0,3 / jour embarqué`. La **durée de contrat** reste à trancher (ma question était ambiguë, cf. §3.2) |
+| 2 | Élèves : 60 ou 90 jours ? | ✅ **60 j** (2026-08-03) — et coefficient d'acquisition `0,3 / jour embarqué`. Le `90` en dur d'ANEMOS est une **erreur**, pas un override. ⚠️ Le défaut d'un élève dépend du **poste**, pas du manning ⇒ résolution en cascade nécessaire (cf. §3.2) |
 | 3 | Les overrides de durée sont-ils volontaires ? | ✅ **« Paramétrable, avec possibilité de modif pour des cas en particulier avec mot de justification »** ⇒ défaut en base + override par cas + **justification obligatoire** (cf. §3.2) |
 | 4 | Flotte | ✅ `ARIES` et `ATHENAIS` **annulés pour l'instant** |
 | 5 | `Db` = doublure ? `*` = poste obligatoire ? | ✅ **« Doublure et l'étoile, ça veut dire obligatoire »** ⇒ l'astérisque marque un **poste obligatoire**, et un poste `Db` signale une **doublure obligatoire**. Lecture à confirmer : un navire ne peut appareiller sans le poste étoilé pourvu **ni sans doublure désignée** là où elle est exigée |
@@ -361,6 +379,16 @@ plus structurante : le résultat part en paie. Cela déplace le niveau d'exigenc
 explicitement exclu (réponse 6), et le planning navire existe déjà dans l'ERP
 (§2.3). Ce qui reste est plus étroit mais plus exigeant.
 
-**Une seule question bloque encore un détail** (la durée par défaut d'un élève,
-réponse 2), et une reste sans réponse (réponse 7, feuille `VIETNAM`). Ni l'une ni
-l'autre n'empêche de concevoir le lot.
+**Les 7 questions sont désormais répondues.** Plus aucune ne bloque la conception
+du lot.
+
+Deux points restent à clarifier **en cours d'implémentation**, et ils sont nés des
+réponses elles-mêmes :
+
+1. **Quel coefficient d'acquisition pour le personnel au Vietnam ?** Une
+   affectation à un **lieu** (ni leg, ni navire) n'est ni `embarqué` ni
+   `débarqué`. `embarqué autre` ? `formation` ? `conduite` ? Ce n'est pas neutre :
+   les coefficients partent en paie.
+2. **La cascade de résolution des durées** — `(poste, manning) → (manning) →
+   défaut` — doit être confirmée sur d'autres postes que l'élève. Y a-t-il
+   d'autres fonctions dont la durée ne suit pas la règle par manning ?
