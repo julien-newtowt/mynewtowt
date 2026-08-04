@@ -326,7 +326,7 @@ d'un élève (90 j TOWT), qui est un paramètre distinct.
 |---|---|---|
 **Jours à bord** (contrat) | **exclusive** — `fin − début`, jour d'embarquement = 0 | Cohérent avec « contrat 60 j ⇒ fin = début + 60 ». C'est ce qu'Excel calcule |
 **Jours de présence Schengen** | **inclusive** | La règle 90/180 compte le jour d'entrée **et** celui de sortie |
-**Jours d'acquisition** | ⏳ **à confirmer** | Ni l'un ni l'autre par défaut : c'est un décompte de **jours travaillés**, à trancher avec la paie |
+**Jours d'acquisition** | ✅ **ni l'une ni l'autre — la question se dissout** | L'accord d'entreprise compte en **« jour travaillé »**, pas en durée entre deux dates. On classe donc chaque **jour calendaire** dans **exactement une position** et on applique son taux. Aucune ambiguïté de borne : le jour du voyage est en position `conduite`, celui à bord en position `embarqué` |
 
 **Contrainte de nommage, non négociable** : toute fonction de comptage dit dans son
 **nom** et sa **docstring** quelle convention elle applique.
@@ -511,7 +511,9 @@ Julien autant que le workflow BL.
 | # | Risque / point | Portée |
 |---|---|---|
 R-A | ✅ **LEVÉ 2026-08-03** — option A retenue : MyTOWT planifie et simule, Marad reste le registre, écran de réconciliation des écarts. Synchro Marad inchangée (lecture seule) | — |
-R-B | **Convention de comptage de l'acquisition non tranchée** (§6.1) — inclusive ou exclusive ? Effet direct sur la paie | 🟠 à trancher avec la paie avant le calcul |
+R-B | ✅ **LEVÉ 2026-08-03** par les accords d'entreprise du 2024-03-22 : l'unité est le **jour travaillé**, donc un classement de chaque jour dans une position unique — l'article 10 rend cette exclusivité **obligatoire en droit**. La question inclusive/exclusive ne se pose plus | — |
+R-H | 🔴 **Divergence accord ↔ Excel sur le détaché à terre** : l'accord fixe **0,675 j/j**, l'Excel applique **0,9** à une ligne `télétravail` et n'a aucune ligne à 0,675. Soit surcrédit de 0,225 j/j (6,75 j par mois de 30 j), soit statut manquant | 🔴 **à trancher avec la paie / les RH avant tout calcul** |
+R-I | ⚠️ **Le taux de 0,9 inclut déjà les congés payés** (3 j/mois), les repos hebdomadaires, les jours fériés et les heures supplémentaires. **Ne jamais ajouter de CP par-dessus** le résultat du grand livre — ce serait un double paiement | 🟠 discipline d'implémentation |
 R-C | **Valeur PMS/élève absente** — la structure l'accueille, mais l'écran doit le signaler | 🟡 non bloquant |
 R-D | **Trois registres d'embarquement** — la règle d'or de `CLAUDE.md` devient critique. Tout nouvel indicateur doit dire de quel registre il parle | 🟠 discipline permanente |
 R-E | **`*` et `Db` groupés sous « obligatoire »** — modélisés séparément par précaution | 🟡 à confirmer |
