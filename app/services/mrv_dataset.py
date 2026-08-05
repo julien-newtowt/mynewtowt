@@ -367,17 +367,14 @@ async def build_ovdla_rows(
     density = await iec.resolve_density(db, vessel.id)
     port_map = await _leg_port_map(db, {ev.leg_id for ev in chain})
     rob_map = _rob_by_event(chain, engines, density)
-    # Cargo « deadweight carried » du voyage = celui du Departure (calculé par
-    # ``compute_cargo_mrv`` — repli sur ``cargo_mrv_t`` saisi tant que les
-    # hydrostatiques manquent, Q11) ; reporté sur toutes les lignes du leg
-    # (mouillages inclus, comme l'échantillon garde le cargo constant/voyage).
-    from app.models.vessel_env import VesselHydrostatics as _VH
-
-    hydro = list((await db.execute(select(_VH).where(_VH.vessel_id == vessel.id))).scalars().all())
+    # Cargo « deadweight carried » du voyage = celui du Departure (saisi
+    # directement par le Master, ``compute_cargo_mrv`` — CDC v0.7, G10) ;
+    # reporté sur toutes les lignes du leg (mouillages inclus, comme
+    # l'échantillon garde le cargo constant/voyage).
     leg_cargo: dict[int, Decimal | None] = {}
     for ev in chain:
         if ev.event_type == "departure" and isinstance(ev, PortCallEvent):
-            leg_cargo[ev.leg_id] = iec.compute_cargo_mrv(ev, vessel, hydro).cargo_mrv_t
+            leg_cargo[ev.leg_id] = iec.compute_cargo_mrv(ev).cargo_mrv_t
     row_event_ids = {
         ev.id
         for ev in chain

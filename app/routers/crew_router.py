@@ -11,12 +11,14 @@ Reprise des écrans riches de la V3.0.0 :
 from __future__ import annotations
 
 import contextlib
+import logging
+import secrets
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from datetime import date as _date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +47,8 @@ from app.services.crew_compliance import (
 )
 from app.templating import brand_for_lang, templates
 
+logger = logging.getLogger("crew")
+
 router = APIRouter(prefix="/crew", tags=["crew"])
 
 
@@ -57,6 +61,12 @@ CREW_ROLES = (
     "bosco",
     "marin",
     "eleve_officier",
+    # Ajoutés pour le trombinoscope Armement (cf.
+    # docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md §11) — fonctions
+    # observées sur le gabarit réel sans équivalent jusqu'ici.
+    "electricien",
+    "ajusteur",
+    "matelot_cuisinier",
 )
 # REQUIRED_ROLES (armement réglementaire) : source unique dans
 # services.crew_compliance — importé ci-dessus (FLX-06).
@@ -1192,6 +1202,155 @@ async def crew_border_police_pdf(
         content=pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="CrewList_{vessel.code}.pdf"'},
+    )
+
+
+@router.post("/trombinoscope.pdf")
+async def crew_directory_pdf(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "C")),
+):
+    """Trombinoscope Armement — régénération manuelle à la demande.
+
+    Marins actifs regroupés par fonction (ou par agence de sous-traitance),
+    à partir des données les plus récentes disponibles. Archive une ligne
+    ``generated_reports`` (``generated_by`` = utilisateur courant) avant de
+    renvoyer le PDF — **POST** (pas GET) car cette route a un effet de bord
+    (écriture), protégée par le token CSRF du formulaire comme toute mutation
+    du projet (sécurité 2026-07-20 : un GET avec effets de bord contournait
+    structurellement CSRFMiddleware, qui ne valide jamais les méthodes sûres
+    GET/HEAD/OPTIONS).
+
+    **Pas de notification ici** (review 2026-07-20) : l'utilisateur qui
+    déclenche cette régénération est déjà informé (il vient de cliquer) —
+    seule la génération automatique mensuelle (scheduler ou endpoint de
+    secours) notifie le rôle ``armement``, qui télécharge ensuite via
+    ``GET /crew/trombinoscope/latest.pdf`` pour diffusion (ex. par email) à
+    l'ensemble de la société. Cf.
+    docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-3).
+    """
+    from fastapi.responses import Response
+
+    from app.services import crew_directory as directory_svc
+    from app.services import report_archive
+    from app.services.pdf_generator import render_crew_directory
+
+    directory_svc.invalidate_cache()  # génération manuelle = données fraîches
+    directory = await directory_svc.build_directory(db)
+    period = datetime.now(UTC).date()
+    doc = render_crew_directory(directory=directory, period=period)
+    period_token = f"{period.year:04d}-{period.month:02d}"
+    try:
+        await report_archive.save_report(
+            db,
+            pdf_bytes=doc.pdf,
+            report_type="trombinoscope",
+            period=period_token,
+            generated_by=user.id,
+        )
+    except Exception:
+        # L'archivage ne doit jamais priver l'utilisateur du PDF déjà rendu
+        # en mémoire (review 2026-07-20) — on logue et on continue.
+        logger.exception("Échec de l'archivage du trombinoscope (génération manuelle)")
+    return Response(
+        content=doc.pdf,
+        media_type=doc.mime,
+        headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
+    )
+
+
+@router.get("/trombinoscope/latest.pdf")
+async def crew_directory_latest_pdf(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("crew", "C")),
+):
+    """Télécharge le dernier trombinoscope déjà généré (auto ou manuel), sans
+    en régénérer un nouveau — lecture seule, donc **GET** légitime (pas
+    d'effet de bord, contrairement à ``crew_directory_pdf`` ci-dessus).
+
+    C'est la cible du lien de la notification ``trombinoscope_generated`` :
+    l'Armement reçoit la notification à la génération mensuelle, clique,
+    télécharge, puis diffuse le PDF (ex. par email) à l'ensemble de la
+    société — cf. docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-5).
+    """
+    from fastapi.responses import Response
+
+    from app.services import report_archive
+    from app.services.safe_files import resolve_path
+
+    report = await report_archive.latest_report(db, report_type="trombinoscope")
+    if report is None:
+        raise HTTPException(status_code=404, detail="Aucun trombinoscope n'a encore été généré")
+    try:
+        content = resolve_path(report.file_path).read_bytes()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Fichier introuvable") from exc
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="Trombinoscope_{report.period}.pdf"'
+        },
+    )
+
+
+trombinoscope_api_router = APIRouter(prefix="/api/trombinoscope", tags=["trombinoscope-api"])
+
+
+def _trombinoscope_expected_token() -> str | None:
+    from app.config import settings
+
+    return (settings.trombinoscope_api_token or "").strip() or None
+
+
+@trombinoscope_api_router.post("/generate")
+async def trombinoscope_generate_api(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Cron externe (Power Automate, dernier jour du mois). Auth X-API-Token.
+
+    Même patron que ``POST /api/marad/refresh`` : 503 si le token n'est pas
+    configuré, 403 si invalide. Génère le trombinoscope à partir des données
+    les plus récentes, l'archive (``generated_reports``, ``generated_by``
+    NULL), et ne renvoie qu'un résumé JSON — le fichier est ensuite
+    consultable via l'archive, pas streamé dans la réponse du cron. Cf.
+    docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-4).
+    """
+    expected = _trombinoscope_expected_token()
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="TROMBINOSCOPE_API_TOKEN non configuré dans .env",
+        )
+    received = request.headers.get("x-api-token") or ""
+    if not secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=403, detail="X-API-Token invalide ou absent")
+
+    from app.services import crew_directory as directory_svc
+    from app.services import notifications, report_archive
+    from app.services.pdf_generator import render_crew_directory
+
+    directory_svc.invalidate_cache()
+    directory = await directory_svc.build_directory(db)
+    period = datetime.now(UTC).date()
+    doc = render_crew_directory(directory=directory, period=period)
+    period_token = f"{period.year:04d}-{period.month:02d}"
+    report = await report_archive.save_report(
+        db,
+        pdf_bytes=doc.pdf,
+        report_type="trombinoscope",
+        period=period_token,
+        generated_by=None,
+    )
+    await notifications.notify_trombinoscope_generated(db, period=period_token)
+    logger.info("Trombinoscope généré automatiquement (report_id=%s)", report.id)
+    return JSONResponse(
+        {
+            "report_id": report.id,
+            "period": report.period,
+            "member_count": directory.member_count,
+        }
     )
 
 

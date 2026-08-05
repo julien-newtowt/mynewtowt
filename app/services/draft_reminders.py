@@ -10,7 +10,11 @@ au-delà d'un délai doit alerter :
 
 Les deux seuils sont résolus via ``validation_engine.get_threshold`` (override
 navire possible, fail-closed sur le défaut codé). L'âge d'un brouillon est
-mesuré depuis ``created_at``.
+mesuré depuis ``last_saved_at`` (repli ``created_at`` si jamais sauvegardé) —
+**pas** ``created_at`` seul : un Master qui reprend un brouillon sur plusieurs
+sessions (l'usage même que l'autosave est censé couvrir) ne doit pas
+déclencher de fausse alerte à chaque passage du cron simplement parce que la
+création initiale remonte à plus de ``delai_rappel_brouillon_h`` (G3).
 
 **Idempotence** — un même brouillon ne redéclenche pas la même alerte à chaque
 passage du cron : avant de créer une notification, on vérifie l'absence d'une
@@ -29,7 +33,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.nav_event import NavEvent
@@ -54,13 +58,21 @@ def _edit_link(event_id: int) -> str:
     return f"/onboard/events/{event_id}/edit"
 
 
-def _age_hours(created_at: datetime | None, now: datetime) -> float:
+def _age_hours(since: datetime | None, now: datetime) -> float:
     """Âge en heures, robuste au mélange naïf (SQLite) / aware (Postgres)."""
-    if created_at is None:
+    if since is None:
         return 0.0
-    a = created_at if created_at.tzinfo is None else created_at.astimezone(UTC).replace(tzinfo=None)
+    a = since if since.tzinfo is None else since.astimezone(UTC).replace(tzinfo=None)
     b = now if now.tzinfo is None else now.astimezone(UTC).replace(tzinfo=None)
     return (b - a).total_seconds() / 3600.0
+
+
+def _last_saved(event: NavEvent) -> datetime | None:
+    """Référence d'âge du brouillon : ``last_saved_at`` (mis à jour à chaque
+    autosave), repli ``created_at`` si jamais explicitement sauvegardé (ne
+    devrait pas arriver — ``event_capture.create_draft`` l'initialise à la
+    création — mais reste défensif)."""
+    return event.last_saved_at or event.created_at
 
 
 @dataclass(frozen=True)
@@ -79,7 +91,7 @@ async def _draft_events(db: AsyncSession) -> list[NavEvent]:
             await db.execute(
                 select(NavEvent)
                 .where(NavEvent.status == "brouillon")
-                .order_by(NavEvent.created_at.asc())
+                .order_by(func.coalesce(NavEvent.last_saved_at, NavEvent.created_at).asc())
             )
         )
         .scalars()
@@ -103,7 +115,7 @@ async def select_dormant_drafts(
         siege_tv = await get_threshold(db, _RULE, "delai_alerte_siege_brouillon_h", ev.vessel_id)
         master_h = float(master_tv.value) if master_tv else float(_DEFAULT_RAPPEL_H)
         siege_h = float(siege_tv.value) if siege_tv else float(_DEFAULT_SIEGE_H)
-        age = _age_hours(ev.created_at, now)
+        age = _age_hours(_last_saved(ev), now)
         if age < master_h:
             continue
         out.append(

@@ -52,6 +52,7 @@ from app.models.escale import DockerShift, EscaleOperation
 from app.models.feature_flag import FeatureFlag
 from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
 from app.models.flgo import FlgoReading, FlgoTankCompartmentVolume, FlgoVoyageConsumptionRef
+from app.models.generated_report import GeneratedReport
 from app.models.hr_absence import HrAbsence
 from app.models.hr_review import HrReview
 from app.models.insurance import InsuranceContract
@@ -132,7 +133,7 @@ from app.models.validation import (
     ValidationRuleThreshold,
 )
 from app.models.vessel import Vessel
-from app.models.vessel_env import VesselEngine, VesselHydrostatics, VesselTank
+from app.models.vessel_env import VesselEngine, VesselTank
 from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.models.voyage_highlight import VoyageHighlight
 from app.models.voyage_photo import VoyagePhoto
@@ -187,6 +188,7 @@ __all__ = [
     "FlgoReading",
     "FlgoTankCompartmentVolume",
     "FlgoVoyageConsumptionRef",
+    "GeneratedReport",
     "HrAbsence",
     "HrReview",
     "InsuranceContract",
@@ -263,7 +265,6 @@ __all__ = [
     "ValidationRuleThreshold",
     "Vessel",
     "VesselEngine",
-    "VesselHydrostatics",
     "VesselPosition",
     "VesselTank",
     "VesselWeather",

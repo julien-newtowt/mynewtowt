@@ -178,9 +178,13 @@ Application par fonction (mapping Q4, décision actée) :
      (parametres mrv:S), 937-1007 (validations mrv:M) ; dashboard_env_router.py:133
      (kpi:C), 554/592 (mrv:C), 237 (mrv:S) -->
 
-> Note : `operation`, `technique` et `manager_maritime` détiennent `mrv:M` par
-> défaut — la validation siège leur est donc accessible. Resserrable **en base**
-> (overrides ARC-04) sans changement de code, au choix du client.
+> **Choix assumé, confirmé (G11)** : le CDC ne prévoit que 3 profils habilités à
+> la validation siège du Carbon Report (Master / Environmental Manager-DPA /
+> Administrateur), mais `operation`, `technique` et `manager_maritime`
+> détiennent tous `mrv:M` par défaut — un périmètre plus large que le modèle
+> CDC. Ce n'est **pas un oubli de configuration** : c'est un choix produit
+> délibéré, confirmé explicitement par le porteur du projet. Resserrable **en
+> base** (overrides ARC-04) sans changement de code si le besoin évolue.
 
 ---
 
@@ -204,12 +208,12 @@ sans code) : <!-- source: referential_env.py:89-141 ; vessel_env.py -->
   | `FWD_GEN`, `AFT_GEN` (groupes électrogènes) | `AE` | oui |
   | `PORT_SHAFT_GEN`, `STBD_SHAFT_GEN` (lignes d'arbre) | `NULL` | **non — exclus** |
 
-- **hydrostatiques** (`vessel_hydrostatics` : tirant d'eau ↔ déplacement m³) :
-  table **vide par conception** (Q11, données officielles à fournir) —
-  l'interpolation Cargo MRV est prête, le repli « valeur saisie » est actif.
-- évolution `vessels` : `lightweight_t`, `default_fuel_type` (défaut `MDO`),
-  `water_density_default_t_m3` (repli 1,025 t/m³).
-  <!-- source: vessel.py:115-129 ; inter_event_compute.py:61 -->
+- évolution `vessels` : `lightweight_t`, `deadweight_t` (G17, symétrique de
+  `lightweight_t` — distinct du `dwt` commercial pré-existant, hors périmètre
+  MRV), `default_fuel_type` (défaut `MDO`), `water_density_default_t_m3`
+  (repli 1,025 t/m³). Les deux poids sont purement informatifs, aucun n'est
+  lu par `compute_cargo_mrv` (G10).
+  <!-- source: vessel.py ; inter_event_compute.py -->
 
 ### 3.2 Facteurs d'émission multi-GES versionnés
 
@@ -334,20 +338,13 @@ speed_kn    = distance_nm / duration_h                # si durée > 0
 
 ### 4.6 Cargo MRV (EU 2016/1928)
 
-`compute_cargo_mrv` sur un PortCall : <!-- source: inter_event_compute.py:496-565 -->
+`compute_cargo_mrv` sur un PortCall : <!-- source: inter_event_compute.py -->
 
 1. `vessel_condition = "ballast"` ⇒ **cargo MRV = 0** (méthode `ballast_zero`) ;
-2. laden + tirants d'eau AV/AR + hydrostatiques + `lightweight_t` connus ⇒
-   ```
-   tirant_moyen_m     = (draft_fwd_m + draft_aft_m) / 2
-   déplacement_m3     = interpolation linéaire de la courbe hydrostatique
-                        (clamp aux points extrêmes hors bornes)
-   cargo_mrv_t        = déplacement_m3 × densité_eau − lightweight_t − consommables_t
-   ```
-   (densité d'eau : `vessels.water_density_default_t_m3`, repli 1,025 t/m³) ;
-3. sinon ⇒ **repli sur la valeur saisie** `cargo_mrv_t` (méthode
-   `declared_fallback`) — c'est le mode effectif actuel, hydrostatiques
-   absentes (Q11).
+2. sinon ⇒ **valeur saisie directement par le Master**, `cargo_mrv_t` (méthode
+   `declared_fallback`) — décision CDC v0.7 du 09/07/2026 : MyTOWT n'a plus
+   vocation à recalculer cette valeur par interpolation hydrostatique (G10,
+   table `vessel_hydrostatics` retirée en conséquence).
 
 ### 4.7 Assiettes de consommation
 
@@ -356,7 +353,7 @@ speed_kn    = distance_nm / duration_h                # si durée > 0
 | **Totale voyage** | Σ des consos d'intervalle du leg |
 | **Mouillage** | Σ des intervalles **entièrement contenus** dans une fenêtre Begin→End Anchoring |
 | **Hors mouillage** | totale − mouillage — **c'est l'assiette d'émission** (MRV) |
-| **Escale** | Arrival (leg N) → Departure (leg N+1) du même navire — portée par le rapport **Stopover** (deltas de compteurs pendant l'escale) ; non matérialisée dans le summary (`conso_escale_t = None`) |
+| **Escale** | Arrival (leg N) → Departure (leg N+1) du même navire — formule R14b résolue pour `Consommation_escale` (ROB déclarés + soutages, G12), repli deltas de compteurs (G2) si un ROB manque ; `None` tant que le Departure suivant n'est pas finalisé |
 
 En repli `legacy_noon` (voyage sans événements v2), tout est « hors mouillage » :
 l'assiette = Σ `total_consumption_t` des noon reports (sinon Σ moteurs) —
@@ -372,14 +369,17 @@ chiffres **identiques** à l'ancien `services.carbon`.
 CO₂ (TtW)  [t]      = conso_t × ef_co2                    # 3,206 (sans dimension t/t)
 CH₄ (TtW)  [g]      = conso_t × ef_ch4 × 1 000 000        # tonnes de GES → grammes
 N₂O (TtW)  [g]      = conso_t × ef_n2o × 1 000 000
+CO₂eq (TtW, GWP-100) [t] = conso_t × (ef_co2 + ef_ch4 × 25 + ef_n2o × 298)
+                      # Annexe I EU 2015/757 ; ≈ 3,26089 kgCO₂eq/kgFuel pour le MDO (G13)
 WtT [tCO₂eq]        = conso_t × 42 700 × wtt_gco2eq_per_mj / 1 000 000
                       # PCI MDO = 42 700 MJ/t ; intensité amont 17,7 gCO₂eq/MJ
 ```
 
-**Le WtT (well-to-tank, FuelEU) est une grandeur DISTINCTE, jamais sommée au
-CO₂ TtW.** CH₄/N₂O sont stockés et affichés **en grammes, à part** — jamais
-agrégés au CO₂ en tonnes (décision Q12 : calculés et affichés distinctement).
-<!-- source: emission_ledger.py:103-104,123 ; voyage_emission_summary.py:53-59 -->
+**Le WtT (well-to-tank, FuelEU) et le CO₂eq (TtW, GWP-100) sont deux grandeurs
+DISTINCTES, jamais sommées entre elles ni avec le CO₂ TtW seul.** CH₄/N₂O sont
+en outre stockés et affichés **en grammes, à part** — jamais agrégés au CO₂ en
+tonnes (décision Q12 : calculés et affichés distinctement).
+<!-- source: emission_ledger.py ; voyage_emission_summary.py -->
 
 ### 4.9 Intensités (adaptateur Carbon, CFOTE_09)
 
@@ -463,9 +463,10 @@ actifs) ; cron `POST /api/mrv/draft-reminders` (R19).
 <!-- source: validation_rules_catalog.py:39-46,1290-1393 -->
 
 **Routage des alertes** (`route_alerts`, idempotent — dédup 24 h +
-acquittement) : R10 et R24 → `administrateur` ; R14 **critique** →
+acquittement) : R10 et R24 → `administrateur` ; R14 **critique** et R27 →
 `manager_maritime` + `administrateur` ; R19 → auteur du brouillon (1ᵉʳ seuil)
-puis `manager_maritime` + `administrateur` (2ᵉ seuil).
+puis `manager_maritime` + `administrateur` (2ᵉ seuil). R28 (warning) n'a pas
+de routage dédié — visible via le run de règles standard, comme R08/R09/R11.
 <!-- source: validation_rules_catalog.py:1197-1287 ; draft_reminders.py:43 -->
 
 Légende seuils : ° = **provisoire** (`provisional=True`, à calibrer post-pilote).
@@ -480,7 +481,7 @@ Légende seuils : ° = **provisoire** (`provisional=True`, à calibrer post-pilo
 | R06 | ROB de référence aux escales (Departure/Arrival **seulement**) : manquant/négatif → bloquant ; = 0 → warning ; > borne → warning. Le Noon ne porte pas de ROB | event | bloquant / warning | `borne_max_rob_t` = 300 | — |
 | R07 | LOCODE des ports du voyage présents et à 5 caractères (1 évaluation/séquence) | event | warning | — | — |
 | R08 | Conso négative → bloquant ; nulle sur un Noon → warning ; > cible journalière → warning ; **escale > N jours sans conso ⇒ estimation par défaut TRACÉE** (0,21 t/j) | event | warning (bloquant si négative) | `seuil_conso_ref_l_j` = 750 ; `duree_escale_alerte_conso_manquante_j` = 2° ; `conso_estimee_defaut_t_j` = 0,21° | — |
-| R09 | v1 : distance déclarée vs calculée (haversine Thalos) ; v2 : horodatage d'escale vs référence ATD/ETD-ATA/ETA du leg | event | warning | `tolerance_distance_manuelle_nm` = 20° ; `tolerance_datetime_escale_h` = 6° | — |
+| R09 | v1 : distance déclarée vs calculée (haversine Thalos), **scopé à `position_source = manuel_justifie` uniquement (G16)** ; v2 : horodatage d'escale vs référence ATD/ETD-ATA/ETA du leg | event | warning | `tolerance_distance_manuelle_nm` = 20° ; `tolerance_datetime_escale_h` = 6° | — |
 | R10 | Monotonie des compteurs moteur : régression **non confirmée** → warning routé ; **escalade bloquante** au-delà du délai. Reset **confirmé** par l'Administrateur = nouvelle base | event | warning → bloquant (escalade) | `delai_confirmation_reset_j` = 3° | **administrateur** |
 | R11 | Bornes de plausibilité paramétrées (conso journalière, ROB) | event | warning | `seuil_conso_ref_l_j` = 750 ; `borne_max_rob_t` = 300 | — |
 | R12 | Copier-coller : ≥ 2 champs de mesure strictement identiques au relevé précédent | event | warning | — (constante structurelle : 2 champs) | — |
@@ -498,15 +499,19 @@ Légende seuils : ° = **provisoire** (`provisional=True`, à calibrer post-pilo
 | R24 | Chaque soutage BDN a une lecture FLGO « Received » sous N jours (cas réel : BDN 36039 non recoupé) | bunker | warning | `delai_flgo_bunkering_j` = 5° | **administrateur** |
 | R25 | Cohérence FLGO, 2 volets — Σ compartiments vs total déclaré (si détail présent) ; progression cohérente entre lectures consécutives. **Signale, ne corrige jamais** | flgo | warning | `tolerance_flgo_interne_m3` = 2° | — |
 | R26 | Chaînage : port d'arrivée du voyage N = port de départ du voyage N+1 (même navire) | voyage | warning | — | — |
+| R27 | Voyage en cours à la bascule d'année civile (31/12 24:00 UTC) sans événement Cut-off finalisé (G1, CDC v0.7 §9.2/§14.1) | voyage | warning → bloquant (escalade) | `tolerance_cutoff_h` = 24° ; `rappel_cutoff_avant_j` = 7° | **manager_maritime + administrateur** |
+| R28 | Distance haversine calculée (entre 2 Noon consécutifs) vs distance loguée par le bord (delta `distance_from_sosp_nm`) — sous-estimation systématique possible en flotte vélique, dégrade artificiellement l'EF_MRV affiché (G4, Matrice §8). Ne corrige jamais la distance utilisée pour Transport Work/EF_MRV | event | warning | `tolerance_distance_haversine_nm` = 20° | — |
+| R29 | Complétude des relevés Noon : voilure (`sail_readings`) et températures air/mer (`hold_readings`) manquantes — utiles à l'étude des conditions de transport et au calcul du profil de propulsion (G6, volet complétude originalement porté par R13, jamais codé) | event | info | — (contrôle de présence pur) | — |
+| R30 | ROB annexes (urée/eau douce) manquants sur un Noon — indépendants du calcul carburant, purement informatifs (G5, originalement porté par R11, jamais codé pour le nouveau modèle événementiel — `nav_events` n'avait aucune colonne pour ces ROB annexes avant G5) | event | warning | — (contrôle de présence pur) | — |
 | IR01 | Doublon de **jour** + type d'événement dans la séquence | event | bloquant | — | — |
 | IR02 | ROB(J) ≈ ROB(J−1) − conso ± soutage : écart > critique → bloquant ; > mineur → warning ; conso inconnue ⇒ abstention (relayé par R14) | event | bloquant / warning | bornes R14 (`mineur` 0,5° / `critique` 5°) ; `densite_defaut_t_m3` | — |
 | IR03 | ROB strictement **figé** sur ≥ N relevés consécutifs malgré une conso (cas réel : figé 4 j puis saut −7,6 t) ; conso totalement inconnue = suspect aussi | event | warning | `ir03_min_reports_figes` = 3° ; `ir03_conso_min_t` = 0,05° | — |
 | IR04 | Compteur carburant **régressant** sans reset documenté (`is_counter_reset`). Distinct de R10 : IR04 accepte un reset documenté, R10 exige la **confirmation** Administrateur | event | bloquant | — | — |
 | IR05 | Position strictement figée sur ≥ N relevés consécutifs **en mer** (Noon) malgré la marche | event | warning | `ir05_min_reports_figes` = 3° | — |
 
-Récapitulatif des seuils : **27 lignes** seedées, dont **21 provisoires** (°)
+Récapitulatif des seuils : **30 lignes** seedées, dont **24 provisoires** (°)
 et 6 confirmées (750 L/j ×2, 24 h, 0,845, 0,015, 300 t).
-<!-- source: validation_engine.py:161-232 -->
+<!-- source: validation_engine.py -->
 
 ### 5.1 Taxonomie qualité transverse
 
@@ -676,18 +681,19 @@ tonnage) — sinon **`theoretical`** (forfait 1,5 g/t·km). `resolve_distance_nm
 
 ## 9. Limites connues & backlog (honnête)
 
-1. **Hydrostatiques et capacités de cuves absentes (Q11).** `vessel_hydrostatics`
-   est vide et `vessel_tanks.capacity_m3` est NULL (plans officiels à obtenir).
-   Conséquences : le **cargo MRV est saisi** (repli `declared_fallback`, jamais
-   de calcul EU 2016/1928 effectif) et le volet « capacités » de **R23 est en
-   Info** (spécifié Bloquant en cible). Bascule automatique dès chargement des
-   données.
+1. **Capacités de cuves absentes (Q11).** `vessel_tanks.capacity_m3` est NULL
+   (plans officiels à obtenir). Conséquence : le volet « capacités » de
+   **R23 est en Info** (spécifié Bloquant en cible). Bascule automatique dès
+   chargement des données. (Le cargo MRV n'est, lui, plus concerné : il est
+   saisi directement par le Master depuis CDC v0.7, G10 — cf. §4.6.)
 2. **21 seuils provisoires sur 27** (`provisional=True`) — propositions Q8 à
    calibrer après le voyage pilote (écran `/mrv/parametres`). Les sévérités ont
    été choisies prudentes en attendant.
 3. **Distance OVDLA = haversine entre événements** (positions déclarées), pas la
-   distance loguée réelle. Amélioration identifiée au lot 10 : brancher une
-   distance journalisée (log/`voyage_track`).
+   distance loguée réelle — sous-estimation possible en flotte vélique
+   (louvoiement), jamais corrigée automatiquement mais désormais **visible**
+   (R28, G4 : écart vs `distance_from_sosp_nm` loguée par le bord). Amélioration
+   identifiée au lot 10 : brancher une distance journalisée (log/`voyage_track`).
 4. **Sourcing CH₄/N₂O/WtT non formalisé (Q12)** : les valeurs (5·10⁻⁵ /
    1,8·10⁻⁴ / 17,7) reprennent le template CFOTE_09 et le PDF DNV, sans
    référence réglementaire tracée ligne à ligne. À sourcer avant toute
@@ -707,9 +713,11 @@ tonnage) — sinon **`theoretical`** (forfait 1,5 g/t·km). `resolve_distance_nm
    source `CheckConsumption` du dossier client est cassée (`#REF!`) ; R15 ne
    croise cette référence que si elle est peuplée à la main / via l'import 2025.
    <!-- source: flgo.py:24-29 -->
-10. **`conso_escale_t` non matérialisée** dans `voyage_emission_summaries`
-    (None) : l'assiette escale vit dans le rapport Stopover.
-    <!-- source: emission_ledger.py:471 -->
+10. **`conso_escale_t` calculée (G12)** : formule R14b résolue pour
+    `Consommation_escale` (ROB déclarés + soutages), repli compteurs (G2) si
+    un ROB manque. Reste `None` tant que le Departure du leg suivant n'est
+    pas finalisé (escale en cours).
+    <!-- source: emission_ledger.py -->
 
 ---
 
@@ -721,7 +729,7 @@ tonnage) — sinon **`theoretical`** (forfait 1,5 g/t·km). `resolve_distance_nm
 | **BDN** | Bunker Delivery Note — note de livraison d'un soutage (n° unique, propriétés carburant) |
 | **Brouillon** | Événement/rapport en cours de saisie — exclu de tout calcul, repris par son auteur seul |
 | **Cargo B/L** | Cargaison commerciale au connaissement (Bill of Lading), en tonnes |
-| **Cargo MRV** | « Deadweight carried » réglementaire (EU 2016/1928) — calculé par hydrostatiques ou saisi (Q11) |
+| **Cargo MRV** | « Deadweight carried » réglementaire (EU 2016/1928) — saisi directement par le Master (CDC v0.7, G10) |
 | **CFOTE_05 / CFOTE_09** | Formulaires officiels TOWT : Noon Report / Carbon Report (cf. `docs/operations/reporting-templates.md`) |
 | **DMS** | Degrés-Minutes-Secondes — format de position exigé par l'OVDLA (interne : décimal) |
 | **DNV** | Société de classification / vérificateur MRV destinataire des datasets OVDLA/OVDBR |

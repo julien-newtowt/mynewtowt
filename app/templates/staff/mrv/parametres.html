@@ -188,4 +188,53 @@
   </table>
   </div>
 </section>
+
+{# ────────────────────── EEDI par navire (G15, scope navire uniquement) ────────────────────── #}
+<section class="card mb-4">
+  <h2 class="h4">{{ t('mrv_param_eedi', lang) }} <span class="pill pill-neutral">{{ dash_overrides|length }}</span></h2>
+  <p class="text-muted text-sm">{{ t('mrv_param_eedi_hint', lang) }}</p>
+  <div style="overflow-x:auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('mrv_param_col_vessel', lang) }}</th>
+        <th>{{ t('mrv_param_col_param', lang) }}</th>
+        <th>{{ t('mrv_param_col_value', lang) }}</th>
+        <th>{{ t('mrv_param_col_unit', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in dash_overrides %}
+      <tr>
+        <td>{% set v = vessel_by_id.get(d.vessel_id) %}{{ v.code if v else d.vessel_id }}</td>
+        <td><code>{{ d.parameter_name }}</code></td>
+        <td>
+          <form method="post" action="/mrv/parametres/dashboard/{{ d.id }}/update" class="row" style="gap:.4rem;align-items:center;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <input name="value" type="number" step="0.000001" min="0" required
+                   value="{{ d.value }}" style="max-width:9rem;" />
+            <button class="btn btn-sm btn-primary" type="submit">{{ t('mrv_param_save', lang) }}</button>
+          </form>
+        </td>
+        <td>{{ d.unit or '—' }}</td>
+      </tr>
+      {% endfor %}
+      {% if vessels %}
+      <tr>
+        <td colspan="4">
+          <form method="post" action="/mrv/parametres/dashboard/eedi/save" class="row" style="gap:.4rem;align-items:center;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <select name="vessel_id" required>
+              {% for v in vessels %}<option value="{{ v.id }}">{{ v.code }}</option>{% endfor %}
+            </select>
+            <input name="value" type="number" step="0.000001" min="0" required placeholder="eedi_design" style="max-width:9rem;" />
+            <button class="btn btn-sm" type="submit">{{ t('mrv_param_add_override', lang) }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+  </div>
+</section>
 {% endblock %}

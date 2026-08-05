@@ -10,6 +10,15 @@
   <div class="flex gap-2 items-center">
     <a href="/crew/compliance" class="btn btn-ghost"><i data-lucide="shield-check"></i> Compliance</a>
     <a href="/crew/calendar" class="btn btn-ghost"><i data-lucide="calendar"></i> Calendrier</a>
+    <a href="/crew/trombinoscope/latest.pdf" class="btn btn-ghost" target="_blank" title="Télécharger le dernier trombinoscope généré (auto ou manuel), sans le régénérer">
+      <i data-lucide="download"></i> Dernier trombinoscope
+    </a>
+    <form method="post" action="/crew/trombinoscope.pdf" style="display:inline;" target="_blank">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-ghost" title="Régénérer le trombinoscope avec les données les plus récentes (PDF)">
+        <i data-lucide="id-card"></i> Régénérer trombinoscope
+      </button>
+    </form>
     {% if marad_configured %}
     <form method="post" action="/crew/sync-marad" style="display:inline;">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />

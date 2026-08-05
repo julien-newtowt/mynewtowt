@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # Automate : run nocturne du moteur de règles — event + voyage +
     # inter-rapports sur les legs actifs de chaque navire). 503 si non configuré.
     mrv_quality_api_token: str | None = None
+    # G1 — Token X-API-Token pour POST /api/mrv/cutoff-reminders (cron Power
+    # Automate : rappel Master à l'approche d'une bascule d'année civile sans
+    # événement Cut-off finalisé, CDC v0.7 §9.2). 503 si non configuré.
+    mrv_cutoff_api_token: str | None = None
 
     # Marad (MaraSoft « Generic API ») — ship & crew management. Intégration
     # LECTURE SEULE des données crew (cf. docs/integrations/marad-crew-readonly.md).
@@ -134,6 +138,18 @@ class Settings(BaseSettings):
     # Relance J+1 sur devis non converti (nurturing avant-vente). Token du cron
     # externe (POST /api/quotes/followup, déclenché par Power Automate).
     quote_followup_api_token: str | None = None
+
+    # Trombinoscope Armement — génération automatique fin de mois (cf.
+    # docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md). Déclenchement
+    # PRINCIPAL : scheduler interne (APScheduler, cf. services.trombinoscope_scheduler)
+    # — seul usage d'un scheduler in-process du projet, toutes les autres
+    # automatisations passant par un cron externe. Toggle utile en dev local
+    # pour désactiver le scheduler (mêmes raisons que REQUIRE_MFA_FOR_ADMIN).
+    trombinoscope_scheduler_enabled: bool = True
+    # Token du endpoint manuel de secours (POST /api/trombinoscope/generate),
+    # même patron que MARAD_SYNC_TOKEN/WEATHER_API_TOKEN — utile pour forcer
+    # une génération sans attendre le scheduler (tests, incident).
+    trombinoscope_api_token: str | None = None
 
     # Note V3.1 — Stripe retiré de la facturation FRET : NEWTOWT facture le
     # fret par virement bancaire (cf. pdf/invoice.html), l'équipe commerciale
