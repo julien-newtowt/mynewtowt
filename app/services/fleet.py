@@ -1,6 +1,6 @@
 """Référentiel flotte pour la vitrine publique — source ERP unique.
 
-Le récit « 2 en opération, 4 en construction » et les horizons de livraison
+Le récit « 3 en opération, 3 en construction » et les horizons de livraison
 ne sont jamais des chaînes statiques dans un template : ils sont dérivés des
 lignes ``Vessel`` (``build_status`` + ``expected_delivery``). Modifier la
 flotte dans l'ERP (ou le seed) met à jour la page ``/flotte`` sans toucher au
@@ -180,8 +180,8 @@ async def roster(db: AsyncSession) -> FleetRoster:
     """Roster public de la flotte — cache 10 min, tolérant aux erreurs DB.
 
     Ordonné par ``Vessel.code`` : dans notre référentiel, l'ordre des codes
-    suit la chronologie de mise en service puis de livraison (Anemos, Artemis
-    en service ; Atlantis, Atlas, Archimedes, Astérias par échéance).
+    suit la chronologie de mise en service puis de livraison (Anemos, Artemis,
+    Atlantis en service ; Atlas, Archimedes, Astérias par échéance).
     """
     global _roster_cache, _roster_loaded_at
     now = time.monotonic()
