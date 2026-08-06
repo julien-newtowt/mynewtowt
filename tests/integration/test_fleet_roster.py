@@ -44,17 +44,13 @@ async def _seed_fleet(db) -> None:
         [
             Vessel(code="1", name="Anemos", build_status="operational"),
             Vessel(code="2", name="Artemis", build_status="operational"),
-            Vessel(
-                code="3",
-                name="Atlantis",
-                build_status="under_construction",
-                expected_delivery="2026-07",
-            ),
+            # Atlantis livré le 06/08/2026 → en service, sans horizon de livraison.
+            Vessel(code="3", name="Atlantis", build_status="operational"),
             Vessel(
                 code="4",
                 name="Atlas",
                 build_status="under_construction",
-                expected_delivery="2026-09",
+                expected_delivery="2026-10",
             ),
             Vessel(
                 code="5",
@@ -86,13 +82,13 @@ def test_parse_delivery_token():
 
 
 def test_delivery_label_is_localised():
-    v = fleet_svc.FleetVessel("Atlantis", "under_construction", 2026, 7)
-    assert v.delivery_label("fr") == "juillet 2026"
-    assert v.delivery_label("en") == "July 2026"
-    assert v.delivery_label("es") == "julio 2026"
-    assert v.delivery_label("pt-br") == "julho 2026"
-    assert v.delivery_label("vi") == "tháng 7 2026"
-    assert v.delivery_label("xx") == "juillet 2026"  # repli FR
+    v = fleet_svc.FleetVessel("Atlas", "under_construction", 2026, 10)
+    assert v.delivery_label("fr") == "octobre 2026"
+    assert v.delivery_label("en") == "October 2026"
+    assert v.delivery_label("es") == "octubre 2026"
+    assert v.delivery_label("pt-br") == "outubro 2026"
+    assert v.delivery_label("vi") == "tháng 10 2026"
+    assert v.delivery_label("xx") == "octobre 2026"  # repli FR
     # Année seule : neutre, aucune traduction de mois.
     year_only = fleet_svc.FleetVessel("Astérias", "under_construction", 2027, None)
     assert year_only.delivery_label("en") == "2027"
@@ -114,18 +110,19 @@ async def test_roster_groups_and_orders(db):
     fleet_svc.invalidate_cache()
     await _seed_fleet(db)
     roster = await fleet_svc.roster(db)
-    assert roster.operational_count == 2
-    assert roster.under_construction_count == 4
-    # Ordonné par code → chronologie de livraison.
-    assert [v.name for v in roster.operational] == ["Anemos", "Artemis"]
+    assert roster.operational_count == 3
+    assert roster.under_construction_count == 3
+    # Ordonné par code → chronologie de livraison. Atlantis (livré août 2026)
+    # est bien côté « en service », sans date de livraison affichée.
+    assert [v.name for v in roster.operational] == ["Anemos", "Artemis", "Atlantis"]
+    assert roster.operational[2].delivery_label("fr") is None
     assert [v.name for v in roster.under_construction] == [
-        "Atlantis",
         "Atlas",
         "Archimedes",
         "Astérias",
     ]
-    assert roster.under_construction[0].delivery_label("fr") == "juillet 2026"
-    assert roster.under_construction[3].delivery_label("fr") == "2027"
+    assert roster.under_construction[0].delivery_label("fr") == "octobre 2026"
+    assert roster.under_construction[2].delivery_label("fr") == "2027"
     fleet_svc.invalidate_cache()
 
 
@@ -145,9 +142,10 @@ async def test_flotte_renders_roster_from_erp(db):
     # Chaque navire nommé, dates localisées FR issues de l'ERP.
     for name in ("Anemos", "Atlantis", "Atlas", "Archimedes", "Astérias"):
         assert name in body
-    assert "juillet 2026" in body
-    assert "septembre 2026" in body
+    assert "octobre 2026" in body
     assert "2027" in body
+    # Atlantis est livré : plus aucune date de livraison de juillet en vitrine.
+    assert "juillet 2026" not in body
     fleet_svc.invalidate_cache()
 
 
@@ -160,8 +158,7 @@ async def test_flotte_localises_delivery_month(db):
     resp = await fleet_capabilities(_ReqLang("en"), db=db)
     body = resp.body.decode()
     # Le roster visible localise le mois de livraison (delivery_label(lang)).
-    assert "July 2026" in body
-    assert "September 2026" in body
+    assert "October 2026" in body
     assert t("fleet_roster_building_badge", "en") in body  # « Under construction »
     fleet_svc.invalidate_cache()
 
