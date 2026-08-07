@@ -37,7 +37,7 @@ ARTICLES: list[tuple] = [
         "exploitation compte désormais trois voiliers-cargos identiques — "
         "Anemos, Artemis et Atlantis — sur la ligne régulière Le Havre/Fécamp "
         "⇄ São Sebastião (Brésil).",
-        "img/Atlantis_sea_trial.jpg",
+        "img/Atlantis_depart.jpg",
         "L'équipe NewTowt",
         datetime(2026, 8, 6, 9, 0, tzinfo=_UTC),
         "<p>Les chantiers <strong>Piriou</strong> ont livré <strong>Atlantis"
@@ -59,7 +59,19 @@ ARTICLES: list[tuple] = [
         "sisterships. Chaque expédition part avec son certificat Anemos : le "
         "CO₂ évité y est mesuré par lot, en kilogrammes, "
         '<a href="/verify">vérifiable en ligne</a> selon une '
-        '<a href="/preuves">méthode publiée</a>.</p>',
+        '<a href="/preuves">méthode publiée</a>.</p>'
+        "<p><strong>Mise à jour du 7 août</strong> — baptisé la veille au "
+        "chantier, Atlantis a appareillé pour son voyage de livraison, cap "
+        "sur son port d'attache. Images du baptême et du départ ci-dessous.</p>"
+        '<figure style="margin:1.5rem 0;">'
+        '<video controls preload="metadata" '
+        'poster="/static/img/Atlantis_depart.jpg" '
+        'style="width:100%;border-radius:12px;display:block;">'
+        '<source src="/static/video/Atlantis_bapteme.mp4" type="video/mp4" />'
+        "</video>"
+        "<figcaption>Le baptême d'Atlantis au chantier, 6 août 2026 — "
+        "© NEWTOWT</figcaption>"
+        "</figure>",
     ),
     (
         "carnet",
@@ -173,6 +185,9 @@ _REFRESH_SLUGS: frozenset[str] = frozenset(
     {
         "atlantis-entre-en-phase-d-essais",
         "atlas-prend-forme-en-cale-de-finition",
+        # Billet de la livraison enrichi a posteriori (photos du départ du
+        # chantier + vidéo du baptême, reçues le 7 août).
+        "atlantis-rejoint-la-flotte-troisieme-sistership-tsc-80-livre",
     }
 )
 
@@ -188,9 +203,12 @@ async def seed() -> None:
                 await db.execute(select(BlogPost).where(BlogPost.slug == slug))
             ).scalar_one_or_none()
             if existing is not None:
-                if slug in _REFRESH_SLUGS and (existing.lead != lead or existing.body != body):
+                if slug in _REFRESH_SLUGS and (
+                    existing.lead != lead or existing.body != body or existing.cover_image != cover
+                ):
                     existing.lead = lead
                     existing.body = body
+                    existing.cover_image = cover
                     refreshed += 1
                 continue
             db.add(
