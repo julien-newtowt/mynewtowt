@@ -1,6 +1,7 @@
 {% extends "public/_layout_v2.html" %}
 {% block title %}{{ t('home_meta_title', lang) }}{% endblock %}
 {% block description %}{{ t('home_meta_desc', lang) }}{% endblock %}
+{% block head %}<script src="/static/js/yt-embed.js" defer></script>{% endblock %}
 {% block content %}
 
 {# ─────────────────────────────  1. HERO  ───────────────────────────── #}
@@ -280,6 +281,21 @@
         <span class="vertical-sub">{{ t('home_vertical_industrial_sub', lang) }}</span>
       </a>
     </div>
+  </div>
+</section>
+
+{# ─────────────  6bis. VIDÉO — un chargement commercial (click-to-load)  ───────────── #}
+<section class="section section--sand" aria-label="{{ t('home_video_title', lang) }}">
+  <div class="section-inner">
+    <span class="section-kicker">{{ t('home_video_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('home_video_title', lang) }}</h2>
+    <p class="section-lead">{{ t('home_video_lead', lang) }}</p>
+    <button type="button" class="yt-facade" data-yt-id="HuqD74dfXlI"
+            data-yt-title="{{ t('home_video_title', lang) }}">
+      <img src="{{ asset('img/Chargement_cafe.jpg') }}" alt="" loading="lazy" decoding="async" />
+      <span class="yt-facade-play" aria-hidden="true">▶</span>
+      <span class="yt-facade-note">{{ t('video_privacy_note', lang) }}</span>
+    </button>
   </div>
 </section>
 

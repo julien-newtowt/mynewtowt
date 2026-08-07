@@ -1,6 +1,7 @@
 {% extends "public/_layout_v2.html" %}
 {% block title %}{{ t('fleet_meta_title', lang) }}{% endblock %}
 {% block description %}{{ t('fleet_meta_desc', lang) }}{% endblock %}
+{% block head %}<script src="/static/js/yt-embed.js" defer></script>{% endblock %}
 
 {% block structured_data %}
 <script type="application/ld+json">
@@ -137,6 +138,21 @@
       {{ t('fleet_callout_text', lang) }}
       <a href="/impact">{{ t('fleet_callout_link', lang) }}</a>
     </div>
+  </div>
+</section>
+
+{# ===== VIDÉO — la classe TSC 80, du chantier au premier chargement ===== #}
+<section class="section" aria-label="{{ t('fleet_video_title', lang) }}">
+  <div class="section-inner">
+    <span class="section-kicker">{{ t('fleet_video_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('fleet_video_title', lang) }}</h2>
+    <p class="section-lead">{{ t('fleet_video_lead', lang) }}</p>
+    <button type="button" class="yt-facade" data-yt-id="ts2NoXLYlP4"
+            data-yt-title="{{ t('fleet_video_title', lang) }}">
+      <img src="{{ asset('img/Artemis_devant.jpg') }}" alt="" loading="lazy" decoding="async" />
+      <span class="yt-facade-play" aria-hidden="true">▶</span>
+      <span class="yt-facade-note">{{ t('video_privacy_note', lang) }}</span>
+    </button>
   </div>
 </section>
 
