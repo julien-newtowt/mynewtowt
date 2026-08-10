@@ -1,7 +1,7 @@
 """Tests unitaires — rétroplanning médias 2026–2027 (P12).
 
 ``build_moments`` est une fonction pure : on vérifie l'ordre chronologique des
-4 livraisons de navires (Atlantis 07/2026, Atlas 09/2026, Archimedes 2027,
+4 livraisons de navires (Atlantis 08/2026, Atlas 10/2026, Archimedes 2027,
 Astérias 2027) et l'intégration des arrivées café/cacao.
 """
 
@@ -27,9 +27,9 @@ def test_four_deliveries_in_chronological_order():
     # Volontairement en désordre à l'entrée.
     vessels = [
         _vessel("Astérias", "2027"),
-        _vessel("Atlantis", "2026-07"),
+        _vessel("Atlantis", "2026-08"),
         _vessel("Archimedes", "2027"),
-        _vessel("Atlas", "2026-09"),
+        _vessel("Atlas", "2026-10"),
     ]
     cal = media_calendar.build_moments(vessels, [], lang="fr")
 
@@ -41,8 +41,8 @@ def test_four_deliveries_in_chronological_order():
         "Astérias",
     ]
     # Libellés localisés (mois FR pour le jeton daté, année seule sinon).
-    assert cal.deliveries[0].date_label == "juillet 2026"
-    assert cal.deliveries[1].date_label == "septembre 2026"
+    assert cal.deliveries[0].date_label == "août 2026"
+    assert cal.deliveries[1].date_label == "octobre 2026"
     assert cal.deliveries[2].date_label == "2027"
     assert "Atlantis" in cal.deliveries[0].title
 
@@ -50,7 +50,7 @@ def test_four_deliveries_in_chronological_order():
 def test_operational_vessels_are_excluded():
     vessels = [
         _vessel("Anemos", None, status="operational"),
-        _vessel("Atlas", "2026-09"),
+        _vessel("Atlas", "2026-10"),
     ]
     cal = media_calendar.build_moments(vessels, [], lang="fr")
     assert [m.vessel_name for m in cal.deliveries] == ["Atlas"]
@@ -62,7 +62,7 @@ def test_unparseable_delivery_token_is_skipped():
 
 
 def test_arrivals_localized_and_interleaved_chronologically():
-    vessels = [_vessel("Atlantis", "2026-07")]
+    vessels = [_vessel("Atlantis", "2026-08")]
     arrivals = [
         Arrival(
             leg_code="1AFRBR6",
@@ -76,7 +76,7 @@ def test_arrivals_localized_and_interleaved_chronologically():
     cal = media_calendar.build_moments(vessels, arrivals, lang="fr")
 
     assert len(cal.moments) == 2
-    # L'arrivée de mars précède la livraison de juillet.
+    # L'arrivée de mars précède la livraison d'août.
     assert cal.moments[0].kind == "cargo_arrival"
     assert cal.moments[1].kind == "vessel_delivery"
     arr = cal.arrivals[0]
