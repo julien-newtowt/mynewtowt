@@ -104,6 +104,50 @@ fusion. Brancher sur le lot 3 évite ce travail perdu.
 | `feature/qhse-foundation` | 🔴 Contient deux défauts qui **détruisent des données** : un filtre par mot-clé (`test\|essai\|demo`) qui quarantaine et n'importe jamais des non-conformités ISM légitimes sans persister la perte, et un `rollback()` dans la boucle d'import qui annule les lignes déjà insérées tout en les comptant comme importées. Correctif de quelques heures, à faire **avant** tout merge. Voir `PROJECT_CONTEXT.md` §14.7.<br>ℹ️ Précisions du 2026-07-30 : **39 commits behind, 2 ahead**. Ses 2 commits ne touchent **que** les fichiers QHSE + i18n + `permissions.py` + `main.py` + `validation_engine.py` — **aucun recouvrement** avec les autres lots de la phase 2, et une fusion **ne supprimerait pas** le trombinoscope (vérifié par fusion à blanc). Le motif de blocage reste entier : ce sont les deux défauts de code, pas la divergence |
 | `feature/dashboard-env-integration`, `scratch/preintegration-rehearsal` | Divergentes de `main` (ahead/behind important). À arbitrer séparément, hors phase 2 |
 
+### Branche supprimée le 2026-08-10 — `fix/alembic-merge-heads`
+
+| | |
+|---|---|
+| **SHA local** | `23ebf59` (avec `main` intégré) |
+| **SHA sur `origin`** | `2313448` |
+| **PR associée** | **#155, fermée** |
+
+**Motif** : le problème qu'elle corrigeait a été résolu **en parallèle sur `main`**
+le 2026-08-07, par `20260807_0113_merge_heads_mrv_crewing` — qui déclare
+**exactement les mêmes parents** (`20260716_0112`, `20260720_0107`).
+
+**Vérifié avant suppression** : les deux migrations ensemble produisaient **deux
+têtes Alembic**, soit précisément la panne qu'elle devait éliminer. La fusionner
+l'aurait recréée.
+
+⚠️ **Son unique contenu propre — `migrations/versions/20260730_0113_merge_heads.py` —
+ne subsistait nulle part ailleurs** (vérifié sur les six lots et sur `main`). Sa
+suppression le retire donc du dépôt. C'est assumé : 46 lignes de *no-op*, rendues
+redondantes, et récupérables via la référence conservée par la PR #155 fermée.
+
+**Conséquence sur l'ordre de fusion** : le préalable de migration **disparaît**.
+Aucun lot ne dépend plus d'une fusion Alembic — `main` la porte déjà.
+
+### Ordre de fusion en vigueur au 2026-08-10
+
+```
+1. chore/ci-integration-tests    (#149)  ← le filet d'abord
+2. docs/decouverte-fonctionnelle (#154)  ← indépendant
+3. feat/ops-quickwins            (#156)  ← indépendant
+4. fix/crew-indicators-honest    (#157)  ← porte le contenu du lot 1
+5. feat/bl-workflow              (#158)  ← porte le contenu du lot 1
+6. feat/crew-rotations           (#159)  ← porte le contenu des lots 1 et 4
+```
+
+**Les trois premiers sont mutuellement indépendants** : leur ordre relatif est libre.
+Les trois suivants portent le contenu du lot 1 — l'ordre y reste recommandé non plus
+pour une raison technique, mais pour **conserver la révocabilité lot par lot**.
+
+> 🧭 **Leçon de la journée du 2026-08-10** : l'ordre de fusion publié le 2026-08-03
+> avait été construit sur un `main` vieux d'une semaine, sans revalidation. Résultat :
+> un lot devenu nuisible, un ordre périmé, trois PR en échec et une remise à niveau
+> complète des six branches. **Revalider `main` AVANT de publier un ordre de fusion.**
+
 ### Branches supprimées le 2026-07-30 (avec accord de Yasmin)
 
 Empreintes conservées ici : une branche supprimée reste récupérable

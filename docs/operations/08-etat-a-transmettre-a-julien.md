@@ -55,14 +55,19 @@ et J9 en dépendent tous.
 ## 3. Ordre de fusion — impératif, pas indicatif
 
 ```
-1. chore/ci-integration-tests    (PR #149, brouillon)  ← le filet d'abord
-2. docs/decouverte-fonctionnelle                       ← doc seule, parallélisable
-3. fix/alembic-merge-heads                             ← 🔴 TA VALIDATION
-4. feat/ops-quickwins                                  ← sans migration
-5. fix/crew-indicators-honest                          ← dérive du lot 1
-6. feat/bl-workflow                                    ← dérive de 1 + 3
-7. feat/crew-rotations                                 ← dérive de 5 + 3
+1. chore/ci-integration-tests    (#149)  ← le filet d'abord
+2. docs/decouverte-fonctionnelle (#154)  ← indépendant
+3. feat/ops-quickwins            (#156)  ← indépendant
+4. fix/crew-indicators-honest    (#157)  ← porte le contenu du lot 1
+5. feat/bl-workflow              (#158)  ← porte le contenu du lot 1
+6. feat/crew-rotations           (#159)  ← porte le contenu des lots 1 et 4
 ```
+
+> 🔄 **Révisé le 2026-08-10.** Le lot « fusion Alembic » a **disparu de la liste** :
+> le problème a été résolu sur `main` le 2026-08-07 (`20260807_0113`), sa PR #155 est
+> **fermée** et sa branche supprimée. **Plus aucun lot n'attend de validation de
+> schéma** — le blocage annoncé au §2 est levé. Les six branches ont été remises à
+> niveau sur `main` (0 conflit) et leur CI est verte.
 
 ⚠️ **Deux règles à ne pas contourner** :
 
