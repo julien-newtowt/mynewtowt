@@ -1,6 +1,7 @@
 {% extends "public/_layout_v2.html" %}
 {% block title %}{{ t('home_meta_title', lang) }}{% endblock %}
 {% block description %}{{ t('home_meta_desc', lang) }}{% endblock %}
+{% block head %}<script src="/static/js/yt-embed.js" defer></script>{% endblock %}
 {% block content %}
 
 {# ─────────────────────────────  1. HERO  ───────────────────────────── #}
@@ -48,7 +49,7 @@
 
 {# ─────────────────────────────  2. IMAGE HÉROS  ───────────────────────────── #}
 <figure class="hero-figure">
-  <img src="{{ asset('img/Anemos_depart.jpg') }}" alt="{{ t('home_hero_title', lang) }}"
+  <img src="{{ asset('img/Atlantis_sea_trial.jpg') }}" alt="{{ t('home_hero_title', lang) }}"
        loading="lazy" decoding="async" />
 </figure>
 
@@ -57,7 +58,35 @@
   <div class="proofstrip-inner">{{ t('home_proofstrip', lang)|safe }}</div>
 </aside>
 
-{# ─────────────  3bis. PREUVE SOCIALE : compteurs réels + presse  ───────────── #}
+{# ─────────────  3bis. BANDEAU ACTUALITÉ (dernière actu publiée)  ───────────── #}
+{# Les clés i18n home_news_title/body décrivent le billet Atlantis (traduites
+   en 5 langues). Si un billet plus récent prend la tête du flux, repli sur
+   son titre/chapô FR canoniques (même convention que /actualites) — mettre
+   à jour les clés home_news_* pour retrouver un bandeau traduit. #}
+{% if latest_news %}
+{% set news_i18n = latest_news.slug == 'atlantis-rejoint-la-flotte-troisieme-sistership-tsc-80-livre' %}
+<section class="section" aria-label="{{ t('home_news_kicker', lang) }}">
+  <div class="section-inner">
+    <article class="card newsband{% if latest_news.cover_image %} has-media{% endif %}">
+      {% if latest_news.cover_image %}
+      <img class="newsband-img" src="{{ asset(latest_news.cover_image) }}"
+           alt="{{ t('home_news_img_alt', lang) if news_i18n else latest_news.title }}" loading="lazy" decoding="async" />
+      {% endif %}
+      <div class="newsband-body">
+        <a class="section-kicker newsband-kicker" href="/actualites">{{ t('home_news_kicker', lang) }}</a>
+        {% if latest_news.published_at %}
+        <p class="newsband-date mono">{{ latest_news.published_at|date }}</p>
+        {% endif %}
+        <h2 class="newsband-title">{{ t('home_news_title', lang) if news_i18n else latest_news.title }}</h2>
+        <p class="newsband-lead">{{ t('home_news_body', lang) if news_i18n else (latest_news.lead or '') }}</p>
+        <a class="btn btn-primary newsband-cta" href="/carnet/{{ latest_news.slug }}">{{ t('home_news_cta', lang) }}</a>
+      </div>
+    </article>
+  </div>
+</section>
+{% endif %}
+
+{# ─────────────  3ter. PREUVE SOCIALE : compteurs réels + presse  ───────────── #}
 {% if counters and counters.has_content %}
 <section class="section" aria-label="{{ t('sp_counters_title', lang) }}">
   <div class="section-inner">
@@ -108,7 +137,7 @@
     <span class="press-strip-label">{{ t('sp_press_title', lang) }}</span>
     {% for m in press_mentions %}
     <a class="press-strip-item" href="{{ m.url }}" target="_blank" rel="noopener"
-       title="{{ m.outlet }} — {{ m.title }}">{{ m.outlet }}</a>
+       title="{{ m.outlet }}">{{ m.outlet }}</a>
     {% endfor %}
   </div>
 </aside>
@@ -164,13 +193,13 @@
         <h3>{{ t('home_card2_title', lang) }}</h3>
         <p class="feature-lede">{{ t('home_card2_lede', lang) }}</p>
         <p>{{ t('home_card2_body', lang) }}</p>
-        <a class="feature-link" href="/impact">{{ t('home_card2_link', lang) }}</a>
+        <a class="feature-link" href="/preuves">{{ t('home_card2_link', lang) }}</a>
       </article>
       <article class="feature-card">
         <h3>{{ t('home_card3_title', lang) }}</h3>
         <p class="feature-lede">{{ t('home_card3_lede', lang) }}</p>
         <p>{{ t('home_card3_body', lang) }}</p>
-        <a class="feature-link" href="/contact">{{ t('home_card3_link', lang) }}</a>
+        <a class="feature-link" href="/solutions/cafe">{{ t('home_card3_link', lang) }}</a>
       </article>
     </div>
   </div>
@@ -220,6 +249,8 @@
       {% endfor %}
     </div>
 
+    <p class="caption sched-method-note">{{ t('home_sched_method_note', lang)|safe }}</p>
+
     <div class="sched-cta">
       <a href="/devis" class="btn btn-secondary btn-lg">{{ t('home_sched_cta', lang) }}</a>
     </div>
@@ -245,19 +276,26 @@
       <a class="vertical-tile is-active" href="/solutions/cacao">
         <span class="vertical-name">{{ t('home_vertical_cocoa', lang) }}</span>
       </a>
-      <div class="vertical-tile is-soon" aria-disabled="true">
-        <span class="vertical-name">{{ t('home_vertical_tea', lang) }}</span>
-        <span class="vertical-soon">{{ t('home_vertical_soon', lang) }}</span>
-      </div>
-      <div class="vertical-tile is-soon" aria-disabled="true">
-        <span class="vertical-name">{{ t('home_vertical_wine', lang) }}</span>
-        <span class="vertical-soon">{{ t('home_vertical_soon', lang) }}</span>
-      </div>
-      <div class="vertical-tile is-soon" aria-disabled="true">
+      <a class="vertical-tile is-active" href="/devis">
         <span class="vertical-name">{{ t('home_vertical_industrial', lang) }}</span>
-        <span class="vertical-soon">{{ t('home_vertical_soon', lang) }}</span>
-      </div>
+        <span class="vertical-sub">{{ t('home_vertical_industrial_sub', lang) }}</span>
+      </a>
     </div>
+  </div>
+</section>
+
+{# ─────────────  6bis. VIDÉO — un chargement commercial (click-to-load)  ───────────── #}
+<section class="section section--sand" aria-label="{{ t('home_video_title', lang) }}">
+  <div class="section-inner">
+    <span class="section-kicker">{{ t('home_video_kicker', lang) }}</span>
+    <h2 class="section-title">{{ t('home_video_title', lang) }}</h2>
+    <p class="section-lead">{{ t('home_video_lead', lang) }}</p>
+    <button type="button" class="yt-facade" data-yt-id="HuqD74dfXlI"
+            data-yt-title="{{ t('home_video_title', lang) }}">
+      <img src="{{ asset('img/Chargement_cafe.jpg') }}" alt="" loading="lazy" decoding="async" />
+      <span class="yt-facade-play" aria-hidden="true">▶</span>
+      <span class="yt-facade-note">{{ t('video_privacy_note', lang) }}</span>
+    </button>
   </div>
 </section>
 
@@ -277,6 +315,7 @@
       <a href="/routes" class="btn btn-white btn-lg">{{ t('home_cta_routes', lang) }}</a>
       <a href="/devis" class="btn btn-secondary btn-lg btn-on-dark">{{ t('home_cta_quote', lang) }}</a>
     </div>
+    <p class="closing-note">{{ t('home_cta_regular', lang)|safe }}</p>
   </div>
 </section>
 

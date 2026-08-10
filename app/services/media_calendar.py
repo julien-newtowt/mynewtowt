@@ -85,7 +85,7 @@ class MediaCalendar:
 
 
 def _month_label(year: int, month: int | None, lang: str) -> str:
-    """« juillet 2026 » / « 2027 » (mois localisé via le référentiel flotte)."""
+    """« octobre 2026 » / « 2027 » (mois localisé via le référentiel flotte)."""
     if month is None:
         return str(year)
     months = fleet._MONTHS_BY_LANG.get((lang or "").lower(), fleet._MONTHS_BY_LANG["fr"])
