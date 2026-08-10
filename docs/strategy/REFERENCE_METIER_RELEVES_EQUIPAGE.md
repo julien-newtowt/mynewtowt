@@ -206,9 +206,16 @@ détaché à terre est donc aujourd'hui rangé sous un statut qui n'est pas le s
 coefficients. C'est un manque du tableur, pas une divergence d'interprétation : il
 est **exigible sur le fondement de l'accord**.
 
-⚠️ Reste à savoir **qui, aujourd'hui, est détaché à terre** et sous quel statut il
-figure dans l'Excel — pour mesurer si des soldes déjà transmis à Silae sont
-affectés. Question de reprise de données, à poser aux RH.
+✅ **Reprise de données : aucune** (Yasmin, 2026-08-03) — « pas de modif à faire à
+ce qui a été déjà partagé ». Les soldes déjà transmis à Silae **ne sont pas
+recalculés**. Le taux de 0,675 s'appliquera **à partir de** la mise en service, sans
+effet rétroactif.
+
+C'est une décision de gestion, à respecter telle quelle : le grand livre ne doit
+**pas** proposer de recalcul des périodes déjà exportées. Techniquement, cela
+renforce l'intérêt du snapshot par période (§4.3 de la spec) — une période close
+reste figée avec les coefficients qui étaient en vigueur, et ce comportement devient
+la règle, plus seulement une commodité d'audit.
 
 **Autre conséquence à ne pas manquer** : le taux de 0,9 **inclut déjà** les congés
 payés (3 j/mois), les repos hebdomadaires, les jours fériés et les heures
@@ -389,16 +396,33 @@ Deck Cadet).
 nullable pour l'embarquement hors voyage) mais va plus loin : ici il n'y a **ni
 leg, ni navire**.
 
-✅ **Coefficient tranché (Yasmin, 2026-08-03) : « Le personnel au Vietnam est en
-position embarquée. »** Il relève donc du statut `embarqué` — soit **0,9 j/j** pour
-le personnel TOWT et **1,0 j/j** pour le personnel PMS (§3.1). Pas de statut
-particulier à créer.
+✅ **Cas général (Yasmin, 2026-08-03) : « Le personnel au Vietnam est en position
+embarquée. »** Statut `embarqué` — **0,9 j/j** en TOWT, **1,0 j/j** en PMS (§3.1).
 
-Lecture métier : ces marins supervisent la construction / la livraison d'un navire
-au Vietnam. Ils ne sont ni à terre au repos, ni en congés — ils travaillent, donc
-ils acquièrent comme s'ils étaient à bord. **Le modèle doit donc autoriser un
-embarquement sans navire ni leg tout en le comptant comme embarqué**, ce qui
-interdit de déduire le statut de la seule présence d'un `vessel_id`.
+⚠️ **Mais pas tous** (précision du 2026-08-03) : « Quand les marins partent au site
+de construction, il faut **pour certains** faire un **détachement**. » Exemple
+donné : **Léo ALLAIN** (second capitaine, ATLANTIS).
+
+⇒ Un marin au Vietnam relève donc **soit** de `embarqué` (0,9), **soit** de
+`detache_a_terre` (0,675) — selon un **acte administratif de détachement**, pas
+selon sa localisation.
+
+### 🔴 Règle de modélisation qui en découle
+
+> **Le statut d'acquisition ne se déduit NI du navire, NI du lieu.** C'est une
+> propriété **portée** par la relève, décidée cas par cas.
+
+Deux tentations à écarter explicitement :
+
+| Déduction tentante | Pourquoi elle est fausse |
+|---|---|
+« pas de `vessel_id` ⇒ pas embarqué » | Le personnel au Vietnam n'a ni navire ni leg et **est** en position embarquée |
+« lieu = Vietnam ⇒ position embarquée » | Certains y sont **détachés** (0,675), pas embarqués (0,9) |
+
+L'écart entre les deux vaut **0,225 jour par jour** et part en paie : le statut doit
+donc être un **champ explicite et obligatoire** de la relève, jamais une valeur
+inférée. Une relève sans statut d'acquisition renseigné doit être **refusée**, pas
+complétée par défaut.
 
 ### 3.5 Postes — **quatre vocabulaires** pour les mêmes fonctions
 
