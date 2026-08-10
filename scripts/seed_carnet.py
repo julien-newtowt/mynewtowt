@@ -1,11 +1,14 @@
-"""Seed des 6 premiers billets du carnet éditorial (P8).
+"""Seed des billets du carnet éditorial (P8) + actualités.
 
-Contenu adossé aux faits du dossier : livraisons Atlantis/Atlas/Archimedes/
-Astérias, ligne Brésil, arrivées café. Garde-fous : jalons **positifs**
-uniquement (aucune critique du constructeur, aucun défaut) ; allégations
-environnementales **factuelles** (kg absolus, « certifié Anemos », vérifiable —
-jamais de pourcentage ni de superlatif). Idempotent : ne réécrit pas un billet
-déjà présent (par slug).
+Contenu adossé aux faits du dossier : livraisons Atlantis (livré août 2026) /
+Atlas (octobre 2026) / Archimedes / Astérias (2027), ligne Brésil, arrivées
+café. Garde-fous : jalons **positifs** uniquement (aucune critique du
+constructeur, aucun défaut) ; allégations environnementales **factuelles**
+(kg absolus, « certificat Anemos », vérifiable — jamais de pourcentage ni de
+superlatif). Idempotent : ne réécrit pas un billet déjà présent (par slug),
+SAUF les billets listés dans ``_REFRESH_SLUGS`` dont le contenu corrigé
+(dates de livraison réelles) est resynchronisé en base — sinon les dates
+obsolètes resteraient servies via /carnet et le flux RSS en staging/prod.
 
 Run :
   docker compose exec app python -m scripts.seed_carnet
@@ -27,18 +30,62 @@ _UTC = UTC
 # (category, topic, title, lead, cover_image, author, published_at, body_html)
 ARTICLES: list[tuple] = [
     (
+        "actualite",
+        "arrivees",
+        "Atlantis rejoint la flotte : troisième sistership TSC 80 livré",
+        "Les chantiers Piriou ont livré Atlantis ce 6 août 2026. La flotte en "
+        "exploitation compte désormais trois voiliers-cargos identiques — "
+        "Anemos, Artemis et Atlantis — sur la ligne régulière Le Havre/Fécamp "
+        "⇄ São Sebastião (Brésil).",
+        "img/Atlantis_depart.jpg",
+        "L'équipe NewTowt",
+        datetime(2026, 8, 6, 9, 0, tzinfo=_UTC),
+        "<p>Les chantiers <strong>Piriou</strong> ont livré <strong>Atlantis"
+        "</strong> ce 6 août 2026. Troisième sistership de la classe "
+        "<strong>TSC 80</strong>, strictement identique à Anemos et Artemis, "
+        "il porte la flotte en exploitation à trois voiliers-cargos sur la "
+        "ligne régulière <strong>Le Havre/Fécamp ⇄ São Sebastião "
+        "(Brésil)</strong>.</p>"
+        "<p>Pour les chargeurs, Atlantis ajoute <strong>978 emplacements de "
+        "palettes</strong> à la ligne : six cales sur trois ponts (1 050 m²), "
+        "ségréguées et maintenues à la température de la mer, dont une cale "
+        "ATEX apte aux marchandises dangereuses des classes 2, 3, 4.1, 8 et 9. "
+        "Avec 2 226 m² de voilure sous pavillon français, chaque rotation "
+        "offre les mêmes volumes et les mêmes garanties, quelle que soit la "
+        "coque.</p>"
+        "<p>La série se complète à dates confirmées : <strong>Atlas</strong> "
+        "(livraison octobre 2026), puis <strong>Archimedes</strong> et "
+        "<strong>Astérias</strong> (2027) porteront la flotte à six "
+        "sisterships. Chaque expédition part avec son certificat Anemos : le "
+        "CO₂ évité y est mesuré par lot, en kilogrammes, "
+        '<a href="/verify">vérifiable en ligne</a> selon une '
+        '<a href="/preuves">méthode publiée</a>.</p>'
+        "<p><strong>Mise à jour du 7 août</strong> — baptisé la veille au "
+        "chantier, Atlantis a appareillé pour son voyage de livraison, cap "
+        "sur son port d'attache. Images du baptême et du départ ci-dessous.</p>"
+        '<figure style="margin:1.5rem 0;">'
+        '<video controls preload="metadata" '
+        'poster="/static/img/Atlantis_depart.jpg" '
+        'style="width:100%;border-radius:12px;display:block;">'
+        '<source src="/static/video/Atlantis_bapteme.mp4" type="video/mp4" />'
+        "</video>"
+        "<figcaption>Le baptême d'Atlantis au chantier, 6 août 2026 — "
+        "© NEWTOWT</figcaption>"
+        "</figure>",
+    ),
+    (
         "carnet",
         "chantier",
         "Atlantis entre en phase d'essais",
         "Le troisième voilier-cargo de la série TSC 80 a quitté la cale de "
-        "construction pour ses premiers essais — livraison attendue en juillet 2026.",
+        "construction pour ses premiers essais — livraison attendue en août 2026.",
         "img/Artemis_devant.jpg",
         "L'équipe NewTowt",
         datetime(2026, 6, 12, 9, 0, tzinfo=_UTC),
         "<p>Atlantis, troisième sistership de la classe <strong>TSC 80</strong>, "
         "a franchi une étape décisive : la coque est achevée et le gréement "
         "installé. Le navire entre désormais en phase d'essais, dernière ligne "
-        "droite avant une livraison attendue en <strong>juillet 2026</strong>.</p>"
+        "droite avant une livraison attendue en <strong>août 2026</strong>.</p>"
         "<p>Comme ses aînés Anemos et Artemis, Atlantis embarque 978 emplacements "
         "de palettes en six cales séparées, dont une apte aux marchandises "
         "dangereuses. Il rejoindra la ligne régulière vers le Brésil et "
@@ -49,7 +96,7 @@ ARTICLES: list[tuple] = [
         "chantier",
         "Atlas prend forme en cale de finition",
         "Quatrième de la série, Atlas avance en cale de finition — livraison "
-        "prévue en septembre 2026.",
+        "prévue en octobre 2026.",
         "img/sortie-fecamp.jpg",
         "L'équipe NewTowt",
         datetime(2026, 5, 28, 9, 0, tzinfo=_UTC),
@@ -57,7 +104,7 @@ ARTICLES: list[tuple] = [
         "en cale de finition sur les chantiers Piriou. Ponts, cloisons de cale "
         "et systèmes de ventilation — clés pour transporter le café à la "
         "température de la mer — sont en cours d'installation.</p>"
-        "<p>Sa livraison est prévue pour <strong>septembre 2026</strong>. Deux "
+        "<p>Sa livraison est prévue pour <strong>octobre 2026</strong>. Deux "
         "navires supplémentaires, Archimedes et Astérias, suivront en 2027.</p>",
     ),
     (
@@ -130,16 +177,39 @@ ARTICLES: list[tuple] = [
 ]
 
 
+# Billets déjà en base dont le contenu a été corrigé (dates de livraison
+# réelles : Atlantis août 2026, Atlas octobre 2026) : pour ces slugs, le seed
+# resynchronise lead + body des lignes existantes (UPDATE ciblé, idempotent)
+# au lieu de les ignorer — piège d'idempotence sinon en staging/production.
+_REFRESH_SLUGS: frozenset[str] = frozenset(
+    {
+        "atlantis-entre-en-phase-d-essais",
+        "atlas-prend-forme-en-cale-de-finition",
+        # Billet de la livraison enrichi a posteriori (photos du départ du
+        # chantier + vidéo du baptême, reçues le 7 août).
+        "atlantis-rejoint-la-flotte-troisieme-sistership-tsc-80-livre",
+    }
+)
+
+
 async def seed() -> None:
     await init_db()
     async with SessionLocal() as db:
         created = 0
+        refreshed = 0
         for category, topic, title, lead, cover, author, published_at, body in ARTICLES:
             slug = slugify(title)
-            exists = (
-                await db.execute(select(BlogPost.id).where(BlogPost.slug == slug))
+            existing = (
+                await db.execute(select(BlogPost).where(BlogPost.slug == slug))
             ).scalar_one_or_none()
-            if exists:
+            if existing is not None:
+                if slug in _REFRESH_SLUGS and (
+                    existing.lead != lead or existing.body != body or existing.cover_image != cover
+                ):
+                    existing.lead = lead
+                    existing.body = body
+                    existing.cover_image = cover
+                    refreshed += 1
                 continue
             db.add(
                 BlogPost(
@@ -158,7 +228,10 @@ async def seed() -> None:
             )
             created += 1
         await db.commit()
-        print(f"Carnet seed completed. {created} nouveau(x) billet(s) sur {len(ARTICLES)}.")
+        print(
+            f"Carnet seed completed. {created} nouveau(x) billet(s), "
+            f"{refreshed} corrigé(s) sur {len(ARTICLES)}."
+        )
 
 
 if __name__ == "__main__":
