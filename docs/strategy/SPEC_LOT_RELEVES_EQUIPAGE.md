@@ -306,6 +306,7 @@ C'est la même discipline que le statut Schengen `indetermine` livré le 2026-07
 `teletravail` | 0,9 | — |
 `embarque_cadet` | **0,3** | — |
 `conduite` / `dispo` | 0 | — |
+**`detache_a_terre`** | **0,675** | ⏳ *(accord TOWT uniquement)* |
 
 Le personnel **au Vietnam** est en position **`embarque`** (tranché le
 2026-08-03) : pas de statut dédié. Le modèle doit donc admettre un embarquement
@@ -512,7 +513,8 @@ Julien autant que le workflow BL.
 |---|---|---|
 R-A | ✅ **LEVÉ 2026-08-03** — option A retenue : MyTOWT planifie et simule, Marad reste le registre, écran de réconciliation des écarts. Synchro Marad inchangée (lecture seule) | — |
 R-B | ✅ **LEVÉ 2026-08-03** par les accords d'entreprise du 2024-03-22 : l'unité est le **jour travaillé**, donc un classement de chaque jour dans une position unique — l'article 10 rend cette exclusivité **obligatoire en droit**. La question inclusive/exclusive ne se pose plus | — |
-R-H | 🔴 **Divergence accord ↔ Excel sur le détaché à terre** : l'accord fixe **0,675 j/j**, l'Excel applique **0,9** à une ligne `télétravail` et n'a aucune ligne à 0,675. Soit surcrédit de 0,225 j/j (6,75 j par mois de 30 j), soit statut manquant | 🔴 **à trancher avec la paie / les RH avant tout calcul** |
+R-H | ✅ **REQUALIFIÉ 2026-08-03** — « télétravail différent de détachement » (Yasmin). Le `télétravail` à 0,9 est donc **conforme** (l'accord fixe 0,9 pour tout *jour travaillé*, et télétravailler c'est travailler). Ce qui manque est un **statut** : `detache_a_terre` à **0,675 j/j**, absent du tableur comme de MyTOWT. **À créer dans la matrice** — exigible sur le fondement de l'accord, ce n'est pas une divergence d'interprétation | 🟠 à créer avec la matrice |
+R-J | ⚠️ **Reprise de données à évaluer** : qui est aujourd'hui détaché à terre, et sous quel statut figure-t-il dans l'Excel ? S'il est classé `télétravail`/`embarqué` il est **surcrédité de 0,225 j/j** ; s'il est classé `débarqué` il est **débité de 1** au lieu d'être crédité de 0,675 — soit un écart de 1,675 j/j. Des soldes déjà transmis à Silae peuvent être affectés | 🟠 question aux RH |
 R-I | ⚠️ **Le taux de 0,9 inclut déjà les congés payés** (3 j/mois), les repos hebdomadaires, les jours fériés et les heures supplémentaires. **Ne jamais ajouter de CP par-dessus** le résultat du grand livre — ce serait un double paiement | 🟠 discipline d'implémentation |
 R-C | **Valeur PMS/élève absente** — la structure l'accueille, mais l'écran doit le signaler | 🟡 non bloquant |
 R-D | **Trois registres d'embarquement** — la règle d'or de `CLAUDE.md` devient critique. Tout nouvel indicateur doit dire de quel registre il parle | 🟠 discipline permanente |

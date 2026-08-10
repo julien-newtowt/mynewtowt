@@ -177,27 +177,38 @@ simplification importante par rapport à ce que je craignais.
 `AT` | 0,2 | **0,2 / jour d'arrêt de travail pour maladie** | ⚠️ « AT » = **arrêt de travail** (maladie), et **non** « accident du travail » comme je l'avais lu. L'accord exige un **certificat médical** — c'est une condition, pas un simple statut |
 `conduite` | 0 | Art. 10 : aucun taux, et position **non cumulable** | ✅ conforme, et **l'exclusivité est une règle de droit** |
 `débarqué` | −1 | le congé-repos se consomme | ✅ cohérent |
-`télétravail` | **0,9** | **0,675** pour les salariés **détachés à terre** | 🔴 **DIVERGENCE POSSIBLE** — voir ci-dessous |
+`télétravail` | 0,9 | non nommé par l'accord ⇒ **jour travaillé** ordinaire | ✅ **conforme** — télétravailler, c'est travailler (cf. ci-dessous) |
+**`détaché à terre`** | ❌ **absent** | **0,675** | 🔴 **STATUT MANQUANT** — voir ci-dessous |
 `embarqué cadet` | 0,3 | **absent des deux accords** | ⏳ hors accord (statut d'élève non couvert) |
 `Dispo` | 0 | absent | — |
 Colonnes **PMS** (1,0 / 0) | | **hors périmètre des accords** | ✅ normal : les accords ne lient que les salariés TOWT, PMS est du personnel d'agence |
 
-#### 🔴 La divergence à faire trancher : télétravail 0,9 contre détaché à terre 0,675
+#### 🔴 Le statut « détaché à terre » manque au paramétrage
 
-L'accord prévoit **0,675** pour un salarié **détaché à terre**. L'Excel applique
-**0,9** à une ligne `télétravail`, et **ne comporte aucune ligne à 0,675**.
+✅ **Tranché par Yasmin (2026-08-03) : « télétravail différent de détachement. »**
+Ce sont **deux situations distinctes**. Conséquences, dans l'ordre :
 
-Deux lectures possibles, et je ne les tranche pas :
+**1. Le `télétravail` à 0,9 est conforme.** L'accord ne le nomme pas, mais il fixe
+0,9 pour tout **jour travaillé** — et télétravailler, c'est travailler. Aucune
+correction à faire de ce côté. *(Ma première hypothèse d'un surcrédit de 0,225 j/j
+était donc fausse : elle supposait les deux termes équivalents.)*
 
-1. **« Télétravail » et « détaché à terre » désignent la même situation** ⇒ l'Excel
-   **surcrédite de 0,225 jour par jour**, soit **6,75 jours par mois de 30 jours**.
-   Sur de la paie, l'écart n'est pas cosmétique.
-2. **Ce sont deux situations distinctes** ⇒ il manque alors purement et simplement
-   la ligne « détaché à terre » (0,675) dans le paramétrage, et un salarié dans ce
-   cas est aujourd'hui calculé avec le mauvais taux **ou pas du tout**.
+**2. Il manque un statut.** L'accord prévoit **0,675 j/j pour le salarié détaché à
+terre**, et **ni le paramétrage Excel ni MyTOWT ne portent ce taux**. Un marin
+détaché à terre est donc aujourd'hui rangé sous un statut qui n'est pas le sien :
 
-⇒ **Question à poser à la paie / aux RH**, pas à l'Armement : c'est une question
-d'interprétation d'accord, pas d'organisation.
+| S'il est classé… | Taux appliqué | Écart / accord |
+|---|---|---|
+`télétravail` ou `embarqué` | 0,9 | **+0,225 j/j** — surcrédit (6,75 j par mois de 30) |
+`débarqué` | −1 | **−1,675 j/j** — le solde est *débité* au lieu d'être crédité |
+
+⇒ **Le statut `detache_a_terre` (0,675) doit être créé** dans la matrice des
+coefficients. C'est un manque du tableur, pas une divergence d'interprétation : il
+est **exigible sur le fondement de l'accord**.
+
+⚠️ Reste à savoir **qui, aujourd'hui, est détaché à terre** et sous quel statut il
+figure dans l'Excel — pour mesurer si des soldes déjà transmis à Silae sont
+affectés. Question de reprise de données, à poser aux RH.
 
 **Autre conséquence à ne pas manquer** : le taux de 0,9 **inclut déjà** les congés
 payés (3 j/mois), les repos hebdomadaires, les jours fériés et les heures
