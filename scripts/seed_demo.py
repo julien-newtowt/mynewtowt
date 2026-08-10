@@ -60,17 +60,19 @@ async def seed() -> None:
 
         # ----- Vessels -----
         # Flotte P4 : 6 sisterships classe TSC 80 (interne « phoenix »).
-        # 2 en opération (Anemos, Artemis), 4 en construction. Capacité
-        # commerciale unique = 978 EPAL ; 12 couchettes passagers (offre 2027).
-        # Horizon de livraison (P5), stocké en jeton machine « AAAA-MM » (ou
-        # « AAAA » quand seule l'année est connue) : Atlantis juillet 2026,
-        # Atlas septembre 2026, les deux suivants en 2027. Le mois est localisé
-        # à l'affichage (services/fleet.py) — la donnée reste triable/neutre.
+        # 3 en opération (Anemos, Artemis, Atlantis — livré le 06/08/2026),
+        # 3 en construction. Capacité commerciale unique = 978 EPAL ;
+        # 12 couchettes passagers (offre 2027). Horizon de livraison (P5),
+        # stocké en jeton machine « AAAA-MM » (ou « AAAA » quand seule l'année
+        # est connue) : Atlas octobre 2026, les deux suivants en 2027. Le mois
+        # est localisé à l'affichage (services/fleet.py) — la donnée reste
+        # triable/neutre. Un navire livré passe build_status="operational" et
+        # expected_delivery=None (même convention qu'Anemos/Artemis).
         vessels_def = [
             ("1", "Anemos", "9123456", "FR", "operational", None),
             ("2", "Artemis", "9123457", "FR", "operational", None),
-            ("3", "Atlantis", "9123458", "FR", "under_construction", "2026-07"),
-            ("4", "Atlas", "9123459", "FR", "under_construction", "2026-09"),
+            ("3", "Atlantis", "9123458", "FR", "operational", None),
+            ("4", "Atlas", "9123459", "FR", "under_construction", "2026-10"),
             ("5", "Archimedes", "9123460", "FR", "under_construction", "2027"),
             ("6", "Astérias", "9123461", "FR", "under_construction", "2027"),
         ]
@@ -92,6 +94,12 @@ async def seed() -> None:
                         opex_daily_sea_eur=4500.0,
                     )
                 )
+            elif (row.build_status, row.expected_delivery) != (build_status, expected_delivery):
+                # Resynchronise le statut de construction d'une base déjà
+                # seedée : le roster /flotte est DB-driven — sans cet UPDATE,
+                # Atlantis resterait « En construction » après sa livraison.
+                row.build_status = build_status
+                row.expected_delivery = expected_delivery
 
         # ----- Ports -----
         ports_def = [

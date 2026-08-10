@@ -93,7 +93,7 @@ async def set_language(lang: str, request: Request):
 @router.get("/", response_class=HTMLResponse)
 async def landing(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     upcoming = await _next_bookable_legs(db, limit=6)
-    from app.services import analytics, service_reliability, social_proof
+    from app.services import analytics, blog, service_reliability, social_proof
 
     await analytics.record(
         db, "landing_view", lang=getattr(request.state, "lang", "fr"), channel="public"
@@ -104,6 +104,10 @@ async def landing(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLR
     # Taux de service (ponctualité) — affiché seulement au-dessus d'un
     # échantillon minimal (pas de « 100 % sur 1 traversée »).
     reliability = await service_reliability.overall(db)
+    # Bandeau actualité (sous le bandeau de preuve) : dernière actu publiée —
+    # masqué si aucun billet « actualite » n'existe en base.
+    latest_news_posts = await blog.list_published(db, category="actualite", limit=1)
+    latest_news = latest_news_posts[0] if latest_news_posts else None
     return templates.TemplateResponse(
         "public/landing.html",
         {
@@ -111,6 +115,7 @@ async def landing(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLR
             "upcoming_legs": upcoming,
             "counters": counters,
             "reliability": reliability,
+            "latest_news": latest_news,
             "press_mentions": social_proof.PRESS_MENTIONS,
             "testimonials": social_proof.TESTIMONIALS,
             "client_logos": social_proof.CLIENT_LOGOS,

@@ -27,7 +27,7 @@ declare -i failures=0
 check() {
   local path="$1" expected="$2" desc="${3:-$1}"
   local code body
-  code="$(curl -s -o /dev/null -w '%{http_code}' -m "${TIMEOUT}" -L --max-redirs 0 "${BASE_URL}${path}" || echo 000)"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -m "${TIMEOUT}" --max-redirs 0 "${BASE_URL}${path}" || echo 000)"
   if [[ "${code}" == "${expected}" ]]; then
     pass "${desc} → ${code}"
   else
