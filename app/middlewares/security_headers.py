@@ -33,6 +33,9 @@ CSP = (
     "https://api.mapbox.com https://api.maptiler.com "
     "https://demotiles.maplibre.org "
     "https://nominatim.openstreetmap.org; "
+    # Vidéos YouTube (façade click-to-load yt-embed.js : aucun chargement
+    # avant le clic) — seul l'embed « confidentialité renforcée » est autorisé.
+    "frame-src 'self' https://www.youtube-nocookie.com; "
     "frame-ancestors 'self'; "
     "base-uri 'self'; "
     "form-action 'self'; "

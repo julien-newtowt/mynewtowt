@@ -19,11 +19,11 @@
     <p class="lead">
       <strong>{{ brand.raison_sociale }}</strong> —
       {% if lang == 'en' %}
-        French maritime company, pioneer of decarbonised transport by sailing
-        cargo since {{ brand.year_founded }}.
+        French maritime company, pioneer of cargo transport under sail
+        since {{ brand.year_founded }}.
       {% else %}
-        compagnie maritime française pionnière du transport décarboné par
-        voilier cargo depuis {{ brand.year_founded }}.
+        compagnie maritime française, pionnière du transport de marchandises
+        à la voile depuis {{ brand.year_founded }}.
       {% endif %}
     </p>
 
@@ -42,8 +42,8 @@
     <ul>
       <li><strong>Anemos</strong> — {% if lang == 'en' %}in service{% else %}en opération{% endif %}.</li>
       <li><strong>Artemis</strong> — {% if lang == 'en' %}in service{% else %}en opération{% endif %}.</li>
-      <li><strong>Atlantis</strong> — {% if lang == 'en' %}under construction, delivery July 2026{% else %}en construction, livraison juillet 2026{% endif %}.</li>
-      <li><strong>Atlas</strong> — {% if lang == 'en' %}under construction, delivery September 2026{% else %}en construction, livraison septembre 2026{% endif %}.</li>
+      <li><strong>Atlantis</strong> — {% if lang == 'en' %}in service (delivered August 2026){% else %}en opération (livré août 2026){% endif %}.</li>
+      <li><strong>Atlas</strong> — {% if lang == 'en' %}under construction, delivery October 2026{% else %}en construction, livraison octobre 2026{% endif %}.</li>
       <li><strong>Archimedes, Astérias</strong> — {% if lang == 'en' %}under construction, delivery 2027{% else %}en construction, livraison 2027{% endif %}.</li>
     </ul>
 
@@ -55,8 +55,11 @@
 
     <h3>{% if lang == 'en' %}Our commitments{% else %}Nos engagements{% endif %}</h3>
     <ol>
-      <li>{% if lang == 'en' %}Firm capacities, schedules announced 6 months in advance.{% else %}Capacités fermes, plannings annoncés 6 mois à l'avance.{% endif %}</li>
-      <li>{% if lang == 'en' %}Emissions divided by nine vs a conventional reference cargo (13.7 → 1.5 g CO₂/t·km, published method) — certificate issued at every delivery.{% else %}Émissions divisées par neuf vs cargo conventionnel de référence (13,7 → 1,5 g CO₂/t·km, méthode publiée) — certificat à chaque livraison.{% endif %}</li>
+      {# « plannings annoncés 6 mois à l'avance » retiré en attendant la
+         confirmation du commercial (relecture 2026-08) — ne republier
+         qu'une promesse vérifiée. #}
+      <li>{% if lang == 'en' %}Firm capacities.{% else %}Capacités fermes.{% endif %}</li>
+      <li>{% if lang == 'en' %}Emissions divided by nine vs a conventional reference cargo (13.7 → 1.5 g CO₂/t·km, <a href="/preuves">published method</a>) — certificate issued at every delivery.{% else %}Émissions divisées par neuf vs cargo conventionnel de référence (13,7 → 1,5 g CO₂/t·km, <a href="/preuves">méthode publiée</a>) — certificat à chaque livraison.{% endif %}</li>
       <li>{% if lang == 'en' %}Real-time tracking, 100 % digital documentation.{% else %}Suivi temps réel, documentation 100 % numérique.{% endif %}</li>
       <li>{% if lang == 'en' %}Protected customer data (GDPR, MFA, complete audit trail).{% else %}Données client protégées (RGPD, MFA, audit complet).{% endif %}</li>
     </ol>
