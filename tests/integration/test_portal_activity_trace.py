@@ -44,7 +44,14 @@ class _Req:
         return self._form
 
 
-TOKEN = "a1b2c3d4e5f6a7b8c9d0e1f2"
+# Faux token de test, jamais un secret réel : 24 caractères hexadécimaux, la forme
+# exacte d'un token de portail (cf. `packing_list.generate_token`). Gitleaks le
+# classe en `generic-api-key` — faux positif attendu et assumé.
+#
+# `gitleaks:allow` en ligne plutôt qu'une empreinte dans `.gitleaksignore` : une
+# empreinte est liée au couple commit + fichier et se périme à chaque réécriture
+# d'historique, alors que l'annotation suit la ligne qu'elle justifie.
+TOKEN = "a1b2c3d4e5f6a7b8c9d0e1f2"  # gitleaks:allow
 
 
 async def _setup(db):

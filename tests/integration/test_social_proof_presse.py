@@ -141,11 +141,22 @@ async def test_counters_computed_from_operations(db):
 
 
 def test_testimonials_and_logos_empty_by_default():
-    """Doctrine : aucune preuve sociale nominative sans contenu + accord."""
+    """Doctrine : aucune preuve sociale nominative sans contenu + accord.
+
+    ⚠️ Ce test exigeait ``len(PRESS_MENTIONS) >= 4``. Le repositionnement café de
+    la landing page (fusionné sur ``main`` le 2026-08-07) a **volontairement**
+    réduit la sélection à la seule mention centrée café — le seuil de 4 était donc
+    un **comptage éditorial incidenté**, pas la doctrine testée.
+
+    L'assertion porte désormais sur l'**invariant** : la sélection n'est pas vide et
+    chaque mention est une source publique en HTTPS. Elle ne recassera donc plus au
+    prochain arbitrage éditorial.
+    """
     assert social_proof.TESTIMONIALS == ()
     assert social_proof.CLIENT_LOGOS == ()
-    assert len(social_proof.PRESS_MENTIONS) >= 4
+    assert social_proof.PRESS_MENTIONS, "au moins une mention presse attendue"
     assert all(m["url"].startswith("https://") for m in social_proof.PRESS_MENTIONS)
+    assert all(m.get("outlet") and m.get("title") for m in social_proof.PRESS_MENTIONS)
 
 
 # ───────────────────── landing ─────────────────────
@@ -162,7 +173,11 @@ async def test_landing_hides_counters_when_zero(db):
     assert t("sp_counters_title", "fr") not in body
     # Le bandeau presse (fait public) reste affiché.
     assert t("sp_press_title", "fr") in body
-    assert "Supply Chain Magazine" in body
+    # ⚠️ Le nom d'un média était codé en dur ici (« Supply Chain Magazine »), ce qui
+    # a cassé ce test au repositionnement café du 2026-08-07. On vérifie désormais
+    # que le bandeau rend bien LES DONNÉES, sans figer quel média y figure.
+    for mention in social_proof.PRESS_MENTIONS:
+        assert mention["outlet"] in body
     # Témoignages/logos absents tant que les listes sont vides.
     assert t("sp_testimonials_title", "fr") not in body
 
