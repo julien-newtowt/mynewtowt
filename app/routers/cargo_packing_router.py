@@ -22,7 +22,7 @@ from app.models.packing_list import (
     PortalMessage,
 )
 from app.permissions import require_permission
-from app.services import cargo_excel
+from app.services import bl_workflow, cargo_excel
 from app.services.activity import record as activity_record
 from app.services.packing_list import (
     apply_batch_update,
@@ -245,6 +245,24 @@ async def _get_batch_or_404(db: AsyncSession, pl_id: int, batch_id: int) -> Pack
     return b
 
 
+def _assert_bl_not_frozen(batch: PackingListBatch) -> None:
+    """409 si le lot porte un BL signé — la correction passe par une révision.
+
+    ⚠️ À appeler **avant** toute écriture. Le verrou de la packing list
+    (``can_modify``) et le gel du BL sont **indépendants** : le premier est porté
+    par la packing list, le second par le lot. Vérifier l'un ne dispense pas de
+    vérifier l'autre.
+    """
+    if bl_workflow.is_frozen(batch):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"BL {batch.bl_number or batch.batch_number} signé "
+                f"({batch.bl_state}) — corriger par révision numérotée, pas par édition."
+            ),
+        )
+
+
 @router.post("/{pl_id}/batches/{batch_id}/edit")
 async def edit_batch(
     pl_id: int,
@@ -258,14 +276,21 @@ async def edit_batch(
     if pl is None or not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     batch = await _get_batch_or_404(db, pl_id, batch_id)
+    # ⚠️ Le gel se vérifie AVANT toute écriture : contrôler après aurait laissé la
+    # modification s'appliquer sur un connaissement signé, ce qui est précisément
+    # ce qu'on interdit.
+    _assert_bl_not_frozen(batch)
     new_values = coerce_batch_form(dict(await request.form()))
-    await apply_batch_update(
-        db,
-        batch=batch,
-        new_values=new_values,
-        actor="staff",
-        actor_name=user.full_name or user.username,
+    actor = user.full_name or user.username
+    changed = await apply_batch_update(
+        db, batch=batch, new_values=new_values, actor="staff", actor_name=actor
     )
+    # Une modification effective après validation client ANNULE cette validation
+    # et ramène le BL à `draft` — une validation porte sur un contenu précis.
+    if changed:
+        await bl_workflow.invalidate_validation_on_edit(
+            db, batch=batch, actor_name=actor, ip=_client_ip(request)
+        )
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
 
 
@@ -282,6 +307,10 @@ async def delete_batch(
     if pl is None or not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     batch = await _get_batch_or_404(db, pl_id, batch_id)
+    # Un lot portant un BL signé ne se supprime pas : le registre doit rester
+    # opposable. La correction passe par une révision qui annule la précédente,
+    # les deux restant tracées.
+    _assert_bl_not_frozen(batch)
     await record_audit(
         db,
         packing_list_id=pl_id,
@@ -532,6 +561,21 @@ async def packing_list_import_xlsx(
     if not parsed:
         raise HTTPException(status_code=400, detail="aucune ligne exploitable dans le fichier")
     actor_name = user.full_name or user.username
+    # 🔴 Cet import REMPLACE les lots existants. S'il en reste un dont le BL est
+    # signé, l'import détruirait un titre opposable — et le compterait comme
+    # « importé ». On refuse en bloc plutôt que d'importer partiellement : un
+    # import à moitié appliqué sur un registre de connaissements est pire qu'un
+    # refus.
+    frozen = [b for b in pl.batches if bl_workflow.is_frozen(b)]
+    if frozen:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "import refusé : "
+                + ", ".join(f"BL {b.bl_number or b.batch_number} ({b.bl_state})" for b in frozen)
+                + " — un lot signé ne peut pas être remplacé par un import."
+            ),
+        )
     # Remplacement : on vide les batches existants puis on recrée depuis l'import.
     for b in list(pl.batches):
         await db.delete(b)

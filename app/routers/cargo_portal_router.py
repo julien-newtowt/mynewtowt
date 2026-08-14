@@ -34,7 +34,7 @@ from app.models.packing_list import (
 )
 from app.models.port import Port
 from app.models.vessel import Vessel
-from app.services import cargo_excel, rate_limit
+from app.services import bl_workflow, cargo_excel, rate_limit
 from app.services import hold_conditions as hold_conditions_svc
 from app.services.activity import record as activity_record
 from app.services.packing_list import (
@@ -251,6 +251,23 @@ async def _portal_batch_or_404(
     return b
 
 
+def _assert_bl_not_frozen(batch: PackingListBatch) -> None:
+    """409 si le lot porte un BL signé.
+
+    ⚠️ **Comportement identique côté staff** (`cargo_packing_router`) : le gel du BL
+    ne doit pas dépendre du chemin d'écriture emprunté. Un garde-fou qui ne
+    s'applique qu'à une interface se contourne par l'autre.
+    """
+    if bl_workflow.is_frozen(batch):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"BL {batch.bl_number or batch.batch_number} signé "
+                f"({batch.bl_state}) — ce lot n'est plus modifiable."
+            ),
+        )
+
+
 @router.post("/{token}/packing/batches/{batch_id}/edit")
 async def portal_packing_edit(
     token: str, batch_id: int, request: Request, db: AsyncSession = Depends(get_db)
@@ -260,6 +277,7 @@ async def portal_packing_edit(
     if not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     batch = await _portal_batch_or_404(db, pl, batch_id)
+    _assert_bl_not_frozen(batch)
     changed = await apply_batch_update(
         db,
         batch=batch,
@@ -271,6 +289,12 @@ async def portal_packing_edit(
     # tracer évite de noyer la piste sous des lignes vides (le détail
     # champ-par-champ reste dans `PackingListAudit`).
     if changed:
+        # Une modification effective annule une validation client antérieure : le
+        # BL repasse en draft. L'expéditeur PEUT modifier au stade draft — c'est
+        # l'exigence métier — mais la validation ne survit pas au changement.
+        await bl_workflow.invalidate_validation_on_edit(
+            db, batch=batch, actor_name=_portal_actor(pl), ip=_client_ip(request)
+        )
         await _portal_trace(
             db,
             request,
@@ -293,6 +317,7 @@ async def portal_packing_delete(
     if not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     batch = await _portal_batch_or_404(db, pl, batch_id)
+    _assert_bl_not_frozen(batch)
     label = f"PL {pl.id} — lot {batch.batch_number}"
     removed = f"{batch.pallet_count}×{batch.pallet_format}"
     await record_audit(
@@ -371,6 +396,18 @@ async def portal_packing_import_xlsx(
         .scalars()
         .all()
     )
+    # 🔴 Même règle que côté staff : cet import REMPLACE les lots. Un lot au BL
+    # signé serait détruit et compté comme importé. Refus en bloc.
+    frozen = [b for b in existing if bl_workflow.is_frozen(b)]
+    if frozen:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "import refusé : "
+                + ", ".join(f"lot {b.batch_number} ({b.bl_state})" for b in frozen)
+                + " — un lot dont le connaissement est signé ne peut pas être remplacé."
+            ),
+        )
     replaced = len(existing)
     for b in existing:
         await db.delete(b)
