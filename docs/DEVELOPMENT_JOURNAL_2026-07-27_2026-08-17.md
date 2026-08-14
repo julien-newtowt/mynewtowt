@@ -798,3 +798,138 @@ pour la PAF. Mais :
   `CrewTicket` (`mode`, `reference`, `carrier`, `departure_at`).
 
 Les pièces sont là, branchées sur la mauvaise source et non assemblées.
+
+---
+
+## 2026-08-10 — Remise à niveau : `main` avait avancé, l'ordre de fusion était périmé
+
+Journée entièrement consacrée à réparer une **erreur de méthode de l'assistant**.
+
+### L'erreur
+
+Les 7 PR ont été créées et ouvertes le matin, avec une note d'ordre de fusion dans
+chacune. **Trois sont tombées en échec en CI.** Le diagnostic a révélé la cause
+réelle : le plan de fusion avait été construit sur un `main` **vieux d'une semaine**,
+sans revalidation.
+
+Entre-temps, `main` avait avancé de **16 commits** (2026-08-07, PR #151/#152/#153).
+
+> 🧭 **Règle retenue** : *revalider `main` AVANT de publier un ordre de fusion, pas
+> après.* Coût de l'omission : un lot devenu nuisible, un ordre périmé le jour de sa
+> publication, trois PR en échec, et une journée de remise à niveau.
+
+### 🔴 Un lot devenu nuisible, pas seulement inutile
+
+`main` a reçu le 2026-08-07 la révision `20260807_0113_merge_heads_mrv_crewing`,
+qui déclare **exactement les mêmes parents** que notre `20260730_0113` :
+`("20260716_0112", "20260720_0107")`.
+
+**Vérifié** : les deux ensemble produisaient **DEUX TÊTES Alembic** — soit
+précisément la panne qu'elles devaient éliminer. Fusionner le lot 3 l'aurait donc
+**recréée**.
+
+Actions : migration retirée des deux branches qui la portaient (`feat/bl-workflow`,
+`feat/crew-rotations`), avec vérification de la tête unique `20260807_0113` **avant
+et après** sur chacune · PR #155 **fermée** · branche supprimée en local et sur
+`origin` (SHA `23ebf59` / `2313448` consignés dans `07-ordre-pr-et-merge.md`).
+
+⚠️ Signalé explicitement : le fichier de migration **ne subsistait nulle part
+ailleurs** (vérifié sur les six lots et sur `main`). Sa suppression le retire du
+dépôt — assumé : 46 lignes de *no-op* redondantes, récupérables via la référence
+conservée par la PR fermée.
+
+**Conséquence heureuse** : le préalable de migration disparaît. **Le blocage qui
+attendait Julien n'existe plus.**
+
+### Deux tests cassés par `main`, et l'argument du lot 1 démontré en situation
+
+`test_social_proof_presse.py` échouait sur deux assertions, **sans qu'aucun de nos
+lots y touche**. Le repositionnement café de la landing page a **volontairement**
+réduit `PRESS_MENTIONS` de 6 entrées à 1 (la seule centrée café) sans mettre les
+tests à jour.
+
+⚠️ **Cette casse n'avait été vue par personne.** Sur `main`, la CI ne lance que
+`tests/unit` — ces deux tests d'intégration n'y sont **jamais exécutés**. Ils
+n'échouent que sur les branches portant le filet. **C'est l'argument du lot 1,
+démontré en conditions réelles, sur une casse que nous n'avons pas causée.**
+
+Correction **sur l'invariant, pas sur l'éditorial** :
+- `len(PRESS_MENTIONS) >= 4` était un **comptage éditorial incident**, pas la
+  doctrine testée. Remplacé par : sélection non vide, chaque mention en HTTPS avec
+  média et titre ;
+- `"Supply Chain Magazine" in body` figeait **le nom d'un média**. Remplacé par une
+  boucle sur les données — le bandeau doit rendre ce qu'il contient, sans qu'on
+  décide quoi.
+
+⇒ Ces tests recasseront si le bandeau cesse d'afficher ses données, mais plus au
+prochain arbitrage éditorial. Le code applicatif **n'a pas été touché** : il est
+intentionnel.
+
+### Le garde-fou gitleaks a fonctionné — et j'avais choisi le mauvais remède
+
+L'étape bloquante ajoutée le 2026-07-30 a correctement détecté
+`test_portal_activity_trace.py:47` : le **faux token de test**, 24 caractères
+hexadécimaux, soit la forme exacte de `packing_list.generate_token`. Faux positif
+`generic-api-key`.
+
+**Premier remède, erroné** : annotation `gitleaks:allow` en ligne, au motif qu'une
+empreinte « se périme à chaque réécriture d'historique ».
+
+**C'est l'inverse.** Gitleaks scanne la **plage de commits** de la PR, pas l'état
+courant des fichiers. Le message le disait : *« detected secret at commit
+1cb1d40 »* — le commit qui a introduit la ligne **avant** l'annotation. Une
+annotation ne protège que les commits qui la contiennent, et la réécriture
+d'historique étant interdite, elle ne peut **jamais** atteindre un commit passé.
+
+⇒ L'empreinte `.gitleaksignore` est le mécanisme approprié, **précisément** parce
+qu'elle désigne un commit précis. Les deux sont conservés : l'annotation couvre les
+commits à venir, l'empreinte celui déjà écrit. Le fichier documente la règle : *ne
+jamais ajouter une empreinte sans avoir vérifié que le secret est faux.*
+
+### Bilan de la remise à niveau
+
+| Lot | `main` intégré | Conflits | Presse | Migration retirée |
+|---|---|---|---|---|
+`chore/ci-integration-tests` | ✅ | **0** | ✅ | — |
+`docs/decouverte-fonctionnelle` | ✅ | **0** | s.o. | — |
+`feat/ops-quickwins` | ✅ | **0** | ✅ | — |
+`fix/crew-indicators-honest` | ✅ | **0** | ✅ | — |
+`feat/bl-workflow` | ✅ | **0** | ✅ | ✅ |
+`feat/crew-rotations` | ✅ | **0** | ✅ | ✅ |
+
+**Zéro conflit sur les six.** Le conflit annoncé entre les lots 1 et 4 sur le
+journal **ne s'est pas matérialisé** : chacun ayant intégré `main` de son côté, ils
+convergent au lieu de s'opposer — une raison de plus de préférer la fusion au rebase
+(qui aurait de surcroît exigé un *force push*, interdit).
+
+**Les 6 PR sont vertes**, notes d'ordre réécrites, ordre passé de 7 à 6 lots avec
+les **trois premiers mutuellement indépendants**.
+
+### Contretemps techniques rencontrés
+
+- **`git fetch` échouait** (`invalid index-pack output`) ⇒ débloqué par
+  `core.compression=0` + `http.postBuffer` élargi.
+- **Opérations git très lentes** (> 2 min) ⇒ passées en tâche de fond, avec
+  vérification d'état après chacune. Un `index.lock` de 0 octet, résidu d'une
+  commande interrompue, a dû être retiré après vérification qu'aucun processus git
+  ne tournait.
+- **Arbitrage de méthode assumé** : la suite complète n'a pas été rejouée localement
+  sur les six branches (≈ 1 h) — la CI exécute la même suite sur Ubuntu, où les 15
+  tests PDF passent réellement. Vérification déplacée, pas supprimée. Signalé à
+  Yasmin avant d'être appliqué.
+
+### Correction d'une affirmation antérieure — le « hook alembic » n'existe pas
+
+Le RAF R8 attribuait une migration parasite (`4f4eeb7bfc89_.py`, vide et anonyme,
+posée sur la migration de fusion) à un « hook du harnais lançant `alembic` ».
+
+**Recherche exhaustive** : aucun `settings.json` projet ni local, global réduit au
+modèle et à l'effort, aucun hook git actif, aucun dossier `.claude/hooks`, aucune
+tâche VS Code, et **rien dans le dépôt n'appelle `alembic revision`** (les six
+occurrences sont des `alembic upgrade head`, toutes dans Docker).
+
+⇒ **L'attribution était une inférence jamais vérifiée**, aggravée le matin même par
+une « requalification » de R8 de bruit cosmétique en « pollue la chaîne de
+migrations ». Le **fait** observé reste vrai, mais **sa cause est inconnue**. R8 passe
+d'« action à mener » à « point de vigilance » : *vérifier la tête unique avant de
+créer une migration, sans présumer d'une cause.*

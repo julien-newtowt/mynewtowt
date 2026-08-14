@@ -3,7 +3,10 @@
 > **Rédigé le 2026-08-03** par Yasmin (assistée). À lire au retour de congés.
 >
 > **Rien n'a été fusionné sur `main`.** Tu es la seule personne pouvant valider une
-> fusion : sept branches attendent, prêtes et testées, dans un ordre précis.
+> fusion : **six** branches attendent, prêtes, testées, **à jour sur `main`** et **CI
+> verte**, dans un ordre précis.
+>
+> *Note relue et corrigée le 2026-08-14 (audit J-1).*
 >
 > Documents de référence : `07-ordre-pr-et-merge.md` (ordre et mécanique),
 > `DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md` (journal détaillé, jour par jour),
@@ -19,36 +22,47 @@ choses fausses ont été corrigés ; et deux lots métier (workflow BL, relèves
 d'équipage) ont été spécifiés à partir des processus réels recueillis auprès de
 l'Armement.
 
-**Un seul point te concerne en priorité** : la fusion Alembic (lot 3), qui débloque
-tout ce qui porte une migration.
+**Ce qui te concerne** : relire et fusionner les six lots dans l'ordre du §3, plus
+**trois arbitrages** listés au §7. **Aucun blocage technique ne subsiste.**
 
 **Aucune décision irréversible n'a été prise sans toi.**
 
 ---
 
-## 2. 🔴 Ce qu'il faut décider en premier
+## 2. Ce qu'il faut faire en premier
 
-### La fusion des deux `head` Alembic
+### Relire et fusionner les six lots, dans l'ordre du §3
 
-`alembic upgrade head` **échouait sur `main`** : deux chaînes de migration avaient
-divergé sans jamais être rebasées (`20260716_0112` MRV / `20260720_0107` rapports
-générés). Conséquence, la production utilisant Alembic exclusivement : **tout
-déploiement était bloqué**, et toute nouvelle migration exigeait de préciser sa
-tête cible.
+**Il n'y a plus de point bloquant.** Les six branches sont à jour sur `main`, leur CI
+est verte, et aucune ne porte de migration.
 
-Correctif proposé : branche **`fix/alembic-merge-heads`**, une migration de
-**fusion pure** — `20260730_0113_merge_heads.py`, **aucun DDL**, `upgrade()` et
-`downgrade()` vides. Son seul rôle est de raccorder les deux chaînes.
+Le premier lot (`chore/ci-integration-tests`, PR #149) est celui à regarder d'abord :
+une fois fusionné, **toutes** les PR suivantes sont vérifiées par la suite complète
+(198 fichiers de test au lieu de 84) au lieu des seuls tests unitaires.
 
-Pourquoi c'est sûr : les deux chaînes touchent des tables **disjointes**
-(`nav_event_noon` d'un côté, `generated_reports` de l'autre), leur ordre
-d'application relatif est donc indifférent.
+### ✅ Résolu pendant ton absence — la fusion des deux `head` Alembic
 
-Vérifié : `alembic heads` renvoie **une seule tête**, `alembic history` affiche le
-`(mergepoint)`, le fichier est importable et ses deux fonctions exécutables.
+Ce point était annoncé comme **le** blocage du chantier, il ne l'est plus. Le récit
+vaut d'être lu, car il explique pourquoi certaines branches ont bougé :
 
-**C'est le point bloquant du chantier** : les lots workflow BL, relèves d'équipage
-et J9 en dépendent tous.
+`alembic upgrade head` **échouait sur `main`** — deux chaînes de migration avaient
+divergé (`20260716_0112` MRV / `20260720_0107` rapports générés). La production
+utilisant Alembic exclusivement, **tout déploiement était bloqué**.
+
+Une migration de fusion pure avait été préparée (`20260730_0113`, aucun DDL).
+**Mais le problème a été résolu en parallèle sur `main` le 2026-08-07** par
+`20260807_0113_merge_heads_mrv_crewing`, qui déclare **exactement les mêmes
+parents**.
+
+⇒ Les deux ensemble produisaient **deux têtes Alembic** : le problème même qu'elles
+devaient éliminer. La migration préparée a donc été **retirée** des deux branches qui
+la portaient (tête unique revérifiée sur chacune), sa PR **fermée** et sa branche
+**supprimée** — SHA consignés dans `07-ordre-pr-et-merge.md`.
+
+> 🧭 **Leçon assumée** : l'ordre de fusion avait été publié le 2026-08-03 sur un
+> `main` vieux d'une semaine, sans revalidation. D'où un lot devenu nuisible et un
+> ordre périmé le jour de sa publication. **Revalider `main` avant de publier un
+> ordre de fusion**, pas après.
 
 ---
 
@@ -72,14 +86,14 @@ et J9 en dépendent tous.
 ⚠️ **Deux règles à ne pas contourner** :
 
 1. **Rejouer la suite complète après *chaque* fusion**, pas une seule fois à la
-   fin. Sept fusions d'affilée sans revérification est la façon la plus sûre de
+   fin. Six fusions d'affilée sans revérification est la façon la plus sûre de
    casser `main` — d'autant que la **protection de branche est absente** (RAF R3,
    à mettre en place : Yasmin n'a pas les droits).
-2. **Les lots 6 et 7 empilent délibérément** les lots dont ils dérivent. Ce n'est
-   pas un accident : `alembic revision` exige une tête unique, et une migration
-   créée sur `main` aurait été rattachée à l'une des deux têtes divergentes, donc
-   **à refaire**. Leur PR affichera les commits de leurs parents jusqu'à ce que
-   ceux-ci soient fusionnés.
+2. **Les lots 4, 5 et 6 portent le contenu du lot 1.** La raison technique
+   d'origine (tête Alembic unique) a disparu, mais le fait subsiste : les fusionner
+   avant le lot 1 emporterait son contenu **en une seule fusion**, ce qui ferait
+   perdre la révocabilité lot par lot. L'ordre reste donc recommandé — désormais par
+   choix, plus par contrainte.
 
 ---
 
