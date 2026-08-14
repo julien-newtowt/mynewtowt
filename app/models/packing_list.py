@@ -205,6 +205,65 @@ class PackingListBatch(Base):
     bl_number: Mapped[str | None] = mapped_column(String(50), unique=True, index=True)
     bl_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # ─── Workflow BL (cf. docs/strategy/SPEC_WORKFLOW_BILL_OF_LADING.md) ───────
+    #
+    # Cycle : draft → client_validated → master_signed → final.
+    # `NULL` = aucun BL n'a encore été généré pour ce lot.
+    #
+    # Le point de gel est la SIGNATURE DU COMMANDANT, pas l'émission : avant
+    # signature un connaissement n'engage personne, après il engage le
+    # transporteur. C'est ce qui permet à l'expéditeur de corriger sa packing
+    # list au stade draft — exigence explicite de la demande métier.
+    bl_state: Mapped[str | None] = mapped_column(String(20), index=True)
+
+    # Génération du draft — `bl_issued_by_*` comble un trou d'audit : l'émission
+    # actuelle ne laisse qu'un horodatage anonyme, sans jamais dire QUI a émis.
+    bl_draft_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bl_issued_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    bl_issued_by_name: Mapped[str | None] = mapped_column(String(200))
+
+    # Validation du draft. Deux FK MUTUELLEMENT EXCLUSIVES :
+    #  - `bl_client_validated_by_id` : le client titulaire du booking valide
+    #    depuis /me (cas normal) ;
+    #  - `bl_validated_on_behalf_by_id` : repli quand le booking n'a pas de compte
+    #    client (`Booking.client_account_id` est nullable) — un membre du staff
+    #    valide POUR SON COMPTE, et c'est tracé comme tel.
+    # ⚠️ Jamais de validation silencieuse présentée comme venant du client : la
+    # contrainte ci-dessous interdit d'en renseigner les deux à la fois.
+    bl_client_validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bl_client_validated_by_id: Mapped[int | None] = mapped_column(ForeignKey("client_accounts.id"))
+    bl_validated_on_behalf_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    # Nom figé à la validation : survit à un renommage ultérieur du compte.
+    bl_client_validated_by: Mapped[str | None] = mapped_column(String(200))
+
+    # Signature du commandant — patron décalqué de `SofEvent` (déjà éprouvé dans
+    # le dépôt) : le hash SHA-256 du contenu signé détecte toute altération
+    # postérieure. Ne pas réinventer un mécanisme de signature.
+    bl_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bl_signed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    bl_signed_by_name: Mapped[str | None] = mapped_column(String(200))
+    bl_signature_hash: Mapped[str | None] = mapped_column(String(64))
+
+    # Après signature, une correction ne passe plus par l'édition mais par une
+    # RÉVISION NUMÉROTÉE qui annule explicitement la précédente — les deux
+    # restant tracées, comme l'exige un registre opposable.
+    bl_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")
+    bl_superseded_by_id: Mapped[int | None] = mapped_column(ForeignKey("packing_list_batches.id"))
+
+    __table_args__ = (
+        # Le validateur du draft est SOIT le client, SOIT le staff pour son
+        # compte — jamais les deux. Contrainte posée EN BASE et non seulement
+        # dans le formulaire : c'est ce qui garantit qu'aucune validation ne peut
+        # être présentée comme venant du client alors qu'elle vient du staff.
+        # Les deux NULL restent permis (aucune validation encore intervenue).
+        CheckConstraint(
+            "bl_client_validated_by_id IS NULL OR bl_validated_on_behalf_by_id IS NULL",
+            name="ck_bl_validator_client_xor_staff",
+        ),
+        # Une révision commence à 1 et ne décroît jamais.
+        CheckConstraint("bl_revision >= 1", name="ck_bl_revision_positive"),
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -108,9 +108,10 @@ Sur `PackingListBatch` :
 `bl_number` et `bl_issued_at` existants sont conservés (le numéro est attribué
 à la génération du draft et **ne bouge plus**).
 
-⚠️ **Cette migration dépend du RAF R1** : avec deux `head` Alembic divergents,
-`alembic revision` exige de préciser la cible et `upgrade head` échoue. **La
-fusion Alembic doit être faite avant ce lot.**
+✅ **Le préalable Alembic est levé** (2026-08-10) : `main` porte
+`20260807_0113_merge_heads_mrv_crewing` depuis le 2026-08-07, la tête est unique.
+La migration de ce lot peut donc être créée directement — c'était le RAF R1, désormais
+clos.
 
 ### 4.3 Journalisation — exigence explicite de la demande
 
