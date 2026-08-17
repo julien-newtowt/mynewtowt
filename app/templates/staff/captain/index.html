@@ -9,6 +9,16 @@
     <h1 class="display">On Board</h1>
     <p class="text-muted">SOF events · ETA shifts · messagerie de bord · cargo documents</p>
   </div>
+  <div class="flex gap-2">
+    {# Point d'entrée de la signature des connaissements. Sans ce lien l'écran
+       n'existerait pas pour le commandant, quelle que soit la qualité de la route. #}
+    <a href="/captain/bl{% if leg %}?leg_id={{ leg.id }}{% endif %}" class="btn btn-secondary">
+      <i data-lucide="file-signature"></i> Connaissements
+    </a>
+    <a href="/captain/next-port" class="btn btn-ghost">
+      <i data-lucide="anchor"></i> Prochaine escale
+    </a>
+  </div>
 </header>
 
 <div class="leg-selector">

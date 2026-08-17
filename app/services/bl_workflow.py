@@ -25,10 +25,14 @@ pistes ne servent pas le même lecteur.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.booking import Booking
+from app.models.commercial import Order
 from app.models.packing_list import PackingList, PackingListBatch
 from app.services.activity import record as activity_record
 from app.services.packing_list import record_audit
@@ -139,6 +143,32 @@ def signature_is_intact(batch: PackingListBatch) -> bool | None:
     if not batch.bl_signature_hash:
         return None
     return compute_signature_hash(batch) == batch.bl_signature_hash
+
+
+async def batches_for_leg(
+    db: AsyncSession, *, leg_id: int, states: tuple[str | None, ...] | None = None
+) -> list[PackingListBatch]:
+    """Lots portant un BL sur un leg donné, filtrés par état.
+
+    La jointure reprend **exactement** la règle COM-11 de
+    ``packing_list._count_issued_bls_for_leg`` : leg épinglé sur la packing list
+    prioritaire, repli sur ``order``/``booking`` pour les lignes héritées. Toute
+    autre convention de rattachement ferait apparaître ou disparaître des
+    connaissements de l'écran du commandant selon la requête, ce qui est
+    inacceptable pour un registre.
+    """
+    stmt = (
+        select(PackingListBatch)
+        .join(PackingList, PackingListBatch.packing_list_id == PackingList.id)
+        .outerjoin(Order, PackingList.order_id == Order.id)
+        .outerjoin(Booking, PackingList.booking_id == Booking.id)
+        .where(PackingListBatch.bl_number.is_not(None))
+        .where(func.coalesce(PackingList.leg_id, Order.leg_id, Booking.leg_id) == leg_id)
+        .order_by(PackingListBatch.bl_number)
+    )
+    if states is not None:
+        stmt = stmt.where(PackingListBatch.bl_state.in_(states))
+    return list((await db.execute(stmt)).scalars().all())
 
 
 async def _trace(
@@ -308,6 +338,46 @@ async def sign_by_master(
         ip=ip,
     )
     return signature
+
+
+@dataclass(frozen=True)
+class BulkSignResult:
+    """Compte rendu **exact** d'une signature groupée.
+
+    Deux listes plutôt qu'un compteur : le commandant doit savoir **lesquels** il
+    a signés et **lesquels** ne l'ont pas été, avec la raison. Un simple « 11
+    signés » sur 12 sélectionnés laisserait croire à une réussite complète.
+    """
+
+    signed: tuple[str, ...]
+    skipped: tuple[tuple[str, str], ...]  # (numéro de BL, raison)
+
+    @property
+    def is_complete(self) -> bool:
+        return not self.skipped
+
+
+async def sign_many(
+    db: AsyncSession, *, batches: list[PackingListBatch], user, ip: str | None = None
+) -> BulkSignResult:
+    """Signe plusieurs connaissements d'un geste (§5.2 — « tout signer »).
+
+    Un lot non signable (revenu à ``draft`` entre l'affichage de l'écran et la
+    validation du formulaire, ou déjà signé) est **écarté avec sa raison**, sans
+    faire échouer les autres : le commandant qui signe douze connaissements ne
+    doit pas en perdre onze parce que le douzième a régressé. Mais l'écran le dit.
+    """
+    signed: list[str] = []
+    skipped: list[tuple[str, str]] = []
+    for batch in batches:
+        label = batch.bl_number or f"lot {batch.batch_number}"
+        try:
+            await sign_by_master(db, batch=batch, user=user, ip=ip)
+        except InvalidTransition as exc:
+            skipped.append((label, str(exc)))
+        else:
+            signed.append(label)
+    return BulkSignResult(signed=tuple(signed), skipped=tuple(skipped))
 
 
 async def issue_final(

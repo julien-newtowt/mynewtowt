@@ -974,3 +974,91 @@ Yasmin ou de Julien, ce n'est pas automatisable ici (GTK absent en local).
 
 Reste sur ce point de la spec : les **révisions numérotées** (`TUAW_…_R2`
 annulant la précédente), non abordées.
+
+---
+
+## 2026-08-17 (3) — écran commandant : signature des connaissements
+
+Branche `feat/bl-workflow`. Réponse au §5.2 de la spec — « Donner le choix au
+commandant de tout signer ou signer un BL en particulier ».
+
+### Ce qui est livré
+
+`/captain/bl` (`captain:C`), avec deux actions en `captain:M` : signature
+**unitaire** et signature **groupée**. L'écran sépare trois listes, et cette
+séparation est le cœur du travail :
+
+| Liste | Signable ? | Pourquoi la montrer |
+|---|---|---|
+| **À signer** (`client_validated`) | oui | le travail du commandant |
+| **En attente de validation client** (`draft`) | **non** | la masquer ferait croire à un oubli d'émission alors que la balle est chez le client |
+| **Signés** (`master_signed`, `final`) | non | registre : signataire, horodatage, empreinte |
+
+Chaque ligne porte un lien « Lire » vers le PDF filigrané : **lire avant de
+signer** n'est pas une option quand on engage le transporteur.
+
+### La signature groupée ne doit pas mentir
+
+C'est le point de conception qui a demandé le plus d'attention. Un lot peut être
+revenu à `draft` entre l'affichage de l'écran et l'envoi du formulaire (la règle de
+régression). Trois comportements possibles, deux mauvais :
+
+- tout refuser ⇒ le commandant qui signe douze connaissements en perd onze à cause
+  du douzième ;
+- signer ce qui passe et annoncer « 11 signés » ⇒ **laisse croire à une réussite
+  complète** ;
+- signer ce qui passe et annoncer **11 signés, 1 écarté**, l'écarté restant visible
+  dans sa liste avec son état réel. C'est ce qui est implémenté.
+
+`BulkSignResult` porte donc deux listes et non un compteur, chaque écart avec sa
+**raison**. Rien n'est encodé dans l'URL : seuls les deux nombres y transitent, le
+détail se lit dans les listes.
+
+### Deux pièges du gabarit, évités et épinglés par des tests
+
+- **`<form>` imbriqué** : j'avais d'abord mis le formulaire de signature unitaire
+  *dans* le formulaire de signature groupée. HTML l'interdit et le navigateur
+  aurait cassé **les deux** envois. Corrigé par `formaction` sur le bouton.
+- **`onchange="this.form.submit()"`** : je m'apprêtais à copier le motif de quatre
+  écrans existants. Vérification faite, la CSP du projet est
+  `script-src 'self' https://unpkg.com`, **sans `unsafe-inline`** : les
+  gestionnaires d'événements en attribut sont **bloqués**.
+
+  🔴 **Constat à part, préexistant** : `staff/captain/cargo_doc_form.html`,
+  `staff/dashboard_env/quality.html`, `staff/onboard/compliance.html` et
+  `staff/rh/absences.html` utilisent ce motif — **leurs filtres ne font donc rien
+  en production**. Non corrigé ici (hors périmètre du lot BL), mais signalé.
+
+### Vérification — 16 tests, non-vacuité mesurée par sabotage
+
+Deux sabotages réels, appliqués puis annulés :
+
+- supprimer le report des écarts ⇒ **2 tests tombent** ;
+- retirer le repli COM-11 de la requête (`coalesce(pl.leg_id, order.leg_id,
+  booking.leg_id)`) ⇒ **le test du repli tombe**. Ce repli n'est pas décoratif :
+  sans lui, les connaissements des packing lists héritées (`leg_id` NULL) seraient
+  **invisibles à bord** et jamais signés.
+
+### Trois erreurs de ma part
+
+1. **🔴 J'ai détruit mon propre travail** avec `git checkout -- <fichier>` sur un
+   fichier portant des modifications **non committées** : `batches_for_leg`,
+   `sign_many` et `BulkSignResult` ont disparu d'un coup. J'avais raisonné
+   « stash » et tapé « checkout ». Réécrit depuis le contexte. La méthode retenue
+   pour un sabotage temporaire est désormais une **copie de sauvegarde du fichier**,
+   restaurée par `cp` — vérifiable, et sans commande destructive.
+2. **Shells mélangés** : un heredoc Bash dans un appel PowerShell (qui n'en
+   accepte pas), puis des cmdlets PowerShell dans un appel Bash. Résultat : le
+   sabotage appliqué, le test jamais exécuté, et un fichier laissé modifié. C'est
+   ce qui a mené à l'erreur 1.
+3. **Deux assertions de test trop grossières** : `"<form"` et `"onchange="`
+   cherchés dans la source du gabarit matchaient mes **propres commentaires
+   Jinja**, ceux qui documentent justement les pièges. Corrigé en retirant les
+   commentaires avant analyse — ils ne sortent jamais au rendu.
+
+### Reste sur les écrans
+
+⛔ **La validation client n'est pas livrée** : elle passe par `/me` (espace
+authentifié), or le rail packing list **n'a toujours aucune route client** (§5.4).
+Elle est donc **liée au lot des routes client**, pas à celui-ci. Le repli staff
+(« valider pour le compte du client ») existe en service et reste à exposer.
