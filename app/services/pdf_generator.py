@@ -78,7 +78,7 @@ def _bl_number(booking) -> str:
 
 
 def render_bill_of_lading_from_pl(
-    *, pl, batch, leg, vessel, pol, pod, bl_number, issued_at=None
+    *, pl, batch, leg, vessel, pol, pod, bl_number, issued_at=None, shipped_on_board=None
 ) -> DocumentBytes:
     """CARGO-01 — Bill of Lading généré depuis un batch de packing list.
 
@@ -90,6 +90,10 @@ def render_bill_of_lading_from_pl(
     signés » sur un brouillon tromperait un tiers de bonne foi (banque en crédit
     documentaire, destinataire, assureur) sur la nature du titre qu'il détient.
     C'est la signature qui fait l'original, pas l'émission.
+
+    ``shipped_on_board`` est un ``Resolved`` (cf. ``services/derived_override``)
+    fourni **par l'appelant** : la dérivation interroge la base, or cette fonction
+    est synchrone. Absent ⇒ la mention n'apparaît pas, plutôt qu'une date fausse.
     """
     from app.services.bl_workflow import FROZEN_STATES
     from app.templating import brand_for_lang
@@ -114,6 +118,11 @@ def render_bill_of_lading_from_pl(
         "signed_at": getattr(batch, "bl_signed_at", None) if is_signed else None,
         "signed_by": getattr(batch, "bl_signed_by_name", None) if is_signed else None,
         "signature_hash": getattr(batch, "bl_signature_hash", None) if is_signed else None,
+        # §5.0 — la DATE seule figure sur le document. Le fait qu'elle ait été
+        # corrigée vit dans la piste d'audit, pas sur le connaissement : annoter
+        # « date corrigée » sur un titre présenté à une banque en crédit
+        # documentaire jetterait un doute injustifié sur le document lui-même.
+        "shipped_on_board": shipped_on_board.value if shipped_on_board else None,
         "brand": brand_for_lang("fr"),
         "site_url": settings.site_url,
     }

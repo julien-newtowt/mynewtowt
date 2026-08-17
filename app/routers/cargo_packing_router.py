@@ -136,9 +136,28 @@ async def packing_list_detail(
     from app.services import messaging
 
     await messaging.mark_portal_read(db, pl_id, reader="staff")
+
+    # §5.0 — date de mise à bord résolue par lot (dérivée de la timeline d'escale,
+    # ou override justifié). Calculée ici et non dans le gabarit : la dérivation
+    # interroge la base, et un gabarit ne doit pas déclencher de requêtes.
+    _o, _b, leg, _v, _pol, _pod = await resolve_pl_context(db, pl)
+    sob_by_batch = {
+        batch.id: await bl_workflow.resolve_shipped_on_board(
+            db, batch=batch, leg_id=leg.id if leg else None
+        )
+        for batch in pl.batches
+    }
+
     return templates.TemplateResponse(
         "staff/cargo/packing_list_detail.html",
-        {"request": request, "user": user, "pl": pl, "order": order, "messages": messages},
+        {
+            "request": request,
+            "user": user,
+            "pl": pl,
+            "order": order,
+            "messages": messages,
+            "sob_by_batch": sob_by_batch,
+        },
     )
 
 
@@ -426,6 +445,64 @@ async def generate_bl_draft(
     )
 
 
+@router.post("/{pl_id}/batches/{batch_id}/bl/shipped-on-board")
+async def override_bl_shipped_on_board(
+    pl_id: int,
+    batch_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """§5.0 — corrige la date de mise à bord, **justification obligatoire**.
+
+    La date effective est normalement **dérivée** du dernier jour des opérations
+    réelles d'escale. Cette route ne sert qu'aux cas où la timeline ne reflète pas
+    la réalité (SOF saisi en retard, par exemple).
+
+    Le motif est exigé : un connaissement antidaté est une fraude documentaire, et
+    le journal demandé « en cas de contrôle » n'a de valeur que s'il porte le
+    pourquoi. Un refus renvoie **400** (donnée d'entrée invalide), un BL signé
+    **409** (la correction passe alors par une révision).
+    """
+    from datetime import date as _date
+
+    from app.services.derived_override import JustificationRequired
+
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    if not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    batch = await _get_batch_or_404(db, pl_id, batch_id)
+
+    form = dict(await request.form())
+    raw_date = str(form.get("shipped_on_board") or "").strip()
+    try:
+        new_date = _date.fromisoformat(raw_date)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="date de mise à bord invalide (format attendu AAAA-MM-JJ)"
+        ) from exc
+
+    _order, _booking, leg, _vessel, _pol, _pod = await resolve_pl_context(db, pl)
+    try:
+        await bl_workflow.override_shipped_on_board(
+            db,
+            batch=batch,
+            leg_id=leg.id if leg else None,
+            new_date=new_date,
+            reason=str(form.get("reason") or ""),
+            user=user,
+            ip=_client_ip(request),
+        )
+    except JustificationRequired as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except bl_workflow.BlFrozen as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+
+
 @router.get("/{pl_id}/batches/{batch_id}/bl.pdf")
 async def batch_bill_of_lading(
     pl_id: int,
@@ -449,6 +526,10 @@ async def batch_bill_of_lading(
         )
     _order, _booking, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
     bl_number = batch.bl_number
+    # §5.0 — résolue ici (la dérivation interroge la base ; le rendu est synchrone).
+    sob = await bl_workflow.resolve_shipped_on_board(
+        db, batch=batch, leg_id=leg.id if leg else None
+    )
     doc = render_bill_of_lading_from_pl(
         pl=pl,
         batch=batch,
@@ -458,6 +539,7 @@ async def batch_bill_of_lading(
         pod=pod,
         bl_number=bl_number,
         issued_at=batch.bl_issued_at,
+        shipped_on_board=sob,
     )
     return Response(
         content=doc.pdf,

@@ -25,8 +25,10 @@ pistes ne servent pas le même lecteur.
 from __future__ import annotations
 
 import hashlib
+import json
+from contextlib import suppress
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +37,12 @@ from app.models.booking import Booking
 from app.models.commercial import Order
 from app.models.packing_list import PackingList, PackingListBatch
 from app.services.activity import record as activity_record
+from app.services.derived_override import (
+    Resolved,
+    audit_snapshot,
+    clean_justification,
+    resolve,
+)
 from app.services.packing_list import record_audit
 
 # ── États et transitions autorisées ──────────────────────────────────────────
@@ -169,6 +177,103 @@ async def batches_for_leg(
     if states is not None:
         stmt = stmt.where(PackingListBatch.bl_state.in_(states))
     return list((await db.execute(stmt)).scalars().all())
+
+
+# ── Date de mise à bord (« shipped on board ») — §5.0 ────────────────────────
+
+
+async def derive_shipped_on_board(db: AsyncSession, *, leg_id: int) -> date | None:
+    """Dernier jour des opérations **réelles** de l'escale. ``None`` si aucune.
+
+    🔴 Ne lit **que** le réel (``actual_end``, à défaut ``actual_start``), jamais le
+    prévisionnel. Dériver d'une opération planifiée produirait un connaissement
+    **post-daté** — soit exactement la fraude documentaire que le §5.0 cherche à
+    éviter, et une exclusion de garantie.
+
+    ``None`` quand l'escale n'a encore aucune opération réelle : mieux vaut aucune
+    date qu'une date inventée.
+    """
+    from app.models.escale import EscaleOperation
+
+    stmt = select(
+        func.max(func.coalesce(EscaleOperation.actual_end, EscaleOperation.actual_start))
+    ).where(EscaleOperation.leg_id == leg_id)
+    value = await db.scalar(stmt)
+    if value is None:
+        return None
+    # SQLite peut rendre une chaîne là où Postgres rend un `datetime` : on ne
+    # suppose pas le type, on ramène toujours à une date civile.
+    if isinstance(value, str):
+        with suppress(ValueError):
+            value = datetime.fromisoformat(value)
+    return value.date() if isinstance(value, datetime) else value
+
+
+async def resolve_shipped_on_board(
+    db: AsyncSession, *, batch: PackingListBatch, leg_id: int | None
+) -> Resolved[date]:
+    """Date de mise à bord effective, **avec sa provenance**.
+
+    Override des Opérations s'il existe, sinon dérivation. La provenance remonte
+    jusqu'au PDF : une date corrigée à la main et une date lue dans la timeline
+    d'escale n'ont pas la même valeur probante.
+    """
+    derived = await derive_shipped_on_board(db, leg_id=leg_id) if leg_id else None
+    return resolve(override=batch.bl_sob_date, derived=derived, reason=batch.bl_sob_reason)
+
+
+async def override_shipped_on_board(
+    db: AsyncSession,
+    *,
+    batch: PackingListBatch,
+    leg_id: int | None,
+    new_date: date,
+    reason: str | None,
+    user,
+    ip: str | None = None,
+) -> Resolved[date]:
+    """Corrige la date de mise à bord — **justification obligatoire**.
+
+    Lève ``JustificationRequired`` (une ``ValueError``) **avant** toute écriture :
+    un override sans motif ne doit pas exister, même transitoirement.
+
+    Refusé sur un connaissement signé : la date de mise à bord fait partie du
+    document opposable, sa correction après signature passe par une révision.
+    """
+    if is_frozen(batch):
+        raise BlFrozen(
+            f"BL {batch.bl_number or batch.batch_number} signé ({batch.bl_state}) — "
+            "corriger la date de mise à bord par révision numérotée, pas par édition."
+        )
+    justification = clean_justification(reason, field="la date de mise à bord")
+
+    derived = await derive_shipped_on_board(db, leg_id=leg_id) if leg_id else None
+    previous = resolve(override=batch.bl_sob_date, derived=derived, reason=batch.bl_sob_reason)
+
+    batch.bl_sob_date = new_date
+    batch.bl_sob_reason = justification
+    batch.bl_sob_by_id = user.id
+    batch.bl_sob_at = datetime.now(UTC)
+    await db.flush()
+
+    resolved = resolve(override=new_date, derived=derived, reason=justification)
+    # Le snapshot part dans la trace : un contrôle des mois plus tard doit pouvoir
+    # rejouer le raisonnement sans dépendre de l'état courant de la timeline.
+    await _trace(
+        db,
+        batch,
+        action="bl_shipped_on_board_overridden",
+        detail=(
+            f"date de mise à bord corrigée : {previous.value or 'non dérivable'} → {new_date} "
+            f"(dérivée {derived or 'indisponible'}) — motif : {justification} "
+            f"| snapshot {json.dumps(audit_snapshot(resolved), ensure_ascii=False)}"
+        ),
+        actor_name=user.full_name or user.username,
+        actor_id=user.id,
+        actor_role=getattr(user, "role", None),
+        ip=ip,
+    )
+    return resolved
 
 
 async def _trace(

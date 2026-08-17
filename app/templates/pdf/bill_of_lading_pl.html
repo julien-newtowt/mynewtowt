@@ -94,6 +94,15 @@
     <td><strong>ETA</strong></td>
     <td class="mono">{{ leg.eta.strftime("%d/%m/%Y %H:%M UTC") }}</td>
   </tr>{% endif %}
+  {# §5.0 — dernier jour des opérations RÉELLES d'escale. Omise plutôt
+     qu'inventée : un connaissement portant une date de mise à bord fausse (a
+     fortiori future) est une fraude documentaire. #}
+  <tr>
+    <td><strong>Shipped on board</strong></td>
+    <td class="mono">
+      {% if shipped_on_board %}{{ shipped_on_board.strftime("%d/%m/%Y") }}{% else %}<span class="c-gris">— non constatée</span>{% endif %}
+    </td>
+  </tr>
 </table>
 
 <h2>Goods · Marchandises</h2>

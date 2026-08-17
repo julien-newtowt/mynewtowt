@@ -122,6 +122,60 @@
     </tbody>
   </table>
 
+  {# §5.0 — date de mise à bord. DÉRIVÉE du dernier jour des opérations réelles
+     d'escale : elle n'est pas saisie. Les Opérations peuvent la corriger, mais
+     jamais sans motif — un connaissement antidaté est une fraude documentaire, et
+     le journal est demandé « en cas de contrôle ». #}
+  {% set batches_with_bl = pl.batches | selectattr('bl_number') | list %}
+  {% if batches_with_bl %}
+  <h3 class="mt-4">Date de mise à bord (shipped on board)</h3>
+  <p class="text-muted text-sm">
+    Dérivée du <strong>dernier jour des opérations réelles</strong> de l'escale. Une
+    correction exige un motif, conservé et journalisé.
+  </p>
+  <table class="data-table">
+    <thead><tr><th>N° BL</th><th>Date retenue</th><th>Provenance</th><th>Correction</th></tr></thead>
+    <tbody>
+      {% for b in batches_with_bl %}
+      {% set sob = sob_by_batch.get(b.id) %}
+      <tr>
+        <td class="mono">{{ b.bl_number }}</td>
+        <td class="mono">
+          {% if sob and sob.value %}{{ sob.value.strftime("%d/%m/%Y") }}{% else %}<span class="text-muted">— non constatée</span>{% endif %}
+        </td>
+        <td>
+          {% if sob and sob.is_override %}
+            <span class="pill pill-warn">corrigée</span>
+            {% if sob.diverges and sob.derived_value %}
+              <span class="text-muted text-xs">dérivée : {{ sob.derived_value.strftime("%d/%m/%Y") }}</span>
+            {% endif %}
+            <div class="text-muted text-xs">{{ b.bl_sob_reason }}</div>
+          {% else %}
+            <span class="pill">dérivée de l'escale</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if b.bl_state in ('master_signed', 'final') %}
+            <span class="text-muted text-sm">BL signé — correction par révision</span>
+          {% elif pl.status != 'locked' %}
+            <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl/shipped-on-board" class="flex gap-1 items-center">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <input type="date" name="shipped_on_board" required
+                     value="{{ sob.value.isoformat() if sob and sob.value else '' }}" />
+              <input type="text" name="reason" required minlength="10" style="min-width:16rem;"
+                     placeholder="Motif (lu en cas de contrôle)" value="" />
+              <button type="submit" class="btn btn-ghost btn-sm">Corriger</button>
+            </form>
+          {% else %}
+            <span class="text-muted text-sm">packing list verrouillée</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
   {% if pl.status != 'locked' %}
   <h3 class="mt-4">Ajouter un batch</h3>
   <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches">

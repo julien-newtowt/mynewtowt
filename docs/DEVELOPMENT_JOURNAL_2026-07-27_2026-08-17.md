@@ -1062,3 +1062,81 @@ Deux sabotages réels, appliqués puis annulés :
 authentifié), or le rail packing list **n'a toujours aucune route client** (§5.4).
 Elle est donc **liée au lot des routes client**, pas à celui-ci. Le repli staff
 (« valider pour le compte du client ») existe en service et reste à exposer.
+
+---
+
+## 2026-08-17 (4) — date de mise à bord : dérivée, corrigeable, justifiée
+
+Branche `feat/bl-workflow`. Réponse au §5.0 de la spec.
+
+### Le mécanisme partagé, construit une seule fois
+
+La spec insistait : le motif *valeur dérivée → override → justification
+obligatoire* est demandé **deux fois** (date de mise à bord ici, durées de contrat
+dans le lot relèves) et devait être écrit une seule fois. C'est
+`app/services/derived_override.py` : il ne connaît **ni la base ni le métier**, il
+décide et ne persiste pas — c'est ce qui le rend utilisable par deux lots qui ne
+partagent aucune table. Précédent suivi : `validation_engine.get_threshold` (MRV
+v2), avec la même idée de snapshot d'audit.
+
+Trois règles y sont posées :
+
+1. **la dérivée est la référence** — jamais recopiée dans la colonne d'override,
+   sinon « corrigé volontairement à cette valeur » devient indistinguable de « pas
+   corrigé », et la valeur figée devient fausse dès que la source bouge ;
+2. **un override est explicite** — valeur, auteur, horodatage ; pas de drapeau
+   séparé qui pourrait se désynchroniser ;
+3. **sans justification, pas d'enregistrement** — refus levé *avant* toute écriture.
+
+Une justification vide est refusée, mais aussi une justification **creuse** :
+« ok », « erreur », « correction », « cf. mail »… Elles remplissent le champ sans
+répondre à la question qui sera posée en contrôle des mois plus tard, par
+quelqu'un qui n'était pas là. Longueur minimale de 10 caractères, paramétrable —
+c'est un garde-fou, pas un dogme.
+
+### 🔴 Le point le plus grave : ne dériver que du réel
+
+La dérivation lit `actual_end`, à défaut `actual_start`. **Jamais** le
+prévisionnel. Une opération planifiée le 20 et non réalisée produirait sinon un
+connaissement portant une date de mise à bord **future** — c'est-à-dire une fraude
+documentaire et une exclusion de garantie, précisément ce que le §5.0 cherche à
+éviter.
+
+Corollaire assumé : **pas d'opération réelle ⇒ pas de date**. Le PDF affiche
+« — non constatée » plutôt qu'une date inventée. C'est moins confortable et c'est
+juste.
+
+### La contrainte est en base, pas seulement dans le service
+
+`ck_bl_sob_override_needs_reason` : une date corrigée sans motif est
+**instockable**. Un futur chemin d'écriture qui oublierait de passer par
+`override_shipped_on_board` échouera quand même. Le journal demandé « en cas de
+contrôle » n'a de valeur que si le motif existe toujours.
+
+### Choix de conception : le PDF porte la date, pas la mention « corrigée »
+
+La provenance remonte jusqu'à l'écran Opérations (pastille « corrigée » + date
+dérivée + motif), mais **pas** sur le connaissement. Annoter « date corrigée » sur
+un titre présenté à une banque en crédit documentaire jetterait un doute
+injustifié sur le document lui-même. La piste d'audit est le bon endroit pour ça —
+et elle porte un snapshot JSON complet (valeur, dérivée, motif, divergence).
+
+### Vérification — 47 tests
+
+Le socle partagé est testé **pour lui-même** (25 tests unitaires) et non seulement
+à travers son appelant : il servira à un autre lot.
+
+Sabotage réel : faire accepter `planned_end` par la dérivation ⇒ le test du
+post-datage tombe. Restauration par copie de sauvegarde du fichier (méthode
+adoptée après l'incident du `git checkout` de ce matin).
+
+Un point d'entrée a été ajouté sur l'écran Opérations — sans lui la route
+n'existerait pas, exactement le défaut relevé la veille sur
+`passport_blocking_reason`.
+
+### Reste du §5.1 — le registre de remise
+
+**Non livré.** Le suivi de réception des originaux (téléchargement horodaté, case
+de confirmation client, repli Opérations avec date/heure/moyen/pièce jointe) est le
+prochain volet. Il dépend en partie des **routes client** (`/me`), comme la
+validation client.

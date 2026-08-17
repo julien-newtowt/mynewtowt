@@ -328,12 +328,12 @@ formulaire du portail (§5.3), pure addition sans retrait.
 | Routes client du rail packing list, puis retrait du rail booking (§5.4) | 1 j | ⛔ **ne peut PAS précéder ce lot** — retirer maintenant priverait le client de tout BL |
 | Migration + machine à états + transitions tracées | 2 j | ✅ **FAIT** (2026-08-14/17) — migration `20260814_0114`, `services/bl_workflow.py`, gel câblé sur les 4 chemins d'écriture, émission en `POST`/`cargo:M`. 45 tests |
 | Écrans (génération draft, validation client, signature) | 2 j | ⚠️ **2 des 3 FAITS** (2026-08-17) — génération du draft (`POST .../bl/draft`) et **écran commandant** `/captain/bl` : signature **unitaire ET groupée** (§5.2), listes séparées « à signer » / « en attente de validation client » / « signés », compte rendu du mode groupé (signés **et** écartés). 16 tests. ⛔ **Validation client restante** — elle passe par `/me`, donc **liée au lot des routes client** ci-dessus (§5.4). Repli disponible dès maintenant en service (`validate_by_client(on_behalf_user=…)`), pas encore exposé à l'écran |
-| Date *shipped on board* dérivée + override justifié (§5.0) | 1 j | ci-dessus. **Mécanisme partagé** avec le lot relèves |
+| Date *shipped on board* dérivée + override justifié (§5.0) | 1 j | ✅ **FAIT** (2026-08-17) — migration `20260817_0115`, **mécanisme partagé** `services/derived_override.py` (dérivée → override → justification refusée si vide/creuse/trop courte), dérivation du **dernier jour des opérations RÉELLES** (jamais le prévisionnel : ce serait un BL post-daté), contrainte `ck_bl_sob_override_needs_reason` **en base**, snapshot d'audit dans la trace, mention sur le PDF, écran Opérations. 47 tests |
 | Registre de remise des originaux (§5.1) | 1,5 j | ci-dessus — table + écran client + repli Opérations avec PJ |
 | Filigrane draft / BL final / révisions | 1 j | ✅ **filigrane FAIT** (2026-08-17) — filigrane `DRAFT` sur toutes les pages + mention opposable + bloc de signature conditionnel + suffixe `-DRAFT` au nom de fichier. 15 tests. ⚠️ **revue visuelle d'un PDF réel restant** (la CI prouve que le document se construit, pas qu'il s'affiche bien). Reste le volet **révisions numérotées** |
 | Séquence non recyclable + upsert de l'import Excel | 1 j | volet **blocage** livré (409 si un BL est signé) ; reste l'*upsert* et la séquence append-only |
 
-**Total ≈ 10,25 jours**, dont **≈ 5 livrés**. Révisé à la hausse depuis
+**Total ≈ 10,25 jours**, dont **≈ 6 livrés**. Révisé à la hausse depuis
 l'estimation initiale de 6,5 j : les réponses du §5 ajoutent le **registre de
 remise** (exigence nouvelle, non demandée initialement) et la **date dérivée avec
 override justifié**. Les deux sont des ajouts de valeur, pas des dérives de

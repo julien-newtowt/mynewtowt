@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from datetime import date as dt_date
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -250,6 +252,24 @@ class PackingListBatch(Base):
     bl_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")
     bl_superseded_by_id: Mapped[int | None] = mapped_column(ForeignKey("packing_list_batches.id"))
 
+    # ── Date de mise à bord (« shipped on board ») — §5.0 ────────────────────
+    # La date effective est **dérivée** du dernier jour des opérations RÉELLES de
+    # l'escale : elle n'est donc PAS stockée. Ces colonnes ne portent que
+    # l'**override** des Opérations, et sa justification.
+    #
+    # ⚠️ Ne jamais recopier ici la valeur dérivée : la présence de `bl_sob_date`
+    # est précisément ce qui distingue « corrigé volontairement » de « pas
+    # corrigé ». Une valeur figée sans raison de l'être devient fausse en silence
+    # dès que la timeline d'escale bouge.
+    #
+    # Enjeu : un connaissement antidaté est une fraude documentaire et une
+    # exclusion de garantie. D'où la justification exigée EN BASE, pas seulement
+    # dans le formulaire.
+    bl_sob_date: Mapped[dt_date | None] = mapped_column(Date)
+    bl_sob_reason: Mapped[str | None] = mapped_column(Text)
+    bl_sob_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    bl_sob_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     __table_args__ = (
         # Le validateur du draft est SOIT le client, SOIT le staff pour son
         # compte — jamais les deux. Contrainte posée EN BASE et non seulement
@@ -262,6 +282,15 @@ class PackingListBatch(Base):
         ),
         # Une révision commence à 1 et ne décroît jamais.
         CheckConstraint("bl_revision >= 1", name="ck_bl_revision_positive"),
+        # §5.0 — « sous justification ». Une date de mise à bord corrigée sans
+        # motif est INSTOCKABLE : la contrainte est en base pour qu'aucun chemin
+        # d'écriture, présent ou futur, ne puisse contourner l'exigence. Le
+        # journal demandé « en cas de contrôle » n'a de valeur que si le motif
+        # existe toujours.
+        CheckConstraint(
+            "bl_sob_date IS NULL OR bl_sob_reason IS NOT NULL",
+            name="ck_bl_sob_override_needs_reason",
+        ),
     )
 
     created_at: Mapped[datetime] = mapped_column(
