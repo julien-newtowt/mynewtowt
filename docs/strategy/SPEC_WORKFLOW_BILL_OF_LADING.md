@@ -147,14 +147,18 @@ soft-delete avec motif obligatoire.
   draft (c'était `cargo:C`, ce qui autorisait `technique`, `data_analyst` et
   **`marins`** à émettre un connaissement). La consultation reste en `cargo:C`.
   Signature commandant en `captain:M` : **reste à faire** avec l'écran.
-- ✅ **FAIT** (2026-08-17, volet blocage) — **Refuser l'import Excel** si un
-  batch de la PL est en `master_signed` ou `final` (409), des deux côtés (staff
-  et portail). Au stade `draft` l'import reste autorisé — c'est le comportement
-  voulu. **Reste** le volet préservation : passer en *upsert* par `batch_number`
-  au lieu de *delete-all/recreate*, pour ne plus recycler les numéros.
-- **Séquence de numéros non recyclable** : remplacer le comptage par une
-  séquence append-only, pour qu'un numéro consommé ne puisse **jamais** être
-  réattribué même après suppression d'une ligne.
+- ✅ **FAIT** (2026-08-17) — **Refuser l'import Excel** si un batch de la PL est en
+  `master_signed` ou `final` (409), des deux côtés (staff et portail). Au stade
+  `draft` l'import reste autorisé — c'est le comportement voulu — et il procède
+  désormais par ***upsert* par `batch_number`** : un lot déjà numéroté est **mis à
+  jour**, jamais détruit puis recréé. Un lot absent de l'import n'est supprimé que
+  s'il ne porte **pas** de connaissement, et l'audit dit ce qui a été conservé.
+- ✅ **FAIT** (2026-08-17) — **Séquence de numéros non recyclable** :
+  `bl_number_sequences`, un compteur par voyage qui ne décroît **jamais**. Corrige
+  deux défauts : le **recyclage** (le comptage réattribuait un numéro consommé après
+  suppression d'un lot) et le **blocage** (suppression d'un lot au milieu de la série
+  ⇒ collision d'unicité en boucle ⇒ émission impossible). Les trous de numérotation
+  sont désormais normaux : ils tracent un numéro consommé puis abandonné.
 
 ---
 
@@ -331,9 +335,9 @@ formulaire du portail (§5.3), pure addition sans retrait.
 | Date *shipped on board* dérivée + override justifié (§5.0) | 1 j | ✅ **FAIT** (2026-08-17) — migration `20260817_0115`, **mécanisme partagé** `services/derived_override.py` (dérivée → override → justification refusée si vide/creuse/trop courte), dérivation du **dernier jour des opérations RÉELLES** (jamais le prévisionnel : ce serait un BL post-daté), contrainte `ck_bl_sob_override_needs_reason` **en base**, snapshot d'audit dans la trace, mention sur le PDF, écran Opérations. 47 tests |
 | Registre de remise des originaux (§5.1) | 1,5 j | ✅ **FAIT** (2026-08-17) — table `bl_delivery_receipts` (migration `20260817_0116`), **3 canaux de valeur probante distincte** (`download` = accès, `client_confirmed` = déclaration du client, `ops_confirmed` = attestation de repli avec moyen **obligatoire** et PJ), append-only, 3 contraintes en base, écrans client + Opérations. 32 tests |
 | Filigrane draft / BL final / révisions | 1 j | ✅ **filigrane FAIT** (2026-08-17) — filigrane `DRAFT` sur toutes les pages + mention opposable + bloc de signature conditionnel + suffixe `-DRAFT` au nom de fichier. 15 tests. ⚠️ **revue visuelle d'un PDF réel restant** (la CI prouve que le document se construit, pas qu'il s'affiche bien). Reste le volet **révisions numérotées** |
-| Séquence non recyclable + upsert de l'import Excel | 1 j | volet **blocage** livré (409 si un BL est signé) ; reste l'*upsert* et la séquence append-only |
+| Séquence non recyclable + upsert de l'import Excel | 1 j | ✅ **FAIT** (2026-08-17) — table `bl_number_sequences` (migration `20260817_0117`), compteur par voyage **strictement croissant**, amorcé sur le **plus grand suffixe** émis (jamais leur nombre) ; import passé en ***upsert* par `batch_number`** des **deux** côtés (staff et portail), un lot numéroté survit et l'audit dit ce qui a été conservé. 23 tests |
 
-**Total ≈ 10,25 jours**, dont **≈ 8,5 livrés**. Révisé à la hausse depuis
+**Total ≈ 10,25 jours**, dont **≈ 9,5 livrés**. Révisé à la hausse depuis
 l'estimation initiale de 6,5 j : les réponses du §5 ajoutent le **registre de
 remise** (exigence nouvelle, non demandée initialement) et la **date dérivée avec
 override justifié**. Les deux sont des ajouts de valeur, pas des dérives de

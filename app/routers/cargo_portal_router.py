@@ -408,21 +408,61 @@ async def portal_packing_import_xlsx(
                 + " — un lot dont le connaissement est signé ne peut pas être remplacé."
             ),
         )
-    replaced = len(existing)
-    for b in existing:
-        await db.delete(b)
-    await db.flush()
+    # ⚠️ UPSERT, plus « delete-all + recreate » — même correctif que côté staff. Un
+    # garde-fou qui n'existerait que d'un côté se contournerait par l'autre porte.
+    # L'ancien remplacement détruisait les lots, donc leur `bl_number` : chaque import
+    # consommait des numéros de connaissement et cassait les liens déjà transmis.
+    actor = _portal_actor(pl)
+    by_number = {b.batch_number: b for b in existing if b.batch_number is not None}
+    seen: set[int] = set()
+    updated = created = 0
     for vals in parsed:
-        await create_batch(db, pl=pl, vals=vals, actor="client", actor_name=_portal_actor(pl))
+        row = dict(vals)
+        match_number = row.pop(cargo_excel.MATCH_KEY, None)
+        target = by_number.get(match_number) if match_number is not None else None
+        if target is not None:
+            seen.add(target.id)
+            changed = await apply_batch_update(
+                db, batch=target, new_values=row, actor="client", actor_name=actor
+            )
+            if changed:
+                await bl_workflow.invalidate_validation_on_edit(
+                    db, batch=target, actor_name=actor, ip=_client_ip(request)
+                )
+            updated += 1
+        else:
+            await create_batch(db, pl=pl, vals=row, actor="client", actor_name=actor)
+            created += 1
+    await db.flush()
+
+    # Absents de l'import : supprimés seulement s'ils ne portent pas de connaissement.
+    kept_numbered: list[str] = []
+    removed = 0
+    for b in existing:
+        if b.id in seen:
+            continue
+        if b.bl_number:
+            kept_numbered.append(b.bl_number)
+            continue
+        await db.delete(b)
+        removed += 1
+    await db.flush()
+    replaced = removed
+
+    summary = f"{updated} mis à jour, {created} créés, {removed} supprimés"
+    if kept_numbered:
+        summary += (
+            f", {len(kept_numbered)} conservés car déjà numérotés ({', '.join(kept_numbered)})"
+        )
     await record_audit(
         db,
         packing_list_id=pl.id,
         batch_id=None,
         actor="client",
-        actor_name=_portal_actor(pl),
+        actor_name=actor,
         field="_import_excel",
         old_value=None,
-        new_value=f"{len(parsed)} batches importés",
+        new_value=summary,
     )
     # Le nombre de lots REMPLACÉS est la donnée sensible de cet import : il
     # écrase l'existant. Sans elle, on ne sait pas ce qui a disparu.

@@ -720,12 +720,58 @@ async def packing_list_import_xlsx(
                 + " — un lot signé ne peut pas être remplacé par un import."
             ),
         )
-    # Remplacement : on vide les batches existants puis on recrée depuis l'import.
-    for b in list(pl.batches):
-        await db.delete(b)
-    await db.flush()
+    # ⚠️ UPSERT, plus « delete-all + recreate ». L'ancien remplacement détruisait les
+    # lots existants, donc leur `bl_number` : chaque import CONSOMMAIT des numéros de
+    # connaissement et cassait les liens déjà transmis au client. Un registre ne se
+    # reconstruit pas à chaque import de tableur.
+    #
+    # Rapprochement par `batch_number` (colonne `BATCH_NUMBER` de l'export). Une ligne
+    # sans clé exploitable est une création.
+    by_number = {b.batch_number: b for b in pl.batches if b.batch_number is not None}
+    seen: set[int] = set()
+    updated = created = 0
     for vals in parsed:
-        await create_batch(db, pl=pl, vals=vals, actor="staff", actor_name=actor_name)
+        row = dict(vals)
+        match_number = row.pop(cargo_excel.MATCH_KEY, None)
+        existing = by_number.get(match_number) if match_number is not None else None
+        if existing is not None:
+            seen.add(existing.id)
+            # `apply_batch_update` audite champ par champ et ne touche NI `bl_number`
+            # NI l'état du BL — c'est tout l'intérêt du rapprochement.
+            changed = await apply_batch_update(
+                db, batch=existing, new_values=row, actor="staff", actor_name=actor_name
+            )
+            if changed:
+                await bl_workflow.invalidate_validation_on_edit(
+                    db, batch=existing, actor_name=actor_name, ip=_client_ip(request)
+                )
+            updated += 1
+        else:
+            await create_batch(db, pl=pl, vals=row, actor="staff", actor_name=actor_name)
+            created += 1
+    await db.flush()
+
+    # Lots absents de l'import. On ne supprime que ceux qui NE PORTENT PAS de
+    # connaissement : détruire un lot numéroté consommerait son numéro sans retour et
+    # casserait un lien déjà remis au client. Les autres sont conservés — et le dit,
+    # plutôt que de laisser croire à une synchronisation complète.
+    kept_numbered: list[str] = []
+    removed = 0
+    for b in list(pl.batches):
+        if b.id in seen:
+            continue
+        if b.bl_number:
+            kept_numbered.append(b.bl_number)
+            continue
+        await db.delete(b)
+        removed += 1
+    await db.flush()
+
+    summary = f"{updated} mis à jour, {created} créés, {removed} supprimés"
+    if kept_numbered:
+        summary += (
+            f", {len(kept_numbered)} conservés car déjà numérotés ({', '.join(kept_numbered)})"
+        )
     await record_audit(
         db,
         packing_list_id=pl.id,
@@ -734,7 +780,7 @@ async def packing_list_import_xlsx(
         actor_name=actor_name,
         field="_import_excel",
         old_value=None,
-        new_value=f"{len(parsed)} batches importés",
+        new_value=summary,
     )
     await activity_record(
         db,

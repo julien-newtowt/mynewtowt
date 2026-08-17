@@ -497,3 +497,47 @@ class BlDeliveryReceipt(Base):
             name="ck_bl_receipt_ops_needs_means",
         ),
     )
+
+
+class BlNumberSequence(Base):
+    """Séquence de numéros de connaissement, **par voyage** et strictement croissante.
+
+    ## Le défaut que cette table corrige
+
+    Le numéro était calculé comme *nombre de BL déjà émis sur le leg + 1*. Deux
+    conséquences, toutes deux graves sur un registre opposable :
+
+    1. **recyclage** — supprimer un lot fait baisser le compteur, et le numéro
+       suivant réattribue un numéro **déjà consommé**. Deux documents différents
+       peuvent alors porter le même numéro à des moments différents de l'histoire ;
+    2. **blocage** — si le lot supprimé n'était pas le dernier (numéros 001, 002, 003
+       avec 002 supprimé), le compteur vaut 2, le code retente 003, entre en collision
+       avec l'unicité et **échoue après 5 tentatives**. L'émission devient impossible.
+
+    ## La règle
+
+    ``last_seq`` ne **décroît jamais** — aucun chemin d'écriture ne le décrémente.
+    Les trous dans la numérotation sont donc **normaux et attendus** : ils sont la
+    trace d'un numéro consommé puis abandonné, ce qui est exactement ce qu'un
+    registre doit conserver.
+
+    À la création de la ligne, le compteur est amorcé sur le **plus grand suffixe
+    déjà émis** pour ce voyage, et non sur leur nombre : c'est ce qui évite de
+    recycler dès la première émission sur un voyage historique.
+    """
+
+    __tablename__ = "bl_number_sequences"
+
+    #: Un voyage = une séquence. Le `leg_code` est le préfixe du numéro, donc deux
+    #: voyages ne peuvent pas se marcher dessus.
+    leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id", ondelete="CASCADE"), primary_key=True)
+    last_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        # Un compteur négatif n'a aucun sens et signalerait une décrémentation —
+        # précisément ce que cette table interdit.
+        CheckConstraint("last_seq >= 0", name="ck_bl_sequence_non_negative"),
+    )

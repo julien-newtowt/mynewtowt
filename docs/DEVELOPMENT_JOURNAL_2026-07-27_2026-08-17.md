@@ -1303,3 +1303,84 @@ après normalisation.
   opposable, deux documents différents pourraient porter le même numéro ;
 - **révisions numérotées** (`TUAW_…_R2`) annulant la précédente ;
 - **retrait du rail booking**, en dernier.
+
+---
+
+## 2026-08-17 (7) — la numérotation des connaissements cesse de se recycler
+
+Branche `feat/bl-workflow`. Réponse au §4.4, deux derniers volets.
+
+### Le défaut était plus large que la spec ne le disait
+
+La spec signalait le **recyclage** : le numéro valait *nombre de BL émis sur le leg
++ 1*, donc supprimer un lot faisait baisser le compteur et le numéro suivant
+réattribuait un numéro **déjà consommé**. Deux documents différents pouvaient porter
+le même numéro à deux moments de l'histoire du registre.
+
+En écrivant le test, j'ai trouvé un **second défaut, pire** : si le lot supprimé
+n'était pas le dernier — numéros 001, 002, 003 avec 002 supprimé — le compteur valait
+2, le code retentait 003, entrait en collision avec la contrainte d'unicité, et
+**échouait après 5 tentatives**. L'émission devenait purement **impossible** sur ce
+voyage. Un utilisateur aurait vu une erreur 500 sans explication, définitivement.
+
+### La correction, et son point délicat
+
+`bl_number_sequences` : un compteur par voyage, jamais décrémenté, avec une contrainte
+`last_seq >= 0` qui interdirait une décrémentation.
+
+Le point délicat n'est pas l'incrément, c'est **l'amorçage**. Une ligne est créée à la
+demande pour un voyage qui porte peut-être déjà des numéros. L'amorcer sur leur
+*nombre* recyclerait dès la première émission. Il faut le **plus grand suffixe déjà
+émis** — et le test qui l'épingle utilise trois numéros dont le plus grand est 007,
+précisément pour distinguer les deux lectures.
+
+Corollaire assumé : **les trous de numérotation sont normaux**. Ils tracent un numéro
+consommé puis abandonné, ce qu'un registre doit conserver.
+
+Cas résiduel documenté : une packing list sans voyage n'a pas de clé de séquence. Le
+repli lit le plus grand suffixe connu (et non leur nombre) : moins fort — supprimer le
+dernier libère son numéro — mais l'émission n'est plus bloquée par un trou au milieu.
+
+### L'import Excel : `upsert` au lieu de `delete-all + recreate`
+
+L'import détruisait tous les lots puis les recréait. Sur un registre de
+connaissements, cela veut dire que **chaque import consommait des numéros** et
+cassait les liens déjà transmis au client.
+
+Passé en *upsert* par `batch_number` : la colonne `BATCH_NUMBER` de l'export, jusque-là
+« ignorée à l'import », est désormais remontée par l'analyseur sous une clé
+`_batch_number` — préfixée d'un souligné pour ne jamais être confondue avec un champ
+du modèle. Un rapprochement réussi passe par `apply_batch_update`, qui audite champ
+par champ et ne touche **ni** `bl_number` **ni** l'état du BL.
+
+Trois décisions à l'intérieur :
+
+- une clé **illisible** est ignorée : la ligne devient une création. Un rapprochement
+  hasardeux sur un registre de connaissements serait pire ;
+- un lot **absent de l'import** n'est supprimé que s'il **ne porte pas** de
+  connaissement. Le détruire consommerait son numéro sans retour et casserait un lien
+  déjà remis ;
+- l'audit **dit** ce qui a été conservé (`N conservés car déjà numérotés (…)`) au lieu
+  du « N batches importés » d'avant, qui laissait croire à une synchronisation
+  complète.
+
+**Corrigé des deux côtés** — staff *et* portail expéditeur. Un garde-fou qui n'existe
+que d'un côté se contourne par l'autre porte, comme pour le gel.
+
+Et la garde du lot précédent tient toujours : un lot **signé** bloque l'import en
+bloc. L'*upsert* préserve les numéros, mais un document signé ne se modifie pas — la
+correction passe par une révision.
+
+### Vérification — 23 tests, deux sabotages
+
+- revenir au comptage ⇒ **6 tests tombent** (recyclage, blocage, trous, amorçage,
+  numéro historique non conforme, monotonie du compteur) ;
+- ignorer la clé de rapprochement ⇒ **3 tests tombent** (numéro perdu, compte rendu
+  d'audit, régression de la validation).
+
+### Reste sur le lot BL
+
+- **révisions numérotées** (`TUAW_…_R2`) annulant la précédente, les deux restant
+  tracées. Les colonnes `bl_revision` / `bl_superseded_by_id` existent depuis la
+  première migration mais **aucun code ne les utilise** ;
+- **retrait du rail booking**, en dernier.
