@@ -84,8 +84,20 @@ def render_bill_of_lading_from_pl(
 
     Les parties (shipper/consignee/notify) et la marchandise proviennent du
     ``PackingListBatch`` saisi par l'expéditeur (et non d'un booking).
+
+    ⚠️ Le document **dit ce qu'il est**. Tant que le commandant n'a pas signé, il
+    porte un filigrane et ne revendique **aucun** original signé : affirmer « 3 OBL
+    signés » sur un brouillon tromperait un tiers de bonne foi (banque en crédit
+    documentaire, destinataire, assureur) sur la nature du titre qu'il détient.
+    C'est la signature qui fait l'original, pas l'émission.
     """
+    from app.services.bl_workflow import FROZEN_STATES
     from app.templating import brand_for_lang
+
+    # `bl_state` peut manquer (lot d'avant la machine à états) : dans le doute on
+    # traite le document comme NON signé — le repli prudent est le filigrane.
+    bl_state = getattr(batch, "bl_state", None)
+    is_signed = bl_state in FROZEN_STATES
 
     ctx = {
         "pl": pl,
@@ -97,11 +109,19 @@ def render_bill_of_lading_from_pl(
         "bl_number": bl_number,
         "issued_at": issued_at or datetime.now(UTC),
         "number_of_obl": 3,
+        "bl_state": bl_state,
+        "is_signed": is_signed,
+        "signed_at": getattr(batch, "bl_signed_at", None) if is_signed else None,
+        "signed_by": getattr(batch, "bl_signed_by_name", None) if is_signed else None,
+        "signature_hash": getattr(batch, "bl_signature_hash", None) if is_signed else None,
         "brand": brand_for_lang("fr"),
         "site_url": settings.site_url,
     }
     html, pdf = _render_pdf("pdf/bill_of_lading_pl.html", ctx)
-    return DocumentBytes(html=html, pdf=pdf, filename=f"{bl_number}.pdf")
+    # Le nom du fichier distingue le brouillon : un PDF nommé comme un original
+    # finit par circuler comme un original.
+    suffix = "" if is_signed else "-DRAFT"
+    return DocumentBytes(html=html, pdf=pdf, filename=f"{bl_number}{suffix}.pdf")
 
 
 def render_arrival_notice(*, pl, batches, leg, vessel, pol, pod) -> DocumentBytes:

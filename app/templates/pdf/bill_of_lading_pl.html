@@ -4,6 +4,28 @@
 {% block doc_ref %}{{ bl_number }}{% endblock %}
 {% block content %}
 
+{# Tant que le commandant n'a pas signé, le document doit le dire — deux fois :
+   un filigrane (visuel, sur toutes les pages) et une mention lisible qu'un tiers
+   peut citer. Le filigrane seul ne suffit pas : il ne se cite pas. #}
+{% if not is_signed %}
+<div class="bl-watermark">DRAFT
+  <span class="bl-watermark-sub">
+    {% if bl_state == 'client_validated' %}validé par le client · en attente de signature{% else %}projet · non signé{% endif %}
+  </span>
+</div>
+<div class="bl-notice">
+  <strong>Projet de connaissement — sans valeur de titre.</strong>
+  Ce document n'a <strong>pas</strong> été signé par le commandant : il ne constitue
+  ni un original négociable, ni une preuve de mise à bord, et ne vaut pas remise de
+  la marchandise.
+  {% if bl_state == 'client_validated' %}
+    Contenu validé par l'expéditeur, en attente de la signature du bord.
+  {% else %}
+    Contenu susceptible de modification.
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="grid-2">
   <div class="box">
     <div class="label">Shipper · Expéditeur</div>
@@ -113,11 +135,29 @@
 <div class="stamp">
   <div>
     <div class="kicker">Émis{% if pol %} à {{ pol.name }}{% endif %} le {{ issued_at.strftime("%d/%m/%Y") }}</div>
-    <div class="small c-gris">Number of Original B/L : {{ number_of_obl }} ({{ number_of_obl }} OBL signés)</div>
+    {# La mention des originaux n'apparaît QUE si la signature existe : « 3 OBL
+       signés » sur un brouillon est une affirmation fausse sur un document
+       opposable. Le nombre lui-même reste 3 en toutes circonstances (§5.1). #}
+    {% if is_signed %}
+      <div class="small c-gris">Number of Original B/L : {{ number_of_obl }} ({{ number_of_obl }} OBL signés)</div>
+    {% else %}
+      <div class="small c-gris">Aucun original signé à ce stade. À la signature : {{ number_of_obl }} originaux.</div>
+    {% endif %}
   </div>
-  <div class="sig-area">
-    Cachet et signature<br/>du transporteur
-  </div>
+  {% if is_signed %}
+    <div class="sig-area">
+      <strong>Cachet et signature du transporteur</strong><br/>
+      {{ signed_by or '—' }}<br/>
+      {% if signed_at %}{{ signed_at.strftime("%d/%m/%Y %H:%M UTC") }}<br/>{% endif %}
+      {% if signature_hash %}<span class="mono">SHA-256 {{ signature_hash[:12] }}…</span>{% endif %}
+    </div>
+  {% endif %}
 </div>
+{% if is_signed and signature_hash %}
+<p class="small c-gris">
+  Empreinte d'intégrité du contenu signé : <span class="mono">{{ signature_hash }}</span> —
+  toute modification postérieure du connaissement rend cette empreinte invalide.
+</p>
+{% endif %}
 
 {% endblock %}

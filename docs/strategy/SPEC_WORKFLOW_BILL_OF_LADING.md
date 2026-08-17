@@ -330,10 +330,10 @@ formulaire du portail (§5.3), pure addition sans retrait.
 | Écrans (génération draft, validation client, signature) | 2 j | ci-dessus. Signature **unitaire + groupée** (§5.2). Seule l'action « générer le draft » est exposée à ce stade |
 | Date *shipped on board* dérivée + override justifié (§5.0) | 1 j | ci-dessus. **Mécanisme partagé** avec le lot relèves |
 | Registre de remise des originaux (§5.1) | 1,5 j | ci-dessus — table + écran client + repli Opérations avec PJ |
-| Filigrane draft / BL final / révisions | 1 j | ci-dessus |
+| Filigrane draft / BL final / révisions | 1 j | ✅ **filigrane FAIT** (2026-08-17) — filigrane `DRAFT` sur toutes les pages + mention opposable + bloc de signature conditionnel + suffixe `-DRAFT` au nom de fichier. 15 tests. ⚠️ **revue visuelle d'un PDF réel restant** (la CI prouve que le document se construit, pas qu'il s'affiche bien). Reste le volet **révisions numérotées** |
 | Séquence non recyclable + upsert de l'import Excel | 1 j | volet **blocage** livré (409 si un BL est signé) ; reste l'*upsert* et la séquence append-only |
 
-**Total ≈ 10,25 jours**, dont **≈ 2,75 livrés**. Révisé à la hausse depuis
+**Total ≈ 10,25 jours**, dont **≈ 3,75 livrés**. Révisé à la hausse depuis
 l'estimation initiale de 6,5 j : les réponses du §5 ajoutent le **registre de
 remise** (exigence nouvelle, non demandée initialement) et la **date dérivée avec
 override justifié**. Les deux sont des ajouts de valeur, pas des dérives de

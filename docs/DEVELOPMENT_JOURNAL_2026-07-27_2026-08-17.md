@@ -906,3 +906,71 @@ Note annexe vérifiée : les 15 échecs locaux « WeasyPrint » ne sont pas prot
 par leur garde. `pytest.importorskip("weasyprint")` ne rattrape qu'`ImportError`,
 or l'absence de GTK lève une `OSError`. Le remède est le monkeypatch du rendu, pas
 l'`importorskip` — trois fichiers de tests existants gagneraient à être alignés.
+
+---
+
+## 2026-08-17 (2) — le PDF du BL cesse d'affirmer qu'il est signé
+
+Branche `feat/bl-workflow`, suite immédiate du volet précédent.
+
+### Ce qui n'allait pas — et ce n'était pas cosmétique
+
+Le gabarit `pdf/bill_of_lading_pl.html` affirmait, **quel que soit l'état du
+lot** :
+
+    Number of Original B/L : 3 (3 OBL signés)
+
+et affichait une zone « Cachet et signature du transporteur ». Sur un brouillon
+que personne n'a signé, ces deux mentions sont **fausses sur un document
+opposable**. Un tiers de bonne foi — banque en crédit documentaire, destinataire,
+assureur — lit un connaissement original émis en trois exemplaires signés.
+
+C'est exactement la tension que le §2 de la spec avait identifiée à l'ouverture du
+lot : le défaut n'était pas la mutabilité du document, c'était **l'absence de
+distinction draft/final** couplée à une mention affirmant le contraire.
+
+### La correction
+
+Le document dit désormais ce qu'il est, à trois endroits complémentaires :
+
+- **filigrane `DRAFT`** en `position: fixed` — donc répété sur **chaque page** ;
+  un filigrane limité à la première page laisserait les suivantes passer pour un
+  original ;
+- **mention lisible** en tête (« Projet de connaissement — sans valeur de
+  titre… ») : le filigrane est visuel, il ne se **cite** pas. Un tiers doit
+  pouvoir opposer une phrase, pas une impression ;
+- **bloc de signature conditionnel** : plus de zone de signature ni de mention
+  d'originaux tant que rien n'est signé. Une fois signé, le bloc nomme le
+  signataire, l'horodate et imprime l'empreinte SHA-256 — ce qui permet de
+  confronter le papier au registre.
+
+Le **nom du fichier** suit aussi (`TUAW_…-DRAFT.pdf`) : un PDF nommé comme un
+original finit par circuler comme un original.
+
+Repli prudent assumé : si `bl_state` est absent (lot antérieur à la machine à
+états), le document est traité comme **non signé**. Dans le doute, filigrane.
+
+### Vérification — 15 tests
+
+Les tests portent sur le **HTML rendu** en substituant *seulement* la conversion
+WeasyPrint, en gardant le vrai gabarit **et le vrai contexte construit par le
+service**. Fabriquer le contexte à la main aurait rendu ces tests vides de sens :
+un `bl_state` oublié dans `pdf_generator` serait passé inaperçu.
+
+Non-vacuité mesurée : sur le code d'avant, **10 échouent, 3 passent** — et les 3
+qui passent sont précisément les gardes anti-sur-correction (« un BL signé déclare
+toujours 3 originaux », exigence §5.1 « toujours 3 »).
+
+Une erreur de ma part corrigée en cours de route : ma première assertion cherchait
+`bl-watermark` dans le HTML, ce qui matchait la **définition CSS** de
+`pdf/_base.html` et non l'élément. Resserrée sur `class="bl-watermark"`.
+
+### ⚠️ Limite honnête de cette vérification
+
+La CI prouve que le PDF **se construit**. Elle ne prouve pas qu'il **s'affiche
+correctement** : opacité du filigrane, rotation, absence de recouvrement du texte.
+**Une revue visuelle d'un PDF réel reste à faire** — à mettre sous les yeux de
+Yasmin ou de Julien, ce n'est pas automatisable ici (GTK absent en local).
+
+Reste sur ce point de la spec : les **révisions numérotées** (`TUAW_…_R2`
+annulant la précédente), non abordées.
