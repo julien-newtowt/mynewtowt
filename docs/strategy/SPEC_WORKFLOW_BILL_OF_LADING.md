@@ -42,20 +42,24 @@ mention « Trois originaux signés (3 OBL) ». Le draft explicite lève ce défa
 
 ---
 
-## 3. État actuel (vérifié dans le code)
+## 3. État actuel
 
-| Élément | État | Fichier |
+> ⚠️ Ce tableau était l'**état de départ** relevé dans le code le 2026-08-03. La
+> colonne « depuis » dit ce qui a changé depuis — le tableau n'est pas réécrit,
+> pour que la trajectoire reste lisible en revue.
+
+| Élément | État au 2026-08-03 | Depuis |
 |---|---|---|
-| Numéro de BL | `bl_number` (unique, indexé) + `bl_issued_at` sur `PackingListBatch` | `models/packing_list.py:205-206` |
-| Émission | **`GET`** `/{pl_id}/batches/{batch_id}/bl.pdf` en permission **`cargo:C`** (consultation !), qui **écrit en base** via `assign_bl_number` | `routers/cargo_packing_router.py:361-374` |
-| Traçabilité de l'émission | ❌ **aucune** — pas d'`activity_record`, pas d'acteur. Seul vestige : un horodatage anonyme | idem |
-| Mutabilité | `can_modify(pl)` ne teste que `pl.status != "locked"`, **ignore `bl_number`** | `services/packing_list.py:230-231` |
-| Statut de la PL | `status` (défaut `"draft"`), passe à `"locked"` au verrouillage, revient à `"submitted"` au déverrouillage | `models/packing_list.py:93` |
-| Import Excel | `delete` de tous les batches puis recréation ⇒ **recycle les numéros de BL** (la séquence est un comptage) | `routers/cargo_packing_router.py:535-540` |
-| Journalisation côté portail client | ❌ **aucune** — 8 routes mutantes (dont suppression de batch et de document), zéro `activity.record()` | `routers/cargo_portal_router.py` |
-| Draft / final | ❌ inexistant | — |
-| Validation client | ❌ inexistante | — |
-| Signature commandant sur le BL | ❌ inexistante | — |
+| Numéro de BL | `bl_number` (unique, indexé) + `bl_issued_at` sur `PackingListBatch` | inchangé — toujours attribué une seule fois, au draft |
+| Émission | **`GET`** `.../bl.pdf` en permission **`cargo:C`** (consultation !), qui **écrit en base** via `assign_bl_number` | ✅ scindée : `POST .../bl/draft` en `cargo:M` écrit, `GET .../bl.pdf` en `cargo:C` ne fait que rendre |
+| Traçabilité de l'émission | ❌ **aucune** — pas d'`activity_record`, pas d'acteur. Seul vestige : un horodatage anonyme | ✅ `bl_issued_by_id`/`_name` + double trace (`activity_logs` + `PackingListAudit`) |
+| Mutabilité | `can_modify(pl)` ne teste que `pl.status != "locked"`, **ignore `bl_number`** | ✅ gel indépendant porté par le **lot** (`bl_workflow.is_frozen`), câblé sur les 4 chemins d'écriture |
+| Statut de la PL | `status` (défaut `"draft"`), passe à `"locked"` au verrouillage | inchangé — les deux verrous restent **indépendants**, et c'est voulu |
+| Import Excel | `delete` de tous les batches puis recréation ⇒ **recycle les numéros de BL** | ⚠️ **bloqué** (409) si un BL est signé ; le recyclage au stade `draft` reste à corriger par *upsert* |
+| Journalisation côté portail client | ❌ **aucune** — 8 routes mutantes, zéro `activity.record()` | ✅ les 8 routes tracées (acteur `portal:PL{id}`, jamais le token) |
+| Draft / final | ❌ inexistant | ✅ machine à états `draft → client_validated → master_signed → final` |
+| Validation client | ❌ inexistante | ✅ en service (client XOR staff pour son compte) — **écran restant** |
+| Signature commandant sur le BL | ❌ inexistante | ✅ en service (hash SHA-256, point de gel) — **écran restant** |
 
 **Patron de signature déjà éprouvé dans le dépôt, à réutiliser** — `SofEvent`
 (`models/sof_event.py:107-111`) : `signed_at` / `signed_by_id` /
@@ -133,16 +137,21 @@ soft-delete avec motif obligatoire.
 
 ### 4.4 Corrections de sécurité à embarquer dans le même lot
 
-- **Émission en `POST`, pas en `GET`** — un lien de consultation ne doit pas
-  écrire en base. Aujourd'hui un préchargement de lien ou un scan de sécurité
-  émet des BL en série.
-- **Permission `cargo:M` minimum** pour générer un draft (aujourd'hui `cargo:C`,
-  ce qui autorise `technique`, `data_analyst` et **`marins`** à émettre un
-  connaissement). Signature commandant en `captain:M`.
-- **Refuser l'import Excel** si un batch de la PL est en `master_signed` ou
-  `final` (409). Au stade `draft`, l'import reste autorisé — c'est le
-  comportement voulu — mais il doit **préserver les numéros** : passer en
-  *upsert* par `batch_number` au lieu de *delete-all/recreate*.
+- ✅ **FAIT** (2026-08-17) — **Émission en `POST`, pas en `GET`** : un lien de
+  consultation ne doit pas écrire en base. Avant, un préchargement de lien ou un
+  scan de sécurité émettait des BL en série.
+  `POST /cargo/packing-lists/{pl_id}/batches/{batch_id}/bl/draft` génère ;
+  `GET .../bl.pdf` rend et **n'écrit plus rien** (404 si aucun BL n'existe).
+  Tests : `tests/integration/test_bl_emission_post_only.py`.
+- ✅ **FAIT** (2026-08-17) — **Permission `cargo:M` minimum** pour générer un
+  draft (c'était `cargo:C`, ce qui autorisait `technique`, `data_analyst` et
+  **`marins`** à émettre un connaissement). La consultation reste en `cargo:C`.
+  Signature commandant en `captain:M` : **reste à faire** avec l'écran.
+- ✅ **FAIT** (2026-08-17, volet blocage) — **Refuser l'import Excel** si un
+  batch de la PL est en `master_signed` ou `final` (409), des deux côtés (staff
+  et portail). Au stade `draft` l'import reste autorisé — c'est le comportement
+  voulu. **Reste** le volet préservation : passer en *upsert* par `batch_number`
+  au lieu de *delete-all/recreate*, pour ne plus recycler les numéros.
 - **Séquence de numéros non recyclable** : remplacer le comptage par une
   séquence append-only, pour qu'un numéro consommé ne puisse **jamais** être
   réattribué même après suppression d'une ligne.
@@ -313,18 +322,18 @@ formulaire du portail (§5.3), pure addition sans retrait.
 
 | Étape | Charge | État / dépendance |
 |---|---|---|
-Journalisation des mutations du portail (volet 1 du §4.3) | 0,5 j | ✅ **FAIT** (2026-08-03, commit `1cb1d40`) — aucune migration |
-Fusion Alembic (RAF R1) | 0,5 j | ⏸️ **prête**, en attente de **Julien** (retour le 2026-08-17) |
-Notify party au formulaire du portail (§5.3) | 0,25 j | ✅ **FAIT** (2026-08-03) — champs déjà en base et audités, seule l'exposition manquait |
-Routes client du rail packing list, puis retrait du rail booking (§5.4) | 1 j | ⛔ **ne peut PAS précéder ce lot** — retirer maintenant priverait le client de tout BL |
-Migration + machine à états + transitions tracées | 2 j | fusion Alembic |
-Écrans (génération draft, validation client, signature) | 2 j | ci-dessus. Signature **unitaire + groupée** (§5.2) |
-Date *shipped on board* dérivée + override justifié (§5.0) | 1 j | ci-dessus. **Mécanisme partagé** avec le lot relèves |
-Registre de remise des originaux (§5.1) | 1,5 j | ci-dessus — table + écran client + repli Opérations avec PJ |
-Filigrane draft / BL final / révisions | 1 j | ci-dessus |
-Séquence non recyclable + upsert de l'import Excel | 1 j | ci-dessus |
+| Journalisation des mutations du portail (volet 1 du §4.3) | 0,5 j | ✅ **FAIT** (2026-08-03, commit `1cb1d40`) — aucune migration |
+| Fusion Alembic (RAF R1) | 0,5 j | ⏸️ **prête**, en attente de **Julien** (retour le 2026-08-17) |
+| Notify party au formulaire du portail (§5.3) | 0,25 j | ✅ **FAIT** (2026-08-03) — champs déjà en base et audités, seule l'exposition manquait |
+| Routes client du rail packing list, puis retrait du rail booking (§5.4) | 1 j | ⛔ **ne peut PAS précéder ce lot** — retirer maintenant priverait le client de tout BL |
+| Migration + machine à états + transitions tracées | 2 j | ✅ **FAIT** (2026-08-14/17) — migration `20260814_0114`, `services/bl_workflow.py`, gel câblé sur les 4 chemins d'écriture, émission en `POST`/`cargo:M`. 45 tests |
+| Écrans (génération draft, validation client, signature) | 2 j | ci-dessus. Signature **unitaire + groupée** (§5.2). Seule l'action « générer le draft » est exposée à ce stade |
+| Date *shipped on board* dérivée + override justifié (§5.0) | 1 j | ci-dessus. **Mécanisme partagé** avec le lot relèves |
+| Registre de remise des originaux (§5.1) | 1,5 j | ci-dessus — table + écran client + repli Opérations avec PJ |
+| Filigrane draft / BL final / révisions | 1 j | ci-dessus |
+| Séquence non recyclable + upsert de l'import Excel | 1 j | volet **blocage** livré (409 si un BL est signé) ; reste l'*upsert* et la séquence append-only |
 
-**Total ≈ 10,25 jours**, dont **0,5 livré**. Révisé à la hausse depuis
+**Total ≈ 10,25 jours**, dont **≈ 2,75 livrés**. Révisé à la hausse depuis
 l'estimation initiale de 6,5 j : les réponses du §5 ajoutent le **registre de
 remise** (exigence nouvelle, non demandée initialement) et la **date dérivée avec
 override justifié**. Les deux sont des ajouts de valeur, pas des dérives de

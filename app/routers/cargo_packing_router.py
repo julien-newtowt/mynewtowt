@@ -26,7 +26,6 @@ from app.services import bl_workflow, cargo_excel
 from app.services.activity import record as activity_record
 from app.services.packing_list import (
     apply_batch_update,
-    assign_bl_number,
     can_modify,
     coerce_batch_form,
     create_batch,
@@ -387,6 +386,46 @@ async def packing_list_history(
     )
 
 
+@router.post("/{pl_id}/batches/{batch_id}/bl/draft")
+async def generate_bl_draft(
+    pl_id: int,
+    batch_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """Génère le draft de BL et attribue son numéro. **Écriture ⇒ POST.**
+
+    ⚠️ Ce que cette route corrige. L'émission passait par un `GET` en permission
+    `cargo:C` qui **écrivait en base** :
+
+    - un `GET` qui écrit s'exécute sur un **préchargement de lien**, un scan de
+      sécurité ou un passage de crawler — donc des connaissements émis en série,
+      avec des numéros consommés, sans que personne ne l'ait demandé ;
+    - `cargo:C` est la permission de **consultation** : elle autorise `technique`,
+      `data_analyst` et **`marins`** à émettre un titre de propriété.
+
+    La génération est donc en `POST` + `cargo:M`, et la consultation reste en `GET`
+    + `cargo:C` mais **n'écrit plus rien**.
+    """
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    if not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    batch = await _get_batch_or_404(db, pl_id, batch_id)
+    _order, _booking, leg, _vessel, _pol, _pod = await resolve_pl_context(db, pl)
+    try:
+        await bl_workflow.generate_draft(
+            db, pl=pl, batch=batch, leg=leg, user=user, ip=_client_ip(request)
+        )
+    except bl_workflow.InvalidTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return RedirectResponse(
+        url=f"/cargo/packing-lists/{pl_id}/batches/{batch_id}/bl.pdf", status_code=303
+    )
+
+
 @router.get("/{pl_id}/batches/{batch_id}/bl.pdf")
 async def batch_bill_of_lading(
     pl_id: int,
@@ -394,13 +433,22 @@ async def batch_bill_of_lading(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "C")),
 ) -> Response:
-    """CARGO-01 — Bill of Lading d'un batch (numéro persistant, anti-doublon)."""
+    """CARGO-01 — rend le BL d'un lot. **Lecture seule : n'attribue plus de numéro.**
+
+    Un lot sans BL généré renvoie 404 : la consultation ne crée pas le document.
+    Passer par `POST .../bl/draft` pour le générer.
+    """
     pl = await db.get(PackingList, pl_id)
     if pl is None:
         raise HTTPException(status_code=404)
     batch = await _get_batch_or_404(db, pl_id, batch_id)
+    if not batch.bl_number:
+        raise HTTPException(
+            status_code=404,
+            detail="aucun BL généré pour ce lot — utiliser l'action « Générer le draft ».",
+        )
     _order, _booking, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
-    bl_number = await assign_bl_number(db, pl, batch, leg)
+    bl_number = batch.bl_number
     doc = render_bill_of_lading_from_pl(
         pl=pl,
         batch=batch,

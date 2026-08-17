@@ -58,7 +58,20 @@
         <td class="mono">{{ b.weight_kg if b.weight_kg else '—' }}</td>
         <td class="mono">{{ b.hs_code or '—' }}</td>
         <td>{% if b.hazardous %}<span class="pill pill-error">IMO {{ b.imdg_class or '' }}</span>{% else %}—{% endif %}</td>
-        <td><a href="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl.pdf" class="btn btn-ghost btn-sm" target="_blank" title="Bill of Lading">{{ b.bl_number or 'Générer BL' }}</a></td>
+        {# Consulter = lien (lecture seule). Générer = formulaire POST : une
+           génération écrit en base et consomme un numéro, elle ne peut donc pas
+           partir d'un simple lien qu'un préchargement suffirait à déclencher. #}
+        <td>
+          {% if b.bl_number %}
+            <a href="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl.pdf" class="btn btn-ghost btn-sm" target="_blank" title="Bill of Lading{% if b.bl_state %} — {{ b.bl_state }}{% endif %}">{{ b.bl_number }}</a>
+            {% if b.bl_state and b.bl_state != 'final' %}<span class="pill pill-neutral text-xs">{{ b.bl_state }}</span>{% endif %}
+          {% else %}
+            <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl/draft" style="display:inline;">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button type="submit" class="btn btn-ghost btn-sm" title="Génère le draft et attribue le numéro de BL">Générer le draft</button>
+            </form>
+          {% endif %}
+        </td>
         <td class="flex gap-1">
           <a href="/stowage/locate/batch/{{ b.id }}" class="btn btn-ghost btn-sm" title="Localiser à bord">📍</a>
           {% if pl.status != 'locked' %}

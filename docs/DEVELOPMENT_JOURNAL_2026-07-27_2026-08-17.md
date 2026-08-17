@@ -795,3 +795,114 @@ deux ajouts du §5 (registre de remise, date dérivée avec override justifié) 
 Plus rien de livrable sans migration. La suite (machine à états, écrans, registre
 de remise, routes client, retrait du rail booking) attend **la fusion du lot 3 par
 Julien**.
+
+---
+
+## 2026-08-17 — BL : l'émission cesse d'être un effet de bord de la consultation
+
+Branche `feat/bl-workflow`. Quatrième et dernier volet du socle BL avant les
+écrans.
+
+### Le défaut corrigé
+
+`GET /cargo/packing-lists/{pl}/batches/{b}/bl.pdf` **écrivait en base** : il
+appelait `assign_bl_number`, attribuait un numéro de connaissement et le
+persistait. Deux conséquences, indépendantes l'une de l'autre :
+
+1. **Un `GET` qui écrit s'exécute sans intention.** Un préchargement de lien par
+   le navigateur, un scan de sécurité, un passage de crawler authentifié : chacun
+   émet un connaissement et consomme un numéro. Personne ne l'a demandé, et rien
+   ne le distingue d'une émission volontaire dans le journal.
+2. **La permission était celle de la consultation.** `cargo:C` couvre
+   `technique`, `data_analyst` et **`marins`** : trois rôles qui pouvaient émettre
+   un titre de propriété sans avoir le droit de modifier une packing list.
+
+Le second point est le plus grave des deux : ce n'est pas un accident possible,
+c'est une autorisation permanente.
+
+### La correction
+
+| Route | Méthode | Permission | Écrit ? |
+|---|---|---|---|
+| `.../bl/draft` | **`POST`** | **`cargo:M`** | oui — attribue le numéro, passe en `draft`, trace |
+| `.../bl.pdf` | `GET` | `cargo:C` | **non** — rend le document, 404 si aucun BL |
+
+Le `POST` redirige en 303 vers la consultation : l'utilisateur voit son document,
+et un rafraîchissement de page ne réémet rien.
+
+Le gabarit suit — c'est la moitié du correctif, pas un détail cosmétique : un
+`<a href>` continuerait de déclencher l'écriture par préchargement.
+`packing_list_detail.html` affiche désormais **un lien quand un BL existe, un
+formulaire `POST` sinon**.
+
+### Vérification
+
+7 tests (`test_bl_emission_post_only.py`), dont trois qui portent le poids :
+
+- le `GET` sur un lot sans BL renvoie 404 **et laisse `bl_number` à `None`** —
+  c'est l'assertion sur l'état en base qui prouve l'absence d'écriture, pas le
+  code de retour ;
+- la **déclaration** de route est figée (méthode `POST`, `cargo:M` dans la
+  signature, `assign_bl_number` absent du corps de la lecture) : repasser la
+  route en `GET` fait échouer la suite. Vérifié par sabotage réel — bascule du
+  décorateur en `@router.get`, le test tombe, restauration ;
+- une garde anti-sur-correction : la consultation d'un BL existant fonctionne
+  toujours. Un correctif qui casserait la lecture serait pire que le défaut.
+
+### Trois erreurs de ma part, corrigées
+
+- **`Set-Content -Encoding utf8` en PowerShell 5.1 écrit un BOM**, et
+  `Get-Content -Raw` relit en ANSI. Mon aller-retour de sabotage a donc
+  double-encodé tous les accents du routeur (mojibake sur ~50 lignes) et ajouté
+  un BOM. Réparé par réencodage cp1252 ; le diff est retombé de 100/52 à 51/3,
+  ce qui a servi de preuve de restauration. **À retenir : pour un sabotage
+  temporaire, passer par `git stash`, pas par un aller-retour de fichier.**
+- **`pytest.importorskip("weasyprint")` ne protège rien ici** : il ne rattrape
+  qu'`ImportError`, alors que l'absence de GTK lève une `OSError`. C'est
+  l'explication des 15 échecs locaux de la suite — ils ne sont pas « connus et
+  inévitables », leur garde est simplement inopérante. Le test de lecture
+  monkeypatche le rendu (motif déjà utilisé par `test_carnet_conditions`) et
+  passe donc partout.
+- **3 erreurs mypy introduites** dans `bl_workflow.py` : un `actor_name`
+  nullable passé à un paramètre non-optionnel. Corrigées à la racine (nom lu
+  depuis la variable locale, pas depuis la colonne nullable) plutôt qu'en
+  élargissant la signature de `_trace` — une trace d'audit sans acteur nommé ne
+  vaut rien. mypy revenu à la référence de 371. Au passage, un vrai trou : si
+  `company_name` **et** `email` étaient vides, la validation client était tracée
+  sans acteur. Repli explicite ajouté.
+
+### Reste à faire sur le lot BL
+
+Le socle est complet (machine à états, gel, traçabilité, émission protégée).
+Restent les **écrans** (validation client, signature commandant unitaire et
+groupée), le **filigrane DRAFT**, le **registre de remise** (§5.1), la **date
+*shipped on board* dérivée** (§5.0), la **séquence non recyclable + upsert de
+l'import**, et enfin les **routes client puis le retrait du rail booking** — dans
+cet ordre, jamais l'inverse.
+
+### Constat de méthode — la suite complète n'est plus exécutable en local
+
+Mesuré le 2026-08-17 : **~36 tests/minute en série**, soit plus de **cinq heures**
+pour les ~2 400 tests. J'ai d'abord cru à un blocage et tué un run après 20 min —
+à tort : le processus consommait bien du CPU, il était simplement lent. Le
+diagnostic correct est venu de `Get-Process | Select CPU`, pas de la taille du
+fichier de sortie.
+
+`pytest-xdist` est déjà installé et la machine a 20 cœurs : `pytest -n 8` ramène
+la durée à environ une heure. C'est utilisable, mais cela reste trop long pour
+servir de boucle de vérification pendant le développement.
+
+**Conséquence pratique adoptée** : vérification locale sur le **sous-ensemble
+concerné** (ici cargo / portail / BL / parité des routes), et la **CI comme
+véritable filet** sur la totalité — ce qu'elle est déjà, prouvé par le run de la
+PR #149 (2 015 passés sur Ubuntu, cf. RAF R4).
+
+⚠️ À ne pas confondre avec R5 (« filet Postgres-free ») : la lenteur est
+**intrinsèque à la suite**, pas causée par SQLite. Passer à Postgres via
+`testcontainers` la ralentirait davantage — argument à verser au dossier quand
+Julien arbitrera R5.
+
+Note annexe vérifiée : les 15 échecs locaux « WeasyPrint » ne sont pas protégés
+par leur garde. `pytest.importorskip("weasyprint")` ne rattrape qu'`ImportError`,
+or l'absence de GTK lève une `OSError`. Le remède est le monkeypatch du rendu, pas
+l'`importorskip` — trois fichiers de tests existants gagneraient à être alignés.

@@ -209,10 +209,13 @@ async def generate_draft(
     assert_transition(batch.bl_state, DRAFT)
 
     number = await assign_bl_number(db, pl, batch, leg)
+    # Le nom vient de la variable locale, pas de la colonne : celle-ci est nullable
+    # et une trace d'audit sans acteur nommé ne vaut rien.
+    issuer_name: str = user.full_name or user.username
     batch.bl_state = DRAFT
     batch.bl_draft_at = datetime.now(UTC)
     batch.bl_issued_by_id = user.id
-    batch.bl_issued_by_name = user.full_name or user.username
+    batch.bl_issued_by_name = issuer_name
     await db.flush()
 
     await _trace(
@@ -220,7 +223,7 @@ async def generate_draft(
         batch,
         action="bl_draft_generated",
         detail=f"draft généré, numéro {number}",
-        actor_name=batch.bl_issued_by_name,
+        actor_name=issuer_name,
         actor_id=user.id,
         actor_role=getattr(user, "role", None),
         ip=ip,
@@ -251,10 +254,13 @@ async def validate_by_client(
 
     batch.bl_state = CLIENT_VALIDATED
     batch.bl_client_validated_at = datetime.now(UTC)
+    name: str
     if client is not None:
         batch.bl_client_validated_by_id = client.id
         batch.bl_validated_on_behalf_by_id = None
-        name = getattr(client, "company_name", None) or getattr(client, "email", "client")
+        # Repli final explicite : les deux champs peuvent être vides, et une
+        # validation tracée sans acteur nommé serait inexploitable en audit.
+        name = getattr(client, "company_name", None) or getattr(client, "email", None) or "client"
         detail = f"validé par le client ({name})"
     else:
         batch.bl_validated_on_behalf_by_id = on_behalf_user.id
@@ -282,24 +288,26 @@ async def sign_by_master(
     """Signature du commandant — **point de gel**. Renvoie le hash calculé."""
     assert_transition(batch.bl_state, MASTER_SIGNED)
 
+    signer_name: str = user.full_name or user.username
     batch.bl_state = MASTER_SIGNED
     batch.bl_signed_at = datetime.now(UTC)
     batch.bl_signed_by_id = user.id
-    batch.bl_signed_by_name = user.full_name or user.username
-    batch.bl_signature_hash = compute_signature_hash(batch)
+    batch.bl_signed_by_name = signer_name
+    signature = compute_signature_hash(batch)
+    batch.bl_signature_hash = signature
     await db.flush()
 
     await _trace(
         db,
         batch,
         action="bl_master_signed",
-        detail=f"signé par le commandant, empreinte {batch.bl_signature_hash[:12]}…",
-        actor_name=batch.bl_signed_by_name,
+        detail=f"signé par le commandant, empreinte {signature[:12]}…",
+        actor_name=signer_name,
         actor_id=user.id,
         actor_role=getattr(user, "role", None),
         ip=ip,
     )
-    return batch.bl_signature_hash
+    return signature
 
 
 async def issue_final(
