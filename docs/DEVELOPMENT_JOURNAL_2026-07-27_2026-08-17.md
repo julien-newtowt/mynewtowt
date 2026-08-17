@@ -1466,3 +1466,87 @@ qu'à la conjonction de deux mécanismes écrits à une heure d'intervalle.
 
 Le **retrait du rail booking** (§5.4), en dernier — c'est la seule étape encore
 ouverte, et elle est purement soustractive.
+
+---
+
+## 2026-08-17 (9) — retrait du rail booking : le lot BL est complet
+
+Branche `feat/bl-workflow`, dernière étape du §5.4.
+
+### ⚠️ L'étape n'était pas « purement soustractive » — j'avais tort
+
+Je l'avais annoncée comme telle. L'inventaire préalable a montré deux choses qui
+l'invalidaient.
+
+**(a) Le rail packing list n'avait aucun DOCX.** Or CLAUDE.md documente le BL Word
+comme livré (lot 75). Retirer `/cargo/booking/{ref}/bl.docx` sans remplacement aurait
+été la régression d'une fonctionnalité documentée. Il a donc fallu **ajouter** avant de
+retirer.
+
+Au passage, l'ancien générateur DOCX portait **exactement le défaut corrigé le matin
+même dans le PDF** : `stamp.add_run("Trois originaux signés (3 OBL)")`,
+inconditionnellement — sur un document que personne n'avait signé, et dans le format
+**éditable**, donc celui qui circule et se réutilise le plus. Le nouveau générateur
+applique les mêmes règles que le PDF : mention `PROJET — SANS VALEUR DE TITRE`,
+signataire et empreinte quand c'est signé, suffixe `-DRAFT` au nom de fichier, date de
+mise à bord « non constatée » plutôt qu'inventée.
+
+**(b) Un booking n'a pas toujours un BL sur le nouveau rail.** La packing list est
+créée **vide** à la confirmation (`booking_lifecycle`, best-effort), le client la
+remplit via le portail, et l'émission du BL est une **action délibérée des
+Opérations**. Entre la confirmation et cette émission, le nouveau rail n'a rien à
+montrer.
+
+J'ai d'abord vu là un argument pour garder l'ancien rail en repli. C'est l'inverse.
+Le document du rail booking était :
+
+- fabriqué **à la volée** depuis le booking (`TUAW_{leg_id}_{booking_id}`) ;
+- **jamais enregistré** — pas de `bl_number` en base, pas d'état, pas de signature,
+  pas de révision, pas de registre de remise ;
+- présenté comme un « Bill of Lading ».
+
+Autrement dit : un document qui se présentait comme un connaissement **sans en être
+un**. Exactement la même faute que « 3 OBL signés » sur un draft, sous une autre forme.
+Le garder en repli aurait été garder un faux.
+
+Quand aucun BL n'est émis, l'écran **le dit** désormais — « Connaissement — pas encore
+émis / Émis par notre équipe dès que la packing list est complète ». C'est la réalité :
+avant émission, il n'y a pas de connaissement.
+
+### Ce qui a été retiré
+
+| Élément | Détail |
+|---|---|
+| 4 routes | `/cargo/booking/{ref}/bl.pdf` · `.docx`, `/me/bookings/{ref}/bl.pdf` · `.docx` |
+| 2 aides | `_bl_response`, `_bl_docx_response` |
+| 1 générateur | `build_bill_of_lading_docx` (version booking) |
+| 1 import | `render_bill_of_lading` dans `cargo_router` |
+| 3 liens | `staff/cargo/index`, `staff/cargo/booking_detail`, `client/booking_detail` |
+| 1 service | `documents.generated_docs_for` pointe vers la liste `/bls` |
+
+`render_bill_of_lading` (PDF, rail booking) **reste** dans `pdf_generator` : d'autres
+tests l'exercent et il n'est plus atteignable par une route. À nettoyer dans un lot
+dédié plutôt qu'en marge de celui-ci.
+
+Trois tests épinglent le retrait : les 4 routes absentes, les aides et le générateur
+absents, et le gabarit client sans `/bl.pdf` — pour qu'un « rétablissement » accidentel
+échoue.
+
+### Vérification
+
+`from app.main import app` charge **640 routes** sans erreur — le contrôle qui compte
+après un retrait, un import orphelin ne se voyant pas autrement. Balayage global : plus
+aucune référence aux chemins retirés, hors le test qui vérifie leur absence.
+
+346 passés sur le périmètre cargo/client/documents/parité, 3 échecs GTK.
+
+### Le lot BL est complet — 10,25 j sur 10,25
+
+Neuf volets en une journée. Ce qui reste n'est pas du code :
+
+- **Julien** : arbitrer l'écart de modèle du §4.2 (`bl_superseded_by_id` retirée au
+  profit d'une table d'instantanés, pour ne pas doubler les agrégats de marchandise) ;
+- **Yasmin** : revue visuelle d'un PDF réel (filigrane), et validation des textes
+  clients — ils engagent le client et sont visibles par lui ;
+- hors périmètre, à planifier : les **4 filtres inertes** (`onchange` bloqué par la CSP)
+  et le nettoyage de `render_bill_of_lading` désormais inatteignable.

@@ -32,7 +32,8 @@
             <td>{{ b.total_weight_kg }} kg</td>
             <td><span class="pill pill-info">{{ b.status }}</span></td>
             <td class="flex gap-2">
-              <a href="/cargo/booking/{{ b.reference }}/bl.pdf" target="_blank" class="btn btn-ghost text-xs">BL</a>
+              {# §5.4 — le BL ne se génère plus depuis le booking : il vit dans le
+                 registre, par lot de packing list. #}
               <a href="/cargo/booking/{{ b.reference }}/packing-list.pdf" target="_blank" class="btn btn-ghost text-xs">PL</a>
               <a href="/cargo/booking/{{ b.reference }}/invoice.pdf" target="_blank" class="btn btn-ghost text-xs">Facture</a>
               {% if b.status in ('discharged','delivered') %}

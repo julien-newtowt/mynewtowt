@@ -196,16 +196,21 @@
     {% if lang == 'en' %}Download your official documents as PDF.{% else %}Téléchargez vos documents officiels en PDF.{% endif %}
   </p>
   <div class="flex gap-3 mt-3" style="flex-wrap:wrap;">
-    {# §5.4 — deux rails coexistent le temps de la transition. Quand de vrais
-       connaissements numérotés existent (rail packing list), on y envoie : ils sont
-       suivis, validables et signés. Sinon on garde le document généré depuis le
-       booking, pour ne priver personne d'un document. #}
+    {# §5.4 — le rail booking est retiré. Le connaissement vit dans le registre : un
+       numéro attribué une fois, un état, une signature, un registre de remise.
+       L'ancien document était fabriqué à la volée depuis le booking et se présentait
+       comme un connaissement sans en être un.
+       Tant qu'aucun BL n'est émis, la page le dit — c'est la réalité : avant émission
+       par les Opérations, il n'y a pas de connaissement. #}
     {% if pl_bl_count %}
       <a href="/me/bookings/{{ booking.reference }}/bls" class="btn btn-primary">
         📄 {% if lang == 'en' %}Bills of Lading{% else %}Connaissements{% endif %} ({{ pl_bl_count }})
       </a>
     {% else %}
-      <a href="/me/bookings/{{ booking.reference }}/bl.pdf" target="_blank" class="btn btn-primary">📄 Bill of Lading</a>
+      <a href="/me/bookings/{{ booking.reference }}/bls" class="btn btn-ghost"
+         title="{% if lang == 'en' %}Issued by our team once the packing list is complete{% else %}Émis par notre équipe dès que la packing list est complète{% endif %}">
+        📄 {% if lang == 'en' %}Bill of Lading — not issued yet{% else %}Connaissement — pas encore émis{% endif %}
+      </a>
     {% endif %}
     <a href="/me/bookings/{{ booking.reference }}/packing-list.pdf" target="_blank" class="btn btn-secondary">📦 Packing List</a>
     <a href="/me/bookings/{{ booking.reference }}/booking-note.pdf" target="_blank" class="btn btn-secondary">

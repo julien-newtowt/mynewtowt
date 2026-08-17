@@ -938,3 +938,49 @@ async def revise_bl(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+
+
+@router.get("/{pl_id}/batches/{batch_id}/bl.docx")
+async def batch_bill_of_lading_docx(
+    pl_id: int,
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "C")),
+) -> Response:
+    """BL éditable (Word) d'un lot — **lecture seule**, comme la version PDF.
+
+    Remplace `/cargo/booking/{ref}/bl.docx` (rail booking retiré) : celui-ci
+    fabriquait un numéro à la volée sans jamais l'enregistrer, et écrivait « Trois
+    originaux signés » y compris sur un document que personne n'avait signé.
+    """
+    from app.services.docx_generator import build_bill_of_lading_docx_from_pl
+
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    batch = await _get_batch_or_404(db, pl_id, batch_id)
+    if not batch.bl_number:
+        raise HTTPException(
+            status_code=404,
+            detail="aucun BL généré pour ce lot — utiliser l'action « Générer le draft ».",
+        )
+    _order, _booking, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
+    sob = await bl_workflow.resolve_shipped_on_board(
+        db, batch=batch, leg_id=leg.id if leg else None
+    )
+    doc = build_bill_of_lading_docx_from_pl(
+        pl=pl,
+        batch=batch,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        bl_number=batch.bl_number,
+        issued_at=batch.bl_issued_at,
+        shipped_on_board=sob,
+    )
+    return Response(
+        content=doc.docx,
+        media_type=doc.mime,
+        headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
+    )

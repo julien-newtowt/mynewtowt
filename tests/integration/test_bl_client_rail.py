@@ -354,15 +354,50 @@ def test_the_client_template_states_that_a_draft_has_no_legal_value():
     assert "/validate" in src
 
 
-def test_the_booking_page_prefers_the_real_bl_registry_when_it_exists():
-    """§5.4 — transition : le nouveau rail quand il a produit, l'ancien sinon.
+def test_the_booking_page_points_only_at_the_registry():
+    """§5.4 — le rail booking est **retiré** (2026-08-17).
 
-    Retirer l'ancien lien avant que le nouveau ne couvre tous les cas priverait
-    certains clients de tout document.
+    Il fabriquait un document à la volée (`TUAW_{leg_id}_{booking_id}`) jamais
+    enregistré, sans état, sans signature et sans registre de remise : un document qui
+    se présentait comme un connaissement sans en être un.
+
+    Quand aucun BL n'est encore émis, la page **le dit** — c'est la réalité : avant
+    émission par les Opérations, il n'y a pas de connaissement. Mieux vaut l'annoncer
+    qu'offrir un faux.
     """
     from app.templating import templates
 
     src = templates.env.loader.get_source(templates.env, "client/booking_detail.html")[0]
     assert "{% if pl_bl_count %}" in src
     assert "/bls" in src
-    assert "/bl.pdf" in src, "le repli du rail booking a été retiré trop tôt"
+    assert "/bl.pdf" not in src, "le rail booking survit dans le gabarit"
+    assert "pas encore émis" in src and "not issued yet" in src
+
+
+def test_the_booking_rail_bl_routes_are_gone():
+    """Les quatre routes retirées ne doivent pas réapparaître."""
+    from app.routers import cargo_router as r
+
+    paths = {rt.path for rt in r.router.routes}
+    for gone in (
+        "/cargo/booking/{ref}/bl.pdf",
+        "/cargo/booking/{ref}/bl.docx",
+        "/me/bookings/{ref}/bl.pdf",
+        "/me/bookings/{ref}/bl.docx",
+    ):
+        assert gone not in paths, f"{gone} est de retour"
+    # …et leur remplaçant est bien là.
+    assert "/me/bookings/{ref}/bl/{batch_id}.pdf" in paths
+    assert "/me/bookings/{ref}/bl/{batch_id}.docx" in paths
+
+
+def test_no_dead_helper_survives_the_removal():
+    """Retirer des routes sans retirer leurs aides laisserait du code mort."""
+    from app.routers import cargo_router as r
+    from app.services import docx_generator
+
+    assert not hasattr(r, "_bl_response")
+    assert not hasattr(r, "_bl_docx_response")
+    # Le générateur DOCX « booking » est remplacé par la version rail registre.
+    assert not hasattr(docx_generator, "build_bill_of_lading_docx")
+    assert hasattr(docx_generator, "build_bill_of_lading_docx_from_pl")

@@ -30,7 +30,6 @@ from app.permissions import require_permission
 from app.services.anemos import resolve_distance_nm
 from app.services.pdf_generator import (
     render_anemos_certificate,
-    render_bill_of_lading,
     render_booking_note,
     render_invoice,
     render_packing_list,
@@ -117,24 +116,6 @@ async def cargo_booking_detail(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/cargo/booking/{ref}/bl.pdf")
-async def staff_bl_pdf(
-    ref: str,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("cargo", "C")),
-) -> Response:
-    return await _bl_response(db, ref)
-
-
-@router.get("/cargo/booking/{ref}/bl.docx")
-async def staff_bl_docx(
-    ref: str,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("cargo", "C")),
-) -> Response:
-    return await _bl_docx_response(db, ref)
-
-
 @router.get("/cargo/booking/{ref}/packing-list.pdf")
 async def staff_pl_pdf(
     ref: str,
@@ -173,24 +154,6 @@ async def staff_co2_pdf_legacy(ref: str):
 # ---------------------------------------------------------------------------
 # Client PDF endpoints (owner-only)
 # ---------------------------------------------------------------------------
-
-
-@router.get("/me/bookings/{ref}/bl.pdf")
-async def client_bl_pdf(
-    ref: str,
-    client=Depends(get_current_client),
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    return await _bl_response(db, ref, owner_client_id=client.id)
-
-
-@router.get("/me/bookings/{ref}/bl.docx")
-async def client_bl_docx(
-    ref: str,
-    client=Depends(get_current_client),
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    return await _bl_docx_response(db, ref, owner_client_id=client.id)
 
 
 @router.get("/me/bookings/{ref}/packing-list.pdf")
@@ -274,43 +237,6 @@ def _docx_response(doc) -> Response:
         media_type=doc.mime,
         headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
     )
-
-
-async def _bl_response(db, ref, owner_client_id=None) -> Response:
-    booking = await _get_booking(db, ref, owner_client_id)
-    if booking.status in ("draft",):
-        raise HTTPException(
-            status_code=400,
-            detail="Bill of Lading not available until the booking is confirmed",
-        )
-    leg, vessel, pol, pod, client = await _load_booking_bundle(db, booking)
-    doc = render_bill_of_lading(
-        booking=booking, leg=leg, vessel=vessel, pol=pol, pod=pod, client=client
-    )
-    return _pdf_response(doc)
-
-
-async def _bl_docx_response(db, ref, owner_client_id=None) -> Response:
-    """Bill of Lading au format Word (.docx) — même garde que la version PDF."""
-    booking = await _get_booking(db, ref, owner_client_id)
-    if booking.status in ("draft",):
-        raise HTTPException(
-            status_code=400,
-            detail="Bill of Lading not available until the booking is confirmed",
-        )
-    leg, vessel, pol, pod, client = await _load_booking_bundle(db, booking)
-    from app.services.docx_generator import build_bill_of_lading_docx
-
-    doc = build_bill_of_lading_docx(
-        booking=booking,
-        leg=leg,
-        vessel=vessel,
-        pol=pol,
-        pod=pod,
-        client=client,
-        bl_number=f"TUAW_{booking.leg_id}_{booking.id}",
-    )
-    return _docx_response(doc)
 
 
 async def _packing_response(db, ref, owner_client_id=None) -> Response:
@@ -621,3 +547,54 @@ async def client_confirm_bl_receipt(
         status_code=status.HTTP_303_SEE_OTHER,
         headers={"Location": f"/me/bookings/{ref}/bls"},
     )
+
+
+@router.get("/me/bookings/{ref}/bl/{batch_id}.docx")
+async def client_batch_bl_docx(
+    ref: str,
+    batch_id: int,
+    request: Request,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """BL éditable (Word) d'un lot — remplace `/me/bookings/{ref}/bl.docx`.
+
+    Même cloisonnement que la version PDF : le lot doit appartenir à CE booking, et
+    l'accès à un original est consigné au registre de remise (§5.1).
+    """
+    from app.models.packing_list import PackingList
+    from app.services import bl_delivery, bl_workflow
+    from app.services.docx_generator import build_bill_of_lading_docx_from_pl
+    from app.services.packing_list import resolve_pl_context
+
+    booking = await _get_booking(db, ref, owner_client_id=client.id)
+    batch = await _owned_batch_or_404(db, booking, batch_id)
+    if not batch.bl_number:
+        raise HTTPException(status_code=404, detail="aucun connaissement pour ce lot")
+
+    pl = await db.get(PackingList, batch.packing_list_id)
+    if pl is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    _o, _b, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
+    sob = await bl_workflow.resolve_shipped_on_board(
+        db, batch=batch, leg_id=leg.id if leg else None
+    )
+    doc = build_bill_of_lading_docx_from_pl(
+        pl=pl,
+        batch=batch,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        bl_number=batch.bl_number,
+        issued_at=batch.bl_issued_at,
+        shipped_on_board=sob,
+    )
+    await bl_delivery.record_download(
+        db,
+        batch=batch,
+        client=client,
+        ip=request.headers.get("x-forwarded-for")
+        or (request.client.host if request.client else None),
+    )
+    return _docx_response(doc)
