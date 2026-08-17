@@ -28,6 +28,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -249,8 +250,13 @@ class PackingListBatch(Base):
     # Après signature, une correction ne passe plus par l'édition mais par une
     # RÉVISION NUMÉROTÉE qui annule explicitement la précédente — les deux
     # restant tracées, comme l'exige un registre opposable.
+    #
+    # `bl_revision` est le numéro de révision **courant** du connaissement de ce lot
+    # (1 = émission d'origine). Les documents annulés vivent dans `BlRevision`, et non
+    # dans des lots clonés : le lot porte la marchandise, le dupliquer doublerait tous
+    # les agrégats (poids, palettes, stowage, export Excel). Voir la docstring de
+    # `BlRevision` pour l'écart assumé par rapport au §4.2 de la spec.
     bl_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")
-    bl_superseded_by_id: Mapped[int | None] = mapped_column(ForeignKey("packing_list_batches.id"))
 
     # ── Date de mise à bord (« shipped on board ») — §5.0 ────────────────────
     # La date effective est **dérivée** du dernier jour des opérations RÉELLES de
@@ -540,4 +546,68 @@ class BlNumberSequence(Base):
         # Un compteur négatif n'a aucun sens et signalerait une décrémentation —
         # précisément ce que cette table interdit.
         CheckConstraint("last_seq >= 0", name="ck_bl_sequence_non_negative"),
+    )
+
+
+class BlRevision(Base):
+    """Instantané d'un connaissement **annulé par une révision** — §4.1.
+
+    > « À partir de ``master_signed``, la correction ne passe plus par l'édition mais
+    > par une **révision numérotée** (``TUAW_…_R2``) qui annule explicitement la
+    > précédente, les deux restant tracées. »
+
+    ## ⚠️ Écart assumé par rapport au §4.2 de la spec
+
+    La spec plaçait ``bl_superseded_by_id`` en clé étrangère vers
+    ``packing_list_batches``, ce qui suppose qu'une révision **crée un nouveau lot**.
+    Vérification faite dans le code, ce modèle **corromprait tous les agrégats** : le
+    lot porte la marchandise, et `pdf_generator` somme ``pallet_count`` /
+    ``weight_kg`` sur ``pl.batches`` (packing list PDF, avis d'arrivée), l'export
+    Excel les liste tous, le stowage les localise, le ratio de complétude les compte.
+    Un lot cloné par révision **doublerait** chacun de ces totaux.
+
+    Le corriger aurait exigé de filtrer « non périmé » dans **chaque** agrégat, avec
+    double comptage silencieux au premier oubli.
+
+    D'où ce modèle : **le lot reste unique**, c'est le **document** qui est versionné.
+    Les agrégats existants restent justes par construction, sans modification.
+
+    ## Ce que la ligne conserve
+
+    ``signed_content`` porte la sérialisation canonique de ce qui avait été signé
+    (``bl_workflow.signature_payload``). Sans elle, on saurait qu'un document a
+    existé sans savoir **ce qu'il disait** — une trace inexploitable en contrôle.
+
+    ``reason`` est **obligatoire** : réviser un titre opposable sans dire pourquoi
+    n'aurait aucune valeur probante.
+    """
+
+    __tablename__ = "bl_revisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("packing_list_batches.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: Numéro de révision du document **annulé** (1 pour l'émission d'origine).
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Numéro du document annulé, tel qu'il a circulé.
+    bl_number: Mapped[str] = mapped_column(String(50), nullable=False)
+    signature_hash: Mapped[str | None] = mapped_column(String(64))
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signed_by_name: Mapped[str | None] = mapped_column(String(200))
+    #: Contenu exact qui avait été signé — c'est ce qui rend la trace exploitable.
+    signed_content: Mapped[str | None] = mapped_column(Text)
+    superseded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    superseded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    superseded_by_name: Mapped[str | None] = mapped_column(String(200))
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        # Une révision donnée d'un lot ne s'archive qu'une fois : sinon deux
+        # instantanés concurrents décriraient le même document annulé.
+        UniqueConstraint("batch_id", "revision", name="uq_bl_revision_batch_revision"),
+        CheckConstraint("revision >= 1", name="ck_bl_revision_snapshot_positive"),
     )

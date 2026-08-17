@@ -106,8 +106,8 @@ Sur `PackingListBatch` :
 `bl_client_validated_by` | `String(200)` | Nom figé à la validation (instantané, survit à un renommage) |
 `bl_signed_at` / `bl_signed_by_id` / `bl_signed_by_name` | idem `SofEvent` | Signature commandant |
 `bl_signature_hash` | `String(64)` | SHA-256 du contenu signé — détecte l'altération |
-`bl_revision` | `Integer`, défaut 1 | Numéro de révision |
-`bl_superseded_by_id` | FK self, nullable | Révision qui annule celle-ci |
+`bl_revision` | `Integer`, défaut 1 | Numéro de révision **courant** du lot |
+~~`bl_superseded_by_id`~~ | ~~FK self~~ | ⚠️ **RETIRÉE le 2026-08-17 — écart assumé.** Cette FK supposait qu'une révision **crée un nouveau lot**. Or le lot porte la marchandise : `pdf_generator` somme `pallet_count`/`weight_kg` sur `pl.batches` (packing list PDF, avis d'arrivée), l'export Excel les liste tous, le stowage les localise, le ratio de complétude les compte. **Un lot cloné par révision aurait doublé tous ces totaux**, et il aurait fallu filtrer « non périmé » dans *chaque* agrégat — avec double comptage silencieux au premier oubli. Modèle retenu : **le lot reste unique, le document est versionné** dans une table d'instantanés `bl_revisions` (numéro, empreinte, signataire, **contenu signé**, motif). Les agrégats existants restent justes sans être touchés (migration `20260817_0118`) |
 
 `bl_number` et `bl_issued_at` existants sont conservés (le numéro est attribué
 à la génération du draft et **ne bouge plus**).
@@ -334,10 +334,10 @@ formulaire du portail (§5.3), pure addition sans retrait.
 | Écrans (génération draft, validation client, signature) | 2 j | ⚠️ **2 des 3 FAITS** (2026-08-17) — génération du draft (`POST .../bl/draft`) et **écran commandant** `/captain/bl` : signature **unitaire ET groupée** (§5.2), listes séparées « à signer » / « en attente de validation client » / « signés », compte rendu du mode groupé (signés **et** écartés). 16 tests. ⛔ **Validation client restante** — elle passe par `/me`, donc **liée au lot des routes client** ci-dessus (§5.4). Repli disponible dès maintenant en service (`validate_by_client(on_behalf_user=…)`), pas encore exposé à l'écran |
 | Date *shipped on board* dérivée + override justifié (§5.0) | 1 j | ✅ **FAIT** (2026-08-17) — migration `20260817_0115`, **mécanisme partagé** `services/derived_override.py` (dérivée → override → justification refusée si vide/creuse/trop courte), dérivation du **dernier jour des opérations RÉELLES** (jamais le prévisionnel : ce serait un BL post-daté), contrainte `ck_bl_sob_override_needs_reason` **en base**, snapshot d'audit dans la trace, mention sur le PDF, écran Opérations. 47 tests |
 | Registre de remise des originaux (§5.1) | 1,5 j | ✅ **FAIT** (2026-08-17) — table `bl_delivery_receipts` (migration `20260817_0116`), **3 canaux de valeur probante distincte** (`download` = accès, `client_confirmed` = déclaration du client, `ops_confirmed` = attestation de repli avec moyen **obligatoire** et PJ), append-only, 3 contraintes en base, écrans client + Opérations. 32 tests |
-| Filigrane draft / BL final / révisions | 1 j | ✅ **filigrane FAIT** (2026-08-17) — filigrane `DRAFT` sur toutes les pages + mention opposable + bloc de signature conditionnel + suffixe `-DRAFT` au nom de fichier. 15 tests. ⚠️ **revue visuelle d'un PDF réel restant** (la CI prouve que le document se construit, pas qu'il s'affiche bien). Reste le volet **révisions numérotées** |
+| Filigrane draft / BL final / révisions | 1 j | ✅ **filigrane FAIT** (2026-08-17) — filigrane `DRAFT` sur toutes les pages + mention opposable + bloc de signature conditionnel + suffixe `-DRAFT` au nom de fichier. 15 tests. ⚠️ **revue visuelle d'un PDF réel restant** (la CI prouve que le document se construit, pas qu'il s'affiche bien). ✅ **révisions numérotées FAITES** (2026-08-17) : `bl_revisions`, `TUAW_…_R2`, motif obligatoire, le document annulé archivé avec son contenu signé, le nouveau repart en projet. 18 tests |
 | Séquence non recyclable + upsert de l'import Excel | 1 j | ✅ **FAIT** (2026-08-17) — table `bl_number_sequences` (migration `20260817_0117`), compteur par voyage **strictement croissant**, amorcé sur le **plus grand suffixe** émis (jamais leur nombre) ; import passé en ***upsert* par `batch_number`** des **deux** côtés (staff et portail), un lot numéroté survit et l'audit dit ce qui a été conservé. 23 tests |
 
-**Total ≈ 10,25 jours**, dont **≈ 9,5 livrés**. Révisé à la hausse depuis
+**Total ≈ 10,25 jours**, dont **≈ 10 livrés**. Révisé à la hausse depuis
 l'estimation initiale de 6,5 j : les réponses du §5 ajoutent le **registre de
 remise** (exigence nouvelle, non demandée initialement) et la **date dérivée avec
 override justifié**. Les deux sont des ajouts de valeur, pas des dérives de

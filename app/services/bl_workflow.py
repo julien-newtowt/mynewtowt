@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -443,6 +444,122 @@ async def sign_by_master(
         ip=ip,
     )
     return signature
+
+
+#: Suffixe de révision. `TUAW_1CFRBR6_001` → `TUAW_1CFRBR6_001_R2` à la 2ᵉ version.
+#: Volontairement **non numérique en fin de chaîne** : l'amorçage de la séquence lit
+#: `_(\d+)$` (cf. `packing_list._max_issued_suffix`), un numéro de révision ne doit
+#: donc pas pouvoir être pris pour un numéro de séquence.
+def revision_number(base_number: str, revision: int) -> str:
+    """Numéro du connaissement à la révision ``revision`` (2 = première révision)."""
+    return f"{base_number}_R{revision}"
+
+
+def base_bl_number(number: str) -> str:
+    """Numéro d'origine, débarrassé d'un éventuel suffixe de révision."""
+    return re.sub(r"_R\d+$", "", number or "")
+
+
+async def create_revision(
+    db: AsyncSession,
+    *,
+    batch: PackingListBatch,
+    user,
+    reason: str | None,
+    ip: str | None = None,
+) -> str:
+    """Révise un connaissement **signé** : archive l'ancien, en ouvre un nouveau.
+
+    C'est la **seule** correction possible après signature (§4.1). Le document annulé
+    n'est pas modifié ni supprimé : il est archivé dans ``BlRevision`` avec son numéro,
+    son empreinte, son signataire **et le contenu exact qui avait été signé**. Sans ce
+    dernier, on saurait qu'un document a existé sans savoir ce qu'il disait.
+
+    Le nouveau document repart à ``draft`` : le client doit **revalider** et le
+    commandant **resigner**. Une révision est un document neuf, pas un correctif
+    silencieux appliqué sous une signature déjà donnée.
+
+    Refusée sur un BL non signé : avant signature, la correction passe par l'édition
+    ordinaire — créer une révision n'aurait pour effet que de brûler un numéro.
+
+    Justification **obligatoire** (mêmes règles que les overrides, cf.
+    ``derived_override.clean_justification``) : réviser un titre opposable sans dire
+    pourquoi n'a aucune valeur probante.
+    """
+    from app.models.packing_list import BlRevision
+
+    if not is_frozen(batch):
+        raise InvalidTransition(
+            f"BL {batch.bl_number or batch.batch_number} non signé "
+            f"(état {batch.bl_state or 'aucun'}) — le corriger par édition, "
+            "pas par révision."
+        )
+    justification = clean_justification(reason, field="ce connaissement signé")
+
+    previous_revision = batch.bl_revision or 1
+    previous_number = batch.bl_number or ""
+    db.add(
+        BlRevision(
+            batch_id=batch.id,
+            revision=previous_revision,
+            bl_number=previous_number,
+            signature_hash=batch.bl_signature_hash,
+            signed_at=batch.bl_signed_at,
+            signed_by_name=batch.bl_signed_by_name,
+            signed_content=signature_payload(batch),
+            superseded_at=datetime.now(UTC),
+            superseded_by_user_id=user.id,
+            superseded_by_name=user.full_name or user.username,
+            reason=justification,
+        )
+    )
+
+    new_revision = previous_revision + 1
+    new_number = revision_number(base_bl_number(previous_number), new_revision)
+    batch.bl_revision = new_revision
+    batch.bl_number = new_number
+    # Le nouveau document n'est ni validé ni signé : on efface les marques de
+    # l'ancien plutôt que de les laisser suggérer une signature qui ne s'applique
+    # plus au contenu courant.
+    batch.bl_state = DRAFT
+    batch.bl_draft_at = datetime.now(UTC)
+    batch.bl_signed_at = None
+    batch.bl_signed_by_id = None
+    batch.bl_signed_by_name = None
+    batch.bl_signature_hash = None
+    batch.bl_client_validated_at = None
+    batch.bl_client_validated_by_id = None
+    batch.bl_validated_on_behalf_by_id = None
+    batch.bl_client_validated_by = None
+    await db.flush()
+
+    await _trace(
+        db,
+        batch,
+        action="bl_revised",
+        detail=(
+            f"révision {new_revision} : {previous_number} annulé par {new_number} — "
+            f"motif : {justification}. Le nouveau document doit être revalidé "
+            "par le client et resigné par le commandant."
+        ),
+        actor_name=user.full_name or user.username,
+        actor_id=user.id,
+        actor_role=getattr(user, "role", None),
+        ip=ip,
+    )
+    return new_number
+
+
+async def revisions_for_batch(db: AsyncSession, *, batch_id: int) -> list:
+    """Documents annulés d'un lot, du plus récent au plus ancien."""
+    from app.models.packing_list import BlRevision
+
+    stmt = (
+        select(BlRevision)
+        .where(BlRevision.batch_id == batch_id)
+        .order_by(BlRevision.revision.desc())
+    )
+    return list((await db.execute(stmt)).scalars().all())
 
 
 @dataclass(frozen=True)

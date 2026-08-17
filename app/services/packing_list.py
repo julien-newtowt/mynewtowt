@@ -403,14 +403,21 @@ _BL_SUFFIX_RE = re.compile(r"_(\d+)$")
 
 
 async def _max_issued_suffix(db: AsyncSession, *, prefix: str) -> int:
-    """Plus grand suffixe déjà attribué parmi les numéros commençant par ``prefix``.
+    """Plus grand suffixe **jamais attribué** parmi les numéros commençant par ``prefix``.
 
     On lit le **maximum**, jamais le nombre : c'est toute la différence entre une
     séquence non recyclable et le compteur défectueux qu'elle remplace. Les numéros
     non conformes au format sont ignorés — ils ne doivent pas faire échouer
     l'amorçage, seulement ne pas y contribuer.
+
+    ⚠️ Les numéros **annulés par une révision** (``bl_revisions``) sont lus eux aussi.
+    Après une révision, le numéro d'origine ne vit plus sur aucun lot — il a migré dans
+    l'archive — mais **il a circulé**. Ne lire que les lots ferait réémettre un numéro
+    déjà porté par un document remis à un tiers.
     """
-    rows = (
+    from app.models.packing_list import BlRevision
+
+    live = (
         (
             await db.execute(
                 select(PackingListBatch.bl_number).where(
@@ -421,8 +428,17 @@ async def _max_issued_suffix(db: AsyncSession, *, prefix: str) -> int:
         .scalars()
         .all()
     )
+    archived = (
+        (
+            await db.execute(
+                select(BlRevision.bl_number).where(BlRevision.bl_number.like(f"{prefix}%"))
+            )
+        )
+        .scalars()
+        .all()
+    )
     best = 0
-    for number in rows:
+    for number in (*live, *archived):
         match = _BL_SUFFIX_RE.search(number or "")
         if match:
             best = max(best, int(match.group(1)))

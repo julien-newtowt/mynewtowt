@@ -249,6 +249,57 @@
   </p>
   {% endif %}
 
+  {# §4.1 — après signature, la correction ne passe plus par l'édition mais par une
+     RÉVISION NUMÉROTÉE qui annule explicitement la précédente, les deux restant
+     tracées. Le nouveau document repart en projet : le client revalide, le
+     commandant resigne. #}
+  {% if signed_batches %}
+  <h3 class="mt-4">Réviser un connaissement signé</h3>
+  <p class="text-muted text-sm">
+    Un connaissement signé ne se modifie pas. Une révision <strong>annule</strong> le
+    document précédent — archivé avec son empreinte et son contenu — et en ouvre un
+    nouveau, qui devra être <strong>revalidé par le client</strong> puis
+    <strong>resigné par le commandant</strong>.
+  </p>
+  <table class="data-table">
+    <thead><tr><th>N° BL courant</th><th>Rév.</th><th>Documents annulés</th><th>Réviser</th></tr></thead>
+    <tbody>
+      {% for b in signed_batches %}
+      <tr>
+        <td class="mono">{{ b.bl_number }}</td>
+        <td class="mono">{{ b.bl_revision }}</td>
+        <td>
+          {% set revs = revisions_by_batch.get(b.id) %}
+          {% if revs %}
+            {% for r in revs %}
+              <div class="text-xs">
+                <span class="mono">{{ r.bl_number }}</span>
+                <span class="text-muted">
+                  annulé le {{ r.superseded_at.strftime("%d/%m/%Y %H:%M") if r.superseded_at }}
+                  par {{ r.superseded_by_name or '—' }} — {{ r.reason }}
+                </span>
+              </div>
+            {% endfor %}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl/revise"
+                class="flex gap-1 items-center"
+                data-confirm="Réviser {{ b.bl_number }} ? Le document actuel sera annulé et devra être revalidé puis resigné.">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <input type="text" name="reason" required minlength="10" style="min-width:16rem;"
+                   placeholder="Motif de la révision (lu en cas de contrôle)" />
+            <button type="submit" class="btn btn-danger btn-sm">Réviser</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
   {% if pl.status != 'locked' %}
   <h3 class="mt-4">Ajouter un batch</h3>
   <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches">

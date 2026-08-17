@@ -159,6 +159,13 @@ async def packing_list_detail(
         batch.id: await bl_delivery.delivery_status(db, batch_id=batch.id) for batch in pl.batches
     }
 
+    # §4.1 — documents annulés par une révision. Affichés : un registre doit montrer
+    # ce qui a circulé, pas seulement l'état courant.
+    revisions_by_batch = {
+        batch.id: await bl_workflow.revisions_for_batch(db, batch_id=batch.id)
+        for batch in pl.batches
+    }
+
     return templates.TemplateResponse(
         "staff/cargo/packing_list_detail.html",
         {
@@ -169,6 +176,7 @@ async def packing_list_detail(
             "messages": messages,
             "sob_by_batch": sob_by_batch,
             "delivery_by_batch": delivery_by_batch,
+            "revisions_by_batch": revisions_by_batch,
             "suggested_means": bl_delivery.SUGGESTED_MEANS,
             "number_of_originals": bl_delivery.NUMBER_OF_ORIGINALS,
         },
@@ -883,6 +891,50 @@ async def ops_confirm_bl_delivery(
     except bl_delivery.MeansRequired as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except bl_delivery.DeliveryReceiptError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+
+
+@router.post("/{pl_id}/batches/{batch_id}/bl/revise")
+async def revise_bl(
+    pl_id: int,
+    batch_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """§4.1 — révise un connaissement **signé** : archive l'ancien, en ouvre un neuf.
+
+    C'est la seule correction possible après signature. Le document annulé n'est ni
+    modifié ni supprimé : il est archivé avec son numéro, son empreinte, son signataire
+    et le contenu exact qui avait été signé.
+
+    Le nouveau document repart à `draft` — le client devra **revalider** et le
+    commandant **resigner**. Une révision est un document neuf, pas un correctif
+    appliqué sous une signature déjà donnée.
+
+    400 si le motif manque, 409 si le connaissement n'est pas signé (auquel cas la
+    correction passe par l'édition ordinaire).
+    """
+    from app.services.derived_override import JustificationRequired
+
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    batch = await _get_batch_or_404(db, pl_id, batch_id)
+    form = dict(await request.form())
+    try:
+        await bl_workflow.create_revision(
+            db,
+            batch=batch,
+            user=user,
+            reason=str(form.get("reason") or ""),
+            ip=_client_ip(request),
+        )
+    except JustificationRequired as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except bl_workflow.InvalidTransition as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)

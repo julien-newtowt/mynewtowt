@@ -1384,3 +1384,85 @@ correction passe par une révision.
   tracées. Les colonnes `bl_revision` / `bl_superseded_by_id` existent depuis la
   première migration mais **aucun code ne les utilise** ;
 - **retrait du rail booking**, en dernier.
+
+---
+
+## 2026-08-17 (8) — révisions numérotées, et un écart de conception assumé
+
+Branche `feat/bl-workflow`. Réponse au §4.1 : « à partir de `master_signed`, la
+correction ne passe plus par l'édition mais par une révision numérotée
+(`TUAW_…_R2`) qui annule explicitement la précédente, les deux restant tracées ».
+
+### ⚠️ J'ai dévié du modèle de données de la spec — voici pourquoi
+
+Le §4.2 plaçait `bl_superseded_by_id` en clé étrangère vers
+`packing_list_batches` : une révision aurait donc **créé un nouveau lot**, l'ancien
+pointant vers son successeur.
+
+Vérification faite dans le code avant d'implémenter, **ce modèle aurait corrompu tous
+les agrégats**. Le lot ne porte pas seulement un document, il porte **la
+marchandise** :
+
+| Endroit | Ce qui aurait cassé |
+|---|---|
+| `pdf_generator.py:140-141` | somme `pallet_count` et `weight_kg` sur `batches` → **poids et palettes doublés** sur la packing list PDF et l'avis d'arrivée |
+| `cargo_excel.export_packing_list_xlsx` | liste tous les lots → ligne fantôme à l'export |
+| `stowage.locate_for_packing_list` | un lot périmé à placer à bord |
+| `PackingList.completion_ratio` | dénominateur faussé |
+
+Corriger cela aurait exigé de filtrer « non périmé » dans **chacun** de ces endroits,
+avec **double comptage silencieux au premier oubli** — et rien n'aurait signalé
+l'oubli.
+
+D'où l'inversion : **le lot reste unique, c'est le document qui est versionné.** Une
+table `bl_revisions` archive le document annulé. Les agrégats existants restent justes
+**sans être touchés**, ce qui est aussi la solution la moins risquée en régression.
+
+Conséquence : `bl_superseded_by_id` n'a plus d'objet et est **retirée** (migration
+`20260817_0118`). Elle avait été ajoutée trois jours plus tôt sur cette même branche,
+non fusionnée, et **aucun code ne la lisait**. La laisser en place aurait été
+exactement le piège que je passe mes journées à corriger : une colonne qui a l'air de
+vouloir dire quelque chose et que personne ne lit. Un test épingle son absence.
+
+Cet écart est consigné dans la spec elle-même (§4.2, ligne barrée avec le motif) pour
+que Julien le voie en revue et puisse le contester.
+
+### Ce que l'archive conserve — et pourquoi le contenu compte
+
+`bl_revisions` garde le numéro, l'empreinte, le signataire, la date, le motif **et le
+contenu exact qui avait été signé** (`signature_payload`). Sans ce dernier, la trace
+dirait qu'un document a existé sans dire **ce qu'il disait** : inexploitable en
+contrôle. Un test vérifie que l'instantané ne bouge plus quand le lot est modifié
+ensuite.
+
+Le nouveau document **repart à `draft`** : les marques de l'ancien (signature,
+validation client) sont effacées. Les laisser suggérerait une signature qui ne
+s'applique plus au contenu courant. Conséquence assumée : le client doit
+**revalider** et le commandant **resigner**. Une révision est un document neuf, pas un
+correctif glissé sous une signature déjà donnée.
+
+Motif **obligatoire**, avec les mêmes règles que les overrides
+(`derived_override.clean_justification`) : « correction » est refusé.
+
+### 🔴 Un trou trouvé par un test que j'écrivais pour autre chose
+
+Le test devait vérifier que `…_001_R2` n'est pas lu comme un numéro de séquence. Il a
+échoué pour une **autre** raison : après révision, le numéro d'origine `…_001` ne vit
+plus sur aucun lot — il a migré dans l'archive. L'amorçage de la séquence, qui ne
+lisait que les lots, **aurait donc réémis un numéro déjà porté par un document remis à
+un tiers**.
+
+`_max_issued_suffix` lit désormais **les deux sources**, lots et archive. C'est
+exactement le genre de défaut qu'aucune relecture n'aurait attrapé : il n'apparaît
+qu'à la conjonction de deux mécanismes écrits à une heure d'intervalle.
+
+### Vérification — 18 tests, deux sabotages
+
+- ne pas archiver le contenu signé ⇒ le test de l'archive complète tombe ;
+- garder l'empreinte de l'ancien document sur le nouveau ⇒ le test « ni validé ni
+  signé » tombe.
+
+### Reste sur le lot BL
+
+Le **retrait du rail booking** (§5.4), en dernier — c'est la seule étape encore
+ouverte, et elle est purement soustractive.
