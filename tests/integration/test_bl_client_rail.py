@@ -141,7 +141,7 @@ async def test_a_client_cannot_download_another_clients_bl(db):
     booking, _pl, batches = await _booking_with_bls(db, leg, theirs, ref="BK-THEIRS2")
 
     with pytest.raises(HTTPException) as e:
-        await client_batch_bl_pdf(booking.reference, batches[0].id, client=mine, db=db)
+        await client_batch_bl_pdf(booking.reference, batches[0].id, _Req(), client=mine, db=db)
     assert e.value.status_code == 404
 
 
@@ -165,7 +165,9 @@ async def test_a_batch_from_another_booking_is_refused(db):
     )
 
     with pytest.raises(HTTPException) as e:
-        await client_batch_bl_pdf(my_booking.reference, their_batches[0].id, client=mine, db=db)
+        await client_batch_bl_pdf(
+            my_booking.reference, their_batches[0].id, _Req(), client=mine, db=db
+        )
     assert e.value.status_code == 404
 
 
@@ -231,7 +233,7 @@ async def test_the_owner_can_read_their_bl(db, monkeypatch):
         return SimpleNamespace(pdf=b"%PDF-1.4 fake", mime="application/pdf", filename="bl.pdf")
 
     monkeypatch.setattr("app.services.pdf_generator.render_bill_of_lading_from_pl", _fake)
-    resp = await client_batch_bl_pdf(booking.reference, batches[0].id, client=mine, db=db)
+    resp = await client_batch_bl_pdf(booking.reference, batches[0].id, _Req(), client=mine, db=db)
     assert resp.status_code == 200
     assert resp.body == b"%PDF-1.4 fake"
 
@@ -251,7 +253,7 @@ async def test_reading_does_not_write(db, monkeypatch):
         return SimpleNamespace(pdf=b"%PDF", mime="application/pdf", filename="bl.pdf")
 
     monkeypatch.setattr("app.services.pdf_generator.render_bill_of_lading_from_pl", _fake)
-    await client_batch_bl_pdf(booking.reference, batches[0].id, client=mine, db=db)
+    await client_batch_bl_pdf(booking.reference, batches[0].id, _Req(), client=mine, db=db)
 
     fresh = await db.get(PackingListBatch, batches[0].id)
     assert (fresh.bl_number, fresh.bl_state) == before

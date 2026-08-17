@@ -33,6 +33,7 @@
         <th class="text-right">{% if lang == 'en' %}Pallets{% else %}Palettes{% endif %}</th>
         <th>{% if lang == 'en' %}Status{% else %}Statut{% endif %}</th>
         <th>{% if lang == 'en' %}Document{% else %}Document{% endif %}</th>
+        <th>{% if lang == 'en' %}Receipt{% else %}Réception{% endif %}</th>
         <th>{% if lang == 'en' %}Action{% else %}Action{% endif %}</th>
       </tr>
     </thead>
@@ -62,8 +63,45 @@
             {% if b.bl_state in ('master_signed', 'final') %}PDF{% else %}{% if lang == 'en' %}Draft PDF{% else %}PDF (projet){% endif %}{% endif %}
           </a>
         </td>
+        {# §5.1 — registre de remise. Un TÉLÉCHARGEMENT est présenté comme une
+           consultation, jamais comme une réception : un préchargement de lien peut
+           le produire. Seule la confirmation explicite atteste. #}
         <td>
-          {% if b.bl_state == 'draft' %}
+          {% set dl = delivery.get(b.id) %}
+          {% if dl and dl.acknowledged %}
+            <span class="pill pill-success">
+              {% if lang == 'en' %}Receipt confirmed{% else %}Réception confirmée{% endif %}
+            </span>
+            <div class="text-muted text-xs">
+              {{ dl.acknowledged_at.strftime("%d/%m/%Y %H:%M") if dl.acknowledged_at }}
+              {% if dl.acknowledged_channel == 'ops_confirmed' %}
+                — {% if lang == 'en' %}recorded by NEWTOWT{% else %}enregistré par NEWTOWT{% endif %}
+              {% endif %}
+            </div>
+          {% elif b.bl_state in ('master_signed', 'final') %}
+            <span class="pill pill-warn">
+              {% if lang == 'en' %}Not confirmed{% else %}Non confirmée{% endif %}
+            </span>
+            {% if dl and dl.download_count %}
+              <div class="text-muted text-xs">
+                {{ dl.download_count }}
+                {% if lang == 'en' %}download(s) — access only, not a receipt{% else %}consultation(s) — accès seulement, pas une réception{% endif %}
+              </div>
+            {% endif %}
+          {% else %}
+            <span class="text-muted text-sm">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if b.bl_state in ('master_signed', 'final') and not (dl and dl.acknowledged) %}
+            <form method="post" action="/me/bookings/{{ booking.reference }}/bl/{{ b.id }}/confirm-receipt"
+                  data-confirm="{% if lang == 'en' %}Confirm you received the {{ number_of_originals }} originals?{% else %}Confirmer la réception des {{ number_of_originals }} originaux ?{% endif %}">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button type="submit" class="btn btn-secondary btn-sm">
+                {% if lang == 'en' %}I received the originals{% else %}J'ai reçu les originaux{% endif %}
+              </button>
+            </form>
+          {% elif b.bl_state == 'draft' %}
             <form method="post" action="/me/bookings/{{ booking.reference }}/bl/{{ b.id }}/validate"
                   data-confirm="{% if lang == 'en' %}Approve this Bill of Lading? Please check the parties, goods and weights first.{% else %}Valider ce connaissement ? Vérifiez d'abord les parties, la marchandise et les poids.{% endif %}">
               <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />

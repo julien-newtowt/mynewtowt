@@ -407,3 +407,93 @@ class PortalMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class BlDeliveryReceipt(Base):
+    """Registre de remise des originaux du connaissement — §5.1.
+
+    > « Normalement, les BLs devraient être téléchargeables dans la plateforme
+    > client. L'idéal serait de tracker le timestamp de cette action ou ajouter une
+    > case de confirmation de réception côté client. Cette case devrait aussi
+    > apparaître pour l'équipe opérations, en mode backup. Si les BLs sont envoyés
+    > en papier par exemple, l'équipe opérations pourra confirmer la réception côté
+    > client en ajoutant la date et heure de confirmation et moyen (téléphone,
+    > mail, etc.) + PJ possible. »
+
+    C'est **exactement** le dispositif dont l'absence exclut la *misdelivery* de la
+    couverture P&I : sans registre, le transporteur ne peut pas établir à qui, quand
+    et comment il a remis les originaux.
+
+    ## Trois canaux, trois valeurs probantes DIFFÉRENTES
+
+    Elles ne doivent jamais être confondues, et c'est la raison d'être de `channel` :
+
+    - ``download`` — le client a **téléchargé** le document. Preuve d'**accès**, pas
+      de réception : un préchargement de lien ou un antivirus de messagerie peut la
+      produire. La plus faible.
+    - ``client_confirmed`` — le client a **coché** la confirmation de réception.
+      Déclaration du client lui-même : la plus forte.
+    - ``ops_confirmed`` — les Opérations attestent d'une remise **hors plateforme**
+      (papier, coursier…). C'est un **repli**, tracé comme tel, jamais présenté
+      comme une déclaration du client — même principe que
+      ``bl_validated_on_behalf_by_id``.
+
+    Table **append-only** : on n'écrase pas un événement de remise, on en ajoute un.
+    Un registre qui se réécrit ne prouve rien.
+    """
+
+    __tablename__ = "bl_delivery_receipts"
+
+    #: Preuve d'accès seulement — jamais de réception.
+    CHANNEL_DOWNLOAD = "download"
+    #: Déclaration du client : la plus forte.
+    CHANNEL_CLIENT = "client_confirmed"
+    #: Repli Opérations pour une remise hors plateforme.
+    CHANNEL_OPS = "ops_confirmed"
+
+    CHANNELS = (CHANNEL_DOWNLOAD, CHANNEL_CLIENT, CHANNEL_OPS)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("packing_list_batches.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    channel: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    #: Instant de l'événement. Pour le repli Opérations c'est la date **déclarée**
+    #: de la remise réelle, qui peut précéder la saisie — d'où un champ distinct de
+    #: `created_at`.
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: Moyen de remise (téléphone, mail, coursier, remise en main propre…).
+    #: **Obligatoire pour le repli Opérations** : sans le moyen, l'attestation
+    #: n'établit rien.
+    means: Mapped[str | None] = mapped_column(String(60))
+    confirmed_by_client_id: Mapped[int | None] = mapped_column(ForeignKey("client_accounts.id"))
+    confirmed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    #: Nom figé au moment de l'événement (survit à un renommage de compte).
+    confirmed_by_name: Mapped[str | None] = mapped_column(String(200))
+    attachment_path: Mapped[str | None] = mapped_column(String(300))
+    notes: Mapped[str | None] = mapped_column(Text)
+    ip_address: Mapped[str | None] = mapped_column(String(60))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('download', 'client_confirmed', 'ops_confirmed')",
+            name="ck_bl_receipt_channel",
+        ),
+        # Le confirmateur est SOIT le client, SOIT le staff — jamais les deux.
+        # Posé en base pour qu'une attestation du staff ne puisse jamais être
+        # présentée comme une déclaration du client.
+        CheckConstraint(
+            "confirmed_by_client_id IS NULL OR confirmed_by_user_id IS NULL",
+            name="ck_bl_receipt_confirmer_client_xor_staff",
+        ),
+        # Le repli Opérations sans moyen de remise n'établit rien : il est
+        # instockable. C'est la seule contrainte qui donne sa valeur au registre
+        # face à un assureur.
+        CheckConstraint(
+            "channel <> 'ops_confirmed' OR means IS NOT NULL",
+            name="ck_bl_receipt_ops_needs_means",
+        ),
+    )

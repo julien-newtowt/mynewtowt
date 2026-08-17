@@ -119,7 +119,11 @@ async def packing_list_detail(
     ).scalar_one_or_none()
     if pl is None:
         raise HTTPException(status_code=404)
-    order = await db.get(Order, pl.order_id)
+    # ⚠️ `order_id` est NULL pour une packing list issue d'un BOOKING (XOR
+    # `ck_packing_lists_order_xor_booking`) — c'est le cas normal du rail client, pas
+    # une anomalie. Sans cette garde, `db.get(Order, None)` déclenche un SAWarning
+    # « fully NULL primary key » à chaque affichage de ces packing lists.
+    order = await db.get(Order, pl.order_id) if pl.order_id else None
     messages = list(
         (
             await db.execute(
@@ -148,6 +152,13 @@ async def packing_list_detail(
         for batch in pl.batches
     }
 
+    # §5.1 — registre de remise par lot.
+    from app.services import bl_delivery
+
+    delivery_by_batch = {
+        batch.id: await bl_delivery.delivery_status(db, batch_id=batch.id) for batch in pl.batches
+    }
+
     return templates.TemplateResponse(
         "staff/cargo/packing_list_detail.html",
         {
@@ -157,6 +168,9 @@ async def packing_list_detail(
             "order": order,
             "messages": messages,
             "sob_by_batch": sob_by_batch,
+            "delivery_by_batch": delivery_by_batch,
+            "suggested_means": bl_delivery.SUGGESTED_MEANS,
+            "number_of_originals": bl_delivery.NUMBER_OF_ORIGINALS,
         },
     )
 
@@ -742,3 +756,87 @@ def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
     )
+
+
+@router.post("/{pl_id}/batches/{batch_id}/bl/confirm-delivery")
+async def ops_confirm_bl_delivery(
+    pl_id: int,
+    batch_id: int,
+    request: Request,
+    file: UploadFile | None = File(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """§5.1 — repli Opérations : attester d'une remise **hors plateforme**.
+
+    > « Si les BLs sont envoyés en papier par exemple, l'équipe opérations pourra
+    > confirmer la réception côté client en ajoutant la date et heure de
+    > confirmation et moyen (téléphone, mail, etc.) + PJ possible. »
+
+    L'attestation est tracée **comme un repli** : elle n'est jamais présentée comme
+    une déclaration du client. Le **moyen** de remise est obligatoire — une
+    attestation qui ne dit pas *comment* la remise a eu lieu n'établit rien face à un
+    assureur (400 s'il manque).
+
+    Refusée tant que le connaissement n'est pas signé : avant la signature aucun
+    original n'existe (409).
+    """
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+
+    from app.services import bl_delivery
+    from app.services.safe_files import UploadRejected, save_upload
+
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
+
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    batch = await _get_batch_or_404(db, pl_id, batch_id)
+
+    form = dict(await request.form())
+    raw_when = str(form.get("confirmed_at") or "").strip()
+    try:
+        # `datetime-local` rend « AAAA-MM-JJTHH:MM » (sans fuseau) : on l'ancre en
+        # UTC plutôt que de laisser une valeur naïve entrer en base.
+        when = _dt.fromisoformat(raw_when)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="date et heure de confirmation invalides (format attendu AAAA-MM-JJTHH:MM)",
+        ) from exc
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=_UTC)
+
+    attachment_path = None
+    if file is not None and getattr(file, "filename", None):
+        content = await file.read()
+        # Le header Content-Length est falsifiable : on revérifie après lecture.
+        size_check = validate_size(content)
+        if not size_check.ok:
+            raise HTTPException(status_code=413, detail=size_check.reason)
+        try:
+            attachment_path, _mime = save_upload(
+                content, file.filename or "preuve", subdir="bl-delivery"
+            )
+        except UploadRejected as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        await bl_delivery.confirm_by_ops(
+            db,
+            batch=batch,
+            user=user,
+            confirmed_at=when,
+            means=str(form.get("means") or ""),
+            notes=str(form.get("notes") or ""),
+            attachment_path=attachment_path,
+            ip=_client_ip(request),
+        )
+    except bl_delivery.MeansRequired as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except bl_delivery.DeliveryReceiptError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)

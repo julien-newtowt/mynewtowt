@@ -1211,3 +1211,95 @@ Gardé.
   supprimer un lot fait réattribuer un numéro déjà consommé ;
 - **révisions numérotées** (`TUAW_…_R2`) ;
 - **retrait du rail booking**, en dernier.
+
+---
+
+## 2026-08-17 (6) — registre de remise des originaux
+
+Branche `feat/bl-workflow`. Réponse au §5.1. C'est le volet qui a le plus de valeur
+défensive du lot : sans registre, NEWTOWT ne peut établir **ni à qui, ni quand, ni
+comment** les originaux ont été remis — et c'est précisément le dispositif dont
+l'absence exclut la *misdelivery* de la couverture P&I.
+
+### Trois canaux, trois valeurs probantes — et on ne les confond jamais
+
+Toute la conception tient dans cette distinction :
+
+| Canal | Ce que ça prouve | Force |
+|---|---|---|
+| `download` | le document a été **consulté** | faible — un préchargement de lien ou un antivirus de messagerie suffit |
+| `client_confirmed` | le client **déclare** avoir reçu | forte — sa propre déclaration |
+| `ops_confirmed` | NEWTOWT **atteste** d'une remise hors plateforme | intermédiaire — c'est un **repli**, tracé comme tel |
+
+🔴 Conséquence directe : `has_client_acknowledgement` **ignore délibérément les
+téléchargements**. C'est la fonction où l'erreur coûterait le plus cher — présenter
+un téléchargement comme une réception produirait une affirmation fausse au moment
+exact où elle compte, face à un assureur en réclamation. Le sabotage (compter tous
+les canaux) fait tomber le test dédié.
+
+Le vocabulaire suit le calcul, dans les deux langues : l'écran dit
+« consultation(s) — accès seulement, pas une réception », jamais « reçu ».
+
+### Un raffinement que j'ai ajouté : un projet n'est pas un original
+
+Télécharger un **projet** n'est pas recevoir un original — avant signature, aucun
+original n'existe. Consigner ces accès dans un registre de **remise** l'aurait
+rempli d'événements hors sujet et gonflé un compteur que quelqu'un aurait fini par
+lire comme une preuve. `is_deliverable` restreint donc les trois canaux aux états
+`master_signed` / `final`.
+
+### Consigner une écriture sur un `GET` — assumé, et encadré
+
+Le téléchargement est par nature un `GET`. Après avoir passé la matinée à corriger
+un `GET` qui écrivait, je note la différence : ici il s'agit d'un **journal
+d'accès**, pas d'une création de ressource à conséquence juridique. Deux garde-fous
+bornent le risque :
+
+- un accès à un projet n'est pas consigné du tout ;
+- un accès n'est **jamais** compté comme une réception.
+
+Un préchargement de lien ne peut donc gonfler qu'un compteur de consultations,
+jamais produire une preuve de remise.
+
+### Trois contraintes en base, pas seulement dans les formulaires
+
+- `ck_bl_receipt_channel` — liste fermée. Trois valeurs probantes, pas une quatrième
+  improvisée dont personne ne saurait ce qu'elle prouve.
+- `ck_bl_receipt_confirmer_client_xor_staff` — le confirmateur est le client **ou**
+  le staff, jamais les deux : une attestation du staff ne doit pas pouvoir être
+  relue comme une déclaration du client (même principe que
+  `bl_validated_on_behalf_by_id`).
+- `ck_bl_receipt_ops_needs_means` — un repli **sans moyen de remise** n'établit
+  rien : il est instockable. C'est la contrainte qui donne sa valeur au registre.
+
+Table **append-only** : on n'écrase pas un événement de remise, on en ajoute un. Un
+registre qui se réécrit ne prouve rien. La date d'attestation ne bouge donc pas
+quand un téléchargement postérieur arrive — un test l'épingle.
+
+`confirmed_at` est distinct de `created_at` : la remise papier est saisie **après
+coup**, la date déclarée peut précéder la saisie.
+
+### Un défaut latent trouvé au passage
+
+`packing_list_detail` faisait `db.get(Order, pl.order_id)` sans garde. Or `order_id`
+est **NULL** pour toute packing list issue d'un **booking** — le cas normal du rail
+client, imposé par le XOR `ck_packing_lists_order_xor_booking`. Chaque affichage de
+ces packing lists émettait donc un `SAWarning` « fully NULL primary key ». Corrigé.
+Trouvé uniquement parce qu'un test a rendu l'écran sur une packing list du rail
+booking — les tests existants ne couvraient que le rail commande.
+
+### Une erreur de test de ma part
+
+J'ai d'abord asserté `confirmed_at.tzinfo is not None`. Faux raisonnement :
+`DateTime(timezone=True)` rend du **naïf sous SQLite** (tests) et de l'aware sous
+Postgres (production) — c'est la convention `planning.ensure_utc` du dépôt.
+L'assertion testait le driver, pas mon code. Corrigée pour comparer l'**instant**
+après normalisation.
+
+### Reste sur le lot BL
+
+- **séquence de numéros non recyclable** — aujourd'hui `nombre de BL du leg + 1` :
+  supprimer un lot fait réattribuer un numéro déjà consommé. Sur un registre
+  opposable, deux documents différents pourraient porter le même numéro ;
+- **révisions numérotées** (`TUAW_…_R2`) annulant la précédente ;
+- **retrait du rail booking**, en dernier.

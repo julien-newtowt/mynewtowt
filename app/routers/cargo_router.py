@@ -462,12 +462,23 @@ async def client_bl_list(
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     """Connaissements du booking : état, document, action de validation."""
+    from app.services import bl_delivery
+
     booking = await _get_booking(db, ref, owner_client_id=client.id)
     batches = await _booking_batches_with_bl(db, booking)
+    # §5.1 — état de remise par lot. Calculé ici : un gabarit ne doit pas
+    # déclencher de requêtes.
+    delivery = {b.id: await bl_delivery.delivery_status(db, batch_id=b.id) for b in batches}
     return templates.TemplateResponse(
         request,
         "client/bl_list.html",
-        {"booking": booking, "batches": batches, "client": client},
+        {
+            "booking": booking,
+            "batches": batches,
+            "client": client,
+            "delivery": delivery,
+            "number_of_originals": bl_delivery.NUMBER_OF_ORIGINALS,
+        },
     )
 
 
@@ -475,10 +486,16 @@ async def client_bl_list(
 async def client_batch_bl_pdf(
     ref: str,
     batch_id: int,
+    request: Request,
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Connaissement d'un lot. **Lecture seule** — n'émet ni ne modifie rien."""
+    """Connaissement d'un lot.
+
+    N'émet ni ne modifie le connaissement. Consigne en revanche l'**accès** dans le
+    registre de remise (§5.1) quand le document est un original signé — un accès
+    n'est jamais compté comme une réception.
+    """
     from app.services import bl_workflow
     from app.services.packing_list import resolve_pl_context
     from app.services.pdf_generator import render_bill_of_lading_from_pl
@@ -509,6 +526,24 @@ async def client_batch_bl_pdf(
         bl_number=batch.bl_number,
         issued_at=batch.bl_issued_at,
         shipped_on_board=sob,
+    )
+
+    # §5.1 — registre de remise. Consigner un ACCÈS sur un `GET` est assumé : c'est
+    # le propre d'un journal d'accès, et son absence viderait le registre de son
+    # intérêt. Deux garde-fous encadrent le risque :
+    #  - un accès à un PROJET n'est pas consigné (aucun original n'existe encore) ;
+    #  - un accès n'est JAMAIS compté comme une réception
+    #    (`bl_delivery.has_client_acknowledgement` ignore ce canal).
+    # Un préchargement de lien ne peut donc gonfler qu'un compteur de consultations,
+    # jamais produire une preuve de remise.
+    from app.services import bl_delivery
+
+    await bl_delivery.record_download(
+        db,
+        batch=batch,
+        client=client,
+        ip=request.headers.get("x-forwarded-for")
+        or (request.client.host if request.client else None),
     )
     return _pdf_response(doc)
 
@@ -547,4 +582,42 @@ async def client_validate_bl(
 
     return Response(
         status_code=status.HTTP_303_SEE_OTHER, headers={"Location": f"/me/bookings/{ref}/bls"}
+    )
+
+
+@router.post("/me/bookings/{ref}/bl/{batch_id}/confirm-receipt")
+async def client_confirm_bl_receipt(
+    ref: str,
+    batch_id: int,
+    request: Request,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """§5.1 — le client **déclare** avoir reçu les originaux.
+
+    C'est la preuve la plus forte du registre de remise, parce qu'elle vient du
+    client lui-même. Refusée tant que le connaissement n'est pas signé : avant la
+    signature aucun original n'existe, et confirmer la réception d'un projet
+    n'établirait rien.
+    """
+    from app.services import bl_delivery
+
+    booking = await _get_booking(db, ref, owner_client_id=client.id)
+    batch = await _owned_batch_or_404(db, booking, batch_id)
+    form = dict(await request.form())
+    try:
+        await bl_delivery.confirm_by_client(
+            db,
+            batch=batch,
+            client=client,
+            notes=str(form.get("notes") or ""),
+            ip=request.headers.get("x-forwarded-for")
+            or (request.client.host if request.client else None),
+        )
+    except bl_delivery.DeliveryReceiptError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return Response(
+        status_code=status.HTTP_303_SEE_OTHER,
+        headers={"Location": f"/me/bookings/{ref}/bls"},
     )
