@@ -196,7 +196,17 @@
     {% if lang == 'en' %}Download your official documents as PDF.{% else %}Téléchargez vos documents officiels en PDF.{% endif %}
   </p>
   <div class="flex gap-3 mt-3" style="flex-wrap:wrap;">
-    <a href="/me/bookings/{{ booking.reference }}/bl.pdf" target="_blank" class="btn btn-primary">📄 Bill of Lading</a>
+    {# §5.4 — deux rails coexistent le temps de la transition. Quand de vrais
+       connaissements numérotés existent (rail packing list), on y envoie : ils sont
+       suivis, validables et signés. Sinon on garde le document généré depuis le
+       booking, pour ne priver personne d'un document. #}
+    {% if pl_bl_count %}
+      <a href="/me/bookings/{{ booking.reference }}/bls" class="btn btn-primary">
+        📄 {% if lang == 'en' %}Bills of Lading{% else %}Connaissements{% endif %} ({{ pl_bl_count }})
+      </a>
+    {% else %}
+      <a href="/me/bookings/{{ booking.reference }}/bl.pdf" target="_blank" class="btn btn-primary">📄 Bill of Lading</a>
+    {% endif %}
     <a href="/me/bookings/{{ booking.reference }}/packing-list.pdf" target="_blank" class="btn btn-secondary">📦 Packing List</a>
     <a href="/me/bookings/{{ booking.reference }}/booking-note.pdf" target="_blank" class="btn btn-secondary">
       📝 Booking note

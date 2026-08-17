@@ -1140,3 +1140,74 @@ n'existerait pas, exactement le défaut relevé la veille sur
 de confirmation client, repli Opérations avec date/heure/moyen/pièce jointe) est le
 prochain volet. Il dépend en partie des **routes client** (`/me`), comme la
 validation client.
+
+---
+
+## 2026-08-17 (5) — rail client du connaissement, et validation par le client
+
+Branche `feat/bl-workflow`. Ce volet lève la dépendance qui bloquait tout le
+reste : le rail packing list n'avait **aucune** route côté client.
+
+### Pourquoi une liste et non un document
+
+Le rail packing list produit **un connaissement par lot** (`PackingListBatch`),
+alors que l'URL client historique est au niveau du **booking**. Un booking pouvant
+porter plusieurs lots, « le » BL du booking n'existe pas. D'où :
+
+    GET  /me/bookings/{ref}/bls                  liste (état, PDF, action)
+    GET  /me/bookings/{ref}/bl/{batch_id}.pdf    un document
+    POST /me/bookings/{ref}/bl/{batch_id}/validate   validation client
+
+### 🔴 Le point qui compte : la référence dans l'URL ne suffit pas
+
+Le contrôle de propriété existant (`_get_booking(..., owner_client_id=…)`) vérifie
+que **le booking** est bien au client. Ce n'est pas assez : **c'est le lot qui
+porte le document**. Un client authentifié passant *sa propre* référence de booking
+avec un `batch_id` appartenant à un tiers aurait lu le connaissement de ce tiers.
+
+D'où `_owned_batch_or_404`, qui joint sur `PackingList.booking_id`. Deux tests le
+couvrent, et le sabotage (retirer la clause de jointure) les fait tomber tous les
+deux.
+
+Convention respectée : **404 et non 403** sur ce qui n'est pas à soi — un 403
+confirmerait l'existence de la référence.
+
+### Ce que le client voit, et ce qu'il ne doit pas croire
+
+Les états sont dits en clair, jamais par un code technique : « Projet — en attente
+de votre validation », « Validé par vous — en attente de signature du commandant »…
+Et la page dit explicitement ce qu'un projet **ne vaut pas** : ni original
+négociable, ni preuve de mise à bord. Elle prévient aussi qu'une modification
+postérieure annule la validation et qu'il faudra revalider — la règle de
+régression, expliquée avant d'être subie.
+
+Un test vérifie la présence de cette mention **dans les deux langues** : la
+protection ne doit pas exister qu'en français.
+
+### Transition entre les deux rails — pas de retrait prématuré
+
+La fiche booking client affichait un bouton « 📄 Bill of Lading » pointant vers le
+rail booking. Il **reste**, mais la page préfère désormais le nouveau rail
+**quand celui-ci a produit quelque chose** (`pl_bl_count`). Retirer l'ancien lien
+maintenant priverait de tout document les bookings sans packing list. Un test
+épingle les deux branches, y compris la présence du repli — pour qu'un futur
+« nettoyage » ne l'enlève pas sans le vouloir.
+
+⛔ Le **retrait du rail booking** reste donc à faire, et c'est volontaire.
+
+### Une erreur mypy de ma part, réelle
+
+`db.get(PackingList, …)` renvoie `PackingList | None`. Sur une donnée incohérente,
+le code aurait planté avec une erreur obscure au lieu de rendre un 404 explicite.
+Gardé.
+
+### Reste
+
+- **registre de remise des originaux (§5.1)** — table + horodatage de
+  téléchargement + case de confirmation client + repli Opérations (date, heure,
+  moyen, pièce jointe). C'est le dispositif dont l'absence exclut la *misdelivery*
+  de la couverture P&I ;
+- **séquence de numéros non recyclable** — aujourd'hui `nombre de BL du leg + 1` :
+  supprimer un lot fait réattribuer un numéro déjà consommé ;
+- **révisions numérotées** (`TUAW_…_R2`) ;
+- **retrait du rail booking**, en dernier.

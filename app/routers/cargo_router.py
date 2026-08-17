@@ -397,3 +397,154 @@ async def _co2_response(db, ref, owner_client_id=None) -> Response:
         crew=crew,
     )
     return _pdf_response(doc)
+
+
+# ---------------------------------------------------------------------------
+# Rail packing list côté client — connaissements du booking
+# ---------------------------------------------------------------------------
+#
+# Cf. `docs/strategy/SPEC_WORKFLOW_BILL_OF_LADING.md` §4.1 et §5.4.
+#
+# ⚠️ Pourquoi ces routes existent. Le rail packing list produit **un
+# connaissement par lot** (`PackingListBatch`), alors que l'URL client historique
+# est au niveau du **booking** — un booking pouvant porter plusieurs lots, il n'y a
+# pas de « le » BL du booking. D'où une **liste** puis un document par lot, et non
+# une route unique.
+#
+# Ces routes sont aussi le **préalable au retrait du rail booking** (§5.4) : le
+# retirer avant priverait le client de tout accès à son connaissement.
+#
+# Le contrôle de propriété passe par `_get_booking(..., owner_client_id=client.id)`
+# qui renvoie **404** et non 403 pour un booking étranger : un 403 confirmerait
+# l'existence de la référence.
+
+
+async def _booking_batches_with_bl(db: AsyncSession, booking: Booking) -> list:
+    """Lots du booking portant un BL, du plus ancien au plus récent."""
+    from app.models.packing_list import PackingList, PackingListBatch
+
+    stmt = (
+        select(PackingListBatch)
+        .join(PackingList, PackingListBatch.packing_list_id == PackingList.id)
+        .where(PackingList.booking_id == booking.id)
+        .where(PackingListBatch.bl_number.is_not(None))
+        .order_by(PackingListBatch.bl_number)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def _owned_batch_or_404(db: AsyncSession, booking: Booking, batch_id: int):
+    """Le lot demandé appartient-il bien à CE booking ?
+
+    Sans cette vérification, un client authentifié pourrait lire le connaissement
+    d'un autre en devinant un `batch_id` — la référence de booking dans l'URL ne
+    suffit pas, c'est le lot qui porte le document.
+    """
+    from app.models.packing_list import PackingList, PackingListBatch
+
+    stmt = (
+        select(PackingListBatch)
+        .join(PackingList, PackingListBatch.packing_list_id == PackingList.id)
+        .where(PackingList.booking_id == booking.id)
+        .where(PackingListBatch.id == batch_id)
+    )
+    batch = (await db.execute(stmt)).scalar_one_or_none()
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return batch
+
+
+@router.get("/me/bookings/{ref}/bls", response_class=HTMLResponse)
+async def client_bl_list(
+    ref: str,
+    request: Request,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Connaissements du booking : état, document, action de validation."""
+    booking = await _get_booking(db, ref, owner_client_id=client.id)
+    batches = await _booking_batches_with_bl(db, booking)
+    return templates.TemplateResponse(
+        request,
+        "client/bl_list.html",
+        {"booking": booking, "batches": batches, "client": client},
+    )
+
+
+@router.get("/me/bookings/{ref}/bl/{batch_id}.pdf")
+async def client_batch_bl_pdf(
+    ref: str,
+    batch_id: int,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Connaissement d'un lot. **Lecture seule** — n'émet ni ne modifie rien."""
+    from app.services import bl_workflow
+    from app.services.packing_list import resolve_pl_context
+    from app.services.pdf_generator import render_bill_of_lading_from_pl
+
+    booking = await _get_booking(db, ref, owner_client_id=client.id)
+    batch = await _owned_batch_or_404(db, booking, batch_id)
+    if not batch.bl_number:
+        raise HTTPException(status_code=404, detail="aucun connaissement pour ce lot")
+
+    from app.models.packing_list import PackingList
+
+    pl = await db.get(PackingList, batch.packing_list_id)
+    if pl is None:
+        # Ne devrait pas arriver (le lot a été trouvé PAR sa packing list), mais un
+        # crash obscur sur une donnée incohérente vaut moins qu'un 404 explicite.
+        raise HTTPException(status_code=404, detail="Not found")
+    _o, _b, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
+    sob = await bl_workflow.resolve_shipped_on_board(
+        db, batch=batch, leg_id=leg.id if leg else None
+    )
+    doc = render_bill_of_lading_from_pl(
+        pl=pl,
+        batch=batch,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        bl_number=batch.bl_number,
+        issued_at=batch.bl_issued_at,
+        shipped_on_board=sob,
+    )
+    return _pdf_response(doc)
+
+
+@router.post("/me/bookings/{ref}/bl/{batch_id}/validate")
+async def client_validate_bl(
+    ref: str,
+    batch_id: int,
+    request: Request,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """Validation du draft **par le client titulaire** du booking (§4.1).
+
+    C'est bien le compte authentifié `/me` qui valide, **pas** le portail
+    expéditeur `/p/{token}` : celui-ci est anonyme par conception et ne peut donc
+    pas engager le client.
+
+    Une modification ultérieure du contenu annulera cette validation et ramènera le
+    BL à `draft` (règle de régression) — une validation porte sur un contenu précis.
+    """
+    from app.services import bl_workflow
+
+    booking = await _get_booking(db, ref, owner_client_id=client.id)
+    batch = await _owned_batch_or_404(db, booking, batch_id)
+    try:
+        await bl_workflow.validate_by_client(
+            db,
+            batch=batch,
+            client=client,
+            ip=request.headers.get("x-forwarded-for")
+            or (request.client.host if request.client else None),
+        )
+    except bl_workflow.InvalidTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return Response(
+        status_code=status.HTTP_303_SEE_OTHER, headers={"Location": f"/me/bookings/{ref}/bls"}
+    )
