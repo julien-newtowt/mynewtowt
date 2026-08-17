@@ -1283,6 +1283,9 @@ CATALOG: dict[str, str] = {
     "qhse_import_result_title": "Relatório de importação QHSE",
     "qhse_import_result_imported": "importado(s)",
     "qhse_import_result_skipped": "ignorado(s) / em quarentena",
+    "qhse_import_result_flagged": "importada(s), a confirmar",
+    "qhse_import_result_flagged_title": "Importadas mas marcadas como possível teste",
+    "qhse_import_result_loss_notice": "⚠ Estas linhas NÃO estão no registro. O detalhe fica no log de atividade (/admin/activity-logs) — corrija o arquivo e reimporte.",
     "qhse_import_result_errors_title": "Anomalias detectadas (linhas em quarentena)",
     "qhse_import_result_no_errors": "Nenhuma anomalia detectada.",
     # ── Dashboard de Desempenho Ambiental — Visão frota e Administração (LOTE 11) ──

@@ -1283,6 +1283,9 @@ CATALOG: dict[str, str] = {
     "qhse_import_result_title": "QHSE import report",
     "qhse_import_result_imported": "imported",
     "qhse_import_result_skipped": "skipped / quarantined",
+    "qhse_import_result_flagged": "imported, to confirm",
+    "qhse_import_result_flagged_title": "Imported but flagged as suspected test",
+    "qhse_import_result_loss_notice": "⚠ These rows are NOT in the register. The detail is kept in the activity log (/admin/activity-logs) — fix the file and re-import.",
     "qhse_import_result_errors_title": "Anomalies detected (quarantined rows)",
     "qhse_import_result_no_errors": "No anomaly detected.",
     # ── Environmental Performance Dashboard — Fleet view & Administration (LOT 11) ──

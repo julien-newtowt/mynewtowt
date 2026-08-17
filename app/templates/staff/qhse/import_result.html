@@ -7,14 +7,24 @@
   <h1 class="display">{{ t('qhse_import_result_title', lang) }}</h1>
 </header>
 
+{# Trois compteurs, pas deux : « écartée » (perdue) et « importée à confirmer »
+   n'ont pas les mêmes conséquences, et les additionner masquerait la perte. #}
 <article class="card mb-3">
   <p>
     <span class="pill pill-ok">{{ report.imported }} {{ t('qhse_import_result_imported', lang) }}</span>
     <span class="pill pill-warn">{{ report.skipped }} {{ t('qhse_import_result_skipped', lang) }}</span>
+    {% if report.flagged %}
+      <span class="pill">{{ report.flagged }} {{ t('qhse_import_result_flagged', lang) }}</span>
+    {% endif %}
   </p>
+  {% if report.skipped %}
+    <p class="text-sm" style="color:var(--cuivre);">
+      {{ t('qhse_import_result_loss_notice', lang) }}
+    </p>
+  {% endif %}
 </article>
 
-<article class="card">
+<article class="card mb-3">
   <h2>{{ t('qhse_import_result_errors_title', lang) }}</h2>
   {% if report.errors %}
   <table class="data-table">
@@ -29,4 +39,19 @@
   <p class="text-muted">{{ t('qhse_import_result_no_errors', lang) }}</p>
   {% endif %}
 </article>
+
+{# Importées, donc présentes dans le registre — mais signalées. La décision de les
+   écarter appartient à un humain, et reste réversible. #}
+{% if report.warnings %}
+<article class="card">
+  <h2>{{ t('qhse_import_result_flagged_title', lang) }}</h2>
+  <table class="data-table">
+    <tbody>
+      {% for w in report.warnings %}
+      <tr><td class="text-sm">{{ w }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endif %}
 {% endblock %}

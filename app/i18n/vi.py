@@ -1283,6 +1283,9 @@ CATALOG: dict[str, str] = {
     "qhse_import_result_title": "Báo cáo nhập QHSE",
     "qhse_import_result_imported": "đã nhập",
     "qhse_import_result_skipped": "đã bỏ qua / cách ly",
+    "qhse_import_result_flagged": "đã nhập, cần xác nhận",
+    "qhse_import_result_flagged_title": "Đã nhập nhưng được đánh dấu nghi là dữ liệu thử",
+    "qhse_import_result_loss_notice": "⚠ Các dòng này KHÔNG có trong sổ đăng ký. Chi tiết được lưu trong nhật ký hoạt động (/admin/activity-logs) — hãy sửa tệp và nhập lại.",
     "qhse_import_result_errors_title": "Bất thường phát hiện (dòng bị cách ly)",
     "qhse_import_result_no_errors": "Không phát hiện bất thường.",
     # ── Dashboard Hiệu suất Môi trường — Tổng quan đội tàu & Quản trị (LOT 11) ──

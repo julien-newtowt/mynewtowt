@@ -29,6 +29,11 @@ from app.utils.file_validation import validate_filename, validate_size
 
 router = APIRouter(prefix="/qhse", tags=["qhse"])
 
+#: Nombre de lignes non importées détaillées dans la trace d'audit. Au-delà, la
+#: troncature est **annoncée** dans le message : une liste coupée en silence ferait
+#: croire à un inventaire complet des pertes.
+_MAX_LOGGED_ROWS = 40
+
 
 def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
@@ -83,6 +88,27 @@ async def qhse_import(
     except QhseIngestionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # 🔴 La PERTE est persistée, pas seulement comptée.
+    #
+    # L'ancienne trace n'écrivait que des nombres (« ignorés=12 ») : le détail des
+    # lignes écartées vivait dans la réponse HTTP et disparaissait avec l'onglet.
+    # Une non-conformité ISM perdue devenait donc introuvable — impossible de
+    # savoir, un mois plus tard, laquelle manquait ni pourquoi.
+    #
+    # `activity_logs` est append-only : c'est le bon support, et il évite une table
+    # dédiée. Troncature **annoncée** si la liste est longue — jamais silencieuse.
+    detail = (
+        f"import={report.imported} ignorés={report.skipped} "
+        f"marqués_test_présumé={report.flagged}"
+    )
+    lost = report.errors
+    if lost:
+        shown = lost[:_MAX_LOGGED_ROWS]
+        detail += " | LIGNES NON IMPORTÉES : " + " ; ".join(shown)
+        if len(lost) > _MAX_LOGGED_ROWS:
+            detail += f" ; … et {len(lost) - _MAX_LOGGED_ROWS} autres (tronqué)"
+    if report.warnings:
+        detail += f" | {len(report.warnings)} importées à confirmer (test présumé)"
     await activity_record(
         db,
         action="import",
@@ -92,7 +118,7 @@ async def qhse_import(
         module="qhse",
         entity_type="qhse_report",
         entity_label=file.filename or "qhse import",
-        detail=f"import={report.imported} ignorés={report.skipped} erreurs={len(report.errors)}",
+        detail=detail,
         ip_address=_client_ip(request),
     )
     return templates.TemplateResponse(

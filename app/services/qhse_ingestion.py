@@ -66,9 +66,21 @@ class QhseIngestionError(Exception):
 
 @dataclass
 class QhseImportReport:
+    """Compte rendu d'un import — **écarté** et **à vérifier** ne se confondent pas.
+
+    ``skipped`` / ``errors`` : lignes **non importées**. C'est une perte de donnée
+    réglementaire, elle doit être persistée par l'appelant (cf. `qhse_router`).
+
+    ``flagged`` / ``warnings`` : lignes **importées** mais portant un doute (motif de
+    test présumé). Elles sont dans le registre, marquées, et un humain tranche —
+    jamais supprimées à sa place.
+    """
+
     imported: int = 0
     skipped: int = 0
+    flagged: int = 0
     errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 # ══════════════════════════════════════════════════════════ Normalisation texte
@@ -252,22 +264,41 @@ async def import_qhse_xlsx(db: AsyncSession, file_bytes: bytes) -> QhseImportRep
         for row_number, row in enumerate(rows_iter, start=2):
             if row is None or all(c is None for c in row):
                 continue
+            # 🔴 Un POINT DE REPRISE PAR LIGNE, et non un `rollback()` global.
+            #
+            # L'ancien code appelait `db.rollback()` dans ce gestionnaire : en
+            # SQLAlchemy, cela annule la transaction ENTIÈRE, donc **toutes les
+            # lignes déjà importées** de ce même fichier. Or `report.imported`
+            # n'était pas décrémenté : l'écran annonçait « N importés » alors
+            # qu'aucun n'avait survécu. Une seule ligne malformée en fin de
+            # classeur détruisait ainsi silencieusement tout l'import, avec un
+            # compte rendu de succès.
+            #
+            # Le savepoint isole l'échec : la ligne fautive est annulée, les
+            # précédentes restent, et le compteur reste vrai. Même motif que
+            # `packing_list.assign_bl_number`.
             try:
-                await _import_row(
-                    db,
-                    row=row,
-                    index=index,
-                    sheet_name=sheet.title,
-                    row_number=row_number,
-                    vessel_by_key=vessel_by_key,
-                    user_by_norm=user_by_norm,
-                    crew_by_norm=crew_by_norm,
-                    report=report,
-                )
+                async with db.begin_nested():
+                    created = await _import_row(
+                        db,
+                        row=row,
+                        index=index,
+                        sheet_name=sheet.title,
+                        row_number=row_number,
+                        vessel_by_key=vessel_by_key,
+                        user_by_norm=user_by_norm,
+                        crew_by_norm=crew_by_norm,
+                        report=report,
+                    )
             except Exception as exc:  # jamais de crash de lot — cf. docstring module
-                await db.rollback()
                 report.errors.append(f"{sheet.title}!L{row_number} : erreur inattendue ({exc})")
                 report.skipped += 1
+            else:
+                # Compté APRÈS la sortie réussie du savepoint, jamais avant : une
+                # violation de contrainte peut surgir à sa libération, et un
+                # compteur incrémenté à l'intérieur mentirait dans ce cas précis.
+                if created:
+                    report.imported += 1
 
     return report
 
@@ -283,7 +314,13 @@ async def _import_row(
     user_by_norm: dict[str, User],
     crew_by_norm: dict[str, CrewMember],
     report: QhseImportReport,
-) -> None:
+) -> bool:
+    """Importe une ligne. Renvoie ``True`` si un rapport a été créé.
+
+    Le compteur ``imported`` est incrémenté par l'appelant **après** la sortie
+    réussie du savepoint — pas ici : une violation de contrainte peut surgir à sa
+    libération, et le compteur mentirait alors.
+    """
     origin = f"{sheet_name}!L{row_number}"
 
     subject = _clean_text(_cell(row, index, "Subject"))
@@ -291,24 +328,34 @@ async def _import_row(
     issued_date = _parse_datetime(_cell(row, index, "IssuedDate"))
     closed_date = _parse_datetime(_cell(row, index, "ClosedDate"))
 
-    # ── Quarantaine — jamais importées (RQ01/RQ02) ─────────────────────────
+    # ── Quarantaine — jamais importées (RQ01) ───────────────────────────────
     if issued_date and closed_date and closed_date < issued_date:
         report.errors.append(
             f"{origin} : ClosedDate antérieure à IssuedDate — quarantainée (RQ01)."
         )
         report.skipped += 1
-        return
+        return False
+
+    # ── 🔴 Motif de test présumé : IMPORTÉ ET MARQUÉ, jamais supprimé (RQ02) ──
+    #
+    # L'ancien code écartait toute ligne dont le sujet ou la description contenait
+    # « test », « essai » ou « demo ». Or ces mots sont le VOCABULAIRE MÊME de
+    # l'ISM : « Essai des embarcations de sauvetage », « Test du système d'alarme
+    # incendie », « Essai hebdomadaire du gouvernail » sont des exercices
+    # obligatoires, et leurs non-conformités sont exactement ce qu'un registre ISM
+    # doit contenir. Elles disparaissaient du registre.
+    #
+    # La règle RQ02 elle-même dit « à confirmer AVANT import » : c'est un signal
+    # destiné à un humain, que l'ingestion avait transformé en suppression.
+    #
+    # Une non-conformité réglementaire ne se supprime pas à la place de
+    # l'utilisateur. Elle entre dans le registre, marquée `suspected_test`, et
+    # quelqu'un tranche — décision réversible, plutôt qu'une perte muette.
     test_match = None
     if subject:
         test_match = _TEST_PATTERN_RE.search(subject)
     if not test_match and description:
         test_match = _TEST_PATTERN_RE.search(description)
-    if test_match:
-        report.errors.append(
-            f"{origin} : motif de test détecté (« {test_match.group(0)} ») — quarantainée (RQ02)."
-        )
-        report.skipped += 1
-        return
 
     # ── Navire — résolution stricte, obligatoire (RQ03) ─────────────────────
     vessel_name_raw = _cell(row, index, "VesselName")
@@ -318,12 +365,12 @@ async def _import_row(
             f"{origin} : navire « {vessel_name_raw} » non reconnu dans le référentiel — quarantainée (RQ03)."
         )
         report.skipped += 1
-        return
+        return False
 
     if not subject or issued_date is None:
         report.errors.append(f"{origin} : Subject ou IssuedDate manquant — quarantainée.")
         report.skipped += 1
-        return
+        return False
 
     grade = _map_grade(_cell(row, index, "Grade"))
     if grade is None:
@@ -331,7 +378,7 @@ async def _import_row(
             f"{origin} : Grade « {_cell(row, index, 'Grade')} » non reconnu — quarantainée."
         )
         report.skipped += 1
-        return
+        return False
 
     # ── Rapporteur — résolution meilleur effort, repli texte libre ──────────
     issued_by_raw = _clean_text(_cell(row, index, "IssuedBy"))
@@ -346,7 +393,7 @@ async def _import_row(
         subject=subject,
         description=description,
         grade=grade,
-        report_source="operational",
+        report_source="suspected_test" if test_match else "operational",
         issued_date=issued_date,
         closed_date=closed_date,
         issued_place=_clean_place(_cell(row, index, "IssuedPlace")),
@@ -401,4 +448,12 @@ async def _import_row(
         )
 
     await db.flush()
-    report.imported += 1
+
+    if test_match:
+        report.flagged += 1
+        report.warnings.append(
+            f"{origin} : motif « {test_match.group(0)} » — IMPORTÉE et marquée "
+            "« test présumé » (RQ02). À confirmer ou écarter manuellement : « essai » "
+            "et « test » sont aussi le vocabulaire des exercices ISM obligatoires."
+        )
+    return True
