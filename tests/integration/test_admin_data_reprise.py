@@ -114,14 +114,26 @@ async def test_purge_route_requires_exact_confirmation(db, staff_user):
     # mauvaise confirmation → 400, rien supprimé
     with pytest.raises(HTTPException) as exc:
         await admin_purge_table(
-            _Req(), table_name="activity_logs", confirm="wrong", db=db, user=staff_user
+            _Req(),
+            table_name="activity_logs",
+            confirm="wrong",
+            # ``older_than_days`` est Form(None) : appelée hors HTTP, l'objet Form
+            # par défaut fuit et casse la comparaison `> 0` dans la route.
+            older_than_days=None,
+            db=db,
+            user=staff_user,
         )
     assert exc.value.status_code == 400
     assert (await db.execute(ActivityLog.__table__.select())).fetchone() is not None
 
     # bonne confirmation → purge
     resp = await admin_purge_table(
-        _Req(), table_name="activity_logs", confirm="activity_logs", db=db, user=staff_user
+        _Req(),
+        table_name="activity_logs",
+        confirm="activity_logs",
+        older_than_days=None,
+        db=db,
+        user=staff_user,
     )
     assert resp.status_code == 303
 

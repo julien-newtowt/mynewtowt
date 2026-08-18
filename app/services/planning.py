@@ -18,6 +18,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from typing import overload
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,6 +57,14 @@ MAX_PLAUSIBLE_SPEED_KN = 18.0
 LEG_STATUSES: tuple[str, ...] = ("planned", "in_progress", "completed", "cancelled")
 
 
+@overload
+def ensure_utc(dt: datetime) -> datetime: ...
+
+
+@overload
+def ensure_utc(dt: None) -> None: ...
+
+
 def ensure_utc(dt: datetime | None) -> datetime | None:
     """Rend un datetime aware UTC (les naïfs sont réputés UTC dans tout l'ERP).
 
@@ -63,6 +72,13 @@ def ensure_utc(dt: datetime | None) -> datetime | None:
     mais naïves sous SQLite (tests) ; les saisies ``datetime-local`` sont
     naïves. Toute arithmétique de planification passe par ce helper pour ne
     jamais mélanger naïf et aware.
+
+    Les ``@overload`` ci-dessus ne servent QUE au typage statique (aucun effet
+    à l'exécution) : ce helper est *nullité-préservante* — il ne fabrique
+    jamais une date et n'en supprime jamais une. Sans eux, chaque appel sur une
+    colonne NOT NULL élargissait inutilement le type en ``datetime | None``,
+    forçant les appelants à écrire des gardes ``is not None`` mortes (cas
+    rencontré dans ``voyage_track.leg_window``, où ``Leg.etd`` est NOT NULL).
     """
     if dt is None or dt.tzinfo is not None:
         return dt

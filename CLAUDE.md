@@ -119,6 +119,25 @@ mynewtowt/
   `await db.commit()`** dans une route (géré par la dependency).
 - Schéma init via `Base.metadata.create_all` au boot (dev) ; production
   utilise Alembic exclusivement.
+- **Invariants de rattachement à connaître avant d'écrire une fixture ou une
+  migration** (les FK sont réellement appliquées, y compris sous SQLite en
+  test) :
+  - `PackingList` — **XOR strict** `order_id` / `booking_id`
+    (`ck_packing_lists_order_xor_booking`) : une PL provient **soit** d'une
+    commande (rail A, remplissage opérateur), **soit** d'un booking client
+    (rail B, remplissage via portail token) — jamais des deux, **jamais
+    d'aucune**. `leg_id` est un champ **additionnel** (COM-11) épinglant le leg
+    d'origine à la création, pour qu'une commande ventilée multi-legs garde sa
+    PL rattachée au bon leg même après réaffectation partielle ; `NULL` ⇒ repli
+    dynamique sur `order/booking.leg_id`. Une PL portant **seulement** `leg_id`
+    est donc un état invalide, pas un cas métier.
+  - `CrewAssignment.leg_id` est **nullable par décision** (arbitrage A4 —
+    embarquement hors leg, ex. changement d'équipage pendant un arrêt
+    technique). ⚠️ Deux écarts connus au 2026-07-29 : plus aucun chemin
+    applicatif ne crée d'affectation hors leg (seul producteur :
+    `services/escale_crew.py`, appelé avec un leg), et
+    `crew_compliance.refresh_schengen_for_members` **saute** les affectations
+    sans leg — leurs jours ne sont donc pas comptés dans le 90/180.
 
 ### Routes
 - Mutations : `validate → modify → await db.flush() → RedirectResponse(303)`.

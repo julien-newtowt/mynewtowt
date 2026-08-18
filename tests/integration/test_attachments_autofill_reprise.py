@@ -185,57 +185,20 @@ async def test_mrv_autofill_does_not_override_manual_position(db):
 # ─────────────────────────── CREW-04 / CREW-05 ───────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_crew_embark_off_leg(db, staff_user):
-    """CREW-04 (A4) — embarquement rattaché au navire sans leg précis."""
-    from app.routers.crew_router import crew_assign
-
-    await _setup_leg(db)
-    m = CrewMember(full_name="Jean Marin", role="matelot")
-    db.add(m)
-    await db.flush()
-
-    resp = await crew_assign(
-        m.id,
-        _Req(),
-        leg_id=None,
-        vessel_id=1,
-        role_on_board="matelot",
-        embark_at="2026-04-01T08:00:00",
-        disembark_at="2026-04-10T08:00:00",
-        override_compliance=None,
-        db=db,
-        user=staff_user,
-    )
-    assert resp.status_code == 303
-    a = (await db.execute(CrewAssignment.__table__.select())).fetchone()
-    assert a.leg_id is None and a.vessel_id == 1
-
-
-@pytest.mark.asyncio
-async def test_crew_embark_requires_leg_or_vessel(db, staff_user):
-    from fastapi import HTTPException
-
-    from app.routers.crew_router import crew_assign
-
-    await _setup_leg(db)
-    m = CrewMember(full_name="Jean Marin", role="matelot")
-    db.add(m)
-    await db.flush()
-    with pytest.raises(HTTPException) as exc:
-        await crew_assign(
-            m.id,
-            _Req(),
-            leg_id=None,
-            vessel_id=None,
-            role_on_board=None,
-            embark_at=None,
-            disembark_at=None,
-            override_compliance=None,
-            db=db,
-            user=staff_user,
-        )
-    assert exc.value.status_code == 400
+# CREW-04 (A4, « embarquement hors leg autorisé ») — les deux tests qui
+# couvraient cet arbitrage exerçaient la route `crew_router.crew_assign`,
+# **supprimée délibérément** par le commit 9b752bd (« feat(crew): retirer
+# créations manuelles ») au profit de la doctrine Marad = source de vérité.
+# Ils échouaient depuis en ImportError, invisibles car `tests/integration`
+# n'était pas branché en CI.
+#
+# ⚠️ Divergence doc/code à arbitrer (consignée au journal, 2026-07-29) :
+# `CrewAssignment.leg_id` est toujours nullable et l'arbitrage A4 figure
+# toujours dans CLAUDE.md, mais le **seul** producteur de `CrewAssignment`
+# est désormais `services/escale_crew.py:52`, appelé avec un leg. Aucun
+# chemin applicatif ne crée donc plus d'affectation hors leg : la capacité
+# existe en base, plus dans l'UI. À trancher — soit réactiver un chemin,
+# soit retirer A4 des décisions actées.
 
 
 @pytest.mark.asyncio
