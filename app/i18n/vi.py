@@ -1292,7 +1292,7 @@ CATALOG: dict[str, str] = {
     "qhse_intro": "Báo cáo an toàn, chất lượng và môi trường của đội tàu — màn hình tối giản (Giai đoạn 0), bảng điều khiển theo vai trò sẽ có ở Giai đoạn 1.",
     "qhse_total_reports": "báo cáo đã nhập",
     "qhse_import_title": "Nhập xlsx",
-    "qhse_import_intro": 'Tải lên file xuất FMS ("QHSE Reports {Tàu}.xlsx") — tàu được xác định theo từng dòng từ cột VesselName.',
+    "qhse_import_intro": 'Tải lên file xuất FMS ("QHSE Reports [Tàu].xlsx") — tàu được xác định theo từng dòng từ cột VesselName.',
     "qhse_import_file": "File xuất FMS (xlsx)",
     "qhse_import_submit": "Nhập",
     "qhse_import_no_dedup_warning": "Nhập lại cùng một file sẽ tạo báo cáo mới (chưa có chống trùng lặp ở Giai đoạn 0).",

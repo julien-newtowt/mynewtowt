@@ -1292,7 +1292,7 @@ CATALOG: dict[str, str] = {
     "qhse_intro": "Relatórios de segurança, qualidade e meio ambiente da frota — tela mínima (Fase 0), os painéis por perfil chegam na Fase 1.",
     "qhse_total_reports": "relatórios importados",
     "qhse_import_title": "Importação xlsx",
-    "qhse_import_intro": 'Envie uma exportação FMS ("QHSE Reports {Navio}.xlsx") — o navio é resolvido linha a linha a partir da coluna VesselName.',
+    "qhse_import_intro": 'Envie uma exportação FMS ("QHSE Reports [Navio].xlsx") — o navio é resolvido linha a linha a partir da coluna VesselName.',
     "qhse_import_file": "Arquivo de exportação FMS (xlsx)",
     "qhse_import_submit": "Importar",
     "qhse_import_no_dedup_warning": "Reimportar o mesmo arquivo cria novos relatórios (sem deduplicação na Fase 0).",

@@ -1292,7 +1292,7 @@ CATALOG: dict[str, str] = {
     "qhse_intro": "Fleet safety, quality and environmental reports — minimal screen (Phase 0), role-based dashboards land in Phase 1.",
     "qhse_total_reports": "imported reports",
     "qhse_import_title": "xlsx import",
-    "qhse_import_intro": 'Drop an FMS export ("QHSE Reports {Vessel}.xlsx") — the vessel is resolved row by row from the VesselName column.',
+    "qhse_import_intro": 'Drop an FMS export ("QHSE Reports [Vessel].xlsx") — the vessel is resolved row by row from the VesselName column.',
     "qhse_import_file": "FMS export file (xlsx)",
     "qhse_import_submit": "Import",
     "qhse_import_no_dedup_warning": "Re-importing the same file creates new reports (no deduplication in Phase 0).",
