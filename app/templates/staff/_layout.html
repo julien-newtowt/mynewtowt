@@ -35,6 +35,7 @@
     {%- set v_mrv = can_access(role, 'mrv') -%}
     {%- set v_claims = can_access(role, 'claims') -%}
     {%- set v_analytics = can_access(role, 'analytics') -%}
+    {%- set v_support = can_access(role, 'support') -%}
     {%- set v_admin = can_access(role, 'admin') -%}
     <nav>
       <div class="nav-group" data-group="pilotage">
@@ -150,6 +151,29 @@
           <li><a href="/admin/emission-factors"><i data-lucide="flame"></i><span>{{ t('s_nav_emission_factors', lang) }}</span></a></li>
           <li><a href="/admin/security"><i data-lucide="shield-check"></i><span>{{ t('s_nav_security', lang) }}</span></a></li>
           <li><a href="/admin/integrations"><i data-lucide="git-branch-plus"></i><span>{{ t('s_nav_integrations', lang) }}</span></a></li>
+        </ul>
+      </div>
+      {% endif %}
+
+      {# Assistance — support applicatif. Hors groupe métier : c'est un outil
+         transverse, disponible depuis n'importe quel écran. À ne pas confondre
+         avec « Tickets escale » (groupe Exploitation), qui porte les incidents
+         d'exploitation portuaire.
+
+         Le lien « Signaler un problème » passe l'écran courant en `?from=` :
+         c'est ce pré-remplissage qui fait la différence entre une demande
+         exploitable et « ça bug quelque part ». La valeur est assainie côté
+         serveur (chemin relatif exigé), jamais reprise telle quelle. #}
+      {% if v_support %}
+      <div class="nav-group" data-group="assistance">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title"><i data-lucide="life-buoy"></i><span>{{ t('s_grp_assistance', lang) }}</span></span>
+          <i data-lucide="chevron-right" class="nav-group-caret"></i>
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/support/nouveau?from={{ request.url.path | urlencode }}"><i data-lucide="megaphone"></i><span>{{ t('s_nav_support_new', lang) }}</span></a></li>
+          <li><a href="/support"><i data-lucide="life-buoy"></i><span>{{ t('s_nav_support', lang) }}</span></a></li>
+          <li><a href="/support/archives"><i data-lucide="archive"></i><span>{{ t('s_nav_support_archives', lang) }}</span></a></li>
         </ul>
       </div>
       {% endif %}
