@@ -2,10 +2,13 @@
 
 Ce module fournit :
 
-1. **Le catalogue seedé** (``RULE_SEED`` = 35 règles, ``THRESHOLD_SEED`` =
+1. **Le catalogue seedé** (``RULE_SEED`` = 38 règles, ``THRESHOLD_SEED`` =
    seuils paramétrables, ``DASHBOARD_SEED`` = paramètres dashboard) et une
    fonction de seed idempotente (``seed_reference_data``) utilisée par le
    boot dev (``create_all`` sans migration) et par l'action d'init admin.
+   Le moteur est **mutualisé** : les 38 règles se répartissent en 35 MRV et
+   3 QHSE (RQ01-RQ03). Le seed les peuple toutes ; le cloisonnement se fait à
+   l'affichage, via ``MRV_RULE_SCOPES`` / ``NON_MRV_RULE_SCOPES``.
 2. **La résolution de seuils** (``get_threshold``) : (rule, vessel) →
    (rule, NULL) → défaut codé *fail-closed*, avec cache 60 s et
    ``invalidate_cache()`` — même patron que ``app.permissions``.
@@ -357,6 +360,21 @@ RULE_SEED: tuple[tuple[str, str, str, str, str, bool], ...] = (
         True,
     ),
 )
+
+# ─────────────────────── Classement des scopes par domaine ───────────────────
+# `RULE_SEED` est partagé par plusieurs domaines : le moteur est mutualisé, les
+# écrans d'administration ne le sont pas. `/mrv/parametres` s'ouvre sur `mrv:C`
+# et écrit sur `mrv:S` ; il ne doit donc exposer QUE les règles du reporting
+# MRV. Une règle de scope `qhse` administrée avec un droit `mrv` traverserait
+# une frontière de module (QHSE a sa propre entrée dans `permissions.py`).
+#
+# **Fail-closed, comme la matrice de permissions et les seuils** : un scope
+# absent de `MRV_RULE_SCOPES` n'apparaît PAS dans l'écran MRV. Le risque
+# symétrique — une future règle MRV rendue invisible par oubli de classement —
+# est couvert par `test_rule_scopes_are_all_classified`, qui échoue dès qu'un
+# scope de `RULE_SEED` n'est déclaré ni ici ni ci-dessous.
+MRV_RULE_SCOPES: frozenset[str] = frozenset({"event", "voyage", "report", "bunker", "flgo"})
+NON_MRV_RULE_SCOPES: frozenset[str] = frozenset({"qhse"})
 
 # (rule_id, parameter_name, value, unit, provisional, note) — vessel_id = NULL.
 # 16 paramètres de la Matrice §6 + 2 densité (R16, absorbés de mrv_parameters)

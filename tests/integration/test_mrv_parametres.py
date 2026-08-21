@@ -23,7 +23,14 @@ from app.models.validation import (
 )
 from app.models.vessel import Vessel
 from app.permissions import require_permission
-from app.services.validation_engine import invalidate_cache, run_rules, seed_reference_data
+from app.services.validation_engine import (
+    MRV_RULE_SCOPES,
+    NON_MRV_RULE_SCOPES,
+    RULE_SEED,
+    invalidate_cache,
+    run_rules,
+    seed_reference_data,
+)
 from tests.integration.conftest import FakeRequest
 
 
@@ -56,7 +63,15 @@ async def test_get_renders_after_seed(db, staff_user):
     assert resp.status_code == 200
     assert resp.template.name == "staff/mrv/parametres.html"
     ctx = resp.context
+    # 35 règles MRV — le catalogue en compte 38, dont 3 de scope `qhse`
+    # (RQ01-RQ03) que cet écran ne doit PAS exposer : il s'administre sur
+    # `mrv:S`, et QHSE a sa propre entrée dans la matrice de permissions.
     assert len(ctx["rules"]) == 35
+    # Garde anti-régression : le filtre de scope est la raison du 35. Sans lui
+    # cette assertion tombe à 38 — c'est ce qui s'est produit à l'intégration
+    # du lot QHSE, `select(ValidationRule)` étant alors sans clause `where`.
+    assert [r.rule_id for r in ctx["rules"] if r.scope not in MRV_RULE_SCOPES] == []
+    assert not [r for r in ctx["rules"] if r.rule_id.startswith("RQ")]
     # 20 (lot 2) + 1 (lot 6 : R24:fenetre_rattachement_bunker_j) + 1 (lot 4 :
     # R19:delai_alerte_siege_brouillon_h) + 5 (lot 8 : R04:tolerance_datetime_futur_h,
     # R10:delai_confirmation_reset_j, IR03:ir03_min_reports_figes,
@@ -72,6 +87,25 @@ async def test_get_renders_after_seed(db, staff_user):
     assert ctx["provisional_count"] == 25
 
 
+# ─────────────────────── classement des scopes (fail-closed) ─────────────────
+
+
+def test_rule_scopes_are_all_classified():
+    """Tout scope de `RULE_SEED` est classé MRV ou non-MRV — sans exception.
+
+    Contrepartie du filtre fail-closed de `/mrv/parametres` : puisqu'un scope
+    inconnu y est MASQUÉ, l'oubli de classement doit se voir ici plutôt que de
+    faire disparaître une règle de son écran d'administration sans un bruit.
+
+    Ce test échoue donc dans les DEUX sens : un scope oublié, ou un scope
+    déclaré à la fois MRV et non-MRV.
+    """
+    seen = {r[4] for r in RULE_SEED}
+    classified = MRV_RULE_SCOPES | NON_MRV_RULE_SCOPES
+    assert not (seen - classified), f"scopes non classés : {sorted(seen - classified)}"
+    assert not (MRV_RULE_SCOPES & NON_MRV_RULE_SCOPES), "un scope ne peut être MRV et non-MRV"
+
+
 # ──────────────────────────── init idempotent ────────────────────────────
 
 
@@ -82,11 +116,15 @@ async def test_init_route_seeds_idempotently(db, staff_user):
     r1 = await mrv_parametres_init(FakeRequest(), db=db, user=staff_user)
     assert r1.status_code == 303
     n1 = len((await db.execute(select(ValidationRule))).scalars().all())
-    assert n1 == 35
+    # 38 = 35 MRV + 3 QHSE (RQ01-RQ03). Le seed peuple le catalogue ENTIER, tous
+    # scopes confondus, et c'est voulu : les règles doivent exister en base pour
+    # que leur module les consomme. Le cloisonnement se fait à l'affichage
+    # (`MRV_RULE_SCOPES`), pas au peuplement — ne pas confondre les deux.
+    assert n1 == 38
     # Deuxième appel = no-op (pas de doublon).
     await mrv_parametres_init(FakeRequest(), db=db, user=staff_user)
     n2 = len((await db.execute(select(ValidationRule))).scalars().all())
-    assert n2 == 35
+    assert n2 == 38
 
 
 # ───────────────────────── gate de permission S ─────────────────────────
