@@ -335,14 +335,32 @@ BL (#9) au lieu du registre complet ; note d'escale en deux étapes.
 
 ## 10. Quality Gate (obligatoire avant toute recommandation de PR)
 
-Compilation · lint (`ruff`, `black --check`) · tests **unit + integration +
-regression** · absence de régression · documentation à jour · cohérence des
-migrations (`upgrade` **et** `downgrade`) · compatibilité des contrats d'API ·
-`bandit` · `pip-audit` · `gitleaks` · absence de secrets · fichiers
-temporaires/debug retirés · pas de dégradation de performance.
+Compilation · lint (`ruff`, `black --check`) · **`mypy app` comparé au plafond
+`MYPY_MAX` de la CI** · tests **unit + integration + regression** · absence de
+régression · documentation à jour · cohérence des migrations (`upgrade` **et**
+`downgrade`) · compatibilité des contrats d'API · `bandit` · `pip-audit` ·
+`gitleaks` · absence de secrets · fichiers temporaires/debug retirés · pas de
+dégradation de performance.
 
 **Tout item en échec est expliqué avec une action corrective proposée, jamais
 passé sous silence.**
+
+### Règles issues d'échecs réels de ce Quality Gate
+
+1. **`mypy app` fait partie du gate** (ajouté 2026-07-30). Le lot J1 a annoncé
+   « dette introduite : aucune » alors qu'il ajoutait une erreur — parce que les
+   contrôles locaux ne lançaient pas mypy et que l'étape CI est
+   `continue-on-error`. Comparer au plafond, pas au vert de l'étape.
+2. **Ne jamais se fier au vert d'une étape `continue-on-error`.** Trois gardes
+   de CI affichaient vert sans rien garder (suites non exécutées, mypy en
+   dérive de 3×, gitleaks en échec permanent). **Un contrôle qu'on ne fait pas
+   échouer volontairement au moins une fois n'est pas un contrôle.**
+3. **Rejouer la suite COMPLÈTE, jamais ciblée**, après toute modification d'un
+   helper partagé (règle née d'une régression J1 sur `voyage_track`, revérifiée
+   au J3 sur `ensure_utc` et ses 57 appelants).
+4. **Un correctif de typage se fait à la racine, pas au point d'appel** quand la
+   signature du helper est en cause : `ensure_utc` correctement typée a résorbé
+   64 erreurs au lieu d'en masquer 1.
 
 ## 11. Audit de compatibilité (obligatoire avant toute PR)
 
@@ -375,18 +393,37 @@ colonne « bloque quoi » est la seule qui compte pour l'ordonnancement.
 
 | # | Item | Bloque le J2 ? | Bloque quoi réellement | Échéance | Qui |
 |---|---|---|---|---|---|
-| R1 | 🔴 **`alembic upgrade head` cassé — deux `head` divergents** (`20260716_0112` MRV / `20260720_0107` rapports générés). Nécessite une migration de fusion (`alembic merge`). Présent sur `main`, pas introduit par la phase 2 | **Non** — le J2 ne comporte aucune migration | **Le lot workflow BL** (migration `bl_state`…), **le J9** (contrainte `atd < ata`) et **tout travail de schéma** : avec deux `head`, `alembic revision` exige de préciser la cible. Et **tout déploiement**, la production utilisant Alembic exclusivement | Avant le lot workflow BL et le J9 | Yasmin + validation manager (touche l'historique de schéma) |
+| R1 | ✅ **CORRIGÉ 2026-07-30, en attente de validation manager** — migration de fusion **pure** `20260730_0113_merge_heads.py` (aucun DDL) sur `fix/alembic-merge-heads`, issue de `main`. Écrite à la main plutôt que par `alembic merge` (`migrations/` n'est pas monté dans le conteneur). Vérifié : **une seule tête**, `(mergepoint)` présent dans l'historique, `upgrade()`/`downgrade()` exécutables. Fusion sûre : les deux chaînes touchent des tables disjointes (`nav_event_noon` / `generated_reports`), leur ordre est indifférent | — | Plus rien — **débloque le lot workflow BL, le J9 et tout déploiement** | Validation manager (touche l'historique de schéma) | Manager |
+| R1b | 🟡 **`alembic upgrade head --sql` inutilisable** — découvert lors de R1, **préexistant et sans lien** : `20260703_0094_planning_rules_hardening.py` fait un `fetchall()`, impossible en mode offline (pas de connexion). On ne peut donc **pas prévisualiser le DDL** d'un déploiement | **Non** | Un déploiement en deux temps (revue du SQL, puis application). Le déploiement normal n'est pas affecté | Opportuniste | — |
 | R2 | ✅ **RÉSOLU 2026-07-29** — lot J1 rebasé sur `main`. La dépendance venait d'un seul commit amendant `PROJECT_CONTEXT.md` (document du lot découverte) : la correction du §7 a été déplacée vers le lot découverte (`e48847d`), rendant les deux lots indépendants. Vérifié : `main` est ancêtre direct des deux, ils fusionnent proprement (`CLAUDE.md` s'auto-fusionne), suite revalidée 2000/15 | — | — | — |
 | R3 | 🟠 **Protection de branche absente sur `main`** — Yasmin n'est pas admin du dépôt. Un incident de merge direct a déjà cassé `main` par le passé | **Non** | Rien techniquement — **contrôle de risque pur**. D'autant plus pertinent qu'on produit beaucoup de commits sur cette période | Dès que possible | À escalader auprès de la personne admin |
-| R4 | 🟠 **CI jamais exécutée** — branche non poussée, aucune PR ; le workflow ne se déclenche que sur `pull_request`/`push:main`. Les 15 tests PDF sur Ubuntu et les paquets `apt` restent non validés | **Non** | La preuve que le filet fonctionne réellement. Tant qu'aucune PR n'existe, « filet en place » reste une affirmation locale | À la 1re PR | Yasmin (une PR ne se crée que sur sa demande explicite) |
+| R4 | ✅ **RÉSOLU 2026-07-30** — PR #149 créée, CI exécutée : **2015 passés · 1 ignoré** sur Ubuntu. Les 15 échecs locaux étaient bien un artefact WeasyPrint/GTK sous Windows : hypothèse **confirmée, plus supposée**. Le filet fonctionne réellement | — | — | — | — |
+| R4b | 🟠 **Deux autres gardes de CI mentaient** — découvert au 1er run. **Gitleaks n'a jamais scanné une seule PR** (`GITHUB_TOKEN` devenu obligatoire ; `continue-on-error` masquait l'échec — vérifié identique sur le run du 23/07, donc préexistant). Et l'étape mypy annonçait « baseline 142 » pour **434** réelles. **Corrigés dans la PR #149** : token ajouté + cliquet bloquant anti-dérive du typage (plafond 371) | — | Plus rien. La 1re exécution réelle de gitleaks est le run suivant — **à surveiller**, il peut révéler des secrets historiques jamais détectés | Vérifier au prochain run | — |
 | R5 | 🟡 **Filet Postgres-free** — toute la suite tourne sur SQLite en mémoire ; ni `TIMESTAMP WITH TIME ZONE`, ni types `Numeric`, ni migrations Alembic ne sont couverts. Le service Postgres du job CI est de la config morte | **Non** | La **fiabilité du filet** sur les lots touchant les dates (J3 Schengen) et le schéma (J9). Piste : `testcontainers[postgres]`, déjà dans `requirements-dev.txt` | Avant J9 | — |
-| R6 | 🟠 **Embarquement hors leg (A4) non saisissable** — cas métier confirmé (changement d'équipage en arrêt technique) mais aucun chemin applicatif ne crée d'affectation sans leg. **Et** le calcul Schengen saute ces affectations ⇒ leurs jours ne seraient pas comptés | **Non** | Rien pour le J2. À traiter **avec** le J3 (faux verts Schengen) : restaurer la saisie sans corriger le calcul ne servirait à rien | J3 | — |
+| R6 | 🟠 **Embarquement hors leg (A4) non saisissable** — cas métier confirmé (changement d'équipage en arrêt technique) mais aucun chemin applicatif ne crée d'affectation sans leg (`EscaleOperation.leg_id` est NOT NULL, et c'est le **seul** point de création de l'app). **Et** le calcul Schengen saute ces affectations (`crew_compliance.py:231-233`) ⇒ leurs jours ne seraient pas comptés. **Même angle mort** sur `vessel_readiness` (l.311) | **Non** | Rien pour le J2. À traiter **avec** le J3 (faux verts Schengen) : restaurer la saisie sans corriger le calcul ne servirait à rien | J3 | — |
+| R9 | 🔴 **Deux registres d'embarquement parallèles qui ne se parlent pas** (analyse d'impact J3, 2026-07-30). `marad_crew_schedules` porte les embarquements décidés par l'**Armement dans Marad** (lecture seule) ; `crew_assignments` est alimenté **uniquement** par la saisie d'escale. **Le calcul Schengen ne lit que le second.** Conséquence : l'écran affiche une bordée complète venue de Marad pendant que le compteur Schengen dit « conforme / 0 jour » pour ces mêmes marins. Le registre où vit la décision est **invisible du calcul de conformité** | **Non** | **La justesse du Schengen elle-même** — le corriger sur le seul registre des Opérations ne le rend juste que si les Opérations saisissent systématiquement, ce qui n'est pas le cas aujourd'hui | **Arbitrage nécessaire avant de coder le J3** | Yasmin |
+| R10 | 🟠 **Décalage de permissions crew ↔ escale** — l'Armement décide les embarquements et a `crew: CMS`, mais seulement `escale: C`. Or **le seul point de création d'une affectation est dans `escale`**. Le service qui décide **ne peut pas saisir** ; ceux qui peuvent sont `operation`/`technique`/`manager_maritime` | **Non** | Rien techniquement (un override ARC-04 en base suffirait). **Question d'organisation** : qui saisit réellement l'embarquement dans MyTOWT ? | À trancher avec R9 | Yasmin |
 | R7 | 🟡 **Dérive de schéma de la base de dev** rattrapée à la main le 2026-07-29 (8 colonnes ajoutées). La procédure §7 de `PROJECT_CONTEXT.md` est corrigée, mais **aucun garde-fou** n'empêche la dérive de réapparaître | **Non** | Rien. Confort et fiabilité des validations locales. Piste : un script de diagnostic `Base.metadata` ↔ `information_schema` à lancer au démarrage en dev | Opportuniste | — |
 | R8 | 🟡 **Hook du harnais lançant `alembic` depuis l'hôte** — échoue à chaque commit (`getaddrinfo failed`, le nom `db` n'est résoluble que dans Docker). Bruit permanent, aucun impact fonctionnel | **Non** | Rien | Opportuniste | Yasmin (config `settings.json`) |
 
-**Lecture d'ensemble** : aucun de ces items ne bloque le J2. **R1 doit être
-traité avant le J9**, et **R6 avec le J3**. R2 est résolu ; R4 reste une
-décision de Yasmin, R3 une escalade externe.
+**Lecture d'ensemble (mise à jour 2026-07-30)** : **R1, R2 et R4 sont soldés** —
+la fusion Alembic débloque le lot workflow BL, le J9 et tout déploiement (reste
+la validation manager), et la CI a fait la preuve du filet.
+
+**Deux items nouveaux bloquent le démarrage du J3 et demandent un arbitrage de
+Yasmin, pas du code** : **R9** (deux registres d'embarquement parallèles — sur
+lequel le Schengen doit-il s'appuyer ?) et **R10** (le service qui décide les
+embarquements n'a pas le droit de les saisir). R6 reste à traiter **avec** le J3.
+
+Restent sans échéance forte : R3 (escalade externe), R5 (avant le J9), R1b, R7,
+R8 (opportunistes).
+
+⚠️ **Leçon de méthode du 2026-07-30** : trois gardes de CI affichaient vert sans
+rien garder, et mon propre Quality Gate a affirmé « dette introduite : aucune »
+alors que le lot ajoutait une erreur mypy. Cause commune : **un contrôle qu'on
+ne fait pas échouer volontairement au moins une fois n'est pas un contrôle**.
+Ajouté au Quality Gate (§10) : exécuter `mypy app` et **comparer au plafond**,
+ne jamais se fier au vert d'une étape `continue-on-error`.
 
 ## 13. Questions ouvertes
 

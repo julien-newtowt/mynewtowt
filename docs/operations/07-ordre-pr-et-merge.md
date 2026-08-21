@@ -27,24 +27,12 @@ signaler dans la PR et fusionner dans l'ordre.
 
 | # | Lot / branche | Contenu | Pourquoi à cette place | Risque |
 |---|---|---|---|---|
-| **1** | `chore/ci-integration-tests` | `voyage_track` (2 correctifs de fuseau), `ci.yml` (exécution `integration`+`regression` + libs WeasyPrint), 10 fichiers de tests périmés, `CLAUDE.md` (invariants), journal, plan | **Le filet d'abord.** Une fois mergé, **toutes** les PR suivantes sont vérifiées par la suite complète (198 fichiers au lieu de 84). C'est aussi la **première exécution réelle** du pipeline modifié — elle valide les 15 tests PDF sur Ubuntu et les paquets `apt`, aujourd'hui non vérifiés (RAF R4) | 🟢 Faible — 1 seul fichier applicatif, suite locale à 2000/15 |
+| **1** | `chore/ci-integration-tests` — **PR [#149](https://github.com/julien-newtowt/mynewtowt/pull/149) ouverte (brouillon)** | `voyage_track` + `planning.ensure_utc` (typage), `ci.yml` (exécution `integration`+`regression` + libs WeasyPrint + gitleaks réparé + cliquet mypy), 10 fichiers de tests périmés, `CLAUDE.md` (invariants), journal, plan | **Le filet d'abord.** Une fois mergé, **toutes** les PR suivantes sont vérifiées par la suite complète (198 fichiers au lieu de 84). ✅ **CI exécutée le 2026-07-30 : 2015 passés · 1 ignoré** — les 15 échecs locaux étaient bien un artefact WeasyPrint sous Windows | 🟢 Faible — 2 fichiers applicatifs, dont un purement statique (`@overload`) |
 | **2** | `docs/decouverte-fonctionnelle` | `PROJECT_CONTEXT.md` (§1-14 : architecture, workflows, audits, correction §7), `CLAUDE.md` (instructions temporaires), guide fonctionnel | **Documentation seule, zéro code.** Peut partir en parallèle du lot 1. Porte `PROJECT_CONTEXT.md`, que tous les autres documents référencent | 🟢 Nul — aucun code |
-| **3** | Lot **fusion Alembic** (à créer) | Migration de fusion des deux `head` divergents (`20260716_0112` MRV / `20260720_0107` rapports générés) | 🔴 **Bloquant pour tout lot ultérieur portant une migration**, et pour tout déploiement (la production utilise Alembic exclusivement). Voir RAF R1. À faire valider par le manager — touche l'historique de schéma | 🟠 Modéré — historique de schéma |
-| **4** | `feat/ops-quickwins` (J2) — **existe, commit `d4b3937`** | Alerte ETA en mer, nom client + `leg_code` sur la liste cargo, heures voile ×6 du Carnet de Bord | Répond à 2 demandes Opérations + 1 bug de document client. **Aucune migration** ⇒ peut passer avant le lot 3. ⚠️ **Empilée sur le lot 1** (a besoin de la suite verte pour se valider) : à rebaser sur `main` après la fusion du lot 1, ou à fusionner juste après lui | 🟢 Faible |
-| **5** | Lot **workflow BL** | Draft → validation par le client titulaire du booking → signature commandant → BL final, avec journalisation. **Inclut aussi** l'unification des rails documentaires (décision D2, reportée du J2) et la journalisation des mutations du portail expéditeur. Voir `docs/strategy/SPEC_WORKFLOW_BILL_OF_LADING.md` | **Nécessite une migration** ⇒ **dépend du lot 3**. Ferme l'exposition juridique du registre BL. Le BL dégradé (sans consignataire) est aujourd'hui servi **au client** — c'est ce lot qui le remplace | 🟠 Modéré |
-| **6** | Lots suivants (J3 faux verts, J9 horodatage…) | cf. plan | J9 porte une migration (`atd < ata`) ⇒ dépend aussi du lot 3 | selon lot |
-
-### État des branches au 2026-07-29
-
-| Branche | Commits sur `main` | Base | Contenu |
-|---|---|---|---|
-| `docs/decouverte-fonctionnelle` | 4 | `main` | Documentation seule |
-| `chore/ci-integration-tests` | 18 | `main` | Filet CI + correctifs |
-| `feat/ops-quickwins` | 19 | **`chore/ci-integration-tests`** | Les 3 quick wins (1 commit propre au lot) |
-| `backup/ci-lot-avant-rebase` | — | — | Filet de secours, supprimable après fusion du lot 1 |
-
-Les deux premières sont indépendantes et **fusionnent proprement entre elles**
-(vérifié : `CLAUDE.md` s'auto-fusionne, régions disjointes).
+| **3** | `fix/alembic-merge-heads` — **prête, en attente de validation manager** | Migration **de fusion pure** `20260730_0113_merge_heads.py` (aucun DDL) raccordant les deux `head` divergents (`20260716_0112` MRV / `20260720_0107` rapports générés) | 🔴 **Bloquant pour tout lot ultérieur portant une migration**, et pour tout déploiement (la production utilise Alembic exclusivement). Voir RAF R1. ✅ Vérifié : **une seule tête**, `(mergepoint)` dans l'historique, `upgrade()`/`downgrade()` exécutables. Les deux chaînes touchent des tables **disjointes** ⇒ ordre d'application indifférent | 🟠 Modéré — historique de schéma. **Validation manager requise** |
+| **4** | `feat/ops-quickwins` (J2) | Alerte ETA en mer, nom client + `leg_code`, heures voile ×6, rail documentaire unique | Répond à 3 demandes Opérations + 1 bug de document client. **Aucune migration** ⇒ peut passer avant le lot 3 si besoin | 🟢 Faible |
+| **5** | Lot **workflow BL** | Draft → validation client → signature commandant → BL final, avec journalisation (voir `docs/strategy/SPEC_WORKFLOW_BILL_OF_LADING.md`) | **Nécessite une migration** ⇒ **dépend du lot 3**. Ferme l'exposition juridique du registre BL | 🟠 Modéré |
+| **6** | Lots suivants (J3 faux verts, J9 horodatage…) | cf. plan | J9 porte une migration (`atd < ata`) ⇒ dépend aussi du lot 3. ⏸️ **J3 en attente d'arbitrage** : l'analyse d'impact a révélé **deux registres d'embarquement parallèles** (RAF R9) — le périmètre du lot dépend de la réponse | selon lot |
 
 ### Lots existants à NE PAS fusionner en l'état
 

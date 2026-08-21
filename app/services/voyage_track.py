@@ -69,7 +69,9 @@ def leg_window(leg: Leg, *, now: datetime | None = None) -> tuple[datetime, date
     is_active = leg.atd is not None and leg.ata is None
     end = ensure_utc(leg.ata) or now
     # Garde-fou : si l'horloge serveur est en amont du départ planifié.
-    if start is not None and end < start:
+    # ``start`` est garanti non-None (``Leg.etd`` est NOT NULL et ``ensure_utc``
+    # préserve la nullité) — inutile de le tester.
+    if end < start:
         end = start
     return start, end, is_active
 
