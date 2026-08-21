@@ -2,15 +2,25 @@
 
 > **Rédigé le 2026-08-03** par Yasmin (assistée). À lire au retour de congés.
 >
-> **Rien n'a été fusionné sur `main`.** Tu es la seule personne pouvant valider une
-> fusion : **six** branches attendent, prêtes, testées, **à jour sur `main`** et **CI
-> verte**, dans un ordre précis.
+> 🔴 **MISE À JOUR DU 2026-08-21 — deux affirmations de cette note sont devenues
+> fausses. L'état à jour fait foi dans le §0 de `07-ordre-pr-et-merge.md`.**
 >
-> *Note relue et corrigée le 2026-08-14 (audit J-1).*
+> 1. « **Rien n'a été fusionné sur `main`** » → **faux depuis le 2026-08-18** : tu as
+>    approuvé et fusionné le lot 1 (PR #149) ce jour-là, et sorti #154 du brouillon
+>    le 19. **Cinq** lots restent, pas six.
+> 2. « **aucune ne porte de migration** » (§2) → **faux** : le lot BL (#158) en porte
+>    **cinq**. Elles sont chaînées proprement sur `20260807_0113` et la tête reste
+>    unique (`20260817_0118`, vérifié) — mais l'affirmation ne doit pas te servir
+>    d'argument de non-risque sur l'historique de schéma.
 >
-> Documents de référence : `07-ordre-pr-et-merge.md` (ordre et mécanique),
-> `DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md` (journal détaillé, jour par jour),
-> `PLAN_UPGRADE_PHASE2_2026-08.md` (plan et RAF).
+> Le reste de cette note (§4 à §9 : ce que le filet a trouvé, les corrections métier,
+> les lots spécifiés, les arbitrages) **reste valable**.
+>
+> *Note relue et corrigée le 2026-08-14 (audit J-1), puis le 2026-08-21.*
+>
+> Documents de référence : `07-ordre-pr-et-merge.md` (**§0 = état courant**, puis
+> ordre et mécanique), `DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md` (journal
+> détaillé, jour par jour), `PLAN_UPGRADE_PHASE2_2026-08.md` (plan et RAF).
 
 ---
 
@@ -31,10 +41,19 @@ l'Armement.
 
 ## 2. Ce qu'il faut faire en premier
 
-### Relire et fusionner les six lots, dans l'ordre du §3
+### Relire et fusionner les lots restants, dans l'ordre du §3
 
-**Il n'y a plus de point bloquant.** Les six branches sont à jour sur `main`, leur CI
-est verte, et aucune ne porte de migration.
+> 🔄 **Au 2026-08-21** : le lot 1 est **fusionné**, il en reste **cinq**. L'ordre du
+> §3 est inchangé pour les suivants — ou plus simplement : **suis le premier nombre
+> du titre des PR**, en sachant qu'il n'existe pas de `[3/7]`.
+
+**Il n'y a plus de point bloquant.** Les branches restantes sont à jour sur `main`
+(`behind=0`, revérifié le 2026-08-21) et leur CI est verte.
+
+⚠️ **Correction** : la version antérieure de ce paragraphe ajoutait « et aucune ne
+porte de migration ». **C'est faux** — le lot BL (#158) en porte **cinq**
+(`20260814_0114` → `20260817_0118`). Chaînage vérifié sur la tête de `main`, tête
+unique après. Détail au §0 de `07-ordre-pr-et-merge.md`.
 
 Le premier lot (`chore/ci-integration-tests`, PR #149) est celui à regarder d'abord :
 une fois fusionné, **toutes** les PR suivantes sont vérifiées par la suite complète
@@ -69,13 +88,18 @@ la portaient (tête unique revérifiée sur chacune), sa PR **fermée** et sa br
 ## 3. Ordre de fusion — impératif, pas indicatif
 
 ```
-1. chore/ci-integration-tests    (#149)  ← le filet d'abord
-2. docs/decouverte-fonctionnelle (#154)  ← indépendant
-3. feat/ops-quickwins            (#156)  ← indépendant
-4. fix/crew-indicators-honest    (#157)  ← porte le contenu du lot 1
-5. feat/bl-workflow              (#158)  ← porte le contenu du lot 1
-6. feat/crew-rotations           (#159)  ← porte le contenu des lots 1 et 4
+1. chore/ci-integration-tests    (#149)  [1/7]  ✅ FUSIONNÉ le 2026-08-18
+2. docs/decouverte-fonctionnelle (#154)  [2/7]  ← sortie du brouillon le 19/08
+3. feat/ops-quickwins            (#156)  [4/7]  ← indépendant
+4. fix/crew-indicators-honest    (#157)  [5/7]  ← porte le contenu du lot 1
+5. feat/bl-workflow              (#158)  [6/7]  ← 5 MIGRATIONS
+6. feat/crew-rotations           (#159)  [7/7]  ← porte le contenu des lots 1 et 4
 ```
+
+> 🔢 **Le numéro entre crochets est celui du titre de la PR** — c'est la consigne
+> transmise à Julien : trier par ce nombre, ascendant. **Il n'existe pas de `[3/7]`**
+> (lot Alembic supprimé). Les deux numérotations coexistent et sont toutes deux
+> justes : position réelle sur 6, titre sur le schéma d'origine à 7.
 
 > 🔄 **Révisé le 2026-08-10.** Le lot « fusion Alembic » a **disparu de la liste** :
 > le problème a été résolu sur `main` le 2026-08-07 (`20260807_0113`), sa PR #155 est
