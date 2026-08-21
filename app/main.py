@@ -120,6 +120,7 @@ def create_app() -> FastAPI:
     app.include_router(commercial_router.router)
     app.include_router(cargo_packing_router.router)
     app.include_router(crew_router.router)
+    app.include_router(crew_router.trombinoscope_api_router)
     app.include_router(escale_router.router)
     # ─── Phase 3 ERP : captain / stowage / claims / mrv ───
     app.include_router(captain_router.router)
@@ -169,7 +170,7 @@ def create_app() -> FastAPI:
     @app.get("/.well-known/security.txt", response_class=PlainTextResponse)
     async def security_txt() -> str:
         return (
-            "Contact: mailto:communication@towt.eu\n"
+            "Contact: mailto:security@newtowt.eu\n"
             "Expires: 2026-12-31T23:59:59.000Z\n"
             "Preferred-Languages: fr, en\n"
             f"Canonical: {settings.site_url}/.well-known/security.txt\n"
@@ -238,7 +239,17 @@ def create_app() -> FastAPI:
                     await _seed_session.commit()
             except Exception:  # pragma: no cover - best effort, jamais bloquant
                 logger.warning("seed référentiel validation MRV ignoré (non bloquant)")
+
+        from app.services import trombinoscope_scheduler
+
+        trombinoscope_scheduler.start()
         logger.info("mynewtowt %s started (env=%s)", __version__, settings.app_env)
+
+    @app.on_event("shutdown")
+    async def _on_shutdown() -> None:
+        from app.services import trombinoscope_scheduler
+
+        trombinoscope_scheduler.shutdown()
 
     return app
 

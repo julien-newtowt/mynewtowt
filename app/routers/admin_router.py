@@ -1601,8 +1601,8 @@ async def co2_variables_update(
 
 
 # ────────────────────────────────────────────── Flotte — référentiel environnemental (MRV lot 1)
-# Cuves / moteurs / hydrostatiques par navire (app.models.vessel_env) + les 3
-# champs référentiel portés par Vessel. Patron : la page /admin/co2 ci-dessus.
+# Cuves / moteurs par navire (app.models.vessel_env) + les 3 champs
+# référentiel portés par Vessel. Patron : la page /admin/co2 ci-dessus.
 def _parse_decimal_or_none(value: str | None) -> Decimal | None:
     raw = (value or "").strip().replace(",", ".")
     if not raw:
@@ -1625,11 +1625,9 @@ async def flotte_env_page(
     vessels = await _vessels_for_form(db)
     tanks_by_vessel = {}
     engines_by_vessel = {}
-    hydro_by_vessel = {}
     for v in vessels:
         tanks_by_vessel[v.id] = await referential_env.get_vessel_tanks(db, v.id)
         engines_by_vessel[v.id] = await referential_env.get_vessel_engines(db, v.id)
-        hydro_by_vessel[v.id] = await referential_env.get_vessel_hydrostatics(db, v.id)
     return templates.TemplateResponse(
         "staff/admin/flotte_env.html",
         {
@@ -1638,7 +1636,6 @@ async def flotte_env_page(
             "vessels": vessels,
             "tanks_by_vessel": tanks_by_vessel,
             "engines_by_vessel": engines_by_vessel,
-            "hydro_by_vessel": hydro_by_vessel,
         },
     )
 
@@ -1684,17 +1681,21 @@ async def flotte_env_update(
     vessel_id: int,
     request: Request,
     lightweight_t: str | None = Form(None),
+    deadweight_t: str | None = Form(None),
     default_fuel_type: str = Form("MDO"),
     water_density_default_t_m3: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "M")),
 ):
-    """Édite les 3 champs référentiel environnemental portés par ``Vessel`` (lot 1)."""
+    """Édite les champs référentiel environnemental portés par ``Vessel`` (lot 1
+    + ``deadweight_t``, G17 — symétrique de ``lightweight_t``, purement
+    informatif comme lui)."""
     vessel = await db.get(Vessel, vessel_id)
     if vessel is None:
         raise HTTPException(status_code=404)
     fuel_clean = (default_fuel_type or "MDO").strip().upper()[:20] or "MDO"
     vessel.lightweight_t = _parse_decimal_or_none(lightweight_t)
+    vessel.deadweight_t = _parse_decimal_or_none(deadweight_t)
     vessel.default_fuel_type = fuel_clean
     vessel.water_density_default_t_m3 = _parse_decimal_or_none(water_density_default_t_m3)
     await db.flush()
@@ -1709,8 +1710,8 @@ async def flotte_env_update(
         entity_id=vessel.id,
         entity_label=vessel.code,
         detail=(
-            f"lightweight_t={vessel.lightweight_t}; fuel={fuel_clean}; "
-            f"water_density_t_m3={vessel.water_density_default_t_m3}"
+            f"lightweight_t={vessel.lightweight_t}; deadweight_t={vessel.deadweight_t}; "
+            f"fuel={fuel_clean}; water_density_t_m3={vessel.water_density_default_t_m3}"
         ),
         ip_address=_client_ip(request),
     )

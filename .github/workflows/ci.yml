@@ -7,6 +7,9 @@ on:
 
 permissions:
   contents: read
+  # Requis par gitleaks-action pour énumérer les commits d'une pull request
+  # (le job `security` est en lecture seule ; aucun droit d'écriture accordé).
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -27,12 +30,33 @@ jobs:
         run: ruff check app tests
       - name: Black --check
         run: black --check app tests
-      - name: Mypy (informational — baseline 142 erreurs à résorber)
+      - name: Mypy (informational — dette de typage, cf. seuil ci-dessous)
         # Non bloquant tant que la dette de typage des routers n'est pas
         # résorbée (cf. docs/audit/2026-06-10-repo-audit.md). Repasser
         # bloquant dès que `mypy app` est à zéro.
+        #
+        # Le libellé annonçait « baseline 142 » alors que le réel était 434 :
+        # `continue-on-error` masquait toute dérive. On garde l'étape non
+        # bloquante MAIS on la borne par un cliquet (étape suivante) : la dette
+        # ne peut plus grossir sans que la CI le dise.
         run: mypy app
         continue-on-error: true
+      - name: Cliquet anti-dérive du typage (bloquant)
+        # Empêche la dette mypy d'augmenter silencieusement. Baisser
+        # MYPY_MAX à chaque résorption — jamais l'augmenter sans décision
+        # explicite tracée en PR.
+        env:
+          # 434 avant cette PR ; 371 après le typage correct de
+          # `planning.ensure_utc` (@overload nullité-préservante).
+          MYPY_MAX: "371"
+        run: |
+          COUNT=$(mypy app 2>/dev/null | sed -n 's/^Found \([0-9]\+\) errors.*/\1/p')
+          COUNT=${COUNT:-0}
+          echo "mypy : $COUNT erreurs (plafond $MYPY_MAX)"
+          if [ "$COUNT" -gt "$MYPY_MAX" ]; then
+            echo "::error::Dette de typage en hausse : $COUNT > $MYPY_MAX. Corriger, ou relever MYPY_MAX en le justifiant dans la PR."
+            exit 1
+          fi
 
   test:
     runs-on: ubuntu-latest
@@ -61,8 +85,23 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements-dev.txt
-      - name: Run unit tests with coverage
-        run: pytest tests/unit --cov=app --cov-report=term-missing --cov-report=xml
+      # WeasyPrint (génération PDF) s'appuie sur Pango/Cairo via des libs
+      # système : sans elles, tous les tests de rendu PDF échouent en
+      # OSError/cannot load library. Nécessaire depuis que `tests/integration`
+      # est exécuté ici (il contient ~15 tests de rendu réel).
+      - name: Install WeasyPrint system libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info
+      # tests/integration (110 fichiers) et tests/regression (4 fichiers, dont
+      # la sentinelle des facteurs d'émission et le filet de parité V2↔V3)
+      # n'étaient pas exécutés en CI : 29 échecs y vivaient invisibles, dont un
+      # vrai bug applicatif (voyage_track, normalisation de fuseau) et une
+      # régression introduite pendant sa correction. Voir
+      # docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md (J1).
+      - name: Run test suite with coverage
+        run: pytest tests/unit tests/integration tests/regression --cov=app --cov-report=term-missing --cov-report=xml
       - name: Upload coverage XML
         uses: actions/upload-artifact@v4
         with:
@@ -73,6 +112,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # OBLIGATOIRE pour gitleaks : l'action ignore l'`args` fourni et
+          # construit sa propre commande sur une PLAGE de commits
+          # (`--log-opts=--no-merges --first-parent <base>..<head>`). Avec le
+          # `fetch-depth: 1` par défaut, le clone ne contient qu'un commit : la
+          # plage est irrésoluble, gitleaks sort en ERREUR (code 1 — et non 2,
+          # qui signalerait des fuites) et écrit un rapport SARIF **vide**.
+          # « 0 détection » signifiait alors « rien n'a été scanné ».
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -87,10 +135,50 @@ jobs:
           pip install pip-audit
           pip-audit -r requirements.txt || true   # informational
       - name: Gitleaks scan
+        id: gitleaks
         uses: gitleaks/gitleaks-action@v2
-        with:
-          args: detect --no-banner --redact -v
+        # GITHUB_TOKEN est devenu OBLIGATOIRE pour scanner une pull request
+        # (breaking change de gitleaks-action v2). Sans lui, l'étape échouait
+        # immédiatement — et `continue-on-error` la faisait passer pour verte :
+        # aucune PR n'a jamais été scannée pour fuite de secret depuis ce
+        # changement. Le token est fourni automatiquement par GitHub.
+        #
+        # L'`args: detect --no-banner --redact -v` qui figurait ici a été retiré :
+        # l'action l'IGNORE et construit sa propre commande
+        # (`--exit-code=2 --report-format=sarif --log-opts=…`). Le laisser
+        # donnait l'illusion d'une configuration active.
+        #
+        # Nécessite aussi `fetch-depth: 0` sur le checkout (cf. commentaire là-bas).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
+      - name: Verifier que gitleaks a REELLEMENT scanne (bloquant)
+        # Les trois modes d'échec connus de gitleaks — token manquant, clone
+        # superficiel, plage de commits irrésoluble — produisent tous un rapport
+        # SARIF **vide mais bien formé** que `continue-on-error` présente comme
+        # un succès. Un rapport sans détection n'est donc PAS une preuve
+        # d'absence de secret : il faut prouver que le scan a abouti.
+        #
+        # Le discriminant fiable est `steps.gitleaks.outcome`, qui conserve le
+        # résultat RÉEL avant application de `continue-on-error` (là où
+        # `conclusion` vaut toujours `success`). Codes de sortie de l'action :
+        # 0 = scan propre · 2 = fuites trouvées · 1 = le scan a échoué.
+        # C'est ce dernier cas qui mentait, et qu'on refuse désormais.
+        run: |
+          if [ ! -f results.sarif ]; then
+            echo "::error::gitleaks n'a produit aucun rapport — scan non effectue."
+            exit 1
+          fi
+          N=$(python -c "import json;d=json.load(open('results.sarif'));print(sum(len(r.get('results',[])) for r in d.get('runs',[])))")
+          if [ "$N" -gt 0 ]; then
+            echo "::error::gitleaks a detecte $N fuite(s) potentielle(s). Voir l'artefact results.sarif. Faux positif : ajouter l'empreinte au fichier .gitleaksignore, jamais desactiver l'etape."
+            exit 1
+          fi
+          if [ "${{ steps.gitleaks.outcome }}" = "failure" ]; then
+            echo "::error::gitleaks a echoue SANS produire de detection : le scan n'a pas abouti (token, profondeur de clone, plage de commits...). Un rapport vide n'est pas une preuve d'absence de secret."
+            exit 1
+          fi
+          echo "gitleaks : scan abouti et concluant, 0 detection."
 
   build:
     runs-on: ubuntu-latest

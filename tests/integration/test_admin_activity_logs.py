@@ -16,31 +16,36 @@ async def test_pagination_and_actor_filter(db, staff_user):
     from app.routers.admin_router import activity_logs_view
     from app.services.activity import record
 
-    for i in range(3):
+    # ``activity_logs_view`` plafonne la taille de page à un minimum de 10
+    # (``limit = max(10, min(limit, 500))``) : tester la pagination exige donc
+    # plus de 10 lignes. Le test d'origine créait 3 lignes et paginait à 2 —
+    # il échouait depuis l'ajout de ce plancher, invisible faute de
+    # `tests/integration` en CI.
+    for i in range(15):
         await record(
             db,
             action="create",
-            user_name="alice" if i < 2 else "bob",
+            user_name="alice" if i < 10 else "bob",
             module="cargo",
         )
     await db.flush()
 
-    # Page 1, limit 2 → 2 lignes, page suivante détectée.
-    resp = await activity_logs_view(FakeRequest(), limit=2, page=1, db=db, user=staff_user)
+    # Page 1, limit 10 → 10 lignes, page suivante détectée.
+    resp = await activity_logs_view(FakeRequest(), limit=10, page=1, db=db, user=staff_user)
     assert resp.context["page"] == 1
-    assert len(resp.context["logs"]) == 2
+    assert len(resp.context["logs"]) == 10
     assert resp.context["has_next"] is True
     assert resp.context["has_prev"] is False
 
-    # Page 2 → 1 ligne restante, pas de page suivante.
-    resp2 = await activity_logs_view(FakeRequest(), limit=2, page=2, db=db, user=staff_user)
-    assert len(resp2.context["logs"]) == 1
+    # Page 2 → 5 lignes restantes, pas de page suivante.
+    resp2 = await activity_logs_view(FakeRequest(), limit=10, page=2, db=db, user=staff_user)
+    assert len(resp2.context["logs"]) == 5
     assert resp2.context["has_next"] is False
     assert resp2.context["has_prev"] is True
 
     # Filtre acteur (partiel, insensible à la casse).
     resp3 = await activity_logs_view(FakeRequest(), actor="ALI", db=db, user=staff_user)
-    assert len(resp3.context["logs"]) == 2
+    assert len(resp3.context["logs"]) == 10
     assert all(log.user_name == "alice" for log in resp3.context["logs"])
 
 

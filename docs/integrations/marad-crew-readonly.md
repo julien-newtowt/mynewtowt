@@ -237,7 +237,9 @@ les placeholders Swagger `"string"` sont ignorés) :
 |---|---|---|
 | **`marad_id`** | `id` | **GUID** → colonne `String(36)` (clé de réconciliation, §4) |
 | `full_name` | `firstName` + `lastName` (fallback `callName`) | concaténé, `(sans nom)` si vide |
-| `role` | `ranks[0]` | 1er rang (libellé brut, tronqué 60). Mapping fin rang→rôle FR = TODO via `getranks` |
+| `first_name` | `firstName` | **Ajouté 2026-07-20** (trombinoscope Armement, cf. `docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md`) — mappé directement, en plus de la concaténation dans `full_name` (conservée pour compatibilité) |
+| `last_name` | `lastName` | idem |
+| `role` | `ranks[0]` | 1er rang (libellé brut, tronqué 60), stocké **tel quel** (pas de normalisation à l'écriture). Mapping fin rang→rôle FR = TODO via `getranks` ; le trombinoscope construit sa propre normalisation d'affichage (`app/services/crew_directory.py`) plutôt que d'attendre ce TODO |
 | `nationality` | `nationality` | conservé **uniquement** si code ISO-2 (colonne CHAR(2)) |
 | `date_of_birth` | `birthDate` | parse ISO datetime → date |
 | `email` | `email` | gardé si contient `@` |

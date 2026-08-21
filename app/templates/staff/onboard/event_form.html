@@ -1,4 +1,5 @@
 {% extends "staff/_layout.html" %}
+{% from "staff/onboard/_engine_readings_shared.html" import engine_readings_table %}
 {% set is_edit = event is not none %}
 {% set is_noon = event_type == 'noon' %}
 {% set is_portcall = event_type in ('departure', 'arrival') %}
@@ -6,6 +7,7 @@
 {% set is_arrival = event_type == 'arrival' %}
 {% set is_anchor = event_type in ('anchoring_begin', 'anchoring_end') %}
 {% set is_anchor_end = event_type == 'anchoring_end' %}
+{% set is_cutoff = event_type == 'cutoff' %}
 {% block title %}{{ event_type_labels.get(event_type, event_type) }} — {{ brand.nom_court }}{% endblock %}
 {% block head %}
 {{ super() }}
@@ -94,7 +96,7 @@
           <option value="manuel_justifie" {% if cur_src == 'manuel_justifie' %}selected{% endif %}>{{ t('onb_event_pos_manual', lang) }}</option>
         </select>
       </div>
-      {% if not is_anchor %}
+      {% if not is_anchor and not is_cutoff %}
       <div class="field"><label>Cargo MRV (t)</label><input name="cargo_mrv_t" type="number" step="0.001" value="{{ event.cargo_mrv_t if is_edit and event.cargo_mrv_t is not none else '' }}" /></div>
       {% endif %}
     </div>
@@ -107,7 +109,16 @@
     {% elif not prefill_pos and not is_edit %}
     <p class="text-muted text-sm">Position Thalos indisponible — saisie manuelle requise (justification obligatoire, R05).</p>
     {% endif %}
+    {% if is_cutoff %}
+    <p class="text-muted text-sm"><i data-lucide="alert-triangle"></i> La date/heure saisie ci-dessus n'est qu'indicative : l'horodatage réglementaire (31/12 24:00 UTC) est figé automatiquement par le système, quelle que soit la valeur saisie.</p>
+    {% endif %}
   </article>
+
+  {# G2 — compteurs moteur aussi requis à Departure/Arrival/Anchoring/Cut-off
+     (pas seulement Noon, qui a sa propre occurrence de la macro plus bas). #}
+  {% if is_portcall or is_anchor or is_cutoff %}
+  {{ engine_readings_table(engines, engine_values, lang) }}
+  {% endif %}
 
   {# ══════════════════════════ NOON ══════════════════════════ #}
   {% if is_noon %}
@@ -133,30 +144,15 @@
   </article>
 
   <article class="card mb-3">
-    <h2 class="h5">Machine — relevés compteurs par moteur</h2>
-    {% if not engines %}
-    <div class="alert alert-warn">{{ t('onb_event_no_engines', lang) }}</div>
-    {% else %}
-    <div style="overflow-x:auto;">
-      <table class="data-table mt-2" style="font-size:var(--text-xs);">
-        <thead><tr><th>Moteur</th><th>Groupe</th><th>Heures (compteur)</th><th>Carburant (L, compteur)</th><th>Reset</th></tr></thead>
-        <tbody>
-          {% for eng in engines %}
-          {% set er = engine_values.get(eng.id) %}
-          <tr>
-            <td class="mono">{{ eng.engine_role }}</td>
-            <td>{{ eng.engine_group or '—' }}</td>
-            <td><input name="eng_hours_{{ eng.id }}" type="number" step="0.001" style="width:7rem;" value="{{ er.running_hours_counter_h if er and er.running_hours_counter_h is not none else '' }}" /></td>
-            <td><input name="eng_fuel_{{ eng.id }}" type="number" step="0.001" style="width:8rem;" value="{{ er.fuel_counter_l if er and er.fuel_counter_l is not none else '' }}" /></td>
-            <td><input type="checkbox" name="eng_reset_{{ eng.id }}" value="1" {% if er and er.is_counter_reset %}checked{% endif %} /></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <h2 class="h5">ROB annexes</h2>
+    <p class="text-muted text-sm">Indépendants du calcul carburant — informatifs (G5).</p>
+    <div class="grid grid-2 gap-3">
+      <div class="field"><label>ROB urée (t)</label><input name="rob_uree_t" type="number" step="0.001" min="0" value="{{ event.rob_uree_t if is_edit and event.rob_uree_t is not none else '' }}" /></div>
+      <div class="field"><label>ROB eau douce (t)</label><input name="rob_eau_douce_t" type="number" step="0.001" min="0" value="{{ event.rob_eau_douce_t if is_edit and event.rob_eau_douce_t is not none else '' }}" /></div>
     </div>
-    <p class="text-muted text-xs mt-1">Compteurs bruts machine (litres, heures) — la consommation est dérivée par deltas (jamais ressaisie).</p>
-    {% endif %}
   </article>
+
+  {{ engine_readings_table(engines, engine_values, lang) }}
 
   <article class="card mb-3">
     <h2 class="h5">Météo — relevés 4 h</h2>
@@ -285,6 +281,28 @@
       {% else %}
       <div class="field" style="grid-column:span 2;"><label>Raison du mouillage</label><textarea name="reason" rows="2">{{ event.reason if is_edit and event.reason else '' }}</textarea></div>
       {% endif %}
+    </div>
+  </article>
+  {% endif %}
+
+  {# ══════════════════════════ CUT-OFF ══════════════════════════ #}
+  {% if is_cutoff %}
+  <article class="card mb-3">
+    <h2 class="h5">ROB par carburant (fin d'exercice)</h2>
+    <p class="text-muted text-sm">ROB déclaré par type de carburant à l'instant de la coupure — sert de nouvel ancrage à la chaîne ROB (au même titre qu'un ROB de référence Departure/Arrival). Laissez une ligne vide si le carburant n'est pas embarqué.</p>
+    <div style="overflow-x:auto;">
+      <table class="data-table mt-2" style="font-size:var(--text-xs);">
+        <thead><tr><th>Carburant</th><th>ROB (t)</th></tr></thead>
+        <tbody>
+          {% for i, ft in cutoff_fuel_types %}
+          {% set rf = rob_by_fuel_values[i] %}
+          <tr>
+            <td><input name="robfuel_type_{{ i }}" type="text" maxlength="20" style="width:8rem;" value="{{ rf.fuel_type if rf else ft }}" /></td>
+            <td><input name="robfuel_val_{{ i }}" type="number" step="0.001" style="width:8rem;" value="{{ rf.rob_t if rf and rf.rob_t is not none else '' }}" /></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </article>
   {% endif %}

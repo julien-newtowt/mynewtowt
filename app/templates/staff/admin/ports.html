@@ -92,6 +92,7 @@
             {% if p.is_active %}<span class="pill pill-ok">Actif</span>
             {% else %}<span class="pill pill-error">Inactif</span>{% endif %}
             {% if p.is_shortcut %}<span class="pill pill-info">★ Raccourci</span>{% endif %}
+            {% if p.mrv_scope %}<span class="pill pill-info" title="Sous juridiction MRV UE (RUP incluses)">MRV UE</span>{% endif %}
           </td>
           <td class="text-right">
             <a href="/admin/ports/{{ p.id }}/config" class="btn btn-ghost text-sm">Config</a>
@@ -99,6 +100,12 @@
               <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
               <button type="submit" class="btn btn-ghost text-sm" title="Proposer ce port en raccourci dans le formulaire de leg">
                 {% if p.is_shortcut %}★ Retirer raccourci{% else %}☆ Raccourci{% endif %}
+              </button>
+            </form>
+            <form method="post" action="/admin/ports/{{ p.id }}/toggle-mrv-scope" style="display:inline;">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button type="submit" class="btn btn-ghost text-sm" title="Port sous juridiction MRV UE (RUP incluses)">
+                {% if p.mrv_scope %}Retirer périmètre MRV UE{% else %}Marquer périmètre MRV UE{% endif %}
               </button>
             </form>
             <form method="post" action="/admin/ports/{{ p.id }}/toggle" style="display:inline;">
