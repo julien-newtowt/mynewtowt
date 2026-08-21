@@ -1,8 +1,8 @@
-# Spécification — Support applicatif (« Signalements »)
+# Spécification — Support applicatif (« Assistance »)
 
 > **Objet** : permettre à tout collaborateur de signaler une difficulté ou un
 > dysfonctionnement **du logiciel MyTOWT lui-même**, et de suivre le traitement de
-> son signalement.
+> sa demande d'assistance.
 >
 > **Statut** : spécification — **aucun code écrit**. À valider avant implémentation.
 > **Rédigé le** 2026-08-21. **Branche** : `feature/support-ticketing` (depuis `main`).
@@ -26,8 +26,8 @@ l'interface.
 | **Sujet** | Un problème survenu **dans le monde réel**, pendant une escale | Un problème survenu **dans le logiciel** |
 | **Nom de module (permissions)** | `tickets` | **`support`** |
 | **Racine d'URL** | `/tickets` | **`/support`** |
-| **Libellé interface (FR)** | « Tickets escale » | **« Signalements »** / « Signaler un problème » |
-| **Vocabulaire utilisateur** | un **ticket** | un **signalement** |
+| **Libellé interface (FR)** | « Tickets escale » | **« Assistance »** — action : « Signaler un problème » |
+| **Vocabulaire utilisateur** | un **ticket** | une **demande d'assistance** (« une demande ») |
 | **Préfixe de référence** | `TKT-2026-A3F1` | **`SUP-2026-0001`** |
 | **Tables** | `tickets`, `ticket_comments` | **`support_tickets`**, `support_ticket_comments`, `support_ticket_attachments` |
 | **Classes** | `Ticket`, `TicketComment` | **`SupportTicket`**, `SupportTicketComment`, `SupportTicketAttachment` |
@@ -43,9 +43,12 @@ l'interface.
 
 1. **Aucun symbole de ce module ne s'appelle `Ticket` tout court.** Le préfixe
    `Support` est obligatoire sur les classes, les tables et les fichiers.
-2. **Le mot « ticket » n'apparaît pas dans l'interface française** de ce module. On
-   dit « signalement ». Cela évite qu'un utilisateur cherche ses signalements dans
-   « Tickets escale ».
+2. **Le mot « ticket » n'apparaît pas dans l'interface française** de ce module. La
+   rubrique s'appelle **« Assistance »**, l'objet est une **demande d'assistance**,
+   et l'action d'entrée est **« Signaler un problème »**. Cela évite qu'un
+   utilisateur cherche ses demandes dans « Tickets escale ».
+   *(Libellé arbitré par Yasmin le 2026-08-21 : « Assistance » retenu contre
+   « Signalements ».)*
 3. **Aucun import croisé** entre `services/support.py` et `services/tickets.py`. Les
    deux modules ne partagent rien d'autre que les briques transverses
    (`notifications`, `activity`, `safe_files`).
@@ -74,13 +77,13 @@ défaut de Starlette — réponse nue, trace sur stderr, rien de durable. Et
 Ce module n'est pas un complément à une capture automatique d'erreurs : il en est
 **le seul et unique canal**. D'où une exigence non négociable :
 
-> **Le signalement doit porter lui-même son contexte technique**, capturé
+> **La demande doit porter elle-même son contexte technique**, capturé
 > automatiquement. Sans cela on récolte des « ça ne marche pas sur la page des
 > escales » inexploitables.
 
 Le câblage de Sentry / OTel / Prometheus et un gestionnaire 500 forment un **lot
 d'observabilité distinct**, délibérément hors périmètre (cf. §13). C'est le
-complément naturel : le signalement dit **qu'**il y a un problème, Sentry dirait
+complément naturel : la demande dit **qu'**il y a un problème, Sentry dirait
 **lequel**.
 
 ---
@@ -89,10 +92,12 @@ complément naturel : le signalement dit **qu'**il y a un problème, Sentry dira
 
 ### Dans le périmètre
 
-- Ouverture d'un signalement par **tout collaborateur** (les 9 rôles staff).
+- Ouverture d'une demande par **tout collaborateur** (les 9 rôles staff).
 - **Capture automatique du contexte technique** (§5).
 - **Pièces jointes**, captures d'écran incluses (§8).
-- Consultation : chacun voit **ses** signalements ; `administrateur` voit **tous**.
+- Consultation : chacun voit **ses** demandes ; `administrateur` voit **toutes**.
+- **Archivage à 3 mois + écran d'archives** (§7.1) — les deux ensemble, jamais l'un
+  sans l'autre.
 - Fil de commentaires entre le demandeur et celui qui traite.
 - Tri par `administrateur` : changement d'état, assignation.
 - Notification à l'ouverture (vers `administrateur`) et à chaque changement d'état
@@ -120,8 +125,8 @@ complément naturel : le signalement dit **qu'**il y a un problème, Sentry dira
 |---|---|---|
 | `id` | PK | |
 | `reference` | `String(20)`, unique | `SUP-2026-0001` — **séquentiel**, cf. §6 |
-| `reporter_id` | FK `users.id`, **non nul** | l'auteur du signalement |
-| `reporter_role` | `String(30)`, non nul | **rôle figé à la création** — le rôle d'un utilisateur peut changer ensuite, le contexte du signalement ne doit pas bouger avec |
+| `reporter_id` | FK `users.id`, **non nul** | l'auteur de la demande |
+| `reporter_role` | `String(30)`, non nul | **rôle figé à la création** — le rôle d'un utilisateur peut changer ensuite, le contexte de la demande ne doit pas bouger avec |
 | `kind` | `String(20)` | `bug` \| `question` \| `amelioration` |
 | `severity` | `String(20)` | `bloquant` \| `genant` \| `mineur` — **déclarée par l'utilisateur**, sans SLA attaché |
 | `title` | `String(200)`, non nul | |
@@ -134,7 +139,7 @@ complément naturel : le signalement dit **qu'**il y a un problème, Sentry dira
 | `page_url` | `String(500)`, nullable | écran où le problème est survenu |
 | `http_referer` | `String(500)`, nullable | |
 | `user_agent` | `String(400)`, nullable | navigateur / OS |
-| `app_version` | `String(20)`, nullable | `settings.app_version` au moment du signalement |
+| `app_version` | `String(20)`, nullable | `settings.app_version` au moment de la demande |
 | `occurred_at` | `DateTime(tz)`, nullable | quand **l'utilisateur** dit que c'est arrivé |
 | **Horodatages** | | |
 | `created_at` / `updated_at` | `DateTime(tz)` | serveur (`server_default=now()`) |
@@ -198,7 +203,7 @@ gestion de collision** (aucun `try`, aucun `IntegrityError` dans tout
 | 500 | 85,1 % |
 
 Une collision lève une `IntegrityError` non rattrapée ⇒ **500 à la création**. Ce
-n'est pas théorique à quelques centaines de signalements par an.
+n'est pas théorique à quelques centaines de demandes par an.
 
 ### Ce qu'on fait à la place
 
@@ -212,8 +217,8 @@ essai laisse la transaction **entière** en échec, et il n'y a plus rien à rep
 C'est exactement le défaut corrigé dans l'ingestion QHSE (`188be0e`), où un
 `rollback()` global annulait tout l'import. **Même patron, pas d'invention.**
 
-Une référence séquentielle a en outre l'avantage d'être **citable à l'oral** (« mon
-signalement 42 »), ce qu'un hexadécimal aléatoire n'est pas — et pour un outil dont
+Une référence séquentielle a en outre l'avantage d'être **citable à l'oral** (« ma
+demande 42 »), ce qu'un hexadécimal aléatoire n'est pas — et pour un outil dont
 on parle en réunion, ça compte.
 
 > Ce défaut du module `tickets` est **signalé, non corrigé ici** : il appartient à ce
@@ -248,6 +253,59 @@ nouveau ──→ en_cours ──→ resolu ──→ clos
   `resolu → en_cours` (« ce n'est pas corrigé »). Tout le reste est réservé à
   `administrateur`.
 
+### 7.1 Archivage à 3 mois — et pourquoi ce n'est PAS une purge
+
+**Décision Yasmin (2026-08-21) : « à archiver après 3 mois ».**
+
+⚠️ **Archiver n'est pas purger, et la question initiale confondait les deux.** Elle
+proposait d'inscrire les 3 tables dans `ALLOWED_PURGE_TABLES` — or cette mécanique
+**supprime** les lignes. Ce n'est pas ce qui est demandé, et ce ne serait pas
+souhaitable : l'historique des demandes est la mémoire des défauts du logiciel. Un
+bug réapparu deux ans plus tard se diagnostique en retrouvant l'ancienne demande.
+
+**Retenu : archivage = sortie de la vue courante, la donnée reste.**
+
+#### Un état dérivé, pas une colonne ni un cron
+
+Une demande est **archivée** si — et seulement si :
+
+```
+status ∈ {clos, rejete}  ET  (maintenant − horodatage terminal) > 90 jours
+```
+
+Aucune colonne `archived_at`, **aucune tâche de fond**. C'est un prédicat de
+requête, évalué à la lecture.
+
+| Option écartée | Motif |
+|---|---|
+| Colonne `archived_at` + cron | Introduit un état à maintenir, donc une dérive possible (cron non exécuté ⇒ rien n'est archivé, et personne ne le voit). Le module `tickets` a déjà ce genre de dépendance |
+| Purge par rétention | Détruit la mémoire des défauts. Et une suppression ne se rattrape pas |
+
+Le seuil vit dans une constante nommée du service (`ARCHIVE_AFTER_DAYS = 90`). S'il
+doit devenir réglable, il rejoindra la configuration — mais pas avant qu'on en ait
+le besoin réel.
+
+#### 🔴 L'écran d'archives part avec, pas après
+
+**C'est une exigence, pas une option.** Le module `tickets` dit textuellement dans
+son code : *« closed/cancelled are off-board, accessed via "Archives" »*. J'ai
+énuméré ses 8 routes : **cet écran n'existe pas.** Conséquence réelle aujourd'hui —
+un ticket d'escale clos **disparaît de l'interface**, atteignable seulement par URL
+directe, alors que ses références sont aléatoires donc non devinables.
+
+⇒ Livrer l'archivage sans l'écran d'archives, ce serait reproduire ce défaut en
+connaissance de cause. Les deux sont dans le même lot, et un test vérifie qu'une
+demande archivée **reste atteignable** depuis l'écran d'archives.
+
+| Écran | Contenu |
+|---|---|
+| `/support` | demandes **non archivées** |
+| `/support/archives` | demandes **archivées**, mêmes filtres, même cloisonnement de lecture (chacun les siennes, l'admin toutes) |
+
+Une demande archivée reste **consultable en détail** (`/support/{ref}`) et **en
+lecture seule** : plus de commentaire, plus de changement d'état, pièces jointes
+toujours téléchargeables selon la règle du §8.
+
 ---
 
 ## 8. Pièces jointes et captures d'écran
@@ -270,18 +328,18 @@ sécurité :
 
 | Règle | Valeur | Motif |
 |---|---|---|
-| Pièces jointes par signalement | **5 maximum** | borne le stockage sans gêner l'usage réel |
-| Ajout après création | autorisé, tant que le signalement n'est pas `clos`/`rejete` | on pense souvent à la capture après coup |
+| Pièces jointes par demande | **5 maximum** | borne le stockage sans gêner l'usage réel |
+| Ajout après création | autorisé, tant que la demande n'est pas `clos`/`rejete` | on pense souvent à la capture après coup |
 | Suppression d'une pièce | son auteur, ou `administrateur` | |
 | Téléchargement | le demandeur ou `administrateur` — **jamais** le simple porteur du droit `support:C` | une capture d'écran peut contenir des données d'un autre module (finance, RH) |
 
 ⚠️ **Le point de contrôle d'accès au téléchargement est le plus sensible de ce
 lot.** Une capture d'écran est une **exfiltration potentielle** : un marin qui
-photographie un écran RH et l'attache à un signalement rendrait ces données
+photographie un écran RH et l'attache à une demande rendrait ces données
 lisibles par quiconque peut ouvrir la pièce. D'où la règle « demandeur ou admin
 seulement », et un test dédié (§12).
 
-Suppression d'un signalement (`support:S`) ⇒ `unlink` best-effort du fichier disque
+Suppression d'une demande (`support:S`) ⇒ `unlink` best-effort du fichier disque
 puis suppression de la métadonnée, patron de `captain_router.delete_leg_attachment`.
 
 ---
@@ -296,16 +354,17 @@ transverse, pas une rubrique d'exploitation. Il **pré-remplit `page_url`** avec
 l'écran courant.
 
 > Un formulaire qu'il faut aller chercher dans un menu ne sera pas utilisé. C'est le
-> pré-remplissage de l'URL qui fait la différence entre un signalement exploitable
+> pré-remplissage de l'URL qui fait la différence entre une demande exploitable
 > et « ça bug quelque part ».
 
 ### Écrans
 
 | Écran | Contenu |
 |---|---|
-| `/support` | **Mes signalements** (tous, si `administrateur`) — liste filtrable par état, type, gravité. Compteur des `nouveau` pour l'admin |
+| `/support` | **Mes demandes** (toutes, si `administrateur`) — **non archivées**, liste filtrable par état, type, gravité. Compteur des `nouveau` pour l'admin |
 | `/support/nouveau` | Formulaire : type, gravité, titre, description, date de survenue, pièces jointes. Contexte technique en champs cachés / serveur |
-| `/support/{ref}` | Fiche : contexte technique, pièces jointes, fil de commentaires, actions selon le rôle |
+| `/support/{ref}` | Fiche : contexte technique, pièces jointes, fil de commentaires, actions selon le rôle. **Lecture seule si archivée** (§7.1) |
+| `/support/archives` | Demandes **archivées** (§7.1) — mêmes filtres, même cloisonnement |
 
 Composants Kairos existants (`.card`, `.badge`, `.pill`, `.alert`, `.btn`) — **aucun
 CSS nouveau**, aucun script inline (CSP stricte).
@@ -321,7 +380,7 @@ CSS nouveau**, aucun script inline (CSP stricte).
 | `administrateur` | **CMS** |
 | les 8 autres (`operation`, `armement`, `technique`, `data_analyst`, `marins`, `commercial`, `manager_maritime`, `rh`) | **CM** |
 
-`C` = voir · `M` = créer un signalement et commenter · `S` = supprimer
+`C` = voir · `M` = créer une demande et commenter · `S` = supprimer
 (`administrateur` seul).
 
 > `armement`, `commercial` et `rh` n'ont **aucun** accès au module `tickets`. C'est
@@ -336,7 +395,7 @@ plutôt que « voir tous ». Or c'est le cœur du besoin.
 **Deux règles vivent donc dans le routeur, pas dans la matrice** :
 
 1. **Cloisonnement de lecture** : un non-`administrateur` ne voit que les
-   signalements dont il est le demandeur. Sur `/support/{ref}`, un accès à celui d'un
+   demandes dont il est le demandeur. Sur `/support/{ref}`, un accès à celle d'un
    autre renvoie **404** (pas 403 — un 403 confirmerait l'existence de la
    ressource).
 2. **Tri réservé** : changement d'état (hors les deux transitions du demandeur, §7)
@@ -354,9 +413,14 @@ de sécurité. Le contrôle de rôle est explicite et testé.
 
 | Événement | Cible |
 |---|---|
-| Signalement créé | `target_role="administrateur"` |
+| Demande créée | `target_role="administrateur"` |
 | Changement d'état | `target_user_id` = le demandeur |
 | Commentaire **non interne** | l'autre partie (demandeur ↔ assigné) |
+
+> **Pas d'e-mail à ce stade** — arbitré par Yasmin le 2026-08-21. La cloche de
+> notification suffit pour la v1. `services/email.py` reste disponible si l'usage
+> montre que l'administrateur passe à côté des demandes ; le brancher plus tard est
+> un ajout de quelques lignes, sans reprise du modèle.
 
 **Audit** : `services.activity.record()` sur création, changement d'état,
 assignation, commentaire, ajout et suppression de pièce jointe. `module="support"`.
@@ -394,7 +458,7 @@ l'escalade SLA. On ne reproduit pas ça.
 ### Intégration — `tests/integration/test_support_screens.py`
 
 - Les 3 écrans rendent.
-- **Cloisonnement** : l'utilisateur A ne voit pas le signalement de B (**404**), et
+- **Cloisonnement** : l'utilisateur A ne voit pas la demande de B (**404**), et
   ne l'a pas dans sa liste.
 - **Tri réservé** : un non-admin qui tente un changement d'état non autorisé ⇒ 403.
 - **Les deux transitions du demandeur** fonctionnent.
@@ -403,6 +467,24 @@ l'escalade SLA. On ne reproduit pas ça.
   refusé (magic number incohérent) ; **téléchargement interdit à un tiers**.
 - Notification créée à l'ouverture, ciblée `administrateur`.
 - `activity_logs` écrit sur chaque mutation.
+
+### Archivage — `tests/integration/test_support_archives.py`
+
+Le défaut du module `tickets` étant précisément qu'une donnée devient inatteignable,
+ces tests portent sur l'**atteignabilité**, pas sur le filtrage :
+
+- Une demande `clos` depuis **89 jours** est dans `/support`, **absente** de
+  `/support/archives`.
+- À **91 jours** : l'inverse — et **toujours consultable** en détail.
+- Une demande **non terminale** ancienne de 2 ans **n'est jamais archivée** (le
+  critère est l'état terminal, pas l'âge seul).
+- Une demande archivée est en **lecture seule** : commentaire et changement d'état
+  refusés.
+- Le **cloisonnement s'applique aussi aux archives** : A ne voit pas les archives de
+  B.
+- Les **pièces jointes d'une demande archivée restent téléchargeables** par le
+  demandeur et l'admin — l'archivage ne doit pas devenir une perte d'accès
+  silencieuse.
 
 ### Non-régression — différenciation (§1)
 
@@ -469,25 +551,38 @@ propre attendue, à revérifier le jour venu.
 | Bloc | Charge |
 |---|---|
 | Modèle + migration | 0,5 j |
-| Service (états, référence séquentielle, requêtes) | 1 j |
+| Service (états, référence séquentielle, requêtes, prédicat d'archivage) | 1 j |
 | Routeur + cloisonnement de lecture + gardes de tri | 1 j |
 | Pièces jointes (upload, téléchargement contrôlé, suppression) | 0,75 j |
-| 3 gabarits + lien permanent | 1 j |
+| 4 gabarits (liste, formulaire, fiche, archives) + lien permanent | 1,25 j |
 | i18n ×5 | 0,5 j |
-| Tests (unit + intégration + non-régression), avec sabotage de chaque garde | 1,25 j |
-| **Total** | **≈ 6 jours** |
+| Tests (unit + intégration + archives + non-régression), avec sabotage de chaque garde | 1,5 j |
+| **Total** | **≈ 6,5 jours** |
+
+L'archivage coûte peu (+0,5 j) parce qu'il est **dérivé** : pas de colonne, pas de
+cron, pas de migration supplémentaire. L'essentiel de la charge est l'écran
+d'archives et ses tests d'atteignabilité.
 
 ---
 
-## 16. Décisions à confirmer avant implémentation
+## 16. Décisions — arbitrées le 2026-08-21
 
-1. **Le libellé « Signalements »** convient-il, ou préfères-tu « Assistance » /
-   « Support » ? C'est le pivot de la différenciation avec « Tickets escale ».
-2. **`kind` à trois valeurs** (`bug` / `question` / `amelioration`) — suffisant, ou
-   une quatrième catégorie manque ?
-3. **Notification par e-mail** en plus de la cloche ? `services/email.py` existe et
-   dégrade silencieusement sans SMTP. Utile si l'admin ne se connecte pas tous les
-   jours.
-4. **Rétention** : que devient un signalement `clos` après N mois ? La table
-   `ALLOWED_PURGE_TABLES` de l'admin permet une purge par rétention — faut-il y
-   inscrire ces 3 tables dès maintenant ?
+| # | Question | Décision |
+|---|---|---|
+| 1 | Libellé de la rubrique | ✅ **« Assistance »** (contre « Signalements »). Objet = « demande d'assistance », action d'entrée = « Signaler un problème » |
+| 2 | Valeurs de `kind` | ✅ **`bug` / `question` / `amelioration`** — proposition retenue sans objection. Ajouter une valeur plus tard est une clé i18n et une entrée de tuple, pas une migration |
+| 3 | Notification e-mail | ✅ **Non à ce stade.** Cloche seule. `services/email.py` reste branchable sans reprise du modèle |
+| 4 | Rétention | ✅ **Archivage à 3 mois, PAS de purge.** État dérivé sans colonne ni cron (§7.1), **avec** l'écran d'archives dans le même lot |
+
+**Plus aucune décision bloquante.** La spec est complète pour l'implémentation.
+
+### Ce qui restera à décider plus tard, en connaissance de cause
+
+- **Ouverture aux clients** (`/me`) puis au **portail expéditeur** (`/p/{token}`) —
+  la colonne `client_id` réserve la place, le canal non authentifié demandera un
+  traitement anti-abus.
+- **Seuil d'archivage réglable** — constante nommée aujourd'hui, à déplacer en
+  configuration seulement si le besoin apparaît.
+- **Correction du module `tickets`** : collision de référence (§6) et écran
+  d'archives manquant (§7.1). Deux défauts réels, à porter dans un lot dédié à ce
+  module — pas ici.
