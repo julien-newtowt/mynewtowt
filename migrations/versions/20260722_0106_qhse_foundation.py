@@ -13,7 +13,7 @@ Crée le socle du module QHSE (sécurité/qualité/environnement) :
   workflows containment/prévention, en 1:0..1 avec ``qhse_reports``.
 
 Revision ID: 20260722_0106
-Revises: 20260709_0105
+Revises: 20260807_0113
 Create Date: 2026-07-22
 """
 
@@ -24,7 +24,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260722_0106"
-down_revision = "20260709_0105"
+down_revision = "20260807_0113"
 branch_labels = None
 depends_on = None
 
