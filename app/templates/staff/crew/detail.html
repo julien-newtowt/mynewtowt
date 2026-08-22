@@ -35,6 +35,7 @@
   <div class="flex gap-2">
     {% if member.schengen_status == 'compliant' %}<span class="pill pill-ok">Schengen OK</span>
     {% elif member.schengen_status == 'warning' %}<span class="pill pill-warn">Schengen Warning</span>
+    {% elif member.schengen_status == 'indetermine' %}<span class="pill pill-neutral" title="Des embarquements existent hors de portée de ce calcul (plannings Marad, affectation sans voyage). La conformité Schengen fait foi dans Marad.">Schengen non calculé — voir Marad</span>
     {% else %}<span class="pill pill-error">Non-compliant</span>{% endif %}
     <a href="/crew/members/{{ member.id }}/edit" class="btn btn-secondary btn-sm">✎ Modifier</a>
     <form method="post" action="/crew/members/{{ member.id }}/toggle-active" style="display:inline;">

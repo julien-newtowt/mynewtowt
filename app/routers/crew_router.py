@@ -354,7 +354,12 @@ async def crew_compliance(
             days = (m.seaman_book_expires_at - today).days
             if days <= 30:
                 warnings.append(f"Seaman book expire dans {days} j")
-        if m.schengen_status != "compliant":
+        # `indetermine` est une ABSENCE d'information, pas un avertissement : la
+        # pastille le dit déjà, et la conformité Schengen fait foi dans Marad
+        # (qui notifie l'Armement en amont). L'ajouter ici produirait du bruit
+        # sur presque tous les marins, puisque leurs embarquements viennent de
+        # Marad et que ce calcul ne les exploite pas.
+        if m.schengen_status not in ("compliant", "indetermine"):
             warnings.append(
                 f"Schengen {m.schengen_status}"
                 + (f" ({m.schengen_days_in_window} j)" if m.schengen_days_in_window else "")
