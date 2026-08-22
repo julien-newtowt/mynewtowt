@@ -69,18 +69,33 @@ async def cargo_index(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "C")),
 ) -> HTMLResponse:
-    """List bookings that are 'issuable' (confirmed or beyond)."""
+    """List bookings that are 'issuable' (confirmed or beyond).
+
+    Le nom du client et le code du leg sont joints ici : la liste affichait
+    auparavant les identifiants techniques bruts (``#42``, ``17``), obligeant
+    les agents à ouvrir chaque booking pour retrouver de quel client et de
+    quelle traversée il s'agissait (demande Opérations, 2026-07).
+
+    Jointures externes : ``client_account_id`` est nullable (booking saisi côté
+    staff pour un client non inscrit), et on préfère afficher la ligne sans nom
+    plutôt que de la faire disparaître.
+    """
     issuable_statuses = ("confirmed", "loaded", "at_sea", "discharged", "delivered")
     res = await db.execute(
-        select(Booking)
+        select(Booking, ClientAccount.company_name, Leg.leg_code)
+        .outerjoin(ClientAccount, ClientAccount.id == Booking.client_account_id)
+        .outerjoin(Leg, Leg.id == Booking.leg_id)
         .where(Booking.status.in_(issuable_statuses))
         .order_by(Booking.created_at.desc())
         .limit(200)
     )
-    bookings = list(res.scalars().all())
+    rows = [
+        {"booking": b, "client_name": company_name, "leg_code": leg_code}
+        for b, company_name, leg_code in res.all()
+    ]
     return templates.TemplateResponse(
         "staff/cargo/index.html",
-        {"request": request, "user": user, "bookings": bookings},
+        {"request": request, "user": user, "rows": rows},
     )
 
 
