@@ -22,9 +22,12 @@ def generated_docs_for(booking: Booking) -> list[dict]:
     discharged = booking.status in ("discharged", "delivered")
     return [
         {
+            # §5.4 — le connaissement ne se génère plus depuis le booking : il vit
+            # dans le registre, par lot de packing list, et un booking peut en porter
+            # plusieurs. D'où un lien vers la LISTE et non vers un document unique.
             "kind": "bl",
             "label": "Bill of Lading",
-            "url": f"/me/bookings/{ref}/bl.pdf",
+            "url": f"/me/bookings/{ref}/bls",
             "available": not_draft,
         },
         {

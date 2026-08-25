@@ -61,11 +61,12 @@
   <h2>Documents générables</h2>
   <p class="text-muted">Cliquer pour générer/télécharger en PDF (rendu serveur WeasyPrint, charte NEWTOWT).</p>
   <div class="flex gap-3 mt-3" style="flex-wrap:wrap;">
-    <a href="/cargo/booking/{{ booking.reference }}/bl.pdf" target="_blank" class="btn btn-primary">
-      Bill of Lading
-    </a>
-    <a href="/cargo/booking/{{ booking.reference }}/bl.docx" class="btn btn-ghost" hx-boost="false" title="Bill of Lading éditable (Word)">
-      Bill of Lading .docx
+    {# §5.4 — le connaissement ne se génère plus depuis le booking. Il vit dans le
+       registre : un numéro attribué une fois, un état, une signature, un registre de
+       remise. L'ancien document était fabriqué à la volée et se présentait comme un
+       connaissement sans en être un. Le chemin passe donc par la packing list. #}
+    <a href="/cargo/packing-lists" class="btn btn-primary">
+      Connaissements (packing list)
     </a>
     <a href="/cargo/booking/{{ booking.reference }}/packing-list.pdf" target="_blank" class="btn btn-secondary">
       Packing List

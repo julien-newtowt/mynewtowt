@@ -161,6 +161,23 @@ async def booking_detail(
     if booking.status in _VOYAGE_STARTED:
         conditions = await hold_conditions_svc.for_leg(db, booking.leg_id)
     voyage_url = f"{settings.site_url.rstrip('/')}/voyage/{booking.reference}"
+
+    # §5.4 — transition entre les deux rails de connaissement. Le rail packing list
+    # produit de VRAIS connaissements numérotés et suivis ; le rail booking génère un
+    # document à la volée depuis le booking. Tant que les deux existent, on préfère
+    # le premier **quand il a produit quelque chose**, et on garde le second sinon —
+    # retirer l'ancien avant priverait certains clients de tout document.
+    from app.models.packing_list import PackingListBatch
+
+    pl_bl_count = (
+        await db.execute(
+            select(func.count(PackingListBatch.id))
+            .join(PackingList, PackingListBatch.packing_list_id == PackingList.id)
+            .where(PackingList.booking_id == booking.id)
+            .where(PackingListBatch.bl_number.is_not(None))
+        )
+    ).scalar_one()
+
     return templates.TemplateResponse(
         "client/booking_detail.html",
         {
@@ -169,6 +186,7 @@ async def booking_detail(
             "booking": booking,
             "messages": messages,
             "positions": positions,
+            "pl_bl_count": pl_bl_count,
             "target_zones": {p["zone"] for p in positions},
             "decks": DECKS,
             "holds": HOLDS,

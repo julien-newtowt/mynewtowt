@@ -54,6 +54,14 @@
               <div class="field"><label>{{ t("pt_packing_consignee_address", lang) }}</label><input name="consignee_address" value="{{ b.consignee_address or '' }}" /></div>
               <div class="field"><label>{{ t("pt_packing_consignee_city", lang) }}</label><input name="consignee_city" value="{{ b.consignee_city or '' }}" /></div>
               <div class="field"><label>{{ t("pt_packing_consignee_country", lang) }}</label><input name="consignee_country" value="{{ b.consignee_country or '' }}" /></div>
+              {# Notify party — saisi par l'expéditeur (décision Yasmin 2026-08-03).
+                 Les colonnes existaient déjà en base et figuraient dans
+                 AUDITABLE_FIELDS : seule leur exposition ici manquait, si bien que
+                 le BL sortait sans notify party. #}
+              <div class="field"><label>{{ t("pt_notify", lang) }}</label><input name="notify_name" value="{{ b.notify_name or '' }}" /></div>
+              <div class="field"><label>{{ t("pt_packing_notify_address", lang) }}</label><input name="notify_address" value="{{ b.notify_address or '' }}" /></div>
+              <div class="field"><label>{{ t("pt_packing_notify_city", lang) }}</label><input name="notify_city" value="{{ b.notify_city or '' }}" /></div>
+              <div class="field"><label>{{ t("pt_packing_notify_country", lang) }}</label><input name="notify_country" value="{{ b.notify_country or '' }}" /></div>
               <div class="field"><label>{{ t("pt_packing_weight_kg", lang) }}</label><input name="weight_kg" type="number" step="0.1" value="{{ b.weight_kg or '' }}" /></div>
               <div class="field"><label>{{ t("pt_packing_length_cm", lang) }}</label><input name="length_cm" type="number" step="0.1" value="{{ b.length_cm or '' }}" /></div>
               <div class="field"><label>{{ t("pt_packing_width_cm", lang) }}</label><input name="width_cm" type="number" step="0.1" value="{{ b.width_cm or '' }}" /></div>
@@ -99,6 +107,7 @@
       <div class="field"><label>{{ t("pt_packing_value_usd", lang) }}</label><input name="cargo_value_usd" type="number" step="0.01" /></div>
       <div class="field"><label>{{ t("pt_shipper", lang) }}</label><input name="shipper_name" type="text" /></div>
       <div class="field"><label>{{ t("pt_consignee", lang) }}</label><input name="consignee_name" type="text" /></div>
+      <div class="field"><label>{{ t("pt_notify", lang) }}</label><input name="notify_name" type="text" /></div>
     </div>
     <button type="submit" class="btn btn-primary btn-sm">+ {{ t("pt_packing_add_batch_btn", lang) }}</button>
   </form>

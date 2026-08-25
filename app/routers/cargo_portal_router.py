@@ -34,8 +34,9 @@ from app.models.packing_list import (
 )
 from app.models.port import Port
 from app.models.vessel import Vessel
-from app.services import cargo_excel, rate_limit
+from app.services import bl_workflow, cargo_excel, rate_limit
 from app.services import hold_conditions as hold_conditions_svc
+from app.services.activity import record as activity_record
 from app.services.packing_list import (
     apply_batch_update,
     can_modify,
@@ -58,6 +59,68 @@ from app.utils.file_validation import validate_size
 _PORTAL_DOC_KINDS = ("customs", "msds", "other")
 
 router = APIRouter(prefix="/p", tags=["cargo-portal"])
+
+
+def _portal_actor(pl: PackingList) -> str:
+    """Libellé d'acteur pour la piste d'audit — **jamais le token**.
+
+    Le portail n'a pas de compte utilisateur : `activity_logs.user_id` reste
+    `NULL` et l'identité se lit dans `user_name`. Le préfixe `portal:` distingue
+    sans ambiguïté une action de l'expéditeur d'une action du staff, et le numéro
+    de packing list rattache l'action à son dossier — la piste précédente
+    n'enregistrait que `actor="client"`, sans jamais dire de quel dossier.
+
+    ⚠️ **On ne nomme volontairement personne.** Le portail est **anonyme par
+    conception** : quiconque détient le lien peut agir, et ce peut être un
+    transitaire plutôt que l'expéditeur lui-même. Écrire un nom de société
+    laisserait croire à une attribution personnelle que rien ne vérifie. Le
+    dossier est identifié, l'IP est enregistrée, et l'expéditeur déclaré reste
+    lisible sur chaque batch (`PackingListBatch.shipper_name`) — c'est
+    suffisant pour reconstituer qui a déclaré quoi, sans surinterpréter.
+
+    (La spécification suggérait `portal:{shipper_name}` en supposant ce champ
+    porté par `PackingList` : il est en réalité porté par **le batch**, et une
+    packing list vide n'en a aucun.)
+
+    Le token n'apparaît nulle part : il n'est journalisé qu'en SHA-256 dans
+    `portal_access_logs` (cf. docstring du module).
+    """
+    return f"portal:PL{pl.id}"
+
+
+async def _portal_trace(
+    db: AsyncSession,
+    request: Request,
+    pl: PackingList,
+    *,
+    action: str,
+    entity_type: str,
+    entity_id: int | None,
+    entity_label: str | None = None,
+    detail: str | None = None,
+) -> None:
+    """Trace une mutation du portail dans `activity_logs` (viewer `/admin`).
+
+    Comble le trou d'audit relevé au §14.2 : les mutations du portail
+    alimentaient la piste `PackingListAudit` (champ par champ, et pas pour
+    toutes les routes) mais **jamais** `activity_logs`, le journal append-only
+    consulté depuis `/admin/activity-logs`. Rien de ce que faisait un expéditeur
+    n'y apparaissait — c'est pourtant cette piste qu'un P&I club demande à
+    l'ouverture d'un dossier.
+    """
+    await activity_record(
+        db,
+        action=action,
+        user_id=None,  # accès par token : aucun compte utilisateur
+        user_name=_portal_actor(pl),
+        user_role="portal",
+        module="cargo",
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_label=entity_label,
+        detail=detail,
+        ip_address=_client_ip(request),
+    )
 
 
 async def _load_or_410(db: AsyncSession, token: str, request: Request) -> PackingList:
@@ -164,7 +227,17 @@ async def portal_packing_add(token: str, request: Request, db: AsyncSession = De
     # Valeurs typées ; on ne passe au constructeur que les champs renseignés
     # (les colonnes à défaut — pallet_format/pallet_count — gardent leur défaut).
     vals = {k: v for k, v in coerce_batch_form(dict(await request.form())).items() if v is not None}
-    await create_batch(db, pl=pl, vals=vals, actor="client", actor_name=None)
+    batch = await create_batch(db, pl=pl, vals=vals, actor="client", actor_name=_portal_actor(pl))
+    await _portal_trace(
+        db,
+        request,
+        pl,
+        action="create",
+        entity_type="packing_batch",
+        entity_id=batch.id,
+        entity_label=f"PL {pl.id} — lot {batch.batch_number}",
+        detail=f"{batch.pallet_count}×{batch.pallet_format}",
+    )
     return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
 
 
@@ -178,6 +251,23 @@ async def _portal_batch_or_404(
     return b
 
 
+def _assert_bl_not_frozen(batch: PackingListBatch) -> None:
+    """409 si le lot porte un BL signé.
+
+    ⚠️ **Comportement identique côté staff** (`cargo_packing_router`) : le gel du BL
+    ne doit pas dépendre du chemin d'écriture emprunté. Un garde-fou qui ne
+    s'applique qu'à une interface se contourne par l'autre.
+    """
+    if bl_workflow.is_frozen(batch):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"BL {batch.bl_number or batch.batch_number} signé "
+                f"({batch.bl_state}) — ce lot n'est plus modifiable."
+            ),
+        )
+
+
 @router.post("/{token}/packing/batches/{batch_id}/edit")
 async def portal_packing_edit(
     token: str, batch_id: int, request: Request, db: AsyncSession = Depends(get_db)
@@ -187,13 +277,34 @@ async def portal_packing_edit(
     if not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     batch = await _portal_batch_or_404(db, pl, batch_id)
-    await apply_batch_update(
+    _assert_bl_not_frozen(batch)
+    changed = await apply_batch_update(
         db,
         batch=batch,
         new_values=coerce_batch_form(dict(await request.form())),
         actor="client",
-        actor_name=None,
+        actor_name=_portal_actor(pl),
     )
+    # Une soumission sans changement réel n'est pas une modification : ne rien
+    # tracer évite de noyer la piste sous des lignes vides (le détail
+    # champ-par-champ reste dans `PackingListAudit`).
+    if changed:
+        # Une modification effective annule une validation client antérieure : le
+        # BL repasse en draft. L'expéditeur PEUT modifier au stade draft — c'est
+        # l'exigence métier — mais la validation ne survit pas au changement.
+        await bl_workflow.invalidate_validation_on_edit(
+            db, batch=batch, actor_name=_portal_actor(pl), ip=_client_ip(request)
+        )
+        await _portal_trace(
+            db,
+            request,
+            pl,
+            action="update",
+            entity_type="packing_batch",
+            entity_id=batch.id,
+            entity_label=f"PL {pl.id} — lot {batch.batch_number}",
+            detail=f"{changed} champ(s) modifié(s)",
+        )
     return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
 
 
@@ -206,15 +317,30 @@ async def portal_packing_delete(
     if not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     batch = await _portal_batch_or_404(db, pl, batch_id)
+    _assert_bl_not_frozen(batch)
+    label = f"PL {pl.id} — lot {batch.batch_number}"
+    removed = f"{batch.pallet_count}×{batch.pallet_format}"
     await record_audit(
         db,
         packing_list_id=pl.id,
         batch_id=batch_id,
         actor="client",
-        actor_name=None,
+        actor_name=_portal_actor(pl),
         field="_delete_batch",
-        old_value=f"{batch.pallet_count}×{batch.pallet_format}",
+        old_value=removed,
         new_value=None,
+    )
+    # Tracé AVANT la suppression : après, ni le numéro de lot ni son contenu ne
+    # seraient plus lisibles pour construire le libellé.
+    await _portal_trace(
+        db,
+        request,
+        pl,
+        action="delete",
+        entity_type="packing_batch",
+        entity_id=batch_id,
+        entity_label=label,
+        detail=removed,
     )
     await db.delete(batch)
     await db.flush()
@@ -270,20 +396,85 @@ async def portal_packing_import_xlsx(
         .scalars()
         .all()
     )
-    for b in existing:
-        await db.delete(b)
-    await db.flush()
+    # 🔴 Même règle que côté staff : cet import REMPLACE les lots. Un lot au BL
+    # signé serait détruit et compté comme importé. Refus en bloc.
+    frozen = [b for b in existing if bl_workflow.is_frozen(b)]
+    if frozen:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "import refusé : "
+                + ", ".join(f"lot {b.batch_number} ({b.bl_state})" for b in frozen)
+                + " — un lot dont le connaissement est signé ne peut pas être remplacé."
+            ),
+        )
+    # ⚠️ UPSERT, plus « delete-all + recreate » — même correctif que côté staff. Un
+    # garde-fou qui n'existerait que d'un côté se contournerait par l'autre porte.
+    # L'ancien remplacement détruisait les lots, donc leur `bl_number` : chaque import
+    # consommait des numéros de connaissement et cassait les liens déjà transmis.
+    actor = _portal_actor(pl)
+    by_number = {b.batch_number: b for b in existing if b.batch_number is not None}
+    seen: set[int] = set()
+    updated = created = 0
     for vals in parsed:
-        await create_batch(db, pl=pl, vals=vals, actor="client", actor_name=None)
+        row = dict(vals)
+        match_number = row.pop(cargo_excel.MATCH_KEY, None)
+        target = by_number.get(match_number) if match_number is not None else None
+        if target is not None:
+            seen.add(target.id)
+            changed = await apply_batch_update(
+                db, batch=target, new_values=row, actor="client", actor_name=actor
+            )
+            if changed:
+                await bl_workflow.invalidate_validation_on_edit(
+                    db, batch=target, actor_name=actor, ip=_client_ip(request)
+                )
+            updated += 1
+        else:
+            await create_batch(db, pl=pl, vals=row, actor="client", actor_name=actor)
+            created += 1
+    await db.flush()
+
+    # Absents de l'import : supprimés seulement s'ils ne portent pas de connaissement.
+    kept_numbered: list[str] = []
+    removed = 0
+    for b in existing:
+        if b.id in seen:
+            continue
+        if b.bl_number:
+            kept_numbered.append(b.bl_number)
+            continue
+        await db.delete(b)
+        removed += 1
+    await db.flush()
+    replaced = removed
+
+    summary = f"{updated} mis à jour, {created} créés, {removed} supprimés"
+    if kept_numbered:
+        summary += (
+            f", {len(kept_numbered)} conservés car déjà numérotés ({', '.join(kept_numbered)})"
+        )
     await record_audit(
         db,
         packing_list_id=pl.id,
         batch_id=None,
         actor="client",
-        actor_name=None,
+        actor_name=actor,
         field="_import_excel",
         old_value=None,
-        new_value=f"{len(parsed)} batches importés",
+        new_value=summary,
+    )
+    # Le nombre de lots REMPLACÉS est la donnée sensible de cet import : il
+    # écrase l'existant. Sans elle, on ne sait pas ce qui a disparu.
+    await _portal_trace(
+        db,
+        request,
+        pl,
+        action="import",
+        entity_type="packing_list",
+        entity_id=pl.id,
+        entity_label=f"PL {pl.id} — import Excel",
+        detail=f"{replaced} lot(s) remplacé(s) par {len(parsed)} lot(s) importé(s)",
     )
     return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
 
@@ -343,10 +534,20 @@ async def portal_documents_upload(
         packing_list_id=pl.id,
         batch_id=None,
         actor="client",
-        actor_name=None,
+        actor_name=_portal_actor(pl),
         field="_upload_document",
         old_value=None,
         new_value=doc.label,
+    )
+    await _portal_trace(
+        db,
+        request,
+        pl,
+        action="upload",
+        entity_type="packing_document",
+        entity_id=doc.id,
+        entity_label=f"PL {pl.id} — {doc.label}",
+        detail=f"type={doc.kind}",
     )
     return RedirectResponse(url=f"/p/{token}/documents", status_code=303)
 
@@ -382,6 +583,7 @@ async def portal_documents_delete(
         with contextlib.suppress(UploadRejected, FileNotFoundError):
             resolve_path(doc.file_path).unlink(missing_ok=True)
     label = doc.label
+    kind = doc.kind
     await db.delete(doc)
     await db.flush()
     await record_audit(
@@ -389,10 +591,22 @@ async def portal_documents_delete(
         packing_list_id=pl.id,
         batch_id=None,
         actor="client",
-        actor_name=None,
+        actor_name=_portal_actor(pl),
         field="_delete_document",
         old_value=label,
         new_value=None,
+    )
+    # Suppression d'une pièce jointe (douane, FDS…) : la trace doit survivre au
+    # fichier, sinon la disparition d'un document devient indétectable.
+    await _portal_trace(
+        db,
+        request,
+        pl,
+        action="delete",
+        entity_type="packing_document",
+        entity_id=doc_id,
+        entity_label=f"PL {pl.id} — {label}",
+        detail=f"type={kind}",
     )
     return RedirectResponse(url=f"/p/{token}/documents", status_code=303)
 
@@ -402,8 +616,33 @@ async def portal_packing_submit(token: str, request: Request, db: AsyncSession =
     pl = await _load_or_410(db, token, request)
     if not can_modify(pl):
         raise HTTPException(status_code=409)
+    previous = pl.status
     pl.status = "submitted"
     await db.flush()
+    # Cette route n'était tracée NULLE PART — ni `PackingListAudit`, ni
+    # `activity_logs` — alors qu'elle change l'état de la packing list. C'est
+    # l'acte par lequel l'expéditeur déclare sa saisie terminée : le moment le
+    # plus utile à datter en cas de litige sur le contenu déclaré.
+    await record_audit(
+        db,
+        packing_list_id=pl.id,
+        batch_id=None,
+        actor="client",
+        actor_name=_portal_actor(pl),
+        field="status",
+        old_value=previous,
+        new_value="submitted",
+    )
+    await _portal_trace(
+        db,
+        request,
+        pl,
+        action="submit",
+        entity_type="packing_list",
+        entity_id=pl.id,
+        entity_label=f"PL {pl.id} — soumission",
+        detail=f"{previous} → submitted",
+    )
     return RedirectResponse(url=f"/p/{token}/packing", status_code=303)
 
 
@@ -440,15 +679,29 @@ async def portal_message_post(
     db: AsyncSession = Depends(get_db),
 ):
     pl = await _load_or_410(db, token, request)
-    db.add(
-        PortalMessage(
-            packing_list_id=pl.id,
-            sender="client",
-            sender_name=sender_name.strip()[:200],
-            body=body.strip(),
-        )
+    msg = PortalMessage(
+        packing_list_id=pl.id,
+        sender="client",
+        sender_name=sender_name.strip()[:200],
+        body=body.strip(),
     )
+    db.add(msg)
     await db.flush()
+    # Trace le FAIT qu'un message a été posté, jamais son contenu : le corps est
+    # déjà persisté dans `portal_messages` et peut contenir des données
+    # commerciales ou personnelles. Le journal d'audit est consultable par tout
+    # profil ayant accès à `/admin/activity-logs` — le dupliquer y étendrait la
+    # surface de lecture sans bénéfice d'audit.
+    await _portal_trace(
+        db,
+        request,
+        pl,
+        action="message",
+        entity_type="portal_message",
+        entity_id=msg.id,
+        entity_label=f"PL {pl.id} — message de l'expéditeur",
+        detail=f"{len(msg.body)} caractère(s)",
+    )
     return RedirectResponse(url=f"/p/{token}/messages", status_code=303)
 
 

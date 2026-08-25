@@ -1,0 +1,15 @@
+# Empreintes de faux positifs gitleaks — format : <commit>:<fichier>:<règle>:<ligne>
+#
+# ⚠️ Pourquoi une empreinte et non seulement une annotation `gitleaks:allow` :
+# gitleaks scanne la PLAGE DE COMMITS d'une pull request, pas seulement l'état
+# courant des fichiers. Une annotation en ligne ne protège donc que les commits qui
+# la contiennent — le commit qui a introduit la ligne reste flaggé, et comme la
+# réécriture d'historique est interdite ici, l'annotation ne peut jamais l'atteindre.
+# L'empreinte, elle, désigne explicitement le commit fautif.
+#
+# Ne jamais ajouter une empreinte sans avoir vérifié que le secret est bien FAUX.
+
+# Faux token de portail dans une fixture de test : 24 caractères hexadécimaux, soit
+# la forme exacte produite par `packing_list.generate_token`. Aucun secret réel — la
+# valeur n'a jamais existé ailleurs que dans ce test.
+1cb1d40e1aea7564bf0282fe3face6300fdf00a2:tests/integration/test_portal_activity_trace.py:generic-api-key:47

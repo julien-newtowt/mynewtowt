@@ -22,11 +22,10 @@ from app.models.packing_list import (
     PortalMessage,
 )
 from app.permissions import require_permission
-from app.services import cargo_excel
+from app.services import bl_workflow, cargo_excel
 from app.services.activity import record as activity_record
 from app.services.packing_list import (
     apply_batch_update,
-    assign_bl_number,
     can_modify,
     coerce_batch_form,
     create_batch,
@@ -120,7 +119,11 @@ async def packing_list_detail(
     ).scalar_one_or_none()
     if pl is None:
         raise HTTPException(status_code=404)
-    order = await db.get(Order, pl.order_id)
+    # ⚠️ `order_id` est NULL pour une packing list issue d'un BOOKING (XOR
+    # `ck_packing_lists_order_xor_booking`) — c'est le cas normal du rail client, pas
+    # une anomalie. Sans cette garde, `db.get(Order, None)` déclenche un SAWarning
+    # « fully NULL primary key » à chaque affichage de ces packing lists.
+    order = await db.get(Order, pl.order_id) if pl.order_id else None
     messages = list(
         (
             await db.execute(
@@ -137,9 +140,46 @@ async def packing_list_detail(
     from app.services import messaging
 
     await messaging.mark_portal_read(db, pl_id, reader="staff")
+
+    # §5.0 — date de mise à bord résolue par lot (dérivée de la timeline d'escale,
+    # ou override justifié). Calculée ici et non dans le gabarit : la dérivation
+    # interroge la base, et un gabarit ne doit pas déclencher de requêtes.
+    _o, _b, leg, _v, _pol, _pod = await resolve_pl_context(db, pl)
+    sob_by_batch = {
+        batch.id: await bl_workflow.resolve_shipped_on_board(
+            db, batch=batch, leg_id=leg.id if leg else None
+        )
+        for batch in pl.batches
+    }
+
+    # §5.1 — registre de remise par lot.
+    from app.services import bl_delivery
+
+    delivery_by_batch = {
+        batch.id: await bl_delivery.delivery_status(db, batch_id=batch.id) for batch in pl.batches
+    }
+
+    # §4.1 — documents annulés par une révision. Affichés : un registre doit montrer
+    # ce qui a circulé, pas seulement l'état courant.
+    revisions_by_batch = {
+        batch.id: await bl_workflow.revisions_for_batch(db, batch_id=batch.id)
+        for batch in pl.batches
+    }
+
     return templates.TemplateResponse(
         "staff/cargo/packing_list_detail.html",
-        {"request": request, "user": user, "pl": pl, "order": order, "messages": messages},
+        {
+            "request": request,
+            "user": user,
+            "pl": pl,
+            "order": order,
+            "messages": messages,
+            "sob_by_batch": sob_by_batch,
+            "delivery_by_batch": delivery_by_batch,
+            "revisions_by_batch": revisions_by_batch,
+            "suggested_means": bl_delivery.SUGGESTED_MEANS,
+            "number_of_originals": bl_delivery.NUMBER_OF_ORIGINALS,
+        },
     )
 
 
@@ -245,6 +285,24 @@ async def _get_batch_or_404(db: AsyncSession, pl_id: int, batch_id: int) -> Pack
     return b
 
 
+def _assert_bl_not_frozen(batch: PackingListBatch) -> None:
+    """409 si le lot porte un BL signé — la correction passe par une révision.
+
+    ⚠️ À appeler **avant** toute écriture. Le verrou de la packing list
+    (``can_modify``) et le gel du BL sont **indépendants** : le premier est porté
+    par la packing list, le second par le lot. Vérifier l'un ne dispense pas de
+    vérifier l'autre.
+    """
+    if bl_workflow.is_frozen(batch):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"BL {batch.bl_number or batch.batch_number} signé "
+                f"({batch.bl_state}) — corriger par révision numérotée, pas par édition."
+            ),
+        )
+
+
 @router.post("/{pl_id}/batches/{batch_id}/edit")
 async def edit_batch(
     pl_id: int,
@@ -258,14 +316,21 @@ async def edit_batch(
     if pl is None or not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     batch = await _get_batch_or_404(db, pl_id, batch_id)
+    # ⚠️ Le gel se vérifie AVANT toute écriture : contrôler après aurait laissé la
+    # modification s'appliquer sur un connaissement signé, ce qui est précisément
+    # ce qu'on interdit.
+    _assert_bl_not_frozen(batch)
     new_values = coerce_batch_form(dict(await request.form()))
-    await apply_batch_update(
-        db,
-        batch=batch,
-        new_values=new_values,
-        actor="staff",
-        actor_name=user.full_name or user.username,
+    actor = user.full_name or user.username
+    changed = await apply_batch_update(
+        db, batch=batch, new_values=new_values, actor="staff", actor_name=actor
     )
+    # Une modification effective après validation client ANNULE cette validation
+    # et ramène le BL à `draft` — une validation porte sur un contenu précis.
+    if changed:
+        await bl_workflow.invalidate_validation_on_edit(
+            db, batch=batch, actor_name=actor, ip=_client_ip(request)
+        )
     return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
 
 
@@ -282,6 +347,10 @@ async def delete_batch(
     if pl is None or not can_modify(pl):
         raise HTTPException(status_code=409, detail="packing list verrouillée")
     batch = await _get_batch_or_404(db, pl_id, batch_id)
+    # Un lot portant un BL signé ne se supprime pas : le registre doit rester
+    # opposable. La correction passe par une révision qui annule la précédente,
+    # les deux restant tracées.
+    _assert_bl_not_frozen(batch)
     await record_audit(
         db,
         packing_list_id=pl_id,
@@ -358,6 +427,104 @@ async def packing_list_history(
     )
 
 
+@router.post("/{pl_id}/batches/{batch_id}/bl/draft")
+async def generate_bl_draft(
+    pl_id: int,
+    batch_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """Génère le draft de BL et attribue son numéro. **Écriture ⇒ POST.**
+
+    ⚠️ Ce que cette route corrige. L'émission passait par un `GET` en permission
+    `cargo:C` qui **écrivait en base** :
+
+    - un `GET` qui écrit s'exécute sur un **préchargement de lien**, un scan de
+      sécurité ou un passage de crawler — donc des connaissements émis en série,
+      avec des numéros consommés, sans que personne ne l'ait demandé ;
+    - `cargo:C` est la permission de **consultation** : elle autorise `technique`,
+      `data_analyst` et **`marins`** à émettre un titre de propriété.
+
+    La génération est donc en `POST` + `cargo:M`, et la consultation reste en `GET`
+    + `cargo:C` mais **n'écrit plus rien**.
+    """
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    if not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    batch = await _get_batch_or_404(db, pl_id, batch_id)
+    _order, _booking, leg, _vessel, _pol, _pod = await resolve_pl_context(db, pl)
+    try:
+        await bl_workflow.generate_draft(
+            db, pl=pl, batch=batch, leg=leg, user=user, ip=_client_ip(request)
+        )
+    except bl_workflow.InvalidTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return RedirectResponse(
+        url=f"/cargo/packing-lists/{pl_id}/batches/{batch_id}/bl.pdf", status_code=303
+    )
+
+
+@router.post("/{pl_id}/batches/{batch_id}/bl/shipped-on-board")
+async def override_bl_shipped_on_board(
+    pl_id: int,
+    batch_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """§5.0 — corrige la date de mise à bord, **justification obligatoire**.
+
+    La date effective est normalement **dérivée** du dernier jour des opérations
+    réelles d'escale. Cette route ne sert qu'aux cas où la timeline ne reflète pas
+    la réalité (SOF saisi en retard, par exemple).
+
+    Le motif est exigé : un connaissement antidaté est une fraude documentaire, et
+    le journal demandé « en cas de contrôle » n'a de valeur que s'il porte le
+    pourquoi. Un refus renvoie **400** (donnée d'entrée invalide), un BL signé
+    **409** (la correction passe alors par une révision).
+    """
+    from datetime import date as _date
+
+    from app.services.derived_override import JustificationRequired
+
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    if not can_modify(pl):
+        raise HTTPException(status_code=409, detail="packing list verrouillée")
+    batch = await _get_batch_or_404(db, pl_id, batch_id)
+
+    form = dict(await request.form())
+    raw_date = str(form.get("shipped_on_board") or "").strip()
+    try:
+        new_date = _date.fromisoformat(raw_date)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="date de mise à bord invalide (format attendu AAAA-MM-JJ)"
+        ) from exc
+
+    _order, _booking, leg, _vessel, _pol, _pod = await resolve_pl_context(db, pl)
+    try:
+        await bl_workflow.override_shipped_on_board(
+            db,
+            batch=batch,
+            leg_id=leg.id if leg else None,
+            new_date=new_date,
+            reason=str(form.get("reason") or ""),
+            user=user,
+            ip=_client_ip(request),
+        )
+    except JustificationRequired as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except bl_workflow.BlFrozen as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+
+
 @router.get("/{pl_id}/batches/{batch_id}/bl.pdf")
 async def batch_bill_of_lading(
     pl_id: int,
@@ -365,13 +532,26 @@ async def batch_bill_of_lading(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "C")),
 ) -> Response:
-    """CARGO-01 — Bill of Lading d'un batch (numéro persistant, anti-doublon)."""
+    """CARGO-01 — rend le BL d'un lot. **Lecture seule : n'attribue plus de numéro.**
+
+    Un lot sans BL généré renvoie 404 : la consultation ne crée pas le document.
+    Passer par `POST .../bl/draft` pour le générer.
+    """
     pl = await db.get(PackingList, pl_id)
     if pl is None:
         raise HTTPException(status_code=404)
     batch = await _get_batch_or_404(db, pl_id, batch_id)
+    if not batch.bl_number:
+        raise HTTPException(
+            status_code=404,
+            detail="aucun BL généré pour ce lot — utiliser l'action « Générer le draft ».",
+        )
     _order, _booking, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
-    bl_number = await assign_bl_number(db, pl, batch, leg)
+    bl_number = batch.bl_number
+    # §5.0 — résolue ici (la dérivation interroge la base ; le rendu est synchrone).
+    sob = await bl_workflow.resolve_shipped_on_board(
+        db, batch=batch, leg_id=leg.id if leg else None
+    )
     doc = render_bill_of_lading_from_pl(
         pl=pl,
         batch=batch,
@@ -381,6 +561,7 @@ async def batch_bill_of_lading(
         pod=pod,
         bl_number=bl_number,
         issued_at=batch.bl_issued_at,
+        shipped_on_board=sob,
     )
     return Response(
         content=doc.pdf,
@@ -532,12 +713,73 @@ async def packing_list_import_xlsx(
     if not parsed:
         raise HTTPException(status_code=400, detail="aucune ligne exploitable dans le fichier")
     actor_name = user.full_name or user.username
-    # Remplacement : on vide les batches existants puis on recrée depuis l'import.
-    for b in list(pl.batches):
-        await db.delete(b)
-    await db.flush()
+    # 🔴 Cet import REMPLACE les lots existants. S'il en reste un dont le BL est
+    # signé, l'import détruirait un titre opposable — et le compterait comme
+    # « importé ». On refuse en bloc plutôt que d'importer partiellement : un
+    # import à moitié appliqué sur un registre de connaissements est pire qu'un
+    # refus.
+    frozen = [b for b in pl.batches if bl_workflow.is_frozen(b)]
+    if frozen:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "import refusé : "
+                + ", ".join(f"BL {b.bl_number or b.batch_number} ({b.bl_state})" for b in frozen)
+                + " — un lot signé ne peut pas être remplacé par un import."
+            ),
+        )
+    # ⚠️ UPSERT, plus « delete-all + recreate ». L'ancien remplacement détruisait les
+    # lots existants, donc leur `bl_number` : chaque import CONSOMMAIT des numéros de
+    # connaissement et cassait les liens déjà transmis au client. Un registre ne se
+    # reconstruit pas à chaque import de tableur.
+    #
+    # Rapprochement par `batch_number` (colonne `BATCH_NUMBER` de l'export). Une ligne
+    # sans clé exploitable est une création.
+    by_number = {b.batch_number: b for b in pl.batches if b.batch_number is not None}
+    seen: set[int] = set()
+    updated = created = 0
     for vals in parsed:
-        await create_batch(db, pl=pl, vals=vals, actor="staff", actor_name=actor_name)
+        row = dict(vals)
+        match_number = row.pop(cargo_excel.MATCH_KEY, None)
+        existing = by_number.get(match_number) if match_number is not None else None
+        if existing is not None:
+            seen.add(existing.id)
+            # `apply_batch_update` audite champ par champ et ne touche NI `bl_number`
+            # NI l'état du BL — c'est tout l'intérêt du rapprochement.
+            changed = await apply_batch_update(
+                db, batch=existing, new_values=row, actor="staff", actor_name=actor_name
+            )
+            if changed:
+                await bl_workflow.invalidate_validation_on_edit(
+                    db, batch=existing, actor_name=actor_name, ip=_client_ip(request)
+                )
+            updated += 1
+        else:
+            await create_batch(db, pl=pl, vals=row, actor="staff", actor_name=actor_name)
+            created += 1
+    await db.flush()
+
+    # Lots absents de l'import. On ne supprime que ceux qui NE PORTENT PAS de
+    # connaissement : détruire un lot numéroté consommerait son numéro sans retour et
+    # casserait un lien déjà remis au client. Les autres sont conservés — et le dit,
+    # plutôt que de laisser croire à une synchronisation complète.
+    kept_numbered: list[str] = []
+    removed = 0
+    for b in list(pl.batches):
+        if b.id in seen:
+            continue
+        if b.bl_number:
+            kept_numbered.append(b.bl_number)
+            continue
+        await db.delete(b)
+        removed += 1
+    await db.flush()
+
+    summary = f"{updated} mis à jour, {created} créés, {removed} supprimés"
+    if kept_numbered:
+        summary += (
+            f", {len(kept_numbered)} conservés car déjà numérotés ({', '.join(kept_numbered)})"
+        )
     await record_audit(
         db,
         packing_list_id=pl.id,
@@ -546,7 +788,7 @@ async def packing_list_import_xlsx(
         actor_name=actor_name,
         field="_import_excel",
         old_value=None,
-        new_value=f"{len(parsed)} batches importés",
+        new_value=summary,
     )
     await activity_record(
         db,
@@ -567,4 +809,178 @@ async def packing_list_import_xlsx(
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
+    )
+
+
+@router.post("/{pl_id}/batches/{batch_id}/bl/confirm-delivery")
+async def ops_confirm_bl_delivery(
+    pl_id: int,
+    batch_id: int,
+    request: Request,
+    file: UploadFile | None = File(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """§5.1 — repli Opérations : attester d'une remise **hors plateforme**.
+
+    > « Si les BLs sont envoyés en papier par exemple, l'équipe opérations pourra
+    > confirmer la réception côté client en ajoutant la date et heure de
+    > confirmation et moyen (téléphone, mail, etc.) + PJ possible. »
+
+    L'attestation est tracée **comme un repli** : elle n'est jamais présentée comme
+    une déclaration du client. Le **moyen** de remise est obligatoire — une
+    attestation qui ne dit pas *comment* la remise a eu lieu n'établit rien face à un
+    assureur (400 s'il manque).
+
+    Refusée tant que le connaissement n'est pas signé : avant la signature aucun
+    original n'existe (409).
+    """
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+
+    from app.services import bl_delivery
+    from app.services.safe_files import UploadRejected, save_upload
+
+    if content_length_exceeds_max(request.headers.get("content-length")):
+        raise HTTPException(status_code=413, detail="fichier trop volumineux")
+
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    batch = await _get_batch_or_404(db, pl_id, batch_id)
+
+    form = dict(await request.form())
+    raw_when = str(form.get("confirmed_at") or "").strip()
+    try:
+        # `datetime-local` rend « AAAA-MM-JJTHH:MM » (sans fuseau) : on l'ancre en
+        # UTC plutôt que de laisser une valeur naïve entrer en base.
+        when = _dt.fromisoformat(raw_when)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="date et heure de confirmation invalides (format attendu AAAA-MM-JJTHH:MM)",
+        ) from exc
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=_UTC)
+
+    attachment_path = None
+    if file is not None and getattr(file, "filename", None):
+        content = await file.read()
+        # Le header Content-Length est falsifiable : on revérifie après lecture.
+        size_check = validate_size(content)
+        if not size_check.ok:
+            raise HTTPException(status_code=413, detail=size_check.reason)
+        try:
+            attachment_path, _mime = save_upload(
+                content, file.filename or "preuve", subdir="bl-delivery"
+            )
+        except UploadRejected as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        await bl_delivery.confirm_by_ops(
+            db,
+            batch=batch,
+            user=user,
+            confirmed_at=when,
+            means=str(form.get("means") or ""),
+            notes=str(form.get("notes") or ""),
+            attachment_path=attachment_path,
+            ip=_client_ip(request),
+        )
+    except bl_delivery.MeansRequired as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except bl_delivery.DeliveryReceiptError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+
+
+@router.post("/{pl_id}/batches/{batch_id}/bl/revise")
+async def revise_bl(
+    pl_id: int,
+    batch_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "M")),
+):
+    """§4.1 — révise un connaissement **signé** : archive l'ancien, en ouvre un neuf.
+
+    C'est la seule correction possible après signature. Le document annulé n'est ni
+    modifié ni supprimé : il est archivé avec son numéro, son empreinte, son signataire
+    et le contenu exact qui avait été signé.
+
+    Le nouveau document repart à `draft` — le client devra **revalider** et le
+    commandant **resigner**. Une révision est un document neuf, pas un correctif
+    appliqué sous une signature déjà donnée.
+
+    400 si le motif manque, 409 si le connaissement n'est pas signé (auquel cas la
+    correction passe par l'édition ordinaire).
+    """
+    from app.services.derived_override import JustificationRequired
+
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    batch = await _get_batch_or_404(db, pl_id, batch_id)
+    form = dict(await request.form())
+    try:
+        await bl_workflow.create_revision(
+            db,
+            batch=batch,
+            user=user,
+            reason=str(form.get("reason") or ""),
+            ip=_client_ip(request),
+        )
+    except JustificationRequired as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except bl_workflow.InvalidTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+
+
+@router.get("/{pl_id}/batches/{batch_id}/bl.docx")
+async def batch_bill_of_lading_docx(
+    pl_id: int,
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("cargo", "C")),
+) -> Response:
+    """BL éditable (Word) d'un lot — **lecture seule**, comme la version PDF.
+
+    Remplace `/cargo/booking/{ref}/bl.docx` (rail booking retiré) : celui-ci
+    fabriquait un numéro à la volée sans jamais l'enregistrer, et écrivait « Trois
+    originaux signés » y compris sur un document que personne n'avait signé.
+    """
+    from app.services.docx_generator import build_bill_of_lading_docx_from_pl
+
+    pl = await db.get(PackingList, pl_id)
+    if pl is None:
+        raise HTTPException(status_code=404)
+    batch = await _get_batch_or_404(db, pl_id, batch_id)
+    if not batch.bl_number:
+        raise HTTPException(
+            status_code=404,
+            detail="aucun BL généré pour ce lot — utiliser l'action « Générer le draft ».",
+        )
+    _order, _booking, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
+    sob = await bl_workflow.resolve_shipped_on_board(
+        db, batch=batch, leg_id=leg.id if leg else None
+    )
+    doc = build_bill_of_lading_docx_from_pl(
+        pl=pl,
+        batch=batch,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        bl_number=batch.bl_number,
+        issued_at=batch.bl_issued_at,
+        shipped_on_board=sob,
+    )
+    return Response(
+        content=doc.docx,
+        media_type=doc.mime,
+        headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
     )

@@ -30,7 +30,6 @@ from app.permissions import require_permission
 from app.services.anemos import resolve_distance_nm
 from app.services.pdf_generator import (
     render_anemos_certificate,
-    render_bill_of_lading,
     render_booking_note,
     render_invoice,
     render_packing_list,
@@ -132,24 +131,6 @@ async def cargo_booking_detail(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/cargo/booking/{ref}/bl.pdf")
-async def staff_bl_pdf(
-    ref: str,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("cargo", "C")),
-) -> Response:
-    return await _bl_response(db, ref)
-
-
-@router.get("/cargo/booking/{ref}/bl.docx")
-async def staff_bl_docx(
-    ref: str,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("cargo", "C")),
-) -> Response:
-    return await _bl_docx_response(db, ref)
-
-
 @router.get("/cargo/booking/{ref}/packing-list.pdf")
 async def staff_pl_pdf(
     ref: str,
@@ -188,24 +169,6 @@ async def staff_co2_pdf_legacy(ref: str):
 # ---------------------------------------------------------------------------
 # Client PDF endpoints (owner-only)
 # ---------------------------------------------------------------------------
-
-
-@router.get("/me/bookings/{ref}/bl.pdf")
-async def client_bl_pdf(
-    ref: str,
-    client=Depends(get_current_client),
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    return await _bl_response(db, ref, owner_client_id=client.id)
-
-
-@router.get("/me/bookings/{ref}/bl.docx")
-async def client_bl_docx(
-    ref: str,
-    client=Depends(get_current_client),
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    return await _bl_docx_response(db, ref, owner_client_id=client.id)
 
 
 @router.get("/me/bookings/{ref}/packing-list.pdf")
@@ -289,43 +252,6 @@ def _docx_response(doc) -> Response:
         media_type=doc.mime,
         headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
     )
-
-
-async def _bl_response(db, ref, owner_client_id=None) -> Response:
-    booking = await _get_booking(db, ref, owner_client_id)
-    if booking.status in ("draft",):
-        raise HTTPException(
-            status_code=400,
-            detail="Bill of Lading not available until the booking is confirmed",
-        )
-    leg, vessel, pol, pod, client = await _load_booking_bundle(db, booking)
-    doc = render_bill_of_lading(
-        booking=booking, leg=leg, vessel=vessel, pol=pol, pod=pod, client=client
-    )
-    return _pdf_response(doc)
-
-
-async def _bl_docx_response(db, ref, owner_client_id=None) -> Response:
-    """Bill of Lading au format Word (.docx) — même garde que la version PDF."""
-    booking = await _get_booking(db, ref, owner_client_id)
-    if booking.status in ("draft",):
-        raise HTTPException(
-            status_code=400,
-            detail="Bill of Lading not available until the booking is confirmed",
-        )
-    leg, vessel, pol, pod, client = await _load_booking_bundle(db, booking)
-    from app.services.docx_generator import build_bill_of_lading_docx
-
-    doc = build_bill_of_lading_docx(
-        booking=booking,
-        leg=leg,
-        vessel=vessel,
-        pol=pol,
-        pod=pod,
-        client=client,
-        bl_number=f"TUAW_{booking.leg_id}_{booking.id}",
-    )
-    return _docx_response(doc)
 
 
 async def _packing_response(db, ref, owner_client_id=None) -> Response:
@@ -412,3 +338,278 @@ async def _co2_response(db, ref, owner_client_id=None) -> Response:
         crew=crew,
     )
     return _pdf_response(doc)
+
+
+# ---------------------------------------------------------------------------
+# Rail packing list côté client — connaissements du booking
+# ---------------------------------------------------------------------------
+#
+# Cf. `docs/strategy/SPEC_WORKFLOW_BILL_OF_LADING.md` §4.1 et §5.4.
+#
+# ⚠️ Pourquoi ces routes existent. Le rail packing list produit **un
+# connaissement par lot** (`PackingListBatch`), alors que l'URL client historique
+# est au niveau du **booking** — un booking pouvant porter plusieurs lots, il n'y a
+# pas de « le » BL du booking. D'où une **liste** puis un document par lot, et non
+# une route unique.
+#
+# Ces routes sont aussi le **préalable au retrait du rail booking** (§5.4) : le
+# retirer avant priverait le client de tout accès à son connaissement.
+#
+# Le contrôle de propriété passe par `_get_booking(..., owner_client_id=client.id)`
+# qui renvoie **404** et non 403 pour un booking étranger : un 403 confirmerait
+# l'existence de la référence.
+
+
+async def _booking_batches_with_bl(db: AsyncSession, booking: Booking) -> list:
+    """Lots du booking portant un BL, du plus ancien au plus récent."""
+    from app.models.packing_list import PackingList, PackingListBatch
+
+    stmt = (
+        select(PackingListBatch)
+        .join(PackingList, PackingListBatch.packing_list_id == PackingList.id)
+        .where(PackingList.booking_id == booking.id)
+        .where(PackingListBatch.bl_number.is_not(None))
+        .order_by(PackingListBatch.bl_number)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def _owned_batch_or_404(db: AsyncSession, booking: Booking, batch_id: int):
+    """Le lot demandé appartient-il bien à CE booking ?
+
+    Sans cette vérification, un client authentifié pourrait lire le connaissement
+    d'un autre en devinant un `batch_id` — la référence de booking dans l'URL ne
+    suffit pas, c'est le lot qui porte le document.
+    """
+    from app.models.packing_list import PackingList, PackingListBatch
+
+    stmt = (
+        select(PackingListBatch)
+        .join(PackingList, PackingListBatch.packing_list_id == PackingList.id)
+        .where(PackingList.booking_id == booking.id)
+        .where(PackingListBatch.id == batch_id)
+    )
+    batch = (await db.execute(stmt)).scalar_one_or_none()
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return batch
+
+
+@router.get("/me/bookings/{ref}/bls", response_class=HTMLResponse)
+async def client_bl_list(
+    ref: str,
+    request: Request,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Connaissements du booking : état, document, action de validation."""
+    from app.services import bl_delivery
+
+    booking = await _get_booking(db, ref, owner_client_id=client.id)
+    batches = await _booking_batches_with_bl(db, booking)
+    # §5.1 — état de remise par lot. Calculé ici : un gabarit ne doit pas
+    # déclencher de requêtes.
+    delivery = {b.id: await bl_delivery.delivery_status(db, batch_id=b.id) for b in batches}
+    return templates.TemplateResponse(
+        request,
+        "client/bl_list.html",
+        {
+            "booking": booking,
+            "batches": batches,
+            "client": client,
+            "delivery": delivery,
+            "number_of_originals": bl_delivery.NUMBER_OF_ORIGINALS,
+        },
+    )
+
+
+@router.get("/me/bookings/{ref}/bl/{batch_id}.pdf")
+async def client_batch_bl_pdf(
+    ref: str,
+    batch_id: int,
+    request: Request,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Connaissement d'un lot.
+
+    N'émet ni ne modifie le connaissement. Consigne en revanche l'**accès** dans le
+    registre de remise (§5.1) quand le document est un original signé — un accès
+    n'est jamais compté comme une réception.
+    """
+    from app.services import bl_workflow
+    from app.services.packing_list import resolve_pl_context
+    from app.services.pdf_generator import render_bill_of_lading_from_pl
+
+    booking = await _get_booking(db, ref, owner_client_id=client.id)
+    batch = await _owned_batch_or_404(db, booking, batch_id)
+    if not batch.bl_number:
+        raise HTTPException(status_code=404, detail="aucun connaissement pour ce lot")
+
+    from app.models.packing_list import PackingList
+
+    pl = await db.get(PackingList, batch.packing_list_id)
+    if pl is None:
+        # Ne devrait pas arriver (le lot a été trouvé PAR sa packing list), mais un
+        # crash obscur sur une donnée incohérente vaut moins qu'un 404 explicite.
+        raise HTTPException(status_code=404, detail="Not found")
+    _o, _b, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
+    sob = await bl_workflow.resolve_shipped_on_board(
+        db, batch=batch, leg_id=leg.id if leg else None
+    )
+    doc = render_bill_of_lading_from_pl(
+        pl=pl,
+        batch=batch,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        bl_number=batch.bl_number,
+        issued_at=batch.bl_issued_at,
+        shipped_on_board=sob,
+    )
+
+    # §5.1 — registre de remise. Consigner un ACCÈS sur un `GET` est assumé : c'est
+    # le propre d'un journal d'accès, et son absence viderait le registre de son
+    # intérêt. Deux garde-fous encadrent le risque :
+    #  - un accès à un PROJET n'est pas consigné (aucun original n'existe encore) ;
+    #  - un accès n'est JAMAIS compté comme une réception
+    #    (`bl_delivery.has_client_acknowledgement` ignore ce canal).
+    # Un préchargement de lien ne peut donc gonfler qu'un compteur de consultations,
+    # jamais produire une preuve de remise.
+    from app.services import bl_delivery
+
+    await bl_delivery.record_download(
+        db,
+        batch=batch,
+        client=client,
+        ip=request.headers.get("x-forwarded-for")
+        or (request.client.host if request.client else None),
+    )
+    return _pdf_response(doc)
+
+
+@router.post("/me/bookings/{ref}/bl/{batch_id}/validate")
+async def client_validate_bl(
+    ref: str,
+    batch_id: int,
+    request: Request,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """Validation du draft **par le client titulaire** du booking (§4.1).
+
+    C'est bien le compte authentifié `/me` qui valide, **pas** le portail
+    expéditeur `/p/{token}` : celui-ci est anonyme par conception et ne peut donc
+    pas engager le client.
+
+    Une modification ultérieure du contenu annulera cette validation et ramènera le
+    BL à `draft` (règle de régression) — une validation porte sur un contenu précis.
+    """
+    from app.services import bl_workflow
+
+    booking = await _get_booking(db, ref, owner_client_id=client.id)
+    batch = await _owned_batch_or_404(db, booking, batch_id)
+    try:
+        await bl_workflow.validate_by_client(
+            db,
+            batch=batch,
+            client=client,
+            ip=request.headers.get("x-forwarded-for")
+            or (request.client.host if request.client else None),
+        )
+    except bl_workflow.InvalidTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return Response(
+        status_code=status.HTTP_303_SEE_OTHER, headers={"Location": f"/me/bookings/{ref}/bls"}
+    )
+
+
+@router.post("/me/bookings/{ref}/bl/{batch_id}/confirm-receipt")
+async def client_confirm_bl_receipt(
+    ref: str,
+    batch_id: int,
+    request: Request,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """§5.1 — le client **déclare** avoir reçu les originaux.
+
+    C'est la preuve la plus forte du registre de remise, parce qu'elle vient du
+    client lui-même. Refusée tant que le connaissement n'est pas signé : avant la
+    signature aucun original n'existe, et confirmer la réception d'un projet
+    n'établirait rien.
+    """
+    from app.services import bl_delivery
+
+    booking = await _get_booking(db, ref, owner_client_id=client.id)
+    batch = await _owned_batch_or_404(db, booking, batch_id)
+    form = dict(await request.form())
+    try:
+        await bl_delivery.confirm_by_client(
+            db,
+            batch=batch,
+            client=client,
+            notes=str(form.get("notes") or ""),
+            ip=request.headers.get("x-forwarded-for")
+            or (request.client.host if request.client else None),
+        )
+    except bl_delivery.DeliveryReceiptError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return Response(
+        status_code=status.HTTP_303_SEE_OTHER,
+        headers={"Location": f"/me/bookings/{ref}/bls"},
+    )
+
+
+@router.get("/me/bookings/{ref}/bl/{batch_id}.docx")
+async def client_batch_bl_docx(
+    ref: str,
+    batch_id: int,
+    request: Request,
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """BL éditable (Word) d'un lot — remplace `/me/bookings/{ref}/bl.docx`.
+
+    Même cloisonnement que la version PDF : le lot doit appartenir à CE booking, et
+    l'accès à un original est consigné au registre de remise (§5.1).
+    """
+    from app.models.packing_list import PackingList
+    from app.services import bl_delivery, bl_workflow
+    from app.services.docx_generator import build_bill_of_lading_docx_from_pl
+    from app.services.packing_list import resolve_pl_context
+
+    booking = await _get_booking(db, ref, owner_client_id=client.id)
+    batch = await _owned_batch_or_404(db, booking, batch_id)
+    if not batch.bl_number:
+        raise HTTPException(status_code=404, detail="aucun connaissement pour ce lot")
+
+    pl = await db.get(PackingList, batch.packing_list_id)
+    if pl is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    _o, _b, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
+    sob = await bl_workflow.resolve_shipped_on_board(
+        db, batch=batch, leg_id=leg.id if leg else None
+    )
+    doc = build_bill_of_lading_docx_from_pl(
+        pl=pl,
+        batch=batch,
+        leg=leg,
+        vessel=vessel,
+        pol=pol,
+        pod=pod,
+        bl_number=batch.bl_number,
+        issued_at=batch.bl_issued_at,
+        shipped_on_board=sob,
+    )
+    await bl_delivery.record_download(
+        db,
+        batch=batch,
+        client=client,
+        ip=request.headers.get("x-forwarded-for")
+        or (request.client.host if request.client else None),
+    )
+    return _docx_response(doc)
