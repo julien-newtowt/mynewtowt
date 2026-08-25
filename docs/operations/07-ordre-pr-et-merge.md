@@ -23,6 +23,67 @@ signaler dans la PR et fusionner dans l'ordre.
 
 ---
 
+## 1 bis. 🔴 Contrainte structurante — un seul valideur, absent jusqu'au 17 août
+
+**Julien est la seule personne compétente pour valider une fusion vers `main`**
+(confirmé par Yasmin le 2026-08-03). Ce n'est pas une question de droits GitHub :
+c'est la seule personne en mesure de juger techniquement un merge. Il est en
+congés **jusqu'au 2026-08-17**.
+
+**Conséquence : rien ne part sur `main` avant son retour.** Y compris la fusion
+Alembic, qui débloque pourtant tout lot portant une migration.
+
+### Stratégie retenue : tout préparer, ne rien fusionner
+
+Attendre passivement coûterait **2,5 semaines** sur une fenêtre qui se termine en
+septembre. On empile donc **délibérément**, en assumant l'exception au principe
+directeur ci-dessus :
+
+```
+main
+ └── fix/alembic-merge-heads          ← lot 3, tête unique Alembic (à valider en 1er)
+      ├── lot workflow BL             ← porte une migration ⇒ dérive du lot 3
+      ├── lot relèves d'équipage      ← portera une migration ⇒ dérive du lot 3
+      └── lot J9 horodatage           ← porte une migration ⇒ dérive du lot 3
+```
+
+**Pourquoi c'est acceptable ici** : `alembic revision` exige une tête unique. Un
+lot portant une migration et branché sur `main` produirait une révision rattachée
+à l'une des deux têtes divergentes — donc une migration **à refaire** après la
+fusion. Brancher sur le lot 3 évite ce travail perdu.
+
+**Ce que ça impose, sans exception** :
+
+1. **Chaque PR de lot dérivé mentionne explicitement sa dépendance** au lot 3 en
+   tête de description, avec la mention « ne pas fusionner avant le lot 3 ».
+2. **L'ordre de fusion du §2 devient impératif**, pas indicatif : fusionner un
+   lot dérivé avant le lot 3 emporterait la migration de fusion avec lui et
+   brouillerait l'historique de schéma.
+3. **Après la fusion du lot 3**, chaque lot dérivé est rebasé sur `main` avant sa
+   propre fusion (cf. §3.3), puis la suite complète est rejouée.
+4. Les lots **sans migration** continuent de partir de `main` directement et
+   restent indépendants — on n'empile que ce qui doit l'être.
+
+### Séquence prévue au retour de Julien (2026-08-17)
+
+| Ordre | Lot | Action |
+|---|---|---|
+| 1 | `chore/ci-integration-tests` (PR #149) | Sortir du brouillon → relecture → fusion. **Le filet d'abord**, il valide tous les suivants |
+| 2 | `docs/decouverte-fonctionnelle` | Doc seule, parallélisable |
+| 3 | `fix/alembic-merge-heads` | ⚠️ **Validation Julien indispensable** — touche l'historique de schéma. Débloque 4, 6, 7, 8 |
+| 4 | `feat/ops-quickwins` | Sans migration, peut passer avant le 3 |
+| 5 | `fix/crew-indicators-honest` | Dérive du lot 1 ⇒ après lui |
+| 6 | Lot workflow BL | Rebase sur `main` après le 3, puis fusion |
+| 7 | Lot relèves d'équipage | Idem — **et** en attente des réponses de l'Armement |
+| 8 | Lot J9 horodatage | Idem |
+
+> ⚠️ **À ne pas oublier au retour** : rejouer la suite **complète** après *chaque*
+> fusion (§3.3), et non une seule fois à la fin. Huit fusions d'affilée sans
+> revérification, c'est exactement la façon de casser `main` — l'incident que la
+> protection de branche absente (RAF R3) ne rattraperait pas.
+
+---
+
 ## 2. Ordre recommandé
 
 | # | Lot / branche | Contenu | Pourquoi à cette place | Risque |
@@ -32,14 +93,120 @@ signaler dans la PR et fusionner dans l'ordre.
 | **3** | `fix/alembic-merge-heads` — **prête, en attente de validation manager** | Migration **de fusion pure** `20260730_0113_merge_heads.py` (aucun DDL) raccordant les deux `head` divergents (`20260716_0112` MRV / `20260720_0107` rapports générés) | 🔴 **Bloquant pour tout lot ultérieur portant une migration**, et pour tout déploiement (la production utilise Alembic exclusivement). Voir RAF R1. ✅ Vérifié : **une seule tête**, `(mergepoint)` dans l'historique, `upgrade()`/`downgrade()` exécutables. Les deux chaînes touchent des tables **disjointes** ⇒ ordre d'application indifférent | 🟠 Modéré — historique de schéma. **Validation manager requise** |
 | **4** | `feat/ops-quickwins` (J2) | Alerte ETA en mer, nom client + `leg_code`, heures voile ×6, rail documentaire unique | Répond à 3 demandes Opérations + 1 bug de document client. **Aucune migration** ⇒ peut passer avant le lot 3 si besoin | 🟢 Faible |
 | **5** | Lot **workflow BL** | Draft → validation client → signature commandant → BL final, avec journalisation (voir `docs/strategy/SPEC_WORKFLOW_BILL_OF_LADING.md`) | **Nécessite une migration** ⇒ **dépend du lot 3**. Ferme l'exposition juridique du registre BL | 🟠 Modéré |
-| **6** | Lots suivants (J3 faux verts, J9 horodatage…) | cf. plan | J9 porte une migration (`atd < ata`) ⇒ dépend aussi du lot 3. ⏸️ **J3 en attente d'arbitrage** : l'analyse d'impact a révélé **deux registres d'embarquement parallèles** (RAF R9) — le périmètre du lot dépend de la réponse | selon lot |
+| **6** | `fix/crew-indicators-honest` (J3) | Double comptage des jours en mer corrigé (union d'ensembles de jours) · statut Schengen `indetermine` au lieu d'un « conforme » sans données · invariant « deux registres » dans `CLAUDE.md` | **Aucune migration.** Branchée **sur le lot 1** (ses éditions de `CLAUDE.md`, du journal et du plan s'appuient sur du contenu créé par le lot 1) ⇒ à fusionner **après** lui. Périmètre réduit après recueil du processus réel : le garde-fou passeport est **abandonné**, il aurait contraint l'agent d'escale qui ne décide pas les embarquements | 🟢 Faible — 2 services, 3 templates, 8 tests ajoutés dont 4 échouant sur l'ancien code |
+| **7** | Lot **relèves d'équipage** (à créer) | Simulation + décision des relèves + transmission PAF + note d'escale | ⏸️ **Bloqué en attente des fichiers Excel** (référence métier). C'est le vrai manque fonctionnel (RAF R11) : le processus vit aujourd'hui entièrement hors du logiciel | à évaluer |
+| **8** | Lots suivants (J9 horodatage…) | cf. plan | J9 porte une migration (`atd < ata`) ⇒ dépend aussi du lot 3 | selon lot |
 
 ### Lots existants à NE PAS fusionner en l'état
 
 | Branche | Raison |
 |---|---|
-| `feature/qhse-foundation` | 🔴 Contient deux défauts qui **détruisent des données** : un filtre par mot-clé (`test\|essai\|demo`) qui quarantaine et n'importe jamais des non-conformités ISM légitimes sans persister la perte, et un `rollback()` dans la boucle d'import qui annule les lignes déjà insérées tout en les comptant comme importées. Correctif de quelques heures, à faire **avant** tout merge. Voir `PROJECT_CONTEXT.md` §14.7 |
+| `feature/qhse-foundation` | 🔴 Contient deux défauts qui **détruisent des données** : un filtre par mot-clé (`test\|essai\|demo`) qui quarantaine et n'importe jamais des non-conformités ISM légitimes sans persister la perte, et un `rollback()` dans la boucle d'import qui annule les lignes déjà insérées tout en les comptant comme importées. Correctif de quelques heures, à faire **avant** tout merge. Voir `PROJECT_CONTEXT.md` §14.7.<br>ℹ️ Précisions du 2026-07-30 : **39 commits behind, 2 ahead**. Ses 2 commits ne touchent **que** les fichiers QHSE + i18n + `permissions.py` + `main.py` + `validation_engine.py` — **aucun recouvrement** avec les autres lots de la phase 2, et une fusion **ne supprimerait pas** le trombinoscope (vérifié par fusion à blanc). Le motif de blocage reste entier : ce sont les deux défauts de code, pas la divergence |
 | `feature/dashboard-env-integration`, `scratch/preintegration-rehearsal` | Divergentes de `main` (ahead/behind important). À arbitrer séparément, hors phase 2 |
+
+### Branches supprimées le 2026-07-30 (avec accord de Yasmin)
+
+Empreintes conservées ici : une branche supprimée reste récupérable
+(`git reflog`, ou `git branch <nom> <sha>`) tant que le ramasse-miettes n'est
+pas passé.
+
+| Branche | SHA au moment de la suppression | Vérification faite avant |
+|---|---|---|
+| `feature/crewing-monthly-yearbook` | `e936675` | `git cherry main <branche>` ⇒ **0 commit absent de `main`** (fusionnée par la PR #148). Supprimée en local **et** sur `origin` |
+| `feature/mrv-gaps-remediation` | `14e42f9` | **0 commit absent de `main`**, y compris pour la version `origin` qui divergeait de la copie locale (fusionnée par la PR #147). Supprimée en local **et** sur `origin` |
+| `backup/ci-lot-avant-rebase` | `3ebb5f1` | Local uniquement. Filet posé avant le rebase du lot 1 ; le rebase a réussi et le lot 1 est poussé + couvert par la PR #149 |
+
+**Sur le backup, la vérification méritait d'être poussée** — et elle a servi.
+`git cherry` signalait **4 commits sans équivalent** dans le lot 1. Trois étaient
+les commits de découverte, retrouvés dans `docs/decouverte-fonctionnelle`. Le
+quatrième, `2c4c757`, n'avait d'équivalent **nulle part** : c'est celui qui avait
+provoqué le conflit de rebase, et il avait été **scindé** en deux (le journal
+vers le lot 1, la correction de `PROJECT_CONTEXT.md` §7 vers le lot découverte
+sous `e48847d`). Un commit scindé ne peut correspondre à aucune empreinte.
+
+Contrôle de contenu ligne à ligne : sur 69 lignes ajoutées au journal par
+`2c4c757`, toutes survivent sauf celles **réécrites** par la résolution du
+conflit (l'item « §7 à corriger » est devenu « ✅ fait, commit `e48847d` »). Les
+faits substantiels sont tous présents : les deux identifiants de tête Alembic,
+les deux noms de migration, la note « fusion à valider ».
+
+> 🧭 **Leçon réutilisable** : `git cherry` ne détecte pas les commits **scindés**
+> lors d'un rebase — leur empreinte ne correspond plus. Avant toute suppression
+> de branche de sauvegarde, vérifier le **contenu**, pas seulement les
+> empreintes.
+
+> ⚠️ **Méthode** : évaluer un recouvrement avec `git diff main..branche` est
+> **faux** pour toute branche en retard — cela remonte ce que `main` a fait
+> évoluer, pas ce que la branche modifie. Toujours partir de
+> `git merge-base`, puis confirmer par une fusion à blanc
+> (`git merge-tree`). Cf. `PLAN_UPGRADE_PHASE2_2026-08.md` §11.
+
+---
+
+## 2 bis. État des branches — relevé du 2026-07-30
+
+Inventaire factuel de **toutes** les branches locales. « Ahead » et « behind » sont
+mesurés depuis la **base commune** avec `main`, jamais par `main..branche`
+(cf. avertissement de méthode ci-dessus).
+
+### Lots de la phase 2
+
+| Branche | Ahead | Behind | GitHub | Base | Lot | Action attendue |
+|---|---|---|---|---|---|---|
+| `chore/ci-integration-tests` | 23 | 0 | ✅ à jour · **PR #149 (brouillon)** | `main` | **1** | Sortir du brouillon, faire relire, fusionner |
+| `docs/decouverte-fonctionnelle` | 4 | 0 | ✅ à jour | `main` | **2** | PR à créer |
+| `fix/alembic-merge-heads` | 1 | 0 | ✅ à jour | `main` | **3** | **Validation manager** (historique de schéma), puis PR |
+| `feat/ops-quickwins` | 21 | 0 | ✅ à jour | `main` | **4** | PR à créer |
+| `fix/crew-indicators-honest` | 27 | 0 | ✅ à jour | `main` | **6** | PR à créer **après** fusion du lot 1 (dont elle contient les 23 commits) |
+
+**Au 2026-07-30, les 5 lots de la phase 2 sont tous sauvegardés sur `origin`.**
+Plus aucun travail n'existe uniquement en local — 26 commits l'étaient encore le
+matin (`feat/ops-quickwins` 21, `docs/decouverte-fonctionnelle` 4,
+`fix/alembic-merge-heads` 1).
+
+> Les 27 commits de `fix/crew-indicators-honest` = les 23 du lot 1 + ses 4 propres.
+> C'est voulu : ses éditions de `CLAUDE.md`, du journal et du plan s'appuient sur
+> du contenu créé par le lot 1. Sa PR n'affichera ses 4 commits qu'une fois le
+> lot 1 fusionné.
+
+### Hors phase 2
+
+| Branche | Ahead | Behind | GitHub | Statut |
+|---|---|---|---|---|
+| `feature/qhse-foundation` | 2 | 39 | ⚠️ diverge d'`origin` | 🔴 Ne pas fusionner : deux défauts détruisant des données (cf. tableau ci-dessus) |
+| `feature/dashboard-env-integration` | 16 | 39 | ⚠️ diverge d'`origin` | À arbitrer hors phase 2 |
+| `scratch/preintegration-rehearsal` | 18 | 18 | ⚠️ **non poussée** | Répétition d'intégration. **Seul travail restant en local uniquement.** À arbitrer hors phase 2 |
+
+Trois branches ont été **supprimées** le 2026-07-30 (cf. section dédiée
+ci-dessous) : les deux déjà fusionnées et le filet de rebase devenu sans objet.
+
+> ℹ️ `origin` porte aussi une dizaine de branches `claude/*` (archives de sessions
+> antérieures) et `fix/git-stabilization`, sans équivalent local. Hors périmètre
+> de la phase 2 ; à trier séparément.
+
+### Ordre de fusion conseillé — version courte
+
+```
+1. chore/ci-integration-tests     (PR #149)  ← le filet d'abord
+2. docs/decouverte-fonctionnelle              ← doc seule, parallélisable avec 1
+3. fix/alembic-merge-heads                    ← débloque toute migration + le déploiement
+4. feat/ops-quickwins                         ← sans migration, peut passer avant 3
+5. fix/crew-indicators-honest                 ← après 1 (elle en dérive)
+6. lot workflow BL                            ← après 3 (porte une migration)
+7. lot relèves d'équipage                     ← après réception des Excel
+8. J9 horodatage…                             ← après 3 (porte une migration)
+```
+
+**Deux règles qui ne se négocient pas** : rejouer la suite **complète** après
+chaque fusion (§3.3), et ne jamais fusionner `fix/alembic-merge-heads` sans
+validation manager. Tout lot portant une migration attend le lot 3.
+
+### Sauvegardes hors dépôt
+
+| Élément | État |
+|---|---|
+| Tag `pre-upgrade-2026-08` | ✅ poussé sur `origin` |
+| `pg_dump` de la base de dev | ✅ hors dépôt, **procédure de restauration testée** (135 tables, comptages vérifiés) |
 
 ---
 
