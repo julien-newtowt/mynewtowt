@@ -33,6 +33,7 @@
     {%- set v_finance = can_access(role, 'finance') -%}
     {%- set v_kpi = can_access(role, 'kpi') -%}
     {%- set v_mrv = can_access(role, 'mrv') -%}
+    {%- set v_qhse = can_access(role, 'qhse') -%}
     {%- set v_claims = can_access(role, 'claims') -%}
     {%- set v_analytics = can_access(role, 'analytics') -%}
     {%- set v_admin = can_access(role, 'admin') -%}
@@ -112,7 +113,7 @@
         </ul>
       </div>
 
-      {% if v_finance or v_kpi or v_planning or v_mrv or v_claims or v_analytics %}
+      {% if v_finance or v_kpi or v_planning or v_mrv or v_qhse or v_claims or v_analytics %}
       <div class="nav-group" data-group="performance">
         <button class="nav-group-toggle" aria-expanded="false">
           <span class="nav-group-title"><i data-lucide="trending-up"></i><span>{{ t('s_grp_performance', lang) }}</span></span>
@@ -131,6 +132,7 @@
           <!-- LOT 8 -->{% if v_mrv %}<li><a href="/mrv/qualite"><i data-lucide="shield-check"></i><span>{{ t('s_nav_mrv_qualite', lang) }}</span></a></li>{% endif %}
           <!-- LOT 10 -->{% if v_mrv %}<li><a href="/mrv/datasets"><i data-lucide="file-spreadsheet"></i><span>{{ t('s_nav_mrv_datasets', lang) }}</span></a></li>{% endif %}
           <!-- LOT 14 -->{% if v_mrv %}<li><a href="/mrv/archive/events"><i data-lucide="archive"></i><span>{{ t('s_nav_mrv_archive', lang) }}</span></a></li>{% endif %}
+          {% if v_qhse %}<li><a href="/qhse"><i data-lucide="shield-alert"></i><span>{{ t('s_nav_qhse', lang) }}</span></a></li>{% endif %}
           {% if v_claims %}<li><a href="/claims"><i data-lucide="shield-alert"></i><span>{{ t('s_nav_claims', lang) }}</span></a></li>{% endif %}
           {% if v_analytics %}<li><a href="/dashboard/analytics"><i data-lucide="bar-chart"></i><span>{{ t('s_nav_analytics', lang) }}</span></a></li>{% endif %}
         </ul>

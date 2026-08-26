@@ -111,6 +111,13 @@ from app.models.payslip import Payslip
 from app.models.planning_scenario import PlanningScenario, ScenarioLeg
 from app.models.planning_share import PlanningShare
 from app.models.port import Port
+from app.models.qhse import (
+    CorrectiveAction,
+    DeficiencyCode,
+    QhseReport,
+    QhseReportDeficiencyCode,
+    RootCauseEvaluation,
+)
 from app.models.quote import Quote, QuoteLine
 from app.models.rate_limit import RateLimitAttempt
 from app.models.role_permission import RolePermission
@@ -167,12 +174,14 @@ __all__ = [
     "ClientInvoice",
     "Co2Variable",
     "ContactRequest",
+    "CorrectiveAction",
     "CrewAssignment",
     "CrewCertification",
     "CrewLeave",
     "CrewMember",
     "CrewTicket",
     "DashboardParameter",
+    "DeficiencyCode",
     "DepartureEvent",
     "DockerShift",
     "EmissionFactor",
@@ -242,6 +251,8 @@ __all__ = [
     "PortConfig",
     "PortalAccessLog",
     "PortalMessage",
+    "QhseReport",
+    "QhseReportDeficiencyCode",
     "QualityCheckResult",
     "Quote",
     "QuoteLine",
@@ -251,6 +262,7 @@ __all__ = [
     "RateLimitAttempt",
     "RateOffer",
     "RolePermission",
+    "RootCauseEvaluation",
     "ScenarioLeg",
     "ScheduleRevision",
     "SilaeExportBatch",
