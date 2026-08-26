@@ -35,7 +35,9 @@ Seuils (cf. commentaire models/crew.py) : > 90 j → ``non_compliant`` ;
 
 from __future__ import annotations
 
+import unicodedata
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
@@ -112,6 +114,25 @@ SCHENGEN_STATUSES: tuple[str, ...] = (
 # « cuisinier » → ``cook`` (seule valeur anglophone de l'enum), les cinq
 # autres rôles existent tels quels (``capitaine``, ``second``,
 # ``chef_mecanicien``, ``lieutenant``, ``bosco``).
+# Enum canonique des fonctions à bord. Duplique volontairement `CREW_ROLES` de
+# `routers/crew_router` : le routeur importe ce service, l'inverse serait
+# circulaire. La dérive entre les deux est interdite par un test de parité
+# (`tests/integration/test_crew_role_vocabulary.py`) — préféré à un refactor du
+# routeur, qui n'apporterait rien de plus et toucherait des formulaires en place.
+CANONICAL_ROLES: tuple[str, ...] = (
+    "capitaine",
+    "second",
+    "chef_mecanicien",
+    "cook",
+    "lieutenant",
+    "bosco",
+    "marin",
+    "eleve_officier",
+    "electricien",
+    "ajusteur",
+    "matelot_cuisinier",
+)
+
 REQUIRED_ROLES: tuple[str, ...] = (
     "capitaine",
     "second",
@@ -133,6 +154,18 @@ ROLE_LABELS: dict[str, str] = {
 # Normalisation défensive : d'anciens écrans (cf. staff/crew/new.html)
 # ont pu enregistrer des rôles en anglais — on les rabat sur l'enum
 # canonique français utilisé par CREW_ROLES.
+#
+# ⚠️ L'enum canonique est **en français** (`CREW_ROLES` de `routers/crew_router`),
+# à une exception près : `cook`. Toute nouvelle table d'alias doit s'y rabattre —
+# ne PAS introduire un vocabulaire supplémentaire.
+#
+# Bloc « Excel Armement » ajouté le 2026-08-03 : les classeurs de relèves
+# emploient QUATRE vocabulaires pour les mêmes fonctions (anglais complet dans le
+# bloc équipage, abréviations dans le bloc « Crew Change », français dans la
+# feuille de manning, codes étoilés dans la feuille `data`). Sans ces alias, un
+# import ou un rapprochement laisse le rôle non résolu et l'armement réglementaire
+# se croit incomplet. Cf. `docs/strategy/REFERENCE_METIER_RELEVES_EQUIPAGE.md`
+# §3.5.
 ROLE_SYNONYMS: dict[str, str] = {
     "captain": "capitaine",
     "master": "capitaine",
@@ -144,15 +177,144 @@ ROLE_SYNONYMS: dict[str, str] = {
     "officer": "lieutenant",
     "bosun": "bosco",
     "boatswain": "bosco",
+    # ── Vocabulaires des classeurs Excel de l'Armement ──────────────────────
+    # Abréviations du bloc « Crew Change »
+    "choff": "second",
+    "cheng": "chef_mecanicien",
+    "ce": "chef_mecanicien",
+    "co": "second",
+    # ⚠️ « BOSCO » est ici la graphie EXCEL du bosco — elle coïncide avec la
+    # valeur canonique, l'alias est donc l'identité. Conservé explicitement pour
+    # que la table documente le vocabulaire source.
+    "bosco": "bosco",
+    # Pont
+    "mate": "lieutenant",
+    "lieutenant pont": "lieutenant",
+    "second capitaine": "second",
+    # Matelots — l'enum canonique ne distingue pas AB1 / AB2 : les deux sont
+    # des matelots. Le rang (1/2) vit dans le poste de la relève, pas dans la
+    # fonction réglementaire.
+    "ab": "marin",
+    "ab1": "marin",
+    "ab2": "marin",
+    "ab 1": "marin",
+    "ab 2": "marin",
+    "matelot": "marin",
+    # Mécanique / technique
+    "fitter": "ajusteur",
+    "fitter / oiler": "ajusteur",
+    "fitter/oiler": "ajusteur",
+    "oiler": "ajusteur",
+    "electrotech": "electricien",
+    "elect": "electricien",
+    "electrical engineering officer assistant": "electricien",
+    # Élèves
+    "cadet": "eleve_officier",
+    "deck cadet": "eleve_officier",
+    "deck_cadet": "eleve_officier",
+    "eleve": "eleve_officier",
+    "élève": "eleve_officier",
 }
+
+# Marqueurs suffixés observés dans la feuille `data` des classeurs :
+#   `MASTER*` → poste obligatoire · `MASTER Db` → doublure obligatoire.
+# Yasmin (2026-08-03) : « doublure et l'étoile, ça veut dire obligatoire ».
+# ⚠️ Modélisés SÉPARÉMENT : rien dans les classeurs ne prouve qu'ils sont
+# équivalents, et deux booléens coûtent moins cher qu'une confusion figée.
+_ROLE_MARKER_MANDATORY = "*"
+_ROLE_MARKER_UNDERSTUDY = "db"
+
+
+@dataclass(frozen=True)
+class RoleToken:
+    """Libellé de poste des classeurs Excel, décomposé.
+
+    ``role`` est la valeur canonique (``CREW_ROLES``) ou ``None`` si le libellé
+    reste non résolu — dans ce cas ``raw`` permet de le remonter à l'utilisateur
+    plutôt que de le perdre en silence.
+    """
+
+    role: str | None
+    is_mandatory: bool
+    requires_understudy: bool
+    raw: str
+    # Libellé débarrassé de ses marqueurs et normalisé en minuscules — sert de
+    # repli d'affichage quand la résolution échoue (cf. `normalize_role`).
+    cleaned: str = ""
 
 
 def normalize_role(value: str | None) -> str | None:
-    """Rabat un rôle libre (FR/EN, casse variable) sur l'enum canonique."""
-    if not value:
-        return None
-    cleaned = value.strip().lower()
-    return ROLE_SYNONYMS.get(cleaned, cleaned)
+    """Rabat un rôle libre (FR/EN, casse variable) sur l'enum canonique.
+
+    Tolère désormais les marqueurs suffixés des classeurs (``MASTER*``,
+    ``CE Db``) : ils sont retirés avant résolution.
+
+    ⚠️ **Comportement délibérément conservé** : un libellé non résolu est renvoyé
+    sous sa forme nettoyée (minuscules), **pas** ``None``. Renvoyer ``None``
+    ferait *disparaître* le marin des postes présents de
+    :func:`vessel_readiness` — remplacer une donnée douteuse par une absence
+    silencieuse serait le défaut miroir de celui qu'on corrige.
+
+    Le code **neuf** qui a besoin de savoir si la résolution a abouti doit
+    utiliser :func:`parse_role_token` et tester ``token.role is None``.
+    """
+    token = parse_role_token(value)
+    if token.role is not None:
+        return token.role
+    return token.cleaned or None
+
+
+def _fold_accents(value: str) -> str:
+    """Retire les diacritiques : ``Mécanicien`` → ``mecanicien``.
+
+    Indispensable ici : l'enum canonique est **sans accent**
+    (``chef_mecanicien``, ``eleve_officier``) alors que les libellés français des
+    classeurs en portent (``Chef Mécanicien``, ``Élève``). Sans ce repliement, la
+    moitié du vocabulaire français reste non résolue — c'est un test de la table
+    d'alias qui l'a révélé.
+    """
+    return "".join(c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c))
+
+
+def parse_role_token(value: str | None) -> RoleToken:
+    """Décompose un libellé de poste en (rôle canonique, obligatoire, doublure).
+
+    Exemples : ``"MASTER*"`` → ``capitaine`` + obligatoire ·
+    ``"CE Db"`` → ``chef_mecanicien`` + doublure · ``"AB 2"`` → ``marin``.
+
+    Un libellé inconnu renvoie ``role=None`` **sans lever** : l'appelant décide
+    de l'ignorer ou de le signaler. Retourner silencieusement le libellé brut
+    comme s'il était canonique — ce que faisait l'ancienne implémentation —
+    laissait passer des rôles non résolus dans l'armement réglementaire.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return RoleToken(None, False, False, raw, "")
+
+    cleaned = raw.lower()
+    mandatory = cleaned.endswith(_ROLE_MARKER_MANDATORY)
+    if mandatory:
+        cleaned = cleaned.rstrip(_ROLE_MARKER_MANDATORY).strip()
+
+    understudy = cleaned.endswith(f" {_ROLE_MARKER_UNDERSTUDY}")
+    if understudy:
+        cleaned = cleaned[: -len(_ROLE_MARKER_UNDERSTUDY)].strip()
+
+    # Espaces et tirets internes ramenés à une forme unique : les classeurs
+    # écrivent « AB 1 », « AB1 », « Fitter / Oiler », « Fitter/Oiler »…
+    collapsed = " ".join(cleaned.replace("_", " ").split())
+    # Chaque forme est essayee accentuee PUIS repliee : les alias sont ecrits sans
+    # accent, mais on ne veut pas casser une cle qui en porterait.
+    candidates = []
+    for form in (cleaned, collapsed, collapsed.replace(" ", ""), collapsed.replace(" ", "_")):
+        candidates.append(form)
+        folded = _fold_accents(form)
+        if folded != form:
+            candidates.append(folded)
+    resolved = next((ROLE_SYNONYMS[c] for c in candidates if c in ROLE_SYNONYMS), None)
+    if resolved is None:
+        resolved = next((c for c in candidates if c in CANONICAL_ROLES), None)
+    return RoleToken(resolved, mandatory, understudy, raw, cleaned)
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:

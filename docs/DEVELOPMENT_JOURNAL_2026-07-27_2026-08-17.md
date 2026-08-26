@@ -713,6 +713,310 @@ tracé possible). Recommandation : le brancher en mode override-possible — le
 risque de ne rien faire est réglementaire (contrôle PAF, responsabilité
 armateur), le risque de le faire est une case à cocher de plus.
 
+### J3 après-midi — recadrage métier par l'Armement, et repriorisation du lot
+
+Yasmin a recueilli le **processus réel des relèves d'équipage** auprès de
+l'Armement. Il invalide une partie de ce que j'avais prévu le matin.
+
+**Processus réel (référence métier)** :
+1. **Simulation dans Excel** (Armement) : jours en mer, périodes embarquées / à
+   terre, anticipation des relèves, planning cohérent avec les contraintes
+   opérationnelles. Cette étape existe **parce que Marad ne donne pas assez de
+   visibilité pour planifier** — ce n'est pas un contournement d'outil, c'est un
+   manque fonctionnel de Marad.
+2. **Décision dans Excel** : une seconde feuille définit et valide les dates
+   d'embarquement/débarquement. **C'est la décision d'Armement.**
+3. **Transmission à l'agent d'escale** : nom/prénom, nationalité, n° de passeport
+   ou titre de séjour, ETD, n° de vol ou de train, heure de départ → alimente la
+   **note d'escale**. L'agent d'escale organise les RDV PAF, **il ne décide
+   rien**.
+4. **Conformité documentaire déjà couverte** : Marad notifie l'Armement
+   suffisamment en amont des expirations (passeports, titres de séjour,
+   Schengen), et l'équipe en tient compte à la planification.
+
+**Ordre de priorité imposé par Yasmin** : comprendre les processus réels → les
+reproduire fidèlement → valider que les équipes travaillent efficacement →
+*ensuite* ajouter contrôles, conformité et qualité de données. « La valeur métier
+doit toujours passer avant les contrôles de conformité ou les fonctionnalités
+*nice to have*. » Elle demande explicitement à être challengée si un risque
+opérationnel ou réglementaire majeur justifie l'inverse.
+
+#### Ce que j'abandonne, et pourquoi ma recommandation du matin était mauvaise
+
+**Recâblage du garde-fou passeport — ABANDONNÉ.** J'avais recommandé le matin de
+brancher `passport_blocking_reason` sur la saisie d'escale, en mode override
+tracé. **Cette recommandation était mauvaise** : l'agent d'escale ne décide pas
+les embarquements, il **transcrit** une décision déjà prise par l'Armement après
+vérification des documents via les alertes Marad. Le contrôle aurait contraint le
+mauvais acteur, pour une décision prise ailleurs, avec moins d'information que
+celui qui l'a prise.
+
+**Approfondissement du calcul Schengen — DÉPRIORITISÉ.** Marad alerte déjà en
+amont. Ce n'est pas une fonctionnalité manquante, c'est un **doublon**.
+
+#### Ce que j'ai maintenu, en le justifiant par la valeur métier
+
+Distinction proposée à Yasmin et retenue : **un indicateur qui affirme quelque
+chose de faux n'est pas un contrôle manquant, c'est un défaut.** Le corriger peut
+consister à le faire **taire** plutôt qu'à le rendre intelligent.
+
+**1. Double comptage des jours en mer — CORRIGÉ (commit à suivre).**
+
+`embarked_days_by_member` **additionnait** les jours de deux registres qui
+décrivent parfois la même période : `MaradCrewSchedule` (les relèves décidées par
+l'Armement) et `CrewAssignment` (créé par la saisie d'escale). Sa docstring
+supposait explicitement `CrewAssignment` vide (« les marins proviennent
+exclusivement de Marad, aucune saisie manuelle ») — ce qui est faux, la saisie
+d'escale en crée. Dès qu'une escale était saisie pour un embarquement déjà connu
+de Marad, **les jours en mer du marin doublaient**. Affiché sur `/crew`.
+
+Reconstruit sur une **union d'ensembles de jours calendaires** (même approche que
+`refresh_schengen_for_members`) : un jour couvert par les deux registres compte
+une fois. `_marad_days_in_year` devenait du code mort → retiré.
+
+**Pourquoi ça reste prioritaire dans la logique de Yasmin** : si mynewtowt doit
+reproduire la planification des relèves, le comptage des jours en mer n'est pas un
+contrôle de phase 4 — **c'est la fonctionnalité elle-même**. Toute la raison
+d'être de la simulation Excel est de compter les jours en mer et les périodes
+embarquées / à terre. Un planificateur qui double-compte est **pire qu'Excel**.
+Ce point de qualité de données ne se reporte donc pas : il est **absorbé** par la
+valeur métier.
+
+Preuve : sur l'ancien code, les deux nouveaux tests donnent `20` là où la vérité
+est `10`, et `21` là où l'union vaut `15` (recouvrement partiel : somme = 21,
+maximum = 11, union = 15 — trois résultats différents).
+
+**2. La pastille Schengen ne mentira plus — CORRIGÉ.**
+
+Nouveau statut `indetermine`, affiché **« Non calculé — voir Marad »** en pastille
+neutre avec infobulle explicative. Déclenché quand des embarquements existent hors
+de portée du calcul : plannings Marad (cas dominant) ou affectation sans voyage
+(`leg_id` nul, arbitrage A4).
+
+⚠️ **Piège évité** : les trois templates avaient un `{% else %}` affichant
+« Non-compliant ». Un nouveau statut y serait apparu comme une **alerte** — on
+aurait remplacé une fausse réassurance par une fausse alarme. Calcul et affichage
+ont donc bougé ensemble (`crew/index.html`, `crew/detail.html`,
+`crew/compliance.html`).
+
+Trois décisions de conception :
+- **Un dépassement certain prime sur l'incertitude** : 100 jours établis restent
+  `non_compliant`, même si d'autres embarquements échappent au calcul.
+- **`indetermine` ne remonte pas dans les alertes** — c'est une absence
+  d'information, pas un avertissement, et Marad alerte déjà. L'y mettre
+  produirait du bruit sur presque tous les marins (leurs embarquements viennent
+  de Marad, que ce calcul n'exploite pas). Le filtre d'alerte de
+  `crew_router.py` liste explicitement `warning`/`non_compliant` : correct par
+  construction, aucune modification nécessaire.
+- **Un marin sans embarquement nulle part reste `compliant`** : là, zéro jour est
+  la vérité.
+
+6 tests dédiés (`test_crew_schengen_indetermine.py`), dont 2 échouent sur
+l'ancien code avec le faux `compliant` et 4 protègent contre une sur-correction
+(congé Marad ≠ embarquement, ressortissant Schengen, absence réelle
+d'embarquement, dépassement établi).
+
+#### Le cliquet de typage m'a bloqué — deuxième fois dans la journée
+
+Après ces corrections : **372 erreurs mypy pour un plafond à 371**. Mon nouveau
+code en ajoutait une — `MaradCrewSchedule.crew_member_id` est une FK **nullable**
+et je l'ajoutais à un `set[int]` sans vérifier, en *supposant* que le filtre SQL
+`in_` l'excluait. Garde explicite ajouté. Condition redondante simplifiée au
+passage (`bool(ensemble and id in ensemble)`).
+
+Après correction : **371, exactement au plafond**. Le cliquet posé le matin a donc
+attrapé, le jour même, une erreur qui serait partie en CI comme celle du matin.
+Il a déjà payé son coût d'installation.
+
+#### Gitleaks — troisième itération, et un défaut dans mon propre garde-fou
+
+Le run précédent a montré que le `GITHUB_TOKEN` était **nécessaire mais pas
+suffisant** : l'action ignore l'`args` fourni et construit sa propre commande sur
+une **plage de commits**, irrésoluble avec le `fetch-depth: 1` par défaut.
+Gitleaks sortait en code 1 (erreur, pas détection) avec un rapport SARIF **vide**.
+« 0 détection » signifiait donc « rien n'a été scanné ».
+
+Corrigé par `fetch-depth: 0`, et `args` retiré (il donnait l'illusion d'une
+configuration active).
+
+⚠️ **Et mon propre garde-fou était insuffisant** : il exigeait « au moins une
+exécution dans le rapport ». Or le rapport du run cassé en contenait déjà une,
+avec zéro résultat — **mon contrôle aurait validé le scan cassé**. Remplacé par le
+vrai discriminant : `steps.gitleaks.outcome`, qui conserve le résultat réel avant
+que `continue-on-error` ne l'efface. Détection d'un secret rendue **bloquante**,
+avec `.gitleaksignore` comme échappatoire documentée.
+
+Résultat vérifié : **22 commits scanned · no leaks found**, erreur de code de
+sortie disparue. **Le dépôt est propre** — aucun secret dans l'historique.
+
+C'est la quatrième fois dans la journée que le même piège se referme, dont deux
+sur mes propres contrôles. La règle « un contrôle qu'on ne fait pas échouer
+volontairement au moins une fois n'est pas un contrôle » est confirmée par
+l'expérience, pas par principe.
+
+#### En attente
+
+**Les fichiers Excel des relèves ne sont pas encore partagés** (vérifié : seuls le
+template de note d'escale `Port Call Preparation-ARTEMIS-Voyage 2BGPFR6` et les
+fichiers MRV sont disponibles). **Aucune implémentation proposée** sur les relèves.
+
+Ce qui sera examiné en priorité à leur réception, parce que c'est là qu'une
+réimplémentation dévie silencieusement d'Excel :
+- **conventions de comptage** — le jour d'embarquement compte-t-il plein ? les
+  jours de transit (vol, train) ? les jours à terre entre deux legs ?
+- **ce qui rend une relève valide** — repos minimum, durée maximale embarquée,
+  postes obligatoires à bord ;
+- **la forme exacte de la transmission** à l'agent d'escale, pour la brancher sur
+  le template de note d'escale.
+
+#### Piste identifiée pour le lot relèves (non engagée)
+
+La transmission PAF existe **déjà à moitié** : la route
+`/crew/border-police/{vessel_id}` produit une liste d'équipage bilingue FR/EN
+pour la PAF. Mais :
+- elle ne lit que les affectations **rattachées à un leg** (`leg_id.in_(...)`,
+  `crew_router.py:1166`) — le registre des Opérations, pas les décisions de
+  l'Armement. En pratique elle est donc probablement vide ou incomplète ;
+- il lui manque exactement les deux champs que l'Armement transmet : **n° de
+  vol/train** et **heure de départ** — or ils existent déjà dans le modèle
+  `CrewTicket` (`mode`, `reference`, `carrier`, `departure_at`).
+
+Les pièces sont là, branchées sur la mauvaise source et non assemblées.
+
+---
+
+## 2026-08-10 — Remise à niveau : `main` avait avancé, l'ordre de fusion était périmé
+
+Journée entièrement consacrée à réparer une **erreur de méthode de l'assistant**.
+
+### L'erreur
+
+Les 7 PR ont été créées et ouvertes le matin, avec une note d'ordre de fusion dans
+chacune. **Trois sont tombées en échec en CI.** Le diagnostic a révélé la cause
+réelle : le plan de fusion avait été construit sur un `main` **vieux d'une semaine**,
+sans revalidation.
+
+Entre-temps, `main` avait avancé de **16 commits** (2026-08-07, PR #151/#152/#153).
+
+> 🧭 **Règle retenue** : *revalider `main` AVANT de publier un ordre de fusion, pas
+> après.* Coût de l'omission : un lot devenu nuisible, un ordre périmé le jour de sa
+> publication, trois PR en échec, et une journée de remise à niveau.
+
+### 🔴 Un lot devenu nuisible, pas seulement inutile
+
+`main` a reçu le 2026-08-07 la révision `20260807_0113_merge_heads_mrv_crewing`,
+qui déclare **exactement les mêmes parents** que notre `20260730_0113` :
+`("20260716_0112", "20260720_0107")`.
+
+**Vérifié** : les deux ensemble produisaient **DEUX TÊTES Alembic** — soit
+précisément la panne qu'elles devaient éliminer. Fusionner le lot 3 l'aurait donc
+**recréée**.
+
+Actions : migration retirée des deux branches qui la portaient (`feat/bl-workflow`,
+`feat/crew-rotations`), avec vérification de la tête unique `20260807_0113` **avant
+et après** sur chacune · PR #155 **fermée** · branche supprimée en local et sur
+`origin` (SHA `23ebf59` / `2313448` consignés dans `07-ordre-pr-et-merge.md`).
+
+⚠️ Signalé explicitement : le fichier de migration **ne subsistait nulle part
+ailleurs** (vérifié sur les six lots et sur `main`). Sa suppression le retire du
+dépôt — assumé : 46 lignes de *no-op* redondantes, récupérables via la référence
+conservée par la PR fermée.
+
+**Conséquence heureuse** : le préalable de migration disparaît. **Le blocage qui
+attendait Julien n'existe plus.**
+
+### Deux tests cassés par `main`, et l'argument du lot 1 démontré en situation
+
+`test_social_proof_presse.py` échouait sur deux assertions, **sans qu'aucun de nos
+lots y touche**. Le repositionnement café de la landing page a **volontairement**
+réduit `PRESS_MENTIONS` de 6 entrées à 1 (la seule centrée café) sans mettre les
+tests à jour.
+
+⚠️ **Cette casse n'avait été vue par personne.** Sur `main`, la CI ne lance que
+`tests/unit` — ces deux tests d'intégration n'y sont **jamais exécutés**. Ils
+n'échouent que sur les branches portant le filet. **C'est l'argument du lot 1,
+démontré en conditions réelles, sur une casse que nous n'avons pas causée.**
+
+Correction **sur l'invariant, pas sur l'éditorial** :
+- `len(PRESS_MENTIONS) >= 4` était un **comptage éditorial incident**, pas la
+  doctrine testée. Remplacé par : sélection non vide, chaque mention en HTTPS avec
+  média et titre ;
+- `"Supply Chain Magazine" in body` figeait **le nom d'un média**. Remplacé par une
+  boucle sur les données — le bandeau doit rendre ce qu'il contient, sans qu'on
+  décide quoi.
+
+⇒ Ces tests recasseront si le bandeau cesse d'afficher ses données, mais plus au
+prochain arbitrage éditorial. Le code applicatif **n'a pas été touché** : il est
+intentionnel.
+
+### Le garde-fou gitleaks a fonctionné — et j'avais choisi le mauvais remède
+
+L'étape bloquante ajoutée le 2026-07-30 a correctement détecté
+`test_portal_activity_trace.py:47` : le **faux token de test**, 24 caractères
+hexadécimaux, soit la forme exacte de `packing_list.generate_token`. Faux positif
+`generic-api-key`.
+
+**Premier remède, erroné** : annotation `gitleaks:allow` en ligne, au motif qu'une
+empreinte « se périme à chaque réécriture d'historique ».
+
+**C'est l'inverse.** Gitleaks scanne la **plage de commits** de la PR, pas l'état
+courant des fichiers. Le message le disait : *« detected secret at commit
+1cb1d40 »* — le commit qui a introduit la ligne **avant** l'annotation. Une
+annotation ne protège que les commits qui la contiennent, et la réécriture
+d'historique étant interdite, elle ne peut **jamais** atteindre un commit passé.
+
+⇒ L'empreinte `.gitleaksignore` est le mécanisme approprié, **précisément** parce
+qu'elle désigne un commit précis. Les deux sont conservés : l'annotation couvre les
+commits à venir, l'empreinte celui déjà écrit. Le fichier documente la règle : *ne
+jamais ajouter une empreinte sans avoir vérifié que le secret est faux.*
+
+### Bilan de la remise à niveau
+
+| Lot | `main` intégré | Conflits | Presse | Migration retirée |
+|---|---|---|---|---|
+`chore/ci-integration-tests` | ✅ | **0** | ✅ | — |
+`docs/decouverte-fonctionnelle` | ✅ | **0** | s.o. | — |
+`feat/ops-quickwins` | ✅ | **0** | ✅ | — |
+`fix/crew-indicators-honest` | ✅ | **0** | ✅ | — |
+`feat/bl-workflow` | ✅ | **0** | ✅ | ✅ |
+`feat/crew-rotations` | ✅ | **0** | ✅ | ✅ |
+
+**Zéro conflit sur les six.** Le conflit annoncé entre les lots 1 et 4 sur le
+journal **ne s'est pas matérialisé** : chacun ayant intégré `main` de son côté, ils
+convergent au lieu de s'opposer — une raison de plus de préférer la fusion au rebase
+(qui aurait de surcroît exigé un *force push*, interdit).
+
+**Les 6 PR sont vertes**, notes d'ordre réécrites, ordre passé de 7 à 6 lots avec
+les **trois premiers mutuellement indépendants**.
+
+### Contretemps techniques rencontrés
+
+- **`git fetch` échouait** (`invalid index-pack output`) ⇒ débloqué par
+  `core.compression=0` + `http.postBuffer` élargi.
+- **Opérations git très lentes** (> 2 min) ⇒ passées en tâche de fond, avec
+  vérification d'état après chacune. Un `index.lock` de 0 octet, résidu d'une
+  commande interrompue, a dû être retiré après vérification qu'aucun processus git
+  ne tournait.
+- **Arbitrage de méthode assumé** : la suite complète n'a pas été rejouée localement
+  sur les six branches (≈ 1 h) — la CI exécute la même suite sur Ubuntu, où les 15
+  tests PDF passent réellement. Vérification déplacée, pas supprimée. Signalé à
+  Yasmin avant d'être appliqué.
+
+### Correction d'une affirmation antérieure — le « hook alembic » n'existe pas
+
+Le RAF R8 attribuait une migration parasite (`4f4eeb7bfc89_.py`, vide et anonyme,
+posée sur la migration de fusion) à un « hook du harnais lançant `alembic` ».
+
+**Recherche exhaustive** : aucun `settings.json` projet ni local, global réduit au
+modèle et à l'effort, aucun hook git actif, aucun dossier `.claude/hooks`, aucune
+tâche VS Code, et **rien dans le dépôt n'appelle `alembic revision`** (les six
+occurrences sont des `alembic upgrade head`, toutes dans Docker).
+
+⇒ **L'attribution était une inférence jamais vérifiée**, aggravée le matin même par
+une « requalification » de R8 de bruit cosmétique en « pollue la chaîne de
+migrations ». Le **fait** observé reste vrai, mais **sa cause est inconnue**. R8 passe
+d'« action à mener » à « point de vigilance » : *vérifier la tête unique avant de
+créer une migration, sans présumer d'une cause.*
 ---
 
 ## 2026-08-03 — Lot workflow BL : ce qui est livrable sans migration

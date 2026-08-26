@@ -422,6 +422,7 @@ colonne « bloque quoi » est la seule qui compte pour l'ordonnancement.
 
 | # | Item | Bloque le J2 ? | Bloque quoi réellement | Échéance | Qui |
 |---|---|---|---|---|---|
+| R1 | ✅ **CLOS 2026-08-10 — résolu sur `main`, pas par nous.** `20260807_0113_merge_heads_mrv_crewing` est arrivée sur `main` le 2026-08-07 avec **exactement les mêmes parents** que la migration que nous avions préparée (`20260730_0113`). Les deux ensemble produisaient **deux têtes** — le problème même à éliminer. Notre migration a été retirée des branches qui la portaient, sa PR #155 fermée et sa branche supprimée (SHA consignés). | — | **Plus rien** — le blocage de déploiement est levé, et aucun lot n'attend de validation de schéma | — | — |
 | R1 | ✅ **CORRIGÉ 2026-07-30, en attente de validation de Julien** — migration de fusion **pure** `20260730_0113_merge_heads.py` (aucun DDL) sur `fix/alembic-merge-heads`, issue de `main`. Écrite à la main plutôt que par `alembic merge` (`migrations/` n'est pas monté dans le conteneur). Vérifié : **une seule tête**, `(mergepoint)` présent dans l'historique, `upgrade()`/`downgrade()` exécutables. Fusion sûre : les deux chaînes touchent des tables disjointes (`nav_event_noon` / `generated_reports`), leur ordre est indifférent | — | **Débloque le lot workflow BL, le J9, le lot relèves et tout déploiement.** 🔴 **Julien est le seul à pouvoir valider une fusion** et il est absent jusqu'au **2026-08-17** ⇒ stratégie « tout préparer, ne rien fusionner », les lots à migration se branchant sur celui-ci (cf. `07-ordre-pr-et-merge.md` §1 bis) | Retour de Julien, 2026-08-17 | **Julien** |
 | R1b | 🟡 **`alembic upgrade head --sql` inutilisable** — découvert lors de R1, **préexistant et sans lien** : `20260703_0094_planning_rules_hardening.py` fait un `fetchall()`, impossible en mode offline (pas de connexion). On ne peut donc **pas prévisualiser le DDL** d'un déploiement | **Non** | Un déploiement en deux temps (revue du SQL, puis application). Le déploiement normal n'est pas affecté | Opportuniste | — |
 | R2 | ✅ **RÉSOLU 2026-07-29** — lot J1 rebasé sur `main`. La dépendance venait d'un seul commit amendant `PROJECT_CONTEXT.md` (document du lot découverte) : la correction du §7 a été déplacée vers le lot découverte (`e48847d`), rendant les deux lots indépendants. Vérifié : `main` est ancêtre direct des deux, ils fusionnent proprement (`CLAUDE.md` s'auto-fusionne), suite revalidée 2000/15 | — | — | — |
@@ -436,7 +437,30 @@ colonne « bloque quoi » est la seule qui compte pour l'ordonnancement.
 | R12 | 🔑 **Le moteur de la simulation est un grand livre d'acquisition de congés**, pas un `début + 60` (découverte du 2026-08-03, feuille `data`) : chaque jour embarqué crédite 0,9 j (1,0 pour le personnel PMS), chaque jour à terre en débite 1, avec des coefficients par statut (formation 0,6 · AT 0,2 · cadet 0,3 · télétravail 0,9). MyTOWT n'a **aucune** logique d'acquisition — `CrewLeave` gère la demande/approbation, `services/leaves.py` ne fait que lister et compter | **Non** | Le dimensionnement du lot relèves. La feuille porte les **matricules** ⇒ adjacence paie à clarifier **avant** de coder | Avec R11 | Armement + RH/paie |
 | R13 | ⚠️ **Deux conventions de comptage de jours, légitimement différentes** — Excel compte les jours à bord en **exclusif** (`AUJOURDHUI()−début`, jour d'embarquement = 0) car cohérent avec « contrat 60 j ⇒ fin = début + 60 » ; la règle **Schengen** 90/180 est **inclusive** (jour d'entrée et de sortie comptés). Écart mesuré : 62 vs 63 jours sur un cas réel | **Non** | Toute fonction de comptage future. **Ne pas unifier — nommer** : confondre les deux casse soit un contrat, soit une conformité réglementaire | À appliquer dès le lot relèves | — |
 | R7 | 🟡 **Dérive de schéma de la base de dev** rattrapée à la main le 2026-07-29 (8 colonnes ajoutées). La procédure §7 de `PROJECT_CONTEXT.md` est corrigée, mais **aucun garde-fou** n'empêche la dérive de réapparaître | **Non** | Rien. Confort et fiabilité des validations locales. Piste : un script de diagnostic `Base.metadata` ↔ `information_schema` à lancer au démarrage en dev | Opportuniste | — |
-| R8 | 🟡 **Hook du harnais lançant `alembic` depuis l'hôte** — échoue à chaque commit (`getaddrinfo failed`, le nom `db` n'est résoluble que dans Docker). Bruit permanent, aucun impact fonctionnel | **Non** | Rien | Opportuniste | Yasmin (config `settings.json`) |
+| R8 | ⚠️ **CORRIGÉ 2026-08-03 — l'attribution était fausse.** Une migration **vide, anonyme et non suivie** (`4f4eeb7bfc89_.py`, « empty message ») était posée sur la migration de fusion et en devenait la tête. Elle a été écartée. Mais l'attribuer à un « hook du harnais lançant `alembic` » était une **inférence jamais vérifiée** : recherche exhaustive faite le 2026-08-03 — aucun `settings.json` projet ni local, global réduit au modèle et à l'effort, **aucun hook git actif**, aucune tâche VS Code, et **rien dans le dépôt n'appelle `alembic revision`** (les 6 occurrences sont des `alembic upgrade head`, toutes dans Docker). **L'origine du fichier reste inconnue.** | **Non** | Rien de connu. Le fait reste : une révision anonyme peut apparaître et devenir la tête ⇒ **vérifier la tête unique avant de créer une migration**, sans présumer d'une cause | Vigilance | — |
+
+### Ordre de priorité imposé par Yasmin (2026-07-30) — à appliquer à toute analyse
+
+1. Comprendre les processus réels de l'entreprise.
+2. Les **reproduire fidèlement** dans MyTOWT.
+3. Valider que les équipes peuvent travailler efficacement avec le logiciel.
+4. **Ensuite** seulement : contrôles, conformité, qualité de données.
+
+> « La valeur métier doit toujours passer avant les contrôles de conformité ou les
+> fonctionnalités *nice to have*. »
+
+Elle demande **explicitement à être challengée** quand un risque opérationnel ou
+réglementaire majeur justifierait l'inverse. Deux endroits où la ligne se tient :
+le **MRV** (organisme accrédité, échéance réglementaire dure) et le **workflow
+BL** (titre de propriété, prescription Hague-Visby d'un an) — tous deux déjà
+priorisés.
+
+**Distinction retenue, qui a servi le 2026-07-30** : un indicateur qui **affirme
+quelque chose de faux** n'est pas un contrôle manquant, c'est un **défaut**. Le
+corriger peut consister à le faire **taire** plutôt qu'à le rendre intelligent —
+quelques heures au lieu de plusieurs jours. Et un chiffre dont dépendra une
+fonctionnalité métier future (les jours en mer pour la planification des relèves)
+n'est pas un « contrôle de phase 4 » : il est **absorbé** par la valeur métier.
 
 ### Ordre de priorité imposé par Yasmin (2026-07-30) — à appliquer à toute analyse
 

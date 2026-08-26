@@ -118,6 +118,7 @@ d'acquisition**.
 | embarqué autre | 0,9 | embarqué PMS autre | 1,0 |
 | **débarqué** | **−1** | débarqué PMS | 0 |
 | formation | 0,6 | débarqué PMS autre | 0 |
+| AT (**arrêt de travail** — cf. accord) | 0,2 | `-` | 0 |
 | AT (accident du travail) | 0,2 | `-` | 0 |
 | télétravail | 0,9 | | |
 | embarqué cadet | 0,3 | | |
@@ -131,6 +132,96 @@ d'« anticiper les futures relèves ».
 **Cela explique `Feuil4`**, où les fins de congés sont calculées en
 `débarquement + 12`, `+ 55`, `+ 59` — durées apparemment arbitraires, en réalité
 **dérivées du solde acquis**.
+
+### 📜 Source NORMATIVE — les accords d'entreprise du 2024-03-22
+
+Les coefficients ne sont pas une convention interne à un tableur : ils sont fixés
+par **deux accords d'entreprise TOWT du 22 mars 2024**, l'un pour les **personnels
+d'exécution (PEX)**, l'autre pour les **personnels officiers (OFF)**.
+
+✅ **Les deux accords sont IDENTIQUES sur les articles 9 et 10.** Il n'y a donc
+**aucune dimension PEX/OFF** à porter dans la matrice des coefficients — une
+simplification importante par rapport à ce que je craignais.
+
+**Article 9 — Temps de repos et congés-repos**, littéralement :
+
+> « Le taux de congés-repos est fixé à **0,9 jour de congés-repos par jour
+> travaillé** (27 jours de congés repos pour 30 jours travaillés). »
+>
+> « Par dérogation, le taux de congés-repos est fixé à **0,6 jour** de congés-repos
+> par **jour de formation** et **0,2 jour** de congés-repos par **jour d'arrêt de
+> travail pour maladie dûment justifié par un certificat médical**. Le taux de
+> congés-repos est fixé à **0,675 jour** de congés-repos par jour travaillé pour les
+> **salariés détachés à terre**. »
+>
+> « Ce taux **comprend les congés payés** attribués à raison de 3 jours calendaires
+> par mois **et la compensation des repos hebdomadaires, des jours fériés et des
+> heures supplémentaires**. »
+
+**Article 10 — Temps de conduite** :
+
+> « Le Salarié bénéficie de la conduite **sauf en cas de débarquement volontaire**. »
+>
+> « La conduite se définit comme le voyage effectué, à la demande de la Compagnie,
+> par le salarié depuis son domicile fiscal métropolitain jusqu'à bord du navire où
+> il est affecté et inversement. »
+>
+> « **La position de conduite n'est pas cumulable avec la position d'embarquement ou
+> la position de congé.** »
+
+#### Confrontation accord ↔ Excel
+
+| Statut Excel | Coeff. Excel | Accord | Verdict |
+|---|---|---|---|
+`embarqué` | 0,9 | **0,9 / jour travaillé** | ✅ conforme |
+`formation` | 0,6 | **0,6** | ✅ conforme |
+`AT` | 0,2 | **0,2 / jour d'arrêt de travail pour maladie** | ⚠️ « AT » = **arrêt de travail** (maladie), et **non** « accident du travail » comme je l'avais lu. L'accord exige un **certificat médical** — c'est une condition, pas un simple statut |
+`conduite` | 0 | Art. 10 : aucun taux, et position **non cumulable** | ✅ conforme, et **l'exclusivité est une règle de droit** |
+`débarqué` | −1 | le congé-repos se consomme | ✅ cohérent |
+`télétravail` | 0,9 | non nommé par l'accord ⇒ **jour travaillé** ordinaire | ✅ **conforme** — télétravailler, c'est travailler (cf. ci-dessous) |
+**`détaché à terre`** | ❌ **absent** | **0,675** | 🔴 **STATUT MANQUANT** — voir ci-dessous |
+`embarqué cadet` | 0,3 | **absent des deux accords** | ⏳ hors accord (statut d'élève non couvert) |
+`Dispo` | 0 | absent | — |
+Colonnes **PMS** (1,0 / 0) | | **hors périmètre des accords** | ✅ normal : les accords ne lient que les salariés TOWT, PMS est du personnel d'agence |
+
+#### 🔴 Le statut « détaché à terre » manque au paramétrage
+
+✅ **Tranché par Yasmin (2026-08-03) : « télétravail différent de détachement. »**
+Ce sont **deux situations distinctes**. Conséquences, dans l'ordre :
+
+**1. Le `télétravail` à 0,9 est conforme.** L'accord ne le nomme pas, mais il fixe
+0,9 pour tout **jour travaillé** — et télétravailler, c'est travailler. Aucune
+correction à faire de ce côté. *(Ma première hypothèse d'un surcrédit de 0,225 j/j
+était donc fausse : elle supposait les deux termes équivalents.)*
+
+**2. Il manque un statut.** L'accord prévoit **0,675 j/j pour le salarié détaché à
+terre**, et **ni le paramétrage Excel ni MyTOWT ne portent ce taux**. Un marin
+détaché à terre est donc aujourd'hui rangé sous un statut qui n'est pas le sien :
+
+| S'il est classé… | Taux appliqué | Écart / accord |
+|---|---|---|
+`télétravail` ou `embarqué` | 0,9 | **+0,225 j/j** — surcrédit (6,75 j par mois de 30) |
+`débarqué` | −1 | **−1,675 j/j** — le solde est *débité* au lieu d'être crédité |
+
+⇒ **Le statut `detache_a_terre` (0,675) doit être créé** dans la matrice des
+coefficients. C'est un manque du tableur, pas une divergence d'interprétation : il
+est **exigible sur le fondement de l'accord**.
+
+✅ **Reprise de données : aucune** (Yasmin, 2026-08-03) — « pas de modif à faire à
+ce qui a été déjà partagé ». Les soldes déjà transmis à Silae **ne sont pas
+recalculés**. Le taux de 0,675 s'appliquera **à partir de** la mise en service, sans
+effet rétroactif.
+
+C'est une décision de gestion, à respecter telle quelle : le grand livre ne doit
+**pas** proposer de recalcul des périodes déjà exportées. Techniquement, cela
+renforce l'intérêt du snapshot par période (§4.3 de la spec) — une période close
+reste figée avec les coefficients qui étaient en vigueur, et ce comportement devient
+la règle, plus seulement une commodité d'audit.
+
+**Autre conséquence à ne pas manquer** : le taux de 0,9 **inclut déjà** les congés
+payés (3 j/mois), les repos hebdomadaires, les jours fériés et les heures
+supplémentaires. ⇒ **Ne jamais ajouter de CP par-dessus** le résultat du grand
+livre : ce serait un double paiement.
 
 ### 🔴 Portée confirmée par Yasmin (2026-08-03) — ce n'est pas du pilotage
 
@@ -211,6 +302,13 @@ fait foi.
 | | **TOWT** | **PMS** |
 |---|---|---|
 | Hors élève | **60 j** | **90 j** |
+| **Élève / Deck Cadet** | **90 j** | **90 j** ✅ *(fourni le 2026-08-03)* |
+
+**La matrice est complète.** Note utile pour l'implémentation : trois cellules sur
+quatre valent 90 j, seul `(hors élève, TOWT)` fait exception à 60 j. La cascade
+reste néanmoins la structure retenue — Yasmin a demandé d'**anticiper les
+évolutions**, et un défaut global à 90 avec une seule exception serait plus court
+mais impossible à faire évoluer sans refonte.
 | **Élève / Deck Cadet** | **90 j** | ⏳ **autre valeur, à préciser** |
 
 ⚠️ **Cet arbitrage inverse la lecture des classeurs qu'on aurait faite
@@ -220,6 +318,10 @@ spontanément** :
 - `ARTEMIS` F13/F14 = `=SI(poste="DECK CADET";60;90)` ⇒ renvoie **60** pour un
   élève ⇒ **la formule est FAUSSE**.
 
+✅ **La cellule PMS/élève est fournie : 90 j** (2026-08-03). Le paramétrage doit
+néanmoins **rester capable** d'accueillir une cellule vide et de signaler le repli :
+la matrice va évoluer, et la prochaine cellule ajoutée ne sera peut-être pas
+renseignée le jour de sa création.
 ⛔ **Ne pas inventer la valeur PMS/élève.** Elle est annoncée comme différente mais
 n'est pas fournie : le paramétrage doit accepter la cellule **vide**, et la
 résolution retomber alors sur le niveau supérieur (PMS = 90 j) **en signalant** que
@@ -300,6 +402,33 @@ Deck Cadet).
 nullable pour l'embarquement hors voyage) mais va plus loin : ici il n'y a **ni
 leg, ni navire**.
 
+✅ **Cas général (Yasmin, 2026-08-03) : « Le personnel au Vietnam est en position
+embarquée. »** Statut `embarqué` — **0,9 j/j** en TOWT, **1,0 j/j** en PMS (§3.1).
+
+⚠️ **Mais pas tous** (précision du 2026-08-03) : « Quand les marins partent au site
+de construction, il faut **pour certains** faire un **détachement**. » Exemple
+donné : **Léo ALLAIN** (second capitaine, ATLANTIS).
+
+⇒ Un marin au Vietnam relève donc **soit** de `embarqué` (0,9), **soit** de
+`detache_a_terre` (0,675) — selon un **acte administratif de détachement**, pas
+selon sa localisation.
+
+### 🔴 Règle de modélisation qui en découle
+
+> **Le statut d'acquisition ne se déduit NI du navire, NI du lieu.** C'est une
+> propriété **portée** par la relève, décidée cas par cas.
+
+Deux tentations à écarter explicitement :
+
+| Déduction tentante | Pourquoi elle est fausse |
+|---|---|
+« pas de `vessel_id` ⇒ pas embarqué » | Le personnel au Vietnam n'a ni navire ni leg et **est** en position embarquée |
+« lieu = Vietnam ⇒ position embarquée » | Certains y sont **détachés** (0,675), pas embarqués (0,9) |
+
+L'écart entre les deux vaut **0,225 jour par jour** et part en paie : le statut doit
+donc être un **champ explicite et obligatoire** de la relève, jamais une valeur
+inférée. Une relève sans statut d'acquisition renseigné doit être **refusée**, pas
+complétée par défaut.
 ✅ **Coefficient tranché (Yasmin, 2026-08-03) : « Le personnel au Vietnam est en
 position embarquée. »** Il relève donc du statut `embarqué` — soit **0,9 j/j** pour
 le personnel TOWT et **1,0 j/j** pour le personnel PMS (§3.1). Pas de statut
@@ -402,6 +531,7 @@ Réponses de Yasmin, transmises par l'Armement le **2026-08-03**.
 | # | Question | Réponse |
 |---|---|---|
 | 1 | Les coefficients d'acquisition font-ils foi ? Alimentent-ils la paie ? | ✅ **« Fixé par la société et transmis à Silae pour la paie »** ⇒ normatifs, adjacents à la paie (cf. §3.1) |
+| 2 | Élèves : 60 ou 90 jours ? | ✅ **90 j pour un élève TOWT** (2026-08-03, après correction d'une première réponse « 60 »). PMS/élève = **90 j** (fourni le 2026-08-03) ⇒ **matrice complète**. La **structure en matrice (poste × manning) est imposée** pour anticiper les évolutions (cf. §3.2). Coefficient d'acquisition confirmé à `0,3 / jour embarqué` |
 | 2 | Élèves : 60 ou 90 jours ? | ✅ **90 j pour un élève TOWT** (2026-08-03, après correction d'une première réponse « 60 »). PMS/élève = **autre valeur, non fournie**. La **structure en matrice (poste × manning) est imposée** pour anticiper les évolutions (cf. §3.2). Coefficient d'acquisition confirmé à `0,3 / jour embarqué` |
 | 3 | Les overrides de durée sont-ils volontaires ? | ✅ **« Paramétrable, avec possibilité de modif pour des cas en particulier avec mot de justification »** ⇒ défaut en base + override par cas + **justification obligatoire** (cf. §3.2) |
 | 4 | Flotte | ✅ `ARIES` et `ATHENAIS` **annulés pour l'instant** |
@@ -427,6 +557,11 @@ n'est plus bloquée par aucune question métier.**
 Reste **une valeur à fournir**, qui ne bloque pas la conception puisque la
 structure l'accueille déjà :
 
+- ✅ **PMS / élève = 90 j** — fourni le 2026-08-03. **La matrice est complète.**
+- 🔴 **Nouveau point, issu des accords d'entreprise** : le taux du salarié
+  **détaché à terre** (0,675) n'a **aucun équivalent** dans l'Excel, qui applique
+  0,9 à une ligne `télétravail`. Soit l'Excel surcrédite de 0,225 j/j, soit il
+  manque un statut. **Question pour la paie / les RH**, pas pour l'Armement.
 - ⏳ **PMS / élève** — annoncée comme différente de 90 j, non communiquée. Le
   paramétrage acceptera la cellule vide et retombera sur PMS = 90 j **en le
   signalant**, jamais en la présentant comme la valeur voulue.

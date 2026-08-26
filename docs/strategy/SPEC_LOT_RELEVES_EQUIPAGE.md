@@ -222,6 +222,13 @@ Décalque de `ValidationRuleThreshold`, adapté à la clé `(poste, manning)`.
 Quatre vocabulaires coexistent dans les classeurs (anglais complet, abréviations,
 français, codes étoilés) plus l'énumération `CREW_ROLES` de MyTOWT.
 
+✅ **LIVRÉ le 2026-08-03.** ⚠️ **Correction de cette spec** : le tableau ci-dessous
+proposait des valeurs canoniques **en anglais** (`master`, `chief_officer`…). C'est
+faux — l'enum canonique du projet est **en français** (`CREW_ROLES` :
+`capitaine`, `second`, `chef_mecanicien`…, avec `cook` pour seule exception).
+L'implémentation a donc **étendu l'existant** plutôt que d'introduire un cinquième
+vocabulaire. Table réelle : `crew_compliance.ROLE_SYNONYMS`, résolution par
+`parse_role_token`.
 **Une liste canonique unique** — `CREW_ROLES` existant, étendu si nécessaire — avec
 une table d'alias d'affichage et d'import :
 
@@ -301,6 +308,7 @@ C'est la même discipline que le statut Schengen `indetermine` livré le 2026-07
 `teletravail` | 0,9 | — |
 `embarque_cadet` | **0,3** | — |
 `conduite` / `dispo` | 0 | — |
+**`detache_a_terre`** | **0,675** | ⏳ *(accord TOWT uniquement)* |
 
 Le personnel **au Vietnam** est en position **`embarque`** (tranché le
 2026-08-03) : pas de statut dédié. Le modèle doit donc admettre un embarquement
@@ -321,6 +329,7 @@ d'un élève (90 j TOWT), qui est un paramètre distinct.
 |---|---|---|
 **Jours à bord** (contrat) | **exclusive** — `fin − début`, jour d'embarquement = 0 | Cohérent avec « contrat 60 j ⇒ fin = début + 60 ». C'est ce qu'Excel calcule |
 **Jours de présence Schengen** | **inclusive** | La règle 90/180 compte le jour d'entrée **et** celui de sortie |
+**Jours d'acquisition** | ✅ **ni l'une ni l'autre — la question se dissout** | L'accord d'entreprise compte en **« jour travaillé »**, pas en durée entre deux dates. On classe donc chaque **jour calendaire** dans **exactement une position** et on applique son taux. Aucune ambiguïté de borne : le jour du voyage est en position `conduite`, celui à bord en position `embarqué` |
 **Jours d'acquisition** | ⏳ **à confirmer** | Ni l'un ni l'autre par défaut : c'est un décompte de **jours travaillés**, à trancher avec la paie |
 
 **Contrainte de nommage, non négociable** : toute fonction de comptage dit dans son
@@ -340,6 +349,10 @@ L'écart mesuré sur un cas réel (DELANNOY, ANEMOS) est de 62 contre 63 jours.
 Pour un marin et une période, construire un **ensemble de jours calendaires par
 statut**, sans recouvrement possible :
 
+1. jours couverts par une relève réalisée → **le statut porté par cette relève**
+   (`embarque`, `embarque_cadet` si le poste est `deck_cadet`, ou
+   `detache_a_terre` si un détachement a été prononcé). ⚠️ **Jamais déduit du
+   navire ni du lieu** — cf. R-K ;
 1. jours couverts par une relève réalisée → `embarque` (ou `embarque_cadet` si le
    poste est `deck_cadet`) ;
 2. jours couverts par un congé/absence (`CrewLeave`, `HrAbsence`) → statut dérivé
@@ -506,6 +519,11 @@ Julien autant que le workflow BL.
 | # | Risque / point | Portée |
 |---|---|---|
 R-A | ✅ **LEVÉ 2026-08-03** — option A retenue : MyTOWT planifie et simule, Marad reste le registre, écran de réconciliation des écarts. Synchro Marad inchangée (lecture seule) | — |
+R-B | ✅ **LEVÉ 2026-08-03** par les accords d'entreprise du 2024-03-22 : l'unité est le **jour travaillé**, donc un classement de chaque jour dans une position unique — l'article 10 rend cette exclusivité **obligatoire en droit**. La question inclusive/exclusive ne se pose plus | — |
+R-H | ✅ **REQUALIFIÉ 2026-08-03** — « télétravail différent de détachement » (Yasmin). Le `télétravail` à 0,9 est donc **conforme** (l'accord fixe 0,9 pour tout *jour travaillé*, et télétravailler c'est travailler). Ce qui manque est un **statut** : `detache_a_terre` à **0,675 j/j**, absent du tableur comme de MyTOWT. **À créer dans la matrice** — exigible sur le fondement de l'accord, ce n'est pas une divergence d'interprétation | 🟠 à créer avec la matrice |
+R-J | ✅ **CLOS 2026-08-03** — « pas de modif à faire à ce qui a été déjà partagé ». **Aucune reprise** : les soldes déjà transmis à Silae ne sont pas recalculés, le taux de 0,675 s'applique **sans effet rétroactif**. Le grand livre ne doit donc **pas** proposer de recalcul d'une période déjà exportée — le snapshot par période devient la **règle**, pas une commodité | — |
+R-K | 🔴 **Le statut d'acquisition ne se déduit NI du navire NI du lieu** — il est **porté** par la relève. Le personnel au Vietnam est `embarqué` (0,9) **sauf ceux qui font l'objet d'un détachement** (0,675), ex. Léo ALLAIN. Écart de 0,225 j/j qui part en paie ⇒ champ **explicite et obligatoire** ; une relève sans statut renseigné doit être **refusée**, jamais complétée par défaut | 🔴 contrainte de modèle |
+R-I | ⚠️ **Le taux de 0,9 inclut déjà les congés payés** (3 j/mois), les repos hebdomadaires, les jours fériés et les heures supplémentaires. **Ne jamais ajouter de CP par-dessus** le résultat du grand livre — ce serait un double paiement | 🟠 discipline d'implémentation |
 R-B | **Convention de comptage de l'acquisition non tranchée** (§6.1) — inclusive ou exclusive ? Effet direct sur la paie | 🟠 à trancher avec la paie avant le calcul |
 R-C | **Valeur PMS/élève absente** — la structure l'accueille, mais l'écran doit le signaler | 🟡 non bloquant |
 R-D | **Trois registres d'embarquement** — la règle d'or de `CLAUDE.md` devient critique. Tout nouvel indicateur doit dire de quel registre il parle | 🟠 discipline permanente |
