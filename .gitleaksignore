@@ -13,3 +13,14 @@
 # la forme exacte produite par `packing_list.generate_token`. Aucun secret réel — la
 # valeur n'a jamais existé ailleurs que dans ce test.
 1cb1d40e1aea7564bf0282fe3face6300fdf00a2:tests/integration/test_portal_activity_trace.py:generic-api-key:47
+
+# Faux mot de passe de test dans les tests d'isolation des grilles tarifaires
+# (constat C-1). `motdepasse-long-2026` est une chaîne inventée, passée à
+# `client_account.create_account` pour peupler une base de test en mémoire ;
+# vérifié absent de `app/`, `scripts/` et de toute configuration. Sa seule
+# contrainte est de dépasser la longueur minimale exigée à l'inscription — d'où
+# une entropie (3,82) qui franchit le seuil de la règle `generic-api-key`.
+86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:36
+86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:51
+86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:66
+86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:72
