@@ -135,7 +135,10 @@ async def resolve_grid(
     pod_locode = pod_locode.upper().strip()
 
     if commercial_client_id is not None:
-        # Grille active du client portant la route exacte demandée.
+        # Grilles actives du client portant la route exacte demandée. Un client
+        # peut en avoir plusieurs valides au même instant (périodes ou conditions
+        # distinctes) : celle marquée **par défaut sur cette route**
+        # (``is_route_default``) l'emporte, sinon la plus récemment ouverte.
         stmt = (
             select(RateGrid)
             .join(RateGridLine, RateGridLine.grid_id == RateGrid.id)
@@ -146,7 +149,7 @@ async def resolve_grid(
                 RateGridLine.pod_locode == pod_locode,
                 *_grid_window_clause(on_date),
             )
-            .order_by(RateGrid.valid_from.desc())
+            .order_by(RateGridLine.is_route_default.desc(), RateGrid.valid_from.desc())
         )
         grid = (await db.execute(stmt)).scalars().unique().first()
         if grid is not None:
@@ -288,16 +291,35 @@ async def _resolve_opex_daily(db: AsyncSession, vessel_id: int | None) -> Decima
     return Decimal(opex_daily) if opex_daily is not None else FALLBACK_OPEX_DAILY_EUR
 
 
-def route_nav_days(distance_nm: Decimal) -> Decimal:
-    """Jours de navigation = distance / (8 nœuds × 24 h)."""
-    return (Decimal(distance_nm) / (TRANSIT_SPEED_KN * Decimal("24"))).quantize(
+def route_nav_days(distance_nm: Decimal, speed_kn: Decimal | None = None) -> Decimal:
+    """Jours de navigation = distance / (vitesse × 24 h).
+
+    ``speed_kn`` vient du leg visé quand il est connu (``Leg.transit_speed_kn``) ;
+    sinon on retombe sur la vitesse de référence. Une vitesse nulle ou négative
+    est ignorée — elle donnerait une durée infinie, donc un tarif absurde.
+    """
+    speed = Decimal(speed_kn) if speed_kn is not None else TRANSIT_SPEED_KN
+    if speed <= 0:
+        speed = TRANSIT_SPEED_KN
+    return (Decimal(distance_nm) / (speed * Decimal("24"))).quantize(
         Decimal("0.001"), rounding=ROUND_HALF_UP
     )
 
 
-def route_base_rate(opex_daily: Decimal, nav_days: Decimal) -> Decimal:
-    """Taux de base €/palette = OPEX jour × jours de mer / 978 (plancher 1 €)."""
-    base = (Decimal(opex_daily) * Decimal(nav_days) / VESSEL_CAPACITY_PALETTES).quantize(
+def route_base_rate(
+    opex_daily: Decimal, nav_days: Decimal, capacity_palettes: Decimal | int | None = None
+) -> Decimal:
+    """Taux de base €/palette = OPEX jour × jours de mer / capacité (plancher 1 €).
+
+    La capacité est celle du **navire de référence** quand il est connu ; sinon la
+    capacité commerciale de référence. Calculer un prix sur une capacité fictive
+    alors que la disponibilité affichée utilise la capacité réelle du navire
+    faisait diverger le tarif et la cale vendue dès qu'un navire s'écartait de 978.
+    """
+    capacity = Decimal(capacity_palettes) if capacity_palettes else VESSEL_CAPACITY_PALETTES
+    if capacity <= 0:
+        capacity = VESSEL_CAPACITY_PALETTES
+    base = (Decimal(opex_daily) * Decimal(nav_days) / capacity).quantize(
         _TWO_PLACES, rounding=ROUND_HALF_UP
     )
     return max(base, Decimal("1.00"))
@@ -316,7 +338,9 @@ async def compute_route_economics(
 
     Distance : valeur fournie (saisie) → leg → ports (haversine/table de repli,
     cf. services.anemos). OPEX jour : navire de la grille → paramètre global →
-    repli historique.
+    repli historique. **Vitesse et capacité** : celles du leg / du navire quand
+    ils sont connus, sinon les valeurs de référence (cf. ``route_nav_days`` et
+    ``route_base_rate``).
     """
     from app.services.anemos import resolve_distance_nm  # import tardif (cycle co2)
 
@@ -330,8 +354,24 @@ async def compute_route_economics(
         distance_nm = resolve_distance_nm(leg, pol, pod)
     distance = Decimal(distance_nm).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
     opex_daily = await _resolve_opex_daily(db, vessel_id)
-    nav_days = route_nav_days(distance)
-    base = route_base_rate(opex_daily, nav_days)
+
+    # Vitesse réelle du leg visé, capacité réelle du navire de référence — à
+    # défaut, les valeurs de référence. Le navire du leg prime sur ``vessel_id``
+    # (grille) : c'est lui qui portera effectivement la marchandise.
+    speed_kn = (
+        Decimal(str(leg.transit_speed_kn))
+        if leg is not None and leg.transit_speed_kn
+        else None
+    )
+    capacity: Decimal | None = None
+    reference_vessel_id = (leg.vessel_id if leg is not None else None) or vessel_id
+    if reference_vessel_id is not None:
+        vessel = await db.get(Vessel, reference_vessel_id)
+        if vessel is not None and vessel.capacity_palettes:
+            capacity = Decimal(vessel.capacity_palettes)
+
+    nav_days = route_nav_days(distance, speed_kn)
+    base = route_base_rate(opex_daily, nav_days, capacity)
     return distance, nav_days, opex_daily, base
 
 
@@ -350,15 +390,33 @@ def _bracket_label(bracket: dict) -> str:
     return str(bracket.get("label") or bracket.get("key") or bracket.get("max_qty") or "")
 
 
+def bracket_upper_bound(bracket: dict) -> float:
+    """Borne haute **incluse** d'un palier ; ``inf`` pour le palier non borné.
+
+    Le palier « navire complet » n'a pas de plafond métier : le représenter par
+    un nombre en dur (l'ancienne capacité 850) faisait retomber toute quantité
+    supérieure sur un repli silencieux. ``max_qty`` absent ou ``None`` vaut donc
+    « sans limite ».
+    """
+    raw = bracket.get("max_qty")
+    if raw is None or raw == "":
+        return float("inf")
+    try:
+        return float(int(raw))
+    except (TypeError, ValueError):
+        return float("inf")
+
+
 def bracket_for_quantity(grid: RateGrid, qty: int) -> tuple[str, Decimal]:
     """(label, coeff) de la bracket de volume applicable à ``qty`` palettes.
 
     Les brackets sont portés par la grille (``brackets_json``), partagés par
-    toutes ses routes.
+    toutes ses routes. ``max_qty`` est la **borne haute incluse** ; ``None``
+    désigne le palier non borné (« navire complet »).
     """
-    brackets = sorted(grid.brackets, key=lambda b: int(b["max_qty"]))
+    brackets = sorted(grid.brackets, key=bracket_upper_bound)
     for bracket in brackets:
-        if qty <= int(bracket["max_qty"]):
+        if qty <= bracket_upper_bound(bracket):
             return _bracket_label(bracket), Decimal(str(bracket["coeff"]))
     if brackets:
         last = brackets[-1]
@@ -526,8 +584,68 @@ def _option_quantity(unit: str, *, total_palettes: int, tonnage_t: Decimal | Non
 
 
 def generate_quote_reference() -> str:
+    """Référence d'estimation — suffixe 48 bits (E-1 : 24 bits étaient énumérables).
+
+    ``Quote.reference`` est ``String(24)`` : ``DEV-AAAA-`` (9) + 12 caractères = 21.
+    """
     year = datetime.now(UTC).year
-    return f"DEV-{year}-{secrets.token_hex(3).upper()}"
+    return f"DEV-{year}-{secrets.token_hex(6).upper()}"
+
+
+async def create_estimation_request(
+    db: AsyncSession,
+    *,
+    pol_locode: str,
+    pod_locode: str,
+    leg: Leg | None = None,
+    client_account: ClientAccount | None = None,
+    commercial_client=None,
+    contact_name: str | None = None,
+    contact_email: str | None = None,
+    contact_company: str | None = None,
+    palettes_total: int,
+    tonnage_t: Decimal | None = None,
+    hazardous: bool = False,
+    items: list[tuple[str, int]] | None = None,
+    lang: str = "fr",
+) -> Quote:
+    """Demande d'estimation **non chiffrée**, déposée depuis la vitrine publique.
+
+    Elle enregistre le besoin (route, volume, coordonnées) sans calculer de
+    tarif : le demandeur n'a pas de grille négociée, et publier un prix avant
+    qualification exposerait la politique tarifaire. Les montants restent à zéro
+    et ``is_priced`` est faux — les écrans s'appuient dessus pour ne rien
+    afficher plutôt que d'afficher « 0 € ».
+    """
+    from app.services.references import unique_reference
+
+    quote = Quote(
+        reference=await unique_reference(
+            db, column=Quote.reference, factory=generate_quote_reference
+        ),
+        status="issued",
+        origin="public_request",
+        pol_locode=pol_locode.upper(),
+        pod_locode=pod_locode.upper(),
+        leg_id=leg.id if leg is not None else None,
+        etd_snapshot=leg.etd if leg is not None else None,
+        client_account_id=client_account.id if client_account is not None else None,
+        commercial_client_id=(
+            commercial_client.id if commercial_client is not None else None
+        ),
+        contact_name=contact_name,
+        contact_email=contact_email,
+        contact_company=contact_company,
+        palettes_total=palettes_total,
+        tonnage_t=tonnage_t,
+        hazardous=hazardous,
+        currency="EUR",
+        items_json=json.dumps([[f, c] for f, c in items]) if items else None,
+        lang=lang,
+    )
+    db.add(quote)
+    await db.flush()
+    return quote
 
 
 async def create_quote(
@@ -547,8 +665,12 @@ async def create_quote(
     items: list[tuple[str, int]] | None = None,
     lang: str = "fr",
 ) -> Quote:
+    from app.services.references import unique_reference
+
     quote = Quote(
-        reference=generate_quote_reference(),
+        reference=await unique_reference(
+            db, column=Quote.reference, factory=generate_quote_reference
+        ),
         status="issued",
         pol_locode=pol_locode.upper(),
         pod_locode=pod_locode.upper(),

@@ -22,6 +22,23 @@
 <section class="section">
   <div class="section-inner" style="max-width:760px;">
 
+    {% if not quote.is_priced %}
+    <div class="card">
+      <h2 style="color:var(--teal);margin-top:0;">{{ t('devis_request_received_title', lang) }}</h2>
+      <p>{{ t('devis_request_received_p', lang) }}</p>
+      <ul>
+        <li>{{ pol.name if pol else quote.pol_locode }} → {{ pod.name if pod else quote.pod_locode }}</li>
+        <li>{{ quote.palettes_total }} {{ t('devis_palettes', lang) }}{% if quote.tonnage_t %} · {{ quote.tonnage_t|round(2) }} t{% endif %}{% if quote.hazardous %} · IMDG{% endif %}</li>
+        {% if leg %}<li>{{ t('devis_result_crossing', lang) }} <span class="mono">{{ leg.leg_code }}</span></li>{% endif %}
+      </ul>
+      <p class="form-hint">{{ t('devis_request_received_next', lang) }}</p>
+    </div>
+
+    <div style="display:flex;gap:var(--sp-3);flex-wrap:wrap;margin-top:var(--sp-5);">
+      <a class="btn btn-secondary" href="/routes">{{ t('devis_see_routes', lang) }}</a>
+      <a class="btn btn-ghost" href="/contact">{{ t('devis_talk_sales', lang) }}</a>
+    </div>
+    {% else %}
     <div class="card">
       <table style="width:100%;border-collapse:collapse;">
         <thead>
@@ -85,6 +102,7 @@
       <a class="btn btn-ghost" href="/devis">{{ t('devis_new_quote', lang) }}</a>
     </div>
     <p class="form-hint" style="margin-top:var(--sp-3);">{{ t('devis_book_reassure', lang) }}</p>
+    {% endif %}
 
     {% if co2_avoided_kg and co2_avoided_kg > 0 %}
     <div class="card" style="margin-top:var(--sp-5);background:var(--sable,#EFE6D6);">

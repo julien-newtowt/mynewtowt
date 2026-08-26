@@ -38,6 +38,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.models.user import User
 
 CLIENT_TYPES = ("freight_forwarder", "shipper")
 RATE_GRID_STATUSES = ("draft", "active", "expired", "superseded")
@@ -69,33 +70,84 @@ def capacity_priority_label(rank: int | None) -> str:
     return CAPACITY_PRIORITY_LABELS.get(int(rank), f"Rang {int(rank)}")
 
 
-RATE_OFFER_STATUSES = ("draft", "sent", "accepted", "declined", "expired")
+# Cycle de vie d'une offre commerciale (métier NEWTOWT) :
+#   en_cours — proposée au client, réserve du volume prévisionnel sur le leg ;
+#   valide   — acceptée : déclenche l'établissement de la booking note ;
+#   echue    — validité dépassée **ou** navire parti (ATD) ;
+#   annule   — retirée sur décision du commercial.
+# ``echue`` et ``annule`` sont terminaux et libèrent le volume réservé.
+RATE_OFFER_STATUSES = ("en_cours", "valide", "echue", "annule")
+RATE_OFFER_STATUS_LABELS: dict[str, str] = {
+    "en_cours": "En cours",
+    "valide": "Validée",
+    "echue": "Échue",
+    "annule": "Annulée",
+}
+# Statuts depuis lesquels une offre peut encore être validée ou annulée.
+RATE_OFFER_OPEN_STATUSES = ("en_cours",)
+
 ORDER_STATUSES = ("draft", "confirmed", "loaded", "delivered", "cancelled")
+# Libellés français — l'interface est en français, elle affichait les valeurs
+# techniques. Les **valeurs** restent inchangées (elles sont contractuelles pour
+# les consommateurs de ``Order.status``, dont le calcul de capacité).
+ORDER_STATUS_LABELS: dict[str, str] = {
+    "draft": "Brouillon",
+    "confirmed": "Confirmée",
+    "loaded": "Chargée",
+    "delivered": "Livrée",
+    "cancelled": "Annulée",
+}
+
+# Conditions de règlement d'une grille — déclencheurs métier (cf.
+# ``RateGridPaymentTerm``). Purement déclaratifs : la facturation du fret est
+# hors plateforme (virement bancaire), ils décrivent le contrat, ils ne
+# déclenchent aucune écriture comptable.
+PAYMENT_TRIGGERS = ("before_loading", "before_discharge", "days_before_etd")
+PAYMENT_TRIGGER_LABELS: dict[str, str] = {
+    "before_loading": "Avant le chargement",
+    "before_discharge": "Avant le déchargement",
+    "days_before_etd": "X jours avant le départ du navire",
+}
+# Une grille prévoit d'un à trois règlements.
+MAX_PAYMENT_TERMS = 3
 
 # Unités de tarification des options de grille.
 # per_palette      — appliqué × nombre de palettes (ex. manutention)
 # per_tonne        — appliqué × tonnage chargé
-# per_booking      — forfait par réservation
+# per_booking      — forfait par commande / réservation
+# per_bl           — forfait par connaissement (BL) émis
 # per_booking_note — forfait par booking note émise (frais documentaires)
-RATE_OPTION_UNITS = ("per_palette", "per_tonne", "per_booking", "per_booking_note")
+RATE_OPTION_UNITS = (
+    "per_palette",
+    "per_tonne",
+    "per_booking",
+    "per_bl",
+    "per_booking_note",
+)
 
 RATE_OPTION_UNIT_LABELS: dict[str, str] = {
     "per_palette": "par palette",
     "per_tonne": "par tonne chargée",
-    "per_booking": "par réservation",
+    "per_booking": "à la commande",
+    "per_bl": "au connaissement (BL)",
     "per_booking_note": "par booking note",
 }
 
 
-# Brackets dégressifs (volume → coefficient)
+# Brackets dégressifs (volume → coefficient).
+#
+# Barème métier NEWTOWT : les paliers sont **inclusifs des deux côtés**
+# (« de 50 à 100 » couvre 50 et 100). ``max_qty`` porte la borne haute incluse ;
+# la borne basse est implicitement ``max_qty`` du palier précédent + 1.
+# Les coefficients sont paramétrables par grille (``brackets_json``) — ceux-ci
+# ne sont que la proposition par défaut à la création.
 DEFAULT_BRACKETS_SHIPPER: list[dict] = [
-    {"key": "lt50", "label": "< 50 palettes", "max_qty": 49, "coeff": 1.10},
-    {"key": "100", "label": "100 palettes", "max_qty": 100, "coeff": 1.00},
-    {"key": "200", "label": "200 palettes", "max_qty": 200, "coeff": 0.80},
-    {"key": "300", "label": "300 palettes", "max_qty": 300, "coeff": 0.80},
-    {"key": "400", "label": "400 palettes", "max_qty": 400, "coeff": 0.80},
-    {"key": "500", "label": "500 palettes", "max_qty": 500, "coeff": 0.70},
-    {"key": "full", "label": "Full ship (850 pal.)", "max_qty": 850, "coeff": 0.60},
+    {"key": "lt50", "label": "Moins de 50 palettes", "max_qty": 49, "coeff": 1.10},
+    {"key": "50_100", "label": "De 50 à 100 palettes", "max_qty": 100, "coeff": 1.00},
+    {"key": "100_300", "label": "De 100 à 300 palettes", "max_qty": 300, "coeff": 0.90},
+    {"key": "300_500", "label": "De 300 à 500 palettes", "max_qty": 500, "coeff": 0.80},
+    {"key": "500_800", "label": "De 500 à 800 palettes", "max_qty": 800, "coeff": 0.70},
+    {"key": "full", "label": "Navire complet", "max_qty": None, "coeff": 0.60},
 ]
 
 DEFAULT_BRACKETS_FF: list[dict] = [
@@ -129,6 +181,15 @@ class Client(Base):
     vat_number: Mapped[str | None] = mapped_column(String(40))
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Fiche créée automatiquement depuis une **demande d'estimation publique**,
+    # avant toute qualification commerciale. Un prospect n'a ni grille négociée
+    # ni extranet : le commercial le qualifie, lui ouvre un accès puis lui
+    # propose une offre. Le drapeau tombe dès qu'un compte plateforme lui est
+    # rattaché — la distinction sert au tri, pas à restreindre quoi que ce soit.
+    is_prospect: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True, server_default="false"
+    )
+    prospect_source: Mapped[str | None] = mapped_column(String(40))
     # ── Compte-ancre (P11) ────────────────────────────────────────────────
     # Un « compte-ancre » est un partenaire stratégique qui sécurise le
     # remplissage : il s'engage sur un volume annuel, bénéficie d'une priorité
@@ -149,6 +210,18 @@ class Client(Base):
         String(20), default="none", nullable=False, server_default="none"
     )
     pipedrive_org_id: Mapped[int | None] = mapped_column(Integer)
+    # ── Commercial attitré ────────────────────────────────────────────────
+    # Chaque client a un commercial référent : c'est lui qu'on notifie d'une
+    # estimation, et lui qui porte la relation. Renseigné à l'import Pipedrive
+    # (``owner_id`` de l'organisation, rapproché par e-mail sur les comptes
+    # staff) **ou** à la main depuis la fiche client ; la saisie manuelle fait
+    # foi — un import ultérieur ne l'écrase jamais (cf. ``pipedrive_sync``).
+    assigned_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    # Propriétaire côté Pipedrive, conservé pour le rapprochement (jamais
+    # utilisé seul comme identité : un owner Pipedrive n'est pas un compte staff).
+    pipedrive_owner_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -169,6 +242,9 @@ class Client(Base):
         """Libellé lisible du statut de co-branding."""
         return CO_BRANDING_STATUS_LABELS.get(self.co_branding_status, self.co_branding_status)
 
+    assigned_user: Mapped[User | None] = relationship(
+        "User", foreign_keys=[assigned_user_id], lazy="selectin"
+    )
     rate_grids: Mapped[list[RateGrid]] = relationship(
         back_populates="client", cascade="all, delete-orphan"
     )
@@ -244,6 +320,11 @@ class RateGrid(Base):
     options: Mapped[list[RateGridOption]] = relationship(
         back_populates="grid", cascade="all, delete-orphan", order_by="RateGridOption.id"
     )
+    payment_terms: Mapped[list[RateGridPaymentTerm]] = relationship(
+        back_populates="grid",
+        cascade="all, delete-orphan",
+        order_by="RateGridPaymentTerm.position",
+    )
 
     @property
     def brackets(self) -> list[dict]:
@@ -281,6 +362,16 @@ class RateGridLine(Base):
     opex_daily: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     base_rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     is_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Référence tarifaire codifiée « P-MMAA-MMAA-XX-YY » (cf.
+    # ``services.commercial.route_tariff_reference``). Portée par la **route** et
+    # non par l'en-tête : la codification encode une paire POL/POD, alors qu'une
+    # grille en couvre plusieurs. Recalculée quand la période ou la route change.
+    tariff_reference: Mapped[str | None] = mapped_column(String(32), index=True)
+    # Grille par défaut du client **sur cette route** : celle retenue quand
+    # plusieurs grilles actives couvrent la même paire POL/POD à la date d'ETD.
+    is_route_default: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
 
     grid: Mapped[RateGrid] = relationship(back_populates="lines")
 
@@ -312,8 +403,65 @@ class RateGridOption(Base):
     grid: Mapped[RateGrid] = relationship(back_populates="options")
 
 
+class RateGridPaymentTerm(Base):
+    """Échéance de règlement d'une grille tarifaire (1 à 3 par grille).
+
+    Les conditions de règlement sont **déclaratives** : elles décrivent ce qui
+    a été négocié et sont reprises telles quelles sur la booking note. Elles ne
+    déclenchent aucune facturation — la facturation du fret est hors plateforme
+    (virement bancaire, comptabilité Pennylane), décision d'arbitrage A5.
+
+    Trois déclencheurs métier (``PAYMENT_TRIGGERS``) :
+
+    * ``before_loading``   — avant le chargement ;
+    * ``before_discharge`` — avant le déchargement ;
+    * ``days_before_etd``  — X jours avant le départ du navire (``offset_days``).
+    """
+
+    __tablename__ = "rate_grid_payment_terms"
+    __table_args__ = (
+        UniqueConstraint("grid_id", "position", name="uq_grid_payment_term_position"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grid_id: Mapped[int] = mapped_column(
+        ForeignKey("rate_grids.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Rang d'affichage / d'échelonnement (1 à MAX_PAYMENT_TERMS).
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    trigger: Mapped[str] = mapped_column(String(30), nullable=False)  # PAYMENT_TRIGGERS
+    # Nombre de jours avant l'ETD — requis pour ``days_before_etd`` uniquement.
+    offset_days: Mapped[int | None] = mapped_column(Integer)
+    # Part de la facture à régler à cette échéance (0 < pct <= 100).
+    percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(120))
+
+    grid: Mapped[RateGrid] = relationship(back_populates="payment_terms")
+
+    @property
+    def trigger_label(self) -> str:
+        """Libellé lisible de l'échéance (avec le nombre de jours si applicable)."""
+        if self.trigger == "days_before_etd":
+            days = self.offset_days if self.offset_days is not None else "X"
+            return f"{days} jours avant le départ du navire"
+        return PAYMENT_TRIGGER_LABELS.get(self.trigger, self.trigger)
+
+
 class RateOffer(Base):
-    """Offre commerciale envoyée à un client (DOCX gen. possible)."""
+    """Offre commerciale : **un** client × **une** grille × **un** leg.
+
+    C'est le point de départ des opérations : elle relie une grille tarifaire à
+    un client et à un voyage précis, réserve du volume dans le chargement
+    prévisionnel du leg jusqu'à sa date de fin de validité, et déclenche à sa
+    validation l'établissement de la booking note.
+
+    ``grid_id`` et ``leg_id`` sont volontairement **nullables en base** malgré
+    la règle métier « une seule et obligatoire » : des offres antérieures à cette
+    règle existent sans l'un ni l'autre. Les rendre NOT NULL exigerait de leur
+    inventer une grille ou un voyage. La contrainte est donc appliquée **à la
+    création** (formulaire et route), et ``is_legacy`` marque les offres
+    historiques pour qu'on ne les confonde pas avec une saisie incomplète.
+    """
 
     __tablename__ = "rate_offers"
 
@@ -323,9 +471,9 @@ class RateOffer(Base):
         ForeignKey("commercial_clients.id"), nullable=False, index=True
     )
     grid_id: Mapped[int | None] = mapped_column(ForeignKey("rate_grids.id"))
-    leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"))
+    leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"), index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="en_cours", nullable=False, index=True)
     estimated_palettes: Mapped[int | None] = mapped_column(Integer)
     proposed_rate_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     total_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
@@ -333,13 +481,110 @@ class RateOffer(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Horodatages du cycle métier (distincts de ``accepted_at``/``declined_at``,
+    # conservés pour les offres antérieures au nouveau cycle).
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_reason: Mapped[str | None] = mapped_column(Text)
+    expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Offre créée avant la règle « 1 grille + 1 leg obligatoires » : elle peut
+    # légitimement en manquer. Distingue l'héritage d'une saisie incomplète.
+    is_legacy: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
     notes: Mapped[str | None] = mapped_column(Text)
     pipedrive_deal_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     client: Mapped[Client] = relationship(back_populates="rate_offers")
+
+    @property
+    def status_label(self) -> str:
+        """Libellé français du statut."""
+        return RATE_OFFER_STATUS_LABELS.get(self.status, self.status)
+
+    def is_open(self) -> bool:
+        """L'offre est-elle encore ouverte (modifiable, validable, annulable) ?"""
+        return self.status in RATE_OFFER_OPEN_STATUSES
+
+
+class RateOfferRevision(Base):
+    """Historique **append-only** d'une offre commerciale.
+
+    Toute modification d'une offre est tracée ici : c'est la pièce mobilisable si
+    un client conteste un prix. Trois niveaux d'information, complémentaires :
+
+    * ``changes_json`` — le **diff champ par champ** (ancienne et nouvelle
+      valeur), qui répond à « qu'est-ce qui a changé exactement ? » ;
+    * ``snapshot_json`` — l'**état complet** de l'offre après la modification, qui
+      permet de rejouer ce qui a été proposé sans reconstituer le diff ;
+    * ``content_hash`` / ``previous_hash`` — un **chaînage SHA-256** : altérer ou
+      retirer une révision casse la chaîne des suivantes, ce qui rend la
+      falsification détectable au lieu d'être indécelable.
+
+    Cette table complète ``activity_logs`` sans le remplacer : le journal
+    d'activité dit « qui a agi », l'historique dit « ce que valait l'offre ».
+    Elle est exclue de la purge administrative (``RETENTION_ONLY_PURGE_TABLES``
+    ne suffirait pas : elle n'est pas purgeable du tout).
+
+    Aucune route ne modifie ni ne supprime une révision — l'insertion est le seul
+    mode d'écriture.
+    """
+
+    __tablename__ = "rate_offer_revisions"
+    __table_args__ = (
+        UniqueConstraint("offer_id", "sequence", name="uq_rate_offer_revision_sequence"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    offer_id: Mapped[int] = mapped_column(
+        ForeignKey("rate_offers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Rang de la révision pour cette offre (1 = création). Contraint unique :
+    # deux révisions ne peuvent pas revendiquer la même place dans la chaîne.
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor_id: Mapped[int | None] = mapped_column(Integer)
+    actor_name: Mapped[str | None] = mapped_column(String(200))
+    actor_role: Mapped[str | None] = mapped_column(String(40))
+    # Diff : liste JSON de {field, old, new}. Vide pour une création.
+    changes_json: Mapped[str | None] = mapped_column(Text)
+    # État complet de l'offre après la modification (JSON canonique).
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    previous_hash: Mapped[str | None] = mapped_column(String(64))
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text)
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+
+    @property
+    def changes(self) -> list[dict]:
+        """Diff décodé (liste vide si absent ou illisible)."""
+        if not self.changes_json:
+            return []
+        try:
+            data = json.loads(self.changes_json)
+        except (ValueError, TypeError):
+            return []
+        return data if isinstance(data, list) else []
+
+    @property
+    def snapshot(self) -> dict:
+        """État complet décodé (dict vide si illisible)."""
+        try:
+            data = json.loads(self.snapshot_json or "{}")
+        except (ValueError, TypeError):
+            return {}
+        return data if isinstance(data, dict) else {}
 
 
 class Order(Base):
@@ -411,6 +656,11 @@ class Order(Base):
     assignments: Mapped[list[OrderAssignment]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
+
+    @property
+    def status_label(self) -> str:
+        """Libellé français du statut (affichage seul — la valeur ne change pas)."""
+        return ORDER_STATUS_LABELS.get(self.status, self.status)
 
 
 class OrderAssignment(Base):

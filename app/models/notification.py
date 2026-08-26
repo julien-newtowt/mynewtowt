@@ -45,6 +45,8 @@ NOTIFICATION_TYPES = (
     "anemos_issued",
     "new_booking_message",
     "trombinoscope_generated",
+    # Estimation tarifaire demandée par un client (ou déposée depuis la vitrine).
+    "estimate_ready",
 )
 
 # Icônes par type (emoji)
@@ -69,6 +71,7 @@ NOTIFICATION_ICONS: dict[str, str] = {
     "anemos_issued": "🌿",
     "new_booking_message": "💬",
     "trombinoscope_generated": "🪪",
+    "estimate_ready": "🧮",
 }
 
 

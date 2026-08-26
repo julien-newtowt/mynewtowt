@@ -214,7 +214,7 @@
     {% endif %}
     <a href="/me/bookings/{{ booking.reference }}/packing-list.pdf" target="_blank" class="btn btn-secondary">📦 Packing List</a>
     <a href="/me/bookings/{{ booking.reference }}/booking-note.pdf" target="_blank" class="btn btn-secondary">
-      📝 Booking note
+      📝 Confirmation de réservation
     </a>
     {% if booking.status in ('discharged','delivered') %}
       <a href="/me/bookings/{{ booking.reference }}/anemos.pdf" target="_blank" class="btn btn-accent">

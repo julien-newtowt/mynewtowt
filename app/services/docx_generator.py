@@ -4,6 +4,9 @@ Regroupe les générateurs Word de la plateforme, en miroir de
 ``services.pdf_generator`` (qui produit les PDF via WeasyPrint) :
 
 - ``build_offer_docx``           : offre commerciale (depuis ``RateOffer``).
+- ``build_booking_note_docx``    : booking note contractuelle (depuis un
+  ``BookingNote``, trame de type BIMCO CONLINEBOOKING, conditions générales au
+  verso).
 - ``build_bill_of_lading_docx``  : Bill of Lading / connaissement (depuis un
   ``Booking`` confirmé).
 
@@ -123,11 +126,13 @@ def build_offer_docx(*, offer, client, leg) -> DocxBytes:
     doc.add_paragraph()  # spacer
 
     _section(doc, "Client")
-    client_rows = [("Nom", client.name if client else "—")]
-    if client and getattr(client, "company_name", None):
-        client_rows.append(("Société", client.company_name))
-    client_rows.append(("E-mail", client.email if client else "—"))
-    client_rows.append(("Téléphone", getattr(client, "phone", None) if client else "—"))
+    # Contrat réel du modèle Client (commercial_clients) : ``name`` est la raison
+    # sociale, le contact vit dans ``contact_name``/``contact_email``/``contact_phone``.
+    client_rows = [("Société", client.name if client else "—")]
+    if client and client.contact_name:
+        client_rows.append(("Contact", client.contact_name))
+    client_rows.append(("E-mail", client.contact_email if client else "—"))
+    client_rows.append(("Téléphone", client.contact_phone if client else "—"))
     _kv_table(doc, client_rows)
     doc.add_paragraph()
 
@@ -520,3 +525,166 @@ def build_bill_of_lading_docx_from_pl(
     _footer(doc)
     suffix = "" if is_signed else "-DRAFT"
     return _serialize(doc, f"{bl_number}{suffix}.docx")
+
+
+# ---------------------------------------------------------------------------
+# Booking note (contrat de réservation d'espace en cale)
+# ---------------------------------------------------------------------------
+
+
+def _bn_cell(cell, label: str, value: str | None) -> None:
+    """Case du formulaire : intitulé en petit, valeur en dessous.
+
+    Reproduit la présentation du gabarit BIMCO, où chaque case porte son
+    intitulé imprimé et la valeur saisie en dessous. Une valeur absente laisse
+    la case **visiblement vide** (un tiret) : elle est à compléter, pas à
+    deviner.
+    """
+    from docx.shared import Pt
+
+    cell.text = ""
+    head = cell.paragraphs[0]
+    head_run = head.add_run(label)
+    head_run.font.size = Pt(7)
+    head_run.bold = True
+    head_run.font.color.rgb = _teal_color()
+
+    body = cell.add_paragraph()
+    body_run = body.add_run(value if value else "—")
+    body_run.font.size = Pt(9)
+    if value:
+        body_run.bold = True
+
+
+def build_booking_note_docx(*, note, offer, leg=None) -> DocxBytes:
+    """Booking note Word depuis un ``BookingNote`` (trame CONLINEBOOKING).
+
+    Le recto reprend les cases du gabarit fourni par la direction ; le verso
+    imprime les conditions générales verbatim (``booking_note_terms``). Le
+    document est construit programmatiquement avec ``python-docx`` : aucun
+    moteur de gabarit n'intervient, donc aucun texte saisi ne peut être
+    interprété comme de la mise en forme.
+
+    Un brouillon porte un **filigrane textuel** en tête : il circule parfois en
+    interne avant diffusion, et rien ne doit laisser croire qu'il engage déjà.
+    """
+    from docx.shared import Pt
+
+    from app.services.booking_note_terms import (
+        BOOKING_NOTE_TERMS,
+        BOOKING_NOTE_TERMS_TITLE,
+    )
+
+    doc = _new_document()
+
+    _title(doc, f"BOOKING NOTE NUMBER – {note.reference}")
+    if note.status != "diffusee":
+        draft = doc.add_paragraph()
+        draft_run = draft.add_run(
+            "BROUILLON — document de travail, non diffusé au client"
+        )
+        draft_run.bold = True
+        draft_run.font.size = Pt(10)
+        from docx.shared import RGBColor
+
+        draft_run.font.color.rgb = RGBColor(0xB4, 0x71, 0x48)  # cuivre NEWTOWT
+
+    place_date = ", ".join(
+        bit for bit in (note.issue_place, _fmt_date(note.issued_on)) if bit and bit != "—"
+    )
+
+    table = doc.add_table(rows=0, cols=2)
+    table.style = "Table Grid"
+
+    def _row(left: tuple[str, str | None], right: tuple[str, str | None]) -> None:
+        cells = table.add_row().cells
+        _bn_cell(cells[0], left[0], left[1])
+        _bn_cell(cells[1], right[0], right[1])
+
+    _row(("Agents", note.agents_pod), ("Place and date", place_date or None))
+    _row(("Carrier", "NEWTOWT\n52 Quai Frissard\n76600 LE HAVRE\nFRANCE"), ("Vessel", note.vessel_name))
+    _row(
+        (
+            "Merchant*",
+            "\n".join(
+                bit
+                for bit in (
+                    note.merchant_name,
+                    note.merchant_contact,
+                    note.merchant_address,
+                    note.merchant_email,
+                )
+                if bit
+            )
+            or None,
+        ),
+        ("Time for shipment (about)", note.time_for_shipment),
+    )
+    _row(("Port of loading**", note.pol_text), ("Port of discharge**", note.pod_text))
+    _row(
+        (
+            "Merchant's representatives at loading port",
+            "TO BE CONFIRMED at time of shipment of the Bill of lading",
+        ),
+        (
+            "Container No./Seal No./Marks and Nos. (if available)",
+            "TO BE CONFIRMED at time of shipment of the Bill of lading",
+        ),
+    )
+    _row(
+        ("Number and kind of packages, description of cargo", note.cargo_description),
+        ("Gross weight, kg (if available)", "1000 kg maximum per pallet"),
+    )
+    _row(
+        ("Freight details and charges", note.freight_terms),
+        ("Special terms, if agreed", note.special_terms),
+    )
+    _row(
+        (
+            "Freight (state pre-payable or payable at destination)\n"
+            "Subject to deadfreight (100%) if shipment canceled 3 months before ETD",
+            note.payment_terms,
+        ),
+        (
+            "Measurement, m3 (if available)",
+            "TO BE CONFIRMED at time of shipment of the Bill of lading",
+        ),
+    )
+
+    doc.add_paragraph()
+    agreement = doc.add_paragraph(
+        "It is hereby agreed that this Contract shall be performed subject to the terms "
+        "contained on Page 1 and 2 hereof which shall prevail over any previous arrangements, "
+        "and which shall in turn be superseded (except as to dead freight) by the terms of the "
+        "Bill of Lading."
+    )
+    for run in agreement.runs:
+        run.font.size = Pt(8)
+
+    sign = doc.add_table(rows=2, cols=2)
+    sign.style = "Table Grid"
+    sign.rows[0].cells[0].text = "Signature (Merchant)"
+    sign.rows[0].cells[1].text = "Signature (Carrier)"
+    sign.rows[1].cells[0].text = "\n\n"
+    sign.rows[1].cells[1].text = "\n\n"
+
+    for footnote in (
+        "* As defined hereinafter (Cl. 1)",
+        "** (or so near thereunto as the Vessel may safely get and lie always afloat)",
+    ):
+        para = doc.add_paragraph(footnote)
+        for run in para.runs:
+            run.font.size = Pt(7)
+
+    # ── Verso : conditions générales, verbatim ───────────────────────────
+    from docx.enum.text import WD_BREAK
+
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+    _section(doc, BOOKING_NOTE_TERMS_TITLE)
+    for clause in BOOKING_NOTE_TERMS:
+        para = doc.add_paragraph(clause)
+        for run in para.runs:
+            run.font.size = Pt(7)
+
+    _footer(doc)
+    return _serialize(doc, f"Booking_Note_{note.reference}.docx")

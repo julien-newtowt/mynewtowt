@@ -324,6 +324,25 @@ async def register(
 ):
     from app.services import client_account as client_account_service
 
+    # M-1 : sans garde, l'inscription répond à la même question que la connexion
+    # (« cet e-mail est-il client NEWTOWT ? ») et contournait tout le durcissement
+    # de /me/login. Même limite par IP, et message d'erreur **neutre** : il ne dit
+    # plus si l'échec vient d'un e-mail déjà pris.
+    ip = _client_ip(request) or "unknown"
+    if await rate_limit.exceeded(
+        db,
+        scope="client_register_ip",
+        identifier=ip,
+        max_attempts=10,
+        window_minutes=10,
+    ):
+        return templates.TemplateResponse(
+            "client/register.html",
+            {"request": request, "error": "Trop de tentatives — patientez 10 minutes."},
+            status_code=429,
+        )
+    await rate_limit.record(db, scope="client_register_ip", identifier=ip)
+
     try:
         client = await client_account_service.create_account(
             db,
@@ -337,7 +356,13 @@ async def register(
     except client_account_service.EmailAlreadyExists:
         return templates.TemplateResponse(
             "client/register.html",
-            {"request": request, "error": "Un compte existe déjà avec cet email."},
+            {
+                "request": request,
+                "error": (
+                    "Impossible de créer ce compte. Si vous avez déjà un espace client, "
+                    "connectez-vous ou utilisez « mot de passe oublié »."
+                ),
+            },
             status_code=400,
         )
     except client_account_service.AccountError as exc:

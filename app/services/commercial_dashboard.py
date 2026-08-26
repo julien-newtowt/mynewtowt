@@ -16,8 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commercial import Order, RateGrid, RateOffer
 
-# Statuts d'offre considérés « émise » (au moins envoyée au client).
-OFFER_EMITTED_STATUSES = ("sent", "accepted", "declined", "expired")
+# Statuts d'offre comptés au dénominateur du taux de conversion : toutes les
+# offres réellement proposées, quelle qu'en soit l'issue. Le nouveau cycle n'a
+# plus d'état « brouillon » — une offre existe dès qu'elle est en cours.
+OFFER_EMITTED_STATUSES = ("en_cours", "valide", "annule", "echue")
+# Statut d'offre valant conversion (numérateur du taux).
+OFFER_WON_STATUS = "valide"
 # Statuts de commande dont le CA est « réalisé » (confirmé et au-delà).
 ORDER_REALIZED_STATUSES = ("confirmed", "loaded", "delivered")
 
@@ -72,7 +76,7 @@ async def grid_performance(db: AsyncSession) -> list[dict]:
     for g in grids:
         ostat = offers.get(g.id, {})
         emitted = sum(ostat.get(s, 0) for s in OFFER_EMITTED_STATUSES)
-        accepted = ostat.get("accepted", 0)
+        accepted = ostat.get(OFFER_WON_STATUS, 0)
         order_count, ca = orders.get(g.id, (0, Decimal(0)))
         out.append(
             {
@@ -105,7 +109,7 @@ async def commercial_totals(db: AsyncSession) -> dict:
         )
     ) or 0
     accepted = (
-        await db.scalar(select(func.count(RateOffer.id)).where(RateOffer.status == "accepted"))
+        await db.scalar(select(func.count(RateOffer.id)).where(RateOffer.status == OFFER_WON_STATUS))
     ) or 0
     return {
         "ca_total_eur": Decimal(ca_total),

@@ -52,8 +52,14 @@ _REFERENCE_PREFIX = "BK-"
 
 
 def generate_reference(year: int | None = None) -> str:
+    """Référence de réservation — suffixe 40 bits (M-6 : 16 bits collisionnaient).
+
+    ``Booking.reference`` est ``String(20)`` : ``BK-AAAA-`` (8) + 10 caractères = 18.
+    À 16 bits, une collision devenait probable dès ~300 réservations dans l'année,
+    et se manifestait par un HTTP 500 à la validation du tunnel client.
+    """
     year = year or datetime.now(UTC).year
-    suffix = secrets.token_hex(2).upper()
+    suffix = secrets.token_hex(5).upper()
     return f"{_REFERENCE_PREFIX}{year}-{suffix}"
 
 
@@ -120,8 +126,12 @@ async def create_draft(
         hazardous=hazardous,
     )
 
+    from app.services.references import unique_reference
+
     booking = Booking(
-        reference=generate_reference(),
+        reference=await unique_reference(
+            db, column=Booking.reference, factory=generate_reference
+        ),
         client_account_id=(client.id if client else None),
         leg_id=leg.id,
         status="draft",

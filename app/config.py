@@ -170,6 +170,20 @@ class Settings(BaseSettings):
         """Vrai si l'encaissement carte (Stripe Checkout) est configuré."""
         return bool(self.stripe_secret_key)
 
+    # ── Signature électronique Yousign (booking note) ─────────────────────
+    # Même principe secure-by-default que Stripe : sans YOUSIGN_API_KEY, la voie
+    # électronique renvoie 503 et le circuit dégradé (signature manuscrite du
+    # document Word) reste seul actif. Le webhook exige YOUSIGN_WEBHOOK_SECRET
+    # pour vérifier l'empreinte HMAC ; sans lui, il renvoie 503 plutôt que
+    # d'accepter des événements non authentifiés.
+    yousign_api_key: str | None = None
+    yousign_webhook_secret: str | None = None
+
+    @property
+    def yousign_enabled(self) -> bool:
+        """Vrai si la signature électronique de la booking note est configurée."""
+        return bool(self.yousign_api_key)
+
     @property
     def map_token(self) -> str:
         """Resolved token for MapLibre tiles. Prefers MAPTILER_TOKEN, falls

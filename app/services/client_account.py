@@ -55,7 +55,10 @@ async def create_account(
     country: str | None = None,
     language: str = "fr",
 ) -> ClientAccount:
-    """Crée un compte client vérifié et le relie au client commercial (best-effort).
+    """Crée un compte client, **sans** rattachement à un client commercial.
+
+    Le lien vers un client commercial (et donc vers sa grille négociée) est posé
+    exclusivement par un opérateur ``commercial:M`` — cf. ``services.client_linking``.
 
     Lève :class:`EmailAlreadyExists` si l'email est déjà pris, ou
     :class:`AccountError` si le mot de passe est trop court / champs manquants.
@@ -89,12 +92,9 @@ async def create_account(
     db.add(account)
     await db.flush()
 
-    # Rattachement au client commercial par email (best-effort, ne lève pas).
-    try:
-        from app.services.client_linking import auto_link_account
-
-        await auto_link_account(db, account)
-    except Exception:  # pragma: no cover - best-effort
-        logger.warning("auto_link_account a échoué pour %s", clean_email, exc_info=True)
-
+    # ⚠️ C-1 : on ne relie JAMAIS automatiquement le compte à un client commercial
+    # (donc à sa grille négociée) à partir de l'e-mail auto-déclaré à l'inscription.
+    # Le rattachement est un acte explicite d'un opérateur commercial:M
+    # (routes /commercial/clients/{id}/accounts/link). Tant qu'il n'a pas eu lieu,
+    # le compte ne voit que la grille standard/par défaut.
     return account

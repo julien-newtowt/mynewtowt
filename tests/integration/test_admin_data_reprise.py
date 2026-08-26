@@ -109,13 +109,25 @@ async def test_purge_route_requires_exact_confirmation(db, staff_user):
 
     from app.routers.admin_router import admin_purge_table
 
-    db.add(ActivityLog(action="x", module="admin", entity_type="t", user_name="u"))
+    # NB : la table d'exemple n'est plus ``activity_logs`` — son vidage intégral
+    # est désormais refusé (M-2), ce qui masquerait le contrôle testé ici.
+    db.add(Vessel(id=1, code="ANE", name="Anemos"))
+    await db.flush()
+    db.add(
+        VesselPosition(
+            vessel_id=1,
+            recorded_at=datetime(2026, 4, 1, tzinfo=UTC),
+            latitude=1.0,
+            longitude=2.0,
+            source="manual",
+        )
+    )
     await db.flush()
     # mauvaise confirmation → 400, rien supprimé
     with pytest.raises(HTTPException) as exc:
         await admin_purge_table(
             _Req(),
-            table_name="activity_logs",
+            table_name="vessel_positions",
             confirm="wrong",
             # ``older_than_days`` est Form(None) : appelée hors HTTP, l'objet Form
             # par défaut fuit et casse la comparaison `> 0` dans la route.
@@ -124,18 +136,19 @@ async def test_purge_route_requires_exact_confirmation(db, staff_user):
             user=staff_user,
         )
     assert exc.value.status_code == 400
-    assert (await db.execute(ActivityLog.__table__.select())).fetchone() is not None
+    assert (await db.execute(VesselPosition.__table__.select())).fetchone() is not None
 
     # bonne confirmation → purge
     resp = await admin_purge_table(
         _Req(),
-        table_name="activity_logs",
-        confirm="activity_logs",
+        table_name="vessel_positions",
+        confirm="vessel_positions",
         older_than_days=None,
         db=db,
         user=staff_user,
     )
     assert resp.status_code == 303
+    assert (await db.execute(VesselPosition.__table__.select())).fetchone() is None
 
 
 # ──────────────────────── Purge ciblée par rétention ────────────────────────
@@ -225,3 +238,46 @@ async def test_purge_route_retention_only_old(db, staff_user):
     assert resp.status_code == 303
     remaining = (await db.execute(VesselPosition.__table__.select())).fetchall()
     assert len(remaining) == 1  # seule la ligne ancienne a été purgée
+
+
+# ─────────────── Journal d'audit : vidage total interdit (M-2) ───────────────
+
+
+@pytest.mark.asyncio
+async def test_activity_logs_total_purge_is_refused(db):
+    """Le journal d'audit ne doit pas pouvoir être vidé d'un clic.
+
+    Il porte la trace de qui a modifié une grille tarifaire ou une offre — donc
+    la preuve mobilisable en cas de contestation de prix. La purge **par
+    rétention** reste ouverte (minimisation RGPD) ; le vidage intégral non.
+    """
+    from app.services.admin_data import purge_table, purge_table_before
+
+    db.add_all(
+        [
+            ActivityLog(
+                action="grid_edit",
+                module="commercial",
+                entity_type="rate_grid",
+                created_at=datetime(2024, 1, 1, tzinfo=UTC),
+            ),
+            ActivityLog(
+                action="offer_send",
+                module="commercial",
+                entity_type="rate_offer",
+                created_at=datetime.now(UTC),
+            ),
+        ]
+    )
+    await db.flush()
+
+    with pytest.raises(ValueError, match="rétention"):
+        await purge_table(db, "activity_logs")
+
+    # Rien n'a été supprimé par la tentative refusée.
+    assert len((await db.execute(ActivityLog.__table__.select())).fetchall()) == 2
+
+    # La purge par ancienneté, elle, reste possible.
+    deleted = await purge_table_before(db, "activity_logs", datetime(2025, 1, 1, tzinfo=UTC))
+    assert deleted == 1
+    assert len((await db.execute(ActivityLog.__table__.select())).fetchall()) == 1

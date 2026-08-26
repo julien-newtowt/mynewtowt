@@ -1551,6 +1551,14 @@ form textarea {
 .badge-refused,
 .badge-overdue    { background: rgba(196,69,54,0.12); color: #8a2c1f; }
 
+/* Cycle de vie d'une offre commerciale : en cours / validée / échue / annulée.
+   « Échue » n'est pas une erreur (le temps a passé) : ton neutre-cuivre plutôt
+   que rouge, réservé aux vraies anomalies. */
+.badge-en_cours   { background: rgba(13,89,102,0.12); color: var(--teal); }
+.badge-valide     { background: rgba(135,189,41,0.18); color: #4a6a16; }
+.badge-echue      { background: rgba(180,113,72,0.15); color: #8f4f2a; }
+.badge-annule     { background: var(--sable-light); color: var(--gris); }
+
 /* ───────────────────────── Port badge with flag emoji ─────────────────── */
 .port-badge {
   display: inline-flex; align-items: center; gap: var(--space-1);
@@ -1593,6 +1601,17 @@ form textarea {
 .dropdown-wrap .dropdown-menu button:hover { background: var(--sable-light); }
 
 /* ───────────────────────── Rich data table ─────────────────────────────── */
+/* Conteneur de défilement pour les tableaux larges (7-8 colonnes et plus).
+   Sans lui, un tableau dense fait défiler la page entière sur mobile ou se
+   fait tronquer. Le défilement reste confiné au tableau. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table-scroll > .data-table {
+  min-width: 42rem;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
