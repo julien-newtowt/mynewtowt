@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.commercial import Client
+from app.models.user import User
 from app.utils import pipedrive
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,30 @@ _FF_ACTIVITY_PREFIX = "IFF"
 # Clé du champ personnalisé Pipedrive portant l'« activité » de l'org. Si non
 # renseignée, on repère par balayage une valeur de champ commençant par IFF.
 _ACTIVITY_FIELD_KEY = (os.getenv("PIPEDRIVE_ORG_ACTIVITY_KEY") or "").strip() or None
+
+
+def _org_owner_id(org: dict) -> int | None:
+    """Identifiant du propriétaire Pipedrive d'une organisation.
+
+    ``owner_id`` est tantôt un entier, tantôt un objet développé
+    (``{"id": 42, "email": …}``) selon l'endpoint et la version d'API.
+    """
+    raw = org.get("owner_id")
+    if isinstance(raw, dict):
+        raw = raw.get("id")
+    try:
+        return int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _org_owner_email(org: dict) -> str | None:
+    """E-mail du propriétaire Pipedrive, quand l'API le développe."""
+    raw = org.get("owner_id")
+    if isinstance(raw, dict):
+        email = (raw.get("email") or "").strip().lower()
+        return email or None
+    return None
 
 
 def _org_has_deal(org: dict) -> bool:
@@ -175,6 +200,16 @@ async def sync_clients(db: AsyncSession) -> dict:
         for c in (await db.execute(select(Client))).scalars().all()
         if c.pipedrive_org_id is not None
     }
+    # Comptes staff indexés par e-mail, pour rapprocher le propriétaire Pipedrive
+    # d'un commercial attitré. Seuls les comptes actifs sont éligibles : attribuer
+    # un client à un compte désactivé reviendrait à ne notifier personne.
+    staff_by_email = {
+        (u.email or "").strip().lower(): u.id
+        for u in (await db.execute(select(User).where(User.is_active.is_(True))))
+        .scalars()
+        .all()
+        if u.email
+    }
 
     # Source de vérité « a un deal sur n'importe quel pipeline » : on liste TOUS
     # les deals (tous pipelines, ouverts/gagnés/perdus) et on en déduit les org
@@ -202,6 +237,12 @@ async def sync_clients(db: AsyncSession) -> dict:
                 continue
             address = (org.get("address") or "").strip() or None
             client_type = _client_type_for(org)
+            owner_id = _org_owner_id(org)
+            # Commercial attitré : le propriétaire Pipedrive est rapproché d'un
+            # compte staff par e-mail. Le rapprochement peut échouer (owner non
+            # développé par l'API, commercial sans compte) — l'attribution reste
+            # alors à faire à la main depuis la fiche client.
+            assigned_id = staff_by_email.get(_org_owner_email(org) or "")
             existing = by_pd.get(int(pd_id))
             if existing is None:
                 db.add(
@@ -210,6 +251,8 @@ async def sync_clients(db: AsyncSession) -> dict:
                         client_type=client_type,
                         address=address,
                         pipedrive_org_id=int(pd_id),
+                        pipedrive_owner_id=owner_id,
+                        assigned_user_id=assigned_id,
                         is_active=True,
                     )
                 )
@@ -221,6 +264,13 @@ async def sync_clients(db: AsyncSession) -> dict:
                 existing.client_type = client_type
                 if address:
                     existing.address = address
+                existing.pipedrive_owner_id = owner_id
+                # ⚠️ L'attribution manuelle fait foi : l'import ne renseigne le
+                # commercial attitré que s'il est **vide**. Écraser un choix
+                # d'organisation interne par une donnée CRM serait une perte
+                # silencieuse — et Pipedrive n'a pas autorité sur qui suit le client.
+                if existing.assigned_user_id is None and assigned_id is not None:
+                    existing.assigned_user_id = assigned_id
                 updated += 1
         except (ValueError, TypeError) as e:  # données Pipedrive inattendues
             errors += 1

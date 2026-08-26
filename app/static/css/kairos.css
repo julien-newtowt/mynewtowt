@@ -1593,6 +1593,17 @@ form textarea {
 .dropdown-wrap .dropdown-menu button:hover { background: var(--sable-light); }
 
 /* ───────────────────────── Rich data table ─────────────────────────────── */
+/* Conteneur de défilement pour les tableaux larges (7-8 colonnes et plus).
+   Sans lui, un tableau dense fait défiler la page entière sur mobile ou se
+   fait tronquer. Le défilement reste confiné au tableau. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table-scroll > .data-table {
+  min-width: 42rem;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;

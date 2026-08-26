@@ -153,11 +153,12 @@ async def test_quote_200_palettes_route1_is_base_x_080_x_adjustment(db):
     )
     quote = compute_grid_quote(grid, route1, items=[("EPAL", 200)])
 
-    expected = (route1.base_rate * grid.adjustment_index * Decimal("0.80")).quantize(
+    # 200 palettes tombent dans « De 100 à 300 palettes » → coeff 0.90
+    # (DEFAULT_BRACKETS_SHIPPER, barème métier à bornes inclusives).
+    expected = (route1.base_rate * grid.adjustment_index * Decimal("0.90")).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )
-    # bracket 200 palettes → coeff 0.80 (DEFAULT_BRACKETS_SHIPPER).
-    assert quote.bracket_label == "200 palettes"
+    assert quote.bracket_label == "De 100 à 300 palettes"
     assert quote.base_rate_eur == expected
     epal = next(li for li in quote.lines if li.kind == "freight")
     assert epal.unit_price_eur == expected

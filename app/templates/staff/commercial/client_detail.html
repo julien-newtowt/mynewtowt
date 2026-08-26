@@ -7,9 +7,12 @@
     <span class="kicker">Commercial · Client</span>
     <h1 class="display">{{ client.name }}</h1>
     <p class="text-muted">{{ client.contact_name or '—' }} · {{ client.contact_email or '—' }}</p>
+    <p class="text-muted text-sm">Commercial attitré :
+      {% if client.assigned_user %}<strong>{{ client.assigned_user.full_name or client.assigned_user.username }}</strong>{% else %}<span title="Les estimations de ce client ne cibleront personne en particulier">non attribué</span>{% endif %}
+    </p>
   </div>
   <div class="flex gap-2 items-center">
-    <span class="badge badge-{{ 'active' if client.client_type == 'freight_forwarder' else 'draft' }}">{{ client.client_type }}</span>
+    <span class="badge badge-{{ 'active' if client.client_type == 'freight_forwarder' else 'draft' }}">{{ client_type_labels.get(client.client_type, client.client_type) }}</span>
     {% if client.is_anchor %}<span class="pill pill-ok" title="Compte-ancre — partenaire stratégique"><i data-lucide="anchor"></i> Compte-ancre</span>{% endif %}
     {% if client.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Inactif</span>{% endif %}
     <a href="/commercial/clients/{{ client.id }}/edit" class="btn btn-secondary btn-sm"><i data-lucide="pencil"></i> Éditer</a>

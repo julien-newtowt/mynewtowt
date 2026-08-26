@@ -28,6 +28,9 @@ from app.models.commercial import (
     CLIENT_TYPES,
     CO_BRANDING_STATUS_LABELS,
     CO_BRANDING_STATUSES,
+    MAX_PAYMENT_TERMS,
+    PAYMENT_TRIGGER_LABELS,
+    PAYMENT_TRIGGERS,
     RATE_OPTION_UNIT_LABELS,
     RATE_OPTION_UNITS,
     Client,
@@ -36,16 +39,20 @@ from app.models.commercial import (
     RateGrid,
     RateGridLine,
     RateGridOption,
+    RateGridPaymentTerm,
     RateOffer,
 )
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.quote import Quote
+from app.models.user import User
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services import capacity as capacity_svc
 from app.services.activity import record as activity_record
 from app.services.commercial import (
+    PaymentTermError,
+    assign_tariff_reference,
     bracket_rate,
     compatible_legs_for_order,
     default_brackets_for,
@@ -54,7 +61,9 @@ from app.services.commercial import (
     next_offer_reference,
     next_order_reference,
     pick_bracket,
+    refresh_grid_references,
     suggest_leg_for_order,
+    validate_payment_terms,
 )
 from app.services.quoting import (
     QuotingError,
@@ -67,6 +76,18 @@ from app.services.quoting import (
 from app.templating import templates
 
 router = APIRouter(prefix="/commercial", tags=["commercial"])
+
+# Rôles pouvant être désignés **commercial attitré** d'un client. Le rôle doit
+# porter la relation commerciale et avoir accès au module : attribuer un client
+# à un compte sans accès rendrait la notification d'estimation muette.
+ASSIGNABLE_ROLES = ("commercial", "manager_maritime", "administrateur")
+
+# Libellés français des types de client — l'interface est en français, elle
+# affichait jusqu'ici les valeurs techniques (« freight_forwarder »).
+CLIENT_TYPE_LABELS: dict[str, str] = {
+    "freight_forwarder": "Transitaire",
+    "shipper": "Chargeur",
+}
 
 
 def _hx_or_redirect(request: Request, target: str):
@@ -253,6 +274,7 @@ async def clients_list(
             "user": user,
             "clients": clients,
             "types": CLIENT_TYPES,
+            "client_type_labels": CLIENT_TYPE_LABELS,
             "pipedrive_configured": is_configured(),
             "search_q": term,
         },
@@ -305,6 +327,7 @@ async def client_create(
     country: str | None = Form(None),
     vat_number: str | None = Form(None),
     notes: str | None = Form(None),
+    assigned_user_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -320,6 +343,7 @@ async def client_create(
         country=(country or "").strip().upper()[:2] or None,
         vat_number=(vat_number or "").strip() or None,
         notes=notes,
+        assigned_user_id=await _resolve_assigned_user(db, assigned_user_id),
     )
     db.add(c)
     await db.flush()
@@ -402,6 +426,7 @@ async def client_detail(
             "linked_accounts": linked_accounts,
             "unlinked_accounts": unlinked_accounts,
             "suggested_account_ids": suggested_account_ids,
+            "client_type_labels": CLIENT_TYPE_LABELS,
             "co_branding_statuses": CO_BRANDING_STATUSES,
             "co_branding_status_labels": CO_BRANDING_STATUS_LABELS,
             "capacity_priority_labels": CAPACITY_PRIORITY_LABELS,
@@ -421,7 +446,14 @@ async def client_edit_form(
         raise HTTPException(status_code=404)
     return templates.TemplateResponse(
         "staff/commercial/client_form.html",
-        {"request": request, "user": user, "client": client, "types": CLIENT_TYPES},
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "types": CLIENT_TYPES,
+            "client_type_labels": CLIENT_TYPE_LABELS,
+            "assignable_users": await _assignable_users(db),
+        },
     )
 
 
@@ -439,6 +471,7 @@ async def client_edit(
     country: str | None = Form(None),
     vat_number: str | None = Form(None),
     notes: str | None = Form(None),
+    assigned_user_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -456,6 +489,7 @@ async def client_edit(
     client.country = (country or "").strip().upper()[:2] or None
     client.vat_number = (vat_number or "").strip() or None
     client.notes = (notes or "").strip() or None
+    client.assigned_user_id = await _resolve_assigned_user(db, assigned_user_id)
     await db.flush()
     await activity_record(
         db,
@@ -727,6 +761,51 @@ async def _vessels(db: AsyncSession) -> list[Vessel]:
     )
 
 
+async def _assignable_users(db: AsyncSession) -> list[User]:
+    """Comptes staff éligibles comme **commercial attitré** d'un client.
+
+    Restreint aux rôles qui portent réellement la relation commerciale : attribuer
+    un client à un compte sans accès au module rendrait la notification muette.
+    """
+    return list(
+        (
+            await db.execute(
+                select(User)
+                .where(
+                    User.is_active.is_(True),
+                    User.role.in_(ASSIGNABLE_ROLES),
+                )
+                .order_by(User.full_name, User.username)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def _resolve_assigned_user(db: AsyncSession, raw: object) -> int | None:
+    """Valide l'identifiant du commercial attitré soumis (vide = aucun).
+
+    ``raw`` est typé large à dessein : appelée hors HTTP (tests, appel direct de
+    la route), la valeur par défaut ``Form(None)`` fuit telle quelle — la traiter
+    comme « non fourni » évite un ``AttributeError`` là où l'intention est
+    clairement de ne rien changer.
+    """
+    if not isinstance(raw, str | int) or isinstance(raw, bool):
+        return None
+    value = str(raw).strip()
+    if not value:
+        return None
+    try:
+        user_id = int(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="commercial attitré invalide") from exc
+    target = await db.get(User, user_id)
+    if target is None or not target.is_active or target.role not in ASSIGNABLE_ROLES:
+        raise HTTPException(status_code=400, detail="commercial attitré invalide")
+    return target.id
+
+
 async def _grid_editable(db: AsyncSession, grid_id: int) -> RateGrid:
     """Grille (avec routes) éditable : 404 si absente, 400 si active (verrouillée)."""
     grid = (
@@ -949,6 +1028,11 @@ async def grid_edit(
     grid.min_charge_eur = _opt_decimal(min_charge_eur)
     grid.volume_commitment = _opt_int(volume_commitment)
     await db.flush()
+    # La référence codifiée des routes encode la période de validité : si celle-ci
+    # a changé, les références deviendraient fausses sans ce recalcul.
+    await db.refresh(grid, ["lines"])
+    await refresh_grid_references(db, grid)
+    await db.flush()
     await activity_record(
         db,
         action="update",
@@ -979,6 +1063,7 @@ async def grid_detail(
                 selectinload(RateGrid.client),
                 selectinload(RateGrid.lines),
                 selectinload(RateGrid.options),
+                selectinload(RateGrid.payment_terms),
             )
             .where(RateGrid.id == grid_id)
         )
@@ -996,6 +1081,9 @@ async def grid_detail(
             "route_ports": await _route_ports(db),
             "option_units": RATE_OPTION_UNITS,
             "option_unit_labels": RATE_OPTION_UNIT_LABELS,
+            "payment_triggers": PAYMENT_TRIGGERS,
+            "payment_trigger_labels": PAYMENT_TRIGGER_LABELS,
+            "max_payment_terms": MAX_PAYMENT_TERMS,
         },
     )
 
@@ -1010,18 +1098,25 @@ async def grid_activate(
     grid = await db.get(RateGrid, grid_id)
     if grid is None:
         raise HTTPException(status_code=404)
-    # Une seule grille active par périmètre : par client pour une grille client,
-    # une seule grille par défaut active globalement. Les autres actives du même
-    # périmètre sont marquées « superseded ».
-    others = select(RateGrid).where(RateGrid.id != grid.id, RateGrid.status == "active")
-    if grid.client_id is not None:
-        others = others.where(RateGrid.client_id == grid.client_id)
-    else:
-        others = others.where(RateGrid.client_id.is_(None), RateGrid.is_default.is_(True))
+    # Un client peut avoir **plusieurs grilles actives simultanément** (périodes
+    # ou conditions distinctes) : activer l'une ne périme donc plus les autres.
+    # Quand plusieurs couvrent la même route à la date d'ETD, l'arbitrage se fait
+    # à la résolution, via le drapeau « par défaut sur cette route » de la ligne.
+    #
+    # Seule exception conservée : la grille **par défaut anonyme** (repli pour un
+    # demandeur sans grille négociée) reste unique — deux replis concurrents
+    # rendraient le tarif public non déterministe.
     superseded = 0
-    for other in (await db.execute(others)).scalars().all():
-        other.status = "superseded"
-        superseded += 1
+    if grid.client_id is None:
+        others = select(RateGrid).where(
+            RateGrid.id != grid.id,
+            RateGrid.status == "active",
+            RateGrid.client_id.is_(None),
+            RateGrid.is_default.is_(True),
+        )
+        for other in (await db.execute(others)).scalars().all():
+            other.status = "superseded"
+            superseded += 1
     grid.status = "active"
     await db.flush()
     await activity_record(
@@ -1170,6 +1265,8 @@ async def grid_route_create(
         is_manual=manual_base is not None,
     )
     db.add(route)
+    await db.flush()
+    await assign_tariff_reference(db, grid, route)
     await db.flush()
     await activity_record(
         db,
@@ -1346,6 +1443,138 @@ async def grid_brackets_update(
         entity_id=grid.id,
         entity_label=grid.reference,
         detail=f"brackets updated ({len(brackets)})",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+# ──────────────────────────────────── Conditions de règlement
+@router.post("/grids/{grid_id}/payment-terms")
+async def grid_payment_terms_update(
+    grid_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Remplace l'échéancier de règlement d'une grille (1 à 3 règlements).
+
+    Les conditions sont **déclaratives** : elles décrivent le contrat et
+    alimentent la booking note, sans déclencher de facturation (le fret se règle
+    par virement, hors plateforme).
+    """
+    grid = (
+        await db.execute(
+            select(RateGrid)
+            .options(selectinload(RateGrid.payment_terms))
+            .where(RateGrid.id == grid_id)
+        )
+    ).scalar_one_or_none()
+    if grid is None:
+        raise HTTPException(status_code=404)
+    if grid.status == "active":
+        raise HTTPException(
+            status_code=400,
+            detail="Grille active verrouillée — repassez-la en brouillon pour la modifier.",
+        )
+
+    form = await request.form()
+    submitted: list[dict] = []
+    for idx in range(MAX_PAYMENT_TERMS):
+        trigger = (form.get(f"terms-{idx}-trigger") or "").strip()
+        percentage = (form.get(f"terms-{idx}-percentage") or "").strip()
+        if not trigger and not percentage:
+            continue
+        submitted.append(
+            {
+                "trigger": trigger,
+                "percentage": percentage,
+                "offset_days": (form.get(f"terms-{idx}-offset_days") or "").strip() or None,
+                "label": form.get(f"terms-{idx}-label"),
+            }
+        )
+
+    try:
+        terms = validate_payment_terms(submitted)
+    except PaymentTermError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    grid.payment_terms.clear()
+    for term in terms:
+        grid.payment_terms.append(RateGridPaymentTerm(**term))
+    await db.flush()
+
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid.id,
+        entity_label=grid.reference,
+        detail=(
+            "payment terms: "
+            + (
+                " + ".join(f"{t['percentage']}% {t['trigger']}" for t in terms)
+                if terms
+                else "aucune"
+            )
+        ),
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+@router.post("/grids/{grid_id}/routes/{route_id}/default")
+async def grid_route_set_default(
+    grid_id: int,
+    route_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Désigne cette route comme grille par défaut du client sur cette paire POL/POD.
+
+    Un client peut avoir plusieurs grilles actives couvrant la même route ; ce
+    drapeau tranche laquelle s'applique. Il est donc **exclusif** : le poser ici
+    le retire des autres routes du même client sur la même paire.
+    """
+    grid = await db.get(RateGrid, grid_id)
+    route = await db.get(RateGridLine, route_id)
+    if grid is None or route is None or route.grid_id != grid.id:
+        raise HTTPException(status_code=404)
+
+    siblings = (
+        select(RateGridLine)
+        .join(RateGrid, RateGrid.id == RateGridLine.grid_id)
+        .where(
+            RateGridLine.id != route.id,
+            RateGridLine.pol_locode == route.pol_locode,
+            RateGridLine.pod_locode == route.pod_locode,
+            RateGridLine.is_route_default.is_(True),
+        )
+    )
+    if grid.client_id is not None:
+        siblings = siblings.where(RateGrid.client_id == grid.client_id)
+    else:
+        siblings = siblings.where(RateGrid.client_id.is_(None))
+    for other in (await db.execute(siblings)).scalars().all():
+        other.is_route_default = False
+
+    route.is_route_default = True
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid.id,
+        entity_label=grid.reference,
+        detail=f"route par défaut : {route.pol_locode}→{route.pod_locode}",
         ip_address=_client_ip(request),
     )
     return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
