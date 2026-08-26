@@ -208,13 +208,62 @@ docker compose exec app alembic upgrade head
 5. Désactive maintenance mode.
 6. Notification Slack.
 
-### 6.2 Rollback migration
+### 6.2 « Multiple head revisions are present » — le déploiement s'arrête
+
+Symptôme (étape 6 de `deploy.sh`, snapshot restauré automatiquement) :
+
+```
+ERROR [alembic.util.messaging] Multiple head revisions are present for given
+argument 'head'; please specify a specific target revision, '<branchname>@head'
+```
+
+**Cause** : deux branches de fonctionnalité ont chaîné leurs migrations sur le
+**même parent** et ont été fusionnées séparément — `main` porte alors deux têtes
+et `alembic upgrade head` refuse de choisir. Constaté le 07/08/2026 (MRV ×
+crewing) et le 26/08/2026 (BL × QHSE). **Ce n'est pas une panne de base** : rien
+n'a été appliqué, la restauration du snapshot est un no-op de précaution.
+
+**Diagnostic** (aucune connexion à la base nécessaire) :
+
+```bash
+docker compose run --rm app alembic heads     # doit renvoyer UNE ligne
+docker compose run --rm app alembic history | head
+docker compose run --rm app alembic current   # où est réellement la prod
+```
+
+**Correctif** : poser une **révision de fusion** sans DDL
+(`alembic merge -m "merge heads" <tête1> <tête2>`), la relire, la faire passer en
+PR, redéployer. Modèles : `20260807_0113`, `20260826_0119`.
+
+⚠️ **Ne pas rechaîner une révision déjà fusionnée sur `main`** (changer son
+`down_revision` pour la tête courante) : toute base qui la porte déjà
+considérerait l'autre chaîne comme appliquée, et ses tables manqueraient
+**silencieusement**. Le rechaînage ne vaut que pour une révision encore sur sa
+branche de travail. La CI refuse maintenant la seconde tête en PR
+(`tests/regression/test_alembic_single_head.py`) : ce mode de panne ne devrait
+plus atteindre le déploiement.
+
+### 6.3 Rollback migration
 
 ```bash
 docker compose exec app alembic downgrade -1
 ```
 
 Si la migration n'est pas reversible, restaurer le snapshot DB.
+
+⚠️ **Sur une révision de fusion (`mergepoint`), `downgrade -1` échoue** en
+`FAILED: Ambiguous walk` — le pas relatif ne sait pas laquelle des deux branches
+remonter. Il faut nommer la cible :
+
+```bash
+# La base est sur 20260826_0119 (mergepoint) : on défait la fusion en nommant
+# la branche où l'on veut retomber.
+docker compose exec app alembic downgrade 20260817_0118
+docker compose exec app alembic current   # → 20260722_0106 + 20260817_0118
+```
+
+Vérifié le 2026-08-26 sur base neuve : la fusion se défait et se rejoue sans
+toucher aux données (aucun DDL).
 
 ## 7. Monitoring
 

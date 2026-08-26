@@ -76,7 +76,7 @@ Les quatre restent **en brouillon** : la sortie de brouillon appartient à Yasmi
 | `feature/qhse-foundation` « deux défauts qui détruisent des données » | **Corrigés** le 2026-08-17 (`188be0e`) — cf. ci-dessous |
 | « Rien n'a été fusionné sur `main` » | **FAUX** depuis le 2026-08-18 (#149) |
 
-### 🔗 Point d'ordonnancement Alembic — à traiter APRÈS la fusion de #158
+### 🔗 Point d'ordonnancement Alembic — ✅ traité le 2026-08-26 (fusion `20260826_0119`)
 
 **#158 et `feature/qhse-foundation` chaînent sur le même parent `20260807_0113`.**
 Ce sont des **frères, pas une file** : `main` absorbe **l'un** des deux sans rien
@@ -89,6 +89,31 @@ sur la nouvelle tête (`20260817_0118`), ou poser une révision de fusion.
 
 Volontairement non pré-résolu : chaîner QHSE sur les migrations de BL le rendrait
 infusionnable sans BL, ce qui violerait le §1 (« un lot = révocable indépendamment »).
+
+#### Ce qui s'est réellement passé, et le correctif retenu
+
+L'action n'a pas été faite à temps : #160 (QHSE) a été fusionnée le 2026-08-26 avec
+`20260807_0113` pour parent, et le déploiement de `96a5c70` a échoué exactement comme
+annoncé (`Multiple head revisions are present`, têtes `20260722_0106` et
+`20260817_0118`) — snapshot restauré automatiquement, aucune perte.
+
+**Correctif : la révision de fusion, pas le rechaînage** —
+`migrations/versions/20260826_0119_merge_heads_bl_qhse.py`, sans aucun DDL
+(`down_revision = ("20260817_0118", "20260722_0106")`). Le rechaînage était encore
+la bonne option **tant que QHSE n'était pas publiée** ; il ne l'est plus une fois la
+révision sur `main` : réécrire l'ascendance de `20260722_0106` ferait considérer
+`20260814_0114` → `20260817_0118` comme **déjà appliquées** sur toute base qui porte
+déjà QHSE (poste de dev, staging), dont les tables BL manqueraient **sans erreur**.
+La fusion, elle, est correcte quel que soit l'état de la base. Les deux chaînes sont
+**disjointes** — QHSE ne crée que des tables neuves (`qhse_*`, `deficiency_codes`),
+BL ne touche que `packing_list_batches` / `bl_*` — donc l'ordre d'application entre
+elles est indifférent.
+
+**Filet pour la prochaine fois** : la panne s'est produite **deux fois** (07/08 puis
+26/08) et à chaque fois en déploiement, jamais en CI — qui ne regardait pas le graphe
+de migrations. La sentinelle `tests/regression/test_alembic_single_head.py` échoue
+désormais en PR dès qu'une seconde tête apparaît (et dès qu'un `down_revision`
+devient orphelin), sans connexion à la base.
 
 ### `feature/qhse-foundation` — hors file, plus bloquée par des défauts
 
