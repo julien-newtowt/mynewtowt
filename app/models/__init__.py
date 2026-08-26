@@ -10,6 +10,7 @@ from app.models.anemos_certificate import AnemosCertificate
 from app.models.blog_post import BlogPost
 from app.models.booking import Booking, BookingItem
 from app.models.booking_message import BookingMessage
+from app.models.booking_note import BookingNote
 from app.models.bunker import BunkerOperation, BunkerTankAllocation
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.claim import (
@@ -29,7 +30,9 @@ from app.models.commercial import (
     RateGrid,
     RateGridLine,
     RateGridOption,
+    RateGridPaymentTerm,
     RateOffer,
+    RateOfferRevision,
 )
 from app.models.contact_request import ContactRequest
 from app.models.crew import (
@@ -158,6 +161,7 @@ __all__ = [
     "Booking",
     "BookingItem",
     "BookingMessage",
+    "BookingNote",
     "BunkerOperation",
     "BunkerTankAllocation",
     "CargoDocument",
@@ -259,8 +263,10 @@ __all__ = [
     "RateGrid",
     "RateGridLine",
     "RateGridOption",
+    "RateGridPaymentTerm",
     "RateLimitAttempt",
     "RateOffer",
+    "RateOfferRevision",
     "RolePermission",
     "RootCauseEvaluation",
     "ScenarioLeg",

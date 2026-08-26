@@ -112,9 +112,13 @@
     </form>
   </details>
   {% elif offer.status == 'valide' %}
-  <p class="text-muted">Offre validée{% if offer.validated_at %} le {{ offer.validated_at|datetime }}{% endif %}.
-    {% if not order %}<a href="/commercial/offers/{{ offer.id }}/convert" class="btn btn-sm btn-secondary">→ Convertir en commande</a>{% endif %}
-  </p>
+  <p class="text-muted">Offre validée{% if offer.validated_at %} le {{ offer.validated_at|datetime }}{% endif %}.</p>
+  <div class="flex gap-2 items-center flex-wrap">
+    <a href="/commercial/offers/{{ offer.id }}/booking-note" class="btn btn-primary">
+      <i data-lucide="file-text"></i> Booking note
+    </a>
+    {% if not order %}<a href="/commercial/offers/{{ offer.id }}/convert" class="btn btn-secondary">→ Convertir en commande</a>{% endif %}
+  </div>
   {% else %}
   <p class="text-muted">Offre {{ offer.status_label|lower }} — plus aucune action possible.</p>
   {% endif %}

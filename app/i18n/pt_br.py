@@ -836,7 +836,7 @@ CATALOG: dict[str, str] = {
     "booking_submit": "Confirmar minha reserva",
     "booking_done_title": "Pedido recebido — confirmamos em 4 h úteis.",
     "booking_done_account": "Sua conta foi criada. Acesse suas reservas →",
-    "booking_done_next": "Você receberá a confirmação e a booking note (pagamento por transferência). Na entrega, seu certificado Anemos nominal é emitido automaticamente — sua prova de CO₂ evitado, pronta para compartilhar com seus clientes.",
+    "booking_done_next": "Você receberá sua confirmação de reserva (pagamento por transferência). Na entrega, seu certificado Anemos nominal é emitido automaticamente — sua prova de CO₂ evitado, pronta para compartilhar com seus clientes.",
     "bk1_title": "Nova reserva",
     "bk1_subtitle": "Escolha sua travessia.",
     "bk1_details": "Detalhes",

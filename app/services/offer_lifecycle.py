@@ -119,6 +119,11 @@ async def validate_offer(
         actor_role=actor_role,
         before=before,
     )
+    # La validation établit la booking note (règle métier). Idempotent : une
+    # offre revalidée ne fabrique pas un second contrat.
+    from app.services.booking_note import ensure_for_offer
+
+    await ensure_for_offer(db, offer)
     return offer
 
 

@@ -836,7 +836,7 @@ CATALOG: dict[str, str] = {
     "booking_submit": "Xác nhận đặt chỗ của tôi",
     "booking_done_title": "Đã nhận yêu cầu — chúng tôi xác nhận trong vòng 4 giờ làm việc.",
     "booking_done_account": "Tài khoản của bạn đã được tạo. Truy cập các đặt chỗ của bạn →",
-    "booking_done_next": "Bạn sẽ nhận được xác nhận và booking note (thanh toán bằng chuyển khoản). Khi giao hàng, chứng chỉ Anemos đích danh của bạn được phát hành tự động — bằng chứng CO₂ tránh được, sẵn sàng chia sẻ với khách hàng của bạn.",
+    "booking_done_next": "Bạn sẽ nhận được xác nhận đặt chỗ (thanh toán bằng chuyển khoản). Khi giao hàng, chứng chỉ Anemos đích danh của bạn được phát hành tự động — bằng chứng CO₂ tránh được, sẵn sàng chia sẻ với khách hàng của bạn.",
     "bk1_title": "Đặt chỗ mới",
     "bk1_subtitle": "Chọn chuyến đi của bạn.",
     "bk1_details": "Chi tiết",

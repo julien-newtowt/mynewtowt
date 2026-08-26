@@ -10,6 +10,7 @@ Reprises de la V3.0.0 :
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 from datetime import UTC, datetime
 from datetime import date as _date
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.models.booking_note import BookingNote
 from app.models.client_account import ClientAccount
 from app.models.commercial import (
     CAPACITY_PRIORITY_LABELS,
@@ -55,6 +57,7 @@ from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services import capacity as capacity_svc
 from app.services.activity import record as activity_record
+from app.services.booking_note import BookingNoteError, mark_issued
 from app.services.commercial import (
     PaymentTermError,
     assign_tariff_reference,
@@ -123,6 +126,37 @@ OFFER_FIELD_LABELS: dict[str, str] = {
     "valid_until": "Validité",
     "notes": "Notes",
 }
+
+# Champs de la booking note corrigeables par le commercial avant diffusion.
+# Liste explicite : elle sert de garde contre l'affectation en masse — un champ
+# de diffusion ou de signature ne doit jamais être posé depuis un formulaire.
+BOOKING_NOTE_EDITABLE_FIELDS: tuple[str, ...] = (
+    "issue_place",
+    "agents_pod",
+    "vessel_name",
+    "time_for_shipment",
+    "pol_text",
+    "pod_text",
+    "merchant_name",
+    "merchant_contact",
+    "merchant_address",
+    "merchant_email",
+    "freight_terms",
+    "payment_terms",
+    "special_terms",
+    "cargo_description",
+)
+
+
+def _safe_filename(name: str) -> str:
+    """Nom de fichier assaini pour l'en-tête ``Content-Disposition``.
+
+    Un guillemet dans le nom permettrait de sortir de la chaîne quotée et
+    d'injecter des paramètres d'en-tête. On ne garde que des caractères sûrs.
+    """
+    cleaned = "".join(c for c in name if c.isalnum() or c in "._-")
+    return cleaned or "document.docx"
+
 
 REVISION_ACTION_LABELS: dict[str, str] = {
     "created": "Création",
@@ -1946,6 +1980,151 @@ async def offer_detail(
             "pending_expiry": offer.is_open() and is_expired(offer, leg),
         },
     )
+
+
+@router.get("/offers/{offer_id}/booking-note", response_class=HTMLResponse)
+async def offer_booking_note(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Booking note d'une offre validée — champs préremplis, éditables avant diffusion."""
+    offer = (
+        await db.execute(
+            select(RateOffer)
+            .options(selectinload(RateOffer.client))
+            .where(RateOffer.id == offer_id)
+        )
+    ).scalar_one_or_none()
+    if offer is None:
+        raise HTTPException(status_code=404)
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer.id))
+    ).scalar_one_or_none()
+    return templates.TemplateResponse(
+        "staff/commercial/booking_note.html",
+        {"request": request, "user": user, "offer": offer, "note": note},
+    )
+
+
+@router.post("/offers/{offer_id}/booking-note")
+async def offer_booking_note_update(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Enregistre les corrections du commercial avant diffusion."""
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer_id))
+    ).scalar_one_or_none()
+    if note is None:
+        raise HTTPException(status_code=404, detail="booking note introuvable")
+    if not note.is_editable():
+        raise HTTPException(
+            status_code=400,
+            detail="Booking note déjà diffusée — elle ne peut plus être modifiée.",
+        )
+
+    form = await request.form()
+    for field in BOOKING_NOTE_EDITABLE_FIELDS:
+        if field in form:
+            value = (form.get(field) or "").strip()
+            setattr(note, field, value or None)
+    await db.flush()
+
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="booking_note",
+        entity_id=note.id,
+        entity_label=note.reference,
+        detail="champs corrigés avant diffusion",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer_id}/booking-note")
+
+
+@router.get("/offers/{offer_id}/booking-note.docx")
+async def offer_booking_note_docx(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> Response:
+    """Télécharge la booking note au format Word."""
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer_id))
+    ).scalar_one_or_none()
+    if note is None:
+        raise HTTPException(status_code=404, detail="booking note introuvable")
+    offer = await db.get(RateOffer, offer_id)
+    leg = await db.get(Leg, offer.leg_id) if offer and offer.leg_id else None
+
+    from app.services.docx_generator import build_booking_note_docx
+
+    doc = build_booking_note_docx(note=note, offer=offer, leg=leg)
+    return Response(
+        content=doc.docx,
+        media_type=doc.mime,
+        headers={
+            "Content-Disposition": f'attachment; filename="{_safe_filename(doc.filename)}"',
+            # Document contractuel portant des prix négociés.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.post("/offers/{offer_id}/booking-note/issue")
+async def offer_booking_note_issue(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Diffuse la booking note : elle est gelée et son empreinte consignée."""
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer_id))
+    ).scalar_one_or_none()
+    if note is None:
+        raise HTTPException(status_code=404, detail="booking note introuvable")
+    offer = await db.get(RateOffer, offer_id)
+    leg = await db.get(Leg, offer.leg_id) if offer and offer.leg_id else None
+
+    from app.services.docx_generator import build_booking_note_docx
+
+    # On fige l'empreinte du document **tel qu'il sera diffusé** : le filigrane
+    # « brouillon » disparaît au passage en diffusée, donc le document doit être
+    # régénéré après le changement de statut, pas avant.
+    try:
+        await mark_issued(
+            db, note, user_id=user.id, user_name=user.full_name or user.username
+        )
+    except BookingNoteError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    doc = build_booking_note_docx(note=note, offer=offer, leg=leg)
+    note.document_sha256 = hashlib.sha256(doc.docx).hexdigest()
+    await db.flush()
+
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="booking_note",
+        entity_id=note.id,
+        entity_label=note.reference,
+        detail="diffusée",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer_id}/booking-note")
 
 
 @router.get("/offers/{offer_id}/history", response_class=HTMLResponse)

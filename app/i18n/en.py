@@ -836,7 +836,7 @@ CATALOG: dict[str, str] = {
     "booking_submit": "Confirm my booking",
     "booking_done_title": "Request received — we confirm within 4 business hours.",
     "booking_done_account": "Your account has been created. Go to your bookings →",
-    "booking_done_next": "You'll receive the confirmation and the booking note (payment by bank transfer). On delivery, your named Anemos certificate is issued automatically — your proof of avoided CO₂, ready to share with your customers.",
+    "booking_done_next": "You'll receive your booking confirmation (payment by bank transfer). On delivery, your named Anemos certificate is issued automatically — your proof of avoided CO₂, ready to share with your customers.",
     "bk1_title": "New booking",
     "bk1_subtitle": "Choose your crossing.",
     "bk1_details": "Details",
