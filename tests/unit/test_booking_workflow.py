@@ -41,8 +41,20 @@ def test_invalid_transitions(current: str, target: str) -> None:
 
 
 def test_reference_format() -> None:
+    """Format et **entropie** de la référence (M-6).
+
+    Le suffixe faisait 4 caractères hexadécimaux (16 bits) : une collision
+    devenait probable dès quelques centaines de réservations dans l'année, et
+    se manifestait par un HTTP 500 à la validation du tunnel client. Le test
+    verrouille désormais le plancher d'entropie, pas seulement le préfixe.
+    """
     from app.services.booking import generate_reference
 
     ref = generate_reference(year=2026)
     assert ref.startswith("BK-2026-")
-    assert len(ref) == 12  # BK-2026-XXXX (XXXX = 4 hex chars)
+    suffix = ref.removeprefix("BK-2026-")
+    assert len(suffix) >= 10  # ≥ 40 bits
+    assert len(ref) <= 20  # tient dans Booking.reference (String(20))
+    assert set(suffix) <= set("0123456789ABCDEF")
+    # Deux tirages consécutifs ne doivent pas coïncider.
+    assert generate_reference(year=2026) != ref

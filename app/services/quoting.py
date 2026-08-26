@@ -526,8 +526,12 @@ def _option_quantity(unit: str, *, total_palettes: int, tonnage_t: Decimal | Non
 
 
 def generate_quote_reference() -> str:
+    """Référence d'estimation — suffixe 48 bits (E-1 : 24 bits étaient énumérables).
+
+    ``Quote.reference`` est ``String(24)`` : ``DEV-AAAA-`` (9) + 12 caractères = 21.
+    """
     year = datetime.now(UTC).year
-    return f"DEV-{year}-{secrets.token_hex(3).upper()}"
+    return f"DEV-{year}-{secrets.token_hex(6).upper()}"
 
 
 async def create_quote(
@@ -547,8 +551,12 @@ async def create_quote(
     items: list[tuple[str, int]] | None = None,
     lang: str = "fr",
 ) -> Quote:
+    from app.services.references import unique_reference
+
     quote = Quote(
-        reference=generate_quote_reference(),
+        reference=await unique_reference(
+            db, column=Quote.reference, factory=generate_quote_reference
+        ),
         status="issued",
         pol_locode=pol_locode.upper(),
         pod_locode=pod_locode.upper(),

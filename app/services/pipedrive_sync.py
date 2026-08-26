@@ -228,22 +228,23 @@ async def sync_clients(db: AsyncSession) -> dict:
 
     await db.flush()
 
-    # Rapprochement auto des comptes plateforme non liés (par e-mail) avec les
-    # clients fraîchement remontés.
-    linked = 0
+    # C-1 : plus de rapprochement automatique compte ↔ client commercial (il donne
+    # accès à la grille négociée). On se contente de **compter** les correspondances
+    # e-mail exactes à proposer à l'opérateur sur la fiche client.
+    suggested = 0
     try:
-        from app.services.client_linking import link_unlinked_accounts
+        from app.services.client_linking import suggest_unlinked_matches
 
-        linked = await link_unlinked_accounts(db)
+        suggested = len(await suggest_unlinked_matches(db))
     except Exception:
-        logger.warning("post-sync account linking failed", exc_info=True)
+        logger.warning("post-sync account match suggestion failed", exc_info=True)
 
     result = {
         "configured": True,
         "created": created,
         "updated": updated,
         "skipped": skipped,
-        "linked": linked,
+        "suggested": suggested,
         "total": len(orgs),
         "errors": errors,
     }

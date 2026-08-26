@@ -81,6 +81,13 @@ assert set(ALLOWED_PURGE_TABLES) == set(
     PURGE_DATE_COLUMNS
 ), "chaque table purgeable doit déclarer sa colonne d'horodatage (PURGE_DATE_COLUMNS)"
 
+# Tables dont seule la purge **par rétention** est autorisée (M-2). Le journal
+# d'audit est la trace de qui a modifié quoi — notamment les grilles tarifaires
+# et les offres, dont le prix se conteste. Un vidage total effacerait cette
+# preuve d'un clic ; la purge par ancienneté reste possible (obligation de
+# minimisation RGPD), le vidage intégral non.
+RETENTION_ONLY_PURGE_TABLES: frozenset[str] = frozenset({"activity_logs"})
+
 
 def _table(name: str):
     """Table SQLAlchemy d'un nom whitelisté, sinon ``ValueError``."""
@@ -119,10 +126,16 @@ async def export_global_zip(db: AsyncSession) -> bytes:
 async def purge_table(db: AsyncSession, table_name: str) -> int:
     """Vide une table purgeable (DELETE paramétré). Retourne le nb de lignes.
 
-    ``ValueError`` si la table n'est pas dans la whitelist de purge.
+    ``ValueError`` si la table n'est pas dans la whitelist de purge, ou si elle
+    n'admet que la purge par rétention (``RETENTION_ONLY_PURGE_TABLES``).
     """
     if table_name not in ALLOWED_PURGE_TABLES:
         raise ValueError(f"table non purgeable : {table_name}")
+    if table_name in RETENTION_ONLY_PURGE_TABLES:
+        raise ValueError(
+            f"{table_name} ne peut être purgée que par rétention "
+            "(ancienneté) — le vidage intégral du journal d'audit est interdit."
+        )
     table = _table(table_name)
     result = await db.execute(delete(table))
     await db.flush()

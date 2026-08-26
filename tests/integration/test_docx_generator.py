@@ -84,8 +84,17 @@ def test_build_offer_docx_roundtrip():
         valid_until=datetime(2026, 8, 1).date(),
         notes="Tarif préférentiel partenaire.",
     )
-    client = SimpleNamespace(
-        name="Acme Rhum", company_name="Acme SAS", email="ops@acme.fr", phone="+33 1 23 45 67 89"
+    # Instance réelle du modèle (et non un SimpleNamespace) : c'est ce qui a laissé
+    # passer le bug client.email/client.phone — le générateur doit lire les vrais
+    # champs contact_email / contact_phone de commercial_clients.
+    from app.models.commercial import Client
+
+    client = Client(
+        name="Acme Rhum",
+        client_type="shipper",
+        contact_name="Marie Dupont",
+        contact_email="ops@acme.fr",
+        contact_phone="+33 1 23 45 67 89",
     )
 
     doc = build_offer_docx(offer=offer, client=client, leg=_leg())
@@ -99,6 +108,10 @@ def test_build_offer_docx_roundtrip():
     assert "1CFRBR6" in text
     assert "5 400.00 EUR" in text  # séparateur d'espace
     assert "Tarif préférentiel partenaire." in text
+    # Le contact réel doit apparaître (garde-fou anti-régression du bug P0).
+    assert "ops@acme.fr" in text
+    assert "+33 1 23 45 67 89" in text
+    assert "Marie Dupont" in text
 
 
 def test_build_offer_docx_without_leg_or_notes():
@@ -113,7 +126,9 @@ def test_build_offer_docx_without_leg_or_notes():
         valid_until=None,
         notes=None,
     )
-    client = SimpleNamespace(name="X", company_name=None, email="x@x.fr", phone=None)
+    from app.models.commercial import Client
+
+    client = Client(name="X", client_type="shipper", contact_email="x@x.fr")
     doc = build_offer_docx(offer=offer, client=client, leg=None)
     text = _read_text(doc.docx)
     assert "À confirmer" in text

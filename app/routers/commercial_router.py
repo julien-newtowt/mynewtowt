@@ -286,7 +286,7 @@ async def clients_sync_pipedrive(
         url=(
             f"/commercial/clients?pd=ok&created={result['created']}"
             f"&updated={result['updated']}&skipped={result.get('skipped', 0)}"
-            f"&linked={result.get('linked', 0)}"
+            f"&suggested={result.get('suggested', 0)}"
         ),
         status_code=303,
     )
@@ -383,6 +383,15 @@ async def client_detail(
         .scalars()
         .all()
     )
+    # C-1 : le rattachement n'est plus automatique. On met en avant les comptes
+    # dont l'e-mail correspond exactement au contact du client — simple suggestion,
+    # l'opérateur reste seul à décider (le lien ouvre l'accès à la grille négociée).
+    contact_email = (client.contact_email or "").strip().lower()
+    suggested_account_ids = (
+        {a.id for a in unlinked_accounts if (a.email or "").strip().lower() == contact_email}
+        if contact_email
+        else set()
+    )
     return templates.TemplateResponse(
         "staff/commercial/client_detail.html",
         {
@@ -392,6 +401,7 @@ async def client_detail(
             "grids": grids,
             "linked_accounts": linked_accounts,
             "unlinked_accounts": unlinked_accounts,
+            "suggested_account_ids": suggested_account_ids,
             "co_branding_statuses": CO_BRANDING_STATUSES,
             "co_branding_status_labels": CO_BRANDING_STATUS_LABELS,
             "capacity_priority_labels": CAPACITY_PRIORITY_LABELS,

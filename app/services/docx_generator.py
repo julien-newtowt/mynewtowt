@@ -123,11 +123,13 @@ def build_offer_docx(*, offer, client, leg) -> DocxBytes:
     doc.add_paragraph()  # spacer
 
     _section(doc, "Client")
-    client_rows = [("Nom", client.name if client else "—")]
-    if client and getattr(client, "company_name", None):
-        client_rows.append(("Société", client.company_name))
-    client_rows.append(("E-mail", client.email if client else "—"))
-    client_rows.append(("Téléphone", getattr(client, "phone", None) if client else "—"))
+    # Contrat réel du modèle Client (commercial_clients) : ``name`` est la raison
+    # sociale, le contact vit dans ``contact_name``/``contact_email``/``contact_phone``.
+    client_rows = [("Société", client.name if client else "—")]
+    if client and client.contact_name:
+        client_rows.append(("Contact", client.contact_name))
+    client_rows.append(("E-mail", client.contact_email if client else "—"))
+    client_rows.append(("Téléphone", client.contact_phone if client else "—"))
     _kv_table(doc, client_rows)
     doc.add_paragraph()
 

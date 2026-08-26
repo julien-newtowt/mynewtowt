@@ -46,6 +46,32 @@ _RATE_LIMIT_SCOPE = "quote_public"
 _RATE_LIMIT_MAX = 10
 _RATE_LIMIT_WINDOW_MIN = 30
 
+# Consultation d'une estimation par son lien (E-1 / E-2). Le POST était limité,
+# pas les GET : une référence donne accès aux prix **et** aux coordonnées du
+# demandeur, et le PDF déclenche un rendu WeasyPrint (le plus coûteux de la pile).
+# Plafond large — un destinataire légitime consulte son lien quelques fois.
+_READ_LIMIT_SCOPE = "quote_read"
+_READ_LIMIT_MAX = 40
+_READ_LIMIT_WINDOW_MIN = 10
+_PDF_LIMIT_SCOPE = "quote_pdf"
+_PDF_LIMIT_MAX = 12
+_PDF_LIMIT_WINDOW_MIN = 10
+
+
+async def _guard_read(db: AsyncSession, request: Request, *, scope: str, max_attempts: int,
+                      window_minutes: int) -> None:
+    """Limite le débit de lecture par IP — freine l'énumération de références."""
+    ip = _client_ip(request) or "unknown"
+    if await rate_limit.exceeded(
+        db,
+        scope=scope,
+        identifier=ip,
+        max_attempts=max_attempts,
+        window_minutes=window_minutes,
+    ):
+        raise HTTPException(status_code=429, detail="Trop de demandes — réessayez plus tard.")
+    await rate_limit.record(db, scope=scope, identifier=ip)
+
 
 async def optional_client(
     session_cookie: Annotated[str | None, Cookie(alias=CLIENT_COOKIE)] = None,
@@ -136,11 +162,26 @@ async def devis_submit(
         except InvalidOperation:
             tonnage_t = None
 
+    # E-3 : les LOCODEs étaient repris bruts du formulaire, sans contrôle contre le
+    # référentiel. Or ``resolve_grid`` est *get-or-create* : une paire inconnue créait
+    # une route persistante dans la grille par défaut (pollution du référentiel
+    # tarifaire depuis un formulaire public), et une valeur > 5 caractères provoquait
+    # une erreur de troncature Postgres (invisible en test, SQLite n'applique pas
+    # les longueurs).
+    known_locodes = {
+        code
+        for (code,) in (
+            await db.execute(select(Port.locode).where(Port.locode.in_([c for c in (pol, pod) if c])))
+        ).all()
+    }
+
     error: str | None = None
     if not pol or not pod:
         error = "Sélectionnez un port de départ et un port d'arrivée."
     elif pol == pod:
         error = "Les ports de départ et d'arrivée doivent être différents."
+    elif pol not in known_locodes or pod not in known_locodes:
+        error = "Port inconnu — sélectionnez un port dans la liste proposée."
     elif not items:
         error = "Indiquez au moins une ligne de palettes (format + quantité)."
     elif contact_email and form.get("consent") != "on":
@@ -247,9 +288,17 @@ async def devis_submit(
 
 @router.get("/devis/{reference}.pdf")
 async def devis_pdf(
+    request: Request,
     reference: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
+    await _guard_read(
+        db,
+        request,
+        scope=_PDF_LIMIT_SCOPE,
+        max_attempts=_PDF_LIMIT_MAX,
+        window_minutes=_PDF_LIMIT_WINDOW_MIN,
+    )
     quote = await find_quote(db, reference)
     if quote is None:
         raise HTTPException(status_code=404, detail="Devis introuvable")
@@ -292,6 +341,13 @@ async def devis_detail(
     db: AsyncSession = Depends(get_db),
     client=Depends(optional_client),
 ) -> HTMLResponse:
+    await _guard_read(
+        db,
+        request,
+        scope=_READ_LIMIT_SCOPE,
+        max_attempts=_READ_LIMIT_MAX,
+        window_minutes=_READ_LIMIT_WINDOW_MIN,
+    )
     quote = await find_quote(db, reference)
     if quote is None:
         raise HTTPException(status_code=404, detail="Devis introuvable")
