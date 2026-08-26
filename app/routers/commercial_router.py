@@ -56,8 +56,15 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services import capacity as capacity_svc
+from app.services import yousign as yousign_svc
 from app.services.activity import record as activity_record
 from app.services.booking_note import BookingNoteError, mark_issued
+from app.services.booking_note_signature import (
+    SIGNATURE_STATUS_LABELS,
+    SignatureError,
+    request_signature,
+)
+from app.services.booking_note_signature import reconcile as reconcile_signature
 from app.services.commercial import (
     PaymentTermError,
     assign_tariff_reference,
@@ -2093,9 +2100,20 @@ async def offer_booking_note(
     note = (
         await db.execute(select(BookingNote).where(BookingNote.offer_id == offer.id))
     ).scalar_one_or_none()
+    if note is not None:
+        # Rattrapage best-effort d'un webhook perdu : l'écran ne doit pas rester
+        # bloqué sur « signature demandée » alors que le client a déjà signé.
+        await reconcile_signature(db, note)
     return templates.TemplateResponse(
         "staff/commercial/booking_note.html",
-        {"request": request, "user": user, "offer": offer, "note": note},
+        {
+            "request": request,
+            "user": user,
+            "offer": offer,
+            "note": note,
+            "signature_labels": SIGNATURE_STATUS_LABELS,
+            "signature_enabled": yousign_svc.is_configured(),
+        },
     )
 
 
@@ -2213,6 +2231,65 @@ async def offer_booking_note_issue(
         entity_id=note.id,
         entity_label=note.reference,
         detail="diffusée",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer_id}/booking-note")
+
+
+@router.post("/offers/{offer_id}/booking-note/sign")
+async def offer_booking_note_sign(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Envoie la booking note diffusée à la signature électronique du client.
+
+    Sans Yousign configuré, la route renvoie 503 : la voie électronique est
+    indisponible, la signature manuscrite du document Word reste possible.
+    """
+    if not yousign_svc.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Signature électronique non configurée — la booking note reste "
+                "signable à la main sur le document Word."
+            ),
+        )
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer_id))
+    ).scalar_one_or_none()
+    if note is None:
+        raise HTTPException(status_code=404, detail="booking note introuvable")
+
+    offer = await db.get(RateOffer, offer_id)
+    leg = await db.get(Leg, offer.leg_id) if offer and offer.leg_id else None
+    from app.services.docx_generator import build_booking_note_docx
+
+    doc = build_booking_note_docx(note=note, offer=offer, leg=leg)
+    try:
+        await request_signature(
+            db, note, document=doc.docx, filename=_safe_filename(doc.filename)
+        )
+    except SignatureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except yousign_svc.YousignError as exc:
+        # Panne du prestataire : on le dit, on ne prétend pas avoir envoyé.
+        raise HTTPException(
+            status_code=502, detail=f"Envoi à la signature impossible : {exc}"
+        ) from exc
+
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="booking_note",
+        entity_id=note.id,
+        entity_label=note.reference,
+        detail="envoyée à la signature électronique",
         ip_address=_client_ip(request),
     )
     return _hx_or_redirect(request, f"/commercial/offers/{offer_id}/booking-note")

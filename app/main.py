@@ -66,6 +66,7 @@ from app.routers import (
     veille_router,
     vitrine_router,
     voyage_router,
+    yousign_router,
 )
 from app.templating import templates
 
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(client_auth_router.router)
     app.include_router(client_dashboard_router.router)
     app.include_router(estimation_router.router)
+    app.include_router(yousign_router.router)
     app.include_router(booking_router.router)
 
     # ------------------------------------------------------------ Health/meta

@@ -8,6 +8,7 @@ détectable** — sans quoi il n'aurait aucune valeur probante.
 
 from __future__ import annotations
 
+import itertools
 from datetime import date
 from decimal import Decimal
 
@@ -111,7 +112,7 @@ async def test_chain_is_valid_across_several_revisions(db):
     revisions = await list_revisions(db, offer.id)
     assert [r.sequence for r in revisions] == [1, 2, 3, 4]
     # Chaque révision pointe sur l'empreinte de la précédente.
-    for previous, current in zip(revisions, revisions[1:], strict=False):
+    for previous, current in itertools.pairwise(revisions):
         assert current.previous_hash == previous.content_hash
 
     ok, reason = await verify_chain(db, offer.id)

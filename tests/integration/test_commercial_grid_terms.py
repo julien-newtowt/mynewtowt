@@ -29,7 +29,6 @@ from app.services.commercial import (
 )
 from app.services.quoting import resolve_grid, route_base_rate, route_nav_days
 
-
 # ─────────────────────────── Référence codifiée ───────────────────────────
 
 
