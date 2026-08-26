@@ -2063,3 +2063,91 @@ faux filet qu'il faut chercher ailleurs dans la suite.
   en ternaires FR/EN alors que le catalogue couvre 5 langues — un client passé
   en portugais sur la vitrine retombe en français dans son espace. Hors périmètre
   commercial, mais à traiter.
+
+---
+
+## 2026-08-26 (suite) — `main` rouge après la #162 : trois causes, dont un 500 latent
+
+**Branche** : `claude/commercial-module-multi-agent-fe0jhc` → PR #163
+**Objectif** : remettre `main` au vert après la fusion de la #162.
+
+### Situation
+
+La #162 a été fusionnée alors que sa CI était rouge. `main` l'est donc devenu
+([run 496](https://github.com/julien-newtowt/mynewtowt/actions/runs/33014036567)),
+avec `lint` et `security` en échec. Le job `build` — qui ne tourne que sur `main`
+— est de ce fait bloqué, et aucun déploiement ne devrait partir de là.
+
+### Analyse
+
+Trois causes, découvertes l'une après l'autre parce que **la CI s'arrête au
+premier job en échec** :
+
+1. **`black --check`** — 24 fichiers non conformes. J'ai passé `ruff check` tout
+   au long du chantier et jamais `black`. Les deux ne se recouvrent pas : ruff ne
+   reformate pas. Défaut de méthode, pas de circonstance.
+2. **gitleaks** — 4 détections `generic-api-key` sur la même chaîne inventée
+   `motdepasse-long-2026` dans les tests d'isolation des grilles. Faux positifs
+   vérifiés (absente de `app/`, `scripts/`, configuration) ; empreintes ajoutées
+   à `.gitleaksignore`, seule voie qui atteigne le commit fautif puisque gitleaks
+   scanne une plage de commits.
+3. **Cliquet anti-dérive du typage** — 381 erreurs pour un plafond de 371.
+
+### Le point à retenir : l'ordre des étapes a masqué un vrai défaut
+
+Le cliquet **n'avait jamais tourné sur la #162** : `black --check` échouait
+avant lui. Le dépassement existait depuis la fusion, invisible. Ce n'est pas un
+défaut de la CI — c'est le comportement normal — mais c'est un angle mort à
+connaître : **tant qu'une étape précoce est rouge, les étapes suivantes ne
+disent rien.** Une CI rouge n'a qu'un seul niveau d'information à la fois.
+
+Et derrière ces 10 erreurs de typage, un vrai défaut applicatif. Mesuré plutôt
+que supposé, même environnement : 352 erreurs sur `main` d'avant la #162
+(`311d9c7`) contre 362 sur la branche — les +10 correspondent exactement à
+l'écart 371 → 381 de la CI, et toutes viennent de code que j'ai écrit, sur un
+seul motif :
+
+```python
+(form.get("pol_locode") or "").strip()
+```
+
+`FormData.get` renvoie `UploadFile | str | None`. Un client qui poste un
+**fichier** sous le nom d'un champ texte fait appeler `.strip()` sur un
+`UploadFile` : `AttributeError`, réponse **500** au lieu d'un rejet de saisie.
+`/me/estimations` et deux formulaires commerciaux étaient exposés.
+
+`app/utils/forms.form_str` traite le fichier comme une valeur absente, en
+reproduisant à l'identique la sémantique du motif remplacé (absent **ou vide**
+⇒ défaut). Appliqué aux 10 sites introduits par la #162.
+
+> ⚠️ **Le motif existe sur ~160 autres appels dans les routers**, avec le même
+> défaut. Non traité ici : c'est un chantier à part, à arbitrer. Aucun de ces
+> appels n'est nouveau, mais aucun n'est sain pour autant.
+
+### Mon erreur, et ce qu'elle coûte
+
+Le cœur du problème n'est pas d'avoir oublié `black`. C'est d'avoir **déclaré
+une porte de qualité franchie sans avoir exécuté ce que la CI exécute**. La
+porte de qualité, c'est le fichier `.github/workflows/ci.yml`, pas la liste
+d'outils que j'ai en tête. Vérifier le workflow avant d'annoncer « CI verte »
+aurait coûté une minute et évité une fusion en rouge.
+
+### Tests
+
+- 2 424 passés, 1 ignoré, 0 échec (+4).
+- Sabotage : retirer la garde `isinstance` de `form_str` fait bien échouer les
+  deux tests portant le cas du fichier.
+- Reformatage vérifié **sans effet sur le contenu** — les 92 paragraphes
+  contractuels de `booking_note_terms` et les 1 498 clés de chacun des 5
+  catalogues i18n sont identiques avant/après, comparés à l'exécution.
+
+### Reste à faire
+
+- **Le cliquet repasse à 371 exactement, sans marge.** La dette revient à son
+  niveau d'avant la #162, elle n'est pas résorbée en dessous : la prochaine PR
+  qui ajoute une erreur de typage sera refusée.
+- **Conversion des ~160 autres `form.get(...).strip()`** — à arbitrer.
+- **Déploiement** : `scripts/deploy.sh` s'exécute **sur le serveur**
+  (`/opt/mynewtowt`), hors de portée d'une session Claude Code. Voir
+  `docs/operations/01-runbook.md` §4, et re-pointer le remote du clone serveur
+  vers `julien-newtowt/mynewtowt` avant le premier déploiement post-transfert.
