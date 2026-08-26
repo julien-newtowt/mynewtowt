@@ -193,145 +193,6 @@ def _ref_centered(doc, text: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def build_bill_of_lading_docx(
-    *, booking, leg, vessel, pol, pod, client, bl_number, issued_at=None
-) -> DocxBytes:
-    """Bill of Lading Word depuis un ``Booking`` confirmé.
-
-    Reprend le contenu du BL PDF (``pdf/bill_of_lading.html``) : parties
-    (shipper/carrier), voyage, marchandises, conditions La Haye-Visby, lieux
-    de prise en charge/livraison, bloc de signature."""
-    from app.templating import brand_for_lang
-
-    brand: dict[str, Any] = brand_for_lang(getattr(client, "language", None) or "fr")
-    issued = issued_at or datetime.now(UTC)
-    doc = _new_document()
-
-    _title(doc, "BILL OF LADING · CONNAISSEMENT")
-    _ref_centered(doc, bl_number)
-    doc.add_paragraph()
-
-    # Parties (shipper / carrier)
-    parties = doc.add_table(rows=1, cols=2)
-    parties.style = "Table Grid"
-    shipper = "\n".join(
-        line
-        for line in [
-            client.company_name if client else "—",
-            getattr(client, "contact_name", None) if client else None,
-            client.email if client else None,
-            getattr(client, "billing_address", None) if client else None,
-            getattr(client, "country", None) if client else None,
-        ]
-        if line
-    )
-    carrier = "\n".join(
-        [brand["raison_sociale"], brand["adresse"], brand["telephone"], brand["email"]]
-    )
-    parties.rows[0].cells[0].text = "Shipper · Expéditeur\n" + shipper
-    parties.rows[0].cells[1].text = "Carrier · Transporteur\n" + carrier
-    doc.add_paragraph()
-
-    # Voyage
-    _section(doc, "Voyage")
-    vessel_desc = vessel.name
-    extra = []
-    if getattr(vessel, "imo_number", None):
-        extra.append(f"IMO {vessel.imo_number}")
-    if getattr(vessel, "flag", None):
-        extra.append(vessel.flag)
-    if extra:
-        vessel_desc += f" ({vessel.code} · " + " · ".join(extra) + ")"
-    else:
-        vessel_desc += f" ({vessel.code})"
-    _kv_table(
-        doc,
-        [
-            ("Navire / Vessel", vessel_desc),
-            ("Voyage · Leg code", leg.leg_code),
-            ("Port of Loading (POL)", f"{pol.name} ({pol.locode} · {pol.country})"),
-            ("Port of Discharge (POD)", f"{pod.name} ({pod.locode} · {pod.country})"),
-            ("ETD", _fmt_date(leg.etd, "%d/%m/%Y %H:%M UTC")),
-            ("ETA", _fmt_date(leg.eta, "%d/%m/%Y %H:%M UTC")),
-        ],
-    )
-    doc.add_paragraph()
-
-    # Marchandises
-    _section(doc, "Goods · Marchandises")
-    goods = doc.add_table(rows=1, cols=6)
-    goods.style = "Table Grid"
-    for idx, label in enumerate(
-        ["Format", "Qté", "Description", "Poids unit. (kg)", "Poids total (kg)", "IMDG"]
-    ):
-        goods.rows[0].cells[idx].text = label
-        if goods.rows[0].cells[idx].paragraphs[0].runs:
-            goods.rows[0].cells[idx].paragraphs[0].runs[0].bold = True
-    for item in booking.items:
-        cells = goods.add_row().cells
-        cells[0].text = item.pallet_format or "—"
-        cells[1].text = str(item.pallet_count or 0)
-        cells[2].text = item.cargo_description or "—"
-        cells[3].text = str(item.unit_weight_kg) if item.unit_weight_kg is not None else "—"
-        cells[4].text = str(item.total_weight_kg) if item.total_weight_kg is not None else "—"
-        if getattr(item, "hazardous", False):
-            imdg = item.imdg_class or "IMDG"
-            if getattr(item, "un_number", None):
-                imdg += f" · UN {item.un_number}"
-            cells[5].text = imdg
-        else:
-            cells[5].text = "—"
-    total_cells = goods.add_row().cells
-    total_cells[0].text = "TOTAL"
-    total_cells[0].paragraphs[0].runs[0].bold = True
-    total_cells[4].text = str(booking.total_weight_kg)
-    total_cells[5].text = f"{booking.total_palettes} palettes"
-    doc.add_paragraph()
-
-    # Conditions
-    _section(doc, "Conditions")
-    terms = booking.signed_terms_version or "v2026.1"
-    cond = (
-        "Transport assuré conformément aux Règles de La Haye-Visby. La "
-        "responsabilité du transporteur est plafonnée selon les conventions "
-        f"internationales en vigueur. Conditions générales applicables : {terms}"
-    )
-    if booking.signed_terms_at:
-        cond += f", signées le {_fmt_date(booking.signed_terms_at)}"
-    doc.add_paragraph(cond + ".")
-
-    if booking.pickup_address or booking.delivery_address:
-        _kv_table(
-            doc,
-            [
-                row
-                for row in [
-                    (
-                        ("Place of receipt", booking.pickup_address)
-                        if booking.pickup_address
-                        else None
-                    ),
-                    (
-                        ("Place of delivery", booking.delivery_address)
-                        if booking.delivery_address
-                        else None
-                    ),
-                ]
-                if row
-            ],
-        )
-
-    # Bloc d'émission / signature
-    doc.add_paragraph()
-    stamp = doc.add_paragraph()
-    stamp.add_run(f"Émis à {pol.name} le {_fmt_date(issued)}\n")
-    stamp.add_run("Trois originaux signés (3 OBL)\n").italic = True
-    stamp.add_run("\nCachet et signature du transporteur")
-
-    _footer(doc)
-    return _serialize(doc, f"{bl_number}.docx")
-
-
 # ---------------------------------------------------------------------------
 # Dashboard environnemental — synthèse d'un voyage (LOT 12)
 # ---------------------------------------------------------------------------
@@ -490,3 +351,172 @@ def build_dashboard_voyage_docx(*, detail) -> DocxBytes:
 
     _footer(doc)
     return _serialize(doc, f"dashboard_voyage_{detail.leg_code}.docx")
+
+
+def build_bill_of_lading_docx_from_pl(
+    *,
+    pl,
+    batch,
+    leg,
+    vessel,
+    pol,
+    pod,
+    bl_number,
+    issued_at=None,
+    shipped_on_board=None,
+) -> DocxBytes:
+    """Bill of Lading Word depuis un **lot de packing list** (rail registre).
+
+    Remplace ``build_bill_of_lading_docx`` (rail booking), qui fabriquait un numéro
+    à la volée sans jamais l'enregistrer.
+
+    ⚠️ **Même règle d'honnêteté que le PDF** (cf. ``pdf_generator``) : tant que le
+    commandant n'a pas signé, le document porte la mention `DRAFT` et ne revendique
+    **aucun** original signé. La version booking écrivait « Trois originaux signés
+    (3 OBL) » **inconditionnellement**, y compris sur un document que personne n'avait
+    signé — et c'est le format **éditable**, donc celui qui circule le plus.
+    """
+    from app.services.bl_workflow import FROZEN_STATES
+    from app.templating import brand_for_lang
+
+    brand: dict[str, Any] = brand_for_lang("fr")
+    issued = issued_at or datetime.now(UTC)
+    is_signed = getattr(batch, "bl_state", None) in FROZEN_STATES
+    doc = _new_document()
+
+    _title(doc, "BILL OF LADING · CONNAISSEMENT")
+    _ref_centered(doc, bl_number)
+    if not is_signed:
+        warn = doc.add_paragraph()
+        run = warn.add_run(
+            "PROJET — SANS VALEUR DE TITRE. Ce document n'a pas été signé par le "
+            "commandant : il ne constitue ni un original négociable, ni une preuve de "
+            "mise à bord, et ne vaut pas remise de la marchandise."
+        )
+        run.bold = True
+        run.italic = True
+    doc.add_paragraph()
+
+    parties = doc.add_table(rows=2, cols=2)
+    parties.style = "Table Grid"
+    shipper = "\n".join(
+        line
+        for line in [
+            batch.shipper_name,
+            batch.shipper_address,
+            f"{batch.shipper_postal or ''} {batch.shipper_city or ''}".strip(),
+            batch.shipper_country,
+        ]
+        if line
+    )
+    carrier = "\n".join(
+        [brand["raison_sociale"], brand["adresse"], brand["telephone"], brand["email"]]
+    )
+    consignee = "\n".join(
+        line
+        for line in [
+            batch.consignee_name,
+            batch.consignee_address,
+            f"{batch.consignee_postal or ''} {batch.consignee_city or ''}".strip(),
+            batch.consignee_country,
+        ]
+        if line
+    )
+    notify = "\n".join(
+        line
+        for line in [
+            batch.notify_name,
+            batch.notify_address,
+            f"{batch.notify_postal or ''} {batch.notify_city or ''}".strip(),
+            batch.notify_country,
+        ]
+        if line
+    )
+    parties.rows[0].cells[0].text = "Shipper · Expéditeur\n" + (shipper or "—")
+    parties.rows[0].cells[1].text = "Carrier · Transporteur\n" + carrier
+    parties.rows[1].cells[0].text = "Consignee · Destinataire\n" + (consignee or "—")
+    parties.rows[1].cells[1].text = "Notify party\n" + (notify or "—")
+    doc.add_paragraph()
+
+    _section(doc, "Voyage")
+    rows: list[tuple[str, str]] = []
+    if vessel is not None:
+        desc = vessel.name
+        extra = [
+            x
+            for x in (
+                f"IMO {vessel.imo_number}" if getattr(vessel, "imo_number", None) else None,
+                getattr(vessel, "flag", None),
+            )
+            if x
+        ]
+        desc += f" ({vessel.code}" + ((" · " + " · ".join(extra)) if extra else "") + ")"
+        rows.append(("Navire / Vessel", desc))
+    if leg is not None:
+        rows.append(("Voyage · Leg code", leg.leg_code))
+        rows.append(("ETD", _fmt_date(leg.etd, "%d/%m/%Y %H:%M UTC")))
+        rows.append(("ETA", _fmt_date(leg.eta, "%d/%m/%Y %H:%M UTC")))
+    if pol is not None:
+        rows.append(("Port of Loading (POL)", f"{pol.name} ({pol.locode} · {pol.country})"))
+    if pod is not None:
+        rows.append(("Port of Discharge (POD)", f"{pod.name} ({pod.locode} · {pod.country})"))
+    # §5.0 — omise plutôt qu'inventée : une date de mise à bord fausse (a fortiori
+    # future) est une fraude documentaire.
+    sob_value = getattr(shipped_on_board, "value", None) if shipped_on_board else None
+    rows.append(
+        ("Shipped on board", _fmt_date(sob_value, "%d/%m/%Y") if sob_value else "— non constatée")
+    )
+    _kv_table(doc, rows)
+    doc.add_paragraph()
+
+    _section(doc, "Goods · Marchandises")
+    goods = doc.add_table(rows=1, cols=6)
+    goods.style = "Table Grid"
+    for idx, label in enumerate(
+        ["Format", "Qté palettes", "Description", "HS", "Poids (kg)", "IMDG"]
+    ):
+        goods.rows[0].cells[idx].text = label
+        if goods.rows[0].cells[idx].paragraphs[0].runs:
+            goods.rows[0].cells[idx].paragraphs[0].runs[0].bold = True
+    cells = goods.add_row().cells
+    cells[0].text = batch.pallet_format or "—"
+    cells[1].text = str(batch.pallet_count or 0)
+    cells[2].text = batch.description_of_goods or batch.type_of_goods or "—"
+    cells[3].text = batch.hs_code or "—"
+    cells[4].text = str(batch.weight_kg) if batch.weight_kg is not None else "—"
+    if getattr(batch, "hazardous", False):
+        imdg = batch.imdg_class or "IMDG"
+        if getattr(batch, "un_number", None):
+            imdg += f" · UN {batch.un_number}"
+        cells[5].text = imdg
+    else:
+        cells[5].text = "—"
+    doc.add_paragraph()
+    if batch.marks_and_numbers:
+        doc.add_paragraph(f"Marks & numbers : {batch.marks_and_numbers}")
+
+    _section(doc, "Conditions")
+    doc.add_paragraph(
+        "Transport assuré conformément aux Règles de La Haye-Visby. La responsabilité "
+        "du transporteur est plafonnée selon les conventions internationales en vigueur."
+    )
+
+    doc.add_paragraph()
+    stamp = doc.add_paragraph()
+    stamp.add_run(f"Émis{f' à {pol.name}' if pol is not None else ''} le {_fmt_date(issued)}\n")
+    if is_signed:
+        stamp.add_run("Trois originaux signés (3 OBL)\n").italic = True
+        stamp.add_run(f"Signé par : {batch.bl_signed_by_name or '—'}\n")
+        if batch.bl_signed_at:
+            stamp.add_run(f"Le : {_fmt_date(batch.bl_signed_at, '%d/%m/%Y %H:%M UTC')}\n")
+        if batch.bl_signature_hash:
+            stamp.add_run(f"Empreinte SHA-256 : {batch.bl_signature_hash}\n")
+        stamp.add_run("\nCachet et signature du transporteur")
+    else:
+        stamp.add_run("Aucun original signé à ce stade. À la signature : 3 originaux.\n").italic = (
+            True
+        )
+
+    _footer(doc)
+    suffix = "" if is_signed else "-DRAFT"
+    return _serialize(doc, f"{bl_number}{suffix}.docx")

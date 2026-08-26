@@ -1,0 +1,138 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}Bills of Lading{% else %}Connaissements{% endif %} — NEWTOWT{% endblock %}
+{% block content %}
+
+<a href="/me/bookings/{{ booking.reference }}" class="btn btn-ghost mb-3">←
+  {% if lang == 'en' %}Back to booking{% else %}Retour à la réservation{% endif %}</a>
+
+<h1>{% if lang == 'en' %}Bills of Lading{% else %}Connaissements{% endif %}</h1>
+<p class="text-muted">
+  {% if lang == 'en' %}Booking{% else %}Réservation{% endif %}
+  <span class="mono">{{ booking.reference }}</span>
+</p>
+
+{# Un booking peut porter plusieurs lots, donc plusieurs connaissements : d'où une
+   liste et non un document unique. #}
+{% if not batches %}
+  <article class="card">
+    <p class="text-muted">
+      {% if lang == 'en' %}No Bill of Lading has been issued for this booking yet. Our
+      team issues it once the packing list is complete.
+      {% else %}Aucun connaissement n'a encore été émis pour cette réservation. Notre
+      équipe l'émet dès que la packing list est complète.{% endif %}
+    </p>
+  </article>
+{% else %}
+
+<article class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{% if lang == 'en' %}B/L number{% else %}N° de connaissement{% endif %}</th>
+        <th>{% if lang == 'en' %}Goods{% else %}Marchandise{% endif %}</th>
+        <th class="text-right">{% if lang == 'en' %}Pallets{% else %}Palettes{% endif %}</th>
+        <th>{% if lang == 'en' %}Status{% else %}Statut{% endif %}</th>
+        <th>{% if lang == 'en' %}Document{% else %}Document{% endif %}</th>
+        <th>{% if lang == 'en' %}Receipt{% else %}Réception{% endif %}</th>
+        <th>{% if lang == 'en' %}Action{% else %}Action{% endif %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in batches %}
+      <tr>
+        <td class="mono">{{ b.bl_number }}</td>
+        <td>{{ b.description_of_goods or b.type_of_goods or '—' }}</td>
+        <td class="text-right">{{ b.pallet_count }}</td>
+        <td>
+          {# Le statut est dit en clair, jamais par un code technique : le client
+             doit comprendre ce qu'on attend de lui, et ce qui l'engage. #}
+          {% if b.bl_state == 'draft' %}
+            <span class="pill pill-warn">{% if lang == 'en' %}Draft — awaiting your approval{% else %}Projet — en attente de votre validation{% endif %}</span>
+          {% elif b.bl_state == 'client_validated' %}
+            <span class="pill">{% if lang == 'en' %}Approved by you — awaiting master's signature{% else %}Validé par vous — en attente de signature du commandant{% endif %}</span>
+          {% elif b.bl_state == 'master_signed' %}
+            <span class="pill pill-success">{% if lang == 'en' %}Signed by the master{% else %}Signé par le commandant{% endif %}</span>
+          {% elif b.bl_state == 'final' %}
+            <span class="pill pill-success">{% if lang == 'en' %}Final{% else %}Définitif{% endif %}</span>
+          {% else %}
+            <span class="pill pill-neutral">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <a href="/me/bookings/{{ booking.reference }}/bl/{{ b.id }}.pdf" target="_blank" class="btn btn-ghost btn-sm">
+            {% if b.bl_state in ('master_signed', 'final') %}PDF{% else %}{% if lang == 'en' %}Draft PDF{% else %}PDF (projet){% endif %}{% endif %}
+          </a>
+        </td>
+        {# §5.1 — registre de remise. Un TÉLÉCHARGEMENT est présenté comme une
+           consultation, jamais comme une réception : un préchargement de lien peut
+           le produire. Seule la confirmation explicite atteste. #}
+        <td>
+          {% set dl = delivery.get(b.id) %}
+          {% if dl and dl.acknowledged %}
+            <span class="pill pill-success">
+              {% if lang == 'en' %}Receipt confirmed{% else %}Réception confirmée{% endif %}
+            </span>
+            <div class="text-muted text-xs">
+              {{ dl.acknowledged_at.strftime("%d/%m/%Y %H:%M") if dl.acknowledged_at }}
+              {% if dl.acknowledged_channel == 'ops_confirmed' %}
+                — {% if lang == 'en' %}recorded by NEWTOWT{% else %}enregistré par NEWTOWT{% endif %}
+              {% endif %}
+            </div>
+          {% elif b.bl_state in ('master_signed', 'final') %}
+            <span class="pill pill-warn">
+              {% if lang == 'en' %}Not confirmed{% else %}Non confirmée{% endif %}
+            </span>
+            {% if dl and dl.download_count %}
+              <div class="text-muted text-xs">
+                {{ dl.download_count }}
+                {% if lang == 'en' %}download(s) — access only, not a receipt{% else %}consultation(s) — accès seulement, pas une réception{% endif %}
+              </div>
+            {% endif %}
+          {% else %}
+            <span class="text-muted text-sm">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if b.bl_state in ('master_signed', 'final') and not (dl and dl.acknowledged) %}
+            <form method="post" action="/me/bookings/{{ booking.reference }}/bl/{{ b.id }}/confirm-receipt"
+                  data-confirm="{% if lang == 'en' %}Confirm you received the {{ number_of_originals }} originals?{% else %}Confirmer la réception des {{ number_of_originals }} originaux ?{% endif %}">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button type="submit" class="btn btn-secondary btn-sm">
+                {% if lang == 'en' %}I received the originals{% else %}J'ai reçu les originaux{% endif %}
+              </button>
+            </form>
+          {% elif b.bl_state == 'draft' %}
+            <form method="post" action="/me/bookings/{{ booking.reference }}/bl/{{ b.id }}/validate"
+                  data-confirm="{% if lang == 'en' %}Approve this Bill of Lading? Please check the parties, goods and weights first.{% else %}Valider ce connaissement ? Vérifiez d'abord les parties, la marchandise et les poids.{% endif %}">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button type="submit" class="btn btn-primary btn-sm">
+                {% if lang == 'en' %}Approve the draft{% else %}Valider le projet{% endif %}
+              </button>
+            </form>
+          {% elif b.bl_state == 'client_validated' %}
+            <span class="text-muted text-sm">
+              {% if b.bl_client_validated_at %}{{ b.bl_client_validated_at.strftime("%d/%m/%Y %H:%M") }}{% endif %}
+            </span>
+          {% else %}
+            <span class="text-muted text-sm">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="text-muted text-sm mt-3">
+    {% if lang == 'en' %}A draft carries no legal value: it is neither a negotiable
+    original nor proof of shipment. Any change to the packing list after your
+    approval cancels it, and you will be asked to approve again — an approval covers
+    a precise content.
+    {% else %}Un projet n'a aucune valeur de titre : ce n'est ni un original
+    négociable, ni une preuve de mise à bord. Toute modification de la packing list
+    après votre validation l'annule et vous serez invité à revalider — une
+    validation porte sur un contenu précis.{% endif %}
+  </p>
+</article>
+
+{% endif %}
+{% endblock %}

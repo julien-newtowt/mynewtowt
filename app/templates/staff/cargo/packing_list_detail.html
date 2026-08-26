@@ -58,7 +58,20 @@
         <td class="mono">{{ b.weight_kg if b.weight_kg else '—' }}</td>
         <td class="mono">{{ b.hs_code or '—' }}</td>
         <td>{% if b.hazardous %}<span class="pill pill-error">IMO {{ b.imdg_class or '' }}</span>{% else %}—{% endif %}</td>
-        <td><a href="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl.pdf" class="btn btn-ghost btn-sm" target="_blank" title="Bill of Lading">{{ b.bl_number or 'Générer BL' }}</a></td>
+        {# Consulter = lien (lecture seule). Générer = formulaire POST : une
+           génération écrit en base et consomme un numéro, elle ne peut donc pas
+           partir d'un simple lien qu'un préchargement suffirait à déclencher. #}
+        <td>
+          {% if b.bl_number %}
+            <a href="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl.pdf" class="btn btn-ghost btn-sm" target="_blank" title="Bill of Lading{% if b.bl_state %} — {{ b.bl_state }}{% endif %}">{{ b.bl_number }}</a>
+            {% if b.bl_state and b.bl_state != 'final' %}<span class="pill pill-neutral text-xs">{{ b.bl_state }}</span>{% endif %}
+          {% else %}
+            <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl/draft" style="display:inline;">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <button type="submit" class="btn btn-ghost btn-sm" title="Génère le draft et attribue le numéro de BL">Générer le draft</button>
+            </form>
+          {% endif %}
+        </td>
         <td class="flex gap-1">
           <a href="/stowage/locate/batch/{{ b.id }}" class="btn btn-ghost btn-sm" title="Localiser à bord">📍</a>
           {% if pl.status != 'locked' %}
@@ -108,6 +121,184 @@
       {% endfor %}
     </tbody>
   </table>
+
+  {# §5.0 — date de mise à bord. DÉRIVÉE du dernier jour des opérations réelles
+     d'escale : elle n'est pas saisie. Les Opérations peuvent la corriger, mais
+     jamais sans motif — un connaissement antidaté est une fraude documentaire, et
+     le journal est demandé « en cas de contrôle ». #}
+  {% set batches_with_bl = pl.batches | selectattr('bl_number') | list %}
+  {% if batches_with_bl %}
+  <h3 class="mt-4">Date de mise à bord (shipped on board)</h3>
+  <p class="text-muted text-sm">
+    Dérivée du <strong>dernier jour des opérations réelles</strong> de l'escale. Une
+    correction exige un motif, conservé et journalisé.
+  </p>
+  <table class="data-table">
+    <thead><tr><th>N° BL</th><th>Date retenue</th><th>Provenance</th><th>Correction</th></tr></thead>
+    <tbody>
+      {% for b in batches_with_bl %}
+      {% set sob = sob_by_batch.get(b.id) %}
+      <tr>
+        <td class="mono">{{ b.bl_number }}</td>
+        <td class="mono">
+          {% if sob and sob.value %}{{ sob.value.strftime("%d/%m/%Y") }}{% else %}<span class="text-muted">— non constatée</span>{% endif %}
+        </td>
+        <td>
+          {% if sob and sob.is_override %}
+            <span class="pill pill-warn">corrigée</span>
+            {% if sob.diverges and sob.derived_value %}
+              <span class="text-muted text-xs">dérivée : {{ sob.derived_value.strftime("%d/%m/%Y") }}</span>
+            {% endif %}
+            <div class="text-muted text-xs">{{ b.bl_sob_reason }}</div>
+          {% else %}
+            <span class="pill">dérivée de l'escale</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if b.bl_state in ('master_signed', 'final') %}
+            <span class="text-muted text-sm">BL signé — correction par révision</span>
+          {% elif pl.status != 'locked' %}
+            <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl/shipped-on-board" class="flex gap-1 items-center">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <input type="date" name="shipped_on_board" required
+                     value="{{ sob.value.isoformat() if sob and sob.value else '' }}" />
+              <input type="text" name="reason" required minlength="10" style="min-width:16rem;"
+                     placeholder="Motif (lu en cas de contrôle)" value="" />
+              <button type="submit" class="btn btn-ghost btn-sm">Corriger</button>
+            </form>
+          {% else %}
+            <span class="text-muted text-sm">packing list verrouillée</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {# §5.1 — registre de remise des originaux. Sans ce registre, NEWTOWT ne peut
+     établir ni à qui, ni quand, ni comment les originaux ont été remis : c'est le
+     dispositif dont l'absence exclut la « misdelivery » de la couverture P&I.
+
+     ⚠️ Un TÉLÉCHARGEMENT n'est pas une réception — un préchargement de lien peut le
+     produire. Il est affiché comme une consultation, et compté à part. #}
+  {% set signed_batches = pl.batches | selectattr('bl_state', 'in', ['master_signed', 'final']) | list %}
+  {% if signed_batches %}
+  <h3 class="mt-4">Remise des originaux ({{ number_of_originals }} par connaissement)</h3>
+  <table class="data-table">
+    <thead><tr><th>N° BL</th><th>Réception</th><th>Consultations</th><th>Attester une remise hors plateforme</th></tr></thead>
+    <tbody>
+      {% for b in signed_batches %}
+      {% set dl = delivery_by_batch.get(b.id) %}
+      <tr>
+        <td class="mono">{{ b.bl_number }}</td>
+        <td>
+          {% if dl and dl.acknowledged %}
+            <span class="pill pill-success">confirmée</span>
+            <div class="text-muted text-xs">
+              {{ dl.acknowledged_at.strftime("%d/%m/%Y %H:%M") if dl.acknowledged_at }}
+              {% if dl.acknowledged_channel == 'ops_confirmed' %}
+                — <strong>attestée par NEWTOWT</strong> (repli)
+              {% else %}
+                — déclarée par le client
+              {% endif %}
+            </div>
+          {% else %}
+            <span class="pill pill-warn">non confirmée</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if dl and dl.download_count %}
+            <span class="mono">{{ dl.download_count }}</span>
+            <div class="text-muted text-xs">
+              dernière le {{ dl.last_download_at.strftime("%d/%m/%Y %H:%M") if dl.last_download_at }} —
+              <strong>accès seulement</strong>, ne vaut pas réception
+            </div>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if dl and dl.acknowledged %}
+            <span class="text-muted text-sm">déjà confirmée</span>
+          {% else %}
+            <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl/confirm-delivery"
+                  enctype="multipart/form-data" class="flex gap-1 items-center" style="flex-wrap:wrap;">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <input type="datetime-local" name="confirmed_at" required title="Date et heure de la remise réelle" />
+              {# Liste ouverte : `list` suggère sans contraindre — un cas non prévu
+                 doit pouvoir être consigné plutôt que perdu. #}
+              <input type="text" name="means" required list="bl-means" placeholder="Moyen (obligatoire)" style="min-width:11rem;" />
+              <input type="text" name="notes" placeholder="Précisions" style="min-width:12rem;" />
+              <input type="file" name="file" title="Pièce jointe (bordereau signé, accusé…)" />
+              <button type="submit" class="btn btn-ghost btn-sm">Attester</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <datalist id="bl-means">
+    {% for m in suggested_means %}<option value="{{ m }}"></option>{% endfor %}
+  </datalist>
+  <p class="text-muted text-sm">
+    Le repli est réservé aux remises <strong>hors plateforme</strong> (papier,
+    coursier…). Il est tracé <strong>comme une attestation de NEWTOWT</strong>, jamais
+    comme une déclaration du client.
+  </p>
+  {% endif %}
+
+  {# §4.1 — après signature, la correction ne passe plus par l'édition mais par une
+     RÉVISION NUMÉROTÉE qui annule explicitement la précédente, les deux restant
+     tracées. Le nouveau document repart en projet : le client revalide, le
+     commandant resigne. #}
+  {% if signed_batches %}
+  <h3 class="mt-4">Réviser un connaissement signé</h3>
+  <p class="text-muted text-sm">
+    Un connaissement signé ne se modifie pas. Une révision <strong>annule</strong> le
+    document précédent — archivé avec son empreinte et son contenu — et en ouvre un
+    nouveau, qui devra être <strong>revalidé par le client</strong> puis
+    <strong>resigné par le commandant</strong>.
+  </p>
+  <table class="data-table">
+    <thead><tr><th>N° BL courant</th><th>Rév.</th><th>Documents annulés</th><th>Réviser</th></tr></thead>
+    <tbody>
+      {% for b in signed_batches %}
+      <tr>
+        <td class="mono">{{ b.bl_number }}</td>
+        <td class="mono">{{ b.bl_revision }}</td>
+        <td>
+          {% set revs = revisions_by_batch.get(b.id) %}
+          {% if revs %}
+            {% for r in revs %}
+              <div class="text-xs">
+                <span class="mono">{{ r.bl_number }}</span>
+                <span class="text-muted">
+                  annulé le {{ r.superseded_at.strftime("%d/%m/%Y %H:%M") if r.superseded_at }}
+                  par {{ r.superseded_by_name or '—' }} — {{ r.reason }}
+                </span>
+              </div>
+            {% endfor %}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/bl/revise"
+                class="flex gap-1 items-center"
+                data-confirm="Réviser {{ b.bl_number }} ? Le document actuel sera annulé et devra être revalidé puis resigné.">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <input type="text" name="reason" required minlength="10" style="min-width:16rem;"
+                   placeholder="Motif de la révision (lu en cas de contrôle)" />
+            <button type="submit" class="btn btn-danger btn-sm">Réviser</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 
   {% if pl.status != 'locked' %}
   <h3 class="mt-4">Ajouter un batch</h3>

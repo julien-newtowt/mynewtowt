@@ -119,6 +119,7 @@ d'acquisition**.
 | **débarqué** | **−1** | débarqué PMS | 0 |
 | formation | 0,6 | débarqué PMS autre | 0 |
 | AT (**arrêt de travail** — cf. accord) | 0,2 | `-` | 0 |
+| AT (accident du travail) | 0,2 | `-` | 0 |
 | télétravail | 0,9 | | |
 | embarqué cadet | 0,3 | | |
 | conduite | 0 | | |
@@ -308,6 +309,7 @@ quatre valent 90 j, seul `(hors élève, TOWT)` fait exception à 60 j. La casca
 reste néanmoins la structure retenue — Yasmin a demandé d'**anticiper les
 évolutions**, et un défaut global à 90 avec une seule exception serait plus court
 mais impossible à faire évoluer sans refonte.
+| **Élève / Deck Cadet** | **90 j** | ⏳ **autre valeur, à préciser** |
 
 ⚠️ **Cet arbitrage inverse la lecture des classeurs qu'on aurait faite
 spontanément** :
@@ -320,6 +322,10 @@ spontanément** :
 néanmoins **rester capable** d'accueillir une cellule vide et de signaler le repli :
 la matrice va évoluer, et la prochaine cellule ajoutée ne sera peut-être pas
 renseignée le jour de sa création.
+⛔ **Ne pas inventer la valeur PMS/élève.** Elle est annoncée comme différente mais
+n'est pas fournie : le paramétrage doit accepter la cellule **vide**, et la
+résolution retomber alors sur le niveau supérieur (PMS = 90 j) **en signalant** que
+la valeur spécifique manque — jamais en la présentant comme voulue.
 
 ### 🔑 Structure imposée : la cascade, même là où une exception suffirait
 
@@ -423,6 +429,16 @@ L'écart entre les deux vaut **0,225 jour par jour** et part en paie : le statut
 donc être un **champ explicite et obligatoire** de la relève, jamais une valeur
 inférée. Une relève sans statut d'acquisition renseigné doit être **refusée**, pas
 complétée par défaut.
+✅ **Coefficient tranché (Yasmin, 2026-08-03) : « Le personnel au Vietnam est en
+position embarquée. »** Il relève donc du statut `embarqué` — soit **0,9 j/j** pour
+le personnel TOWT et **1,0 j/j** pour le personnel PMS (§3.1). Pas de statut
+particulier à créer.
+
+Lecture métier : ces marins supervisent la construction / la livraison d'un navire
+au Vietnam. Ils ne sont ni à terre au repos, ni en congés — ils travaillent, donc
+ils acquièrent comme s'ils étaient à bord. **Le modèle doit donc autoriser un
+embarquement sans navire ni leg tout en le comptant comme embarqué**, ce qui
+interdit de déduire le statut de la seule présence d'un `vessel_id`.
 
 ### 3.5 Postes — **quatre vocabulaires** pour les mêmes fonctions
 
@@ -516,6 +532,7 @@ Réponses de Yasmin, transmises par l'Armement le **2026-08-03**.
 |---|---|---|
 | 1 | Les coefficients d'acquisition font-ils foi ? Alimentent-ils la paie ? | ✅ **« Fixé par la société et transmis à Silae pour la paie »** ⇒ normatifs, adjacents à la paie (cf. §3.1) |
 | 2 | Élèves : 60 ou 90 jours ? | ✅ **90 j pour un élève TOWT** (2026-08-03, après correction d'une première réponse « 60 »). PMS/élève = **90 j** (fourni le 2026-08-03) ⇒ **matrice complète**. La **structure en matrice (poste × manning) est imposée** pour anticiper les évolutions (cf. §3.2). Coefficient d'acquisition confirmé à `0,3 / jour embarqué` |
+| 2 | Élèves : 60 ou 90 jours ? | ✅ **90 j pour un élève TOWT** (2026-08-03, après correction d'une première réponse « 60 »). PMS/élève = **autre valeur, non fournie**. La **structure en matrice (poste × manning) est imposée** pour anticiper les évolutions (cf. §3.2). Coefficient d'acquisition confirmé à `0,3 / jour embarqué` |
 | 3 | Les overrides de durée sont-ils volontaires ? | ✅ **« Paramétrable, avec possibilité de modif pour des cas en particulier avec mot de justification »** ⇒ défaut en base + override par cas + **justification obligatoire** (cf. §3.2) |
 | 4 | Flotte | ✅ `ARIES` et `ATHENAIS` **annulés pour l'instant** |
 | 5 | `Db` = doublure ? `*` = poste obligatoire ? | ✅ **« Doublure et l'étoile, ça veut dire obligatoire »** ⇒ l'astérisque marque un **poste obligatoire**, et un poste `Db` signale une **doublure obligatoire**. Lecture à confirmer : un navire ne peut appareiller sans le poste étoilé pourvu **ni sans doublure désignée** là où elle est exigée |
@@ -545,6 +562,9 @@ structure l'accueille déjà :
   **détaché à terre** (0,675) n'a **aucun équivalent** dans l'Excel, qui applique
   0,9 à une ligne `télétravail`. Soit l'Excel surcrédite de 0,225 j/j, soit il
   manque un statut. **Question pour la paie / les RH**, pas pour l'Armement.
+- ⏳ **PMS / élève** — annoncée comme différente de 90 j, non communiquée. Le
+  paramétrage acceptera la cellule vide et retombera sur PMS = 90 j **en le
+  signalant**, jamais en la présentant comme la valeur voulue.
 
 **Instruction d'architecture à ne pas contourner** (Yasmin, 2026-08-03) : garder
 la **structure en cascade** même là où une exception suffirait aujourd'hui — « cela

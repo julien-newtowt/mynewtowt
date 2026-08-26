@@ -225,7 +225,15 @@ async def test_portal_document_delete_is_audited(db):
 
 @pytest.mark.asyncio
 async def test_bill_of_lading_pdf_renders_from_batch(db, staff_user):
-    from app.routers.cargo_packing_router import batch_bill_of_lading
+    """Génération puis consultation — deux appels distincts depuis 2026-08-17.
+
+    Ce test appelait auparavant le seul `GET`, qui **attribuait le numéro au
+    passage**. L'émission est désormais un `POST` en `cargo:M` (un lien de
+    consultation ne doit pas écrire en base, cf. `test_bl_emission_post_only.py`).
+    Ce que le test protège est inchangé : le PDF se rend depuis un lot, et le
+    numéro respecte le format `TUAW_{leg_code}_{rang}`.
+    """
+    from app.routers.cargo_packing_router import batch_bill_of_lading, generate_bl_draft
 
     pl, _ = await _setup_graph(db, with_leg=True)
     b = PackingListBatch(
@@ -242,11 +250,13 @@ async def test_bill_of_lading_pdf_renders_from_batch(db, staff_user):
     db.add(b)
     await db.flush()
 
+    await generate_bl_draft(pl.id, b.id, _Req(), db=db, user=staff_user)
+    await db.refresh(b)
+    assert b.bl_number == "TUAW_1CFRBR6_001"
+
     resp = await batch_bill_of_lading(pl.id, b.id, db=db, user=staff_user)
     assert resp.media_type == "application/pdf"
     assert len(resp.body) > 500  # vrai PDF généré
-    await db.refresh(b)
-    assert b.bl_number == "TUAW_1CFRBR6_001"
 
 
 @pytest.mark.asyncio

@@ -39,6 +39,10 @@ de production de données non désirées pendant la période de développement.
 | D4 | **La capture MRV v2 reste ACTIVE** (pas d'opt-out `mrv_v2_capture.audience.vessels_off`) | Yasmin veut pouvoir tester la saisie événementielle elle-même ; aucun autre utilisateur n'a d'accès en écriture | ⚠️ Vigilance : un événement **finalisé** entre dans le grand livre et peut alimenter un certificat Anemos. Rester en brouillon en exploration, ou dédier un navire de test. |
 | D5 | **Filet CI : option A** — corriger les tests périmés puis activer `tests/integration` + `tests/regression` en CI | Un filet fiable vaut mieux qu'un filet bruyant ; 29 `xfail` risqueraient de noyer l'écart cascade à investiguer | J1 étendu de 0,5 j à ~1 j. |
 | D6 | **Décision du 2026-07-27 sur la CI rouverte** | Elle était raisonnable tant qu'on ne développait pas ; elle ne l'est plus dès lors qu'on touche capacité, horodatage et émission de connaissements | J1 = prérequis de tout le reste. |
+| D7 | **Fret dangereux : à intégrer plus tard** | NEWTOWT en acceptera, mais pas dans cette version | La ségrégation IMDG reste en **P3** — mais **cesse d'être hypothétique**. À cadrer *avant* d'accepter du DG en exploitation : aujourd'hui toutes les classes sont empilées dans les mêmes 3 zones et la cargaison de référence est **alimentaire** (café/cacao). |
+| D8 | **Marad est le logiciel principal des contrats d'engagement maritime — aucun module ni intégration prévu** | Marad fait déjà le travail | La **modélisation MLC sort définitivement du périmètre** (SEA, rapatriement, 11 mois, garantie d'abandon). Item P3 **supprimé**, pas reporté. La question « Marad porte-t-il les SEA ? » est close. |
+| D9 | **Un leg = 1 port de départ + 1 port d'arrivée. Mais une cargaison peut traverser plusieurs legs** — ex. chargement Belco en Colombie, déchargement d'un autre client au Canada, puis déchargement Belco en France (Belco = 2 legs CO-CA et CA-FR) | Réalité d'exploitation | 🔴 **Requalification majeure.** L'overstowage n'est plus une question ouverte : c'est un **risque confirmé**. Au port intermédiaire, la cargaison du client canadien doit être accessible — donc **pas sous** celle de Belco. Second effet : sur le leg CA→FR, les palettes Belco encore à bord sont **invisibles** du plan d'arrimage (`StowageItem` n'a aucun champ de port de déchargement — vérifié, zéro occurrence ; le plan est unique par leg et ne collecte que les commandes de ce leg) ⇒ **occupation sous-estimée**. ⏳ **Traitement décidé : après septembre** (Yasmin). |
+| D10 | **Le FMS est la source de vérité QHSE** ; il reste l'outil de saisie et le logiciel principal à bord. MyTOWT sert à **analyser la donnée, aider à la décision et piloter** | Répartition des rôles assumée | Tranche tout le design de la Phase 1 QHSE : mynewtowt est un **miroir en lecture, jamais une seconde source d'écriture**. Conséquence immédiate : le trou de **schéma** (aucune clé `source_code`/`import_batch_id` ⇒ import non réconciliable, dédoublonnage impossible sans migration) devient le **premier point à corriger** de ce module, avant tout tableau de bord. |
 
 ---
 
@@ -419,6 +423,7 @@ colonne « bloque quoi » est la seule qui compte pour l'ordonnancement.
 | # | Item | Bloque le J2 ? | Bloque quoi réellement | Échéance | Qui |
 |---|---|---|---|---|---|
 | R1 | ✅ **CLOS 2026-08-10 — résolu sur `main`, pas par nous.** `20260807_0113_merge_heads_mrv_crewing` est arrivée sur `main` le 2026-08-07 avec **exactement les mêmes parents** que la migration que nous avions préparée (`20260730_0113`). Les deux ensemble produisaient **deux têtes** — le problème même à éliminer. Notre migration a été retirée des branches qui la portaient, sa PR #155 fermée et sa branche supprimée (SHA consignés). | — | **Plus rien** — le blocage de déploiement est levé, et aucun lot n'attend de validation de schéma | — | — |
+| R1 | ✅ **CORRIGÉ 2026-07-30, en attente de validation de Julien** — migration de fusion **pure** `20260730_0113_merge_heads.py` (aucun DDL) sur `fix/alembic-merge-heads`, issue de `main`. Écrite à la main plutôt que par `alembic merge` (`migrations/` n'est pas monté dans le conteneur). Vérifié : **une seule tête**, `(mergepoint)` présent dans l'historique, `upgrade()`/`downgrade()` exécutables. Fusion sûre : les deux chaînes touchent des tables disjointes (`nav_event_noon` / `generated_reports`), leur ordre est indifférent | — | **Débloque le lot workflow BL, le J9, le lot relèves et tout déploiement.** 🔴 **Julien est le seul à pouvoir valider une fusion** et il est absent jusqu'au **2026-08-17** ⇒ stratégie « tout préparer, ne rien fusionner », les lots à migration se branchant sur celui-ci (cf. `07-ordre-pr-et-merge.md` §1 bis) | Retour de Julien, 2026-08-17 | **Julien** |
 | R1b | 🟡 **`alembic upgrade head --sql` inutilisable** — découvert lors de R1, **préexistant et sans lien** : `20260703_0094_planning_rules_hardening.py` fait un `fetchall()`, impossible en mode offline (pas de connexion). On ne peut donc **pas prévisualiser le DDL** d'un déploiement | **Non** | Un déploiement en deux temps (revue du SQL, puis application). Le déploiement normal n'est pas affecté | Opportuniste | — |
 | R2 | ✅ **RÉSOLU 2026-07-29** — lot J1 rebasé sur `main`. La dépendance venait d'un seul commit amendant `PROJECT_CONTEXT.md` (document du lot découverte) : la correction du §7 a été déplacée vers le lot découverte (`e48847d`), rendant les deux lots indépendants. Vérifié : `main` est ancêtre direct des deux, ils fusionnent proprement (`CLAUDE.md` s'auto-fusionne), suite revalidée 2000/15 | — | — | — |
 | R3 | 🟠 **Protection de branche absente sur `main`** — Yasmin n'est pas admin du dépôt. Un incident de merge direct a déjà cassé `main` par le passé | **Non** | Rien techniquement — **contrôle de risque pur**. D'autant plus pertinent qu'on produit beaucoup de commits sur cette période | Dès que possible | À escalader auprès de la personne admin |
@@ -433,6 +438,29 @@ colonne « bloque quoi » est la seule qui compte pour l'ordonnancement.
 | R13 | ⚠️ **Deux conventions de comptage de jours, légitimement différentes** — Excel compte les jours à bord en **exclusif** (`AUJOURDHUI()−début`, jour d'embarquement = 0) car cohérent avec « contrat 60 j ⇒ fin = début + 60 » ; la règle **Schengen** 90/180 est **inclusive** (jour d'entrée et de sortie comptés). Écart mesuré : 62 vs 63 jours sur un cas réel | **Non** | Toute fonction de comptage future. **Ne pas unifier — nommer** : confondre les deux casse soit un contrat, soit une conformité réglementaire | À appliquer dès le lot relèves | — |
 | R7 | 🟡 **Dérive de schéma de la base de dev** rattrapée à la main le 2026-07-29 (8 colonnes ajoutées). La procédure §7 de `PROJECT_CONTEXT.md` est corrigée, mais **aucun garde-fou** n'empêche la dérive de réapparaître | **Non** | Rien. Confort et fiabilité des validations locales. Piste : un script de diagnostic `Base.metadata` ↔ `information_schema` à lancer au démarrage en dev | Opportuniste | — |
 | R8 | ⚠️ **CORRIGÉ 2026-08-03 — l'attribution était fausse.** Une migration **vide, anonyme et non suivie** (`4f4eeb7bfc89_.py`, « empty message ») était posée sur la migration de fusion et en devenait la tête. Elle a été écartée. Mais l'attribuer à un « hook du harnais lançant `alembic` » était une **inférence jamais vérifiée** : recherche exhaustive faite le 2026-08-03 — aucun `settings.json` projet ni local, global réduit au modèle et à l'effort, **aucun hook git actif**, aucune tâche VS Code, et **rien dans le dépôt n'appelle `alembic revision`** (les 6 occurrences sont des `alembic upgrade head`, toutes dans Docker). **L'origine du fichier reste inconnue.** | **Non** | Rien de connu. Le fait reste : une révision anonyme peut apparaître et devenir la tête ⇒ **vérifier la tête unique avant de créer une migration**, sans présumer d'une cause | Vigilance | — |
+
+### Ordre de priorité imposé par Yasmin (2026-07-30) — à appliquer à toute analyse
+
+1. Comprendre les processus réels de l'entreprise.
+2. Les **reproduire fidèlement** dans MyTOWT.
+3. Valider que les équipes peuvent travailler efficacement avec le logiciel.
+4. **Ensuite** seulement : contrôles, conformité, qualité de données.
+
+> « La valeur métier doit toujours passer avant les contrôles de conformité ou les
+> fonctionnalités *nice to have*. »
+
+Elle demande **explicitement à être challengée** quand un risque opérationnel ou
+réglementaire majeur justifierait l'inverse. Deux endroits où la ligne se tient :
+le **MRV** (organisme accrédité, échéance réglementaire dure) et le **workflow
+BL** (titre de propriété, prescription Hague-Visby d'un an) — tous deux déjà
+priorisés.
+
+**Distinction retenue, qui a servi le 2026-07-30** : un indicateur qui **affirme
+quelque chose de faux** n'est pas un contrôle manquant, c'est un **défaut**. Le
+corriger peut consister à le faire **taire** plutôt qu'à le rendre intelligent —
+quelques heures au lieu de plusieurs jours. Et un chiffre dont dépendra une
+fonctionnalité métier future (les jours en mer pour la planification des relèves)
+n'est pas un « contrôle de phase 4 » : il est **absorbé** par la valeur métier.
 
 ### Ordre de priorité imposé par Yasmin (2026-07-30) — à appliquer à toute analyse
 
@@ -488,13 +516,8 @@ ne jamais se fier au vert d'une étape `continue-on-error`.
 
 1. **Écart cascade** (J1, catégorie ③) : attente de test périmée après un
    changement délibéré non documenté, ou off-by-one réel ? → investigation.
-2. **NEWTOWT accepte-t-il réellement du fret dangereux ?** Détermine la
-   priorité de la ségrégation IMDG (aujourd'hui inexistante : toutes classes
-   confondues dans les mêmes zones, café/cacao = denrées alimentaires).
-3. **Marad porte-t-il les contrats d'engagement maritime (SEA), certificats
-   de rapatriement et garantie financière d'abandon ?** Si oui → import
-   lecture seule ; si non → module. À répondre **avant** de coder.
-4. **Un leg peut-il avoir plusieurs ports de déchargement ?** Prérequis d'un
-   vrai contrôle d'overstowage.
-5. **Le FMS reste-t-il la source de vérité QHSE ?** Détermine tout le design
-   de la Phase 1 (miroir idempotent vs seconde source d'écriture).
+2. ✅ **Fret dangereux** — tranché (D7) : oui, à intégrer plus tard.
+3. ✅ **Contrats d'engagement maritime** — tranché (D8) : Marad, pas de module.
+4. ✅ **Multi-legs** — tranché (D9) : un leg = 1 POL + 1 POD, mais une cargaison
+   traverse plusieurs legs ⇒ overstowage confirmé, traitement après septembre.
+5. ✅ **Source de vérité QHSE** — tranché (D10) : le FMS.

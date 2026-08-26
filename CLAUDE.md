@@ -373,7 +373,7 @@ Conséquences à connaître **avant** de toucher à un indicateur d'équipage :
 | Planning | `/planning` | ✅ Gantt + table + share token |
 | Planning — scénarios | `/planning/scenarios` | ✅ what-if isolé (jamais d'écriture sur `legs`) : brouillon ou clone de legs réels, Gantt/table/comparaison, export CSV, drag-drop |
 | Commercial | `/commercial` | ✅ clients, grids, offers, orders |
-| Cargo (packing list + portail) | `/cargo` + `/p/{token}` | ✅ batches + **audit consultable** + edit/suppr + lock + messagerie ; **BL reconnecté au batch** (n° `TUAW_…`), Arrival Notice, import/export Excel, portail multilingue |
+| Cargo (packing list + portail) | `/cargo` + `/p/{token}` | ✅ batches + **audit consultable** + edit/suppr + lock + messagerie ; **workflow BL complet** (`draft → client_validated → master_signed → final`, gel à la signature, filigrane DRAFT, révisions `TUAW_…_R2`, séquence de numéros **non recyclable**, registre de remise des originaux, date *shipped on board* dérivée de l'escale), Arrival Notice, import/export Excel **en upsert** (préserve les numéros), portail multilingue. ⛔ **Rail booking retiré** : plus de BL généré à la volée depuis un booking |
 | Escale (port call) | `/escale` | ✅ operations + dockers + lock |
 | Onboard / Captain | `/captain` | ✅ SOF + ETA shifts + messagerie + docs + quart (watch log) + clôture escale (ONB-05) |
 | Carnet de bord ANEMOS | `/carnet-bord` | ✅ éditeur staff (perm. `captain`) : highlights + photos par leg → preview HTML + PDF ; alimente la page publique `/voyage/{ref}` |
@@ -525,8 +525,12 @@ de Continuité d'Activité) et `docs/audit/ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md
 Backlog actif :
 1. Certificats CO₂ : couverts par le **label Anemos** (PDF WeasyPrint par booking).
 2. ✅ DOCX generators : service `docx_generator.py` — Bill of Lading
-   (`/cargo/booking/{ref}/bl.docx` + `/me/bookings/{ref}/bl.docx`) + offre
-   commerciale (`/offers/{id}/export.docx`) (lot 75).
+   (`/cargo/packing-lists/{pl_id}/batches/{batch_id}/bl.docx` +
+   `/me/bookings/{ref}/bl/{batch_id}.docx`) + offre commerciale
+   (`/offers/{id}/export.docx`) (lot 75). ⚠️ Le BL Word part du **lot de packing
+   list**, plus du booking (rail retiré le 2026-08-17, cf. workflow BL §5.4) : il
+   porte le numéro du registre, et ne revendique « 3 originaux signés » **que si le
+   commandant a signé**.
 3. ✅ Stowage visualisation : vue SVG top-down des navires (STO-10, lot 72).
 4. ✅ Exports admin : ZIP global + CSV sélectif par table whitelistée
    (ADM-04, `admin_data.py`).

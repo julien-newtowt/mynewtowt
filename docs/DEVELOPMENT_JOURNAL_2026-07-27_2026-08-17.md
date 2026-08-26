@@ -462,6 +462,90 @@ Aucune migration Alembic. Aucun secret. Aucun fichier temporaire/debug.
 
 ---
 
+## 2026-07-29 — Phase 2, J2 : quick wins Operations
+
+**Objectif** : répondre au maximum de demandes Opérations pour un coût minimal,
+en s'appuyant sur le constat de l'analyse d'écart — **4 demandes sur 8 portaient
+sur des fonctionnalités existantes**, mal affichées ou rangées sur le mauvais
+écran.
+
+**Branche** : `feat/ops-quickwins` (empilée sur `chore/ci-integration-tests` —
+voir « dette de structure » ci-dessous).
+**Commit** : `d4b3937`.
+
+### Analyse d'impact — faite AVANT de coder cette fois
+
+Correction de l'écart §9 relevé au J1 (analyse rédigée rétrospectivement).
+
+| Cible | Consommateurs | Rayon d'action |
+|---|---|---|
+`dashboard_alerts` | `staff_dashboard_router.py` seul | 🟢 Faible |
+`sailing_hours` / `assisted_hours` / `motor_hours` | `chapitre_6_performance_navigation.html` seul | 🟢 Faible |
+BL du rail booking | **4 points d'appel, dont `client/booking_detail.html:199` — servi au CLIENT** | 🟠 Modéré ⇒ **sorti du lot** |
+
+### Livré
+
+**1. Alerte ETA dépassée en mer** (`services/dashboard_alerts.py`)
+La condition `if eta and not ata and not atd:` excluait les legs **déjà partis**,
+donc éliminait le seul cas opérationnel utile : navire en mer, ETA dépassée,
+arrivée non constatée. L'alerte ne se déclenchait que pour un leg jamais parti
+— un oubli de saisie, pas un retard. Corrigé en `if eta and not ata:`, avec un
+message distinguant « en mer » et « non appareillé ».
+
+**2. Liste cargo lisible** (`routers/cargo_router.py` + `staff/cargo/index.html`)
+Les colonnes *Client* et *Leg* existaient mais affichaient `#{{ client_account_id }}`
+et `{{ leg_id }}` — soit `#42` et `17`. Cause : le routeur ne chargeait que
+`Booking`, sans jointure. Ajout de **jointures externes** vers
+`ClientAccount.company_name` et `Leg.leg_code`. Externes délibérément :
+`client_account_id` est nullable (booking saisi côté staff pour un client non
+inscrit) ⇒ repli « Sans compte client » plutôt qu'une ligne qui disparaît.
+
+**3. Heures voile du Carnet de Bord** (`services/carnet_bord.py`)
+Le calcul ajoutait `24` par ligne de voilure, alors qu'une ligne couvre **un
+créneau de 4 h** (`NoonReportSail` = « relevé voilure horaire (4 h) », et
+`NOON_TIME_SLOTS` définit 6 créneaux/jour). **Surévaluation d'un facteur 6** :
+un voyage de 10 j tout sous voile imprimait **1 440 h au lieu de 240**, sous le
+libellé « Heures sous voile pure » du carnet remis au client. Les pourcentages
+restaient justes (le facteur se compensait au numérateur et au dénominateur) —
+c'était l'**absolu** qui mentait, et c'est lui qui est imprimé.
+Constante `SAIL_SLOT_HOURS = 24 // len(NOON_TIME_SLOTS)` plutôt qu'un littéral,
+pour rester juste si les créneaux évoluent.
+
+### Décisions de périmètre prises et assumées
+
+**L'unification des rails documentaires (décision D2) est reportée au lot
+workflow BL.** L'analyse d'impact a montré que le BL dégradé — celui **sans
+consignataire ni notify party** — est servi au **client** (`client/booking_detail.html:199`),
+pas seulement au staff. Or c'est exactement le périmètre que le workflow BL
+redéfinit (draft → validé → signé → final). Le corriger maintenant changerait
+l'interface client **deux fois en quinze jours**.
+
+**La journalisation des mutations du portail client reste à faire** — c'est le
+volet de la demande BL livrable sans migration (8 routes mutantes de
+`cargo_portal_router.py` sans aucun `activity.record()`).
+
+### Validation
+
+- Suite complète : **793 passés · 15 échecs · 1 skip** — les **mêmes 15** échecs
+  PDF/WeasyPrint qu'avant le lot. **Aucune régression.**
+- `ruff` ✅ · `black` ✅.
+- **Validation en application réelle** : rebuild de l'image, authentification
+  staff, `/cargo` `/dashboard` `/escale` `/planning` en 200. La liste cargo étant
+  vide sur la base de démo (aucun booking confirmé), deux bookings de test ont
+  été insérés pour exercer le **vrai** chemin de rendu — nom du client
+  (`Acme Wines SAS`), `leg_code` (`1AFRUS6`) et repli « Sans compte client » tous
+  affichés, **zéro identifiant brut résiduel** — puis supprimés
+  (`DELETE 2`, table `bookings` revenue à 0).
+
+### Dette de structure introduite (assumée, signalée)
+
+`feat/ops-quickwins` est **empilée sur `chore/ci-integration-tests`**, non mergée.
+Raison : le lot a besoin de la suite verte pour se valider. La pile est donc
+`main` → ci → quickwins. Elle se résorbe dès la fusion du lot CI. C'est le RAF R2
+qui reparaît sous une autre forme — signalé plutôt que laissé passer.
+
+---
+
 ## 2026-07-30 — J3 : fusion Alembic, 1re PR, et la CI se prend son propre audit
 
 ### Fusion des deux têtes Alembic (RAF R1 — levé)
@@ -933,3 +1017,924 @@ une « requalification » de R8 de bruit cosmétique en « pollue la chaîne de
 migrations ». Le **fait** observé reste vrai, mais **sa cause est inconnue**. R8 passe
 d'« action à mener » à « point de vigilance » : *vérifier la tête unique avant de
 créer une migration, sans présumer d'une cause.*
+---
+
+## 2026-08-03 — Lot workflow BL : ce qui est livrable sans migration
+
+Journée cadrée par une contrainte externe : **Julien est le seul à pouvoir valider
+une fusion** et il est absent jusqu'au 2026-08-17. Stratégie retenue avec Yasmin :
+**tout préparer, ne rien fusionner** (cf. `07-ordre-pr-et-merge.md` §1 bis).
+
+### Base de la branche — un choix contraint, pas une commodité
+
+`feat/bl-workflow` dérive de **deux** lots, et il le fallait :
+
+- **lot 3** (`fix/alembic-merge-heads`) : `alembic revision` exige une **tête
+  unique**. Brancher sur `main` produirait une migration rattachée à l'une des
+  deux têtes divergentes ⇒ migration à refaire après fusion.
+- **lot 1** (`chore/ci-integration-tests`) : il porte **la spec BL elle-même**
+  (absente de `main`) **et** les 11 corrections de tests périmés. Sans lui, la
+  référence de test compterait une vingtaine d'échecs connus — inacceptable pour
+  détecter une régression sur un lot qui touche un **titre de propriété**.
+
+Fusion à blanc testée : zéro conflit. Référence de test établie **avant** toute
+modification : **2000 passés / 15 échoués / 1 ignoré** (les 15 = rendus PDF
+WeasyPrint absents de l'hôte Windows).
+
+### 🔴 Une migration parasite était posée sur la migration de fusion
+
+`migrations/versions/4f4eeb7bfc89_.py` — créée le 2026-08-03 à 10:05:28, **non
+suivie par git**, `upgrade()` et `downgrade()` vides, intitulée « empty message »,
+révisant `20260730_0113`. Origine quasi certaine : le **hook du harnais qui lance
+`alembic`** (RAF R8).
+
+⚠️ **Cela requalifie R8** : ce hook ne produit pas seulement du bruit au commit,
+il **peut polluer la chaîne de migrations**. Si ce fichier avait été commité,
+toute migration ultérieure se serait enchaînée depuis une révision anonyme et
+vide, et le contrôle de tête aurait désigné la mauvaise.
+
+Fichier **déplacé** (non supprimé) vers le dossier de travail temporaire. Tête
+rétablie et vérifiée : 121 révisions, tête unique `20260730_0113`.
+
+### Deux défauts dans mes propres outils de vérification
+
+1. **Mon script de contrôle des têtes Alembic** ne gérait pas les déclarations
+   annotées (`down_revision: Union[str, None] = "…"`) et a annoncé **deux têtes**
+   là où il n'y en avait qu'une. Attrapé en recoupant avec le résultat réel
+   d'`alembic heads` obtenu la veille — sans ce recoupement, je signalais un faux
+   problème. Corrigé.
+2. **Deux de mes nouveaux tests passaient à vide** : sans aucune journalisation,
+   « le token n'apparaît pas dans le journal » est trivialement vrai sur zéro
+   ligne. Gardes anti-succès-à-vide ajoutées ⇒ **8 sur 8** échouent désormais sur
+   l'ancien code.
+
+### Volet livré 1 — journalisation des 8 mutations du portail (commit `1cb1d40`)
+
+**Correction d'un constat que j'avais énoncé trop fortement** : j'avais dit
+« aucun appel de journalisation ». Faux. Les opérations de batch alimentaient bien
+`PackingListAudit` (champ par champ, via `create_batch` / `apply_batch_update`).
+Ce qui manquait réellement :
+
+- **zéro entrée dans `activity_logs`** (le journal append-only de
+  `/admin/activity-logs`) — c'est pourtant la piste qu'un P&I club réclame ;
+- `actor_name=None` partout : la piste disait « client » sans jamais dire lequel ;
+- **deux routes tracées nulle part** : la soumission de la packing list (qui
+  change son état) et l'envoi d'un message.
+
+**Choix de conception — on ne nomme volontairement personne.** Le portail est
+**anonyme par conception** : quiconque détient le lien agit, et ce peut être un
+transitaire. Écrire un nom de société laisserait croire à une attribution que rien
+ne vérifie. Le libellé est `portal:PL<id>` (canal + dossier), l'IP est
+enregistrée, et l'expéditeur déclaré reste lisible sur chaque batch.
+
+**Erreur de ma conception, attrapée par les tests** : j'avais écrit
+`pl.shipper_name`. **`PackingList` ne porte aucun champ d'identité d'expéditeur** —
+les parties (shipper / notify / consignee) vivent sur `PackingListBatch`. Ce code
+aurait levé une `AttributeError` à **chaque mutation du portail** en production.
+La spécification suggérait ce champ : elle se trompait aussi. Un test fige
+désormais le constat (`assert not hasattr(pl, "shipper_name")`).
+
+Le corps d'un message n'est **pas** dupliqué dans le journal (longueur seulement) :
+il est déjà persisté dans `portal_messages`, et `/admin/activity-logs` a une
+surface de lecture plus large.
+
+**Durcissement, pas correction de bug** : `get_by_token` comparait
+`token_expires_at` (naïf sous SQLite) à `datetime.now(UTC)` (aware). En production
+la valeur vient toujours de `default_token_expiry()`, donc aware — **ce n'est pas
+un bug applicatif constaté**, c'est la limite Postgres-free de la suite (RAF R5).
+Mais l'expiration de token est un contrôle de sécurité : rendue **testable**
+plutôt que contournée en fixture, via `planning.ensure_utc`.
+
+Vérifié **par AST** (pas par grep) qu'aucun des 10 appels de journalisation ne
+reçoit le token sous quelque forme que ce soit.
+
+### Volet livré 2 — notify party au formulaire du portail
+
+Décision de Yasmin : « Notify party & consignee à saisir depuis le portail
+expéditeur ». État constaté : les cinq colonnes `notify_*` existaient **déjà** sur
+`PackingListBatch` **et** figuraient **déjà** dans `AUDITABLE_FIELDS`. Le backend
+les acceptait même déjà via `coerce_batch_form`. **Seule l'interface manquait** —
+si bien que tout BL issu d'une packing list remplie par l'expéditeur sortait
+**sans notify party**, sans que rien ne le signale.
+
+Ajoutés au formulaire d'édition **et** de création, avec les 4 libellés dans les
+**5 catalogues** i18n. « Notify party » reste en anglais partout, comme
+« Consignee » l'est déjà : c'est un terme du connaissement.
+
+9 tests, dont **7 échouent sur l'ancien code**. Les 2 qui passent des deux côtés
+vérifient un comportement **préexistant et correct** (couverture d'audit +
+acceptation backend) — ce sont des garde-fous contre une régression future, pas
+des tests de ce changement. Distinction consignée pour ne pas surestimer la
+couverture.
+
+### ⛔ Volet NON livré — le retrait du rail booking, et pourquoi
+
+La spec prévoyait de retirer le rail booking **avant** ce lot. **L'inventaire des
+routes invalide ce séquencement.**
+
+| Route | Public | Remplacement |
+|---|---|---|
+| `/cargo/packing-lists/{pl}/batches/{b}/bl.pdf` | staff | *(la cible)* |
+| `/cargo/booking/{ref}/bl.pdf` · `.docx` | staff | ✅ rail packing list |
+| `/me/bookings/{ref}/bl.pdf` · `.docx` | **client** | ❌ **AUCUN** |
+
+🔴 **Le rail packing list n'a aucune route côté client**, et
+`templates/client/booking_detail.html:199` expose un bouton visible
+« 📄 Bill of Lading » pointant vers la route booking.
+
+Retirer maintenant supprimerait **la seule façon pour un client d'obtenir son
+connaissement**, sans remplacement, pendant tout le délai d'attente. Régression
+fonctionnelle visible ⇒ **refusé**, en application de la méthode de développement
+prudent.
+
+Séquencement corrigé (dans le lot, pas avant) : créer les routes client du rail
+packing list → rebrancher le bouton client → **alors** retirer les 4 routes
+booking et leurs 3 entrées staff.
+
+Point de conception soulevé au passage : un booking peut porter **plusieurs
+batches**, donc plusieurs BL, alors que l'URL client est au niveau du booking. Le
+choix (lister les BL / un document par batch) appartient au lot.
+
+### Décisions métier obtenues de Yasmin (les 5 points de la spec sont tranchés)
+
+1. **Date « shipped on board » = dernier jour des opérations**, lu depuis la
+   timeline d'escale, modifiable par les Opérations **sous justification** avec
+   journal « en cas de contrôle ».
+2. **Toujours 3 originaux** — aucun paramétrage. **Mais** nouvelle exigence : un
+   **suivi de réception** (horodatage du téléchargement client et/ou case de
+   confirmation, **plus** un repli Opérations avec date, heure, moyen et pièce
+   jointe si le BL part en papier). C'est précisément le registre de remise dont
+   l'absence exclut la *misdelivery* de la couverture P&I.
+3. **Signature du commandant au choix** : unitaire **ou** groupée, les deux modes.
+4. **Marchandises** depuis la packing list, **parties** depuis le portail.
+
+🔁 **Mutualisation identifiée** : le motif *valeur dérivée → override →
+justification obligatoire* est demandé **deux fois** — ici pour la date *shipped
+on board*, et dans le lot relèves pour les durées de contrat. À construire **une
+seule fois**. Précédent proche dans le dépôt : `validation_engine.get_threshold`
+(MRV v2, « zéro seuil en dur », résolution fail-closed + snapshot d'audit).
+
+**Estimation révisée : 6,5 j → 10,25 j**, dont 0,75 livré. La hausse vient des
+deux ajouts du §5 (registre de remise, date dérivée avec override justifié) — des
+**ajouts de valeur**, pas des dérives de périmètre, et signalés comme tels.
+
+### Reste à faire sur ce lot
+
+Plus rien de livrable sans migration. La suite (machine à états, écrans, registre
+de remise, routes client, retrait du rail booking) attend **la fusion du lot 3 par
+Julien**.
+
+---
+
+## 2026-08-17 — BL : l'émission cesse d'être un effet de bord de la consultation
+
+Branche `feat/bl-workflow`. Quatrième et dernier volet du socle BL avant les
+écrans.
+
+### Le défaut corrigé
+
+`GET /cargo/packing-lists/{pl}/batches/{b}/bl.pdf` **écrivait en base** : il
+appelait `assign_bl_number`, attribuait un numéro de connaissement et le
+persistait. Deux conséquences, indépendantes l'une de l'autre :
+
+1. **Un `GET` qui écrit s'exécute sans intention.** Un préchargement de lien par
+   le navigateur, un scan de sécurité, un passage de crawler authentifié : chacun
+   émet un connaissement et consomme un numéro. Personne ne l'a demandé, et rien
+   ne le distingue d'une émission volontaire dans le journal.
+2. **La permission était celle de la consultation.** `cargo:C` couvre
+   `technique`, `data_analyst` et **`marins`** : trois rôles qui pouvaient émettre
+   un titre de propriété sans avoir le droit de modifier une packing list.
+
+Le second point est le plus grave des deux : ce n'est pas un accident possible,
+c'est une autorisation permanente.
+
+### La correction
+
+| Route | Méthode | Permission | Écrit ? |
+|---|---|---|---|
+| `.../bl/draft` | **`POST`** | **`cargo:M`** | oui — attribue le numéro, passe en `draft`, trace |
+| `.../bl.pdf` | `GET` | `cargo:C` | **non** — rend le document, 404 si aucun BL |
+
+Le `POST` redirige en 303 vers la consultation : l'utilisateur voit son document,
+et un rafraîchissement de page ne réémet rien.
+
+Le gabarit suit — c'est la moitié du correctif, pas un détail cosmétique : un
+`<a href>` continuerait de déclencher l'écriture par préchargement.
+`packing_list_detail.html` affiche désormais **un lien quand un BL existe, un
+formulaire `POST` sinon**.
+
+### Vérification
+
+7 tests (`test_bl_emission_post_only.py`), dont trois qui portent le poids :
+
+- le `GET` sur un lot sans BL renvoie 404 **et laisse `bl_number` à `None`** —
+  c'est l'assertion sur l'état en base qui prouve l'absence d'écriture, pas le
+  code de retour ;
+- la **déclaration** de route est figée (méthode `POST`, `cargo:M` dans la
+  signature, `assign_bl_number` absent du corps de la lecture) : repasser la
+  route en `GET` fait échouer la suite. Vérifié par sabotage réel — bascule du
+  décorateur en `@router.get`, le test tombe, restauration ;
+- une garde anti-sur-correction : la consultation d'un BL existant fonctionne
+  toujours. Un correctif qui casserait la lecture serait pire que le défaut.
+
+### Trois erreurs de ma part, corrigées
+
+- **`Set-Content -Encoding utf8` en PowerShell 5.1 écrit un BOM**, et
+  `Get-Content -Raw` relit en ANSI. Mon aller-retour de sabotage a donc
+  double-encodé tous les accents du routeur (mojibake sur ~50 lignes) et ajouté
+  un BOM. Réparé par réencodage cp1252 ; le diff est retombé de 100/52 à 51/3,
+  ce qui a servi de preuve de restauration. **À retenir : pour un sabotage
+  temporaire, passer par `git stash`, pas par un aller-retour de fichier.**
+- **`pytest.importorskip("weasyprint")` ne protège rien ici** : il ne rattrape
+  qu'`ImportError`, alors que l'absence de GTK lève une `OSError`. C'est
+  l'explication des 15 échecs locaux de la suite — ils ne sont pas « connus et
+  inévitables », leur garde est simplement inopérante. Le test de lecture
+  monkeypatche le rendu (motif déjà utilisé par `test_carnet_conditions`) et
+  passe donc partout.
+- **3 erreurs mypy introduites** dans `bl_workflow.py` : un `actor_name`
+  nullable passé à un paramètre non-optionnel. Corrigées à la racine (nom lu
+  depuis la variable locale, pas depuis la colonne nullable) plutôt qu'en
+  élargissant la signature de `_trace` — une trace d'audit sans acteur nommé ne
+  vaut rien. mypy revenu à la référence de 371. Au passage, un vrai trou : si
+  `company_name` **et** `email` étaient vides, la validation client était tracée
+  sans acteur. Repli explicite ajouté.
+
+### Reste à faire sur le lot BL
+
+Le socle est complet (machine à états, gel, traçabilité, émission protégée).
+Restent les **écrans** (validation client, signature commandant unitaire et
+groupée), le **filigrane DRAFT**, le **registre de remise** (§5.1), la **date
+*shipped on board* dérivée** (§5.0), la **séquence non recyclable + upsert de
+l'import**, et enfin les **routes client puis le retrait du rail booking** — dans
+cet ordre, jamais l'inverse.
+
+### Constat de méthode — la suite complète n'est plus exécutable en local
+
+Mesuré le 2026-08-17 : **~36 tests/minute en série**, soit plus de **cinq heures**
+pour les ~2 400 tests. J'ai d'abord cru à un blocage et tué un run après 20 min —
+à tort : le processus consommait bien du CPU, il était simplement lent. Le
+diagnostic correct est venu de `Get-Process | Select CPU`, pas de la taille du
+fichier de sortie.
+
+`pytest-xdist` est déjà installé et la machine a 20 cœurs : `pytest -n 8` ramène
+la durée à environ une heure. C'est utilisable, mais cela reste trop long pour
+servir de boucle de vérification pendant le développement.
+
+**Conséquence pratique adoptée** : vérification locale sur le **sous-ensemble
+concerné** (ici cargo / portail / BL / parité des routes), et la **CI comme
+véritable filet** sur la totalité — ce qu'elle est déjà, prouvé par le run de la
+PR #149 (2 015 passés sur Ubuntu, cf. RAF R4).
+
+⚠️ À ne pas confondre avec R5 (« filet Postgres-free ») : la lenteur est
+**intrinsèque à la suite**, pas causée par SQLite. Passer à Postgres via
+`testcontainers` la ralentirait davantage — argument à verser au dossier quand
+Julien arbitrera R5.
+
+Note annexe vérifiée : les 15 échecs locaux « WeasyPrint » ne sont pas protégés
+par leur garde. `pytest.importorskip("weasyprint")` ne rattrape qu'`ImportError`,
+or l'absence de GTK lève une `OSError`. Le remède est le monkeypatch du rendu, pas
+l'`importorskip` — trois fichiers de tests existants gagneraient à être alignés.
+
+---
+
+## 2026-08-17 (2) — le PDF du BL cesse d'affirmer qu'il est signé
+
+Branche `feat/bl-workflow`, suite immédiate du volet précédent.
+
+### Ce qui n'allait pas — et ce n'était pas cosmétique
+
+Le gabarit `pdf/bill_of_lading_pl.html` affirmait, **quel que soit l'état du
+lot** :
+
+    Number of Original B/L : 3 (3 OBL signés)
+
+et affichait une zone « Cachet et signature du transporteur ». Sur un brouillon
+que personne n'a signé, ces deux mentions sont **fausses sur un document
+opposable**. Un tiers de bonne foi — banque en crédit documentaire, destinataire,
+assureur — lit un connaissement original émis en trois exemplaires signés.
+
+C'est exactement la tension que le §2 de la spec avait identifiée à l'ouverture du
+lot : le défaut n'était pas la mutabilité du document, c'était **l'absence de
+distinction draft/final** couplée à une mention affirmant le contraire.
+
+### La correction
+
+Le document dit désormais ce qu'il est, à trois endroits complémentaires :
+
+- **filigrane `DRAFT`** en `position: fixed` — donc répété sur **chaque page** ;
+  un filigrane limité à la première page laisserait les suivantes passer pour un
+  original ;
+- **mention lisible** en tête (« Projet de connaissement — sans valeur de
+  titre… ») : le filigrane est visuel, il ne se **cite** pas. Un tiers doit
+  pouvoir opposer une phrase, pas une impression ;
+- **bloc de signature conditionnel** : plus de zone de signature ni de mention
+  d'originaux tant que rien n'est signé. Une fois signé, le bloc nomme le
+  signataire, l'horodate et imprime l'empreinte SHA-256 — ce qui permet de
+  confronter le papier au registre.
+
+Le **nom du fichier** suit aussi (`TUAW_…-DRAFT.pdf`) : un PDF nommé comme un
+original finit par circuler comme un original.
+
+Repli prudent assumé : si `bl_state` est absent (lot antérieur à la machine à
+états), le document est traité comme **non signé**. Dans le doute, filigrane.
+
+### Vérification — 15 tests
+
+Les tests portent sur le **HTML rendu** en substituant *seulement* la conversion
+WeasyPrint, en gardant le vrai gabarit **et le vrai contexte construit par le
+service**. Fabriquer le contexte à la main aurait rendu ces tests vides de sens :
+un `bl_state` oublié dans `pdf_generator` serait passé inaperçu.
+
+Non-vacuité mesurée : sur le code d'avant, **10 échouent, 3 passent** — et les 3
+qui passent sont précisément les gardes anti-sur-correction (« un BL signé déclare
+toujours 3 originaux », exigence §5.1 « toujours 3 »).
+
+Une erreur de ma part corrigée en cours de route : ma première assertion cherchait
+`bl-watermark` dans le HTML, ce qui matchait la **définition CSS** de
+`pdf/_base.html` et non l'élément. Resserrée sur `class="bl-watermark"`.
+
+### ⚠️ Limite honnête de cette vérification
+
+La CI prouve que le PDF **se construit**. Elle ne prouve pas qu'il **s'affiche
+correctement** : opacité du filigrane, rotation, absence de recouvrement du texte.
+**Une revue visuelle d'un PDF réel reste à faire** — à mettre sous les yeux de
+Yasmin ou de Julien, ce n'est pas automatisable ici (GTK absent en local).
+
+Reste sur ce point de la spec : les **révisions numérotées** (`TUAW_…_R2`
+annulant la précédente), non abordées.
+
+---
+
+## 2026-08-17 (3) — écran commandant : signature des connaissements
+
+Branche `feat/bl-workflow`. Réponse au §5.2 de la spec — « Donner le choix au
+commandant de tout signer ou signer un BL en particulier ».
+
+### Ce qui est livré
+
+`/captain/bl` (`captain:C`), avec deux actions en `captain:M` : signature
+**unitaire** et signature **groupée**. L'écran sépare trois listes, et cette
+séparation est le cœur du travail :
+
+| Liste | Signable ? | Pourquoi la montrer |
+|---|---|---|
+| **À signer** (`client_validated`) | oui | le travail du commandant |
+| **En attente de validation client** (`draft`) | **non** | la masquer ferait croire à un oubli d'émission alors que la balle est chez le client |
+| **Signés** (`master_signed`, `final`) | non | registre : signataire, horodatage, empreinte |
+
+Chaque ligne porte un lien « Lire » vers le PDF filigrané : **lire avant de
+signer** n'est pas une option quand on engage le transporteur.
+
+### La signature groupée ne doit pas mentir
+
+C'est le point de conception qui a demandé le plus d'attention. Un lot peut être
+revenu à `draft` entre l'affichage de l'écran et l'envoi du formulaire (la règle de
+régression). Trois comportements possibles, deux mauvais :
+
+- tout refuser ⇒ le commandant qui signe douze connaissements en perd onze à cause
+  du douzième ;
+- signer ce qui passe et annoncer « 11 signés » ⇒ **laisse croire à une réussite
+  complète** ;
+- signer ce qui passe et annoncer **11 signés, 1 écarté**, l'écarté restant visible
+  dans sa liste avec son état réel. C'est ce qui est implémenté.
+
+`BulkSignResult` porte donc deux listes et non un compteur, chaque écart avec sa
+**raison**. Rien n'est encodé dans l'URL : seuls les deux nombres y transitent, le
+détail se lit dans les listes.
+
+### Deux pièges du gabarit, évités et épinglés par des tests
+
+- **`<form>` imbriqué** : j'avais d'abord mis le formulaire de signature unitaire
+  *dans* le formulaire de signature groupée. HTML l'interdit et le navigateur
+  aurait cassé **les deux** envois. Corrigé par `formaction` sur le bouton.
+- **`onchange="this.form.submit()"`** : je m'apprêtais à copier le motif de quatre
+  écrans existants. Vérification faite, la CSP du projet est
+  `script-src 'self' https://unpkg.com`, **sans `unsafe-inline`** : les
+  gestionnaires d'événements en attribut sont **bloqués**.
+
+  🔴 **Constat à part, préexistant** : `staff/captain/cargo_doc_form.html`,
+  `staff/dashboard_env/quality.html`, `staff/onboard/compliance.html` et
+  `staff/rh/absences.html` utilisent ce motif — **leurs filtres ne font donc rien
+  en production**. Non corrigé ici (hors périmètre du lot BL), mais signalé.
+
+### Vérification — 16 tests, non-vacuité mesurée par sabotage
+
+Deux sabotages réels, appliqués puis annulés :
+
+- supprimer le report des écarts ⇒ **2 tests tombent** ;
+- retirer le repli COM-11 de la requête (`coalesce(pl.leg_id, order.leg_id,
+  booking.leg_id)`) ⇒ **le test du repli tombe**. Ce repli n'est pas décoratif :
+  sans lui, les connaissements des packing lists héritées (`leg_id` NULL) seraient
+  **invisibles à bord** et jamais signés.
+
+### Trois erreurs de ma part
+
+1. **🔴 J'ai détruit mon propre travail** avec `git checkout -- <fichier>` sur un
+   fichier portant des modifications **non committées** : `batches_for_leg`,
+   `sign_many` et `BulkSignResult` ont disparu d'un coup. J'avais raisonné
+   « stash » et tapé « checkout ». Réécrit depuis le contexte. La méthode retenue
+   pour un sabotage temporaire est désormais une **copie de sauvegarde du fichier**,
+   restaurée par `cp` — vérifiable, et sans commande destructive.
+2. **Shells mélangés** : un heredoc Bash dans un appel PowerShell (qui n'en
+   accepte pas), puis des cmdlets PowerShell dans un appel Bash. Résultat : le
+   sabotage appliqué, le test jamais exécuté, et un fichier laissé modifié. C'est
+   ce qui a mené à l'erreur 1.
+3. **Deux assertions de test trop grossières** : `"<form"` et `"onchange="`
+   cherchés dans la source du gabarit matchaient mes **propres commentaires
+   Jinja**, ceux qui documentent justement les pièges. Corrigé en retirant les
+   commentaires avant analyse — ils ne sortent jamais au rendu.
+
+### Reste sur les écrans
+
+⛔ **La validation client n'est pas livrée** : elle passe par `/me` (espace
+authentifié), or le rail packing list **n'a toujours aucune route client** (§5.4).
+Elle est donc **liée au lot des routes client**, pas à celui-ci. Le repli staff
+(« valider pour le compte du client ») existe en service et reste à exposer.
+
+---
+
+## 2026-08-17 (4) — date de mise à bord : dérivée, corrigeable, justifiée
+
+Branche `feat/bl-workflow`. Réponse au §5.0 de la spec.
+
+### Le mécanisme partagé, construit une seule fois
+
+La spec insistait : le motif *valeur dérivée → override → justification
+obligatoire* est demandé **deux fois** (date de mise à bord ici, durées de contrat
+dans le lot relèves) et devait être écrit une seule fois. C'est
+`app/services/derived_override.py` : il ne connaît **ni la base ni le métier**, il
+décide et ne persiste pas — c'est ce qui le rend utilisable par deux lots qui ne
+partagent aucune table. Précédent suivi : `validation_engine.get_threshold` (MRV
+v2), avec la même idée de snapshot d'audit.
+
+Trois règles y sont posées :
+
+1. **la dérivée est la référence** — jamais recopiée dans la colonne d'override,
+   sinon « corrigé volontairement à cette valeur » devient indistinguable de « pas
+   corrigé », et la valeur figée devient fausse dès que la source bouge ;
+2. **un override est explicite** — valeur, auteur, horodatage ; pas de drapeau
+   séparé qui pourrait se désynchroniser ;
+3. **sans justification, pas d'enregistrement** — refus levé *avant* toute écriture.
+
+Une justification vide est refusée, mais aussi une justification **creuse** :
+« ok », « erreur », « correction », « cf. mail »… Elles remplissent le champ sans
+répondre à la question qui sera posée en contrôle des mois plus tard, par
+quelqu'un qui n'était pas là. Longueur minimale de 10 caractères, paramétrable —
+c'est un garde-fou, pas un dogme.
+
+### 🔴 Le point le plus grave : ne dériver que du réel
+
+La dérivation lit `actual_end`, à défaut `actual_start`. **Jamais** le
+prévisionnel. Une opération planifiée le 20 et non réalisée produirait sinon un
+connaissement portant une date de mise à bord **future** — c'est-à-dire une fraude
+documentaire et une exclusion de garantie, précisément ce que le §5.0 cherche à
+éviter.
+
+Corollaire assumé : **pas d'opération réelle ⇒ pas de date**. Le PDF affiche
+« — non constatée » plutôt qu'une date inventée. C'est moins confortable et c'est
+juste.
+
+### La contrainte est en base, pas seulement dans le service
+
+`ck_bl_sob_override_needs_reason` : une date corrigée sans motif est
+**instockable**. Un futur chemin d'écriture qui oublierait de passer par
+`override_shipped_on_board` échouera quand même. Le journal demandé « en cas de
+contrôle » n'a de valeur que si le motif existe toujours.
+
+### Choix de conception : le PDF porte la date, pas la mention « corrigée »
+
+La provenance remonte jusqu'à l'écran Opérations (pastille « corrigée » + date
+dérivée + motif), mais **pas** sur le connaissement. Annoter « date corrigée » sur
+un titre présenté à une banque en crédit documentaire jetterait un doute
+injustifié sur le document lui-même. La piste d'audit est le bon endroit pour ça —
+et elle porte un snapshot JSON complet (valeur, dérivée, motif, divergence).
+
+### Vérification — 47 tests
+
+Le socle partagé est testé **pour lui-même** (25 tests unitaires) et non seulement
+à travers son appelant : il servira à un autre lot.
+
+Sabotage réel : faire accepter `planned_end` par la dérivation ⇒ le test du
+post-datage tombe. Restauration par copie de sauvegarde du fichier (méthode
+adoptée après l'incident du `git checkout` de ce matin).
+
+Un point d'entrée a été ajouté sur l'écran Opérations — sans lui la route
+n'existerait pas, exactement le défaut relevé la veille sur
+`passport_blocking_reason`.
+
+### Reste du §5.1 — le registre de remise
+
+**Non livré.** Le suivi de réception des originaux (téléchargement horodaté, case
+de confirmation client, repli Opérations avec date/heure/moyen/pièce jointe) est le
+prochain volet. Il dépend en partie des **routes client** (`/me`), comme la
+validation client.
+
+---
+
+## 2026-08-17 (5) — rail client du connaissement, et validation par le client
+
+Branche `feat/bl-workflow`. Ce volet lève la dépendance qui bloquait tout le
+reste : le rail packing list n'avait **aucune** route côté client.
+
+### Pourquoi une liste et non un document
+
+Le rail packing list produit **un connaissement par lot** (`PackingListBatch`),
+alors que l'URL client historique est au niveau du **booking**. Un booking pouvant
+porter plusieurs lots, « le » BL du booking n'existe pas. D'où :
+
+    GET  /me/bookings/{ref}/bls                  liste (état, PDF, action)
+    GET  /me/bookings/{ref}/bl/{batch_id}.pdf    un document
+    POST /me/bookings/{ref}/bl/{batch_id}/validate   validation client
+
+### 🔴 Le point qui compte : la référence dans l'URL ne suffit pas
+
+Le contrôle de propriété existant (`_get_booking(..., owner_client_id=…)`) vérifie
+que **le booking** est bien au client. Ce n'est pas assez : **c'est le lot qui
+porte le document**. Un client authentifié passant *sa propre* référence de booking
+avec un `batch_id` appartenant à un tiers aurait lu le connaissement de ce tiers.
+
+D'où `_owned_batch_or_404`, qui joint sur `PackingList.booking_id`. Deux tests le
+couvrent, et le sabotage (retirer la clause de jointure) les fait tomber tous les
+deux.
+
+Convention respectée : **404 et non 403** sur ce qui n'est pas à soi — un 403
+confirmerait l'existence de la référence.
+
+### Ce que le client voit, et ce qu'il ne doit pas croire
+
+Les états sont dits en clair, jamais par un code technique : « Projet — en attente
+de votre validation », « Validé par vous — en attente de signature du commandant »…
+Et la page dit explicitement ce qu'un projet **ne vaut pas** : ni original
+négociable, ni preuve de mise à bord. Elle prévient aussi qu'une modification
+postérieure annule la validation et qu'il faudra revalider — la règle de
+régression, expliquée avant d'être subie.
+
+Un test vérifie la présence de cette mention **dans les deux langues** : la
+protection ne doit pas exister qu'en français.
+
+### Transition entre les deux rails — pas de retrait prématuré
+
+La fiche booking client affichait un bouton « 📄 Bill of Lading » pointant vers le
+rail booking. Il **reste**, mais la page préfère désormais le nouveau rail
+**quand celui-ci a produit quelque chose** (`pl_bl_count`). Retirer l'ancien lien
+maintenant priverait de tout document les bookings sans packing list. Un test
+épingle les deux branches, y compris la présence du repli — pour qu'un futur
+« nettoyage » ne l'enlève pas sans le vouloir.
+
+⛔ Le **retrait du rail booking** reste donc à faire, et c'est volontaire.
+
+### Une erreur mypy de ma part, réelle
+
+`db.get(PackingList, …)` renvoie `PackingList | None`. Sur une donnée incohérente,
+le code aurait planté avec une erreur obscure au lieu de rendre un 404 explicite.
+Gardé.
+
+### Reste
+
+- **registre de remise des originaux (§5.1)** — table + horodatage de
+  téléchargement + case de confirmation client + repli Opérations (date, heure,
+  moyen, pièce jointe). C'est le dispositif dont l'absence exclut la *misdelivery*
+  de la couverture P&I ;
+- **séquence de numéros non recyclable** — aujourd'hui `nombre de BL du leg + 1` :
+  supprimer un lot fait réattribuer un numéro déjà consommé ;
+- **révisions numérotées** (`TUAW_…_R2`) ;
+- **retrait du rail booking**, en dernier.
+
+---
+
+## 2026-08-17 (6) — registre de remise des originaux
+
+Branche `feat/bl-workflow`. Réponse au §5.1. C'est le volet qui a le plus de valeur
+défensive du lot : sans registre, NEWTOWT ne peut établir **ni à qui, ni quand, ni
+comment** les originaux ont été remis — et c'est précisément le dispositif dont
+l'absence exclut la *misdelivery* de la couverture P&I.
+
+### Trois canaux, trois valeurs probantes — et on ne les confond jamais
+
+Toute la conception tient dans cette distinction :
+
+| Canal | Ce que ça prouve | Force |
+|---|---|---|
+| `download` | le document a été **consulté** | faible — un préchargement de lien ou un antivirus de messagerie suffit |
+| `client_confirmed` | le client **déclare** avoir reçu | forte — sa propre déclaration |
+| `ops_confirmed` | NEWTOWT **atteste** d'une remise hors plateforme | intermédiaire — c'est un **repli**, tracé comme tel |
+
+🔴 Conséquence directe : `has_client_acknowledgement` **ignore délibérément les
+téléchargements**. C'est la fonction où l'erreur coûterait le plus cher — présenter
+un téléchargement comme une réception produirait une affirmation fausse au moment
+exact où elle compte, face à un assureur en réclamation. Le sabotage (compter tous
+les canaux) fait tomber le test dédié.
+
+Le vocabulaire suit le calcul, dans les deux langues : l'écran dit
+« consultation(s) — accès seulement, pas une réception », jamais « reçu ».
+
+### Un raffinement que j'ai ajouté : un projet n'est pas un original
+
+Télécharger un **projet** n'est pas recevoir un original — avant signature, aucun
+original n'existe. Consigner ces accès dans un registre de **remise** l'aurait
+rempli d'événements hors sujet et gonflé un compteur que quelqu'un aurait fini par
+lire comme une preuve. `is_deliverable` restreint donc les trois canaux aux états
+`master_signed` / `final`.
+
+### Consigner une écriture sur un `GET` — assumé, et encadré
+
+Le téléchargement est par nature un `GET`. Après avoir passé la matinée à corriger
+un `GET` qui écrivait, je note la différence : ici il s'agit d'un **journal
+d'accès**, pas d'une création de ressource à conséquence juridique. Deux garde-fous
+bornent le risque :
+
+- un accès à un projet n'est pas consigné du tout ;
+- un accès n'est **jamais** compté comme une réception.
+
+Un préchargement de lien ne peut donc gonfler qu'un compteur de consultations,
+jamais produire une preuve de remise.
+
+### Trois contraintes en base, pas seulement dans les formulaires
+
+- `ck_bl_receipt_channel` — liste fermée. Trois valeurs probantes, pas une quatrième
+  improvisée dont personne ne saurait ce qu'elle prouve.
+- `ck_bl_receipt_confirmer_client_xor_staff` — le confirmateur est le client **ou**
+  le staff, jamais les deux : une attestation du staff ne doit pas pouvoir être
+  relue comme une déclaration du client (même principe que
+  `bl_validated_on_behalf_by_id`).
+- `ck_bl_receipt_ops_needs_means` — un repli **sans moyen de remise** n'établit
+  rien : il est instockable. C'est la contrainte qui donne sa valeur au registre.
+
+Table **append-only** : on n'écrase pas un événement de remise, on en ajoute un. Un
+registre qui se réécrit ne prouve rien. La date d'attestation ne bouge donc pas
+quand un téléchargement postérieur arrive — un test l'épingle.
+
+`confirmed_at` est distinct de `created_at` : la remise papier est saisie **après
+coup**, la date déclarée peut précéder la saisie.
+
+### Un défaut latent trouvé au passage
+
+`packing_list_detail` faisait `db.get(Order, pl.order_id)` sans garde. Or `order_id`
+est **NULL** pour toute packing list issue d'un **booking** — le cas normal du rail
+client, imposé par le XOR `ck_packing_lists_order_xor_booking`. Chaque affichage de
+ces packing lists émettait donc un `SAWarning` « fully NULL primary key ». Corrigé.
+Trouvé uniquement parce qu'un test a rendu l'écran sur une packing list du rail
+booking — les tests existants ne couvraient que le rail commande.
+
+### Une erreur de test de ma part
+
+J'ai d'abord asserté `confirmed_at.tzinfo is not None`. Faux raisonnement :
+`DateTime(timezone=True)` rend du **naïf sous SQLite** (tests) et de l'aware sous
+Postgres (production) — c'est la convention `planning.ensure_utc` du dépôt.
+L'assertion testait le driver, pas mon code. Corrigée pour comparer l'**instant**
+après normalisation.
+
+### Reste sur le lot BL
+
+- **séquence de numéros non recyclable** — aujourd'hui `nombre de BL du leg + 1` :
+  supprimer un lot fait réattribuer un numéro déjà consommé. Sur un registre
+  opposable, deux documents différents pourraient porter le même numéro ;
+- **révisions numérotées** (`TUAW_…_R2`) annulant la précédente ;
+- **retrait du rail booking**, en dernier.
+
+---
+
+## 2026-08-17 (7) — la numérotation des connaissements cesse de se recycler
+
+Branche `feat/bl-workflow`. Réponse au §4.4, deux derniers volets.
+
+### Le défaut était plus large que la spec ne le disait
+
+La spec signalait le **recyclage** : le numéro valait *nombre de BL émis sur le leg
++ 1*, donc supprimer un lot faisait baisser le compteur et le numéro suivant
+réattribuait un numéro **déjà consommé**. Deux documents différents pouvaient porter
+le même numéro à deux moments de l'histoire du registre.
+
+En écrivant le test, j'ai trouvé un **second défaut, pire** : si le lot supprimé
+n'était pas le dernier — numéros 001, 002, 003 avec 002 supprimé — le compteur valait
+2, le code retentait 003, entrait en collision avec la contrainte d'unicité, et
+**échouait après 5 tentatives**. L'émission devenait purement **impossible** sur ce
+voyage. Un utilisateur aurait vu une erreur 500 sans explication, définitivement.
+
+### La correction, et son point délicat
+
+`bl_number_sequences` : un compteur par voyage, jamais décrémenté, avec une contrainte
+`last_seq >= 0` qui interdirait une décrémentation.
+
+Le point délicat n'est pas l'incrément, c'est **l'amorçage**. Une ligne est créée à la
+demande pour un voyage qui porte peut-être déjà des numéros. L'amorcer sur leur
+*nombre* recyclerait dès la première émission. Il faut le **plus grand suffixe déjà
+émis** — et le test qui l'épingle utilise trois numéros dont le plus grand est 007,
+précisément pour distinguer les deux lectures.
+
+Corollaire assumé : **les trous de numérotation sont normaux**. Ils tracent un numéro
+consommé puis abandonné, ce qu'un registre doit conserver.
+
+Cas résiduel documenté : une packing list sans voyage n'a pas de clé de séquence. Le
+repli lit le plus grand suffixe connu (et non leur nombre) : moins fort — supprimer le
+dernier libère son numéro — mais l'émission n'est plus bloquée par un trou au milieu.
+
+### L'import Excel : `upsert` au lieu de `delete-all + recreate`
+
+L'import détruisait tous les lots puis les recréait. Sur un registre de
+connaissements, cela veut dire que **chaque import consommait des numéros** et
+cassait les liens déjà transmis au client.
+
+Passé en *upsert* par `batch_number` : la colonne `BATCH_NUMBER` de l'export, jusque-là
+« ignorée à l'import », est désormais remontée par l'analyseur sous une clé
+`_batch_number` — préfixée d'un souligné pour ne jamais être confondue avec un champ
+du modèle. Un rapprochement réussi passe par `apply_batch_update`, qui audite champ
+par champ et ne touche **ni** `bl_number` **ni** l'état du BL.
+
+Trois décisions à l'intérieur :
+
+- une clé **illisible** est ignorée : la ligne devient une création. Un rapprochement
+  hasardeux sur un registre de connaissements serait pire ;
+- un lot **absent de l'import** n'est supprimé que s'il **ne porte pas** de
+  connaissement. Le détruire consommerait son numéro sans retour et casserait un lien
+  déjà remis ;
+- l'audit **dit** ce qui a été conservé (`N conservés car déjà numérotés (…)`) au lieu
+  du « N batches importés » d'avant, qui laissait croire à une synchronisation
+  complète.
+
+**Corrigé des deux côtés** — staff *et* portail expéditeur. Un garde-fou qui n'existe
+que d'un côté se contourne par l'autre porte, comme pour le gel.
+
+Et la garde du lot précédent tient toujours : un lot **signé** bloque l'import en
+bloc. L'*upsert* préserve les numéros, mais un document signé ne se modifie pas — la
+correction passe par une révision.
+
+### Vérification — 23 tests, deux sabotages
+
+- revenir au comptage ⇒ **6 tests tombent** (recyclage, blocage, trous, amorçage,
+  numéro historique non conforme, monotonie du compteur) ;
+- ignorer la clé de rapprochement ⇒ **3 tests tombent** (numéro perdu, compte rendu
+  d'audit, régression de la validation).
+
+### Reste sur le lot BL
+
+- **révisions numérotées** (`TUAW_…_R2`) annulant la précédente, les deux restant
+  tracées. Les colonnes `bl_revision` / `bl_superseded_by_id` existent depuis la
+  première migration mais **aucun code ne les utilise** ;
+- **retrait du rail booking**, en dernier.
+
+---
+
+## 2026-08-17 (8) — révisions numérotées, et un écart de conception assumé
+
+Branche `feat/bl-workflow`. Réponse au §4.1 : « à partir de `master_signed`, la
+correction ne passe plus par l'édition mais par une révision numérotée
+(`TUAW_…_R2`) qui annule explicitement la précédente, les deux restant tracées ».
+
+### ⚠️ J'ai dévié du modèle de données de la spec — voici pourquoi
+
+Le §4.2 plaçait `bl_superseded_by_id` en clé étrangère vers
+`packing_list_batches` : une révision aurait donc **créé un nouveau lot**, l'ancien
+pointant vers son successeur.
+
+Vérification faite dans le code avant d'implémenter, **ce modèle aurait corrompu tous
+les agrégats**. Le lot ne porte pas seulement un document, il porte **la
+marchandise** :
+
+| Endroit | Ce qui aurait cassé |
+|---|---|
+| `pdf_generator.py:140-141` | somme `pallet_count` et `weight_kg` sur `batches` → **poids et palettes doublés** sur la packing list PDF et l'avis d'arrivée |
+| `cargo_excel.export_packing_list_xlsx` | liste tous les lots → ligne fantôme à l'export |
+| `stowage.locate_for_packing_list` | un lot périmé à placer à bord |
+| `PackingList.completion_ratio` | dénominateur faussé |
+
+Corriger cela aurait exigé de filtrer « non périmé » dans **chacun** de ces endroits,
+avec **double comptage silencieux au premier oubli** — et rien n'aurait signalé
+l'oubli.
+
+D'où l'inversion : **le lot reste unique, c'est le document qui est versionné.** Une
+table `bl_revisions` archive le document annulé. Les agrégats existants restent justes
+**sans être touchés**, ce qui est aussi la solution la moins risquée en régression.
+
+Conséquence : `bl_superseded_by_id` n'a plus d'objet et est **retirée** (migration
+`20260817_0118`). Elle avait été ajoutée trois jours plus tôt sur cette même branche,
+non fusionnée, et **aucun code ne la lisait**. La laisser en place aurait été
+exactement le piège que je passe mes journées à corriger : une colonne qui a l'air de
+vouloir dire quelque chose et que personne ne lit. Un test épingle son absence.
+
+Cet écart est consigné dans la spec elle-même (§4.2, ligne barrée avec le motif) pour
+que Julien le voie en revue et puisse le contester.
+
+### Ce que l'archive conserve — et pourquoi le contenu compte
+
+`bl_revisions` garde le numéro, l'empreinte, le signataire, la date, le motif **et le
+contenu exact qui avait été signé** (`signature_payload`). Sans ce dernier, la trace
+dirait qu'un document a existé sans dire **ce qu'il disait** : inexploitable en
+contrôle. Un test vérifie que l'instantané ne bouge plus quand le lot est modifié
+ensuite.
+
+Le nouveau document **repart à `draft`** : les marques de l'ancien (signature,
+validation client) sont effacées. Les laisser suggérerait une signature qui ne
+s'applique plus au contenu courant. Conséquence assumée : le client doit
+**revalider** et le commandant **resigner**. Une révision est un document neuf, pas un
+correctif glissé sous une signature déjà donnée.
+
+Motif **obligatoire**, avec les mêmes règles que les overrides
+(`derived_override.clean_justification`) : « correction » est refusé.
+
+### 🔴 Un trou trouvé par un test que j'écrivais pour autre chose
+
+Le test devait vérifier que `…_001_R2` n'est pas lu comme un numéro de séquence. Il a
+échoué pour une **autre** raison : après révision, le numéro d'origine `…_001` ne vit
+plus sur aucun lot — il a migré dans l'archive. L'amorçage de la séquence, qui ne
+lisait que les lots, **aurait donc réémis un numéro déjà porté par un document remis à
+un tiers**.
+
+`_max_issued_suffix` lit désormais **les deux sources**, lots et archive. C'est
+exactement le genre de défaut qu'aucune relecture n'aurait attrapé : il n'apparaît
+qu'à la conjonction de deux mécanismes écrits à une heure d'intervalle.
+
+### Vérification — 18 tests, deux sabotages
+
+- ne pas archiver le contenu signé ⇒ le test de l'archive complète tombe ;
+- garder l'empreinte de l'ancien document sur le nouveau ⇒ le test « ni validé ni
+  signé » tombe.
+
+### Reste sur le lot BL
+
+Le **retrait du rail booking** (§5.4), en dernier — c'est la seule étape encore
+ouverte, et elle est purement soustractive.
+
+---
+
+## 2026-08-17 (9) — retrait du rail booking : le lot BL est complet
+
+Branche `feat/bl-workflow`, dernière étape du §5.4.
+
+### ⚠️ L'étape n'était pas « purement soustractive » — j'avais tort
+
+Je l'avais annoncée comme telle. L'inventaire préalable a montré deux choses qui
+l'invalidaient.
+
+**(a) Le rail packing list n'avait aucun DOCX.** Or CLAUDE.md documente le BL Word
+comme livré (lot 75). Retirer `/cargo/booking/{ref}/bl.docx` sans remplacement aurait
+été la régression d'une fonctionnalité documentée. Il a donc fallu **ajouter** avant de
+retirer.
+
+Au passage, l'ancien générateur DOCX portait **exactement le défaut corrigé le matin
+même dans le PDF** : `stamp.add_run("Trois originaux signés (3 OBL)")`,
+inconditionnellement — sur un document que personne n'avait signé, et dans le format
+**éditable**, donc celui qui circule et se réutilise le plus. Le nouveau générateur
+applique les mêmes règles que le PDF : mention `PROJET — SANS VALEUR DE TITRE`,
+signataire et empreinte quand c'est signé, suffixe `-DRAFT` au nom de fichier, date de
+mise à bord « non constatée » plutôt qu'inventée.
+
+**(b) Un booking n'a pas toujours un BL sur le nouveau rail.** La packing list est
+créée **vide** à la confirmation (`booking_lifecycle`, best-effort), le client la
+remplit via le portail, et l'émission du BL est une **action délibérée des
+Opérations**. Entre la confirmation et cette émission, le nouveau rail n'a rien à
+montrer.
+
+J'ai d'abord vu là un argument pour garder l'ancien rail en repli. C'est l'inverse.
+Le document du rail booking était :
+
+- fabriqué **à la volée** depuis le booking (`TUAW_{leg_id}_{booking_id}`) ;
+- **jamais enregistré** — pas de `bl_number` en base, pas d'état, pas de signature,
+  pas de révision, pas de registre de remise ;
+- présenté comme un « Bill of Lading ».
+
+Autrement dit : un document qui se présentait comme un connaissement **sans en être
+un**. Exactement la même faute que « 3 OBL signés » sur un draft, sous une autre forme.
+Le garder en repli aurait été garder un faux.
+
+Quand aucun BL n'est émis, l'écran **le dit** désormais — « Connaissement — pas encore
+émis / Émis par notre équipe dès que la packing list est complète ». C'est la réalité :
+avant émission, il n'y a pas de connaissement.
+
+### Ce qui a été retiré
+
+| Élément | Détail |
+|---|---|
+| 4 routes | `/cargo/booking/{ref}/bl.pdf` · `.docx`, `/me/bookings/{ref}/bl.pdf` · `.docx` |
+| 2 aides | `_bl_response`, `_bl_docx_response` |
+| 1 générateur | `build_bill_of_lading_docx` (version booking) |
+| 1 import | `render_bill_of_lading` dans `cargo_router` |
+| 3 liens | `staff/cargo/index`, `staff/cargo/booking_detail`, `client/booking_detail` |
+| 1 service | `documents.generated_docs_for` pointe vers la liste `/bls` |
+
+`render_bill_of_lading` (PDF, rail booking) **reste** dans `pdf_generator` : d'autres
+tests l'exercent et il n'est plus atteignable par une route. À nettoyer dans un lot
+dédié plutôt qu'en marge de celui-ci.
+
+Trois tests épinglent le retrait : les 4 routes absentes, les aides et le générateur
+absents, et le gabarit client sans `/bl.pdf` — pour qu'un « rétablissement » accidentel
+échoue.
+
+### Vérification
+
+`from app.main import app` charge **640 routes** sans erreur — le contrôle qui compte
+après un retrait, un import orphelin ne se voyant pas autrement. Balayage global : plus
+aucune référence aux chemins retirés, hors le test qui vérifie leur absence.
+
+346 passés sur le périmètre cargo/client/documents/parité, 3 échecs GTK.
+
+### Le lot BL est complet — 10,25 j sur 10,25
+
+Neuf volets en une journée. Ce qui reste n'est pas du code :
+
+- **Julien** : arbitrer l'écart de modèle du §4.2 (`bl_superseded_by_id` retirée au
+  profit d'une table d'instantanés, pour ne pas doubler les agrégats de marchandise) ;
+- **Yasmin** : revue visuelle d'un PDF réel (filigrane), et validation des textes
+  clients — ils engagent le client et sont visibles par lui ;
+- hors périmètre, à planifier : les **4 filtres inertes** (`onchange` bloqué par la CSP)
+  et le nettoyage de `render_bill_of_lading` désormais inatteignable.

@@ -42,20 +42,24 @@ mention « Trois originaux signés (3 OBL) ». Le draft explicite lève ce défa
 
 ---
 
-## 3. État actuel (vérifié dans le code)
+## 3. État actuel
 
-| Élément | État | Fichier |
+> ⚠️ Ce tableau était l'**état de départ** relevé dans le code le 2026-08-03. La
+> colonne « depuis » dit ce qui a changé depuis — le tableau n'est pas réécrit,
+> pour que la trajectoire reste lisible en revue.
+
+| Élément | État au 2026-08-03 | Depuis |
 |---|---|---|
-| Numéro de BL | `bl_number` (unique, indexé) + `bl_issued_at` sur `PackingListBatch` | `models/packing_list.py:205-206` |
-| Émission | **`GET`** `/{pl_id}/batches/{batch_id}/bl.pdf` en permission **`cargo:C`** (consultation !), qui **écrit en base** via `assign_bl_number` | `routers/cargo_packing_router.py:361-374` |
-| Traçabilité de l'émission | ❌ **aucune** — pas d'`activity_record`, pas d'acteur. Seul vestige : un horodatage anonyme | idem |
-| Mutabilité | `can_modify(pl)` ne teste que `pl.status != "locked"`, **ignore `bl_number`** | `services/packing_list.py:230-231` |
-| Statut de la PL | `status` (défaut `"draft"`), passe à `"locked"` au verrouillage, revient à `"submitted"` au déverrouillage | `models/packing_list.py:93` |
-| Import Excel | `delete` de tous les batches puis recréation ⇒ **recycle les numéros de BL** (la séquence est un comptage) | `routers/cargo_packing_router.py:535-540` |
-| Journalisation côté portail client | ❌ **aucune** — 8 routes mutantes (dont suppression de batch et de document), zéro `activity.record()` | `routers/cargo_portal_router.py` |
-| Draft / final | ❌ inexistant | — |
-| Validation client | ❌ inexistante | — |
-| Signature commandant sur le BL | ❌ inexistante | — |
+| Numéro de BL | `bl_number` (unique, indexé) + `bl_issued_at` sur `PackingListBatch` | inchangé — toujours attribué une seule fois, au draft |
+| Émission | **`GET`** `.../bl.pdf` en permission **`cargo:C`** (consultation !), qui **écrit en base** via `assign_bl_number` | ✅ scindée : `POST .../bl/draft` en `cargo:M` écrit, `GET .../bl.pdf` en `cargo:C` ne fait que rendre |
+| Traçabilité de l'émission | ❌ **aucune** — pas d'`activity_record`, pas d'acteur. Seul vestige : un horodatage anonyme | ✅ `bl_issued_by_id`/`_name` + double trace (`activity_logs` + `PackingListAudit`) |
+| Mutabilité | `can_modify(pl)` ne teste que `pl.status != "locked"`, **ignore `bl_number`** | ✅ gel indépendant porté par le **lot** (`bl_workflow.is_frozen`), câblé sur les 4 chemins d'écriture |
+| Statut de la PL | `status` (défaut `"draft"`), passe à `"locked"` au verrouillage | inchangé — les deux verrous restent **indépendants**, et c'est voulu |
+| Import Excel | `delete` de tous les batches puis recréation ⇒ **recycle les numéros de BL** | ⚠️ **bloqué** (409) si un BL est signé ; le recyclage au stade `draft` reste à corriger par *upsert* |
+| Journalisation côté portail client | ❌ **aucune** — 8 routes mutantes, zéro `activity.record()` | ✅ les 8 routes tracées (acteur `portal:PL{id}`, jamais le token) |
+| Draft / final | ❌ inexistant | ✅ machine à états `draft → client_validated → master_signed → final` |
+| Validation client | ❌ inexistante | ✅ **complète** (2026-08-17) : service + écran client `/me/bookings/{ref}/bls`. Repli staff « pour le compte » toujours en service, pas exposé |
+| Signature commandant sur le BL | ❌ inexistante | ✅ en service (hash SHA-256, point de gel) — **écran restant** |
 
 **Patron de signature déjà éprouvé dans le dépôt, à réutiliser** — `SofEvent`
 (`models/sof_event.py:107-111`) : `signed_at` / `signed_by_id` /
@@ -102,15 +106,16 @@ Sur `PackingListBatch` :
 `bl_client_validated_by` | `String(200)` | Nom figé à la validation (instantané, survit à un renommage) |
 `bl_signed_at` / `bl_signed_by_id` / `bl_signed_by_name` | idem `SofEvent` | Signature commandant |
 `bl_signature_hash` | `String(64)` | SHA-256 du contenu signé — détecte l'altération |
-`bl_revision` | `Integer`, défaut 1 | Numéro de révision |
-`bl_superseded_by_id` | FK self, nullable | Révision qui annule celle-ci |
+`bl_revision` | `Integer`, défaut 1 | Numéro de révision **courant** du lot |
+~~`bl_superseded_by_id`~~ | ~~FK self~~ | ⚠️ **RETIRÉE le 2026-08-17 — écart assumé.** Cette FK supposait qu'une révision **crée un nouveau lot**. Or le lot porte la marchandise : `pdf_generator` somme `pallet_count`/`weight_kg` sur `pl.batches` (packing list PDF, avis d'arrivée), l'export Excel les liste tous, le stowage les localise, le ratio de complétude les compte. **Un lot cloné par révision aurait doublé tous ces totaux**, et il aurait fallu filtrer « non périmé » dans *chaque* agrégat — avec double comptage silencieux au premier oubli. Modèle retenu : **le lot reste unique, le document est versionné** dans une table d'instantanés `bl_revisions` (numéro, empreinte, signataire, **contenu signé**, motif). Les agrégats existants restent justes sans être touchés (migration `20260817_0118`) |
 
 `bl_number` et `bl_issued_at` existants sont conservés (le numéro est attribué
 à la génération du draft et **ne bouge plus**).
 
-⚠️ **Cette migration dépend du RAF R1** : avec deux `head` Alembic divergents,
-`alembic revision` exige de préciser la cible et `upgrade head` échoue. **La
-fusion Alembic doit être faite avant ce lot.**
+✅ **Le préalable Alembic est levé** (2026-08-10) : `main` porte
+`20260807_0113_merge_heads_mrv_crewing` depuis le 2026-08-07, la tête est unique.
+La migration de ce lot peut donc être créée directement — c'était le RAF R1, désormais
+clos.
 
 ### 4.3 Journalisation — exigence explicite de la demande
 
@@ -132,28 +137,165 @@ soft-delete avec motif obligatoire.
 
 ### 4.4 Corrections de sécurité à embarquer dans le même lot
 
-- **Émission en `POST`, pas en `GET`** — un lien de consultation ne doit pas
-  écrire en base. Aujourd'hui un préchargement de lien ou un scan de sécurité
-  émet des BL en série.
-- **Permission `cargo:M` minimum** pour générer un draft (aujourd'hui `cargo:C`,
-  ce qui autorise `technique`, `data_analyst` et **`marins`** à émettre un
-  connaissement). Signature commandant en `captain:M`.
-- **Refuser l'import Excel** si un batch de la PL est en `master_signed` ou
-  `final` (409). Au stade `draft`, l'import reste autorisé — c'est le
-  comportement voulu — mais il doit **préserver les numéros** : passer en
-  *upsert* par `batch_number` au lieu de *delete-all/recreate*.
-- **Séquence de numéros non recyclable** : remplacer le comptage par une
-  séquence append-only, pour qu'un numéro consommé ne puisse **jamais** être
-  réattribué même après suppression d'une ligne.
+- ✅ **FAIT** (2026-08-17) — **Émission en `POST`, pas en `GET`** : un lien de
+  consultation ne doit pas écrire en base. Avant, un préchargement de lien ou un
+  scan de sécurité émettait des BL en série.
+  `POST /cargo/packing-lists/{pl_id}/batches/{batch_id}/bl/draft` génère ;
+  `GET .../bl.pdf` rend et **n'écrit plus rien** (404 si aucun BL n'existe).
+  Tests : `tests/integration/test_bl_emission_post_only.py`.
+- ✅ **FAIT** (2026-08-17) — **Permission `cargo:M` minimum** pour générer un
+  draft (c'était `cargo:C`, ce qui autorisait `technique`, `data_analyst` et
+  **`marins`** à émettre un connaissement). La consultation reste en `cargo:C`.
+  Signature commandant en `captain:M` : **reste à faire** avec l'écran.
+- ✅ **FAIT** (2026-08-17) — **Refuser l'import Excel** si un batch de la PL est en
+  `master_signed` ou `final` (409), des deux côtés (staff et portail). Au stade
+  `draft` l'import reste autorisé — c'est le comportement voulu — et il procède
+  désormais par ***upsert* par `batch_number`** : un lot déjà numéroté est **mis à
+  jour**, jamais détruit puis recréé. Un lot absent de l'import n'est supprimé que
+  s'il ne porte **pas** de connaissement, et l'audit dit ce qui a été conservé.
+- ✅ **FAIT** (2026-08-17) — **Séquence de numéros non recyclable** :
+  `bl_number_sequences`, un compteur par voyage qui ne décroît **jamais**. Corrige
+  deux défauts : le **recyclage** (le comptage réattribuait un numéro consommé après
+  suppression d'un lot) et le **blocage** (suppression d'un lot au milieu de la série
+  ⇒ collision d'unicité en boucle ⇒ émission impossible). Les trous de numérotation
+  sont désormais normaux : ils tracent un numéro consommé puis abandonné.
 
 ---
 
-## 5. Points à trancher avant implémentation
+## 5. Points tranchés — réponses de Yasmin (2026-08-03)
 
-1. **Le rail booking.** Décision D2 acte que les documents sont générés depuis
-   les packing lists. Le rail booking (`/cargo/booking/{ref}/bl.pdf`) produit un
-   BL **sans consignataire ni notify party** : à retirer dans le lot J2, avant
-   ce lot-ci. À confirmer.
+Les cinq points sont désormais tranchés. Ce qui suit remplace les questions.
+
+### 5.0 Date « shipped on board » = dernier jour des opérations
+
+> « Dans la section des opérations, on voit la ligne du temps montrant le flux
+> daté. Le jour de *ship on board* devrait être le dernier jour des opérations.
+> Avec la possibilité d'être modifié par l'équipe opérations (sous
+> justification) et journal de modification en cas de contrôle. »
+
+**Source de vérité** : la timeline d'escale (`EscaleOperation`), pas l'instant du
+clic. La date retenue est celle de la **dernière opération** du leg — donc une
+valeur **dérivée**, pas saisie.
+
+**Motif à trois niveaux, identique à celui des durées de contrat du lot relèves**
+(cf. `REFERENCE_METIER_RELEVES_EQUIPAGE.md` §3.2) :
+
+| Niveau | Nature |
+|---|---|
+| 1. Dérivée | dernier jour des opérations d'escale |
+| 2. Override | l'équipe Opérations (`escale:M` ou `cargo:M`) peut la corriger |
+| 3. **Justification obligatoire** | **refuser l'enregistrement** d'un override sans motif |
+
+⇒ **Un seul mécanisme à construire pour les deux lots.** À implémenter une fois,
+réutilisable : *valeur dérivée + override tracé + justification exigée*.
+
+Enjeu : un BL antidaté est une **fraude documentaire** et une exclusion de
+garantie. Le journal est explicitement demandé « en cas de contrôle ».
+
+### 5.1 Nombre d'originaux : toujours 3 — **et suivi de réception**
+
+> « Toujours 3. Normalement, les BLs devraient être téléchargeables dans la
+> plateforme client. L'idéal serait de tracker le timestamp de cette action ou
+> ajouter une case de confirmation de réception côté client. Cette case devrait
+> aussi apparaître pour l'équipe opérations, en mode backup. Si les BLs sont
+> envoyés en papier par exemple, l'équipe opérations pourra confirmer la
+> réception côté client en ajoutant la date et heure de confirmation et moyen
+> (téléphone, mail, etc.) + PJ possible. »
+
+`3` reste donc **constant** — pas de paramétrage à prévoir.
+
+**Nouvelle exigence : un registre de remise.** C'est exactement le dispositif
+dont l'absence exclut la *misdelivery* de la couverture P&I. Deux voies, la
+seconde servant de repli :
+
+| Voie | Déclencheur | Données |
+|---|---|---|
+| **Numérique** | le client télécharge le BL depuis `/me` | horodatage automatique du téléchargement · **et/ou** case « réception confirmée » cochée par le client |
+| **Repli Opérations** | BL remis en papier / hors plateforme | date **et heure** de confirmation · **moyen** (téléphone, mail, courrier…) · **pièce jointe possible** · l'auteur côté staff |
+
+⇒ Nouvelle table `BlDeliveryReceipt` (ou champs dédiés) : `batch_id`, `channel`
+(`download` / `client_confirmed` / `ops_confirmed`), `confirmed_at`, `means`,
+`confirmed_by_client_id` **xor** `confirmed_by_user_id`, `attachment_path`,
+`notes`. Le repli staff est tracé **comme tel**, jamais présenté comme une
+confirmation du client — même principe que
+`bl_validated_on_behalf_by_id` au §4.2.
+
+### 5.2 Signature du commandant : **au choix, unitaire ou groupée**
+
+> « Donner le choix au commandant de tout signer ou signer un BL en
+> particulier. »
+
+Les deux modes, pas l'un ou l'autre : un écran listant les BL en attente sur son
+navire, avec signature individuelle **et** action « tout signer ». Chaque BL reçoit
+sa propre entrée de signature (`bl_signed_at`, `bl_signature_hash`) même en
+signature groupée — le groupage est une commodité d'interface, pas une signature
+unique portant sur un lot.
+
+### 5.3 Données du BL : marchandises depuis la packing list, **parties depuis le portail**
+
+> « Données marchandises pour BL générés à partir de packing list. Notify party
+> & consignee à saisir depuis le portail expéditeur de MyTOWT. »
+
+Confirme la décision D2 (rail packing list) **et** précise qui saisit les parties.
+
+⚠️ **État vérifié dans le code (2026-08-03) — l'exigence est à moitié satisfaite :**
+
+| Champ | Modèle | Formulaire portail | Formulaire staff |
+|---|---|---|---|
+| `shipper_*` | ✅ `PackingListBatch` | ✅ présent | ✅ |
+| `consignee_*` | ✅ `PackingListBatch` | ✅ présent | ✅ |
+| **`notify_*`** | ✅ `PackingListBatch` | ❌ **ABSENT** | ✅ |
+
+Les cinq champs `notify_name` / `notify_address` / `notify_postal` /
+`notify_city` / `notify_country` existent en base et figurent dans
+`AUDITABLE_FIELDS` — ils sont donc déjà audités **dès qu'ils sont remplis**. Il
+manque uniquement leur exposition dans `templates/portal/packing.html`.
+**Correctif court, à embarquer dans ce lot.**
+
+### 5.4 Le rail booking — ⛔ le retrait **ne peut pas** précéder ce lot
+
+Décision D2 acte que les documents sont générés depuis les packing lists. Le rail
+booking produit un BL **sans consignataire ni notify party** : il doit disparaître.
+La réponse 5.3 le confirme — les parties se saisissent au portail, donc sur la
+packing list, pas sur le booking.
+
+**Mais l'inventaire des routes (fait le 2026-08-03) invalide le séquencement
+initialement prévu** (« à retirer dans le lot J2, avant ce lot-ci ») :
+
+| Route | Rail | Public | Remplacement disponible ? |
+|---|---|---|---|
+| `/cargo/packing-lists/{pl_id}/batches/{batch_id}/bl.pdf` | **packing list** | staff | — *(c'est la cible)* |
+| `/cargo/booking/{ref}/bl.pdf` | booking | staff | ✅ la route packing list |
+| `/cargo/booking/{ref}/bl.docx` | booking | staff | ✅ idem |
+| `/me/bookings/{ref}/bl.pdf` | booking | **client** | ❌ **AUCUN** |
+| `/me/bookings/{ref}/bl.docx` | booking | **client** | ❌ **AUCUN** |
+
+🔴 **Le rail packing list n'a aucune route côté client.** Et l'interface client
+expose un bouton visible « 📄 Bill of Lading »
+(`templates/client/booking_detail.html:199`) qui pointe vers la route booking.
+
+⇒ **Retirer le rail booking maintenant supprimerait la seule façon pour un client
+d'obtenir son connaissement**, sans remplacement, pour toute la durée d'attente
+(retour de Julien + implémentation). C'est une régression fonctionnelle
+visible — exactement ce que la méthode de développement prudent interdit.
+
+**Séquencement corrigé.** Le retrait n'est pas un préalable, c'est une
+**conséquence** : il se fait *dans* ce lot, une fois les routes client du rail
+packing list créées, et dans cet ordre :
+
+1. créer les routes client du rail packing list (draft filigrané / BL final selon
+   `bl_state`) ;
+2. **rebrancher** le bouton client `booking_detail.html:199` dessus ;
+3. **alors** retirer les 4 routes du rail booking et leurs 3 entrées staff
+   (`staff/cargo/booking_detail.html` ×2, `staff/cargo/index.html` ×1).
+
+**Point de conception à trancher en route** : un booking peut porter **plusieurs
+batches**, donc plusieurs BL, alors que l'URL client est au niveau du booking. Il
+faut choisir entre lister les BL du booking ou produire un document par batch —
+ce choix appartient à ce lot, pas à un correctif préalable.
+
+**Ce qui a été fait sans risque en attendant** : l'ajout du notify party au
+formulaire du portail (§5.3), pure addition sans retrait.
 2. ~~Qui valide côté client ?~~ ✅ **TRANCHÉ (Yasmin, 2026-07-29)**
 
    **C'est le client titulaire du booking qui valide le draft**, depuis l'espace
@@ -174,35 +316,43 @@ soft-delete avec motif obligatoire.
    vérification de propriété individuelle (`booking.client_account_id ==
    client.id`) : il n'y a pas de middleware central, chaque route `/me` la refait.
 
-3. **Nombre d'originaux.** Aujourd'hui `3` est codé en dur
-   (`services/pdf_generator.py:99`) et imprimé « 3 OBL signés » même sur un
-   document non signé. Doit-il être paramétrable par BL ? Et faut-il un registre
-   de remise des originaux (*surrender*) — sans lui, la livraison sans
-   présentation d'original (*misdelivery*) est **exclue de la couverture P&I** ?
-4. **Le commandant signe-t-il par batch ou par escale ?** Un navire chargeant
-   20 lots implique 20 signatures. Un écran de signature groupée est peut-être
-   nécessaire.
-5. **Date « shipped on board ».** Aujourd'hui la date d'émission est l'instant
-   du clic. Un BL antidaté est une fraude documentaire et une exclusion de
-   garantie. La date doit venir du chargement réel (`Booking.loaded_at`, qui
-   existe et n'est jamais utilisé) ou de l'ATD.
+   Note : `3` reste **constant** (réponse 5.1), donc
+   `services/pdf_generator.py:99` n'a pas besoin d'être paramétré — mais la
+   mention « 3 OBL signés » doit disparaître du **draft**, qui n'est pas signé.
 
 ---
 
 ## 6. Estimation et séquencement
 
-| Étape | Charge | Dépendance |
+| Étape | Charge | État / dépendance |
 |---|---|---|
-Journalisation du portail client (volet 1 du §4.3) | 0,5 j | aucune — **livrable dès le J2** |
-Fusion Alembic (RAF R1) | 0,5 j | validation manager |
-Migration + machine à états + transitions tracées | 2 j | fusion Alembic |
-Écrans (génération draft, validation client, signature commandant) | 2 j | ci-dessus |
-Filigrane draft / BL final / révisions | 1 j | ci-dessus |
-Séquence non recyclable + upsert de l'import Excel | 1 j | ci-dessus |
+| Journalisation des mutations du portail (volet 1 du §4.3) | 0,5 j | ✅ **FAIT** (2026-08-03, commit `1cb1d40`) — aucune migration |
+| Fusion Alembic (RAF R1) | 0,5 j | ⏸️ **prête**, en attente de **Julien** (retour le 2026-08-17) |
+| Notify party au formulaire du portail (§5.3) | 0,25 j | ✅ **FAIT** (2026-08-03) — champs déjà en base et audités, seule l'exposition manquait |
+| Routes client du rail packing list, puis retrait du rail booking (§5.4) | 1 j | ⚠️ **routes client FAITES** (2026-08-17) — `GET /me/bookings/{ref}/bls` (liste : un BL par lot), `GET .../bl/{batch_id}.pdf`, `POST .../bl/{batch_id}/validate`. Cloisonnement vérifié **par lot** et pas seulement par booking (404, jamais 403). 15 tests. ✅ **retrait FAIT** (2026-08-17). ⚠️ **L'étape n'était PAS purement soustractive**, deux découvertes : (a) le rail packing list n'avait **aucun DOCX**, or CLAUDE.md le documente comme livré (lot 75) — porté d'abord, en corrigeant au passage le même défaut que le PDF (« Trois originaux signés » écrit **inconditionnellement**, sur le format **éditable**) ; (b) le document du rail booking était fabriqué à la volée (`TUAW_{leg_id}_{booking_id}`), **jamais enregistré**, sans état, sans signature, sans registre — un document qui se présentait comme un connaissement sans en être un. Retiré : 4 routes, 2 aides, 1 générateur DOCX, 3 liens de gabarit. Quand aucun BL n'est émis, l'écran **le dit** au lieu d'offrir un faux |
+| Migration + machine à états + transitions tracées | 2 j | ✅ **FAIT** (2026-08-14/17) — migration `20260814_0114`, `services/bl_workflow.py`, gel câblé sur les 4 chemins d'écriture, émission en `POST`/`cargo:M`. 45 tests |
+| Écrans (génération draft, validation client, signature) | 2 j | ⚠️ **2 des 3 FAITS** (2026-08-17) — génération du draft (`POST .../bl/draft`) et **écran commandant** `/captain/bl` : signature **unitaire ET groupée** (§5.2), listes séparées « à signer » / « en attente de validation client » / « signés », compte rendu du mode groupé (signés **et** écartés). 16 tests. ⛔ **Validation client restante** — elle passe par `/me`, donc **liée au lot des routes client** ci-dessus (§5.4). Repli disponible dès maintenant en service (`validate_by_client(on_behalf_user=…)`), pas encore exposé à l'écran |
+| Date *shipped on board* dérivée + override justifié (§5.0) | 1 j | ✅ **FAIT** (2026-08-17) — migration `20260817_0115`, **mécanisme partagé** `services/derived_override.py` (dérivée → override → justification refusée si vide/creuse/trop courte), dérivation du **dernier jour des opérations RÉELLES** (jamais le prévisionnel : ce serait un BL post-daté), contrainte `ck_bl_sob_override_needs_reason` **en base**, snapshot d'audit dans la trace, mention sur le PDF, écran Opérations. 47 tests |
+| Registre de remise des originaux (§5.1) | 1,5 j | ✅ **FAIT** (2026-08-17) — table `bl_delivery_receipts` (migration `20260817_0116`), **3 canaux de valeur probante distincte** (`download` = accès, `client_confirmed` = déclaration du client, `ops_confirmed` = attestation de repli avec moyen **obligatoire** et PJ), append-only, 3 contraintes en base, écrans client + Opérations. 32 tests |
+| Filigrane draft / BL final / révisions | 1 j | ✅ **filigrane FAIT** (2026-08-17) — filigrane `DRAFT` sur toutes les pages + mention opposable + bloc de signature conditionnel + suffixe `-DRAFT` au nom de fichier. 15 tests. ⚠️ **revue visuelle d'un PDF réel restant** (la CI prouve que le document se construit, pas qu'il s'affiche bien). ✅ **révisions numérotées FAITES** (2026-08-17) : `bl_revisions`, `TUAW_…_R2`, motif obligatoire, le document annulé archivé avec son contenu signé, le nouveau repart en projet. 18 tests |
+| Séquence non recyclable + upsert de l'import Excel | 1 j | ✅ **FAIT** (2026-08-17) — table `bl_number_sequences` (migration `20260817_0117`), compteur par voyage **strictement croissant**, amorcé sur le **plus grand suffixe** émis (jamais leur nombre) ; import passé en ***upsert* par `batch_number`** des **deux** côtés (staff et portail), un lot numéroté survit et l'audit dit ce qui a été conservé. 23 tests |
 
-**Total ≈ 6,5 jours** hors décisions du §5. C'est un **lot structurant**, pas un
-quick win : il touche un document juridiquement opposable et mérite la revue du
-manager.
+**Total ≈ 10,25 jours**, dont **10,25 livrés — le lot est complet**. Révisé à la hausse depuis
+l'estimation initiale de 6,5 j : les réponses du §5 ajoutent le **registre de
+remise** (exigence nouvelle, non demandée initialement) et la **date dérivée avec
+override justifié**. Les deux sont des ajouts de valeur, pas des dérives de
+périmètre.
+
+C'est un **lot structurant**, pas un quick win : il touche un document
+juridiquement opposable (titre de propriété, prescription Hague-Visby d'un an) et
+mérite la revue de Julien.
+
+> 🔁 **Mutualisation à ne pas manquer** : le motif *valeur dérivée → override →
+> justification obligatoire* est demandé **deux fois**, ici pour la date
+> *shipped on board* (§5.0) et dans le lot relèves pour les durées de contrat
+> (`REFERENCE_METIER_RELEVES_EQUIPAGE.md` §3.2). À construire **une seule fois**.
+> Le dépôt porte déjà un précédent proche : `validation_engine.get_threshold`
+> (MRV v2, « zéro seuil en dur », résolution fail-closed + snapshot d'audit).
 
 **Ce qui est livrable immédiatement au J2, sans migration ni décision** : la
 journalisation des mutations du portail client (elle est de toute façon requise
