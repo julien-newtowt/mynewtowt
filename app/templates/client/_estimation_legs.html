@@ -1,0 +1,16 @@
+{# Partiel HTMX : voyages à venir sur la route choisie. #}
+{% if legs %}
+<div class="field">
+  <label for="leg_id">{% if lang == 'en' %}Sailing{% else %}Voyage{% endif %}</label>
+  <select id="leg_id" name="leg_id">
+    <option value="">— {% if lang == 'en' %}no specific sailing{% else %}sans voyage précis{% endif %} —</option>
+    {% for l in legs %}
+    <option value="{{ l.id }}">{{ l.leg_code }} — ETD {{ l.etd|date if l.etd else '—' }}</option>
+    {% endfor %}
+  </select>
+  <small class="text-muted">
+    {% if lang == 'en' %}The applicable grid is the one valid on the sailing's ETD.
+    {% else %}La grille appliquée est celle valide à la date de départ (ETD) du voyage.{% endif %}
+  </small>
+</div>
+{% endif %}

@@ -51,7 +51,7 @@ from app.models.commercial import (
 )
 from app.models.leg import Leg
 from app.models.port import Port
-from app.models.quote import Quote
+from app.models.quote import QUOTE_ORIGIN_LABELS, Quote
 from app.models.user import User
 from app.models.vessel import Vessel
 from app.permissions import require_permission
@@ -73,6 +73,8 @@ from app.services.commercial import (
     suggest_leg_for_order,
     validate_payment_terms,
 )
+from app.services.estimation import EstimationError
+from app.services.estimation import convert_to_offer as convert_estimation_to_offer
 from app.services.offer_history import (
     list_revisions,
     record_revision,
@@ -1803,7 +1805,7 @@ async def devis_list(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    """100 derniers devis émis par l'outil public /devis et le booking."""
+    """Estimations tarifaires : demandes extranet chiffrées, demandes publiques à qualifier."""
     rows = (
         await db.execute(
             select(Quote, ClientAccount.email, ClientAccount.company_name)
@@ -1818,8 +1820,86 @@ async def devis_list(
     ]
     return templates.TemplateResponse(
         "staff/commercial/devis_list.html",
-        {"request": request, "user": user, "quotes": quotes},
+        {
+            "request": request,
+            "user": user,
+            "quotes": quotes,
+            "origin_labels": QUOTE_ORIGIN_LABELS,
+        },
     )
+
+
+@router.get("/estimations", response_class=HTMLResponse)
+async def estimations_alias(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Alias de ``/commercial/devis`` sous le nouveau vocabulaire.
+
+    L'URL historique est conservée — elle est en liens internes et en signets —
+    mais le chemin qui porte le nom du métier existe désormais aussi.
+    """
+    return await devis_list(request, db=db, user=user)
+
+
+@router.get("/estimations/{reference}", response_class=HTMLResponse)
+async def estimation_detail_alias(
+    reference: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Alias de ``/commercial/devis/{reference}`` (cible des notifications)."""
+    return await devis_detail_staff(reference, request, db=db, user=user)
+
+
+@router.post("/estimations/{reference}/convert")
+async def estimation_convert(
+    reference: str,
+    request: Request,
+    leg_id: int = Form(...),
+    title: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Transforme une estimation en offre commerciale.
+
+    Le tarif est **recalculé** sur la grille applicable à l'ETD du voyage retenu :
+    une estimation de plusieurs semaines peut porter un prix qui n'a plus cours.
+    """
+    quote = (
+        await db.execute(select(Quote).where(Quote.reference == reference))
+    ).scalar_one_or_none()
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Estimation introuvable")
+    try:
+        offer = await convert_estimation_to_offer(
+            db,
+            quote,
+            leg_id=leg_id,
+            title=title if isinstance(title, str) else None,
+            actor_id=user.id,
+            actor_name=user.full_name or user.username,
+            actor_role=user.role,
+        )
+    except EstimationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await activity_record(
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=offer.id,
+        entity_label=offer.reference,
+        detail=f"issue de l'estimation {quote.reference}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer.id}")
 
 
 @router.get("/devis/{reference}", response_class=HTMLResponse)
@@ -1846,6 +1926,15 @@ async def devis_detail_staff(
         await db.execute(select(Port).where(Port.locode == quote.pod_locode))
     ).scalar_one_or_none()
     leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
+    # Voyages à venir sur la route — cibles possibles de la conversion en offre
+    # (une offre porte toujours sur un voyage précis).
+    from app.services.estimation import upcoming_legs_for_route
+
+    convertible_legs = (
+        []
+        if quote.converted_offer_id
+        else await upcoming_legs_for_route(db, quote.pol_locode, quote.pod_locode)
+    )
     return templates.TemplateResponse(
         "staff/commercial/devis_detail.html",
         {
@@ -1855,6 +1944,8 @@ async def devis_detail_staff(
             "pol": pol,
             "pod": pod,
             "leg": leg,
+            "convertible_legs": convertible_legs,
+            "origin_labels": QUOTE_ORIGIN_LABELS,
         },
     )
 

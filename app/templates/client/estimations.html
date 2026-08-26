@@ -1,0 +1,137 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}Rate estimates{% else %}Estimations tarifaires{% endif %} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <h1 class="display">{% if lang == 'en' %}Rate estimates{% else %}Estimations tarifaires{% endif %}</h1>
+  <p class="text-muted">
+    {% if lang == 'en' %}
+      Get an instant price on the routes covered by your negotiated rate grid.
+    {% else %}
+      Obtenez un tarif immédiat sur les routes couvertes par votre grille tarifaire négociée.
+    {% endif %}
+  </p>
+</header>
+
+{% if error %}
+<div class="alert alert-warn mb-4"><i data-lucide="alert-triangle"></i> {{ error }}</div>
+{% endif %}
+
+{% if not routes %}
+<article class="card">
+  <h2>{% if lang == 'en' %}No rate grid yet{% else %}Aucune grille tarifaire{% endif %}</h2>
+  <p class="text-muted">
+    {% if lang == 'en' %}
+      No active rate grid covers your account yet. Contact your NEWTOWT account manager to have one
+      set up — you will then be able to price your shipments here directly.
+    {% else %}
+      Aucune grille tarifaire active ne couvre votre compte pour le moment. Contactez votre
+      interlocuteur commercial NEWTOWT pour la mettre en place — vous pourrez ensuite chiffrer vos
+      expéditions directement ici.
+    {% endif %}
+  </p>
+  <a href="/contact" class="btn btn-primary">{% if lang == 'en' %}Contact us{% else %}Nous contacter{% endif %}</a>
+</article>
+{% else %}
+
+<article class="card">
+  <h2>{% if lang == 'en' %}New estimate{% else %}Nouvelle estimation{% endif %}</h2>
+  <form method="post" action="/me/estimations">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+    <div class="field">
+      <label for="route">{% if lang == 'en' %}Route{% else %}Route{% endif %}</label>
+      <select id="route" name="route" required
+              hx-get="/me/estimations/legs" hx-target="#leg-choice" hx-trigger="change"
+              hx-include="this" onchange="this.form.pol_locode.value=this.value.split('|')[0];this.form.pod_locode.value=this.value.split('|')[1];">
+        <option value="">— {% if lang == 'en' %}choose a route{% else %}choisissez une route{% endif %} —</option>
+        {% for r in routes %}
+        <option value="{{ r.pol_locode }}|{{ r.pod_locode }}">
+          {{ r.pol_name }} ({{ r.pol_locode }}) → {{ r.pod_name }} ({{ r.pod_locode }})
+        </option>
+        {% endfor %}
+      </select>
+      <small class="text-muted">
+        {% if lang == 'en' %}Only routes covered by your active rate grid are listed.
+        {% else %}Seules les routes couvertes par votre grille tarifaire active sont proposées.{% endif %}
+      </small>
+    </div>
+    <input type="hidden" name="pol_locode" value="" />
+    <input type="hidden" name="pod_locode" value="" />
+
+    <div id="leg-choice"></div>
+
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="palettes">{% if lang == 'en' %}Number of pallets{% else %}Nombre de palettes{% endif %}</label>
+        <input id="palettes" name="palettes" type="number" min="1" max="5000" step="1" required inputmode="numeric" />
+      </div>
+      <div class="field">
+        <label for="palette_format">{% if lang == 'en' %}Pallet format{% else %}Format de palette{% endif %}</label>
+        <select id="palette_format" name="palette_format">
+          {% for f in palette_formats %}<option value="{{ f }}" {{ 'selected' if f == 'EPAL' else '' }}>{{ f }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="tonnage_t">{% if lang == 'en' %}Total weight (t){% else %}Poids total (t){% endif %} <small class="text-muted">— {% if lang == 'en' %}optional{% else %}facultatif{% endif %}</small></label>
+        <input id="tonnage_t" name="tonnage_t" type="text" inputmode="decimal" />
+      </div>
+      <div class="field">
+        <label for="hazardous">
+          <input id="hazardous" name="hazardous" type="checkbox" />
+          {% if lang == 'en' %}Dangerous goods (IMDG){% else %}Marchandises dangereuses (IMDG){% endif %}
+        </label>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-block">
+      {% if lang == 'en' %}Get my estimate{% else %}Obtenir mon estimation{% endif %}
+    </button>
+  </form>
+</article>
+{% endif %}
+
+<article class="card mt-4">
+  <h2>{% if lang == 'en' %}My past estimates{% else %}Mes estimations passées{% endif %}</h2>
+  {% if quotes %}
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{% if lang == 'en' %}Reference{% else %}Référence{% endif %}</th>
+          <th>{% if lang == 'en' %}Route{% else %}Route{% endif %}</th>
+          <th>{% if lang == 'en' %}Pallets{% else %}Palettes{% endif %}</th>
+          <th>{% if lang == 'en' %}Total{% else %}Total{% endif %}</th>
+          <th>{% if lang == 'en' %}Valid until{% else %}Valide jusqu'au{% endif %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for q in quotes %}
+        <tr>
+          <td class="mono"><a href="/me/estimations/{{ q.reference }}">{{ q.reference }}</a></td>
+          <td class="mono">{{ q.pol_locode }} → {{ q.pod_locode }}</td>
+          <td class="mono">{{ q.palettes_total }}</td>
+          <td class="mono">{% if q.is_priced %}{{ q.net_total_eur|money }}{% else %}—{% endif %}</td>
+          <td>{{ q.valid_until|date if q.valid_until else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted">
+    {% if lang == 'en' %}No estimate yet.{% else %}Aucune estimation pour le moment.{% endif %}
+  </p>
+  {% endif %}
+</article>
+
+{% if commercial %}
+<p class="text-muted text-sm mt-4">
+  {% if lang == 'en' %}Your account manager{% else %}Votre interlocuteur commercial{% endif %} :
+  <strong>{{ commercial.full_name or commercial.username }}</strong>.
+  {% if lang == 'en' %}They are notified of each estimate you request.
+  {% else %}Il est prévenu de chaque estimation que vous demandez.{% endif %}
+</p>
+{% endif %}
+
+{% endblock %}

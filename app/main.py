@@ -40,6 +40,7 @@ from app.routers import (
     dashboard_env_router,
     devis_router,
     escale_router,
+    estimation_router,
     finance_router,
     kpi_router,
     marad_router,
@@ -160,6 +161,7 @@ def create_app() -> FastAPI:
     app.include_router(chat_router.router)
     app.include_router(client_auth_router.router)
     app.include_router(client_dashboard_router.router)
+    app.include_router(estimation_router.router)
     app.include_router(booking_router.router)
 
     # ------------------------------------------------------------ Health/meta

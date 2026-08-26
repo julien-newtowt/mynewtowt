@@ -30,12 +30,10 @@ from app.models.quote import QuoteView
 from app.models.vessel import Vessel
 from app.services import rate_limit
 from app.services.activity import record as activity_record
+from app.services.estimation import ensure_prospect, notify_assigned_salesperson
 from app.services.quoting import (
-    QuotingError,
-    compute_grid_quote,
-    create_quote,
+    create_estimation_request,
     find_quote,
-    resolve_grid,
 )
 from app.templating import templates
 
@@ -186,6 +184,10 @@ async def devis_submit(
         error = "Indiquez au moins une ligne de palettes (format + quantité)."
     elif contact_email and form.get("consent") != "on":
         error = "Merci d'accepter la politique de confidentialité pour être recontacté."
+    elif not contact_email:
+        # La demande publique n'affiche plus de prix : elle ouvre un dossier
+        # commercial. Sans adresse de retour, elle n'aboutirait nulle part.
+        error = "Indiquez une adresse e-mail pour que notre équipe vous réponde."
 
     if error:
         context = await _form_context(
@@ -193,35 +195,31 @@ async def devis_submit(
         )
         return templates.TemplateResponse("public/devis_form.html", context, status_code=422)
 
-    commercial_client_id = getattr(client, "commercial_client_id", None) if client else None
-    on_date = (leg_obj.etd.date() if leg_obj is not None and leg_obj.etd else None) or datetime.now(
-        UTC
-    ).date()
-
-    try:
-        grid, route = await resolve_grid(
-            db,
-            pol_locode=pol,
-            pod_locode=pod,
-            on_date=on_date,
-            commercial_client_id=commercial_client_id,
-        )
-        computed = compute_grid_quote(
-            grid, route, items=items, tonnage_t=tonnage_t, hazardous=hazardous
-        )
-    except QuotingError as e:
-        context = await _form_context(
-            request, db, client=client, leg_code=leg_code, error=str(e), values=dict(form)
-        )
-        return templates.TemplateResponse("public/devis_form.html", context, status_code=422)
-
-    quote = await create_quote(
+    # ⚠️ Demande **publique** : aucun tarif n'est calculé ni affiché.
+    #
+    # Auparavant, ce formulaire chiffrait immédiatement — et, si le visiteur se
+    # trouvait connecté, sur la grille négociée de son client. Publier un prix à
+    # qui n'a pas été identifié expose la politique tarifaire à n'importe qui, y
+    # compris à un concurrent. Le parcours devient donc : la demande ouvre un
+    # dossier (fiche prospect), le commercial qualifie, ouvre un extranet, puis
+    # propose une offre — la tarification s'appuyant alors sur la grille standard
+    # de la route. Les clients déjà équipés estiment en libre-service depuis
+    # ``/me/estimations``, sur **leurs** grilles.
+    prospect = await ensure_prospect(
         db,
-        computed=computed,
+        company=contact_company,
+        contact_name=contact_name,
+        email=contact_email,
+        source="estimation_publique",
+    )
+
+    quote = await create_estimation_request(
+        db,
         pol_locode=pol,
         pod_locode=pod,
         leg=leg_obj,
         client_account=client,
+        commercial_client=prospect,
         contact_name=contact_name,
         contact_email=contact_email,
         contact_company=contact_company,
@@ -231,20 +229,21 @@ async def devis_submit(
         items=items,
         lang=getattr(request.state, "lang", "fr") or "fr",
     )
+    await notify_assigned_salesperson(db, quote)
 
     await activity_record(
         db,
-        action="quote_created",
+        action="estimation_requested",
         user_name=(client.email if client else contact_email) or "anonyme",
         module="commercial",
         entity_type="quote",
         entity_id=quote.id,
         entity_label=quote.reference,
-        detail=f"{pol}→{pod} · {quote.palettes_total} pal. · {quote.total_eur} EUR",
+        detail=f"{pol}→{pod} · {quote.palettes_total} pal. (demande publique, non chiffrée)",
         ip_address=_client_ip(request),
     )
 
-    # Analytics tunnel : devis généré.
+    # Analytics tunnel : demande d'estimation déposée.
     from app.services import analytics
 
     await analytics.record(
@@ -256,7 +255,9 @@ async def devis_submit(
         detail=f"{pol}->{pod}",
     )
 
-    # Lead commercial (best-effort) : tout devis invité avec email est un lead.
+    # Lead commercial (best-effort). Le montant n'est plus transmis : il n'est
+    # plus calculé à ce stade, et faire sortir un prix vers le CRM avant
+    # qualification n'aurait pas plus de sens que de l'afficher au visiteur.
     if contact_email and client is None:
         try:
             from app.services.leads import push_lead
@@ -266,9 +267,9 @@ async def devis_submit(
                 name=contact_name or contact_email,
                 email=contact_email,
                 company=contact_company,
-                message=f"Devis {quote.reference} — {pol}→{pod}, "
-                f"{quote.palettes_total} palettes, total {quote.total_eur} EUR",
-                source="devis",
+                message=f"Demande d'estimation {quote.reference} — {pol}→{pod}, "
+                f"{quote.palettes_total} palettes",
+                source="estimation",
                 leg_code=leg_code,
                 details={
                     "pol": pol,
@@ -276,8 +277,7 @@ async def devis_submit(
                     "palettes": str(quote.palettes_total),
                     "tonnage_t": str(tonnage_t) if tonnage_t is not None else None,
                     "hazardous": "Oui" if hazardous else "Non",
-                    "quote_reference": quote.reference,
-                    "quote_total_eur": str(quote.total_eur),
+                    "estimation_reference": quote.reference,
                 },
             )
         except Exception:

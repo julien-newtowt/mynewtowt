@@ -592,6 +592,62 @@ def generate_quote_reference() -> str:
     return f"DEV-{year}-{secrets.token_hex(6).upper()}"
 
 
+async def create_estimation_request(
+    db: AsyncSession,
+    *,
+    pol_locode: str,
+    pod_locode: str,
+    leg: Leg | None = None,
+    client_account: ClientAccount | None = None,
+    commercial_client=None,
+    contact_name: str | None = None,
+    contact_email: str | None = None,
+    contact_company: str | None = None,
+    palettes_total: int,
+    tonnage_t: Decimal | None = None,
+    hazardous: bool = False,
+    items: list[tuple[str, int]] | None = None,
+    lang: str = "fr",
+) -> Quote:
+    """Demande d'estimation **non chiffrée**, déposée depuis la vitrine publique.
+
+    Elle enregistre le besoin (route, volume, coordonnées) sans calculer de
+    tarif : le demandeur n'a pas de grille négociée, et publier un prix avant
+    qualification exposerait la politique tarifaire. Les montants restent à zéro
+    et ``is_priced`` est faux — les écrans s'appuient dessus pour ne rien
+    afficher plutôt que d'afficher « 0 € ».
+    """
+    from app.services.references import unique_reference
+
+    quote = Quote(
+        reference=await unique_reference(
+            db, column=Quote.reference, factory=generate_quote_reference
+        ),
+        status="issued",
+        origin="public_request",
+        pol_locode=pol_locode.upper(),
+        pod_locode=pod_locode.upper(),
+        leg_id=leg.id if leg is not None else None,
+        etd_snapshot=leg.etd if leg is not None else None,
+        client_account_id=client_account.id if client_account is not None else None,
+        commercial_client_id=(
+            commercial_client.id if commercial_client is not None else None
+        ),
+        contact_name=contact_name,
+        contact_email=contact_email,
+        contact_company=contact_company,
+        palettes_total=palettes_total,
+        tonnage_t=tonnage_t,
+        hazardous=hazardous,
+        currency="EUR",
+        items_json=json.dumps([[f, c] for f, c in items]) if items else None,
+        lang=lang,
+    )
+    db.add(quote)
+    await db.flush()
+    return quote
+
+
 async def create_quote(
     db: AsyncSession,
     *,

@@ -1,10 +1,10 @@
 {% extends "staff/_layout.html" %}
-{% block title %}Devis {{ quote.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block title %}Estimation {{ quote.reference }} — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
 <header class="flex justify-between items-center mb-4">
   <div>
-    <span class="kicker">Commercial · Devis</span>
+    <span class="kicker">Commercial · Estimation tarifaire</span>
     <h1 class="display mono">{{ quote.reference }}</h1>
     <p class="text-muted">
       {{ quote.pol_locode }} → {{ quote.pod_locode }}
@@ -14,7 +14,7 @@
   </div>
   <div class="flex items-center" style="gap:8px;">
     <a href="/devis/{{ quote.reference }}.pdf" class="btn btn-secondary" target="_blank"><i data-lucide="file-text"></i> PDF</a>
-    <a href="/commercial/devis" class="btn btn-ghost">← Devis émis</a>
+    <a href="/commercial/devis" class="btn btn-ghost">← Estimations</a>
   </div>
 </header>
 
@@ -48,7 +48,7 @@
       {% endfor %}
     </ul>
     {% else %}
-    <p class="text-muted">Le client n'a pas encore consulté ce devis.</p>
+    <p class="text-muted">Le client n'a pas encore consulté cette estimation.</p>
     {% endif %}
   </article>
 </div>
@@ -84,7 +84,7 @@
   <h2>Remise / ajustement commercial</h2>
   <p class="text-muted text-sm mb-2">
     Montant signé en EUR appliqué au total calculé : <strong>négatif pour une remise</strong>,
-    positif pour une majoration. Visible sur le PDF du devis.
+    positif pour une majoration. Visible sur le PDF de l'estimation.
   </p>
   <form method="post" action="/commercial/devis/{{ quote.reference }}/adjust">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
@@ -104,6 +104,49 @@
       <button type="submit" class="btn btn-primary">Enregistrer l'ajustement</button>
     </div>
   </form>
+</article>
+
+<article class="card mt-4">
+  <h2>Transformer en offre commerciale</h2>
+  {% if quote.converted_offer_id %}
+  <p class="text-muted">
+    Cette estimation a déjà été transformée en offre.
+    <a href="/commercial/offers/{{ quote.converted_offer_id }}" class="btn btn-sm btn-secondary">Voir l'offre</a>
+  </p>
+  {% elif not quote.commercial_client_id %}
+  <div class="alert alert-warn">
+    <i data-lucide="user-plus"></i>
+    Cette estimation n'est rattachée à aucun client. Qualifiez d'abord la fiche prospect
+    (rattachez-la à un client commercial), puis revenez ici.
+  </div>
+  {% elif not convertible_legs %}
+  <p class="text-muted">Aucun voyage à venir sur cette route — l'offre doit cibler un voyage précis.</p>
+  {% else %}
+  <p class="text-muted text-sm">
+    L'offre relie ce client, la grille applicable et <strong>un</strong> voyage. Le tarif est
+    <strong>recalculé</strong> sur la grille valide à l'ETD du voyage retenu : une estimation
+    ancienne peut porter un prix qui n'a plus cours.
+  </p>
+  <form method="post" action="/commercial/estimations/{{ quote.reference }}/convert">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="leg_id">Voyage</label>
+        <select id="leg_id" name="leg_id" required>
+          {% for l in convertible_legs %}
+          <option value="{{ l.id }}">{{ l.leg_code }} — ETD {{ l.etd|date if l.etd else '—' }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="title">Objet de l'offre <small class="text-muted">— facultatif</small></label>
+        <input id="title" name="title" type="text" maxlength="200"
+               placeholder="Estimation {{ quote.reference }} — {{ quote.pol_locode }}→{{ quote.pod_locode }}" />
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Créer l'offre commerciale</button>
+  </form>
+  {% endif %}
 </article>
 
 {% endblock %}

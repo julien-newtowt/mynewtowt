@@ -181,6 +181,15 @@ class Client(Base):
     vat_number: Mapped[str | None] = mapped_column(String(40))
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Fiche créée automatiquement depuis une **demande d'estimation publique**,
+    # avant toute qualification commerciale. Un prospect n'a ni grille négociée
+    # ni extranet : le commercial le qualifie, lui ouvre un accès puis lui
+    # propose une offre. Le drapeau tombe dès qu'un compte plateforme lui est
+    # rattaché — la distinction sert au tri, pas à restreindre quoi que ce soit.
+    is_prospect: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True, server_default="false"
+    )
+    prospect_source: Mapped[str | None] = mapped_column(String(40))
     # ── Compte-ancre (P11) ────────────────────────────────────────────────
     # Un « compte-ancre » est un partenaire stratégique qui sécurise le
     # remplissage : il s'engage sur un volume annuel, bénéficie d'une priorité
