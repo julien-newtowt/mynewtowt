@@ -26,12 +26,14 @@
         <td>
           {% if o.status == 'draft' %}
           <form method="post" action="/commercial/offers/{{ o.id }}/send" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
             <button type="submit" class="btn btn-sm btn-ghost">Envoyer</button>
           </form>
           {% endif %}
           {% if o.status in ('draft','sent','accepted') %}
           <a href="/commercial/offers/{{ o.id }}/convert" class="btn btn-sm btn-primary">→ Commande</a>
           {% endif %}
+          <a href="/commercial/offers/{{ o.id }}/history" class="btn btn-sm btn-ghost" title="Historique des modifications">Historique</a>
         </td>
       </tr>
       {% else %}

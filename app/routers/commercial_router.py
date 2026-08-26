@@ -65,6 +65,12 @@ from app.services.commercial import (
     suggest_leg_for_order,
     validate_payment_terms,
 )
+from app.services.offer_history import (
+    list_revisions,
+    record_revision,
+    snapshot_offer,
+    verify_chain,
+)
 from app.services.quoting import (
     QuotingError,
     _match_route,
@@ -87,6 +93,33 @@ ASSIGNABLE_ROLES = ("commercial", "manager_maritime", "administrateur")
 CLIENT_TYPE_LABELS: dict[str, str] = {
     "freight_forwarder": "Transitaire",
     "shipper": "Chargeur",
+}
+
+# Libellés des champs d'offre dans l'historique — un diff qui affiche
+# « proposed_rate_eur » ne se lit pas ; un commercial doit pouvoir relire
+# l'historique sans connaître le schéma.
+OFFER_FIELD_LABELS: dict[str, str] = {
+    "reference": "Référence",
+    "client_id": "Client",
+    "grid_id": "Grille tarifaire",
+    "leg_id": "Voyage (leg)",
+    "title": "Objet",
+    "status": "Statut",
+    "estimated_palettes": "Palettes",
+    "proposed_rate_eur": "Tarif proposé (€/palette)",
+    "total_eur": "Total (€)",
+    "valid_until": "Validité",
+    "notes": "Notes",
+}
+
+REVISION_ACTION_LABELS: dict[str, str] = {
+    "created": "Création",
+    "updated": "Modification",
+    "sent": "Envoi au client",
+    "validated": "Validation",
+    "cancelled": "Annulation",
+    "expired": "Échéance dépassée",
+    "converted": "Conversion en commande",
 }
 
 
@@ -758,6 +791,32 @@ async def _vessels(db: AsyncSession) -> list[Vessel]:
         (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.name)))
         .scalars()
         .all()
+    )
+
+
+async def _record_offer_revision(
+    db: AsyncSession,
+    offer: RateOffer,
+    *,
+    action: str,
+    user,
+    before: dict | None = None,
+    comment: str | None = None,
+):
+    """Consigne une révision de l'offre dans l'historique inaltérable.
+
+    Complète ``activity_record`` sans le remplacer : le journal d'activité dit
+    qui a agi, l'historique dit ce que valait l'offre.
+    """
+    return await record_revision(
+        db,
+        offer,
+        action=action,
+        actor_id=getattr(user, "id", None),
+        actor_name=(getattr(user, "full_name", None) or getattr(user, "username", None)),
+        actor_role=getattr(user, "role", None),
+        before=before,
+        comment=comment,
     )
 
 
@@ -1809,6 +1868,41 @@ async def offers_list(
     )
 
 
+@router.get("/offers/{offer_id}/history", response_class=HTMLResponse)
+async def offer_history(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Historique inaltérable d'une offre + état de la chaîne d'intégrité."""
+    offer = (
+        await db.execute(
+            select(RateOffer)
+            .options(selectinload(RateOffer.client))
+            .where(RateOffer.id == offer_id)
+        )
+    ).scalar_one_or_none()
+    if offer is None:
+        raise HTTPException(status_code=404)
+
+    revisions = await list_revisions(db, offer.id)
+    chain_ok, chain_reason = await verify_chain(db, offer.id)
+    return templates.TemplateResponse(
+        "staff/commercial/offer_history.html",
+        {
+            "request": request,
+            "user": user,
+            "offer": offer,
+            "revisions": revisions,
+            "chain_ok": chain_ok,
+            "chain_reason": chain_reason,
+            "field_labels": OFFER_FIELD_LABELS,
+            "action_labels": REVISION_ACTION_LABELS,
+        },
+    )
+
+
 @router.get("/offers/new", response_class=HTMLResponse)
 async def offer_new_form(
     request: Request,
@@ -1958,6 +2052,7 @@ async def offer_create(
     )
     db.add(offer)
     await db.flush()
+    await _record_offer_revision(db, offer, action="created", user=user)
     await activity_record(
         db,
         action="create",
@@ -1983,9 +2078,11 @@ async def offer_send(
     o = await db.get(RateOffer, offer_id)
     if o is None:
         raise HTTPException(status_code=404)
+    before = snapshot_offer(o)
     o.status = "sent"
     o.sent_at = datetime.now(UTC)
     await db.flush()
+    await _record_offer_revision(db, o, action="sent", user=user, before=before)
     # COM-06 — une offre émise devient une opportunité : push Deal Pipedrive.
     await _push_pipedrive_deal(db, o)
     await activity_record(
@@ -2058,8 +2155,10 @@ async def offer_convert_to_order(
         raise HTTPException(status_code=404)
     if offer.status not in ("draft", "sent", "accepted"):
         raise HTTPException(status_code=400, detail="offre non convertible")
+    before = snapshot_offer(offer)
     offer.status = "accepted"
     offer.accepted_at = datetime.now(UTC)
+    await db.flush()
     ref = await next_order_reference(db)
     order = Order(
         reference=ref,
@@ -2080,6 +2179,14 @@ async def offer_convert_to_order(
     )
     db.add(order)
     await db.flush()
+    await _record_offer_revision(
+        db,
+        offer,
+        action="converted",
+        user=user,
+        before=before,
+        comment=f"convertie en commande {ref}",
+    )
     await activity_record(
         db,
         action="create",

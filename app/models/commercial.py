@@ -443,6 +443,77 @@ class RateOffer(Base):
     client: Mapped[Client] = relationship(back_populates="rate_offers")
 
 
+class RateOfferRevision(Base):
+    """Historique **append-only** d'une offre commerciale.
+
+    Toute modification d'une offre est tracée ici : c'est la pièce mobilisable si
+    un client conteste un prix. Trois niveaux d'information, complémentaires :
+
+    * ``changes_json`` — le **diff champ par champ** (ancienne et nouvelle
+      valeur), qui répond à « qu'est-ce qui a changé exactement ? » ;
+    * ``snapshot_json`` — l'**état complet** de l'offre après la modification, qui
+      permet de rejouer ce qui a été proposé sans reconstituer le diff ;
+    * ``content_hash`` / ``previous_hash`` — un **chaînage SHA-256** : altérer ou
+      retirer une révision casse la chaîne des suivantes, ce qui rend la
+      falsification détectable au lieu d'être indécelable.
+
+    Cette table complète ``activity_logs`` sans le remplacer : le journal
+    d'activité dit « qui a agi », l'historique dit « ce que valait l'offre ».
+    Elle est exclue de la purge administrative (``RETENTION_ONLY_PURGE_TABLES``
+    ne suffirait pas : elle n'est pas purgeable du tout).
+
+    Aucune route ne modifie ni ne supprime une révision — l'insertion est le seul
+    mode d'écriture.
+    """
+
+    __tablename__ = "rate_offer_revisions"
+    __table_args__ = (
+        UniqueConstraint("offer_id", "sequence", name="uq_rate_offer_revision_sequence"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    offer_id: Mapped[int] = mapped_column(
+        ForeignKey("rate_offers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Rang de la révision pour cette offre (1 = création). Contraint unique :
+    # deux révisions ne peuvent pas revendiquer la même place dans la chaîne.
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor_id: Mapped[int | None] = mapped_column(Integer)
+    actor_name: Mapped[str | None] = mapped_column(String(200))
+    actor_role: Mapped[str | None] = mapped_column(String(40))
+    # Diff : liste JSON de {field, old, new}. Vide pour une création.
+    changes_json: Mapped[str | None] = mapped_column(Text)
+    # État complet de l'offre après la modification (JSON canonique).
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    previous_hash: Mapped[str | None] = mapped_column(String(64))
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text)
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+
+    @property
+    def changes(self) -> list[dict]:
+        """Diff décodé (liste vide si absent ou illisible)."""
+        if not self.changes_json:
+            return []
+        try:
+            data = json.loads(self.changes_json)
+        except (ValueError, TypeError):
+            return []
+        return data if isinstance(data, list) else []
+
+    @property
+    def snapshot(self) -> dict:
+        """État complet décodé (dict vide si illisible)."""
+        try:
+            data = json.loads(self.snapshot_json or "{}")
+        except (ValueError, TypeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+
 class Order(Base):
     """Commande ferme (issue d'une offre acceptée ou créée directement)."""
 

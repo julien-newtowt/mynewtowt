@@ -1,0 +1,93 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Historique {{ offer.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial · Offre</span>
+    <h1 class="display">Historique de {{ offer.reference }}</h1>
+    <p class="text-muted">{{ offer.title }}{% if offer.client %} · {{ offer.client.name }}{% endif %}</p>
+  </div>
+  <a href="/commercial/offers" class="btn btn-ghost">← Retour aux offres</a>
+</header>
+
+{% if chain_ok %}
+<div class="alert alert-success mb-4">
+  <i data-lucide="shield-check"></i>
+  Chaîne d'intégrité vérifiée : {{ revisions|length }} révision(s), aucune altération détectée.
+</div>
+{% else %}
+<div class="alert alert-danger mb-4">
+  <i data-lucide="shield-alert"></i>
+  <strong>Chaîne d'intégrité rompue</strong> — {{ chain_reason }}. L'historique de cette offre a été
+  modifié en dehors de l'application : ne vous y fiez pas sans investigation.
+</div>
+{% endif %}
+
+<article class="card">
+  <h2>Révisions</h2>
+  <p class="text-muted text-sm">
+    Journal <strong>append-only</strong> : chaque révision conserve l'état complet de l'offre et
+    est scellée par un hachage chaîné à la précédente. Aucune écriture ne peut le modifier depuis
+    l'application, et il n'est pas purgeable.
+  </p>
+
+  {% for r in revisions %}
+  <section class="mb-4" style="border-left:3px solid var(--teal);padding-left:1rem;">
+    <div class="flex gap-2 items-center">
+      <span class="pill pill-info mono">#{{ r.sequence }}</span>
+      <strong>{{ action_labels.get(r.action, r.action) }}</strong>
+      <span class="text-muted text-sm">{{ r.at|datetime }}</span>
+      <span class="text-muted text-sm">
+        · {{ r.actor_name or 'système' }}{% if r.actor_role %} ({{ r.actor_role }}){% endif %}
+      </span>
+    </div>
+    {% if r.comment %}<p class="text-muted text-sm mt-1">{{ r.comment }}</p>{% endif %}
+
+    {% if r.changes %}
+    <div class="table-scroll mt-2">
+      <table class="data-table">
+        <thead><tr><th>Champ</th><th>Avant</th><th>Après</th></tr></thead>
+        <tbody>
+          {% for c in r.changes %}
+          <tr>
+            <td>{{ field_labels.get(c.field, c.field) }}</td>
+            <td class="mono text-muted">{{ c.old if c.old is not none else '—' }}</td>
+            <td class="mono"><strong>{{ c.new if c.new is not none else '—' }}</strong></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% elif r.sequence == 1 %}
+    <p class="text-muted text-sm mt-1">État initial de l'offre.</p>
+    {% else %}
+    <p class="text-muted text-sm mt-1">Aucun champ suivi modifié — changement d'état seul.</p>
+    {% endif %}
+
+    <details class="mt-2">
+      <summary class="text-muted text-sm" style="cursor:pointer;">Empreinte et état complet</summary>
+      <p class="mono text-sm text-muted mt-1" style="word-break:break-all;">
+        SHA-256 : {{ r.content_hash }}<br/>
+        Précédent : {{ r.previous_hash or '— (première révision)' }}
+      </p>
+      <div class="table-scroll">
+        <table class="data-table">
+          <tbody>
+            {% for key, value in r.snapshot.items() %}
+            <tr><td>{{ field_labels.get(key, key) }}</td><td class="mono">{{ value if value is not none else '—' }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+  {% else %}
+  <p class="text-muted">
+    Aucune révision enregistrée. Les offres créées avant la mise en place de l'historique
+    n'en ont pas — leur première révision sera consignée à leur prochaine modification.
+  </p>
+  {% endfor %}
+</article>
+
+{% endblock %}

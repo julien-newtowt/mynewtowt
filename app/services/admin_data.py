@@ -88,6 +88,16 @@ assert set(ALLOWED_PURGE_TABLES) == set(
 # minimisation RGPD), le vidage intégral non.
 RETENTION_ONLY_PURGE_TABLES: frozenset[str] = frozenset({"activity_logs"})
 
+# Tables interdites de purge, quel que soit le mode. ``rate_offer_revisions``
+# est l'historique inaltérable des offres : c'est la pièce mobilisable si un
+# client conteste un prix. Elle n'est **pas** dans ``ALLOWED_PURGE_TABLES`` —
+# cette liste explicite documente l'intention et sert de garde-fou si quelqu'un
+# l'y ajoutait un jour par analogie avec les autres journaux.
+NEVER_PURGE_TABLES: frozenset[str] = frozenset({"rate_offer_revisions"})
+assert not (
+    set(ALLOWED_PURGE_TABLES) & NEVER_PURGE_TABLES
+), "une table d'historique inaltérable ne peut pas être purgeable"
+
 
 def _table(name: str):
     """Table SQLAlchemy d'un nom whitelisté, sinon ``ValueError``."""
