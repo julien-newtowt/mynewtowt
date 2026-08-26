@@ -80,19 +80,18 @@ async def request_signature(
         )
     if note.signature_status == "signed":
         raise SignatureError("Booking note déjà signée.")
-    if not (note.merchant_email or "").strip():
+    signer_email = (note.merchant_email or "").strip()
+    if not signer_email:
         raise SignatureError(
             "Aucune adresse e-mail de signataire sur la booking note."
         )
 
-    first_name, last_name = yousign_svc.split_name(
-        note.merchant_contact, note.merchant_email
-    )
+    first_name, last_name = yousign_svc.split_name(note.merchant_contact, signer_email)
     result = await yousign_svc.create_signature_request(
         name=f"Booking note {note.reference}",
         document=document,
         filename=filename,
-        signer_email=note.merchant_email,
+        signer_email=signer_email,
         signer_first_name=first_name,
         signer_last_name=last_name,
     )

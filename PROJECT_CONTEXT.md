@@ -521,3 +521,60 @@ Fil conducteur : **un excellent système d'enregistrement, pas encore un outil d
 - `docs/strategy/SOF_UPGRADE_PLAN.md:52-61` documente précisément l'écart laytime (S1→S8, daté 2026-06-22) — plan jamais exécuté. À requalifier (backlog assumé) ou à exécuter.
 - `docs/audit/specs/SPEC-CREW-reprise-P0.md:18` signalait déjà d'adapter les requêtes filtrant `CrewAssignment.leg_id` pour les affectations « navire seul » — non traité (cf. §14.1).
 - `vessel_position.get_latest_position` : docstring affirmant « ~toutes les heures » alors que la cadence réelle est quotidienne (`max_age_hours=6` rend le helper inopérant).
+
+---
+
+## 15. Refonte du module commercial (2026-08-26)
+
+Chantier conduit sur `claude/commercial-module-multi-agent-fe0jhc`, en 7 lots,
+après audit multi-agents et arbitrage explicite (Q1–Q6) de Julien. Détail des
+décisions : `docs/architecture/ADR-010-refonte-module-commercial.md`. Journal :
+entrée du 2026-08-26.
+
+### Ce qu'il faut savoir avant de toucher au commercial
+
+1. **Le tarif négocié ne sort jamais vers une identité non établie.** Le
+   rattachement d'un compte plateforme à un client commercial est la clé d'accès
+   aux prix : il se pose **à la main** par un opérateur `commercial:M`, jamais
+   par dérivation d'une donnée auto-déclarée. Le parcours public dépose une
+   demande **non chiffrée** ; le libre-service chiffré vit dans `/me/estimations`,
+   borné aux grilles actives du client.
+2. **Trois rails réservent la même cale** — offres, commandes, bookings. Une
+   marchandise ne doit être comptée qu'une fois : `capacity.py` exclut les offres
+   portant une commande et les commandes reprises en booking. Tout nouveau rail
+   doit poser la même exclusion.
+3. **`rate_offer_revisions` est append-only et chaînée.** Ni exportable, ni
+   purgeable, aucune écriture hors insertion. Sa valeur probante tient à ce
+   qu'aucune retouche ne passe inaperçue.
+4. **« Booking note » = le contrat**, pas la confirmation de réservation client
+   (renommée). Ses conditions générales sont verbatim dans
+   `services/booking_note_terms.py` — ne pas les reformuler.
+5. **Signature ≠ règlement**, et les conditions de règlement sont
+   **déclaratives** : la facturation du fret reste hors plateforme (A5).
+
+### État des lieux après refonte
+
+| Sujet | Avant | Après |
+|---|---|---|
+| Commercial attitré | inexistant | `Client.assigned_user_id`, import Pipedrive + saisie manuelle (la saisie fait foi) |
+| Réf. de grille | `RG-{année}-{NNNN}` (2 générateurs) | + `P-MMAA-MMAA-XX-YY` par ligne-route (ISO alpha-2) |
+| Grilles actives par client | une seule | plusieurs, arbitrage par `is_route_default` |
+| Conditions de règlement | aucune | 1 à 3 échéances, somme = 100 %, déclaratives |
+| Statuts d'offre | 5 dont 2 inatteignables | 4 réels, `echue` matérialisée par balayage |
+| Volume réservé par une offre | non compté | compté, sans double-comptage |
+| Historique des offres | `activity_logs` sans diff | table dédiée chaînée SHA-256 |
+| Booking note | export manuel « offre commerciale » | établie à la validation, corrigeable puis gelée, signable |
+| Devis | public, chiffré, sans notification | estimation extranet chiffrée + demande publique non chiffrée, commercial notifié |
+
+### Points ouverts (repris du journal)
+
+- Rendu Word réel de la booking note à valider (LibreOffice indisponible dans le
+  conteneur de développement — relecture faite par extraction structurée).
+- Bac à sable Yousign avant première signature client (l'API réelle n'a jamais
+  été appelée).
+- Coefficients des paliers par défaut à confirmer commercialement.
+- Verrou anti-impayé (pas de connaissement sans règlement) : identifié, non
+  construit — suppose le suivi d'encaissement dans l'outil.
+- Portail client authentifié en ternaires FR/EN alors que le catalogue couvre 5
+  langues : un client passé en portugais retombe en français dans son espace.
+  Hors périmètre commercial.

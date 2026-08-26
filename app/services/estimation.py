@@ -230,9 +230,9 @@ async def notify_assigned_salesperson(db: AsyncSession, quote: Quote) -> None:
 
     await notifications.create(
         db,
-        type_="estimate_ready",
+        type="estimate_ready",
         title=title,
-        body=body,
+        detail=body,
         link=f"/commercial/estimations/{quote.reference}",
         target_user_id=assigned_id,
         target_role=None if assigned_id else "commercial",

@@ -257,6 +257,52 @@ Conséquences à connaître **avant** de toucher à un indicateur d'équipage :
   — donc ni Marad, ni les embarquements hors voyage. La liste PAF est de ce fait
   probablement incomplète en production.
 
+### Commercial — le tarif négocié ne sort jamais sans identité établie
+
+Règle d'or du module : **une grille tarifaire négociée n'est servie qu'à un
+compte rattaché à son client par un opérateur** `commercial:M`. Le rattachement
+(`ClientAccount.commercial_client_id`) **est** la clé d'accès aux prix.
+
+- **Ne jamais dériver ce rattachement d'une donnée auto-déclarée** (e-mail,
+  domaine, société saisie à l'inscription). C'était le défaut C-1 : un tiers
+  s'inscrivant avec le domaine d'un client lisait sa grille.
+  `services/client_linking.py` ne fait plus que **suggérer**, il n'écrit rien.
+- **Parcours public = demande non chiffrée.** `/devis` crée une fiche prospect et
+  notifie le commercial ; aucun prix n'est calculé ni affiché. Le libre-service
+  chiffré vit dans l'extranet (`/me/estimations`), borné aux grilles actives du
+  client — et la route demandée y est **revalidée** contre ces grilles, sinon la
+  résolution retomberait silencieusement sur la grille par défaut.
+- **`resolve_grid` est *get-or-create*** : ne jamais l'appeler depuis un chemin
+  non authentifié sans avoir validé POL/POD contre `ports` — une paire inconnue
+  matérialise une route dans la grille par défaut.
+
+**Réservation de cale — anti-double-comptage.** Une offre `en_cours`/`valide`
+réserve son volume sur le leg, une commande `confirmed`/`loaded` aussi, un
+booking également. Une même marchandise ne doit être comptée **qu'une fois** :
+`capacity.py` exclut les offres portant une commande (`Order.offer_id`) et les
+commandes reprises en booking (`Order.booking_id`). Tout nouveau rail qui
+réserve de la cale doit poser la même exclusion.
+
+**Historisation des offres.** `rate_offer_revisions` est append-only, chaînée en
+SHA-256, **ni exportable ni purgeable** (`NEVER_PURGE_TABLES`). Ne jamais y
+ajouter de route d'écriture autre que l'insertion : sa valeur probante tient à
+ce qu'aucune retouche ne puisse passer inaperçue. `activity_logs` reste
+complémentaire (qui a agi), et son **vidage intégral est désormais refusé** —
+seule la purge par ancienneté subsiste.
+
+**Booking note ≠ confirmation de réservation.** La *booking note* est le contrat
+de réservation d'espace en cale (trame CONLINEBOOKING, `booking_notes`), établie
+à la validation d'une offre et gelée à la diffusion. La *confirmation de
+réservation* est le PDF client de `/me/bookings/{ref}/booking-note.pdf`. Les
+conditions générales du contrat vivent verbatim dans
+`services/booking_note_terms.py` : **ne pas les reformuler** — toute correction
+de fond engage le transporteur et relève de la direction.
+
+**Signature ≠ règlement.** `BookingNote.signature_status` et l'échéancier de
+règlement sont indépendants ; aucun ne pilote l'autre. La facturation du fret
+reste hors plateforme (arbitrage A5) : les conditions de règlement sont
+**déclaratives**.
+
 ### Routes
 - Mutations : `validate → modify → await db.flush() → RedirectResponse(303)`.
 - Détection HTMX : `request.headers.get("hx-request")` → renvoyer header
@@ -372,7 +418,8 @@ Conséquences à connaître **avant** de toucher à un indicateur d'équipage :
 |---|---|---|
 | Planning | `/planning` | ✅ Gantt + table + share token |
 | Planning — scénarios | `/planning/scenarios` | ✅ what-if isolé (jamais d'écriture sur `legs`) : brouillon ou clone de legs réels, Gantt/table/comparaison, export CSV, drag-drop |
-| Commercial | `/commercial` | ✅ clients, grids, offers, orders |
+| Commercial | `/commercial` | ✅ clients (+ **commercial attitré**, fiches prospect), **grilles tarifaires** (réf. codifiée `P-MMAA-MMAA-XX-YY` par route, plusieurs grilles actives/client, défaut par route, paliers inclusifs, options dont `per_bl`, **conditions de règlement 1-3 échéances déclaratives**), **estimations tarifaires**, **offres** (cycle `en_cours`/`valide`/`echue`/`annule`, réservation de volume, **historique chaîné SHA-256**), commandes, **booking note** auto + signature Yousign |
+| Estimation tarifaire | `/me/estimations` + `/devis` | ✅ **extranet client** : libre-service sur **ses** grilles actives, notifie le commercial attitré, transformable en offre. **Vitrine** : demande **non chiffrée** créant une fiche prospect (le tarif ne sort jamais vers une identité non établie) |
 | Cargo (packing list + portail) | `/cargo` + `/p/{token}` | ✅ batches + **audit consultable** + edit/suppr + lock + messagerie ; **workflow BL complet** (`draft → client_validated → master_signed → final`, gel à la signature, filigrane DRAFT, révisions `TUAW_…_R2`, séquence de numéros **non recyclable**, registre de remise des originaux, date *shipped on board* dérivée de l'escale), Arrival Notice, import/export Excel **en upsert** (préserve les numéros), portail multilingue. ⛔ **Rail booking retiré** : plus de BL généré à la volée depuis un booking |
 | Escale (port call) | `/escale` | ✅ operations + dockers + lock |
 | Onboard / Captain | `/captain` | ✅ SOF + ETA shifts + messagerie + docs + quart (watch log) + clôture escale (ONB-05) |
@@ -439,6 +486,9 @@ Conséquences à connaître **avant** de toucher à un indicateur d'équipage :
 | **MDO** | Marine Diesel Oil |
 | **ROB** | Remaining On Board (fuel restant) |
 | **Schengen** | Statut immigration marin étranger (90 jours / 180) |
+| **Booking Note** | Contrat de réservation d'espace en cale (trame BIMCO CONLINEBOOKING) — à ne pas confondre avec la *confirmation de réservation* client |
+| **Estimation tarifaire** | Chiffrage indicatif sur grille (ex-« devis »). Libre-service extranet, ou demande non chiffrée depuis la vitrine |
+| **Merchant** | Le chargeur au sens du connaissement et de la booking note (expéditeur, destinataire, porteur du BL — cf. clause 1) |
 
 ## Conventions
 
@@ -472,6 +522,11 @@ Conséquences à connaître **avant** de toucher à un indicateur d'équipage :
 - Pas de police `Inter`, `Poppins`, `Segoe UI` — uniquement Manrope.
 - **Ne jamais multiplier une consommation par un facteur d'émission hors
   `services/emission_ledger.py`** (règle d'or, sentinelle `test_factor_whitelist`).
+- **Ne jamais servir une grille négociée à un compte non rattaché par un
+  opérateur**, ni dériver ce rattachement d'une donnée auto-déclarée.
+- **Ne jamais chiffrer depuis un chemin public** — la vitrine dépose une
+  demande, elle n'affiche pas de prix.
+- Pas de route d'écriture sur `rate_offer_revisions` autre que l'insertion.
 - **Jamais de seuil métier MRV en littéral** — toujours `validation_engine.get_threshold`
   (paramétrable en base, override navire, fail-closed).
 - Pas de **module ERP** passengers (disparu en v3.0.0 : pas de modèle, pas

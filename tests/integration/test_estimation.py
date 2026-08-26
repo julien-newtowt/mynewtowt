@@ -335,3 +335,81 @@ async def test_extranet_estimation_is_priced(db):
     assert quote.is_priced is True
     assert quote.total_eur > 0
     assert quote.grid_reference == grid.reference
+
+
+# ─────────── Notification du commercial attitré ───────────
+
+
+@pytest.mark.asyncio
+async def test_estimation_notifies_the_assigned_salesperson_by_name(db):
+    """Ciblage nominatif quand le client a un référent — pas une diffusion au rôle."""
+    from app.models.notification import Notification
+    from app.models.user import User
+    from app.services.estimation import notify_assigned_salesperson
+
+    await _referentiel(db)
+    commercial = User(
+        id=42, username="sofia", email="sofia@newtowt.eu", hashed_password="x",
+        role="commercial", full_name="Sofia Nunes",
+    )
+    db.add(commercial)
+    await db.flush()
+
+    client = await _client_with_grid(db, name="Café du Port")
+    client.assigned_user_id = commercial.id
+    await db.flush()
+    quote = await _estimation(db, client)
+
+    await notify_assigned_salesperson(db, quote)
+
+    notifications = (await db.execute(Notification.__table__.select())).fetchall()
+    assert len(notifications) == 1
+    notif = notifications[0]
+    assert notif.type == "estimate_ready"
+    assert notif.target_user_id == commercial.id
+    assert notif.target_role is None
+    assert "Café du Port" in notif.detail
+    assert quote.reference in notif.link
+
+
+@pytest.mark.asyncio
+async def test_without_an_assigned_salesperson_the_whole_role_is_notified(db):
+    """Sans référent, une estimation ne doit être vue de personne — donc on diffuse."""
+    from app.models.notification import Notification
+    from app.services.estimation import notify_assigned_salesperson
+
+    await _referentiel(db)
+    client = await _client_with_grid(db, name="Sans référent")
+    quote = await _estimation(db, client)
+
+    await notify_assigned_salesperson(db, quote)
+
+    notif = (await db.execute(Notification.__table__.select())).fetchone()
+    assert notif.target_user_id is None
+    assert notif.target_role == "commercial"
+
+
+@pytest.mark.asyncio
+async def test_public_request_notification_says_the_prospect_needs_qualifying(db):
+    from app.models.notification import Notification
+    from app.services.estimation import notify_assigned_salesperson
+
+    await _referentiel(db)
+    prospect = await ensure_prospect(
+        db, company="Visiteur SARL", contact_name=None, email="visiteur@example.org"
+    )
+    quote = Quote(
+        reference="DEV-2026-PUB000000001",
+        status="issued",
+        origin="public_request",
+        pol_locode="FRLEH",
+        pod_locode="BRSSZ",
+        commercial_client_id=prospect.id,
+        palettes_total=40,
+    )
+    db.add(quote)
+    await db.flush()
+
+    await notify_assigned_salesperson(db, quote)
+    notif = (await db.execute(Notification.__table__.select())).fetchone()
+    assert "qualifier" in notif.detail.lower()

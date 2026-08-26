@@ -178,9 +178,13 @@ def validate_payment_terms(terms: list[dict]) -> list[dict]:
         offset_days: int | None = None
         if trigger == "days_before_etd":
             raw_days = raw.get("offset_days")
+            if raw_days is None or str(raw_days).strip() == "":
+                raise PaymentTermError(
+                    "Indiquez le nombre de jours avant le départ du navire."
+                )
             try:
-                offset_days = int(raw_days)
-            except (TypeError, ValueError) as exc:
+                offset_days = int(str(raw_days).strip())
+            except ValueError as exc:
                 raise PaymentTermError(
                     "Indiquez le nombre de jours avant le départ du navire."
                 ) from exc

@@ -1938,3 +1938,128 @@ Neuf volets en une journée. Ce qui reste n'est pas du code :
   clients — ils engagent le client et sont visibles par lui ;
 - hors périmètre, à planifier : les **4 filtres inertes** (`onchange` bloqué par la CSP)
   et le nettoyage de `render_bill_of_lading` désormais inatteignable.
+
+---
+
+## 2026-08-26 — Refonte du module commercial (7 lots)
+
+> ⚠️ Cette entrée déborde la fenêtre annoncée du journal (27/07 → 17/08). Elle y
+> est consignée parce que c'est le document de reprise que le manager lira, et
+> qu'un chantier de cette taille ne doit pas vivre uniquement dans l'historique
+> Git.
+
+**Branche** : `claude/commercial-module-multi-agent-fe0jhc` (depuis `main` @311d9c7)
+**Migrations** : `20260826_0120` → `20260826_0124`
+**Tests** : 2417 passés (2334 au départ), 0 échec
+**ADR** : `docs/architecture/ADR-010-refonte-module-commercial.md`
+
+### Méthode — audit avant code
+
+Cinq agents spécialisés ont audité le périmètre **avant** toute écriture :
+comportement actuel, cohérence inter-modules, sécurité, UX, veille marché. Les
+rapports ont été consolidés en un plan soumis à arbitrage (Q1–Q6), tranché par
+Julien le 2026-08-26. Aucun code n'a été écrit avant ces réponses.
+
+Cette séquence a payé : le constat central — « la cible n'est pas une page
+blanche » — a évité de reconstruire un moteur tarifaire qui existait déjà, et
+l'audit sécurité a remonté une fuite exploitable qu'aucune lecture fonctionnelle
+n'aurait trouvée.
+
+### Le défaut le plus grave, et pourquoi il était invisible
+
+`services/client_account.create_account` forçait `is_verified=True` — aucun flux
+de vérification e-mail n'existe dans le dépôt — puis appelait `auto_link_account`,
+qui rattachait le compte au client commercial partageant le **domaine e-mail**.
+
+Chaîne complète : un concurrent s'inscrit avec `n.importe.quoi@client.fr`, le
+compte est actif immédiatement, le rattachement se fait tout seul, et `/devis`
+lui sert la **grille négociée** de ce client — taux par palette, remises de
+volume, prix des options, référence de grille.
+
+Chaque maillon était défendable isolément : la vérification instantanée est
+documentée comme un choix V3.0, le rapprochement par domaine comme une commodité
+d'exploitation, et `/devis` appliquait « logiquement » la grille du client
+connecté. C'est leur composition qui ouvrait la fuite — et c'est exactement ce
+qu'une relecture fichier par fichier ne voit pas.
+
+Corrigé au lot 1 : le rattachement devient un acte explicite d'opérateur
+`commercial:M`, `client_linking` ne fait plus que suggérer. Vérifié par sabotage
+(rétablir l'ancien comportement fait échouer 3 tests).
+
+### Ce qui a été livré, par lot
+
+| Lot | Objet | Commit |
+|---|---|---|
+| 1 | Socle sécurité (C-1, E-1/E-2/E-3, M-1, M-2, M-6) + bug P0 export DOCX | `86cd4ff` |
+| 2 | Grilles : commercial attitré, réf. codifiée, échéances, unités, barème | `1bc3799` |
+| 3 | Historisation des offres, chaînée et vérifiable | `c76cdfb` |
+| 4 | Cycle de vie de l'offre, réservation de volume, écran de détail | `48ed1f5` |
+| 5 | Booking note automatique + levée de l'homonymie côté client | `7cd1614` |
+| 6 | Estimation tarifaire : extranet, prospects, renommage 5 langues | `9411cd1` |
+| 7 | Signature électronique Yousign (niveau avancé) | `c1291a7` |
+
+### Un bug de production trouvé au passage
+
+`docx_generator.build_offer_docx` lisait `client.email` et `client.phone`,
+absents du modèle `Client` (les champs sont `contact_email` / `contact_phone`) :
+`AttributeError` à **chaque** export d'offre rattachée à un vrai client, et
+téléphone silencieusement vide.
+
+Il était passé parce que le test fabriquait un `SimpleNamespace` aux attributs
+inventés — il ne testait pas le contrat du modèle, il testait sa propre fiction.
+Le test utilise désormais une instance réelle de `Client`. C'est le genre de
+faux filet qu'il faut chercher ailleurs dans la suite.
+
+### Vérifications faites, et leurs limites
+
+- **Migrations testées sur PostgreSQL 16 réel** (pas seulement SQLite) : montée,
+  descente, et reprise sur données héritées insérées à la main. La correspondance
+  des statuts d'offre et le backfill des références codifiées ont été relus
+  ligne à ligne dans la base.
+- **Sabotage systématique** des gardes critiques : isolation des grilles,
+  validation des LOCODE, anti-double-comptage de capacité, vérification de
+  signature webhook, relecture serveur-à-serveur. Chaque fois, retirer le
+  correctif fait bien échouer les tests censés le garder.
+- **Limite honnête** : LibreOffice ne charge aucun `.docx` dans ce conteneur — y
+  compris le gabarit d'origine fourni par la direction. La booking note générée
+  a donc été relue par extraction structurée (cases, valeurs, clauses,
+  signatures), **pas visuellement**. Un rendu Word réel reste à faire avant
+  diffusion à un client.
+- **Limite honnête** : l'intégration Yousign n'a jamais appelé l'API réelle. Les
+  tests couvrent la vérification de signature, l'idempotence et le refus de
+  croire le payload, tous avec un client simulé. Le premier envoi réel demandera
+  une vérification en bac à sable (endpoints v3, forme exacte de l'en-tête de
+  signature, `signature_level` accepté par le compte).
+
+### Erreurs de ma part, corrigées
+
+1. **`max_qty: None` sans regarder les consommateurs.** J'ai rendu le palier
+   « navire complet » non borné avant de vérifier que `pick_bracket` et
+   `bracket_for_quantity` faisaient `int(b["max_qty"])`. Les deux auraient levé.
+   Corrigé par un `bracket_upper_bound` partagé — mais j'aurais dû lire les
+   appelants d'abord.
+2. **`Form(None)` qui fuit hors HTTP.** `_resolve_assigned_user` supposait une
+   chaîne ; appelée directement par un test existant, elle recevait l'objet
+   `Form` par défaut et levait un `AttributeError`. Le dépôt documentait déjà ce
+   piège dans un test de purge admin — je ne l'avais pas retenu.
+3. **Imports supprimés par `ruff --fix` avant d'écrire leurs usages.** Deux
+   allers-retours perdus. Écrire l'usage d'abord, formater ensuite.
+
+### Reste à faire
+
+- **Rendu Word réel** de la booking note à valider par la direction (mise en
+  page des cases, lisibilité des conditions au verso).
+- **Bac à sable Yousign** avant première signature client.
+- **Calibrage des remises par défaut** : les coefficients des paliers
+  (1,10 / 1,00 / 0,90 / 0,80 / 0,70 / 0,60) sont une proposition à la création,
+  pas une décision commerciale — à confirmer par Julien.
+- **Verrou anti-impayé** (pas de connaissement sans règlement) : identifié par
+  la veille marché, non construit — il suppose de faire entrer le suivi
+  d'encaissement dans l'outil, ce qui dépasse le périmètre arbitré.
+- **Écran de qualification de prospect** : la fiche est créée, le rattachement
+  d'un extranet se fait depuis la fiche client existante. Un parcours dédié
+  « prospect → client » serait plus lisible.
+- **Reste de l'audit UX non traité** : le portail client authentifié est câblé
+  en ternaires FR/EN alors que le catalogue couvre 5 langues — un client passé
+  en portugais sur la vitrine retombe en français dans son espace. Hors périmètre
+  commercial, mais à traiter.
