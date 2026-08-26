@@ -104,6 +104,7 @@ from app.services.quoting import (
     resolve_grid,
 )
 from app.templating import templates
+from app.utils.forms import form_str
 
 router = APIRouter(prefix="/commercial", tags=["commercial"])
 
@@ -1594,15 +1595,15 @@ async def grid_payment_terms_update(
     form = await request.form()
     submitted: list[dict] = []
     for idx in range(MAX_PAYMENT_TERMS):
-        trigger = (form.get(f"terms-{idx}-trigger") or "").strip()
-        percentage = (form.get(f"terms-{idx}-percentage") or "").strip()
+        trigger = form_str(form, f"terms-{idx}-trigger").strip()
+        percentage = form_str(form, f"terms-{idx}-percentage").strip()
         if not trigger and not percentage:
             continue
         submitted.append(
             {
                 "trigger": trigger,
                 "percentage": percentage,
-                "offset_days": (form.get(f"terms-{idx}-offset_days") or "").strip() or None,
+                "offset_days": form_str(form, f"terms-{idx}-offset_days").strip() or None,
                 "label": form.get(f"terms-{idx}-label"),
             }
         )
@@ -2139,7 +2140,7 @@ async def offer_booking_note_update(
     form = await request.form()
     for field in BOOKING_NOTE_EDITABLE_FIELDS:
         if field in form:
-            value = (form.get(field) or "").strip()
+            value = form_str(form, field).strip()
             setattr(note, field, value or None)
     await db.flush()
 

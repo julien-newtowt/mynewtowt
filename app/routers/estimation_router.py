@@ -47,6 +47,7 @@ from app.services.quoting import (
     resolve_grid,
 )
 from app.templating import templates
+from app.utils.forms import form_str
 
 router = APIRouter(tags=["estimation"])
 
@@ -149,11 +150,11 @@ async def estimation_submit(
     await _guard(db, request, client)
     form = await request.form()
 
-    pol = (form.get("pol_locode") or "").strip().upper()
-    pod = (form.get("pod_locode") or "").strip().upper()
-    palette_format = (form.get("palette_format") or "EPAL").strip()
-    raw_palettes = (form.get("palettes") or "").strip()
-    raw_leg = (form.get("leg_id") or "").strip()
+    pol = form_str(form, "pol_locode").strip().upper()
+    pod = form_str(form, "pod_locode").strip().upper()
+    palette_format = form_str(form, "palette_format", "EPAL").strip()
+    raw_palettes = form_str(form, "palettes").strip()
+    raw_leg = form_str(form, "leg_id").strip()
     hazardous = form.get("hazardous") == "on"
 
     error: str | None = None
@@ -176,7 +177,7 @@ async def estimation_submit(
             leg = None
 
     tonnage: Decimal | None = None
-    raw_tonnage = (form.get("tonnage_t") or "").strip().replace(",", ".")
+    raw_tonnage = form_str(form, "tonnage_t").strip().replace(",", ".")
     if raw_tonnage:
         try:
             value = Decimal(raw_tonnage)
