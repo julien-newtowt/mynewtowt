@@ -11,36 +11,37 @@
 </header>
 
 <article class="card">
+  <nav class="flex gap-2 mb-3 flex-wrap" aria-label="Filtrer par statut">
+    <a href="/commercial/offers" class="btn btn-sm {{ 'btn-secondary' if not current_status else 'btn-ghost' }}">Toutes</a>
+    {% for s in statuses %}
+    <a href="/commercial/offers?status={{ s }}" class="btn btn-sm {{ 'btn-secondary' if current_status == s else 'btn-ghost' }}">{{ status_labels.get(s, s) }}</a>
+    {% endfor %}
+  </nav>
+
+  <div class="table-scroll">
   <table class="data-table">
-    <thead><tr><th>Référence</th><th>Titre</th><th>Statut</th><th>Palettes</th><th>Tarif</th><th>Total</th><th>Valide jusqu'au</th><th></th></tr></thead>
+    <thead><tr><th>Référence</th><th>Client</th><th>Titre</th><th>Statut</th><th>Palettes</th><th>Tarif</th><th>Total</th><th>Valide jusqu'au</th><th></th></tr></thead>
     <tbody>
       {% for o in offers %}
       <tr>
-        <td class="mono">{{ o.reference }}</td>
+        <td class="mono"><a href="/commercial/offers/{{ o.id }}"><strong>{{ o.reference }}</strong></a></td>
+        <td>{{ o.client.name if o.client else '—' }}</td>
         <td>{{ o.title }}</td>
-        <td><span class="badge badge-{{ o.status }}">{{ o.status }}</span></td>
-        <td>{{ o.estimated_palettes or '—' }}</td>
+        <td><span class="badge badge-{{ o.status }}">{{ o.status_label }}</span></td>
+        <td class="mono">{{ o.estimated_palettes or '—' }}</td>
         <td class="mono">{{ o.proposed_rate_eur|money if o.proposed_rate_eur else '—' }}</td>
         <td class="mono">{{ o.total_eur|money if o.total_eur else '—' }}</td>
         <td>{{ o.valid_until|date if o.valid_until else '—' }}</td>
-        <td>
-          {% if o.status == 'draft' %}
-          <form method="post" action="/commercial/offers/{{ o.id }}/send" style="display:inline;">
-            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-            <button type="submit" class="btn btn-sm btn-ghost">Envoyer</button>
-          </form>
-          {% endif %}
-          {% if o.status in ('draft','sent','accepted') %}
-          <a href="/commercial/offers/{{ o.id }}/convert" class="btn btn-sm btn-primary">→ Commande</a>
-          {% endif %}
-          <a href="/commercial/offers/{{ o.id }}/history" class="btn btn-sm btn-ghost" title="Historique des modifications">Historique</a>
-        </td>
+        <td><a href="/commercial/offers/{{ o.id }}" class="btn btn-sm btn-ghost">Ouvrir</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="text-muted text-center">Aucune offre.</td></tr>
+      <tr><td colspan="9" class="text-muted text-center">
+        {% if current_status %}Aucune offre « {{ status_labels.get(current_status, current_status) }} ».{% else %}Aucune offre.{% endif %}
+      </td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </article>
 
 {% endblock %}

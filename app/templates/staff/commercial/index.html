@@ -131,7 +131,7 @@
         <td>{{ o.client.name if o.client else '—' }}</td>
         <td>{{ o.booked_palettes }}</td>
         <td>{{ o.total_eur|money if o.total_eur else '—' }}</td>
-        <td><span class="badge badge-{{ o.status }}">{{ o.status }}</span></td>
+        <td><span class="badge badge-{{ o.status }}">{{ o.status_label }}</span></td>
         <td class="text-muted text-sm">{{ o.created_at|datetime("%d/%m/%Y") }}</td>
       </tr>
       {% endfor %}

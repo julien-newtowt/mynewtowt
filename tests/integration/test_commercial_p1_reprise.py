@@ -182,8 +182,8 @@ async def test_grid_performance_kpis(db):
     db.add(c)
     await db.flush()
     g = await _grid(db)
-    # 3 offres émises (sent/accepted/declined), 1 acceptée
-    for ref, status in [("RO-1", "sent"), ("RO-2", "accepted"), ("RO-3", "declined")]:
+    # 3 offres au nouveau cycle : en cours / validée / annulée.
+    for ref, status in [("RO-1", "en_cours"), ("RO-2", "valide"), ("RO-3", "annule")]:
         db.add(RateOffer(reference=ref, client_id=c.id, grid_id=g.id, title="T", status=status))
     # 2 commandes liées à la grille : 1 confirmée (CA réalisé), 1 draft (non réalisé)
     db.add(
@@ -250,7 +250,7 @@ async def _offer(db, **over):
         "reference": "RO-2026-0001",
         "client_id": c.id,
         "title": "Offre Le Havre → FDF",
-        "status": "sent",
+        "status": "en_cours",
         "estimated_palettes": 80,
         "proposed_rate_eur": Decimal("120.00"),
         "total_eur": Decimal("9600.00"),
@@ -302,9 +302,9 @@ async def test_offer_convert_with_edited_values(db, staff_user):
     assert order.rate_per_palette_eur == Decimal("100.00")
     assert order.total_eur == Decimal("12000.00")
     assert order.departure_locode == "FRLEH"
-    # offre passée à "accepted"
+    # convertir vaut acceptation : l'offre passe à « validée »
     off = await db.get(RateOffer, o.id)
-    assert off.status == "accepted"
+    assert off.status == "valide"
 
 
 @pytest.mark.asyncio

@@ -29,8 +29,13 @@ from app.models.commercial import (
     CO_BRANDING_STATUS_LABELS,
     CO_BRANDING_STATUSES,
     MAX_PAYMENT_TERMS,
+    ORDER_STATUS_LABELS,
+    ORDER_STATUSES,
     PAYMENT_TRIGGER_LABELS,
     PAYMENT_TRIGGERS,
+    RATE_OFFER_OPEN_STATUSES,
+    RATE_OFFER_STATUS_LABELS,
+    RATE_OFFER_STATUSES,
     RATE_OPTION_UNIT_LABELS,
     RATE_OPTION_UNITS,
     Client,
@@ -70,6 +75,13 @@ from app.services.offer_history import (
     record_revision,
     snapshot_offer,
     verify_chain,
+)
+from app.services.offer_lifecycle import (
+    OfferTransitionError,
+    cancel_offer,
+    expire_due_offers,
+    is_expired,
+    validate_offer,
 )
 from app.services.quoting import (
     QuotingError,
@@ -149,7 +161,7 @@ async def commercial_index(
     offers_open = (
         await db.scalar(
             select(__import__("sqlalchemy").func.count(RateOffer.id)).where(
-                RateOffer.status.in_(("draft", "sent"))
+                RateOffer.status.in_(RATE_OFFER_OPEN_STATUSES)
             )
         )
     ) or 0
@@ -1856,15 +1868,83 @@ async def devis_adjust(
 @router.get("/offers", response_class=HTMLResponse)
 async def offers_list(
     request: Request,
+    status: str | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    offers = list(
-        (await db.execute(select(RateOffer).order_by(RateOffer.created_at.desc()))).scalars().all()
-    )
+    # Balayage d'échéance à l'ouverture de l'écran (patron du kanban tickets) :
+    # le volume réservé doit se libérer même sans cron, et l'écran ne doit jamais
+    # afficher « en cours » une offre dont le navire est parti.
+    await expire_due_offers(db)
+
+    stmt = select(RateOffer).options(selectinload(RateOffer.client))
+    if status:
+        stmt = stmt.where(RateOffer.status == status)
+    offers = list((await db.execute(stmt.order_by(RateOffer.created_at.desc()))).scalars().all())
     return templates.TemplateResponse(
         "staff/commercial/offers.html",
-        {"request": request, "user": user, "offers": offers},
+        {
+            "request": request,
+            "user": user,
+            "offers": offers,
+            "statuses": RATE_OFFER_STATUSES,
+            "status_labels": RATE_OFFER_STATUS_LABELS,
+            "current_status": status,
+        },
+    )
+
+
+@router.get("/offers/{offer_id}", response_class=HTMLResponse)
+async def offer_detail(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Fiche d'une offre : état, tarification, volume réservé, historique récent."""
+    offer = (
+        await db.execute(
+            select(RateOffer)
+            .options(selectinload(RateOffer.client))
+            .where(RateOffer.id == offer_id)
+        )
+    ).scalar_one_or_none()
+    if offer is None:
+        raise HTTPException(status_code=404)
+
+    leg = await db.get(Leg, offer.leg_id) if offer.leg_id else None
+    grid = (
+        (
+            await db.execute(
+                select(RateGrid)
+                .options(selectinload(RateGrid.payment_terms), selectinload(RateGrid.lines))
+                .where(RateGrid.id == offer.grid_id)
+            )
+        ).scalar_one_or_none()
+        if offer.grid_id
+        else None
+    )
+    order = (
+        await db.execute(select(Order).where(Order.offer_id == offer.id).limit(1))
+    ).scalar_one_or_none()
+
+    revisions = await list_revisions(db, offer.id)
+    return templates.TemplateResponse(
+        "staff/commercial/offer_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "offer": offer,
+            "leg": leg,
+            "grid": grid,
+            "order": order,
+            "revisions": list(reversed(revisions))[:5],
+            "revision_count": len(revisions),
+            "status_labels": RATE_OFFER_STATUS_LABELS,
+            "action_labels": REVISION_ACTION_LABELS,
+            # Affiche l'échéance même si le balayage n'est pas encore passé.
+            "pending_expiry": offer.is_open() and is_expired(offer, leg),
+        },
     )
 
 
@@ -2003,15 +2083,23 @@ async def offer_create(
 ):
     if not await db.get(Client, client_id):
         raise HTTPException(status_code=404, detail="client introuvable")
+    # Règle métier : une offre relie **un** client, **une** grille et **un** leg.
+    # La contrainte est posée ici et non en base — des offres antérieures à cette
+    # règle existent sans grille ni leg, et leur en inventer serait faux
+    # (cf. RateOffer.is_legacy).
+    if not grid_id:
+        raise HTTPException(status_code=400, detail="une grille tarifaire est requise")
+    if not leg_id:
+        raise HTTPException(status_code=400, detail="un voyage (leg) est requis")
     grid = (
-        (
-            await db.execute(
-                select(RateGrid).options(selectinload(RateGrid.lines)).where(RateGrid.id == grid_id)
-            )
-        ).scalar_one_or_none()
-        if grid_id
-        else None
-    )
+        await db.execute(
+            select(RateGrid).options(selectinload(RateGrid.lines)).where(RateGrid.id == grid_id)
+        )
+    ).scalar_one_or_none()
+    if grid is None:
+        raise HTTPException(status_code=404, detail="grille introuvable")
+    if await db.get(Leg, leg_id) is None:
+        raise HTTPException(status_code=404, detail="voyage introuvable")
     proposed_rate = Decimal("0")
     total = Decimal("0")
     if grid is not None and estimated_palettes > 0 and grid.lines:
@@ -2040,10 +2128,10 @@ async def offer_create(
     offer = RateOffer(
         reference=ref,
         client_id=client_id,
-        grid_id=grid.id if grid else None,
+        grid_id=grid.id,
         leg_id=leg_id,
         title=title.strip(),
-        status="draft",
+        status="en_cours",
         estimated_palettes=estimated_palettes,
         proposed_rate_eur=proposed_rate or None,
         total_eur=total or None,
@@ -2078,8 +2166,12 @@ async def offer_send(
     o = await db.get(RateOffer, offer_id)
     if o is None:
         raise HTTPException(status_code=404)
+    if not o.is_open():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Offre close ({o.status_label}) — elle ne peut plus être envoyée.",
+        )
     before = snapshot_offer(o)
-    o.status = "sent"
     o.sent_at = datetime.now(UTC)
     await db.flush()
     await _record_offer_revision(db, o, action="sent", user=user, before=before)
@@ -2098,7 +2190,83 @@ async def offer_send(
         detail="sent",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url="/commercial/offers", status_code=303)
+    return _hx_or_redirect(request, f"/commercial/offers/{o.id}")
+
+
+@router.post("/offers/{offer_id}/validate")
+async def offer_validate(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Valide une offre — point de bascule vers les opérations."""
+    offer = await db.get(RateOffer, offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404)
+    try:
+        await validate_offer(
+            db,
+            offer,
+            actor_id=user.id,
+            actor_name=user.full_name or user.username,
+            actor_role=user.role,
+        )
+    except OfferTransitionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=offer.id,
+        entity_label=offer.reference,
+        detail="validée",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer.id}")
+
+
+@router.post("/offers/{offer_id}/cancel")
+async def offer_cancel(
+    offer_id: int,
+    request: Request,
+    reason: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Annule une offre sur décision du commercial — libère le volume réservé."""
+    offer = await db.get(RateOffer, offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404)
+    try:
+        await cancel_offer(
+            db,
+            offer,
+            reason=reason if isinstance(reason, str) else None,
+            actor_id=user.id,
+            actor_name=user.full_name or user.username,
+            actor_role=user.role,
+        )
+    except OfferTransitionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=offer.id,
+        entity_label=offer.reference,
+        detail=f"annulée : {offer.cancelled_reason or 'sans motif'}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer.id}")
 
 
 @router.get("/offers/{offer_id}/convert", response_class=HTMLResponse)
@@ -2112,8 +2280,11 @@ async def offer_convert_form(
     offer = await db.get(RateOffer, offer_id)
     if offer is None:
         raise HTTPException(status_code=404)
-    if offer.status not in ("draft", "sent", "accepted"):
-        raise HTTPException(status_code=400, detail="offre non convertible")
+    if offer.status not in ("en_cours", "valide"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Offre {offer.status_label.lower()} — elle n'est plus convertible.",
+        )
     leg = await db.get(Leg, offer.leg_id) if offer.leg_id else None
     pol = await db.get(Port, leg.departure_port_id) if leg and leg.departure_port_id else None
     pod = await db.get(Port, leg.arrival_port_id) if leg and leg.arrival_port_id else None
@@ -2153,11 +2324,16 @@ async def offer_convert_to_order(
     offer = await db.get(RateOffer, offer_id)
     if offer is None:
         raise HTTPException(status_code=404)
-    if offer.status not in ("draft", "sent", "accepted"):
-        raise HTTPException(status_code=400, detail="offre non convertible")
+    if offer.status not in ("en_cours", "valide"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Offre {offer.status_label.lower()} — elle n'est plus convertible.",
+        )
     before = snapshot_offer(offer)
-    offer.status = "accepted"
-    offer.accepted_at = datetime.now(UTC)
+    # Convertir vaut acceptation : une offre encore en cours passe en validée.
+    offer.status = "valide"
+    offer.validated_at = offer.validated_at or datetime.now(UTC)
+    offer.accepted_at = offer.validated_at
     await db.flush()
     ref = await next_order_reference(db)
     order = Order(
@@ -2218,7 +2394,14 @@ async def orders_list(
     orders = list((await db.execute(stmt)).scalars().all())
     return templates.TemplateResponse(
         "staff/commercial/orders.html",
-        {"request": request, "user": user, "orders": orders, "filter_status": status},
+        {
+            "request": request,
+            "user": user,
+            "orders": orders,
+            "filter_status": status,
+            "order_statuses": ORDER_STATUSES,
+            "order_status_labels": ORDER_STATUS_LABELS,
+        },
     )
 
 

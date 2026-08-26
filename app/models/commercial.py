@@ -70,8 +70,33 @@ def capacity_priority_label(rank: int | None) -> str:
     return CAPACITY_PRIORITY_LABELS.get(int(rank), f"Rang {int(rank)}")
 
 
-RATE_OFFER_STATUSES = ("draft", "sent", "accepted", "declined", "expired")
+# Cycle de vie d'une offre commerciale (métier NEWTOWT) :
+#   en_cours — proposée au client, réserve du volume prévisionnel sur le leg ;
+#   valide   — acceptée : déclenche l'établissement de la booking note ;
+#   echue    — validité dépassée **ou** navire parti (ATD) ;
+#   annule   — retirée sur décision du commercial.
+# ``echue`` et ``annule`` sont terminaux et libèrent le volume réservé.
+RATE_OFFER_STATUSES = ("en_cours", "valide", "echue", "annule")
+RATE_OFFER_STATUS_LABELS: dict[str, str] = {
+    "en_cours": "En cours",
+    "valide": "Validée",
+    "echue": "Échue",
+    "annule": "Annulée",
+}
+# Statuts depuis lesquels une offre peut encore être validée ou annulée.
+RATE_OFFER_OPEN_STATUSES = ("en_cours",)
+
 ORDER_STATUSES = ("draft", "confirmed", "loaded", "delivered", "cancelled")
+# Libellés français — l'interface est en français, elle affichait les valeurs
+# techniques. Les **valeurs** restent inchangées (elles sont contractuelles pour
+# les consommateurs de ``Order.status``, dont le calcul de capacité).
+ORDER_STATUS_LABELS: dict[str, str] = {
+    "draft": "Brouillon",
+    "confirmed": "Confirmée",
+    "loaded": "Chargée",
+    "delivered": "Livrée",
+    "cancelled": "Annulée",
+}
 
 # Conditions de règlement d'une grille — déclencheurs métier (cf.
 # ``RateGridPaymentTerm``). Purement déclaratifs : la facturation du fret est
@@ -414,7 +439,20 @@ class RateGridPaymentTerm(Base):
 
 
 class RateOffer(Base):
-    """Offre commerciale envoyée à un client (DOCX gen. possible)."""
+    """Offre commerciale : **un** client × **une** grille × **un** leg.
+
+    C'est le point de départ des opérations : elle relie une grille tarifaire à
+    un client et à un voyage précis, réserve du volume dans le chargement
+    prévisionnel du leg jusqu'à sa date de fin de validité, et déclenche à sa
+    validation l'établissement de la booking note.
+
+    ``grid_id`` et ``leg_id`` sont volontairement **nullables en base** malgré
+    la règle métier « une seule et obligatoire » : des offres antérieures à cette
+    règle existent sans l'un ni l'autre. Les rendre NOT NULL exigerait de leur
+    inventer une grille ou un voyage. La contrainte est donc appliquée **à la
+    création** (formulaire et route), et ``is_legacy`` marque les offres
+    historiques pour qu'on ne les confonde pas avec une saisie incomplète.
+    """
 
     __tablename__ = "rate_offers"
 
@@ -424,9 +462,9 @@ class RateOffer(Base):
         ForeignKey("commercial_clients.id"), nullable=False, index=True
     )
     grid_id: Mapped[int | None] = mapped_column(ForeignKey("rate_grids.id"))
-    leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"))
+    leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"), index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="en_cours", nullable=False, index=True)
     estimated_palettes: Mapped[int | None] = mapped_column(Integer)
     proposed_rate_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     total_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
@@ -434,13 +472,39 @@ class RateOffer(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Horodatages du cycle métier (distincts de ``accepted_at``/``declined_at``,
+    # conservés pour les offres antérieures au nouveau cycle).
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_reason: Mapped[str | None] = mapped_column(Text)
+    expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Offre créée avant la règle « 1 grille + 1 leg obligatoires » : elle peut
+    # légitimement en manquer. Distingue l'héritage d'une saisie incomplète.
+    is_legacy: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
     notes: Mapped[str | None] = mapped_column(Text)
     pipedrive_deal_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     client: Mapped[Client] = relationship(back_populates="rate_offers")
+
+    @property
+    def status_label(self) -> str:
+        """Libellé français du statut."""
+        return RATE_OFFER_STATUS_LABELS.get(self.status, self.status)
+
+    def is_open(self) -> bool:
+        """L'offre est-elle encore ouverte (modifiable, validable, annulable) ?"""
+        return self.status in RATE_OFFER_OPEN_STATUSES
 
 
 class RateOfferRevision(Base):
@@ -583,6 +647,11 @@ class Order(Base):
     assignments: Mapped[list[OrderAssignment]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
+
+    @property
+    def status_label(self) -> str:
+        """Libellé français du statut (affichage seul — la valeur ne change pas)."""
+        return ORDER_STATUS_LABELS.get(self.status, self.status)
 
 
 class OrderAssignment(Base):
