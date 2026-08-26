@@ -69,10 +69,7 @@ async def routes_for_client(
         )
     ).all()
 
-    ports = {
-        p.locode: p
-        for p in (await db.execute(select(Port))).scalars().all()
-    }
+    ports = {p.locode: p for p in (await db.execute(select(Port))).scalars().all()}
 
     seen: set[tuple[str, str]] = set()
     routes: list[dict] = []
@@ -105,12 +102,8 @@ async def upcoming_legs_for_route(
     db: AsyncSession, pol_locode: str, pod_locode: str, *, limit: int = 12
 ) -> list[Leg]:
     """Voyages à venir sur une route — l'ETD détermine la grille applicable."""
-    pol = (
-        await db.execute(select(Port).where(Port.locode == pol_locode))
-    ).scalar_one_or_none()
-    pod = (
-        await db.execute(select(Port).where(Port.locode == pod_locode))
-    ).scalar_one_or_none()
+    pol = (await db.execute(select(Port).where(Port.locode == pol_locode))).scalar_one_or_none()
+    pod = (await db.execute(select(Port).where(Port.locode == pod_locode))).scalar_one_or_none()
     if pol is None or pod is None:
         return []
     now = datetime.now(UTC)
@@ -147,9 +140,7 @@ async def assert_route_is_covered(
     grille par défaut : le client verrait un tarif public en croyant lire le sien.
     """
     routes = await routes_for_client(db, commercial_client_id, on_date=on_date)
-    if not any(
-        r["pol_locode"] == pol_locode and r["pod_locode"] == pod_locode for r in routes
-    ):
+    if not any(r["pol_locode"] == pol_locode and r["pod_locode"] == pod_locode for r in routes):
         raise EstimationError(
             "Aucune grille tarifaire active ne couvre cette route pour votre compte. "
             "Contactez votre commercial pour la mettre en place."
@@ -266,9 +257,7 @@ async def convert_to_offer(
             "Cette estimation n'est rattachée à aucun client — qualifiez d'abord le prospect."
         )
     if quote.converted_offer_id is not None:
-        raise EstimationError(
-            f"Estimation {quote.reference} déjà transformée en offre."
-        )
+        raise EstimationError(f"Estimation {quote.reference} déjà transformée en offre.")
 
     leg = await db.get(Leg, leg_id)
     if leg is None:

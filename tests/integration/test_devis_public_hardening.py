@@ -83,9 +83,7 @@ async def test_overlong_locode_is_rejected_before_reaching_the_database(db):
 
     await _referentiel(db)
 
-    resp = await devis_submit(
-        _Req(_payload(pod="BBBBBBBBBB")), db=db, client=None
-    )
+    resp = await devis_submit(_Req(_payload(pod="BBBBBBBBBB")), db=db, client=None)
 
     assert resp.status_code == 422
     assert (await db.execute(RateGridLine.__table__.select())).fetchone() is None

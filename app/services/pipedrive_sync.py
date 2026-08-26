@@ -205,9 +205,7 @@ async def sync_clients(db: AsyncSession) -> dict:
     # un client à un compte désactivé reviendrait à ne notifier personne.
     staff_by_email = {
         (u.email or "").strip().lower(): u.id
-        for u in (await db.execute(select(User).where(User.is_active.is_(True))))
-        .scalars()
-        .all()
+        for u in (await db.execute(select(User).where(User.is_active.is_(True)))).scalars().all()
         if u.email
     }
 

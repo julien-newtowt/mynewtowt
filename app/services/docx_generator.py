@@ -580,9 +580,7 @@ def build_booking_note_docx(*, note, offer, leg=None) -> DocxBytes:
     _title(doc, f"BOOKING NOTE NUMBER – {note.reference}")
     if note.status != "diffusee":
         draft = doc.add_paragraph()
-        draft_run = draft.add_run(
-            "BROUILLON — document de travail, non diffusé au client"
-        )
+        draft_run = draft.add_run("BROUILLON — document de travail, non diffusé au client")
         draft_run.bold = True
         draft_run.font.size = Pt(10)
         from docx.shared import RGBColor
@@ -602,7 +600,10 @@ def build_booking_note_docx(*, note, offer, leg=None) -> DocxBytes:
         _bn_cell(cells[1], right[0], right[1])
 
     _row(("Agents", note.agents_pod), ("Place and date", place_date or None))
-    _row(("Carrier", "NEWTOWT\n52 Quai Frissard\n76600 LE HAVRE\nFRANCE"), ("Vessel", note.vessel_name))
+    _row(
+        ("Carrier", "NEWTOWT\n52 Quai Frissard\n76600 LE HAVRE\nFRANCE"),
+        ("Vessel", note.vessel_name),
+    )
     _row(
         (
             "Merchant*",

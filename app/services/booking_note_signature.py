@@ -82,9 +82,7 @@ async def request_signature(
         raise SignatureError("Booking note déjà signée.")
     signer_email = (note.merchant_email or "").strip()
     if not signer_email:
-        raise SignatureError(
-            "Aucune adresse e-mail de signataire sur la booking note."
-        )
+        raise SignatureError("Aucune adresse e-mail de signataire sur la booking note.")
 
     first_name, last_name = yousign_svc.split_name(note.merchant_contact, signer_email)
     result = await yousign_svc.create_signature_request(
@@ -123,14 +121,10 @@ async def apply_signature_state(
     # Le webhook dit quelle demande regarder ; c'est Yousign qui dit son état.
     remote_status = ""
     try:
-        remote = await yousign_svc.retrieve_signature_request(
-            note.signature_request_id or ""
-        )
+        remote = await yousign_svc.retrieve_signature_request(note.signature_request_id or "")
         remote_status = (remote.get("status") or "").lower()
     except yousign_svc.YousignError as exc:
-        logger.warning(
-            "Relecture Yousign impossible pour %s : %s", note.reference, exc
-        )
+        logger.warning("Relecture Yousign impossible pour %s : %s", note.reference, exc)
         return note
 
     if target == "signed":
@@ -163,13 +157,9 @@ async def _store_signed_document(db: AsyncSession, note: BookingNote) -> None:
     from app.services import safe_files
 
     try:
-        content = await yousign_svc.download_signed_document(
-            note.signature_request_id or ""
-        )
+        content = await yousign_svc.download_signed_document(note.signature_request_id or "")
     except yousign_svc.YousignError as exc:
-        logger.warning(
-            "Document signé %s non récupéré : %s — à retélécharger", note.reference, exc
-        )
+        logger.warning("Document signé %s non récupéré : %s — à retélécharger", note.reference, exc)
         return
     if not content:
         return

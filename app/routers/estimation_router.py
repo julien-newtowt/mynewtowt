@@ -184,9 +184,7 @@ async def estimation_submit(
         except InvalidOperation:
             tonnage = None
 
-    on_date = (leg.etd.date() if leg is not None and leg.etd else None) or datetime.now(
-        UTC
-    ).date()
+    on_date = (leg.etd.date() if leg is not None and leg.etd else None) or datetime.now(UTC).date()
 
     if not error:
         try:
@@ -225,7 +223,10 @@ async def estimation_submit(
             commercial_client_id=client.commercial_client_id,
         )
         computed = compute_grid_quote(
-            grid, route, items=[(palette_format, palettes)], tonnage_t=tonnage,
+            grid,
+            route,
+            items=[(palette_format, palettes)],
+            tonnage_t=tonnage,
             hazardous=hazardous,
         )
     except QuotingError as exc:

@@ -36,9 +36,7 @@ async def suggest_client_for_email(db: AsyncSession, email: str | None) -> Clien
     if not clean or "@" not in clean:
         return None
     return (
-        await db.execute(
-            select(Client).where(func.lower(Client.contact_email) == clean).limit(1)
-        )
+        await db.execute(select(Client).where(func.lower(Client.contact_email) == clean).limit(1))
     ).scalar_one_or_none()
 
 

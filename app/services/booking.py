@@ -129,9 +129,7 @@ async def create_draft(
     from app.services.references import unique_reference
 
     booking = Booking(
-        reference=await unique_reference(
-            db, column=Booking.reference, factory=generate_reference
-        ),
+        reference=await unique_reference(db, column=Booking.reference, factory=generate_reference),
         client_account_id=(client.id if client else None),
         leg_id=leg.id,
         status="draft",

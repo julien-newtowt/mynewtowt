@@ -126,13 +126,19 @@ async def test_estimating_outside_your_grid_is_refused(db):
 
     # Route couverte : passe.
     await assert_route_is_covered(
-        db, commercial_client_id=client.id, pol_locode="FRLEH", pod_locode="BRSSZ",
+        db,
+        commercial_client_id=client.id,
+        pol_locode="FRLEH",
+        pod_locode="BRSSZ",
         on_date=date(2026, 6, 1),
     )
     # Route non couverte : refusée, avec un message actionnable.
     with pytest.raises(EstimationError, match="grille"):
         await assert_route_is_covered(
-            db, commercial_client_id=client.id, pol_locode="FRLEH", pod_locode="PTLIS",
+            db,
+            commercial_client_id=client.id,
+            pol_locode="FRLEH",
+            pod_locode="PTLIS",
             on_date=date(2026, 6, 1),
         )
 
@@ -146,7 +152,10 @@ async def test_a_client_cannot_reach_another_clients_route(db):
 
     with pytest.raises(EstimationError):
         await assert_route_is_covered(
-            db, commercial_client_id=mine.id, pol_locode="FRLEH", pod_locode="PTLIS",
+            db,
+            commercial_client_id=mine.id,
+            pol_locode="FRLEH",
+            pod_locode="PTLIS",
             on_date=date(2026, 6, 1),
         )
 
@@ -157,7 +166,9 @@ async def test_a_client_cannot_reach_another_clients_route(db):
 @pytest.mark.asyncio
 async def test_public_request_creates_a_prospect(db):
     prospect = await ensure_prospect(
-        db, company="Torréfaction du Nord", contact_name="Léa Martin",
+        db,
+        company="Torréfaction du Nord",
+        contact_name="Léa Martin",
         email="lea@torrefaction-nord.fr",
     )
     assert prospect is not None
@@ -169,8 +180,10 @@ async def test_public_request_creates_a_prospect(db):
 @pytest.mark.asyncio
 async def test_prospect_creation_is_idempotent_and_never_downgrades_a_client(db):
     existing = Client(
-        name="Client établi", client_type="freight_forwarder",
-        contact_email="ops@etabli.fr", is_prospect=False,
+        name="Client établi",
+        client_type="freight_forwarder",
+        contact_email="ops@etabli.fr",
+        is_prospect=False,
     )
     db.add(existing)
     await db.flush()
@@ -320,13 +333,22 @@ async def test_extranet_estimation_is_priced(db):
     await db.flush()
 
     grid, route = await resolve_grid(
-        db, pol_locode="FRLEH", pod_locode="BRSSZ",
-        on_date=date(2026, 6, 1), commercial_client_id=client.id,
+        db,
+        pol_locode="FRLEH",
+        pod_locode="BRSSZ",
+        on_date=date(2026, 6, 1),
+        commercial_client_id=client.id,
     )
     computed = compute_grid_quote(grid, route, items=[("EPAL", 150)])
     quote = await create_quote(
-        db, computed=computed, pol_locode="FRLEH", pod_locode="BRSSZ",
-        client_account=account, palettes_total=150, tonnage_t=None, hazardous=False,
+        db,
+        computed=computed,
+        pol_locode="FRLEH",
+        pod_locode="BRSSZ",
+        client_account=account,
+        palettes_total=150,
+        tonnage_t=None,
+        hazardous=False,
         items=[("EPAL", 150)],
     )
     quote.origin = "extranet"
@@ -349,8 +371,12 @@ async def test_estimation_notifies_the_assigned_salesperson_by_name(db):
 
     await _referentiel(db)
     commercial = User(
-        id=42, username="sofia", email="sofia@newtowt.eu", hashed_password="x",
-        role="commercial", full_name="Sofia Nunes",
+        id=42,
+        username="sofia",
+        email="sofia@newtowt.eu",
+        hashed_password="x",
+        role="commercial",
+        full_name="Sofia Nunes",
     )
     db.add(commercial)
     await db.flush()

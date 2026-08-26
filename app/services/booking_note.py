@@ -65,9 +65,7 @@ def _freight_terms(offer: RateOffer, grid: RateGrid | None) -> str:
     lines: list[str] = []
     palettes = offer.estimated_palettes or 0
     if offer.proposed_rate_eur is not None:
-        lines.append(
-            f"Fret : {offer.proposed_rate_eur} EUR par palette × {palettes} palette(s)"
-        )
+        lines.append(f"Fret : {offer.proposed_rate_eur} EUR par palette × {palettes} palette(s)")
     else:
         lines.append(f"Fret : {palettes} palette(s)")
     if offer.total_eur is not None:
@@ -88,9 +86,7 @@ def _freight_terms(offer: RateOffer, grid: RateGrid | None) -> str:
         if grid.min_charge_eur:
             lines.append(f"Minimum de facturation : {grid.min_charge_eur} EUR")
         if grid.hazardous_surcharge_pct:
-            lines.append(
-                f"Surcharge marchandises dangereuses : {grid.hazardous_surcharge_pct} %"
-            )
+            lines.append(f"Surcharge marchandises dangereuses : {grid.hazardous_surcharge_pct} %")
     return "\n".join(lines)
 
 
@@ -99,8 +95,7 @@ def _payment_terms(grid: RateGrid | None) -> str:
     if grid is None or not grid.payment_terms:
         return ""
     return "\n".join(
-        f"{term.percentage} % — {term.trigger_label}"
-        + (f" ({term.label})" if term.label else "")
+        f"{term.percentage} % — {term.trigger_label}" + (f" ({term.label})" if term.label else "")
         for term in grid.payment_terms
     )
 
@@ -118,9 +113,7 @@ async def next_booking_note_reference(db: AsyncSession) -> str:
 
     count = (
         await db.scalar(
-            select(func.count(BookingNote.id)).where(
-                BookingNote.reference.like(f"BN-{year}-%")
-            )
+            select(func.count(BookingNote.id)).where(BookingNote.reference.like(f"BN-{year}-%"))
         )
     ) or 0
     return f"BN-{year}-{int(count) + 1:04d}"
@@ -170,9 +163,7 @@ async def ensure_for_offer(db: AsyncSession, offer: RateOffer) -> BookingNote:
         issued_on=datetime.now(UTC),
         vessel_name=vessel.name if vessel is not None else None,
         # « Time for shipment (about) » = ETD du voyage (arbitrage 2026-08-26).
-        time_for_shipment=(
-            leg.etd.strftime("%d/%m/%Y") if leg is not None and leg.etd else None
-        ),
+        time_for_shipment=(leg.etd.strftime("%d/%m/%Y") if leg is not None and leg.etd else None),
         pol_text=_port_text(pol),
         pod_text=_port_text(pod),
         merchant_name=client.name if client is not None else None,

@@ -2211,9 +2211,7 @@ async def offer_booking_note_issue(
     # « brouillon » disparaît au passage en diffusée, donc le document doit être
     # régénéré après le changement de statut, pas avant.
     try:
-        await mark_issued(
-            db, note, user_id=user.id, user_name=user.full_name or user.username
-        )
+        await mark_issued(db, note, user_id=user.id, user_name=user.full_name or user.username)
     except BookingNoteError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     doc = build_booking_note_docx(note=note, offer=offer, leg=leg)
@@ -2268,9 +2266,7 @@ async def offer_booking_note_sign(
 
     doc = build_booking_note_docx(note=note, offer=offer, leg=leg)
     try:
-        await request_signature(
-            db, note, document=doc.docx, filename=_safe_filename(doc.filename)
-        )
+        await request_signature(db, note, document=doc.docx, filename=_safe_filename(doc.filename))
     except SignatureError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except yousign_svc.YousignError as exc:

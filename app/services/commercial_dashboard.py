@@ -109,7 +109,9 @@ async def commercial_totals(db: AsyncSession) -> dict:
         )
     ) or 0
     accepted = (
-        await db.scalar(select(func.count(RateOffer.id)).where(RateOffer.status == OFFER_WON_STATUS))
+        await db.scalar(
+            select(func.count(RateOffer.id)).where(RateOffer.status == OFFER_WON_STATUS)
+        )
     ) or 0
     return {
         "ca_total_eur": Decimal(ca_total),
