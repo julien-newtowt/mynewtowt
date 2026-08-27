@@ -37,7 +37,13 @@ from app.models.onboard_sales import (
 )
 from app.models.stripe_event import StripeWebhookEvent
 from app.models.vessel import Vessel
-from app.permissions import require_permission
+from app.permissions import (
+    SEAFARER_ROLES,
+    VesselAccessDenied,
+    assert_vessel_access,
+    require_permission,
+    visible_vessel_id,
+)
 from app.services import notifications
 from app.services import onboard_sales as svc
 from app.services import stripe_checkout as stripe_svc
@@ -94,6 +100,14 @@ class _TransientSettlementError(Exception):
     """
 
 
+def _check_vessel(user, vessel_id: int | None) -> None:
+    """Cloisonnement par navire (ADR-012) — 403 explicite en cas de refus."""
+    try:
+        assert_vessel_access(user, vessel_id)
+    except VesselAccessDenied as e:
+        raise HTTPException(status_code=403, detail=str(e)) from None
+
+
 async def _release_checkout_session(sale: OnboardSale) -> None:
     """Ferme le lien de paiement Stripe encore ouvert sur cette vente.
 
@@ -129,12 +143,19 @@ async def _release_checkout_session(sale: OnboardSale) -> None:
         ) from e
 
 
-async def _get_sale_or_404(db: AsyncSession, reference: str) -> OnboardSale:
+async def _get_sale_or_404(db: AsyncSession, reference: str, *, user=None) -> OnboardSale:
+    """Charge une vente et vérifie qu'elle relève du périmètre de l'utilisateur.
+
+    Le contrôle est porté ici plutôt que route par route : toutes les routes de
+    vente passent par cette fonction, donc aucune ne peut l'oublier.
+    """
     sale = (
         await db.execute(select(OnboardSale).where(OnboardSale.reference == reference))
     ).scalar_one_or_none()
     if sale is None:
         raise HTTPException(status_code=404, detail="Vente introuvable")
+    if user is not None:
+        _check_vessel(user, sale.vessel_id)
     return sale
 
 
@@ -148,9 +169,13 @@ async def hub(
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
     # Le commandant rattaché à un navire est redirigé vers son tableau de bord.
-    assigned = getattr(user, "assigned_vessel_id", None)
-    if assigned:
-        return RedirectResponse(url=f"/captain/ventes/{assigned}", status_code=303)
+    # Utilisateur borné à un navire : on l'y envoie directement, il n'a rien à
+    # choisir — et la liste flotte ne doit pas lui être présentée (ADR-012).
+    scoped = visible_vessel_id(user)
+    if scoped:
+        return RedirectResponse(url=f"/captain/ventes/{scoped}", status_code=303)
+    if getattr(user, "role", None) in SEAFARER_ROLES:
+        _check_vessel(user, None)  # marin sans affectation → refus explicite
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     return templates.TemplateResponse(
         "staff/onboard_sales/hub.html",
@@ -288,6 +313,7 @@ async def vessel_dashboard(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if vessel is None:
         raise HTTPException(status_code=404, detail="Navire introuvable")
@@ -344,6 +370,7 @@ async def add_stock(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if vessel is None:
         raise HTTPException(status_code=404, detail="Navire introuvable")
@@ -386,6 +413,7 @@ async def create_sale_route(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if vessel is None:
         raise HTTPException(status_code=404, detail="Navire introuvable")
@@ -424,7 +452,7 @@ async def sale_detail(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
-    sale = await _get_sale_or_404(db, reference)
+    sale = await _get_sale_or_404(db, reference, user=user)
     await _reconcile_pending_card_payment(db, sale, recorded_by_id=user.id)
     vessel = await db.get(Vessel, sale.vessel_id)
     lines = list(
@@ -477,7 +505,7 @@ async def add_sale_line(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
-    sale = await _get_sale_or_404(db, reference)
+    sale = await _get_sale_or_404(db, reference, user=user)
     product = await db.get(OnboardProduct, product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="Produit introuvable")
@@ -497,7 +525,7 @@ async def delete_sale_line(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
-    sale = await _get_sale_or_404(db, reference)
+    sale = await _get_sale_or_404(db, reference, user=user)
     if sale.status != "draft":
         raise HTTPException(status_code=400, detail="Vente non modifiable")
     line = await db.get(OnboardSaleLine, line_id)
@@ -515,7 +543,7 @@ async def confirm_cash(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
-    sale = await _get_sale_or_404(db, reference)
+    sale = await _get_sale_or_404(db, reference, user=user)
     # Ferme d'abord le lien CB éventuel : un client qui a déjà scanné le QR
     # pourrait sinon payer par carte une vente encaissée en liquide.
     await _release_checkout_session(sale)
@@ -551,7 +579,7 @@ async def create_checkout(
             status_code=503,
             detail="Encaissement carte indisponible (Stripe non configuré). Utilisez les espèces.",
         )
-    sale = await _get_sale_or_404(db, reference)
+    sale = await _get_sale_or_404(db, reference, user=user)
     if sale.is_settled or sale.status == "paid":
         raise HTTPException(status_code=400, detail="Vente déjà réglée.")
     if sale.status not in ("draft", "pending_payment"):
@@ -606,7 +634,7 @@ async def checkout_page(
     user=Depends(require_permission("captain", "C")),
 ):
     """Affiche l'URL de paiement + QR code (SVG segno) de la session en cours."""
-    sale = await _get_sale_or_404(db, reference)
+    sale = await _get_sale_or_404(db, reference, user=user)
     if sale.status != "pending_payment" or not sale.stripe_checkout_session_id:
         return RedirectResponse(url=f"/captain/ventes/vente/{sale.reference}", status_code=303)
     try:
@@ -656,7 +684,7 @@ async def cancel_sale_route(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
-    sale = await _get_sale_or_404(db, reference)
+    sale = await _get_sale_or_404(db, reference, user=user)
     # « Rien n'est encaissé » n'était vrai que si le lien cessait d'être payable.
     await _release_checkout_session(sale)
     try:
@@ -689,6 +717,7 @@ async def registre(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if vessel is None:
         raise HTTPException(status_code=404, detail="Navire introuvable")
@@ -717,6 +746,7 @@ async def registre_csv(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> Response:
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if vessel is None:
         raise HTTPException(status_code=404, detail="Navire introuvable")
