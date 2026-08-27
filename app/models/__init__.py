@@ -134,6 +134,7 @@ from app.models.sof_event import (
     SofEvent,
 )
 from app.models.stowage import StowageItem, StowagePlan, StowageZoneSpec
+from app.models.stripe_event import StripeWebhookEvent
 from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
 from app.models.validation import (
@@ -276,6 +277,7 @@ __all__ = [
     "StowageItem",
     "StowagePlan",
     "StowageZoneSpec",
+    "StripeWebhookEvent",
     "Ticket",
     "TicketComment",
     "User",

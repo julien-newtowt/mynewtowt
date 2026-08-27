@@ -259,6 +259,18 @@ async def settle_sale(
 
     Ne bloque jamais sur un stock insuffisant (le paiement a eu lieu).
     """
+    # 0. Sérialisation — le verrou d'idempotence doit être lu sous verrou.
+    # La garde ci-dessous lisait un attribut d'un objet déjà chargé en session :
+    # en READ COMMITTED, deux transactions concurrentes (webhook redélivré +
+    # réconciliation à l'affichage) le voyaient toutes deux à NULL, créaient
+    # chacune un mouvement de caisse et un jeu de sorties de stock, et la
+    # seconde écrasait la référence de la première — mouvement orphelin,
+    # indétraçable, dans un registre sans route de suppression.
+    # Même patron que `packing_list.py` pour la séquence de numéros de BL.
+    locked = await db.get(OnboardSale, sale.id, with_for_update=True)
+    if locked is not None:
+        sale = locked
+
     # 1. Idempotence — déjà réglée : ne rien refaire.
     if sale.cashbox_movement_id is not None:
         # Compléter la référence de paiement n'a de sens que si la vente a bien

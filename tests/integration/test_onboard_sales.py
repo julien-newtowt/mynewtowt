@@ -121,6 +121,10 @@ async def test_webhook_settle_idempotent(db, staff_user):
     from app.routers.onboard_sales_router import _settle_from_session
 
     _vessel, _product, sale = await _setup_sale(db, staff_user)
+    # La vente porte l'identifiant de la session qui la paie : le webhook
+    # vérifie désormais cette correspondance avant d'écrire en caisse.
+    sale.stripe_checkout_session_id = "cs_test_123"
+    await db.flush()
     session_obj = {
         "id": "cs_test_123",
         "payment_status": "paid",
@@ -536,6 +540,8 @@ async def test_card_payment_on_a_cash_settled_sale_raises_an_incident(db, staff_
     from app.routers import onboard_sales_router as r
 
     _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.stripe_checkout_session_id = "cs_x"  # un lien CB avait été généré
+    await db.flush()
     await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
     assert sale.status == "paid"
 
@@ -573,6 +579,8 @@ async def test_webhook_replay_of_the_same_payment_is_not_an_incident(db, staff_u
     from app.routers import onboard_sales_router as r
 
     _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.stripe_checkout_session_id = "cs_x"
+    await db.flush()
     obj = {
         "id": "cs_x",
         "payment_status": "paid",
@@ -590,3 +598,245 @@ async def test_webhook_replay_of_the_same_payment_is_not_an_incident(db, staff_u
         )
         == 0
     )
+
+
+# ── Durcissement du webhook (audit 2026-08-27, lot 3) ───────────────────────
+#
+# Le webhook ne contrôlait que `payment_status` : il faisait confiance à
+# `metadata.sale_id` pour désigner la vente, puis écrivait en caisse le total
+# applicatif sans jamais regarder ce que Stripe avait réellement encaissé.
+
+
+def _fake_request(body: bytes):
+    """Requête Starlette minimale — permet d'exercer la vraie route webhook.
+
+    Aucun test du module ne passait jusqu'ici par une route ; c'est ce qui avait
+    laissé le défaut de permission `marins` invisible jusqu'au test à bord.
+    """
+    from starlette.requests import Request
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/webhooks/stripe",
+        "headers": [(b"stripe-signature", b"t=1,v1=deadbeef")],
+        "query_string": b"",
+    }
+    return Request(scope, receive)
+
+
+async def _pending_card_sale(db, staff_user, session_id="cs_x"):
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.status = "pending_payment"
+    sale.payment_method = "card"
+    sale.stripe_checkout_session_id = session_id
+    await db.flush()
+    return sale
+
+
+@pytest.mark.asyncio
+async def test_webhook_refuses_a_divergent_amount(db, staff_user):
+    """Le montant encaissé doit correspondre au montant attendu."""
+    from app.models.notification import Notification
+    from app.routers import onboard_sales_router as r
+
+    sale = await _pending_card_sale(db, staff_user)  # total 13,00 EUR
+    await r._settle_from_session(
+        db,
+        {
+            "id": "cs_x",
+            "payment_status": "paid",
+            "payment_intent": "pi_1",
+            "currency": "eur",
+            "amount_total": 100,  # 1,00 € au lieu de 13,00 €
+            "metadata": {"sale_id": str(sale.id)},
+        },
+    )
+    assert sale.status == "pending_payment"
+    assert await _count_vente_movements(db) == 0
+    incident = await db.scalar(
+        select(func.count())
+        .select_from(Notification)
+        .where(Notification.type == "onboard_payment_incident")
+    )
+    assert incident == 1
+
+
+@pytest.mark.asyncio
+async def test_webhook_refuses_an_event_from_another_environment(db, staff_user):
+    """Un compte Stripe partagé diffuse ses événements à tous ses endpoints."""
+    from app.routers import onboard_sales_router as r
+
+    sale = await _pending_card_sale(db, staff_user)
+    await r._settle_from_session(
+        db,
+        {
+            "id": "cs_x",
+            "payment_status": "paid",
+            "payment_intent": "pi_1",
+            "metadata": {"sale_id": str(sale.id), "env": "staging-ailleurs"},
+        },
+    )
+    assert sale.status == "pending_payment"
+    assert await _count_vente_movements(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_webhook_refuses_a_session_that_is_not_the_expected_one(db, staff_user):
+    from app.routers import onboard_sales_router as r
+
+    sale = await _pending_card_sale(db, staff_user, session_id="cs_attendue")
+    await r._settle_from_session(
+        db,
+        {
+            "id": "cs_autre",
+            "payment_status": "paid",
+            "payment_intent": "pi_1",
+            "metadata": {"sale_id": str(sale.id)},
+        },
+    )
+    assert sale.status == "pending_payment"
+    assert await _count_vente_movements(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_webhook_route_is_idempotent_per_event_id(db, staff_user, monkeypatch):
+    """Deux livraisons du même event.id : la seconde ne touche à rien."""
+    from app.models.stripe_event import StripeWebhookEvent
+    from app.routers import onboard_sales_router as r
+
+    sale = await _pending_card_sale(db, staff_user)
+    event = {
+        "id": "evt_1",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_x",
+                "payment_status": "paid",
+                "payment_intent": "pi_1",
+                "currency": "eur",
+                "amount_total": 1300,
+                "metadata": {"sale_id": str(sale.id)},
+            }
+        },
+    }
+    monkeypatch.setattr(r.stripe_svc.settings, "stripe_webhook_secret", "whsec_x")
+    monkeypatch.setattr(r.stripe_svc, "construct_event", lambda payload, sig: event)
+
+    first = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert first.status_code == 200
+    assert await _count_vente_movements(db) == 1
+
+    second = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert second.status_code == 200
+    assert b"duplicate" in second.body
+    assert await _count_vente_movements(db) == 1
+    # Une seule ligne au journal des événements.
+    assert await db.scalar(select(func.count()).select_from(StripeWebhookEvent)) == 1
+
+
+@pytest.mark.asyncio
+async def test_webhook_route_rejects_an_invalid_signature(db, monkeypatch):
+    from app.routers import onboard_sales_router as r
+
+    monkeypatch.setattr(r.stripe_svc.settings, "stripe_webhook_secret", "whsec_x")
+
+    def bad_signature(payload, sig):
+        raise r.stripe_svc.StripeCheckoutError("signature invalide")
+
+    monkeypatch.setattr(r.stripe_svc, "construct_event", bad_signature)
+    resp = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_webhook_route_returns_503_without_webhook_secret(db, monkeypatch):
+    """Secure-by-default : pas de secret, pas de traitement."""
+    from app.routers import onboard_sales_router as r
+
+    monkeypatch.setattr(r.stripe_svc.settings, "stripe_webhook_secret", None)
+    resp = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_webhook_asks_for_a_retry_when_the_period_is_closed(db, staff_user, monkeypatch):
+    """Échec transitoire : 500 pour que Stripe rejoue, plutôt que de perdre
+    l'écriture d'un paiement déjà encaissé."""
+    from app.routers import onboard_sales_router as r
+    from app.services.cashbox import PeriodClosed
+
+    sale = await _pending_card_sale(db, staff_user)
+    event = {
+        "id": "evt_closed",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_x",
+                "payment_status": "paid",
+                "payment_intent": "pi_1",
+                "metadata": {"sale_id": str(sale.id)},
+            }
+        },
+    }
+    monkeypatch.setattr(r.stripe_svc.settings, "stripe_webhook_secret", "whsec_x")
+    monkeypatch.setattr(r.stripe_svc, "construct_event", lambda payload, sig: event)
+
+    async def closed(*a, **kw):
+        raise PeriodClosed("Période clôturée")
+
+    monkeypatch.setattr(r.svc, "settle_sale", closed)
+    resp = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert resp.status_code == 500
+    assert b"retry" in resp.body
+
+
+@pytest.mark.asyncio
+async def test_a_retry_after_a_transient_failure_actually_settles(db, staff_user, monkeypatch):
+    """Le rejeu qui suit un 500 ne doit pas être rejeté comme doublon.
+
+    La marque d'idempotence est posée avant traitement pour sérialiser les
+    livraisons concurrentes ; sur échec transitoire elle doit être retirée,
+    sinon le paiement serait perdu malgré le 500 qui demandait le rejeu.
+    """
+    from app.routers import onboard_sales_router as r
+    from app.services.cashbox import PeriodClosed
+
+    sale = await _pending_card_sale(db, staff_user)
+    event = {
+        "id": "evt_retry",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_x",
+                "payment_status": "paid",
+                "payment_intent": "pi_1",
+                "currency": "eur",
+                "amount_total": 1300,
+                "metadata": {"sale_id": str(sale.id)},
+            }
+        },
+    }
+    monkeypatch.setattr(r.stripe_svc.settings, "stripe_webhook_secret", "whsec_x")
+    monkeypatch.setattr(r.stripe_svc, "construct_event", lambda payload, sig: event)
+
+    real_settle = r.svc.settle_sale
+
+    async def closed(*a, **kw):
+        raise PeriodClosed("Période clôturée")
+
+    monkeypatch.setattr(r.svc, "settle_sale", closed)
+    first = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert first.status_code == 500
+    assert await _count_vente_movements(db) == 0
+
+    # Le siège rouvre la période ; Stripe rejoue le même événement.
+    monkeypatch.setattr(r.svc, "settle_sale", real_settle)
+    second = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert second.status_code == 200
+    assert b"duplicate" not in second.body
+    assert await _count_vente_movements(db) == 1
+    assert sale.status == "paid"

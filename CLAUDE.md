@@ -109,9 +109,11 @@ Transport) — pionnier du transport maritime décarboné à la voile depuis
 > 💳 **Exception — « Vente à bord »** : Stripe est réintroduit de façon
 > **ciblée** pour l'encaissement CB des collaborateurs embarqués (module
 > `captain`, route `/captain/ventes`). Stripe **Checkout** (page hébergée,
-> lien + QR) + **webhook** `/webhooks/stripe`. Secure-by-default : sans
-> `STRIPE_SECRET_KEY`, la voie carte renvoie 503 et seule reste l'espèce.
-> Aucun autre circuit de paiement n'est concerné.
+> lien + QR) + **webhook** `/webhooks/stripe`. Secure-by-default : la voie
+> carte n'ouvre que si `STRIPE_SECRET_KEY` **et** `STRIPE_WEBHOOK_SECRET`
+> sont présents (sans canal de confirmation, une carte débitée ne remonterait
+> jamais) ; sinon 503 et seule reste l'espèce. Aucun autre circuit de
+> paiement n'est concerné.
 
 ## Stack technique
 
@@ -355,6 +357,37 @@ reste hors plateforme (arbitrage A5) : les conditions de règlement sont
   rouvre jamais le legacy), cache 20 s. Opt-out **par navire** en base via
   `audience.vessels_off` (codes/ids) pour le double-run pilote.
 
+### Vente à bord — ce qu'il faut savoir avant d'y toucher
+
+Module d'encaissement : il manipule de l'argent réel et alimente deux registres
+**append-only sans route de suppression** (le registre douanier de vente
+détaxée, le grand livre de caisse). Les invariants ci-dessous ne sont pas des
+préférences de style.
+
+- **`settle_sale` est le chemin unique de règlement**, et il est idempotent :
+  verrou `cashbox_movement_id` (unique en base), ligne relue
+  `with_for_update`, et journal `stripe_webhook_events` qui déduplique au
+  niveau `event.id`. Ne jamais créer un mouvement de caisse de vente ailleurs.
+- **Fermer la session Stripe avant tout geste qui rend la vente non payable**
+  (encaissement espèces, annulation, régénération de lien) — via
+  `_release_checkout_session`. Sans cela le lien reste payable et le client
+  peut débiter une seconde fois. En cas d'échec de fermeture, **refuser le
+  geste** plutôt que de poursuivre.
+- **Aucune saisie numérique ne va en base sans `utils.decimals`** :
+  `Decimal("nan")` est un littéral valide et `NaN == 0` vaut `False`, donc les
+  gardes naïves le laissent passer ; PostgreSQL l'accepte et `SUM()` le
+  propage. Une seule ligne suffit à rendre un solde définitivement illisible.
+- **Le webhook vérifie l'objet reçu** (session attendue, devise, `amount_total`,
+  `livemode`, `metadata.env`) avant d'écrire. Un écart est un **incident**
+  notifié au siège, jamais un cas métier silencieux.
+- **Distinguer l'échec transitoire du définitif** dans le webhook : un 200 sur
+  une cause temporaire (période clôturée) retire l'événement de la file de
+  retry Stripe et perd l'écriture d'un paiement encaissé.
+- **Deux arbitrages restent ouverts**, à ne pas trancher seul :
+  `docs/architecture/ADR-011` (les ventes CB créditent la caisse **espèces**,
+  ce qui fausse la variance de clôture) et `ADR-012` (aucun cloisonnement par
+  navire).
+
 ### Sécurité
 - **CSRF** : `CSRFMiddleware` (double-submit cookie `towt_csrf`).
   HTMX injecte automatiquement le header via `csrf-htmx.js`.
@@ -435,7 +468,7 @@ reste hors plateforme (arbitrage A5) : les conditions de règlement sont
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
 | Cashbox | `/cashbox` | ✅ EUR/USD/VND |
-| Vente à bord | `/captain/ventes` | ✅ catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe (avitaillement/franchise) + export CSV. Webhook `/webhooks/stripe` (signature + idempotent). Perm. `captain` (marins → CM via override) |
+| Vente à bord | `/captain/ventes` | 🟠 **MVP — pas encore exploitable en production** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` passe à CM par la migration 0125. **Boucle de correction absente** (ni reçu client, ni remboursement, ni correction d'un mouvement de caisse, ni clôture à la relève) et **aucun mode hors connexion**. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
 | RH (SIRH) | `/rh` | ✅ congés marins + SIRH sédentaires : dossier/CRUD/import, contrats & avenants + alertes, congés/absences + self-service `/rh/moi`, EVP + verrouillage période, export Silae CSV + journal des lots, coffre-fort bulletins + entretiens + reporting RH (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |
 | Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |

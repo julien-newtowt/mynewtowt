@@ -20,6 +20,7 @@ import segno
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -34,6 +35,7 @@ from app.models.onboard_sales import (
     OnboardSale,
     OnboardSaleLine,
 )
+from app.models.stripe_event import StripeWebhookEvent
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services import notifications
@@ -80,6 +82,16 @@ async def _default_leg_id(db: AsyncSession, vessel_id: int) -> int | None:
     return await db.scalar(
         select(Leg.id).where(Leg.vessel_id == vessel_id).order_by(Leg.id.desc()).limit(1)
     )
+
+
+class _TransientSettlementError(Exception):
+    """Échec de règlement rejouable : le webhook doit répondre 500, pas 200.
+
+    Répondre 200 acquitte l'événement auprès de Stripe, qui cesse de le
+    redélivrer. Sur une cause temporaire — période de caisse clôturée alors
+    qu'un paiement était en vol, indisponibilité base — l'écriture était perdue
+    définitivement, pour un paiement pourtant encaissé.
+    """
 
 
 async def _release_checkout_session(sale: OnboardSale) -> None:
@@ -841,6 +853,24 @@ async def _reconcile_pending_card_payment(
         return
     if getattr(session, "payment_status", None) not in ("paid", "no_payment_required"):
         return
+    # La session vient d'être relue par son identifiant : le contrôle porte donc
+    # sur le montant et la devise, qui peuvent avoir divergé si la vente a été
+    # modifiée entre la création du lien et le paiement.
+    mismatch = _session_matches_sale(
+        {
+            "id": sale.stripe_checkout_session_id,
+            "currency": getattr(session, "currency", None),
+            "amount_total": getattr(session, "amount_total", None),
+        },
+        sale,
+    )
+    if mismatch:
+        detail = f"{sale.reference} — réconciliation refusée : {mismatch}"
+        logger.error("Réconciliation Stripe : %s", detail)
+        await notifications.notify_onboard_payment_incident(
+            db, sale_reference=sale.reference, sale_id=sale.id, detail=detail
+        )
+        return
     payment_intent = getattr(session, "payment_intent", None)
     if isinstance(payment_intent, dict):
         payment_intent = payment_intent.get("id")
@@ -898,13 +928,90 @@ async def stripe_webhook(
         return JSONResponse({"error": "invalid_signature"}, status_code=400)
 
     etype = event.get("type", "")
+    event_id = event.get("id") or ""
     obj = event.get("data", {}).get("object", {})
-    if etype in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
-        await _settle_from_session(db, obj)
-    elif etype == "checkout.session.expired":
-        await _revert_from_session(db, obj)
-    # Tout autre event : accusé de réception (200) sans traitement.
+
+    # Idempotence au niveau **événement** : Stripe livre « au moins une fois ».
+    # L'insertion sous contrainte d'unicité sérialise les livraisons
+    # concurrentes du même événement — la seconde échoue ici et repart en 200
+    # sans avoir rien touché.
+    seen: StripeWebhookEvent | None = None
+    if event_id:
+        try:
+            # Point de reprise : sur conflit, seule l'insertion est annulée. Un
+            # `rollback()` complet annulerait aussi ce que la requête a déjà
+            # écrit — et, en test où la transaction couvre plusieurs appels,
+            # le traitement de la livraison précédente.
+            async with db.begin_nested():
+                seen = StripeWebhookEvent(event_id=event_id, event_type=etype[:80])
+                db.add(seen)
+        except IntegrityError:
+            logger.info("Webhook Stripe : événement déjà traité (%s)", event_id)
+            return JSONResponse({"received": True, "duplicate": True})
+
+    try:
+        if etype in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+            await _settle_from_session(db, obj)
+        elif etype == "checkout.session.expired":
+            await _revert_from_session(db, obj)
+        # Tout autre event : accusé de réception (200) sans traitement.
+    except _TransientSettlementError as e:
+        # Échec **transitoire** (période de caisse clôturée, indisponibilité
+        # base) : répondre 200 retirait l'événement de la file de retry Stripe
+        # et perdait définitivement l'écriture d'un paiement pourtant encaissé.
+        # Un 500 fait rejouer Stripe (jusqu'à 3 jours).
+        #
+        # La marque d'idempotence doit être **retirée** : la laisser ferait
+        # rejeter le rejeu comme doublon, et on perdrait le paiement malgré le
+        # 500. On n'a donc consommé l'``event.id`` que pour sérialiser les
+        # livraisons concurrentes, pas pour acquitter un traitement qui n'a pas
+        # eu lieu.
+        if seen is not None:
+            await db.delete(seen)
+            await db.flush()
+        logger.error("Webhook Stripe : échec transitoire, retry demandé — %s", e)
+        return JSONResponse({"error": "transient", "retry": True}, status_code=500)
     return JSONResponse({"received": True})
+
+
+def _session_matches_sale(obj, sale: OnboardSale) -> str | None:
+    """Vérifie que l'objet session Stripe correspond bien à cette vente.
+
+    Renvoie ``None`` si tout concorde, sinon le motif du refus. Le webhook ne
+    contrôlait jusqu'ici que ``payment_status`` : il faisait confiance à
+    ``metadata.sale_id`` pour désigner la vente, puis écrivait en caisse le
+    total **applicatif**, sans jamais regarder ce que Stripe avait réellement
+    encaissé.
+
+    Le cas concret que cela laissait passer n'est pas un exploit mais une
+    mésconfiguration courante : un même compte Stripe servant staging et
+    production diffuse chaque événement à **tous** ses endpoints du même mode.
+    Un règlement de test à 1,00 € soldait alors, avec une signature parfaitement
+    valide, la vente de même identifiant en production — plusieurs centaines
+    d'euros portés en caisse sans qu'un centime ait été encaissé pour elle.
+    """
+    session_id = obj.get("id")
+    if session_id and sale.stripe_checkout_session_id != session_id:
+        return f"session {session_id} ≠ session attendue {sale.stripe_checkout_session_id}"
+
+    env = (obj.get("metadata") or {}).get("env")
+    if env is not None and env != settings.app_env:
+        return f"événement émis par l'environnement « {env} »"
+
+    livemode = obj.get("livemode")
+    if livemode is not None and bool(livemode) != (settings.app_env == "production"):
+        return f"livemode={livemode} incohérent avec app_env={settings.app_env}"
+
+    currency = (obj.get("currency") or "").upper()
+    if currency and currency != sale.currency.upper():
+        return f"devise {currency} ≠ {sale.currency}"
+
+    amount_total = obj.get("amount_total")
+    if amount_total is not None:
+        expected = stripe_svc.amount_to_minor(Decimal(sale.total), sale.currency)
+        if int(amount_total) != expected:
+            return f"montant encaissé {amount_total} ≠ montant attendu {expected}"
+    return None
 
 
 async def _find_sale_from_session(db: AsyncSession, obj) -> OnboardSale | None:
@@ -938,6 +1045,26 @@ async def _settle_from_session(db: AsyncSession, obj) -> None:
     # arrivera ensuite avec payment_status='paid'.
     if obj.get("payment_status") not in ("paid", "no_payment_required"):
         return
+    mismatch = _session_matches_sale(obj, sale)
+    if mismatch:
+        # Un écart ici est un incident, pas un cas métier : on n'écrit rien et
+        # on le fait remonter, plutôt que de créditer une caisse sur la foi
+        # d'un événement qui ne concerne pas cette vente.
+        detail = f"{sale.reference} — événement Stripe refusé : {mismatch}"
+        logger.error("Webhook Stripe : %s", detail)
+        await activity_record(
+            db,
+            action="onboard_sale_webhook_mismatch",
+            user_name="stripe-webhook",
+            module="captain",
+            entity_type="onboard_sale",
+            entity_id=sale.id,
+            detail=detail,
+        )
+        await notifications.notify_onboard_payment_incident(
+            db, sale_reference=sale.reference, sale_id=sale.id, detail=detail
+        )
+        return
     payment_intent = obj.get("payment_intent")
     if isinstance(payment_intent, dict):
         payment_intent = payment_intent.get("id")
@@ -945,7 +1072,13 @@ async def _settle_from_session(db: AsyncSession, obj) -> None:
         settled = await svc.settle_sale(
             db, sale, payment_method="card", payment_intent_id=payment_intent
         )
+    except PeriodClosed as e:
+        # Transitoire par nature : le siège rouvrira la période, ou l'écriture
+        # sera datée du jour de réception. Ne pas acquitter, faire rejouer.
+        raise _TransientSettlementError(f"{sale.reference} : {e}") from e
     except (svc.OnboardSalesError, CashboxError) as e:
+        # Définitif (vente annulée, montant nul) : acquitter, mais laisser une
+        # trace exploitable — le client a payé, l'application ne l'encaisse pas.
         logger.error("Webhook Stripe : règlement échoué %s : %s", sale.reference, e)
         await _flag_duplicate_payment(db, sale, payment_intent, source="webhook")
         return
