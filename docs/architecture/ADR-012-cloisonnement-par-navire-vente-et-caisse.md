@@ -1,12 +1,13 @@
 # ADR-012 — Cloisonner « Vente à bord » et « Caisse de bord » par navire
 
 - **Date** : 2026-08-27
-- **Statut** : **proposé — en attente d'arbitrage** (Opérations + Armement)
-- **Décideur pressenti** : Opérations et Armement, sur proposition de Yasmin Ponce
+- **Statut** : **accepté** — arbitré le 2026-08-27
+- **Décideur** : Julien Gondé
 - **Rédaction** : audit multi-agents du module « Vente à bord » + « Caisse de bord »
   (cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md`, constat V-09)
-- **Nature de la décision** : elle change la **visibilité quotidienne** des
-  Opérations à terre. C'est un arbitrage d'organisation, pas un choix technique.
+- **Décision** : le **personnel maritime est borné à son navire d'affectation**.
+  Les seules consultations ouvertes sur la flotte entière sont le **planning de
+  navigation** et la **position des navires**.
 
 ---
 
@@ -48,10 +49,58 @@ pas la charge.
 
 ---
 
-## Ce qui doit être arbitré
+## Décision
 
-La question n'est pas « faut-il cloisonner ? » — l'écriture croisée entre
-navires n'est défendable par personne. Elle est : **jusqu'où**, et **pour qui**.
+La question n'était pas « faut-il cloisonner ? » — l'écriture croisée entre
+navires n'est défendable par personne — mais **jusqu'où** et **pour qui**.
+
+> **Le personnel maritime est borné à son navire d'affectation.** Les seules
+> autorisations de visualisation portant sur la flotte entière sont le
+> **planning de navigation** et la **position des navires**.
+
+Cette règle est **plus stricte que la recommandation initiale** (qui n'aurait
+borné que la caisse, en laissant ventes et inventaire visibles sur la flotte).
+Elle est aussi plus simple à tenir : une règle unique, deux exceptions nommées,
+là où la posture « ouverte sauf la caisse » demandait de trancher module par
+module ce qui est sensible — un test qu'une évolution ultérieure casse sans
+qu'on s'en aperçoive.
+
+### Ce que la décision implique, par question posée
+
+| Question | Réponse |
+|---|---|
+| **Écriture** — un marin écrit-il sur un autre navire ? | **Non**, jamais. |
+| **Lecture** — un marin lit-il la caisse ou les ventes d'un autre navire ? | **Non.** Seuls le planning de navigation et les positions restent ouverts sur la flotte. |
+| **Rôles siège** | Non bornés : ils doivent pouvoir corriger et administrer à distance. |
+
+### Portée de l'application immédiate
+
+La décision énonce un **principe général**, mais n'est appliquée pour l'instant
+qu'aux deux modules audités — **Vente à bord** et **Caisse de bord**. L'étendre
+aux autres modules du bord (`escale`, `cargo`, `crew`, `mrv`, `qhse`,
+`tickets`…) demande un passage dédié, module par module : chacun a ses écrans de
+liste, ses exports et ses cas de bord, et un cloisonnement posé à l'aveugle
+produirait exactement le blocage terrain que cette remédiation corrige.
+
+**Ce chantier reste donc ouvert** et doit être planifié explicitement — il n'est
+pas soldé par le présent ADR.
+
+### Point resté ouvert : qui clôture la caisse ?
+
+La recommandation initiale proposait de passer `close_period` sous `finance:M`,
+au nom de la séparation des tâches (le même compte encaisse, compte, clôture et
+verrouille). Cette question **n'a pas été tranchée séparément**, et la décision
+prise sur le contrôle de caisse va dans le sens contraire : le commandant
+sortant fige lui-même sa comptabilité à la relève (cf. §« Gel à la relève » du
+rapport d'audit). La clôture reste donc sous `captain:M`.
+
+La réserve de contrôle interne subsiste et reste **documentée** : elle sera à
+reprendre si un écart significatif survient, ou si un commissaire aux comptes
+la soulève.
+
+---
+
+## Éléments d'instruction (conservés pour mémoire)
 
 ### Question 1 — L'écriture
 
@@ -92,13 +141,12 @@ commandant à bord, ou le siège ? Cette réponse détermine aussi qui est
 
 ---
 
-## Recommandation
+## Mise en œuvre retenue
 
-- **Écriture** : bornée à `assigned_vessel_id`, rôles siège exemptés.
-- **Lecture** : posture **L3** — ouverte sur ventes et inventaire, bornée sur la
-  caisse.
-- **Clôture** : `finance:M`, avec notification.
-- **Mise en œuvre** : une dépendance FastAPI factorisée
+- **Écriture et lecture** : bornées à `assigned_vessel_id` pour le personnel
+  maritime, rôles siège exemptés.
+- **Clôture** : reste `captain:M` (cf. §« Point resté ouvert » ci-dessus).
+- **Détail technique** : une dépendance FastAPI factorisée
   `require_vessel_access(vessel_id, user)` appliquée aux deux routeurs, et
   `_get_sale_or_404` portant le contrôle (il ne filtre aujourd'hui que sur la
   référence, `onboard_sales_router.py:71-77`).
@@ -117,15 +165,20 @@ commandant à bord, ou le siège ? Cette réponse détermine aussi qui est
 - Documentation à mettre à jour : `CLAUDE.md` (matrice), notice commandant,
   guide utilisateur.
 
-## En attendant la décision
+## Risque résiduel assumé
 
-Le risque est **documenté** dans le rapport d'audit. Il est atténué, mais pas
-supprimé, par le fait que tous les accès sont journalisés (`activity_logs`) et
-que le périmètre réel est de deux navires exploités par des équipes qui se
-connaissent. Il redevient sérieux dès l'ajout d'un troisième navire ou d'un
-équipage extérieur.
+Un compte de personnel maritime **sans navire d'affectation** perd l'accès au
+module. C'est le comportement voulu — un cloisonnement qui laisse passer les
+comptes mal renseignés ne cloisonne rien — mais il déplace la fiabilité de la
+règle vers une donnée d'administration.
 
-Aucune action corrective n'est engagée avant arbitrage : borner un accès dont
-les Opérations dépendent quotidiennement, sans le leur avoir demandé, créerait
-un blocage terrain — exactement le défaut que cette remédiation corrige par
-ailleurs.
+Deux mesures l'encadrent :
+
+1. le refus est **explicite et actionnable** : il nomme la cause (compte non
+   rattaché) et la correction (`/admin/users`), au lieu du « 403 » muet qui a
+   fait échouer le premier test à bord ;
+2. le rattachement figure à la **checklist de mise en service** du module
+   (`docs/audit/2026-08-27-audit-vente-a-bord-caisse.md`, phase 2).
+
+Sans ces deux garde-fous, cette décision recréerait exactement le blocage
+terrain que la remédiation corrige par ailleurs.

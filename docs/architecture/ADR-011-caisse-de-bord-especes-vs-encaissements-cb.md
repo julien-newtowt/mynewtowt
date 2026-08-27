@@ -1,13 +1,14 @@
 # ADR-011 — Séparer la caisse d'espèces des encaissements par carte
 
 - **Date** : 2026-08-27
-- **Statut** : **proposé — en attente d'arbitrage** (direction financière)
-- **Décideur pressenti** : direction financière, sur proposition de Yasmin Ponce
+- **Statut** : **accepté** — arbitré le 2026-08-27
+- **Décideur** : Julien Gondé
 - **Rédaction** : audit multi-agents du module « Vente à bord » + « Caisse de bord »
   (cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md`, constat V-02)
-- **Ne pas implémenter avant décision** : ce changement modifie la définition
-  comptable de la caisse de bord et contredit une procédure déjà diffusée aux
-  commandants.
+- **Décision** : **option B** (colonne `medium`), et le rapprochement bancaire
+  des règlements CB **reste hors application** — il se fait dans le logiciel
+  comptable, à partir de l'export mensuel de l'application et de l'extrait
+  bancaire.
 
 ---
 
@@ -110,11 +111,24 @@ transit soldé au versement Stripe.
 
 ---
 
-## Recommandation
+## Décision
 
-**Option B.** Elle corrige la cause (une écriture d'espèces pour de l'argent qui
-n'est pas en espèces) sans changer le modèle mental du commandant, qui continue
-de voir un journal unique et un solde d'espèces — désormais juste.
+**Option B**, retenue le 2026-08-27. Elle corrige la cause — une écriture
+d'espèces pour de l'argent qui n'est pas en espèces — sans changer le modèle
+mental du commandant, qui continue de voir un journal unique et un solde
+d'espèces, désormais juste.
+
+**Le rapprochement bancaire ne vit pas dans l'application.** Il se fait dans le
+logiciel comptable, en rapprochant l'export mensuel de l'application et
+l'extrait bancaire. C'est cohérent avec l'arbitrage A5, qui a déjà sorti la
+facturation fret de la plateforme : l'application produit la matière comptable,
+elle ne tient pas la comptabilité.
+
+*Conséquence directe sur l'export* : le CSV mensuel doit distinguer les
+règlements carte des espèces et porter leur total séparément, sinon le
+comptable ne peut pas faire le rapprochement que cette décision lui confie.
+C'est la seule obligation que la décision crée côté application — et elle rend
+l'option C (deux caisses distinctes) définitivement sans objet.
 
 ## Prérequis impératif à l'implémentation
 
@@ -150,17 +164,9 @@ partie du lot, pas de la suite.
 - **Écran** : un total « CB à rapprocher » distinct du solde d'espèces, et à
   terme un rapprochement Stripe (hors périmètre de cet ADR).
 
-## Question ouverte pour le décideur
+## Question tranchée
 
-Le rapprochement bancaire des encaissements carte doit-il vivre **dans**
-l'application (écran de rapprochement ventes CB ↔ versements Stripe) ou rester
-**hors plateforme**, cohérent avec l'arbitrage A5 qui a sorti la facturation
-fret de l'outil ? La réponse conditionne l'option C à moyen terme.
-
-## En attendant la décision
-
-Le comportement actuel reste en place. Le risque est **documenté** dans le
-rapport d'audit et connu du commandant par la notice. Si un pilote à bord a lieu
-avant l'arbitrage, la recommandation opérationnelle est de le mener **en espèces
-seules** (`STRIPE_SECRET_KEY` non provisionné) : la question ne se pose alors
-pas, puisque tous les encaissements sont effectivement en espèces.
+*Le rapprochement bancaire des encaissements carte doit-il vivre dans
+l'application ?* → **Non.** Logiciel comptable, sur la base de l'export mensuel
+et de l'extrait bancaire. Aucun écran de rapprochement Stripe n'est à
+construire ; l'option C perd son seul argument.
