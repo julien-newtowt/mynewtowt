@@ -202,6 +202,9 @@ async def test_create_session_prefixes_sku(monkeypatch):
     from app.services import stripe_checkout as sc
 
     monkeypatch.setattr(sc.settings, "stripe_secret_key", "sk_test_x")
+    # La voie carte exige désormais aussi le secret de webhook : sans canal de
+    # confirmation, un lien de paiement encaisserait sans jamais remonter.
+    monkeypatch.setattr(sc.settings, "stripe_webhook_secret", "whsec_x")
     captured: dict = {}
 
     def fake_sync(**kwargs):
@@ -363,3 +366,227 @@ async def test_cancel_sale_success_path(db, staff_user):
     assert sale.status == "cancelled"
     assert sale.cancelled_at is not None
     assert sale.cashbox_movement_id is None
+
+
+# ── Fermeture du lien Stripe (audit 2026-08-27, lot 2) ──────────────────────
+#
+# Sans fermeture, la session restait payable ~24 h après un encaissement en
+# espèces ou une annulation : le client qui avait déjà scanné le QR pouvait
+# payer une seconde fois, sans trace ni voie de remboursement.
+
+
+def _stripe_on(monkeypatch):
+    from app.services import stripe_checkout as sc
+
+    monkeypatch.setattr(sc.settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(sc.settings, "stripe_webhook_secret", "whsec_x")
+    return sc
+
+
+def test_card_path_requires_both_secrets(monkeypatch):
+    """Secure-by-default : une clé sans webhook n'ouvre pas la voie carte."""
+    from app.services import stripe_checkout as sc
+
+    monkeypatch.setattr(sc.settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(sc.settings, "stripe_webhook_secret", None)
+    # L'API reste joignable (on doit pouvoir fermer/réconcilier l'existant)…
+    assert sc.is_configured() is True
+    # …mais aucun nouveau lien ne peut être proposé au client.
+    assert sc.card_payments_enabled() is False
+
+    monkeypatch.setattr(sc.settings, "stripe_secret_key", None)
+    assert sc.is_configured() is False
+    assert sc.card_payments_enabled() is False
+
+
+@pytest.mark.asyncio
+async def test_expire_session_closes_an_open_session(monkeypatch):
+    from types import SimpleNamespace
+
+    sc = _stripe_on(monkeypatch)
+    expired: dict = {}
+
+    async def fake_retrieve(session_id):
+        return SimpleNamespace(id=session_id, status="open", payment_status="unpaid")
+
+    monkeypatch.setattr(sc, "retrieve_session", fake_retrieve)
+    monkeypatch.setattr(
+        sc.stripe.checkout.Session,
+        "expire",
+        lambda sid, **kw: expired.setdefault("id", sid) or SimpleNamespace(status="expired"),
+    )
+    assert await sc.expire_session("cs_open") == "expired"
+    assert expired["id"] == "cs_open"
+
+
+@pytest.mark.asyncio
+async def test_expire_session_refuses_when_already_paid(monkeypatch):
+    """Le cas dangereux : le client a payé pendant qu'on cliquait."""
+    from types import SimpleNamespace
+
+    sc = _stripe_on(monkeypatch)
+
+    async def fake_retrieve(session_id):
+        return SimpleNamespace(id=session_id, status="complete", payment_status="paid")
+
+    monkeypatch.setattr(sc, "retrieve_session", fake_retrieve)
+    with pytest.raises(sc.StripeSessionAlreadyPaid):
+        await sc.expire_session("cs_paid")
+
+
+@pytest.mark.asyncio
+async def test_confirm_cash_closes_the_payment_link_first(db, staff_user, monkeypatch):
+    """L'encaissement espèces doit fermer le lien avant d'écrire en caisse."""
+    from app.routers import onboard_sales_router as r
+
+    sc = _stripe_on(monkeypatch)
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.stripe_checkout_session_id = "cs_open"
+    sale.status = "pending_payment"
+    await db.flush()
+
+    calls: list[str] = []
+
+    async def fake_expire(session_id):
+        calls.append(session_id)
+        return "expired"
+
+    monkeypatch.setattr(sc, "expire_session", fake_expire)
+    await r.confirm_cash(sale.reference, db=db, user=staff_user)
+
+    assert calls == ["cs_open"], "le lien Stripe n'a pas été fermé"
+    assert sale.status == "paid"
+    assert sale.payment_method == "cash"
+
+
+@pytest.mark.asyncio
+async def test_confirm_cash_refuses_when_link_cannot_be_closed(db, staff_user, monkeypatch):
+    """Stripe injoignable : on refuse plutôt que d'exposer à un double débit."""
+    from fastapi import HTTPException
+
+    from app.routers import onboard_sales_router as r
+
+    sc = _stripe_on(monkeypatch)
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.stripe_checkout_session_id = "cs_open"
+    sale.status = "pending_payment"
+    await db.flush()
+
+    async def boom(session_id):
+        raise sc.StripeCheckoutError("réseau indisponible")
+
+    monkeypatch.setattr(sc, "expire_session", boom)
+    with pytest.raises(HTTPException) as exc:
+        await r.confirm_cash(sale.reference, db=db, user=staff_user)
+    assert exc.value.status_code == 502
+    # Rien n'a été encaissé.
+    assert sale.status == "pending_payment"
+    assert sale.cashbox_movement_id is None
+    assert await _count_vente_movements(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_cancel_refuses_when_client_already_paid(db, staff_user, monkeypatch):
+    """Annuler une vente que le client vient de régler par carte est refusé."""
+    from fastapi import HTTPException
+
+    from app.routers import onboard_sales_router as r
+
+    sc = _stripe_on(monkeypatch)
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.stripe_checkout_session_id = "cs_paid"
+    sale.status = "pending_payment"
+    await db.flush()
+
+    async def already_paid(session_id):
+        raise sc.StripeSessionAlreadyPaid("déjà réglée")
+
+    monkeypatch.setattr(sc, "expire_session", already_paid)
+    with pytest.raises(HTTPException) as exc:
+        await r.cancel_sale_route(sale.reference, db=db, user=staff_user)
+    assert exc.value.status_code == 409
+    assert sale.status == "pending_payment"
+
+
+@pytest.mark.asyncio
+async def test_expired_event_never_resurrects_a_cancelled_sale(db, staff_user):
+    """Une annulation est une décision, pas un état transitoire."""
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.status = "cancelled"
+    await db.flush()
+    await svc.revert_to_draft(db, sale)
+    assert sale.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_expired_event_reverts_a_pending_sale(db, staff_user):
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.status = "pending_payment"
+    sale.stripe_checkout_session_id = "cs_x"
+    await db.flush()
+    await svc.revert_to_draft(db, sale)
+    assert sale.status == "draft"
+    assert sale.stripe_checkout_session_id is None
+
+
+@pytest.mark.asyncio
+async def test_card_payment_on_a_cash_settled_sale_raises_an_incident(db, staff_user):
+    """Double débit : la garde d'idempotence tenait, mais en silence."""
+    from app.models.notification import Notification
+    from app.routers import onboard_sales_router as r
+
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    assert sale.status == "paid"
+
+    # Le client paie malgré tout par carte : le webhook arrive.
+    await r._settle_from_session(
+        db,
+        {
+            "id": "cs_x",
+            "payment_status": "paid",
+            "payment_intent": "pi_double",
+            "metadata": {"sale_id": str(sale.id)},
+        },
+    )
+    # Aucun second mouvement de caisse (idempotence préservée)…
+    assert await _count_vente_movements(db) == 1
+    # …mais l'incident est désormais visible du siège.
+    notifs = (
+        (
+            await db.execute(
+                select(Notification).where(Notification.type == "onboard_payment_incident")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(notifs) == 1
+    assert sale.reference in notifs[0].title
+    assert "pi_double" in (notifs[0].detail or "")
+
+
+@pytest.mark.asyncio
+async def test_webhook_replay_of_the_same_payment_is_not_an_incident(db, staff_user):
+    """Un rejeu du même paiement reste un no-op normal, pas une alerte."""
+    from app.models.notification import Notification
+    from app.routers import onboard_sales_router as r
+
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    obj = {
+        "id": "cs_x",
+        "payment_status": "paid",
+        "payment_intent": "pi_1",
+        "metadata": {"sale_id": str(sale.id)},
+    }
+    await r._settle_from_session(db, obj)
+    await r._settle_from_session(db, obj)  # redélivrance Stripe
+    assert await _count_vente_movements(db) == 1
+    assert (
+        await db.scalar(
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.type == "onboard_payment_incident")
+        )
+        == 0
+    )

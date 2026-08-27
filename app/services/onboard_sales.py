@@ -261,7 +261,16 @@ async def settle_sale(
     """
     # 1. Idempotence — déjà réglée : ne rien refaire.
     if sale.cashbox_movement_id is not None:
-        if payment_intent_id and not sale.stripe_payment_intent_id:
+        # Compléter la référence de paiement n'a de sens que si la vente a bien
+        # été réglée **par carte** : la rattacher à une vente encaissée en
+        # espèces la faisait passer pour une vente carte et masquait le seul
+        # signal disponible d'un double débit du client (l'appelant compare
+        # justement `stripe_payment_intent_id` pour détecter l'incident).
+        if (
+            payment_intent_id
+            and sale.payment_method == "card"
+            and not sale.stripe_payment_intent_id
+        ):
             sale.stripe_payment_intent_id = payment_intent_id
             await db.flush()
         return False
@@ -331,8 +340,16 @@ async def cancel_sale(db: AsyncSession, sale: OnboardSale) -> None:
 
 
 async def revert_to_draft(db: AsyncSession, sale: OnboardSale) -> None:
-    """Repasse une vente en brouillon (ex. session Stripe expirée)."""
-    if sale.is_settled or sale.status == "paid":
+    """Repasse en brouillon une vente **en attente de paiement**.
+
+    Déclenché par l'événement ``checkout.session.expired``. La garde porte sur
+    le statut exact : elle ne se contentait auparavant d'écarter que les ventes
+    réglées, si bien qu'une vente **annulée** ressuscitait en brouillon à
+    l'expiration de son lien — redevenant modifiable et encaissable, avec un
+    ``cancelled_at`` incohérent. Une annulation est une décision, pas un état
+    transitoire.
+    """
+    if sale.status != "pending_payment":
         return
     sale.status = "draft"
     sale.stripe_checkout_session_id = None

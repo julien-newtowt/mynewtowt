@@ -36,6 +36,7 @@ from app.models.onboard_sales import (
 )
 from app.models.vessel import Vessel
 from app.permissions import require_permission
+from app.services import notifications
 from app.services import onboard_sales as svc
 from app.services import stripe_checkout as stripe_svc
 from app.services.activity import record as activity_record
@@ -79,6 +80,41 @@ async def _default_leg_id(db: AsyncSession, vessel_id: int) -> int | None:
     return await db.scalar(
         select(Leg.id).where(Leg.vessel_id == vessel_id).order_by(Leg.id.desc()).limit(1)
     )
+
+
+async def _release_checkout_session(sale: OnboardSale) -> None:
+    """Ferme le lien de paiement Stripe encore ouvert sur cette vente.
+
+    À appeler **avant** tout geste qui rend la vente non payable par carte —
+    encaissement en espèces, annulation, régénération d'un lien. Sans cela le
+    lien restait vivant : le client qui avait déjà scanné le QR pouvait payer
+    une vente déjà réglée en liquide ou annulée, et ce second débit n'était ni
+    tracé ni remboursable depuis l'application.
+
+    En cas d'échec on **lève** plutôt que de continuer : mieux vaut refuser le
+    geste et le rejouer avec du réseau que d'exposer le client à un double
+    paiement. Les deux cas non bloquants sont l'absence de session et une voie
+    carte non configurée (aucune session n'a alors pu être créée).
+    """
+    if not sale.stripe_checkout_session_id or not stripe_svc.is_configured():
+        return
+    try:
+        await stripe_svc.expire_session(sale.stripe_checkout_session_id)
+    except stripe_svc.StripeNotConfigured:
+        return
+    except stripe_svc.StripeSessionAlreadyPaid as e:
+        # Le client vient de payer : poursuivre encaisserait une seconde fois.
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except stripe_svc.StripeCheckoutError as e:
+        logger.error("Fermeture du lien Stripe impossible (%s) : %s", sale.reference, e)
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Le lien de paiement n'a pas pu être fermé (Stripe injoignable). "
+                "N'encaissez pas maintenant : réessayez une fois le réseau revenu, "
+                "sinon le client risque de payer deux fois."
+            ),
+        ) from e
 
 
 async def _get_sale_or_404(db: AsyncSession, reference: str) -> OnboardSale:
@@ -416,7 +452,7 @@ async def sale_detail(
             "products": products,
             "status_labels": SALE_STATUS_LABELS,
             "payment_labels": PAYMENT_METHOD_LABELS,
-            "stripe_enabled": stripe_svc.is_configured(),
+            "stripe_enabled": stripe_svc.card_payments_enabled(),
         },
     )
 
@@ -468,6 +504,9 @@ async def confirm_cash(
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
     sale = await _get_sale_or_404(db, reference)
+    # Ferme d'abord le lien CB éventuel : un client qui a déjà scanné le QR
+    # pourrait sinon payer par carte une vente encaissée en liquide.
+    await _release_checkout_session(sale)
     try:
         await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=user.id)
     except PeriodClosed as e:
@@ -495,7 +534,7 @@ async def create_checkout(
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
     """Génère un lien de paiement Stripe (Checkout Session) pour la vente."""
-    if not stripe_svc.is_configured():
+    if not stripe_svc.card_payments_enabled():
         raise HTTPException(
             status_code=503,
             detail="Encaissement carte indisponible (Stripe non configuré). Utilisez les espèces.",
@@ -507,6 +546,9 @@ async def create_checkout(
         raise HTTPException(status_code=400, detail="Vente non payable dans cet état.")
     if sale.total <= 0:
         raise HTTPException(status_code=400, detail="Vente sans montant.")
+    # Régénération : l'ancienne session était simplement écrasée en base et
+    # restait payable — deux liens vivants pour une seule vente.
+    await _release_checkout_session(sale)
     lines = (
         (await db.execute(select(OnboardSaleLine).where(OnboardSaleLine.sale_id == sale.id)))
         .scalars()
@@ -557,7 +599,11 @@ async def checkout_page(
         return RedirectResponse(url=f"/captain/ventes/vente/{sale.reference}", status_code=303)
     try:
         session = await stripe_svc.retrieve_session(sale.stripe_checkout_session_id)
-    except (stripe_svc.StripeNotConfigured, stripe_svc.StripeCheckoutError) as e:
+    except stripe_svc.StripeNotConfigured as e:
+        # Voie carte fermée : c'est une indisponibilité de service, pas une
+        # panne d'amont — même sémantique que la route de création (503).
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except stripe_svc.StripeCheckoutError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     pay_url = getattr(session, "url", None)
     # Session expirée / déjà réglée : plus d'URL ouvrable → retour au détail.
@@ -599,6 +645,8 @@ async def cancel_sale_route(
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
     sale = await _get_sale_or_404(db, reference)
+    # « Rien n'est encaissé » n'était vrai que si le lien cessait d'être payable.
+    await _release_checkout_session(sale)
     try:
         await svc.cancel_sale(db, sale)
     except svc.OnboardSalesError as e:
@@ -725,6 +773,47 @@ async def _sku_map_for_lines(db: AsyncSession, lines) -> dict[int, str]:
     return dict(rows)
 
 
+async def _flag_duplicate_payment(
+    db: AsyncSession, sale: OnboardSale, payment_intent: str | None, *, source: str
+) -> None:
+    """Signale un paiement carte arrivé sur une vente déjà réglée ou annulée.
+
+    ``settle_sale`` renvoie ``False`` dans ce cas — c'est sa garde d'idempotence
+    qui joue, et elle est correcte : elle empêche un second mouvement de caisse.
+    Mais elle le faisait **en silence**, alors que la situation signifie que le
+    client a payé une fois de trop : l'argent est chez Stripe, le grand livre ne
+    le voit pas, et aucune route de remboursement n'existe encore. Sans trace
+    exploitable, personne ne pouvait rembourser à froid.
+
+    On ne signale que le vrai doublon : un rejeu de webhook sur une vente déjà
+    réglée **par le même paiement** est un no-op normal, pas un incident.
+    """
+    known = sale.stripe_payment_intent_id
+    is_new_card_payment = bool(payment_intent) and payment_intent != known
+    if not (is_new_card_payment or sale.status == "cancelled"):
+        return
+    detail = (
+        f"{sale.reference} — paiement carte reçu ({source}) alors que la vente est "
+        f"« {sale.status_label} »"
+        + (f" (réglée en {sale.payment_method_label})" if sale.payment_method else "")
+        + f". payment_intent={payment_intent or '?'}. "
+        "Aucun mouvement de caisse n'a été créé : remboursement à traiter côté Stripe."
+    )
+    logger.error("Incident encaissement vente à bord : %s", detail)
+    await activity_record(
+        db,
+        action="onboard_sale_duplicate_payment",
+        user_name=f"stripe-{source}",
+        module="captain",
+        entity_type="onboard_sale",
+        entity_id=sale.id,
+        detail=detail,
+    )
+    await notifications.notify_onboard_payment_incident(
+        db, sale_reference=sale.reference, sale_id=sale.id, detail=detail
+    )
+
+
 async def _reconcile_pending_card_payment(
     db: AsyncSession, sale: OnboardSale, *, recorded_by_id: int | None = None
 ) -> None:
@@ -765,7 +854,10 @@ async def _reconcile_pending_card_payment(
         )
     except (svc.OnboardSalesError, CashboxError) as e:
         logger.error("Réconciliation : règlement échoué %s : %s", sale.reference, e)
+        await _flag_duplicate_payment(db, sale, payment_intent, source="reconcile")
         return
+    if not settled:
+        await _flag_duplicate_payment(db, sale, payment_intent, source="reconcile")
     if settled:
         await activity_record(
             db,
@@ -855,7 +947,10 @@ async def _settle_from_session(db: AsyncSession, obj) -> None:
         )
     except (svc.OnboardSalesError, CashboxError) as e:
         logger.error("Webhook Stripe : règlement échoué %s : %s", sale.reference, e)
+        await _flag_duplicate_payment(db, sale, payment_intent, source="webhook")
         return
+    if not settled:
+        await _flag_duplicate_payment(db, sale, payment_intent, source="webhook")
     if settled:
         await activity_record(
             db,
