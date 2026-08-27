@@ -23,6 +23,53 @@
 </section>
 
 <article class="card mb-4">
+  <div class="flex gap-3" style="align-items:baseline;flex-wrap:wrap;justify-content:space-between;">
+    <div>
+      <h2 style="margin:0;">Contrôle de caisse</h2>
+      <p class="text-muted" style="margin:var(--space-1) 0 0;">
+        À chaque fin d'embarquement et chaque fin de mois, le commandant sortant
+        déclare l'état complet de sa caisse, coupure par coupure.
+      </p>
+    </div>
+    <a href="/cashbox/{{ vessel.id }}/etat" class="btn btn-cuivre">🧾 Déclarer l'état de caisse</a>
+  </div>
+
+  {% if cash_counts %}
+    <div class="table-scroll mt-3">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Date</th><th>Motif</th><th>Déclaré par</th><th>Remis à</th>
+            <th>Écarts</th><th>Statut</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in cash_counts %}
+            <tr>
+              <td class="mono">{{ c.counted_on|date }}</td>
+              <td>{{ c.trigger_label }}</td>
+              <td>{{ c.declared_by_name }}</td>
+              <td class="text-muted">{{ c.handover_to_name or "—" }}</td>
+              <td class="mono">
+                {% for b in c.currencies %}
+                  <span class="{% if b.variance < 0 %}text-error{% elif b.variance > 0 %}text-warning{% else %}text-success{% endif %}">
+                    {{ b.currency }} {{ "%+.2f"|format(b.variance|float) }}
+                  </span>{% if not loop.last %} · {% endif %}
+                {% else %}—{% endfor %}
+              </td>
+              <td><span class="pill">{{ c.status_label }}</span></td>
+              <td><a href="/cashbox/{{ vessel.id }}/etat/{{ c.id }}" class="btn btn-ghost btn-sm">Voir</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-muted mt-3">Aucun état de caisse déclaré pour ce navire.</p>
+  {% endif %}
+</article>
+
+<article class="card mb-4">
   <h2>Nouveau mouvement</h2>
   <form method="post" action="/cashbox/{{ vessel.id }}/movement" enctype="multipart/form-data" data-cashbox-form>
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
@@ -60,8 +107,8 @@
         <input id="description" name="description" required />
       </div>
       <div class="field">
-        <label for="occurred_at">Date/heure</label>
-        <input id="occurred_at" name="occurred_at" type="datetime-local" />
+        <label for="occurred_at">Date d'effet</label>
+        <input id="occurred_at" name="occurred_at" type="date" />
       </div>
       <div class="field" style="grid-column: span 2;">
         <label for="receipt">Justificatif (scan / photo)</label>
@@ -149,7 +196,7 @@
         {% for m in movements %}
           <tr>
             <td class="mono text-sm">
-              {{ m.occurred_at|datetime }}
+              {{ m.occurred_at|date }}
               {% if m.is_locked %}<span class="pill pill-neutral" title="Verrouillé (clôturé)">🔒</span>{% endif %}
             </td>
             <td class="mono">{{ m.currency }}</td>

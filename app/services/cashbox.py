@@ -63,6 +63,23 @@ async def get_or_create(db: AsyncSession, vessel_id: int) -> OnboardCashbox:
     return cb
 
 
+def as_movement_date(when: datetime) -> datetime:
+    """Ramène une date d'effet à minuit UTC.
+
+    Un mouvement de caisse s'impute à une **journée**, pas à un instant : le
+    commandant note ce qu'il a encaissé ou dépensé dans la journée, souvent en
+    différé. Conserver une heure donnait une fausse précision — celle de la
+    saisie, pas celle de l'opération — et rendait deux mouvements du même jour
+    incomparables selon qu'ils avaient été saisis ou déduits automatiquement.
+
+    Les bornes de période (`month_bounds`) sont inclusives depuis 00:00:00 :
+    ramener à minuit ne fait donc sortir aucun mouvement de sa période.
+    """
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return when.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 async def add_movement(
     db: AsyncSession,
     cashbox: OnboardCashbox,
@@ -91,7 +108,7 @@ async def add_movement(
         raise CashboxError("Amount cannot be zero")
     if not description.strip():
         raise CashboxError("Description required")
-    occ = occurred_at or datetime.now(UTC)
+    occ = as_movement_date(occurred_at or datetime.now(UTC))
     if await is_period_closed(db, cashbox, currency.upper(), occ):
         raise PeriodClosed("Période clôturée : impossible d'ajouter un mouvement à cette date.")
     mov = CashboxMovement(
@@ -173,7 +190,7 @@ async def recent_movements(
     stmt = (
         select(CashboxMovement)
         .where(CashboxMovement.cashbox_id == cashbox.id)
-        .order_by(CashboxMovement.occurred_at.desc())
+        .order_by(CashboxMovement.occurred_at.desc(), CashboxMovement.id.desc())
         .limit(limit)
     )
     if currency:
@@ -197,7 +214,7 @@ async def period_movements(
             CashboxMovement.occurred_at >= start,
             CashboxMovement.occurred_at <= end,
         )
-        .order_by(CashboxMovement.occurred_at.asc())
+        .order_by(CashboxMovement.occurred_at.asc(), CashboxMovement.id.asc())
     )
     if currency:
         stmt = stmt.where(CashboxMovement.currency == currency.upper())

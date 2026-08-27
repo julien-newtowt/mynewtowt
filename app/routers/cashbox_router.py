@@ -16,6 +16,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.cash_count import (
+    CASH_COUNT_TRIGGER_LABELS,
+    CASH_COUNT_TRIGGERS,
+    CashCount,
+)
 from app.models.onboard_cashbox import (
     CATEGORY_KIND,
     CATEGORY_LABELS,
@@ -28,12 +33,14 @@ from app.models.onboard_cashbox import (
 )
 from app.models.vessel import Vessel
 from app.permissions import require_permission
+from app.services import cash_count as cash_count_svc
 from app.services import safe_files
 from app.services.activity import record as activity_record
 from app.services.cashbox import (
     CashboxError,
     PeriodClosed,
     add_movement,
+    as_movement_date,
     balances,
     close_month,
     export_csv,
@@ -109,6 +116,188 @@ async def cashbox_detail(
             "category_kind": CATEGORY_KIND,
             "default_year": now.year,
             "default_month": now.month,
+            "cash_counts": await cash_count_svc.history(db, cb, limit=12),
+        },
+    )
+
+
+# ── Contrôle de caisse : état déclaré par le commandant ─────────────────────
+
+
+@router.get("/{vessel_id}/etat", response_class=HTMLResponse)
+async def cash_count_form(
+    request: Request,
+    vessel_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> HTMLResponse:
+    """Grille de comptage — une colonne par devise, une ligne par coupure."""
+    vessel = await db.get(Vessel, vessel_id)
+    if not vessel:
+        raise HTTPException(status_code=404, detail="Vessel not found")
+    cb = await get_or_create(db, vessel_id)
+    today = datetime.now(UTC).date()
+    blocks = []
+    for cur in SUPPORTED_CURRENCIES:
+        blocks.append(
+            {
+                "currency": cur,
+                "denominations": cash_count_svc.denominations_for(cur),
+                # Solde théorique affiché à titre indicatif : le commandant
+                # compte d'abord, l'écart se lit ensuite. On ne le met pas dans
+                # un champ pré-rempli — un comptage qu'on aligne sur le
+                # théorique ne contrôle rien.
+                "computed": await cash_count_svc.computed_balance(db, cb, cur, upto=today),
+            }
+        )
+    return templates.TemplateResponse(
+        "staff/cashbox/cash_count_form.html",
+        {
+            "request": request,
+            "user": user,
+            "vessel": vessel,
+            "cashbox": cb,
+            "blocks": blocks,
+            "today": today,
+            "triggers": CASH_COUNT_TRIGGERS,
+            "trigger_labels": CASH_COUNT_TRIGGER_LABELS,
+            "currency_labels": CURRENCY_LABELS,
+        },
+    )
+
+
+@router.post("/{vessel_id}/etat")
+async def submit_cash_count(
+    request: Request,
+    vessel_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> RedirectResponse:
+    """Enregistre l'état déclaré et fige les écarts par devise.
+
+    Les quantités arrivent sous la forme ``qty_{DEVISE}_{valeur}`` ; le total
+    n'est jamais repris du formulaire, il est recalculé depuis ces quantités.
+    """
+    vessel = await db.get(Vessel, vessel_id)
+    if not vessel:
+        raise HTTPException(status_code=404, detail="Vessel not found")
+    cb = await get_or_create(db, vessel_id)
+    form = await request.form()
+
+    raw_date = str(form.get("counted_on") or "").strip()
+    try:
+        counted_on = (
+            datetime.fromisoformat(raw_date).date() if raw_date else datetime.now(UTC).date()
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Date de comptage invalide (format attendu AAAA-MM-JJ)."
+        ) from None
+
+    counts: dict[str, dict[Decimal, int]] = {}
+    bulk_coins: dict[str, Decimal] = {}
+    reasons: dict[str, str] = {}
+    for cur in SUPPORTED_CURRENCIES:
+        # Une devise n'est déclarée que si le commandant l'a cochée : un bloc à
+        # zéro pour une devise réellement détenue produirait un faux écart.
+        if not form.get(f"declare_{cur}"):
+            continue
+        quantities: dict[Decimal, int] = {}
+        for value, _kind in cash_count_svc.denominations_for(cur):
+            raw = str(form.get(f"qty_{cur}_{value}") or "").strip()
+            if not raw:
+                continue
+            try:
+                qty = int(raw)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Nombre de coupures invalide ({cur} {value}).",
+                ) from None
+            if qty < 0:
+                raise HTTPException(
+                    status_code=400, detail=f"Nombre de coupures négatif ({cur} {value})."
+                )
+            if qty:
+                quantities[value] = qty
+        raw_bulk = str(form.get(f"bulk_{cur}") or "").strip()
+        if raw_bulk:
+            try:
+                bulk_coins[cur] = parse_decimal(
+                    raw_bulk, label=f"pièces en vrac {cur}", min_value=Decimal("0"), quantize=CENTS
+                )
+            except DecimalInputError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from None
+        reason = str(form.get(f"reason_{cur}") or "").strip()
+        if reason:
+            reasons[cur] = reason
+        counts[cur] = quantities
+
+    declared_by = (
+        str(form.get("declared_by_name") or "").strip()
+        or getattr(user, "full_name", None)
+        or user.username
+    )
+
+    try:
+        count = await cash_count_svc.declare_count(
+            db,
+            cb,
+            trigger=str(form.get("trigger") or "controle"),
+            counted_on=counted_on,
+            declared_by_name=declared_by,
+            declared_by_id=user.id,
+            handover_to_name=str(form.get("handover_to_name") or "").strip() or None,
+            counts=counts,
+            bulk_coins=bulk_coins,
+            variance_reasons=reasons,
+            notes=str(form.get("notes") or "").strip() or None,
+        )
+    except cash_count_svc.CashCountError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    await activity_record(
+        db,
+        action="cashbox_cash_count",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="cash_count",
+        entity_id=count.id,
+        detail=(
+            f"vessel={vessel_id} {count.trigger} {count.counted_on} — écarts : "
+            + ", ".join(f"{c.currency} {c.variance}" for c in count.currencies)
+        ),
+    )
+    return RedirectResponse(url=f"/cashbox/{vessel_id}/etat/{count.id}", status_code=303)
+
+
+@router.get("/{vessel_id}/etat/{count_id}", response_class=HTMLResponse)
+async def cash_count_detail(
+    request: Request,
+    vessel_id: int,
+    count_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> HTMLResponse:
+    vessel = await db.get(Vessel, vessel_id)
+    if not vessel:
+        raise HTTPException(status_code=404, detail="Vessel not found")
+    count = await db.get(CashCount, count_id)
+    if count is None:
+        raise HTTPException(status_code=404, detail="État de caisse introuvable")
+    cb = await get_or_create(db, vessel_id)
+    if count.cashbox_id != cb.id:
+        raise HTTPException(status_code=404, detail="État de caisse introuvable")
+    return templates.TemplateResponse(
+        "staff/cashbox/cash_count_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "vessel": vessel,
+            "count": count,
+            "currency_labels": CURRENCY_LABELS,
         },
     )
 
@@ -153,6 +342,9 @@ async def add_mov(
             ) from None
         if occ.tzinfo is None:
             occ = occ.replace(tzinfo=UTC)
+        # Le formulaire ne saisit plus qu'une date ; on tronque quand même, pour
+        # les requêtes qui porteraient encore une heure (page mise en cache).
+        occ = as_movement_date(occ)
 
     receipt_url, receipt_mime = await _maybe_store_receipt(receipt)
 
