@@ -12,6 +12,7 @@ from app.models.booking import Booking, BookingItem
 from app.models.booking_message import BookingMessage
 from app.models.booking_note import BookingNote
 from app.models.bunker import BunkerOperation, BunkerTankAllocation
+from app.models.cash_count import CashCount, CashCountCurrency, CashCountLine
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.claim import (
     Claim,
@@ -166,6 +167,9 @@ __all__ = [
     "BunkerOperation",
     "BunkerTankAllocation",
     "CargoDocument",
+    "CashCount",
+    "CashCountCurrency",
+    "CashCountLine",
     "CashboxClosure",
     "CashboxMovement",
     "ChatConversation",

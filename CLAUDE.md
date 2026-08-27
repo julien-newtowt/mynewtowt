@@ -388,6 +388,24 @@ préférences de style.
   ce qui fausse la variance de clôture) et `ADR-012` (aucun cloisonnement par
   navire).
 
+### Caisse de bord — contrôle et détenteur
+
+- **Un mouvement de caisse s'impute à une journée, pas à un instant** :
+  `cashbox.as_movement_date` ramène toute date d'effet à minuit UTC. Conserver
+  une heure donnait la précision de la *saisie*, pas celle de l'opération.
+  Le tri se départage ensuite par ordre de saisie (`id`).
+- **`cash_counts` est l'opération de contrôle** : le commandant sortant déclare
+  sa caisse coupure par coupure à chaque fin d'embarquement et chaque fin de
+  mois. Deux invariants : le total est **recalculé** depuis les quantités (un
+  total déclaratif ne contrôle rien), et l'écart est **figé** avec le solde
+  théorique du moment (un mouvement saisi après coup ne réécrit pas un contrôle
+  rendu — il apparaît dans le suivant).
+- **Ne déclarer que les devises réellement détenues** : un bloc à zéro sur une
+  devise présente en caisse fabriquerait un faux écart.
+- `cash_count.computed_balance` fait un `SUM` simple et **testable** ; à ne pas
+  confondre avec `cashbox.balances`, qui ventile entrées/sorties via
+  `greatest`/`least` — absents de SQLite, d'où sa couverture de test nulle.
+
 ### Sécurité
 - **CSRF** : `CSRFMiddleware` (double-submit cookie `towt_csrf`).
   HTMX injecte automatiquement le header via `csrf-htmx.js`.
@@ -467,7 +485,7 @@ préférences de style.
 | KPI | `/kpi` | ✅ vue KPI consolidée + Carbon Report par leg (intensités t·nm) ; **certificats CO₂ = label Anemos** (par booking + RSE annuel) |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
-| Cashbox | `/cashbox` | ✅ EUR/USD/VND |
+| Cashbox | `/cashbox` | ✅ EUR/USD/VND · mouvements datés à la **journée** (pas d'heure) · **contrôle de caisse** : état déclaré par le commandant coupure par coupure à chaque fin d'embarquement et fin de mois, écarts figés et historisés (`cash_counts`) |
 | Vente à bord | `/captain/ventes` | 🟠 **MVP — pas encore exploitable en production** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` passe à CM par la migration 0125. **Boucle de correction absente** (ni reçu client, ni remboursement, ni correction d'un mouvement de caisse, ni clôture à la relève) et **aucun mode hors connexion**. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
 | RH (SIRH) | `/rh` | ✅ congés marins + SIRH sédentaires : dossier/CRUD/import, contrats & avenants + alertes, congés/absences + self-service `/rh/moi`, EVP + verrouillage période, export Silae CSV + journal des lots, coffre-fort bulletins + entretiens + reporting RH (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |
 | Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |

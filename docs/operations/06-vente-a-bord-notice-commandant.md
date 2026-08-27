@@ -118,6 +118,37 @@ bord** (`/cashbox`), en positif, dans la devise de la vente. Vous y suivez le
 solde en temps réel et la **clôture mensuelle**. Rien à ressaisir : la vente et
 la caisse sont liées.
 
+## 7 bis. Déclarer l'état de sa caisse (contrôle)
+
+**Quand :** à chaque **fin d'embarquement** (avant de débarquer) et à chaque
+**fin de mois**. Un contrôle ponctuel est possible à tout moment.
+
+**Où :** Caisse de bord → **« Déclarer l'état de caisse »**.
+
+**Comment :**
+
+1. Choisissez le **motif** (relève / fin de mois / contrôle) et la **date** du
+   comptage.
+2. Indiquez votre nom, et — s'il s'agit d'une relève — celui du commandant
+   **entrant**. C'est ce qui rend la responsabilité du cash traçable : jusqu'ici
+   la caisse n'avait pas de détenteur identifié.
+3. **Cochez uniquement les devises que la caisse contient réellement.** Une
+   devise cochée mais non comptée produirait un faux écart.
+4. Comptez physiquement et saisissez le **nombre de coupures** pour chaque
+   valeur, billets puis pièces. Si vous ne triez pas la petite monnaie, portez
+   son montant global sur la ligne **« Pièces non détaillées »**.
+5. Validez. Le total est **recalculé par le système** à partir de vos
+   quantités : il n'est jamais repris tel quel d'un champ « total ».
+
+**L'écart n'a pas à être nul.** Il est calculé, affiché, et **conservé** avec le
+solde théorique du jour. Expliquez-le dans le champ prévu (avance non saisie,
+erreur de rendu de monnaie, dépense sans justificatif…). Un écart expliqué vaut
+mieux qu'un comptage ajusté pour tomber juste.
+
+**Un mouvement saisi après coup ne modifie pas un état déjà déclaré** : il
+apparaîtra dans le contrôle suivant. C'est voulu — un contrôle qui se réécrirait
+tout seul ne contrôlerait rien.
+
 ## 8. Le registre douanier (vente détaxée)
 
 Le **Registre des mouvements — vente détaxée** (bouton *« Registre »* dans

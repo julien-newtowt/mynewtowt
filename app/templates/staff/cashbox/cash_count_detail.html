@@ -1,0 +1,89 @@
+{% extends "staff/_layout.html" %}
+{% block title %}État de caisse du {{ count.counted_on|date }} — {{ vessel.name }}{% endblock %}
+{% block content %}
+<a href="/cashbox/{{ vessel.id }}" class="btn btn-ghost mb-3">← Caisse {{ vessel.code }}</a>
+<header class="mb-4">
+  <span class="kicker">Contrôle de caisse · {{ count.trigger_label }}</span>
+  <h1 class="display">État du {{ count.counted_on|date }}</h1>
+  <p class="text-muted">
+    Déclaré par <strong>{{ count.declared_by_name }}</strong>
+    {% if count.handover_to_name %} — remis à <strong>{{ count.handover_to_name }}</strong>{% endif %}
+    · <span class="pill">{{ count.status_label }}</span>
+  </p>
+</header>
+
+{% if count.has_variance %}
+  <div class="alert alert-warning mb-4">
+    Cet état présente un écart. Le solde théorique est figé au moment de la
+    déclaration : un mouvement saisi depuis n'a pas modifié ce contrôle.
+  </div>
+{% else %}
+  <div class="alert alert-success mb-4">Comptage conforme au solde théorique sur toutes les devises déclarées.</div>
+{% endif %}
+
+{% for block in count.currencies %}
+  <article class="card mb-4">
+    <h2>{{ currency_labels.get(block.currency, block.currency) }}</h2>
+    <section class="kpi-strip mb-3">
+      <div class="kpi-card">
+        <div class="label">Compté</div>
+        <div class="value mono">{{ "%.2f"|format(block.counted_total|float) }}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Théorique</div>
+        <div class="value mono">{{ "%.2f"|format(block.computed_balance|float) }}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Écart</div>
+        <div class="value mono {% if block.variance < 0 %}text-error{% elif block.variance > 0 %}text-warning{% else %}text-success{% endif %}">
+          {{ "%+.2f"|format(block.variance|float) }}
+        </div>
+      </div>
+    </section>
+
+    {% if block.variance_reason %}
+      <p><strong>Explication déclarée :</strong> {{ block.variance_reason }}</p>
+    {% endif %}
+
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr><th>Valeur</th><th>Type</th><th>Nombre</th><th>Total</th></tr>
+        </thead>
+        <tbody>
+          {% for line in block.lines %}
+            <tr>
+              <td class="mono">{{ "%g"|format(line.denomination|float) }}</td>
+              <td class="text-muted">{{ "Billet" if line.kind == "billet" else "Pièce" }}</td>
+              <td class="mono">{{ line.quantity }}</td>
+              <td class="mono">{{ "%.2f"|format(line.line_total|float) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-muted">Aucune coupure déclarée.</td></tr>
+          {% endfor %}
+          {% if block.bulk_coins_amount %}
+            <tr>
+              <td colspan="3">Pièces non détaillées</td>
+              <td class="mono">{{ "%.2f"|format(block.bulk_coins_amount|float) }}</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+{% endfor %}
+
+{% if count.notes %}
+  <article class="card mb-4">
+    <h2>Observations</h2>
+    <p>{{ count.notes }}</p>
+  </article>
+{% endif %}
+
+{% if count.review_comment %}
+  <article class="card">
+    <h2>Suite donnée par le siège</h2>
+    <p>{{ count.review_comment }}</p>
+  </article>
+{% endif %}
+{% endblock %}
