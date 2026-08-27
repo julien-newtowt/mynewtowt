@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from app.models.onboard_cashbox import CashboxMovement
 from app.models.onboard_sales import OnboardProduct
 from app.models.vessel import Vessel
+from app.services import cashbox as cashbox_svc
 from app.services import onboard_sales as svc
 
 
@@ -840,3 +841,123 @@ async def test_a_retry_after_a_transient_failure_actually_settles(db, staff_user
     assert b"duplicate" not in second.body
     assert await _count_vente_movements(db) == 1
     assert sale.status == "paid"
+
+
+# ── Remboursement, geste du siège (ADR-013) ─────────────────────────────────
+#
+# Le statut `refunded` était déclaré, lu par la garde de `settle_sale`, promis
+# aux Opérations par la notice — et écrit par aucun chemin de code. Une vente
+# encaissée par erreur était définitive, corrigible seulement en SQL.
+
+
+@pytest.mark.asyncio
+async def test_refund_is_a_reversal_not_a_deletion(db, staff_user):
+    from app.models.onboard_cashbox import CashboxMovement
+
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    original = sale.cashbox_movement_id
+
+    mov = await svc.refund_sale(db, sale, reason="erreur de montant", refunded_by_id=staff_user.id)
+
+    assert sale.status == "refunded"
+    assert sale.refunded_at is not None
+    assert sale.refund_reason == "erreur de montant"
+    # Contre-passation : montant opposé, même catégorie, même support.
+    assert mov.amount == Decimal("-13.00")
+    assert mov.category == "vente_a_bord"
+    assert mov.medium == "cash"
+    # Le mouvement d'origine est intact : rien n'est supprimé.
+    assert (await db.get(CashboxMovement, original)).amount == Decimal("13.00")
+    assert sale.cashbox_movement_id == original
+    # Deux mouvements, de somme nulle.
+    total = await db.scalar(
+        select(func.coalesce(func.sum(CashboxMovement.amount), 0)).where(
+            CashboxMovement.category == "vente_a_bord"
+        )
+    )
+    assert Decimal(total) == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_refund_returns_tracked_goods_to_stock(db, staff_user):
+    vessel, product, sale = await _setup_sale(db, staff_user)  # stock 10, vente 2
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    assert await svc.stock_on_hand(db, vessel_id=vessel.id, product_id=product.id) == Decimal("8")
+    await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+    assert await svc.stock_on_hand(db, vessel_id=vessel.id, product_id=product.id) == Decimal("10")
+
+
+@pytest.mark.asyncio
+async def test_refund_is_idempotent(db, staff_user):
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    first = await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+    second = await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+    assert first.id == second.id
+    assert await _count_vente_movements(db) == 2  # l'encaissement et sa contre-passation
+
+
+@pytest.mark.asyncio
+async def test_an_unsettled_sale_cannot_be_refunded(db, staff_user):
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    with pytest.raises(svc.OnboardSalesError):
+        await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+
+
+@pytest.mark.asyncio
+async def test_a_card_refund_uses_the_card_channel(db, staff_user):
+    """Une vente CB est recréditée sur la carte, pas prise dans le coffre."""
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.settle_sale(db, sale, payment_method="card", recorded_by_id=staff_user.id)
+    mov = await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+    assert mov.medium == "card"
+
+
+@pytest.mark.asyncio
+async def test_the_bridge_can_only_request_a_refund(db, staff_user):
+    """Le bord signale ; sans cela la règle se contournerait par téléphone."""
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    with pytest.raises(svc.OnboardSalesError):  # pas encore réglée
+        await svc.request_refund(db, sale, note="oups")
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    await svc.request_refund(db, sale, note="erreur de montant")
+    assert sale.refund_pending is True
+    assert sale.status == "paid"  # la demande ne rembourse rien par elle-même
+    assert sale.refund_request_note == "erreur de montant"
+
+
+@pytest.mark.asyncio
+async def test_refund_route_requires_the_office_permission(db, staff_user, monkeypatch):
+    """`captain:M` encaisse ; il ne doit pas pouvoir défaire un encaissement."""
+    from app.permissions import has_permission
+
+    # Les rôles qui encaissent n'ont pas `finance:M`…
+    for role in ("marins", "operation", "technique"):
+        assert has_permission(role, "captain", "M") or role == "marins"
+        assert not has_permission(role, "finance", "M")
+    # …et les rôles du siège l'ont.
+    assert has_permission("administrateur", "finance", "M")
+
+
+@pytest.mark.asyncio
+async def test_refund_after_a_handover_is_deferred_not_lost(db, staff_user):
+    """L'argent est réellement sorti : l'écriture ne peut pas être perdue."""
+    from datetime import UTC, datetime
+
+    from app.services import cash_count as cc
+
+    vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    cb = await cashbox_svc.get_or_create(db, vessel.id)
+    await cc.declare_count(
+        db,
+        cb,
+        trigger="fin_embarquement",
+        counted_on=datetime.now(UTC).date(),
+        declared_by_name="Cdt Sortant",
+        counts={"EUR": {Decimal("5"): 1}},
+    )
+    mov = await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+    assert sale.status == "refunded"
+    assert "reporté" in mov.description

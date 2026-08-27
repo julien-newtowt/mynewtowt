@@ -167,10 +167,13 @@ avitaillements, ventes, ajustements, inventaires, retours. Il constitue la
   le client ne peut plus payer une vente annulée. Si l'écran signale que le
   lien n'a pas pu être fermé, **n'annulez pas** : réessayez avec du réseau.
 - **Après règlement** : une vente **Payée** ne s'annule pas d'un clic (un
-  encaissement a eu lieu). Le remboursement se traite **aujourd'hui hors
-  application**, côté siège (le statut *Remboursée* n'est pas encore
-  actionnable dans l'écran) : signalez la vente au siège en précisant sa
-  référence.
+  encaissement a eu lieu). Sur la vente, utilisez **« Demander un remboursement
+  au siège »** en indiquant le motif. Le siège est alerté et traite le
+  remboursement ; **le bord n'y touche pas** — on encaisse à bord, on ne défait
+  pas un encaissement à bord.
+- Une fois traité, la vente passe **Remboursée**. Rien n'est supprimé : un
+  mouvement de caisse **négatif** vient équilibrer l'encaissement d'origine, et
+  les articles suivis en stock **reviennent en stock** automatiquement.
 
 ---
 

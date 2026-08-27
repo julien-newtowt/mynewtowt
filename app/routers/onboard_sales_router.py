@@ -41,6 +41,7 @@ from app.permissions import (
     SEAFARER_ROLES,
     VesselAccessDenied,
     assert_vessel_access,
+    has_permission,
     require_permission,
     visible_vessel_id,
 )
@@ -493,6 +494,10 @@ async def sale_detail(
             "status_labels": SALE_STATUS_LABELS,
             "payment_labels": PAYMENT_METHOD_LABELS,
             "stripe_enabled": stripe_svc.card_payments_enabled(),
+            # Le bouton de remboursement n'apparaît qu'à qui a le droit de
+            # l'utiliser : proposer un geste qui finira en 403 est le défaut
+            # d'ergonomie qui a fait échouer le premier test à bord.
+            "can_refund": has_permission(getattr(user, "role", ""), "finance", "M"),
         },
     )
 
@@ -706,6 +711,126 @@ async def cancel_sale_route(
 
 
 # ───────────────────────────────────────────────────────────────── Registre douanier
+
+
+@router.post("/vente/{reference}/refund-request")
+async def request_refund_route(
+    reference: str,
+    note: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> RedirectResponse:
+    """Le bord **signale** une vente à rembourser. Il ne rembourse pas (ADR-013).
+
+    Sans ce geste, la règle « seul le siège rembourse » se contournerait par
+    téléphone et la trace se perdrait.
+    """
+    sale = await _get_sale_or_404(db, reference, user=user)
+    try:
+        await svc.request_refund(db, sale, note=note.strip() or None)
+    except svc.OnboardSalesError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    await activity_record(
+        db,
+        action="onboard_sale_refund_requested",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="onboard_sale",
+        entity_id=sale.id,
+        detail=f"{sale.reference} — {note.strip() or 'sans motif'}",
+    )
+    await notifications.create(
+        db,
+        type="onboard_payment_incident",
+        title=f"Remboursement demandé — {sale.reference}",
+        detail=(
+            f"{sale.reference} · {sale.total} {sale.currency} · "
+            f"demandé par {user.username}" + (f" — {note.strip()}" if note.strip() else "")
+        ),
+        link=f"/captain/ventes/vente/{sale.reference}",
+        target_role="administrateur",
+    )
+    return RedirectResponse(url=f"/captain/ventes/vente/{sale.reference}", status_code=303)
+
+
+@router.post("/vente/{reference}/refund")
+async def refund_route(
+    reference: str,
+    reason: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("finance", "M")),
+) -> RedirectResponse:
+    """Rembourse une vente réglée — **réservé au siège** (ADR-013).
+
+    La permission est délibérément `finance:M`, et non `captain:M` : cette
+    dernière est celle qui encaisse. Un rôle capable d'encaisser *et* de défaire
+    un encaissement n'offre aucun contrôle. Qui détient `finance:M` reste
+    réglable dans `/admin/permissions`.
+    """
+    # Pas de contrôle de navire ici : le siège rembourse pour toute la flotte.
+    sale = await _get_sale_or_404(db, reference)
+    if sale.is_refunded:
+        return RedirectResponse(url=f"/captain/ventes/vente/{sale.reference}", status_code=303)
+    if not sale.is_settled:
+        raise HTTPException(status_code=400, detail="Vente non réglée : rien à rembourser.")
+
+    # Le remboursement Stripe est déclenché **avant** l'écriture comptable : on
+    # ne veut pas d'une contre-passation en base pour un remboursement que le
+    # prestataire aurait refusé.
+    stripe_refund_id = None
+    if sale.payment_method == "card" and sale.stripe_payment_intent_id:
+        if not stripe_svc.is_configured():
+            raise HTTPException(
+                status_code=503,
+                detail="Remboursement carte indisponible (Stripe non configuré).",
+            )
+        try:
+            refund = await stripe_svc.create_refund(sale.stripe_payment_intent_id)
+        except stripe_svc.StripeNotConfigured as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
+        except stripe_svc.StripeCheckoutError as e:
+            raise HTTPException(status_code=502, detail=str(e)) from e
+        stripe_refund_id = getattr(refund, "id", None)
+
+    try:
+        await svc.refund_sale(
+            db,
+            sale,
+            reason=reason.strip() or None,
+            refunded_by_id=user.id,
+            stripe_refund_id=stripe_refund_id,
+        )
+    except (svc.OnboardSalesError, CashboxError) as e:
+        # Le remboursement Stripe est déjà parti : l'écart doit être visible.
+        logger.error("Remboursement %s : écriture impossible — %s", sale.reference, e)
+        await notifications.notify_onboard_payment_incident(
+            db,
+            sale_reference=sale.reference,
+            sale_id=sale.id,
+            detail=(
+                f"{sale.reference} — remboursement Stripe émis "
+                f"({stripe_refund_id or 'n/a'}) mais écriture comptable refusée : {e}"
+            ),
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    await activity_record(
+        db,
+        action="onboard_sale_refunded",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="onboard_sale",
+        entity_id=sale.id,
+        detail=(
+            f"{sale.reference} {sale.total} {sale.currency} "
+            f"({sale.payment_method_label}) — {reason.strip() or 'sans motif'}"
+        ),
+    )
+    return RedirectResponse(url=f"/captain/ventes/vente/{sale.reference}", status_code=303)
 
 
 @router.get("/{vessel_id}/registre", response_class=HTMLResponse)

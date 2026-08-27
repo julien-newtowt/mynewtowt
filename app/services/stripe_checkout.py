@@ -269,6 +269,27 @@ async def expire_session(session_id: str) -> str:
     return getattr(closed, "status", "expired") or "expired"
 
 
+async def create_refund(payment_intent_id: str, *, amount_minor: int | None = None) -> Any:
+    """Rembourse un paiement carte. Montant total par défaut.
+
+    Utilise ``is_configured`` et non ``card_payments_enabled`` : rembourser doit
+    rester possible sur une installation dont la voie carte a été refermée —
+    c'est même le cas où l'on en a le plus besoin.
+    """
+    if not is_configured():
+        raise StripeNotConfigured("Stripe non configuré : remboursement impossible.")
+    payload: dict[str, Any] = {"payment_intent": payment_intent_id}
+    if amount_minor is not None:
+        payload["amount"] = amount_minor
+    try:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: stripe.Refund.create(**payload, **_api_kwargs())
+        )
+    except stripe.StripeError as e:  # type: ignore[attr-defined]
+        raise StripeCheckoutError(f"Remboursement Stripe refusé : {e}") from e
+
+
 def construct_event(payload: bytes, sig_header: str) -> Any:
     """Vérifie la signature d'un webhook Stripe et renvoie l'event.
 

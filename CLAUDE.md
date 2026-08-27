@@ -383,10 +383,14 @@ préférences de style.
 - **Distinguer l'échec transitoire du définitif** dans le webhook : un 200 sur
   une cause temporaire (période clôturée) retire l'événement de la file de
   retry Stripe et perd l'écriture d'un paiement encaissé.
-- **Deux arbitrages restent ouverts**, à ne pas trancher seul :
-  `docs/architecture/ADR-011` (les ventes CB créditent la caisse **espèces**,
-  ce qui fausse la variance de clôture) et `ADR-012` (aucun cloisonnement par
-  navire).
+- **Le remboursement est un geste du siège** (ADR-013) : route sous
+  `finance:M`, jamais `captain:M` — celle-là encaisse. Il se fait par
+  **contre-passation** (mouvement de caisse négatif, même catégorie, même
+  support, retours en stock), **jamais par suppression** : les deux registres
+  restent append-only. Le bord peut seulement *demander* un remboursement.
+- **Arbitrages tranchés le 2026-08-27** : `ADR-011` (espèces ≠ CB),
+  `ADR-012` (cloisonnement par navire), `ADR-013` (remboursement, valeur du
+  registre, gel à la relève). Les lire avant de rouvrir l'un de ces sujets.
 
 ### Caisse de bord — contrôle et détenteur
 
@@ -506,7 +510,7 @@ préférences de style.
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
 | Cashbox | `/cashbox` | ✅ EUR/USD/VND · mouvements datés à la **journée** (pas d'heure) · **contrôle de caisse** : état déclaré par le commandant coupure par coupure à chaque fin d'embarquement et fin de mois, écarts figés et historisés (`cash_counts`) |
-| Vente à bord | `/captain/ventes` | 🟠 **MVP — pas encore exploitable en production** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` passe à CM par la migration 0125. **Boucle de correction absente** (ni reçu client, ni remboursement, ni correction d'un mouvement de caisse, ni clôture à la relève) et **aucun mode hors connexion**. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
+| Vente à bord | `/captain/ventes` | 🟡 **Boucle de correction en place, pas encore éprouvé à bord** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` passe à CM par la migration 0125. Remboursement (siège, par contre-passation), contrôle de caisse et gel à la relève livrés. **Restent absents** : reçu client, correction d'un mouvement de caisse, et tout **mode hors connexion**. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
 | RH (SIRH) | `/rh` | ✅ congés marins + SIRH sédentaires : dossier/CRUD/import, contrats & avenants + alertes, congés/absences + self-service `/rh/moi`, EVP + verrouillage période, export Silae CSV + journal des lots, coffre-fort bulletins + entretiens + reporting RH (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |
 | Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |

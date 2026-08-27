@@ -215,10 +215,26 @@ class OnboardSale(Base):
         ForeignKey("cashbox_movements.id", ondelete="SET NULL")
     )
 
+    # ── Remboursement (ADR-013) ──────────────────────────────────────────────
+    # Geste du **siège** : le bord encaisse, il ne défait pas un encaissement.
+    # Réalisé par contre-passation — un mouvement de caisse négatif et des
+    # retours en stock — jamais par suppression : les deux registres restent
+    # append-only, c'est ce qui fait leur valeur.
+    refund_cashbox_movement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cashbox_movements.id", ondelete="SET NULL")
+    )
+    stripe_refund_id: Mapped[str | None] = mapped_column(String(255))
+    refund_reason: Mapped[str | None] = mapped_column(Text)
+    refunded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    # Demande de remboursement émise depuis le bord, en attente de décision.
+    refund_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refund_request_note: Mapped[str | None] = mapped_column(Text)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     recorded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
@@ -236,6 +252,7 @@ class OnboardSale(Base):
         # qui devenait orphelin et indétraçable. La contrainte est le filet de
         # dernier recours derrière le verrou applicatif de `settle_sale`.
         UniqueConstraint("cashbox_movement_id", name="uq_onboard_sale_cashbox_movement"),
+        UniqueConstraint("refund_cashbox_movement_id", name="uq_onboard_sale_refund_movement"),
         CheckConstraint("total >= 0", name="ck_onboard_sales_total_non_negative"),
         CheckConstraint(_sql_in("status", SALE_STATUSES), name="ck_onboard_sales_status"),
         CheckConstraint(
@@ -254,6 +271,15 @@ class OnboardSale(Base):
     @property
     def payment_method_label(self) -> str:
         return PAYMENT_METHOD_LABELS.get(self.payment_method or "", "—")
+
+    @property
+    def is_refunded(self) -> bool:
+        return self.refund_cashbox_movement_id is not None
+
+    @property
+    def refund_pending(self) -> bool:
+        """Remboursement demandé par le bord, pas encore traité par le siège."""
+        return self.refund_requested_at is not None and not self.is_refunded
 
     @property
     def is_settled(self) -> bool:

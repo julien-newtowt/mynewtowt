@@ -23,6 +23,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.onboard_cashbox import CashboxMovement
 from app.models.onboard_sales import (
     REGIME_FRANCHISE,
     SUPPORTED_CURRENCIES,
@@ -360,6 +361,110 @@ async def cancel_sale(db: AsyncSession, sale: OnboardSale) -> None:
     await db.flush()
 
 
+async def request_refund(db: AsyncSession, sale: OnboardSale, *, note: str | None = None) -> None:
+    """Le bord signale une vente à rembourser. Il ne rembourse pas lui-même.
+
+    Sans ce geste, la décision « seul le siège rembourse » (ADR-013) se
+    contournerait par téléphone et la trace se perdrait.
+    """
+    if not sale.is_settled:
+        raise OnboardSalesError("Vente non réglée : utilisez l'annulation.")
+    if sale.is_refunded:
+        raise OnboardSalesError("Vente déjà remboursée.")
+    sale.refund_requested_at = datetime.now(UTC)
+    sale.refund_request_note = note or None
+    await db.flush()
+
+
+async def refund_sale(
+    db: AsyncSession,
+    sale: OnboardSale,
+    *,
+    reason: str | None = None,
+    refunded_by_id: int | None = None,
+    stripe_refund_id: str | None = None,
+) -> CashboxMovement:
+    """Rembourse une vente réglée, **par contre-passation**. Idempotent.
+
+    Miroir strict de ``settle_sale`` :
+
+    1. verrou sur ``refund_cashbox_movement_id`` — un rejeu est un no-op ;
+    2. un mouvement de caisse **négatif** dans la même catégorie et le même
+       support que l'encaissement d'origine : c'est une contre-passation
+       comptable, pas une suppression. Le total « ventes à bord » devient net
+       des remboursements, ce qui est le comportement recherché ;
+    3. des mouvements de stock ``retour`` pour les produits suivis ;
+    4. la vente passe à ``refunded``.
+
+    Le remboursement Stripe lui-même est déclenché par l'appelant (routeur) et
+    son identifiant passé ici : on ne veut pas qu'une écriture comptable dépende
+    d'un appel réseau à l'intérieur de la transaction.
+    """
+    locked = await db.get(OnboardSale, sale.id, with_for_update=True)
+    if locked is not None:
+        sale = locked
+    if sale.refund_cashbox_movement_id is not None:
+        return await db.get(CashboxMovement, sale.refund_cashbox_movement_id)
+    if not sale.is_settled:
+        raise OnboardSalesError("Vente non réglée : rien à rembourser.")
+    if sale.total <= 0:
+        raise OnboardSalesError("Vente sans montant.")
+
+    buyer = f" — {sale.buyer_name}" if sale.buyer_name else ""
+    mov = await cashbox_svc.add_movement(
+        db,
+        await cashbox_svc.get_or_create(db, sale.vessel_id),
+        amount=-_money(Decimal(sale.total)),
+        currency=sale.currency,
+        category="vente_a_bord",
+        # Le remboursement emprunte le même canal que l'encaissement : une vente
+        # CB est recréditée sur la carte, pas prise dans le coffre.
+        medium="card" if sale.payment_method == "card" else "cash",
+        # L'argent est réellement sorti : on ne perd pas l'écriture si la caisse
+        # vient d'être figée par une relève (cf. ADR-013).
+        defer_if_frozen=True,
+        description=f"Remboursement vente {sale.reference}{buyer}",
+        leg_id=sale.leg_id,
+        recorded_by_id=refunded_by_id,
+    )
+
+    sale.refund_cashbox_movement_id = mov.id
+    sale.status = "refunded"
+    sale.refunded_at = datetime.now(UTC)
+    sale.refunded_by_id = refunded_by_id
+    sale.refund_reason = reason or None
+    if stripe_refund_id:
+        sale.stripe_refund_id = stripe_refund_id
+    await db.flush()
+
+    # Retour en stock des produits suivis — symétrique des sorties de vente.
+    lines = (
+        (await db.execute(select(OnboardSaleLine).where(OnboardSaleLine.sale_id == sale.id)))
+        .scalars()
+        .all()
+    )
+    for line in lines:
+        if line.product_id is None:
+            continue
+        product = await db.get(OnboardProduct, line.product_id)
+        if product is None or not product.tracks_stock:
+            continue
+        db.add(
+            OnboardStockMovement(
+                vessel_id=sale.vessel_id,
+                product_id=product.id,
+                qty=_qty(Decimal(line.qty)),
+                reason="retour",
+                sale_id=sale.id,
+                note=f"Remboursement {sale.reference}",
+                occurred_at=sale.refunded_at,
+                recorded_by_id=refunded_by_id,
+            )
+        )
+    await db.flush()
+    return mov
+
+
 async def revert_to_draft(db: AsyncSession, sale: OnboardSale) -> None:
     """Repasse en brouillon une vente **en attente de paiement**.
 
@@ -435,7 +540,12 @@ async def register_rows(
                 "qty_in": qty if qty > 0 else Decimal("0"),
                 "qty_out": -qty if qty < 0 else Decimal("0"),
                 "sale_reference": sale.reference if sale else "",
-                "regime": REGIME_FRANCHISE,
+                # Lu sur la vente, pas écrit en dur : tant qu'il n'existe qu'un
+                # régime l'écart est invisible, mais le jour où un second
+                # apparaît le registre mentirait sans que rien n'échoue. Un
+                # mouvement sans vente (avitaillement, inventaire) reste en
+                # franchise, qui est le régime du navire.
+                "regime": sale.regime if sale else REGIME_FRANCHISE,
                 "note": mov.note or "",
             }
         )

@@ -129,6 +129,56 @@
     le {{ sale.paid_at|datetime }}.
     Mouvement de caisse : <a href="/cashbox/{{ sale.vessel_id }}">voir la caisse de bord</a>.
   </p>
+
+  {% if sale.refund_pending %}
+    <div class="alert alert-warning">
+      <strong>Remboursement demandé</strong> le {{ sale.refund_requested_at|date }}.
+      En attente de traitement par le siège.
+      {% if sale.refund_request_note %}<br />Motif : {{ sale.refund_request_note }}{% endif %}
+    </div>
+  {% else %}
+    <form method="post" action="/captain/ventes/vente/{{ sale.reference }}/refund-request"
+          data-confirm="Signaler cette vente au siège pour remboursement ?">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="refund_note">Motif de la demande de remboursement</label>
+        <input id="refund_note" name="note" type="text"
+               placeholder="Ex. erreur de montant, article rendu…" />
+      </div>
+      <button type="submit" class="btn btn-secondary">Demander un remboursement au siège</button>
+      <p class="text-muted" style="margin-top:var(--space-2);">
+        Le remboursement est réalisé par le siège : le bord encaisse, il ne défait
+        pas un encaissement.
+      </p>
+    </form>
+  {% endif %}
+
+  {% if can_refund %}
+    <hr />
+    <form method="post" action="/captain/ventes/vente/{{ sale.reference }}/refund"
+          data-confirm="Rembourser cette vente ? Un mouvement de caisse négatif sera créé et les articles suivis retourneront en stock.">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="refund_reason">Motif du remboursement (siège)</label>
+        <input id="refund_reason" name="reason" type="text" />
+      </div>
+      <button type="submit" class="btn btn-cuivre">Rembourser (siège)</button>
+    </form>
+  {% endif %}
+</article>
+{% elif sale.status == "refunded" %}
+<article class="card">
+  <h2>Vente remboursée</h2>
+  <p>
+    Remboursée le {{ sale.refunded_at|datetime }} par contre-passation
+    (mouvement de caisse négatif{% if sale.stripe_refund_id %}, remboursement Stripe
+    <span class="mono">{{ sale.stripe_refund_id }}</span>{% endif %}).
+    {% if sale.refund_reason %}<br />Motif : {{ sale.refund_reason }}{% endif %}
+  </p>
+  <p class="text-muted">
+    Ni la vente ni le mouvement d'origine n'ont été supprimés : les deux registres
+    restent append-only, la contre-passation les équilibre.
+  </p>
 </article>
 {% endif %}
 {% endblock %}
