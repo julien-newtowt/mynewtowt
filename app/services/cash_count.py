@@ -117,6 +117,9 @@ async def computed_balance(
     stmt = select(func.coalesce(func.sum(CashboxMovement.amount), 0)).where(
         CashboxMovement.cashbox_id == cashbox.id,
         CashboxMovement.currency == currency.upper(),
+        # Espèces uniquement (ADR-011) : le commandant compte des billets, pas
+        # des règlements encaissés chez le prestataire de paiement.
+        CashboxMovement.medium == "cash",
     )
     if upto is not None:
         end = datetime(upto.year, upto.month, upto.day, 23, 59, 59, tzinfo=UTC)
@@ -229,7 +232,47 @@ async def declare_count(
     )
     db.add(count)
     await db.flush()
+
+    if trigger == "fin_embarquement":
+        await _freeze_accounting(db, cashbox, count)
+        await db.flush()
     return count
+
+
+async def _freeze_accounting(db: AsyncSession, cashbox: OnboardCashbox, count: CashCount) -> int:
+    """Fige la comptabilité du commandant débarquant (ADR-013).
+
+    Une relève est une **décharge** : le sortant remet une caisse dont le
+    contenu a été compté. Si l'entrant — ou le sortant — peut encore écrire
+    dans la période remise, la décharge ne vaut rien et l'écart redevient
+    inimputable. Les mouvements jusqu'à la date du comptage passent donc en
+    lecture seule, et ``cashbox.add_movement`` refuse toute écriture antérieure.
+
+    Les mouvements déjà verrouillés par une clôture mensuelle sont laissés tels
+    quels : leur verrou est antérieur, le réattribuer effacerait au titre de
+    quoi ils avaient été figés. Renvoie le nombre de mouvements gelés ici.
+    """
+    end = datetime(
+        count.counted_on.year, count.counted_on.month, count.counted_on.day, 23, 59, 59, tzinfo=UTC
+    )
+    rows = (
+        (
+            await db.execute(
+                select(CashboxMovement).where(
+                    CashboxMovement.cashbox_id == cashbox.id,
+                    CashboxMovement.occurred_at <= end,
+                    CashboxMovement.locked_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    now = datetime.now(UTC)
+    for mov in rows:
+        mov.cash_count_id = count.id
+        mov.locked_at = now
+    return len(rows)
 
 
 async def review_count(

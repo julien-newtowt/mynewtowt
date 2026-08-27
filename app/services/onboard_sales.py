@@ -300,6 +300,15 @@ async def settle_sale(
         amount=_money(Decimal(sale.total)),
         currency=sale.currency,
         category="vente_a_bord",
+        # Le support suit le moyen de paiement : une vente CB est encaissée
+        # chez Stripe puis en banque, elle n'entre jamais dans le coffre. La
+        # confondre avec l'espèce faussait la variance de clôture (ADR-011).
+        medium="card" if payment_method == "card" else "cash",
+        # L'argent a été encaissé : si la caisse est figée par une relève, on
+        # reporte l'écriture au premier jour ouvert plutôt que de la refuser.
+        # Perdre le règlement d'un paiement reçu serait pire que de le dater
+        # d'un jour trop tard — et le report est visible dans le libellé.
+        defer_if_frozen=True,
         description=f"Vente à bord {sale.reference}{buyer}",
         leg_id=sale.leg_id,
         recorded_by_id=recorded_by_id,

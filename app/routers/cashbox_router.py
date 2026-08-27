@@ -32,7 +32,13 @@ from app.models.onboard_cashbox import (
     categories_for,
 )
 from app.models.vessel import Vessel
-from app.permissions import require_permission
+from app.permissions import (
+    SEAFARER_ROLES,
+    VesselAccessDenied,
+    assert_vessel_access,
+    require_permission,
+    visible_vessel_id,
+)
 from app.services import cash_count as cash_count_svc
 from app.services import safe_files
 from app.services.activity import record as activity_record
@@ -42,8 +48,10 @@ from app.services.cashbox import (
     add_movement,
     as_movement_date,
     balances,
+    card_totals,
     close_month,
     export_csv,
+    frozen_until,
     get_or_create,
     list_closures,
     period_movements,
@@ -58,13 +66,30 @@ _RECEIPT_SUBDIR = "cashbox/receipts"
 _EXPORT_SUBDIR = "cashbox/exports"
 
 
+def _check_vessel(user, vessel_id: int | None) -> None:
+    """Cloisonnement par navire (ADR-012) — 403 explicite en cas de refus."""
+    try:
+        assert_vessel_access(user, vessel_id)
+    except VesselAccessDenied as e:
+        raise HTTPException(status_code=403, detail=str(e)) from None
+
+
 @router.get("", response_class=HTMLResponse)
 async def cashbox_index(
     request: Request,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
-    vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    # Un utilisateur borné ne voit que sa caisse : le solde et les mouvements
+    # d'un autre navire ne font pas partie des consultations restées ouvertes
+    # sur la flotte (ADR-012 — seuls planning et positions le sont).
+    scoped = visible_vessel_id(user)
+    if scoped is None and getattr(user, "role", None) in SEAFARER_ROLES:
+        _check_vessel(user, None)  # marin sans affectation → refus explicite
+    stmt = select(Vessel).order_by(Vessel.code)
+    if scoped is not None:
+        stmt = stmt.where(Vessel.id == scoped)
+    vessels = list((await db.execute(stmt)).scalars().all())
     summary = []
     for v in vessels:
         cb = await get_or_create(db, v.id)
@@ -89,11 +114,14 @@ async def cashbox_detail(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if not vessel:
         raise HTTPException(status_code=404, detail="Vessel not found")
     cb = await get_or_create(db, vessel_id)
-    bal = await balances(db, cb)
+    bal = await balances(db, cb)  # espèces (ADR-011)
+    cards = await card_totals(db, cb)
+    frozen = await frozen_until(db, cb)
     mvts = await recent_movements(db, cb, currency=currency, limit=200)
     closures = await list_closures(db, cb, limit=24)
     now = datetime.now(UTC)
@@ -105,6 +133,8 @@ async def cashbox_detail(
             "vessel": vessel,
             "cashbox": cb,
             "balances": bal,
+            "card_totals": cards,
+            "frozen_until": frozen,
             "movements": mvts,
             "closures": closures,
             "currency_filter": currency,
@@ -132,6 +162,7 @@ async def cash_count_form(
     user=Depends(require_permission("captain", "M")),
 ) -> HTMLResponse:
     """Grille de comptage — une colonne par devise, une ligne par coupure."""
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if not vessel:
         raise HTTPException(status_code=404, detail="Vessel not found")
@@ -178,6 +209,7 @@ async def submit_cash_count(
     Les quantités arrivent sous la forme ``qty_{DEVISE}_{valeur}`` ; le total
     n'est jamais repris du formulaire, il est recalculé depuis ces quantités.
     """
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if not vessel:
         raise HTTPException(status_code=404, detail="Vessel not found")
@@ -281,6 +313,7 @@ async def cash_count_detail(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if not vessel:
         raise HTTPException(status_code=404, detail="Vessel not found")
@@ -316,6 +349,7 @@ async def add_mov(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
+    _check_vessel(user, vessel_id)
     cb = await get_or_create(db, vessel_id)
     if movement_kind not in ("income", "expense"):
         raise HTTPException(status_code=400, detail="Invalid movement kind")
@@ -387,6 +421,7 @@ async def attach_receipt(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
+    _check_vessel(user, vessel_id)
     mov = await _get_movement(db, vessel_id, mov_id)
     if mov.is_locked:
         raise HTTPException(status_code=400, detail="Mouvement verrouillé (clôturé)")
@@ -417,6 +452,7 @@ async def view_receipt(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> Response:
+    _check_vessel(user, vessel_id)
     mov = await _get_movement(db, vessel_id, mov_id)
     if not mov.receipt_url:
         raise HTTPException(status_code=404, detail="Pas de justificatif")
@@ -439,6 +475,7 @@ async def export_period(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> Response:
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if not vessel:
         raise HTTPException(status_code=404, detail="Vessel not found")
@@ -465,6 +502,7 @@ async def close_period(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
+    _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
     if not vessel:
         raise HTTPException(status_code=404, detail="Vessel not found")

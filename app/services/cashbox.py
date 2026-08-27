@@ -10,12 +10,13 @@ import calendar
 import csv
 import io
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.cash_count import CashCount
 from app.models.onboard_cashbox import (
     CATEGORY_LABELS,
     SUPPORTED_CURRENCIES,
@@ -37,6 +38,15 @@ class CurrencyBalance:
 
 class CashboxError(Exception):
     pass
+
+
+class AccountingFrozen(CashboxError):
+    """La comptabilité est figée par un état de caisse de fin d'embarquement.
+
+    Distinct de ``PeriodClosed`` (clôture mensuelle) : une relève arrête la
+    responsabilité d'une personne, pas un mois comptable. Le message doit le
+    dire, sinon le commandant entrant ne comprend pas pourquoi il est refusé.
+    """
 
 
 class PeriodClosed(CashboxError):
@@ -61,6 +71,23 @@ async def get_or_create(db: AsyncSession, vessel_id: int) -> OnboardCashbox:
     db.add(cb)
     await db.flush()
     return cb
+
+
+async def frozen_until(db: AsyncSession, cashbox: OnboardCashbox) -> date | None:
+    """Date jusqu'à laquelle la comptabilité de cette caisse est figée.
+
+    Renvoie la date du dernier état de caisse déclaré en **fin d'embarquement**
+    (ADR-013). Le gel couvre **toute la caisse**, pas seulement les devises
+    déclarées : une relève arrête la comptabilité du débarquant, pas une partie
+    de celle-ci. Corollaire opérationnel : le commandant doit déclarer toutes
+    les devises qu'il détient — c'est dit dans la notice.
+    """
+    return await db.scalar(
+        select(func.max(CashCount.counted_on)).where(
+            CashCount.cashbox_id == cashbox.id,
+            CashCount.trigger == "fin_embarquement",
+        )
+    )
 
 
 def as_movement_date(when: datetime) -> datetime:
@@ -88,7 +115,9 @@ async def add_movement(
     currency: str,
     category: str,
     description: str,
+    medium: str = "cash",
     occurred_at: datetime | None = None,
+    defer_if_frozen: bool = False,
     leg_id: int | None = None,
     port_id: int | None = None,
     recorded_by_id: int | None = None,
@@ -97,6 +126,8 @@ async def add_movement(
 ) -> CashboxMovement:
     if currency.upper() not in SUPPORTED_CURRENCIES:
         raise CashboxError(f"Unsupported currency: {currency}")
+    if medium not in ("cash", "card"):
+        raise CashboxError(f"Support de règlement inconnu : {medium}")
     # Finitude d'abord : `Decimal("nan") == 0` vaut False, donc la garde
     # « montant non nul » ci-dessous était franchie par un NaN, qui rendait
     # ensuite `SUM(amount)` — et donc le solde de la caisse — définitivement NaN.
@@ -109,12 +140,33 @@ async def add_movement(
     if not description.strip():
         raise CashboxError("Description required")
     occ = as_movement_date(occurred_at or datetime.now(UTC))
+
+    # Gel à la relève (ADR-013). Deux natures d'écriture, deux traitements :
+    # une **saisie** est refusée — la période a été remise et déchargée ; un
+    # **règlement de vente** est reporté au premier jour ouvert, parce que
+    # l'argent a réellement été encaissé et qu'on ne perd jamais l'écriture
+    # d'un paiement reçu. Le report est visible dans le libellé ; l'écart du
+    # contrôle déjà rendu, lui, n'est jamais réécrit.
+    frozen = await frozen_until(db, cashbox)
+    if frozen is not None and occ.date() <= frozen:
+        if not defer_if_frozen:
+            raise AccountingFrozen(
+                f"Comptabilité figée au {frozen} par un état de caisse de fin "
+                "d'embarquement : aucune écriture n'est possible à cette date."
+            )
+        first_open = frozen + timedelta(days=1)
+        occ = as_movement_date(
+            datetime(first_open.year, first_open.month, first_open.day, tzinfo=UTC)
+        )
+        description = f"{description} [reporté — caisse figée au {frozen}]"
+
     if await is_period_closed(db, cashbox, currency.upper(), occ):
         raise PeriodClosed("Période clôturée : impossible d'ajouter un mouvement à cette date.")
     mov = CashboxMovement(
         cashbox_id=cashbox.id,
         amount=amount,
         currency=currency.upper(),
+        medium=medium,
         category=category,
         description=description.strip()[:300],
         leg_id=leg_id,
@@ -147,18 +199,31 @@ async def is_period_closed(
     return (await db.scalar(stmt)) is not None
 
 
-async def balances(db: AsyncSession, cashbox: OnboardCashbox) -> list[CurrencyBalance]:
-    """One row per currency that has at least one movement."""
+async def balances(
+    db: AsyncSession, cashbox: OnboardCashbox, *, medium: str | None = "cash"
+) -> list[CurrencyBalance]:
+    """Soldes par devise. Par défaut **espèces seules** (ADR-011).
+
+    La caisse de bord décrit l'argent physique détenu à bord : un règlement par
+    carte n'y est jamais. Le laisser dans le solde affichait une trésorerie qui
+    n'existe pas et faussait la comparaison avec le comptage. Passer
+    ``medium=None`` rend l'ancien comportement (tous supports confondus), utile
+    pour un total de contrôle.
+    """
     stmt = (
         select(
             CashboxMovement.currency,
             func.coalesce(func.sum(CashboxMovement.amount), 0).label("balance"),
+            # `case` plutôt que `greatest`/`least` : ces deux fonctions n'existent
+            # pas sous SQLite, ce qui rendait `balances()` inexécutable en test —
+            # d'où sa couverture nulle, relevée à l'audit du 2026-08-27, sur une
+            # fonction qui calcule pourtant le solde affiché à l'écran.
             func.coalesce(
-                func.sum(func.greatest(CashboxMovement.amount, 0)),
+                func.sum(case((CashboxMovement.amount > 0, CashboxMovement.amount), else_=0)),
                 0,
             ).label("income"),
             func.coalesce(
-                func.sum(func.least(CashboxMovement.amount, 0)),
+                func.sum(case((CashboxMovement.amount < 0, CashboxMovement.amount), else_=0)),
                 0,
             ).label("expense"),
             func.count(CashboxMovement.id).label("cnt"),
@@ -167,6 +232,8 @@ async def balances(db: AsyncSession, cashbox: OnboardCashbox) -> list[CurrencyBa
         .group_by(CashboxMovement.currency)
         .order_by(CashboxMovement.currency)
     )
+    if medium is not None:
+        stmt = stmt.where(CashboxMovement.medium == medium)
     rows = (await db.execute(stmt)).all()
     return [
         CurrencyBalance(
@@ -178,6 +245,34 @@ async def balances(db: AsyncSession, cashbox: OnboardCashbox) -> list[CurrencyBa
         )
         for r in rows
     ]
+
+
+async def card_totals(
+    db: AsyncSession, cashbox: OnboardCashbox, *, year: int | None = None, month: int | None = None
+) -> dict[str, Decimal]:
+    """Encaissements carte par devise — matière du rapprochement bancaire.
+
+    Ils sont exclus du solde d'espèces (ADR-011) mais restent au journal : le
+    rapprochement se fait dans le logiciel comptable, à partir de l'export
+    mensuel et de l'extrait bancaire. Cette fonction sert à afficher et à
+    exporter le total, pas à le rapprocher ici.
+    """
+    stmt = (
+        select(
+            CashboxMovement.currency,
+            func.coalesce(func.sum(CashboxMovement.amount), 0).label("total"),
+        )
+        .where(
+            CashboxMovement.cashbox_id == cashbox.id,
+            CashboxMovement.medium == "card",
+        )
+        .group_by(CashboxMovement.currency)
+        .order_by(CashboxMovement.currency)
+    )
+    if year is not None and month is not None:
+        start, end = month_bounds(year, month)
+        stmt = stmt.where(CashboxMovement.occurred_at >= start, CashboxMovement.occurred_at <= end)
+    return {r.currency: Decimal(r.total or 0) for r in (await db.execute(stmt)).all()}
 
 
 async def recent_movements(
@@ -234,6 +329,7 @@ def export_csv(movements: list[CashboxMovement], *, vessel_code: str, period: st
             "Libellé",
             "Montant",
             "Devise",
+            "Support",
             "Justificatif",
             "Saisi le",
             "Verrou",
@@ -250,11 +346,27 @@ def export_csv(movements: list[CashboxMovement], *, vessel_code: str, period: st
                 (m.description or "").replace("\n", " "),
                 f"{m.amount:.2f}",
                 m.currency,
+                "Carte" if m.medium == "card" else "Espèces",
                 "oui" if m.receipt_url else "non",
                 m.recorded_at.strftime("%Y-%m-%d %H:%M") if m.recorded_at else "",
                 "verrouillé" if m.closure_id else "ouvert",
             ]
         )
+
+    # Totaux par devise **et par support**. C'est la matière du rapprochement
+    # bancaire, qui se fait dans le logiciel comptable (ADR-011) : sans cette
+    # ventilation, le comptable ne peut pas séparer ce qui est passé en caisse
+    # de ce qui est arrivé sur le compte bancaire.
+    totals: dict[tuple[str, str], Decimal] = {}
+    for m in movements:
+        key = (m.currency, m.medium or "cash")
+        totals[key] = totals.get(key, Decimal("0")) + Decimal(m.amount)
+    if totals:
+        w.writerow([])
+        w.writerow(["Totaux par devise et support"])
+        w.writerow(["Devise", "Support", "Total"])
+        for (cur, med), total in sorted(totals.items()):
+            w.writerow([cur, "Carte" if med == "card" else "Espèces", f"{total:.2f}"])
     return buf.getvalue()
 
 
@@ -300,11 +412,16 @@ async def close_month(
     now = datetime.now(UTC)
     created: list[CashboxClosure] = []
     for cur in currencies:
-        # Solde cumulé à la fin de la période (cash théorique en caisse).
+        # Solde cumulé à la fin de la période — **espèces uniquement** (ADR-011).
+        # `counted_balance` est un comptage physique de billets : y comparer un
+        # total incluant les règlements carte produisait une variance fausse du
+        # montant des ventes CB, chaque mois, derrière laquelle une perte
+        # d'espèces réelle devenait indétectable.
         computed = await db.scalar(
             select(func.coalesce(func.sum(CashboxMovement.amount), 0)).where(
                 CashboxMovement.cashbox_id == cashbox.id,
                 CashboxMovement.currency == cur,
+                CashboxMovement.medium == "cash",
                 CashboxMovement.occurred_at <= end,
             )
         )
