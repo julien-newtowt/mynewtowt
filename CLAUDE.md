@@ -390,6 +390,24 @@ préférences de style.
 
 ### Caisse de bord — contrôle et détenteur
 
+- **La caisse de bord, c'est de l'argent physique** (ADR-011) : un règlement par
+  carte porte `medium="card"`, reste au journal et à l'export — le rapprochement
+  bancaire se fait dans le logiciel comptable — mais **sort du solde théorique et
+  de l'écart de comptage**. Les confondre rendait la variance de clôture fausse
+  du montant des ventes CB chaque mois, et y noyait toute perte d'espèces réelle.
+- **Une déclaration de fin d'embarquement fige la comptabilité du débarquant**
+  (ADR-013) : les mouvements jusqu'à la date du comptage passent en lecture seule
+  et plus rien ne s'y écrit. Une relève est une **décharge**. Exception qui ne se
+  négocie pas : un **règlement de vente** dans la fenêtre gelée est **reporté** au
+  premier jour ouvert, jamais refusé — on ne perd jamais l'écriture d'un paiement
+  encaissé. Une **saisie manuelle**, elle, est refusée.
+- **Le personnel maritime est borné à son navire d'affectation** (ADR-012) :
+  `permissions.assert_vessel_access` sur toute route portant un `vessel_id`, et
+  dans `_get_sale_or_404` pour les routes de vente. Seuls `administrateur` et
+  `armement` voient la flotte. Les consultations restées ouvertes sur la flotte
+  entière sont le **planning de navigation** et la **position des navires** — pas
+  la caisse, pas les ventes. Un marin sans affectation est refusé, avec un
+  message qui dit quoi faire.
 - **Un mouvement de caisse s'impute à une journée, pas à un instant** :
   `cashbox.as_movement_date` ramène toute date d'effet à minuit UTC. Conserver
   une heure donnait la précision de la *saisie*, pas celle de l'opération.
@@ -402,9 +420,11 @@ préférences de style.
   rendu — il apparaît dans le suivant).
 - **Ne déclarer que les devises réellement détenues** : un bloc à zéro sur une
   devise présente en caisse fabriquerait un faux écart.
-- `cash_count.computed_balance` fait un `SUM` simple et **testable** ; à ne pas
-  confondre avec `cashbox.balances`, qui ventile entrées/sorties via
-  `greatest`/`least` — absents de SQLite, d'où sa couverture de test nulle.
+- `cash_count.computed_balance` fait un `SUM` simple sur les **espèces** ;
+  `cashbox.balances` ventile entrées/sorties et prend un filtre `medium`
+  (défaut : espèces). Les deux sont testables — `balances` utilisait
+  `greatest`/`least`, absents de SQLite, ce qui expliquait sa couverture nulle ;
+  elle est passée en `case`.
 
 ### Sécurité
 - **CSRF** : `CSRFMiddleware` (double-submit cookie `towt_csrf`).
