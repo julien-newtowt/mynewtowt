@@ -23,6 +23,7 @@ from app.models.onboard_cashbox import (
     CashboxMovement,
     OnboardCashbox,
 )
+from app.utils.decimals import DecimalInputError, ensure_finite
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,13 @@ async def add_movement(
 ) -> CashboxMovement:
     if currency.upper() not in SUPPORTED_CURRENCIES:
         raise CashboxError(f"Unsupported currency: {currency}")
+    # Finitude d'abord : `Decimal("nan") == 0` vaut False, donc la garde
+    # « montant non nul » ci-dessous était franchie par un NaN, qui rendait
+    # ensuite `SUM(amount)` — et donc le solde de la caisse — définitivement NaN.
+    try:
+        amount = ensure_finite(Decimal(amount), label="montant")
+    except DecimalInputError as e:
+        raise CashboxError(str(e)) from None
     if amount == 0:
         raise CashboxError("Amount cannot be zero")
     if not description.strip():

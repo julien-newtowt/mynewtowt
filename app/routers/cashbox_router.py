@@ -7,11 +7,10 @@ verrouille les mouvements de la période.
 
 from __future__ import annotations
 
-import contextlib
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +43,7 @@ from app.services.cashbox import (
     recent_movements,
 )
 from app.templating import templates
+from app.utils.decimals import CENTS, DecimalInputError, parse_decimal
 
 router = APIRouter(prefix="/cashbox", tags=["cashbox"])
 
@@ -135,19 +135,24 @@ async def add_mov(
             status_code=400, detail="Catégorie incompatible avec le sens du mouvement"
         )
     try:
-        amt = abs(Decimal(amount.replace(",", ".")))
-    except (InvalidOperation, AttributeError):
-        raise HTTPException(status_code=400, detail="Invalid amount") from None
+        amt = abs(parse_decimal(amount, label="montant", quantize=CENTS))
+    except DecimalInputError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     if movement_kind == "expense":
         amt = -amt
+    # Date d'effet : une saisie illisible était silencieusement remplacée par
+    # « maintenant » — le mouvement antidaté par le commandant atterrissait au
+    # jour courant, sans le moindre signal. On refuse plutôt que de deviner.
     occ = None
-    if occurred_at:
+    if occurred_at.strip():
         try:
             occ = datetime.fromisoformat(occurred_at.replace("T", " "))
-            if occ.tzinfo is None:
-                occ = occ.replace(tzinfo=UTC)
         except ValueError:
-            pass
+            raise HTTPException(
+                status_code=400, detail="Date d'effet invalide (format attendu AAAA-MM-JJ HH:MM)."
+            ) from None
+        if occ.tzinfo is None:
+            occ = occ.replace(tzinfo=UTC)
 
     receipt_url, receipt_mime = await _maybe_store_receipt(receipt)
 
@@ -237,8 +242,8 @@ async def view_receipt(
 @router.get("/{vessel_id}/export.csv")
 async def export_period(
     vessel_id: int,
-    year: int,
-    month: int,
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> Response:
@@ -263,8 +268,8 @@ async def export_period(
 async def close_period(
     request: Request,
     vessel_id: int,
-    year: int = Form(...),
-    month: int = Form(...),
+    year: int = Form(..., ge=2000, le=2100),
+    month: int = Form(..., ge=1, le=12),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
@@ -277,10 +282,13 @@ async def close_period(
     form = await request.form()
     counted: dict[str, Decimal] = {}
     for cur in SUPPORTED_CURRENCIES:
-        raw = (form.get(f"counted_{cur}") or "").strip().replace(",", ".")
-        if raw:
-            with contextlib.suppress(InvalidOperation):
-                counted[cur] = Decimal(raw)
+        raw = str(form.get(f"counted_{cur}") or "").strip()
+        if not raw:
+            continue
+        try:
+            counted[cur] = parse_decimal(raw, label=f"solde compté {cur}", quantize=CENTS)
+        except DecimalInputError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
 
     # Export comptable d'abord (les données sont exportées puis verrouillées).
     movs = await period_movements(db, cb, year=year, month=month)

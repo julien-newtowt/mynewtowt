@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from uuid import uuid4
 
 import segno
@@ -41,6 +41,7 @@ from app.services import stripe_checkout as stripe_svc
 from app.services.activity import record as activity_record
 from app.services.cashbox import CashboxError, PeriodClosed
 from app.templating import templates
+from app.utils.decimals import CENTS, QTY_STEP, DecimalInputError, parse_decimal
 
 logger = logging.getLogger("onboard_sales")
 
@@ -54,11 +55,23 @@ webhook_router = APIRouter(prefix="/webhooks", tags=["stripe"])
 _MANUAL_STOCK_REASONS = ("avitaillement", "retour", "ajustement", "inventaire")
 
 
-def _parse_decimal(raw: str) -> Decimal:
+def _parse_decimal(
+    raw: str,
+    *,
+    label: str = "valeur",
+    min_value: Decimal | None = None,
+    quantize: Decimal | None = None,
+) -> Decimal:
+    """Parse une saisie numérique et refuse tout ce qui n'est pas fini et borné.
+
+    ``NaN``/``Infinity`` sont des littéraux ``Decimal`` valides : sans le
+    contrôle de finitude de ``utils.decimals``, ils traversaient jusqu'au
+    registre de stock, dont aucune route ne permet de supprimer une ligne.
+    """
     try:
-        return Decimal((raw or "").strip().replace(",", ".").replace(" ", ""))
-    except (InvalidOperation, AttributeError):
-        raise HTTPException(status_code=400, detail="Valeur numérique invalide") from None
+        return parse_decimal(raw, label=label, min_value=min_value, quantize=quantize)
+    except DecimalInputError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 async def _default_leg_id(db: AsyncSession, vessel_id: int) -> int | None:
@@ -143,7 +156,9 @@ async def create_product(
         sku=f"__pending_{uuid4().hex[:16]}",  # placeholder unique, remplacé après flush
         label=label.strip(),
         kind=kind if kind in ("bien", "service") else "bien",
-        unit_price=_parse_decimal(unit_price),
+        unit_price=_parse_decimal(
+            unit_price, label="prix unitaire", min_value=Decimal("0"), quantize=CENTS
+        ),
         currency=currency.upper(),
         unit=unit.strip() or "pièce",
         tracks_stock=(kind != "service") and (tracks_stock in ("on", "true", "1", "yes")),
@@ -181,7 +196,9 @@ async def update_product(
     if product is None:
         raise HTTPException(status_code=404, detail="Produit introuvable")
     product.label = label.strip() or product.label
-    product.unit_price = _parse_decimal(unit_price)
+    product.unit_price = _parse_decimal(
+        unit_price, label="prix unitaire", min_value=Decimal("0"), quantize=CENTS
+    )
     product.unit = unit.strip() or product.unit
     product.notes = notes.strip() or None
     await db.flush()
@@ -292,7 +309,7 @@ async def add_stock(
             db,
             vessel_id=vessel_id,
             product=product,
-            qty=_parse_decimal(qty),
+            qty=_parse_decimal(qty, label="quantité", quantize=QTY_STEP),
             reason=reason,
             note=note,
             recorded_by_id=user.id,
@@ -417,7 +434,9 @@ async def add_sale_line(
     if product is None:
         raise HTTPException(status_code=404, detail="Produit introuvable")
     try:
-        await svc.add_line(db, sale, product=product, qty=_parse_decimal(qty))
+        await svc.add_line(
+            db, sale, product=product, qty=_parse_decimal(qty, label="quantité", quantize=QTY_STEP)
+        )
     except svc.OnboardSalesError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return RedirectResponse(url=f"/captain/ventes/vente/{sale.reference}", status_code=303)
@@ -658,12 +677,20 @@ async def registre_csv(
 
 
 def _parse_date(raw: str, *, end_of_day: bool = False) -> datetime | None:
-    if not raw:
+    """Borne de période du registre douanier. Refuse une date illisible.
+
+    Renvoyer ``None`` sur entrée invalide désactivait silencieusement le
+    filtre : l'utilisateur croyait consulter (ou exporter) un mois, il obtenait
+    l'historique complet du navire sans qu'aucun message ne le signale.
+    """
+    if not raw.strip():
         return None
     try:
         d = datetime.fromisoformat(raw)
     except ValueError:
-        return None
+        raise HTTPException(
+            status_code=400, detail="Date de filtre invalide (format attendu AAAA-MM-JJ)."
+        ) from None
     if d.tzinfo is None:
         d = d.replace(tzinfo=UTC)
     if end_of_day and d.hour == 0 and d.minute == 0:

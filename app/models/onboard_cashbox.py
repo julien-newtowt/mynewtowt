@@ -18,6 +18,7 @@ from decimal import Decimal
 from sqlalchemy import (
     CHAR,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -167,6 +168,19 @@ class CashboxMovement(Base):
     __table_args__ = (
         Index("ix_cashbox_mov_cb_date", "cashbox_id", "occurred_at"),
         Index("ix_cashbox_mov_currency", "currency"),
+        # Le solde de la caisse est un `SUM(amount)` : une seule ligne aberrante
+        # le rend faux, et aucune route ne permet de supprimer un mouvement.
+        CheckConstraint("amount <> 0", name="ck_cashbox_mov_amount_non_zero"),
+        CheckConstraint(
+            "currency IN ('EUR', 'USD', 'VND')",
+            name="ck_cashbox_mov_currency",
+        ),
+        CheckConstraint(
+            "category IN ("
+            + ", ".join(f"'{c}'" for c in INCOME_CATEGORIES + EXPENSE_CATEGORIES)
+            + ")",
+            name="ck_cashbox_mov_category",
+        ),
     )
 
 

@@ -32,6 +32,7 @@ from app.models.onboard_sales import (
     OnboardStockMovement,
 )
 from app.services import cashbox as cashbox_svc
+from app.utils.decimals import DecimalInputError, ensure_finite
 
 _CENTS = Decimal("0.01")
 _QTY_Q = Decimal("0.001")
@@ -41,12 +42,26 @@ class OnboardSalesError(Exception):
     """Erreur métier « Vente à bord » (message affichable à l'utilisateur)."""
 
 
+def _guard(value: Decimal, label: str) -> Decimal:
+    """Refuse ``NaN``/``Infinity`` avant toute écriture, quel que soit l'appelant.
+
+    Les routeurs valident déjà la saisie (``utils.decimals``) ; ce garde-fou
+    couvre les autres chemins (import, script, appel interne). Une valeur non
+    finie écrite ici contaminerait définitivement un ``SUM()`` — solde de caisse
+    ou stock — dans des tables append-only sans route de suppression.
+    """
+    try:
+        return ensure_finite(value, label=label)
+    except DecimalInputError as e:
+        raise OnboardSalesError(str(e)) from None
+
+
 def _money(value: Decimal) -> Decimal:
-    return value.quantize(_CENTS, rounding=ROUND_HALF_UP)
+    return _guard(value, "montant").quantize(_CENTS, rounding=ROUND_HALF_UP)
 
 
 def _qty(value: Decimal) -> Decimal:
-    return value.quantize(_QTY_Q, rounding=ROUND_HALF_UP)
+    return _guard(value, "quantité").quantize(_QTY_Q, rounding=ROUND_HALF_UP)
 
 
 # ── Références ────────────────────────────────────────────────────────────────

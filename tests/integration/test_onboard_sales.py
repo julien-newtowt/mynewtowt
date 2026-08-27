@@ -274,3 +274,92 @@ async def test_create_product_autogenerates_sku(db, staff_user):
     )
     skus = [p.sku for p in (await db.execute(select(OnboardProduct))).scalars().all()]
     assert len(set(skus)) == 2
+
+
+# ── Garde-fous de saisie (audit 2026-08-27, lot 1) ──────────────────────────
+#
+# Les services revalident ce que les routeurs ont déjà validé : une valeur non
+# finie peut aussi venir d'un import, d'un script ou d'un appelant interne. Les
+# tables visées étant append-only et sans route de suppression, une écriture
+# aberrante y serait définitive.
+
+
+@pytest.mark.asyncio
+async def test_stock_entry_rejects_non_finite_qty(db, staff_user):
+    vessel = Vessel(code="ANE", name="Anemos")
+    db.add(vessel)
+    await db.flush()
+    product = OnboardProduct(
+        sku="CAF-250", label="Café", kind="bien", unit_price=Decimal("6.50"), currency="EUR"
+    )
+    db.add(product)
+    await db.flush()
+    for bad in (Decimal("nan"), Decimal("Infinity")):
+        with pytest.raises(svc.OnboardSalesError):
+            await svc.add_stock_entry(
+                db, vessel_id=vessel.id, product=product, qty=bad, reason="avitaillement"
+            )
+    # Aucun mouvement n'a été écrit au registre.
+    assert await svc.stock_on_hand(db, vessel_id=vessel.id, product_id=product.id) == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_add_line_rejects_non_finite_and_non_positive_qty(db, staff_user):
+    _vessel, product, sale = await _setup_sale(db, staff_user)
+    for bad in (Decimal("nan"), Decimal("0"), Decimal("-1")):
+        with pytest.raises(svc.OnboardSalesError):
+            await svc.add_line(db, sale, product=product, qty=bad)
+    # Le total de la vente n'a pas bougé (2 × 6,50 posés par _setup_sale).
+    await svc.recompute_total(db, sale)
+    assert sale.total == Decimal("13.00")
+
+
+@pytest.mark.asyncio
+async def test_cashbox_rejects_non_finite_amount(db, staff_user):
+    """Le cas qui rendait un solde de caisse définitivement NaN."""
+    from app.services import cashbox as cashbox_svc
+
+    vessel = Vessel(code="ANE", name="Anemos")
+    db.add(vessel)
+    await db.flush()
+    cb = await cashbox_svc.get_or_create(db, vessel.id)
+    for bad in (Decimal("nan"), Decimal("Infinity"), Decimal("-Infinity")):
+        with pytest.raises(cashbox_svc.CashboxError):
+            await cashbox_svc.add_movement(
+                db,
+                cb,
+                amount=bad,
+                currency="EUR",
+                category="depot_recharge",
+                description="tentative",
+            )
+    # Aucun mouvement écrit : le solde reste calculable.
+    # (`cashbox.balances()` n'est pas appelé ici — il utilise `greatest`/`least`,
+    # non supportés par SQLite ; c'est la raison de sa couverture nulle, relevée
+    # à l'audit et laissée en l'état, hors périmètre de ce lot.)
+    total = await db.scalar(
+        select(func.count()).select_from(CashboxMovement).where(CashboxMovement.cashbox_id == cb.id)
+    )
+    assert total == 0
+
+
+@pytest.mark.asyncio
+async def test_settle_refuses_cancelled_sale(db, staff_user):
+    """Une vente annulée ne doit jamais produire d'écriture de caisse."""
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.cancel_sale(db, sale)
+    assert sale.status == "cancelled"
+    before = await _count_vente_movements(db)
+    with pytest.raises(svc.OnboardSalesError):
+        await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    assert await _count_vente_movements(db) == before
+
+
+@pytest.mark.asyncio
+async def test_cancel_sale_success_path(db, staff_user):
+    """Le chemin nominal d'annulation n'était couvert par aucun test."""
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.cancel_sale(db, sale)
+    assert sale.status == "cancelled"
+    assert sale.cancelled_at is not None
+    assert sale.cashbox_movement_id is None

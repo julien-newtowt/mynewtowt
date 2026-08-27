@@ -28,6 +28,7 @@ from decimal import Decimal
 from sqlalchemy import (
     CHAR,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -88,6 +89,14 @@ SALE_STATUS_LABELS: dict[str, str] = {
 }
 
 PAYMENT_METHODS: tuple[str, ...] = ("cash", "card")
+
+
+def _sql_in(column: str, values: tuple[str, ...]) -> str:
+    """Fragment ``col IN (...)`` portable pour un ``CheckConstraint``."""
+    joined = ", ".join(f"'{v}'" for v in values)
+    return f"{column} IN ({joined})"
+
+
 PAYMENT_METHOD_LABELS: dict[str, str] = {
     "cash": "Espèces",
     "card": "Carte bancaire (Stripe)",
@@ -124,6 +133,18 @@ class OnboardProduct(Base):
         nullable=False,
     )
 
+    # Le vocabulaire et les bornes de signe vivaient uniquement en Python : rien
+    # n'empêchait un prix négatif de se propager en `line_total` négatif, ni une
+    # devise hors périmètre d'être persistée. Le registre de vente détaxée a la
+    # même valeur probante que le registre BL, qui porte lui 12 CheckConstraint.
+    __table_args__ = (
+        CheckConstraint("unit_price >= 0", name="ck_onboard_products_unit_price_non_negative"),
+        CheckConstraint(
+            _sql_in("currency", SUPPORTED_CURRENCIES), name="ck_onboard_products_currency"
+        ),
+        CheckConstraint(_sql_in("kind", PRODUCT_KINDS), name="ck_onboard_products_kind"),
+    )
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<OnboardProduct {self.sku} {self.label!r}>"
 
@@ -157,6 +178,8 @@ class OnboardStockMovement(Base):
     __table_args__ = (
         Index("ix_onboard_stock_vessel_product", "vessel_id", "product_id"),
         Index("ix_onboard_stock_occurred", "occurred_at"),
+        CheckConstraint("qty <> 0", name="ck_onboard_stock_qty_non_zero"),
+        CheckConstraint(_sql_in("reason", STOCK_REASONS), name="ck_onboard_stock_reason"),
     )
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -205,6 +228,25 @@ class OnboardSale(Base):
         order_by="OnboardSaleLine.id",
     )
 
+    __table_args__ = (
+        # `cashbox_movement_id` est le **verrou d'idempotence** du règlement.
+        # Sans unicité en base, deux règlements concurrents (webhook redélivré +
+        # réconciliation à l'affichage) pouvaient créer deux mouvements de caisse
+        # pour un seul paiement, le second écrasant la référence du premier —
+        # qui devenait orphelin et indétraçable. La contrainte est le filet de
+        # dernier recours derrière le verrou applicatif de `settle_sale`.
+        UniqueConstraint("cashbox_movement_id", name="uq_onboard_sale_cashbox_movement"),
+        CheckConstraint("total >= 0", name="ck_onboard_sales_total_non_negative"),
+        CheckConstraint(_sql_in("status", SALE_STATUSES), name="ck_onboard_sales_status"),
+        CheckConstraint(
+            f"payment_method IS NULL OR {_sql_in('payment_method', PAYMENT_METHODS)}",
+            name="ck_onboard_sales_payment_method",
+        ),
+        CheckConstraint(
+            _sql_in("currency", SUPPORTED_CURRENCIES), name="ck_onboard_sales_currency"
+        ),
+    )
+
     @property
     def status_label(self) -> str:
         return SALE_STATUS_LABELS.get(self.status, self.status)
@@ -240,7 +282,14 @@ class OnboardSaleLine(Base):
 
     sale: Mapped[OnboardSale] = relationship(back_populates="lines")
 
-    __table_args__ = (UniqueConstraint("sale_id", "product_id", name="uq_sale_line_product"),)
+    __table_args__ = (
+        UniqueConstraint("sale_id", "product_id", name="uq_sale_line_product"),
+        CheckConstraint("qty > 0", name="ck_onboard_sale_line_qty_positive"),
+        CheckConstraint(
+            "unit_price >= 0 AND line_total >= 0",
+            name="ck_onboard_sale_line_amounts_non_negative",
+        ),
+    )
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<OnboardSaleLine sale={self.sale_id} {self.label!r} x{self.qty}>"
