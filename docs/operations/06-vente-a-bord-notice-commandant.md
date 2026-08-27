@@ -72,8 +72,15 @@ jamais à la saisir à la main.
 
 Section **Encaissement** → **« Encaisser en espèces »** → confirmez le montant.
 La vente passe **Payée**, et un mouvement est créé dans la **caisse du bord**
-(catégorie *vente à bord*). C'est le mode toujours disponible, même sans
-connexion.
+(catégorie *vente à bord*). C'est le mode le plus simple : il ne dépend
+d'aucun prestataire extérieur.
+
+> ⚠️ **Le module exige une connexion.** L'application tourne à terre : sans
+> lien satellite ou 4G, **aucune vente ni saisie de caisse n'est possible**, y
+> compris en espèces. Il n'existe pas (encore) de mode hors connexion ni de
+> file d'attente. En cas de coupure pendant un encaissement, **ne ressaisissez
+> rien** : attendez le retour du réseau, rouvrez la vente et vérifiez son
+> statut avant toute nouvelle action.
 
 ## 6. Encaisser par carte bancaire (CB)
 
@@ -98,7 +105,11 @@ sur cette installation. Encaissez **en espèces** ; signalez‑le au siège si l
 CB devait être disponible.
 
 **Le client règle finalement en espèces** alors qu'un lien CB est en attente ?
-Sur la vente, utilisez **« Basculer en espèces »**.
+Sur la vente, utilisez **« Basculer en espèces »**. Le lien de paiement est
+alors **fermé côté Stripe** : le client ne peut plus payer par carte une vente
+déjà réglée en liquide. Si un message vous signale que le lien n'a pas pu être
+fermé (Stripe injoignable), **n'encaissez pas en espèces** — réessayez une fois
+le réseau revenu, sinon le client risque de payer deux fois.
 
 ## 7. La caisse du bord
 
@@ -120,10 +131,15 @@ avitaillements, ventes, ajustements, inventaires, retours. Il constitue la
 ## 9. Annuler ou corriger une vente
 
 - **Avant règlement** (Brouillon ou En attente de paiement) :
-  **« Annuler la vente »**. Rien n'est encaissé, aucun stock n'est décrémenté.
+  **« Annuler la vente »**. Rien n'est encaissé, aucun stock n'est décrémenté,
+  et le lien de paiement CB éventuellement généré est **fermé côté Stripe** —
+  le client ne peut plus payer une vente annulée. Si l'écran signale que le
+  lien n'a pas pu être fermé, **n'annulez pas** : réessayez avec du réseau.
 - **Après règlement** : une vente **Payée** ne s'annule pas d'un clic (un
-  encaissement a eu lieu). Contactez le siège pour un **remboursement** (statut
-  *Remboursée*).
+  encaissement a eu lieu). Le remboursement se traite **aujourd'hui hors
+  application**, côté siège (le statut *Remboursée* n'est pas encore
+  actionnable dans l'écran) : signalez la vente au siège en précisant sa
+  référence.
 
 ---
 
@@ -141,6 +157,10 @@ avitaillements, ventes, ajustements, inventaires, retours. Il constitue la
 
 - **Je ne vois pas « Vente à bord » dans le menu.** Votre profil n'a pas le
   droit *captain* — demandez au siège de l'activer.
+- **Je vois les écrans mais chaque bouton renvoie « Accès refusé » (403).**
+  Votre profil est en **consultation seule** sur le module. Le siège doit
+  activer « Modifier » sur la cellule *(votre rôle × captain)* dans
+  `/admin/permissions` ; la prise d'effet demande jusqu'à une minute.
 - **Le QR est trop petit / illisible.** Utilisez **« Ouvrir la page de
   paiement »** ou copiez l'URL affichée : c'est le même paiement.
 - **Puis‑je vendre un article dont le stock est à zéro ?** Oui, la vente n'est
