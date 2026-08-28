@@ -178,6 +178,26 @@ mieux qu'un comptage ajusté pour tomber juste.
 apparaîtra dans le contrôle suivant. C'est voulu — un contrôle qui se réécrirait
 tout seul ne contrôlerait rien.
 
+## 7 ter. Corriger un mouvement de caisse mal saisi
+
+Sur la ligne du mouvement, **« ✏️ Rectifier »** : indiquez le motif, et le
+montant correct si vous en avez un (laissez vide pour une simple annulation).
+
+**Rien n'est effacé.** Le mouvement d'origine reste au journal, et le système
+ajoute une écriture opposée **datée du jour**, puis le montant corrigé. C'est la
+manière comptable de rectifier : on ne réécrit pas le passé, on l'équilibre.
+
+Deux conséquences à connaître :
+
+- la correction n'apparaît **pas** dans la période d'origine. Si un contrôle de
+  caisse a déjà été rendu sur cette période, il reste ce qu'il était — la
+  rectification se lira dans le suivant ;
+- un mouvement ne se rectifie **qu'une fois**. Si vous vous êtes trompé dans la
+  correction elle-même, rectifiez l'écriture de correction.
+
+Les mouvements **verrouillés** (clôture mensuelle passée, ou relève déclarée) ne
+proposent pas ce bouton : leur période est arrêtée.
+
 ## 8. Le registre douanier (vente détaxée)
 
 Le **Registre des mouvements — vente détaxée** (bouton *« Registre »* dans

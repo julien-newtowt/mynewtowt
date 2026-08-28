@@ -11,7 +11,7 @@ Les appelants machine — API publique, webhooks — gardent du JSON.
 
 from __future__ import annotations
 
-import warnings
+import re
 from pathlib import Path
 
 import pytest
@@ -22,19 +22,19 @@ from starlette.testclient import TestClient
 def _build_app() -> FastAPI:
     """Construit l'application réelle.
 
-    L'import est enveloppé : `app/main.py` utilise encore `@app.on_event`, que
-    FastAPI déprécie au profit des gestionnaires de cycle de vie. La suite
-    escalade les avertissements en erreurs (`pyproject.toml`), ce qui rendait
-    l'application **impossible à importer depuis un test** — aucun ne le faisait
-    donc, et la fabrique n'était exercée nulle part. On confine le contournement
-    ici plutôt que de filtrer globalement : la déprécition reste visible partout
-    ailleurs, et la migration vers `lifespan` reste à faire.
-    """
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        from app.main import create_app
+    L'import était auparavant impossible depuis un test : `app/main.py` utilisait
+    `@app.on_event`, déprécié par FastAPI, et la suite escalade les
+    avertissements en erreurs (`pyproject.toml`). La fabrique de l'application
+    n'était donc exercée nulle part — une troncature y serait passée inaperçue.
+    Le passage aux gestionnaires de cycle de vie a levé l'obstacle.
 
-        return create_app()
+    Le client n'entre pas dans le contexte de l'application : le cycle de vie
+    (connexion à la base, ordonnanceur) n'a pas à tourner pour tester le rendu
+    des erreurs.
+    """
+    from app.main import create_app
+
+    return create_app()
 
 
 @pytest.fixture(scope="module")
@@ -166,3 +166,15 @@ def test_the_quick_sale_form_is_queued_offline():
     # La PWA doit être chargée sur cet écran, sinon rien ne s'enregistre.
     for script in ("pwa-onboard.js", "onboard-idb.js", "onboard-offline.js"):
         assert script in page
+
+
+def test_no_deprecated_event_handlers_remain():
+    """`@app.on_event` rendait l'application intestable — qu'il ne revienne pas.
+
+    On cherche le **décorateur** en début de ligne, pas la chaîne : les
+    docstrings du module le mentionnent légitimement pour expliquer la
+    migration.
+    """
+    source = Path("app/main.py").read_text(encoding="utf-8")
+    assert not re.search(r"^\s*@\w+\.on_event\(", source, re.M)
+    assert "lifespan=" in source

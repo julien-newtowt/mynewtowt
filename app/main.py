@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
@@ -125,7 +126,46 @@ def _safe_back_url(request: Request) -> str | None:
 
 
 def create_app() -> FastAPI:
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        """Démarrage et arrêt de l'application.
+
+        Remplace `@app.on_event`, déprécié par FastAPI. Ce n'est pas qu'une
+        mise en conformité : la suite de tests escalade les avertissements en
+        erreurs, si bien que `app.main` était **impossible à importer depuis un
+        test** — la fabrique de l'application n'était donc exercée nulle part,
+        et une troncature y serait passée inaperçue.
+        """
+        from app.config import enforce_production_safety
+
+        enforce_production_safety()
+        await init_db()
+        # LOT 2 — seed idempotent du référentiel de validation MRV. En dev,
+        # ``init_db`` crée le schéma via ``create_all`` (sans migration) : sans
+        # ce seed, les tables validation_* seraient vides. En staging/prod, le
+        # seed vit dans la migration 0097 (ceci est alors un no-op idempotent).
+        if settings.app_env == "development":
+            try:
+                from app.database import SessionLocal
+                from app.services.validation_engine import seed_reference_data
+
+                async with SessionLocal() as _seed_session:
+                    await seed_reference_data(_seed_session)
+                    await _seed_session.commit()
+            except Exception:  # pragma: no cover - best effort, jamais bloquant
+                logger.warning("seed référentiel validation MRV ignoré (non bloquant)")
+
+        from app.services import trombinoscope_scheduler
+
+        trombinoscope_scheduler.start()
+        logger.info("mynewtowt %s started (env=%s)", __version__, settings.app_env)
+
+        yield
+
+        trombinoscope_scheduler.shutdown()
+
     app = FastAPI(
+        lifespan=_lifespan,
         title=settings.app_name,
         version=__version__,
         description="NEWTOWT ERP and customer booking platform.",
@@ -321,39 +361,6 @@ def create_app() -> FastAPI:
             )
         except Exception:
             return PlainTextResponse(f"{exc.status_code} — {title}", status_code=exc.status_code)
-
-    # ----------------------------------------------------------- Lifecycle
-    @app.on_event("startup")
-    async def _on_startup() -> None:
-        from app.config import enforce_production_safety
-
-        enforce_production_safety()
-        await init_db()
-        # LOT 2 — seed idempotent du référentiel de validation MRV. En dev,
-        # ``init_db`` crée le schéma via ``create_all`` (sans migration) : sans
-        # ce seed, les tables validation_* seraient vides. En staging/prod, le
-        # seed vit dans la migration 0097 (ceci est alors un no-op idempotent).
-        if settings.app_env == "development":
-            try:
-                from app.database import SessionLocal
-                from app.services.validation_engine import seed_reference_data
-
-                async with SessionLocal() as _seed_session:
-                    await seed_reference_data(_seed_session)
-                    await _seed_session.commit()
-            except Exception:  # pragma: no cover - best effort, jamais bloquant
-                logger.warning("seed référentiel validation MRV ignoré (non bloquant)")
-
-        from app.services import trombinoscope_scheduler
-
-        trombinoscope_scheduler.start()
-        logger.info("mynewtowt %s started (env=%s)", __version__, settings.app_env)
-
-    @app.on_event("shutdown")
-    async def _on_shutdown() -> None:
-        from app.services import trombinoscope_scheduler
-
-        trombinoscope_scheduler.shutdown()
 
     return app
 
