@@ -457,7 +457,7 @@ async def test_confirm_cash_closes_the_payment_link_first(db, staff_user, monkey
         return "expired"
 
     monkeypatch.setattr(sc, "expire_session", fake_expire)
-    await r.confirm_cash(sale.reference, db=db, user=staff_user)
+    await r.confirm_cash(sale.reference, cash_received="", db=db, user=staff_user)
 
     assert calls == ["cs_open"], "le lien Stripe n'a pas été fermé"
     assert sale.status == "paid"
@@ -482,7 +482,7 @@ async def test_confirm_cash_refuses_when_link_cannot_be_closed(db, staff_user, m
 
     monkeypatch.setattr(sc, "expire_session", boom)
     with pytest.raises(HTTPException) as exc:
-        await r.confirm_cash(sale.reference, db=db, user=staff_user)
+        await r.confirm_cash(sale.reference, cash_received="", db=db, user=staff_user)
     assert exc.value.status_code == 502
     # Rien n'a été encaissé.
     assert sale.status == "pending_payment"

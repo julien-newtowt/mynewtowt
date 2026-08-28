@@ -268,6 +268,7 @@ async def update_product(
     unit_price: str = Form(...),
     unit: str = Form("pièce"),
     notes: str = Form(""),
+    min_stock_alert: str = Form(""),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
@@ -277,6 +278,13 @@ async def update_product(
     product.label = label.strip() or product.label
     product.unit_price = _parse_decimal(
         unit_price, label="prix unitaire", min_value=Decimal("0"), quantize=CENTS
+    )
+    product.min_stock_alert = (
+        _parse_decimal(
+            min_stock_alert, label="seuil d'alerte", min_value=Decimal("0"), quantize=QTY_STEP
+        )
+        if min_stock_alert.strip()
+        else None
     )
     product.unit = unit.strip() or product.unit
     product.notes = notes.strip() or None
@@ -664,6 +672,7 @@ async def add_sale_line(
     reference: str,
     product_id: int = Form(...),
     qty: str = Form(...),
+    discount_pct: str = Form("0"),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
@@ -673,10 +682,58 @@ async def add_sale_line(
         raise HTTPException(status_code=404, detail="Produit introuvable")
     try:
         await svc.add_line(
-            db, sale, product=product, qty=_parse_decimal(qty, label="quantité", quantize=QTY_STEP)
+            db,
+            sale,
+            product=product,
+            qty=_parse_decimal(qty, label="quantité", quantize=QTY_STEP),
+            discount_pct=_parse_decimal(
+                discount_pct or "0", label="remise", min_value=Decimal("0"), quantize=CENTS
+            ),
         )
     except svc.OnboardSalesError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    return RedirectResponse(url=f"/captain/ventes/vente/{sale.reference}", status_code=303)
+
+
+@router.post("/vente/{reference}/line-libre")
+async def add_free_sale_line(
+    reference: str,
+    label: str = Form(...),
+    unit_price: str = Form(...),
+    qty: str = Form("1"),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> RedirectResponse:
+    """Ligne hors catalogue — article non référencé, geste commercial.
+
+    Le modèle le permettait depuis l'origine (``product_id`` nullable) mais
+    aucune route ne le faisait : vendre un article non catalogué imposait de
+    créer un faux produit, qui polluait ensuite catalogue et inventaire.
+    """
+    sale = await _get_sale_or_404(db, reference, user=user)
+    try:
+        await svc.add_free_line(
+            db,
+            sale,
+            label=label,
+            unit_price=_parse_decimal(
+                unit_price, label="prix", min_value=Decimal("0"), quantize=CENTS
+            ),
+            qty=_parse_decimal(qty, label="quantité", quantize=QTY_STEP),
+        )
+    except svc.OnboardSalesError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    await activity_record(
+        db,
+        action="onboard_sale_free_line",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="onboard_sale",
+        entity_id=sale.id,
+        detail=f"{sale.reference} — {label.strip()} × {qty}",
+    )
     return RedirectResponse(url=f"/captain/ventes/vente/{sale.reference}", status_code=303)
 
 
@@ -702,6 +759,7 @@ async def delete_sale_line(
 @router.post("/vente/{reference}/confirm-cash")
 async def confirm_cash(
     reference: str,
+    cash_received: str = Form(""),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "M")),
 ) -> RedirectResponse:
@@ -710,7 +768,19 @@ async def confirm_cash(
     # pourrait sinon payer par carte une vente encaissée en liquide.
     await _release_checkout_session(sale)
     try:
-        await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=user.id)
+        await svc.settle_sale(
+            db,
+            sale,
+            payment_method="cash",
+            recorded_by_id=user.id,
+            cash_received=(
+                _parse_decimal(
+                    cash_received, label="espèces reçues", min_value=Decimal("0"), quantize=CENTS
+                )
+                if cash_received.strip()
+                else None
+            ),
+        )
     except PeriodClosed as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except (svc.OnboardSalesError, CashboxError) as e:

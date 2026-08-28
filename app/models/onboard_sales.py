@@ -122,6 +122,9 @@ class OnboardProduct(Base):
     # Les services ne sont pas suivis en stock (tracks_stock=False).
     tracks_stock: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Seuil d'alerte de réapprovisionnement. NULL = pas de suivi d'alerte.
+    # Sans lui, une rupture ne se découvrait qu'au moment de vendre.
+    min_stock_alert: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -239,6 +242,12 @@ class OnboardSale(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Espèces remises par l'acheteur, pour calculer le rendu. Purement
+    # informatif : la caisse est créditée du **total de la vente**, pas de ce
+    # montant. Sans cette trace, un écart de rendu de monnaie était
+    # inexplicable au comptage.
+    cash_received: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -279,6 +288,13 @@ class OnboardSale(Base):
         return PAYMENT_METHOD_LABELS.get(self.payment_method or "", "—")
 
     @property
+    def change_due(self) -> Decimal | None:
+        """Monnaie à rendre, si les espèces reçues ont été saisies."""
+        if self.cash_received is None:
+            return None
+        return Decimal(self.cash_received) - Decimal(self.total)
+
+    @property
     def is_refunded(self) -> bool:
         return self.refund_cashbox_movement_id is not None
 
@@ -310,6 +326,12 @@ class OnboardSaleLine(Base):
     label: Mapped[str] = mapped_column(String(200), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     qty: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    # Remise en pourcentage, appliquée à cette ligne. 100 % = gratuité (geste
+    # commercial, article offert à l'équipage). Le total de ligne reste
+    # dérivable de (prix × quantité × remise) : rien n'est saisi librement.
+    discount_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), default=Decimal("0"), nullable=False
+    )
     line_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
     sale: Mapped[OnboardSale] = relationship(back_populates="lines")
@@ -317,6 +339,10 @@ class OnboardSaleLine(Base):
     __table_args__ = (
         UniqueConstraint("sale_id", "product_id", name="uq_sale_line_product"),
         CheckConstraint("qty > 0", name="ck_onboard_sale_line_qty_positive"),
+        CheckConstraint(
+            "discount_pct >= 0 AND discount_pct <= 100",
+            name="ck_onboard_sale_line_discount_range",
+        ),
         CheckConstraint(
             "unit_price >= 0 AND line_total >= 0",
             name="ck_onboard_sale_line_amounts_non_negative",

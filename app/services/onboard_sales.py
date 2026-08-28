@@ -178,12 +178,64 @@ async def create_sale(
     return sale
 
 
+def _apply_discount(unit_price: Decimal, qty: Decimal, discount_pct: Decimal) -> Decimal:
+    """Total de ligne après remise. Toujours dérivé, jamais saisi."""
+    pct = _guard(Decimal(discount_pct), "remise")
+    if pct < 0 or pct > 100:
+        raise OnboardSalesError("La remise doit être comprise entre 0 et 100 %.")
+    return _money(unit_price * qty * (Decimal("100") - pct) / Decimal("100"))
+
+
+async def add_free_line(
+    db: AsyncSession,
+    sale: OnboardSale,
+    *,
+    label: str,
+    unit_price: Decimal,
+    qty: Decimal,
+) -> OnboardSaleLine:
+    """Ligne hors catalogue — article absent du référentiel, geste commercial.
+
+    Le modèle prévoyait ``product_id`` nullable depuis l'origine, mais aucune
+    route ne créait de ligne libre : vendre un article non catalogué imposait de
+    créer un faux produit, qui polluait ensuite le catalogue et l'inventaire
+    (audit du 2026-08-27).
+
+    Sans produit, il n'y a **pas de mouvement de stock** au règlement : c'est
+    cohérent, l'article n'est pas suivi.
+    """
+    if sale.status != "draft":
+        raise OnboardSalesError("La vente n'est plus modifiable.")
+    if not label.strip():
+        raise OnboardSalesError("Désignation requise pour une ligne hors catalogue.")
+    q = _qty(Decimal(qty))
+    if q <= 0:
+        raise OnboardSalesError("La quantité doit être positive.")
+    price = _money(Decimal(unit_price))
+    if price < 0:
+        raise OnboardSalesError("Le prix ne peut pas être négatif.")
+    line = OnboardSaleLine(
+        sale_id=sale.id,
+        product_id=None,
+        label=label.strip()[:200],
+        unit_price=price,
+        qty=q,
+        discount_pct=Decimal("0"),
+        line_total=_money(price * q),
+    )
+    db.add(line)
+    await db.flush()
+    await recompute_total(db, sale)
+    return line
+
+
 async def add_line(
     db: AsyncSession,
     sale: OnboardSale,
     *,
     product: OnboardProduct,
     qty: Decimal,
+    discount_pct: Decimal = Decimal("0"),
 ) -> OnboardSaleLine:
     """Ajoute une ligne à une vente en brouillon (prix serveur, snapshot).
 
@@ -213,7 +265,8 @@ async def add_line(
     if existing is not None:
         existing.qty = _qty(Decimal(existing.qty) + q)
         existing.unit_price = unit_price
-        existing.line_total = _money(unit_price * existing.qty)
+        existing.discount_pct = Decimal(discount_pct)
+        existing.line_total = _apply_discount(unit_price, existing.qty, discount_pct)
         line = existing
     else:
         line = OnboardSaleLine(
@@ -222,7 +275,8 @@ async def add_line(
             label=product.label,
             unit_price=unit_price,
             qty=q,
-            line_total=_money(unit_price * q),
+            discount_pct=Decimal(discount_pct),
+            line_total=_apply_discount(unit_price, q, discount_pct),
         )
         db.add(line)
     await db.flush()
@@ -249,6 +303,7 @@ async def settle_sale(
     payment_method: str,
     recorded_by_id: int | None = None,
     payment_intent_id: str | None = None,
+    cash_received: Decimal | None = None,
 ) -> bool:
     """Encaisse une vente — **idempotent**. Renvoie True si réglée maintenant.
 
@@ -320,6 +375,14 @@ async def settle_sale(
     sale.status = "paid"
     sale.payment_method = payment_method
     sale.paid_at = datetime.now(UTC)
+    if cash_received is not None and payment_method == "cash":
+        # Purement informatif : la caisse est créditée du **total de la vente**,
+        # jamais de ce montant. Sans cette trace, un écart de rendu de monnaie
+        # restait inexplicable au comptage.
+        received = _money(Decimal(cash_received))
+        if received < Decimal(sale.total):
+            raise OnboardSalesError("Espèces reçues inférieures au montant de la vente.")
+        sale.cash_received = received
     if payment_intent_id:
         sale.stripe_payment_intent_id = payment_intent_id
     await db.flush()
@@ -786,7 +849,27 @@ async def current_inventory(db: AsyncSession, vessel_id: int) -> list[dict]:
         .all()
     )
     smap = await stock_map(db, vessel_id)
-    return [{"product": p, "on_hand": smap.get(p.id, Decimal("0"))} for p in products]
+    rows = []
+    for p in products:
+        on_hand = smap.get(p.id, Decimal("0"))
+        threshold = Decimal(p.min_stock_alert) if p.min_stock_alert is not None else None
+        rows.append(
+            {
+                "product": p,
+                "on_hand": on_hand,
+                "threshold": threshold,
+                # Une rupture ne se découvrait qu'au moment de vendre : le
+                # commandant ne savait pas qu'il fallait réapprovisionner.
+                "low": threshold is not None and on_hand <= threshold,
+                "negative": on_hand < 0,
+            }
+        )
+    return rows
+
+
+async def low_stock(db: AsyncSession, vessel_id: int) -> list[dict]:
+    """Articles sous leur seuil d'alerte — à réapprovisionner."""
+    return [row for row in await current_inventory(db, vessel_id) if row["low"] or row["negative"]]
 
 
 async def register_rows(

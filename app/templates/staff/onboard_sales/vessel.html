@@ -115,14 +115,25 @@
   {% if inventory %}
     <div class="table-scroll">
 <table class="data-table">
-      <thead><tr><th>SKU</th><th>Désignation</th><th class="text-right">En stock</th><th>Unité</th></tr></thead>
+      <thead><tr><th>SKU</th><th>Désignation</th><th class="text-right">En stock</th><th class="text-right">Seuil</th><th>Unité</th><th></th></tr></thead>
       <tbody>
         {% for it in inventory %}
           <tr>
             <td class="mono">{{ it.product.sku }}</td>
             <td>{{ it.product.label }}</td>
-            <td class="text-right mono {% if it.on_hand < 0 %}text-error{% endif %}">{{ it.on_hand.normalize() }}</td>
+            <td class="text-right mono {% if it.negative %}text-error{% elif it.low %}text-warning{% endif %}">{{ it.on_hand.normalize() }}</td>
+            <td class="text-right mono text-muted">
+              {% if it.threshold is not none %}{{ it.threshold.normalize() }}{% else %}—{% endif %}
+            </td>
             <td>{{ it.product.unit }}</td>
+            <td>
+              {# Une rupture ne se découvrait qu'au moment de vendre. #}
+              {% if it.negative %}
+                <span class="pill pill-danger">stock négatif</span>
+              {% elif it.low %}
+                <span class="pill pill-warn">à réapprovisionner</span>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>

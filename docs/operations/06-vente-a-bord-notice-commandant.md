@@ -41,6 +41,11 @@ saisir.
 
 ## 3. Avitailler : entrer le stock à bord
 
+> 🔔 **Seuil d'alerte** — dans le catalogue, chaque article peut porter un
+> seuil. Dès que le stock du navire passe dessous, l'inventaire l'affiche
+> *« à réapprovisionner »*. Un stock négatif est toujours signalé, seuil ou
+> non : c'est un écart d'inventaire à régulariser.
+
 Avant les premières ventes d'une rotation, saisissez les quantités embarquées.
 Dans l'espace du navire, section **Inventaire du bord**, ajoutez un mouvement
 de stock avec le motif :
@@ -68,12 +73,32 @@ jamais à la saisir à la main.
 > Tant qu'aucun article n'est ajouté (**Total 0,00**), les boutons
 > d'encaissement restent **grisés** : c'est normal, ajoutez d'abord une ligne.
 
+## 4 bis. Remise, gratuité, article hors catalogue
+
+**Remise** — au moment d'ajouter un article, un champ *Remise (%)* applique une
+réduction sur cette ligne. **100 % vaut gratuité** : c'est ainsi qu'on offre un
+article à l'équipage ou qu'on fait un geste commercial. Le prix du catalogue
+reste affiché et conservé ; seul le total de ligne change.
+
+**Article hors catalogue** — le lien *« + Ligne hors catalogue »* permet de
+vendre quelque chose qui n'est pas au référentiel (dépannage, service
+ponctuel) : désignation, prix, quantité. **N'inventez plus de faux produit**
+pour cela — il polluerait le catalogue et l'inventaire durablement.
+
+Une ligne hors catalogue **ne bouge pas le stock** au règlement : l'article
+n'est pas suivi, c'est cohérent.
+
 ## 5. Encaisser en espèces
 
 Section **Encaissement** → **« Encaisser en espèces »** → confirmez le montant.
 La vente passe **Payée**, et un mouvement est créé dans la **caisse du bord**
 (catégorie *vente à bord*). C'est le mode le plus simple : il ne dépend
 d'aucun prestataire extérieur.
+
+Le champ **« Espèces reçues »** est facultatif mais utile : il calcule et
+conserve la **monnaie rendue**. Sans cette trace, un écart au comptage de
+caisse reste inexplicable. La caisse est créditée du **montant de la vente**,
+jamais de la somme remise par l'acheteur.
 
 Une fois la vente réglée, **« Reçu de l'acheteur (PDF) »** produit le
 justificatif à remettre. Ce n'est pas une facture : les ventes à bord sont en

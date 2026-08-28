@@ -100,6 +100,12 @@
                       <input name="unit" value="{{ p.unit }}" />
                     </div>
                     <div class="field">
+                      <label>Seuil d'alerte de stock</label>
+                      <input name="min_stock_alert" inputmode="decimal"
+                             value="{{ p.min_stock_alert.normalize() if p.min_stock_alert is not none else "" }}"
+                             placeholder="vide = pas d'alerte" />
+                    </div>
+                    <div class="field">
                       <label>Notes</label>
                       <input name="notes" value="{{ p.notes or "" }}" />
                     </div>

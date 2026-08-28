@@ -394,6 +394,14 @@ préférences de style.
   `POST /captain/ventes/{vessel_id}/vente-rapide`, idempotent par `client_uuid`
   généré côté navigateur. La file ne conserve qu'une valeur par nom de champ :
   le panier voyage dans un **champ unique** (`"id:qté,id:qté"`).
+- **Le total d'une ligne de vente est toujours dérivé**, jamais saisi :
+  `prix catalogue × quantité × (1 − remise)`. Une remise de 100 % est la
+  gratuité. Une **ligne hors catalogue** (`product_id` NULL) porte son propre
+  prix mais ne génère **aucun mouvement de stock** au règlement — l'article
+  n'est pas suivi.
+- **`cash_received` est informatif** : la caisse est créditée du **total de la
+  vente**, jamais des espèces remises. Il ne sert qu'à tracer le rendu de
+  monnaie, sans quoi un écart au comptage reste inexplicable.
 - **Le chiffre d'affaires ne se consolide pas entre devises** :
   `sales_summary` ventile par devise et n'additionne jamais — l'application ne
   tient aucun taux de change, un total unique serait faux d'apparence juste. Le
