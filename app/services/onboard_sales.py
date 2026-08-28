@@ -540,6 +540,235 @@ async def revert_to_draft(db: AsyncSession, sale: OnboardSale) -> None:
     await db.flush()
 
 
+# ── Reporting ────────────────────────────────────────────────────────────────
+
+
+def _settled_filter():
+    """Ventes effectivement encaissées — les brouillons ne sont pas du chiffre."""
+    return OnboardSale.cashbox_movement_id.is_not(None)
+
+
+async def sales_summary(
+    db: AsyncSession,
+    *,
+    vessel_id: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict:
+    """Chiffre d'affaires de la vente à bord, ventilé.
+
+    Le siège ne pouvait pas répondre à « combien la boutique a-t-elle vendu ce
+    mois-ci ? » autrement qu'en lisant l'export CSV de caisse : aucune
+    agrégation n'existait dans l'application (audit du 2026-08-27).
+
+    Ne compte que les ventes **réglées**. Une vente remboursée est comptée à
+    part et retirée du net : le chiffre d'affaires est net de remboursements,
+    comme la contre-passation le fait déjà en caisse.
+
+    Les montants restent **ventilés par devise** — il n'existe aucun taux de
+    change dans l'application, et en inventer un ici produirait un total faux
+    d'apparence juste.
+    """
+    from app.models.leg import Leg
+    from app.models.vessel import Vessel
+
+    def _scope(stmt):
+        stmt = stmt.where(_settled_filter())
+        if vessel_id is not None:
+            stmt = stmt.where(OnboardSale.vessel_id == vessel_id)
+        if date_from is not None:
+            stmt = stmt.where(OnboardSale.paid_at >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(OnboardSale.paid_at <= date_to)
+        return stmt
+
+    # ── Totaux par devise ────────────────────────────────────────────────────
+    rows = (
+        await db.execute(
+            _scope(
+                select(
+                    OnboardSale.currency,
+                    OnboardSale.status,
+                    func.coalesce(func.sum(OnboardSale.total), 0).label("amount"),
+                    func.count(OnboardSale.id).label("cnt"),
+                ).group_by(OnboardSale.currency, OnboardSale.status)
+            )
+        )
+    ).all()
+    totals: dict[str, dict] = {}
+    for r in rows:
+        entry = totals.setdefault(
+            r.currency,
+            {"gross": Decimal("0"), "refunded": Decimal("0"), "net": Decimal("0"), "count": 0},
+        )
+        amount = Decimal(r.amount or 0)
+        if r.status == "refunded":
+            entry["refunded"] += amount
+        else:
+            entry["gross"] += amount
+            entry["count"] += int(r.cnt or 0)
+    for entry in totals.values():
+        entry["net"] = _money(entry["gross"])
+        entry["gross"] = _money(entry["gross"])
+        entry["refunded"] = _money(entry["refunded"])
+
+    # ── Par navire ───────────────────────────────────────────────────────────
+    by_vessel = [
+        {
+            "vessel_id": r.id,
+            "code": r.code,
+            "name": r.name,
+            "currency": r.currency,
+            "net": _money(Decimal(r.amount or 0)),
+            "count": int(r.cnt or 0),
+        }
+        for r in (
+            await db.execute(
+                _scope(
+                    select(
+                        Vessel.id,
+                        Vessel.code,
+                        Vessel.name,
+                        OnboardSale.currency,
+                        func.coalesce(func.sum(OnboardSale.total), 0).label("amount"),
+                        func.count(OnboardSale.id).label("cnt"),
+                    )
+                    .join(Vessel, Vessel.id == OnboardSale.vessel_id)
+                    .where(OnboardSale.status == "paid")
+                    .group_by(Vessel.id, Vessel.code, Vessel.name, OnboardSale.currency)
+                    .order_by(Vessel.code)
+                )
+            )
+        ).all()
+    ]
+
+    # ── Par article ──────────────────────────────────────────────────────────
+    by_product = [
+        {
+            "label": r.label,
+            "currency": r.currency,
+            "qty": _qty(Decimal(r.qty or 0)),
+            "net": _money(Decimal(r.amount or 0)),
+        }
+        for r in (
+            await db.execute(
+                _scope(
+                    select(
+                        OnboardSaleLine.label,
+                        OnboardSale.currency,
+                        func.coalesce(func.sum(OnboardSaleLine.qty), 0).label("qty"),
+                        func.coalesce(func.sum(OnboardSaleLine.line_total), 0).label("amount"),
+                    )
+                    .join(OnboardSale, OnboardSale.id == OnboardSaleLine.sale_id)
+                    .where(OnboardSale.status == "paid")
+                    .group_by(OnboardSaleLine.label, OnboardSale.currency)
+                )
+            )
+        ).all()
+    ]
+    by_product.sort(key=lambda row: row["net"], reverse=True)
+
+    # ── Par voyage ───────────────────────────────────────────────────────────
+    by_leg = [
+        {
+            "leg_id": r.id,
+            "leg_code": r.leg_code,
+            "currency": r.currency,
+            "net": _money(Decimal(r.amount or 0)),
+            "count": int(r.cnt or 0),
+        }
+        for r in (
+            await db.execute(
+                _scope(
+                    select(
+                        Leg.id,
+                        Leg.leg_code,
+                        OnboardSale.currency,
+                        func.coalesce(func.sum(OnboardSale.total), 0).label("amount"),
+                        func.count(OnboardSale.id).label("cnt"),
+                    )
+                    .join(Leg, Leg.id == OnboardSale.leg_id)
+                    .where(OnboardSale.status == "paid")
+                    .group_by(Leg.id, Leg.leg_code, OnboardSale.currency)
+                    .order_by(Leg.leg_code)
+                )
+            )
+        ).all()
+    ]
+
+    return {
+        "totals": totals,
+        "by_vessel": by_vessel,
+        "by_product": by_product,
+        "by_leg": by_leg,
+    }
+
+
+async def onboard_revenue_by_leg(db: AsyncSession, leg_id: int) -> dict[str, Decimal]:
+    """CA de vente à bord d'un voyage, par devise.
+
+    Exposé pour Finance/KPI. **Volontairement non injecté** dans
+    ``LegFinance.revenue_eur``, qui est saisi par un opérateur : y écrire
+    d'office écraserait sa saisie sans qu'il le sache. La consolidation
+    automatique est une décision de gestion, pas un détail d'implémentation.
+    """
+    rows = (
+        await db.execute(
+            select(
+                OnboardSale.currency,
+                func.coalesce(func.sum(OnboardSale.total), 0).label("amount"),
+            )
+            .where(
+                OnboardSale.leg_id == leg_id,
+                OnboardSale.status == "paid",
+                _settled_filter(),
+            )
+            .group_by(OnboardSale.currency)
+        )
+    ).all()
+    return {r.currency: _money(Decimal(r.amount or 0)) for r in rows}
+
+
+def export_summary_csv(summary: dict, *, period: str) -> str:
+    """Export comptable du chiffre d'affaires, ventilé comme à l'écran."""
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow([f"Vente à bord — chiffre d'affaires — période {period}"])
+    w.writerow([])
+
+    w.writerow(["Totaux par devise"])
+    w.writerow(["Devise", "Encaissé", "Remboursé", "Net", "Nombre de ventes"])
+    for currency, entry in sorted(summary["totals"].items()):
+        w.writerow(
+            [
+                currency,
+                f"{entry['gross']:.2f}",
+                f"{entry['refunded']:.2f}",
+                f"{entry['net']:.2f}",
+                entry["count"],
+            ]
+        )
+
+    w.writerow([])
+    w.writerow(["Par navire"])
+    w.writerow(["Navire", "Nom", "Devise", "Net", "Ventes"])
+    for row in summary["by_vessel"]:
+        w.writerow([row["code"], row["name"], row["currency"], f"{row['net']:.2f}", row["count"]])
+
+    w.writerow([])
+    w.writerow(["Par article"])
+    w.writerow(["Article", "Devise", "Quantité", "Net"])
+    for row in summary["by_product"]:
+        w.writerow([row["label"], row["currency"], f"{row['qty']:.3f}", f"{row['net']:.2f}"])
+
+    w.writerow([])
+    w.writerow(["Par voyage"])
+    w.writerow(["Leg", "Devise", "Net", "Ventes"])
+    for row in summary["by_leg"]:
+        w.writerow([row["leg_code"], row["currency"], f"{row['net']:.2f}", row["count"]])
+    return buf.getvalue()
+
+
 # ── Registre douanier & inventaire ──────────────────────────────────────────
 
 

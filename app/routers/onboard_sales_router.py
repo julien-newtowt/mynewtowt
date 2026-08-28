@@ -312,6 +312,84 @@ async def toggle_product(
 # ───────────────────────────────────────────────────────── Tableau de bord navire
 
 
+@router.get("/rapport", response_class=HTMLResponse)
+async def sales_report(
+    request: Request,
+    vessel_id: int | None = None,
+    date_from: str = "",
+    date_to: str = "",
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> HTMLResponse:
+    """Chiffre d'affaires de la vente à bord, ventilé par navire, article, voyage.
+
+    Le siège ne pouvait pas répondre à « combien la boutique a-t-elle vendu ce
+    mois-ci ? » autrement qu'en lisant l'export CSV de caisse.
+    """
+    scoped = visible_vessel_id(user)
+    if scoped is not None:
+        vessel_id = scoped  # un utilisateur borné ne voit que son navire
+    elif getattr(user, "role", None) in SEAFARER_ROLES:
+        _check_vessel(user, None)
+
+    summary = await svc.sales_summary(
+        db,
+        vessel_id=vessel_id,
+        date_from=_parse_date(date_from),
+        date_to=_parse_date(date_to, end_of_day=True),
+    )
+    vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+    if scoped is not None:
+        vessels = [v for v in vessels if v.id == scoped]
+    return templates.TemplateResponse(
+        "staff/onboard_sales/rapport.html",
+        {
+            "request": request,
+            "user": user,
+            "summary": summary,
+            "vessels": vessels,
+            "vessel_id": vessel_id,
+            "date_from": date_from,
+            "date_to": date_to,
+            "scoped": scoped is not None,
+        },
+    )
+
+
+@router.get("/rapport/export.csv")
+async def sales_report_csv(
+    vessel_id: int | None = None,
+    date_from: str = "",
+    date_to: str = "",
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> Response:
+    """Même ventilation, exportable pour la comptabilité."""
+    scoped = visible_vessel_id(user)
+    if scoped is not None:
+        vessel_id = scoped
+    elif getattr(user, "role", None) in SEAFARER_ROLES:
+        _check_vessel(user, None)
+
+    summary = await svc.sales_summary(
+        db,
+        vessel_id=vessel_id,
+        date_from=_parse_date(date_from),
+        date_to=_parse_date(date_to, end_of_day=True),
+    )
+    csv_text = svc.export_summary_csv(summary, period=f"{date_from or '—'} → {date_to or '—'}")
+    return Response(
+        content=csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="ventes-a-bord.csv"'},
+    )
+
+
+# ⚠️ Ordre de déclaration : les chemins littéraux (`/catalogue`, `/rapport`)
+# doivent précéder `/{vessel_id}`. FastAPI n'ajoute pas de convertisseur de type
+# au motif de route : `/{vessel_id}` capture n'importe quel segment, et un
+# `/rapport` déclaré après renverrait 422 au lieu de sa page. Verrouillé par
+# `test_literal_routes_are_declared_before_the_vessel_placeholder`.
 @router.get("/{vessel_id}", response_class=HTMLResponse)
 async def vessel_dashboard(
     request: Request,
