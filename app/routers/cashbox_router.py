@@ -80,7 +80,7 @@ def _check_vessel(user, vessel_id: int | None) -> None:
 async def cashbox_index(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> HTMLResponse:
     # Un utilisateur borné ne voit que sa caisse : le solde et les mouvements
     # d'un autre navire ne font pas partie des consultations restées ouvertes
@@ -114,7 +114,7 @@ async def cashbox_detail(
     vessel_id: int,
     currency: str | None = None,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> HTMLResponse:
     _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
@@ -161,7 +161,7 @@ async def cash_count_form(
     request: Request,
     vessel_id: int,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> HTMLResponse:
     """Grille de comptage — une colonne par devise, une ligne par coupure."""
     _check_vessel(user, vessel_id)
@@ -204,7 +204,7 @@ async def submit_cash_count(
     request: Request,
     vessel_id: int,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     """Enregistre l'état déclaré et fige les écarts par devise.
 
@@ -313,7 +313,7 @@ async def cash_count_detail(
     vessel_id: int,
     count_id: int,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> HTMLResponse:
     _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
@@ -349,7 +349,7 @@ async def add_mov(
     occurred_at: str = Form(""),
     receipt: UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     _check_vessel(user, vessel_id)
     cb = await get_or_create(db, vessel_id)
@@ -421,7 +421,7 @@ async def attach_receipt(
     mov_id: int,
     receipt: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     _check_vessel(user, vessel_id)
     mov = await _get_movement(db, vessel_id, mov_id)
@@ -452,7 +452,7 @@ async def view_receipt(
     vessel_id: int,
     mov_id: int,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> Response:
     _check_vessel(user, vessel_id)
     mov = await _get_movement(db, vessel_id, mov_id)
@@ -476,7 +476,7 @@ async def correct_movement(
     reason: str = Form(...),
     corrected_amount: str = Form(""),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     """Rectifie un mouvement mal saisi, par contre-écriture.
 
@@ -541,7 +541,7 @@ async def export_period(
     year: int = Query(..., ge=2000, le=2100),
     month: int = Query(..., ge=1, le=12),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> Response:
     _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
@@ -568,7 +568,7 @@ async def close_period(
     year: int = Form(..., ge=2000, le=2100),
     month: int = Form(..., ge=1, le=12),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)

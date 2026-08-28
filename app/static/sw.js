@@ -18,7 +18,7 @@
 
 importScripts("/static/js/onboard-idb.js");
 
-var CACHE_NAME = "towt-onboard-v3";
+var CACHE_NAME = "towt-onboard-v4";
 var SYNC_TAG = "towt-onboard-flush";
 
 /* App shell : CSS + JS chargés par les pages /onboard (base.html +
@@ -94,6 +94,37 @@ function shouldHandle(request) {
   );
 }
 
+// Une réponse peut-elle être conservée en cache ?
+//
+// Le périmètre du SW couvre désormais la caisse et la vente à bord, où les
+// pages portent des données financières nominatives : soldes, mouvements,
+// noms d'acheteurs, exports comptables, justificatifs, reçus. Le cache est
+// partagé par **origine**, pas par session — et les tablettes du bord sont
+// partagées et hors ligne par construction. Sans ce filtre, la page de caisse
+// consultée par un commandant serait resservie, hors ligne, à quiconque ouvre
+// la même URL sur l'appareil, sans qu'aucun contrôle serveur n'intervienne.
+//
+// On ne conserve donc que ce qui doit fonctionner hors connexion et ne révèle
+// rien : la coquille applicative et les ressources statiques. Le formulaire de
+// vente rapide reste utilisable, sa file d'attente vivant en IndexedDB.
+function isCacheable(request, response) {
+  var url = new URL(request.url);
+  if (url.pathname.indexOf("/static/") === 0) return true;
+
+  // Le serveur marque explicitement les pages à ne pas conserver.
+  var cc = response.headers.get("cache-control") || "";
+  if (cc.indexOf("no-store") !== -1) return false;
+
+  // Données financières : jamais en cache, quel que soit l'en-tête.
+  if (
+    url.pathname.indexOf("/cashbox") === 0 ||
+    url.pathname.indexOf("/captain/ventes") === 0
+  ) {
+    return false;
+  }
+  return true;
+}
+
 self.addEventListener("fetch", function (event) {
   var request = event.request;
   if (!shouldHandle(request)) return;
@@ -102,7 +133,12 @@ self.addEventListener("fetch", function (event) {
     fetch(request)
       .then(function (response) {
         // Network-first : on met en cache les réponses 200 (clone).
-        if (response && response.status === 200 && response.type === "basic") {
+        if (
+          response &&
+          response.status === 200 &&
+          response.type === "basic" &&
+          isCacheable(request, response)
+        ) {
           var copy = response.clone();
           caches.open(CACHE_NAME).then(function (cache) {
             cache.put(request, copy);

@@ -222,3 +222,18 @@ def test_the_back_link_refuses_active_schemes(client, referer):
     assert "Revenir en arrière" not in r.text
     assert "javascript:" not in r.text
     assert "data:text/html" not in r.text
+
+
+def test_the_service_worker_never_caches_financial_pages():
+    """Le cache est partagé par origine, pas par session.
+
+    Les tablettes du bord sont partagées et hors ligne par construction : une
+    page de caisse conservée en cache serait resservie à quiconque ouvre la même
+    URL sur l'appareil, sans aucun contrôle serveur (revue du 2026-08-28).
+    """
+    sw = Path("app/static/sw.js").read_text(encoding="utf-8")
+    assert "function isCacheable(" in sw
+    # Le filtre est appliqué avant toute écriture en cache.
+    assert "isCacheable(request, response)" in sw
+    for marker in ('url.pathname.indexOf("/cashbox") === 0', "no-store"):
+        assert marker in sw, marker

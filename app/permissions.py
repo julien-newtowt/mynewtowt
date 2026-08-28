@@ -49,6 +49,13 @@ MODULES: tuple[str, ...] = (
     "finance",
     "kpi",
     "captain",
+    # Vente à bord + caisse de bord. Module **distinct** de `captain`
+    # délibérément : le commandant doit pouvoir encaisser sans recevoir pour
+    # autant le droit d'écrire les SOF, les décalages d'ETA, les documents
+    # cargo et la saisie MRV — que `captain:M` déverrouille sur toute la flotte,
+    # sans contrôle de navire. Donner tout le module pour une fonctionnalité
+    # était une escalade de privilège (revue de sécurité du 2026-08-28).
+    "ventes",
     "crew",
     "claims",
     "mrv",
@@ -73,6 +80,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("operation", "cargo"): "CMS",
     ("operation", "kpi"): "C",
     ("operation", "captain"): "CM",
+    ("operation", "ventes"): "CM",
     ("operation", "crew"): "CM",
     ("operation", "claims"): "CMS",
     ("operation", "mrv"): "CM",
@@ -87,6 +95,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("armement", "escale"): "C",
     ("armement", "kpi"): "C",
     ("armement", "captain"): "C",
+    ("armement", "ventes"): "C",
     ("armement", "crew"): "CMS",
     ("armement", "mrv"): "C",
     ("armement", "qhse"): "C",
@@ -100,6 +109,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("technique", "cargo"): "C",
     ("technique", "kpi"): "C",
     ("technique", "captain"): "CM",
+    ("technique", "ventes"): "CM",
     ("technique", "crew"): "C",
     ("technique", "claims"): "C",
     ("technique", "mrv"): "CM",
@@ -115,6 +125,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("data_analyst", "finance"): "CMS",
     ("data_analyst", "kpi"): "C",
     ("data_analyst", "captain"): "C",
+    ("data_analyst", "ventes"): "C",
     ("data_analyst", "crew"): "C",
     ("data_analyst", "claims"): "C",
     ("data_analyst", "mrv"): "CM",
@@ -129,6 +140,9 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("marins", "escale"): "C",
     ("marins", "kpi"): "C",
     ("marins", "captain"): "C",
+    # Le commandant encaisse : c'est sa fonction. Le cloisonnement par navire
+    # (ADR-012) borne ensuite chaque route au navire d'affectation.
+    ("marins", "ventes"): "CM",
     ("marins", "crew"): "C",
     ("marins", "cargo"): "C",
     ("marins", "mrv"): "C",
@@ -144,6 +158,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("commercial", "kpi"): "C",
     ("commercial", "qhse"): "C",
     ("commercial", "captain"): "C",
+    ("commercial", "ventes"): "C",
     ("commercial", "rh"): "C",
     ("commercial", "booking"): "CMS",
     ("commercial", "analytics"): "C",
@@ -155,6 +170,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("manager_maritime", "cargo"): "CM",
     ("manager_maritime", "kpi"): "C",
     ("manager_maritime", "captain"): "CMS",
+    ("manager_maritime", "ventes"): "CMS",
     ("manager_maritime", "crew"): "CM",
     ("manager_maritime", "claims"): "CM",
     ("manager_maritime", "mrv"): "CM",

@@ -212,3 +212,51 @@ async def test_shore_administration_still_reaches_every_vessel(db):
 def test_cash_count_amounts_are_untouched_by_scoping():
     """Garde-fou : le cloisonnement ne doit pas altérer les calculs."""
     assert Decimal("76.47") == Decimal("20") * 2 + Decimal("5") + Decimal("31.47")
+
+
+# ── Périmètre de la permission accordée au commandant ───────────────────────
+
+
+def test_selling_does_not_unlock_the_whole_captain_module():
+    """Revue de sécurité du 2026-08-28 — escalade de privilège corrigée.
+
+    Donner `captain:CM` à `marins` pour qu'il puisse encaisser lui ouvrait en
+    réalité 39 routes d'écriture qui ne contrôlent pas le navire (SOF, décalages
+    d'ETA, messagerie du bord, documents cargo, saisie MRV), sur toute la flotte.
+    La vente et la caisse vivent donc dans leur propre module de permission.
+    """
+    from app.permissions import MODULES, has_permission
+
+    assert "ventes" in MODULES
+    # Le commandant encaisse…
+    assert has_permission("marins", "ventes", "M")
+    # …et ne reçoit pour autant aucun droit d'écriture ailleurs.
+    assert not has_permission("marins", "captain", "M")
+    assert not has_permission("marins", "mrv", "M")
+    assert not has_permission("marins", "cargo", "M")
+
+
+def test_the_sales_and_cashbox_routers_use_the_dedicated_module():
+    """Sentinelle : aucune route de ces deux modules ne doit exiger `captain`."""
+    from pathlib import Path
+
+    for path in ("app/routers/onboard_sales_router.py", "app/routers/cashbox_router.py"):
+        source = Path(path).read_text(encoding="utf-8")
+        assert 'require_permission("captain"' not in source, path
+        assert 'require_permission("ventes"' in source, path
+
+
+def test_shore_roles_keep_the_access_they_had():
+    """Le nouveau module ne doit priver personne de ce qu'il avait sur `captain`."""
+    from app.permissions import has_permission
+
+    for role, level in (
+        ("operation", "M"),
+        ("technique", "M"),
+        ("manager_maritime", "S"),
+        ("administrateur", "S"),
+    ):
+        assert has_permission(role, "ventes", level), f"{role} a perdu {level} sur ventes"
+    for role in ("armement", "data_analyst", "commercial"):
+        assert has_permission(role, "ventes", "C")
+        assert not has_permission(role, "ventes", "M")

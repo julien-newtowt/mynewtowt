@@ -39,9 +39,7 @@ def _sign(payload: bytes, secret: str = _SECRET) -> str:
 def configured(monkeypatch):
     """Instance où Yousign est provisionné."""
     monkeypatch.setattr(yousign_svc.settings, "yousign_api_key", "clef-api", raising=False)
-    monkeypatch.setattr(
-        yousign_svc.settings, "yousign_webhook_secret", _SECRET, raising=False
-    )
+    monkeypatch.setattr(yousign_svc.settings, "yousign_webhook_secret", _SECRET, raising=False)
 
 
 @pytest.fixture
@@ -305,9 +303,7 @@ def test_settings_expose_a_disabled_flag_by_default():
     """Sans clé, ``yousign_enabled`` est faux — la voie électronique est fermée."""
     from app.config import Settings
 
-    settings = Settings(
-        secret_key="x" * 40, database_url="postgresql+asyncpg://u:p@localhost/db"
-    )
+    settings = Settings(secret_key="x" * 40, database_url="postgresql+asyncpg://u:p@localhost/db")
     assert settings.yousign_enabled is False
 
 
@@ -316,9 +312,7 @@ def test_signature_and_payment_stay_independent():
     from app.services.booking_note_signature import SIGNATURE_STATUSES
 
     assert not any(
-        token in status
-        for status in SIGNATURE_STATUSES
-        for token in ("paid", "regle", "payment")
+        token in status for status in SIGNATURE_STATUSES for token in ("paid", "regle", "payment")
     )
     note = SimpleNamespace(signature_status="signed", document_sha256=None)
     assert not hasattr(note, "paid_at")

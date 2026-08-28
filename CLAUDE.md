@@ -313,8 +313,12 @@ reste hors plateforme (arbitrage A5) : les conditions de règlement sont
 ### Permissions
 - 9 rôles : `administrateur`, `operation`, `armement`, `technique`,
   `data_analyst`, `marins`, `commercial`, `manager_maritime`, `rh`.
-- 17 modules : planning, commercial, escale, cargo, finance, kpi, captain,
-  crew, claims, mrv, rh, booking, tickets, analytics, chat, veille, admin.
+- 18 modules : planning, commercial, escale, cargo, finance, kpi, captain,
+  **ventes**, crew, claims, mrv, rh, booking, tickets, analytics, chat, veille,
+  admin. `ventes` (vente à bord + caisse) est **distinct de `captain`** :
+  `captain:M` déverrouille SOF, ETA, documents cargo et saisie MRV sur toute la
+  flotte, sans contrôle de navire. Accorder tout le module pour permettre
+  d'encaisser était une escalade de privilège.
 - Niveaux C / M / S = Consult / Modify / Suppress.
 - Décorateur `Depends(require_permission("module", "C"|"M"|"S"))` sur
   toute route.
@@ -430,6 +434,9 @@ préférences de style.
   négocie pas : un **règlement de vente** dans la fenêtre gelée est **reporté** au
   premier jour ouvert, jamais refusé — on ne perd jamais l'écriture d'un paiement
   encaissé. Une **saisie manuelle**, elle, est refusée.
+- **Vente et caisse vivent dans le module de permission `ventes`**, jamais
+  `captain` : ce dernier ouvre 39 routes d'écriture sans contrôle de navire.
+  Ne jamais élargir un module entier pour débloquer une fonctionnalité.
 - **Le personnel maritime est borné à son navire d'affectation** (ADR-012) :
   `permissions.assert_vessel_access` sur toute route portant un `vessel_id`, et
   dans `_get_sale_or_404` pour les routes de vente. Seuls `administrateur` et
@@ -542,7 +549,7 @@ préférences de style.
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
 | Cashbox | `/cashbox` | ✅ EUR/USD/VND · mouvements datés à la **journée** (pas d'heure) · **contrôle de caisse** : état déclaré par le commandant coupure par coupure à chaque fin d'embarquement et fin de mois, écarts figés et historisés (`cash_counts`) |
-| Vente à bord | `/captain/ventes` | 🟡 **Boucle de correction en place, pas encore éprouvé à bord** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` passe à CM par la migration 0125. Remboursement (siège, par contre-passation), contrôle de caisse, gel à la relève, reçu PDF, vente rapide espèces rejouable hors connexion et rectification d'un mouvement de caisse livrés. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
+| Vente à bord | `/captain/ventes` | 🟡 **Boucle de correction en place, pas encore éprouvé à bord** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` a `ventes:CM` par défaut dans la matrice — aucun override requis. Remboursement (siège, par contre-passation), contrôle de caisse, gel à la relève, reçu PDF, vente rapide espèces rejouable hors connexion et rectification d'un mouvement de caisse livrés. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
 | RH (SIRH) | `/rh` | ✅ congés marins + SIRH sédentaires : dossier/CRUD/import, contrats & avenants + alertes, congés/absences + self-service `/rh/moi`, EVP + verrouillage période, export Silae CSV + journal des lots, coffre-fort bulletins + entretiens + reporting RH (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |
 | Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |

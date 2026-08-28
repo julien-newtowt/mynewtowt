@@ -44,9 +44,12 @@ def test_route_reference_uses_iso2_country_codes():
 
 def test_route_reference_marks_open_validity_and_unknown_country():
     """Une validité ouverte ne s'invente pas une échéance, un pays inconnu se voit."""
-    assert route_tariff_reference(
-        valid_from=date(2026, 12, 1), valid_to=None, pol_country="FR", pod_country=None
-    ) == "P-1226------FR-??"
+    assert (
+        route_tariff_reference(
+            valid_from=date(2026, 12, 1), valid_to=None, pol_country="FR", pod_country=None
+        )
+        == "P-1226------FR-??"
+    )
 
 
 @pytest.mark.asyncio
@@ -187,11 +190,18 @@ async def test_route_default_grid_wins_over_the_most_recent(db):
 
     # La plus récente n'est PAS celle par défaut — sans le drapeau, elle gagnerait.
     await _grid_with_route(
-        db, client, reference="RG-2026-0001", base_rate="300.00",
-        valid_from=date(2026, 1, 1), is_route_default=True,
+        db,
+        client,
+        reference="RG-2026-0001",
+        base_rate="300.00",
+        valid_from=date(2026, 1, 1),
+        is_route_default=True,
     )
     await _grid_with_route(
-        db, client, reference="RG-2026-0002", base_rate="450.00",
+        db,
+        client,
+        reference="RG-2026-0002",
+        base_rate="450.00",
         valid_from=date(2026, 5, 1),
     )
 

@@ -164,6 +164,14 @@ async def declare_count(
         raise CashCountError("Le nom du déclarant est requis.")
     if not counts:
         raise CashCountError("Déclarez au moins une devise.")
+    # Un comptage décrit une caisse **constatée** : il ne peut pas être daté
+    # dans le futur. Sans cette borne, un motif « fin d'embarquement » daté de
+    # 2999 gelait la comptabilité pour toujours — plus aucune saisie manuelle
+    # possible, et chaque règlement reporté à une date hors de toute clôture,
+    # donc absent des exports comptables : l'argent encaissé disparaissait des
+    # livres (revue de sécurité du 2026-08-28).
+    if counted_on > datetime.now(UTC).date():
+        raise CashCountError("Un comptage ne peut pas être daté dans le futur.")
 
     bulk_coins = bulk_coins or {}
     variance_reasons = variance_reasons or {}

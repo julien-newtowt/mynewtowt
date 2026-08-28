@@ -284,8 +284,12 @@ avitaillements, ventes, ajustements, inventaires, retours. Il constitue la
   droit *captain* — demandez au siège de l'activer.
 - **Je vois les écrans mais chaque bouton renvoie « Accès refusé » (403).**
   Votre profil est en **consultation seule** sur le module. Le siège doit
-  activer « Modifier » sur la cellule *(votre rôle × captain)* dans
-  `/admin/permissions` ; la prise d'effet demande jusqu'à une minute.
+  activer « Modifier » sur la cellule *(votre rôle × ventes)* dans
+  `/admin/permissions` ; la prise d'effet demande jusqu'à une minute. Le rôle
+  *marins* l'a par défaut : si ce n'est pas votre cas, vérifiez votre rôle.
+- **« Votre compte n'est rattaché à aucun navire ».** Le siège doit renseigner
+  votre navire d'affectation dans `/admin/users` : sans lui, la vente et la
+  caisse sont fermées.
 - **Le QR est trop petit / illisible.** Utilisez **« Ouvrir la page de
   paiement »** ou copiez l'URL affichée : c'est le même paiement.
 - **Puis‑je vendre un article dont le stock est à zéro ?** Oui, la vente n'est

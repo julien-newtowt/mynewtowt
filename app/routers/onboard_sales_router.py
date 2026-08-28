@@ -172,7 +172,7 @@ async def _get_sale_or_404(db: AsyncSession, reference: str, *, user=None) -> On
 async def hub(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> HTMLResponse:
     # Le commandant rattaché à un navire est redirigé vers son tableau de bord.
     # Utilisateur borné à un navire : on l'y envoie directement, il n'a rien à
@@ -196,7 +196,7 @@ async def hub(
 async def catalogue(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> HTMLResponse:
     products = list(
         (await db.execute(select(OnboardProduct).order_by(OnboardProduct.label))).scalars().all()
@@ -222,7 +222,7 @@ async def create_product(
     tracks_stock: str = Form(""),  # checkbox : absent si décochée
     notes: str = Form(""),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     # La référence (SKU) est attribuée AUTOMATIQUEMENT (format ART-XXXX dérivé
     # de l'id), jamais saisie par l'utilisateur. On insère avec un placeholder
@@ -270,7 +270,7 @@ async def update_product(
     notes: str = Form(""),
     min_stock_alert: str = Form(""),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     product = await db.get(OnboardProduct, product_id)
     if product is None:
@@ -307,7 +307,7 @@ async def update_product(
 async def toggle_product(
     product_id: int,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     product = await db.get(OnboardProduct, product_id)
     if product is None:
@@ -327,7 +327,7 @@ async def sales_report(
     date_from: str = "",
     date_to: str = "",
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> HTMLResponse:
     """Chiffre d'affaires de la vente à bord, ventilé par navire, article, voyage.
 
@@ -370,7 +370,7 @@ async def sales_report_csv(
     date_from: str = "",
     date_to: str = "",
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> Response:
     """Même ventilation, exportable pour la comptabilité."""
     scoped = visible_vessel_id(user)
@@ -403,7 +403,7 @@ async def vessel_dashboard(
     request: Request,
     vessel_id: int,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> HTMLResponse:
     _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
@@ -460,7 +460,7 @@ async def add_stock(
     reason: str = Form("avitaillement"),
     note: str = Form(""),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
@@ -503,7 +503,7 @@ async def create_sale_route(
     buyer_name: str = Form(""),
     currency: str = Form("EUR"),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
@@ -565,7 +565,7 @@ async def quick_cash_sale(
     buyer_name: str = Form(""),
     currency: str = Form("EUR"),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     """Vente espèces en **une seule requête** — rejouable hors connexion.
 
@@ -616,7 +616,7 @@ async def sale_detail(
     request: Request,
     reference: str,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> HTMLResponse:
     sale = await _get_sale_or_404(db, reference, user=user)
     await _reconcile_pending_card_payment(db, sale, recorded_by_id=user.id)
@@ -674,7 +674,7 @@ async def add_sale_line(
     qty: str = Form(...),
     discount_pct: str = Form("0"),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     sale = await _get_sale_or_404(db, reference, user=user)
     product = await db.get(OnboardProduct, product_id)
@@ -702,7 +702,7 @@ async def add_free_sale_line(
     unit_price: str = Form(...),
     qty: str = Form("1"),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     """Ligne hors catalogue — article non référencé, geste commercial.
 
@@ -742,7 +742,7 @@ async def delete_sale_line(
     reference: str,
     line_id: int,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     sale = await _get_sale_or_404(db, reference, user=user)
     if sale.status != "draft":
@@ -761,7 +761,7 @@ async def confirm_cash(
     reference: str,
     cash_received: str = Form(""),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     sale = await _get_sale_or_404(db, reference, user=user)
     # Ferme d'abord le lien CB éventuel : un client qui a déjà scanné le QR
@@ -803,7 +803,7 @@ async def confirm_cash(
 async def create_checkout(
     reference: str,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     """Génère un lien de paiement Stripe (Checkout Session) pour la vente."""
     if not stripe_svc.card_payments_enabled():
@@ -863,7 +863,7 @@ async def checkout_page(
     request: Request,
     reference: str,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ):
     """Affiche l'URL de paiement + QR code (SVG segno) de la session en cours."""
     sale = await _get_sale_or_404(db, reference, user=user)
@@ -914,7 +914,7 @@ async def checkout_page(
 async def cancel_sale_route(
     reference: str,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     sale = await _get_sale_or_404(db, reference, user=user)
     # « Rien n'est encaissé » n'était vrai que si le lien cessait d'être payable.
@@ -944,7 +944,7 @@ async def cancel_sale_route(
 async def sale_receipt(
     reference: str,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> Response:
     """Reçu PDF remis à l'acheteur.
 
@@ -984,7 +984,7 @@ async def request_refund_route(
     reference: str,
     note: str = Form(""),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "M")),
+    user=Depends(require_permission("ventes", "M")),
 ) -> RedirectResponse:
     """Le bord **signale** une vente à rembourser. Il ne rembourse pas (ADR-013).
 
@@ -1106,7 +1106,7 @@ async def registre(
     date_from: str = "",
     date_to: str = "",
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> HTMLResponse:
     _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)
@@ -1135,7 +1135,7 @@ async def registre_csv(
     date_from: str = "",
     date_to: str = "",
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("captain", "C")),
+    user=Depends(require_permission("ventes", "C")),
 ) -> Response:
     _check_vessel(user, vessel_id)
     vessel = await db.get(Vessel, vessel_id)

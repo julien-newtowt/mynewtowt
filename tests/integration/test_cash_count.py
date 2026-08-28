@@ -76,7 +76,7 @@ async def test_total_is_recomputed_from_the_denominations(db, staff_user):
         db,
         cb,
         trigger="fin_de_mois",
-        counted_on=date(2026, 8, 31),
+        counted_on=date(2026, 8, 20),
         declared_by_name="Cdt Sortant",
         counts={"EUR": {Decimal("20"): 2, Decimal("5"): 1}},
         bulk_coins={"EUR": Decimal("31.47")},
@@ -96,7 +96,7 @@ async def test_dollar_block_matches_the_reference_sheet(db, staff_user):
         db,
         cb,
         trigger="fin_embarquement",
-        counted_on=date(2026, 8, 31),
+        counted_on=date(2026, 8, 20),
         declared_by_name="Cdt Sortant",
         counts={
             "USD": {
@@ -329,7 +329,7 @@ async def test_route_declares_only_the_checked_currencies(db, staff_user):
         _form_request(
             {
                 "trigger": "fin_embarquement",
-                "counted_on": "2026-08-31",
+                "counted_on": "2026-08-20",
                 "declared_by_name": "Cdt Sortant",
                 "handover_to_name": "Cdt Entrant",
                 "declare_EUR": "1",
@@ -348,7 +348,7 @@ async def test_route_declares_only_the_checked_currencies(db, staff_user):
     count = (await db.execute(select(CashCount))).scalars().unique().one()
     assert [b.currency for b in count.currencies] == ["EUR"]
     assert count.currencies[0].counted_total == Decimal("76.47")
-    assert count.counted_on == date(2026, 8, 31)
+    assert count.counted_on == date(2026, 8, 20)
     assert count.handover_to_name == "Cdt Entrant"
 
 
@@ -365,7 +365,7 @@ async def test_route_refuses_an_invalid_quantity(db, staff_user):
                 _form_request(
                     {
                         "trigger": "controle",
-                        "counted_on": "2026-08-31",
+                        "counted_on": "2026-08-20",
                         "declared_by_name": "Cdt",
                         "declare_EUR": "1",
                         "qty_EUR_20": bad,
@@ -688,7 +688,7 @@ async def test_a_monthly_close_does_not_freeze_future_entries(db, staff_user):
         db,
         cb,
         trigger="fin_de_mois",
-        counted_on=date(2026, 8, 31),
+        counted_on=date(2026, 8, 20),
         declared_by_name="Cdt",
         counts={"EUR": {Decimal("50"): 1}},
     )
@@ -841,3 +841,30 @@ async def test_a_frozen_period_still_accepts_a_correction_dated_today(db, staff_
     )
     reversal, _ = await cashbox_svc.reverse_movement(db, cb, old, reason="dépense non due")
     assert reversal.occurred_at.date() > date(2026, 8, 25)
+
+
+@pytest.mark.asyncio
+async def test_a_count_cannot_be_dated_in_the_future(db, staff_user):
+    """Un gel daté de 2999 faisait disparaître l'argent encaissé des livres.
+
+    Un « fin d'embarquement » daté dans le futur gelait la comptabilité pour
+    toujours : plus aucune saisie manuelle possible, et chaque règlement
+    reporté à une date hors de toute clôture — donc absent de tout export
+    comptable, alors que l'argent avait bien été encaissé.
+    """
+    from datetime import timedelta
+
+    _vessel, cb = await _box(db)
+    demain = datetime.now(UTC).date() + timedelta(days=1)
+    with pytest.raises(svc.CashCountError):
+        await svc.declare_count(
+            db,
+            cb,
+            trigger="fin_embarquement",
+            counted_on=demain,
+            declared_by_name="Cdt",
+            counts={"EUR": {Decimal("5"): 1}},
+        )
+    # Rien n'a été gelé.
+    assert await cashbox_svc.frozen_until(db, cb) is None
+    assert await db.scalar(select(func.count()).select_from(CashCount)) == 0
