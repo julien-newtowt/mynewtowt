@@ -359,9 +359,7 @@ async def compute_route_economics(
     # défaut, les valeurs de référence. Le navire du leg prime sur ``vessel_id``
     # (grille) : c'est lui qui portera effectivement la marchandise.
     speed_kn = (
-        Decimal(str(leg.transit_speed_kn))
-        if leg is not None and leg.transit_speed_kn
-        else None
+        Decimal(str(leg.transit_speed_kn)) if leg is not None and leg.transit_speed_kn else None
     )
     capacity: Decimal | None = None
     reference_vessel_id = (leg.vessel_id if leg is not None else None) or vessel_id
@@ -630,9 +628,7 @@ async def create_estimation_request(
         leg_id=leg.id if leg is not None else None,
         etd_snapshot=leg.etd if leg is not None else None,
         client_account_id=client_account.id if client_account is not None else None,
-        commercial_client_id=(
-            commercial_client.id if commercial_client is not None else None
-        ),
+        commercial_client_id=(commercial_client.id if commercial_client is not None else None),
         contact_name=contact_name,
         contact_email=contact_email,
         contact_company=contact_company,

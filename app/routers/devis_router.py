@@ -56,8 +56,9 @@ _PDF_LIMIT_MAX = 12
 _PDF_LIMIT_WINDOW_MIN = 10
 
 
-async def _guard_read(db: AsyncSession, request: Request, *, scope: str, max_attempts: int,
-                      window_minutes: int) -> None:
+async def _guard_read(
+    db: AsyncSession, request: Request, *, scope: str, max_attempts: int, window_minutes: int
+) -> None:
     """Limite le débit de lecture par IP — freine l'énumération de références."""
     ip = _client_ip(request) or "unknown"
     if await rate_limit.exceeded(
@@ -169,7 +170,9 @@ async def devis_submit(
     known_locodes = {
         code
         for (code,) in (
-            await db.execute(select(Port.locode).where(Port.locode.in_([c for c in (pol, pod) if c])))
+            await db.execute(
+                select(Port.locode).where(Port.locode.in_([c for c in (pol, pod) if c]))
+            )
         ).all()
     }
 

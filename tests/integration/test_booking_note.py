@@ -96,12 +96,18 @@ async def _scene(db, *, with_grid=True) -> tuple[RateOffer, Client]:
         db.add_all(
             [
                 RateGridPaymentTerm(
-                    grid_id=grid.id, position=1, trigger="days_before_etd",
-                    offset_days=30, percentage=Decimal("40.00"),
+                    grid_id=grid.id,
+                    position=1,
+                    trigger="days_before_etd",
+                    offset_days=30,
+                    percentage=Decimal("40.00"),
                 ),
                 RateGridPaymentTerm(
-                    grid_id=grid.id, position=2, trigger="before_loading",
-                    percentage=Decimal("60.00"), label="Solde",
+                    grid_id=grid.id,
+                    position=2,
+                    trigger="before_loading",
+                    percentage=Decimal("60.00"),
+                    label="Solde",
                 ),
             ]
         )

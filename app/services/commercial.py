@@ -82,9 +82,7 @@ def route_tariff_reference(
         clean = (code or "").strip().upper()
         return clean[:2] if len(clean) >= 2 else "??"
 
-    return (
-        f"P-{_mmaa(valid_from)}-{_mmaa(valid_to)}-{_cc(pol_country)}-{_cc(pod_country)}"
-    )
+    return f"P-{_mmaa(valid_from)}-{_mmaa(valid_to)}-{_cc(pol_country)}-{_cc(pod_country)}"
 
 
 # ─────────────────────────── Pricing ───────────────────────────────
@@ -110,9 +108,7 @@ async def assign_tariff_reference(db: AsyncSession, grid: RateGrid, route) -> st
     for locode in (route.pol_locode, route.pod_locode):
         clean = (locode or "").strip().upper()
         if clean and clean not in countries:
-            port = (
-                await db.execute(select(Port).where(Port.locode == clean))
-            ).scalar_one_or_none()
+            port = (await db.execute(select(Port).where(Port.locode == clean))).scalar_one_or_none()
             countries[clean] = port.country if port is not None else None
 
     route.tariff_reference = route_tariff_reference(
@@ -157,9 +153,7 @@ def validate_payment_terms(terms: list[dict]) -> list[dict]:
     if not terms:
         return []
     if len(terms) > MAX_PAYMENT_TERMS:
-        raise PaymentTermError(
-            f"Au plus {MAX_PAYMENT_TERMS} règlements par grille tarifaire."
-        )
+        raise PaymentTermError(f"Au plus {MAX_PAYMENT_TERMS} règlements par grille tarifaire.")
 
     normalised: list[dict] = []
     total = Decimal("0")
@@ -179,9 +173,7 @@ def validate_payment_terms(terms: list[dict]) -> list[dict]:
         if trigger == "days_before_etd":
             raw_days = raw.get("offset_days")
             if raw_days is None or str(raw_days).strip() == "":
-                raise PaymentTermError(
-                    "Indiquez le nombre de jours avant le départ du navire."
-                )
+                raise PaymentTermError("Indiquez le nombre de jours avant le départ du navire.")
             try:
                 offset_days = int(str(raw_days).strip())
             except ValueError as exc:

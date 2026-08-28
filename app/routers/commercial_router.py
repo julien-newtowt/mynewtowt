@@ -104,6 +104,7 @@ from app.services.quoting import (
     resolve_grid,
 )
 from app.templating import templates
+from app.utils.forms import form_str
 
 router = APIRouter(prefix="/commercial", tags=["commercial"])
 
@@ -1594,15 +1595,15 @@ async def grid_payment_terms_update(
     form = await request.form()
     submitted: list[dict] = []
     for idx in range(MAX_PAYMENT_TERMS):
-        trigger = (form.get(f"terms-{idx}-trigger") or "").strip()
-        percentage = (form.get(f"terms-{idx}-percentage") or "").strip()
+        trigger = form_str(form, f"terms-{idx}-trigger").strip()
+        percentage = form_str(form, f"terms-{idx}-percentage").strip()
         if not trigger and not percentage:
             continue
         submitted.append(
             {
                 "trigger": trigger,
                 "percentage": percentage,
-                "offset_days": (form.get(f"terms-{idx}-offset_days") or "").strip() or None,
+                "offset_days": form_str(form, f"terms-{idx}-offset_days").strip() or None,
                 "label": form.get(f"terms-{idx}-label"),
             }
         )
@@ -2139,7 +2140,7 @@ async def offer_booking_note_update(
     form = await request.form()
     for field in BOOKING_NOTE_EDITABLE_FIELDS:
         if field in form:
-            value = (form.get(field) or "").strip()
+            value = form_str(form, field).strip()
             setattr(note, field, value or None)
     await db.flush()
 
@@ -2211,9 +2212,7 @@ async def offer_booking_note_issue(
     # « brouillon » disparaît au passage en diffusée, donc le document doit être
     # régénéré après le changement de statut, pas avant.
     try:
-        await mark_issued(
-            db, note, user_id=user.id, user_name=user.full_name or user.username
-        )
+        await mark_issued(db, note, user_id=user.id, user_name=user.full_name or user.username)
     except BookingNoteError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     doc = build_booking_note_docx(note=note, offer=offer, leg=leg)
@@ -2268,9 +2267,7 @@ async def offer_booking_note_sign(
 
     doc = build_booking_note_docx(note=note, offer=offer, leg=leg)
     try:
-        await request_signature(
-            db, note, document=doc.docx, filename=_safe_filename(doc.filename)
-        )
+        await request_signature(db, note, document=doc.docx, filename=_safe_filename(doc.filename))
     except SignatureError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except yousign_svc.YousignError as exc:
