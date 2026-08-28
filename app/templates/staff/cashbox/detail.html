@@ -237,6 +237,25 @@
             </td>
             <td>{{ m.description }}</td>
             <td>
+              {% if not m.is_locked and not m.reverses_movement_id %}
+                <details style="display:inline-block;">
+                  <summary class="btn btn-ghost btn-sm" style="list-style:none;">✏️ Rectifier</summary>
+                  <form method="post" action="/cashbox/{{ vessel.id }}/movement/{{ m.id }}/correct"
+                        style="margin-top:var(--space-2);min-width:16rem;"
+                        data-confirm="Rectifier ce mouvement ? Une contre-écriture datée d'aujourd'hui sera ajoutée — l'écriture d'origine reste au journal.">
+                    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                    <div class="field">
+                      <label>Motif</label>
+                      <input name="reason" required placeholder="Ex. montant saisi à l'envers" />
+                    </div>
+                    <div class="field">
+                      <label>Montant corrigé (vide = simple annulation)</label>
+                      <input name="corrected_amount" inputmode="decimal" placeholder="0.00" />
+                    </div>
+                    <button type="submit" class="btn btn-secondary btn-sm">Rectifier</button>
+                  </form>
+                </details>
+              {% endif %}
               {% if m.receipt_url %}
                 <a href="/cashbox/{{ vessel.id }}/movement/{{ m.id }}/receipt" target="_blank" class="btn btn-ghost btn-sm">📎 Voir</a>
               {% elif not m.is_locked %}

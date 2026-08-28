@@ -43,6 +43,7 @@ from app.services import cash_count as cash_count_svc
 from app.services import safe_files
 from app.services.activity import record as activity_record
 from app.services.cashbox import (
+    AccountingFrozen,
     CashboxError,
     PeriodClosed,
     add_movement,
@@ -56,6 +57,7 @@ from app.services.cashbox import (
     list_closures,
     period_movements,
     recent_movements,
+    reverse_movement,
 )
 from app.templating import templates
 from app.utils.decimals import CENTS, DecimalInputError, parse_decimal
@@ -465,6 +467,72 @@ async def view_receipt(
         media_type=mov.receipt_mime or "application/octet-stream",
         headers={"Content-Disposition": f'inline; filename="justificatif-{mov_id}{path.suffix}"'},
     )
+
+
+@router.post("/{vessel_id}/movement/{mov_id}/correct")
+async def correct_movement(
+    vessel_id: int,
+    mov_id: int,
+    reason: str = Form(...),
+    corrected_amount: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> RedirectResponse:
+    """Rectifie un mouvement mal saisi, par contre-écriture.
+
+    Le grand livre n'a ni route de modification ni route de suppression, et
+    c'est délibéré. Rectifier se fait comme en comptabilité : un mouvement
+    opposé, daté du jour de la correction, puis le montant correct s'il y a
+    lieu. La période d'origine n'est jamais réécrite — un contrôle de caisse
+    déjà rendu reste ce qu'il était.
+    """
+    _check_vessel(user, vessel_id)
+    cb = await get_or_create(db, vessel_id)
+    mov = await _get_movement(db, vessel_id, mov_id)
+
+    amount = None
+    if corrected_amount.strip():
+        try:
+            amount = parse_decimal(corrected_amount, label="montant corrigé", quantize=CENTS)
+        except DecimalInputError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        # Le sens du mouvement d'origine fait foi : une dépense reste une
+        # dépense, on n'en fait pas un encaissement par une faute de signe.
+        amount = -abs(amount) if mov.amount < 0 else abs(amount)
+
+    try:
+        reversal, replacement = await reverse_movement(
+            db,
+            cb,
+            mov,
+            reason=reason,
+            corrected_amount=amount,
+            recorded_by_id=user.id,
+        )
+    except PeriodClosed as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except AccountingFrozen as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except CashboxError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    await activity_record(
+        db,
+        action="cashbox_movement_corrected",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="cashbox_movement",
+        entity_id=mov.id,
+        detail=(
+            f"vessel={vessel_id} #{mov.id} ({mov.amount} {mov.currency}) "
+            f"annulé par #{reversal.id}"
+            + (f", remplacé par #{replacement.id} ({replacement.amount})" if replacement else "")
+            + f" — {reason.strip()}"
+        ),
+    )
+    return RedirectResponse(url=f"/cashbox/{vessel_id}", status_code=303)
 
 
 @router.get("/{vessel_id}/export.csv")

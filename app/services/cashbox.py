@@ -181,6 +181,73 @@ async def add_movement(
     return mov
 
 
+async def reverse_movement(
+    db: AsyncSession,
+    cashbox: OnboardCashbox,
+    movement: CashboxMovement,
+    *,
+    reason: str,
+    corrected_amount: Decimal | None = None,
+    recorded_by_id: int | None = None,
+) -> tuple[CashboxMovement, CashboxMovement | None]:
+    """Rectifie un mouvement par **contre-écriture**. Idempotent.
+
+    Le grand livre de caisse n'a aucune route de modification ni de suppression,
+    et c'est délibéré : une écriture passée fait foi. Rectifier une saisie
+    erronée se fait donc comme en comptabilité — on ajoute un mouvement opposé,
+    daté du **jour de la correction**, puis éventuellement le mouvement correct.
+
+    Conséquence à assumer : la correction n'apparaît pas dans la période
+    d'origine. C'est voulu — un contrôle de caisse déjà rendu ne se réécrit pas,
+    la rectification apparaît dans le suivant.
+
+    Renvoie ``(contre-écriture, mouvement corrigé | None)``. Un second appel sur
+    le même mouvement est refusé : l'unicité de ``reverses_movement_id`` le
+    garantit aussi en base.
+    """
+    if movement.cashbox_id != cashbox.id:
+        raise CashboxError("Ce mouvement n'appartient pas à cette caisse.")
+    if not reason.strip():
+        raise CashboxError("Motif de rectification requis.")
+    already = await db.scalar(
+        select(CashboxMovement.id).where(CashboxMovement.reverses_movement_id == movement.id)
+    )
+    if already is not None:
+        raise CashboxError("Ce mouvement a déjà été rectifié.")
+
+    label = f"Rectification du mouvement #{movement.id} — {reason.strip()}"
+    reversal = await add_movement(
+        db,
+        cashbox,
+        amount=-Decimal(movement.amount),
+        currency=movement.currency,
+        category=movement.category,
+        medium=movement.medium or "cash",
+        description=f"Annulation : {label}"[:300],
+        leg_id=movement.leg_id,
+        port_id=movement.port_id,
+        recorded_by_id=recorded_by_id,
+    )
+    reversal.reverses_movement_id = movement.id
+    await db.flush()
+
+    replacement = None
+    if corrected_amount is not None:
+        replacement = await add_movement(
+            db,
+            cashbox,
+            amount=Decimal(corrected_amount),
+            currency=movement.currency,
+            category=movement.category,
+            medium=movement.medium or "cash",
+            description=f"Montant corrigé : {label}"[:300],
+            leg_id=movement.leg_id,
+            port_id=movement.port_id,
+            recorded_by_id=recorded_by_id,
+        )
+    return reversal, replacement
+
+
 async def is_period_closed(
     db: AsyncSession, cashbox: OnboardCashbox, currency: str, when: datetime
 ) -> bool:

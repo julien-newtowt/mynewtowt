@@ -171,6 +171,13 @@ class CashboxMovement(Base):
     # le même champ `locked_at` — la clôture arrête un **mois comptable**, la
     # relève arrête la **responsabilité d'une personne**. On garde la référence
     # de celui qui a gelé, pour savoir toujours au titre de quoi.
+    # Rectification : ce mouvement annule (contre-écriture) le mouvement visé.
+    # Le grand livre reste append-only — on n'efface ni ne modifie jamais une
+    # écriture passée, on en ajoute une opposée, datée du jour de la correction.
+    reverses_movement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cashbox_movements.id", ondelete="SET NULL"), unique=True
+    )
+
     cash_count_id: Mapped[int | None] = mapped_column(
         ForeignKey("cash_counts.id", ondelete="SET NULL"), index=True
     )

@@ -727,3 +727,117 @@ async def test_balances_splits_income_and_expense(db, staff_user):
     # Tous supports confondus : total de contrôle.
     all_rows = await cashbox_svc.balances(db, cb, medium=None)
     assert next(r for r in all_rows if r.currency == "EUR").balance == Decimal("1150.00")
+
+
+# ── Rectification d'un mouvement de caisse (dernier P0) ─────────────────────
+#
+# Le grand livre n'a ni UPDATE ni DELETE, et c'est délibéré : une écriture
+# passée fait foi. Rectifier se fait donc comme en comptabilité — une
+# contre-écriture datée du jour de la correction.
+
+
+@pytest.mark.asyncio
+async def test_a_correction_is_a_counter_entry_not_an_edit(db, staff_user):
+    from app.models.onboard_cashbox import CashboxMovement
+
+    _vessel, cb = await _box(db)
+    wrong = await _movement(db, cb, "-500.00", staff_user=staff_user)  # doigt lourd
+    original_amount = wrong.amount
+
+    reversal, replacement = await cashbox_svc.reverse_movement(
+        db,
+        cb,
+        wrong,
+        reason="montant saisi à l'envers",
+        corrected_amount=Decimal("-50.00"),
+        recorded_by_id=staff_user.id,
+    )
+    # L'écriture d'origine est intacte.
+    assert (await db.get(CashboxMovement, wrong.id)).amount == original_amount
+    # La contre-écriture l'annule et le dit.
+    assert reversal.amount == Decimal("500.00")
+    assert reversal.reverses_movement_id == wrong.id
+    assert "montant saisi à l'envers" in reversal.description
+    assert replacement.amount == Decimal("-50.00")
+    # Solde net : −50, comme si la saisie avait été correcte.
+    assert await svc.computed_balance(db, cb, "EUR") == Decimal("-50.00")
+
+
+@pytest.mark.asyncio
+async def test_a_correction_can_simply_cancel(db, staff_user):
+    _vessel, cb = await _box(db)
+    wrong = await _movement(db, cb, "-80.00", staff_user=staff_user)
+    reversal, replacement = await cashbox_svc.reverse_movement(
+        db, cb, wrong, reason="dépense saisie deux fois"
+    )
+    assert replacement is None
+    assert reversal.amount == Decimal("80.00")
+    assert await svc.computed_balance(db, cb, "EUR") == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_a_movement_is_only_corrected_once(db, staff_user):
+    """Deux contre-écritures successives feraient dériver le solde."""
+    _vessel, cb = await _box(db)
+    wrong = await _movement(db, cb, "-80.00", staff_user=staff_user)
+    await cashbox_svc.reverse_movement(db, cb, wrong, reason="erreur")
+    with pytest.raises(cashbox_svc.CashboxError):
+        await cashbox_svc.reverse_movement(db, cb, wrong, reason="encore")
+
+
+@pytest.mark.asyncio
+async def test_a_correction_requires_a_reason(db, staff_user):
+    _vessel, cb = await _box(db)
+    mov = await _movement(db, cb, "-10.00", staff_user=staff_user)
+    with pytest.raises(cashbox_svc.CashboxError):
+        await cashbox_svc.reverse_movement(db, cb, mov, reason="   ")
+
+
+@pytest.mark.asyncio
+async def test_a_movement_of_another_cashbox_is_refused(db, staff_user):
+    _vessel_a, cb_a = await _box(db)
+    vessel_b = Vessel(code="GRA", name="Grain de Sail")
+    db.add(vessel_b)
+    await db.flush()
+    cb_b = await cashbox_svc.get_or_create(db, vessel_b.id)
+    mov = await _movement(db, cb_a, "-10.00", staff_user=staff_user)
+    with pytest.raises(cashbox_svc.CashboxError):
+        await cashbox_svc.reverse_movement(db, cb_b, mov, reason="erreur")
+
+
+@pytest.mark.asyncio
+async def test_the_correction_keeps_the_medium_of_the_original(db, staff_user):
+    """Rectifier un règlement carte ne doit pas sortir d'espèces du coffre."""
+    _vessel, cb = await _box(db)
+    card = await cashbox_svc.add_movement(
+        db,
+        cb,
+        amount=Decimal("120.00"),
+        currency="EUR",
+        category="vente_a_bord",
+        description="vente CB",
+        medium="card",
+    )
+    reversal, _ = await cashbox_svc.reverse_movement(db, cb, card, reason="vente annulée")
+    assert reversal.medium == "card"
+    # Le solde d'espèces n'a pas bougé.
+    assert await svc.computed_balance(db, cb, "EUR") == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_a_frozen_period_still_accepts_a_correction_dated_today(db, staff_user):
+    """La contre-écriture est datée du jour : elle ne réécrit pas le passé gelé."""
+    _vessel, cb = await _box(db)
+    old = await _movement(
+        db, cb, "-40.00", when=datetime(2026, 8, 20, tzinfo=UTC), staff_user=staff_user
+    )
+    await svc.declare_count(
+        db,
+        cb,
+        trigger="fin_embarquement",
+        counted_on=date(2026, 8, 25),
+        declared_by_name="Cdt Sortant",
+        counts={"EUR": {Decimal("5"): 1}},
+    )
+    reversal, _ = await cashbox_svc.reverse_movement(db, cb, old, reason="dépense non due")
+    assert reversal.occurred_at.date() > date(2026, 8, 25)
