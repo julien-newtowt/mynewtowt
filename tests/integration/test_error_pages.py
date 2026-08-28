@@ -198,9 +198,9 @@ def test_literal_routes_are_declared_before_the_vessel_placeholder(client):
     ]
     placeholder = ordre.index("/captain/ventes/{vessel_id}")
     for litteral in ("/captain/ventes/catalogue", "/captain/ventes/rapport"):
-        assert ordre.index(litteral) < placeholder, (
-            f"{litteral} doit être déclaré avant /captain/ventes/{{vessel_id}}"
-        )
+        assert (
+            ordre.index(litteral) < placeholder
+        ), f"{litteral} doit être déclaré avant /captain/ventes/{{vessel_id}}"
 
 
 def test_a_literal_route_is_not_swallowed_by_the_placeholder(client):
