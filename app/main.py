@@ -107,13 +107,22 @@ def _error_detail(exc) -> str | None:
 
 
 def _safe_back_url(request: Request) -> str | None:
-    """Referer, uniquement s'il pointe vers cette application."""
+    """Referer, uniquement s'il pointe vers cette application.
+
+    Le schéma est validé en premier : `javascript:` et `data:` ont un `netloc`
+    **vide**, ils échappaient donc au contrôle d'origine ci-dessous et se
+    retrouvaient dans un `href`. Un navigateur n'envoie jamais un tel `Referer`
+    — l'exploitation demanderait un client forgé, qui n'attaque que lui-même —
+    mais rien ne justifie de construire un lien depuis un schéma actif.
+    """
     referer = request.headers.get("referer") or ""
     if not referer:
         return None
     try:
         parsed = urlparse(referer)
     except ValueError:
+        return None
+    if parsed.scheme and parsed.scheme not in ("http", "https"):
         return None
     if parsed.netloc and parsed.netloc != request.url.netloc:
         return None

@@ -209,3 +209,16 @@ def test_a_literal_route_is_not_swallowed_by_the_placeholder(client):
     # Non authentifié → redirection vers /login. Le point est qu'on n'obtient
     # **pas** un 422 de validation de `vessel_id`.
     assert r.status_code != 422
+
+
+@pytest.mark.parametrize(
+    "referer",
+    ["javascript:alert(1)", "data:text/html,<script>alert(1)</script>", "vbscript:msgbox(1)"],
+)
+def test_the_back_link_refuses_active_schemes(client, referer):
+    """`javascript:` et `data:` ont un `netloc` vide : ils échappaient au
+    contrôle d'origine et se retrouvaient dans un `href`."""
+    r = client.get("/_test/boom", headers={"referer": referer})
+    assert "Revenir en arrière" not in r.text
+    assert "javascript:" not in r.text
+    assert "data:text/html" not in r.text
