@@ -178,3 +178,34 @@ def test_no_deprecated_event_handlers_remain():
     source = Path("app/main.py").read_text(encoding="utf-8")
     assert not re.search(r"^\s*@\w+\.on_event\(", source, re.M)
     assert "lifespan=" in source
+
+
+def test_literal_routes_are_declared_before_the_vessel_placeholder(client):
+    """Piège d'ordre : `/{vessel_id}` capture n'importe quel segment.
+
+    FastAPI n'ajoute pas de convertisseur de type au motif de route — annoter
+    `vessel_id: int` ne restreint pas le filtre. Un chemin littéral déclaré
+    **après** `/{vessel_id}` est donc capturé par lui et renvoie 422 au lieu de
+    sa page. L'audit du 2026-08-27 signalait cette fragilité comme non
+    verrouillée ; elle l'est ici.
+    """
+    app: FastAPI = client.app
+    ordre = [
+        r.path
+        for r in app.routes
+        if getattr(r, "path", "").startswith("/captain/ventes")
+        and "GET" in getattr(r, "methods", set())
+    ]
+    placeholder = ordre.index("/captain/ventes/{vessel_id}")
+    for litteral in ("/captain/ventes/catalogue", "/captain/ventes/rapport"):
+        assert ordre.index(litteral) < placeholder, (
+            f"{litteral} doit être déclaré avant /captain/ventes/{{vessel_id}}"
+        )
+
+
+def test_a_literal_route_is_not_swallowed_by_the_placeholder(client):
+    """Vérification de bout en bout : la route répond, elle n'est pas capturée."""
+    r = client.get("/captain/ventes/rapport", follow_redirects=False)
+    # Non authentifié → redirection vers /login. Le point est qu'on n'obtient
+    # **pas** un 422 de validation de `vessel_id`.
+    assert r.status_code != 422

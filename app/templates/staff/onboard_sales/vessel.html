@@ -16,6 +16,7 @@
   <div class="flex gap-2 mt-2">
     <a href="/captain/ventes/catalogue" class="btn btn-ghost btn-sm">Catalogue</a>
     <a href="/captain/ventes/{{ vessel.id }}/registre" class="btn btn-ghost btn-sm">Registre douanier</a>
+    <a href="/captain/ventes/rapport?vessel_id={{ vessel.id }}" class="btn btn-ghost btn-sm">Chiffre d'affaires</a>
     <a href="/cashbox/{{ vessel.id }}" class="btn btn-ghost btn-sm">Caisse de bord</a>
   </div>
 </header>
@@ -63,6 +64,7 @@
           <thead><tr><th>Article</th><th>Qté</th><th>Total</th><th></th></tr></thead>
           <tbody data-qs-lines></tbody>
         </table>
+</div>
       </div>
 
       <div class="flex gap-3 mt-3" style="align-items:end;flex-wrap:wrap;">
@@ -111,19 +113,21 @@
 <article class="card mb-4">
   <h2>Inventaire du bord</h2>
   {% if inventory %}
-    <table>
+    <div class="table-scroll">
+<table class="data-table">
       <thead><tr><th>SKU</th><th>Désignation</th><th class="text-right">En stock</th><th>Unité</th></tr></thead>
       <tbody>
         {% for it in inventory %}
           <tr>
             <td class="mono">{{ it.product.sku }}</td>
             <td>{{ it.product.label }}</td>
-            <td class="text-right mono {% if it.on_hand < 0 %}text-error{% endif %}">{{ "%.3f"|format(it.on_hand|float) }}</td>
+            <td class="text-right mono {% if it.on_hand < 0 %}text-error{% endif %}">{{ it.on_hand.normalize() }}</td>
             <td>{{ it.product.unit }}</td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+</div>
   {% else %}
     <p class="text-muted">Aucun produit suivi en stock. Ajoutez des produits au <a href="/captain/ventes/catalogue">catalogue</a>.</p>
   {% endif %}
@@ -162,7 +166,8 @@
 <article class="card">
   <h2>Ventes récentes</h2>
   {% if sales %}
-    <table>
+    <div class="table-scroll">
+<table class="data-table">
       <thead>
         <tr><th>Référence</th><th>Date</th><th>Acheteur</th><th class="text-right">Total</th><th>Règlement</th><th>Statut</th><th></th></tr>
       </thead>
@@ -185,6 +190,7 @@
         {% endfor %}
       </tbody>
     </table>
+</div>
   {% else %}
     <p class="text-muted">Aucune vente enregistrée.</p>
   {% endif %}

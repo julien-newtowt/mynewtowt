@@ -198,6 +198,23 @@ Deux conséquences à connaître :
 Les mouvements **verrouillés** (clôture mensuelle passée, ou relève déclarée) ne
 proposent pas ce bouton : leur période est arrêtée.
 
+## 7 quater. Savoir ce que la boutique a vendu
+
+**Vente à bord → « Chiffre d'affaires »** (ou depuis l'écran du navire).
+Filtrable par navire et par période, exportable en CSV pour la comptabilité.
+
+Trois ventilations : par navire, par article (classé par chiffre d'affaires) et
+par voyage. Seules les ventes **réglées** comptent — un brouillon n'est pas du
+chiffre d'affaires — et le net est déduit des remboursements.
+
+Deux limites à connaître :
+
+- les montants restent **séparés par devise**. L'application ne tient aucun
+  taux de change : additionner des euros et des đồng donnerait un total faux
+  d'apparence juste ;
+- la **marge n'est pas calculable** : le catalogue ne porte pas de prix de
+  revient. Le chiffre affiché est un chiffre d'affaires, pas un résultat.
+
 ## 8. Le registre douanier (vente détaxée)
 
 Le **Registre des mouvements — vente détaxée** (bouton *« Registre »* dans

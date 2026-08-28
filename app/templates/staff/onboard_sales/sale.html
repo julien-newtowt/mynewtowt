@@ -25,14 +25,15 @@
 <article class="card mb-4">
   <h2>Articles</h2>
   {% if lines %}
-    <table>
+    <div class="table-scroll">
+<table class="data-table">
       <thead><tr><th>Désignation</th><th class="text-right">PU</th><th class="text-right">Qté</th><th class="text-right">Total</th>{% if sale.status == "draft" %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for l in lines %}
           <tr>
             <td>{{ l.label }}</td>
             <td class="text-right mono">{{ "%.2f"|format(l.unit_price|float) }}</td>
-            <td class="text-right mono">{{ "%.3f"|format(l.qty|float) }}</td>
+            <td class="text-right mono">{{ l.qty.normalize() }}</td>
             <td class="text-right mono">{{ "%.2f"|format(l.line_total|float) }}</td>
             {% if sale.status == "draft" %}
             <td>
@@ -46,6 +47,7 @@
         {% endfor %}
       </tbody>
     </table>
+</div>
   {% else %}
     <p class="text-muted">Aucun article. Ajoutez au moins une ligne.</p>
   {% endif %}

@@ -34,7 +34,8 @@
 <article class="card">
   <h2>Mouvements</h2>
   {% if rows %}
-    <table>
+    <div class="table-scroll">
+<table class="data-table">
       <thead>
         <tr>
           <th>Date</th><th>SKU</th><th>Désignation</th><th>Mouvement</th>
@@ -58,6 +59,7 @@
         {% endfor %}
       </tbody>
     </table>
+</div>
   {% else %}
     <p class="text-muted">Aucun mouvement sur la période.</p>
   {% endif %}

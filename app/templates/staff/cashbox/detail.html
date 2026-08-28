@@ -87,6 +87,7 @@
           {% endfor %}
         </tbody>
       </table>
+</div>
     </div>
   {% else %}
     <p class="text-muted mt-3">Aucun état de caisse déclaré pour ce navire.</p>
@@ -192,7 +193,8 @@
 
   {% if closures %}
   <h3 class="mt-4">Clôtures</h3>
-  <table>
+  <div class="table-scroll">
+<table class="data-table">
     <thead><tr><th>Période</th><th>Devise</th><th class="text-right">Compté</th><th class="text-right">Calculé</th><th class="text-right">Écart</th><th>Mvts</th><th>Clôturé le</th></tr></thead>
     <tbody>
       {% for cl in closures %}
@@ -208,13 +210,15 @@
       {% endfor %}
     </tbody>
   </table>
+</div>
   {% endif %}
 </article>
 
 <article class="card">
   <h2>Mouvements récents {% if currency_filter %}({{ currency_filter }}){% endif %}</h2>
   {% if movements %}
-    <table>
+    <div class="table-scroll">
+<table class="data-table">
       <thead><tr><th>Date</th><th>Devise</th><th class="text-right">Montant</th><th>Catégorie</th><th>Description</th><th>Justif.</th><th></th></tr></thead>
       <tbody>
         {% for m in movements %}
@@ -273,6 +277,7 @@
         {% endfor %}
       </tbody>
     </table>
+</div>
   {% else %}
     <p class="text-muted">Aucun mouvement.</p>
   {% endif %}

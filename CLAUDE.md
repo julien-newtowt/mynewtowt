@@ -394,6 +394,17 @@ préférences de style.
   `POST /captain/ventes/{vessel_id}/vente-rapide`, idempotent par `client_uuid`
   généré côté navigateur. La file ne conserve qu'une valeur par nom de champ :
   le panier voyage dans un **champ unique** (`"id:qté,id:qté"`).
+- **Le chiffre d'affaires ne se consolide pas entre devises** :
+  `sales_summary` ventile par devise et n'additionne jamais — l'application ne
+  tient aucun taux de change, un total unique serait faux d'apparence juste. Le
+  CA par voyage est **exposé** (`onboard_revenue_by_leg`) mais délibérément
+  **non injecté** dans `LegFinance.revenue_eur`, qui est saisi par un opérateur :
+  y écrire d'office écraserait sa saisie. La consolidation automatique est une
+  décision de gestion, pas un détail d'implémentation.
+- **Ordre de déclaration des routes** : les chemins littéraux (`/catalogue`,
+  `/rapport`) doivent précéder `/{vessel_id}`. FastAPI n'ajoute pas de
+  convertisseur de type au motif de route — `/{vessel_id}` capture n'importe
+  quel segment. Verrouillé par un test.
 - **Arbitrages tranchés le 2026-08-27** : `ADR-011` (espèces ≠ CB),
   `ADR-012` (cloisonnement par navire), `ADR-013` (remboursement, valeur du
   registre, gel à la relève). Les lire avant de rouvrir l'un de ces sujets.
