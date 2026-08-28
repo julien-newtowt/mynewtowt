@@ -25,7 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models.leg import Leg
 from app.models.onboard_sales import (
     PAYMENT_METHOD_LABELS,
     SALE_STATUS_LABELS,
@@ -47,6 +46,7 @@ from app.permissions import (
 )
 from app.services import notifications, pdf_generator
 from app.services import onboard_sales as svc
+from app.services import planning as planning_svc
 from app.services import stripe_checkout as stripe_svc
 from app.services.activity import record as activity_record
 from app.services.cashbox import CashboxError, PeriodClosed
@@ -85,10 +85,15 @@ def _parse_decimal(
 
 
 async def _default_leg_id(db: AsyncSession, vessel_id: int) -> int | None:
-    """Leg « courant » du navire (dernier leg par id) pour rattacher la vente."""
-    return await db.scalar(
-        select(Leg.id).where(Leg.vessel_id == vessel_id).order_by(Leg.id.desc()).limit(1)
-    )
+    """Leg courant du navire, pour rattacher la vente au bon voyage.
+
+    Prenait auparavant le **dernier leg créé** (``ORDER BY id DESC``), qui n'a
+    aucun rapport avec le voyage en cours : un leg planifié la veille pour
+    l'année suivante l'emportait. Le rattachement des ventes et des mouvements
+    de caisse était donc structurellement faux — et se corrompait un peu plus à
+    chaque vente.
+    """
+    return await planning_svc.current_leg_id(db, vessel_id)
 
 
 class _TransientSettlementError(Exception):
