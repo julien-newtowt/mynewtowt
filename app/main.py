@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 
 from app import __version__
@@ -71,6 +73,55 @@ from app.routers import (
 from app.templating import templates
 
 logger = logging.getLogger(__name__)
+
+
+# Libellé et icône par statut de la page d'erreur générique. Le message de
+# l'exception vient en complément : il est rédigé pour l'utilisateur dans les
+# routes concernées.
+_ERROR_PRESENTATION: dict[int, tuple[str, str]] = {
+    400: ("Action impossible", "alert-triangle"),
+    401: ("Authentification requise", "lock"),
+    405: ("Action non autorisée ici", "alert-triangle"),
+    409: ("Conflit", "alert-triangle"),
+    413: ("Fichier trop volumineux", "file-x"),
+    422: ("Saisie invalide", "alert-triangle"),
+    429: ("Trop de tentatives", "timer"),
+    500: ("Erreur interne", "alert-octagon"),
+    502: ("Service externe indisponible", "cloud-off"),
+    503: ("Service indisponible", "cloud-off"),
+}
+
+
+def _error_detail(exc) -> str | None:
+    """Message affichable, ou ``None`` si le détail n'apporte rien à l'usager."""
+    detail = getattr(exc, "detail", None)
+    if not isinstance(detail, str):
+        return None
+    detail = detail.strip()
+    # Les libellés génériques de Starlette n'aident personne : le gabarit dit
+    # déjà « Action impossible », inutile de répéter « Bad Request ».
+    if detail.lower() in {"bad request", "forbidden", "not found", "internal server error", ""}:
+        return None
+    return detail
+
+
+def _safe_back_url(request: Request) -> str | None:
+    """Referer, uniquement s'il pointe vers cette application."""
+    referer = request.headers.get("referer") or ""
+    if not referer:
+        return None
+    try:
+        parsed = urlparse(referer)
+    except ValueError:
+        return None
+    if parsed.netloc and parsed.netloc != request.url.netloc:
+        return None
+    if parsed.path == request.url.path:
+        # Renvoyer sur la page qui vient d'échouer ne mène nulle part. On
+        # compare les chemins et non les URL entières : un paramètre de requête
+        # près, c'est le même écran.
+        return None
+    return referer
 
 
 def create_app() -> FastAPI:
@@ -214,13 +265,62 @@ def create_app() -> FastAPI:
     @app.exception_handler(403)
     async def _forbidden(request: Request, exc: HTTPException) -> HTMLResponse | JSONResponse:
         if request.headers.get("accept", "").startswith("application/json"):
-            return JSONResponse({"detail": "Forbidden"}, status_code=403)
+            return JSONResponse({"detail": exc.detail or "Forbidden"}, status_code=403)
         try:
             return templates.TemplateResponse(
-                "errors/403.html", {"request": request}, status_code=403
+                "errors/403.html",
+                {"request": request, "detail": _error_detail(exc)},
+                status_code=403,
             )
         except Exception:
             return PlainTextResponse("403 — Accès refusé", status_code=403)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_error(request: Request, exc: StarletteHTTPException):
+        """Rend une page HTML pour toute erreur métier, au lieu de JSON brut.
+
+        Seuls 404 et 403 avaient un gabarit. Toutes les autres — 400 (vente sans
+        montant, période clôturée, date invalide…), 409, 502, 503 — arrivaient à
+        l'utilisateur sous la forme d'un écran blanc portant ``{"detail": "…"}``,
+        sans mise en page ni moyen de revenir. Sur un téléphone, debout, devant
+        un client qui paie, c'est un cul-de-sac : constat de l'audit du
+        2026-08-27.
+
+        Les appelants machine gardent du JSON : API publique, webhooks, et tout
+        client demandant explicitement ``application/json``. HTMX ne remplace
+        pas sa cible sur un statut non-2xx, le comportement de ces requêtes est
+        donc inchangé.
+        """
+        wants_json = (
+            request.headers.get("accept", "").startswith("application/json")
+            or request.url.path.startswith("/api/")
+            or request.url.path.startswith("/webhooks/")
+        )
+        if wants_json:
+            return JSONResponse(
+                {"detail": exc.detail},
+                status_code=exc.status_code,
+                headers=getattr(exc, "headers", None),
+            )
+        title, icon = _ERROR_PRESENTATION.get(
+            exc.status_code, ("Une erreur est survenue", "alert-triangle")
+        )
+        try:
+            return templates.TemplateResponse(
+                "errors/error.html",
+                {
+                    "request": request,
+                    "status_code": exc.status_code,
+                    "title": title,
+                    "icon": icon,
+                    "detail": _error_detail(exc),
+                    "back_url": _safe_back_url(request),
+                },
+                status_code=exc.status_code,
+                headers=getattr(exc, "headers", None),
+            )
+        except Exception:
+            return PlainTextResponse(f"{exc.status_code} — {title}", status_code=exc.status_code)
 
     # ----------------------------------------------------------- Lifecycle
     @app.on_event("startup")
