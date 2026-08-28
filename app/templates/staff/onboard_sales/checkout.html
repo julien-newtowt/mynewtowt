@@ -1,4 +1,8 @@
 {% extends "staff/_layout.html" %}
+{% block head %}
+{{ super() }}
+<script src="{{ asset('js/onboard-checkout.js') }}" defer></script>
+{% endblock %}
 {% block title %}Paiement CB — {{ sale.reference }}{% endblock %}
 {% block content %}
 <a href="/captain/ventes/vente/{{ sale.reference }}" class="btn btn-ghost mb-3">← Vente {{ sale.reference }}</a>
@@ -27,13 +31,18 @@
     <p><a href="{{ pay_url }}" target="_blank" rel="noopener" class="btn btn-primary">Ouvrir la page de paiement →</a></p>
     <div class="field mt-3">
       <label for="pay_url">URL</label>
-      <input id="pay_url" type="text" value="{{ pay_url }}" readonly onclick="this.select();" />
+      {# `onclick` inerte sous CSP : `autofocus` + sélection au focus via
+         `onboard-checkout.js`, qui gère aussi la copie. #}
+      <input id="pay_url" type="text" value="{{ pay_url }}" readonly data-select-on-focus />
     </div>
     <hr class="my-4" />
-    <p class="text-muted text-sm">
+    <p class="text-muted text-sm" data-checkout-watch
+       data-sale-url="/captain/ventes/vente/{{ sale.reference }}">
       Statut : <span class="pill pill-warn">En attente de paiement</span><br />
-      Cette page se met à jour après paiement. Rechargez la vente pour voir le
-      statut « Payée ».
+      <span data-checkout-status>
+        Cette page surveille le règlement et bascule automatiquement sur la
+        vente dès qu'il est confirmé.
+      </span>
     </p>
     <div class="flex gap-2 mt-3">
       <form method="post" action="/captain/ventes/vente/{{ sale.reference }}/checkout">

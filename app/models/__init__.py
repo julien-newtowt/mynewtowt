@@ -12,6 +12,7 @@ from app.models.booking import Booking, BookingItem
 from app.models.booking_message import BookingMessage
 from app.models.booking_note import BookingNote
 from app.models.bunker import BunkerOperation, BunkerTankAllocation
+from app.models.cash_count import CashCount, CashCountCurrency, CashCountLine
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.claim import (
     Claim,
@@ -134,6 +135,7 @@ from app.models.sof_event import (
     SofEvent,
 )
 from app.models.stowage import StowageItem, StowagePlan, StowageZoneSpec
+from app.models.stripe_event import StripeWebhookEvent
 from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
 from app.models.validation import (
@@ -165,6 +167,9 @@ __all__ = [
     "BunkerOperation",
     "BunkerTankAllocation",
     "CargoDocument",
+    "CashCount",
+    "CashCountCurrency",
+    "CashCountLine",
     "CashboxClosure",
     "CashboxMovement",
     "ChatConversation",
@@ -276,6 +281,7 @@ __all__ = [
     "StowageItem",
     "StowagePlan",
     "StowageZoneSpec",
+    "StripeWebhookEvent",
     "Ticket",
     "TicketComment",
     "User",

@@ -87,17 +87,25 @@ Conflit pip CI, gate de couverture réaliste (25% au lieu de 80% fictif), tous l
 - ~~Faut-il ajouter `pytest tests/integration` + `tests/regression` à la CI (P0-1) avant tout autre développement ?~~ **Tranché 2026-07-27 : on garde le constat pour l'instant, pas d'action immédiate.**
 - ~~La protection de branche GitHub sur `main` (P0-2) nécessite un accès admin GitHub.~~ **Confirmé 2026-07-27 : Yasmin n'est pas admin du repo — à escalader plus tard (au retour du manager ou via la personne admin).**
 - Rafraîchir les 4 documents obsolètes (§2.2) maintenant, ou les laisser en l'état et se fier au code + à ce document ? — en attente.
+- ~~Caisse de bord : les règlements CB doivent-ils créditer la caisse espèces ?~~ **Tranché 2026-08-27 — ADR-011, option B.**
+- ~~Cloisonnement par navire : jusqu'où, et pour qui ?~~ **Tranché 2026-08-27 — ADR-012, le personnel maritime est borné à son navire d'affectation.**
+- ~~Qui peut rembourser une vente à bord ?~~ **Tranché 2026-08-27 — ADR-013, le siège seul.**
+- ~~Le registre de vente détaxée doit-il porter les exigences probantes du registre BL ?~~ **Tranché 2026-08-27 — non, ce sont deux objets distincts (ADR-013).**
+- ~~Régime de taxe pour le service passagers 2027 ?~~ **Sans objet — activité passagers suspendue (2026-08-27).**
+- **Reste ouvert** : qui clôture la caisse (la séparation des tâches voudrait `finance:M`, la décision sur le gel à la relève va dans l'autre sens — cf. ADR-012 §« Point resté ouvert »).
+- **Reste ouvert** : extension du cloisonnement par navire aux autres modules du bord (escale, cargo, crew, mrv, qhse, tickets) — principe acté, application à faire module par module.
 
-**Priorité actuelle (2026-07-27)** : avant tout développement, Yasmin veut comprendre le fonctionnement fonctionnel/métier actuel du logiciel (pas seulement l'architecture technique déjà couverte en §2-3).
+**Priorité (2026-08-27)** : rendre la vente à bord et la caisse réellement utilisables par le bord. Cf. §16.
 
 ---
 
 ## 6. Prochaines étapes recommandées
 
 Par ordre de valeur opérationnelle (cf. `CLAUDE.md` — priorité à ce qui aide Operations aujourd'hui) :
-1. Combler le trou de couverture CI (P0-1) — changement mécanique, faible risque, gain de sécurité élevé avant toute autre modification.
-2. Vérifier/activer la protection de branche `main` (P0-2).
-3. Reprendre le backlog P1 fonctionnel (`docs/audit/backlog/`) en fonction des retours Operations à venir (retour progressif de congés, escale navire dans ~2 semaines).
+1. **Rejouer un test à bord** de la vente/caisse, une fois la checklist de mise en service exécutée (§16). C'est le seul moyen de valider la remédiation du 2026-08-27.
+2. Combler le trou de couverture CI (P0-1) — changement mécanique, faible risque, gain de sécurité élevé avant toute autre modification.
+3. Vérifier/activer la protection de branche `main` (P0-2).
+4. Reprendre le backlog P1 fonctionnel (`docs/audit/backlog/`) en fonction des retours Operations.
 
 ## 7. Lancer l'app en local — procédure réelle (le README est incomplet sur ce point)
 
@@ -236,7 +244,11 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
 
 ## 12. Journal de développement & ADR
 
-Pas encore initiés — seront créés (`docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md`, registre ADR) au premier développement significatif de cette fenêtre, conformément aux consignes de `CLAUDE.md`.
+- Journal : `docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md`.
+- ADR : `docs/architecture/` — **ADR-010** (refonte commerciale, 2026-08-26),
+  **ADR-011** (caisse : espèces ≠ encaissements CB), **ADR-012** (cloisonnement
+  par navire), **ADR-013** (remboursement, valeur du registre de vente, gel à la
+  relève). Les trois derniers sont datés du 2026-08-27 et **acceptés**.
 
 ## 13. Audit de cohérence métier (2026-07-28) — feedback logiciel vs compagnie maritime réelle
 
@@ -578,3 +590,92 @@ entrée du 2026-08-26.
 - Portail client authentifié en ternaires FR/EN alors que le catalogue couvre 5
   langues : un client passé en portugais retombe en français dans son espace.
   Hors périmètre commercial.
+
+---
+
+## 16. Audit et remédiation « Vente à bord » + « Caisse de bord » (2026-08-27)
+
+Branche : `claude/audit-ventes-onboard-3uwjd7` — 15 commits, **aucune PR ouverte**.
+Rapport : `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md`.
+Migrations : `0125` → `0131`.
+
+### Point de départ
+
+Un **test réel à bord n'avait pas abouti**. Un audit conduit par six auditeurs
+indépendants (architecture, sécurité & intégrité financière, couverture
+fonctionnelle, UX terrain, QA, reconstitution des conditions terrain) a établi
+le diagnostic : un **MVP de faisabilité technique promu au rang de module
+livré**. Qualité de surface réelle (patterns projet respectés, lint vert, tests
+verts) ; les invariants qu'exigent de la monnaie et un registre douanier n'étaient
+pas tenus.
+
+**Cause la plus probable de l'échec du test** : `("marins", "captain")` valait
+`"C"` dans la matrice, et l'override `CM` annoncé par la documentation n'était
+posé par aucune migration ni aucun seed. La barre latérale se contentant du
+niveau `C`, le commandant voyait le menu, ouvrait les écrans, et se heurtait à
+un **403 au premier bouton**. `scripts/check_user.py` imprimait déjà
+l'avertissement ; il n'avait pas été exécuté.
+
+### Défauts corrigés (les quatre critiques)
+
+| # | Défaut | Correctif |
+|---|---|---|
+| V-01 | Aucun `Session.expire` dans le dépôt : après « Basculer en espèces » ou « Annuler », le lien Stripe restait payable ~24 h → **double débit réel du marin**, absorbé en silence, non remboursable | `expire_session` sur les trois chemins ; le geste est **refusé** si la fermeture n'est pas garantie ; TTL du lien ramené à 30 min |
+| V-02 | `settle_sale` créditait la caisse quel que soit le moyen de paiement → variance de clôture fausse du montant des ventes CB, chaque mois | Colonne `medium` (ADR-011) |
+| V-03 | `Decimal("nan")` traversait les parseurs (`NaN == 0` vaut `False`) jusque dans des tables append-only sans route de suppression | `app/utils/decimals.py`, revalidation en service, `CHECK` en base |
+| V-04 | Module hors périmètre du service worker : **aucun mode hors connexion**, contrairement à la notice | Notice rectifiée. **Le défaut technique subsiste** |
+
+Également livrés : durcissement du webhook (montant, devise, session attendue,
+`livemode`, `env`), sérialisation du règlement (`with_for_update` + unicité +
+table `stripe_webhook_events`), échec transitoire → 500 pour que Stripe rejoue,
+`/webhooks/` exempté du mode maintenance.
+
+### Fonctionnalités ajoutées
+
+- **Contrôle de caisse** (`cash_counts`) : le commandant sortant déclare sa
+  caisse **coupure par coupure** à chaque fin d'embarquement et fin de mois,
+  d'après le document « Master's Cash Box ». Le total est **recalculé** depuis
+  les quantités, l'écart **figé** avec le solde théorique du moment. Donne
+  enfin un **détenteur nommé** au cash.
+- **Gel à la relève** : une déclaration de fin d'embarquement fige la
+  comptabilité du débarquant. Une saisie manuelle y est refusée ; un **règlement
+  de vente est reporté** au premier jour ouvert — on ne perd jamais l'écriture
+  d'un paiement encaissé.
+- **Remboursement** (`finance:M`, siège) par **contre-passation** — mouvement de
+  caisse négatif, retours en stock, `stripe.Refund` pour les ventes CB. Le bord
+  peut seulement *demander*.
+- **Cloisonnement par navire** sur les deux modules (ADR-012).
+- Mouvements de caisse **datés à la journée**, plus à l'instant.
+- Uploads : **HEIC / HEIF / AVIF acceptés** — les justificatifs photographiés
+  depuis un iPhone étaient rejetés. Correctif posé dans le validateur commun,
+  donc valable pour tous les uploads photo de l'application.
+
+### Ce qui reste absent (dit sans détour)
+
+1. **Aucun mode hors connexion** — le plus gros manque, et celui qui compte le
+   plus en mer. `sw.js` ne couvre que `/onboard*` et `/static/*`.
+2. **Aucun reçu remis à l'acheteur.**
+3. **Aucune correction d'un mouvement de caisse** (ni UPDATE ni DELETE).
+4. Pas de reporting de CA, pas de consolidation Finance/KPI, et
+   `_default_leg_id` prend le **dernier leg créé** — la donnée d'imputation au
+   voyage est déjà peu fiable, à corriger **avant** de construire du reporting.
+5. UX terrain notée 4/10 : erreurs métier en **JSON brut** (aucun handler HTML
+   pour 400/503), pavés `onclick` inertes sous CSP, rechargement complet à
+   chaque ligne, aucun `hx-` dans les gabarits du module.
+
+### Avant tout nouveau test à bord
+
+Checklist complète en §10 du rapport d'audit. Les points qui bloquent :
+
+1. `SITE_URL` = URL **publique** (le défaut `localhost` casse le retour Stripe).
+2. `/admin/permissions` : la migration 0125 pose `(marins × captain) = CM` —
+   vérifier qu'elle est appliquée.
+3. `/admin/users` : le compte du commandant doit avoir un **`assigned_vessel_id`**
+   — sans lui, le cloisonnement le refuse (avec un message actionnable).
+4. `docker compose exec app python scripts/check_user.py <username>` doit ne
+   plus rien signaler.
+5. Annoncer que **le module exige le lien satellite**.
+
+**Recommandation de méthode** : ce module n'a **jamais eu de cahier des
+charges** (recherche exhaustive de `docs/`). 45 minutes avec les Opérations pour
+cadrer le besoin réel vaudraient plus que n'importe quel lot de développement.

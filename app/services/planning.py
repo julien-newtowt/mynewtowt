@@ -57,6 +57,45 @@ MAX_PLAUSIBLE_SPEED_KN = 18.0
 LEG_STATUSES: tuple[str, ...] = ("planned", "in_progress", "completed", "cancelled")
 
 
+async def current_leg_id(
+    db: AsyncSession, vessel_id: int, *, when: datetime | None = None
+) -> int | None:
+    """Leg sur lequel se trouve un navire à une date donnée.
+
+    Trois passes, du plus certain au plus probable :
+
+    1. un leg **réellement en cours** — parti (``atd``), pas encore arrivé
+       (``ata``) : c'est le fait, pas la prévision ;
+    2. à défaut, un leg dont la fenêtre prévisionnelle ``[etd, eta]`` couvre la
+       date ;
+    3. à défaut, le dernier leg dont le départ précède la date.
+
+    Motivation : le rattachement d'une vente à bord se faisait sur le **dernier
+    leg créé** (``ORDER BY id DESC``), qui n'a aucun rapport avec le voyage en
+    cours — un leg planifié la veille pour l'année suivante l'emportait. Toute
+    analyse par voyage bâtie là-dessus serait fausse, et la donnée se corrompait
+    à chaque vente.
+    """
+    moment = when or datetime.now(UTC)
+    base = select(Leg.id).where(Leg.vessel_id == vessel_id, Leg.status != "cancelled")
+
+    en_cours = await db.scalar(
+        base.where(Leg.atd.is_not(None), Leg.atd <= moment, Leg.ata.is_(None))
+        .order_by(Leg.atd.desc())
+        .limit(1)
+    )
+    if en_cours is not None:
+        return en_cours
+
+    fenetre = await db.scalar(
+        base.where(Leg.etd <= moment, Leg.eta >= moment).order_by(Leg.etd.desc()).limit(1)
+    )
+    if fenetre is not None:
+        return fenetre
+
+    return await db.scalar(base.where(Leg.etd <= moment).order_by(Leg.etd.desc()).limit(1))
+
+
 @overload
 def ensure_utc(dt: datetime) -> datetime: ...
 

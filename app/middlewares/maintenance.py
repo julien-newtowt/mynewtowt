@@ -19,7 +19,12 @@ from starlette.responses import HTMLResponse
 # n'est accessible qu'à l'utilisateur non-root du service.
 MARKER = Path("/tmp/.maintenance")  # nosec B108
 
-EXEMPT_PREFIXES = ("/health", "/static/", "/.well-known/")
+# `/webhooks/` est exempté : pendant une fenêtre de maintenance, les événements
+# Stripe recevaient une page HTML 503. Stripe réessaie, donc le cas est en
+# principe récupérable — mais un retry qui retombe sur une période de caisse
+# clôturée perd définitivement l'écriture. Ces endpoints sont authentifiés par
+# signature et ne servent aucune page.
+EXEMPT_PREFIXES = ("/health", "/static/", "/.well-known/", "/webhooks/")
 
 MAINTENANCE_HTML = """<!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><title>Maintenance — NEWTOWT</title>

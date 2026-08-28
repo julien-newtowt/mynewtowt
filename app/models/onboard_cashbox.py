@@ -18,6 +18,7 @@ from decimal import Decimal
 from sqlalchemy import (
     CHAR,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -136,6 +137,15 @@ class CashboxMovement(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
 
+    # Nature de l'argent (ADR-011). La caisse de bord décrit des **espèces**
+    # physiques ; un règlement par carte est encaissé chez le prestataire, puis
+    # en banque, jamais dans le coffre. Les confondre rendait la variance de
+    # clôture fausse du montant des ventes carte — chaque mois — et noyait dans
+    # cet écart « normal » toute perte d'espèces réelle.
+    # `card` reste au journal (le comptable en a besoin pour le rapprochement
+    # bancaire) mais sort du solde théorique et de l'écart de comptage.
+    medium: Mapped[str] = mapped_column(String(4), default="cash", nullable=False, index=True)
+
     category: Mapped[str] = mapped_column(String(40), nullable=False)
     description: Mapped[str] = mapped_column(String(300), nullable=False)
 
@@ -156,17 +166,47 @@ class CashboxMovement(Base):
     closure_id: Mapped[int | None] = mapped_column(
         ForeignKey("cashbox_closures.id", ondelete="SET NULL"), index=True
     )
+    # Gel à la relève (ADR-013) : un état de caisse « fin d'embarquement » arrête
+    # la comptabilité du commandant débarquant. Deux mécanismes verrouillent donc
+    # le même champ `locked_at` — la clôture arrête un **mois comptable**, la
+    # relève arrête la **responsabilité d'une personne**. On garde la référence
+    # de celui qui a gelé, pour savoir toujours au titre de quoi.
+    # Rectification : ce mouvement annule (contre-écriture) le mouvement visé.
+    # Le grand livre reste append-only — on n'efface ni ne modifie jamais une
+    # écriture passée, on en ajoute une opposée, datée du jour de la correction.
+    reverses_movement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cashbox_movements.id", ondelete="SET NULL"), unique=True
+    )
+
+    cash_count_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cash_counts.id", ondelete="SET NULL"), index=True
+    )
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     cashbox: Mapped[OnboardCashbox] = relationship(back_populates="movements")
 
     @property
     def is_locked(self) -> bool:
-        return self.closure_id is not None
+        """Verrouillé par une clôture mensuelle **ou** par une relève."""
+        return self.locked_at is not None
 
     __table_args__ = (
         Index("ix_cashbox_mov_cb_date", "cashbox_id", "occurred_at"),
         Index("ix_cashbox_mov_currency", "currency"),
+        # Le solde de la caisse est un `SUM(amount)` : une seule ligne aberrante
+        # le rend faux, et aucune route ne permet de supprimer un mouvement.
+        CheckConstraint("amount <> 0", name="ck_cashbox_mov_amount_non_zero"),
+        CheckConstraint("medium IN ('cash', 'card')", name="ck_cashbox_mov_medium"),
+        CheckConstraint(
+            "currency IN ('EUR', 'USD', 'VND')",
+            name="ck_cashbox_mov_currency",
+        ),
+        CheckConstraint(
+            "category IN ("
+            + ", ".join(f"'{c}'" for c in INCOME_CATEGORIES + EXPENSE_CATEGORIES)
+            + ")",
+            name="ck_cashbox_mov_category",
+        ),
     )
 
 

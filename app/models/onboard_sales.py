@@ -28,6 +28,7 @@ from decimal import Decimal
 from sqlalchemy import (
     CHAR,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -88,6 +89,14 @@ SALE_STATUS_LABELS: dict[str, str] = {
 }
 
 PAYMENT_METHODS: tuple[str, ...] = ("cash", "card")
+
+
+def _sql_in(column: str, values: tuple[str, ...]) -> str:
+    """Fragment ``col IN (...)`` portable pour un ``CheckConstraint``."""
+    joined = ", ".join(f"'{v}'" for v in values)
+    return f"{column} IN ({joined})"
+
+
 PAYMENT_METHOD_LABELS: dict[str, str] = {
     "cash": "Espèces",
     "card": "Carte bancaire (Stripe)",
@@ -113,6 +122,9 @@ class OnboardProduct(Base):
     # Les services ne sont pas suivis en stock (tracks_stock=False).
     tracks_stock: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Seuil d'alerte de réapprovisionnement. NULL = pas de suivi d'alerte.
+    # Sans lui, une rupture ne se découvrait qu'au moment de vendre.
+    min_stock_alert: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -122,6 +134,18 @@ class OnboardProduct(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    # Le vocabulaire et les bornes de signe vivaient uniquement en Python : rien
+    # n'empêchait un prix négatif de se propager en `line_total` négatif, ni une
+    # devise hors périmètre d'être persistée. Le registre de vente détaxée a la
+    # même valeur probante que le registre BL, qui porte lui 12 CheckConstraint.
+    __table_args__ = (
+        CheckConstraint("unit_price >= 0", name="ck_onboard_products_unit_price_non_negative"),
+        CheckConstraint(
+            _sql_in("currency", SUPPORTED_CURRENCIES), name="ck_onboard_products_currency"
+        ),
+        CheckConstraint(_sql_in("kind", PRODUCT_KINDS), name="ck_onboard_products_kind"),
     )
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -157,6 +181,8 @@ class OnboardStockMovement(Base):
     __table_args__ = (
         Index("ix_onboard_stock_vessel_product", "vessel_id", "product_id"),
         Index("ix_onboard_stock_occurred", "occurred_at"),
+        CheckConstraint("qty <> 0", name="ck_onboard_stock_qty_non_zero"),
+        CheckConstraint(_sql_in("reason", STOCK_REASONS), name="ck_onboard_stock_reason"),
     )
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -170,6 +196,12 @@ class OnboardSale(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     reference: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    # Identifiant généré par le client pour la **vente rapide hors connexion**.
+    # La file d'attente du bord rejoue un POST tant qu'il n'a pas abouti : sans
+    # cette clé, un rejeu créerait une seconde vente et un second encaissement.
+    # Nullable : les ventes créées écran par écran n'en ont pas besoin, leur
+    # idempotence tient au verrou de règlement.
+    client_uuid: Mapped[str | None] = mapped_column(String(64), unique=True)
     vessel_id: Mapped[int] = mapped_column(ForeignKey("vessels.id"), nullable=False, index=True)
     leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"), index=True)
     # Acheteur : collaborateur embarqué (texte libre — pas de lien RH obligatoire).
@@ -192,10 +224,32 @@ class OnboardSale(Base):
         ForeignKey("cashbox_movements.id", ondelete="SET NULL")
     )
 
+    # ── Remboursement (ADR-013) ──────────────────────────────────────────────
+    # Geste du **siège** : le bord encaisse, il ne défait pas un encaissement.
+    # Réalisé par contre-passation — un mouvement de caisse négatif et des
+    # retours en stock — jamais par suppression : les deux registres restent
+    # append-only, c'est ce qui fait leur valeur.
+    refund_cashbox_movement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cashbox_movements.id", ondelete="SET NULL")
+    )
+    stripe_refund_id: Mapped[str | None] = mapped_column(String(255))
+    refund_reason: Mapped[str | None] = mapped_column(Text)
+    refunded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    # Demande de remboursement émise depuis le bord, en attente de décision.
+    refund_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refund_request_note: Mapped[str | None] = mapped_column(Text)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Espèces remises par l'acheteur, pour calculer le rendu. Purement
+    # informatif : la caisse est créditée du **total de la vente**, pas de ce
+    # montant. Sans cette trace, un écart de rendu de monnaie était
+    # inexplicable au comptage.
+    cash_received: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     recorded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
@@ -205,6 +259,26 @@ class OnboardSale(Base):
         order_by="OnboardSaleLine.id",
     )
 
+    __table_args__ = (
+        # `cashbox_movement_id` est le **verrou d'idempotence** du règlement.
+        # Sans unicité en base, deux règlements concurrents (webhook redélivré +
+        # réconciliation à l'affichage) pouvaient créer deux mouvements de caisse
+        # pour un seul paiement, le second écrasant la référence du premier —
+        # qui devenait orphelin et indétraçable. La contrainte est le filet de
+        # dernier recours derrière le verrou applicatif de `settle_sale`.
+        UniqueConstraint("cashbox_movement_id", name="uq_onboard_sale_cashbox_movement"),
+        UniqueConstraint("refund_cashbox_movement_id", name="uq_onboard_sale_refund_movement"),
+        CheckConstraint("total >= 0", name="ck_onboard_sales_total_non_negative"),
+        CheckConstraint(_sql_in("status", SALE_STATUSES), name="ck_onboard_sales_status"),
+        CheckConstraint(
+            f"payment_method IS NULL OR {_sql_in('payment_method', PAYMENT_METHODS)}",
+            name="ck_onboard_sales_payment_method",
+        ),
+        CheckConstraint(
+            _sql_in("currency", SUPPORTED_CURRENCIES), name="ck_onboard_sales_currency"
+        ),
+    )
+
     @property
     def status_label(self) -> str:
         return SALE_STATUS_LABELS.get(self.status, self.status)
@@ -212,6 +286,22 @@ class OnboardSale(Base):
     @property
     def payment_method_label(self) -> str:
         return PAYMENT_METHOD_LABELS.get(self.payment_method or "", "—")
+
+    @property
+    def change_due(self) -> Decimal | None:
+        """Monnaie à rendre, si les espèces reçues ont été saisies."""
+        if self.cash_received is None:
+            return None
+        return Decimal(self.cash_received) - Decimal(self.total)
+
+    @property
+    def is_refunded(self) -> bool:
+        return self.refund_cashbox_movement_id is not None
+
+    @property
+    def refund_pending(self) -> bool:
+        """Remboursement demandé par le bord, pas encore traité par le siège."""
+        return self.refund_requested_at is not None and not self.is_refunded
 
     @property
     def is_settled(self) -> bool:
@@ -236,11 +326,28 @@ class OnboardSaleLine(Base):
     label: Mapped[str] = mapped_column(String(200), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     qty: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    # Remise en pourcentage, appliquée à cette ligne. 100 % = gratuité (geste
+    # commercial, article offert à l'équipage). Le total de ligne reste
+    # dérivable de (prix × quantité × remise) : rien n'est saisi librement.
+    discount_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), default=Decimal("0"), nullable=False
+    )
     line_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
     sale: Mapped[OnboardSale] = relationship(back_populates="lines")
 
-    __table_args__ = (UniqueConstraint("sale_id", "product_id", name="uq_sale_line_product"),)
+    __table_args__ = (
+        UniqueConstraint("sale_id", "product_id", name="uq_sale_line_product"),
+        CheckConstraint("qty > 0", name="ck_onboard_sale_line_qty_positive"),
+        CheckConstraint(
+            "discount_pct >= 0 AND discount_pct <= 100",
+            name="ck_onboard_sale_line_discount_range",
+        ),
+        CheckConstraint(
+            "unit_price >= 0 AND line_total >= 0",
+            name="ck_onboard_sale_line_amounts_non_negative",
+        ),
+    )
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<OnboardSaleLine sale={self.sale_id} {self.label!r} x{self.qty}>"

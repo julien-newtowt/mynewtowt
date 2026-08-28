@@ -167,8 +167,27 @@ class Settings(BaseSettings):
 
     @property
     def stripe_enabled(self) -> bool:
-        """Vrai si l'encaissement carte (Stripe Checkout) est configuré."""
+        """Vrai si l'API Stripe est joignable (clé secrète présente).
+
+        Gouverne les opérations *sortantes* : relire une session, la fermer,
+        réconcilier un paiement. Volontairement distinct de
+        ``stripe_card_payments_enabled`` : une installation dont le secret de
+        webhook a été retiré doit continuer à pouvoir solder et fermer les
+        sessions déjà créées, même si elle n'en ouvre plus de nouvelles.
+        """
         return bool(self.stripe_secret_key)
+
+    @property
+    def stripe_card_payments_enabled(self) -> bool:
+        """Vrai si la voie carte peut être **ouverte** à un client.
+
+        Exige aussi ``STRIPE_WEBHOOK_SECRET`` : sans lui, le webhook répond 503
+        à chaque livraison, et une carte réellement débitée ne remonte jamais
+        dans l'application. Proposer un lien de paiement dans cette
+        configuration revient à encaisser sans confirmation — l'inverse du
+        principe secure-by-default du module.
+        """
+        return bool(self.stripe_secret_key) and bool(self.stripe_webhook_secret)
 
     # ── Signature électronique Yousign (booking note) ─────────────────────
     # Même principe secure-by-default que Stripe : sans YOUSIGN_API_KEY, la voie
@@ -249,6 +268,16 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 f"Production refusing to start: DATABASE_URL password is in the "
                 f"weak list ({password!r}). Generate a random one."
+            )
+
+        # Une clé Stripe de test en production encaisse des paiements fictifs :
+        # la caisse de bord et le registre douanier enregistreraient des ventes
+        # réelles pour de l'argent qui n'existe pas.
+        if (self.stripe_secret_key or "").startswith("sk_test_"):
+            raise RuntimeError(
+                "Production refusing to start: STRIPE_SECRET_KEY is a test key "
+                "(sk_test_…). Use the live key, or leave it empty to disable "
+                "card payments."
             )
 
 

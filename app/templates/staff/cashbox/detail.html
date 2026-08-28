@@ -7,6 +7,21 @@
   <h1 class="display"><span class="mono text-muted">{{ vessel.code }}</span> {{ vessel.name }}</h1>
 </header>
 
+{% if frozen_until %}
+  <div class="alert alert-warning mb-4">
+    <strong>Comptabilité figée au {{ frozen_until|date }}</strong> par un état de
+    caisse de fin d'embarquement. Les mouvements de cette période sont en lecture
+    seule et aucune écriture ne peut y être ajoutée — c'est la décharge du
+    commandant sortant. Les règlements de vente confirmés après le gel sont
+    reportés au premier jour ouvert, avec mention dans leur libellé.
+  </div>
+{% endif %}
+
+<p class="text-muted mb-2">
+  Le solde ci-dessous est celui des <strong>espèces détenues à bord</strong>.
+  Les règlements par carte sont encaissés en banque : ils figurent au journal et
+  à l'export, mais pas dans ce solde ni dans l'écart de comptage.
+</p>
 <section class="kpi-strip">
   {% for b in balances %}
     <a href="?currency={{ b.currency }}" class="kpi-card" style="text-decoration:none;border-bottom:none;{% if currency_filter == b.currency %}border:2px solid var(--cuivre);{% endif %}">
@@ -18,9 +33,66 @@
       </div>
     </a>
   {% else %}
-    <div class="kpi-card"><div class="label">Aucun mouvement</div><div class="value">—</div></div>
+    <div class="kpi-card"><div class="label">Aucun mouvement en espèces</div><div class="value">—</div></div>
   {% endfor %}
 </section>
+
+{% if card_totals %}
+  <p class="text-muted mb-4">
+    <strong>Encaissements par carte</strong> (hors caisse, à rapprocher en comptabilité) :
+    {% for cur, total in card_totals.items() %}
+      <span class="mono">{{ "%.2f"|format(total|float) }} {{ cur }}</span>{% if not loop.last %} · {% endif %}
+    {% endfor %}
+  </p>
+{% endif %}
+
+<article class="card mb-4">
+  <div class="flex gap-3" style="align-items:baseline;flex-wrap:wrap;justify-content:space-between;">
+    <div>
+      <h2 style="margin:0;">Contrôle de caisse</h2>
+      <p class="text-muted" style="margin:var(--space-1) 0 0;">
+        À chaque fin d'embarquement et chaque fin de mois, le commandant sortant
+        déclare l'état complet de sa caisse, coupure par coupure.
+      </p>
+    </div>
+    <a href="/cashbox/{{ vessel.id }}/etat" class="btn btn-cuivre">🧾 Déclarer l'état de caisse</a>
+  </div>
+
+  {% if cash_counts %}
+    <div class="table-scroll mt-3">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Date</th><th>Motif</th><th>Déclaré par</th><th>Remis à</th>
+            <th>Écarts</th><th>Statut</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in cash_counts %}
+            <tr>
+              <td class="mono">{{ c.counted_on|date }}</td>
+              <td>{{ c.trigger_label }}</td>
+              <td>{{ c.declared_by_name }}</td>
+              <td class="text-muted">{{ c.handover_to_name or "—" }}</td>
+              <td class="mono">
+                {% for b in c.currencies %}
+                  <span class="{% if b.variance < 0 %}text-error{% elif b.variance > 0 %}text-warning{% else %}text-success{% endif %}">
+                    {{ b.currency }} {{ "%+.2f"|format(b.variance|float) }}
+                  </span>{% if not loop.last %} · {% endif %}
+                {% else %}—{% endfor %}
+              </td>
+              <td><span class="pill">{{ c.status_label }}</span></td>
+              <td><a href="/cashbox/{{ vessel.id }}/etat/{{ c.id }}" class="btn btn-ghost btn-sm">Voir</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+</div>
+    </div>
+  {% else %}
+    <p class="text-muted mt-3">Aucun état de caisse déclaré pour ce navire.</p>
+  {% endif %}
+</article>
 
 <article class="card mb-4">
   <h2>Nouveau mouvement</h2>
@@ -60,8 +132,8 @@
         <input id="description" name="description" required />
       </div>
       <div class="field">
-        <label for="occurred_at">Date/heure</label>
-        <input id="occurred_at" name="occurred_at" type="datetime-local" />
+        <label for="occurred_at">Date d'effet</label>
+        <input id="occurred_at" name="occurred_at" type="date" />
       </div>
       <div class="field" style="grid-column: span 2;">
         <label for="receipt">Justificatif (scan / photo)</label>
@@ -121,7 +193,8 @@
 
   {% if closures %}
   <h3 class="mt-4">Clôtures</h3>
-  <table>
+  <div class="table-scroll">
+<table class="data-table">
     <thead><tr><th>Période</th><th>Devise</th><th class="text-right">Compté</th><th class="text-right">Calculé</th><th class="text-right">Écart</th><th>Mvts</th><th>Clôturé le</th></tr></thead>
     <tbody>
       {% for cl in closures %}
@@ -137,19 +210,22 @@
       {% endfor %}
     </tbody>
   </table>
+</div>
   {% endif %}
 </article>
 
 <article class="card">
   <h2>Mouvements récents {% if currency_filter %}({{ currency_filter }}){% endif %}</h2>
   {% if movements %}
-    <table>
+    <div class="table-scroll">
+<table class="data-table">
       <thead><tr><th>Date</th><th>Devise</th><th class="text-right">Montant</th><th>Catégorie</th><th>Description</th><th>Justif.</th><th></th></tr></thead>
       <tbody>
         {% for m in movements %}
           <tr>
             <td class="mono text-sm">
-              {{ m.occurred_at|datetime }}
+              {{ m.occurred_at|date }}
+              {% if m.medium == "card" %}<span class="badge">CB</span>{% endif %}
               {% if m.is_locked %}<span class="pill pill-neutral" title="Verrouillé (clôturé)">🔒</span>{% endif %}
             </td>
             <td class="mono">{{ m.currency }}</td>
@@ -165,6 +241,25 @@
             </td>
             <td>{{ m.description }}</td>
             <td>
+              {% if not m.is_locked and not m.reverses_movement_id %}
+                <details style="display:inline-block;">
+                  <summary class="btn btn-ghost btn-sm" style="list-style:none;">✏️ Rectifier</summary>
+                  <form method="post" action="/cashbox/{{ vessel.id }}/movement/{{ m.id }}/correct"
+                        style="margin-top:var(--space-2);min-width:16rem;"
+                        data-confirm="Rectifier ce mouvement ? Une contre-écriture datée d'aujourd'hui sera ajoutée — l'écriture d'origine reste au journal.">
+                    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                    <div class="field">
+                      <label>Motif</label>
+                      <input name="reason" required placeholder="Ex. montant saisi à l'envers" />
+                    </div>
+                    <div class="field">
+                      <label>Montant corrigé (vide = simple annulation)</label>
+                      <input name="corrected_amount" inputmode="decimal" placeholder="0.00" />
+                    </div>
+                    <button type="submit" class="btn btn-secondary btn-sm">Rectifier</button>
+                  </form>
+                </details>
+              {% endif %}
               {% if m.receipt_url %}
                 <a href="/cashbox/{{ vessel.id }}/movement/{{ m.id }}/receipt" target="_blank" class="btn btn-ghost btn-sm">📎 Voir</a>
               {% elif not m.is_locked %}
@@ -182,6 +277,7 @@
         {% endfor %}
       </tbody>
     </table>
+</div>
   {% else %}
     <p class="text-muted">Aucun mouvement.</p>
   {% endif %}

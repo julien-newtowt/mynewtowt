@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ status_code }} — {{ title }}{% endblock %}
+{% block body %}
+<div class="auth-shell">
+  <div class="auth-card text-center">
+    <i data-lucide="{{ icon }}" style="width:48px;height:48px;color:var(--cuivre);"></i>
+    <h1 class="display" style="font-size:var(--text-4xl)">{{ status_code }}</h1>
+    <p><strong>{{ title }}</strong></p>
+    {% if detail %}<p>{{ detail }}</p>{% endif %}
+    <div class="flex gap-3 mt-3" style="justify-content:center;flex-wrap:wrap;">
+      {% if back_url %}
+        <a href="{{ back_url }}" class="btn btn-primary">Revenir en arrière</a>
+      {% endif %}
+      <a href="/" class="btn btn-ghost">Accueil</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

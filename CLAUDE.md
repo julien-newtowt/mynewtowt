@@ -109,9 +109,11 @@ Transport) — pionnier du transport maritime décarboné à la voile depuis
 > 💳 **Exception — « Vente à bord »** : Stripe est réintroduit de façon
 > **ciblée** pour l'encaissement CB des collaborateurs embarqués (module
 > `captain`, route `/captain/ventes`). Stripe **Checkout** (page hébergée,
-> lien + QR) + **webhook** `/webhooks/stripe`. Secure-by-default : sans
-> `STRIPE_SECRET_KEY`, la voie carte renvoie 503 et seule reste l'espèce.
-> Aucun autre circuit de paiement n'est concerné.
+> lien + QR) + **webhook** `/webhooks/stripe`. Secure-by-default : la voie
+> carte n'ouvre que si `STRIPE_SECRET_KEY` **et** `STRIPE_WEBHOOK_SECRET`
+> sont présents (sans canal de confirmation, une carte débitée ne remonterait
+> jamais) ; sinon 503 et seule reste l'espèce. Aucun autre circuit de
+> paiement n'est concerné.
 
 ## Stack technique
 
@@ -311,8 +313,12 @@ reste hors plateforme (arbitrage A5) : les conditions de règlement sont
 ### Permissions
 - 9 rôles : `administrateur`, `operation`, `armement`, `technique`,
   `data_analyst`, `marins`, `commercial`, `manager_maritime`, `rh`.
-- 17 modules : planning, commercial, escale, cargo, finance, kpi, captain,
-  crew, claims, mrv, rh, booking, tickets, analytics, chat, veille, admin.
+- 18 modules : planning, commercial, escale, cargo, finance, kpi, captain,
+  **ventes**, crew, claims, mrv, rh, booking, tickets, analytics, chat, veille,
+  admin. `ventes` (vente à bord + caisse) est **distinct de `captain`** :
+  `captain:M` déverrouille SOF, ETA, documents cargo et saisie MRV sur toute la
+  flotte, sans contrôle de navire. Accorder tout le module pour permettre
+  d'encaisser était une escalade de privilège.
 - Niveaux C / M / S = Consult / Modify / Suppress.
 - Décorateur `Depends(require_permission("module", "C"|"M"|"S"))` sur
   toute route.
@@ -354,6 +360,114 @@ reste hors plateforme (arbitrage A5) : les conditions de règlement sont
   **défaut ON global** (flag absent ⇒ actif), **fail-open** vers ON (une panne DB ne
   rouvre jamais le legacy), cache 20 s. Opt-out **par navire** en base via
   `audience.vessels_off` (codes/ids) pour le double-run pilote.
+
+### Vente à bord — ce qu'il faut savoir avant d'y toucher
+
+Module d'encaissement : il manipule de l'argent réel et alimente deux registres
+**append-only sans route de suppression** (le registre douanier de vente
+détaxée, le grand livre de caisse). Les invariants ci-dessous ne sont pas des
+préférences de style.
+
+- **`settle_sale` est le chemin unique de règlement**, et il est idempotent :
+  verrou `cashbox_movement_id` (unique en base), ligne relue
+  `with_for_update`, et journal `stripe_webhook_events` qui déduplique au
+  niveau `event.id`. Ne jamais créer un mouvement de caisse de vente ailleurs.
+- **Fermer la session Stripe avant tout geste qui rend la vente non payable**
+  (encaissement espèces, annulation, régénération de lien) — via
+  `_release_checkout_session`. Sans cela le lien reste payable et le client
+  peut débiter une seconde fois. En cas d'échec de fermeture, **refuser le
+  geste** plutôt que de poursuivre.
+- **Aucune saisie numérique ne va en base sans `utils.decimals`** :
+  `Decimal("nan")` est un littéral valide et `NaN == 0` vaut `False`, donc les
+  gardes naïves le laissent passer ; PostgreSQL l'accepte et `SUM()` le
+  propage. Une seule ligne suffit à rendre un solde définitivement illisible.
+- **Le webhook vérifie l'objet reçu** (session attendue, devise, `amount_total`,
+  `livemode`, `metadata.env`) avant d'écrire. Un écart est un **incident**
+  notifié au siège, jamais un cas métier silencieux.
+- **Distinguer l'échec transitoire du définitif** dans le webhook : un 200 sur
+  une cause temporaire (période clôturée) retire l'événement de la file de
+  retry Stripe et perd l'écriture d'un paiement encaissé.
+- **Le remboursement est un geste du siège** (ADR-013) : route sous
+  `finance:M`, jamais `captain:M` — celle-là encaisse. Il se fait par
+  **contre-passation** (mouvement de caisse négatif, même catégorie, même
+  support, retours en stock), **jamais par suppression** : les deux registres
+  restent append-only. Le bord peut seulement *demander* un remboursement.
+- **Encaisser hors connexion passe par un POST atomique** : la file d'attente
+  du bord (`onboard-offline.js`) rejoue **une** requête, pas une séquence. Le
+  parcours pas à pas enchaîne trois POST dépendants — donc inqueueable. D'où
+  `POST /captain/ventes/{vessel_id}/vente-rapide`, idempotent par `client_uuid`
+  généré côté navigateur. La file ne conserve qu'une valeur par nom de champ :
+  le panier voyage dans un **champ unique** (`"id:qté,id:qté"`).
+- **Le total d'une ligne de vente est toujours dérivé**, jamais saisi :
+  `prix catalogue × quantité × (1 − remise)`. Une remise de 100 % est la
+  gratuité. Une **ligne hors catalogue** (`product_id` NULL) porte son propre
+  prix mais ne génère **aucun mouvement de stock** au règlement — l'article
+  n'est pas suivi.
+- **`cash_received` est informatif** : la caisse est créditée du **total de la
+  vente**, jamais des espèces remises. Il ne sert qu'à tracer le rendu de
+  monnaie, sans quoi un écart au comptage reste inexplicable.
+- **Le chiffre d'affaires ne se consolide pas entre devises** :
+  `sales_summary` ventile par devise et n'additionne jamais — l'application ne
+  tient aucun taux de change, un total unique serait faux d'apparence juste. Le
+  CA par voyage est **exposé** (`onboard_revenue_by_leg`) mais délibérément
+  **non injecté** dans `LegFinance.revenue_eur`, qui est saisi par un opérateur :
+  y écrire d'office écraserait sa saisie. La consolidation automatique est une
+  décision de gestion, pas un détail d'implémentation.
+- **Ordre de déclaration des routes** : les chemins littéraux (`/catalogue`,
+  `/rapport`) doivent précéder `/{vessel_id}`. FastAPI n'ajoute pas de
+  convertisseur de type au motif de route — `/{vessel_id}` capture n'importe
+  quel segment. Verrouillé par un test.
+- **Arbitrages tranchés le 2026-08-27** : `ADR-011` (espèces ≠ CB),
+  `ADR-012` (cloisonnement par navire), `ADR-013` (remboursement, valeur du
+  registre, gel à la relève). Les lire avant de rouvrir l'un de ces sujets.
+
+### Caisse de bord — contrôle et détenteur
+
+- **La caisse de bord, c'est de l'argent physique** (ADR-011) : un règlement par
+  carte porte `medium="card"`, reste au journal et à l'export — le rapprochement
+  bancaire se fait dans le logiciel comptable — mais **sort du solde théorique et
+  de l'écart de comptage**. Les confondre rendait la variance de clôture fausse
+  du montant des ventes CB chaque mois, et y noyait toute perte d'espèces réelle.
+- **Une déclaration de fin d'embarquement fige la comptabilité du débarquant**
+  (ADR-013) : les mouvements jusqu'à la date du comptage passent en lecture seule
+  et plus rien ne s'y écrit. Une relève est une **décharge**. Exception qui ne se
+  négocie pas : un **règlement de vente** dans la fenêtre gelée est **reporté** au
+  premier jour ouvert, jamais refusé — on ne perd jamais l'écriture d'un paiement
+  encaissé. Une **saisie manuelle**, elle, est refusée.
+- **Vente et caisse vivent dans le module de permission `ventes`**, jamais
+  `captain` : ce dernier ouvre 39 routes d'écriture sans contrôle de navire.
+  Ne jamais élargir un module entier pour débloquer une fonctionnalité.
+- **Le personnel maritime est borné à son navire d'affectation** (ADR-012) :
+  `permissions.assert_vessel_access` sur toute route portant un `vessel_id`, et
+  dans `_get_sale_or_404` pour les routes de vente. Seuls `administrateur` et
+  `armement` voient la flotte. Les consultations restées ouvertes sur la flotte
+  entière sont le **planning de navigation** et la **position des navires** — pas
+  la caisse, pas les ventes. Un marin sans affectation est refusé, avec un
+  message qui dit quoi faire.
+- **Un mouvement de caisse s'impute à une journée, pas à un instant** :
+  `cashbox.as_movement_date` ramène toute date d'effet à minuit UTC. Conserver
+  une heure donnait la précision de la *saisie*, pas celle de l'opération.
+  Le tri se départage ensuite par ordre de saisie (`id`).
+- **Rectifier un mouvement se fait par contre-écriture**, jamais par
+  modification : le grand livre n'a ni UPDATE ni DELETE, et une écriture passée
+  fait foi. `cashbox.reverse_movement` ajoute un mouvement opposé daté du jour
+  de la correction (et le montant correct s'il y a lieu), lié par
+  `reverses_movement_id` — unique, un mouvement ne se rectifie qu'une fois.
+  Conséquence assumée : la correction n'apparaît pas dans la période d'origine,
+  un contrôle déjà rendu ne se réécrit pas.
+- **`cash_counts` est l'opération de contrôle** : le commandant sortant déclare
+  sa caisse coupure par coupure à chaque fin d'embarquement et chaque fin de
+  mois. Deux invariants : le total est **recalculé** depuis les quantités (un
+  total déclaratif ne contrôle rien), et l'écart est **figé** avec le solde
+  théorique du moment (un mouvement saisi après coup ne réécrit pas un contrôle
+  rendu — il apparaît dans le suivant).
+- **Ne déclarer que les devises réellement détenues** : un bloc à zéro sur une
+  devise présente en caisse fabriquerait un faux écart.
+- `cash_count.computed_balance` fait un `SUM` simple sur les **espèces** ;
+  `cashbox.balances` ventile entrées/sorties et prend un filtre `medium`
+  (défaut : espèces). Les deux sont testables — `balances` utilisait
+  `greatest`/`least`, absents de SQLite, ce qui expliquait sa couverture nulle ;
+  elle est passée en `case`.
 
 ### Sécurité
 - **CSRF** : `CSRFMiddleware` (double-submit cookie `towt_csrf`).
@@ -434,8 +548,8 @@ reste hors plateforme (arbitrage A5) : les conditions de règlement sont
 | KPI | `/kpi` | ✅ vue KPI consolidée + Carbon Report par leg (intensités t·nm) ; **certificats CO₂ = label Anemos** (par booking + RSE annuel) |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
-| Cashbox | `/cashbox` | ✅ EUR/USD/VND |
-| Vente à bord | `/captain/ventes` | ✅ catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe (avitaillement/franchise) + export CSV. Webhook `/webhooks/stripe` (signature + idempotent). Perm. `captain` (marins → CM via override) |
+| Cashbox | `/cashbox` | ✅ EUR/USD/VND · mouvements datés à la **journée** (pas d'heure) · **contrôle de caisse** : état déclaré par le commandant coupure par coupure à chaque fin d'embarquement et fin de mois, écarts figés et historisés (`cash_counts`) |
+| Vente à bord | `/captain/ventes` | 🟡 **Boucle de correction en place, pas encore éprouvé à bord** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` a `ventes:CM` par défaut dans la matrice — aucun override requis. Remboursement (siège, par contre-passation), contrôle de caisse, gel à la relève, reçu PDF, vente rapide espèces rejouable hors connexion et rectification d'un mouvement de caisse livrés. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
 | RH (SIRH) | `/rh` | ✅ congés marins + SIRH sédentaires : dossier/CRUD/import, contrats & avenants + alertes, congés/absences + self-service `/rh/moi`, EVP + verrouillage période, export Silae CSV + journal des lots, coffre-fort bulletins + entretiens + reporting RH (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |
 | Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |

@@ -17,6 +17,7 @@ Devises : Stripe attend le montant en **plus petite unité**. Les devises
 from __future__ import annotations
 
 import asyncio
+import time
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -56,9 +57,55 @@ class StripeCheckoutError(Exception):
     """Erreur d'appel à l'API Stripe (message affichable)."""
 
 
+class StripeSessionAlreadyPaid(StripeCheckoutError):
+    """La session visée a déjà été payée : elle ne peut plus être fermée.
+
+    Signalé à part car c'est le cas dangereux : on s'apprêtait à annuler la
+    vente ou à l'encaisser en espèces alors que le client venait de payer par
+    carte. Poursuivre produirait un double encaissement.
+    """
+
+
+# Durée de vie d'un lien de paiement. Stripe la fixe à 24 h par défaut ; à bord
+# la vente se règle dans la minute, et un lien qui traîne est une fenêtre de
+# double débit (le client peut le rouvrir après un règlement en espèces).
+SESSION_TTL_SECONDS = 30 * 60
+
+# Délai réseau borné : le SDK attend ~80 s par défaut et réessaie deux fois. Sur
+# liaison satellite, l'affichage d'une vente — qui interroge Stripe — se figeait
+# jusqu'à plusieurs minutes. Mieux vaut échouer vite et proposer les espèces.
+REQUEST_TIMEOUT_SECONDS = 8
+
+# Version d'API épinglée : sans elle, une montée de version côté Stripe peut
+# changer la forme des objets reçus par le webhook sans qu'on l'ait décidé.
+API_VERSION = "2024-11-20.acacia"
+
+
+def _api_kwargs() -> dict[str, Any]:
+    """Arguments communs à tous les appels SDK (clé, version, délais)."""
+    return {
+        "api_key": settings.stripe_secret_key or "",
+        "stripe_version": API_VERSION,
+        "timeout": REQUEST_TIMEOUT_SECONDS,
+        "max_network_retries": 1,
+    }
+
+
 def is_configured() -> bool:
-    """Vrai si l'encaissement carte est configuré (clé secrète présente)."""
+    """Vrai si l'API Stripe est joignable (clé secrète présente).
+
+    Gouverne les opérations sortantes : relire, fermer, réconcilier.
+    """
     return settings.stripe_enabled
+
+
+def card_payments_enabled() -> bool:
+    """Vrai si un **nouveau** lien de paiement peut être proposé au client.
+
+    Exige en plus le secret de webhook : sans canal de confirmation, une carte
+    débitée ne remonterait jamais dans l'application.
+    """
+    return settings.stripe_card_payments_enabled
 
 
 def webhook_configured() -> bool:
@@ -77,24 +124,24 @@ def amount_to_minor(amount: Decimal, currency: str) -> int:
 
 def _create_session_sync(
     *,
-    api_key: str,
-    currency: str,
     line_items: list[dict],
     success_url: str,
     cancel_url: str,
     metadata: dict[str, str],
     client_reference_id: str,
+    expires_at: int,
 ) -> Any:
     return stripe.checkout.Session.create(
-        api_key=api_key,
         mode="payment",
         line_items=line_items,
         success_url=success_url,
         cancel_url=cancel_url,
         metadata=metadata,
         client_reference_id=client_reference_id,
+        expires_at=expires_at,
         # Le montant fait foi côté serveur ; on interdit tout ajustement client.
         submit_type="pay",
+        **_api_kwargs(),
     )
 
 
@@ -116,8 +163,11 @@ async def create_session(
     (SKU). Quand une ligne y correspond, le SKU préfixe le libellé affiché sur
     la page de paiement Stripe et le reçu — traçabilité de l'article vendu.
     """
-    if not is_configured():
-        raise StripeNotConfigured("Stripe non configuré (STRIPE_SECRET_KEY manquant).")
+    if not card_payments_enabled():
+        raise StripeNotConfigured(
+            "Voie carte indisponible : STRIPE_SECRET_KEY et STRIPE_WEBHOOK_SECRET "
+            "sont tous deux requis (sans webhook, un paiement ne remonterait pas)."
+        )
     skus = sku_by_product_id or {}
     currency = sale.currency.lower()
     line_items: list[dict] = []
@@ -138,19 +188,25 @@ async def create_session(
         )
     if not line_items:
         raise StripeCheckoutError("Vente sans article : rien à encaisser.")
-    metadata = {"sale_id": str(sale.id), "reference": sale.reference}
+    # ``env`` permet au webhook de rejeter un événement émis par une autre
+    # installation partageant le même compte Stripe (staging ↔ production).
+    metadata = {
+        "sale_id": str(sale.id),
+        "reference": sale.reference,
+        "env": settings.app_env,
+    }
+    expires_at = int(time.time()) + SESSION_TTL_SECONDS
     try:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
             lambda: _create_session_sync(
-                api_key=settings.stripe_secret_key or "",
-                currency=currency,
                 line_items=line_items,
                 success_url=success_url,
                 cancel_url=cancel_url,
                 metadata=metadata,
                 client_reference_id=sale.reference,
+                expires_at=expires_at,
             ),
         )
     except stripe.StripeError as e:  # type: ignore[attr-defined]
@@ -165,12 +221,73 @@ async def retrieve_session(session_id: str) -> Any:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
-            lambda: stripe.checkout.Session.retrieve(
-                session_id, api_key=settings.stripe_secret_key or ""
-            ),
+            lambda: stripe.checkout.Session.retrieve(session_id, **_api_kwargs()),
         )
     except stripe.StripeError as e:  # type: ignore[attr-defined]
         raise StripeCheckoutError(f"Erreur Stripe : {e}") from e
+
+
+async def expire_session(session_id: str) -> str:
+    """Ferme une Checkout Session encore ouverte. Renvoie son statut final.
+
+    Appelée avant d'annuler une vente, de l'encaisser en espèces ou de
+    régénérer un lien. Sans cela, la session restait **payable** : le client
+    qui avait déjà scanné le QR pouvait régler par carte une vente réglée en
+    liquide ou annulée entre-temps — double débit réel, absorbé en silence par
+    la garde d'idempotence du règlement, et non remboursable dans l'application.
+
+    On relit la session avant de la fermer, délibérément : c'est ce qui permet
+    de détecter le cas dangereux — le client vient de payer pendant que le
+    commandant cliquait — et de lever ``StripeSessionAlreadyPaid`` plutôt que
+    d'enchaîner sur un second encaissement.
+
+    Renvoie ``"expired"`` si la session a été fermée ici, sinon son statut déjà
+    acquis (``"expired"``, ``"complete"``). Lève ``StripeCheckoutError`` si on
+    ne peut pas garantir qu'elle est fermée : l'appelant doit alors renoncer,
+    jamais poursuivre.
+    """
+    if not is_configured():
+        raise StripeNotConfigured("Stripe non configuré.")
+    session = await retrieve_session(session_id)
+    if getattr(session, "payment_status", None) in ("paid", "no_payment_required"):
+        raise StripeSessionAlreadyPaid(
+            "Le client a déjà réglé cette vente par carte : rechargez la vente "
+            "avant toute autre action."
+        )
+    status = getattr(session, "status", None)
+    if status != "open":
+        # Déjà expirée côté Stripe : l'objectif est atteint.
+        return status or "unknown"
+    try:
+        loop = asyncio.get_running_loop()
+        closed = await loop.run_in_executor(
+            None,
+            lambda: stripe.checkout.Session.expire(session_id, **_api_kwargs()),
+        )
+    except stripe.StripeError as e:  # type: ignore[attr-defined]
+        raise StripeCheckoutError(f"Fermeture du lien de paiement impossible : {e}") from e
+    return getattr(closed, "status", "expired") or "expired"
+
+
+async def create_refund(payment_intent_id: str, *, amount_minor: int | None = None) -> Any:
+    """Rembourse un paiement carte. Montant total par défaut.
+
+    Utilise ``is_configured`` et non ``card_payments_enabled`` : rembourser doit
+    rester possible sur une installation dont la voie carte a été refermée —
+    c'est même le cas où l'on en a le plus besoin.
+    """
+    if not is_configured():
+        raise StripeNotConfigured("Stripe non configuré : remboursement impossible.")
+    payload: dict[str, Any] = {"payment_intent": payment_intent_id}
+    if amount_minor is not None:
+        payload["amount"] = amount_minor
+    try:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: stripe.Refund.create(**payload, **_api_kwargs())
+        )
+    except stripe.StripeError as e:  # type: ignore[attr-defined]
+        raise StripeCheckoutError(f"Remboursement Stripe refusé : {e}") from e
 
 
 def construct_event(payload: bytes, sig_header: str) -> Any:

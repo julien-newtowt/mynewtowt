@@ -241,6 +241,19 @@ a:focus-visible {
 .card-meta { color: var(--text-2); font-size: var(--text-sm); }
 
 /* ─────────────────────────── Buttons ──────────────────────────────── */
+/* Cibles tactiles — usage à bord : debout, une main prise, parfois les mains
+   mouillées. Les recommandations d'accessibilité fixent 44px ; `.btn` en fait
+   ~35 et `.btn-sm` ~25. On n'élargit que sur pointeur grossier (tactile) :
+   appliqué globalement, cela déplacerait la mise en page de tous les écrans de
+   bureau de l'application pour un gain nul là où l'on a une souris. */
+@media (pointer: coarse) {
+  .btn { min-height: 44px; }
+  .btn-sm { min-height: 38px; }
+  /* Champs de saisie : même contrainte, et 16px évite le zoom automatique
+     d'iOS au focus, qui recadre la page en pleine saisie de vente. */
+  input, select, textarea { min-height: 44px; font-size: 16px; }
+}
+
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
   gap: var(--space-2);

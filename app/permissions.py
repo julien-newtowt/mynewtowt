@@ -49,6 +49,13 @@ MODULES: tuple[str, ...] = (
     "finance",
     "kpi",
     "captain",
+    # Vente à bord + caisse de bord. Module **distinct** de `captain`
+    # délibérément : le commandant doit pouvoir encaisser sans recevoir pour
+    # autant le droit d'écrire les SOF, les décalages d'ETA, les documents
+    # cargo et la saisie MRV — que `captain:M` déverrouille sur toute la flotte,
+    # sans contrôle de navire. Donner tout le module pour une fonctionnalité
+    # était une escalade de privilège (revue de sécurité du 2026-08-28).
+    "ventes",
     "crew",
     "claims",
     "mrv",
@@ -73,6 +80,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("operation", "cargo"): "CMS",
     ("operation", "kpi"): "C",
     ("operation", "captain"): "CM",
+    ("operation", "ventes"): "CM",
     ("operation", "crew"): "CM",
     ("operation", "claims"): "CMS",
     ("operation", "mrv"): "CM",
@@ -87,6 +95,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("armement", "escale"): "C",
     ("armement", "kpi"): "C",
     ("armement", "captain"): "C",
+    ("armement", "ventes"): "C",
     ("armement", "crew"): "CMS",
     ("armement", "mrv"): "C",
     ("armement", "qhse"): "C",
@@ -100,6 +109,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("technique", "cargo"): "C",
     ("technique", "kpi"): "C",
     ("technique", "captain"): "CM",
+    ("technique", "ventes"): "CM",
     ("technique", "crew"): "C",
     ("technique", "claims"): "C",
     ("technique", "mrv"): "CM",
@@ -115,6 +125,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("data_analyst", "finance"): "CMS",
     ("data_analyst", "kpi"): "C",
     ("data_analyst", "captain"): "C",
+    ("data_analyst", "ventes"): "C",
     ("data_analyst", "crew"): "C",
     ("data_analyst", "claims"): "C",
     ("data_analyst", "mrv"): "CM",
@@ -129,6 +140,9 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("marins", "escale"): "C",
     ("marins", "kpi"): "C",
     ("marins", "captain"): "C",
+    # Le commandant encaisse : c'est sa fonction. Le cloisonnement par navire
+    # (ADR-012) borne ensuite chaque route au navire d'affectation.
+    ("marins", "ventes"): "CM",
     ("marins", "crew"): "C",
     ("marins", "cargo"): "C",
     ("marins", "mrv"): "C",
@@ -144,6 +158,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("commercial", "kpi"): "C",
     ("commercial", "qhse"): "C",
     ("commercial", "captain"): "C",
+    ("commercial", "ventes"): "C",
     ("commercial", "rh"): "C",
     ("commercial", "booking"): "CMS",
     ("commercial", "analytics"): "C",
@@ -155,6 +170,7 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("manager_maritime", "cargo"): "CM",
     ("manager_maritime", "kpi"): "C",
     ("manager_maritime", "captain"): "CMS",
+    ("manager_maritime", "ventes"): "CMS",
     ("manager_maritime", "crew"): "CM",
     ("manager_maritime", "claims"): "CM",
     ("manager_maritime", "mrv"): "CM",
@@ -367,3 +383,61 @@ def require_permission(module: str, level: Level):
 def require_admin():
     """Shortcut for admin-only routes."""
     return require_permission("admin", "C")
+
+
+# ── Cloisonnement par navire (ADR-012) ───────────────────────────────────────
+#
+# Décision du 2026-08-27 : le **personnel maritime est borné à son navire
+# d'affectation**. Les seules consultations ouvertes sur la flotte entière sont
+# le planning de navigation et la position des navires — donc pas la caisse, pas
+# les ventes, pas l'inventaire, pas le registre.
+#
+# La règle s'appuie sur ``User.assigned_vessel_id`` plutôt que sur une liste de
+# rôles : c'est le rattachement qui fait le marin, et un technicien embarqué doit
+# être borné comme lui. Deux exceptions nommées, qui doivent pouvoir corriger et
+# administrer à distance.
+
+#: Rôles jamais bornés : ils administrent la flotte depuis le siège.
+FLEET_WIDE_ROLES: frozenset[str] = frozenset({"administrateur", "armement"})
+
+#: Rôles considérés comme personnel maritime : sans navire d'affectation, ils
+#: n'ont accès à rien plutôt qu'à tout — un cloisonnement qui laisse passer les
+#: comptes mal renseignés ne cloisonne rien.
+SEAFARER_ROLES: frozenset[str] = frozenset({"marins"})
+
+
+class VesselAccessDenied(Exception):
+    """Accès à un navire hors périmètre. Message destiné à l'utilisateur."""
+
+
+def assert_vessel_access(user, vessel_id: int | None) -> None:
+    """Vérifie qu'un utilisateur a le droit d'agir sur ce navire.
+
+    Lève ``VesselAccessDenied`` avec un message **actionnable** : c'est un 403
+    muet, sans cause ni remède affichés, qui a fait échouer le premier test à
+    bord du module de vente. Un refus doit dire quoi faire.
+    """
+    role = getattr(user, "role", None)
+    if role in FLEET_WIDE_ROLES:
+        return
+    assigned = getattr(user, "assigned_vessel_id", None)
+    if assigned is None:
+        if role in SEAFARER_ROLES:
+            raise VesselAccessDenied(
+                "Votre compte n'est rattaché à aucun navire. Demandez au siège de "
+                "le rattacher à votre navire d'affectation (écran /admin/users)."
+            )
+        # Rôle de terre sans affectation : périmètre flotte, comme aujourd'hui.
+        return
+    if vessel_id is not None and int(assigned) != int(vessel_id):
+        raise VesselAccessDenied(
+            "Vous n'avez accès qu'à votre navire d'affectation. "
+            "Contactez le siège si votre rattachement doit changer."
+        )
+
+
+def visible_vessel_id(user) -> int | None:
+    """Navire auquel l'utilisateur est borné, ou ``None`` s'il voit la flotte."""
+    if getattr(user, "role", None) in FLEET_WIDE_ROLES:
+        return None
+    return getattr(user, "assigned_vessel_id", None)
