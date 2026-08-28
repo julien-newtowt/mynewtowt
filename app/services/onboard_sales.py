@@ -361,6 +361,64 @@ async def cancel_sale(db: AsyncSession, sale: OnboardSale) -> None:
     await db.flush()
 
 
+async def create_cash_sale(
+    db: AsyncSession,
+    *,
+    vessel_id: int,
+    items: list[tuple[int, Decimal]],
+    client_uuid: str,
+    currency: str = "EUR",
+    buyer_name: str | None = None,
+    leg_id: int | None = None,
+    recorded_by_id: int | None = None,
+) -> OnboardSale:
+    """Crée **et encaisse** une vente espèces en une seule opération. Idempotent.
+
+    C'est ce qui rend la vente rapide rejouable hors connexion. Le parcours
+    écran par écran enchaîne trois requêtes dépendantes — créer la vente,
+    ajouter chaque ligne, encaisser — dont la deuxième a besoin de la référence
+    renvoyée par la première : impossible à mettre en file d'attente. Une
+    opération atomique, elle, se rejoue telle quelle.
+
+    ``client_uuid`` est généré par le navigateur et porte l'idempotence : un
+    rejeu de la file renvoie la vente déjà enregistrée au lieu d'en créer une
+    seconde. La contrainte d'unicité en base est le filet de dernier recours.
+
+    ``items`` : couples ``(product_id, quantité)``. Les prix ne viennent jamais
+    du client — ils sont lus sur le catalogue, comme dans ``add_line``.
+    """
+    uuid = (client_uuid or "").strip()
+    if not uuid:
+        raise OnboardSalesError("Identifiant de vente manquant.")
+    existing = (
+        await db.execute(select(OnboardSale).where(OnboardSale.client_uuid == uuid))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing  # rejeu de la file : rien à refaire
+    if not items:
+        raise OnboardSalesError("Vente sans article : ajoutez au moins une ligne.")
+
+    sale = await create_sale(
+        db,
+        vessel_id=vessel_id,
+        currency=currency,
+        leg_id=leg_id,
+        buyer_name=buyer_name,
+        recorded_by_id=recorded_by_id,
+    )
+    sale.client_uuid = uuid
+    await db.flush()
+
+    for product_id, qty in items:
+        product = await db.get(OnboardProduct, product_id)
+        if product is None or not product.is_active:
+            raise OnboardSalesError(f"Article indisponible (id={product_id}).")
+        await add_line(db, sale, product=product, qty=qty)
+    await recompute_total(db, sale)
+    await settle_sale(db, sale, payment_method="cash", recorded_by_id=recorded_by_id)
+    return sale
+
+
 async def request_refund(db: AsyncSession, sale: OnboardSale, *, note: str | None = None) -> None:
     """Le bord signale une vente à rembourser. Il ne rembourse pas lui-même.
 

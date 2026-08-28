@@ -18,7 +18,7 @@
 
 importScripts("/static/js/onboard-idb.js");
 
-var CACHE_NAME = "towt-onboard-v2";
+var CACHE_NAME = "towt-onboard-v3";
 var SYNC_TAG = "towt-onboard-flush";
 
 /* App shell : CSS + JS chargés par les pages /onboard (base.html +
@@ -39,6 +39,7 @@ var PRECACHE = [
   "/static/js/onboard-offline.js",
   "/static/js/onboard-idb.js",
   "/static/js/event-autosave.js",
+  "/static/js/onboard-quick-sale.js",
   "/static/img/logo_NEWTOWT_web_white.png",
   "/static/offline.html"
 ];
@@ -84,6 +85,11 @@ function shouldHandle(request) {
   return (
     url.pathname === "/onboard" ||
     url.pathname.indexOf("/onboard/") === 0 ||
+    // Vente à bord et caisse : le module encaisse de l'argent en mer, il doit
+    // rester atteignable sans réseau. Les POST ne sont jamais interceptés (la
+    // file IndexedDB s'en charge) — seules les pages sont mises en cache.
+    url.pathname.indexOf("/captain/ventes") === 0 ||
+    url.pathname.indexOf("/cashbox") === 0 ||
     url.pathname.indexOf("/static/") === 0
   );
 }

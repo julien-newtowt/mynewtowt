@@ -45,7 +45,7 @@ from app.permissions import (
     require_permission,
     visible_vessel_id,
 )
-from app.services import notifications
+from app.services import notifications, pdf_generator
 from app.services import onboard_sales as svc
 from app.services import stripe_checkout as stripe_svc
 from app.services.activity import record as activity_record
@@ -446,6 +446,80 @@ async def create_sale_route(
 # ─────────────────────────────────────────────────────────────── Détail d'une vente
 
 
+def _parse_cart(raw: str) -> list[tuple[int, Decimal]]:
+    """Décode le panier de la vente rapide : ``"7:2,12:1.5"``.
+
+    Un seul champ, délibérément : la file d'attente hors connexion ne conserve
+    qu'une valeur par nom de champ, des lignes répétées y seraient écrasées.
+    """
+    items: list[tuple[int, Decimal]] = []
+    for chunk in (raw or "").split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        product_id, _, qty = chunk.partition(":")
+        try:
+            pid = int(product_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Panier illisible.") from None
+        items.append((pid, _parse_decimal(qty, label="quantité", quantize=QTY_STEP)))
+    return items
+
+
+@router.post("/{vessel_id}/vente-rapide")
+async def quick_cash_sale(
+    vessel_id: int,
+    cart: str = Form(...),
+    client_uuid: str = Form(...),
+    buyer_name: str = Form(""),
+    currency: str = Form("EUR"),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+) -> RedirectResponse:
+    """Vente espèces en **une seule requête** — rejouable hors connexion.
+
+    Le parcours écran par écran enchaîne trois POST dépendants, impossibles à
+    mettre en file d'attente. Celui-ci est atomique et idempotent
+    (``client_uuid``), donc conservable localement et rejoué au retour du
+    réseau : c'est ce qui permet d'encaisser en mer.
+
+    Espèces seulement : la voie carte a besoin d'un aller-retour vers Stripe,
+    elle ne peut par nature pas fonctionner sans connexion.
+    """
+    _check_vessel(user, vessel_id)
+    vessel = await db.get(Vessel, vessel_id)
+    if not vessel:
+        raise HTTPException(status_code=404, detail="Navire introuvable")
+    try:
+        sale = await svc.create_cash_sale(
+            db,
+            vessel_id=vessel_id,
+            items=_parse_cart(cart),
+            client_uuid=client_uuid,
+            currency=currency,
+            buyer_name=buyer_name.strip() or None,
+            leg_id=await _default_leg_id(db, vessel_id),
+            recorded_by_id=user.id,
+        )
+    except PeriodClosed as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except (svc.OnboardSalesError, CashboxError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    await activity_record(
+        db,
+        action="onboard_sale_quick_cash",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="captain",
+        entity_type="onboard_sale",
+        entity_id=sale.id,
+        detail=f"{sale.reference} {sale.total} {sale.currency} (vente rapide)",
+    )
+    return RedirectResponse(url=f"/captain/ventes/vente/{sale.reference}", status_code=303)
+
+
 @router.get("/vente/{reference}", response_class=HTMLResponse)
 async def sale_detail(
     request: Request,
@@ -711,6 +785,45 @@ async def cancel_sale_route(
 
 
 # ───────────────────────────────────────────────────────────────── Registre douanier
+
+
+@router.get("/vente/{reference}/recu.pdf")
+async def sale_receipt(
+    reference: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> Response:
+    """Reçu PDF remis à l'acheteur.
+
+    Le module encaissait sans rien remettre : le marin payait et repartait sans
+    preuve d'achat ni justificatif de note de frais.
+    """
+    sale = await _get_sale_or_404(db, reference, user=user)
+    if not sale.is_settled:
+        raise HTTPException(status_code=400, detail="Vente non réglée : aucun reçu à délivrer.")
+    vessel = await db.get(Vessel, sale.vessel_id)
+    lines = list(
+        (
+            await db.execute(
+                select(OnboardSaleLine)
+                .where(OnboardSaleLine.sale_id == sale.id)
+                .order_by(OnboardSaleLine.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    doc = pdf_generator.onboard_sale_receipt(
+        sale,
+        vessel,
+        lines,
+        payment_label=PAYMENT_METHOD_LABELS.get(sale.payment_method or "", "—"),
+    )
+    return Response(
+        content=doc.pdf,
+        media_type=doc.mime,
+        headers={"Content-Disposition": f'inline; filename="{doc.filename}"'},
+    )
 
 
 @router.post("/vente/{reference}/refund-request")

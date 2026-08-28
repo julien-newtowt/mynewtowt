@@ -193,6 +193,12 @@ class OnboardSale(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     reference: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    # Identifiant généré par le client pour la **vente rapide hors connexion**.
+    # La file d'attente du bord rejoue un POST tant qu'il n'a pas abouti : sans
+    # cette clé, un rejeu créerait une seconde vente et un second encaissement.
+    # Nullable : les ventes créées écran par écran n'en ont pas besoin, leur
+    # idempotence tient au verrou de règlement.
+    client_uuid: Mapped[str | None] = mapped_column(String(64), unique=True)
     vessel_id: Mapped[int] = mapped_column(ForeignKey("vessels.id"), nullable=False, index=True)
     leg_id: Mapped[int | None] = mapped_column(ForeignKey("legs.id"), index=True)
     # Acheteur : collaborateur embarqué (texte libre — pas de lien RH obligatoire).
