@@ -127,9 +127,9 @@ async def test_deleting_the_last_batch_does_not_free_its_number(db):
     await db.flush()
 
     b3 = await _batch(db, pl, 3)
-    assert await assign_bl_number(db, pl, b3, leg) == "TUAW_1CFRBR6_003", (
-        "le numéro 002, déjà consommé, a été réattribué"
-    )
+    assert (
+        await assign_bl_number(db, pl, b3, leg) == "TUAW_1CFRBR6_003"
+    ), "le numéro 002, déjà consommé, a été réattribué"
 
 
 @pytest.mark.asyncio

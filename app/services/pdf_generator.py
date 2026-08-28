@@ -37,8 +37,16 @@ _BRAND_CONTEXT = {
 }
 
 
-def _render_pdf(template: str, context: dict[str, Any]) -> bytes:
-    """Render a Jinja template then convert to PDF with WeasyPrint."""
+def _render_pdf(template: str, context: dict[str, Any]) -> tuple[str, bytes]:
+    """Rend un gabarit Jinja puis le convertit en PDF — renvoie **(html, pdf)**.
+
+    L'annotation disait ``bytes`` alors que la fonction renvoie un couple depuis
+    toujours. Le coût n'était pas cosmétique : ``bytes`` étant un itérable
+    d'``int``, mypy déballait chaque ``html, pdf = _render_pdf(...)`` en deux
+    ``int`` et signalait une erreur par appel — une vingtaine dans ce fichier,
+    qui noyaient les vraies. Le HTML est conservé à côté du PDF pour les tests
+    de rendu, qui l'inspectent sans relire le binaire.
+    """
     from weasyprint import HTML  # local import — heavy native deps
 
     tpl = templates.get_template(template)

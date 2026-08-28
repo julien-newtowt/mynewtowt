@@ -525,7 +525,21 @@ async def refund_sale(
     if locked is not None:
         sale = locked
     if sale.refund_cashbox_movement_id is not None:
-        return await db.get(CashboxMovement, sale.refund_cashbox_movement_id)
+        # Rejeu : on rend la contre-passation déjà écrite. Le mouvement est
+        # censé exister — la FK est en ``ON DELETE SET NULL`` et le registre de
+        # caisse est append-only, donc un identifiant non nul désigne une ligne
+        # vivante. S'il manque quand même, la comptabilité de cette vente est
+        # incohérente : le dire plutôt que rendre ``None`` à un appelant qui
+        # attend un mouvement, et qui échouerait plus loin sur un attribut.
+        # Le routeur attrape ``OnboardSalesError`` et le remonte en incident de
+        # paiement — exactement le traitement voulu pour un écart d'écriture.
+        existing = await db.get(CashboxMovement, sale.refund_cashbox_movement_id)
+        if existing is None:
+            raise OnboardSalesError(
+                f"Remboursement {sale.reference} : mouvement de caisse "
+                f"{sale.refund_cashbox_movement_id} introuvable."
+            )
+        return existing
     if not sale.is_settled:
         raise OnboardSalesError("Vente non réglée : rien à rembourser.")
     if sale.total <= 0:
