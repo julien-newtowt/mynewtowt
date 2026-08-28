@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models.onboard_cashbox import CashboxMovement
-from app.models.onboard_sales import OnboardProduct
+from app.models.onboard_sales import OnboardProduct, OnboardSaleLine
 from app.models.vessel import Vessel
 from app.services import cashbox as cashbox_svc
 from app.services import onboard_sales as svc
@@ -961,3 +961,145 @@ async def test_refund_after_a_handover_is_deferred_not_lost(db, staff_user):
     mov = await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
     assert sale.status == "refunded"
     assert "reporté" in mov.description
+
+
+# ── Vente rapide, rejouable hors connexion ──────────────────────────────────
+#
+# Le parcours écran par écran enchaîne trois POST dépendants : impossible à
+# mettre en file d'attente, donc impossible à encaisser en mer. Cette opération
+# est atomique et idempotente, donc conservable localement et rejouable.
+
+
+async def _vessel_and_products(db):
+    vessel = Vessel(code="ANE", name="Anemos")
+    db.add(vessel)
+    await db.flush()
+    cafe = OnboardProduct(
+        sku="CAF-250", label="Café", kind="bien", unit_price=Decimal("6.50"), currency="EUR"
+    )
+    biere = OnboardProduct(
+        sku="BIE-33", label="Bière", kind="bien", unit_price=Decimal("3.00"), currency="EUR"
+    )
+    db.add_all([cafe, biere])
+    await db.flush()
+    for p in (cafe, biere):
+        await svc.add_stock_entry(
+            db, vessel_id=vessel.id, product=p, qty=Decimal("20"), reason="avitaillement"
+        )
+    return vessel, cafe, biere
+
+
+@pytest.mark.asyncio
+async def test_a_quick_sale_creates_lines_and_settles_in_one_go(db, staff_user):
+    vessel, cafe, biere = await _vessel_and_products(db)
+    sale = await svc.create_cash_sale(
+        db,
+        vessel_id=vessel.id,
+        items=[(cafe.id, Decimal("2")), (biere.id, Decimal("3"))],
+        client_uuid="uuid-1",
+        buyer_name="Marin X",
+        recorded_by_id=staff_user.id,
+    )
+    assert sale.status == "paid"
+    assert sale.payment_method == "cash"
+    assert sale.total == Decimal("22.00")  # 2×6,50 + 3×3,00
+    assert sale.cashbox_movement_id is not None
+    # Le stock est décrémenté comme sur le parcours normal.
+    assert await svc.stock_on_hand(db, vessel_id=vessel.id, product_id=cafe.id) == Decimal("18")
+
+
+@pytest.mark.asyncio
+async def test_replaying_a_queued_sale_never_charges_twice(db, staff_user):
+    """Le cœur du hors-ligne : la file rejoue tant que le POST n'a pas abouti."""
+    vessel, cafe, _biere = await _vessel_and_products(db)
+    first = await svc.create_cash_sale(
+        db,
+        vessel_id=vessel.id,
+        items=[(cafe.id, Decimal("2"))],
+        client_uuid="uuid-rejeu",
+        recorded_by_id=staff_user.id,
+    )
+    second = await svc.create_cash_sale(
+        db,
+        vessel_id=vessel.id,
+        items=[(cafe.id, Decimal("2"))],
+        client_uuid="uuid-rejeu",
+        recorded_by_id=staff_user.id,
+    )
+    assert first.id == second.id
+    assert await _count_vente_movements(db) == 1
+    # Et le stock n'a été décrémenté qu'une fois.
+    assert await svc.stock_on_hand(db, vessel_id=vessel.id, product_id=cafe.id) == Decimal("18")
+
+
+@pytest.mark.asyncio
+async def test_two_distinct_sales_are_both_recorded(db, staff_user):
+    """L'idempotence ne doit pas confondre deux ventes réellement différentes."""
+    vessel, cafe, _biere = await _vessel_and_products(db)
+    a = await svc.create_cash_sale(
+        db, vessel_id=vessel.id, items=[(cafe.id, Decimal("1"))], client_uuid="uuid-a"
+    )
+    b = await svc.create_cash_sale(
+        db, vessel_id=vessel.id, items=[(cafe.id, Decimal("1"))], client_uuid="uuid-b"
+    )
+    assert a.id != b.id
+    assert await _count_vente_movements(db) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_quick_sale_refuses_an_empty_or_unidentified_cart(db, staff_user):
+    vessel, _cafe, _biere = await _vessel_and_products(db)
+    with pytest.raises(svc.OnboardSalesError):
+        await svc.create_cash_sale(db, vessel_id=vessel.id, items=[], client_uuid="uuid-vide")
+    with pytest.raises(svc.OnboardSalesError):
+        await svc.create_cash_sale(
+            db, vessel_id=vessel.id, items=[(1, Decimal("1"))], client_uuid=""
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_quick_sale_refuses_an_inactive_product(db, staff_user):
+    vessel, cafe, _biere = await _vessel_and_products(db)
+    cafe.is_active = False
+    await db.flush()
+    with pytest.raises(svc.OnboardSalesError):
+        await svc.create_cash_sale(
+            db, vessel_id=vessel.id, items=[(cafe.id, Decimal("1"))], client_uuid="uuid-x"
+        )
+
+
+@pytest.mark.asyncio
+async def test_prices_are_never_taken_from_the_client(db, staff_user):
+    """Le panier ne transporte que des identifiants et des quantités."""
+    vessel, cafe, _biere = await _vessel_and_products(db)
+    sale = await svc.create_cash_sale(
+        db, vessel_id=vessel.id, items=[(cafe.id, Decimal("2"))], client_uuid="uuid-prix"
+    )
+    line = (
+        (await db.execute(select(OnboardSaleLine).where(OnboardSaleLine.sale_id == sale.id)))
+        .scalars()
+        .one()
+    )
+    assert line.unit_price == cafe.unit_price
+    assert line.label == cafe.label
+
+
+def test_the_cart_is_encoded_in_a_single_field():
+    """La file hors connexion ne conserve qu'une valeur par nom de champ :
+    des lignes répétées y seraient écrasées."""
+    from app.routers.onboard_sales_router import _parse_cart
+
+    assert _parse_cart("7:2,12:1.5") == [(7, Decimal("2.000")), (12, Decimal("1.500"))]
+    assert _parse_cart("") == []
+    assert _parse_cart(" 7:1 , ") == [(7, Decimal("1.000"))]
+
+
+def test_an_unreadable_cart_is_refused():
+    from fastapi import HTTPException
+
+    from app.routers.onboard_sales_router import _parse_cart
+
+    for bad in ("abc:1", "7:nan", "7:", ":2"):
+        with pytest.raises(HTTPException) as exc:
+            _parse_cart(bad)
+        assert exc.value.status_code == 400

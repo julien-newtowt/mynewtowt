@@ -75,12 +75,41 @@ La vente passe **Payée**, et un mouvement est créé dans la **caisse du bord**
 (catégorie *vente à bord*). C'est le mode le plus simple : il ne dépend
 d'aucun prestataire extérieur.
 
-> ⚠️ **Le module exige une connexion.** L'application tourne à terre : sans
-> lien satellite ou 4G, **aucune vente ni saisie de caisse n'est possible**, y
-> compris en espèces. Il n'existe pas (encore) de mode hors connexion ni de
-> file d'attente. En cas de coupure pendant un encaissement, **ne ressaisissez
-> rien** : attendez le retour du réseau, rouvrez la vente et vérifiez son
-> statut avant toute nouvelle action.
+Une fois la vente réglée, **« Reçu de l'acheteur (PDF) »** produit le
+justificatif à remettre. Ce n'est pas une facture : les ventes à bord sont en
+franchise de taxe et n'ouvrent pas droit à déduction — le document le précise.
+
+> 📶 **Sans réseau, utilisez « Vente rapide — espèces »** (en haut de l'écran
+> du navire). Cette voie construit le panier sur votre appareil et n'envoie
+> qu'une seule fois, à la validation : si le lien est coupé, la vente est
+> **conservée localement** et part automatiquement au retour du réseau. Vous
+> pouvez encaisser normalement.
+>
+> Les autres écrans (« Nouvelle vente » pas à pas, saisie de caisse, carte
+> bancaire) **exigent une connexion** : ils enchaînent plusieurs échanges avec
+> le serveur, ou dépendent du prestataire de paiement. En cas de coupure sur
+> ces voies-là, **ne ressaisissez rien** : attendez le réseau, rouvrez la vente
+> et vérifiez son statut avant toute nouvelle action.
+
+## 5 bis. Vente rapide — la voie à utiliser sans réseau
+
+En haut de l'écran du navire, **« Vente rapide — espèces »** encaisse en une
+seule opération : choisissez l'article, la quantité, **« Ajouter au panier »**,
+répétez, puis **« Encaisser en espèces »**.
+
+C'est la seule voie utilisable **hors connexion**. La différence n'est pas
+cosmétique : le parcours pas à pas envoie une requête à chaque étape et a besoin
+du serveur entre chacune, alors que la vente rapide n'envoie **qu'une fois**, à
+la fin. Si le réseau manque à cet instant, la vente est conservée sur l'appareil
+et repart toute seule au retour du lien — un message vous le confirme.
+
+**Ne ressaisissez pas une vente qui semble « ne pas être passée »** : elle est
+en file d'attente. Un doublon serait un second encaissement. Le système refuse
+d'ailleurs de l'enregistrer deux fois, mais autant ne pas s'y fier.
+
+Limites à connaître : espèces et euros uniquement, et les articles doivent déjà
+être au catalogue (préparez-le à quai). La carte bancaire exige une connexion
+par nature — le paiement passe par un prestataire extérieur.
 
 ## 6. Encaisser par carte bancaire (CB)
 

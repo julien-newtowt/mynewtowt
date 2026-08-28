@@ -404,3 +404,35 @@ def render_planning_brochure(*, groups, summary, meta, lang: str = "fr") -> Docu
 
 # Alias backward-compat — peut disparaître en V3.7
 render_co2_certificate = render_anemos_certificate
+
+
+def onboard_sale_receipt(sale, vessel, lines, *, payment_label: str) -> DocumentBytes:
+    """Reçu remis à l'acheteur d'une vente à bord.
+
+    Le module encaissait sans rien remettre : le marin payait et repartait les
+    mains vides, sans preuve d'achat ni justificatif de note de frais. C'était
+    le manque fonctionnel le plus visible relevé à l'audit du 2026-08-27.
+
+    Ce n'est **pas une facture** : les ventes à bord sont en franchise de taxe
+    (avitaillement) et n'ouvrent pas droit à déduction. Le document le dit, pour
+    qu'il ne soit pas présenté comme tel en comptabilité.
+    """
+    from app.templating import brand_for_lang
+
+    ctx = {
+        "sale": sale,
+        "vessel": vessel,
+        "lines": lines,
+        "payment_label": payment_label,
+        # Rendu hors-requête : le context processor n'injecte pas ``brand``.
+        "brand": brand_for_lang("fr"),
+        "paid_at": sale.paid_at.strftime("%d/%m/%Y %H:%M UTC") if sale.paid_at else "—",
+        "refunded_at": (
+            sale.refunded_at.strftime("%d/%m/%Y") if getattr(sale, "refunded_at", None) else ""
+        ),
+        # `_base.html` formate lui-même `issued_at` : il attend un datetime.
+        "issued_at": datetime.now(UTC),
+        "site_url": settings.site_url,
+    }
+    html, pdf = _render_pdf("pdf/onboard_sale_receipt.html", ctx)
+    return DocumentBytes(html=html, pdf=pdf, filename=f"recu-{sale.reference}.pdf")

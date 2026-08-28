@@ -129,6 +129,10 @@
     le {{ sale.paid_at|datetime }}.
     Mouvement de caisse : <a href="/cashbox/{{ sale.vessel_id }}">voir la caisse de bord</a>.
   </p>
+  <p>
+    <a href="/captain/ventes/vente/{{ sale.reference }}/recu.pdf" target="_blank"
+       class="btn btn-secondary">🧾 Reçu de l'acheteur (PDF)</a>
+  </p>
 
   {% if sale.refund_pending %}
     <div class="alert alert-warning">
@@ -178,6 +182,10 @@
   <p class="text-muted">
     Ni la vente ni le mouvement d'origine n'ont été supprimés : les deux registres
     restent append-only, la contre-passation les équilibre.
+  </p>
+  <p>
+    <a href="/captain/ventes/vente/{{ sale.reference }}/recu.pdf" target="_blank"
+       class="btn btn-ghost">🧾 Reçu (mentionne le remboursement)</a>
   </p>
 </article>
 {% endif %}
