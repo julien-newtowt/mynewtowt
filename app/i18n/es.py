@@ -1563,4 +1563,16 @@ CATALOG: dict[str, str] = {
     "mrv_bascule_noon_frozen_title": "Captura v2 activa",
     "mrv_bascule_noon_frozen_body": "El antiguo formulario noon se sustituye por la declaración de eventos en este buque.",
     "mrv_bascule_goto_events": "Declarar un evento",
+    # Reprise UX Phase 3 — toasts espace client + bienvenue post-wizard.
+    "toast_notification_read": "Notificación marcada como leída",
+    "toast_message_sent": "Mensaje enviado",
+    "toast_voyage_public_on": "Página de travesía publicada",
+    "toast_voyage_public_off": "Página de travesía despublicada",
+    "toast_bl_validated": "Conocimiento de embarque aprobado",
+    "toast_bl_receipt_confirmed": "Recepción de los originales confirmada",
+    "booking_welcome_title": "Bienvenido a su espacio de cliente",
+    "booking_welcome_intro": "Su cuenta NEWTOWT está lista. Aquí encontrará todo:",
+    "booking_welcome_bookings": "Sus reservas, estado y detalles de la carga.",
+    "booking_welcome_documents": "Packing list, conocimientos de embarque, facturas y certificados.",
+    "booking_welcome_track": "El seguimiento en tiempo real de su travesía en el mapa.",
 }

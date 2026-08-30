@@ -14,6 +14,8 @@ distance after the noon-report data is collected.
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
@@ -21,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_client
 from app.database import get_db
+from app.i18n import t as i18n_t
 from app.models.booking import Booking
 from app.models.client_account import ClientAccount
 from app.models.leg import Leg
@@ -37,6 +40,28 @@ from app.services.pdf_generator import (
 from app.templating import templates
 
 router = APIRouter(tags=["cargo"])
+
+
+def _bl_mutation_response(request: Request, redirect_url: str, message: str) -> Response:
+    """Réponse standard d'une mutation du rail BL client (reprise UX Phase 3, K-4).
+
+    Même motif que ``escale_router._mutation_response`` /
+    ``client_dashboard_router._me_mutation_response`` : 204 + ``HX-Trigger``
+    (toast + ``meRefresh``) sous HTMX, 303 classique sinon. Ne change QUE la
+    forme de la réponse — les invariants de validation (XOR client/staff,
+    registre de remise append-only) restent entièrement portés par
+    ``bl_workflow`` / ``bl_delivery``, appelés avant ce retour.
+    """
+    if request.headers.get("hx-request"):
+        return Response(
+            status_code=204,
+            headers={
+                "HX-Trigger": json.dumps(
+                    {"toast": {"message": message, "type": "success"}, "meRefresh": True}
+                )
+            },
+        )
+    return Response(status_code=status.HTTP_303_SEE_OTHER, headers={"Location": redirect_url})
 
 
 async def _load_booking_bundle(
@@ -521,8 +546,8 @@ async def client_validate_bl(
     except bl_workflow.InvalidTransition as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    return Response(
-        status_code=status.HTTP_303_SEE_OTHER, headers={"Location": f"/me/bookings/{ref}/bls"}
+    return _bl_mutation_response(
+        request, f"/me/bookings/{ref}/bls", i18n_t("toast_bl_validated", client.language)
     )
 
 
@@ -558,9 +583,8 @@ async def client_confirm_bl_receipt(
     except bl_delivery.DeliveryReceiptError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    return Response(
-        status_code=status.HTTP_303_SEE_OTHER,
-        headers={"Location": f"/me/bookings/{ref}/bls"},
+    return _bl_mutation_response(
+        request, f"/me/bookings/{ref}/bls", i18n_t("toast_bl_receipt_confirmed", client.language)
     )
 
 

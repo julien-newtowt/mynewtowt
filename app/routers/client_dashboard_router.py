@@ -12,6 +12,7 @@ Routes :
 from __future__ import annotations
 
 import base64
+import json
 import mimetypes
 from datetime import UTC, datetime
 
@@ -32,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_client
 from app.config import settings
 from app.database import get_db
+from app.i18n import t as i18n_t
 from app.models.anemos_certificate import AnemosCertificate
 from app.models.booking import Booking
 from app.models.leg import Leg
@@ -55,6 +57,28 @@ _VOYAGE_STEPS = ("submitted", "confirmed", "loaded", "at_sea", "discharged", "de
 _VOYAGE_STARTED = ("loaded", "at_sea", "discharged", "delivered")
 
 router = APIRouter(tags=["client-dashboard"])
+
+
+def _me_mutation_response(request: Request, redirect_url: str, message: str) -> Response:
+    """Réponse standard d'une mutation répétitive de l'espace client.
+
+    Reprise UX Phase 3 (docs/design/03-reprise-ux-legacy.md §10.3, K-4) — même
+    motif que le cockpit escale (``escale_router._mutation_response``) : sous
+    HTMX, on ne recharge plus toute la page — 204 + ``HX-Trigger`` qui (a)
+    affiche le toast (toast.js) et (b) déclenche ``meRefresh``, écouté par le
+    wrapper de section de la page qui se re-remplit via ``hx-get`` + ``hx-select``
+    sur elle-même. Sans JS : redirect 303 classique, inchangé.
+    """
+    if request.headers.get("hx-request"):
+        return Response(
+            status_code=204,
+            headers={
+                "HX-Trigger": json.dumps(
+                    {"toast": {"message": message, "type": "success"}, "meRefresh": True}
+                )
+            },
+        )
+    return RedirectResponse(url=redirect_url, status_code=303)
 
 
 @router.get("/me", response_class=HTMLResponse)
@@ -150,14 +174,17 @@ async def notifications_list(
 
 @router.post("/me/notifications/{notif_id}/read")
 async def notification_mark_read(
+    request: Request,
     notif_id: int,
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
-) -> RedirectResponse:
+) -> Response:
     notif = await db.get(Notification, notif_id)
     if notif is not None and notif.target_client_id == client.id:
         await notifications.mark_read(db, notif)
-    return RedirectResponse(url="/me/notifications", status_code=303)
+    return _me_mutation_response(
+        request, "/me/notifications", i18n_t("toast_notification_read", client.language)
+    )
 
 
 @router.get("/me/bookings", response_class=HTMLResponse)
@@ -243,11 +270,12 @@ async def booking_detail(
 
 @router.post("/me/bookings/{ref}/messages")
 async def post_message(
+    request: Request,
     ref: str,
     body: str = Form(...),
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
-) -> RedirectResponse:
+) -> Response:
     booking = await find_by_reference(db, ref)
     if not booking or booking.client_account_id != client.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
@@ -264,16 +292,19 @@ async def post_message(
             booking_reference=booking.reference,
             booking_id=booking.id,
         )
-    return RedirectResponse(url=f"/me/bookings/{ref}#messages", status_code=303)
+    return _me_mutation_response(
+        request, f"/me/bookings/{ref}#messages", i18n_t("toast_message_sent", client.language)
+    )
 
 
 @router.post("/me/bookings/{ref}/voyage-public")
 async def booking_voyage_public_toggle(
+    request: Request,
     ref: str,
     enabled: str = Form(""),
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
-) -> RedirectResponse:
+) -> Response:
     """Opt-in / opt-out de la page publique de voyage ``/voyage/{ref}``.
 
     C'est la destination du QR B2B2C imprimé sur le paquet : jamais publiée
@@ -285,6 +316,7 @@ async def booking_voyage_public_toggle(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     booking.voyage_public = enabled == "on"
     await db.flush()
+    toast_key = "toast_voyage_public_on" if booking.voyage_public else "toast_voyage_public_off"
     await activity_record(
         db,
         action="client_voyage_public_on" if booking.voyage_public else "client_voyage_public_off",
@@ -294,7 +326,9 @@ async def booking_voyage_public_toggle(
         entity_id=booking.id,
         entity_label=booking.reference,
     )
-    return RedirectResponse(url=f"/me/bookings/{ref}?voyage_saved=1", status_code=303)
+    return _me_mutation_response(
+        request, f"/me/bookings/{ref}?voyage_saved=1", i18n_t(toast_key, client.language)
+    )
 
 
 @router.get("/me/bookings/{ref}/carnet.pdf")

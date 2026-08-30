@@ -1563,4 +1563,16 @@ CATALOG: dict[str, str] = {
     "mrv_bascule_noon_frozen_title": "Capture v2 active",
     "mrv_bascule_noon_frozen_body": "The old noon form is replaced by event declaration on this vessel.",
     "mrv_bascule_goto_events": "Declare an event",
+    # ── UX legacy recovery Phase 3 (K-4 HTMX toasts + K-6 welcome block) ──
+    "toast_notification_read": "Notification marked as read",
+    "toast_message_sent": "Message sent",
+    "toast_voyage_public_on": "Voyage page published",
+    "toast_voyage_public_off": "Voyage page unpublished",
+    "toast_bl_validated": "Bill of Lading approved",
+    "toast_bl_receipt_confirmed": "Receipt of originals confirmed",
+    "booking_welcome_title": "Welcome to your customer area",
+    "booking_welcome_intro": "Your NEWTOWT account is ready. Here's where to find everything:",
+    "booking_welcome_bookings": "Your bookings, status and cargo details.",
+    "booking_welcome_documents": "Packing list, bills of lading, invoices and certificates.",
+    "booking_welcome_track": "Real-time tracking of your crossing on the map.",
 }

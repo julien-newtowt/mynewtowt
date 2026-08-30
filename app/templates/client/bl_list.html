@@ -11,6 +11,17 @@
   <span class="mono">{{ booking.reference }}</span>
 </p>
 
+{# Reprise UX Phase 3 (K-4) — même motif que le cockpit escale : valider un
+   connaissement / confirmer une réception postent en HTMX (204 + toast +
+   `meRefresh`) et ce wrapper se re-remplit via hx-get + hx-select sur la
+   page elle-même. Sans JS : 303 classique, ce wrapper n'a alors aucun effet. #}
+<div id="bl-sections"
+     hx-get="/me/bookings/{{ booking.reference }}/bls"
+     hx-trigger="meRefresh from:body"
+     hx-select="#bl-sections"
+     hx-target="this"
+     hx-swap="outerHTML">
+
 {# Un booking peut porter plusieurs lots, donc plusieurs connaissements : d'où une
    liste et non un document unique. #}
 {% if not batches %}
@@ -94,8 +105,14 @@
         </td>
         <td>
           {% if b.bl_state in ('master_signed', 'final') and not (dl and dl.acknowledged) %}
+            {# hx-confirm (pas data-confirm) : avec hx-post, c'est htmx qui pilote la
+               requête — un data-confirm géré séparément par forms.js déclencherait
+               un second window.confirm et courrait le risque de partir avant la
+               réponse de l'utilisateur. Sans JS, ni l'un ni l'autre ne s'exécute
+               (déjà le cas avant) : le formulaire se soumet directement. #}
             <form method="post" action="/me/bookings/{{ booking.reference }}/bl/{{ b.id }}/confirm-receipt"
-                  data-confirm="{% if lang == 'en' %}Confirm you received the {{ number_of_originals }} originals?{% else %}Confirmer la réception des {{ number_of_originals }} originaux ?{% endif %}">
+                  hx-post="/me/bookings/{{ booking.reference }}/bl/{{ b.id }}/confirm-receipt" hx-swap="none"
+                  hx-confirm="{% if lang == 'en' %}Confirm you received the {{ number_of_originals }} originals?{% else %}Confirmer la réception des {{ number_of_originals }} originaux ?{% endif %}">
               <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
               <button type="submit" class="btn btn-secondary btn-sm">
                 {% if lang == 'en' %}I received the originals{% else %}J'ai reçu les originaux{% endif %}
@@ -103,7 +120,8 @@
             </form>
           {% elif b.bl_state == 'draft' %}
             <form method="post" action="/me/bookings/{{ booking.reference }}/bl/{{ b.id }}/validate"
-                  data-confirm="{% if lang == 'en' %}Approve this Bill of Lading? Please check the parties, goods and weights first.{% else %}Valider ce connaissement ? Vérifiez d'abord les parties, la marchandise et les poids.{% endif %}">
+                  hx-post="/me/bookings/{{ booking.reference }}/bl/{{ b.id }}/validate" hx-swap="none"
+                  hx-confirm="{% if lang == 'en' %}Approve this Bill of Lading? Please check the parties, goods and weights first.{% else %}Valider ce connaissement ? Vérifiez d'abord les parties, la marchandise et les poids.{% endif %}">
               <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
               <button type="submit" class="btn btn-primary btn-sm">
                 {% if lang == 'en' %}Approve the draft{% else %}Valider le projet{% endif %}
@@ -135,4 +153,7 @@
 </article>
 
 {% endif %}
+
+</div>
+
 {% endblock %}

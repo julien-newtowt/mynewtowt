@@ -103,7 +103,9 @@ compte client (ou création en direct au parcours 5). Choisir un leg
    titres de topbar corrects sur toutes les pages ; entrée « Facturation »
    dans la sidebar (page explicite hors plateforme).
 3. Notifications : marquer lu. ✅ sans rechargement. Messagerie d'une
-   réservation : poster. ✅ sans rechargement.
+   réservation : poster. ✅ le message part (rechargement classique —
+   le formulaire vit dans un partial partagé, HTMX à y étendre plus tard).
+   Publier/dépublier la page de voyage : ✅ sans rechargement.
 4. Connaissements client : valider un projet de BL, puis confirmer la
    réception des originaux. ✅ sans rechargement, états en clair.
 5. Compte : changer le mot de passe (règle 12 caractères, vérification de

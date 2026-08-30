@@ -1563,4 +1563,16 @@ CATALOG: dict[str, str] = {
     "mrv_bascule_noon_frozen_title": "Thu thập v2 đang bật",
     "mrv_bascule_noon_frozen_body": "Biểu mẫu noon cũ được thay bằng khai báo sự kiện trên tàu này.",
     "mrv_bascule_goto_events": "Khai báo sự kiện",
+    # Reprise UX Phase 3 — toasts espace client + bienvenue post-wizard.
+    "toast_notification_read": "Đã đánh dấu thông báo là đã đọc",
+    "toast_message_sent": "Đã gửi tin nhắn",
+    "toast_voyage_public_on": "Đã công bố trang hành trình",
+    "toast_voyage_public_off": "Đã gỡ công bố trang hành trình",
+    "toast_bl_validated": "Vận đơn đã được phê duyệt",
+    "toast_bl_receipt_confirmed": "Đã xác nhận nhận bản gốc",
+    "booking_welcome_title": "Chào mừng đến với khu vực khách hàng của bạn",
+    "booking_welcome_intro": "Tài khoản NEWTOWT của bạn đã sẵn sàng. Mọi thứ ở đây:",
+    "booking_welcome_bookings": "Các đặt chỗ, trạng thái và chi tiết hàng hóa của bạn.",
+    "booking_welcome_documents": "Packing list, vận đơn, hóa đơn và chứng nhận.",
+    "booking_welcome_track": "Theo dõi hành trình của bạn theo thời gian thực trên bản đồ.",
 }

@@ -223,7 +223,26 @@ changement de modèle de données**. Suite complète : 2905 tests verts.
   document cargo, contexte/lieu sur les claims. (Export Word des docs
   cargo : déjà couvert partiellement par `docx_generator` — à évaluer.)
 
-### Phase 3 — Format des pages & design system · risque 🟢 Faible
+### Phase 3 — Format des pages & design system · risque 🟢 Faible · ✅ **LIVRÉE le 2026-08-30** (périmètre amendé §9.3 + §10.4 inclus)
+
+> **Livré** : skeletons + indicateur HTMX générique, focus visible
+> systématisé, empty states enrichis et généralisés (claims, client),
+> densité de tableau togglable (topbar, préférence par navigateur),
+> graisses Manrope 300/800 chargées, pages 403/404 refaites, purge du
+> bloc CSS legacy mort ; fiche PL au standard cockpit (HTMX sur verrou/
+> lots/message, sous-nav, formulaire replié) + export Excel du portail +
+> filtre BL auto-soumis ; fiche sinistre au standard cockpit (badges
+> stylés, formulaires repliés, mutations sans rechargement, + correction
+> d'un CSRF manquant sur la note) ; espace client HTMX (notifications,
+> toggle voyage public, validation/réception BL) + bloc de bienvenue
+> post-wizard (i18n 5 langues).
+> **Écarts assumés** : formulaire de messagerie (partial partagé
+> `_partials/message_thread.html`) resté en rechargement classique ;
+> uploads/suppressions et gestes BL sensibles volontairement hors HTMX ;
+> densité par navigateur (localStorage), pas en base ; stat-card-icon
+> limité à 5 teintes (6ᵉ à arbitrer). Backlog optionnel inchangé
+> (command palette, dark mode, bento, messagerie scope navire).
+> Contenu initialement prévu ci-dessous, conservé pour référence :
 
 - **Loading states** : classe `.skeleton` + indicateur HTMX global.
 - **Empty states** normalisés (icône Lucide + titre + CTA) et généralisés.

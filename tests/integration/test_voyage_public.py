@@ -167,13 +167,15 @@ async def test_voyage_public_toggle_on_off_and_ownership(db):
     account, _leg, booking, _cert = await _fixture(db, published=False)
 
     resp = await booking_voyage_public_toggle(
-        booking.reference, enabled="on", client=account, db=db
+        _Req(), booking.reference, enabled="on", client=account, db=db
     )
     assert resp.status_code == 303
     await db.refresh(booking)
     assert booking.voyage_public is True
 
-    resp = await booking_voyage_public_toggle(booking.reference, enabled="", client=account, db=db)
+    resp = await booking_voyage_public_toggle(
+        _Req(), booking.reference, enabled="", client=account, db=db
+    )
     assert resp.status_code == 303
     await db.refresh(booking)
     assert booking.voyage_public is False
@@ -182,7 +184,9 @@ async def test_voyage_public_toggle_on_off_and_ownership(db):
     db.add(intruder)
     await db.flush()
     with pytest.raises(HTTPException):
-        await booking_voyage_public_toggle(booking.reference, enabled="on", client=intruder, db=db)
+        await booking_voyage_public_toggle(
+                _Req(), booking.reference, enabled="on", client=intruder, db=db
+            )
 
 
 # ───────────────────── page publique ─────────────────────
