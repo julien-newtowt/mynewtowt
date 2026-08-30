@@ -415,11 +415,31 @@
   <article class="card" id="sec-documents">
     <div class="section-header">
       <h3><i data-lucide="file-text"></i> Documents &amp; SOF</h3>
+      {# Phase 2 — la timeline unifiée bord + terre a sa page dédiée. #}
+      <a href="/escale/legs/{{ selected_leg.id }}/journal" class="btn btn-ghost btn-sm" title="Timeline unifiée bord + terre : SOF, opérations, documents, BL, tickets, sinistres">
+        <i data-lucide="list-ordered"></i> Journal d'escale
+      </a>
       <a href="/captain?leg_id={{ selected_leg.id }}" class="btn btn-ghost btn-sm" title="SOF, documents cargo, pièces jointes et clôture — espace bord">
         <i data-lucide="external-link"></i> Espace bord
       </a>
     </div>
     {% if docs_sof %}
+    {% if docs_sof.bl_counts and docs_sof.bl_counts.total %}
+    <p class="text-sm mb-2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <strong>Connaissements :</strong>
+      {% if docs_sof.bl_counts.draft %}<span class="pill pill-info">{{ docs_sof.bl_counts.draft }} projet(s)</span>{% endif %}
+      {% if docs_sof.bl_counts.client_validated %}<span class="pill pill-warn">{{ docs_sof.bl_counts.client_validated }} à signer</span>{% endif %}
+      {% if docs_sof.bl_counts.signed %}<span class="pill pill-ok">{{ docs_sof.bl_counts.signed }} signé(s)</span>{% endif %}
+      <a href="/captain/bl?leg_id={{ selected_leg.id }}" class="text-xs">registre</a>
+    </p>
+    {% endif %}
+    {% if docs_sof.claims_total %}
+    <p class="text-sm mb-2" style="display:flex;align-items:center;gap:8px;">
+      <strong>Sinistres du leg :</strong>
+      <span class="pill pill-error">{{ docs_sof.claims_total }}</span>
+      <a href="/claims?leg_id={{ selected_leg.id }}" class="text-xs">voir</a>
+    </p>
+    {% endif %}
     <div class="grid grid-3 gap-2 mb-3">
       <div class="stat-card">
         <div class="stat-card-body">
@@ -458,6 +478,12 @@
     <div class="alert alert-warn mb-1">
       <i data-lucide="alert-triangle"></i>
       <span>Clôture de voyage engagée le {{ docs_sof.closure_submitted_at|datetime("%d/%m/%Y") }} alors que l'escale n'est <strong>pas verrouillée</strong> — vérifier avant validation.</span>
+    </div>
+    {% endif %}
+    {% if docs_sof.locked_without_closure %}
+    <div class="alert alert-info mb-1">
+      <i data-lucide="info"></i>
+      <span>Escale verrouillée alors que la clôture de voyage n'est <strong>pas engagée</strong> — penser à la soumettre côté bord.</span>
     </div>
     {% endif %}
     <p class="text-muted text-xs">

@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.claim import Claim
 from app.models.crew import CrewAssignment, CrewMember
 from app.models.escale import (
     ACTIONS_BY_TYPE,
@@ -39,11 +40,13 @@ from app.models.ticket import Ticket
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
+from app.services.bl_workflow import batches_for_leg
 from app.services.escale_crew import (
     couple_crew_assignment,
     embarkation_alerts,
     maybe_create_paf,
 )
+from app.services.escale_journal import JOURNAL_KINDS, build_journal, sof_reconciliation
 from app.services.stowage import occupation_by_hold
 from app.templating import templates
 
@@ -392,6 +395,21 @@ async def escale_index(
                     )
                 )
             ).scalar_one()
+            # Phase 2 — compteurs BL par état (registre du commandant) et
+            # sinistres du leg, pour que le cockpit dise aussi où en sont
+            # les documents juridiquement engageants.
+            bl_batches = await batches_for_leg(db, leg_id=selected_leg.id)
+            bl_counts = {
+                "draft": sum(1 for b in bl_batches if b.bl_state == "draft"),
+                "client_validated": sum(1 for b in bl_batches if b.bl_state == "client_validated"),
+                "signed": sum(1 for b in bl_batches if b.bl_state in ("master_signed", "final")),
+                "total": len(bl_batches),
+            }
+            claims_total = (
+                await db.execute(
+                    select(func.count(Claim.id)).where(Claim.leg_id == selected_leg.id)
+                )
+            ).scalar_one()
             docs_sof = {
                 "sof_recent": sof_recent,
                 "sof_total": sof_total,
@@ -406,6 +424,13 @@ async def escale_index(
                 "closure_engaged_unlocked": bool(
                     selected_leg.closure_submitted_at and not selected_leg.escale_locked_at
                 ),
+                # Alerte croisée inverse (Phase 2) : escale verrouillée alors
+                # qu'aucune clôture n'est engagée — simple signal, sans blocage.
+                "locked_without_closure": bool(
+                    selected_leg.escale_locked_at and not selected_leg.closure_submitted_at
+                ),
+                "bl_counts": bl_counts,
+                "claims_total": claims_total,
             }
         except Exception:
             logger.exception("cockpit docs/sof summary failed for leg %s", selected_leg.id)
@@ -1090,4 +1115,76 @@ async def escale_sof_pdf(
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
+    )
+
+
+# ─────────────────── Journal d'escale (reprise UX Phase 2) ───────────────────
+
+
+@router.get("/legs/{leg_id}/journal", response_class=HTMLResponse)
+async def escale_journal_page(
+    leg_id: int,
+    request: Request,
+    kind: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "C")),
+) -> HTMLResponse:
+    """Timeline unifiée du dossier voyage — bord + terre, lecture seule.
+
+    Agrège SOF, opérations réelles, documents cargo, transitions BL, pièces
+    jointes, tickets, sinistres, statut portuaire et verrous/clôture
+    (service ``escale_journal``), avec le rapprochement des deux registres
+    SOF. Filtrable par type d'entrée (``?kind=``).
+    """
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
+    pol = await db.get(Port, leg.departure_port_id)
+    pod = await db.get(Port, leg.arrival_port_id)
+
+    entries = await build_journal(db, leg)
+    counts_by_kind = {k: sum(1 for e in entries if e.kind == k) for k in JOURNAL_KINDS}
+    selected_kind = kind if kind in JOURNAL_KINDS else None
+    if selected_kind:
+        entries = [e for e in entries if e.kind == selected_kind]
+
+    # Groupement par journée (clé de tri déjà normalisée en naïf).
+    days: list[tuple] = []
+    for e in entries:
+        day = e.sort_at.date()
+        if not days or days[-1][0] != day:
+            days.append((day, []))
+        days[-1][1].append(e)
+
+    operations = list(
+        (await db.execute(select(EscaleOperation).where(EscaleOperation.leg_id == leg_id)))
+        .scalars()
+        .all()
+    )
+    sof_events = list(
+        (await db.execute(select(SofEvent).where(SofEvent.leg_id == leg_id))).scalars().all()
+    )
+    reconciliation = sof_reconciliation(operations, sof_events)
+
+    return templates.TemplateResponse(
+        "staff/escale/journal.html",
+        {
+            "request": request,
+            "user": user,
+            "leg": leg,
+            "vessel": vessel,
+            "pol": pol,
+            "pod": pod,
+            "days": days,
+            "entry_total": sum(counts_by_kind.values()),
+            "counts_by_kind": counts_by_kind,
+            "selected_kind": selected_kind,
+            "journal_kinds": JOURNAL_KINDS,
+            "reconciliation": reconciliation,
+            "leg_locked": _escale_locked(leg),
+            "closure_engaged_unlocked": bool(leg.closure_submitted_at and not leg.escale_locked_at),
+            "next_port_tz": (pod.timezone if pod and pod.timezone else None),
+            "next_port_label": (pod.locode if pod else None),
+        },
     )

@@ -22,6 +22,14 @@
     <a href="/escale?leg_id={{ leg.id }}" class="btn btn-ghost">
       <i data-lucide="anchor"></i> Escale (terre)
     </a>
+    <a href="/escale/legs/{{ leg.id }}/journal" class="btn btn-ghost">
+      <i data-lucide="list-ordered"></i> Journal d'escale
+    </a>
+    {% if can_access(user.role, 'claims') %}
+    <a href="/claims?leg_id={{ leg.id }}" class="btn btn-ghost">
+      <i data-lucide="shield-alert"></i> Sinistres du leg
+    </a>
+    {% endif %}
     {% endif %}
   </div>
 </header>
