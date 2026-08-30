@@ -388,3 +388,68 @@ Constats à reprendre :
 
 Maquettes : planches « Fiche sinistre » et « Fiche packing list »
 ajoutées au canvas « Reprise UX Escale ».
+
+---
+
+## 10. Audit complémentaire du 2026-08-30 — Espace client
+
+### 10.1 Cadrage : « l'ancien » de l'espace client, c'est la V3 elle-même
+
+Le V2 réel n'avait **« aucune plateforme client ni publique »**
+(`AUDIT_V2_V3_RAPPORT_ECARTS_ET_PLAN.md:20-22` — constat issu de la
+lecture de l'archive complète ; seule nuance : le portail expéditeur par
+token existait en V2, mais c'est un accès anonyme par lien, pas un espace
+client). Les « anciennes fonctionnalités et anciennes pages » côté client
+sont donc les **versions antérieures de la V3**, traçables dans git à
+partir du 2026-06-30.
+
+### 10.2 Chronologie des retraits/transformations (git + arbitrages)
+
+| Date | Quoi | Remplaçant | Verdict |
+|---|---|---|---|
+| ≤ V3.1 (avant l'historique) | Stripe retiré de la facturation fret | virement + confirmation commerciale 4 h ; Stripe ne subsiste que pour la vente à bord | Décision produit assumée |
+| avant 2026-06-30 | `/about/co2` | 301 → `/about/anemos` | Renommage propre (301 conservé) |
+| avant 2026-06-30 | Wizard « 4 étapes + paiement » du design-handoff | wizard **3 étapes session invité** + autocréation de compte, présent dès le premier commit tracé | Vision jamais construite telle quelle (pas une perte utilisateur prouvée) |
+| A5 (2026-06-22) | Facturation client intégrée | `/me/invoices` = page explicite « hors plateforme » (remplace un 301 silencieux), `ClientInvoice` dormant | Décision produit assumée |
+| 2026-08-17 (`afa7986`) | **Rail BL depuis le booking** : `GET /me/bookings/{ref}/bl.pdf`/`.docx` (+ rail staff équivalent) supprimés | rail packing list : `/me/bookings/{ref}/bls` (registre, validation client, réception) + `/bl/{batch_id}.pdf`/`.docx` — ajoutés dans le **même commit** | Retrait assumé (l'ancien document « se présentait comme un connaissement sans en être un ») — mais **sans 301** : un lien envoyé par e-mail avant le 17/08 casse en 404 silencieux chez le client |
+| 2026-08-26 (`9411cd1`) | `/devis` public chiffrait immédiatement (y compris grille négociée) | `/devis` = demande non chiffrée + `/me/estimations` (chiffré, authentifié, borné aux grilles du compte) | Durcissement sécurité C-1 assumé ; URLs `/devis` conservées |
+
+**Aucun lien mort dans le code actuel** (87 href client+public vérifiés
+contre les routeurs). Le seul risque hérité : les anciens liens BL
+**déjà envoyés** aux clients (404 sans redirection — décision à
+arbitrer : poser un 301 → `/me/bookings/{ref}/bls`, en ajustant le test
+`test_the_booking_rail_bl_routes_are_gone`).
+
+### 10.3 Constats sur l'existant (audit UX du 2026-08-30)
+
+Périmètre : ~45 routes (`/me/*` + `/booking/*`), 26 templates client.
+Matrice de non-perte complète établie (wizard invité + autocréation
+idempotente, CGV/grille d'annulation signées horodatées, position à bord
+avec confidentialité inter-clients, notifications ETA, registre BL 3
+canaux, Anemos + rapport RSE, kit B2B2C + voyage public opt-in, MFA TOTP
++ appareils de confiance + alerte nouveau device, rattachement grille
+= acte staff audité).
+
+| # | Constat | Reprise |
+|---|---|---|
+| K-1 | **3 liens morts dans `/me/account`** : « Changer mon mot de passe », « Exporter mes données » (RGPD), « Supprimer mon compte » → `href="#"`, aucune route n'existe (le docstring du router promet pourtant le changement de mot de passe) | **Phase 2** : implémenter le changement de mot de passe (briques `hash_password`/`verify_password` déjà là) ; pour RGPD/suppression : brancher ou remplacer par un contact explicite — un lien mort dans l'écran *sécurité* est le pire endroit |
+| K-2 | `/me/invoices` **orpheline** : aucune entrée sidebar/topbar/dashboard ne la référence | Phase 2 : entrée sidebar ou lien depuis `/me/documents` |
+| K-3 | **Copie fausse sur `/devis`** pour un client connecté : « votre grille tarifaire s'applique si elle existe » — faux depuis le durcissement C-1 (aucun prix n'y est calculé) | Phase 2 : corriger le texte + lien « obtenez un tarif immédiat sur `/me/estimations` » (source de tickets support sinon) |
+| K-4 | **1 seule interaction HTMX sur 26 templates** — marquer-lu, messages, validation BL, réception, voyage public, uploads : tout recharge la page | Phase 3 : lot « HTMX côté client », miroir du lot staff Phase 1 |
+| K-5 | Topbar : `_page_labels` ne couvre que 6 chemins sur ~20 (titre générique ailleurs) ; pas de widget « en mer actuellement » vers `/me/track/{ref}` | Phase 2 (repères + découvrabilité du tracking) |
+| K-6 | **3 systèmes visuels** traversés par un client neuf (vitrine v2 → wizard standalone → app kairos) avec bascule silencieuse au moment de la création de compte, + 4ᵉ rupture sur login | Phase 3 : transition accompagnée (message de bienvenue contextualisé sur `booking_done`), harmonisation progressive |
+| K-7 | `public/_layout.html` (101 l.) = **template mort** (0 usage, vestige) | Quick win : suppression (précédent : `staff/escale/detail.html` en Phase 1) |
+| K-8 | Aucun statut de règlement, même déclaratif, visible côté client (`Booking` sans `paid_at`/`due_date` ; cohérent avec A5 mais le client ne sait pas où il en est) | Backlog produit (décision métier sur la granularité) |
+| K-9 | Anciens liens BL emailés → 404 sans redirection (cf. 10.2) | Décision à arbitrer (301 + ajustement du test) |
+
+### 10.4 Phases amendées (volet client)
+
+- **Phase 2** ajoute : K-1 (mot de passe a minima), K-2, K-3, K-5.
+- **Phase 3** ajoute : K-4 (lot HTMX client), K-6 (transition visuelle),
+  K-7 (suppression layout mort — faisable dès maintenant).
+- **Décisions produit à arbitrer** (s'ajoutent aux 4 déjà listées §9.3) :
+  redirection 301 des anciens liens BL (K-9) ; statut de règlement
+  déclaratif (K-8) ; export RGPD/suppression de compte automatisés ou
+  procédure manuelle (K-1, volets 2-3).
+
+Maquette : planche « Espace client — dashboard cible » ajoutée au canvas.
