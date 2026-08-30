@@ -36,6 +36,7 @@ from app.permissions import (
     SEAFARER_ROLES,
     VesselAccessDenied,
     assert_vessel_access,
+    has_permission,
     require_permission,
     visible_vessel_id,
 )
@@ -46,6 +47,7 @@ from app.services.cashbox import (
     AccountingFrozen,
     CashboxError,
     PeriodClosed,
+    RegularisationRefused,
     add_movement,
     as_movement_date,
     balances,
@@ -57,6 +59,9 @@ from app.services.cashbox import (
     list_closures,
     period_movements,
     recent_movements,
+    regularise_variance,
+    regularised_by_count,
+    remaining_variance,
     reverse_movement,
 )
 from app.templating import templates
@@ -325,6 +330,16 @@ async def cash_count_detail(
     cb = await get_or_create(db, vessel_id)
     if count.cashbox_id != cb.id:
         raise HTTPException(status_code=404, detail="État de caisse introuvable")
+    # Suite donnée à l'écart : ce qui a déjà été régularisé, et ce qui reste.
+    # L'écart lui-même n'est jamais recalculé — il est figé (c'est l'objet du
+    # contrôle) ; le restant se déduit des régularisations rattachées.
+    settlement = {
+        block.currency: {
+            "movements": await regularised_by_count(db, count.id, block.currency),
+            "remaining": await remaining_variance(db, block),
+        }
+        for block in count.currencies
+    }
     return templates.TemplateResponse(
         "staff/cashbox/cash_count_detail.html",
         {
@@ -333,8 +348,77 @@ async def cash_count_detail(
             "vessel": vessel,
             "count": count,
             "currency_labels": CURRENCY_LABELS,
+            "settlement": settlement,
+            # Affichage seulement : la route de régularisation refait le
+            # contrôle sur la matrice effective (overrides compris).
+            "can_regularise": has_permission(getattr(user, "role", ""), "finance", "M"),
         },
     )
+
+
+@router.post("/{vessel_id}/etat/{count_id}/regularisation")
+async def regularise_count(
+    vessel_id: int,
+    count_id: int,
+    currency: str = Form(...),
+    amount: str = Form(...),
+    reason: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("finance", "M")),
+) -> RedirectResponse:
+    """Solde tout ou partie d'un écart constaté — **réservé au siège** (ADR-014).
+
+    La permission est délibérément `finance:M`, jamais `ventes:M` : cette
+    dernière est celle qui tient la caisse et qui déclare le comptage. Un rôle
+    capable de constater un écart *et* de le faire disparaître ne se contrôle
+    pas lui-même — c'est le même raisonnement que pour le remboursement
+    (ADR-013). Le bord signale ; le siège régularise.
+
+    Pas de cloisonnement par navire ici : le siège régularise pour toute la
+    flotte, comme il rembourse pour toute la flotte.
+    """
+    vessel = await db.get(Vessel, vessel_id)
+    if not vessel:
+        raise HTTPException(status_code=404, detail="Vessel not found")
+    cb = await get_or_create(db, vessel_id)
+    count = await db.get(CashCount, count_id)
+    if count is None or count.cashbox_id != cb.id:
+        raise HTTPException(status_code=404, detail="État de caisse introuvable")
+    block = next((b for b in count.currencies if b.currency == currency.upper()), None)
+    if block is None:
+        raise HTTPException(
+            status_code=400, detail=f"Ce contrôle ne déclare pas de bloc {currency.upper()}."
+        )
+    try:
+        amt = parse_decimal(amount, label="montant", quantize=CENTS)
+    except DecimalInputError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+    try:
+        movement = await regularise_variance(
+            db, cb, count, block, amount=amt, reason=reason, recorded_by_id=user.id
+        )
+    except (RegularisationRefused, AccountingFrozen, PeriodClosed) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except CashboxError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    await activity_record(
+        db,
+        action="cashbox_variance_regularised",
+        user_id=user.id,
+        user_name=user.username,
+        user_role=user.role,
+        module="finance",
+        entity_type="cashbox_movement",
+        entity_id=movement.id,
+        detail=(
+            f"vessel={vessel_id} contrôle #{count.id} ({count.counted_on}) "
+            f"écart {block.currency} {block.variance} — régularisé de "
+            f"{movement.amount} par #{movement.id} : {reason.strip()}"
+        ),
+    )
+    return RedirectResponse(url=f"/cashbox/{vessel_id}/etat/{count_id}", status_code=303)
 
 
 @router.post("/{vessel_id}/movement")

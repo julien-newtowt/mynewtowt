@@ -11,11 +11,13 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, select
 
 from app.models.cash_count import CashCount, CashCountLine
+from app.models.onboard_cashbox import CashboxMovement
 from app.models.vessel import Vessel
 from app.services import cash_count as svc
 from app.services import cashbox as cashbox_svc
@@ -988,3 +990,242 @@ async def test_the_declaration_is_confirmed_before_being_written(db, staff_user)
     assert "data-cash-count-form" in html
     assert "définitif" in html
     assert "js/forms.js" in html, "la confirmation globale doit être chargée sur la page"
+
+
+# ── Régularisation d'un écart — geste du siège, jamais du bord (ADR-014) ────
+#
+# Le contrôle de caisse constate un écart ; rien n'encadrait sa suite. Un
+# commandant pouvait faire disparaître un manquant par un « Autre
+# encaissement » indiscernable d'une écriture ordinaire : le contrôle
+# constatait alors un écart que celui qui en répond pouvait solder lui-même.
+
+
+async def _count_with_variance(db, staff_user, *, surplus="311.46", code="ANE"):
+    """Reproduit le cas réel du 2026-08-29 : théorique 1 676,89 / compté 1 988,35."""
+    vessel, cb = await _box(db, code=code)
+    await _movement(db, cb, "1676.89", staff_user=staff_user)
+    counted = Decimal("1676.89") + Decimal(surplus)
+    # Une seule coupure fictive suffit : le bloc porte le total et l'écart.
+    count = await svc.declare_count(
+        db,
+        cb,
+        trigger="fin_de_mois",
+        counted_on=datetime.now(UTC).date(),
+        declared_by_name="LE GUIL G",
+        counts={"EUR": {}},
+        bulk_coins={"EUR": counted},
+    )
+    return vessel, cb, count
+
+
+@pytest.mark.asyncio
+async def test_the_bridge_cannot_reach_the_regularisation_categories(db, staff_user):
+    """Les catégories de régularisation ne sont pas atteignables par le bord.
+
+    Elles sont délibérément absentes des listes sélectionnables : la même
+    exclusion ferme à la fois la liste déroulante et la validation de la route
+    générique de mouvement — il n'y a pas de garde séparée à oublier.
+    """
+    from app.models.onboard_cashbox import (
+        EXPENSE_CATEGORIES,
+        INCOME_CATEGORIES,
+        REGULARISATION_CATEGORIES,
+        categories_for,
+    )
+
+    for code in REGULARISATION_CATEGORIES:
+        assert code not in INCOME_CATEGORIES
+        assert code not in EXPENSE_CATEGORIES
+        assert code not in categories_for("income")
+        assert code not in categories_for("expense")
+
+
+@pytest.mark.asyncio
+async def test_the_generic_movement_route_refuses_a_regularisation(db, staff_user):
+    """Un POST direct du bord sur la route de mouvement est refusé."""
+    from fastapi import HTTPException
+
+    from app.routers import cashbox_router as r
+
+    vessel, _cb = await _box(db)
+    with pytest.raises(HTTPException) as exc:
+        await r.add_mov(
+            _page_request(f"/cashbox/{vessel.id}/movement"),
+            vessel.id,
+            amount="311.46",
+            currency="EUR",
+            category="regularisation_excedent",
+            description="je solde mon écart moi-même",
+            movement_kind="income",
+            db=db,
+            user=staff_user,
+        )
+    assert exc.value.status_code == 400
+    assert await db.scalar(select(func.count()).select_from(CashboxMovement)) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_surplus_is_settled_by_an_entry_of_the_right_sign(db, staff_user):
+    """La régularisation suit le sens de l'écart, pas celui d'une saisie."""
+    _vessel, cb, count = await _count_with_variance(db, staff_user)
+    block = count.currencies[0]
+    assert block.variance == Decimal("311.46")
+
+    mov = await cashbox_svc.regularise_variance(
+        db, cb, count, block, amount=Decimal("311.46"), reason="écart inexpliqué", recorded_by_id=1
+    )
+    assert mov.amount == Decimal("311.46")
+    assert mov.category == "regularisation_excedent"
+    assert mov.settles_cash_count_id == count.id
+    # Le solde théorique rejoint la caisse réellement comptée.
+    assert await svc.computed_balance(db, cb, "EUR") == Decimal("1988.35")
+
+
+@pytest.mark.asyncio
+async def test_a_shortfall_is_settled_by_an_outgoing_entry(db, staff_user):
+    _vessel, cb, count = await _count_with_variance(db, staff_user, surplus="-120.00")
+    block = count.currencies[0]
+    assert block.variance == Decimal("-120.00")
+
+    mov = await cashbox_svc.regularise_variance(
+        db, cb, count, block, amount=Decimal("120.00"), reason="manquant constaté", recorded_by_id=1
+    )
+    assert mov.amount == Decimal("-120.00")
+    assert mov.category == "regularisation_manquant"
+
+
+@pytest.mark.asyncio
+async def test_a_regularisation_never_exceeds_nor_flips_the_declared_variance(db, staff_user):
+    """La borne est ce qui distingue cette écriture d'un « Autre encaissement ».
+
+    Sans elle, la catégorie ne serait qu'un libellé plus flatteur posé sur un
+    montant libre — aucun contrôle gagné.
+    """
+    _vessel, cb, count = await _count_with_variance(db, staff_user)
+    block = count.currencies[0]
+
+    with pytest.raises(cashbox_svc.RegularisationRefused):
+        await cashbox_svc.regularise_variance(
+            db, cb, count, block, amount=Decimal("400.00"), reason="trop"
+        )
+    with pytest.raises(cashbox_svc.RegularisationRefused):
+        await cashbox_svc.regularise_variance(
+            db, cb, count, block, amount=Decimal("-311.46"), reason="sens inversé"
+        )
+    with pytest.raises(cashbox_svc.RegularisationRefused):
+        await cashbox_svc.regularise_variance(
+            db, cb, count, block, amount=Decimal("50"), reason=" "
+        )
+    assert await db.scalar(select(func.count()).select_from(CashboxMovement)) == 1  # le dépôt seul
+
+
+@pytest.mark.asyncio
+async def test_the_same_variance_is_never_regularised_twice(db, staff_user):
+    """L'écart étant figé, le restant se déduit des régularisations déjà passées.
+
+    Sans cette soustraction, rejouer la régularisation doublerait la correction
+    — et le solde théorique dépasserait la caisse réellement comptée.
+    """
+    _vessel, cb, count = await _count_with_variance(db, staff_user)
+    block = count.currencies[0]
+
+    await cashbox_svc.regularise_variance(
+        db, cb, count, block, amount=Decimal("200.00"), reason="première part"
+    )
+    assert await cashbox_svc.remaining_variance(db, block) == Decimal("111.46")
+    # L'écart déclaré, lui, n'a pas bougé : un contrôle rendu ne se réécrit pas.
+    assert block.variance == Decimal("311.46")
+
+    with pytest.raises(cashbox_svc.RegularisationRefused):
+        await cashbox_svc.regularise_variance(
+            db, cb, count, block, amount=Decimal("200.00"), reason="au-delà du restant"
+        )
+    await cashbox_svc.regularise_variance(
+        db, cb, count, block, amount=Decimal("111.46"), reason="solde"
+    )
+    assert await cashbox_svc.remaining_variance(db, block) == Decimal("0.00")
+    with pytest.raises(cashbox_svc.RegularisationRefused):
+        await cashbox_svc.regularise_variance(
+            db, cb, count, block, amount=Decimal("1.00"), reason="une fois de trop"
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_regularisation_is_dated_today_not_backdated_into_the_control(db, staff_user):
+    """Antidater une régularisation réécrirait par la bande un contrôle rendu."""
+    _vessel, cb, count = await _count_with_variance(db, staff_user)
+    mov = await cashbox_svc.regularise_variance(
+        db, cb, count, count.currencies[0], amount=Decimal("311.46"), reason="écart inexpliqué"
+    )
+    assert mov.occurred_at.date() == datetime.now(UTC).date()
+    # La contrepartie est nommée : le contrôle, son motif et son déclarant.
+    assert "LE GUIL G" in mov.description
+    assert str(count.counted_on) in mov.description
+
+
+@pytest.mark.asyncio
+async def test_a_block_of_another_control_is_refused(db, staff_user):
+    """Le bloc doit appartenir au contrôle visé, et le contrôle à cette caisse."""
+    _vessel, cb, count = await _count_with_variance(db, staff_user)
+    _other_vessel, other_cb, other_count = await _count_with_variance(
+        db, staff_user, surplus="10", code="TUA"
+    )
+
+    with pytest.raises(cashbox_svc.RegularisationRefused):
+        await cashbox_svc.regularise_variance(
+            db, other_cb, count, count.currencies[0], amount=Decimal("10"), reason="mauvaise caisse"
+        )
+    with pytest.raises(cashbox_svc.RegularisationRefused):
+        await cashbox_svc.regularise_variance(
+            db, cb, count, other_count.currencies[0], amount=Decimal("10"), reason="mauvais bloc"
+        )
+
+
+@pytest.mark.asyncio
+async def test_the_route_is_gated_on_the_office_permission(db, staff_user):
+    """`finance:M`, jamais `ventes:M` — celle-là tient la caisse et la déclare."""
+    import inspect
+
+    from app.routers import cashbox_router as r
+
+    dep = inspect.signature(r.regularise_count).parameters["user"].default
+    # `require_permission("finance", "M")` est capturé dans la closure du Depends.
+    closure = dep.dependency.__closure__ or ()
+    captured = {c.cell_contents for c in closure if isinstance(c.cell_contents, str)}
+    assert "finance" in captured and "M" in captured
+    assert "ventes" not in captured
+
+
+@pytest.mark.asyncio
+async def test_the_control_page_offers_the_settlement_only_to_the_office(db, staff_user):
+    """Le bord voit l'écart et la consigne ; il ne voit pas le formulaire."""
+    from app.routers import cashbox_router as r
+
+    vessel, _cb, count = await _count_with_variance(db, staff_user)
+
+    seafarer = SimpleNamespace(
+        id=2, username="cdt", role="marins", assigned_vessel_id=vessel.id, full_name="Cdt"
+    )
+    html_bord = (
+        await r.cash_count_detail(
+            _page_request(f"/cashbox/{vessel.id}/etat/{count.id}"),
+            vessel.id,
+            count.id,
+            db=db,
+            user=seafarer,
+        )
+    ).body.decode()
+    assert "geste du siège" in html_bord
+    assert "/regularisation" not in html_bord
+
+    html_siege = (
+        await r.cash_count_detail(
+            _page_request(f"/cashbox/{vessel.id}/etat/{count.id}"),
+            vessel.id,
+            count.id,
+            db=db,
+            user=staff_user,  # administrateur → finance:M
+        )
+    ).body.decode()
+    assert "Régulariser l'écart" in html_siege
+    assert f"/cashbox/{vessel.id}/etat/{count.id}/regularisation" in html_siege

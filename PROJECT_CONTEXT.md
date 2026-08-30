@@ -708,19 +708,37 @@ apparu à la seconde où le premier état de caisse a été validé. Une page re
 « à vide » n'est pas une page vérifiée. Les tests de page ajoutés rendent
 désormais le gabarit **complet, layout compris**, sur des données réelles.
 
-### Ouvert — à arbitrer (candidat ADR-014)
+### Arbitré et livré — ADR-014 (2026-08-30)
 
-Deux manques révélés par ce retour, **volontairement non implémentés** parce que
-ce sont des règles de contrôle interne, pas des détails d'interface :
+**« Seul le siège peut passer des régularisations. Jamais le bord. »**
 
-1. **Régularisation d'un écart de caisse.** Aujourd'hui un commandant peut faire
-   disparaître un manquant par un simple « Autre encaissement », indiscernable
-   d'une écriture ordinaire — le contrôle de caisse y perd l'essentiel de sa
-   valeur. Symétrique exact du remboursement (ADR-013 : geste du **siège**).
-   Proposition : catégories `regularisation_excedent` / `regularisation_manquant`
-   sous `finance:M`, rattachées au `cash_count` soldé. Coût : une migration
-   (`CHECK` sur `category`), une route, un écran.
-2. **Suite donnée à un contrôle.** `cash_count.review_count()` (validé /
-   contesté) existe et est testé depuis le 2026-08-27 mais **n'est exposé par
-   aucune route** : une déclaration partie par erreur reste « DÉCLARÉE »
-   indéfiniment. La prévention est livrée, le remède non.
+Le contrôle de caisse constatait un écart sans encadrer sa **suite** : le
+commandant qui répond de la caisse pouvait le solder lui-même par un « Autre
+encaissement » indiscernable d'une écriture ordinaire. Symétrique exact du
+remboursement (ADR-013).
+
+Livré (migration `20260830_0136`) :
+
+- catégories `regularisation_excedent` / `regularisation_manquant`,
+  **délibérément hors** de `INCOME_CATEGORIES` / `EXPENSE_CATEGORIES` — ces
+  tuples alimentant à la fois la liste du bord et `categories_for()` (donc la
+  validation de la route générique), les en exclure ferme la voie du bord **en
+  un seul point**, sans garde séparée à oublier ;
+- route dédiée sous `finance:M`, sans cloisonnement navire (le siège régularise
+  pour la flotte, comme il rembourse) ;
+- écriture adossée à l'écart qu'elle solde (`settles_cash_count_id`, distinct de
+  `cash_count_id` qui dit « gelé *par* »), **bornée** par cet écart et par son
+  sens, **datée du jour** de la décision, **motif obligatoire** ;
+- l'écran d'un contrôle affiche la suite donnée à l'écart ; le bord y lit la
+  consigne (signaler, pas régulariser), le siège seul voit le formulaire.
+
+⚠️ **Régulariser est le dernier recours, pas le premier** : on retrouve d'abord
+les écritures manquantes (notice commandant §7 bis). L'outil ne peut pas imposer
+cet ordre ; la borne fait le reste.
+
+### Reste ouvert — non tranché
+
+**Suite donnée à un contrôle.** `cash_count.review_count()` (validé / contesté)
+existe et est testé depuis le 2026-08-27 mais **n'est exposé par aucune route** :
+une déclaration partie par erreur reste « DÉCLARÉE » indéfiniment. La prévention
+est livrée, le remède non. Même sujet, mêmes acteurs que l'ADR-014.

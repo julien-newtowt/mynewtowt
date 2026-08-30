@@ -16,7 +16,7 @@ from decimal import Decimal
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.cash_count import CashCount
+from app.models.cash_count import CashCount, CashCountCurrency
 from app.models.onboard_cashbox import (
     CATEGORY_LABELS,
     SUPPORTED_CURRENCIES,
@@ -24,7 +24,7 @@ from app.models.onboard_cashbox import (
     CashboxMovement,
     OnboardCashbox,
 )
-from app.utils.decimals import DecimalInputError, ensure_finite
+from app.utils.decimals import CENTS, DecimalInputError, ensure_finite
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,10 @@ class AccountingFrozen(CashboxError):
     responsabilité d'une personne, pas un mois comptable. Le message doit le
     dire, sinon le commandant entrant ne comprend pas pourquoi il est refusé.
     """
+
+
+class RegularisationRefused(CashboxError):
+    """Régularisation d'écart refusée (ADR-014) — message affichable."""
 
 
 class PeriodClosed(CashboxError):
@@ -529,3 +533,116 @@ async def list_closures(
         .limit(limit)
     )
     return list((await db.execute(stmt)).scalars().all())
+
+
+# ── Régularisation d'un écart de caisse — geste du siège (ADR-014) ──────────
+
+
+async def regularised_by_count(
+    db: AsyncSession, count_id: int, currency: str
+) -> list[CashboxMovement]:
+    """Régularisations déjà passées sur l'écart d'un contrôle, pour une devise."""
+    stmt = (
+        select(CashboxMovement)
+        .where(
+            CashboxMovement.settles_cash_count_id == count_id,
+            CashboxMovement.currency == currency.upper(),
+        )
+        .order_by(CashboxMovement.id)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def remaining_variance(db: AsyncSession, block: CashCountCurrency) -> Decimal:
+    """Part de l'écart d'un bloc devise **non encore régularisée**, signée.
+
+    L'écart d'un contrôle est figé (c'est sa raison d'être) : il ne diminue pas
+    quand le siège passe une régularisation. On soustrait donc explicitement ce
+    qui a déjà été passé, sans quoi une seconde régularisation du même écart
+    doublerait la correction sans que rien ne s'y oppose.
+    """
+    already = sum(
+        (m.amount for m in await regularised_by_count(db, block.cash_count_id, block.currency)),
+        Decimal("0"),
+    )
+    return (Decimal(block.variance) - already).quantize(CENTS)
+
+
+async def regularise_variance(
+    db: AsyncSession,
+    cashbox: OnboardCashbox,
+    count: CashCount,
+    block: CashCountCurrency,
+    *,
+    amount: Decimal,
+    reason: str,
+    recorded_by_id: int | None = None,
+) -> CashboxMovement:
+    """Solde tout ou partie de l'écart constaté par un contrôle de caisse.
+
+    **Geste du siège, jamais du bord** (ADR-014). Le contrôle appartenant à
+    l'appelant, ce service ne vérifie pas la permission — la route le fait, sous
+    ``finance:M`` — mais il pose les trois garde-fous qui donnent sa valeur à
+    l'écriture :
+
+    1. **elle est adossée à un écart déclaré** : pas de régularisation flottante,
+       la contrepartie est un contrôle nommé, daté et signé d'un commandant ;
+    2. **elle ne peut ni dépasser cet écart ni en inverser le sens** — sans
+       cette borne, la catégorie ne serait qu'un « Autre encaissement » relabellé,
+       et n'apporterait aucun contrôle ;
+    3. **elle est datée du jour de la décision**, jamais antidatée dans la
+       période contrôlée. Une écriture qui remonterait avant le comptage
+       réécrirait par la bande un contrôle déjà rendu.
+
+    Le motif est **obligatoire** : une régularisation sans cause écrite est
+    exactement ce que cette décision cherche à empêcher.
+    """
+    # `count` est passé explicitement plutôt que lu par `block.count` : la
+    # relation inverse n'est pas chargée par le `selectin` descendant, et un
+    # accès paresseux en contexte async lève `MissingGreenlet`.
+    if count.cashbox_id != cashbox.id:
+        raise RegularisationRefused("Ce contrôle de caisse n'appartient pas à cette caisse.")
+    if block.cash_count_id != count.id:
+        raise RegularisationRefused("Cette devise n'appartient pas à ce contrôle de caisse.")
+    if not reason.strip():
+        raise RegularisationRefused("Motif de régularisation requis.")
+    try:
+        amount = ensure_finite(Decimal(amount), label="montant").quantize(CENTS)
+    except DecimalInputError as e:
+        raise RegularisationRefused(str(e)) from None
+    if amount <= 0:
+        raise RegularisationRefused("Le montant à régulariser doit être strictement positif.")
+
+    remaining = await remaining_variance(db, block)
+    if remaining == 0:
+        raise RegularisationRefused(
+            f"L'écart {block.currency} de ce contrôle est déjà entièrement régularisé."
+        )
+    if amount > abs(remaining):
+        raise RegularisationRefused(
+            f"Montant supérieur à l'écart restant à régulariser "
+            f"({abs(remaining)} {block.currency})."
+        )
+
+    # Le sens suit celui de l'écart constaté, jamais celui d'une saisie : un
+    # excédent se régularise par une entrée, un manquant par une sortie.
+    if remaining > 0:
+        signed, category = amount, "regularisation_excedent"
+    else:
+        signed, category = -amount, "regularisation_manquant"
+
+    movement = await add_movement(
+        db,
+        cashbox,
+        amount=signed,
+        currency=block.currency,
+        category=category,
+        description=(
+            f"Régularisation d'écart — contrôle du {count.counted_on} "
+            f"({count.trigger_label}, déclaré par {count.declared_by_name}) : {reason.strip()}"
+        ),
+        recorded_by_id=recorded_by_id,
+    )
+    movement.settles_cash_count_id = count.id
+    await db.flush()
+    return movement

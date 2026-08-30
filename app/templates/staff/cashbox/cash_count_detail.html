@@ -45,6 +45,70 @@
       <p><strong>Explication déclarée :</strong> {{ block.variance_reason }}</p>
     {% endif %}
 
+    {# ── Suite donnée à l'écart : régularisation, geste du siège (ADR-014) ── #}
+    {% set suite = settlement.get(block.currency) %}
+    {% if block.variance != 0 and suite %}
+      <section class="mt-3">
+        <h3>Régularisation de l'écart</h3>
+        {% if suite.movements %}
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead><tr><th>Date</th><th class="text-right">Montant</th><th>Passée par le siège</th></tr></thead>
+              <tbody>
+                {% for m in suite.movements %}
+                  <tr>
+                    <td class="mono text-sm">{{ m.occurred_at|date }}</td>
+                    <td class="text-right mono {% if m.amount < 0 %}text-error{% else %}text-success{% endif %}">
+                      {{ "%+.2f"|format(m.amount|float) }}
+                    </td>
+                    <td>{{ m.description }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+
+        {% if suite.remaining == 0 %}
+          <p class="text-success">Écart entièrement régularisé.</p>
+        {% else %}
+          <p class="text-muted">
+            Reste à régulariser :
+            <strong class="mono">{{ "%+.2f"|format(suite.remaining|float) }} {{ block.currency }}</strong>.
+            L'écart déclaré, lui, reste figé — une régularisation ne le réécrit pas,
+            elle en donne la suite.
+          </p>
+          {% if can_regularise %}
+            <form method="post"
+                  action="/cashbox/{{ vessel.id }}/etat/{{ count.id }}/regularisation"
+                  data-confirm="Passer cette régularisation ? Le mouvement sera daté d'aujourd'hui et restera au grand livre — il ne pourra pas être supprimé.">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+              <input type="hidden" name="currency" value="{{ block.currency }}" />
+              <div class="grid grid-3 gap-3" style="align-items:end;">
+                <div class="field">
+                  <label for="amount_{{ block.currency }}">Montant à régulariser ({{ block.currency }})</label>
+                  <input id="amount_{{ block.currency }}" name="amount" inputmode="decimal"
+                         placeholder="{{ "%.2f"|format(suite.remaining|abs|float) }}" required />
+                </div>
+                <div class="field" style="grid-column: span 2;">
+                  <label for="reason_{{ block.currency }}">Motif (obligatoire)</label>
+                  <input id="reason_{{ block.currency }}" name="reason" required
+                         placeholder="Ex. écart inexpliqué après recherche des écritures manquantes" />
+                </div>
+              </div>
+              <button type="submit" class="btn btn-cuivre">Régulariser l'écart</button>
+            </form>
+          {% else %}
+            <p class="form-hint">
+              La régularisation d'un écart est un <strong>geste du siège</strong> (ADR-014) :
+              le bord la signale, il ne la passe pas. Signalez cet écart au siège
+              en indiquant ce que vous avez déjà vérifié à bord.
+            </p>
+          {% endif %}
+        {% endif %}
+      </section>
+    {% endif %}
+
     <div class="table-scroll">
       <table class="data-table">
         <thead>

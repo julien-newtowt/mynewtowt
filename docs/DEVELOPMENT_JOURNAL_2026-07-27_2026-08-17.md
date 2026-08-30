@@ -2299,3 +2299,96 @@ ci-dessus — même sujet, mêmes acteurs.
 - Ces correctifs sont **cosmétiques et front** : ils ne modifient ni le schéma,
   ni les règles de calcul, ni les permissions. Ils peuvent partir sans attendre
   le retour du manager.
+
+---
+
+## 2026-08-30 (2) — ADR-014 : la régularisation d'un écart est un geste du siège
+
+**Branche** : `claude/user-message-au0tqk` (rebasée sur `main` après la #166)
+**Arbitrage** : Julien Gondé, 2026-08-30 — *« Seul le siège peut passer des
+régularisations. Jamais le bord. »*
+**ADR** : `docs/architecture/ADR-014-regularisation-ecart-de-caisse.md`
+**Migration** : `20260830_0136`
+
+### Situation
+
+Le premier usage réel du contrôle de caisse (entrée précédente) avait laissé un
+point ouvert que j'avais signalé sans le trancher : le contrôle **constate** un
+écart, mais rien n'encadrait sa **suite**. Le commandant qui répond de la caisse
+pouvait solder lui-même l'écart qu'on venait de constater, par un « Autre
+encaissement » que rien ne distinguait d'une écriture ordinaire. Le contrôle
+devenait une formalité.
+
+Arbitrage rendu : geste du siège, jamais du bord. Implémenté ici.
+
+### La décision de conception qui porte tout le reste
+
+Il aurait été tentant d'ajouter les deux catégories aux tuples existants et de
+poser une garde dans la route. **Elles en sont délibérément exclues.**
+
+`INCOME_CATEGORIES` et `EXPENSE_CATEGORIES` alimentent **à la fois** la liste
+déroulante du bord **et** `categories_for()`, qui valide la route générique de
+mouvement. Tenir les codes de régularisation à l'écart de ces deux tuples ferme
+donc la voie du bord **en un seul point** — il n'y a pas de garde séparée à
+oublier lors d'un prochain écran. Le `CHECK` en base, lui, porte sur l'union
+(`ALL_CATEGORIES`) : la catégorie doit rester écrivable par la route du siège.
+
+Le test qui compte n'est pas celui qui vérifie que la route marche, c'est celui
+qui **POSTe la catégorie sur la route du bord** et attend un 400.
+
+### Trois bornes, et pourquoi chacune existe
+
+Sans elles, la fonctionnalité n'aurait été qu'un libellé plus flatteur posé sur
+un « Autre encaissement » :
+
+1. **Adossée à un écart déclaré** (`settles_cash_count_id`) — pas de
+   régularisation flottante ; la contrepartie est un contrôle nommé, daté et
+   signé d'un commandant. Colonne **distincte** de `cash_count_id`, qui dit
+   « gelé *par* ce contrôle » : les confondre ferait passer une régularisation
+   pour un mouvement verrouillé, et l'inverse.
+2. **Bornée par cet écart, et de son sens** — un excédent se régularise par une
+   entrée, un manquant par une sortie ; le sens est **dérivé**, jamais saisi.
+   Le restant se déduit des régularisations déjà rattachées : l'écart, lui, est
+   figé et ne bouge pas (c'est sa raison d'être), donc sans cette soustraction
+   rejouer l'opération doublerait la correction.
+3. **Datée du jour de la décision** — antidater réécrirait par la bande un
+   contrôle déjà rendu.
+
+Le motif est obligatoire : une régularisation sans cause écrite est exactement
+ce que la décision cherche à empêcher.
+
+### Ce que j'ai écrit dans la notice, et qui ne peut pas être codé
+
+**Régulariser est le dernier recours, pas le premier.** Un excédent de 311,46 €
+veut dire que de l'argent est entré sans être saisi. La marche à suivre est de
+retrouver et saisir les écritures manquantes, chacune à sa date et dans sa
+catégorie ; le solde théorique rejoint alors la caisse réelle **écriture par
+écriture**, et l'écart s'explique au lieu d'être soldé. L'outil ne peut pas
+imposer cet ordre — la notice le dit (§7 bis), la borne fait le reste.
+
+### Détail d'implémentation à ne pas reproduire de travers
+
+`regularise_variance` prend le `CashCount` **en paramètre** plutôt que de le lire
+par `block.count`. La relation inverse n'est pas peuplée par le `selectin`
+descendant, et un accès paresseux en contexte async lève `MissingGreenlet` — le
+même piège que celui documenté sur la construction du graphe dans
+`declare_count`.
+
+### Vérifications
+
+- 48 tests sur `test_cash_count.py`, dont 10 nouveaux ; suite complète verte.
+- **Sabotage** : basculer la route de `finance:M` à `ventes:M` fait échouer
+  `test_the_route_is_gated_on_the_office_permission`.
+- Le test de page rend l'écran réel **deux fois**, avec un compte `marins` puis
+  un compte siège : le premier lit la consigne et **aucun** lien de
+  régularisation, le second voit le formulaire.
+- Retour arrière de la migration : refuse de s'appliquer s'il reste des
+  régularisations en base, plutôt que d'échouer à mi-parcours ou de supprimer
+  des écritures d'un registre append-only.
+
+### Reste ouvert (inchangé)
+
+`review_count()` (suite *validé* / *contesté* donnée par le siège à un contrôle)
+existe, est testé, et n'est **exposé par aucune route**. Une déclaration partie
+par erreur reste « DÉCLARÉE » indéfiniment. Même sujet, mêmes acteurs — non
+tranché.

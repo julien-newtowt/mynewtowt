@@ -65,8 +65,32 @@ EXPENSE_CATEGORIES: tuple[str, ...] = (
     "autre",
 )
 
-# Union (rétro-compat : import historique de MOVEMENT_CATEGORIES).
+# ── Catégories réservées au siège (ADR-014) ─────────────────────────────────
+#
+# Régulariser un écart de caisse est un **geste du siège, jamais du bord**.
+# Sans cette séparation, un commandant fait disparaître un manquant par un
+# simple « Autre encaissement », indiscernable d'une écriture ordinaire — et le
+# contrôle de caisse perd l'essentiel de sa valeur : il constate un écart que
+# celui qui en répond peut solder lui-même.
+#
+# Ces codes sont **délibérément absents** de INCOME_CATEGORIES et
+# EXPENSE_CATEGORIES : ces deux tuples alimentent la liste déroulante de saisie
+# du bord *et* la validation de la route générique de mouvement (via
+# ``categories_for``). Les en tenir à l'écart suffit donc à fermer la voie du
+# bord, sans garde supplémentaire à ne pas oublier. Le CHECK en base porte, lui,
+# sur l'union — la catégorie doit rester écrivable par la route du siège.
+REGULARISATION_CATEGORIES: tuple[str, ...] = (
+    "regularisation_excedent",
+    "regularisation_manquant",
+)
+
+# Union (rétro-compat : import historique de MOVEMENT_CATEGORIES). Les
+# catégories réservées n'y figurent pas : ce tuple sert de liste *sélectionnable*.
 MOVEMENT_CATEGORIES: tuple[str, ...] = INCOME_CATEGORIES + EXPENSE_CATEGORIES
+
+# Toutes les catégories persistables — c'est elle, et elle seule, que reflète la
+# contrainte ``ck_cashbox_mov_category``.
+ALL_CATEGORIES: tuple[str, ...] = MOVEMENT_CATEGORIES + REGULARISATION_CATEGORIES
 
 CATEGORY_LABELS: dict[str, str] = {
     # Encaissement
@@ -85,18 +109,35 @@ CATEGORY_LABELS: dict[str, str] = {
     "douane": "Formalité douanière",
     "carburant_annexe": "Carburant annexe",
     "autre": "Autre",
+    # Réservées au siège (ADR-014)
+    "regularisation_excedent": "Régularisation d'écart — excédent constaté",
+    "regularisation_manquant": "Régularisation d'écart — manquant constaté",
 }
 
 # Sens d'un code catégorie : "income" (encaissement) | "expense" (décaissement).
 CATEGORY_KIND: dict[str, str] = {
     **dict.fromkeys(INCOME_CATEGORIES, "income"),
     **dict.fromkeys(EXPENSE_CATEGORIES, "expense"),
+    # Le journal doit savoir colorer une régularisation, même si personne ne
+    # peut la choisir dans un formulaire.
+    "regularisation_excedent": "income",
+    "regularisation_manquant": "expense",
 }
 
 
 def categories_for(kind: str) -> tuple[str, ...]:
-    """Codes catégorie autorisés pour un sens de flux."""
+    """Codes catégorie **sélectionnables** pour un sens de flux.
+
+    Ne renvoie jamais les catégories réservées au siège (ADR-014) : cette
+    fonction sert à la fois à peupler la liste déroulante du bord et à valider
+    la route générique de mouvement. Une régularisation ne s'obtient que par sa
+    route dédiée, sous ``finance:M``.
+    """
     return INCOME_CATEGORIES if kind == "income" else EXPENSE_CATEGORIES
+
+
+def is_regularisation(category: str) -> bool:
+    return category in REGULARISATION_CATEGORIES
 
 
 class OnboardCashbox(Base):
@@ -181,6 +222,13 @@ class CashboxMovement(Base):
     cash_count_id: Mapped[int | None] = mapped_column(
         ForeignKey("cash_counts.id", ondelete="SET NULL"), index=True
     )
+    # Rattachement d'une **régularisation** à l'écart qu'elle solde (ADR-014).
+    # Volontairement distinct de `cash_count_id` juste au-dessus, qui dit « gelé
+    # PAR ce contrôle » : les confondre ferait passer une régularisation pour un
+    # mouvement verrouillé, et un mouvement gelé pour une régularisation.
+    settles_cash_count_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cash_counts.id", ondelete="SET NULL"), index=True
+    )
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     cashbox: Mapped[OnboardCashbox] = relationship(back_populates="movements")
@@ -202,9 +250,7 @@ class CashboxMovement(Base):
             name="ck_cashbox_mov_currency",
         ),
         CheckConstraint(
-            "category IN ("
-            + ", ".join(f"'{c}'" for c in INCOME_CATEGORIES + EXPENSE_CATEGORIES)
-            + ")",
+            "category IN (" + ", ".join(f"'{c}'" for c in ALL_CATEGORIES) + ")",
             name="ck_cashbox_mov_category",
         ),
     )

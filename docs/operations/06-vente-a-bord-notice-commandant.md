@@ -229,11 +229,16 @@ sa raison d'être. Il se corrige en **remettant les écritures manquantes** :
    **vraie date d'effet** et sa catégorie (« Vente à bord », « Dépôt / recharge
    de caisse », « Remboursement / avoir »…), justificatif à l'appui. Le solde
    théorique rejoint alors la caisse réelle, écriture par écriture.
-3. **Seul le reliquat vraiment inexplicable** se solde par un mouvement
-   « **Autre encaissement** » (excédent) ou « **Autre** » (manquant), dont la
-   description doit dire ce qu'elle est — par exemple : *« Régularisation
-   d'écart de caisse constaté au 29/08/2026, état n° 12, cause non
-   identifiée »*. Signalez-le au siège dans le même geste.
+3. **Seul le reliquat vraiment inexplicable** se régularise — et **ce n'est pas
+   à vous de le faire** (ADR-014). Signalez l'écart au siège en indiquant ce que
+   vous avez déjà vérifié à bord ; le siège passe la régularisation depuis
+   l'écran de votre contrôle de caisse. Vous y verrez ensuite ce qui a été
+   régularisé et ce qui reste.
+
+   > Pourquoi cette séparation : vous détenez la caisse et vous en déclarez
+   > l'état. Si vous pouviez en plus effacer l'écart entre les deux, le contrôle
+   > ne contrôlerait plus rien — c'est la même règle que pour le remboursement
+   > d'une vente, qui est aussi un geste du siège.
 
 > ⚠️ Ces mouvements **ne réécrivent pas** le contrôle déjà déclaré : ils
 > apparaîtront dans le suivant, qui doit alors tomber juste. Et si la période

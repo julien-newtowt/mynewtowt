@@ -419,7 +419,9 @@ préférences de style.
   quel segment. Verrouillé par un test.
 - **Arbitrages tranchés le 2026-08-27** : `ADR-011` (espèces ≠ CB),
   `ADR-012` (cloisonnement par navire), `ADR-013` (remboursement, valeur du
-  registre, gel à la relève). Les lire avant de rouvrir l'un de ces sujets.
+  registre, gel à la relève) — et le 2026-08-30 : `ADR-014` (régularisation
+  d'un écart de caisse, geste du siège). Les lire avant de rouvrir l'un de ces
+  sujets.
 
 ### Caisse de bord — contrôle et détenteur
 
@@ -448,6 +450,17 @@ préférences de style.
   `cashbox.as_movement_date` ramène toute date d'effet à minuit UTC. Conserver
   une heure donnait la précision de la *saisie*, pas celle de l'opération.
   Le tri se départage ensuite par ordre de saisie (`id`).
+- **Régulariser un écart de caisse est un geste du siège** (ADR-014), jamais du
+  bord : celui qui détient la caisse et en déclare l'état ne peut pas, en plus,
+  effacer l'écart entre les deux. Les catégories `regularisation_excedent` /
+  `regularisation_manquant` sont **hors de `INCOME_CATEGORIES` /
+  `EXPENSE_CATEGORIES`** — ces tuples alimentent la liste du bord *et*
+  `categories_for`, donc la validation de la route générique : les en tenir à
+  l'écart ferme la voie du bord en un seul point. La route dédiée est sous
+  `finance:M`, l'écriture est adossée à l'écart qu'elle solde
+  (`settles_cash_count_id`, distinct de `cash_count_id` qui dit « gelé *par* »),
+  bornée par cet écart, de son sens, et datée du jour de la décision. Régulariser
+  est le **dernier** recours : on retrouve d'abord les écritures manquantes.
 - **Rectifier un mouvement se fait par contre-écriture**, jamais par
   modification : le grand livre n'a ni UPDATE ni DELETE, et une écriture passée
   fait foi. `cashbox.reverse_movement` ajoute un mouvement opposé daté du jour
@@ -548,7 +561,7 @@ préférences de style.
 | KPI | `/kpi` | ✅ vue KPI consolidée + Carbon Report par leg (intensités t·nm) ; **certificats CO₂ = label Anemos** (par booking + RSE annuel) |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
-| Cashbox | `/cashbox` | ✅ EUR/USD/VND · mouvements datés à la **journée** (pas d'heure) · **contrôle de caisse** : état déclaré par le commandant coupure par coupure à chaque fin d'embarquement et fin de mois, écarts figés et historisés (`cash_counts`) |
+| Cashbox | `/cashbox` | ✅ EUR/USD/VND · mouvements datés à la **journée** (pas d'heure) · **contrôle de caisse** : état déclaré par le commandant coupure par coupure à chaque fin d'embarquement et fin de mois, écarts figés et historisés (`cash_counts`) · **régularisation d'écart réservée au siège** (`finance:M`, ADR-014) |
 | Vente à bord | `/captain/ventes` | 🟡 **Boucle de correction en place, pas encore éprouvé à bord** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` a `ventes:CM` par défaut dans la matrice — aucun override requis. Remboursement (siège, par contre-passation), contrôle de caisse, gel à la relève, reçu PDF, vente rapide espèces rejouable hors connexion et rectification d'un mouvement de caisse livrés. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
 | RH (SIRH) | `/rh` | ✅ congés marins + SIRH sédentaires : dossier/CRUD/import, contrats & avenants + alertes, congés/absences + self-service `/rh/moi`, EVP + verrouillage période, export Silae CSV + journal des lots, coffre-fort bulletins + entretiens + reporting RH (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |
 | Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |
@@ -641,6 +654,9 @@ préférences de style.
 - **Ne jamais chiffrer depuis un chemin public** — la vitrine dépose une
   demande, elle n'affiche pas de prix.
 - Pas de route d'écriture sur `rate_offer_revisions` autre que l'insertion.
+- **Ne jamais ouvrir au bord la régularisation d'un écart de caisse** (ADR-014) :
+  ni catégorie ajoutée à `INCOME_CATEGORIES` / `EXPENSE_CATEGORIES`, ni route
+  sous `ventes:M`. Qui déclare l'écart ne le solde pas.
 - **Jamais de seuil métier MRV en littéral** — toujours `validation_engine.get_threshold`
   (paramétrable en base, override navire, fail-closed).
 - Pas de **module ERP** passengers (disparu en v3.0.0 : pas de modèle, pas
