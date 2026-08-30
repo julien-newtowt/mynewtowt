@@ -139,9 +139,16 @@ CATALOG: dict[str, str] = {
     "devis_hero_kicker": "Estimation tarifaire",
     "devis_hero_title": "Demandez votre estimation tarifaire",
     "devis_hero_lead": "Décrivez votre expédition, notre équipe commerciale vous adresse une estimation chiffrée sous 4 heures ouvrées. Nos clients sous contrat estiment en libre-service depuis leur extranet.",
-    "devis_hero_lead_client": " — et sur votre grille négociée si vous en avez une",
+    "devis_hero_lead_client": (
+        " — mais cette page n'affiche aucun tarif : obtenez un chiffrage immédiat"
+        " sur vos grilles actives depuis votre espace client"
+    ),
     "devis_logged_in_pre": "Connecté :",
-    "devis_logged_in_post": "— votre grille tarifaire s'applique si elle existe.",
+    "devis_logged_in_post": (
+        "— cette demande n'affiche aucun tarif ; vos estimations tarifaires"
+        " immédiates vous attendent dans votre espace client."
+    ),
+    "devis_goto_estimations": "Obtenir un chiffrage immédiat dans mon espace client →",
     "devis_step1_route": "La route",
     "devis_departure_planned": "Départ prévu :",
     "devis_change_route": "Changer de route",

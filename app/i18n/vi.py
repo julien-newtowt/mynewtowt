@@ -139,9 +139,16 @@ CATALOG: dict[str, str] = {
     "devis_hero_kicker": "Ước tính giá cước",
     "devis_hero_title": "Yêu cầu ước tính giá cước",
     "devis_hero_lead": "Nhận ngay một báo giá tham khảo, không cần tạo tài khoản. Phép tính dựa trên bảng giá của tuyến đường",
-    "devis_hero_lead_client": " — và trên bảng giá đã thương lượng của bạn nếu bạn có",
+    "devis_hero_lead_client": (
+        " — nhưng trang này không hiển thị bất kỳ mức giá nào: nhận báo giá"
+        " tức thì trên bảng giá đang áp dụng của bạn từ khu vực khách hàng"
+    ),
     "devis_logged_in_pre": "Đã đăng nhập:",
-    "devis_logged_in_post": "— bảng giá của bạn sẽ được áp dụng nếu có.",
+    "devis_logged_in_post": (
+        "— yêu cầu này không hiển thị bất kỳ mức giá nào; các ước tính giá"
+        " tức thì của bạn đang chờ trong khu vực khách hàng."
+    ),
+    "devis_goto_estimations": "Nhận báo giá tức thì trong khu vực khách hàng của tôi →",
     "devis_step1_route": "Tuyến đường",
     "devis_departure_planned": "Khởi hành dự kiến:",
     "devis_change_route": "Đổi tuyến đường",

@@ -188,7 +188,26 @@ changement de modèle de données**. Suite complète : 2905 tests verts.
   (2). Limite connue : une erreur 400 sous HTMX (escale verrouillée entre
   deux gestes) n'affiche pas encore de toast d'erreur — repli : recharger.
 
-### Phase 2 — Journal documents & événements d'escale · risque 🟡 Modéré
+### Phase 2 — Journal documents & événements d'escale · risque 🟡 Modéré · ✅ **LIVRÉE le 2026-08-30** (périmètre amendé §9.3 + §10.4 inclus)
+
+> **Livré** : journal d'escale unifié `/escale/legs/{id}/journal`
+> (timeline bord + terre : statut, SOF, opérations réelles, documents,
+> transitions BL, PJ, tickets, sinistres, verrous — filtrable, groupée
+> par jour) + rapprochement des deux SOF ; compteurs BL par état et
+> sinistres au cockpit + alerte croisée inverse ; liens Journal/Sinistres
+> depuis l'espace bord (gardés par permission) ; maillage cargo (bandeau
+> contexte voyage sur la fiche PL, colonnes + filtre leg sur l'index,
+> liens croisés PL ↔ escale ↔ bord ↔ BL) ; espace client (changement de
+> mot de passe réel, liens compte honnêtes, entrée Facturation, copie
+> `/devis` corrigée dans les 5 langues + lien estimations, titres topbar
+> complets, bloc « En mer actuellement », gating des boutons sinistres
+> côté bord, suppression du layout public mort).
+> **Écarts assumés** : PJ multiples par document cargo différées
+> (nécessitent une migration — hors engagement « aucune migration » des
+> 3 phases) ; rapprochement SOF limité aux 7 actions synchronisables ;
+> aucune décision produit préemptée (matrice de permissions intacte,
+> RGPD = demande via contact, pas de 301 sur les anciennes routes BL).
+> Contenu initialement prévu ci-dessous, conservé pour référence :
 
 - **Timeline unifiée** de l'escale (lecture) : événements SOF + opérations
   réelles + documents cargo signés + pièces jointes agent + poses ATA/ATD

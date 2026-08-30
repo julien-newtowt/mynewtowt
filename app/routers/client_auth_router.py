@@ -32,12 +32,15 @@ from app.auth import (
     create_client_session,
     decode_client_mfa_pending,
     decode_client_mfa_trusted,
+    get_current_client,
+    hash_password,
     verify_password,
 )
 from app.database import get_db
 from app.models.client_account import ClientAccount
 from app.services import device_detection, mfa, rate_limit, security_alerts
 from app.services.activity import record as activity_record
+from app.services.client_account import MIN_PASSWORD_LENGTH
 from app.templating import templates
 
 # Hash bcrypt fictif (vrai bcrypt cost=12) utilisé pour égaliser le temps
@@ -387,6 +390,99 @@ async def register(
     redirect = RedirectResponse(url="/me", status_code=303)
     redirect.set_cookie(value=token, **cookie_kwargs_for_client(request))
     return redirect
+
+
+@router.get("/me/account/password", response_class=HTMLResponse)
+async def client_password_change_form(
+    request: Request,
+    client=Depends(get_current_client),
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "client/password_change.html",
+        {"request": request, "client": client, "error": None},
+    )
+
+
+@router.post("/me/account/password", response_class=HTMLResponse)
+async def client_password_change(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    client=Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    ip = _client_ip(request) or "unknown"
+
+    # Rate-limit persistant par compte — freine le bruteforce du mot de passe
+    # actuel (même mécanique que le login, cf. en-tête de fichier).
+    if await rate_limit.exceeded(
+        db,
+        scope="client_password_change",
+        identifier=str(client.id),
+        max_attempts=5,
+        window_minutes=15,
+    ):
+        return templates.TemplateResponse(
+            "client/password_change.html",
+            {
+                "request": request,
+                "client": client,
+                "error": "Trop de tentatives — patientez 15 minutes.",
+            },
+            status_code=429,
+        )
+
+    if not verify_password(current_password, client.hashed_password):
+        await rate_limit.record(db, scope="client_password_change", identifier=str(client.id))
+        return templates.TemplateResponse(
+            "client/password_change.html",
+            {"request": request, "client": client, "error": "Mot de passe actuel incorrect."},
+            status_code=400,
+        )
+    if new_password != confirm_password:
+        return templates.TemplateResponse(
+            "client/password_change.html",
+            {
+                "request": request,
+                "client": client,
+                "error": "Les deux nouveaux mots de passe diffèrent.",
+            },
+            status_code=400,
+        )
+    if len(new_password) < MIN_PASSWORD_LENGTH:
+        return templates.TemplateResponse(
+            "client/password_change.html",
+            {
+                "request": request,
+                "client": client,
+                "error": (
+                    f"Le mot de passe doit contenir au moins {MIN_PASSWORD_LENGTH} caractères."
+                ),
+            },
+            status_code=400,
+        )
+
+    client.hashed_password = hash_password(new_password)
+    await db.flush()
+    await activity_record(
+        db,
+        action="client_password_change",
+        user_name=client.email,
+        module="booking",
+        entity_type="client_account",
+        entity_id=client.id,
+        ip_address=ip,
+    )
+    # Alerte email best-effort — même helper que côté staff, silencieux sans SMTP.
+    if client.email:
+        await security_alerts.notify_password_changed(
+            to_email=client.email,
+            recipient_name=client.contact_name or client.company_name or client.email,
+            ip=ip,
+            ua=request.headers.get("user-agent"),
+        )
+    return RedirectResponse(url="/me/account?password_changed=1", status_code=303)
 
 
 @router.get("/me/logout")

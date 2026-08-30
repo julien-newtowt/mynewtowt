@@ -78,6 +78,48 @@ async def dashboard(
     # Alertes proactives affichées dès la connexion (retard / décalage ETA…).
     all_notifs = await notifications.list_for(db, client_id=client.id, limit=20)
     alert_items = [n for n in all_notifs if not n.is_read][:5]
+
+    # K-5 — « En mer actuellement » : une ligne par traversée du client dont le
+    # leg est en mer (statut booking `at_sea`, même convention que `_VOYAGE_STARTED`
+    # / le suivi `/me/track`). ETA = `leg.eta` (courante, pas `eta_ref`).
+    at_sea_crossings: list[dict] = []
+    at_sea_bookings = [b for b in bookings if b.status == "at_sea"]
+    if at_sea_bookings:
+        leg_ids = {b.leg_id for b in at_sea_bookings}
+        legs_by_id = {
+            leg_row.id: leg_row
+            for leg_row in (
+                (await db.execute(select(Leg).where(Leg.id.in_(leg_ids)))).scalars().all()
+            )
+        }
+        port_ids = {
+            pid
+            for leg_row in legs_by_id.values()
+            for pid in (leg_row.departure_port_id, leg_row.arrival_port_id)
+        }
+        ports_by_id = (
+            {
+                port_row.id: port_row
+                for port_row in (
+                    (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()
+                )
+            }
+            if port_ids
+            else {}
+        )
+        for b in at_sea_bookings:
+            leg_row = legs_by_id.get(b.leg_id)
+            if leg_row is None:
+                continue
+            at_sea_crossings.append(
+                {
+                    "reference": b.reference,
+                    "pol": ports_by_id.get(leg_row.departure_port_id),
+                    "pod": ports_by_id.get(leg_row.arrival_port_id),
+                    "eta": leg_row.eta,
+                }
+            )
+
     return templates.TemplateResponse(
         "client/dashboard.html",
         {
@@ -88,6 +130,7 @@ async def dashboard(
             "co2_avoided_kg": float(co2_avoided or 0),
             "notif_unread": notif_unread,
             "alert_items": alert_items,
+            "at_sea_crossings": at_sea_crossings,
         },
     )
 

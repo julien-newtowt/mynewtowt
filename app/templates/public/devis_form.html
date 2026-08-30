@@ -24,6 +24,9 @@
 
     {% if client %}
     <p class="pill">{{ t('devis_logged_in_pre', lang) }} {{ client.company_name }} {{ t('devis_logged_in_post', lang) }}</p>
+    <p style="margin-bottom:var(--sp-5);">
+      <a class="btn btn-secondary" href="/me/estimations">{{ t('devis_goto_estimations', lang) }}</a>
+    </p>
     {% endif %}
 
     <form method="POST" action="/devis" novalidate>

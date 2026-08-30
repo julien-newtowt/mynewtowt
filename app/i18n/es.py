@@ -139,9 +139,16 @@ CATALOG: dict[str, str] = {
     "devis_hero_kicker": "Estimación tarifaria",
     "devis_hero_title": "Solicite su estimación tarifaria",
     "devis_hero_lead": "Obtén de inmediato una cotización indicativa, sin crear cuenta. El cálculo se basa en la tarifa de la ruta",
-    "devis_hero_lead_client": " — y en tu tarifa negociada si tienes una",
+    "devis_hero_lead_client": (
+        " — pero esta página no muestra ningún precio: obtén un cálculo"
+        " inmediato sobre tus tarifas activas desde tu área de cliente"
+    ),
     "devis_logged_in_pre": "Conectado:",
-    "devis_logged_in_post": "— tu tarifa se aplica si existe.",
+    "devis_logged_in_post": (
+        "— esta solicitud no muestra ningún precio; tus estimaciones"
+        " tarifarias inmediatas te esperan en tu área de cliente."
+    ),
+    "devis_goto_estimations": "Obtener un cálculo inmediato en mi área de cliente →",
     "devis_step1_route": "La ruta",
     "devis_departure_planned": "Salida prevista:",
     "devis_change_route": "Cambiar de ruta",

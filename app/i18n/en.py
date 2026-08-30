@@ -139,9 +139,16 @@ CATALOG: dict[str, str] = {
     "devis_hero_kicker": "Rate estimate",
     "devis_hero_title": "Request your rate estimate",
     "devis_hero_lead": "Get an indicative quote right away, no account required. The calculation is based on the route's rate grid",
-    "devis_hero_lead_client": " — and on your negotiated grid if you have one",
+    "devis_hero_lead_client": (
+        " — but this page shows no pricing: get an instant quote on your active"
+        " rate grids from your customer area"
+    ),
     "devis_logged_in_pre": "Signed in:",
-    "devis_logged_in_post": "— your rate grid applies if it exists.",
+    "devis_logged_in_post": (
+        "— this request shows no pricing; your instant rate estimates are"
+        " waiting in your customer area."
+    ),
+    "devis_goto_estimations": "Get an instant quote in my customer area →",
     "devis_step1_route": "The route",
     "devis_departure_planned": "Planned departure:",
     "devis_change_route": "Change route",
