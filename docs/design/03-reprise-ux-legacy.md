@@ -297,3 +297,94 @@ création, escalade idempotente, commentaires interne/public, assignation.
 *Rapports d'audit détaillés (routes, composants, sources) produits en
 session le 2026-08-30 ; synthèses conservées avec ce document. Maquettes :
 voir le canvas de design « Reprise UX escale » partagé avec ce plan.*
+
+---
+
+## 9. Audits complémentaires du 2026-08-30 — Sinistres & Marchandises
+
+À la demande de Julien, deux audits ciblés ont complété le périmètre
+initial (qui couvrait escale, bord/SOF, tickets et design system). Même
+méthode que §2 : inventaire des routes, structure UX réelle des écrans,
+invariants, écarts. Verdict commun : **fonctionnel complet et verrouillé
+par les tests de parité ; le travail restant est de la navigation, de la
+densité d'écran et de l'interaction** — le même profil que l'escale
+avant la Phase 1.
+
+### 9.1 Sinistres (`/claims` — 14 routes, 4 écrans)
+
+Fonctionnel préservé (matrice de non-perte) : workflow 6 statuts +
+notifications aux transitions clés ; SOF `CLAIM_DECLARED` automatique ;
+rattachements leg/booking/marin ; provision + historique complet des
+révisions ; lien contrat d'assurance structuré avec repli libre ; pièces
+jointes 6 types (`safe_files`) ; auto-position cale + deep-link stowage ;
+reporting `/claims/stats` + CSV ; carte KPI consolidé ; `activity_record`
+partout ; référence `CLM-YYYY-NNNN`.
+
+Constats à reprendre :
+
+| # | Constat | Reprise |
+|---|---|---|
+| C-F1 | **Bug de permission** : `/onboard/navigation` affiche « Sinistres du leg » / « Déclarer un sinistre » au rôle `marins`, qui n'a AUCUNE entrée `claims` dans la matrice → 403 garanti pour le commandant, unique public de ces boutons | **Quick-fix Phase 2**, mais décision sécurité à valider avant : accorder `("marins","claims")` ouvre les sinistres de toute la flotte (les routes claims n'ont pas `assert_vessel_access` — à articuler avec ADR-012) |
+| C-F2 | Un sinistre déclaré pendant l'escale est invisible depuis le cockpit `/escale` | Phase 2 : entrées `CLAIM_DECLARED` dans le journal + compteur « sinistres du leg » + lien `/claims?leg_id=` |
+| C-F3 | `/captain` n'a aucun lien vers `/claims` (seul `/onboard/navigation` en a) | Phase 2, avec C-F1 |
+| C-F4 | 9 actions d'écriture en rechargement complet (zéro HTMX) | Phase 3 : patron Phase 1 (204 + `HX-Trigger`), en commençant par note timeline et upload PJ |
+| C-F5 | `detail.html` : `badge-{{ status }}` sans classe CSS pour 5 statuts sur 6 (badge non stylé) | Phase 3 (mapping comme `index.html` ou classes ajoutées) |
+| C-F6 | Formulaires permanents jamais repliés (contre-pattern Phase 1) | Phase 3 (`<details>`) |
+| C-F7 | Aucune validation de transition de statut (tout → tout), contrairement aux tickets | À trancher avec le métier avant tout dev |
+
+Écarts fonctionnels encore ouverts (chantier fonctionnel, PAS de l'UX —
+hors des 3 phases, à prioriser séparément si le produit le veut) :
+détail financier **par sinistre** (franchise/indemnité/reste-à-charge —
+seuls provision/réglé existent ; la franchise ne vit qu'agrégée au KPI
+via le contrat), lien `order_assignment` (rattachement marchandise
+indirect via position cale), timeline 9 types + PJ par entrée (5 types,
+PJ globales). ⚠️ `AUDIT_CLAIMS_ECGT.md` est un faux ami (claims
+marketing ECGT, pas les sinistres). ⚠️ Génération de référence par
+`count()` non atomique (collision théorique sous concurrence).
+
+### 9.2 Marchandises (cargo staff + portail token + workflow BL + stowage)
+
+Fonctionnel préservé : backlog CARGO-01→14 vérifié ligne à ligne comme
+soldé ; invariants du workflow BL tous en place et protégés par
+contraintes/tests — XOR order/booking, leg épinglé + repli `coalesce`,
+gel à la signature (pas à l'émission), régression `client_validated →
+draft` sur toute édition (staff, portail, Excel), séquence de numéros
+jamais décroissante, hash SHA-256 + refus d'émission si altéré, SOB
+dérivé du réel avec override justifié, **révision = document versionné,
+jamais un nouveau lot**, registre de remise 3 canaux (téléchargement ≠
+réception), import Excel en upsert refusé en bloc si lot gelé, portail
+anonyme par conception.
+
+Constats à reprendre :
+
+| # | Constat | Reprise |
+|---|---|---|
+| M-A/B/D/I | Navigation à sens unique : le cockpit escale lie vers les PL, mais depuis une PL aucun lien vers l'escale, `/captain`, `/captain/bl`, ni même la commande (`order.reference` non cliquable) ; `/captain/bl` ne lie pas la fiche PL | Phase 2 : bandeau de contexte voyage en tête de `packing_list_detail.html` (leg_code, navire, POL→POD, liens croisés) + lien PL depuis `/captain/bl` |
+| M-C | Index `/cargo/packing-lists` sans leg ni navire (seul `order_id` brut) | Phase 2 : colonne leg_code (résolution COM-11 déjà factorisée) + filtre `build_leg_filter` |
+| M-E | Le cockpit escale compte les `CargoDocument` mais **aucun compteur BL** (draft / à valider / signés) | Phase 2 : étendre `docs_sof` avec `bl_workflow.batches_for_leg` (déjà exposé) |
+| M-5 | Deux systèmes documentaires (docs cargo guidés vs workflow BL) jamais articulés à l'écran | Phase 2 : transitions BL dans le journal unifié (`activity_logs` `entity_type="packing_batch"` existe déjà) |
+| M-1/2/3 | Zéro HTMX sur tout le périmètre ; `packing_list_detail.html` (360 l.) monolithe sans sous-nav ; formulaire d'ajout de batch permanent | Phase 3 : patron Phase 1 (HTMX + sous-nav collante + `<details>`) — **revue terrain cargo au préalable**, comme pour l'escale |
+| M-G | Export Excel absent côté portail (template vide seulement) | Phase 3 (réutilise `cargo_excel.export_packing_list_xlsx`) |
+| M-H | Filtre `<select>` inerte sur `/captain/bl` (CSP) — pattern signalé « existant sur 4 écrans » | Phase 3 (auto-soumission `hx-get`, ticket transverse) |
+| M-F | **Décision produit** : le portail token (rail commande) promet « Recevoir le Bill of Lading » mais n'a aucune route pour le montrer — seul le rail booking authentifié (`/me/bookings/{ref}/bls`) l'expose | Backlog à arbitrer : exposer `/p/{token}/bl` en lecture (mêmes précautions d'anonymat), OU corriger le texte d'accueil |
+| M-4 | Split Import/Export non repris sur les batches (tokens dispo) | Backlog optionnel — à valider avec les Opérations avant d'investir |
+
+### 9.3 Phases amendées
+
+- **Phase 2** (journal d'escale) devient **« journal & maillage du
+  dossier voyage »** : timeline unifiée SOF + opérations + documents
+  cargo + **transitions BL** + **sinistres (`CLAIM_DECLARED`)** + PJ +
+  verrous ; rapprochement des deux SOF ; compteurs BL et sinistres au
+  cockpit ; bandeau de contexte voyage sur la fiche PL + liens croisés
+  PL ↔ escale ↔ bord ↔ commande ; quick-fix permission `marins`/claims
+  (après validation du point sécurité C-F1).
+- **Phase 3** (format des pages) absorbe : HTMX cargo + claims, sous-nav
+  fiche PL, formulaires repliés (batch, claims), badges statuts claims,
+  export Excel portail, filtres `<select>` inertes.
+- **Backlog produit à arbitrer** (hors phases) : BL self-service du rail
+  commande (M-F), détail financier par sinistre + `order_assignment`
+  (ex-ONB-06 partiel), machine à états claims (C-F7), split I/E des
+  batches (M-4).
+
+Maquettes : planches « Fiche sinistre » et « Fiche packing list »
+ajoutées au canvas « Reprise UX Escale ».
