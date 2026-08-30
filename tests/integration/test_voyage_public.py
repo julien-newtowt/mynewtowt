@@ -185,8 +185,8 @@ async def test_voyage_public_toggle_on_off_and_ownership(db):
     await db.flush()
     with pytest.raises(HTTPException):
         await booking_voyage_public_toggle(
-                _Req(), booking.reference, enabled="on", client=intruder, db=db
-            )
+            _Req(), booking.reference, enabled="on", client=intruder, db=db
+        )
 
 
 # ───────────────────── page publique ─────────────────────
