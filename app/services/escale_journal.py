@@ -76,8 +76,21 @@ _BL_STATE_LABELS = {
 }
 
 
-async def build_journal(db: AsyncSession, leg: Leg) -> list[JournalEntry]:
-    """Chronologie unifiée du leg, triée du plus ancien au plus récent."""
+async def build_journal(
+    db: AsyncSession,
+    leg: Leg,
+    *,
+    operations: list[EscaleOperation] | None = None,
+    sof_events: list[SofEvent] | None = None,
+) -> list[JournalEntry]:
+    """Chronologie unifiée du leg, triée du plus ancien au plus récent.
+
+    ``operations`` / ``sof_events`` sont optionnels : un appelant qui les a
+    déjà chargés (ex. la route de journal, pour les réutiliser ensuite dans
+    ``sof_reconciliation`` sans re-SELECT) peut les passer ici plutôt que de
+    laisser cette fonction refaire la requête. ``None`` (par défaut) déclenche
+    le chargement habituel — comportement inchangé pour tout appelant existant.
+    """
     entries: list[JournalEntry] = []
 
     # ── Statut portuaire + verrous/clôture (portés par le leg) ──────────
@@ -137,9 +150,10 @@ async def build_journal(db: AsyncSession, leg: Leg) -> list[JournalEntry]:
     )
 
     # ── Événements SOF (bord) ────────────────────────────────────────────
-    sof_events = (
-        (await db.execute(select(SofEvent).where(SofEvent.leg_id == leg.id))).scalars().all()
-    )
+    if sof_events is None:
+        sof_events = (
+            (await db.execute(select(SofEvent).where(SofEvent.leg_id == leg.id))).scalars().all()
+        )
     for ev in sof_events:
         signed = ev.signed_at is not None
         _entry(
@@ -157,11 +171,12 @@ async def build_journal(db: AsyncSession, leg: Leg) -> list[JournalEntry]:
         )
 
     # ── Opérations d'escale réelles (terre) ─────────────────────────────
-    operations = (
-        (await db.execute(select(EscaleOperation).where(EscaleOperation.leg_id == leg.id)))
-        .scalars()
-        .all()
-    )
+    if operations is None:
+        operations = (
+            (await db.execute(select(EscaleOperation).where(EscaleOperation.leg_id == leg.id)))
+            .scalars()
+            .all()
+        )
     for op in operations:
         base = f"{op.action}" + (f" — {op.label}" if op.label else "")
         who = f"Intervenant : {op.intervenant}" if op.intervenant else op.operation_type

@@ -66,7 +66,7 @@ async def kanban(
         logger.exception("SLA escalation failed during kanban load")
 
     columns = await list_for_kanban(db, leg_id=leg_id, priority=priority, category=category)
-    s = await ticket_stats(db)
+    s = await ticket_stats(db, leg_id=leg_id)
 
     selected_leg = await db.get(Leg, leg_id) if leg_id else None
     return templates.TemplateResponse(

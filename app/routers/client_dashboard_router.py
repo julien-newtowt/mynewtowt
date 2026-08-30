@@ -12,7 +12,6 @@ Routes :
 from __future__ import annotations
 
 import base64
-import json
 import mimetypes
 from datetime import UTC, datetime
 
@@ -46,6 +45,7 @@ from app.services import documents as documents_svc
 from app.services import hold_conditions as hold_conditions_svc
 from app.services.activity import record as activity_record
 from app.services.booking import find_by_reference, list_for_client
+from app.services.hx import mutation_response
 from app.services.vessel_position import get_latest_position
 from app.templating import templates
 
@@ -62,23 +62,16 @@ router = APIRouter(tags=["client-dashboard"])
 def _me_mutation_response(request: Request, redirect_url: str, message: str) -> Response:
     """Réponse standard d'une mutation répétitive de l'espace client.
 
-    Reprise UX Phase 3 (docs/design/03-reprise-ux-legacy.md §10.3, K-4) — même
-    motif que le cockpit escale (``escale_router._mutation_response``) : sous
-    HTMX, on ne recharge plus toute la page — 204 + ``HX-Trigger`` qui (a)
-    affiche le toast (toast.js) et (b) déclenche ``meRefresh``, écouté par le
-    wrapper de section de la page qui se re-remplit via ``hx-get`` + ``hx-select``
-    sur elle-même. Sans JS : redirect 303 classique, inchangé.
+    Wrapper d'une ligne sur ``services.hx.mutation_response`` (même motif que
+    le cockpit escale, ``escale_router._mutation_response``) — conservé pour
+    ne pas retoucher tous les call sites de ce routeur.
     """
-    if request.headers.get("hx-request"):
-        return Response(
-            status_code=204,
-            headers={
-                "HX-Trigger": json.dumps(
-                    {"toast": {"message": message, "type": "success"}, "meRefresh": True}
-                )
-            },
-        )
-    return RedirectResponse(url=redirect_url, status_code=303)
+    return mutation_response(
+        request,
+        redirect_url=redirect_url,
+        message=message,
+        refresh_event="meRefresh",
+    )
 
 
 @router.get("/me", response_class=HTMLResponse)

@@ -14,6 +14,7 @@ KAIROS_CSS = Path(__file__).resolve().parents[2] / "app" / "static" / "css" / "k
 BASE_HTML = Path(__file__).resolve().parents[2] / "app" / "templates" / "base.html"
 TOPBAR_HTML = Path(__file__).resolve().parents[2] / "app" / "templates" / "staff" / "_topbar.html"
 DENSITY_JS = Path(__file__).resolve().parents[2] / "app" / "static" / "js" / "density.js"
+TOAST_JS = Path(__file__).resolve().parents[2] / "app" / "static" / "js" / "toast.js"
 
 
 def _kairos_css() -> str:
@@ -114,6 +115,26 @@ def test_density_js_exists_and_has_no_inline_handlers():
     assert "onclick" not in src
     assert "addEventListener" in src
     assert "towt-density" in src
+
+
+# ───────────────────────── toast.js — erreurs 4xx/5xx sous HTMX ─────────────────────────
+
+
+def test_toast_js_handles_htmx_response_error():
+    """Une mutation ``hx-post`` + ``hx-swap="none"`` ne swape jamais sur un
+    non-2xx : sans handler dédié, un 409 (verrou/gel) ou 400 (métier)
+    n'affichait RIEN. ``htmx:responseError`` doit toaster un message, en
+    lisant ``detail`` du corps JSON FastAPI quand présent.
+    """
+    src = TOAST_JS.read_text(encoding="utf-8")
+    assert 'addEventListener("htmx:responseError"' in src
+    assert "detail" in src
+    assert "error" in src
+
+
+def test_toast_js_loaded_globally_via_base_html():
+    base_src = BASE_HTML.read_text(encoding="utf-8")
+    assert "js/toast.js" in base_src
 
 
 # ───────────────────────── Pages d'erreur enrichies ─────────────────────────

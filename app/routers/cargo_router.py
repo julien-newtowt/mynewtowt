@@ -14,8 +14,6 @@ distance after the noon-report data is collected.
 
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
@@ -31,6 +29,7 @@ from app.models.port import Port
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.anemos import resolve_distance_nm
+from app.services.hx import mutation_response
 from app.services.pdf_generator import (
     render_anemos_certificate,
     render_booking_note,
@@ -45,23 +44,19 @@ router = APIRouter(tags=["cargo"])
 def _bl_mutation_response(request: Request, redirect_url: str, message: str) -> Response:
     """Réponse standard d'une mutation du rail BL client (reprise UX Phase 3, K-4).
 
-    Même motif que ``escale_router._mutation_response`` /
-    ``client_dashboard_router._me_mutation_response`` : 204 + ``HX-Trigger``
-    (toast + ``meRefresh``) sous HTMX, 303 classique sinon. Ne change QUE la
-    forme de la réponse — les invariants de validation (XOR client/staff,
-    registre de remise append-only) restent entièrement portés par
-    ``bl_workflow`` / ``bl_delivery``, appelés avant ce retour.
+    Wrapper d'une ligne sur ``services.hx.mutation_response`` (même motif que
+    ``escale_router._mutation_response`` / ``client_dashboard_router._me_mutation_response``)
+    — conservé pour ne pas retoucher tous les call sites de ce routeur. Ne
+    change QUE la forme de la réponse — les invariants de validation (XOR
+    client/staff, registre de remise append-only) restent entièrement portés
+    par ``bl_workflow`` / ``bl_delivery``, appelés avant ce retour.
     """
-    if request.headers.get("hx-request"):
-        return Response(
-            status_code=204,
-            headers={
-                "HX-Trigger": json.dumps(
-                    {"toast": {"message": message, "type": "success"}, "meRefresh": True}
-                )
-            },
-        )
-    return Response(status_code=status.HTTP_303_SEE_OTHER, headers={"Location": redirect_url})
+    return mutation_response(
+        request,
+        redirect_url=redirect_url,
+        message=message,
+        refresh_event="meRefresh",
+    )
 
 
 async def _load_booking_bundle(

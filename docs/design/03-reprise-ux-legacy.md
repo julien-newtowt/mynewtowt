@@ -491,3 +491,13 @@ canaux, Anemos + rapport RSE, kit B2B2C + voyage public opt-in, MFA TOTP
   procédure manuelle (K-1, volets 2-3).
 
 Maquette : planche « Espace client — dashboard cible » ajoutée au canvas.
+
+---
+
+## 11. Bug préexistant relevé pendant la revue (2026-08-30) — hors périmètre PR #167
+
+`services.tickets.is_sla_breached()` compare `sla_target_at` à
+`datetime.now(UTC)` sans normaliser naïf/aware : une valeur naïve en base
+ferait planter tout le kanban (reproduit sous SQLite en test, Postgres non
+affecté aujourd'hui). Antérieur à la reprise UX — à corriger sur une
+branche `fix/` dédiée (coercition naïf → UTC avant comparaison).

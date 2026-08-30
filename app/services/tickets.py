@@ -346,8 +346,18 @@ async def list_for_kanban(
     return bucket
 
 
-async def stats(db: AsyncSession) -> TicketStats:
-    rows = list((await db.execute(select(Ticket))).scalars().all())
+async def stats(db: AsyncSession, leg_id: int | None = None) -> TicketStats:
+    """KPI globaux, ou bornés à ``leg_id`` quand fourni.
+
+    Sans ``leg_id`` : comportement inchangé (flotte entière). Avec : les
+    compteurs (par statut, P1 ouverts, SLA dépassé) ne portent que sur les
+    tickets du leg — évite des KPI globaux contradictoires avec un kanban
+    filtré par leg.
+    """
+    query = select(Ticket)
+    if leg_id is not None:
+        query = query.where(Ticket.leg_id == leg_id)
+    rows = list((await db.execute(query)).scalars().all())
     by_status: dict[str, int] = {}
     p1_open = 0
     breached = 0

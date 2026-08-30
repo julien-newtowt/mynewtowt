@@ -68,4 +68,26 @@
       if (parsed.toast) show(parsed.toast.message, parsed.toast.type);
     } catch (e) { /* not JSON, ignore */ }
   });
+
+  // Mutations shipped as hx-post + hx-swap="none" never swap on a non-2xx
+  // response (htmx only swaps on success), so a 409 (verrou/gel) or 400
+  // (métier) response was silently dropped with no htmx:afterRequest toast
+  // either. Surface it here: FastAPI's HTTPException body is
+  // {"detail": "..."} — toast that verbatim; otherwise fall back to a
+  // generic bilingual message. Same path for 4xx and 5xx: we don't try to
+  // distinguish, there is nothing more useful to say without a body.
+  document.addEventListener("htmx:responseError", function (evt) {
+    var xhr = evt.detail && evt.detail.xhr;
+    var message = null;
+    if (xhr && xhr.responseText) {
+      try {
+        var body = JSON.parse(xhr.responseText);
+        if (body && typeof body.detail === "string") message = body.detail;
+      } catch (e) { /* not JSON, ignore */ }
+    }
+    if (!message) {
+      message = "Action refusée — rechargez la page / Action rejected — reload the page";
+    }
+    show(message, "error");
+  });
 })();

@@ -1,6 +1,7 @@
 {% extends "staff/_layout.html" %}
 {% block title %}Connaissements à signer — {{ brand.nom_court }}{% endblock %}
 {% block content %}
+<div id="bl-page">
 <a href="/captain" class="btn btn-ghost mb-3">← Onboard</a>
 <header class="mb-4">
   <span class="kicker">Commandant</span>
@@ -31,12 +32,15 @@
    `unsafe-inline`, donc PAS de `onchange="this.form.submit()"` (quatre écrans
    existants utilisent ce motif et leurs filtres sont de ce fait inertes —
    signalé, pas reproduit ici). HTMX soumet le formulaire au changement du
-   select ; le bouton « Afficher » reste le repli sans JS. #}
+   select ; le bouton « Afficher » reste le repli sans JS.
+   hx-select/hx-target ciblent #bl-page (pas `body`) : sous htmx 2, une réponse
+   document-complet perd son <body> au makeFragment, donc hx-select="body" ne
+   matche jamais rien (swap vide, page blanche). #}
 <form method="get" action="/captain/bl" class="mb-4">
   <label class="text-sm text-muted" for="leg_id">Leg</label>
   <select name="leg_id" id="leg_id"
           hx-get="/captain/bl" hx-trigger="change" hx-include="closest form"
-          hx-target="body" hx-select="body" hx-swap="innerHTML" hx-push-url="true">
+          hx-select="#bl-page" hx-target="#bl-page" hx-swap="outerHTML" hx-push-url="true">
     {% for l in legs %}
       <option value="{{ l.id }}" {% if selected and l.id == selected.id %}selected{% endif %}>
         {{ l.leg_code }}{% if l.etd %} · ETD {{ l.etd.strftime("%d/%m/%Y") }}{% endif %}
@@ -164,4 +168,5 @@
 {% endif %}
 
 {% endif %}
+</div>
 {% endblock %}

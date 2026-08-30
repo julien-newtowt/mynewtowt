@@ -6,7 +6,6 @@ Workflow status :
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -34,6 +33,7 @@ from app.models.sof_event import SofEvent
 from app.permissions import require_permission
 from app.services import notifications, safe_files
 from app.services.activity import record as activity_record
+from app.services.hx import mutation_response
 from app.services.stowage import zone_label, zones_for_leg
 from app.templating import templates
 
@@ -43,26 +43,16 @@ router = APIRouter(prefix="/claims", tags=["claims"])
 def _mutation_response(request: Request, claim_id: int, message: str) -> Response:
     """Réponse standard d'une mutation de la fiche claim.
 
-    Reprise UX Phase 3 (docs/design/03-reprise-ux-legacy.md §9.1, C-F4) —
-    même motif que le cockpit escale (``escale_router._mutation_response``) :
-    sous HTMX, on ne recharge plus la page — 204 + ``HX-Trigger`` qui (a)
-    affiche le toast (toast.js) et (b) déclenche ``claimsRefresh``, écouté par
-    le conteneur ``#claim-sections`` qui se re-remplit via ``hx-get`` +
-    ``hx-select`` sur la page elle-même. Sans JS : 303 classique.
+    Wrapper d'une ligne sur ``services.hx.mutation_response`` (même motif que
+    le cockpit escale, ``escale_router._mutation_response``) — conservé pour
+    ne pas retoucher tous les call sites de ce routeur.
     """
-    if request.headers.get("hx-request"):
-        return Response(
-            status_code=204,
-            headers={
-                "HX-Trigger": json.dumps(
-                    {
-                        "toast": {"message": message, "type": "success"},
-                        "claimsRefresh": True,
-                    }
-                )
-            },
-        )
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return mutation_response(
+        request,
+        redirect_url=f"/claims/{claim_id}",
+        message=message,
+        refresh_event="claimsRefresh",
+    )
 
 
 @router.get("", response_class=HTMLResponse)

@@ -10,7 +10,6 @@ Reprises de la V3.0.0 :
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import UTC, datetime
 
@@ -47,6 +46,7 @@ from app.services.escale_crew import (
     maybe_create_paf,
 )
 from app.services.escale_journal import JOURNAL_KINDS, build_journal, sof_reconciliation
+from app.services.hx import mutation_response
 from app.services.stowage import occupation_by_hold
 from app.templating import templates
 
@@ -63,25 +63,16 @@ def _escale_locked(leg: Leg) -> bool:
 def _mutation_response(request: Request, leg_id: int, message: str) -> Response:
     """Réponse standard d'une mutation du cockpit escale.
 
-    Reprise UX Phase 1 (docs/design/03-reprise-ux-legacy.md) : sous HTMX,
-    on ne recharge plus la page — 204 + ``HX-Trigger`` qui (a) affiche le
-    toast (toast.js) et (b) déclenche ``escaleRefresh``, écouté par le
-    conteneur ``#escale-sections`` qui se re-remplit via ``hx-get`` +
-    ``hx-select`` sur la page elle-même. Sans JS : 303 classique.
+    Wrapper d'une ligne sur ``services.hx.mutation_response`` (motif Phase 1,
+    docs/design/03-reprise-ux-legacy.md) — conservé pour ne pas retoucher tous
+    les call sites de ce routeur.
     """
-    if request.headers.get("hx-request"):
-        return Response(
-            status_code=204,
-            headers={
-                "HX-Trigger": json.dumps(
-                    {
-                        "toast": {"message": message, "type": "success"},
-                        "escaleRefresh": True,
-                    }
-                )
-            },
-        )
-    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+    return mutation_response(
+        request,
+        redirect_url=f"/escale?leg_id={leg_id}",
+        message=message,
+        refresh_event="escaleRefresh",
+    )
 
 
 def _cockpit_late_op_ids(operations: list[EscaleOperation], now: datetime) -> set[int]:
@@ -1143,7 +1134,19 @@ async def escale_journal_page(
     pol = await db.get(Port, leg.departure_port_id)
     pod = await db.get(Port, leg.arrival_port_id)
 
-    entries = await build_journal(db, leg)
+    # Chargés une seule fois ici, puis réutilisés pour build_journal ET
+    # sof_reconciliation — build_journal ne les re-SELECT plus quand on les
+    # lui passe.
+    operations = list(
+        (await db.execute(select(EscaleOperation).where(EscaleOperation.leg_id == leg_id)))
+        .scalars()
+        .all()
+    )
+    sof_events = list(
+        (await db.execute(select(SofEvent).where(SofEvent.leg_id == leg_id))).scalars().all()
+    )
+
+    entries = await build_journal(db, leg, operations=operations, sof_events=sof_events)
     counts_by_kind = {k: sum(1 for e in entries if e.kind == k) for k in JOURNAL_KINDS}
     selected_kind = kind if kind in JOURNAL_KINDS else None
     if selected_kind:
@@ -1157,14 +1160,6 @@ async def escale_journal_page(
             days.append((day, []))
         days[-1][1].append(e)
 
-    operations = list(
-        (await db.execute(select(EscaleOperation).where(EscaleOperation.leg_id == leg_id)))
-        .scalars()
-        .all()
-    )
-    sof_events = list(
-        (await db.execute(select(SofEvent).where(SofEvent.leg_id == leg_id))).scalars().all()
-    )
     reconciliation = sof_reconciliation(operations, sof_events)
 
     return templates.TemplateResponse(

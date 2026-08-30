@@ -101,3 +101,76 @@ async def test_kanban_without_leg_id_returns_all(db, staff_user):
     body = resp.body.decode()
     assert on_leg.reference in body
     assert off_leg.reference in body
+
+
+@pytest.mark.asyncio
+async def test_stats_leg_id_only_counts_that_leg(db):
+    """``stats(db, leg_id=...)`` ne compte que les tickets rattachés au leg.
+
+    Avant ce lot, le kanban filtré par leg gardait des KPI globaux
+    (``ticket_stats(db)`` sans filtre) : des compteurs P1/SLA contradictoires
+    avec le tableau filtré affiché juste en dessous.
+    """
+    from app.services.tickets import create_ticket, stats
+
+    leg = await _setup_leg(db)
+
+    on_leg = await create_ticket(
+        db,
+        category="incident_cargo",
+        priority="P1",
+        title="P1 rattaché au leg",
+        description="Compté par le filtre",
+        leg_id=leg.id,
+    )
+    off_leg = await create_ticket(
+        db,
+        category="formalite_douane",
+        priority="P1",
+        title="P1 hors leg",
+        description="Ne doit pas être compté quand on filtre",
+    )
+    # Le SLA target est calculé à la création (sla_target()) : le vérifier ici
+    # documente l'attendu et s'assure que les deux tickets sont bien formés
+    # avant d'interroger stats().
+    assert on_leg.sla_target_at is not None
+    assert off_leg.sla_target_at is not None
+
+    filtered = await stats(db, leg_id=leg.id)
+    unfiltered = await stats(db)
+
+    assert filtered.p1_open == 1
+    assert unfiltered.p1_open == 2
+
+
+@pytest.mark.asyncio
+async def test_kanban_route_stats_reflect_leg_filter(db, staff_user):
+    """Le kanban filtré par leg passe des stats bornées au même leg au template."""
+    from app.routers.tickets_router import kanban
+    from app.services.tickets import create_ticket
+
+    leg = await _setup_leg(db)
+
+    on_leg = await create_ticket(
+        db,
+        category="incident_cargo",
+        priority="P1",
+        title="P1 rattaché au leg",
+        description="Compté par le filtre",
+        leg_id=leg.id,
+    )
+    off_leg = await create_ticket(
+        db,
+        category="formalite_douane",
+        priority="P1",
+        title="P1 hors leg",
+        description="Ne doit pas être compté quand on filtre",
+    )
+    assert on_leg.sla_target_at is not None
+    assert off_leg.sla_target_at is not None
+
+    resp_filtered = await kanban(FakeRequest(), leg_id=leg.id, db=db, user=staff_user)
+    resp_unfiltered = await kanban(FakeRequest(), leg_id=None, db=db, user=staff_user)
+
+    assert '<div class="value text-error">1</div>' in resp_filtered.body.decode()
+    assert '<div class="value text-error">2</div>' in resp_unfiltered.body.decode()

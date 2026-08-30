@@ -6,8 +6,6 @@ field-by-field. Verrouillage par un staff après validation côté armateur.
 
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
@@ -26,6 +24,7 @@ from app.models.packing_list import (
 from app.permissions import require_permission
 from app.services import bl_workflow, cargo_excel
 from app.services.activity import record as activity_record
+from app.services.hx import mutation_response
 from app.services.packing_list import (
     apply_batch_update,
     can_modify,
@@ -50,31 +49,21 @@ router = APIRouter(prefix="/cargo/packing-lists", tags=["cargo-packing"])
 def _mutation_response(request: Request, pl_id: int, message: str) -> Response:
     """Réponse standard d'une mutation répétitive de la fiche packing list.
 
-    Reprise UX Phase 3 (docs/design/03-reprise-ux-legacy.md) — copie EXACTE du
-    pattern posé en Phase 1 par ``escale_router._mutation_response`` : sous
-    HTMX, on ne recharge plus la page — 204 + ``HX-Trigger`` qui (a) affiche le
-    toast (toast.js) et (b) déclenche ``cargoRefresh``, écouté par le conteneur
-    ``#pl-sections`` qui se re-remplit via ``hx-get`` + ``hx-select`` sur la
-    page elle-même. Sans JS : 303 classique, inchangé.
+    Wrapper d'une ligne sur ``services.hx.mutation_response`` (copie du motif
+    Phase 1 posé par ``escale_router._mutation_response``) — conservé pour ne
+    pas retoucher tous les call sites de ce routeur.
 
     ⚠️ Réservé aux actions répétitives (lock/unlock, ajout de batch, édition de
     batch, message staff→portail) — PAS aux actions BL sensibles
     (draft/revise/confirm-delivery/shipped-on-board) ni aux suppressions, qui
     gardent leur redirect classique (revue de sécurité plus simple).
     """
-    if request.headers.get("hx-request"):
-        return Response(
-            status_code=204,
-            headers={
-                "HX-Trigger": json.dumps(
-                    {
-                        "toast": {"message": message, "type": "success"},
-                        "cargoRefresh": True,
-                    }
-                )
-            },
-        )
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return mutation_response(
+        request,
+        redirect_url=f"/cargo/packing-lists/{pl_id}",
+        message=message,
+        refresh_event="cargoRefresh",
+    )
 
 
 @router.get("", response_class=HTMLResponse)

@@ -193,6 +193,14 @@ def test_bl_list_template_leg_select_is_htmx_auto_submit():
     select_tag = src[select_idx : src.index(">", select_idx)]
     assert 'hx-get="/captain/bl"' in select_tag
     assert 'hx-trigger="change"' in select_tag
+    # hx-select/hx-target ciblent #bl-page (pas `body`) : sous htmx 2, une
+    # réponse document-complet perd son <body> au makeFragment, donc
+    # hx-select="body" ne matche jamais rien (swap vide, page blanche).
+    assert 'hx-select="#bl-page"' in select_tag
+    assert 'hx-target="#bl-page"' in select_tag
+    assert 'hx-select="body"' not in select_tag
+    assert 'hx-target="body"' not in select_tag
+    assert '<div id="bl-page">' in src
     # Repli sans JS : le bouton « Afficher » reste présent.
     assert "Afficher" in src
 
