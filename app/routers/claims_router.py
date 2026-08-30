@@ -6,6 +6,7 @@ Workflow status :
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -37,6 +38,31 @@ from app.services.stowage import zone_label, zones_for_leg
 from app.templating import templates
 
 router = APIRouter(prefix="/claims", tags=["claims"])
+
+
+def _mutation_response(request: Request, claim_id: int, message: str) -> Response:
+    """Réponse standard d'une mutation de la fiche claim.
+
+    Reprise UX Phase 3 (docs/design/03-reprise-ux-legacy.md §9.1, C-F4) —
+    même motif que le cockpit escale (``escale_router._mutation_response``) :
+    sous HTMX, on ne recharge plus la page — 204 + ``HX-Trigger`` qui (a)
+    affiche le toast (toast.js) et (b) déclenche ``claimsRefresh``, écouté par
+    le conteneur ``#claim-sections`` qui se re-remplit via ``hx-get`` +
+    ``hx-select`` sur la page elle-même. Sans JS : 303 classique.
+    """
+    if request.headers.get("hx-request"):
+        return Response(
+            status_code=204,
+            headers={
+                "HX-Trigger": json.dumps(
+                    {
+                        "toast": {"message": message, "type": "success"},
+                        "claimsRefresh": True,
+                    }
+                )
+            },
+        )
+    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -400,7 +426,7 @@ async def claim_update_cargo_position(
     new_position = (cargo_position or "").strip() or None
     old_position = c.cargo_position
     if new_position == old_position:
-        return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+        return _mutation_response(request, claim_id, "Position cale inchangée.")
     c.cargo_position = new_position
     db.add(
         ClaimTimelineEntry(
@@ -425,7 +451,7 @@ async def claim_update_cargo_position(
         detail=f"cargo_position {old_position or '—'} → {new_position or '—'}",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return _mutation_response(request, claim_id, "Position cale mise à jour.")
 
 
 @router.post("/{claim_id}/status")
@@ -482,7 +508,7 @@ async def claim_update_status(
         detail=f"{old_status} → {new_status}",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return _mutation_response(request, claim_id, f"Statut mis à jour : {new_status}.")
 
 
 @router.post("/{claim_id}/notes")
@@ -506,7 +532,7 @@ async def claim_add_note(
         )
     )
     await db.flush()
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return _mutation_response(request, claim_id, "Note ajoutée.")
 
 
 # ---------------------------------------------------------------------------
@@ -530,7 +556,7 @@ async def claim_update_provision(
     new_amount = Decimal(str(provision_eur)) if provision_eur is not None else None
     old_amount = c.provision_eur
     if new_amount == old_amount:
-        return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+        return _mutation_response(request, claim_id, "Provision inchangée.")
     c.provision_eur = new_amount
     db.add(
         ClaimProvisionHistory(
@@ -565,7 +591,7 @@ async def claim_update_provision(
         detail=f"provision {old_amount or '—'} → {new_amount or '—'}",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return _mutation_response(request, claim_id, "Provision mise à jour.")
 
 
 # ---------------------------------------------------------------------------
@@ -594,7 +620,7 @@ async def claim_update_insurer(
     c.insurer = (insurer or "").strip() or (contract.insurer if contract else None)
     c.insurer_claim_ref = (insurer_claim_ref or "").strip() or None
     await db.flush()
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return _mutation_response(request, claim_id, "Assurance mise à jour.")
 
 
 # ---------------------------------------------------------------------------
