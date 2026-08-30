@@ -1921,3 +1921,73 @@ form textarea {
    cela le SVG déborde de sa carte. */
 .qr-frame { max-width: 260px; margin: 1rem auto; }
 .qr-frame svg { display: block; width: 100%; height: auto; }
+
+/* ════════════════ Cockpit escale — reprise UX Phase 1 ════════════════ */
+/* (docs/design/03-reprise-ux-legacy.md — split Import/Export, sous-nav
+   collante, indicateurs retard/PAF, pointage rapide dockers) */
+
+.escale-subnav {
+  position: sticky;
+  top: 56px; /* sous la topbar */
+  z-index: 50;
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  align-items: center;
+  background: var(--bg-0);
+  padding: var(--space-2) 0;
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--gris-clair);
+}
+.escale-subnav a {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--teal);
+  text-decoration: none;
+  border-bottom: none;
+}
+.escale-subnav a:hover { background: var(--sable-light); }
+.escale-subnav a:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
+
+/* Ancres : ne pas disparaître sous topbar + sous-nav collantes. */
+#escale-sections article[id], #escale-sections span[id] { scroll-margin-top: 112px; }
+
+/* Volets directionnels Import / Export / Commun. */
+.dir-col { border: 1px solid var(--gris-clair); border-radius: var(--radius-md); overflow: hidden; }
+.dir-col-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-wide);
+  color: var(--teal-dark);
+}
+.dir-col-head svg, .dir-col-head [data-lucide] { width: 16px; height: 16px; }
+.dir-col-import { border-top: 4px solid var(--cargo-import); }
+.dir-col-import > .dir-col-head { background: rgba(158, 198, 210, 0.15); }
+.dir-col-export { border-top: 4px solid var(--cargo-export); }
+.dir-col-export > .dir-col-head { background: rgba(180, 113, 72, 0.10); color: #7a4827; }
+.dir-col-common { border-top: 4px solid var(--gris-clair); }
+.dir-col-common > .dir-col-head { background: var(--sable-light); color: var(--gris); }
+.dir-col .data-table { border-top: 1px solid var(--gris-clair); }
+.badge-dir-import { background: rgba(158, 198, 210, 0.35); color: var(--teal-dark); }
+.badge-dir-export { background: rgba(180, 113, 72, 0.15); color: #7a4827; }
+
+/* Passage PAF — opération réglementaire mise en évidence. */
+.op-paf-row td { background: rgba(180, 113, 72, 0.06); }
+.op-paf-chip { background: rgba(180, 113, 72, 0.15); color: #7a4827; border: 1px solid var(--cuivre); }
+.op-paf-chip svg, .op-paf-chip [data-lucide] { width: 12px; height: 12px; }
+
+/* KPI en alerte (retard, P1 ouverts). */
+.kpi-card-alert { border-color: var(--danger); }
+.kpi-card-alert .value { color: var(--danger); }
+
+/* Pointage rapide de l'avancement d'un shift (palettes réalisées). */
+.progress-quick-form { display: inline-flex; align-items: center; gap: var(--space-1); margin-top: var(--space-1); }
+.progress-quick-form input[type="number"] { width: 72px; padding: 2px var(--space-2); font-family: var(--font-mono); font-size: var(--text-xs); }
+
+/* Formulaires de saisie repliés par défaut (cockpit compact). */
+.form-disclosure > summary { list-style: none; }
+.form-disclosure > summary::-webkit-details-marker { display: none; }
+.form-disclosure[open] > summary { margin-bottom: var(--space-2); }

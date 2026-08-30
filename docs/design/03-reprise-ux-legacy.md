@@ -154,25 +154,39 @@ Manrope 300/800, CSS mort `.tz-*`).
 
 ## 4. Plan d'action phasé
 
-### Phase 1 — Cockpit escale (`/escale`) · risque 🟡 Modéré
+### Phase 1 — Cockpit escale (`/escale`) · risque 🟡 Modéré · ✅ **LIVRÉE le 2026-08-30**
 
-Refonte de `staff/escale/index.html` + fragments HTMX dans
-`escale_router.py`, **sans changement de modèle de données**.
+Refonte de `staff/escale/index.html` + `escale_router.py`, **sans
+changement de modèle de données**. Suite complète : 2905 tests verts.
 
 - Sous-navigation collante d'ancres : Statut · Opérations · Dockers ·
-  Équipage · Commercial · Documents & SOF.
-- **Split Import / Export / Commun** sur opérations et dockers (regroupement
-  par `direction`, déjà en base), code couleur tokens existants.
-- Formulaires « Nouvelle opération » / « Nouveau shift » **en modal**
-  (`modal.js` existant) au lieu de blocs permanents.
-- Actions rapides en **fragments HTMX** : start/end opération, progress
-  docker, pose ATA/ATD — la carte se rafraîchit, la page ne bouge plus.
-- Indicateur **retard** sur opérations (réel vs planifié échu) ; ligne PAF
-  mise en évidence (badge réglementaire) ; marins cliquables vers `/crew`.
-- Encart tickets de l'escale (kanban filtré `leg_id` — service déjà prêt)
-  + lien croisé permanent vers `/captain?leg_id=…`.
-- Nettoyage : suppression du template orphelin `staff/escale/detail.html`,
-  correction du lien mort `staff/onboard/escale.html`.
+  Équipage · Documents & SOF · Tickets · Commercial. ✅
+- **Split Import / Export / Commun** sur les opérations (regroupement par
+  `direction`, déjà en base), code couleur tokens existants ; badges
+  directionnels sur les shifts. ✅
+- Formulaires « Nouvelle opération » / « Nouveau shift » **repliés par
+  défaut** (`<details>` natif). *Écart assumé vs le plan initial (« en
+  modal ») : la CSP interdit les handlers inline dont dépendait
+  `loadModal`, et le disclosure natif fait le même travail sans JS.* ✅
+- Actions rapides **sans rechargement** : start/end opération, pointage
+  palettes (nouveau mini-formulaire), pose ATA/ATD, créations — POST HTMX
+  → `204` + `HX-Trigger` (`toast` + `escaleRefresh`), le conteneur
+  `#escale-sections` se re-remplit par `hx-get` + `hx-select` sur la page
+  elle-même (aucun refactor du contexte, repli 303 sans JS intact). ✅
+- KPI d'escale (en cours / en retard / palettes / cadence moyenne),
+  indicateur **retard** (`_cockpit_late_op_ids`), ligne **PAF** mise en
+  évidence, marins cliquables vers `/crew/members/{id}`. ✅
+- Carte **Documents & SOF** (compteurs SOF/docs/PJ, 3 derniers SOF, les
+  deux PDF SOF côte à côte, **alerte croisée** clôture engagée ↔ escale
+  non verrouillée) + lien « Espace bord ». ✅
+- Encart tickets de l'escale + kanban filtré `leg_id` (routeur + bandeau),
+  pré-sélection du leg sur `/tickets/new` ; lien réciproque « Escale
+  (terre) » depuis `/captain`. ✅
+- Nettoyage : template orphelin `staff/escale/detail.html` supprimé, lien
+  mort `staff/onboard/escale.html` corrigé. ✅
+- Tests ajoutés : `test_escale_cockpit.py` (5), `test_tickets_leg_filter.py`
+  (2). Limite connue : une erreur 400 sous HTMX (escale verrouillée entre
+  deux gestes) n'affiche pas encore de toast d'erreur — repli : recharger.
 
 ### Phase 2 — Journal documents & événements d'escale · risque 🟡 Modéré
 

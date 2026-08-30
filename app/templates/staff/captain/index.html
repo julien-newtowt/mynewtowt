@@ -18,6 +18,11 @@
     <a href="/captain/next-port" class="btn btn-ghost">
       <i data-lucide="anchor"></i> Prochaine escale
     </a>
+    {% if leg %}
+    <a href="/escale?leg_id={{ leg.id }}" class="btn btn-ghost">
+      <i data-lucide="anchor"></i> Escale (terre)
+    </a>
+    {% endif %}
   </div>
 </header>
 

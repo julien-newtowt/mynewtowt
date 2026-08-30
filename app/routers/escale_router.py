@@ -10,12 +10,13 @@ Reprises de la V3.0.0 :
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -30,9 +31,11 @@ from app.models.escale import (
     EscaleOperation,
 )
 from app.models.leg import Leg
+from app.models.leg_attachment import LegAttachment
 from app.models.port import Port
-from app.models.sof_event import SOF_EVENT_TYPES, SofEvent
+from app.models.sof_event import SOF_EVENT_TYPES, CargoDocument, SofEvent
 from app.models.stowage import HOLDS
+from app.models.ticket import Ticket
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
@@ -52,6 +55,55 @@ router = APIRouter(prefix="/escale", tags=["escale"])
 def _escale_locked(leg: Leg) -> bool:
     """L'escale du leg est-elle verrouillée (clôture administrative) ?"""
     return leg.escale_locked_at is not None
+
+
+def _mutation_response(request: Request, leg_id: int, message: str) -> Response:
+    """Réponse standard d'une mutation du cockpit escale.
+
+    Reprise UX Phase 1 (docs/design/03-reprise-ux-legacy.md) : sous HTMX,
+    on ne recharge plus la page — 204 + ``HX-Trigger`` qui (a) affiche le
+    toast (toast.js) et (b) déclenche ``escaleRefresh``, écouté par le
+    conteneur ``#escale-sections`` qui se re-remplit via ``hx-get`` +
+    ``hx-select`` sur la page elle-même. Sans JS : 303 classique.
+    """
+    if request.headers.get("hx-request"):
+        return Response(
+            status_code=204,
+            headers={
+                "HX-Trigger": json.dumps(
+                    {
+                        "toast": {"message": message, "type": "success"},
+                        "escaleRefresh": True,
+                    }
+                )
+            },
+        )
+    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+
+
+def _cockpit_late_op_ids(operations: list[EscaleOperation], now: datetime) -> set[int]:
+    """Opérations en retard : fenêtre planifiée échue sans réel correspondant.
+
+    Indicateur d'affichage uniquement (aucune écriture) — planifié échu :
+    - début prévu dépassé sans démarrage réel, ou
+    - fin prévue dépassée sans fin réelle.
+    Les datetimes stockés peuvent être naïfs (SQLite en test) ou aware
+    (PostgreSQL) : on normalise en UTC naïf avant comparaison.
+    """
+
+    def _naive(dt: datetime) -> datetime:
+        return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+    now_n = _naive(now)
+    late: set[int] = set()
+    for op in operations:
+        if op.status == "completed":
+            continue
+        start_missed = op.planned_start and not op.actual_start and _naive(op.planned_start) < now_n
+        end_missed = op.planned_end and not op.actual_end and _naive(op.planned_end) < now_n
+        if start_missed or end_missed:
+            late.add(op.id)
+    return late
 
 
 def _assert_escale_unlocked(leg: Leg) -> None:
@@ -282,6 +334,112 @@ async def escale_index(
         positions = await positions_for_leg(db, selected_leg)
         nav_metrics = compute_metrics(positions, selected_leg, arr_port=pod)
 
+    # ── Cockpit escale (reprise UX Phase 1) ──────────────────────────────
+    # KPI d'escale, indicateur de retard, synthèses Documents & SOF et
+    # Tickets — lecture seule, best-effort : la page ne casse jamais si une
+    # synthèse échoue (même filet que occupation_by_hold).
+    late_op_ids: set[int] = set()
+    escale_kpis = None
+    docs_sof = None
+    tickets_summary = None
+    if selected_leg is not None:
+        now = datetime.now(UTC)
+        late_op_ids = _cockpit_late_op_ids(operations, now)
+        palettes_done = sum(s.palettes_done or 0 for s in shifts)
+        palettes_target = sum(s.palettes_target or 0 for s in shifts)
+        rates = [s.actual_rate for s in shifts if s.actual_rate is not None]
+        escale_kpis = {
+            "ops_total": len(operations),
+            "ops_in_progress": sum(1 for op in operations if op.status == "in_progress"),
+            "ops_late": len(late_op_ids),
+            "palettes_done": palettes_done,
+            "palettes_target": palettes_target,
+            "avg_rate": (round(sum(rates) / len(rates), 1) if rates else None),
+        }
+        try:
+            sof_recent = list(
+                (
+                    await db.execute(
+                        select(SofEvent)
+                        .where(SofEvent.leg_id == selected_leg.id)
+                        .order_by(SofEvent.occurred_at.desc())
+                        .limit(3)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            sof_total, sof_signed = (
+                await db.execute(
+                    select(
+                        func.count(SofEvent.id),
+                        func.count(SofEvent.signed_at),
+                    ).where(SofEvent.leg_id == selected_leg.id)
+                )
+            ).one()
+            docs_total, docs_signed = (
+                await db.execute(
+                    select(
+                        func.count(CargoDocument.id),
+                        func.count(CargoDocument.signed_at),
+                    ).where(CargoDocument.leg_id == selected_leg.id)
+                )
+            ).one()
+            attachments_total = (
+                await db.execute(
+                    select(func.count(LegAttachment.id)).where(
+                        LegAttachment.leg_id == selected_leg.id
+                    )
+                )
+            ).scalar_one()
+            docs_sof = {
+                "sof_recent": sof_recent,
+                "sof_total": sof_total,
+                "sof_signed": sof_signed,
+                "docs_total": docs_total,
+                "docs_signed": docs_signed,
+                "attachments_total": attachments_total,
+                # Alerte croisée verrous : clôture engagée ↔ escale non
+                # verrouillée (les deux mécanismes restent indépendants —
+                # simple signal d'attention, aucun blocage).
+                "closure_submitted_at": selected_leg.closure_submitted_at,
+                "closure_engaged_unlocked": bool(
+                    selected_leg.closure_submitted_at and not selected_leg.escale_locked_at
+                ),
+            }
+        except Exception:
+            logger.exception("cockpit docs/sof summary failed for leg %s", selected_leg.id)
+            docs_sof = None
+        try:
+            rows = (
+                await db.execute(
+                    select(Ticket.status, func.count(Ticket.id))
+                    .where(Ticket.leg_id == selected_leg.id)
+                    .group_by(Ticket.status)
+                )
+            ).all()
+            by_status = dict(rows)
+            open_p1 = (
+                await db.execute(
+                    select(func.count(Ticket.id)).where(
+                        Ticket.leg_id == selected_leg.id,
+                        Ticket.priority == "P1",
+                        Ticket.status.in_(("open", "in_progress", "pending_external")),
+                    )
+                )
+            ).scalar_one()
+            tickets_summary = {
+                "open": by_status.get("open", 0),
+                "in_progress": by_status.get("in_progress", 0),
+                "pending_external": by_status.get("pending_external", 0),
+                "resolved": by_status.get("resolved", 0),
+                "open_p1": open_p1,
+                "total": sum(by_status.values()),
+            }
+        except Exception:
+            logger.exception("cockpit tickets summary failed for leg %s", selected_leg.id)
+            tickets_summary = None
+
     response = templates.TemplateResponse(
         "staff/escale/index.html",
         {
@@ -327,6 +485,11 @@ async def escale_index(
             "crew_assignments": crew_assignments,
             "embark_alerts": embark_alerts,
             "crew_by_id": crew_by_id,
+            # Cockpit escale — reprise UX Phase 1.
+            "late_op_ids": late_op_ids,
+            "escale_kpis": escale_kpis,
+            "docs_sof": docs_sof,
+            "tickets_summary": tickets_summary,
         },
     )
     set_leg_filter_cookie(response, f)
@@ -387,7 +550,7 @@ async def create_operation(
     # ESC-06 — couplage équipage (embarquement/débarquement) + auto-PAF FR.
     await couple_crew_assignment(db, op, leg, crew_member_id)
     await maybe_create_paf(db, op, leg)
-    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+    return _mutation_response(request, leg_id, "Opération créée.")
 
 
 @router.post("/operations/{op_id}/start")
@@ -408,7 +571,7 @@ async def start_operation(
     await db.flush()
     # FLX-04 — l'opération démarrée matérialise son SOF (occurred_at réel).
     await _sync_sof_from_operation(db, request, user, op)
-    return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
+    return _mutation_response(request, op.leg_id, "Opération démarrée.")
 
 
 @router.post("/operations/{op_id}/end")
@@ -427,7 +590,7 @@ async def end_operation(
     op.actual_end = datetime.now(UTC)
     op.status = "completed"
     await db.flush()
-    return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
+    return _mutation_response(request, op.leg_id, "Opération terminée.")
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -595,7 +758,7 @@ async def create_docker_shift(
         entity_label=f"shift {company} leg={leg_id} cale={s.hold or '—'}",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+    return _mutation_response(request, leg_id, "Shift docker créé.")
 
 
 @router.post("/dockers/{shift_id}/progress")
@@ -614,7 +777,7 @@ async def docker_progress(
         _assert_escale_unlocked(leg)
     s.palettes_done = palettes_done
     await db.flush()
-    return RedirectResponse(url=f"/escale?leg_id={s.leg_id}", status_code=303)
+    return _mutation_response(request, s.leg_id, "Avancement du shift mis à jour.")
 
 
 @router.post("/dockers/{shift_id}/edit")
@@ -792,7 +955,7 @@ async def update_port_status(
         detail=f"→ {new_status} @ {t.isoformat()}",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+    return _mutation_response(request, leg_id, "Statut portuaire mis à jour.")
 
 
 @router.post("/legs/{leg_id}/lock")
