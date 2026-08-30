@@ -868,3 +868,123 @@ async def test_a_count_cannot_be_dated_in_the_future(db, staff_user):
     # Rien n'a été gelé.
     assert await cashbox_svc.frozen_until(db, cb) is None
     assert await db.scalar(select(func.count()).select_from(CashCount)) == 0
+
+
+# ── Pages du module caisse : ce que le bord voit réellement ─────────────────
+#
+# Retours du Cdt de l'ANEMOS le 2026-08-29 : la page caisse « a cassé toute la
+# mise en page » dès qu'un état de caisse existait, et la grille de comptage
+# n'affichait aucun total, obligeant à valider une déclaration définitive sans
+# avoir pu vérifier ses chiffres. Les tests suivants rendent les pages réelles
+# (layout compris) et vérifient ces deux points.
+
+
+def _page_request(path: str):
+    """Requête GET minimale, suffisante pour rendre une page staff."""
+    from starlette.requests import Request
+
+    request = Request(
+        {"type": "http", "method": "GET", "path": path, "headers": [], "query_string": b""}
+    )
+    request.state.csrf_token = "test-csrf"
+    return request
+
+
+def _tag_balance(html: str, tag: str) -> tuple[int, int]:
+    import re
+
+    return (
+        len(re.findall(rf"<{tag}\b", html)),
+        len(re.findall(rf"</{tag}\s*>", html)),
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_cashbox_page_still_closes_its_layout_once_a_count_exists(db, staff_user):
+    """Une fermeture ``</div>`` en trop refermait le ``<main>`` du layout.
+
+    Le contenu suivant — nouveau mouvement, export, journal — sortait alors de
+    la grille et s'affichait pleine largeur sous la barre latérale. Le défaut ne
+    se déclenchait que dans la branche « au moins un état de caisse déclaré »,
+    donc jamais sur une caisse neuve.
+    """
+    from app.routers import cashbox_router as r
+
+    vessel, cb = await _box(db)
+    await _movement(db, cb, "500.00", staff_user=staff_user)
+    await svc.declare_count(
+        db,
+        cb,
+        trigger="fin_de_mois",
+        counted_on=date(2026, 8, 20),
+        declared_by_name="Cdt Sortant",
+        counts={"EUR": {Decimal("100"): 5}},
+    )
+
+    resp = await r.cashbox_detail(
+        _page_request(f"/cashbox/{vessel.id}"), vessel.id, db=db, user=staff_user
+    )
+    html = resp.body.decode()
+
+    assert "Contrôle de caisse" in html and "Cdt Sortant" in html
+    opened, closed = _tag_balance(html, "div")
+    assert opened == closed, f"<div> déséquilibrés : {opened} ouverts / {closed} fermés"
+    # Le formulaire de mouvement doit rester **dans** le conteneur principal.
+    assert html.index("Nouveau mouvement") < html.index("</main>")
+
+
+@pytest.mark.asyncio
+async def test_the_counting_grid_carries_the_live_total_wiring(db, staff_user):
+    """La grille porte de quoi totaliser la déclaration pendant la saisie.
+
+    Le commandant compte des coupures, pas des sommes : sans total vivant, il
+    validait un état **définitif** sans avoir pu confronter son comptage au
+    solde théorique. Le total affiché reste indicatif — le serveur le recalcule
+    depuis les quantités — mais il doit exister.
+    """
+    from app.routers import cashbox_router as r
+
+    vessel, cb = await _box(db)
+    await _movement(db, cb, "1676.89", staff_user=staff_user)
+
+    resp = await r.cash_count_form(
+        _page_request(f"/cashbox/{vessel.id}/etat"), vessel.id, db=db, user=staff_user
+    )
+    html = resp.body.decode()
+
+    # Un bloc calculable par devise, portant son solde théorique.
+    for currency in ("EUR", "USD", "VND"):
+        assert f'data-currency="{currency}"' in html
+    assert 'data-computed="1676.89"' in html
+    # Chaque coupure du référentiel est totalisable (valeur faciale portée).
+    expected = sum(len(svc.denominations_for(c)) for c in ("EUR", "USD", "VND"))
+    assert html.count("data-denom=") == expected
+    assert "data-bulk" in html
+    # Zones d'affichage lues par le script, et le script lui-même (CSP stricte :
+    # fichier externe, jamais d'inline).
+    for hook in ("data-cash-count-form", "data-counted-total", "data-variance", "data-declare"):
+        assert hook in html, hook
+    assert "js/cash-count-form.js" in html
+    opened, closed = _tag_balance(html, "div")
+    assert opened == closed
+
+
+@pytest.mark.asyncio
+async def test_the_declaration_is_confirmed_before_being_written(db, staff_user):
+    """Une déclaration est définitive : elle ne part pas sur une fausse manœuvre.
+
+    La confirmation est portée par ``forms.js`` (écouteur global
+    ``form[data-confirm]``) ; ``cash-count-form.js`` n'en fournit que le
+    récapitulatif, à jour à chaque frappe. Le formulaire doit donc être marqué
+    pour cet écouteur, et la page annoncer le caractère irréversible.
+    """
+    from app.routers import cashbox_router as r
+
+    vessel, _cb = await _box(db)
+    resp = await r.cash_count_form(
+        _page_request(f"/cashbox/{vessel.id}/etat"), vessel.id, db=db, user=staff_user
+    )
+    html = resp.body.decode()
+    assert "data-cash-count-form" in html
+    assert "définitif" in html
+    assert "js/forms.js" in html, "la confirmation globale doit être chargée sur la page"

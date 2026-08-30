@@ -87,7 +87,6 @@
           {% endfor %}
         </tbody>
       </table>
-</div>
     </div>
   {% else %}
     <p class="text-muted mt-3">Aucun état de caisse déclaré pour ce navire.</p>
@@ -283,5 +282,5 @@
   {% endif %}
 </article>
 
-<script src="/static/js/cashbox-form.js" defer></script>
+<script src="{{ asset('js/cashbox-form.js') }}" defer></script>
 {% endblock %}

@@ -679,3 +679,48 @@ Checklist complète en §10 du rapport d'audit. Les points qui bloquent :
 **Recommandation de méthode** : ce module n'a **jamais eu de cahier des
 charges** (recherche exhaustive de `docs/`). 45 minutes avec les Opérations pour
 cadrer le besoin réel vaudraient plus que n'importe quel lot de développement.
+
+---
+
+## 17. Premier retour d'usage réel du contrôle de caisse (2026-08-30)
+
+Branche : `claude/user-message-au0tqk`. Origine : courriel du Cdt de l'ANEMOS du
+2026-08-29 (4 remarques). Détail complet : journal, entrée du 2026-08-30.
+
+**Le module a fonctionné en conditions réelles** — deux déclarations
+enregistrées, écarts figés, gel non déclenché (motif « fin de mois »). Les
+quatre remarques portent sur l'interface et l'usage, aucune sur le calcul.
+
+### Ce qui a été corrigé (front uniquement, aucune migration)
+
+| # | Remarque | Correctif |
+|---|---|---|
+| R3 | « Le contrôle de la caisse a cassé toute la mise en page » | `</div>` en trop dans `staff/cashbox/detail.html` — il refermait le `<main>` du layout, tout le contenu suivant sortait de la grille. **Le même défaut existait sur `staff/onboard_sales/vessel.html`**, pas encore rencontré. Sentinelle `tests/regression/test_template_tag_balance.py` |
+| R1 | Aucun total pendant la saisie du comptage | *Total déclaré / Théorique / Écart* recalculés à chaque frappe (`app/static/js/cash-count-form.js`), en **centimes entiers**. Rien n'est pré-rempli depuis le théorique ; le serveur reste seul à calculer la valeur écrite |
+| R2 | Une déclaration partie sur une erreur de manipulation | Confirmation portant le **récapitulatif exact** de ce qui va être écrit. Défaut trouvé au passage : `cashbox-form.js` doublait l'écouteur global de `forms.js` → **deux boîtes de dialogue** sur la clôture et la rectification. Corrigé |
+| R4 | « Théorique 1 676,89 € / réel 1 988,35 €, comment corriger ? » | Question d'usage : réponse dans la notice commandant §7 bis. Un écart se corrige en **remettant les écritures manquantes**, jamais en retouchant le contrôle (figé par conception) |
+
+### Leçon transverse (vaut au-delà de la caisse)
+
+Le défaut R3 ne se déclenchait que dans la branche `{% if cash_counts %}` : il
+était **invisible pendant tout le développement et toute la recette**, et est
+apparu à la seconde où le premier état de caisse a été validé. Une page rendue
+« à vide » n'est pas une page vérifiée. Les tests de page ajoutés rendent
+désormais le gabarit **complet, layout compris**, sur des données réelles.
+
+### Ouvert — à arbitrer (candidat ADR-014)
+
+Deux manques révélés par ce retour, **volontairement non implémentés** parce que
+ce sont des règles de contrôle interne, pas des détails d'interface :
+
+1. **Régularisation d'un écart de caisse.** Aujourd'hui un commandant peut faire
+   disparaître un manquant par un simple « Autre encaissement », indiscernable
+   d'une écriture ordinaire — le contrôle de caisse y perd l'essentiel de sa
+   valeur. Symétrique exact du remboursement (ADR-013 : geste du **siège**).
+   Proposition : catégories `regularisation_excedent` / `regularisation_manquant`
+   sous `finance:M`, rattachées au `cash_count` soldé. Coût : une migration
+   (`CHECK` sur `category`), une route, un écran.
+2. **Suite donnée à un contrôle.** `cash_count.review_count()` (validé /
+   contesté) existe et est testé depuis le 2026-08-27 mais **n'est exposé par
+   aucune route** : une déclaration partie par erreur reste « DÉCLARÉE »
+   indéfiniment. La prévention est livrée, le remède non.
