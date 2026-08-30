@@ -37,6 +37,7 @@ from app.auth import (
     verify_password,
 )
 from app.database import get_db
+from app.i18n import t as i18n_t
 from app.models.client_account import ClientAccount
 from app.services import device_detection, mfa, rate_limit, security_alerts
 from app.services.activity import record as activity_record
@@ -186,7 +187,7 @@ async def login(
             ua=ua,
         )
 
-    token = create_client_session(user.id)
+    token = create_client_session(user.id, user.hashed_password)
     redirect = RedirectResponse(url=next_url or "/me", status_code=303)
     redirect.set_cookie(value=token, **cookie_kwargs_for_client(request))
     return redirect
@@ -298,7 +299,7 @@ async def mfa_challenge_submit(
             ip=ip,
             ua=ua,
         )
-    token = create_client_session(user.id)
+    token = create_client_session(user.id, user.hashed_password)
     redirect = RedirectResponse(url="/me", status_code=303)
     redirect.set_cookie(value=token, **cookie_kwargs_for_client(request))
     redirect.delete_cookie(CLIENT_MFA_PENDING_COOKIE, path="/")
@@ -386,7 +387,7 @@ async def register(
         ip_address=_client_ip(request),
     )
 
-    token = create_client_session(client.id)
+    token = create_client_session(client.id, client.hashed_password)
     redirect = RedirectResponse(url="/me", status_code=303)
     redirect.set_cookie(value=token, **cookie_kwargs_for_client(request))
     return redirect
@@ -428,7 +429,7 @@ async def client_password_change(
             {
                 "request": request,
                 "client": client,
-                "error": "Trop de tentatives — patientez 15 minutes.",
+                "error": i18n_t("pwd_change_rate_limited", client.language),
             },
             status_code=429,
         )
@@ -437,7 +438,11 @@ async def client_password_change(
         await rate_limit.record(db, scope="client_password_change", identifier=str(client.id))
         return templates.TemplateResponse(
             "client/password_change.html",
-            {"request": request, "client": client, "error": "Mot de passe actuel incorrect."},
+            {
+                "request": request,
+                "client": client,
+                "error": i18n_t("pwd_change_wrong_current", client.language),
+            },
             status_code=400,
         )
     if new_password != confirm_password:
@@ -446,7 +451,7 @@ async def client_password_change(
             {
                 "request": request,
                 "client": client,
-                "error": "Les deux nouveaux mots de passe diffèrent.",
+                "error": i18n_t("pwd_change_mismatch", client.language),
             },
             status_code=400,
         )
@@ -456,9 +461,7 @@ async def client_password_change(
             {
                 "request": request,
                 "client": client,
-                "error": (
-                    f"Le mot de passe doit contenir au moins {MIN_PASSWORD_LENGTH} caractères."
-                ),
+                "error": i18n_t("pwd_change_too_short", client.language, min=MIN_PASSWORD_LENGTH),
             },
             status_code=400,
         )
@@ -482,7 +485,14 @@ async def client_password_change(
             ip=ip,
             ua=request.headers.get("user-agent"),
         )
-    return RedirectResponse(url="/me/account?password_changed=1", status_code=303)
+    # Rotation de session : le nouveau cookie porte la version du nouveau mot
+    # de passe (``pwv``) — toutes les sessions émises avant le changement
+    # (autre navigateur, cookie volé) sont invalidées par get_current_client ;
+    # celle du demandeur continue sans re-login.
+    redirect = RedirectResponse(url="/me/account?password_changed=1", status_code=303)
+    token = create_client_session(client.id, client.hashed_password)
+    redirect.set_cookie(value=token, **cookie_kwargs_for_client(request))
+    return redirect
 
 
 @router.get("/me/logout")

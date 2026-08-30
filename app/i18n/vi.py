@@ -1575,4 +1575,9 @@ CATALOG: dict[str, str] = {
     "booking_welcome_bookings": "Các đặt chỗ, trạng thái và chi tiết hàng hóa của bạn.",
     "booking_welcome_documents": "Packing list, vận đơn, hóa đơn và chứng nhận.",
     "booking_welcome_track": "Theo dõi hành trình của bạn theo thời gian thực trên bản đồ.",
+    # Đổi mật khẩu khách hàng — lỗi (review PR #167).
+    "pwd_change_rate_limited": "Quá nhiều lần thử — vui lòng đợi 15 phút.",
+    "pwd_change_wrong_current": "Mật khẩu hiện tại không đúng.",
+    "pwd_change_mismatch": "Hai mật khẩu mới không khớp.",
+    "pwd_change_too_short": "Mật khẩu phải có ít nhất {min} ký tự.",
 }

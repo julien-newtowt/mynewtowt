@@ -459,7 +459,7 @@ async def step_3_confirm_submit(
         booking.client_account_id = account.id
         await db.flush()
         account_created = True
-        session_token = create_client_session(account.id)
+        session_token = create_client_session(account.id, account.hashed_password)
         await activity_record(
             db,
             action="client_register",

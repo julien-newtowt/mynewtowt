@@ -1575,4 +1575,9 @@ CATALOG: dict[str, str] = {
     "booking_welcome_bookings": "Vos réservations, statut et détails de cargaison.",
     "booking_welcome_documents": "Packing list, connaissements, factures et certificats.",
     "booking_welcome_track": "Le suivi en temps réel de votre traversée sur la carte.",
+    # Changement de mot de passe client — erreurs (revue PR #167).
+    "pwd_change_rate_limited": "Trop de tentatives — patientez 15 minutes.",
+    "pwd_change_wrong_current": "Mot de passe actuel incorrect.",
+    "pwd_change_mismatch": "Les deux nouveaux mots de passe diffèrent.",
+    "pwd_change_too_short": "Le mot de passe doit contenir au moins {min} caractères.",
 }

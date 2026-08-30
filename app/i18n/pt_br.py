@@ -1575,4 +1575,9 @@ CATALOG: dict[str, str] = {
     "booking_welcome_bookings": "Suas reservas, status e detalhes da carga.",
     "booking_welcome_documents": "Packing list, conhecimentos de embarque, faturas e certificados.",
     "booking_welcome_track": "O acompanhamento em tempo real da sua travessia no mapa.",
+    # Troca de senha do cliente — erros (revisão PR #167).
+    "pwd_change_rate_limited": "Muitas tentativas — aguarde 15 minutos.",
+    "pwd_change_wrong_current": "A senha atual está incorreta.",
+    "pwd_change_mismatch": "As duas novas senhas não coincidem.",
+    "pwd_change_too_short": "A senha deve ter pelo menos {min} caracteres.",
 }

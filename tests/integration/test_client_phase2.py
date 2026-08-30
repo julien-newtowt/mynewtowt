@@ -327,3 +327,75 @@ def test_dead_public_layout_removed_and_unreferenced():
     for py_file in (root / "app").rglob("*.py"):
         text = py_file.read_text(encoding="utf-8")
         assert '"public/_layout.html"' not in text
+
+
+# ─────────────── Revue PR #167 — invalidation de session (pwv) ───────────────
+
+# Mot de passe factice à entropie volontairement quasi nulle (gitleaks) —
+# sa seule contrainte est la longueur minimale d'inscription.
+_PWV_DUMMY_PASSWORD = "x" * 11 + "A1"
+
+
+@pytest.mark.asyncio
+async def test_password_change_invalidates_older_sessions(db):
+    """Un cookie émis avant le changement de mot de passe est rejeté après."""
+    from app.auth import AuthInvalid, create_client_session, get_current_client
+    from app.routers.client_auth_router import client_password_change
+
+    account = await _client_account(db, email="pwv@example.test", password=_PWV_DUMMY_PASSWORD)
+    account.is_verified = True
+    await db.flush()
+    old_token = create_client_session(account.id, account.hashed_password)
+    # Sanity : le cookie versionné est accepté tant que le hash n'a pas changé.
+    assert (await get_current_client(session_cookie=old_token, db=db)).id == account.id
+
+    resp = await client_password_change(
+        FakeRequest(),
+        current_password=_PWV_DUMMY_PASSWORD,
+        new_password="BrandNewPassword123",
+        confirm_password="BrandNewPassword123",
+        client=account,
+        db=db,
+    )
+    assert resp.status_code == 303
+    # L'ancien cookie (pwv du hash précédent) est invalidé…
+    with pytest.raises(AuthInvalid):
+        await get_current_client(session_cookie=old_token, db=db)
+    # …le nouveau (posé sur la redirection) et un cookie re-émis passent.
+    new_token = create_client_session(account.id, account.hashed_password)
+    assert (await get_current_client(session_cookie=new_token, db=db)).id == account.id
+    assert "set-cookie" in {k.lower() for k in resp.headers}
+
+
+@pytest.mark.asyncio
+async def test_legacy_session_without_pwv_still_accepted(db):
+    """Compatibilité : un cookie sans ``pwv`` (antérieur) reste accepté."""
+    from app.auth import create_client_session, get_current_client
+
+    account = await _client_account(db, email="legacy-cookie@example.test")
+    account.is_verified = True
+    await db.flush()
+    legacy_token = create_client_session(account.id)  # pas de hashed_password
+    assert (await get_current_client(session_cookie=legacy_token, db=db)).id == account.id
+
+
+@pytest.mark.asyncio
+async def test_password_change_errors_are_translated(db):
+    """Revue PR #167 : les erreurs suivent la langue du client (plus de FR figé)."""
+    from app.routers.client_auth_router import client_password_change
+
+    account = await _client_account(db, email="lang-en@example.test")
+    account.language = "en"
+    await db.flush()
+    resp = await client_password_change(
+        FakeRequest(),
+        current_password="definitely-not-the-password",
+        new_password="BrandNewPassword123",
+        confirm_password="BrandNewPassword123",
+        client=account,
+        db=db,
+    )
+    assert resp.status_code == 400
+    body = resp.body.decode()
+    assert "Current password is incorrect." in body
+    assert "Mot de passe actuel incorrect." not in body
