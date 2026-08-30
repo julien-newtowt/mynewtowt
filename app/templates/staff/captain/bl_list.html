@@ -84,6 +84,7 @@
               {# Lire avant de signer : le lien ouvre le PDF filigrané du draft. #}
               <a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf"
                  target="_blank" class="btn btn-ghost btn-sm">Lire</a>
+              <a href="/cargo/packing-lists/{{ b.packing_list_id }}" class="btn btn-ghost btn-sm" title="Fiche packing list">Fiche PL</a>
               {# `formaction` et non un formulaire imbriqué : HTML interdit d'imbriquer
                  un <form> dans un <form>, et le navigateur casserait alors l'envoi
                  groupé comme l'unitaire. Le champ `_csrf` du formulaire englobant
@@ -124,7 +125,10 @@
         <td class="mono">{{ b.batch_number }}</td>
         <td>{{ b.consignee_name or '—' }}</td>
         <td>{{ b.description_of_goods or b.type_of_goods or '—' }}</td>
-        <td><a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf" target="_blank" class="btn btn-ghost btn-sm">Lire</a></td>
+        <td>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf" target="_blank" class="btn btn-ghost btn-sm">Lire</a>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}" class="btn btn-ghost btn-sm" title="Fiche packing list">Fiche PL</a>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -145,7 +149,10 @@
         <td class="mono">{% if b.bl_signed_at %}{{ b.bl_signed_at.strftime("%d/%m/%Y %H:%M") }}{% else %}—{% endif %}</td>
         <td class="mono text-xs">{{ (b.bl_signature_hash or '')[:12] }}{% if b.bl_signature_hash %}…{% endif %}</td>
         <td><span class="pill {% if b.bl_state == 'final' %}pill-success{% endif %}">{{ b.bl_state }}</span></td>
-        <td><a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf" target="_blank" class="btn btn-ghost btn-sm">Ouvrir</a></td>
+        <td>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf" target="_blank" class="btn btn-ghost btn-sm">Ouvrir</a>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}" class="btn btn-ghost btn-sm" title="Fiche packing list">Fiche PL</a>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
