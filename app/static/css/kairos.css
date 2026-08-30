@@ -91,17 +91,16 @@ a:focus-visible {
   padding: 0 var(--pad-x);
 }
 
-.app-shell {
-  display: grid;
-  grid-template-columns: 256px 1fr;
-  min-height: 100vh;
-  background: var(--bg-0);
-}
-@media (max-width: 768px) {
-  .app-shell { grid-template-columns: 1fr; }
-}
-
 /* ────────────────────────── Sidebar ───────────────────────────────── */
+/* AUDIT Phase 3 (docs/design/03-reprise-ux-legacy.md §4) : le conteneur
+ * grid `.app-shell` (legacy, remplacé par `.app-shell-v2`) était mort — aucun
+ * template ne porte `class="app-shell"` — et a été supprimé ici. Les règles
+ * `.sidebar { … }` ci-dessous, en revanche, NE SONT PAS mortes : elles restent
+ * consommées par le layout actuel (`staff/_layout.html`, `client/_layout.html`
+ * portent `class="sidebar"` à l'intérieur de `.app-shell-v2`), et
+ * `.app-shell-v2 .sidebar` (plus bas dans ce fichier) ne redéfinit qu'une
+ * partie de ces propriétés (couleurs/dimensions), pas la structure flex de
+ * `.sidebar nav a`. Signalé tel quel, non supprimé — cf. rapport de session. */
 .sidebar {
   background: var(--teal-dark);
   color: var(--blanc-casse);
@@ -502,6 +501,10 @@ tr:hover { background: var(--sable-light); }
   gap: var(--space-4);
   margin-bottom: var(--space-6);
 }
+/* AUDIT Phase 3 : `.kpi-card` (ci-dessous) et `.stat-card` (plus bas,
+ * "Stats grid (dashboard)") coexistent — usages nombreux des deux côtés,
+ * aucune n'est supprimée. Leurs bases (border/radius/ombre/padding) sont déjà
+ * identiques ; `.kpi-card` est la cible pour tout nouvel écran. */
 .kpi-card {
   background: var(--blanc);
   border: 1px solid var(--gris-clair);
@@ -1304,6 +1307,9 @@ form textarea {
   gap: var(--space-4);
   margin-bottom: var(--space-5);
 }
+/* Base (border/radius/ombre/padding) alignée sur `.kpi-card` — cf. note
+ * Phase 3 ci-dessus `.kpi-card`. Ne pas fusionner les deux classes ici
+ * (usages nombreux) ; `.kpi-card` reste la cible des nouveaux écrans. */
 .stat-card {
   background: var(--blanc);
   border: 1px solid var(--gris-clair);
@@ -2012,3 +2018,85 @@ form textarea {
 .journal-label { font-weight: var(--fw-semibold); }
 .journal-entry .pill { align-self: center; flex-shrink: 0; }
 .escale-subnav a.journal-filter-active { background: var(--teal); color: var(--blanc); }
+
+/* ═══════════════ Design system — reprise UX Phase 3 ═══════════════ */
+/* (docs/design/03-reprise-ux-legacy.md §4 Phase 3 : loading states,
+   focus rings systématiques, empty states enrichis, densité de tableau) */
+
+/* ── Skeleton loaders ─────────────────────────────────────────────────
+ * Usage : placeholder de contenu pendant un chargement (fragment HTMX en
+ * vol, page qui hydrate un tableau) — ex.
+ *   <div class="skeleton" style="height:1rem;width:60%"></div>
+ * Pulsation ~1,5 s entre --sable et --sable-light, radius sm. Neutralisée
+ * globalement par `prefers-reduced-motion` (tokens.css, `animation-duration:
+ * 0.01ms !important`) — vérifié : pas de règle à dupliquer ici. */
+.skeleton {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--sable) 0%, var(--sable-light) 50%, var(--sable) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Indicateur HTMX générique (usage futur) ──────────────────────────
+ * Pattern htmx standard : htmx ajoute `.htmx-request` à l'élément qui a
+ * déclenché la requête pendant qu'elle est en vol — aucun JS requis.
+ * Usage : <span class="htmx-indicator"><i data-lucide="loader-2"></i></span>
+ * à l'intérieur (ou sur) un élément portant hx-get/hx-post. Caché par
+ * défaut, visible seulement pendant la requête. */
+.htmx-indicator { opacity: 0; transition: opacity var(--duration-fast) var(--easing-out); }
+.htmx-request .htmx-indicator,
+.htmx-indicator.htmx-request { opacity: 1; }
+
+/* ── Focus visible systématique (dette accessibilité — audit §2.3) ───
+ * Complète les composants interactifs qui n'avaient pas de halo focus
+ * (le halo cuivre `--shadow-glow` existe déjà sur `a`, `.btn`,
+ * `.escale-subnav a`, les champs de formulaire — non dupliqués ici). */
+.topbar-action:focus-visible,
+.sidebar-toggle:focus-visible,
+.nav-group-toggle:focus-visible,
+.vessel-tab:focus-visible,
+.year-btn:focus-visible,
+.view-btn:focus-visible,
+.leg-chip:focus-visible,
+.btn-icon-only:focus-visible,
+.form-disclosure > summary:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+/* Champs hors <form> stylé (ex. filtre <select hx-get> autonome) — les
+   champs à l'intérieur d'un <form> ont déjà leur halo via `form input:focus`
+   plus haut ; ce sélecteur générique couvre le reste sans les dupliquer. */
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+/* ── Empty state — slot CTA + variante carte ──────────────────────────
+ * `.empty-state` existant (ligne ~1863) complété : la généralisation aux
+ * templates reste à faire au fil de l'eau (hors périmètre CSS-only). */
+.empty-state .btn { margin-top: var(--space-2); }
+.empty-state--card {
+  background: var(--blanc);
+  border: 1px solid var(--gris-clair);
+  border-radius: var(--radius-md);
+  padding: var(--space-7) var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Densité de tableau togglable ─────────────────────────────────────
+ * Compacte par défaut (padding `.data-table` existant). Variante
+ * "confortable" appliquée par `density.js` via une classe sur <body> —
+ * préférence PAR NAVIGATEUR (localStorage `towt-density`), pas persistée
+ * en base : pas d'écran de configuration serveur, ne survit pas au
+ * changement de poste. */
+body.density-cosy .data-table th,
+body.density-cosy .data-table td {
+  padding: calc(var(--space-2) + 4px) var(--space-3);
+}

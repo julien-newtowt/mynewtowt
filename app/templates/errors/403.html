@@ -2,11 +2,16 @@
 {% block title %}403 — Accès refusé{% endblock %}
 {% block body %}
 <div class="auth-shell">
-  <div class="auth-card text-center">
-    <i data-lucide="shield-off" style="width:48px;height:48px;color:var(--danger);"></i>
-    <h1 class="display" style="font-size:var(--text-4xl)">403</h1>
-    <p>Vous n'avez pas l'autorisation d'accéder à cette page.</p>
-    <a href="/" class="btn btn-primary mt-3">Accueil</a>
+  <div class="auth-card">
+    <div class="empty-state empty-state--card">
+      <i data-lucide="shield-off" style="color: var(--danger);"></i>
+      <p class="empty-title">Accès refusé</p>
+      <p class="empty-hint">Vous n'avez pas l'autorisation d'accéder à cette page. Si vous pensez qu'il s'agit d'une erreur, contactez le support.</p>
+      <div class="flex gap-2 justify-center mt-3">
+        <a href="/" class="btn btn-primary">Accueil</a>
+        <a href="/contact" class="btn btn-secondary">Contacter le support</a>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}

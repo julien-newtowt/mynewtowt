@@ -89,6 +89,12 @@
       </div>
     </div>
 
+    {# Densité de tableau (compacte/confortable) — préférence par navigateur,
+       cf. app/static/js/density.js et kairos.css `body.density-cosy`. #}
+    <button type="button" class="topbar-action" id="density-toggle" title="Densité d'affichage">
+      <i data-lucide="rows-3"></i>
+    </button>
+
     {% if newtowt_agent_enabled %}
     <a href="/chat" class="topbar-action" title="Newtowt Agent">
       <i data-lucide="message-square"></i>
