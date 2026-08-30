@@ -38,14 +38,9 @@
         if (inp.files && inp.files.length && inp.form) inp.form.submit();
       });
     });
-    // Confirmation avant une action verrouillante (clôture).
-    document.querySelectorAll("form[data-confirm]").forEach(function (form) {
-      form.addEventListener("submit", function (e) {
-        if (!window.confirm(form.getAttribute("data-confirm"))) {
-          e.preventDefault();
-        }
-      });
-    });
+    // NB : la confirmation des formulaires `data-confirm` (clôture,
+    // rectification) est portée globalement par forms.js. La rebrancher ici
+    // ouvrait deux boîtes de dialogue à la suite pour un seul envoi.
   }
 
   if (document.readyState === "loading") {

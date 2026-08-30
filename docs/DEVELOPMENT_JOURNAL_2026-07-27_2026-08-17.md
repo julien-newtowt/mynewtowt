@@ -2151,3 +2151,151 @@ aurait coûté une minute et évité une fusion en rouge.
   (`/opt/mynewtowt`), hors de portée d'une session Claude Code. Voir
   `docs/operations/01-runbook.md` §4, et re-pointer le remote du clone serveur
   vers `julien-newtowt/mynewtowt` avant le premier déploiement post-transfert.
+
+---
+
+## 2026-08-30 — Retours du bord sur le module de caisse (Cdt ANEMOS)
+
+> ⚠️ Entrée hors de la fenêtre annoncée du journal (27/07 → 17/08), consignée
+> ici parce que c'est le premier **retour d'usage réel** du module caisse, et
+> qu'il valide autant qu'il corrige.
+
+**Branche** : `claude/user-message-au0tqk` (depuis `main` @274ee91)
+**Origine** : courriel du Cdt Gwenola LE GUIL (ANEMOS) du 2026-08-29, 4 remarques
+**Migrations** : aucune
+**Périmètre** : templates + JS + tests + documentation. Aucun modèle, aucune
+route, aucune règle métier touchée.
+
+### Situation
+
+Le contrôle de caisse a été utilisé pour la première fois en conditions réelles,
+sur l'ANEMOS. Il a fonctionné — deux déclarations enregistrées, écarts figés,
+gel non déclenché (motif « fin de mois ») — mais l'usage a fait remonter quatre
+points, dont un défaut d'affichage franc et une erreur de manipulation.
+
+### R3 — la page caisse « a cassé toute la mise en page » (le plus grave)
+
+Une balise `</div>` **en trop** dans `staff/cashbox/detail.html`. Le navigateur
+ne signale rien : il referme silencieusement le conteneur ouvert le plus proche
+— ici le `<main>` du layout — et **tout le contenu suivant sort de la grille**
+(nouveau mouvement, export, journal des mouvements s'affichaient pleine largeur
+sous la barre latérale, cf. capture jointe au courriel).
+
+Deux choses à retenir :
+
+1. **le défaut ne se déclenchait que dans la branche `{% if cash_counts %}`** —
+   invisible tant qu'aucun état de caisse n'existait, c'est-à-dire pendant tout
+   le développement et toute la recette. Il est apparu à la seconde exacte où
+   le commandant a validé sa première déclaration ;
+2. **le même défaut existait sur `staff/onboard_sales/vessel.html`** (écran de
+   vente à bord, branche « catalogue non vide »), non signalé parce que non
+   encore rencontré. Recherche systématique : ces deux fichiers étaient les
+   **seuls** des 301 gabarits, et le motif est identique dans les deux cas — un
+   `</div>` en colonne 0 collé après un `</table>`, la signature d'une édition
+   automatisée passée un peu vite.
+
+Filet posé : `tests/regression/test_template_tag_balance.py`, sentinelle qui
+réduit chaque gabarit à **un** chemin de rendu (première branche des
+`if`/`elif`/`else`, une itération des boucles) puis vérifie l'appariement des
+balises. La réduction n'est pas un détail : sans elle, un gabarit qui ouvre la
+même balise dans deux branches exclusives (`{% if edit %}<form A>{% else %}<form
+B>{% endif %}`) serait compté deux fois — deux faux positifs existaient
+réellement dans le dépôt (`staff/admin/users.html`, `pdf/dashboard_voyage.html`).
+
+### R1 — aucun total pendant la saisie
+
+Le commandant compte des **coupures** ; il validait un état **définitif** sans
+avoir jamais vu la somme de ce qu'il déclarait, ni son écart au théorique. Le
+solde théorique était pourtant affiché juste au-dessus : l'information à
+confronter était là, la confrontation était impossible.
+
+Ajout de `app/static/js/cash-count-form.js` : *Total déclaré / Solde théorique /
+Écart* recalculés à chaque frappe, par devise, avec une phrase qui dit le sens
+de l'écart (excédent / manquant). Trois points de conception :
+
+- **rien n'est pré-rempli à partir du théorique** — la garde posée à l'écriture
+  du service tient toujours : un comptage qu'on aligne sur l'attendu ne contrôle
+  rien. On affiche l'écart, on ne le suggère pas ;
+- **la somme est faite en centimes entiers.** En virgule flottante, `0.1 + 0.2`
+  ne fait pas `0.3` ; une caisse affichée à 1 988,34 au lieu de 1 988,35 ruine la
+  confiance dans l'outil plus sûrement qu'une absence de total ;
+- **la valeur affichée n'est jamais celle qui est écrite** : le serveur recalcule
+  tout depuis les quantités. C'est une aide à la saisie, et le test le dit.
+
+Vérifié sur les chiffres réels du courriel : 18×100 + 8×20 + 5×5 + 4×0,50 +
+7×0,05 + 1,00 = **1 988,35**, théorique **1 676,89**, écart **+311,46** —
+exactement ce que la capture montre.
+
+### R2 — une déclaration partie sur une fausse manœuvre
+
+Un état de caisse est **définitif** (registre sans UPDATE ni DELETE) et partait
+sur un simple clic. Le formulaire demande désormais une confirmation portant le
+**récapitulatif exact de ce qui va être écrit** : motif, date, et par devise
+compté / théorique / écart — plus la mention du gel comptable si le motif est
+« fin d'embarquement ». Une confirmation qui ne redit pas ce qu'on s'apprête à
+faire ne protège de rien.
+
+Implémentation : `forms.js` porte déjà un écouteur global `form[data-confirm]`.
+`cash-count-form.js` se contente donc de **tenir à jour le message**, plutôt que
+d'ajouter un second `window.confirm`.
+
+> 🐛 Défaut trouvé au passage : `cashbox-form.js` rebranchait justement ce second
+> écouteur. Les formulaires `data-confirm` de la page caisse — **clôture
+> mensuelle** et **rectification d'un mouvement** — ouvraient donc **deux boîtes
+> de dialogue à la suite** pour un seul envoi. Corrigé (le doublon est retiré,
+> la confirmation globale suffit).
+
+### R4 — « caisse théorique 1 676,89 €, caisse réelle 1 988,35 € : comment corriger ? »
+
+**Question d'usage, pas de code — pas de correctif logiciel ici.** La réponse
+opérationnelle est écrite dans la notice commandant (§7 bis) : un écart ne se
+corrige pas en retouchant le contrôle (il est figé, c'est sa raison d'être), il
+se corrige en **remettant les écritures manquantes**. Un excédent de 311,46 €
+signifie que de l'argent est entré sans être saisi — vente espèces non
+enregistrée, dépôt du siège, avance rendue. Seul le reliquat vraiment
+inexplicable se solde par un mouvement « Autre encaissement » explicitement
+libellé.
+
+**Ce que ce cas révèle, et qui n'est pas tranché** — un commandant peut
+aujourd'hui faire disparaître un **manquant** par un simple « Autre
+encaissement », sans que rien ne le distingue d'une écriture ordinaire. Le
+contrôle de caisse perd alors l'essentiel de sa valeur. C'est l'exact symétrique
+du remboursement, tranché par l'**ADR-013** (geste du siège, jamais du bord).
+Proposition à arbitrer, **non implémentée** :
+
+- catégories dédiées `regularisation_excedent` / `regularisation_manquant`,
+  réservées à `finance:M` (siège), le bord ne pouvant que *signaler* ;
+- rattachement du mouvement de régularisation au `cash_count` qu'il solde, pour
+  que l'écart et sa suite se lisent au même endroit ;
+- coût : une migration (contrainte `CHECK` sur `category`), une route, un écran.
+
+Cela mérite un **ADR-014** et une décision, pas une implémentation silencieuse :
+c'est une règle de contrôle interne, pas un détail d'interface.
+
+### Trou constaté, non comblé
+
+`cash_count.review_count()` (suite donnée par le siège : *validé* / *contesté*)
+existe et est testé depuis le 2026-08-27, mais **n'est exposé par aucune route
+ni aucun écran**. Conséquence directe pour ce cas : la déclaration partie par
+erreur reste « DÉCLARÉE » indéfiniment, sans qu'on puisse la marquer comme telle.
+La prévention est livrée (R2) ; le remède, non. À arbitrer avec l'ADR-014
+ci-dessus — même sujet, mêmes acteurs.
+
+### Vérifications
+
+- Suite complète exécutée, 0 échec ; `ruff check` et `black --check` verts.
+- **Sabotage** : remise en place du `</div>` fautif → la sentinelle de gabarits
+  **et** le test de page échouent tous les deux (`57 == 58` sur les `<div>`).
+- Arithmétique du script rejouée hors navigateur sur les chiffres réels du
+  courriel (total, écart, robustesse aux saisies illisibles et à la virgule
+  décimale).
+- Les tests de page **rendent le gabarit complet, layout compris** (appel direct
+  du handler, lecture de `resp.body`) — c'est ce qui permet de vérifier que le
+  contenu reste bien *à l'intérieur* du `<main>`.
+
+### Reste à faire
+
+- **Arbitrer l'ADR-014** (régularisation d'écart + suite donnée à un contrôle).
+- Ces correctifs sont **cosmétiques et front** : ils ne modifient ni le schéma,
+  ni les règles de calcul, ni les permissions. Ils peuvent partir sans attendre
+  le retour du manager.

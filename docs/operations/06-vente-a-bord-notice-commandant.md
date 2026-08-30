@@ -191,8 +191,16 @@ la caisse sont liées.
 4. Comptez physiquement et saisissez le **nombre de coupures** pour chaque
    valeur, billets puis pièces. Si vous ne triez pas la petite monnaie, portez
    son montant global sur la ligne **« Pièces non détaillées »**.
-5. Validez. Le total est **recalculé par le système** à partir de vos
-   quantités : il n'est jamais repris tel quel d'un champ « total ».
+   Au-dessus de la grille, trois cases se mettent à jour **à chaque saisie** :
+   *Total déclaré*, *Solde théorique*, *Écart*. Vérifiez vos chiffres là, avant
+   de valider.
+5. Validez. Une **confirmation** vous présente le récapitulatif exact de ce qui
+   va être écrit (motif, date, total compté, théorique, écart par devise).
+   Relisez-la : un état de caisse est **définitif**, il ne peut être ni modifié
+   ni supprimé. Si quelque chose ne va pas, annulez et reprenez la saisie.
+6. Le total est **recalculé par le système** à partir de vos quantités : il
+   n'est jamais repris tel quel d'un champ « total ». Les cases de l'étape 4
+   sont une aide à la saisie, pas la valeur enregistrée.
 
 **L'écart n'a pas à être nul.** Il est calculé, affiché, et **conservé** avec le
 solde théorique du jour. Expliquez-le dans le champ prévu (avance non saisie,
@@ -202,6 +210,39 @@ mieux qu'un comptage ajusté pour tomber juste.
 **Un mouvement saisi après coup ne modifie pas un état déjà déclaré** : il
 apparaîtra dans le contrôle suivant. C'est voulu — un contrôle qui se réécrirait
 tout seul ne contrôlerait rien.
+
+### Que faire quand la caisse réelle et le solde théorique divergent
+
+Exemple réel : caisse comptée **1 988,35 €**, solde théorique **1 676,89 €**,
+soit **+311,46 €** d'excédent.
+
+Un écart ne se corrige **pas** en retouchant le contrôle — il est figé, et c'est
+sa raison d'être. Il se corrige en **remettant les écritures manquantes** :
+
+1. **Cherchez d'abord la cause.** Un excédent d'espèces veut dire que de
+   l'argent est entré sans être saisi. Les trois cas courants : une **vente à
+   bord réglée en espèces** non enregistrée, un **dépôt / recharge de caisse**
+   du siège, une **avance équipage rendue** ou une dépense finalement
+   remboursée. Un manquant se lit à l'inverse : une **dépense** payée en espèces
+   et jamais saisie.
+2. **Saisissez chaque écriture retrouvée** dans *Nouveau mouvement*, avec sa
+   **vraie date d'effet** et sa catégorie (« Vente à bord », « Dépôt / recharge
+   de caisse », « Remboursement / avoir »…), justificatif à l'appui. Le solde
+   théorique rejoint alors la caisse réelle, écriture par écriture.
+3. **Seul le reliquat vraiment inexplicable** se solde par un mouvement
+   « **Autre encaissement** » (excédent) ou « **Autre** » (manquant), dont la
+   description doit dire ce qu'elle est — par exemple : *« Régularisation
+   d'écart de caisse constaté au 29/08/2026, état n° 12, cause non
+   identifiée »*. Signalez-le au siège dans le même geste.
+
+> ⚠️ Ces mouvements **ne réécrivent pas** le contrôle déjà déclaré : ils
+> apparaîtront dans le suivant, qui doit alors tomber juste. Et si la période
+> est **verrouillée** (clôture mensuelle passée, ou relève déclarée), la saisie
+> est refusée : le siège doit intervenir.
+
+> 💡 Un écart important qui revient d'un contrôle à l'autre n'est pas un
+> problème de saisie mais un problème de procédure : dites-le, plutôt que de le
+> solder à chaque fois.
 
 ## 7 ter. Corriger un mouvement de caisse mal saisi
 
