@@ -139,9 +139,16 @@ CATALOG: dict[str, str] = {
     "devis_hero_kicker": "Estimation tarifaire",
     "devis_hero_title": "Demandez votre estimation tarifaire",
     "devis_hero_lead": "Décrivez votre expédition, notre équipe commerciale vous adresse une estimation chiffrée sous 4 heures ouvrées. Nos clients sous contrat estiment en libre-service depuis leur extranet.",
-    "devis_hero_lead_client": " — et sur votre grille négociée si vous en avez une",
+    "devis_hero_lead_client": (
+        " — mais cette page n'affiche aucun tarif : obtenez un chiffrage immédiat"
+        " sur vos grilles actives depuis votre espace client"
+    ),
     "devis_logged_in_pre": "Connecté :",
-    "devis_logged_in_post": "— votre grille tarifaire s'applique si elle existe.",
+    "devis_logged_in_post": (
+        "— cette demande n'affiche aucun tarif ; vos estimations tarifaires"
+        " immédiates vous attendent dans votre espace client."
+    ),
+    "devis_goto_estimations": "Obtenir un chiffrage immédiat dans mon espace client →",
     "devis_step1_route": "La route",
     "devis_departure_planned": "Départ prévu :",
     "devis_change_route": "Changer de route",
@@ -1556,4 +1563,21 @@ CATALOG: dict[str, str] = {
     "mrv_bascule_noon_frozen_title": "Capture v2 active",
     "mrv_bascule_noon_frozen_body": "L'ancien formulaire noon est remplacé par la déclaration d'événements sur ce navire.",
     "mrv_bascule_goto_events": "Déclarer un événement",
+    # ── Reprise UX Phase 3 (K-4 toasts HTMX + K-6 bienvenue) ──
+    "toast_notification_read": "Notification marquée comme lue",
+    "toast_message_sent": "Message envoyé",
+    "toast_voyage_public_on": "Page de voyage publiée",
+    "toast_voyage_public_off": "Page de voyage dépubliée",
+    "toast_bl_validated": "Connaissement validé",
+    "toast_bl_receipt_confirmed": "Réception des originaux confirmée",
+    "booking_welcome_title": "Bienvenue dans votre espace client",
+    "booking_welcome_intro": "Votre compte NEWTOWT est prêt. Voici où tout retrouver :",
+    "booking_welcome_bookings": "Vos réservations, statut et détails de cargaison.",
+    "booking_welcome_documents": "Packing list, connaissements, factures et certificats.",
+    "booking_welcome_track": "Le suivi en temps réel de votre traversée sur la carte.",
+    # Changement de mot de passe client — erreurs (revue PR #167).
+    "pwd_change_rate_limited": "Trop de tentatives — patientez 15 minutes.",
+    "pwd_change_wrong_current": "Mot de passe actuel incorrect.",
+    "pwd_change_mismatch": "Les deux nouveaux mots de passe diffèrent.",
+    "pwd_change_too_short": "Le mot de passe doit contenir au moins {min} caractères.",
 }

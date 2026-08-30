@@ -139,9 +139,16 @@ CATALOG: dict[str, str] = {
     "devis_hero_kicker": "Ước tính giá cước",
     "devis_hero_title": "Yêu cầu ước tính giá cước",
     "devis_hero_lead": "Nhận ngay một báo giá tham khảo, không cần tạo tài khoản. Phép tính dựa trên bảng giá của tuyến đường",
-    "devis_hero_lead_client": " — và trên bảng giá đã thương lượng của bạn nếu bạn có",
+    "devis_hero_lead_client": (
+        " — nhưng trang này không hiển thị bất kỳ mức giá nào: nhận báo giá"
+        " tức thì trên bảng giá đang áp dụng của bạn từ khu vực khách hàng"
+    ),
     "devis_logged_in_pre": "Đã đăng nhập:",
-    "devis_logged_in_post": "— bảng giá của bạn sẽ được áp dụng nếu có.",
+    "devis_logged_in_post": (
+        "— yêu cầu này không hiển thị bất kỳ mức giá nào; các ước tính giá"
+        " tức thì của bạn đang chờ trong khu vực khách hàng."
+    ),
+    "devis_goto_estimations": "Nhận báo giá tức thì trong khu vực khách hàng của tôi →",
     "devis_step1_route": "Tuyến đường",
     "devis_departure_planned": "Khởi hành dự kiến:",
     "devis_change_route": "Đổi tuyến đường",
@@ -1556,4 +1563,21 @@ CATALOG: dict[str, str] = {
     "mrv_bascule_noon_frozen_title": "Thu thập v2 đang bật",
     "mrv_bascule_noon_frozen_body": "Biểu mẫu noon cũ được thay bằng khai báo sự kiện trên tàu này.",
     "mrv_bascule_goto_events": "Khai báo sự kiện",
+    # Reprise UX Phase 3 — toasts espace client + bienvenue post-wizard.
+    "toast_notification_read": "Đã đánh dấu thông báo là đã đọc",
+    "toast_message_sent": "Đã gửi tin nhắn",
+    "toast_voyage_public_on": "Đã công bố trang hành trình",
+    "toast_voyage_public_off": "Đã gỡ công bố trang hành trình",
+    "toast_bl_validated": "Vận đơn đã được phê duyệt",
+    "toast_bl_receipt_confirmed": "Đã xác nhận nhận bản gốc",
+    "booking_welcome_title": "Chào mừng đến với khu vực khách hàng của bạn",
+    "booking_welcome_intro": "Tài khoản NEWTOWT của bạn đã sẵn sàng. Mọi thứ ở đây:",
+    "booking_welcome_bookings": "Các đặt chỗ, trạng thái và chi tiết hàng hóa của bạn.",
+    "booking_welcome_documents": "Packing list, vận đơn, hóa đơn và chứng nhận.",
+    "booking_welcome_track": "Theo dõi hành trình của bạn theo thời gian thực trên bản đồ.",
+    # Đổi mật khẩu khách hàng — lỗi (review PR #167).
+    "pwd_change_rate_limited": "Quá nhiều lần thử — vui lòng đợi 15 phút.",
+    "pwd_change_wrong_current": "Mật khẩu hiện tại không đúng.",
+    "pwd_change_mismatch": "Hai mật khẩu mới không khớp.",
+    "pwd_change_too_short": "Mật khẩu phải có ít nhất {min} ký tự.",
 }

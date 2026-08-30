@@ -4,6 +4,12 @@
 
 <h1>{% if lang == 'en' %}My account{% else %}Mon compte{% endif %}</h1>
 
+{% if request.query_params.get('password_changed') %}
+<div class="alert alert-success">
+  {% if lang == 'en' %}Password changed.{% else %}Mot de passe modifié.{% endif %}
+</div>
+{% endif %}
+
 <section class="card mb-4">
   <h2>{% if lang == 'en' %}Information{% else %}Informations{% endif %}</h2>
   <table>
@@ -27,7 +33,7 @@
         <strong>{% if lang == 'en' %}Password{% else %}Mot de passe{% endif %}</strong> —
         {% if lang == 'en' %}Change it regularly.{% else %}Modifiez-le régulièrement.{% endif %}
       </p>
-      <a href="#" class="btn btn-secondary">
+      <a href="/me/account/password" class="btn btn-secondary">
         {% if lang == 'en' %}Change my password{% else %}Changer mon mot de passe{% endif %}
       </a>
     </div>
@@ -57,16 +63,16 @@
       <p>
         {% if lang == 'en' %}Download all your data as a ZIP file.{% else %}Téléchargez l'ensemble de vos données au format ZIP.{% endif %}
       </p>
-      <a href="#" class="btn btn-ghost">
-        {% if lang == 'en' %}Export my data{% else %}Exporter mes données{% endif %}
+      <a href="/contact" class="btn btn-ghost">
+        {% if lang == 'en' %}On request — contact us{% else %}Sur demande — nous contacter{% endif %}
       </a>
     </div>
     <div>
       <p class="text-error">
         {% if lang == 'en' %}Permanent deletion (30-day reversibility).{% else %}Suppression définitive (30 j de réversibilité).{% endif %}
       </p>
-      <a href="#" class="btn btn-danger">
-        {% if lang == 'en' %}Delete my account{% else %}Supprimer mon compte{% endif %}
+      <a href="/contact" class="btn btn-danger">
+        {% if lang == 'en' %}On request — contact us{% else %}Sur demande — nous contacter{% endif %}
       </a>
     </div>
   </div>

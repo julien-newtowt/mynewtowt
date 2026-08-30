@@ -29,9 +29,16 @@
     </ul>
   </div>
 {% else %}
-  <p class="text-muted">
-    {% if lang == 'en' %}No conversation yet. Open a booking to message us.{% else %}Aucune conversation. Ouvrez une réservation pour nous écrire.{% endif %}
-  </p>
+  <div class="empty-state">
+    <i data-lucide="message-square"></i>
+    <p class="empty-title">
+      {% if lang == 'en' %}No conversation yet{% else %}Aucune conversation pour l'instant{% endif %}
+    </p>
+    <p class="empty-hint">
+      {% if lang == 'en' %}Open a booking to send us a message — our team replies right there.
+      {% else %}Ouvrez une réservation pour nous écrire — notre équipe y répond directement.{% endif %}
+    </p>
+  </div>
 {% endif %}
 
 {% endblock %}

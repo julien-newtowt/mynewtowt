@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_client
 from app.config import settings
 from app.database import get_db
+from app.i18n import t as i18n_t
 from app.models.anemos_certificate import AnemosCertificate
 from app.models.booking import Booking
 from app.models.leg import Leg
@@ -44,6 +45,7 @@ from app.services import documents as documents_svc
 from app.services import hold_conditions as hold_conditions_svc
 from app.services.activity import record as activity_record
 from app.services.booking import find_by_reference, list_for_client
+from app.services.hx import mutation_response
 from app.services.vessel_position import get_latest_position
 from app.templating import templates
 
@@ -55,6 +57,21 @@ _VOYAGE_STEPS = ("submitted", "confirmed", "loaded", "at_sea", "discharged", "de
 _VOYAGE_STARTED = ("loaded", "at_sea", "discharged", "delivered")
 
 router = APIRouter(tags=["client-dashboard"])
+
+
+def _me_mutation_response(request: Request, redirect_url: str, message: str) -> Response:
+    """Réponse standard d'une mutation répétitive de l'espace client.
+
+    Wrapper d'une ligne sur ``services.hx.mutation_response`` (même motif que
+    le cockpit escale, ``escale_router._mutation_response``) — conservé pour
+    ne pas retoucher tous les call sites de ce routeur.
+    """
+    return mutation_response(
+        request,
+        redirect_url=redirect_url,
+        message=message,
+        refresh_event="meRefresh",
+    )
 
 
 @router.get("/me", response_class=HTMLResponse)
@@ -78,6 +95,48 @@ async def dashboard(
     # Alertes proactives affichées dès la connexion (retard / décalage ETA…).
     all_notifs = await notifications.list_for(db, client_id=client.id, limit=20)
     alert_items = [n for n in all_notifs if not n.is_read][:5]
+
+    # K-5 — « En mer actuellement » : une ligne par traversée du client dont le
+    # leg est en mer (statut booking `at_sea`, même convention que `_VOYAGE_STARTED`
+    # / le suivi `/me/track`). ETA = `leg.eta` (courante, pas `eta_ref`).
+    at_sea_crossings: list[dict] = []
+    at_sea_bookings = [b for b in bookings if b.status == "at_sea"]
+    if at_sea_bookings:
+        leg_ids = {b.leg_id for b in at_sea_bookings}
+        legs_by_id = {
+            leg_row.id: leg_row
+            for leg_row in (
+                (await db.execute(select(Leg).where(Leg.id.in_(leg_ids)))).scalars().all()
+            )
+        }
+        port_ids = {
+            pid
+            for leg_row in legs_by_id.values()
+            for pid in (leg_row.departure_port_id, leg_row.arrival_port_id)
+        }
+        ports_by_id = (
+            {
+                port_row.id: port_row
+                for port_row in (
+                    (await db.execute(select(Port).where(Port.id.in_(port_ids)))).scalars().all()
+                )
+            }
+            if port_ids
+            else {}
+        )
+        for b in at_sea_bookings:
+            leg_row = legs_by_id.get(b.leg_id)
+            if leg_row is None:
+                continue
+            at_sea_crossings.append(
+                {
+                    "reference": b.reference,
+                    "pol": ports_by_id.get(leg_row.departure_port_id),
+                    "pod": ports_by_id.get(leg_row.arrival_port_id),
+                    "eta": leg_row.eta,
+                }
+            )
+
     return templates.TemplateResponse(
         "client/dashboard.html",
         {
@@ -88,6 +147,7 @@ async def dashboard(
             "co2_avoided_kg": float(co2_avoided or 0),
             "notif_unread": notif_unread,
             "alert_items": alert_items,
+            "at_sea_crossings": at_sea_crossings,
         },
     )
 
@@ -107,14 +167,17 @@ async def notifications_list(
 
 @router.post("/me/notifications/{notif_id}/read")
 async def notification_mark_read(
+    request: Request,
     notif_id: int,
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
-) -> RedirectResponse:
+) -> Response:
     notif = await db.get(Notification, notif_id)
     if notif is not None and notif.target_client_id == client.id:
         await notifications.mark_read(db, notif)
-    return RedirectResponse(url="/me/notifications", status_code=303)
+    return _me_mutation_response(
+        request, "/me/notifications", i18n_t("toast_notification_read", client.language)
+    )
 
 
 @router.get("/me/bookings", response_class=HTMLResponse)
@@ -200,11 +263,12 @@ async def booking_detail(
 
 @router.post("/me/bookings/{ref}/messages")
 async def post_message(
+    request: Request,
     ref: str,
     body: str = Form(...),
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
-) -> RedirectResponse:
+) -> Response:
     booking = await find_by_reference(db, ref)
     if not booking or booking.client_account_id != client.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
@@ -221,16 +285,19 @@ async def post_message(
             booking_reference=booking.reference,
             booking_id=booking.id,
         )
-    return RedirectResponse(url=f"/me/bookings/{ref}#messages", status_code=303)
+    return _me_mutation_response(
+        request, f"/me/bookings/{ref}#messages", i18n_t("toast_message_sent", client.language)
+    )
 
 
 @router.post("/me/bookings/{ref}/voyage-public")
 async def booking_voyage_public_toggle(
+    request: Request,
     ref: str,
     enabled: str = Form(""),
     client=Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
-) -> RedirectResponse:
+) -> Response:
     """Opt-in / opt-out de la page publique de voyage ``/voyage/{ref}``.
 
     C'est la destination du QR B2B2C imprimé sur le paquet : jamais publiée
@@ -242,6 +309,7 @@ async def booking_voyage_public_toggle(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     booking.voyage_public = enabled == "on"
     await db.flush()
+    toast_key = "toast_voyage_public_on" if booking.voyage_public else "toast_voyage_public_off"
     await activity_record(
         db,
         action="client_voyage_public_on" if booking.voyage_public else "client_voyage_public_off",
@@ -251,7 +319,9 @@ async def booking_voyage_public_toggle(
         entity_id=booking.id,
         entity_label=booking.reference,
     )
-    return RedirectResponse(url=f"/me/bookings/{ref}?voyage_saved=1", status_code=303)
+    return _me_mutation_response(
+        request, f"/me/bookings/{ref}?voyage_saved=1", i18n_t(toast_key, client.language)
+    )
 
 
 @router.get("/me/bookings/{ref}/carnet.pdf")

@@ -7,8 +7,15 @@
     <span class="kicker">Opérations</span>
     <h1 class="display">Tickets escale</h1>
   </div>
-  <a href="/tickets/new" class="btn btn-primary">+ Nouveau ticket</a>
+  <a href="/tickets/new{% if filter_leg_id %}?leg_id={{ filter_leg_id }}{% endif %}" class="btn btn-primary">+ Nouveau ticket</a>
 </header>
+
+{% if filter_leg %}
+<div class="alert alert-info mb-3" role="status">
+  Filtré sur le leg <span class="mono">{{ filter_leg.leg_code }}</span>
+  — <a href="/tickets{% if filter_priority or filter_category %}?{% if filter_priority %}priority={{ filter_priority }}{% endif %}{% if filter_priority and filter_category %}&amp;{% endif %}{% if filter_category %}category={{ filter_category }}{% endif %}{% endif %}">retirer le filtre</a>
+</div>
+{% endif %}
 
 <section class="kpi-strip">
   <div class="kpi-card">
@@ -34,6 +41,7 @@
 </section>
 
 <form class="card mb-4" method="get" action="/tickets" style="display:flex; gap:var(--space-3); flex-wrap:wrap; align-items:end;">
+  {% if filter_leg_id %}<input type="hidden" name="leg_id" value="{{ filter_leg_id }}" />{% endif %}
   <div class="field" style="margin:0;">
     <label for="priority">Priorité</label>
     <select id="priority" name="priority">
@@ -53,7 +61,7 @@
     </select>
   </div>
   <button type="submit" class="btn btn-secondary">Filtrer</button>
-  {% if filter_priority or filter_category %}<a href="/tickets" class="btn btn-ghost">Réinitialiser</a>{% endif %}
+  {% if filter_priority or filter_category or filter_leg_id %}<a href="/tickets" class="btn btn-ghost">Réinitialiser</a>{% endif %}
 </form>
 
 <div class="kanban" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--space-4); align-items:start;">

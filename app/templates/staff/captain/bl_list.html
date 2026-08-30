@@ -1,6 +1,7 @@
 {% extends "staff/_layout.html" %}
 {% block title %}Connaissements à signer — {{ brand.nom_court }}{% endblock %}
 {% block content %}
+<div id="bl-page">
 <a href="/captain" class="btn btn-ghost mb-3">← Onboard</a>
 <header class="mb-4">
   <span class="kicker">Commandant</span>
@@ -27,13 +28,19 @@
   </div>
 {% endif %}
 
-{# Bouton d'envoi explicite, PAS `onchange="this.form.submit()"` : la CSP du projet
-   est `script-src 'self'` sans `unsafe-inline`, elle bloque donc les gestionnaires
-   d'événements en attribut. Quatre écrans existants utilisent ce motif et leurs
-   filtres sont de ce fait inertes — signalé, pas reproduit ici. #}
+{# Filtre auto-soumis, CSP-safe : la CSP du projet est `script-src 'self'` sans
+   `unsafe-inline`, donc PAS de `onchange="this.form.submit()"` (quatre écrans
+   existants utilisent ce motif et leurs filtres sont de ce fait inertes —
+   signalé, pas reproduit ici). HTMX soumet le formulaire au changement du
+   select ; le bouton « Afficher » reste le repli sans JS.
+   hx-select/hx-target ciblent #bl-page (pas `body`) : sous htmx 2, une réponse
+   document-complet perd son <body> au makeFragment, donc hx-select="body" ne
+   matche jamais rien (swap vide, page blanche). #}
 <form method="get" action="/captain/bl" class="mb-4">
   <label class="text-sm text-muted" for="leg_id">Leg</label>
-  <select name="leg_id" id="leg_id">
+  <select name="leg_id" id="leg_id"
+          hx-get="/captain/bl" hx-trigger="change" hx-include="closest form"
+          hx-select="#bl-page" hx-target="#bl-page" hx-swap="outerHTML" hx-push-url="true">
     {% for l in legs %}
       <option value="{{ l.id }}" {% if selected and l.id == selected.id %}selected{% endif %}>
         {{ l.leg_code }}{% if l.etd %} · ETD {{ l.etd.strftime("%d/%m/%Y") }}{% endif %}
@@ -84,6 +91,7 @@
               {# Lire avant de signer : le lien ouvre le PDF filigrané du draft. #}
               <a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf"
                  target="_blank" class="btn btn-ghost btn-sm">Lire</a>
+              <a href="/cargo/packing-lists/{{ b.packing_list_id }}" class="btn btn-ghost btn-sm" title="Fiche packing list">Fiche PL</a>
               {# `formaction` et non un formulaire imbriqué : HTML interdit d'imbriquer
                  un <form> dans un <form>, et le navigateur casserait alors l'envoi
                  groupé comme l'unitaire. Le champ `_csrf` du formulaire englobant
@@ -124,7 +132,10 @@
         <td class="mono">{{ b.batch_number }}</td>
         <td>{{ b.consignee_name or '—' }}</td>
         <td>{{ b.description_of_goods or b.type_of_goods or '—' }}</td>
-        <td><a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf" target="_blank" class="btn btn-ghost btn-sm">Lire</a></td>
+        <td>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf" target="_blank" class="btn btn-ghost btn-sm">Lire</a>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}" class="btn btn-ghost btn-sm" title="Fiche packing list">Fiche PL</a>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -145,7 +156,10 @@
         <td class="mono">{% if b.bl_signed_at %}{{ b.bl_signed_at.strftime("%d/%m/%Y %H:%M") }}{% else %}—{% endif %}</td>
         <td class="mono text-xs">{{ (b.bl_signature_hash or '')[:12] }}{% if b.bl_signature_hash %}…{% endif %}</td>
         <td><span class="pill {% if b.bl_state == 'final' %}pill-success{% endif %}">{{ b.bl_state }}</span></td>
-        <td><a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf" target="_blank" class="btn btn-ghost btn-sm">Ouvrir</a></td>
+        <td>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf" target="_blank" class="btn btn-ghost btn-sm">Ouvrir</a>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}" class="btn btn-ghost btn-sm" title="Fiche packing list">Fiche PL</a>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -154,4 +168,5 @@
 {% endif %}
 
 {% endif %}
+</div>
 {% endblock %}

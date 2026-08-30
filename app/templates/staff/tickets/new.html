@@ -51,7 +51,7 @@
       <label for="leg_id">Lié à un leg (optionnel)</label>
       <select id="leg_id" name="leg_id">
         <option value="">—</option>
-        {{ leg_option_tags(leg_options) }}
+        {{ leg_option_tags(leg_options, preselected_leg_id) }}
       </select>
     </div>
     <div class="field">

@@ -139,9 +139,16 @@ CATALOG: dict[str, str] = {
     "devis_hero_kicker": "Estimación tarifaria",
     "devis_hero_title": "Solicite su estimación tarifaria",
     "devis_hero_lead": "Obtén de inmediato una cotización indicativa, sin crear cuenta. El cálculo se basa en la tarifa de la ruta",
-    "devis_hero_lead_client": " — y en tu tarifa negociada si tienes una",
+    "devis_hero_lead_client": (
+        " — pero esta página no muestra ningún precio: obtén un cálculo"
+        " inmediato sobre tus tarifas activas desde tu área de cliente"
+    ),
     "devis_logged_in_pre": "Conectado:",
-    "devis_logged_in_post": "— tu tarifa se aplica si existe.",
+    "devis_logged_in_post": (
+        "— esta solicitud no muestra ningún precio; tus estimaciones"
+        " tarifarias inmediatas te esperan en tu área de cliente."
+    ),
+    "devis_goto_estimations": "Obtener un cálculo inmediato en mi área de cliente →",
     "devis_step1_route": "La ruta",
     "devis_departure_planned": "Salida prevista:",
     "devis_change_route": "Cambiar de ruta",
@@ -1556,4 +1563,21 @@ CATALOG: dict[str, str] = {
     "mrv_bascule_noon_frozen_title": "Captura v2 activa",
     "mrv_bascule_noon_frozen_body": "El antiguo formulario noon se sustituye por la declaración de eventos en este buque.",
     "mrv_bascule_goto_events": "Declarar un evento",
+    # Reprise UX Phase 3 — toasts espace client + bienvenue post-wizard.
+    "toast_notification_read": "Notificación marcada como leída",
+    "toast_message_sent": "Mensaje enviado",
+    "toast_voyage_public_on": "Página de travesía publicada",
+    "toast_voyage_public_off": "Página de travesía despublicada",
+    "toast_bl_validated": "Conocimiento de embarque aprobado",
+    "toast_bl_receipt_confirmed": "Recepción de los originales confirmada",
+    "booking_welcome_title": "Bienvenido a su espacio de cliente",
+    "booking_welcome_intro": "Su cuenta NEWTOWT está lista. Aquí encontrará todo:",
+    "booking_welcome_bookings": "Sus reservas, estado y detalles de la carga.",
+    "booking_welcome_documents": "Packing list, conocimientos de embarque, facturas y certificados.",
+    "booking_welcome_track": "El seguimiento en tiempo real de su travesía en el mapa.",
+    # Cambio de contraseña cliente — errores (revisión PR #167).
+    "pwd_change_rate_limited": "Demasiados intentos — espere 15 minutos.",
+    "pwd_change_wrong_current": "La contraseña actual es incorrecta.",
+    "pwd_change_mismatch": "Las dos contraseñas nuevas no coinciden.",
+    "pwd_change_too_short": "La contraseña debe tener al menos {min} caracteres.",
 }

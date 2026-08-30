@@ -363,6 +363,46 @@ async def portal_packing_template_xlsx(
     )
 
 
+@router.get("/{token}/packing/export.xlsx")
+async def portal_packing_export_xlsx(
+    token: str, request: Request, db: AsyncSession = Depends(get_db)
+) -> Response:
+    """CARGO-09 — export Excel des batches de la packing list, côté expéditeur.
+
+    Calqué sur la route staff équivalente (``cargo_packing_router.
+    packing_list_export_xlsx``) : même service ``cargo_excel.
+    export_packing_list_xlsx``, même contexte (voyage/navire/POL/POD résolu via
+    ``resolve_pl_context``). Mêmes gardes que les routes voisines du portail :
+    ``_load_or_410`` (résolution + expiration du token, rate-limit par IP, audit
+    d'accès dans ``portal_access_logs``) — pas de trace supplémentaire dans
+    ``activity_logs``, comme pour le template Excel voisin (une consultation,
+    pas une mutation).
+    """
+    pl = await _load_or_410(db, token, request)
+    pl_full = (
+        await db.execute(
+            select(PackingList)
+            .options(selectinload(PackingList.batches))
+            .where(PackingList.id == pl.id)
+        )
+    ).scalar_one()
+    from app.services.packing_list import resolve_pl_context
+
+    _order, _booking, leg, vessel, pol, pod = await resolve_pl_context(db, pl_full)
+    ctx = {
+        "voyage_id": leg.leg_code if leg else None,
+        "vessel": vessel.name if vessel else None,
+        "pol_code": pol.locode if pol else None,
+        "pod_code": pod.locode if pod else None,
+    }
+    content = cargo_excel.export_packing_list_xlsx(list(pl_full.batches), **ctx)
+    return Response(
+        content=content,
+        media_type=cargo_excel.XLSX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="packing_list_{pl_full.id}.xlsx"'},
+    )
+
+
 @router.post("/{token}/packing/import-xlsx")
 async def portal_packing_import_xlsx(
     token: str,

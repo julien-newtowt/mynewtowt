@@ -24,6 +24,7 @@ from app.models.packing_list import (
 from app.permissions import require_permission
 from app.services import bl_workflow, cargo_excel
 from app.services.activity import record as activity_record
+from app.services.hx import mutation_response
 from app.services.packing_list import (
     apply_batch_update,
     can_modify,
@@ -45,31 +46,86 @@ from app.utils.file_validation import validate_size
 router = APIRouter(prefix="/cargo/packing-lists", tags=["cargo-packing"])
 
 
+def _mutation_response(request: Request, pl_id: int, message: str) -> Response:
+    """Réponse standard d'une mutation répétitive de la fiche packing list.
+
+    Wrapper d'une ligne sur ``services.hx.mutation_response`` (copie du motif
+    Phase 1 posé par ``escale_router._mutation_response``) — conservé pour ne
+    pas retoucher tous les call sites de ce routeur.
+
+    ⚠️ Réservé aux actions répétitives (lock/unlock, ajout de batch, édition de
+    batch, message staff→portail) — PAS aux actions BL sensibles
+    (draft/revise/confirm-delivery/shipped-on-board) ni aux suppressions, qui
+    gardent leur redirect classique (revue de sécurité plus simple).
+    """
+    return mutation_response(
+        request,
+        redirect_url=f"/cargo/packing-lists/{pl_id}",
+        message=message,
+        refresh_event="cargoRefresh",
+    )
+
+
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 async def packing_lists_index(
     request: Request,
+    leg_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("cargo", "C")),
 ) -> HTMLResponse:
-    pls = list(
-        (
-            await db.execute(
-                select(PackingList)
-                .options(selectinload(PackingList.batches))
-                .order_by(PackingList.updated_at.desc())
-                .limit(100)
-            )
-        )
-        .scalars()
-        .all()
+    """Maillage cargo ↔ voyage (Phase 2, §9.2) — colonnes Voyage/Navire + filtre
+    ``?leg_id=``, résolus COM-11 (``coalesce(pl.leg_id, order.leg_id,
+    booking.leg_id)``) en **une seule requête groupée** (jointure Order/Booking
+    dans le SELECT principal — pas de résolution par packing list)."""
+    from app.models.leg import Leg
+    from app.models.vessel import Vessel
+
+    # COM-11 — même règle de résolution que `resolve_pl_context`, mais portée par
+    # la requête (pas de coûteux aller-retour par ligne).
+    resolved_leg_id = func.coalesce(PackingList.leg_id, Order.leg_id, Booking.leg_id)
+    stmt = (
+        select(PackingList, resolved_leg_id)
+        .options(selectinload(PackingList.batches))
+        .outerjoin(Order, PackingList.order_id == Order.id)
+        .outerjoin(Booking, PackingList.booking_id == Booking.id)
     )
+    if leg_id is not None:
+        stmt = stmt.where(resolved_leg_id == leg_id)
+    rows = (await db.execute(stmt.order_by(PackingList.updated_at.desc()).limit(100))).all()
+    pls = [row[0] for row in rows]
+    leg_id_by_pl: dict[int, int | None] = {row[0].id: row[1] for row in rows}
+
+    # Legs (+ navires) des packing lists affichées, en un seul SELECT groupé.
+    wanted_leg_ids = {lid for lid in leg_id_by_pl.values() if lid is not None}
+    leg_and_vessel_by_leg_id: dict[int, tuple[Leg, Vessel | None]] = {}
+    if wanted_leg_ids:
+        leg_rows = (
+            await db.execute(
+                select(Leg, Vessel)
+                .outerjoin(Vessel, Leg.vessel_id == Vessel.id)
+                .where(Leg.id.in_(wanted_leg_ids))
+            )
+        ).all()
+        leg_and_vessel_by_leg_id = {leg.id: (leg, vessel) for leg, vessel in leg_rows}
+
+    filter_leg = await db.get(Leg, leg_id) if leg_id is not None else None
+
     from app.services import messaging
 
     unread = await messaging.portal_unread_counts(db, [pl.id for pl in pls], reader="staff")
     return templates.TemplateResponse(
         "staff/cargo/packing_lists.html",
-        {"request": request, "user": user, "packing_lists": pls, "unread": unread},
+        {
+            "request": request,
+            "user": user,
+            "packing_lists": pls,
+            "unread": unread,
+            "leg_id_by_pl": leg_id_by_pl,
+            "leg_and_vessel_by_leg_id": leg_and_vessel_by_leg_id,
+            "filter_leg_id": leg_id,
+            "filter_leg": filter_leg,
+        },
     )
 
 
@@ -144,7 +200,9 @@ async def packing_list_detail(
     # §5.0 — date de mise à bord résolue par lot (dérivée de la timeline d'escale,
     # ou override justifié). Calculée ici et non dans le gabarit : la dérivation
     # interroge la base, et un gabarit ne doit pas déclencher de requêtes.
-    _o, _b, leg, _v, _pol, _pod = await resolve_pl_context(db, pl)
+    # Maillage cargo ↔ voyage (Phase 2, §9.2) — même appel COM-11, réutilisé
+    # aussi pour le bandeau de contexte voyage (leg/navire/POL/POD).
+    _o, booking, leg, vessel, pol, pod = await resolve_pl_context(db, pl)
     sob_by_batch = {
         batch.id: await bl_workflow.resolve_shipped_on_board(
             db, batch=batch, leg_id=leg.id if leg else None
@@ -173,6 +231,11 @@ async def packing_list_detail(
             "user": user,
             "pl": pl,
             "order": order,
+            "booking": booking,
+            "leg": leg,
+            "vessel": vessel,
+            "pol": pol,
+            "pod": pod,
             "messages": messages,
             "sob_by_batch": sob_by_batch,
             "delivery_by_batch": delivery_by_batch,
@@ -198,7 +261,7 @@ async def add_batch(
     await create_batch(
         db, pl=pl, vals=vals, actor="staff", actor_name=user.full_name or user.username
     )
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return _mutation_response(request, pl_id, "Batch ajouté.")
 
 
 @router.post("/{pl_id}/lock")
@@ -225,7 +288,7 @@ async def lock_pl(
         detail="locked",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return _mutation_response(request, pl_id, "Packing list verrouillée.")
 
 
 @router.post("/{pl_id}/unlock")
@@ -252,7 +315,7 @@ async def unlock_pl(
         detail="unlocked",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return _mutation_response(request, pl_id, "Packing list déverrouillée.")
 
 
 @router.post("/{pl_id}/messages")
@@ -275,7 +338,7 @@ async def post_message_staff(
         )
     )
     await db.flush()
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return _mutation_response(request, pl_id, "Message envoyé au client.")
 
 
 async def _get_batch_or_404(db: AsyncSession, pl_id: int, batch_id: int) -> PackingListBatch:
@@ -331,7 +394,7 @@ async def edit_batch(
         await bl_workflow.invalidate_validation_on_edit(
             db, batch=batch, actor_name=actor, ip=_client_ip(request)
         )
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return _mutation_response(request, pl_id, "Batch modifié.")
 
 
 @router.post("/{pl_id}/batches/{batch_id}/delete")

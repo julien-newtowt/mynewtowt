@@ -91,17 +91,16 @@ a:focus-visible {
   padding: 0 var(--pad-x);
 }
 
-.app-shell {
-  display: grid;
-  grid-template-columns: 256px 1fr;
-  min-height: 100vh;
-  background: var(--bg-0);
-}
-@media (max-width: 768px) {
-  .app-shell { grid-template-columns: 1fr; }
-}
-
 /* ────────────────────────── Sidebar ───────────────────────────────── */
+/* AUDIT Phase 3 (docs/design/03-reprise-ux-legacy.md §4) : le conteneur
+ * grid `.app-shell` (legacy, remplacé par `.app-shell-v2`) était mort — aucun
+ * template ne porte `class="app-shell"` — et a été supprimé ici. Les règles
+ * `.sidebar { … }` ci-dessous, en revanche, NE SONT PAS mortes : elles restent
+ * consommées par le layout actuel (`staff/_layout.html`, `client/_layout.html`
+ * portent `class="sidebar"` à l'intérieur de `.app-shell-v2`), et
+ * `.app-shell-v2 .sidebar` (plus bas dans ce fichier) ne redéfinit qu'une
+ * partie de ces propriétés (couleurs/dimensions), pas la structure flex de
+ * `.sidebar nav a`. Signalé tel quel, non supprimé — cf. rapport de session. */
 .sidebar {
   background: var(--teal-dark);
   color: var(--blanc-casse);
@@ -502,6 +501,10 @@ tr:hover { background: var(--sable-light); }
   gap: var(--space-4);
   margin-bottom: var(--space-6);
 }
+/* AUDIT Phase 3 : `.kpi-card` (ci-dessous) et `.stat-card` (plus bas,
+ * "Stats grid (dashboard)") coexistent — usages nombreux des deux côtés,
+ * aucune n'est supprimée. Leurs bases (border/radius/ombre/padding) sont déjà
+ * identiques ; `.kpi-card` est la cible pour tout nouvel écran. */
 .kpi-card {
   background: var(--blanc);
   border: 1px solid var(--gris-clair);
@@ -1304,6 +1307,9 @@ form textarea {
   gap: var(--space-4);
   margin-bottom: var(--space-5);
 }
+/* Base (border/radius/ombre/padding) alignée sur `.kpi-card` — cf. note
+ * Phase 3 ci-dessus `.kpi-card`. Ne pas fusionner les deux classes ici
+ * (usages nombreux) ; `.kpi-card` reste la cible des nouveaux écrans. */
 .stat-card {
   background: var(--blanc);
   border: 1px solid var(--gris-clair);
@@ -1921,3 +1927,176 @@ form textarea {
    cela le SVG déborde de sa carte. */
 .qr-frame { max-width: 260px; margin: 1rem auto; }
 .qr-frame svg { display: block; width: 100%; height: auto; }
+
+/* ════════════════ Cockpit escale — reprise UX Phase 1 ════════════════ */
+/* (docs/design/03-reprise-ux-legacy.md — split Import/Export, sous-nav
+   collante, indicateurs retard/PAF, pointage rapide dockers) */
+
+.escale-subnav {
+  position: sticky;
+  top: 56px; /* sous la topbar */
+  z-index: 50;
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  align-items: center;
+  background: var(--bg-0);
+  padding: var(--space-2) 0;
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--gris-clair);
+}
+.escale-subnav a {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--teal);
+  text-decoration: none;
+  border-bottom: none;
+}
+.escale-subnav a:hover { background: var(--sable-light); }
+.escale-subnav a:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
+
+/* Ancres : ne pas disparaître sous topbar + sous-nav collantes. */
+#escale-sections article[id], #escale-sections span[id] { scroll-margin-top: 112px; }
+
+/* Volets directionnels Import / Export / Commun. */
+.dir-col { border: 1px solid var(--gris-clair); border-radius: var(--radius-md); overflow: hidden; }
+.dir-col-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-wide);
+  color: var(--teal-dark);
+}
+.dir-col-head svg, .dir-col-head [data-lucide] { width: 16px; height: 16px; }
+.dir-col-import { border-top: 4px solid var(--cargo-import); }
+.dir-col-import > .dir-col-head { background: rgba(158, 198, 210, 0.15); }
+.dir-col-export { border-top: 4px solid var(--cargo-export); }
+.dir-col-export > .dir-col-head { background: rgba(180, 113, 72, 0.10); color: #7a4827; }
+.dir-col-common { border-top: 4px solid var(--gris-clair); }
+.dir-col-common > .dir-col-head { background: var(--sable-light); color: var(--gris); }
+.dir-col .data-table { border-top: 1px solid var(--gris-clair); }
+.badge-dir-import { background: rgba(158, 198, 210, 0.35); color: var(--teal-dark); }
+.badge-dir-export { background: rgba(180, 113, 72, 0.15); color: #7a4827; }
+
+/* Passage PAF — opération réglementaire mise en évidence. */
+.op-paf-row td { background: rgba(180, 113, 72, 0.06); }
+.op-paf-chip { background: rgba(180, 113, 72, 0.15); color: #7a4827; border: 1px solid var(--cuivre); }
+.op-paf-chip svg, .op-paf-chip [data-lucide] { width: 12px; height: 12px; }
+
+/* KPI en alerte (retard, P1 ouverts). */
+.kpi-card-alert { border-color: var(--danger); }
+.kpi-card-alert .value { color: var(--danger); }
+
+/* Pointage rapide de l'avancement d'un shift (palettes réalisées). */
+.progress-quick-form { display: inline-flex; align-items: center; gap: var(--space-1); margin-top: var(--space-1); }
+.progress-quick-form input[type="number"] { width: 72px; padding: 2px var(--space-2); font-family: var(--font-mono); font-size: var(--text-xs); }
+
+/* Formulaires de saisie repliés par défaut (cockpit compact). */
+.form-disclosure > summary { list-style: none; }
+.form-disclosure > summary::-webkit-details-marker { display: none; }
+.form-disclosure[open] > summary { margin-bottom: var(--space-2); }
+
+/* ═══════════════ Journal d'escale — reprise UX Phase 2 ═══════════════ */
+.journal-day { display: flex; flex-direction: column; gap: 0; padding-bottom: var(--space-3); }
+.journal-day-label {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  color: var(--cuivre);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-wider);
+  padding: var(--space-2) 0;
+}
+.journal-entry {
+  display: flex; align-items: baseline; gap: var(--space-3);
+  padding: var(--space-2) 0 var(--space-2) var(--space-4);
+  border-left: 2px solid var(--gris-clair);
+}
+.journal-time { flex-shrink: 0; width: 44px; font-size: var(--text-xs); color: var(--gris); }
+.journal-body { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0; }
+.journal-label { font-weight: var(--fw-semibold); }
+.journal-entry .pill { align-self: center; flex-shrink: 0; }
+.escale-subnav a.journal-filter-active { background: var(--teal); color: var(--blanc); }
+
+/* ═══════════════ Design system — reprise UX Phase 3 ═══════════════ */
+/* (docs/design/03-reprise-ux-legacy.md §4 Phase 3 : loading states,
+   focus rings systématiques, empty states enrichis, densité de tableau) */
+
+/* ── Skeleton loaders ─────────────────────────────────────────────────
+ * Usage : placeholder de contenu pendant un chargement (fragment HTMX en
+ * vol, page qui hydrate un tableau) — ex.
+ *   <div class="skeleton" style="height:1rem;width:60%"></div>
+ * Pulsation ~1,5 s entre --sable et --sable-light, radius sm. Neutralisée
+ * globalement par `prefers-reduced-motion` (tokens.css, `animation-duration:
+ * 0.01ms !important`) — vérifié : pas de règle à dupliquer ici. */
+.skeleton {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--sable) 0%, var(--sable-light) 50%, var(--sable) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Indicateur HTMX générique (usage futur) ──────────────────────────
+ * Pattern htmx standard : htmx ajoute `.htmx-request` à l'élément qui a
+ * déclenché la requête pendant qu'elle est en vol — aucun JS requis.
+ * Usage : <span class="htmx-indicator"><i data-lucide="loader-2"></i></span>
+ * à l'intérieur (ou sur) un élément portant hx-get/hx-post. Caché par
+ * défaut, visible seulement pendant la requête. */
+.htmx-indicator { opacity: 0; transition: opacity var(--duration-fast) var(--easing-out); }
+.htmx-request .htmx-indicator,
+.htmx-indicator.htmx-request { opacity: 1; }
+
+/* ── Focus visible systématique (dette accessibilité — audit §2.3) ───
+ * Complète les composants interactifs qui n'avaient pas de halo focus
+ * (le halo cuivre `--shadow-glow` existe déjà sur `a`, `.btn`,
+ * `.escale-subnav a`, les champs de formulaire — non dupliqués ici). */
+.topbar-action:focus-visible,
+.sidebar-toggle:focus-visible,
+.nav-group-toggle:focus-visible,
+.vessel-tab:focus-visible,
+.year-btn:focus-visible,
+.view-btn:focus-visible,
+.leg-chip:focus-visible,
+.btn-icon-only:focus-visible,
+.form-disclosure > summary:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+/* Champs hors <form> stylé (ex. filtre <select hx-get> autonome) — les
+   champs à l'intérieur d'un <form> ont déjà leur halo via `form input:focus`
+   plus haut ; ce sélecteur générique couvre le reste sans les dupliquer. */
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+/* ── Empty state — slot CTA + variante carte ──────────────────────────
+ * `.empty-state` existant (ligne ~1863) complété : la généralisation aux
+ * templates reste à faire au fil de l'eau (hors périmètre CSS-only). */
+.empty-state .btn { margin-top: var(--space-2); }
+.empty-state--card {
+  background: var(--blanc);
+  border: 1px solid var(--gris-clair);
+  border-radius: var(--radius-md);
+  padding: var(--space-7) var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Densité de tableau togglable ─────────────────────────────────────
+ * Compacte par défaut (padding `.data-table` existant). Variante
+ * "confortable" appliquée par `density.js` via une classe sur <body> —
+ * préférence PAR NAVIGATEUR (localStorage `towt-density`), pas persistée
+ * en base : pas d'écran de configuration serveur, ne survit pas au
+ * changement de poste. */
+body.density-cosy .data-table th,
+body.density-cosy .data-table td {
+  padding: calc(var(--space-2) + 4px) var(--space-3);
+}

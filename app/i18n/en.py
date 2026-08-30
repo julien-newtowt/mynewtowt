@@ -139,9 +139,16 @@ CATALOG: dict[str, str] = {
     "devis_hero_kicker": "Rate estimate",
     "devis_hero_title": "Request your rate estimate",
     "devis_hero_lead": "Get an indicative quote right away, no account required. The calculation is based on the route's rate grid",
-    "devis_hero_lead_client": " — and on your negotiated grid if you have one",
+    "devis_hero_lead_client": (
+        " — but this page shows no pricing: get an instant quote on your active"
+        " rate grids from your customer area"
+    ),
     "devis_logged_in_pre": "Signed in:",
-    "devis_logged_in_post": "— your rate grid applies if it exists.",
+    "devis_logged_in_post": (
+        "— this request shows no pricing; your instant rate estimates are"
+        " waiting in your customer area."
+    ),
+    "devis_goto_estimations": "Get an instant quote in my customer area →",
     "devis_step1_route": "The route",
     "devis_departure_planned": "Planned departure:",
     "devis_change_route": "Change route",
@@ -1556,4 +1563,21 @@ CATALOG: dict[str, str] = {
     "mrv_bascule_noon_frozen_title": "Capture v2 active",
     "mrv_bascule_noon_frozen_body": "The old noon form is replaced by event declaration on this vessel.",
     "mrv_bascule_goto_events": "Declare an event",
+    # ── UX legacy recovery Phase 3 (K-4 HTMX toasts + K-6 welcome block) ──
+    "toast_notification_read": "Notification marked as read",
+    "toast_message_sent": "Message sent",
+    "toast_voyage_public_on": "Voyage page published",
+    "toast_voyage_public_off": "Voyage page unpublished",
+    "toast_bl_validated": "Bill of Lading approved",
+    "toast_bl_receipt_confirmed": "Receipt of originals confirmed",
+    "booking_welcome_title": "Welcome to your customer area",
+    "booking_welcome_intro": "Your NEWTOWT account is ready. Here's where to find everything:",
+    "booking_welcome_bookings": "Your bookings, status and cargo details.",
+    "booking_welcome_documents": "Packing list, bills of lading, invoices and certificates.",
+    "booking_welcome_track": "Real-time tracking of your crossing on the map.",
+    # Client password change — errors (PR #167 review).
+    "pwd_change_rate_limited": "Too many attempts — please wait 15 minutes.",
+    "pwd_change_wrong_current": "Current password is incorrect.",
+    "pwd_change_mismatch": "The two new passwords do not match.",
+    "pwd_change_too_short": "The password must be at least {min} characters long.",
 }

@@ -14,11 +14,12 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.claim import Claim
 from app.models.crew import CrewAssignment, CrewMember
 from app.models.escale import (
     ACTIONS_BY_TYPE,
@@ -30,17 +31,22 @@ from app.models.escale import (
     EscaleOperation,
 )
 from app.models.leg import Leg
+from app.models.leg_attachment import LegAttachment
 from app.models.port import Port
-from app.models.sof_event import SOF_EVENT_TYPES, SofEvent
+from app.models.sof_event import SOF_EVENT_TYPES, CargoDocument, SofEvent
 from app.models.stowage import HOLDS
+from app.models.ticket import Ticket
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
+from app.services.bl_workflow import batches_for_leg
 from app.services.escale_crew import (
     couple_crew_assignment,
     embarkation_alerts,
     maybe_create_paf,
 )
+from app.services.escale_journal import JOURNAL_KINDS, build_journal, sof_reconciliation
+from app.services.hx import mutation_response
 from app.services.stowage import occupation_by_hold
 from app.templating import templates
 
@@ -52,6 +58,46 @@ router = APIRouter(prefix="/escale", tags=["escale"])
 def _escale_locked(leg: Leg) -> bool:
     """L'escale du leg est-elle verrouillée (clôture administrative) ?"""
     return leg.escale_locked_at is not None
+
+
+def _mutation_response(request: Request, leg_id: int, message: str) -> Response:
+    """Réponse standard d'une mutation du cockpit escale.
+
+    Wrapper d'une ligne sur ``services.hx.mutation_response`` (motif Phase 1,
+    docs/design/03-reprise-ux-legacy.md) — conservé pour ne pas retoucher tous
+    les call sites de ce routeur.
+    """
+    return mutation_response(
+        request,
+        redirect_url=f"/escale?leg_id={leg_id}",
+        message=message,
+        refresh_event="escaleRefresh",
+    )
+
+
+def _cockpit_late_op_ids(operations: list[EscaleOperation], now: datetime) -> set[int]:
+    """Opérations en retard : fenêtre planifiée échue sans réel correspondant.
+
+    Indicateur d'affichage uniquement (aucune écriture) — planifié échu :
+    - début prévu dépassé sans démarrage réel, ou
+    - fin prévue dépassée sans fin réelle.
+    Les datetimes stockés peuvent être naïfs (SQLite en test) ou aware
+    (PostgreSQL) : on normalise en UTC naïf avant comparaison.
+    """
+
+    def _naive(dt: datetime) -> datetime:
+        return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+    now_n = _naive(now)
+    late: set[int] = set()
+    for op in operations:
+        if op.status == "completed":
+            continue
+        start_missed = op.planned_start and not op.actual_start and _naive(op.planned_start) < now_n
+        end_missed = op.planned_end and not op.actual_end and _naive(op.planned_end) < now_n
+        if start_missed or end_missed:
+            late.add(op.id)
+    return late
 
 
 def _assert_escale_unlocked(leg: Leg) -> None:
@@ -282,6 +328,134 @@ async def escale_index(
         positions = await positions_for_leg(db, selected_leg)
         nav_metrics = compute_metrics(positions, selected_leg, arr_port=pod)
 
+    # ── Cockpit escale (reprise UX Phase 1) ──────────────────────────────
+    # KPI d'escale, indicateur de retard, synthèses Documents & SOF et
+    # Tickets — lecture seule, best-effort : la page ne casse jamais si une
+    # synthèse échoue (même filet que occupation_by_hold).
+    late_op_ids: set[int] = set()
+    escale_kpis = None
+    docs_sof = None
+    tickets_summary = None
+    if selected_leg is not None:
+        now = datetime.now(UTC)
+        late_op_ids = _cockpit_late_op_ids(operations, now)
+        palettes_done = sum(s.palettes_done or 0 for s in shifts)
+        palettes_target = sum(s.palettes_target or 0 for s in shifts)
+        rates = [s.actual_rate for s in shifts if s.actual_rate is not None]
+        escale_kpis = {
+            "ops_total": len(operations),
+            "ops_in_progress": sum(1 for op in operations if op.status == "in_progress"),
+            "ops_late": len(late_op_ids),
+            "palettes_done": palettes_done,
+            "palettes_target": palettes_target,
+            "avg_rate": (round(sum(rates) / len(rates), 1) if rates else None),
+        }
+        try:
+            sof_recent = list(
+                (
+                    await db.execute(
+                        select(SofEvent)
+                        .where(SofEvent.leg_id == selected_leg.id)
+                        .order_by(SofEvent.occurred_at.desc())
+                        .limit(3)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            sof_total, sof_signed = (
+                await db.execute(
+                    select(
+                        func.count(SofEvent.id),
+                        func.count(SofEvent.signed_at),
+                    ).where(SofEvent.leg_id == selected_leg.id)
+                )
+            ).one()
+            docs_total, docs_signed = (
+                await db.execute(
+                    select(
+                        func.count(CargoDocument.id),
+                        func.count(CargoDocument.signed_at),
+                    ).where(CargoDocument.leg_id == selected_leg.id)
+                )
+            ).one()
+            attachments_total = (
+                await db.execute(
+                    select(func.count(LegAttachment.id)).where(
+                        LegAttachment.leg_id == selected_leg.id
+                    )
+                )
+            ).scalar_one()
+            # Phase 2 — compteurs BL par état (registre du commandant) et
+            # sinistres du leg, pour que le cockpit dise aussi où en sont
+            # les documents juridiquement engageants.
+            bl_batches = await batches_for_leg(db, leg_id=selected_leg.id)
+            bl_counts = {
+                "draft": sum(1 for b in bl_batches if b.bl_state == "draft"),
+                "client_validated": sum(1 for b in bl_batches if b.bl_state == "client_validated"),
+                "signed": sum(1 for b in bl_batches if b.bl_state in ("master_signed", "final")),
+                "total": len(bl_batches),
+            }
+            claims_total = (
+                await db.execute(
+                    select(func.count(Claim.id)).where(Claim.leg_id == selected_leg.id)
+                )
+            ).scalar_one()
+            docs_sof = {
+                "sof_recent": sof_recent,
+                "sof_total": sof_total,
+                "sof_signed": sof_signed,
+                "docs_total": docs_total,
+                "docs_signed": docs_signed,
+                "attachments_total": attachments_total,
+                # Alerte croisée verrous : clôture engagée ↔ escale non
+                # verrouillée (les deux mécanismes restent indépendants —
+                # simple signal d'attention, aucun blocage).
+                "closure_submitted_at": selected_leg.closure_submitted_at,
+                "closure_engaged_unlocked": bool(
+                    selected_leg.closure_submitted_at and not selected_leg.escale_locked_at
+                ),
+                # Alerte croisée inverse (Phase 2) : escale verrouillée alors
+                # qu'aucune clôture n'est engagée — simple signal, sans blocage.
+                "locked_without_closure": bool(
+                    selected_leg.escale_locked_at and not selected_leg.closure_submitted_at
+                ),
+                "bl_counts": bl_counts,
+                "claims_total": claims_total,
+            }
+        except Exception:
+            logger.exception("cockpit docs/sof summary failed for leg %s", selected_leg.id)
+            docs_sof = None
+        try:
+            rows = (
+                await db.execute(
+                    select(Ticket.status, func.count(Ticket.id))
+                    .where(Ticket.leg_id == selected_leg.id)
+                    .group_by(Ticket.status)
+                )
+            ).all()
+            by_status = dict(rows)
+            open_p1 = (
+                await db.execute(
+                    select(func.count(Ticket.id)).where(
+                        Ticket.leg_id == selected_leg.id,
+                        Ticket.priority == "P1",
+                        Ticket.status.in_(("open", "in_progress", "pending_external")),
+                    )
+                )
+            ).scalar_one()
+            tickets_summary = {
+                "open": by_status.get("open", 0),
+                "in_progress": by_status.get("in_progress", 0),
+                "pending_external": by_status.get("pending_external", 0),
+                "resolved": by_status.get("resolved", 0),
+                "open_p1": open_p1,
+                "total": sum(by_status.values()),
+            }
+        except Exception:
+            logger.exception("cockpit tickets summary failed for leg %s", selected_leg.id)
+            tickets_summary = None
+
     response = templates.TemplateResponse(
         "staff/escale/index.html",
         {
@@ -327,6 +501,11 @@ async def escale_index(
             "crew_assignments": crew_assignments,
             "embark_alerts": embark_alerts,
             "crew_by_id": crew_by_id,
+            # Cockpit escale — reprise UX Phase 1.
+            "late_op_ids": late_op_ids,
+            "escale_kpis": escale_kpis,
+            "docs_sof": docs_sof,
+            "tickets_summary": tickets_summary,
         },
     )
     set_leg_filter_cookie(response, f)
@@ -387,7 +566,7 @@ async def create_operation(
     # ESC-06 — couplage équipage (embarquement/débarquement) + auto-PAF FR.
     await couple_crew_assignment(db, op, leg, crew_member_id)
     await maybe_create_paf(db, op, leg)
-    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+    return _mutation_response(request, leg_id, "Opération créée.")
 
 
 @router.post("/operations/{op_id}/start")
@@ -408,7 +587,7 @@ async def start_operation(
     await db.flush()
     # FLX-04 — l'opération démarrée matérialise son SOF (occurred_at réel).
     await _sync_sof_from_operation(db, request, user, op)
-    return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
+    return _mutation_response(request, op.leg_id, "Opération démarrée.")
 
 
 @router.post("/operations/{op_id}/end")
@@ -427,7 +606,7 @@ async def end_operation(
     op.actual_end = datetime.now(UTC)
     op.status = "completed"
     await db.flush()
-    return RedirectResponse(url=f"/escale?leg_id={op.leg_id}", status_code=303)
+    return _mutation_response(request, op.leg_id, "Opération terminée.")
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -595,7 +774,7 @@ async def create_docker_shift(
         entity_label=f"shift {company} leg={leg_id} cale={s.hold or '—'}",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+    return _mutation_response(request, leg_id, "Shift docker créé.")
 
 
 @router.post("/dockers/{shift_id}/progress")
@@ -614,7 +793,7 @@ async def docker_progress(
         _assert_escale_unlocked(leg)
     s.palettes_done = palettes_done
     await db.flush()
-    return RedirectResponse(url=f"/escale?leg_id={s.leg_id}", status_code=303)
+    return _mutation_response(request, s.leg_id, "Avancement du shift mis à jour.")
 
 
 @router.post("/dockers/{shift_id}/edit")
@@ -792,7 +971,7 @@ async def update_port_status(
         detail=f"→ {new_status} @ {t.isoformat()}",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/escale?leg_id={leg_id}", status_code=303)
+    return _mutation_response(request, leg_id, "Statut portuaire mis à jour.")
 
 
 @router.post("/legs/{leg_id}/lock")
@@ -927,4 +1106,80 @@ async def escale_sof_pdf(
 def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
+    )
+
+
+# ─────────────────── Journal d'escale (reprise UX Phase 2) ───────────────────
+
+
+@router.get("/legs/{leg_id}/journal", response_class=HTMLResponse)
+async def escale_journal_page(
+    leg_id: int,
+    request: Request,
+    kind: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("escale", "C")),
+) -> HTMLResponse:
+    """Timeline unifiée du dossier voyage — bord + terre, lecture seule.
+
+    Agrège SOF, opérations réelles, documents cargo, transitions BL, pièces
+    jointes, tickets, sinistres, statut portuaire et verrous/clôture
+    (service ``escale_journal``), avec le rapprochement des deux registres
+    SOF. Filtrable par type d'entrée (``?kind=``).
+    """
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        raise HTTPException(status_code=404)
+    vessel = await db.get(Vessel, leg.vessel_id) if leg.vessel_id else None
+    pol = await db.get(Port, leg.departure_port_id)
+    pod = await db.get(Port, leg.arrival_port_id)
+
+    # Chargés une seule fois ici, puis réutilisés pour build_journal ET
+    # sof_reconciliation — build_journal ne les re-SELECT plus quand on les
+    # lui passe.
+    operations = list(
+        (await db.execute(select(EscaleOperation).where(EscaleOperation.leg_id == leg_id)))
+        .scalars()
+        .all()
+    )
+    sof_events = list(
+        (await db.execute(select(SofEvent).where(SofEvent.leg_id == leg_id))).scalars().all()
+    )
+
+    entries = await build_journal(db, leg, operations=operations, sof_events=sof_events)
+    counts_by_kind = {k: sum(1 for e in entries if e.kind == k) for k in JOURNAL_KINDS}
+    selected_kind = kind if kind in JOURNAL_KINDS else None
+    if selected_kind:
+        entries = [e for e in entries if e.kind == selected_kind]
+
+    # Groupement par journée (clé de tri déjà normalisée en naïf).
+    days: list[tuple] = []
+    for e in entries:
+        day = e.sort_at.date()
+        if not days or days[-1][0] != day:
+            days.append((day, []))
+        days[-1][1].append(e)
+
+    reconciliation = sof_reconciliation(operations, sof_events)
+
+    return templates.TemplateResponse(
+        "staff/escale/journal.html",
+        {
+            "request": request,
+            "user": user,
+            "leg": leg,
+            "vessel": vessel,
+            "pol": pol,
+            "pod": pod,
+            "days": days,
+            "entry_total": sum(counts_by_kind.values()),
+            "counts_by_kind": counts_by_kind,
+            "selected_kind": selected_kind,
+            "journal_kinds": JOURNAL_KINDS,
+            "reconciliation": reconciliation,
+            "leg_locked": _escale_locked(leg),
+            "closure_engaged_unlocked": bool(leg.closure_submitted_at and not leg.escale_locked_at),
+            "next_port_tz": (pod.timezone if pod and pod.timezone else None),
+            "next_port_label": (pod.locode if pod else None),
+        },
     )

@@ -19,7 +19,11 @@
 <section class="stats-grid">
   {% for status in statuses %}
   <div class="stat-card">
-    <div class="stat-card-icon {{ 'danger' if status == 'open' else ('cuivre' if status == 'in_review' else ('green' if status == 'settled' else 'sky')) }}"><i data-lucide="shield"></i></div>
+    {# C-F5 — couleurs distinctes par statut (5 teintes stat-card-icon dispo
+     pour 6 statuts) : ``rejected`` reprend ``danger`` (issue négative comme
+     ``open``, seule collision restante) ; ``closed`` reste sur ``sky``
+     (état archive, neutre) faute d'une 6ᵉ teinte sans toucher kairos.css. #}
+  <div class="stat-card-icon {{ 'danger' if status == 'open' else ('cuivre' if status == 'in_review' else ('teal' if status == 'provisioned' else ('green' if status == 'settled' else ('danger' if status == 'rejected' else 'sky')))) }}"><i data-lucide="shield"></i></div>
     <div class="stat-card-body">
       <span class="stat-card-value">{{ counts.get(status, 0) }}</span>
       <span class="stat-card-label">{{ status }}</span>
@@ -58,7 +62,13 @@
       {% endfor %}
     </tbody>
   </table>
-  {% else %}<p class="text-muted">Aucun claim enregistré.</p>{% endif %}
+  {% else %}
+  <div class="empty-state">
+    <i data-lucide="shield"></i>
+    <span class="empty-title">Aucun claim enregistré</span>
+    <span class="empty-hint">Les sinistres cargo, équipage, coque ou tiers déclarés apparaîtront ici.</span>
+  </div>
+  {% endif %}
 </article>
 
 {% endblock %}
