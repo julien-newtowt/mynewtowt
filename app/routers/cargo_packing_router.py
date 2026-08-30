@@ -6,6 +6,8 @@ field-by-field. Verrouillage par un staff après validation côté armateur.
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
@@ -43,6 +45,36 @@ from app.templating import templates
 from app.utils.file_validation import validate_size
 
 router = APIRouter(prefix="/cargo/packing-lists", tags=["cargo-packing"])
+
+
+def _mutation_response(request: Request, pl_id: int, message: str) -> Response:
+    """Réponse standard d'une mutation répétitive de la fiche packing list.
+
+    Reprise UX Phase 3 (docs/design/03-reprise-ux-legacy.md) — copie EXACTE du
+    pattern posé en Phase 1 par ``escale_router._mutation_response`` : sous
+    HTMX, on ne recharge plus la page — 204 + ``HX-Trigger`` qui (a) affiche le
+    toast (toast.js) et (b) déclenche ``cargoRefresh``, écouté par le conteneur
+    ``#pl-sections`` qui se re-remplit via ``hx-get`` + ``hx-select`` sur la
+    page elle-même. Sans JS : 303 classique, inchangé.
+
+    ⚠️ Réservé aux actions répétitives (lock/unlock, ajout de batch, édition de
+    batch, message staff→portail) — PAS aux actions BL sensibles
+    (draft/revise/confirm-delivery/shipped-on-board) ni aux suppressions, qui
+    gardent leur redirect classique (revue de sécurité plus simple).
+    """
+    if request.headers.get("hx-request"):
+        return Response(
+            status_code=204,
+            headers={
+                "HX-Trigger": json.dumps(
+                    {
+                        "toast": {"message": message, "type": "success"},
+                        "cargoRefresh": True,
+                    }
+                )
+            },
+        )
+    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -240,7 +272,7 @@ async def add_batch(
     await create_batch(
         db, pl=pl, vals=vals, actor="staff", actor_name=user.full_name or user.username
     )
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return _mutation_response(request, pl_id, "Batch ajouté.")
 
 
 @router.post("/{pl_id}/lock")
@@ -267,7 +299,7 @@ async def lock_pl(
         detail="locked",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return _mutation_response(request, pl_id, "Packing list verrouillée.")
 
 
 @router.post("/{pl_id}/unlock")
@@ -294,7 +326,7 @@ async def unlock_pl(
         detail="unlocked",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return _mutation_response(request, pl_id, "Packing list déverrouillée.")
 
 
 @router.post("/{pl_id}/messages")
@@ -317,7 +349,7 @@ async def post_message_staff(
         )
     )
     await db.flush()
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return _mutation_response(request, pl_id, "Message envoyé au client.")
 
 
 async def _get_batch_or_404(db: AsyncSession, pl_id: int, batch_id: int) -> PackingListBatch:
@@ -373,7 +405,7 @@ async def edit_batch(
         await bl_workflow.invalidate_validation_on_edit(
             db, batch=batch, actor_name=actor, ip=_client_ip(request)
         )
-    return RedirectResponse(url=f"/cargo/packing-lists/{pl_id}", status_code=303)
+    return _mutation_response(request, pl_id, "Batch modifié.")
 
 
 @router.post("/{pl_id}/batches/{batch_id}/delete")

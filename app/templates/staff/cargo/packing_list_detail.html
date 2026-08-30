@@ -24,11 +24,15 @@
     <a href="/cargo/packing-lists/{{ pl.id }}/history" class="btn btn-ghost btn-sm">Historique</a>
     <a href="/cargo/packing-lists/{{ pl.id }}/arrival-notice.pdf" class="btn btn-ghost btn-sm" target="_blank">Arrival Notice</a>
     {% if pl.status != 'locked' %}
-    <form method="post" action="/cargo/packing-lists/{{ pl.id }}/lock" style="display:inline;">
+    <form method="post" action="/cargo/packing-lists/{{ pl.id }}/lock" style="display:inline;"
+          hx-post="/cargo/packing-lists/{{ pl.id }}/lock" hx-swap="none">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <button type="submit" class="btn btn-primary btn-sm">Verrouiller</button>
     </form>
     {% else %}
-    <form method="post" action="/cargo/packing-lists/{{ pl.id }}/unlock" style="display:inline;">
+    <form method="post" action="/cargo/packing-lists/{{ pl.id }}/unlock" style="display:inline;"
+          hx-post="/cargo/packing-lists/{{ pl.id }}/unlock" hx-swap="none">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <button type="submit" class="btn btn-secondary btn-sm">Déverrouiller</button>
     </form>
     {% endif %}
@@ -40,6 +44,19 @@
     <a href="/cargo/packing-lists" class="btn btn-ghost">← Retour</a>
   </div>
 </header>
+
+{# Reprise UX Phase 3 (docs/design/03-reprise-ux-legacy.md §9.2, M-1/2/3) —
+   zone rafraîchie sans rechargement (pattern HTMX identique à
+   ``#escale-sections``, Phase 1) : sous HTMX, une mutation répétitive
+   (lock/unlock, batch, message) déclenche ``cargoRefresh`` (``HX-Trigger``) et
+   ce conteneur se re-remplit via ``hx-get`` + ``hx-select`` sur lui-même. Sans
+   JS : les formulaires gardent leur repli 303 classique. #}
+<div id="pl-sections"
+     hx-get="/cargo/packing-lists/{{ pl.id }}"
+     hx-trigger="cargoRefresh from:body"
+     hx-select="#pl-sections"
+     hx-target="this"
+     hx-swap="outerHTML">
 
 {# Maillage cargo ↔ voyage (Phase 2, §9.2) — leg résolu COM-11
    (``coalesce(pl.leg_id, order.leg_id, booking.leg_id)``, cf.
@@ -64,6 +81,16 @@
 </div>
 {% endif %}
 
+{# Sous-navigation collante de la fiche PL — ancres vers les sections réelles. #}
+<nav class="escale-subnav" aria-label="Sections de la packing list">
+  <a href="#sec-lots">Lots/BL</a>
+  <a href="#sec-mise-a-bord">Mise à bord</a>
+  <a href="#sec-remise">Remise des originaux</a>
+  <a href="#sec-revisions">Révisions</a>
+  <a href="#sec-excel">Excel</a>
+  <a href="#sec-messagerie">Messagerie</a>
+</nav>
+
 {% set hazardous = pl.batches | selectattr('hazardous') | list %}
 {% if hazardous %}
 <div class="alert alert-warn mb-4" role="alert">
@@ -74,7 +101,7 @@
 </div>
 {% endif %}
 
-<article class="card">
+<article class="card" id="sec-lots">
   <h2>Batches ({{ pl.batches|length }})</h2>
   <table class="data-table">
     <thead><tr><th>#</th><th>Format</th><th>Palettes</th><th>Consignee</th><th>Poids (kg)</th><th>HS</th><th>Dangereux</th><th>BL</th><th>Actions</th></tr></thead>
@@ -116,7 +143,9 @@
         <td colspan="9">
           <details>
             <summary class="text-muted">✎ Modifier le batch #{{ b.batch_number or b.id }}</summary>
-            <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/edit" class="mt-2">
+            <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/edit" class="mt-2"
+                  hx-post="/cargo/packing-lists/{{ pl.id }}/batches/{{ b.id }}/edit" hx-swap="none">
+              <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
               <div class="grid grid-3 gap-3">
                 <div class="field"><label>Type de marchandise</label><input name="type_of_goods" value="{{ b.type_of_goods or '' }}" /></div>
                 <div class="field"><label>Description (BL)</label><input name="description_of_goods" value="{{ b.description_of_goods or '' }}" /></div>
@@ -156,6 +185,7 @@
      d'escale : elle n'est pas saisie. Les Opérations peuvent la corriger, mais
      jamais sans motif — un connaissement antidaté est une fraude documentaire, et
      le journal est demandé « en cas de contrôle ». #}
+  <span id="sec-mise-a-bord"></span>
   {% set batches_with_bl = pl.batches | selectattr('bl_number') | list %}
   {% if batches_with_bl %}
   <h3 class="mt-4">Date de mise à bord (shipped on board)</h3>
@@ -212,6 +242,7 @@
 
      ⚠️ Un TÉLÉCHARGEMENT n'est pas une réception — un préchargement de lien peut le
      produire. Il est affiché comme une consultation, et compté à part. #}
+  <span id="sec-remise"></span>
   {% set signed_batches = pl.batches | selectattr('bl_state', 'in', ['master_signed', 'final']) | list %}
   {% if signed_batches %}
   <h3 class="mt-4">Remise des originaux ({{ number_of_originals }} par connaissement)</h3>
@@ -283,6 +314,7 @@
      RÉVISION NUMÉROTÉE qui annule explicitement la précédente, les deux restant
      tracées. Le nouveau document repart en projet : le client revalide, le
      commandant resigne. #}
+  <span id="sec-revisions"></span>
   {% if signed_batches %}
   <h3 class="mt-4">Réviser un connaissement signé</h3>
   <p class="text-muted text-sm">
@@ -331,27 +363,36 @@
   {% endif %}
 
   {% if pl.status != 'locked' %}
-  <h3 class="mt-4">Ajouter un batch</h3>
-  <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches">
-    <div class="grid grid-3 gap-3">
-      <div class="field"><label>Format</label><select name="pallet_format"><option>EPAL</option><option>USPAL</option><option>PORTPAL</option><option>IBC</option><option>BIGBAG</option><option>BARRIQUE120</option><option>BARRIQUE140</option></select></div>
-      <div class="field"><label>Palettes</label><input name="pallet_count" type="number" value="1" min="1" /></div>
-      <div class="field"><label>HS</label><input name="hs_code" type="text" /></div>
-      <div class="field"><label>Poids (kg)</label><input name="weight_kg" type="number" step="0.1" /></div>
-      <div class="field"><label>Cubage (m³)</label><input name="cubage_m3" type="number" step="0.001" /></div>
-      <div class="field"><label>Type de marchandise</label><input name="type_of_goods" type="text" /></div>
-      <div class="field"><label>Description (BL)</label><input name="description_of_goods" type="text" /></div>
-      <div class="field"><label>Nb. colis</label><input name="cases_quantity" type="number" min="0" /></div>
-      <div class="field"><label>Unités / colis</label><input name="units_per_case" type="number" min="0" /></div>
-      <div class="field"><label>Valeur (USD)</label><input name="cargo_value_usd" type="number" step="0.01" /></div>
-      <div class="field"><label>Shipper</label><input name="shipper_name" type="text" /></div>
-      <div class="field"><label>Consignee</label><input name="consignee_name" type="text" /></div>
-    </div>
-    <button type="submit" class="btn btn-primary btn-sm">+ Ajouter</button>
-  </form>
+  {# Saisie repliée par défaut (pattern « Nouvelle opération » d'escale/index.html,
+     Phase 1) : le formulaire complet reste disponible mais ne s'affiche qu'à la
+     demande. #}
+  <details class="mt-3 form-disclosure">
+    <summary class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+      <i data-lucide="plus"></i> Ajouter un batch
+    </summary>
+    <form method="post" action="/cargo/packing-lists/{{ pl.id }}/batches" class="mt-2"
+          hx-post="/cargo/packing-lists/{{ pl.id }}/batches" hx-swap="none">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="grid grid-3 gap-3">
+        <div class="field"><label>Format</label><select name="pallet_format"><option>EPAL</option><option>USPAL</option><option>PORTPAL</option><option>IBC</option><option>BIGBAG</option><option>BARRIQUE120</option><option>BARRIQUE140</option></select></div>
+        <div class="field"><label>Palettes</label><input name="pallet_count" type="number" value="1" min="1" /></div>
+        <div class="field"><label>HS</label><input name="hs_code" type="text" /></div>
+        <div class="field"><label>Poids (kg)</label><input name="weight_kg" type="number" step="0.1" /></div>
+        <div class="field"><label>Cubage (m³)</label><input name="cubage_m3" type="number" step="0.001" /></div>
+        <div class="field"><label>Type de marchandise</label><input name="type_of_goods" type="text" /></div>
+        <div class="field"><label>Description (BL)</label><input name="description_of_goods" type="text" /></div>
+        <div class="field"><label>Nb. colis</label><input name="cases_quantity" type="number" min="0" /></div>
+        <div class="field"><label>Unités / colis</label><input name="units_per_case" type="number" min="0" /></div>
+        <div class="field"><label>Valeur (USD)</label><input name="cargo_value_usd" type="number" step="0.01" /></div>
+        <div class="field"><label>Shipper</label><input name="shipper_name" type="text" /></div>
+        <div class="field"><label>Consignee</label><input name="consignee_name" type="text" /></div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">+ Ajouter</button>
+    </form>
+  </details>
   {% endif %}
 
-  <h3 class="mt-4">Excel (saisie de masse)</h3>
+  <h3 class="mt-4" id="sec-excel">Excel (saisie de masse)</h3>
   <div class="flex gap-2 items-center flex-wrap">
     <a href="/cargo/packing-lists/{{ pl.id }}/export.xlsx" class="btn btn-secondary btn-sm">⤓ Exporter la PL</a>
     <a href="/cargo/packing-lists/{{ pl.id }}/template.xlsx" class="btn btn-ghost btn-sm">⤓ Template vierge</a>
@@ -367,7 +408,7 @@
   {% endif %}
 </article>
 
-<article class="card mt-4">
+<article class="card mt-4" id="sec-messagerie">
   <h2>Messages portail ({{ messages|length }})</h2>
   {% for m in messages|reverse %}
   <div class="dash-notif-card {% if m.is_read %}notif-read{% endif %}">
@@ -381,10 +422,14 @@
   <p class="text-muted">Aucun message échangé.</p>
   {% endfor %}
 
-  <form method="post" action="/cargo/packing-lists/{{ pl.id }}/messages" class="mt-3">
+  <form method="post" action="/cargo/packing-lists/{{ pl.id }}/messages" class="mt-3"
+        hx-post="/cargo/packing-lists/{{ pl.id }}/messages" hx-swap="none">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     <div class="field"><label>Nouveau message</label><textarea name="body" rows="3" required></textarea></div>
     <button type="submit" class="btn btn-primary btn-sm">Envoyer au client</button>
   </form>
 </article>
+
+</div>{# /#pl-sections #}
 
 {% endblock %}

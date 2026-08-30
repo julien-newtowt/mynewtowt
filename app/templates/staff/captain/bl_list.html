@@ -27,13 +27,16 @@
   </div>
 {% endif %}
 
-{# Bouton d'envoi explicite, PAS `onchange="this.form.submit()"` : la CSP du projet
-   est `script-src 'self'` sans `unsafe-inline`, elle bloque donc les gestionnaires
-   d'événements en attribut. Quatre écrans existants utilisent ce motif et leurs
-   filtres sont de ce fait inertes — signalé, pas reproduit ici. #}
+{# Filtre auto-soumis, CSP-safe : la CSP du projet est `script-src 'self'` sans
+   `unsafe-inline`, donc PAS de `onchange="this.form.submit()"` (quatre écrans
+   existants utilisent ce motif et leurs filtres sont de ce fait inertes —
+   signalé, pas reproduit ici). HTMX soumet le formulaire au changement du
+   select ; le bouton « Afficher » reste le repli sans JS. #}
 <form method="get" action="/captain/bl" class="mb-4">
   <label class="text-sm text-muted" for="leg_id">Leg</label>
-  <select name="leg_id" id="leg_id">
+  <select name="leg_id" id="leg_id"
+          hx-get="/captain/bl" hx-trigger="change" hx-include="closest form"
+          hx-target="body" hx-select="body" hx-swap="innerHTML" hx-push-url="true">
     {% for l in legs %}
       <option value="{{ l.id }}" {% if selected and l.id == selected.id %}selected{% endif %}>
         {{ l.leg_code }}{% if l.etd %} · ETD {{ l.etd.strftime("%d/%m/%Y") }}{% endif %}
