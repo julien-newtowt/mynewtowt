@@ -24,3 +24,12 @@
 86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:51
 86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:66
 86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:72
+
+# 2026-08-30 — reprise UX Phase 2 (PR #167) : mot de passe factice du test de
+# rate-limit du changement de mot de passe client
+# (tests/integration/test_client_phase2.py — « wrong-one-123456 », valeur
+# délibérément fausse passée à `client_password_change` pour épuiser le
+# compteur). Jamais utilisé hors de ce test ; vérifié absent de `app/`,
+# `scripts/` et de toute configuration. Son entropie (3,63) franchit le seuil
+# de la règle `generic-api-key`.
+84f939a8c3aea5f193f00e39c3683edafa177560:tests/integration/test_client_phase2.py:generic-api-key:124
