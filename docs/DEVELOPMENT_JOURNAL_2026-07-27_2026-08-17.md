@@ -2374,9 +2374,25 @@ descendant, et un accès paresseux en contexte async lève `MissingGreenlet` —
 même piège que celui documenté sur la construction du graphe dans
 `declare_count`.
 
+### 🔴 Un défaut trouvé en relisant mon propre code
+
+`reverse_movement` recopie `category`, `medium`, `leg_id` et `port_id` sur la
+contre-écriture — mais **pas** `settles_cash_count_id`, que je venais d'ajouter.
+Conséquence : rectifier une régularisation mal saisie annulait bien l'argent,
+mais l'écart restait affiché comme **entièrement régularisé** (la contre-écriture
+n'était pas comptée dans le restant), et plus aucune régularisation n'était
+possible sur ce contrôle. Un écart soldé en apparence, rouvert en réalité.
+
+Corrigé, sur la contre-écriture **et** sur le mouvement de remplacement.
+Sabotage vérifié : retirer la ligne fait échouer le test.
+
+Leçon : ajouter une colonne porteuse de sens oblige à relire **tous** les
+chemins qui recopient une écriture. Ici il n'y en avait qu'un — mais rien ne le
+signalait.
+
 ### Vérifications
 
-- 48 tests sur `test_cash_count.py`, dont 10 nouveaux ; suite complète verte.
+- 53 tests sur `test_cash_count.py`, dont 11 nouveaux ; suite complète verte.
 - **Sabotage** : basculer la route de `finance:M` à `ventes:M` fait échouer
   `test_the_route_is_gated_on_the_office_permission`.
 - Le test de page rend l'écran réel **deux fois**, avec un compte `marins` puis

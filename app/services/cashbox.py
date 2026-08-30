@@ -233,6 +233,11 @@ async def reverse_movement(
         recorded_by_id=recorded_by_id,
     )
     reversal.reverses_movement_id = movement.id
+    # Le rattachement à l'écart soldé suit la contre-écriture (ADR-014). Sans
+    # cela, rectifier une régularisation laissait l'écart affiché comme
+    # entièrement régularisé alors que l'écriture venait d'être annulée — et
+    # aucune nouvelle régularisation n'était plus possible sur ce contrôle.
+    reversal.settles_cash_count_id = movement.settles_cash_count_id
     await db.flush()
 
     replacement = None
@@ -249,6 +254,8 @@ async def reverse_movement(
             port_id=movement.port_id,
             recorded_by_id=recorded_by_id,
         )
+        replacement.settles_cash_count_id = movement.settles_cash_count_id
+        await db.flush()
     return reversal, replacement
 
 

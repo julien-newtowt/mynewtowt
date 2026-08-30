@@ -1229,3 +1229,34 @@ async def test_the_control_page_offers_the_settlement_only_to_the_office(db, sta
     ).body.decode()
     assert "Régulariser l'écart" in html_siege
     assert f"/cashbox/{vessel.id}/etat/{count.id}/regularisation" in html_siege
+
+
+@pytest.mark.asyncio
+async def test_rectifying_a_regularisation_reopens_the_variance(db, staff_user):
+    """La contre-écriture d'une régularisation suit l'écart qu'elle soldait.
+
+    Sans propagation de ``settles_cash_count_id``, rectifier une régularisation
+    mal saisie laissait l'écart affiché comme **entièrement régularisé** alors
+    que l'écriture venait d'être annulée — et fermait toute nouvelle
+    régularisation sur ce contrôle.
+    """
+    _vessel, cb, count = await _count_with_variance(db, staff_user)
+    block = count.currencies[0]
+
+    mov = await cashbox_svc.regularise_variance(
+        db, cb, count, block, amount=Decimal("311.46"), reason="montant erroné"
+    )
+    assert await cashbox_svc.remaining_variance(db, block) == Decimal("0.00")
+
+    reversal, replacement = await cashbox_svc.reverse_movement(
+        db, cb, mov, reason="montant saisi à l'envers", corrected_amount=Decimal("11.46")
+    )
+    assert reversal.settles_cash_count_id == count.id
+    assert replacement is not None and replacement.settles_cash_count_id == count.id
+    # 311,46 − 311,46 + 11,46 régularisés ⇒ il reste 300,00 à traiter.
+    assert await cashbox_svc.remaining_variance(db, block) == Decimal("300.00")
+    # …et une régularisation du restant redevient possible.
+    await cashbox_svc.regularise_variance(
+        db, cb, count, block, amount=Decimal("300.00"), reason="solde"
+    )
+    assert await cashbox_svc.remaining_variance(db, block) == Decimal("0.00")
