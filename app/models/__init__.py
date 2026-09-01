@@ -10,7 +10,9 @@ from app.models.anemos_certificate import AnemosCertificate
 from app.models.blog_post import BlogPost
 from app.models.booking import Booking, BookingItem
 from app.models.booking_message import BookingMessage
+from app.models.booking_note import BookingNote
 from app.models.bunker import BunkerOperation, BunkerTankAllocation
+from app.models.cash_count import CashCount, CashCountCurrency, CashCountLine
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.claim import (
     Claim,
@@ -29,7 +31,9 @@ from app.models.commercial import (
     RateGrid,
     RateGridLine,
     RateGridOption,
+    RateGridPaymentTerm,
     RateOffer,
+    RateOfferRevision,
 )
 from app.models.contact_request import ContactRequest
 from app.models.crew import (
@@ -111,6 +115,13 @@ from app.models.payslip import Payslip
 from app.models.planning_scenario import PlanningScenario, ScenarioLeg
 from app.models.planning_share import PlanningShare
 from app.models.port import Port
+from app.models.qhse import (
+    CorrectiveAction,
+    DeficiencyCode,
+    QhseReport,
+    QhseReportDeficiencyCode,
+    RootCauseEvaluation,
+)
 from app.models.quote import Quote, QuoteLine
 from app.models.rate_limit import RateLimitAttempt
 from app.models.role_permission import RolePermission
@@ -124,6 +135,7 @@ from app.models.sof_event import (
     SofEvent,
 )
 from app.models.stowage import StowageItem, StowagePlan, StowageZoneSpec
+from app.models.stripe_event import StripeWebhookEvent
 
 # Support applicatif (« Assistance ») — à ne pas confondre avec `ticket` ci-dessous,
 # qui porte les incidents d'exploitation portuaire. Cf. SPEC_SUPPORT_TICKETING §1.
@@ -159,9 +171,13 @@ __all__ = [
     "Booking",
     "BookingItem",
     "BookingMessage",
+    "BookingNote",
     "BunkerOperation",
     "BunkerTankAllocation",
     "CargoDocument",
+    "CashCount",
+    "CashCountCurrency",
+    "CashCountLine",
     "CashboxClosure",
     "CashboxMovement",
     "ChatConversation",
@@ -175,12 +191,14 @@ __all__ = [
     "ClientInvoice",
     "Co2Variable",
     "ContactRequest",
+    "CorrectiveAction",
     "CrewAssignment",
     "CrewCertification",
     "CrewLeave",
     "CrewMember",
     "CrewTicket",
     "DashboardParameter",
+    "DeficiencyCode",
     "DepartureEvent",
     "DockerShift",
     "EmissionFactor",
@@ -250,15 +268,20 @@ __all__ = [
     "PortConfig",
     "PortalAccessLog",
     "PortalMessage",
+    "QhseReport",
+    "QhseReportDeficiencyCode",
     "QualityCheckResult",
     "Quote",
     "QuoteLine",
     "RateGrid",
     "RateGridLine",
     "RateGridOption",
+    "RateGridPaymentTerm",
     "RateLimitAttempt",
     "RateOffer",
+    "RateOfferRevision",
     "RolePermission",
+    "RootCauseEvaluation",
     "ScenarioLeg",
     "ScheduleRevision",
     "SilaeExportBatch",
@@ -266,6 +289,7 @@ __all__ = [
     "StowageItem",
     "StowagePlan",
     "StowageZoneSpec",
+    "StripeWebhookEvent",
     "SupportTicket",
     "SupportTicketAttachment",
     "SupportTicketComment",

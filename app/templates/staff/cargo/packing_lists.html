@@ -10,14 +10,32 @@
   <a href="/commercial/orders" class="btn btn-ghost">Voir commandes →</a>
 </header>
 
+{# Maillage cargo ↔ voyage (Phase 2, §9.2) — même pattern que le kanban tickets. #}
+{% if filter_leg %}
+<div class="alert alert-info mb-3" role="status">
+  Filtré sur le voyage <span class="mono">{{ filter_leg.leg_code }}</span>
+  — <a href="/cargo/packing-lists">retirer le filtre</a>
+</div>
+{% endif %}
+
 <article class="card">
   <table class="data-table">
-    <thead><tr><th>PL #</th><th>Order</th><th>Statut</th><th>Msg</th><th>Batches</th><th>Complétion</th><th>Token</th><th>Expire</th></tr></thead>
+    <thead><tr><th>PL #</th><th>Order</th><th>Voyage</th><th>Navire</th><th>Statut</th><th>Msg</th><th>Batches</th><th>Complétion</th><th>Token</th><th>Expire</th></tr></thead>
     <tbody>
       {% for pl in packing_lists %}
+      {% set resolved_leg_id = leg_id_by_pl.get(pl.id) %}
+      {% set leg_vessel = leg_and_vessel_by_leg_id.get(resolved_leg_id) if resolved_leg_id else None %}
       <tr>
         <td><a href="/cargo/packing-lists/{{ pl.id }}" class="mono">PL-{{ pl.id }}</a></td>
         <td class="mono">{{ pl.order_id }}</td>
+        <td>
+          {% if leg_vessel %}
+            <a href="/cargo/packing-lists?leg_id={{ resolved_leg_id }}" class="mono">{{ leg_vessel[0].leg_code }}</a>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td>{{ leg_vessel[1].name if leg_vessel and leg_vessel[1] else '—' }}</td>
         <td><span class="badge badge-{{ pl.status }}">{{ pl.status }}</span></td>
         <td>{% set n = unread.get(pl.id, 0) %}{% if n %}<span class="pill pill-warn" title="{{ n }} message(s) client non lu(s)">{{ n }} ✉</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
         <td>{{ pl.batch_count }}</td>
@@ -29,7 +47,7 @@
         <td class="text-muted text-sm">{{ pl.token_expires_at|datetime("%d/%m/%Y") if pl.token_expires_at else '—' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="text-muted text-center">Aucune packing list pour l'instant. Créez-en une depuis une commande.</td></tr>
+      <tr><td colspan="10" class="text-muted text-center">Aucune packing list pour l'instant. Créez-en une depuis une commande.</td></tr>
       {% endfor %}
     </tbody>
   </table>

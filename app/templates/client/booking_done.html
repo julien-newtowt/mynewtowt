@@ -25,4 +25,42 @@
   </div>
 </div>
 
+{# Reprise UX Phase 3 (K-6) — transition wizard → app. `booking_router.step_4_done`
+   ne distingue pas compte auto-créé vs compte existant dans son contexte (et ce
+   routeur est hors périmètre de cette phase) : ce bloc est donc générique,
+   affiché dans tous les cas, plutôt que de deviner une condition absente. #}
+<div class="card mt-4" id="welcome-block">
+  <h2>{{ t('booking_welcome_title', lang) }}</h2>
+  <p class="text-muted">{{ t('booking_welcome_intro', lang) }}</p>
+  <ul style="list-style:none;margin:16px 0 0;padding:0;display:flex;flex-direction:column;gap:14px;">
+    <li style="display:flex;gap:12px;align-items:flex-start;">
+      <i data-lucide="package" style="flex-shrink:0;margin-top:2px;"></i>
+      <div>
+        <a href="/me/bookings" style="font-weight:600;">
+          {% if lang == 'en' %}My bookings{% else %}Mes réservations{% endif %}
+        </a>
+        <p class="text-muted text-sm" style="margin:2px 0 0;">{{ t('booking_welcome_bookings', lang) }}</p>
+      </div>
+    </li>
+    <li style="display:flex;gap:12px;align-items:flex-start;">
+      <i data-lucide="file-text" style="flex-shrink:0;margin-top:2px;"></i>
+      <div>
+        <a href="/me/documents" style="font-weight:600;">
+          {% if lang == 'en' %}My documents{% else %}Mes documents{% endif %}
+        </a>
+        <p class="text-muted text-sm" style="margin:2px 0 0;">{{ t('booking_welcome_documents', lang) }}</p>
+      </div>
+    </li>
+    <li style="display:flex;gap:12px;align-items:flex-start;">
+      <i data-lucide="navigation" style="flex-shrink:0;margin-top:2px;"></i>
+      <div>
+        <a href="/me/track/{{ booking.reference }}" style="font-weight:600;">
+          {% if lang == 'en' %}Track the voyage{% else %}Suivre la traversée{% endif %}
+        </a>
+        <p class="text-muted text-sm" style="margin:2px 0 0;">{{ t('booking_welcome_track', lang) }}</p>
+      </div>
+    </li>
+  </ul>
+</div>
+
 {% endblock %}

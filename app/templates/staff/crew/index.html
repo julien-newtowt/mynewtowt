@@ -141,6 +141,7 @@
         <td>
           {% if m.schengen_status == 'compliant' %}<span class="pill pill-ok">OK</span>
           {% elif m.schengen_status == 'warning' %}<span class="pill pill-warn">Warning</span>
+          {% elif m.schengen_status == 'indetermine' %}<span class="pill pill-neutral" title="Des embarquements existent hors de portée de ce calcul (plannings Marad, affectation sans voyage). La conformité Schengen fait foi dans Marad.">Non calculé — voir Marad</span>
           {% else %}<span class="pill pill-error">Non-compliant</span>{% endif %}
         </td>
         <td class="mono">{{ embarked_days.get(m.id, 0) }}</td>

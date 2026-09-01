@@ -9,6 +9,7 @@ Each context has its own dependency (`get_current_staff`, `get_current_client`).
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 from datetime import UTC, datetime
 from typing import Annotated
@@ -101,8 +102,29 @@ def create_staff_session(user_id: int) -> str:
     return _staff_serializer.dumps(payload)
 
 
-def create_client_session(client_id: int) -> str:
+def password_fingerprint(hashed_password: str | None) -> str | None:
+    """Empreinte courte (non réversible) du hash de mot de passe.
+
+    Embarquée dans le cookie de session client (``pwv``) : un changement de
+    mot de passe change le hash bcrypt, donc l'empreinte — toutes les
+    sessions émises avant le changement deviennent invalides
+    (``get_current_client``). L'empreinte dérive du hash (jamais du mot de
+    passe en clair) et ne permet de retrouver ni l'un ni l'autre.
+    """
+    if not hashed_password:
+        return None
+    return hashlib.sha256(hashed_password.encode("utf-8")).hexdigest()[:12]
+
+
+def create_client_session(client_id: int, hashed_password: str | None = None) -> str:
     payload = {"cid": client_id, "iat": datetime.now(UTC).timestamp()}
+    # ``pwv`` — version de mot de passe. Optionnel pour compatibilité : un
+    # cookie émis sans ``pwv`` (antérieur à cette évolution) reste accepté
+    # jusqu'à son expiration naturelle ; tout cookie émis avec est invalidé
+    # par un changement de mot de passe.
+    pwv = password_fingerprint(hashed_password)
+    if pwv:
+        payload["pwv"] = pwv
     return _client_serializer.dumps(payload)
 
 
@@ -312,6 +334,13 @@ async def get_current_client(
         )
     ).scalar_one_or_none()
     if not client:
+        raise AuthInvalid()
+    # Invalidation des sessions au changement de mot de passe : un cookie
+    # portant une version de mot de passe (``pwv``) différente du hash
+    # courant a été émis AVANT le changement — il est rejeté. Un cookie sans
+    # ``pwv`` (antérieur à cette évolution) reste accepté jusqu'à expiration.
+    pwv = payload.get("pwv")
+    if pwv and pwv != password_fingerprint(client.hashed_password):
         raise AuthInvalid()
     return client
 

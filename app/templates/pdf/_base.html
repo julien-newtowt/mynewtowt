@@ -178,6 +178,41 @@
       font-size: 8pt;
     }
 
+    /* Filigrane d'un document non signé. Posé en `position: fixed` pour que
+       WeasyPrint le répète sur CHAQUE page : un filigrane qui n'apparaîtrait
+       qu'en première page laisserait les suivantes passer pour un original. */
+    .bl-watermark {
+      position: fixed;
+      top: 40%;
+      left: 0;
+      right: 0;
+      text-align: center;
+      transform: rotate(-24deg);
+      font-size: 64pt;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #B47148;
+      opacity: 0.16;
+      z-index: 0;
+    }
+    .bl-watermark .bl-watermark-sub {
+      display: block;
+      font-size: 13pt;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      opacity: 0.9;
+    }
+    /* Bandeau lisible en tête : le filigrane est visuel, ceci est la mention
+       opposable — un tiers doit pouvoir la citer, pas seulement la voir. */
+    .bl-notice {
+      border: 1.5pt solid #B47148;
+      background: #FBF4EC;
+      color: #7A4A2C;
+      padding: 8pt 10pt;
+      margin-bottom: 14pt;
+      font-size: 9pt;
+    }
+
     .badge-co2 {
       display: inline-block;
       background: #87BD29;

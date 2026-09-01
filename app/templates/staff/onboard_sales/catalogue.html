@@ -57,7 +57,8 @@
 <article class="card">
   <h2>Produits</h2>
   {% if products %}
-    <table>
+    <div class="table-scroll">
+<table class="data-table">
       <thead>
         <tr>
           <th>SKU</th><th>Désignation</th><th>Type</th>
@@ -75,15 +76,57 @@
             <td>{% if p.tracks_stock %}<span class="pill pill-ok">suivi</span>{% else %}<span class="pill pill-neutral">non</span>{% endif %}</td>
             <td>{% if p.is_active %}<span class="pill pill-ok">actif</span>{% else %}<span class="pill pill-warn">inactif</span>{% endif %}</td>
             <td>
-              <form method="post" action="/captain/ventes/catalogue/products/{{ p.id }}/toggle" style="display:inline;">
-                <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-                <button type="submit" class="btn btn-ghost btn-sm">{{ "Désactiver" if p.is_active else "Activer" }}</button>
-              </form>
+              <div class="flex gap-2" style="flex-wrap:wrap;">
+                {# La route de modification existait depuis l'origine mais
+                   aucun écran ne la ciblait : un prix erroné ne pouvait être
+                   corrigé qu'en désactivant l'article et en le recréant, ce qui
+                   orpheline son historique et son stock (audit 2026-08-27). #}
+                <details>
+                  <summary class="btn btn-ghost btn-sm" style="list-style:none;">Modifier</summary>
+                  <form method="post" action="/captain/ventes/catalogue/products/{{ p.id }}"
+                        style="margin-top:var(--space-2);min-width:14rem;">
+                    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                    <div class="field">
+                      <label>Désignation</label>
+                      <input name="label" value="{{ p.label }}" />
+                    </div>
+                    <div class="field">
+                      <label>Prix ({{ p.currency }})</label>
+                      <input name="unit_price" inputmode="decimal"
+                             value="{{ "%.2f"|format(p.unit_price|float) }}" />
+                    </div>
+                    <div class="field">
+                      <label>Unité</label>
+                      <input name="unit" value="{{ p.unit }}" />
+                    </div>
+                    <div class="field">
+                      <label>Seuil d'alerte de stock</label>
+                      <input name="min_stock_alert" inputmode="decimal"
+                             value="{{ p.min_stock_alert.normalize() if p.min_stock_alert is not none else "" }}"
+                             placeholder="vide = pas d'alerte" />
+                    </div>
+                    <div class="field">
+                      <label>Notes</label>
+                      <input name="notes" value="{{ p.notes or "" }}" />
+                    </div>
+                    <button type="submit" class="btn btn-secondary btn-sm">Enregistrer</button>
+                    <p class="text-muted text-sm" style="margin-top:var(--space-2);">
+                      La devise, le type et le suivi de stock ne se modifient pas :
+                      les ventes déjà passées y font référence.
+                    </p>
+                  </form>
+                </details>
+                <form method="post" action="/captain/ventes/catalogue/products/{{ p.id }}/toggle" style="display:inline;">
+                  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+                  <button type="submit" class="btn btn-ghost btn-sm">{{ "Désactiver" if p.is_active else "Activer" }}</button>
+                </form>
+              </div>
             </td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+</div>
   {% else %}
     <p class="text-muted">Catalogue vide.</p>
   {% endif %}

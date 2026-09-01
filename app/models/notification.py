@@ -45,6 +45,12 @@ NOTIFICATION_TYPES = (
     "anemos_issued",
     "new_booking_message",
     "trombinoscope_generated",
+    # Estimation tarifaire demandée par un client (ou déposée depuis la vitrine).
+    "estimate_ready",
+    # Vente à bord : un paiement carte est arrivé sur une vente déjà réglée ou
+    # annulée. Argent encaissé chez Stripe sans contrepartie dans le grand livre
+    # — le siège doit rembourser à froid, l'application ne sait pas le faire.
+    "onboard_payment_incident",
 )
 
 # Icônes par type (emoji)
@@ -69,6 +75,8 @@ NOTIFICATION_ICONS: dict[str, str] = {
     "anemos_issued": "🌿",
     "new_booking_message": "💬",
     "trombinoscope_generated": "🪪",
+    "estimate_ready": "🧮",
+    "onboard_payment_incident": "🚨",
 }
 
 

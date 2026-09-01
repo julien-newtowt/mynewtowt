@@ -162,6 +162,18 @@
 </section>
 {% endif %}
 
+{# Reprise UX Phase 3 (K-4) — même motif que le cockpit escale : les mutations
+   de cette zone (toggle voyage public + messagerie ci-dessous) postent en
+   HTMX (204 + toast + `meRefresh`) et ce wrapper se re-remplit via hx-get +
+   hx-select sur la page elle-même. Sans JS : 303 classique, ce wrapper n'a
+   alors aucun effet. #}
+<div id="me-booking-sections"
+     hx-get="/me/bookings/{{ booking.reference }}"
+     hx-trigger="meRefresh from:body"
+     hx-select="#me-booking-sections"
+     hx-target="this"
+     hx-swap="outerHTML">
+
 {% if booking.status in ('loaded','at_sea','discharged','delivered') %}
 <section class="card mb-4">
   <h2>{% if lang == 'en' %}Public voyage page (QR){% else %}Page publique du voyage (QR){% endif %}</h2>
@@ -171,7 +183,8 @@
   <p class="text-muted text-sm">
     {% if lang == 'en' %}Publish this shipment's voyage on a public page — the destination of the QR code printed on your packaging: real route on a map, hold conditions, avoided CO₂, on-board photos. No personal data is shown; you can unpublish at any time.{% else %}Publiez la traversée de cette expédition sur une page publique — la destination du QR code imprimé sur vos emballages : trajet réel sur carte, conditions de cale, CO₂ évité, photos de bord. Aucune donnée personnelle n'est affichée ; dépubliable à tout moment.{% endif %}
   </p>
-  <form method="post" action="/me/bookings/{{ booking.reference }}/voyage-public">
+  <form method="post" action="/me/bookings/{{ booking.reference }}/voyage-public"
+        hx-post="/me/bookings/{{ booking.reference }}/voyage-public" hx-swap="none">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     <label style="display:flex;align-items:center;gap:0.5rem;">
       <input type="checkbox" name="enabled" {% if booking.voyage_public %}checked{% endif %} />
@@ -196,10 +209,25 @@
     {% if lang == 'en' %}Download your official documents as PDF.{% else %}Téléchargez vos documents officiels en PDF.{% endif %}
   </p>
   <div class="flex gap-3 mt-3" style="flex-wrap:wrap;">
-    <a href="/me/bookings/{{ booking.reference }}/bl.pdf" target="_blank" class="btn btn-primary">📄 Bill of Lading</a>
+    {# §5.4 — le rail booking est retiré. Le connaissement vit dans le registre : un
+       numéro attribué une fois, un état, une signature, un registre de remise.
+       L'ancien document était fabriqué à la volée depuis le booking et se présentait
+       comme un connaissement sans en être un.
+       Tant qu'aucun BL n'est émis, la page le dit — c'est la réalité : avant émission
+       par les Opérations, il n'y a pas de connaissement. #}
+    {% if pl_bl_count %}
+      <a href="/me/bookings/{{ booking.reference }}/bls" class="btn btn-primary">
+        📄 {% if lang == 'en' %}Bills of Lading{% else %}Connaissements{% endif %} ({{ pl_bl_count }})
+      </a>
+    {% else %}
+      <a href="/me/bookings/{{ booking.reference }}/bls" class="btn btn-ghost"
+         title="{% if lang == 'en' %}Issued by our team once the packing list is complete{% else %}Émis par notre équipe dès que la packing list est complète{% endif %}">
+        📄 {% if lang == 'en' %}Bill of Lading — not issued yet{% else %}Connaissement — pas encore émis{% endif %}
+      </a>
+    {% endif %}
     <a href="/me/bookings/{{ booking.reference }}/packing-list.pdf" target="_blank" class="btn btn-secondary">📦 Packing List</a>
     <a href="/me/bookings/{{ booking.reference }}/booking-note.pdf" target="_blank" class="btn btn-secondary">
-      📝 Booking note
+      📝 Confirmation de réservation
     </a>
     {% if booking.status in ('discharged','delivered') %}
       <a href="/me/bookings/{{ booking.reference }}/anemos.pdf" target="_blank" class="btn btn-accent">
@@ -246,5 +274,7 @@
   {% set viewer = "client" %}
   {% include "_partials/message_thread.html" %}
 </section>
+
+</div>
 
 {% endblock %}

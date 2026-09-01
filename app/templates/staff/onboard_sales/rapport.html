@@ -1,0 +1,138 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Ventes à bord — chiffre d'affaires{% endblock %}
+{% block content %}
+<a href="/captain/ventes" class="btn btn-ghost mb-3">← Vente à bord</a>
+<header class="mb-4">
+  <span class="kicker">Vente à bord</span>
+  <h1 class="display">Chiffre d'affaires</h1>
+  <p class="text-muted">
+    Ventes <strong>réglées</strong> uniquement. Le net est déduit des
+    remboursements. Les montants restent ventilés par devise : l'application ne
+    tient aucun taux de change, un total consolidé serait faux d'apparence juste.
+  </p>
+</header>
+
+<article class="card mb-4">
+  <form method="get" action="/captain/ventes/rapport" class="grid grid-4 gap-3" style="align-items:end;">
+    {% if not scoped %}
+      <div class="field">
+        <label for="vessel_id">Navire</label>
+        <select id="vessel_id" name="vessel_id">
+          <option value="">Tous</option>
+          {% for v in vessels %}
+            <option value="{{ v.id }}" {% if vessel_id == v.id %}selected{% endif %}>
+              {{ v.code }} — {{ v.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+    <div class="field">
+      <label for="date_from">Du</label>
+      <input id="date_from" name="date_from" type="date" value="{{ date_from }}" />
+    </div>
+    <div class="field">
+      <label for="date_to">Au</label>
+      <input id="date_to" name="date_to" type="date" value="{{ date_to }}" />
+    </div>
+    <div class="field flex gap-2">
+      <button type="submit" class="btn btn-primary">Filtrer</button>
+      <a class="btn btn-secondary"
+         href="/captain/ventes/rapport/export.csv?vessel_id={{ vessel_id or '' }}&date_from={{ date_from }}&date_to={{ date_to }}">
+        Export CSV
+      </a>
+    </div>
+  </form>
+</article>
+
+<section class="kpi-strip mb-4">
+  {% for currency, entry in summary.totals.items() %}
+    <div class="kpi-card">
+      <div class="label">{{ currency }} · net encaissé</div>
+      <div class="value mono">{{ "%.2f"|format(entry.net|float) }}</div>
+      <div class="delta text-muted">
+        {{ entry.count }} vente(s)
+        {% if entry.refunded %}
+          · <span class="text-error">−{{ "%.2f"|format(entry.refunded|float) }} remboursé</span>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="kpi-card">
+      <div class="label">Aucune vente réglée sur la période</div>
+      <div class="value">—</div>
+    </div>
+  {% endfor %}
+</section>
+
+<article class="card mb-4">
+  <h2>Par navire</h2>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Navire</th><th>Devise</th><th>Net</th><th>Ventes</th></tr></thead>
+      <tbody>
+        {% for row in summary.by_vessel %}
+          <tr>
+            <td><span class="mono text-muted">{{ row.code }}</span> {{ row.name }}</td>
+            <td>{{ row.currency }}</td>
+            <td class="mono">{{ "%.2f"|format(row.net|float) }}</td>
+            <td class="mono">{{ row.count }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="text-muted">Aucune donnée.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</article>
+
+<article class="card mb-4">
+  <h2>Par article</h2>
+  <p class="text-muted">
+    Classé par chiffre d'affaires. La <strong>marge n'est pas calculable</strong> :
+    le catalogue ne porte pas de prix de revient.
+  </p>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Article</th><th>Devise</th><th>Quantité</th><th>Net</th></tr></thead>
+      <tbody>
+        {% for row in summary.by_product %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td>{{ row.currency }}</td>
+            <td class="mono">{{ row.qty.normalize() }}</td>
+            <td class="mono">{{ "%.2f"|format(row.net|float) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="text-muted">Aucune donnée.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</article>
+
+<article class="card">
+  <h2>Par voyage</h2>
+  <p class="text-muted">
+    Les ventes non rattachées à un voyage (navire à quai hors leg) n'apparaissent
+    pas ici, mais restent comptées dans les totaux.
+  </p>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Leg</th><th>Devise</th><th>Net</th><th>Ventes</th></tr></thead>
+      <tbody>
+        {% for row in summary.by_leg %}
+          <tr>
+            <td class="mono">{{ row.leg_code }}</td>
+            <td>{{ row.currency }}</td>
+            <td class="mono">{{ "%.2f"|format(row.net|float) }}</td>
+            <td class="mono">{{ row.count }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="text-muted">Aucune donnée.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</article>
+{% endblock %}

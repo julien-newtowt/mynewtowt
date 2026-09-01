@@ -16,6 +16,31 @@
   </a>
 </header>
 
+{% if at_sea_crossings %}
+<section class="card mb-4">
+  <h2>{% if lang == 'en' %}Currently at sea{% else %}En mer actuellement{% endif %}</h2>
+  <ul style="list-style:none; margin:0; padding:0;">
+    {% for c in at_sea_crossings %}
+    <li style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); padding:8px 0; border-bottom:1px solid var(--sable); flex-wrap:wrap;">
+      <span>
+        <span class="mono">{{ c.reference }}</span>
+        —
+        {{ c.pol.name if c.pol else '—' }}{% if c.pol and c.pol.country %} {{ c.pol.country|flag }}{% endif %}
+        →
+        {{ c.pod.name if c.pod else '—' }}{% if c.pod and c.pod.country %} {{ c.pod.country|flag }}{% endif %}
+        <span class="text-muted text-sm">
+          · ETA {{ c.eta|date if c.eta else '—' }}
+        </span>
+      </span>
+      <a href="/me/track/{{ c.reference }}" class="btn btn-primary btn-sm">
+        {% if lang == 'en' %}Track →{% else %}Suivre →{% endif %}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 {% if alert_items %}
 <section class="card" style="border-left:4px solid var(--cuivre); margin-bottom:var(--space-4);">
   <div class="flex justify-between items-center mb-2">

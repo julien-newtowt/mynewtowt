@@ -1,0 +1,113 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Journal d'escale {{ leg.leg_code }} — {{ brand.nom_court }}{% endblock %}
+
+{# ──────────────────────────────────────────────────────────────────────
+   Journal d'escale — reprise UX Phase 2 (docs/design/03-reprise-ux-legacy.md).
+   Timeline unifiée bord + terre en LECTURE SEULE : SOF, opérations réelles,
+   documents cargo, transitions BL, pièces jointes, tickets, sinistres,
+   statut portuaire, verrous/clôture — plus le rapprochement des deux
+   registres SOF. Les actions se font dans les cockpits (/escale, /captain).
+   ────────────────────────────────────────────────────────────────────── #}
+
+{% set tone_class = {"ok": "pill-ok", "warn": "pill-warn", "error": "pill-error", "info": "pill-info", "neutral": "pill-neutral"} %}
+{% set kind_labels = {"statut": "Statut", "sof": "SOF", "operation": "Opérations", "document": "Documents", "bl": "Connaissements", "pj": "Pièces jointes", "ticket": "Tickets", "sinistre": "Sinistres", "verrou": "Verrous"} %}
+
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Opérations · Escale <span class="mono">{{ leg.leg_code }}</span></span>
+    <h1 class="display">Journal d'escale</h1>
+    <p class="text-muted">Tous les documents et événements du voyage, quelle que soit leur origine — bord ou terre. Lecture seule : les actions se font dans les cockpits.</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="/escale?leg_id={{ leg.id }}" class="btn btn-secondary"><i data-lucide="anchor"></i> Cockpit escale</a>
+    <a href="/captain?leg_id={{ leg.id }}" class="btn btn-ghost"><i data-lucide="ship"></i> Espace bord</a>
+  </div>
+</header>
+
+<div class="leg-summary">
+  <span class="mono" style="font-size:1.1rem;font-weight:700;">{{ leg.leg_code }}</span>
+  <span class="text-muted">{{ vessel.name if vessel else '—' }} · {{ pol.locode if pol else '?' }} → {{ pod.locode if pod else '?' }}</span>
+  {% if leg_locked %}<span class="lock-badge"><i data-lucide="lock"></i> escale verrouillée</span>{% endif %}
+  <div style="flex-grow:1;"></div>
+  <span class="mono text-xs text-muted">
+    ATA {{ leg.ata|datetime("%d/%m %H:%M") if leg.ata else '—' }} ·
+    ATD {{ leg.atd|datetime("%d/%m %H:%M") if leg.atd else '—' }}
+  </span>
+</div>
+
+{% if closure_engaged_unlocked %}
+<div class="alert alert-warn mb-3">
+  <i data-lucide="alert-triangle"></i>
+  <span>Clôture de voyage engagée alors que l'escale n'est <strong>pas verrouillée</strong> — vérifier avant validation.</span>
+</div>
+{% endif %}
+
+{# Rapprochement des deux registres SOF — limité aux actions synchronisables. #}
+<article class="card mb-3">
+  <div class="section-header"><h3><i data-lucide="git-compare"></i> Rapprochement des SOF (bord ↔ terre)</h3></div>
+  <div class="grid grid-2 gap-4">
+    <div class="kpi-strip">
+      <div class="kpi-card"><div class="label">Bord (événements SOF)</div><div class="value">{{ reconciliation.sof_total }}</div><div class="delta text-muted">{{ reconciliation.sof_signed }} signé(s)</div></div>
+      <div class="kpi-card"><div class="label">Terre (opérations)</div><div class="value">{{ reconciliation.ops_total }}</div><div class="delta text-muted">{{ reconciliation.ops_synced }} synchronisable(s)</div></div>
+    </div>
+    <div>
+      {% if reconciliation.missing_on_board or reconciliation.missing_on_shore %}
+        {% for t in reconciliation.missing_on_board %}
+        <div class="alert alert-warn mb-1"><i data-lucide="alert-triangle"></i><span><span class="mono">{{ t }}</span> attendu depuis une opération d'escale, <strong>absent du registre du bord</strong>.</span></div>
+        {% endfor %}
+        {% for t in reconciliation.missing_on_shore %}
+        <div class="alert alert-info mb-1"><i data-lucide="info"></i><span><span class="mono">{{ t }}</span> présent au bord, <strong>sans opération d'escale correspondante</strong>.</span></div>
+        {% endfor %}
+      {% else %}
+      <p class="text-muted"><i data-lucide="check"></i> Aucun écart sur les actions synchronisables.</p>
+      {% endif %}
+      <p class="text-muted text-xs mt-1">
+        SOF escale : <a href="/escale/legs/{{ leg.id }}/sof.pdf" hx-boost="false" target="_blank">PDF</a> ·
+        SOF commandant : <a href="/captain/legs/{{ leg.id }}/sof.pdf" hx-boost="false" target="_blank">PDF</a>
+      </p>
+    </div>
+  </div>
+</article>
+
+{# Filtres par type d'entrée. #}
+<div class="escale-subnav" role="navigation" aria-label="Filtres du journal">
+  <a href="/escale/legs/{{ leg.id }}/journal" {% if not selected_kind %}class="journal-filter-active"{% endif %}>Tout ({{ entry_total }})</a>
+  {% for k in journal_kinds %}
+    {% if counts_by_kind.get(k) %}
+    <a href="/escale/legs/{{ leg.id }}/journal?kind={{ k }}" {% if selected_kind == k %}class="journal-filter-active"{% endif %}>{{ kind_labels.get(k, k) }} ({{ counts_by_kind[k] }})</a>
+    {% endif %}
+  {% endfor %}
+</div>
+
+{# Timeline groupée par journée. #}
+{% if days %}
+<article class="card">
+  {% for day, items in days %}
+  <div class="journal-day">
+    <span class="mono journal-day-label">{{ day.strftime("%d/%m/%Y") }}</span>
+    {% for e in items %}
+    <div class="journal-entry">
+      <span class="mono journal-time">{{ e.at.strftime("%H:%M") }}</span>
+      <div class="journal-body">
+        <span class="journal-label">{% if e.link %}<a href="{{ e.link }}">{{ e.label }}</a>{% else %}{{ e.label }}{% endif %}</span>
+        {% if e.detail %}<span class="text-muted text-xs">{{ e.detail }}</span>{% endif %}
+      </div>
+      {% if e.badge %}<span class="pill {{ tone_class.get(e.badge_tone, 'pill-neutral') }}">{{ e.badge }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</article>
+{% else %}
+<article class="card">
+  <div class="empty-state">
+    <i data-lucide="waves"></i>
+    <span class="empty-title">Rien à journaliser{% if selected_kind %} pour ce filtre{% endif %}</span>
+    <span class="text-muted text-sm">Les événements apparaissent ici au fil de l'escale — saisie depuis les cockpits.</span>
+  </div>
+</article>
+{% endif %}
+
+{% endblock %}

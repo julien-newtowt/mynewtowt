@@ -158,7 +158,20 @@ async def mrv_parametres(
         ValidationRuleThreshold,
     )
 
-    rules = list((await db.execute(select(ValidationRule))).scalars().all())
+    # Scopes MRV uniquement : le moteur de validation est mutualisé (QHSE y pose
+    # RQ01-RQ03), cet écran ne l'est pas — il s'administre sur `mrv:S`. Voir
+    # `MRV_RULE_SCOPES` dans `validation_engine` (fail-closed).
+    from app.services.validation_engine import MRV_RULE_SCOPES
+
+    rules = list(
+        (
+            await db.execute(
+                select(ValidationRule).where(ValidationRule.scope.in_(sorted(MRV_RULE_SCOPES)))
+            )
+        )
+        .scalars()
+        .all()
+    )
     thresholds = list((await db.execute(select(ValidationRuleThreshold))).scalars().all())
     dashboard_params = list(
         (await db.execute(select(DashboardParameter).order_by(DashboardParameter.parameter_name)))

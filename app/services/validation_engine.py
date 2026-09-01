@@ -2,10 +2,13 @@
 
 Ce module fournit :
 
-1. **Le catalogue seedé** (``RULE_SEED`` = 35 règles, ``THRESHOLD_SEED`` =
+1. **Le catalogue seedé** (``RULE_SEED`` = 38 règles, ``THRESHOLD_SEED`` =
    seuils paramétrables, ``DASHBOARD_SEED`` = paramètres dashboard) et une
    fonction de seed idempotente (``seed_reference_data``) utilisée par le
    boot dev (``create_all`` sans migration) et par l'action d'init admin.
+   Le moteur est **mutualisé** : les 38 règles se répartissent en 35 MRV et
+   3 QHSE (RQ01-RQ03). Le seed les peuple toutes ; le cloisonnement se fait à
+   l'affichage, via ``MRV_RULE_SCOPES`` / ``NON_MRV_RULE_SCOPES``.
 2. **La résolution de seuils** (``get_threshold``) : (rule, vessel) →
    (rule, NULL) → défaut codé *fail-closed*, avec cache 60 s et
    ``invalidate_cache()`` — même patron que ``app.permissions``.
@@ -327,7 +330,51 @@ RULE_SEED: tuple[tuple[str, str, str, str, str, bool], ...] = (
         "event",
         True,
     ),
+    # ─────────────────────────── QHSE (Phase 0 — fondations) ───────────────
+    # Implémentées dans ``app.services.qhse_validation_rules`` (importé en fin
+    # de fichier, même patron que ``validation_rules_catalog``). Scope "qhse",
+    # sujets duck-typés (``QhseReport``-like : issued_date/closed_date/subject/
+    # vessel_id).
+    (
+        "RQ01",
+        "Cohérence dates",
+        "Date de clôture antérieure à la date d'émission — donnée de test/erreur de saisie.",
+        "bloquant",
+        "qhse",
+        True,
+    ),
+    (
+        "RQ02",
+        "Hygiène de saisie",
+        "Sujet/description correspondant à un motif de test (test/essai/demo).",
+        "warning",
+        "qhse",
+        True,
+    ),
+    (
+        "RQ03",
+        "Identité navire",
+        "Navire non résolu vers le référentiel MyTOWT existant lors de l'ingestion.",
+        "bloquant",
+        "qhse",
+        True,
+    ),
 )
+
+# ─────────────────────── Classement des scopes par domaine ───────────────────
+# `RULE_SEED` est partagé par plusieurs domaines : le moteur est mutualisé, les
+# écrans d'administration ne le sont pas. `/mrv/parametres` s'ouvre sur `mrv:C`
+# et écrit sur `mrv:S` ; il ne doit donc exposer QUE les règles du reporting
+# MRV. Une règle de scope `qhse` administrée avec un droit `mrv` traverserait
+# une frontière de module (QHSE a sa propre entrée dans `permissions.py`).
+#
+# **Fail-closed, comme la matrice de permissions et les seuils** : un scope
+# absent de `MRV_RULE_SCOPES` n'apparaît PAS dans l'écran MRV. Le risque
+# symétrique — une future règle MRV rendue invisible par oubli de classement —
+# est couvert par `test_rule_scopes_are_all_classified`, qui échoue dès qu'un
+# scope de `RULE_SEED` n'est déclaré ni ici ni ci-dessous.
+MRV_RULE_SCOPES: frozenset[str] = frozenset({"event", "voyage", "report", "bunker", "flgo"})
+NON_MRV_RULE_SCOPES: frozenset[str] = frozenset({"qhse"})
 
 # (rule_id, parameter_name, value, unit, provisional, note) — vessel_id = NULL.
 # 16 paramètres de la Matrice §6 + 2 densité (R16, absorbés de mrv_parameters)
@@ -1464,4 +1511,7 @@ async def seed_reference_data(
 #   séquence (doublon/antériorité). Conservé ; le volet doublon/antériorité est
 #   désormais porté rigoureusement par **IR01** (scope séquence). La complétude
 #   reste couverte de fait par les présences R05/R06/R07.
+# QHSE (Phase 0) — même patron : le module s'importe en fin de fichier pour
+# peupler ``RULES`` (RQ01-RQ03) via ``@rule`` sans cycle d'import.
+from app.services import qhse_validation_rules as _qhse_rules  # noqa: E402,F401
 from app.services import validation_rules_catalog as _catalog  # noqa: E402,F401

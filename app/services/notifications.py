@@ -301,6 +301,30 @@ async def notify_new_booking_message(
     )
 
 
+async def notify_onboard_payment_incident(
+    db: AsyncSession,
+    *,
+    sale_reference: str,
+    sale_id: int,
+    detail: str,
+) -> Notification:
+    """Alerte le siège : un paiement carte est arrivé sans contrepartie possible.
+
+    Cas visés — une vente déjà réglée en espèces, ou annulée, dont le lien
+    Stripe a malgré tout été payé. L'argent est chez Stripe, le grand livre ne
+    le voit pas, et aucune route de remboursement n'existe encore : sans cette
+    alerte, l'incident ne laissait qu'une ligne de log que personne ne lit.
+    """
+    return await create(
+        db,
+        type="onboard_payment_incident",
+        title=f"Paiement carte sans contrepartie — {sale_reference}",
+        detail=detail,
+        link=f"/captain/ventes/vente/{sale_reference}",
+        target_role="administrateur",
+    )
+
+
 async def notify_trombinoscope_generated(db: AsyncSession, *, period: str) -> Notification:
     """Trombinoscope Armement généré automatiquement (scheduler ou endpoint de
     secours — **pas** la régénération manuelle, cf. review 2026-07-20 :

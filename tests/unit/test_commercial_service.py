@@ -16,11 +16,43 @@ from app.services.commercial import (
 )
 
 
-def test_default_brackets_for_shipper_returns_seven_brackets():
+def test_default_brackets_follow_the_business_scale():
+    """Barème métier : < 50 / 50-100 / 100-300 / 300-500 / 500-800 / navire complet.
+
+    Les bornes sont **inclusives des deux côtés** : ``max_qty`` porte la borne
+    haute incluse, la borne basse du palier suivant est celle-ci + 1.
+    """
     b = default_brackets_for("shipper")
-    assert len(b) == 7
-    assert b[0]["key"] == "lt50"
-    assert b[-1]["key"] == "full"
+    assert [x["key"] for x in b] == [
+        "lt50",
+        "50_100",
+        "100_300",
+        "300_500",
+        "500_800",
+        "full",
+    ]
+    assert [x["max_qty"] for x in b] == [49, 100, 300, 500, 800, None]
+    # Coefficients strictement dégressifs — un palier plus gros ne coûte jamais plus cher.
+    coeffs = [x["coeff"] for x in b]
+    assert coeffs == sorted(coeffs, reverse=True)
+
+
+def test_default_brackets_bounds_are_inclusive():
+    """Chaque borne annoncée appartient bien à son palier."""
+    for qty, expected in [
+        (1, "lt50"),
+        (49, "lt50"),
+        (50, "50_100"),
+        (100, "50_100"),  # « de 50 à 100 » inclut 100
+        (101, "100_300"),
+        (300, "100_300"),
+        (301, "300_500"),
+        (500, "300_500"),
+        (501, "500_800"),
+        (800, "500_800"),
+        (801, "full"),
+    ]:
+        assert pick_bracket(DEFAULT_BRACKETS_SHIPPER, qty)["key"] == expected, qty
 
 
 def test_default_brackets_for_freight_forwarder_returns_flat():
@@ -36,17 +68,19 @@ def test_pick_bracket_below_first_threshold():
 
 def test_pick_bracket_at_100():
     b = pick_bracket(DEFAULT_BRACKETS_SHIPPER, 100)
-    assert b["key"] == "100"
+    assert b["key"] == "50_100"
 
 
-def test_pick_bracket_at_350_picks_400():
+def test_pick_bracket_at_350_picks_300_500():
     b = pick_bracket(DEFAULT_BRACKETS_SHIPPER, 350)
-    assert b["key"] == "400"
+    assert b["key"] == "300_500"
 
 
 def test_pick_bracket_above_max_picks_full():
+    """Le palier « navire complet » n'est pas borné : aucune quantité ne le dépasse."""
     b = pick_bracket(DEFAULT_BRACKETS_SHIPPER, 1000)
     assert b["key"] == "full"
+    assert pick_bracket(DEFAULT_BRACKETS_SHIPPER, 99_999)["key"] == "full"
 
 
 def test_bracket_rate_applies_base_coeff_and_index():

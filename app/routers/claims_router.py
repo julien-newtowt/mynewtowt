@@ -33,10 +33,26 @@ from app.models.sof_event import SofEvent
 from app.permissions import require_permission
 from app.services import notifications, safe_files
 from app.services.activity import record as activity_record
+from app.services.hx import mutation_response
 from app.services.stowage import zone_label, zones_for_leg
 from app.templating import templates
 
 router = APIRouter(prefix="/claims", tags=["claims"])
+
+
+def _mutation_response(request: Request, claim_id: int, message: str) -> Response:
+    """Réponse standard d'une mutation de la fiche claim.
+
+    Wrapper d'une ligne sur ``services.hx.mutation_response`` (même motif que
+    le cockpit escale, ``escale_router._mutation_response``) — conservé pour
+    ne pas retoucher tous les call sites de ce routeur.
+    """
+    return mutation_response(
+        request,
+        redirect_url=f"/claims/{claim_id}",
+        message=message,
+        refresh_event="claimsRefresh",
+    )
 
 
 @router.get("", response_class=HTMLResponse)
@@ -400,7 +416,7 @@ async def claim_update_cargo_position(
     new_position = (cargo_position or "").strip() or None
     old_position = c.cargo_position
     if new_position == old_position:
-        return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+        return _mutation_response(request, claim_id, "Position cale inchangée.")
     c.cargo_position = new_position
     db.add(
         ClaimTimelineEntry(
@@ -425,7 +441,7 @@ async def claim_update_cargo_position(
         detail=f"cargo_position {old_position or '—'} → {new_position or '—'}",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return _mutation_response(request, claim_id, "Position cale mise à jour.")
 
 
 @router.post("/{claim_id}/status")
@@ -482,7 +498,7 @@ async def claim_update_status(
         detail=f"{old_status} → {new_status}",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return _mutation_response(request, claim_id, f"Statut mis à jour : {new_status}.")
 
 
 @router.post("/{claim_id}/notes")
@@ -506,7 +522,7 @@ async def claim_add_note(
         )
     )
     await db.flush()
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return _mutation_response(request, claim_id, "Note ajoutée.")
 
 
 # ---------------------------------------------------------------------------
@@ -530,7 +546,7 @@ async def claim_update_provision(
     new_amount = Decimal(str(provision_eur)) if provision_eur is not None else None
     old_amount = c.provision_eur
     if new_amount == old_amount:
-        return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+        return _mutation_response(request, claim_id, "Provision inchangée.")
     c.provision_eur = new_amount
     db.add(
         ClaimProvisionHistory(
@@ -565,7 +581,7 @@ async def claim_update_provision(
         detail=f"provision {old_amount or '—'} → {new_amount or '—'}",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return _mutation_response(request, claim_id, "Provision mise à jour.")
 
 
 # ---------------------------------------------------------------------------
@@ -594,7 +610,7 @@ async def claim_update_insurer(
     c.insurer = (insurer or "").strip() or (contract.insurer if contract else None)
     c.insurer_claim_ref = (insurer_claim_ref or "").strip() or None
     await db.flush()
-    return RedirectResponse(url=f"/claims/{claim_id}", status_code=303)
+    return _mutation_response(request, claim_id, "Assurance mise à jour.")
 
 
 # ---------------------------------------------------------------------------

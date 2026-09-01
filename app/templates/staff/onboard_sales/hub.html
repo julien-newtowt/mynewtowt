@@ -13,12 +13,18 @@
 
 <div class="grid grid-2 gap-4">
   {% for v in vessels %}
-    <article class="card card-interactive" onclick="window.location='/captain/ventes/{{ v.id }}';">
+    {# `onclick` est inerte : la CSP stricte interdit le JS inline. Le pavé
+       paraissait cliquable (curseur, survol) et ne l'était pas — premier écran
+       du module, première impression d'appli cassée (audit 2026-08-27).
+       Un vrai lien est cliquable, focusable au clavier et ouvrable en
+       nouvel onglet. #}
+    <a href="/captain/ventes/{{ v.id }}" class="card card-interactive"
+       style="display:block;color:inherit;text-decoration:none;border-bottom:none;">
       <div class="flex justify-between items-center">
         <h2 style="margin:0;"><span class="mono text-muted">{{ v.code }}</span> {{ v.name }}</h2>
-        <a href="/captain/ventes/{{ v.id }}" class="btn btn-ghost text-sm">Ouvrir →</a>
+        <span class="btn btn-ghost text-sm">Ouvrir →</span>
       </div>
-    </article>
+    </a>
   {% else %}
     <p class="text-muted">Aucun navire.</p>
   {% endfor %}

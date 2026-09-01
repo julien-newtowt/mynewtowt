@@ -10,7 +10,7 @@
         <h2><span class="mono text-accent">{{ leg.leg_code }}</span></h2>
         <p>ATA <span class="mono">{{ leg.ata|datetime }}</span></p>
         <p>ETD <span class="mono">{{ leg.etd|datetime }}</span></p>
-        <a href="/escale/{{ leg.id }}" class="btn btn-primary">Détail import/export →</a>
+        <a href="/escale?leg_id={{ leg.id }}" class="btn btn-primary">Détail import/export →</a>
       </article>
     {% endfor %}
   </div>

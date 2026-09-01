@@ -1,0 +1,57 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('qhse_import_result_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/qhse" class="btn btn-ghost mb-3">{{ t('btn_back', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">{{ t('qhse_kicker', lang) }}</span>
+  <h1 class="display">{{ t('qhse_import_result_title', lang) }}</h1>
+</header>
+
+{# Trois compteurs, pas deux : « écartée » (perdue) et « importée à confirmer »
+   n'ont pas les mêmes conséquences, et les additionner masquerait la perte. #}
+<article class="card mb-3">
+  <p>
+    <span class="pill pill-ok">{{ report.imported }} {{ t('qhse_import_result_imported', lang) }}</span>
+    <span class="pill pill-warn">{{ report.skipped }} {{ t('qhse_import_result_skipped', lang) }}</span>
+    {% if report.flagged %}
+      <span class="pill">{{ report.flagged }} {{ t('qhse_import_result_flagged', lang) }}</span>
+    {% endif %}
+  </p>
+  {% if report.skipped %}
+    <p class="text-sm" style="color:var(--cuivre);">
+      {{ t('qhse_import_result_loss_notice', lang) }}
+    </p>
+  {% endif %}
+</article>
+
+<article class="card mb-3">
+  <h2>{{ t('qhse_import_result_errors_title', lang) }}</h2>
+  {% if report.errors %}
+  <table class="data-table">
+    <thead><tr><th>{{ t('qhse_import_result_errors_title', lang) }}</th></tr></thead>
+    <tbody>
+      {% for e in report.errors %}
+      <tr><td class="text-sm">{{ e }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">{{ t('qhse_import_result_no_errors', lang) }}</p>
+  {% endif %}
+</article>
+
+{# Importées, donc présentes dans le registre — mais signalées. La décision de les
+   écarter appartient à un humain, et reste réversible. #}
+{% if report.warnings %}
+<article class="card">
+  <h2>{{ t('qhse_import_result_flagged_title', lang) }}</h2>
+  <table class="data-table">
+    <tbody>
+      {% for w in report.warnings %}
+      <tr><td class="text-sm">{{ w }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endif %}
+{% endblock %}

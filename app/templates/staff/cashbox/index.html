@@ -9,13 +9,22 @@
 
 <div class="grid grid-2 gap-4">
   {% for entry in summary %}
-    <article class="card card-interactive" onclick="window.location='/cashbox/{{ entry.vessel.id }}';">
+    {# Pas de `<a>` englobant ici : la carte contient un tableau, l'imbriquer
+       produirait du HTML invalide. Le titre devient le lien, et `onclick` —
+       inerte sous CSP stricte — est retiré plutôt que laissé à faire croire
+       que le pavé est cliquable. #}
+    <article class="card">
       <div class="flex justify-between items-center mb-3">
-        <h2 style="margin:0;"><span class="mono text-muted">{{ entry.vessel.code }}</span> {{ entry.vessel.name }}</h2>
+        <h2 style="margin:0;">
+          <a href="/cashbox/{{ entry.vessel.id }}" style="color:inherit;">
+            <span class="mono text-muted">{{ entry.vessel.code }}</span> {{ entry.vessel.name }}
+          </a>
+        </h2>
         <a href="/cashbox/{{ entry.vessel.id }}" class="btn btn-ghost text-sm">Détail →</a>
       </div>
       {% if entry.balances %}
-        <table>
+        <div class="table-scroll">
+<table class="data-table">
           <thead><tr><th>Devise</th><th class="text-right">Solde</th><th class="text-right">Mouvements</th></tr></thead>
           <tbody>
             {% for b in entry.balances %}
@@ -27,6 +36,7 @@
             {% endfor %}
           </tbody>
         </table>
+</div>
       {% else %}
         <p class="text-muted">Aucun mouvement enregistré.</p>
       {% endif %}

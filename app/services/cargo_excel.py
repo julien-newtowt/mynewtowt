@@ -17,6 +17,7 @@ une cellule vide laisse jouer le défaut de colonne (pas d'écrasement).
 
 from __future__ import annotations
 
+import contextlib
 import io
 
 from openpyxl import Workbook, load_workbook
@@ -150,12 +151,22 @@ def export_packing_list_xlsx(batches, *, voyage_id, vessel, pol_code, pod_code) 
     return export_rows_xlsx(rows)
 
 
+#: Clé de rapprochement ajoutée aux lignes analysées quand la colonne
+#: ``BATCH_NUMBER`` est renseignée. Préfixée d'un souligné pour ne **jamais** être
+#: confondue avec un champ de ``PackingListBatch`` : l'appelant la retire avant
+#: d'écrire. Elle permet à l'import de **mettre à jour** un lot existant au lieu de
+#: le détruire et le recréer — ce qui consommerait un numéro de connaissement.
+MATCH_KEY = "_batch_number"
+
+
 def parse_xlsx(content: bytes) -> list[dict]:
     """Relit un classeur → liste de dicts de valeurs typées (une par batch).
 
     Seules les colonnes éditables reconnues sont mappées ; les colonnes de
-    contexte sont ignorées. Une ligne entièrement vide est sautée. Une cellule
-    vide n'est pas reportée (le défaut de colonne s'applique à la création).
+    contexte sont ignorées **sauf** ``BATCH_NUMBER``, remontée sous la clé
+    ``MATCH_KEY`` pour permettre un *upsert*. Une ligne entièrement vide est sautée.
+    Une cellule vide n'est pas reportée (le défaut de colonne s'applique à la
+    création).
     """
     wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     ws = wb.active
@@ -168,10 +179,15 @@ def parse_xlsx(content: bytes) -> list[dict]:
     # En-tête → index ; on ne retient que les colonnes éditables connues.
     header_to_field = dict(EDITABLE_COLUMNS)
     col_field: dict[int, str] = {}
+    batch_col: int | None = None
     for idx, name in enumerate(header_row):
         if name is None:
             continue
-        field = header_to_field.get(str(name).strip().upper())
+        header = str(name).strip().upper()
+        if header == "BATCH_NUMBER":
+            batch_col = idx
+            continue
+        field = header_to_field.get(header)
         if field is not None:
             col_field[idx] = field
 
@@ -188,7 +204,16 @@ def parse_xlsx(content: bytes) -> list[dict]:
                 continue
             form[field] = value
         vals = {k: v for k, v in coerce_batch_form(form).items() if v is not None}
-        if vals:
-            out.append(vals)
+        if not vals:
+            continue
+        # Clé de rapprochement, si la colonne est présente ET exploitable. Une valeur
+        # illisible est ignorée : la ligne sera traitée comme une création, ce qui est
+        # préférable à un rapprochement hasardeux sur un registre de connaissements.
+        if batch_col is not None and batch_col < len(row):
+            raw = row[batch_col]
+            if raw is not None and str(raw).strip() != "":
+                with contextlib.suppress(TypeError, ValueError):
+                    vals[MATCH_KEY] = int(str(raw).strip())
+        out.append(vals)
     wb.close()
     return out

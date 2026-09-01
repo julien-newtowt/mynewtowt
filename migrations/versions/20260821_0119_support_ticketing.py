@@ -21,7 +21,7 @@ une collision concurrente échoue bruyamment au lieu de produire un doublon.
 donc rien à migrer — cf. ``services.support.is_archived``.
 
 Revision ID: 20260821_0119
-Revises: 20260807_0113
+Revises: 20260828_0135
 Create Date: 2026-08-21
 """
 
@@ -32,7 +32,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260821_0119"
-down_revision = "20260807_0113"
+down_revision = "20260828_0135"
 branch_labels = None
 depends_on = None
 

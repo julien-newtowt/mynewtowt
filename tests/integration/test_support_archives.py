@@ -193,14 +193,20 @@ async def test_sql_and_python_archive_predicates_agree(db) -> None:
     open_one.closed_at = datetime.now(UTC) - timedelta(days=500)
     await db.flush()
 
+    # Un SEUL instant de référence, passé aux deux prédicats. Sans cela chacun
+    # appelle son propre ``datetime.now()`` : la demande plantée à exactement
+    # 90 jours tombe alors d'un côté ou de l'autre du seuil selon les
+    # microsecondes écoulées entre les deux appels, et le test devient flaky
+    # sans qu'aucune divergence réelle n'existe.
+    now = datetime.now(UTC)
     sql_archived = {
         r.reference
-        for r in (await db.execute(select(SupportTicket).where(support._archived_clause())))
+        for r in (await db.execute(select(SupportTicket).where(support._archived_clause(now))))
         .scalars()
         .all()
     }
     all_rows = list((await db.execute(select(SupportTicket))).scalars().all())
-    py_archived = {r.reference for r in all_rows if support.is_archived(r)}
+    py_archived = {r.reference for r in all_rows if support.is_archived(r, now=now)}
     assert (
         sql_archived == py_archived
     ), f"divergence SQL/Python — SQL={sorted(sql_archived)} Python={sorted(py_archived)}"

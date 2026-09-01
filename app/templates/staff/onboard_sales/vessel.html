@@ -1,5 +1,13 @@
 {% extends "staff/_layout.html" %}
 {% block title %}Vente à bord — {{ vessel.name }}{% endblock %}
+{% block head %}
+{{ super() }}
+{# PWA du bord : le module doit rester utilisable sans réseau. #}
+<script src="/static/js/pwa-onboard.js" defer></script>
+<script src="/static/js/onboard-idb.js" defer></script>
+<script src="/static/js/onboard-offline.js" defer></script>
+<script src="{{ asset('js/onboard-quick-sale.js') }}" defer></script>
+{% endblock %}
 {% block content %}
 <a href="/captain/ventes" class="btn btn-ghost mb-3">← Navires</a>
 <header class="mb-4">
@@ -8,9 +16,76 @@
   <div class="flex gap-2 mt-2">
     <a href="/captain/ventes/catalogue" class="btn btn-ghost btn-sm">Catalogue</a>
     <a href="/captain/ventes/{{ vessel.id }}/registre" class="btn btn-ghost btn-sm">Registre douanier</a>
+    <a href="/captain/ventes/rapport?vessel_id={{ vessel.id }}" class="btn btn-ghost btn-sm">Chiffre d'affaires</a>
     <a href="/cashbox/{{ vessel.id }}" class="btn btn-ghost btn-sm">Caisse de bord</a>
   </div>
 </header>
+
+{# ──────────────── Vente rapide espèces (hors connexion) ──────────────── #}
+{% set cash_products = products | selectattr("is_active") | list %}
+<article class="card mb-4" data-quick-sale data-currency="EUR">
+  <h2>Vente rapide — espèces</h2>
+  <p class="text-muted">
+    Encaissement en une seule opération, <strong>conservée localement si le
+    réseau est coupé</strong> et envoyée automatiquement à son retour. Le
+    paiement par carte, lui, exige une connexion : passez par « Nouvelle vente ».
+  </p>
+
+  {% if cash_products %}
+    <form method="post" action="/captain/ventes/{{ vessel.id }}/vente-rapide" data-offline-queue>
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <input type="hidden" name="currency" value="EUR" />
+      <input type="hidden" name="cart" data-qs-cart value="" />
+      <input type="hidden" name="client_uuid" data-qs-uuid value="" />
+
+      <div class="grid grid-3 gap-3" style="align-items:end;">
+        <div class="field" style="grid-column: span 2;">
+          <label for="qs_product">Article</label>
+          <select id="qs_product" data-qs-product>
+            {% for p in cash_products %}
+              {% if p.currency == "EUR" %}
+                <option value="{{ p.id }}" data-price="{{ p.unit_price }}" data-label="{{ p.label }}">
+                  {{ p.label }} — {{ "%.2f"|format(p.unit_price|float) }} EUR / {{ p.unit }}
+                </option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="qs_qty">Quantité</label>
+          <input id="qs_qty" type="number" min="0" step="0.001" value="1"
+                 inputmode="decimal" data-qs-qty />
+        </div>
+      </div>
+      <button type="button" class="btn btn-secondary" data-qs-add>Ajouter au panier</button>
+
+      <div class="table-scroll mt-3">
+        <table class="data-table">
+          <thead><tr><th>Article</th><th>Qté</th><th>Total</th><th></th></tr></thead>
+          <tbody data-qs-lines></tbody>
+        </table>
+      </div>
+
+      <div class="flex gap-3 mt-3" style="align-items:end;flex-wrap:wrap;">
+        <div class="field" style="flex:1 1 16rem;">
+          <label for="qs_buyer">Acheteur</label>
+          <input id="qs_buyer" name="buyer_name" placeholder="Nom / fonction" />
+        </div>
+        <p style="margin:0 0 var(--space-3);">
+          Total : <strong class="mono" data-qs-total>0,00 EUR</strong>
+        </p>
+        <button type="submit" class="btn btn-primary" data-qs-submit disabled>
+          💶 Encaisser en espèces
+        </button>
+      </div>
+    </form>
+  {% else %}
+    <p class="text-muted">
+      Aucun article actif au catalogue —
+      <a href="/captain/ventes/catalogue">créez-en un</a> pour encaisser.
+    </p>
+  {% endif %}
+</article>
 
 {# ─────────────────────────── Nouvelle vente ─────────────────────────── #}
 <article class="card mb-4">
@@ -37,19 +112,32 @@
 <article class="card mb-4">
   <h2>Inventaire du bord</h2>
   {% if inventory %}
-    <table>
-      <thead><tr><th>SKU</th><th>Désignation</th><th class="text-right">En stock</th><th>Unité</th></tr></thead>
+    <div class="table-scroll">
+<table class="data-table">
+      <thead><tr><th>SKU</th><th>Désignation</th><th class="text-right">En stock</th><th class="text-right">Seuil</th><th>Unité</th><th></th></tr></thead>
       <tbody>
         {% for it in inventory %}
           <tr>
             <td class="mono">{{ it.product.sku }}</td>
             <td>{{ it.product.label }}</td>
-            <td class="text-right mono {% if it.on_hand < 0 %}text-error{% endif %}">{{ "%.3f"|format(it.on_hand|float) }}</td>
+            <td class="text-right mono {% if it.negative %}text-error{% elif it.low %}text-warning{% endif %}">{{ it.on_hand.normalize() }}</td>
+            <td class="text-right mono text-muted">
+              {% if it.threshold is not none %}{{ it.threshold.normalize() }}{% else %}—{% endif %}
+            </td>
             <td>{{ it.product.unit }}</td>
+            <td>
+              {# Une rupture ne se découvrait qu'au moment de vendre. #}
+              {% if it.negative %}
+                <span class="pill pill-danger">stock négatif</span>
+              {% elif it.low %}
+                <span class="pill pill-warn">à réapprovisionner</span>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+</div>
   {% else %}
     <p class="text-muted">Aucun produit suivi en stock. Ajoutez des produits au <a href="/captain/ventes/catalogue">catalogue</a>.</p>
   {% endif %}
@@ -88,7 +176,8 @@
 <article class="card">
   <h2>Ventes récentes</h2>
   {% if sales %}
-    <table>
+    <div class="table-scroll">
+<table class="data-table">
       <thead>
         <tr><th>Référence</th><th>Date</th><th>Acheteur</th><th class="text-right">Total</th><th>Règlement</th><th>Statut</th><th></th></tr>
       </thead>
@@ -111,6 +200,7 @@
         {% endfor %}
       </tbody>
     </table>
+</div>
   {% else %}
     <p class="text-muted">Aucune vente enregistrée.</p>
   {% endif %}

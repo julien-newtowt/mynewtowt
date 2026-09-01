@@ -1697,3 +1697,147 @@ def _client_ip(request: Request) -> str | None:
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else None
     )
+
+
+# ─────────────────────────────────────────────────────────────────────
+#          Connaissements — signature du commandant (BL workflow)
+# ─────────────────────────────────────────────────────────────────────
+#
+# Point de gel du workflow BL (cf. `docs/strategy/SPEC_WORKFLOW_BILL_OF_LADING.md`
+# §4.1) : avant signature un connaissement n'engage personne, après il engage le
+# transporteur. La signature vit donc ici, en `captain:M`, et non côté cargo.
+#
+# §5.2 — « Donner le choix au commandant de tout signer ou signer un BL en
+# particulier » : les deux modes sont exposés. Le mode groupé exige une
+# **sélection explicite** (cases à cocher) plutôt qu'un bouton « signer tout » à
+# l'aveugle : le commandant engage sa responsabilité sur chaque document.
+
+
+@router.get("/bl", response_class=HTMLResponse)
+async def captain_bl_index(
+    request: Request,
+    leg_id: int | None = None,
+    signed: int | None = None,
+    skipped: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "C")),
+) -> HTMLResponse:
+    """Connaissements du leg : en attente de signature, et déjà signés.
+
+    `signed` / `skipped` sont les compteurs du compte rendu d'une signature
+    groupée (redirection depuis `/captain/bl/sign-selected`).
+    """
+    from app.services import bl_workflow
+
+    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(20))).scalars().all())
+    selected = (await db.get(Leg, leg_id)) if leg_id else (legs[0] if legs else None)
+
+    awaiting: list = []
+    signed_batches: list = []
+    not_ready: list = []
+    if selected:
+        awaiting = await bl_workflow.batches_for_leg(
+            db, leg_id=selected.id, states=(bl_workflow.CLIENT_VALIDATED,)
+        )
+        signed_batches = await bl_workflow.batches_for_leg(
+            db, leg_id=selected.id, states=(bl_workflow.MASTER_SIGNED, bl_workflow.FINAL)
+        )
+        # Affichés séparément et NON signables : un draft non validé par le client
+        # ne doit pas pouvoir être signé, mais le taire ferait croire à un oubli
+        # d'émission alors que la balle est chez le client.
+        not_ready = await bl_workflow.batches_for_leg(
+            db, leg_id=selected.id, states=(bl_workflow.DRAFT,)
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "staff/captain/bl_list.html",
+        {
+            "legs": legs,
+            "selected": selected,
+            "awaiting": awaiting,
+            "signed_batches": signed_batches,
+            "not_ready": not_ready,
+            "signed_count": signed,
+            "skipped_count": skipped,
+            "user": user,
+        },
+    )
+
+
+@router.post("/bl/{batch_id}/sign")
+async def captain_sign_bl(
+    batch_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """Signe **un** connaissement (§5.2, mode unitaire)."""
+    from app.models.packing_list import PackingListBatch
+    from app.services import bl_workflow
+
+    batch = await db.get(PackingListBatch, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404)
+    try:
+        await bl_workflow.sign_by_master(db, batch=batch, user=user, ip=_client_ip(request))
+    except bl_workflow.InvalidTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    leg_id = request.query_params.get("leg_id", "")
+    suffix = f"?leg_id={leg_id}" if leg_id else ""
+    return RedirectResponse(url=f"/captain/bl{suffix}", status_code=303)
+
+
+@router.post("/bl/sign-selected")
+async def captain_sign_selected_bls(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("captain", "M")),
+):
+    """Signe les connaissements **cochés** (§5.2, mode groupé).
+
+    Le compte rendu distingue signés et écartés, avec la raison : un « 11 signés »
+    sur 12 sélectionnés laisserait croire à une réussite complète.
+    """
+    from app.models.packing_list import PackingListBatch
+    from app.services import bl_workflow
+
+    form = await request.form()
+    raw_ids = form.getlist("batch_ids") if hasattr(form, "getlist") else []
+    ids: list[int] = []
+    for raw in raw_ids:
+        # Un champ de formulaire peut porter un FICHIER (`UploadFile`) et pas
+        # seulement une chaîne : une requête forgée en profiterait. On ne convertit
+        # donc que ce qui est bien du texte, et on ignore le reste en silence —
+        # une sélection invalide n'a rien à signer.
+        if not isinstance(raw, str):
+            continue
+        with contextlib.suppress(ValueError):
+            ids.append(int(raw))
+    leg_id = str(form.get("leg_id") or "")
+    suffix = f"?leg_id={leg_id}" if leg_id else ""
+
+    if not ids:
+        # Rien de coché : on ne signe rien et on ne prétend pas le contraire.
+        return RedirectResponse(url=f"/captain/bl{suffix}", status_code=303)
+
+    batches = list(
+        (await db.execute(select(PackingListBatch).where(PackingListBatch.id.in_(ids))))
+        .scalars()
+        .all()
+    )
+    result = await bl_workflow.sign_many(db, batches=batches, user=user, ip=_client_ip(request))
+    logger.info(
+        "BL signature groupée par %s : %d signés, %d écartés (%s)",
+        user.username,
+        len(result.signed),
+        len(result.skipped),
+        "; ".join(f"{n}: {r}" for n, r in result.skipped) or "aucun",
+    )
+    # Les compteurs remontent à l'écran ; le DÉTAIL des écartés se lit dans les
+    # listes ci-dessous, qui affichent leur état réel. Rien n'est passé sous
+    # silence, et rien n'est encodé dans l'URL.
+    params = f"signed={len(result.signed)}&skipped={len(result.skipped)}"
+    joiner = "&" if suffix else "?"
+    return RedirectResponse(url=f"/captain/bl{suffix}{joiner}{params}", status_code=303)

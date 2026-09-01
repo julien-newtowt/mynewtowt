@@ -43,6 +43,7 @@ def _mov(**kw):
         "occurred_at": datetime(2026, 6, 3, tzinfo=UTC),
         "recorded_at": datetime(2026, 6, 3, 9, 0, tzinfo=UTC),
         "currency": "EUR",
+        "medium": "cash",
         "amount": Decimal("-12.50"),
         "category": "avitaillement",
         "description": "eau + vivres",
