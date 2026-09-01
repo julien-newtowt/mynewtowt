@@ -18,7 +18,7 @@
 
   var EDGE_PX = 8; // zone de préhension des bords (resize)
   var MIN_PCT = 0.3; // largeur minimale d'une barre
-  var HOUR_MS = 3600 * 1000;
+  var DAY_MS = 24 * 3600 * 1000;
 
   function getCsrf() {
     var m = document.cookie.split("; ").find(function (r) {
@@ -27,8 +27,10 @@
     return m ? m.split("=")[1] : "";
   }
 
-  function snapHour(ms) {
-    return Math.round(ms / HOUR_MS) * HOUR_MS;
+  // Granularité jour : snappe sur minuit UTC (planification à la journée,
+  // plus de saisie d'heure — cf. leg_form.html).
+  function snapDay(ms) {
+    return Math.round(ms / DAY_MS) * DAY_MS;
   }
 
   function pad(n) {
@@ -124,9 +126,9 @@
       suppressClick = true;
       var leftPct = parseFloat(bar.style.left) || 0;
       var widthPct = parseFloat(bar.style.width) || 0;
-      var etdMs = snapHour(winStart + (leftPct / 100) * span);
-      var etaMs = snapHour(winStart + ((leftPct + widthPct) / 100) * span);
-      if (etaMs - etdMs < HOUR_MS) etaMs = etdMs + HOUR_MS;
+      var etdMs = snapDay(winStart + (leftPct / 100) * span);
+      var etaMs = snapDay(winStart + ((leftPct + widthPct) / 100) * span);
+      if (etaMs - etdMs < DAY_MS) etaMs = etdMs + DAY_MS;
       save(etdMs, etaMs);
       mode = null;
     }

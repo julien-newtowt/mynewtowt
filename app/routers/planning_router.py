@@ -32,6 +32,8 @@ from app.services.planning import (
     delete_leg,
     detect_port_conflicts,
     detect_port_conflicts_view,
+    effective_eta,
+    effective_etd,
     list_legs_in_window,
     list_shares,
     lookup_share,
@@ -206,6 +208,12 @@ async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
 
     Le dict est sérialisé en data-attribute du form et appliqué côté JS
     quand l'utilisateur sélectionne un navire (cf. leg-form-suggest.js).
+
+    Format des dates : ``%Y-%m-%d`` (jour seul). Le formulaire de
+    planification travaille à l'échelle de la **journée** (``<input
+    type="date">``) : une valeur ``%Y-%m-%dT%H:%M`` serait rejetée
+    silencieusement par le navigateur et la suggestion ne s'appliquerait
+    pas. Le calcul, lui, reste horaire (escale en heures).
     """
     from sqlalchemy import desc
 
@@ -228,12 +236,12 @@ async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
         closed = await closed_weekdays_for_port(db, last.arrival_port_id)
         suggested = next_working_departure(base, stay, closed)
         suggestions[v.id] = {
-            "etd": suggested.strftime("%Y-%m-%dT%H:%M"),
+            "etd": suggested.strftime("%Y-%m-%d"),
             "pol_id": last.arrival_port_id,
             "port_stay_hours": stay,
             "from_leg_code": last.leg_code,
-            "from_eta": (last.eta.strftime("%Y-%m-%dT%H:%M") if last.eta else None),
-            "from_ata": (last.ata.strftime("%Y-%m-%dT%H:%M") if last.ata else None),
+            "from_eta": (last.eta.strftime("%Y-%m-%d") if last.eta else None),
+            "from_ata": (last.ata.strftime("%Y-%m-%d") if last.ata else None),
         }
     return suggestions
 
@@ -1071,7 +1079,14 @@ async def public_share(
         vessel = vessels_by_id.get(leg.vessel_id)
         pol = ports.get(leg.departure_port_id)
         pod = ports.get(leg.arrival_port_id)
-        transit_hours = (leg.eta - leg.etd).total_seconds() / 3600 if leg.eta and leg.etd else None
+        # Transit = durée EFFECTIVE dès qu'elle est connue (ATD/ATA), sinon
+        # prévisionnelle : sur une traversée réalisée, le prospectus commercial
+        # annonce la durée réellement tenue, pas celle qui avait été planifiée.
+        # Les colonnes de dates restent, elles, explicitement prévisionnelles
+        # (en-têtes « Départ (ETD) » / « Arrivée (ETA) » de planning_share.html).
+        dep = effective_etd(leg)
+        arr = effective_eta(leg)
+        transit_hours = (arr - dep).total_seconds() / 3600 if arr and dep else None
         transit_days = round(transit_hours / 24, 1) if transit_hours else None
         table_rows.append(
             {
@@ -1129,8 +1144,20 @@ def _build_gantt_rows(
     for vessel in vessels:
         bars: list[dict] = []
         for leg in by_vessel.get(vessel.id, []):
-            start = max(leg.etd, window_start)
-            end = min(leg.eta, window_end)
+            # Position et longueur de la barre = dates EFFECTIVES : le réel
+            # (ATD/ATA) dès qu'il est posé, le prévisionnel sinon. Sans cela
+            # un navire parti avec deux jours de retard restait dessiné sur
+            # son ETD, et le Gantt — outil de décision de l'exploitation —
+            # affichait un planning que plus personne ne suivait.
+            # Cas voulu : leg appareillé mais pas arrivé (ata NULL) → barre
+            # de l'ATD réel jusqu'à l'ETA prévisionnelle (la seule arrivée
+            # connue). Les helpers normalisent en UTC aware, ce qui rend les
+            # clamps ci-dessous tz-safe face aux bornes de fenêtre aware
+            # (SQLite relit naïf, Postgres aware).
+            leg_start = effective_etd(leg)
+            leg_end = effective_eta(leg)
+            start = max(leg_start, window_start)
+            end = min(leg_end, window_end)
             if end <= start:
                 continue
             left_pct = ((start - window_start).total_seconds() / total_seconds) * 100
@@ -1149,8 +1176,11 @@ def _build_gantt_rows(
                     "width_pct": round(max(width_pct, 1.0), 3),
                     "pol_locode": pol.locode if pol else "",
                     "pod_locode": pod.locode if pod else "",
-                    "etd": leg.etd,
-                    "eta": leg.eta,
+                    # Infobulle alignée sur la géométrie de la barre : afficher
+                    # l'ETD prévisionnel sous une barre positionnée sur l'ATD
+                    # ferait mentir l'un des deux.
+                    "etd": leg_start,
+                    "eta": leg_end,
                     "in_conflict": leg.id in conflict_ids,
                     "is_bookable": leg.is_bookable,
                 }

@@ -159,12 +159,12 @@
     <h2>Dates ETD / ETA</h2>
     <div class="grid grid-3 gap-3">
       <div class="field">
-        <label for="etd">ETD (départ prévu)</label>
-        <input id="etd" type="datetime-local" name="etd" required value="{% if leg %}{{ leg.etd.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+        <label for="etd">ETD (jour de départ prévu)</label>
+        <input id="etd" type="date" name="etd" required value="{% if leg %}{{ leg.etd.strftime('%Y-%m-%d') }}{% endif %}" />
       </div>
       <div class="field">
-        <label for="eta">ETA (arrivée prévue)</label>
-        <input id="eta" type="datetime-local" name="eta" required value="{% if leg %}{{ leg.eta.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+        <label for="eta">ETA (jour d'arrivée prévue)</label>
+        <input id="eta" type="date" name="eta" required value="{% if leg %}{{ leg.eta.strftime('%Y-%m-%d') }}{% endif %}" />
       </div>
       <div class="field">
         <label>Distance · durée estimées</label>
@@ -197,8 +197,8 @@
       </div>
       <div class="field">
         <label for="booking_close_at">Clôture des réservations</label>
-        <input id="booking_close_at" type="datetime-local" name="booking_close_at"
-               value="{% if leg and leg.booking_close_at %}{{ leg.booking_close_at.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
+        <input id="booking_close_at" type="date" name="booking_close_at"
+               value="{% if leg and leg.booking_close_at %}{{ leg.booking_close_at.strftime('%Y-%m-%d') }}{% endif %}" />
         <small class="text-muted">Vide ⇒ <strong>auto ETD − 48 h</strong>.</small>
       </div>
     </div>

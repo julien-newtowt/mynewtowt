@@ -899,79 +899,75 @@ async def update_port_status(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("escale", "M")),
 ):
-    """ESC-02 — pilotage du statut portuaire : pose ATA/ATD, recalcule la
-    finance (rollup) et notifie la compagnie. **Idempotent** : re-soumettre
-    (correction d'horodatage) ne réémet pas de notification.
+    """ESC-02 / PLN-SEQ — déclaration du départ (POL) et de l'arrivée (POD).
 
-    Réutilise les helpers V3 partagés avec le commandant (``voyage_events``) :
-    arrivée = EOSP (à quai), départ = SOSP (pilote départ).
-
-    NB — la pose d'ATA/ATD n'altère ni l'ETD ni l'ETA du leg : la propagation
-    des dates prévisionnelles aval (``cascade_from_leg``) relève du décalage
-    d'ETA (déclaration capitaine / édition planning), pas de l'enregistrement
-    du réel. On ne cascade donc pas ici — comportement aligné sur le flux SOF
-    du commandant (``captain_router``), qui ne cascade pas non plus à l'arrivée
-    ou au départ.
+    La page du leg porte les deux déclarations de SON voyage, dans l'ordre de
+    la séquence : « Déclarer le départ du port de {POL} » (pose ATD, ouvre la
+    navigation, statut « en mer ») PUIS « Déclarer l'arrivée au port de
+    {POD} » (pose ATA, ferme la navigation, statut « à quai », active le leg
+    suivant). Toute la chaîne (SOF, recalcul d'ETA + legs aval, historisation,
+    rollup finance, notifications) vit dans ``services.voyage_transitions`` —
+    partagée avec le canal SOF du bord. **Idempotent** : re-soumettre au même
+    horodatage ne réémet rien ; un horodatage différent est une correction
+    tracée. Les anciennes valeurs de formulaire (``a_quai`` /
+    ``pilote_depart``) restent acceptées.
     """
-    from app.services.finance_rollup import rollup_for_leg
-    from app.services.notifications import notify_eosp, notify_sosp
-    from app.services.voyage_events import on_vessel_arrived, on_vessel_departed
+    from app.services.voyage_transitions import (
+        VoyageSequenceError,
+        declare_arrival,
+        declare_departure,
+    )
 
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
     _assert_escale_unlocked(leg)
+    # Un horodatage saisi mais illisible est une erreur de saisie, pas un
+    # « maintenant » implicite (l'ancien repli silencieux posait la date
+    # du clic à la place de celle voulue par l'opérateur).
+    if status_time and status_time.strip() and _parse_iso(status_time) is None:
+        raise HTTPException(status_code=400, detail="Horodatage illisible — format attendu jj/mm/aaaa hh:mm.")
     t = _to_utc(_parse_iso(status_time)) or datetime.now(UTC)
 
-    from app.services.planning import refresh_leg_status
-
-    if new_status == "a_quai":
-        first_arrival = leg.ata is None  # garde d'idempotence (avant mutation)
-        leg.ata = t
-        refresh_leg_status(leg)
-        await on_vessel_arrived(db, leg)  # idempotent : ata déjà posée, avance bookings
-        await rollup_for_leg(db, leg)
-        if first_arrival:
-            await notify_eosp(db, leg.leg_code, leg.id)
-    elif new_status == "pilote_depart":
-        if leg.ata is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Renseigner d'abord le statut « à quai » (ATA) avant le départ.",
+    actor_name = user.full_name or user.username
+    try:
+        if new_status in ("depart", "pilote_depart"):
+            summary = await declare_departure(
+                db, leg, at=t, actor_id=user.id, actor_name=actor_name
             )
-        first_departure = leg.atd is None  # garde d'idempotence (avant mutation)
-        # L'ATD du leg est le départ RÉEL du POL, posé par le SOF du
-        # commandant (SOSP) : le flux escale ne l'écrase JAMAIS — poser ici
-        # l'heure du « pilote départ » (sortie du port d'ARRIVÉE) écrasait
-        # la donnée du bord avec un horodatage postérieur à l'ATA.
-        if first_departure:
-            leg.atd = t
-        # Statut dérivé de la machine à états unique : le leg reste
-        # « en cours » jusqu'à l'approbation de clôture (plus de passage
-        # direct à « completed » depuis l'escale).
-        refresh_leg_status(leg)
-        await on_vessel_departed(db, leg)
-        await rollup_for_leg(db, leg)
-        if first_departure:
-            await notify_sosp(db, leg.leg_code, leg.id)
-    else:
-        raise HTTPException(status_code=400, detail="statut portuaire inconnu")
+            action_label = "depart"
+            toast = "Départ déclaré — leg en mer."
+        elif new_status in ("arrivee", "a_quai"):
+            summary = await declare_arrival(
+                db, leg, at=t, actor_id=user.id, actor_name=actor_name
+            )
+            action_label = "arrivee"
+            toast = "Arrivée déclarée — navire à quai."
+            if summary.get("next_leg_code"):
+                toast += f" Leg suivant activé : {summary['next_leg_code']}."
+        else:
+            raise HTTPException(status_code=400, detail="statut portuaire inconnu")
+    except VoyageSequenceError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if summary.get("cascade", {}).get("skipped"):
+        toast += " ⚠ Recalcul aval partiel — voir notifications."
 
     await db.flush()
     await activity_record(
         db,
         action="port_status",
         user_id=user.id,
-        user_name=user.full_name or user.username,
+        user_name=actor_name,
         user_role=user.role,
         module="escale",
         entity_type="leg",
         entity_id=leg.id,
         entity_label=leg.leg_code,
-        detail=f"→ {new_status} @ {t.isoformat()}",
+        detail=f"→ {action_label} @ {t.isoformat()}",
         ip_address=_client_ip(request),
     )
-    return _mutation_response(request, leg_id, "Statut portuaire mis à jour.")
+    return _mutation_response(request, leg_id, toast)
 
 
 @router.post("/legs/{leg_id}/lock")

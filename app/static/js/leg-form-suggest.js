@@ -58,9 +58,11 @@
       }
       // Affiche le bandeau
       if (banner && bannerText) {
+        // Format serveur "YYYY-MM-DD" (granularité jour) : affiché tel quel,
+        // plus de "T" heure à neutraliser.
         var src = s.from_ata
-          ? "ATA " + s.from_ata.replace("T", " ")
-          : "ETA " + (s.from_eta || "").replace("T", " ");
+          ? "ATA " + s.from_ata
+          : "ETA " + (s.from_eta || "");
         bannerText.textContent =
           "💡 Suggestion basée sur le leg " + s.from_leg_code +
           " (" + src + " + " + s.port_stay_hours + "h d'escale).";
