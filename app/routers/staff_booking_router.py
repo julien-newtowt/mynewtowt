@@ -63,13 +63,13 @@ def _parse_milestone(value: str) -> datetime | None:
 @router.get(
     "",
     response_class=HTMLResponse,
-    dependencies=[Depends(require_permission("booking", "C"))],
 )
 async def list_all(
     request: Request,
     status_filter: str | None = None,
     channel: str | None = None,
     db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("booking", "C")),
 ) -> HTMLResponse:
     """Vue unifiée des réservations (tous canaux). Filtres : statut + canal."""
     channel_filter = channel if channel in _CHANNELS else None
@@ -94,6 +94,7 @@ async def list_all(
         "staff/bookings.html",
         {
             "request": request,
+            "user": user,
             "bookings": bookings,
             "status_filter": status_filter,
             "channel_filter": channel_filter,
@@ -132,11 +133,11 @@ async def _bookable_legs(db: AsyncSession) -> list[dict]:
 @router.get(
     "/new",
     response_class=HTMLResponse,
-    dependencies=[Depends(require_permission("booking", "M"))],
 )
 async def operator_new_form(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("booking", "M")),
 ) -> HTMLResponse:
     """Formulaire opérateur : créer une réservation au nom d'un client."""
     accounts = (
@@ -155,6 +156,7 @@ async def operator_new_form(
         "staff/bookings/new.html",
         {
             "request": request,
+            "user": user,
             "accounts": accounts,
             "legs": legs,
             "cargo_rows": range(_OPERATOR_CARGO_ROWS),
@@ -191,6 +193,7 @@ async def operator_new_submit(
             "staff/bookings/new.html",
             {
                 "request": request,
+                "user": user,
                 "accounts": accounts,
                 "legs": legs,
                 "cargo_rows": range(_OPERATOR_CARGO_ROWS),
@@ -278,12 +281,12 @@ async def operator_new_submit(
 @router.get(
     "/{ref}",
     response_class=HTMLResponse,
-    dependencies=[Depends(require_permission("booking", "C"))],
 )
 async def detail(
     request: Request,
     ref: str,
     db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("booking", "C")),
 ) -> HTMLResponse:
     booking = (
         await db.execute(select(Booking).where(Booking.reference == ref))
@@ -306,6 +309,7 @@ async def detail(
         "staff/booking_detail.html",
         {
             "request": request,
+            "user": user,
             "booking": booking,
             "client": client,
             "commercial_client": commercial_client,
