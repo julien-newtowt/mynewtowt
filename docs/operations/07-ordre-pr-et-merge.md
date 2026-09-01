@@ -11,9 +11,106 @@
 
 ---
 
-## 0. ÉTAT AU 2026-08-21 — fait foi, supersède tout ce qui suit
+## 0. ÉTAT AU 2026-09-01 — fait foi, supersède tout ce qui suit
 
-> ⚠️ **Lire ce §0 avant le reste.** Les sections 1 à 12 sont conservées comme
+> ⚠️ **Lire ce §0 avant le reste.** La file des 7 lots de la phase 2 est
+> **entièrement fusionnée** : les sections suivantes, §0 bis compris, sont
+> conservées comme **récit historique** et décrivent une file qui n'existe plus.
+
+### La phase 2 est soldée
+
+Julien a fusionné les 7 lots (PR #149, #154, #156 → #160) entre le 2026-08-18 et
+le 2026-08-21, puis a mené son propre chantier sur `main` (PR #161 → #168) :
+refonte du module commercial, audit et remédiation « vente à bord + caisse de
+bord », reprise UX legacy en 3 phases. `main` est à `16ae84f`, **CI verte**,
+**une seule tête Alembic** (`20260828_0135`), 144 migrations.
+
+### Trois branches préparées, poussées le 2026-09-01, aucune PR ouverte
+
+| Branche | Commit | Contenu | Suite complète |
+|---|---|---|---|
+| `docs/claude-md-socle-methode` | `7256c06` | `CLAUDE.md` scindé (socle de méthode gardé, cadrage daté de la période de congés retiré) + `PROJECT_CONTEXT.md` §7 | markdown seul |
+| `feature/support-ticketing` | `0721e8c` | Module Assistance (support applicatif) + intégration de `main` (146 commits) | ✅ **3103** passés, 1 ignoré |
+| `feature/dashboard-env-integration` | `2a2376e` | Dashboard Performance Environnementale v2 (5 pages) + suppression du legacy MRV + intégration de `main` (233 commits) | ✅ **3007** passés, 1 ignoré |
+
+Les deux branches de code sont **poussables en fast-forward** — `main` y a été
+intégré par une **fusion**, jamais par un rebase, donc aucun historique partagé
+n'a été réécrit et aucun force push n'a été nécessaire.
+
+> 🔎 Les suites ont été exécutées **dans le conteneur Linux**, pas sous Windows :
+> WeasyPrint y trouve GTK/Pango, sans quoi ~19 tests de rendu PDF échouent pour
+> une raison d'environnement et non de code. Sous Windows, lire un résultat rouge
+> sur ces tests-là ne veut rien dire.
+
+### ⚠️ Point d'ordonnancement Alembic — collision annoncée par la PR #169
+
+La **PR #169** (`claude/practical-mayer-rphihj`, ouverte par Julien le 2026-09-01)
+ajoute `20260901_0136_schedule_revision_actuals.py`, chaînée sur `20260828_0135`.
+
+Or les deux migrations non publiées des branches ci-dessus sont **rechaînées sur
+ce même `20260828_0135`** :
+
+| Branche | Migration | `down_revision` actuel |
+|---|---|---|
+| `feature/support-ticketing` | `20260821_0119_support_ticketing.py` | `20260828_0135` |
+| `feature/dashboard-env-integration` | `20260713_0106_drop_mrv_legacy_tables.py` | `20260828_0135` |
+
+⇒ **Dès que #169 est fusionnée**, `main` a pour tête `20260901_0136` et chacune
+de ces deux branches recrée **deux têtes**. C'est le motif structurel déjà
+rencontré deux fois (§0 bis) ; il est désormais attrapé par la sentinelle
+`tests/regression/test_alembic_single_head.py` avant la production.
+
+**Geste correctif** : rechaîner le `down_revision` de ces deux migrations sur
+`20260901_0136`. Une ligne par branche, plus la ligne `Revises:` du docstring.
+**Ne pas poser de migration de fusion** : ces deux révisions ne sont pas
+publiées sur `main`, et la règle du §7 de `PROJECT_CONTEXT.md` est explicite —
+le rechaînage ne vaut que pour une révision non publiée, la fusion est réservée
+aux révisions déjà absorbées par `main`.
+
+### Recouvrements de fichiers avec la PR #169
+
+Mesurés fichier par fichier le 2026-09-01 :
+
+| Branche | Fichiers communs avec #169 |
+|---|---|
+| `docs/claude-md-socle-methode` | `CLAUDE.md`, `PROJECT_CONTEXT.md` — soit **ses 2 seuls fichiers** |
+| `feature/support-ticketing` | `CLAUDE.md` (1 sur 22) |
+| `feature/dashboard-env-integration` | `CLAUDE.md`, **`app/routers/captain_router.py`**, **`app/services/planning.py`** (3 sur 62) |
+
+Les conflits sur `CLAUDE.md` sont additifs et mécaniques. Les deux fichiers de
+code partagés avec `dashboard-env` méritent en revanche un regard : #169 touche
+la séquence de planification, la branche touche `planning.py` pour retirer
+`MRVEvent` du garde-fou `delete_leg`.
+
+### Ordre de fusion recommandé
+
+1. **PR #169** (déjà ouverte, chantier de Julien) — la laisser passer d'abord :
+   elle est en cours de revue et fixe la tête Alembic.
+2. **`docs/claude-md-socle-methode`** — markdown seul, aucun risque de
+   régression. La fusionner tôt évite que les branches suivantes réintroduisent
+   la section de consignes périmée à chaque intégration de `main`.
+3. **`feature/support-ticketing`** — après rechaînage de sa migration sur
+   `0136` et réintégration de `main`.
+4. **`feature/dashboard-env-integration`** — en dernier, et **pas sans revue
+   explicite** : elle porte un `DROP` de tables (`mrv_events`,
+   `mrv_parameters`) et le décommissionnement de `dashboard_env_router`.
+   Arbitrage de Yasmin du 2026-09-01 : le `DROP` est sans conséquence
+   aujourd'hui, **aucune donnée MRV n'étant encore en base** — mais la décision
+   d'architecture reste à confirmer par Julien.
+
+### Ce qui reste ouvert du côté de Julien
+
+Deux branches à lui, poussées et sans PR au 2026-09-01 :
+`fix/stock-scientific-notation` (stock affiché en notation scientifique) et
+`claude/user-message-au0tqk` (**ADR-014** — régularisation d'un écart de caisse
+réservée au siège), que son propre journal donne « à arbitrer ».
+
+---
+
+## 0 bis. ÉTAT AU 2026-08-21 — récit historique, superseded par le §0
+
+> ⚠️ **Section historique** — vraie au 2026-08-21, superseded par le §0.
+> Les sections 1 à 12 sont conservées comme
 > **récit historique** et contiennent des affirmations vraies à leur date, fausses
 > aujourd'hui — notamment tout ce qui concerne le lot `fix/alembic-merge-heads`
 > (supprimé le 2026-08-10) et la ligne « aucun lot ne porte de migration »
