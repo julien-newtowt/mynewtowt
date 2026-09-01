@@ -76,6 +76,15 @@ SESSION_TTL_SECONDS = 30 * 60
 # jusqu'à plusieurs minutes. Mieux vaut échouer vite et proposer les espèces.
 REQUEST_TIMEOUT_SECONDS = 8
 
+# ⚠️ Le délai se configure sur le TRANSPORT global du SDK, jamais en kwarg des
+# appels de ressources : ``timeout`` n'est pas une option par requête du SDK
+# (contrairement à ``max_network_retries``) — passé à ``Session.create()``, il
+# était sérialisé dans le corps envoyé à l'API et Stripe refusait la requête
+# (« Received unknown parameter: timeout », constaté à bord le 2026-08-30).
+stripe.default_http_client = stripe.http_client.new_default_http_client(
+    timeout=REQUEST_TIMEOUT_SECONDS
+)
+
 # Version d'API épinglée : sans elle, une montée de version côté Stripe peut
 # changer la forme des objets reçus par le webhook sans qu'on l'ait décidé.
 API_VERSION = "2024-11-20.acacia"
@@ -83,10 +92,12 @@ API_VERSION = "2024-11-20.acacia"
 
 def _api_kwargs() -> dict[str, Any]:
     """Arguments communs à tous les appels SDK (clé, version, délais)."""
+    # ``timeout`` est volontairement ABSENT : ce n'est pas une option par
+    # requête (cf. configuration du transport ci-dessus) — l'y remettre
+    # repartirait dans le corps de la requête API (400 Stripe).
     return {
         "api_key": settings.stripe_secret_key or "",
         "stripe_version": API_VERSION,
-        "timeout": REQUEST_TIMEOUT_SECONDS,
         "max_network_retries": 1,
     }
 
