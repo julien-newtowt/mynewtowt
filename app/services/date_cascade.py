@@ -140,9 +140,7 @@ async def cascade_from_leg(
             try:
                 from app.services import notifications
 
-                await notifications.notify_cascade_blocked(
-                    db, leg.leg_code, leg.id, detail=str(e)
-                )
+                await notifications.notify_cascade_blocked(db, leg.leg_code, leg.id, detail=str(e))
             except Exception:
                 logger.exception("cascade: blocked-notification failed (leg %s)", leg.id)
         moved = 0
