@@ -134,6 +134,17 @@ async def cascade_from_leg(
             # rien en aval, on le signale (l'opérateur arbitre manuellement).
             summary["skipped"].append(f"downstream_legs:{e}")
             planned = {}
+            # Incident de reprogrammation VISIBLE : notification aux
+            # Opérations (best-effort — l'échec de la notification ne doit
+            # pas masquer le blocage, déjà tracé dans ``skipped``).
+            try:
+                from app.services import notifications
+
+                await notifications.notify_cascade_blocked(
+                    db, leg.leg_code, leg.id, detail=str(e)
+                )
+            except Exception:
+                logger.exception("cascade: blocked-notification failed (leg %s)", leg.id)
         moved = 0
         for dn in lane:
             if dn.id not in planned:

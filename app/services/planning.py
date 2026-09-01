@@ -56,6 +56,18 @@ MAX_PLAUSIBLE_SPEED_KN = 18.0
 # canonique est ``in_progress`` (migration 0094 normalise l'existant).
 LEG_STATUSES: tuple[str, ...] = ("planned", "in_progress", "completed", "cancelled")
 
+# Phases opérationnelles dérivées (cf. ``Leg.phase``) — affichage uniquement,
+# jamais stockées : la séquence déclarée départ/arrivée pilote le passage
+# planifié → en mer → à quai, la clôture approuvée pose « terminé ».
+LEG_PHASES: tuple[str, ...] = ("planifie", "en_mer", "a_quai", "termine", "annule")
+LEG_PHASE_LABELS: dict[str, str] = {
+    "planifie": "Planifié",
+    "en_mer": "En mer",
+    "a_quai": "À quai",
+    "termine": "Terminé",
+    "annule": "Annulé",
+}
+
 
 async def current_leg_id(
     db: AsyncSession, vessel_id: int, *, when: datetime | None = None
@@ -1109,6 +1121,25 @@ async def closed_weekdays_for_port(db: AsyncSession, port_id: int | None) -> set
     return closed
 
 
+# ──────────────────── Dates effectives (réel prioritaire) ────────────────────
+#
+# Doctrine transverse : tout calcul « où en est le voyage » lit le RÉEL
+# (ATD/ATA) dès qu'il est posé, et retombe sur le prévisionnel (ETD/ETA)
+# sinon. Le pattern était réimplémenté inline dans ~12 modules (voyage_track,
+# finance_rollup, crew_compliance, bunkering…) : ces deux helpers sont la
+# forme canonique pour les nouveaux usages.
+
+
+def effective_etd(leg: Leg) -> datetime:
+    """Départ effectif : ATD si déclaré, sinon ETD prévisionnel."""
+    return ensure_utc(leg.atd) or ensure_utc(leg.etd)
+
+
+def effective_eta(leg: Leg) -> datetime:
+    """Arrivée effective : ATA si déclarée, sinon ETA prévisionnelle."""
+    return ensure_utc(leg.ata) or ensure_utc(leg.eta)
+
+
 # ─────────────────────────── PLN-05 — détection de retard ────────────────────
 
 DELAY_THRESHOLD_HOURS = 4.0
@@ -1128,12 +1159,17 @@ def _dev_hours(current: datetime | None, reference: datetime | None) -> float:
 
 
 def leg_delay_hours(leg: Leg) -> float:
-    """Pire retard (heures) du prévisionnel courant vs la référence figée.
+    """Pire retard (heures) vs la référence figée à la création.
 
-    Compare ETD↔ETD_ref et ETA↔ETA_ref ; renvoie le plus grand écart (positif
-    = retard, négatif = avance).
+    Compare le départ et l'arrivée à leur référence (ETD_ref / ETA_ref), en
+    lisant le RÉEL (ATD/ATA) dès qu'il est déclaré, le prévisionnel courant
+    sinon — un leg parti en retard reste donc signalé même si personne n'a
+    recalé son ETD. Renvoie le plus grand écart (positif = retard).
     """
-    return max(_dev_hours(leg.etd, leg.etd_ref), _dev_hours(leg.eta, leg.eta_ref))
+    return max(
+        _dev_hours(effective_etd(leg), leg.etd_ref),
+        _dev_hours(effective_eta(leg), leg.eta_ref),
+    )
 
 
 def is_delayed(leg: Leg, threshold_hours: float = DELAY_THRESHOLD_HOURS) -> bool:
