@@ -149,18 +149,36 @@
 <article class="card mb-3" id="sec-statut">
   <div class="section-header"><h3><i data-lucide="ship"></i> Statut portuaire</h3></div>
   <p class="text-muted text-sm">
-    ATA : <span class="mono">{{ selected_leg.ata|datetime if selected_leg.ata else '— non posée' }}</span> ·
-    ATD : <span class="mono">{{ selected_leg.atd|datetime if selected_leg.atd else '— non posée' }}</span>
+    {%- set _phase = selected_leg.phase -%}
+    Phase :
+    <span class="pill {% if _phase == 'en_mer' %}pill-info{% elif _phase == 'a_quai' %}pill-ok{% elif _phase == 'termine' %}pill-ok{% elif _phase == 'annule' %}pill-danger{% else %}pill-neutral{% endif %}">
+      {%- if _phase == 'en_mer' %}⛵ En mer{% elif _phase == 'a_quai' %}⚓ À quai{% elif _phase == 'termine' %}Terminé{% elif _phase == 'annule' %}Annulé{% else %}Planifié{% endif -%}
+    </span> ·
+    ATD (départ {{ pol.locode if pol else 'POL' }}) : <span class="mono">{{ selected_leg.atd|datetime if selected_leg.atd else '— non déclaré' }}</span> ·
+    ATA (arrivée {{ pod.locode if pod else 'POD' }}) : <span class="mono">{{ selected_leg.ata|datetime if selected_leg.ata else '— non déclarée' }}</span>
   </p>
   <form method="post" action="/escale/legs/{{ selected_leg.id }}/port-status" class="flex gap-2" style="align-items:flex-end; flex-wrap:wrap;"
         hx-post="/escale/legs/{{ selected_leg.id }}/port-status" hx-swap="none">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     {# ESC-07 — sélecteur de fuseau (UTC/Paris/Port) + aperçu UTC sur l'horodatage. #}
     {{ tz_datetime("status_time", label="Horodatage") }}
-    <button type="submit" name="new_status" value="a_quai" class="btn btn-primary btn-sm">⚓ À quai (pose ATA)</button>
-    <button type="submit" name="new_status" value="pilote_depart" class="btn btn-secondary btn-sm">🚢 Pilote départ (pose ATD)</button>
+    {% if not selected_leg.atd %}
+      <button type="submit" name="new_status" value="depart" class="btn btn-primary btn-sm">🚢 Déclarer le départ du port de {{ pol.name if pol else 'chargement' }}</button>
+      <button type="submit" name="new_status" value="arrivee" class="btn btn-ghost btn-sm" disabled title="Séquence : déclarez d'abord le départ.">⚓ Déclarer l'arrivée au port de {{ pod.name if pod else 'destination' }}</button>
+    {% elif not selected_leg.ata %}
+      <button type="submit" name="new_status" value="arrivee" class="btn btn-primary btn-sm">⚓ Déclarer l'arrivée au port de {{ pod.name if pod else 'destination' }}</button>
+      <button type="submit" name="new_status" value="depart" class="btn btn-ghost btn-sm" title="Corrige l'ATD déjà déclaré (mouvement historisé).">✎ Corriger le départ</button>
+    {% else %}
+      <button type="submit" name="new_status" value="depart" class="btn btn-ghost btn-sm" title="Corrige l'ATD déjà déclaré (mouvement historisé).">✎ Corriger le départ</button>
+      <button type="submit" name="new_status" value="arrivee" class="btn btn-ghost btn-sm" title="Corrige l'ATA déjà déclarée (mouvement historisé).">✎ Corriger l'arrivée</button>
+    {% endif %}
   </form>
-  <p class="text-muted text-xs mt-1">Pose ATA/ATD, recalcule l'OPEX réel (rollup) et notifie la compagnie (EOSP/SOSP).</p>
+  <p class="text-muted text-xs mt-1">
+    Séquence : départ (ATD, ouvre la navigation, statut « en mer », ETA et legs suivants recalculés)
+    → arrivée (ATA, ferme la navigation, statut « à quai », leg suivant activé).
+    Chaque déclaration s'inscrit au SOF (SOSP/EOSP), recalcule l'OPEX réel et notifie la compagnie ;
+    tous les mouvements de dates sont historisés (bouton « Historique » de la fiche planning).
+  </p>
 </article>
 {% else %}
 <span id="sec-statut"></span>

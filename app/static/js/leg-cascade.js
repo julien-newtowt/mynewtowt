@@ -152,10 +152,12 @@
     var x = Math.sin((p2 - p1) / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
     return 2 * 3440.065 * Math.asin(Math.sqrt(x));
   }
-  function isoLocal(d) {
+  // Instant → "YYYY-MM-DD" à partir des composantes UTC (les inputs
+  // type="date" valent "YYYY-MM-DD", parsés par `new Date` comme minuit
+  // UTC ; relire en local dériverait d'un jour selon le fuseau navigateur).
+  function isoDate(d) {
     var pad = function (n) { return String(n).padStart(2, "0"); };
-    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
-      "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate());
   }
   function updateEtaHint() {
     var pol = selectedPort("pol");
@@ -182,9 +184,11 @@
         if (etaEl.dataset.auto === "on") etaEl.value = "";
         return;
       }
-      var eta = new Date(etd.getTime() + hours * 3600 * 1000);
+      // Granularité jour : ETA = ETD + durée arrondie au jour SUPÉRIEUR.
+      var days = Math.ceil(hours / 24);
+      var eta = new Date(etd.getTime() + days * 24 * 3600 * 1000);
       if (isNaN(eta.getTime())) return;
-      etaEl.value = isoLocal(eta);
+      etaEl.value = isoDate(eta);
       etaEl.dataset.auto = "on";
     }
   }

@@ -103,5 +103,26 @@ class Leg(Base):
         "VoyagePhoto", back_populates="leg", cascade="all, delete-orphan"
     )
 
+    @property
+    def phase(self) -> str:
+        """Phase opérationnelle du voyage, dérivée du réel — jamais stockée.
+
+        ``planifie`` → ``en_mer`` (départ déclaré, ATD posé) → ``a_quai``
+        (arrivée déclarée, ATA posée) → ``termine`` (clôture approuvée).
+        ``annule`` est porté par ``status`` (décision humaine, sticky).
+        Complète ``status`` (machine à états stockée, cf.
+        ``services.planning.refresh_leg_status``) sans le remplacer : les
+        consommateurs de ``status`` restent valides, l'UI affiche la phase.
+        """
+        if self.status == "cancelled":
+            return "annule"
+        if self.status == "completed":
+            return "termine"
+        if self.ata is not None:
+            return "a_quai"
+        if self.atd is not None:
+            return "en_mer"
+        return "planifie"
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Leg {self.leg_code} {self.etd.date()}{self.eta.date()}>"
