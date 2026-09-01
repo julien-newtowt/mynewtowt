@@ -1103,3 +1103,30 @@ def test_an_unreadable_cart_is_refused():
         with pytest.raises(HTTPException) as exc:
             _parse_cart(bad)
         assert exc.value.status_code == 400
+
+
+# ─────────── Fix 2026-08-30 — « Received unknown parameter: timeout » ───────────
+
+
+def test_stripe_api_kwargs_are_valid_per_request_options():
+    """Sentinelle : ``_api_kwargs`` ne contient QUE des options par requête du SDK.
+
+    ``timeout`` n'en est pas une : passé aux appels de ressources, le SDK le
+    sérialisait dans le corps de la requête API et Stripe refusait la création
+    du lien de paiement (400 « Received unknown parameter: timeout », constaté
+    à bord). Le délai vit désormais sur le transport global du SDK.
+    """
+    import stripe
+    from stripe._request_options import RequestOptions
+
+    from app.services import stripe_checkout
+
+    allowed = set(RequestOptions.__annotations__.keys())
+    kwargs = set(stripe_checkout._api_kwargs())
+    assert kwargs <= allowed, f"kwargs hors options par requête : {kwargs - allowed}"
+    assert "timeout" not in kwargs
+    # Le délai borné (liaison satellite) reste bien appliqué, côté transport.
+    assert (
+        getattr(stripe.default_http_client, "_timeout", None)
+        == stripe_checkout.REQUEST_TIMEOUT_SECONDS
+    )
