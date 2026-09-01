@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json as _json
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,25 @@ from app.i18n import (
 from app.services.seo import organization_jsonld as _org_jsonld
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+
+def _format_qty(value: Any) -> str:
+    """Quantité/stock ``Decimal`` → notation positionnelle, sans zéros de fin.
+
+    ``Decimal.normalize()`` seul produit de la notation SCIENTIFIQUE pour les
+    multiples de 10 — ``Decimal("30.000").normalize() == Decimal("3E+1")``,
+    affiché « 3E+1 » tel quel (constaté sur le stock de bord, 2026-09-01).
+    ``format(d, "f")`` force la forme positionnelle : 30.000 → « 30 »,
+    2.500 → « 2.5 », 0.000 → « 0 ». À utiliser pour TOUTE quantité Decimal
+    affichée — jamais ``.normalize()`` nu dans un template.
+    """
+    if value is None:
+        return ""
+    try:
+        d = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return str(value)
+    return format(d.normalize(), "f")
 
 
 def _format_money(value: Any, currency: str = "EUR") -> str:
@@ -192,6 +212,7 @@ templates = Jinja2Templates(
 )
 
 templates.env.filters["money"] = _format_money
+templates.env.filters["qty"] = _format_qty
 templates.env.filters["date"] = _format_date
 templates.env.filters["datetime"] = _format_datetime
 templates.env.filters["flag"] = _flag_emoji
