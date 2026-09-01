@@ -1,0 +1,74 @@
+{% extends "client/_layout.html" %}
+{% block title %}{% if lang == 'en' %}Estimate{% else %}Estimation{% endif %} {{ quote.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">{% if lang == 'en' %}Rate estimate{% else %}Estimation tarifaire{% endif %}</span>
+  <h1 class="display mono">{{ quote.reference }}</h1>
+  <p class="text-muted">
+    {{ quote.pol_locode }} → {{ quote.pod_locode }} · {{ quote.palettes_total }}
+    {% if lang == 'en' %}pallet(s){% else %}palette(s){% endif %}
+    {% if leg %} · {{ leg.leg_code }}{% endif %}
+  </p>
+</header>
+
+{% if not quote.is_priced %}
+<div class="alert alert-info">
+  <i data-lucide="info"></i>
+  {% if lang == 'en' %}
+    Your request has been passed to our commercial team, who will come back to you with a priced offer.
+  {% else %}
+    Votre demande a été transmise à notre équipe commerciale, qui reviendra vers vous avec une offre chiffrée.
+  {% endif %}
+</div>
+{% else %}
+
+<article class="card">
+  <h2>{% if lang == 'en' %}Breakdown{% else %}Détail{% endif %}</h2>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{% if lang == 'en' %}Item{% else %}Poste{% endif %}</th>
+          <th>{% if lang == 'en' %}Qty{% else %}Qté{% endif %}</th>
+          <th>{% if lang == 'en' %}Unit price{% else %}Prix unitaire{% endif %}</th>
+          <th>{% if lang == 'en' %}Total{% else %}Total{% endif %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in quote.lines %}
+        <tr>
+          <td>{{ line.label }}</td>
+          <td class="mono">{{ line.quantity }}</td>
+          <td class="mono">{{ line.unit_price_eur|money if line.unit_price_eur else '—' }}</td>
+          <td class="mono">{{ line.total_eur|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="3">{% if lang == 'en' %}Total estimate{% else %}Total estimé{% endif %}</th>
+          <th class="mono">{{ quote.net_total_eur|money }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <p class="text-muted text-sm mt-3">
+    {% if lang == 'en' %}
+      Indicative estimate based on your rate grid{% if quote.grid_reference %} ({{ quote.grid_reference }}){% endif %},
+      valid until {{ quote.valid_until|date if quote.valid_until else '—' }}. It does not constitute a
+      booking: your account manager will turn it into a commercial offer.
+    {% else %}
+      Estimation indicative établie sur votre grille tarifaire{% if quote.grid_reference %} ({{ quote.grid_reference }}){% endif %},
+      valable jusqu'au {{ quote.valid_until|date if quote.valid_until else '—' }}. Elle ne vaut pas
+      réservation : votre interlocuteur commercial la transformera en offre commerciale.
+    {% endif %}
+  </p>
+</article>
+{% endif %}
+
+<div class="flex gap-2 mt-4">
+  <a href="/me/estimations" class="btn btn-ghost">← {% if lang == 'en' %}Back to estimates{% else %}Retour aux estimations{% endif %}</a>
+</div>
+
+{% endblock %}

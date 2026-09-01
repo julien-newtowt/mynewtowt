@@ -65,3 +65,6 @@ test-results/
 
 # Claude Code agent worktrees / local state
 .claude/
+
+# Override docker-compose local (poste de dev) — jamais versionné
+docker-compose.override.yml

@@ -34,7 +34,13 @@ from app.models.bunker import BunkerOperation
 from app.models.env_report import EnvFieldModification, EnvReport
 from app.models.flgo import FlgoReading, FlgoVoyageConsumptionRef
 from app.models.leg import Leg
-from app.models.nav_event import ArrivalEvent, DepartureEvent, NavEventEngineReading
+from app.models.nav_event import (
+    ArrivalEvent,
+    CutoffEvent,
+    DepartureEvent,
+    NavEventEngineReading,
+    NavEventRobByFuel,
+)
 from app.models.port import Port
 from app.models.user import User
 from app.models.vessel import Vessel
@@ -180,8 +186,12 @@ async def test_r14_rob_classification(db, arr_rob, expected_class, expected_seve
 
 @pytest.mark.asyncio
 async def test_r14_reference_is_portcall_never_noon(db):
-    """Hiérarchie v2 : seuls les PortCall portent un ROB déclaré — la chaîne
-    n'a AUCUN point Noon à cross-checker (le modèle n'a pas de ROB au Noon)."""
+    """Hiérarchie v2 : le Noon ne porte jamais de ROB déclaré (le modèle n'a
+    pas de champ ROB au Noon) — sur une chaîne Departure/Arrival sans
+    Cut-off, seuls ces deux points sont cross-checkables. Depuis G1, un
+    CutoffEvent en devient un troisième (cf. test_r14_cutoff_declared_rob_
+    is_anchor_and_checked ci-dessous) — cette hiérarchie exclut toujours le
+    Noon, pas le Cut-off."""
     from app.services import inter_event_compute as iec
 
     vessel, leg, engines = await _base(db)
@@ -189,6 +199,74 @@ async def test_r14_reference_is_portcall_never_noon(db):
     comp = await iec.compute_leg(db, leg)
     declared_points = [p for p in comp.rob_chain if p.rob_declared_t is not None]
     assert {p.event_type for p in declared_points} == {"departure", "arrival"}
+
+
+@pytest.mark.asyncio
+async def test_r14_cutoff_declared_rob_is_anchor_and_checked(db):
+    """G1 — décision produit : le ROB par carburant du Cut-off devient un
+    nouvel ancrage de la chaîne ROB, au même titre qu'un Departure/Arrival.
+    Un écart déclaré/calculé AU Cut-off doit être détecté par R14, alors
+    qu'avant G1 ce point était invisible à la règle (``rob_declared_t`` valait
+    toujours None pour tout type autre que PortCall)."""
+    from app.services import inter_event_compute as iec
+
+    vessel, leg, engines = await _base(db)
+    dep = DepartureEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        lat_decimal=Decimal("50"),
+        lon_decimal=Decimal("-5"),
+        rob_t=Decimal("100"),
+        vessel_condition="laden",
+    )
+    dep.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("10000"))
+    ]
+    # Δ 1000 L PME entre Dep et Cutoff → conso 0,845 t → ROB calculé 99,155 t.
+    # Déclaré (somme ROB par carburant) volontairement à 90 t → écart 9,155 t
+    # (critique, > seuil 5 t).
+    cutoff = CutoffEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=12),
+    )
+    cutoff.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("11000"))
+    ]
+    cutoff.rob_by_fuel_readings = [
+        NavEventRobByFuel(fuel_type="MDO", rob_t=Decimal("70")),
+        NavEventRobByFuel(fuel_type="VLSFO", rob_t=Decimal("20")),
+    ]
+    arr = ArrivalEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=24),
+        lat_decimal=Decimal("45"),
+        lon_decimal=Decimal("-5"),
+        rob_t=Decimal("98.155"),
+        vessel_condition="laden",
+    )
+    arr.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("11000"))
+    ]
+    db.add_all([dep, cutoff, arr])
+    await db.flush()
+
+    comp = await iec.compute_leg(db, leg)
+    cutoff_point = next(p for p in comp.rob_chain if p.event_type == "cutoff")
+    assert cutoff_point.rob_declared_t == Decimal("90")  # 70 + 20
+
+    out = await RULES["R14"](_ctx(db, "R14", leg, vessel=vessel))
+    cutoff_fail = next(
+        (r for r in out if r.result == "fail" and r.details.get("event_id") == cutoff.id), None
+    )
+    assert cutoff_fail is not None, "R14 doit détecter l'écart au Cut-off"
+    assert cutoff_fail.severity == "bloquant"
+    assert cutoff_fail.details["classification"] == "critique"
 
 
 @pytest.mark.asyncio

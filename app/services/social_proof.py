@@ -119,41 +119,17 @@ async def counters(db: AsyncSession) -> SocialCounters:
 
 
 # ── Mentions presse (couvertures publiées — fait public, liens sortants) ────
+# Doctrine vitrine (décision client 2026-08) : aucune couverture à récit de
+# reprise/transition (« sauvée », « reprend la mer », « second souffle »…) —
+# la vitrine ne raconte que la flotte en exploitation. Le bandeau à une seule
+# mention est assumé ; il se masque si la liste est vide. Côté template, seul
+# le nom du média est affiché (jamais le titre cité — on ne réécrit pas un
+# titre, on ne reprend pas non plus ses superlatifs).
 PRESS_MENTIONS: tuple[dict, ...] = (
-    {
-        "outlet": "Le Journal de la Marine Marchande",
-        "title": "TOWT échappe à la disparition avec la reprise portée par le Crédit Mutuel",
-        "url": "https://www.journalmarinemarchande.fr/shipping/2026/05/towt-echappe-a-la-disparition-avec-la-reprise-portee-par-le-credit-mutuel/",
-        "year": 2026,
-    },
-    {
-        "outlet": "France 3 Normandie",
-        "title": "L'entreprise TOWT sauvée : qui sont les repreneurs du pionnier français du cargo à voile",
-        "url": "https://france3-regions.franceinfo.fr/normandie/seine-maritime/havre/l-entreprise-towt-sauvee-qui-sont-les-repreneurs-du-pionnier-francais-du-cargo-a-voile-3347188.html",
-        "year": 2026,
-    },
-    {
-        "outlet": "Supply Chain Magazine",
-        "title": "NewTowt reprend la mer, cap sur le Brésil",
-        "url": "https://supplychainmagazine.fr/newtowt-reprend-la-mer-cap-sur-le-bresil/",
-        "year": 2026,
-    },
     {
         "outlet": "Le Figaro Nautisme",
         "title": "Anemos et Artemis : le café le plus décarboné du monde arrive à la voile",
         "url": "https://figaronautisme.meteoconsult.fr/actus-nautisme-flash/2026-01-04/84440-anemos-et-artemis-le-cafe-le-plus-decarbone-du-monde-arrive-a-la-voile",
-        "year": 2026,
-    },
-    {
-        "outlet": "Voxlog",
-        "title": "Towt maintient le cap et devient Newtowt",
-        "url": "https://www.voxlog.fr/actualite/10898/towt-maintient-le-cap-et-devient-newtowt",
-        "year": 2026,
-    },
-    {
-        "outlet": "Places du Café",
-        "title": "NewTowt, un second souffle pour le transport de café à la voile",
-        "url": "https://www.placesducafe.com/professionnel/newtowt-un-second-souffle-pour-le-transport-de-cafe-a-la-voile-258",
         "year": 2026,
     },
 )

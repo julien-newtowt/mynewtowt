@@ -10,6 +10,7 @@ Convention :
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
@@ -30,6 +31,7 @@ from app.models.packing_list import (
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.services.activity import record as activity_record
+from app.services.planning import ensure_utc
 
 # CARGO-03 — champs de batch éditables soumis à l'audit field-by-field.
 AUDITABLE_FIELDS: tuple[str, ...] = (
@@ -82,7 +84,15 @@ async def get_by_token(db: AsyncSession, token: str) -> PackingList | None:
     ).scalar_one_or_none()
     if pl is None:
         return None
-    if pl.token_expires_at is not None and pl.token_expires_at < datetime.now(UTC):
+    # `ensure_utc` : les colonnes `DateTime(timezone=True)` reviennent aware sous
+    # Postgres mais NAÏVES sous SQLite, et comparer naïf à aware lève
+    # `TypeError`. En production la valeur vient toujours de
+    # `default_token_expiry()`, donc aware — ce n'est PAS un bug applicatif
+    # constaté, mais un durcissement : il rend l'expiration de token — un
+    # contrôle de sécurité — réellement testable, et immunise le chemin si une
+    # valeur naïve y arrivait un jour par une autre voie.
+    expires = ensure_utc(pl.token_expires_at)
+    if expires is not None and expires < datetime.now(UTC):
         return None
     return pl
 
@@ -387,31 +397,118 @@ async def _count_issued_bls_for_leg(db: AsyncSession, *, leg_id: int) -> int:
     return int((await db.scalar(stmt)) or 0)
 
 
+#: Suffixe numérique d'un numéro de BL (`TUAW_1CFRBR6_007` → 7). Ancré à la fin
+#: pour ne pas capter des chiffres du `leg_code`.
+_BL_SUFFIX_RE = re.compile(r"_(\d+)$")
+
+
+async def _max_issued_suffix(db: AsyncSession, *, prefix: str) -> int:
+    """Plus grand suffixe **jamais attribué** parmi les numéros commençant par ``prefix``.
+
+    On lit le **maximum**, jamais le nombre : c'est toute la différence entre une
+    séquence non recyclable et le compteur défectueux qu'elle remplace. Les numéros
+    non conformes au format sont ignorés — ils ne doivent pas faire échouer
+    l'amorçage, seulement ne pas y contribuer.
+
+    ⚠️ Les numéros **annulés par une révision** (``bl_revisions``) sont lus eux aussi.
+    Après une révision, le numéro d'origine ne vit plus sur aucun lot — il a migré dans
+    l'archive — mais **il a circulé**. Ne lire que les lots ferait réémettre un numéro
+    déjà porté par un document remis à un tiers.
+    """
+    from app.models.packing_list import BlRevision
+
+    live = (
+        (
+            await db.execute(
+                select(PackingListBatch.bl_number).where(
+                    PackingListBatch.bl_number.like(f"{prefix}%")
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    archived = (
+        (
+            await db.execute(
+                select(BlRevision.bl_number).where(BlRevision.bl_number.like(f"{prefix}%"))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    best = 0
+    for number in (*live, *archived):
+        match = _BL_SUFFIX_RE.search(number or "")
+        if match:
+            best = max(best, int(match.group(1)))
+    return best
+
+
+async def next_bl_sequence(db: AsyncSession, *, leg: Leg, prefix: str) -> int:
+    """Prochain numéro de séquence du voyage. **Strictement croissant.**
+
+    Le compteur vit en base (``bl_number_sequences``) et n'est jamais décrémenté :
+    un numéro consommé ne peut donc plus être réattribué, même si le lot qui le
+    portait est supprimé. Les trous sont normaux — ils sont la trace d'un numéro
+    consommé puis abandonné, ce qu'un registre doit conserver.
+
+    Amorçage : le plus grand suffixe **déjà émis** pour ce voyage. Amorcer sur leur
+    *nombre* recyclerait dès la première émission sur un voyage historique.
+
+    ``with_for_update`` sérialise deux émissions simultanées sur le même voyage (sans
+    effet sous SQLite, où les tests sont de toute façon séquentiels ; c'est en
+    production que cela compte).
+    """
+    from app.models.packing_list import BlNumberSequence
+
+    row = await db.get(BlNumberSequence, leg.id, with_for_update=True)
+    if row is None:
+        row = BlNumberSequence(leg_id=leg.id, last_seq=await _max_issued_suffix(db, prefix=prefix))
+        db.add(row)
+        await db.flush()
+    row.last_seq += 1
+    await db.flush()
+    return row.last_seq
+
+
 async def assign_bl_number(
     db: AsyncSession, pl: PackingList, batch: PackingListBatch, leg: Leg | None
 ) -> str:
     """CARGO-01 — affecte (idempotent) un numéro de BL ``TUAW_{leg_code}_{seq:03d}``.
 
-    Anti-doublon par leg : la séquence = nombre de BL déjà émis sur le leg + 1.
     Si le batch a déjà un numéro, on le renvoie sans rien changer.
 
-    La colonne ``bl_number`` est UNIQUE ; en cas de collision concurrente
-    (deux émissions simultanées sur le même leg lisant le même compteur), le
-    flush échoue et on ré-essaie avec le compteur réactualisé (savepoint).
+    ⚠️ La séquence est **non recyclable** (``next_bl_sequence``) : elle ne se déduit
+    plus du nombre de BL émis. L'ancien comptage réattribuait un numéro déjà consommé
+    après la suppression d'un lot, et **bloquait purement l'émission** quand le lot
+    supprimé n'était pas le dernier (collision d'unicité en boucle).
+
+    La colonne ``bl_number`` reste UNIQUE : c'est le garde-fou ultime. La boucle de
+    reprise est conservée pour les cas résiduels (numéros historiques non conformes
+    au format, sur lesquels l'amorçage ne peut rien lire).
     """
     if batch.bl_number:
         return batch.bl_number
     voyage = leg.leg_code if (leg and leg.leg_code) else "NA"
+    prefix = f"TUAW_{voyage}_"
     last_error: Exception | None = None
     for _attempt in range(5):
-        seq = (await _count_issued_bls_for_leg(db, leg_id=leg.id) + 1) if leg else 1
-        batch.bl_number = f"TUAW_{voyage}_{seq:03d}"
+        if leg is not None:
+            seq = await next_bl_sequence(db, leg=leg, prefix=prefix)
+        else:
+            # Packing list non rattachée à un voyage : aucune clé de séquence
+            # possible. On retombe sur le plus grand suffixe connu + 1 — moins fort
+            # (la suppression du dernier numéro le libère à nouveau) mais sans
+            # recyclage silencieux au milieu de la série, contrairement au comptage.
+            seq = await _max_issued_suffix(db, prefix=prefix) + 1
+        batch.bl_number = f"{prefix}{seq:03d}"
         batch.bl_issued_at = datetime.now(UTC)
         try:
             async with db.begin_nested():
                 await db.flush()
             return batch.bl_number
-        except IntegrityError as exc:  # collision de numéro → on recompte
+        except IntegrityError as exc:  # collision résiduelle → on repasse
             last_error = exc
             batch.bl_number = None
     raise last_error or RuntimeError("BL number assignment failed")

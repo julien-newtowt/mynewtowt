@@ -10,7 +10,9 @@ from app.models.anemos_certificate import AnemosCertificate
 from app.models.blog_post import BlogPost
 from app.models.booking import Booking, BookingItem
 from app.models.booking_message import BookingMessage
+from app.models.booking_note import BookingNote
 from app.models.bunker import BunkerOperation, BunkerTankAllocation
+from app.models.cash_count import CashCount, CashCountCurrency, CashCountLine
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.claim import (
     Claim,
@@ -29,7 +31,9 @@ from app.models.commercial import (
     RateGrid,
     RateGridLine,
     RateGridOption,
+    RateGridPaymentTerm,
     RateOffer,
+    RateOfferRevision,
 )
 from app.models.contact_request import ContactRequest
 from app.models.crew import (
@@ -52,6 +56,7 @@ from app.models.escale import DockerShift, EscaleOperation
 from app.models.feature_flag import FeatureFlag
 from app.models.finance import LegFinance, LegKPI, OpexParameter, PortConfig
 from app.models.flgo import FlgoReading, FlgoTankCompartmentVolume, FlgoVoyageConsumptionRef
+from app.models.generated_report import GeneratedReport
 from app.models.hr_absence import HrAbsence
 from app.models.hr_review import HrReview
 from app.models.insurance import InsuranceContract
@@ -109,6 +114,13 @@ from app.models.payslip import Payslip
 from app.models.planning_scenario import PlanningScenario, ScenarioLeg
 from app.models.planning_share import PlanningShare
 from app.models.port import Port
+from app.models.qhse import (
+    CorrectiveAction,
+    DeficiencyCode,
+    QhseReport,
+    QhseReportDeficiencyCode,
+    RootCauseEvaluation,
+)
 from app.models.quote import Quote, QuoteLine
 from app.models.rate_limit import RateLimitAttempt
 from app.models.role_permission import RolePermission
@@ -122,6 +134,7 @@ from app.models.sof_event import (
     SofEvent,
 )
 from app.models.stowage import StowageItem, StowagePlan, StowageZoneSpec
+from app.models.stripe_event import StripeWebhookEvent
 from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
 from app.models.validation import (
@@ -131,7 +144,7 @@ from app.models.validation import (
     ValidationRuleThreshold,
 )
 from app.models.vessel import Vessel
-from app.models.vessel_env import VesselEngine, VesselHydrostatics, VesselTank
+from app.models.vessel_env import VesselEngine, VesselTank
 from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.models.voyage_highlight import VoyageHighlight
 from app.models.voyage_photo import VoyagePhoto
@@ -149,9 +162,13 @@ __all__ = [
     "Booking",
     "BookingItem",
     "BookingMessage",
+    "BookingNote",
     "BunkerOperation",
     "BunkerTankAllocation",
     "CargoDocument",
+    "CashCount",
+    "CashCountCurrency",
+    "CashCountLine",
     "CashboxClosure",
     "CashboxMovement",
     "ChatConversation",
@@ -165,12 +182,14 @@ __all__ = [
     "ClientInvoice",
     "Co2Variable",
     "ContactRequest",
+    "CorrectiveAction",
     "CrewAssignment",
     "CrewCertification",
     "CrewLeave",
     "CrewMember",
     "CrewTicket",
     "DashboardParameter",
+    "DeficiencyCode",
     "DepartureEvent",
     "DockerShift",
     "EmissionFactor",
@@ -186,6 +205,7 @@ __all__ = [
     "FlgoReading",
     "FlgoTankCompartmentVolume",
     "FlgoVoyageConsumptionRef",
+    "GeneratedReport",
     "HrAbsence",
     "HrReview",
     "InsuranceContract",
@@ -237,15 +257,20 @@ __all__ = [
     "PortConfig",
     "PortalAccessLog",
     "PortalMessage",
+    "QhseReport",
+    "QhseReportDeficiencyCode",
     "QualityCheckResult",
     "Quote",
     "QuoteLine",
     "RateGrid",
     "RateGridLine",
     "RateGridOption",
+    "RateGridPaymentTerm",
     "RateLimitAttempt",
     "RateOffer",
+    "RateOfferRevision",
     "RolePermission",
+    "RootCauseEvaluation",
     "ScenarioLeg",
     "ScheduleRevision",
     "SilaeExportBatch",
@@ -253,6 +278,7 @@ __all__ = [
     "StowageItem",
     "StowagePlan",
     "StowageZoneSpec",
+    "StripeWebhookEvent",
     "Ticket",
     "TicketComment",
     "User",
@@ -260,7 +286,6 @@ __all__ = [
     "ValidationRuleThreshold",
     "Vessel",
     "VesselEngine",
-    "VesselHydrostatics",
     "VesselPosition",
     "VesselTank",
     "VesselWeather",

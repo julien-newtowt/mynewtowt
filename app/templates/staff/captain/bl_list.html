@@ -1,0 +1,172 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Connaissements à signer — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<div id="bl-page">
+<a href="/captain" class="btn btn-ghost mb-3">← Onboard</a>
+<header class="mb-4">
+  <span class="kicker">Commandant</span>
+  <h1 class="display">Connaissements</h1>
+  <p class="text-muted">
+    La signature du commandant est le <strong>point de gel</strong> : après elle, le
+    connaissement engage le transporteur et ne se corrige plus que par une révision
+    numérotée.
+  </p>
+</header>
+
+{# Compte rendu d'une signature groupée. On annonce les deux nombres, jamais le
+   seul succès : un « 11 signés » sur 12 sélectionnés laisserait croire à une
+   réussite complète. Le détail des écartés se lit dans les listes ci-dessous,
+   qui affichent leur état réel. #}
+{% if signed_count is not none %}
+  <div class="alert {% if skipped_count %}alert-warn{% else %}alert-success{% endif %} mb-4">
+    <strong>{{ signed_count }}</strong> connaissement(s) signé(s).
+    {% if skipped_count %}
+      <strong>{{ skipped_count }}</strong> écarté(s) — non signable(s) au moment de la
+      validation du formulaire (contenu modifié depuis, ou déjà signé). Ils figurent
+      ci-dessous avec leur état actuel.
+    {% endif %}
+  </div>
+{% endif %}
+
+{# Filtre auto-soumis, CSP-safe : la CSP du projet est `script-src 'self'` sans
+   `unsafe-inline`, donc PAS de `onchange="this.form.submit()"` (quatre écrans
+   existants utilisent ce motif et leurs filtres sont de ce fait inertes —
+   signalé, pas reproduit ici). HTMX soumet le formulaire au changement du
+   select ; le bouton « Afficher » reste le repli sans JS.
+   hx-select/hx-target ciblent #bl-page (pas `body`) : sous htmx 2, une réponse
+   document-complet perd son <body> au makeFragment, donc hx-select="body" ne
+   matche jamais rien (swap vide, page blanche). #}
+<form method="get" action="/captain/bl" class="mb-4">
+  <label class="text-sm text-muted" for="leg_id">Leg</label>
+  <select name="leg_id" id="leg_id"
+          hx-get="/captain/bl" hx-trigger="change" hx-include="closest form"
+          hx-select="#bl-page" hx-target="#bl-page" hx-swap="outerHTML" hx-push-url="true">
+    {% for l in legs %}
+      <option value="{{ l.id }}" {% if selected and l.id == selected.id %}selected{% endif %}>
+        {{ l.leg_code }}{% if l.etd %} · ETD {{ l.etd.strftime("%d/%m/%Y") }}{% endif %}
+      </option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-ghost btn-sm">Afficher</button>
+</form>
+
+{% if selected is none %}
+  <article class="card"><p class="text-muted">Aucun leg disponible.</p></article>
+{% else %}
+
+<article class="card mb-4">
+  <h2>À signer <span class="pill">{{ awaiting|length }}</span></h2>
+  {% if not awaiting %}
+    <p class="text-muted">Aucun connaissement validé par le client en attente de signature.</p>
+  {% else %}
+    <form method="post" action="/captain/bl/sign-selected"
+          data-confirm="Signer les connaissements cochés ? Cette action est définitive.">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <input type="hidden" name="leg_id" value="{{ selected.id }}" />
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:2rem;"></th>
+            <th>N° BL</th><th>Lot</th><th>Expéditeur</th><th>Destinataire</th>
+            <th>Marchandise</th><th class="text-right">Palettes</th>
+            <th class="text-right">Poids (kg)</th><th>Validé par</th><th>Aperçu</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in awaiting %}
+          <tr>
+            <td><input type="checkbox" name="batch_ids" value="{{ b.id }}" aria-label="Sélectionner {{ b.bl_number }}" /></td>
+            <td class="mono">{{ b.bl_number }}</td>
+            <td class="mono">{{ b.batch_number }}</td>
+            <td>{{ b.shipper_name or '—' }}</td>
+            <td>{{ b.consignee_name or '—' }}</td>
+            <td>{{ b.description_of_goods or b.type_of_goods or '—' }}</td>
+            <td class="text-right">{{ b.pallet_count }}</td>
+            <td class="text-right">{{ b.weight_kg if b.weight_kg else '—' }}</td>
+            <td>
+              {{ b.bl_client_validated_by or '—' }}
+              {% if b.bl_validated_on_behalf_by_id %}<span class="pill pill-warn text-xs">pour le compte</span>{% endif %}
+            </td>
+            <td>
+              {# Lire avant de signer : le lien ouvre le PDF filigrané du draft. #}
+              <a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf"
+                 target="_blank" class="btn btn-ghost btn-sm">Lire</a>
+              <a href="/cargo/packing-lists/{{ b.packing_list_id }}" class="btn btn-ghost btn-sm" title="Fiche packing list">Fiche PL</a>
+              {# `formaction` et non un formulaire imbriqué : HTML interdit d'imbriquer
+                 un <form> dans un <form>, et le navigateur casserait alors l'envoi
+                 groupé comme l'unitaire. Le champ `_csrf` du formulaire englobant
+                 s'applique aux deux. #}
+              <button type="submit" class="btn btn-primary btn-sm"
+                      formaction="/captain/bl/{{ b.id }}/sign?leg_id={{ selected.id }}">Signer</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary">Signer les connaissements cochés</button>
+        <span class="text-muted text-sm">
+          Rien de coché, rien de signé. La sélection est explicite à dessein : chaque
+          signature engage votre responsabilité sur le document.
+        </span>
+      </div>
+    </form>
+  {% endif %}
+</article>
+
+{# Un draft non validé par le client n'est PAS signable. Le taire ferait croire à
+   un oubli d'émission alors que la balle est chez le client. #}
+{% if not_ready %}
+<article class="card mb-4">
+  <h2>En attente de validation client <span class="pill pill-neutral">{{ not_ready|length }}</span></h2>
+  <p class="text-muted text-sm">
+    Ces connaissements existent en projet mais ne sont pas encore validés par le
+    client : ils ne peuvent pas être signés. Rien à faire à bord.
+  </p>
+  <table class="data-table">
+    <thead><tr><th>N° BL</th><th>Lot</th><th>Destinataire</th><th>Marchandise</th><th>Aperçu</th></tr></thead>
+    <tbody>
+      {% for b in not_ready %}
+      <tr>
+        <td class="mono">{{ b.bl_number }}</td>
+        <td class="mono">{{ b.batch_number }}</td>
+        <td>{{ b.consignee_name or '—' }}</td>
+        <td>{{ b.description_of_goods or b.type_of_goods or '—' }}</td>
+        <td>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf" target="_blank" class="btn btn-ghost btn-sm">Lire</a>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}" class="btn btn-ghost btn-sm" title="Fiche packing list">Fiche PL</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endif %}
+
+{% if signed_batches %}
+<article class="card">
+  <h2>Signés <span class="pill pill-success">{{ signed_batches|length }}</span></h2>
+  <table class="data-table">
+    <thead><tr><th>N° BL</th><th>Signé par</th><th>Le</th><th>Empreinte</th><th>État</th><th>Document</th></tr></thead>
+    <tbody>
+      {% for b in signed_batches %}
+      <tr>
+        <td class="mono">{{ b.bl_number }}</td>
+        <td>{{ b.bl_signed_by_name or '—' }}</td>
+        <td class="mono">{% if b.bl_signed_at %}{{ b.bl_signed_at.strftime("%d/%m/%Y %H:%M") }}{% else %}—{% endif %}</td>
+        <td class="mono text-xs">{{ (b.bl_signature_hash or '')[:12] }}{% if b.bl_signature_hash %}…{% endif %}</td>
+        <td><span class="pill {% if b.bl_state == 'final' %}pill-success{% endif %}">{{ b.bl_state }}</span></td>
+        <td>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}/batches/{{ b.id }}/bl.pdf" target="_blank" class="btn btn-ghost btn-sm">Ouvrir</a>
+          <a href="/cargo/packing-lists/{{ b.packing_list_id }}" class="btn btn-ghost btn-sm" title="Fiche packing list">Fiche PL</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endif %}
+
+{% endif %}
+</div>
+{% endblock %}

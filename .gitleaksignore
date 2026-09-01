@@ -1,0 +1,35 @@
+# Empreintes de faux positifs gitleaks — format : <commit>:<fichier>:<règle>:<ligne>
+#
+# ⚠️ Pourquoi une empreinte et non seulement une annotation `gitleaks:allow` :
+# gitleaks scanne la PLAGE DE COMMITS d'une pull request, pas seulement l'état
+# courant des fichiers. Une annotation en ligne ne protège donc que les commits qui
+# la contiennent — le commit qui a introduit la ligne reste flaggé, et comme la
+# réécriture d'historique est interdite ici, l'annotation ne peut jamais l'atteindre.
+# L'empreinte, elle, désigne explicitement le commit fautif.
+#
+# Ne jamais ajouter une empreinte sans avoir vérifié que le secret est bien FAUX.
+
+# Faux token de portail dans une fixture de test : 24 caractères hexadécimaux, soit
+# la forme exacte produite par `packing_list.generate_token`. Aucun secret réel — la
+# valeur n'a jamais existé ailleurs que dans ce test.
+1cb1d40e1aea7564bf0282fe3face6300fdf00a2:tests/integration/test_portal_activity_trace.py:generic-api-key:47
+
+# Faux mot de passe de test dans les tests d'isolation des grilles tarifaires
+# (constat C-1). `motdepasse-long-2026` est une chaîne inventée, passée à
+# `client_account.create_account` pour peupler une base de test en mémoire ;
+# vérifié absent de `app/`, `scripts/` et de toute configuration. Sa seule
+# contrainte est de dépasser la longueur minimale exigée à l'inscription — d'où
+# une entropie (3,82) qui franchit le seuil de la règle `generic-api-key`.
+86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:36
+86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:51
+86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:66
+86cd4ffe4f85531a16dd1a09fd013ab16059c9e1:tests/integration/test_commercial_grid_isolation.py:generic-api-key:72
+
+# 2026-08-30 — reprise UX Phase 2 (PR #167) : mot de passe factice du test de
+# rate-limit du changement de mot de passe client
+# (tests/integration/test_client_phase2.py — « wrong-one-123456 », valeur
+# délibérément fausse passée à `client_password_change` pour épuiser le
+# compteur). Jamais utilisé hors de ce test ; vérifié absent de `app/`,
+# `scripts/` et de toute configuration. Son entropie (3,63) franchit le seuil
+# de la règle `generic-api-key`.
+84f939a8c3aea5f193f00e39c3683edafa177560:tests/integration/test_client_phase2.py:generic-api-key:124

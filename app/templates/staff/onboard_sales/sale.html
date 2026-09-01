@@ -25,14 +25,18 @@
 <article class="card mb-4">
   <h2>Articles</h2>
   {% if lines %}
-    <table>
-      <thead><tr><th>Désignation</th><th class="text-right">PU</th><th class="text-right">Qté</th><th class="text-right">Total</th>{% if sale.status == "draft" %}<th></th>{% endif %}</tr></thead>
+    <div class="table-scroll">
+<table class="data-table">
+      <thead><tr><th>Désignation</th><th class="text-right">PU</th><th class="text-right">Qté</th><th class="text-right">Remise</th><th class="text-right">Total</th>{% if sale.status == "draft" %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for l in lines %}
           <tr>
             <td>{{ l.label }}</td>
             <td class="text-right mono">{{ "%.2f"|format(l.unit_price|float) }}</td>
-            <td class="text-right mono">{{ "%.3f"|format(l.qty|float) }}</td>
+            <td class="text-right mono">{{ l.qty.normalize() }}</td>
+            <td class="text-right mono">
+              {% if l.discount_pct %}−{{ l.discount_pct.normalize() }} %{% else %}—{% endif %}
+            </td>
             <td class="text-right mono">{{ "%.2f"|format(l.line_total|float) }}</td>
             {% if sale.status == "draft" %}
             <td>
@@ -46,6 +50,7 @@
         {% endfor %}
       </tbody>
     </table>
+</div>
   {% else %}
     <p class="text-muted">Aucun article. Ajoutez au moins une ligne.</p>
   {% endif %}
@@ -68,9 +73,46 @@
           <input id="qty" name="qty" type="text" inputmode="decimal" value="1" required />
         </div>
         <div class="field">
+          <label for="discount_pct">Remise (%)</label>
+          <input id="discount_pct" name="discount_pct" type="number" min="0" max="100"
+                 step="1" value="0" inputmode="decimal" />
+        </div>
+        <div class="field">
           <button type="submit" class="btn btn-secondary">Ajouter</button>
         </div>
       </form>
+
+      {# Ligne hors catalogue : le modèle l'autorisait depuis l'origine
+         (`product_id` nullable), aucune route ne la créait. Vendre un article
+         non référencé imposait de créer un faux produit. #}
+      <details class="mt-3">
+        <summary class="btn btn-ghost btn-sm" style="list-style:none;">
+          + Ligne hors catalogue
+        </summary>
+        <form method="post" action="/captain/ventes/vente/{{ sale.reference }}/line-libre"
+              class="grid grid-3 gap-3 mt-2" style="align-items:end;">
+          <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+          <div class="field">
+            <label for="free_label">Désignation</label>
+            <input id="free_label" name="label" required placeholder="Article non catalogué" />
+          </div>
+          <div class="field">
+            <label for="free_price">Prix unitaire ({{ sale.currency }})</label>
+            <input id="free_price" name="unit_price" inputmode="decimal" required />
+          </div>
+          <div class="field">
+            <label for="free_qty">Quantité</label>
+            <input id="free_qty" name="qty" inputmode="decimal" value="1" />
+          </div>
+          <div class="field">
+            <button type="submit" class="btn btn-ghost">Ajouter</button>
+          </div>
+        </form>
+        <p class="text-muted text-sm">
+          Sans produit du catalogue, aucun mouvement de stock n'est écrit au
+          règlement : l'article n'est pas suivi.
+        </p>
+      </details>
     {% else %}
       <p class="text-muted">Aucun produit actif en {{ sale.currency }}. Vérifiez le <a href="/captain/ventes/catalogue">catalogue</a>.</p>
     {% endif %}
@@ -86,7 +128,17 @@
     <form method="post" action="/captain/ventes/vente/{{ sale.reference }}/confirm-cash"
           data-confirm="Confirmer l'encaissement en espèces de {{ '%.2f'|format(sale.total|float) }} {{ sale.currency }} ? Un mouvement de caisse sera créé.">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field" style="max-width:14rem;">
+        <label for="cash_received">Espèces reçues (facultatif)</label>
+        <input id="cash_received" name="cash_received" inputmode="decimal"
+               placeholder="{{ '%.2f'|format(sale.total|float) }}" />
+      </div>
       <button type="submit" class="btn btn-primary" {% if sale.total <= 0 %}disabled{% endif %}>💶 Encaisser en espèces</button>
+      <p class="text-muted text-sm" style="margin-top:var(--space-2);max-width:20rem;">
+        Les espèces reçues servent à tracer le rendu de monnaie : sans elles,
+        un écart au comptage reste inexplicable. La caisse est créditée du
+        montant de la vente, pas de cette somme.
+      </p>
     </form>
     {% if stripe_enabled %}
     <form method="post" action="/captain/ventes/vente/{{ sale.reference }}/checkout">
@@ -128,6 +180,70 @@
     Réglée par <strong>{{ payment_labels.get(sale.payment_method, "—") }}</strong>
     le {{ sale.paid_at|datetime }}.
     Mouvement de caisse : <a href="/cashbox/{{ sale.vessel_id }}">voir la caisse de bord</a>.
+  </p>
+  {% if sale.change_due is not none %}
+    <p>
+      Espèces reçues : <span class="mono">{{ "%.2f"|format(sale.cash_received|float) }} {{ sale.currency }}</span>
+      · <strong>Monnaie rendue : <span class="mono">{{ "%.2f"|format(sale.change_due|float) }} {{ sale.currency }}</span></strong>
+    </p>
+  {% endif %}
+  <p>
+    <a href="/captain/ventes/vente/{{ sale.reference }}/recu.pdf" target="_blank"
+       class="btn btn-secondary">🧾 Reçu de l'acheteur (PDF)</a>
+  </p>
+
+  {% if sale.refund_pending %}
+    <div class="alert alert-warning">
+      <strong>Remboursement demandé</strong> le {{ sale.refund_requested_at|date }}.
+      En attente de traitement par le siège.
+      {% if sale.refund_request_note %}<br />Motif : {{ sale.refund_request_note }}{% endif %}
+    </div>
+  {% else %}
+    <form method="post" action="/captain/ventes/vente/{{ sale.reference }}/refund-request"
+          data-confirm="Signaler cette vente au siège pour remboursement ?">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="refund_note">Motif de la demande de remboursement</label>
+        <input id="refund_note" name="note" type="text"
+               placeholder="Ex. erreur de montant, article rendu…" />
+      </div>
+      <button type="submit" class="btn btn-secondary">Demander un remboursement au siège</button>
+      <p class="text-muted" style="margin-top:var(--space-2);">
+        Le remboursement est réalisé par le siège : le bord encaisse, il ne défait
+        pas un encaissement.
+      </p>
+    </form>
+  {% endif %}
+
+  {% if can_refund %}
+    <hr />
+    <form method="post" action="/captain/ventes/vente/{{ sale.reference }}/refund"
+          data-confirm="Rembourser cette vente ? Un mouvement de caisse négatif sera créé et les articles suivis retourneront en stock.">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="refund_reason">Motif du remboursement (siège)</label>
+        <input id="refund_reason" name="reason" type="text" />
+      </div>
+      <button type="submit" class="btn btn-cuivre">Rembourser (siège)</button>
+    </form>
+  {% endif %}
+</article>
+{% elif sale.status == "refunded" %}
+<article class="card">
+  <h2>Vente remboursée</h2>
+  <p>
+    Remboursée le {{ sale.refunded_at|datetime }} par contre-passation
+    (mouvement de caisse négatif{% if sale.stripe_refund_id %}, remboursement Stripe
+    <span class="mono">{{ sale.stripe_refund_id }}</span>{% endif %}).
+    {% if sale.refund_reason %}<br />Motif : {{ sale.refund_reason }}{% endif %}
+  </p>
+  <p class="text-muted">
+    Ni la vente ni le mouvement d'origine n'ont été supprimés : les deux registres
+    restent append-only, la contre-passation les équilibre.
+  </p>
+  <p>
+    <a href="/captain/ventes/vente/{{ sale.reference }}/recu.pdf" target="_blank"
+       class="btn btn-ghost">🧾 Reçu (mentionne le remboursement)</a>
   </p>
 </article>
 {% endif %}

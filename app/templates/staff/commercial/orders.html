@@ -10,9 +10,9 @@
   <div class="flex gap-2">
     {% set status_filter = filter_status or '' %}
     <a href="/commercial/orders" class="btn btn-{{ 'primary' if not status_filter else 'ghost' }} btn-sm">Toutes</a>
-    <a href="/commercial/orders?status=draft" class="btn btn-{{ 'primary' if status_filter == 'draft' else 'ghost' }} btn-sm">Draft</a>
-    <a href="/commercial/orders?status=confirmed" class="btn btn-{{ 'primary' if status_filter == 'confirmed' else 'ghost' }} btn-sm">Confirmed</a>
-    <a href="/commercial/orders?status=cancelled" class="btn btn-{{ 'primary' if status_filter == 'cancelled' else 'ghost' }} btn-sm">Cancelled</a>
+    {% for s in order_statuses %}
+    <a href="/commercial/orders?status={{ s }}" class="btn btn-{{ 'primary' if status_filter == s else 'ghost' }} btn-sm">{{ order_status_labels.get(s, s) }}</a>
+    {% endfor %}
     <a href="/commercial/orders/new" class="btn btn-primary">+ Nouvelle commande</a>
   </div>
 </header>
@@ -28,7 +28,7 @@
         <td class="mono">{{ o.leg_id or '—' }}</td>
         <td>{{ o.booked_palettes }}</td>
         <td class="mono">{{ o.total_eur|money if o.total_eur else '—' }}</td>
-        <td><span class="badge badge-{{ o.status }}">{{ o.status }}</span></td>
+        <td><span class="badge badge-{{ o.status }}">{{ o.status_label }}</span></td>
       </tr>
       {% else %}
       <tr><td colspan="6" class="text-muted text-center">Aucune commande.</td></tr>

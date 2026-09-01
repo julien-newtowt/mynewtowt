@@ -37,8 +37,16 @@ _BRAND_CONTEXT = {
 }
 
 
-def _render_pdf(template: str, context: dict[str, Any]) -> bytes:
-    """Render a Jinja template then convert to PDF with WeasyPrint."""
+def _render_pdf(template: str, context: dict[str, Any]) -> tuple[str, bytes]:
+    """Rend un gabarit Jinja puis le convertit en PDF — renvoie **(html, pdf)**.
+
+    L'annotation disait ``bytes`` alors que la fonction renvoie un couple depuis
+    toujours. Le coût n'était pas cosmétique : ``bytes`` étant un itérable
+    d'``int``, mypy déballait chaque ``html, pdf = _render_pdf(...)`` en deux
+    ``int`` et signalait une erreur par appel — une vingtaine dans ce fichier,
+    qui noyaient les vraies. Le HTML est conservé à côté du PDF pour les tests
+    de rendu, qui l'inspectent sans relire le binaire.
+    """
     from weasyprint import HTML  # local import — heavy native deps
 
     tpl = templates.get_template(template)
@@ -78,14 +86,30 @@ def _bl_number(booking) -> str:
 
 
 def render_bill_of_lading_from_pl(
-    *, pl, batch, leg, vessel, pol, pod, bl_number, issued_at=None
+    *, pl, batch, leg, vessel, pol, pod, bl_number, issued_at=None, shipped_on_board=None
 ) -> DocumentBytes:
     """CARGO-01 — Bill of Lading généré depuis un batch de packing list.
 
     Les parties (shipper/consignee/notify) et la marchandise proviennent du
     ``PackingListBatch`` saisi par l'expéditeur (et non d'un booking).
+
+    ⚠️ Le document **dit ce qu'il est**. Tant que le commandant n'a pas signé, il
+    porte un filigrane et ne revendique **aucun** original signé : affirmer « 3 OBL
+    signés » sur un brouillon tromperait un tiers de bonne foi (banque en crédit
+    documentaire, destinataire, assureur) sur la nature du titre qu'il détient.
+    C'est la signature qui fait l'original, pas l'émission.
+
+    ``shipped_on_board`` est un ``Resolved`` (cf. ``services/derived_override``)
+    fourni **par l'appelant** : la dérivation interroge la base, or cette fonction
+    est synchrone. Absent ⇒ la mention n'apparaît pas, plutôt qu'une date fausse.
     """
+    from app.services.bl_workflow import FROZEN_STATES
     from app.templating import brand_for_lang
+
+    # `bl_state` peut manquer (lot d'avant la machine à états) : dans le doute on
+    # traite le document comme NON signé — le repli prudent est le filigrane.
+    bl_state = getattr(batch, "bl_state", None)
+    is_signed = bl_state in FROZEN_STATES
 
     ctx = {
         "pl": pl,
@@ -97,11 +121,24 @@ def render_bill_of_lading_from_pl(
         "bl_number": bl_number,
         "issued_at": issued_at or datetime.now(UTC),
         "number_of_obl": 3,
+        "bl_state": bl_state,
+        "is_signed": is_signed,
+        "signed_at": getattr(batch, "bl_signed_at", None) if is_signed else None,
+        "signed_by": getattr(batch, "bl_signed_by_name", None) if is_signed else None,
+        "signature_hash": getattr(batch, "bl_signature_hash", None) if is_signed else None,
+        # §5.0 — la DATE seule figure sur le document. Le fait qu'elle ait été
+        # corrigée vit dans la piste d'audit, pas sur le connaissement : annoter
+        # « date corrigée » sur un titre présenté à une banque en crédit
+        # documentaire jetterait un doute injustifié sur le document lui-même.
+        "shipped_on_board": shipped_on_board.value if shipped_on_board else None,
         "brand": brand_for_lang("fr"),
         "site_url": settings.site_url,
     }
     html, pdf = _render_pdf("pdf/bill_of_lading_pl.html", ctx)
-    return DocumentBytes(html=html, pdf=pdf, filename=f"{bl_number}.pdf")
+    # Le nom du fichier distingue le brouillon : un PDF nommé comme un original
+    # finit par circuler comme un original.
+    suffix = "" if is_signed else "-DRAFT"
+    return DocumentBytes(html=html, pdf=pdf, filename=f"{bl_number}{suffix}.pdf")
 
 
 def render_arrival_notice(*, pl, batches, leg, vessel, pol, pod) -> DocumentBytes:
@@ -322,6 +359,35 @@ def render_methodology(*, factors, lang: str = "fr") -> DocumentBytes:
     )
 
 
+_TROMBI_MONTHS_FR = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)  # fmt: skip
+
+
+def render_crew_directory(*, directory, period) -> DocumentBytes:
+    """Trombinoscope Armement — cf. docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md.
+
+    ``directory`` est un ``crew_directory.CrewDirectory`` (déjà construit,
+    groupé par fonction/agence, photos encodées en data URI). ``period`` est
+    un ``date`` quelconque du mois concerné (le jour n'est pas utilisé).
+    """
+    from app.templating import brand_for_lang
+
+    period_label = f"{_TROMBI_MONTHS_FR[period.month - 1]} {period.year}"
+    period_token = f"{period.year:04d}-{period.month:02d}"
+    ctx = {
+        "directory": directory,
+        "period_label": period_label,
+        "period_token": period_token,
+        "issued_at": datetime.now(UTC),
+        "brand": brand_for_lang("fr"),
+        "site_url": settings.site_url,
+    }
+    html, pdf = _render_pdf("pdf/crew_directory.html", ctx)
+    return DocumentBytes(html=html, pdf=pdf, filename=f"Trombinoscope_{period_token}.pdf")
+
+
 def render_planning_brochure(*, groups, summary, meta, lang: str = "fr") -> DocumentBytes:
     """PLN-01 — brochure commerciale imprimable du planning.
 
@@ -346,3 +412,35 @@ def render_planning_brochure(*, groups, summary, meta, lang: str = "fr") -> Docu
 
 # Alias backward-compat — peut disparaître en V3.7
 render_co2_certificate = render_anemos_certificate
+
+
+def onboard_sale_receipt(sale, vessel, lines, *, payment_label: str) -> DocumentBytes:
+    """Reçu remis à l'acheteur d'une vente à bord.
+
+    Le module encaissait sans rien remettre : le marin payait et repartait les
+    mains vides, sans preuve d'achat ni justificatif de note de frais. C'était
+    le manque fonctionnel le plus visible relevé à l'audit du 2026-08-27.
+
+    Ce n'est **pas une facture** : les ventes à bord sont en franchise de taxe
+    (avitaillement) et n'ouvrent pas droit à déduction. Le document le dit, pour
+    qu'il ne soit pas présenté comme tel en comptabilité.
+    """
+    from app.templating import brand_for_lang
+
+    ctx = {
+        "sale": sale,
+        "vessel": vessel,
+        "lines": lines,
+        "payment_label": payment_label,
+        # Rendu hors-requête : le context processor n'injecte pas ``brand``.
+        "brand": brand_for_lang("fr"),
+        "paid_at": sale.paid_at.strftime("%d/%m/%Y %H:%M UTC") if sale.paid_at else "—",
+        "refunded_at": (
+            sale.refunded_at.strftime("%d/%m/%Y") if getattr(sale, "refunded_at", None) else ""
+        ),
+        # `_base.html` formate lui-même `issued_at` : il attend un datetime.
+        "issued_at": datetime.now(UTC),
+        "site_url": settings.site_url,
+    }
+    html, pdf = _render_pdf("pdf/onboard_sale_receipt.html", ctx)
+    return DocumentBytes(html=html, pdf=pdf, filename=f"recu-{sale.reference}.pdf")

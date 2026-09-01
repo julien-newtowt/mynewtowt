@@ -10,6 +10,7 @@ Reprises de la V3.0.0 :
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 from datetime import UTC, datetime
 from datetime import date as _date
@@ -22,12 +23,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.models.booking_note import BookingNote
 from app.models.client_account import ClientAccount
 from app.models.commercial import (
     CAPACITY_PRIORITY_LABELS,
     CLIENT_TYPES,
     CO_BRANDING_STATUS_LABELS,
     CO_BRANDING_STATUSES,
+    MAX_PAYMENT_TERMS,
+    ORDER_STATUS_LABELS,
+    ORDER_STATUSES,
+    PAYMENT_TRIGGER_LABELS,
+    PAYMENT_TRIGGERS,
+    RATE_OFFER_OPEN_STATUSES,
+    RATE_OFFER_STATUS_LABELS,
+    RATE_OFFER_STATUSES,
     RATE_OPTION_UNIT_LABELS,
     RATE_OPTION_UNITS,
     Client,
@@ -36,16 +46,28 @@ from app.models.commercial import (
     RateGrid,
     RateGridLine,
     RateGridOption,
+    RateGridPaymentTerm,
     RateOffer,
 )
 from app.models.leg import Leg
 from app.models.port import Port
-from app.models.quote import Quote
+from app.models.quote import QUOTE_ORIGIN_LABELS, Quote
+from app.models.user import User
 from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services import capacity as capacity_svc
+from app.services import yousign as yousign_svc
 from app.services.activity import record as activity_record
+from app.services.booking_note import BookingNoteError, mark_issued
+from app.services.booking_note_signature import (
+    SIGNATURE_STATUS_LABELS,
+    SignatureError,
+    request_signature,
+)
+from app.services.booking_note_signature import reconcile as reconcile_signature
 from app.services.commercial import (
+    PaymentTermError,
+    assign_tariff_reference,
     bracket_rate,
     compatible_legs_for_order,
     default_brackets_for,
@@ -54,7 +76,24 @@ from app.services.commercial import (
     next_offer_reference,
     next_order_reference,
     pick_bracket,
+    refresh_grid_references,
     suggest_leg_for_order,
+    validate_payment_terms,
+)
+from app.services.estimation import EstimationError
+from app.services.estimation import convert_to_offer as convert_estimation_to_offer
+from app.services.offer_history import (
+    list_revisions,
+    record_revision,
+    snapshot_offer,
+    verify_chain,
+)
+from app.services.offer_lifecycle import (
+    OfferTransitionError,
+    cancel_offer,
+    expire_due_offers,
+    is_expired,
+    validate_offer,
 )
 from app.services.quoting import (
     QuotingError,
@@ -65,8 +104,79 @@ from app.services.quoting import (
     resolve_grid,
 )
 from app.templating import templates
+from app.utils.forms import form_str
 
 router = APIRouter(prefix="/commercial", tags=["commercial"])
+
+# Rôles pouvant être désignés **commercial attitré** d'un client. Le rôle doit
+# porter la relation commerciale et avoir accès au module : attribuer un client
+# à un compte sans accès rendrait la notification d'estimation muette.
+ASSIGNABLE_ROLES = ("commercial", "manager_maritime", "administrateur")
+
+# Libellés français des types de client — l'interface est en français, elle
+# affichait jusqu'ici les valeurs techniques (« freight_forwarder »).
+CLIENT_TYPE_LABELS: dict[str, str] = {
+    "freight_forwarder": "Transitaire",
+    "shipper": "Chargeur",
+}
+
+# Libellés des champs d'offre dans l'historique — un diff qui affiche
+# « proposed_rate_eur » ne se lit pas ; un commercial doit pouvoir relire
+# l'historique sans connaître le schéma.
+OFFER_FIELD_LABELS: dict[str, str] = {
+    "reference": "Référence",
+    "client_id": "Client",
+    "grid_id": "Grille tarifaire",
+    "leg_id": "Voyage (leg)",
+    "title": "Objet",
+    "status": "Statut",
+    "estimated_palettes": "Palettes",
+    "proposed_rate_eur": "Tarif proposé (€/palette)",
+    "total_eur": "Total (€)",
+    "valid_until": "Validité",
+    "notes": "Notes",
+}
+
+# Champs de la booking note corrigeables par le commercial avant diffusion.
+# Liste explicite : elle sert de garde contre l'affectation en masse — un champ
+# de diffusion ou de signature ne doit jamais être posé depuis un formulaire.
+BOOKING_NOTE_EDITABLE_FIELDS: tuple[str, ...] = (
+    "issue_place",
+    "agents_pod",
+    "vessel_name",
+    "time_for_shipment",
+    "pol_text",
+    "pod_text",
+    "merchant_name",
+    "merchant_contact",
+    "merchant_address",
+    "merchant_email",
+    "freight_terms",
+    "payment_terms",
+    "special_terms",
+    "cargo_description",
+)
+
+
+def _safe_filename(name: str) -> str:
+    """Nom de fichier assaini pour l'en-tête ``Content-Disposition``.
+
+    Un guillemet dans le nom permettrait de sortir de la chaîne quotée et
+    d'injecter des paramètres d'en-tête. On ne garde que des caractères sûrs.
+    """
+    cleaned = "".join(c for c in name if c.isalnum() or c in "._-")
+    return cleaned or "document.docx"
+
+
+REVISION_ACTION_LABELS: dict[str, str] = {
+    "created": "Création",
+    "updated": "Modification",
+    "sent": "Envoi au client",
+    "validated": "Validation",
+    "cancelled": "Annulation",
+    "expired": "Échéance dépassée",
+    "converted": "Conversion en commande",
+}
 
 
 def _hx_or_redirect(request: Request, target: str):
@@ -95,7 +205,7 @@ async def commercial_index(
     offers_open = (
         await db.scalar(
             select(__import__("sqlalchemy").func.count(RateOffer.id)).where(
-                RateOffer.status.in_(("draft", "sent"))
+                RateOffer.status.in_(RATE_OFFER_OPEN_STATUSES)
             )
         )
     ) or 0
@@ -253,6 +363,7 @@ async def clients_list(
             "user": user,
             "clients": clients,
             "types": CLIENT_TYPES,
+            "client_type_labels": CLIENT_TYPE_LABELS,
             "pipedrive_configured": is_configured(),
             "search_q": term,
         },
@@ -286,7 +397,7 @@ async def clients_sync_pipedrive(
         url=(
             f"/commercial/clients?pd=ok&created={result['created']}"
             f"&updated={result['updated']}&skipped={result.get('skipped', 0)}"
-            f"&linked={result.get('linked', 0)}"
+            f"&suggested={result.get('suggested', 0)}"
         ),
         status_code=303,
     )
@@ -305,6 +416,7 @@ async def client_create(
     country: str | None = Form(None),
     vat_number: str | None = Form(None),
     notes: str | None = Form(None),
+    assigned_user_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -320,6 +432,7 @@ async def client_create(
         country=(country or "").strip().upper()[:2] or None,
         vat_number=(vat_number or "").strip() or None,
         notes=notes,
+        assigned_user_id=await _resolve_assigned_user(db, assigned_user_id),
     )
     db.add(c)
     await db.flush()
@@ -383,6 +496,15 @@ async def client_detail(
         .scalars()
         .all()
     )
+    # C-1 : le rattachement n'est plus automatique. On met en avant les comptes
+    # dont l'e-mail correspond exactement au contact du client — simple suggestion,
+    # l'opérateur reste seul à décider (le lien ouvre l'accès à la grille négociée).
+    contact_email = (client.contact_email or "").strip().lower()
+    suggested_account_ids = (
+        {a.id for a in unlinked_accounts if (a.email or "").strip().lower() == contact_email}
+        if contact_email
+        else set()
+    )
     return templates.TemplateResponse(
         "staff/commercial/client_detail.html",
         {
@@ -392,6 +514,8 @@ async def client_detail(
             "grids": grids,
             "linked_accounts": linked_accounts,
             "unlinked_accounts": unlinked_accounts,
+            "suggested_account_ids": suggested_account_ids,
+            "client_type_labels": CLIENT_TYPE_LABELS,
             "co_branding_statuses": CO_BRANDING_STATUSES,
             "co_branding_status_labels": CO_BRANDING_STATUS_LABELS,
             "capacity_priority_labels": CAPACITY_PRIORITY_LABELS,
@@ -411,7 +535,14 @@ async def client_edit_form(
         raise HTTPException(status_code=404)
     return templates.TemplateResponse(
         "staff/commercial/client_form.html",
-        {"request": request, "user": user, "client": client, "types": CLIENT_TYPES},
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "types": CLIENT_TYPES,
+            "client_type_labels": CLIENT_TYPE_LABELS,
+            "assignable_users": await _assignable_users(db),
+        },
     )
 
 
@@ -429,6 +560,7 @@ async def client_edit(
     country: str | None = Form(None),
     vat_number: str | None = Form(None),
     notes: str | None = Form(None),
+    assigned_user_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
@@ -446,6 +578,7 @@ async def client_edit(
     client.country = (country or "").strip().upper()[:2] or None
     client.vat_number = (vat_number or "").strip() or None
     client.notes = (notes or "").strip() or None
+    client.assigned_user_id = await _resolve_assigned_user(db, assigned_user_id)
     await db.flush()
     await activity_record(
         db,
@@ -717,6 +850,77 @@ async def _vessels(db: AsyncSession) -> list[Vessel]:
     )
 
 
+async def _record_offer_revision(
+    db: AsyncSession,
+    offer: RateOffer,
+    *,
+    action: str,
+    user,
+    before: dict | None = None,
+    comment: str | None = None,
+):
+    """Consigne une révision de l'offre dans l'historique inaltérable.
+
+    Complète ``activity_record`` sans le remplacer : le journal d'activité dit
+    qui a agi, l'historique dit ce que valait l'offre.
+    """
+    return await record_revision(
+        db,
+        offer,
+        action=action,
+        actor_id=getattr(user, "id", None),
+        actor_name=(getattr(user, "full_name", None) or getattr(user, "username", None)),
+        actor_role=getattr(user, "role", None),
+        before=before,
+        comment=comment,
+    )
+
+
+async def _assignable_users(db: AsyncSession) -> list[User]:
+    """Comptes staff éligibles comme **commercial attitré** d'un client.
+
+    Restreint aux rôles qui portent réellement la relation commerciale : attribuer
+    un client à un compte sans accès au module rendrait la notification muette.
+    """
+    return list(
+        (
+            await db.execute(
+                select(User)
+                .where(
+                    User.is_active.is_(True),
+                    User.role.in_(ASSIGNABLE_ROLES),
+                )
+                .order_by(User.full_name, User.username)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def _resolve_assigned_user(db: AsyncSession, raw: object) -> int | None:
+    """Valide l'identifiant du commercial attitré soumis (vide = aucun).
+
+    ``raw`` est typé large à dessein : appelée hors HTTP (tests, appel direct de
+    la route), la valeur par défaut ``Form(None)`` fuit telle quelle — la traiter
+    comme « non fourni » évite un ``AttributeError`` là où l'intention est
+    clairement de ne rien changer.
+    """
+    if not isinstance(raw, str | int) or isinstance(raw, bool):
+        return None
+    value = str(raw).strip()
+    if not value:
+        return None
+    try:
+        user_id = int(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="commercial attitré invalide") from exc
+    target = await db.get(User, user_id)
+    if target is None or not target.is_active or target.role not in ASSIGNABLE_ROLES:
+        raise HTTPException(status_code=400, detail="commercial attitré invalide")
+    return target.id
+
+
 async def _grid_editable(db: AsyncSession, grid_id: int) -> RateGrid:
     """Grille (avec routes) éditable : 404 si absente, 400 si active (verrouillée)."""
     grid = (
@@ -939,6 +1143,11 @@ async def grid_edit(
     grid.min_charge_eur = _opt_decimal(min_charge_eur)
     grid.volume_commitment = _opt_int(volume_commitment)
     await db.flush()
+    # La référence codifiée des routes encode la période de validité : si celle-ci
+    # a changé, les références deviendraient fausses sans ce recalcul.
+    await db.refresh(grid, ["lines"])
+    await refresh_grid_references(db, grid)
+    await db.flush()
     await activity_record(
         db,
         action="update",
@@ -969,6 +1178,7 @@ async def grid_detail(
                 selectinload(RateGrid.client),
                 selectinload(RateGrid.lines),
                 selectinload(RateGrid.options),
+                selectinload(RateGrid.payment_terms),
             )
             .where(RateGrid.id == grid_id)
         )
@@ -986,6 +1196,9 @@ async def grid_detail(
             "route_ports": await _route_ports(db),
             "option_units": RATE_OPTION_UNITS,
             "option_unit_labels": RATE_OPTION_UNIT_LABELS,
+            "payment_triggers": PAYMENT_TRIGGERS,
+            "payment_trigger_labels": PAYMENT_TRIGGER_LABELS,
+            "max_payment_terms": MAX_PAYMENT_TERMS,
         },
     )
 
@@ -1000,18 +1213,25 @@ async def grid_activate(
     grid = await db.get(RateGrid, grid_id)
     if grid is None:
         raise HTTPException(status_code=404)
-    # Une seule grille active par périmètre : par client pour une grille client,
-    # une seule grille par défaut active globalement. Les autres actives du même
-    # périmètre sont marquées « superseded ».
-    others = select(RateGrid).where(RateGrid.id != grid.id, RateGrid.status == "active")
-    if grid.client_id is not None:
-        others = others.where(RateGrid.client_id == grid.client_id)
-    else:
-        others = others.where(RateGrid.client_id.is_(None), RateGrid.is_default.is_(True))
+    # Un client peut avoir **plusieurs grilles actives simultanément** (périodes
+    # ou conditions distinctes) : activer l'une ne périme donc plus les autres.
+    # Quand plusieurs couvrent la même route à la date d'ETD, l'arbitrage se fait
+    # à la résolution, via le drapeau « par défaut sur cette route » de la ligne.
+    #
+    # Seule exception conservée : la grille **par défaut anonyme** (repli pour un
+    # demandeur sans grille négociée) reste unique — deux replis concurrents
+    # rendraient le tarif public non déterministe.
     superseded = 0
-    for other in (await db.execute(others)).scalars().all():
-        other.status = "superseded"
-        superseded += 1
+    if grid.client_id is None:
+        others = select(RateGrid).where(
+            RateGrid.id != grid.id,
+            RateGrid.status == "active",
+            RateGrid.client_id.is_(None),
+            RateGrid.is_default.is_(True),
+        )
+        for other in (await db.execute(others)).scalars().all():
+            other.status = "superseded"
+            superseded += 1
     grid.status = "active"
     await db.flush()
     await activity_record(
@@ -1160,6 +1380,8 @@ async def grid_route_create(
         is_manual=manual_base is not None,
     )
     db.add(route)
+    await db.flush()
+    await assign_tariff_reference(db, grid, route)
     await db.flush()
     await activity_record(
         db,
@@ -1341,6 +1563,138 @@ async def grid_brackets_update(
     return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
 
 
+# ──────────────────────────────────── Conditions de règlement
+@router.post("/grids/{grid_id}/payment-terms")
+async def grid_payment_terms_update(
+    grid_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Remplace l'échéancier de règlement d'une grille (1 à 3 règlements).
+
+    Les conditions sont **déclaratives** : elles décrivent le contrat et
+    alimentent la booking note, sans déclencher de facturation (le fret se règle
+    par virement, hors plateforme).
+    """
+    grid = (
+        await db.execute(
+            select(RateGrid)
+            .options(selectinload(RateGrid.payment_terms))
+            .where(RateGrid.id == grid_id)
+        )
+    ).scalar_one_or_none()
+    if grid is None:
+        raise HTTPException(status_code=404)
+    if grid.status == "active":
+        raise HTTPException(
+            status_code=400,
+            detail="Grille active verrouillée — repassez-la en brouillon pour la modifier.",
+        )
+
+    form = await request.form()
+    submitted: list[dict] = []
+    for idx in range(MAX_PAYMENT_TERMS):
+        trigger = form_str(form, f"terms-{idx}-trigger").strip()
+        percentage = form_str(form, f"terms-{idx}-percentage").strip()
+        if not trigger and not percentage:
+            continue
+        submitted.append(
+            {
+                "trigger": trigger,
+                "percentage": percentage,
+                "offset_days": form_str(form, f"terms-{idx}-offset_days").strip() or None,
+                "label": form.get(f"terms-{idx}-label"),
+            }
+        )
+
+    try:
+        terms = validate_payment_terms(submitted)
+    except PaymentTermError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    grid.payment_terms.clear()
+    for term in terms:
+        grid.payment_terms.append(RateGridPaymentTerm(**term))
+    await db.flush()
+
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid.id,
+        entity_label=grid.reference,
+        detail=(
+            "payment terms: "
+            + (
+                " + ".join(f"{t['percentage']}% {t['trigger']}" for t in terms)
+                if terms
+                else "aucune"
+            )
+        ),
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+@router.post("/grids/{grid_id}/routes/{route_id}/default")
+async def grid_route_set_default(
+    grid_id: int,
+    route_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Désigne cette route comme grille par défaut du client sur cette paire POL/POD.
+
+    Un client peut avoir plusieurs grilles actives couvrant la même route ; ce
+    drapeau tranche laquelle s'applique. Il est donc **exclusif** : le poser ici
+    le retire des autres routes du même client sur la même paire.
+    """
+    grid = await db.get(RateGrid, grid_id)
+    route = await db.get(RateGridLine, route_id)
+    if grid is None or route is None or route.grid_id != grid.id:
+        raise HTTPException(status_code=404)
+
+    siblings = (
+        select(RateGridLine)
+        .join(RateGrid, RateGrid.id == RateGridLine.grid_id)
+        .where(
+            RateGridLine.id != route.id,
+            RateGridLine.pol_locode == route.pol_locode,
+            RateGridLine.pod_locode == route.pod_locode,
+            RateGridLine.is_route_default.is_(True),
+        )
+    )
+    if grid.client_id is not None:
+        siblings = siblings.where(RateGrid.client_id == grid.client_id)
+    else:
+        siblings = siblings.where(RateGrid.client_id.is_(None))
+    for other in (await db.execute(siblings)).scalars().all():
+        other.is_route_default = False
+
+    route.is_route_default = True
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid.id,
+        entity_label=grid.reference,
+        detail=f"route par défaut : {route.pol_locode}→{route.pod_locode}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
 # ────────────────────────────────────────────── Grid options
 @router.post("/grids/{grid_id}/options")
 async def grid_option_create(
@@ -1459,7 +1813,7 @@ async def devis_list(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    """100 derniers devis émis par l'outil public /devis et le booking."""
+    """Estimations tarifaires : demandes extranet chiffrées, demandes publiques à qualifier."""
     rows = (
         await db.execute(
             select(Quote, ClientAccount.email, ClientAccount.company_name)
@@ -1474,8 +1828,86 @@ async def devis_list(
     ]
     return templates.TemplateResponse(
         "staff/commercial/devis_list.html",
-        {"request": request, "user": user, "quotes": quotes},
+        {
+            "request": request,
+            "user": user,
+            "quotes": quotes,
+            "origin_labels": QUOTE_ORIGIN_LABELS,
+        },
     )
+
+
+@router.get("/estimations", response_class=HTMLResponse)
+async def estimations_alias(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Alias de ``/commercial/devis`` sous le nouveau vocabulaire.
+
+    L'URL historique est conservée — elle est en liens internes et en signets —
+    mais le chemin qui porte le nom du métier existe désormais aussi.
+    """
+    return await devis_list(request, db=db, user=user)
+
+
+@router.get("/estimations/{reference}", response_class=HTMLResponse)
+async def estimation_detail_alias(
+    reference: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Alias de ``/commercial/devis/{reference}`` (cible des notifications)."""
+    return await devis_detail_staff(reference, request, db=db, user=user)
+
+
+@router.post("/estimations/{reference}/convert")
+async def estimation_convert(
+    reference: str,
+    request: Request,
+    leg_id: int = Form(...),
+    title: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Transforme une estimation en offre commerciale.
+
+    Le tarif est **recalculé** sur la grille applicable à l'ETD du voyage retenu :
+    une estimation de plusieurs semaines peut porter un prix qui n'a plus cours.
+    """
+    quote = (
+        await db.execute(select(Quote).where(Quote.reference == reference))
+    ).scalar_one_or_none()
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Estimation introuvable")
+    try:
+        offer = await convert_estimation_to_offer(
+            db,
+            quote,
+            leg_id=leg_id,
+            title=title if isinstance(title, str) else None,
+            actor_id=user.id,
+            actor_name=user.full_name or user.username,
+            actor_role=user.role,
+        )
+    except EstimationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await activity_record(
+        db,
+        action="create",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=offer.id,
+        entity_label=offer.reference,
+        detail=f"issue de l'estimation {quote.reference}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer.id}")
 
 
 @router.get("/devis/{reference}", response_class=HTMLResponse)
@@ -1502,6 +1934,15 @@ async def devis_detail_staff(
         await db.execute(select(Port).where(Port.locode == quote.pod_locode))
     ).scalar_one_or_none()
     leg = await db.get(Leg, quote.leg_id) if quote.leg_id else None
+    # Voyages à venir sur la route — cibles possibles de la conversion en offre
+    # (une offre porte toujours sur un voyage précis).
+    from app.services.estimation import upcoming_legs_for_route
+
+    convertible_legs = (
+        []
+        if quote.converted_offer_id
+        else await upcoming_legs_for_route(db, quote.pol_locode, quote.pod_locode)
+    )
     return templates.TemplateResponse(
         "staff/commercial/devis_detail.html",
         {
@@ -1511,6 +1952,8 @@ async def devis_detail_staff(
             "pol": pol,
             "pod": pod,
             "leg": leg,
+            "convertible_legs": convertible_legs,
+            "origin_labels": QUOTE_ORIGIN_LABELS,
         },
     )
 
@@ -1558,15 +2001,329 @@ async def devis_adjust(
 @router.get("/offers", response_class=HTMLResponse)
 async def offers_list(
     request: Request,
+    status: str | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    offers = list(
-        (await db.execute(select(RateOffer).order_by(RateOffer.created_at.desc()))).scalars().all()
-    )
+    # Balayage d'échéance à l'ouverture de l'écran (patron du kanban tickets) :
+    # le volume réservé doit se libérer même sans cron, et l'écran ne doit jamais
+    # afficher « en cours » une offre dont le navire est parti.
+    await expire_due_offers(db)
+
+    stmt = select(RateOffer).options(selectinload(RateOffer.client))
+    if status:
+        stmt = stmt.where(RateOffer.status == status)
+    offers = list((await db.execute(stmt.order_by(RateOffer.created_at.desc()))).scalars().all())
     return templates.TemplateResponse(
         "staff/commercial/offers.html",
-        {"request": request, "user": user, "offers": offers},
+        {
+            "request": request,
+            "user": user,
+            "offers": offers,
+            "statuses": RATE_OFFER_STATUSES,
+            "status_labels": RATE_OFFER_STATUS_LABELS,
+            "current_status": status,
+        },
+    )
+
+
+@router.get("/offers/{offer_id}", response_class=HTMLResponse)
+async def offer_detail(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Fiche d'une offre : état, tarification, volume réservé, historique récent."""
+    offer = (
+        await db.execute(
+            select(RateOffer)
+            .options(selectinload(RateOffer.client))
+            .where(RateOffer.id == offer_id)
+        )
+    ).scalar_one_or_none()
+    if offer is None:
+        raise HTTPException(status_code=404)
+
+    leg = await db.get(Leg, offer.leg_id) if offer.leg_id else None
+    grid = (
+        (
+            await db.execute(
+                select(RateGrid)
+                .options(selectinload(RateGrid.payment_terms), selectinload(RateGrid.lines))
+                .where(RateGrid.id == offer.grid_id)
+            )
+        ).scalar_one_or_none()
+        if offer.grid_id
+        else None
+    )
+    order = (
+        await db.execute(select(Order).where(Order.offer_id == offer.id).limit(1))
+    ).scalar_one_or_none()
+
+    revisions = await list_revisions(db, offer.id)
+    return templates.TemplateResponse(
+        "staff/commercial/offer_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "offer": offer,
+            "leg": leg,
+            "grid": grid,
+            "order": order,
+            "revisions": list(reversed(revisions))[:5],
+            "revision_count": len(revisions),
+            "status_labels": RATE_OFFER_STATUS_LABELS,
+            "action_labels": REVISION_ACTION_LABELS,
+            # Affiche l'échéance même si le balayage n'est pas encore passé.
+            "pending_expiry": offer.is_open() and is_expired(offer, leg),
+        },
+    )
+
+
+@router.get("/offers/{offer_id}/booking-note", response_class=HTMLResponse)
+async def offer_booking_note(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Booking note d'une offre validée — champs préremplis, éditables avant diffusion."""
+    offer = (
+        await db.execute(
+            select(RateOffer)
+            .options(selectinload(RateOffer.client))
+            .where(RateOffer.id == offer_id)
+        )
+    ).scalar_one_or_none()
+    if offer is None:
+        raise HTTPException(status_code=404)
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer.id))
+    ).scalar_one_or_none()
+    if note is not None:
+        # Rattrapage best-effort d'un webhook perdu : l'écran ne doit pas rester
+        # bloqué sur « signature demandée » alors que le client a déjà signé.
+        await reconcile_signature(db, note)
+    return templates.TemplateResponse(
+        "staff/commercial/booking_note.html",
+        {
+            "request": request,
+            "user": user,
+            "offer": offer,
+            "note": note,
+            "signature_labels": SIGNATURE_STATUS_LABELS,
+            "signature_enabled": yousign_svc.is_configured(),
+        },
+    )
+
+
+@router.post("/offers/{offer_id}/booking-note")
+async def offer_booking_note_update(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Enregistre les corrections du commercial avant diffusion."""
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer_id))
+    ).scalar_one_or_none()
+    if note is None:
+        raise HTTPException(status_code=404, detail="booking note introuvable")
+    if not note.is_editable():
+        raise HTTPException(
+            status_code=400,
+            detail="Booking note déjà diffusée — elle ne peut plus être modifiée.",
+        )
+
+    form = await request.form()
+    for field in BOOKING_NOTE_EDITABLE_FIELDS:
+        if field in form:
+            value = form_str(form, field).strip()
+            setattr(note, field, value or None)
+    await db.flush()
+
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="booking_note",
+        entity_id=note.id,
+        entity_label=note.reference,
+        detail="champs corrigés avant diffusion",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer_id}/booking-note")
+
+
+@router.get("/offers/{offer_id}/booking-note.docx")
+async def offer_booking_note_docx(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> Response:
+    """Télécharge la booking note au format Word."""
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer_id))
+    ).scalar_one_or_none()
+    if note is None:
+        raise HTTPException(status_code=404, detail="booking note introuvable")
+    offer = await db.get(RateOffer, offer_id)
+    leg = await db.get(Leg, offer.leg_id) if offer and offer.leg_id else None
+
+    from app.services.docx_generator import build_booking_note_docx
+
+    doc = build_booking_note_docx(note=note, offer=offer, leg=leg)
+    return Response(
+        content=doc.docx,
+        media_type=doc.mime,
+        headers={
+            "Content-Disposition": f'attachment; filename="{_safe_filename(doc.filename)}"',
+            # Document contractuel portant des prix négociés.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.post("/offers/{offer_id}/booking-note/issue")
+async def offer_booking_note_issue(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Diffuse la booking note : elle est gelée et son empreinte consignée."""
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer_id))
+    ).scalar_one_or_none()
+    if note is None:
+        raise HTTPException(status_code=404, detail="booking note introuvable")
+    offer = await db.get(RateOffer, offer_id)
+    leg = await db.get(Leg, offer.leg_id) if offer and offer.leg_id else None
+
+    from app.services.docx_generator import build_booking_note_docx
+
+    # On fige l'empreinte du document **tel qu'il sera diffusé** : le filigrane
+    # « brouillon » disparaît au passage en diffusée, donc le document doit être
+    # régénéré après le changement de statut, pas avant.
+    try:
+        await mark_issued(db, note, user_id=user.id, user_name=user.full_name or user.username)
+    except BookingNoteError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    doc = build_booking_note_docx(note=note, offer=offer, leg=leg)
+    note.document_sha256 = hashlib.sha256(doc.docx).hexdigest()
+    await db.flush()
+
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="booking_note",
+        entity_id=note.id,
+        entity_label=note.reference,
+        detail="diffusée",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer_id}/booking-note")
+
+
+@router.post("/offers/{offer_id}/booking-note/sign")
+async def offer_booking_note_sign(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Envoie la booking note diffusée à la signature électronique du client.
+
+    Sans Yousign configuré, la route renvoie 503 : la voie électronique est
+    indisponible, la signature manuscrite du document Word reste possible.
+    """
+    if not yousign_svc.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Signature électronique non configurée — la booking note reste "
+                "signable à la main sur le document Word."
+            ),
+        )
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer_id))
+    ).scalar_one_or_none()
+    if note is None:
+        raise HTTPException(status_code=404, detail="booking note introuvable")
+
+    offer = await db.get(RateOffer, offer_id)
+    leg = await db.get(Leg, offer.leg_id) if offer and offer.leg_id else None
+    from app.services.docx_generator import build_booking_note_docx
+
+    doc = build_booking_note_docx(note=note, offer=offer, leg=leg)
+    try:
+        await request_signature(db, note, document=doc.docx, filename=_safe_filename(doc.filename))
+    except SignatureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except yousign_svc.YousignError as exc:
+        # Panne du prestataire : on le dit, on ne prétend pas avoir envoyé.
+        raise HTTPException(
+            status_code=502, detail=f"Envoi à la signature impossible : {exc}"
+        ) from exc
+
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="booking_note",
+        entity_id=note.id,
+        entity_label=note.reference,
+        detail="envoyée à la signature électronique",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer_id}/booking-note")
+
+
+@router.get("/offers/{offer_id}/history", response_class=HTMLResponse)
+async def offer_history(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Historique inaltérable d'une offre + état de la chaîne d'intégrité."""
+    offer = (
+        await db.execute(
+            select(RateOffer)
+            .options(selectinload(RateOffer.client))
+            .where(RateOffer.id == offer_id)
+        )
+    ).scalar_one_or_none()
+    if offer is None:
+        raise HTTPException(status_code=404)
+
+    revisions = await list_revisions(db, offer.id)
+    chain_ok, chain_reason = await verify_chain(db, offer.id)
+    return templates.TemplateResponse(
+        "staff/commercial/offer_history.html",
+        {
+            "request": request,
+            "user": user,
+            "offer": offer,
+            "revisions": revisions,
+            "chain_ok": chain_ok,
+            "chain_reason": chain_reason,
+            "field_labels": OFFER_FIELD_LABELS,
+            "action_labels": REVISION_ACTION_LABELS,
+        },
     )
 
 
@@ -1670,15 +2427,23 @@ async def offer_create(
 ):
     if not await db.get(Client, client_id):
         raise HTTPException(status_code=404, detail="client introuvable")
+    # Règle métier : une offre relie **un** client, **une** grille et **un** leg.
+    # La contrainte est posée ici et non en base — des offres antérieures à cette
+    # règle existent sans grille ni leg, et leur en inventer serait faux
+    # (cf. RateOffer.is_legacy).
+    if not grid_id:
+        raise HTTPException(status_code=400, detail="une grille tarifaire est requise")
+    if not leg_id:
+        raise HTTPException(status_code=400, detail="un voyage (leg) est requis")
     grid = (
-        (
-            await db.execute(
-                select(RateGrid).options(selectinload(RateGrid.lines)).where(RateGrid.id == grid_id)
-            )
-        ).scalar_one_or_none()
-        if grid_id
-        else None
-    )
+        await db.execute(
+            select(RateGrid).options(selectinload(RateGrid.lines)).where(RateGrid.id == grid_id)
+        )
+    ).scalar_one_or_none()
+    if grid is None:
+        raise HTTPException(status_code=404, detail="grille introuvable")
+    if await db.get(Leg, leg_id) is None:
+        raise HTTPException(status_code=404, detail="voyage introuvable")
     proposed_rate = Decimal("0")
     total = Decimal("0")
     if grid is not None and estimated_palettes > 0 and grid.lines:
@@ -1707,10 +2472,10 @@ async def offer_create(
     offer = RateOffer(
         reference=ref,
         client_id=client_id,
-        grid_id=grid.id if grid else None,
+        grid_id=grid.id,
         leg_id=leg_id,
         title=title.strip(),
-        status="draft",
+        status="en_cours",
         estimated_palettes=estimated_palettes,
         proposed_rate_eur=proposed_rate or None,
         total_eur=total or None,
@@ -1719,6 +2484,7 @@ async def offer_create(
     )
     db.add(offer)
     await db.flush()
+    await _record_offer_revision(db, offer, action="created", user=user)
     await activity_record(
         db,
         action="create",
@@ -1744,9 +2510,15 @@ async def offer_send(
     o = await db.get(RateOffer, offer_id)
     if o is None:
         raise HTTPException(status_code=404)
-    o.status = "sent"
+    if not o.is_open():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Offre close ({o.status_label}) — elle ne peut plus être envoyée.",
+        )
+    before = snapshot_offer(o)
     o.sent_at = datetime.now(UTC)
     await db.flush()
+    await _record_offer_revision(db, o, action="sent", user=user, before=before)
     # COM-06 — une offre émise devient une opportunité : push Deal Pipedrive.
     await _push_pipedrive_deal(db, o)
     await activity_record(
@@ -1762,7 +2534,83 @@ async def offer_send(
         detail="sent",
         ip_address=_client_ip(request),
     )
-    return RedirectResponse(url="/commercial/offers", status_code=303)
+    return _hx_or_redirect(request, f"/commercial/offers/{o.id}")
+
+
+@router.post("/offers/{offer_id}/validate")
+async def offer_validate(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Valide une offre — point de bascule vers les opérations."""
+    offer = await db.get(RateOffer, offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404)
+    try:
+        await validate_offer(
+            db,
+            offer,
+            actor_id=user.id,
+            actor_name=user.full_name or user.username,
+            actor_role=user.role,
+        )
+    except OfferTransitionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=offer.id,
+        entity_label=offer.reference,
+        detail="validée",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer.id}")
+
+
+@router.post("/offers/{offer_id}/cancel")
+async def offer_cancel(
+    offer_id: int,
+    request: Request,
+    reason: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Annule une offre sur décision du commercial — libère le volume réservé."""
+    offer = await db.get(RateOffer, offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404)
+    try:
+        await cancel_offer(
+            db,
+            offer,
+            reason=reason if isinstance(reason, str) else None,
+            actor_id=user.id,
+            actor_name=user.full_name or user.username,
+            actor_role=user.role,
+        )
+    except OfferTransitionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=offer.id,
+        entity_label=offer.reference,
+        detail=f"annulée : {offer.cancelled_reason or 'sans motif'}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer.id}")
 
 
 @router.get("/offers/{offer_id}/convert", response_class=HTMLResponse)
@@ -1776,8 +2624,11 @@ async def offer_convert_form(
     offer = await db.get(RateOffer, offer_id)
     if offer is None:
         raise HTTPException(status_code=404)
-    if offer.status not in ("draft", "sent", "accepted"):
-        raise HTTPException(status_code=400, detail="offre non convertible")
+    if offer.status not in ("en_cours", "valide"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Offre {offer.status_label.lower()} — elle n'est plus convertible.",
+        )
     leg = await db.get(Leg, offer.leg_id) if offer.leg_id else None
     pol = await db.get(Port, leg.departure_port_id) if leg and leg.departure_port_id else None
     pod = await db.get(Port, leg.arrival_port_id) if leg and leg.arrival_port_id else None
@@ -1817,10 +2668,17 @@ async def offer_convert_to_order(
     offer = await db.get(RateOffer, offer_id)
     if offer is None:
         raise HTTPException(status_code=404)
-    if offer.status not in ("draft", "sent", "accepted"):
-        raise HTTPException(status_code=400, detail="offre non convertible")
-    offer.status = "accepted"
-    offer.accepted_at = datetime.now(UTC)
+    if offer.status not in ("en_cours", "valide"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Offre {offer.status_label.lower()} — elle n'est plus convertible.",
+        )
+    before = snapshot_offer(offer)
+    # Convertir vaut acceptation : une offre encore en cours passe en validée.
+    offer.status = "valide"
+    offer.validated_at = offer.validated_at or datetime.now(UTC)
+    offer.accepted_at = offer.validated_at
+    await db.flush()
     ref = await next_order_reference(db)
     order = Order(
         reference=ref,
@@ -1841,6 +2699,14 @@ async def offer_convert_to_order(
     )
     db.add(order)
     await db.flush()
+    await _record_offer_revision(
+        db,
+        offer,
+        action="converted",
+        user=user,
+        before=before,
+        comment=f"convertie en commande {ref}",
+    )
     await activity_record(
         db,
         action="create",
@@ -1872,7 +2738,14 @@ async def orders_list(
     orders = list((await db.execute(stmt)).scalars().all())
     return templates.TemplateResponse(
         "staff/commercial/orders.html",
-        {"request": request, "user": user, "orders": orders, "filter_status": status},
+        {
+            "request": request,
+            "user": user,
+            "orders": orders,
+            "filter_status": status,
+            "order_statuses": ORDER_STATUSES,
+            "order_status_labels": ORDER_STATUS_LABELS,
+        },
     )
 
 

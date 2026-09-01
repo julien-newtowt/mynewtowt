@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # Automate : run nocturne du moteur de règles — event + voyage +
     # inter-rapports sur les legs actifs de chaque navire). 503 si non configuré.
     mrv_quality_api_token: str | None = None
+    # G1 — Token X-API-Token pour POST /api/mrv/cutoff-reminders (cron Power
+    # Automate : rappel Master à l'approche d'une bascule d'année civile sans
+    # événement Cut-off finalisé, CDC v0.7 §9.2). 503 si non configuré.
+    mrv_cutoff_api_token: str | None = None
 
     # Marad (MaraSoft « Generic API ») — ship & crew management. Intégration
     # LECTURE SEULE des données crew (cf. docs/integrations/marad-crew-readonly.md).
@@ -135,6 +139,18 @@ class Settings(BaseSettings):
     # externe (POST /api/quotes/followup, déclenché par Power Automate).
     quote_followup_api_token: str | None = None
 
+    # Trombinoscope Armement — génération automatique fin de mois (cf.
+    # docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md). Déclenchement
+    # PRINCIPAL : scheduler interne (APScheduler, cf. services.trombinoscope_scheduler)
+    # — seul usage d'un scheduler in-process du projet, toutes les autres
+    # automatisations passant par un cron externe. Toggle utile en dev local
+    # pour désactiver le scheduler (mêmes raisons que REQUIRE_MFA_FOR_ADMIN).
+    trombinoscope_scheduler_enabled: bool = True
+    # Token du endpoint manuel de secours (POST /api/trombinoscope/generate),
+    # même patron que MARAD_SYNC_TOKEN/WEATHER_API_TOKEN — utile pour forcer
+    # une génération sans attendre le scheduler (tests, incident).
+    trombinoscope_api_token: str | None = None
+
     # Note V3.1 — Stripe retiré de la facturation FRET : NEWTOWT facture le
     # fret par virement bancaire (cf. pdf/invoice.html), l'équipe commerciale
     # confirme les bookings sous 4h.
@@ -151,8 +167,41 @@ class Settings(BaseSettings):
 
     @property
     def stripe_enabled(self) -> bool:
-        """Vrai si l'encaissement carte (Stripe Checkout) est configuré."""
+        """Vrai si l'API Stripe est joignable (clé secrète présente).
+
+        Gouverne les opérations *sortantes* : relire une session, la fermer,
+        réconcilier un paiement. Volontairement distinct de
+        ``stripe_card_payments_enabled`` : une installation dont le secret de
+        webhook a été retiré doit continuer à pouvoir solder et fermer les
+        sessions déjà créées, même si elle n'en ouvre plus de nouvelles.
+        """
         return bool(self.stripe_secret_key)
+
+    @property
+    def stripe_card_payments_enabled(self) -> bool:
+        """Vrai si la voie carte peut être **ouverte** à un client.
+
+        Exige aussi ``STRIPE_WEBHOOK_SECRET`` : sans lui, le webhook répond 503
+        à chaque livraison, et une carte réellement débitée ne remonte jamais
+        dans l'application. Proposer un lien de paiement dans cette
+        configuration revient à encaisser sans confirmation — l'inverse du
+        principe secure-by-default du module.
+        """
+        return bool(self.stripe_secret_key) and bool(self.stripe_webhook_secret)
+
+    # ── Signature électronique Yousign (booking note) ─────────────────────
+    # Même principe secure-by-default que Stripe : sans YOUSIGN_API_KEY, la voie
+    # électronique renvoie 503 et le circuit dégradé (signature manuscrite du
+    # document Word) reste seul actif. Le webhook exige YOUSIGN_WEBHOOK_SECRET
+    # pour vérifier l'empreinte HMAC ; sans lui, il renvoie 503 plutôt que
+    # d'accepter des événements non authentifiés.
+    yousign_api_key: str | None = None
+    yousign_webhook_secret: str | None = None
+
+    @property
+    def yousign_enabled(self) -> bool:
+        """Vrai si la signature électronique de la booking note est configurée."""
+        return bool(self.yousign_api_key)
 
     @property
     def map_token(self) -> str:
@@ -219,6 +268,16 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 f"Production refusing to start: DATABASE_URL password is in the "
                 f"weak list ({password!r}). Generate a random one."
+            )
+
+        # Une clé Stripe de test en production encaisse des paiements fictifs :
+        # la caisse de bord et le registre douanier enregistreraient des ventes
+        # réelles pour de l'argent qui n'existe pas.
+        if (self.stripe_secret_key or "").startswith("sk_test_"):
+            raise RuntimeError(
+                "Production refusing to start: STRIPE_SECRET_KEY is a test key "
+                "(sk_test_…). Use the live key, or leave it empty to disable "
+                "card payments."
             )
 
 

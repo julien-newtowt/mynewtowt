@@ -28,6 +28,20 @@ from app.database import Base
 
 QUOTE_STATUSES = ("issued", "accepted", "expired", "cancelled")
 
+# Origine d'une estimation tarifaire :
+#   extranet       — demandée par un client authentifié sur **ses** grilles
+#                    actives ; le prix est calculé et affiché immédiatement ;
+#   public_request — demande déposée depuis la vitrine par un visiteur sans
+#                    compte. **Aucun prix n'est affiché** : la demande crée une
+#                    fiche prospect, et c'est le commercial qui reprend la main
+#                    (ouverture d'un extranet, puis offre validée). Le tarif
+#                    s'appuiera alors sur la grille standard de la route.
+QUOTE_ORIGINS = ("extranet", "public_request")
+QUOTE_ORIGIN_LABELS: dict[str, str] = {
+    "extranet": "Extranet client",
+    "public_request": "Demande publique",
+}
+
 
 class Quote(Base):
     __tablename__ = "quotes"
@@ -35,6 +49,20 @@ class Quote(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     reference: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="issued", nullable=False)
+    origin: Mapped[str] = mapped_column(
+        String(20), default="extranet", nullable=False, server_default="extranet", index=True
+    )
+    # Client commercial concerné — renseigné pour une estimation extranet (le
+    # compte est rattaché) comme pour une demande publique (la fiche prospect
+    # créée à la volée). C'est ce lien qui permet au commercial attitré d'être
+    # notifié et de transformer l'estimation en offre.
+    commercial_client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("commercial_clients.id", ondelete="SET NULL"), index=True
+    )
+    # Offre commerciale issue de cette estimation (traçabilité de la conversion).
+    converted_offer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rate_offers.id", ondelete="SET NULL")
+    )
 
     # Route + voyage visé (le leg est optionnel : un devis peut être
     # demandé sur une route sans date arrêtée).
@@ -99,6 +127,16 @@ class Quote(Base):
     def net_total_eur(self) -> Decimal:
         """Total final = total calculé + ajustement commercial (signé)."""
         return (self.total_eur or Decimal("0")) + (self.adjustment_eur or Decimal("0"))
+
+    @property
+    def is_priced(self) -> bool:
+        """L'estimation porte-t-elle un tarif ?
+
+        Une **demande publique** n'en porte pas : le visiteur n'a pas de grille
+        négociée, et afficher un prix indicatif avant qualification exposerait la
+        politique tarifaire à n'importe qui. Le commercial reprend la main.
+        """
+        return self.origin != "public_request"
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Quote {self.reference} {self.pol_locode}->{self.pod_locode}>"

@@ -9,8 +9,9 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models.onboard_cashbox import CashboxMovement
-from app.models.onboard_sales import OnboardProduct
+from app.models.onboard_sales import OnboardProduct, OnboardSaleLine
 from app.models.vessel import Vessel
+from app.services import cashbox as cashbox_svc
 from app.services import onboard_sales as svc
 
 
@@ -121,6 +122,10 @@ async def test_webhook_settle_idempotent(db, staff_user):
     from app.routers.onboard_sales_router import _settle_from_session
 
     _vessel, _product, sale = await _setup_sale(db, staff_user)
+    # La vente porte l'identifiant de la session qui la paie : le webhook
+    # vérifie désormais cette correspondance avant d'écrire en caisse.
+    sale.stripe_checkout_session_id = "cs_test_123"
+    await db.flush()
     session_obj = {
         "id": "cs_test_123",
         "payment_status": "paid",
@@ -202,6 +207,9 @@ async def test_create_session_prefixes_sku(monkeypatch):
     from app.services import stripe_checkout as sc
 
     monkeypatch.setattr(sc.settings, "stripe_secret_key", "sk_test_x")
+    # La voie carte exige désormais aussi le secret de webhook : sans canal de
+    # confirmation, un lien de paiement encaisserait sans jamais remonter.
+    monkeypatch.setattr(sc.settings, "stripe_webhook_secret", "whsec_x")
     captured: dict = {}
 
     def fake_sync(**kwargs):
@@ -274,3 +282,851 @@ async def test_create_product_autogenerates_sku(db, staff_user):
     )
     skus = [p.sku for p in (await db.execute(select(OnboardProduct))).scalars().all()]
     assert len(set(skus)) == 2
+
+
+# ── Garde-fous de saisie (audit 2026-08-27, lot 1) ──────────────────────────
+#
+# Les services revalident ce que les routeurs ont déjà validé : une valeur non
+# finie peut aussi venir d'un import, d'un script ou d'un appelant interne. Les
+# tables visées étant append-only et sans route de suppression, une écriture
+# aberrante y serait définitive.
+
+
+@pytest.mark.asyncio
+async def test_stock_entry_rejects_non_finite_qty(db, staff_user):
+    vessel = Vessel(code="ANE", name="Anemos")
+    db.add(vessel)
+    await db.flush()
+    product = OnboardProduct(
+        sku="CAF-250", label="Café", kind="bien", unit_price=Decimal("6.50"), currency="EUR"
+    )
+    db.add(product)
+    await db.flush()
+    for bad in (Decimal("nan"), Decimal("Infinity")):
+        with pytest.raises(svc.OnboardSalesError):
+            await svc.add_stock_entry(
+                db, vessel_id=vessel.id, product=product, qty=bad, reason="avitaillement"
+            )
+    # Aucun mouvement n'a été écrit au registre.
+    assert await svc.stock_on_hand(db, vessel_id=vessel.id, product_id=product.id) == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_add_line_rejects_non_finite_and_non_positive_qty(db, staff_user):
+    _vessel, product, sale = await _setup_sale(db, staff_user)
+    for bad in (Decimal("nan"), Decimal("0"), Decimal("-1")):
+        with pytest.raises(svc.OnboardSalesError):
+            await svc.add_line(db, sale, product=product, qty=bad)
+    # Le total de la vente n'a pas bougé (2 × 6,50 posés par _setup_sale).
+    await svc.recompute_total(db, sale)
+    assert sale.total == Decimal("13.00")
+
+
+@pytest.mark.asyncio
+async def test_cashbox_rejects_non_finite_amount(db, staff_user):
+    """Le cas qui rendait un solde de caisse définitivement NaN."""
+    from app.services import cashbox as cashbox_svc
+
+    vessel = Vessel(code="ANE", name="Anemos")
+    db.add(vessel)
+    await db.flush()
+    cb = await cashbox_svc.get_or_create(db, vessel.id)
+    for bad in (Decimal("nan"), Decimal("Infinity"), Decimal("-Infinity")):
+        with pytest.raises(cashbox_svc.CashboxError):
+            await cashbox_svc.add_movement(
+                db,
+                cb,
+                amount=bad,
+                currency="EUR",
+                category="depot_recharge",
+                description="tentative",
+            )
+    # Aucun mouvement écrit : le solde reste calculable.
+    # (`cashbox.balances()` n'est pas appelé ici — il utilise `greatest`/`least`,
+    # non supportés par SQLite ; c'est la raison de sa couverture nulle, relevée
+    # à l'audit et laissée en l'état, hors périmètre de ce lot.)
+    total = await db.scalar(
+        select(func.count()).select_from(CashboxMovement).where(CashboxMovement.cashbox_id == cb.id)
+    )
+    assert total == 0
+
+
+@pytest.mark.asyncio
+async def test_settle_refuses_cancelled_sale(db, staff_user):
+    """Une vente annulée ne doit jamais produire d'écriture de caisse."""
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.cancel_sale(db, sale)
+    assert sale.status == "cancelled"
+    before = await _count_vente_movements(db)
+    with pytest.raises(svc.OnboardSalesError):
+        await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    assert await _count_vente_movements(db) == before
+
+
+@pytest.mark.asyncio
+async def test_cancel_sale_success_path(db, staff_user):
+    """Le chemin nominal d'annulation n'était couvert par aucun test."""
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.cancel_sale(db, sale)
+    assert sale.status == "cancelled"
+    assert sale.cancelled_at is not None
+    assert sale.cashbox_movement_id is None
+
+
+# ── Fermeture du lien Stripe (audit 2026-08-27, lot 2) ──────────────────────
+#
+# Sans fermeture, la session restait payable ~24 h après un encaissement en
+# espèces ou une annulation : le client qui avait déjà scanné le QR pouvait
+# payer une seconde fois, sans trace ni voie de remboursement.
+
+
+def _stripe_on(monkeypatch):
+    from app.services import stripe_checkout as sc
+
+    monkeypatch.setattr(sc.settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(sc.settings, "stripe_webhook_secret", "whsec_x")
+    return sc
+
+
+def test_card_path_requires_both_secrets(monkeypatch):
+    """Secure-by-default : une clé sans webhook n'ouvre pas la voie carte."""
+    from app.services import stripe_checkout as sc
+
+    monkeypatch.setattr(sc.settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(sc.settings, "stripe_webhook_secret", None)
+    # L'API reste joignable (on doit pouvoir fermer/réconcilier l'existant)…
+    assert sc.is_configured() is True
+    # …mais aucun nouveau lien ne peut être proposé au client.
+    assert sc.card_payments_enabled() is False
+
+    monkeypatch.setattr(sc.settings, "stripe_secret_key", None)
+    assert sc.is_configured() is False
+    assert sc.card_payments_enabled() is False
+
+
+@pytest.mark.asyncio
+async def test_expire_session_closes_an_open_session(monkeypatch):
+    from types import SimpleNamespace
+
+    sc = _stripe_on(monkeypatch)
+    expired: dict = {}
+
+    async def fake_retrieve(session_id):
+        return SimpleNamespace(id=session_id, status="open", payment_status="unpaid")
+
+    monkeypatch.setattr(sc, "retrieve_session", fake_retrieve)
+    monkeypatch.setattr(
+        sc.stripe.checkout.Session,
+        "expire",
+        lambda sid, **kw: expired.setdefault("id", sid) or SimpleNamespace(status="expired"),
+    )
+    assert await sc.expire_session("cs_open") == "expired"
+    assert expired["id"] == "cs_open"
+
+
+@pytest.mark.asyncio
+async def test_expire_session_refuses_when_already_paid(monkeypatch):
+    """Le cas dangereux : le client a payé pendant qu'on cliquait."""
+    from types import SimpleNamespace
+
+    sc = _stripe_on(monkeypatch)
+
+    async def fake_retrieve(session_id):
+        return SimpleNamespace(id=session_id, status="complete", payment_status="paid")
+
+    monkeypatch.setattr(sc, "retrieve_session", fake_retrieve)
+    with pytest.raises(sc.StripeSessionAlreadyPaid):
+        await sc.expire_session("cs_paid")
+
+
+@pytest.mark.asyncio
+async def test_confirm_cash_closes_the_payment_link_first(db, staff_user, monkeypatch):
+    """L'encaissement espèces doit fermer le lien avant d'écrire en caisse."""
+    from app.routers import onboard_sales_router as r
+
+    sc = _stripe_on(monkeypatch)
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.stripe_checkout_session_id = "cs_open"
+    sale.status = "pending_payment"
+    await db.flush()
+
+    calls: list[str] = []
+
+    async def fake_expire(session_id):
+        calls.append(session_id)
+        return "expired"
+
+    monkeypatch.setattr(sc, "expire_session", fake_expire)
+    await r.confirm_cash(sale.reference, cash_received="", db=db, user=staff_user)
+
+    assert calls == ["cs_open"], "le lien Stripe n'a pas été fermé"
+    assert sale.status == "paid"
+    assert sale.payment_method == "cash"
+
+
+@pytest.mark.asyncio
+async def test_confirm_cash_refuses_when_link_cannot_be_closed(db, staff_user, monkeypatch):
+    """Stripe injoignable : on refuse plutôt que d'exposer à un double débit."""
+    from fastapi import HTTPException
+
+    from app.routers import onboard_sales_router as r
+
+    sc = _stripe_on(monkeypatch)
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.stripe_checkout_session_id = "cs_open"
+    sale.status = "pending_payment"
+    await db.flush()
+
+    async def boom(session_id):
+        raise sc.StripeCheckoutError("réseau indisponible")
+
+    monkeypatch.setattr(sc, "expire_session", boom)
+    with pytest.raises(HTTPException) as exc:
+        await r.confirm_cash(sale.reference, cash_received="", db=db, user=staff_user)
+    assert exc.value.status_code == 502
+    # Rien n'a été encaissé.
+    assert sale.status == "pending_payment"
+    assert sale.cashbox_movement_id is None
+    assert await _count_vente_movements(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_cancel_refuses_when_client_already_paid(db, staff_user, monkeypatch):
+    """Annuler une vente que le client vient de régler par carte est refusé."""
+    from fastapi import HTTPException
+
+    from app.routers import onboard_sales_router as r
+
+    sc = _stripe_on(monkeypatch)
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.stripe_checkout_session_id = "cs_paid"
+    sale.status = "pending_payment"
+    await db.flush()
+
+    async def already_paid(session_id):
+        raise sc.StripeSessionAlreadyPaid("déjà réglée")
+
+    monkeypatch.setattr(sc, "expire_session", already_paid)
+    with pytest.raises(HTTPException) as exc:
+        await r.cancel_sale_route(sale.reference, db=db, user=staff_user)
+    assert exc.value.status_code == 409
+    assert sale.status == "pending_payment"
+
+
+@pytest.mark.asyncio
+async def test_expired_event_never_resurrects_a_cancelled_sale(db, staff_user):
+    """Une annulation est une décision, pas un état transitoire."""
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.status = "cancelled"
+    await db.flush()
+    await svc.revert_to_draft(db, sale)
+    assert sale.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_expired_event_reverts_a_pending_sale(db, staff_user):
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.status = "pending_payment"
+    sale.stripe_checkout_session_id = "cs_x"
+    await db.flush()
+    await svc.revert_to_draft(db, sale)
+    assert sale.status == "draft"
+    assert sale.stripe_checkout_session_id is None
+
+
+@pytest.mark.asyncio
+async def test_card_payment_on_a_cash_settled_sale_raises_an_incident(db, staff_user):
+    """Double débit : la garde d'idempotence tenait, mais en silence."""
+    from app.models.notification import Notification
+    from app.routers import onboard_sales_router as r
+
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.stripe_checkout_session_id = "cs_x"  # un lien CB avait été généré
+    await db.flush()
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    assert sale.status == "paid"
+
+    # Le client paie malgré tout par carte : le webhook arrive.
+    await r._settle_from_session(
+        db,
+        {
+            "id": "cs_x",
+            "payment_status": "paid",
+            "payment_intent": "pi_double",
+            "metadata": {"sale_id": str(sale.id)},
+        },
+    )
+    # Aucun second mouvement de caisse (idempotence préservée)…
+    assert await _count_vente_movements(db) == 1
+    # …mais l'incident est désormais visible du siège.
+    notifs = (
+        (
+            await db.execute(
+                select(Notification).where(Notification.type == "onboard_payment_incident")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(notifs) == 1
+    assert sale.reference in notifs[0].title
+    assert "pi_double" in (notifs[0].detail or "")
+
+
+@pytest.mark.asyncio
+async def test_webhook_replay_of_the_same_payment_is_not_an_incident(db, staff_user):
+    """Un rejeu du même paiement reste un no-op normal, pas une alerte."""
+    from app.models.notification import Notification
+    from app.routers import onboard_sales_router as r
+
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.stripe_checkout_session_id = "cs_x"
+    await db.flush()
+    obj = {
+        "id": "cs_x",
+        "payment_status": "paid",
+        "payment_intent": "pi_1",
+        "metadata": {"sale_id": str(sale.id)},
+    }
+    await r._settle_from_session(db, obj)
+    await r._settle_from_session(db, obj)  # redélivrance Stripe
+    assert await _count_vente_movements(db) == 1
+    assert (
+        await db.scalar(
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.type == "onboard_payment_incident")
+        )
+        == 0
+    )
+
+
+# ── Durcissement du webhook (audit 2026-08-27, lot 3) ───────────────────────
+#
+# Le webhook ne contrôlait que `payment_status` : il faisait confiance à
+# `metadata.sale_id` pour désigner la vente, puis écrivait en caisse le total
+# applicatif sans jamais regarder ce que Stripe avait réellement encaissé.
+
+
+def _fake_request(body: bytes):
+    """Requête Starlette minimale — permet d'exercer la vraie route webhook.
+
+    Aucun test du module ne passait jusqu'ici par une route ; c'est ce qui avait
+    laissé le défaut de permission `marins` invisible jusqu'au test à bord.
+    """
+    from starlette.requests import Request
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/webhooks/stripe",
+        "headers": [(b"stripe-signature", b"t=1,v1=deadbeef")],
+        "query_string": b"",
+    }
+    return Request(scope, receive)
+
+
+async def _pending_card_sale(db, staff_user, session_id="cs_x"):
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    sale.status = "pending_payment"
+    sale.payment_method = "card"
+    sale.stripe_checkout_session_id = session_id
+    await db.flush()
+    return sale
+
+
+@pytest.mark.asyncio
+async def test_webhook_refuses_a_divergent_amount(db, staff_user):
+    """Le montant encaissé doit correspondre au montant attendu."""
+    from app.models.notification import Notification
+    from app.routers import onboard_sales_router as r
+
+    sale = await _pending_card_sale(db, staff_user)  # total 13,00 EUR
+    await r._settle_from_session(
+        db,
+        {
+            "id": "cs_x",
+            "payment_status": "paid",
+            "payment_intent": "pi_1",
+            "currency": "eur",
+            "amount_total": 100,  # 1,00 € au lieu de 13,00 €
+            "metadata": {"sale_id": str(sale.id)},
+        },
+    )
+    assert sale.status == "pending_payment"
+    assert await _count_vente_movements(db) == 0
+    incident = await db.scalar(
+        select(func.count())
+        .select_from(Notification)
+        .where(Notification.type == "onboard_payment_incident")
+    )
+    assert incident == 1
+
+
+@pytest.mark.asyncio
+async def test_webhook_refuses_an_event_from_another_environment(db, staff_user):
+    """Un compte Stripe partagé diffuse ses événements à tous ses endpoints."""
+    from app.routers import onboard_sales_router as r
+
+    sale = await _pending_card_sale(db, staff_user)
+    await r._settle_from_session(
+        db,
+        {
+            "id": "cs_x",
+            "payment_status": "paid",
+            "payment_intent": "pi_1",
+            "metadata": {"sale_id": str(sale.id), "env": "staging-ailleurs"},
+        },
+    )
+    assert sale.status == "pending_payment"
+    assert await _count_vente_movements(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_webhook_refuses_a_session_that_is_not_the_expected_one(db, staff_user):
+    from app.routers import onboard_sales_router as r
+
+    sale = await _pending_card_sale(db, staff_user, session_id="cs_attendue")
+    await r._settle_from_session(
+        db,
+        {
+            "id": "cs_autre",
+            "payment_status": "paid",
+            "payment_intent": "pi_1",
+            "metadata": {"sale_id": str(sale.id)},
+        },
+    )
+    assert sale.status == "pending_payment"
+    assert await _count_vente_movements(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_webhook_route_is_idempotent_per_event_id(db, staff_user, monkeypatch):
+    """Deux livraisons du même event.id : la seconde ne touche à rien."""
+    from app.models.stripe_event import StripeWebhookEvent
+    from app.routers import onboard_sales_router as r
+
+    sale = await _pending_card_sale(db, staff_user)
+    event = {
+        "id": "evt_1",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_x",
+                "payment_status": "paid",
+                "payment_intent": "pi_1",
+                "currency": "eur",
+                "amount_total": 1300,
+                "metadata": {"sale_id": str(sale.id)},
+            }
+        },
+    }
+    monkeypatch.setattr(r.stripe_svc.settings, "stripe_webhook_secret", "whsec_x")
+    monkeypatch.setattr(r.stripe_svc, "construct_event", lambda payload, sig: event)
+
+    first = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert first.status_code == 200
+    assert await _count_vente_movements(db) == 1
+
+    second = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert second.status_code == 200
+    assert b"duplicate" in second.body
+    assert await _count_vente_movements(db) == 1
+    # Une seule ligne au journal des événements.
+    assert await db.scalar(select(func.count()).select_from(StripeWebhookEvent)) == 1
+
+
+@pytest.mark.asyncio
+async def test_webhook_route_rejects_an_invalid_signature(db, monkeypatch):
+    from app.routers import onboard_sales_router as r
+
+    monkeypatch.setattr(r.stripe_svc.settings, "stripe_webhook_secret", "whsec_x")
+
+    def bad_signature(payload, sig):
+        raise r.stripe_svc.StripeCheckoutError("signature invalide")
+
+    monkeypatch.setattr(r.stripe_svc, "construct_event", bad_signature)
+    resp = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_webhook_route_returns_503_without_webhook_secret(db, monkeypatch):
+    """Secure-by-default : pas de secret, pas de traitement."""
+    from app.routers import onboard_sales_router as r
+
+    monkeypatch.setattr(r.stripe_svc.settings, "stripe_webhook_secret", None)
+    resp = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_webhook_asks_for_a_retry_when_the_period_is_closed(db, staff_user, monkeypatch):
+    """Échec transitoire : 500 pour que Stripe rejoue, plutôt que de perdre
+    l'écriture d'un paiement déjà encaissé."""
+    from app.routers import onboard_sales_router as r
+    from app.services.cashbox import PeriodClosed
+
+    sale = await _pending_card_sale(db, staff_user)
+    event = {
+        "id": "evt_closed",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_x",
+                "payment_status": "paid",
+                "payment_intent": "pi_1",
+                "metadata": {"sale_id": str(sale.id)},
+            }
+        },
+    }
+    monkeypatch.setattr(r.stripe_svc.settings, "stripe_webhook_secret", "whsec_x")
+    monkeypatch.setattr(r.stripe_svc, "construct_event", lambda payload, sig: event)
+
+    async def closed(*a, **kw):
+        raise PeriodClosed("Période clôturée")
+
+    monkeypatch.setattr(r.svc, "settle_sale", closed)
+    resp = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert resp.status_code == 500
+    assert b"retry" in resp.body
+
+
+@pytest.mark.asyncio
+async def test_a_retry_after_a_transient_failure_actually_settles(db, staff_user, monkeypatch):
+    """Le rejeu qui suit un 500 ne doit pas être rejeté comme doublon.
+
+    La marque d'idempotence est posée avant traitement pour sérialiser les
+    livraisons concurrentes ; sur échec transitoire elle doit être retirée,
+    sinon le paiement serait perdu malgré le 500 qui demandait le rejeu.
+    """
+    from app.routers import onboard_sales_router as r
+    from app.services.cashbox import PeriodClosed
+
+    sale = await _pending_card_sale(db, staff_user)
+    event = {
+        "id": "evt_retry",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_x",
+                "payment_status": "paid",
+                "payment_intent": "pi_1",
+                "currency": "eur",
+                "amount_total": 1300,
+                "metadata": {"sale_id": str(sale.id)},
+            }
+        },
+    }
+    monkeypatch.setattr(r.stripe_svc.settings, "stripe_webhook_secret", "whsec_x")
+    monkeypatch.setattr(r.stripe_svc, "construct_event", lambda payload, sig: event)
+
+    real_settle = r.svc.settle_sale
+
+    async def closed(*a, **kw):
+        raise PeriodClosed("Période clôturée")
+
+    monkeypatch.setattr(r.svc, "settle_sale", closed)
+    first = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert first.status_code == 500
+    assert await _count_vente_movements(db) == 0
+
+    # Le siège rouvre la période ; Stripe rejoue le même événement.
+    monkeypatch.setattr(r.svc, "settle_sale", real_settle)
+    second = await r.stripe_webhook(_fake_request(b"{}"), db=db)
+    assert second.status_code == 200
+    assert b"duplicate" not in second.body
+    assert await _count_vente_movements(db) == 1
+    assert sale.status == "paid"
+
+
+# ── Remboursement, geste du siège (ADR-013) ─────────────────────────────────
+#
+# Le statut `refunded` était déclaré, lu par la garde de `settle_sale`, promis
+# aux Opérations par la notice — et écrit par aucun chemin de code. Une vente
+# encaissée par erreur était définitive, corrigible seulement en SQL.
+
+
+@pytest.mark.asyncio
+async def test_refund_is_a_reversal_not_a_deletion(db, staff_user):
+    from app.models.onboard_cashbox import CashboxMovement
+
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    original = sale.cashbox_movement_id
+
+    mov = await svc.refund_sale(db, sale, reason="erreur de montant", refunded_by_id=staff_user.id)
+
+    assert sale.status == "refunded"
+    assert sale.refunded_at is not None
+    assert sale.refund_reason == "erreur de montant"
+    # Contre-passation : montant opposé, même catégorie, même support.
+    assert mov.amount == Decimal("-13.00")
+    assert mov.category == "vente_a_bord"
+    assert mov.medium == "cash"
+    # Le mouvement d'origine est intact : rien n'est supprimé.
+    assert (await db.get(CashboxMovement, original)).amount == Decimal("13.00")
+    assert sale.cashbox_movement_id == original
+    # Deux mouvements, de somme nulle.
+    total = await db.scalar(
+        select(func.coalesce(func.sum(CashboxMovement.amount), 0)).where(
+            CashboxMovement.category == "vente_a_bord"
+        )
+    )
+    assert Decimal(total) == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_refund_returns_tracked_goods_to_stock(db, staff_user):
+    vessel, product, sale = await _setup_sale(db, staff_user)  # stock 10, vente 2
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    assert await svc.stock_on_hand(db, vessel_id=vessel.id, product_id=product.id) == Decimal("8")
+    await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+    assert await svc.stock_on_hand(db, vessel_id=vessel.id, product_id=product.id) == Decimal("10")
+
+
+@pytest.mark.asyncio
+async def test_refund_is_idempotent(db, staff_user):
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    first = await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+    second = await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+    assert first.id == second.id
+    assert await _count_vente_movements(db) == 2  # l'encaissement et sa contre-passation
+
+
+@pytest.mark.asyncio
+async def test_an_unsettled_sale_cannot_be_refunded(db, staff_user):
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    with pytest.raises(svc.OnboardSalesError):
+        await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+
+
+@pytest.mark.asyncio
+async def test_a_card_refund_uses_the_card_channel(db, staff_user):
+    """Une vente CB est recréditée sur la carte, pas prise dans le coffre."""
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.settle_sale(db, sale, payment_method="card", recorded_by_id=staff_user.id)
+    mov = await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+    assert mov.medium == "card"
+
+
+@pytest.mark.asyncio
+async def test_the_bridge_can_only_request_a_refund(db, staff_user):
+    """Le bord signale ; sans cela la règle se contournerait par téléphone."""
+    _vessel, _product, sale = await _setup_sale(db, staff_user)
+    with pytest.raises(svc.OnboardSalesError):  # pas encore réglée
+        await svc.request_refund(db, sale, note="oups")
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    await svc.request_refund(db, sale, note="erreur de montant")
+    assert sale.refund_pending is True
+    assert sale.status == "paid"  # la demande ne rembourse rien par elle-même
+    assert sale.refund_request_note == "erreur de montant"
+
+
+@pytest.mark.asyncio
+async def test_refund_route_requires_the_office_permission(db, staff_user, monkeypatch):
+    """`captain:M` encaisse ; il ne doit pas pouvoir défaire un encaissement."""
+    from app.permissions import has_permission
+
+    # Les rôles qui encaissent n'ont pas `finance:M`…
+    for role in ("marins", "operation", "technique"):
+        assert has_permission(role, "captain", "M") or role == "marins"
+        assert not has_permission(role, "finance", "M")
+    # …et les rôles du siège l'ont.
+    assert has_permission("administrateur", "finance", "M")
+
+
+@pytest.mark.asyncio
+async def test_refund_after_a_handover_is_deferred_not_lost(db, staff_user):
+    """L'argent est réellement sorti : l'écriture ne peut pas être perdue."""
+    from datetime import UTC, datetime
+
+    from app.services import cash_count as cc
+
+    vessel, _product, sale = await _setup_sale(db, staff_user)
+    await svc.settle_sale(db, sale, payment_method="cash", recorded_by_id=staff_user.id)
+    cb = await cashbox_svc.get_or_create(db, vessel.id)
+    await cc.declare_count(
+        db,
+        cb,
+        trigger="fin_embarquement",
+        counted_on=datetime.now(UTC).date(),
+        declared_by_name="Cdt Sortant",
+        counts={"EUR": {Decimal("5"): 1}},
+    )
+    mov = await svc.refund_sale(db, sale, refunded_by_id=staff_user.id)
+    assert sale.status == "refunded"
+    assert "reporté" in mov.description
+
+
+# ── Vente rapide, rejouable hors connexion ──────────────────────────────────
+#
+# Le parcours écran par écran enchaîne trois POST dépendants : impossible à
+# mettre en file d'attente, donc impossible à encaisser en mer. Cette opération
+# est atomique et idempotente, donc conservable localement et rejouable.
+
+
+async def _vessel_and_products(db):
+    vessel = Vessel(code="ANE", name="Anemos")
+    db.add(vessel)
+    await db.flush()
+    cafe = OnboardProduct(
+        sku="CAF-250", label="Café", kind="bien", unit_price=Decimal("6.50"), currency="EUR"
+    )
+    biere = OnboardProduct(
+        sku="BIE-33", label="Bière", kind="bien", unit_price=Decimal("3.00"), currency="EUR"
+    )
+    db.add_all([cafe, biere])
+    await db.flush()
+    for p in (cafe, biere):
+        await svc.add_stock_entry(
+            db, vessel_id=vessel.id, product=p, qty=Decimal("20"), reason="avitaillement"
+        )
+    return vessel, cafe, biere
+
+
+@pytest.mark.asyncio
+async def test_a_quick_sale_creates_lines_and_settles_in_one_go(db, staff_user):
+    vessel, cafe, biere = await _vessel_and_products(db)
+    sale = await svc.create_cash_sale(
+        db,
+        vessel_id=vessel.id,
+        items=[(cafe.id, Decimal("2")), (biere.id, Decimal("3"))],
+        client_uuid="uuid-1",
+        buyer_name="Marin X",
+        recorded_by_id=staff_user.id,
+    )
+    assert sale.status == "paid"
+    assert sale.payment_method == "cash"
+    assert sale.total == Decimal("22.00")  # 2×6,50 + 3×3,00
+    assert sale.cashbox_movement_id is not None
+    # Le stock est décrémenté comme sur le parcours normal.
+    assert await svc.stock_on_hand(db, vessel_id=vessel.id, product_id=cafe.id) == Decimal("18")
+
+
+@pytest.mark.asyncio
+async def test_replaying_a_queued_sale_never_charges_twice(db, staff_user):
+    """Le cœur du hors-ligne : la file rejoue tant que le POST n'a pas abouti."""
+    vessel, cafe, _biere = await _vessel_and_products(db)
+    first = await svc.create_cash_sale(
+        db,
+        vessel_id=vessel.id,
+        items=[(cafe.id, Decimal("2"))],
+        client_uuid="uuid-rejeu",
+        recorded_by_id=staff_user.id,
+    )
+    second = await svc.create_cash_sale(
+        db,
+        vessel_id=vessel.id,
+        items=[(cafe.id, Decimal("2"))],
+        client_uuid="uuid-rejeu",
+        recorded_by_id=staff_user.id,
+    )
+    assert first.id == second.id
+    assert await _count_vente_movements(db) == 1
+    # Et le stock n'a été décrémenté qu'une fois.
+    assert await svc.stock_on_hand(db, vessel_id=vessel.id, product_id=cafe.id) == Decimal("18")
+
+
+@pytest.mark.asyncio
+async def test_two_distinct_sales_are_both_recorded(db, staff_user):
+    """L'idempotence ne doit pas confondre deux ventes réellement différentes."""
+    vessel, cafe, _biere = await _vessel_and_products(db)
+    a = await svc.create_cash_sale(
+        db, vessel_id=vessel.id, items=[(cafe.id, Decimal("1"))], client_uuid="uuid-a"
+    )
+    b = await svc.create_cash_sale(
+        db, vessel_id=vessel.id, items=[(cafe.id, Decimal("1"))], client_uuid="uuid-b"
+    )
+    assert a.id != b.id
+    assert await _count_vente_movements(db) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_quick_sale_refuses_an_empty_or_unidentified_cart(db, staff_user):
+    vessel, _cafe, _biere = await _vessel_and_products(db)
+    with pytest.raises(svc.OnboardSalesError):
+        await svc.create_cash_sale(db, vessel_id=vessel.id, items=[], client_uuid="uuid-vide")
+    with pytest.raises(svc.OnboardSalesError):
+        await svc.create_cash_sale(
+            db, vessel_id=vessel.id, items=[(1, Decimal("1"))], client_uuid=""
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_quick_sale_refuses_an_inactive_product(db, staff_user):
+    vessel, cafe, _biere = await _vessel_and_products(db)
+    cafe.is_active = False
+    await db.flush()
+    with pytest.raises(svc.OnboardSalesError):
+        await svc.create_cash_sale(
+            db, vessel_id=vessel.id, items=[(cafe.id, Decimal("1"))], client_uuid="uuid-x"
+        )
+
+
+@pytest.mark.asyncio
+async def test_prices_are_never_taken_from_the_client(db, staff_user):
+    """Le panier ne transporte que des identifiants et des quantités."""
+    vessel, cafe, _biere = await _vessel_and_products(db)
+    sale = await svc.create_cash_sale(
+        db, vessel_id=vessel.id, items=[(cafe.id, Decimal("2"))], client_uuid="uuid-prix"
+    )
+    line = (
+        (await db.execute(select(OnboardSaleLine).where(OnboardSaleLine.sale_id == sale.id)))
+        .scalars()
+        .one()
+    )
+    assert line.unit_price == cafe.unit_price
+    assert line.label == cafe.label
+
+
+def test_the_cart_is_encoded_in_a_single_field():
+    """La file hors connexion ne conserve qu'une valeur par nom de champ :
+    des lignes répétées y seraient écrasées."""
+    from app.routers.onboard_sales_router import _parse_cart
+
+    assert _parse_cart("7:2,12:1.5") == [(7, Decimal("2.000")), (12, Decimal("1.500"))]
+    assert _parse_cart("") == []
+    assert _parse_cart(" 7:1 , ") == [(7, Decimal("1.000"))]
+
+
+def test_an_unreadable_cart_is_refused():
+    from fastapi import HTTPException
+
+    from app.routers.onboard_sales_router import _parse_cart
+
+    for bad in ("abc:1", "7:nan", "7:", ":2"):
+        with pytest.raises(HTTPException) as exc:
+            _parse_cart(bad)
+        assert exc.value.status_code == 400
+
+
+# ─────────── Fix 2026-08-30 — « Received unknown parameter: timeout » ───────────
+
+
+def test_stripe_api_kwargs_are_valid_per_request_options():
+    """Sentinelle : ``_api_kwargs`` ne contient QUE des options par requête du SDK.
+
+    ``timeout`` n'en est pas une : passé aux appels de ressources, le SDK le
+    sérialisait dans le corps de la requête API et Stripe refusait la création
+    du lien de paiement (400 « Received unknown parameter: timeout », constaté
+    à bord). Le délai vit désormais sur le transport global du SDK.
+    """
+    import stripe
+    from stripe._request_options import RequestOptions
+
+    from app.services import stripe_checkout
+
+    allowed = set(RequestOptions.__annotations__.keys())
+    kwargs = set(stripe_checkout._api_kwargs())
+    assert kwargs <= allowed, f"kwargs hors options par requête : {kwargs - allowed}"
+    assert "timeout" not in kwargs
+    # Le délai borné (liaison satellite) reste bien appliqué, côté transport.
+    assert (
+        getattr(stripe.default_http_client, "_timeout", None)
+        == stripe_checkout.REQUEST_TIMEOUT_SECONDS
+    )

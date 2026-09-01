@@ -299,3 +299,51 @@ async def notify_new_booking_message(
         link=f"/staff/bookings/{booking_reference}",
         target_role="operation",
     )
+
+
+async def notify_onboard_payment_incident(
+    db: AsyncSession,
+    *,
+    sale_reference: str,
+    sale_id: int,
+    detail: str,
+) -> Notification:
+    """Alerte le siège : un paiement carte est arrivé sans contrepartie possible.
+
+    Cas visés — une vente déjà réglée en espèces, ou annulée, dont le lien
+    Stripe a malgré tout été payé. L'argent est chez Stripe, le grand livre ne
+    le voit pas, et aucune route de remboursement n'existe encore : sans cette
+    alerte, l'incident ne laissait qu'une ligne de log que personne ne lit.
+    """
+    return await create(
+        db,
+        type="onboard_payment_incident",
+        title=f"Paiement carte sans contrepartie — {sale_reference}",
+        detail=detail,
+        link=f"/captain/ventes/vente/{sale_reference}",
+        target_role="administrateur",
+    )
+
+
+async def notify_trombinoscope_generated(db: AsyncSession, *, period: str) -> Notification:
+    """Trombinoscope Armement généré automatiquement (scheduler ou endpoint de
+    secours — **pas** la régénération manuelle, cf. review 2026-07-20 :
+    l'utilisateur qui régénère à la main est déjà informé, seule la
+    génération mensuelle notifie) — cf.
+    docs/strategy/CAHIER_DES_CHARGES_TROMBINOSCOPE.md (module TRB-5).
+
+    Cible le rôle ``armement`` (destinataires exacts non figés en v1 — le
+    ciblage par rôle reste facilement extensible vers une liste explicite
+    sans redéveloppement, cf. cahier des charges §13).
+
+    ``link`` pointe vers ``/crew/trombinoscope/latest.pdf`` — une route de
+    lecture seule (GET) qui télécharge le dernier PDF déjà archivé sans en
+    régénérer un nouveau ; l'Armement clique, télécharge, puis diffuse (ex.
+    par email) à l'ensemble de la société."""
+    return await create(
+        db,
+        type="trombinoscope_generated",
+        title=f"Trombinoscope généré — {period}",
+        link="/crew/trombinoscope/latest.pdf",
+        target_role="armement",
+    )

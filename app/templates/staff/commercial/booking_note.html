@@ -1,0 +1,198 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Booking note {{ offer.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial · Booking note</span>
+    <h1 class="display">{% if note %}{{ note.reference }}{% else %}Booking note{% endif %}</h1>
+    <p class="text-muted">Offre <a href="/commercial/offers/{{ offer.id }}" class="mono">{{ offer.reference }}</a>
+      {% if offer.client %} · {{ offer.client.name }}{% endif %}</p>
+  </div>
+  <div class="flex gap-2 items-center">
+    {% if note %}<span class="badge badge-{{ 'valide' if note.status == 'diffusee' else 'draft' }}">{{ note.status_label }}</span>{% endif %}
+    <a href="/commercial/offers/{{ offer.id }}" class="btn btn-ghost">← Retour à l'offre</a>
+  </div>
+</header>
+
+{% if not note %}
+<div class="alert alert-info">
+  <i data-lucide="info"></i>
+  Aucune booking note pour cette offre. Elle est établie automatiquement à la
+  <strong>validation</strong> de l'offre (statut actuel : {{ offer.status_label }}).
+</div>
+{% else %}
+
+{% if note.status == 'diffusee' %}
+<div class="alert alert-success mb-4">
+  <i data-lucide="lock"></i>
+  Diffusée le {{ note.issued_at|datetime }}{% if note.issued_by_name %} par {{ note.issued_by_name }}{% endif %}.
+  Le document est gelé : ce qui a été envoyé au client reste consultable tel quel.
+  {% if note.document_sha256 %}<br/><span class="mono text-sm">Empreinte SHA-256 : {{ note.document_sha256 }}</span>{% endif %}
+</div>
+{% else %}
+<div class="alert alert-warn mb-4">
+  <i data-lucide="edit-3"></i>
+  <strong>Brouillon</strong> — relisez et corrigez les champs préremplis, puis diffusez.
+  Le document téléchargé porte la mention « brouillon » tant qu'il n'est pas diffusé.
+</div>
+{% endif %}
+
+<div class="flex gap-2 mb-4 flex-wrap">
+  <a href="/commercial/offers/{{ offer.id }}/booking-note.docx" class="btn btn-secondary">
+    <i data-lucide="download"></i> Télécharger (.docx)
+  </a>
+  {% if note.is_editable() %}
+  <form method="post" action="/commercial/offers/{{ offer.id }}/booking-note/issue" style="display:inline;">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <button type="submit" class="btn btn-primary" data-confirm="Diffuser cette booking note ? Elle sera gelée et ne pourra plus être modifiée.">
+      Diffuser au client
+    </button>
+  </form>
+  {% elif signature_enabled and note.signature_status != 'signed' %}
+  <form method="post" action="/commercial/offers/{{ offer.id }}/booking-note/sign" style="display:inline;">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <button type="submit" class="btn btn-primary" data-confirm="Envoyer cette booking note à la signature électronique du client ?">
+      <i data-lucide="pen-tool"></i>
+      {% if note.signature_status %}Relancer la signature{% else %}Envoyer à la signature{% endif %}
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+{% if note.status == 'diffusee' %}
+<article class="card mb-4">
+  <h2>Signature électronique</h2>
+  {% if not signature_enabled %}
+  <p class="text-muted">
+    La signature électronique n'est pas configurée sur cette instance. La booking note reste
+    signable à la main sur le document Word — le circuit n'est pas bloqué.
+  </p>
+  {% elif note.signature_status == 'signed' %}
+  <p>
+    <span class="pill pill-ok">Signée</span>
+    {% if note.signed_at %} le {{ note.signed_at|datetime }}{% endif %}
+    {% if note.merchant_email %} par {{ note.merchant_email }}{% endif %}.
+  </p>
+  {% if note.signed_document_sha256 %}
+  <p class="mono text-sm text-muted" style="word-break:break-all;">
+    Empreinte du document signé : {{ note.signed_document_sha256 }}
+  </p>
+  {% else %}
+  <p class="text-muted text-sm">
+    Signature acquise, document signé non encore archivé — il sera récupéré au prochain passage.
+  </p>
+  {% endif %}
+  {% elif note.signature_status %}
+  <p>
+    <span class="pill pill-info">{{ signature_labels.get(note.signature_status, note.signature_status) }}</span>
+    {% if note.signature_requested_at %} — demandée le {{ note.signature_requested_at|datetime }}{% endif %}
+  </p>
+  {% else %}
+  <p class="text-muted">
+    Booking note diffusée, non encore envoyée à la signature.
+    {% if not note.merchant_email %}<br/><strong>Renseignez l'e-mail du chargeur</strong> avant de l'envoyer.{% endif %}
+  </p>
+  {% endif %}
+  <p class="text-muted text-sm">
+    Signer n'est pas régler : les échéances de règlement suivent leur propre cours, et la
+    facturation reste hors plateforme.
+  </p>
+</article>
+{% endif %}
+
+<form method="post" action="/commercial/offers/{{ offer.id }}/booking-note">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <article class="card">
+    <h2>En-tête</h2>
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="issue_place">Lieu d'établissement</label>
+        <input id="issue_place" name="issue_place" type="text" maxlength="120" value="{{ note.issue_place or '' }}" {{ 'disabled' if not note.is_editable() }} />
+      </div>
+      <div class="field">
+        <label for="vessel_name">Navire</label>
+        <input id="vessel_name" name="vessel_name" type="text" maxlength="120" value="{{ note.vessel_name or '' }}" {{ 'disabled' if not note.is_editable() }} />
+      </div>
+      <div class="field">
+        <label for="time_for_shipment">Time for shipment (about)</label>
+        <input id="time_for_shipment" name="time_for_shipment" type="text" maxlength="120" value="{{ note.time_for_shipment or '' }}" {{ 'disabled' if not note.is_editable() }} />
+        <small class="text-muted">Prérempli avec l'ETD du voyage.</small>
+      </div>
+      <div class="field">
+        <label for="agents_pod">Agents (port de déchargement)</label>
+        <textarea id="agents_pod" name="agents_pod" rows="2" {{ 'disabled' if not note.is_editable() }}>{{ note.agents_pod or '' }}</textarea>
+        <small class="text-muted">Non prérempli : l'agent est désigné escale par escale, le système ne le connaît pas.</small>
+      </div>
+      <div class="field">
+        <label for="pol_text">Port of loading</label>
+        <input id="pol_text" name="pol_text" type="text" maxlength="200" value="{{ note.pol_text or '' }}" {{ 'disabled' if not note.is_editable() }} />
+      </div>
+      <div class="field">
+        <label for="pod_text">Port of discharge</label>
+        <input id="pod_text" name="pod_text" type="text" maxlength="200" value="{{ note.pod_text or '' }}" {{ 'disabled' if not note.is_editable() }} />
+      </div>
+    </div>
+  </article>
+
+  <article class="card mt-4">
+    <h2>Merchant (chargeur)</h2>
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="merchant_name">Raison sociale</label>
+        <input id="merchant_name" name="merchant_name" type="text" maxlength="200" value="{{ note.merchant_name or '' }}" {{ 'disabled' if not note.is_editable() }} />
+      </div>
+      <div class="field">
+        <label for="merchant_contact">Contact</label>
+        <input id="merchant_contact" name="merchant_contact" type="text" maxlength="200" value="{{ note.merchant_contact or '' }}" {{ 'disabled' if not note.is_editable() }} />
+      </div>
+      <div class="field">
+        <label for="merchant_email">E-mail</label>
+        <input id="merchant_email" name="merchant_email" type="email" maxlength="200" value="{{ note.merchant_email or '' }}" {{ 'disabled' if not note.is_editable() }} />
+      </div>
+      <div class="field">
+        <label for="merchant_address">Adresse</label>
+        <textarea id="merchant_address" name="merchant_address" rows="2" {{ 'disabled' if not note.is_editable() }}>{{ note.merchant_address or '' }}</textarea>
+      </div>
+    </div>
+  </article>
+
+  <article class="card mt-4">
+    <h2>Cargaison et conditions</h2>
+    <div class="field">
+      <label for="cargo_description">Number and kind of packages, description of cargo</label>
+      <textarea id="cargo_description" name="cargo_description" rows="2" {{ 'disabled' if not note.is_editable() }}>{{ note.cargo_description or '' }}</textarea>
+    </div>
+    <div class="field">
+      <label for="freight_terms">Conditions tarifaires complètes</label>
+      <textarea id="freight_terms" name="freight_terms" rows="7" {{ 'disabled' if not note.is_editable() }}>{{ note.freight_terms or '' }}</textarea>
+      <small class="text-muted">Préremplies depuis l'offre et sa grille (fret, frais documentaires, options, minimum).</small>
+    </div>
+    <div class="field">
+      <label for="payment_terms">Conditions de règlement</label>
+      <textarea id="payment_terms" name="payment_terms" rows="4" {{ 'disabled' if not note.is_editable() }}>{{ note.payment_terms or '' }}</textarea>
+      <small class="text-muted">Préremplies depuis l'échéancier de la grille tarifaire.</small>
+    </div>
+    <div class="field">
+      <label for="special_terms">Special terms, if agreed</label>
+      <textarea id="special_terms" name="special_terms" rows="3" {{ 'disabled' if not note.is_editable() }}>{{ note.special_terms or '' }}</textarea>
+    </div>
+  </article>
+
+  {% if note.is_editable() %}
+  <div class="flex gap-2 mt-4">
+    <button type="submit" class="btn btn-primary">Enregistrer les corrections</button>
+    <a href="/commercial/offers/{{ offer.id }}" class="btn btn-ghost">Annuler</a>
+  </div>
+  {% endif %}
+</form>
+
+<p class="text-muted text-sm mt-4">
+  Les conditions générales du transporteur (22 clauses, clause ANEMOS et clause US COGSA) sont
+  imprimées au verso du document et ne sont pas modifiables ici : elles engagent la responsabilité
+  du transporteur et relèvent d'une décision de la direction.
+</p>
+
+{% endif %}
+{% endblock %}

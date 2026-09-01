@@ -6,28 +6,60 @@
   </button>
 
   {%- set _path = request.url.path -%}
+  {#- Repères de navigation (K-5) — couvre les pages client réelles, y compris
+     les routes à segment dynamique (booking ref, cert ref…) via des préfixes
+     de chemin. Ordre : du plus spécifique au plus générique, la première
+     correspondance l'emporte. -#}
   {%- if lang == 'en' -%}
     {%- set _page_labels = {
-          "/me": "Dashboard",
-          "/me/bookings": "My bookings",
+          "/me/bookings/": "Booking",
+          "/me/track/": "Track my shipment",
+          "/me/notifications": "Notifications",
+          "/me/messages": "Messages",
           "/me/documents": "My documents",
+          "/me/invoices": "Billing",
           "/me/anemos": "My Anemos certificates",
+          "/me/brand": "My brand",
+          "/me/estimations": "Rate estimates",
+          "/me/bookings": "My bookings",
+          "/me/account/password": "Change my password",
+          "/me/account/mfa": "Two-factor authentication",
           "/me/account": "My account",
           "/booking/new": "New booking",
+          "/me": "Dashboard",
     } -%}
-    {%- set _label = _page_labels.get(_path, "Customer area") -%}
+    {%- set _fallback = "Customer area" -%}
   {%- else -%}
     {%- set _page_labels = {
-          "/me": "Tableau de bord",
-          "/me/bookings": "Mes réservations",
+          "/me/bookings/": "Réservation",
+          "/me/track/": "Suivi de traversée",
+          "/me/notifications": "Notifications",
+          "/me/messages": "Messages",
           "/me/documents": "Mes documents",
+          "/me/invoices": "Facturation",
           "/me/anemos": "Mes certificats Anemos",
+          "/me/brand": "Ma marque",
+          "/me/estimations": "Estimations tarifaires",
+          "/me/bookings": "Mes réservations",
+          "/me/account/password": "Changer mon mot de passe",
+          "/me/account/mfa": "Authentification 2FA",
           "/me/account": "Mon compte",
           "/booking/new": "Nouvelle réservation",
+          "/me": "Tableau de bord",
     } -%}
-    {%- set _label = _page_labels.get(_path, "Espace client") -%}
+    {%- set _fallback = "Espace client" -%}
   {%- endif -%}
-  <div class="topbar-title">{% block topbar_title %}{{ _label }}{% endblock %}</div>
+  {#- Une clé finissant par "/" est un préfixe (segment dynamique à suivre,
+     ex. booking ref) ; les autres exigent une correspondance EXACTE — sans
+     quoi "/me" (préfixe de toute page client) absorberait tout le reste. -#}
+  {%- set _ns = namespace(label=_fallback) -%}
+  {%- for _key, _lbl in _page_labels.items() -%}
+    {%- set _matches = (_path == _key) or (_key.endswith('/') and _path.startswith(_key)) -%}
+    {%- if _ns.label == _fallback and _matches -%}
+      {%- set _ns.label = _lbl -%}
+    {%- endif -%}
+  {%- endfor -%}
+  <div class="topbar-title">{% block topbar_title %}{{ _ns.label }}{% endblock %}</div>
 
   <div class="topbar-actions">
     <div class="clock-widget" aria-live="off">

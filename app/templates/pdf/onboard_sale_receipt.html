@@ -1,0 +1,91 @@
+{% extends "pdf/_base.html" %}
+{% block title %}Reçu {{ sale.reference }}{% endblock %}
+{% block doc_kind %}Reçu de vente à bord · On-board sale receipt{% endblock %}
+{% block doc_ref %}{{ sale.reference }}{% endblock %}
+{% block content %}
+
+<div style="text-align:center; padding:12pt 0;">
+  <span class="kicker">{{ brand.mention }}</span>
+  <h1 class="c-teal" style="font-size:22pt; margin:6pt 0;">Reçu de vente à bord</h1>
+  <span class="baseline">{{ brand.tagline_1 }} {{ brand.tagline_2 }}</span>
+</div>
+
+<table style="width:100%; margin-bottom:12pt;">
+  <tr>
+    <td style="width:50%; vertical-align:top;">
+      <div class="label">Navire</div>
+      <div class="value"><strong>{{ vessel.name }}</strong>
+        <span class="mono c-gris">{{ vessel.code }}</span></div>
+    </td>
+    <td style="width:50%; vertical-align:top;">
+      <div class="label">Date de règlement</div>
+      <div class="value">{{ paid_at }}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="vertical-align:top;">
+      <div class="label">Acheteur</div>
+      <div class="value">{{ sale.buyer_name or "—" }}</div>
+    </td>
+    <td style="vertical-align:top;">
+      <div class="label">Moyen de paiement</div>
+      <div class="value">{{ payment_label }}</div>
+    </td>
+  </tr>
+</table>
+
+<h2>Détail</h2>
+<table style="width:100%; border-collapse:collapse;">
+  <thead>
+    <tr class="bg-sable">
+      <th style="text-align:left; padding:5pt;">Article</th>
+      <th style="text-align:right; padding:5pt;">P.U.</th>
+      <th style="text-align:right; padding:5pt;">Qté</th>
+      <th style="text-align:right; padding:5pt;">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for line in lines %}
+      <tr>
+        <td style="padding:5pt; border-bottom:1px solid #E4E4E4;">{{ line.label }}</td>
+        <td style="padding:5pt; text-align:right; border-bottom:1px solid #E4E4E4;"
+            class="mono">{{ "%.2f"|format(line.unit_price|float) }}</td>
+        <td style="padding:5pt; text-align:right; border-bottom:1px solid #E4E4E4;"
+            class="mono">{{ line.qty.normalize() }}</td>
+        <td style="padding:5pt; text-align:right; border-bottom:1px solid #E4E4E4;"
+            class="mono">{{ "%.2f"|format(line.line_total|float) }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td colspan="3" style="padding:7pt; text-align:right;"><strong>Total réglé</strong></td>
+      <td style="padding:7pt; text-align:right;" class="mono">
+        <strong>{{ "%.2f"|format(sale.total|float) }} {{ sale.currency }}</strong>
+      </td>
+    </tr>
+  </tfoot>
+</table>
+
+{% if sale.status == "refunded" %}
+  <div class="box" style="border-left:3px solid #B47148; margin-top:12pt;">
+    <strong>Vente remboursée</strong> le {{ refunded_at }}.
+    Ce reçu ne vaut plus justificatif d'achat.
+  </div>
+{% endif %}
+
+<div class="box" style="margin-top:14pt;">
+  <div class="label">Régime</div>
+  <div class="value">
+    Vente en <strong>franchise de taxe</strong> (avitaillement de bord), tracée
+    au registre du navire. Ce reçu n'est pas une facture et n'ouvre pas droit à
+    déduction de TVA.
+  </div>
+</div>
+
+<p class="small c-gris" style="margin-top:14pt;">
+  Émis le {{ issued_at.strftime("%d/%m/%Y %H:%M UTC") }} par {{ brand.raison_sociale }}. Référence
+  <span class="mono">{{ sale.reference }}</span> — à conserver comme justificatif
+  de dépense.
+</p>
+{% endblock %}

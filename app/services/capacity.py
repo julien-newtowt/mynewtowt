@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking
-from app.models.commercial import PALETTE_COEFFICIENTS, Order, OrderAssignment
+from app.models.commercial import PALETTE_COEFFICIENTS, Order, OrderAssignment, RateOffer
 from app.models.leg import Leg
 from app.models.vessel import Vessel
 
@@ -58,6 +58,28 @@ _RESERVED_STATUSES: tuple[str, ...] = (
 # FLX-01 — le rail commercial classique (commandes) consomme la même cale
 # que les bookings : ses statuts « engageants » réservent la capacité.
 _ORDER_RESERVED_STATUSES: tuple[str, ...] = ("confirmed", "loaded")
+
+# Une offre commerciale positionne son volume dans le chargement prévisionnel du
+# leg jusqu'à la fin de sa validité. ``echue`` et ``annule`` le libèrent.
+OFFER_RESERVED_STATUSES: tuple[str, ...] = ("en_cours", "valide")
+
+
+async def _reserved_by_offers(db: AsyncSession, leg_id: int) -> int:
+    """Palettes réservées par les offres commerciales encore engageantes.
+
+    ⚠️ Anti-double-comptage : une offre convertie en commande a déjà son volume
+    compté côté ``Order`` — la compter ici aussi doublerait la réservation, puis
+    la triplerait si la commande est elle-même reprise en booking. On exclut donc
+    les offres portant une commande, exactement comme ``_reserved_by_orders``
+    exclut les commandes reprises en booking (B2.2).
+    """
+    has_order = select(Order.id).where(Order.offer_id == RateOffer.id).exists()
+    stmt = select(func.coalesce(func.sum(RateOffer.estimated_palettes), 0)).where(
+        RateOffer.leg_id == leg_id,
+        RateOffer.status.in_(OFFER_RESERVED_STATUSES),
+        ~has_order,
+    )
+    return int((await db.scalar(stmt)) or 0)
 
 
 async def _reserved_by_orders(db: AsyncSession, leg_id: int) -> int:
@@ -131,7 +153,11 @@ async def get_available_capacity(
         .where(Booking.leg_id == leg_id)
         .where(Booking.status.in_(_RESERVED_STATUSES))
     )
-    reserved = int(reserved or 0) + await _reserved_by_orders(db, leg_id)
+    reserved = (
+        int(reserved or 0)
+        + await _reserved_by_orders(db, leg_id)
+        + await _reserved_by_offers(db, leg_id)
+    )
 
     available = max(capacity - reserved, 0)
     return CapacityInfo(

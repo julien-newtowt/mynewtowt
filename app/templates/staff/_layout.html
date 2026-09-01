@@ -2,6 +2,7 @@
 
 {% block head %}
 <script src="/static/js/sidebar.js" defer></script>
+<script src="/static/js/density.js" defer></script>
 <script src="/static/js/clock.js" defer></script>
 <script src="/static/js/topbar-menus.js" defer></script>
 <script src="/static/js/lang-switch.js" defer></script>
@@ -27,12 +28,14 @@
     {%- set v_cargo = can_access(role, 'cargo') -%}
     {%- set v_escale = can_access(role, 'escale') -%}
     {%- set v_captain = can_access(role, 'captain') -%}
+    {%- set v_ventes = can_access(role, 'ventes') -%}
     {%- set v_tickets = can_access(role, 'tickets') -%}
     {%- set v_crew = can_access(role, 'crew') -%}
     {%- set v_rh = can_access(role, 'rh') -%}
     {%- set v_finance = can_access(role, 'finance') -%}
     {%- set v_kpi = can_access(role, 'kpi') -%}
     {%- set v_mrv = can_access(role, 'mrv') -%}
+    {%- set v_qhse = can_access(role, 'qhse') -%}
     {%- set v_claims = can_access(role, 'claims') -%}
     {%- set v_analytics = can_access(role, 'analytics') -%}
     {%- set v_admin = can_access(role, 'admin') -%}
@@ -81,7 +84,7 @@
       </div>
       {% endif %}
 
-      {% if v_escale or v_captain or v_tickets or v_planning %}
+      {% if v_escale or v_captain or v_ventes or v_tickets or v_planning %}
       <div class="nav-group" data-group="operations">
         <button class="nav-group-toggle" aria-expanded="true">
           <span class="nav-group-title"><i data-lucide="anchor"></i><span>{{ t('s_grp_operations', lang) }}</span></span>
@@ -89,8 +92,8 @@
         </button>
         <ul class="nav-group-list">
           {% if v_escale %}<li><a href="/escale"><i data-lucide="anchor"></i><span>{{ t('s_nav_escale', lang) }}</span></a></li>{% endif %}
-          {% if v_captain %}<li><a href="/onboard"><i data-lucide="ship"></i><span>{{ t('s_nav_onboard', lang) }}</span></a></li>
-          <li><a href="/cashbox"><i data-lucide="euro"></i><span>{{ t('s_nav_cashbox', lang) }}</span></a></li>
+          {% if v_captain %}<li><a href="/onboard"><i data-lucide="ship"></i><span>{{ t('s_nav_onboard', lang) }}</span></a></li>{% endif %}
+          {% if v_ventes %}<li><a href="/cashbox"><i data-lucide="euro"></i><span>{{ t('s_nav_cashbox', lang) }}</span></a></li>
           <li><a href="/captain/ventes"><i data-lucide="shopping-cart"></i><span>{{ t('s_nav_ventes_bord', lang) }}</span></a></li>{% endif %}
           {% if v_tickets %}<li><a href="/tickets"><i data-lucide="ticket"></i><span>{{ t('s_nav_tickets', lang) }}</span></a></li>{% endif %}
           {% if v_planning %}<li><a href="/tracking"><i data-lucide="map"></i><span>{{ t('s_nav_tracking', lang) }}</span></a></li>{% endif %}
@@ -112,7 +115,7 @@
         </ul>
       </div>
 
-      {% if v_finance or v_kpi or v_planning or v_mrv or v_claims or v_analytics %}
+      {% if v_finance or v_kpi or v_planning or v_mrv or v_qhse or v_claims or v_analytics %}
       <div class="nav-group" data-group="performance">
         <button class="nav-group-toggle" aria-expanded="false">
           <span class="nav-group-title"><i data-lucide="trending-up"></i><span>{{ t('s_grp_performance', lang) }}</span></span>
@@ -130,6 +133,7 @@
           <!-- LOT 7 -->{% if v_mrv %}<li><a href="/mrv/flgo"><i data-lucide="gauge"></i><span>{{ t('s_nav_mrv_flgo', lang) }}</span></a></li>{% endif %}
           <!-- LOT 8 -->{% if v_mrv %}<li><a href="/mrv/qualite"><i data-lucide="shield-check"></i><span>{{ t('s_nav_mrv_qualite', lang) }}</span></a></li>{% endif %}
           <!-- LOT 10 -->{% if v_mrv %}<li><a href="/mrv/datasets"><i data-lucide="file-spreadsheet"></i><span>{{ t('s_nav_mrv_datasets', lang) }}</span></a></li>{% endif %}
+          {% if v_qhse %}<li><a href="/qhse"><i data-lucide="shield-alert"></i><span>{{ t('s_nav_qhse', lang) }}</span></a></li>{% endif %}
           {% if v_claims %}<li><a href="/claims"><i data-lucide="shield-alert"></i><span>{{ t('s_nav_claims', lang) }}</span></a></li>{% endif %}
           {% if v_analytics %}<li><a href="/dashboard/analytics"><i data-lucide="bar-chart"></i><span>{{ t('s_nav_analytics', lang) }}</span></a></li>{% endif %}
         </ul>

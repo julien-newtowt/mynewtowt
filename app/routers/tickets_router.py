@@ -48,6 +48,7 @@ api_router = APIRouter(prefix="/api/tickets", tags=["tickets-api"])
 @router.get("", response_class=HTMLResponse)
 async def kanban(
     request: Request,
+    leg_id: int | None = None,
     priority: str | None = None,
     category: str | None = None,
     db: AsyncSession = Depends(get_db),
@@ -64,8 +65,10 @@ async def kanban(
         # Best-effort : un échec d'escalade ne doit pas bloquer le board.
         logger.exception("SLA escalation failed during kanban load")
 
-    columns = await list_for_kanban(db, priority=priority, category=category)
-    s = await ticket_stats(db)
+    columns = await list_for_kanban(db, leg_id=leg_id, priority=priority, category=category)
+    s = await ticket_stats(db, leg_id=leg_id)
+
+    selected_leg = await db.get(Leg, leg_id) if leg_id else None
     return templates.TemplateResponse(
         "staff/tickets/kanban.html",
         {
@@ -77,6 +80,8 @@ async def kanban(
             "category_labels": CATEGORY_LABELS,
             "priority_labels": PRIORITY_LABELS,
             "stats": s,
+            "filter_leg_id": leg_id,
+            "filter_leg": selected_leg,
             "filter_priority": priority,
             "filter_category": category,
             "categories": CATEGORIES,
@@ -89,6 +94,7 @@ async def kanban(
 @router.get("/new", response_class=HTMLResponse)
 async def new_form(
     request: Request,
+    leg_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("tickets", "M")),
 ) -> HTMLResponse:
@@ -114,6 +120,7 @@ async def new_form(
             "priorities": PRIORITIES,
             "priority_labels": PRIORITY_LABELS,
             "sla_hours": PRIORITY_SLA_HOURS,
+            "preselected_leg_id": leg_id,
             "error": None,
         },
     )

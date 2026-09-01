@@ -1,0 +1,151 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Offre {{ offer.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial · Offre</span>
+    <h1 class="display">{{ offer.reference }}</h1>
+    <p class="text-muted">{{ offer.title }}{% if offer.client %} · {{ offer.client.name }}{% endif %}</p>
+  </div>
+  <div class="flex gap-2 items-center">
+    <span class="badge badge-{{ offer.status }}">{{ offer.status_label }}</span>
+    <a href="/commercial/offers" class="btn btn-ghost">← Retour aux offres</a>
+  </div>
+</header>
+
+{% if offer.is_legacy %}
+<div class="alert alert-info mb-3">
+  <i data-lucide="history"></i>
+  Offre antérieure à la règle « une grille et un voyage obligatoires » : il peut légitimement lui
+  manquer l'un ou l'autre. Ce n'est pas une saisie incomplète.
+</div>
+{% endif %}
+
+{% if pending_expiry %}
+<div class="alert alert-warn mb-3">
+  <i data-lucide="clock"></i>
+  Cette offre remplit les conditions de l'échéance
+  ({% if leg and leg.atd %}le navire est parti{% else %}la date de validité est dépassée{% endif %})
+  et sera basculée en « Échue » au prochain balayage.
+</div>
+{% endif %}
+
+<div class="grid grid-2 gap-4">
+  <article class="card">
+    <h2>Caractéristiques</h2>
+    <table class="data-table">
+      <tbody>
+        <tr><td>Client</td><td>{% if offer.client %}<a href="/commercial/clients/{{ offer.client.id }}">{{ offer.client.name }}</a>{% else %}—{% endif %}</td></tr>
+        <tr><td>Grille tarifaire</td><td>{% if grid %}<a href="/commercial/grids/{{ grid.id }}" class="mono">{{ grid.reference }}</a>{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
+        <tr><td>Voyage</td><td>{% if leg %}<span class="mono">{{ leg.leg_code }}</span> · ETD {{ leg.etd|date if leg.etd else '—' }}{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
+        <tr><td>Volume</td><td class="mono">{{ offer.estimated_palettes or 0 }} palettes</td></tr>
+        <tr><td>Tarif proposé</td><td class="mono">{{ offer.proposed_rate_eur|money if offer.proposed_rate_eur else '—' }}</td></tr>
+        <tr><td>Total</td><td class="mono"><strong>{{ offer.total_eur|money if offer.total_eur else '—' }}</strong></td></tr>
+        <tr><td>Valide jusqu'au</td><td>{{ offer.valid_until|date if offer.valid_until else '—' }}</td></tr>
+        {% if offer.cancelled_reason %}<tr><td>Motif d'annulation</td><td>{{ offer.cancelled_reason }}</td></tr>{% endif %}
+        {% if order %}<tr><td>Commande</td><td><a href="/commercial/orders/{{ order.id }}" class="mono">{{ order.reference }}</a></td></tr>{% endif %}
+      </tbody>
+    </table>
+    {% if offer.notes %}<h3 class="mt-3">Notes</h3><p>{{ offer.notes }}</p>{% endif %}
+  </article>
+
+  <div>
+    <article class="card">
+      <h2>Chargement prévisionnel</h2>
+      {% if offer.status in ('en_cours', 'valide') and not order %}
+      <p class="text-muted text-sm">
+        Cette offre réserve <strong>{{ offer.estimated_palettes or 0 }} palettes</strong> dans le
+        chargement prévisionnel du voyage{% if leg %} <span class="mono">{{ leg.leg_code }}</span>{% endif %}.
+        La réservation est libérée si l'offre est annulée ou échoit.
+      </p>
+      {% elif order %}
+      <p class="text-muted text-sm">
+        Le volume est désormais porté par la commande <span class="mono">{{ order.reference }}</span> —
+        il n'est plus compté au titre de l'offre, pour ne pas réserver la cale deux fois.
+      </p>
+      {% else %}
+      <p class="text-muted text-sm">Offre {{ offer.status_label|lower }} — aucun volume réservé.</p>
+      {% endif %}
+    </article>
+
+    {% if grid and grid.payment_terms %}
+    <article class="card mt-4">
+      <h2>Conditions de règlement</h2>
+      <table class="data-table">
+        <tbody>
+          {% for t in grid.payment_terms %}
+          <tr><td class="mono">{{ t.percentage }} %</td><td>{{ t.trigger_label }}{% if t.label %} — {{ t.label }}{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="text-muted text-sm">Conditions contractuelles reprises sur la booking note. La facturation reste hors plateforme.</p>
+    </article>
+    {% endif %}
+  </div>
+</div>
+
+<article class="card mt-4">
+  <h2>Actions</h2>
+  {% if offer.is_open() %}
+  <div class="flex gap-2 items-center flex-wrap">
+    <form method="post" action="/commercial/offers/{{ offer.id }}/send" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-secondary">Marquer envoyée au client</button>
+    </form>
+    <form method="post" action="/commercial/offers/{{ offer.id }}/validate" style="display:inline;">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-primary" data-confirm="Valider cette offre ? Une booking note sera établie.">Valider l'offre</button>
+    </form>
+    <a href="/commercial/offers/{{ offer.id }}/convert" class="btn btn-secondary">→ Convertir en commande</a>
+  </div>
+  <details class="mt-3">
+    <summary class="btn btn-ghost btn-sm" style="color:var(--cuivre);">Annuler l'offre</summary>
+    <form method="post" action="/commercial/offers/{{ offer.id }}/cancel" class="mt-2">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="field">
+        <label for="reason">Motif de l'annulation</label>
+        <input id="reason" name="reason" type="text" maxlength="500" placeholder="Ex. le client a renoncé au projet" />
+        <small class="text-muted">Consigné dans l'historique. L'annulation libère le volume réservé et est définitive.</small>
+      </div>
+      <button type="submit" class="btn btn-ghost" style="color:var(--cuivre);" data-confirm="Annuler définitivement cette offre ?">Confirmer l'annulation</button>
+    </form>
+  </details>
+  {% elif offer.status == 'valide' %}
+  <p class="text-muted">Offre validée{% if offer.validated_at %} le {{ offer.validated_at|datetime }}{% endif %}.</p>
+  <div class="flex gap-2 items-center flex-wrap">
+    <a href="/commercial/offers/{{ offer.id }}/booking-note" class="btn btn-primary">
+      <i data-lucide="file-text"></i> Booking note
+    </a>
+    {% if not order %}<a href="/commercial/offers/{{ offer.id }}/convert" class="btn btn-secondary">→ Convertir en commande</a>{% endif %}
+  </div>
+  {% else %}
+  <p class="text-muted">Offre {{ offer.status_label|lower }} — plus aucune action possible.</p>
+  {% endif %}
+</article>
+
+<article class="card mt-4">
+  <div class="flex justify-between items-center">
+    <h2>Historique récent</h2>
+    <a href="/commercial/offers/{{ offer.id }}/history" class="btn btn-ghost btn-sm">Historique complet ({{ revision_count }})</a>
+  </div>
+  {% if revisions %}
+  <table class="data-table">
+    <thead><tr><th>#</th><th>Action</th><th>Quand</th><th>Par</th></tr></thead>
+    <tbody>
+      {% for r in revisions %}
+      <tr>
+        <td class="mono">{{ r.sequence }}</td>
+        <td>{{ action_labels.get(r.action, r.action) }}</td>
+        <td>{{ r.at|datetime }}</td>
+        <td>{{ r.actor_name or 'système' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucune révision enregistrée — offre antérieure à la mise en place de l'historique.</p>
+  {% endif %}
+</article>
+
+{% endblock %}

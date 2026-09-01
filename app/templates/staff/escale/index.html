@@ -2,6 +2,61 @@
 {% from "staff/_leg_filter.html" import leg_filter, leg_summary %}
 {% from "staff/_time_input.html" import tz_datetime %}
 {% block title %}Escale — {{ brand.nom_court }}{% endblock %}
+
+{# ──────────────────────────────────────────────────────────────────────
+   Cockpit d'escale — reprise UX Phase 1 (docs/design/03-reprise-ux-legacy.md).
+   Principes : une page, tout sous la main (habitude V2), sections ancrées
+   par une sous-navigation collante, split Import/Export (pattern legacy),
+   actions rapides sans rechargement (HTMX : POST → 204 + escaleRefresh →
+   le conteneur #escale-sections se re-remplit via hx-get + hx-select).
+   Aucune fonctionnalité retirée — uniquement réorganisée.
+   ────────────────────────────────────────────────────────────────────── #}
+
+{# Lignes d'opérations — mutualisées entre les volets Import/Export/Commun. #}
+{% macro op_rows(ops) %}
+  {% for op in ops %}
+  <tr {% if op.action == 'passage_paf' %}class="op-paf-row"{% endif %}>
+    <td>
+      <strong>{{ op.operation_type }}</strong><br/><small class="text-muted">{{ op.action }}</small>
+      {% if op.action == 'passage_paf' %}<br/><span class="pill op-paf-chip" title="Passage Police Aux Frontières — opération réglementaire"><i data-lucide="shield"></i> PAF · réglementaire</span>{% endif %}
+      {% if op.label %}<br/><small>{{ op.label }}</small>{% endif %}
+      {% if op.intervenant %}<br/><small class="text-muted">👤 {{ op.intervenant }}</small>{% endif %}
+    </td>
+    <td class="mono text-xs">
+      {{ op.planned_start|datetime("%d/%m %H:%M") if op.planned_start else '—' }}<br/>
+      <small>{{ op.planned_end|datetime("%H:%M") if op.planned_end else '' }}</small>
+      {% if op.planned_duration_hours is not none %}<br/><small class="text-muted">{{ op.planned_duration_hours }} h</small>{% endif %}
+    </td>
+    <td class="mono text-xs">
+      {{ op.actual_start|datetime("%d/%m %H:%M") if op.actual_start else '—' }}<br/>
+      <small>{{ op.actual_end|datetime("%H:%M") if op.actual_end else '' }}</small>
+      {% if op.actual_duration_hours is not none %}<br/><small class="text-muted">{{ op.actual_duration_hours }} h</small>{% endif %}
+    </td>
+    <td>
+      <span class="badge badge-{{ op.status }}">{{ op.status }}</span>
+      {% if op.id in late_op_ids %}<br/><span class="badge badge-overdue mt-1" title="Fenêtre planifiée échue sans réel">retard</span>{% endif %}
+    </td>
+    <td>
+      {% if not leg_locked %}
+        {% if not op.actual_start %}
+        <form method="post" action="/escale/operations/{{ op.id }}/start" style="display:inline;"
+              hx-post="/escale/operations/{{ op.id }}/start" hx-swap="none">
+          <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+          <button type="submit" class="btn btn-ghost btn-sm" title="Démarrer">▶</button>
+        </form>
+        {% elif not op.actual_end %}
+        <form method="post" action="/escale/operations/{{ op.id }}/end" style="display:inline;"
+              hx-post="/escale/operations/{{ op.id }}/end" hx-swap="none">
+          <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+          <button type="submit" class="btn btn-ghost btn-sm" title="Terminer">■</button>
+        </form>
+        {% endif %}
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+{% endmacro %}
+
 {% block content %}
 
 <header class="flex justify-between items-center mb-4">
@@ -14,6 +69,13 @@
 {{ leg_filter(leg_filter_ctx, "/escale") }}
 
 {% if selected_leg %}
+<div id="escale-sections"
+     hx-get="/escale?leg_id={{ selected_leg.id }}"
+     hx-trigger="escaleRefresh from:body"
+     hx-select="#escale-sections"
+     hx-target="this"
+     hx-swap="outerHTML">
+
 {% call leg_summary(selected_leg, pol, pod, vessel_status, leg_locked) %}
   {% if leg_locked %}
   <form method="post" action="/escale/legs/{{ selected_leg.id }}/unlock">
@@ -28,6 +90,17 @@
   {% endif %}
 {% endcall %}
 
+{# Sous-navigation collante du cockpit — ancres vers les sections. #}
+<nav class="escale-subnav" aria-label="Sections de l'escale">
+  <a href="#sec-statut">Statut</a>
+  <a href="#sec-operations">Opérations</a>
+  <a href="#sec-dockers">Dockers &amp; cale</a>
+  <a href="#sec-equipage">Équipage</a>
+  <a href="#sec-documents">Documents &amp; SOF</a>
+  <a href="#sec-tickets">Tickets</a>
+  <a href="#sec-commercial">Commercial</a>
+</nav>
+
 {% if port_call %}
 <article class="card mb-3">
   <div class="section-header"><h3><i data-lucide="git-commit"></i> Flux opérationnel</h3></div>
@@ -38,6 +111,16 @@
     {% endfor %}
   </div>
 </article>
+{% endif %}
+
+{# KPI du cockpit — pouls de l'escale en un coup d'œil (Phase 1). #}
+{% if escale_kpis and escale_kpis.ops_total %}
+<section class="kpi-strip mb-3">
+  <div class="kpi-card"><div class="label">Opérations en cours</div><div class="value">{{ escale_kpis.ops_in_progress }} <small class="text-muted">/ {{ escale_kpis.ops_total }}</small></div></div>
+  <div class="kpi-card {% if escale_kpis.ops_late %}kpi-card-alert{% endif %}"><div class="label">En retard</div><div class="value">{{ escale_kpis.ops_late }}</div><div class="delta text-muted">planifié échu sans réel</div></div>
+  <div class="kpi-card"><div class="label">Palettes traitées</div><div class="value">{{ escale_kpis.palettes_done }}{% if escale_kpis.palettes_target %} <small class="text-muted">/ {{ escale_kpis.palettes_target }}</small>{% endif %}</div></div>
+  <div class="kpi-card"><div class="label">Cadence moyenne</div><div class="value">{{ escale_kpis.avg_rate if escale_kpis.avg_rate is not none else '—' }}{% if escale_kpis.avg_rate is not none %} <small class="text-muted">pal/h</small>{% endif %}</div></div>
+</section>
 {% endif %}
 
 {% if nav_metrics and nav_metrics.point_count %}
@@ -63,13 +146,14 @@
 {% endif %}
 
 {% if not leg_locked %}
-<article class="card mb-3">
+<article class="card mb-3" id="sec-statut">
   <div class="section-header"><h3><i data-lucide="ship"></i> Statut portuaire</h3></div>
   <p class="text-muted text-sm">
     ATA : <span class="mono">{{ selected_leg.ata|datetime if selected_leg.ata else '— non posée' }}</span> ·
     ATD : <span class="mono">{{ selected_leg.atd|datetime if selected_leg.atd else '— non posée' }}</span>
   </p>
-  <form method="post" action="/escale/legs/{{ selected_leg.id }}/port-status" class="flex gap-2" style="align-items:flex-end; flex-wrap:wrap;">
+  <form method="post" action="/escale/legs/{{ selected_leg.id }}/port-status" class="flex gap-2" style="align-items:flex-end; flex-wrap:wrap;"
+        hx-post="/escale/legs/{{ selected_leg.id }}/port-status" hx-swap="none">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     {# ESC-07 — sélecteur de fuseau (UTC/Paris/Port) + aperçu UTC sur l'horodatage. #}
     {{ tz_datetime("status_time", label="Horodatage") }}
@@ -78,129 +162,95 @@
   </form>
   <p class="text-muted text-xs mt-1">Pose ATA/ATD, recalcule l'OPEX réel (rollup) et notifie la compagnie (EOSP/SOSP).</p>
 </article>
+{% else %}
+<span id="sec-statut"></span>
 {% endif %}
 
-{% if leg_overview %}
-<article class="card mb-3">
-  <div class="section-header"><h3><i data-lucide="package"></i> Commercial du leg</h3></div>
-  <div class="grid grid-2 gap-4">
-    <div>
-      <h4>Commandes ({{ leg_overview.orders|length }})</h4>
-      {% if leg_overview.orders %}
+{# ── Opérations — split Import / Export / Commun (pattern legacy repris). ── #}
+<article class="card mb-3" id="sec-operations">
+  <div class="section-header"><h3><i data-lucide="anchor"></i> Opérations</h3></div>
+
+  {% set ops_import = operations | selectattr('direction', 'equalto', 'IMPORT') | list %}
+  {% set ops_export = operations | selectattr('direction', 'equalto', 'EXPORT') | list %}
+  {% set ops_common = operations | rejectattr('id', 'in', (ops_import + ops_export) | map(attribute='id') | list) | list %}
+
+  {% if operations %}
+  <div class="grid grid-2 gap-4 dir-split">
+    <div class="dir-col dir-col-import">
+      <div class="dir-col-head"><i data-lucide="arrow-down-to-line"></i> IMPORT <small class="text-muted">débarquements{% if pod %} · {{ pod.locode }}{% endif %}</small></div>
+      {% if ops_import %}
       <table class="data-table">
-        <thead><tr><th>Référence</th><th>Client</th><th>Palettes</th><th>Statut</th></tr></thead>
-        <tbody>
-          {% for row in leg_overview.orders %}
-          <tr>
-            <td class="mono"><a href="/commercial/orders/{{ row.order.id }}">{{ row.order.reference }}</a></td>
-            <td>{{ row.client_name }}</td>
-            <td class="mono">{{ row.order.booked_palettes }}</td>
-            <td><span class="badge badge-{{ row.order.status }}">{{ row.order.status }}</span></td>
-          </tr>
-          {% endfor %}
-        </tbody>
+        <thead><tr><th>Type/Action</th><th>Planifié</th><th>Réel</th><th>Statut</th><th></th></tr></thead>
+        <tbody>{{ op_rows(ops_import) }}</tbody>
       </table>
-      {% else %}<p class="text-muted">Aucune commande affectée à ce leg.</p>{% endif %}
+      {% else %}<p class="text-muted text-sm">Aucune opération import.</p>{% endif %}
     </div>
-    <div>
-      <h4>Packing lists ({{ leg_overview.packing_lists|length }})</h4>
-      {% if leg_overview.packing_lists %}
-      <ul style="list-style:none;padding-left:0;margin:0;display:flex;flex-direction:column;gap:6px;">
-        {% for pl in leg_overview.packing_lists %}
-        <li><a href="/cargo/packing-lists/{{ pl.id }}" class="mono">PL-{{ pl.id }}</a> <span class="badge badge-{{ pl.status }}">{{ pl.status }}</span></li>
-        {% endfor %}
-      </ul>
-      {% else %}<p class="text-muted">Aucune packing list pour ce leg.</p>{% endif %}
+    <div class="dir-col dir-col-export">
+      <div class="dir-col-head"><i data-lucide="arrow-up-from-line"></i> EXPORT <small class="text-muted">embarquements{% if pod %} · {{ pod.locode }}{% endif %}</small></div>
+      {% if ops_export %}
+      <table class="data-table">
+        <thead><tr><th>Type/Action</th><th>Planifié</th><th>Réel</th><th>Statut</th><th></th></tr></thead>
+        <tbody>{{ op_rows(ops_export) }}</tbody>
+      </table>
+      {% else %}<p class="text-muted text-sm">Aucune opération export.</p>{% endif %}
     </div>
   </div>
-</article>
-{% endif %}
-
-<div class="grid grid-2 gap-4">
-  <article class="card">
-    <div class="section-header"><h3><i data-lucide="anchor"></i> Opérations</h3></div>
-    {% if operations %}
+  {% if ops_common %}
+  <div class="dir-col dir-col-common mt-3">
+    <div class="dir-col-head"><i data-lucide="git-merge"></i> COMMUN <small class="text-muted">opérations transverses (technique, armement, réglementaire…)</small></div>
     <table class="data-table">
-      <thead><tr><th>Type/Action</th><th>Direction</th><th>Planifié</th><th>Réel</th><th>Statut</th><th></th></tr></thead>
-      <tbody>
-        {% for op in operations %}
-        <tr>
-          <td>
-            <strong>{{ op.operation_type }}</strong><br/><small class="text-muted">{{ op.action }}</small>
-            {% if op.intervenant %}<br/><small class="text-muted">👤 {{ op.intervenant }}</small>{% endif %}
-          </td>
-          <td><span class="badge">{{ op.direction or '—' }}</span></td>
-          <td class="mono text-xs">
-            {{ op.planned_start|datetime("%d/%m %H:%M") if op.planned_start else '—' }}<br/>
-            <small>{{ op.planned_end|datetime("%H:%M") if op.planned_end else '' }}</small>
-            {% if op.planned_duration_hours is not none %}<br/><small class="text-muted">{{ op.planned_duration_hours }} h</small>{% endif %}
-          </td>
-          <td class="mono text-xs">
-            {{ op.actual_start|datetime("%d/%m %H:%M") if op.actual_start else '—' }}<br/>
-            <small>{{ op.actual_end|datetime("%H:%M") if op.actual_end else '' }}</small>
-            {% if op.actual_duration_hours is not none %}<br/><small class="text-muted">{{ op.actual_duration_hours }} h</small>{% endif %}
-          </td>
-          <td><span class="badge badge-{{ op.status }}">{{ op.status }}</span></td>
-          <td>
-            {% if not leg_locked %}
-              {% if not op.actual_start %}
-              <form method="post" action="/escale/operations/{{ op.id }}/start" style="display:inline;">
-                <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-                <button type="submit" class="btn btn-ghost btn-sm" title="Démarrer">▶</button>
-              </form>
-              {% elif not op.actual_end %}
-              <form method="post" action="/escale/operations/{{ op.id }}/end" style="display:inline;">
-                <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-                <button type="submit" class="btn btn-ghost btn-sm" title="Terminer">■</button>
-              </form>
-              {% endif %}
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
+      <thead><tr><th>Type/Action</th><th>Planifié</th><th>Réel</th><th>Statut</th><th></th></tr></thead>
+      <tbody>{{ op_rows(ops_common) }}</tbody>
     </table>
-    {% else %}<p class="text-muted">Aucune opération.</p>{% endif %}
+  </div>
+  {% endif %}
+  {% else %}<p class="text-muted">Aucune opération.</p>{% endif %}
 
-    {# ESC-08 — vue en swim-lanes : activités menées en parallèle, une colonne
-       par catégorie d'opération. Complément additif de la table ci-dessus. #}
-    {% if lanes %}
-    <details class="mt-3">
-      <summary class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-        <i data-lucide="columns-3"></i> Activités parallèles ({{ lanes|length }} catégorie{{ 's' if lanes|length > 1 else '' }})
-      </summary>
-      <div class="lane-grid mt-2" style="display:grid;grid-template-columns:repeat({{ lanes|length }}, minmax(180px, 1fr));gap:10px;overflow-x:auto;">
-        {% for lane in lanes %}
-        <div class="lane-col">
-          <h4 class="lane-head" style="margin:0 0 8px;display:flex;align-items:center;gap:6px;">
-            {{ lane.label }} <span class="pill pill-neutral">{{ lane.ops|length }}</span>
-          </h4>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            {% for op in lane.ops %}
-            <div class="lane-card card" style="padding:8px;">
-              <div class="flex items-center gap-2" style="flex-wrap:wrap;">
-                <strong class="text-sm">{{ op.action }}</strong>
-                <span class="badge badge-{{ op.status }}">{{ op.status }}</span>
-                {% if op.direction %}<span class="badge">{{ op.direction }}</span>{% endif %}
-              </div>
-              {% if op.label %}<div class="text-sm">{{ op.label }}</div>{% endif %}
-              {% if op.intervenant %}<div class="text-xs text-muted">👤 {{ op.intervenant }}</div>{% endif %}
-              <div class="mono text-xs text-muted">
-                {{ (op.actual_start or op.planned_start)|datetime("%d/%m %H:%M") if (op.actual_start or op.planned_start) else '—' }}
-                {% if op.actual_end or op.planned_end %}→ {{ (op.actual_end or op.planned_end)|datetime("%H:%M") }}{% endif %}
-              </div>
+  {# ESC-08 — vue en swim-lanes : activités menées en parallèle, une colonne
+     par catégorie d'opération. Complément additif des tables ci-dessus. #}
+  {% if lanes %}
+  <details class="mt-3">
+    <summary class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+      <i data-lucide="columns-3"></i> Activités parallèles ({{ lanes|length }} catégorie{{ 's' if lanes|length > 1 else '' }})
+    </summary>
+    <div class="lane-grid mt-2" style="display:grid;grid-template-columns:repeat({{ lanes|length }}, minmax(180px, 1fr));gap:10px;overflow-x:auto;">
+      {% for lane in lanes %}
+      <div class="lane-col">
+        <h4 class="lane-head" style="margin:0 0 8px;display:flex;align-items:center;gap:6px;">
+          {{ lane.label }} <span class="pill pill-neutral">{{ lane.ops|length }}</span>
+        </h4>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          {% for op in lane.ops %}
+          <div class="lane-card card" style="padding:8px;">
+            <div class="flex items-center gap-2" style="flex-wrap:wrap;">
+              <strong class="text-sm">{{ op.action }}</strong>
+              <span class="badge badge-{{ op.status }}">{{ op.status }}</span>
+              {% if op.direction %}<span class="badge">{{ op.direction }}</span>{% endif %}
             </div>
-            {% endfor %}
+            {% if op.label %}<div class="text-sm">{{ op.label }}</div>{% endif %}
+            {% if op.intervenant %}<div class="text-xs text-muted">👤 {{ op.intervenant }}</div>{% endif %}
+            <div class="mono text-xs text-muted">
+              {{ (op.actual_start or op.planned_start)|datetime("%d/%m %H:%M") if (op.actual_start or op.planned_start) else '—' }}
+              {% if op.actual_end or op.planned_end %}→ {{ (op.actual_end or op.planned_end)|datetime("%H:%M") }}{% endif %}
+            </div>
           </div>
+          {% endfor %}
         </div>
-        {% endfor %}
       </div>
-    </details>
-    {% endif %}
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
 
-    {% if not leg_locked %}
-    <h4 class="mt-3">Nouvelle opération</h4>
-    <form method="post" action="/escale/legs/{{ selected_leg.id }}/operations">
+  {% if not leg_locked %}
+  {# Saisie repliée par défaut : le cockpit reste compact, le formulaire
+     complet s'ouvre à la demande (remplace le bloc permanent en bas de card). #}
+  <details class="mt-3 form-disclosure">
+    <summary class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+      <i data-lucide="plus"></i> Nouvelle opération
+    </summary>
+    <form method="post" action="/escale/legs/{{ selected_leg.id }}/operations" class="mt-2"
+          hx-post="/escale/legs/{{ selected_leg.id }}/operations" hx-swap="none">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       <div class="grid grid-3 gap-2">
         <div class="field"><label>Type</label><select name="operation_type">{% for t in operation_types %}<option>{{ t }}</option>{% endfor %}</select></div>
@@ -222,10 +272,116 @@
       <p class="text-muted text-xs">Une action « embarquement »/« débarquement » avec un marin crée (ou clôt) automatiquement son affectation équipage ; un passage PAF est généré aux ports français.</p>
       <button type="submit" class="btn btn-primary btn-sm">+ Opération</button>
     </form>
-    {% endif %}
-  </article>
+  </details>
+  {% endif %}
+</article>
 
-  <article class="card">
+{# ── Shifts dockers & occupation de cale. ── #}
+<article class="card mb-3" id="sec-dockers">
+  <div class="section-header"><h3><i data-lucide="users"></i> Shifts dockers</h3></div>
+
+  {# B3 — occupation du plan de chargement par cale (relie dockers ↔ stowage). #}
+  <div class="mb-3">
+    <h4 class="flex items-center gap-2" style="margin:0 0 8px;">
+      <i data-lucide="package"></i> Occupation par cale
+      <a href="/stowage/legs/{{ selected_leg.id }}" class="btn btn-ghost btn-sm" title="Ouvrir le plan de chargement">
+        <i data-lucide="external-link"></i> Plan de chargement
+      </a>
+      <a href="/stowage/legs/{{ selected_leg.id }}/plan.pdf?lang=fr" class="btn btn-ghost btn-sm" target="_blank" hx-boost="false" title="Plan d'arrimage imprimable (FR)">🇫🇷 PDF</a>
+      <a href="/stowage/legs/{{ selected_leg.id }}/plan.pdf?lang=en" class="btn btn-ghost btn-sm" target="_blank" hx-boost="false" title="Stowage plan printable (EN)">🇬🇧 PDF</a>
+    </h4>
+    {% if stowage_by_hold %}
+    <div class="grid grid-2 gap-2">
+      {% for hold in holds %}
+      {% set occ = stowage_by_hold.get(hold) %}
+      <div class="stat-card">
+        <div class="stat-card-icon teal"><i data-lucide="package"></i></div>
+        <div class="stat-card-body">
+          <span class="stat-card-value">{{ occ.pallet_count if occ else 0 }} pal.</span>
+          <span class="stat-card-label">
+            Cale {{ hold }} ·
+            {{ '%.0f'|format(occ.weight_kg|float) if occ and occ.weight_kg else 0 }} kg ·
+            {{ occ.zones if occ else 0 }} zone(s)
+            {% if occ and occ.dangerous %}· <span class="pill">{{ occ.dangerous }} IMO</span>{% endif %}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted">Plan de chargement non renseigné.</p>
+    {% endif %}
+  </div>
+
+  {% if shifts %}
+  <table class="data-table">
+    <thead><tr><th>Compagnie</th><th>Direction</th><th>Cale</th><th>Dockers</th><th>Cible / Réalisé</th><th>Cadence (pal/h)</th><th>Coût</th></tr></thead>
+    <tbody>
+      {% for s in shifts %}
+      <tr>
+        <td>{{ s.company or '—' }}</td>
+        <td><span class="badge {% if s.direction == 'IMPORT' %}badge-dir-import{% elif s.direction == 'EXPORT' %}badge-dir-export{% endif %}">{{ s.direction or '—' }}</span></td>
+        <td>{% if s.hold %}<span class="pill">{{ s.hold }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td>{{ s.nb_dockers }}</td>
+        <td>
+          {% if s.palettes_target %}
+          <div class="progress-bar"><div class="progress-bar-fill" style="width:{{ (100 * (s.palettes_done or 0) / s.palettes_target) if s.palettes_target else 0 }}%"></div></div>
+          <small class="mono">{{ s.palettes_done }}/{{ s.palettes_target }}</small>
+          {% else %}{{ s.palettes_done }}{% endif %}
+          {% if not leg_locked %}
+          {# Pointage rapide sans rechargement — le geste le plus répété d'une escale active. #}
+          <form method="post" action="/escale/dockers/{{ s.id }}/progress" class="progress-quick-form"
+                hx-post="/escale/dockers/{{ s.id }}/progress" hx-swap="none">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <input name="palettes_done" type="number" min="0" value="{{ s.palettes_done or 0 }}" aria-label="Palettes réalisées" />
+            <button type="submit" class="btn btn-ghost btn-sm" title="Mettre à jour l'avancement"><i data-lucide="check"></i></button>
+          </form>
+          {% endif %}
+        </td>
+        {# ESC-05 — cadence dockers : prévue vs réelle + écart %. #}
+        <td class="mono text-sm">
+          {% if s.actual_rate is not none %}
+            <strong>{{ s.actual_rate }}</strong>{% if s.planned_rate is not none %} <span class="text-muted">/ {{ s.planned_rate }}</span>{% endif %}
+            {% if s.rate_delta_pct is not none %}
+              <span class="pill {{ 'pill-ok' if s.rate_delta_pct >= 0 else 'pill-warn' }}">{{ '%+.0f%%'|format(s.rate_delta_pct) }}</span>
+            {% endif %}
+          {% elif s.planned_rate is not none %}
+            <span class="text-muted">cible {{ s.planned_rate }}</span>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td class="mono">{{ s.cost_eur|money if s.cost_eur else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="text-muted">Aucun shift.</p>{% endif %}
+
+  {% if not leg_locked %}
+  <details class="mt-3 form-disclosure">
+    <summary class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+      <i data-lucide="plus"></i> Nouveau shift
+    </summary>
+    <form method="post" action="/escale/legs/{{ selected_leg.id }}/dockers" class="mt-2"
+          hx-post="/escale/legs/{{ selected_leg.id }}/dockers" hx-swap="none">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <div class="grid grid-3 gap-2">
+        <div class="field"><label>Compagnie</label><input name="company" type="text" /></div>
+        <div class="field"><label>Dockers</label><input name="nb_dockers" type="number" value="0" /></div>
+        <div class="field"><label>Direction</label><select name="direction">{% for d in directions %}<option>{{ d }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Cale</label><select name="hold"><option value="">—</option>{% for h in holds %}<option value="{{ h }}">{{ h }}</option>{% endfor %}</select></div>
+        {{ tz_datetime("planned_start", label="Début prévu") }}
+        {{ tz_datetime("planned_end", label="Fin prévue") }}
+        <div class="field"><label>Cible palettes</label><input name="palettes_target" type="number" /></div>
+        <div class="field"><label>Coût (€)</label><input name="cost_eur" type="number" step="0.01" /></div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">+ Shift</button>
+    </form>
+  </details>
+  {% endif %}
+</article>
+
+<div class="grid grid-2 gap-4">
+  <article class="card" id="sec-equipage">
     <div class="section-header"><h3><i data-lucide="anchor"></i> Équipage &amp; billets</h3></div>
     {% if embark_alerts %}
     <div class="mb-3">
@@ -242,7 +398,8 @@
       <tbody>
         {% for a in crew_assignments %}
         <tr>
-          <td>{{ crew_by_id.get(a.crew_member_id, 'Marin #' ~ a.crew_member_id) }}</td>
+          {# Le nom ouvre la fiche marin (module Équipage) — fin de l'impasse. #}
+          <td><a href="/crew/members/{{ a.crew_member_id }}">{{ crew_by_id.get(a.crew_member_id, 'Marin #' ~ a.crew_member_id) }}</a></td>
           <td class="mono text-xs">{{ a.embark_at|datetime("%d/%m %H:%M") if a.embark_at else '—' }}</td>
           <td class="mono text-xs">{{ a.disembark_at|datetime("%d/%m %H:%M") if a.disembark_at else '—' }}</td>
           <td>{% if a.ticket_path %}<span class="pill pill-ok">📄 billet</span>{% else %}<span class="pill pill-neutral">—</span>{% endif %}</td>
@@ -253,95 +410,147 @@
     {% else %}<p class="text-muted">Aucun mouvement d'équipage sur ce voyage.</p>{% endif %}
   </article>
 
-  <article class="card">
-    <div class="section-header"><h3><i data-lucide="users"></i> Shifts dockers</h3></div>
-
-    {# B3 — occupation du plan de chargement par cale (relie dockers ↔ stowage). #}
-    <div class="mb-3">
-      <h4 class="flex items-center gap-2" style="margin:0 0 8px;">
-        <i data-lucide="package"></i> Occupation par cale
-        <a href="/stowage/legs/{{ selected_leg.id }}" class="btn btn-ghost btn-sm" title="Ouvrir le plan de chargement">
-          <i data-lucide="external-link"></i> Plan de chargement
-        </a>
-        <a href="/stowage/legs/{{ selected_leg.id }}/plan.pdf?lang=fr" class="btn btn-ghost btn-sm" target="_blank" hx-boost="false" title="Plan d'arrimage imprimable (FR)">🇫🇷 PDF</a>
-        <a href="/stowage/legs/{{ selected_leg.id }}/plan.pdf?lang=en" class="btn btn-ghost btn-sm" target="_blank" hx-boost="false" title="Stowage plan printable (EN)">🇬🇧 PDF</a>
-      </h4>
-      {% if stowage_by_hold %}
-      <div class="grid grid-2 gap-2">
-        {% for hold in holds %}
-        {% set occ = stowage_by_hold.get(hold) %}
-        <div class="stat-card">
-          <div class="stat-card-icon teal"><i data-lucide="package"></i></div>
-          <div class="stat-card-body">
-            <span class="stat-card-value">{{ occ.pallet_count if occ else 0 }} pal.</span>
-            <span class="stat-card-label">
-              Cale {{ hold }} ·
-              {{ '%.0f'|format(occ.weight_kg|float) if occ and occ.weight_kg else 0 }} kg ·
-              {{ occ.zones if occ else 0 }} zone(s)
-              {% if occ and occ.dangerous %}· <span class="pill">{{ occ.dangerous }} IMO</span>{% endif %}
-            </span>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="text-muted">Plan de chargement non renseigné.</p>
-      {% endif %}
+  {# ── Documents & SOF — pont vers l'espace bord (Phase 1 : synthèse ;
+       la timeline unifiée « journal d'escale » arrive en Phase 2). ── #}
+  <article class="card" id="sec-documents">
+    <div class="section-header">
+      <h3><i data-lucide="file-text"></i> Documents &amp; SOF</h3>
+      {# Phase 2 — la timeline unifiée bord + terre a sa page dédiée. #}
+      <a href="/escale/legs/{{ selected_leg.id }}/journal" class="btn btn-ghost btn-sm" title="Timeline unifiée bord + terre : SOF, opérations, documents, BL, tickets, sinistres">
+        <i data-lucide="list-ordered"></i> Journal d'escale
+      </a>
+      <a href="/captain?leg_id={{ selected_leg.id }}" class="btn btn-ghost btn-sm" title="SOF, documents cargo, pièces jointes et clôture — espace bord">
+        <i data-lucide="external-link"></i> Espace bord
+      </a>
     </div>
-
-    {% if shifts %}
-    <table class="data-table">
-      <thead><tr><th>Compagnie</th><th>Direction</th><th>Cale</th><th>Dockers</th><th>Cible / Réalisé</th><th>Cadence (pal/h)</th><th>Coût</th></tr></thead>
+    {% if docs_sof %}
+    {% if docs_sof.bl_counts and docs_sof.bl_counts.total %}
+    <p class="text-sm mb-2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <strong>Connaissements :</strong>
+      {% if docs_sof.bl_counts.draft %}<span class="pill pill-info">{{ docs_sof.bl_counts.draft }} projet(s)</span>{% endif %}
+      {% if docs_sof.bl_counts.client_validated %}<span class="pill pill-warn">{{ docs_sof.bl_counts.client_validated }} à signer</span>{% endif %}
+      {% if docs_sof.bl_counts.signed %}<span class="pill pill-ok">{{ docs_sof.bl_counts.signed }} signé(s)</span>{% endif %}
+      <a href="/captain/bl?leg_id={{ selected_leg.id }}" class="text-xs">registre</a>
+    </p>
+    {% endif %}
+    {% if docs_sof.claims_total %}
+    <p class="text-sm mb-2" style="display:flex;align-items:center;gap:8px;">
+      <strong>Sinistres du leg :</strong>
+      <span class="pill pill-error">{{ docs_sof.claims_total }}</span>
+      <a href="/claims?leg_id={{ selected_leg.id }}" class="text-xs">voir</a>
+    </p>
+    {% endif %}
+    <div class="grid grid-3 gap-2 mb-3">
+      <div class="stat-card">
+        <div class="stat-card-body">
+          <span class="stat-card-value">{{ docs_sof.sof_total }}</span>
+          <span class="stat-card-label">événements SOF · {{ docs_sof.sof_signed }} signé(s)</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-body">
+          <span class="stat-card-value">{{ docs_sof.docs_total }}</span>
+          <span class="stat-card-label">documents cargo · {{ docs_sof.docs_signed }} signé(s)</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-body">
+          <span class="stat-card-value">{{ docs_sof.attachments_total }}</span>
+          <span class="stat-card-label">pièces jointes du leg</span>
+        </div>
+      </div>
+    </div>
+    {% if docs_sof.sof_recent %}
+    <table class="data-table mb-2">
+      <thead><tr><th>SOF récents</th><th>Quand</th><th>Statut</th></tr></thead>
       <tbody>
-        {% for s in shifts %}
+        {% for ev in docs_sof.sof_recent %}
         <tr>
-          <td>{{ s.company or '—' }}</td>
-          <td><span class="badge">{{ s.direction or '—' }}</span></td>
-          <td>{% if s.hold %}<span class="pill">{{ s.hold }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
-          <td>{{ s.nb_dockers }}</td>
-          <td>
-            {% if s.palettes_target %}
-            <div class="progress-bar"><div class="progress-bar-fill" style="width:{{ (100 * (s.palettes_done or 0) / s.palettes_target) if s.palettes_target else 0 }}%"></div></div>
-            <small class="mono">{{ s.palettes_done }}/{{ s.palettes_target }}</small>
-            {% else %}{{ s.palettes_done }}{% endif %}
-          </td>
-          {# ESC-05 — cadence dockers : prévue vs réelle + écart %. #}
-          <td class="mono text-sm">
-            {% if s.actual_rate is not none %}
-              <strong>{{ s.actual_rate }}</strong>{% if s.planned_rate is not none %} <span class="text-muted">/ {{ s.planned_rate }}</span>{% endif %}
-              {% if s.rate_delta_pct is not none %}
-                <span class="pill {{ 'pill-ok' if s.rate_delta_pct >= 0 else 'pill-warn' }}">{{ '%+.0f%%'|format(s.rate_delta_pct) }}</span>
-              {% endif %}
-            {% elif s.planned_rate is not none %}
-              <span class="text-muted">cible {{ s.planned_rate }}</span>
-            {% else %}<span class="text-muted">—</span>{% endif %}
-          </td>
-          <td class="mono">{{ s.cost_eur|money if s.cost_eur else '—' }}</td>
+          <td><strong>{{ ev.event_type }}</strong>{% if ev.label %} <small class="text-muted">{{ ev.label }}</small>{% endif %}</td>
+          <td class="mono text-xs">{{ ev.occurred_at|datetime("%d/%m %H:%M") }}</td>
+          <td>{% if ev.signed_at %}<span class="pill pill-ok">signé</span>{% else %}<span class="pill pill-neutral">à signer</span>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
-    {% else %}<p class="text-muted">Aucun shift.</p>{% endif %}
-
-    {% if not leg_locked %}
-    <h4 class="mt-3">Nouveau shift</h4>
-    <form method="post" action="/escale/legs/{{ selected_leg.id }}/dockers">
-      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <div class="grid grid-3 gap-2">
-        <div class="field"><label>Compagnie</label><input name="company" type="text" /></div>
-        <div class="field"><label>Dockers</label><input name="nb_dockers" type="number" value="0" /></div>
-        <div class="field"><label>Direction</label><select name="direction">{% for d in directions %}<option>{{ d }}</option>{% endfor %}</select></div>
-        <div class="field"><label>Cale</label><select name="hold"><option value="">—</option>{% for h in holds %}<option value="{{ h }}">{{ h }}</option>{% endfor %}</select></div>
-        {{ tz_datetime("planned_start", label="Début prévu") }}
-        {{ tz_datetime("planned_end", label="Fin prévue") }}
-        <div class="field"><label>Cible palettes</label><input name="palettes_target" type="number" /></div>
-        <div class="field"><label>Coût (€)</label><input name="cost_eur" type="number" step="0.01" /></div>
-      </div>
-      <button type="submit" class="btn btn-primary btn-sm">+ Shift</button>
-    </form>
     {% endif %}
+    {% if docs_sof.closure_engaged_unlocked %}
+    <div class="alert alert-warn mb-1">
+      <i data-lucide="alert-triangle"></i>
+      <span>Clôture de voyage engagée le {{ docs_sof.closure_submitted_at|datetime("%d/%m/%Y") }} alors que l'escale n'est <strong>pas verrouillée</strong> — vérifier avant validation.</span>
+    </div>
+    {% endif %}
+    {% if docs_sof.locked_without_closure %}
+    <div class="alert alert-info mb-1">
+      <i data-lucide="info"></i>
+      <span>Escale verrouillée alors que la clôture de voyage n'est <strong>pas engagée</strong> — penser à la soumettre côté bord.</span>
+    </div>
+    {% endif %}
+    <p class="text-muted text-xs">
+      SOF escale (opérations + shifts) : <a href="/escale/legs/{{ selected_leg.id }}/sof.pdf" hx-boost="false" target="_blank">PDF</a> ·
+      SOF commandant (événements de bord) : <a href="/captain/legs/{{ selected_leg.id }}/sof.pdf" hx-boost="false" target="_blank">PDF</a>
+    </p>
+    {% else %}<p class="text-muted">Synthèse indisponible.</p>{% endif %}
   </article>
 </div>
+
+<div class="grid grid-2 gap-4 mt-3">
+  <article class="card" id="sec-tickets">
+    <div class="section-header">
+      <h3><i data-lucide="clipboard-list"></i> Tickets de l'escale</h3>
+      <a href="/tickets?leg_id={{ selected_leg.id }}" class="btn btn-ghost btn-sm"><i data-lucide="external-link"></i> Kanban filtré</a>
+    </div>
+    {% if tickets_summary and tickets_summary.total %}
+    <div class="kpi-strip">
+      <div class="kpi-card {% if tickets_summary.open_p1 %}kpi-card-alert{% endif %}"><div class="label">Ouverts</div><div class="value">{{ tickets_summary.open }}</div>{% if tickets_summary.open_p1 %}<div class="delta">dont {{ tickets_summary.open_p1 }} P1</div>{% endif %}</div>
+      <div class="kpi-card"><div class="label">En cours</div><div class="value">{{ tickets_summary.in_progress }}</div></div>
+      <div class="kpi-card"><div class="label">Attente ext.</div><div class="value">{{ tickets_summary.pending_external }}</div></div>
+      <div class="kpi-card"><div class="label">Résolus</div><div class="value">{{ tickets_summary.resolved }}</div></div>
+    </div>
+    {% else %}
+    <p class="text-muted">Aucun ticket rattaché à cette escale.</p>
+    <a href="/tickets/new?leg_id={{ selected_leg.id }}" class="btn btn-secondary btn-sm">+ Nouveau ticket</a>
+    {% endif %}
+  </article>
+
+  <article class="card" id="sec-commercial">
+    <div class="section-header"><h3><i data-lucide="package"></i> Commercial du leg</h3></div>
+    {% if leg_overview %}
+    <div class="grid grid-2 gap-4">
+      <div>
+        <h4>Commandes ({{ leg_overview.orders|length }})</h4>
+        {% if leg_overview.orders %}
+        <table class="data-table">
+          <thead><tr><th>Référence</th><th>Client</th><th>Palettes</th><th>Statut</th></tr></thead>
+          <tbody>
+            {% for row in leg_overview.orders %}
+            <tr>
+              <td class="mono"><a href="/commercial/orders/{{ row.order.id }}">{{ row.order.reference }}</a></td>
+              <td>{{ row.client_name }}</td>
+              <td class="mono">{{ row.order.booked_palettes }}</td>
+              <td><span class="badge badge-{{ row.order.status }}">{{ row.order.status }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}<p class="text-muted">Aucune commande affectée à ce leg.</p>{% endif %}
+      </div>
+      <div>
+        <h4>Packing lists ({{ leg_overview.packing_lists|length }})</h4>
+        {% if leg_overview.packing_lists %}
+        <ul style="list-style:none;padding-left:0;margin:0;display:flex;flex-direction:column;gap:6px;">
+          {% for pl in leg_overview.packing_lists %}
+          <li><a href="/cargo/packing-lists/{{ pl.id }}" class="mono">PL-{{ pl.id }}</a> <span class="badge badge-{{ pl.status }}">{{ pl.status }}</span></li>
+          {% endfor %}
+        </ul>
+        {% else %}<p class="text-muted">Aucune packing list pour ce leg.</p>{% endif %}
+      </div>
+    </div>
+    {% else %}<p class="text-muted">Synthèse commerciale indisponible.</p>{% endif %}
+  </article>
+</div>
+
+</div>{# /#escale-sections #}
 {% else %}
 <article class="card text-center">
   <p class="text-muted">Sélectionnez une escale ci-dessus pour afficher ses opérations et shifts.</p>

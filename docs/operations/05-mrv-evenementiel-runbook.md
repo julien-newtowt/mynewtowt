@@ -106,7 +106,7 @@ bouton d'init poste `POST /admin/flotte-env/{vessel_id}/init` (`admin:M`) →
 (`14`/`15`/`16`/`17`/`other`) et **6 moteurs** (`PME`, `SME`, `FWD_GEN`,
 `AFT_GEN`, `PORT_SHAFT_GEN`, `STBD_SHAFT_GEN` ; groupe ME/AE dérivé).
 **Idempotent** : un appel répété ne crée jamais de doublon. Les capacités de
-cuve et les hydrostatiques restent vides (données officielles à fournir, Q11).
+cuve restent vides (données officielles à fournir, Q11).
 <!-- source: admin_router.py:1619,1646,1661 ; referential_env.py:89 -->
 
 Les **facteurs d'émission** multi-GES se gèrent sur **`/admin/emission-factors`**

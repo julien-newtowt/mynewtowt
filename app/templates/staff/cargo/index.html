@@ -8,7 +8,7 @@
   <p class="text-muted">Génération BL · Packing List · Facture · Certificat Anemos.</p>
 </header>
 
-{% if bookings %}
+{% if rows %}
   <div class="card">
     <table>
       <thead>
@@ -23,16 +23,24 @@
         </tr>
       </thead>
       <tbody>
-        {% for b in bookings %}
+        {% for row in rows %}
+          {% set b = row.booking %}
           <tr>
             <td><a href="/cargo/booking/{{ b.reference }}" class="mono">{{ b.reference }}</a></td>
-            <td><span class="text-muted">#{{ b.client_account_id }}</span></td>
-            <td><span class="mono">{{ b.leg_id }}</span></td>
+            <td>
+              {% if row.client_name %}{{ row.client_name }}
+              {% else %}<span class="text-muted">Sans compte client</span>{% endif %}
+            </td>
+            <td>
+              {% if row.leg_code %}<span class="mono">{{ row.leg_code }}</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
             <td>{{ b.total_palettes }}</td>
             <td>{{ b.total_weight_kg }} kg</td>
             <td><span class="pill pill-info">{{ b.status }}</span></td>
             <td class="flex gap-2">
-              <a href="/cargo/booking/{{ b.reference }}/bl.pdf" target="_blank" class="btn btn-ghost text-xs">BL</a>
+              {# §5.4 — le BL ne se génère plus depuis le booking : il vit dans le
+                 registre, par lot de packing list. #}
               <a href="/cargo/booking/{{ b.reference }}/packing-list.pdf" target="_blank" class="btn btn-ghost text-xs">PL</a>
               <a href="/cargo/booking/{{ b.reference }}/invoice.pdf" target="_blank" class="btn btn-ghost text-xs">Facture</a>
               {% if b.status in ('discharged','delivered') %}

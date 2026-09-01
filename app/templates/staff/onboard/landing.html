@@ -37,7 +37,8 @@
         <a href="/onboard/events/{{ d.event.id }}/edit" class="mono">
           {{ d.event.event_type }} · #{{ d.event.id }}
         </a>
-        <span class="text-muted text-sm"> — {{ t('onb_event_saved_ago', lang, hours=d.age_h) }}</span>
+        <span class="text-muted text-sm"> — {{ t('onb_event_saved_ago', lang, hours=d.age_h) }}
+          · {{ t('onb_event_completion', lang, filled=d.completion[0], total=d.completion[1]) }}</span>
       </li>
       {% endfor %}
     </ul>
@@ -83,6 +84,7 @@
 <section class="card mt-4">
   <h2>Outils annexes</h2>
   <div class="flex gap-3" style="flex-wrap:wrap;">
+    <a href="/captain/ventes" class="btn btn-secondary">🛒 Vente à bord</a>
     <a href="/cashbox" class="btn btn-secondary">💰 Caisse de bord</a>
     <a href="/tickets/new" class="btn btn-secondary">🎫 Lever un ticket P1</a>
     <a href="/planning" class="btn btn-secondary">🗓️ Planning</a>

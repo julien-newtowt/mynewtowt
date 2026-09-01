@@ -7,7 +7,9 @@ Couvre ``app.services.report_generation`` sur un moteur SQLite en mémoire
   (chaîne de 2 événements) ;
 - **Carbon** : assiette « hors mouillage » (cas avec 1 mouillage) et multi-GES
   exact (4,43625 t DO × 3,206 = 14,2226175 tCO₂) ;
-- **Stopover** : écart ROB classé sur 4 niveaux via les bornes R14 ;
+- **Stopover** : écart ROB classé sur 4 niveaux via les bornes R14 ; cargaison
+  chargée/déchargée (delta B/L déclaré) et ancrage/dérive rattaché à la
+  fenêtre d'escale (G8, CDC §12.4 blocs 7/8) ;
 - **cycle de vie** : regénération brouillon OK / validé refusée ;
 - **field modification** : R18 (justification vide refusée) + statut dérivé
   (pire cas ``under_conformity``).
@@ -337,6 +339,94 @@ async def test_carbon_assiette_excludes_anchoring(db):
     assert any(a["sequence_no"] == 1 for a in report.payload["anchorings"])
 
 
+# ═══════════════════════════════════ Carbon — scission au Cut-off (G1) ═══════════════════════════════════
+
+CUTOFF_FUEL = {
+    "PME": 11500,
+    "SME": 8900,
+    "FWD_GEN": 5450,
+    "AFT_GEN": 4300,
+    "PORT_SHAFT_GEN": 2150,
+    "STBD_SHAFT_GEN": 2150,
+}
+
+
+async def test_carbon_report_splits_at_cutoff(db):
+    """G1 — un Cut-off finalisé entre Noon1 et Noon2 scinde le Carbon Report
+    en 2 rapports indépendants dont la somme réconcilie exactement avec le
+    total non scindé (même chaîne d'intervalles, juste partitionnée)."""
+    from app.models.nav_event import CutoffEvent
+
+    vessel, leg, engines = await _base(db)
+    dep, n1, n2, arr = await _reference_chain(db, vessel, leg, engines)
+
+    cutoff = CutoffEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=n1.datetime_utc + timedelta(hours=12),
+    )
+    cutoff.engine_readings = _readings(engines, CUTOFF_FUEL)
+    db.add(cutoff)
+    await db.flush()
+
+    whole = await rg.generate_carbon_report(db, leg, author_user_id=1)
+    whole_total = Decimal(whole.payload["totals"]["conso_total_t"])
+
+    r1, r2 = await rg.generate_carbon_reports_split(db, leg, cutoff, author_user_id=1)
+    assert r1.period_seq == 1
+    assert r2.period_seq == 2
+    t1 = Decimal(r1.payload["totals"]["conso_total_t"])
+    t2 = Decimal(r2.payload["totals"]["conso_total_t"])
+    assert t1 + t2 == whole_total  # réconciliation : somme des 2 périodes == total non scindé
+
+    # Même cargo physique dans les deux moitiés (le B/L ne change pas au Cut-off).
+    assert Decimal(r1.payload["cargo"]["cargo_bl_t"]) == Decimal("900.000")
+    assert Decimal(r2.payload["cargo"]["cargo_bl_t"]) == Decimal("900.000")
+
+    # Événements liés : période 1 = Dep..Cutoff ; période 2 = Cutoff..Arr —
+    # le Cut-off appartient aux deux (point de jonction).
+    assert {lk.event_id for lk in r1.event_links} == {dep.id, n1.id, cutoff.id}
+    assert {lk.event_id for lk in r2.event_links} == {cutoff.id, n2.id, arr.id}
+
+
+async def test_carbon_reports_for_leg_detects_cutoff_and_is_idempotent(db):
+    """``carbon_reports_for_leg`` scinde automatiquement (pas besoin d'appeler
+    ``generate_carbon_reports_split`` explicitement) et régénère sans doublon."""
+    from app.models.nav_event import CutoffEvent
+
+    vessel, leg, engines = await _base(db)
+    await _reference_chain(db, vessel, leg, engines)
+    cutoff = CutoffEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=36),
+    )
+    cutoff.engine_readings = _readings(engines, CUTOFF_FUEL)
+    db.add(cutoff)
+    await db.flush()
+
+    reports = await rg.carbon_reports_for_leg(db, leg, author_user_id=1)
+    assert len(reports) == 2
+    assert {r.period_seq for r in reports} == {1, 2}
+
+    # Régénération : mêmes 2 lignes (pas de doublon), pas 4.
+    again = await rg.carbon_reports_for_leg(db, leg, author_user_id=1)
+    assert {r.id for r in again} == {r.id for r in reports}
+
+
+async def test_carbon_reports_for_leg_without_cutoff_returns_single_report(db):
+    """Sans Cut-off finalisé, comportement historique inchangé : 1 seul rapport,
+    ``period_seq`` None."""
+    vessel, leg, engines = await _base(db)
+    await _reference_chain(db, vessel, leg, engines)
+
+    reports = await rg.carbon_reports_for_leg(db, leg, author_user_id=1)
+    assert len(reports) == 1
+    assert reports[0].period_seq is None
+
+
 # ════════════════════════════════════════════════════════════ Stopover
 
 
@@ -394,6 +484,130 @@ async def test_stopover_ecart_four_levels(db, rob_departure, expected):
     assert Decimal(report.payload["consumption"]["conso_escale_t"]) == Decimal("200") * FACTOR
     assert Decimal(rc["theoretical_departure_t"]) == Decimal("50.000") - Decimal("200") * FACTOR
     assert rc["classification"] == expected
+
+
+async def test_stopover_report_includes_cargo_delta(db):
+    """G8 (CDC §12.4 bloc 7) : cargaison chargée/déchargée pendant l'escale =
+    delta du B/L déclaré entre Arrival et Departure."""
+    vessel, leg, engines = await _base(db)
+    arr = await _portcall(
+        ArrivalEvent, leg, vessel, engines, dt=T0, rob=Decimal("50.000"), fuel_pme=1000
+    )
+    arr.cargo_bl_t = Decimal("500.000")
+    dep = await _portcall(
+        DepartureEvent,
+        leg,
+        vessel,
+        engines,
+        dt=T0 + timedelta(hours=12),
+        rob=Decimal("49.831"),
+        fuel_pme=1200,
+    )
+    dep.cargo_bl_t = Decimal("650.000")
+    db.add_all([arr, dep])
+    await db.flush()
+
+    report = await rg.generate_stopover_report(db, arr, dep, author_user_id=1)
+    cargo = report.payload["cargo"]
+    assert Decimal(cargo["declared_arrival_t"]) == Decimal("500.000")
+    assert Decimal(cargo["declared_departure_t"]) == Decimal("650.000")
+    assert Decimal(cargo["delta_t"]) == Decimal("150.000")  # chargée pendant l'escale
+
+
+async def test_stopover_report_cargo_delta_none_when_undeclared(db):
+    vessel, leg, engines = await _base(db)
+    arr = await _portcall(
+        ArrivalEvent, leg, vessel, engines, dt=T0, rob=Decimal("50.000"), fuel_pme=1000
+    )
+    dep = await _portcall(
+        DepartureEvent,
+        leg,
+        vessel,
+        engines,
+        dt=T0 + timedelta(hours=12),
+        rob=Decimal("49.831"),
+        fuel_pme=1200,
+    )
+    db.add_all([arr, dep])
+    await db.flush()
+
+    report = await rg.generate_stopover_report(db, arr, dep, author_user_id=1)
+    assert report.payload["cargo"]["delta_t"] is None
+
+
+async def test_stopover_report_includes_anchoring_in_window(db):
+    """G8 (CDC §12.4 bloc 8) : mouillage Begin/End survenu pendant l'escale,
+    apparié et référencé (hors temps MRV, pour information)."""
+    vessel, leg, engines = await _base(db)
+    arr = await _portcall(
+        ArrivalEvent, leg, vessel, engines, dt=T0, rob=Decimal("50.000"), fuel_pme=1000
+    )
+    dep = await _portcall(
+        DepartureEvent,
+        leg,
+        vessel,
+        engines,
+        dt=T0 + timedelta(hours=24),
+        rob=Decimal("49.831"),
+        fuel_pme=1200,
+    )
+    begin = BeginAnchoringEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=6),
+        sequence_no=1,
+    )
+    end = EndAnchoringEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=10),
+        sequence_no=1,
+    )
+    db.add_all([arr, dep, begin, end])
+    await db.flush()
+
+    report = await rg.generate_stopover_report(db, arr, dep, author_user_id=1)
+    anchorings = report.payload["anchorings"]
+    assert len(anchorings) == 1
+    assert Decimal(anchorings[0]["duration_h"]) == Decimal("4")
+
+
+async def test_stopover_report_excludes_anchoring_outside_window(db):
+    vessel, leg, engines = await _base(db)
+    arr = await _portcall(
+        ArrivalEvent, leg, vessel, engines, dt=T0, rob=Decimal("50.000"), fuel_pme=1000
+    )
+    dep = await _portcall(
+        DepartureEvent,
+        leg,
+        vessel,
+        engines,
+        dt=T0 + timedelta(hours=12),
+        rob=Decimal("49.831"),
+        fuel_pme=1200,
+    )
+    # Mouillage AVANT l'arrivée — hors fenêtre d'escale.
+    begin = BeginAnchoringEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 - timedelta(hours=6),
+        sequence_no=1,
+    )
+    end = EndAnchoringEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 - timedelta(hours=2),
+        sequence_no=1,
+    )
+    db.add_all([arr, dep, begin, end])
+    await db.flush()
+
+    report = await rg.generate_stopover_report(db, arr, dep, author_user_id=1)
+    assert report.payload["anchorings"] == []
 
 
 # ════════════════════════════════════════════════════════════ Cycle de vie

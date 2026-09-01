@@ -19,6 +19,14 @@ ALLOWED_EXTENSIONS: tuple[str, ...] = (
     ".jpg",
     ".jpeg",
     ".webp",
+    # Formats natifs des photos de téléphone. Sans eux, un justificatif
+    # photographié depuis un iPhone (HEIC par défaut) ou un Android récent
+    # (AVIF) était rejeté au motif « extension non autorisée » — alors que les
+    # champs concernés sont explicitement des prises de vue (`capture` =
+    # appareil photo) : justificatif de caisse, scan de BL, document équipage.
+    ".heic",
+    ".heif",
+    ".avif",
     ".csv",
     ".txt",
     ".zip",
@@ -34,6 +42,19 @@ _MAGIC_SIGNATURES: dict[bytes, str] = {
     b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1": "application/msword",  # DOC/XLS old
 }
 
+# Familles ISO-BMFF : la signature n'est pas en tête de fichier mais à
+# l'offset 4 (`ftyp`), suivie d'une « marque » qui désigne le format exact.
+_FTYP_BRANDS: dict[bytes, str] = {
+    b"heic": "image/heic",
+    b"heix": "image/heic",
+    b"hevc": "image/heic",
+    b"hevx": "image/heic",
+    b"mif1": "image/heif",
+    b"msf1": "image/heif",
+    b"avif": "image/avif",
+    b"avis": "image/avif",
+}
+
 
 @dataclass(frozen=True)
 class ValidationResult:
@@ -47,7 +68,13 @@ def validate_filename(name: str) -> ValidationResult:
         return ValidationResult(False, "nom de fichier vide")
     lname = name.lower()
     if not any(lname.endswith(ext) for ext in ALLOWED_EXTENSIONS):
-        return ValidationResult(False, f"extension non autorisée ({name})")
+        # Message actionnable : l'utilisateur doit savoir quoi faire, pas
+        # seulement que c'est refusé.
+        return ValidationResult(
+            False,
+            f"format non accepté ({name}). Formats acceptés : "
+            "photo (JPG, PNG, HEIC, WEBP), PDF, Word, Excel, CSV, ZIP.",
+        )
     if "/" in name or "\\" in name or ".." in name:
         return ValidationResult(False, "chemin invalide dans le nom de fichier")
     return ValidationResult(True)
@@ -65,6 +92,9 @@ def sniff_mime(content: bytes) -> str | None:
     for sig, mime in _MAGIC_SIGNATURES.items():
         if head.startswith(sig):
             return mime
+    # HEIC / HEIF / AVIF : conteneur ISO-BMFF, `ftyp` à l'offset 4.
+    if len(head) >= 12 and head[4:8] == b"ftyp":
+        return _FTYP_BRANDS.get(head[8:12])
     return None
 
 

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
+import re
 
 from app.services import emission_ledger, kpi_env
 
@@ -43,7 +44,27 @@ def _fields(cls) -> dict[str, str]:
 
 
 def _sig(fn) -> str:
-    return str(inspect.signature(fn))
+    """Signature rendue comme le TEXTE SOURCE, sans les guillemets d'``inspect``.
+
+    ``from __future__ import annotations`` etant actif dans les modules
+    couverts, les annotations sont des chaines a l'execution et
+    ``str(inspect.signature(...))`` les rend entre apostrophes
+    (``db: 'AsyncSession'``). Les gabarits ci-dessous figent le texte source
+    tel qu'ecrit — c'est ce que dit la note « Signatures figees » — donc on
+    retire ces apostrophes, qui sont un artefact de rendu et non une
+    propriete du contrat.
+    """
+    rendu = str(inspect.signature(fn))
+
+    # Retire les apostrophes autour des ANNOTATIONS seulement : elles suivent
+    # « : » ou « -> ». Une valeur par defaut suit « = » et les conserve.
+    def sans_quotes(m):
+        return m.group(1)
+
+    rendu = re.sub("(?<=: )'([^']*)'", sans_quotes, rendu)
+    return re.sub("(?<=-> )'([^']*)'", sans_quotes, rendu)
+    # Uniquement les annotations : elles suivent « : » ou « -> ». Les valeurs
+    # par defaut suivent « = » et gardent leurs apostrophes (``= 'A'``).
 
 
 # ─────────────────────────────────────────────────── Gabarits — kpi_env
@@ -199,6 +220,10 @@ LEDGER_RESULT_FIELDS = {
     "co2_emitted_t": "Decimal | None",
     "ch4_g": "Decimal | None",
     "n2o_g": "Decimal | None",
+    # Ajout compatible (CO2eq GWP-100 tank-to-wake, G13) : present dans
+    # ``LedgerResult`` mais omis au gel du contrat. Extension, donc pas
+    # d'increment de DASHBOARD_CONTRACT_VERSION.
+    "co2eq_t": "Decimal | None",
     "wtt_co2eq_t": "Decimal | None",
     "avoided_co2_kg": "Decimal | None",
     "ef_method_a": "Decimal | None",
@@ -213,6 +238,7 @@ EMISSIONS_BREAKDOWN_KEYS = {
     "co2_t",
     "ch4_g",
     "n2o_g",
+    "co2eq_t",  # meme ajout compatible que dans LEDGER_RESULT_FIELDS (G13).
     "wtt_gco2eq_per_mj",
     "wtt_co2eq_t",
     "ef_co2_kg_per_kg",

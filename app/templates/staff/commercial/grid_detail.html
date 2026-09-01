@@ -52,12 +52,14 @@
 
 <article class="card">
   <h2>Routes (POL → POD)</h2>
-  <p class="text-muted text-sm">Chaque route porte sa distance, son OPEX jour et son tarif de base : <span class="mono">base_rate = OPEX/j × (distance / (8 × 24)) / 978</span>. Le tarif effectif d'un devis = base_rate × bracket × index.</p>
+  <p class="text-muted text-sm">Chaque route porte sa distance, son OPEX jour et son tarif de base : <span class="mono">base_rate = OPEX/j × (distance / (vitesse × 24)) / capacité navire</span> — vitesse et capacité réelles du leg/navire quand ils sont connus. Le tarif effectif d'une estimation = base_rate × palier × index.</p>
+  <div class="table-scroll">
   <table class="data-table">
-    <thead><tr><th>Route</th><th>Distance (NM)</th><th>Jours de mer</th><th>OPEX/j</th><th>Tarif base</th><th>Source</th>{% if editable %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>Référence</th><th>Route</th><th>Distance (NM)</th><th>Jours de mer</th><th>OPEX/j</th><th>Tarif base</th><th>Source</th>{% if editable %}<th></th>{% endif %}</tr></thead>
     <tbody>
       {% for r in grid.lines %}
       <tr>
+        <td class="mono">{{ r.tariff_reference or '—' }}{% if r.is_route_default %} <span class="pill pill-ok" title="Grille appliquée par défaut sur cette route">défaut</span>{% endif %}</td>
         <td class="mono">{{ r.pol_locode }} → {{ r.pod_locode }}</td>
         <td class="mono">{{ r.distance_nm }}</td>
         <td class="mono">{{ r.nav_days }}</td>
@@ -85,6 +87,12 @@
             <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
             <button type="submit" class="btn btn-ghost btn-sm" title="Recalcule l'OPEX (efface la surcharge manuelle)">↻</button>
           </form>
+          {% if not r.is_route_default %}
+          <form method="post" action="/commercial/grids/{{ grid.id }}/routes/{{ r.id }}/default" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-ghost btn-sm" title="Appliquer cette grille par défaut sur cette route">Par défaut</button>
+          </form>
+          {% endif %}
           <form method="post" action="/commercial/grids/{{ grid.id }}/routes/{{ r.id }}/delete" style="display:inline;">
             <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
             <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--cuivre);" data-confirm>Supprimer</button>
@@ -93,10 +101,11 @@
         {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="{{ '7' if editable else '6' }}" class="text-muted text-center">Aucune route. Ajoutez une route POL→POD.</td></tr>
+      <tr><td colspan="{{ '8' if editable else '7' }}" class="text-muted text-center">Aucune route. Ajoutez une route POL→POD.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 
   {% if editable %}
   <h3 class="mt-3">Ajouter une route</h3>
@@ -177,8 +186,70 @@
 </article>
 
 <article class="card mt-4">
+  <h2>Conditions de règlement</h2>
+  <p class="text-muted text-sm">
+    De un à {{ max_payment_terms }} règlements, dont la somme fait 100 %. Ces conditions sont
+    <strong>contractuelles</strong> : elles sont reprises sur la booking note. Elles ne déclenchent
+    aucune facturation — le fret est facturé hors plateforme, par virement.
+  </p>
+
+  {% if grid.payment_terms %}
+  <table class="data-table">
+    <thead><tr><th>#</th><th>Échéance</th><th>Part</th><th>Libellé</th></tr></thead>
+    <tbody>
+      {% for t in grid.payment_terms %}
+      <tr>
+        <td class="mono">{{ t.position }}</td>
+        <td>{{ t.trigger_label }}</td>
+        <td class="mono">{{ t.percentage }} %</td>
+        <td>{{ t.label or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Aucune condition de règlement définie sur cette grille.</p>
+  {% endif %}
+
+  {% if editable %}
+  <h3 class="mt-3">Définir l'échéancier</h3>
+  <form method="post" action="/commercial/grids/{{ grid.id }}/payment-terms">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <p class="text-muted text-sm">Laissez une ligne vide pour la supprimer. Enregistrer remplace l'échéancier complet.</p>
+    {% for i in range(max_payment_terms) %}
+    {% set t = grid.payment_terms[i] if grid.payment_terms|length > i else None %}
+    <div class="grid grid-4 gap-4">
+      <div class="field">
+        <label for="terms-{{ i }}-trigger">Règlement {{ i + 1 }}</label>
+        <select id="terms-{{ i }}-trigger" name="terms-{{ i }}-trigger">
+          <option value="">— aucun —</option>
+          {% for trig in payment_triggers %}
+          <option value="{{ trig }}" {% if t and t.trigger == trig %}selected{% endif %}>{{ payment_trigger_labels[trig] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="terms-{{ i }}-offset_days">Jours avant départ <small class="text-muted">— si applicable</small></label>
+        <input id="terms-{{ i }}-offset_days" name="terms-{{ i }}-offset_days" type="number" min="0" step="1" class="mono" value="{{ t.offset_days if t and t.offset_days is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label for="terms-{{ i }}-percentage">Part (%)</label>
+        <input id="terms-{{ i }}-percentage" name="terms-{{ i }}-percentage" type="number" min="0" max="100" step="0.01" class="mono" value="{{ t.percentage if t else '' }}" />
+      </div>
+      <div class="field">
+        <label for="terms-{{ i }}-label">Libellé <small class="text-muted">— facultatif</small></label>
+        <input id="terms-{{ i }}-label" name="terms-{{ i }}-label" type="text" maxlength="120" value="{{ t.label or '' if t else '' }}" />
+      </div>
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Enregistrer l'échéancier</button>
+  </form>
+  {% endif %}
+</article>
+
+<article class="card mt-4">
   <h2>Options tarifaires</h2>
-  <p class="text-muted text-sm">Coûts annexes au fret (manutention, booking note…). Les options <strong>actives</strong> sont reprises dans chaque devis calculé sur cette grille.</p>
+  <p class="text-muted text-sm">Coûts annexes au fret (manutention, booking note…). Les options <strong>actives</strong> sont reprises dans chaque estimation calculée sur cette grille.</p>
   <table class="data-table">
     <thead><tr><th>Code</th><th>Libellé</th><th>Unité</th><th>Montant</th><th>Active</th><th></th></tr></thead>
     <tbody>

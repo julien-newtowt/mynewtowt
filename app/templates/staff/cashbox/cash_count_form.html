@@ -1,0 +1,139 @@
+{% extends "staff/_layout.html" %}
+{% block title %}État de caisse — {{ vessel.name }}{% endblock %}
+{% block content %}
+<a href="/cashbox/{{ vessel.id }}" class="btn btn-ghost mb-3">← Caisse {{ vessel.code }}</a>
+<header class="mb-4">
+  <span class="kicker">Contrôle de caisse</span>
+  <h1 class="display">État de caisse — <span class="mono text-muted">{{ vessel.code }}</span> {{ vessel.name }}</h1>
+  <p class="text-muted">
+    Comptez physiquement les espèces, coupure par coupure, puis déclarez.
+    L'écart avec le solde théorique est calculé et conservé tel quel : il n'a
+    pas à être nul, il a à être expliqué.
+  </p>
+</header>
+
+<form method="post" action="/cashbox/{{ vessel.id }}/etat" data-cash-count-form
+      data-confirm="Enregistrer cet état de caisse ? Un état de caisse est définitif : il ne peut être ni modifié ni supprimé.">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <article class="card mb-4">
+    <h2>Contexte</h2>
+    <div class="grid grid-3 gap-3">
+      <div class="field">
+        <label for="trigger">Motif</label>
+        <select id="trigger" name="trigger" required>
+          {% for code in triggers %}
+            <option value="{{ code }}">{{ trigger_labels[code] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="counted_on">Date du comptage</label>
+        <input id="counted_on" name="counted_on" type="date" value="{{ today }}" required />
+      </div>
+      <div class="field">
+        <label for="declared_by_name">Commandant sortant</label>
+        <input id="declared_by_name" name="declared_by_name" type="text"
+               placeholder="Nom du déclarant" autocomplete="off" />
+      </div>
+      <div class="field" style="grid-column: span 2;">
+        <label for="handover_to_name">Remise à (commandant entrant)</label>
+        <input id="handover_to_name" name="handover_to_name" type="text"
+               placeholder="Laisser vide si ce n'est pas une relève" autocomplete="off" />
+      </div>
+    </div>
+    <div class="field">
+      <label for="notes">Observations</label>
+      <textarea id="notes" name="notes" rows="2"
+                placeholder="Contexte du comptage, témoin présent, remarques…"></textarea>
+    </div>
+  </article>
+
+  {% for block in blocks %}
+    <article class="card mb-4" data-cash-block
+             data-currency="{{ block.currency }}"
+             data-computed="{{ "%.2f"|format(block.computed|float) }}">
+      <div class="flex gap-3" style="align-items:baseline;flex-wrap:wrap;">
+        <label class="flex gap-2" style="align-items:center;">
+          <input type="checkbox" name="declare_{{ block.currency }}" value="1" data-declare
+                 {% if block.currency == 'EUR' %}checked{% endif %} />
+          <h2 style="margin:0;">{{ currency_labels[block.currency] }}</h2>
+        </label>
+        <span class="text-muted">
+          Solde théorique à ce jour :
+          <strong class="mono">{{ "%.2f"|format(block.computed|float) }} {{ block.currency }}</strong>
+        </span>
+      </div>
+      <p class="text-muted">
+        Ne cochez la devise que si la caisse en contient. Laissez les cases vides
+        pour les coupures absentes.
+      </p>
+
+      {# Comptage vivant : le total et l'écart se lisent pendant la saisie, pour
+         vérifier ses chiffres avant de les enregistrer. Valeurs indicatives —
+         le serveur les recalcule depuis les quantités à l'enregistrement. #}
+      <section class="kpi-strip mb-3">
+        <div class="kpi-card">
+          <div class="label">Total déclaré ({{ block.currency }})</div>
+          <div class="value mono" data-counted-total>0,00</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Solde théorique</div>
+          <div class="value mono">{{ "%.2f"|format(block.computed|float) }}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Écart</div>
+          <div class="value mono" data-variance>—</div>
+        </div>
+      </section>
+      <p class="form-hint" data-variance-hint></p>
+
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Valeur</th><th>Type</th><th>Nombre</th></tr>
+          </thead>
+          <tbody>
+            {% for value, kind in block.denominations %}
+              <tr>
+                <td class="mono">{{ "%g"|format(value|float) }} {{ block.currency }}</td>
+                <td class="text-muted">{{ "Billet" if kind == "billet" else "Pièce" }}</td>
+                <td>
+                  <input name="qty_{{ block.currency }}_{{ value }}" type="number"
+                         min="0" step="1" inputmode="numeric" placeholder="0"
+                         data-denom="{{ value }}" style="max-width:8rem;" />
+                </td>
+              </tr>
+            {% endfor %}
+            <tr>
+              <td colspan="2">Pièces non détaillées (montant global)</td>
+              <td>
+                <input name="bulk_{{ block.currency }}" type="text" inputmode="decimal"
+                       placeholder="0.00" data-bulk style="max-width:8rem;" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="field">
+        <label for="reason_{{ block.currency }}">Explication d'un écart éventuel ({{ block.currency }})</label>
+        <input id="reason_{{ block.currency }}" name="reason_{{ block.currency }}" type="text"
+               placeholder="Ex. avance non saisie, erreur de rendu de monnaie…" />
+      </div>
+    </article>
+  {% endfor %}
+
+  <p class="text-muted">
+    Un état de caisse est <strong>définitif</strong> : le registre n'a ni
+    modification ni suppression. Un récapitulatif de votre déclaration vous est
+    présenté pour confirmation avant enregistrement.
+  </p>
+  <div class="flex gap-3">
+    <button type="submit" class="btn btn-primary">Déclarer l'état de caisse</button>
+    <a href="/cashbox/{{ vessel.id }}" class="btn btn-ghost">Annuler</a>
+  </div>
+</form>
+
+<script src="{{ asset('js/cash-count-form.js') }}" defer></script>
+{% endblock %}

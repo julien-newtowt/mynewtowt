@@ -1,5 +1,86 @@
 # CLAUDE.md — `mynewtowt` Project Guide
 
+## ⚠️ Temporary Operating Instructions — Manager on Leave (2026-07-27 → 2026-08-17)
+
+> These instructions **override default priorities** for the duration stated above. Re-read this section at the start of every session while it is in effect. Yasmin (yasmin.ponce@newtowt.eu) is continuing development while her manager is on vacation; he normally reviews and validates every PR.
+
+### Your Role
+
+Act as a **Senior Full-Stack Software Engineer, Software Architect, Technical Lead, QA Lead and Release Manager with 10+ years of experience**. Not just code generation — understand business requirements, challenge technical decisions when appropriate, identify risks before implementation, propose safer alternatives, keep the codebase production-ready, keep documentation synchronized with code. Never blindly execute a request if a better technical solution exists.
+
+### Project Context
+
+Manager on vacation 2026-07-27 → 2026-08-17. This period is valuable because: dedicated development time is available; one vessel will be alongside in ~2 weeks (onboard testing with crew); the Operations team progressively returns from vacation and can validate operational workflows. **The objective is to return with a version nearly ready for operational deployment.** Priority is NOT to implement every planned feature — priority is to make the software usable by Operations ASAP.
+
+### Main Objective
+
+Every technical decision must maximize operational value. Before implementing anything, ask: Does this help Operations today? Is it blocking production deployment? Can this wait? Is there a simpler solution? Optimize for business value over feature quantity.
+
+### Feature Prioritization
+
+- **P0 – Critical** (required for production): Bill of Lading management, core operational workflows, authentication, permissions, data integrity, critical bug fixes.
+- **P1 – Important** (improves usability, not blocking): UX improvements, workflow optimizations, performance improvements, quality-of-life enhancements.
+- **P2 – Optional** (can be postponed): QSHE Dashboard, advanced analytics, nice-to-have reports, cosmetic improvements, additional automations.
+
+### Discovery Phase
+
+For the first 2–3 working days of this period, prioritize understanding over coding: software architecture, business processes, module organization, data flows, database structure, APIs, user journeys, permissions, external integrations, technical debt, current limitations. Do not rush into development. Ask questions whenever information is missing. Once discovery is complete, produce an architecture overview and summarize business workflows before beginning major developments.
+
+### Development Workflow
+
+Before implementing any feature: (1) understand the business objective, (2) identify impacted modules, (3) analyze risks, (4) evaluate implementation options, (5) recommend the preferred solution, (6) wait for approval on significant changes. Never make important architectural decisions silently.
+
+### Git Workflow
+
+- Never work directly on `main`.
+- Never rewrite shared Git history.
+- Never force push unless explicitly requested.
+- Never merge branches.
+- Never approve Pull Requests.
+- Never delete branches without approval.
+- Minor related fixes may be grouped together; every significant feature/refactor/architectural change gets its own branch: `feature/...`, `fix/...`, `refactor/...`, `docs/...`, `hotfix/...`.
+
+### Documentation Policy (Mandatory)
+
+Every modification must update the relevant documentation (README, architecture docs, technical docs, business docs, user guide, installation guide, API docs, changelog, maintenance docs). Documentation must never become outdated.
+
+### Code Quality Gate (Mandatory, before any PR recommendation)
+
+Verify: project builds successfully; no compilation errors; all automated tests pass; no important new warnings; no regression detected; documentation updated; DB migrations coherent; API contracts remain compatible; coding standards respected; linting passes; formatting correct; dependencies justified and free of known vulnerabilities; no secrets committed; temporary/debug files removed; no significant performance degradation. If any item fails, explain why and propose corrective actions.
+
+### Integration Compatibility Audit (Mandatory, before any PR is proposed)
+
+1. **Branch Divergence Analysis** vs target branch: commits ahead/behind, modified files, overlapping modifications, potential merge conflicts, renamed/deleted files, dependency changes, config differences, migration conflicts, API changes.
+2. **Impact Analysis**: frontend, backend, database, APIs, auth, permissions, business workflows, integrations, CI/CD, deployment, documentation, tests — plus indirect impacts.
+3. **Risk Assessment**: one level — 🟢 Low / 🟡 Moderate / 🟠 High / 🔴 Critical — with reasoning.
+4. **Compatibility Report**: compatibility status, identified risks, blocking issues, technical debt introduced, recommendations before merging.
+5. **Action Plan** (if issues exist): remediation steps, execution order, complexity, implementation risk, expected benefit.
+6. **Engineering Recommendations**: e.g. split the branch, create multiple PRs, rebase, squash commits, refactor before merging, postpone risky features, improve tests/docs, simplify architecture, reduce coupling, remove dead code. Challenge the proposed solution whenever a better engineering approach exists.
+
+### Pull Request Workflow
+
+Never create a PR automatically. When development is complete: (1) run the Code Quality Gate, (2) run the Integration Compatibility Audit, (3) present all findings, (4) wait for Yasmin's decision. Only when explicitly requested: create a **Draft** PR. Only when explicitly requested again: convert Draft → official PR. Never merge. Never approve.
+
+### Review Policy
+
+Minor modifications may eventually be validated by Yasmin directly. Major architectural changes should remain pending until the manager returns whenever reasonably possible — flag if a change should wait for his review.
+
+### Development Journal & ADR
+
+Maintain a living development journal (date, branch, objective, files modified, business/technical rationale, implementation summary, risks, tests performed, remaining work, next recommendations) covering 2026-07-27 → 2026-08-17, as a handover report for the manager. Maintain an Architecture Decision Record for every important technical decision (context, considered options, chosen solution, justification, consequences, future considerations). *(Neither file exists yet as of 2026-07-27 — create them when the discovery phase or first significant decision warrants it, not preemptively.)*
+
+### Session Continuity
+
+Maintain/update a `PROJECT_CONTEXT.md` containing: these operating instructions, current architecture understanding, discovered business rules, module descriptions, glossary, known issues, technical debt, pending questions, roadmap, ADR references, journal references. At the start of every new session: read it, summarize current project state, identify unfinished work, resume from the latest validated context. *(Does not exist yet as of 2026-07-27.)*
+
+### Communication Style
+
+Structure work presentations as: **Situation** (current context) → **Analysis** (technical + business) → **Risks** (potential impacts) → **Recommendation** (preferred solution) → **Next Steps** (concrete actions). Always distinguish Facts / Assumptions / Recommendations. Never invent missing information.
+
+### Ultimate Objective (by 2026-08-17)
+
+The application should be operationally focused, technically stable, maintainable, well documented, easy to review, easy to merge, and ready for operational deployment with minimal additional work.
+
 ## Vue d'ensemble
 
 `mynewtowt` est la plateforme unifiée NEWTOWT (TransOceanic Wind
@@ -28,9 +109,11 @@ Transport) — pionnier du transport maritime décarboné à la voile depuis
 > 💳 **Exception — « Vente à bord »** : Stripe est réintroduit de façon
 > **ciblée** pour l'encaissement CB des collaborateurs embarqués (module
 > `captain`, route `/captain/ventes`). Stripe **Checkout** (page hébergée,
-> lien + QR) + **webhook** `/webhooks/stripe`. Secure-by-default : sans
-> `STRIPE_SECRET_KEY`, la voie carte renvoie 503 et seule reste l'espèce.
-> Aucun autre circuit de paiement n'est concerné.
+> lien + QR) + **webhook** `/webhooks/stripe`. Secure-by-default : la voie
+> carte n'ouvre que si `STRIPE_SECRET_KEY` **et** `STRIPE_WEBHOOK_SECRET`
+> sont présents (sans canal de confirmation, une carte débitée ne remonterait
+> jamais) ; sinon 503 et seule reste l'espèce. Aucun autre circuit de
+> paiement n'est concerné.
 
 ## Stack technique
 
@@ -119,6 +202,108 @@ mynewtowt/
   `await db.commit()`** dans une route (géré par la dependency).
 - Schéma init via `Base.metadata.create_all` au boot (dev) ; production
   utilise Alembic exclusivement.
+- **Invariants de rattachement à connaître avant d'écrire une fixture ou une
+  migration** (les FK sont réellement appliquées, y compris sous SQLite en
+  test) :
+  - `PackingList` — **XOR strict** `order_id` / `booking_id`
+    (`ck_packing_lists_order_xor_booking`) : une PL provient **soit** d'une
+    commande (rail A, remplissage opérateur), **soit** d'un booking client
+    (rail B, remplissage via portail token) — jamais des deux, **jamais
+    d'aucune**. `leg_id` est un champ **additionnel** (COM-11) épinglant le leg
+    d'origine à la création, pour qu'une commande ventilée multi-legs garde sa
+    PL rattachée au bon leg même après réaffectation partielle ; `NULL` ⇒ repli
+    dynamique sur `order/booking.leg_id`. Une PL portant **seulement** `leg_id`
+    est donc un état invalide, pas un cas métier.
+  - `CrewAssignment.leg_id` est **nullable par décision** (arbitrage A4 —
+    embarquement hors leg, ex. changement d'équipage pendant un arrêt
+    technique). ⚠️ Deux écarts connus au 2026-07-29 : plus aucun chemin
+    applicatif ne crée d'affectation hors leg (seul producteur :
+    `services/escale_crew.py`, appelé avec un leg), et
+    `crew_compliance.refresh_schengen_for_members` **saute** les affectations
+    sans leg — leurs jours ne sont donc pas comptés dans le 90/180. Depuis le
+    2026-07-30 ce saut n'est plus silencieux : il force le statut
+    `indetermine` (cf. ci-dessous).
+
+### Équipage — deux registres d'embarquement, à ne jamais confondre
+
+Règle d'or : **tout indicateur d'équipage doit dire de quel registre il parle.**
+Deux tables décrivent les embarquements, parfois **la même période**, et elles
+n'ont ni la même autorité ni la même couverture.
+
+| Registre | Alimenté par | Autorité |
+|---|---|---|
+| `marad_crew_schedules` | Cron Marad (`services/marad_sync.sync_schedules`), **lecture seule** | **Source de vérité des relèves** — c'est l'Armement qui décide, et sa décision se prend dans Excel puis atterrit dans Marad |
+| `crew_assignments` | **Uniquement** la saisie d'une opération d'escale `embarquement` (`services/escale_crew.couple_crew_assignment`, seul producteur de toute l'app) | Transcription par les Opérations. L'agent d'escale **ne décide rien** : il organise les RDV PAF à partir de ce que l'Armement lui transmet |
+
+Conséquences à connaître **avant** de toucher à un indicateur d'équipage :
+
+- **Ne jamais additionner des comptes de jours entre les deux registres** — ils se
+  recouvrent. Construire une **union d'ensembles de jours calendaires** (cf.
+  `embarked_days_by_member`, corrigé le 2026-07-30 : il doublait les jours en mer
+  dès qu'une escale était saisie pour un embarquement déjà connu de Marad).
+  Bornes **inclusives** des deux côtés : 1er → 10 = 10 jours.
+- **`schengen_status` a quatre valeurs** (`SCHENGEN_STATUSES`), dont
+  **`indetermine`** = « des embarquements existent hors de portée du calcul ».
+  Le calcul ne lit que `crew_assignments` : il est **structurellement incomplet**,
+  et `indetermine` le dit au lieu de le masquer derrière un `compliant` obtenu
+  par un décompte à zéro. Un **dépassement établi prime** sur l'incertitude.
+  `indetermine` n'est **pas une alerte** (absence d'information, et Marad notifie
+  déjà l'Armement en amont des expirations) : ne pas l'ajouter aux filtres
+  d'alerte de `crew_router`.
+- **Tout nouveau branchement d'un statut d'équipage doit couvrir le `{% else %}`
+  des templates** : `crew/index.html`, `crew/detail.html` et
+  `crew/compliance.html` y affichent « Non-compliant ». Un statut non traité
+  devient donc une **fausse alarme** — l'inverse du défaut qu'on corrige.
+- **Angles morts restants** (documentés, non corrigés) : `vessel_readiness` et
+  `crew_border_police_pdf` ne lisent que les affectations **rattachées à un leg**
+  — donc ni Marad, ni les embarquements hors voyage. La liste PAF est de ce fait
+  probablement incomplète en production.
+
+### Commercial — le tarif négocié ne sort jamais sans identité établie
+
+Règle d'or du module : **une grille tarifaire négociée n'est servie qu'à un
+compte rattaché à son client par un opérateur** `commercial:M`. Le rattachement
+(`ClientAccount.commercial_client_id`) **est** la clé d'accès aux prix.
+
+- **Ne jamais dériver ce rattachement d'une donnée auto-déclarée** (e-mail,
+  domaine, société saisie à l'inscription). C'était le défaut C-1 : un tiers
+  s'inscrivant avec le domaine d'un client lisait sa grille.
+  `services/client_linking.py` ne fait plus que **suggérer**, il n'écrit rien.
+- **Parcours public = demande non chiffrée.** `/devis` crée une fiche prospect et
+  notifie le commercial ; aucun prix n'est calculé ni affiché. Le libre-service
+  chiffré vit dans l'extranet (`/me/estimations`), borné aux grilles actives du
+  client — et la route demandée y est **revalidée** contre ces grilles, sinon la
+  résolution retomberait silencieusement sur la grille par défaut.
+- **`resolve_grid` est *get-or-create*** : ne jamais l'appeler depuis un chemin
+  non authentifié sans avoir validé POL/POD contre `ports` — une paire inconnue
+  matérialise une route dans la grille par défaut.
+
+**Réservation de cale — anti-double-comptage.** Une offre `en_cours`/`valide`
+réserve son volume sur le leg, une commande `confirmed`/`loaded` aussi, un
+booking également. Une même marchandise ne doit être comptée **qu'une fois** :
+`capacity.py` exclut les offres portant une commande (`Order.offer_id`) et les
+commandes reprises en booking (`Order.booking_id`). Tout nouveau rail qui
+réserve de la cale doit poser la même exclusion.
+
+**Historisation des offres.** `rate_offer_revisions` est append-only, chaînée en
+SHA-256, **ni exportable ni purgeable** (`NEVER_PURGE_TABLES`). Ne jamais y
+ajouter de route d'écriture autre que l'insertion : sa valeur probante tient à
+ce qu'aucune retouche ne puisse passer inaperçue. `activity_logs` reste
+complémentaire (qui a agi), et son **vidage intégral est désormais refusé** —
+seule la purge par ancienneté subsiste.
+
+**Booking note ≠ confirmation de réservation.** La *booking note* est le contrat
+de réservation d'espace en cale (trame CONLINEBOOKING, `booking_notes`), établie
+à la validation d'une offre et gelée à la diffusion. La *confirmation de
+réservation* est le PDF client de `/me/bookings/{ref}/booking-note.pdf`. Les
+conditions générales du contrat vivent verbatim dans
+`services/booking_note_terms.py` : **ne pas les reformuler** — toute correction
+de fond engage le transporteur et relève de la direction.
+
+**Signature ≠ règlement.** `BookingNote.signature_status` et l'échéancier de
+règlement sont indépendants ; aucun ne pilote l'autre. La facturation du fret
+reste hors plateforme (arbitrage A5) : les conditions de règlement sont
+**déclaratives**.
 
 ### Routes
 - Mutations : `validate → modify → await db.flush() → RedirectResponse(303)`.
@@ -128,8 +313,12 @@ mynewtowt/
 ### Permissions
 - 9 rôles : `administrateur`, `operation`, `armement`, `technique`,
   `data_analyst`, `marins`, `commercial`, `manager_maritime`, `rh`.
-- 17 modules : planning, commercial, escale, cargo, finance, kpi, captain,
-  crew, claims, mrv, rh, booking, tickets, analytics, chat, veille, admin.
+- 18 modules : planning, commercial, escale, cargo, finance, kpi, captain,
+  **ventes**, crew, claims, mrv, rh, booking, tickets, analytics, chat, veille,
+  admin. `ventes` (vente à bord + caisse) est **distinct de `captain`** :
+  `captain:M` déverrouille SOF, ETA, documents cargo et saisie MRV sur toute la
+  flotte, sans contrôle de navire. Accorder tout le module pour permettre
+  d'encaisser était une escalade de privilège.
 - Niveaux C / M / S = Consult / Modify / Suppress.
 - Décorateur `Depends(require_permission("module", "C"|"M"|"S"))` sur
   toute route.
@@ -171,6 +360,114 @@ mynewtowt/
   **défaut ON global** (flag absent ⇒ actif), **fail-open** vers ON (une panne DB ne
   rouvre jamais le legacy), cache 20 s. Opt-out **par navire** en base via
   `audience.vessels_off` (codes/ids) pour le double-run pilote.
+
+### Vente à bord — ce qu'il faut savoir avant d'y toucher
+
+Module d'encaissement : il manipule de l'argent réel et alimente deux registres
+**append-only sans route de suppression** (le registre douanier de vente
+détaxée, le grand livre de caisse). Les invariants ci-dessous ne sont pas des
+préférences de style.
+
+- **`settle_sale` est le chemin unique de règlement**, et il est idempotent :
+  verrou `cashbox_movement_id` (unique en base), ligne relue
+  `with_for_update`, et journal `stripe_webhook_events` qui déduplique au
+  niveau `event.id`. Ne jamais créer un mouvement de caisse de vente ailleurs.
+- **Fermer la session Stripe avant tout geste qui rend la vente non payable**
+  (encaissement espèces, annulation, régénération de lien) — via
+  `_release_checkout_session`. Sans cela le lien reste payable et le client
+  peut débiter une seconde fois. En cas d'échec de fermeture, **refuser le
+  geste** plutôt que de poursuivre.
+- **Aucune saisie numérique ne va en base sans `utils.decimals`** :
+  `Decimal("nan")` est un littéral valide et `NaN == 0` vaut `False`, donc les
+  gardes naïves le laissent passer ; PostgreSQL l'accepte et `SUM()` le
+  propage. Une seule ligne suffit à rendre un solde définitivement illisible.
+- **Le webhook vérifie l'objet reçu** (session attendue, devise, `amount_total`,
+  `livemode`, `metadata.env`) avant d'écrire. Un écart est un **incident**
+  notifié au siège, jamais un cas métier silencieux.
+- **Distinguer l'échec transitoire du définitif** dans le webhook : un 200 sur
+  une cause temporaire (période clôturée) retire l'événement de la file de
+  retry Stripe et perd l'écriture d'un paiement encaissé.
+- **Le remboursement est un geste du siège** (ADR-013) : route sous
+  `finance:M`, jamais `captain:M` — celle-là encaisse. Il se fait par
+  **contre-passation** (mouvement de caisse négatif, même catégorie, même
+  support, retours en stock), **jamais par suppression** : les deux registres
+  restent append-only. Le bord peut seulement *demander* un remboursement.
+- **Encaisser hors connexion passe par un POST atomique** : la file d'attente
+  du bord (`onboard-offline.js`) rejoue **une** requête, pas une séquence. Le
+  parcours pas à pas enchaîne trois POST dépendants — donc inqueueable. D'où
+  `POST /captain/ventes/{vessel_id}/vente-rapide`, idempotent par `client_uuid`
+  généré côté navigateur. La file ne conserve qu'une valeur par nom de champ :
+  le panier voyage dans un **champ unique** (`"id:qté,id:qté"`).
+- **Le total d'une ligne de vente est toujours dérivé**, jamais saisi :
+  `prix catalogue × quantité × (1 − remise)`. Une remise de 100 % est la
+  gratuité. Une **ligne hors catalogue** (`product_id` NULL) porte son propre
+  prix mais ne génère **aucun mouvement de stock** au règlement — l'article
+  n'est pas suivi.
+- **`cash_received` est informatif** : la caisse est créditée du **total de la
+  vente**, jamais des espèces remises. Il ne sert qu'à tracer le rendu de
+  monnaie, sans quoi un écart au comptage reste inexplicable.
+- **Le chiffre d'affaires ne se consolide pas entre devises** :
+  `sales_summary` ventile par devise et n'additionne jamais — l'application ne
+  tient aucun taux de change, un total unique serait faux d'apparence juste. Le
+  CA par voyage est **exposé** (`onboard_revenue_by_leg`) mais délibérément
+  **non injecté** dans `LegFinance.revenue_eur`, qui est saisi par un opérateur :
+  y écrire d'office écraserait sa saisie. La consolidation automatique est une
+  décision de gestion, pas un détail d'implémentation.
+- **Ordre de déclaration des routes** : les chemins littéraux (`/catalogue`,
+  `/rapport`) doivent précéder `/{vessel_id}`. FastAPI n'ajoute pas de
+  convertisseur de type au motif de route — `/{vessel_id}` capture n'importe
+  quel segment. Verrouillé par un test.
+- **Arbitrages tranchés le 2026-08-27** : `ADR-011` (espèces ≠ CB),
+  `ADR-012` (cloisonnement par navire), `ADR-013` (remboursement, valeur du
+  registre, gel à la relève). Les lire avant de rouvrir l'un de ces sujets.
+
+### Caisse de bord — contrôle et détenteur
+
+- **La caisse de bord, c'est de l'argent physique** (ADR-011) : un règlement par
+  carte porte `medium="card"`, reste au journal et à l'export — le rapprochement
+  bancaire se fait dans le logiciel comptable — mais **sort du solde théorique et
+  de l'écart de comptage**. Les confondre rendait la variance de clôture fausse
+  du montant des ventes CB chaque mois, et y noyait toute perte d'espèces réelle.
+- **Une déclaration de fin d'embarquement fige la comptabilité du débarquant**
+  (ADR-013) : les mouvements jusqu'à la date du comptage passent en lecture seule
+  et plus rien ne s'y écrit. Une relève est une **décharge**. Exception qui ne se
+  négocie pas : un **règlement de vente** dans la fenêtre gelée est **reporté** au
+  premier jour ouvert, jamais refusé — on ne perd jamais l'écriture d'un paiement
+  encaissé. Une **saisie manuelle**, elle, est refusée.
+- **Vente et caisse vivent dans le module de permission `ventes`**, jamais
+  `captain` : ce dernier ouvre 39 routes d'écriture sans contrôle de navire.
+  Ne jamais élargir un module entier pour débloquer une fonctionnalité.
+- **Le personnel maritime est borné à son navire d'affectation** (ADR-012) :
+  `permissions.assert_vessel_access` sur toute route portant un `vessel_id`, et
+  dans `_get_sale_or_404` pour les routes de vente. Seuls `administrateur` et
+  `armement` voient la flotte. Les consultations restées ouvertes sur la flotte
+  entière sont le **planning de navigation** et la **position des navires** — pas
+  la caisse, pas les ventes. Un marin sans affectation est refusé, avec un
+  message qui dit quoi faire.
+- **Un mouvement de caisse s'impute à une journée, pas à un instant** :
+  `cashbox.as_movement_date` ramène toute date d'effet à minuit UTC. Conserver
+  une heure donnait la précision de la *saisie*, pas celle de l'opération.
+  Le tri se départage ensuite par ordre de saisie (`id`).
+- **Rectifier un mouvement se fait par contre-écriture**, jamais par
+  modification : le grand livre n'a ni UPDATE ni DELETE, et une écriture passée
+  fait foi. `cashbox.reverse_movement` ajoute un mouvement opposé daté du jour
+  de la correction (et le montant correct s'il y a lieu), lié par
+  `reverses_movement_id` — unique, un mouvement ne se rectifie qu'une fois.
+  Conséquence assumée : la correction n'apparaît pas dans la période d'origine,
+  un contrôle déjà rendu ne se réécrit pas.
+- **`cash_counts` est l'opération de contrôle** : le commandant sortant déclare
+  sa caisse coupure par coupure à chaque fin d'embarquement et chaque fin de
+  mois. Deux invariants : le total est **recalculé** depuis les quantités (un
+  total déclaratif ne contrôle rien), et l'écart est **figé** avec le solde
+  théorique du moment (un mouvement saisi après coup ne réécrit pas un contrôle
+  rendu — il apparaît dans le suivant).
+- **Ne déclarer que les devises réellement détenues** : un bloc à zéro sur une
+  devise présente en caisse fabriquerait un faux écart.
+- `cash_count.computed_balance` fait un `SUM` simple sur les **espèces** ;
+  `cashbox.balances` ventile entrées/sorties et prend un filtre `medium`
+  (défaut : espèces). Les deux sont testables — `balances` utilisait
+  `greatest`/`least`, absents de SQLite, ce qui expliquait sa couverture nulle ;
+  elle est passée en `case`.
 
 ### Sécurité
 - **CSRF** : `CSRFMiddleware` (double-submit cookie `towt_csrf`).
@@ -235,23 +532,24 @@ mynewtowt/
 |---|---|---|
 | Planning | `/planning` | ✅ Gantt + table + share token |
 | Planning — scénarios | `/planning/scenarios` | ✅ what-if isolé (jamais d'écriture sur `legs`) : brouillon ou clone de legs réels, Gantt/table/comparaison, export CSV, drag-drop |
-| Commercial | `/commercial` | ✅ clients, grids, offers, orders |
-| Cargo (packing list + portail) | `/cargo` + `/p/{token}` | ✅ batches + **audit consultable** + edit/suppr + lock + messagerie ; **BL reconnecté au batch** (n° `TUAW_…`), Arrival Notice, import/export Excel, portail multilingue |
-| Escale (port call) | `/escale` | ✅ operations + dockers + lock |
+| Commercial | `/commercial` | ✅ clients (+ **commercial attitré**, fiches prospect), **grilles tarifaires** (réf. codifiée `P-MMAA-MMAA-XX-YY` par route, plusieurs grilles actives/client, défaut par route, paliers inclusifs, options dont `per_bl`, **conditions de règlement 1-3 échéances déclaratives**), **estimations tarifaires**, **offres** (cycle `en_cours`/`valide`/`echue`/`annule`, réservation de volume, **historique chaîné SHA-256**), commandes, **booking note** auto + signature Yousign |
+| Estimation tarifaire | `/me/estimations` + `/devis` | ✅ **extranet client** : libre-service sur **ses** grilles actives, notifie le commercial attitré, transformable en offre. **Vitrine** : demande **non chiffrée** créant une fiche prospect (le tarif ne sort jamais vers une identité non établie) |
+| Cargo (packing list + portail) | `/cargo` + `/p/{token}` | ✅ batches + **audit consultable** + edit/suppr + lock + messagerie ; **workflow BL complet** (`draft → client_validated → master_signed → final`, gel à la signature, filigrane DRAFT, révisions `TUAW_…_R2`, séquence de numéros **non recyclable**, registre de remise des originaux, date *shipped on board* dérivée de l'escale), Arrival Notice, import/export Excel **en upsert** (préserve les numéros), portail multilingue. ⛔ **Rail booking retiré** : plus de BL généré à la volée depuis un booking |
+| Escale (port call) | `/escale` | ✅ **cockpit d'escale** (reprise UX Phase 1) : split Import/Export/Commun, sous-nav collante, KPI d'escale, actions sans rechargement (HTMX 204 + `escaleRefresh`), pointage rapide dockers, PAF/retards signalés, synthèse Documents & SOF + alerte croisée verrou/clôture, tickets filtrés par leg, formulaires repliés, **journal d'escale unifié** (`/escale/legs/{id}/journal` : timeline bord + terre + rapprochement des deux SOF), compteurs BL/sinistres — operations + dockers + lock conservés (cf. `docs/design/03-reprise-ux-legacy.md`, Phases 1-2-3 livrées) |
 | Onboard / Captain | `/captain` | ✅ SOF + ETA shifts + messagerie + docs + quart (watch log) + clôture escale (ONB-05) |
 | Carnet de bord ANEMOS | `/carnet-bord` | ✅ éditeur staff (perm. `captain`) : highlights + photos par leg → preview HTML + PDF ; alimente la page publique `/voyage/{ref}` |
 | Crew | `/crew` | ✅ bordées + compliance Schengen + calendar |
 | Stowage | `/stowage` | ✅ 18 zones + algo glouton |
 | Claims | `/claims` | ✅ workflow 6 statuts + timeline |
-| MRV (reporting événementiel v2) | `/mrv` + `/onboard/events` | ✅ **architecture événementielle déclarative** : capture d'événements `/onboard/events` (Noon/Departure/Arrival/Begin-End Anchoring ; brouillon auteur-seul → finalisé → validé, `captain:M`) ; hub `/mrv` (`mrv:C`, actions `mrv:M`, seuils/facteurs `mrv:S`) : `voyages`, `reports` (Noon/Carbon/Stopover générés), `bunkering` (BDN), `flgo` (Marad lecture seule), `qualite` (moteur R01-R26 + IR01-IR05 + resets R10), `parametres` (seuils + dashboard params), `datasets` **OVDLA/OVDBR** (remplacent le CSV DNV 18 col.), `archive/events` (noon/MRVEvent legacy lecture seule). Grand livre unique `emission_ledger` multi-GES |
+| MRV (reporting événementiel v2) | `/mrv` + `/onboard/events` | ✅ **architecture événementielle déclarative** : capture d'événements `/onboard/events` (Noon/Departure/Arrival/Begin-End Anchoring ; brouillon auteur-seul → finalisé → validé, `captain:M`) ; hub `/mrv` (`mrv:C`, actions `mrv:M`, seuils/facteurs `mrv:S`) : `voyages`, `reports` (Noon/Carbon/Stopover générés), `bunkering` (BDN), `flgo` (Marad lecture seule), `qualite` (moteur R01-R26 + IR01-IR05 + resets R10), `parametres` (seuils + dashboard params), `datasets` **OVDLA/OVDBR** (remplacent le CSV DNV 18 col.). Grand livre unique `emission_ledger` multi-GES. ⛔ **Archive legacy retirée** : l'écran `/mrv/archive/events`, le modèle `MRVEvent`/`MRVParameter` et les tables `mrv_events`/`mrv_parameters` sont supprimés (migration `20260713_0106`) — le legacy MRV n'a plus de rail de lecture |
 | Dashboard Performance Environnementale | `/dashboard-perf` | ✅ 5 pages, exclusivement event-driven (mode `strict`, NC-04) : **vue flotte** (`kpi:C`), **suivi opérationnel** navire→voyage→événements (`kpi:C` / `mrv:C` — ROB timeline, conso vs cible, répartition ME/AE, **profil de propulsion 4 h**, carte MapLibre), **détail voyage** + exports PDF/DOCX (`mrv:C`), **qualité des données** (`mrv:C` — anomalies par règle/sévérité, resets R10, complétude), **administration** des paramètres (`mrv:S`). Remplace `dashboard-env` (LOT 11/12), décommissionné |
 | Navigation | `/performance/navigation` | ✅ multi-legs/multi-navires : carte (1 couleur/leg) points GPS + trait + route théorique, tableau comparatif (réelle/théorique/écart/durée/restant), météo le long du trajet + blocs « conditions actuelles » par navire (rose des vents, anémomètre/Beaufort, pression, visibilité, T°…) |
 | Finance | `/finance` | ✅ prévisionnel/réel 5 postes + écarts + export CSV + NOx/SOx évités + section Exploitation + détail assurance + CRUD OPEX |
 | KPI | `/kpi` | ✅ vue KPI consolidée + Carbon Report par leg (intensités t·nm) ; **certificats CO₂ = label Anemos** (par booking + RSE annuel) |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
 | Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
-| Cashbox | `/cashbox` | ✅ EUR/USD/VND |
-| Vente à bord | `/captain/ventes` | ✅ catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe (avitaillement/franchise) + export CSV. Webhook `/webhooks/stripe` (signature + idempotent). Perm. `captain` (marins → CM via override) |
+| Cashbox | `/cashbox` | ✅ EUR/USD/VND · mouvements datés à la **journée** (pas d'heure) · **contrôle de caisse** : état déclaré par le commandant coupure par coupure à chaque fin d'embarquement et fin de mois, écarts figés et historisés (`cash_counts`) |
+| Vente à bord | `/captain/ventes` | 🟡 **Boucle de correction en place, pas encore éprouvé à bord** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` a `ventes:CM` par défaut dans la matrice — aucun override requis. Remboursement (siège, par contre-passation), contrôle de caisse, gel à la relève, reçu PDF, vente rapide espèces rejouable hors connexion et rectification d'un mouvement de caisse livrés. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
 | RH (SIRH) | `/rh` | ✅ congés marins + SIRH sédentaires : dossier/CRUD/import, contrats & avenants + alertes, congés/absences + self-service `/rh/moi`, EVP + verrouillage période, export Silae CSV + journal des lots, coffre-fort bulletins + entretiens + reporting RH (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |
 | Tracking flotte | `/tracking` | ✅ positions live + historique trajets (filtre navire × leg × période + trait reliant les points) |
 | Tracking API | `/api/tracking/upload` | ✅ Power Automate compatible |
@@ -302,6 +600,9 @@ mynewtowt/
 | **MDO** | Marine Diesel Oil |
 | **ROB** | Remaining On Board (fuel restant) |
 | **Schengen** | Statut immigration marin étranger (90 jours / 180) |
+| **Booking Note** | Contrat de réservation d'espace en cale (trame BIMCO CONLINEBOOKING) — à ne pas confondre avec la *confirmation de réservation* client |
+| **Estimation tarifaire** | Chiffrage indicatif sur grille (ex-« devis »). Libre-service extranet, ou demande non chiffrée depuis la vitrine |
+| **Merchant** | Le chargeur au sens du connaissement et de la booking note (expéditeur, destinataire, porteur du BL — cf. clause 1) |
 
 ## Conventions
 
@@ -335,6 +636,11 @@ mynewtowt/
 - Pas de police `Inter`, `Poppins`, `Segoe UI` — uniquement Manrope.
 - **Ne jamais multiplier une consommation par un facteur d'émission hors
   `services/emission_ledger.py`** (règle d'or, sentinelle `test_factor_whitelist`).
+- **Ne jamais servir une grille négociée à un compte non rattaché par un
+  opérateur**, ni dériver ce rattachement d'une donnée auto-déclarée.
+- **Ne jamais chiffrer depuis un chemin public** — la vitrine dépose une
+  demande, elle n'affiche pas de prix.
+- Pas de route d'écriture sur `rate_offer_revisions` autre que l'insertion.
 - **Jamais de seuil métier MRV en littéral** — toujours `validation_engine.get_threshold`
   (paramétrable en base, override navire, fail-closed).
 - Pas de **module ERP** passengers (disparu en v3.0.0 : pas de modèle, pas
@@ -380,9 +686,11 @@ Source : `docs/audit/backlog/ARBITRAGES.md` (tranché 2026-06-22) + reprise V2�
 - **MRV v2 — OVDLA (Q10)** : `Source_System = "MyTOWT"` ; **pas de lignes Noon**
   dans l'OVDLA (1 ligne/événement validé Departure/Arrival/Anchoring, valeurs en
   deltas entre événements).
-- **MRV v2 — cargo MRV en attente (Q11)** : hydrostatiques et capacités officielles
-  des cuves non fournies → `cargo_mrv_t` **saisi** (repli), R23 volet capacités en
-  sévérité **Info** (bascule Bloquant dès réception des plans).
+- **MRV v2 — cargo MRV saisi (CDC v0.7, G10)** : `cargo_mrv_t` est saisi
+  directement par le Master (calcul hydrostatique retiré, table
+  `vessel_hydrostatics` supprimée) ; capacités officielles des cuves non
+  fournies (Q11) → R23 volet capacités reste en sévérité **Info** (bascule
+  Bloquant dès réception des plans).
 
 ## Roadmap & backlog
 
@@ -393,8 +701,12 @@ de Continuité d'Activité) et `docs/audit/ETUDE_COMPARATIVE_BRANCHES_VS_MAIN.md
 Backlog actif :
 1. Certificats CO₂ : couverts par le **label Anemos** (PDF WeasyPrint par booking).
 2. ✅ DOCX generators : service `docx_generator.py` — Bill of Lading
-   (`/cargo/booking/{ref}/bl.docx` + `/me/bookings/{ref}/bl.docx`) + offre
-   commerciale (`/offers/{id}/export.docx`) (lot 75).
+   (`/cargo/packing-lists/{pl_id}/batches/{batch_id}/bl.docx` +
+   `/me/bookings/{ref}/bl/{batch_id}.docx`) + offre commerciale
+   (`/offers/{id}/export.docx`) (lot 75). ⚠️ Le BL Word part du **lot de packing
+   list**, plus du booking (rail retiré le 2026-08-17, cf. workflow BL §5.4) : il
+   porte le numéro du registre, et ne revendique « 3 originaux signés » **que si le
+   commandant a signé**.
 3. ✅ Stowage visualisation : vue SVG top-down des navires (STO-10, lot 72).
 4. ✅ Exports admin : ZIP global + CSV sélectif par table whitelistée
    (ADM-04, `admin_data.py`).

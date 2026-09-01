@@ -15,17 +15,20 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from datetime import date as dt_date
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -205,6 +208,97 @@ class PackingListBatch(Base):
     bl_number: Mapped[str | None] = mapped_column(String(50), unique=True, index=True)
     bl_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # ─── Workflow BL (cf. docs/strategy/SPEC_WORKFLOW_BILL_OF_LADING.md) ───────
+    #
+    # Cycle : draft → client_validated → master_signed → final.
+    # `NULL` = aucun BL n'a encore été généré pour ce lot.
+    #
+    # Le point de gel est la SIGNATURE DU COMMANDANT, pas l'émission : avant
+    # signature un connaissement n'engage personne, après il engage le
+    # transporteur. C'est ce qui permet à l'expéditeur de corriger sa packing
+    # list au stade draft — exigence explicite de la demande métier.
+    bl_state: Mapped[str | None] = mapped_column(String(20), index=True)
+
+    # Génération du draft — `bl_issued_by_*` comble un trou d'audit : l'émission
+    # actuelle ne laisse qu'un horodatage anonyme, sans jamais dire QUI a émis.
+    bl_draft_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bl_issued_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    bl_issued_by_name: Mapped[str | None] = mapped_column(String(200))
+
+    # Validation du draft. Deux FK MUTUELLEMENT EXCLUSIVES :
+    #  - `bl_client_validated_by_id` : le client titulaire du booking valide
+    #    depuis /me (cas normal) ;
+    #  - `bl_validated_on_behalf_by_id` : repli quand le booking n'a pas de compte
+    #    client (`Booking.client_account_id` est nullable) — un membre du staff
+    #    valide POUR SON COMPTE, et c'est tracé comme tel.
+    # ⚠️ Jamais de validation silencieuse présentée comme venant du client : la
+    # contrainte ci-dessous interdit d'en renseigner les deux à la fois.
+    bl_client_validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bl_client_validated_by_id: Mapped[int | None] = mapped_column(ForeignKey("client_accounts.id"))
+    bl_validated_on_behalf_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    # Nom figé à la validation : survit à un renommage ultérieur du compte.
+    bl_client_validated_by: Mapped[str | None] = mapped_column(String(200))
+
+    # Signature du commandant — patron décalqué de `SofEvent` (déjà éprouvé dans
+    # le dépôt) : le hash SHA-256 du contenu signé détecte toute altération
+    # postérieure. Ne pas réinventer un mécanisme de signature.
+    bl_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bl_signed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    bl_signed_by_name: Mapped[str | None] = mapped_column(String(200))
+    bl_signature_hash: Mapped[str | None] = mapped_column(String(64))
+
+    # Après signature, une correction ne passe plus par l'édition mais par une
+    # RÉVISION NUMÉROTÉE qui annule explicitement la précédente — les deux
+    # restant tracées, comme l'exige un registre opposable.
+    #
+    # `bl_revision` est le numéro de révision **courant** du connaissement de ce lot
+    # (1 = émission d'origine). Les documents annulés vivent dans `BlRevision`, et non
+    # dans des lots clonés : le lot porte la marchandise, le dupliquer doublerait tous
+    # les agrégats (poids, palettes, stowage, export Excel). Voir la docstring de
+    # `BlRevision` pour l'écart assumé par rapport au §4.2 de la spec.
+    bl_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")
+
+    # ── Date de mise à bord (« shipped on board ») — §5.0 ────────────────────
+    # La date effective est **dérivée** du dernier jour des opérations RÉELLES de
+    # l'escale : elle n'est donc PAS stockée. Ces colonnes ne portent que
+    # l'**override** des Opérations, et sa justification.
+    #
+    # ⚠️ Ne jamais recopier ici la valeur dérivée : la présence de `bl_sob_date`
+    # est précisément ce qui distingue « corrigé volontairement » de « pas
+    # corrigé ». Une valeur figée sans raison de l'être devient fausse en silence
+    # dès que la timeline d'escale bouge.
+    #
+    # Enjeu : un connaissement antidaté est une fraude documentaire et une
+    # exclusion de garantie. D'où la justification exigée EN BASE, pas seulement
+    # dans le formulaire.
+    bl_sob_date: Mapped[dt_date | None] = mapped_column(Date)
+    bl_sob_reason: Mapped[str | None] = mapped_column(Text)
+    bl_sob_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    bl_sob_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        # Le validateur du draft est SOIT le client, SOIT le staff pour son
+        # compte — jamais les deux. Contrainte posée EN BASE et non seulement
+        # dans le formulaire : c'est ce qui garantit qu'aucune validation ne peut
+        # être présentée comme venant du client alors qu'elle vient du staff.
+        # Les deux NULL restent permis (aucune validation encore intervenue).
+        CheckConstraint(
+            "bl_client_validated_by_id IS NULL OR bl_validated_on_behalf_by_id IS NULL",
+            name="ck_bl_validator_client_xor_staff",
+        ),
+        # Une révision commence à 1 et ne décroît jamais.
+        CheckConstraint("bl_revision >= 1", name="ck_bl_revision_positive"),
+        # §5.0 — « sous justification ». Une date de mise à bord corrigée sans
+        # motif est INSTOCKABLE : la contrainte est en base pour qu'aucun chemin
+        # d'écriture, présent ou futur, ne puisse contourner l'exigence. Le
+        # journal demandé « en cas de contrôle » n'a de valeur que si le motif
+        # existe toujours.
+        CheckConstraint(
+            "bl_sob_date IS NULL OR bl_sob_reason IS NOT NULL",
+            name="ck_bl_sob_override_needs_reason",
+        ),
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -318,4 +412,202 @@ class PortalMessage(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class BlDeliveryReceipt(Base):
+    """Registre de remise des originaux du connaissement — §5.1.
+
+    > « Normalement, les BLs devraient être téléchargeables dans la plateforme
+    > client. L'idéal serait de tracker le timestamp de cette action ou ajouter une
+    > case de confirmation de réception côté client. Cette case devrait aussi
+    > apparaître pour l'équipe opérations, en mode backup. Si les BLs sont envoyés
+    > en papier par exemple, l'équipe opérations pourra confirmer la réception côté
+    > client en ajoutant la date et heure de confirmation et moyen (téléphone,
+    > mail, etc.) + PJ possible. »
+
+    C'est **exactement** le dispositif dont l'absence exclut la *misdelivery* de la
+    couverture P&I : sans registre, le transporteur ne peut pas établir à qui, quand
+    et comment il a remis les originaux.
+
+    ## Trois canaux, trois valeurs probantes DIFFÉRENTES
+
+    Elles ne doivent jamais être confondues, et c'est la raison d'être de `channel` :
+
+    - ``download`` — le client a **téléchargé** le document. Preuve d'**accès**, pas
+      de réception : un préchargement de lien ou un antivirus de messagerie peut la
+      produire. La plus faible.
+    - ``client_confirmed`` — le client a **coché** la confirmation de réception.
+      Déclaration du client lui-même : la plus forte.
+    - ``ops_confirmed`` — les Opérations attestent d'une remise **hors plateforme**
+      (papier, coursier…). C'est un **repli**, tracé comme tel, jamais présenté
+      comme une déclaration du client — même principe que
+      ``bl_validated_on_behalf_by_id``.
+
+    Table **append-only** : on n'écrase pas un événement de remise, on en ajoute un.
+    Un registre qui se réécrit ne prouve rien.
+    """
+
+    __tablename__ = "bl_delivery_receipts"
+
+    #: Preuve d'accès seulement — jamais de réception.
+    CHANNEL_DOWNLOAD = "download"
+    #: Déclaration du client : la plus forte.
+    CHANNEL_CLIENT = "client_confirmed"
+    #: Repli Opérations pour une remise hors plateforme.
+    CHANNEL_OPS = "ops_confirmed"
+
+    CHANNELS = (CHANNEL_DOWNLOAD, CHANNEL_CLIENT, CHANNEL_OPS)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("packing_list_batches.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    channel: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    #: Instant de l'événement. Pour le repli Opérations c'est la date **déclarée**
+    #: de la remise réelle, qui peut précéder la saisie — d'où un champ distinct de
+    #: `created_at`.
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: Moyen de remise (téléphone, mail, coursier, remise en main propre…).
+    #: **Obligatoire pour le repli Opérations** : sans le moyen, l'attestation
+    #: n'établit rien.
+    means: Mapped[str | None] = mapped_column(String(60))
+    confirmed_by_client_id: Mapped[int | None] = mapped_column(ForeignKey("client_accounts.id"))
+    confirmed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    #: Nom figé au moment de l'événement (survit à un renommage de compte).
+    confirmed_by_name: Mapped[str | None] = mapped_column(String(200))
+    attachment_path: Mapped[str | None] = mapped_column(String(300))
+    notes: Mapped[str | None] = mapped_column(Text)
+    ip_address: Mapped[str | None] = mapped_column(String(60))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('download', 'client_confirmed', 'ops_confirmed')",
+            name="ck_bl_receipt_channel",
+        ),
+        # Le confirmateur est SOIT le client, SOIT le staff — jamais les deux.
+        # Posé en base pour qu'une attestation du staff ne puisse jamais être
+        # présentée comme une déclaration du client.
+        CheckConstraint(
+            "confirmed_by_client_id IS NULL OR confirmed_by_user_id IS NULL",
+            name="ck_bl_receipt_confirmer_client_xor_staff",
+        ),
+        # Le repli Opérations sans moyen de remise n'établit rien : il est
+        # instockable. C'est la seule contrainte qui donne sa valeur au registre
+        # face à un assureur.
+        CheckConstraint(
+            "channel <> 'ops_confirmed' OR means IS NOT NULL",
+            name="ck_bl_receipt_ops_needs_means",
+        ),
+    )
+
+
+class BlNumberSequence(Base):
+    """Séquence de numéros de connaissement, **par voyage** et strictement croissante.
+
+    ## Le défaut que cette table corrige
+
+    Le numéro était calculé comme *nombre de BL déjà émis sur le leg + 1*. Deux
+    conséquences, toutes deux graves sur un registre opposable :
+
+    1. **recyclage** — supprimer un lot fait baisser le compteur, et le numéro
+       suivant réattribue un numéro **déjà consommé**. Deux documents différents
+       peuvent alors porter le même numéro à des moments différents de l'histoire ;
+    2. **blocage** — si le lot supprimé n'était pas le dernier (numéros 001, 002, 003
+       avec 002 supprimé), le compteur vaut 2, le code retente 003, entre en collision
+       avec l'unicité et **échoue après 5 tentatives**. L'émission devient impossible.
+
+    ## La règle
+
+    ``last_seq`` ne **décroît jamais** — aucun chemin d'écriture ne le décrémente.
+    Les trous dans la numérotation sont donc **normaux et attendus** : ils sont la
+    trace d'un numéro consommé puis abandonné, ce qui est exactement ce qu'un
+    registre doit conserver.
+
+    À la création de la ligne, le compteur est amorcé sur le **plus grand suffixe
+    déjà émis** pour ce voyage, et non sur leur nombre : c'est ce qui évite de
+    recycler dès la première émission sur un voyage historique.
+    """
+
+    __tablename__ = "bl_number_sequences"
+
+    #: Un voyage = une séquence. Le `leg_code` est le préfixe du numéro, donc deux
+    #: voyages ne peuvent pas se marcher dessus.
+    leg_id: Mapped[int] = mapped_column(ForeignKey("legs.id", ondelete="CASCADE"), primary_key=True)
+    last_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        # Un compteur négatif n'a aucun sens et signalerait une décrémentation —
+        # précisément ce que cette table interdit.
+        CheckConstraint("last_seq >= 0", name="ck_bl_sequence_non_negative"),
+    )
+
+
+class BlRevision(Base):
+    """Instantané d'un connaissement **annulé par une révision** — §4.1.
+
+    > « À partir de ``master_signed``, la correction ne passe plus par l'édition mais
+    > par une **révision numérotée** (``TUAW_…_R2``) qui annule explicitement la
+    > précédente, les deux restant tracées. »
+
+    ## ⚠️ Écart assumé par rapport au §4.2 de la spec
+
+    La spec plaçait ``bl_superseded_by_id`` en clé étrangère vers
+    ``packing_list_batches``, ce qui suppose qu'une révision **crée un nouveau lot**.
+    Vérification faite dans le code, ce modèle **corromprait tous les agrégats** : le
+    lot porte la marchandise, et `pdf_generator` somme ``pallet_count`` /
+    ``weight_kg`` sur ``pl.batches`` (packing list PDF, avis d'arrivée), l'export
+    Excel les liste tous, le stowage les localise, le ratio de complétude les compte.
+    Un lot cloné par révision **doublerait** chacun de ces totaux.
+
+    Le corriger aurait exigé de filtrer « non périmé » dans **chaque** agrégat, avec
+    double comptage silencieux au premier oubli.
+
+    D'où ce modèle : **le lot reste unique**, c'est le **document** qui est versionné.
+    Les agrégats existants restent justes par construction, sans modification.
+
+    ## Ce que la ligne conserve
+
+    ``signed_content`` porte la sérialisation canonique de ce qui avait été signé
+    (``bl_workflow.signature_payload``). Sans elle, on saurait qu'un document a
+    existé sans savoir **ce qu'il disait** — une trace inexploitable en contrôle.
+
+    ``reason`` est **obligatoire** : réviser un titre opposable sans dire pourquoi
+    n'aurait aucune valeur probante.
+    """
+
+    __tablename__ = "bl_revisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("packing_list_batches.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: Numéro de révision du document **annulé** (1 pour l'émission d'origine).
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Numéro du document annulé, tel qu'il a circulé.
+    bl_number: Mapped[str] = mapped_column(String(50), nullable=False)
+    signature_hash: Mapped[str | None] = mapped_column(String(64))
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signed_by_name: Mapped[str | None] = mapped_column(String(200))
+    #: Contenu exact qui avait été signé — c'est ce qui rend la trace exploitable.
+    signed_content: Mapped[str | None] = mapped_column(Text)
+    superseded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    superseded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    superseded_by_name: Mapped[str | None] = mapped_column(String(200))
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        # Une révision donnée d'un lot ne s'archive qu'une fois : sinon deux
+        # instantanés concurrents décriraient le même document annulé.
+        UniqueConstraint("batch_id", "revision", name="uq_bl_revision_batch_revision"),
+        CheckConstraint("revision >= 1", name="ck_bl_revision_snapshot_positive"),
     )

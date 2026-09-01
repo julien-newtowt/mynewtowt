@@ -2,10 +2,13 @@
 
 Ce module fournit :
 
-1. **Le catalogue seedé** (``RULE_SEED`` = 31 règles, ``THRESHOLD_SEED`` =
+1. **Le catalogue seedé** (``RULE_SEED`` = 38 règles, ``THRESHOLD_SEED`` =
    seuils paramétrables, ``DASHBOARD_SEED`` = paramètres dashboard) et une
    fonction de seed idempotente (``seed_reference_data``) utilisée par le
    boot dev (``create_all`` sans migration) et par l'action d'init admin.
+   Le moteur est **mutualisé** : les 38 règles se répartissent en 35 MRV et
+   3 QHSE (RQ01-RQ03). Le seed les peuple toutes ; le cloisonnement se fait à
+   l'affichage, via ``MRV_RULE_SCOPES`` / ``NON_MRV_RULE_SCOPES``.
 2. **La résolution de seuils** (``get_threshold``) : (rule, vessel) →
    (rule, NULL) → défaut codé *fail-closed*, avec cache 60 s et
    ``invalidate_cache()`` — même patron que ``app.permissions``.
@@ -254,6 +257,46 @@ RULE_SEED: tuple[tuple[str, str, str, str, str, bool], ...] = (
         True,
     ),
     (
+        "R27",
+        "Cut-off fin d'année",
+        "Voyage en cours à la bascule d'année civile (31/12 24:00 UTC) sans événement "
+        "Cut-off finalisé — bloque la consolidation MRV au-delà de tolerance_cutoff_h.",
+        "warning",
+        "voyage",
+        True,
+    ),
+    (
+        "R28",
+        "Distance haversine vs loguée (SOSP)",
+        "Distance haversine calculée entre deux Noon consécutifs vs distance loguée par "
+        "le bord (delta distance_from_sosp_nm) — sous-estimation systématique possible "
+        "en flotte vélique (louvoiement), dégrade artificiellement l'EF_MRV affiché "
+        "(Matrice §8, revue technique 09/07). N'est jamais corrigée automatiquement.",
+        "warning",
+        "event",
+        True,
+    ),
+    (
+        "R29",
+        "Complétude relevés Noon (voilure/température)",
+        "Voilure (sail_readings) et températures air/mer (hold_readings) manquantes sur un "
+        "Noon — utiles à l'étude des conditions de transport et au calcul du profil de "
+        "propulsion (G6, volet complétude originalement porté par R13, jamais codé).",
+        "info",
+        "event",
+        True,
+    ),
+    (
+        "R30",
+        "ROB annexes Noon (urée/eau douce)",
+        "ROB urée/eau douce manquants sur un Noon — indépendants du calcul carburant, "
+        "purement informatifs (G5, originalement porté par R11, jamais codé pour le "
+        "nouveau modèle événementiel).",
+        "warning",
+        "event",
+        True,
+    ),
+    (
         "IR01",
         "Séquence dates",
         "Doublon (même date+type, bloquant), saut >2 jours (warning), date antérieure au "
@@ -287,7 +330,51 @@ RULE_SEED: tuple[tuple[str, str, str, str, str, bool], ...] = (
         "event",
         True,
     ),
+    # ─────────────────────────── QHSE (Phase 0 — fondations) ───────────────
+    # Implémentées dans ``app.services.qhse_validation_rules`` (importé en fin
+    # de fichier, même patron que ``validation_rules_catalog``). Scope "qhse",
+    # sujets duck-typés (``QhseReport``-like : issued_date/closed_date/subject/
+    # vessel_id).
+    (
+        "RQ01",
+        "Cohérence dates",
+        "Date de clôture antérieure à la date d'émission — donnée de test/erreur de saisie.",
+        "bloquant",
+        "qhse",
+        True,
+    ),
+    (
+        "RQ02",
+        "Hygiène de saisie",
+        "Sujet/description correspondant à un motif de test (test/essai/demo).",
+        "warning",
+        "qhse",
+        True,
+    ),
+    (
+        "RQ03",
+        "Identité navire",
+        "Navire non résolu vers le référentiel MyTOWT existant lors de l'ingestion.",
+        "bloquant",
+        "qhse",
+        True,
+    ),
 )
+
+# ─────────────────────── Classement des scopes par domaine ───────────────────
+# `RULE_SEED` est partagé par plusieurs domaines : le moteur est mutualisé, les
+# écrans d'administration ne le sont pas. `/mrv/parametres` s'ouvre sur `mrv:C`
+# et écrit sur `mrv:S` ; il ne doit donc exposer QUE les règles du reporting
+# MRV. Une règle de scope `qhse` administrée avec un droit `mrv` traverserait
+# une frontière de module (QHSE a sa propre entrée dans `permissions.py`).
+#
+# **Fail-closed, comme la matrice de permissions et les seuils** : un scope
+# absent de `MRV_RULE_SCOPES` n'apparaît PAS dans l'écran MRV. Le risque
+# symétrique — une future règle MRV rendue invisible par oubli de classement —
+# est couvert par `test_rule_scopes_are_all_classified`, qui échoue dès qu'un
+# scope de `RULE_SEED` n'est déclaré ni ici ni ci-dessous.
+MRV_RULE_SCOPES: frozenset[str] = frozenset({"event", "voyage", "report", "bunker", "flgo"})
+NON_MRV_RULE_SCOPES: frozenset[str] = frozenset({"qhse"})
 
 # (rule_id, parameter_name, value, unit, provisional, note) — vessel_id = NULL.
 # 16 paramètres de la Matrice §6 + 2 densité (R16, absorbés de mrv_parameters)
@@ -524,6 +611,46 @@ THRESHOLD_SEED: tuple[tuple[str, str, str, str, bool, str], ...] = (
         False,
         "Borne haute de plausibilité du ROB (aligné R06 >300 t).",
     ),
+    (
+        "R12",
+        "min_releves_meteo_jour",
+        "3",
+        "relevés",
+        True,
+        "Nombre minimal de relevés météo horodatés (créneaux 4 h) attendus par "
+        "NoonEvent — volet « fréquence » de R12 (Matrice §1), jamais codé "
+        "jusqu'ici (G7).",
+    ),
+    (
+        "R27",
+        "tolerance_cutoff_h",
+        "24",
+        "h",
+        True,
+        "Délai de tolérance après la bascule d'année avant escalade bloquante "
+        "de R27 (CDC v0.7 §14.1, proposition).",
+    ),
+    (
+        "R27",
+        "rappel_cutoff_avant_j",
+        "7",
+        "j",
+        True,
+        "Fenêtre de rappel au Master avant l'approche de la bascule d'année "
+        "(CDC v0.7 §9.2 : « rappel système au Master à l'approche de "
+        "l'échéance »), proposition.",
+    ),
+    (
+        "R28",
+        "tolerance_distance_haversine_nm",
+        "20",
+        "nm",
+        True,
+        "Écart acceptable entre distance haversine calculée et distance loguée "
+        "(SOSP) — aucune valeur proposée par la Matrice §8 (« à confirmer avec "
+        "le métier, nouveau »), alignée sur tolerance_distance_manuelle_nm (R09) "
+        "à défaut d'un chiffre métier.",
+    ),
 )
 
 # (parameter_name, value, unit) — vessel_id = NULL.
@@ -656,6 +783,24 @@ def _get(subject: Any, name: str, default: Any = None) -> Any:
     if isinstance(subject, dict):
         return subject.get(name, default)
     return getattr(subject, name, default)
+
+
+def _get_loaded(subject: Any, name: str) -> Any:
+    """Comme ``_get``, mais ne déclenche JAMAIS un lazy-load synchrone d'une
+    relation ORM non chargée — incompatible avec une session async (crash
+    « greenlet_spawn has not been called »), qui surviendrait si le sujet a
+    été construit/flushé sans jamais avoir touché cet attribut (contrairement
+    au flux normal onboard_router, cf. ``_sync_event_readings``, qui l'assigne
+    toujours avant finalisation). ``None`` si non chargée ou absente."""
+    try:
+        from sqlalchemy import inspect as sa_inspect
+
+        insp = sa_inspect(subject, raiseerr=False)
+    except Exception:
+        insp = None
+    if insp is not None and name in insp.unloaded:
+        return None
+    return _get(subject, name)
 
 
 def _first(subject: Any, names: tuple[str, ...]) -> Any:
@@ -979,8 +1124,33 @@ async def _r11_plausible_bounds(ctx: RuleContext) -> list[CheckOutcome]:
 
 
 @rule("R12")
-async def _r12_copy_paste(ctx: RuleContext) -> list[CheckOutcome]:
-    """R12 — copier-coller : sujet identique au précédent sur les mesures."""
+async def _r12_measurement_quality(ctx: RuleContext) -> list[CheckOutcome]:
+    """R12 — qualité des relevés météo (Matrice §1, deux volets) :
+
+    - **fréquence** (G7) : un NoonEvent porte moins de ``min_releves_meteo_jour``
+      relevés météo horodatés (créneaux 4 h, ``NAV_TIME_SLOTS``, sur les 6
+      possibles) — chaque ligne ``weather_readings`` correspond à un créneau
+      **effectivement saisi** (aucune ligne n'est créée pour un créneau vide,
+      cf. ``onboard_router._sync_event_readings``), donc ``len(...)`` est
+      directement le compte de relevés du jour. Duck-typé : s'abstient si le
+      sujet ne porte pas cet attribut (seul NoonEvent l'expose) ou si la
+      relation n'est pas chargée (``_get_loaded``, jamais de lazy-load
+      synchrone) ;
+    - **copier-coller** : sujet identique au précédent sur les mesures.
+    """
+    weather_readings = _get_loaded(ctx.subject, "weather_readings")
+    if weather_readings is not None:
+        seuil = await ctx.threshold("min_releves_meteo_jour", coded_default=3)
+        count = len(weather_readings)
+        if seuil is not None and count < seuil:
+            return [
+                CheckOutcome(
+                    "fail",
+                    f"R12 — {count} relevé(s) météo (< {seuil} attendus/jour).",
+                    {"releves_meteo": count, "seuil": str(seuil)},
+                    severity="warning",
+                )
+            ]
     prev = ctx.prev
     if prev is None:
         return [CheckOutcome("pass", "Premier relevé de la séquence.")]
@@ -1037,6 +1207,44 @@ async def _r13_chronology(ctx: RuleContext) -> list[CheckOutcome]:
             )
         ]
     return [CheckOutcome("pass", "Chronologie croissante.")]
+
+
+@rule("R29")
+async def _r29_noon_completeness(ctx: RuleContext) -> list[CheckOutcome]:
+    """R29 — complétude des relevés Noon : voilure et températures (G6,
+    volet complétude originalement porté par R13, jamais codé — cf. R13
+    ci-dessus, "la complétude des champs arrive au lot 8").
+
+    Ces données alimentent l'étude des conditions de transport et le calcul
+    du profil de propulsion (``kpi_env.build_propulsion_profile`` — vélique
+    pur / hybride / mécanique / statique) : leur absence n'est jamais
+    bloquante mais doit être visible. Informatif.
+
+    Duck-typé : s'abstient si le sujet n'expose pas ``sail_readings`` (pas un
+    NoonEvent) ou si la relation n'est pas chargée (``_get_loaded``, jamais de
+    lazy-load synchrone incompatible avec une session async, cf. R12/G7)."""
+    sail_readings = _get_loaded(ctx.subject, "sail_readings")
+    if sail_readings is None:
+        return [CheckOutcome("pass", "R29 — non applicable (pas un Noon).")]
+    hold_readings = _get_loaded(ctx.subject, "hold_readings") or []
+    missing: list[str] = []
+    if not sail_readings:
+        missing.append("voilure")
+    temp_zones = {r.zone for r in hold_readings if r.temp_c is not None}
+    if "air" not in temp_zones:
+        missing.append("température air")
+    if "sea_water" not in temp_zones:
+        missing.append("température mer")
+    if missing:
+        return [
+            CheckOutcome(
+                "fail",
+                f"R29 — relevés manquants sur ce Noon : {', '.join(missing)}.",
+                {"missing": missing},
+                severity="info",
+            )
+        ]
+    return [CheckOutcome("pass", "R29 — relevés voilure/température complets.")]
 
 
 # ════════════════════════════════════════════════════════════ Exécuteur
@@ -1303,4 +1511,7 @@ async def seed_reference_data(
 #   séquence (doublon/antériorité). Conservé ; le volet doublon/antériorité est
 #   désormais porté rigoureusement par **IR01** (scope séquence). La complétude
 #   reste couverte de fait par les présences R05/R06/R07.
+# QHSE (Phase 0) — même patron : le module s'importe en fin de fichier pour
+# peupler ``RULES`` (RQ01-RQ03) via ``@rule`` sans cycle d'import.
+from app.services import qhse_validation_rules as _qhse_rules  # noqa: E402,F401
 from app.services import validation_rules_catalog as _catalog  # noqa: E402,F401

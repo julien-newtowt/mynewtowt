@@ -4,6 +4,17 @@
 
 <h1>{% if lang == 'en' %}Notifications{% else %}Notifications{% endif %}</h1>
 
+{# Reprise UX Phase 3 (K-4) — même motif que le cockpit escale : la ligne
+   "Marquer lu" poste en HTMX (204 + toast + `meRefresh`) et ce wrapper se
+   re-remplit via hx-get + hx-select sur la page elle-même. Sans JS : la
+   route retombe sur un 303 classique, ce wrapper n'a alors aucun effet. #}
+<div id="notif-sections"
+     hx-get="/me/notifications"
+     hx-trigger="meRefresh from:body"
+     hx-select="#notif-sections"
+     hx-target="this"
+     hx-swap="outerHTML">
+
 {% if notifications %}
   <div class="card">
     <ul class="notif-list" style="list-style:none;margin:0;padding:0;">
@@ -20,7 +31,8 @@
             <div class="text-muted text-sm">{{ n.created_at|datetime }}</div>
           </div>
           {% if not n.is_read %}
-            <form method="post" action="/me/notifications/{{ n.id }}/read" style="margin:0;">
+            <form method="post" action="/me/notifications/{{ n.id }}/read" style="margin:0;"
+                  hx-post="/me/notifications/{{ n.id }}/read" hx-swap="none">
               <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
               <button class="btn btn-ghost btn-sm" type="submit">
                 {% if lang == 'en' %}Mark read{% else %}Marquer lu{% endif %}
@@ -32,9 +44,18 @@
     </ul>
   </div>
 {% else %}
-  <p class="text-muted">
-    {% if lang == 'en' %}No notifications yet.{% else %}Aucune notification pour l'instant.{% endif %}
-  </p>
+  <div class="empty-state">
+    <i data-lucide="bell-off"></i>
+    <p class="empty-title">
+      {% if lang == 'en' %}No notifications yet{% else %}Aucune notification pour l'instant{% endif %}
+    </p>
+    <p class="empty-hint">
+      {% if lang == 'en' %}You'll be notified here about status changes, delays and new documents on your bookings.
+      {% else %}Vous serez averti ici des changements de statut, retards et nouveaux documents sur vos réservations.{% endif %}
+    </p>
+  </div>
 {% endif %}
+
+</div>
 
 {% endblock %}

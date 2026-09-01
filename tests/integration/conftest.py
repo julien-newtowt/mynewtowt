@@ -89,7 +89,9 @@ class FakeRequest:
         self.state = SimpleNamespace()
         self.cookies: dict[str, str] = {}
         self.query_params: dict[str, str] = {}
-        self.url = SimpleNamespace(path="/")
+        # ``scheme`` : lu par cookie_kwargs_for_client (flag Secure) quand une
+        # route pose un cookie de session — http en test, comme en dev local.
+        self.url = SimpleNamespace(path="/", scheme="http")
 
     async def form(self):
         return self._form
