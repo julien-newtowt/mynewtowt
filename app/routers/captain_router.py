@@ -43,7 +43,7 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import WatchLog
 from app.permissions import require_permission
-from app.services import notifications
+from app.services import notifications, voyage_transitions
 from app.services import weather as wx
 from app.services.activity import record as activity_record
 from app.services.signature import (
@@ -54,12 +54,7 @@ from app.services.signature import (
     ensure_unlocked,
     sign_record,
 )
-from app.services.voyage_events import (
-    ARRIVAL_SOF_TYPES,
-    DEPARTURE_SOF_TYPES,
-    on_vessel_arrived,
-    on_vessel_departed,
-)
+from app.services.voyage_events import ARRIVAL_SOF_TYPES, DEPARTURE_SOF_TYPES
 from app.templating import templates
 
 logger = logging.getLogger("captain")
@@ -261,12 +256,27 @@ async def add_sof_event(
     )
     # LOT 14 — la synchro SOF→MRVEvent (``mrv_sync``) est éteinte (module archivé).
     # Les Departure/Arrival de la capture v2 se pré-remplissent depuis le SOF.
-    # FLX-02 — les événements réels du bord pilotent les statuts (ATD/ATA + bookings).
+    # FLX-02 / PLN-SEQ — les événements réels du bord pilotent la séquence via
+    # l'orchestrateur unique (ATD/ATA à l'heure de l'événement — plus « now() » —,
+    # bookings, recalcul ETA + legs aval, historisation, rollup, notifications).
+    # Le SOF étant lui-même le déclencheur, pas de double inscription
+    # (``create_sof=False``). Une violation de séquence (EOSP sans SOSP) ne
+    # bloque pas l'enregistrement du SOF : elle est loggée, le réel n'est pas
+    # posé — la checklist de clôture la fera remonter.
     try:
+        actor_name = user.full_name or user.username
         if event_type in DEPARTURE_SOF_TYPES:
-            await on_vessel_departed(db, leg)
+            await voyage_transitions.declare_departure(
+                db, leg, at=e.occurred_at, actor_id=user.id, actor_name=actor_name,
+                create_sof=False,
+            )
         elif event_type in ARRIVAL_SOF_TYPES:
-            await on_vessel_arrived(db, leg)
+            await voyage_transitions.declare_arrival(
+                db, leg, at=e.occurred_at, actor_id=user.id, actor_name=actor_name,
+                create_sof=False,
+            )
+    except voyage_transitions.VoyageSequenceError as seq_err:
+        logger.warning("SOF %s hors séquence (leg %s) : %s", event_type, leg_id, seq_err)
     except Exception:
         logger.exception("voyage event hook failed for leg %s (%s)", leg_id, event_type)
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
@@ -1060,15 +1070,28 @@ async def sign_sof_event(
         detail=e.signature_hash[:12] if e.signature_hash else None,
         ip_address=_client_ip(request),
     )
-    # FLX-02 — backstop idempotent : la signature confirme le départ/l'arrivée
-    # (déjà déclenché à la création du SOF — sans effet si déjà appliqué).
+    # FLX-02 / PLN-SEQ — backstop idempotent : la signature confirme le
+    # départ/l'arrivée (déjà déclenché à la création du SOF — re-déclarer au
+    # même horodatage est sans effet).
     try:
         leg = await db.get(Leg, e.leg_id)
         if leg is not None:
-            if e.event_type in DEPARTURE_SOF_TYPES:
-                await on_vessel_departed(db, leg)
-            elif e.event_type in ARRIVAL_SOF_TYPES:
-                await on_vessel_arrived(db, leg)
+            actor_name = user.full_name or user.username
+            try:
+                if e.event_type in DEPARTURE_SOF_TYPES:
+                    await voyage_transitions.declare_departure(
+                        db, leg, at=e.occurred_at, actor_id=user.id,
+                        actor_name=actor_name, create_sof=False,
+                    )
+                elif e.event_type in ARRIVAL_SOF_TYPES:
+                    await voyage_transitions.declare_arrival(
+                        db, leg, at=e.occurred_at, actor_id=user.id,
+                        actor_name=actor_name, create_sof=False,
+                    )
+            except voyage_transitions.VoyageSequenceError as seq_err:
+                logger.warning(
+                    "SOF signé hors séquence (leg %s) : %s", e.leg_id, seq_err
+                )
             # ONB-04 — journal de bord : trace la signature SOF (best-effort).
             with contextlib.suppress(Exception):
                 await post_onboard_system_message(

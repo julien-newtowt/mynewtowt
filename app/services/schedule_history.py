@@ -32,6 +32,10 @@ async def record(
     detail: str | None = None,
     user_id: int | None = None,
     user_name: str | None = None,
+    old_atd: datetime | None = None,
+    new_atd: datetime | None = None,
+    old_ata: datetime | None = None,
+    new_ata: datetime | None = None,
 ) -> ScheduleRevision:
     rev = ScheduleRevision(
         leg_id=leg.id,
@@ -44,6 +48,10 @@ async def record(
         new_etd=new_etd,
         old_eta=old_eta,
         new_eta=new_eta,
+        old_atd=old_atd,
+        new_atd=new_atd,
+        old_ata=old_ata,
+        new_ata=new_ata,
         reason=reason,
         detail=detail,
         user_id=user_id,

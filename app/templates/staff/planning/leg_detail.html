@@ -35,15 +35,16 @@
         <tr><th>Arrivée</th><td>{{ pod.name }} <span class="mono text-muted">({{ pod.locode }} {{ pod.country|flag }})</span></td></tr>
         <tr><th>ETD</th><td><span class="mono">{{ leg.etd|datetime }}</span></td></tr>
         <tr><th>ETA</th><td><span class="mono">{{ leg.eta|datetime }}</span></td></tr>
-        <tr><th>ATD</th><td>{% if leg.atd %}<span class="mono">{{ leg.atd|datetime }}</span>{% else %}<span class="text-muted">non parti</span>{% endif %}</td></tr>
+        <tr><th>ATD</th><td>{% if leg.atd %}<span class="mono">{{ leg.atd|datetime }}</span>{% else %}<span class="text-muted">départ non déclaré</span>{% endif %}</td></tr>
         <tr><th>ATA</th><td>{% if leg.ata %}<span class="mono">{{ leg.ata|datetime }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
         <tr><th>Réalisé</th><td class="text-muted text-sm">
-          ATD/ATA &amp; statut portuaire posés depuis l'<a href="/escale">Escale</a> (pilotage ATA/ATD)
-          et le bord (SOF). Édition du prévisionnel : bouton « Éditer ».
+          Déclarations de départ (POL) et d'arrivée (POD) depuis l'<a href="/escale?leg_id={{ leg.id }}">Escale</a>
+          ou le bord (SOF). Chaque déclaration recalcule l'ETA et les legs suivants —
+          mouvements historisés (bouton « Historique »). Édition du prévisionnel : bouton « Éditer ».
         </td></tr>
         {% if delayed is defined and delayed %}
         <tr><th>Dérive planning</th><td>
-          <span class="pill pill-warn" title="Écart ETD/ETA vs référence ≥ 4 h">⚠ retard {{ delay_h }} h</span>
+          <span class="pill pill-warn" title="Écart départ/arrivée (réel si déclaré, prévisionnel sinon) vs référence ≥ 4 h">⚠ retard {{ delay_h }} h</span>
         </td></tr>
         {% endif %}
         <tr><th>Escale prévue</th><td>
@@ -53,11 +54,16 @@
           {% else %}<span class="text-muted">non programmée</span>{% endif %}
         </td></tr>
         <tr><th>Statut</th><td>
-          {% if leg.status == 'planned' %}<span class="pill pill-info">Planifié</span>
-          {% elif leg.status == 'in_progress' %}<span class="pill pill-warn">En cours</span>
-          {% elif leg.status == 'completed' %}<span class="pill pill-ok">Terminé</span>
-          {% elif leg.status == 'cancelled' %}<span class="pill pill-neutral">Annulé</span>
+          {%- set _phase = leg.phase -%}
+          {% if _phase == 'planifie' %}<span class="pill pill-info">Planifié</span>
+          {% elif _phase == 'en_mer' %}<span class="pill pill-warn">⛵ En mer</span>
+          {% elif _phase == 'a_quai' %}<span class="pill pill-ok">⚓ À quai</span>
+          {% elif _phase == 'termine' %}<span class="pill pill-ok">Terminé</span>
+          {% elif _phase == 'annule' %}<span class="pill pill-neutral">Annulé</span>
           {% else %}<span class="pill pill-neutral">{{ leg.status }}</span>{% endif %}
+          {% if _phase == 'a_quai' and leg.status == 'in_progress' %}
+            <span class="text-muted text-sm">(clôture de voyage en attente)</span>
+          {% endif %}
         </td></tr>
       </tbody>
     </table>
