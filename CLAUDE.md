@@ -218,6 +218,35 @@ mynewtowt/
     2026-07-30 ce saut n'est plus silencieux : il force le statut
     `indetermine` (cf. ci-dessous).
 
+### Planning — séquence déclarative départ/arrivée (PLN-SEQ)
+
+Doc de référence : `docs/design/05-sequence-planification.md`.
+
+- **Un leg vit la séquence** planifié → en mer (départ déclaré, ATD) → à quai
+  (arrivée déclarée, ATA) → terminé (clôture approuvée). Le statut stocké
+  reste `planned/in_progress/completed/cancelled` (`refresh_leg_status`,
+  seul écrivain) ; la **phase** affichée est dérivée (`Leg.phase`).
+- **`services.voyage_transitions` est le chemin unique de pose du réel**
+  (ATD/ATA), pour les deux canaux (cockpit escale + SOF bord). Il enchaîne :
+  SOF (SOSP/EOSP), statut, re-ancrage d'ETA sur l'ATD (durée de transit
+  conservée), recalcul des legs suivants (cascade), historisation, rollup
+  OPEX, notifications. Ne jamais écrire `leg.atd`/`leg.ata` ailleurs.
+- **Séquence dure** : pas d'arrivée sans départ déclaré, pas d'ATA < ATD, pas
+  de chevauchement de legs (validations `validate_leg_schedule` + cascade).
+  Un leg déjà appareillé n'est **jamais** déplacé par un recalcul : la cascade
+  se bloque et l'incident est **notifié** (`cascade_blocked`).
+- **Tous les mouvements de dates sont historisés** dans `schedule_revisions`
+  (prévisionnel ET réel — sources `departure_declared`/`arrival_declared`,
+  colonnes `old/new_atd`, `old/new_ata`, migration 0136, `batch_id` partagé
+  avec la cascade). Viewer : fiche leg → « Historique ».
+- **Planification à la journée** : ETD/ETA/clôture booking se saisissent en
+  `type="date"` (le back-end accepte l'ISO jour = minuit UTC) ; le réel garde
+  l'heure précise.
+- **Dates effectives** : tout calcul « où en est le voyage » passe par
+  `planning.effective_etd/effective_eta` (réel prioritaire, repli
+  prévisionnel) — la dérive (`leg_delay_hours`), le Gantt et le transit
+  commercial les utilisent déjà.
+
 ### Équipage — deux registres d'embarquement, à ne jamais confondre
 
 Règle d'or : **tout indicateur d'équipage doit dire de quel registre il parle.**
@@ -524,7 +553,7 @@ préférences de style.
 
 | Module | Route racine | État |
 |---|---|---|
-| Planning | `/planning` | ✅ Gantt + table + share token |
+| Planning | `/planning` | ✅ Gantt + table + share token + **séquence déclarative départ/arrivée** (PLN-SEQ : SOF, recalculs, historisation réel+prévisionnel, activation du leg suivant — cf. `docs/design/05-sequence-planification.md`) |
 | Planning — scénarios | `/planning/scenarios` | ✅ what-if isolé (jamais d'écriture sur `legs`) : brouillon ou clone de legs réels, Gantt/table/comparaison, export CSV, drag-drop |
 | Commercial | `/commercial` | ✅ clients (+ **commercial attitré**, fiches prospect), **grilles tarifaires** (réf. codifiée `P-MMAA-MMAA-XX-YY` par route, plusieurs grilles actives/client, défaut par route, paliers inclusifs, options dont `per_bl`, **conditions de règlement 1-3 échéances déclaratives**), **estimations tarifaires**, **offres** (cycle `en_cours`/`valide`/`echue`/`annule`, réservation de volume, **historique chaîné SHA-256**), commandes, **booking note** auto + signature Yousign |
 | Estimation tarifaire | `/me/estimations` + `/devis` | ✅ **extranet client** : libre-service sur **ses** grilles actives, notifie le commercial attitré, transformable en offre. **Vitrine** : demande **non chiffrée** créant une fiche prospect (le tarif ne sort jamais vers une identité non établie) |

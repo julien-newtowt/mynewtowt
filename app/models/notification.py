@@ -51,6 +51,12 @@ NOTIFICATION_TYPES = (
     # annulée. Argent encaissé chez Stripe sans contrepartie dans le grand livre
     # — le siège doit rembourser à froid, l'application ne sait pas le faire.
     "onboard_payment_incident",
+    # Séquence planning : l'arrivée déclarée d'un leg « active » le suivant
+    # (prochain voyage du navire) — les Opérations préparent son escale.
+    "leg_activated",
+    # Incident de reprogrammation : la cascade de recalcul des legs aval a été
+    # bloquée (leg déjà appareillé chevauché) — arbitrage manuel requis.
+    "cascade_blocked",
 )
 
 # Icônes par type (emoji)
@@ -77,6 +83,8 @@ NOTIFICATION_ICONS: dict[str, str] = {
     "trombinoscope_generated": "🪪",
     "estimate_ready": "🧮",
     "onboard_payment_incident": "🚨",
+    "leg_activated": "🧭",
+    "cascade_blocked": "🚧",
 }
 
 

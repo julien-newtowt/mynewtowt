@@ -269,6 +269,14 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   **ADR-011** (caisse : espèces ≠ encaissements CB), **ADR-012** (cloisonnement
   par navire), **ADR-013** (remboursement, valeur du registre de vente, gel à la
   relève). Les trois derniers sont datés du 2026-08-27 et **acceptés**.
+- **PLN-SEQ (2026-09-01)** : refonte de la séquence de planification —
+  déclarations « départ du POL » / « arrivée au POD » (escale + SOF bord →
+  `services.voyage_transitions`, chemin unique du réel), re-ancrage d'ETA sur
+  l'ATD + cascade des legs suivants, historisation du réel dans
+  `schedule_revisions` (migration 0136), phase dérivée `Leg.phase`
+  (en mer / à quai), planification saisie à la journée, dates effectives
+  (`effective_etd/eta`) dans dérive/Gantt/transit. Doc :
+  `docs/design/05-sequence-planification.md`.
 
 ## 13. Audit de cohérence métier (2026-07-28) — feedback logiciel vs compagnie maritime réelle
 

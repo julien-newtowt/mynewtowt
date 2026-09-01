@@ -34,16 +34,32 @@ def test_leg_delay_detection():
         eta_ref=base + timedelta(days=20),
         etd=base + timedelta(hours=1),
         eta=base + timedelta(days=20, hours=2),
+        atd=None,
+        ata=None,
     )
     late = SimpleNamespace(
         etd_ref=base,
         eta_ref=base + timedelta(days=20),
         etd=base,
         eta=base + timedelta(days=20, hours=6),  # +6 h sur l'ETA
+        atd=None,
+        ata=None,
     )
     assert is_delayed(on_time) is False  # max 2 h < seuil 4 h
     assert is_delayed(late) is True
     assert leg_delay_hours(late) == pytest.approx(6.0)
+    # Le RÉEL prime dès qu'il est déclaré : un leg parti 8 h après son ETD de
+    # référence est en retard même si personne n'a recalé son prévisionnel.
+    departed_late = SimpleNamespace(
+        etd_ref=base,
+        eta_ref=base + timedelta(days=20),
+        etd=base,
+        eta=base + timedelta(days=20),
+        atd=base + timedelta(hours=8),
+        ata=None,
+    )
+    assert is_delayed(departed_late) is True
+    assert leg_delay_hours(departed_late) == pytest.approx(8.0)
 
 
 # ─────────────────────────────── PLN-06 ───────────────────────────────

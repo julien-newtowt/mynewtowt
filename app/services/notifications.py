@@ -166,6 +166,33 @@ async def notify_sosp(db: AsyncSession, leg_code: str, leg_id: int) -> Notificat
     )
 
 
+async def notify_leg_activated(db: AsyncSession, leg_code: str, leg_id: int) -> Notification:
+    """L'arrivée déclarée du leg précédent « active » ce leg (prochain voyage)."""
+    return await create(
+        db,
+        type="leg_activated",
+        title=f"Leg suivant activé — {leg_code}",
+        detail="Arrivée du leg précédent déclarée : préparer l'escale et le départ.",
+        link=f"/escale?leg_id={leg_id}",
+        target_role="operation",
+    )
+
+
+async def notify_cascade_blocked(
+    db: AsyncSession, leg_code: str, leg_id: int, detail: str | None = None
+) -> Notification:
+    """Incident de reprogrammation : la cascade aval n'a pas pu recaler les
+    legs suivants (leg déjà appareillé chevauché) — arbitrage manuel requis."""
+    return await create(
+        db,
+        type="cascade_blocked",
+        title=f"Recalcul planning bloqué — {leg_code}",
+        detail=detail or "Un leg déjà appareillé bloque le recalage des legs aval.",
+        link=f"/planning/legs/{leg_id}",
+        target_role="operation",
+    )
+
+
 async def notify_new_claim(db: AsyncSession, reference: str, claim_id: int) -> Notification:
     return await create(
         db,
