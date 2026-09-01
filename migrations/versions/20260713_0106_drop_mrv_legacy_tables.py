@@ -22,7 +22,7 @@ mrv_parameters;`` sur la vraie base de production. Ne pas lancer
 ``alembic upgrade head`` en production avant cette vérification.
 
 Revision ID: 20260713_0106
-Revises: 20260828_0135
+Revises: 20260901_0136
 Create Date: 2026-07-13
 """
 
@@ -33,7 +33,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260713_0106"
-down_revision = "20260828_0135"
+down_revision = "20260901_0136"
 branch_labels = None
 depends_on = None
 
