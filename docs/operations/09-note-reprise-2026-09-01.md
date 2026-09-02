@@ -24,16 +24,24 @@ push.
 
 ## 2. Ce qu'il faut regarder en premier
 
-1. **La PR #169 fixe la tête Alembic** — la laisser passer, puis rechaîner les
-   deux migrations non publiées des branches (détail : `07` §0, « collision
-   annoncée »). Une ligne par branche.
-2. **`feature/dashboard-env-integration` demande ton arbitrage**, pas seulement
+1. **La PR #170 d'abord** — `main` est rouge sur `lint` depuis la fusion de la
+   #169 : `black` n'a pas été passé sur 4 fichiers de PLN-SEQ. La #170 ne
+   contient que ce reformatage, égalité d'AST vérifiée, CI verte sur les trois
+   jobs. **Tant qu'elle n'est pas fusionnée, les quatre autres PR héritent d'un
+   `lint` rouge sur des fichiers qu'elles ne touchent pas.**
+2. **Réintégrer `main` dans les quatre branches après chaque fusion.** La #169 a
+   posé `20260901_0136` là où pointaient les deux migrations non publiées des
+   branches de code : leur fusion a recréé deux têtes Alembic, rechaînées depuis
+   (détail : `07` §0). Le geste est à refaire à chaque fois qu'une migration part
+   sur `main` pendant qu'une branche attend.
+3. **`feature/dashboard-env-integration` demande ton arbitrage**, pas seulement
    ta relecture : elle supprime `mrv_events` / `mrv_parameters` et décommissionne
    `dashboard_env_router`. Arbitrage de Yasmin du 2026-09-01 : le `DROP` est sans
    conséquence **aucune donnée MRV n'étant encore en base**. La décision
    d'architecture, elle, reste tienne.
-3. **`docs/claude-md-socle-methode` touche `CLAUDE.md` et `PROJECT_CONTEXT.md`**,
-   soit exactement les deux fichiers de doc que ta PR #169 modifie aussi.
+4. **`docs/claude-md-socle-methode` touche `CLAUDE.md` et `PROJECT_CONTEXT.md`**,
+   soit exactement les deux fichiers de doc que ta PR #169 modifiait aussi — les
+   deux fusions se sont faites sans conflit, zones disjointes.
 
 ---
 
