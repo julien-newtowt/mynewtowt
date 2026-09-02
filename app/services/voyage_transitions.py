@@ -458,3 +458,46 @@ async def declare_arrival(
 
     await db.flush()
     return summary
+
+
+async def repair_vessel_sequence(
+    db: AsyncSession, *, vessel_id: int | None = None
+) -> list[tuple[Leg, Leg]]:
+    """Passe de cohérence « un seul leg actif par navire » sur la donnée existante.
+
+    La règle vit dans ``declare_departure`` (le départ du leg N+1 termine le
+    leg N) — mais un ATD posé par un autre chemin (ancien flux escale, import,
+    SQL) l'a contournée : deux legs du même navire peuvent alors rester « à
+    quai » côte à côte. Cette passe rejoue la règle a posteriori : tout leg
+    arrivé (ATA) dont un leg ultérieur du même navire a appareillé (ATD) est
+    terminé opérationnellement (``voyage_completed_at`` = cet ATD, statut
+    recalculé). Idempotente, jamais de réécriture d'une fin déjà posée.
+
+    Renvoie les couples ``(leg terminé, leg suivant qui l'a terminé)``.
+    """
+    stmt = (
+        select(Leg)
+        .where(Leg.status != "cancelled")
+        .order_by(Leg.vessel_id.asc(), Leg.etd.asc(), Leg.id.asc())
+    )
+    if vessel_id is not None:
+        stmt = stmt.where(Leg.vessel_id == vessel_id)
+    legs = list((await db.execute(stmt)).scalars().all())
+    by_vessel: dict[int, list[Leg]] = {}
+    for lg in legs:
+        by_vessel.setdefault(lg.vessel_id, []).append(lg)
+
+    repaired: list[tuple[Leg, Leg]] = []
+    for lane in by_vessel.values():
+        for idx, lg in enumerate(lane):
+            if lg.ata is None or lg.voyage_completed_at is not None:
+                continue
+            successor = next((n for n in lane[idx + 1 :] if n.atd is not None), None)
+            if successor is None:
+                continue
+            lg.voyage_completed_at = ensure_utc(successor.atd)
+            refresh_leg_status(lg)
+            repaired.append((lg, successor))
+    if repaired:
+        await db.flush()
+    return repaired

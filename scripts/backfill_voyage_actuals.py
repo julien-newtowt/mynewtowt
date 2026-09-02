@@ -1,5 +1,9 @@
 """Reprise des dates RÉELLES de départ/arrivée (ATD/ATA) des legs — PLN-SEQ.
 
+Termine aussi par une passe de cohérence sur TOUTE la donnée : tout leg arrivé
+dont un leg ultérieur du même navire a appareillé est terminé opérationnellement
+(un seul leg actif par navire), même s'il n'est pas dans le CSV.
+
 Rejoue, pour chaque leg d'un fichier CSV (``leg_code,atd,ata`` — dates ISO
 jour ou jour+heure, UTC), les déclarations de départ et d'arrivée **par le
 chemin unique** ``services.voyage_transitions`` : la séquence est donc
@@ -43,6 +47,7 @@ from app.services.voyage_transitions import (
     VoyageSequenceError,
     declare_arrival,
     declare_departure,
+    repair_vessel_sequence,
 )
 
 DEFAULT_FILE = Path(__file__).parent / "data" / "voyage_actuals_2026.csv"
@@ -140,6 +145,18 @@ async def run(path: Path, *, apply: bool, today: datetime) -> int:
                 errors += 1
                 line.append(f"✖ SÉQUENCE : {e}")
             print(" · ".join(line))
+
+        # Cohérence « un seul leg actif par navire » sur TOUTE la donnée
+        # (CSV ou pas) : un leg arrivé dont le suivant a appareillé — par
+        # l'ancien flux escale, un import… — est terminé opérationnellement.
+        repaired = await repair_vessel_sequence(db)
+        for done, nxt in repaired:
+            print(
+                f"{done.leg_code:9} · cohérence : terminé (le suivant {nxt.leg_code} "
+                f"a appareillé le {ensure_utc(nxt.atd):%Y-%m-%d}) · phase={done.phase}"
+            )
+        if not repaired:
+            print("(cohérence : aucun leg arrivé laissé actif après un départ ultérieur)")
 
         if apply and errors == 0:
             await db.commit()

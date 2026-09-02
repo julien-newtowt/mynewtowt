@@ -126,7 +126,11 @@ prévisionnel). Quand l'arrivée réelle est fournie, l'ETA prévisionnelle n'es
 **pas** re-ancrée sur l'ATD (`reanchor_eta=False`) : re-ancrer une prévision
 aussitôt supplantée par l'ATA fausserait le « prévu » affiché (leg planifié au
 1ᵉʳ août parti le 6 juin → ETA tirée de 56 j). Seul un leg aval déjà appareillé
-qui bloque le recalage est rapporté comme incident. Jeu de données 2026 :
+qui bloque le recalage est rapporté comme incident. Le script termine par une
+**passe de cohérence** (`voyage_transitions.repair_vessel_sequence`) sur toute la
+donnée : un leg arrivé dont un leg ultérieur du navire a appareillé (ATD posé par
+l'ancien flux, un import…) est terminé opérationnellement — deux legs « à quai »
+côte à côte ne peuvent pas subsister. Jeu de données 2026 :
 `scripts/data/voyage_actuals_2026.csv`.
 
 ## 6. Historisation

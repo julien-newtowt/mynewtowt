@@ -292,3 +292,26 @@ async def test_departure_can_keep_forecast_eta(db):
     revs = (await db.execute(ScheduleRevision.__table__.select())).fetchall()
     assert [r.source for r in revs] == ["departure_declared"]  # le mouvement réel est tracé
     assert _naive(revs[0].new_atd) == _naive(at)
+
+
+@pytest.mark.asyncio
+async def test_repair_vessel_sequence_closes_legacy_overlaps(db):
+    """Donnée héritée : ATD/ATA posés hors du chemin unique → deux legs « à quai ».
+    La passe de cohérence termine le leg arrivé dont le suivant a appareillé."""
+    from app.services.voyage_transitions import repair_vessel_sequence
+
+    leg1, leg2 = await _setup_two_legs(db)
+    leg1.atd, leg1.ata = BASE, BASE + timedelta(days=20)
+    leg2.atd, leg2.ata = BASE + timedelta(days=24), BASE + timedelta(days=44)
+    for lg in (leg1, leg2):
+        lg.status = "in_progress"
+    await db.flush()
+    assert [lg.phase for lg in (leg1, leg2)] == ["a_quai", "a_quai"]  # l'anomalie
+
+    repaired = await repair_vessel_sequence(db)
+    assert [(a.id, b.id) for a, b in repaired] == [(leg1.id, leg2.id)]
+    assert leg1.phase == "termine" and leg1.status == "completed"
+    assert _naive(leg1.voyage_completed_at) == _naive(leg2.atd)
+    assert leg2.phase == "a_quai"  # dernier leg arrivé : reste à quai
+    # Idempotente.
+    assert await repair_vessel_sequence(db) == []
