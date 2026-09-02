@@ -2666,7 +2666,7 @@ en mode multi-agents / multi-modèles.
 - Un pipeline local « Extraction Noon Reports » existe déjà hors dépôt (2026
   seulement, en erreur depuis 07/2026).
 
-### Décisions et implémentation (ADR-014, statut proposé)
+### Décisions et implémentation (ADR-014 — accepté par Julien le 2026-09-02)
 
 1. `legs.origin` (`newtowt` | `towt_archive`, migration 0138, index) +
    `Leg.is_archive` ; garde unique `assert_leg_mutable` (`LegArchivedError`)
@@ -2746,7 +2746,7 @@ regression).
 
 ### Reste à faire
 
-Arbitrage ADR-014 (dont la cible des noon reports) ; exécution staging
-(legs → GPS) ; lot 2 archive noon reports ; confirmation de la source GPS
-08-10/2024 ; revue des 5 ports créés dans Admin → Ports.
+Exécution staging (legs → GPS) ; lot 2 archive noon reports (ADR-014 D6,
+accepté) ; confirmation de la source GPS 08-10/2024 ; revue des 5 ports créés
+dans Admin → Ports ; sentinelle des sites `select(Leg)`.
 

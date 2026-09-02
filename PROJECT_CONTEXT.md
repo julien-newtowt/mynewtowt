@@ -249,8 +249,8 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   **ADR-011** (caisse : espèces ≠ encaissements CB), **ADR-012** (cloisonnement
   par navire), **ADR-013** (remboursement, valeur du registre de vente, gel à la
   relève). Les trois derniers sont datés du 2026-08-27 et **acceptés**.
-  **ADR-014** (reprise d'historique TOWT, 2026-09-02) est **proposé** — six
-  décisions, la 6ᵉ (cible des noon reports) ouverte.
+  **ADR-014** (reprise d'historique TOWT, 2026-09-02) est **accepté** — sept
+  décisions, la 6ᵉ (table d'archive des noon reports) ouvre le lot 2.
 - **PLN-SEQ (2026-09-01)** : refonte de la séquence de planification —
   déclarations « départ du POL » / « arrivée au POD » (escale + SOF bord →
   `services.voyage_transitions`, chemin unique du réel), re-ancrage d'ETA sur
@@ -283,7 +283,7 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   `/tracking`. Scripts : `import_towt_legs` (CSV versionné des 36 voyages),
   `towt_gps_consolidate` (local) → `import_towt_positions` (serveur),
   `towt_noon_extract` (prototype local). Doc :
-  `docs/audit/2026-09-02-reprise-historique-towt.md`, **ADR-014** (proposé).
+  `docs/audit/2026-09-02-reprise-historique-towt.md`, **ADR-014** (accepté le 2026-09-02).
 
 ## 13. Audit de cohérence métier (2026-07-28) — feedback logiciel vs compagnie maritime réelle
 

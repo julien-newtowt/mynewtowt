@@ -1,7 +1,7 @@
 # ADR-014 — Reprise de l'historique TOWT : archive immuable dans l'ERP
 
 - **Date** : 2026-09-02
-- **Statut** : **proposé** — en attente de l'arbitrage de Julien Gondé (décisions 1 à 5 implémentées sur branche, décision 6 ouverte)
+- **Statut** : **accepté** — arbitré le 2026-09-02 par Julien Gondé (les sept décisions ; la décision 6 ouvre le lot 2 « archive des noon reports »)
 - **Décideur** : Julien Gondé
 - **Rédaction** : suites de l'audit des sources d'historique (`docs/audit/2026-09-02-reprise-historique-towt.md`)
 
@@ -149,7 +149,7 @@ Rejetée — coût réseau et base sans valeur ajoutée, pas de manifeste.
 
 ---
 
-## Décision 6 — Noon reports : table d'archive dédiée, en attente d'arbitrage
+## Décision 6 — Noon reports : table d'archive dédiée (lot 2)
 
 **Contexte.** Trois cibles possibles : `noon_reports` legacy (gelée en écriture
 depuis le LOT 14 — y écrire rouvre une table décommissionnée), `nav_events`
@@ -159,10 +159,10 @@ identité, horodatage UTC, position, voyage TOWT, charge utile JSON du formulair
 complet, SHA-256 du fichier source) avec un viewer lecture seule et une
 inscription dans `NEVER_PURGE_TABLES`.
 
-**Décision (proposée).** Nouvelle table d'archive, hors périmètre MRV, aucune
-émission calculée (règle d'or `emission_ledger`), alimentée par la sortie NDJSON
-de `scripts/towt_noon_extract.py`. À arbitrer par Julien après un premier passage
-du prototype sur les classeurs 2024-2025.
+**Décision.** Nouvelle table d'archive, hors périmètre MRV, aucune émission
+calculée (règle d'or `emission_ledger`), alimentée par la sortie NDJSON de
+`scripts/towt_noon_extract.py`. Le lot 2 démarre après un premier passage du
+prototype sur les classeurs 2024-2025 (retour des échecs de parsing).
 
 **Ce que cela implique.** Lot 2 distinct (migration, modèle, viewer, tests).
 Les indicateurs « profil de propulsion » et « cales » de l'ancien tableau de

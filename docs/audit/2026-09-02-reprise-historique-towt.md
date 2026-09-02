@@ -262,7 +262,7 @@ Pratiques à faire évoluer (proposition) :
 
 | # | Action | Qui | Quand |
 |---|---|---|---|
-| 1 | Valider l'ADR-014 (6 décisions, dont le modèle cible des noon reports) | Julien | avant merge |
+| 1 | ~~Valider l'ADR-014~~ — **accepté le 2026-09-02** (7 décisions, dont la table d'archive des noon reports) | Julien | fait |
 | 2 | Lancer `python -m scripts.import_towt_legs` (dry-run puis `--yes`) en staging, contrôler `/planning?origin=towt` | Julien / Yasmin | J+1 |
 | 3 | Exécuter `scripts/towt_gps_consolidate.py` sur le poste synchronisé, vérifier `manifest.json` (points, trous > 6 h, premier fichier 2024-10-21) | Julien | J+1 |
 | 4 | Importer les CSV consolidés (`import_towt_positions`, dry-run puis `--yes`), contrôler `/tracking` (historique 2025, leg `1HYF5`) et `/performance/navigation/kpis` 2025 | Yasmin | J+2 |
