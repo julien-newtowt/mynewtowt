@@ -2526,3 +2526,110 @@ import. À faire sur cette branche-là, pas ici, pour éviter un conflit.
 - Parseurs exécutés sur les **fichiers réels** (116 000 lignes) avant/après :
   11 763 → 16 669 ports maritimes, `REPDG` écarté, Manille présente.
 
+
+## 2026-09-02 (3) — Le sélecteur de ports ne voyait que la moitié du monde
+
+**Branche** : `fix/ports-picker-server-side` · **Objectif** : « Da Nang VNDAD
+existe bien, mais n'est pas disponible dans le moteur de recherche. Les filtres
+sont incomplets. »
+
+### Situation
+
+Signalement de Yasmin juste après le chargement du référentiel UN/LOCODE
+(16 669 ports). Son diagnostic — « le moteur de recherche n'est pas connecté à
+l'intégralité de la base » — était exact.
+
+### Analyse
+
+`leg-cascade.js` appelait `/api/v1/ports/search?limit=10000` **une fois**, puis
+filtrait dans le navigateur. L'API trie par `country, locode` : la coupure des
+10 000 tombait à l'intérieur du Japon. Mesuré sur la charge réelle :
+**123 pays disparaissaient entièrement** — VN (Da Nang), NL (Rotterdam), US,
+PT, RE, MQ, SG, ZA, MA… tout ce qui suit `JP` dans l'alphabet.
+
+Un seul défaut, trois symptômes : la cascade Zone → Pays → Port, la liste des
+pays et la recherche libre étaient **toutes** dérivées de ce payload tronqué.
+D'où « les filtres sont incomplets » : ce n'était pas un second bug.
+
+Et rien ne le signalait. Le port existait en base, la page ne disait pas qu'elle
+n'en voyait qu'une partie. C'est le pire mode de défaillance : silencieux,
+plausible, et il désigne l'utilisateur comme fautif.
+
+**Le plafond de 10 000 est du code préexistant, mais il ne devenait nuisible
+qu'au-delà de 10 000 lignes — franchies par l'import que j'ai livré le matin
+même.** Je l'assume : j'ai grossi la table sans vérifier ce qui la consommait.
+La leçon est là, pas dans le patch : changer le volume d'une source de vérité
+partagée, c'est changer le contrat de tous ses lecteurs.
+
+Second défaut, latent lui aussi : la carte pays → continent vivait dans le JS,
+codée en dur, commentée « minimal viable list » — ~90 pays. Tout le reste
+tombait dans la zone « Autre ». Invisible avec 250 ports curés, criant avec 200+
+pays en base.
+
+### Décisions
+
+Arbitrage proposé et validé : **recherche côté serveur** plutôt que relever le
+plafond. Relever à 20 000 aurait rendu les ports sélectionnables aujourd'hui en
+laissant intacts le vice (~2 Mo de JSON par ouverture de page) et l'échéance
+(le même bug au prochain palier).
+
+| Besoin | Avant | Après |
+|---|---|---|
+| Zones + pays | dérivés du payload complet | `GET /ports/countries` |
+| Ports d'un pays | filtre client | `GET /ports/search?country=XX` |
+| Recherche libre | filtre client | `GET /ports/search?q=…` (débounce 220 ms) |
+| Port par id | recherche dans le payload | `GET /ports/{id}` |
+| Zone d'un pays | carte JS ~90 pays | `services.geo.region_of`, 251 codes ISO-3166 |
+
+Trois choix de conception qui méritent d'être explicites :
+
+1. **`limit` est bornée** (`PORTS_SEARCH_MAX_LIMIT = 500`). Une limite non
+   bornée *invite* à rapatrier la table ; c'est ce qui s'est passé.
+2. **Quand une liste par pays atteint le plafond, l'UI le dit.** Le défaut
+   qu'on corrige est une troncature muette : la remplacer par une troncature
+   muette plus haute n'aurait rien réglé.
+3. **Choisir une zone sans pays n'affiche plus de ports.** Une zone peut en
+   porter des milliers ; les déverser n'aide personne. La recherche libre
+   couvre le cas « je ne sais pas dans quel pays ».
+
+Sur les régions : « Europe » géographique (Russie et Turquie incluses — leurs
+ports de commerce y sont, et un opérateur européen les y cherche) n'est **pas**
+`EUROPE_ISO2`, le périmètre commercial des catégories import/export qui les
+exclut délibérément. Deux notions distinctes qu'une sentinelle empêche de
+diverger : le périmètre doit rester un sous-ensemble de la région.
+
+### Risques
+
+- 🟡 **Un aller-retour réseau par interaction** au lieu d'un seul au chargement.
+  Débounce à 220 ms, réponses hors séquence ignorées, échec de requête affiché
+  (« Recherche indisponible ») plutôt que silencieux. En contrepartie la page
+  ne télécharge plus ~2 Mo de JSON à chaque ouverture.
+- 🟡 **Changement d'UX** : la liste Port exige désormais un pays. Assumé, et
+  annoncé dans le libellé du champ.
+- 🟢 Aucune migration, aucune dépendance, aucune écriture. Un revert restaure
+  l'ancien comportement, troncature comprise.
+
+### Tests
+
+- 23 tests sur la table de régions : complétude (> 240 codes), aucune zone
+  orpheline dans les deux sens, codes bien formés, `EUROPE_ISO2` ⊆ Europe,
+  15 vérifications ponctuelles (VN → Asie, RE → Afrique, MQ → Amériques,
+  XZ → Haute mer…), repli sans exception, et **aucun pays du catalogue
+  embarqué ne tombe dans « Autre »**.
+- 10 tests d'API : Da Nang retrouvée par nom **et** par LOCODE (le cas exact
+  remonté), recherche partielle et insensible à la casse, ports inactifs et
+  sans coordonnées exclus, `limit` bornée dans les deux sens, tous les pays
+  présents avec leur zone et leur compte, tri par zone métier, port par id
+  avec ses coordonnées, 404 sur inconnu et sur inactif.
+- 2 verrous de structure : les nouvelles routes passent bien par le garde
+  staff-ou-clé (sinon 503 et cascade vide, régression déjà vécue), et
+  `/ports/{port_id}` est déclarée après tous les chemins littéraux `/ports/…`
+  (FastAPI n'ajoute pas de convertisseur de type au motif de route).
+- 1 verrou statique sur le JS : plus de `limit=10000`, plus d'`allPorts`, plus
+  de carte `CONTINENT`, et les trois endpoints bien appelés.
+
+### Ce qui n'est pas vérifié
+
+Aucun parcours rejoué dans un navigateur : le débounce, l'ordre des réponses et
+le rendu du menu de résultats ne sont couverts que par lecture du code. À voir
+en recette, en cherchant précisément « Da Nang ».

@@ -393,6 +393,15 @@ Doc : `docs/integrations/unlocode-ports.md`.
 - **Attribution ODbL** : les coordonnées `unlocode-improved` dérivent en partie
   d'OpenStreetMap. Toute republication (carte publique, export client, PDF)
   doit porter `© OpenStreetMap contributors`.
+- **Le sélecteur de ports interroge le serveur, jamais la table entière.**
+  `/api/v1/ports/countries` sert les pays + leur zone (`services.geo.region_of`,
+  couverture ISO-3166 complète, 251 codes) ; `/ports/search?country=…` et
+  `?q=…` servent les ports ; `/ports/{id}` un port isolé. `limit` est **bornée**
+  (`PORTS_SEARCH_MAX_LIMIT`). Rapatrier la liste et filtrer dans le navigateur
+  tronquait au-delà de 10 000 lignes — trié par pays, tout ce qui suivait `JP`
+  disparaissait (123 pays, dont VN/Da Nang), cascade et recherche comprises,
+  **sans aucun signal**. Ne jamais reconstruire une carte pays → continent côté
+  JS : elle divergera de `PORT_REGIONS`.
 
 ### Permissions
 - 9 rôles : `administrateur`, `operation`, `armement`, `technique`,

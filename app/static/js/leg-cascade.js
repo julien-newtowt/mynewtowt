@@ -4,79 +4,101 @@
  *
  * Page unique « Créer un leg » (PLN-08) : le navire est choisi par boutons
  * radio (input[name=vessel_id]) ; un <select id="vessel_id"> reste supporté
- * (formulaire scénario). Les continents sont dérivés des codes ISO-2 côté
- * navigateur ; la liste des ports actifs vient de /api/v1/ports/search.
+ * (formulaire scénario).
+ *
+ * ── Pourquoi tout passe par le serveur ────────────────────────────────────
+ * Ce fichier rapatriait le référentiel entier (`/api/v1/ports/search?limit=10000`)
+ * puis filtrait dans le navigateur. Passé 10 000 ports en base, la requête
+ * **tronquait silencieusement** : triée par pays, tout ce qui suit `JP`
+ * disparaissait — 123 pays, dont le Viêt Nam (Da Nang `VNDAD` introuvable),
+ * les Pays-Bas, les États-Unis, La Réunion… La cascade Zone/Pays/Port ET la
+ * recherche libre étant dérivées de ce même payload, les filtres étaient
+ * incomplets sans que rien ne le signale.
+ *
+ * Désormais : les zones et pays viennent de `/api/v1/ports/countries`
+ * (quelques centaines d'octets, zone calculée par `services.geo.region_of`,
+ * couverture ISO-3166 complète — plus de carte de continents codée en dur
+ * ici) ; les ports d'un pays et la recherche libre sont **requêtés au
+ * serveur** ; un port désigné par son id est lu via `/api/v1/ports/{id}`.
  *
  * Événement public : `document.dispatchEvent(new CustomEvent("leg:pick-port",
  * {detail: {prefix: "pol", id: 12}}))` sélectionne un port (mis en file tant
- * que la liste n'est pas chargée) — utilisé par leg-form-suggest.js.
+ * que la liste des pays n'est pas chargée) — utilisé par leg-form-suggest.js.
  */
 (function () {
   "use strict";
 
-  // Approx ISO-3166-1 → continent mapping (minimal viable list)
-  var CONTINENT = {
-    // Europe
-    FR:"Europe",GB:"Europe",IE:"Europe",DE:"Europe",ES:"Europe",PT:"Europe",
-    IT:"Europe",NL:"Europe",BE:"Europe",NO:"Europe",SE:"Europe",DK:"Europe",
-    FI:"Europe",IS:"Europe",PL:"Europe",GR:"Europe",HR:"Europe",CY:"Europe",
-    MT:"Europe",EE:"Europe",LV:"Europe",LT:"Europe",AT:"Europe",CH:"Europe",
-    RO:"Europe",BG:"Europe",
-    // Americas
-    US:"Amériques",CA:"Amériques",MX:"Amériques",BR:"Amériques",AR:"Amériques",
-    CL:"Amériques",PE:"Amériques",CO:"Amériques",VE:"Amériques",UY:"Amériques",
-    EC:"Amériques",PY:"Amériques",BO:"Amériques",CR:"Amériques",PA:"Amériques",
-    CU:"Amériques",DO:"Amériques",GT:"Amériques",HN:"Amériques",JM:"Amériques",
-    HT:"Amériques",GP:"Amériques",MQ:"Amériques",GF:"Amériques",
-    // Africa
-    MA:"Afrique",DZ:"Afrique",TN:"Afrique",EG:"Afrique",SN:"Afrique",CI:"Afrique",
-    GH:"Afrique",NG:"Afrique",CM:"Afrique",GA:"Afrique",AO:"Afrique",NA:"Afrique",
-    ZA:"Afrique",MZ:"Afrique",TZ:"Afrique",KE:"Afrique",DJ:"Afrique",RE:"Afrique",
-    MU:"Afrique",MG:"Afrique",
-    // Asia
-    CN:"Asie",JP:"Asie",KR:"Asie",VN:"Asie",TH:"Asie",MY:"Asie",SG:"Asie",
-    ID:"Asie",PH:"Asie",IN:"Asie",PK:"Asie",BD:"Asie",LK:"Asie",AE:"Asie",
-    SA:"Asie",OM:"Asie",QA:"Asie",IL:"Asie",TR:"Asie",GE:"Asie",
-    // Oceania
-    AU:"Océanie",NZ:"Océanie",PG:"Océanie",FJ:"Océanie",
-  };
-  var DEFAULT_CONTINENT = "Autre";
   var DAY_MS = 24 * 3600 * 1000;
+  var PORTS_PER_COUNTRY = 500;   // plafond serveur de /ports/search
+  var SEARCH_LIMIT = 8;
+  var SEARCH_DEBOUNCE_MS = 220;
 
-  function continentOf(country) {
-    return CONTINENT[(country || "").toUpperCase()] || DEFAULT_CONTINENT;
+  var countries = [];            // [{country, zone, port_count}]
+  var zoneByCountry = {};        // "VN" -> "Asie"
+  var ready = false;
+  var pendingPicks = [];
+  var portCache = {};            // id -> {id, locode, name, country, lat, lon}
+
+  function api(path) {
+    return fetch(path, { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; });
   }
 
-  var allPorts = [];   // [{id, locode, name, country, latitude, longitude}]
-  var portsReady = false;
-  var pendingPicks = [];
+  function cache(port) {
+    if (port && port.id != null) portCache[String(port.id)] = port;
+    return port;
+  }
 
-  // ── Fetch active ports once ────────────────────────────────────────
-  function loadPorts() {
-    return fetch("/api/v1/ports/search?limit=10000")
-      .then(function (r) { return r.ok ? r.json() : []; })
-      .then(function (rows) { allPorts = rows || []; });
+  function zoneOf(country) {
+    return zoneByCountry[(country || "").toUpperCase()] || "Autre";
+  }
+
+  // ── Pays + zones : un seul appel, quelques centaines d'octets ──────
+  function loadCountries() {
+    return api("/api/v1/ports/countries").then(function (rows) {
+      countries = rows || [];
+      zoneByCountry = {};
+      countries.forEach(function (c) { zoneByCountry[c.country] = c.zone; });
+    });
   }
 
   function uniqueZones() {
-    var s = new Set();
-    allPorts.forEach(function (p) { s.add(continentOf(p.country)); });
-    return Array.from(s).sort();
+    var seen = {};
+    var out = [];
+    // L'API trie déjà par zone (ordre métier) puis pays : on conserve cet ordre.
+    countries.forEach(function (c) {
+      if (!seen[c.zone]) { seen[c.zone] = true; out.push(c.zone); }
+    });
+    return out;
   }
 
   function countriesIn(zone) {
-    var s = new Set();
-    allPorts.forEach(function (p) {
-      if (continentOf(p.country) === zone) s.add(p.country);
-    });
-    return Array.from(s).sort();
+    return countries
+      .filter(function (c) { return !zone || c.zone === zone; })
+      .map(function (c) { return c; });
   }
 
-  function portsIn(zone, country) {
-    return allPorts.filter(function (p) {
-      return (!zone || continentOf(p.country) === zone) &&
-             (!country || p.country === country);
-    }).sort(function (a, b) { return a.locode.localeCompare(b.locode); });
+  // ── Ports d'un pays : requête serveur, jamais la table entière ─────
+  function fetchPortsOfCountry(country) {
+    if (!country) return Promise.resolve([]);
+    return api("/api/v1/ports/search?limit=" + PORTS_PER_COUNTRY +
+               "&country=" + encodeURIComponent(country))
+      .then(function (rows) { (rows || []).forEach(cache); return rows || []; });
+  }
+
+  function fetchPortById(id) {
+    var hit = portCache[String(id)];
+    if (hit) return Promise.resolve(hit);
+    return api("/api/v1/ports/" + encodeURIComponent(id)).then(cache);
+  }
+
+  function fetchPortByLocode(locode) {
+    return api("/api/v1/ports/search?limit=10&q=" + encodeURIComponent(locode))
+      .then(function (rows) {
+        var exact = (rows || []).filter(function (p) { return p.locode === locode; });
+        return exact.length ? cache(exact[0]) : null;
+      });
   }
 
   // ── Navire sélectionné (radios « boutons » ou <select> legacy) ─────
@@ -106,70 +128,113 @@
     if (!e.zone || !e.country || !e.port) return;
 
     fillZone(e.zone);
+    // Les deux selects suivants sont rendus vides par le gabarit : sans ça, le
+    // champ Port est un menu déroulant vide qui n'explique pas ce qu'il attend
+    // (et le `required` du formulaire produit un message opaque).
+    fillCountry(e.country, "");
+    if (!e.port.value) resetPort(e.port, "Choisissez une zone puis un pays");
     e.zone.addEventListener("change", function () {
       fillCountry(e.country, e.zone.value);
-      fillPort(e.port, e.zone.value, "");
+      // Pas de pays choisi = pas de liste : une zone entière peut porter
+      // plusieurs milliers de ports, et les déverser n'aide personne. La
+      // recherche libre couvre le cas « je ne sais pas dans quel pays ».
+      resetPort(e.port, e.zone.value ? "Choisissez un pays" : "— Choisir —");
     });
     e.country.addEventListener("change", function () {
-      fillPort(e.port, e.zone.value, e.country.value);
+      fillPort(e.port, e.country.value);
     });
     e.port.addEventListener("change", function () { renderSelected(prefix); });
     // Un port déjà présent (édition, re-rendu d'erreur) : aligner zone/pays.
     if (e.port.value) {
-      var cur = allPorts.find(function (p) { return String(p.id) === e.port.value; });
-      if (cur) selectPort(prefix, cur, { keepHint: true });
+      fetchPortById(e.port.value).then(function (cur) {
+        if (cur) selectPort(prefix, cur, { keepHint: true });
+      });
     }
   }
 
   function fillZone(el) {
-    var zones = uniqueZones();
     el.innerHTML = '<option value="">— Toutes —</option>' +
-      zones.map(function (z) { return '<option value="' + z + '">' + z + '</option>'; }).join("");
+      uniqueZones().map(function (z) {
+        return '<option value="' + z + '">' + z + "</option>";
+      }).join("");
   }
+
   function fillCountry(el, zone) {
-    var countries = zone ? countriesIn(zone) : [];
+    var rows = zone ? countriesIn(zone) : [];
     el.innerHTML = '<option value="">— Tous —</option>' +
-      countries.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join("");
+      rows.map(function (c) {
+        return '<option value="' + c.country + '">' + c.country +
+               " (" + c.port_count + ")</option>";
+      }).join("");
   }
-  function fillPort(el, zone, country) {
-    var ports = portsIn(zone, country);
-    var html = '<option value="">— Choisir —</option>';
-    ports.slice(0, 500).forEach(function (p) {
-      html += '<option value="' + p.id + '" data-locode="' + p.locode + '">' +
-              p.locode + " — " + p.name + " (" + p.country + ")</option>";
+
+  function resetPort(el, label) {
+    el.innerHTML = '<option value="">' + label + "</option>";
+  }
+
+  function fillPort(el, country) {
+    if (!country) { resetPort(el, "Choisissez un pays"); return Promise.resolve([]); }
+    resetPort(el, "Chargement…");
+    return fetchPortsOfCountry(country).then(function (ports) {
+      var html = '<option value="">— Choisir —</option>';
+      ports.forEach(function (p) {
+        html += '<option value="' + p.id + '" data-locode="' + p.locode + '">' +
+                p.locode + " — " + p.name + " (" + p.country + ")</option>";
+      });
+      // Le plafond serveur est atteint : le dire, plutôt que laisser croire
+      // que la liste est exhaustive (cf. la troncature silencieuse d'avant).
+      if (ports.length >= PORTS_PER_COUNTRY) {
+        html += '<option value="" disabled>… liste tronquée à ' + PORTS_PER_COUNTRY +
+                " — affinez par la recherche</option>";
+      }
+      el.innerHTML = html;
+      return ports;
     });
-    el.innerHTML = html;
   }
 
   // ── Sélection d'un port (raccourci, recherche, suggestion) ─────────
   function selectPort(prefix, port, opts) {
     var e = els(prefix);
-    if (!e.zone || !e.country || !e.port || !port) return;
-    var zone = continentOf(port.country);
+    if (!e.zone || !e.country || !e.port || !port) return Promise.resolve();
+    cache(port);
+    var zone = zoneOf(port.country);
     e.zone.value = zone;
     fillCountry(e.country, zone);
     e.country.value = port.country;
-    fillPort(e.port, zone, port.country);
-    e.port.value = String(port.id);
-    if (e.search) e.search.value = "";
-    if (e.results) e.results.innerHTML = "";
-    renderSelected(prefix, opts && opts.hint);
-    updateEtaHint();
-    updateRecap();
+    return fillPort(e.port, port.country).then(function (ports) {
+      // Le port peut être hors du lot renvoyé (pays très fourni, plafond
+      // atteint) : on l'ajoute pour que la sélection soit toujours possible.
+      var known = ports.some(function (p) { return String(p.id) === String(port.id); });
+      if (!known) {
+        var opt = document.createElement("option");
+        opt.value = String(port.id);
+        opt.setAttribute("data-locode", port.locode);
+        opt.textContent = port.locode + " — " + port.name + " (" + port.country + ")";
+        e.port.insertBefore(opt, e.port.firstChild ? e.port.firstChild.nextSibling : null);
+      }
+      e.port.value = String(port.id);
+      if (e.search) e.search.value = "";
+      if (e.results) e.results.innerHTML = "";
+      renderSelected(prefix, opts && opts.hint);
+      updateEtaHint();
+      updateRecap();
+    });
   }
 
   function pickByLocode(prefix, locode) {
-    var port = allPorts.find(function (p) { return p.locode === locode; });
-    if (!port) {
-      alert("Port " + locode + " non disponible. Vérifie qu'il est actif dans /admin/ports.");
-      return;
-    }
-    selectPort(prefix, port);
+    fetchPortByLocode(locode).then(function (port) {
+      if (!port) {
+        alert("Port " + locode + " non disponible. Vérifie qu'il est actif dans /admin/ports.");
+        return;
+      }
+      selectPort(prefix, port);
+    });
   }
 
   function pickById(prefix, id, hint) {
-    var port = allPorts.find(function (p) { return String(p.id) === String(id); });
-    if (port) selectPort(prefix, port, { hint: hint });
+    fetchPortById(id).then(function (port) {
+      if (port) selectPort(prefix, port, { hint: hint });
+    });
   }
 
   function renderSelected(prefix, hint) {
@@ -190,45 +255,62 @@
     set("data-port-selected-hint", hint || "");
   }
 
-  // ── Recherche libre : tous les ports, sans filtre zone / pays ───────
-  function normalize(s) {
-    return (s || "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-  }
+  // ── Recherche libre : requêtée au SERVEUR, tout le référentiel ──────
   function bindSearch(prefix) {
     var e = els(prefix);
     if (!e.search || !e.results) return;
-    function render() {
-      var q = normalize(e.search.value.trim());
+    var timer = null;
+    var seq = 0;
+
+    function message(text) {
       e.results.innerHTML = "";
-      if (q.length < 2) return;
-      var hits = allPorts.filter(function (p) {
-        return normalize(p.name).indexOf(q) !== -1 || normalize(p.locode).indexOf(q) !== -1;
-      }).slice(0, 8);
-      if (!hits.length) {
-        var none = document.createElement("div");
-        none.className = "text-muted text-sm";
-        none.style.padding = "8px 12px";
-        none.textContent = "Aucun port actif ne correspond.";
-        e.results.appendChild(none);
-        return;
-      }
-      hits.forEach(function (p) {
-        var b = document.createElement("button");
-        b.type = "button";
-        b.className = "port-result";
-        b.setAttribute("role", "option");
-        b.innerHTML = '<span><span class="mono" style="font-weight:600;color:var(--teal);">' + p.locode +
-          '</span> &nbsp;<strong>' + p.name + '</strong> <span class="text-muted">' + p.country +
-          ' · ' + continentOf(p.country) + '</span></span>';
-        b.addEventListener("click", function () { selectPort(prefix, p); });
-        e.results.appendChild(b);
-      });
+      var n = document.createElement("div");
+      n.className = "text-muted text-sm";
+      n.style.padding = "8px 12px";
+      n.textContent = text;
+      e.results.appendChild(n);
     }
-    e.search.addEventListener("input", render);
-    e.search.addEventListener("focus", render);
+
+    function run() {
+      var q = e.search.value.trim();
+      if (q.length < 2) { e.results.innerHTML = ""; return; }
+      var mine = ++seq;
+      api("/api/v1/ports/search?limit=" + SEARCH_LIMIT + "&q=" + encodeURIComponent(q))
+        .then(function (rows) {
+          // Réponse d'une frappe précédente arrivée en retard : on l'ignore.
+          if (mine !== seq) return;
+          if (rows === null) { message("Recherche indisponible — réessayez."); return; }
+          if (!rows.length) { message("Aucun port actif ne correspond."); return; }
+          e.results.innerHTML = "";
+          rows.forEach(function (p) {
+            cache(p);
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "port-result";
+            b.setAttribute("role", "option");
+            b.innerHTML = '<span><span class="mono" style="font-weight:600;color:var(--teal);">' +
+              p.locode + '</span> &nbsp;<strong>' + p.name + '</strong> <span class="text-muted">' +
+              p.country + " · " + zoneOf(p.country) + "</span></span>";
+            b.addEventListener("click", function () { selectPort(prefix, p); });
+            e.results.appendChild(b);
+          });
+        });
+    }
+
+    function schedule() {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(run, SEARCH_DEBOUNCE_MS);
+    }
+
+    e.search.addEventListener("input", schedule);
+    e.search.addEventListener("focus", schedule);
     e.search.addEventListener("keydown", function (ev) {
       if (ev.key === "Escape") { e.results.innerHTML = ""; }
-      if (ev.key === "Enter") { ev.preventDefault(); var first = e.results.querySelector(".port-result"); if (first) first.click(); }
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        var first = e.results.querySelector(".port-result");
+        if (first) first.click();
+      }
     });
     document.addEventListener("click", function (ev) {
       if (!e.search.contains(ev.target) && !e.results.contains(ev.target)) e.results.innerHTML = "";
@@ -239,7 +321,10 @@
   function selectedPort(prefix) {
     var e = els(prefix);
     if (!e.port || !e.port.value) return null;
-    return allPorts.find(function (p) { return String(p.id) === e.port.value; }) || null;
+    // Le cache est alimenté par tout chemin de sélection (liste par pays,
+    // recherche, raccourci, suggestion) : l'aperçu d'ETA a besoin des
+    // coordonnées, et on ne détient plus le référentiel complet.
+    return portCache[e.port.value] || null;
   }
   function speed() {
     var tEl = document.getElementById("transit_speed_kn");
@@ -359,11 +444,11 @@
   function init() {
     document.addEventListener("leg:pick-port", function (ev) {
       var d = ev.detail || {};
-      if (portsReady) pickById(d.prefix, d.id, d.hint); else pendingPicks.push(d);
+      if (ready) pickById(d.prefix, d.id, d.hint); else pendingPicks.push(d);
     });
 
-    loadPorts().then(function () {
-      portsReady = true;
+    loadCountries().then(function () {
+      ready = true;
       bindCascade("pol");
       bindCascade("pod");
       bindSearch("pol");

@@ -109,6 +109,43 @@ l'opération.
 `www.data.gouv.fr` (ports français). À vérifier depuis le serveur avant de
 planifier un rafraîchissement automatique.
 
+## 5 bis. Conséquence sur l'UI : le sélecteur de ports (2026-09-02)
+
+Charger 16 669 ports dans le navigateur a cassé le sélecteur du formulaire de
+leg — un défaut **latent** que le grossissement du référentiel a révélé.
+
+`leg-cascade.js` appelait `/api/v1/ports/search?limit=10000` puis filtrait
+côté client. L'API triant par `country, locode`, la coupure des 10 000 tombait
+dans `JP` : **123 pays disparaissaient** de la cascade Zone/Pays/Port *et* de
+la recherche libre — VN (Da Nang), NL (Rotterdam), US, PT, RE, MQ, SG, ZA, MA…
+Aucun message : le port existait en base et restait introuvable.
+
+S'y ajoutait une carte pays → continent codée en dur dans le JS
+(« minimal viable list », ~90 pays) : tout le reste tombait dans la zone
+« Autre », invisible tant que le référentiel comptait 250 ports curés.
+
+Correctif :
+
+| Besoin | Avant | Après |
+|---|---|---|
+| Zones + pays | dérivés du payload complet | `GET /api/v1/ports/countries` (quelques centaines d'octets) |
+| Ports d'un pays | filtre client | `GET /ports/search?country=XX` |
+| Recherche libre | filtre client sur le payload | `GET /ports/search?q=…` (débounce 220 ms) |
+| Port par id | recherche dans le payload | `GET /ports/{id}` |
+| Zone d'un pays | carte JS de ~90 pays | `services.geo.region_of` (251 codes ISO-3166) |
+
+Deux garde-fous : `limit` est bornée par `PORTS_SEARCH_MAX_LIMIT` (500) — cet
+endpoint cherche, il n'exporte pas — et quand une liste par pays atteint ce
+plafond, l'UI **le dit** au lieu de laisser croire qu'elle est exhaustive.
+Choisir une zone sans pays n'affiche plus de ports (une zone peut en porter
+des milliers) : la recherche libre couvre le cas « je ne sais pas quel pays ».
+
+⚠ Ne jamais reconstruire une table pays → région côté navigateur : elle
+divergerait de `PORT_REGIONS`. Et `PORT_REGIONS["Europe"]` (géographie, Russie
+et Turquie incluses) n'est pas `EUROPE_ISO2` (périmètre commercial import /
+export, qui les exclut) — `tests/unit/test_geo_regions.py` vérifie que le
+second reste un sous-ensemble du premier.
+
 ## 6. Ce qui n'est pas fait (et pourquoi)
 
 - **Pas de cron automatique** : UNECE publie deux fois par an, un
