@@ -159,8 +159,10 @@ def refresh_leg_status(leg: Leg) -> str:
     """Recalcule ``leg.status`` à partir du réel — machine à états unique.
 
     - ``cancelled`` est sticky (décision humaine, jamais recalculée) ;
-    - ``completed`` = clôture de voyage approuvée (``closure_approved_at``) ;
-    - ``in_progress`` = du premier fait réel (ATD ou ATA posé) à la clôture ;
+    - ``completed`` = clôture de voyage approuvée (``closure_approved_at``) OU
+      fin opérationnelle (``voyage_completed_at`` : le leg suivant du navire a
+      appareillé — un seul leg actif par navire, PLN-SEQ) ;
+    - ``in_progress`` = du premier fait réel (ATD ou ATA posé) à la fin ;
     - ``planned`` sinon.
 
     Tous les flux qui posent ATD/ATA ou touchent la clôture (SOF capitaine,
@@ -169,7 +171,7 @@ def refresh_leg_status(leg: Leg) -> str:
     """
     if leg.status == "cancelled":
         return leg.status
-    if leg.closure_approved_at is not None:
+    if leg.closure_approved_at is not None or leg.voyage_completed_at is not None:
         leg.status = "completed"
     elif leg.atd is not None or leg.ata is not None:
         leg.status = "in_progress"

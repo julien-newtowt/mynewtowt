@@ -49,8 +49,14 @@ def test_ensure_utc_mixes_naive_and_aware_safely() -> None:
 # ───────────────────────── refresh_leg_status ──────────────────────────
 
 
-def _leg(status="planned", atd=None, ata=None, closure_approved_at=None):
-    return SimpleNamespace(status=status, atd=atd, ata=ata, closure_approved_at=closure_approved_at)
+def _leg(status="planned", atd=None, ata=None, closure_approved_at=None, voyage_completed_at=None):
+    return SimpleNamespace(
+        status=status,
+        atd=atd,
+        ata=ata,
+        closure_approved_at=closure_approved_at,
+        voyage_completed_at=voyage_completed_at,
+    )
 
 
 def test_status_planned_without_reality() -> None:
@@ -69,6 +75,16 @@ def test_status_completed_only_on_closure_approval() -> None:
     leg = _leg(atd=now, ata=now)
     assert refresh_leg_status(leg) == "in_progress"
     leg.closure_approved_at = now
+    assert refresh_leg_status(leg) == "completed"
+
+
+def test_status_completed_on_operational_end() -> None:
+    """PLN-SEQ : le départ du leg suivant termine le leg (voyage_completed_at),
+    indépendamment de la clôture administrative."""
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    leg = _leg(atd=now, ata=now, voyage_completed_at=now)
     assert refresh_leg_status(leg) == "completed"
 
 

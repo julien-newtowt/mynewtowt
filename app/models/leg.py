@@ -79,6 +79,13 @@ class Leg(Base):
     closure_reviewed_by: Mapped[str | None] = mapped_column(String(100))
     closure_notes: Mapped[str | None] = mapped_column(Text)
 
+    # Fin OPÉRATIONNELLE du voyage (PLN-SEQ) : posée quand le leg suivant du
+    # même navire déclare son départ — le navire a quitté le quai, ce leg est
+    # terminé même si la clôture administrative (closure_*) n'est pas encore
+    # approuvée. Garantit « un seul leg actif par navire ». Jamais écrite
+    # ailleurs que dans ``services.voyage_transitions``.
+    voyage_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -108,7 +115,8 @@ class Leg(Base):
         """Phase opérationnelle du voyage, dérivée du réel — jamais stockée.
 
         ``planifie`` → ``en_mer`` (départ déclaré, ATD posé) → ``a_quai``
-        (arrivée déclarée, ATA posée) → ``termine`` (clôture approuvée).
+        (arrivée déclarée, ATA posée) → ``termine`` (le leg suivant a
+        appareillé — ``voyage_completed_at`` — ou clôture approuvée).
         ``annule`` est porté par ``status`` (décision humaine, sticky).
         Complète ``status`` (machine à états stockée, cf.
         ``services.planning.refresh_leg_status``) sans le remplacer : les
@@ -116,7 +124,7 @@ class Leg(Base):
         """
         if self.status == "cancelled":
             return "annule"
-        if self.status == "completed":
+        if self.status == "completed" or self.voyage_completed_at is not None:
             return "termine"
         if self.ata is not None:
             return "a_quai"

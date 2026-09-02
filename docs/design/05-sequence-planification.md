@@ -103,6 +103,27 @@ mêmes recalculs, même historisation. Re-déclarer au même horodatage est sans
 effet (idempotence) ; à un horodatage différent, c'est une **correction
 tracée** (ancienne → nouvelle valeur dans l'historique).
 
+### Un seul leg actif par navire
+
+Le départ d'un leg **exige** que le leg précédent du navire soit arrivé (ATA
+déclarée) et lui soit postérieur ; il **termine** ce leg précédent dans le même
+geste (`legs.voyage_completed_at`, migration `0137` → statut `completed`,
+phase « terminé »). À tout instant un navire n'a donc qu'un leg « en mer » ou
+« à quai ». La clôture administrative (`closure_*`, workflow captain) reste
+indépendante : un leg terminé opérationnellement peut avoir une clôture en
+attente (mention affichée sur la fiche).
+
+La liste `/planning` affiche le réel dès qu'il existe (ATD/ATA, pastille
+« réel », prévisionnel et écart en jours en dessous) et la phase en statut.
+
+### Reprise des dates réelles
+
+`python -m scripts.backfill_voyage_actuals` (dry-run par défaut, `--yes` pour
+appliquer) rejoue un CSV `leg_code,atd,ata` par le chemin unique — séquence
+vérifiée, SOF, recalculs, historique, complétion des legs précédents — en mode
+`quiet` (sans notifications). Les dates futures sont ignorées (elles restent du
+prévisionnel). Jeu de données 2026 : `scripts/data/voyage_actuals_2026.csv`.
+
 ## 6. Historisation
 
 `schedule_revisions` (append-only, survit à la suppression du leg) porte
