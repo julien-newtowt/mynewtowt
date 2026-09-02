@@ -926,7 +926,9 @@ async def update_port_status(
     # « maintenant » implicite (l'ancien repli silencieux posait la date
     # du clic à la place de celle voulue par l'opérateur).
     if status_time and status_time.strip() and _parse_iso(status_time) is None:
-        raise HTTPException(status_code=400, detail="Horodatage illisible — format attendu jj/mm/aaaa hh:mm.")
+        raise HTTPException(
+            status_code=400, detail="Horodatage illisible — format attendu jj/mm/aaaa hh:mm."
+        )
     t = _to_utc(_parse_iso(status_time)) or datetime.now(UTC)
 
     actor_name = user.full_name or user.username
@@ -938,9 +940,7 @@ async def update_port_status(
             action_label = "depart"
             toast = "Départ déclaré — leg en mer."
         elif new_status in ("arrivee", "a_quai"):
-            summary = await declare_arrival(
-                db, leg, at=t, actor_id=user.id, actor_name=actor_name
-            )
+            summary = await declare_arrival(db, leg, at=t, actor_id=user.id, actor_name=actor_name)
             action_label = "arrivee"
             toast = "Arrivée déclarée — navire à quai."
             if summary.get("next_leg_code"):
