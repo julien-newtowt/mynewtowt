@@ -164,8 +164,8 @@
         <th>Leg</th>
         <th>Navire</th>
         <th>Itinéraire</th>
-        <th>ETD</th>
-        <th>ETA</th>
+        <th>Départ <span class="text-muted text-xs">(ATD · prévu ETD)</span></th>
+        <th>Arrivée <span class="text-muted text-xs">(ATA · prévue ETA)</span></th>
         <th>Statut</th>
         <th>Réservable</th>
         <th></th>
@@ -182,13 +182,33 @@
             →
             <span class="mono">{{ ports[leg.arrival_port_id].locode if ports[leg.arrival_port_id] else '?' }}</span>
           </td>
-          <td>{{ leg.etd|date }}</td>
-          <td>{{ leg.eta|date }}</td>
+          {# Réel prioritaire (PLN-SEQ) : ATD/ATA dès qu'ils sont déclarés, le
+             prévisionnel reste visible en dessous avec l'écart en jours. #}
           <td>
-            {% if leg.status == 'planned' %}<span class="pill pill-info">Planifié</span>
-            {% elif leg.status == 'in_progress' %}<span class="pill pill-warn">En cours</span>
-            {% elif leg.status == 'completed' %}<span class="pill pill-ok">Terminé</span>
-            {% elif leg.status == 'cancelled' %}<span class="pill pill-neutral">Annulé</span>
+            {% if leg.atd %}
+              <span class="mono">{{ leg.atd|date }}</span> <span class="pill pill-ok text-xs" title="Départ déclaré (ATD)">réel</span>
+              {%- set d_dep = ((leg.atd.replace(tzinfo=None) - leg.etd.replace(tzinfo=None)).days) -%}
+              <div class="text-muted text-xs">ETD {{ leg.etd|date }}{% if d_dep %} ({{ '%+d'|format(d_dep) }} j){% endif %}</div>
+            {% else %}
+              <span class="mono">{{ leg.etd|date }}</span> <span class="text-muted text-xs">ETD</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if leg.ata %}
+              <span class="mono">{{ leg.ata|date }}</span> <span class="pill pill-ok text-xs" title="Arrivée déclarée (ATA)">réel</span>
+              {%- set d_arr = ((leg.ata.replace(tzinfo=None) - leg.eta.replace(tzinfo=None)).days) -%}
+              <div class="text-muted text-xs">ETA {{ leg.eta|date }}{% if d_arr %} ({{ '%+d'|format(d_arr) }} j){% endif %}</div>
+            {% else %}
+              <span class="mono">{{ leg.eta|date }}</span> <span class="text-muted text-xs">ETA</span>
+            {% endif %}
+          </td>
+          <td>
+            {%- set _phase = leg.phase -%}
+            {% if _phase == 'planifie' %}<span class="pill pill-info">Planifié</span>
+            {% elif _phase == 'en_mer' %}<span class="pill pill-warn">⛵ En mer</span>
+            {% elif _phase == 'a_quai' %}<span class="pill pill-ok">⚓ À quai</span>
+            {% elif _phase == 'termine' %}<span class="pill pill-ok">Terminé</span>
+            {% elif _phase == 'annule' %}<span class="pill pill-neutral">Annulé</span>
             {% else %}<span class="pill pill-neutral">{{ leg.status }}</span>{% endif %}
           </td>
           <td>{% if leg.is_bookable %}<span class="pill pill-ok">Oui</span>{% else %}<span class="pill pill-neutral">Non</span>{% endif %}</td>

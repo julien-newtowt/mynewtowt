@@ -241,13 +241,21 @@ Doc de référence : `docs/design/05-sequence-planification.md`.
   de chevauchement de legs (validations `validate_leg_schedule` + cascade).
   Un leg déjà appareillé n'est **jamais** déplacé par un recalcul : la cascade
   se bloque et l'incident est **notifié** (`cascade_blocked`).
+- **Un seul leg actif par navire** : déclarer le départ du leg N+1 exige
+  l'arrivée (ATA) du leg N et le **termine** (`voyage_completed_at`, migration
+  0137 → `completed`/« terminé »), indépendamment de la clôture administrative.
+  Reprise d'historique : `scripts/backfill_voyage_actuals.py` (dry-run par
+  défaut, mode `quiet`).
 - **Tous les mouvements de dates sont historisés** dans `schedule_revisions`
   (prévisionnel ET réel — sources `departure_declared`/`arrival_declared`,
   colonnes `old/new_atd`, `old/new_ata`, migration 0136, `batch_id` partagé
   avec la cascade). Viewer : fiche leg → « Historique ».
 - **Planification à la journée** : ETD/ETA/clôture booking se saisissent en
   `type="date"` (le back-end accepte l'ISO jour = minuit UTC) ; le réel garde
-  l'heure précise.
+  l'heure précise. **Création de leg = page unique** (PLN-08) : navire par
+  boutons, Départ/Arrivée côte à côte (ports habituels BRSSO/FRFEC, filtres +
+  recherche libre), POL/ETD pré-remplis depuis la séquence du navire, escale en
+  **jours** (`port_stay_planned_days` → heures ×24).
 - **Dates effectives** : tout calcul « où en est le voyage » passe par
   `planning.effective_etd/effective_eta` (réel prioritaire, repli
   prévisionnel) — la dérive (`leg_delay_hours`), le Gantt et le transit

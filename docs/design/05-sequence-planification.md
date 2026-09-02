@@ -103,6 +103,27 @@ mêmes recalculs, même historisation. Re-déclarer au même horodatage est sans
 effet (idempotence) ; à un horodatage différent, c'est une **correction
 tracée** (ancienne → nouvelle valeur dans l'historique).
 
+### Un seul leg actif par navire
+
+Le départ d'un leg **exige** que le leg précédent du navire soit arrivé (ATA
+déclarée) et lui soit postérieur ; il **termine** ce leg précédent dans le même
+geste (`legs.voyage_completed_at`, migration `0137` → statut `completed`,
+phase « terminé »). À tout instant un navire n'a donc qu'un leg « en mer » ou
+« à quai ». La clôture administrative (`closure_*`, workflow captain) reste
+indépendante : un leg terminé opérationnellement peut avoir une clôture en
+attente (mention affichée sur la fiche).
+
+La liste `/planning` affiche le réel dès qu'il existe (ATD/ATA, pastille
+« réel », prévisionnel et écart en jours en dessous) et la phase en statut.
+
+### Reprise des dates réelles
+
+`python -m scripts.backfill_voyage_actuals` (dry-run par défaut, `--yes` pour
+appliquer) rejoue un CSV `leg_code,atd,ata` par le chemin unique — séquence
+vérifiée, SOF, recalculs, historique, complétion des legs précédents — en mode
+`quiet` (sans notifications). Les dates futures sont ignorées (elles restent du
+prévisionnel). Jeu de données 2026 : `scripts/data/voyage_actuals_2026.csv`.
+
 ## 6. Historisation
 
 `schedule_revisions` (append-only, survit à la suppression du leg) porte
@@ -120,7 +141,30 @@ ETD/ETA/clôture booking, suggestion et Gantt drag-drop snappés au jour). Le
 **réel** (déclarations, SOF) garde l'heure précise. L'ETA re-ancrée au départ
 hérite de la précision du réel.
 
-## 8. Ce qui reste connu et assumé (non traité ici)
+## 8. Création d'un leg — page unique (PLN-08)
+
+Maquette validée le 2026-09-02. `/planning/legs/new` (et l'édition) tient sur
+**une page**, sans wizard :
+
+1. **Navire** — un bouton par navire (radios stylés), avec l'état de sa
+   séquence (dernier leg, ports, ETA/ATA, phase). Le choix pilote le
+   pré-remplissage (`_new_leg_suggestions`, sérialisé en `data-suggestions`).
+2. **Départ / Arrivée côte à côte** — ports habituels (`Port.is_shortcut`,
+   repli : **BRSSO São Sebastião, FRFEC Fécamp**) → filtres Zone / Pays / Port →
+   **recherche libre** par saisie (nom ou LOCODE, tous les ports actifs, sans
+   filtre zone/pays). Le **POL se remplit automatiquement** = POD du dernier leg
+   du navire (continuité), via l'événement `leg:pick-port` (`leg-cascade.js`).
+3. **Dates** — ETD pré-rempli (ETA/ATA du leg précédent + escale, jour ouvré du
+   port), ETA calculée (distance × élongation ÷ vitesse, arrondie au jour) ;
+   tous deux modifiables. **Escale saisie en jours**
+   (`port_stay_planned_days` → stockée en heures ×24 ; le champ historique en
+   heures reste accepté). Vitesse / élongation derrière un repli.
+4. **Réservation** — une seule case « Ouvrir à la réservation » ; capacité et
+   clôture reprennent les défauts (navire, ETD − 48 h), ajustables en édition.
+5. **Récapitulatif** — code de leg prévisionnel (rang chronologique de l'année
+   de l'ETD suggéré), route, dates, jours de mer, escale.
+
+## 9. Ce qui reste connu et assumé (non traité ici)
 
 - Le sélecteur de fuseau du formulaire d'horodatage escale reste décoratif
   (saisie interprétée en UTC) — à traiter séparément (ESC-07).

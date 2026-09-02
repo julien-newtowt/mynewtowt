@@ -213,3 +213,62 @@ async def test_cascade_blocked_by_departed_downstream_is_visible(db):
     assert (leg2.etd, leg2.eta) == (etd2, eta2)  # fait réalisé jamais réécrit
     notif_types = [r.type for r in (await db.execute(Notification.__table__.select())).fetchall()]
     assert "cascade_blocked" in notif_types
+
+
+@pytest.mark.asyncio
+async def test_one_active_leg_per_vessel(db):
+    """Un seul leg actif par navire : le départ du leg suivant exige l'arrivée
+    du précédent, et le termine opérationnellement (voyage_completed_at)."""
+    from app.services.voyage_transitions import (
+        VoyageSequenceError,
+        declare_arrival,
+        declare_departure,
+    )
+
+    leg1, leg2 = await _setup_two_legs(db)
+    await declare_departure(db, leg1, at=BASE)
+    # leg1 encore en mer → le départ de leg2 est refusé.
+    with pytest.raises(VoyageSequenceError):
+        await declare_departure(db, leg2, at=BASE + timedelta(days=24))
+    assert leg2.atd is None
+
+    await declare_arrival(db, leg1, at=BASE + timedelta(days=20))
+    assert leg1.phase == "a_quai"
+    # Départ de leg2 avant l'arrivée de leg1 → refusé (chevauchement réel).
+    with pytest.raises(VoyageSequenceError):
+        await declare_departure(db, leg2, at=BASE + timedelta(days=19))
+
+    summary = await declare_departure(db, leg2, at=BASE + timedelta(days=24))
+    assert summary["completed_leg_ids"] == [leg1.id]
+    assert leg1.voyage_completed_at is not None
+    assert leg1.status == "completed" and leg1.phase == "termine"
+    assert leg2.phase == "en_mer"
+    # Un seul leg actif (en mer / à quai) pour le navire.
+    active = [lg for lg in (leg1, leg2) if lg.phase in ("en_mer", "a_quai")]
+    assert active == [leg2]
+    # Idempotent : la fin opérationnelle n'est jamais réécrite.
+    stamp = leg1.voyage_completed_at
+    await declare_departure(db, leg2, at=BASE + timedelta(days=24, hours=2))
+    assert leg1.voyage_completed_at == stamp
+
+
+@pytest.mark.asyncio
+async def test_quiet_mode_skips_notifications(db):
+    from app.models.notification import Notification
+    from app.services.voyage_transitions import declare_arrival, declare_departure
+
+    leg1, _ = await _setup_two_legs(db)
+    await declare_departure(db, leg1, at=BASE, quiet=True)
+    await declare_arrival(db, leg1, at=BASE + timedelta(days=20), quiet=True)
+    notifs = (await db.execute(Notification.__table__.select())).fetchall()
+    assert [n.type for n in notifs if n.type in ("sosp", "eosp", "leg_activated")] == []
+    assert leg1.phase == "a_quai"  # le réel est bien posé, seules les notifications sont coupées
+
+
+def test_planning_list_shows_actuals_and_phase():
+    from app.templating import templates
+
+    src = templates.env.loader.get_source(templates.env, "staff/planning/index.html")[0]
+    assert "leg.atd|date" in src and "leg.ata|date" in src  # réel affiché quand présent
+    assert "leg.phase" in src  # statut = phase (en mer / à quai / terminé)
+    assert "En mer" in src and "À quai" in src
