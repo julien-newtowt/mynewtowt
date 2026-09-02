@@ -166,6 +166,9 @@ async def test_admin_port_config_saves_coordinates_and_recomputes(db, staff_user
     assert "recomputed=1" in resp.headers["location"]
     port = await db.get(Port, 2)
     assert (round(port.latitude, 4), round(port.longitude, 4)) == (-20.9373, 55.2925)
+    # La correction humaine doit survivre au prochain rafraîchissement du
+    # référentiel : ``upsert_ports`` ne dégrade jamais une entrée « manual ».
+    assert port.source == "manual"
     refreshed = (await db.execute(select(Leg).where(Leg.id == leg.id))).scalar_one()
     assert refreshed.distance_nm is not None
 

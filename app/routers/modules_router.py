@@ -894,6 +894,11 @@ async def admin_port_config_save(
             )
         if (port.latitude, port.longitude) != (float(lat), float(lon)):
             port.latitude, port.longitude = float(lat), float(lon)
+            # Une correction humaine prime sur toute source automatique :
+            # ``upsert_ports`` ne dégrade jamais une entrée ``manual``. Sans
+            # cette bascule, le prochain rafraîchissement du référentiel
+            # (scripts/load_ports.py) effacerait la saisie de l'opérateur.
+            port.source = "manual"
             await db.flush()
             from app.services.planning import recompute_leg_distances
 

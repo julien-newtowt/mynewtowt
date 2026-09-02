@@ -271,8 +271,10 @@ Doc de référence : `docs/design/05-sequence-planification.md`.
   est posée au create/update et vaut `None` si un port n'a pas de coordonnées —
   auquel cas l'écart et l'allongement réels ne sont plus calculables. Repli au
   rendu (`voyage_track.theoretical_distance_nm`, marqué `*` dans l'UI), édition
-  des coordonnées dans **Admin → Ports** (qui recalcule les legs du port), et
-  reprise à froid : `scripts/backfill_leg_distances.py`.
+  des coordonnées dans **Admin → Ports** (qui recalcule les legs du port et
+  bascule `Port.source` en `manual`, sinon le prochain import du référentiel
+  effacerait la correction), et reprise à froid :
+  `scripts/backfill_leg_distances.py`.
 - **Suppression d'un leg** : inventaire explicite des dépendances
   (`planning._leg_blocking_models` / `_leg_unlinked_models`). Les registres
   d'argent (caisse, ventes, contrôles) **bloquent** — ils n'ont ni UPDATE ni
