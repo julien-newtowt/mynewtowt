@@ -915,37 +915,39 @@ async def update_leg(
     )
 
 
-async def delete_leg(db: AsyncSession, leg: Leg) -> None:
-    """Delete a leg.
+def _leg_blocking_models() -> list[tuple[type, str]]:
+    """(modèle, label humain) des tables qui **refusent** la suppression d'un leg.
 
-    Refuse si des données dépendantes existent — la plupart des FK
-    enfants n'ont pas ``ondelete="CASCADE"`` (volontaire : intégrité
-    réglementaire MRV, SOF, finance…). On scanne explicitement et on
-    rend une erreur lisible listant ce qui bloque, plutôt que de
-    laisser remonter un IntegrityError opaque.
+    La plupart des FK enfants n'ont pas ``ondelete="CASCADE"`` (volontaire :
+    intégrité réglementaire MRV, SOF, finance, registres d'argent…). On les
+    scanne explicitement pour rendre une erreur lisible listant ce qui bloque,
+    plutôt que de laisser remonter un ``IntegrityError`` opaque (→ 500).
+
+    ``LegKPI`` n'est PAS dans cette liste : c'est un rollup **dérivé**
+    (auto-calculé par ``services.carbon`` / ``compute_for_leg``), recalculable
+    et sans valeur propre une fois son leg supprimé — il est nettoyé
+    automatiquement, sauf s'il a été **saisi manuellement** (``is_manual``),
+    auquel cas il redevient de la donnée humaine à protéger (cf. delete_leg).
+
+    Les trois registres d'argent (``CashboxMovement``, ``OnboardSale``,
+    ``CashCount``) bloquent, ils ne se délient pas : le grand livre de caisse
+    et le registre de vente n'ont **ni UPDATE ni DELETE** (ADR-011/013), donc
+    y écrire ``leg_id = NULL`` pour faire de la place à une suppression n'est
+    pas une option.
     """
-    from sqlalchemy import func
-
     from app.models.booking import Booking
+    from app.models.cash_count import CashCount
     from app.models.commercial import OrderAssignment, RateOffer
     from app.models.crew import CrewAssignment
     from app.models.escale import DockerShift, EscaleOperation
-    from app.models.finance import LegFinance, LegKPI
+    from app.models.finance import LegFinance
     from app.models.mrv import MRVEvent
     from app.models.noon_report import NoonReport
+    from app.models.onboard_cashbox import CashboxMovement
+    from app.models.onboard_sales import OnboardSale
     from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 
-    # (modèle, label humain) — uniquement les tables avec FK NOT NULL ou
-    # qui contiennent de la donnée audit/réglementaire qui ne doit pas
-    # disparaître silencieusement. Les FK nullable nettoyées par la DB
-    # (claims, tickets, certificats CO₂…) ne bloquent pas la suppression
-    # car on les set à NULL avant le delete (cf. _nullify_optional_fks).
-    # LegKPI n'est PAS dans cette liste : c'est un rollup **dérivé**
-    # (auto-calculé par services.carbon / compute_for_leg), recalculable et
-    # sans valeur propre une fois son leg supprimé. On le nettoie
-    # automatiquement plus bas — sauf s'il a été **saisi manuellement**
-    # (``is_manual``), auquel cas il redevient de la donnée humaine à protéger.
-    BLOCKING = [
+    return [
         (Booking, "réservations"),
         (NoonReport, "noon reports"),
         (LegFinance, "fiche finance"),
@@ -958,10 +960,73 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
         (CrewAssignment, "affectations équipage"),
         (OrderAssignment, "assignations commande"),
         (RateOffer, "offres tarifaires"),
+        (CashboxMovement, "mouvements de caisse"),
+        (OnboardSale, "ventes à bord"),
+        (CashCount, "contrôles de caisse"),
     ]
 
+
+def _leg_unlinked_models() -> tuple[type, ...]:
+    """Modèles dont le ``leg_id`` est simplement **délié** avant suppression.
+
+    Ces tables conservent leur donnée historique mais perdent le lien vers le
+    leg supprimé (la FK est nullable et la DB ne la nettoie pas d'elle-même :
+    sans ``ondelete``, PostgreSQL refuserait la suppression du parent).
+
+    - ``PackingList`` — ``leg_id`` est le leg **épinglé à la création**
+      (COM-11) ; ``NULL`` est un état supporté (repli dynamique sur
+      ``order/booking.leg_id``).
+    - ``RateGridLine`` — le leg n'est qu'un **leg type** de la route
+      (« distance reprise du leg »), la ligne de grille lui survit.
+    - ``MaradCrewSchedule`` — miroir **lecture seule** de Marad : le lien vers
+      le leg n'est qu'une corrélation calculée à la synchro.
+    - ``OnboardMessage`` — la messagerie de bord reste consultable.
+    - ``ScheduleRevision`` — l'historique de recalcul survit à la suppression
+      (le ``leg_code`` y est conservé en snapshot) ; ses **deux** FK sont
+      déliées (cf. ``_nullify_optional_fks``).
+    """
+    from app.models.anemos_certificate import AnemosCertificate
+    from app.models.claim import Claim
+    from app.models.commercial import Order, RateGridLine
+    from app.models.crew import MaradCrewSchedule
+    from app.models.crew_ticket import CrewTicket
+    from app.models.packing_list import PackingList
+    from app.models.schedule_revision import ScheduleRevision
+    from app.models.sof_event import OnboardMessage
+    from app.models.ticket import Ticket
+
+    return (
+        Claim,
+        Ticket,
+        CrewTicket,
+        AnemosCertificate,
+        Order,
+        PackingList,
+        RateGridLine,
+        MaradCrewSchedule,
+        OnboardMessage,
+        ScheduleRevision,
+    )
+
+
+async def delete_leg(db: AsyncSession, leg: Leg) -> None:
+    """Supprime un leg — après inventaire explicite de ses dépendances.
+
+    Refuse (``PlanningError`` lisible) si des données dépendantes existent
+    (cf. ``_leg_blocking_models``), délie les FK nullables
+    (``_leg_unlinked_models``), puis supprime dans un **SAVEPOINT** : si une
+    FK oubliée bloquait malgré tout, l'``IntegrityError`` est traduite en
+    ``PlanningError`` au lieu de remonter en 500, et la session reste
+    utilisable pour re-rendre la page avec le bandeau d'erreur.
+    """
+    from sqlalchemy import delete as sa_delete
+    from sqlalchemy import func
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.finance import LegKPI
+
     blocks: list[str] = []
-    for model, label in BLOCKING:
+    for model, label in _leg_blocking_models():
         count = await db.scalar(
             select(func.count()).select_from(model).where(model.leg_id == leg.id)
         )
@@ -978,60 +1043,71 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
     if manual_kpi:
         blocks.append(f"{manual_kpi} KPI saisi(s) manuellement")
 
+    # Snapshot AVANT toute mutation : après un rollback de savepoint les
+    # attributs ORM sont expirés, et y toucher en contexte sync (message
+    # d'erreur, log) déclencherait un lazy-load async → MissingGreenlet.
+    leg_code, leg_id = leg.leg_code, leg.id
+    vessel_id, year = leg.vessel_id, leg.etd.year
+
     if blocks:
         raise PlanningError(
-            f"Impossible de supprimer le leg {leg.leg_code} — dépendances : "
+            f"Impossible de supprimer le leg {leg_code} — dépendances : "
             + ", ".join(blocks)
             + ". Nettoyez ces enregistrements avant suppression."
         )
 
-    # Nettoyage du KPI auto-calculé (non manuel) : sans valeur sans son leg.
-    from sqlalchemy import delete as sa_delete
+    try:
+        async with db.begin_nested():
+            # Nettoyage du KPI auto-calculé (non manuel) : sans valeur sans son leg.
+            await db.execute(sa_delete(LegKPI).where(LegKPI.leg_id == leg_id))
+            await _nullify_optional_fks(db, leg_id)
+            await db.delete(leg)
+            await db.flush()
+    except IntegrityError as exc:
+        raise PlanningError(
+            f"Impossible de supprimer le leg {leg_code} — une donnée liée "
+            f"l'en empêche ({_fk_violation_hint(exc)}). Signalez ce message : "
+            "la table concernée doit être ajoutée à l'inventaire de "
+            "suppression (services/planning.py)."
+        ) from exc
 
-    await db.execute(sa_delete(LegKPI).where(LegKPI.leg_id == leg.id))
-
-    # FK nullables qu'on délie proprement avant suppression (la DB
-    # refuserait sinon avec un IntegrityError opaque).
-    await _nullify_optional_fks(db, leg.id)
-
-    vessel_id, year = leg.vessel_id, leg.etd.year
-    await db.delete(leg)
-    await db.flush()
     # Le rang (lettre du leg_code) est chronologique : la suppression
     # renumérote les legs suivants de l'année.
     await renumber_vessel_year(db, vessel_id, year)
 
 
+def _fk_violation_hint(exc: Exception) -> str:
+    """Nom de contrainte / table lisible extrait d'une violation de FK.
+
+    asyncpg expose ``table_name``/``constraint_name`` sur l'exception
+    d'origine ; SQLite (tests) n'expose rien d'exploitable → on retombe sur
+    un extrait du message.
+    """
+    orig = getattr(exc, "orig", None)
+    table = getattr(orig, "table_name", None)
+    constraint = getattr(orig, "constraint_name", None)
+    if table or constraint:
+        return " / ".join(x for x in (table, constraint) if x)
+    text = str(orig or exc).strip().replace("\n", " ")
+    return text[:160] or "contrainte de clé étrangère"
+
+
 async def _nullify_optional_fks(db: AsyncSession, leg_id: int) -> None:
-    """Set leg_id=NULL sur les FK nullables pointant vers ce leg.
+    """Set ``leg_id = NULL`` sur les FK nullables pointant vers ce leg.
 
-    Ces tables conservent la donnée historique mais perdent le lien
-    vers le leg supprimé. Couvre : claims, tickets, onboard_cashboxes,
-    crew_tickets, co2_certificates, commercial orders.
-
-    RateGridLine n'est PAS dans la liste — bien que commercial.py le
-    suggère par voisinage, ce modèle n'a pas de FK leg_id (les lignes
-    de grille tarifaire ne sont pas liées à un leg spécifique).
+    Inventaire dans ``_leg_unlinked_models`` (une seule source de vérité,
+    vérifiée par la sentinelle ``tests/unit/test_delete_leg_models.py`` qui
+    échoue si une nouvelle table référence ``legs.id`` sans être couverte
+    ici, dans ``_leg_blocking_models``, ou par un ``ondelete`` en base).
     """
     from sqlalchemy import update
 
-    from app.models.anemos_certificate import AnemosCertificate
-    from app.models.claim import Claim
-    from app.models.commercial import Order
-    from app.models.crew_ticket import CrewTicket
-    from app.models.onboard_cashbox import CashboxMovement
     from app.models.schedule_revision import ScheduleRevision
-    from app.models.ticket import Ticket
 
-    # CashboxMovement (pas OnboardCashbox) porte le leg_id : un mouvement
-    # cash est rattaché à un leg, le coffre lui-même non.
-    for model in (Claim, Ticket, CashboxMovement, CrewTicket, AnemosCertificate, Order):
+    for model in _leg_unlinked_models():
         await db.execute(update(model).where(model.leg_id == leg_id).values(leg_id=None))
-    # L'historique de recalcul survit à la suppression du leg (snapshot
-    # leg_code conservé) — on délie les deux FK.
-    await db.execute(
-        update(ScheduleRevision).where(ScheduleRevision.leg_id == leg_id).values(leg_id=None)
-    )
+    # ScheduleRevision porte DEUX FK vers legs (le leg révisé + le leg
+    # déclencheur de la cascade) : la boucle ci-dessus n'en couvre qu'une.
     await db.execute(
         update(ScheduleRevision)
         .where(ScheduleRevision.trigger_leg_id == leg_id)

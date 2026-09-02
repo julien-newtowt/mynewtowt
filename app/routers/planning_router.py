@@ -593,6 +593,21 @@ async def delete_leg_action(
     except PlanningError as e:
         # Au lieu d'un 400 sec, on re-rend leg_detail avec un bandeau
         # d'erreur listant les dépendances bloquantes (UX > Exception).
+        #
+        # ``delete_leg`` peut avoir déjà muté (délier des FK, supprimer le KPI
+        # dérivé) avant de refuser : ``get_db`` committe même sur un 400
+        # re-rendu, donc on annule. Le rollback EXPIRE les instances ORM de la
+        # session — les toucher au rendu (sync) déclencherait un lazy-load
+        # async → MissingGreenlet → 500, c'est-à-dire le bug qu'on corrige.
+        from sqlalchemy import inspect as sa_inspect
+
+        from app.services.planning import is_delayed, leg_delay_hours
+
+        await db.rollback()
+        user_state = sa_inspect(user, raiseerr=False)
+        if user_state is not None and user_state.persistent:
+            await db.refresh(user)
+        leg = await _get_leg_or_404(db, leg_id)
         vessel = await db.get(Vessel, leg.vessel_id)
         pol = await db.get(Port, leg.departure_port_id)
         pod = await db.get(Port, leg.arrival_port_id)
@@ -605,6 +620,8 @@ async def delete_leg_action(
                 "vessel": vessel,
                 "pol": pol,
                 "pod": pod,
+                "delayed": is_delayed(leg),
+                "delay_h": round(leg_delay_hours(leg), 1),
                 "delete_error": str(e),
             },
             status_code=400,
