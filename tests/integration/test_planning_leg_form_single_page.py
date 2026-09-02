@@ -58,6 +58,24 @@ def test_leg_form_lets_the_reference_leg_be_chosen():
     assert "activeSuggestion" in cascade
 
 
+def test_port_picker_queries_the_server_not_the_whole_table():
+    """Le formulaire ne doit plus rapatrier le référentiel de ports.
+
+    Bug du 2026-09-02 : `limit=10000` tronquait silencieusement au-delà de
+    10 000 ports (123 pays perdus, dont le Viêt Nam), et la carte de continents
+    codée en dur ne couvrait que ~90 pays. Zones et pays viennent maintenant de
+    l'API, la recherche interroge le serveur.
+    """
+    js = pathlib.Path("app/static/js/leg-cascade.js").read_text()
+    body = js.split("*/", 1)[1]  # hors en-tête, qui cite l'ancien appel
+    assert "limit=10000" not in body
+    assert "allPorts" not in body
+    assert "CONTINENT" not in body  # plus de carte de continents dans le navigateur
+    assert "/api/v1/ports/countries" in body
+    assert "/api/v1/ports/search?limit=" in body
+    assert "/api/v1/ports/" in body
+
+
 async def _setup(db):
     db.add(Vessel(id=1, code="1", name="Anemos"))
     db.add(Vessel(id=2, code="2", name="Artemis"))
