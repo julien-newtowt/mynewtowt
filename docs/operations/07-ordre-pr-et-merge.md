@@ -51,7 +51,7 @@ qu'elles ne touchent pas. Ce n'est pas un défaut de leur contenu. Une fois la
 |---|---|---|
 | `docs/note-reprise-2026-09-01` | Ce §0 + `09-note-reprise-2026-09-01.md` | markdown seul |
 | `docs/claude-md-socle-methode` | `CLAUDE.md` scindé (socle de méthode gardé, cadrage daté de la période de congés retiré) + `PROJECT_CONTEXT.md` §7 | markdown seul |
-| `feature/support-ticketing` | Module Assistance (support applicatif) | ✅ vert |
+| `feature/support-ticketing` | Module Assistance (support applicatif) | ✅ **3121** passés, 1 ignoré |
 | `feature/dashboard-env-integration` | Dashboard Performance Environnementale v2 (5 pages) + suppression du legacy MRV | ✅ **3025** passés, 1 ignoré |
 
 Les quatre ont `main` intégré à `afa66d9` (**`behind = 0`**) et sont **poussables
