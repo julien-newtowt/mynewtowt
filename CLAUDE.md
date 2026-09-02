@@ -368,6 +368,32 @@ reste hors plateforme (arbitrage A5) : les conditions de règlement sont
 - Détection HTMX : `request.headers.get("hx-request")` → renvoyer header
   `HX-Redirect`.
 
+### Référentiel des ports — source de vérité partagée
+
+`Port.locode` est une clé métier (leg_codes, grilles tarifaires, BL, pages
+publiques) et ses coordonnées commandent la distance théorique de tout leg.
+Doc : `docs/integrations/unlocode-ports.md`.
+
+- **Alimentation** : `scripts/load_ports.py` (catalogue embarqué + data.gouv.fr
+  + `--with-unlocode`). La source UN/LOCODE par défaut est le miroir
+  **géolocalisé** : 16 669 ports maritimes exploitables contre 11 763 pour le
+  miroir brut (UNECE laisse 20 % des lieux sans coordonnées, dont de vrais
+  ports). Il n'existe **aucune API officielle** — UNECE publie des fichiers
+  deux fois par an.
+- **Hiérarchie de sources** (`services.ports.may_overwrite`) : `manual` (30) >
+  `world_ports` (20) > `unlocode-improved` (15) > reste (10). Un import
+  automatique ne dégrade **jamais** une donnée curée ; un ré-import de la même
+  source rafraîchit toujours. Une correction de coordonnées dans Admin → Ports
+  doit passer `Port.source` à `manual`, sinon le prochain import l'efface.
+- **Filtre maritime** = position 1 du code fonction (`1` = port). Il **rate de
+  vrais ports** (`RELPT` « Le Port », La Réunion, est correct ; `REPDG` est en
+  statut `XX` = retiré et sans fonction port) : ne jamais purger ni désactiver
+  un port existant sur ce critère. Les entrées en statut `XX` ne sont pas
+  ajoutées, jamais supprimées.
+- **Attribution ODbL** : les coordonnées `unlocode-improved` dérivent en partie
+  d'OpenStreetMap. Toute republication (carte publique, export client, PDF)
+  doit porter `© OpenStreetMap contributors`.
+
 ### Permissions
 - 9 rôles : `administrateur`, `operation`, `armement`, `technique`,
   `data_analyst`, `marins`, `commercial`, `manager_maritime`, `rh`.

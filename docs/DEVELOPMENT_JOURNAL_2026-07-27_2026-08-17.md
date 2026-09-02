@@ -2424,3 +2424,105 @@ cours » : c'est une intention d'opérateur.
 3. Le bandeau d'audit sur Atlantis dira maintenant de combien de jours l'escale
    de 3C dépasse le départ de 3D : à trancher côté métier (réduire l'escale ou
    décaler le départ), la donnée n'est pas modifiée d'office.
+
+## 2026-09-02 (2) — Référentiel de ports : une source fiable, et deux promesses creuses
+
+**Branche** : `feature/ports-unlocode-loader` · **Objectif** : trouver une
+source fiable et auto-actualisable de la liste des ports maritimes mondiaux
+(demande de Yasmin), et l'utiliser pour tarir à la source les ports sans
+coordonnées qui privent les legs de distance théorique.
+
+### Situation
+
+Le référentiel repose sur ~250 ports maintenus à la main
+(`scripts/data/world_ports.py`) plus, en option, un miroir GitHub d'UN/LOCODE.
+Les ports sans coordonnées sont la cause racine du bug 4 du jour (distance et
+dérive vides sur `/performance/navigation`).
+
+### Analyse des sources — Faits mesurés
+
+| Source | Contenu | Fraîcheur | API | Licence |
+|---|---|---|---|---|
+| UN/LOCODE (UNECE) | **le** référentiel des codes | 2 éditions/an | ❌ zip | PDDL |
+| `datasets/un-locode` | même liste, coord. DDMM | v2024.2.0 (UNECE : 2025-1) | ❌ fichier | PDDL |
+| `cristan/improved-un-locodes` | + `CoordinatesDecimal` | suit le précédent | ❌ fichier | PDDL + **ODbL** |
+| NGA World Port Index | ~3 700 **vrais** ports (profondeurs, installations) | **mensuelle** | ✅ REST GeoJSON sans clé | domaine public US |
+
+Mesures sur les fichiers réellement téléchargés : le miroir brut donne
+**11 763** ports maritimes exploitables, le géolocalisé **16 669**. L'écart
+n'est pas cosmétique : UNECE laisse 20 % des lieux sans coordonnées, **dont de
+vrais ports** — `PHMNL` (Manille) était purement absente du référentiel.
+
+**Réponse à la question posée** : il n'existe pas d'API officielle
+auto-actualisée pour les *codes* de ports ; UNECE publie des fichiers deux fois
+par an. Le seul vrai service REST gratuit du lot est le FeatureServer du World
+Port Index — utile pour les coordonnées et la qualification maritime, pas pour
+les codes. Périmètre retenu avec Yasmin : réparer et fiabiliser le chargeur,
+sans cron ni croisement WPI pour l'instant.
+
+### Deux promesses creuses trouvées au passage
+
+1. **« Ne remplace jamais une entrée manuelle par une entrée automatique »**
+   (docstring du chargeur) était vraie au sens littéral et fausse en pratique :
+   la protection ne portait que sur `source == "manual"`, valeur qu'**aucun
+   chemin de code n'écrivait**. Le catalogue embarqué (`world_ports`) était donc
+   écrasable — et *dégradé* : il place Fécamp à 49,7594 / 0,3742, UN/LOCODE
+   l'arrondit à la minute d'arc (49,75 / 0,38333, ~1 km d'écart).
+2. **Le code fonction UN/LOCODE n'est pas une vérité maritime.** `REPDG`
+   (Pointe des Galets) porte la fonction `--3-----` (route seule) et le statut
+   `XX` — entrée en cours de retrait chez UNECE. Le port de La Réunion est
+   `RELPT` (« Le Port », `1-3-5---`, statut `AF`). Un filtre naïf sur la
+   fonction perd donc de vrais ports : il ne doit jamais servir à purger.
+
+### Implémentation
+
+- Le parseur UN/LOCODE quitte le script pour `services/ports.py` (un parseur
+  n'a pas sa place dans un script) : `parse_unlocode_csv`, avec les deux
+  formats de coordonnées — **décimal prioritaire**, repli DDMM — et un
+  `UnlocodeReport` qui compte les lignes écartées **et pourquoi**. Un import
+  muet ne se contrôle pas.
+- Validation de plage sur les deux parseurs de coordonnées : une position hors
+  [−90, 90] / [−180, 180] est refusée, pas tronquée.
+- Les entrées en statut `XX` ne sont plus ajoutées ; rien n'est jamais
+  supprimé (un code retiré chez UNECE peut rester porté par un booking passé).
+- **Hiérarchie de sources** explicite (`may_overwrite`) : `manual` (30) >
+  `world_ports` (20) > `unlocode-improved` (15) > sources automatiques (10),
+  avec ré-import de la même source toujours autorisé.
+- Source par défaut de `--with-unlocode` = miroir géolocalisé ; miroir brut
+  toujours accessible via `--unlocode-url`.
+
+### Risques
+
+- 🟠 **Miroir communautaire en retard d'une édition** (2024-2 contre 2025-1) et
+  **part ODbL** : attribution OpenStreetMap obligatoire dès qu'on republie ces
+  coordonnées ailleurs que sur un fond de carte qui la porte déjà. Documenté.
+  Passer au zip officiel UNECE lèverait la dépendance — non fait.
+- 🟡 **Volume** : `--with-unlocode` porte le référentiel à ~16 700 ports. Les
+  écrans de sélection sont pilotés par recherche, donc a priori sans effet
+  visible — à confirmer en recette.
+- 🟡 **Dépendance non vérifiable d'ici** : l'egress de la session de
+  développement ne joint que GitHub (`msi.nga.mil`, `unece.org`, `arcgis.com`
+  et `data.gouv.fr` sont bloqués). Le chargeur exige
+  `raw.githubusercontent.com` depuis le serveur — à valider avant tout
+  rafraîchissement planifié.
+- 🟢 Aucune migration, aucune dépendance nouvelle, aucune suppression de donnée.
+
+### Dette à solder tout de suite après
+
+L'écran **Admin → Ports → Position géographique** (livré sur
+`fix/planning-sequence-bugs`) doit passer `Port.source` à `manual` en
+enregistrant, sinon la correction de l'opérateur est effacée au prochain
+import. À faire sur cette branche-là, pas ici, pour éviter un conflit.
+
+### Tests
+
+- 8 tests unitaires : priorité du décimal, repli DDMM (N/S/E/W, longitude à
+  trois chiffres), rejet des coordonnées illisibles ou hors plage, statut `XX`
+  écarté, doublons de locode, compteurs du rapport, filtre maritime.
+- 5 tests d'intégration sur `upsert_ports` : insertion, rafraîchissement de la
+  même source, catalogue curé non dégradé, correction humaine survivant à tous
+  les imports, coordonnées améliorées non écrasées par le miroir brut, lignes
+  sans position ignorées.
+- Parseurs exécutés sur les **fichiers réels** (116 000 lignes) avant/après :
+  11 763 → 16 669 ports maritimes, `REPDG` écarté, Manille présente.
+
