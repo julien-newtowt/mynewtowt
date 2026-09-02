@@ -886,6 +886,8 @@ async def admin_port_config_save(
         if invalid:
             # Refus explicite : une coordonnée fausse produirait une distance
             # fausse — pire qu'une distance absente, car elle a l'air juste.
+            # Le rollback annule TOUT le formulaire (``get_db`` committe même
+            # sur une redirection) : le bandeau d'erreur le dit.
             await db.rollback()
             return RedirectResponse(
                 url=f"/admin/ports/{port_id}/config?err=coords", status_code=303

@@ -141,3 +141,59 @@ async def test_recompute_only_missing_by_default(db):
     assert await recompute_leg_distances(db) == []
     changed = await recompute_leg_distances(db, only_missing=False)
     assert [c[1] for c in changed] == [leg.leg_code]
+
+
+# ── Admin → Ports : saisie des coordonnées, et recalcul immédiat ────────────
+
+
+@pytest.mark.asyncio
+async def test_admin_port_config_saves_coordinates_and_recomputes(db, staff_user):
+    """Renseigner les coordonnées répare les legs du port, sans autre geste."""
+    from app.routers.modules_router import admin_port_config_save
+    from tests.integration.conftest import FakeRequest
+
+    await _seed(db, arrival_has_coords=False)
+    leg = await _leg(db)
+    assert leg.distance_nm is None
+
+    resp = await admin_port_config_save(
+        2,
+        FakeRequest({"latitude": "-20,9373", "longitude": "55.2925"}),
+        db=db,
+        user=staff_user,
+    )
+    assert resp.status_code == 303
+    assert "recomputed=1" in resp.headers["location"]
+    port = await db.get(Port, 2)
+    assert (round(port.latitude, 4), round(port.longitude, 4)) == (-20.9373, 55.2925)
+    refreshed = (await db.execute(select(Leg).where(Leg.id == leg.id))).scalar_one()
+    assert refreshed.distance_nm is not None
+
+
+@pytest.mark.parametrize(
+    ("form", "why"),
+    [
+        ({"latitude": "-20.9373"}, "latitude seule"),
+        ({"longitude": "55.2925"}, "longitude seule"),
+        ({"latitude": "120", "longitude": "55.29"}, "latitude hors [-90, 90]"),
+        ({"latitude": "-20.9", "longitude": "200"}, "longitude hors [-180, 180]"),
+        ({"latitude": "nord", "longitude": "est"}, "saisie non numérique"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_admin_port_config_refuses_unusable_coordinates(db, staff_user, form, why):
+    """Coordonnée inutilisable = refus explicite, jamais un enregistrement partiel.
+
+    Une coordonnée fausse produirait une distance fausse — pire qu'une distance
+    absente, puisqu'elle a l'air juste. Le refus annule tout le formulaire
+    (``get_db`` committe même sur une redirection) : ici le rollback emporte
+    jusqu'au jeu d'essai, ce qui prouve qu'aucune écriture n'a survécu.
+    """
+    from app.routers.modules_router import admin_port_config_save
+    from tests.integration.conftest import FakeRequest
+
+    await _seed(db, arrival_has_coords=False)
+    resp = await admin_port_config_save(2, FakeRequest(form), db=db, user=staff_user)
+    assert resp.status_code == 303, why
+    assert "err=coords" in resp.headers["location"], why
+    assert await db.get(Port, 2) is None, why  # transaction annulée
