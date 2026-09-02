@@ -73,6 +73,13 @@ flowchart TD
     style G fill:#B47148,color:#fff
 ```
 
+**Espacement par l'escale** : la résolution des chevauchements recale un leg
+au plus tôt à la **disponibilité** du précédent = ETA + escale planifiée
+(`port_stay_planned_hours`, défaut 24 h) — jamais à son ETA brute (constat prod
+du 2026-09-02 : quatre legs d'Artemis enchaînés le même jour). Même règle dans le
+moteur scénario. Pour remettre d'aplomb une planification héritée :
+`python -m scripts.respace_downstream_legs` (dry-run par défaut, `--yes`).
+
 **Incident de reprogrammation** : si le recalcul aval devrait déplacer un leg
 déjà appareillé, rien n'est écrasé (règle d'or « on ne touche jamais un fait
 réalisé »), l'incident est tracé (`summary.skipped`) **et notifié** aux

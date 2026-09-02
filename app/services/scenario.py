@@ -339,15 +339,24 @@ async def _cascade_downstream(
             dl.eta = dl.eta + delta
             moved.add(dl.id)
 
-    # 2. Résolution des chevauchements résiduels (jamais vers le passé).
-    prev_eta = leg.eta
+    # 2. Résolution des chevauchements résiduels (jamais vers le passé) — un
+    #    leg démarre au plus tôt à la DISPONIBILITÉ du précédent : ETA + escale
+    #    planifiée (même règle que ``planning.plan_downstream_shifts``).
+    from datetime import timedelta as _td
+
+    from app.services.planning import DEFAULT_PORT_STAY_HOURS
+
+    def _ready(x):
+        return x.eta + _td(hours=x.port_stay_planned_hours or DEFAULT_PORT_STAY_HOURS)
+
+    prev_ready = _ready(leg)
     for dl in sorted(downstream, key=lambda x: x.etd):
-        if dl.etd < prev_eta:
-            push = prev_eta - dl.etd
+        if dl.etd < prev_ready:
+            push = prev_ready - dl.etd
             dl.etd = dl.etd + push
             dl.eta = dl.eta + push
             moved.add(dl.id)
-        prev_eta = dl.eta
+        prev_ready = max(prev_ready, _ready(dl))
 
     return sorted(moved)
 
@@ -408,8 +417,7 @@ def scenario_warnings(
                 if leg.arrival_port_id != nxt.departure_port_id:
                     nlabel = nxt.label or f"#{nxt.id}"
                     warnings.append(
-                        f"{label} → {nlabel} : rupture de continuité "
-                        f"(arrivée ≠ départ suivant)."
+                        f"{label} → {nlabel} : rupture de continuité (arrivée ≠ départ suivant)."
                     )
                 if nxt.etd < leg.eta:
                     nlabel = nxt.label or f"#{nxt.id}"

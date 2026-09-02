@@ -315,3 +315,47 @@ async def test_repair_vessel_sequence_closes_legacy_overlaps(db):
     assert leg2.phase == "a_quai"  # dernier leg arrivé : reste à quai
     # Idempotente.
     assert await repair_vessel_sequence(db) == []
+
+
+@pytest.mark.asyncio
+async def test_respace_downstream_spaces_planned_legs_by_port_stay(db):
+    """Planification héritée : legs planifiés enchaînés le même jour que l'ETA du
+    précédent. Le recalage à froid les espace de l'escale planifiée, historise
+    (source cascade, ancre = voyage courant) et est idempotent."""
+    from app.models.schedule_revision import ScheduleRevision
+    from app.services.date_cascade import respace_downstream
+
+    leg1, leg2 = await _setup_two_legs(db)
+    # leg1 = voyage courant (parti), escale 48 h ; leg2 planifié le jour même de l'ETA
+    # de leg1 ; leg3 planifié le jour même de l'ETA de leg2 (escale 72 h).
+    leg1.atd = BASE
+    leg2.etd, leg2.eta = BASE + timedelta(days=20), BASE + timedelta(days=40)
+    leg2.port_stay_planned_hours = 72
+    leg3 = Leg(
+        id=3,
+        leg_code="1CFRBR6",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd_ref=BASE + timedelta(days=40),
+        eta_ref=BASE + timedelta(days=60),
+        etd=BASE + timedelta(days=40),
+        eta=BASE + timedelta(days=60),
+    )
+    db.add(leg3)
+    await db.flush()
+
+    summary = await respace_downstream(db, leg1, actor_name="ops")
+    assert summary["downstream_legs"] == 2
+    # leg2 : au plus tôt ETA(leg1) + 48 h = J+22 ; leg3 : ETA(leg2) + 72 h = J+45.
+    assert _naive(leg2.etd) == _naive(BASE + timedelta(days=22))
+    assert _naive(leg2.eta) == _naive(BASE + timedelta(days=42))
+    assert _naive(leg3.etd) == _naive(BASE + timedelta(days=45))
+    assert _naive(leg3.eta) == _naive(BASE + timedelta(days=65))
+    assert leg1.atd == BASE  # l'ancre ne bouge jamais
+    revs = (await db.execute(ScheduleRevision.__table__.select())).fetchall()
+    assert sorted(r.leg_id for r in revs) == [leg2.id, leg3.id]
+    assert {r.source for r in revs} == {"cascade"} and {r.trigger_leg_id for r in revs} == {leg1.id}
+    # Idempotent : un second passage ne déplace plus rien.
+    again = await respace_downstream(db, leg1, actor_name="ops")
+    assert again["downstream_legs"] == 0
