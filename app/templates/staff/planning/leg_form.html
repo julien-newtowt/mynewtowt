@@ -96,6 +96,14 @@
     <div id="leg-suggestion-banner" class="alert mt-3" style="display:none; background:var(--sable); border-left:3px solid var(--teal); margin-bottom:0;">
       <span class="pill pill-info" style="margin-right:var(--space-2);">Séquence</span>
       <span id="leg-suggestion-text"></span>
+      {# Le dernier leg par ETD n'est pas toujours celui après lequel on
+         enchaîne (un voyage saisi longtemps à l'avance capte le défaut) :
+         le leg de référence est choisi explicitement ici, et l'ETD, le POL,
+         l'escale et le rang en sont redérivés. #}
+      <span id="leg-chain-picker" class="flex gap-2" style="display:none; align-items:center; width:100%; margin-top:var(--space-2);">
+        <label for="leg-chain-after" class="text-sm" style="white-space:nowrap;">Chaîner après</label>
+        <select id="leg-chain-after" style="max-width:32rem;"></select>
+      </span>
       <button type="button" id="leg-suggestion-dismiss" class="btn btn-ghost btn-xs" style="margin-left:var(--space-2);">Effacer la suggestion</button>
     </div>
     {% endif %}

@@ -8,6 +8,7 @@ heures), réservation = une case. Plus de wizard.
 
 from __future__ import annotations
 
+import pathlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -35,6 +36,20 @@ def test_leg_form_is_single_page_with_vessel_buttons_and_two_columns():
     # Ports habituels en repli : São Sebastião et Fécamp, rien d'autre.
     assert 'data-locode="BRSSO"' in src and 'data-locode="FRFEC"' in src
     assert 'data-locode="USNYC"' not in src and 'data-locode="FRLEH"' not in src
+
+
+def test_leg_form_lets_the_reference_leg_be_chosen():
+    """Le sélecteur « Chaîner après » doit exister et être câblé au JS.
+
+    Sans lui, l'opérateur subit le défaut (dernier leg par ETD) sans pouvoir
+    le corriger — bug remonté le 2026-09-02.
+    """
+    src = _src()
+    assert 'id="leg-chain-after"' in src
+    assert 'id="leg-chain-picker"' in src
+    js = (pathlib.Path("app/static/js/leg-form-suggest.js")).read_text()
+    for ident in ("leg-chain-after", "leg-chain-picker", "chain_options"):
+        assert ident in js, f"{ident} absent de leg-form-suggest.js"
 
 
 async def _setup(db):
@@ -87,6 +102,49 @@ async def test_suggestions_carry_sequence_state_per_vessel(db):
     assert anemos["etd"] == "2026-10-05"  # ETA 02/10 + 3 j (pas de fermeture WE configurée)
     assert anemos["next_rank_letter"] == "B"  # 2ᵉ leg de 2026 pour ce navire
     assert anemos["year_digit"] == "6"
+
+
+@pytest.mark.asyncio
+async def test_suggestions_expose_every_chainable_leg(db):
+    """Le défaut (dernier ETD) ne suffit pas : le leg de référence est choisi.
+
+    Bug 2026-09-02 — un voyage saisi longtemps à l'avance capte le défaut et
+    fait chaîner sur lui les legs de l'année en cours : « il a repris le leg A
+    alors qu'on programme le D ». Le formulaire doit donc proposer les autres
+    legs de la séquence, chacun avec SA suggestion (ETD, POL, escale, rang).
+    """
+    from app.routers.planning_router import _new_leg_suggestions
+
+    await _setup(db)
+    # Un voyage 2027 saisi à l'avance : c'est lui qui a l'ETD le plus tardif.
+    far = datetime(2027, 1, 20, tzinfo=UTC)
+    db.add(
+        Leg(
+            id=2,
+            leg_code="1ABRFR7",
+            vessel_id=1,
+            departure_port_id=2,
+            arrival_port_id=1,
+            etd_ref=far,
+            eta_ref=far + timedelta(days=21),
+            etd=far,
+            eta=far + timedelta(days=21),
+            port_stay_planned_hours=48,
+        )
+    )
+    await db.flush()
+
+    anemos = (await _new_leg_suggestions(db))[1]
+    options = anemos["chain_options"]
+    # Défaut inchangé : on prolonge la ligne (ETD le plus tardif).
+    assert anemos["from_leg_code"] == "1ABRFR7"
+    assert [o["from_leg_code"] for o in options] == ["1ABRFR7", "1CFRBR6"]
+    # Chaque option porte SA propre dérivation — c'est ce qui rend le choix utile.
+    by_code = {o["from_leg_code"]: o for o in options}
+    assert by_code["1ABRFR7"]["pol_id"] == 1 and by_code["1ABRFR7"]["etd"].startswith("2027-")
+    assert by_code["1CFRBR6"]["pol_id"] == 2 and by_code["1CFRBR6"]["etd"] == "2026-10-05"
+    assert by_code["1CFRBR6"]["port_stay_days"] == 3
+    assert by_code["1CFRBR6"]["ref_leg_id"] == 1
 
 
 @pytest.mark.asyncio
