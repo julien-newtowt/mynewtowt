@@ -159,7 +159,7 @@ async def navigation_index(
         positions = await positions_for_leg(db, leg)
         dep = await db.get(Port, leg.departure_port_id)
         arr = await db.get(Port, leg.arrival_port_id)
-        metrics = compute_metrics(positions, leg, arr_port=arr)
+        metrics = compute_metrics(positions, leg, dep_port=dep, arr_port=arr)
         observations = await weather_history.observations_for_leg(db, leg)
         v_obj = await db.get(Vessel, leg.vessel_id)
         color = _LEG_PALETTE[idx % len(_LEG_PALETTE)]

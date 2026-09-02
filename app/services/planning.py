@@ -18,7 +18,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import overload
+from typing import Any, overload
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -255,6 +255,57 @@ async def compute_effective_distance_nm(
     nm = haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude)
     effective = Decimal(str(nm * (elongation_coef or 1.0)))
     return effective.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+async def recompute_leg_distances(
+    db: AsyncSession,
+    *,
+    port_id: int | None = None,
+    only_missing: bool = True,
+) -> list[tuple[int, str, Decimal | None, Decimal | None]]:
+    """Recalcule ``distance_nm`` sur les legs visés (orthodromie × élongation).
+
+    ``distance_nm`` est normalement posée au create/update d'un leg, mais elle
+    vaut ``None`` dès que l'un des deux ports n'avait pas de coordonnées à ce
+    moment-là — et elle ne se recalcule jamais d'elle-même ensuite. Résultat :
+    les colonnes THÉORIQUE / ÉCART / ALLONG. restent vides pour ces legs.
+
+    - ``port_id`` : ne traiter que les legs touchant ce port (appelé quand un
+      opérateur vient de renseigner ses coordonnées).
+    - ``only_missing=False`` : recalculer aussi les distances déjà posées
+      (utile après correction de coordonnées erronées).
+
+    Renvoie ``(leg_id, leg_code, ancienne, nouvelle)`` pour chaque leg modifié.
+    Ne touche **jamais** un leg dont la distance reste incalculable.
+    """
+    from sqlalchemy import or_
+
+    stmt = select(Leg)
+    if port_id is not None:
+        stmt = stmt.where(or_(Leg.departure_port_id == port_id, Leg.arrival_port_id == port_id))
+    if only_missing:
+        stmt = stmt.where(Leg.distance_nm.is_(None))
+    changed: list[tuple[int, str, Decimal | None, Decimal | None]] = []
+    for leg in (await db.execute(stmt.order_by(Leg.etd.asc()))).scalars().all():
+        _speed, elongation = await _resolved_navigation_params(
+            db,
+            vessel_id=leg.vessel_id,
+            transit_speed_kn=leg.transit_speed_kn,
+            elongation_coef=leg.elongation_coef,
+        )
+        new_distance = await compute_effective_distance_nm(
+            db,
+            departure_port_id=leg.departure_port_id,
+            arrival_port_id=leg.arrival_port_id,
+            elongation_coef=elongation,
+        )
+        if new_distance is None or new_distance == leg.distance_nm:
+            continue
+        old, leg.distance_nm = leg.distance_nm, new_distance
+        changed.append((leg.id, leg.leg_code, old, new_distance))
+    if changed:
+        await db.flush()
+    return changed
 
 
 # ---------------------------------------------------------------------------
@@ -915,37 +966,46 @@ async def update_leg(
     )
 
 
-async def delete_leg(db: AsyncSession, leg: Leg) -> None:
-    """Delete a leg.
+# Les inventaires ci-dessous renvoient des **classes** SQLAlchemy dont on lit
+# l'attribut mappé ``leg_id``. Annotées ``type`` (ou ``type[Base]``), mypy perd
+# ces attributs et sort un `attr-defined` sur du code correct ; annotées par un
+# Protocol, il refuse les classes déclaratives (``Mapped[...]`` n'est pas une
+# variable simple). ``Any`` est donc l'annotation honnête ici — le contrat réel
+# (« porter un ``leg_id`` ») est vérifié à l'exécution par la sentinelle
+# ``tests/unit/test_delete_leg_models.py``.
+def _leg_blocking_models() -> list[tuple[Any, str]]:
+    """(modèle, label humain) des tables qui **refusent** la suppression d'un leg.
 
-    Refuse si des données dépendantes existent — la plupart des FK
-    enfants n'ont pas ``ondelete="CASCADE"`` (volontaire : intégrité
-    réglementaire MRV, SOF, finance…). On scanne explicitement et on
-    rend une erreur lisible listant ce qui bloque, plutôt que de
-    laisser remonter un IntegrityError opaque.
+    La plupart des FK enfants n'ont pas ``ondelete="CASCADE"`` (volontaire :
+    intégrité réglementaire MRV, SOF, finance, registres d'argent…). On les
+    scanne explicitement pour rendre une erreur lisible listant ce qui bloque,
+    plutôt que de laisser remonter un ``IntegrityError`` opaque (→ 500).
+
+    ``LegKPI`` n'est PAS dans cette liste : c'est un rollup **dérivé**
+    (auto-calculé par ``services.carbon`` / ``compute_for_leg``), recalculable
+    et sans valeur propre une fois son leg supprimé — il est nettoyé
+    automatiquement, sauf s'il a été **saisi manuellement** (``is_manual``),
+    auquel cas il redevient de la donnée humaine à protéger (cf. delete_leg).
+
+    Les trois registres d'argent (``CashboxMovement``, ``OnboardSale``,
+    ``CashCount``) bloquent, ils ne se délient pas : le grand livre de caisse
+    et le registre de vente n'ont **ni UPDATE ni DELETE** (ADR-011/013), donc
+    y écrire ``leg_id = NULL`` pour faire de la place à une suppression n'est
+    pas une option.
     """
-    from sqlalchemy import func
-
     from app.models.booking import Booking
+    from app.models.cash_count import CashCount
     from app.models.commercial import OrderAssignment, RateOffer
     from app.models.crew import CrewAssignment
     from app.models.escale import DockerShift, EscaleOperation
-    from app.models.finance import LegFinance, LegKPI
+    from app.models.finance import LegFinance
     from app.models.mrv import MRVEvent
     from app.models.noon_report import NoonReport
+    from app.models.onboard_cashbox import CashboxMovement
+    from app.models.onboard_sales import OnboardSale
     from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
 
-    # (modèle, label humain) — uniquement les tables avec FK NOT NULL ou
-    # qui contiennent de la donnée audit/réglementaire qui ne doit pas
-    # disparaître silencieusement. Les FK nullable nettoyées par la DB
-    # (claims, tickets, certificats CO₂…) ne bloquent pas la suppression
-    # car on les set à NULL avant le delete (cf. _nullify_optional_fks).
-    # LegKPI n'est PAS dans cette liste : c'est un rollup **dérivé**
-    # (auto-calculé par services.carbon / compute_for_leg), recalculable et
-    # sans valeur propre une fois son leg supprimé. On le nettoie
-    # automatiquement plus bas — sauf s'il a été **saisi manuellement**
-    # (``is_manual``), auquel cas il redevient de la donnée humaine à protéger.
-    BLOCKING = [
+    return [
         (Booking, "réservations"),
         (NoonReport, "noon reports"),
         (LegFinance, "fiche finance"),
@@ -958,10 +1018,73 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
         (CrewAssignment, "affectations équipage"),
         (OrderAssignment, "assignations commande"),
         (RateOffer, "offres tarifaires"),
+        (CashboxMovement, "mouvements de caisse"),
+        (OnboardSale, "ventes à bord"),
+        (CashCount, "contrôles de caisse"),
     ]
 
+
+def _leg_unlinked_models() -> tuple[Any, ...]:
+    """Modèles dont le ``leg_id`` est simplement **délié** avant suppression.
+
+    Ces tables conservent leur donnée historique mais perdent le lien vers le
+    leg supprimé (la FK est nullable et la DB ne la nettoie pas d'elle-même :
+    sans ``ondelete``, PostgreSQL refuserait la suppression du parent).
+
+    - ``PackingList`` — ``leg_id`` est le leg **épinglé à la création**
+      (COM-11) ; ``NULL`` est un état supporté (repli dynamique sur
+      ``order/booking.leg_id``).
+    - ``RateGridLine`` — le leg n'est qu'un **leg type** de la route
+      (« distance reprise du leg »), la ligne de grille lui survit.
+    - ``MaradCrewSchedule`` — miroir **lecture seule** de Marad : le lien vers
+      le leg n'est qu'une corrélation calculée à la synchro.
+    - ``OnboardMessage`` — la messagerie de bord reste consultable.
+    - ``ScheduleRevision`` — l'historique de recalcul survit à la suppression
+      (le ``leg_code`` y est conservé en snapshot) ; ses **deux** FK sont
+      déliées (cf. ``_nullify_optional_fks``).
+    """
+    from app.models.anemos_certificate import AnemosCertificate
+    from app.models.claim import Claim
+    from app.models.commercial import Order, RateGridLine
+    from app.models.crew import MaradCrewSchedule
+    from app.models.crew_ticket import CrewTicket
+    from app.models.packing_list import PackingList
+    from app.models.schedule_revision import ScheduleRevision
+    from app.models.sof_event import OnboardMessage
+    from app.models.ticket import Ticket
+
+    return (
+        Claim,
+        Ticket,
+        CrewTicket,
+        AnemosCertificate,
+        Order,
+        PackingList,
+        RateGridLine,
+        MaradCrewSchedule,
+        OnboardMessage,
+        ScheduleRevision,
+    )
+
+
+async def delete_leg(db: AsyncSession, leg: Leg) -> None:
+    """Supprime un leg — après inventaire explicite de ses dépendances.
+
+    Refuse (``PlanningError`` lisible) si des données dépendantes existent
+    (cf. ``_leg_blocking_models``), délie les FK nullables
+    (``_leg_unlinked_models``), puis supprime dans un **SAVEPOINT** : si une
+    FK oubliée bloquait malgré tout, l'``IntegrityError`` est traduite en
+    ``PlanningError`` au lieu de remonter en 500, et la session reste
+    utilisable pour re-rendre la page avec le bandeau d'erreur.
+    """
+    from sqlalchemy import delete as sa_delete
+    from sqlalchemy import func
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.finance import LegKPI
+
     blocks: list[str] = []
-    for model, label in BLOCKING:
+    for model, label in _leg_blocking_models():
         count = await db.scalar(
             select(func.count()).select_from(model).where(model.leg_id == leg.id)
         )
@@ -978,60 +1101,71 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
     if manual_kpi:
         blocks.append(f"{manual_kpi} KPI saisi(s) manuellement")
 
+    # Snapshot AVANT toute mutation : après un rollback de savepoint les
+    # attributs ORM sont expirés, et y toucher en contexte sync (message
+    # d'erreur, log) déclencherait un lazy-load async → MissingGreenlet.
+    leg_code, leg_id = leg.leg_code, leg.id
+    vessel_id, year = leg.vessel_id, leg.etd.year
+
     if blocks:
         raise PlanningError(
-            f"Impossible de supprimer le leg {leg.leg_code} — dépendances : "
+            f"Impossible de supprimer le leg {leg_code} — dépendances : "
             + ", ".join(blocks)
             + ". Nettoyez ces enregistrements avant suppression."
         )
 
-    # Nettoyage du KPI auto-calculé (non manuel) : sans valeur sans son leg.
-    from sqlalchemy import delete as sa_delete
+    try:
+        async with db.begin_nested():
+            # Nettoyage du KPI auto-calculé (non manuel) : sans valeur sans son leg.
+            await db.execute(sa_delete(LegKPI).where(LegKPI.leg_id == leg_id))
+            await _nullify_optional_fks(db, leg_id)
+            await db.delete(leg)
+            await db.flush()
+    except IntegrityError as exc:
+        raise PlanningError(
+            f"Impossible de supprimer le leg {leg_code} — une donnée liée "
+            f"l'en empêche ({_fk_violation_hint(exc)}). Signalez ce message : "
+            "la table concernée doit être ajoutée à l'inventaire de "
+            "suppression (services/planning.py)."
+        ) from exc
 
-    await db.execute(sa_delete(LegKPI).where(LegKPI.leg_id == leg.id))
-
-    # FK nullables qu'on délie proprement avant suppression (la DB
-    # refuserait sinon avec un IntegrityError opaque).
-    await _nullify_optional_fks(db, leg.id)
-
-    vessel_id, year = leg.vessel_id, leg.etd.year
-    await db.delete(leg)
-    await db.flush()
     # Le rang (lettre du leg_code) est chronologique : la suppression
     # renumérote les legs suivants de l'année.
     await renumber_vessel_year(db, vessel_id, year)
 
 
+def _fk_violation_hint(exc: Exception) -> str:
+    """Nom de contrainte / table lisible extrait d'une violation de FK.
+
+    asyncpg expose ``table_name``/``constraint_name`` sur l'exception
+    d'origine ; SQLite (tests) n'expose rien d'exploitable → on retombe sur
+    un extrait du message.
+    """
+    orig = getattr(exc, "orig", None)
+    table = getattr(orig, "table_name", None)
+    constraint = getattr(orig, "constraint_name", None)
+    if table or constraint:
+        return " / ".join(x for x in (table, constraint) if x)
+    text = str(orig or exc).strip().replace("\n", " ")
+    return text[:160] or "contrainte de clé étrangère"
+
+
 async def _nullify_optional_fks(db: AsyncSession, leg_id: int) -> None:
-    """Set leg_id=NULL sur les FK nullables pointant vers ce leg.
+    """Set ``leg_id = NULL`` sur les FK nullables pointant vers ce leg.
 
-    Ces tables conservent la donnée historique mais perdent le lien
-    vers le leg supprimé. Couvre : claims, tickets, onboard_cashboxes,
-    crew_tickets, co2_certificates, commercial orders.
-
-    RateGridLine n'est PAS dans la liste — bien que commercial.py le
-    suggère par voisinage, ce modèle n'a pas de FK leg_id (les lignes
-    de grille tarifaire ne sont pas liées à un leg spécifique).
+    Inventaire dans ``_leg_unlinked_models`` (une seule source de vérité,
+    vérifiée par la sentinelle ``tests/unit/test_delete_leg_models.py`` qui
+    échoue si une nouvelle table référence ``legs.id`` sans être couverte
+    ici, dans ``_leg_blocking_models``, ou par un ``ondelete`` en base).
     """
     from sqlalchemy import update
 
-    from app.models.anemos_certificate import AnemosCertificate
-    from app.models.claim import Claim
-    from app.models.commercial import Order
-    from app.models.crew_ticket import CrewTicket
-    from app.models.onboard_cashbox import CashboxMovement
     from app.models.schedule_revision import ScheduleRevision
-    from app.models.ticket import Ticket
 
-    # CashboxMovement (pas OnboardCashbox) porte le leg_id : un mouvement
-    # cash est rattaché à un leg, le coffre lui-même non.
-    for model in (Claim, Ticket, CashboxMovement, CrewTicket, AnemosCertificate, Order):
+    for model in _leg_unlinked_models():
         await db.execute(update(model).where(model.leg_id == leg_id).values(leg_id=None))
-    # L'historique de recalcul survit à la suppression du leg (snapshot
-    # leg_code conservé) — on délie les deux FK.
-    await db.execute(
-        update(ScheduleRevision).where(ScheduleRevision.leg_id == leg_id).values(leg_id=None)
-    )
+    # ScheduleRevision porte DEUX FK vers legs (le leg révisé + le leg
+    # déclencheur de la cascade) : la boucle ci-dessus n'en couvre qu'une.
     await db.execute(
         update(ScheduleRevision)
         .where(ScheduleRevision.trigger_leg_id == leg_id)
@@ -1253,11 +1387,24 @@ def audit_planning_sequence(
                 )
             )
         if leg.distance_nm is None:
+            # Cause quasi systématique : un port sans coordonnées (l'orthodromie
+            # n'est alors pas calculable) — on le nomme, sinon l'utilisateur
+            # voit « — » dans les colonnes THÉORIQUE / ÉCART / ALLONG. sans
+            # savoir quoi corriger.
+            blind = _ports_without_coordinates(leg, ports)
+            if blind:
+                detail = (
+                    "coordonnées manquantes pour "
+                    + ", ".join(blind)
+                    + " (à renseigner dans Admin → Ports)"
+                )
+            else:
+                detail = "distance non calculée (elle le sera au prochain enregistrement du leg)"
             issues.append(
                 PlanningIssue(
                     "warning",
                     "distance_missing",
-                    f"{leg.leg_code} n'a pas de distance de planning persistée.",
+                    f"{leg.leg_code} n'a pas de distance théorique — {detail}.",
                     leg_id=leg.id,
                     vessel_id=leg.vessel_id,
                 )
@@ -1297,33 +1444,83 @@ def audit_planning_sequence(
                         vessel_id=vessel_id,
                     )
                 )
-            ready_at = ensure_utc(prev.eta) + timedelta(
-                hours=prev.port_stay_planned_hours or default_stay_hours
-            )
-            next_etd = ensure_utc(leg.etd)
+            # Un leg déjà appareillé est un FAIT, pas un conflit de
+            # planification : son ATD ne se corrige plus. On n'audite donc que
+            # ce qui reste modifiable (legs encore à quai ou à planifier).
+            if leg.atd is not None:
+                continue
+            # Dates EFFECTIVES : une arrivée réelle (ATA) prime sur l'ETA, sinon
+            # l'audit compare l'escale à une prévision déjà périmée.
+            prev_arrival = effective_eta(prev)
+            stay_hours = prev.port_stay_planned_hours or default_stay_hours
+            ready_at = prev_arrival + timedelta(hours=stay_hours)
+            next_etd = effective_etd(leg)
+            arrival_label = "ATA" if prev.ata is not None else "ETA"
             if next_etd < ready_at:
+                missing_h = (ready_at - next_etd).total_seconds() / 3600.0
                 issues.append(
                     PlanningIssue(
                         "critical",
                         "port_stay_overlap",
-                        f"{vessel_label} : {leg.leg_code} démarre avant la fin de l'escale "
-                        f"prévue après {prev.leg_code}.",
+                        f"{vessel_label} : {prev.leg_code} arrive le "
+                        f"{_fr_day(prev_arrival)} ({arrival_label}) et son escale "
+                        f"planifiée de {_fr_duration(stay_hours)} court jusqu'au "
+                        f"{_fr_day(ready_at)}, mais {leg.leg_code} repart dès le "
+                        f"{_fr_day(next_etd)} — il manque {_fr_duration(missing_h)}. "
+                        f"Réduisez l'escale de {prev.leg_code} ou décalez le départ "
+                        f"de {leg.leg_code}.",
                         leg_id=leg.id,
                         vessel_id=vessel_id,
                     )
                 )
-            elif next_etd == ensure_utc(prev.eta):
+            elif next_etd == prev_arrival:
                 issues.append(
                     PlanningIssue(
                         "warning",
                         "missing_escale_gap",
-                        f"{vessel_label} : aucune escale planifiée entre "
-                        f"{prev.leg_code} et {leg.leg_code}.",
+                        f"{vessel_label} : {leg.leg_code} repart le "
+                        f"{_fr_day(next_etd)}, le jour même de l'arrivée de "
+                        f"{prev.leg_code} — aucune escale planifiée entre les deux.",
                         leg_id=leg.id,
                         vessel_id=vessel_id,
                     )
                 )
     return issues
+
+
+def _fr_day(moment: datetime) -> str:
+    """Date au format opérationnel français (jj/mm/aaaa) — planification au jour."""
+    return moment.strftime("%d/%m/%Y")
+
+
+def _fr_duration(hours: float) -> str:
+    """Durée en jours si elle en fait au moins un, sinon en heures.
+
+    Les escales se saisissent en **jours** (PLN-08) : un message d'audit qui
+    parle en heures est illisible pour l'agent d'escale.
+    """
+    if hours >= 24 and hours % 24 == 0:
+        days = int(hours // 24)
+        return f"{days} j"
+    if hours >= 24:
+        return f"{hours / 24:.1f} j".replace(".", ",")
+    if float(hours).is_integer():
+        return f"{int(hours)} h"
+    return f"{hours:.1f} h".replace(".", ",")
+
+
+def _ports_without_coordinates(leg: Leg, ports: dict[int, object] | None) -> list[str]:
+    """LOCODEs (ou ids) des ports du leg dépourvus de latitude/longitude."""
+    blind: list[str] = []
+    for port_id in (leg.departure_port_id, leg.arrival_port_id):
+        port = (ports or {}).get(port_id)
+        if port is None:
+            continue
+        if getattr(port, "latitude", None) is None or getattr(port, "longitude", None) is None:
+            label = getattr(port, "locode", None) or f"port #{port_id}"
+            if label not in blind:
+                blind.append(label)
+    return blind
 
 
 def schedule_kpis(legs: Sequence[Leg], issues: Sequence[PlanningIssue]) -> ScheduleKpi:

@@ -134,6 +134,156 @@ async def test_delete_leg_removes_auto_kpi(db):
     assert remaining == 0
 
 
+# ───── suppression : FK nullables déliées / registres d'argent bloquants ─────
+
+
+async def _pinned_packing_list(db, leg):
+    """Une packing list épinglée sur le leg (COM-11) via une commande."""
+    from app.models.commercial import Client, Order
+    from app.models.packing_list import PackingList
+
+    cl = Client(name="ACME", client_type="shipper")
+    db.add(cl)
+    await db.flush()
+    order = Order(reference=f"CMD-{leg.id}", client_id=cl.id, leg_id=leg.id)
+    db.add(order)
+    await db.flush()
+    pl = PackingList(order_id=order.id, leg_id=leg.id)
+    db.add(pl)
+    await db.flush()
+    return pl
+
+
+@pytest.mark.asyncio
+async def test_delete_leg_unlinks_nullable_fks(db):
+    """Régression 2026-09-02 : ``packing_lists.leg_id`` (COM-11),
+    ``onboard_messages`` et ``marad_crew_schedules`` référencent ``legs.id``
+    sans ``ondelete`` — non déliées, la suppression sortait en **500**
+    (IntegrityError opaque) au lieu de réussir.
+    """
+    from app.models.crew import CrewMember, MaradCrewSchedule
+    from app.models.sof_event import OnboardMessage
+    from app.services.planning import delete_leg
+
+    await _seed(db)
+    leg = await create_leg(
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
+    )
+    pl = await _pinned_packing_list(db, leg)
+    db.add(OnboardMessage(leg_id=leg.id, vessel_id=1, author_name="Master", body="RAS"))
+    member = CrewMember(full_name="Ana Silva", role="matelot")
+    db.add(member)
+    await db.flush()
+    db.add(MaradCrewSchedule(marad_schedule_id="MS-1", crew_member_id=member.id, leg_id=leg.id))
+    await db.flush()
+
+    await delete_leg(db, leg)  # ne doit pas lever
+
+    # La donnée survit, seul le lien vers le leg disparaît.
+    await db.refresh(pl)
+    assert pl.leg_id is None
+    assert pl.order_id is not None  # XOR order/booking toujours satisfait
+    msgs = (await db.execute(select(OnboardMessage))).scalars().all()
+    assert len(msgs) == 1 and msgs[0].leg_id is None
+    scheds = (await db.execute(select(MaradCrewSchedule))).scalars().all()
+    assert len(scheds) == 1 and scheds[0].leg_id is None
+
+
+@pytest.mark.asyncio
+async def test_delete_leg_blocked_by_onboard_sale(db):
+    """Registre de vente = append-only (ADR-013) : il bloque, il ne se délie
+    pas. Message métier lisible plutôt qu'un 500."""
+    from decimal import Decimal
+
+    from app.models.onboard_sales import OnboardSale
+    from app.services.planning import PlanningError, delete_leg
+
+    await _seed(db)
+    leg = await create_leg(
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
+    )
+    db.add(
+        OnboardSale(
+            reference="V-0001",
+            vessel_id=1,
+            leg_id=leg.id,
+            currency="EUR",
+            total=Decimal("12.00"),
+        )
+    )
+    await db.flush()
+    with pytest.raises(PlanningError, match="ventes à bord"):
+        await delete_leg(db, leg)
+
+
+@pytest.mark.asyncio
+async def test_delete_leg_blocked_by_cash_count(db):
+    """Contrôle de caisse rendu = pièce de décharge : bloque la suppression."""
+    from app.models.cash_count import CashCount
+    from app.models.onboard_cashbox import OnboardCashbox
+    from app.services.planning import PlanningError, delete_leg
+
+    await _seed(db)
+    leg = await create_leg(
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
+    )
+    box = OnboardCashbox(vessel_id=1)
+    db.add(box)
+    await db.flush()
+    db.add(
+        CashCount(
+            cashbox_id=box.id,
+            leg_id=leg.id,
+            trigger="fin_embarquement",
+            counted_on=BASE.date(),
+            declared_by_name="Master",
+        )
+    )
+    await db.flush()
+    with pytest.raises(PlanningError, match="contrôles de caisse"):
+        await delete_leg(db, leg)
+
+
+@pytest.mark.asyncio
+async def test_delete_leg_blocked_message_keeps_session_usable(db):
+    """Après un refus, la session reste utilisable : la route re-rend la fiche
+    leg avec le bandeau d'erreur (elle ferait un 500 sur session cassée)."""
+    from app.models.onboard_sales import OnboardSale
+    from app.services.planning import PlanningError, delete_leg
+
+    await _seed(db)
+    leg = await create_leg(
+        db,
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd=BASE,
+        eta=BASE + timedelta(days=20),
+    )
+    db.add(OnboardSale(reference="V-0002", vessel_id=1, leg_id=leg.id))
+    await db.flush()
+    with pytest.raises(PlanningError):
+        await delete_leg(db, leg)
+    # Lecture post-refus : la transaction n'est pas avortée.
+    again = await db.get(type(leg), leg.id)
+    assert again is not None and again.leg_code == "1AFRBR6"
+
+
 @pytest.mark.asyncio
 async def test_delete_leg_blocked_by_manual_kpi(db):
     """Un KPI SAISI MANUELLEMENT reste une donnée humaine → bloque toujours."""
