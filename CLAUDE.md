@@ -258,11 +258,27 @@ Doc de référence : `docs/design/05-sequence-planification.md`.
   l'heure précise. **Création de leg = page unique** (PLN-08) : navire par
   boutons, Départ/Arrivée côte à côte (ports habituels BRSSO/FRFEC, filtres +
   recherche libre), POL/ETD pré-remplis depuis la séquence du navire, escale en
-  **jours** (`port_stay_planned_days` → heures ×24).
+  **jours** (`port_stay_planned_days` → heures ×24). Le **leg de référence est
+  choisi** (« Chaîner après », `chain_options`) : le dernier leg par ETD n'est
+  qu'un défaut, et il est faux dès qu'un voyage lointain est déjà saisi.
 - **Dates effectives** : tout calcul « où en est le voyage » passe par
   `planning.effective_etd/effective_eta` (réel prioritaire, repli
-  prévisionnel) — la dérive (`leg_delay_hours`), le Gantt et le transit
-  commercial les utilisent déjà.
+  prévisionnel) — la dérive (`leg_delay_hours`), le Gantt, le transit
+  commercial et l'**audit de séquence** les utilisent déjà. L'audit
+  n'instruit **jamais** un leg déjà appareillé : son ATD est un fait, pas un
+  conflit de planification.
+- **Distance théorique** : `Leg.distance_nm` (orthodromie POL→POD × élongation)
+  est posée au create/update et vaut `None` si un port n'a pas de coordonnées —
+  auquel cas l'écart et l'allongement réels ne sont plus calculables. Repli au
+  rendu (`voyage_track.theoretical_distance_nm`, marqué `*` dans l'UI), édition
+  des coordonnées dans **Admin → Ports** (qui recalcule les legs du port), et
+  reprise à froid : `scripts/backfill_leg_distances.py`.
+- **Suppression d'un leg** : inventaire explicite des dépendances
+  (`planning._leg_blocking_models` / `_leg_unlinked_models`). Les registres
+  d'argent (caisse, ventes, contrôles) **bloquent** — ils n'ont ni UPDATE ni
+  DELETE ; les FK nullables sont **déliées**. Toute nouvelle table référençant
+  `legs.id` doit rejoindre l'un des deux inventaires (ou porter un `ondelete`) :
+  la sentinelle `tests/unit/test_delete_leg_models.py` échoue sinon.
 
 ### Équipage — deux registres d'embarquement, à ne jamais confondre
 

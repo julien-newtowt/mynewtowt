@@ -165,6 +165,15 @@ Maquette validée le 2026-09-02. `/planning/legs/new` (et l'édition) tient sur
 1. **Navire** — un bouton par navire (radios stylés), avec l'état de sa
    séquence (dernier leg, ports, ETA/ATA, phase). Le choix pilote le
    pré-remplissage (`_new_leg_suggestions`, sérialisé en `data-suggestions`).
+1 bis. **Leg de référence — « Chaîner après »** (correctif 2026-09-02). Le
+   défaut reste le **dernier leg par ETD** : créer un leg, c'est le plus souvent
+   prolonger la ligne. Mais ce défaut est faux dès qu'un voyage lointain est
+   déjà saisi — un leg de janvier 2027 captait le chaînage des legs de l'année
+   en cours (« il a repris le leg A alors qu'on programme le D »), avec l'ETD
+   **et** le POL qui en découlent. Le formulaire expose donc les derniers legs
+   du navire (`chain_options`, 8 max, ETD décroissant) : changer de référence
+   redérive ETD, POL, escale et rang. Le sélecteur est masqué quand il n'y a
+   qu'une option — un choix à une entrée est du bruit.
 2. **Départ / Arrivée côte à côte** — ports habituels (`Port.is_shortcut`,
    repli : **BRSSO São Sebastião, FRFEC Fécamp**) → filtres Zone / Pays / Port →
    **recherche libre** par saisie (nom ou LOCODE, tous les ports actifs, sans
@@ -179,6 +188,30 @@ Maquette validée le 2026-09-02. `/planning/legs/new` (et l'édition) tient sur
    clôture reprennent les défauts (navire, ETD − 48 h), ajustables en édition.
 5. **Récapitulatif** — code de leg prévisionnel (rang chronologique de l'année
    de l'ETD suggéré), route, dates, jours de mer, escale.
+
+## 8 bis. Audit de séquence — ce qu'il dit et ce qu'il ne dit pas
+
+`audit_planning_sequence` compare, navire par navire et par ETD croissant, la
+disponibilité du leg précédent (**arrivée effective + escale planifiée**) au
+départ du leg suivant. Trois règles corrigées le 2026-09-02 :
+
+- **Dates effectives** — l'ATA prime sur l'ETA (l'ATD sur l'ETD). Mesurer une
+  escale contre une prévision déjà périmée produisait des alertes fausses.
+- **Un leg appareillé n'est plus audité** — son ATD est un fait, pas un conflit
+  de planification : l'alerte était insoluble par construction.
+- **Le message porte les chiffres** — date d'arrivée (en précisant ATA ou ETA),
+  durée d'escale, date de disponibilité, départ constaté, manque en jours, et
+  les deux corrections possibles (réduire l'escale du précédent, ou décaler le
+  départ). « démarre avant la fin de l'escale prévue » ne disait rien
+  d'actionnable.
+
+`distance_missing` nomme désormais sa cause : un port sans coordonnées. La
+distance théorique (`Leg.distance_nm`) est posée au create/update et vaut
+`None` si l'orthodromie n'est pas calculable ; sans elle, l'**écart** et
+l'**allongement réel** sont vides eux aussi. Trois voies de réparation :
+repli calculé au rendu (`voyage_track.theoretical_distance_nm`, marqué `*`),
+saisie des coordonnées dans **Admin → Ports** (qui recalcule les legs du port),
+et reprise à froid `scripts/backfill_leg_distances.py`.
 
 ## 9. Ce qui reste connu et assumé (non traité ici)
 

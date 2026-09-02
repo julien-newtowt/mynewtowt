@@ -2299,3 +2299,128 @@ ci-dessus — même sujet, mêmes acteurs.
 - Ces correctifs sont **cosmétiques et front** : ils ne modifient ni le schéma,
   ni les règles de calcul, ni les permissions. Ils peuvent partir sans attendre
   le retour du manager.
+
+## 2026-09-02 — Quatre retours sur la planification : trois bugs, un défaut de conception
+
+**Branche** : `fix/planning-sequence-bugs` · **Objectif** : traiter les quatre
+retours d'usage arrivés après la mise en service de la séquence déclarative
+départ/arrivée (PLN-SEQ, PR #177).
+
+### Situation
+
+Quatre signalements, dans l'ordre où ils ont été remontés :
+
+1. « À la création d'un nouveau leg, le module ne prend pas la bonne ETD ni le
+   bon POD. Il a repris le leg A alors qu'on programme le D. »
+2. « Je ne comprends pas l'erreur » — bandeau rouge *« Atlantis : 3DFRBR6
+   démarre avant la fin de l'escale prévue après 3CBRFR6 »*.
+3. **Erreur 500** à la suppression d'un leg (`/planning/legs/16/delete`).
+4. « Il y a des voyages qui n'ont pas de calcul automatisé de la distance et de
+   la dérive » — colonnes Théorique / Écart / Allongement à « — » pour
+   `1AFRBR6`, `2BGPFR6`, `3APHRE6`.
+
+### Analyse
+
+**(3) est un vrai bug de production, et le plus grave** — c'est le seul qui
+casse une page. Quatre tables référencent `legs.id` **sans** `ondelete` et
+**sans** être déliées avant la suppression : `packing_lists.leg_id` (le leg
+épinglé par COM-11, ajouté après l'écriture de `delete_leg`),
+`rate_grid_lines`, `marad_crew_schedules`, `onboard_messages`. PostgreSQL
+refuse donc la suppression du parent et l'`IntegrityError` remonte telle
+quelle. Le leg 16 porte une packing list : suppression impossible, 500 nu. Le
+défaut n'est pas la liste incomplète — c'est qu'**aucun garde-fou ne signalait
+l'oubli** : la liste était un littéral dans le corps d'une fonction, invisible
+à quiconque ajoute une table.
+
+**(4) n'est pas un calcul cassé mais une donnée absente.** `Leg.distance_nm`
+(orthodromie POL→POD × élongation) est bien posée au create/update — mais
+`compute_effective_distance_nm` renvoie `None` quand un port n'a pas de
+coordonnées, et rien ne recalcule ensuite. L'écart et l'allongement se dérivant
+de la théorique, les trois colonnes tombent ensemble. L'UI affichait « — » sans
+dire pourquoi, et l'audit disait « n'a pas de distance de planning persistée »,
+ce qui décrit le symptôme, pas la cause.
+
+**(2) est un message, pas un calcul** — l'alerte était juste sur le fond
+(l'escale planifiée de 3C court plus loin que le départ de 3D) mais ne portait
+aucun chiffre : ni la date d'arrivée, ni la durée d'escale, ni le manque, ni la
+correction possible. Deux défauts de fond en dessous : l'audit comparait des
+**ETA prévisionnelles** même quand l'ATA était connue, et il instruisait des
+legs **déjà appareillés** — dont l'ATD ne se corrige plus, donc une alerte
+critique insoluble par construction.
+
+**(1) est un défaut de conception, pas un bug.** `_new_leg_suggestions` prenait
+le dernier leg par ETD, toutes années confondues. C'est le bon défaut — créer
+un leg, c'est prolonger la ligne — mais il devient faux dès qu'un voyage
+lointain est saisi à l'avance : un leg de janvier 2027 capte le chaînage des
+legs de l'année en cours, et impose son POD comme POL. Aucune valeur par défaut
+ne peut trancher entre « prolonger la séquence » et « insérer dans l'année en
+cours » : c'est une intention d'opérateur.
+
+### Décisions et implémentation
+
+- **Suppression d'un leg** — l'inventaire des dépendances sort du corps de
+  `delete_leg` en deux fonctions nommées (`_leg_blocking_models`,
+  `_leg_unlinked_models`), les quatre tables manquantes sont déliées, et la
+  suppression se fait dans un **SAVEPOINT** : une FK oubliée devient une
+  `PlanningError` lisible (400 avec bandeau) au lieu d'un 500, la session
+  restant utilisable pour re-rendre la page. Une **sentinelle** échoue au build
+  si une table référence `legs.id` sans être couverte (ondelete, inventaire
+  bloquant, ou inventaire délié).
+- **Les registres d'argent bloquent désormais** au lieu d'être déliés : ventes à
+  bord, contrôles de caisse, mouvements de caisse. Écrire `leg_id = NULL` dans
+  un grand livre qui n'a **ni UPDATE ni DELETE** (ADR-011/013) pour faire de la
+  place à une suppression n'est pas une option ; et un leg qui porte des ventes
+  réelles est un voyage effectué, pas un brouillon.
+- **Leg de référence choisi** — le formulaire expose les 8 derniers legs du
+  navire (`chain_options`) dans un sélecteur « Chaîner après » ; ETD, POL,
+  escale et rang se redérivent du leg choisi. Le défaut ne change pas, il
+  devient corrigeable en un clic. Sélecteur masqué s'il n'y a qu'une option.
+- **Audit de séquence** — messages chiffrés et actionnables, dates effectives,
+  et plus aucune instruction d'un leg appareillé.
+- **Distance théorique** — trois voies, du palliatif à la racine : repli calculé
+  au rendu (`voyage_track.theoretical_distance_nm`, marqué `*` avec info-bulle,
+  la valeur persistée restant prioritaire) ; **édition des coordonnées d'un
+  port** dans Admin → Ports, qui recalcule immédiatement les legs touchant ce
+  port (`recompute_leg_distances`) ; reprise à froid
+  `scripts/backfill_leg_distances.py` (dry-run par défaut), qui **liste
+  nommément** les ports sans coordonnées restants.
+
+### Risques
+
+- 🟡 **Suppression de leg plus restrictive** — un leg porteur de mouvements de
+  caisse ou de ventes ne se supprime plus. C'est l'intention (protection d'un
+  registre), mais c'est un changement de comportement : le message d'erreur dit
+  quoi nettoyer.
+- 🟢 Le repli de distance est **calculé à l'affichage, jamais écrit** : aucune
+  écriture sur une requête de lecture, aucune valeur inventée quand les
+  coordonnées manquent.
+- 🟢 Coordonnées de port : validation de plage (−90/90, −180/180) et refus
+  explicite d'une saisie partielle — une coordonnée fausse produirait une
+  distance fausse, pire qu'une distance absente puisqu'elle a l'air juste.
+
+### Tests
+
+- Sentinelle FK : 25 FK vers `legs.id` scannées, 0 non couverte. Sabotage
+  vérifié (retrait des 4 tables → la sentinelle **et** le test d'intégration
+  échouent).
+- `test_delete_leg_unlinks_nullable_fks` : suppression réussie avec packing
+  list épinglée + message de bord + planning Marad, données conservées, lien
+  effacé, XOR de la packing list préservé.
+- Deux tests de blocage (vente à bord, contrôle de caisse) + un test de session
+  restée utilisable après refus.
+- Audit : message explicite (fragments de dates et de durées vérifiés), leg
+  appareillé ignoré, ATA prioritaire, port sans coordonnées nommé.
+- Distance : 6 tests (absence à la création, repli au rendu, priorité au
+  persisté, refus d'inventer sans coordonnées, recalcul après saisie des
+  coordonnées, idempotence).
+- Suite complète verte ; `ruff check` et `black --check` verts.
+
+### Reste à faire (côté exploitation)
+
+1. Déployer, puis `docker compose exec app python -m scripts.backfill_leg_distances`
+   (dry-run) — le rapport nomme les ports sans coordonnées.
+2. Renseigner ces coordonnées dans **Admin → Ports** (l'écran recalcule les legs
+   du port ; le script `--yes` finit le reste).
+3. Le bandeau d'audit sur Atlantis dira maintenant de combien de jours l'escale
+   de 3C dépasse le départ de 3D : à trancher côté métier (réduire l'escale ou
+   décaler le départ), la donnée n'est pas modifiée d'office.
