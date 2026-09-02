@@ -305,6 +305,14 @@
     if (!form) return {};
     try { return JSON.parse(form.getAttribute("data-suggestions") || "{}"); } catch (e) { return {}; }
   }
+  /* Suggestion RÉELLEMENT appliquée (leg-form-suggest.js) : elle peut porter un
+     autre leg de référence que le défaut du navire, choisi via « Chaîner après ».
+     Le rang du code prévisionnel dépend de l'année de SON ETD. */
+  function activeSuggestion() {
+    var form = document.getElementById("leg-form");
+    if (!form || !form.dataset.activeSuggestion) return null;
+    try { return JSON.parse(form.dataset.activeSuggestion); } catch (e) { return null; }
+  }
   function frDate(iso) {
     if (!iso) return null;
     var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
@@ -323,7 +331,7 @@
     var etaEl = document.getElementById("eta");
     var stayEl = document.getElementById("port_stay_planned_days");
     var bookEl = document.getElementById("is_bookable");
-    var s = v ? (suggestions()[v.value] || {}) : {};
+    var s = activeSuggestion() || (v ? (suggestions()[v.value] || {}) : {});
     var etd = etdEl && etdEl.value ? etdEl.value : null;
     var eta = etaEl && etaEl.value ? etaEl.value : null;
     var parts = [];

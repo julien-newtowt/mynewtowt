@@ -50,6 +50,12 @@ def test_leg_form_lets_the_reference_leg_be_chosen():
     js = (pathlib.Path("app/static/js/leg-form-suggest.js")).read_text()
     for ident in ("leg-chain-after", "leg-chain-picker", "chain_options"):
         assert ident in js, f"{ident} absent de leg-form-suggest.js"
+    # Le récapitulatif doit chiffrer le code prévisionnel sur la référence
+    # RETENUE, pas sur le défaut du navire : sinon le rang affiche « ? » dès
+    # qu'on change de leg de référence.
+    assert "activeSuggestion" in js
+    cascade = (pathlib.Path("app/static/js/leg-cascade.js")).read_text()
+    assert "activeSuggestion" in cascade
 
 
 async def _setup(db):

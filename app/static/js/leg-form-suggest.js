@@ -95,16 +95,12 @@
       var replace = force || (appliedFor !== null && appliedFor !== vesselId);
       if (etd && (replace || !etd.value)) { etd.value = s.etd; if (eta) { eta.value = ""; eta.dataset.auto = "on"; } }
       if (portStay && (replace || !portStay.value) && s.port_stay_days) portStay.value = s.port_stay_days;
-      if (s.pol_id) {
-        document.dispatchEvent(new CustomEvent("leg:pick-port", {
-          detail: {
-            prefix: "pol",
-            id: s.pol_id,
-            hint: "Port d'arrivée du leg précédent " + s.from_leg_code + " — continuité géographique.",
-          },
-        }));
-      }
       appliedFor = vesselId;
+      /* Le récapitulatif (leg-cascade.js) doit chiffrer le code de leg
+         prévisionnel sur la référence RÉELLEMENT retenue, pas sur le défaut :
+         sinon changer de référence affiche un rang « ? ». Publié avant le
+         dispatch de `leg:pick-port`, qui déclenche le recalcul du récap. */
+      form.dataset.activeSuggestion = JSON.stringify(s);
       if (banner && bannerText) {
         var ref = s.from_ata ? "ATA " + frDate(s.from_ata) : "ETA " + frDate(s.from_eta);
         bannerText.textContent =
@@ -114,6 +110,15 @@
         banner.style.display = "flex";
         banner.style.alignItems = "center";
         banner.style.flexWrap = "wrap";
+      }
+      if (s.pol_id) {
+        document.dispatchEvent(new CustomEvent("leg:pick-port", {
+          detail: {
+            prefix: "pol",
+            id: s.pol_id,
+            hint: "Port d'arrivée du leg précédent " + s.from_leg_code + " — continuité géographique.",
+          },
+        }));
       }
     }
 
@@ -128,6 +133,7 @@
       if (portStay) portStay.value = "";
       if (banner) banner.style.display = "none";
       if (picker) picker.style.display = "none";
+      delete form.dataset.activeSuggestion;
       appliedFor = null;
       // POL on laisse — souvent l'user veut garder le port de départ.
     }

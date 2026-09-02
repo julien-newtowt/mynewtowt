@@ -307,6 +307,11 @@ async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
         options = [o for o in [await _chain_option(db, c) for c in candidates] if o]
         if not options:
             continue
+        # Le récapitulatif (leg-cascade.js) lit l'identité du navire en repli
+        # sur la suggestion active : chaque option doit la porter.
+        for option in options:
+            option["vessel_code"] = v.code
+            option["vessel_name"] = v.name
         entry.update(options[0])
         entry["no_legs"] = False
         entry["chain_options"] = options
