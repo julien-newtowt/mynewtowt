@@ -872,9 +872,10 @@ async def admin_port_config_save(
     # l'allongement (colonnes « — » sur /performance/navigation). Les
     # renseigner ici **recalcule** immédiatement ces legs.
     lat, lon = _dec("latitude"), _dec("longitude")
-    coords_given = bool((form.get("latitude") or "").strip()) or bool(
-        (form.get("longitude") or "").strip()
-    )
+    # ``_opt`` plutôt qu'un ``form.get(...).strip()`` direct : la lecture de
+    # formulaire est déjà normalisée là, et un champ saisi mais illisible
+    # (« nord ») doit compter comme *renseigné* pour être refusé — pas ignoré.
+    coords_given = bool(_opt("latitude")) or bool(_opt("longitude"))
     recomputed: list = []
     if coords_given:
         invalid = (

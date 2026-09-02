@@ -18,7 +18,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import overload
+from typing import Any, overload
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -966,7 +966,14 @@ async def update_leg(
     )
 
 
-def _leg_blocking_models() -> list[tuple[type, str]]:
+# Les inventaires ci-dessous renvoient des **classes** SQLAlchemy dont on lit
+# l'attribut mappé ``leg_id``. Annotées ``type`` (ou ``type[Base]``), mypy perd
+# ces attributs et sort un `attr-defined` sur du code correct ; annotées par un
+# Protocol, il refuse les classes déclaratives (``Mapped[...]`` n'est pas une
+# variable simple). ``Any`` est donc l'annotation honnête ici — le contrat réel
+# (« porter un ``leg_id`` ») est vérifié à l'exécution par la sentinelle
+# ``tests/unit/test_delete_leg_models.py``.
+def _leg_blocking_models() -> list[tuple[Any, str]]:
     """(modèle, label humain) des tables qui **refusent** la suppression d'un leg.
 
     La plupart des FK enfants n'ont pas ``ondelete="CASCADE"`` (volontaire :
@@ -1017,7 +1024,7 @@ def _leg_blocking_models() -> list[tuple[type, str]]:
     ]
 
 
-def _leg_unlinked_models() -> tuple[type, ...]:
+def _leg_unlinked_models() -> tuple[Any, ...]:
     """Modèles dont le ``leg_id`` est simplement **délié** avant suppression.
 
     Ces tables conservent leur donnée historique mais perdent le lien vers le
