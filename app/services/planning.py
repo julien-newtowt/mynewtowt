@@ -1329,11 +1329,24 @@ def audit_planning_sequence(
                 )
             )
         if leg.distance_nm is None:
+            # Cause quasi systématique : un port sans coordonnées (l'orthodromie
+            # n'est alors pas calculable) — on le nomme, sinon l'utilisateur
+            # voit « — » dans les colonnes THÉORIQUE / ÉCART / ALLONG. sans
+            # savoir quoi corriger.
+            blind = _ports_without_coordinates(leg, ports)
+            if blind:
+                detail = (
+                    "coordonnées manquantes pour "
+                    + ", ".join(blind)
+                    + " (à renseigner dans Admin → Ports)"
+                )
+            else:
+                detail = "distance non calculée (elle le sera au prochain enregistrement du leg)"
             issues.append(
                 PlanningIssue(
                     "warning",
                     "distance_missing",
-                    f"{leg.leg_code} n'a pas de distance de planning persistée.",
+                    f"{leg.leg_code} n'a pas de distance théorique — {detail}.",
                     leg_id=leg.id,
                     vessel_id=leg.vessel_id,
                 )
@@ -1373,33 +1386,83 @@ def audit_planning_sequence(
                         vessel_id=vessel_id,
                     )
                 )
-            ready_at = ensure_utc(prev.eta) + timedelta(
-                hours=prev.port_stay_planned_hours or default_stay_hours
-            )
-            next_etd = ensure_utc(leg.etd)
+            # Un leg déjà appareillé est un FAIT, pas un conflit de
+            # planification : son ATD ne se corrige plus. On n'audite donc que
+            # ce qui reste modifiable (legs encore à quai ou à planifier).
+            if leg.atd is not None:
+                continue
+            # Dates EFFECTIVES : une arrivée réelle (ATA) prime sur l'ETA, sinon
+            # l'audit compare l'escale à une prévision déjà périmée.
+            prev_arrival = effective_eta(prev)
+            stay_hours = prev.port_stay_planned_hours or default_stay_hours
+            ready_at = prev_arrival + timedelta(hours=stay_hours)
+            next_etd = effective_etd(leg)
+            arrival_label = "ATA" if prev.ata is not None else "ETA"
             if next_etd < ready_at:
+                missing_h = (ready_at - next_etd).total_seconds() / 3600.0
                 issues.append(
                     PlanningIssue(
                         "critical",
                         "port_stay_overlap",
-                        f"{vessel_label} : {leg.leg_code} démarre avant la fin de l'escale "
-                        f"prévue après {prev.leg_code}.",
+                        f"{vessel_label} : {prev.leg_code} arrive le "
+                        f"{_fr_day(prev_arrival)} ({arrival_label}) et son escale "
+                        f"planifiée de {_fr_duration(stay_hours)} court jusqu'au "
+                        f"{_fr_day(ready_at)}, mais {leg.leg_code} repart dès le "
+                        f"{_fr_day(next_etd)} — il manque {_fr_duration(missing_h)}. "
+                        f"Réduisez l'escale de {prev.leg_code} ou décalez le départ "
+                        f"de {leg.leg_code}.",
                         leg_id=leg.id,
                         vessel_id=vessel_id,
                     )
                 )
-            elif next_etd == ensure_utc(prev.eta):
+            elif next_etd == prev_arrival:
                 issues.append(
                     PlanningIssue(
                         "warning",
                         "missing_escale_gap",
-                        f"{vessel_label} : aucune escale planifiée entre "
-                        f"{prev.leg_code} et {leg.leg_code}.",
+                        f"{vessel_label} : {leg.leg_code} repart le "
+                        f"{_fr_day(next_etd)}, le jour même de l'arrivée de "
+                        f"{prev.leg_code} — aucune escale planifiée entre les deux.",
                         leg_id=leg.id,
                         vessel_id=vessel_id,
                     )
                 )
     return issues
+
+
+def _fr_day(moment: datetime) -> str:
+    """Date au format opérationnel français (jj/mm/aaaa) — planification au jour."""
+    return moment.strftime("%d/%m/%Y")
+
+
+def _fr_duration(hours: float) -> str:
+    """Durée en jours si elle en fait au moins un, sinon en heures.
+
+    Les escales se saisissent en **jours** (PLN-08) : un message d'audit qui
+    parle en heures est illisible pour l'agent d'escale.
+    """
+    if hours >= 24 and hours % 24 == 0:
+        days = int(hours // 24)
+        return f"{days} j"
+    if hours >= 24:
+        return f"{hours / 24:.1f} j".replace(".", ",")
+    if float(hours).is_integer():
+        return f"{int(hours)} h"
+    return f"{hours:.1f} h".replace(".", ",")
+
+
+def _ports_without_coordinates(leg: Leg, ports: dict[int, object] | None) -> list[str]:
+    """LOCODEs (ou ids) des ports du leg dépourvus de latitude/longitude."""
+    blind: list[str] = []
+    for port_id in (leg.departure_port_id, leg.arrival_port_id):
+        port = (ports or {}).get(port_id)
+        if port is None:
+            continue
+        if getattr(port, "latitude", None) is None or getattr(port, "longitude", None) is None:
+            label = getattr(port, "locode", None) or f"port #{port_id}"
+            if label not in blind:
+                blind.append(label)
+    return blind
 
 
 def schedule_kpis(legs: Sequence[Leg], issues: Sequence[PlanningIssue]) -> ScheduleKpi:
