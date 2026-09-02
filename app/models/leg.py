@@ -15,15 +15,24 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    event,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.voyage_highlight import VoyageHighlight
     from app.models.voyage_photo import VoyagePhoto
+
+
+LEG_ORIGINS: tuple[str, ...] = ("newtowt", "towt_archive")
+LEG_ORIGIN_TOWT = "towt_archive"
+
+# Clé ``session.info`` autorisant explicitement l'écriture d'un leg d'archive
+# (scripts de reprise/correction uniquement — jamais posée par une route).
+LEG_ARCHIVE_WRITE_KEY = "allow_towt_archive_write"
 
 
 class Leg(Base):
@@ -43,6 +52,17 @@ class Leg(Base):
     ata: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     status: Mapped[str] = mapped_column(String(20), default="planned", nullable=False)
+
+    # Origine du leg (reprise d'historique TOWT, ADR-014). ``newtowt`` = leg
+    # vécu dans l'ERP ; ``towt_archive`` = voyage de l'ancienne compagnie repris
+    # depuis les archives (Excel des traversées). Un leg d'archive est un FAIT :
+    # lecture seule (``services.planning.assert_leg_mutable``), exclu de la
+    # renumérotation des codes, filtrable dans /planning. Son ``leg_code`` est
+    # le TRIP CODE TOWT d'origine (clé de rapprochement avec les noon reports
+    # et l'ancien tableau de bord), jamais recalculé.
+    origin: Mapped[str] = mapped_column(
+        String(20), default="newtowt", server_default="newtowt", nullable=False
+    )
 
     # Booking platform fields
     is_bookable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -100,6 +120,7 @@ class Leg(Base):
         Index("ix_legs_etd", "etd"),
         Index("ix_legs_status", "status"),
         Index("ix_legs_bookable", "is_bookable"),
+        Index("ix_legs_origin", "origin"),
     )
 
     # Relations pour Carnet de Bord ANEMOS
@@ -109,6 +130,11 @@ class Leg(Base):
     photos: Mapped[list[VoyagePhoto]] = relationship(
         "VoyagePhoto", back_populates="leg", cascade="all, delete-orphan"
     )
+
+    @property
+    def is_archive(self) -> bool:
+        """Leg repris des archives TOWT (lecture seule, ADR-014)."""
+        return self.origin == LEG_ORIGIN_TOWT
 
     @property
     def phase(self) -> str:
@@ -134,3 +160,31 @@ class Leg(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Leg {self.leg_code} {self.etd.date()}{self.eta.date()}>"
+
+
+@event.listens_for(Session, "before_flush")
+def _refuse_archive_leg_writes(session: Session, flush_context, instances) -> None:
+    """Garde ORM (ADR-014) : aucun UPDATE/DELETE d'un leg d'archive TOWT.
+
+    Filet de sécurité derrière ``services.planning.assert_leg_mutable`` : il
+    attrape tout écrivain qui n'appelle pas la garde (scénarios, décalage d'ETA
+    bord, futurs chemins). La création (``session.new``) reste libre — c'est
+    ainsi que la reprise insère l'archive. Échappement explicite :
+    ``session.info[LEG_ARCHIVE_WRITE_KEY] = True`` (scripts uniquement).
+    """
+    if session.info.get(LEG_ARCHIVE_WRITE_KEY):
+        return
+    offenders = [
+        obj
+        for obj in list(session.dirty) + list(session.deleted)
+        if isinstance(obj, Leg)
+        and obj.origin == LEG_ORIGIN_TOWT
+        and (obj in session.deleted or session.is_modified(obj))
+    ]
+    if offenders:
+        from app.services.planning import LegArchivedError
+
+        codes = ", ".join(sorted(o.leg_code for o in offenders))
+        raise LegArchivedError(
+            f"Écriture refusée sur un leg d'archive TOWT (lecture seule, ADR-014) : {codes}"
+        )

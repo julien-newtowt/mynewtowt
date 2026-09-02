@@ -2633,3 +2633,120 @@ diverger : le périmètre doit rester un sous-ensemble de la région.
 Aucun parcours rejoué dans un navigateur : le débounce, l'ordre des réponses et
 le rendu du menu de résultats ne sont couverts que par lecture du code. À voir
 en recette, en cherchant précisément « Da Nang ».
+
+---
+
+## 2026-09-02 (4) — Reprise d'historique TOWT : l'archive entre dans l'ERP, en lecture seule
+
+### Situation
+
+Julien fournit le classeur des traversées TOWT (36 voyages 2024-08 → 2026-01),
+l'ancien tableau de bord Power BI, et pointe deux bibliothèques SharePoint :
+relevés GPS satcom (« 12 - Tracking », ~32 000 CSV horaires au pas de 5 min
+depuis le 2024-10-21) et noon reports (« 10 - Data reporting Noon reports »,
+~1 300 classeurs Excel, deux générations de formulaire). Demande : auditer,
+établir un plan de reprise, créer les legs, rendre l'historique **non
+modifiable et filtrable « TOWT »**, proposer une évolution de la culture data —
+en mode multi-agents / multi-modèles.
+
+### Analyse — faits mesurés
+
+- Trois agents d'exploration (legs/planning ; tracking ; MRV-noon + conventions
+  doc) puis une revue critique sur un modèle distinct. Détail dans
+  `docs/audit/2026-09-02-reprise-historique-towt.md`.
+- Le classeur ne contient que des **dates réelles au jour** ; 28 anomalies
+  (une faute de frappe bloquante `2NZF5` ATA 2016, ruptures de continuité =
+  arrêts techniques non tracés, ETO/ETC incohérentes, ports absents).
+- Le code TOWT (`1YMB4`) suit deux conventions successives avec des caractères
+  de port **en collision** : non reconstructible, à conserver tel quel — c'est la
+  clé des noon reports et du PBIX.
+- Rien dans `legs` ne marque une origine ; insérer un leg 2026 d'archive aurait
+  **renuméroté** `1AFRBR6` → `1BFRBR6`. `vessel_positions` était **purgeable**
+  et `/tracking` sérialisait toute l'année (≈ 105 000 points/navire/an à 5 min).
+- Un pipeline local « Extraction Noon Reports » existe déjà hors dépôt (2026
+  seulement, en erreur depuis 07/2026).
+
+### Décisions et implémentation (ADR-014, statut proposé)
+
+1. `legs.origin` (`newtowt` | `towt_archive`, migration 0138, index) +
+   `Leg.is_archive` ; garde unique `assert_leg_mutable` (`LegArchivedError`)
+   dans `update_leg`, `delete_leg`, `declare_departure/arrival`, et
+   `_escale_locked` ; `renumber_vessel_year` exclut les archives ;
+   `list_legs_in_window(origin=…)` ; `/planning?origin=towt|newtowt`, badges
+   « TOWT », bandeau lecture seule et boutons masqués sur la fiche.
+2. `scripts/data/towt_legs_history.csv` (36 lignes, `notes` + `source_ata_raw`)
+   et `scripts/import_towt_legs.py` : dry-run par défaut, idempotent,
+   `leg_code` = TRIP CODE, `etd=atd`, `eta=ata` (minuit UTC), `completed`,
+   `voyage_completed_at=ata`, ports manquants créés (`source=user`), ruptures
+   **signalées jamais corrigées**, collision NEWTOWT bloquante.
+3. `scripts/towt_gps_consolidate.py` (poste local, stdlib, manifeste SHA-256,
+   trous > 6 h) → `scripts/import_towt_positions.py` (insertion en lot,
+   préchargement des clés, `source='towt_archive'`, `import_batch`).
+   `admin_data.PURGE_PROTECTED_ROWS` protège ces lignes des deux modes de purge.
+   `voyage_track.downsample` (4 000 points) dans `/tracking` ; `leg_filter`
+   remonte jusqu'à la première ETD.
+4. `scripts/towt_noon_extract.py` : prototype local piloté par les libellés,
+   deux générations de formulaire, NDJSON + CSV de synthèse, **aucune écriture
+   en base** (cible = décision 6 de l'ADR, ouverte).
+
+### 🔴 Ce que la revue critique (second modèle) a trouvé — et ce que j'en ai fait
+
+Quatre gardes de service posées à la main ne couvraient pas ~40 sites
+`select(Leg)`. Constats retenus (26 au total) :
+
+- **Deux écrivains passaient outre** : `scenario.apply_to_active_planning`
+  réécrivait un leg d'archive cloné ; le décalage d'ETA du bord aussi. →
+  garde ORM `before_flush` sur `Leg` (tout UPDATE/DELETE d'archive refusé,
+  échappement `session.info` pour les scripts) **et** trigger PostgreSQL dans
+  la migration 0138. L'immutabilité n'est plus une convention.
+- **Le taux de ponctualité publié montait à 100 %** par construction (prévu =
+  réel), le compteur public de traversées gagnait 36, le contrôle qualité MRV
+  nocturne aurait alerté chaque nuit sur 36 voyages « actifs » sans
+  événements, l'audit `/planning` aurait affiché en permanence les ruptures
+  connues de l'archive, et le filtre transverse aurait exposé l'archive à dix
+  modules — dont `/kpi` qui **écrit** des `LegKPI`. → exclusion systématique
+  (décision 7 de l'ADR), `build_leg_filter(include_archive=False)` par défaut.
+- **La séquence vivante** (chevauchement, continuité, cascade, voisins,
+  `repair_vessel_sequence`) voyait l'archive : le premier leg NEWTOWT devenait
+  inéditable après une rupture d'archive. → exclusion dans toutes ces requêtes.
+- **Volume** : `/performance/navigation` hydratait ~6 000 instances ORM par leg
+  d'archive. → lecture en lignes allégées (`light=True`) + décimation de la
+  carte ; l'échantillonnage SQL des KPI annuels reste en lot 2.
+- Scripts : classeurs `read_only` non fermés, fuseau illisible devenu UTC en
+  silence, fichiers au nom inattendu ignorés sans compteur, INSERT sans
+  `ON CONFLICT` face au cron live, doublons comptés comme invalides — corrigés.
+
+### Risques
+
+- 🔴 Renumérotation des codes 2026 — couvert par test.
+- 🔴 Purge de l'archive GPS — couvert par test (rétention et vidage).
+- 🔴 Écrivains non gardés / séquence et indicateurs pollués — couverts par
+  tests (garde ORM, séquence, indicateurs publiés, filtre, scénario, MRV).
+- 🟠 `/tracking` à 5 min — décimation d'affichage ; distances calculées sur la
+  trace complète côté Navigation.
+- 🟡 KPI annuels 2024-2025 sans cargo/OPEX/MRV ; ports approximatifs ; GPS
+  absent avant le 2024-10-21 (à confirmer par Julien) ; sentinelle des sites
+  `select(Leg)` à écrire (lot 2).
+
+### Tests
+
+27 nouveaux tests (gardes de service, garde ORM ×3, renumérotation, filtre
+d'origine, escale, fenêtre d'années, séquence vivante, indicateurs publiés,
+filtre transverse, scénario, contrôle MRV, script legs sur le CSV réel + rejeu
++ collision, script positions + purge, consolidation GPS, parseur noon ×2
+générations, décimation). Suite complète rejouée (unit + integration +
+regression).
+
+### Ce qui n'est pas vérifié
+
+- Exécution des scripts locaux sur les vrais dossiers SharePoint (poste Julien).
+- Volume réel des positions et rendu de `/tracking` sur une année complète.
+- Comportement d'`import_towt_positions` sur PostgreSQL (les tests tournent sur
+  SQLite ; l'insertion en lot et le préchargement des clés sont standards).
+
+### Reste à faire
+
+Arbitrage ADR-014 (dont la cible des noon reports) ; exécution staging
+(legs → GPS) ; lot 2 archive noon reports ; confirmation de la source GPS
+08-10/2024 ; revue des 5 ports créés dans Admin → Ports.
+

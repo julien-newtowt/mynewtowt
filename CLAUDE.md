@@ -275,6 +275,16 @@ Doc de référence : `docs/design/05-sequence-planification.md`.
   bascule `Port.source` en `manual`, sinon le prochain import du référentiel
   effacerait la correction), et reprise à froid :
   `scripts/backfill_leg_distances.py`.
+- **Archives TOWT (ADR-014)** : un leg `origin = 'towt_archive'` est un voyage
+  de l'ancienne compagnie repris des archives — **lecture seule**
+  (`services.planning.assert_leg_mutable`, appelée par `update_leg`,
+  `delete_leg`, `declare_departure/arrival`, escale), **exclu de la
+  renumérotation** et son `leg_code` est le TRIP CODE TOWT d'origine (`1YMB4`),
+  clé des noon reports et de l'ancien PBIX — ne jamais le « normaliser ».
+  `etd = atd`, `eta = ata` (aucun prévisionnel n'existe). Positions GPS
+  d'archive : `vessel_positions.source = 'towt_archive'`, protégées de la purge
+  (`admin_data.PURGE_PROTECTED_ROWS`), importées **après** les legs
+  (rattachement temporel). Filtre `/planning?origin=towt|newtowt`.
 - **Suppression d'un leg** : inventaire explicite des dépendances
   (`planning._leg_blocking_models` / `_leg_unlinked_models`). Les registres
   d'argent (caisse, ventes, contrôles) **bloquent** — ils n'ont ni UPDATE ni

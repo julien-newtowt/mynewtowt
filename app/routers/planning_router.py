@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.port import Port
 from app.models.vessel import Vessel
 from app.permissions import require_permission
@@ -63,10 +63,16 @@ async def gantt_index(
     request: Request,
     vessel_id: int | None = None,
     year: int | None = None,
+    origin: str | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("planning", "C")),
 ) -> HTMLResponse:
     now = datetime.now(UTC)
+    # Filtre d'origine (ADR-014) : ``towt`` = archives de l'ancienne compagnie
+    # seules, ``newtowt`` = legs vécus dans l'ERP, sinon tout. Valeur inconnue
+    # → tout (jamais une 400 sur un filtre d'affichage).
+    origin_filter = {"towt": LEG_ORIGIN_TOWT, "newtowt": "newtowt"}.get(origin or "")
+    selected_origin = origin if origin_filter else "all"
     # Vue ANNÉE ENTIÈRE (req #5) — sélecteur d'année + filtre navire en tête.
     selected_year = year or now.year
     window_start = datetime(selected_year, 1, 1, tzinfo=UTC)
@@ -78,7 +84,9 @@ async def gantt_index(
         date_from=window_start,
         date_to=window_end,
         vessel_id=vessel_id,
+        origin=origin_filter,
     )
+    archive_count = sum(1 for lg in legs if lg.is_archive)
 
     # Années disponibles (min/max ETD en base + année courante + sélectionnée).
     yr_row = (await db.execute(select(func.min(Leg.etd), func.max(Leg.etd)))).first()
@@ -98,7 +106,11 @@ async def gantt_index(
         else {}
     )
 
-    conflicts = detect_port_conflicts(legs)
+    # Audit, conflits de port, continuité et KPI de tenue du calendrier ne
+    # portent que sur les legs vécus dans l'ERP : l'archive TOWT (ADR-014) a des
+    # ruptures connues et un « prévu » égal au réel — elle fausserait tout.
+    live_legs = [lg for lg in legs if not lg.is_archive]
+    conflicts = detect_port_conflicts(live_legs)
     conflict_ids: set[int] = set()
     for a, b in conflicts:
         conflict_ids.add(a)
@@ -108,9 +120,9 @@ async def gantt_index(
     # intermédiaire ou changement de navire laissent un trou silencieux :
     # on l'affiche en bandeau plutôt que de le laisser invisible.
     vessels_by_id = {v.id: v for v in vessels}
-    continuity_alerts = continuity_warnings(legs, ports, vessels_by_id)
-    planning_issues = audit_planning_sequence(legs, ports=ports, vessels=vessels_by_id)
-    planning_kpis = schedule_kpis(legs, planning_issues)
+    continuity_alerts = continuity_warnings(live_legs, ports, vessels_by_id)
+    planning_issues = audit_planning_sequence(live_legs, ports=ports, vessels=vessels_by_id)
+    planning_kpis = schedule_kpis(live_legs, planning_issues)
 
     # Build Gantt rows (one per vessel) with positioned bars
     gantt_rows = _build_gantt_rows(
@@ -148,6 +160,8 @@ async def gantt_index(
             "gantt_rows": gantt_rows,
             "filter_vessel_id": vessel_id,
             "selected_year": selected_year,
+            "selected_origin": selected_origin,
+            "archive_count": archive_count,
             "years": years_sorted,
             "month_marks": month_marks,
             "today_pct": today_pct,

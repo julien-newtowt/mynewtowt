@@ -128,6 +128,42 @@ du point fraîchement reçu sans attendre le prochain tick de 30 min.
   restante, et les relevés météo historisés le long de la trace (clic = détail
   vent/courant/vague/température). Bouton « Snapshot » pour forcer un relevé.
 
+## 5 bis. Reprise de l'historique GPS TOWT (ADR-014)
+
+Les relevés satcom de l'ancienne compagnie (SharePoint « Service Technique /
+12 - Tracking », un CSV par navire et par heure depuis le 2024-10-21) se
+reprennent en deux étages, **après** les legs d'archive (le rattachement
+position ↔ voyage est temporel).
+
+1. Legs d'archive (serveur, dry-run par défaut) :
+   ```bash
+   python -m scripts.import_towt_legs          # rapport, aucune écriture
+   python -m scripts.import_towt_legs --yes    # applique
+   ```
+   Contrôle : `/planning?year=2025&origin=towt` — 36 voyages, badge « TOWT »,
+   fiche en lecture seule.
+2. Consolidation locale (poste où la bibliothèque est synchronisée, Python ≥ 3.10,
+   aucune dépendance) :
+   ```bash
+   python scripts/towt_gps_consolidate.py --source "C:\Users\<user>\TOWT\NewTOWT - Service Technique - Documents\12 - Tracking" --out .\gps_towt
+   ```
+   Produit `towt_gps_<navire>_<année>.csv` + `manifest.json` (fichiers lus,
+   points, premier/dernier horodatage, trous > 6 h, SHA-256). Vérifier que le
+   premier horodatage est bien 2024-10-21 et que le nombre de fichiers lus
+   correspond au dossier.
+3. Import serveur (copier le dossier consolidé sur le serveur) :
+   ```bash
+   python -m scripts.import_towt_positions --dir ./gps_towt          # dry-run
+   python -m scripts.import_towt_positions --dir ./gps_towt --yes
+   ```
+   Idempotent : relancer n'insère rien de nouveau. Les points portent
+   `source='towt_archive'` et `import_batch=<fichier consolidé>` ; ils sont
+   **exclus de toute purge** (`/admin/data`, rétention comprise).
+4. Contrôle : `/tracking?history=1&vessel=1&year=2025&leg_id=<id de 1HYF5>`
+   (trace complète), `/performance/navigation/kpis?year=2025` (distances
+   réelles, allongement). L'affichage est décimé à 4 000 points ; les calculs
+   utilisent la trace complète. Aucune météo n'existe pour l'archive.
+
 ## 6. Dépannage
 
 ### `POST /api/weather/refresh` → 503

@@ -125,12 +125,16 @@ async def tracking_index(
 
         from app.services.leg_filter import build_leg_filter
         from app.services.voyage_track import (
+            MAX_TRACK_POINTS_HISTORY,
+            downsample,
             positions_for_leg,
             positions_in_window,
             positions_payload,
         )
 
-        f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=leg_id)
+        f = await build_leg_filter(
+            db, vessel=vessel, year=year, leg_id=leg_id, include_archive=True
+        )
         selected_leg = f["selected_leg"]
         sel_vessel = next((v for v in vessels if v.code == f["selected_vessel"]), None)
 
@@ -140,12 +144,14 @@ async def tracking_index(
         positions: list[VesselPosition] = []
         if selected_leg is not None:
             # Un leg sélectionné prime : sa fenêtre départ→arrivée fait foi.
-            positions = await positions_for_leg(db, selected_leg)
+            positions = await positions_for_leg(db, selected_leg, light=True)
         elif sel_vessel is not None:
             # Sinon, cadrage par dates explicites, à défaut l'année courante.
             start = df or datetime(f["current_year"], 1, 1, tzinfo=UTC)
             end = dt_to or datetime(f["current_year"], 12, 31, 23, 59, 59, tzinfo=UTC)
-            positions = await positions_in_window(db, vessel_id=sel_vessel.id, start=start, end=end)
+            positions = await positions_in_window(
+                db, vessel_id=sel_vessel.id, start=start, end=end, light=True
+            )
 
         # Query-params propagés sur les liens du filtre (préserve le mode + dates)
         xq_pairs = [("history", "1")]
@@ -163,7 +169,11 @@ async def tracking_index(
 
         history_ctx = {
             "f": f,
-            "points": positions_payload(positions),
+            # Décimation d'affichage (archives TOWT au pas de 5 min) — le
+            # nombre brut reste exposé pour le dire à l'écran.
+            "points": positions_payload(downsample(positions, max_points=MAX_TRACK_POINTS_HISTORY)),
+            "points_total": len(positions),
+            "points_cap": MAX_TRACK_POINTS_HISTORY,
             "date_from": date_from or "",
             "date_to": date_to or "",
             "extra_query": extra_query,

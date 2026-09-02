@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.anemos_certificate import AnemosCertificate
 from app.models.booking import Booking
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 
 # Statuts où la marchandise a réellement été embarquée.
 _LOADED_STATUSES = ("loaded", "at_sea", "discharged", "delivered")
@@ -108,7 +108,15 @@ async def counters(db: AsyncSession) -> SocialCounters:
             ).scalar_one()
         )
         crossings = int(
-            (await db.execute(select(func.count(Leg.id)).where(Leg.ata.is_not(None)))).scalar_one()
+            (
+                await db.execute(
+                    select(func.count(Leg.id))
+                    .where(Leg.ata.is_not(None))
+                    # Traversées NEWTOWT uniquement : l'archive TOWT (ADR-014) ne
+                    # gonfle pas un compteur publié par la nouvelle compagnie.
+                    .where(Leg.origin != LEG_ORIGIN_TOWT)
+                )
+            ).scalar_one()
         )
     except Exception:  # pragma: no cover — best-effort, la vitrine ne casse pas
         pass

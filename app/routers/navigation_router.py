@@ -40,8 +40,10 @@ from app.services import weather_history
 from app.services.activity import record as activity_record
 from app.services.leg_filter import build_leg_filter
 from app.services.voyage_track import (
+    MAX_TRACK_POINTS_HISTORY,
     annual_navigation_kpis,
     compute_metrics,
+    downsample,
     positions_for_leg,
     positions_payload,
 )
@@ -147,7 +149,7 @@ async def navigation_index(
             selected_ids.append(lid)
 
     # Filtre de référence pour la navigation navire × année (chips multi-toggle).
-    f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=None)
+    f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=None, include_archive=True)
 
     # ── Legs sélectionnés : trace + métriques + météo, une couleur par leg ──
     legs_data: list[dict] = []
@@ -156,14 +158,15 @@ async def navigation_index(
         leg = await db.get(Leg, lid)
         if leg is None:
             continue
-        positions = await positions_for_leg(db, leg)
+        positions = await positions_for_leg(db, leg, light=True)
         dep = await db.get(Port, leg.departure_port_id)
         arr = await db.get(Port, leg.arrival_port_id)
         metrics = compute_metrics(positions, leg, dep_port=dep, arr_port=arr)
         observations = await weather_history.observations_for_leg(db, leg)
         v_obj = await db.get(Vessel, leg.vessel_id)
         color = _LEG_PALETTE[idx % len(_LEG_PALETTE)]
-        pts = positions_payload(positions)
+        # Métriques sur la trace complète, carte décimée (archives à 5 min).
+        pts = positions_payload(downsample(positions, max_points=MAX_TRACK_POINTS_HISTORY))
         wx_pts = _weather_payload(observations)
         legs_data.append(
             {
