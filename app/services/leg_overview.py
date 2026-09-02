@@ -25,12 +25,14 @@ OPERATION_TYPE_LABELS: dict[str, str] = {
     "commercial": "Commercial",
 }
 
-# Étapes du flux opérationnel d'escale (ordre chronologique).
+# Étapes du flux opérationnel (ordre chronologique = séquence du leg PLN-SEQ :
+# le départ du POL ouvre le voyage, l'arrivée au POD le ferme, les opérations
+# d'escale au POD suivent, le verrou clôture).
 _PORT_CALL_STEPS = (
     ("planifie", "Planifié"),
-    ("arrivee", "Arrivée (ATA)"),
+    ("appareillage", "Départ POL (ATD)"),
+    ("arrivee", "Arrivée POD (ATA)"),
     ("operations", "Opérations"),
-    ("appareillage", "Appareillage (ATD)"),
     ("cloture", "Clôturé"),
 )
 
@@ -39,14 +41,15 @@ def port_call_steps(leg, operations) -> list[dict]:
     """Timeline du flux opérationnel : 5 étapes, chacune ``done`` / ``current`` /
     ``pending``. La première étape non terminée (dans l'ordre) est ``current``.
 
-    Dérivée de : leg planifié (toujours fait) → ATA posée → toutes les opérations
-    terminées (``actual_end``) → ATD posée → escale verrouillée."""
+    Dérivée de la séquence déclarée : leg planifié (toujours fait) → départ
+    déclaré (ATD, POL) → arrivée déclarée (ATA, POD) → toutes les opérations
+    terminées (``actual_end``) → escale verrouillée."""
     ops = list(operations or [])
     done_flags = {
         "planifie": True,
+        "appareillage": leg.atd is not None,
         "arrivee": leg.ata is not None,
         "operations": bool(ops) and all(o.actual_end is not None for o in ops),
-        "appareillage": leg.atd is not None,
         "cloture": getattr(leg, "escale_locked_at", None) is not None,
     }
     out: list[dict] = []

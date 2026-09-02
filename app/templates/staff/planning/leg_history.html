@@ -23,6 +23,7 @@
         <th>Origine</th>
         <th>ETD</th>
         <th>ETA</th>
+        <th>Réel (ATD / ATA)</th>
         <th>Motif</th>
         <th>Par</th>
         <th>Lot</th>
@@ -41,6 +42,8 @@
           {% elif r.source == 'gantt_move' %}<span class="pill pill-info">Drag-drop Gantt</span>
           {% elif r.source == 'eta_shift' %}<span class="pill pill-warn">ETA-shift bord</span>
           {% elif r.source == 'cascade' %}<span class="pill pill-neutral">Cascade</span>
+          {% elif r.source == 'departure_declared' %}<span class="pill pill-ok">🚢 Départ déclaré</span>
+          {% elif r.source == 'arrival_declared' %}<span class="pill pill-ok">⚓ Arrivée déclarée</span>
           {% else %}<span class="pill pill-neutral">{{ r.source }}</span>{% endif %}
         </td>
         <td class="mono text-sm">
@@ -52,6 +55,13 @@
           {% if r.old_eta and r.new_eta and r.old_eta != r.new_eta %}
             {{ r.old_eta|datetime }} → <strong>{{ r.new_eta|datetime }}</strong>
           {% elif r.new_eta %}{{ r.new_eta|datetime }}{% else %}—{% endif %}
+        </td>
+        <td class="mono text-sm">
+          {% if r.new_atd %}
+            {% if r.old_atd %}{{ r.old_atd|datetime }} → {% endif %}<strong>ATD {{ r.new_atd|datetime }}</strong>
+          {% elif r.new_ata %}
+            {% if r.old_ata %}{{ r.old_ata|datetime }} → {% endif %}<strong>ATA {{ r.new_ata|datetime }}</strong>
+          {% else %}—{% endif %}
         </td>
         <td class="text-sm">{{ r.reason or '—' }}{% if r.detail %} <span class="text-muted">· {{ r.detail }}</span>{% endif %}</td>
         <td class="text-sm">{{ r.user_name or 'système' }}</td>

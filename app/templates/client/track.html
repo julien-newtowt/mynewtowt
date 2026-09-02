@@ -54,8 +54,15 @@
         <td>{{ pol.name }} <span class="mono text-muted">({{ pol.locode }})</span></td></tr>{% endif %}
       {% if pod %}<tr><th>{% if lang == 'en' %}To{% else %}Arrivée{% endif %}</th>
         <td>{{ pod.name }} <span class="mono text-muted">({{ pod.locode }})</span></td></tr>{% endif %}
-      {% if leg %}<tr><th>ETD</th><td class="mono">{{ leg.atd|datetime if leg.atd else leg.etd|datetime }}</td></tr>
-      <tr><th>ETA</th><td class="mono">{{ leg.ata|datetime if leg.ata else leg.eta|datetime }}</td></tr>{% endif %}
+      {# Ces deux cellules affichent le RÉEL (ATD/ATA) dès qu'il est posé, le
+         prévisionnel sinon : les libellés ne peuvent donc pas dire « ETD » /
+         « ETA », qui annoncent une estimation. « Date de départ » / « Date
+         d'arrivée » couvrent les deux cas — et ne se confondent pas avec les
+         lignes « Départ » / « Arrivée » ci-dessus, qui portent les ports. #}
+      {% if leg %}<tr><th>{% if lang == 'en' %}Departure{% else %}Date de départ{% endif %}</th>
+        <td class="mono">{{ leg.atd|datetime if leg.atd else leg.etd|datetime }}</td></tr>
+      <tr><th>{% if lang == 'en' %}Arrival{% else %}Date d'arrivée{% endif %}</th>
+        <td class="mono">{{ leg.ata|datetime if leg.ata else leg.eta|datetime }}</td></tr>{% endif %}
     </table>
     {% if position %}
       <p class="text-muted text-sm mt-3">
