@@ -199,30 +199,41 @@ async def port_conflicts(
 
 
 async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
-    """Pré-calcule pour chaque navire la suggestion ETD/POL du prochain leg.
+    """Séquence courante de chaque navire → pré-remplissage du prochain leg.
 
-    Règle : ETD suggéré = (ATA si déjà arrivé, sinon ETA) du dernier leg
-    de ce navire + ``port_stay_planned_hours`` du dernier leg (default 48h
-    si non renseigné). POL suggéré = POD du dernier leg (continuité
-    géographique). Si le navire n'a aucun leg, pas de suggestion.
+    Pour chaque navire : dernier leg (par ETD), sa phase, ses ports, et la
+    suggestion du leg suivant — ETD = (ATA si déjà arrivé, sinon ETA) du
+    dernier leg + escale planifiée (défaut 48 h), décalé au prochain jour
+    ouvré du port ; POL = POD du dernier leg (continuité) ; rang (lettre)
+    prévisionnel du futur ``leg_code``. Un navire sans leg est présent avec
+    ``no_legs=True`` (le formulaire l'affiche, sans suggestion).
 
-    Le dict est sérialisé en data-attribute du form et appliqué côté JS
-    quand l'utilisateur sélectionne un navire (cf. leg-form-suggest.js).
+    Sérialisé en ``data-suggestions`` sur le formulaire (leg-form-suggest.js
+    et leg-cascade.js) et lu par le template pour les boutons navire.
 
-    Format des dates : ``%Y-%m-%d`` (jour seul). Le formulaire de
+    Format des dates : ``%Y-%m-%d`` (jour seul) — le formulaire de
     planification travaille à l'échelle de la **journée** (``<input
-    type="date">``) : une valeur ``%Y-%m-%dT%H:%M`` serait rejetée
-    silencieusement par le navigateur et la suggestion ne s'appliquerait
-    pas. Le calcul, lui, reste horaire (escale en heures).
+    type="date">``). L'escale est exposée en **jours** (arrondi supérieur de
+    la valeur stockée en heures).
     """
-    from sqlalchemy import desc
+    from math import ceil
+
+    from sqlalchemy import desc, func
+
+    from app.services.planning import rank_letter
 
     suggestions: dict[int, dict] = {}
-    vessels_q = await db.execute(select(Vessel))
+    vessels_q = await db.execute(select(Vessel).order_by(Vessel.code))
     for v in vessels_q.scalars().all():
+        entry: dict = {"vessel_code": v.code, "vessel_name": v.name, "no_legs": True}
+        suggestions[v.id] = entry
         last = (
             await db.execute(
-                select(Leg).where(Leg.vessel_id == v.id).order_by(desc(Leg.etd)).limit(1)
+                select(Leg)
+                .where(Leg.vessel_id == v.id)
+                .where(Leg.status != "cancelled")
+                .order_by(desc(Leg.etd))
+                .limit(1)
             )
         ).scalar_one_or_none()
         if last is None:
@@ -235,15 +246,55 @@ async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
         # l'escale glisse vers le(s) jour(s) ouvré(s) suivant(s).
         closed = await closed_weekdays_for_port(db, last.arrival_port_id)
         suggested = next_working_departure(base, stay, closed)
-        suggestions[v.id] = {
-            "etd": suggested.strftime("%Y-%m-%d"),
-            "pol_id": last.arrival_port_id,
-            "port_stay_hours": stay,
-            "from_leg_code": last.leg_code,
-            "from_eta": (last.eta.strftime("%Y-%m-%d") if last.eta else None),
-            "from_ata": (last.ata.strftime("%Y-%m-%d") if last.ata else None),
-        }
+        pol = await db.get(Port, last.departure_port_id)
+        pod = await db.get(Port, last.arrival_port_id)
+        # Rang prévisionnel : position chronologique du futur leg dans l'année
+        # de l'ETD suggéré (les legs existants de cette année + 1).
+        year_start = datetime(suggested.year, 1, 1, tzinfo=UTC)
+        year_end = datetime(suggested.year + 1, 1, 1, tzinfo=UTC)
+        n_year = await db.scalar(
+            select(func.count())
+            .select_from(Leg)
+            .where(Leg.vessel_id == v.id)
+            .where(Leg.status != "cancelled")
+            .where(Leg.etd >= year_start)
+            .where(Leg.etd < year_end)
+        )
+        try:
+            next_rank = rank_letter(int(n_year or 0) + 1)
+        except PlanningError:
+            next_rank = "?"
+        entry.update(
+            {
+                "no_legs": False,
+                "etd": suggested.strftime("%Y-%m-%d"),
+                "pol_id": last.arrival_port_id,
+                "port_stay_hours": stay,
+                "port_stay_days": max(1, ceil(stay / 24)),
+                "from_leg_code": last.leg_code,
+                "from_phase": last.phase,
+                "from_pol_locode": pol.locode if pol else None,
+                "from_pod_locode": pod.locode if pod else None,
+                "from_pod_name": pod.name if pod else None,
+                "from_eta": (last.eta.strftime("%Y-%m-%d") if last.eta else None),
+                "from_ata": (last.ata.strftime("%Y-%m-%d") if last.ata else None),
+                "next_rank_letter": next_rank,
+                "year_digit": str(suggested.year)[-1],
+            }
+        )
     return suggestions
+
+
+def _stay_hours_from_form(form) -> int | None:
+    """Escale saisie en JOURS (``port_stay_planned_days``) → heures stockées.
+
+    Le champ historique ``port_stay_planned_hours`` reste accepté (API,
+    anciens formulaires) ; la saisie en jours prime quand elle est fournie.
+    """
+    days = _maybe_int(form.get("port_stay_planned_days"))
+    if days is not None:
+        return max(0, days) * 24
+    return _maybe_int(form.get("port_stay_planned_hours"))
 
 
 @router.get(
@@ -316,7 +367,7 @@ async def create_leg_action(
             booking_close_at=_parse_dt(form.get("booking_close_at"), allow_empty=True),
             transit_speed_kn=_maybe_float(form.get("transit_speed_kn")),
             elongation_coef=_maybe_float(form.get("elongation_coef")),
-            port_stay_planned_hours=_maybe_int(form.get("port_stay_planned_hours")),
+            port_stay_planned_hours=_stay_hours_from_form(form),
         )
     except (InvalidLegDates, PlanningError, KeyError, ValueError) as e:
         # get_db committe même sur un 400 re-rendu : on annule toute mutation
@@ -342,6 +393,8 @@ async def create_leg_action(
                 "ports": ports,
                 "error": f"Création impossible : {e}",
                 "form": dict(form),
+                "suggestions": await _new_leg_suggestions(db),
+                "preselected_vessel_id": _maybe_int(form.get("vessel_id")),
             },
             status_code=400,
         )
@@ -414,6 +467,7 @@ async def edit_leg_form(
             "vessels": vessels,
             "ports": ports,
             "error": None,
+            "suggestions": await _new_leg_suggestions(db),
         },
     )
 
@@ -497,7 +551,7 @@ async def update_leg_action(
             booking_close_at=_parse_dt(form.get("booking_close_at"), allow_empty=True),
             transit_speed_kn=_maybe_float(form.get("transit_speed_kn")),
             elongation_coef=_maybe_float(form.get("elongation_coef")),
-            port_stay_planned_hours=_maybe_int(form.get("port_stay_planned_hours")),
+            port_stay_planned_hours=_stay_hours_from_form(form),
             cascade=cascade,
             source="planning_edit",
             actor_id=user.id,
@@ -624,8 +678,7 @@ async def move_leg_action(
         entity_id=leg.id,
         entity_label=leg.leg_code,
         detail=(
-            f"gantt_move delta={report.delta_hours:.1f}h "
-            f"impacted={len(report.impacted_leg_ids)}"
+            f"gantt_move delta={report.delta_hours:.1f}h impacted={len(report.impacted_leg_ids)}"
             if report
             else "gantt_move"
         ),
