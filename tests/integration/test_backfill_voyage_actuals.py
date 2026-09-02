@@ -97,6 +97,9 @@ async def test_backfill_replays_sequence_and_skips_future(db, tmp_path, monkeypa
     leg1, leg2, leg3 = legs
     assert leg1.atd is not None and leg1.ata is not None
     assert leg1.phase == "termine"  # terminé par le départ de 1BBRFR6
+    # Arrivée réelle connue : l'ETA prévisionnelle n'est pas re-ancrée sur l'ATD.
+    assert leg1.eta.replace(tzinfo=None) == (BASE + timedelta(days=30)).replace(tzinfo=None)
+    assert leg2.eta.replace(tzinfo=None) == (BASE + timedelta(days=66)).replace(tzinfo=None)
     assert leg2.phase == "a_quai"  # arrivé, le suivant n'a pas encore appareillé
     assert leg3.atd is None and leg3.phase == "planifie"  # date future ignorée
 
@@ -136,3 +139,33 @@ def test_load_rows_rejects_incoherent_sequence(tmp_path):
     bad.write_text("leg_code,atd,ata\n1AFRBR6,2026-07-20,2026-07-19\n", encoding="utf-8")
     with pytest.raises(SystemExit):
         load_rows(bad)
+
+
+@pytest.mark.asyncio
+async def test_backfill_repairs_legacy_sequence_even_outside_csv(db, tmp_path, monkeypatch):
+    """Un leg hors CSV dont l'ATD a été posé par l'ancien flux termine quand même
+    le leg arrivé qui le précède (passe de cohérence)."""
+    from scripts import backfill_voyage_actuals as script
+
+    legs = await _setup(db)
+    leg1, leg2, _ = legs
+    leg1.atd, leg1.ata = BASE, BASE + timedelta(days=33)
+    leg2.atd = BASE + timedelta(days=36)  # ancien flux : posé sans passer par declare_departure
+    for lg in (leg1, leg2):
+        lg.status = "in_progress"
+    await db.flush()
+
+    csv_path = tmp_path / "vide.csv"
+    csv_path.write_text("leg_code,atd,ata\n", encoding="utf-8")
+
+    @asynccontextmanager
+    async def _session():
+        yield db
+
+    monkeypatch.setattr(script, "SessionLocal", _session)
+    monkeypatch.setattr(db, "commit", _noop, raising=False)
+    monkeypatch.setattr(db, "rollback", _noop, raising=False)
+
+    rc = await script.run(csv_path, apply=True, today=datetime(2026, 9, 1, tzinfo=UTC))
+    assert rc == 0
+    assert leg1.phase == "termine" and leg2.phase == "en_mer"

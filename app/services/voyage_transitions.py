@@ -177,12 +177,18 @@ async def declare_departure(
     actor_name: str | None = None,
     create_sof: bool = True,
     quiet: bool = False,
+    reanchor_eta: bool = True,
 ) -> dict:
     """Déclare le départ du port de chargement (POL) — ouvre la navigation.
 
     Séquence inter-legs : le leg précédent du navire doit être arrivé (ATA) ;
     il est terminé opérationnellement par ce départ (``voyage_completed_at``).
     ``quiet`` coupe les notifications (reprise d'historique en masse).
+    ``reanchor_eta=False`` conserve l'ETA prévisionnelle telle quelle (pas de
+    re-ancrage sur l'ATD ni de cascade) : c'est le bon réglage pour une
+    reprise d'historique dont l'arrivée réelle est déjà connue — re-ancrer une
+    prévision aussitôt supplantée par l'ATA fausserait le « prévu » affiché
+    (ex. leg planifié au 1er août, parti le 6 juin : ETA tirée de 56 j).
 
     Renvoie un dict de synthèse : ``first`` (première déclaration), ``changed``
     (ATD posé ou corrigé), ``sof_created``, ``eta_shift_hours`` (re-ancrage
@@ -256,7 +262,7 @@ async def declare_departure(
         batch_id = uuid.uuid4().hex[:12]
         old_eta = ensure_utc(leg.eta)
         new_eta = old_eta
-        if ata is None:
+        if ata is None and reanchor_eta:
             # Re-ancrage de l'ETA sur le départ réel : la durée de transit
             # prévue est conservée (ancre = ATD précédent s'il s'agit d'une
             # correction, ETD prévisionnel sinon). L'ETD n'est jamais réécrit :
@@ -452,3 +458,46 @@ async def declare_arrival(
 
     await db.flush()
     return summary
+
+
+async def repair_vessel_sequence(
+    db: AsyncSession, *, vessel_id: int | None = None
+) -> list[tuple[Leg, Leg]]:
+    """Passe de cohérence « un seul leg actif par navire » sur la donnée existante.
+
+    La règle vit dans ``declare_departure`` (le départ du leg N+1 termine le
+    leg N) — mais un ATD posé par un autre chemin (ancien flux escale, import,
+    SQL) l'a contournée : deux legs du même navire peuvent alors rester « à
+    quai » côte à côte. Cette passe rejoue la règle a posteriori : tout leg
+    arrivé (ATA) dont un leg ultérieur du même navire a appareillé (ATD) est
+    terminé opérationnellement (``voyage_completed_at`` = cet ATD, statut
+    recalculé). Idempotente, jamais de réécriture d'une fin déjà posée.
+
+    Renvoie les couples ``(leg terminé, leg suivant qui l'a terminé)``.
+    """
+    stmt = (
+        select(Leg)
+        .where(Leg.status != "cancelled")
+        .order_by(Leg.vessel_id.asc(), Leg.etd.asc(), Leg.id.asc())
+    )
+    if vessel_id is not None:
+        stmt = stmt.where(Leg.vessel_id == vessel_id)
+    legs = list((await db.execute(stmt)).scalars().all())
+    by_vessel: dict[int, list[Leg]] = {}
+    for lg in legs:
+        by_vessel.setdefault(lg.vessel_id, []).append(lg)
+
+    repaired: list[tuple[Leg, Leg]] = []
+    for lane in by_vessel.values():
+        for idx, lg in enumerate(lane):
+            if lg.ata is None or lg.voyage_completed_at is not None:
+                continue
+            successor = next((n for n in lane[idx + 1 :] if n.atd is not None), None)
+            if successor is None:
+                continue
+            lg.voyage_completed_at = ensure_utc(successor.atd)
+            refresh_leg_status(lg)
+            repaired.append((lg, successor))
+    if repaired:
+        await db.flush()
+    return repaired

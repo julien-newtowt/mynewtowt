@@ -267,12 +267,20 @@ async def add_sof_event(
         actor_name = user.full_name or user.username
         if event_type in DEPARTURE_SOF_TYPES:
             await voyage_transitions.declare_departure(
-                db, leg, at=e.occurred_at, actor_id=user.id, actor_name=actor_name,
+                db,
+                leg,
+                at=e.occurred_at,
+                actor_id=user.id,
+                actor_name=actor_name,
                 create_sof=False,
             )
         elif event_type in ARRIVAL_SOF_TYPES:
             await voyage_transitions.declare_arrival(
-                db, leg, at=e.occurred_at, actor_id=user.id, actor_name=actor_name,
+                db,
+                leg,
+                at=e.occurred_at,
+                actor_id=user.id,
+                actor_name=actor_name,
                 create_sof=False,
             )
     except voyage_transitions.VoyageSequenceError as seq_err:
@@ -1080,18 +1088,24 @@ async def sign_sof_event(
             try:
                 if e.event_type in DEPARTURE_SOF_TYPES:
                     await voyage_transitions.declare_departure(
-                        db, leg, at=e.occurred_at, actor_id=user.id,
-                        actor_name=actor_name, create_sof=False,
+                        db,
+                        leg,
+                        at=e.occurred_at,
+                        actor_id=user.id,
+                        actor_name=actor_name,
+                        create_sof=False,
                     )
                 elif e.event_type in ARRIVAL_SOF_TYPES:
                     await voyage_transitions.declare_arrival(
-                        db, leg, at=e.occurred_at, actor_id=user.id,
-                        actor_name=actor_name, create_sof=False,
+                        db,
+                        leg,
+                        at=e.occurred_at,
+                        actor_id=user.id,
+                        actor_name=actor_name,
+                        create_sof=False,
                     )
             except voyage_transitions.VoyageSequenceError as seq_err:
-                logger.warning(
-                    "SOF signé hors séquence (leg %s) : %s", e.leg_id, seq_err
-                )
+                logger.warning("SOF signé hors séquence (leg %s) : %s", e.leg_id, seq_err)
             # ONB-04 — journal de bord : trace la signature SOF (best-effort).
             with contextlib.suppress(Exception):
                 await post_onboard_system_message(

@@ -73,6 +73,13 @@ flowchart TD
     style G fill:#B47148,color:#fff
 ```
 
+**Espacement par l'escale** : la résolution des chevauchements recale un leg
+au plus tôt à la **disponibilité** du précédent = ETA + escale planifiée
+(`port_stay_planned_hours`, défaut 24 h) — jamais à son ETA brute (constat prod
+du 2026-09-02 : quatre legs d'Artemis enchaînés le même jour). Même règle dans le
+moteur scénario. Pour remettre d'aplomb une planification héritée :
+`python -m scripts.respace_downstream_legs` (dry-run par défaut, `--yes`).
+
 **Incident de reprogrammation** : si le recalcul aval devrait déplacer un leg
 déjà appareillé, rien n'est écrasé (règle d'or « on ne touche jamais un fait
 réalisé »), l'incident est tracé (`summary.skipped`) **et notifié** aux
@@ -122,7 +129,16 @@ La liste `/planning` affiche le réel dès qu'il existe (ATD/ATA, pastille
 appliquer) rejoue un CSV `leg_code,atd,ata` par le chemin unique — séquence
 vérifiée, SOF, recalculs, historique, complétion des legs précédents — en mode
 `quiet` (sans notifications). Les dates futures sont ignorées (elles restent du
-prévisionnel). Jeu de données 2026 : `scripts/data/voyage_actuals_2026.csv`.
+prévisionnel). Quand l'arrivée réelle est fournie, l'ETA prévisionnelle n'est
+**pas** re-ancrée sur l'ATD (`reanchor_eta=False`) : re-ancrer une prévision
+aussitôt supplantée par l'ATA fausserait le « prévu » affiché (leg planifié au
+1ᵉʳ août parti le 6 juin → ETA tirée de 56 j). Seul un leg aval déjà appareillé
+qui bloque le recalage est rapporté comme incident. Le script termine par une
+**passe de cohérence** (`voyage_transitions.repair_vessel_sequence`) sur toute la
+donnée : un leg arrivé dont un leg ultérieur du navire a appareillé (ATD posé par
+l'ancien flux, un import…) est terminé opérationnellement — deux legs « à quai »
+côte à côte ne peuvent pas subsister. Jeu de données 2026 :
+`scripts/data/voyage_actuals_2026.csv`.
 
 ## 6. Historisation
 

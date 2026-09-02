@@ -286,9 +286,7 @@ async def test_port_status_flow_atd_then_ata(db, staff_user):
     # Tous les mouvements de dates sont historisés (réel + ETA re-ancrée).
     revs = (
         await db.execute(
-            ScheduleRevision.__table__.select().where(
-                ScheduleRevision.__table__.c.leg_id == leg.id
-            )
+            ScheduleRevision.__table__.select().where(ScheduleRevision.__table__.c.leg_id == leg.id)
         )
     ).fetchall()
     sources = {r.source for r in revs}

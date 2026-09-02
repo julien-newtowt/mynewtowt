@@ -1,5 +1,9 @@
 """Reprise des dates RÉELLES de départ/arrivée (ATD/ATA) des legs — PLN-SEQ.
 
+Termine aussi par une passe de cohérence sur TOUTE la donnée : tout leg arrivé
+dont un leg ultérieur du même navire a appareillé est terminé opérationnellement
+(un seul leg actif par navire), même s'il n'est pas dans le CSV.
+
 Rejoue, pour chaque leg d'un fichier CSV (``leg_code,atd,ata`` — dates ISO
 jour ou jour+heure, UTC), les déclarations de départ et d'arrivée **par le
 chemin unique** ``services.voyage_transitions`` : la séquence est donc
@@ -43,6 +47,7 @@ from app.services.voyage_transitions import (
     VoyageSequenceError,
     declare_arrival,
     declare_departure,
+    repair_vessel_sequence,
 )
 
 DEFAULT_FILE = Path(__file__).parent / "data" / "voyage_actuals_2026.csv"
@@ -96,7 +101,17 @@ async def run(path: Path, *, apply: bool, today: datetime) -> int:
                 elif atd > today:
                     line.append(f"départ {atd:%Y-%m-%d} FUTUR → ignoré (reste prévisionnel)")
                 else:
-                    s = await declare_departure(db, leg, at=atd, actor_name=ACTOR, quiet=True)
+                    # Arrivée réelle connue → l'ETA prévisionnelle reste telle quelle
+                    # (re-ancrer une prévision aussitôt supplantée par l'ATA
+                    # fausserait le « prévu » affiché).
+                    s = await declare_departure(
+                        db,
+                        leg,
+                        at=atd,
+                        actor_name=ACTOR,
+                        quiet=True,
+                        reanchor_eta=(ata is None or ata > today),
+                    )
                     tag = "posé" if s["first"] else ("corrigé" if s["changed"] else "inchangé")
                     line.append(f"ATD {atd:%Y-%m-%d} {tag}")
                     if s["completed_leg_ids"]:
@@ -115,14 +130,33 @@ async def run(path: Path, *, apply: bool, today: datetime) -> int:
                         line.append(f"ATA {ata:%Y-%m-%d} {tag}")
                         if s2.get("next_leg_code"):
                             line.append(f"→ leg suivant {s2['next_leg_code']}")
-                    skipped = (s.get("cascade") or {}).get("skipped") or []
-                    if skipped:
-                        line.append(f"⚠ cascade partielle : {skipped}")
+                    # Seul un leg aval déjà appareillé qui bloque le recalage est un
+                    # incident ; les autres entrées de ``skipped`` sont informatives
+                    # (ex. packing lists sans date à décaler).
+                    blocked = [
+                        x
+                        for x in ((s.get("cascade") or {}).get("skipped") or [])
+                        if str(x).startswith("downstream_legs:")
+                    ]
+                    if blocked:
+                        line.append(f"⚠ recalage aval bloqué : {blocked}")
                 line.append(f"phase={leg.phase}")
             except VoyageSequenceError as e:
                 errors += 1
                 line.append(f"✖ SÉQUENCE : {e}")
             print(" · ".join(line))
+
+        # Cohérence « un seul leg actif par navire » sur TOUTE la donnée
+        # (CSV ou pas) : un leg arrivé dont le suivant a appareillé — par
+        # l'ancien flux escale, un import… — est terminé opérationnellement.
+        repaired = await repair_vessel_sequence(db)
+        for done, nxt in repaired:
+            print(
+                f"{done.leg_code:9} · cohérence : terminé (le suivant {nxt.leg_code} "
+                f"a appareillé le {ensure_utc(nxt.atd):%Y-%m-%d}) · phase={done.phase}"
+            )
+        if not repaired:
+            print("(cohérence : aucun leg arrivé laissé actif après un départ ultérieur)")
 
         if apply and errors == 0:
             await db.commit()

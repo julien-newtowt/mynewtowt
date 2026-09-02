@@ -662,6 +662,7 @@ def plan_downstream_shifts(
     *,
     delta: timedelta,
     source_eta: datetime,
+    default_stay_hours: int | None = None,
 ) -> dict[int, tuple[datetime, datetime]]:
     """Positions finales (etd, eta) des legs aval après cascade — pur, sans I/O.
 
@@ -669,9 +670,16 @@ def plan_downstream_shifts(
       1. **Décalage rigide** : les legs non appareillés (ATD null) sont
          translatés de ``delta`` — la planification relative est préservée.
       2. **Résolution des chevauchements** : parcours par ETD tentatif
-         croissant ; tout leg qui démarrerait avant la fin du précédent est
-         repoussé (durée conservée). Couvre l'allongement d'ETA sans
-         décalage d'ETD (``delta`` nul).
+         croissant ; tout leg qui démarrerait avant la **disponibilité** du
+         précédent — son ETA **plus son escale planifiée**
+         (``port_stay_planned_hours``, défaut ``DEFAULT_PORT_STAY_HOURS``) —
+         est repoussé (durée conservée). Couvre l'allongement d'ETA sans
+         décalage d'ETD (``delta`` nul). ``source_eta`` est déjà la
+         disponibilité du leg source (ETA + escale), fournie par l'appelant.
+
+    Un navire n'enchaîne jamais deux legs sans son temps d'escale : recaler un
+    leg à l'ETA brute du précédent produisait des enchaînements le même jour
+    (constat prod 2026-09-02, Artemis 2D→2G).
 
     RÈGLE D'OR : un leg déjà appareillé (ATD posé) ne bouge JAMAIS. Si la
     résolution exigerait de le déplacer, lève ``LegOverlap`` — l'opérateur
@@ -688,21 +696,25 @@ def plan_downstream_shifts(
         else:
             pos[lg.id] = (etd0, eta0)
 
-    prev_eta = ensure_utc(source_eta)
+    stay_default = default_stay_hours if default_stay_hours is not None else DEFAULT_PORT_STAY_HOURS
+    prev_ready = ensure_utc(source_eta)
     for lg in sorted(downstream, key=lambda x: pos[x.id][0]):
         petd, peta = pos[lg.id]
-        if petd < prev_eta:
+        if petd < prev_ready:
             if lg.atd is not None:
                 raise LegOverlap(
                     f"Recalcul impossible : le leg {lg.leg_code} a déjà "
                     f"appareillé (ATD posé) et se retrouverait chevauché. "
                     f"Ajustez la planification manuellement."
                 )
-            push = prev_eta - petd
+            push = prev_ready - petd
             petd, peta = petd + push, peta + push
             pos[lg.id] = (petd, peta)
-        if peta > prev_eta:
-            prev_eta = peta
+        # Disponibilité du navire après ce leg : ETA + escale planifiée à l'arrivée.
+        stay_h = getattr(lg, "port_stay_planned_hours", None) or stay_default
+        ready = peta + timedelta(hours=stay_h)
+        if ready > prev_ready:
+            prev_ready = ready
     return pos
 
 

@@ -239,8 +239,11 @@ Doc de référence : `docs/design/05-sequence-planification.md`.
   OPEX, notifications. Ne jamais écrire `leg.atd`/`leg.ata` ailleurs.
 - **Séquence dure** : pas d'arrivée sans départ déclaré, pas d'ATA < ATD, pas
   de chevauchement de legs (validations `validate_leg_schedule` + cascade).
-  Un leg déjà appareillé n'est **jamais** déplacé par un recalcul : la cascade
-  se bloque et l'incident est **notifié** (`cascade_blocked`).
+  La cascade recale un leg aval au plus tôt à **ETA + escale planifiée** du
+  précédent (jamais à l'ETA brute) ; recalage à froid :
+  `scripts/respace_downstream_legs.py`. Un leg déjà appareillé n'est
+  **jamais** déplacé par un recalcul : la cascade se bloque et l'incident est
+  **notifié** (`cascade_blocked`).
 - **Un seul leg actif par navire** : déclarer le départ du leg N+1 exige
   l'arrivée (ATA) du leg N et le **termine** (`voyage_completed_at`, migration
   0137 → `completed`/« terminé »), indépendamment de la clôture administrative.
