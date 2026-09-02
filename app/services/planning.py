@@ -257,6 +257,57 @@ async def compute_effective_distance_nm(
     return effective.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+async def recompute_leg_distances(
+    db: AsyncSession,
+    *,
+    port_id: int | None = None,
+    only_missing: bool = True,
+) -> list[tuple[int, str, Decimal | None, Decimal | None]]:
+    """Recalcule ``distance_nm`` sur les legs visés (orthodromie × élongation).
+
+    ``distance_nm`` est normalement posée au create/update d'un leg, mais elle
+    vaut ``None`` dès que l'un des deux ports n'avait pas de coordonnées à ce
+    moment-là — et elle ne se recalcule jamais d'elle-même ensuite. Résultat :
+    les colonnes THÉORIQUE / ÉCART / ALLONG. restent vides pour ces legs.
+
+    - ``port_id`` : ne traiter que les legs touchant ce port (appelé quand un
+      opérateur vient de renseigner ses coordonnées).
+    - ``only_missing=False`` : recalculer aussi les distances déjà posées
+      (utile après correction de coordonnées erronées).
+
+    Renvoie ``(leg_id, leg_code, ancienne, nouvelle)`` pour chaque leg modifié.
+    Ne touche **jamais** un leg dont la distance reste incalculable.
+    """
+    from sqlalchemy import or_
+
+    stmt = select(Leg)
+    if port_id is not None:
+        stmt = stmt.where(or_(Leg.departure_port_id == port_id, Leg.arrival_port_id == port_id))
+    if only_missing:
+        stmt = stmt.where(Leg.distance_nm.is_(None))
+    changed: list[tuple[int, str, Decimal | None, Decimal | None]] = []
+    for leg in (await db.execute(stmt.order_by(Leg.etd.asc()))).scalars().all():
+        _speed, elongation = await _resolved_navigation_params(
+            db,
+            vessel_id=leg.vessel_id,
+            transit_speed_kn=leg.transit_speed_kn,
+            elongation_coef=leg.elongation_coef,
+        )
+        new_distance = await compute_effective_distance_nm(
+            db,
+            departure_port_id=leg.departure_port_id,
+            arrival_port_id=leg.arrival_port_id,
+            elongation_coef=elongation,
+        )
+        if new_distance is None or new_distance == leg.distance_nm:
+            continue
+        old, leg.distance_nm = leg.distance_nm, new_distance
+        changed.append((leg.id, leg.leg_code, old, new_distance))
+    if changed:
+        await db.flush()
+    return changed
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------

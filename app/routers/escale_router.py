@@ -326,7 +326,7 @@ async def escale_index(
         port_call = port_call_steps(selected_leg, operations)
         lanes = operations_by_lane(operations)
         positions = await positions_for_leg(db, selected_leg)
-        nav_metrics = compute_metrics(positions, selected_leg, arr_port=pod)
+        nav_metrics = compute_metrics(positions, selected_leg, dep_port=pol, arr_port=pod)
 
     # ── Cockpit escale (reprise UX Phase 1) ──────────────────────────────
     # KPI d'escale, indicateur de retard, synthèses Documents & SOF et
