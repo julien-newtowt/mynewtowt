@@ -96,7 +96,17 @@ async def run(path: Path, *, apply: bool, today: datetime) -> int:
                 elif atd > today:
                     line.append(f"départ {atd:%Y-%m-%d} FUTUR → ignoré (reste prévisionnel)")
                 else:
-                    s = await declare_departure(db, leg, at=atd, actor_name=ACTOR, quiet=True)
+                    # Arrivée réelle connue → l'ETA prévisionnelle reste telle quelle
+                    # (re-ancrer une prévision aussitôt supplantée par l'ATA
+                    # fausserait le « prévu » affiché).
+                    s = await declare_departure(
+                        db,
+                        leg,
+                        at=atd,
+                        actor_name=ACTOR,
+                        quiet=True,
+                        reanchor_eta=(ata is None or ata > today),
+                    )
                     tag = "posé" if s["first"] else ("corrigé" if s["changed"] else "inchangé")
                     line.append(f"ATD {atd:%Y-%m-%d} {tag}")
                     if s["completed_leg_ids"]:
@@ -115,9 +125,16 @@ async def run(path: Path, *, apply: bool, today: datetime) -> int:
                         line.append(f"ATA {ata:%Y-%m-%d} {tag}")
                         if s2.get("next_leg_code"):
                             line.append(f"→ leg suivant {s2['next_leg_code']}")
-                    skipped = (s.get("cascade") or {}).get("skipped") or []
-                    if skipped:
-                        line.append(f"⚠ cascade partielle : {skipped}")
+                    # Seul un leg aval déjà appareillé qui bloque le recalage est un
+                    # incident ; les autres entrées de ``skipped`` sont informatives
+                    # (ex. packing lists sans date à décaler).
+                    blocked = [
+                        x
+                        for x in ((s.get("cascade") or {}).get("skipped") or [])
+                        if str(x).startswith("downstream_legs:")
+                    ]
+                    if blocked:
+                        line.append(f"⚠ recalage aval bloqué : {blocked}")
                 line.append(f"phase={leg.phase}")
             except VoyageSequenceError as e:
                 errors += 1

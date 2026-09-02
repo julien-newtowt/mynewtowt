@@ -950,8 +950,16 @@ async def update_port_status(
     except VoyageSequenceError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    if summary.get("cascade", {}).get("skipped"):
-        toast += " ⚠ Recalcul aval partiel — voir notifications."
+    # Seul un leg aval déjà appareillé qui bloque le recalage est un incident
+    # (notifié par la cascade) ; les autres entrées de ``skipped`` sont
+    # informatives (ex. packing lists sans date à décaler).
+    blocked = [
+        x
+        for x in (summary.get("cascade") or {}).get("skipped") or []
+        if str(x).startswith("downstream_legs:")
+    ]
+    if blocked:
+        toast += " ⚠ Recalage des legs suivants bloqué — voir notifications."
 
     await db.flush()
     await activity_record(

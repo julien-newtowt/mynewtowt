@@ -272,3 +272,23 @@ def test_planning_list_shows_actuals_and_phase():
     assert "leg.atd|date" in src and "leg.ata|date" in src  # réel affiché quand présent
     assert "leg.phase" in src  # statut = phase (en mer / à quai / terminé)
     assert "En mer" in src and "À quai" in src
+
+
+@pytest.mark.asyncio
+async def test_departure_can_keep_forecast_eta(db):
+    """Reprise d'historique : ``reanchor_eta=False`` pose l'ATD (historisé) sans
+    toucher l'ETA prévisionnelle ni les legs suivants."""
+    from app.models.schedule_revision import ScheduleRevision
+    from app.services.voyage_transitions import declare_departure
+
+    leg1, leg2 = await _setup_two_legs(db)
+    eta_before, etd2_before = leg1.eta, leg2.etd
+    at = BASE + timedelta(days=3)
+    summary = await declare_departure(db, leg1, at=at, reanchor_eta=False)
+    assert _naive(leg1.atd) == _naive(at) and leg1.phase == "en_mer"
+    assert leg1.eta == eta_before  # prévisionnel conservé
+    assert leg2.etd == etd2_before  # pas de cascade
+    assert summary["eta_shift_hours"] == 0.0
+    revs = (await db.execute(ScheduleRevision.__table__.select())).fetchall()
+    assert [r.source for r in revs] == ["departure_declared"]  # le mouvement réel est tracé
+    assert _naive(revs[0].new_atd) == _naive(at)

@@ -122,7 +122,12 @@ La liste `/planning` affiche le réel dès qu'il existe (ATD/ATA, pastille
 appliquer) rejoue un CSV `leg_code,atd,ata` par le chemin unique — séquence
 vérifiée, SOF, recalculs, historique, complétion des legs précédents — en mode
 `quiet` (sans notifications). Les dates futures sont ignorées (elles restent du
-prévisionnel). Jeu de données 2026 : `scripts/data/voyage_actuals_2026.csv`.
+prévisionnel). Quand l'arrivée réelle est fournie, l'ETA prévisionnelle n'est
+**pas** re-ancrée sur l'ATD (`reanchor_eta=False`) : re-ancrer une prévision
+aussitôt supplantée par l'ATA fausserait le « prévu » affiché (leg planifié au
+1ᵉʳ août parti le 6 juin → ETA tirée de 56 j). Seul un leg aval déjà appareillé
+qui bloque le recalage est rapporté comme incident. Jeu de données 2026 :
+`scripts/data/voyage_actuals_2026.csv`.
 
 ## 6. Historisation
 

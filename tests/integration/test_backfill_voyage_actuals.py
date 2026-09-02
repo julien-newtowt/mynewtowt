@@ -97,6 +97,9 @@ async def test_backfill_replays_sequence_and_skips_future(db, tmp_path, monkeypa
     leg1, leg2, leg3 = legs
     assert leg1.atd is not None and leg1.ata is not None
     assert leg1.phase == "termine"  # terminé par le départ de 1BBRFR6
+    # Arrivée réelle connue : l'ETA prévisionnelle n'est pas re-ancrée sur l'ATD.
+    assert leg1.eta.replace(tzinfo=None) == (BASE + timedelta(days=30)).replace(tzinfo=None)
+    assert leg2.eta.replace(tzinfo=None) == (BASE + timedelta(days=66)).replace(tzinfo=None)
     assert leg2.phase == "a_quai"  # arrivé, le suivant n'a pas encore appareillé
     assert leg3.atd is None and leg3.phase == "planifie"  # date future ignorée
 

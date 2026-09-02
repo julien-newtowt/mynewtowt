@@ -177,12 +177,18 @@ async def declare_departure(
     actor_name: str | None = None,
     create_sof: bool = True,
     quiet: bool = False,
+    reanchor_eta: bool = True,
 ) -> dict:
     """Déclare le départ du port de chargement (POL) — ouvre la navigation.
 
     Séquence inter-legs : le leg précédent du navire doit être arrivé (ATA) ;
     il est terminé opérationnellement par ce départ (``voyage_completed_at``).
     ``quiet`` coupe les notifications (reprise d'historique en masse).
+    ``reanchor_eta=False`` conserve l'ETA prévisionnelle telle quelle (pas de
+    re-ancrage sur l'ATD ni de cascade) : c'est le bon réglage pour une
+    reprise d'historique dont l'arrivée réelle est déjà connue — re-ancrer une
+    prévision aussitôt supplantée par l'ATA fausserait le « prévu » affiché
+    (ex. leg planifié au 1er août, parti le 6 juin : ETA tirée de 56 j).
 
     Renvoie un dict de synthèse : ``first`` (première déclaration), ``changed``
     (ATD posé ou corrigé), ``sof_created``, ``eta_shift_hours`` (re-ancrage
@@ -256,7 +262,7 @@ async def declare_departure(
         batch_id = uuid.uuid4().hex[:12]
         old_eta = ensure_utc(leg.eta)
         new_eta = old_eta
-        if ata is None:
+        if ata is None and reanchor_eta:
             # Re-ancrage de l'ETA sur le départ réel : la durée de transit
             # prévue est conservée (ancre = ATD précédent s'il s'agit d'une
             # correction, ETD prévisionnel sinon). L'ETD n'est jamais réécrit :
