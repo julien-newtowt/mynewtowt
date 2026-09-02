@@ -80,7 +80,7 @@
         <td class="mono">{{ "%.1f kn"|format(d.avg_sog_kn) if d.avg_sog_kn is not none else "—" }}</td>
         <td class="mono">{{ "%.1f kn"|format(d.max_sog_kn) if d.max_sog_kn is not none else "—" }}</td>
         <td class="mono">{{ "%.0f"|format(m.actual_nm) }} NM</td>
-        <td class="mono">{{ "%.0f NM"|format(m.theoretical_nm) if m.theoretical_nm is not none else "—" }}</td>
+        <td class="mono">{% if m.theoretical_nm is not none %}{{ "%.0f NM"|format(m.theoretical_nm) }}{% if m.theoretical_is_fallback %}<span class="text-muted" title="Distance recalculée à l'affichage (orthodromie POL→POD) — elle n'est pas encore persistée sur le leg.">*</span>{% endif %}{% else %}<span title="Un des deux ports n'a pas de coordonnées — à renseigner dans Admin → Ports.">—</span>{% endif %}</td>
         <td class="mono">{{ "×%.2f"|format(m.real_elongation) if m.real_elongation is not none else "—" }}</td>
       </tr>
     {% endfor %}

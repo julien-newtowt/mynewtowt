@@ -170,6 +170,82 @@ def test_audit_flags_leg_before_previous_port_stay_finishes() -> None:
     assert kpis.calendar_respect_pct == 50.0
 
 
+def test_audit_overlap_message_is_explicit() -> None:
+    """Le message doit porter les CHIFFRES qui expliquent l'alerte.
+
+    « démarre avant la fin de l'escale prévue » ne dit ni quand, ni combien,
+    ni quoi corriger — retour utilisateur du 2026-09-02 : « je ne comprends
+    pas l'erreur ».
+    """
+    base = datetime(2026, 10, 6, tzinfo=UTC)
+    a = _planning_leg(1, 1, 10, 20, base, base + timedelta(days=30), stay=120, code="3CBRFR6")
+    b = _planning_leg(
+        2,
+        1,
+        20,
+        30,
+        base + timedelta(days=32),
+        base + timedelta(days=63),
+        code="3DFRBR6",
+    )
+    vessel = SimpleNamespace(id=1, name="Atlantis")
+    issues = audit_planning_sequence([a, b], vessels={1: vessel})
+    overlap = next(i for i in issues if i.code == "port_stay_overlap")
+    for fragment in (
+        "Atlantis",
+        "3CBRFR6 arrive le 05/11/2026",
+        "escale planifiée de 5 j",
+        "jusqu'au 10/11/2026",
+        "3DFRBR6 repart dès le 07/11/2026",
+        "il manque 3 j",
+        "Réduisez l'escale",
+    ):
+        assert fragment in overlap.message, f"{fragment!r} absent de : {overlap.message}"
+
+
+def test_audit_ignores_overlap_on_a_leg_already_at_sea() -> None:
+    """Un leg déjà appareillé est un fait : son ATD ne se corrige plus.
+
+    L'auditer produisait une alerte critique que personne ne pouvait résoudre.
+    """
+    base = datetime(2026, 10, 6, tzinfo=UTC)
+    a = _planning_leg(1, 1, 10, 20, base, base + timedelta(days=30), stay=120, code="3CBRFR6")
+    b = _planning_leg(
+        2, 1, 20, 30, base + timedelta(days=32), base + timedelta(days=63), code="3DFRBR6"
+    )
+    b.atd = base + timedelta(days=32)  # départ déclaré
+    issues = audit_planning_sequence([a, b])
+    assert not any(i.code == "port_stay_overlap" for i in issues)
+
+
+def test_audit_overlap_uses_real_arrival_when_known() -> None:
+    """ATA connue → l'escale se mesure sur le réel, pas sur l'ETA périmée."""
+    base = datetime(2026, 10, 6, tzinfo=UTC)
+    a = _planning_leg(1, 1, 10, 20, base, base + timedelta(days=30), stay=48, code="3CBRFR6")
+    a.ata = base + timedelta(days=34)  # arrivée réelle en retard de 4 j
+    b = _planning_leg(
+        2, 1, 20, 30, base + timedelta(days=33), base + timedelta(days=63), code="3DFRBR6"
+    )
+    issues = audit_planning_sequence([a, b])
+    overlap = next(i for i in issues if i.code == "port_stay_overlap")
+    assert "(ATA)" in overlap.message
+
+
+def test_audit_names_the_port_missing_coordinates() -> None:
+    """Distance absente : dire POURQUOI (le port n'a pas de coordonnées)."""
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    leg = _planning_leg(1, 1, 10, 20, base, base + timedelta(days=5), distance=None)
+    ports = {
+        10: SimpleNamespace(id=10, locode="FRFEC", latitude=49.75, longitude=0.37),
+        20: SimpleNamespace(id=20, locode="REPDG", latitude=None, longitude=None),
+    }
+    issues = audit_planning_sequence([leg], ports=ports)
+    missing = next(i for i in issues if i.code == "distance_missing")
+    assert "REPDG" in missing.message
+    assert "FRFEC" not in missing.message
+    assert "Admin → Ports" in missing.message
+
+
 def test_plan_downstream_shifts_uses_source_availability() -> None:
     base = datetime(2026, 1, 1, tzinfo=UTC)
     downstream = [_planning_leg(2, 1, 20, 30, base + timedelta(days=6), base + timedelta(days=10))]

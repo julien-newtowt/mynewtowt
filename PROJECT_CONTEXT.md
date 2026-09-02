@@ -257,6 +257,21 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   (en mer / à quai), planification saisie à la journée, dates effectives
   (`effective_etd/eta`) dans dérive/Gantt/transit. Doc :
   `docs/design/05-sequence-planification.md`.
+- **PLN-BUGS (2026-09-02)** : quatre retours d'usage sur la planification.
+  (1) Le **leg de référence** de la création est choisi (« Chaîner après »,
+  `chain_options`) — le dernier leg par ETD reste le défaut mais devient faux
+  dès qu'un voyage lointain est saisi à l'avance, avec l'ETD **et** le POL qui
+  en découlent. (2) L'**audit de séquence** parle chiffré, sur les dates
+  effectives, et n'instruit plus un leg appareillé (son ATD est un fait).
+  (3) La **suppression d'un leg** ne sort plus en 500 : quatre FK vers
+  `legs.id` n'étaient ni déliées ni couvertes par un `ondelete`
+  (`packing_lists` en tête, ajouté par COM-11 après l'écriture de
+  `delete_leg`) ; inventaires nommés + SAVEPOINT + sentinelle de FK, et les
+  registres d'argent **bloquent** au lieu d'être déliés. (4) La **distance
+  théorique** absente (port sans coordonnées) est repliée au rendu, corrigeable
+  dans Admin → Ports (recalcul immédiat des legs du port) et reprise par
+  `scripts/backfill_leg_distances.py` — l'écart et l'allongement réels s'en
+  dérivant, les trois colonnes tombaient ensemble.
 
 ## 13. Audit de cohérence métier (2026-07-28) — feedback logiciel vs compagnie maritime réelle
 

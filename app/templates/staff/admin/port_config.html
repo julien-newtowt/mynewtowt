@@ -16,8 +16,54 @@
   </p>
 </header>
 
+{% if coords_error %}
+<div class="alert alert-error mb-3">
+  Coordonnées refusées : latitude et longitude doivent être renseignées
+  <strong>toutes les deux</strong>, en degrés décimaux (latitude −90 à 90,
+  longitude −180 à 180). <strong>Rien n'a été enregistré</strong> — y compris
+  les autres champs du formulaire : corrigez la position et renvoyez.
+</div>
+{% endif %}
+{% if recomputed and recomputed != '0' %}
+<div class="alert alert-success mb-3">
+  Position enregistrée — distance théorique recalculée sur
+  <strong>{{ recomputed }}</strong> leg(s) touchant ce port.
+</div>
+{% endif %}
+
 <form method="post" action="/admin/ports/{{ port.id }}/config">
   <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+
+  <article class="card mb-4">
+    <h2>📍 Position géographique</h2>
+    <p class="text-sm text-muted">
+      Degrés décimaux (ex. Fécamp : <span class="mono">49.7594</span> /
+      <span class="mono">0.3742</span>). Sans coordonnées, aucune distance
+      théorique n'est calculable pour les legs touchant ce port — les colonnes
+      Théorique / Écart / Allongement restent vides sur le suivi de navigation.
+      Les renseigner recalcule ces legs immédiatement.
+    </p>
+    <div class="grid grid-2 gap-3">
+      <div class="field">
+        <label for="latitude">Latitude</label>
+        <input id="latitude" name="latitude" type="text" inputmode="decimal"
+               class="mono" placeholder="49.7594"
+               value="{{ port.latitude if port.latitude is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label for="longitude">Longitude</label>
+        <input id="longitude" name="longitude" type="text" inputmode="decimal"
+               class="mono" placeholder="0.3742"
+               value="{{ port.longitude if port.longitude is not none else '' }}" />
+      </div>
+    </div>
+    {% if port.latitude is none or port.longitude is none %}
+    <div class="alert alert-warn mt-3">
+      ⚠ Ce port n'a pas de coordonnées : les legs qui y touchent n'ont pas de
+      distance théorique.
+    </div>
+    {% endif %}
+  </article>
 
   <article class="card mb-4">
     <h2>⚓ Agent maritime</h2>

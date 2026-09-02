@@ -198,15 +198,83 @@ async def port_conflicts(
 # ---------------------------------------------------------------------------
 
 
-async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
-    """Séquence courante de chaque navire → pré-remplissage du prochain leg.
+CHAIN_OPTIONS_LIMIT = 8
+"""Nombre de legs de référence proposés par navire dans « Chaîner après »."""
 
-    Pour chaque navire : dernier leg (par ETD), sa phase, ses ports, et la
-    suggestion du leg suivant — ETD = (ATA si déjà arrivé, sinon ETA) du
-    dernier leg + escale planifiée (défaut 48 h), décalé au prochain jour
-    ouvré du port ; POL = POD du dernier leg (continuité) ; rang (lettre)
-    prévisionnel du futur ``leg_code``. Un navire sans leg est présent avec
-    ``no_legs=True`` (le formulaire l'affiche, sans suggestion).
+
+async def _chain_option(db: AsyncSession, ref: Leg) -> dict | None:
+    """Suggestion de leg suivant dérivée d'un leg de référence.
+
+    ETD = (ATA si déjà arrivé, sinon ETA) du leg de référence + son escale
+    planifiée (défaut 48 h), décalé au prochain jour ouvré du port d'arrivée ;
+    POL = POD du leg de référence (continuité géographique) ; rang (lettre)
+    prévisionnel du futur ``leg_code`` dans l'année de l'ETD suggéré.
+
+    ``None`` si le leg de référence n'a pas d'arrivée exploitable.
+    """
+    from math import ceil
+
+    from sqlalchemy import func
+
+    from app.services.planning import rank_letter
+
+    base = ref.ata or ref.eta
+    if base is None:
+        return None
+    stay = ref.port_stay_planned_hours or 48
+    # Décale le départ si le port d'arrivée est fermé au commerce le WE :
+    # l'escale glisse vers le(s) jour(s) ouvré(s) suivant(s).
+    closed = await closed_weekdays_for_port(db, ref.arrival_port_id)
+    suggested = next_working_departure(base, stay, closed)
+    pol = await db.get(Port, ref.departure_port_id)
+    pod = await db.get(Port, ref.arrival_port_id)
+    # Rang prévisionnel : position chronologique du futur leg dans l'année
+    # de l'ETD suggéré (les legs existants de cette année + 1).
+    year_start = datetime(suggested.year, 1, 1, tzinfo=UTC)
+    year_end = datetime(suggested.year + 1, 1, 1, tzinfo=UTC)
+    n_year = await db.scalar(
+        select(func.count())
+        .select_from(Leg)
+        .where(Leg.vessel_id == ref.vessel_id)
+        .where(Leg.status != "cancelled")
+        .where(Leg.etd >= year_start)
+        .where(Leg.etd < year_end)
+    )
+    try:
+        next_rank = rank_letter(int(n_year or 0) + 1)
+    except PlanningError:
+        next_rank = "?"
+    return {
+        "ref_leg_id": ref.id,
+        "etd": suggested.strftime("%Y-%m-%d"),
+        "pol_id": ref.arrival_port_id,
+        "port_stay_hours": stay,
+        "port_stay_days": max(1, ceil(stay / 24)),
+        "from_leg_code": ref.leg_code,
+        "from_phase": ref.phase,
+        "from_pol_locode": pol.locode if pol else None,
+        "from_pod_locode": pod.locode if pod else None,
+        "from_pod_name": pod.name if pod else None,
+        "from_eta": (ref.eta.strftime("%Y-%m-%d") if ref.eta else None),
+        "from_ata": (ref.ata.strftime("%Y-%m-%d") if ref.ata else None),
+        "next_rank_letter": next_rank,
+        "year_digit": str(suggested.year)[-1],
+    }
+
+
+async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
+    """Séquence de chaque navire → pré-remplissage du prochain leg.
+
+    Le leg de référence par défaut est le **dernier de la séquence** (ETD le
+    plus tardif, legs annulés exclus) : créer un leg, c'est le plus souvent
+    prolonger la ligne. Mais ce défaut est faux dès qu'un leg lointain existe
+    déjà (un voyage 2027 saisi à l'avance fait chaîner sur lui les legs de
+    l'année en cours — bug remonté le 2026-09-02 : « il a repris le leg A alors
+    qu'on programme le D »). Chaque navire expose donc aussi ``chain_options``,
+    ses derniers legs par ETD, pour que l'opérateur choisisse explicitement
+    après lequel il enchaîne ; ETD, POL, escale et rang sont redérivés du leg
+    choisi. Un navire sans leg est présent avec ``no_legs=True`` (le formulaire
+    l'affiche, sans suggestion).
 
     Sérialisé en ``data-suggestions`` sur le formulaire (leg-form-suggest.js
     et leg-cascade.js) et lu par le template pour les boutons navire.
@@ -216,72 +284,37 @@ async def _new_leg_suggestions(db: AsyncSession) -> dict[int, dict]:
     type="date">``). L'escale est exposée en **jours** (arrondi supérieur de
     la valeur stockée en heures).
     """
-    from math import ceil
-
-    from sqlalchemy import desc, func
-
-    from app.services.planning import rank_letter
+    from sqlalchemy import desc
 
     suggestions: dict[int, dict] = {}
     vessels_q = await db.execute(select(Vessel).order_by(Vessel.code))
     for v in vessels_q.scalars().all():
         entry: dict = {"vessel_code": v.code, "vessel_name": v.name, "no_legs": True}
         suggestions[v.id] = entry
-        last = (
-            await db.execute(
-                select(Leg)
-                .where(Leg.vessel_id == v.id)
-                .where(Leg.status != "cancelled")
-                .order_by(desc(Leg.etd))
-                .limit(1)
+        candidates = list(
+            (
+                await db.execute(
+                    select(Leg)
+                    .where(Leg.vessel_id == v.id)
+                    .where(Leg.status != "cancelled")
+                    .order_by(desc(Leg.etd), desc(Leg.id))
+                    .limit(CHAIN_OPTIONS_LIMIT)
+                )
             )
-        ).scalar_one_or_none()
-        if last is None:
-            continue
-        base = last.ata or last.eta
-        if base is None:
-            continue
-        stay = last.port_stay_planned_hours or 48
-        # Décale le départ si le port d'arrivée est fermé au commerce le WE :
-        # l'escale glisse vers le(s) jour(s) ouvré(s) suivant(s).
-        closed = await closed_weekdays_for_port(db, last.arrival_port_id)
-        suggested = next_working_departure(base, stay, closed)
-        pol = await db.get(Port, last.departure_port_id)
-        pod = await db.get(Port, last.arrival_port_id)
-        # Rang prévisionnel : position chronologique du futur leg dans l'année
-        # de l'ETD suggéré (les legs existants de cette année + 1).
-        year_start = datetime(suggested.year, 1, 1, tzinfo=UTC)
-        year_end = datetime(suggested.year + 1, 1, 1, tzinfo=UTC)
-        n_year = await db.scalar(
-            select(func.count())
-            .select_from(Leg)
-            .where(Leg.vessel_id == v.id)
-            .where(Leg.status != "cancelled")
-            .where(Leg.etd >= year_start)
-            .where(Leg.etd < year_end)
+            .scalars()
+            .all()
         )
-        try:
-            next_rank = rank_letter(int(n_year or 0) + 1)
-        except PlanningError:
-            next_rank = "?"
-        entry.update(
-            {
-                "no_legs": False,
-                "etd": suggested.strftime("%Y-%m-%d"),
-                "pol_id": last.arrival_port_id,
-                "port_stay_hours": stay,
-                "port_stay_days": max(1, ceil(stay / 24)),
-                "from_leg_code": last.leg_code,
-                "from_phase": last.phase,
-                "from_pol_locode": pol.locode if pol else None,
-                "from_pod_locode": pod.locode if pod else None,
-                "from_pod_name": pod.name if pod else None,
-                "from_eta": (last.eta.strftime("%Y-%m-%d") if last.eta else None),
-                "from_ata": (last.ata.strftime("%Y-%m-%d") if last.ata else None),
-                "next_rank_letter": next_rank,
-                "year_digit": str(suggested.year)[-1],
-            }
-        )
+        options = [o for o in [await _chain_option(db, c) for c in candidates] if o]
+        if not options:
+            continue
+        # Le récapitulatif (leg-cascade.js) lit l'identité du navire en repli
+        # sur la suggestion active : chaque option doit la porter.
+        for option in options:
+            option["vessel_code"] = v.code
+            option["vessel_name"] = v.name
+        entry.update(options[0])
+        entry["no_legs"] = False
+        entry["chain_options"] = options
     return suggestions
 
 
@@ -593,6 +626,21 @@ async def delete_leg_action(
     except PlanningError as e:
         # Au lieu d'un 400 sec, on re-rend leg_detail avec un bandeau
         # d'erreur listant les dépendances bloquantes (UX > Exception).
+        #
+        # ``delete_leg`` peut avoir déjà muté (délier des FK, supprimer le KPI
+        # dérivé) avant de refuser : ``get_db`` committe même sur un 400
+        # re-rendu, donc on annule. Le rollback EXPIRE les instances ORM de la
+        # session — les toucher au rendu (sync) déclencherait un lazy-load
+        # async → MissingGreenlet → 500, c'est-à-dire le bug qu'on corrige.
+        from sqlalchemy import inspect as sa_inspect
+
+        from app.services.planning import is_delayed, leg_delay_hours
+
+        await db.rollback()
+        user_state = sa_inspect(user, raiseerr=False)
+        if user_state is not None and user_state.persistent:
+            await db.refresh(user)
+        leg = await _get_leg_or_404(db, leg_id)
         vessel = await db.get(Vessel, leg.vessel_id)
         pol = await db.get(Port, leg.departure_port_id)
         pod = await db.get(Port, leg.arrival_port_id)
@@ -605,6 +653,8 @@ async def delete_leg_action(
                 "vessel": vessel,
                 "pol": pol,
                 "pod": pod,
+                "delayed": is_delayed(leg),
+                "delay_h": round(leg_delay_hours(leg), 1),
                 "delete_error": str(e),
             },
             status_code=400,

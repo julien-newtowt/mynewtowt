@@ -806,7 +806,14 @@ async def admin_port_config_form(
     ).scalar_one_or_none()
     return templates.TemplateResponse(
         "staff/admin/port_config.html",
-        {"request": request, "user": user, "port": port, "config": config},
+        {
+            "request": request,
+            "user": user,
+            "port": port,
+            "config": config,
+            "coords_error": request.query_params.get("err") == "coords",
+            "recomputed": request.query_params.get("recomputed"),
+        },
     )
 
 
@@ -859,6 +866,45 @@ async def admin_port_config_save(
     config.docker_fee_per_palette_eur = _dec("docker_fee_per_palette_eur")
     config.notes = _opt("notes")
 
+    # ── Coordonnées du port ──────────────────────────────────────────────
+    # Un port sans latitude/longitude rend l'orthodromie incalculable : tous
+    # les legs qui y touchent perdent leur distance théorique, donc l'écart et
+    # l'allongement (colonnes « — » sur /performance/navigation). Les
+    # renseigner ici **recalcule** immédiatement ces legs.
+    lat, lon = _dec("latitude"), _dec("longitude")
+    # ``_opt`` plutôt qu'un ``form.get(...).strip()`` direct : la lecture de
+    # formulaire est déjà normalisée là, et un champ saisi mais illisible
+    # (« nord ») doit compter comme *renseigné* pour être refusé — pas ignoré.
+    coords_given = bool(_opt("latitude")) or bool(_opt("longitude"))
+    recomputed: list = []
+    if coords_given:
+        invalid = (
+            lat is None
+            or lon is None
+            or not (Decimal("-90") <= lat <= Decimal("90"))
+            or not (Decimal("-180") <= lon <= Decimal("180"))
+        )
+        if invalid:
+            # Refus explicite : une coordonnée fausse produirait une distance
+            # fausse — pire qu'une distance absente, car elle a l'air juste.
+            # Le rollback annule TOUT le formulaire (``get_db`` committe même
+            # sur une redirection) : le bandeau d'erreur le dit.
+            await db.rollback()
+            return RedirectResponse(
+                url=f"/admin/ports/{port_id}/config?err=coords", status_code=303
+            )
+        if (port.latitude, port.longitude) != (float(lat), float(lon)):
+            port.latitude, port.longitude = float(lat), float(lon)
+            # Une correction humaine prime sur toute source automatique :
+            # ``upsert_ports`` ne dégrade jamais une entrée ``manual``. Sans
+            # cette bascule, le prochain rafraîchissement du référentiel
+            # (scripts/load_ports.py) effacerait la saisie de l'opérateur.
+            port.source = "manual"
+            await db.flush()
+            from app.services.planning import recompute_leg_distances
+
+            recomputed = await recompute_leg_distances(db, port_id=port_id)
+
     await db.flush()
     await activity_record(
         db,
@@ -871,7 +917,8 @@ async def admin_port_config_save(
         entity_id=config.id,
         entity_label=port.locode,
     )
-    return RedirectResponse(url=f"/admin/ports/{port_id}/config", status_code=303)
+    suffix = f"?recomputed={len(recomputed)}" if recomputed else ""
+    return RedirectResponse(url=f"/admin/ports/{port_id}/config{suffix}", status_code=303)
 
 
 @router.post("/admin/ports/upload")

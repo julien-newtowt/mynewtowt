@@ -43,6 +43,10 @@ class TrackMetrics:
     duration_hours: float | None  # durée écoulée depuis le départ
     avg_speed_kn: float | None  # vitesse moyenne réelle
     is_active: bool  # leg en cours (pas encore arrivé)
+    # True quand la théorique n'est pas celle persistée sur le leg mais un
+    # repli calculé au rendu depuis les coordonnées des ports (legs anciens
+    # ou créés avant que la distance ne soit calculée à l'enregistrement).
+    theoretical_is_fallback: bool = False
 
     @property
     def real_elongation(self) -> float | None:
@@ -131,10 +135,46 @@ def actual_distance_nm(
     return total
 
 
+def theoretical_distance_nm(
+    leg: Leg,
+    *,
+    dep_port: Port | None = None,
+    arr_port: Port | None = None,
+) -> tuple[float | None, bool]:
+    """(distance théorique, repli ?) du leg.
+
+    Priorité à ``leg.distance_nm`` (persistée au create/update). À défaut, on
+    la **recalcule au rendu** depuis les coordonnées des ports — sinon les
+    colonnes THÉORIQUE / ÉCART / ALLONG. restent vides pour tous les legs dont
+    la distance n'a jamais été persistée, sans que rien ne l'explique.
+
+    Renvoie ``(None, False)`` quand même le repli est impossible (port sans
+    coordonnées) : c'est le seul cas où l'UI doit afficher « — »
+    (``audit_planning_sequence`` nomme alors le port fautif).
+    """
+    if leg.distance_nm is not None:
+        return float(leg.distance_nm), False
+    if (
+        dep_port is None
+        or arr_port is None
+        or dep_port.latitude is None
+        or dep_port.longitude is None
+        or arr_port.latitude is None
+        or arr_port.longitude is None
+    ):
+        return None, False
+    gc = haversine_nm(dep_port.latitude, dep_port.longitude, arr_port.latitude, arr_port.longitude)
+    # Même convention que ``planning.compute_effective_distance_nm`` :
+    # orthodromie × coefficient d'élongation du leg (1.0 s'il est absent —
+    # le défaut navire n'est pas accessible sans requête DB).
+    return round(gc * (leg.elongation_coef or 1.0), 2), True
+
+
 def compute_metrics(
     positions: list[VesselPosition],
     leg: Leg,
     *,
+    dep_port: Port | None = None,
     arr_port: Port | None = None,
     now: datetime | None = None,
 ) -> TrackMetrics:
@@ -145,7 +185,9 @@ def compute_metrics(
     # Filtre anti-saut actif sur la métrique consommée par l'UI (SEC-05).
     actual = actual_distance_nm(positions, max_speed_kn=MAX_PLAUSIBLE_SPEED_KN)
 
-    theoretical: float | None = float(leg.distance_nm) if leg.distance_nm is not None else None
+    theoretical, theoretical_is_fallback = theoretical_distance_nm(
+        leg, dep_port=dep_port, arr_port=arr_port
+    )
 
     # Distance restante : dernier point connu → port d'arrivée (0 si arrivé).
     remaining: float | None = None
@@ -179,6 +221,7 @@ def compute_metrics(
         duration_hours=duration_hours,
         avg_speed_kn=avg_speed,
         is_active=is_active,
+        theoretical_is_fallback=theoretical_is_fallback,
     )
 
 
@@ -238,8 +281,9 @@ async def annual_navigation_kpis(
         positions = await positions_for_leg(db, leg, now=now)
         if not positions:
             continue
+        dep = await db.get(Port, leg.departure_port_id)
         arr = await db.get(Port, leg.arrival_port_id)
-        metrics = compute_metrics(positions, leg, arr_port=arr, now=now)
+        metrics = compute_metrics(positions, leg, dep_port=dep, arr_port=arr, now=now)
         avg_sog, max_sog = sog_stats(positions)
         rows.append(
             NavigationKpiRow(
@@ -266,8 +310,9 @@ async def navigation_aggregate(db: AsyncSession, legs, *, now: datetime | None =
         if not positions:
             continue
         legs_with_gps += 1
+        dep = await db.get(Port, leg.departure_port_id) if leg.departure_port_id else None
         arr = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
-        m = compute_metrics(positions, leg, arr_port=arr, now=now)
+        m = compute_metrics(positions, leg, dep_port=dep, arr_port=arr, now=now)
         total_real += m.actual_nm
         if m.real_elongation is not None:
             elongations.append(m.real_elongation)
