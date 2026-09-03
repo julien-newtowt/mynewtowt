@@ -2,7 +2,7 @@
 {% block title %}{{ share.label or ('Sailing schedule' if lang == 'en' else 'Calendrier de navigation') }} — {{ brand.nom_court }}{% endblock %}
 
 {% block head %}
-<script src="/static/js/print-page.js" defer></script>
+<script src="{{ asset('js/print-page.js') }}" defer></script>
 <style>
   /* Prospectus commercial — mise en page écran + impression A4. */
   .prospectus { max-width: 960px; margin: 0 auto; }

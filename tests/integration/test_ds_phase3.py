@@ -103,7 +103,10 @@ def test_topbar_has_density_toggle_button():
 def test_staff_layout_loads_density_js():
     layout = Path(__file__).resolve().parents[2] / "app" / "templates" / "staff" / "_layout.html"
     src = layout.read_text(encoding="utf-8")
-    assert "/static/js/density.js" in src
+    # Passe par ``asset()`` depuis le 2026-09-03 : le chemin nu privait le
+    # fichier du cache-busting ``?v=<mtime>``, et le navigateur servait une
+    # version périmée après déploiement (cf. test_static_cache_busting).
+    assert "asset('js/density.js')" in src
 
 
 # ───────────────────────── density.js — CSP-safe ─────────────────────────

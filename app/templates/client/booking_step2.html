@@ -2,10 +2,10 @@
 {% set wizard_step = 2 %}
 {% block wizard_title %}{{ t('bk2_title', lang) }}{% endblock %}
 {% block wizard_head %}
-  <script src="/static/js/booking-co2.js" defer></script>
-  <script src="/static/js/cargo-rows.js" defer></script>
-  <script src="/static/js/booking-imdg.js" defer></script>
-  <script src="/static/js/booking-fds.js" defer></script>
+  <script src="{{ asset('js/booking-co2.js') }}" defer></script>
+  <script src="{{ asset('js/cargo-rows.js') }}" defer></script>
+  <script src="{{ asset('js/booking-imdg.js') }}" defer></script>
+  <script src="{{ asset('js/booking-fds.js') }}" defer></script>
 {% endblock %}
 
 {% block wizard_content %}

@@ -4,9 +4,9 @@
 {% block head %}
 {{ super() }}
 <link rel="manifest" href="/manifest.json" />
-<script src="/static/js/pwa-onboard.js" defer></script>
-<script src="/static/js/onboard-idb.js" defer></script>
-<script src="/static/js/onboard-offline.js" defer></script>
+<script src="{{ asset('js/pwa-onboard.js') }}" defer></script>
+<script src="{{ asset('js/onboard-idb.js') }}" defer></script>
+<script src="{{ asset('js/onboard-offline.js') }}" defer></script>
 <script src="{{ asset('js/noon-fuel.js') }}" defer></script>
 {% endblock %}
 {% block content %}
@@ -51,7 +51,7 @@
   <article class="card" id="noon-form">
     <div class="flex justify-between items-center">
       <h2 style="margin:0;">Saisir un noon report</h2>
-      <a href="/static/reference/towt_noon_report_template.xlsx" download
+      <a href="{{ asset('reference/towt_noon_report_template.xlsx') }}" download
          class="btn btn-ghost btn-sm" title="Modèle officiel TOWT (xlsx) — référence de remplissage">
         📥 Modèle (xlsx)
       </a>

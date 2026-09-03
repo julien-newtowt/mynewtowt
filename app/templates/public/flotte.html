@@ -1,7 +1,7 @@
 {% extends "public/_layout_v2.html" %}
 {% block title %}{{ t('fleet_meta_title', lang) }}{% endblock %}
 {% block description %}{{ t('fleet_meta_desc', lang) }}{% endblock %}
-{% block head %}<script src="/static/js/yt-embed.js" defer></script>{% endblock %}
+{% block head %}<script src="{{ asset('js/yt-embed.js') }}" defer></script>{% endblock %}
 
 {% block structured_data %}
 <script type="application/ld+json">

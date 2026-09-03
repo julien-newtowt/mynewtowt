@@ -3,9 +3,9 @@
 {% block head %}
 {{ super() }}
 {# PWA du bord : le module doit rester utilisable sans réseau. #}
-<script src="/static/js/pwa-onboard.js" defer></script>
-<script src="/static/js/onboard-idb.js" defer></script>
-<script src="/static/js/onboard-offline.js" defer></script>
+<script src="{{ asset('js/pwa-onboard.js') }}" defer></script>
+<script src="{{ asset('js/onboard-idb.js') }}" defer></script>
+<script src="{{ asset('js/onboard-offline.js') }}" defer></script>
 <script src="{{ asset('js/onboard-quick-sale.js') }}" defer></script>
 {% endblock %}
 {% block content %}
