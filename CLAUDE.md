@@ -298,8 +298,8 @@ Doc de référence : `docs/design/05-sequence-planification.md`.
   un `Booking` emporte ses packing lists (`ondelete="CASCADE"`) — donc ces
   pièces. Et comme la *booking note* pend de `rate_offers` et non de
   `bookings`, une réservation issue d'une offre validée est protégée **par
-  construction**. Pour un voyage qui n'aura pas lieu mais dont l'histoire
-  existe, **annuler le leg** plutôt que le supprimer.
+  construction**. Un blocage se lève en traitant l'enregistrement depuis son
+  propre module, pas en contournant l'inventaire.
 
 ### Équipage — deux registres d'embarquement, à ne jamais confondre
 

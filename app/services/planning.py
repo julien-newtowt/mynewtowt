@@ -1369,7 +1369,8 @@ async def delete_leg(db: AsyncSession, leg: Leg, *, cascade: bool = False) -> No
 
     if blocks:
         suite = (
-            ". Ces registres ne se suppriment pas — annulez le leg plutôt que " "de le supprimer."
+            ". Ces enregistrements n'ont ni modification ni suppression : "
+            "traitez-les depuis leur propre écran, puis relancez la suppression."
             if cascade
             else ". Nettoyez ces enregistrements avant suppression."
         )

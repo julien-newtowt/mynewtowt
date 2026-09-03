@@ -198,7 +198,7 @@ async def test_money_register_blocks_even_in_cascade(db):
 
     with pytest.raises(PlanningError) as exc:
         await delete_leg(db, leg, cascade=True)
-    assert "annulez le leg" in str(exc.value)
+    assert "ni modification ni suppression" in str(exc.value)
 
 
 @pytest.mark.asyncio
