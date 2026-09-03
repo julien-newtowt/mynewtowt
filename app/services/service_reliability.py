@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 
 # Fenêtre de ponctualité (heures) autour de l'ETA de référence.
 ON_TIME_WINDOW_HOURS = 24.0
@@ -100,7 +100,18 @@ async def overall(db: AsyncSession) -> ReliabilityStats:
     if _overall_cache is not None and (now - _overall_loaded_at) < _CACHE_TTL_SECONDS:
         return _overall_cache
     try:
-        legs = list((await db.execute(select(Leg).where(Leg.ata.is_not(None)))).scalars().all())
+        # Archives TOWT exclues (ADR-014) : leur « prévu » est le réel recopié,
+        # elles seraient toutes « tenues » par construction — un taux publié
+        # ne s'achète pas ainsi (doctrine anti-greenwashing).
+        legs = list(
+            (
+                await db.execute(
+                    select(Leg).where(Leg.ata.is_not(None)).where(Leg.origin != LEG_ORIGIN_TOWT)
+                )
+            )
+            .scalars()
+            .all()
+        )
         stats = _tally(legs)
     except Exception:  # pragma: no cover — best-effort, la vitrine ne casse pas
         stats = ReliabilityStats(completed=0, on_time=0)
@@ -122,6 +133,7 @@ async def for_route(
                     .where(Leg.departure_port_id == departure_port_id)
                     .where(Leg.arrival_port_id == arrival_port_id)
                     .where(Leg.ata.is_not(None))
+                    .where(Leg.origin != LEG_ORIGIN_TOWT)
                 )
             )
             .scalars()

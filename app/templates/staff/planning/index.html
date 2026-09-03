@@ -21,13 +21,15 @@
   </div>
 </header>
 
+{# Filtre d'origine (ADR-014) propagé sur tous les liens du bandeau. #}
+{%- set _oq = ('&origin=' ~ selected_origin) if selected_origin and selected_origin != 'all' else '' -%}
 <div class="planning-filters mb-3">
   <div class="vessel-tabs">
-    <a href="/planning?year={{ selected_year }}" class="vessel-tab {% if not filter_vessel_id %}active{% endif %}">
+    <a href="/planning?year={{ selected_year }}{{ _oq }}" class="vessel-tab {% if not filter_vessel_id %}active{% endif %}">
       <i data-lucide="layers"></i> Tous les navires
     </a>
     {% for v in vessels %}
-    <a href="/planning?year={{ selected_year }}&vessel_id={{ v.id }}"
+    <a href="/planning?year={{ selected_year }}&vessel_id={{ v.id }}{{ _oq }}"
        class="vessel-tab {% if filter_vessel_id == v.id %}active{% endif %}">
       <i data-lucide="ship"></i> {{ v.name }}
     </a>
@@ -35,10 +37,19 @@
   </div>
   <div class="year-selector">
     {% for y in years|sort %}
-    <a href="/planning?year={{ y }}{% if filter_vessel_id %}&vessel_id={{ filter_vessel_id }}{% endif %}"
+    <a href="/planning?year={{ y }}{% if filter_vessel_id %}&vessel_id={{ filter_vessel_id }}{% endif %}{{ _oq }}"
        class="year-btn {% if y == selected_year %}active{% endif %}">{{ y }}</a>
     {% endfor %}
   </div>
+  <div class="year-selector" title="Origine des voyages : NEWTOWT (vécus dans l'ERP) ou archives TOWT (ancienne compagnie, lecture seule)">
+    {%- set _base = '/planning?year=' ~ selected_year ~ ('&vessel_id=' ~ filter_vessel_id if filter_vessel_id else '') -%}
+    <a href="{{ _base }}" class="year-btn {% if selected_origin == 'all' %}active{% endif %}">Toutes origines</a>
+    <a href="{{ _base }}&origin=newtowt" class="year-btn {% if selected_origin == 'newtowt' %}active{% endif %}">NEWTOWT</a>
+    <a href="{{ _base }}&origin=towt" class="year-btn {% if selected_origin == 'towt' %}active{% endif %}">Archive TOWT</a>
+  </div>
+  {% if archive_count %}
+    <span class="pill pill-neutral" style="align-self:center;" title="Voyages repris des archives de l'ancienne compagnie — lecture seule (ADR-014)">🗄 {{ archive_count }} archive(s) TOWT</span>
+  {% endif %}
   {% if conflict_count %}
     <a href="/planning/conflicts" class="pill pill-warn" style="align-self:center;">⚠ {{ conflict_count }} conflit(s) port</a>
   {% endif %}
@@ -164,8 +175,8 @@
         <th>Leg</th>
         <th>Navire</th>
         <th>Itinéraire</th>
-        <th>ETD</th>
-        <th>ETA</th>
+        <th>Départ <span class="text-muted text-xs">(ATD · prévu ETD)</span></th>
+        <th>Arrivée <span class="text-muted text-xs">(ATA · prévue ETA)</span></th>
         <th>Statut</th>
         <th>Réservable</th>
         <th></th>
@@ -175,20 +186,42 @@
       {% for leg in legs %}
         {% set v = (vessels | selectattr("id", "equalto", leg.vessel_id) | list | first) %}
         <tr>
-          <td><span class="mono">{{ leg.leg_code }}</span></td>
+          <td><span class="mono">{{ leg.leg_code }}</span>
+            {% if leg.is_archive %}<span class="pill pill-neutral text-xs" title="Archive TOWT — voyage de l'ancienne compagnie, lecture seule (ADR-014)">TOWT</span>{% endif %}
+          </td>
           <td>{{ v.name if v else '—' }}</td>
           <td>
             <span class="mono">{{ ports[leg.departure_port_id].locode if ports[leg.departure_port_id] else '?' }}</span>
             →
             <span class="mono">{{ ports[leg.arrival_port_id].locode if ports[leg.arrival_port_id] else '?' }}</span>
           </td>
-          <td>{{ leg.etd|date }}</td>
-          <td>{{ leg.eta|date }}</td>
+          {# Réel prioritaire (PLN-SEQ) : ATD/ATA dès qu'ils sont déclarés, le
+             prévisionnel reste visible en dessous avec l'écart en jours. #}
           <td>
-            {% if leg.status == 'planned' %}<span class="pill pill-info">Planifié</span>
-            {% elif leg.status == 'in_progress' %}<span class="pill pill-warn">En cours</span>
-            {% elif leg.status == 'completed' %}<span class="pill pill-ok">Terminé</span>
-            {% elif leg.status == 'cancelled' %}<span class="pill pill-neutral">Annulé</span>
+            {% if leg.atd %}
+              <span class="mono">{{ leg.atd|date }}</span> <span class="pill pill-ok text-xs" title="Départ déclaré (ATD)">réel</span>
+              {%- set d_dep = ((leg.atd.replace(tzinfo=None) - leg.etd.replace(tzinfo=None)).days) -%}
+              <div class="text-muted text-xs">ETD {{ leg.etd|date }}{% if d_dep %} ({{ '%+d'|format(d_dep) }} j){% endif %}</div>
+            {% else %}
+              <span class="mono">{{ leg.etd|date }}</span> <span class="text-muted text-xs">ETD</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if leg.ata %}
+              <span class="mono">{{ leg.ata|date }}</span> <span class="pill pill-ok text-xs" title="Arrivée déclarée (ATA)">réel</span>
+              {%- set d_arr = ((leg.ata.replace(tzinfo=None) - leg.eta.replace(tzinfo=None)).days) -%}
+              <div class="text-muted text-xs">ETA {{ leg.eta|date }}{% if d_arr %} ({{ '%+d'|format(d_arr) }} j){% endif %}</div>
+            {% else %}
+              <span class="mono">{{ leg.eta|date }}</span> <span class="text-muted text-xs">ETA</span>
+            {% endif %}
+          </td>
+          <td>
+            {%- set _phase = leg.phase -%}
+            {% if _phase == 'planifie' %}<span class="pill pill-info">Planifié</span>
+            {% elif _phase == 'en_mer' %}<span class="pill pill-warn">⛵ En mer</span>
+            {% elif _phase == 'a_quai' %}<span class="pill pill-ok">⚓ À quai</span>
+            {% elif _phase == 'termine' %}<span class="pill pill-ok">Terminé</span>
+            {% elif _phase == 'annule' %}<span class="pill pill-neutral">Annulé</span>
             {% else %}<span class="pill pill-neutral">{{ leg.status }}</span>{% endif %}
           </td>
           <td>{% if leg.is_bookable %}<span class="pill pill-ok">Oui</span>{% else %}<span class="pill pill-neutral">Non</span>{% endif %}</td>

@@ -56,8 +56,12 @@ router = APIRouter(prefix="/escale", tags=["escale"])
 
 
 def _escale_locked(leg: Leg) -> bool:
-    """L'escale du leg est-elle verrouillée (clôture administrative) ?"""
-    return leg.escale_locked_at is not None
+    """L'escale du leg est-elle verrouillée (clôture administrative) ?
+
+    Un leg d'archive TOWT (ADR-014) est verrouillé par nature : son escale
+    est un fait passé de l'ancienne compagnie, rien ne s'y ajoute.
+    """
+    return leg.escale_locked_at is not None or leg.is_archive
 
 
 def _mutation_response(request: Request, leg_id: int, message: str) -> Response:
@@ -106,6 +110,14 @@ def _assert_escale_unlocked(leg: Leg) -> None:
     Levée d'une 400 avec message FR explicite — appelée par tous les
     endpoints create/edit/start/end/delete d'opérations et de shifts.
     """
+    if leg.is_archive:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Le leg {leg.leg_code} est un voyage repris des archives TOWT "
+                "(lecture seule, ADR-014) : son escale ne se modifie pas."
+            ),
+        )
     if _escale_locked(leg):
         raise HTTPException(
             status_code=400,
@@ -326,7 +338,7 @@ async def escale_index(
         port_call = port_call_steps(selected_leg, operations)
         lanes = operations_by_lane(operations)
         positions = await positions_for_leg(db, selected_leg)
-        nav_metrics = compute_metrics(positions, selected_leg, arr_port=pod)
+        nav_metrics = compute_metrics(positions, selected_leg, dep_port=pol, arr_port=pod)
 
     # ── Cockpit escale (reprise UX Phase 1) ──────────────────────────────
     # KPI d'escale, indicateur de retard, synthèses Documents & SOF et
@@ -950,8 +962,16 @@ async def update_port_status(
     except VoyageSequenceError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    if summary.get("cascade", {}).get("skipped"):
-        toast += " ⚠ Recalcul aval partiel — voir notifications."
+    # Seul un leg aval déjà appareillé qui bloque le recalage est un incident
+    # (notifié par la cascade) ; les autres entrées de ``skipped`` sont
+    # informatives (ex. packing lists sans date à décaler).
+    blocked = [
+        x
+        for x in (summary.get("cascade") or {}).get("skipped") or []
+        if str(x).startswith("downstream_legs:")
+    ]
+    if blocked:
+        toast += " ⚠ Recalage des legs suivants bloqué — voir notifications."
 
     await db.flush()
     await activity_record(
@@ -1016,6 +1036,10 @@ async def unlock_leg(
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
+    if leg.is_archive:
+        raise HTTPException(
+            status_code=400, detail="Archive TOWT : rien à déverrouiller (lecture seule, ADR-014)."
+        )
     leg.escale_locked_at = None
     leg.escale_locked_by = None
     await db.flush()

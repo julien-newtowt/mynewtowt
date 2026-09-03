@@ -679,6 +679,17 @@ tonnage) — sinon **`theoretical`** (forfait 1,5 g/t·km). `resolve_distance_nm
 
 ---
 
+### 8 bis. Reprise d'historique TOWT (2026-09-02, ADR-014) — hors périmètre MRV
+
+La décision Q1 (démarrage à vide) est **partiellement rouverte** : les voyages
+2024-2026 de l'ancienne compagnie (`legs.origin = 'towt_archive'`) et leurs
+positions GPS (`vessel_positions.source = 'towt_archive'`) entrent en
+production comme archive immuable. **Rien n'entre dans le périmètre MRV** :
+aucun `nav_event`, aucun soutage, aucune émission calculée ; les noon reports
+TOWT restent hors base tant que leur table d'archive n'est pas arbitrée
+(ADR-014, décision 6). Les datasets OVDLA/OVDBR et le grand livre sont
+inchangés par cette reprise.
+
 ## 9. Limites connues & backlog (honnête)
 
 1. **Capacités de cuves absentes (Q11).** `vessel_tanks.capacity_m3` est NULL

@@ -239,19 +239,58 @@ Doc de référence : `docs/design/05-sequence-planification.md`.
   OPEX, notifications. Ne jamais écrire `leg.atd`/`leg.ata` ailleurs.
 - **Séquence dure** : pas d'arrivée sans départ déclaré, pas d'ATA < ATD, pas
   de chevauchement de legs (validations `validate_leg_schedule` + cascade).
-  Un leg déjà appareillé n'est **jamais** déplacé par un recalcul : la cascade
-  se bloque et l'incident est **notifié** (`cascade_blocked`).
+  La cascade recale un leg aval au plus tôt à **ETA + escale planifiée** du
+  précédent (jamais à l'ETA brute) ; recalage à froid :
+  `scripts/respace_downstream_legs.py`. Un leg déjà appareillé n'est
+  **jamais** déplacé par un recalcul : la cascade se bloque et l'incident est
+  **notifié** (`cascade_blocked`).
+- **Un seul leg actif par navire** : déclarer le départ du leg N+1 exige
+  l'arrivée (ATA) du leg N et le **termine** (`voyage_completed_at`, migration
+  0137 → `completed`/« terminé »), indépendamment de la clôture administrative.
+  Reprise d'historique : `scripts/backfill_voyage_actuals.py` (dry-run par
+  défaut, mode `quiet`).
 - **Tous les mouvements de dates sont historisés** dans `schedule_revisions`
   (prévisionnel ET réel — sources `departure_declared`/`arrival_declared`,
   colonnes `old/new_atd`, `old/new_ata`, migration 0136, `batch_id` partagé
   avec la cascade). Viewer : fiche leg → « Historique ».
 - **Planification à la journée** : ETD/ETA/clôture booking se saisissent en
   `type="date"` (le back-end accepte l'ISO jour = minuit UTC) ; le réel garde
-  l'heure précise.
+  l'heure précise. **Création de leg = page unique** (PLN-08) : navire par
+  boutons, Départ/Arrivée côte à côte (ports habituels BRSSO/FRFEC, filtres +
+  recherche libre), POL/ETD pré-remplis depuis la séquence du navire, escale en
+  **jours** (`port_stay_planned_days` → heures ×24). Le **leg de référence est
+  choisi** (« Chaîner après », `chain_options`) : le dernier leg par ETD n'est
+  qu'un défaut, et il est faux dès qu'un voyage lointain est déjà saisi.
 - **Dates effectives** : tout calcul « où en est le voyage » passe par
   `planning.effective_etd/effective_eta` (réel prioritaire, repli
-  prévisionnel) — la dérive (`leg_delay_hours`), le Gantt et le transit
-  commercial les utilisent déjà.
+  prévisionnel) — la dérive (`leg_delay_hours`), le Gantt, le transit
+  commercial et l'**audit de séquence** les utilisent déjà. L'audit
+  n'instruit **jamais** un leg déjà appareillé : son ATD est un fait, pas un
+  conflit de planification.
+- **Distance théorique** : `Leg.distance_nm` (orthodromie POL→POD × élongation)
+  est posée au create/update et vaut `None` si un port n'a pas de coordonnées —
+  auquel cas l'écart et l'allongement réels ne sont plus calculables. Repli au
+  rendu (`voyage_track.theoretical_distance_nm`, marqué `*` dans l'UI), édition
+  des coordonnées dans **Admin → Ports** (qui recalcule les legs du port et
+  bascule `Port.source` en `manual`, sinon le prochain import du référentiel
+  effacerait la correction), et reprise à froid :
+  `scripts/backfill_leg_distances.py`.
+- **Archives TOWT (ADR-014)** : un leg `origin = 'towt_archive'` est un voyage
+  de l'ancienne compagnie repris des archives — **lecture seule**
+  (`services.planning.assert_leg_mutable`, appelée par `update_leg`,
+  `delete_leg`, `declare_departure/arrival`, escale), **exclu de la
+  renumérotation** et son `leg_code` est le TRIP CODE TOWT d'origine (`1YMB4`),
+  clé des noon reports et de l'ancien PBIX — ne jamais le « normaliser ».
+  `etd = atd`, `eta = ata` (aucun prévisionnel n'existe). Positions GPS
+  d'archive : `vessel_positions.source = 'towt_archive'`, protégées de la purge
+  (`admin_data.PURGE_PROTECTED_ROWS`), importées **après** les legs
+  (rattachement temporel). Filtre `/planning?origin=towt|newtowt`.
+- **Suppression d'un leg** : inventaire explicite des dépendances
+  (`planning._leg_blocking_models` / `_leg_unlinked_models`). Les registres
+  d'argent (caisse, ventes, contrôles) **bloquent** — ils n'ont ni UPDATE ni
+  DELETE ; les FK nullables sont **déliées**. Toute nouvelle table référençant
+  `legs.id` doit rejoindre l'un des deux inventaires (ou porter un `ondelete`) :
+  la sentinelle `tests/unit/test_delete_leg_models.py` échoue sinon.
 
 ### Équipage — deux registres d'embarquement, à ne jamais confondre
 
@@ -338,6 +377,41 @@ reste hors plateforme (arbitrage A5) : les conditions de règlement sont
 - Mutations : `validate → modify → await db.flush() → RedirectResponse(303)`.
 - Détection HTMX : `request.headers.get("hx-request")` → renvoyer header
   `HX-Redirect`.
+
+### Référentiel des ports — source de vérité partagée
+
+`Port.locode` est une clé métier (leg_codes, grilles tarifaires, BL, pages
+publiques) et ses coordonnées commandent la distance théorique de tout leg.
+Doc : `docs/integrations/unlocode-ports.md`.
+
+- **Alimentation** : `scripts/load_ports.py` (catalogue embarqué + data.gouv.fr
+  + `--with-unlocode`). La source UN/LOCODE par défaut est le miroir
+  **géolocalisé** : 16 669 ports maritimes exploitables contre 11 763 pour le
+  miroir brut (UNECE laisse 20 % des lieux sans coordonnées, dont de vrais
+  ports). Il n'existe **aucune API officielle** — UNECE publie des fichiers
+  deux fois par an.
+- **Hiérarchie de sources** (`services.ports.may_overwrite`) : `manual` (30) >
+  `world_ports` (20) > `unlocode-improved` (15) > reste (10). Un import
+  automatique ne dégrade **jamais** une donnée curée ; un ré-import de la même
+  source rafraîchit toujours. Une correction de coordonnées dans Admin → Ports
+  doit passer `Port.source` à `manual`, sinon le prochain import l'efface.
+- **Filtre maritime** = position 1 du code fonction (`1` = port). Il **rate de
+  vrais ports** (`RELPT` « Le Port », La Réunion, est correct ; `REPDG` est en
+  statut `XX` = retiré et sans fonction port) : ne jamais purger ni désactiver
+  un port existant sur ce critère. Les entrées en statut `XX` ne sont pas
+  ajoutées, jamais supprimées.
+- **Attribution ODbL** : les coordonnées `unlocode-improved` dérivent en partie
+  d'OpenStreetMap. Toute republication (carte publique, export client, PDF)
+  doit porter `© OpenStreetMap contributors`.
+- **Le sélecteur de ports interroge le serveur, jamais la table entière.**
+  `/api/v1/ports/countries` sert les pays + leur zone (`services.geo.region_of`,
+  couverture ISO-3166 complète, 251 codes) ; `/ports/search?country=…` et
+  `?q=…` servent les ports ; `/ports/{id}` un port isolé. `limit` est **bornée**
+  (`PORTS_SEARCH_MAX_LIMIT`). Rapatrier la liste et filtrer dans le navigateur
+  tronquait au-delà de 10 000 lignes — trié par pays, tout ce qui suivait `JP`
+  disparaissait (123 pays, dont VN/Da Nang), cascade et recherche comprises,
+  **sans aucun signal**. Ne jamais reconstruire une carte pays → continent côté
+  JS : elle divergera de `PORT_REGIONS`.
 
 ### Permissions
 - 9 rôles : `administrateur`, `operation`, `armement`, `technique`,

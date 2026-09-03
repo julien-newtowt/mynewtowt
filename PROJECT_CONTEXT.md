@@ -249,6 +249,8 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   **ADR-011** (caisse : espèces ≠ encaissements CB), **ADR-012** (cloisonnement
   par navire), **ADR-013** (remboursement, valeur du registre de vente, gel à la
   relève). Les trois derniers sont datés du 2026-08-27 et **acceptés**.
+  **ADR-014** (reprise d'historique TOWT, 2026-09-02) est **accepté** — sept
+  décisions, la 6ᵉ (table d'archive des noon reports) ouvre le lot 2.
 - **PLN-SEQ (2026-09-01)** : refonte de la séquence de planification —
   déclarations « départ du POL » / « arrivée au POD » (escale + SOF bord →
   `services.voyage_transitions`, chemin unique du réel), re-ancrage d'ETA sur
@@ -257,6 +259,31 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   (en mer / à quai), planification saisie à la journée, dates effectives
   (`effective_etd/eta`) dans dérive/Gantt/transit. Doc :
   `docs/design/05-sequence-planification.md`.
+- **PLN-BUGS (2026-09-02)** : quatre retours d'usage sur la planification.
+  (1) Le **leg de référence** de la création est choisi (« Chaîner après »,
+  `chain_options`) — le dernier leg par ETD reste le défaut mais devient faux
+  dès qu'un voyage lointain est saisi à l'avance, avec l'ETD **et** le POL qui
+  en découlent. (2) L'**audit de séquence** parle chiffré, sur les dates
+  effectives, et n'instruit plus un leg appareillé (son ATD est un fait).
+  (3) La **suppression d'un leg** ne sort plus en 500 : quatre FK vers
+  `legs.id` n'étaient ni déliées ni couvertes par un `ondelete`
+  (`packing_lists` en tête, ajouté par COM-11 après l'écriture de
+  `delete_leg`) ; inventaires nommés + SAVEPOINT + sentinelle de FK, et les
+  registres d'argent **bloquent** au lieu d'être déliés. (4) La **distance
+  théorique** absente (port sans coordonnées) est repliée au rendu, corrigeable
+  dans Admin → Ports (recalcul immédiat des legs du port) et reprise par
+  `scripts/backfill_leg_distances.py` — l'écart et l'allongement réels s'en
+  dérivant, les trois colonnes tombaient ensemble.
+- **TOWT-HIST (2026-09-02)** : reprise d'historique de l'ancienne compagnie —
+  `legs.origin` (`newtowt` | `towt_archive`, migration 0138), garde unique
+  `assert_leg_mutable` (lecture seule : édition, déplacement, suppression,
+  déclarations, escale), exclusion de la renumérotation (code TOWT d'origine
+  conservé), filtre `origin` + badges « TOWT » dans `/planning`, protection
+  anti-purge des positions `source='towt_archive'`, décimation d'affichage de
+  `/tracking`. Scripts : `import_towt_legs` (CSV versionné des 36 voyages),
+  `towt_gps_consolidate` (local) → `import_towt_positions` (serveur),
+  `towt_noon_extract` (prototype local). Doc :
+  `docs/audit/2026-09-02-reprise-historique-towt.md`, **ADR-014** (accepté le 2026-09-02).
 
 ## 13. Audit de cohérence métier (2026-07-28) — feedback logiciel vs compagnie maritime réelle
 
@@ -732,3 +759,45 @@ ce sont des règles de contrôle interne, pas des détails d'interface :
    contesté) existe et est testé depuis le 2026-08-27 mais **n'est exposé par
    aucune route** : une déclaration partie par erreur reste « DÉCLARÉE »
    indéfiniment. La prévention est livrée, le remède non.
+
+---
+
+## 18. Reprise d'historique TOWT (2026-09-02)
+
+**Ce qu'il faut savoir avant de toucher aux legs ou aux positions.**
+
+- Un leg `origin = 'towt_archive'` est un **fait** de l'ancienne compagnie :
+  `assert_leg_mutable` refuse toute mutation ; `is_archive` pilote badges et
+  masquage des boutons. Son `leg_code` est le TRIP CODE TOWT (`1YMB4`,
+  `2LQF5-B`), **jamais** renuméroté — c'est la clé des noon reports (« Voyage
+  number ») et de l'ancien PBIX. Ne pas « normaliser » ces codes.
+- Le réel d'archive (ATD/ATA au jour, minuit UTC) est posé directement par
+  `scripts/import_towt_legs.py`, pas par `voyage_transitions` (pas de SOF, pas
+  de leg suivant à activer) : exception assumée, documentée ADR-014 D3.
+  `etd = atd`, `eta = ata` : il n'y a **aucun prévisionnel** TOWT.
+- Positions GPS d'archive : `vessel_positions.source = 'towt_archive'`,
+  `import_batch` = fichier consolidé, protégées de la purge par
+  `admin_data.PURGE_PROTECTED_ROWS`. Rattachement au leg **temporel**
+  (`voyage_track.leg_window`) : importer les legs **avant** les positions.
+- Couverture connue : legs 2024-08-09 → 2026-01-31 ; GPS à partir du
+  **2024-10-21** seulement (source antérieure à confirmer) ; noon reports
+  2024-09 → aujourd'hui, **non repris** (lot 2, table d'archive à arbitrer).
+- Ports créés par la reprise (`source=user`, coordonnées approximatives) :
+  COSTM, GTPBR, REREU, CAMAT, FRCOC (+ FRFEC si absent) — à raffiner dans
+  Admin → Ports.
+- **Trois couches d'immutabilité** : garde de service (`assert_leg_mutable`),
+  garde ORM `before_flush` (`app/models/leg.py`, échappement
+  `session.info["allow_towt_archive_write"]` pour les scripts), trigger
+  PostgreSQL `trg_legs_towt_archive_readonly` (`SET LOCAL
+  newtowt.allow_towt_archive_write = 'on'` pour les scripts).
+- **Hors séquence vivante et hors indicateurs** (ADR-014 D7) : toute requête
+  qui construit la séquence d'un navire, un indicateur publié (ponctualité,
+  compteur de traversées), le contrôle MRV nocturne ou le filtre transverse
+  exclut `origin = 'towt_archive'`. `build_leg_filter(include_archive=True)`
+  n'est posé que par `/tracking` et `/performance/navigation`. Toute nouvelle
+  requête `select(Leg)` doit choisir explicitement ; une sentinelle reste à
+  écrire (lot 2).
+- Angles morts : aucune météo pour l'archive ; KPI annuels 2024-2025 sans
+  cargo/OPEX/MRV ; `event_capture.prefill_position` étiquette toute position
+  `thalos_auto` (préexistant).
+

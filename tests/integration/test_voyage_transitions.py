@@ -213,3 +213,149 @@ async def test_cascade_blocked_by_departed_downstream_is_visible(db):
     assert (leg2.etd, leg2.eta) == (etd2, eta2)  # fait réalisé jamais réécrit
     notif_types = [r.type for r in (await db.execute(Notification.__table__.select())).fetchall()]
     assert "cascade_blocked" in notif_types
+
+
+@pytest.mark.asyncio
+async def test_one_active_leg_per_vessel(db):
+    """Un seul leg actif par navire : le départ du leg suivant exige l'arrivée
+    du précédent, et le termine opérationnellement (voyage_completed_at)."""
+    from app.services.voyage_transitions import (
+        VoyageSequenceError,
+        declare_arrival,
+        declare_departure,
+    )
+
+    leg1, leg2 = await _setup_two_legs(db)
+    await declare_departure(db, leg1, at=BASE)
+    # leg1 encore en mer → le départ de leg2 est refusé.
+    with pytest.raises(VoyageSequenceError):
+        await declare_departure(db, leg2, at=BASE + timedelta(days=24))
+    assert leg2.atd is None
+
+    await declare_arrival(db, leg1, at=BASE + timedelta(days=20))
+    assert leg1.phase == "a_quai"
+    # Départ de leg2 avant l'arrivée de leg1 → refusé (chevauchement réel).
+    with pytest.raises(VoyageSequenceError):
+        await declare_departure(db, leg2, at=BASE + timedelta(days=19))
+
+    summary = await declare_departure(db, leg2, at=BASE + timedelta(days=24))
+    assert summary["completed_leg_ids"] == [leg1.id]
+    assert leg1.voyage_completed_at is not None
+    assert leg1.status == "completed" and leg1.phase == "termine"
+    assert leg2.phase == "en_mer"
+    # Un seul leg actif (en mer / à quai) pour le navire.
+    active = [lg for lg in (leg1, leg2) if lg.phase in ("en_mer", "a_quai")]
+    assert active == [leg2]
+    # Idempotent : la fin opérationnelle n'est jamais réécrite.
+    stamp = leg1.voyage_completed_at
+    await declare_departure(db, leg2, at=BASE + timedelta(days=24, hours=2))
+    assert leg1.voyage_completed_at == stamp
+
+
+@pytest.mark.asyncio
+async def test_quiet_mode_skips_notifications(db):
+    from app.models.notification import Notification
+    from app.services.voyage_transitions import declare_arrival, declare_departure
+
+    leg1, _ = await _setup_two_legs(db)
+    await declare_departure(db, leg1, at=BASE, quiet=True)
+    await declare_arrival(db, leg1, at=BASE + timedelta(days=20), quiet=True)
+    notifs = (await db.execute(Notification.__table__.select())).fetchall()
+    assert [n.type for n in notifs if n.type in ("sosp", "eosp", "leg_activated")] == []
+    assert leg1.phase == "a_quai"  # le réel est bien posé, seules les notifications sont coupées
+
+
+def test_planning_list_shows_actuals_and_phase():
+    from app.templating import templates
+
+    src = templates.env.loader.get_source(templates.env, "staff/planning/index.html")[0]
+    assert "leg.atd|date" in src and "leg.ata|date" in src  # réel affiché quand présent
+    assert "leg.phase" in src  # statut = phase (en mer / à quai / terminé)
+    assert "En mer" in src and "À quai" in src
+
+
+@pytest.mark.asyncio
+async def test_departure_can_keep_forecast_eta(db):
+    """Reprise d'historique : ``reanchor_eta=False`` pose l'ATD (historisé) sans
+    toucher l'ETA prévisionnelle ni les legs suivants."""
+    from app.models.schedule_revision import ScheduleRevision
+    from app.services.voyage_transitions import declare_departure
+
+    leg1, leg2 = await _setup_two_legs(db)
+    eta_before, etd2_before = leg1.eta, leg2.etd
+    at = BASE + timedelta(days=3)
+    summary = await declare_departure(db, leg1, at=at, reanchor_eta=False)
+    assert _naive(leg1.atd) == _naive(at) and leg1.phase == "en_mer"
+    assert leg1.eta == eta_before  # prévisionnel conservé
+    assert leg2.etd == etd2_before  # pas de cascade
+    assert summary["eta_shift_hours"] == 0.0
+    revs = (await db.execute(ScheduleRevision.__table__.select())).fetchall()
+    assert [r.source for r in revs] == ["departure_declared"]  # le mouvement réel est tracé
+    assert _naive(revs[0].new_atd) == _naive(at)
+
+
+@pytest.mark.asyncio
+async def test_repair_vessel_sequence_closes_legacy_overlaps(db):
+    """Donnée héritée : ATD/ATA posés hors du chemin unique → deux legs « à quai ».
+    La passe de cohérence termine le leg arrivé dont le suivant a appareillé."""
+    from app.services.voyage_transitions import repair_vessel_sequence
+
+    leg1, leg2 = await _setup_two_legs(db)
+    leg1.atd, leg1.ata = BASE, BASE + timedelta(days=20)
+    leg2.atd, leg2.ata = BASE + timedelta(days=24), BASE + timedelta(days=44)
+    for lg in (leg1, leg2):
+        lg.status = "in_progress"
+    await db.flush()
+    assert [lg.phase for lg in (leg1, leg2)] == ["a_quai", "a_quai"]  # l'anomalie
+
+    repaired = await repair_vessel_sequence(db)
+    assert [(a.id, b.id) for a, b in repaired] == [(leg1.id, leg2.id)]
+    assert leg1.phase == "termine" and leg1.status == "completed"
+    assert _naive(leg1.voyage_completed_at) == _naive(leg2.atd)
+    assert leg2.phase == "a_quai"  # dernier leg arrivé : reste à quai
+    # Idempotente.
+    assert await repair_vessel_sequence(db) == []
+
+
+@pytest.mark.asyncio
+async def test_respace_downstream_spaces_planned_legs_by_port_stay(db):
+    """Planification héritée : legs planifiés enchaînés le même jour que l'ETA du
+    précédent. Le recalage à froid les espace de l'escale planifiée, historise
+    (source cascade, ancre = voyage courant) et est idempotent."""
+    from app.models.schedule_revision import ScheduleRevision
+    from app.services.date_cascade import respace_downstream
+
+    leg1, leg2 = await _setup_two_legs(db)
+    # leg1 = voyage courant (parti), escale 48 h ; leg2 planifié le jour même de l'ETA
+    # de leg1 ; leg3 planifié le jour même de l'ETA de leg2 (escale 72 h).
+    leg1.atd = BASE
+    leg2.etd, leg2.eta = BASE + timedelta(days=20), BASE + timedelta(days=40)
+    leg2.port_stay_planned_hours = 72
+    leg3 = Leg(
+        id=3,
+        leg_code="1CFRBR6",
+        vessel_id=1,
+        departure_port_id=1,
+        arrival_port_id=2,
+        etd_ref=BASE + timedelta(days=40),
+        eta_ref=BASE + timedelta(days=60),
+        etd=BASE + timedelta(days=40),
+        eta=BASE + timedelta(days=60),
+    )
+    db.add(leg3)
+    await db.flush()
+
+    summary = await respace_downstream(db, leg1, actor_name="ops")
+    assert summary["downstream_legs"] == 2
+    # leg2 : au plus tôt ETA(leg1) + 48 h = J+22 ; leg3 : ETA(leg2) + 72 h = J+45.
+    assert _naive(leg2.etd) == _naive(BASE + timedelta(days=22))
+    assert _naive(leg2.eta) == _naive(BASE + timedelta(days=42))
+    assert _naive(leg3.etd) == _naive(BASE + timedelta(days=45))
+    assert _naive(leg3.eta) == _naive(BASE + timedelta(days=65))
+    assert leg1.atd == BASE  # l'ancre ne bouge jamais
+    revs = (await db.execute(ScheduleRevision.__table__.select())).fetchall()
+    assert sorted(r.leg_id for r in revs) == [leg2.id, leg3.id]
+    assert {r.source for r in revs} == {"cascade"} and {r.trigger_leg_id for r in revs} == {leg1.id}
+    # Idempotent : un second passage ne déplace plus rien.
+    again = await respace_downstream(db, leg1, actor_name="ops")
+    assert again["downstream_legs"] == 0

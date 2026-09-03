@@ -49,8 +49,14 @@ def test_ensure_utc_mixes_naive_and_aware_safely() -> None:
 # ───────────────────────── refresh_leg_status ──────────────────────────
 
 
-def _leg(status="planned", atd=None, ata=None, closure_approved_at=None):
-    return SimpleNamespace(status=status, atd=atd, ata=ata, closure_approved_at=closure_approved_at)
+def _leg(status="planned", atd=None, ata=None, closure_approved_at=None, voyage_completed_at=None):
+    return SimpleNamespace(
+        status=status,
+        atd=atd,
+        ata=ata,
+        closure_approved_at=closure_approved_at,
+        voyage_completed_at=voyage_completed_at,
+    )
 
 
 def test_status_planned_without_reality() -> None:
@@ -69,6 +75,16 @@ def test_status_completed_only_on_closure_approval() -> None:
     leg = _leg(atd=now, ata=now)
     assert refresh_leg_status(leg) == "in_progress"
     leg.closure_approved_at = now
+    assert refresh_leg_status(leg) == "completed"
+
+
+def test_status_completed_on_operational_end() -> None:
+    """PLN-SEQ : le départ du leg suivant termine le leg (voyage_completed_at),
+    indépendamment de la clôture administrative."""
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    leg = _leg(atd=now, ata=now, voyage_completed_at=now)
     assert refresh_leg_status(leg) == "completed"
 
 
@@ -112,8 +128,23 @@ def test_push_chains_across_multiple_legs() -> None:
     ]
     pos = plan_downstream_shifts(dn, delta=timedelta(0), source_eta=BASE + timedelta(days=30))
     assert pos[2] == (BASE + timedelta(days=30), BASE + timedelta(days=50))
-    # Le push se propage : leg 3 démarrait avant la nouvelle fin du leg 2.
-    assert pos[3] == (BASE + timedelta(days=50), BASE + timedelta(days=69))
+    # Le push se propage : leg 3 démarrait avant la DISPONIBILITÉ du leg 2
+    # (ETA + escale planifiée, ici le défaut de 24 h) — jamais d'enchaînement
+    # le même jour sans temps d'escale.
+    assert pos[3] == (BASE + timedelta(days=51), BASE + timedelta(days=70))
+
+
+def test_push_respects_each_leg_port_stay() -> None:
+    """L'escale planifiée de chaque leg aval espace le suivant (constat prod :
+    des legs recalés le même jour que l'ETA du précédent)."""
+    leg2 = _lane_leg(2, BASE + timedelta(days=20), BASE + timedelta(days=40))
+    leg2.port_stay_planned_hours = 72
+    leg3 = _lane_leg(3, BASE + timedelta(days=40), BASE + timedelta(days=60))  # même jour que l'ETA
+    pos = plan_downstream_shifts(
+        [leg2, leg3], delta=timedelta(0), source_eta=BASE + timedelta(days=20)
+    )
+    assert pos[2] == (BASE + timedelta(days=20), BASE + timedelta(days=40))
+    assert pos[3] == (BASE + timedelta(days=43), BASE + timedelta(days=63))  # ETA + 3 j d'escale
 
 
 def test_sailed_leg_never_moves_and_blocks_resolution() -> None:

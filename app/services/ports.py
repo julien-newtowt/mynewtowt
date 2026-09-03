@@ -110,6 +110,39 @@ async def closest_port(
 # ---------------------------------------------------------------------------
 
 
+# Priorité des sources — qui peut écraser quoi lors d'un upsert.
+#
+# Sans cette hiérarchie, un rafraîchissement UN/LOCODE **dégradait** les
+# données curées : le catalogue embarqué donne Fécamp à 49,7594 / 0,3742, là où
+# UN/LOCODE l'arrondit à la minute (49,75 / 0,38333, soit ~1 km d'écart). Le
+# docstring du chargeur promettait « ne remplace jamais une entrée manuelle »,
+# promesse creuse en pratique : aucune source n'écrivait ``manual``.
+_SOURCE_PRECEDENCE: dict[str, int] = {
+    "manual": 30,  # correction humaine (Admin → Ports) — jamais écrasée
+    "world_ports": 20,  # catalogue embarqué, maintenu à la main
+    "unlocode-improved": 15,  # UN/LOCODE + coordonnées corrigées (OSM/Wikidata)
+}
+_DEFAULT_SOURCE_PRECEDENCE = 10
+"""Sources automatiques indifférenciées (unlocode brut, data.gouv, CSV, fichier)."""
+
+
+def source_precedence(source: str | None) -> int:
+    return _SOURCE_PRECEDENCE.get(source or "", _DEFAULT_SOURCE_PRECEDENCE)
+
+
+def may_overwrite(existing_source: str | None, new_source: str | None) -> bool:
+    """Une entrée ``existing_source`` peut-elle être réécrite par ``new_source`` ?
+
+    Un ré-import de la **même** source met toujours à jour (c'est le principe
+    d'un rafraîchissement). Sinon, seule une source de priorité supérieure ou
+    égale écrase. Les sources automatiques sont à égalité : la dernière
+    importée gagne, comportement historique conservé.
+    """
+    if existing_source == new_source:
+        return True
+    return source_precedence(new_source) >= source_precedence(existing_source)
+
+
 async def upsert_ports(db: AsyncSession, rows: Iterable[PortRow]) -> tuple[int, int]:
     """Insert new ports, update existing ones (matched on locode).
 
@@ -154,9 +187,10 @@ async def upsert_ports(db: AsyncSession, rows: Iterable[PortRow]) -> tuple[int, 
             inserted += 1
             pending += 1
         else:
-            # Don't overwrite manual entries with automatic data unless
-            # explicitly re-imported by the same source.
-            if existing.source == "manual" and row.source != "manual":
+            # Hiérarchie de sources : une donnée curée (correction humaine,
+            # catalogue embarqué) n'est jamais dégradée par un import
+            # automatique. Cf. ``may_overwrite``.
+            if not may_overwrite(existing.source, row.source):
                 continue
             existing.name = row.name
             existing.country = row.country
@@ -253,6 +287,184 @@ def _detect_delimiter(text: str) -> str:
     head = text[:2048]
     counts = {d: head.count(d) for d in (",", ";", "\t", "|")}
     return max(counts, key=counts.get)
+
+
+# ---------------------------------------------------------------------------
+# UN/LOCODE — référentiel officiel des codes de lieux (UNECE)
+# ---------------------------------------------------------------------------
+
+UNLOCODE_RETIRED_STATUS = "XX"
+"""Statut UN/LOCODE « entrée qui sera retirée de la prochaine édition ».
+
+On n'ajoute pas ces codes au référentiel : ils sont en cours de retrait chez
+UNECE. Exemple relevé le 2026-09-02 : ``REPDG`` (Pointe des Galets) est en
+``XX`` **et** sans fonction port, alors que le port réel de La Réunion est
+``RELPT`` (« Le Port », fonction ``1-3-5---``, statut ``AF``). Les entrées
+déjà présentes en base ne sont jamais supprimées pour autant — ``upsert_ports``
+n'efface rien, et un code retiré peut rester porté par un booking passé.
+"""
+
+
+@dataclass
+class UnlocodeReport:
+    """Compte-rendu de parsing — un import muet ne se contrôle pas.
+
+    ``skipped_no_coordinates`` est le compteur qui compte : c'est lui qui
+    explique un référentiel incomplet (et, en cascade, des legs sans distance
+    théorique).
+    """
+
+    total_rows: int = 0
+    kept: int = 0
+    duplicates: int = 0
+    skipped_no_coordinates: int = 0
+    skipped_no_name: int = 0
+    skipped_retired: int = 0
+    from_decimal: int = 0
+    from_packed: int = 0
+
+    def summary(self) -> str:
+        return (
+            f"{self.total_rows} lignes lues → {self.kept} retenues "
+            f"({self.from_decimal} coord. décimales, {self.from_packed} coord. DDMM) ; "
+            f"écartées : {self.skipped_no_coordinates} sans coordonnées, "
+            f"{self.skipped_no_name} sans nom, {self.skipped_retired} retirées (statut "
+            f"{UNLOCODE_RETIRED_STATUS}), {self.duplicates} doublons de locode"
+        )
+
+
+def parse_unlocode_packed_coordinates(packed: str | None) -> tuple[float, float] | None:
+    """``'4015N 12453W'`` → ``(40.25, -124.8833)``.
+
+    Format UN/LOCODE historique : ``DDMM[N|S] DDDMM[E|W]`` — degré + minute,
+    sans décimale. La précision plafonne donc à la minute d'arc (~1,8 km) :
+    suffisant pour une orthodromie transatlantique, grossier pour poser un
+    marqueur de port sur une carte. ``None`` si le parsing échoue.
+    """
+    if not packed:
+        return None
+    parts = packed.strip().split()
+    if len(parts) != 2:
+        return None
+    lat_s, lon_s = parts
+    try:
+        lat_hemi = lat_s[-1]
+        if lat_hemi not in ("N", "S"):
+            return None
+        lat_dd = int(lat_s[:-5]) if len(lat_s) >= 6 else int(lat_s[:-3])
+        lat_mm = int(lat_s[-3:-1])
+        lat = lat_dd + lat_mm / 60.0
+        if lat_hemi == "S":
+            lat = -lat
+
+        lon_hemi = lon_s[-1]
+        if lon_hemi not in ("E", "W"):
+            return None
+        lon_dd = int(lon_s[:-3])
+        lon_mm = int(lon_s[-3:-1])
+        lon = lon_dd + lon_mm / 60.0
+        if lon_hemi == "W":
+            lon = -lon
+    except (ValueError, IndexError):
+        return None
+    if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
+        return None
+    return (round(lat, 4), round(lon, 4))
+
+
+def parse_unlocode_decimal_coordinates(value: str | None) -> tuple[float, float] | None:
+    """``'42.50000,1.51667'`` → ``(42.5, 1.51667)``.
+
+    Colonne ``CoordinatesDecimal`` du jeu **improved-un-locodes** : elle
+    couvre les lieux que UN/LOCODE laisse sans coordonnées (20 % du fichier
+    officiel, dont de vrais ports) et corrige les positions fausses à partir
+    d'OpenStreetMap / Wikidata.
+
+    ⚠ Cette part dérivée d'OSM est sous **ODbL** : toute republication de ces
+    positions (carte publique, export client) doit porter l'attribution
+    OpenStreetMap. Cf. ``docs/integrations/unlocode-ports.md``.
+    """
+    if not value:
+        return None
+    parts = value.strip().split(",")
+    if len(parts) != 2:
+        return None
+    try:
+        lat, lon = float(parts[0]), float(parts[1])
+    except ValueError:
+        return None
+    if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
+        return None
+    return (round(lat, 6), round(lon, 6))
+
+
+def parse_unlocode_csv(
+    content: bytes | str, *, report: UnlocodeReport | None = None
+) -> list[PortRow]:
+    """Parse un CSV UN/LOCODE (miroir officiel ou variante géolocalisée).
+
+    Colonnes lues (``datasets/un-locode`` et ``cristan/improved-un-locodes``) :
+    ``Country``, ``Location``, ``Name``, ``NameWoDiacritics``, ``Subdivision``,
+    ``Status``, ``Function``, ``Coordinates`` et — quand elle existe —
+    ``CoordinatesDecimal``.
+
+    La colonne décimale est **prioritaire** : plus couvrante et plus précise
+    que le DDMM. Le locode est reconstitué ``Country + Location`` (le fichier
+    ne porte pas de colonne unique).
+
+    Le fichier contient régulièrement **plusieurs lignes pour un même locode**
+    (variantes orthographiques, ex. ``BEZUN`` « Zuen (Zuun) » / « Zuun
+    (Zuen) ») : la **première occurrence** gagne.
+    """
+    rep = report if report is not None else UnlocodeReport()
+    text = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else content
+    seen: set[str] = set()
+    out: list[PortRow] = []
+    for row in csv.DictReader(io.StringIO(text)):
+        if not row:
+            continue
+        rep.total_rows += 1
+        country = (row.get("Country") or "").strip().upper()[:2]
+        loc = (row.get("Location") or "").strip().upper()[:3]
+        if not country or not loc:
+            continue
+        locode = (country + loc).replace(" ", "")[:5]
+        if locode in seen:
+            rep.duplicates += 1
+            continue
+        if (row.get("Status") or "").strip().upper() == UNLOCODE_RETIRED_STATUS:
+            rep.skipped_retired += 1
+            continue
+        name = (row.get("Name") or row.get("NameWoDiacritics") or "").strip()
+        if not name:
+            rep.skipped_no_name += 1
+            continue
+        coords = parse_unlocode_decimal_coordinates(row.get("CoordinatesDecimal"))
+        if coords is not None:
+            rep.from_decimal += 1
+            source = "unlocode-improved"
+        else:
+            coords = parse_unlocode_packed_coordinates(row.get("Coordinates"))
+            if coords is None:
+                rep.skipped_no_coordinates += 1
+                continue
+            rep.from_packed += 1
+            source = "unlocode"
+        seen.add(locode)
+        rep.kept += 1
+        out.append(
+            PortRow(
+                locode=locode,
+                name=name[:100],
+                country=country,
+                latitude=coords[0],
+                longitude=coords[1],
+                source=source,
+                function_code=(row.get("Function") or "").strip() or "1-------",
+                subdivision=(row.get("Subdivision") or "").strip()[:8] or None,
+            )
+        )
+    return out
 
 
 def _filter_unlocode_seaports(rows: list[PortRow]) -> list[PortRow]:

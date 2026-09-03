@@ -64,7 +64,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.bunker import BunkerOperation, BunkerTankAllocation
 from app.models.env_report import EnvFieldModification, EnvReport
 from app.models.flgo import FlgoReading
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.nav_event import EVENT_TYPES
 from app.models.port import Port
 from app.models.validation import QualityCheckResult, ValidationRule
@@ -1795,8 +1795,14 @@ async def _leg_of(db: AsyncSession, leg_id: int | None) -> Leg | None:
 
 
 def _leg_is_active(leg: Leg) -> bool:
-    """Voyage « actif » = non clôturé (pas d'approbation de clôture) et non annulé."""
-    return _get(leg, "closure_approved_at") is None and _get(leg, "status") != "cancelled"
+    """Voyage « actif » = non clôturé (pas d'approbation de clôture), non annulé
+    et vécu dans l'ERP (une archive TOWT, ADR-014, n'a ni événements ni clôture
+    à attendre : elle ne relève pas du contrôle qualité nocturne)."""
+    return (
+        _get(leg, "origin") != LEG_ORIGIN_TOWT
+        and _get(leg, "closure_approved_at") is None
+        and _get(leg, "status") != "cancelled"
+    )
 
 
 async def run_nightly_quality(db: AsyncSession, now: datetime | None = None) -> dict[str, int]:
