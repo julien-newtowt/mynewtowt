@@ -12,6 +12,16 @@ temporel (``voyage_track.leg_window``), d'où l'ordre : **d'abord les legs**
 (``import_towt_legs``), puis les positions. Aucune météo n'est associée à
 l'archive (le snapshot Windy ne concerne que le dernier point).
 
+**Borne d'archive (garde-fou).** Le dossier satcom couvre aussi la période
+NEWTOWT et des navires postérieurs à la reprise (Atlantis, Atlas) : les
+fichiers sont découpés par année civile, alors que la frontière TOWT/NEWTOWT
+est la **fin du dernier voyage d'archive du navire**. Étiqueter une position
+NEWTOWT vivante en ``towt_archive`` la rendrait de plus impurgeable. Le script
+calcule donc, pour chaque navire, la borne = `ATA du dernier leg
+origin='towt_archive'` + 1 jour (la journée d'arrivée appartient au voyage),
+ignore tout point au-delà, et **refuse** un fichier dont le navire n'a aucun
+leg d'archive. ``--until`` remplace la borne calculée (décision explicite).
+
 OPÉRATION SENSIBLE — dry-run par défaut (travail complet puis ROLLBACK) ;
 ``--yes`` pour committer.
 
@@ -19,6 +29,8 @@ Usage :
     python -m scripts.import_towt_positions --dir ./gps_towt              # dry-run
     python -m scripts.import_towt_positions --dir ./gps_towt --yes
     python -m scripts.import_towt_positions --file towt_gps_anemos_2025.csv --yes
+    python -m scripts.import_towt_positions --dir ./gps_towt --vessel ANEMOS
+    python -m scripts.import_towt_positions --dir ./gps_towt --until 2026-01-31
 """
 
 from __future__ import annotations
@@ -28,13 +40,14 @@ import asyncio
 import csv
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import insert, select
+from sqlalchemy import func, insert, select
 
 from app.database import SessionLocal
 from app.models.claim import VesselPosition
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.vessel import Vessel
 from app.services.admin_data import TOWT_ARCHIVE_SOURCE
 
@@ -50,6 +63,8 @@ class FileReport:
     skipped_existing: int = 0
     skipped_duplicate: int = 0
     skipped_invalid: int = 0
+    skipped_after_cutoff: int = 0
+    cutoff: str = ""
     first: str = ""
     last: str = ""
     errors: list[str] = field(default_factory=list)
@@ -125,7 +140,24 @@ def load_points(path: Path, report: FileReport) -> tuple[str | None, list[dict]]
     return vessel_name, points
 
 
-async def import_file(db, path: Path) -> FileReport:
+async def archive_cutoff(db, vessel_id: int) -> datetime | None:
+    """Borne d'archive du navire : lendemain de l'ATA de son dernier leg
+    ``origin='towt_archive'``. ``None`` si le navire n'a aucun leg d'archive —
+    le fichier n'est alors pas de l'archive TOWT et doit être refusé."""
+    last_ata = (
+        await db.execute(
+            select(func.max(Leg.ata))
+            .where(Leg.vessel_id == vessel_id)
+            .where(Leg.origin == LEG_ORIGIN_TOWT)
+        )
+    ).scalar_one_or_none()
+    if last_ata is None:
+        return None
+    day = _naive(last_ata).replace(hour=0, minute=0, second=0, microsecond=0)
+    return (day + timedelta(days=1)).replace(tzinfo=UTC)
+
+
+async def import_file(db, path: Path, *, until: datetime | None = None) -> FileReport:
     report = FileReport(name=path.name)
     vessel_name, points = load_points(path, report)
     if report.errors:
@@ -138,6 +170,26 @@ async def import_file(db, path: Path) -> FileReport:
     if vessel is None:
         report.errors.append(f"navire « {vessel_name} » introuvable en base")
         return report
+
+    cutoff = until or await archive_cutoff(db, vessel.id)
+    if cutoff is None:
+        report.errors.append(
+            f"aucun leg d'archive TOWT pour « {vessel_name} » : ce fichier couvre "
+            "la période NEWTOWT (ou un navire postérieur à la reprise). Les "
+            "positions vivantes arrivent par /api/tracking/upload, pas par "
+            "l'archive — utiliser --until pour forcer une borne si c'est voulu."
+        )
+        return report
+    report.cutoff = cutoff.date().isoformat()
+    kept = [p for p in points if p["recorded_at"] < cutoff]
+    report.skipped_after_cutoff = len(points) - len(kept)
+    points = kept
+    if not points:
+        report.errors.append(
+            f"tous les points sont postérieurs à la borne d'archive ({report.cutoff})"
+        )
+        return report
+
     lo, hi = points[0]["recorded_at"], points[-1]["recorded_at"]
     existing_naive = {
         _naive(ts)
@@ -192,22 +244,28 @@ def _naive(ts: datetime) -> datetime:
 def _files(args) -> list[Path]:
     if args.file:
         return [args.file]
-    return sorted(args.dir.glob("towt_gps_*.csv"))
+    pattern = f"towt_gps_{args.vessel.lower()}_*.csv" if args.vessel else "towt_gps_*.csv"
+    return sorted(args.dir.glob(pattern))
 
 
-async def run(files: list[Path], *, apply: bool) -> int:
+async def run(files: list[Path], *, apply: bool, until: datetime | None = None) -> int:
     if not files:
         print("✖ aucun fichier towt_gps_*.csv à importer")
         return 2
     failed = False
     async with SessionLocal() as db:
         for path in files:
-            rep = await import_file(db, path)
+            rep = await import_file(db, path, until=until)
             status = "✖" if rep.errors else "✔"
             print(
                 f"{status} {rep.name}: {rep.read} lus, {rep.inserted} insérés, "
                 f"{rep.skipped_existing} déjà présents, {rep.skipped_duplicate} doublons, "
                 f"{rep.skipped_invalid} invalides"
+                + (
+                    f", {rep.skipped_after_cutoff} hors archive (> {rep.cutoff})"
+                    if rep.skipped_after_cutoff
+                    else ""
+                )
                 + (f" ({rep.first} → {rep.last})" if rep.first else "")
             )
             for e in rep.errors:
@@ -231,9 +289,23 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--dir", type=Path, help="dossier des CSV consolidés")
     group.add_argument("--file", type=Path, help="un seul CSV consolidé")
+    parser.add_argument("--vessel", help="Ne reprendre qu'un navire (anemos | artemis)")
+    parser.add_argument(
+        "--until",
+        help="Borne d'archive explicite AAAA-MM-JJ (inclus) — remplace la borne "
+        "calculée depuis le dernier leg d'archive du navire",
+    )
     parser.add_argument("--yes", action="store_true", help="Appliquer (sinon dry-run)")
     args = parser.parse_args(argv)
-    return asyncio.run(run(_files(args), apply=args.yes))
+    until = None
+    if args.until:
+        try:
+            day = datetime.strptime(args.until, "%Y-%m-%d")
+        except ValueError:
+            print("✖ --until attend une date AAAA-MM-JJ", file=sys.stderr)
+            return 2
+        until = (day + timedelta(days=1)).replace(tzinfo=UTC)
+    return asyncio.run(run(_files(args), apply=args.yes, until=until))
 
 
 if __name__ == "__main__":
