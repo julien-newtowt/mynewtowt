@@ -191,7 +191,8 @@ async def onboard_landing(
     if selected_leg:
         pol = await db.get(Port, selected_leg.departure_port_id)
         pod = await db.get(Port, selected_leg.arrival_port_id)
-        vessel_status = "en_mer" if (selected_leg.atd and not selected_leg.ata) else "a_quai"
+        # Cf. escale_router : ``Leg.phase`` est la dérivation unique (5 états).
+        vessel_status = selected_leg.phase
 
     # LOT 4 — brouillons d'événements en cours de l'utilisateur (bloc landing).
     my_drafts = await _my_event_drafts(db, user)

@@ -55,11 +55,18 @@
   }
 
   // ── Pays + zones : un seul appel, quelques centaines d'octets ──────
+  // Renvoie ``false`` si l'appel a échoué. ``api()`` convertit toute erreur en
+  // ``null`` : sans cette distinction, une API muette est indiscernable d'un
+  // référentiel vide, et la cascade Zone/Pays s'affichait vide **sans le dire**
+  // — le défaut signalé par les Opérations le 03/09. La recherche libre, elle,
+  // signalait déjà son indisponibilité : c'est ce contrat qu'on généralise.
   function loadCountries() {
     return api("/api/v1/ports/countries").then(function (rows) {
-      countries = rows || [];
+      if (rows === null) { countries = []; zoneByCountry = {}; return false; }
+      countries = rows;
       zoneByCountry = {};
       countries.forEach(function (c) { zoneByCountry[c.country] = c.zone; });
+      return true;
     });
   }
 
@@ -84,7 +91,9 @@
     if (!country) return Promise.resolve([]);
     return api("/api/v1/ports/search?limit=" + PORTS_PER_COUNTRY +
                "&country=" + encodeURIComponent(country))
-      .then(function (rows) { (rows || []).forEach(cache); return rows || []; });
+      // ``null`` (échec) propagé tel quel : le confondre avec « ce pays n'a
+      // aucun port » ferait afficher une liste vide comme un fait.
+      .then(function (rows) { if (rows === null) return null; rows.forEach(cache); return rows; });
   }
 
   function fetchPortById(id) {
@@ -176,6 +185,10 @@
     if (!country) { resetPort(el, "Choisissez un pays"); return Promise.resolve([]); }
     resetPort(el, "Chargement…");
     return fetchPortsOfCountry(country).then(function (ports) {
+      if (ports === null) {
+        resetPort(el, "Liste indisponible — réessayez");
+        return [];
+      }
       var html = '<option value="">— Choisir —</option>';
       ports.forEach(function (p) {
         html += '<option value="' + p.id + '" data-locode="' + p.locode + '">' +
@@ -441,14 +454,41 @@
   }
 
   // ── Init ───────────────────────────────────────────────────────────
+  // Référentiel des pays injoignable : la cascade Zone → Pays → Port ne peut
+  // pas fonctionner, mais les raccourcis et la recherche libre, eux, restent
+  // opérants (ils n'en dépendent pas). On le dit dans chaque colonne au lieu
+  // de laisser deux menus déroulants vides sans explication.
+  function reportCascadeUnavailable() {
+    ["pol", "pod"].forEach(function (prefix) {
+      var e = els(prefix);
+      if (e.state) {
+        e.state.textContent = "Filtres indisponibles";
+        e.state.classList.remove("pill-neutral");
+        e.state.classList.add("pill-warn");
+      }
+      if (e.zone) resetPort(e.zone, "Indisponible");
+      if (e.country) resetPort(e.country, "Indisponible");
+      if (e.port && !e.port.value) {
+        resetPort(e.port, "Utilisez la recherche ci-dessous");
+      }
+      if (e.results) {
+        e.results.innerHTML =
+          '<div class="text-muted text-sm" style="padding:8px 12px;">' +
+          "Référentiel des pays injoignable. Les ports habituels et la " +
+          "recherche par nom ou LOCODE restent utilisables.</div>";
+      }
+    });
+  }
+
   function init() {
     document.addEventListener("leg:pick-port", function (ev) {
       var d = ev.detail || {};
       if (ready) pickById(d.prefix, d.id, d.hint); else pendingPicks.push(d);
     });
 
-    loadCountries().then(function () {
+    loadCountries().then(function (ok) {
       ready = true;
+      if (!ok) reportCascadeUnavailable();
       bindCascade("pol");
       bindCascade("pod");
       bindSearch("pol");

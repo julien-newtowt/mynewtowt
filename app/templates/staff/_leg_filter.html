@@ -84,8 +84,15 @@
     </span>
   </div>
   {% if vessel_status %}
+  {# Icône par phase. Le libellé vient de ``leg_phase_label`` (source unique
+     ``LEG_PHASE_LABELS``) : le recopier ici ferait qu'une phase non traitée
+     s'afficherait sous un libellé faux — c'est le défaut corrigé, où tout ce
+     qui n'était pas « en mer » devenait « À quai », leg planifié compris. #}
+  {% set phase_icons = {'planifie': 'calendar-clock', 'en_mer': 'waves',
+                        'a_quai': 'anchor', 'termine': 'check-circle',
+                        'annule': 'ban'} %}
   <div class="vessel-status-badge {{ vessel_status }}">
-    {% if vessel_status == 'a_quai' %}<i data-lucide="anchor"></i> À quai{% else %}<i data-lucide="waves"></i> En mer{% endif %}
+    <i data-lucide="{{ phase_icons.get(vessel_status, 'help-circle') }}"></i> {{ leg_phase_label(vessel_status) or vessel_status }}
   </div>
   {% endif %}
   {% if locked %}<span class="lock-badge"><i data-lucide="lock"></i> Verrouillée</span>{% endif %}
