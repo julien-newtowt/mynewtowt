@@ -11,9 +11,138 @@
 
 ---
 
-## 0. ÉTAT AU 2026-08-21 — fait foi, supersède tout ce qui suit
+## 0. ÉTAT AU 2026-09-01 (soir) — fait foi, supersède tout ce qui suit
 
-> ⚠️ **Lire ce §0 avant le reste.** Les sections 1 à 12 sont conservées comme
+> ⚠️ **Lire ce §0 avant le reste.** La file des 7 lots de la phase 2 est
+> **entièrement fusionnée** : les sections suivantes, §0 bis compris, sont
+> conservées comme **récit historique** et décrivent une file qui n'existe plus.
+
+### La phase 2 est soldée
+
+Julien a fusionné les 7 lots (PR #149, #154, #156 → #160) entre le 2026-08-18 et
+le 2026-08-21, puis a mené son propre chantier sur `main` (PR #161 → #169) :
+refonte du module commercial, audit et remédiation « vente à bord + caisse de
+bord », reprise UX legacy en 3 phases, et séquence déclarative départ/arrivée
+(PLN-SEQ). `main` est à `afa66d9`, tête Alembic **`20260901_0136`**,
+145 migrations.
+
+### 🔴 `main` est rouge sur `lint` — correctif en attente dans la PR #170
+
+Depuis la fusion de la PR #169, `black --check app tests` échoue sur `main` :
+4 fichiers de PLN-SEQ ne sont pas formatés (`app/services/date_cascade.py`,
+`app/routers/escale_router.py`, `app/routers/captain_router.py`,
+`tests/integration/test_escale_reprise.py`). Écart **purement cosmétique**,
+48 lignes de retour à la ligne, **égalité d'AST vérifiée** avant/après sur les
+quatre fichiers.
+
+La **PR #170** (`fix/ci-black-pln-seq`) ne contient que ce reformatage et est
+**verte sur les trois jobs** — dont `test` en 9 min 07, ce qui établit au passage
+que **le formatage est le seul défaut de `main`** : PLN-SEQ n'a rien cassé
+d'autre.
+
+⇒ **Conséquence pour les quatre PR ci-dessous** : elles sont ouvertes alors que
+`main` est rouge, donc leur job `lint` échoue par **héritage**, sur des fichiers
+qu'elles ne touchent pas. Ce n'est pas un défaut de leur contenu. Une fois la
+#170 fusionnée, réintégrer `main` dans chacune les rend vertes.
+
+### Quatre branches prêtes
+
+| Branche | Contenu | Suite complète (conteneur Linux) |
+|---|---|---|
+| `docs/note-reprise-2026-09-01` | Ce §0 + `09-note-reprise-2026-09-01.md` | markdown seul |
+| `docs/claude-md-socle-methode` | `CLAUDE.md` scindé (socle de méthode gardé, cadrage daté de la période de congés retiré) + `PROJECT_CONTEXT.md` §7 | markdown seul |
+| `feature/support-ticketing` | Module Assistance (support applicatif) | ✅ **3121** passés, 1 ignoré |
+| `feature/dashboard-env-integration` | Dashboard Performance Environnementale v2 (5 pages) + suppression du legacy MRV | ✅ **3025** passés, 1 ignoré |
+
+Les quatre ont `main` intégré à `afa66d9` (**`behind = 0`**) et sont **poussables
+en fast-forward** — `main` y a été intégré par une **fusion**, jamais par un
+rebase, donc aucun historique partagé n'a été réécrit et aucun force push n'a été
+nécessaire.
+
+> 🔎 Les suites sont exécutées **dans le conteneur Linux**, pas sous Windows :
+> WeasyPrint y trouve GTK/Pango, sans quoi ~19 tests de rendu PDF échouent pour
+> une raison d'environnement et non de code. Sous Windows, lire un résultat rouge
+> sur ces tests-là ne veut rien dire.
+
+### ✅ Collision de têtes Alembic — annoncée, survenue, traitée
+
+La PR #169 a posé `20260901_0136_schedule_revision_actuals.py` sur
+`20260828_0135`, où pointaient les deux migrations **non publiées** des branches
+de code. Sa fusion a donc recréé **deux têtes** sur chacune, exactement comme
+prévu — et la sentinelle `tests/regression/test_alembic_single_head.py` les a
+attrapées avant tout déploiement.
+
+| Branche | Migration | `down_revision` |
+|---|---|---|
+| `feature/support-ticketing` | `20260821_0119_support_ticketing.py` | → `20260901_0136` |
+| `feature/dashboard-env-integration` | `20260713_0106_drop_mrv_legacy_tables.py` | → `20260901_0136` |
+
+**Règle appliquée, à réappliquer telle quelle la prochaine fois** : on rechaîne
+une révision **non publiée** sur `main` ; on pose une migration de **fusion**
+seulement pour une révision **déjà absorbée** par `main`. Réécrire l'ascendance
+d'une révision déjà appliquée ferait considérer l'autre chaîne comme appliquée
+sur toute base qui la porte, et ses tables manqueraient silencieusement.
+
+⇒ **Ce motif se reproduira** à chaque fois qu'une branche de fonctionnalité
+attend pendant qu'une migration part sur `main`. Ce n'est pas un défaut à
+corriger, c'est une étape normale de mise à jour de branche.
+
+### Ordre de fusion recommandé
+
+0. **PR #170** — débloque la CI pour tout le monde. Tout le reste en dépend.
+1. **`docs/note-reprise-2026-09-01`** — ce §0 et la note de reprise ; elle
+   explique les trois autres, donc elle gagne à être lue en premier.
+2. **`docs/claude-md-socle-methode`** — markdown seul, aucun risque de
+   régression. La fusionner tôt évite que les branches suivantes réintroduisent
+   la section de consignes périmée à chaque intégration de `main`.
+3. **`feature/support-ticketing`** — module autonome, sans recouvrement de code
+   avec le chantier PLN-SEQ.
+4. **`feature/dashboard-env-integration`** — en dernier, et **pas sans revue
+   explicite** : elle porte un `DROP` de tables (`mrv_events`,
+   `mrv_parameters`) et le décommissionnement de `dashboard_env_router`.
+   Arbitrage de Yasmin du 2026-09-01 : le `DROP` est sans conséquence
+   aujourd'hui, **aucune donnée MRV n'étant encore en base** — mais la décision
+   d'architecture reste à confirmer par Julien.
+
+> ⚠️ **Après chaque fusion**, les branches restantes doivent réintégrer `main`.
+> Si la branche fusionnée portait une migration, les migrations non publiées des
+> branches restantes sont à rechaîner sur la nouvelle tête — cf. la section
+> précédente. C'est le geste que la fusion de #169 a rendu nécessaire deux fois.
+
+### Recouvrements avec le chantier PLN-SEQ (PR #169, fusionnée)
+
+Mesurés fichier par fichier avant fusion, et **tous absorbés sans conflit** :
+
+| Branche | Fichiers partagés avec #169 | Résultat |
+|---|---|---|
+| `docs/claude-md-socle-methode` | `CLAUDE.md`, `PROJECT_CONTEXT.md` | fusion automatique propre (zones disjointes) |
+| `feature/support-ticketing` | `CLAUDE.md` | fusion automatique propre |
+| `feature/dashboard-env-integration` | `CLAUDE.md`, `app/routers/captain_router.py`, `app/services/planning.py` | fusion automatique propre, **vérifiée à la main** : le garde-fou `delete_leg` reste débarrassé de `MRVEvent`, et `effective_etd`/`effective_eta` de #169 sont bien présents |
+
+**Un couplage de tests à connaître.** `tests/integration/test_planning_effective_dates.py`,
+arrivé avec PLN-SEQ, importe `_setup_leg` depuis
+`tests/integration/test_mrv_reprise`. Cet import est **valide sur `main`**, où ce
+module existe — mais `feature/dashboard-env-integration` supprime ce module
+(legacy MRV) après avoir relocalisé le helper dans `conftest.py`, et la collecte
+pytest s'interrompait donc entièrement sur cette branche. Import rectifié dans la
+branche, sur le motif que suivent les huit autres suites. C'est le **deuxième**
+test venu de `main` à buter sur cette relocalisation (après
+`test_portal_messages_read.py`) : mieux vaut savoir que `_setup_leg` vit
+désormais dans `conftest.py` que corriger le cas une troisième fois.
+
+### Ce qui reste ouvert du côté de Julien
+
+Deux branches à lui, poussées et sans PR au 2026-09-01 :
+`fix/stock-scientific-notation` (stock affiché en notation scientifique) et
+`claude/user-message-au0tqk` (**ADR-014** — régularisation d'un écart de caisse
+réservée au siège), que son propre journal donne « à arbitrer ».
+
+---
+
+## 0 bis. ÉTAT AU 2026-08-21 — récit historique, superseded par le §0
+
+> ⚠️ **Section historique** — vraie au 2026-08-21, superseded par le §0.
+> Les sections 1 à 12 sont conservées comme
 > **récit historique** et contiennent des affirmations vraies à leur date, fausses
 > aujourd'hui — notamment tout ce qui concerne le lot `fix/alembic-merge-heads`
 > (supprimé le 2026-08-10) et la ligne « aucun lot ne porte de migration »
