@@ -100,7 +100,7 @@
           <tr>
             <td>{{ row.label }}</td>
             <td>{{ row.currency }}</td>
-            <td class="mono">{{ row.qty.normalize() }}</td>
+            <td class="mono">{{ row.qty|qty }}</td>
             <td class="mono">{{ "%.2f"|format(row.net|float) }}</td>
           </tr>
         {% else %}

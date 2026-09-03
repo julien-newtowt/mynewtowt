@@ -1130,3 +1130,41 @@ def test_stripe_api_kwargs_are_valid_per_request_options():
         getattr(stripe.default_http_client, "_timeout", None)
         == stripe_checkout.REQUEST_TIMEOUT_SECONDS
     )
+
+
+# ────────── Fix 2026-09-01 — stock affiché « 3E+1 » (notation scientifique) ──────────
+
+
+def test_qty_filter_renders_positional_notation():
+    """Le filtre ``qty`` remplace ``.normalize()`` nu dans les templates.
+
+    ``Decimal("30.000").normalize()`` vaut ``3E+1`` — affiché tel quel sur
+    l'inventaire de bord. Le filtre force la notation positionnelle en
+    conservant l'ébarbage des zéros de fin.
+    """
+    from decimal import Decimal
+
+    from app.templating import _format_qty
+
+    assert _format_qty(Decimal("30.000")) == "30"
+    assert _format_qty(Decimal("3E+1")) == "30"
+    assert _format_qty(Decimal("2.500")) == "2.5"
+    assert _format_qty(Decimal("0.000")) == "0"
+    assert _format_qty(Decimal("-10.0")) == "-10"
+    assert _format_qty(None) == ""
+
+
+def test_templates_never_call_bare_normalize():
+    """Sentinelle : plus aucun ``.normalize()`` nu dans les templates.
+
+    C'est le motif qui produisait « 3E+1 » — toute quantité Decimal affichée
+    passe par le filtre ``|qty``.
+    """
+    from pathlib import Path
+
+    offenders = [
+        str(f)
+        for f in Path("app/templates").rglob("*.html")
+        if ".normalize()" in f.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], offenders

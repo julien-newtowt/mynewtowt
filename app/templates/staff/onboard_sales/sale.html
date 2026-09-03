@@ -33,9 +33,9 @@
           <tr>
             <td>{{ l.label }}</td>
             <td class="text-right mono">{{ "%.2f"|format(l.unit_price|float) }}</td>
-            <td class="text-right mono">{{ l.qty.normalize() }}</td>
+            <td class="text-right mono">{{ l.qty|qty }}</td>
             <td class="text-right mono">
-              {% if l.discount_pct %}−{{ l.discount_pct.normalize() }} %{% else %}—{% endif %}
+              {% if l.discount_pct %}−{{ l.discount_pct|qty }} %{% else %}—{% endif %}
             </td>
             <td class="text-right mono">{{ "%.2f"|format(l.line_total|float) }}</td>
             {% if sale.status == "draft" %}

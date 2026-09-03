@@ -51,7 +51,7 @@
         <td style="padding:5pt; text-align:right; border-bottom:1px solid #E4E4E4;"
             class="mono">{{ "%.2f"|format(line.unit_price|float) }}</td>
         <td style="padding:5pt; text-align:right; border-bottom:1px solid #E4E4E4;"
-            class="mono">{{ line.qty.normalize() }}</td>
+            class="mono">{{ line.qty|qty }}</td>
         <td style="padding:5pt; text-align:right; border-bottom:1px solid #E4E4E4;"
             class="mono">{{ "%.2f"|format(line.line_total|float) }}</td>
       </tr>
