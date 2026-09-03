@@ -77,9 +77,9 @@ PURGE_DATE_COLUMNS: dict[str, str] = {
     "rate_limit_attempts": "attempted_at",
 }
 # Garde de complétude : toute table purgeable doit déclarer sa colonne de date.
-assert set(ALLOWED_PURGE_TABLES) == set(PURGE_DATE_COLUMNS), (
-    "chaque table purgeable doit déclarer sa colonne d'horodatage (PURGE_DATE_COLUMNS)"
-)
+assert set(ALLOWED_PURGE_TABLES) == set(
+    PURGE_DATE_COLUMNS
+), "chaque table purgeable doit déclarer sa colonne d'horodatage (PURGE_DATE_COLUMNS)"
 
 # Tables dont seule la purge **par rétention** est autorisée (M-2). Le journal
 # d'audit est la trace de qui a modifié quoi — notamment les grilles tarifaires
@@ -94,9 +94,9 @@ RETENTION_ONLY_PURGE_TABLES: frozenset[str] = frozenset({"activity_logs"})
 # cette liste explicite documente l'intention et sert de garde-fou si quelqu'un
 # l'y ajoutait un jour par analogie avec les autres journaux.
 NEVER_PURGE_TABLES: frozenset[str] = frozenset({"rate_offer_revisions"})
-assert not (set(ALLOWED_PURGE_TABLES) & NEVER_PURGE_TABLES), (
-    "une table d'historique inaltérable ne peut pas être purgeable"
-)
+assert not (
+    set(ALLOWED_PURGE_TABLES) & NEVER_PURGE_TABLES
+), "une table d'historique inaltérable ne peut pas être purgeable"
 
 # Lignes protégées à l'intérieur d'une table purgeable (ADR-014). Les positions
 # GPS reprises des archives TOWT vivent dans ``vessel_positions`` aux côtés des
@@ -107,9 +107,9 @@ TOWT_ARCHIVE_SOURCE = "towt_archive"
 PURGE_PROTECTED_ROWS: dict[str, tuple[str, str]] = {
     "vessel_positions": ("source", TOWT_ARCHIVE_SOURCE),
 }
-assert set(PURGE_PROTECTED_ROWS) <= set(ALLOWED_PURGE_TABLES), (
-    "une protection de lignes ne se déclare que sur une table purgeable"
-)
+assert set(PURGE_PROTECTED_ROWS) <= set(
+    ALLOWED_PURGE_TABLES
+), "une protection de lignes ne se déclare que sur une table purgeable"
 
 
 def _table(name: str):

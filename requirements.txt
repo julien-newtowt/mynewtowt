@@ -7,6 +7,18 @@ uvicorn[standard]==0.34.0
 pydantic==2.10.4
 pydantic-settings==2.7.0
 python-multipart==0.0.20
+# Épinglé comme tout le reste de ce fichier : anyio n'était qu'une dépendance
+# transitive de starlette, donc libre de dériver. anyio 4.15.0 a déprécié
+# l'alias `anyio.abc.BlockingPortal`, que `starlette.testclient` évalue à
+# l'import (annotation de module) ; `filterwarnings = ["error"]` de
+# pyproject.toml en fait une erreur, et la collecte pytest s'interrompt sur
+# 4 modules. `main` est ainsi devenu rouge le 03/09/2026 sans qu'aucune ligne
+# de code ne change. 4.14.2 est la version la plus haute qui n'émet pas
+# l'avertissement (mesuré de 4.6.2 à 4.15.0).
+# Le correctif durable est en amont : les starlette récents utilisent
+# `anyio.from_thread.BlockingPortal`. Ce pin pourra tomber au prochain
+# relèvement de fastapi/starlette.
+anyio==4.14.2
 
 # --- Database ---
 sqlalchemy[asyncio]==2.0.36
