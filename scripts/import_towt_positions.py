@@ -266,10 +266,13 @@ def _naive(ts: datetime) -> datetime:
 
 
 def _files(args) -> list[Path]:
+    """Fichiers à importer. ``--dir`` cherche **récursivement** : un ``docker cp``
+    ou un ``scp`` répété ajoute volontiers un niveau de dossier, et l'import ne
+    doit pas échouer pour cette raison."""
     if args.file:
         return [args.file]
     pattern = f"towt_gps_{args.vessel.lower()}_*.csv" if args.vessel else "towt_gps_*.csv"
-    return sorted(args.dir.glob(pattern))
+    return sorted(args.dir.rglob(pattern))
 
 
 async def run(files: list[Path], *, apply: bool, until: datetime | None = None) -> int:
@@ -329,7 +332,18 @@ def main(argv: list[str] | None = None) -> int:
             print("✖ --until attend une date AAAA-MM-JJ", file=sys.stderr)
             return 2
         until = (day + timedelta(days=1)).replace(tzinfo=UTC)
-    return asyncio.run(run(_files(args), apply=args.yes, until=until))
+    files = _files(args)
+    if not files and args.dir is not None:
+        # Dire ce qui a été trouvé plutôt que « rien à importer » : le cas
+        # courant est un niveau de dossier en trop, ou un dossier vide.
+        found = sorted(p.name for p in args.dir.rglob("*.csv"))[:10]
+        print(f"✖ aucun fichier towt_gps_*.csv sous {args.dir}", file=sys.stderr)
+        print(
+            f"  CSV présents : {', '.join(found) if found else 'aucun'}",
+            file=sys.stderr,
+        )
+        return 2
+    return asyncio.run(run(files, apply=args.yes, until=until))
 
 
 if __name__ == "__main__":
