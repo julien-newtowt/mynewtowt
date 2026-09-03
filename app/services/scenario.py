@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.planning_scenario import PlanningScenario, ScenarioLeg
 from app.models.port import Port
 from app.models.vessel import Vessel
@@ -30,6 +30,7 @@ from app.services.geo import leg_trade_category
 from app.services.planning import (
     MAX_PLAUSIBLE_SPEED_KN,
     InvalidLegDates,
+    assert_leg_mutable,
     compute_effective_distance_nm,
     renumber_vessel_year,
     validate_dates,
@@ -140,7 +141,9 @@ async def clone_real_legs_into(
     Lecture seule sur ``legs`` : on ne lit que pour dupliquer. Renvoie le
     nombre de traversées clonées.
     """
-    stmt = select(Leg).order_by(Leg.etd.asc())
+    # Les archives TOWT (ADR-014) ne se clonent pas : un scénario ne rejoue
+    # pas le passé de l'ancienne compagnie, et ``apply`` ne doit jamais le viser.
+    stmt = select(Leg).where(Leg.origin != LEG_ORIGIN_TOWT).order_by(Leg.etd.asc())
     if vessel_id is not None:
         stmt = stmt.where(Leg.vessel_id == vessel_id)
     if date_from is not None:
@@ -613,6 +616,7 @@ async def apply_to_active_planning(
         )
         if not fields_changed:
             continue
+        assert_leg_mutable(real)  # archive TOWT : lecture seule (ADR-014)
 
         real.vessel_id = sc_leg.vessel_id
         real.departure_port_id = sc_leg.departure_port_id

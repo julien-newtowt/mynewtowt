@@ -23,7 +23,7 @@ from typing import Any, overload
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.planning_share import PlanningShare
 
 
@@ -45,6 +45,25 @@ class LegContinuityError(PlanningError):
 
 class LegSpeedIncoherent(PlanningError):
     """Durée incohérente avec la distance et la vitesse plausible."""
+
+
+class LegArchivedError(PlanningError):
+    """Le leg est une archive TOWT (ADR-014) : lecture seule, aucune mutation."""
+
+
+def assert_leg_mutable(leg: Leg) -> None:
+    """Refuse toute mutation d'un leg repris des archives TOWT.
+
+    Un voyage de l'ancienne compagnie est un **fait établi** : on ne l'édite
+    pas, on ne le déplace pas, on ne le supprime pas, on ne re-déclare pas son
+    départ ni son arrivée. Garde unique appelée par ``update_leg``,
+    ``delete_leg``, ``voyage_transitions.declare_*`` et le cockpit escale.
+    """
+    if leg.origin == LEG_ORIGIN_TOWT:
+        raise LegArchivedError(
+            f"Le leg {leg.leg_code} est une archive TOWT (lecture seule) : "
+            "l'historique repris ne se modifie pas."
+        )
 
 
 # Vitesse max physiquement plausible pour un voilier-cargo NEWTOWT (kn).
@@ -362,10 +381,13 @@ async def validate_leg_schedule(
     ignored = set(ignore_overlap_leg_ids)
 
     # ── 1. Chevauchement temporel sur le même navire ──────────────────
+    # Les archives TOWT (ADR-014) ne font pas partie de la séquence vivante :
+    # ni chevauchement, ni continuité, ni cascade ne les considèrent.
     overlap_stmt = (
         select(Leg)
         .where(Leg.vessel_id == vessel_id)
         .where(Leg.status != "cancelled")
+        .where(Leg.origin != LEG_ORIGIN_TOWT)
         .where(Leg.etd < eta)
         .where(Leg.eta > etd)
     )
@@ -386,6 +408,7 @@ async def validate_leg_schedule(
         select(Leg)
         .where(Leg.vessel_id == vessel_id)
         .where(Leg.status != "cancelled")
+        .where(Leg.origin != LEG_ORIGIN_TOWT)
         .where(Leg.etd < etd)
         .order_by(Leg.etd.desc())
         .limit(1)
@@ -404,6 +427,7 @@ async def validate_leg_schedule(
         select(Leg)
         .where(Leg.vessel_id == vessel_id)
         .where(Leg.status != "cancelled")
+        .where(Leg.origin != LEG_ORIGIN_TOWT)
         .where(Leg.etd > etd)
         .order_by(Leg.etd.asc())
         .limit(1)
@@ -516,6 +540,8 @@ async def renumber_vessel_year(
                 .where(Leg.etd >= year_start)
                 .where(Leg.etd < year_end)
                 .where(Leg.status != "cancelled")
+                # Archives TOWT (ADR-014) : code d'origine figé, hors rang.
+                .where(Leg.origin != LEG_ORIGIN_TOWT)
                 .order_by(Leg.etd.asc(), Leg.id.asc())
             )
         )
@@ -702,6 +728,7 @@ async def _lane_after(
         .where(Leg.vessel_id == vessel_id)
         .where(Leg.id != exclude_leg_id)
         .where(Leg.status != "cancelled")
+        .where(Leg.origin != LEG_ORIGIN_TOWT)
         .where(Leg.etd > after_etd)
         .order_by(Leg.etd.asc())
     )
@@ -812,6 +839,7 @@ async def update_leg(
     ``source`` qualifie l'origine du recalcul dans ``schedule_revisions``
     (``planning_edit`` | ``gantt_move`` | ``eta_shift``).
     """
+    assert_leg_mutable(leg)
     new_etd = ensure_utc(etd) or ensure_utc(leg.etd)
     new_eta = ensure_utc(eta) or ensure_utc(leg.eta)
     validate_dates(new_etd, new_eta)
@@ -1077,6 +1105,7 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
     ``PlanningError`` au lieu de remonter en 500, et la session reste
     utilisable pour re-rendre la page avec le bandeau d'erreur.
     """
+    assert_leg_mutable(leg)
     from sqlalchemy import delete as sa_delete
     from sqlalchemy import func
     from sqlalchemy.exc import IntegrityError
@@ -1185,8 +1214,16 @@ async def list_legs_in_window(
     date_to: datetime | None = None,
     vessel_id: int | None = None,
     status: str | None = None,
+    origin: str | None = None,
 ) -> list[Leg]:
+    """Legs dont la plage ETD→ETA intersecte la fenêtre.
+
+    ``origin`` : ``None`` = tous ; ``"towt_archive"`` = archives TOWT
+    uniquement ; ``"newtowt"`` = legs vécus dans l'ERP (ADR-014).
+    """
     stmt = select(Leg).order_by(Leg.etd.asc())
+    if origin:
+        stmt = stmt.where(Leg.origin == origin)
     if date_from is not None:
         stmt = stmt.where(Leg.eta >= date_from)
     if date_to is not None:

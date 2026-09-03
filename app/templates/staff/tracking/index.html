@@ -55,6 +55,12 @@
        data-no-position-text="Aucun point enregistré pour ce filtre."
        data-no-position-detail="Choisis un navire/leg ou une période contenant des positions satcom."
        data-points='{{ history.points|tojson }}'></div>
+  {% if history.points_total and history.points_total > history.points_cap %}
+  <div class="text-muted text-xs" style="padding:var(--space-2) var(--space-3);">
+    Affichage décimé : {{ history.points|length }} points tracés sur {{ history.points_total }} enregistrés
+    (la page Navigation calcule distances et vitesses sur la trace complète).
+  </div>
+  {% endif %}
 </article>
 {% else %}
 {# ── Vue temps réel : dernière position connue de chaque navire ── #}

@@ -21,13 +21,15 @@
   </div>
 </header>
 
+{# Filtre d'origine (ADR-014) propagé sur tous les liens du bandeau. #}
+{%- set _oq = ('&origin=' ~ selected_origin) if selected_origin and selected_origin != 'all' else '' -%}
 <div class="planning-filters mb-3">
   <div class="vessel-tabs">
-    <a href="/planning?year={{ selected_year }}" class="vessel-tab {% if not filter_vessel_id %}active{% endif %}">
+    <a href="/planning?year={{ selected_year }}{{ _oq }}" class="vessel-tab {% if not filter_vessel_id %}active{% endif %}">
       <i data-lucide="layers"></i> Tous les navires
     </a>
     {% for v in vessels %}
-    <a href="/planning?year={{ selected_year }}&vessel_id={{ v.id }}"
+    <a href="/planning?year={{ selected_year }}&vessel_id={{ v.id }}{{ _oq }}"
        class="vessel-tab {% if filter_vessel_id == v.id %}active{% endif %}">
       <i data-lucide="ship"></i> {{ v.name }}
     </a>
@@ -35,10 +37,19 @@
   </div>
   <div class="year-selector">
     {% for y in years|sort %}
-    <a href="/planning?year={{ y }}{% if filter_vessel_id %}&vessel_id={{ filter_vessel_id }}{% endif %}"
+    <a href="/planning?year={{ y }}{% if filter_vessel_id %}&vessel_id={{ filter_vessel_id }}{% endif %}{{ _oq }}"
        class="year-btn {% if y == selected_year %}active{% endif %}">{{ y }}</a>
     {% endfor %}
   </div>
+  <div class="year-selector" title="Origine des voyages : NEWTOWT (vécus dans l'ERP) ou archives TOWT (ancienne compagnie, lecture seule)">
+    {%- set _base = '/planning?year=' ~ selected_year ~ ('&vessel_id=' ~ filter_vessel_id if filter_vessel_id else '') -%}
+    <a href="{{ _base }}" class="year-btn {% if selected_origin == 'all' %}active{% endif %}">Toutes origines</a>
+    <a href="{{ _base }}&origin=newtowt" class="year-btn {% if selected_origin == 'newtowt' %}active{% endif %}">NEWTOWT</a>
+    <a href="{{ _base }}&origin=towt" class="year-btn {% if selected_origin == 'towt' %}active{% endif %}">Archive TOWT</a>
+  </div>
+  {% if archive_count %}
+    <span class="pill pill-neutral" style="align-self:center;" title="Voyages repris des archives de l'ancienne compagnie — lecture seule (ADR-014)">🗄 {{ archive_count }} archive(s) TOWT</span>
+  {% endif %}
   {% if conflict_count %}
     <a href="/planning/conflicts" class="pill pill-warn" style="align-self:center;">⚠ {{ conflict_count }} conflit(s) port</a>
   {% endif %}
@@ -175,7 +186,9 @@
       {% for leg in legs %}
         {% set v = (vessels | selectattr("id", "equalto", leg.vessel_id) | list | first) %}
         <tr>
-          <td><span class="mono">{{ leg.leg_code }}</span></td>
+          <td><span class="mono">{{ leg.leg_code }}</span>
+            {% if leg.is_archive %}<span class="pill pill-neutral text-xs" title="Archive TOWT — voyage de l'ancienne compagnie, lecture seule (ADR-014)">TOWT</span>{% endif %}
+          </td>
           <td>{{ v.name if v else '—' }}</td>
           <td>
             <span class="mono">{{ ports[leg.departure_port_id].locode if ports[leg.departure_port_id] else '?' }}</span>

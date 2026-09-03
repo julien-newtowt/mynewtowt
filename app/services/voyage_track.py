@@ -15,6 +15,7 @@ Lecture seule : aucune écriture en base.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -86,23 +87,40 @@ async def positions_in_window(
     vessel_id: int,
     start: datetime | None = None,
     end: datetime | None = None,
+    light: bool = False,
 ) -> list[VesselPosition]:
-    """Positions d'un navire dans une fenêtre [start, end], triées chronologiquement."""
-    stmt = select(VesselPosition).where(VesselPosition.vessel_id == vessel_id)
+    """Positions d'un navire dans une fenêtre [start, end], triées chronologiquement.
+
+    ``light=True`` renvoie des lignes allégées (``recorded_at``, ``latitude``,
+    ``longitude``, ``sog_kn``, ``cog_deg`` — mêmes attributs, pas d'instance ORM
+    ni d'identity map) : indispensable pour les traces d'archive au pas de 5 min
+    (≈ 6 000 points par leg, ≈ 105 000 par navire et par an, ADR-014).
+    """
+    if light:
+        stmt = select(
+            VesselPosition.recorded_at,
+            VesselPosition.latitude,
+            VesselPosition.longitude,
+            VesselPosition.sog_kn,
+            VesselPosition.cog_deg,
+        ).where(VesselPosition.vessel_id == vessel_id)
+    else:
+        stmt = select(VesselPosition).where(VesselPosition.vessel_id == vessel_id)
     if start is not None:
         stmt = stmt.where(VesselPosition.recorded_at >= start)
     if end is not None:
         stmt = stmt.where(VesselPosition.recorded_at <= end)
     stmt = stmt.order_by(VesselPosition.recorded_at.asc())
-    return list((await db.execute(stmt)).scalars().all())
+    result = await db.execute(stmt)
+    return list(result.all()) if light else list(result.scalars().all())
 
 
 async def positions_for_leg(
-    db: AsyncSession, leg: Leg, *, now: datetime | None = None
+    db: AsyncSession, leg: Leg, *, now: datetime | None = None, light: bool = False
 ) -> list[VesselPosition]:
     """Positions satcom rattachées à un leg (même navire, fenêtre départ→arrivée)."""
     start, end, _ = leg_window(leg, now=now)
-    return await positions_in_window(db, vessel_id=leg.vessel_id, start=start, end=end)
+    return await positions_in_window(db, vessel_id=leg.vessel_id, start=start, end=end, light=light)
 
 
 # SEC-05 — au-delà de cette vitesse implicite, un segment est considéré comme
@@ -278,7 +296,7 @@ async def annual_navigation_kpis(
 
     rows: list[NavigationKpiRow] = []
     for leg in legs:
-        positions = await positions_for_leg(db, leg, now=now)
+        positions = await positions_for_leg(db, leg, now=now, light=True)
         if not positions:
             continue
         dep = await db.get(Port, leg.departure_port_id)
@@ -347,6 +365,29 @@ def downsample_for_weather(
     if positions[-1] is not kept[-1]:
         kept.append(positions[-1])
     return kept
+
+
+# Plafond de points sérialisés vers la carte d'historique. Les archives TOWT
+# (ADR-014) sont au pas de 5 min : ~105 000 points par navire et par an — un
+# JSON de plusieurs Mo dans la page. Le calcul de distance (``actual_distance_nm``)
+# garde toujours la résolution complète ; seul l'AFFICHAGE est décimé.
+MAX_TRACK_POINTS_HISTORY = 4000
+
+
+def downsample(positions: Sequence[VesselPosition], *, max_points: int) -> list[VesselPosition]:
+    """Décime une trace par pas régulier en conservant le premier et le dernier point.
+
+    Ne modifie pas l'ordre ; ``max_points <= 0`` ou trace déjà courte → inchangé.
+    """
+    pts = list(positions)
+    if max_points <= 0 or len(pts) <= max_points:
+        return pts
+    if max_points == 1:
+        return [pts[0], pts[-1]]
+    step = (len(pts) - 1) / (max_points - 1)
+    keep = [pts[round(i * step)] for i in range(max_points - 1)]
+    keep.append(pts[-1])
+    return keep
 
 
 def positions_payload(positions: list[VesselPosition]) -> list[dict]:

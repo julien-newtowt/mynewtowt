@@ -60,11 +60,12 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.sof_event import SofEvent
 from app.services.planning import (
     DEFAULT_PORT_STAY_HOURS,
     PlanningError,
+    assert_leg_mutable,
     ensure_utc,
     refresh_leg_status,
 )
@@ -123,6 +124,7 @@ async def _next_leg(db: AsyncSession, leg: Leg) -> Leg | None:
             .where(Leg.vessel_id == leg.vessel_id)
             .where(Leg.id != leg.id)
             .where(Leg.status != "cancelled")
+            .where(Leg.origin != LEG_ORIGIN_TOWT)
             .where(Leg.etd > leg.etd)
             .order_by(Leg.etd.asc(), Leg.id.asc())
             .limit(1)
@@ -143,6 +145,7 @@ async def _previous_legs(db: AsyncSession, leg: Leg) -> list[Leg]:
                 .where(Leg.vessel_id == leg.vessel_id)
                 .where(Leg.id != leg.id)
                 .where(Leg.status != "cancelled")
+                .where(Leg.origin != LEG_ORIGIN_TOWT)
                 .where(Leg.etd < leg.etd)
                 .order_by(Leg.etd.asc(), Leg.id.asc())
             )
@@ -195,6 +198,7 @@ async def declare_departure(
     d'ETA appliqué), ``cascade`` (synthèse ``date_cascade``),
     ``completed_leg_ids`` (legs précédents terminés par ce départ).
     """
+    assert_leg_mutable(leg)  # archive TOWT : le réel est un fait, il ne se redéclare pas
     from app.services.finance_rollup import rollup_for_leg
     from app.services.notifications import notify_sosp
     from app.services.voyage_events import on_vessel_departed
@@ -345,6 +349,7 @@ async def declare_arrival(
     ATA + durée d'escale planifiée, notification aux Opérations). ``quiet``
     coupe les notifications (reprise d'historique en masse).
     """
+    assert_leg_mutable(leg)  # archive TOWT : le réel est un fait, il ne se redéclare pas
     from app.services.finance_rollup import rollup_for_leg
     from app.services.notifications import notify_eosp, notify_leg_activated
     from app.services.voyage_events import on_vessel_arrived
@@ -478,6 +483,7 @@ async def repair_vessel_sequence(
     stmt = (
         select(Leg)
         .where(Leg.status != "cancelled")
+        .where(Leg.origin != LEG_ORIGIN_TOWT)  # ADR-014 : hors séquence vivante
         .order_by(Leg.vessel_id.asc(), Leg.etd.asc(), Leg.id.asc())
     )
     if vessel_id is not None:
