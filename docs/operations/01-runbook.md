@@ -116,9 +116,48 @@ Scripts livrés dans `scripts/` :
    restore snapshot et exit 1.
 7. Rolling restart `up -d --force-recreate app`.
 8. Wait `/health` pendant `HEALTH_TIMEOUT_SECONDS` (90 s). Échec ⇒
-   rollback + exit 2.
-9. Smoke tests (12 endpoints). Échec ⇒ rollback + exit 2.
-10. Maintenance OFF + report.
+   retour arrière applicatif, **maintenance non levée**, exit 2.
+9. Smoke tests (12 endpoints). Même traitement qu'au point 8.
+10. Maintenance OFF + mémorisation de la révision saine + report.
+
+### 4.1 bis Retour arrière applicatif (`rollback_app`)
+
+Jusqu'au 2026-09-03, cette étape n'existait que sur le papier : la fonction
+n'émettait que deux avertissements réclamant une intervention manuelle, et la
+maintenance était levée **avant** elle. Un déploiement raté laissait donc la
+production morte et découverte — c'est ce qui a transformé une erreur de
+syntaxe en plus d'une heure d'indisponibilité.
+
+Comportement réel désormais :
+
+- La révision qui tournait avant le déploiement est capturée par `sync_code`
+  **avant tout checkout** (`PREVIOUS_VERSION`), avec repli sur
+  `backups/.last-release` — la dernière révision ayant passé health **et**
+  smoke tests.
+- En cas d'échec, `rollback_app` **recompile et redéploie** cette révision,
+  puis vérifie `/health`. Il n'y a pas d'image précédente à repuller : le
+  service `app` est déclaré `build: .` sans `image:`, donc chaque build écrase
+  le tag. La révision git est la seule trace de l'état d'avant.
+- La maintenance n'est levée **que si** le retour arrière est sain. Sinon le
+  script sort en 2 en nommant la dernière révision saine connue.
+- Si des migrations ont été appliquées pendant le déploiement (tête Alembic
+  comparée avant/après), le retour arrière du code seul le signale : l'ancien
+  code se retrouve face au nouveau schéma, ce qui n'est sûr que si les
+  migrations sont rétro-compatibles. La commande `rollback.sh <snapshot>` à
+  lancer est affichée.
+- Rien à faire pour revenir sur la branche de déploiement : le retour arrière
+  travaille en HEAD détaché, et le `sync_code` suivant refait
+  `checkout main` + `merge --ff-only`.
+
+⚠️ **Limite connue, non corrigée.** Le marqueur de maintenance vit dans
+`/tmp/.maintenance` **à l'intérieur du conteneur app**
+(`app/middlewares/maintenance.py`). Un `--force-recreate` le détruit, et un
+conteneur qui a quitté ne sert plus rien : pendant la fenêtre où l'application
+est morte, les visiteurs reçoivent un 502 du reverse proxy, pas la page
+d'attente. Ne pas lever la maintenance reste néanmoins utile — c'est ce qui
+évite d'exposer un backend non validé quand le conteneur, lui, tourne. Rendre
+le marqueur persistant (volume, ou prise en charge côté Caddy) est un
+correctif distinct, non traité ici.
 
 ### 4.2 Contrainte anti-chevauchement (`legs_no_vessel_overlap`)
 
