@@ -472,3 +472,57 @@ chaque migration au moment de sa fusion, jamais en avance ; (5) `COUNT(*)` de pr
 **Décisions qui reviennent à Yasmin / Julien** — le DROP legacy MRV (irréversible,
 sans ADR) ; le maintien ou non de la redirection `/dashboard-env` ; le choix entre
 reformater à `black 24.10.0` ou remonter le pin.
+
+---
+
+## 11. Suites du 2026-09-03 — ce qui a été fait, ce qui reste
+
+> Ajouté en fin de journée. Les sections 1 à 10 décrivent l'état **au matin** et
+> restent le compte rendu de l'audit ; cette section dit ce qu'il en est advenu.
+
+### Ce qui a été fusionné
+
+| PR | Objet | Issue |
+|---|---|---|
+| #170 → #174 | les cinq PR auditées | **toutes fusionnées** — l'ordre et les conditions recommandés n'ont pas été suivis |
+| #182 | `hotfix(captain)` — `IndentationError` de la résolution de conflit de #170 | fusionnée |
+| #183 | `fix(deploy)` — retour arrière applicatif réel | fusionnée |
+| #184 | `fix(alembic)` — révision de fusion `20260903_0139` | fusionnée |
+| #185 | `fix(ci)` — `black` + `anyio` épinglé | fusionnée |
+| #186 | `fix(mrv)` — renommage au lieu du `DROP`, fusion `20260903_0140`, import mort | fusionnée |
+
+### Cinq déploiements en échec, deux causes
+
+| Heure UTC | Commit | Cause |
+|---|---|---|
+| 07:22, 07:31, 08:34 | `c31805a`, `93a6e6d` | `IndentationError` — conflit de #170 résolu en gardant les deux `except` |
+| 09:28 | `1d480c6` | têtes Alembic multiples (#173 non rechaînée) |
+| 10:41 | `1f082f9` | têtes Alembic multiples (#174, troisième enfant de `0136`) |
+
+Aucune donnée perdue : les deux échecs de migration ont restauré le snapshot
+sans avoir rien appliqué, et l'image n'a jamais été permutée.
+
+### Arbitrages rendus
+
+- **`DROP` du legacy MRV → renommage** (`*_deprecated_20260903`, PR #186). Le
+  « GATE HUMAIN » de la migration n'était qu'une docstring ; le comptage en
+  production n'avait jamais été fait. La suppression sèche reste à instruire.
+- **Fusion et non rechaînage** pour les deux collisions Alembic : les révisions
+  étaient publiées sur `main`, donc rechaîner aurait pu faire manquer des
+  tables silencieusement sur une base de développement.
+
+### Reste à faire
+
+1. **Protection de branche sur `main`** — runbook §4.0. C'est la cause commune
+   des cinq échecs : les deux défauts avaient été détectés par la CI avant le
+   déploiement, et la sentinelle Alembic a signalé les quatre collisions de
+   l'histoire du projet sans jamais pouvoir bloquer une fusion.
+2. **`COUNT(*)` en production** sur `mrv_events_deprecated_20260903` et
+   `mrv_parameters_deprecated_20260903`, consigné, avant toute suppression sèche.
+3. **Marqueur de maintenance persistant** — il vit dans `/tmp` du conteneur app,
+   donc détruit par `--force-recreate` et inaccessible quand l'app est morte.
+   Documenté dans `rollback_app`, non corrigé.
+4. **Correctif orphelin `fix/stock-scientific-notation`** — toujours sans PR ;
+   le stock de Vente à bord s'affiche encore « 3E+1 » au lieu de « 30 ».
+5. **Redirection `/dashboard-env` → `/dashboard-perf`** — absente : les favoris
+   des Opérations tombent en 404.

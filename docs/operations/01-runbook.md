@@ -103,6 +103,147 @@ Scripts livrés dans `scripts/` :
 ./scripts/smoke-tests.sh https://staging.my.newtowt.eu
 ```
 
+### 4.0 Protection de la branche `main` — préalable à tout déploiement
+
+> **À appliquer une fois, dans les réglages du dépôt.** Cette section décrit une
+> configuration à poser manuellement : ni `deploy.sh`, ni la CI, ni un agent ne
+> peuvent la mettre en place — c'est un réglage GitHub, accessible au seul
+> propriétaire du dépôt.
+
+#### Pourquoi
+
+La journée du **2026-09-03** a produit cinq déploiements en échec pour deux
+causes, et **les deux avaient été détectées par la CI avant le déploiement** :
+
+| Heure UTC | Commit | Cause | La CI disait |
+|---|---|---|---|
+| 07:22 | `c31805a` | `IndentationError` (résolution de conflit gardant deux `except`) | rouge depuis 06:53 |
+| 07:31 | `c31805a` | idem — même code redéployé | rouge |
+| 08:34 | `93a6e6d` | idem — PR #171 empilée par-dessus | rouge |
+| 09:28 | `1d480c6` | têtes Alembic multiples (PR #173) | rouge, sentinelle explicite |
+| 10:41 | `1f082f9` | têtes Alembic multiples (PR #174) | rouge, sentinelle explicite |
+
+`tests/regression/test_alembic_single_head.py` a signalé **les quatre**
+collisions de têtes de l'historique du projet (07/08, 26/08, et deux fois le
+03/09). Elle n'a jamais pu empêcher une fusion. **Un garde-fou qui n'est pas
+opposable est un avertissement, pas un garde-fou** — c'est le constat central de
+cet incident, et il ne se corrige pas dans le code.
+
+Second effet, plus insidieux : tant que `main` est rouge pour une raison de
+fond (ce jour-là : `black` sur deux fichiers, puis `anyio` non épinglé), **le
+rouge d'une sentinelle utile se noie dans un rouge d'ambiance**. Personne ne
+distingue plus le signal qui compte. Garder `main` vert n'est pas de l'hygiène :
+c'est ce qui rend tous les autres contrôles lisibles.
+
+#### Configuration à poser
+
+`Settings → Branches → Add branch protection rule`, ou
+`Settings → Rules → Rulesets` sur les dépôts récents.
+
+| Réglage | Valeur | Ce que ça évite |
+|---|---|---|
+| Branch name pattern | `main` | — |
+| **Require a pull request before merging** | ✅ | Un push direct sur `main` (le CLAUDE.md l'interdit déjà ; ceci le rend impossible) |
+| ↳ Require approvals | `1` | Applique la politique de revue : Julien valide chaque PR |
+| ↳ Dismiss stale approvals when new commits are pushed | ✅ | Une approbation qui ne porte plus sur le code fusionné |
+| **Require status checks to pass before merging** | ✅ | **Les cinq échecs du tableau ci-dessus** |
+| ↳ Checks requis | `lint`, `test`, `security` | — |
+| ↳ **Require branches to be up to date before merging** | ✅ | Une PR ouverte sur une base périmée — les cinq PR du jour étaient à **27 commits** de `main` |
+| **Do not allow bypassing the above settings** | ✅ | Le contournement administrateur, qui a permis les fusions sur rouge |
+| **Allow force pushes** | ❌ | Réécriture d'historique partagé |
+| **Allow deletions** | ❌ | Suppression accidentelle de `main` |
+
+⚠️ **Ne pas exiger le check `build`.** Le job `build` de `.github/workflows/ci.yml`
+porte `if: github.ref == 'refs/heads/main'` : il **ne s'exécute jamais sur une
+pull request**. L'exiger mettrait chaque PR en attente d'un check qui n'arrivera
+pas — blocage total et déroutant. Les trois checks à exiger sont exactement
+`lint`, `test` et `security`, qui tournent sur l'événement `pull_request`.
+
+Équivalent en ligne de commande, pour appliquer le réglage de façon tracée :
+
+L'API de protection de branche attend des objets imbriqués : passer le corps en
+JSON (`--input`), et non en paires `-f cle=valeur`, que `gh` n'aplatit pas
+correctement pour cet endpoint.
+
+```bash
+cat <<'JSON' | gh api -X PUT \
+  repos/julien-newtowt/mynewtowt/branches/main/protection --input -
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": ["lint", "test", "security"]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 1,
+    "dismiss_stale_reviews": true
+  },
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+JSON
+```
+
+`restrictions: null` est **obligatoire** (et non omissible) : l'endpoint refuse
+la requête si la clé manque. `enforce_admins: true` est la traduction API de
+« Do not allow bypassing » — c'est la ligne qui compte.
+
+Vérification :
+
+```bash
+gh api repos/julien-newtowt/mynewtowt/branches/main/protection \
+  | python3 -m json.tool
+```
+
+#### Ce que « up to date before merging » change au quotidien
+
+C'est le réglage le plus utile ici, et celui qui coûte le plus cher en confort :
+GitHub exige que la branche ait intégré `main` **avant** de fusionner, donc la
+CI rejoue après chaque mise à jour. Sur une file de PR, chaque fusion invalide
+la suivante.
+
+C'est exactement le problème qu'il faut payer. Les cinq PR du 03/09 avaient une
+CI **verte ou rouge datant d'avant 27 commits de `main`** : ces verdicts ne
+disaient plus rien de l'état réel. Et c'est ce réglage qui aurait exigé le
+rechaînage des migrations **au moment de la fusion**, quand la tête réelle est
+connue — la discipline que ce runbook réclame au §6.2 sans pouvoir l'imposer.
+
+Coût mesuré : la CI tourne en ~12 minutes. Sur une file de 4 PR, cela ajoute
+environ 3 rejeux, soit ~36 minutes d'attente cumulée. À comparer aux cinq
+déploiements perdus et à l'heure d'indisponibilité du 03/09.
+
+#### Urgence : fusionner malgré un check rouge
+
+Cette procédure existe pour que la protection ne soit **jamais désactivée** au
+premier incident — c'est ainsi qu'elle se perd.
+
+1. **Établir que le rouge n'est pas celui de la PR.** Rejouer le check en local
+   sur la branche (`ruff check app tests`, `black --check app tests`,
+   `pytest tests/unit tests/integration tests/regression`) et constater que
+   l'échec reproduit à l'identique sur `main` seul. Un rouge hérité de `main`
+   n'est pas une raison de fusionner sur rouge : c'est une raison de corriger
+   `main` d'abord, par une PR dédiée — c'est ce qu'a fait la PR #185.
+2. Si le déblocage ne peut pas attendre, **lever la protection nommément et pour
+   la durée du geste** (`Do not allow bypassing` décoché, fusion, recoché), en
+   consignant dans la PR : qui, quand, pourquoi, et quel check a été outrepassé.
+3. **Jamais** de fusion sur un `test` rouge dont l'échec porte sur la PR
+   elle-même. La sentinelle Alembic et la sentinelle
+   `tests/unit/test_delete_leg_models.py` décrivent des pannes de déploiement,
+   pas des préférences de style.
+
+#### Contrôle avant fusion, tant que la protection n'est pas posée
+
+```bash
+pytest tests/regression/test_alembic_single_head.py -q --no-cov
+ruff check app tests && black --check app tests
+python -c "from app.main import app; print(len(app.routes), 'routes')"
+```
+
+La dernière ligne est celle qui manquait le 03/09 : elle échoue immédiatement si
+un module de l'application ne s'importe pas, ce que `/health` ne peut dire
+qu'après un déploiement.
+
 ### 4.1 Workflow `deploy.sh`
 
 1. Pre-flight : docker / git / curl présents, `.env` valide, refus
