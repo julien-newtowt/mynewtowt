@@ -1,0 +1,73 @@
+{# Assistance — dépôt d'une demande.
+   Le contexte technique (navigateur, version, referer) est capturé CÔTÉ SERVEUR ;
+   seul `page_url` transite par ce formulaire, et il est assaini à l'arrivée. #}
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('sup_title_new', lang) }} — {{ brand.nom_court }} ERP{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">{{ t('s_grp_assistance', lang) }}</span>
+  <h1 class="display">{{ t('sup_title_new', lang) }}</h1>
+  <p class="text-muted">{{ t('sup_intro_new', lang) }}</p>
+</header>
+
+{% if error %}<div class="alert alert-error mb-4">{{ error }}</div>{% endif %}
+
+<form class="card" method="POST" action="/support/nouveau" enctype="multipart/form-data">
+  <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+  <input type="hidden" name="page_url" value="{{ from_url }}" />
+
+  {% if from_url %}
+  <p class="text-sm text-muted mb-3">
+    {{ t('sup_ctx_page', lang) }} : <code>{{ from_url }}</code>
+  </p>
+  {% endif %}
+
+  <div class="grid grid-2 gap-3">
+    <div>
+      <label class="label" for="kind">{{ t('sup_f_kind', lang) }}</label>
+      <select id="kind" name="kind" required>
+        {% for k in kinds %}
+        <option value="{{ k }}">{{ t(kind_keys[k], lang) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="label" for="severity">{{ t('sup_f_severity', lang) }}</label>
+      <select id="severity" name="severity" required>
+        {% for s in severities %}
+        <option value="{{ s }}" {% if s == 'genant' %}selected{% endif %}>{{ t(severity_keys[s], lang) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="mt-3">
+    <label class="label" for="title">{{ t('sup_f_title', lang) }}</label>
+    <input id="title" name="title" type="text" maxlength="200" required />
+  </div>
+
+  <div class="mt-3">
+    <label class="label" for="description">{{ t('sup_f_description', lang) }}</label>
+    <textarea id="description" name="description" rows="6" required></textarea>
+  </div>
+
+  <div class="grid grid-2 gap-3 mt-3">
+    <div>
+      <label class="label" for="occurred_at">{{ t('sup_f_occurred_at', lang) }}</label>
+      <input id="occurred_at" name="occurred_at" type="datetime-local" />
+    </div>
+    <div>
+      <label class="label" for="attachments">{{ t('sup_f_attachments', lang) }}</label>
+      <input id="attachments" name="attachments" type="file" multiple />
+      <p class="text-sm text-muted">{{ max_attachments }} max</p>
+    </div>
+  </div>
+
+  <div class="flex gap-2 mt-4">
+    <button type="submit" class="btn btn-primary">{{ t('sup_b_submit', lang) }}</button>
+    <a href="/support" class="btn btn-ghost">{{ t('s_nav_support', lang) }}</a>
+  </div>
+</form>
+
+{% endblock %}

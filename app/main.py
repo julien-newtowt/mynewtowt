@@ -64,6 +64,7 @@ from app.routers import (
     staff_booking_router,
     staff_dashboard_router,
     stowage_router,
+    support_router,
     tickets_router,
     tracking_router,
     veille_router,
@@ -250,6 +251,9 @@ def create_app() -> FastAPI:
     app.include_router(admin_router.router)
     app.include_router(notifications_router.router)
     # ─── Existing routers ───
+    # Assistance (support applicatif) — distinct de tickets_router, qui porte
+    # les incidents d'exploitation portuaire. Cf. SPEC_SUPPORT_TICKETING §1.
+    app.include_router(support_router.router)
     app.include_router(tickets_router.router)
     app.include_router(tickets_router.api_router)
     app.include_router(cashbox_router.router)

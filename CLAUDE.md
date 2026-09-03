@@ -410,12 +410,25 @@ Doc : `docs/integrations/unlocode-ports.md`.
 ### Permissions
 - 9 rôles : `administrateur`, `operation`, `armement`, `technique`,
   `data_analyst`, `marins`, `commercial`, `manager_maritime`, `rh`.
-- 18 modules : planning, commercial, escale, cargo, finance, kpi, captain,
-  **ventes**, crew, claims, mrv, rh, booking, tickets, analytics, chat, veille,
-  admin. `ventes` (vente à bord + caisse) est **distinct de `captain`** :
+- 20 modules : planning, commercial, escale, cargo, finance, kpi, captain,
+  **ventes**, crew, claims, mrv, qhse, rh, booking, tickets, analytics, chat,
+  veille, support, admin. `ventes` (vente à bord + caisse) est **distinct de `captain`** :
   `captain:M` déverrouille SOF, ETA, documents cargo et saisie MRV sur toute la
   flotte, sans contrôle de navire. Accorder tout le module pour permettre
   d'encaisser était une escalade de privilège.
+- ⚠️ **`tickets` ≠ `support`** — deux modules sans rapport : `tickets` porte les
+  **incidents d'exploitation portuaire** en escale (avarie, avitaillement urgent,
+  formalité douanière) ; `support` porte les **difficultés rencontrées dans le
+  logiciel** (« Assistance »). Nomenclature séparée jusqu'au vocabulaire : un
+  *ticket* d'un côté, une *demande d'assistance* de l'autre. Aucun import croisé.
+- **`support` est le seul module ouvert aux 9 rôles** (`CM` partout, `CMS` pour
+  l'administrateur) : tout le monde doit pouvoir signaler un problème. C'est
+  précisément pourquoi ce besoin ne pouvait pas être servi en étendant `tickets`,
+  fermé à `armement`, `commercial` et `rh`.
+- La matrice **ne sait pas exprimer** « voir les siennes » vs « voir toutes » :
+  ce cloisonnement et la réserve du tri vivent dans `support_router`, avec
+  `permissions.is_administrator()`. Le niveau `S` n'est **pas** détourné pour
+  signifier « peut trier ».
 - Niveaux C / M / S = Consult / Modify / Suppress.
 - Décorateur `Depends(require_permission("module", "C"|"M"|"S"))` sur
   toute route.
@@ -644,7 +657,8 @@ préférences de style.
 | Finance | `/finance` | ✅ prévisionnel/réel 5 postes + écarts + export CSV + NOx/SOx évités + section Exploitation + détail assurance + CRUD OPEX |
 | KPI | `/kpi` | ✅ vue KPI consolidée + Carbon Report par leg (intensités t·nm) ; **certificats CO₂ = label Anemos** (par booking + RSE annuel) |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
-| Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
+| Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 — **incidents d'exploitation portuaire** (à ne pas confondre avec `/support`) |
+| Assistance (support applicatif) | `/support` | ✅ signalement d'une difficulté **dans le logiciel** : contexte technique capturé automatiquement (écran, navigateur, version), pièces jointes et captures (5 max, via `safe_files`), fil d'échanges avec notes internes, tri `administrateur`, **archivage dérivé à 90 j + écran `/support/archives`** (ni colonne ni cron). Ouvert aux 9 rôles ; chacun voit les siennes, l'admin toutes. Référence `SUP-{année}-{séquence}` non recyclante |
 | Cashbox | `/cashbox` | ✅ EUR/USD/VND · mouvements datés à la **journée** (pas d'heure) · **contrôle de caisse** : état déclaré par le commandant coupure par coupure à chaque fin d'embarquement et fin de mois, écarts figés et historisés (`cash_counts`) |
 | Vente à bord | `/captain/ventes` | 🟡 **Boucle de correction en place, pas encore éprouvé à bord** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` a `ventes:CM` par défaut dans la matrice — aucun override requis. Remboursement (siège, par contre-passation), contrôle de caisse, gel à la relève, reçu PDF, vente rapide espèces rejouable hors connexion et rectification d'un mouvement de caisse livrés. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
 | RH (SIRH) | `/rh` | ✅ congés marins + SIRH sédentaires : dossier/CRUD/import, contrats & avenants + alertes, congés/absences + self-service `/rh/moi`, EVP + verrouillage période, export Silae CSV + journal des lots, coffre-fort bulletins + entretiens + reporting RH (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |

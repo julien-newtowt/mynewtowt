@@ -66,6 +66,7 @@ MODULES: tuple[str, ...] = (
     "analytics",
     "chat",
     "veille",
+    "support",
     "admin",
 )
 
@@ -201,6 +202,32 @@ _MATRIX: dict[tuple[str, str], str] = {
     ("marins", "veille"): "C",
     ("commercial", "veille"): "CM",
     ("manager_maritime", "veille"): "CMS",
+    # support — Assistance : signaler une difficulté rencontrée DANS LE LOGICIEL.
+    # ⚠️ Rien à voir avec `tickets`, qui porte les incidents d'exploitation
+    # portuaire (cf. SPEC_SUPPORT_TICKETING §1).
+    #
+    # TOUS les rôles obtiennent CM — c'est précisément pourquoi ce besoin ne
+    # pouvait pas être servi en étendant `tickets` : armement, commercial et rh
+    # n'y ont aucun accès, et leur ouvrir le kanban d'escale aurait été absurde.
+    # administrateur a déjà CMS via la boucle sur MODULES.
+    #
+    # ⚠️ La matrice ne sait PAS exprimer « voir les siennes » vs « voir toutes ».
+    # Ce cloisonnement, et la réserve du tri à administrateur, vivent dans
+    # `support_router` — pas ici. Le niveau S n'est PAS détourné pour signifier
+    # « peut trier » : S veut dire Suppress.
+    **{
+        (r, "support"): "CM"
+        for r in (
+            "operation",
+            "armement",
+            "technique",
+            "data_analyst",
+            "marins",
+            "commercial",
+            "manager_maritime",
+            "rh",
+        )
+    },
 }
 
 _LEGACY_ROLE_MAP: dict[str, str] = {
@@ -324,6 +351,22 @@ def can_edit(role: str, module: str) -> bool:
 
 def can_delete(role: str, module: str) -> bool:
     return has_permission(role, module, "S")
+
+
+def is_administrator(role: str) -> bool:
+    """``True`` si ``role`` est l'administrateur, rôles legacy normalisés.
+
+    Certaines décisions ne sont pas exprimables dans la matrice (rôle × module ×
+    niveau) : le module ``support`` doit distinguer « voir les siennes » de
+    « voir toutes », et réserver le tri. Ces règles vivent dans le routeur et
+    s'appuient sur ce helper.
+
+    À utiliser plutôt qu'un ``role == "administrateur"`` en dur, qui raterait un
+    compte encore porteur du rôle legacy ``admin``. Et plutôt qu'un
+    ``has_permission(role, module, "S")`` détourné : ``S`` signifie *Suppress*,
+    lui faire dire « peut trier » serait un mensonge sémantique.
+    """
+    return _normalize_role(role) == "administrateur"
 
 
 def has_any_access(role: str, module: str) -> bool:
