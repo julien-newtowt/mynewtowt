@@ -159,12 +159,16 @@ position ↔ voyage est temporel).
    points, premier/dernier horodatage, trous > 6 h, SHA-256). Vérifier que le
    premier horodatage est bien 2024-10-21 et que le nombre de fichiers lus
    correspond au dossier.
-3. Import serveur : copier le dossier consolidé sur le serveur, puis le rendre
-   visible au conteneur (`docker compose cp ./gps_towt app:/tmp/gps_towt`) :
+3. Import serveur. Le conteneur tourne sous l'utilisateur `app` alors que
+   `docker compose cp` dépose en `root` : **donner l'accès en lecture** après
+   la copie, sinon le script ne voit rien.
    ```bash
+   docker compose cp ./gps_towt app:/tmp/gps_towt
+   docker compose exec -u root app chmod -R a+rX /tmp/gps_towt
    docker compose exec app python -m scripts.import_towt_positions --dir /tmp/gps_towt        # dry-run
    docker compose exec app python -m scripts.import_towt_positions --dir /tmp/gps_towt --yes
    ```
+   `--dir` cherche récursivement : un niveau de dossier en trop ne bloque pas.
    Idempotent : relancer n'insère rien de nouveau. Les points portent
    `source='towt_archive'` et `import_batch=<fichier consolidé>` ; ils sont
    **exclus de toute purge** (`/admin/data`, rétention comprise).

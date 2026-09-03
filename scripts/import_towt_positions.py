@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -332,6 +333,24 @@ def main(argv: list[str] | None = None) -> int:
             print("✖ --until attend une date AAAA-MM-JJ", file=sys.stderr)
             return 2
         until = (day + timedelta(days=1)).replace(tzinfo=UTC)
+    if args.dir is not None:
+        # Diagnostics explicites : dossier absent, ou illisible parce que
+        # ``docker compose cp`` dépose en root alors que le conteneur tourne
+        # sous l'utilisateur ``app`` — sinon la recherche renvoie « rien » sans
+        # dire pourquoi.
+        if not args.dir.is_dir():
+            print(f"✖ dossier introuvable : {args.dir}", file=sys.stderr)
+            return 2
+        if not os.access(args.dir, os.R_OK | os.X_OK):
+            print(
+                f"✖ dossier illisible par l'utilisateur courant : {args.dir}\n"
+                "  Après un « docker compose cp », les fichiers appartiennent à "
+                "root : donner l'accès en lecture, par exemple\n"
+                "  docker compose exec -u root app chmod -R a+rX "
+                f"{args.dir}",
+                file=sys.stderr,
+            )
+            return 2
     files = _files(args)
     if not files and args.dir is not None:
         # Dire ce qui a été trouvé plutôt que « rien à importer » : le cas
