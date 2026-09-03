@@ -94,6 +94,8 @@ class InvalidSupportTransition(SupportError):
 class SupportStats:
     open_count: int
     new_count: int
+    blocking_open: int
+    oldest_open_days: int | None
 
 
 # ---------------------------------------------------------------------------
@@ -525,8 +527,18 @@ async def get_by_reference(db: AsyncSession, ref: str) -> SupportTicket | None:
 
 
 async def stats(db: AsyncSession) -> SupportStats:
-    """Compteurs pour l'administrateur (badge « nouvelles »)."""
+    """Compteurs pour l'administrateur (badge « nouvelles » + petit tableau de bord)."""
     rows = list((await db.execute(select(SupportTicket))).scalars().all())
-    open_count = sum(1 for t in rows if t.status not in TERMINAL_STATUSES)
+    open_rows = [t for t in rows if t.status not in TERMINAL_STATUSES]
     new_count = sum(1 for t in rows if t.status == "nouveau")
-    return SupportStats(open_count=open_count, new_count=new_count)
+    blocking_open = sum(1 for t in open_rows if t.severity == "bloquant")
+    oldest_open_days = None
+    if open_rows:
+        oldest = min(ensure_utc(t.created_at) for t in open_rows)
+        oldest_open_days = (datetime.now(UTC) - oldest).days
+    return SupportStats(
+        open_count=len(open_rows),
+        new_count=new_count,
+        blocking_open=blocking_open,
+        oldest_open_days=oldest_open_days,
+    )

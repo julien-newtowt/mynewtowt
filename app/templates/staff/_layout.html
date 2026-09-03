@@ -166,7 +166,15 @@
          Le lien « Signaler un problème » passe l'écran courant en `?from=` :
          c'est ce pré-remplissage qui fait la différence entre une demande
          exploitable et « ça bug quelque part ». La valeur est assainie côté
-         serveur (chemin relatif exigé), jamais reprise telle quelle. #}
+         serveur (chemin relatif exigé), jamais reprise telle quelle.
+
+         « Mes demandes » et « Archives » sont réservées à l'administrateur
+         (décision du 2026-09-03) : la liste et son filtre de tri appartiennent
+         à la personne qui instruit les demandes, pas à celle qui les dépose —
+         elle atterrit sur la sienne juste après l'avoir postée (redirection
+         vers `/support/{ref}`), qui reste son point de retour. La route
+         `/support` elle-même n'est pas fermée (`support:C` couvre tous les
+         rôles) : ce sont uniquement ces deux entrées de menu qui se replient. #}
       {% if v_support %}
       <div class="nav-group" data-group="assistance">
         <button class="nav-group-toggle" aria-expanded="false">
@@ -175,8 +183,10 @@
         </button>
         <ul class="nav-group-list">
           <li><a href="/support/nouveau?from={{ request.url.path | urlencode }}"><i data-lucide="megaphone"></i><span>{{ t('s_nav_support_new', lang) }}</span></a></li>
+          {% if role == 'administrateur' %}
           <li><a href="/support"><i data-lucide="life-buoy"></i><span>{{ t('s_nav_support', lang) }}</span></a></li>
           <li><a href="/support/archives"><i data-lucide="archive"></i><span>{{ t('s_nav_support_archives', lang) }}</span></a></li>
+          {% endif %}
         </ul>
       </div>
       {% endif %}
