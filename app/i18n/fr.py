@@ -1612,4 +1612,6 @@ CATALOG: dict[str, str] = {
     "sup_archive_notice": "Les demandes terminées rejoignent les archives après 90 jours. Elles restent consultables.",
     "sup_stat_new": "Nouvelles demandes",
     "sup_stat_open": "En cours de traitement",
+    "sup_stat_blocking": "Bloquantes ouvertes",
+    "sup_stat_oldest": "Plus ancienne ouverte (j)",
 }

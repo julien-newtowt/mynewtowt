@@ -100,6 +100,16 @@
       document.querySelectorAll(".sidebar nav a[href]")
     );
 
+    // Un lien peut porter une query string (ex. "/support/nouveau?from=...").
+    // location.pathname n'en a jamais : on la retire avant toute comparaison,
+    // sinon ce lien ne matche plus jamais rien et un lien parent plus court
+    // (ex. "/support") gagne par défaut alors qu'il est moins spécifique.
+    function pathOnly(href) {
+      if (!href) return href;
+      var i = href.search(/[?#]/);
+      return i === -1 ? href : href.slice(0, i);
+    }
+
     // Un lien "matche" si exact OU si le chemin courant commence par
     // href + "/" (frontière de path — évite que /me matche /medical).
     function matches(href) {
@@ -116,7 +126,7 @@
     var bestLen = -1;
     links.forEach(function (a) {
       a.removeAttribute("aria-current");
-      var href = a.getAttribute("href");
+      var href = pathOnly(a.getAttribute("href"));
       if (matches(href) && href.length > bestLen) {
         best = a;
         bestLen = href.length;

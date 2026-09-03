@@ -7,6 +7,7 @@ tous sur des fonctions pures. Ce fichier couvre l'inverse.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -621,3 +622,43 @@ async def test_attachment_add_refuses_a_text_field(db, monkeypatch, tmp_path) ->
     with pytest.raises(HTTPException) as exc:
         await attachment_add(ticket.reference, req, db=db, user=MARIN)
     assert exc.value.status_code == 400
+
+
+# ───────────────────────── Petit tableau de bord (admin) ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_stats_blocking_and_oldest(db) -> None:
+    """Les deux compteurs ajoutés au tableau de bord : bloquantes ouvertes, ancienneté."""
+    await _seed_users(db)
+
+    await _make(db, severity="bloquant")
+
+    old = await _make(db, severity="genant")
+    old.created_at = datetime.now(UTC) - timedelta(days=10, hours=1)
+    await db.flush()
+
+    closed = await _make(db, severity="mineur")
+    closed.status = "clos"
+    closed.closed_at = datetime.now(UTC)
+    await db.flush()
+
+    result = await support.stats(db)
+    assert result.open_count == 2
+    assert result.blocking_open == 1
+    assert result.oldest_open_days == 10
+
+
+@pytest.mark.asyncio
+async def test_stats_oldest_is_none_without_open_requests(db) -> None:
+    """Aucune demande ouverte : l'ancienneté n'a pas de sens, pas un faux zéro."""
+    await _seed_users(db)
+    closed = await _make(db, severity="mineur")
+    closed.status = "clos"
+    closed.closed_at = datetime.now(UTC)
+    await db.flush()
+
+    result = await support.stats(db)
+    assert result.open_count == 0
+    assert result.blocking_open == 0
+    assert result.oldest_open_days is None

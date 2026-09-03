@@ -34,6 +34,14 @@
     <div class="label">{{ t('sup_stat_open', lang) }}</div>
     <div class="value">{{ stats.open_count }}</div>
   </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('sup_stat_blocking', lang) }}</div>
+    <div class="value {% if stats.blocking_open %}text-error{% endif %}">{{ stats.blocking_open }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('sup_stat_oldest', lang) }}</div>
+    <div class="value">{{ stats.oldest_open_days if stats.oldest_open_days is not none else "—" }}</div>
+  </div>
 </section>
 {% endif %}
 

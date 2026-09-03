@@ -1612,4 +1612,6 @@ CATALOG: dict[str, str] = {
     "sup_archive_notice": "Yêu cầu đã kết thúc sẽ được lưu trữ sau 90 ngày. Vẫn có thể xem lại.",
     "sup_stat_new": "Yêu cầu mới",
     "sup_stat_open": "Đang xử lý",
+    "sup_stat_blocking": "Chặn đang mở",
+    "sup_stat_oldest": "Cũ nhất đang mở (ngày)",
 }
