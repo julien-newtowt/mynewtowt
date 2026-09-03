@@ -129,7 +129,15 @@
   <div class="kpi-card"><div class="label">Théorique</div><div class="value">{{ "%.0f"|format(nav_metrics.theoretical_nm) if nav_metrics.theoretical_nm else '—' }}{% if nav_metrics.theoretical_nm %} NM{% endif %}</div><div class="delta text-muted">orthodromie</div></div>
   <div class="kpi-card"><div class="label">Restant</div><div class="value">{{ "%.0f"|format(nav_metrics.remaining_nm) if nav_metrics.remaining_nm is not none else '—' }}{% if nav_metrics.remaining_nm is not none %} NM{% endif %}</div></div>
   <div class="kpi-card"><div class="label">Vitesse moy.</div><div class="value">{{ "%.1f"|format(nav_metrics.avg_speed_kn) if nav_metrics.avg_speed_kn else '—' }}{% if nav_metrics.avg_speed_kn %} kn{% endif %}</div></div>
-  <div class="kpi-card"><div class="label">Allongement</div><div class="value">{{ nav_metrics.real_elongation if nav_metrics.real_elongation else '—' }}</div><div class="delta text-muted">réel / orthodromie</div></div>
+  {# En mer, le rapport réel/orthodromie est un taux d'AVANCEMENT (trajet
+     partiel / voyage entier) et non un allongement — l'afficher sous ce nom
+     donnait « 0.069 » pour un navire à 7 % de sa route. Le libellé suit donc
+     la grandeur. #}
+  {% if nav_metrics.is_active %}
+  <div class="kpi-card"><div class="label">Avancement</div><div class="value">{{ "%.0f %%"|format(nav_metrics.progress_ratio * 100) if nav_metrics.progress_ratio is not none else '—' }}</div><div class="delta text-muted">parcouru / orthodromie</div></div>
+  {% else %}
+  <div class="kpi-card"><div class="label">Allongement</div><div class="value">{{ "×%.2f"|format(nav_metrics.real_elongation) if nav_metrics.real_elongation is not none else '—' }}</div><div class="delta text-muted">réel / orthodromie</div></div>
+  {% endif %}
 </section>
 {% endif %}
 

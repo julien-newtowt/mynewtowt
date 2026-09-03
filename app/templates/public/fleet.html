@@ -24,6 +24,8 @@
       {%- set _ = ns.items.append({
             "name": v.name, "code": v.code,
             "lat": p.latitude, "lon": p.longitude,
+            "sog": (p.sog_kn|float if p.sog_kn is not none else none),
+            "phase": phases.get(v.id),
             "recorded_at": p.recorded_at.isoformat(),
           }) -%}
     {%- endif -%}

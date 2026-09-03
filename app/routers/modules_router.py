@@ -113,6 +113,7 @@ async def tracking_index(
         ).scalar_one_or_none()
         last_positions[v.id] = p
     from app.config import settings as _settings
+    from app.services.planning import vessel_phases
 
     # ── Mode « historique des trajets » ───────────────────────────────────
     # Toggle en haut de page : affiche le filtre de référence (navire × année ×
@@ -188,6 +189,7 @@ async def tracking_index(
             "user": user,
             "vessels": vessels,
             "last_positions": last_positions,
+            "phases": await vessel_phases(db, [v.id for v in vessels]),
             "maptiler_token": _settings.map_token,
             "history_on": history_on,
             "history": history_ctx,
