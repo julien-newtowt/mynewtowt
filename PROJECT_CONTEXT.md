@@ -781,10 +781,15 @@ ce sont des règles de contrôle interne, pas des détails d'interface :
   (`voyage_track.leg_window`) : importer les legs **avant** les positions.
 - **Borne d'archive** (constat de production, 2026-09-03) : le dossier satcom
   contient quatre navires et couvre aussi la période NEWTOWT, avec un découpage
-  par année civile qui ne coïncide pas avec la reprise. `import_towt_positions`
-  borne chaque navire à l'`ATA` de son dernier leg d'archive + 1 jour et refuse
-  un navire sans leg d'archive (Atlantis, Atlas) — marquer une position vivante
-  `towt_archive` la rendrait impurgeable.
+  par année civile. Deux critères cumulatifs dans `import_towt_positions` :
+  `NEWTOWT_TAKEOVER_DATE = 2026-05-11` (date de reprise, arbitrage Julien —
+  tout point à partir de ce jour est NEWTOWT) et l'appartenance du navire à
+  TOWT (au moins un leg d'archive ; Atlantis et Atlas sont refusés). Marquer
+  une position vivante `towt_archive` la rendrait impurgeable.
+- **Trou connu dans l'archive des legs** : l'Excel s'arrête au 2026-01-31 alors
+  que TOWT exploitait jusqu'au 2026-05-11. Les positions de février à mai 2026
+  sont archivées sans leg de rattachement ; les voyages correspondants
+  manquent (à compléter si la liste existe).
 - Couverture connue : legs 2024-08-09 → 2026-01-31 ; GPS à partir du
   **2024-10-21** seulement (source antérieure à confirmer) ; noon reports
   2024-09 → aujourd'hui, **non repris** (lot 2, table d'archive à arbitrer).

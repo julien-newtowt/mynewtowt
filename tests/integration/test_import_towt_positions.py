@@ -125,7 +125,7 @@ async def test_unknown_vessel_blocks(db, monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_refuses_file_of_vessel_without_archive_leg(db, monkeypatch, tmp_path):
+async def test_refuses_file_of_vessel_that_never_sailed_for_towt(db, monkeypatch, tmp_path):
     """Atlantis / Atlas (navires NEWTOWT) : aucun leg d'archive → refus net.
 
     Sans cette borne, des positions vivantes seraient étiquetées
@@ -146,31 +146,54 @@ async def test_refuses_file_of_vessel_without_archive_leg(db, monkeypatch, tmp_p
 
 
 @pytest.mark.asyncio
-async def test_points_after_archive_cutoff_are_ignored(db, monkeypatch, tmp_path):
-    """Le fichier 2026 d'ANEMOS couvre janvier → septembre : seuls les points
-    antérieurs à la borne (dernier leg d'archive + 1 j) sont repris."""
+async def test_points_from_the_takeover_date_are_ignored(db, monkeypatch, tmp_path):
+    """Le fichier 2026 d'ANEMOS couvre janvier → septembre : la reprise NEWTOWT
+    du 11 mai 2026 borne l'archive, quels que soient les legs présents."""
     await _setup(db, monkeypatch, tmp_path)
-    path = tmp_path / "towt_gps_anemos_2024b.csv"
+    path = tmp_path / "towt_gps_anemos_2026.csv"
     path.write_text(
         "vessel,recorded_at_utc,latitude,longitude,sog_kn,cog_deg,interface,source_file\n"
-        "anemos,2024-10-23T10:00:00Z,49.1,-1.0,8,90,x,a.csv\n"  # avant la borne
-        "anemos,2024-10-24T23:00:00Z,49.2,-1.1,8,90,x,a.csv\n"  # jour d'arrivée : gardé
-        "anemos,2024-10-25T10:00:00Z,49.3,-1.2,8,90,x,a.csv\n"  # après : ignoré
-        "anemos,2026-06-01T10:00:00Z,49.4,-1.3,8,90,x,a.csv\n",  # période NEWTOWT
+        # Février → mai : exploitation TOWT, aucun leg d'archive sur la période
+        # (l'Excel s'arrête en janvier) — repris quand même.
+        "anemos,2026-03-14T10:00:00Z,49.1,-1.0,8,90,x,a.csv\n"
+        "anemos,2026-05-10T23:50:00Z,49.2,-1.1,8,90,x,a.csv\n"  # veille : gardé
+        "anemos,2026-05-11T00:05:00Z,49.3,-1.2,8,90,x,a.csv\n"  # reprise : ignoré
+        "anemos,2026-06-01T10:00:00Z,49.4,-1.3,8,90,x,a.csv\n",  # NEWTOWT : ignoré
         encoding="utf-8",
     )
     rep = await script.import_file(db, path)
     assert rep.errors == []
-    assert rep.cutoff == "2024-10-25"
+    assert rep.cutoff == "2026-05-11"
     assert rep.inserted == 2 and rep.skipped_after_cutoff == 2
+
+
+@pytest.mark.asyncio
+async def test_file_entirely_after_takeover_is_refused(db, monkeypatch, tmp_path):
+    await _setup(db, monkeypatch, tmp_path)
+    path = tmp_path / "towt_gps_anemos_2026b.csv"
+    path.write_text(
+        "vessel,recorded_at_utc,latitude,longitude,sog_kn,cog_deg,interface,source_file\n"
+        "anemos,2026-08-01T10:00:00Z,49.1,-1.0,8,90,x,a.csv\n",
+        encoding="utf-8",
+    )
+    rep = await script.import_file(db, path)
+    assert rep.inserted == 0
+    assert rep.errors and "2026-05-11" in rep.errors[0]
 
 
 @pytest.mark.asyncio
 async def test_until_overrides_the_computed_cutoff(db, monkeypatch, tmp_path):
     path = await _setup(db, monkeypatch, tmp_path)
-    # Borne explicite à 09:10 (exclusive) : seul le point de 09:05 reste, et il
-    # est déjà en base → rien d'inséré, les trois autres sont hors borne.
+    # Borne explicite à 09:10 (exclusive) — prime sur la date de reprise : seul
+    # le point de 09:05 reste, et il est déjà en base → rien d'inséré.
     rep = await script.import_file(db, path, until=datetime(2024, 10, 21, 9, 10, tzinfo=UTC))
     assert rep.cutoff == "2024-10-21"
     assert rep.skipped_after_cutoff == 3
     assert rep.inserted == 0 and rep.skipped_existing == 1
+
+
+def test_takeover_date_is_the_documented_arbitration():
+    """La date de reprise est un fait d'entreprise, pas un réglage : elle vit
+    en constante nommée et borne l'archive à minuit UTC, exclusivement."""
+    assert script.NEWTOWT_TAKEOVER_DATE.isoformat() == "2026-05-11"
+    assert script.takeover_cutoff() == datetime(2026, 5, 11, tzinfo=UTC)

@@ -170,14 +170,21 @@ position ↔ voyage est temporel).
    **exclus de toute purge** (`/admin/data`, rétention comprise).
 
    ⚠️ **Borne d'archive.** Le dossier satcom couvre aussi la période NEWTOWT et
-   les navires postérieurs à la reprise (Atlantis, Atlas), alors que les
-   fichiers sont découpés par année civile. Le script borne donc chaque navire
-   à l'`ATA` de son dernier leg `origin='towt_archive'` + 1 jour, ignore les
-   points au-delà (comptés « hors archive » au rapport) et **refuse** un
-   fichier dont le navire n'a aucun leg d'archive. Les positions de la période
-   NEWTOWT arrivent par le cron `/api/tracking/upload`, jamais par ce script :
-   elles doivent rester purgeables. `--vessel` et `--until` restreignent ou
-   forcent une borne, en décision explicite.
+   des navires postérieurs à la reprise, alors que ses fichiers sont découpés
+   par année civile. Deux critères cumulatifs délimitent l'archive :
+   - **la date de reprise** — `NEWTOWT_TAKEOVER_DATE = 2026-05-11` : à compter
+     de ce jour, les navires exploitent sous NEWTOWT ; tout point à cette date
+     ou après est ignoré (compté « hors archive » au rapport) ;
+   - **le navire** — il doit porter au moins un leg `origin='towt_archive'`,
+     sinon le fichier est refusé (Atlantis et Atlas n'ont jamais navigué pour
+     TOWT).
+
+   Les positions de la période NEWTOWT arrivent par le cron
+   `/api/tracking/upload`, jamais par ce script : elles doivent rester
+   purgeables. `--vessel` restreint à un navire, `--until AAAA-MM-JJ` remplace
+   la date de reprise. À noter : l'Excel des traversées s'arrête au 2026-01-31
+   alors que l'exploitation TOWT court jusqu'au 2026-05-11 — les positions de
+   février à mai 2026 entrent donc dans l'archive sans leg auquel se rattacher.
 4. Contrôle : `/tracking?history=1&vessel=1&year=2025&leg_id=<id de 1HYF5>`
    (trace complète), `/performance/navigation/kpis?year=2025` (distances
    réelles, allongement). L'affichage est décimé à 4 000 points ; les calculs

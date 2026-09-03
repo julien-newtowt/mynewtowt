@@ -122,12 +122,22 @@ comme pour toute table — le garde-fou est applicatif, documenté ici.
 **Corollaire découvert à l'import (2026-09-03).** Puisque le marquage rend la
 ligne impurgeable, il ne doit jamais toucher une position vivante. Le dossier
 satcom contient pourtant quatre navires — dont Atlantis et Atlas, mis en
-service en 2026 — et ses fichiers sont découpés par année civile, alors que la
-frontière TOWT/NEWTOWT est la fin du dernier voyage d'archive du navire.
-L'import borne donc chaque navire à cette date + 1 jour, et refuse tout
-fichier dont le navire n'a aucun leg d'archive. Les positions de la période
-NEWTOWT restent du ressort du cron `/api/tracking/upload` (`source` satcom,
-purgeables).
+service en 2026 — et ses fichiers sont découpés par année civile. Deux critères
+cumulatifs délimitent donc l'archive des positions :
+
+1. **La date de reprise**, `NEWTOWT_TAKEOVER_DATE = 2026-05-11` (arbitrage
+   Julien Gondé du 2026-09-03) : à compter de ce jour, les navires exploitent
+   sous NEWTOWT. C'est un **fait d'entreprise**, pas la conséquence des données
+   présentes — d'où une constante nommée plutôt qu'une borne dérivée des legs.
+2. **Le navire** doit avoir navigué pour TOWT (au moins un leg
+   `origin='towt_archive'`), sinon le fichier est refusé.
+
+Conséquence assumée : l'Excel des traversées s'arrête au 2026-01-31 alors que
+l'exploitation TOWT court jusqu'au 2026-05-11. Les positions de février à mai
+2026 sont donc reprises comme archive **sans leg auquel se rattacher** — elles
+restent visibles dans l'historique par dates, pas dans la trace d'un voyage.
+Les voyages de cette période manquent à l'archive des legs : si leur liste
+existe, elle complètera `scripts/data/towt_legs_history.csv` (lot 2).
 
 *Alternative écartée* : table `vessel_positions_archive`. Rejetée — les
 consommateurs (fenêtre temporelle par leg, distance réelle) auraient dû

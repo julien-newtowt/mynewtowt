@@ -2783,32 +2783,44 @@ notamment, qui n'a aucun rapport avec l'ancienne compagnie.
 
 ### Décisions et implémentation
 
-- `import_towt_positions` calcule pour chaque navire une **borne d'archive** =
-  `ATA du dernier leg origin='towt_archive'` + 1 jour (la journée d'arrivée
-  appartient au voyage), ignore les points au-delà (comptés « hors archive »
-  au rapport) et **refuse** un fichier dont le navire n'a aucun leg d'archive.
-- Options `--vessel` et `--until` pour restreindre ou forcer une borne, en
-  décision explicite.
+Première version : borne dérivée des données, à l'`ATA` du dernier leg
+d'archive du navire. **Corrigée le même jour par Julien** : la reprise NEWTOWT
+est effective au **11 mai 2026** — c'est un fait d'entreprise, pas une
+conséquence des voyages saisis. La borne devient donc une constante nommée
+`NEWTOWT_TAKEOVER_DATE`, et l’appartenance du navire à TOWT reste le second
+critère.
+
+- `import_towt_positions` : archive = point **antérieur au 2026-05-11** ET
+  navire portant au moins un leg `origin='towt_archive'`. Les points au-delà
+  sont comptés « hors archive » au rapport ; un navire sans leg d'archive
+  (Atlantis, Atlas) fait refuser le fichier.
+- Options `--vessel` (restreindre) et `--until` (remplacer la date de reprise).
 - Runbook : section borne ajoutée. ADR-014, décision 4 : corollaire documenté.
 
 ### Risques
 
-- 🟡 Les positions ANEMOS/ARTEMIS de février à septembre 2026 ne sont reprises
-  par personne si le cron satcom ne couvrait pas cette période : trou de
-  données à combler séparément, en `source` satcom purgeable. **Décision de
-  Julien** (cf. « Reste à faire »).
+- 🟠 **Trou dans l'archive des legs** : l'Excel s'arrête au 2026-01-31 alors que
+  TOWT exploitait jusqu'au 2026-05-11. Les positions de février à mai 2026
+  entrent dans l'archive **sans leg de rattachement** : visibles dans
+  l'historique par dates, absentes de toute trace de voyage. Les voyages de
+  cette période manquent à la reprise.
+- 🟡 Les positions ANEMOS/ARTEMIS du 2026-05-11 à septembre ne sont reprises par
+  personne si le cron satcom ne couvrait pas cette période : trou à combler
+  séparément, en `source` satcom purgeable. **Décision de Julien.**
 - 🟢 Un fichier illisible sur 28 675 (verrou OneDrive probable) : à relire au
   besoin, l'import est idempotent.
 
 ### Tests
 
-3 nouveaux tests : refus d'un fichier de navire sans leg d'archive (cas
-Atlantis), points postérieurs à la borne ignorés, `--until` prioritaire sur la
-borne calculée. Suite TOWT complète : 28 tests verts.
+5 nouveaux tests : refus d'un navire n'ayant jamais navigué pour TOWT (cas
+Atlantis), points à partir du 2026-05-11 ignorés, fichier entièrement
+postérieur refusé, `--until` prioritaire, date de reprise en constante.
+Suite TOWT complète : 30 tests verts.
 
 ### Reste à faire
 
-Trancher le sort des positions NEWTOWT 2026 du dossier SharePoint (déjà en base
-par le cron ? sinon les charger en `source` satcom) ; relire le fichier
-illisible ; puis `--yes` sur les seuls fichiers d'archive.
+Récupérer la liste des voyages TOWT de février à mai 2026 (absents de l'Excel)
+pour compléter l'archive des legs ; trancher le sort des positions NEWTOWT
+postérieures au 2026-05-11 (déjà en base par le cron ? sinon les charger en
+`source` satcom) ; relire le fichier illisible ; puis `--yes`.
 

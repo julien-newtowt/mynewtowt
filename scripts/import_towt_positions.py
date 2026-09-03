@@ -13,14 +13,23 @@ temporel (``voyage_track.leg_window``), d'où l'ordre : **d'abord les legs**
 l'archive (le snapshot Windy ne concerne que le dernier point).
 
 **Borne d'archive (garde-fou).** Le dossier satcom couvre aussi la période
-NEWTOWT et des navires postérieurs à la reprise (Atlantis, Atlas) : les
-fichiers sont découpés par année civile, alors que la frontière TOWT/NEWTOWT
-est la **fin du dernier voyage d'archive du navire**. Étiqueter une position
-NEWTOWT vivante en ``towt_archive`` la rendrait de plus impurgeable. Le script
-calcule donc, pour chaque navire, la borne = `ATA du dernier leg
-origin='towt_archive'` + 1 jour (la journée d'arrivée appartient au voyage),
-ignore tout point au-delà, et **refuse** un fichier dont le navire n'a aucun
-leg d'archive. ``--until`` remplace la borne calculée (décision explicite).
+NEWTOWT et des navires postérieurs à la reprise (Atlantis, Atlas), alors que
+ses fichiers sont découpés par année civile. Étiqueter une position NEWTOWT
+vivante en ``towt_archive`` la rendrait de plus **impurgeable**. Deux critères
+cumulatifs délimitent donc l'archive :
+
+1. **Date de reprise** — ``NEWTOWT_TAKEOVER_DATE`` (2026-05-11, arbitrage
+   Julien Gondé du 2026-09-03) : à compter de ce jour, les navires exploitent
+   sous NEWTOWT. Tout point à cette date ou après est ignoré (compté « hors
+   archive » au rapport). ``--until`` remplace cette borne explicitement.
+2. **Navire de l'ancienne compagnie** — le navire doit porter au moins un leg
+   ``origin='towt_archive'``. Sinon le fichier est **refusé** : Atlantis et
+   Atlas n'ont jamais navigué pour TOWT, leurs positions sont vivantes.
+
+Conséquence connue : l'Excel des traversées s'arrête au 2026-01-31, alors que
+l'exploitation TOWT court jusqu'au 2026-05-11 — les positions de février à mai
+2026 sont donc reprises comme archive sans leg auquel se rattacher (elles
+restent visibles dans l'historique par dates, pas dans la trace d'un voyage).
 
 OPÉRATION SENSIBLE — dry-run par défaut (travail complet puis ROLLBACK) ;
 ``--yes`` pour committer.
@@ -30,7 +39,7 @@ Usage :
     python -m scripts.import_towt_positions --dir ./gps_towt --yes
     python -m scripts.import_towt_positions --file towt_gps_anemos_2025.csv --yes
     python -m scripts.import_towt_positions --dir ./gps_towt --vessel ANEMOS
-    python -m scripts.import_towt_positions --dir ./gps_towt --until 2026-01-31
+    python -m scripts.import_towt_positions --dir ./gps_towt --until 2026-05-10
 """
 
 from __future__ import annotations
@@ -40,16 +49,22 @@ import asyncio
 import csv
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import insert, select
 
 from app.database import SessionLocal
 from app.models.claim import VesselPosition
 from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.vessel import Vessel
 from app.services.admin_data import TOWT_ARCHIVE_SOURCE
+
+# Date de reprise par NEWTOWT (arbitrage Julien Gondé, 2026-09-03) : à compter
+# de ce jour **inclus**, les navires exploitent sous la nouvelle compagnie et
+# leurs positions ne sont PAS de l'archive — elles arrivent par le cron
+# ``/api/tracking/upload`` et doivent rester purgeables.
+NEWTOWT_TAKEOVER_DATE = date(2026, 5, 11)
 
 CHUNK = 5000
 MAX_SOG_KN = 40.0  # au-delà : valeur capteur aberrante → SOG ignorée, point conservé
@@ -140,21 +155,28 @@ def load_points(path: Path, report: FileReport) -> tuple[str | None, list[dict]]
     return vessel_name, points
 
 
-async def archive_cutoff(db, vessel_id: int) -> datetime | None:
-    """Borne d'archive du navire : lendemain de l'ATA de son dernier leg
-    ``origin='towt_archive'``. ``None`` si le navire n'a aucun leg d'archive —
-    le fichier n'est alors pas de l'archive TOWT et doit être refusé."""
-    last_ata = (
+async def is_towt_vessel(db, vessel_id: int) -> bool:
+    """Le navire a-t-il navigué pour l'ancienne compagnie ?
+
+    Critère : au moins un leg ``origin='towt_archive'``. Un navire NEWTOWT
+    (Atlantis, Atlas) n'en a aucun — ses positions ne sont jamais de l'archive,
+    même antérieures à la date de reprise.
+    """
+    found = (
         await db.execute(
-            select(func.max(Leg.ata))
+            select(Leg.id)
             .where(Leg.vessel_id == vessel_id)
             .where(Leg.origin == LEG_ORIGIN_TOWT)
+            .limit(1)
         )
     ).scalar_one_or_none()
-    if last_ata is None:
-        return None
-    day = _naive(last_ata).replace(hour=0, minute=0, second=0, microsecond=0)
-    return (day + timedelta(days=1)).replace(tzinfo=UTC)
+    return found is not None
+
+
+def takeover_cutoff() -> datetime:
+    """Borne d'archive : minuit UTC du jour de reprise NEWTOWT (exclusive)."""
+    d = NEWTOWT_TAKEOVER_DATE
+    return datetime(d.year, d.month, d.day, tzinfo=UTC)
 
 
 async def import_file(db, path: Path, *, until: datetime | None = None) -> FileReport:
@@ -171,22 +193,24 @@ async def import_file(db, path: Path, *, until: datetime | None = None) -> FileR
         report.errors.append(f"navire « {vessel_name} » introuvable en base")
         return report
 
-    cutoff = until or await archive_cutoff(db, vessel.id)
-    if cutoff is None:
+    if not await is_towt_vessel(db, vessel.id):
         report.errors.append(
-            f"aucun leg d'archive TOWT pour « {vessel_name} » : ce fichier couvre "
-            "la période NEWTOWT (ou un navire postérieur à la reprise). Les "
-            "positions vivantes arrivent par /api/tracking/upload, pas par "
-            "l'archive — utiliser --until pour forcer une borne si c'est voulu."
+            f"« {vessel_name} » n'a aucun leg d'archive TOWT : ce navire n'a pas "
+            "navigué pour l'ancienne compagnie. Ses positions sont vivantes et "
+            "arrivent par /api/tracking/upload — les marquer 'towt_archive' les "
+            "rendrait impurgeables."
         )
         return report
+
+    cutoff = until or takeover_cutoff()
     report.cutoff = cutoff.date().isoformat()
     kept = [p for p in points if p["recorded_at"] < cutoff]
     report.skipped_after_cutoff = len(points) - len(kept)
     points = kept
     if not points:
         report.errors.append(
-            f"tous les points sont postérieurs à la borne d'archive ({report.cutoff})"
+            f"aucun point antérieur à la reprise NEWTOWT du {report.cutoff} — "
+            "fichier entièrement hors archive"
         )
         return report
 
@@ -262,7 +286,7 @@ async def run(files: list[Path], *, apply: bool, until: datetime | None = None) 
                 f"{rep.skipped_existing} déjà présents, {rep.skipped_duplicate} doublons, "
                 f"{rep.skipped_invalid} invalides"
                 + (
-                    f", {rep.skipped_after_cutoff} hors archive (> {rep.cutoff})"
+                    f", {rep.skipped_after_cutoff} hors archive (≥ {rep.cutoff})"
                     if rep.skipped_after_cutoff
                     else ""
                 )
@@ -292,8 +316,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vessel", help="Ne reprendre qu'un navire (anemos | artemis)")
     parser.add_argument(
         "--until",
-        help="Borne d'archive explicite AAAA-MM-JJ (inclus) — remplace la borne "
-        "calculée depuis le dernier leg d'archive du navire",
+        help=f"Borne d'archive explicite AAAA-MM-JJ (inclus) — remplace la date "
+        f"de reprise NEWTOWT ({NEWTOWT_TAKEOVER_DATE.isoformat()})",
     )
     parser.add_argument("--yes", action="store_true", help="Appliquer (sinon dry-run)")
     args = parser.parse_args(argv)
