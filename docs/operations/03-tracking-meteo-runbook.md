@@ -135,11 +135,18 @@ Les relevés satcom de l'ancienne compagnie (SharePoint « Service Technique /
 reprennent en deux étages, **après** les legs d'archive (le rattachement
 position ↔ voyage est temporel).
 
-1. Legs d'archive (serveur, dry-run par défaut) :
+1. Legs d'archive — **dans le conteneur `app`** (le code, les dépendances et
+   `DATABASE_URL` y vivent ; sur l'hôte, `python` n'existe pas et la base n'est
+   pas joignable). La colonne `legs.origin` doit exister : migration d'abord.
    ```bash
-   python -m scripts.import_towt_legs          # rapport, aucune écriture
-   python -m scripts.import_towt_legs --yes    # applique
+   cd /opt/mynewtowt
+   docker compose exec app alembic upgrade head          # migration 0138
+   docker compose exec app python -m scripts.import_towt_legs        # dry-run
+   docker compose exec app python -m scripts.import_towt_legs --yes  # applique
    ```
+   Après un déploiement de branche, reconstruire l'image d'abord
+   (`docker compose build app && docker compose up -d app`) : les scripts sont
+   copiés à la construction, aucun montage du code source.
    Contrôle : `/planning?year=2025&origin=towt` — 36 voyages, badge « TOWT »,
    fiche en lecture seule.
 2. Consolidation locale (poste où la bibliothèque est synchronisée, Python ≥ 3.10,
@@ -151,10 +158,11 @@ position ↔ voyage est temporel).
    points, premier/dernier horodatage, trous > 6 h, SHA-256). Vérifier que le
    premier horodatage est bien 2024-10-21 et que le nombre de fichiers lus
    correspond au dossier.
-3. Import serveur (copier le dossier consolidé sur le serveur) :
+3. Import serveur : copier le dossier consolidé sur le serveur, puis le rendre
+   visible au conteneur (`docker compose cp ./gps_towt app:/tmp/gps_towt`) :
    ```bash
-   python -m scripts.import_towt_positions --dir ./gps_towt          # dry-run
-   python -m scripts.import_towt_positions --dir ./gps_towt --yes
+   docker compose exec app python -m scripts.import_towt_positions --dir /tmp/gps_towt        # dry-run
+   docker compose exec app python -m scripts.import_towt_positions --dir /tmp/gps_towt --yes
    ```
    Idempotent : relancer n'insère rien de nouveau. Les points portent
    `source='towt_archive'` et `import_batch=<fichier consolidé>` ; ils sont
