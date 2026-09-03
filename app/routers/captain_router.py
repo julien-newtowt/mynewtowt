@@ -46,6 +46,7 @@ from app.permissions import require_permission
 from app.services import notifications, voyage_transitions
 from app.services import weather as wx
 from app.services.activity import record as activity_record
+from app.services.planning import PlanningError, assert_leg_mutable
 from app.services.signature import (
     compute_cargo_doc_hash,
     compute_noon_hash,
@@ -60,6 +61,15 @@ from app.templating import templates
 logger = logging.getLogger("captain")
 
 router = APIRouter(prefix="/captain", tags=["captain"])
+
+
+def _refuse_archive(leg: Leg) -> None:
+    """Un leg d'archive TOWT (ADR-014) ne reçoit ni SOF ni décalage d'ETA."""
+    try:
+        assert_leg_mutable(leg)
+    except PlanningError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
 
 MENTION_RE = re.compile(r"@([A-Za-z0-9_]{2,40})")
 
@@ -229,6 +239,7 @@ async def add_sof_event(
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
+    _refuse_archive(leg)
     e = SofEvent(
         leg_id=leg_id,
         event_type=event_type,
@@ -267,15 +278,25 @@ async def add_sof_event(
         actor_name = user.full_name or user.username
         if event_type in DEPARTURE_SOF_TYPES:
             await voyage_transitions.declare_departure(
-                db, leg, at=e.occurred_at, actor_id=user.id, actor_name=actor_name,
+                db,
+                leg,
+                at=e.occurred_at,
+                actor_id=user.id,
+                actor_name=actor_name,
                 create_sof=False,
             )
         elif event_type in ARRIVAL_SOF_TYPES:
             await voyage_transitions.declare_arrival(
-                db, leg, at=e.occurred_at, actor_id=user.id, actor_name=actor_name,
+                db,
+                leg,
+                at=e.occurred_at,
+                actor_id=user.id,
+                actor_name=actor_name,
                 create_sof=False,
             )
-    except voyage_transitions.VoyageSequenceError as seq_err:
+    except PlanningError as seq_err:
+        # Séquence violée (EOSP sans SOSP…) ou leg d'archive : refus normal,
+        # pas une exception à tracer.
         logger.warning("SOF %s hors séquence (leg %s) : %s", event_type, leg_id, seq_err)
     except Exception:
         logger.exception("voyage event hook failed for leg %s (%s)", leg_id, event_type)
@@ -308,6 +329,7 @@ async def declare_eta_shift(
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
+    _refuse_archive(leg)
     try:
         parsed_eta = parse_form_datetime(new_eta)
     except InvalidLegDates as e:
@@ -1079,18 +1101,24 @@ async def sign_sof_event(
             try:
                 if e.event_type in DEPARTURE_SOF_TYPES:
                     await voyage_transitions.declare_departure(
-                        db, leg, at=e.occurred_at, actor_id=user.id,
-                        actor_name=actor_name, create_sof=False,
+                        db,
+                        leg,
+                        at=e.occurred_at,
+                        actor_id=user.id,
+                        actor_name=actor_name,
+                        create_sof=False,
                     )
                 elif e.event_type in ARRIVAL_SOF_TYPES:
                     await voyage_transitions.declare_arrival(
-                        db, leg, at=e.occurred_at, actor_id=user.id,
-                        actor_name=actor_name, create_sof=False,
+                        db,
+                        leg,
+                        at=e.occurred_at,
+                        actor_id=user.id,
+                        actor_name=actor_name,
+                        create_sof=False,
                     )
-            except voyage_transitions.VoyageSequenceError as seq_err:
-                logger.warning(
-                    "SOF signé hors séquence (leg %s) : %s", e.leg_id, seq_err
-                )
+            except PlanningError as seq_err:
+                logger.warning("SOF signé hors séquence (leg %s) : %s", e.leg_id, seq_err)
             # ONB-04 — journal de bord : trace la signature SOF (best-effort).
             with contextlib.suppress(Exception):
                 await post_onboard_system_message(

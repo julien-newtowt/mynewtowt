@@ -1,30 +1,20 @@
 # CLAUDE.md — `mynewtowt` Project Guide
 
-## ⚠️ Temporary Operating Instructions — Manager on Leave (2026-07-27 → 2026-08-17)
+## Operating Instructions
 
-> These instructions **override default priorities** for the duration stated above. Re-read this section at the start of every session while it is in effect. Yasmin (yasmin.ponce@newtowt.eu) is continuing development while her manager is on vacation; he normally reviews and validates every PR.
+> Standing instructions for every session on this repository: posture, workflow,
+> quality gates, communication. They are **not tied to any calendar period** —
+> re-read them at the start of a session. Julien (julien.gonde@newtowt.eu)
+> reviews and validates every Pull Request; Yasmin (yasmin.ponce@newtowt.eu)
+> drives development and decides what is proposed for review.
 
 ### Your Role
 
 Act as a **Senior Full-Stack Software Engineer, Software Architect, Technical Lead, QA Lead and Release Manager with 10+ years of experience**. Not just code generation — understand business requirements, challenge technical decisions when appropriate, identify risks before implementation, propose safer alternatives, keep the codebase production-ready, keep documentation synchronized with code. Never blindly execute a request if a better technical solution exists.
 
-### Project Context
-
-Manager on vacation 2026-07-27 → 2026-08-17. This period is valuable because: dedicated development time is available; one vessel will be alongside in ~2 weeks (onboard testing with crew); the Operations team progressively returns from vacation and can validate operational workflows. **The objective is to return with a version nearly ready for operational deployment.** Priority is NOT to implement every planned feature — priority is to make the software usable by Operations ASAP.
-
 ### Main Objective
 
-Every technical decision must maximize operational value. Before implementing anything, ask: Does this help Operations today? Is it blocking production deployment? Can this wait? Is there a simpler solution? Optimize for business value over feature quantity.
-
-### Feature Prioritization
-
-- **P0 – Critical** (required for production): Bill of Lading management, core operational workflows, authentication, permissions, data integrity, critical bug fixes.
-- **P1 – Important** (improves usability, not blocking): UX improvements, workflow optimizations, performance improvements, quality-of-life enhancements.
-- **P2 – Optional** (can be postponed): QSHE Dashboard, advanced analytics, nice-to-have reports, cosmetic improvements, additional automations.
-
-### Discovery Phase
-
-For the first 2–3 working days of this period, prioritize understanding over coding: software architecture, business processes, module organization, data flows, database structure, APIs, user journeys, permissions, external integrations, technical debt, current limitations. Do not rush into development. Ask questions whenever information is missing. Once discovery is complete, produce an architecture overview and summarize business workflows before beginning major developments.
+Every technical decision must maximize operational value. Before implementing anything, ask: Does this help Operations today? Is it blocking production deployment? Can this wait? Is there a simpler solution? Optimize for business value over feature quantity. The application should stay operationally focused, technically stable, maintainable, well documented, easy to review and easy to merge.
 
 ### Development Workflow
 
@@ -39,6 +29,7 @@ Before implementing any feature: (1) understand the business objective, (2) iden
 - Never approve Pull Requests.
 - Never delete branches without approval.
 - Minor related fixes may be grouped together; every significant feature/refactor/architectural change gets its own branch: `feature/...`, `fix/...`, `refactor/...`, `docs/...`, `hotfix/...`.
+- ⚠️ **A branch already pushed to `origin` carries shared history**: integrate `main` *into* it (a real merge commit, `chore: integrer main (N commits…)`) rather than rebasing it — a rebase could only reach `origin` through a force push. Re-chaining a migration that has never been published is not a history rewrite, and is the expected fix when `main` has moved its Alembic head.
 
 ### Documentation Policy (Mandatory)
 
@@ -47,6 +38,13 @@ Every modification must update the relevant documentation (README, architecture 
 ### Code Quality Gate (Mandatory, before any PR recommendation)
 
 Verify: project builds successfully; no compilation errors; all automated tests pass; no important new warnings; no regression detected; documentation updated; DB migrations coherent; API contracts remain compatible; coding standards respected; linting passes; formatting correct; dependencies justified and free of known vulnerabilities; no secrets committed; temporary/debug files removed; no significant performance degradation. If any item fails, explain why and propose corrective actions.
+
+> Two traps this gate has actually caught, worth knowing before reading a red
+> suite. `ruff` and `black` run on **`app` and `tests` only** in CI: findings in
+> `scripts/` or `migrations/` are pre-existing debt, not a regression. And
+> **~19 PDF-rendering tests fail on Windows** because WeasyPrint needs the
+> GTK/Pango system libraries — run the suite in the Linux container before
+> concluding anything about them.
 
 ### Integration Compatibility Audit (Mandatory, before any PR is proposed)
 
@@ -63,23 +61,19 @@ Never create a PR automatically. When development is complete: (1) run the Code 
 
 ### Review Policy
 
-Minor modifications may eventually be validated by Yasmin directly. Major architectural changes should remain pending until the manager returns whenever reasonably possible — flag if a change should wait for his review.
+Minor modifications may be validated by Yasmin directly. **Significant architectural changes must be flagged as warranting Julien's review, and never merged without it** — destructive migrations and table drops, cross-module refactors, changes to the permission matrix, and anything that reshapes a business workflow or the meaning of a probative register.
 
 ### Development Journal & ADR
 
-Maintain a living development journal (date, branch, objective, files modified, business/technical rationale, implementation summary, risks, tests performed, remaining work, next recommendations) covering 2026-07-27 → 2026-08-17, as a handover report for the manager. Maintain an Architecture Decision Record for every important technical decision (context, considered options, chosen solution, justification, consequences, future considerations). *(Neither file exists yet as of 2026-07-27 — create them when the discovery phase or first significant decision warrants it, not preemptively.)*
+Maintain a living development journal for each work period (date, branch, objective, files modified, business/technical rationale, implementation summary, risks, tests performed, remaining work, next recommendations) — it is the handover material a reviewer reads first. The 2026-07-27 → 2026-08-17 period is recorded in `docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md`. Maintain an Architecture Decision Record under `docs/architecture/` for every important technical decision (context, considered options, chosen solution, justification, consequences, future considerations).
 
 ### Session Continuity
 
-Maintain/update a `PROJECT_CONTEXT.md` containing: these operating instructions, current architecture understanding, discovered business rules, module descriptions, glossary, known issues, technical debt, pending questions, roadmap, ADR references, journal references. At the start of every new session: read it, summarize current project state, identify unfinished work, resume from the latest validated context. *(Does not exist yet as of 2026-07-27.)*
+`PROJECT_CONTEXT.md` carries: these operating instructions, current architecture understanding, discovered business rules, module descriptions, glossary, known issues, technical debt, pending questions, roadmap, ADR references, journal references. At the start of every session: read it, summarize current project state, identify unfinished work, resume from the latest validated context — and keep it updated as understanding evolves.
 
 ### Communication Style
 
 Structure work presentations as: **Situation** (current context) → **Analysis** (technical + business) → **Risks** (potential impacts) → **Recommendation** (preferred solution) → **Next Steps** (concrete actions). Always distinguish Facts / Assumptions / Recommendations. Never invent missing information.
-
-### Ultimate Objective (by 2026-08-17)
-
-The application should be operationally focused, technically stable, maintainable, well documented, easy to review, easy to merge, and ready for operational deployment with minimal additional work.
 
 ## Vue d'ensemble
 
@@ -239,19 +233,58 @@ Doc de référence : `docs/design/05-sequence-planification.md`.
   OPEX, notifications. Ne jamais écrire `leg.atd`/`leg.ata` ailleurs.
 - **Séquence dure** : pas d'arrivée sans départ déclaré, pas d'ATA < ATD, pas
   de chevauchement de legs (validations `validate_leg_schedule` + cascade).
-  Un leg déjà appareillé n'est **jamais** déplacé par un recalcul : la cascade
-  se bloque et l'incident est **notifié** (`cascade_blocked`).
+  La cascade recale un leg aval au plus tôt à **ETA + escale planifiée** du
+  précédent (jamais à l'ETA brute) ; recalage à froid :
+  `scripts/respace_downstream_legs.py`. Un leg déjà appareillé n'est
+  **jamais** déplacé par un recalcul : la cascade se bloque et l'incident est
+  **notifié** (`cascade_blocked`).
+- **Un seul leg actif par navire** : déclarer le départ du leg N+1 exige
+  l'arrivée (ATA) du leg N et le **termine** (`voyage_completed_at`, migration
+  0137 → `completed`/« terminé »), indépendamment de la clôture administrative.
+  Reprise d'historique : `scripts/backfill_voyage_actuals.py` (dry-run par
+  défaut, mode `quiet`).
 - **Tous les mouvements de dates sont historisés** dans `schedule_revisions`
   (prévisionnel ET réel — sources `departure_declared`/`arrival_declared`,
   colonnes `old/new_atd`, `old/new_ata`, migration 0136, `batch_id` partagé
   avec la cascade). Viewer : fiche leg → « Historique ».
 - **Planification à la journée** : ETD/ETA/clôture booking se saisissent en
   `type="date"` (le back-end accepte l'ISO jour = minuit UTC) ; le réel garde
-  l'heure précise.
+  l'heure précise. **Création de leg = page unique** (PLN-08) : navire par
+  boutons, Départ/Arrivée côte à côte (ports habituels BRSSO/FRFEC, filtres +
+  recherche libre), POL/ETD pré-remplis depuis la séquence du navire, escale en
+  **jours** (`port_stay_planned_days` → heures ×24). Le **leg de référence est
+  choisi** (« Chaîner après », `chain_options`) : le dernier leg par ETD n'est
+  qu'un défaut, et il est faux dès qu'un voyage lointain est déjà saisi.
 - **Dates effectives** : tout calcul « où en est le voyage » passe par
   `planning.effective_etd/effective_eta` (réel prioritaire, repli
-  prévisionnel) — la dérive (`leg_delay_hours`), le Gantt et le transit
-  commercial les utilisent déjà.
+  prévisionnel) — la dérive (`leg_delay_hours`), le Gantt, le transit
+  commercial et l'**audit de séquence** les utilisent déjà. L'audit
+  n'instruit **jamais** un leg déjà appareillé : son ATD est un fait, pas un
+  conflit de planification.
+- **Distance théorique** : `Leg.distance_nm` (orthodromie POL→POD × élongation)
+  est posée au create/update et vaut `None` si un port n'a pas de coordonnées —
+  auquel cas l'écart et l'allongement réels ne sont plus calculables. Repli au
+  rendu (`voyage_track.theoretical_distance_nm`, marqué `*` dans l'UI), édition
+  des coordonnées dans **Admin → Ports** (qui recalcule les legs du port et
+  bascule `Port.source` en `manual`, sinon le prochain import du référentiel
+  effacerait la correction), et reprise à froid :
+  `scripts/backfill_leg_distances.py`.
+- **Archives TOWT (ADR-014)** : un leg `origin = 'towt_archive'` est un voyage
+  de l'ancienne compagnie repris des archives — **lecture seule**
+  (`services.planning.assert_leg_mutable`, appelée par `update_leg`,
+  `delete_leg`, `declare_departure/arrival`, escale), **exclu de la
+  renumérotation** et son `leg_code` est le TRIP CODE TOWT d'origine (`1YMB4`),
+  clé des noon reports et de l'ancien PBIX — ne jamais le « normaliser ».
+  `etd = atd`, `eta = ata` (aucun prévisionnel n'existe). Positions GPS
+  d'archive : `vessel_positions.source = 'towt_archive'`, protégées de la purge
+  (`admin_data.PURGE_PROTECTED_ROWS`), importées **après** les legs
+  (rattachement temporel). Filtre `/planning?origin=towt|newtowt`.
+- **Suppression d'un leg** : inventaire explicite des dépendances
+  (`planning._leg_blocking_models` / `_leg_unlinked_models`). Les registres
+  d'argent (caisse, ventes, contrôles) **bloquent** — ils n'ont ni UPDATE ni
+  DELETE ; les FK nullables sont **déliées**. Toute nouvelle table référençant
+  `legs.id` doit rejoindre l'un des deux inventaires (ou porter un `ondelete`) :
+  la sentinelle `tests/unit/test_delete_leg_models.py` échoue sinon.
 
 ### Équipage — deux registres d'embarquement, à ne jamais confondre
 
@@ -339,15 +372,63 @@ reste hors plateforme (arbitrage A5) : les conditions de règlement sont
 - Détection HTMX : `request.headers.get("hx-request")` → renvoyer header
   `HX-Redirect`.
 
+### Référentiel des ports — source de vérité partagée
+
+`Port.locode` est une clé métier (leg_codes, grilles tarifaires, BL, pages
+publiques) et ses coordonnées commandent la distance théorique de tout leg.
+Doc : `docs/integrations/unlocode-ports.md`.
+
+- **Alimentation** : `scripts/load_ports.py` (catalogue embarqué + data.gouv.fr
+  + `--with-unlocode`). La source UN/LOCODE par défaut est le miroir
+  **géolocalisé** : 16 669 ports maritimes exploitables contre 11 763 pour le
+  miroir brut (UNECE laisse 20 % des lieux sans coordonnées, dont de vrais
+  ports). Il n'existe **aucune API officielle** — UNECE publie des fichiers
+  deux fois par an.
+- **Hiérarchie de sources** (`services.ports.may_overwrite`) : `manual` (30) >
+  `world_ports` (20) > `unlocode-improved` (15) > reste (10). Un import
+  automatique ne dégrade **jamais** une donnée curée ; un ré-import de la même
+  source rafraîchit toujours. Une correction de coordonnées dans Admin → Ports
+  doit passer `Port.source` à `manual`, sinon le prochain import l'efface.
+- **Filtre maritime** = position 1 du code fonction (`1` = port). Il **rate de
+  vrais ports** (`RELPT` « Le Port », La Réunion, est correct ; `REPDG` est en
+  statut `XX` = retiré et sans fonction port) : ne jamais purger ni désactiver
+  un port existant sur ce critère. Les entrées en statut `XX` ne sont pas
+  ajoutées, jamais supprimées.
+- **Attribution ODbL** : les coordonnées `unlocode-improved` dérivent en partie
+  d'OpenStreetMap. Toute republication (carte publique, export client, PDF)
+  doit porter `© OpenStreetMap contributors`.
+- **Le sélecteur de ports interroge le serveur, jamais la table entière.**
+  `/api/v1/ports/countries` sert les pays + leur zone (`services.geo.region_of`,
+  couverture ISO-3166 complète, 251 codes) ; `/ports/search?country=…` et
+  `?q=…` servent les ports ; `/ports/{id}` un port isolé. `limit` est **bornée**
+  (`PORTS_SEARCH_MAX_LIMIT`). Rapatrier la liste et filtrer dans le navigateur
+  tronquait au-delà de 10 000 lignes — trié par pays, tout ce qui suivait `JP`
+  disparaissait (123 pays, dont VN/Da Nang), cascade et recherche comprises,
+  **sans aucun signal**. Ne jamais reconstruire une carte pays → continent côté
+  JS : elle divergera de `PORT_REGIONS`.
+
 ### Permissions
 - 9 rôles : `administrateur`, `operation`, `armement`, `technique`,
   `data_analyst`, `marins`, `commercial`, `manager_maritime`, `rh`.
-- 18 modules : planning, commercial, escale, cargo, finance, kpi, captain,
-  **ventes**, crew, claims, mrv, rh, booking, tickets, analytics, chat, veille,
-  admin. `ventes` (vente à bord + caisse) est **distinct de `captain`** :
+- 20 modules : planning, commercial, escale, cargo, finance, kpi, captain,
+  **ventes**, crew, claims, mrv, qhse, rh, booking, tickets, analytics, chat,
+  veille, support, admin. `ventes` (vente à bord + caisse) est **distinct de `captain`** :
   `captain:M` déverrouille SOF, ETA, documents cargo et saisie MRV sur toute la
   flotte, sans contrôle de navire. Accorder tout le module pour permettre
   d'encaisser était une escalade de privilège.
+- ⚠️ **`tickets` ≠ `support`** — deux modules sans rapport : `tickets` porte les
+  **incidents d'exploitation portuaire** en escale (avarie, avitaillement urgent,
+  formalité douanière) ; `support` porte les **difficultés rencontrées dans le
+  logiciel** (« Assistance »). Nomenclature séparée jusqu'au vocabulaire : un
+  *ticket* d'un côté, une *demande d'assistance* de l'autre. Aucun import croisé.
+- **`support` est le seul module ouvert aux 9 rôles** (`CM` partout, `CMS` pour
+  l'administrateur) : tout le monde doit pouvoir signaler un problème. C'est
+  précisément pourquoi ce besoin ne pouvait pas être servi en étendant `tickets`,
+  fermé à `armement`, `commercial` et `rh`.
+- La matrice **ne sait pas exprimer** « voir les siennes » vs « voir toutes » :
+  ce cloisonnement et la réserve du tri vivent dans `support_router`, avec
+  `permissions.is_administrator()`. Le niveau `S` n'est **pas** détourné pour
+  signifier « peut trier ».
 - Niveaux C / M / S = Consult / Modify / Suppress.
 - Décorateur `Depends(require_permission("module", "C"|"M"|"S"))` sur
   toute route.
@@ -576,7 +657,8 @@ préférences de style.
 | Finance | `/finance` | ✅ prévisionnel/réel 5 postes + écarts + export CSV + NOx/SOx évités + section Exploitation + détail assurance + CRUD OPEX |
 | KPI | `/kpi` | ✅ vue KPI consolidée + Carbon Report par leg (intensités t·nm) ; **certificats CO₂ = label Anemos** (par booking + RSE annuel) |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
-| Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 |
+| Tickets escale | `/tickets` | ✅ kanban + SLA P1/P2/P3 — **incidents d'exploitation portuaire** (à ne pas confondre avec `/support`) |
+| Assistance (support applicatif) | `/support` | ✅ signalement d'une difficulté **dans le logiciel** : contexte technique capturé automatiquement (écran, navigateur, version), pièces jointes et captures (5 max, via `safe_files`), fil d'échanges avec notes internes, tri `administrateur`, **archivage dérivé à 90 j + écran `/support/archives`** (ni colonne ni cron). Ouvert aux 9 rôles ; chacun voit les siennes, l'admin toutes. Référence `SUP-{année}-{séquence}` non recyclante |
 | Cashbox | `/cashbox` | ✅ EUR/USD/VND · mouvements datés à la **journée** (pas d'heure) · **contrôle de caisse** : état déclaré par le commandant coupure par coupure à chaque fin d'embarquement et fin de mois, écarts figés et historisés (`cash_counts`) |
 | Vente à bord | `/captain/ventes` | 🟡 **Boucle de correction en place, pas encore éprouvé à bord** : catalogue biens/services, inventaire par navire, ventes (espèces → caisse `vente_a_bord` ou CB → Stripe Checkout + QR), registre douanier détaxe + export CSV, webhook `/webhooks/stripe` (signature + idempotence par `event.id`). Perm. `captain` ; `marins` a `ventes:CM` par défaut dans la matrice — aucun override requis. Remboursement (siège, par contre-passation), contrôle de caisse, gel à la relève, reçu PDF, vente rapide espèces rejouable hors connexion et rectification d'un mouvement de caisse livrés. Cf. `docs/audit/2026-08-27-audit-vente-a-bord-caisse.md` |
 | RH (SIRH) | `/rh` | ✅ congés marins + SIRH sédentaires : dossier/CRUD/import, contrats & avenants + alertes, congés/absences + self-service `/rh/moi`, EVP + verrouillage période, export Silae CSV + journal des lots, coffre-fort bulletins + entretiens + reporting RH (cf. `docs/strategy/CAHIER_DES_CHARGES_SIRH.md`) |

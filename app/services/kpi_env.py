@@ -61,7 +61,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bunker import BunkerOperation
 from app.models.finance import LegKPI
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.nav_event import NAV_TIME_SLOTS, NoonEvent
 from app.models.port import Port
 from app.models.validation import DashboardParameter, QualityCheckResult
@@ -1414,7 +1414,11 @@ def _leg_is_active(leg: Leg) -> bool:
     """Voyage « actif » = non clôturé (pas d'approbation) et non annulé
     (miroir de ``validation_rules_catalog._leg_is_active`` — non importé pour
     ne pas coupler la page à la catalogue de règles, cf. périmètre LOT 12)."""
-    return leg.closure_approved_at is None and leg.status != "cancelled"
+    return (
+        leg.origin != LEG_ORIGIN_TOWT
+        and leg.closure_approved_at is None
+        and leg.status != "cancelled"
+    )
 
 
 def _quality_trend(rows: list[QualityCheckResult], *, now: datetime) -> list[QualityTrendPoint]:
@@ -1605,7 +1609,7 @@ async def quality_overview(
                 pct=pct,
             )
         )
-    noon_completeness.sort(key=lambda n: (n.pct if n.pct is not None else Decimal(0)))
+    noon_completeness.sort(key=lambda n: n.pct if n.pct is not None else Decimal(0))
 
     trend = _quality_trend(qcr_rows, now=now)
     trend_max = max((p.count for p in trend), default=0)

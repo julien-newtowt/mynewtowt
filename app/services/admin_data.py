@@ -97,6 +97,19 @@ assert not (
     set(ALLOWED_PURGE_TABLES) & NEVER_PURGE_TABLES
 ), "une table d'historique inaltérable ne peut pas être purgeable"
 
+# Lignes protégées à l'intérieur d'une table purgeable (ADR-014). Les positions
+# GPS reprises des archives TOWT vivent dans ``vessel_positions`` aux côtés des
+# positions live (même clé naturelle, mêmes consommateurs) ; la purge par
+# rétention des positions live reste légitime, mais l'archive est un fait
+# historique non purgeable : chaque DELETE porte ``colonne != valeur``.
+TOWT_ARCHIVE_SOURCE = "towt_archive"
+PURGE_PROTECTED_ROWS: dict[str, tuple[str, str]] = {
+    "vessel_positions": ("source", TOWT_ARCHIVE_SOURCE),
+}
+assert set(PURGE_PROTECTED_ROWS) <= set(
+    ALLOWED_PURGE_TABLES
+), "une protection de lignes ne se déclare que sur une table purgeable"
+
 
 def _table(name: str):
     """Table SQLAlchemy d'un nom whitelisté, sinon ``ValueError``."""
@@ -146,7 +159,7 @@ async def purge_table(db: AsyncSession, table_name: str) -> int:
             "(ancienneté) — le vidage intégral du journal d'audit est interdit."
         )
     table = _table(table_name)
-    result = await db.execute(delete(table))
+    result = await db.execute(_protect_rows(table_name, table, delete(table)))
     await db.flush()
     return int(result.rowcount or 0)
 
@@ -165,6 +178,21 @@ async def purge_table_before(db: AsyncSession, table_name: str, cutoff: datetime
     col_name = PURGE_DATE_COLUMNS[table_name]
     table = _table(table_name)
     column = table.c[col_name]
-    result = await db.execute(delete(table).where(column < cutoff))
+    result = await db.execute(
+        _protect_rows(table_name, table, delete(table).where(column < cutoff))
+    )
     await db.flush()
     return int(result.rowcount or 0)
+
+
+def _protect_rows(table_name: str, table, stmt):
+    """Exclut du DELETE les lignes protégées de la table (``PURGE_PROTECTED_ROWS``).
+
+    Colonne et valeur viennent de la whitelist, jamais d'une saisie ; la valeur
+    est un paramètre lié.
+    """
+    guard = PURGE_PROTECTED_ROWS.get(table_name)
+    if guard is None:
+        return stmt
+    col_name, protected_value = guard
+    return stmt.where(table.c[col_name].is_distinct_from(protected_value))

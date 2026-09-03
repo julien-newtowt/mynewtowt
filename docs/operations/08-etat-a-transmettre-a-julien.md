@@ -2,6 +2,10 @@
 
 > **Rédigé le 2026-08-03** par Yasmin (assistée). À lire au retour de congés.
 >
+> ➡️ **Suite au 2026-09-01** : la file des 7 lots est entièrement fusionnée.
+> État des branches et ordre de fusion dans le §0 de `07-ordre-pr-et-merge.md` ;
+> constats de fond dans `09-note-reprise-2026-09-01.md`.
+>
 > 🔴 **MISE À JOUR DU 2026-08-21 — deux affirmations de cette note sont devenues
 > fausses. L'état à jour fait foi dans le §0 de `07-ordre-pr-et-merge.md`.**
 >

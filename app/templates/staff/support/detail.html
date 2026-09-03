@@ -1,0 +1,157 @@
+{# Assistance — fiche d'une demande.
+   ⚠️ `comments` est DÉJÀ filtré par `support.visible_comments()` : ce gabarit ne
+   doit jamais itérer `t_ref.comments` directement, sinon une note interne
+   fuiterait vers le demandeur. #}
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t_ref.reference }} — {{ brand.nom_court }} ERP{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">{{ t('s_grp_assistance', lang) }}</span>
+    <h1 class="display"><code>{{ t_ref.reference }}</code> — {{ t_ref.title }}</h1>
+    <p class="text-muted">
+      <span class="pill">{{ t(status_keys[t_ref.status], lang) }}</span>
+      <span class="badge {% if t_ref.severity == 'bloquant' %}badge-error{% elif t_ref.severity == 'genant' %}badge-warning{% endif %}">
+        {{ t(severity_keys[t_ref.severity], lang) }}
+      </span>
+      <span class="badge">{{ t(kind_keys[t_ref.kind], lang) }}</span>
+      {% if archived %}<span class="badge">{{ t('sup_archived_badge', lang) }}</span>{% endif %}
+    </p>
+  </div>
+  <a href="/support" class="btn btn-ghost">{{ t('s_nav_support', lang) }}</a>
+</header>
+
+{% if read_only %}<div class="alert alert-info mb-4">{{ t('sup_readonly', lang) }}</div>{% endif %}
+
+<section class="card mb-4">
+  <p style="white-space: pre-wrap;">{{ t_ref.description }}</p>
+  {% if t_ref.resolution %}
+  <div class="alert mt-3"><strong>{{ t('sup_f_resolution', lang) }}</strong> — {{ t_ref.resolution }}</div>
+  {% endif %}
+</section>
+
+{# ── Contexte technique : la seule chance de retrouver un bug, puisque rien ne
+     capte les erreurs applicatives aujourd'hui. ── #}
+<section class="card mb-4">
+  <h2 class="h3">{{ t('sup_ctx_title', lang) }}</h2>
+  <table class="table">
+    <tbody>
+      <tr><th>{{ t('sup_ctx_page', lang) }}</th><td><code>{{ t_ref.page_url or '—' }}</code></td></tr>
+      <tr><th>{{ t('sup_f_occurred_at', lang) }}</th><td>{{ t_ref.occurred_at|datetime if t_ref.occurred_at else '—' }}</td></tr>
+      <tr><th>{{ t('sup_c_created', lang) }}</th><td>{{ t_ref.created_at|datetime }}</td></tr>
+      <tr><th>{{ t('sup_ctx_version', lang) }}</th><td>{{ t_ref.app_version or '—' }}</td></tr>
+      {% if is_admin %}
+      <tr><th>{{ t('sup_ctx_agent', lang) }}</th><td class="text-sm text-muted">{{ t_ref.user_agent or '—' }}</td></tr>
+      <tr><th>Referer</th><td class="text-sm text-muted"><code>{{ t_ref.http_referer or '—' }}</code></td></tr>
+      <tr><th>{{ t('sup_c_reporter', lang) }}</th><td>{{ t_ref.reporter_role }} (#{{ t_ref.reporter_id }})</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+
+{# ── Pièces jointes ── #}
+<section class="card mb-4">
+  <h2 class="h3">{{ t('sup_files', lang) }}</h2>
+  {% if attachments %}
+  <ul>
+    {% for a in attachments %}
+    <li class="flex justify-between items-center">
+      <a href="/support/{{ t_ref.reference }}/pieces/{{ a.id }}/telecharger">{{ a.original_name or a.id }}</a>
+      <span class="text-muted text-sm">{{ a.created_at|datetime }}</span>
+      {% if not read_only and (is_admin or a.uploaded_by_id == user.id) %}
+      <form method="POST" action="/support/{{ t_ref.reference }}/pieces/{{ a.id }}/supprimer">
+        <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+        <button type="submit" class="btn btn-ghost btn-sm">{{ t('sup_b_delete', lang) }}</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-muted">—</p>
+  {% endif %}
+
+  {% if not read_only and attachments|length < max_attachments %}
+  <form method="POST" action="/support/{{ t_ref.reference }}/pieces" enctype="multipart/form-data" class="mt-3">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <input name="attachment" type="file" required />
+    <button type="submit" class="btn btn-secondary">{{ t('sup_b_add_file', lang) }}</button>
+  </form>
+  {% endif %}
+</section>
+
+{# ── Tri : administrateur seulement, hors les deux transitions du demandeur ── #}
+{% if not archived %}
+{% set targets = allowed_targets if is_admin else reporter_targets %}
+{% if targets %}
+<section class="card mb-4">
+  <form method="POST" action="/support/{{ t_ref.reference }}/statut"
+        style="display:flex; gap:var(--space-3); flex-wrap:wrap; align-items:end;">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div>
+      <label class="label" for="status">{{ t('sup_b_status', lang) }}</label>
+      <select id="status" name="status" required>
+        {% for s in targets %}
+        <option value="{{ s }}">{{ t(status_keys[s], lang) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="flex:1; min-width:16rem;">
+      <label class="label" for="resolution">{{ t('sup_f_resolution', lang) }}</label>
+      <input id="resolution" name="resolution" type="text" maxlength="500" />
+    </div>
+    <button type="submit" class="btn btn-primary">{{ t('sup_b_status', lang) }}</button>
+  </form>
+
+  {% if is_admin %}
+  <form method="POST" action="/support/{{ t_ref.reference }}/assignation" class="mt-3"
+        style="display:flex; gap:var(--space-3); align-items:end;">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div>
+      <label class="label" for="assigned_to_id">{{ t('sup_b_assign', lang) }}</label>
+      <select id="assigned_to_id" name="assigned_to_id">
+        <option value="">—</option>
+        {% for u in assignees %}
+        <option value="{{ u.id }}" {% if t_ref.assigned_to_id == u.id %}selected{% endif %}>{{ u.full_name or u.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-secondary">{{ t('sup_b_assign', lang) }}</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+{% endif %}
+
+{# ── Échanges ── #}
+<section class="card">
+  <h2 class="h3">{{ t('sup_comments', lang) }}</h2>
+  {% for c in comments %}
+  <div class="mb-3">
+    <p class="text-sm text-muted">
+      <strong>{{ c.author_name or '—' }}</strong> · {{ c.created_at|datetime }}
+      {% if c.is_internal %}<span class="badge badge-warning">{{ t('sup_internal_badge', lang) }}</span>{% endif %}
+    </p>
+    <p style="white-space: pre-wrap;">{{ c.body }}</p>
+  </div>
+  {% else %}
+  <p class="text-muted">—</p>
+  {% endfor %}
+
+  {% if not read_only %}
+  <form method="POST" action="/support/{{ t_ref.reference }}/commentaire" class="mt-3">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <textarea name="body" rows="3" required></textarea>
+    {% if is_admin %}
+    <label class="mt-2" style="display:flex; gap:var(--space-2); align-items:center;">
+      <input type="checkbox" name="is_internal" value="1" />
+      <span class="text-sm">{{ t('sup_internal_note', lang) }}</span>
+    </label>
+    {% endif %}
+    <button type="submit" class="btn btn-primary mt-2">{{ t('sup_b_comment', lang) }}</button>
+  </form>
+  {% endif %}
+</section>
+
+{% endblock %}

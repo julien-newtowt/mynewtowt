@@ -97,6 +97,55 @@ async def ports_nearby(
     ]
 
 
+PORTS_SEARCH_MAX_LIMIT = 500
+"""Plafond dur de ``/ports/search``.
+
+Une limite non bornée invitait à télécharger le référentiel entier : le
+formulaire de leg demandait ``limit=10000`` et filtrait dans le navigateur.
+Passé 10 000 lignes en base, la requête **tronquait silencieusement** —
+triée par pays, tout ce qui suivait ``JP`` disparaissait de la cascade
+Zone/Pays/Port et de la recherche libre (123 pays, dont le Viêt Nam). Le
+plafond force la recherche à rester une recherche : on interroge le serveur
+avec un critère, on ne rapatrie pas la table.
+"""
+
+
+@router.get("/ports/countries", dependencies=[Depends(require_api_key_or_staff)])
+async def ports_countries(db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """Pays ayant au moins un port exploitable, avec leur zone géographique.
+
+    Alimente la cascade **Zone → Pays → Port** du formulaire de leg : quelques
+    centaines d'octets au lieu du référentiel complet. La zone vient de
+    ``services.geo.region_of`` (couverture ISO-3166 complète) et non d'une
+    carte codée en dur côté navigateur.
+    """
+    from sqlalchemy import func
+
+    from app.models.port import Port
+    from app.services.geo import REGION_ORDER, region_of
+
+    rows = (
+        await db.execute(
+            select(Port.country, func.count(Port.id))
+            .where(Port.latitude.is_not(None))
+            .where(Port.is_active.is_(True))
+            .group_by(Port.country)
+        )
+    ).all()
+    entries = [
+        {"country": country, "zone": region_of(country), "port_count": count}
+        for country, count in rows
+        if country
+    ]
+    order = {zone: i for i, zone in enumerate(REGION_ORDER)}
+    # Zones dans l'ordre métier, pays alphabétiques ; une zone inconnue passe
+    # en fin de liste plutôt que de casser le tri.
+    # Une zone inconnue (code pays hors ISO — « Autre ») passe en fin de liste
+    # plutôt que de casser le tri.
+    entries.sort(key=lambda e: (order.get(e["zone"], len(order)), e["country"]))
+    return entries
+
+
 @router.get("/ports/search", dependencies=[Depends(require_api_key_or_staff)])
 async def ports_search(
     q: str | None = None,
@@ -104,9 +153,14 @@ async def ports_search(
     limit: int = 20,
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
-    """Search active ports by name or locode prefix (case-insensitive)."""
+    """Recherche de ports actifs par nom ou LOCODE (insensible à la casse).
+
+    ``limit`` est **borné** à ``PORTS_SEARCH_MAX_LIMIT`` : cet endpoint sert à
+    chercher, pas à exporter le référentiel (cf. le plafond ci-dessus).
+    """
     from app.models.port import Port
 
+    limit = max(1, min(limit, PORTS_SEARCH_MAX_LIMIT))
     stmt = select(Port).where(Port.latitude.is_not(None)).where(Port.is_active.is_(True))
     if q:
         like = f"%{q.lower()}%"
@@ -217,6 +271,33 @@ async def ports_next_clocks(
             }
         )
     return out
+
+
+@router.get("/ports/{port_id}", dependencies=[Depends(require_api_key_or_staff)])
+async def port_by_id(port_id: int, db: AsyncSession = Depends(get_db)) -> dict:
+    """Un port par son id — lookup ponctuel, pas de liste.
+
+    ⚠ **Ordre de déclaration** : cette route doit rester APRÈS tous les chemins
+    littéraux ``/ports/...`` (``search``, ``countries``, ``nearby``, ``bbox``,
+    ``next-clocks``). FastAPI n'ajoute pas de convertisseur de type au motif de
+    route : ``/{port_id}`` capture n'importe quel segment et masquerait les
+    littéraux déclarés après lui. Verrouillé par un test.
+
+    Sert au formulaire de leg : une suggestion de séquence désigne le POL par
+    son id, et l'aperçu d'ETA a besoin des coordonnées des deux ports — sans
+    cet accès unitaire, il faudrait de nouveau rapatrier tout le référentiel.
+    """
+    port = await db.get(Port, port_id)
+    if port is None or not port.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Port not found")
+    return {
+        "id": port.id,
+        "locode": port.locode,
+        "name": port.name,
+        "country": port.country,
+        "latitude": port.latitude,
+        "longitude": port.longitude,
+    }
 
 
 @router.get("/spec")

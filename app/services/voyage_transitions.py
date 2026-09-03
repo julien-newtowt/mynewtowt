@@ -5,10 +5,17 @@ de la pose du réel (ATD/ATA), quel que soit le canal : cockpit escale
 (boutons « Déclarer le départ du port de … » / « Déclarer l'arrivée au port
 de … ») ou SOF du bord (SOSP/EOSP, ``captain_router``).
 
-Séquence garantie (jamais de chevauchement, jamais d'arrivée sans départ) :
+Séquence garantie (jamais de chevauchement, jamais d'arrivée sans départ,
+**un seul leg actif par navire**) :
 
     planifié ──déclaration départ (ATD, POL)──▶ en mer
-    en mer  ──déclaration arrivée (ATA, POD)──▶ à quai ──clôture──▶ terminé
+    en mer  ──déclaration arrivée (ATA, POD)──▶ à quai
+    à quai  ──départ déclaré du leg SUIVANT────▶ terminé (voyage_completed_at)
+
+Le départ d'un leg exige que le leg précédent du navire soit arrivé (ATA) ;
+il le termine opérationnellement dans le même geste : à tout instant un
+navire n'a qu'un leg « en mer » ou « à quai ». La clôture administrative
+(``closure_*``, workflow captain) reste indépendante.
 
 Chaque déclaration enchaîne, dans l'ordre :
 
@@ -53,11 +60,12 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.sof_event import SofEvent
 from app.services.planning import (
     DEFAULT_PORT_STAY_HOURS,
     PlanningError,
+    assert_leg_mutable,
     ensure_utc,
     refresh_leg_status,
 )
@@ -116,6 +124,7 @@ async def _next_leg(db: AsyncSession, leg: Leg) -> Leg | None:
             .where(Leg.vessel_id == leg.vessel_id)
             .where(Leg.id != leg.id)
             .where(Leg.status != "cancelled")
+            .where(Leg.origin != LEG_ORIGIN_TOWT)
             .where(Leg.etd > leg.etd)
             .order_by(Leg.etd.asc(), Leg.id.asc())
             .limit(1)
@@ -127,6 +136,41 @@ def _stay_delta(leg: Leg) -> timedelta:
     return timedelta(hours=leg.port_stay_planned_hours or DEFAULT_PORT_STAY_HOURS)
 
 
+async def _previous_legs(db: AsyncSession, leg: Leg) -> list[Leg]:
+    """Legs (non annulés) du même navire qui précèdent ``leg`` — par ETD."""
+    return list(
+        (
+            await db.execute(
+                select(Leg)
+                .where(Leg.vessel_id == leg.vessel_id)
+                .where(Leg.id != leg.id)
+                .where(Leg.status != "cancelled")
+                .where(Leg.origin != LEG_ORIGIN_TOWT)
+                .where(Leg.etd < leg.etd)
+                .order_by(Leg.etd.asc(), Leg.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _complete_previous_legs(previous: list[Leg], *, at: datetime) -> list[int]:
+    """Termine opérationnellement les legs précédents arrivés (ATA posée).
+
+    Un navire qui appareille pour un nouveau leg a quitté le quai : le voyage
+    précédent est terminé — ``voyage_completed_at`` posé une seule fois (jamais
+    réécrit), statut recalculé par la machine à états unique.
+    """
+    done: list[int] = []
+    for prev in previous:
+        if prev.ata is not None and prev.voyage_completed_at is None:
+            prev.voyage_completed_at = at
+            refresh_leg_status(prev)
+            done.append(prev.id)
+    return done
+
+
 async def declare_departure(
     db: AsyncSession,
     leg: Leg,
@@ -135,13 +179,26 @@ async def declare_departure(
     actor_id: int | None = None,
     actor_name: str | None = None,
     create_sof: bool = True,
+    quiet: bool = False,
+    reanchor_eta: bool = True,
 ) -> dict:
     """Déclare le départ du port de chargement (POL) — ouvre la navigation.
 
+    Séquence inter-legs : le leg précédent du navire doit être arrivé (ATA) ;
+    il est terminé opérationnellement par ce départ (``voyage_completed_at``).
+    ``quiet`` coupe les notifications (reprise d'historique en masse).
+    ``reanchor_eta=False`` conserve l'ETA prévisionnelle telle quelle (pas de
+    re-ancrage sur l'ATD ni de cascade) : c'est le bon réglage pour une
+    reprise d'historique dont l'arrivée réelle est déjà connue — re-ancrer une
+    prévision aussitôt supplantée par l'ATA fausserait le « prévu » affiché
+    (ex. leg planifié au 1er août, parti le 6 juin : ETA tirée de 56 j).
+
     Renvoie un dict de synthèse : ``first`` (première déclaration), ``changed``
     (ATD posé ou corrigé), ``sof_created``, ``eta_shift_hours`` (re-ancrage
-    d'ETA appliqué), ``cascade`` (synthèse ``date_cascade``).
+    d'ETA appliqué), ``cascade`` (synthèse ``date_cascade``),
+    ``completed_leg_ids`` (legs précédents terminés par ce départ).
     """
+    assert_leg_mutable(leg)  # archive TOWT : le réel est un fait, il ne se redéclare pas
     from app.services.finance_rollup import rollup_for_leg
     from app.services.notifications import notify_sosp
     from app.services.voyage_events import on_vessel_departed
@@ -163,11 +220,33 @@ async def declare_departure(
         "sof_created": False,
         "eta_shift_hours": 0.0,
         "cascade": {},
+        "completed_leg_ids": [],
     }
+
+    # Un seul leg actif par navire : le leg précédent doit être arrivé.
+    previous = await _previous_legs(db, leg)
+    still_at_sea = [p for p in previous if p.atd is not None and p.ata is None]
+    if still_at_sea:
+        codes = ", ".join(p.leg_code for p in still_at_sea)
+        raise VoyageSequenceError(
+            f"Le leg précédent {codes} est encore en mer : déclarez d'abord son "
+            "arrivée (ATA) — un navire n'a qu'un seul voyage actif."
+        )
+    if previous:
+        last_prev = previous[-1]
+        prev_ata = ensure_utc(last_prev.ata)
+        if prev_ata is not None and t < prev_ata:
+            raise VoyageSequenceError(
+                f"Le départ ne peut pas précéder l'arrivée du leg précédent "
+                f"{last_prev.leg_code} ({prev_ata:%Y-%m-%d %H:%M} UTC)."
+            )
 
     if changed:
         leg.atd = t
     refresh_leg_status(leg)
+    # Le navire a quitté le quai : le(s) leg(s) précédent(s) arrivé(s) sont
+    # terminés opérationnellement (posé une seule fois, jamais réécrit).
+    summary["completed_leg_ids"] = _complete_previous_legs(previous, at=t)
 
     if create_sof:
         summary["sof_created"] = await _ensure_sof(
@@ -187,7 +266,7 @@ async def declare_departure(
         batch_id = uuid.uuid4().hex[:12]
         old_eta = ensure_utc(leg.eta)
         new_eta = old_eta
-        if ata is None:
+        if ata is None and reanchor_eta:
             # Re-ancrage de l'ETA sur le départ réel : la durée de transit
             # prévue est conservée (ancre = ATD précédent s'il s'agit d'une
             # correction, ETD prévisionnel sinon). L'ETD n'est jamais réécrit :
@@ -243,7 +322,7 @@ async def declare_departure(
     except Exception:
         logger.exception("declare_departure: rollup failed (leg %s)", leg.id)
 
-    if first:
+    if first and not quiet:
         try:
             await notify_sosp(db, leg.leg_code, leg.id)
         except Exception:
@@ -261,13 +340,16 @@ async def declare_arrival(
     actor_id: int | None = None,
     actor_name: str | None = None,
     create_sof: bool = True,
+    quiet: bool = False,
 ) -> dict:
     """Déclare l'arrivée au port de destination (POD) — ferme la navigation.
 
     Exige un départ déclaré (séquence départ → arrivée) et une arrivée
     postérieure au départ. Active le leg suivant (recalage de ses dates sur
-    ATA + durée d'escale planifiée, notification aux Opérations).
+    ATA + durée d'escale planifiée, notification aux Opérations). ``quiet``
+    coupe les notifications (reprise d'historique en masse).
     """
+    assert_leg_mutable(leg)  # archive TOWT : le réel est un fait, il ne se redéclare pas
     from app.services.finance_rollup import rollup_for_leg
     from app.services.notifications import notify_eosp, notify_leg_activated
     from app.services.voyage_events import on_vessel_arrived
@@ -362,7 +444,7 @@ async def declare_arrival(
     if nxt is not None:
         summary["next_leg_id"] = nxt.id
         summary["next_leg_code"] = nxt.leg_code
-        if first:
+        if first and not quiet:
             try:
                 await notify_leg_activated(db, nxt.leg_code, nxt.id)
             except Exception:
@@ -373,7 +455,7 @@ async def declare_arrival(
     except Exception:
         logger.exception("declare_arrival: rollup failed (leg %s)", leg.id)
 
-    if first:
+    if first and not quiet:
         try:
             await notify_eosp(db, leg.leg_code, leg.id)
         except Exception:
@@ -381,3 +463,47 @@ async def declare_arrival(
 
     await db.flush()
     return summary
+
+
+async def repair_vessel_sequence(
+    db: AsyncSession, *, vessel_id: int | None = None
+) -> list[tuple[Leg, Leg]]:
+    """Passe de cohérence « un seul leg actif par navire » sur la donnée existante.
+
+    La règle vit dans ``declare_departure`` (le départ du leg N+1 termine le
+    leg N) — mais un ATD posé par un autre chemin (ancien flux escale, import,
+    SQL) l'a contournée : deux legs du même navire peuvent alors rester « à
+    quai » côte à côte. Cette passe rejoue la règle a posteriori : tout leg
+    arrivé (ATA) dont un leg ultérieur du même navire a appareillé (ATD) est
+    terminé opérationnellement (``voyage_completed_at`` = cet ATD, statut
+    recalculé). Idempotente, jamais de réécriture d'une fin déjà posée.
+
+    Renvoie les couples ``(leg terminé, leg suivant qui l'a terminé)``.
+    """
+    stmt = (
+        select(Leg)
+        .where(Leg.status != "cancelled")
+        .where(Leg.origin != LEG_ORIGIN_TOWT)  # ADR-014 : hors séquence vivante
+        .order_by(Leg.vessel_id.asc(), Leg.etd.asc(), Leg.id.asc())
+    )
+    if vessel_id is not None:
+        stmt = stmt.where(Leg.vessel_id == vessel_id)
+    legs = list((await db.execute(stmt)).scalars().all())
+    by_vessel: dict[int, list[Leg]] = {}
+    for lg in legs:
+        by_vessel.setdefault(lg.vessel_id, []).append(lg)
+
+    repaired: list[tuple[Leg, Leg]] = []
+    for lane in by_vessel.values():
+        for idx, lg in enumerate(lane):
+            if lg.ata is None or lg.voyage_completed_at is not None:
+                continue
+            successor = next((n for n in lane[idx + 1 :] if n.atd is not None), None)
+            if successor is None:
+                continue
+            lg.voyage_completed_at = ensure_utc(successor.atd)
+            refresh_leg_status(lg)
+            repaired.append((lg, successor))
+    if repaired:
+        await db.flush()
+    return repaired

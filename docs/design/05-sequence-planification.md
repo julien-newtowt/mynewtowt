@@ -73,6 +73,13 @@ flowchart TD
     style G fill:#B47148,color:#fff
 ```
 
+**Espacement par l'escale** : la résolution des chevauchements recale un leg
+au plus tôt à la **disponibilité** du précédent = ETA + escale planifiée
+(`port_stay_planned_hours`, défaut 24 h) — jamais à son ETA brute (constat prod
+du 2026-09-02 : quatre legs d'Artemis enchaînés le même jour). Même règle dans le
+moteur scénario. Pour remettre d'aplomb une planification héritée :
+`python -m scripts.respace_downstream_legs` (dry-run par défaut, `--yes`).
+
 **Incident de reprogrammation** : si le recalcul aval devrait déplacer un leg
 déjà appareillé, rien n'est écrasé (règle d'or « on ne touche jamais un fait
 réalisé »), l'incident est tracé (`summary.skipped`) **et notifié** aux
@@ -103,6 +110,36 @@ mêmes recalculs, même historisation. Re-déclarer au même horodatage est sans
 effet (idempotence) ; à un horodatage différent, c'est une **correction
 tracée** (ancienne → nouvelle valeur dans l'historique).
 
+### Un seul leg actif par navire
+
+Le départ d'un leg **exige** que le leg précédent du navire soit arrivé (ATA
+déclarée) et lui soit postérieur ; il **termine** ce leg précédent dans le même
+geste (`legs.voyage_completed_at`, migration `0137` → statut `completed`,
+phase « terminé »). À tout instant un navire n'a donc qu'un leg « en mer » ou
+« à quai ». La clôture administrative (`closure_*`, workflow captain) reste
+indépendante : un leg terminé opérationnellement peut avoir une clôture en
+attente (mention affichée sur la fiche).
+
+La liste `/planning` affiche le réel dès qu'il existe (ATD/ATA, pastille
+« réel », prévisionnel et écart en jours en dessous) et la phase en statut.
+
+### Reprise des dates réelles
+
+`python -m scripts.backfill_voyage_actuals` (dry-run par défaut, `--yes` pour
+appliquer) rejoue un CSV `leg_code,atd,ata` par le chemin unique — séquence
+vérifiée, SOF, recalculs, historique, complétion des legs précédents — en mode
+`quiet` (sans notifications). Les dates futures sont ignorées (elles restent du
+prévisionnel). Quand l'arrivée réelle est fournie, l'ETA prévisionnelle n'est
+**pas** re-ancrée sur l'ATD (`reanchor_eta=False`) : re-ancrer une prévision
+aussitôt supplantée par l'ATA fausserait le « prévu » affiché (leg planifié au
+1ᵉʳ août parti le 6 juin → ETA tirée de 56 j). Seul un leg aval déjà appareillé
+qui bloque le recalage est rapporté comme incident. Le script termine par une
+**passe de cohérence** (`voyage_transitions.repair_vessel_sequence`) sur toute la
+donnée : un leg arrivé dont un leg ultérieur du navire a appareillé (ATD posé par
+l'ancien flux, un import…) est terminé opérationnellement — deux legs « à quai »
+côte à côte ne peuvent pas subsister. Jeu de données 2026 :
+`scripts/data/voyage_actuals_2026.csv`.
+
 ## 6. Historisation
 
 `schedule_revisions` (append-only, survit à la suppression du leg) porte
@@ -120,7 +157,63 @@ ETD/ETA/clôture booking, suggestion et Gantt drag-drop snappés au jour). Le
 **réel** (déclarations, SOF) garde l'heure précise. L'ETA re-ancrée au départ
 hérite de la précision du réel.
 
-## 8. Ce qui reste connu et assumé (non traité ici)
+## 8. Création d'un leg — page unique (PLN-08)
+
+Maquette validée le 2026-09-02. `/planning/legs/new` (et l'édition) tient sur
+**une page**, sans wizard :
+
+1. **Navire** — un bouton par navire (radios stylés), avec l'état de sa
+   séquence (dernier leg, ports, ETA/ATA, phase). Le choix pilote le
+   pré-remplissage (`_new_leg_suggestions`, sérialisé en `data-suggestions`).
+1 bis. **Leg de référence — « Chaîner après »** (correctif 2026-09-02). Le
+   défaut reste le **dernier leg par ETD** : créer un leg, c'est le plus souvent
+   prolonger la ligne. Mais ce défaut est faux dès qu'un voyage lointain est
+   déjà saisi — un leg de janvier 2027 captait le chaînage des legs de l'année
+   en cours (« il a repris le leg A alors qu'on programme le D »), avec l'ETD
+   **et** le POL qui en découlent. Le formulaire expose donc les derniers legs
+   du navire (`chain_options`, 8 max, ETD décroissant) : changer de référence
+   redérive ETD, POL, escale et rang. Le sélecteur est masqué quand il n'y a
+   qu'une option — un choix à une entrée est du bruit.
+2. **Départ / Arrivée côte à côte** — ports habituels (`Port.is_shortcut`,
+   repli : **BRSSO São Sebastião, FRFEC Fécamp**) → filtres Zone / Pays / Port →
+   **recherche libre** par saisie (nom ou LOCODE, tous les ports actifs, sans
+   filtre zone/pays). Le **POL se remplit automatiquement** = POD du dernier leg
+   du navire (continuité), via l'événement `leg:pick-port` (`leg-cascade.js`).
+3. **Dates** — ETD pré-rempli (ETA/ATA du leg précédent + escale, jour ouvré du
+   port), ETA calculée (distance × élongation ÷ vitesse, arrondie au jour) ;
+   tous deux modifiables. **Escale saisie en jours**
+   (`port_stay_planned_days` → stockée en heures ×24 ; le champ historique en
+   heures reste accepté). Vitesse / élongation derrière un repli.
+4. **Réservation** — une seule case « Ouvrir à la réservation » ; capacité et
+   clôture reprennent les défauts (navire, ETD − 48 h), ajustables en édition.
+5. **Récapitulatif** — code de leg prévisionnel (rang chronologique de l'année
+   de l'ETD suggéré), route, dates, jours de mer, escale.
+
+## 8 bis. Audit de séquence — ce qu'il dit et ce qu'il ne dit pas
+
+`audit_planning_sequence` compare, navire par navire et par ETD croissant, la
+disponibilité du leg précédent (**arrivée effective + escale planifiée**) au
+départ du leg suivant. Trois règles corrigées le 2026-09-02 :
+
+- **Dates effectives** — l'ATA prime sur l'ETA (l'ATD sur l'ETD). Mesurer une
+  escale contre une prévision déjà périmée produisait des alertes fausses.
+- **Un leg appareillé n'est plus audité** — son ATD est un fait, pas un conflit
+  de planification : l'alerte était insoluble par construction.
+- **Le message porte les chiffres** — date d'arrivée (en précisant ATA ou ETA),
+  durée d'escale, date de disponibilité, départ constaté, manque en jours, et
+  les deux corrections possibles (réduire l'escale du précédent, ou décaler le
+  départ). « démarre avant la fin de l'escale prévue » ne disait rien
+  d'actionnable.
+
+`distance_missing` nomme désormais sa cause : un port sans coordonnées. La
+distance théorique (`Leg.distance_nm`) est posée au create/update et vaut
+`None` si l'orthodromie n'est pas calculable ; sans elle, l'**écart** et
+l'**allongement réel** sont vides eux aussi. Trois voies de réparation :
+repli calculé au rendu (`voyage_track.theoretical_distance_nm`, marqué `*`),
+saisie des coordonnées dans **Admin → Ports** (qui recalcule les legs du port),
+et reprise à froid `scripts/backfill_leg_distances.py`.
+
+## 9. Ce qui reste connu et assumé (non traité ici)
 
 - Le sélecteur de fuseau du formulaire d'horodatage escale reste décoratif
   (saisie interprétée en UTC) — à traiter séparément (ESC-07).

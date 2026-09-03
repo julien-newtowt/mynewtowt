@@ -2,7 +2,7 @@
 
 Usage :
   python -m scripts.load_ports                                   # embedded + datagouv FR
-  python -m scripts.load_ports --with-unlocode                   # + UN/LOCODE mondial
+  python -m scripts.load_ports --with-unlocode                   # + UN/LOCODE mondial géolocalisé
   python -m scripts.load_ports --datagouv-slug seaports-locations-data
                                                                  # par slug
   python -m scripts.load_ports --from-file /tmp/seaports.csv     # depuis un fichier local
@@ -16,12 +16,21 @@ Sources :
   appelle l'API ``/api/1/datasets/{slug}/`` pour récupérer la première
   ressource CSV. Avec ``--datagouv-url``, on passe directement
   l'URL de la ressource.
-- **UN/LOCODE community mirror** — ~110 000 entrées (--with-unlocode).
+- **UN/LOCODE géolocalisé** — ~116 000 lieux, dont **16 669 ports
+  maritimes** exploitables (--with-unlocode). Le miroir brut UNECE n'en donne
+  que 11 763 : UNECE laisse 20 % des lieux sans coordonnées, dont de vrais
+  ports (Manille en était absente). ⚠ La part de coordonnées corrigées est
+  dérivée d'OpenStreetMap (**ODbL**) : attribution obligatoire en cas de
+  republication (cf. docs/integrations/unlocode-ports.md).
 - **--from-file** — lit n'importe quel CSV local (utile quand l'host
   d'exécution n'a pas d'accès réseau vers data.gouv.fr).
 
-Idempotent : upsert sur le locode, ne remplace jamais une entrée
-manuelle par une entrée automatique.
+Idempotent : upsert sur le locode, avec une **hiérarchie de sources**
+(`services.ports.may_overwrite`) — une correction humaine (`manual`) et le
+catalogue embarqué (`world_ports`) ne sont jamais dégradés par un import
+automatique ; les coordonnées géolocalisées (`unlocode-improved`) ne sont pas
+écrasées par le miroir brut. Détail et attribution ODbL :
+`docs/integrations/unlocode-ports.md`.
 """
 
 from __future__ import annotations
@@ -35,15 +44,26 @@ import httpx
 
 from app.database import SessionLocal
 from app.services.ports import (
-    PortRow,
+    UnlocodeReport,
     _filter_unlocode_seaports,
     parse_csv,
+    parse_unlocode_csv,
     upsert_ports,
 )
 from scripts.data.world_ports import as_port_rows as embedded_world_ports
 
 DATAGOUV_DEFAULT_URL = "https://www.data.gouv.fr/fr/datasets/r/ac2c8109-8db3-40ff-af88-9e68ddafe66d"
+# Miroir UN/LOCODE **géolocalisé** : même liste que le miroir officiel
+# (datasets/un-locode) plus une colonne ``CoordinatesDecimal`` qui couvre les
+# lieux laissés sans coordonnées par UNECE (20 % du fichier, dont de vrais
+# ports : Manille en était absente) et corrige les positions fausses.
+# Mesuré le 2026-09-02 : 16 676 ports maritimes exploitables contre 11 763
+# avec le miroir brut. Repli disponible via ``--unlocode-url``.
 UNLOCODE_DEFAULT_URL = (
+    "https://raw.githubusercontent.com/cristan/improved-un-locodes/master/data/"
+    "code-list-improved.csv"
+)
+UNLOCODE_PLAIN_URL = (
     "https://raw.githubusercontent.com/datasets/un-locode/master/data/code-list.csv"
 )
 
@@ -90,93 +110,6 @@ async def _resolve_datagouv_slug(slug: str) -> str | None:
             return url
     logger.warning("No CSV/XLSX resource found in dataset %r", slug)
     return None
-
-
-def _parse_unlocode_coords(packed: str) -> tuple[float, float] | None:
-    """Parse a UN/LOCODE coordinates string like '4015N 12453W' → (40.25, -124.883).
-
-    Format : DDMM[N|S] DDDMM[E|W]   (degré + minute, sans décimale ni espace
-    intra-coord). Retourne (lat, lon) en décimal, ou None si parsing échoue.
-    """
-    if not packed:
-        return None
-    packed = packed.strip()
-    parts = packed.split()
-    if len(parts) != 2:
-        return None
-    lat_s, lon_s = parts
-    try:
-        # Latitude DDMM[N|S]
-        lat_hemi = lat_s[-1]
-        if lat_hemi not in ("N", "S"):
-            return None
-        lat_dd = int(lat_s[:-5]) if len(lat_s) >= 6 else int(lat_s[:-3])
-        lat_mm = int(lat_s[-3:-1])
-        lat = lat_dd + lat_mm / 60.0
-        if lat_hemi == "S":
-            lat = -lat
-
-        # Longitude DDDMM[E|W]
-        lon_hemi = lon_s[-1]
-        if lon_hemi not in ("E", "W"):
-            return None
-        lon_dd = int(lon_s[:-3])
-        lon_mm = int(lon_s[-3:-1])
-        lon = lon_dd + lon_mm / 60.0
-        if lon_hemi == "W":
-            lon = -lon
-        return (round(lat, 4), round(lon, 4))
-    except (ValueError, IndexError):
-        return None
-
-
-def parse_unlocode_csv(content: bytes) -> list[PortRow]:
-    """Parse the UN/LOCODE github mirror CSV (with packed coordinates).
-
-    Columns expected (datasets/un-locode/code-list.csv) :
-        Change, Country, Location, Name, NameWoDiacritics, Subdivision,
-        Status, Function, Date, IATA, Coordinates, Remarks
-
-    Le CSV UN/LOCODE contient régulièrement des **doublons** pour un même
-    locode (variantes orthographiques, ex. BEZUN "Zuen (Zuun)" et
-    "Zuun (Zuen)"). On garde la **première occurrence** de chaque locode.
-    """
-    import csv
-    import io
-
-    seen: set[str] = set()
-    out: list[PortRow] = []
-    text = content.decode("utf-8", errors="replace")
-    reader = csv.DictReader(io.StringIO(text))
-    for row in reader:
-        if not row:
-            continue
-        country = (row.get("Country") or "").strip().upper()[:2]
-        loc = (row.get("Location") or "").strip().upper()[:3]
-        if not country or not loc:
-            continue
-        locode = (country + loc).replace(" ", "")[:5]
-        if locode in seen:
-            continue
-        name = (row.get("Name") or row.get("NameWoDiacritics") or "").strip()
-        function = (row.get("Function") or "").strip()
-        coords = _parse_unlocode_coords((row.get("Coordinates") or "").strip())
-        if not coords or not name:
-            continue
-        seen.add(locode)
-        out.append(
-            PortRow(
-                locode=locode,
-                name=name[:100],
-                country=country,
-                latitude=coords[0],
-                longitude=coords[1],
-                source="unlocode",
-                function_code=function or "1-------",
-                subdivision=(row.get("Subdivision") or "").strip()[:8] or None,
-            )
-        )
-    return out
 
 
 async def load(
@@ -258,11 +191,19 @@ async def load(
             logger.info("Fetching UN/LOCODE from %s", unlocode_url)
             payload = await _download(unlocode_url)
             if payload:
-                rows = parse_unlocode_csv(payload)
-                rows = _filter_unlocode_seaports(rows)
-                # Garde tous les pays — l'embedded couvre l'essentiel
-                # mais UN/LOCODE complète avec la long tail.
-                ins, upd = await upsert_ports(db, rows)
+                report = UnlocodeReport()
+                rows = parse_unlocode_csv(payload, report=report)
+                logger.info("UN/LOCODE : %s", report.summary())
+                # Filtre maritime : position 1 de la fonction = port. On garde
+                # tous les pays — l'embedded couvre l'essentiel, UN/LOCODE
+                # complète la long tail mondiale.
+                seaports = _filter_unlocode_seaports(rows)
+                logger.info(
+                    "UN/LOCODE : %d ports maritimes retenus sur %d lieux " "(fonction 1 = port)",
+                    len(seaports),
+                    len(rows),
+                )
+                ins, upd = await upsert_ports(db, seaports)
                 await db.commit()
                 logger.info("UN/LOCODE : %d inserted, %d updated", ins, upd)
             else:
@@ -284,7 +225,7 @@ def main() -> int:
     parser.add_argument(
         "--with-unlocode",
         action="store_true",
-        help="Charge en plus le mirror UN/LOCODE github (long tail mondiale)",
+        help="Charge en plus UN/LOCODE géolocalisé (long tail mondiale, 16 669 ports)",
     )
     parser.add_argument(
         "--datagouv-url",
@@ -303,7 +244,12 @@ def main() -> int:
         help="Filtre les rows data.gouv par code pays ISO-2 "
         "(ex. FR). Par défaut: pas de filtre.",
     )
-    parser.add_argument("--unlocode-url", default=UNLOCODE_DEFAULT_URL)
+    parser.add_argument(
+        "--unlocode-url",
+        default=UNLOCODE_DEFAULT_URL,
+        help="URL du CSV UN/LOCODE (défaut : miroir géolocalisé ; miroir brut "
+        f"UNECE : {UNLOCODE_PLAIN_URL})",
+    )
     parser.add_argument(
         "--from-file", default=None, help="Charge un CSV local (utile sans accès réseau)"
     )
