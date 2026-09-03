@@ -259,9 +259,17 @@ argument 'head'; please specify a specific target revision, '<branchname>@head'
 **Cause** : deux branches de fonctionnalité ont chaîné leurs migrations sur le
 **même parent** et ont été fusionnées séparément — `main` porte alors deux têtes
 et `alembic upgrade head` refuse de choisir. Constaté le 07/08/2026 (MRV ×
-crewing), le 26/08/2026 (BL × QHSE) et le 03/09/2026 (Assistance × planification,
-déploiement de `1d480c6`). **Ce n'est pas une panne de base** : rien n'a été
-appliqué, la restauration du snapshot est un no-op de précaution.
+crewing), le 26/08/2026 (BL × QHSE), puis **deux fois le 03/09/2026** —
+Assistance × planification (déploiement de `1d480c6`), puis legacy MRV × le
+reste (déploiement de `1f082f9`). **Ce n'est pas une panne de base** : rien n'a
+été appliqué, la restauration du snapshot est un no-op de précaution.
+
+⚠️ **Une révision de fusion ne vaut que pour les têtes existant au moment où
+elle est écrite.** La seconde occurrence du 03/09 vient de là : `20260903_0139`
+avait réuni deux des trois enfants de `20260901_0136`, le troisième arrivant
+avec la PR suivante. Avant de poser une fusion, vérifier qu'aucune branche non
+fusionnée ne porte encore une migration chaînée sur le même parent —
+`git grep 'down_revision = ' origin/…` sur les branches ouvertes.
 
 **Diagnostic** (aucune connexion à la base nécessaire) :
 
@@ -273,7 +281,8 @@ docker compose run --rm app alembic current   # où est réellement la prod
 
 **Correctif** : poser une **révision de fusion** sans DDL
 (`alembic merge -m "merge heads" <tête1> <tête2>`), la relire, la faire passer en
-PR, redéployer. Modèles : `20260807_0113`, `20260826_0119`, `20260903_0139`.
+PR, redéployer. Modèles : `20260807_0113`, `20260826_0119`, `20260903_0139`,
+`20260903_0140`.
 
 ⚠️ **Ne pas rechaîner une révision déjà fusionnée sur `main`** (changer son
 `down_revision` pour la tête courante) : toute base qui la porte déjà

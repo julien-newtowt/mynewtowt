@@ -1026,7 +1026,7 @@ def _leg_blocking_models() -> list[tuple[Any, str]]:
     from app.models.commercial import OrderAssignment, RateOffer
     from app.models.crew import CrewAssignment
     from app.models.escale import DockerShift, EscaleOperation
-    from app.models.finance import LegFinance, LegKPI
+    from app.models.finance import LegFinance
     from app.models.noon_report import NoonReport
     from app.models.onboard_cashbox import CashboxMovement
     from app.models.onboard_sales import OnboardSale
