@@ -110,8 +110,7 @@ async def counters(db: AsyncSession) -> SocialCounters:
         crossings = int(
             (
                 await db.execute(
-                    select(func.count(Leg.id))
-                    .where(Leg.ata.is_not(None))
+                    select(func.count(Leg.id)).where(Leg.ata.is_not(None))
                     # Traversées NEWTOWT uniquement : l'archive TOWT (ADR-014) ne
                     # gonfle pas un compteur publié par la nouvelle compagnie.
                     .where(Leg.origin != LEG_ORIGIN_TOWT)
