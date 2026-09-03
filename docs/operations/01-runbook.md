@@ -259,8 +259,9 @@ argument 'head'; please specify a specific target revision, '<branchname>@head'
 **Cause** : deux branches de fonctionnalité ont chaîné leurs migrations sur le
 **même parent** et ont été fusionnées séparément — `main` porte alors deux têtes
 et `alembic upgrade head` refuse de choisir. Constaté le 07/08/2026 (MRV ×
-crewing) et le 26/08/2026 (BL × QHSE). **Ce n'est pas une panne de base** : rien
-n'a été appliqué, la restauration du snapshot est un no-op de précaution.
+crewing), le 26/08/2026 (BL × QHSE) et le 03/09/2026 (Assistance × planification,
+déploiement de `1d480c6`). **Ce n'est pas une panne de base** : rien n'a été
+appliqué, la restauration du snapshot est un no-op de précaution.
 
 **Diagnostic** (aucune connexion à la base nécessaire) :
 
@@ -272,15 +273,33 @@ docker compose run --rm app alembic current   # où est réellement la prod
 
 **Correctif** : poser une **révision de fusion** sans DDL
 (`alembic merge -m "merge heads" <tête1> <tête2>`), la relire, la faire passer en
-PR, redéployer. Modèles : `20260807_0113`, `20260826_0119`.
+PR, redéployer. Modèles : `20260807_0113`, `20260826_0119`, `20260903_0139`.
 
 ⚠️ **Ne pas rechaîner une révision déjà fusionnée sur `main`** (changer son
 `down_revision` pour la tête courante) : toute base qui la porte déjà
 considérerait l'autre chaîne comme appliquée, et ses tables manqueraient
 **silencieusement**. Le rechaînage ne vaut que pour une révision encore sur sa
-branche de travail. La CI refuse maintenant la seconde tête en PR
-(`tests/regression/test_alembic_single_head.py`) : ce mode de panne ne devrait
-plus atteindre le déploiement.
+branche de travail.
+
+**La sentinelle CI ne suffit pas, et le 03/09/2026 l'a montré.**
+`tests/regression/test_alembic_single_head.py` a bien détecté la seconde tête sur
+la PR #173 — mais la PR a été fusionnée alors que sa CI était rouge, et la panne
+a atteint le déploiement. La sentinelle dit la vérité ; elle ne protège que si le
+verdict de la CI est **opposable**. Deux conséquences pratiques :
+
+- activer une **protection de branche** sur `main` exigeant les checks verts,
+  sans quoi la sentinelle n'est qu'un avertissement ;
+- tant que `main` est rouge pour une autre raison (c'était le cas ce jour-là :
+  `black` sur deux fichiers, `anyio` non épinglé), le rouge de la sentinelle est
+  noyé dans un rouge de fond. **Remettre `main` au vert est ce qui rend les
+  garde-fous lisibles** — un `main` durablement rouge les neutralise tous.
+
+Contrôle à faire avant chaque fusion, tant que la protection de branche n'est pas
+en place :
+
+```bash
+pytest tests/regression/test_alembic_single_head.py -q --no-cov
+```
 
 ### 6.3 Rollback migration
 
