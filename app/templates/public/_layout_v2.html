@@ -42,15 +42,15 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="/static/css/colors_and_type.css" />
-  <link rel="stylesheet" href="/static/css/newtowt-public.css" />
-  <link rel="icon" type="image/png" href="/static/img/favicon.png" />
+  <link rel="stylesheet" href="{{ asset('css/colors_and_type.css') }}" />
+  <link rel="stylesheet" href="{{ asset('css/newtowt-public.css') }}" />
+  <link rel="icon" type="image/png" href="{{ asset('img/favicon.png') }}" />
   <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
-  <script src="/static/js/csrf-htmx.js" defer></script>
-  <script src="/static/js/lucide-init.js" defer></script>
-  <script src="/static/js/toast.js" defer></script>
-  <script src="/static/js/lang-switch.js" defer></script>
+  <script src="{{ asset('js/csrf-htmx.js') }}" defer></script>
+  <script src="{{ asset('js/lucide-init.js') }}" defer></script>
+  <script src="{{ asset('js/toast.js') }}" defer></script>
+  <script src="{{ asset('js/lang-switch.js') }}" defer></script>
 
   {# Données structurées Schema.org — fiche Organisation (source de vérité §2).
      Bloc de données application/ld+json : non exécuté → compatible CSP stricte. #}
@@ -65,7 +65,7 @@
   <header class="header" role="banner">
     <div class="header-inner">
       <a class="header-logo" href="/" aria-label="NEWTOWT — accueil">
-        <img src="/static/img/logo_NEWTOWT_email.png" alt="NEWTOWT" />
+        <img src="{{ asset('img/logo_NEWTOWT_email.png') }}" alt="NEWTOWT" />
       </a>
       <nav class="header-nav" aria-label="Navigation principale">
         <a href="/flotte">{{ t('nav_our_fleet', lang) }}</a>
@@ -105,7 +105,7 @@
       <div class="footer-grid">
         <div>
           <div class="footer-brand">
-            <img src="/static/img/logo_NEWTOWT_email_white.png" alt="NEWTOWT" />
+            <img src="{{ asset('img/logo_NEWTOWT_email_white.png') }}" alt="NEWTOWT" />
           </div>
           <p class="footer-tagline">{{ brand.mention }}</p>
           <p class="footer-addr">52 quai Frissard<br/>76600 Le Havre<br/>France</p>

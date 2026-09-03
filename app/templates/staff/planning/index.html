@@ -234,5 +234,5 @@
   </table>
 </section>
 
-{% if can_move %}<script src="/static/js/planning-gantt-drag.js" defer></script>{% endif %}
+{% if can_move %}<script src="{{ asset('js/planning-gantt-drag.js') }}" defer></script>{% endif %}
 {% endblock %}

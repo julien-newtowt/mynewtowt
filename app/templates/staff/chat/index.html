@@ -1,7 +1,7 @@
 {% extends "staff/_layout.html" %}
 {% block title %}Newtowt Agent{% endblock %}
 {% block head %}{{ super() }}
-<script src="/static/js/chat.js" defer></script>
+<script src="{{ asset('js/chat.js') }}" defer></script>
 {% endblock %}
 {% block content %}
 <header class="mb-4"><span class="kicker">Assistant</span><h1 class="display">Newtowt Agent</h1>

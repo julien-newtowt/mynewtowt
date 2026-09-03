@@ -12,9 +12,9 @@
 {% block head %}
 {{ super() }}
 <link rel="manifest" href="/manifest.json" />
-<script src="/static/js/pwa-onboard.js" defer></script>
-<script src="/static/js/onboard-idb.js" defer></script>
-<script src="/static/js/onboard-offline.js" defer></script>
+<script src="{{ asset('js/pwa-onboard.js') }}" defer></script>
+<script src="{{ asset('js/onboard-idb.js') }}" defer></script>
+<script src="{{ asset('js/onboard-offline.js') }}" defer></script>
 <script src="{{ asset('js/event-autosave.js') }}" defer></script>
 {% endblock %}
 {% block content %}

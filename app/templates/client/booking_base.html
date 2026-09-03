@@ -10,17 +10,17 @@
   <title>{% block wizard_title %}{{ t('nav_book', lang) }}{% endblock %} · NEWTOWT</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="/static/css/colors_and_type.css" />
-  <link rel="stylesheet" href="/static/css/newtowt-public.css" />
-  <link rel="icon" type="image/png" href="/static/img/favicon.png" />
-  <script src="/static/js/csrf-htmx.js" defer></script>
-  <script src="/static/js/forms.js" defer></script>
+  <link rel="stylesheet" href="{{ asset('css/colors_and_type.css') }}" />
+  <link rel="stylesheet" href="{{ asset('css/newtowt-public.css') }}" />
+  <link rel="icon" type="image/png" href="{{ asset('img/favicon.png') }}" />
+  <script src="{{ asset('js/csrf-htmx.js') }}" defer></script>
+  <script src="{{ asset('js/forms.js') }}" defer></script>
   {% block wizard_head %}{% endblock %}
 </head>
 <body>
   <header class="header" role="banner">
     <div class="header-inner">
-      <a class="header-logo" href="/"><img src="/static/img/logo_NEWTOWT_email.png" alt="NEWTOWT" /></a>
+      <a class="header-logo" href="/"><img src="{{ asset('img/logo_NEWTOWT_email.png') }}" alt="NEWTOWT" /></a>
       <div class="progress-steps" aria-label="{{ t('booking_step_counter', lang, n=wizard_step|default(1)) }}">
         {% set steps = [('1', t('booking_step_route', lang)), ('2', t('booking_step_cargo', lang)), ('3', t('booking_step_confirm', lang))] %}
         {% for num, label in steps %}
