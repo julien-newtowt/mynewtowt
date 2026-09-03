@@ -635,8 +635,20 @@ async def delete_leg_action(
     user=Depends(require_permission("planning", "S")),
 ):
     leg = await _get_leg_or_404(db, leg_id)
+    form = await request.form()
+    # Case cochée sur l'écran de refus : détruire aussi les dépendances de
+    # pré-planification. Le service ne l'accepte que sur un leg futur et
+    # refuse toujours les registres d'argent, MRV, ISPS et les offres chaînées.
+    cascade = form.get("cascade_dependencies") == "on"
+    # Relevé AVANT suppression : après, il n'y a plus rien à compter, et
+    # l'audit doit dire ce qui a été détruit, pas seulement que ça l'a été.
+    destroyed: list[str] = []
+    if cascade:
+        from app.services.planning import leg_deletion_report as _report
+
+        destroyed = (await _report(db, leg)).cascade_targets
     try:
-        await delete_leg(db, leg)
+        await delete_leg(db, leg, cascade=cascade)
     except PlanningError as e:
         # Au lieu d'un 400 sec, on re-rend leg_detail avec un bandeau
         # d'erreur listant les dépendances bloquantes (UX > Exception).
@@ -648,7 +660,11 @@ async def delete_leg_action(
         # async → MissingGreenlet → 500, c'est-à-dire le bug qu'on corrige.
         from sqlalchemy import inspect as sa_inspect
 
-        from app.services.planning import is_delayed, leg_delay_hours
+        from app.services.planning import (
+            is_delayed,
+            leg_delay_hours,
+            leg_deletion_report,
+        )
 
         await db.rollback()
         user_state = sa_inspect(user, raiseerr=False)
@@ -670,12 +686,16 @@ async def delete_leg_action(
                 "delayed": is_delayed(leg),
                 "delay_h": round(leg_delay_hours(leg), 1),
                 "delete_error": str(e),
+                # Inventaire relu APRÈS le rollback : il alimente l'écran de
+                # refus (ce qui bloque, ce que la cascade détruirait, pourquoi
+                # elle est éventuellement fermée).
+                "deletion_report": await leg_deletion_report(db, leg),
             },
             status_code=400,
         )
     await activity_record(
         db,
-        action="leg_delete",
+        action="leg_delete_cascade" if cascade else "leg_delete",
         user_id=user.id,
         user_name=user.username,
         user_role=user.role,
@@ -683,6 +703,12 @@ async def delete_leg_action(
         entity_type="leg",
         entity_id=leg.id,
         entity_label=leg.leg_code,
+        detail=(
+            "suppression en cascade — dépendances détruites : "
+            + (", ".join(destroyed) if destroyed else "aucune")
+            if cascade
+            else None
+        ),
     )
     return RedirectResponse(url="/planning", status_code=303)
 
