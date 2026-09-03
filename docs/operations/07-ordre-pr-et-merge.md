@@ -75,7 +75,7 @@ attrapées avant tout déploiement.
 | Branche | Migration | `down_revision` |
 |---|---|---|
 | `feature/support-ticketing` | `20260821_0119_support_ticketing.py` | → `20260901_0136` |
-| `feature/dashboard-env-integration` | `20260713_0106_drop_mrv_legacy_tables.py` | → `20260901_0136` |
+| `feature/dashboard-env-integration` | `20260713_0106_retire_mrv_legacy_tables.py` | → `20260901_0136` |
 
 **Règle appliquée, à réappliquer telle quelle la prochaine fois** : on rechaîne
 une révision **non publiée** sur `main` ; on pose une migration de **fusion**
