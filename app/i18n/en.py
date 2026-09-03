@@ -1313,6 +1313,7 @@ CATALOG: dict[str, str] = {
     "qhse_import_no_dedup_warning": "Re-importing the same file creates new reports (no deduplication in Phase 0).",
     "qhse_import_result_title": "QHSE import report",
     "qhse_import_result_imported": "imported",
+    "qhse_import_result_updated": "updated",
     "qhse_import_result_skipped": "skipped / quarantined",
     "qhse_import_result_flagged": "imported, to confirm",
     "qhse_import_result_flagged_title": "Imported but flagged as suspected test",

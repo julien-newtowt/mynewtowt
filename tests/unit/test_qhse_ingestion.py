@@ -458,3 +458,196 @@ def test_the_result_screen_distinguishes_loss_from_doubt():
     assert "report.flagged" in src
     assert "report.warnings" in src
     assert "qhse_import_result_loss_notice" in src
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#        Réconciliation des ré-imports (D10) — 2026-09-03
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Le FMS ré-exporte périodiquement l'intégralité du registre : sans clé de
+# rapprochement, chaque ré-export duplique tout le registre. Cf. docstring de
+# ``qhse_ingestion`` et ``migrations/versions/20260903_0141_...``.
+
+
+def test_source_code_distinguishes_real_psc_edge_case():
+    """Trois signalements PSC réels (Artemis, 2025-01-28) partagent navire,
+    jour et un ``Subject`` générique (« PSC ») — seule leur ``Description``
+    les distingue (cahier des charges §3.3). ``Subject`` seul dans la clé les
+    fusionnerait à tort ; leur ``Description`` réelle les sépare.
+    """
+    from datetime import UTC, datetime
+
+    from app.services.qhse_ingestion import _compute_source_code
+
+    day = datetime(2025, 1, 28, tzinfo=UTC)
+    codes = {
+        _compute_source_code(1, day, "PSC", "see PSC QHSE report code 1511"),
+        _compute_source_code(
+            1, day, "PSC", "Failure of implementation of ISM code considered by USCG"
+        ),
+        _compute_source_code(
+            1,
+            day,
+            "PSC",
+            "Oil record book was found with incorrect entries with discharge of "
+            "oil at sea without the position entered.",
+        ),
+    }
+    assert len(codes) == 3
+
+
+def test_source_code_is_stable_across_calls():
+    """Même entrée → même clé, condition de base de toute réconciliation."""
+    from datetime import UTC, datetime
+
+    from app.services.qhse_ingestion import _compute_source_code
+
+    day = datetime(2026, 1, 10, tzinfo=UTC)
+    assert _compute_source_code(1, day, "Subject", "desc") == _compute_source_code(
+        1, day, "Subject", "desc"
+    )
+
+
+async def _seed_vessel(db) -> None:
+    """``seed_reference_data`` ne crée aucun navire — chaque test en pose un,
+    même motif que ``test_import_qhse_xlsx_happy_path_and_quarantine``."""
+    db.add(Vessel(code="ANE", name="Anemos"))
+    await db.flush()
+
+
+async def test_reimport_updates_instead_of_duplicating(db):
+    """Importer deux fois le même fichier ne double pas le registre."""
+    await _seed_vessel(db)
+    wb = _workbook([_row("A near miss"), _row("A second report", day=11)])
+
+    first = await import_qhse_xlsx(db, wb, filename="f1.xlsx")
+    assert (first.imported, first.updated) == (2, 0)
+
+    second = await import_qhse_xlsx(db, wb, filename="f2.xlsx")
+    assert (second.imported, second.updated) == (0, 2)
+
+    rows = (await db.execute(select(QhseReport))).scalars().all()
+    assert len(rows) == 2  # pas 4
+
+
+async def test_reimport_moves_the_row_to_the_latest_batch(db):
+    """``import_batch_id`` reflète le dernier import qui a touché la ligne,
+    pas seulement le premier — traçabilité D10."""
+    from app.models.qhse import QhseImportBatch
+
+    await _seed_vessel(db)
+    wb = _workbook([_row("A near miss")])
+    await import_qhse_xlsx(db, wb, filename="f1.xlsx")
+    second = await import_qhse_xlsx(db, wb, filename="f2.xlsx")
+
+    report_row = (await db.execute(select(QhseReport))).scalars().one()
+    batches = (await db.execute(select(QhseImportBatch))).scalars().all()
+    latest_batch = max(batches, key=lambda b: b.id)
+    assert report_row.import_batch_id == latest_batch.id
+    assert latest_batch.updated_count == second.updated == 1
+
+
+async def test_import_batch_persisted_with_counts(db):
+    """Le lot est une ligne interrogeable, pas seulement une mention dans
+    ``activity_logs`` — compteurs cohérents avec le rapport renvoyé."""
+    from app.models.qhse import QhseImportBatch
+    from app.models.user import User
+
+    await _seed_vessel(db)
+    db.add(
+        User(
+            id=7,
+            username="qhse",
+            email="qhse@example.test",
+            hashed_password="x",
+            role="manager_maritime",
+        )
+    )
+    await db.flush()
+    wb = _workbook([_row("A near miss"), _row("Unknown ship", vessel="Nope")])
+    report = await import_qhse_xlsx(db, wb, filename="import.xlsx", imported_by_user_id=7)
+
+    batch = (await db.execute(select(QhseImportBatch))).scalars().one()
+    assert batch.filename == "import.xlsx"
+    assert batch.imported_by_user_id == 7
+    assert batch.created_count == report.imported == 1
+    assert batch.skipped_count == report.skipped == 1
+
+
+async def test_reimport_updates_corrective_action_without_duplicating(db):
+    """Un correctif renseigné plus tard (``CorrectiveActionFinishedDate``
+    apparaît dans un export ultérieur) met à jour la même ligne — jamais un
+    doublon (``report_id`` est UNIQUE sur ``qhse_corrective_actions``)."""
+    from app.models.qhse import CorrectiveAction
+
+    await _seed_vessel(db)
+    header = [
+        *_HEADER,
+        "CorrectiveActionDescription",
+        "CorrectiveActionLimitDate",
+        "CorrectiveActionFinishedDate",
+    ]
+
+    def _wb(finished):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(header)
+        ws.append(
+            [
+                "A near miss",
+                None,
+                "desc",
+                "Crew",
+                None,
+                None,
+                "Observation",
+                datetime(2026, 1, 10),
+                None,
+                "Anemos",
+                None,
+                None,
+                "Fix the thing",
+                datetime(2026, 2, 1),
+                finished,
+            ]
+        )
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    await import_qhse_xlsx(db, _wb(None))
+    actions = (await db.execute(select(CorrectiveAction))).scalars().all()
+    assert len(actions) == 1
+    assert actions[0].status == "open"
+
+    await import_qhse_xlsx(db, _wb(datetime(2026, 2, 15)))
+    actions = (await db.execute(select(CorrectiveAction))).scalars().all()
+    assert len(actions) == 1  # toujours une seule ligne
+    assert actions[0].status == "implemented"
+    assert actions[0].finished_date is not None
+
+
+async def test_run_rules_invoked_on_import_creates_quality_check_results(db):
+    """Chaque rapport créé/mis à jour passe désormais par le moteur générique
+    (RQ01-RQ03) — enregistré mais jamais exécuté avant ce correctif."""
+    from app.models.validation import QualityCheckResult
+
+    await _seed_vessel(db)
+    wb = _workbook([_row("A near miss")])
+    await import_qhse_xlsx(db, wb)
+
+    report_row = (await db.execute(select(QhseReport))).scalars().one()
+    results = (
+        (
+            await db.execute(
+                select(QualityCheckResult).where(
+                    QualityCheckResult.subject_type == "qhse_reports",
+                    QualityCheckResult.subject_id == report_row.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {r.rule_id for r in results} == {"RQ01", "RQ02", "RQ03"}
+    assert all(r.result == "pass" for r in results)

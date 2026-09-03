@@ -34,10 +34,27 @@ charges §3.4) et leur résolution fine est différée à la Phase 1.
 Jamais d'exception qui interrompt tout le lot (même principe que
 ``flgo_sync.import_flgo_xlsx``) : une ligne en anomalie est comptée et
 décrite dans ``QhseImportReport.errors``, jamais un crash de l'import.
+
+**Réconciliation des ré-imports (D10)** : le FMS ré-exporte périodiquement
+l'intégralité du registre, workflow CAPA compris — sans clé de
+rapprochement, chaque ré-export duplique tout. ``source_code`` (hachage de la
+clé naturelle vessel/date/sujet/description, cf. :func:`_compute_source_code`)
+identifie une ligne déjà connue ; trouvée, elle est **mise à jour** (« photo
+la plus récente », même doctrine que ``flgo_sync._upsert_reading``), jamais
+dupliquée. ``QhseImportBatch`` trace quel import a créé ou rafraîchi chaque
+ligne (``qhse_reports.import_batch_id``).
+
+Chaque rapport créé ou mis à jour est ensuite passé à
+``validation_engine.run_rules(db, "qhse", ...)`` — RQ01-RQ03 étaient
+enregistrées dans le moteur (même patron que MRV) mais jamais exécutées
+contre de vraies lignes persistées : ceci complète cette fonctionnalité sans
+toucher aux quarantaines pré-insertion ci-dessus, qui répondent à un besoin
+différent (refuser d'insérer) et doivent rester telles quelles.
 """
 
 from __future__ import annotations
 
+import hashlib
 import io
 import re
 import unicodedata
@@ -50,9 +67,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.crew import CrewMember
-from app.models.qhse import CorrectiveAction, QhseReport, RootCauseEvaluation
+from app.models.qhse import CorrectiveAction, QhseImportBatch, QhseReport, RootCauseEvaluation
 from app.models.user import User
 from app.models.vessel import Vessel
+from app.services.validation_engine import run_rules
 
 # ══════════════════════════════════════════════════════════════ Exceptions
 
@@ -74,9 +92,13 @@ class QhseImportReport:
     ``flagged`` / ``warnings`` : lignes **importées** mais portant un doute (motif de
     test présumé). Elles sont dans le registre, marquées, et un humain tranche —
     jamais supprimées à sa place.
+
+    ``updated`` : ligne **reconnue** via ``source_code`` (D10) et rafraîchie plutôt
+    que dupliquée — distinct d'``imported`` (première apparition de ce rapport).
     """
 
     imported: int = 0
+    updated: int = 0
     skipped: int = 0
     flagged: int = 0
     errors: list[str] = field(default_factory=list)
@@ -121,6 +143,31 @@ def _normalize_name(raw: str | None) -> str:
     decomposed = unicodedata.normalize("NFKD", raw)
     stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
     return _WHITESPACE_RE.sub(" ", stripped).strip().casefold()
+
+
+def _compute_source_code(
+    vessel_id: int, issued_date: datetime, subject: str, description: str | None
+) -> str:
+    """Clé naturelle de réconciliation (D10) — SHA-256 de meilleur effort.
+
+    ``(vessel_id, jour d'émission, sujet normalisé, description normalisée)`` :
+    aucune des 41 colonnes de l'export FMS ne porte d'identifiant stable
+    (cahier des charges §3.1/§16.1). ``Subject`` seul ne suffit pas — trois
+    signalements PSC réels (Artemis, même navire, même jour, sujet générique
+    « PSC ») ne se distinguent que par leur ``Description`` (§3.3) ; validé
+    sur les 190 lignes réelles Anemos+Artemis, 190 clés distinctes.
+
+    L'heure n'entre pas dans la clé (seul le jour), les deux exports sources
+    ne portant pas de garantie d'heure stable. ``description`` participe à la
+    clé : si son texte est réellement retouché entre deux exports (plutôt que
+    seulement complété via les champs CAPA/Evaluation, qui n'y entrent pas),
+    la ligne sera reconnue comme nouvelle plutôt que mise à jour — limite
+    assumée en l'absence d'identifiant FMS, jamais un risque de fusionner deux
+    rapports réellement distincts.
+    """
+    parts = [str(vessel_id), issued_date.date().isoformat(), _normalize_name(subject)]
+    parts.append(_normalize_name(description) if description else "")
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
 # ══════════════════════════════════════════════════════════════ Dates
@@ -222,14 +269,27 @@ def _cell(row: tuple, index: dict[str, int], column: str) -> Any:
 # ══════════════════════════════════════════════════════════════ Import
 
 
-async def import_qhse_xlsx(db: AsyncSession, file_bytes: bytes) -> QhseImportReport:
-    """Parse + importe un export QHSE FMS (une ligne = un rapport).
+async def import_qhse_xlsx(
+    db: AsyncSession,
+    file_bytes: bytes,
+    *,
+    filename: str | None = None,
+    imported_by_user_id: int | None = None,
+) -> QhseImportReport:
+    """Parse + importe/réconcilie un export QHSE FMS (une ligne = un rapport).
 
     Lève :class:`QhseIngestionError` seulement si le classeur est illisible
     (mauvais format de fichier) — toute anomalie de contenu (navire non
     résolu, dates incohérentes, motif de test) est quarantainée ligne par
     ligne dans ``QhseImportReport.errors``, jamais une exception qui
     interromprait tout le lot.
+
+    Une ligne déjà connue (``source_code``, D10) est mise à jour, pas
+    dupliquée. Chaque rapport créé ou mis à jour est ensuite passé au moteur
+    de qualité générique (``validation_engine.run_rules``, scope ``qhse``) —
+    en un seul appel groupé après la boucle, pas ligne par ligne : RQ01-RQ03
+    ne sont pas des règles séquentielles, et un appel groupé évite N
+    aller-retours.
     """
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
@@ -237,6 +297,11 @@ async def import_qhse_xlsx(db: AsyncSession, file_bytes: bytes) -> QhseImportRep
         raise QhseIngestionError(f"fichier Excel illisible : {exc}") from exc
 
     report = QhseImportReport()
+    batch = QhseImportBatch(filename=filename, imported_by_user_id=imported_by_user_id)
+    db.add(batch)
+    await db.flush()  # matérialise batch.id avant de l'attacher aux rapports
+
+    touched: list[QhseReport] = []
 
     # Index navires/personnes chargé une fois (flotte + effectifs restent
     # petits — évite le N+1 par ligne).
@@ -279,7 +344,7 @@ async def import_qhse_xlsx(db: AsyncSession, file_bytes: bytes) -> QhseImportRep
             # `packing_list.assign_bl_number`.
             try:
                 async with db.begin_nested():
-                    created = await _import_row(
+                    outcome = await _import_row(
                         db,
                         row=row,
                         index=index,
@@ -289,6 +354,7 @@ async def import_qhse_xlsx(db: AsyncSession, file_bytes: bytes) -> QhseImportRep
                         user_by_norm=user_by_norm,
                         crew_by_norm=crew_by_norm,
                         report=report,
+                        batch_id=batch.id,
                     )
             except Exception as exc:  # jamais de crash de lot — cf. docstring module
                 report.errors.append(f"{sheet.title}!L{row_number} : erreur inattendue ({exc})")
@@ -297,10 +363,88 @@ async def import_qhse_xlsx(db: AsyncSession, file_bytes: bytes) -> QhseImportRep
                 # Compté APRÈS la sortie réussie du savepoint, jamais avant : une
                 # violation de contrainte peut surgir à sa libération, et un
                 # compteur incrémenté à l'intérieur mentirait dans ce cas précis.
-                if created:
-                    report.imported += 1
+                if outcome is not None:
+                    kind, qhse_report = outcome
+                    if kind == "created":
+                        report.imported += 1
+                    else:
+                        report.updated += 1
+                    touched.append(qhse_report)
+
+    if touched:
+        await run_rules(db, "qhse", touched)
+
+    batch.created_count = report.imported
+    batch.updated_count = report.updated
+    batch.skipped_count = report.skipped
+    batch.flagged_count = report.flagged
 
     return report
+
+
+async def _upsert_corrective_action(
+    db: AsyncSession,
+    *,
+    report_id: int,
+    description: str | None,
+    limit_date: date | None,
+    finished_date: date | None,
+    responsible_user_id: int | None,
+    responsible_rank: str | None,
+) -> None:
+    """Crée ou met à jour l'action corrective d'un rapport — jamais un doublon.
+
+    ``report_id`` est UNIQUE (1:0..1 avec ``QhseReport``) : un ré-import qui
+    créerait une seconde ligne violerait cette contrainte. Rien à faire si
+    aucun champ n'est renseigné — et une ligne déjà existante n'est **jamais
+    supprimée** si un export ultérieur cesse de renseigner ces champs (perte
+    de donnée), photo la plus récente ou pas.
+    """
+    if not (description or limit_date or finished_date):
+        return
+    existing = (
+        await db.execute(select(CorrectiveAction).where(CorrectiveAction.report_id == report_id))
+    ).scalar_one_or_none()
+    action = existing or CorrectiveAction(report_id=report_id)
+    action.description = description
+    action.limit_date = limit_date
+    action.finished_date = finished_date
+    action.responsible_user_id = responsible_user_id
+    action.responsible_rank = responsible_rank
+    action.status = "implemented" if finished_date else "open"
+    if existing is None:
+        db.add(action)
+
+
+async def _upsert_root_cause(
+    db: AsyncSession,
+    *,
+    report_id: int,
+    root_cause_text: str | None,
+    preventative_action: str | None,
+    limit_date: date | None,
+    finished_date: date | None,
+    responsible_user_id: int | None,
+    responsible_rank: str | None,
+) -> None:
+    """Miroir de :func:`_upsert_corrective_action` pour l'évaluation racine."""
+    if not (root_cause_text or preventative_action or limit_date or finished_date):
+        return
+    existing = (
+        await db.execute(
+            select(RootCauseEvaluation).where(RootCauseEvaluation.report_id == report_id)
+        )
+    ).scalar_one_or_none()
+    evaluation = existing or RootCauseEvaluation(report_id=report_id)
+    evaluation.root_cause_text = root_cause_text
+    evaluation.preventative_action = preventative_action
+    evaluation.limit_date = limit_date
+    evaluation.finished_date = finished_date
+    evaluation.responsible_user_id = responsible_user_id
+    evaluation.responsible_rank = responsible_rank
+    evaluation.status = "implemented" if finished_date else "open"
+    if existing is None:
+        db.add(evaluation)
 
 
 async def _import_row(
@@ -314,12 +458,14 @@ async def _import_row(
     user_by_norm: dict[str, User],
     crew_by_norm: dict[str, CrewMember],
     report: QhseImportReport,
-) -> bool:
-    """Importe une ligne. Renvoie ``True`` si un rapport a été créé.
+    batch_id: int,
+) -> tuple[str, QhseReport] | None:
+    """Importe/réconcilie une ligne. Renvoie ``("created"|"updated", rapport)``,
+    ou ``None`` si quarantainée.
 
-    Le compteur ``imported`` est incrémenté par l'appelant **après** la sortie
-    réussie du savepoint — pas ici : une violation de contrainte peut surgir à sa
-    libération, et le compteur mentirait alors.
+    Les compteurs ``imported``/``updated`` sont incrémentés par l'appelant
+    **après** la sortie réussie du savepoint — pas ici : une violation de
+    contrainte peut surgir à sa libération, et le compteur mentirait alors.
     """
     origin = f"{sheet_name}!L{row_number}"
 
@@ -334,7 +480,7 @@ async def _import_row(
             f"{origin} : ClosedDate antérieure à IssuedDate — quarantainée (RQ01)."
         )
         report.skipped += 1
-        return False
+        return None
 
     # ── 🔴 Motif de test présumé : IMPORTÉ ET MARQUÉ, jamais supprimé (RQ02) ──
     #
@@ -365,12 +511,12 @@ async def _import_row(
             f"{origin} : navire « {vessel_name_raw} » non reconnu dans le référentiel — quarantainée (RQ03)."
         )
         report.skipped += 1
-        return False
+        return None
 
     if not subject or issued_date is None:
         report.errors.append(f"{origin} : Subject ou IssuedDate manquant — quarantainée.")
         report.skipped += 1
-        return False
+        return None
 
     grade = _map_grade(_cell(row, index, "Grade"))
     if grade is None:
@@ -378,7 +524,7 @@ async def _import_row(
             f"{origin} : Grade « {_cell(row, index, 'Grade')} » non reconnu — quarantainée."
         )
         report.skipped += 1
-        return False
+        return None
 
     # ── Rapporteur — résolution meilleur effort, repli texte libre ──────────
     issued_by_raw = _clean_text(_cell(row, index, "IssuedBy"))
@@ -388,72 +534,72 @@ async def _import_row(
     description_added_by_raw = _clean_text(_cell(row, index, "DescriptionAddedBy"))
     description_added_by_user = user_by_norm.get(_normalize_name(description_added_by_raw))
 
-    qhse_report = QhseReport(
-        vessel_id=vessel.id,
-        subject=subject,
-        description=description,
-        grade=grade,
-        report_source="suspected_test" if test_match else "operational",
-        issued_date=issued_date,
-        closed_date=closed_date,
-        issued_place=_clean_place(_cell(row, index, "IssuedPlace")),
-        issued_by_raw=None if (reporter_user or reporter_crew) else issued_by_raw,
-        reporter_user_id=reporter_user.id if reporter_user else None,
-        reporter_crew_member_id=reporter_crew.id if reporter_crew else None,
-        contact=_clean_text(_cell(row, index, "Contact")),
-        description_added_date=_parse_datetime(_cell(row, index, "DescriptionAddedDate")),
-        description_added_by_user_id=(
-            description_added_by_user.id if description_added_by_user else None
-        ),
+    # ── Réconciliation (D10) — une ligne déjà connue est mise à jour, jamais
+    # dupliquée. Cf. docstring de module et :func:`_compute_source_code`.
+    source_code = _compute_source_code(vessel.id, issued_date, subject, description)
+    existing = (
+        await db.execute(select(QhseReport).where(QhseReport.source_code == source_code))
+    ).scalar_one_or_none()
+
+    kind = "updated" if existing is not None else "created"
+    qhse_report = existing or QhseReport(vessel_id=vessel.id, source_code=source_code)
+    qhse_report.vessel_id = vessel.id
+    qhse_report.source_code = source_code
+    qhse_report.subject = subject
+    qhse_report.description = description
+    qhse_report.grade = grade
+    qhse_report.report_source = "suspected_test" if test_match else "operational"
+    qhse_report.issued_date = issued_date
+    qhse_report.closed_date = closed_date
+    qhse_report.issued_place = _clean_place(_cell(row, index, "IssuedPlace"))
+    qhse_report.issued_by_raw = None if (reporter_user or reporter_crew) else issued_by_raw
+    qhse_report.reporter_user_id = reporter_user.id if reporter_user else None
+    qhse_report.reporter_crew_member_id = reporter_crew.id if reporter_crew else None
+    qhse_report.contact = _clean_text(_cell(row, index, "Contact"))
+    qhse_report.description_added_date = _parse_datetime(_cell(row, index, "DescriptionAddedDate"))
+    qhse_report.description_added_by_user_id = (
+        description_added_by_user.id if description_added_by_user else None
     )
-    db.add(qhse_report)
+    qhse_report.import_batch_id = batch_id
+    if existing is None:
+        db.add(qhse_report)
     await db.flush()
 
-    corrective_description = _clean_text(_cell(row, index, "CorrectiveActionDescription"))
-    corrective_limit = _parse_date(_cell(row, index, "CorrectiveActionLimitDate"))
-    corrective_finished = _parse_date(_cell(row, index, "CorrectiveActionFinishedDate"))
-    if corrective_description or corrective_limit or corrective_finished:
-        responsible_raw = _clean_text(_cell(row, index, "CorrectiveActionResponsiblePerson"))
-        responsible_user = user_by_norm.get(_normalize_name(responsible_raw))
-        db.add(
-            CorrectiveAction(
-                report_id=qhse_report.id,
-                description=corrective_description,
-                limit_date=corrective_limit,
-                finished_date=corrective_finished,
-                responsible_user_id=responsible_user.id if responsible_user else None,
-                responsible_rank=_clean_text(_cell(row, index, "CorrectiveActionResponsibleRank")),
-                status="implemented" if corrective_finished else "open",
-            )
-        )
+    corrective_responsible_raw = _clean_text(_cell(row, index, "CorrectiveActionResponsiblePerson"))
+    corrective_responsible_user = user_by_norm.get(_normalize_name(corrective_responsible_raw))
+    await _upsert_corrective_action(
+        db,
+        report_id=qhse_report.id,
+        description=_clean_text(_cell(row, index, "CorrectiveActionDescription")),
+        limit_date=_parse_date(_cell(row, index, "CorrectiveActionLimitDate")),
+        finished_date=_parse_date(_cell(row, index, "CorrectiveActionFinishedDate")),
+        responsible_user_id=corrective_responsible_user.id if corrective_responsible_user else None,
+        responsible_rank=_clean_text(_cell(row, index, "CorrectiveActionResponsibleRank")),
+    )
 
-    root_cause_text = _clean_text(_cell(row, index, "EvaluationRootCause"))
-    preventative_action = _clean_text(_cell(row, index, "EvaluationPreventativeAction"))
-    evaluation_limit = _parse_date(_cell(row, index, "EvaluationLimitDate"))
-    evaluation_finished = _parse_date(_cell(row, index, "EvaluationFinishedDate"))
-    if root_cause_text or preventative_action or evaluation_limit or evaluation_finished:
-        responsible_raw = _clean_text(_cell(row, index, "EvaluationResponsiblePerson"))
-        responsible_user = user_by_norm.get(_normalize_name(responsible_raw))
-        db.add(
-            RootCauseEvaluation(
-                report_id=qhse_report.id,
-                root_cause_text=root_cause_text,
-                preventative_action=preventative_action,
-                limit_date=evaluation_limit,
-                finished_date=evaluation_finished,
-                responsible_user_id=responsible_user.id if responsible_user else None,
-                responsible_rank=_clean_text(_cell(row, index, "EvaluationResponsibleRank")),
-                status="implemented" if evaluation_finished else "open",
-            )
-        )
+    evaluation_responsible_raw = _clean_text(_cell(row, index, "EvaluationResponsiblePerson"))
+    evaluation_responsible_user = user_by_norm.get(_normalize_name(evaluation_responsible_raw))
+    await _upsert_root_cause(
+        db,
+        report_id=qhse_report.id,
+        root_cause_text=_clean_text(_cell(row, index, "EvaluationRootCause")),
+        preventative_action=_clean_text(_cell(row, index, "EvaluationPreventativeAction")),
+        limit_date=_parse_date(_cell(row, index, "EvaluationLimitDate")),
+        finished_date=_parse_date(_cell(row, index, "EvaluationFinishedDate")),
+        responsible_user_id=(
+            evaluation_responsible_user.id if evaluation_responsible_user else None
+        ),
+        responsible_rank=_clean_text(_cell(row, index, "EvaluationResponsibleRank")),
+    )
 
     await db.flush()
 
     if test_match:
         report.flagged += 1
+        verb = "IMPORTÉE" if kind == "created" else "MISE À JOUR"
         report.warnings.append(
-            f"{origin} : motif « {test_match.group(0)} » — IMPORTÉE et marquée "
+            f"{origin} : motif « {test_match.group(0)} » — {verb} et marquée "
             "« test présumé » (RQ02). À confirmer ou écarter manuellement : « essai » "
             "et « test » sont aussi le vocabulaire des exercices ISM obligatoires."
         )
-    return True
+    return kind, qhse_report

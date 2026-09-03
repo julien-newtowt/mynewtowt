@@ -1313,6 +1313,7 @@ CATALOG: dict[str, str] = {
     "qhse_import_no_dedup_warning": "Nhập lại cùng một file sẽ tạo báo cáo mới (chưa có chống trùng lặp ở Giai đoạn 0).",
     "qhse_import_result_title": "Báo cáo nhập QHSE",
     "qhse_import_result_imported": "đã nhập",
+    "qhse_import_result_updated": "đã cập nhật",
     "qhse_import_result_skipped": "đã bỏ qua / cách ly",
     "qhse_import_result_flagged": "đã nhập, cần xác nhận",
     "qhse_import_result_flagged_title": "Đã nhập nhưng được đánh dấu nghi là dữ liệu thử",

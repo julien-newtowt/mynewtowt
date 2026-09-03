@@ -20,8 +20,10 @@ from sqlalchemy import select
 
 from app.models.activity_log import ActivityLog
 from app.models.qhse import QhseReport
+from app.models.user import User
 from app.models.vessel import Vessel
 from app.permissions import require_permission
+from app.services.validation_engine import invalidate_cache, seed_reference_data
 from tests.integration.conftest import FakeRequest
 
 _HEADER = [
@@ -99,7 +101,25 @@ async def test_qhse_index_renders(db):
 async def test_qhse_import_end_to_end_traced(db):
     from app.routers.qhse_router import qhse_import
 
+    # RQ01-RQ03 doivent exister comme lignes ``validation_rules`` avant que
+    # ``run_rules`` (désormais appelé par l'ingestion) puisse y référencer un
+    # ``QualityCheckResult`` — même motif que ``test_mrv_qualite._seed``.
+    invalidate_cache()
+    await seed_reference_data(db)
+    invalidate_cache()
+
     db.add(Vessel(code="ANE", name="Anemos"))
+    # ``imported_by_user_id`` (D10) référence users.id pour de vrai — l'acteur
+    # synthétique de ``_manager_user()`` a besoin d'une ligne correspondante.
+    db.add(
+        User(
+            id=40,
+            username="qm",
+            email="qm@example.test",
+            hashed_password="x",
+            role="manager_maritime",
+        )
+    )
     await db.flush()
 
     content = _build_xlsx(
@@ -138,6 +158,17 @@ async def test_qhse_import_end_to_end_traced(db):
 @pytest.mark.asyncio
 async def test_qhse_import_unresolved_vessel_is_skipped_not_crashed(db):
     from app.routers.qhse_router import qhse_import
+
+    db.add(
+        User(
+            id=40,
+            username="qm",
+            email="qm@example.test",
+            hashed_password="x",
+            role="manager_maritime",
+        )
+    )
+    await db.flush()
 
     content = _build_xlsx(
         [

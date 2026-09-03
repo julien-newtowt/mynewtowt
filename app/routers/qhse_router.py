@@ -61,16 +61,15 @@ async def qhse_import(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("qhse", "M")),
 ) -> HTMLResponse:
-    """Import xlsx (un ou plusieurs navires par fichier, résolus par ligne).
+    """Import/réconciliation xlsx (un ou plusieurs navires par fichier, résolus par ligne).
 
     Jamais d'exception non gérée sur un contenu malformé — les anomalies
     (navire non résolu, dates incohérentes, motif de test) sont collectées
     dans le rapport (cf. ``qhse_ingestion.import_qhse_xlsx``).
 
-    Limite Phase 0 assumée : pas de déduplication — ré-importer le même
-    fichier crée de nouveaux rapports plutôt que de les mettre à jour
-    (contrairement à l'upsert idempotent de ``flgo_sync``). Affiché dans le
-    template de résultat.
+    Une ligne déjà connue (``source_code``, D10) est **mise à jour**, pas
+    dupliquée — un ré-import du même fichier, ou d'un export ultérieur dont le
+    workflow CAPA a progressé, rafraîchit le registre au lieu de le doubler.
     """
     if content_length_exceeds_max(request.headers.get("content-length")):
         raise HTTPException(status_code=413, detail="fichier trop volumineux")
@@ -84,7 +83,9 @@ async def qhse_import(
         raise HTTPException(status_code=413, detail=size_check.reason)
 
     try:
-        report = await import_qhse_xlsx(db, content)
+        report = await import_qhse_xlsx(
+            db, content, filename=file.filename, imported_by_user_id=user.id
+        )
     except QhseIngestionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -98,7 +99,7 @@ async def qhse_import(
     # `activity_logs` est append-only : c'est le bon support, et il évite une table
     # dédiée. Troncature **annoncée** si la liste est longue — jamais silencieuse.
     detail = (
-        f"import={report.imported} ignorés={report.skipped} "
+        f"créés={report.imported} mis_à_jour={report.updated} ignorés={report.skipped} "
         f"marqués_test_présumé={report.flagged}"
     )
     lost = report.errors
