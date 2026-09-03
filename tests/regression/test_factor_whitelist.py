@@ -38,12 +38,13 @@ _TOKEN_RE = re.compile("|".join(FACTOR_TOKENS))
 
 # Liste blanche — chemins relatifs à la racine du dépôt (posix). Elle REFLÈTE
 # LE RÉEL : chaque entrée doit encore référencer un jeton facteur (prouvé par
-# ``test_no_obsolete_whitelist_entry``). Le lot 14 l'a RÉDUITE en purgeant le
-# legacy : ``mrv_compute.py`` (constante CO₂ morte retirée), ``mrv_router.py``
-# (CRUD/exports legacy retirés — plus de facteur affiché) et ``emissions.py``
-# (NOx/SOx via ``co2_variables`` — ne porte AUCUN jeton facteur CO₂/multi-GES)
-# en sont sortis. Étendre exige une justification d'architecte ; retirer, la
-# preuve qu'une purge a bien eu lieu (lots 10/14).
+# ``test_no_obsolete_whitelist_entry``). Purges successives (lots 10/14, puis
+# suppression totale du legacy MRV) : ``mrv_compute.py`` et ``mrv_export.py``
+# (constantes CO₂ mortes, fichiers supprimés/nettoyés), ``mrv_router.py``
+# (CRUD/exports legacy retirés) et ``emissions.py`` (NOx/SOx via
+# ``co2_variables`` — ne porte AUCUN jeton facteur CO₂/multi-GES) en sont
+# sortis. Étendre exige une justification d'architecte ; retirer, la preuve
+# qu'une purge a bien eu lieu.
 FACTOR_WHITELIST: frozenset[str] = frozenset(
     {
         # Le grand livre : L'UNIQUE implémentation des formules (lot 9).
@@ -54,9 +55,6 @@ FACTOR_WHITELIST: frozenset[str] = frozenset(
         "app/models/emission_factor.py",  # schéma du référentiel multi-GES
         # Écran d'administration du référentiel (affichage/saisie, pas de calcul).
         "app/routers/admin_router.py",
-        # LEGACY résiduel (lot 14) : ``carbon_report_summary`` (agrégat historique)
-        # porte encore ``CO2_EMISSION_FACTOR_MDO`` ; le CSV DNV 18/9 col. a été retiré.
-        "app/services/mrv_export.py",
     }
 )
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from app.models.stowage import BLOCKS, DANGEROUS_ZONES, DECKS, HOLDS, StowageItem, StowagePlan
-from tests.integration.test_mrv_reprise import _setup_leg
+from tests.integration.conftest import _setup_leg
 
 
 @pytest.mark.asyncio

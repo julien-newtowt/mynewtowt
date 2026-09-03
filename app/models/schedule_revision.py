@@ -22,7 +22,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 # Origines possibles d'une révision de planification.
-REVISION_SOURCES: tuple[str, ...] = ("planning_edit", "gantt_move", "eta_shift", "cascade")
+# ``departure_declared`` / ``arrival_declared`` = pose (ou correction) du
+# RÉEL — ATD/ATA — par la déclaration de départ/arrivée (escale ou SOF bord),
+# avec l'éventuel re-ancrage d'ETA qui en découle.
+REVISION_SOURCES: tuple[str, ...] = (
+    "planning_edit",
+    "gantt_move",
+    "eta_shift",
+    "cascade",
+    "departure_declared",
+    "arrival_declared",
+)
 
 
 class ScheduleRevision(Base):
@@ -45,6 +55,15 @@ class ScheduleRevision(Base):
     new_etd: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     old_eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     new_eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Mouvements du RÉEL (déclarations de départ/arrivée, corrections
+    # comprises) — « tous les mouvements de dates sont enregistrés », le
+    # réel comme le prévisionnel. NULL sur les révisions purement
+    # prévisionnelles (édition planning, cascade…).
+    old_atd: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    new_atd: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    old_ata: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    new_ata: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Motif (repris de l'ETA-shift capitaine) + détail libre.
     reason: Mapped[str | None] = mapped_column(String(40))

@@ -1,97 +1,169 @@
 /*
- * Auto-pré-remplissage du form de création de leg.
+ * Pré-remplissage du formulaire « Créer un leg » depuis la séquence du navire.
  *
- * Quand l'user choisit un navire dans le select #vessel_id, on lit le
- * dict ``data-suggestions`` du form (JSON {vessel_id: {etd, pol_id,
- * port_stay_hours, from_leg_code}}) et on remplit :
- *   - input #etd        = ETD suggéré (ATA ou ETA du dernier leg
- *                          + port_stay_planned_hours)
- *   - select #departure_port_id = POD du dernier leg (continuité)
- *   - input #port_stay_planned_hours = même valeur que le leg précédent
+ * Quand l'utilisateur choisit un navire (boutons radio input[name=vessel_id],
+ * ou <select id="vessel_id"> legacy), on lit le dict ``data-suggestions`` du
+ * form (JSON {vessel_id: {etd, pol_id, port_stay_days, from_leg_code, …,
+ * chain_options: [...]}}, calculé côté serveur —
+ * planning_router._new_leg_suggestions) et on remplit :
+ *   - #etd                      = ETD suggéré (ATA ou ETA du dernier leg
+ *                                 + escale, jour ouvré du port)
+ *   - port de départ (POL)      = POD du dernier leg (continuité), via
+ *                                 l'événement `leg:pick-port` (leg-cascade.js)
+ *   - #port_stay_planned_days   = même escale que le leg précédent
  *
- * Conditions :
- *   - Ne touche un champ que s'il est vide (pas écraser une saisie user).
- *   - Bandeau d'info en tête de form expliquant la suggestion + bouton
- *     "Effacer" pour neutraliser.
+ * Le leg de référence par défaut est le dernier du navire par ETD, mais il est
+ * CHOISISSABLE (select #leg-chain-after alimenté par ``chain_options``) : un
+ * voyage saisi longtemps à l'avance captait le défaut et faisait chaîner les
+ * legs de l'année en cours sur lui. Changer de référence redérive ETD, POL,
+ * escale et rang.
  *
- * Si data-preselected-vessel est défini, on l'applique au chargement.
+ * Conditions : ne touche un champ que s'il est vide (jamais écraser une
+ * saisie), sauf au changement de navire ou de leg de référence où la
+ * suggestion précédente est remplacée. Bandeau « Séquence » explicatif +
+ * bouton « Effacer ». Sans effet en mode édition (data-edit-mode).
  */
 (function () {
   "use strict";
 
+  function frDate(iso) {
+    if (!iso) return "";
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+    return m ? m[3] + "/" + m[2] + "/" + m[1] : iso;
+  }
+
   function init() {
     var form = document.getElementById("leg-form");
-    if (!form) return;
+    if (!form || form.getAttribute("data-edit-mode")) return;
     var raw = form.getAttribute("data-suggestions");
     if (!raw) return;
     var suggestions;
     try { suggestions = JSON.parse(raw); } catch (e) { return; }
     if (!suggestions || !Object.keys(suggestions).length) return;
 
-    var selectVessel = document.getElementById("vessel_id");
     var etd = document.getElementById("etd");
-    var portStay = document.getElementById("port_stay_planned_hours");
-    var pol = document.getElementById("departure_port_id");
+    var eta = document.getElementById("eta");
+    var portStay = document.getElementById("port_stay_planned_days");
     var banner = document.getElementById("leg-suggestion-banner");
     var bannerText = document.getElementById("leg-suggestion-text");
     var dismissBtn = document.getElementById("leg-suggestion-dismiss");
+    var picker = document.getElementById("leg-chain-picker");
+    var chainSelect = document.getElementById("leg-chain-after");
+    var appliedFor = null;   // navire dont la suggestion est en place
 
-    function applyFor(vesselId) {
+    function optionsFor(vesselId) {
       var s = suggestions[vesselId];
-      if (!s) {
+      if (!s || s.no_legs) return [];
+      if (s.chain_options && s.chain_options.length) return s.chain_options;
+      return s.etd ? [s] : [];
+    }
+
+    function optionLabel(o) {
+      var ref = o.from_ata ? "arrivé le " + frDate(o.from_ata) : "arrivée le " + frDate(o.from_eta);
+      return o.from_leg_code + " · " + (o.from_pol_locode || "?") + " → " +
+        (o.from_pod_locode || "?") + " · " + ref + " · départ suggéré " + frDate(o.etd);
+    }
+
+    /* Alimente le sélecteur « Chaîner après ». Masqué s'il n'y a qu'un seul
+       leg de référence possible : un choix à une option est du bruit. */
+    function fillPicker(vesselId) {
+      if (!chainSelect || !picker) return;
+      var options = optionsFor(vesselId);
+      chainSelect.innerHTML = "";
+      options.forEach(function (o, i) {
+        var el = document.createElement("option");
+        el.value = String(i);
+        el.textContent = optionLabel(o);
+        chainSelect.appendChild(el);
+      });
+      chainSelect.value = "0";
+      picker.style.display = options.length > 1 ? "flex" : "none";
+    }
+
+    function applyFor(vesselId, force, optionIndex) {
+      var options = optionsFor(vesselId);
+      var idx = optionIndex || 0;
+      var s = options[idx];
+      if (!s || !s.etd) {
         if (banner) banner.style.display = "none";
+        if (picker) picker.style.display = "none";
+        appliedFor = null;
         return;
       }
-      // Ne touche que les champs vides (jamais écraser une saisie).
-      if (etd && !etd.value) etd.value = s.etd;
-      if (portStay && !portStay.value && s.port_stay_hours)
-        portStay.value = s.port_stay_hours;
-      if (pol && !pol.value && s.pol_id) {
-        pol.value = String(s.pol_id);
-        // Recalcule l'ETA via leg-cascade.js — UNIQUEMENT si l'ETA n'a pas
-        // été saisie manuellement (dataset.auto==="off" = l'utilisateur a
-        // touché le champ). Évite d'écraser une ETA voulue par l'opérateur.
-        var etaEl = document.getElementById("eta");
-        if (!etaEl || etaEl.dataset.auto !== "off") {
-          pol.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-      }
-      // Affiche le bandeau
+      // Changement de navire ou de leg de référence : la suggestion
+      // précédente est remplacée.
+      var replace = force || (appliedFor !== null && appliedFor !== vesselId);
+      if (etd && (replace || !etd.value)) { etd.value = s.etd; if (eta) { eta.value = ""; eta.dataset.auto = "on"; } }
+      if (portStay && (replace || !portStay.value) && s.port_stay_days) portStay.value = s.port_stay_days;
+      appliedFor = vesselId;
+      /* Le récapitulatif (leg-cascade.js) doit chiffrer le code de leg
+         prévisionnel sur la référence RÉELLEMENT retenue, pas sur le défaut :
+         sinon changer de référence affiche un rang « ? ». Publié avant le
+         dispatch de `leg:pick-port`, qui déclenche le recalcul du récap. */
+      form.dataset.activeSuggestion = JSON.stringify(s);
       if (banner && bannerText) {
-        var src = s.from_ata
-          ? "ATA " + s.from_ata.replace("T", " ")
-          : "ETA " + (s.from_eta || "").replace("T", " ");
+        var ref = s.from_ata ? "ATA " + frDate(s.from_ata) : "ETA " + frDate(s.from_eta);
         bannerText.textContent =
-          "💡 Suggestion basée sur le leg " + s.from_leg_code +
-          " (" + src + " + " + s.port_stay_hours + "h d'escale).";
-        banner.style.display = "block";
+          "Le nouveau leg suit " + s.from_leg_code + " (" + (s.from_pol_locode || "?") + " → " +
+          (s.from_pod_locode || "?") + ", " + ref + "). Départ de " + (s.from_pod_name || s.from_pod_locode) +
+          " après " + s.port_stay_days + " j d'escale : ETD suggéré " + frDate(s.etd) + ". Tout reste modifiable.";
+        banner.style.display = "flex";
+        banner.style.alignItems = "center";
+        banner.style.flexWrap = "wrap";
       }
+      if (s.pol_id) {
+        document.dispatchEvent(new CustomEvent("leg:pick-port", {
+          detail: {
+            prefix: "pol",
+            id: s.pol_id,
+            hint: "Port d'arrivée du leg précédent " + s.from_leg_code + " — continuité géographique.",
+          },
+        }));
+      }
+    }
+
+    function selectVesselAndApply(vesselId, force) {
+      fillPicker(vesselId);
+      applyFor(vesselId, force, 0);
     }
 
     function clearSuggestion() {
       if (etd) etd.value = "";
+      if (eta) { eta.value = ""; eta.dataset.auto = "on"; }
       if (portStay) portStay.value = "";
       if (banner) banner.style.display = "none";
+      if (picker) picker.style.display = "none";
+      delete form.dataset.activeSuggestion;
+      appliedFor = null;
       // POL on laisse — souvent l'user veut garder le port de départ.
     }
 
+    document.querySelectorAll("input[name=vessel_id]").forEach(function (r) {
+      r.addEventListener("change", function () { if (r.checked) selectVesselAndApply(r.value, true); });
+    });
+    var selectVessel = document.getElementById("vessel_id");
     if (selectVessel) {
-      selectVessel.addEventListener("change", function () {
-        applyFor(selectVessel.value);
+      selectVessel.addEventListener("change", function () { selectVesselAndApply(selectVessel.value, true); });
+    }
+    if (chainSelect) {
+      chainSelect.addEventListener("change", function () {
+        if (appliedFor === null) return;
+        applyFor(appliedFor, true, parseInt(chainSelect.value, 10) || 0);
       });
     }
-    if (dismissBtn) {
-      dismissBtn.addEventListener("click", clearSuggestion);
-    }
+    if (dismissBtn) dismissBtn.addEventListener("click", clearSuggestion);
 
-    // Apply on load if preselected
+    // Navire présélectionné (lien « + leg » depuis le Gantt) ou restauré par le navigateur.
     var preselected = form.getAttribute("data-preselected-vessel");
-    if (preselected && selectVessel) {
-      selectVessel.value = preselected;
-      applyFor(preselected);
+    var checked = document.querySelector("input[name=vessel_id]:checked");
+    if (preselected) {
+      var r = document.querySelector('input[name=vessel_id][value="' + preselected + '"]');
+      if (r) r.checked = true;
+      selectVesselAndApply(preselected, false);
+    } else if (checked) {
+      selectVesselAndApply(checked.value, false);
     } else if (selectVessel && selectVessel.value) {
-      // Si le navigateur a restauré une sélection (back button), apply.
-      applyFor(selectVessel.value);
+      selectVesselAndApply(selectVessel.value, false);
     }
   }
 

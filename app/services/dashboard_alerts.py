@@ -225,9 +225,13 @@ async def compute_alerts(db: AsyncSession, year: int | None = None) -> list[dict
                 "icon": "clock",
                 "title": f"Taux de service {reliability.pct:.0f} %",
                 "message": (
+                    # « ETA de référence » : le calcul (service_reliability._tally)
+                    # compare l'ATA à ``eta_ref``, l'arrivée figée à la création du
+                    # leg — pas à l'ETA courante, qui est recalée à chaque décalage
+                    # et rendrait la ponctualité auto-réalisatrice.
                     f"Ponctualité sous {service_reliability.ALERT_FLOOR_PCT:.0f} % "
                     f"(arrivée dans les {service_reliability.ON_TIME_WINDOW_HOURS:.0f} h "
-                    f"de l'ETA) sur {reliability.completed} traversées — "
+                    f"de l'ETA de référence) sur {reliability.completed} traversées — "
                     "affiché publiquement sur la vitrine."
                 ),
                 "link": "/kpi",

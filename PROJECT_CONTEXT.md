@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT.md — mynewtowt
 
-> Document de continuité de session, maintenu pendant l'absence du manager (2026-07-27 → 2026-08-17). Voir `CLAUDE.md` pour les consignes opérationnelles complètes, la stack technique détaillée, le glossaire maritime et les patterns critiques (base de données, permissions, MRV, sécurité) — ce document ne duplique pas ce contenu, il le référence.
+> Document de continuité de session, maintenu au fil des périodes de travail. Voir `CLAUDE.md` pour les consignes opérationnelles complètes, la stack technique détaillée, le glossaire maritime et les patterns critiques (base de données, permissions, MRV, sécurité) — ce document ne duplique pas ce contenu, il le référence.
 >
 > **Au début de chaque session** : lire ce document, résumer l'état du projet, identifier le travail non terminé, reprendre depuis le dernier contexte validé.
 
@@ -118,6 +118,26 @@ Testé et validé le 2026-07-28. Le README dit juste `docker compose up -d` puis
    ⚠️ **CORRECTION 2026-07-29 — la recommandation initiale (`alembic stamp head`) était mauvaise.** `stamp` marque l'historique comme appliqué **sans exécuter le DDL** : toute migration ultérieure qui `ALTER` une table ne s'exécute donc jamais, et la base dérive silencieusement du modèle. Constaté en pratique le 2026-07-29 : **7 colonnes manquantes sur 6 tables** (`vessels.deadweight_t`, `crew_members.first_name/last_name/agency`, `env_reports.period_seq`, `nav_event_noon.rob_uree_t/rob_eau_douce_t`, `ports.mrv_scope`, `voyage_emission_summaries.co2eq_t`) + **7 tables obsolètes** jamais supprimées (`create_all` ne supprime rien). Symptôme : `/tracking`, `/planning` et `/dashboard` en **HTTP 500** (`asyncpg.UndefinedColumnError`).
 
    **Procédure corrigée** : soit laisser `create_all` construire le schéma courant sur une base **réellement vide** puis `alembic stamp head` (valable uniquement à cet instant, et à refaire à chaque évolution de modèle), soit — préférable — diagnostiquer la dérive avant usage en comparant `Base.metadata` à `information_schema.columns`, et rattraper par `ALTER TABLE … ADD COLUMN IF NOT EXISTS` avec un DDL **généré depuis le modèle** (`sqlalchemy.schema.CreateColumn` compilé sur le dialecte PostgreSQL), en retirant les `NOT NULL`.
+
+   ✅ **RÉSOLU 2026-09-01 — la chaîne complète passe sur une base vierge, il n'y a plus lieu de `stamp`.** Vérifié sur la tête `20260828_0135` : les **144 migrations** s'appliquent d'un bout à l'autre sur une base réellement vide, sans erreur. La procédure propre, et **non destructive**, est donc :
+
+   ```bash
+   docker compose stop app                      # sinon create_all devance Alembic
+   docker compose exec -T db psql -U towt -d postgres -c "create database towt_neuve owner towt;"
+   docker compose run --rm --no-deps \
+     -e DATABASE_URL='postgresql+asyncpg://towt:<pwd>@db:5432/towt_neuve' \
+     app alembic upgrade head                   # conteneur jetable : pas de boot de l'app
+   # puis bascule par renommage, l'ancienne base restant disponible en repli :
+   #   alter database towt rename to towt_legacy_<date>;
+   #   alter database towt_neuve rename to towt;
+   docker compose start app && docker compose exec -T app python -m scripts.seed_demo
+   ```
+
+   ⚠️ **Reconstruire l'image avant** (`docker compose up -d --build app`) : le service `app` **embarque le code**, il ne le monte pas. Une image ancienne fait échouer `alembic current` sur `Can't locate revision …` — la révision existe dans le dépôt, pas dans l'image. Et `restart: unless-stopped` relance les anciens conteneurs au démarrage du daemon : leur présence ne prouve pas que le build a eu lieu.
+
+   **Pourquoi ne pas se contenter de `create_all`** — mesuré le 2026-09-01 en comparant colonne par colonne une base `create_all` et une base Alembic : **46 colonnes** posées par les migrations `0114`→`0135` manquaient à la base `create_all` (`packing_list_batches.bl_*`, `cashbox_movements.medium`, `onboard_sales.refund_*`, `rate_offers.*`, `commercial_clients.is_prospect`…). `create_all` crée les tables absentes mais **ne modifie jamais** une table existante : après une évolution de modèle sur table existante, la base est silencieusement incomplète et les écrans concernés tombent en 500.
+
+   **Dérive modèles ↔ migrations, état au 2026-09-01** : **aucune** colonne du modèle absente des migrations — la chaîne couvre intégralement les modèles. En revanche **45 colonnes** sont `NOT NULL` côté modèle et **nullables** côté migration (`activity_logs.created_at`, `client_accounts.language`, `docker_shifts.nb_dockers`…), et `ports.mrv_scope` l'inverse. Dette ancienne et de faible sévérité, mais réelle : la production autorise NULL là où le modèle l'interdit. À traiter par une migration dédiée, pas en urgence.
 
 4. 🔴 **`alembic upgrade head` est cassé sur `main` — blocage de déploiement** (constaté 2026-07-29) : `FAILED: Multiple head revisions are present`. Deux chaînes de migration **divergentes** coexistent — `20260716_0112_noon_rob_annexes.py` (chaîne MRV) et `20260720_0107_generated_reports.py` (chaîne rapports générés/trombinoscope) : deux branches de fonctionnalité ont ajouté des migrations sans se rebaser l'une sur l'autre. Or `CLAUDE.md` indique que **la production utilise Alembic exclusivement** ⇒ un déploiement par `alembic upgrade head` échoue en l'état. Correctif : une **migration de fusion** (`alembic merge`), à faire valider (touche l'historique de schéma). **À vérifier avant tout déploiement** : quelle révision la base de production porte réellement, et si l'écart au modèle y est le même qu'en local.
 
@@ -249,6 +269,41 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   **ADR-011** (caisse : espèces ≠ encaissements CB), **ADR-012** (cloisonnement
   par navire), **ADR-013** (remboursement, valeur du registre de vente, gel à la
   relève). Les trois derniers sont datés du 2026-08-27 et **acceptés**.
+  **ADR-014** (reprise d'historique TOWT, 2026-09-02) est **accepté** — sept
+  décisions, la 6ᵉ (table d'archive des noon reports) ouvre le lot 2.
+- **PLN-SEQ (2026-09-01)** : refonte de la séquence de planification —
+  déclarations « départ du POL » / « arrivée au POD » (escale + SOF bord →
+  `services.voyage_transitions`, chemin unique du réel), re-ancrage d'ETA sur
+  l'ATD + cascade des legs suivants, historisation du réel dans
+  `schedule_revisions` (migration 0136), phase dérivée `Leg.phase`
+  (en mer / à quai), planification saisie à la journée, dates effectives
+  (`effective_etd/eta`) dans dérive/Gantt/transit. Doc :
+  `docs/design/05-sequence-planification.md`.
+- **PLN-BUGS (2026-09-02)** : quatre retours d'usage sur la planification.
+  (1) Le **leg de référence** de la création est choisi (« Chaîner après »,
+  `chain_options`) — le dernier leg par ETD reste le défaut mais devient faux
+  dès qu'un voyage lointain est saisi à l'avance, avec l'ETD **et** le POL qui
+  en découlent. (2) L'**audit de séquence** parle chiffré, sur les dates
+  effectives, et n'instruit plus un leg appareillé (son ATD est un fait).
+  (3) La **suppression d'un leg** ne sort plus en 500 : quatre FK vers
+  `legs.id` n'étaient ni déliées ni couvertes par un `ondelete`
+  (`packing_lists` en tête, ajouté par COM-11 après l'écriture de
+  `delete_leg`) ; inventaires nommés + SAVEPOINT + sentinelle de FK, et les
+  registres d'argent **bloquent** au lieu d'être déliés. (4) La **distance
+  théorique** absente (port sans coordonnées) est repliée au rendu, corrigeable
+  dans Admin → Ports (recalcul immédiat des legs du port) et reprise par
+  `scripts/backfill_leg_distances.py` — l'écart et l'allongement réels s'en
+  dérivant, les trois colonnes tombaient ensemble.
+- **TOWT-HIST (2026-09-02)** : reprise d'historique de l'ancienne compagnie —
+  `legs.origin` (`newtowt` | `towt_archive`, migration 0138), garde unique
+  `assert_leg_mutable` (lecture seule : édition, déplacement, suppression,
+  déclarations, escale), exclusion de la renumérotation (code TOWT d'origine
+  conservé), filtre `origin` + badges « TOWT » dans `/planning`, protection
+  anti-purge des positions `source='towt_archive'`, décimation d'affichage de
+  `/tracking`. Scripts : `import_towt_legs` (CSV versionné des 36 voyages),
+  `towt_gps_consolidate` (local) → `import_towt_positions` (serveur),
+  `towt_noon_extract` (prototype local). Doc :
+  `docs/audit/2026-09-02-reprise-historique-towt.md`, **ADR-014** (accepté le 2026-09-02).
 
 ## 13. Audit de cohérence métier (2026-07-28) — feedback logiciel vs compagnie maritime réelle
 
@@ -724,3 +779,45 @@ ce sont des règles de contrôle interne, pas des détails d'interface :
    contesté) existe et est testé depuis le 2026-08-27 mais **n'est exposé par
    aucune route** : une déclaration partie par erreur reste « DÉCLARÉE »
    indéfiniment. La prévention est livrée, le remède non.
+
+---
+
+## 18. Reprise d'historique TOWT (2026-09-02)
+
+**Ce qu'il faut savoir avant de toucher aux legs ou aux positions.**
+
+- Un leg `origin = 'towt_archive'` est un **fait** de l'ancienne compagnie :
+  `assert_leg_mutable` refuse toute mutation ; `is_archive` pilote badges et
+  masquage des boutons. Son `leg_code` est le TRIP CODE TOWT (`1YMB4`,
+  `2LQF5-B`), **jamais** renuméroté — c'est la clé des noon reports (« Voyage
+  number ») et de l'ancien PBIX. Ne pas « normaliser » ces codes.
+- Le réel d'archive (ATD/ATA au jour, minuit UTC) est posé directement par
+  `scripts/import_towt_legs.py`, pas par `voyage_transitions` (pas de SOF, pas
+  de leg suivant à activer) : exception assumée, documentée ADR-014 D3.
+  `etd = atd`, `eta = ata` : il n'y a **aucun prévisionnel** TOWT.
+- Positions GPS d'archive : `vessel_positions.source = 'towt_archive'`,
+  `import_batch` = fichier consolidé, protégées de la purge par
+  `admin_data.PURGE_PROTECTED_ROWS`. Rattachement au leg **temporel**
+  (`voyage_track.leg_window`) : importer les legs **avant** les positions.
+- Couverture connue : legs 2024-08-09 → 2026-01-31 ; GPS à partir du
+  **2024-10-21** seulement (source antérieure à confirmer) ; noon reports
+  2024-09 → aujourd'hui, **non repris** (lot 2, table d'archive à arbitrer).
+- Ports créés par la reprise (`source=user`, coordonnées approximatives) :
+  COSTM, GTPBR, REREU, CAMAT, FRCOC (+ FRFEC si absent) — à raffiner dans
+  Admin → Ports.
+- **Trois couches d'immutabilité** : garde de service (`assert_leg_mutable`),
+  garde ORM `before_flush` (`app/models/leg.py`, échappement
+  `session.info["allow_towt_archive_write"]` pour les scripts), trigger
+  PostgreSQL `trg_legs_towt_archive_readonly` (`SET LOCAL
+  newtowt.allow_towt_archive_write = 'on'` pour les scripts).
+- **Hors séquence vivante et hors indicateurs** (ADR-014 D7) : toute requête
+  qui construit la séquence d'un navire, un indicateur publié (ponctualité,
+  compteur de traversées), le contrôle MRV nocturne ou le filtre transverse
+  exclut `origin = 'towt_archive'`. `build_leg_filter(include_archive=True)`
+  n'est posé que par `/tracking` et `/performance/navigation`. Toute nouvelle
+  requête `select(Leg)` doit choisir explicitement ; une sentinelle reste à
+  écrire (lot 2).
+- Angles morts : aucune météo pour l'archive ; KPI annuels 2024-2025 sans
+  cargo/OPEX/MRV ; `event_capture.prefill_position` étiquette toute position
+  `thalos_auto` (préexistant).
+

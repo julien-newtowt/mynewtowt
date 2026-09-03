@@ -202,41 +202,58 @@ async def test_edit_operation_rejected_when_escale_locked(db, staff_user):
 
 
 @pytest.mark.asyncio
-async def test_port_status_flow_ata_atd(db, staff_user):
-    """ESC-02 : pose ATA puis ATD, recalcule la finance, garde l'ordre."""
+async def test_port_status_flow_atd_then_ata(db, staff_user):
+    """PLN-SEQ : séquence départ (ATD, POL) → arrivée (ATA, POD).
+
+    La déclaration de départ ouvre la navigation (phase « en mer »), inscrit
+    le SOSP au SOF, re-ancre l'ETA sur l'ATD et recalcule la finance ; la
+    déclaration d'arrivée ferme la navigation (phase « à quai »), inscrit
+    l'EOSP. Chaque mouvement écrit une ``schedule_revision``.
+    """
     from fastapi import HTTPException
 
     from app.models.finance import LegFinance
+    from app.models.schedule_revision import ScheduleRevision
+    from app.models.sof_event import SofEvent
     from app.routers.escale_router import update_port_status
 
     leg = await _setup_leg(db)
 
-    # Départ refusé avant l'arrivée.
+    # Séquence : l'arrivée est refusée tant que le départ n'est pas déclaré.
     with pytest.raises(HTTPException) as exc:
         await update_port_status(
             leg.id,
             _Req(),
-            new_status="pilote_depart",
-            status_time="2026-04-25T10:00:00",
+            new_status="arrivee",
+            status_time="2026-04-21T10:00:00",
             db=db,
             user=staff_user,
         )
     assert exc.value.status_code == 400
 
-    # À quai → ATA posée, statut in_progress, finance recalculée (rollup).
+    # Départ déclaré → ATD posé, phase « en mer », SOSP au SOF, ETA re-ancrée
+    # (+10 h : départ réel à 10:00 vs ETD prévisionnel à minuit).
     resp = await update_port_status(
         leg.id,
         _Req(),
-        new_status="a_quai",
-        status_time="2026-04-21T10:00:00",
+        new_status="depart",
+        status_time="2026-04-01T10:00:00",
         db=db,
         user=staff_user,
     )
     assert resp.status_code == 303
     # ``leg`` est identity-mappé : la route a muté le même objet (pas de refresh
     # — qui relirait des datetimes naïfs sous SQLite et fausserait le test).
-    assert leg.ata is not None
+    assert leg.atd is not None
     assert leg.status == "in_progress"
+    assert leg.phase == "en_mer"
+    assert leg.eta.replace(tzinfo=None) == datetime(2026, 4, 21, 10, 0)
+    sosp = (
+        await db.execute(
+            SofEvent.__table__.select().where(SofEvent.__table__.c.event_type == "SOSP")
+        )
+    ).fetchall()
+    assert len(sosp) == 1  # inscription au SOF
     fin = (
         await db.execute(
             LegFinance.__table__.select().where(LegFinance.__table__.c.leg_id == leg.id)
@@ -244,20 +261,66 @@ async def test_port_status_flow_ata_atd(db, staff_user):
     ).fetchone()
     assert fin is not None  # rollup_for_leg a créé la ligne finance
 
-    # Pilote départ → ATD posée ; le statut reste « in_progress » : la
-    # machine à états unique ne passe à « completed » qu'à l'approbation de
-    # clôture de voyage (workflow captain), plus depuis l'escale.
+    # Arrivée déclarée → ATA posée, phase « à quai », EOSP au SOF ; le statut
+    # stocké reste « in_progress » : la machine à états unique ne passe à
+    # « completed » qu'à l'approbation de clôture de voyage (workflow captain).
     resp = await update_port_status(
         leg.id,
         _Req(),
-        new_status="pilote_depart",
-        status_time="2026-04-25T10:00:00",
+        new_status="arrivee",
+        status_time="2026-04-21T08:00:00",
         db=db,
         user=staff_user,
     )
     assert resp.status_code == 303
-    assert leg.atd is not None
+    assert leg.ata is not None
     assert leg.status == "in_progress"
+    assert leg.phase == "a_quai"
+    eosp = (
+        await db.execute(
+            SofEvent.__table__.select().where(SofEvent.__table__.c.event_type == "EOSP")
+        )
+    ).fetchall()
+    assert len(eosp) == 1
+
+    # Tous les mouvements de dates sont historisés (réel + ETA re-ancrée).
+    revs = (
+        await db.execute(
+            ScheduleRevision.__table__.select().where(ScheduleRevision.__table__.c.leg_id == leg.id)
+        )
+    ).fetchall()
+    sources = {r.source for r in revs}
+    assert "departure_declared" in sources
+    assert "arrival_declared" in sources
+
+
+@pytest.mark.asyncio
+async def test_port_status_arrival_before_departure_time_refused(db, staff_user):
+    """PLN-SEQ : une ATA antérieure à l'ATD déclaré est refusée (chevauchement)."""
+    from fastapi import HTTPException
+
+    from app.routers.escale_router import update_port_status
+
+    leg = await _setup_leg(db)
+    await update_port_status(
+        leg.id,
+        _Req(),
+        new_status="depart",
+        status_time="2026-04-02T10:00:00",
+        db=db,
+        user=staff_user,
+    )
+    with pytest.raises(HTTPException) as exc:
+        await update_port_status(
+            leg.id,
+            _Req(),
+            new_status="arrivee",
+            status_time="2026-04-01T10:00:00",  # avant le départ
+            db=db,
+            user=staff_user,
+        )
+    assert exc.value.status_code == 400
+    assert leg.ata is None
 
 
 @pytest.mark.asyncio
@@ -278,46 +341,47 @@ async def test_port_status_notifications_are_idempotent(db, staff_user):
         ).fetchall()
         return len(rows)
 
-    # 1re arrivée → 1 EOSP.
+    # 1er départ → 1 SOSP ; correction d'horodatage → toujours 1 (appliquée).
     await update_port_status(
         leg.id,
         _Req(),
-        new_status="a_quai",
+        new_status="depart",
+        status_time="2026-04-01T10:00:00",
+        db=db,
+        user=staff_user,
+    )
+    assert await _count("sosp") == 1
+    await update_port_status(
+        leg.id,
+        _Req(),
+        new_status="depart",
+        status_time="2026-04-01T12:00:00",
+        db=db,
+        user=staff_user,
+    )
+    assert leg.atd.hour == 12  # la correction est bien appliquée
+    assert await _count("sosp") == 1
+
+    # 1re arrivée → 1 EOSP ; correction → toujours 1 (pas de doublon).
+    await update_port_status(
+        leg.id,
+        _Req(),
+        new_status="arrivee",
         status_time="2026-04-21T10:00:00",
         db=db,
         user=staff_user,
     )
     assert await _count("eosp") == 1
-    # Correction de l'horodatage d'arrivée → toujours 1 EOSP (pas de doublon).
     await update_port_status(
         leg.id,
         _Req(),
-        new_status="a_quai",
+        new_status="arrivee",
         status_time="2026-04-21T11:00:00",
         db=db,
         user=staff_user,
     )
     assert leg.ata.hour == 11  # la correction est bien appliquée
     assert await _count("eosp") == 1
-
-    # 1er départ → 1 SOSP ; re-soumission → toujours 1.
-    await update_port_status(
-        leg.id,
-        _Req(),
-        new_status="pilote_depart",
-        status_time="2026-04-25T10:00:00",
-        db=db,
-        user=staff_user,
-    )
-    await update_port_status(
-        leg.id,
-        _Req(),
-        new_status="pilote_depart",
-        status_time="2026-04-25T12:00:00",
-        db=db,
-        user=staff_user,
-    )
-    assert await _count("sosp") == 1
 
 
 @pytest.mark.asyncio

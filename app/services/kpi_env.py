@@ -61,7 +61,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bunker import BunkerOperation
 from app.models.finance import LegKPI
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.nav_event import NAV_TIME_SLOTS, NoonEvent
 from app.models.port import Port
 from app.models.validation import DashboardParameter, QualityCheckResult
@@ -73,6 +73,20 @@ from app.services.co2 import NM_TO_KM
 from app.services.validation_engine import get_threshold
 
 # ─────────────────────────────────────────────────────────── Constantes
+
+# NC-01 — contrat d'interface Dashboard (import Python direct, décision
+# actée le 15/07/2026 : pas d'API HTTP séparée). Couvre les signatures et
+# dataclasses de fleet_summary/vessel_operational/voyage_detail/
+# quality_overview + emission_ledger.emissions_breakdown, figées et testées
+# dans tests/regression/test_dashboard_contract.py (SUITE GELÉE).
+#
+# Politique de dépréciation :
+#   - Ajouter un champ avec une valeur par défaut = extension compatible ;
+#     mettre à jour le gabarit correspondant dans le même commit.
+#   - Renommer/retirer/retyper un champ existant, ou changer une signature
+#     de fonction couverte = changement CASSANT : revue explicite avec le
+#     porteur du Dashboard avant fusion, et incrément de cette constante.
+DASHBOARD_CONTRACT_VERSION = 1
 
 EF_METHODS: tuple[str, ...] = ("A", "B", "C")
 
@@ -143,6 +157,12 @@ class LegEmissionRecord:
     ata: datetime | None
     has_kpi: bool  # émission connue (résumé grand livre ou LegKPI co2 renseigné)
     cargo_mrv_t: Decimal | None = None  # cargo MRV (méthode C) — None si indispo
+    # NC-04 — provenance (même vocabulaire que VoyageRow.source) : "events" /
+    # "legacy_noon" (VoyageEmissionSummary) ou "legacy_kpi" / "none" (repli
+    # LegKPI). Défaut "events" pour ne pas casser les fixtures de tests
+    # existantes qui construisent des LegEmissionRecord "de fait" sans jamais
+    # préciser la provenance (formules pures, non concernées par le mode strict).
+    source: str = "events"
 
 
 @dataclass(frozen=True)
@@ -188,6 +208,9 @@ class VesselKpiBlock:
     avoided_container: AvoidedResult
     avoided_airfreight: AvoidedResult
     completeness: CompletenessBlock
+    # NC-04 — nombre de legs écartés des totaux ci-dessus car `source` != "events"
+    # (mode strict uniquement ; toujours 0 hors mode strict, rien n'est écarté).
+    legs_excluded_non_event: int = 0
 
 
 @dataclass(frozen=True)
@@ -307,6 +330,7 @@ async def _emissions_provider(
                 summary.distance_nm if summary.distance_nm is not None else leg.distance_nm
             )
             cargo_mrv_t = summary.cargo_mrv_t
+            source = summary.source  # "events" | "legacy_noon"
         else:
             # Repli legacy — identique à l'avant-lot-9 (aucune régression).
             k = kpi_by_leg.get(leg.id)
@@ -321,6 +345,7 @@ async def _emissions_provider(
             )
             distance_src = leg.distance_nm
             cargo_mrv_t = None
+            source = "legacy_kpi" if k is not None else "none"
         distance_nm = distance_src if distance_src is not None else Decimal(0)
         records.append(
             LegEmissionRecord(
@@ -334,6 +359,7 @@ async def _emissions_provider(
                 ata=leg.ata,
                 has_kpi=has_kpi,
                 cargo_mrv_t=cargo_mrv_t,
+                source=source,
             )
         )
     return records
@@ -528,6 +554,7 @@ async def fleet_summary(
     method: str,
     vessel_id: int | None = None,
     now: datetime | None = None,
+    strict: bool = False,
 ) -> FleetSummary:
     """Page 1 — Vue flotte : bandeau KPI + cartes par navire + tendance + complétude.
 
@@ -536,6 +563,13 @@ async def fleet_summary(
     périmètre LOT 11). ``method`` : ``"A"``/``"B"``/``"C"`` (§5.1), jamais
     mélangées. ``vessel_id`` : None = bandeau flotte ; sinon bandeau centré
     sur ce navire (les cartes par navire restent toutes affichées).
+
+    ``strict`` (NC-04, défaut ``False`` — zéro changement pour les appelants
+    existants) : quand ``True``, les legs dont le ``LegEmissionRecord.source``
+    n'est pas ``"events"`` (repli ``legacy_noon``/``legacy_kpi``/``none``) sont
+    **exclus** de tous les totaux/tendances — jamais mélangés en silence à la
+    donnée événementielle. Leur nombre est reporté dans
+    ``VesselKpiBlock.legs_excluded_non_event`` plutôt que simplement omis.
     """
     _check_method(method)
     now = now or datetime.now(UTC)
@@ -557,6 +591,10 @@ async def fleet_summary(
         scoped_records: list[LegEmissionRecord], *, label: str, vid: int | None, code: str | None
     ) -> VesselKpiBlock:
         year_records = [r for r in scoped_records if r.etd is not None and r.etd.year == period]
+        excluded_non_event = 0
+        if strict:
+            excluded_non_event = sum(1 for r in year_records if r.source != "events")
+            year_records = [r for r in year_records if r.source == "events"]
         ef, denom = aggregate_ef(
             year_records, method=method, occupancy_pct=occupancy_pct, capacity_ref_t=capacity_ref_t
         )
@@ -588,6 +626,7 @@ async def fleet_summary(
             avoided_container=avoided_container,
             avoided_airfreight=avoided_airfreight,
             completeness=completeness,
+            legs_excluded_non_event=excluded_non_event,
         )
 
     fleet_block = _block(all_records, label="Flotte", vid=None, code=None)
@@ -602,6 +641,8 @@ async def fleet_summary(
     trend_source = (
         all_records if vessel_id is None else [r for r in all_records if r.vessel_id == vessel_id]
     )
+    if strict:
+        trend_source = [r for r in trend_source if r.source == "events"]
     trend = monthly_trend(trend_source, now=now)
     trend_max_t = max((p.co2_emitted_t for p in trend), default=Decimal(0))
     if trend_max_t <= 0:
@@ -942,7 +983,14 @@ async def voyage_detail(
     Réutilise ``emission_ledger.compute_for_leg`` (KPI/EF/conso, source events
     ou legacy) et ``inter_event_compute.compute_leg`` (chaîne + ROB chaîné) —
     aucun recalcul. ``conso_target_l_j`` : override de la cible (défaut =
-    seuil ``seuil_conso_ref_l_j`` résolu, fail-closed 750)."""
+    seuil ``seuil_conso_ref_l_j`` résolu, fail-closed 750).
+
+    NC-04 : ce détail porte un seul voyage, pas d'agrégat — pas de mode
+    ``strict`` ici. L'objet retourné expose déjà ``source`` (``events`` /
+    ``legacy_noon``) ; un Dashboard exclusivement event-driven doit vérifier
+    ce champ et présenter un état explicite « non migré » plutôt que de
+    traiter un voyage ``legacy_noon`` comme une donnée événementielle normale.
+    """
     leg = await db.get(Leg, leg_id)
     if leg is None:
         return None
@@ -1130,6 +1178,10 @@ class VesselOperational:
     leg_count: int
     laden_count: int
     ballast_count: int
+    # NC-04 — nombre de voyages écartés des totaux ci-dessus car `source` !=
+    # "events" (mode strict uniquement). Les lignes restent dans ``voyages``
+    # (chacune porte son propre ``source``) — seuls les agrégats les excluent.
+    excluded_non_event_count: int = 0
 
 
 def _summary_ef_for_method(summary: VoyageEmissionSummary, method: str) -> Decimal | None:
@@ -1141,13 +1193,21 @@ def _summary_ef_for_method(summary: VoyageEmissionSummary, method: str) -> Decim
 
 
 async def vessel_operational(
-    db: AsyncSession, vessel_id: int, *, period: int, method: str = "A"
+    db: AsyncSession, vessel_id: int, *, period: int, method: str = "A", strict: bool = False
 ) -> VesselOperational | None:
     """Page 2 — liste des voyages d'un navire + KPI par voyage (grand livre).
 
     Lit ``voyage_emission_summaries`` (source de vérité env., cache du grand
     livre) avec repli ``LegKPI`` (legacy) pour les voyages sans résumé. Filtre
     par année d'ETD. ``method`` sélectionne l'EF affiché (A/B/C), jamais mélangé.
+
+    ``strict`` (NC-04, défaut ``False``) : quand ``True``, les totaux
+    (``co2_total_t``, ``conso_total_t``, ``distance_total_nm``, ``leg_count``,
+    ``laden_count``, ``ballast_count``) n'agrègent que les voyages dont
+    ``source == "events"`` — jamais de legacy mélangé en silence. La liste
+    ``voyages`` reste complète (chaque ligne porte son propre ``source``) ;
+    le nombre de voyages écartés des totaux est reporté dans
+    ``excluded_non_event_count``.
     """
     _check_method(method)
     vessel = await db.get(Vessel, vessel_id)
@@ -1244,10 +1304,20 @@ async def vessel_operational(
                 )
             )
 
-    co2_total = sum((r.co2_t for r in rows if r.co2_t is not None), Decimal(0))
-    conso_total = sum((r.conso_total_t for r in rows if r.conso_total_t is not None), Decimal(0))
-    dist_total = sum((r.distance_nm for r in rows if r.distance_nm is not None), Decimal(0))
-    laden = sum(1 for r in rows if not r.is_ballast)
+    # NC-04 — en mode strict, les totaux n'agrègent que les voyages event-sourcés ;
+    # ``rows`` (voyages) reste complet, chaque ligne portant son propre ``source``.
+    excluded_non_event = 0
+    totals_rows = rows
+    if strict:
+        excluded_non_event = sum(1 for r in rows if r.source != "events")
+        totals_rows = [r for r in rows if r.source == "events"]
+
+    co2_total = sum((r.co2_t for r in totals_rows if r.co2_t is not None), Decimal(0))
+    conso_total = sum(
+        (r.conso_total_t for r in totals_rows if r.conso_total_t is not None), Decimal(0)
+    )
+    dist_total = sum((r.distance_nm for r in totals_rows if r.distance_nm is not None), Decimal(0))
+    laden = sum(1 for r in totals_rows if not r.is_ballast)
 
     return VesselOperational(
         vessel_id=vessel.id,
@@ -1260,9 +1330,10 @@ async def vessel_operational(
         co2_total_t=co2_total.quantize(_T_QUANT),
         conso_total_t=conso_total.quantize(_T_QUANT),
         distance_total_nm=dist_total.quantize(_T_QUANT),
-        leg_count=len(rows),
+        leg_count=len(totals_rows),
         laden_count=laden,
-        ballast_count=len(rows) - laden,
+        ballast_count=len(totals_rows) - laden,
+        excluded_non_event_count=excluded_non_event,
     )
 
 
@@ -1343,7 +1414,11 @@ def _leg_is_active(leg: Leg) -> bool:
     """Voyage « actif » = non clôturé (pas d'approbation) et non annulé
     (miroir de ``validation_rules_catalog._leg_is_active`` — non importé pour
     ne pas coupler la page à la catalogue de règles, cf. périmètre LOT 12)."""
-    return leg.closure_approved_at is None and leg.status != "cancelled"
+    return (
+        leg.origin != LEG_ORIGIN_TOWT
+        and leg.closure_approved_at is None
+        and leg.status != "cancelled"
+    )
 
 
 def _quality_trend(rows: list[QualityCheckResult], *, now: datetime) -> list[QualityTrendPoint]:
@@ -1534,7 +1609,7 @@ async def quality_overview(
                 pct=pct,
             )
         )
-    noon_completeness.sort(key=lambda n: (n.pct if n.pct is not None else Decimal(0)))
+    noon_completeness.sort(key=lambda n: n.pct if n.pct is not None else Decimal(0))
 
     trend = _quality_trend(qcr_rows, now=now)
     trend_max = max((p.count for p in trend), default=0)

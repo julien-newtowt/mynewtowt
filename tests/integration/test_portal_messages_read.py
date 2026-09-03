@@ -17,7 +17,7 @@ async def test_portal_unread_counts_and_mark_read(db):
     from app.models.booking import Booking
     from app.models.packing_list import PackingList, PortalMessage
     from app.services import messaging
-    from tests.integration.test_mrv_reprise import _setup_leg
+    from tests.integration.conftest import _setup_leg
 
     await _setup_leg(db)  # leg id=1
     db.add(Booking(id=1, reference="BK-PORTAL-1", leg_id=1, status="confirmed"))

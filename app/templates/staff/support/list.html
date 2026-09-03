@@ -1,0 +1,116 @@
+{# Assistance — liste des demandes. Sert la vue courante ET les archives
+   (`archived_view`). ⚠️ Module distinct de « Tickets escale » : ici on parle de
+   DEMANDES d'assistance sur le logiciel, jamais de « tickets ». #}
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('sup_title_archives', lang) if archived_view else t('sup_title_list', lang) }} — {{ brand.nom_court }} ERP{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">{{ t('s_grp_assistance', lang) }}</span>
+    <h1 class="display">
+      {%- if archived_view -%}{{ t('sup_title_archives', lang) }}
+      {%- elif is_admin -%}{{ t('sup_title_list_all', lang) }}
+      {%- else -%}{{ t('sup_title_list', lang) }}{%- endif -%}
+    </h1>
+  </div>
+  <div class="flex gap-2 items-center">
+    {% if archived_view %}
+      <a href="/support" class="btn btn-ghost">{{ t('s_nav_support', lang) }}</a>
+    {% else %}
+      <a href="/support/archives" class="btn btn-ghost">{{ t('s_nav_support_archives', lang) }}</a>
+    {% endif %}
+    <a href="/support/nouveau" class="btn btn-primary">+ {{ t('s_nav_support_new', lang) }}</a>
+  </div>
+</header>
+
+{% if is_admin and stats and not archived_view %}
+<section class="kpi-strip">
+  <div class="kpi-card">
+    <div class="label">{{ t('sup_stat_new', lang) }}</div>
+    <div class="value {% if stats.new_count %}text-error{% endif %}">{{ stats.new_count }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('sup_stat_open', lang) }}</div>
+    <div class="value">{{ stats.open_count }}</div>
+  </div>
+</section>
+{% endif %}
+
+<form class="card mb-4" method="get" action="{{ '/support/archives' if archived_view else '/support' }}"
+      style="display:flex; gap:var(--space-3); flex-wrap:wrap; align-items:end;">
+  <div>
+    <label class="label" for="f-status">{{ t('sup_c_status', lang) }}</label>
+    <select id="f-status" name="status">
+      <option value="">—</option>
+      {% for s in statuses %}
+      <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>{{ t(status_keys[s], lang) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="label" for="f-kind">{{ t('sup_c_kind', lang) }}</label>
+    <select id="f-kind" name="kind">
+      <option value="">—</option>
+      {% for k in kinds %}
+      <option value="{{ k }}" {% if filter_kind == k %}selected{% endif %}>{{ t(kind_keys[k], lang) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="label" for="f-sev">{{ t('sup_c_severity', lang) }}</label>
+    <select id="f-sev" name="severity">
+      <option value="">—</option>
+      {% for s in severities %}
+      <option value="{{ s }}" {% if filter_severity == s %}selected{% endif %}>{{ t(severity_keys[s], lang) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="btn btn-secondary">{{ t('sup_c_status', lang) }}</button>
+  {% if filter_status or filter_kind or filter_severity %}
+  <a href="{{ '/support/archives' if archived_view else '/support' }}" class="btn btn-ghost">{{ t('sup_b_reset', lang) }}</a>
+  {% endif %}
+</form>
+
+{% if not archived_view %}
+<div class="alert alert-info mb-4">{{ t('sup_archive_notice', lang) }}</div>
+{% endif %}
+
+<section class="card">
+  {% if rows %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>{{ t('sup_c_ref', lang) }}</th>
+        <th>{{ t('sup_c_kind', lang) }}</th>
+        <th>{{ t('sup_c_severity', lang) }}</th>
+        <th>{{ t('sup_f_title', lang) }}</th>
+        {% if is_admin %}<th>{{ t('sup_c_reporter', lang) }}</th>{% endif %}
+        <th>{{ t('sup_c_status', lang) }}</th>
+        <th>{{ t('sup_c_created', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><a href="/support/{{ r.reference }}"><code>{{ r.reference }}</code></a></td>
+        <td>{{ t(kind_keys[r.kind], lang) }}</td>
+        <td>
+          <span class="badge {% if r.severity == 'bloquant' %}badge-error{% elif r.severity == 'genant' %}badge-warning{% endif %}">
+            {{ t(severity_keys[r.severity], lang) }}
+          </span>
+        </td>
+        <td>{{ r.title }}</td>
+        {% if is_admin %}<td class="text-muted">{{ r.reporter_role }}</td>{% endif %}
+        <td><span class="pill">{{ t(status_keys[r.status], lang) }}</span></td>
+        <td class="text-muted">{{ r.created_at|datetime }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">{{ t('sup_empty_archives', lang) if archived_view else t('sup_empty', lang) }}</p>
+  {% endif %}
+</section>
+
+{% endblock %}

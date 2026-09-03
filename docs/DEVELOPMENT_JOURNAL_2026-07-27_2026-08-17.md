@@ -2299,3 +2299,454 @@ ci-dessus — même sujet, mêmes acteurs.
 - Ces correctifs sont **cosmétiques et front** : ils ne modifient ni le schéma,
   ni les règles de calcul, ni les permissions. Ils peuvent partir sans attendre
   le retour du manager.
+
+## 2026-09-02 — Quatre retours sur la planification : trois bugs, un défaut de conception
+
+**Branche** : `fix/planning-sequence-bugs` · **Objectif** : traiter les quatre
+retours d'usage arrivés après la mise en service de la séquence déclarative
+départ/arrivée (PLN-SEQ, PR #177).
+
+### Situation
+
+Quatre signalements, dans l'ordre où ils ont été remontés :
+
+1. « À la création d'un nouveau leg, le module ne prend pas la bonne ETD ni le
+   bon POD. Il a repris le leg A alors qu'on programme le D. »
+2. « Je ne comprends pas l'erreur » — bandeau rouge *« Atlantis : 3DFRBR6
+   démarre avant la fin de l'escale prévue après 3CBRFR6 »*.
+3. **Erreur 500** à la suppression d'un leg (`/planning/legs/16/delete`).
+4. « Il y a des voyages qui n'ont pas de calcul automatisé de la distance et de
+   la dérive » — colonnes Théorique / Écart / Allongement à « — » pour
+   `1AFRBR6`, `2BGPFR6`, `3APHRE6`.
+
+### Analyse
+
+**(3) est un vrai bug de production, et le plus grave** — c'est le seul qui
+casse une page. Quatre tables référencent `legs.id` **sans** `ondelete` et
+**sans** être déliées avant la suppression : `packing_lists.leg_id` (le leg
+épinglé par COM-11, ajouté après l'écriture de `delete_leg`),
+`rate_grid_lines`, `marad_crew_schedules`, `onboard_messages`. PostgreSQL
+refuse donc la suppression du parent et l'`IntegrityError` remonte telle
+quelle. Le leg 16 porte une packing list : suppression impossible, 500 nu. Le
+défaut n'est pas la liste incomplète — c'est qu'**aucun garde-fou ne signalait
+l'oubli** : la liste était un littéral dans le corps d'une fonction, invisible
+à quiconque ajoute une table.
+
+**(4) n'est pas un calcul cassé mais une donnée absente.** `Leg.distance_nm`
+(orthodromie POL→POD × élongation) est bien posée au create/update — mais
+`compute_effective_distance_nm` renvoie `None` quand un port n'a pas de
+coordonnées, et rien ne recalcule ensuite. L'écart et l'allongement se dérivant
+de la théorique, les trois colonnes tombent ensemble. L'UI affichait « — » sans
+dire pourquoi, et l'audit disait « n'a pas de distance de planning persistée »,
+ce qui décrit le symptôme, pas la cause.
+
+**(2) est un message, pas un calcul** — l'alerte était juste sur le fond
+(l'escale planifiée de 3C court plus loin que le départ de 3D) mais ne portait
+aucun chiffre : ni la date d'arrivée, ni la durée d'escale, ni le manque, ni la
+correction possible. Deux défauts de fond en dessous : l'audit comparait des
+**ETA prévisionnelles** même quand l'ATA était connue, et il instruisait des
+legs **déjà appareillés** — dont l'ATD ne se corrige plus, donc une alerte
+critique insoluble par construction.
+
+**(1) est un défaut de conception, pas un bug.** `_new_leg_suggestions` prenait
+le dernier leg par ETD, toutes années confondues. C'est le bon défaut — créer
+un leg, c'est prolonger la ligne — mais il devient faux dès qu'un voyage
+lointain est saisi à l'avance : un leg de janvier 2027 capte le chaînage des
+legs de l'année en cours, et impose son POD comme POL. Aucune valeur par défaut
+ne peut trancher entre « prolonger la séquence » et « insérer dans l'année en
+cours » : c'est une intention d'opérateur.
+
+### Décisions et implémentation
+
+- **Suppression d'un leg** — l'inventaire des dépendances sort du corps de
+  `delete_leg` en deux fonctions nommées (`_leg_blocking_models`,
+  `_leg_unlinked_models`), les quatre tables manquantes sont déliées, et la
+  suppression se fait dans un **SAVEPOINT** : une FK oubliée devient une
+  `PlanningError` lisible (400 avec bandeau) au lieu d'un 500, la session
+  restant utilisable pour re-rendre la page. Une **sentinelle** échoue au build
+  si une table référence `legs.id` sans être couverte (ondelete, inventaire
+  bloquant, ou inventaire délié).
+- **Les registres d'argent bloquent désormais** au lieu d'être déliés : ventes à
+  bord, contrôles de caisse, mouvements de caisse. Écrire `leg_id = NULL` dans
+  un grand livre qui n'a **ni UPDATE ni DELETE** (ADR-011/013) pour faire de la
+  place à une suppression n'est pas une option ; et un leg qui porte des ventes
+  réelles est un voyage effectué, pas un brouillon.
+- **Leg de référence choisi** — le formulaire expose les 8 derniers legs du
+  navire (`chain_options`) dans un sélecteur « Chaîner après » ; ETD, POL,
+  escale et rang se redérivent du leg choisi. Le défaut ne change pas, il
+  devient corrigeable en un clic. Sélecteur masqué s'il n'y a qu'une option.
+- **Audit de séquence** — messages chiffrés et actionnables, dates effectives,
+  et plus aucune instruction d'un leg appareillé.
+- **Distance théorique** — trois voies, du palliatif à la racine : repli calculé
+  au rendu (`voyage_track.theoretical_distance_nm`, marqué `*` avec info-bulle,
+  la valeur persistée restant prioritaire) ; **édition des coordonnées d'un
+  port** dans Admin → Ports, qui recalcule immédiatement les legs touchant ce
+  port (`recompute_leg_distances`) ; reprise à froid
+  `scripts/backfill_leg_distances.py` (dry-run par défaut), qui **liste
+  nommément** les ports sans coordonnées restants.
+
+### Risques
+
+- 🟡 **Suppression de leg plus restrictive** — un leg porteur de mouvements de
+  caisse ou de ventes ne se supprime plus. C'est l'intention (protection d'un
+  registre), mais c'est un changement de comportement : le message d'erreur dit
+  quoi nettoyer.
+- 🟢 Le repli de distance est **calculé à l'affichage, jamais écrit** : aucune
+  écriture sur une requête de lecture, aucune valeur inventée quand les
+  coordonnées manquent.
+- 🟢 Coordonnées de port : validation de plage (−90/90, −180/180) et refus
+  explicite d'une saisie partielle — une coordonnée fausse produirait une
+  distance fausse, pire qu'une distance absente puisqu'elle a l'air juste.
+
+### Tests
+
+- Sentinelle FK : 25 FK vers `legs.id` scannées, 0 non couverte. Sabotage
+  vérifié (retrait des 4 tables → la sentinelle **et** le test d'intégration
+  échouent).
+- `test_delete_leg_unlinks_nullable_fks` : suppression réussie avec packing
+  list épinglée + message de bord + planning Marad, données conservées, lien
+  effacé, XOR de la packing list préservé.
+- Deux tests de blocage (vente à bord, contrôle de caisse) + un test de session
+  restée utilisable après refus.
+- Audit : message explicite (fragments de dates et de durées vérifiés), leg
+  appareillé ignoré, ATA prioritaire, port sans coordonnées nommé.
+- Distance : 6 tests (absence à la création, repli au rendu, priorité au
+  persisté, refus d'inventer sans coordonnées, recalcul après saisie des
+  coordonnées, idempotence).
+- Suite complète verte ; `ruff check` et `black --check` verts.
+
+### Reste à faire (côté exploitation)
+
+1. Déployer, puis `docker compose exec app python -m scripts.backfill_leg_distances`
+   (dry-run) — le rapport nomme les ports sans coordonnées.
+2. Renseigner ces coordonnées dans **Admin → Ports** (l'écran recalcule les legs
+   du port ; le script `--yes` finit le reste).
+3. Le bandeau d'audit sur Atlantis dira maintenant de combien de jours l'escale
+   de 3C dépasse le départ de 3D : à trancher côté métier (réduire l'escale ou
+   décaler le départ), la donnée n'est pas modifiée d'office.
+
+## 2026-09-02 (2) — Référentiel de ports : une source fiable, et deux promesses creuses
+
+**Branche** : `feature/ports-unlocode-loader` · **Objectif** : trouver une
+source fiable et auto-actualisable de la liste des ports maritimes mondiaux
+(demande de Yasmin), et l'utiliser pour tarir à la source les ports sans
+coordonnées qui privent les legs de distance théorique.
+
+### Situation
+
+Le référentiel repose sur ~250 ports maintenus à la main
+(`scripts/data/world_ports.py`) plus, en option, un miroir GitHub d'UN/LOCODE.
+Les ports sans coordonnées sont la cause racine du bug 4 du jour (distance et
+dérive vides sur `/performance/navigation`).
+
+### Analyse des sources — Faits mesurés
+
+| Source | Contenu | Fraîcheur | API | Licence |
+|---|---|---|---|---|
+| UN/LOCODE (UNECE) | **le** référentiel des codes | 2 éditions/an | ❌ zip | PDDL |
+| `datasets/un-locode` | même liste, coord. DDMM | v2024.2.0 (UNECE : 2025-1) | ❌ fichier | PDDL |
+| `cristan/improved-un-locodes` | + `CoordinatesDecimal` | suit le précédent | ❌ fichier | PDDL + **ODbL** |
+| NGA World Port Index | ~3 700 **vrais** ports (profondeurs, installations) | **mensuelle** | ✅ REST GeoJSON sans clé | domaine public US |
+
+Mesures sur les fichiers réellement téléchargés : le miroir brut donne
+**11 763** ports maritimes exploitables, le géolocalisé **16 669**. L'écart
+n'est pas cosmétique : UNECE laisse 20 % des lieux sans coordonnées, **dont de
+vrais ports** — `PHMNL` (Manille) était purement absente du référentiel.
+
+**Réponse à la question posée** : il n'existe pas d'API officielle
+auto-actualisée pour les *codes* de ports ; UNECE publie des fichiers deux fois
+par an. Le seul vrai service REST gratuit du lot est le FeatureServer du World
+Port Index — utile pour les coordonnées et la qualification maritime, pas pour
+les codes. Périmètre retenu avec Yasmin : réparer et fiabiliser le chargeur,
+sans cron ni croisement WPI pour l'instant.
+
+### Deux promesses creuses trouvées au passage
+
+1. **« Ne remplace jamais une entrée manuelle par une entrée automatique »**
+   (docstring du chargeur) était vraie au sens littéral et fausse en pratique :
+   la protection ne portait que sur `source == "manual"`, valeur qu'**aucun
+   chemin de code n'écrivait**. Le catalogue embarqué (`world_ports`) était donc
+   écrasable — et *dégradé* : il place Fécamp à 49,7594 / 0,3742, UN/LOCODE
+   l'arrondit à la minute d'arc (49,75 / 0,38333, ~1 km d'écart).
+2. **Le code fonction UN/LOCODE n'est pas une vérité maritime.** `REPDG`
+   (Pointe des Galets) porte la fonction `--3-----` (route seule) et le statut
+   `XX` — entrée en cours de retrait chez UNECE. Le port de La Réunion est
+   `RELPT` (« Le Port », `1-3-5---`, statut `AF`). Un filtre naïf sur la
+   fonction perd donc de vrais ports : il ne doit jamais servir à purger.
+
+### Implémentation
+
+- Le parseur UN/LOCODE quitte le script pour `services/ports.py` (un parseur
+  n'a pas sa place dans un script) : `parse_unlocode_csv`, avec les deux
+  formats de coordonnées — **décimal prioritaire**, repli DDMM — et un
+  `UnlocodeReport` qui compte les lignes écartées **et pourquoi**. Un import
+  muet ne se contrôle pas.
+- Validation de plage sur les deux parseurs de coordonnées : une position hors
+  [−90, 90] / [−180, 180] est refusée, pas tronquée.
+- Les entrées en statut `XX` ne sont plus ajoutées ; rien n'est jamais
+  supprimé (un code retiré chez UNECE peut rester porté par un booking passé).
+- **Hiérarchie de sources** explicite (`may_overwrite`) : `manual` (30) >
+  `world_ports` (20) > `unlocode-improved` (15) > sources automatiques (10),
+  avec ré-import de la même source toujours autorisé.
+- Source par défaut de `--with-unlocode` = miroir géolocalisé ; miroir brut
+  toujours accessible via `--unlocode-url`.
+
+### Risques
+
+- 🟠 **Miroir communautaire en retard d'une édition** (2024-2 contre 2025-1) et
+  **part ODbL** : attribution OpenStreetMap obligatoire dès qu'on republie ces
+  coordonnées ailleurs que sur un fond de carte qui la porte déjà. Documenté.
+  Passer au zip officiel UNECE lèverait la dépendance — non fait.
+- 🟡 **Volume** : `--with-unlocode` porte le référentiel à ~16 700 ports. Les
+  écrans de sélection sont pilotés par recherche, donc a priori sans effet
+  visible — à confirmer en recette.
+- 🟡 **Dépendance non vérifiable d'ici** : l'egress de la session de
+  développement ne joint que GitHub (`msi.nga.mil`, `unece.org`, `arcgis.com`
+  et `data.gouv.fr` sont bloqués). Le chargeur exige
+  `raw.githubusercontent.com` depuis le serveur — à valider avant tout
+  rafraîchissement planifié.
+- 🟢 Aucune migration, aucune dépendance nouvelle, aucune suppression de donnée.
+
+### Dette à solder tout de suite après
+
+L'écran **Admin → Ports → Position géographique** (livré sur
+`fix/planning-sequence-bugs`) doit passer `Port.source` à `manual` en
+enregistrant, sinon la correction de l'opérateur est effacée au prochain
+import. À faire sur cette branche-là, pas ici, pour éviter un conflit.
+
+### Tests
+
+- 8 tests unitaires : priorité du décimal, repli DDMM (N/S/E/W, longitude à
+  trois chiffres), rejet des coordonnées illisibles ou hors plage, statut `XX`
+  écarté, doublons de locode, compteurs du rapport, filtre maritime.
+- 5 tests d'intégration sur `upsert_ports` : insertion, rafraîchissement de la
+  même source, catalogue curé non dégradé, correction humaine survivant à tous
+  les imports, coordonnées améliorées non écrasées par le miroir brut, lignes
+  sans position ignorées.
+- Parseurs exécutés sur les **fichiers réels** (116 000 lignes) avant/après :
+  11 763 → 16 669 ports maritimes, `REPDG` écarté, Manille présente.
+
+
+## 2026-09-02 (3) — Le sélecteur de ports ne voyait que la moitié du monde
+
+**Branche** : `fix/ports-picker-server-side` · **Objectif** : « Da Nang VNDAD
+existe bien, mais n'est pas disponible dans le moteur de recherche. Les filtres
+sont incomplets. »
+
+### Situation
+
+Signalement de Yasmin juste après le chargement du référentiel UN/LOCODE
+(16 669 ports). Son diagnostic — « le moteur de recherche n'est pas connecté à
+l'intégralité de la base » — était exact.
+
+### Analyse
+
+`leg-cascade.js` appelait `/api/v1/ports/search?limit=10000` **une fois**, puis
+filtrait dans le navigateur. L'API trie par `country, locode` : la coupure des
+10 000 tombait à l'intérieur du Japon. Mesuré sur la charge réelle :
+**123 pays disparaissaient entièrement** — VN (Da Nang), NL (Rotterdam), US,
+PT, RE, MQ, SG, ZA, MA… tout ce qui suit `JP` dans l'alphabet.
+
+Un seul défaut, trois symptômes : la cascade Zone → Pays → Port, la liste des
+pays et la recherche libre étaient **toutes** dérivées de ce payload tronqué.
+D'où « les filtres sont incomplets » : ce n'était pas un second bug.
+
+Et rien ne le signalait. Le port existait en base, la page ne disait pas qu'elle
+n'en voyait qu'une partie. C'est le pire mode de défaillance : silencieux,
+plausible, et il désigne l'utilisateur comme fautif.
+
+**Le plafond de 10 000 est du code préexistant, mais il ne devenait nuisible
+qu'au-delà de 10 000 lignes — franchies par l'import que j'ai livré le matin
+même.** Je l'assume : j'ai grossi la table sans vérifier ce qui la consommait.
+La leçon est là, pas dans le patch : changer le volume d'une source de vérité
+partagée, c'est changer le contrat de tous ses lecteurs.
+
+Second défaut, latent lui aussi : la carte pays → continent vivait dans le JS,
+codée en dur, commentée « minimal viable list » — ~90 pays. Tout le reste
+tombait dans la zone « Autre ». Invisible avec 250 ports curés, criant avec 200+
+pays en base.
+
+### Décisions
+
+Arbitrage proposé et validé : **recherche côté serveur** plutôt que relever le
+plafond. Relever à 20 000 aurait rendu les ports sélectionnables aujourd'hui en
+laissant intacts le vice (~2 Mo de JSON par ouverture de page) et l'échéance
+(le même bug au prochain palier).
+
+| Besoin | Avant | Après |
+|---|---|---|
+| Zones + pays | dérivés du payload complet | `GET /ports/countries` |
+| Ports d'un pays | filtre client | `GET /ports/search?country=XX` |
+| Recherche libre | filtre client | `GET /ports/search?q=…` (débounce 220 ms) |
+| Port par id | recherche dans le payload | `GET /ports/{id}` |
+| Zone d'un pays | carte JS ~90 pays | `services.geo.region_of`, 251 codes ISO-3166 |
+
+Trois choix de conception qui méritent d'être explicites :
+
+1. **`limit` est bornée** (`PORTS_SEARCH_MAX_LIMIT = 500`). Une limite non
+   bornée *invite* à rapatrier la table ; c'est ce qui s'est passé.
+2. **Quand une liste par pays atteint le plafond, l'UI le dit.** Le défaut
+   qu'on corrige est une troncature muette : la remplacer par une troncature
+   muette plus haute n'aurait rien réglé.
+3. **Choisir une zone sans pays n'affiche plus de ports.** Une zone peut en
+   porter des milliers ; les déverser n'aide personne. La recherche libre
+   couvre le cas « je ne sais pas dans quel pays ».
+
+Sur les régions : « Europe » géographique (Russie et Turquie incluses — leurs
+ports de commerce y sont, et un opérateur européen les y cherche) n'est **pas**
+`EUROPE_ISO2`, le périmètre commercial des catégories import/export qui les
+exclut délibérément. Deux notions distinctes qu'une sentinelle empêche de
+diverger : le périmètre doit rester un sous-ensemble de la région.
+
+### Risques
+
+- 🟡 **Un aller-retour réseau par interaction** au lieu d'un seul au chargement.
+  Débounce à 220 ms, réponses hors séquence ignorées, échec de requête affiché
+  (« Recherche indisponible ») plutôt que silencieux. En contrepartie la page
+  ne télécharge plus ~2 Mo de JSON à chaque ouverture.
+- 🟡 **Changement d'UX** : la liste Port exige désormais un pays. Assumé, et
+  annoncé dans le libellé du champ.
+- 🟢 Aucune migration, aucune dépendance, aucune écriture. Un revert restaure
+  l'ancien comportement, troncature comprise.
+
+### Tests
+
+- 23 tests sur la table de régions : complétude (> 240 codes), aucune zone
+  orpheline dans les deux sens, codes bien formés, `EUROPE_ISO2` ⊆ Europe,
+  15 vérifications ponctuelles (VN → Asie, RE → Afrique, MQ → Amériques,
+  XZ → Haute mer…), repli sans exception, et **aucun pays du catalogue
+  embarqué ne tombe dans « Autre »**.
+- 10 tests d'API : Da Nang retrouvée par nom **et** par LOCODE (le cas exact
+  remonté), recherche partielle et insensible à la casse, ports inactifs et
+  sans coordonnées exclus, `limit` bornée dans les deux sens, tous les pays
+  présents avec leur zone et leur compte, tri par zone métier, port par id
+  avec ses coordonnées, 404 sur inconnu et sur inactif.
+- 2 verrous de structure : les nouvelles routes passent bien par le garde
+  staff-ou-clé (sinon 503 et cascade vide, régression déjà vécue), et
+  `/ports/{port_id}` est déclarée après tous les chemins littéraux `/ports/…`
+  (FastAPI n'ajoute pas de convertisseur de type au motif de route).
+- 1 verrou statique sur le JS : plus de `limit=10000`, plus d'`allPorts`, plus
+  de carte `CONTINENT`, et les trois endpoints bien appelés.
+
+### Ce qui n'est pas vérifié
+
+Aucun parcours rejoué dans un navigateur : le débounce, l'ordre des réponses et
+le rendu du menu de résultats ne sont couverts que par lecture du code. À voir
+en recette, en cherchant précisément « Da Nang ».
+
+---
+
+## 2026-09-02 (4) — Reprise d'historique TOWT : l'archive entre dans l'ERP, en lecture seule
+
+### Situation
+
+Julien fournit le classeur des traversées TOWT (36 voyages 2024-08 → 2026-01),
+l'ancien tableau de bord Power BI, et pointe deux bibliothèques SharePoint :
+relevés GPS satcom (« 12 - Tracking », ~32 000 CSV horaires au pas de 5 min
+depuis le 2024-10-21) et noon reports (« 10 - Data reporting Noon reports »,
+~1 300 classeurs Excel, deux générations de formulaire). Demande : auditer,
+établir un plan de reprise, créer les legs, rendre l'historique **non
+modifiable et filtrable « TOWT »**, proposer une évolution de la culture data —
+en mode multi-agents / multi-modèles.
+
+### Analyse — faits mesurés
+
+- Trois agents d'exploration (legs/planning ; tracking ; MRV-noon + conventions
+  doc) puis une revue critique sur un modèle distinct. Détail dans
+  `docs/audit/2026-09-02-reprise-historique-towt.md`.
+- Le classeur ne contient que des **dates réelles au jour** ; 28 anomalies
+  (une faute de frappe bloquante `2NZF5` ATA 2016, ruptures de continuité =
+  arrêts techniques non tracés, ETO/ETC incohérentes, ports absents).
+- Le code TOWT (`1YMB4`) suit deux conventions successives avec des caractères
+  de port **en collision** : non reconstructible, à conserver tel quel — c'est la
+  clé des noon reports et du PBIX.
+- Rien dans `legs` ne marque une origine ; insérer un leg 2026 d'archive aurait
+  **renuméroté** `1AFRBR6` → `1BFRBR6`. `vessel_positions` était **purgeable**
+  et `/tracking` sérialisait toute l'année (≈ 105 000 points/navire/an à 5 min).
+- Un pipeline local « Extraction Noon Reports » existe déjà hors dépôt (2026
+  seulement, en erreur depuis 07/2026).
+
+### Décisions et implémentation (ADR-014 — accepté par Julien le 2026-09-02)
+
+1. `legs.origin` (`newtowt` | `towt_archive`, migration 0138, index) +
+   `Leg.is_archive` ; garde unique `assert_leg_mutable` (`LegArchivedError`)
+   dans `update_leg`, `delete_leg`, `declare_departure/arrival`, et
+   `_escale_locked` ; `renumber_vessel_year` exclut les archives ;
+   `list_legs_in_window(origin=…)` ; `/planning?origin=towt|newtowt`, badges
+   « TOWT », bandeau lecture seule et boutons masqués sur la fiche.
+2. `scripts/data/towt_legs_history.csv` (36 lignes, `notes` + `source_ata_raw`)
+   et `scripts/import_towt_legs.py` : dry-run par défaut, idempotent,
+   `leg_code` = TRIP CODE, `etd=atd`, `eta=ata` (minuit UTC), `completed`,
+   `voyage_completed_at=ata`, ports manquants créés (`source=user`), ruptures
+   **signalées jamais corrigées**, collision NEWTOWT bloquante.
+3. `scripts/towt_gps_consolidate.py` (poste local, stdlib, manifeste SHA-256,
+   trous > 6 h) → `scripts/import_towt_positions.py` (insertion en lot,
+   préchargement des clés, `source='towt_archive'`, `import_batch`).
+   `admin_data.PURGE_PROTECTED_ROWS` protège ces lignes des deux modes de purge.
+   `voyage_track.downsample` (4 000 points) dans `/tracking` ; `leg_filter`
+   remonte jusqu'à la première ETD.
+4. `scripts/towt_noon_extract.py` : prototype local piloté par les libellés,
+   deux générations de formulaire, NDJSON + CSV de synthèse, **aucune écriture
+   en base** (cible = décision 6 de l'ADR, ouverte).
+
+### 🔴 Ce que la revue critique (second modèle) a trouvé — et ce que j'en ai fait
+
+Quatre gardes de service posées à la main ne couvraient pas ~40 sites
+`select(Leg)`. Constats retenus (26 au total) :
+
+- **Deux écrivains passaient outre** : `scenario.apply_to_active_planning`
+  réécrivait un leg d'archive cloné ; le décalage d'ETA du bord aussi. →
+  garde ORM `before_flush` sur `Leg` (tout UPDATE/DELETE d'archive refusé,
+  échappement `session.info` pour les scripts) **et** trigger PostgreSQL dans
+  la migration 0138. L'immutabilité n'est plus une convention.
+- **Le taux de ponctualité publié montait à 100 %** par construction (prévu =
+  réel), le compteur public de traversées gagnait 36, le contrôle qualité MRV
+  nocturne aurait alerté chaque nuit sur 36 voyages « actifs » sans
+  événements, l'audit `/planning` aurait affiché en permanence les ruptures
+  connues de l'archive, et le filtre transverse aurait exposé l'archive à dix
+  modules — dont `/kpi` qui **écrit** des `LegKPI`. → exclusion systématique
+  (décision 7 de l'ADR), `build_leg_filter(include_archive=False)` par défaut.
+- **La séquence vivante** (chevauchement, continuité, cascade, voisins,
+  `repair_vessel_sequence`) voyait l'archive : le premier leg NEWTOWT devenait
+  inéditable après une rupture d'archive. → exclusion dans toutes ces requêtes.
+- **Volume** : `/performance/navigation` hydratait ~6 000 instances ORM par leg
+  d'archive. → lecture en lignes allégées (`light=True`) + décimation de la
+  carte ; l'échantillonnage SQL des KPI annuels reste en lot 2.
+- Scripts : classeurs `read_only` non fermés, fuseau illisible devenu UTC en
+  silence, fichiers au nom inattendu ignorés sans compteur, INSERT sans
+  `ON CONFLICT` face au cron live, doublons comptés comme invalides — corrigés.
+
+### Risques
+
+- 🔴 Renumérotation des codes 2026 — couvert par test.
+- 🔴 Purge de l'archive GPS — couvert par test (rétention et vidage).
+- 🔴 Écrivains non gardés / séquence et indicateurs pollués — couverts par
+  tests (garde ORM, séquence, indicateurs publiés, filtre, scénario, MRV).
+- 🟠 `/tracking` à 5 min — décimation d'affichage ; distances calculées sur la
+  trace complète côté Navigation.
+- 🟡 KPI annuels 2024-2025 sans cargo/OPEX/MRV ; ports approximatifs ; GPS
+  absent avant le 2024-10-21 (à confirmer par Julien) ; sentinelle des sites
+  `select(Leg)` à écrire (lot 2).
+
+### Tests
+
+27 nouveaux tests (gardes de service, garde ORM ×3, renumérotation, filtre
+d'origine, escale, fenêtre d'années, séquence vivante, indicateurs publiés,
+filtre transverse, scénario, contrôle MRV, script legs sur le CSV réel + rejeu
++ collision, script positions + purge, consolidation GPS, parseur noon ×2
+générations, décimation). Suite complète rejouée (unit + integration +
+regression).
+
+### Ce qui n'est pas vérifié
+
+- Exécution des scripts locaux sur les vrais dossiers SharePoint (poste Julien).
+- Volume réel des positions et rendu de `/tracking` sur une année complète.
+- Comportement d'`import_towt_positions` sur PostgreSQL (les tests tournent sur
+  SQLite ; l'insertion en lot et le préchargement des clés sont standards).
+
+### Reste à faire
+
+Exécution staging (legs → GPS) ; lot 2 archive noon reports (ADR-014 D6,
+accepté) ; confirmation de la source GPS 08-10/2024 ; revue des 5 ports créés
+dans Admin → Ports ; sentinelle des sites `select(Leg)`.
+

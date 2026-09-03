@@ -2,17 +2,48 @@
 {% block title %}{% if leg %}Éditer {{ leg.leg_code }}{% else %}Nouveau leg{% endif %} — Planning{% endblock %}
 {% block head %}{{ super() }}
 <style>
-  .wizard-progress { display:flex; gap:var(--space-2); list-style:none; padding:0; margin:0 0 var(--space-5); flex-wrap:wrap; }
-  .wizard-progress li { display:flex; align-items:center; gap:var(--space-2); color:var(--gris); font-size:var(--text-sm); cursor:pointer; }
-  .wizard-progress li .dot { width:28px; height:28px; border-radius:999px; background:var(--gris-clair); color:var(--gris); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; transition:all .15s; }
-  .wizard-progress li.is-active .dot { background:var(--teal); color:#fff; box-shadow:0 0 0 4px rgba(13,89,102,.15); }
-  .wizard-progress li.is-active { color:var(--teal); font-weight:600; }
-  .wizard-progress li.is-done .dot { background:var(--vert); color:#fff; }
-  .wizard-nav { display:flex; justify-content:space-between; gap:var(--space-3); margin-top:var(--space-4); }
-  [data-wizard-submit] { display: none; }
+  /* Page unique « Créer un leg » (PLN-08) — voir docs/design/05-sequence-planification.md §9. */
+  .leg-page { display: flex; flex-direction: column; gap: var(--space-5); }
+  .leg-page .card h2 { font-size: var(--text-lg); margin-bottom: var(--space-3); }
+  .vessel-choices { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+  .vessel-choice { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 200px; min-height: 60px;
+    padding: var(--space-3) var(--space-4); background: var(--blanc); border: 1px solid var(--gris-clair);
+    border-radius: var(--radius-md); color: var(--text-2); font-size: var(--text-sm); cursor: pointer;
+    transition: all var(--duration-fast) var(--easing-out); }
+  .vessel-choice:hover { background: var(--sable-light); border-color: var(--teal-light); }
+  .vessel-choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .vessel-choice .name { color: var(--text-0); font-weight: var(--fw-semibold); font-size: var(--text-base); display: flex; gap: var(--space-2); align-items: baseline; }
+  .vessel-choice .sub { font-size: var(--text-xs); color: var(--text-2); }
+  .vessel-choice:has(input:checked) { background: var(--teal); border-color: var(--teal); color: var(--blanc-casse); }
+  .vessel-choice:has(input:checked) .name { color: var(--blanc); }
+  .vessel-choice:has(input:checked) .sub { color: var(--vert-light); }
+  .vessel-choice:has(input:focus-visible) { box-shadow: var(--shadow-glow); }
+  .port-column { display: flex; flex-direction: column; gap: var(--space-4); }
+  .port-shortcuts { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+  .port-search { position: relative; }
+  .port-results { position: absolute; left: 0; right: 0; z-index: 20; margin-top: 4px; background: var(--blanc);
+    border: 1px solid var(--gris-clair); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: var(--space-2);
+    display: flex; flex-direction: column; gap: 4px; }
+  .port-results:empty { display: none; }
+  .port-result { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%;
+    padding: var(--space-2) var(--space-3); min-height: 44px; background: transparent; border: none; border-radius: var(--radius-sm);
+    font-family: inherit; font-size: var(--text-sm); color: var(--text-0); text-align: left; cursor: pointer; }
+  .port-result:hover, .port-result:focus-visible { background: var(--sable-light); outline: none; }
+  .port-selected { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--gris-clair); border-radius: var(--radius-md); background: var(--sable-light); min-height: 44px; }
+  .port-selected[hidden] { display: none; }
+  .leg-recap { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); flex-wrap: wrap; }
+  .leg-recap .code { font-family: var(--font-mono); font-size: 20px; font-weight: var(--fw-semibold); color: var(--cuivre); }
+  .stay-row { display: flex; align-items: center; gap: var(--space-3); }
+  .stay-row input { width: 120px; }
+  details.nav-params summary { cursor: pointer; color: var(--teal); font-size: var(--text-sm); }
 </style>
 {% endblock %}
 {% block content %}
+
+{% set seq = suggestions if suggestions is defined and suggestions else {} %}
+{% set form_data = form if form is defined and form else {} %}
+{% set current_vessel_id = (leg.vessel_id if leg else (preselected_vessel_id if preselected_vessel_id is defined and preselected_vessel_id else (form_data.get('vessel_id')|int if form_data.get('vessel_id') else None))) %}
 
 <a href="/planning" class="btn btn-ghost mb-3">← Planning</a>
 
@@ -22,199 +53,192 @@
     <h1 class="display">Éditer leg <span class="mono text-accent">{{ leg.leg_code }}</span></h1>
   {% else %}
     <h1 class="display">Nouveau leg</h1>
-    <p class="text-muted">Démarche guidée : navire → origine/destination → dates → réservation.
+    <p class="text-muted">Une seule page : navire, départ et arrivée côte à côte, dates, réservation.
+       Le port de départ et les dates se pré-remplissent depuis la séquence du navire — tout reste modifiable.
        Ou <a href="/planning/legs/new-from-map">choisir les ports sur la carte</a>.</p>
   {% endif %}
 </header>
 
 {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
 
-<ol id="wizard-progress" class="wizard-progress">
-  <li data-step-dot="0" class="is-active"><span class="dot">1</span> Navire</li>
-  <li data-step-dot="1"><span class="dot">2</span> Origine / destination</li>
-  <li data-step-dot="2"><span class="dot">3</span> Dates ETD / ETA</li>
-  <li data-step-dot="3"><span class="dot">4</span> Réservation</li>
-</ol>
-
 <form method="post"
       action="{% if leg %}/planning/legs/{{ leg.id }}/edit{% else %}/planning/legs/new{% endif %}"
-      class="card" id="leg-form"
-      {% if suggestions is defined and suggestions %}
-      data-suggestions='{{ suggestions|tojson }}'
-      data-preselected-vessel="{{ preselected_vessel_id or '' }}"
-      {% endif %}>
+      class="leg-page" id="leg-form"
+      data-suggestions='{{ seq|tojson }}'
+      data-preselected-vessel="{{ current_vessel_id or '' }}"
+      data-edit-mode="{{ '1' if leg else '' }}">
   <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
 
-  {% if suggestions is defined and suggestions and not leg %}
-    <div id="leg-suggestion-banner" class="alert mb-3" style="display:none; background:var(--sable); border-left:3px solid var(--teal);">
+  {# ── 1. Navire : un bouton par navire, avec l'état de sa séquence ── #}
+  <section class="card">
+    <h2>Navire</h2>
+    <div class="vessel-choices" role="radiogroup" aria-label="Navire">
+      {% for v in vessels %}
+        {% set vs = seq.get(v.id) or seq.get(v.id|string) or {} %}
+        <label class="vessel-choice">
+          <input type="radio" name="vessel_id" value="{{ v.id }}" required
+                 data-default-speed="{{ v.default_speed_kn }}"
+                 data-default-elongation="{{ v.default_elongation }}"
+                 data-vessel-code="{{ v.code }}"
+                 {% if current_vessel_id == v.id %}checked{% endif %} />
+          <span class="name"><span class="mono" style="font-size:var(--text-sm);">{{ v.code }}</span><span>{{ v.name }}</span></span>
+          <span class="sub">
+            {% if vs and not vs.no_legs %}
+              {% if vs.from_phase == 'en_mer' %}En mer{% elif vs.from_phase == 'a_quai' %}À quai {{ vs.from_pod_locode }}{% elif vs.from_phase == 'termine' %}Terminé{% else %}Planifié{% endif %}
+              · {{ vs.from_leg_code }} {{ vs.from_pol_locode }} → {{ vs.from_pod_locode }}
+              · {% if vs.from_ata %}ATA {{ vs.from_ata }}{% else %}ETA {{ vs.from_eta }}{% endif %}
+            {% else %}Aucun leg planifié{% endif %}
+          </span>
+        </label>
+      {% endfor %}
+    </div>
+    {% if not leg %}
+    <div id="leg-suggestion-banner" class="alert mt-3" style="display:none; background:var(--sable); border-left:3px solid var(--teal); margin-bottom:0;">
+      <span class="pill pill-info" style="margin-right:var(--space-2);">Séquence</span>
       <span id="leg-suggestion-text"></span>
+      {# Le dernier leg par ETD n'est pas toujours celui après lequel on
+         enchaîne (un voyage saisi longtemps à l'avance capte le défaut) :
+         le leg de référence est choisi explicitement ici, et l'ETD, le POL,
+         l'escale et le rang en sont redérivés. #}
+      <span id="leg-chain-picker" class="flex gap-2" style="display:none; align-items:center; width:100%; margin-top:var(--space-2);">
+        <label for="leg-chain-after" class="text-sm" style="white-space:nowrap;">Chaîner après</label>
+        <select id="leg-chain-after" style="max-width:32rem;"></select>
+      </span>
       <button type="button" id="leg-suggestion-dismiss" class="btn btn-ghost btn-xs" style="margin-left:var(--space-2);">Effacer la suggestion</button>
     </div>
-  {% endif %}
+    {% endif %}
+  </section>
 
-  {# ── Étape 1 : Navire ── #}
-  <fieldset class="wizard-step" data-step="1" style="border:none;padding:0;margin:0;">
-    <h2>Navire</h2>
-    <div class="grid grid-3 gap-3">
-      <div class="field">
-        <label for="vessel_id">Navire</label>
-        <select id="vessel_id" name="vessel_id" required>
-          {% for v in vessels %}
-            <option value="{{ v.id }}"
-                    data-default-speed="{{ v.default_speed_kn }}"
-                    data-default-elongation="{{ v.default_elongation }}"
-                    {% if leg and leg.vessel_id == v.id %}selected{% endif %}>
-              {{ v.code }} — {{ v.name }} ({{ v.default_speed_kn }} kn, ×{{ v.default_elongation }})
-            </option>
-          {% endfor %}
-        </select>
+  {# ── 2. Départ / Arrivée côte à côte ── #}
+  {# PLN-07 — raccourcis pilotés par Port.is_shortcut (admin) ; repli sur les
+     deux ports habituels NEWTOWT : São Sebastião (BRSSO) et Fécamp (FRFEC). #}
+  {% set shortcut_ports = ports | selectattr('is_shortcut') | list %}
+  {% macro port_column(prefix, field_name, title, current_id) %}
+    {% set cur = (ports | selectattr('id', 'equalto', current_id) | list | first) if current_id else None %}
+    <section class="card port-column">
+      <div class="flex justify-between items-center gap-2">
+        <h2 style="margin:0;">{{ title }}</h2>
+        <span class="pill pill-neutral" data-port-state="{{ prefix }}">{% if cur %}Sélectionné{% else %}À choisir{% endif %}</span>
       </div>
-      <div class="field">
-        <label for="transit_speed_kn">Vitesse traversée (kn)</label>
-        <input id="transit_speed_kn" type="number" step="0.1" min="0" max="30" name="transit_speed_kn"
-               value="{{ leg.transit_speed_kn if leg and leg.transit_speed_kn is not none else '' }}"
-               placeholder="défaut navire" />
-        <small class="text-muted">Vide ⇒ vitesse par défaut du navire.</small>
-      </div>
-      <div class="field">
-        <label for="elongation_coef">Coefficient d'élongation</label>
-        <input id="elongation_coef" type="number" step="0.01" min="1" max="3" name="elongation_coef"
-               value="{{ leg.elongation_coef if leg and leg.elongation_coef is not none else '' }}"
-               placeholder="défaut navire (1.15)" />
-        <small class="text-muted">Multiplicateur distance orthodromique (vent, courants).</small>
-      </div>
-    </div>
-  </fieldset>
-
-  {# ── Étape 2 : Origine / destination ── #}
-  <fieldset class="wizard-step" data-step="2" hidden style="border:none;padding:0;margin:0;">
-    <h2>Origine / destination</h2>
-    {# PLN-07 — raccourcis pilotés par Port.is_shortcut (admin) ; repli sur la
-       liste historique si aucun port n'est marqué (pas de régression). #}
-    {% set shortcut_ports = ports | selectattr('is_shortcut') | list %}
-    <div class="leg-shortcuts grid grid-2 gap-4 mb-3">
       <div>
-        <span class="kicker">Raccourcis POL (départ)</span>
-        <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+        <span class="kicker">Ports habituels</span>
+        <div class="port-shortcuts mt-2">
           {% if shortcut_ports %}
-          {% for p in shortcut_ports %}
-          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="{{ p.locode }}">{{ p.country|flag }} {{ p.name }} <span class="mono text-muted">{{ p.locode }}</span></button>
-          {% endfor %}
+            {% for p in shortcut_ports %}
+              <button type="button" class="btn btn-secondary btn-sm" data-shortcut="{{ prefix }}" data-locode="{{ p.locode }}">{{ p.name }} <span class="mono text-muted">{{ p.locode }}</span></button>
+            {% endfor %}
           {% else %}
-          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="FRFEC">🇫🇷 Fécamp <span class="mono text-muted">FRFEC</span></button>
-          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="BRSSO">🇧🇷 São Sebastião <span class="mono text-muted">BRSSO</span></button>
-          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="USNYC">🇺🇸 New York <span class="mono text-muted">USNYC</span></button>
-          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pol" data-locode="FRLEH">🇫🇷 Le Havre <span class="mono text-muted">FRLEH</span></button>
+            <button type="button" class="btn btn-secondary btn-sm" data-shortcut="{{ prefix }}" data-locode="BRSSO">São Sebastião <span class="mono text-muted">BRSSO</span></button>
+            <button type="button" class="btn btn-secondary btn-sm" data-shortcut="{{ prefix }}" data-locode="FRFEC">Fécamp <span class="mono text-muted">FRFEC</span></button>
           {% endif %}
         </div>
       </div>
-      <div>
-        <span class="kicker">Raccourcis POD (arrivée)</span>
-        <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
-          {% if shortcut_ports %}
-          {% for p in shortcut_ports %}
-          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="{{ p.locode }}">{{ p.country|flag }} {{ p.name }} <span class="mono text-muted">{{ p.locode }}</span></button>
-          {% endfor %}
-          {% else %}
-          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="BRSSO">🇧🇷 São Sebastião <span class="mono text-muted">BRSSO</span></button>
-          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="FRFEC">🇫🇷 Fécamp <span class="mono text-muted">FRFEC</span></button>
-          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="USNYC">🇺🇸 New York <span class="mono text-muted">USNYC</span></button>
-          <button type="button" class="btn btn-secondary btn-sm" data-shortcut="pod" data-locode="FRLEH">🇫🇷 Le Havre <span class="mono text-muted">FRLEH</span></button>
-          {% endif %}
+      <div class="grid grid-3 gap-2">
+        <div class="field" style="margin:0;"><label for="{{ prefix }}-zone">Zone</label><select id="{{ prefix }}-zone" data-cascade-zone="{{ prefix }}"></select></div>
+        <div class="field" style="margin:0;"><label for="{{ prefix }}-country">Pays</label><select id="{{ prefix }}-country" data-cascade-country="{{ prefix }}"></select></div>
+        <div class="field" style="margin:0;">
+          <label for="{{ field_name }}">Port</label>
+          <select id="{{ field_name }}" name="{{ field_name }}" required data-cascade-port="{{ prefix }}">
+            {% if cur %}<option value="{{ cur.id }}" selected>{{ cur.locode }} — {{ cur.name }} ({{ cur.country }})</option>{% endif %}
+          </select>
         </div>
       </div>
-    </div>
+      <div class="field port-search" style="margin:0;">
+        <label for="{{ prefix }}-search">Rechercher un port</label>
+        <input id="{{ prefix }}-search" type="search" autocomplete="off" data-port-search="{{ prefix }}"
+               placeholder="Nom ou LOCODE — tous les ports, sans filtre zone / pays" />
+        <div class="port-results" data-port-results="{{ prefix }}" role="listbox"></div>
+      </div>
+      <div class="port-selected" data-port-selected="{{ prefix }}" {% if not cur %}hidden{% endif %}>
+        <div style="display:flex; flex-direction:column;">
+          <div class="flex gap-2 items-center">
+            <strong data-port-selected-name>{{ cur.name if cur else '' }}</strong>
+            <span class="mono" style="color:var(--teal); font-weight:600;" data-port-selected-locode>{{ cur.locode if cur else '' }}</span>
+            <span class="text-muted text-sm" data-port-selected-country>{{ cur.country if cur else '' }}</span>
+          </div>
+          <small class="text-muted" data-port-selected-hint></small>
+        </div>
+      </div>
+    </section>
+  {% endmacro %}
+  <div class="grid grid-2 gap-4">
+    {{ port_column('pol', 'departure_port_id', 'Départ — port de chargement (POL)', leg.departure_port_id if leg else (form_data.get('departure_port_id')|int if form_data.get('departure_port_id') else None)) }}
+    {{ port_column('pod', 'arrival_port_id', 'Arrivée — port de déchargement (POD)', leg.arrival_port_id if leg else (form_data.get('arrival_port_id')|int if form_data.get('arrival_port_id') else None)) }}
+  </div>
+
+  {# ── 3. Dates (échelle : la journée) ── #}
+  <section class="card">
+    <h2>Dates</h2>
     <div class="grid grid-2 gap-4">
-      <fieldset style="border:1px solid var(--gris-clair); padding:var(--space-3); border-radius:var(--radius-md);">
-        <legend class="kicker">Port de départ (POL)</legend>
-        <div class="grid grid-2 gap-2 mb-2">
-          <div class="field" style="margin:0;"><label>Zone</label><select id="pol-zone" data-cascade-zone="pol"></select></div>
-          <div class="field" style="margin:0;"><label>Pays</label><select id="pol-country" data-cascade-country="pol"></select></div>
+      <div class="field" style="margin:0;">
+        <label for="etd">ETD — jour de départ prévu</label>
+        <input id="etd" type="date" name="etd" required value="{% if leg %}{{ leg.etd.strftime('%Y-%m-%d') }}{% else %}{{ form_data.get('etd', '') }}{% endif %}" />
+        <small class="text-muted" id="etd-hint">Pré-rempli depuis le leg précédent du navire (arrivée + escale, jour ouvré du port). Modifiable.</small>
+      </div>
+      <div class="field" style="margin:0;">
+        <label for="eta">ETA — jour d'arrivée prévue</label>
+        <input id="eta" type="date" name="eta" required value="{% if leg %}{{ leg.eta.strftime('%Y-%m-%d') }}{% else %}{{ form_data.get('eta', '') }}{% endif %}" />
+        <small class="text-muted"><span id="eta-hint">—</span> · Calculée depuis la distance et la vitesse du navire, arrondie au jour. Modifiable.</small>
+      </div>
+    </div>
+    <div class="grid grid-2 gap-4 mt-3" style="align-items:end;">
+      <div class="field" style="margin:0;">
+        <label for="port_stay_planned_days">Escale prévue à l'arrivée</label>
+        <div class="stay-row">
+          <input id="port_stay_planned_days" type="number" name="port_stay_planned_days" min="0" max="30" step="1"
+                 value="{% if leg and leg.port_stay_planned_hours is not none %}{{ ((leg.port_stay_planned_hours + 23) // 24) }}{% else %}{{ form_data.get('port_stay_planned_days', '') }}{% endif %}" placeholder="2" />
+          <span>jours</span>
         </div>
-        <div class="field" style="margin:0;">
-          <label>Port</label>
-          <select id="departure_port_id" name="departure_port_id" required data-cascade-port="pol">
-            {% if leg %}<option value="{{ leg.departure_port_id }}" selected>(actuel #{{ leg.departure_port_id }})</option>{% endif %}
-          </select>
+        <small class="text-muted">Sert au départ suggéré du leg suivant du navire.</small>
+      </div>
+      <details class="nav-params">
+        <summary>Paramètres de navigation — vitesse et élongation (défauts du navire)</summary>
+        <div class="grid grid-2 gap-3 mt-2">
+          <div class="field" style="margin:0;">
+            <label for="transit_speed_kn">Vitesse traversée (kn)</label>
+            <input id="transit_speed_kn" type="number" step="0.1" min="0" max="30" name="transit_speed_kn"
+                   value="{{ leg.transit_speed_kn if leg and leg.transit_speed_kn is not none else '' }}" placeholder="défaut navire" />
+          </div>
+          <div class="field" style="margin:0;">
+            <label for="elongation_coef">Coefficient d'élongation</label>
+            <input id="elongation_coef" type="number" step="0.01" min="1" max="3" name="elongation_coef"
+                   value="{{ leg.elongation_coef if leg and leg.elongation_coef is not none else '' }}" placeholder="défaut navire (1.15)" />
+          </div>
         </div>
-      </fieldset>
-      <fieldset style="border:1px solid var(--gris-clair); padding:var(--space-3); border-radius:var(--radius-md);">
-        <legend class="kicker">Port d'arrivée (POD)</legend>
-        <div class="grid grid-2 gap-2 mb-2">
-          <div class="field" style="margin:0;"><label>Zone</label><select id="pod-zone" data-cascade-zone="pod"></select></div>
-          <div class="field" style="margin:0;"><label>Pays</label><select id="pod-country" data-cascade-country="pod"></select></div>
-        </div>
-        <div class="field" style="margin:0;">
-          <label>Port</label>
-          <select id="arrival_port_id" name="arrival_port_id" required data-cascade-port="pod">
-            {% if leg %}<option value="{{ leg.arrival_port_id }}" selected>(actuel #{{ leg.arrival_port_id }})</option>{% endif %}
-          </select>
-        </div>
-      </fieldset>
+      </details>
     </div>
-  </fieldset>
+  </section>
 
-  {# ── Étape 3 : Dates ETD / ETA + escale ── #}
-  <fieldset class="wizard-step" data-step="3" hidden style="border:none;padding:0;margin:0;">
-    <h2>Dates ETD / ETA</h2>
-    <div class="grid grid-3 gap-3">
-      <div class="field">
-        <label for="etd">ETD (départ prévu)</label>
-        <input id="etd" type="datetime-local" name="etd" required value="{% if leg %}{{ leg.etd.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
-      </div>
-      <div class="field">
-        <label for="eta">ETA (arrivée prévue)</label>
-        <input id="eta" type="datetime-local" name="eta" required value="{% if leg %}{{ leg.eta.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
-      </div>
-      <div class="field">
-        <label>Distance · durée estimées</label>
-        <div id="eta-hint" class="mono text-muted">—</div>
-      </div>
+  {# ── 4. Réservation ── #}
+  <section class="card">
+    <h2>Réservation</h2>
+    <div class="field field-check" style="margin:0;">
+      <input id="is_bookable" type="checkbox" name="is_bookable" {% if (leg and leg.is_bookable) or form_data.get('is_bookable') == 'on' %}checked{% endif %} />
+      <label for="is_bookable">Ouvrir à la réservation</label>
     </div>
-    <h2 class="mt-4">Escale à programmer</h2>
-    <div class="grid grid-3 gap-3">
-      <div class="field">
-        <label for="port_stay_planned_hours">Durée d'escale prévue (heures)</label>
-        <input id="port_stay_planned_hours" type="number" name="port_stay_planned_hours" min="0" max="720" step="1"
-               value="{% if leg and leg.port_stay_planned_hours is not none %}{{ leg.port_stay_planned_hours }}{% endif %}" placeholder="48" />
-        <small class="text-muted">Temps de quai prévu à l'arrivée. Sert au planning du leg aval du même navire.</small>
-      </div>
-    </div>
-  </fieldset>
-
-  {# ── Étape 4 : Réservation ── #}
-  <fieldset class="wizard-step" data-step="4" hidden style="border:none;padding:0;margin:0;">
-    <h2>Ouverture à la réservation</h2>
-    <div class="grid grid-3 gap-3">
-      <div class="field field-check">
-        <input id="is_bookable" type="checkbox" name="is_bookable" {% if leg and leg.is_bookable %}checked{% endif %} />
-        <label for="is_bookable">Ouvrir aux réservations clients</label>
-      </div>
-      <div class="field">
-        <label for="public_capacity_palettes">Capacité publique (palettes)</label>
-        <input id="public_capacity_palettes" type="number" name="public_capacity_palettes" min="1" max="2000"
-               value="{% if leg %}{{ leg.public_capacity_palettes or '' }}{% endif %}" placeholder="978" />
-      </div>
-      <div class="field">
-        <label for="booking_close_at">Clôture des réservations</label>
-        <input id="booking_close_at" type="datetime-local" name="booking_close_at"
-               value="{% if leg and leg.booking_close_at %}{{ leg.booking_close_at.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" />
-        <small class="text-muted">Vide ⇒ <strong>auto ETD − 48 h</strong>.</small>
-      </div>
-    </div>
-
-    <div class="alert alert-info" style="margin-top:var(--space-3);">
-      <strong>Tarification :</strong> le tarif par palette se gère dans
-      <a href="/commercial/grids"><strong>Commercial → Grilles tarifaires</strong></a>
-      puis attaché au leg via une <a href="/commercial/offers/new">offre</a> ou une
-      <a href="/commercial/orders/new">commande</a>.
-    </div>
-
+    <small class="text-muted">Clôture automatique des réservations à ETD − 48 h · capacité publique = capacité du navire · tarif géré dans
+      <a href="/commercial/grids">Commercial → Grilles tarifaires</a>.</small>
     {% if leg %}
+      <details class="nav-params mt-3">
+        <summary>Options de réservation — capacité publique, clôture</summary>
+        <div class="grid grid-2 gap-3 mt-2">
+          <div class="field" style="margin:0;">
+            <label for="public_capacity_palettes">Capacité publique (palettes)</label>
+            <input id="public_capacity_palettes" type="number" name="public_capacity_palettes" min="1" max="2000"
+                   value="{{ leg.public_capacity_palettes or '' }}" placeholder="capacité du navire" />
+          </div>
+          <div class="field" style="margin:0;">
+            <label for="booking_close_at">Clôture des réservations</label>
+            <input id="booking_close_at" type="date" name="booking_close_at"
+                   value="{% if leg.booking_close_at %}{{ leg.booking_close_at.strftime('%Y-%m-%d') }}{% endif %}" />
+            <small class="text-muted">Vide ⇒ <strong>auto ETD − 48 h</strong>.</small>
+          </div>
+        </div>
+      </details>
       {# Verrou optimiste : refuse l'enregistrement si le leg a été modifié
          par quelqu'un d'autre depuis l'affichage du formulaire. #}
       <input type="hidden" name="expected_updated_at" value="{{ leg.updated_at.isoformat() if leg.updated_at else '' }}" />
-      <div class="alert alert-info" style="margin-top:var(--space-4);">
+      <div class="alert alert-info" style="margin-top:var(--space-4); margin-bottom:0;">
         <div class="field field-check" style="background:transparent; border:none; padding:0;">
           <input id="cascade" type="checkbox" name="cascade" checked />
           <label for="cascade"><strong>Cascade automatique</strong></label>
@@ -225,20 +249,22 @@
         </p>
       </div>
     {% endif %}
-  </fieldset>
+  </section>
 
-  {# ── Navigation wizard ── #}
-  <div class="wizard-nav">
-    <button type="button" class="btn btn-ghost" data-wizard-prev>← Précédent</button>
+  {# ── Récapitulatif + actions ── #}
+  <section class="card leg-recap">
+    <div class="flex items-center gap-4" style="flex-wrap:wrap;">
+      <span class="kicker">Récapitulatif</span>
+      <span class="code" data-recap-code>{% if leg %}{{ leg.leg_code }}{% else %}—{% endif %}</span>
+      <span class="text-sm" data-recap-text>{% if leg %}{{ leg.leg_code }}{% else %}Choisissez un navire, les ports et les dates.{% endif %}</span>
+    </div>
     <div class="flex gap-2">
       <a href="{% if leg %}/planning/legs/{{ leg.id }}{% else %}/planning{% endif %}" class="btn btn-ghost">Annuler</a>
-      <button type="button" class="btn btn-primary" data-wizard-next>Suivant →</button>
-      <button type="submit" class="btn btn-primary btn-lg" data-wizard-submit hidden>{% if leg %}Enregistrer{% else %}Créer le leg{% endif %}</button>
+      <button type="submit" class="btn btn-primary btn-lg">{% if leg %}Enregistrer{% else %}Créer le leg{% endif %}</button>
     </div>
-  </div>
+  </section>
 </form>
 
 <script src="/static/js/leg-cascade.js" defer></script>
 <script src="/static/js/leg-form-suggest.js" defer></script>
-<script src="/static/js/leg-wizard.js" defer></script>
 {% endblock %}

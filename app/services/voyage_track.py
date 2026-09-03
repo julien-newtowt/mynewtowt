@@ -15,6 +15,7 @@ Lecture seule : aucune écriture en base.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -43,6 +44,10 @@ class TrackMetrics:
     duration_hours: float | None  # durée écoulée depuis le départ
     avg_speed_kn: float | None  # vitesse moyenne réelle
     is_active: bool  # leg en cours (pas encore arrivé)
+    # True quand la théorique n'est pas celle persistée sur le leg mais un
+    # repli calculé au rendu depuis les coordonnées des ports (legs anciens
+    # ou créés avant que la distance ne soit calculée à l'enregistrement).
+    theoretical_is_fallback: bool = False
 
     @property
     def real_elongation(self) -> float | None:
@@ -82,23 +87,40 @@ async def positions_in_window(
     vessel_id: int,
     start: datetime | None = None,
     end: datetime | None = None,
+    light: bool = False,
 ) -> list[VesselPosition]:
-    """Positions d'un navire dans une fenêtre [start, end], triées chronologiquement."""
-    stmt = select(VesselPosition).where(VesselPosition.vessel_id == vessel_id)
+    """Positions d'un navire dans une fenêtre [start, end], triées chronologiquement.
+
+    ``light=True`` renvoie des lignes allégées (``recorded_at``, ``latitude``,
+    ``longitude``, ``sog_kn``, ``cog_deg`` — mêmes attributs, pas d'instance ORM
+    ni d'identity map) : indispensable pour les traces d'archive au pas de 5 min
+    (≈ 6 000 points par leg, ≈ 105 000 par navire et par an, ADR-014).
+    """
+    if light:
+        stmt = select(
+            VesselPosition.recorded_at,
+            VesselPosition.latitude,
+            VesselPosition.longitude,
+            VesselPosition.sog_kn,
+            VesselPosition.cog_deg,
+        ).where(VesselPosition.vessel_id == vessel_id)
+    else:
+        stmt = select(VesselPosition).where(VesselPosition.vessel_id == vessel_id)
     if start is not None:
         stmt = stmt.where(VesselPosition.recorded_at >= start)
     if end is not None:
         stmt = stmt.where(VesselPosition.recorded_at <= end)
     stmt = stmt.order_by(VesselPosition.recorded_at.asc())
-    return list((await db.execute(stmt)).scalars().all())
+    result = await db.execute(stmt)
+    return list(result.all()) if light else list(result.scalars().all())
 
 
 async def positions_for_leg(
-    db: AsyncSession, leg: Leg, *, now: datetime | None = None
+    db: AsyncSession, leg: Leg, *, now: datetime | None = None, light: bool = False
 ) -> list[VesselPosition]:
     """Positions satcom rattachées à un leg (même navire, fenêtre départ→arrivée)."""
     start, end, _ = leg_window(leg, now=now)
-    return await positions_in_window(db, vessel_id=leg.vessel_id, start=start, end=end)
+    return await positions_in_window(db, vessel_id=leg.vessel_id, start=start, end=end, light=light)
 
 
 # SEC-05 — au-delà de cette vitesse implicite, un segment est considéré comme
@@ -131,10 +153,46 @@ def actual_distance_nm(
     return total
 
 
+def theoretical_distance_nm(
+    leg: Leg,
+    *,
+    dep_port: Port | None = None,
+    arr_port: Port | None = None,
+) -> tuple[float | None, bool]:
+    """(distance théorique, repli ?) du leg.
+
+    Priorité à ``leg.distance_nm`` (persistée au create/update). À défaut, on
+    la **recalcule au rendu** depuis les coordonnées des ports — sinon les
+    colonnes THÉORIQUE / ÉCART / ALLONG. restent vides pour tous les legs dont
+    la distance n'a jamais été persistée, sans que rien ne l'explique.
+
+    Renvoie ``(None, False)`` quand même le repli est impossible (port sans
+    coordonnées) : c'est le seul cas où l'UI doit afficher « — »
+    (``audit_planning_sequence`` nomme alors le port fautif).
+    """
+    if leg.distance_nm is not None:
+        return float(leg.distance_nm), False
+    if (
+        dep_port is None
+        or arr_port is None
+        or dep_port.latitude is None
+        or dep_port.longitude is None
+        or arr_port.latitude is None
+        or arr_port.longitude is None
+    ):
+        return None, False
+    gc = haversine_nm(dep_port.latitude, dep_port.longitude, arr_port.latitude, arr_port.longitude)
+    # Même convention que ``planning.compute_effective_distance_nm`` :
+    # orthodromie × coefficient d'élongation du leg (1.0 s'il est absent —
+    # le défaut navire n'est pas accessible sans requête DB).
+    return round(gc * (leg.elongation_coef or 1.0), 2), True
+
+
 def compute_metrics(
     positions: list[VesselPosition],
     leg: Leg,
     *,
+    dep_port: Port | None = None,
     arr_port: Port | None = None,
     now: datetime | None = None,
 ) -> TrackMetrics:
@@ -145,7 +203,9 @@ def compute_metrics(
     # Filtre anti-saut actif sur la métrique consommée par l'UI (SEC-05).
     actual = actual_distance_nm(positions, max_speed_kn=MAX_PLAUSIBLE_SPEED_KN)
 
-    theoretical: float | None = float(leg.distance_nm) if leg.distance_nm is not None else None
+    theoretical, theoretical_is_fallback = theoretical_distance_nm(
+        leg, dep_port=dep_port, arr_port=arr_port
+    )
 
     # Distance restante : dernier point connu → port d'arrivée (0 si arrivé).
     remaining: float | None = None
@@ -179,6 +239,7 @@ def compute_metrics(
         duration_hours=duration_hours,
         avg_speed_kn=avg_speed,
         is_active=is_active,
+        theoretical_is_fallback=theoretical_is_fallback,
     )
 
 
@@ -235,11 +296,12 @@ async def annual_navigation_kpis(
 
     rows: list[NavigationKpiRow] = []
     for leg in legs:
-        positions = await positions_for_leg(db, leg, now=now)
+        positions = await positions_for_leg(db, leg, now=now, light=True)
         if not positions:
             continue
+        dep = await db.get(Port, leg.departure_port_id)
         arr = await db.get(Port, leg.arrival_port_id)
-        metrics = compute_metrics(positions, leg, arr_port=arr, now=now)
+        metrics = compute_metrics(positions, leg, dep_port=dep, arr_port=arr, now=now)
         avg_sog, max_sog = sog_stats(positions)
         rows.append(
             NavigationKpiRow(
@@ -266,8 +328,9 @@ async def navigation_aggregate(db: AsyncSession, legs, *, now: datetime | None =
         if not positions:
             continue
         legs_with_gps += 1
+        dep = await db.get(Port, leg.departure_port_id) if leg.departure_port_id else None
         arr = await db.get(Port, leg.arrival_port_id) if leg.arrival_port_id else None
-        m = compute_metrics(positions, leg, arr_port=arr, now=now)
+        m = compute_metrics(positions, leg, dep_port=dep, arr_port=arr, now=now)
         total_real += m.actual_nm
         if m.real_elongation is not None:
             elongations.append(m.real_elongation)
@@ -302,6 +365,29 @@ def downsample_for_weather(
     if positions[-1] is not kept[-1]:
         kept.append(positions[-1])
     return kept
+
+
+# Plafond de points sérialisés vers la carte d'historique. Les archives TOWT
+# (ADR-014) sont au pas de 5 min : ~105 000 points par navire et par an — un
+# JSON de plusieurs Mo dans la page. Le calcul de distance (``actual_distance_nm``)
+# garde toujours la résolution complète ; seul l'AFFICHAGE est décimé.
+MAX_TRACK_POINTS_HISTORY = 4000
+
+
+def downsample(positions: Sequence[VesselPosition], *, max_points: int) -> list[VesselPosition]:
+    """Décime une trace par pas régulier en conservant le premier et le dernier point.
+
+    Ne modifie pas l'ordre ; ``max_points <= 0`` ou trace déjà courte → inchangé.
+    """
+    pts = list(positions)
+    if max_points <= 0 or len(pts) <= max_points:
+        return pts
+    if max_points == 1:
+        return [pts[0], pts[-1]]
+    step = (len(pts) - 1) / (max_points - 1)
+    keep = [pts[round(i * step)] for i in range(max_points - 1)]
+    keep.append(pts[-1])
+    return keep
 
 
 def positions_payload(positions: list[VesselPosition]) -> list[dict]:

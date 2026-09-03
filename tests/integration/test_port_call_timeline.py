@@ -25,7 +25,8 @@ def test_planned_only():
     assert len(steps) == 5
     states = {s["key"]: s["state"] for s in steps}
     assert states["planifie"] == "done"
-    assert states["arrivee"] == "current"  # 1re étape non terminée
+    assert states["appareillage"] == "current"  # 1re étape non terminée : le départ
+    assert states["arrivee"] == "pending"
     assert states["operations"] == "pending"
     assert states["cloture"] == "pending"
 
@@ -34,12 +35,12 @@ def test_arrived_with_ops_in_progress():
     from app.services.leg_overview import port_call_steps
 
     t = datetime(2026, 1, 1, tzinfo=UTC)
-    leg = _leg(ata=t)
+    leg = _leg(ata=t, atd=t)  # séquence respectée : départ déclaré avant arrivée
     ops = [_op(end=t), _op(start=t)]  # une terminée, une en cours → pas toutes finies
     states = {s["key"]: s["state"] for s in port_call_steps(leg, ops)}
+    assert states["appareillage"] == "done"
     assert states["arrivee"] == "done"
     assert states["operations"] == "current"
-    assert states["appareillage"] == "pending"
 
 
 def test_fully_closed():

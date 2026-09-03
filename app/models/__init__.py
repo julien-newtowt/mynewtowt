@@ -64,7 +64,6 @@ from app.models.known_device import KnownDevice
 from app.models.leg import Leg
 from app.models.leg_attachment import LegAttachment
 from app.models.mfa_recovery_code import MfaRecoveryCode
-from app.models.mrv import MRVEvent, MRVParameter
 from app.models.mrv_dataset import MrvBunkeringEntry, MrvLogAbstractEntry
 from app.models.nav_event import (
     AnchoringEvent,
@@ -136,6 +135,14 @@ from app.models.sof_event import (
 )
 from app.models.stowage import StowageItem, StowagePlan, StowageZoneSpec
 from app.models.stripe_event import StripeWebhookEvent
+
+# Support applicatif (« Assistance ») — à ne pas confondre avec `ticket` ci-dessous,
+# qui porte les incidents d'exploitation portuaire. Cf. SPEC_SUPPORT_TICKETING §1.
+from app.models.support import (
+    SupportTicket,
+    SupportTicketAttachment,
+    SupportTicketComment,
+)
 from app.models.ticket import Ticket, TicketComment
 from app.models.user import User
 from app.models.validation import (
@@ -215,8 +222,6 @@ __all__ = [
     "LegAttachment",
     "LegFinance",
     "LegKPI",
-    "MRVEvent",
-    "MRVParameter",
     "MaradCrewSchedule",
     "MfaRecoveryCode",
     "MrvBunkeringEntry",
@@ -282,6 +287,9 @@ __all__ = [
     "StowagePlan",
     "StowageZoneSpec",
     "StripeWebhookEvent",
+    "SupportTicket",
+    "SupportTicketAttachment",
+    "SupportTicketComment",
     "Ticket",
     "TicketComment",
     "User",

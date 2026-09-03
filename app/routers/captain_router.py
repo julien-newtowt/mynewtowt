@@ -43,9 +43,10 @@ from app.models.user import User
 from app.models.vessel import Vessel
 from app.models.watch_log import WatchLog
 from app.permissions import require_permission
-from app.services import notifications
+from app.services import notifications, voyage_transitions
 from app.services import weather as wx
 from app.services.activity import record as activity_record
+from app.services.planning import PlanningError, assert_leg_mutable
 from app.services.signature import (
     compute_cargo_doc_hash,
     compute_noon_hash,
@@ -54,17 +55,21 @@ from app.services.signature import (
     ensure_unlocked,
     sign_record,
 )
-from app.services.voyage_events import (
-    ARRIVAL_SOF_TYPES,
-    DEPARTURE_SOF_TYPES,
-    on_vessel_arrived,
-    on_vessel_departed,
-)
+from app.services.voyage_events import ARRIVAL_SOF_TYPES, DEPARTURE_SOF_TYPES
 from app.templating import templates
 
 logger = logging.getLogger("captain")
 
 router = APIRouter(prefix="/captain", tags=["captain"])
+
+
+def _refuse_archive(leg: Leg) -> None:
+    """Un leg d'archive TOWT (ADR-014) ne reçoit ni SOF ni décalage d'ETA."""
+    try:
+        assert_leg_mutable(leg)
+    except PlanningError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
 
 MENTION_RE = re.compile(r"@([A-Za-z0-9_]{2,40})")
 
@@ -234,6 +239,7 @@ async def add_sof_event(
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
+    _refuse_archive(leg)
     e = SofEvent(
         leg_id=leg_id,
         event_type=event_type,
@@ -259,14 +265,39 @@ async def add_sof_event(
         entity_label=f"{event_type}@{occurred_at}",
         ip_address=_client_ip(request),
     )
-    # LOT 14 — la synchro SOF→MRVEvent (``mrv_sync``) est éteinte (module archivé).
+    # La synchro SOF→MRVEvent (``mrv_sync``) a été supprimée (legacy retiré).
     # Les Departure/Arrival de la capture v2 se pré-remplissent depuis le SOF.
-    # FLX-02 — les événements réels du bord pilotent les statuts (ATD/ATA + bookings).
+    # FLX-02 / PLN-SEQ — les événements réels du bord pilotent la séquence via
+    # l'orchestrateur unique (ATD/ATA à l'heure de l'événement — plus « now() » —,
+    # bookings, recalcul ETA + legs aval, historisation, rollup, notifications).
+    # Le SOF étant lui-même le déclencheur, pas de double inscription
+    # (``create_sof=False``). Une violation de séquence (EOSP sans SOSP) ne
+    # bloque pas l'enregistrement du SOF : elle est loggée, le réel n'est pas
+    # posé — la checklist de clôture la fera remonter.
     try:
+        actor_name = user.full_name or user.username
         if event_type in DEPARTURE_SOF_TYPES:
-            await on_vessel_departed(db, leg)
+            await voyage_transitions.declare_departure(
+                db,
+                leg,
+                at=e.occurred_at,
+                actor_id=user.id,
+                actor_name=actor_name,
+                create_sof=False,
+            )
         elif event_type in ARRIVAL_SOF_TYPES:
-            await on_vessel_arrived(db, leg)
+            await voyage_transitions.declare_arrival(
+                db,
+                leg,
+                at=e.occurred_at,
+                actor_id=user.id,
+                actor_name=actor_name,
+                create_sof=False,
+            )
+    except PlanningError as seq_err:
+        # Séquence violée (EOSP sans SOSP…) ou leg d'archive : refus normal,
+        # pas une exception à tracer.
+        logger.warning("SOF %s hors séquence (leg %s) : %s", event_type, leg_id, seq_err)
     except Exception:
         logger.exception("voyage event hook failed for leg %s (%s)", leg_id, event_type)
     return RedirectResponse(url=f"/captain?leg_id={leg_id}", status_code=303)
@@ -298,6 +329,7 @@ async def declare_eta_shift(
     leg = await db.get(Leg, leg_id)
     if leg is None:
         raise HTTPException(status_code=404)
+    _refuse_archive(leg)
     try:
         parsed_eta = parse_form_datetime(new_eta)
     except InvalidLegDates as e:
@@ -848,8 +880,7 @@ async def edit_sof_event(
 ):
     """ONB-01 — corrige un SOF **non signé** (type/label/heure/position/notes).
 
-    Interdit dès que le SOF est signé (``is_locked``) → 409. L'éventuel
-    MRVEvent dérivé est réaligné (best-effort) pour rester cohérent.
+    Interdit dès que le SOF est signé (``is_locked``) → 409.
     """
     e = await db.get(SofEvent, event_id)
     if e is None:
@@ -868,7 +899,7 @@ async def edit_sof_event(
     e.longitude = longitude
     e.notes = (notes or "").strip() or None
     await db.flush()
-    # LOT 14 — synchro SOF→MRVEvent éteinte (module ``mrv_sync`` archivé).
+    # Synchro SOF→MRVEvent supprimée (module ``mrv_sync`` retiré).
     await activity_record(
         db,
         action="update",
@@ -898,7 +929,7 @@ async def delete_sof_event(
     ensure_unlocked(e)
     leg_id = e.leg_id
     label = f"{e.event_type}@{e.occurred_at.isoformat()}"
-    # LOT 14 — plus de nettoyage MRVEvent dérivé (module ``mrv_sync`` archivé).
+    # Plus de nettoyage MRVEvent dérivé (module ``mrv_sync`` supprimé).
     await db.delete(e)
     await db.flush()
     await activity_record(
@@ -1060,15 +1091,34 @@ async def sign_sof_event(
         detail=e.signature_hash[:12] if e.signature_hash else None,
         ip_address=_client_ip(request),
     )
-    # FLX-02 — backstop idempotent : la signature confirme le départ/l'arrivée
-    # (déjà déclenché à la création du SOF — sans effet si déjà appliqué).
+    # FLX-02 / PLN-SEQ — backstop idempotent : la signature confirme le
+    # départ/l'arrivée (déjà déclenché à la création du SOF — re-déclarer au
+    # même horodatage est sans effet).
     try:
         leg = await db.get(Leg, e.leg_id)
         if leg is not None:
-            if e.event_type in DEPARTURE_SOF_TYPES:
-                await on_vessel_departed(db, leg)
-            elif e.event_type in ARRIVAL_SOF_TYPES:
-                await on_vessel_arrived(db, leg)
+            actor_name = user.full_name or user.username
+            try:
+                if e.event_type in DEPARTURE_SOF_TYPES:
+                    await voyage_transitions.declare_departure(
+                        db,
+                        leg,
+                        at=e.occurred_at,
+                        actor_id=user.id,
+                        actor_name=actor_name,
+                        create_sof=False,
+                    )
+                elif e.event_type in ARRIVAL_SOF_TYPES:
+                    await voyage_transitions.declare_arrival(
+                        db,
+                        leg,
+                        at=e.occurred_at,
+                        actor_id=user.id,
+                        actor_name=actor_name,
+                        create_sof=False,
+                    )
+            except PlanningError as seq_err:
+                logger.warning("SOF signé hors séquence (leg %s) : %s", e.leg_id, seq_err)
             # ONB-04 — journal de bord : trace la signature SOF (best-effort).
             with contextlib.suppress(Exception):
                 await post_onboard_system_message(
@@ -1104,9 +1154,10 @@ async def sign_noon_report(
         detail=n.signature_hash[:12] if n.signature_hash else None,
         ip_address=_client_ip(request),
     )
-    # LOT 14 — synchro noon→MRVEvent éteinte (module ``mrv_sync`` archivé) : le
-    # noon report signé reste immuable (audit/signature) et alimente le fallback
-    # ledger ``legacy_noon``, mais ne génère plus de ``mrv_events``.
+    # Synchro noon→MRVEvent supprimée (module ``mrv_sync`` retiré) : le noon
+    # report signé reste immuable (audit/signature) et alimente le fallback
+    # ledger ``legacy_noon``, mais ne génère plus de ``mrv_events`` (table
+    # elle-même supprimée).
     return RedirectResponse(url=f"/onboard/navigation?leg_id={n.leg_id}", status_code=303)
 
 

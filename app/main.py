@@ -40,7 +40,7 @@ from app.routers import (
     client_dashboard_router,
     commercial_router,
     crew_router,
-    dashboard_env_router,
+    dashboard_perf_router,
     devis_router,
     escale_router,
     estimation_router,
@@ -64,6 +64,7 @@ from app.routers import (
     staff_booking_router,
     staff_dashboard_router,
     stowage_router,
+    support_router,
     tickets_router,
     tracking_router,
     veille_router,
@@ -234,8 +235,9 @@ def create_app() -> FastAPI:
     app.include_router(qhse_router.router)
     # ─── Phase 4 ERP : kpi / finance ───
     app.include_router(kpi_router.router)
-    # LOT 11 — dashboard performance environnementale
-    app.include_router(dashboard_env_router.router)
+    # NC-01/NC-04 — dashboard performance environnementale, exclusivement event-driven.
+    # Remplace dashboard_env_router (LOT 11/12), décommissionné action 6 du plan d'audit.
+    app.include_router(dashboard_perf_router.router)
     app.include_router(navigation_router.router)
     app.include_router(navigation_router.api_router)
     app.include_router(marad_router.api_router)
@@ -250,6 +252,9 @@ def create_app() -> FastAPI:
     app.include_router(admin_router.router)
     app.include_router(notifications_router.router)
     # ─── Existing routers ───
+    # Assistance (support applicatif) — distinct de tickets_router, qui porte
+    # les incidents d'exploitation portuaire. Cf. SPEC_SUPPORT_TICKETING §1.
+    app.include_router(support_router.router)
     app.include_router(tickets_router.router)
     app.include_router(tickets_router.api_router)
     app.include_router(cashbox_router.router)

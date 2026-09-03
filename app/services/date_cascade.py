@@ -9,8 +9,10 @@ moteur scénario, cf. ``services.planning.plan_downstream_shifts``) :
      (ATD null, hors annulés) sont translatés du delta d'ETD — la
      planification relative est préservée.
   2. **Résolution des chevauchements** : tout leg qui démarrerait avant la
-     fin (ETA) du précédent est repoussé, durée conservée. Couvre le pur
-     allongement d'ETA (retard d'arrivée sans décalage de départ).
+     disponibilité du précédent — son ETA **plus son escale planifiée** —
+     est repoussé, durée conservée. Couvre le pur allongement d'ETA (retard
+     d'arrivée sans décalage de départ). Recalage à froid d'une planification
+     héritée : ``respace_downstream`` / ``scripts.respace_downstream_legs``.
 
 Sont ensuite recalés, PAR LEG et de son propre delta :
   - opérations escale (``EscaleOperation``) — planned_* tant que actual_* NULL ;
@@ -66,11 +68,14 @@ async def cascade_from_leg(
     batch_id: str | None = None,
     actor_id: int | None = None,
     actor_name: str | None = None,
+    force: bool = False,
 ) -> dict:
     """Re-challenge toutes les dates dépendantes d'un ``leg`` dont les dates
     ont bougé. ``leg`` porte DÉJÀ les nouvelles valeurs ; ``old_etd`` /
     ``old_eta`` sont les valeurs AVANT modification (elles définissent la
-    frontière aval et les deltas).
+    frontière aval et les deltas). ``force=True`` lance la résolution des
+    chevauchements même si rien n'a bougé sur le leg source (recalage des
+    legs aval sur la règle « ETA + escale », cf. ``respace_downstream``).
 
     Best-effort : chaque bloc est isolé, les compteurs reflètent ce qui a
     réellement été décalé. Ne lève pas. ``await db.flush()`` est laissé à
@@ -113,7 +118,7 @@ async def cascade_from_leg(
     }
 
     # Rien n'a bougé → rien à propager (rapport cohérent quand même).
-    if delta == timedelta(0) and new_eta == old_eta and source_ready == old_ready:
+    if not force and delta == timedelta(0) and new_eta == old_eta and source_ready == old_ready:
         return summary
 
     # ── 1. Legs aval du même navire (2 passes : rigide + anti-chevauchement)
@@ -134,6 +139,15 @@ async def cascade_from_leg(
             # rien en aval, on le signale (l'opérateur arbitre manuellement).
             summary["skipped"].append(f"downstream_legs:{e}")
             planned = {}
+            # Incident de reprogrammation VISIBLE : notification aux
+            # Opérations (best-effort — l'échec de la notification ne doit
+            # pas masquer le blocage, déjà tracé dans ``skipped``).
+            try:
+                from app.services import notifications
+
+                await notifications.notify_cascade_blocked(db, leg.leg_code, leg.id, detail=str(e))
+            except Exception:
+                logger.exception("cascade: blocked-notification failed (leg %s)", leg.id)
         moved = 0
         for dn in lane:
             if dn.id not in planned:
@@ -301,3 +315,39 @@ async def cascade_from_leg(
         logger.exception("cascade: client notifications block failed (legs %s)", impacted_ids)
 
     return summary
+
+
+async def respace_downstream(
+    db: AsyncSession,
+    anchor: Leg,
+    *,
+    actor_id: int | None = None,
+    actor_name: str | None = None,
+) -> dict:
+    """Recale les legs aval d'un navire sur la règle « ETA + escale planifiée »
+    à partir d'un leg d'ancrage (le voyage courant), sans toucher à ce leg.
+
+    Sert à remettre d'aplomb une planification saisie ou héritée avec des legs
+    enchaînés sans temps d'escale : la cascade normale ne tourne qu'au
+    mouvement d'une date, celle-ci est forcée. Mêmes effets (révisions
+    ``cascade`` liées à l'ancre, opérations d'escale, dockers, clôtures
+    booking, notifications clients) ; un leg déjà appareillé n'est jamais
+    déplacé (incident notifié).
+    """
+    from app.services.planning import DEFAULT_PORT_STAY_HOURS, effective_eta
+
+    ready = effective_eta(anchor) + timedelta(
+        hours=anchor.port_stay_planned_hours or DEFAULT_PORT_STAY_HOURS
+    )
+    return await cascade_from_leg(
+        db,
+        anchor,
+        old_etd=anchor.etd,
+        old_eta=anchor.eta,
+        old_ready_at=ready,
+        source_ready_at=ready,
+        source="cascade",
+        actor_id=actor_id,
+        actor_name=actor_name,
+        force=True,
+    )

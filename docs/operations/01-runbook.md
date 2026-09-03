@@ -116,9 +116,48 @@ Scripts livrés dans `scripts/` :
    restore snapshot et exit 1.
 7. Rolling restart `up -d --force-recreate app`.
 8. Wait `/health` pendant `HEALTH_TIMEOUT_SECONDS` (90 s). Échec ⇒
-   rollback + exit 2.
-9. Smoke tests (12 endpoints). Échec ⇒ rollback + exit 2.
-10. Maintenance OFF + report.
+   retour arrière applicatif, **maintenance non levée**, exit 2.
+9. Smoke tests (12 endpoints). Même traitement qu'au point 8.
+10. Maintenance OFF + mémorisation de la révision saine + report.
+
+### 4.1 bis Retour arrière applicatif (`rollback_app`)
+
+Jusqu'au 2026-09-03, cette étape n'existait que sur le papier : la fonction
+n'émettait que deux avertissements réclamant une intervention manuelle, et la
+maintenance était levée **avant** elle. Un déploiement raté laissait donc la
+production morte et découverte — c'est ce qui a transformé une erreur de
+syntaxe en plus d'une heure d'indisponibilité.
+
+Comportement réel désormais :
+
+- La révision qui tournait avant le déploiement est capturée par `sync_code`
+  **avant tout checkout** (`PREVIOUS_VERSION`), avec repli sur
+  `backups/.last-release` — la dernière révision ayant passé health **et**
+  smoke tests.
+- En cas d'échec, `rollback_app` **recompile et redéploie** cette révision,
+  puis vérifie `/health`. Il n'y a pas d'image précédente à repuller : le
+  service `app` est déclaré `build: .` sans `image:`, donc chaque build écrase
+  le tag. La révision git est la seule trace de l'état d'avant.
+- La maintenance n'est levée **que si** le retour arrière est sain. Sinon le
+  script sort en 2 en nommant la dernière révision saine connue.
+- Si des migrations ont été appliquées pendant le déploiement (tête Alembic
+  comparée avant/après), le retour arrière du code seul le signale : l'ancien
+  code se retrouve face au nouveau schéma, ce qui n'est sûr que si les
+  migrations sont rétro-compatibles. La commande `rollback.sh <snapshot>` à
+  lancer est affichée.
+- Rien à faire pour revenir sur la branche de déploiement : le retour arrière
+  travaille en HEAD détaché, et le `sync_code` suivant refait
+  `checkout main` + `merge --ff-only`.
+
+⚠️ **Limite connue, non corrigée.** Le marqueur de maintenance vit dans
+`/tmp/.maintenance` **à l'intérieur du conteneur app**
+(`app/middlewares/maintenance.py`). Un `--force-recreate` le détruit, et un
+conteneur qui a quitté ne sert plus rien : pendant la fenêtre où l'application
+est morte, les visiteurs reçoivent un 502 du reverse proxy, pas la page
+d'attente. Ne pas lever la maintenance reste néanmoins utile — c'est ce qui
+évite d'exposer un backend non validé quand le conteneur, lui, tourne. Rendre
+le marqueur persistant (volume, ou prise en charge côté Caddy) est un
+correctif distinct, non traité ici.
 
 ### 4.2 Contrainte anti-chevauchement (`legs_no_vessel_overlap`)
 
@@ -220,8 +259,17 @@ argument 'head'; please specify a specific target revision, '<branchname>@head'
 **Cause** : deux branches de fonctionnalité ont chaîné leurs migrations sur le
 **même parent** et ont été fusionnées séparément — `main` porte alors deux têtes
 et `alembic upgrade head` refuse de choisir. Constaté le 07/08/2026 (MRV ×
-crewing) et le 26/08/2026 (BL × QHSE). **Ce n'est pas une panne de base** : rien
-n'a été appliqué, la restauration du snapshot est un no-op de précaution.
+crewing), le 26/08/2026 (BL × QHSE), puis **deux fois le 03/09/2026** —
+Assistance × planification (déploiement de `1d480c6`), puis legacy MRV × le
+reste (déploiement de `1f082f9`). **Ce n'est pas une panne de base** : rien n'a
+été appliqué, la restauration du snapshot est un no-op de précaution.
+
+⚠️ **Une révision de fusion ne vaut que pour les têtes existant au moment où
+elle est écrite.** La seconde occurrence du 03/09 vient de là : `20260903_0139`
+avait réuni deux des trois enfants de `20260901_0136`, le troisième arrivant
+avec la PR suivante. Avant de poser une fusion, vérifier qu'aucune branche non
+fusionnée ne porte encore une migration chaînée sur le même parent —
+`git grep 'down_revision = ' origin/…` sur les branches ouvertes.
 
 **Diagnostic** (aucune connexion à la base nécessaire) :
 
@@ -233,15 +281,34 @@ docker compose run --rm app alembic current   # où est réellement la prod
 
 **Correctif** : poser une **révision de fusion** sans DDL
 (`alembic merge -m "merge heads" <tête1> <tête2>`), la relire, la faire passer en
-PR, redéployer. Modèles : `20260807_0113`, `20260826_0119`.
+PR, redéployer. Modèles : `20260807_0113`, `20260826_0119`, `20260903_0139`,
+`20260903_0140`.
 
 ⚠️ **Ne pas rechaîner une révision déjà fusionnée sur `main`** (changer son
 `down_revision` pour la tête courante) : toute base qui la porte déjà
 considérerait l'autre chaîne comme appliquée, et ses tables manqueraient
 **silencieusement**. Le rechaînage ne vaut que pour une révision encore sur sa
-branche de travail. La CI refuse maintenant la seconde tête en PR
-(`tests/regression/test_alembic_single_head.py`) : ce mode de panne ne devrait
-plus atteindre le déploiement.
+branche de travail.
+
+**La sentinelle CI ne suffit pas, et le 03/09/2026 l'a montré.**
+`tests/regression/test_alembic_single_head.py` a bien détecté la seconde tête sur
+la PR #173 — mais la PR a été fusionnée alors que sa CI était rouge, et la panne
+a atteint le déploiement. La sentinelle dit la vérité ; elle ne protège que si le
+verdict de la CI est **opposable**. Deux conséquences pratiques :
+
+- activer une **protection de branche** sur `main` exigeant les checks verts,
+  sans quoi la sentinelle n'est qu'un avertissement ;
+- tant que `main` est rouge pour une autre raison (c'était le cas ce jour-là :
+  `black` sur deux fichiers, `anyio` non épinglé), le rouge de la sentinelle est
+  noyé dans un rouge de fond. **Remettre `main` au vert est ce qui rend les
+  garde-fous lisibles** — un `main` durablement rouge les neutralise tous.
+
+Contrôle à faire avant chaque fusion, tant que la protection de branche n'est pas
+en place :
+
+```bash
+pytest tests/regression/test_alembic_single_head.py -q --no-cov
+```
 
 ### 6.3 Rollback migration
 

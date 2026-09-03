@@ -22,10 +22,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.leg import Leg
+from app.models.leg import LEG_ORIGIN_TOWT, Leg
 from app.models.vessel import Vessel
 
 if TYPE_CHECKING:
@@ -84,8 +84,14 @@ async def build_leg_filter(
     year: int | None = None,
     leg_id: int | None = None,
     request: Request | None = None,
+    include_archive: bool = False,
 ) -> dict:
     """Construit le contexte du filtre navire × année × leg (lecture seule).
+
+    ``include_archive`` : par défaut les legs d'archive TOWT (ADR-014) sont
+    **exclus** — les modules opérationnels (escale, KPI, finance, stowage…)
+    n'ont rien à en faire et certains écrivent des dérivés par leg. Seules les
+    pages de lecture (tracking, navigation) les demandent explicitement.
 
     Les paramètres absents (None) sont complétés depuis le cookie de filtre
     (``request``), pour que les pages du module opérations héritent du leg
@@ -99,9 +105,21 @@ async def build_leg_filter(
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     selected_vessel = vessel or (vessels[0].code if vessels else None)
     current_year = year or datetime.now(UTC).year
-    years = list(range(current_year - 1, current_year + 3))
+    # Fenêtre d'années : N-1 → N+2 par défaut, étendue vers le passé jusqu'à la
+    # première ETD en base (archives TOWT 2024, ADR-014 — sinon leurs legs
+    # seraient inaccessibles depuis le filtre transverse).
+    first_year = current_year - 1
+    min_stmt = select(func.min(Leg.etd))
+    if not include_archive:
+        min_stmt = min_stmt.where(Leg.origin != LEG_ORIGIN_TOWT)
+    min_etd = (await db.execute(min_stmt)).scalar_one_or_none()
+    if min_etd is not None:
+        first_year = min(first_year, min_etd.year)
+    years = list(range(first_year, current_year + 3))
 
     stmt = select(Leg).order_by(Leg.etd.asc())
+    if not include_archive:
+        stmt = stmt.where(Leg.origin != LEG_ORIGIN_TOWT)
     v = next((x for x in vessels if x.code == selected_vessel), None) if selected_vessel else None
     if v is not None:
         stmt = stmt.where(Leg.vessel_id == v.id)
@@ -154,7 +172,7 @@ async def leg_select_options(db: AsyncSession, *, vessel_id: int | None = None) 
     """
     from app.models.port import Port
 
-    stmt = select(Leg)
+    stmt = select(Leg).where(Leg.origin != LEG_ORIGIN_TOWT)  # jamais lier à une archive
     if vessel_id is not None:
         stmt = stmt.where(Leg.vessel_id == vessel_id)
     legs = list((await db.execute(stmt)).scalars().all())
