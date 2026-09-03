@@ -1001,6 +1001,79 @@ async def update_leg(
 # variable simple). ``Any`` est donc l'annotation honnête ici — le contrat réel
 # (« porter un ``leg_id`` ») est vérifié à l'exécution par la sentinelle
 # ``tests/unit/test_delete_leg_models.py``.
+def _leg_never_deletable_models() -> list[tuple[Any, str]]:
+    """(modèle, label) des tables qui refusent la suppression d'un leg — **toujours**.
+
+    Ni la suppression simple, ni la suppression en cascade
+    (``delete_leg(cascade=True)``) ne les touche. Chacune est là pour une
+    raison qui ne se négocie pas :
+
+    - ``CashboxMovement``, ``OnboardSale``, ``CashCount`` — les trois registres
+      d'argent n'ont **ni UPDATE ni DELETE** (ADR-011/013). Ils ne se délient
+      pas davantage qu'ils ne se suppriment : écrire ``leg_id = NULL`` pour
+      faire de la place serait la même faute par un autre chemin.
+    - ``RateOffer`` — son historique ``rate_offer_revisions`` est chaîné en
+      SHA-256, ni exportable ni purgeable. Sa valeur probante tient à ce
+      qu'aucune retouche ne passe inaperçue. Conséquence utile : la *booking
+      note* pendant de ``rate_offers`` (et non de ``bookings``), une
+      réservation issue d'une offre validée est protégée **par construction**.
+    - ``NoonReport`` — intégrité réglementaire MRV.
+    - ``VisitorLog`` — registre visiteurs ISPS.
+
+    Sur un leg futur, aucune de ces lignes ne devrait exister : si l'une
+    apparaît, le blocage est le comportement voulu, pas une gêne.
+    """
+    from app.models.cash_count import CashCount
+    from app.models.commercial import RateOffer
+    from app.models.noon_report import NoonReport
+    from app.models.onboard_cashbox import CashboxMovement
+    from app.models.onboard_sales import OnboardSale
+    from app.models.watch_log import VisitorLog
+
+    return [
+        (NoonReport, "noon reports"),
+        (VisitorLog, "registre visiteurs ISPS"),
+        (RateOffer, "offres tarifaires"),
+        (CashboxMovement, "mouvements de caisse"),
+        (OnboardSale, "ventes à bord"),
+        (CashCount, "contrôles de caisse"),
+    ]
+
+
+def _leg_cascade_models() -> list[tuple[Any, str]]:
+    """(modèle, label) des tables que la **cascade** peut détruire.
+
+    Uniquement sur un leg futur (cf. ``assert_leg_cascade_allowed``) : ce sont
+    des artefacts de **pré-planification**, sans valeur propre dès lors que le
+    voyage n'aura pas lieu. Sur un leg déjà appareillé, ils décrivent des faits
+    et la cascade leur est fermée.
+
+    ``Booking`` mérite une mention : le supprimer emporte en base ses
+    ``booking_items``, ses messages et ses **packing lists**
+    (``ondelete="CASCADE"``). C'est pourquoi ``_booking_cascade_blockers``
+    refuse la cascade dès qu'un artefact probant s'y est accroché — numéro de
+    BL tiré du registre non recyclable, certificat Anemos publié, facture
+    client.
+    """
+    from app.models.booking import Booking
+    from app.models.commercial import OrderAssignment
+    from app.models.crew import CrewAssignment
+    from app.models.escale import DockerShift, EscaleOperation
+    from app.models.finance import LegFinance
+    from app.models.watch_log import OnboardChecklist, WatchLog
+
+    return [
+        (Booking, "réservations"),
+        (LegFinance, "fiche finance"),
+        (EscaleOperation, "opérations escale"),
+        (DockerShift, "shifts dockers"),
+        (WatchLog, "entrées de quart"),
+        (OnboardChecklist, "check-lists onboard"),
+        (CrewAssignment, "affectations équipage"),
+        (OrderAssignment, "assignations commande"),
+    ]
+
+
 def _leg_blocking_models() -> list[tuple[Any, str]]:
     """(modèle, label humain) des tables qui **refusent** la suppression d'un leg.
 
@@ -1015,39 +1088,14 @@ def _leg_blocking_models() -> list[tuple[Any, str]]:
     automatiquement, sauf s'il a été **saisi manuellement** (``is_manual``),
     auquel cas il redevient de la donnée humaine à protéger (cf. delete_leg).
 
-    Les trois registres d'argent (``CashboxMovement``, ``OnboardSale``,
-    ``CashCount``) bloquent, ils ne se délient pas : le grand livre de caisse
-    et le registre de vente n'ont **ni UPDATE ni DELETE** (ADR-011/013), donc
-    y écrire ``leg_id = NULL`` pour faire de la place à une suppression n'est
-    pas une option.
+    Union de ``_leg_never_deletable_models`` (jamais supprimables, registres
+    d'argent compris) et de ``_leg_cascade_models`` (destructibles par la
+    cascade sur un leg futur). La sentinelle
+    ``tests/unit/test_delete_leg_models.py`` lit ce contrat : toute table
+    référençant ``legs.id`` doit rejoindre l'un des deux inventaires, la liste
+    des déliés, ou porter un ``ondelete``.
     """
-    from app.models.booking import Booking
-    from app.models.cash_count import CashCount
-    from app.models.commercial import OrderAssignment, RateOffer
-    from app.models.crew import CrewAssignment
-    from app.models.escale import DockerShift, EscaleOperation
-    from app.models.finance import LegFinance
-    from app.models.noon_report import NoonReport
-    from app.models.onboard_cashbox import CashboxMovement
-    from app.models.onboard_sales import OnboardSale
-    from app.models.watch_log import OnboardChecklist, VisitorLog, WatchLog
-
-    return [
-        (Booking, "réservations"),
-        (NoonReport, "noon reports"),
-        (LegFinance, "fiche finance"),
-        (EscaleOperation, "opérations escale"),
-        (DockerShift, "shifts dockers"),
-        (WatchLog, "entrées de quart"),
-        (OnboardChecklist, "check-lists onboard"),
-        (VisitorLog, "registre visiteurs ISPS"),
-        (CrewAssignment, "affectations équipage"),
-        (OrderAssignment, "assignations commande"),
-        (RateOffer, "offres tarifaires"),
-        (CashboxMovement, "mouvements de caisse"),
-        (OnboardSale, "ventes à bord"),
-        (CashCount, "contrôles de caisse"),
-    ]
+    return _leg_never_deletable_models() + _leg_cascade_models()
 
 
 def _leg_unlinked_models() -> tuple[Any, ...]:
@@ -1093,7 +1141,180 @@ def _leg_unlinked_models() -> tuple[Any, ...]:
     )
 
 
-async def delete_leg(db: AsyncSession, leg: Leg) -> None:
+@dataclass(frozen=True)
+class LegDeletionReport:
+    """Ce qui empêche — ou permet — de supprimer un leg.
+
+    Trois listes, à ne pas confondre :
+
+    - ``hard_blocking`` : registres jamais supprimables (argent, MRV, ISPS,
+      offres chaînées) et KPI saisi à la main. Aucune option ne les ouvre.
+    - ``cascade_targets`` : ce qu'une suppression en cascade détruirait.
+    - ``cascade_refusals`` : pourquoi la cascade est fermée — leg déjà
+      appareillé ou passé, artefact probant accroché à une réservation.
+    """
+
+    hard_blocking: list[str] = field(default_factory=list)
+    cascade_targets: list[str] = field(default_factory=list)
+    cascade_refusals: list[str] = field(default_factory=list)
+
+    @property
+    def can_delete_simply(self) -> bool:
+        return not self.hard_blocking and not self.cascade_targets
+
+    @property
+    def can_cascade(self) -> bool:
+        return bool(self.cascade_targets) and not self.hard_blocking and not self.cascade_refusals
+
+
+def cascade_refusal_reason(leg: Leg) -> str | None:
+    """Pourquoi la cascade est fermée sur ce leg, ou ``None`` si elle est ouverte.
+
+    **La cascade n'est ouverte que sur un leg futur** (décision du 2026-09-03).
+    Sur un leg parti, arrivé, terminé ou annulé, les dépendances décrivent des
+    **faits** : les détruire réécrirait l'histoire du voyage. Sur un leg encore
+    à venir, ce ne sont que des intentions de planification.
+
+    L'ETD passée est également refusée : un leg planifié qui n'a jamais
+    appareillé est une anomalie de planification à instruire (cf. l'audit de
+    séquence), pas un candidat à la destruction silencieuse de ses réservations.
+    """
+    if leg.origin == LEG_ORIGIN_TOWT:
+        return "c'est un voyage d'archive TOWT, en lecture seule (ADR-014)"
+    if leg.phase != "planifie":
+        return f"le leg est « {LEG_PHASE_LABELS.get(leg.phase, leg.phase)} » — la cascade ne vise que les legs à venir"
+    etd = ensure_utc(leg.etd)
+    if etd is not None and etd <= datetime.now(UTC):
+        return "son ETD est passée — un leg jamais appareillé s'instruit, il ne s'efface pas"
+    return None
+
+
+def assert_leg_cascade_allowed(leg: Leg) -> None:
+    """Lève ``PlanningError`` si la cascade n'est pas ouverte sur ce leg."""
+    assert_leg_mutable(leg)
+    reason = cascade_refusal_reason(leg)
+    if reason:
+        raise PlanningError(f"Suppression en cascade refusée sur le leg {leg.leg_code} : {reason}.")
+
+
+async def _booking_cascade_blockers(db: AsyncSession, leg_id: int) -> list[str]:
+    """Artefacts probants accrochés aux réservations du leg — ils ferment la cascade.
+
+    Supprimer un ``Booking`` emporte ses **packing lists** en base
+    (``ondelete="CASCADE"``). Or un lot de packing list peut porter un
+    **numéro de BL** tiré d'une séquence *non recyclable* : le détruire
+    laisserait un trou dans un registre qui fait foi. Même logique pour un
+    certificat Anemos (vérifiable publiquement sur ``/verify/{ref}``) et pour
+    une facture client.
+    """
+    from sqlalchemy import func
+
+    from app.models.anemos_certificate import AnemosCertificate
+    from app.models.booking import Booking
+    from app.models.client_invoice import ClientInvoice
+    from app.models.packing_list import PackingList, PackingListBatch
+
+    booking_ids = select(Booking.id).where(Booking.leg_id == leg_id).scalar_subquery()
+    blockers: list[str] = []
+
+    with_bl = await db.scalar(
+        select(func.count())
+        .select_from(PackingListBatch)
+        .join(PackingList, PackingList.id == PackingListBatch.packing_list_id)
+        .where(PackingList.booking_id.in_(booking_ids))
+        .where(PackingListBatch.bl_number.is_not(None))
+    )
+    if with_bl:
+        blockers.append(f"{with_bl} lot(s) de packing list portant un numéro de BL")
+
+    certs = await db.scalar(
+        select(func.count())
+        .select_from(AnemosCertificate)
+        .where(AnemosCertificate.booking_id.in_(booking_ids))
+    )
+    if certs:
+        blockers.append(f"{certs} certificat(s) Anemos émis")
+
+    invoices = await db.scalar(
+        select(func.count())
+        .select_from(ClientInvoice)
+        .where(ClientInvoice.booking_id.in_(booking_ids))
+    )
+    if invoices:
+        blockers.append(f"{invoices} facture(s) client")
+
+    return blockers
+
+
+async def leg_deletion_report(db: AsyncSession, leg: Leg) -> LegDeletionReport:
+    """Inventaire lisible des dépendances d'un leg, pour l'écran de suppression."""
+    from sqlalchemy import func
+
+    from app.models.finance import LegKPI
+
+    async def _count(model: Any) -> int:
+        return (
+            await db.scalar(select(func.count()).select_from(model).where(model.leg_id == leg.id))
+        ) or 0
+
+    hard: list[str] = []
+    for model, label in _leg_never_deletable_models():
+        n = await _count(model)
+        if n:
+            hard.append(f"{n} {label}")
+
+    manual_kpi = await db.scalar(
+        select(func.count())
+        .select_from(LegKPI)
+        .where(LegKPI.leg_id == leg.id)
+        .where(LegKPI.is_manual.is_(True))
+    )
+    if manual_kpi:
+        hard.append(f"{manual_kpi} KPI saisi(s) manuellement")
+
+    targets: list[str] = []
+    for model, label in _leg_cascade_models():
+        n = await _count(model)
+        if n:
+            targets.append(f"{n} {label}")
+
+    refusals: list[str] = []
+    if targets:
+        reason = cascade_refusal_reason(leg)
+        if reason:
+            refusals.append(reason)
+        else:
+            refusals.extend(await _booking_cascade_blockers(db, leg.id))
+
+    return LegDeletionReport(hard_blocking=hard, cascade_targets=targets, cascade_refusals=refusals)
+
+
+async def _delete_leg_cascade_rows(db: AsyncSession, leg_id: int) -> None:
+    """Détruit les dépendances de pré-planification du leg, réservations comprises.
+
+    Les FK **nullables** pointant vers les réservations détruites sont déliées
+    d'abord : PostgreSQL ne les nettoie pas seul, et sans ``ondelete`` il
+    refuserait la suppression du parent. Les enfants en ``ondelete="CASCADE"``
+    (``booking_items``, messages, packing lists) partent avec la réservation.
+    """
+    from sqlalchemy import delete as sa_delete
+    from sqlalchemy import update as sa_update
+
+    from app.models.booking import Booking
+    from app.models.claim import Claim
+    from app.models.commercial import Order
+
+    booking_ids = select(Booking.id).where(Booking.leg_id == leg_id).scalar_subquery()
+    for model in (Order, Claim):
+        await db.execute(
+            sa_update(model).where(model.booking_id.in_(booking_ids)).values(booking_id=None)
+        )
+
+    for model, _label in _leg_cascade_models():
+        await db.execute(sa_delete(model).where(model.leg_id == leg_id))
+
+
+async def delete_leg(db: AsyncSession, leg: Leg, *, cascade: bool = False) -> None:
     """Supprime un leg — après inventaire explicite de ses dépendances.
 
     Refuse (``PlanningError`` lisible) si des données dépendantes existent
@@ -1102,8 +1323,18 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
     FK oubliée bloquait malgré tout, l'``IntegrityError`` est traduite en
     ``PlanningError`` au lieu de remonter en 500, et la session reste
     utilisable pour re-rendre la page avec le bandeau d'erreur.
+
+    ``cascade=True`` détruit en plus les dépendances de **pré-planification**
+    (``_leg_cascade_models`` — réservations comprises), et **uniquement sur un
+    leg futur** : ``assert_leg_cascade_allowed`` refuse un leg appareillé,
+    arrivé, terminé, annulé, d'archive, ou dont l'ETD est passée. Les
+    registres jamais supprimables (``_leg_never_deletable_models``) bloquent
+    dans les deux modes, et un artefact probant accroché à une réservation
+    (numéro de BL, certificat Anemos, facture) ferme la cascade.
     """
     assert_leg_mutable(leg)
+    if cascade:
+        assert_leg_cascade_allowed(leg)
     from sqlalchemy import delete as sa_delete
     from sqlalchemy import func
     from sqlalchemy.exc import IntegrityError
@@ -1111,7 +1342,9 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
     from app.models.finance import LegKPI
 
     blocks: list[str] = []
-    for model, label in _leg_blocking_models():
+    # En cascade, seuls les registres jamais supprimables bloquent encore.
+    inventory = _leg_never_deletable_models() if cascade else _leg_blocking_models()
+    for model, label in inventory:
         count = await db.scalar(
             select(func.count()).select_from(model).where(model.leg_id == leg.id)
         )
@@ -1135,14 +1368,30 @@ async def delete_leg(db: AsyncSession, leg: Leg) -> None:
     vessel_id, year = leg.vessel_id, leg.etd.year
 
     if blocks:
+        suite = (
+            ". Ces registres ne se suppriment pas — annulez le leg plutôt que " "de le supprimer."
+            if cascade
+            else ". Nettoyez ces enregistrements avant suppression."
+        )
         raise PlanningError(
             f"Impossible de supprimer le leg {leg_code} — dépendances : "
             + ", ".join(blocks)
-            + ". Nettoyez ces enregistrements avant suppression."
+            + suite
         )
+
+    if cascade:
+        probants = await _booking_cascade_blockers(db, leg_id)
+        if probants:
+            raise PlanningError(
+                f"Suppression en cascade refusée sur le leg {leg_code} : "
+                + ", ".join(probants)
+                + ". Supprimer la réservation emporterait ces pièces, qui font foi."
+            )
 
     try:
         async with db.begin_nested():
+            if cascade:
+                await _delete_leg_cascade_rows(db, leg_id)
             # Nettoyage du KPI auto-calculé (non manuel) : sans valeur sans son leg.
             await db.execute(sa_delete(LegKPI).where(LegKPI.leg_id == leg_id))
             await _nullify_optional_fks(db, leg_id)

@@ -279,12 +279,27 @@ Doc de référence : `docs/design/05-sequence-planification.md`.
   d'archive : `vessel_positions.source = 'towt_archive'`, protégées de la purge
   (`admin_data.PURGE_PROTECTED_ROWS`), importées **après** les legs
   (rattachement temporel). Filtre `/planning?origin=towt|newtowt`.
-- **Suppression d'un leg** : inventaire explicite des dépendances
-  (`planning._leg_blocking_models` / `_leg_unlinked_models`). Les registres
-  d'argent (caisse, ventes, contrôles) **bloquent** — ils n'ont ni UPDATE ni
-  DELETE ; les FK nullables sont **déliées**. Toute nouvelle table référençant
-  `legs.id` doit rejoindre l'un des deux inventaires (ou porter un `ondelete`) :
-  la sentinelle `tests/unit/test_delete_leg_models.py` échoue sinon.
+- **Suppression d'un leg** : inventaire explicite des dépendances, en **trois**
+  familles. `_leg_never_deletable_models` — registres d'argent (caisse, ventes,
+  contrôles, ADR-011/013), MRV (`noon_reports`), ISPS (`visitor_logs`) et
+  `rate_offers` dont l'historique est chaîné SHA-256 — bloquent **toujours**,
+  cascade comprise ; ils ne se délient pas davantage qu'ils ne se suppriment.
+  `_leg_cascade_models` — réservations, fiche finance, opérations d'escale,
+  shifts dockers, quart, check-lists, affectations équipage, assignations de
+  commande — sont détruites par `delete_leg(cascade=True)`, **uniquement sur un
+  leg futur** (`assert_leg_cascade_allowed` : phase `planifie`, ETD à venir,
+  hors archive TOWT). `_leg_unlinked_models` : FK nullables **déliées**. Toute
+  nouvelle table référençant `legs.id` doit rejoindre l'un des inventaires (ou
+  porter un `ondelete`) : la sentinelle `tests/unit/test_delete_leg_models.py`
+  échoue sinon.
+- ⚠️ **La cascade refuse aussi tout artefact probant accroché à une
+  réservation** (`_booking_cascade_blockers`) : numéro de BL tiré de la
+  séquence non recyclable, certificat Anemos publié, facture client. Supprimer
+  un `Booking` emporte ses packing lists (`ondelete="CASCADE"`) — donc ces
+  pièces. Et comme la *booking note* pend de `rate_offers` et non de
+  `bookings`, une réservation issue d'une offre validée est protégée **par
+  construction**. Pour un voyage qui n'aura pas lieu mais dont l'histoire
+  existe, **annuler le leg** plutôt que le supprimer.
 
 ### Équipage — deux registres d'embarquement, à ne jamais confondre
 

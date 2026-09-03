@@ -37,6 +37,61 @@
 <div class="alert alert-error mb-4" role="alert">
   <strong>Suppression refusée.</strong> {{ delete_error }}
 </div>
+{% if deletion_report %}
+{# Écran de refus : dire ce qui bloque, ce qui pourrait être détruit, et
+   pourquoi la cascade est éventuellement fermée. Sans ce détail, l'opérateur
+   n'a que « nettoyez ces enregistrements » et aucun moyen de savoir où. #}
+<div class="card mb-4">
+  <h2 style="margin-top:0;">Dépendances de ce leg</h2>
+
+  {% if deletion_report.hard_blocking %}
+  <div class="mt-2">
+    <span class="pill pill-error">Jamais supprimable</span>
+    <ul class="mt-2">
+      {% for item in deletion_report.hard_blocking %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+    <p class="text-muted text-sm">
+      Registres d'argent, réglementaires ou probants : ils n'ont ni modification
+      ni suppression. Pour un voyage qui n'aura pas lieu, <strong>annulez le
+      leg</strong> plutôt que de le supprimer — l'historique reste intact.
+    </p>
+  </div>
+  {% endif %}
+
+  {% if deletion_report.cascade_targets %}
+  <div class="mt-3">
+    <span class="pill pill-warn">Destructible avec le leg</span>
+    <ul class="mt-2">
+      {% for item in deletion_report.cascade_targets %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+
+    {% if deletion_report.can_cascade %}
+    <form method="POST" action="/planning/legs/{{ leg.id }}/delete" class="mt-2">
+      <label class="flex gap-2 items-center">
+        <input type="checkbox" name="cascade_dependencies" required />
+        <span>Je confirme la destruction définitive des enregistrements ci-dessus.</span>
+      </label>
+      <button type="submit" class="btn btn-danger mt-2">
+        Supprimer le leg et ses dépendances
+      </button>
+      <p class="text-muted text-sm mt-1">
+        Irréversible. Les pièces qui font foi — numéros de BL, certificats
+        Anemos, factures — ferment cette voie : aucune n'est accrochée ici.
+      </p>
+    </form>
+    {% else %}
+    <p class="text-muted text-sm mt-2">
+      <strong>Cascade fermée.</strong>
+      {% for r in deletion_report.cascade_refusals %}{{ r }}{% if not loop.last %} ; {% endif %}{% endfor %}
+      {% if not deletion_report.cascade_refusals %}
+      Des registres non supprimables subsistent (voir ci-dessus).
+      {% endif %}
+    </p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 {% endif %}
 
 <div class="grid grid-2 gap-4">
