@@ -2817,6 +2817,35 @@ Atlantis), points à partir du 2026-05-11 ignorés, fichier entièrement
 postérieur refusé, `--until` prioritaire, date de reprise en constante.
 Suite TOWT complète : 30 tests verts.
 
+### Exécution en production — passage à blanc du 2026-09-03
+
+Rapport du dry-run sur les 8 fichiers consolidés (321 597 points lus) :
+
+| Fichier | Insérés | Déjà présents | Hors archive (≥ 2026-05-11) |
+|---|---|---|---|
+| anemos 2024 | 18 301 | 12 | — |
+| anemos 2025 | 101 838 | 0 | — |
+| anemos 2026 | 18 702 | 11 | 19 300 |
+| artemis 2024 | 18 294 | 12 | — |
+| artemis 2025 | 101 287 | 0 | — |
+| artemis 2026 | 18 522 | 11 | 18 936 |
+| atlantis 2026 | ⊘ ignoré (navire NEWTOWT) | | 5 976 |
+| atlas 2026 | ⊘ ignoré (navire NEWTOWT) | | 395 |
+
+Soit **276 944 positions d'archive**, et 44 607 points écartés comme NEWTOWT.
+
+### 🔴 Défaut trouvé par ce passage à blanc
+
+Le refus d'Atlantis — **voulu** — faisait échouer le lot entier : un
+`report.errors` sur un seul fichier déclenchait le rollback global et
+`return 1`. Le `--yes` n'aurait donc rien écrit du tout. Corrigé : les
+exclusions par conception (navire hors TOWT, fichier entièrement postérieur à
+la reprise) sont désormais distinctes des échecs réels (navire inconnu en base,
+fichier illisible, plusieurs navires dans un fichier). Une exclusion est
+marquée `⊘` et n'interrompt pas le lot ; un échec annule **son seul** fichier.
+Le commit passe de global à **fichier par fichier** : un lot interrompu se
+reprend à l'identique.
+
 ### Reste à faire
 
 Récupérer la liste des voyages TOWT de février à mai 2026 (absents de l'Excel)

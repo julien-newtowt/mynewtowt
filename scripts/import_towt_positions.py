@@ -23,8 +23,11 @@ cumulatifs délimitent donc l'archive :
    sous NEWTOWT. Tout point à cette date ou après est ignoré (compté « hors
    archive » au rapport). ``--until`` remplace cette borne explicitement.
 2. **Navire de l'ancienne compagnie** — le navire doit porter au moins un leg
-   ``origin='towt_archive'``. Sinon le fichier est **refusé** : Atlantis et
-   Atlas n'ont jamais navigué pour TOWT, leurs positions sont vivantes.
+   ``origin='towt_archive'``. Sinon le fichier est **ignoré** (``⊘``) : Atlantis
+   et Atlas n'ont jamais navigué pour TOWT, leurs positions sont vivantes. Une
+   exclusion par conception n'interrompt pas le lot ; seul un **échec** (navire
+   inconnu en base, fichier illisible, plusieurs navires dans un fichier)
+   annule le fichier concerné et fait sortir en code 1.
 
 Conséquence connue : l'Excel des traversées s'arrête au 2026-01-31, alors que
 l'exploitation TOWT court jusqu'au 2026-05-11 — les positions de février à mai
@@ -32,7 +35,8 @@ l'exploitation TOWT court jusqu'au 2026-05-11 — les positions de février à m
 restent visibles dans l'historique par dates, pas dans la trace d'un voyage).
 
 OPÉRATION SENSIBLE — dry-run par défaut (travail complet puis ROLLBACK) ;
-``--yes`` pour committer.
+``--yes`` pour committer. Le commit a lieu **fichier par fichier** : un lot
+interrompu est repris à l'identique (idempotence), sans transaction géante.
 
 Usage :
     python -m scripts.import_towt_positions --dir ./gps_towt              # dry-run
@@ -83,6 +87,11 @@ class FileReport:
     cutoff: str = ""
     first: str = ""
     last: str = ""
+    # Exclusions **par conception** (navire hors TOWT, fichier entièrement
+    # postérieur à la reprise) : le fichier est ignoré, le lot continue.
+    excluded: list[str] = field(default_factory=list)
+    # Échecs réels (navire inconnu, fichier illisible, plusieurs navires) :
+    # ils annulent le fichier et font échouer le lot.
     errors: list[str] = field(default_factory=list)
 
 
@@ -195,7 +204,7 @@ async def import_file(db, path: Path, *, until: datetime | None = None) -> FileR
         return report
 
     if not await is_towt_vessel(db, vessel.id):
-        report.errors.append(
+        report.excluded.append(
             f"« {vessel_name} » n'a aucun leg d'archive TOWT : ce navire n'a pas "
             "navigué pour l'ancienne compagnie. Ses positions sont vivantes et "
             "arrivent par /api/tracking/upload — les marquer 'towt_archive' les "
@@ -209,7 +218,7 @@ async def import_file(db, path: Path, *, until: datetime | None = None) -> FileR
     report.skipped_after_cutoff = len(points) - len(kept)
     points = kept
     if not points:
-        report.errors.append(
+        report.excluded.append(
             f"aucun point antérieur à la reprise NEWTOWT du {report.cutoff} — "
             "fichier entièrement hors archive"
         )
@@ -281,10 +290,12 @@ async def run(files: list[Path], *, apply: bool, until: datetime | None = None) 
         print("✖ aucun fichier towt_gps_*.csv à importer")
         return 2
     failed = False
+    total_inserted = 0
+    total_excluded = 0
     async with SessionLocal() as db:
         for path in files:
             rep = await import_file(db, path, until=until)
-            status = "✖" if rep.errors else "✔"
+            status = "✖" if rep.errors else ("⊘" if rep.excluded else "✔")
             print(
                 f"{status} {rep.name}: {rep.read} lus, {rep.inserted} insérés, "
                 f"{rep.skipped_existing} déjà présents, {rep.skipped_duplicate} doublons, "
@@ -296,19 +307,34 @@ async def run(files: list[Path], *, apply: bool, until: datetime | None = None) 
                 )
                 + (f" ({rep.first} → {rep.last})" if rep.first else "")
             )
-            for e in rep.errors:
-                print(f"    {e}")
-            failed = failed or bool(rep.errors)
-        if failed:
-            await db.rollback()
-            print("✖ Erreurs : rien n'est écrit.")
-            return 1
+            for msg in rep.excluded + rep.errors:
+                print(f"    {msg}")
+            # Un fichier en échec est annulé seul ; une exclusion par conception
+            # (Atlantis, Atlas, fichier post-reprise) n'empêche pas le reste du
+            # lot d'être écrit — sinon le seul fichier hors périmètre bloquerait
+            # toute la reprise.
+            if rep.errors:
+                failed = True
+                await db.rollback()
+                continue
+            total_inserted += rep.inserted
+            total_excluded += 1 if rep.excluded else 0
+            if apply:
+                await db.commit()
+            else:
+                await db.rollback()
         if apply:
-            await db.commit()
-            print("✔ Commit effectué.")
+            print(f"✔ Commit effectué — {total_inserted} position(s) d'archive écrite(s).")
         else:
-            await db.rollback()
-            print("ℹ Dry-run : aucune écriture (relancer avec --yes pour appliquer).")
+            print(
+                f"ℹ Dry-run : aucune écriture. {total_inserted} position(s) seraient "
+                "insérées (relancer avec --yes pour appliquer)."
+            )
+        if total_excluded:
+            print(f"⊘ {total_excluded} fichier(s) hors archive, ignoré(s) — voir ci-dessus.")
+        if failed:
+            print("✖ Des fichiers ont échoué (voir ✖ ci-dessus) : ils n'ont rien écrit.")
+            return 1
     return 0
 
 

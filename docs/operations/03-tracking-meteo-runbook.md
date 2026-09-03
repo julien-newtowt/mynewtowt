@@ -169,6 +169,10 @@ position ↔ voyage est temporel).
    docker compose exec app python -m scripts.import_towt_positions --dir /tmp/gps_towt --yes
    ```
    `--dir` cherche récursivement : un niveau de dossier en trop ne bloque pas.
+   Le commit a lieu **fichier par fichier** ; un fichier hors archive est
+   marqué `⊘` et ignoré sans interrompre le lot, un **échec** (`✖` : navire
+   inconnu, fichier illisible) n'annule que le fichier concerné et fait sortir
+   en code 1.
    Idempotent : relancer n'insère rien de nouveau. Les points portent
    `source='towt_archive'` et `import_batch=<fichier consolidé>` ; ils sont
    **exclus de toute purge** (`/admin/data`, rétention comprise).
