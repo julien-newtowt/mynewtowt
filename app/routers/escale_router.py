@@ -272,7 +272,11 @@ async def escale_index(
             )
             pol = await db.get(Port, selected_leg.departure_port_id)
             pod = await db.get(Port, selected_leg.arrival_port_id)
-            vessel_status = "en_mer" if (selected_leg.atd and not selected_leg.ata) else "a_quai"
+            # La phase est dérivée par ``Leg.phase`` (5 états) — seul endroit qui
+            # la calcule. Cette ligne la recalculait sur deux états et retombait
+            # sur « à quai » par défaut : un leg planifié, sans ATD déclaré,
+            # s'affichait donc « À quai » alors que le navire n'a pas appareillé.
+            vessel_status = selected_leg.phase
             # ESC-06 — équipage du navire (pour la sélection embarq./débarq.) +
             # affectations du voyage (panneau billets) + alertes de cohérence.
             if selected_leg.vessel_id:

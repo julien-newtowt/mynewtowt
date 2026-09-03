@@ -212,6 +212,24 @@ from app.permissions import has_any_access as _has_any_access  # noqa: E402
 
 templates.env.globals["can_access"] = _has_any_access
 
+
+def _leg_phase_label(phase: str | None) -> str:
+    """Libellé d'une phase de leg, ou chaîne vide si la phase est inconnue.
+
+    Import différé : ``services.planning`` tire les modèles, et ``templating``
+    est importé très tôt — l'importer au niveau module créerait un cycle.
+    """
+    from app.services.planning import LEG_PHASE_LABELS
+
+    return LEG_PHASE_LABELS.get(phase or "", "")
+
+
+# Libellés des phases de leg, servis depuis leur source unique
+# (``services.planning.LEG_PHASE_LABELS``). Les recopier dans un gabarit
+# expose au piège documenté au CLAUDE.md : une phase non traitée tombe dans
+# le ``{% else %}`` et affiche une information fausse.
+templates.env.globals["leg_phase_label"] = _leg_phase_label
+
 templates.env.globals["app_name"] = settings.app_name
 templates.env.globals["app_version"] = settings.app_version
 templates.env.globals["app_env"] = settings.app_env

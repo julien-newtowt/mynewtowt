@@ -1492,6 +1492,12 @@ form textarea {
 }
 .vessel-status-badge.a_quai { background: rgba(13,89,102,0.12); color: var(--teal-dark); }
 .vessel-status-badge.en_mer { background: rgba(135,189,41,0.18); color: #4a6a16; }
+/* Les trois phases restantes de Leg.phase : sans classe, le badge s'affichait
+   sans fond et se lisait mal. « planifié » en sable (éditorial, rien n'a
+   commencé), « terminé » en gris, « annulé » en cuivre (signal). */
+.vessel-status-badge.planifie { background: var(--sable); color: var(--teal-dark); }
+.vessel-status-badge.termine { background: var(--gris-clair); color: var(--gris); }
+.vessel-status-badge.annule { background: rgba(180,113,72,0.16); color: var(--cuivre); }
 .vessel-status-badge .nav-icon { width: 14px; height: 14px; }
 
 .lock-badge {
