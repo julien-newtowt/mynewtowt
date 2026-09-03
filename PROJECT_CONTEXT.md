@@ -779,6 +779,12 @@ ce sont des règles de contrôle interne, pas des détails d'interface :
   `import_batch` = fichier consolidé, protégées de la purge par
   `admin_data.PURGE_PROTECTED_ROWS`. Rattachement au leg **temporel**
   (`voyage_track.leg_window`) : importer les legs **avant** les positions.
+- **Borne d'archive** (constat de production, 2026-09-03) : le dossier satcom
+  contient quatre navires et couvre aussi la période NEWTOWT, avec un découpage
+  par année civile qui ne coïncide pas avec la reprise. `import_towt_positions`
+  borne chaque navire à l'`ATA` de son dernier leg d'archive + 1 jour et refuse
+  un navire sans leg d'archive (Atlantis, Atlas) — marquer une position vivante
+  `towt_archive` la rendrait impurgeable.
 - Couverture connue : legs 2024-08-09 → 2026-01-31 ; GPS à partir du
   **2024-10-21** seulement (source antérieure à confirmer) ; noon reports
   2024-09 → aujourd'hui, **non repris** (lot 2, table d'archive à arbitrer).

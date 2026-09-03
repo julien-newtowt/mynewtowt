@@ -2750,3 +2750,65 @@ Exécution staging (legs → GPS) ; lot 2 archive noon reports (ADR-014 D6,
 accepté) ; confirmation de la source GPS 08-10/2024 ; revue des 5 ports créés
 dans Admin → Ports ; sentinelle des sites `select(Leg)`.
 
+---
+
+## 2026-09-03 — Reprise TOWT : la borne d'archive, trouvée en production
+
+### Situation
+
+Import des positions en production (étape 3 du plan). Le manifeste de
+consolidation, produit sur le poste de Julien, a révélé ce que l'audit sur
+échantillon n'avait pas vu.
+
+### Analyse — faits mesurés
+
+- Le dossier « 12 - Tracking » contient **quatre navires**, pas deux :
+  `anemos` et `artemis` (2024-10-21 → 2026-09-03), mais aussi **`atlantis`**
+  (2026-08-07 → 2026-09-03, 5 976 points) et **`atlas`** (2026-08-19 →
+  2026-08-24, 395 points) — deux navires NEWTOWT postérieurs à la reprise.
+- Les fichiers sont découpés par **année civile**, alors que la frontière
+  TOWT/NEWTOWT est la **fin du dernier voyage d'archive** : ANEMOS `1AYF6`
+  arrive le 2026-01-31, ARTEMIS `2NZF5` le 2026-01-14. Les fichiers 2026
+  couvrent janvier à septembre, donc très majoritairement la période NEWTOWT.
+- Total consolidé : 321 597 points, 28 674 fichiers lus sur 28 675 (un
+  illisible), aucun rejet, aucun nom de fichier inattendu.
+
+### 🔴 Le défaut que cela aurait produit
+
+Importer le dossier tel quel aurait étiqueté des positions NEWTOWT **vivantes**
+en `source='towt_archive'` — et ce marquage est précisément ce qui les rend
+**impurgeables** (ADR-014, décision 4). La protection conçue pour préserver
+l'histoire aurait figé des données d'exploitation courante, sur Atlantis
+notamment, qui n'a aucun rapport avec l'ancienne compagnie.
+
+### Décisions et implémentation
+
+- `import_towt_positions` calcule pour chaque navire une **borne d'archive** =
+  `ATA du dernier leg origin='towt_archive'` + 1 jour (la journée d'arrivée
+  appartient au voyage), ignore les points au-delà (comptés « hors archive »
+  au rapport) et **refuse** un fichier dont le navire n'a aucun leg d'archive.
+- Options `--vessel` et `--until` pour restreindre ou forcer une borne, en
+  décision explicite.
+- Runbook : section borne ajoutée. ADR-014, décision 4 : corollaire documenté.
+
+### Risques
+
+- 🟡 Les positions ANEMOS/ARTEMIS de février à septembre 2026 ne sont reprises
+  par personne si le cron satcom ne couvrait pas cette période : trou de
+  données à combler séparément, en `source` satcom purgeable. **Décision de
+  Julien** (cf. « Reste à faire »).
+- 🟢 Un fichier illisible sur 28 675 (verrou OneDrive probable) : à relire au
+  besoin, l'import est idempotent.
+
+### Tests
+
+3 nouveaux tests : refus d'un fichier de navire sans leg d'archive (cas
+Atlantis), points postérieurs à la borne ignorés, `--until` prioritaire sur la
+borne calculée. Suite TOWT complète : 28 tests verts.
+
+### Reste à faire
+
+Trancher le sort des positions NEWTOWT 2026 du dossier SharePoint (déjà en base
+par le cron ? sinon les charger en `source` satcom) ; relire le fichier
+illisible ; puis `--yes` sur les seuls fichiers d'archive.
+

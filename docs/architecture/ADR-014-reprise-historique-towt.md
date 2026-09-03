@@ -119,6 +119,16 @@ valeur est un paramètre lié.
 inaltérable par l'écran d'administration. Un DELETE SQL direct reste possible,
 comme pour toute table — le garde-fou est applicatif, documenté ici.
 
+**Corollaire découvert à l'import (2026-09-03).** Puisque le marquage rend la
+ligne impurgeable, il ne doit jamais toucher une position vivante. Le dossier
+satcom contient pourtant quatre navires — dont Atlantis et Atlas, mis en
+service en 2026 — et ses fichiers sont découpés par année civile, alors que la
+frontière TOWT/NEWTOWT est la fin du dernier voyage d'archive du navire.
+L'import borne donc chaque navire à cette date + 1 jour, et refuse tout
+fichier dont le navire n'a aucun leg d'archive. Les positions de la période
+NEWTOWT restent du ressort du cron `/api/tracking/upload` (`source` satcom,
+purgeables).
+
 *Alternative écartée* : table `vessel_positions_archive`. Rejetée — les
 consommateurs (fenêtre temporelle par leg, distance réelle) auraient dû
 interroger deux tables.

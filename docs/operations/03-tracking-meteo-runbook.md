@@ -168,6 +168,16 @@ position ↔ voyage est temporel).
    Idempotent : relancer n'insère rien de nouveau. Les points portent
    `source='towt_archive'` et `import_batch=<fichier consolidé>` ; ils sont
    **exclus de toute purge** (`/admin/data`, rétention comprise).
+
+   ⚠️ **Borne d'archive.** Le dossier satcom couvre aussi la période NEWTOWT et
+   les navires postérieurs à la reprise (Atlantis, Atlas), alors que les
+   fichiers sont découpés par année civile. Le script borne donc chaque navire
+   à l'`ATA` de son dernier leg `origin='towt_archive'` + 1 jour, ignore les
+   points au-delà (comptés « hors archive » au rapport) et **refuse** un
+   fichier dont le navire n'a aucun leg d'archive. Les positions de la période
+   NEWTOWT arrivent par le cron `/api/tracking/upload`, jamais par ce script :
+   elles doivent rester purgeables. `--vessel` et `--until` restreignent ou
+   forcent une borne, en décision explicite.
 4. Contrôle : `/tracking?history=1&vessel=1&year=2025&leg_id=<id de 1HYF5>`
    (trace complète), `/performance/navigation/kpis?year=2025` (distances
    réelles, allongement). L'affichage est décimé à 4 000 points ; les calculs
