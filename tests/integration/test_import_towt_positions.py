@@ -140,7 +140,7 @@ async def test_refuses_file_of_vessel_that_never_sailed_for_towt(db, monkeypatch
         encoding="utf-8",
     )
     rc = await script.run([other], apply=True)
-    assert rc == 1
+    assert rc == 0  # exclusion par conception, pas un échec
     left = list((await db.execute(select(VesselPosition))).scalars())
     assert all(r.source != admin_data.TOWT_ARCHIVE_SOURCE for r in left)
 
@@ -178,7 +178,8 @@ async def test_file_entirely_after_takeover_is_refused(db, monkeypatch, tmp_path
     )
     rep = await script.import_file(db, path)
     assert rep.inserted == 0
-    assert rep.errors and "2026-05-11" in rep.errors[0]
+    assert rep.errors == []
+    assert rep.excluded and "2026-05-11" in rep.excluded[0]
 
 
 @pytest.mark.asyncio
@@ -197,3 +198,36 @@ def test_takeover_date_is_the_documented_arbitration():
     en constante nommée et borne l'archive à minuit UTC, exclusivement."""
     assert script.NEWTOWT_TAKEOVER_DATE.isoformat() == "2026-05-11"
     assert script.takeover_cutoff() == datetime(2026, 5, 11, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_excluded_file_does_not_block_the_batch(db, monkeypatch, tmp_path):
+    """Le refus d'Atlantis (voulu) ne doit pas empêcher l'écriture des fichiers
+    d'archive du même lot — sinon un seul fichier hors périmètre bloque tout.
+    """
+    path = await _setup(db, monkeypatch, tmp_path)
+    db.add(Vessel(id=3, code="3", name="Atlantis"))
+    await db.flush()
+    excluded = tmp_path / "towt_gps_atlantis_2026.csv"
+    excluded.write_text(
+        CSV.replace("anemos,", "atlantis,").replace("2024-10-21", "2026-08-07"),
+        encoding="utf-8",
+    )
+    rc = await script.run([excluded, path], apply=True)
+    assert rc == 0
+    rows = list((await db.execute(select(VesselPosition))).scalars())
+    archive = [r for r in rows if r.source == admin_data.TOWT_ARCHIVE_SOURCE]
+    assert len(archive) == 3  # les points d'archive d'ANEMOS sont bien écrits
+    assert all(r.vessel_id == 1 for r in archive)
+
+
+@pytest.mark.asyncio
+async def test_real_failure_returns_one_and_writes_nothing(db, monkeypatch, tmp_path):
+    """Navire absent de la base = échec : code 1, aucune écriture pour ce fichier."""
+    path = await _setup(db, monkeypatch, tmp_path)
+    unknown = tmp_path / "towt_gps_archimede_2025.csv"
+    unknown.write_text(CSV.replace("anemos,", "archimede,"), encoding="utf-8")
+    rc = await script.run([unknown, path], apply=True)
+    assert rc == 1
+    rows = list((await db.execute(select(VesselPosition))).scalars())
+    assert all(r.vessel_id == 1 for r in rows)  # rien pour le navire inconnu
