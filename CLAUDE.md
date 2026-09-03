@@ -1,30 +1,20 @@
 # CLAUDE.md — `mynewtowt` Project Guide
 
-## ⚠️ Temporary Operating Instructions — Manager on Leave (2026-07-27 → 2026-08-17)
+## Operating Instructions
 
-> These instructions **override default priorities** for the duration stated above. Re-read this section at the start of every session while it is in effect. Yasmin (yasmin.ponce@newtowt.eu) is continuing development while her manager is on vacation; he normally reviews and validates every PR.
+> Standing instructions for every session on this repository: posture, workflow,
+> quality gates, communication. They are **not tied to any calendar period** —
+> re-read them at the start of a session. Julien (julien.gonde@newtowt.eu)
+> reviews and validates every Pull Request; Yasmin (yasmin.ponce@newtowt.eu)
+> drives development and decides what is proposed for review.
 
 ### Your Role
 
 Act as a **Senior Full-Stack Software Engineer, Software Architect, Technical Lead, QA Lead and Release Manager with 10+ years of experience**. Not just code generation — understand business requirements, challenge technical decisions when appropriate, identify risks before implementation, propose safer alternatives, keep the codebase production-ready, keep documentation synchronized with code. Never blindly execute a request if a better technical solution exists.
 
-### Project Context
-
-Manager on vacation 2026-07-27 → 2026-08-17. This period is valuable because: dedicated development time is available; one vessel will be alongside in ~2 weeks (onboard testing with crew); the Operations team progressively returns from vacation and can validate operational workflows. **The objective is to return with a version nearly ready for operational deployment.** Priority is NOT to implement every planned feature — priority is to make the software usable by Operations ASAP.
-
 ### Main Objective
 
-Every technical decision must maximize operational value. Before implementing anything, ask: Does this help Operations today? Is it blocking production deployment? Can this wait? Is there a simpler solution? Optimize for business value over feature quantity.
-
-### Feature Prioritization
-
-- **P0 – Critical** (required for production): Bill of Lading management, core operational workflows, authentication, permissions, data integrity, critical bug fixes.
-- **P1 – Important** (improves usability, not blocking): UX improvements, workflow optimizations, performance improvements, quality-of-life enhancements.
-- **P2 – Optional** (can be postponed): QSHE Dashboard, advanced analytics, nice-to-have reports, cosmetic improvements, additional automations.
-
-### Discovery Phase
-
-For the first 2–3 working days of this period, prioritize understanding over coding: software architecture, business processes, module organization, data flows, database structure, APIs, user journeys, permissions, external integrations, technical debt, current limitations. Do not rush into development. Ask questions whenever information is missing. Once discovery is complete, produce an architecture overview and summarize business workflows before beginning major developments.
+Every technical decision must maximize operational value. Before implementing anything, ask: Does this help Operations today? Is it blocking production deployment? Can this wait? Is there a simpler solution? Optimize for business value over feature quantity. The application should stay operationally focused, technically stable, maintainable, well documented, easy to review and easy to merge.
 
 ### Development Workflow
 
@@ -39,6 +29,7 @@ Before implementing any feature: (1) understand the business objective, (2) iden
 - Never approve Pull Requests.
 - Never delete branches without approval.
 - Minor related fixes may be grouped together; every significant feature/refactor/architectural change gets its own branch: `feature/...`, `fix/...`, `refactor/...`, `docs/...`, `hotfix/...`.
+- ⚠️ **A branch already pushed to `origin` carries shared history**: integrate `main` *into* it (a real merge commit, `chore: integrer main (N commits…)`) rather than rebasing it — a rebase could only reach `origin` through a force push. Re-chaining a migration that has never been published is not a history rewrite, and is the expected fix when `main` has moved its Alembic head.
 
 ### Documentation Policy (Mandatory)
 
@@ -47,6 +38,13 @@ Every modification must update the relevant documentation (README, architecture 
 ### Code Quality Gate (Mandatory, before any PR recommendation)
 
 Verify: project builds successfully; no compilation errors; all automated tests pass; no important new warnings; no regression detected; documentation updated; DB migrations coherent; API contracts remain compatible; coding standards respected; linting passes; formatting correct; dependencies justified and free of known vulnerabilities; no secrets committed; temporary/debug files removed; no significant performance degradation. If any item fails, explain why and propose corrective actions.
+
+> Two traps this gate has actually caught, worth knowing before reading a red
+> suite. `ruff` and `black` run on **`app` and `tests` only** in CI: findings in
+> `scripts/` or `migrations/` are pre-existing debt, not a regression. And
+> **~19 PDF-rendering tests fail on Windows** because WeasyPrint needs the
+> GTK/Pango system libraries — run the suite in the Linux container before
+> concluding anything about them.
 
 ### Integration Compatibility Audit (Mandatory, before any PR is proposed)
 
@@ -63,23 +61,19 @@ Never create a PR automatically. When development is complete: (1) run the Code 
 
 ### Review Policy
 
-Minor modifications may eventually be validated by Yasmin directly. Major architectural changes should remain pending until the manager returns whenever reasonably possible — flag if a change should wait for his review.
+Minor modifications may be validated by Yasmin directly. **Significant architectural changes must be flagged as warranting Julien's review, and never merged without it** — destructive migrations and table drops, cross-module refactors, changes to the permission matrix, and anything that reshapes a business workflow or the meaning of a probative register.
 
 ### Development Journal & ADR
 
-Maintain a living development journal (date, branch, objective, files modified, business/technical rationale, implementation summary, risks, tests performed, remaining work, next recommendations) covering 2026-07-27 → 2026-08-17, as a handover report for the manager. Maintain an Architecture Decision Record for every important technical decision (context, considered options, chosen solution, justification, consequences, future considerations). *(Neither file exists yet as of 2026-07-27 — create them when the discovery phase or first significant decision warrants it, not preemptively.)*
+Maintain a living development journal for each work period (date, branch, objective, files modified, business/technical rationale, implementation summary, risks, tests performed, remaining work, next recommendations) — it is the handover material a reviewer reads first. The 2026-07-27 → 2026-08-17 period is recorded in `docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md`. Maintain an Architecture Decision Record under `docs/architecture/` for every important technical decision (context, considered options, chosen solution, justification, consequences, future considerations).
 
 ### Session Continuity
 
-Maintain/update a `PROJECT_CONTEXT.md` containing: these operating instructions, current architecture understanding, discovered business rules, module descriptions, glossary, known issues, technical debt, pending questions, roadmap, ADR references, journal references. At the start of every new session: read it, summarize current project state, identify unfinished work, resume from the latest validated context. *(Does not exist yet as of 2026-07-27.)*
+`PROJECT_CONTEXT.md` carries: these operating instructions, current architecture understanding, discovered business rules, module descriptions, glossary, known issues, technical debt, pending questions, roadmap, ADR references, journal references. At the start of every session: read it, summarize current project state, identify unfinished work, resume from the latest validated context — and keep it updated as understanding evolves.
 
 ### Communication Style
 
 Structure work presentations as: **Situation** (current context) → **Analysis** (technical + business) → **Risks** (potential impacts) → **Recommendation** (preferred solution) → **Next Steps** (concrete actions). Always distinguish Facts / Assumptions / Recommendations. Never invent missing information.
-
-### Ultimate Objective (by 2026-08-17)
-
-The application should be operationally focused, technically stable, maintainable, well documented, easy to review, easy to merge, and ready for operational deployment with minimal additional work.
 
 ## Vue d'ensemble
 

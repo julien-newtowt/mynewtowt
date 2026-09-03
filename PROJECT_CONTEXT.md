@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT.md — mynewtowt
 
-> Document de continuité de session, maintenu pendant l'absence du manager (2026-07-27 → 2026-08-17). Voir `CLAUDE.md` pour les consignes opérationnelles complètes, la stack technique détaillée, le glossaire maritime et les patterns critiques (base de données, permissions, MRV, sécurité) — ce document ne duplique pas ce contenu, il le référence.
+> Document de continuité de session, maintenu au fil des périodes de travail. Voir `CLAUDE.md` pour les consignes opérationnelles complètes, la stack technique détaillée, le glossaire maritime et les patterns critiques (base de données, permissions, MRV, sécurité) — ce document ne duplique pas ce contenu, il le référence.
 >
 > **Au début de chaque session** : lire ce document, résumer l'état du projet, identifier le travail non terminé, reprendre depuis le dernier contexte validé.
 
@@ -118,6 +118,26 @@ Testé et validé le 2026-07-28. Le README dit juste `docker compose up -d` puis
    ⚠️ **CORRECTION 2026-07-29 — la recommandation initiale (`alembic stamp head`) était mauvaise.** `stamp` marque l'historique comme appliqué **sans exécuter le DDL** : toute migration ultérieure qui `ALTER` une table ne s'exécute donc jamais, et la base dérive silencieusement du modèle. Constaté en pratique le 2026-07-29 : **7 colonnes manquantes sur 6 tables** (`vessels.deadweight_t`, `crew_members.first_name/last_name/agency`, `env_reports.period_seq`, `nav_event_noon.rob_uree_t/rob_eau_douce_t`, `ports.mrv_scope`, `voyage_emission_summaries.co2eq_t`) + **7 tables obsolètes** jamais supprimées (`create_all` ne supprime rien). Symptôme : `/tracking`, `/planning` et `/dashboard` en **HTTP 500** (`asyncpg.UndefinedColumnError`).
 
    **Procédure corrigée** : soit laisser `create_all` construire le schéma courant sur une base **réellement vide** puis `alembic stamp head` (valable uniquement à cet instant, et à refaire à chaque évolution de modèle), soit — préférable — diagnostiquer la dérive avant usage en comparant `Base.metadata` à `information_schema.columns`, et rattraper par `ALTER TABLE … ADD COLUMN IF NOT EXISTS` avec un DDL **généré depuis le modèle** (`sqlalchemy.schema.CreateColumn` compilé sur le dialecte PostgreSQL), en retirant les `NOT NULL`.
+
+   ✅ **RÉSOLU 2026-09-01 — la chaîne complète passe sur une base vierge, il n'y a plus lieu de `stamp`.** Vérifié sur la tête `20260828_0135` : les **144 migrations** s'appliquent d'un bout à l'autre sur une base réellement vide, sans erreur. La procédure propre, et **non destructive**, est donc :
+
+   ```bash
+   docker compose stop app                      # sinon create_all devance Alembic
+   docker compose exec -T db psql -U towt -d postgres -c "create database towt_neuve owner towt;"
+   docker compose run --rm --no-deps \
+     -e DATABASE_URL='postgresql+asyncpg://towt:<pwd>@db:5432/towt_neuve' \
+     app alembic upgrade head                   # conteneur jetable : pas de boot de l'app
+   # puis bascule par renommage, l'ancienne base restant disponible en repli :
+   #   alter database towt rename to towt_legacy_<date>;
+   #   alter database towt_neuve rename to towt;
+   docker compose start app && docker compose exec -T app python -m scripts.seed_demo
+   ```
+
+   ⚠️ **Reconstruire l'image avant** (`docker compose up -d --build app`) : le service `app` **embarque le code**, il ne le monte pas. Une image ancienne fait échouer `alembic current` sur `Can't locate revision …` — la révision existe dans le dépôt, pas dans l'image. Et `restart: unless-stopped` relance les anciens conteneurs au démarrage du daemon : leur présence ne prouve pas que le build a eu lieu.
+
+   **Pourquoi ne pas se contenter de `create_all`** — mesuré le 2026-09-01 en comparant colonne par colonne une base `create_all` et une base Alembic : **46 colonnes** posées par les migrations `0114`→`0135` manquaient à la base `create_all` (`packing_list_batches.bl_*`, `cashbox_movements.medium`, `onboard_sales.refund_*`, `rate_offers.*`, `commercial_clients.is_prospect`…). `create_all` crée les tables absentes mais **ne modifie jamais** une table existante : après une évolution de modèle sur table existante, la base est silencieusement incomplète et les écrans concernés tombent en 500.
+
+   **Dérive modèles ↔ migrations, état au 2026-09-01** : **aucune** colonne du modèle absente des migrations — la chaîne couvre intégralement les modèles. En revanche **45 colonnes** sont `NOT NULL` côté modèle et **nullables** côté migration (`activity_logs.created_at`, `client_accounts.language`, `docker_shifts.nb_dockers`…), et `ports.mrv_scope` l'inverse. Dette ancienne et de faible sévérité, mais réelle : la production autorise NULL là où le modèle l'interdit. À traiter par une migration dédiée, pas en urgence.
 
 4. 🔴 **`alembic upgrade head` est cassé sur `main` — blocage de déploiement** (constaté 2026-07-29) : `FAILED: Multiple head revisions are present`. Deux chaînes de migration **divergentes** coexistent — `20260716_0112_noon_rob_annexes.py` (chaîne MRV) et `20260720_0107_generated_reports.py` (chaîne rapports générés/trombinoscope) : deux branches de fonctionnalité ont ajouté des migrations sans se rebaser l'une sur l'autre. Or `CLAUDE.md` indique que **la production utilise Alembic exclusivement** ⇒ un déploiement par `alembic upgrade head` échoue en l'état. Correctif : une **migration de fusion** (`alembic merge`), à faire valider (touche l'historique de schéma). **À vérifier avant tout déploiement** : quelle révision la base de production porte réellement, et si l'écart au modèle y est le même qu'en local.
 
