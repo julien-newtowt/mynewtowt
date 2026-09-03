@@ -46,6 +46,7 @@ from app.services import hold_conditions as hold_conditions_svc
 from app.services.activity import record as activity_record
 from app.services.booking import find_by_reference, list_for_client
 from app.services.hx import mutation_response
+from app.services.planning import vessel_phases
 from app.services.vessel_position import get_latest_position
 from app.templating import templates
 
@@ -404,6 +405,9 @@ async def track(
 
     # Données carte (réutilise le même format que fleet-map.js).
     vessels_json: list[dict] = []
+    # Un seul navire ici (celui du booking suivi) : la phase de son voyage en
+    # cours, pour que la carte n'ait pas à la déduire de la vitesse.
+    phases = await vessel_phases(db, [vessel.id]) if vessel is not None else {}
     if position is not None and vessel is not None:
         vessels_json.append(
             {
@@ -411,8 +415,11 @@ async def track(
                 "code": vessel.code,
                 "lat": position.latitude,
                 "lon": position.longitude,
-                "sog": float(position.sog_kn or 0),
-                "cog": float(position.cog_deg or 0),
+                # ``None`` plutôt que 0 : une vitesse absente n'est pas une
+                # vitesse nulle, et la carte ne doit pas en conclure « à quai ».
+                "sog": (float(position.sog_kn) if position.sog_kn is not None else None),
+                "cog": (float(position.cog_deg) if position.cog_deg is not None else None),
+                "phase": phases.get(vessel.id),
                 "recorded_at": position.recorded_at.isoformat(),
             }
         )

@@ -97,7 +97,10 @@
     <tbody>
     {% for d in legs_data %}
       {% set m = d.metrics %}
-      {% set ecart = (m.actual_nm - m.theoretical_nm) if m.theoretical_nm is not none else none %}
+      {# L'écart n'a de sens qu'une fois le voyage arrivé : sur un leg en mer,
+         « réel − théorique » renvoie l'opposé du reste à parcourir, que la
+         colonne « restante » dit déjà. ``deviation_nm`` porte cette règle. #}
+      {% set ecart = m.deviation_nm %}
       {% set dh = m.duration_hours %}
       <tr>
         <td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ d.color }};margin-right:6px;"></span><strong class="mono">{{ d.leg.leg_code }}</strong></td>
@@ -109,7 +112,9 @@
         <td class="mono">{{ "%.0f"|format(m.actual_nm) }} NM</td>
         <td class="mono">{% if m.theoretical_nm is not none %}{{ "%.0f NM"|format(m.theoretical_nm) }}{% if m.theoretical_is_fallback %}<span class="text-muted" title="Distance recalculée à l'affichage (orthodromie POL→POD) — elle n'est pas encore persistée sur le leg.">*</span>{% endif %}{% else %}<span title="Un des deux ports n'a pas de coordonnées — à renseigner dans Admin → Ports.">—</span>{% endif %}</td>
         <td class="mono {{ 'text-warn' if (ecart is not none and ecart > 0) else 'text-success' if ecart is not none else '' }}">
-          {{ "%+.0f NM"|format(ecart) if ecart is not none else "—" }}
+          {% if ecart is not none %}{{ "%+.0f NM"|format(ecart) }}
+          {%- elif m.is_active %}<span title="Voyage en cours : l'écart se mesure à l'arrivée.">—</span>
+          {%- else %}—{% endif %}
         </td>
         <td class="mono">{{ "%.1f kn"|format(m.avg_speed_kn) if m.avg_speed_kn is not none else "—" }}</td>
         <td class="mono">{{ "×%.2f"|format(m.real_elongation) if m.real_elongation is not none else "—" }}</td>

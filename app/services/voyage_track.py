@@ -55,10 +55,44 @@ class TrackMetrics:
 
         > 1 = route plus longue que l'orthodromie (cap au vent, contournements).
         ``None`` si l'orthodromique est inconnue ou nulle.
+
+        ``None`` **aussi tant que le leg est en cours** : sur un voyage non
+        arrivé, ``actual_nm`` est un trajet PARTIEL et l'orthodromie couvre le
+        voyage ENTIER. Le rapport n'est alors pas un allongement mais un taux
+        d'avancement — constaté en production le 2026-09-03 sur 1CFRBR6, qui
+        affichait « allongement ×0.07 » (400 NM parcourus sur 5799). Un
+        allongement est par définition ≥ 1 : une route réelle est plus longue
+        que l'orthodromie, jamais quatorze fois plus courte. Cf.
+        ``progress_ratio`` pour la grandeur qui a un sens en cours de route.
         """
+        if self.is_active:
+            return None
         if self.theoretical_nm and self.theoretical_nm > 0:
             return round(self.actual_nm / self.theoretical_nm, 3)
         return None
+
+    @property
+    def progress_ratio(self) -> float | None:
+        """Part du voyage parcourue (0 → 1), la grandeur qui a un sens en cours.
+
+        C'est ce que valait l'ancien « allongement » sur un leg en mer, sous un
+        nom qui affirmait autre chose.
+        """
+        if self.theoretical_nm and self.theoretical_nm > 0:
+            return round(min(self.actual_nm / self.theoretical_nm, 1.0), 3)
+        return None
+
+    @property
+    def deviation_nm(self) -> float | None:
+        """Écart réel − théorique, **seulement sur un voyage arrivé**.
+
+        Sur un leg en cours, cette soustraction ne mesure rien : elle renvoie
+        l'opposé du reste à parcourir (« −5399 NM » sur 1CFRBR6), ce que la
+        colonne « restante » dit déjà, et correctement.
+        """
+        if self.is_active or self.theoretical_nm is None:
+            return None
+        return round(self.actual_nm - self.theoretical_nm, 2)
 
 
 def leg_window(leg: Leg, *, now: datetime | None = None) -> tuple[datetime, datetime, bool]:

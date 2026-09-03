@@ -16,12 +16,42 @@
 (function () {
   "use strict";
 
-  // TRK-04 — statut d'un navire d'après sa vitesse fond (SOG, en nœuds).
-  // Seuils : < 0.5 kn = à quai ; < 3 kn = manœuvre/lent ; sinon = en mer.
-  function vesselStatus(sog) {
-    if (typeof sog !== "number" || sog < 0.5) return { label: "À quai", color: "#0D5966" };
-    if (sog < 3) return { label: "Manœuvre", color: "#B47148" };
-    return { label: "En mer", color: "#87BD29" };
+  // TRK-04 — statut d'un navire.
+  //
+  // La phase du VOYAGE (déclarations ATD/ATA, cf. Leg.phase) fait foi quand
+  // elle est connue ; la vitesse fond n'en est qu'une nuance. L'inverse —
+  // déduire le statut du seul SOG — affirmait « À quai » pour tout navire à
+  // moins de 0,5 nœud, y compris un voilier encalminé en pleine mer, et pour
+  // toute position SANS vitesse (`sog` absent devenait 0 côté gabarit).
+  // Constaté le 2026-09-03 : Anemos annoncé « À quai » sur le tableau de bord
+  // et « En mer » sur sa fiche de leg, au même instant.
+  var PHASE_LABELS = {
+    planifie: { label: "Planifié", color: "#B8C5CE" },
+    en_mer: { label: "En mer", color: "#87BD29" },
+    a_quai: { label: "À quai", color: "#0D5966" },
+    termine: { label: "Terminé", color: "#7A8C99" },
+    annule: { label: "Annulé", color: "#B47148" }
+  };
+
+  function vesselStatus(sog, phase) {
+    var known = typeof sog === "number" && isFinite(sog);
+    var base = PHASE_LABELS[phase];
+    if (base) {
+      // Nuance utile aux Opérations : en mer et sans erre, c'est une
+      // information (pétole, avarie), pas un changement de phase.
+      if (phase === "en_mer" && known && sog < 0.5) {
+        return { label: "En mer — sans erre", color: base.color };
+      }
+      if (phase === "en_mer" && known && sog < 3) {
+        return { label: "En mer — allure lente", color: base.color };
+      }
+      return base;
+    }
+    // Aucune phase connue : ne rien affirmer sur la position dans le voyage.
+    if (!known) return { label: "Vitesse inconnue", color: "#B8C5CE" };
+    if (sog < 0.5) return { label: "Sans erre", color: "#B8C5CE" };
+    if (sog < 3) return { label: "Allure lente", color: "#B47148" };
+    return { label: "En route", color: "#87BD29" };
   }
 
   function initMap(el) {
@@ -69,7 +99,7 @@
         var marker = document.createElement("div");
         // TRK-04 — codage couleur du statut par vitesse fond (SOG) :
         // à quai (gris/teal), manœuvre (cuivre), en mer (vert).
-        var status = vesselStatus(v.sog);
+        var status = vesselStatus(v.sog, v.phase);
         marker.style.cssText = (
           "width:34px;height:34px;border-radius:50%;background:" + status.color + ";" +
           "color:#fff;display:flex;align-items:center;justify-content:center;" +

@@ -21,6 +21,7 @@ from app.models.claim import VesselPosition
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.vessel import Vessel
+from app.services.planning import vessel_phases
 from app.templating import templates
 
 router = APIRouter(tags=["public"])
@@ -50,6 +51,7 @@ async def fleet_tracker(
             "request": request,
             "vessels": vessels,
             "last_positions": last_positions,
+            "phases": await vessel_phases(db, [v.id for v in vessels]),
             "maptiler_token": settings.map_token,
         },
     )

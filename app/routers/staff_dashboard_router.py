@@ -18,6 +18,7 @@ from app.models.leg import Leg
 from app.models.ticket import Ticket
 from app.models.vessel import Vessel
 from app.services.notifications import list_for as list_notifications
+from app.services.planning import vessel_phases
 from app.templating import templates
 
 router = APIRouter(tags=["staff-dashboard"])
@@ -92,6 +93,7 @@ async def dashboard(
             "tickets_p1": int(tickets_p1 or 0),
             "vessels": vessels,
             "last_positions": last_positions,
+            "phases": await vessel_phases(db, [v.id for v in vessels]),
             "maptiler_token": settings.map_token,
             "notifications": notifications,
             "notif_count": sum(1 for n in notifications if not n.is_read),

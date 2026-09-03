@@ -88,6 +88,33 @@ LEG_PHASE_LABELS: dict[str, str] = {
 }
 
 
+async def vessel_phases(db: AsyncSession, vessel_ids: list[int]) -> dict[int, str]:
+    """Phase du voyage en cours par navire — ``{vessel_id: phase}``.
+
+    Alimente la carte de flotte, qui déduisait son étiquette de la seule
+    vitesse fond : ``sog < 0.5`` y valait « À quai », et une vitesse
+    **absente** aussi. Sur une compagnie à la voile, un navire encalminé au
+    milieu de l'Atlantique s'affichait donc « à quai » — constaté le
+    2026-09-03 sur Anemos, que la fiche de leg donnait au même instant « en
+    mer ». Une vitesse dit une vitesse ; elle ne dit pas où le navire se
+    trouve dans son voyage.
+
+    Les navires sans leg courant sont simplement absents du dictionnaire :
+    l'appelant doit alors s'abstenir de conclure, pas choisir un défaut.
+    """
+    if not vessel_ids:
+        return {}
+    phases: dict[int, str] = {}
+    for vessel_id in vessel_ids:
+        leg_id = await current_leg_id(db, vessel_id)
+        if leg_id is None:
+            continue
+        leg = await db.get(Leg, leg_id)
+        if leg is not None:
+            phases[vessel_id] = leg.phase
+    return phases
+
+
 async def current_leg_id(
     db: AsyncSession, vessel_id: int, *, when: datetime | None = None
 ) -> int | None:

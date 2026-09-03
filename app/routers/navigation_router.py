@@ -314,6 +314,11 @@ async def navigation_kpis(
     total_points = 0
     total_actual = 0.0
     total_theoretical = 0.0
+    # Allongement de flotte : n'agréger que les legs ARRIVÉS. Un leg en cours
+    # apporte un trajet partiel face à une orthodromie entière et tirerait le
+    # ratio de toute la flotte sous 1 — un allongement est ≥ 1 par définition.
+    done_actual = 0.0
+    done_theoretical = 0.0
     for r in rows:
         dep = await _port(r.leg.departure_port_id)
         arr = await _port(r.leg.arrival_port_id)
@@ -332,6 +337,9 @@ async def navigation_kpis(
         total_actual += r.metrics.actual_nm
         if r.metrics.theoretical_nm is not None:
             total_theoretical += r.metrics.theoretical_nm
+            if not r.metrics.is_active:
+                done_actual += r.metrics.actual_nm
+                done_theoretical += r.metrics.theoretical_nm
 
     totals = {
         "leg_count": len(enriched),
@@ -339,7 +347,7 @@ async def navigation_kpis(
         "actual_nm": total_actual,
         "theoretical_nm": total_theoretical or None,
         "real_elongation": (
-            round(total_actual / total_theoretical, 3) if total_theoretical > 0 else None
+            round(done_actual / done_theoretical, 3) if done_theoretical > 0 else None
         ),
     }
 
