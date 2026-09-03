@@ -15,7 +15,9 @@
 #
 # Failure modes are explicit:
 #   - migration error  → DB snapshot restored, image NOT swapped, exit 1
-#   - smoke test fail  → previous image redeployed (rollback), exit 2
+#   - health/smoke fail → previous revision rebuilt & redeployed, exit 2
+#                         (si ce retour arrière échoue lui aussi : maintenance
+#                          non levée, exit 2, intervention manuelle)
 #
 # Usage:
 #   scripts/deploy.sh                          # deploys origin/main HEAD (pulls)
@@ -54,6 +56,17 @@ HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-90}"
 
 BACKUP_DIR="${BACKUP_DIR:-${PROJECT_ROOT}/backups}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
+
+# Révision qui tournait AVANT ce déploiement — cible du retour arrière.
+# Renseignée par sync_code, donc toujours capturée avant le moindre checkout.
+PREVIOUS_VERSION=""
+# Dernière révision passée au vert (health + smoke). Persistée pour qu'un run
+# ultérieur sache vers quoi revenir même s'il meurt avant sync_code.
+LAST_RELEASE_FILE="${BACKUP_DIR}/.last-release"
+# Positionné par run_migrations quand la tête Alembic a réellement bougé : un
+# retour arrière du code seul laisse alors l'ancien code face au nouveau
+# schéma, ce que rollback_app doit dire au lieu de le taire.
+MIGRATIONS_APPLIED=0
 
 # Colors only if TTY
 if [[ -t 1 ]]; then
@@ -188,6 +201,11 @@ preflight() {
 # ---------------------------------------------------------------------------
 
 sync_code() {
+  # Révision actuellement déployée, capturée AVANT tout checkout : sans elle,
+  # un déploiement raté n'a aucun point de retour connu. C'est ce qui manquait
+  # à rollback_app, qui se contentait de réclamer une intervention manuelle.
+  PREVIOUS_VERSION="$(git -C "${PROJECT_ROOT}" rev-parse --short HEAD 2>/dev/null || true)"
+
   if (( SKIP_GIT_SYNC == 1 )); then
     warn "Skipping git sync (--skip-git-sync) — deploying the working tree as-is"
     VERSION="${VERSION:-$(git -C "${PROJECT_ROOT}" rev-parse --short HEAD)}"
@@ -300,12 +318,26 @@ run_migrations() {
   log "Applying Alembic migrations"
   cd "${PROJECT_ROOT}"
 
+  # Tête Alembic avant migration. Un retour arrière du code seul n'est sûr que
+  # si le schéma n'a pas bougé ; sinon l'ancien code tourne face au nouveau
+  # schéma. On mesure, plutôt que de supposer.
+  local before after
+  before="$(docker compose -f "${COMPOSE_FILE}" run --rm -T app \
+              alembic current 2>/dev/null | tail -1 || true)"
+
   # Run migration in a one-shot container that shares env + network with the
   # main app service. This way we don't depend on the app being healthy.
   if ! docker compose -f "${COMPOSE_FILE}" run --rm app alembic upgrade head; then
     err "Migration failed"
     restore_last_snapshot
     fatal "Migration failed and DB has been restored. Exit code 1."
+  fi
+
+  after="$(docker compose -f "${COMPOSE_FILE}" run --rm -T app \
+             alembic current 2>/dev/null | tail -1 || true)"
+  if [[ -n "${after}" && "${before}" != "${after}" ]]; then
+    MIGRATIONS_APPLIED=1
+    log "Schema moved: ${before:-<unknown>} → ${after}"
   fi
   success "Migrations applied"
 }
@@ -448,14 +480,89 @@ restore_last_snapshot() {
   success "DB restored from ${snapshot}"
 }
 
+# Retour arrière applicatif RÉEL : recompile et redéploie la révision qui
+# tournait avant ce déploiement, puis vérifie qu'elle est saine.
+#
+# Il n'y a pas d'image précédente à repuller : le service `app` de
+# docker-compose.yml est déclaré `build: .` sans `image:`, donc chaque build
+# écrase le tag précédent. La seule trace de « l'état d'avant » est donc la
+# révision git — d'où le rebuild, plus lent qu'un pull mais qui ne dépend
+# d'aucun registre ni d'aucune convention de nommage d'image.
+#
+# Contrat : renvoie 0 si l'ancienne révision est de nouveau saine, 1 sinon.
+# L'appelant NE DOIT PAS lever la maintenance quand la valeur est 1.
+#
+# ⚠️ Limite connue, non corrigée ici : le marqueur de maintenance vit dans
+# `/tmp/.maintenance` À L'INTÉRIEUR du conteneur app (cf.
+# app/middlewares/maintenance.py). Un `--force-recreate` le détruit, et un
+# conteneur qui a quitté ne peut plus rien servir — donc pendant la fenêtre
+# où l'app est morte, les visiteurs reçoivent un 502 du reverse proxy et non
+# la page d'attente. Ne pas lever la maintenance reste néanmoins nécessaire :
+# c'est ce qui évite d'exposer un backend non validé quand le conteneur, lui,
+# tourne. Rendre le marqueur persistant (volume, ou prise en charge côté
+# Caddy) est un correctif distinct.
 rollback_app() {
-  warn "Attempting app rollback"
+  local target="${PREVIOUS_VERSION}"
+
+  if [[ -z "${target}" && -f "${LAST_RELEASE_FILE}" ]]; then
+    target="$(cat "${LAST_RELEASE_FILE}" 2>/dev/null || true)"
+    [[ -n "${target}" ]] && log "Rollback target read from ${LAST_RELEASE_FILE}"
+  fi
+
+  if [[ -z "${target}" ]]; then
+    err "No previous revision known — cannot roll back automatically."
+    err "Maintenance mode is NOT lifted. Deploy a known-good revision explicitly:"
+    err "  scripts/deploy.sh -v <sha|tag>"
+    return 1
+  fi
+
+  if [[ "${target}" == "${VERSION}" ]]; then
+    warn "Previous revision (${target}) is the one just deployed — nothing to"
+    warn "roll back to. Expected with --skip-git-sync. Maintenance NOT lifted."
+    return 1
+  fi
+
+  if (( MIGRATIONS_APPLIED == 1 )); then
+    warn "Migrations were applied during this deploy: rolling the CODE back to"
+    warn "${target} leaves the previous code facing the NEW schema. That is safe"
+    warn "only if those migrations are backward-compatible. If the rolled-back"
+    warn "app misbehaves, restore the database too:"
+    warn "  scripts/rollback.sh $(cat "${BACKUP_DIR}/.last-snapshot" 2>/dev/null || echo '<snapshot>')"
+  fi
+
+  log "Rolling back app to ${target}"
   cd "${PROJECT_ROOT}"
-  # Simplest: bring previous image back by rebuilding from previous commit.
-  # In a real registry-based setup, you'd `docker pull <prev_image>` and
-  # `docker compose up -d`. Here we rely on the snapshot for data integrity
-  # and a manual git checkout of the previous tag.
-  warn "Manual intervention required: pull previous image / git checkout previous release"
+
+  # HEAD détaché : la branche de déploiement reste intacte, et le prochain
+  # `sync_code` sans -v la remettra en place par checkout + fast-forward.
+  if ! git checkout --detach "${target}"; then
+    err "git checkout ${target} failed — cannot roll back. Maintenance NOT lifted."
+    return 1
+  fi
+  if ! docker compose -f "${COMPOSE_FILE}" build app; then
+    err "Rebuild of ${target} failed — cannot roll back. Maintenance NOT lifted."
+    return 1
+  fi
+  if ! docker compose -f "${COMPOSE_FILE}" up -d --no-deps --force-recreate app; then
+    err "Could not recreate the app container on ${target}. Maintenance NOT lifted."
+    return 1
+  fi
+
+  if wait_for_health; then
+    success "Rolled back to ${target} — application healthy again"
+    return 0
+  fi
+
+  err "Rollback to ${target} did not become healthy either. Maintenance NOT lifted."
+  err "Manual intervention required. Last known-good revision: ${target}"
+  return 1
+}
+
+# Mémorise la révision qui vient de passer health ET smoke : point de retour
+# d'un déploiement ultérieur qui échouerait avant d'avoir pu capturer HEAD.
+record_release() {
+  mkdir -p "${BACKUP_DIR}"
+  echo "${VERSION}" > "${LAST_RELEASE_FILE}"
 }
 
 # ---------------------------------------------------------------------------
@@ -490,6 +597,7 @@ report() {
 ────────────────────────────────────────────────────────────────────
   Environment      : ${ENV}
   Version deployed : ${VERSION}
+  Previous version : ${PREVIOUS_VERSION:-<unknown>}
   Health URL       : ${HEALTH_URL}
   Snapshot         : ${SKIP_SNAPSHOT:+skipped}$( (( SKIP_SNAPSHOT == 0 )) && cat "${BACKUP_DIR}/.last-snapshot" 2>/dev/null )
   Time             : $(date -u +%FT%TZ)
@@ -512,17 +620,29 @@ main() {
   maintenance_on
   run_migrations
   rolling_restart
+  # La maintenance reste ON pendant le retour arrière. La lever d'abord —
+  # ce que faisait ce script — exposait un backend non validé, voire mort,
+  # au moment précis où il fallait le cacher.
   if ! wait_for_health; then
-    maintenance_off
-    rollback_app
-    fatal "Deployment aborted: health check failed. Exit code 2."
+    if rollback_app; then
+      maintenance_off
+      err "Deployment aborted: health check failed — rolled back to ${PREVIOUS_VERSION}. Exit code 2."
+      exit 2
+    fi
+    err "Deployment aborted: health check failed AND rollback failed. Exit code 2."
+    exit 2
   fi
   if ! smoke_tests; then
-    maintenance_off
-    rollback_app
-    fatal "Deployment aborted: smoke tests failed. Exit code 2."
+    if rollback_app; then
+      maintenance_off
+      err "Deployment aborted: smoke tests failed — rolled back to ${PREVIOUS_VERSION}. Exit code 2."
+      exit 2
+    fi
+    err "Deployment aborted: smoke tests failed AND rollback failed. Exit code 2."
+    exit 2
   fi
   maintenance_off
+  record_release
   report
   success "Deployment completed successfully — version ${VERSION}"
 }
