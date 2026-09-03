@@ -265,7 +265,7 @@ async def add_sof_event(
         entity_label=f"{event_type}@{occurred_at}",
         ip_address=_client_ip(request),
     )
-    # LOT 14 — la synchro SOF→MRVEvent (``mrv_sync``) est éteinte (module archivé).
+    # La synchro SOF→MRVEvent (``mrv_sync``) a été supprimée (legacy retiré).
     # Les Departure/Arrival de la capture v2 se pré-remplissent depuis le SOF.
     # FLX-02 / PLN-SEQ — les événements réels du bord pilotent la séquence via
     # l'orchestrateur unique (ATD/ATA à l'heure de l'événement — plus « now() » —,
@@ -880,8 +880,7 @@ async def edit_sof_event(
 ):
     """ONB-01 — corrige un SOF **non signé** (type/label/heure/position/notes).
 
-    Interdit dès que le SOF est signé (``is_locked``) → 409. L'éventuel
-    MRVEvent dérivé est réaligné (best-effort) pour rester cohérent.
+    Interdit dès que le SOF est signé (``is_locked``) → 409.
     """
     e = await db.get(SofEvent, event_id)
     if e is None:
@@ -900,7 +899,7 @@ async def edit_sof_event(
     e.longitude = longitude
     e.notes = (notes or "").strip() or None
     await db.flush()
-    # LOT 14 — synchro SOF→MRVEvent éteinte (module ``mrv_sync`` archivé).
+    # Synchro SOF→MRVEvent supprimée (module ``mrv_sync`` retiré).
     await activity_record(
         db,
         action="update",
@@ -930,7 +929,7 @@ async def delete_sof_event(
     ensure_unlocked(e)
     leg_id = e.leg_id
     label = f"{e.event_type}@{e.occurred_at.isoformat()}"
-    # LOT 14 — plus de nettoyage MRVEvent dérivé (module ``mrv_sync`` archivé).
+    # Plus de nettoyage MRVEvent dérivé (module ``mrv_sync`` supprimé).
     await db.delete(e)
     await db.flush()
     await activity_record(
@@ -1155,9 +1154,10 @@ async def sign_noon_report(
         detail=n.signature_hash[:12] if n.signature_hash else None,
         ip_address=_client_ip(request),
     )
-    # LOT 14 — synchro noon→MRVEvent éteinte (module ``mrv_sync`` archivé) : le
-    # noon report signé reste immuable (audit/signature) et alimente le fallback
-    # ledger ``legacy_noon``, mais ne génère plus de ``mrv_events``.
+    # Synchro noon→MRVEvent supprimée (module ``mrv_sync`` retiré) : le noon
+    # report signé reste immuable (audit/signature) et alimente le fallback
+    # ledger ``legacy_noon``, mais ne génère plus de ``mrv_events`` (table
+    # elle-même supprimée).
     return RedirectResponse(url=f"/onboard/navigation?leg_id={n.leg_id}", status_code=303)
 
 

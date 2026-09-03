@@ -402,19 +402,19 @@ def test_v2_pipedrive_deal_push_restored():
 
 
 def test_v2_mrv_routes_decommissioned_lot14():
-    """LOT 14 — les routes legacy V2 restaurées jadis sont RETIRÉES à la bascule.
+    """LOT 14 puis suppression totale — les routes legacy V2 sont RETIRÉES.
 
     Décision client (GO) : le CRUD manuel ``mrv_events``, l'export CSV DNV et
-    l'écran ``/params`` disparaissent ; la capture d'événements v2 + les datasets
-    OVDLA/OVDBR sont la voie unique. Les ``mrv_events`` restent en archive
-    lecture seule (``/mrv/archive/events``). Ce test remplace l'ancien
-    ``test_v2_mrv_routes_restored`` (obsolété par le décommissionnement).
+    l'écran ``/params`` disparaissent (lot 14) ; la table ``mrv_events`` et son
+    archive lecture seule ont ensuite été supprimées à leur tour (aucune preuve
+    d'usage réglementaire réel). La capture d'événements v2 + les datasets
+    OVDLA/OVDBR sont la voie unique.
     """
     from app.routers.mrv_router import router
 
     m = _methods(router)
     paths = _paths(router)
-    # Retirés (CRUD MRVEvent, exports legacy, params) :
+    # Retirés (CRUD MRVEvent, exports legacy, params, archive) :
     assert ("POST", "/mrv/legs/{leg_id}/events") not in m
     assert ("POST", "/mrv/events/{event_id}/edit") not in m
     assert ("POST", "/mrv/events/{event_id}/delete") not in m
@@ -422,8 +422,8 @@ def test_v2_mrv_routes_decommissioned_lot14():
     assert ("GET", "/mrv/export/carbon-report.pdf") not in m
     assert ("POST", "/mrv/params") not in m
     assert "/mrv/legs/{leg_id}" not in paths  # détail legacy retiré
-    # Voie unique + archive :
-    assert "/mrv/archive/events" in paths
+    assert "/mrv/archive/events" not in paths  # archive supprimée avec la table
+    # Voie unique :
     assert "/mrv/datasets" in paths
 
 
@@ -436,60 +436,11 @@ def test_v2_dnv_18col_export_removed_lot14():
     assert not hasattr(me, "build_dnv_rows")
 
 
-def test_v2_mrv_do_counters_present():
-    """MRV-04 : les 4 compteurs DO + ME/AE/ROB calculés existent."""
-    from app.models.mrv import MRVEvent
-
-    for f in (
-        "port_me_do_counter",
-        "stbd_me_do_counter",
-        "fwd_gen_do_counter",
-        "aft_gen_do_counter",
-        "me_consumption_t",
-        "ae_consumption_t",
-        "total_consumption_t",
-        "rob_calculated_t",
-        "lat_deg",
-        "lat_ns",
-    ):
-        assert hasattr(MRVEvent, f), f
-
-
-def test_v2_mrv_multirule_quality_restored():
-    """MRV-05 : contrôle qualité multi-règles + statut `error` bloquant."""
-    from decimal import Decimal
-
-    from app.models.mrv import MRVEvent
-    from app.services.mrv_compute import leg_has_quality_errors, validate_event
-
-    assert callable(leg_has_quality_errors)
-    # Règle compteurs monotones : une baisse vs l'événement précédent ⇒ error.
-    prev = MRVEvent(
-        leg_id=1,
-        event_kind="noon_consumption",
-        fuel_type="MDO",
-        port_me_do_counter=100,
-        stbd_me_do_counter=100,
-        fwd_gen_do_counter=50,
-        aft_gen_do_counter=50,
-    )
-    cur = MRVEvent(
-        leg_id=1,
-        event_kind="noon_consumption",
-        fuel_type="MDO",
-        port_me_do_counter=90,  # en baisse → anomalie
-        stbd_me_do_counter=100,
-        fwd_gen_do_counter=50,
-        aft_gen_do_counter=50,
-    )
-    validate_event(cur, prev, density=Decimal("0.845"), deviation=Decimal("2"))
-    assert cur.quality_status == "error"
-    assert "baisse" in (cur.quality_notes or "")
-    # LOT 14 — le moteur qualité legacy (``mrv_compute``) reste importable pour
-    # l'archive et le chemin inerte de ``mrv_sync`` ; l'ancien blocage porté par
-    # l'export Carbon Report legacy a disparu (route retirée). Le contrôle qualité
-    # vivant est désormais le moteur de règles v2 (``QualityCheckResult``,
-    # écran ``/mrv/qualite``, lot 8) — hors périmètre de cette parité V2.
+# test_v2_mrv_do_counters_present / test_v2_mrv_multirule_quality_restored
+# (MRV-04/MRV-05, modèle ``MRVEvent`` + moteur ``mrv_compute``) supprimés avec
+# le legacy MRV : plus aucun symbole à vérifier. Le contrôle qualité vivant
+# est le moteur de règles v2 (``QualityCheckResult``, écran ``/mrv/qualite``,
+# lot 8), hors périmètre de cette parité V2.
 
 
 # ───────────────────────────── Commercial (V2 parité) ────────────────────────
@@ -788,12 +739,17 @@ def test_v2_crew_offleg_and_ticket_restored():
 
 
 def test_v2_mrv_dms_autofill_restored():
-    """MRV-07 — convertisseur décimal→DMS + auto-remplissage de la position."""
-    from app.services.mrv_compute import autofill_event_position, decimal_to_dms
+    """MRV-07 — convertisseur décimal→DMS (déplacé vers app.utils.geo).
+
+    ``autofill_event_position`` (mrv_compute, dead code confirmé) a été
+    supprimé avec le reste du legacy MRV, sans être préservé.
+    """
+    from decimal import Decimal
+
+    from app.utils.geo import decimal_to_dms
 
     deg, minutes, hemi = decimal_to_dms(49.5, is_lat=True)
-    assert (deg, hemi) == (49, "N")
-    assert callable(autofill_event_position)
+    assert (deg, minutes, hemi) == (49, Decimal("30.000"), "N")
 
 
 def test_v2_order_attachments_restored():
@@ -1010,22 +966,19 @@ def test_v2_claims_insurance_exposure_restored():
 def test_v2_mrv_editable_params_drive_quality():
     """MRV-06 : densité MDO + seuil de déviation éditables pilotent la qualité.
 
-    LOT 14 — l'écran legacy ``/mrv/params`` (MRVParameter) est RETIRÉ : la
-    configuration des seuils vit désormais dans le moteur de règles v2
-    (``/mrv/parametres`` : ``validation_rule_thresholds``, override par navire).
-    Les résolveurs canoniques legacy restent importables (archive + chemin
-    inerte de ``mrv_sync``) ; le paramétrage vivant passe par l'écran v2.
+    L'écran legacy ``/mrv/params`` (MRVParameter) est RETIRÉ : la configuration
+    des seuils vit désormais dans le moteur de règles v2 (``/mrv/parametres`` :
+    ``validation_rule_thresholds``, override par navire). Les résolveurs
+    canoniques legacy (``mrv_compute.resolve_density``/``resolve_deviation``)
+    ont été supprimés avec le reste du legacy MRV.
     """
     from app.routers.mrv_router import router
-    from app.services.mrv_compute import resolve_density, resolve_deviation
 
     m = _methods(router)
     paths = _paths(router)
     # Écran legacy retiré ; écran de paramétrage v2 présent.
     assert ("GET", "/mrv/params") not in m and ("POST", "/mrv/params") not in m
     assert "/mrv/parametres" in paths
-    # Résolveurs canoniques des paramètres legacy toujours importables (archive).
-    assert callable(resolve_density) and callable(resolve_deviation)
 
 
 def test_v2_stowage_capacity_format_stacking_restored():

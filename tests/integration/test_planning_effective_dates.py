@@ -27,7 +27,7 @@ from app.models.leg import Leg
 from app.models.vessel import Vessel
 from app.routers.planning_router import _build_gantt_rows, _new_leg_suggestions
 from app.services.planning import effective_eta, effective_etd, ensure_utc
-from tests.integration.test_mrv_reprise import _setup_leg
+from tests.integration.conftest import _setup_leg
 
 # ``_setup_leg`` pose etd = 2026-04-01, eta = +20 j (navire 1, FRFEC → BRSSO).
 BASE = datetime(2026, 4, 1, tzinfo=UTC)

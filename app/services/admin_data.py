@@ -40,7 +40,6 @@ ALLOWED_EXPORT_TABLES: tuple[str, ...] = (
     "eta_shifts",
     "escale_operations",
     "docker_shifts",
-    "mrv_events",
     "stowage_plans",
     "stowage_items",
     "commercial_clients",

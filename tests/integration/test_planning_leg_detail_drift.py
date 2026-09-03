@@ -11,8 +11,7 @@ from datetime import timedelta
 
 import pytest
 
-from tests.integration.conftest import FakeRequest
-from tests.integration.test_mrv_reprise import _setup_leg
+from tests.integration.conftest import FakeRequest, _setup_leg
 
 
 def test_leg_detail_template_exposes_delegated_flow_and_drift():
