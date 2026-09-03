@@ -149,8 +149,9 @@ position ↔ voyage est temporel).
    copiés à la construction, aucun montage du code source.
    Contrôle : `/planning?year=2025&origin=towt` — 36 voyages, badge « TOWT »,
    fiche en lecture seule.
-2. Consolidation locale (poste où la bibliothèque est synchronisée, Python ≥ 3.10,
-   aucune dépendance) :
+2. Consolidation locale (poste où la bibliothèque est synchronisée,
+   **Python ≥ 3.11**, aucune dépendance — le fichier est autonome, il peut être
+   copié seul sans cloner le dépôt) :
    ```bash
    python scripts/towt_gps_consolidate.py --source "C:\Users\<user>\TOWT\NewTOWT - Service Technique - Documents\12 - Tracking" --out .\gps_towt
    ```

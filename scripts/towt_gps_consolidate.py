@@ -4,6 +4,9 @@
 12 - Tracking » est synchronisée (OneDrive), par exemple :
     C:\\Users\\<user>\\TOWT\\NewTOWT - Service Technique - Documents\\12 - Tracking
 
+Autonome : bibliothèque standard uniquement, **Python ≥ 3.11** (``datetime.UTC``).
+Le fichier peut donc être copié seul sur le poste, sans cloner le dépôt.
+
 Ce dossier contient un CSV par navire et par heure depuis le 2024-10-21
 (``AAAAMMJJhhmmss-<navire>-satcoms.csv``, séparateur ``;``, ~12 points au pas
 de 5 min, ordre antéchronologique, première ligne souvent sans SOG/COG) :
