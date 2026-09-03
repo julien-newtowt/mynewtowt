@@ -1118,7 +1118,6 @@ async def sign_sof_event(
                         actor_name=actor_name,
                         create_sof=False,
                     )
-            except voyage_transitions.VoyageSequenceError as seq_err:
             except PlanningError as seq_err:
                 logger.warning("SOF signé hors séquence (leg %s) : %s", e.leg_id, seq_err)
             # ONB-04 — journal de bord : trace la signature SOF (best-effort).
