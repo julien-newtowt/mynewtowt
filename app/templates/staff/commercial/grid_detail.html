@@ -1,5 +1,8 @@
 {% extends "staff/_layout.html" %}
 {% block title %}{{ grid.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block head %}{{ super() }}
+<script src="/static/js/bracket-rows.js" defer></script>
+{% endblock %}
 {% set editable = grid.status != 'active' %}
 {% block content %}
 
@@ -155,30 +158,68 @@
 
   {% if editable %}
   <h3 class="mt-3">Éditer les brackets</h3>
-  <p class="text-muted text-sm">Laissez une ligne vide pour la supprimer. Les lignes renseignées remplacent l'ensemble des brackets.</p>
+  <p class="text-muted text-sm">
+    Le <strong>+</strong> insère une tranche sous la ligne, la <strong>croix</strong> la retire.
+    L'enregistrement remplace l'ensemble des tranches ; elles sont retriées par quantité.
+  </p>
   <form method="post" action="/commercial/grids/{{ grid.id }}/brackets">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     <table class="data-table">
-      <thead><tr><th>Libellé</th><th>Max qty</th><th>Coefficient</th></tr></thead>
-      <tbody>
-        {% for b in grid.brackets %}
+      <thead>
         <tr>
+          <th>Libellé</th><th>Max qty</th><th>Coefficient</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      {# Les trois champs d'une tranche sont postés en listes parallèles : c'est
+         la position de la ligne qui les associe. bracket-rows.js insère et
+         retire donc toujours la ligne entière. #}
+      <tbody id="bracket-rows">
+        {% for b in grid.brackets %}
+        <tr data-bracket-row>
           <td><input name="bracket_label" type="text" maxlength="80" value="{{ b.label or '' }}" /></td>
           <td><input name="bracket_max_qty" type="number" min="1" step="1" value="{{ b.max_qty }}" class="mono" /></td>
           <td><input name="bracket_coeff" type="number" min="0" step="0.01" value="{{ b.coeff }}" class="mono" /></td>
+          <td>
+            <button type="button" class="btn btn-ghost btn-sm" data-add-bracket
+                    title="Insérer une tranche sous celle-ci" aria-label="Insérer une tranche">+</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-remove-bracket
+                    title="Retirer cette tranche" aria-label="Retirer cette tranche">✕</button>
+          </td>
         </tr>
         {% endfor %}
-        {% for _ in range(3) %}
-        <tr>
+        {# Une ligne vierge conservée : sans JavaScript, elle reste le seul moyen
+           d'ajouter une tranche. Vide, le serveur l'ignore. #}
+        <tr data-bracket-row>
           <td><input name="bracket_label" type="text" maxlength="80" placeholder="ex. 200 palettes" /></td>
           <td><input name="bracket_max_qty" type="number" min="1" step="1" placeholder="200" class="mono" /></td>
           <td><input name="bracket_coeff" type="number" min="0" step="0.01" placeholder="0.80" class="mono" /></td>
+          <td>
+            <button type="button" class="btn btn-ghost btn-sm" data-add-bracket
+                    title="Insérer une tranche sous celle-ci" aria-label="Insérer une tranche">+</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-remove-bracket
+                    title="Retirer cette tranche" aria-label="Retirer cette tranche">✕</button>
+          </td>
         </tr>
-        {% endfor %}
       </tbody>
     </table>
     <button type="submit" class="btn btn-primary">Enregistrer les brackets</button>
   </form>
+
+  {# Gabarit cloné par bracket-rows.js. #}
+  <template id="bracket-row-tpl">
+    <tr data-bracket-row>
+      <td><input name="bracket_label" type="text" maxlength="80" placeholder="ex. 200 palettes" /></td>
+      <td><input name="bracket_max_qty" type="number" min="1" step="1" placeholder="200" class="mono" /></td>
+      <td><input name="bracket_coeff" type="number" min="0" step="0.01" placeholder="0.80" class="mono" /></td>
+      <td>
+        <button type="button" class="btn btn-ghost btn-sm" data-add-bracket
+                title="Insérer une tranche sous celle-ci" aria-label="Insérer une tranche">+</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-remove-bracket
+                title="Retirer cette tranche" aria-label="Retirer cette tranche">✕</button>
+      </td>
+    </tr>
+  </template>
   {% endif %}
   {% if grid.notes %}
   <div class="alert alert-info mt-3">{{ grid.notes }}</div>

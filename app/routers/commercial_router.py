@@ -1613,7 +1613,14 @@ async def grid_payment_terms_update(
     except PaymentTermError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Vider PUIS flusher avant de réinsérer. Sans ce flush intermédiaire,
+    # SQLAlchemy émet les INSERT avant les DELETE dans le même flush : les
+    # nouvelles échéances reprennent les positions 1..n encore occupées et la
+    # contrainte `uq_grid_payment_term_position` saute — 500 à chaque
+    # ré-enregistrement de l'échéancier (le premier passait, n'ayant rien à
+    # remplacer, ce qui rendait le défaut invisible à la recette).
     grid.payment_terms.clear()
+    await db.flush()
     for term in terms:
         grid.payment_terms.append(RateGridPaymentTerm(**term))
     await db.flush()
@@ -2027,6 +2034,97 @@ async def offers_list(
     )
 
 
+# ⚠️ ORDRE DE DÉCLARATION — les chemins littéraux (`/offers/new`,
+# `/offers/grid-options`) doivent précéder `/offers/{offer_id}`. FastAPI
+# résout dans l'ordre de déclaration et n'ajoute aucun convertisseur de type
+# au motif : `/{offer_id}` capture n'importe quel segment, donc `new` était lu
+# comme un identifiant et l'écran de création répondait 422 `int_parsing`.
+# Même piège que `/captain/ventes/{vessel_id}` — verrouillé par un test.
+@router.get("/offers/new", response_class=HTMLResponse)
+async def offer_new_form(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+) -> HTMLResponse:
+    clients = list(
+        (await db.execute(select(Client).where(Client.is_active.is_(True)).order_by(Client.name)))
+        .scalars()
+        .all()
+    )
+    from app.services.leg_filter import leg_select_options
+
+    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
+    leg_options = await leg_select_options(db)
+    grids = list(
+        (
+            await db.execute(
+                select(RateGrid)
+                .options(selectinload(RateGrid.lines))
+                .where(RateGrid.status == "active")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return templates.TemplateResponse(
+        "staff/commercial/offer_form.html",
+        {
+            "request": request,
+            "user": user,
+            "clients": clients,
+            "legs": legs,
+            "leg_options": leg_options,
+            "grids": grids,
+            "offer": None,
+        },
+    )
+
+
+async def _grids_for(db: AsyncSession, *, client_id: int | None) -> list[RateGrid]:
+    """Grilles actives applicables à un client (multi-routes).
+
+    Retenues : statut ``active``, valides à ce jour, et soit propres au client
+    soit grilles par défaut (``client_id`` NULL). La route est résolue à la
+    création de l'offre via la ligne-route POL/POD de la grille (cf. le leg
+    ciblé). Les grilles spécifiques au client sont listées avant les défauts.
+    """
+    today = datetime.now(UTC).date()
+    query = (
+        select(RateGrid)
+        .options(selectinload(RateGrid.lines))
+        .where(
+            RateGrid.status == "active",
+            RateGrid.valid_from <= today,
+            or_(RateGrid.valid_to.is_(None), RateGrid.valid_to >= today),
+        )
+    )
+    if client_id:
+        query = query.where(or_(RateGrid.client_id == client_id, RateGrid.client_id.is_(None)))
+    else:
+        query = query.where(RateGrid.client_id.is_(None))
+
+    grids = list((await db.execute(query)).scalars().all())
+    # Client-specific d'abord, puis défaut ; tri secondaire par référence.
+    grids.sort(key=lambda g: (g.client_id is None, g.reference or ""))
+    return grids
+
+
+@router.get("/offers/grid-options", response_class=HTMLResponse)
+async def offer_grid_options(
+    request: Request,
+    client_id: int | None = None,
+    leg_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Partial HTMX : options du <select> grille filtrées par client."""
+    grids = await _grids_for(db, client_id=client_id)
+    return templates.TemplateResponse(
+        "staff/commercial/_grid_options.html",
+        {"request": request, "grids": grids},
+    )
+
+
 @router.get("/offers/{offer_id}", response_class=HTMLResponse)
 async def offer_detail(
     offer_id: int,
@@ -2324,91 +2422,6 @@ async def offer_history(
             "field_labels": OFFER_FIELD_LABELS,
             "action_labels": REVISION_ACTION_LABELS,
         },
-    )
-
-
-@router.get("/offers/new", response_class=HTMLResponse)
-async def offer_new_form(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("commercial", "M")),
-) -> HTMLResponse:
-    clients = list(
-        (await db.execute(select(Client).where(Client.is_active.is_(True)).order_by(Client.name)))
-        .scalars()
-        .all()
-    )
-    from app.services.leg_filter import leg_select_options
-
-    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
-    leg_options = await leg_select_options(db)
-    grids = list(
-        (
-            await db.execute(
-                select(RateGrid)
-                .options(selectinload(RateGrid.lines))
-                .where(RateGrid.status == "active")
-            )
-        )
-        .scalars()
-        .all()
-    )
-    return templates.TemplateResponse(
-        "staff/commercial/offer_form.html",
-        {
-            "request": request,
-            "user": user,
-            "clients": clients,
-            "legs": legs,
-            "leg_options": leg_options,
-            "grids": grids,
-            "offer": None,
-        },
-    )
-
-
-async def _grids_for(db: AsyncSession, *, client_id: int | None) -> list[RateGrid]:
-    """Grilles actives applicables à un client (multi-routes).
-
-    Retenues : statut ``active``, valides à ce jour, et soit propres au client
-    soit grilles par défaut (``client_id`` NULL). La route est résolue à la
-    création de l'offre via la ligne-route POL/POD de la grille (cf. le leg
-    ciblé). Les grilles spécifiques au client sont listées avant les défauts.
-    """
-    today = datetime.now(UTC).date()
-    query = (
-        select(RateGrid)
-        .options(selectinload(RateGrid.lines))
-        .where(
-            RateGrid.status == "active",
-            RateGrid.valid_from <= today,
-            or_(RateGrid.valid_to.is_(None), RateGrid.valid_to >= today),
-        )
-    )
-    if client_id:
-        query = query.where(or_(RateGrid.client_id == client_id, RateGrid.client_id.is_(None)))
-    else:
-        query = query.where(RateGrid.client_id.is_(None))
-
-    grids = list((await db.execute(query)).scalars().all())
-    # Client-specific d'abord, puis défaut ; tri secondaire par référence.
-    grids.sort(key=lambda g: (g.client_id is None, g.reference or ""))
-    return grids
-
-
-@router.get("/offers/grid-options", response_class=HTMLResponse)
-async def offer_grid_options(
-    request: Request,
-    client_id: int | None = None,
-    leg_id: int | None = None,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("commercial", "C")),
-) -> HTMLResponse:
-    """Partial HTMX : options du <select> grille filtrées par client."""
-    grids = await _grids_for(db, client_id=client_id)
-    return templates.TemplateResponse(
-        "staff/commercial/_grid_options.html",
-        {"request": request, "grids": grids},
     )
 
 

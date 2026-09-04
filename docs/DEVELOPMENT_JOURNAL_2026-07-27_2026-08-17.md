@@ -2154,6 +2154,90 @@ aurait coûté une minute et évité une fusion en rouge.
 
 ---
 
+## 2026-08-28 — Deux pannes de production, une reprise de données, un écran
+
+**Branche** : `claude/commercial-module-multi-agent-fe0jhc`
+
+### 🔴 `/commercial/offers/new` était inatteignable
+
+Signalé par Julien : l'écran de création d'offre répondait
+`422 int_parsing — unable to parse "new" as an integer`. Cause : j'ai déclaré
+`@router.get("/offers/{offer_id}")` (écran de détail, lot 4) **avant** le
+`/offers/new` préexistant. FastAPI résout dans l'ordre de déclaration et
+n'ajoute aucun convertisseur de type au motif : `{offer_id}` capture `new`.
+`/offers/grid-options` était cassé de la même façon.
+
+C'est exactement le piège que `CLAUDE.md` documentait déjà… pour le module
+**ventes**, dans la section « Vente à bord ». Rangée là, la règle n'a protégé
+personne d'autre. Deux conclusions tirées :
+
+1. les deux routes littérales passent avant la route à paramètre ;
+2. la règle est promue en interdit global, et surtout verrouillée par une
+   **sentinelle générale** (`test_literal_routes_not_shadowed.py`) qui vérifie
+   que *toute* route littérale de l'application est atteignable — pas seulement
+   les deux du jour. Elle n'a rien trouvé d'autre.
+
+### 🔴 « Enregistrer l'échéancier » : 500 à chaque ré-enregistrement
+
+`grid.payment_terms.clear()` suivi d'une ré-insertion aux mêmes positions dans
+un seul flush : SQLAlchemy émet les INSERT **avant** les DELETE, et la
+contrainte `uq_grid_payment_term_position` saute.
+
+Le défaut était invisible à la recette : le **premier** enregistrement passe,
+n'ayant rien à remplacer. Il ne se déclenche qu'au second — c'est-à-dire chez
+l'utilisateur. Reproduit par un test avant correction, corrigé par un flush
+intermédiaire.
+
+### Reprise : ventes et caisse imputées à un voyage de 2027
+
+Julien a constaté 19 mouvements de caisse et 19 ventes rattachés au leg
+`1ABRFR7`, dont le départ est en janvier 2027. Le **code** était déjà corrigé
+(`_default_leg_id` délègue à `planning.current_leg_id`) ; restaient les lignes
+écrites avant, et tout indicateur par voyage bâti dessus.
+
+`services/leg_attachment.py` + `scripts/fix_leg_attachment.py` (dry-run par
+défaut). Trois partis pris, chacun discutable et donc explicité :
+
+- **Seule la colonne `leg_id` bouge.** Le grand livre de caisse est append-only
+  pour ce qui fait foi : l'argent. `leg_id` est une étiquette analytique. La
+  contre-passation, instrument normal de rectification, serait ici le mauvais
+  outil — 19 mouvements négatifs et 19 positifs pour corriger des étiquettes
+  doubleraient le registre et fausseraient le solde que la règle protège.
+  Chaque correction est journalisée dans `activity_logs`.
+- **Le lien de règlement prime sur le recalcul.** Un mouvement né du règlement
+  d'une vente hérite du voyage de cette vente : c'est un fait, et cela garantit
+  que les deux registres concordent. Le recalcul par date ne sert qu'aux
+  mouvements sans vente — les mouvements sont datés à la journée, un recalcul
+  les ferait basculer aux frontières de voyage.
+- **Indéterminable ⇒ NULL, pas « à peu près ».** Si aucun voyage ne précède
+  l'opération, l'étiquette tombe. Même parti que `schengen_status =
+  indetermine` : une absence s'interroge, une valeur fausse se propage.
+
+`cash_counts.leg_id` n'est pas concernée — le routeur ne l'alimente jamais.
+
+### Écran : tranches de remplissage ajoutables/supprimables
+
+Le tableau « Éditer les brackets » n'offrait que deux gestes implicites — vider
+une ligne pour la supprimer, remplir l'une des trois lignes vierges du bas pour
+ajouter — et plafonnait à trois ajouts par enregistrement. Un `+` et une `✕` par
+ligne (`bracket-rows.js`, fichier externe : CSP stricte). Une ligne vierge est
+conservée pour que l'écran reste utilisable sans JavaScript.
+
+⚠️ Piège rencontré : le `{% block head %}` du layout staff porte quatre scripts
+(sidebar, horloge, menus, langue). Le surcharger sans `{{ super() }}` les aurait
+fait disparaître **de cette seule page** — panne discrète. Un test le verrouille.
+
+### Mon erreur de méthode, à nouveau
+
+Le test de rendu que j'ai d'abord écrit montait un `SimpleNamespace` : il aurait
+survécu à n'importe quel renommage de colonne, en testant sa propre fiction.
+C'est le défaut exact que j'avais relevé sur `docx_generator` dans la #162, et
+je l'ai reproduit trois jours plus tard. Réécrit sur un vrai `RateGrid`.
+
+### Tests
+
+- 2 610 passés, 0 échec (+15).
+- black, ruff (périmètre CI) et bandit propres ; mypy à 328, inchangé.
 ## 2026-08-30 — Retours du bord sur le module de caisse (Cdt ANEMOS)
 
 > ⚠️ Entrée hors de la fenêtre annoncée du journal (27/07 → 17/08), consignée
