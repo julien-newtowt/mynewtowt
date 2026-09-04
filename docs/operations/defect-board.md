@@ -61,6 +61,22 @@ empiriquement : chaîne neuve → 38 règles, dont les trois RQ. Seule une base
 migrée avant le 2026-07-22 est incomplète, et il n'en existe qu'une : la
 production. Le défaut était **structurellement invisible à tout test**.
 
+**Portée réelle — confirmée en production le 2026-09-04.** Le défaut ne se
+limite pas à QHSE. L'écran `/mrv/parametres` de production s'arrête à `R26` :
+le référentiel y est resté à l'état du 2026-07-09, soit **31 règles**, et il en
+manque **7** — `R27`, `R28`, `R29`, `R30` (MRV, ajoutées les 15-16 juillet) en
+plus de `RQ01`-`RQ03`. Or `R28`/`R29`/`R30` sont de scope `event`, celui
+qu'exécute `run_rules` à la **finalisation d'un événement MRV**
+(`event_capture.py:283`) : ce chemin échoue donc de la même façon depuis la
+mi-juillet. Jusqu'à 11 seuils sont également absents — sans conséquence de
+verdict, `get_threshold` retombant sur les défauts codés, vérifiés **identiques
+aux valeurs semées** (31/31, valeur et unité).
+
+Aucune des 7 règles manquantes n'est `bloquant` (5 `warning`, 1 `info`, et les
+deux `bloquant` sont de scope `qhse`, où elles n'empêchent pas l'import) : les
+semer ne peut donc bloquer aucun workflow, seulement rétablir des contrôles
+inopérants.
+
 **Correctif.** Migration `20260904_0142` (instantané figé, idempotente) +
 bannière/bouton d'init affichés dès que le référentiel est *incomplet* et plus
 seulement vide (`/mrv/parametres` — réparation possible sans déploiement) +

@@ -23,7 +23,7 @@ from __future__ import annotations
 import ast
 import pathlib
 
-from app.services.validation_engine import RULE_SEED
+from app.services.validation_engine import RULE_SEED, THRESHOLD_SEED
 
 MIGRATIONS_DIR = pathlib.Path(__file__).resolve().parents[2] / "migrations" / "versions"
 
@@ -37,49 +37,87 @@ SEED_CONSTANTS = {"RULE_SEED", "THRESHOLD_SEED", "DASHBOARD_SEED"}
 GRANDFATHERED = {"20260709_0097_mrv_validation_socle.py"}
 
 
-def test_frozen_qhse_rules_match_the_live_catalogue() -> None:
-    """L'instantané figé de la migration 0142 == les règles QHSE de ``RULE_SEED``.
+CATCHUP_MIGRATION = "20260904_0142_qhse_validation_rules_seed.py"
 
-    La migration écrit ses valeurs en dur (c'est le correctif). Ce test empêche
-    l'instantané et le catalogue de diverger en silence : si une règle QHSE
-    change de sévérité ou de libellé dans le code, la divergence est signalée
-    ici, et le rattrapage à faire (nouvelle migration) devient explicite.
-    """
-    module = MIGRATIONS_DIR / "20260904_0142_qhse_validation_rules_seed.py"
-    tree = ast.parse(module.read_text(encoding="utf-8"))
 
-    frozen: dict[str, tuple] = {}
+def _frozen_constant(module_name: str, constant: str) -> list[dict]:
+    """Extrait un littéral d'une migration sans l'importer (pas d'effet de bord)."""
+    tree = ast.parse((MIGRATIONS_DIR / module_name).read_text(encoding="utf-8"))
     for node in tree.body:
-        # L'assignation est annotée (``QHSE_RULES: tuple[...] = (...)``) donc
-        # ``AnnAssign`` ; on accepte les deux formes pour ne pas rendre la
-        # sentinelle sensible à un simple retrait d'annotation.
+        # L'assignation est annotée (``X: tuple[...] = (...)``) donc ``AnnAssign`` ;
+        # on accepte les deux formes pour ne pas rendre la sentinelle sensible à
+        # un simple retrait d'annotation.
         if isinstance(node, ast.AnnAssign):
-            targets = [node.target]
-            value = node.value
+            targets, value = [node.target], node.value
         elif isinstance(node, ast.Assign):
-            targets = list(node.targets)
-            value = node.value
+            targets, value = list(node.targets), node.value
         else:
             continue
-        if value is None or not any(getattr(t, "id", None) == "QHSE_RULES" for t in targets):
-            continue
-        for entry in ast.literal_eval(value):
-            frozen[entry["rule_id"]] = (
-                entry["domain"],
-                entry["description"],
-                entry["default_severity"],
-                entry["scope"],
-                entry["active"],
-            )
+        if value is not None and any(getattr(t, "id", None) == constant for t in targets):
+            return list(ast.literal_eval(value))
+    raise AssertionError(f"{constant} introuvable dans {module_name}")
 
-    assert frozen, "QHSE_RULES introuvable dans la migration 0142"
+
+def test_frozen_catchup_rules_match_the_live_catalogue() -> None:
+    """L'instantané figé de 0142 doit rester aligné sur ``RULE_SEED``.
+
+    La migration écrit ses valeurs en dur (c'est le correctif : cf. son
+    docstring). Ce test empêche l'instantané et le catalogue de diverger en
+    silence — si l'une de ces règles change de sévérité, de scope ou de
+    libellé dans le code, la divergence est signalée ici, et le rattrapage à
+    faire (nouvelle migration) devient explicite.
+    """
+    frozen = {
+        entry["rule_id"]: (
+            entry["domain"],
+            entry["description"],
+            entry["default_severity"],
+            entry["scope"],
+            entry["active"],
+        )
+        for entry in _frozen_constant(CATCHUP_MIGRATION, "CATCHUP_RULES")
+    }
+    # Les 7 règles ajoutées au catalogue après la création de 0097 : R27-R30
+    # (MRV) et RQ01-RQ03 (QHSE). C'est exactement l'écart mesuré à l'écran
+    # `/mrv/parametres` de production le 2026-09-04.
+    assert set(frozen) == {"R27", "R28", "R29", "R30", "RQ01", "RQ02", "RQ03"}
 
     catalogue = {
         rid: (domain, desc, severity, scope, active)
         for (rid, domain, desc, severity, scope, active) in RULE_SEED
-        if scope == "qhse"
+        if rid in frozen
     }
     assert frozen == catalogue
+
+
+def test_frozen_catchup_thresholds_match_the_live_catalogue() -> None:
+    """Idem pour les seuils : mêmes valeurs, mêmes unités, même caractère provisoire.
+
+    Ces seuils ne changent aucun verdict (``get_threshold`` retombe sur les
+    défauts codés, identiques), mais un instantané qui dériverait du catalogue
+    finirait par en introduire un.
+    """
+    frozen = {
+        (entry["rule_id"], entry["parameter_name"]): (
+            str(entry["value"]),
+            entry["unit"],
+            entry["provisional"],
+            entry["note"],
+        )
+        for entry in _frozen_constant(CATCHUP_MIGRATION, "CATCHUP_THRESHOLDS")
+    }
+    catalogue = {
+        (rid, param): (str(value), unit, provisional, note)
+        for (rid, param, value, unit, provisional, note) in THRESHOLD_SEED
+        if (rid, param) in frozen
+    }
+    assert frozen == catalogue
+
+    # Un seuil ne peut pas être semé sans sa règle : la FK
+    # `validation_rule_thresholds.rule_id` l'interdit, et l'ordre d'insertion de
+    # la migration en dépend.
+    catalogue_rules = {rid for (rid, *_rest) in RULE_SEED}
+    assert {rid for (rid, _param) in frozen} <= catalogue_rules
 
 
 # Empreinte du catalogue au 2026-09-04 : 35 règles MRV (semées en production
