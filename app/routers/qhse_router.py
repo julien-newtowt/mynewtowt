@@ -27,7 +27,12 @@ from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.qhse_ingestion import QhseIngestionError, import_qhse_xlsx
-from app.services.qhse_kpi import build_dashboard, list_vessels_with_reports, trend_bars
+from app.services.qhse_kpi import (
+    build_dashboard,
+    build_quality_report,
+    list_vessels_with_reports,
+    trend_bars,
+)
 from app.services.safe_files import content_length_exceeds_max
 from app.templating import templates
 from app.utils.file_validation import validate_filename, validate_size
@@ -91,6 +96,38 @@ async def qhse_dashboard(
             "selected_vessel_id": vessel_id,
             "trend_bars": bars,
             "trend_chart": chart,
+        },
+    )
+
+
+@router.get("/qualite", response_class=HTMLResponse)
+async def qhse_qualite(
+    request: Request,
+    vessel_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("qhse", "C")),
+) -> HTMLResponse:
+    """Liste des signalements à corriger **dans le FMS**, motif par motif.
+
+    Complète le tableau de bord : R1 dit *combien* de champs manquent, cet
+    écran dit *lesquels*, sur quel signalement et sur quel navire. Lecture
+    seule par construction (D10) — la correction se fait dans le FMS, le
+    ré-import met la ligne à jour (réconciliation ``source_code``).
+
+    ⚠️ Route littérale déclarée AVANT ``/{report_id}``, comme ``/dashboard``.
+    """
+    vessels = await list_vessels_with_reports(db)
+    if vessel_id is not None and vessel_id not in {v.id for v in vessels}:
+        vessel_id = None  # navire sans donnée : repli silencieux sur la flotte
+    quality = await build_quality_report(db, vessel_id=vessel_id)
+    return templates.TemplateResponse(
+        "staff/qhse/qualite.html",
+        {
+            "request": request,
+            "user": user,
+            "quality": quality,
+            "vessels": vessels,
+            "selected_vessel_id": vessel_id,
         },
     )
 

@@ -79,6 +79,8 @@ def test_dashboard_route_declared_before_the_catch_all():
 
     order = [r.path for r in qhse_router.router.routes]
     assert order.index("/qhse/dashboard") < order.index("/qhse/{report_id}")
+    assert "/qhse/qualite" in order
+    assert order.index("/qhse/qualite") < order.index("/qhse/{report_id}")
 
 
 @pytest.mark.asyncio
@@ -279,6 +281,71 @@ async def test_qhse_dashboard_unknown_vessel_falls_back_to_fleet(db):
     resp = await qhse_dashboard(FakeRequest(), vessel_id=999, db=db, user=_manager_user())
     assert resp.context["selected_vessel_id"] is None
     assert resp.context["dashboard"].total_reports == 1
+
+
+@pytest.mark.asyncio
+async def test_qhse_dashboard_exposes_issuer_origins(db):
+    """Q2 — les 4 origines sont dans le contexte, `indetermine` comprise."""
+    from app.routers.qhse_router import qhse_dashboard
+    from app.services.qhse_kpi import ISSUER_ORIGINS
+
+    db.add(Vessel(code="ANE", name="Anemos"))
+    await db.flush()
+    vessel = (await db.execute(select(Vessel))).scalars().one()
+    await _seed_report(db, vessel)
+
+    resp = await qhse_dashboard(FakeRequest(), db=db, user=_manager_user())
+    origins = [o.origin for o in resp.context["dashboard"].origin_counts]
+    assert origins == list(ISSUER_ORIGINS)
+
+
+@pytest.mark.asyncio
+async def test_qhse_qualite_renders_and_names_what_to_fix(db):
+    from app.routers.qhse_router import qhse_qualite
+
+    db.add(Vessel(code="ANE", name="Anemos"))
+    await db.flush()
+    vessel = (await db.execute(select(Vessel))).scalars().one()
+    await _seed_report(db, vessel, subject="incomplet")
+
+    resp = await qhse_qualite(FakeRequest(), db=db, user=_manager_user())
+    assert resp.status_code == 200
+    assert resp.template.name == "staff/qhse/qualite.html"
+    quality = resp.context["quality"]
+    assert quality.total_reports == 1
+    assert quality.total_flagged == 1
+    assert "missing_root_cause" in quality.items[0].issues
+
+
+@pytest.mark.asyncio
+async def test_qhse_qualite_renders_empty_without_crashing(db):
+    from app.routers.qhse_router import qhse_qualite
+
+    resp = await qhse_qualite(FakeRequest(), db=db, user=_manager_user())
+    assert resp.status_code == 200
+    assert resp.context["quality"].total_reports == 0
+
+
+@pytest.mark.asyncio
+async def test_qhse_qualite_unknown_vessel_falls_back_to_fleet(db):
+    """Même repli silencieux que le tableau de bord — cohérence des deux écrans."""
+    from app.routers.qhse_router import qhse_qualite
+
+    db.add(Vessel(code="ANE", name="Anemos"))
+    await db.flush()
+    vessel = (await db.execute(select(Vessel))).scalars().one()
+    await _seed_report(db, vessel)
+
+    resp = await qhse_qualite(FakeRequest(), vessel_id=999, db=db, user=_manager_user())
+    assert resp.context["selected_vessel_id"] is None
+    assert resp.context["quality"].total_reports == 1
+
+
+@pytest.mark.asyncio
+async def test_qhse_qualite_requires_qhse_c(db):
+    checker = require_permission("qhse", "C")
+    rh_user = _readonly_user()
+    assert await checker(FakeRequest(), user=rh_user, db=db) is rh_user
 
 
 @pytest.mark.asyncio
