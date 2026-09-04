@@ -541,7 +541,10 @@ préférences de style.
 - **Ordre de déclaration des routes** : les chemins littéraux (`/catalogue`,
   `/rapport`) doivent précéder `/{vessel_id}`. FastAPI n'ajoute pas de
   convertisseur de type au motif de route — `/{vessel_id}` capture n'importe
-  quel segment. Verrouillé par un test.
+  quel segment. Le piège n'est pas propre à ce module : il a resurgi sur
+  `/commercial/offers/new`, masqué par `/offers/{offer_id}`, dès qu'un écran de
+  détail a été ajouté au-dessus. Verrouillé pour **toute** l'application par la
+  sentinelle `tests/regression/test_literal_routes_not_shadowed.py`.
 - **Arbitrages tranchés le 2026-08-27** : `ADR-011` (espèces ≠ CB),
   `ADR-012` (cloisonnement par navire), `ADR-013` (remboursement, valeur du
   registre, gel à la relève). Les lire avant de rouvrir l'un de ces sujets.
@@ -767,6 +770,15 @@ préférences de style.
 - **Ne jamais chiffrer depuis un chemin public** — la vitrine dépose une
   demande, elle n'affiche pas de prix.
 - Pas de route d'écriture sur `rate_offer_revisions` autre que l'insertion.
+- **Ne jamais déclarer une route littérale après la route à paramètre qui la
+  capture** (`/offers/new` après `/offers/{offer_id}`) : elle devient
+  inatteignable et répond 422. Sentinelle :
+  `tests/regression/test_literal_routes_not_shadowed.py`.
+- **Ne jamais remplacer une collection sous contrainte d'unicité sans flush
+  intermédiaire** : `collection.clear()` puis ré-insertion aux mêmes positions
+  dans un seul flush émet les INSERT avant les DELETE. C'est ce qui faisait
+  échouer tout ré-enregistrement de l'échéancier d'une grille — le premier
+  passant, faute d'avoir quoi que ce soit à remplacer.
 - **Jamais de seuil métier MRV en littéral** — toujours `validation_engine.get_threshold`
   (paramétrable en base, override navire, fail-closed).
 - Pas de **module ERP** passengers (disparu en v3.0.0 : pas de modèle, pas

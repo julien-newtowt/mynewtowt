@@ -2154,6 +2154,90 @@ aurait coûté une minute et évité une fusion en rouge.
 
 ---
 
+## 2026-08-28 — Deux pannes de production, une reprise de données, un écran
+
+**Branche** : `claude/commercial-module-multi-agent-fe0jhc`
+
+### 🔴 `/commercial/offers/new` était inatteignable
+
+Signalé par Julien : l'écran de création d'offre répondait
+`422 int_parsing — unable to parse "new" as an integer`. Cause : j'ai déclaré
+`@router.get("/offers/{offer_id}")` (écran de détail, lot 4) **avant** le
+`/offers/new` préexistant. FastAPI résout dans l'ordre de déclaration et
+n'ajoute aucun convertisseur de type au motif : `{offer_id}` capture `new`.
+`/offers/grid-options` était cassé de la même façon.
+
+C'est exactement le piège que `CLAUDE.md` documentait déjà… pour le module
+**ventes**, dans la section « Vente à bord ». Rangée là, la règle n'a protégé
+personne d'autre. Deux conclusions tirées :
+
+1. les deux routes littérales passent avant la route à paramètre ;
+2. la règle est promue en interdit global, et surtout verrouillée par une
+   **sentinelle générale** (`test_literal_routes_not_shadowed.py`) qui vérifie
+   que *toute* route littérale de l'application est atteignable — pas seulement
+   les deux du jour. Elle n'a rien trouvé d'autre.
+
+### 🔴 « Enregistrer l'échéancier » : 500 à chaque ré-enregistrement
+
+`grid.payment_terms.clear()` suivi d'une ré-insertion aux mêmes positions dans
+un seul flush : SQLAlchemy émet les INSERT **avant** les DELETE, et la
+contrainte `uq_grid_payment_term_position` saute.
+
+Le défaut était invisible à la recette : le **premier** enregistrement passe,
+n'ayant rien à remplacer. Il ne se déclenche qu'au second — c'est-à-dire chez
+l'utilisateur. Reproduit par un test avant correction, corrigé par un flush
+intermédiaire.
+
+### Reprise : ventes et caisse imputées à un voyage de 2027
+
+Julien a constaté 19 mouvements de caisse et 19 ventes rattachés au leg
+`1ABRFR7`, dont le départ est en janvier 2027. Le **code** était déjà corrigé
+(`_default_leg_id` délègue à `planning.current_leg_id`) ; restaient les lignes
+écrites avant, et tout indicateur par voyage bâti dessus.
+
+`services/leg_attachment.py` + `scripts/fix_leg_attachment.py` (dry-run par
+défaut). Trois partis pris, chacun discutable et donc explicité :
+
+- **Seule la colonne `leg_id` bouge.** Le grand livre de caisse est append-only
+  pour ce qui fait foi : l'argent. `leg_id` est une étiquette analytique. La
+  contre-passation, instrument normal de rectification, serait ici le mauvais
+  outil — 19 mouvements négatifs et 19 positifs pour corriger des étiquettes
+  doubleraient le registre et fausseraient le solde que la règle protège.
+  Chaque correction est journalisée dans `activity_logs`.
+- **Le lien de règlement prime sur le recalcul.** Un mouvement né du règlement
+  d'une vente hérite du voyage de cette vente : c'est un fait, et cela garantit
+  que les deux registres concordent. Le recalcul par date ne sert qu'aux
+  mouvements sans vente — les mouvements sont datés à la journée, un recalcul
+  les ferait basculer aux frontières de voyage.
+- **Indéterminable ⇒ NULL, pas « à peu près ».** Si aucun voyage ne précède
+  l'opération, l'étiquette tombe. Même parti que `schengen_status =
+  indetermine` : une absence s'interroge, une valeur fausse se propage.
+
+`cash_counts.leg_id` n'est pas concernée — le routeur ne l'alimente jamais.
+
+### Écran : tranches de remplissage ajoutables/supprimables
+
+Le tableau « Éditer les brackets » n'offrait que deux gestes implicites — vider
+une ligne pour la supprimer, remplir l'une des trois lignes vierges du bas pour
+ajouter — et plafonnait à trois ajouts par enregistrement. Un `+` et une `✕` par
+ligne (`bracket-rows.js`, fichier externe : CSP stricte). Une ligne vierge est
+conservée pour que l'écran reste utilisable sans JavaScript.
+
+⚠️ Piège rencontré : le `{% block head %}` du layout staff porte quatre scripts
+(sidebar, horloge, menus, langue). Le surcharger sans `{{ super() }}` les aurait
+fait disparaître **de cette seule page** — panne discrète. Un test le verrouille.
+
+### Mon erreur de méthode, à nouveau
+
+Le test de rendu que j'ai d'abord écrit montait un `SimpleNamespace` : il aurait
+survécu à n'importe quel renommage de colonne, en testant sa propre fiction.
+C'est le défaut exact que j'avais relevé sur `docx_generator` dans la #162, et
+je l'ai reproduit trois jours plus tard. Réécrit sur un vrai `RateGrid`.
+
+### Tests
+
+- 2 610 passés, 0 échec (+15).
+- black, ruff (périmètre CI) et bandit propres ; mypy à 328, inchangé.
 ## 2026-08-30 — Retours du bord sur le module de caisse (Cdt ANEMOS)
 
 > ⚠️ Entrée hors de la fenêtre annoncée du journal (27/07 → 17/08), consignée
@@ -2750,3 +2834,105 @@ Exécution staging (legs → GPS) ; lot 2 archive noon reports (ADR-014 D6,
 accepté) ; confirmation de la source GPS 08-10/2024 ; revue des 5 ports créés
 dans Admin → Ports ; sentinelle des sites `select(Leg)`.
 
+
+---
+
+## 2026-09-04 — Une arrivée déclarée par erreur, et deux indicateurs qui la croyaient
+
+**Branche** : `claude/commercial-module-multi-agent-fe0jhc`
+
+### Le signalement
+
+Sur la page d'escale du leg RERUN→BRSSO : ATD le 03/09 à 08:19, ATA le 04/09 à
+06:20 — une arrivée déclarée un jour après le départ, pour un voyage de 6287 NM.
+L'écran affichait alors, imperturbable : **Restant 0 NM** et **Allongement
+×0.02**, sur 119 NM relevés par 215 points GPS.
+
+### Ce que le correctif du 03/09 avait manqué
+
+La veille, trois indicateurs de voyage avaient été corrigés pour « cesser
+d'affirmer plus que la donnée ne dit ». La docstring de `real_elongation`
+énonçait même la règle : *« un allongement est par définition ≥ 1 : une route
+réelle est plus longue que l'orthodromie, jamais quatorze fois plus courte »*.
+
+Mais la garde posée testait le **statut** (`is_active`), pas l'invariant. Or
+`is_active` vaut `atd is not None and ata is None` : saisir une ATA le fait
+tomber, et l'écran repassait à l'affichage « voyage terminé » — rouvrant très
+exactement le trou qu'on venait de fermer.
+
+Leçon : **une garde qui teste l'état plutôt que la propriété ne tient que tant
+que l'état est juste.** L'invariant est maintenant vérifié pour lui-même
+(`arrival_contradicted_by_track`), quel que soit le chemin par lequel le leg a
+cessé d'être actif.
+
+### « Restant 0 NM » relevait du même travers
+
+`remaining = 0.0` dès que `leg.ata` existe — zéro parce qu'on a *déclaré*
+l'arrivée, pas parce que le navire est arrivé. Quand la trace contredit la
+déclaration, la réponse honnête n'est ni zéro (qui affirme une arrivée démentie)
+ni la distance depuis le dernier point (qui suppose ce point à jour) : c'est
+« on ne sait pas ». L'écran affiche « — » et dit pourquoi.
+
+### Ce que je n'ai pas construit, et pourquoi
+
+En cherchant comment l'opérateur pouvait revenir en arrière, constat : **il ne
+peut pas**. Le formulaire n'offre que `depart` et `arrivee` ; une fois l'ATA
+posée, on peut la *redater*, pas l'annuler. Le leg reste « à quai » pour
+toujours.
+
+C'est le vrai manque derrière le signalement — mais l'annuler n'est pas un
+`ata = None` : la déclaration a inscrit un EOSP au SOF, recalculé l'OPEX réel,
+activé le leg suivant et notifié la compagnie. Défaire tout cela est une
+décision de conception, pas un correctif d'affichage. Le bandeau le dit à
+l'opérateur au lieu de lui promettre un bouton qui n'existe pas, et la question
+est posée à Julien.
+
+### Mon erreur
+
+En nettoyant un test de sabotage, j'ai lancé `git checkout` sur un fichier dont
+les modifications n'étaient **pas commitées** : trois correctifs perdus, à
+réécrire. Le sabotage lui-même était concluant (un seul test tombait, le bon).
+Ne jamais mêler `git checkout` à la restauration d'un sabotage sur du travail
+non commité — copier le fichier, ou committer d'abord.
+
+### Tests
+
+7 tests unitaires sur l'invariant, dont les bornes (`actual == theoretical`
+vaut 1 et reste valide ; sans orthodromie ou sans trace, on ne conclut rien) et
+la non-régression du cas « en mer » déjà traité.
+
+### Complément — annulation ponctuelle de l'arrivée de 3BREBR6
+
+Julien tranche : **pas de bouton d'annulation d'arrivée** dans l'interface. La
+décision tient : une déclaration engage le SOF, la finance, les bookings et le
+planning aval, et en faire un geste courant banaliserait tout cela.
+
+Reste à réparer le cas réel. `scripts/cancel_arrival.py --leg 3BREBR6`, dry-run
+par défaut, nomme explicitement son leg — pas de lot, pas de balayage.
+
+**Ce qu'il défait** : l'ATA (statut recalculé, le leg redevient « en mer »,
+l'ATD restant posé), l'événement SOF EOSP, et les bookings passés à
+`discharged` → `at_sea`.
+
+**Ce qu'il refuse de faire**, et c'est le cœur de sa valeur :
+
+- **Un EOSP signé bloque tout.** Un SOF signé est immuable — c'est son objet.
+  Le script s'arrête plutôt que d'écraser une signature.
+- **Les certificats Anemos ne sont pas touchés.** En cartographiant les effets
+  de `declare_arrival`, découverte du maillon dangereux : le passage d'un
+  booking à `discharged` déclenche l'émission du certificat CO₂. Une arrivée
+  erronée a donc pu émettre des certificats pour un voyage qui n'a pas eu lieu
+  — sur une plateforme dont les certificats sont **publiquement vérifiables**
+  (`/verify`). Le script les liste, refuse de continuer sans confirmation
+  explicite, et n'en dispose jamais lui-même : retirer un document opposable
+  est une décision de direction.
+- **`schedule_history` n'est pas réécrit** : l'annulation s'y ajoute.
+- **Les notifications déjà parties** (EOSP, activation du leg suivant) ne se
+  rappellent pas. Le script le dit au lieu de le taire.
+- **Le recalage des legs aval** n'est pas rejoué à l'envers : le défaire
+  demande de savoir ce que l'opérateur veut, pas ce que le code peut. Ici il
+  n'a probablement pas eu lieu — une arrivée *en avance* ne tire pas les legs
+  suivants — mais le script le signale plutôt que de le supposer.
+
+6 tests, dont les deux refus (EOSP signé, certificats émis) et la garantie
+dont dépend le dry-run : `inspect()` ne modifie rien.
