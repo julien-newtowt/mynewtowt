@@ -1,0 +1,105 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('qhse_quality_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/qhse/dashboard" class="btn btn-ghost mb-3">{{ t('btn_back', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">{{ t('qhse_kicker', lang) }}</span>
+  <h1 class="display">{{ t('qhse_quality_title', lang) }}</h1>
+  <p class="text-muted">{{ t('qhse_quality_subtitle', lang) }}</p>
+</header>
+
+{# Lecture seule assumée (D10) : la correction se fait dans le FMS, le
+   ré-import met la ligne à jour. Dit explicitement, pour qu'on ne cherche pas
+   un bouton d'édition qui n'existera pas. #}
+<div class="alert alert-info mb-4">{{ t('qhse_quality_readonly_notice', lang) }}</div>
+
+{# ───────────────────────────── Filtre navire ───────────────────────────── #}
+<div class="flex items-center gap-2 mb-4" style="flex-wrap:wrap;">
+  <span class="text-muted text-sm">{{ t('qhse_dash_filter_vessel', lang) }}</span>
+  <div class="flex gap-1" style="flex-wrap:wrap;">
+    <a href="/qhse/qualite"
+       class="btn btn-sm {% if not selected_vessel_id %}btn-primary{% else %}btn-ghost{% endif %}">
+      <i data-lucide="layers"></i> {{ t('qhse_dash_fleet_all', lang) }}
+    </a>
+    {% for v in vessels %}
+    <a href="/qhse/qualite?vessel_id={{ v.id }}"
+       class="btn btn-sm {% if selected_vessel_id == v.id %}btn-primary{% else %}btn-ghost{% endif %}">
+      <i data-lucide="ship"></i> {{ v.name }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if quality.total_reports == 0 %}
+<div class="alert alert-info">{{ t('qhse_dash_empty', lang) }}</div>
+{% elif quality.total_flagged == 0 %}
+<div class="alert alert-success">{{ t('qhse_quality_none', lang) }}</div>
+{% else %}
+
+{# ──────────────────── Compte par motif, sur la totalité ────────────────── #}
+<section class="kpi-strip mb-4">
+  <div class="kpi-card">
+    <div class="label">{{ t('qhse_quality_kpi_flagged', lang) }}</div>
+    <div class="value">{{ quality.total_flagged }}</div>
+    <div class="delta text-muted">/ {{ quality.total_reports }}</div>
+  </div>
+  {% for issue in ['suspected_test', 'closed_before_issued', 'missing_root_cause', 'missing_corrective_description'] %}
+  <div class="kpi-card">
+    <div class="label">{{ t('qhse_issue_' ~ issue, lang) }}</div>
+    <div class="value">{{ quality.issue_counts.get(issue, 0) }}</div>
+  </div>
+  {% endfor %}
+</section>
+
+{# ───────── Constat structurel : compté à part, jamais dans la liste ─────── #}
+{% if quality.responsible_missing_count %}
+<div class="alert alert-info mb-4">
+  <strong>{{ t('qhse_issue_missing_responsible', lang) }} :
+    {{ quality.responsible_missing_count }} / {{ quality.total_reports }}</strong>
+  <p class="text-sm mt-1">{{ t('qhse_quality_responsible_structural', lang) }}</p>
+</div>
+{% endif %}
+
+{% if quality.truncated %}
+{# Troncature ANNONCÉE : une liste coupée en silence ferait croire à un
+   inventaire complet. #}
+<div class="alert alert-warn mb-3">{{ t('qhse_quality_truncated', lang) }}</div>
+{% endif %}
+
+<article class="card">
+  <div class="card-title">{{ t('qhse_quality_list_title', lang) }}</div>
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{{ t('qhse_dash_open_col_subject', lang) }}</th>
+          <th>{{ t('qhse_quality_col_vessel', lang) }}</th>
+          <th>{{ t('qhse_quality_col_issued', lang) }}</th>
+          <th>{{ t('qhse_quality_col_issues', lang) }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in quality.items %}
+        <tr>
+          <td><a href="/qhse/{{ item.id }}">{{ item.subject }}</a></td>
+          <td><span class="pill pill-neutral">{{ item.vessel_code }}</span></td>
+          <td>{{ item.issued_date|date }}</td>
+          <td>
+            {# `pill-warn` sur les deux motifs qui demandent une DÉCISION (garder
+               ou écarter, corriger une date incohérente) ; `pill-neutral` sur
+               les manques de saisie, plus nombreux et moins urgents. #}
+            {% for issue in item.issues %}
+            <span class="pill {% if issue in ('suspected_test', 'closed_before_issued') %}pill-warn{% else %}pill-neutral{% endif %}">
+              {{ t('qhse_issue_' ~ issue, lang) }}
+            </span>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</article>
+
+{% endif %}
+{% endblock %}
