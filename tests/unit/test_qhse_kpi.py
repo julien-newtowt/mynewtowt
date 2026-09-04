@@ -186,8 +186,8 @@ async def test_trend_bars_geometry_is_sane(db):
 async def test_completeness_is_none_shaped_correctly_per_report(db):
     anemos, _ = await _seed_vessels(db)
 
-    # 0/3 : rien de renseigné.
-    bare = await _report(db, anemos.id, subject="bare")
+    # 0/3 : rien de renseigné. Seul son effet (exister en base) compte ici.
+    await _report(db, anemos.id, subject="bare")
 
     # 3/3 : cause racine, description corrective, responsable identifié.
     full = await _report(db, anemos.id, subject="full")
@@ -251,7 +251,9 @@ async def test_c2_denominator_is_all_reports_not_just_evaluations_created(db):
     anemos, _ = await _seed_vessels(db)
 
     evaluated = await _report(db, anemos.id, subject="evaluated")
-    db.add(RootCauseEvaluation(report_id=evaluated.id, root_cause_text="x", finished_date=NOW.date()))
+    db.add(
+        RootCauseEvaluation(report_id=evaluated.id, root_cause_text="x", finished_date=NOW.date())
+    )
     await _report(db, anemos.id, subject="no_evaluation_at_all")
     await db.flush()
 
