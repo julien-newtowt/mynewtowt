@@ -129,6 +129,34 @@ collisions de têtes de l'historique du projet (07/08, 26/08, et deux fois le
 opposable est un avertissement, pas un garde-fou** — c'est le constat central de
 cet incident, et il ne se corrige pas dans le code.
 
+##### Cinquième occurrence, 2026-09-04 — celle que la sentinelle ne pouvait pas voir
+
+| Heure UTC | Commit | Cause | La CI disait |
+|---|---|---|---|
+| ~11:5x | `473a36e` | têtes Alembic multiples (PR #195 × PR #196) | **verte sur les deux PR** |
+
+Celle-ci n'est pas de la même nature que les quatre précédentes, et c'est ce qui
+la rend instructive. Les PR #195 (`20260903_0141`, QHSE) et #196
+(`20260904_0141`, commercial) ont chacune chaîné sur `20260903_0140` sans se
+voir. Sur chaque branche prise isolément, le graphe n'a **qu'une tête** : la
+sentinelle était verte, à raison. Elle lit le graphe de la branche, jamais celui
+du futur `main`.
+
+La CI *tourne* pourtant sur le commit de fusion (`on: pull_request` → GitHub
+teste `refs/pull/N/merge`). Mais pour #196 elle l'a fait **avant** que #195 ne
+soit fusionnée : son verdict portait sur un `main` qui ne contenait pas encore
+`20260903_0141`, et il n'a pas été redemandé après.
+
+**Aucun test ne peut corriger cela.** Le seul remède est le réglage
+**« Require branches to be up to date before merging »** du tableau ci-dessous —
+déjà prescrit ici le 03/09, et manifestement pas encore posé. Les quatre
+premières occurrences appelaient « rendre la sentinelle opposable » ; celle-ci
+appelle « rejouer la CI sur l''état réel d''après-fusion ». Le même réglage
+couvre les deux.
+
+Correctif appliqué : révision de fusion `20260904_0142` (no-op — les deux lots
+sont disjoints).
+
 Second effet, plus insidieux : tant que `main` est rouge pour une raison de
 fond (ce jour-là : `black` sur deux fichiers, puis `anyio` non épinglé), **le
 rouge d'une sentinelle utile se noie dans un rouge d'ambiance**. Personne ne
