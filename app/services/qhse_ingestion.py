@@ -1,8 +1,27 @@
 """QHSE — pipeline d'ingestion Excel (Phase 0).
 
-Parse les exports FMS actuels (``QHSE Reports {Anemos,Artemis}.xlsx``, 41
-colonnes à plat, une ligne par rapport — cf. cahier des charges §3.1/§16.1)
-et les normalise vers le schéma ``app.models.qhse`` en résolvant les entités
+**Deux formats d'export réels, même FMS** — reconnus automatiquement par
+en-tête, résolus vers les MÊMES colonnes canoniques (:data:`_HEADER_ALIASES`),
+donc partageant tout le reste du pipeline (nettoyage, résolution, upsert D10,
+moteur de qualité) sans chemin séparé :
+
+1. **Export « données brutes »** (``QHSE Reports {Anemos,Artemis}.xlsx``, 41
+   colonnes à plat, une ligne par rapport — cf. cahier des charges
+   §3.1/§16.1) — le format analysé dans le cahier des charges.
+2. **Export « historique »** (``Anemos_QHSE Reports History.xlsx``, dataset
+   réel importé le 2026-09-04) — vue imprimable par navire : bloc de titre
+   au-dessus de l'en-tête (:func:`_find_header_and_metadata`), navire cité
+   une fois pour toute la feuille plutôt qu'en colonne ``VesselName`` par
+   ligne (:func:`_find_title_vessel`), dates en texte ``JJ/MM/AAAA``, une
+   seule ``ClosedDate`` sans date de finalisation distincte par workflow.
+   Trois colonnes de ce format n'ont délibérément aucun alias — décision du
+   2026-09-04, Marad restant l'unique outil de saisie, MyTOWT n'ajoute pas de
+   colonne pour les capter : ``Checklist`` (vide sur les 91 lignes réelles),
+   ``Limit Date`` (quasi vide, redondante avec ``P/A Limit Date``), ``Closed
+   by`` (absente aussi du format « données brutes » — pas un trou qui
+   s'aggrave, propre à ce second format).
+
+Normalise vers le schéma ``app.models.qhse`` en résolvant les entités
 existantes plutôt qu'en dupliquant du texte libre (§3.5, §2.1.B) :
 
 - ``VesselName`` → ``vessels.id`` (résolution stricte par ``code``/``name`` ;
@@ -176,17 +195,24 @@ _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
 
 def _parse_datetime(raw: Any) -> datetime | None:
-    if raw is None or raw == "":
+    """Isoformat (export « données brutes ») ou ``JJ/MM/AAAA`` (export
+    « historique » — cf. ``Anemos_QHSE Reports History.xlsx``, sans heure,
+    séparateur ``/``). ``-`` est le vide explicite de ce second format."""
+    if raw is None or raw == "" or raw == "-":
         return None
     if isinstance(raw, datetime):
         return raw if raw.tzinfo else raw.replace(tzinfo=UTC)
     if isinstance(raw, date):
         return datetime(raw.year, raw.month, raw.day, tzinfo=UTC)
     text = str(raw).strip()
-    if not text:
+    if not text or text == "-":
         return None
     try:
         return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        pass
+    try:
+        return datetime.strptime(text, "%d/%m/%Y").replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -219,8 +245,25 @@ def _map_grade(raw: Any) -> str | None:
 
 # ══════════════════════════════════════════════════════════════ En-têtes xlsx
 
-# Les 41 colonnes de l'export FMS (cahier des charges §3.1/§16.1) — ordre non
-# garanti à l'ingestion, on résout par nom d'en-tête plutôt que par position.
+# Les 41 colonnes de l'export FMS « données brutes » (cahier des charges
+# §3.1/§16.1) — ordre non garanti à l'ingestion, on résout par nom d'en-tête
+# plutôt que par position.
+#
+# Second format observé en pratique : l'export « historique » imprimable par
+# navire (``Anemos_QHSE Reports History.xlsx``) — même FMS, présentation
+# différente. Ses en-têtes propres sont alias vers les MÊMES clés canoniques
+# ci-dessous (bloc « Export historique ») : le reste du pipeline (nettoyage,
+# résolution, upsert D10) ne voit aucune différence entre les deux formats.
+#
+# Colonnes de ce second format délibérément SANS alias, donc ignorées —
+# décision du 2026-09-04 (Marad reste l'unique outil de saisie, MyTOWT
+# n'ajoute pas de colonne pour les capter) :
+#   - ``Checklist`` : vide sur les 91 lignes réelles observées.
+#   - ``Limit Date`` : quasi toujours vide, et identique à ``P/A Limit Date``
+#     quand elle est renseignée — redondante.
+#   - ``Closed by`` : qui a clos le signalement. Absente aussi du format
+#     « données brutes » (cahier des charges §16.1) — pas un trou qui
+#     s'aggrave, une donnée propre à ce second format.
 _HEADER_ALIASES: dict[str, str] = {
     "subject": "Subject",
     "code": "Code",
@@ -245,6 +288,15 @@ _HEADER_ALIASES: dict[str, str] = {
     "evaluationfinisheddate": "EvaluationFinishedDate",
     "evaluationresponsibleperson": "EvaluationResponsiblePerson",
     "evaluationresponsiblerank": "EvaluationResponsibleRank",
+    # ── Export « historique » ────────────────────────────────────────────
+    "issuedon": "IssuedDate",
+    "issuer": "IssuedBy",
+    "place": "IssuedPlace",
+    "correctiveactionremarks": "CorrectiveActionDescription",
+    "evaluationrootanalysisremarks": "EvaluationRootCause",
+    "evaluationpreventiveactionremarks": "EvaluationPreventativeAction",
+    "c/alimitdate": "CorrectiveActionLimitDate",
+    "p/alimitdate": "EvaluationLimitDate",
 }
 
 
@@ -264,6 +316,55 @@ def _build_header_index(header_row: tuple) -> dict[str, int]:
 def _cell(row: tuple, index: dict[str, int], column: str) -> Any:
     i = index.get(column)
     return row[i] if i is not None and i < len(row) else None
+
+
+#: Nombre de lignes scrutées avant de renoncer à trouver un en-tête — l'export
+#: « historique » en porte 4 (titre, navire, société, ligne vide) avant le
+#: sien ; large marge pour ne pas casser sur une variante à une ligne près.
+_MAX_HEADER_SCAN = 10
+
+
+def _find_header_and_metadata(
+    rows_iter: Any,
+) -> tuple[dict[str, int], list[tuple]]:
+    """Repère la ligne d'en-tête, en tolérant un bloc de titre au-dessus
+    (export « historique » : titre, nom du navire, société — cf. docstring
+    de :data:`_HEADER_ALIASES`).
+
+    ``rows_iter`` est consommé jusqu'à l'en-tête inclus (ou jusqu'à
+    :data:`_MAX_HEADER_SCAN` lignes) : il ressort positionné juste après,
+    prêt pour les lignes de données. Renvoie ``(index, lignes_avant_entete)`` —
+    ``index`` vide si aucune en-tête reconnue dans la fenêtre (feuille non
+    reconnue, cf. appelant), ``lignes_avant_entete`` sert à
+    :func:`_find_title_vessel`.
+    """
+    metadata_rows: list[tuple] = []
+    for _ in range(_MAX_HEADER_SCAN):
+        try:
+            row = next(rows_iter)
+        except StopIteration:
+            break
+        idx = _build_header_index(row)
+        if "Subject" in idx:
+            return idx, metadata_rows
+        metadata_rows.append(row)
+    return {}, metadata_rows
+
+
+def _find_title_vessel(
+    metadata_rows: list[tuple], vessel_by_key: dict[str, Vessel]
+) -> Vessel | None:
+    """Navire cité dans le bloc de titre au-dessus de l'en-tête (export
+    « historique » : une feuille = un navire, jamais de ``VesselName`` par
+    ligne). Premier match, dans l'ordre de lecture."""
+    for row in metadata_rows:
+        for cell in row or ():
+            if cell is None:
+                continue
+            vessel = vessel_by_key.get(str(cell).strip().lower())
+            if vessel is not None:
+                return vessel
+    return None
 
 
 # ══════════════════════════════════════════════════════════════ Import
@@ -317,16 +418,24 @@ async def import_qhse_xlsx(
 
     for sheet in wb.worksheets:
         rows_iter = sheet.iter_rows(values_only=True)
-        try:
-            header_row = next(rows_iter)
-        except StopIteration:
-            continue
-        index = _build_header_index(header_row)
-        if "Subject" not in index or "VesselName" not in index:
+        index, metadata_rows = _find_header_and_metadata(rows_iter)
+        if "Subject" not in index:
             # Feuille non reconnue (pas le format attendu) — ignorée, pas une erreur.
             continue
 
-        for row_number, row in enumerate(rows_iter, start=2):
+        # Export « historique » : pas de `VesselName` par ligne, un seul
+        # navire cité dans le titre de la feuille. Sans ce repli, RQ03 ne
+        # pourrait jamais résoudre le navire pour aucune ligne — la feuille
+        # entière est alors ignorée plutôt que quarantainée ligne par ligne
+        # (elle n'est structurellement pas exploitable, ce n'est pas une
+        # anomalie de contenu ligne par ligne).
+        default_vessel: Vessel | None = None
+        if "VesselName" not in index:
+            default_vessel = _find_title_vessel(metadata_rows, vessel_by_key)
+            if default_vessel is None:
+                continue
+
+        for row_number, row in enumerate(rows_iter, start=len(metadata_rows) + 2):
             if row is None or all(c is None for c in row):
                 continue
             # 🔴 Un POINT DE REPRISE PAR LIGNE, et non un `rollback()` global.
@@ -355,6 +464,7 @@ async def import_qhse_xlsx(
                         crew_by_norm=crew_by_norm,
                         report=report,
                         batch_id=batch.id,
+                        default_vessel=default_vessel,
                     )
             except Exception as exc:  # jamais de crash de lot — cf. docstring module
                 report.errors.append(f"{sheet.title}!L{row_number} : erreur inattendue ({exc})")
@@ -459,6 +569,7 @@ async def _import_row(
     crew_by_norm: dict[str, CrewMember],
     report: QhseImportReport,
     batch_id: int,
+    default_vessel: Vessel | None = None,
 ) -> tuple[str, QhseReport] | None:
     """Importe/réconcilie une ligne. Renvoie ``("created"|"updated", rapport)``,
     ou ``None`` si quarantainée.
@@ -466,6 +577,10 @@ async def _import_row(
     Les compteurs ``imported``/``updated`` sont incrémentés par l'appelant
     **après** la sortie réussie du savepoint — pas ici : une violation de
     contrainte peut surgir à sa libération, et le compteur mentirait alors.
+
+    ``default_vessel`` : repli pour l'export « historique », qui ne porte pas
+    de ``VesselName`` par ligne (le navire est un bloc de titre par feuille,
+    résolu une fois par :func:`_find_title_vessel`).
     """
     origin = f"{sheet_name}!L{row_number}"
 
@@ -504,8 +619,14 @@ async def _import_row(
         test_match = _TEST_PATTERN_RE.search(description)
 
     # ── Navire — résolution stricte, obligatoire (RQ03) ─────────────────────
+    # Repli sur `default_vessel` quand la feuille n'a pas de `VesselName` par
+    # ligne (export « historique ») — jamais l'inverse : une ligne qui PORTE
+    # un `VesselName` explicite prime toujours sur le titre de la feuille.
     vessel_name_raw = _cell(row, index, "VesselName")
-    vessel = vessel_by_key.get(str(vessel_name_raw or "").strip().lower())
+    if vessel_name_raw is not None:
+        vessel = vessel_by_key.get(str(vessel_name_raw).strip().lower())
+    else:
+        vessel = default_vessel
     if vessel is None:
         report.errors.append(
             f"{origin} : navire « {vessel_name_raw} » non reconnu dans le référentiel — quarantainée (RQ03)."
@@ -565,27 +686,50 @@ async def _import_row(
         db.add(qhse_report)
     await db.flush()
 
+    # ── Date de finalisation — proxy par ``ClosedDate`` quand l'export ne
+    # porte pas de colonne dédiée (export « historique » : une seule date de
+    # clôture globale, pas de ``*FinishedDate`` par workflow). Décision du
+    # 2026-09-04. Ne s'applique QUE si la colonne est absente de l'en-tête —
+    # sur l'export « données brutes », une ligne close sans date de
+    # finalisation explicite reste "open" (c'est un vrai écart de saisie,
+    # cf. cahier des charges §3.5, pas une valeur à déduire).
+    closed_on = closed_date.date() if closed_date else None
+
+    corrective_description = _clean_text(_cell(row, index, "CorrectiveActionDescription"))
+    corrective_finished = _parse_date(_cell(row, index, "CorrectiveActionFinishedDate"))
+    if (
+        corrective_finished is None
+        and "CorrectiveActionFinishedDate" not in index
+        and corrective_description
+    ):
+        corrective_finished = closed_on
+
     corrective_responsible_raw = _clean_text(_cell(row, index, "CorrectiveActionResponsiblePerson"))
     corrective_responsible_user = user_by_norm.get(_normalize_name(corrective_responsible_raw))
     await _upsert_corrective_action(
         db,
         report_id=qhse_report.id,
-        description=_clean_text(_cell(row, index, "CorrectiveActionDescription")),
+        description=corrective_description,
         limit_date=_parse_date(_cell(row, index, "CorrectiveActionLimitDate")),
-        finished_date=_parse_date(_cell(row, index, "CorrectiveActionFinishedDate")),
+        finished_date=corrective_finished,
         responsible_user_id=corrective_responsible_user.id if corrective_responsible_user else None,
         responsible_rank=_clean_text(_cell(row, index, "CorrectiveActionResponsibleRank")),
     )
+
+    root_cause_text = _clean_text(_cell(row, index, "EvaluationRootCause"))
+    evaluation_finished = _parse_date(_cell(row, index, "EvaluationFinishedDate"))
+    if evaluation_finished is None and "EvaluationFinishedDate" not in index and root_cause_text:
+        evaluation_finished = closed_on
 
     evaluation_responsible_raw = _clean_text(_cell(row, index, "EvaluationResponsiblePerson"))
     evaluation_responsible_user = user_by_norm.get(_normalize_name(evaluation_responsible_raw))
     await _upsert_root_cause(
         db,
         report_id=qhse_report.id,
-        root_cause_text=_clean_text(_cell(row, index, "EvaluationRootCause")),
+        root_cause_text=root_cause_text,
         preventative_action=_clean_text(_cell(row, index, "EvaluationPreventativeAction")),
         limit_date=_parse_date(_cell(row, index, "EvaluationLimitDate")),
-        finished_date=_parse_date(_cell(row, index, "EvaluationFinishedDate")),
+        finished_date=evaluation_finished,
         responsible_user_id=(
             evaluation_responsible_user.id if evaluation_responsible_user else None
         ),

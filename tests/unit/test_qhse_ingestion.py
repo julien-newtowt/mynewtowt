@@ -651,3 +651,204 @@ async def test_run_rules_invoked_on_import_creates_quality_check_results(db):
     )
     assert {r.rule_id for r in results} == {"RQ01", "RQ02", "RQ03"}
     assert all(r.result == "pass" for r in results)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#   Second format d'export FMS — « historique » imprimable par navire
+#   (Anemos_QHSE Reports History.xlsx, dataset réel importé le 2026-09-04)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Même FMS, présentation différente : pas de VesselName par ligne (le navire
+# est un bloc de titre par feuille), en-têtes différents, dates JJ/MM/AAAA en
+# texte, pas de date de finalisation distincte par workflow (une seule
+# ClosedDate globale). Structure ci-dessous reproduite fidèlement depuis le
+# fichier réel (4 lignes de titre, en-tête à la 5e, ligne résiduelle isolée
+# en fin de classeur).
+
+
+def _history_workbook(rows: list[list], *, vessel_title: str = "Anemos") -> bytes:
+    header = [
+        "Issued on",
+        "Grade",
+        "Subject",
+        "Issuer",
+        "Place",
+        "Limit Date",
+        "Description",
+        "Checklist",
+        "Corrective Action Remarks",
+        "Evaluation Root Analysis Remarks",
+        "Evaluation Preventive Action Remarks",
+        "C/A Limit Date",
+        "Closed date",
+        "P/A Limit Date",
+        "Closed by",
+        "Code",
+    ]
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["", "", "", "QHSE Reports History", "", "", "", "", "", ""])
+    ws.append(["", "", "", vessel_title, "", "", "", "", "", ""])
+    ws.append(["", "", "", "NewTOWT", "", "", "", "", "", ""])
+    ws.append([])
+    ws.append(header)
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _history_row(
+    subject,
+    *,
+    issued="10/01/2026",
+    grade="Near Miss / Hazard",
+    place="At Sea[Sync]",
+    description="desc",
+    corrective="-",
+    ca_limit="-",
+    closed="-",
+    root_cause="-",
+    pa_limit="-",
+    closed_by="Guillaume BATARD",
+):
+    return [
+        issued,
+        grade,
+        subject,
+        "Crew",
+        place,
+        "-",  # Limit Date — ignorée (redondante avec P/A Limit Date)
+        description,
+        None,  # Checklist — toujours vide sur le dataset réel
+        corrective,
+        root_cause,
+        "-",
+        ca_limit,
+        closed,
+        pa_limit,
+        closed_by,  # Closed by — ignorée (Marad reste l'unique outil de saisie)
+        None,
+    ]
+
+
+async def test_history_format_resolves_vessel_from_title_block(db):
+    """Aucun ``VesselName`` par ligne : le navire vient du bloc de titre."""
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss")])
+
+    report = await import_qhse_xlsx(db, wb)
+    assert report.imported == 1
+
+    saved = (await db.execute(select(QhseReport))).scalars().one()
+    vessel = (await db.execute(select(Vessel))).scalars().one()
+    assert saved.vessel_id == vessel.id
+    assert saved.issued_place == "At Sea"  # artefact [Sync] retiré, même nettoyage
+
+
+async def test_history_format_unresolved_title_vessel_skips_whole_sheet(db):
+    """Aucun navire dans le titre, aucun ``VesselName`` par ligne : la feuille
+    n'est structurellement pas exploitable — ignorée, pas quarantainée ligne
+    par ligne (RQ03 ne peut rien résoudre pour aucune ligne de cette feuille)."""
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss")], vessel_title="Unknown Ship")
+
+    report = await import_qhse_xlsx(db, wb)
+    assert report.imported == 0
+    assert report.skipped == 0
+    assert report.errors == []
+
+
+async def test_history_format_parses_ddmmyyyy_dates(db):
+    """Dates en texte ``JJ/MM/AAAA``, pas ISO — format réel de cet export."""
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss", issued="15/01/2025", closed="20/01/2025")])
+
+    await import_qhse_xlsx(db, wb)
+    saved = (await db.execute(select(QhseReport))).scalars().one()
+    assert saved.issued_date.date().isoformat() == "2025-01-15"
+    assert saved.closed_date.date().isoformat() == "2025-01-20"
+
+
+async def test_history_format_trailing_stray_row_is_quarantined_not_crashed(db):
+    """Ligne résiduelle en fin de classeur (une seule cellule, un fragment de
+    date) — reproduction du défaut réel observé sur le fichier importé.
+    Doit être quarantainée par le garde-fou existant (Subject/IssuedDate
+    manquant), jamais planter tout l'import."""
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss"), ["01/09/2026"]])
+
+    report = await import_qhse_xlsx(db, wb)
+    assert report.imported == 1
+    assert report.skipped == 1
+    assert any("manquant" in e for e in report.errors)
+
+
+async def test_history_format_uses_closed_date_as_finished_date_proxy(db):
+    """Pas de colonne de finalisation dédiée dans ce format — décision du
+    2026-09-04 : la date de clôture du signalement en tient lieu, pour les
+    DEUX workflows, uniquement quand le texte correspondant est renseigné."""
+    from app.models.qhse import CorrectiveAction, RootCauseEvaluation
+
+    await _seed_vessel(db)
+    wb = _history_workbook(
+        [
+            _history_row(
+                "A near miss",
+                corrective="Fixed it",
+                root_cause="Bad training",
+                closed="15/02/2026",
+            )
+        ]
+    )
+    await import_qhse_xlsx(db, wb)
+
+    action = (await db.execute(select(CorrectiveAction))).scalars().one()
+    evaluation = (await db.execute(select(RootCauseEvaluation))).scalars().one()
+    assert action.finished_date.isoformat() == "2026-02-15"
+    assert action.status == "implemented"
+    assert evaluation.finished_date.isoformat() == "2026-02-15"
+    assert evaluation.status == "implemented"
+
+
+async def test_history_format_no_finished_date_proxy_without_closed_date(db):
+    """Signalement encore ouvert : pas de date de clôture, donc pas de date
+    de finalisation déduite — l'action reste "open", pas un faux "implemented"."""
+    from app.models.qhse import CorrectiveAction
+
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss", corrective="Fixed it", closed="-")])
+    await import_qhse_xlsx(db, wb)
+
+    action = (await db.execute(select(CorrectiveAction))).scalars().one()
+    assert action.finished_date is None
+    assert action.status == "open"
+
+
+async def test_history_format_ignores_limit_date_checklist_and_closed_by(db):
+    """``Limit Date``/``Checklist``/``Closed by`` n'ont aucun alias — ignorées,
+    et surtout : ne doivent atterrir dans AUCUN autre champ par accident."""
+    await _seed_vessel(db)
+    wb = _history_workbook(
+        [_history_row("A near miss", ca_limit="10/03/2026", pa_limit="20/03/2026")]
+    )
+    await import_qhse_xlsx(db, wb)
+
+    saved = (await db.execute(select(QhseReport))).scalars().one()
+    assert saved.contact is None  # "Limit Date"/"Checklist" n'ont pas dérivé ici
+
+
+async def test_history_format_reconciles_with_source_code_like_the_raw_export(db):
+    """La réconciliation D10 fonctionne identiquement sur ce second format —
+    même fonction, même clé naturelle, aucun chemin séparé."""
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss")])
+
+    first = await import_qhse_xlsx(db, wb, filename="f1.xlsx")
+    second = await import_qhse_xlsx(db, wb, filename="f2.xlsx")
+
+    assert (first.imported, first.updated) == (1, 0)
+    assert (second.imported, second.updated) == (0, 1)
+    rows = (await db.execute(select(QhseReport))).scalars().all()
+    assert len(rows) == 1
