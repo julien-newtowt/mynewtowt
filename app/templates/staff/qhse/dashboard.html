@@ -1,0 +1,138 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('qhse_dash_title', lang) }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/qhse" class="btn btn-ghost mb-3">{{ t('btn_back', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">{{ t('qhse_kicker', lang) }}</span>
+  <h1 class="display">{{ t('qhse_dash_title', lang) }}</h1>
+  <p class="text-muted">{{ t('qhse_dash_subtitle', lang) }}</p>
+</header>
+
+{# ───────────────────────────── Filtre navire ───────────────────────────── #}
+<div class="flex items-center gap-2 mb-4" style="flex-wrap:wrap;">
+  <span class="text-muted text-sm">{{ t('qhse_dash_filter_vessel', lang) }}</span>
+  <div class="flex gap-1" style="flex-wrap:wrap;">
+    <a href="/qhse/dashboard"
+       class="btn btn-sm {% if not selected_vessel_id %}btn-primary{% else %}btn-ghost{% endif %}">
+      <i data-lucide="layers"></i> {{ t('qhse_dash_fleet_all', lang) }}
+    </a>
+    {% for v in vessels %}
+    <a href="/qhse/dashboard?vessel_id={{ v.id }}"
+       class="btn btn-sm {% if selected_vessel_id == v.id %}btn-primary{% else %}btn-ghost{% endif %}">
+      <i data-lucide="ship"></i> {{ v.name }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if dashboard.total_reports == 0 %}
+<div class="alert alert-info mb-3">{{ t('qhse_dash_empty', lang) }}</div>
+{% else %}
+
+{# ───────────────────────────── Bandeau KPI ───────────────────────────── #}
+<section class="kpi-strip mb-4">
+  <div class="kpi-card">
+    <div class="label">{{ t('qhse_dash_kpi_total', lang) }}</div>
+    <div class="value">{{ dashboard.total_reports }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('qhse_dash_kpi_open', lang) }}</div>
+    <div class="value {% if dashboard.open_count %}text-error{% endif %}">{{ dashboard.open_count }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('qhse_dash_kpi_completeness', lang) }}</div>
+    <div class="value">{{ dashboard.field_completeness_pct }} %</div>
+    <div class="delta text-muted">{{ t('qhse_dash_kpi_completeness_hint', lang) }}</div>
+  </div>
+</section>
+
+{# ─────────────────── Répartition par grade + Tendance 12 mois ─────────── #}
+<div class="grid grid-2 gap-3 mb-4">
+  <article class="card">
+    <div class="card-title">{{ t('qhse_dash_grades_title', lang) }}</div>
+    <p class="text-muted text-sm">{{ t('qhse_dash_grades_subtitle', lang) }}</p>
+    {% for g in dashboard.grade_counts %}
+    {% set pct = ((100 * g.count / dashboard.total_reports) if dashboard.total_reports else 0) %}
+    <div class="mb-2">
+      <p class="text-sm flex justify-between">
+        <span>{{ t(g.label_key, lang) }}</span>
+        <span class="text-muted">{{ g.count }} ({{ pct|round(0, 'floor')|int }}%)</span>
+      </p>
+      <div class="progress-bar"><div class="progress-bar-fill" style="width:{{ pct }}%"></div></div>
+    </div>
+    {% endfor %}
+  </article>
+
+  <article class="card">
+    <div class="card-title">{{ t('qhse_dash_trend_title', lang) }}</div>
+    <p class="text-muted text-sm">{{ t('qhse_dash_trend_subtitle', lang) }}</p>
+    <div style="overflow-x:auto;">
+      <svg viewBox="0 0 {{ trend_chart.width }} {{ trend_chart.height }}" width="100%" height="180"
+           preserveAspectRatio="xMidYMid meet" role="img" aria-label="{{ t('qhse_dash_trend_title', lang) }}">
+        <line x1="8" y1="{{ trend_chart.baseline_y }}" x2="{{ trend_chart.width - 8 }}" y2="{{ trend_chart.baseline_y }}"
+              stroke="#D8CBB0" stroke-width="1"></line>
+        {% for bar in trend_bars %}
+        <rect x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" fill="#0D5966" rx="2">
+          <title>{{ bar.label }} — {{ bar.value }}</title>
+        </rect>
+        <text x="{{ bar.label_x }}" y="{{ trend_chart.label_y }}" font-size="8" text-anchor="middle" fill="#6E6E6E">{{ bar.label }}</text>
+        {% endfor %}
+      </svg>
+    </div>
+  </article>
+</div>
+
+{# ───────────────── L'écart CAPA — le constat le plus actionnable ───────── #}
+<div class="grid grid-2 gap-3 mb-4">
+  <article class="card">
+    <div class="card-title">{{ t('qhse_dash_c1_title', lang) }}</div>
+    <p class="text-muted text-sm">{{ t('qhse_dash_c1_subtitle', lang) }}</p>
+    {% if dashboard.corrective_on_time_pct is not none %}
+    <div class="kpi-card" style="border:none; padding:0;">
+      <div class="value">{{ dashboard.corrective_on_time_pct }} %</div>
+      <div class="delta text-muted">{{ dashboard.corrective_finished_count }}/{{ dashboard.corrective_total_count }} {{ t('qhse_dash_c1_denominator', lang) }}</div>
+    </div>
+    {% else %}
+    <p class="text-muted">{{ t('qhse_dash_no_data', lang) }}</p>
+    {% endif %}
+  </article>
+
+  <article class="card">
+    <div class="card-title">{{ t('qhse_dash_c2_title', lang) }}</div>
+    <p class="text-muted text-sm">{{ t('qhse_dash_c2_subtitle', lang) }}</p>
+    <div class="kpi-card" style="border:none; padding:0;">
+      <div class="value">{{ dashboard.root_cause_completion_pct }} %</div>
+      <div class="delta text-muted">{{ dashboard.root_cause_finished_count }}/{{ dashboard.total_reports }} {{ t('qhse_dash_c2_denominator', lang) }}</div>
+    </div>
+  </article>
+</div>
+
+{# ───────────────────────────── Ouverts, par ancienneté ─────────────────── #}
+<article class="card">
+  <div class="card-title">{{ t('qhse_dash_open_title', lang) }}</div>
+  {% if dashboard.open_items %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('qhse_dash_open_col_subject', lang) }}</th>
+        <th>{{ t('qhse_dash_open_col_grade', lang) }}</th>
+        <th>{{ t('qhse_dash_open_col_age', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in dashboard.open_items %}
+      <tr>
+        <td><a href="/qhse/{{ item.id }}">{{ item.subject }}</a></td>
+        <td>{{ t('qhse_grade_' ~ item.grade, lang) }}</td>
+        <td>{{ item.days_open }} {{ t('qhse_dash_days', lang) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">{{ t('qhse_dash_open_none', lang) }}</p>
+  {% endif %}
+</article>
+
+{% endif %}
+{% endblock %}

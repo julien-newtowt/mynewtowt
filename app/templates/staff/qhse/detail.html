@@ -1,0 +1,67 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ report.subject }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+<a href="/qhse/dashboard" class="btn btn-ghost mb-3">{{ t('btn_back', lang) }}</a>
+
+<header class="mb-4">
+  <span class="kicker">{{ t('qhse_kicker', lang) }} · {{ vessel.name if vessel else "—" }}</span>
+  <h1 class="display">{{ report.subject }}</h1>
+  <p>
+    <span class="pill">{{ t('qhse_grade_' ~ report.grade, lang) }}</span>
+    {% if report.closed_date %}<span class="pill pill-ok">{{ t('qhse_dash_closed', lang) }}</span>
+    {% else %}<span class="pill pill-warn">{{ t('qhse_dash_open_status', lang) }}</span>{% endif %}
+    {% if report.report_source == 'suspected_test' %}
+    <span class="pill">{{ t('qhse_import_result_flagged', lang) }}</span>
+    {% endif %}
+  </p>
+</header>
+
+<div class="grid grid-2 gap-3 mb-3">
+  <article class="card">
+    <div class="card-title">{{ t('qhse_detail_context', lang) }}</div>
+    <p class="text-sm"><strong>{{ t('qhse_detail_issued', lang) }}</strong> {{ report.issued_date|datetime }}</p>
+    {% if report.closed_date %}<p class="text-sm"><strong>{{ t('qhse_detail_closed', lang) }}</strong> {{ report.closed_date|datetime }}</p>{% endif %}
+    <p class="text-sm"><strong>{{ t('qhse_detail_place', lang) }}</strong> {{ report.issued_place or "—" }}</p>
+    <p class="text-sm"><strong>{{ t('qhse_detail_reporter', lang) }}</strong> {{ reporter or "—" }}</p>
+  </article>
+  <article class="card">
+    <div class="card-title">{{ t('qhse_detail_description', lang) }}</div>
+    <p class="text-sm" style="white-space:pre-wrap;">{{ report.description or "—" }}</p>
+  </article>
+</div>
+
+<div class="grid grid-2 gap-3">
+  <article class="card">
+    <div class="card-title">{{ t('qhse_detail_corrective_title', lang) }}</div>
+    {% if report.corrective_action %}
+    {% set ca = report.corrective_action %}
+    <p class="text-sm" style="white-space:pre-wrap;">{{ ca.description or "—" }}</p>
+    <p class="text-sm text-muted">
+      {{ t('qhse_detail_limit', lang) }} {{ ca.limit_date|date if ca.limit_date else "—" }}
+      · {{ t('qhse_detail_finished', lang) }} {{ ca.finished_date|date if ca.finished_date else "—" }}
+    </p>
+    {% if corrective_responsible %}<p class="text-sm text-muted">{{ t('qhse_detail_responsible', lang) }} {{ corrective_responsible }}</p>{% endif %}
+    <span class="pill {% if ca.status == 'implemented' %}pill-ok{% else %}pill-warn{% endif %}">{{ ca.status }}</span>
+    {% else %}
+    <p class="text-muted">{{ t('qhse_dash_no_data', lang) }}</p>
+    {% endif %}
+  </article>
+
+  <article class="card">
+    <div class="card-title">{{ t('qhse_detail_evaluation_title', lang) }}</div>
+    {% if report.root_cause_evaluation %}
+    {% set rce = report.root_cause_evaluation %}
+    <p class="text-sm" style="white-space:pre-wrap;">{{ rce.root_cause_text or "—" }}</p>
+    {% if rce.preventative_action %}<p class="text-sm text-muted">{{ rce.preventative_action }}</p>{% endif %}
+    <p class="text-sm text-muted">
+      {{ t('qhse_detail_limit', lang) }} {{ rce.limit_date|date if rce.limit_date else "—" }}
+      · {{ t('qhse_detail_finished', lang) }} {{ rce.finished_date|date if rce.finished_date else "—" }}
+    </p>
+    {% if evaluation_responsible %}<p class="text-sm text-muted">{{ t('qhse_detail_responsible', lang) }} {{ evaluation_responsible }}</p>{% endif %}
+    <span class="pill {% if rce.status == 'implemented' %}pill-ok{% else %}pill-warn{% endif %}">{{ rce.status }}</span>
+    {% else %}
+    <p class="text-muted">{{ t('qhse_dash_no_data', lang) }}</p>
+    {% endif %}
+  </article>
+</div>
+{% endblock %}
