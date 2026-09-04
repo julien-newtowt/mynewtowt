@@ -2834,3 +2834,69 @@ Exécution staging (legs → GPS) ; lot 2 archive noon reports (ADR-014 D6,
 accepté) ; confirmation de la source GPS 08-10/2024 ; revue des 5 ports créés
 dans Admin → Ports ; sentinelle des sites `select(Leg)`.
 
+
+---
+
+## 2026-09-04 — Une arrivée déclarée par erreur, et deux indicateurs qui la croyaient
+
+**Branche** : `claude/commercial-module-multi-agent-fe0jhc`
+
+### Le signalement
+
+Sur la page d'escale du leg RERUN→BRSSO : ATD le 03/09 à 08:19, ATA le 04/09 à
+06:20 — une arrivée déclarée un jour après le départ, pour un voyage de 6287 NM.
+L'écran affichait alors, imperturbable : **Restant 0 NM** et **Allongement
+×0.02**, sur 119 NM relevés par 215 points GPS.
+
+### Ce que le correctif du 03/09 avait manqué
+
+La veille, trois indicateurs de voyage avaient été corrigés pour « cesser
+d'affirmer plus que la donnée ne dit ». La docstring de `real_elongation`
+énonçait même la règle : *« un allongement est par définition ≥ 1 : une route
+réelle est plus longue que l'orthodromie, jamais quatorze fois plus courte »*.
+
+Mais la garde posée testait le **statut** (`is_active`), pas l'invariant. Or
+`is_active` vaut `atd is not None and ata is None` : saisir une ATA le fait
+tomber, et l'écran repassait à l'affichage « voyage terminé » — rouvrant très
+exactement le trou qu'on venait de fermer.
+
+Leçon : **une garde qui teste l'état plutôt que la propriété ne tient que tant
+que l'état est juste.** L'invariant est maintenant vérifié pour lui-même
+(`arrival_contradicted_by_track`), quel que soit le chemin par lequel le leg a
+cessé d'être actif.
+
+### « Restant 0 NM » relevait du même travers
+
+`remaining = 0.0` dès que `leg.ata` existe — zéro parce qu'on a *déclaré*
+l'arrivée, pas parce que le navire est arrivé. Quand la trace contredit la
+déclaration, la réponse honnête n'est ni zéro (qui affirme une arrivée démentie)
+ni la distance depuis le dernier point (qui suppose ce point à jour) : c'est
+« on ne sait pas ». L'écran affiche « — » et dit pourquoi.
+
+### Ce que je n'ai pas construit, et pourquoi
+
+En cherchant comment l'opérateur pouvait revenir en arrière, constat : **il ne
+peut pas**. Le formulaire n'offre que `depart` et `arrivee` ; une fois l'ATA
+posée, on peut la *redater*, pas l'annuler. Le leg reste « à quai » pour
+toujours.
+
+C'est le vrai manque derrière le signalement — mais l'annuler n'est pas un
+`ata = None` : la déclaration a inscrit un EOSP au SOF, recalculé l'OPEX réel,
+activé le leg suivant et notifié la compagnie. Défaire tout cela est une
+décision de conception, pas un correctif d'affichage. Le bandeau le dit à
+l'opérateur au lieu de lui promettre un bouton qui n'existe pas, et la question
+est posée à Julien.
+
+### Mon erreur
+
+En nettoyant un test de sabotage, j'ai lancé `git checkout` sur un fichier dont
+les modifications n'étaient **pas commitées** : trois correctifs perdus, à
+réécrire. Le sabotage lui-même était concluant (un seul test tombait, le bon).
+Ne jamais mêler `git checkout` à la restauration d'un sabotage sur du travail
+non commité — copier le fichier, ou committer d'abord.
+
+### Tests
+
+7 tests unitaires sur l'invariant, dont les bornes (`actual == theoretical`
+vaut 1 et reste valide ; sans orthodromie ou sans trace, on ne conclut rien) et
+la non-régression du cas « en mer » déjà traité.

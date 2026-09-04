@@ -12,6 +12,7 @@ crochets ``data-*``, le script est inerte et l'écran régresse en silence.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from types import SimpleNamespace
 
@@ -98,7 +99,13 @@ def test_les_crochets_du_script_sont_presents():
 
     assert 'id="bracket-rows"' in html
     assert 'id="bracket-row-tpl"' in html
-    assert "/static/js/bracket-rows.js" in html
+    # Chemin passé par `asset()` — cache-busting obligatoire depuis l'incident
+    # du 2026-09-03 (leg-cascade.js servi périmé). Sentinelle :
+    # tests/integration/test_static_cache_busting.py
+    # Le script doit porter un paramètre de version : `asset()` suffixe le
+    # `mtime` du fichier. Sans lui, le navigateur ressert la version en cache
+    # après déploiement — l'incident du 2026-09-03 sur leg-cascade.js.
+    assert re.search(r"/static/js/bracket-rows\.js\?v=\d+", html)
 
 
 def test_le_gabarit_porte_les_trois_champs_ensemble():
@@ -116,16 +123,16 @@ def test_le_gabarit_porte_les_trois_champs_ensemble():
 
 
 def test_le_script_de_page_ne_chasse_pas_ceux_du_layout():
-    """``{{ super() }}`` — le bloc head du layout staff porte 4 scripts.
+    """``{{ super() }}`` — le bloc head du layout staff porte plusieurs scripts.
 
-    Le surcharger sans appeler ``super()`` ferait disparaître la sidebar,
-    l'horloge, les menus et le sélecteur de langue de cette seule page : une
-    panne discrète, visible nulle part ailleurs.
+    Le surcharger sans appeler ``super()`` ferait disparaître la sidebar, la
+    densité, l'horloge, les menus et le sélecteur de langue de cette seule
+    page : une panne discrète, visible nulle part ailleurs.
     """
     html = _render()
 
-    for script in ("sidebar.js", "clock.js", "topbar-menus.js", "lang-switch.js"):
-        assert f"/static/js/{script}" in html
+    for script in ("sidebar.js", "density.js", "clock.js", "topbar-menus.js", "lang-switch.js"):
+        assert script in html
 
 
 def test_une_grille_active_n_est_pas_editable():

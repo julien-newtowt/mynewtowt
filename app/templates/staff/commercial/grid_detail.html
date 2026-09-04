@@ -1,7 +1,7 @@
 {% extends "staff/_layout.html" %}
 {% block title %}{{ grid.reference }} — {{ brand.nom_court }}{% endblock %}
 {% block head %}{{ super() }}
-<script src="/static/js/bracket-rows.js" defer></script>
+<script src="{{ asset('js/bracket-rows.js') }}" defer></script>
 {% endblock %}
 {% set editable = grid.status != 'active' %}
 {% block content %}

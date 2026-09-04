@@ -48,6 +48,30 @@ class TrackMetrics:
     # repli calculé au rendu depuis les coordonnées des ports (legs anciens
     # ou créés avant que la distance ne soit calculée à l'enregistrement).
     theoretical_is_fallback: bool = False
+    # Une ATA a été saisie. Distinct de ``not is_active``, qui couvre aussi les
+    # legs pas encore partis.
+    declared_arrived: bool = False
+
+    @property
+    def arrival_contradicted_by_track(self) -> bool:
+        """L'arrivée déclarée et la trace GPS ne peuvent pas être vraies ensemble.
+
+        Une route réelle est toujours **plus longue** que l'orthodromie : on ne
+        rejoint pas deux ports par un chemin plus court que la géodésique. Un
+        rapport réel/orthodromie inférieur à 1 sur un voyage déclaré arrivé est
+        donc un contresens, pas une mesure.
+
+        Deux lectures possibles, sans de quoi trancher entre elles : l'arrivée a
+        été déclarée par erreur (cas constaté le 2026-09-04 sur RERUN→BRSSO,
+        arrivée saisie après 119 NM relevés sur 6287), ou la trace GPS est
+        incomplète. Dans les deux cas les indicateurs dérivés ne veulent rien
+        dire, et l'écran doit le dire plutôt qu'afficher un nombre.
+        """
+        if not self.declared_arrived or self.actual_nm <= 0:
+            return False
+        if not self.theoretical_nm or self.theoretical_nm <= 0:
+            return False
+        return self.actual_nm < self.theoretical_nm
 
     @property
     def real_elongation(self) -> float | None:
@@ -65,7 +89,7 @@ class TrackMetrics:
         que l'orthodromie, jamais quatorze fois plus courte. Cf.
         ``progress_ratio`` pour la grandeur qui a un sens en cours de route.
         """
-        if self.is_active:
+        if self.is_active or self.arrival_contradicted_by_track:
             return None
         if self.theoretical_nm and self.theoretical_nm > 0:
             return round(self.actual_nm / self.theoretical_nm, 3)
@@ -241,17 +265,33 @@ def compute_metrics(
         leg, dep_port=dep_port, arr_port=arr_port
     )
 
-    # Distance restante : dernier point connu → port d'arrivée (0 si arrivé).
-    remaining: float | None = None
-    if leg.ata is not None:
-        remaining = 0.0
-    elif (
-        positions and arr_port and arr_port.latitude is not None and arr_port.longitude is not None
-    ):
+    # Distance restante : dernier point connu → port d'arrivée.
+    measured_remaining: float | None = None
+    if positions and arr_port and arr_port.latitude is not None and arr_port.longitude is not None:
         last = positions[-1]
-        remaining = haversine_nm(
+        measured_remaining = haversine_nm(
             last.latitude, last.longitude, arr_port.latitude, arr_port.longitude
         )
+
+    declared_arrived = leg.ata is not None
+    # Une arrivée déclarée met le restant à zéro — c'est le sens de la
+    # déclaration. Mais quand la trace la contredit (réel < orthodromie), on ne
+    # sait plus : ni zéro, qui affirmerait une arrivée démentie par les
+    # positions, ni la distance depuis le dernier point, qui supposerait ce
+    # point à jour. On rend ``None`` et l'écran affiche « — » avec la raison.
+    contradicted = (
+        declared_arrived
+        and actual > 0
+        and theoretical is not None
+        and theoretical > 0
+        and actual < theoretical
+    )
+    if contradicted:
+        remaining = None
+    elif declared_arrived:
+        remaining = 0.0
+    else:
+        remaining = measured_remaining
 
     # Durée depuis le départ : ATD/ETD → ATA si arrivé, sinon dernier point / maintenant.
     # ``ensure_utc`` obligatoire : ``leg.ata`` et ``recorded_at`` reviennent
@@ -274,6 +314,7 @@ def compute_metrics(
         avg_speed_kn=avg_speed,
         is_active=is_active,
         theoretical_is_fallback=theoretical_is_fallback,
+        declared_arrived=declared_arrived,
     )
 
 

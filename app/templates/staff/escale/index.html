@@ -123,6 +123,24 @@
 </section>
 {% endif %}
 
+{% if nav_metrics and nav_metrics.arrival_contradicted_by_track %}
+<div class="alert alert-warning mb-3">
+  <strong>Arrivée déclarée incohérente avec la trace GPS.</strong>
+  Le navire a parcouru {{ "%.0f"|format(nav_metrics.actual_nm) }} NM relevés pour
+  une orthodromie de {{ "%.0f"|format(nav_metrics.theoretical_nm) }} NM : une route
+  réelle ne peut pas être plus courte que la géodésique. Soit l'arrivée a été
+  déclarée par erreur, soit le suivi GPS de ce voyage est incomplet.
+  « Restant » et « Allongement » restent vides tant que les deux ne concordent
+  pas : ils n'auraient aucun sens.
+  <br />
+  ⚠️ Cet écran permet de <em>redater</em> l'arrivée (« Corriger l'arrivée »),
+  <strong>pas de l'annuler</strong> : un leg déclaré arrivé ne peut pas repasser
+  « en mer » depuis l'interface. Si l'arrivée est à retirer, signalez-le — la
+  déclaration a aussi inscrit un EOSP au SOF, recalculé l'OPEX et activé le leg
+  suivant, autant d'effets à défaire ensemble.
+</div>
+{% endif %}
+
 {% if nav_metrics and nav_metrics.point_count %}
 <section class="kpi-strip mb-3">
   <div class="kpi-card"><div class="label">Distance réelle</div><div class="value">{{ "%.0f"|format(nav_metrics.actual_nm) }} NM</div><div class="delta text-muted">{{ nav_metrics.point_count }} points GPS</div></div>
