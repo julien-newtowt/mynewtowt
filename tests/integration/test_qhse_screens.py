@@ -79,6 +79,19 @@ def test_dashboard_route_declared_before_the_catch_all():
 
     order = [r.path for r in qhse_router.router.routes]
     assert order.index("/qhse/dashboard") < order.index("/qhse/{report_id}")
+    # Idem pour ``/import`` : le GET existe uniquement pour éviter que l'URL
+    # tapée à la main ne réponde un 422 « invalid integer » indiscernable d'une
+    # panne réelle de l'import (incident du 2026-09-04).
+    assert order.index("/qhse/import") < order.index("/qhse/{report_id}")
+
+
+@pytest.mark.asyncio
+async def test_get_on_import_redirects_to_the_hub_instead_of_a_422():
+    from app.routers.qhse_router import qhse_import_get
+
+    resp = await qhse_import_get()
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/qhse"
 
 
 @pytest.mark.asyncio

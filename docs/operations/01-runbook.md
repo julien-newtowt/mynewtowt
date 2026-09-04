@@ -372,21 +372,26 @@ Test mensuel automatique sur staging.
 ### 6.1 Standard
 
 ```bash
+# Diagnostic (lecture seule) — quelle révision porte la base ?
+docker compose exec app alembic current
+
 # Sur staging
 docker compose exec app alembic upgrade head
 
-# Sur prod (avec verrou)
-./scripts/migrate-prod.sh
+# Sur prod : passer par le déploiement standard
+./scripts/deploy.sh
 ```
 
-`migrate-prod.sh` :
+> ⚠ **`./scripts/migrate-prod.sh` n'existe pas** (constaté le 2026-09-04 —
+> ce runbook le documentait depuis l'origine). Ne pas le chercher : la
+> migration de production se fait par `deploy.sh`, dont la fonction
+> `run_migrations()` enchaîne déjà relevé de la révision courante → snapshot
+> Postgres → `alembic upgrade head` → smoke tests, avec **restauration
+> automatique du snapshot** en cas d'échec. Un `alembic upgrade head` lancé à
+> la main sur la prod n'a aucun de ces garde-fous.
 
-1. Active maintenance mode.
-2. Snapshot Postgres.
-3. `alembic upgrade head`.
-4. Smoke tests.
-5. Désactive maintenance mode.
-6. Notification Slack.
+Rattraper une migration oubliée revient donc à **relancer `./scripts/deploy.sh`**
+(idempotent : si le code est déjà à jour, seul le schéma bouge).
 
 ### 6.2 « Multiple head revisions are present » — le déploiement s'arrête
 
