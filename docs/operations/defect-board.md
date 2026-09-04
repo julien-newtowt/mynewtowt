@@ -39,7 +39,7 @@ _(vide)_
 | Module | qhse |
 | Reproductible | oui (toujours, sur une base migrée avant le 2026-07-22) |
 | Owner | dev |
-| Status | fix-in-progress (branche `hotfix/qhse-validation-rules-seed`) |
+| Status | **resolved en production le 2026-09-04** ; correctif permanent en attente de fusion (branche `hotfix/qhse-validation-rules-seed`) |
 
 **Symptôme.** `POST /qhse/import` répond `500 Internal Server Error`. Aucune
 ligne écrite. Le hub `/qhse` et le tableau de bord fonctionnent normalement.
@@ -81,6 +81,24 @@ inopérants.
 bannière/bouton d'init affichés dès que le référentiel est *incomplet* et plus
 seulement vide (`/mrv/parametres` — réparation possible sans déploiement) +
 deux sentinelles (`tests/regression/test_validation_rules_seeded.py`).
+
+**Résolution en production (2026-09-04, sans déploiement).** La route de
+réparation `POST /mrv/parametres/init` (`seed_reference_data`, idempotente et
+purement additive) existait déjà en production depuis le lot MRV 2 — seul son
+bouton était masqué par le défaut d'affichage ci-dessus. Elle a été déclenchée
+par un administrateur depuis la console du navigateur, l'action restant tracée
+dans `activity_logs` sous `mrv_validation_seed`. Vérifications :
+
+- `/mrv/parametres` affiche désormais `R27`-`R30` et leurs seuils, **aux valeurs
+  exactes de l'instantané figé de la migration** (7 j, 24 h, 20 nm, 0,05 t, 3) —
+  production et migration convergent au chiffre près ;
+- `/qhse/import` : **90 signalements importés**, 1 ligne quarantainée (résidu de
+  fin de classeur), 4 marquées « test présumé » — première exécution réelle de
+  `RQ02` sur des données de production.
+
+La migration `20260904_0142` reste nécessaire : elle rend le correctif permanent
+pour toute base reconstruite ou restaurée, et sera sans effet au déploiement
+(elle n'insère que l'absent).
 
 **Recommandation non traitée (décision à prendre).** Aujourd'hui, un référentiel
 incomplet fait perdre **tout** l'import (transaction entière) sur une erreur qui
