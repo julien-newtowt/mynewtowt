@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import pairwise
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.claim import VesselPosition
@@ -477,3 +477,161 @@ def positions_payload(positions: list[VesselPosition]) -> list[dict]:
         }
         for p in positions
     ]
+
+
+# ---------------------------------------------------------------------------
+# Routes desservies — comparaison de plusieurs voyages sur la même paire POL/POD
+# ---------------------------------------------------------------------------
+
+#: Séparateur de la clé de route en query-string (``FRFEC-BRSSO``). Les LOCODE
+#: sont alphanumériques sur 5 caractères, le tiret ne peut donc pas y apparaître.
+ROUTE_KEY_SEP = "-"
+
+#: Plafond de voyages tracés ensemble sur une même carte. Au-delà, la carte
+#: cesse d'être lisible (la palette ne porte que 10 couleurs) et chaque leg coûte
+#: une lecture de positions. Les voyages **les plus récents** sont retenus : ce
+#: sont ceux auxquels on compare.
+MAX_ROUTE_LEGS = 10
+
+
+def route_key(pol_locode: str | None, pod_locode: str | None) -> str | None:
+    """Clé de route ``POL-POD`` (majuscules), ou ``None`` si l'un manque."""
+    pol = (pol_locode or "").strip().upper()
+    pod = (pod_locode or "").strip().upper()
+    if not pol or not pod:
+        return None
+    return f"{pol}{ROUTE_KEY_SEP}{pod}"
+
+
+def parse_route_key(value: str | None) -> tuple[str, str] | None:
+    """(POL, POD) depuis une clé ``FRFEC-BRSSO``, ou ``None`` si mal formée.
+
+    Tolérante à la casse et aux espaces ; refuse tout ce qui n'est pas deux
+    LOCODE de 5 caractères alphanumériques — une clé bricolée ne doit pas
+    devenir un filtre silencieusement vide.
+    """
+    raw = (value or "").strip().upper()
+    if ROUTE_KEY_SEP not in raw:
+        return None
+    pol, _, pod = raw.partition(ROUTE_KEY_SEP)
+    if len(pol) != 5 or len(pod) != 5 or not pol.isalnum() or not pod.isalnum():
+        return None
+    return pol, pod
+
+
+async def routes_served(db: AsyncSession) -> list[dict]:
+    """Routes POL→POD réellement parcourues, avec le nombre de voyages.
+
+    Une route n'est proposée que si **au moins un voyage en est parti**
+    (``atd`` posé) : comparer des trajets suppose qu'il y ait des trajets. Un
+    leg seulement planifié n'a pas de trace, et le proposer promettrait une
+    carte vide.
+
+    La route est **orientée** : ``FRFEC→BRSSO`` et ``BRSSO→FRFEC`` sont deux
+    routes distinctes, comme au métier — l'aller et le retour n'ont ni la même
+    météo, ni les mêmes courants, ni la même durée.
+
+    Les archives TOWT sont incluses : ce sont précisément les voyages
+    historiques auxquels on compare (ADR-014).
+    """
+    pol = Port.__table__.alias("pol")
+    pod = Port.__table__.alias("pod")
+    stmt = (
+        select(
+            pol.c.locode,
+            pol.c.name,
+            pol.c.country,
+            pod.c.locode,
+            pod.c.name,
+            pod.c.country,
+            func.count(Leg.id),
+            func.max(Leg.etd),
+        )
+        .select_from(
+            Leg.__table__.join(pol, pol.c.id == Leg.departure_port_id).join(
+                pod, pod.c.id == Leg.arrival_port_id
+            )
+        )
+        .where(Leg.atd.is_not(None))
+        .group_by(pol.c.locode, pol.c.name, pol.c.country, pod.c.locode, pod.c.name, pod.c.country)
+    )
+    rows = (await db.execute(stmt)).all()
+    routes = [
+        {
+            "key": route_key(r[0], r[3]),
+            "pol_locode": r[0],
+            "pol_name": r[1],
+            "pol_country": r[2],
+            "pod_locode": r[3],
+            "pod_name": r[4],
+            "pod_country": r[5],
+            "leg_count": int(r[6] or 0),
+            "last_etd": r[7],
+        }
+        for r in rows
+        if route_key(r[0], r[3])
+    ]
+    # Les routes les plus fréquentées d'abord — c'est là qu'une comparaison a du
+    # sens ; à égalité, la plus récemment parcourue.
+    routes.sort(key=lambda r: (-r["leg_count"], r["last_etd"] is None, r["key"]))
+    return routes
+
+
+async def legs_on_route(
+    db: AsyncSession, pol_locode: str, pod_locode: str, *, limit: int = MAX_ROUTE_LEGS
+) -> tuple[list[Leg], int]:
+    """Legs partis sur cette route, du plus récent au plus ancien.
+
+    Renvoie ``(legs retenus, total disponible)`` : l'écran doit pouvoir dire
+    qu'il en montre 10 sur 23 plutôt que de laisser croire que la route n'a
+    connu que dix voyages.
+    """
+    pol = Port.__table__.alias("pol")
+    pod = Port.__table__.alias("pod")
+    base = (
+        select(Leg)
+        .join(pol, pol.c.id == Leg.departure_port_id)
+        .join(pod, pod.c.id == Leg.arrival_port_id)
+        .where(
+            func.upper(pol.c.locode) == pol_locode.upper(),
+            func.upper(pod.c.locode) == pod_locode.upper(),
+            Leg.atd.is_not(None),
+        )
+    )
+    total = await db.scalar(select(func.count()).select_from(base.order_by(None).subquery()))
+    legs = list((await db.execute(base.order_by(Leg.atd.desc()).limit(limit))).scalars().all())
+    return legs, int(total or 0)
+
+
+def route_spread(metrics_list: Sequence) -> dict | None:
+    """Dispersion des distances réellement parcourues sur une même route.
+
+    C'est le chiffre que la comparaison cherche : sur une route donnée, de
+    combien les voyages s'écartent-ils les uns des autres ? On ne retient que
+    les voyages **arrivés** dont la trace n'est pas contredite — un voyage en
+    cours a par construction une distance partielle, et l'inclure ferait passer
+    un trajet inachevé pour un trajet court.
+
+    ``None`` quand moins de deux voyages exploitables : une dispersion sur un
+    seul point n'existe pas.
+    """
+    values = sorted(
+        float(m.actual_nm)
+        for m in metrics_list
+        if m.declared_arrived
+        and not m.arrival_contradicted_by_track
+        and m.actual_nm
+        and m.actual_nm > 0
+    )
+    if len(values) < 2:
+        return None
+    n = len(values)
+    median = values[n // 2] if n % 2 else (values[n // 2 - 1] + values[n // 2]) / 2
+    return {
+        "count": n,
+        "min_nm": values[0],
+        "max_nm": values[-1],
+        "median_nm": median,
+        "spread_nm": values[-1] - values[0],
+        "spread_pct": ((values[-1] - values[0]) / median * 100) if median else None,
+    }

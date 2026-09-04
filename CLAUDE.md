@@ -336,6 +336,36 @@ Conséquences à connaître **avant** de toucher à un indicateur d'équipage :
   — donc ni Marad, ni les embarquements hors voyage. La liste PAF est de ce fait
   probablement incomplète en production.
 
+### Navigation — comparer une route, pas un voyage isolé
+
+`/performance/navigation` a deux entrées : la sélection **leg par leg**
+(historique) et le **filtre de route** POL→POD (`?route=FRFEC-BRSSO`), qui
+superpose tous les voyages d'une même paire de ports sur une seule carte. Un
+détour, un contournement de dépression ou une trace incomplète se repèrent par
+**différence entre passages**, jamais dans l'absolu — d'où les règles suivantes,
+qui décident de ce que la carte compare :
+
+- **Le filtre de route est transverse au navire et à l'année.** Le borner à un
+  navire ou à une saison supprimerait précisément les points de comparaison
+  recherchés. Les onglets navire/année restent ceux des chips manuelles.
+- **Une route est orientée** : `FRFEC→BRSSO` et `BRSSO→FRFEC` sont deux routes
+  distinctes (ni la même météo, ni les mêmes courants, ni la même durée).
+- **Seules les routes réellement parcourues sont proposées** (`Leg.atd` posé) :
+  un leg planifié n'a pas de trace, le proposer promettrait une carte vide. Les
+  archives TOWT sont **incluses** — ce sont les passages auxquels on compare.
+- **La route pilote la sélection**, elle ne s'y ajoute pas : mélanger legs
+  cochés à la main et legs de la route donnerait une carte dont personne ne
+  saurait dire ce qu'elle compare. Décocher un leg sort du mode route.
+- **Le plafond est dit, pas subi** : `MAX_ROUTE_LEGS` (10, la palette n'en porte
+  pas plus) retient les voyages les plus récents, et l'écran affiche « 10 sur
+  23 » — montrer les dix derniers en silence laisserait croire que la route n'a
+  connu que dix voyages.
+- **L'amplitude (`route_spread`) n'agrège que des voyages arrivés** dont la trace
+  ne contredit pas l'arrivée déclarée : un voyage en cours a par construction une
+  distance partielle, et l'inclure ferait passer un trajet inachevé pour un
+  trajet court. Moins de deux voyages exploitables ⇒ `None`, et l'écran dit
+  pourquoi.
+
 ### Commercial — le tarif négocié ne sort jamais sans identité établie
 
 Règle d'or du module : **une grille tarifaire négociée n'est servie qu'à un
@@ -723,7 +753,7 @@ préférences de style.
 | Claims | `/claims` | ✅ workflow 6 statuts + timeline |
 | MRV (reporting événementiel v2) | `/mrv` + `/onboard/events` | ✅ **architecture événementielle déclarative** : capture d'événements `/onboard/events` (Noon/Departure/Arrival/Begin-End Anchoring ; brouillon auteur-seul → finalisé → validé, `captain:M`) ; hub `/mrv` (`mrv:C`, actions `mrv:M`, seuils/facteurs `mrv:S`) : `voyages`, `reports` (Noon/Carbon/Stopover générés), `bunkering` (BDN), `flgo` (Marad lecture seule), `qualite` (moteur R01-R26 + IR01-IR05 + resets R10), `parametres` (seuils + dashboard params), `datasets` **OVDLA/OVDBR** (remplacent le CSV DNV 18 col.). Grand livre unique `emission_ledger` multi-GES. ⛔ **Archive legacy retirée** : l'écran `/mrv/archive/events`, le modèle `MRVEvent`/`MRVParameter` et les services associés sont supprimés — le legacy MRV n'a plus de rail de lecture. Les **tables** `mrv_events`/`mrv_parameters` ne sont pas supprimées mais **mises à l'écart** (migration `20260713_0106`, renommées `*_deprecated_20260903`) : le `DROP` sec attend le comptage en production (arbitrage du 2026-09-03). Aucun code ne les référence |
 | Dashboard Performance Environnementale | `/dashboard-perf` | ✅ 5 pages, exclusivement event-driven (mode `strict`, NC-04) : **vue flotte** (`kpi:C`), **suivi opérationnel** navire→voyage→événements (`kpi:C` / `mrv:C` — ROB timeline, conso vs cible, répartition ME/AE, **profil de propulsion 4 h**, carte MapLibre), **détail voyage** + exports PDF/DOCX (`mrv:C`), **qualité des données** (`mrv:C` — anomalies par règle/sévérité, resets R10, complétude), **administration** des paramètres (`mrv:S`). Remplace `dashboard-env` (LOT 11/12), décommissionné |
-| Navigation | `/performance/navigation` | ✅ multi-legs/multi-navires : carte (1 couleur/leg) points GPS + trait + route théorique, tableau comparatif (réelle/théorique/écart/durée/restant), météo le long du trajet + blocs « conditions actuelles » par navire (rose des vents, anémomètre/Beaufort, pression, visibilité, T°…) |
+| Navigation | `/performance/navigation` | ✅ multi-legs/multi-navires : carte (1 couleur/leg) points GPS + trait + route théorique, tableau comparatif (réelle/théorique/écart/durée/restant), météo le long du trajet + blocs « conditions actuelles » par navire (rose des vents, anémomètre/Beaufort, pression, visibilité, T°…). **Filtre par route POL→POD** (`?route=FRFEC-BRSSO`) : superpose tous les voyages d'une même paire de ports pour repérer les écarts d'un passage à l'autre |
 | Finance | `/finance` | ✅ prévisionnel/réel 5 postes + écarts + export CSV + NOx/SOx évités + section Exploitation + détail assurance + CRUD OPEX |
 | KPI | `/kpi` | ✅ vue KPI consolidée + Carbon Report par leg (intensités t·nm) ; **certificats CO₂ = label Anemos** (par booking + RSE annuel) |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
