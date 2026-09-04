@@ -85,6 +85,64 @@ async def test_get_renders_after_seed(db, staff_user):
     # 14 (lot 2) + 1 (lot 6) + 1 (lot 4) + 5 (lot 8) + 2 (G1) + 1 (G4) + 1 (G7)
     # — tous provisoires (Q8).
     assert ctx["provisional_count"] == 25
+    # Référentiel complet : rien à rattraper, la bannière d'init reste masquée.
+    assert ctx["missing_rules"] == []
+
+
+@pytest.mark.asyncio
+async def test_partially_seeded_referential_is_reported_not_hidden(db, staff_user):
+    """Reproduit l'état réel de la production au 2026-09-04.
+
+    Les 35 règles MRV sont présentes, les 3 règles QHSE absentes (ajoutées à
+    ``RULE_SEED`` après le passage de la migration 0097). `seeded` valant
+    ``bool(rules)`` sur les seuls scopes MRV, l'écran se croyait initialisé et
+    **masquait le bouton d'init** — pourtant idempotent et additif, et seule
+    réparation disponible sans déploiement. Conséquence : tout import QHSE
+    échouait en 500 (FK ``quality_check_results.rule_id``) sans qu'aucun écran
+    n'offre de correction.
+    """
+    from app.routers.mrv_router import mrv_parametres
+
+    await seed_reference_data(db)
+    invalidate_cache()
+    for rule in (
+        (await db.execute(select(ValidationRule).where(ValidationRule.scope == "qhse")))
+        .scalars()
+        .all()
+    ):
+        await db.delete(rule)
+    await db.flush()
+    invalidate_cache()
+
+    ctx = (await mrv_parametres(FakeRequest(), db=db, user=staff_user)).context
+    # L'écran reste « semé » du point de vue MRV — c'est bien pour cela que le
+    # trou était invisible.
+    assert ctx["seeded"] is True
+    assert ctx["missing_rules"] == ["RQ01", "RQ02", "RQ03"]
+
+
+@pytest.mark.asyncio
+async def test_init_repairs_a_partially_seeded_referential(db, staff_user):
+    """L'init doit compléter un référentiel partiel, pas seulement en créer un vide."""
+    from app.routers.mrv_router import mrv_parametres, mrv_parametres_init
+
+    await seed_reference_data(db)
+    invalidate_cache()
+    for rule in (
+        (await db.execute(select(ValidationRule).where(ValidationRule.scope == "qhse")))
+        .scalars()
+        .all()
+    ):
+        await db.delete(rule)
+    await db.flush()
+    invalidate_cache()
+
+    await mrv_parametres_init(FakeRequest(), db=db, user=staff_user)
+    await db.flush()
+    invalidate_cache()
+
+    ctx = (await mrv_parametres(FakeRequest(), db=db, user=staff_user)).context
+    assert ctx["missing_rules"] == []
 
 
 # ─────────────────────── classement des scopes (fail-closed) ─────────────────

@@ -1174,6 +1174,7 @@ CATALOG: dict[str, str] = {
     "mrv_param_add_override": "Tạo",
     "mrv_param_init": "Khởi tạo dữ liệu tham chiếu",
     "mrv_param_empty": "Chưa khởi tạo dữ liệu tham chiếu kiểm tra.",
+    "mrv_param_incomplete": "Dữ liệu tham chiếu kiểm tra chưa đầy đủ — các quy tắc thiếu:",
     "mrv_param_back": "← MRV",
     # ── Tiếp nhiên liệu (Bunker Delivery Note / BDN) — LOT 6 ──
     "bunker_title": "Tiếp nhiên liệu (BDN)",

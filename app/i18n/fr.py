@@ -1174,6 +1174,7 @@ CATALOG: dict[str, str] = {
     "mrv_param_add_override": "Créer",
     "mrv_param_init": "Initialiser le référentiel",
     "mrv_param_empty": "Référentiel de validation non initialisé.",
+    "mrv_param_incomplete": "Référentiel de validation incomplet — règles absentes :",
     "mrv_param_back": "← MRV",
     # ── Soutage (Bunker Report / BDN) — LOT 6 ──
     "bunker_title": "Soutages (BDN)",
