@@ -1335,8 +1335,22 @@ async def grid_delete(
     offers = await db.scalar(
         select(func.count()).select_from(RateOffer).where(RateOffer.grid_id == grid_id)
     )
+    # Deux rattachements distincts côté commande : l'en-tête de grille et la
+    # **ligne-route**. Ne contrôler que le premier laissait passer le cas où
+    # seule la ligne est citée : les lignes tombent en cascade avec la grille,
+    # et la suppression sortait alors en erreur d'intégrité au lieu du refus
+    # nommé que cette route promet.
     orders = await db.scalar(
-        select(func.count()).select_from(Order).where(Order.rate_grid_id == grid_id)
+        select(func.count())
+        .select_from(Order)
+        .where(
+            or_(
+                Order.rate_grid_id == grid_id,
+                Order.rate_grid_line_id.in_(
+                    select(RateGridLine.id).where(RateGridLine.grid_id == grid_id)
+                ),
+            )
+        )
     )
     blockers = []
     if offers:
@@ -2795,8 +2809,23 @@ async def offer_edit(
     if offer is None:
         raise HTTPException(status_code=404)
     before = snapshot_offer(offer)
+    # Règle d'or du module : une grille négociée ne se sert qu'au client
+    # auquel elle est rattachée. L'écran de correction ne propose que les
+    # grilles servables, mais le POST doit le revalider — un formulaire
+    # rejoué attacherait sinon la grille d'un autre client à cette offre.
+    new_grid_id = _opt_int(grid_id)
+    if new_grid_id is not None:
+        allowed = {g.id for g in await _grids_for(db, client_id=offer.client_id)}
+        if new_grid_id not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Grille non applicable à ce client : seules ses grilles actives "
+                    "et les grilles par défaut peuvent porter l'offre."
+                ),
+            )
     offer.title = title.strip()
-    offer.grid_id = _opt_int(grid_id)
+    offer.grid_id = new_grid_id
     offer.leg_id = _opt_int(leg_id)
     offer.estimated_palettes = _opt_int(estimated_palettes)
     offer.proposed_rate_eur = _opt_decimal(proposed_rate_eur)

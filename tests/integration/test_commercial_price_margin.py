@@ -434,6 +434,93 @@ async def test_grid_deletion_names_what_blocks_it(db):
 
 
 @pytest.mark.asyncio
+async def test_grid_deletion_is_blocked_by_an_order_citing_only_its_route(db):
+    """Une commande peut ne citer que la **ligne-route**, pas l'en-tête.
+
+    Les lignes tombent en cascade avec la grille : ne contrôler que
+    ``Order.rate_grid_id`` faisait sortir la suppression en erreur d'intégrité
+    au lieu du refus nommé que la route promet.
+    """
+    from app.routers.commercial_router import grid_delete
+
+    admin = SimpleNamespace(id=1, full_name="A", username="a", role="administrateur")
+    db.add(Client(id=1, name="Café du Port", client_type="shipper"))
+    grid = await _grid(db, client_id=1)
+    route = RateGridLine(
+        grid_id=grid.id,
+        pol_locode="FRFEC",
+        pod_locode="BRSSO",
+        distance_nm=Decimal("4500"),
+        nav_days=Decimal("23.4"),
+        opex_daily=_OPEX,
+        base_rate=Decimal("400.00"),
+        cost_rate=Decimal("300.00"),
+    )
+    db.add(route)
+    await db.flush()
+    db.add(
+        Order(
+            reference="ORD-2026-0002",
+            client_id=1,
+            status="confirmed",
+            rate_grid_id=None,  # seule la ligne est citée
+            rate_grid_line_id=route.id,
+        )
+    )
+    await db.flush()
+
+    with pytest.raises(HTTPException) as exc:
+        await grid_delete(grid.id, FakeRequest(), db=db, user=admin)
+    assert exc.value.status_code == 400
+    assert "commande" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_offer_correction_refuses_another_clients_grid(db):
+    """Règle d'or : une grille négociée ne se sert qu'à son client.
+
+    L'écran ne propose que les grilles servables — le POST doit le revalider,
+    sinon un formulaire rejoué attacherait la grille d'un tiers à l'offre.
+    """
+    from datetime import date as _d
+
+    from app.routers.commercial_router import offer_edit
+
+    admin = SimpleNamespace(id=1, full_name="A", username="a", role="administrateur")
+    db.add_all(
+        [
+            Client(id=1, name="Café du Port", client_type="shipper"),
+            Client(id=2, name="Concurrent SA", client_type="shipper"),
+        ]
+    )
+    await db.flush()
+    foreign = RateGrid(
+        id=99,
+        reference="RG-2026-0099",
+        client_id=2,
+        status="active",
+        valid_from=_d(2026, 1, 1),
+    )
+    db.add(foreign)
+    db.add(
+        RateOffer(id=1, reference="RO-2026-0004", client_id=1, title="Campagne", status="en_cours")
+    )
+    await db.flush()
+
+    with pytest.raises(HTTPException) as exc:
+        await offer_edit(
+            1,
+            FakeRequest(),
+            title="Campagne",
+            grid_id="99",
+            db=db,
+            user=admin,
+        )
+    assert exc.value.status_code == 400
+    assert "client" in exc.value.detail
+
+
+@pytest.mark.asyncio
 async def test_offer_deletion_is_blocked_by_the_order_it_produced(db):
     from app.routers.commercial_router import offer_delete
 
