@@ -8,9 +8,21 @@
     <h1 class="display">{{ offer.reference }}</h1>
     <p class="text-muted">{{ offer.title }}{% if offer.client %} · {{ offer.client.name }}{% endif %}</p>
   </div>
-  <div class="flex gap-2 items-center">
+  <div class="page-actions">
     <span class="badge badge-{{ offer.status }}">{{ offer.status_label }}</span>
-    <a href="/commercial/offers" class="btn btn-ghost">← Retour aux offres</a>
+    <span class="page-actions-sep" aria-hidden="true"></span>
+    {% if offer.status in ('en_cours', 'valide') and not order %}
+    <a href="/commercial/offers/{{ offer.id }}/convert" class="btn btn-primary"><i data-lucide="file-check"></i> Confirmer l'offre</a>
+    {% endif %}
+    <a href="/commercial/offers/{{ offer.id }}/history" class="btn btn-secondary"><i data-lucide="history"></i> Historique</a>
+    {% if is_admin(user) %}
+    <a href="/commercial/offers/{{ offer.id }}/edit" class="btn btn-secondary"><i data-lucide="pencil"></i> Corriger</a>
+    <form method="post" action="/commercial/offers/{{ offer.id }}/delete">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-danger" data-confirm="Supprimer définitivement l'offre {{ offer.reference }} et son historique ?"><i data-lucide="trash-2"></i> Supprimer</button>
+    </form>
+    {% endif %}
+    <a href="/commercial/offers" class="btn btn-ghost"><i data-lucide="arrow-left"></i> Retour</a>
   </div>
 </header>
 
@@ -88,16 +100,16 @@
 <article class="card mt-4">
   <h2>Actions</h2>
   {% if offer.is_open() %}
-  <div class="flex gap-2 items-center flex-wrap">
-    <form method="post" action="/commercial/offers/{{ offer.id }}/send" style="display:inline;">
+  <div class="page-actions" style="justify-content:flex-start;">
+    <form method="post" action="/commercial/offers/{{ offer.id }}/validate">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-secondary">Marquer envoyée au client</button>
+      <button type="submit" class="btn btn-primary" data-confirm="Valider cette offre ? Une booking note sera établie."><i data-lucide="check"></i> Valider l'offre</button>
     </form>
-    <form method="post" action="/commercial/offers/{{ offer.id }}/validate" style="display:inline;">
+    <form method="post" action="/commercial/offers/{{ offer.id }}/send">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-primary" data-confirm="Valider cette offre ? Une booking note sera établie.">Valider l'offre</button>
+      <button type="submit" class="btn btn-secondary"><i data-lucide="send"></i> Marquer envoyée au client</button>
     </form>
-    <a href="/commercial/offers/{{ offer.id }}/convert" class="btn btn-secondary">→ Convertir en commande</a>
+    <a href="/commercial/offers/{{ offer.id }}/convert" class="btn btn-secondary"><i data-lucide="file-check"></i> Confirmer en commande</a>
   </div>
   <details class="mt-3">
     <summary class="btn btn-ghost btn-sm" style="color:var(--cuivre);">Annuler l'offre</summary>
@@ -113,11 +125,9 @@
   </details>
   {% elif offer.status == 'valide' %}
   <p class="text-muted">Offre validée{% if offer.validated_at %} le {{ offer.validated_at|datetime }}{% endif %}.</p>
-  <div class="flex gap-2 items-center flex-wrap">
-    <a href="/commercial/offers/{{ offer.id }}/booking-note" class="btn btn-primary">
-      <i data-lucide="file-text"></i> Booking note
-    </a>
-    {% if not order %}<a href="/commercial/offers/{{ offer.id }}/convert" class="btn btn-secondary">→ Convertir en commande</a>{% endif %}
+  <div class="page-actions" style="justify-content:flex-start;">
+    <a href="/commercial/offers/{{ offer.id }}/booking-note" class="btn btn-primary"><i data-lucide="file-text"></i> Booking note</a>
+    {% if not order %}<a href="/commercial/offers/{{ offer.id }}/convert" class="btn btn-secondary"><i data-lucide="file-check"></i> Confirmer en commande</a>{% endif %}
   </div>
   {% else %}
   <p class="text-muted">Offre {{ offer.status_label|lower }} — plus aucune action possible.</p>

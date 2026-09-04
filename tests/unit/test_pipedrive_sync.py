@@ -94,6 +94,101 @@ def test_sync_clients_upsert(monkeypatch) -> None:
     asyncio.run(_run())
 
 
+def test_sync_clients_fills_the_contact_block_from_the_crm(monkeypatch) -> None:
+    """COM-12 — la fiche client remonte de Pipedrive : contact, téléphone, pays.
+
+    Deux garanties, opposées et complémentaires :
+
+    * ce que le CRM **sait**, il le pose (le bloc « Contact » de la fiche
+      restait vide alors que Pipedrive porte l'information) ;
+    * ce que le CRM **tait**, il ne l'efface pas — un champ absent de l'API
+      n'est pas une valeur vide, et écraser une saisie manuelle par ce silence
+      serait une perte de donnée silencieuse.
+    """
+    monkeypatch.setattr(pipedrive, "enabled", lambda: True)
+
+    async def _fake_orgs(*, max_items=1000):
+        return [
+            {
+                "id": 201,
+                "name": "Café Brasil Imports",
+                "address": "Rua do Porto 8, Santos",
+                "address_country": "Brazil",
+                "won_deals_count": 1,
+            },
+            {"id": 202, "name": "Cacao Direct", "address_country": "CI", "open_deals_count": 1},
+        ]
+
+    async def _fake_deals(*, max_items=10000):
+        return []
+
+    async def _fake_persons(*, max_items=20000):
+        return [
+            # Personne sans moyen de contact : ne doit pas masquer la suivante.
+            {"name": "Standard", "org_id": 201, "email": [], "phone": []},
+            {
+                "name": "Ana Souza",
+                "org_id": {"value": 201},
+                "email": [
+                    {"value": "second@brasil.test", "primary": False},
+                    {"value": "ana@brasil.test", "primary": True},
+                ],
+                "phone": [{"value": "+55 13 99999-0000", "primary": True}],
+            },
+            {"name": "Sans org", "org_id": None, "email": [{"value": "x@y.test"}]},
+        ]
+
+    monkeypatch.setattr(pipedrive, "list_organizations", _fake_orgs)
+    monkeypatch.setattr(pipedrive, "list_deals", _fake_deals)
+    monkeypatch.setattr(pipedrive, "list_persons", _fake_persons)
+
+    async def _run():
+        eng = create_async_engine("sqlite+aiosqlite://")
+        try:
+            async with eng.begin() as c:
+                await c.run_sync(Base.metadata.create_all)
+            Session = async_sessionmaker(eng, expire_on_commit=False)
+            async with Session() as s:
+                # Client existant avec un téléphone saisi à la main et aucun
+                # correspondant côté CRM (l'org 202 n'a pas de personne).
+                s.add(
+                    Client(
+                        name="Cacao Direct",
+                        client_type="shipper",
+                        contact_phone="+225 07 00 00 00",
+                        pipedrive_org_id=202,
+                    )
+                )
+                await s.flush()
+
+                await pipedrive_sync.sync_clients(s)
+                clients = {
+                    c.pipedrive_org_id: c for c in (await s.execute(select(Client))).scalars().all()
+                }
+
+                created = clients[201]
+                assert created.contact_name == "Ana Souza"
+                assert created.contact_email == "ana@brasil.test"  # entrée « primary »
+                assert created.contact_phone == "+55 13 99999-0000"
+                assert created.country == "BR"  # « Brazil » → ISO 2
+                assert created.pipedrive_synced_at is not None
+
+                kept = clients[202]
+                assert kept.contact_phone == "+225 07 00 00 00", "le CRM muet n'efface rien"
+                assert kept.country == "CI"  # déjà un code ISO 2 côté CRM
+        finally:
+            await eng.dispose()
+
+    asyncio.run(_run())
+
+
+def test_country_code_ignores_an_unresolvable_label() -> None:
+    """Un pays non reconnu ne pose rien — un mauvais code afficherait un faux drapeau."""
+    assert pipedrive_sync._country_code({"address_country": "Ruritania"}) is None
+    assert pipedrive_sync._country_code({}) is None
+    assert pipedrive_sync._country_code({"address_country": "france"}) == "FR"
+
+
 def test_sync_clients_not_configured(monkeypatch) -> None:
     monkeypatch.setattr(pipedrive, "enabled", lambda: False)
 

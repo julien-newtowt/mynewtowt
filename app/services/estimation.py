@@ -22,13 +22,20 @@ jamais vers quelqu'un dont l'identité n'a pas été établie par un opérateur.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.client_account import ClientAccount
-from app.models.commercial import Client, RateGrid, RateGridLine
+from app.models.commercial import (
+    RATE_UNIT_PALETTE,
+    RATE_UNIT_TONNE,
+    Client,
+    RateGrid,
+    RateGridLine,
+)
 from app.models.leg import Leg
 from app.models.port import Port
 from app.models.quote import Quote
@@ -278,12 +285,24 @@ async def convert_to_offer(
     total = None
     picked = pick_bracket(grid.brackets, palettes) if palettes > 0 else None
     if picked is not None:
-        proposed_rate = bracket_rate(
+        effective = bracket_rate(
             base_rate=matched.base_rate,
             coeff=picked["coeff"],
             adjustment_index=grid.adjustment_index,
         )
-        total = proposed_rate * palettes
+        if (getattr(matched, "rate_unit", RATE_UNIT_PALETTE) or RATE_UNIT_PALETTE) == (
+            RATE_UNIT_TONNE
+        ):
+            # Route vendue **au poids** (COM-12). ``proposed_rate_eur`` est un
+            # €/palette : le renseigner avec un €/tonne le rendrait faux partout
+            # où il est affiché. On ne pose donc que le **total**, et seulement
+            # si le tonnage est connu — multiplier un €/tonne par un nombre de
+            # palettes fabriquerait un montant d'apparence juste.
+            if quote.tonnage_t:
+                total = effective * Decimal(quote.tonnage_t)
+        else:
+            proposed_rate = effective
+            total = proposed_rate * palettes
 
     offer = RateOffer(
         reference=await next_offer_reference(db),

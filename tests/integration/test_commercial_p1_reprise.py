@@ -150,11 +150,17 @@ async def test_rate_lookup_requires_palettes(db, staff_user):
     assert "palettes" in resp.body.decode().lower()
 
 
-def test_order_form_template_compiles():
-    """Le formulaire de commande (HTMX rate-lookup) compile sans erreur."""
+def test_order_entry_templates_compile():
+    """Écran d'entrée d'une commande + conversion d'offre (HTMX rate-lookup).
+
+    COM-13 — ``order_form.html`` (saisie libre) a été retiré : une commande naît
+    d'une offre confirmée ou d'une estimation acceptée, jamais d'un formulaire
+    vierge. Le fragment ``rate-lookup`` vit désormais dans l'écran de conversion.
+    """
     from app.templating import templates
 
-    assert templates.env.get_template("staff/commercial/order_form.html") is not None
+    assert templates.env.get_template("staff/commercial/order_new.html") is not None
+    assert templates.env.get_template("staff/commercial/order_convert_form.html") is not None
 
 
 # ─────────────────────────────── COM-08 ───────────────────────────────

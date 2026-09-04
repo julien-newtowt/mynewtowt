@@ -271,6 +271,8 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   relève). Les trois derniers sont datés du 2026-08-27 et **acceptés**.
   **ADR-014** (reprise d'historique TOWT, 2026-09-02) est **accepté** — sept
   décisions, la 6ᵉ (table d'archive des noon reports) ouvre le lot 2.
+  **ADR-015** (prix annoncé / coût calculé / marge dérivée, 2026-09-04) est
+  **accepté** — il remplace partiellement ADR-010 sur la formation du tarif.
 - **PLN-SEQ (2026-09-01)** : refonte de la séquence de planification —
   déclarations « départ du POL » / « arrivée au POD » (escale + SOF bord →
   `services.voyage_transitions`, chemin unique du réel), re-ancrage d'ETA sur
@@ -304,6 +306,25 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   `towt_gps_consolidate` (local) → `import_towt_positions` (serveur),
   `towt_noon_extract` (prototype local). Doc :
   `docs/audit/2026-09-02-reprise-historique-towt.md`, **ADR-014** (accepté le 2026-09-02).
+
+- **COM-12 / COM-13 (2026-09-04)** : reprise du module commercial sur retour
+  d'usage de Julien. (1) **Inversion prix ↔ coût** — `RateGridLine.base_rate`
+  devient le *prix annoncé*, `cost_rate` le *coût de revient* calculé, la marge
+  est dérivée (jamais stockée) ; `is_manual` se relit « prix confirmé » et un
+  recalcul de coût ne déplace plus un prix confirmé. Le logiciel *propose*
+  (`suggested_price`), le commercial *confirme*. (2) **Unité de vente par route**
+  (`rate_unit` : palette | tonne) — une route au poids refuse de coter sans
+  tonnage plutôt que d'inventer une équivalence. (3) `cost_rate` **nullable** =
+  coût non calculable (port en lourd absent), affiché « — » et non zéro.
+  (4) **Plus de navire de référence sur une grille** : l'OPEX est celui de la
+  flotte. (5) **Plus de `POST /commercial/orders`** — une commande naît de la
+  confirmation d'une offre ou de l'acceptation d'une estimation. (6) **Suppression
+  d'une pièce émise réservée à l'administrateur**, avec bloqueurs nommés ;
+  correction d'une offre émise inscrite dans l'historique chaîné. (7) **Fiche
+  client alimentée par Pipedrive** (contact + pays), création réservée à
+  l'administrateur, « compte-ancre » réduit à une case *client stratégique* — les
+  trois attributs qui l'accompagnaient n'étaient consommés par aucune règle.
+  Migration 0141. **ADR-015** (accepté le 2026-09-04).
 
 ## 13. Audit de cohérence métier (2026-07-28) — feedback logiciel vs compagnie maritime réelle
 
