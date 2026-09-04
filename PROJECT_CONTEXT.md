@@ -307,6 +307,25 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   `towt_noon_extract` (prototype local). Doc :
   `docs/audit/2026-09-02-reprise-historique-towt.md`, **ADR-014** (accepté le 2026-09-02).
 
+- **PLN-SCEN (2026-09-04)** : alignement du moteur de **planification
+  provisoire** sur le moteur réel. (1) `apply_to_active_planning` — la seule
+  fonction du module qui écrit dans `legs` — **délègue à `planning.update_leg`**
+  au lieu de poser `etd`/`eta` à la main : elle hérite ainsi de
+  `validate_leg_schedule`, de la cascade `date_cascade.cascade_from_leg` (legs
+  aval, escale, dockers, **notifications client**), de l'historisation et de la
+  renumérotation. (2) **Un leg appareillé n'est plus replanifiable par un
+  scénario** : refus en bloc, avant la première écriture, legs nommés — un ATD
+  est un fait, et le scénario était la porte dérobée du refus posé par PLN-SEQ.
+  (3) Le **clone part des dates effectives** (`effective_etd/eta`) : cloner
+  l'ETD d'un leg parti reproduisait le plan, pas la réalité. (4) Le
+  **formulaire provisoire suit PLN-08** : page unique (le wizard 4 étapes est
+  retiré, `leg-wizard.js` supprimé), dates à la **journée**, escale en **jours**,
+  navire par boutons, « Chaîner après » sur la séquence **du scénario**, et
+  **aucun `leg_code` fabriqué** au récapitulatif. (5) La docstring du service et
+  CLAUDE.md affirmaient « jamais d'écriture sur `legs` » — faux depuis la
+  création d'`apply`, et ce mensonge avait couvert l'absence des gardes.
+  `apply` n'avait **aucun test** ; il en a huit.
+
 - **COM-12 / COM-13 (2026-09-04)** : reprise du module commercial sur retour
   d'usage de Julien. (1) **Inversion prix ↔ coût** — `RateGridLine.base_rate`
   devient le *prix annoncé*, `cost_rate` le *coût de revient* calculé, la marge

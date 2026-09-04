@@ -336,6 +336,35 @@ Conséquences à connaître **avant** de toucher à un indicateur d'équipage :
   — donc ni Marad, ni les embarquements hors voyage. La liste PAF est de ce fait
   probablement incomplète en production.
 
+### Planification provisoire — une seule porte vers le réel
+
+Les scénarios (`/planning/scenarios`) explorent des hypothèses dans
+`planning_scenarios` / `scenario_legs`. **Une seule fonction écrit dans
+`legs`** : `services.scenario.apply_to_active_planning`. La docstring du service
+et cette page affirmaient l'inverse (« jamais d'écriture sur `legs` ») — ce
+mensonge a couvert l'absence des gardes du moteur réel sur ce chemin.
+
+- **`apply` délègue à `planning.update_leg`**, il n'écrit jamais `leg.etd`/`eta`
+  lui-même. C'est ce qui lui donne, sans les recopier, `validate_leg_schedule`,
+  la cascade `date_cascade.cascade_from_leg` (legs aval, opérations d'escale,
+  shifts dockers, **notifications client**), l'historisation et la
+  renumérotation. Dupliquer ces règles, c'est les laisser diverger.
+- **Un leg appareillé n'est jamais replanifié par un scénario** : `apply` refuse
+  en bloc, avant la première écriture, en nommant les legs concernés. Un ATD est
+  un fait ; le scénario ne doit pas être la porte dérobée du moteur réel.
+- **Deux régimes de validation** : *souple* dans le scénario (on explore —
+  chevauchement et continuité ne sont que des avertissements), *dur* à
+  l'application (celui du moteur réel). Ne jamais transporter la souplesse du
+  premier dans le second.
+- **Le clone part des dates effectives** (`effective_etd/eta`) : cloner l'ETD
+  d'un leg déjà parti reproduirait le plan, pas la réalité.
+- Le formulaire provisoire suit **PLN-08** comme le réel : page unique, dates à
+  la **journée**, escale en **jours**, navire par boutons, « Chaîner après » —
+  mais la séquence proposée est celle **du scénario**, pas du planning réel. Il
+  n'y affiche **aucun `leg_code`** (`data-recap-code="off"`) : un scénario porte
+  des étiquettes libres, et fabriquer un code d'apparence réglementaire ferait
+  passer une invention pour une référence.
+
 ### Commercial — le tarif négocié ne sort jamais sans identité établie
 
 Règle d'or du module : **une grille tarifaire négociée n'est servie qu'à un
@@ -711,7 +740,7 @@ préférences de style.
 | Module | Route racine | État |
 |---|---|---|
 | Planning | `/planning` | ✅ Gantt + table + share token + **séquence déclarative départ/arrivée** (PLN-SEQ : SOF, recalculs, historisation réel+prévisionnel, activation du leg suivant — cf. `docs/design/05-sequence-planification.md`) |
-| Planning — scénarios | `/planning/scenarios` | ✅ what-if isolé (jamais d'écriture sur `legs`) : brouillon ou clone de legs réels, Gantt/table/comparaison, export CSV, drag-drop |
+| Planning — scénarios | `/planning/scenarios` | ✅ what-if : brouillon ou clone de legs réels (aux **dates effectives**), Gantt/table/comparaison, export CSV, drag-drop, formulaire **page unique** aligné sur PLN-08. ⚠️ **Une seule écriture réelle** : `POST /{id}/apply`, qui délègue à `planning.update_leg` (mêmes contrôles, même cascade, même refus de déplacer un leg appareillé) |
 | Commercial | `/commercial` | ✅ clients (+ **commercial attitré**, fiches prospect), **grilles tarifaires** (réf. codifiée `P-MMAA-MMAA-XX-YY` par route, plusieurs grilles actives/client, défaut par route, paliers inclusifs, options dont `per_bl`, **conditions de règlement 1-3 échéances déclaratives**), **estimations tarifaires**, **offres** (cycle `en_cours`/`valide`/`echue`/`annule`, réservation de volume, **historique chaîné SHA-256**), commandes, **booking note** auto + signature Yousign |
 | Estimation tarifaire | `/me/estimations` + `/devis` | ✅ **extranet client** : libre-service sur **ses** grilles actives, notifie le commercial attitré, transformable en offre. **Vitrine** : demande **non chiffrée** créant une fiche prospect (le tarif ne sort jamais vers une identité non établie) |
 | Cargo (packing list + portail) | `/cargo` + `/p/{token}` | ✅ batches + **audit consultable** + edit/suppr + lock + messagerie ; **workflow BL complet** (`draft → client_validated → master_signed → final`, gel à la signature, filigrane DRAFT, révisions `TUAW_…_R2`, séquence de numéros **non recyclable**, registre de remise des originaux, date *shipped on board* dérivée de l'escale), Arrival Notice, import/export Excel **en upsert** (préserve les numéros), portail multilingue. ⛔ **Rail booking retiré** : plus de BL généré à la volée depuis un booking |

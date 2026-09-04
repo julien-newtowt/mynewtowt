@@ -444,6 +444,15 @@
     if (stayEl && stayEl.value) parts.push("escale " + stayEl.value + " j");
     if (bookEl && bookEl.checked) parts.push("réservable");
     var code = "—";
+    // Le récapitulatif n'affiche un `leg_code` que là où il en existe un. Un
+    // scénario provisoire porte des étiquettes libres, pas la numérotation
+    // officielle : fabriquer un code d'apparence réglementaire (rang « ? » ou
+    // tiret) y ferait passer une invention pour une référence. Le formulaire
+    // le déclare par `data-recap-code="off"`.
+    if (codeEl.dataset.recapCode === "off") {
+      textEl.textContent = parts.length ? parts.join(" · ") : "Choisissez un navire, les ports et les dates.";
+      return;
+    }
     if (v && pol && pod && etd) {
       var vcode = v.dataset.vesselCode || s.vessel_code || "";
       var rank = (etd.slice(0, 4) === (s.etd || "").slice(0, 4) && s.next_rank_letter) ? s.next_rank_letter : "?";

@@ -1,8 +1,13 @@
 """Planification provisoire — scénarios what-if isolés du planning réel.
 
 Routes montées sous ``/planning/scenarios``. Permission module ``planning``
-(C consult / M modify / S suppress). Outil **consultatif** : aucune écriture
-dans la table ``legs``.
+(C consult / M modify / S suppress).
+
+L'outil est **consultatif**, à une exception près et une seule :
+``POST /{id}/apply`` reporte le scénario sur la planification réelle. Cette
+route délègue à ``planning.update_leg`` — mêmes contrôles, même cascade, même
+refus de déplacer un leg appareillé que l'écran de planification (cf.
+``services.scenario.apply_to_active_planning``).
 """
 
 from __future__ import annotations
@@ -48,6 +53,111 @@ async def _get_leg_or_404(db: AsyncSession, scenario_id: int, leg_id: int) -> Sc
 
 async def _vessels(db: AsyncSession) -> list[Vessel]:
     return list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
+
+
+#: Nombre de traversées proposées au « Chaîner après » (même valeur que le
+#: formulaire réel : au-delà, la liste cesse d'aider).
+CHAIN_OPTIONS_LIMIT = 8
+
+
+async def _chain_option(db: AsyncSession, ref: ScenarioLeg) -> dict | None:
+    """Suggestion de traversée suivante dérivée d'une traversée provisoire.
+
+    Même contrat que ``planning_router._chain_option`` — c'est
+    ``leg-form-suggest.js`` qui consomme ce dictionnaire, et il est partagé
+    avec le formulaire réel. Deux différences assumées, propres au provisoire :
+
+    * la référence est une **traversée du scénario**, pas un leg réel : on
+      construit une séquence hypothétique, elle doit s'enchaîner sur elle-même ;
+    * il n'y a ni ATA ni rang de ``leg_code`` à prévoir — un scénario porte des
+      étiquettes libres, pas la numérotation officielle. Les clés existent
+      quand même (``from_ata``, ``next_rank_letter``) pour que le script n'ait
+      pas à connaître deux formats ; elles valent ``None`` / ``"—"``.
+    """
+    from math import ceil
+
+    from app.services.planning import closed_weekdays_for_port, next_working_departure
+
+    if ref.eta is None:
+        return None
+    stay = ref.port_stay_planned_hours or 48
+    closed = await closed_weekdays_for_port(db, ref.arrival_port_id)
+    suggested = next_working_departure(ref.eta, stay, closed)
+    pol = await db.get(Port, ref.departure_port_id)
+    pod = await db.get(Port, ref.arrival_port_id)
+    return {
+        "ref_leg_id": ref.id,
+        "etd": suggested.strftime("%Y-%m-%d"),
+        "pol_id": ref.arrival_port_id,
+        "port_stay_hours": stay,
+        "port_stay_days": max(1, ceil(stay / 24)),
+        "from_leg_code": ref.label or f"#{ref.id}",
+        "from_phase": "planifie",
+        "from_pol_locode": pol.locode if pol else None,
+        "from_pod_locode": pod.locode if pod else None,
+        "from_pod_name": pod.name if pod else None,
+        "from_eta": ref.eta.strftime("%Y-%m-%d"),
+        "from_ata": None,
+        "next_rank_letter": "—",
+        "year_digit": str(suggested.year)[-1],
+    }
+
+
+async def _chain_suggestions(db: AsyncSession, scenario_id: int) -> dict[int, dict]:
+    """Séquence **du scénario** par navire → pré-remplissage de la traversée
+    suivante (POL, ETD, escale).
+
+    On chaîne sur les traversées du scénario et non sur les legs réels : une
+    hypothèse se construit sur les hypothèses déjà posées. Un scénario cloné du
+    réel contient de toute façon ces legs, donc le cas courant est couvert.
+
+    Comme au réel (PLN-BUGS), le défaut est la traversée d'ETD le plus tardif
+    mais il **reste un défaut** : ``chain_options`` expose les dernières
+    traversées pour que l'opérateur désigne celle après laquelle il enchaîne.
+    """
+    from sqlalchemy import desc
+
+    suggestions: dict[int, dict] = {}
+    for vessel in await _vessels(db):
+        entry: dict = {"vessel_code": vessel.code, "vessel_name": vessel.name, "no_legs": True}
+        suggestions[vessel.id] = entry
+        candidates = list(
+            (
+                await db.execute(
+                    select(ScenarioLeg)
+                    .where(ScenarioLeg.scenario_id == scenario_id)
+                    .where(ScenarioLeg.vessel_id == vessel.id)
+                    .where(ScenarioLeg.status != "cancelled")
+                    .order_by(desc(ScenarioLeg.etd), desc(ScenarioLeg.id))
+                    .limit(CHAIN_OPTIONS_LIMIT)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        options = [o for o in [await _chain_option(db, c) for c in candidates] if o]
+        if not options:
+            continue
+        for option in options:
+            option["vessel_code"] = vessel.code
+            option["vessel_name"] = vessel.name
+        entry.update(options[0])
+        entry["no_legs"] = False
+        entry["chain_options"] = options
+    return suggestions
+
+
+def _stay_hours_from_form(form) -> int | None:
+    """Escale saisie en JOURS (``port_stay_planned_days``) → heures stockées.
+
+    Le formulaire provisoire travaille à la journée depuis PLN-08, comme le
+    réel. Le champ historique en heures reste accepté (anciens signets, appels
+    directs) ; la saisie en jours prime quand elle est fournie.
+    """
+    days = _maybe_int(form.get("port_stay_planned_days"))
+    if days is not None:
+        return max(0, days) * 24
+    return _maybe_int(form.get("port_stay_planned_hours"))
 
 
 async def _ports(db: AsyncSession) -> list[Port]:
@@ -368,6 +478,11 @@ async def apply_scenario_action(
         )
     except svc.ScenarioError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except PlanningError as e:
+        # Appliquer un scénario passe désormais par ``planning.update_leg`` :
+        # ses refus (chevauchement, continuité, vitesse, archive TOWT) doivent
+        # remonter à l'opérateur avec leur message, pas en 500.
+        raise HTTPException(status_code=400, detail=str(e)) from e
     await activity_record(
         db,
         action="scenario_apply",
@@ -380,7 +495,7 @@ async def apply_scenario_action(
         entity_label=scenario.name,
         detail=(
             f"updated={result.updated_legs} changed={result.changed_legs} "
-            f"renumbered={len(result.renumbered)}"
+            f"renumbered={len(result.renumbered)} batch={result.batch_id}"
         ),
     )
     return RedirectResponse(url="/planning", status_code=303)
@@ -440,6 +555,7 @@ async def new_leg_form(
             "leg": None,
             "vessels": await _vessels(db),
             "ports": await _ports(db),
+            "suggestions": await _chain_suggestions(db, scenario_id),
             "error": None,
         },
     )
@@ -465,7 +581,7 @@ async def create_leg_action(
             eta=_parse_dt(form.get("eta")),
             label=form.get("label"),
             status=form.get("status") or "planned",
-            port_stay_planned_hours=_maybe_int(form.get("port_stay_planned_hours")),
+            port_stay_planned_hours=_stay_hours_from_form(form),
             transit_speed_kn=_maybe_float(form.get("transit_speed_kn")),
             elongation_coef=_maybe_float(form.get("elongation_coef")),
             notes=form.get("notes"),
@@ -480,6 +596,7 @@ async def create_leg_action(
                 "leg": None,
                 "vessels": await _vessels(db),
                 "ports": await _ports(db),
+                "suggestions": await _chain_suggestions(db, scenario_id),
                 "error": f"Ajout impossible : {e}",
                 "form": dict(form),
             },
@@ -518,6 +635,7 @@ async def edit_leg_form(
             "leg": leg,
             "vessels": await _vessels(db),
             "ports": await _ports(db),
+            "suggestions": await _chain_suggestions(db, scenario_id),
             "error": None,
         },
     )
@@ -545,7 +663,7 @@ async def update_leg_action(
             eta=_parse_dt(form.get("eta"), allow_empty=True),
             label=form.get("label"),
             status=form.get("status"),
-            port_stay_planned_hours=_maybe_int(form.get("port_stay_planned_hours")),
+            port_stay_planned_hours=_stay_hours_from_form(form),
             transit_speed_kn=_maybe_float(form.get("transit_speed_kn")),
             elongation_coef=_maybe_float(form.get("elongation_coef")),
             notes=form.get("notes"),
@@ -560,6 +678,7 @@ async def update_leg_action(
                 "leg": leg,
                 "vessels": await _vessels(db),
                 "ports": await _ports(db),
+                "suggestions": await _chain_suggestions(db, scenario_id),
                 "error": str(e),
             },
             status_code=400,

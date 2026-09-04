@@ -1,13 +1,26 @@
 """Service planification provisoire (scénarios what-if).
 
-Tout vit dans les tables ``planning_scenarios`` / ``scenario_legs``, isolées
-de la planification réelle (``legs``). Aucune fonction de ce module n'écrit
-dans ``legs`` : l'outil est consultatif par conception.
+Les hypothèses vivent dans ``planning_scenarios`` / ``scenario_legs``, isolées
+de la planification réelle. **Une seule fonction de ce module écrit dans
+``legs`` : ``apply_to_active_planning``** — c'est le geste par lequel un
+scénario cesse d'être une hypothèse. Tout le reste est consultatif.
 
-Validation **souple** adaptée à l'exploration d'hypothèses :
-  - dur (lève) : ETD ≥ ETA, durée > 180 j, ports identiques ;
-  - souple (avertissements non bloquants) : chevauchement navire, rupture de
-    continuité géographique, vitesse implicite invraisemblable.
+Cette précision n'est pas cosmétique : la docstring affirmait « aucune fonction
+de ce module n'écrit dans ``legs`` » alors qu'``apply`` le faisait depuis sa
+création, et elle a couvert l'absence des gardes du moteur réel sur ce chemin.
+
+Deux régimes de validation, à ne pas confondre :
+
+* **Dans le scénario** — validation *souple*, adaptée à l'exploration :
+  dur (lève) sur ETD ≥ ETA, durée > 180 j, ports identiques ; simples
+  avertissements sur chevauchement navire, rupture de continuité géographique,
+  vitesse implicite invraisemblable. On explore, on ne s'engage pas.
+* **À l'application au réel** — validation *du moteur réel*. ``apply`` délègue
+  à ``planning.update_leg`` : mêmes contrôles durs (``validate_leg_schedule``),
+  même cascade (``date_cascade.cascade_from_leg`` : legs aval, opérations
+  d'escale, shifts dockers, notifications client), même refus de déplacer un
+  leg déjà appareillé. Un scénario ne doit jamais pouvoir poser dans le réel ce
+  que l'écran de planification refuserait.
 """
 
 from __future__ import annotations
@@ -30,9 +43,10 @@ from app.services.geo import leg_trade_category
 from app.services.planning import (
     MAX_PLAUSIBLE_SPEED_KN,
     InvalidLegDates,
-    assert_leg_mutable,
-    compute_effective_distance_nm,
-    renumber_vessel_year,
+    effective_eta,
+    effective_etd,
+    ensure_utc,
+    update_leg,
     validate_dates,
 )
 
@@ -46,6 +60,52 @@ class ScenarioApplyResult:
     updated_legs: int
     changed_legs: int
     renumbered: list[tuple[int, str, str]]
+    #: Identifiant du lot d'application — repris au journal d'activité.
+    batch_id: str | None = None
+
+
+#: Champs qu'une traversée provisoire peut poser sur un leg réel. Liste
+#: explicite : elle sert à la fois à décider si un leg change (donc s'il faut
+#: l'écrire) et à borner ce que ``apply`` transmet à ``update_leg``. Un champ
+#: ajouté ici doit exister des deux côtés.
+_APPLIED_FIELDS: tuple[str, ...] = (
+    "vessel_id",
+    "departure_port_id",
+    "arrival_port_id",
+    "etd",
+    "eta",
+    "port_stay_planned_hours",
+    "transit_speed_kn",
+    "elongation_coef",
+)
+
+
+def _by_label(legs: Sequence[ScenarioLeg], label: str) -> ScenarioLeg:
+    """Traversée provisoire portant ce label (unicité déjà vérifiée)."""
+    return next(li for li in legs if (li.label or "").strip() == label)
+
+
+def _differs_from_scenario(real: Leg, sc_leg: ScenarioLeg) -> bool:
+    """Le leg réel diffère-t-il de l'hypothèse ?
+
+    Sert de garde d'écriture **et** de garde de refus : un leg appareillé que
+    le scénario ne change pas n'a pas à bloquer l'application — il se contente
+    d'être repris à l'identique.
+
+    Les dates passent par ``ensure_utc`` avant comparaison. Les deux objets ne
+    viennent pas de la même source (le leg réel est relu par un ``select``, la
+    traversée provisoire est en session) et un ``DateTime(timezone=True)``
+    revient **naïf** sous SQLite : comparer sans normaliser déclarait
+    différentes deux dates identiques, et faisait refuser une application qui
+    ne déplaçait rien.
+    """
+    for field in _APPLIED_FIELDS:
+        left, right = getattr(real, field), getattr(sc_leg, field)
+        if isinstance(left, datetime) or isinstance(right, datetime):
+            left, right = ensure_utc(left), ensure_utc(right)
+        if left != right:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +200,13 @@ async def clone_real_legs_into(
 
     Lecture seule sur ``legs`` : on ne lit que pour dupliquer. Renvoie le
     nombre de traversées clonées.
+
+    **Dates effectives, pas prévisionnelles.** Un leg déjà parti a un ATD : le
+    cloner sur son ETD reproduirait le plan, pas la réalité, et le scénario
+    partirait d'une image périmée exactement là où elle compte le plus — sur le
+    voyage en cours. Même règle que la dérive, le Gantt et l'audit de séquence
+    (``planning.effective_etd/effective_eta`` : le réel prime, le prévisionnel
+    est le repli).
     """
     # Les archives TOWT (ADR-014) ne se clonent pas : un scénario ne rejoue
     # pas le passé de l'ancienne compagnie, et ``apply`` ne doit jamais le viser.
@@ -159,8 +226,8 @@ async def clone_real_legs_into(
                 vessel_id=leg.vessel_id,
                 departure_port_id=leg.departure_port_id,
                 arrival_port_id=leg.arrival_port_id,
-                etd=leg.etd,
-                eta=leg.eta,
+                etd=effective_etd(leg),
+                eta=effective_eta(leg),
                 label=leg.leg_code,
                 status=(
                     leg.status
@@ -538,13 +605,30 @@ async def apply_to_active_planning(
     user_id: int | None = None,
     user_name: str | None = None,
 ) -> ScenarioApplyResult:
-    """Applique un scénario cloné au planning actif (`legs`).
+    """Applique un scénario cloné au planning actif (``legs``).
 
-    Garde-fous :
+    **Seul chemin d'écriture réelle du module.** Il délègue à
+    ``planning.update_leg`` plutôt que d'écrire les champs à la main : c'est ce
+    qui lui donne, sans les recopier, les garanties du moteur de planification —
+    ``validate_leg_schedule`` (chevauchement, continuité géographique, vitesse
+    plausible), le refus de déplacer un leg **déjà appareillé**, la cascade
+    ``date_cascade.cascade_from_leg`` (legs aval, opérations d'escale, shifts
+    dockers, **notifications client**), l'historisation dans
+    ``schedule_revisions`` et la renumérotation.
+
+    L'ancienne version posait ``real.etd``/``real.eta`` directement. Elle
+    pouvait donc reculer un leg parti (son ATD devenait postérieur à son ETD),
+    créer un chevauchement que l'écran de planification refuse, et surtout ne
+    prévenait ni l'escale, ni les dockers, ni les clients. Un scénario ne doit
+    jamais pouvoir poser dans le réel ce que la planification refuserait.
+
+    Garde-fous propres à l'application, vérifiés **avant la première écriture** :
       - scénario non archivé ;
-      - chaque ScenarioLeg doit porter un label correspondant à un leg_code réel ;
+      - chaque ``ScenarioLeg`` porte un label correspondant à un ``leg_code``
+        réel, sans doublon ;
       - aucun avertissement de cohérence sur le scénario complet ;
-      - prévalidation complète avant la première écriture.
+      - **aucun leg visé n'a appareillé** (ATD posé) — cf. ci-dessous ;
+      - dates et ports valides.
     """
     if scenario.status == "archived":
         raise ScenarioError("Un scénario archivé ne peut pas être appliqué au planning actif.")
@@ -594,78 +678,69 @@ async def apply_to_active_planning(
             eta=sc_leg.eta,
         )
 
-    from app.services import schedule_history
+    # ── Legs déjà appareillés : refus AVANT toute écriture ────────────────
+    #
+    # Un ATD est un fait, pas une hypothèse. Le moteur réel ne déplace jamais un
+    # leg parti (``plan_downstream_shifts`` lève ``LegOverlap``) ; l'application
+    # d'un scénario ne doit pas être la porte dérobée qui le fait. On refuse ici,
+    # en bloc et en nommant les legs, plutôt que de laisser ``update_leg`` s'en
+    # apercevoir au milieu du lot : la prévalidation complète avant la première
+    # écriture est la promesse de cette fonction.
+    sailed = [
+        (label, real_legs[label])
+        for label in labels
+        if real_legs[label].atd is not None
+        and _differs_from_scenario(real_legs[label], _by_label(legs, label))
+    ]
+    if sailed:
+        codes = ", ".join(sorted(label for label, _ in sailed))
+        raise ScenarioError(
+            f"Application impossible : {codes} a déjà appareillé (ATD posé). "
+            "Un départ réel ne se replanifie pas — retirez ces traversées du "
+            "scénario, ou corrigez-les depuis la fiche du voyage."
+        )
 
     batch_id = uuid.uuid4().hex[:12]
     changed = 0
-    touched_pairs: set[tuple[int, int]] = set()
+    renumbered: list[tuple[int, str, str]] = []
     for sc_leg in sorted(legs, key=lambda li: li.etd):
         label = (sc_leg.label or "").strip()
         real = real_legs[label]
-        old_etd, old_eta = real.etd, real.eta
-        old_vessel, old_year = real.vessel_id, real.etd.year
-        fields_changed = (
-            real.vessel_id != sc_leg.vessel_id
-            or real.departure_port_id != sc_leg.departure_port_id
-            or real.arrival_port_id != sc_leg.arrival_port_id
-            or real.etd != sc_leg.etd
-            or real.eta != sc_leg.eta
-            or real.port_stay_planned_hours != sc_leg.port_stay_planned_hours
-            or real.transit_speed_kn != sc_leg.transit_speed_kn
-            or real.elongation_coef != sc_leg.elongation_coef
-        )
-        if not fields_changed:
+        if not _differs_from_scenario(real, sc_leg):
             continue
-        assert_leg_mutable(real)  # archive TOWT : lecture seule (ADR-014)
-
-        real.vessel_id = sc_leg.vessel_id
-        real.departure_port_id = sc_leg.departure_port_id
-        real.arrival_port_id = sc_leg.arrival_port_id
-        etd_delta = sc_leg.etd - real.etd
-        real.etd = sc_leg.etd
-        real.eta = sc_leg.eta
-        if real.booking_close_at and etd_delta:
-            real.booking_close_at = real.booking_close_at + etd_delta
-        real.port_stay_planned_hours = sc_leg.port_stay_planned_hours
-        real.transit_speed_kn = sc_leg.transit_speed_kn
-        real.elongation_coef = sc_leg.elongation_coef
-        vessel = await db.get(Vessel, real.vessel_id)
-        effective_elongation = (
-            real.elongation_coef
-            if real.elongation_coef is not None
-            else (vessel.default_elongation if vessel else None)
-        )
-        real.distance_nm = await compute_effective_distance_nm(
+        # ``update_leg`` porte l'intégralité des contrôles et de la propagation :
+        # archive TOWT, validation dure, cascade aval, escale, dockers,
+        # notifications, historisation, renumérotation. On ne réécrit rien de
+        # tout cela ici — le dupliquer, c'est le laisser diverger.
+        report = await update_leg(
             db,
-            departure_port_id=real.departure_port_id,
-            arrival_port_id=real.arrival_port_id,
-            elongation_coef=effective_elongation,
-        )
-        await schedule_history.record(
-            db,
-            leg=real,
-            old_etd=old_etd,
-            new_etd=real.etd,
-            old_eta=old_eta,
-            new_eta=real.eta,
+            real,
+            vessel_id=sc_leg.vessel_id,
+            etd=sc_leg.etd,
+            eta=sc_leg.eta,
+            departure_port_id=sc_leg.departure_port_id,
+            arrival_port_id=sc_leg.arrival_port_id,
+            transit_speed_kn=sc_leg.transit_speed_kn,
+            elongation_coef=sc_leg.elongation_coef,
+            port_stay_planned_hours=sc_leg.port_stay_planned_hours,
             source="scenario_apply",
-            batch_id=batch_id,
-            user_id=user_id,
-            user_name=user_name,
+            actor_id=user_id,
+            actor_name=user_name,
         )
-        touched_pairs.add((old_vessel, old_year))
-        touched_pairs.add((real.vessel_id, real.etd.year))
+        if report is not None:
+            renumbered += report.renumbered
         changed += 1
 
     await db.flush()
-    renumbered: list[tuple[int, str, str]] = []
-    for vessel_id, year in sorted(touched_pairs):
-        renumbered += await renumber_vessel_year(db, vessel_id, year)
-    await db.flush()
+    # ``batch_id`` reste exposé pour le journal d'activité de la route : il
+    # identifie l'application comme un lot, même si l'historisation fine est
+    # désormais posée leg par leg par ``update_leg``.
+    scenario.updated_at = datetime.now(UTC)
     return ScenarioApplyResult(
         updated_legs=len(legs),
         changed_legs=changed,
         renumbered=renumbered,
+        batch_id=batch_id,
     )
 
 
