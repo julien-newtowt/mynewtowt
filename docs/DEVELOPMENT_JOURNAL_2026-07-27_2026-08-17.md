@@ -2900,3 +2900,39 @@ non commité — copier le fichier, ou committer d'abord.
 7 tests unitaires sur l'invariant, dont les bornes (`actual == theoretical`
 vaut 1 et reste valide ; sans orthodromie ou sans trace, on ne conclut rien) et
 la non-régression du cas « en mer » déjà traité.
+
+### Complément — annulation ponctuelle de l'arrivée de 3BREBR6
+
+Julien tranche : **pas de bouton d'annulation d'arrivée** dans l'interface. La
+décision tient : une déclaration engage le SOF, la finance, les bookings et le
+planning aval, et en faire un geste courant banaliserait tout cela.
+
+Reste à réparer le cas réel. `scripts/cancel_arrival.py --leg 3BREBR6`, dry-run
+par défaut, nomme explicitement son leg — pas de lot, pas de balayage.
+
+**Ce qu'il défait** : l'ATA (statut recalculé, le leg redevient « en mer »,
+l'ATD restant posé), l'événement SOF EOSP, et les bookings passés à
+`discharged` → `at_sea`.
+
+**Ce qu'il refuse de faire**, et c'est le cœur de sa valeur :
+
+- **Un EOSP signé bloque tout.** Un SOF signé est immuable — c'est son objet.
+  Le script s'arrête plutôt que d'écraser une signature.
+- **Les certificats Anemos ne sont pas touchés.** En cartographiant les effets
+  de `declare_arrival`, découverte du maillon dangereux : le passage d'un
+  booking à `discharged` déclenche l'émission du certificat CO₂. Une arrivée
+  erronée a donc pu émettre des certificats pour un voyage qui n'a pas eu lieu
+  — sur une plateforme dont les certificats sont **publiquement vérifiables**
+  (`/verify`). Le script les liste, refuse de continuer sans confirmation
+  explicite, et n'en dispose jamais lui-même : retirer un document opposable
+  est une décision de direction.
+- **`schedule_history` n'est pas réécrit** : l'annulation s'y ajoute.
+- **Les notifications déjà parties** (EOSP, activation du leg suivant) ne se
+  rappellent pas. Le script le dit au lieu de le taire.
+- **Le recalage des legs aval** n'est pas rejoué à l'envers : le défaire
+  demande de savoir ce que l'opérateur veut, pas ce que le code peut. Ici il
+  n'a probablement pas eu lieu — une arrivée *en avance* ne tire pas les legs
+  suivants — mais le script le signale plutôt que de le supposer.
+
+6 tests, dont les deux refus (EOSP signé, certificats émis) et la garantie
+dont dépend le dry-run : `inspect()` ne modifie rien.

@@ -20,16 +20,16 @@ from app.services.voyage_track import TrackMetrics
 
 
 def _metrics(**kw) -> TrackMetrics:
-    base = dict(
-        point_count=215,
-        actual_nm=119.0,
-        theoretical_nm=6287.0,
-        remaining_nm=None,
-        duration_hours=22.0,
-        avg_speed_kn=5.4,
-        is_active=False,
-        declared_arrived=True,
-    )
+    base = {
+        "point_count": 215,
+        "actual_nm": 119.0,
+        "theoretical_nm": 6287.0,
+        "remaining_nm": None,
+        "duration_hours": 22.0,
+        "avg_speed_kn": 5.4,
+        "is_active": False,
+        "declared_arrived": True,
+    }
     base.update(kw)
     return TrackMetrics(**base)  # type: ignore[arg-type]
 
