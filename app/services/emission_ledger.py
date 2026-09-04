@@ -207,6 +207,26 @@ class LedgerResult:
     ef_method_b: Decimal | None
     ef_method_c: Decimal | None
 
+    # ── Émissions du séjour au port (« Port Emissions ») ─────────────────
+    #
+    # Assiette DISJOINTE de `co2_emitted_t` : celle-là porte le trajet (conso
+    # hors mouillage), celles-ci l'escale qui SUIT l'arrivée (`conso_escale_t`,
+    # G12). Les deux ne se recouvrent pas et ne doivent jamais être
+    # additionnées sans le dire — l'escale d'un leg peut s'étendre sur la
+    # fenêtre du leg suivant.
+    #
+    # Même facteur, même primitive (`emissions_breakdown`) : c'est la règle
+    # d'or, l'unique multiplication conso × facteur vit dans ce module.
+    #
+    # 🔴 Placés en FIN de dataclass, avec un défaut : c'est ce qui rend l'ajout
+    # une **extension compatible** au sens de la politique du contrat
+    # Dashboard (`tests/regression/test_dashboard_contract.py`) — aucun
+    # constructeur existant n'est cassé, et pas d'incrément de
+    # `DASHBOARD_CONTRACT_VERSION`. Les insérer au milieu aurait été un
+    # changement cassant de signature.
+    co2_escale_t: Decimal | None = None
+    co2eq_escale_t: Decimal | None = None
+
 
 # ════════════════════════════════════════════════════════════ Helpers datetime
 
@@ -548,6 +568,15 @@ async def compute_for_leg(
     co2eq_t = Decimal(em["co2eq_t"]) if em["co2eq_t"] is not None else None
     wtt_co2eq_t = Decimal(em["wtt_co2eq_t"]) if em["wtt_co2eq_t"] is not None else None
 
+    # Émissions du séjour au port (« Port Emissions », décision du 2026-09-04 :
+    # « port emissions = émissions d'escale »). Assiette DISJOINTE du trajet :
+    # `conso_escale_t` couvre l'escale qui SUIT l'arrivée, jamais la navigation.
+    # Même facteur et même primitive — la règle d'or veut que l'unique
+    # multiplication conso × facteur reste ici.
+    em_escale = emissions_breakdown(conso_escale, factor)
+    co2_escale_t = Decimal(em_escale["co2_t"]) if em_escale["co2_t"] is not None else None
+    co2eq_escale_t = Decimal(em_escale["co2eq_t"]) if em_escale["co2eq_t"] is not None else None
+
     # CO₂ évité : comparateur conventionnel ``co2.estimate`` (mêmes valeurs).
     avoided = await _avoided_co2_kg(db, distance, cargo_bl)
 
@@ -580,6 +609,8 @@ async def compute_for_leg(
         n2o_g=n2o_g,
         co2eq_t=co2eq_t,
         wtt_co2eq_t=wtt_co2eq_t,
+        co2_escale_t=co2_escale_t,
+        co2eq_escale_t=co2eq_escale_t,
         avoided_co2_kg=avoided,
         ef_method_a=ef_a,
         ef_method_b=ef_b,
@@ -674,6 +705,8 @@ async def refresh_summary(db: AsyncSession, leg: Leg) -> VoyageEmissionSummary:
         "n2o_g": result.n2o_g,
         "co2eq_t": result.co2eq_t,
         "wtt_co2eq_t": result.wtt_co2eq_t,
+        "co2_escale_t": result.co2_escale_t,
+        "co2eq_escale_t": result.co2eq_escale_t,
         "distance_nm": result.distance_nm,
         "cargo_bl_t": result.cargo_bl_t,
         "cargo_mrv_t": result.cargo_mrv_t,

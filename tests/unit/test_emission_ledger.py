@@ -525,6 +525,35 @@ async def test_escale_consumption_rob_solved(db):
     # 50,000 + 10,000 − 55,000 = 5,000.
     assert r.conso_escale_t == Decimal("5.000")
 
+    # « Port emissions = émissions d'escale » (décision du 2026-09-04) : le
+    # grand livre dérive désormais l'émission de cette consommation, au MÊME
+    # facteur et par la MÊME primitive que le trajet — la règle d'or veut que
+    # l'unique multiplication conso × facteur vive dans ce module.
+    expected = emission_ledger.emissions_breakdown(r.conso_escale_t, r.factor)
+    assert r.co2_escale_t == Decimal(expected["co2_t"])
+    assert r.co2eq_escale_t == Decimal(expected["co2eq_t"])
+
+    # Assiettes DISJOINTES : l'émission du trajet porte la conso hors
+    # mouillage, celle de l'escale la conso d'escale. Les confondre ferait
+    # double-compter, l'escale pouvant s'étendre sur le voyage suivant.
+    assert r.co2_escale_t != r.co2_emitted_t
+    assert r.do_consumed_t == r.conso_hors_mouillage_t
+
+
+async def test_escale_emission_is_none_without_escale_consumption(db):
+    """Pas d'escale (voyage non arrivé, G12) ⇒ pas d'émission d'escale.
+
+    ``None`` et non ``0`` : un voyage encore en mer n'a pas une escale à
+    émission nulle, il n'a pas encore d'escale.
+    """
+    vessel, leg = await _base(db)
+    await _events_chain(db, vessel, leg)
+
+    r = await emission_ledger.compute_for_leg(db, leg)
+    assert r.conso_escale_t is None
+    assert r.co2_escale_t is None
+    assert r.co2eq_escale_t is None
+
 
 async def test_escale_consumption_falls_back_to_counters_without_declared_rob(db):
     """ROB déclaré manquant à une des deux bornes → repli sur le delta de

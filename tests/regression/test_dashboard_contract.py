@@ -229,6 +229,16 @@ LEDGER_RESULT_FIELDS = {
     "ef_method_a": "Decimal | None",
     "ef_method_b": "Decimal | None",
     "ef_method_c": "Decimal | None",
+    # Ajout compatible (2026-09-04) : emissions du sejour au port
+    # (« port emissions = emissions d'escale »). Champs en FIN de dataclass
+    # AVEC defaut, donc aucun constructeur existant n'est casse — extension au
+    # sens de la politique ci-dessus, pas d'increment de
+    # DASHBOARD_CONTRACT_VERSION.
+    #
+    # ⚠️ Assiette DISJOINTE de `co2_emitted_t` (trajet) : tout consommateur du
+    # contrat qui voudrait un total « trajet + escale » doit l'annoncer.
+    "co2_escale_t": "Decimal | None",
+    "co2eq_escale_t": "Decimal | None",
 }
 
 # Clés exactes du dict retourné par emission_ledger.emissions_breakdown() —
