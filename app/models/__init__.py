@@ -117,6 +117,7 @@ from app.models.port import Port
 from app.models.qhse import (
     CorrectiveAction,
     DeficiencyCode,
+    QhseImportBatch,
     QhseReport,
     QhseReportDeficiencyCode,
     RootCauseEvaluation,
@@ -265,6 +266,7 @@ __all__ = [
     "PortConfig",
     "PortalAccessLog",
     "PortalMessage",
+    "QhseImportBatch",
     "QhseReport",
     "QhseReportDeficiencyCode",
     "QualityCheckResult",

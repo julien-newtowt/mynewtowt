@@ -17,12 +17,17 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.models.crew import CrewMember
 from app.models.qhse import QhseReport
+from app.models.user import User
+from app.models.vessel import Vessel
 from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.qhse_ingestion import QhseIngestionError, import_qhse_xlsx
+from app.services.qhse_kpi import build_dashboard, list_vessels_with_reports, trend_bars
 from app.services.safe_files import content_length_exceeds_max
 from app.templating import templates
 from app.utils.file_validation import validate_filename, validate_size
@@ -54,6 +59,42 @@ async def qhse_index(
     )
 
 
+@router.get("/dashboard", response_class=HTMLResponse)
+async def qhse_dashboard(
+    request: Request,
+    vessel_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("qhse", "C")),
+) -> HTMLResponse:
+    """Tableau de bord — premier lot visuel (Phase 1), cf. ``app.services.qhse_kpi``.
+
+    Vue flotte par défaut ; ``?vessel_id=`` filtre sur un navire (parmi ceux
+    qui ont au moins un signalement — inutile de lister un navire sans
+    donnée dans le sélecteur).
+
+    ⚠️ Route littérale déclarée AVANT ``/{report_id}`` : sinon FastAPI la
+    capturerait comme un ``report_id`` invalide (même règle que le module
+    vente à bord, verrouillée par un test là-bas).
+    """
+    vessels = await list_vessels_with_reports(db)
+    if vessel_id is not None and vessel_id not in {v.id for v in vessels}:
+        vessel_id = None  # filtre sur un navire sans donnée : repli silencieux sur la flotte
+    dashboard = await build_dashboard(db, vessel_id=vessel_id)
+    bars, chart = trend_bars(dashboard.trend)
+    return templates.TemplateResponse(
+        "staff/qhse/dashboard.html",
+        {
+            "request": request,
+            "user": user,
+            "dashboard": dashboard,
+            "vessels": vessels,
+            "selected_vessel_id": vessel_id,
+            "trend_bars": bars,
+            "trend_chart": chart,
+        },
+    )
+
+
 @router.post("/import", response_class=HTMLResponse)
 async def qhse_import(
     request: Request,
@@ -61,16 +102,15 @@ async def qhse_import(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("qhse", "M")),
 ) -> HTMLResponse:
-    """Import xlsx (un ou plusieurs navires par fichier, résolus par ligne).
+    """Import/réconciliation xlsx (un ou plusieurs navires par fichier, résolus par ligne).
 
     Jamais d'exception non gérée sur un contenu malformé — les anomalies
     (navire non résolu, dates incohérentes, motif de test) sont collectées
     dans le rapport (cf. ``qhse_ingestion.import_qhse_xlsx``).
 
-    Limite Phase 0 assumée : pas de déduplication — ré-importer le même
-    fichier crée de nouveaux rapports plutôt que de les mettre à jour
-    (contrairement à l'upsert idempotent de ``flgo_sync``). Affiché dans le
-    template de résultat.
+    Une ligne déjà connue (``source_code``, D10) est **mise à jour**, pas
+    dupliquée — un ré-import du même fichier, ou d'un export ultérieur dont le
+    workflow CAPA a progressé, rafraîchit le registre au lieu de le doubler.
     """
     if content_length_exceeds_max(request.headers.get("content-length")):
         raise HTTPException(status_code=413, detail="fichier trop volumineux")
@@ -84,7 +124,9 @@ async def qhse_import(
         raise HTTPException(status_code=413, detail=size_check.reason)
 
     try:
-        report = await import_qhse_xlsx(db, content)
+        report = await import_qhse_xlsx(
+            db, content, filename=file.filename, imported_by_user_id=user.id
+        )
     except QhseIngestionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -98,7 +140,7 @@ async def qhse_import(
     # `activity_logs` est append-only : c'est le bon support, et il évite une table
     # dédiée. Troncature **annoncée** si la liste est longue — jamais silencieuse.
     detail = (
-        f"import={report.imported} ignorés={report.skipped} "
+        f"créés={report.imported} mis_à_jour={report.updated} ignorés={report.skipped} "
         f"marqués_test_présumé={report.flagged}"
     )
     lost = report.errors
@@ -124,4 +166,72 @@ async def qhse_import(
     return templates.TemplateResponse(
         "staff/qhse/import_result.html",
         {"request": request, "user": user, "report": report},
+    )
+
+
+@router.get("/{report_id}", response_class=HTMLResponse)
+async def qhse_detail(
+    report_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("qhse", "C")),
+) -> HTMLResponse:
+    """Fiche d'un signalement — lecture seule (Phase 1). Point d'arrivée de
+    la liste « ouverts » du tableau de bord (§10.2 : 1 clic jusqu'au détail).
+
+    ``selectinload`` sur les deux workflows 1:0..1 : un accès paresseux sur
+    une relation ORM échouerait en async hors contexte de requête déjà
+    ouverte (``MissingGreenlet``) — même précaution que partout ailleurs
+    dans le dépôt sur ce pattern.
+    """
+    stmt = (
+        select(QhseReport)
+        .options(
+            selectinload(QhseReport.corrective_action),
+            selectinload(QhseReport.root_cause_evaluation),
+        )
+        .where(QhseReport.id == report_id)
+    )
+    report = (await db.execute(stmt)).scalar_one_or_none()
+    if report is None:
+        raise HTTPException(status_code=404, detail="signalement introuvable")
+
+    vessel = (
+        await db.execute(select(Vessel).where(Vessel.id == report.vessel_id))
+    ).scalar_one_or_none()
+
+    async def _person(user_id: int | None, crew_id: int | None = None) -> str | None:
+        if user_id is not None:
+            u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+            if u:
+                return u.full_name or u.username
+        if crew_id is not None:
+            c = (
+                await db.execute(select(CrewMember).where(CrewMember.id == crew_id))
+            ).scalar_one_or_none()
+            if c:
+                return c.full_name
+        return None
+
+    reporter = await _person(report.reporter_user_id, report.reporter_crew_member_id)
+    description_added_by = await _person(report.description_added_by_user_id)
+    corrective_responsible = None
+    if report.corrective_action:
+        corrective_responsible = await _person(report.corrective_action.responsible_user_id)
+    evaluation_responsible = None
+    if report.root_cause_evaluation:
+        evaluation_responsible = await _person(report.root_cause_evaluation.responsible_user_id)
+
+    return templates.TemplateResponse(
+        "staff/qhse/detail.html",
+        {
+            "request": request,
+            "user": user,
+            "report": report,
+            "vessel": vessel,
+            "reporter": reporter or report.issued_by_raw,
+            "description_added_by": description_added_by,
+            "corrective_responsible": corrective_responsible,
+            "evaluation_responsible": evaluation_responsible,
+        },
     )
