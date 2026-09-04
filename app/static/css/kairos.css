@@ -2106,3 +2106,49 @@ body.density-cosy .data-table th,
 body.density-cosy .data-table td {
   padding: calc(var(--space-2) + 4px) var(--space-3);
 }
+
+/* ── Barre d'actions d'en-tête de page ────────────────────────────────
+ * Les fiches (grille tarifaire, client, offre, commande) alignaient des
+ * boutons de tailles et de styles différents : un `btn-primary` pleine
+ * taille à côté d'un `btn-sm` outillé, à côté d'un lien nu — et « Modifier
+ * l'en-tête » repassait à la ligne au milieu du mot faute de largeur.
+ *
+ * `.page-actions` impose une grammaire unique : même hauteur, même taille de
+ * police, jamais de césure, un seul bouton `btn-primary` (l'action
+ * principale), le reste en `btn-secondary`, les gestes destructeurs en
+ * `btn-danger`, le retour en `btn-ghost`. Les états (badges, pills) passent
+ * devant, séparés des actions.
+ */
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.page-actions .btn {
+  white-space: nowrap;
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+.page-actions form { display: inline-flex; margin: 0; }
+/* Séparateur discret entre les indicateurs d'état et les actions. */
+.page-actions .page-actions-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 0 var(--space-1);
+  background: var(--gris-clair);
+}
+
+/* ── Select filtrable (recherche dans une longue liste) ───────────────
+ * Amélioration progressive : sans JavaScript, le `<select>` reste utilisable
+ * tel quel. `searchable-select.js` insère le champ de recherche au-dessus.
+ */
+.searchable-select-wrap { display: flex; flex-direction: column; gap: 4px; }
+.searchable-select-input { width: 100%; }
+.searchable-select-count { font-size: var(--text-xs); color: var(--gris); }
+
+/* ── Marge tarifaire (grille) ─────────────────────────────────────────── */
+.margin-negative { color: var(--danger); font-weight: var(--fw-semibold); }
+.margin-unknown { color: var(--gris); }

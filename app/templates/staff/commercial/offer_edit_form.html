@@ -1,0 +1,73 @@
+{% extends "staff/_layout.html" %}
+{% from "staff/_leg_filter.html" import leg_option_tags %}
+{% block title %}Corriger {{ offer.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="mb-4">
+  <span class="kicker">Commercial · Offre</span>
+  <h1 class="display">Corriger {{ offer.reference }}</h1>
+  <p class="text-muted">{{ offer.title }}{% if offer.client %} · {{ offer.client.name }}{% endif %}</p>
+</header>
+
+{# Voie de rattrapage réservée à l'administrateur. Le cycle de vie normal d'une
+   offre n'a pas de retour arrière : on l'annule et on en émet une autre. Toute
+   correction passée par ici est inscrite dans l'historique chaîné SHA-256 de
+   l'offre — donc visible, datée et opposable. #}
+<div class="alert alert-warn mb-4">
+  <i data-lucide="shield-alert"></i>
+  Correction d'une offre <strong>émise</strong>. Elle sera consignée dans l'historique inaltérable
+  de l'offre, avec votre nom et votre commentaire. Pour un changement de fond, préférez annuler
+  l'offre et en émettre une nouvelle.
+</div>
+
+<article class="card">
+  <form method="post" action="/commercial/offers/{{ offer.id }}/edit">
+    <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="title">Objet</label>
+        <input id="title" name="title" type="text" required value="{{ offer.title }}" />
+      </div>
+      <div class="field">
+        <label for="grid_id">Grille tarifaire</label>
+        <select id="grid_id" name="grid_id">
+          <option value="">Sans grille</option>
+          {% for g in grids %}<option value="{{ g.id }}" {% if offer.grid_id == g.id %}selected{% endif %}>{{ g.reference }} · {% if g.client_id %}client{% else %}défaut{% endif %} · {{ g.lines|length }} route{{ 's' if g.lines|length != 1 else '' }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="leg_id">Voyage ciblé</label>
+        <select id="leg_id" name="leg_id">
+          <option value="">Aucun</option>
+          {{ leg_option_tags(leg_options, offer.leg_id) }}
+        </select>
+      </div>
+      <div class="field">
+        <label for="estimated_palettes">Palettes estimées</label>
+        <input id="estimated_palettes" name="estimated_palettes" type="number" min="0" class="mono" value="{{ offer.estimated_palettes if offer.estimated_palettes is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label for="proposed_rate_eur">Tarif proposé (€/palette) <small class="text-muted">— le total est recalculé</small></label>
+        <input id="proposed_rate_eur" name="proposed_rate_eur" type="number" min="0" step="0.01" class="mono" value="{{ offer.proposed_rate_eur if offer.proposed_rate_eur is not none else '' }}" />
+      </div>
+      <div class="field">
+        <label for="valid_until">Valide jusqu'au</label>
+        <input id="valid_until" name="valid_until" type="date" value="{{ offer.valid_until if offer.valid_until else '' }}" />
+      </div>
+    </div>
+    <div class="field">
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="3">{{ offer.notes or '' }}</textarea>
+    </div>
+    <div class="field">
+      <label for="comment">Motif de la correction <small class="text-muted">— inscrit dans l'historique</small></label>
+      <input id="comment" name="comment" type="text" maxlength="200" placeholder="ex. volume erroné à la saisie" />
+    </div>
+    <div class="page-actions" style="justify-content:flex-start;">
+      <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Enregistrer la correction</button>
+      <a href="/commercial/offers/{{ offer.id }}" class="btn btn-ghost">Annuler</a>
+    </div>
+  </form>
+</article>
+
+{% endblock %}

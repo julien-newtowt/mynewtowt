@@ -18,7 +18,7 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,10 +26,7 @@ from app.database import get_db
 from app.models.booking_note import BookingNote
 from app.models.client_account import ClientAccount
 from app.models.commercial import (
-    CAPACITY_PRIORITY_LABELS,
     CLIENT_TYPES,
-    CO_BRANDING_STATUS_LABELS,
-    CO_BRANDING_STATUSES,
     MAX_PAYMENT_TERMS,
     ORDER_STATUS_LABELS,
     ORDER_STATUSES,
@@ -40,6 +37,9 @@ from app.models.commercial import (
     RATE_OFFER_STATUSES,
     RATE_OPTION_UNIT_LABELS,
     RATE_OPTION_UNITS,
+    RATE_UNIT_LABELS,
+    RATE_UNIT_PALETTE,
+    RATE_UNITS,
     Client,
     Order,
     OrderAssignment,
@@ -54,7 +54,7 @@ from app.models.port import Port
 from app.models.quote import QUOTE_ORIGIN_LABELS, Quote
 from app.models.user import User
 from app.models.vessel import Vessel
-from app.permissions import require_permission
+from app.permissions import is_administrator, require_permission
 from app.services import capacity as capacity_svc
 from app.services import yousign as yousign_svc
 from app.services.activity import record as activity_record
@@ -95,6 +95,7 @@ from app.services.offer_lifecycle import (
     is_expired,
     validate_offer,
 )
+from app.services.pipedrive_sync import is_configured as pipedrive_is_configured
 from app.services.quoting import (
     QuotingError,
     _match_route,
@@ -102,6 +103,7 @@ from app.services.quoting import (
     compute_grid_quote,
     compute_route_economics,
     resolve_grid,
+    suggested_price,
 )
 from app.templating import templates
 from app.utils.forms import form_str
@@ -339,8 +341,6 @@ async def clients_list(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    from app.services.pipedrive_sync import is_configured
-
     # Recherche base client : nom, contact, e-mail, n° TVA, ville/pays.
     query = select(Client)
     term = (q or "").strip()
@@ -364,7 +364,7 @@ async def clients_list(
             "clients": clients,
             "types": CLIENT_TYPES,
             "client_type_labels": CLIENT_TYPE_LABELS,
-            "pipedrive_configured": is_configured(),
+            "pipedrive_configured": pipedrive_is_configured(),
             "search_q": term,
         },
     )
@@ -420,6 +420,17 @@ async def client_create(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
+    """Création d'un client — **administrateur uniquement**.
+
+    La base client est alimentée par Pipedrive : le CRM est la source de vérité
+    du portefeuille, et c'est là que se décide qu'une organisation devient
+    cliente. Une création parallèle depuis l'ERP fabriquait des doublons que la
+    synchronisation ne pouvait pas rapprocher (aucun ``pipedrive_org_id``), et
+    la fiche restait vide de tout ce que le CRM sait déjà. Reste ouverte à
+    l'administrateur : il faut une porte de secours quand le CRM est
+    indisponible ou qu'un client existe avant son organisation.
+    """
+    _assert_administrator(user)
     if client_type not in CLIENT_TYPES:
         raise HTTPException(status_code=400, detail="invalid client_type")
     c = Client(
@@ -516,9 +527,7 @@ async def client_detail(
             "unlinked_accounts": unlinked_accounts,
             "suggested_account_ids": suggested_account_ids,
             "client_type_labels": CLIENT_TYPE_LABELS,
-            "co_branding_statuses": CO_BRANDING_STATUSES,
-            "co_branding_status_labels": CO_BRANDING_STATUS_LABELS,
-            "capacity_priority_labels": CAPACITY_PRIORITY_LABELS,
+            "pipedrive_configured": pipedrive_is_configured(),
         },
     )
 
@@ -628,33 +637,27 @@ async def client_anchor_update(
     client_id: int,
     request: Request,
     is_anchor: bool = Form(False),
-    annual_volume_commitment: str | None = Form(None),
-    capacity_priority: str | None = Form(None),
-    co_branding_status: str = Form("none"),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
-    """Configure le statut « compte-ancre » d'un client (P11).
+    """Marque (ou non) un client comme **stratégique**.
 
-    Engagement de volume annuel (palettes/an), rang de priorité capacité et
-    statut de co-branding. Surface d'écriture du back-office commercial ;
-    l'état est consulté en lecture dans le back-office booking.
+    Le « compte-ancre » de P11 portait quatre attributs : le drapeau, un
+    engagement de volume annuel, un rang de priorité capacité et un statut de
+    co-branding. Les trois derniers n'ont **jamais eu de conséquence** dans le
+    code — aucune allocation de cale, aucune facturation, aucun tri ne les lit ;
+    seuls deux badges les affichaient. Trois champs saisis que rien n'applique
+    finissent par être crus, alors qu'ils ne décident de rien.
+
+    Il ne reste donc qu'une case à cocher : *client stratégique*. Les colonnes
+    restent en base (aucune donnée n'est détruite) et cessent d'être exposées.
+    Le jour où une priorité d'allocation sera réellement arbitrée, elle sera
+    réintroduite avec la règle qui la consomme.
     """
     client = await db.get(Client, client_id)
     if client is None:
         raise HTTPException(status_code=404)
-    if co_branding_status not in CO_BRANDING_STATUSES:
-        raise HTTPException(status_code=400, detail="statut de co-branding invalide")
-    priority = _opt_int(capacity_priority) or 0
-    if priority < 0:
-        raise HTTPException(status_code=400, detail="rang de priorité capacité invalide (>= 0)")
-    volume = _opt_int(annual_volume_commitment)
-    if volume is not None and volume < 0:
-        raise HTTPException(status_code=400, detail="engagement de volume invalide (>= 0)")
     client.is_anchor = bool(is_anchor)
-    client.annual_volume_commitment = volume
-    client.capacity_priority = priority
-    client.co_branding_status = co_branding_status
     await db.flush()
     await activity_record(
         db,
@@ -666,11 +669,7 @@ async def client_anchor_update(
         entity_type="client",
         entity_id=client.id,
         entity_label=client.name,
-        detail=(
-            f"compte-ancre={'oui' if client.is_anchor else 'non'} · "
-            f"volume={volume if volume is not None else '—'} · "
-            f"priorité={priority} · co-branding={co_branding_status}"
-        ),
+        detail=f"client stratégique={'oui' if client.is_anchor else 'non'}",
         ip_address=_client_ip(request),
     )
     return _hx_or_redirect(request, f"/commercial/clients/{client.id}")
@@ -783,7 +782,7 @@ def _opt_int(value: str | None) -> int | None:
         return None
 
 
-def _opt_date(value: str | None, field: str = "date") -> _date | None:
+def _opt_date(value: object, field: str = "date") -> _date | None:
     """Parse une date ISO optionnelle (``YYYY-MM-DD``) ; vide → None.
 
     Une saisie non vide mais invalide lève un 400 (cohérent avec
@@ -791,7 +790,7 @@ def _opt_date(value: str | None, field: str = "date") -> _date | None:
     fenêtre de livraison mal saisie désactiverait sans bruit l'alerte « hors
     délai » qui est le cœur de COM-01.
     """
-    raw = (value or "").strip()
+    raw = value.strip() if isinstance(value, str) else ""
     if not raw:
         return None
     try:
@@ -810,9 +809,15 @@ async def _route_ports(db: AsyncSession) -> list[Port]:
     )
 
 
-def _clean_locode(value: str | None, field: str) -> str | None:
-    """LOCODE UN normalisé (majuscules) ou None ; 400 si format invalide."""
-    code = (value or "").strip().upper()
+def _clean_locode(value: object, field: str) -> str | None:
+    """LOCODE UN normalisé (majuscules) ou None ; 400 si format invalide.
+
+    ``value`` est typé large : appelée hors HTTP (tests, appel direct de la
+    route), la valeur par défaut ``Form(None)`` fuit telle quelle — la traiter
+    comme « non fourni » évite un ``AttributeError`` là où l'intention est de
+    ne rien poser (même patron que ``_resolve_assigned_user``).
+    """
+    code = value.strip().upper() if isinstance(value, str) else ""
     if not code:
         return None
     if len(code) != 5 or not code.isalnum():
@@ -821,6 +826,43 @@ def _clean_locode(value: str | None, field: str) -> str | None:
             detail=f"{field} invalide : LOCODE UN sur 5 caractères (ex. FRLEH)",
         )
     return code
+
+
+def _assert_administrator(user) -> None:
+    """Réserve un geste à l'administrateur.
+
+    Supprimer une grille, une offre ou une estimation **émise** sort du cadre
+    courant du module : ces pièces ont été diffusées et servent de référence à
+    d'autres écrans. La matrice de permissions ne sait pas exprimer « le
+    commercial modifie, seul l'administrateur supprime » (elle ne connaît que
+    C/M/S par module), donc la règle vit ici — comme le cloisonnement de
+    ``support_router``, et pour la même raison.
+    """
+    if not is_administrator(getattr(user, "role", "")):
+        raise HTTPException(
+            status_code=403,
+            detail="Réservé à l'administrateur : supprimer une pièce commerciale émise.",
+        )
+
+
+def _clean_rate_unit(value: object) -> str:
+    """Unité de vente d'une route de grille (« palette » ou « tonne »).
+
+    Une valeur inconnue est **refusée** plutôt que ramenée au défaut : accepter
+    silencieusement ferait vendre à l'emplacement une route saisie au poids.
+
+    ``value`` est typé large à dessein — même raison que ``_resolve_assigned_user``
+    : appelée hors HTTP (tests, appel direct de la route), la valeur par défaut
+    ``Form(...)`` fuit telle quelle, et la traiter comme « non fourni » évite un
+    ``AttributeError`` là où l'intention est clairement de garder le défaut.
+    """
+    unit = (value.strip().lower() if isinstance(value, str) else "") or RATE_UNIT_PALETTE
+    if unit not in RATE_UNITS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unité de vente invalide : attendu {' ou '.join(RATE_UNITS)}.",
+        )
+    return unit
 
 
 def _validate_grid_header(*, client_id: int | None, is_default: bool) -> None:
@@ -839,15 +881,6 @@ def _validate_grid_header(*, client_id: int | None, is_default: bool) -> None:
             status_code=400,
             detail="une grille doit être rattachée à un client, ou marquée « grille par défaut »",
         )
-
-
-async def _vessels(db: AsyncSession) -> list[Vessel]:
-    """Navires actifs (pour le select navire de référence d'une grille)."""
-    return list(
-        (await db.execute(select(Vessel).where(Vessel.is_active.is_(True)).order_by(Vessel.name)))
-        .scalars()
-        .all()
-    )
 
 
 async def _record_offer_revision(
@@ -1002,8 +1035,8 @@ async def grid_new_form(
             "request": request,
             "user": user,
             "clients": clients,
-            "vessels": await _vessels(db),
             "grid": None,
+            "client_type_labels": CLIENT_TYPE_LABELS,
         },
     )
 
@@ -1012,7 +1045,6 @@ async def grid_new_form(
 async def grid_create(
     request: Request,
     client_id: int | None = Form(None),
-    vessel_id: int | None = Form(None),
     is_default: bool = Form(False),
     valid_from: str = Form(...),
     valid_to: str | None = Form(None),
@@ -1031,8 +1063,6 @@ async def grid_create(
         client = await db.get(Client, client_id)
         if client is None:
             raise HTTPException(status_code=404, detail="client introuvable")
-    if vessel_id is not None and await db.get(Vessel, vessel_id) is None:
-        raise HTTPException(status_code=404, detail="navire introuvable")
     ref = await next_grid_reference(db)
     # Brackets de volume au niveau grille selon le type de client (shipper :
     # dégressif complet ; FF : tarif flat). Stockés en JSON sur l'en-tête.
@@ -1040,7 +1070,10 @@ async def grid_create(
     grid = RateGrid(
         reference=ref,
         client_id=client.id if client else None,
-        vessel_id=vessel_id,
+        # Plus de navire de référence sur une grille : l'OPEX jour est le même
+        # pour toute la flotte (sisterships TSC 80), et désigner un navire
+        # laissait croire à une politique tarifaire par coque qui n'existe pas.
+        vessel_id=None,
         is_default=is_default,
         status="draft",
         valid_from=_date.fromisoformat(valid_from),
@@ -1092,8 +1125,8 @@ async def grid_edit_form(
             "request": request,
             "user": user,
             "clients": clients,
-            "vessels": await _vessels(db),
             "grid": grid,
+            "client_type_labels": CLIENT_TYPE_LABELS,
         },
     )
 
@@ -1103,7 +1136,6 @@ async def grid_edit(
     grid_id: int,
     request: Request,
     client_id: int | None = Form(None),
-    vessel_id: int | None = Form(None),
     is_default: bool = Form(False),
     valid_from: str = Form(...),
     valid_to: str | None = Form(None),
@@ -1129,10 +1161,11 @@ async def grid_edit(
     _validate_grid_header(client_id=client_id, is_default=is_default)
     if client_id is not None and await db.get(Client, client_id) is None:
         raise HTTPException(status_code=404, detail="client introuvable")
-    if vessel_id is not None and await db.get(Vessel, vessel_id) is None:
-        raise HTTPException(status_code=404, detail="navire introuvable")
     grid.client_id = client_id
-    grid.vessel_id = vessel_id
+    # Normalisation d'une grille héritée : elle repasse sur l'OPEX de flotte.
+    # Explicite plutôt que silencieux — la valeur ne pouvait plus être effacée
+    # depuis l'écran une fois le sélecteur retiré.
+    grid.vessel_id = None
     grid.is_default = is_default
     grid.valid_from = _date.fromisoformat(valid_from)
     grid.valid_to = _date.fromisoformat(valid_to) if valid_to else None
@@ -1199,6 +1232,8 @@ async def grid_detail(
             "payment_triggers": PAYMENT_TRIGGERS,
             "payment_trigger_labels": PAYMENT_TRIGGER_LABELS,
             "max_payment_terms": MAX_PAYMENT_TERMS,
+            "rate_units": RATE_UNITS,
+            "rate_unit_labels": RATE_UNIT_LABELS,
         },
     )
 
@@ -1279,21 +1314,86 @@ async def grid_set_draft(
     return RedirectResponse(url=f"/commercial/grids/{grid_id}", status_code=303)
 
 
+@router.post("/grids/{grid_id}/delete")
+async def grid_delete(
+    grid_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "S")),
+):
+    """Supprime une grille tarifaire — **administrateur uniquement**.
+
+    Refusée tant qu'une pièce s'y adosse (offre, commande) : ces pièces citent
+    la grille comme référence tarifaire, et la faire disparaître sous elles
+    rendrait leur prix inexplicable. Le refus nomme ce qui bloque et où le
+    traiter, au lieu d'un 500 de contrainte d'intégrité.
+    """
+    _assert_administrator(user)
+    grid = await db.get(RateGrid, grid_id)
+    if grid is None:
+        raise HTTPException(status_code=404)
+    offers = await db.scalar(
+        select(func.count()).select_from(RateOffer).where(RateOffer.grid_id == grid_id)
+    )
+    orders = await db.scalar(
+        select(func.count()).select_from(Order).where(Order.rate_grid_id == grid_id)
+    )
+    blockers = []
+    if offers:
+        blockers.append(f"{offers} offre(s)")
+    if orders:
+        blockers.append(f"{orders} commande(s)")
+    if blockers:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Grille {grid.reference} référencée par " + ", ".join(blockers) + " : "
+                "traitez-les d'abord (annulation, suppression) depuis leur propre écran."
+            ),
+        )
+    reference = grid.reference
+    await db.delete(grid)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid",
+        entity_id=grid_id,
+        entity_label=reference,
+        detail="suppression administrateur",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, "/commercial/grids")
+
+
 async def _recalc_route(db: AsyncSession, grid: RateGrid, route: RateGridLine) -> None:
-    """Recalcule distance/nav_days/opex/base_rate d'une route (OPEX du navire)."""
+    """Recalcule le **coût de revient** d'une route (distance, jours de mer, OPEX).
+
+    Le **prix annoncé** n'est réécrit que s'il est encore une proposition du
+    logiciel (``is_manual`` faux). Un prix confirmé par le commercial est un
+    engagement : un recalcul de coût ne le déplace pas dans son dos (COM-12).
+    """
     leg = await db.get(Leg, route.leg_id) if route.leg_id else None
-    distance, nav_days, opex_daily, base = await compute_route_economics(
+    distance, nav_days, opex_daily, cost = await compute_route_economics(
         db,
         pol_locode=route.pol_locode,
         pod_locode=route.pod_locode,
         vessel_id=grid.vessel_id,
         leg=leg,
+        rate_unit=route.rate_unit,
     )
     route.distance_nm = distance
     route.nav_days = nav_days
     route.opex_daily = opex_daily
-    route.base_rate = base
-    route.is_manual = False
+    route.cost_rate = cost
+    if not route.is_manual:
+        proposal = suggested_price(cost)
+        if proposal is not None:
+            route.base_rate = proposal
 
 
 @router.post("/grids/{grid_id}/recalculate")
@@ -1303,7 +1403,13 @@ async def grid_recalculate(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
-    """Recalcule le base_rate de toutes les routes non-manuelles (OPEX × jours / 978)."""
+    """Recalcule le **coût de revient** de toutes les routes de la grille.
+
+    Le prix annoncé n'est réécrit que sur les routes encore en proposition ; un
+    prix confirmé par le commercial reste intact (COM-12). Le recalcul porte
+    donc désormais sur **toutes** les routes — l'ancienne version sautait les
+    routes manuelles, ce qui laissait leur coût figé et donc leur marge fausse.
+    """
     grid = (
         await db.execute(
             select(RateGrid).options(selectinload(RateGrid.lines)).where(RateGrid.id == grid_id)
@@ -1318,8 +1424,6 @@ async def grid_recalculate(
         )
     recalculated = 0
     for route in grid.lines:
-        if route.is_manual:
-            continue
         await _recalc_route(db, grid, route)
         recalculated += 1
     await db.flush()
@@ -1348,10 +1452,16 @@ async def grid_route_create(
     pod_locode: str = Form(...),
     distance_nm: str | None = Form(None),
     base_rate: str | None = Form(None),
+    rate_unit: str = Form(RATE_UNIT_PALETTE),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
-    """Ajoute une route POL→POD à la grille (distance saisie ou résolue)."""
+    """Ajoute une route POL→POD à la grille.
+
+    Le commercial annonce un **prix** ; à défaut, le logiciel en **propose** un
+    (coût de revient + marge cible) qui restera marqué comme proposition tant
+    qu'il n'aura pas été confirmé (COM-12).
+    """
     grid = await _grid_editable(db, grid_id)
     pol = _clean_locode(pol_locode, "POL")
     pod = _clean_locode(pod_locode, "POD")
@@ -1361,14 +1471,27 @@ async def grid_route_create(
         raise HTTPException(status_code=400, detail="POL et POD doivent être différents.")
     if _match_route(grid, pol, pod) is not None:
         raise HTTPException(status_code=400, detail="Cette route existe déjà sur la grille.")
-    manual_base = _opt_decimal(base_rate)
-    distance, nav_days, opex_daily, base = await compute_route_economics(
+    unit = _clean_rate_unit(rate_unit)
+    announced = _opt_decimal(base_rate)
+    distance, nav_days, opex_daily, cost = await compute_route_economics(
         db,
         pol_locode=pol,
         pod_locode=pod,
         vessel_id=grid.vessel_id,
         distance_nm=_opt_decimal(distance_nm),
+        rate_unit=unit,
     )
+    price = announced if announced is not None else suggested_price(cost)
+    if price is None:
+        # Route au poids sans port en lourd connu : le logiciel ne peut rien
+        # proposer, et deviner un prix serait pire que refuser.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Coût à la tonne non calculable (aucun port en lourd au référentiel flotte) : "
+                "annoncez un prix, ou renseignez le port en lourd dans Admin → Flotte."
+            ),
+        )
     route = RateGridLine(
         grid_id=grid.id,
         pol_locode=pol,
@@ -1376,8 +1499,10 @@ async def grid_route_create(
         distance_nm=distance,
         nav_days=nav_days,
         opex_daily=opex_daily,
-        base_rate=manual_base if manual_base is not None else base,
-        is_manual=manual_base is not None,
+        cost_rate=cost,
+        rate_unit=unit,
+        base_rate=price,
+        is_manual=announced is not None,
     )
     db.add(route)
     await db.flush()
@@ -1405,31 +1530,47 @@ async def grid_route_edit(
     request: Request,
     distance_nm: str | None = Form(None),
     base_rate: str | None = Form(None),
+    rate_unit: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
-    """Édite la distance et/ou le base_rate (surcharge manuelle) d'une route."""
+    """Édite la distance, l'unité de vente et le **prix annoncé** d'une route.
+
+    Un prix saisi vaut confirmation (``is_manual``) ; un champ laissé vide rend
+    la route à la proposition du logiciel (coût + marge cible).
+    """
     grid = await _grid_editable(db, grid_id)
     route = await db.get(RateGridLine, route_id)
     if route is None or route.grid_id != grid.id:
         raise HTTPException(status_code=404)
-    manual_base = _opt_decimal(base_rate)
-    distance, nav_days, opex_daily, base = await compute_route_economics(
+    announced = _opt_decimal(base_rate)
+    unit = (
+        _clean_rate_unit(rate_unit) if isinstance(rate_unit, str) and rate_unit else route.rate_unit
+    )
+    distance, nav_days, opex_daily, cost = await compute_route_economics(
         db,
         pol_locode=route.pol_locode,
         pod_locode=route.pod_locode,
         vessel_id=grid.vessel_id,
         distance_nm=_opt_decimal(distance_nm),
+        rate_unit=unit,
     )
+    price = announced if announced is not None else suggested_price(cost)
+    if price is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Coût à la tonne non calculable (aucun port en lourd au référentiel flotte) : "
+                "annoncez un prix, ou renseignez le port en lourd dans Admin → Flotte."
+            ),
+        )
     route.distance_nm = distance
     route.nav_days = nav_days
     route.opex_daily = opex_daily
-    if manual_base is not None:
-        route.base_rate = manual_base
-        route.is_manual = True
-    else:
-        route.base_rate = base
-        route.is_manual = False
+    route.cost_rate = cost
+    route.rate_unit = unit
+    route.base_rate = price
+    route.is_manual = announced is not None
     await db.flush()
     await activity_record(
         db,
@@ -1454,7 +1595,7 @@ async def grid_route_recalculate(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
-    """Recalcule l'économie OPEX d'une route (efface la surcharge manuelle)."""
+    """Recalcule le coût de revient d'une route (le prix confirmé est préservé)."""
     grid = await _grid_editable(db, grid_id)
     route = await db.get(RateGridLine, route_id)
     if route is None or route.grid_id != grid.id:
@@ -1472,6 +1613,42 @@ async def grid_route_recalculate(
         entity_id=route.id,
         entity_label=f"{grid.reference} · {route.pol_locode}→{route.pod_locode}",
         detail=f"recalculated base_rate={route.base_rate}",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
+
+
+@router.post("/grids/{grid_id}/routes/{route_id}/confirm-price")
+async def grid_route_confirm_price(
+    grid_id: int,
+    route_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Confirme le prix **proposé** par le logiciel, sans le modifier.
+
+    C'est le geste qui manquait à l'inversion : le logiciel propose, le
+    commercial confirme. Tant que la confirmation n'a pas eu lieu, un recalcul
+    de coût peut déplacer le prix ; après, plus jamais.
+    """
+    grid = await _grid_editable(db, grid_id)
+    route = await db.get(RateGridLine, route_id)
+    if route is None or route.grid_id != grid.id:
+        raise HTTPException(status_code=404)
+    route.is_manual = True
+    await db.flush()
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_grid_line",
+        entity_id=route.id,
+        entity_label=f"{grid.reference} · {route.pol_locode}→{route.pod_locode}",
+        detail=f"prix confirmé {route.base_rate} {route.rate_unit_label}",
         ip_address=_client_ip(request),
     )
     return _hx_or_redirect(request, f"/commercial/grids/{grid_id}")
@@ -1915,6 +2092,52 @@ async def estimation_convert(
         ip_address=_client_ip(request),
     )
     return _hx_or_redirect(request, f"/commercial/offers/{offer.id}")
+
+
+@router.post("/devis/{reference}/delete")
+async def devis_delete(
+    reference: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "S")),
+):
+    """Supprime une estimation — **administrateur uniquement**.
+
+    Refusée si elle a été convertie en offre : l'offre cite l'estimation dont
+    elle est issue, et supprimer la source rendrait cette filiation muette. On
+    supprime alors l'offre d'abord, ou on ne supprime rien.
+    """
+    _assert_administrator(user)
+    quote = (
+        await db.execute(select(Quote).where(Quote.reference == reference))
+    ).scalar_one_or_none()
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Estimation introuvable")
+    if quote.converted_offer_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Estimation {quote.reference} convertie en offre : "
+                "supprimez l'offre issue de cette estimation avant l'estimation elle-même."
+            ),
+        )
+    quote_id = quote.id
+    await db.delete(quote)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="quote",
+        entity_id=quote_id,
+        entity_label=reference,
+        detail="suppression administrateur",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, "/commercial/devis")
 
 
 @router.get("/devis/{reference}", response_class=HTMLResponse)
@@ -2513,6 +2736,167 @@ async def offer_create(
     return RedirectResponse(url="/commercial/offers", status_code=303)
 
 
+@router.get("/offers/{offer_id}/edit", response_class=HTMLResponse)
+async def offer_edit_form(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+) -> HTMLResponse:
+    """Correction d'une offre **émise** — administrateur uniquement.
+
+    Le cycle de vie normal d'une offre n'a pas de retour arrière : on l'annule
+    et on en émet une autre. Cet écran est la voie de rattrapage (faute de
+    frappe sur un volume, un objet, une date de validité) ; toute correction est
+    consignée dans l'historique chaîné, donc visible et opposable.
+    """
+    _assert_administrator(user)
+    offer = await db.get(RateOffer, offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404)
+    from app.services.leg_filter import leg_select_options
+
+    clients = list(
+        (await db.execute(select(Client).where(Client.is_active.is_(True)).order_by(Client.name)))
+        .scalars()
+        .all()
+    )
+    return templates.TemplateResponse(
+        "staff/commercial/offer_edit_form.html",
+        {
+            "request": request,
+            "user": user,
+            "offer": offer,
+            "clients": clients,
+            "grids": await _grids_for(db, client_id=offer.client_id),
+            "leg_options": await leg_select_options(db),
+        },
+    )
+
+
+@router.post("/offers/{offer_id}/edit")
+async def offer_edit(
+    offer_id: int,
+    request: Request,
+    title: str = Form(...),
+    grid_id: str | None = Form(None),
+    leg_id: str | None = Form(None),
+    estimated_palettes: str | None = Form(None),
+    proposed_rate_eur: str | None = Form(None),
+    valid_until: str | None = Form(None),
+    notes: str | None = Form(None),
+    comment: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "M")),
+):
+    """Applique la correction et l'inscrit dans l'historique chaîné de l'offre."""
+    _assert_administrator(user)
+    offer = await db.get(RateOffer, offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404)
+    before = snapshot_offer(offer)
+    offer.title = title.strip()
+    offer.grid_id = _opt_int(grid_id)
+    offer.leg_id = _opt_int(leg_id)
+    offer.estimated_palettes = _opt_int(estimated_palettes)
+    offer.proposed_rate_eur = _opt_decimal(proposed_rate_eur)
+    # Le total suit le tarif et le volume : le laisser à sa valeur d'origine
+    # après correction de l'un des deux afficherait deux chiffres incohérents.
+    if offer.proposed_rate_eur is not None and offer.estimated_palettes:
+        offer.total_eur = (offer.proposed_rate_eur * Decimal(offer.estimated_palettes)).quantize(
+            Decimal("0.01")
+        )
+    offer.valid_until = _opt_date(valid_until, "Validité")
+    offer.notes = (notes or "").strip() or None
+    await db.flush()
+    await _record_offer_revision(
+        db,
+        offer,
+        action="corrected",
+        user=user,
+        before=before,
+        comment=(comment or "").strip() or "correction administrateur",
+    )
+    await activity_record(
+        db,
+        action="update",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=offer.id,
+        entity_label=offer.reference,
+        detail="correction administrateur",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, f"/commercial/offers/{offer.id}")
+
+
+@router.post("/offers/{offer_id}/delete")
+async def offer_delete(
+    offer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "S")),
+):
+    """Supprime une offre — **administrateur uniquement**, et jamais une offre
+    qui a produit une pièce opposable.
+
+    Trois verrous, dans l'esprit de l'inventaire de suppression d'un leg : une
+    commande issue de l'offre, une booking note **diffusée**, une estimation
+    convertie. Chacun se lève depuis son propre écran, pas en contournant le
+    contrôle. La suppression emporte l'historique chaîné de l'offre — c'est
+    assumé : cet historique documente une offre qui n'existe plus, et le journal
+    d'activité, lui, conserve la trace de la suppression et de son auteur.
+    """
+    _assert_administrator(user)
+    offer = await db.get(RateOffer, offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404)
+    blockers: list[str] = []
+    order = (
+        await db.execute(select(Order).where(Order.offer_id == offer_id).limit(1))
+    ).scalar_one_or_none()
+    if order is not None:
+        blockers.append(f"commande {order.reference}")
+    note = (
+        await db.execute(select(BookingNote).where(BookingNote.offer_id == offer_id))
+    ).scalar_one_or_none()
+    if note is not None and note.issued_at is not None:
+        blockers.append(f"booking note diffusée {note.reference}")
+    quote = (
+        await db.execute(select(Quote).where(Quote.converted_offer_id == offer_id).limit(1))
+    ).scalar_one_or_none()
+    if quote is not None:
+        blockers.append(f"estimation convertie {quote.reference}")
+    if blockers:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Offre {offer.reference} rattachée à " + ", ".join(blockers) + " : "
+                "traitez ces pièces depuis leur écran avant de supprimer l'offre."
+            ),
+        )
+    reference = offer.reference
+    await db.delete(offer)
+    await db.flush()
+    await activity_record(
+        db,
+        action="delete",
+        user_id=user.id,
+        user_name=user.full_name or user.username,
+        user_role=user.role,
+        module="commercial",
+        entity_type="rate_offer",
+        entity_id=offer_id,
+        entity_label=reference,
+        detail="suppression administrateur",
+        ip_address=_client_ip(request),
+    )
+    return _hx_or_redirect(request, "/commercial/offers")
+
+
 @router.post("/offers/{offer_id}/send")
 async def offer_send(
     offer_id: int,
@@ -2670,13 +3054,20 @@ async def offer_convert_to_order(
     total_eur: str | None = Form(None),
     departure_locode: str | None = Form(None),
     arrival_locode: str | None = Form(None),
+    delivery_date_start: str | None = Form(None),
+    delivery_date_end: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ):
-    """Convertir une offre en commande ferme.
+    """Confirmer une offre : elle devient une commande ferme.
 
     COM-05 — les valeurs (qty/format/prix/route) peuvent être ajustées au
-    moment de la conversion ; à défaut, on reprend celles de l'offre.
+    moment de la confirmation ; à défaut, on reprend celles de l'offre.
+
+    COM-13 — c'est désormais le **seul** chemin de création d'une commande. Il
+    reprend donc les garanties de saisie que portait l'ancien formulaire libre :
+    LOCODE normalisé et validé, fenêtre de livraison validée, total dérivé du
+    tarif et du volume quand il n'est pas fourni.
     """
     offer = await db.get(RateOffer, offer_id)
     if offer is None:
@@ -2693,20 +3084,32 @@ async def offer_convert_to_order(
     offer.accepted_at = offer.validated_at
     await db.flush()
     ref = await next_order_reference(db)
+    palettes = booked_palettes if booked_palettes is not None else (offer.estimated_palettes or 0)
+    rate = _opt_decimal(rate_per_palette_eur) or offer.proposed_rate_eur
+    # Total : la valeur saisie fait foi ; sinon celle de l'offre ; sinon on la
+    # dérive du tarif et du volume. Reprendre le total de l'offre après avoir
+    # corrigé le volume à la confirmation afficherait deux chiffres incohérents.
+    total = _opt_decimal(total_eur)
+    if total is None:
+        total = (
+            (rate * Decimal(palettes)).quantize(Decimal("0.01"))
+            if rate is not None and palettes
+            else offer.total_eur
+        )
     order = Order(
         reference=ref,
         client_id=offer.client_id,
         offer_id=offer.id,
         leg_id=offer.leg_id,
         status="draft",
-        booked_palettes=(
-            booked_palettes if booked_palettes is not None else (offer.estimated_palettes or 0)
-        ),
-        rate_per_palette_eur=_opt_decimal(rate_per_palette_eur) or offer.proposed_rate_eur,
-        total_eur=_opt_decimal(total_eur) or offer.total_eur,
-        palette_format=(palette_format or None),
-        departure_locode=(departure_locode or None),
-        arrival_locode=(arrival_locode or None),
+        booked_palettes=palettes,
+        rate_per_palette_eur=rate,
+        total_eur=total,
+        palette_format=(palette_format or "").strip() or None,
+        departure_locode=_clean_locode(departure_locode, "POL"),
+        arrival_locode=_clean_locode(arrival_locode, "POD"),
+        delivery_date_start=_opt_date(delivery_date_start, "Livraison (début)"),
+        delivery_date_end=_opt_date(delivery_date_end, "Livraison (fin)"),
         rate_grid_id=offer.grid_id,
         pipedrive_deal_id=offer.pipedrive_deal_id,
     )
@@ -2768,24 +3171,52 @@ async def order_new_form(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "M")),
 ) -> HTMLResponse:
-    clients = list(
-        (await db.execute(select(Client).where(Client.is_active.is_(True)).order_by(Client.name)))
+    """Point d'entrée d'une commande : **confirmer une offre** ou **accepter une
+    estimation** (COM-13).
+
+    Une commande n'a plus de saisie libre. Elle naît toujours d'un engagement
+    antérieur — une offre en cours ou validée, une estimation à convertir — pour
+    que son prix, son volume et sa route soient traçables jusqu'à la grille qui
+    les a produits. Un formulaire vierge permettait de créer une commande hors
+    de toute offre : son tarif ne se rattachait alors à rien, et la conversion
+    par grille de l'écran de pilotage comptait une commande sans offre d'origine.
+    """
+    await expire_due_offers(db)
+    offers = list(
+        (
+            await db.execute(
+                select(RateOffer)
+                .options(selectinload(RateOffer.client))
+                .where(
+                    RateOffer.status.in_(("en_cours", "valide")),
+                    ~RateOffer.id.in_(select(Order.offer_id).where(Order.offer_id.is_not(None))),
+                )
+                .order_by(RateOffer.created_at.desc())
+            )
+        )
         .scalars()
         .all()
     )
-    from app.services.leg_filter import leg_select_options
-
-    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
-    leg_options = await leg_select_options(db)
+    quotes = list(
+        (
+            await db.execute(
+                select(Quote)
+                .where(Quote.converted_offer_id.is_(None))
+                .order_by(Quote.created_at.desc())
+                .limit(50)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
-        "staff/commercial/order_form.html",
+        "staff/commercial/order_new.html",
         {
             "request": request,
             "user": user,
-            "clients": clients,
-            "legs": legs,
-            "leg_options": leg_options,
-            "order": None,
+            "offers": offers,
+            "quotes": quotes,
+            "origin_labels": QUOTE_ORIGIN_LABELS,
         },
     )
 
@@ -2843,73 +3274,10 @@ async def rate_lookup(
     )
 
 
-@router.post("/orders")
-async def order_create(
-    request: Request,
-    client_id: int = Form(...),
-    leg_id: int | None = Form(None),
-    booked_palettes: int = Form(0),
-    rate_per_palette_eur: float | None = Form(None),
-    cargo_description: str | None = Form(None),
-    shipper_name: str | None = Form(None),
-    consignee_name: str | None = Form(None),
-    palette_format: str | None = Form(None),
-    weight_per_palette_kg: str | None = Form(None),
-    thc_included: str | None = Form(None),
-    booking_fee: str | None = Form(None),
-    documentation_fee: str | None = Form(None),
-    departure_locode: str | None = Form(None),
-    arrival_locode: str | None = Form(None),
-    delivery_date_start: str | None = Form(None),
-    delivery_date_end: str | None = Form(None),
-    rate_grid_id: str | None = Form(None),
-    rate_grid_line_id: str | None = Form(None),
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("commercial", "M")),
-):
-    if not await db.get(Client, client_id):
-        raise HTTPException(status_code=404, detail="client introuvable")
-    ref = await next_order_reference(db)
-    rate = Decimal(str(rate_per_palette_eur)) if rate_per_palette_eur else None
-    total = (rate * Decimal(booked_palettes)).quantize(Decimal("0.01")) if rate else None
-    order = Order(
-        reference=ref,
-        client_id=client_id,
-        leg_id=leg_id,
-        status="draft",
-        booked_palettes=booked_palettes,
-        rate_per_palette_eur=rate,
-        total_eur=total,
-        cargo_description=cargo_description,
-        shipper_name=shipper_name,
-        consignee_name=consignee_name,
-        palette_format=(palette_format or "").strip() or None,
-        weight_per_palette_kg=_opt_decimal(weight_per_palette_kg),
-        thc_included=thc_included in ("on", "true", "1"),
-        booking_fee=_opt_decimal(booking_fee),
-        documentation_fee=_opt_decimal(documentation_fee),
-        departure_locode=_clean_locode(departure_locode, "POL"),
-        arrival_locode=_clean_locode(arrival_locode, "POD"),
-        delivery_date_start=_opt_date(delivery_date_start, "Livraison (début)"),
-        delivery_date_end=_opt_date(delivery_date_end, "Livraison (fin)"),
-        rate_grid_id=_opt_int(rate_grid_id),
-        rate_grid_line_id=_opt_int(rate_grid_line_id),
-    )
-    db.add(order)
-    await db.flush()
-    await activity_record(
-        db,
-        action="create",
-        user_id=user.id,
-        user_name=user.full_name or user.username,
-        user_role=user.role,
-        module="commercial",
-        entity_type="order",
-        entity_id=order.id,
-        entity_label=ref,
-        ip_address=_client_ip(request),
-    )
-    return RedirectResponse(url=f"/commercial/orders/{order.id}", status_code=303)
+# ⚠️ Il n'existe **pas** de `POST /commercial/orders` : une commande ne se crée
+# pas ex nihilo. Elle naît de la confirmation d'une offre
+# (`POST /commercial/offers/{offer_id}/convert`), elle-même issue d'une grille —
+# ou d'une estimation convertie en offre au préalable. Cf. `order_new_form`.
 
 
 @router.get("/orders/{order_id}", response_class=HTMLResponse)

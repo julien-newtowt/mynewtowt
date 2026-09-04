@@ -36,8 +36,12 @@ from sqlalchemy.orm import selectinload
 from app.models.client_account import ClientAccount
 from app.models.commercial import (
     DEFAULT_BRACKETS_SHIPPER,
+    DEFAULT_TARGET_MARGIN_PCT,
     PALETTE_COEFFICIENTS,
     RATE_OPTION_UNIT_LABELS,
+    RATE_UNIT_PALETTE,
+    RATE_UNIT_SHORT_LABELS,
+    RATE_UNIT_TONNE,
     RateGrid,
     RateGridLine,
     RateGridOption,
@@ -56,6 +60,11 @@ OPEX_PARAMETER_NAME = "opex_daily_sea"
 # cale (référentiel stowage Phoenix). Pilote le taux de base €/palette.
 VESSEL_CAPACITY_PALETTES = Decimal("978")
 TRANSIT_SPEED_KN = Decimal("8")
+# Aucune capacité en tonnes de référence n'est codée en dur : le port en lourd
+# vit dans le référentiel flotte (``Vessel.dwt``, écran Admin → Flotte). Sans
+# lui, le coût de revient d'une route tarifée **à la tonne** n'est pas
+# calculable — et c'est ce que dit ``cost_rate = None``, plutôt qu'un nombre
+# inventé qui se propagerait dans une marge affichée comme un fait.
 HAZARDOUS_SURCHARGE_RATE = Decimal("0.25")
 QUOTE_VALIDITY_DAYS = 30
 
@@ -83,6 +92,9 @@ class GridQuote:
     is_default_grid: bool
     base_rate_eur: Decimal
     bracket_label: str
+    # Unité du ``base_rate_eur`` : « palette » ou « tonne ». Rendre un montant
+    # sans son unité laisserait un €/tonne se lire comme un €/palette.
+    rate_unit: str = RATE_UNIT_PALETTE
     lines: list[QuoteLineDraft] = field(default_factory=list)
     freight_subtotal_eur: Decimal = Decimal("0")
     options_total_eur: Decimal = Decimal("0")
@@ -92,6 +104,11 @@ class GridQuote:
     volume_commitment: int | None = None
     # True si la quantité demandée est sous l'engagement minimum.
     below_commitment: bool = False
+
+    @property
+    def rate_unit_short(self) -> str:
+        """« palette » / « tonne » — suffixe d'affichage du taux de base."""
+        return RATE_UNIT_SHORT_LABELS.get(self.rate_unit, RATE_UNIT_SHORT_LABELS[RATE_UNIT_PALETTE])
 
 
 # ---------------------------------------------------------------------------
@@ -223,9 +240,12 @@ async def ensure_default_grid(
 
     route = _match_route(grid, pol_locode, pod_locode)
     if route is None:
-        distance, nav_days, opex_daily, base = await compute_route_economics(
+        distance, nav_days, opex_daily, cost = await compute_route_economics(
             db, pol_locode=pol_locode, pod_locode=pod_locode, vessel_id=grid.vessel_id
         )
+        # Route matérialisée automatiquement (grille par défaut) : personne n'a
+        # annoncé de prix, donc le prix part **au coût** — marge nulle, ce qui
+        # est la vérité tant qu'un commercial ne l'a pas repris.
         route = RateGridLine(
             grid_id=grid.id,
             pol_locode=pol_locode,
@@ -233,7 +253,9 @@ async def ensure_default_grid(
             distance_nm=distance,
             nav_days=nav_days,
             opex_daily=opex_daily,
-            base_rate=base,
+            base_rate=cost if cost is not None else Decimal("1.00"),
+            cost_rate=cost,
+            rate_unit=RATE_UNIT_PALETTE,
             is_manual=False,
         )
         db.add(route)
@@ -306,15 +328,15 @@ def route_nav_days(distance_nm: Decimal, speed_kn: Decimal | None = None) -> Dec
     )
 
 
-def route_base_rate(
+def route_cost_rate(
     opex_daily: Decimal, nav_days: Decimal, capacity_palettes: Decimal | int | None = None
 ) -> Decimal:
-    """Taux de base €/palette = OPEX jour × jours de mer / capacité (plancher 1 €).
+    """Coût de revient €/palette = OPEX jour × jours de mer / capacité (plancher 1 €).
 
     La capacité est celle du **navire de référence** quand il est connu ; sinon la
-    capacité commerciale de référence. Calculer un prix sur une capacité fictive
-    alors que la disponibilité affichée utilise la capacité réelle du navire
-    faisait diverger le tarif et la cale vendue dès qu'un navire s'écartait de 978.
+    capacité commerciale de référence. Calculer sur une capacité fictive alors
+    que la disponibilité affichée utilise la capacité réelle du navire faisait
+    diverger le coût et la cale vendue dès qu'un navire s'écartait de 978.
     """
     capacity = Decimal(capacity_palettes) if capacity_palettes else VESSEL_CAPACITY_PALETTES
     if capacity <= 0:
@@ -325,6 +347,79 @@ def route_base_rate(
     return max(base, Decimal("1.00"))
 
 
+#: Nom historique de ``route_cost_rate``. La valeur n'a pas changé — c'est le
+#: **sens** qui a été corrigé (COM-12) : elle a toujours été un coût, et non un
+#: prix. L'alias reste pour les appelants existants.
+route_base_rate = route_cost_rate
+
+
+def route_cost_per_tonne(
+    opex_daily: Decimal, nav_days: Decimal, capacity_tonnes: Decimal | None
+) -> Decimal | None:
+    """Coût de revient €/tonne = OPEX jour × jours de mer / port en lourd.
+
+    ``None`` quand le port en lourd du navire de référence est inconnu : sans
+    lui, il n'existe aucune façon honnête de ramener un coût journalier à la
+    tonne. L'écran affiche « — » et renvoie vers Admin → Flotte, exactement
+    comme la distance théorique d'un leg dont un port n'a pas de coordonnées.
+    """
+    if capacity_tonnes is None or Decimal(capacity_tonnes) <= 0:
+        return None
+    cost = (Decimal(opex_daily) * Decimal(nav_days) / Decimal(capacity_tonnes)).quantize(
+        _TWO_PLACES, rounding=ROUND_HALF_UP
+    )
+    return max(cost, Decimal("1.00"))
+
+
+def suggested_price(
+    cost_rate: Decimal | None, target_margin_pct: Decimal | None = None
+) -> Decimal | None:
+    """Prix **proposé** à partir du coût et d'un taux de marge sur prix de vente.
+
+    ``prix = coût / (1 − taux)``. Le logiciel propose, le commercial confirme :
+    rien n'écrit cette valeur en base sans une action explicite de l'opérateur.
+    ``None`` quand le coût est inconnu — proposer un prix sans coût reviendrait
+    à inventer la marge qu'on prétend calculer.
+    """
+    if cost_rate is None:
+        return None
+    rate = Decimal(
+        target_margin_pct if target_margin_pct is not None else DEFAULT_TARGET_MARGIN_PCT
+    )
+    if rate < 0 or rate >= 100:
+        rate = DEFAULT_TARGET_MARGIN_PCT
+    price = (Decimal(cost_rate) / (Decimal("1") - rate / Decimal("100"))).quantize(
+        _TWO_PLACES, rounding=ROUND_HALF_UP
+    )
+    return max(price, Decimal("1.00"))
+
+
+async def _fleet_deadweight_t(db: AsyncSession) -> Decimal | None:
+    """Port en lourd de référence de la flotte : moyenne des navires actifs qui
+    en déclarent un.
+
+    Sert quand aucun navire de référence n'est désigné — ce qui est désormais le
+    cas général, la grille ne portant plus de navire (les OPEX sont les mêmes
+    pour toute la flotte). La flotte étant composée de sisterships TSC 80, la
+    moyenne est exacte ; elle resterait défendable si elle ne l'était plus. Sans
+    aucun port en lourd renseigné, renvoie ``None`` — et le coût à la tonne est
+    déclaré non calculable au lieu d'être approché.
+    """
+    rows = (
+        (
+            await db.execute(
+                select(Vessel.dwt).where(Vessel.is_active.is_(True), Vessel.dwt.is_not(None))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    values = [Decimal(str(v)) for v in rows if v and Decimal(str(v)) > 0]
+    if not values:
+        return None
+    return (sum(values) / Decimal(len(values))).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+
 async def compute_route_economics(
     db: AsyncSession,
     *,
@@ -333,14 +428,22 @@ async def compute_route_economics(
     vessel_id: int | None = None,
     leg: Leg | None = None,
     distance_nm: Decimal | None = None,
-) -> tuple[Decimal, Decimal, Decimal, Decimal]:
-    """(distance_nm, nav_days, opex_daily, base_rate) d'une route.
+    rate_unit: str = RATE_UNIT_PALETTE,
+) -> tuple[Decimal, Decimal, Decimal, Decimal | None]:
+    """(distance_nm, nav_days, opex_daily, **cost_rate**) d'une route.
+
+    Le quatrième terme est le **coût de revient**, dans l'unité ``rate_unit`` —
+    ce n'est pas un prix : le prix est annoncé par le commercial (COM-12).
 
     Distance : valeur fournie (saisie) → leg → ports (haversine/table de repli,
     cf. services.anemos). OPEX jour : navire de la grille → paramètre global →
     repli historique. **Vitesse et capacité** : celles du leg / du navire quand
-    ils sont connus, sinon les valeurs de référence (cf. ``route_nav_days`` et
-    ``route_base_rate``).
+    ils sont connus, sinon les valeurs de référence (cf. ``route_nav_days``,
+    ``route_cost_rate`` et ``route_cost_per_tonne``).
+
+    Le coût vaut ``None`` **uniquement** pour une route à la tonne dont aucun
+    port en lourd n'est connu : à l'emplacement, la capacité de référence (978)
+    est toujours disponible.
     """
     from app.services.anemos import resolve_distance_nm  # import tardif (cycle co2)
 
@@ -362,15 +465,23 @@ async def compute_route_economics(
         Decimal(str(leg.transit_speed_kn)) if leg is not None and leg.transit_speed_kn else None
     )
     capacity: Decimal | None = None
+    deadweight_t: Decimal | None = None
     reference_vessel_id = (leg.vessel_id if leg is not None else None) or vessel_id
     if reference_vessel_id is not None:
         vessel = await db.get(Vessel, reference_vessel_id)
         if vessel is not None and vessel.capacity_palettes:
             capacity = Decimal(vessel.capacity_palettes)
+        if vessel is not None and vessel.dwt:
+            deadweight_t = Decimal(str(vessel.dwt))
 
     nav_days = route_nav_days(distance, speed_kn)
-    base = route_base_rate(opex_daily, nav_days, capacity)
-    return distance, nav_days, opex_daily, base
+    if rate_unit == RATE_UNIT_TONNE:
+        if deadweight_t is None:
+            deadweight_t = await _fleet_deadweight_t(db)
+        cost = route_cost_per_tonne(opex_daily, nav_days, deadweight_t)
+    else:
+        cost = route_cost_rate(opex_daily, nav_days, capacity)
+    return distance, nav_days, opex_daily, cost
 
 
 def _generate_grid_reference(*, default: bool) -> str:
@@ -442,26 +553,52 @@ def compute_grid_quote(
 
     bracket_label, bracket_coeff = bracket_for_quantity(grid, total_palettes)
     effective_base = Decimal(route.base_rate) * Decimal(grid.adjustment_index) * bracket_coeff
+    rate_unit = getattr(route, "rate_unit", RATE_UNIT_PALETTE) or RATE_UNIT_PALETTE
 
     lines: list[QuoteLineDraft] = []
     freight_subtotal = Decimal("0")
-    for fmt, count in items:
-        if count <= 0:
-            continue
-        coef = Decimal(str(PALETTE_COEFFICIENTS.get(fmt, 1.0)))
-        unit_price = (effective_base * coef).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
-        line_total = (unit_price * Decimal(count)).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
-        freight_subtotal += line_total
+    if rate_unit == RATE_UNIT_TONNE:
+        # Route vendue **au poids**. Le tonnage n'est pas déductible du nombre
+        # de palettes : refuser est la seule réponse honnête, sinon le devis
+        # facturerait un poids inventé. Le palier de volume et la capacité de
+        # cale restent comptés en emplacements — c'est bien de la cale qui est
+        # occupée, quelle que soit l'unité de facturation.
+        if tonnage_t is None or Decimal(tonnage_t) <= 0:
+            raise QuotingError(
+                "Cette route est tarifée à la tonne : indiquez le tonnage de la marchandise."
+            )
+        tonnage = Decimal(tonnage_t)
+        unit_price = effective_base.quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
+        line_total = (unit_price * tonnage).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
+        freight_subtotal = line_total
         lines.append(
             QuoteLineDraft(
                 kind="freight",
-                label=f"Fret maritime — palette {fmt}",
-                unit="per_palette",
-                quantity=Decimal(count),
+                label="Fret maritime — au poids",
+                unit="per_tonne",
+                quantity=tonnage,
                 unit_price_eur=unit_price,
                 total_eur=line_total,
             )
         )
+    else:
+        for fmt, count in items:
+            if count <= 0:
+                continue
+            coef = Decimal(str(PALETTE_COEFFICIENTS.get(fmt, 1.0)))
+            unit_price = (effective_base * coef).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
+            line_total = (unit_price * Decimal(count)).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
+            freight_subtotal += line_total
+            lines.append(
+                QuoteLineDraft(
+                    kind="freight",
+                    label=f"Fret maritime — palette {fmt}",
+                    unit="per_palette",
+                    quantity=Decimal(count),
+                    unit_price_eur=unit_price,
+                    total_eur=line_total,
+                )
+            )
 
     if hazardous and freight_subtotal > 0:
         # Taux IMDG : configurable par grille (points de %), sinon défaut global.
@@ -556,6 +693,7 @@ def compute_grid_quote(
         is_default_grid=bool(grid.is_default),
         base_rate_eur=effective_base.quantize(_TWO_PLACES, rounding=ROUND_HALF_UP),
         bracket_label=bracket_label,
+        rate_unit=rate_unit,
         lines=lines,
         freight_subtotal_eur=freight_subtotal.quantize(_TWO_PLACES, rounding=ROUND_HALF_UP),
         options_total_eur=options_total.quantize(_TWO_PLACES, rounding=ROUND_HALF_UP),

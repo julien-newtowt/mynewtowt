@@ -8,27 +8,32 @@
     <h1 class="display">{{ order.reference }}</h1>
     <p class="text-muted">{{ order.booked_palettes }} palettes · {{ order.total_eur|money if order.total_eur else 'tarif non défini' }}</p>
   </div>
-  <div class="flex gap-2">
+  <div class="page-actions">
     <span class="badge badge-{{ order.status }}">{{ order.status_label }}</span>
+    <span class="page-actions-sep" aria-hidden="true"></span>
     {% if order.status == 'draft' %}
-    <form method="post" action="/commercial/orders/{{ order.id }}/confirm" style="display:inline;">
-      <button type="submit" class="btn btn-primary btn-sm">Confirmer</button>
+    <form method="post" action="/commercial/orders/{{ order.id }}/confirm">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-primary"><i data-lucide="check"></i> Confirmer</button>
     </form>
     {% elif order.status == 'confirmed' %}
-    <form method="post" action="/commercial/orders/{{ order.id }}/advance" style="display:inline;">
-      <button type="submit" class="btn btn-primary btn-sm" title="Marquer la commande comme chargée">Marquer chargée →</button>
+    <form method="post" action="/commercial/orders/{{ order.id }}/advance">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-primary" title="Marquer la commande comme chargée"><i data-lucide="package-check"></i> Marquer chargée</button>
     </form>
     {% elif order.status == 'loaded' %}
-    <form method="post" action="/commercial/orders/{{ order.id }}/advance" style="display:inline;">
-      <button type="submit" class="btn btn-primary btn-sm" title="Marquer la commande comme livrée">Marquer livrée →</button>
+    <form method="post" action="/commercial/orders/{{ order.id }}/advance">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-primary" title="Marquer la commande comme livrée"><i data-lucide="truck"></i> Marquer livrée</button>
     </form>
     {% endif %}
-    <form method="post" action="/cargo/packing-lists/from-order/{{ order.id }}" style="display:inline;">
-      <button type="submit" class="btn btn-secondary btn-sm">+ Packing list</button>
+    <a href="/commercial/orders/{{ order.id }}/assign" class="btn btn-secondary" title="Affecter la commande à un leg"><i data-lucide="git-merge"></i> Affecter à un leg</a>
+    <form method="post" action="/cargo/packing-lists/from-order/{{ order.id }}">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-secondary"><i data-lucide="clipboard-list"></i> Packing list</button>
     </form>
-    <a href="/commercial/orders/{{ order.id }}/assign" class="btn btn-secondary btn-sm" title="Affecter la commande à un leg"><i data-lucide="git-merge"></i> Affecter à un leg</a>
-    <a href="/stowage/locate/order/{{ order.id }}" class="btn btn-ghost btn-sm" title="Localiser la cargaison à bord">📍 Localiser à bord</a>
-    <a href="/commercial/orders" class="btn btn-ghost">← Retour</a>
+    <a href="/stowage/locate/order/{{ order.id }}" class="btn btn-secondary" title="Localiser la cargaison à bord"><i data-lucide="map-pin"></i> Localiser à bord</a>
+    <a href="/commercial/orders" class="btn btn-ghost"><i data-lucide="arrow-left"></i> Retour</a>
   </div>
 </header>
 

@@ -5,7 +5,7 @@
 <div class="alert alert-info">
   <div class="flex justify-between items-center" style="border-bottom:none; gap:var(--space-3); flex-wrap:wrap;">
     <div>
-      <strong class="mono">{{ quote.base_rate_eur|money }}</strong> / palette
+      <strong class="mono">{{ quote.base_rate_eur|money }}</strong> / {{ quote.rate_unit_short }}
       <span class="text-muted text-sm">· total {{ quote.total_eur|money }}</span>
     </div>
     <div class="text-sm text-muted">

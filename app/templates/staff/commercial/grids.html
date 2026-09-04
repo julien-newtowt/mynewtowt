@@ -7,12 +7,12 @@
     <span class="kicker">Commercial</span>
     <h1 class="display">Grilles tarifaires</h1>
   </div>
-  <div class="flex gap-2">
-    <form method="post" action="/commercial/grids/backfill-defaults" style="display:inline;">
+  <div class="page-actions">
+    <a href="/commercial/grids/new" class="btn btn-primary"><i data-lucide="plus"></i> Nouvelle grille</a>
+    <form method="post" action="/commercial/grids/backfill-defaults">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-secondary">Générer les grilles par défaut des routes du planning</button>
+      <button type="submit" class="btn btn-secondary" title="Crée une grille par défaut pour chaque route POL→POD du planning"><i data-lucide="wand-2"></i> Générer les grilles par défaut</button>
     </form>
-    <a href="/commercial/grids/new" class="btn btn-primary">+ Nouvelle grille</a>
   </div>
 </header>
 

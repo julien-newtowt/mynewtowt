@@ -12,9 +12,15 @@
       · émis le {{ quote.created_at|datetime("%d/%m/%Y") }}
     </p>
   </div>
-  <div class="flex items-center" style="gap:8px;">
+  <div class="page-actions">
     <a href="/devis/{{ quote.reference }}.pdf" class="btn btn-secondary" target="_blank"><i data-lucide="file-text"></i> PDF</a>
-    <a href="/commercial/devis" class="btn btn-ghost">← Estimations</a>
+    {% if is_admin(user) %}
+    <form method="post" action="/commercial/devis/{{ quote.reference }}/delete">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-danger" data-confirm="Supprimer définitivement l'estimation {{ quote.reference }} ?"><i data-lucide="trash-2"></i> Supprimer</button>
+    </form>
+    {% endif %}
+    <a href="/commercial/devis" class="btn btn-ghost"><i data-lucide="arrow-left"></i> Estimations</a>
   </div>
 </header>
 

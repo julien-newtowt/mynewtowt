@@ -31,8 +31,9 @@ from app.services.quoting import (
     compute_grid_quote,
     compute_route_economics,
     resolve_grid,
-    route_base_rate,
+    route_cost_rate,
     route_nav_days,
+    suggested_price,
 )
 
 # OPEX/j du navire de référence : pilote le base_rate de chaque route.
@@ -113,10 +114,11 @@ async def test_resolve_grid_matches_client_route_per_direction(db):
     assert not g1.is_default
     assert (r1.pol_locode, r1.pod_locode) == ("FRFEC", "BRSSO")
     assert (r2.pol_locode, r2.pod_locode) == ("BRSSO", "FRFEC")
-    # base_rate OPEX distinct par route (distances différentes).
+    # Coût distinct par route (distances différentes) — et prix posé au coût
+    # par le montage de la fixture (aucun commercial n'a annoncé de prix).
     assert r1.base_rate != r2.base_rate
-    assert r1.base_rate == route_base_rate(_OPEX_DAILY, route_nav_days(_ROUTE1[2]))
-    assert r2.base_rate == route_base_rate(_OPEX_DAILY, route_nav_days(_ROUTE2[2]))
+    assert r1.base_rate == route_cost_rate(_OPEX_DAILY, route_nav_days(_ROUTE1[2]))
+    assert r2.base_rate == route_cost_rate(_OPEX_DAILY, route_nav_days(_ROUTE2[2]))
 
 
 @pytest.mark.asyncio
@@ -192,20 +194,22 @@ async def test_quote_distinct_per_route_same_grid(db):
 
 
 @pytest.mark.asyncio
-async def test_global_recalc_recomputes_each_route_base_rate(db, staff_user):
-    """Le recalcul global réécrit le base_rate OPEX (navire) de chaque route.
+async def test_global_recalc_recomputes_each_route_cost(db, staff_user):
+    """Le recalcul global réécrit le **coût de revient** de chaque route.
 
     NB : le recalcul re-résout la distance de chaque route (leg/ports) — on
-    vérifie donc que la **formule OPEX** est appliquée par route avec l'OPEX du
-    navire de la grille, pas une distance figée.
+    vérifie donc que la **formule OPEX** est appliquée par route, pas une
+    distance figée. Depuis COM-12 le prix, lui, n'est réécrit que s'il est
+    encore une proposition (ADR-015).
     """
     from app.routers.commercial_router import grid_recalculate
     from tests.integration.conftest import FakeRequest
 
     grid, _client = await _setup_client_grid(db, status="draft")
-    # On casse les base_rate pour vérifier qu'ils sont bien recalculés.
+    # On casse coût et prix pour vérifier qu'ils sont bien recalculés.
     for line in grid.lines:
         line.base_rate = Decimal("1.00")
+        line.cost_rate = None
     await db.flush()
 
     resp = await grid_recalculate(grid.id, FakeRequest(), db=db, user=staff_user)
@@ -213,34 +217,48 @@ async def test_global_recalc_recomputes_each_route_base_rate(db, staff_user):
     await db.refresh(grid, attribute_names=["lines"])
     assert len(grid.lines) == 2
     for li in grid.lines:
-        # OPEX/j repris du navire de la grille, base_rate = OPEX × jours / 978.
+        # OPEX/j repris de la flotte, coût = OPEX × jours / 978.
         assert li.opex_daily == _OPEX_DAILY
-        assert li.base_rate == route_base_rate(_OPEX_DAILY, li.nav_days)
+        assert li.cost_rate == route_cost_rate(_OPEX_DAILY, li.nav_days)
+        # Prix encore proposé → aligné sur la proposition (coût + marge cible).
+        assert li.base_rate == suggested_price(li.cost_rate)
         assert li.base_rate != Decimal("1.00")  # bien recalculé
 
 
 @pytest.mark.asyncio
-async def test_global_recalc_skips_manual_routes(db, staff_user):
-    """Une route à base_rate manuel n'est pas réécrite par le recalcul OPEX."""
+async def test_global_recalc_spares_a_confirmed_price_but_refreshes_its_cost(db, staff_user):
+    """Un prix **confirmé** n'est pas réécrit — mais son coût, si.
+
+    L'ancienne version sautait entièrement les routes manuelles : leur coût
+    restait figé et leur marge devenait fausse dès que l'OPEX bougeait.
+    """
     from app.routers.commercial_router import grid_recalculate
     from tests.integration.conftest import FakeRequest
 
     grid, _client = await _setup_client_grid(db, status="draft")
-    manual = grid.lines[0]
-    manual.is_manual = True
-    manual.base_rate = Decimal("999.99")
+    confirmed = grid.lines[0]
+    confirmed.is_manual = True
+    confirmed.base_rate = Decimal("999.99")
+    confirmed.cost_rate = None
     await db.flush()
 
     await grid_recalculate(grid.id, FakeRequest(), db=db, user=staff_user)
     await db.refresh(grid, attribute_names=["lines"])
-    kept = next(li for li in grid.lines if li.id == manual.id)
-    assert kept.base_rate == Decimal("999.99")  # figé (surcharge manuelle)
+    kept = next(li for li in grid.lines if li.id == confirmed.id)
+    assert kept.base_rate == Decimal("999.99")  # le prix confirmé est un engagement
     assert kept.is_manual is True
+    assert kept.cost_rate == route_cost_rate(_OPEX_DAILY, kept.nav_days)
+    assert kept.margin_eur is not None  # la marge redevient lisible
 
 
 @pytest.mark.asyncio
-async def test_route_level_recalc_clears_manual_override(db, staff_user):
-    """Le recalcul d'une route efface la surcharge manuelle (retour OPEX)."""
+async def test_route_level_recalc_updates_cost_only(db, staff_user):
+    """Le recalcul d'une route pose son coût sans toucher au prix confirmé.
+
+    Avant COM-12 ce geste effaçait la « surcharge manuelle » et ramenait le
+    tarif à la formule : le commercial perdait son prix d'un clic sur une icône
+    de rafraîchissement.
+    """
     from app.routers.commercial_router import grid_route_recalculate
     from tests.integration.conftest import FakeRequest
 
@@ -248,11 +266,12 @@ async def test_route_level_recalc_clears_manual_override(db, staff_user):
     route = grid.lines[0]
     route.is_manual = True
     route.base_rate = Decimal("999.99")
+    route.cost_rate = None
     await db.flush()
 
     await grid_route_recalculate(grid.id, route.id, FakeRequest(), db=db, user=staff_user)
     await db.refresh(route)
-    assert route.is_manual is False
+    assert route.is_manual is True
+    assert route.base_rate == Decimal("999.99")
     assert route.opex_daily == _OPEX_DAILY
-    assert route.base_rate == route_base_rate(_OPEX_DAILY, route.nav_days)
-    assert route.base_rate != Decimal("999.99")  # surcharge manuelle effacée
+    assert route.cost_rate == route_cost_rate(_OPEX_DAILY, route.nav_days)
