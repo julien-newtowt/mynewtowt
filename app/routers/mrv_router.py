@@ -638,6 +638,7 @@ from app.models.env_report import EnvFieldModification, EnvReport  # noqa: E402
 from app.models.nav_event import NavEvent  # noqa: E402
 from app.permissions import has_permission_effective  # noqa: E402
 from app.services import inter_event_compute as _iec  # noqa: E402
+from app.services import mrv_emission_views as _emv  # noqa: E402
 from app.services import report_generation as _rg  # noqa: E402
 
 _LOT5_REPORT_TYPES: tuple[str, ...] = ("noon", "carbon", "stopover")
@@ -699,6 +700,68 @@ async def mrv_voyages(
     return templates.TemplateResponse(
         "staff/mrv/voyages.html", {"request": request, "user": user, "rows": rows}
     )
+
+
+async def _emissions_screen(
+    request: Request,
+    *,
+    scope: str,
+    vessel_id: int | None,
+    db: AsyncSession,
+    user,
+) -> HTMLResponse:
+    """Écran de restitution des émissions — ``scope`` vaut ``voyage`` ou ``port``.
+
+    Un seul gabarit : les deux vues ont la même structure (filtre navire +
+    tableau par leg) et ne diffèrent que par les colonnes. Les dupliquer aurait
+    fait dériver la seconde à la première évolution de l'une.
+    """
+    vessels = await _emv.vessels_with_summaries(db)
+    if vessel_id is not None and vessel_id not in {v.id for v in vessels}:
+        vessel_id = None  # navire sans donnée : repli silencieux sur la flotte
+    rows = (
+        await _emv.port_emissions(db, vessel_id=vessel_id)
+        if scope == "port"
+        else await _emv.voyage_emissions(db, vessel_id=vessel_id)
+    )
+    return templates.TemplateResponse(
+        "staff/mrv/emissions.html",
+        {
+            "request": request,
+            "user": user,
+            "scope": scope,
+            "rows": rows,
+            "vessels": vessels,
+            "selected_vessel_id": vessel_id,
+        },
+    )
+
+
+@router.get("/emissions/voyages", response_class=HTMLResponse)
+async def mrv_emissions_voyages(
+    request: Request,
+    vessel_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """Émissions du trajet (Departure → Arrival), par voyage."""
+    return await _emissions_screen(request, scope="voyage", vessel_id=vessel_id, db=db, user=user)
+
+
+@router.get("/emissions/port", response_class=HTMLResponse)
+async def mrv_emissions_port(
+    request: Request,
+    vessel_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """Séjour au port suivant l'arrivée — **consommation** seule.
+
+    L'émission correspondante n'est pas calculée par le grand livre (assiette
+    hors mouillage) : l'écran le dit au lieu de laisser une cellule vide, qui se
+    lirait comme un zéro. Cf. ``services.mrv_emission_views``.
+    """
+    return await _emissions_screen(request, scope="port", vessel_id=vessel_id, db=db, user=user)
 
 
 @router.get("/voyages/{leg_id}", response_class=HTMLResponse)
@@ -1482,16 +1545,23 @@ async def _build_dataset_rows(
     return ovdla, ovdbr
 
 
-@router.get("/datasets", response_class=HTMLResponse)
-async def mrv_datasets(
+async def _datasets_screen(
     request: Request,
-    vessel_id: int | None = None,
-    year: int | None = None,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_permission("mrv", "C")),
+    *,
+    vessel_id: int | None,
+    year: int | None,
+    db: AsyncSession,
+    user,
+    kind: str,
 ) -> HTMLResponse:
-    """LOT 10 — écran datasets : sélection navire+période, aperçu OVDLA/OVDBR
-    (statut + exclusions motivées). Génération/téléchargements séparés."""
+    """Rend l'écran datasets, restreint à un seul jeu si ``kind`` le demande.
+
+    ``kind`` vaut ``ovdla``, ``ovdbr`` ou ``both`` — un filtre d'**affichage**,
+    jamais de calcul : les deux jeux sont construits de la même façon (une seule
+    sélection navire+période les alimente tous les deux), et les exclusions
+    motivées de l'un ne dépendent pas de l'autre. Séparer les deux vues répond à
+    une demande de lisibilité du menu, pas à un besoin de calcul distinct.
+    """
     vessels = list((await db.execute(select(Vessel).order_by(Vessel.code))).scalars().all())
     vessel = None
     if vessel_id:
@@ -1530,7 +1600,65 @@ async def mrv_datasets(
             "ovdbr_counts": _counts(ovdbr_rows),
             "ovdla_columns": _mrv_ds.OVDLA_COLUMNS,
             "ovdbr_columns": _mrv_ds.OVDBR_COLUMNS,
+            "dataset_kind": kind,
+            # Titre porté par la route : un `{% set %}` hors bloc dans un
+            # gabarit enfant n'est pas visible depuis `{% block title %}`.
+            "dataset_title_key": {
+                "ovdla": "mrv_ds_ovdla_title",
+                "ovdbr": "mrv_ds_ovdbr_title",
+            }.get(kind, "mrv_ds_title"),
         },
+    )
+
+
+@router.get("/datasets", response_class=HTMLResponse)
+async def mrv_datasets(
+    request: Request,
+    vessel_id: int | None = None,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """LOT 10 — écran datasets : sélection navire+période, aperçu OVDLA/OVDBR
+    (statut + exclusions motivées). Génération/téléchargements séparés.
+
+    Conservée : c'est la cible de redirection de la génération, et la vue
+    combinée reste utile pour vérifier les deux jeux d'un coup. Le menu, lui,
+    pointe désormais les deux vues dédiées.
+    """
+    return await _datasets_screen(
+        request, vessel_id=vessel_id, year=year, db=db, user=user, kind="both"
+    )
+
+
+# ⚠️ Les deux routes littérales ci-dessous doivent rester déclarées AVANT toute
+# route `/datasets/{...}` dynamique (il n'en existe aucune aujourd'hui) — même
+# règle d'ordre que le module vente à bord.
+@router.get("/datasets/ovdla", response_class=HTMLResponse)
+async def mrv_datasets_ovdla(
+    request: Request,
+    vessel_id: int | None = None,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """Vue dédiée OVDLA (+ exports xlsx/csv), pour un menu MRV lisible."""
+    return await _datasets_screen(
+        request, vessel_id=vessel_id, year=year, db=db, user=user, kind="ovdla"
+    )
+
+
+@router.get("/datasets/ovdbr", response_class=HTMLResponse)
+async def mrv_datasets_ovdbr(
+    request: Request,
+    vessel_id: int | None = None,
+    year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("mrv", "C")),
+) -> HTMLResponse:
+    """Vue dédiée OVDBR (+ exports xlsx/csv)."""
+    return await _datasets_screen(
+        request, vessel_id=vessel_id, year=year, db=db, user=user, kind="ovdbr"
     )
 
 

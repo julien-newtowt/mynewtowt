@@ -116,7 +116,43 @@
         </ul>
       </div>
 
-      {% if v_finance or v_kpi or v_planning or v_mrv or v_qhse or v_claims or v_analytics %}
+      {# 🔴 MRV sort de « Performance » et devient son propre module.
+         Raison métier : le MRV est une **obligation réglementaire**, pas un
+         indicateur de performance. Ses 7 entrées à plat noyaient les 6 autres
+         du groupe, et le vocabulaire (OVDLA, FLGO, BDN) n'est lisible que par
+         qui suit le sujet. Les chiffres produits ici alimentent le suivi de
+         performance ; le suivi réglementaire, lui, se tient à part.
+         Les sous-titres ne sont pas des groupes repliables : `sidebar.js`
+         n'ouvre que le groupe le PLUS PROCHE du lien actif (`closest`), donc
+         un groupe imbriqué resterait fermé. #}
+      {% if v_mrv %}
+      <div class="nav-group" data-group="mrv">
+        <button class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-title"><i data-lucide="file-check-2"></i><span>{{ t('s_grp_mrv', lang) }}</span></span>
+          <i data-lucide="chevron-right" class="nav-group-caret"></i>
+        </button>
+        <ul class="nav-group-list">
+          <li><a href="/mrv"><i data-lucide="fuel"></i><span>{{ t('s_nav_mrv', lang) }}</span></a></li>
+
+          <li class="nav-subhead">{{ t('s_sub_mrv_events', lang) }}</li>
+          <li><a href="/mrv/voyages"><i data-lucide="route"></i><span>{{ t('s_nav_mrv_voyages', lang) }}</span></a></li>
+          <li><a href="/mrv/datasets/ovdla"><i data-lucide="file-spreadsheet"></i><span>{{ t('s_nav_mrv_ovdla', lang) }}</span></a></li>
+          <li><a href="/mrv/datasets/ovdbr"><i data-lucide="file-spreadsheet"></i><span>{{ t('s_nav_mrv_ovdbr', lang) }}</span></a></li>
+
+          <li class="nav-subhead">{{ t('s_sub_mrv_emissions', lang) }}</li>
+          <li><a href="/mrv/emissions/port"><i data-lucide="anchor"></i><span>{{ t('s_nav_mrv_em_port', lang) }}</span></a></li>
+          <li><a href="/mrv/emissions/voyages"><i data-lucide="ship"></i><span>{{ t('s_nav_mrv_em_voyage', lang) }}</span></a></li>
+
+          <li class="nav-subhead">{{ t('s_sub_mrv_suivi', lang) }}</li>
+          <li><a href="/mrv/bunkering"><i data-lucide="droplets"></i><span>{{ t('s_nav_mrv_bunkering', lang) }}</span></a></li>
+          <li><a href="/mrv/flgo"><i data-lucide="gauge"></i><span>{{ t('s_nav_mrv_flgo', lang) }}</span></a></li>
+          <li><a href="/mrv/qualite"><i data-lucide="shield-check"></i><span>{{ t('s_nav_mrv_qualite', lang) }}</span></a></li>
+          <li><a href="/mrv/parametres"><i data-lucide="sliders-horizontal"></i><span>{{ t('s_nav_mrv_param', lang) }}</span></a></li>
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if v_finance or v_kpi or v_planning or v_qhse or v_claims or v_analytics %}
       <div class="nav-group" data-group="performance">
         <button class="nav-group-toggle" aria-expanded="false">
           <span class="nav-group-title"><i data-lucide="trending-up"></i><span>{{ t('s_grp_performance', lang) }}</span></span>
@@ -127,13 +163,6 @@
           {% if v_kpi %}<li><a href="/kpi"><i data-lucide="bar-chart-3"></i><span>{{ t('s_nav_kpi', lang) }}</span></a></li>{% endif %}
           {% if v_kpi %}<li><a href="/dashboard-perf"><i data-lucide="leaf"></i><span>{{ t('dashperf_nav_title', lang) }}</span></a></li>{% endif %} <!-- NC-01/NC-04 -->
           {% if v_planning %}<li><a href="/performance/navigation"><i data-lucide="compass"></i><span>{{ t('s_nav_navigation', lang) }}</span></a></li>{% endif %}
-          {% if v_mrv %}<li><a href="/mrv"><i data-lucide="fuel"></i><span>{{ t('s_nav_mrv', lang) }}</span></a></li>{% endif %}
-          {% if v_mrv %}<li><a href="/mrv/voyages"><i data-lucide="route"></i><span>{{ t('s_nav_mrv_voyages', lang) }}</span></a></li>{% endif %}<!-- LOT 5 -->
-          {% if v_mrv %}<li><a href="/mrv/bunkering"><i data-lucide="droplets"></i><span>{{ t('s_nav_mrv_bunkering', lang) }}</span></a></li>{% endif %}
-          {% if v_mrv %}<li><a href="/mrv/parametres"><i data-lucide="sliders-horizontal"></i><span>{{ t('s_nav_mrv_param', lang) }}</span></a></li>{% endif %}
-          <!-- LOT 7 -->{% if v_mrv %}<li><a href="/mrv/flgo"><i data-lucide="gauge"></i><span>{{ t('s_nav_mrv_flgo', lang) }}</span></a></li>{% endif %}
-          <!-- LOT 8 -->{% if v_mrv %}<li><a href="/mrv/qualite"><i data-lucide="shield-check"></i><span>{{ t('s_nav_mrv_qualite', lang) }}</span></a></li>{% endif %}
-          <!-- LOT 10 -->{% if v_mrv %}<li><a href="/mrv/datasets"><i data-lucide="file-spreadsheet"></i><span>{{ t('s_nav_mrv_datasets', lang) }}</span></a></li>{% endif %}
           {% if v_qhse %}<li><a href="/qhse"><i data-lucide="shield-alert"></i><span>{{ t('s_nav_qhse', lang) }}</span></a></li>{% endif %}
           {% if v_claims %}<li><a href="/claims"><i data-lucide="shield-alert"></i><span>{{ t('s_nav_claims', lang) }}</span></a></li>{% endif %}
           {% if v_analytics %}<li><a href="/dashboard/analytics"><i data-lucide="bar-chart"></i><span>{{ t('s_nav_analytics', lang) }}</span></a></li>{% endif %}

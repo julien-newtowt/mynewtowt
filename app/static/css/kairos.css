@@ -711,7 +711,25 @@ tr:hover { background: var(--sable-light); }
   overflow: hidden;
   transition: max-height var(--duration-medium) var(--easing-out);
 }
-.sidebar nav .nav-group.open .nav-group-list { max-height: 600px; }
+/* 720 et non 600 : un groupe long (MRV = 10 liens + 3 sous-titres) se faisait
+   silencieusement tronquer par `overflow: hidden` — les dernières entrées
+   devenaient inatteignables sans aucun signal. La valeur reste un plafond
+   d'animation, jamais une hauteur imposée. */
+.sidebar nav .nav-group.open .nav-group-list { max-height: 720px; }
+
+/* Sous-titre de section à l'intérieur d'un groupe : structure la liste sans
+   introduire un second niveau repliable (cf. commentaire dans _layout.html —
+   `sidebar.js` n'ouvre que le groupe le plus proche du lien actif). */
+.sidebar nav .nav-group-list .nav-subhead {
+  padding: var(--space-3) var(--space-3) var(--space-1) calc(var(--space-3) + 20px);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sable);
+  opacity: 0.7;
+  white-space: nowrap;
+}
 
 .sidebar nav .nav-group-list a {
   display: flex; align-items: center; gap: var(--space-2);
@@ -1085,7 +1103,10 @@ form textarea {
   .app-shell-v2 .sidebar.collapsed .role-label,
   .app-shell-v2 .sidebar.collapsed .user-info-text,
   .app-shell-v2 .sidebar.collapsed .sidebar-clock,
-  .app-shell-v2 .sidebar.collapsed .brand-mark img { display: none; }
+  .app-shell-v2 .sidebar.collapsed .brand-mark img,
+  /* Le sous-titre est un `li` de texte nu, pas un `span` dans un `a` : sans
+     cette règle il resterait visible et déborderait des 64 px. */
+  .app-shell-v2 .sidebar.collapsed .nav-subhead { display: none; }
   .app-shell-v2 .sidebar.collapsed .nav-group-toggle { justify-content: center; }
   .app-shell-v2:has(.sidebar.collapsed) { grid-template-columns: 64px 1fr; }
 }
@@ -1096,7 +1117,8 @@ form textarea {
   .app-shell-v2 .sidebar .nav-group-toggle span:not(.nav-group-caret),
   .app-shell-v2 .sidebar .role-label,
   .app-shell-v2 .sidebar .user-info-text,
-  .app-shell-v2 .sidebar .sidebar-clock { display: none; }
+  .app-shell-v2 .sidebar .sidebar-clock,
+  .app-shell-v2 .sidebar .nav-subhead { display: none; }
   .app-shell-v2 .sidebar.expanded {
     width: 240px; padding-left: var(--space-3); padding-right: var(--space-3);
     box-shadow: var(--shadow-lg); z-index: 200;
@@ -1105,7 +1127,8 @@ form textarea {
   .app-shell-v2 .sidebar.expanded .nav-group-toggle span:not(.nav-group-caret),
   .app-shell-v2 .sidebar.expanded .role-label,
   .app-shell-v2 .sidebar.expanded .user-info-text,
-  .app-shell-v2 .sidebar.expanded .sidebar-clock { display: block; }
+  .app-shell-v2 .sidebar.expanded .sidebar-clock,
+  .app-shell-v2 .sidebar.expanded .nav-subhead { display: block; }
   .app-shell-v2 .sidebar.expanded nav a span { display: inline; }
 }
 @media (max-width: 768px) {

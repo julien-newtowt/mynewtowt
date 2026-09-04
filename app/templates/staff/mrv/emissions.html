@@ -1,0 +1,99 @@
+{% extends "staff/_layout.html" %}
+{% block title %}{{ t('mrv_em_port_title' if scope == 'port' else 'mrv_em_voyage_title', lang) }}{% endblock %}
+{% block content %}
+{% set base = '/mrv/emissions/port' if scope == 'port' else '/mrv/emissions/voyages' %}
+
+<a href="/mrv" class="btn btn-ghost mb-3">{{ t('btn_back', lang) }}</a>
+<header class="mb-4">
+  <span class="kicker">{{ t('mrv_em_kicker', lang) }}</span>
+  <h1 class="display">{{ t('mrv_em_port_title' if scope == 'port' else 'mrv_em_voyage_title', lang) }}</h1>
+  <p class="text-muted">{{ t('mrv_em_port_intro' if scope == 'port' else 'mrv_em_voyage_intro', lang) }}</p>
+</header>
+
+{# Les deux assiettes sont DISJOINTES et ne sont jamais additionnées ici :
+   l'escale d'un voyage peut s'étendre sur la fenêtre du voyage suivant. #}
+<div class="alert alert-info mb-4" role="status">{{ t('mrv_em_scope_notice', lang) }}</div>
+
+{# 🔴 Trou restant, DIT et non laissé à deviner : la conso au mouillage est
+   exclue de l'assiette du trajet et ne reçoit aucune émission. #}
+{% if scope != 'port' %}
+<div class="alert alert-warn mb-4" role="status">{{ t('mrv_em_anchoring_notice', lang) }}</div>
+{% endif %}
+
+{# ───────────────────────────── Filtre navire ───────────────────────────── #}
+<div class="flex items-center gap-2 mb-4" style="flex-wrap:wrap;">
+  <span class="text-muted text-sm">{{ t('mrv_em_filter_vessel', lang) }}</span>
+  <div class="flex gap-1" style="flex-wrap:wrap;">
+    <a href="{{ base }}"
+       class="btn btn-sm {% if not selected_vessel_id %}btn-primary{% else %}btn-ghost{% endif %}">
+      <i data-lucide="layers"></i> {{ t('mrv_em_fleet_all', lang) }}
+    </a>
+    {% for v in vessels %}
+    <a href="{{ base }}?vessel_id={{ v.id }}"
+       class="btn btn-sm {% if selected_vessel_id == v.id %}btn-primary{% else %}btn-ghost{% endif %}">
+      <i data-lucide="ship"></i> {{ v.name }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if not rows %}
+<section class="card"><p class="text-muted">{{ t('mrv_em_empty', lang) }}</p></section>
+{% else %}
+<article class="card">
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{{ t('mrv_em_col_leg', lang) }}</th>
+          <th>{{ t('mrv_em_col_vessel', lang) }}</th>
+          {% if scope == 'port' %}
+          <th>{{ t('mrv_em_col_port', lang) }}</th>
+          <th>{{ t('mrv_em_col_conso_escale', lang) }}</th>
+          <th>{{ t('mrv_em_col_co2', lang) }}</th>
+          <th>{{ t('mrv_em_col_co2eq', lang) }}</th>
+          {% else %}
+          <th>{{ t('mrv_em_col_distance', lang) }}</th>
+          <th>{{ t('mrv_em_col_conso_voyage', lang) }}</th>
+          <th>{{ t('mrv_em_col_co2', lang) }}</th>
+          <th>{{ t('mrv_em_col_co2eq', lang) }}</th>
+          <th>{{ t('mrv_em_col_conso_mouillage', lang) }}</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><a href="/mrv/voyages/{{ r.leg.id }}"><code>{{ r.leg.leg_code or r.leg.id }}</code></a></td>
+          <td>{{ r.vessel.code if r.vessel else '—' }}</td>
+          {% if scope == 'port' %}
+          <td>{% if r.arrival_port %}<span class="port-badge">{{ r.arrival_port.locode }}</span>{% else %}—{% endif %}</td>
+          <td>{{ r.conso_escale_t if r.conso_escale_t is not none else '—' }}</td>
+          {# Un résumé antérieur à la migration 0143 n'a pas encore été
+             recalculé : « non calculé » plutôt qu'un tiret qui se lirait
+             comme un zéro (le résumé est un cache recalculable). #}
+          <td>
+            {% if r.co2_escale_t is not none %}{{ r.co2_escale_t }}
+            {% else %}<span class="pill pill-neutral">{{ t('mrv_em_not_computed', lang) }}</span>{% endif %}
+          </td>
+          <td>{{ r.co2eq_escale_t if r.co2eq_escale_t is not none else '—' }}</td>
+          {% else %}
+          <td>{{ r.distance_nm if r.distance_nm is not none else '—' }}</td>
+          <td>{{ r.conso_voyage_t if r.conso_voyage_t is not none else '—' }}</td>
+          <td>
+            {% if r.has_summary %}{{ r.co2_t if r.co2_t is not none else '—' }}
+            {% else %}<span class="pill pill-neutral">{{ t('mrv_em_not_computed', lang) }}</span>{% endif %}
+          </td>
+          <td>{{ r.co2eq_t if r.co2eq_t is not none else '—' }}</td>
+          {# Conso au mouillage : exclue de l'assiette, sans émission dérivée. #}
+          <td>{{ r.conso_mouillage_t if r.conso_mouillage_t is not none else '—' }}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="small text-muted mt-2">{{ t('mrv_em_units_hint', lang) }}</p>
+</article>
+{% endif %}
+{% endblock %}

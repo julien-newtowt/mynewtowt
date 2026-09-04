@@ -60,6 +60,15 @@ class VoyageEmissionSummary(Base):
     co2eq_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     wtt_co2eq_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
 
+    # ── Émissions du séjour au port (« Port Emissions ») ─────────────────
+    # Assiette DISJOINTE des colonnes ci-dessus : celles-là portent le trajet
+    # (conso hors mouillage), celles-ci l'escale qui SUIT l'arrivée du voyage
+    # (``conso_escale_t``, G12). Les deux ne se recouvrent pas et ne doivent
+    # jamais être additionnées sans le dire : l'escale d'un voyage peut
+    # s'étendre sur la fenêtre du voyage suivant.
+    co2_escale_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    co2eq_escale_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+
     # ── Distance / cargo ─────────────────────────────────────────────────
     distance_nm: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     cargo_bl_t: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
