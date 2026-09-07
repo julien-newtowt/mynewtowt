@@ -355,6 +355,58 @@ compte rattaché à son client par un opérateur** `commercial:M`. Le rattacheme
   non authentifié sans avoir validé POL/POD contre `ports` — une paire inconnue
   matérialise une route dans la grille par défaut.
 
+**Prix annoncé, coût calculé, marge dérivée (COM-12).** Le sens de lecture d'une
+grille va **du prix vers le coût**, jamais l'inverse. `RateGridLine.base_rate`
+est le **prix annoncé par le commercial** ; `cost_rate` est le **coût de
+revient** calculé (`opex_daily × nav_days` / capacité) ; la marge en découle
+(`margin_eur`, `margin_pct` — dérivées, jamais stockées). Le logiciel *propose*
+un prix (`suggested_price`, coût + marge cible), l'opérateur *confirme* :
+`is_manual` ne dit plus « surcharge manuelle » mais **« prix confirmé »**, et un
+recalcul de coût ne déplace jamais un prix confirmé.
+- Une route porte son **unité de vente** (`rate_unit` : `palette` ou `tonne` —
+  le café vert et le cacao se négocient au poids). Un devis sur une route au
+  poids **refuse** de coter sans tonnage déclaré plutôt que d'inventer une
+  équivalence ; le palier de volume et la cale restent comptés en emplacements.
+- `cost_rate` est **nullable à dessein** : `None` = capacité de référence
+  inconnue (aucun port en lourd au référentiel flotte pour une route à la
+  tonne). L'écran affiche « — » et renvoie vers Admin → Flotte — même patron que
+  la distance théorique d'un leg sans coordonnées de port. Ne jamais y
+  substituer un tonnage par défaut : la marge affichée passerait pour un fait.
+- **Une grille ne porte plus de navire de référence** : l'OPEX jour est celui de
+  la flotte (sisterships TSC 80). `RateGrid.vessel_id` subsiste en base pour les
+  grilles antérieures et n'est plus exposé ; toute édition d'en-tête le remet à
+  `NULL`.
+
+**Une commande naît d'un engagement, jamais d'un formulaire vierge (COM-13).**
+Il n'existe **pas** de `POST /commercial/orders`. `GET /commercial/orders/new`
+liste les offres à **confirmer** et les estimations à **accepter** ; la création
+passe par `POST /commercial/offers/{id}/convert`. Une commande saisie hors de
+toute offre portait un tarif que rien ne rattachait à une grille — ni sa marge,
+ni la conversion par grille du tableau de pilotage n'étaient calculables.
+
+**Supprimer une pièce émise est réservé à l'administrateur.** La matrice ne sait
+pas exprimer « le commercial modifie, seul l'administrateur supprime » : la règle
+vit dans `commercial_router._assert_administrator`, comme le cloisonnement de
+`support_router`. Chaque suppression est **refusée tant qu'une pièce s'y
+adosse**, et le refus nomme le bloqueur : une grille référencée par une offre ou
+une commande, une offre portant une commande / une booking note **diffusée** /
+une estimation convertie, une estimation déjà transformée en offre. Corriger une
+offre émise (`/offers/{id}/edit`, administrateur) inscrit la correction dans
+l'historique chaîné — jamais en dehors.
+
+**La fiche client remonte de Pipedrive.** `sync_clients` alimente nom, type,
+adresse, **pays**, et le **contact** (nom / e-mail / téléphone, via
+`pipedrive.list_persons`, un seul appel groupé par organisation). Une valeur
+**absente** du CRM n'écrase jamais une saisie faite dans l'ERP
+(`_apply_crm_field`) — le silence de l'API n'est pas une valeur vide. La
+**création d'un client depuis l'ERP est réservée à l'administrateur** : une
+fiche créée en parallèle n'a pas de `pipedrive_org_id` et devient un doublon que
+la synchronisation ne peut plus rapprocher. `Client.is_anchor` est désormais une
+simple case **« client stratégique »** : les trois attributs qui
+l'accompagnaient (`annual_volume_commitment`, `capacity_priority`,
+`co_branding_status`) n'étaient consommés par **aucune** règle — ni allocation,
+ni facturation, ni tri — et ne sont plus exposés. Les colonnes restent en base.
+
 **Réservation de cale — anti-double-comptage.** Une offre `en_cours`/`valide`
 réserve son volume sur le leg, une commande `confirmed`/`loaded` aussi, un
 booking également. Une même marchandise ne doit être comptée **qu'une fois** :

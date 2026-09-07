@@ -7,15 +7,18 @@
     <span class="kicker">Commercial</span>
     <h1 class="display">Commandes</h1>
   </div>
-  <div class="flex gap-2">
-    {% set status_filter = filter_status or '' %}
-    <a href="/commercial/orders" class="btn btn-{{ 'primary' if not status_filter else 'ghost' }} btn-sm">Toutes</a>
-    {% for s in order_statuses %}
-    <a href="/commercial/orders?status={{ s }}" class="btn btn-{{ 'primary' if status_filter == s else 'ghost' }} btn-sm">{{ order_status_labels.get(s, s) }}</a>
-    {% endfor %}
-    <a href="/commercial/orders/new" class="btn btn-primary">+ Nouvelle commande</a>
+  <div class="page-actions">
+    <a href="/commercial/orders/new" class="btn btn-primary" title="Confirmer une offre ou accepter une estimation"><i data-lucide="file-check"></i> Confirmer une offre</a>
   </div>
 </header>
+
+<nav class="flex gap-2 mb-3 flex-wrap" aria-label="Filtrer par statut">
+  {% set status_filter = filter_status or '' %}
+  <a href="/commercial/orders" class="btn btn-sm {{ 'btn-secondary' if not status_filter else 'btn-ghost' }}">Toutes</a>
+  {% for s in order_statuses %}
+  <a href="/commercial/orders?status={{ s }}" class="btn btn-sm {{ 'btn-secondary' if status_filter == s else 'btn-ghost' }}">{{ order_status_labels.get(s, s) }}</a>
+  {% endfor %}
+</nav>
 
 <article class="card">
   <table class="data-table">

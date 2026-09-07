@@ -18,7 +18,9 @@
     {% else %}
     <span class="pill pill-neutral" title="Renseignez PIPEDRIVE_API_TOKEN dans .env">Pipedrive non configuré</span>
     {% endif %}
-    <a href="#new-client" class="btn btn-primary">+ Nouveau client</a>
+    {% if is_admin(user) %}
+    <a href="#new-client" class="btn btn-primary"><i data-lucide="plus"></i> Nouveau client</a>
+    {% endif %}
   </div>
 </header>
 
@@ -53,7 +55,7 @@
     <tbody>
       {% for c in clients %}
       <tr>
-        <td><a href="/commercial/clients/{{ c.id }}"><strong>{{ c.name }}</strong></a>{% if c.is_anchor %} <span class="pill pill-ok" title="Compte-ancre (priorité : {{ c.capacity_priority_display }})"><i data-lucide="anchor"></i> Ancre</span>{% endif %}{% if c.pipedrive_org_id %} <span class="badge" title="Lié à Pipedrive (org #{{ c.pipedrive_org_id }})">PD</span>{% endif %}{% if c.vat_number %}<br/><small class="text-muted mono">{{ c.vat_number }}</small>{% endif %}</td>
+        <td><a href="/commercial/clients/{{ c.id }}"><strong>{{ c.name }}</strong></a>{% if c.is_anchor %} <span class="pill pill-ok" title="Client stratégique"><i data-lucide="star"></i> Stratégique</span>{% endif %}{% if c.pipedrive_org_id %} <span class="badge" title="Lié à Pipedrive (org #{{ c.pipedrive_org_id }})">PD</span>{% endif %}{% if c.vat_number %}<br/><small class="text-muted mono">{{ c.vat_number }}</small>{% endif %}</td>
         <td><span class="badge badge-{{ 'active' if c.client_type == 'freight_forwarder' else 'draft' }}">{{ client_type_labels.get(c.client_type, c.client_type) }}</span></td>
         <td>{{ c.contact_name or '—' }}<br/><small class="text-muted">{{ c.contact_email or '' }}</small></td>
         <td>{% if c.country %}<span class="port-badge">{{ c.country|flag }} {{ c.country }}</span>{% else %}—{% endif %}</td>
@@ -66,8 +68,18 @@
   </table>
 </article>
 
+{% if is_admin(user) %}
+{# Création réservée à l'administrateur : la base client est alimentée par
+   Pipedrive (le CRM décide qu'une organisation devient cliente), et une saisie
+   parallèle fabriquait des doublons que la synchronisation ne pouvait plus
+   rapprocher — la fiche créée ici n'a pas de `pipedrive_org_id`. Reste ouverte
+   à l'administrateur comme porte de secours. #}
 <article class="card" id="new-client">
-  <h2>Nouveau client</h2>
+  <h2>Nouveau client <span class="pill pill-neutral">administrateur</span></h2>
+  <p class="text-muted text-sm">
+    Les clients remontent normalement de <strong>Pipedrive</strong>. Ne créez une fiche ici que
+    si l'organisation n'existe pas encore au CRM — sinon la synchronisation créera un doublon.
+  </p>
   <form method="post" action="/commercial/clients">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     <div class="grid grid-2 gap-4">
@@ -135,5 +147,6 @@
     <button type="submit" class="btn btn-primary">Créer le client</button>
   </form>
 </article>
+{% endif %}
 
 {% endblock %}

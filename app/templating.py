@@ -233,6 +233,19 @@ from app.permissions import has_any_access as _has_any_access  # noqa: E402
 
 templates.env.globals["can_access"] = _has_any_access
 
+# Certaines actions ne sont pas exprimables dans la matrice (rôle × module ×
+# niveau) : « le commercial modifie, seul l'administrateur supprime une pièce
+# émise ». Les routes concernées appliquent la règle elles-mêmes ; ce helper ne
+# sert qu'à ne pas afficher un bouton qui répondrait 403.
+from app.permissions import is_administrator as _is_administrator  # noqa: E402
+
+
+def _is_admin_role(user: object) -> bool:
+    return _is_administrator(getattr(user, "role", "") or "")
+
+
+templates.env.globals["is_admin"] = _is_admin_role
+
 
 def _leg_phase_label(phase: str | None) -> str:
     """Libellé d'une phase de leg, ou chaîne vide si la phase est inconnue.

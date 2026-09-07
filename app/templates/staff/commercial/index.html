@@ -7,12 +7,13 @@
     <span class="kicker">Commercial</span>
     <h1 class="display">Pilotage commercial</h1>
   </div>
-  <div class="flex gap-2">
+  <div class="page-actions">
     <a href="/commercial/clients" class="btn btn-ghost">Clients</a>
     <a href="/commercial/grids" class="btn btn-ghost">Grilles tarifaires</a>
     <a href="/commercial/devis" class="btn btn-ghost">Estimations</a>
-    <a href="/commercial/offers/new" class="btn btn-secondary">+ Nouvelle offre</a>
-    <a href="/commercial/orders/new" class="btn btn-primary">+ Nouvelle commande</a>
+    <span class="page-actions-sep" aria-hidden="true"></span>
+    <a href="/commercial/offers/new" class="btn btn-secondary"><i data-lucide="plus"></i> Nouvelle offre</a>
+    <a href="/commercial/orders/new" class="btn btn-primary"><i data-lucide="file-check"></i> Confirmer une offre</a>
   </div>
 </header>
 
@@ -138,7 +139,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="text-muted">Aucune commande pour l'instant. <a href="/commercial/orders/new">Créer la première</a></p>
+  <p class="text-muted">Aucune commande pour l'instant. <a href="/commercial/orders/new">Confirmer une offre</a> pour en créer une.</p>
   {% endif %}
 </article>
 

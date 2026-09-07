@@ -11,26 +11,49 @@
       {% if client.assigned_user %}<strong>{{ client.assigned_user.full_name or client.assigned_user.username }}</strong>{% else %}<span title="Les estimations de ce client ne cibleront personne en particulier">non attribué</span>{% endif %}
     </p>
   </div>
-  <div class="flex gap-2 items-center">
+  {# Barre d'actions uniforme (`.page-actions`) : états d'abord, puis actions —
+     même hauteur, même style, un seul bouton principal. #}
+  <div class="page-actions">
     <span class="badge badge-{{ 'active' if client.client_type == 'freight_forwarder' else 'draft' }}">{{ client_type_labels.get(client.client_type, client.client_type) }}</span>
-    {% if client.is_anchor %}<span class="pill pill-ok" title="Compte-ancre — partenaire stratégique"><i data-lucide="anchor"></i> Compte-ancre</span>{% endif %}
+    {% if client.is_anchor %}<span class="pill pill-ok" title="Client stratégique"><i data-lucide="star"></i> Stratégique</span>{% endif %}
     {% if client.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Inactif</span>{% endif %}
-    <a href="/commercial/clients/{{ client.id }}/edit" class="btn btn-secondary btn-sm"><i data-lucide="pencil"></i> Éditer</a>
-    <form method="post" action="/commercial/clients/{{ client.id }}/toggle-active" style="display:inline;">
+    <span class="page-actions-sep" aria-hidden="true"></span>
+    <a href="/commercial/clients/{{ client.id }}/edit" class="btn btn-primary"><i data-lucide="pencil"></i> Modifier</a>
+    <form method="post" action="/commercial/clients/{{ client.id }}/toggle-active">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
       {% if client.is_active %}
-      <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--cuivre);" data-confirm="Désactiver ce client ?">Désactiver</button>
+      <button type="submit" class="btn btn-danger" data-confirm="Désactiver ce client ?"><i data-lucide="user-x"></i> Désactiver</button>
       {% else %}
-      <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--vert);">Réactiver</button>
+      <button type="submit" class="btn btn-secondary"><i data-lucide="user-check"></i> Réactiver</button>
       {% endif %}
     </form>
-    <a href="/commercial/clients" class="btn btn-ghost">← Retour</a>
+    <a href="/commercial/clients" class="btn btn-ghost"><i data-lucide="arrow-left"></i> Retour</a>
   </div>
 </header>
 
 <div class="grid grid-2 gap-4">
   <article class="card">
-    <h2>Fiche client</h2>
+    <div class="section-header">
+      <h2>Fiche client</h2>
+      {% if client.pipedrive_org_id %}
+      <span class="pill pill-info" title="Organisation Pipedrive #{{ client.pipedrive_org_id }}">
+        <i data-lucide="refresh-cw"></i> Pipedrive
+        {%- if client.pipedrive_synced_at %} · {{ client.pipedrive_synced_at|datetime("%d/%m/%Y %H:%M") }}{% endif -%}
+      </span>
+      {% endif %}
+    </div>
+    {# La fiche est alimentée par le CRM : c'est Pipedrive qui décide qu'une
+       organisation est cliente, et c'est là que vit sa donnée de contact. Une
+       valeur absente du CRM n'écrase jamais une saisie faite ici. #}
+    <p class="text-muted text-sm">
+      {% if client.pipedrive_org_id %}
+      Contact, adresse et pays remontent de <strong>Pipedrive</strong> à chaque synchronisation
+      (bouton « Synchroniser Pipedrive » sur la liste des clients). Une correction saisie ici
+      n'est pas écrasée par un champ vide du CRM.
+      {% else %}
+      Fiche non rattachée à Pipedrive — ses coordonnées sont saisies à la main.
+      {% endif %}
+    </p>
     <table class="data-table">
       <tr><td>Contact</td><td>{{ client.contact_name or '—' }}</td></tr>
       <tr><td>E-mail</td><td>{{ client.contact_email or '—' }}</td></tr>
@@ -65,49 +88,26 @@
 </div>
 
 <article class="card mt-4">
-  <h2><i data-lucide="anchor"></i> Compte-ancre</h2>
-  <p class="text-muted text-sm">Partenaire stratégique qui sécurise le remplissage : engagement de volume annuel, priorité d'allocation de cale et co-branding. Ces attributs sont consultés dans le back-office booking (badge de priorité sur la réservation).</p>
-  <table class="data-table mb-3">
-    <tr><td>Statut</td><td>{% if client.is_anchor %}<span class="pill pill-ok">Compte-ancre</span>{% else %}<span class="pill pill-neutral">Client standard</span>{% endif %}</td></tr>
-    <tr><td>Engagement volume annuel</td><td class="mono">{{ client.annual_volume_commitment if client.annual_volume_commitment is not none else '—' }}{% if client.annual_volume_commitment is not none %} palettes/an{% endif %}</td></tr>
-    <tr><td>Priorité capacité</td><td>{{ client.capacity_priority_display }} <span class="text-muted mono">(rang {{ client.capacity_priority }})</span></td></tr>
-    <tr><td>Co-branding</td><td>{{ client.co_branding_label }}</td></tr>
-  </table>
-
-  <h3>Configurer</h3>
+  <h2><i data-lucide="star"></i> Client stratégique</h2>
+  {# Le « compte-ancre » de P11 portait quatre attributs — drapeau, engagement de
+     volume, rang de priorité capacité, co-branding. Trois n'étaient consommés
+     par aucune règle : ni allocation de cale, ni facturation, ni tri ne les
+     lisaient. Une case à cocher suffit à dire ce que l'application sait faire
+     de l'information ; les colonnes restent en base, sans être exposées. #}
+  <p class="text-muted text-sm">
+    Marque un partenaire qui compte pour le remplissage. Le repère est affiché sur la fiche
+    client et sur la réservation, dans le back-office booking. Il ne déclenche aucune règle
+    d'allocation automatique.
+  </p>
   <form method="post" action="/commercial/clients/{{ client.id }}/anchor">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     <div class="field">
       <label style="margin-bottom:0;">
         <input type="checkbox" name="is_anchor" {{ 'checked' if client.is_anchor else '' }} />
-        Marquer comme compte-ancre (partenaire stratégique)
+        Client stratégique
       </label>
     </div>
-    <div class="grid grid-2 gap-4">
-      <div class="field">
-        <label for="annual_volume_commitment">Engagement volume annuel (palettes/an)</label>
-        <input id="annual_volume_commitment" name="annual_volume_commitment" type="number" min="0" step="1"
-               class="mono" value="{{ client.annual_volume_commitment if client.annual_volume_commitment is not none else '' }}"
-               placeholder="ex. 2400" />
-      </div>
-      <div class="field">
-        <label for="capacity_priority">Priorité capacité</label>
-        <select id="capacity_priority" name="capacity_priority">
-          {% for rank, label in capacity_priority_labels.items() %}
-          <option value="{{ rank }}" {{ 'selected' if client.capacity_priority == rank else '' }}>{{ label }} (rang {{ rank }})</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="co_branding_status">Co-branding</label>
-        <select id="co_branding_status" name="co_branding_status">
-          {% for st in co_branding_statuses %}
-          <option value="{{ st }}" {{ 'selected' if client.co_branding_status == st else '' }}>{{ co_branding_status_labels.get(st, st) }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-    <button type="submit" class="btn btn-primary">Enregistrer le compte-ancre</button>
+    <button type="submit" class="btn btn-primary">Enregistrer</button>
   </form>
 </article>
 

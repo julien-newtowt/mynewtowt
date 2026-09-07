@@ -1,5 +1,8 @@
 {% extends "staff/_layout.html" %}
 {% block title %}{{ 'Modifier ' ~ grid.reference if grid else 'Nouvelle grille' }} — {{ brand.nom_court }}{% endblock %}
+{% block head %}{{ super() }}
+<script src="{{ asset('js/searchable-select.js') }}" defer></script>
+{% endblock %}
 {% block content %}
 
 <header class="mb-4">
@@ -18,16 +21,14 @@
     <div class="grid grid-2 gap-4">
       <div class="field">
         <label for="client_id">Client</label>
-        <select id="client_id" name="client_id">
+        {# Liste déroulante filtrable : le portefeuille remonte de Pipedrive et
+           se compte en centaines — dérouler jusqu'à la bonne ligne n'est pas
+           un mode de sélection. Le `<select>` reste le contrôle posté ; le
+           champ de filtre est ajouté par searchable-select.js. #}
+        <select id="client_id" name="client_id" data-searchable
+                data-searchable-placeholder="Rechercher un client (nom)…">
           <option value="">— Aucun (grille par défaut) —</option>
-          {% for c in clients %}<option value="{{ c.id }}" {% if grid and grid.client_id == c.id %}selected{% endif %}>{{ c.name }} ({{ c.client_type }})</option>{% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="vessel_id">Navire de référence <small class="text-muted">— lookup OPEX au recalcul</small></label>
-        <select id="vessel_id" name="vessel_id">
-          <option value="">— Paramètre global OPEX —</option>
-          {% for v in vessels %}<option value="{{ v.id }}" {% if grid and grid.vessel_id == v.id %}selected{% endif %}>{{ v.name }} ({{ v.code }})</option>{% endfor %}
+          {% for c in clients %}<option value="{{ c.id }}" {% if grid and grid.client_id == c.id %}selected{% endif %}>{{ c.name }} ({{ client_type_labels.get(c.client_type, c.client_type) if client_type_labels else c.client_type }})</option>{% endfor %}
         </select>
       </div>
       <div class="field">
@@ -71,10 +72,11 @@
       </div>
     </div>
     <div class="alert alert-info mb-3">
-      Une grille <strong>client</strong> couvre une ou plusieurs <strong>routes</strong> (lignes POL→POD), chacune avec sa distance et son tarif de base OPEX.
+      Une grille <strong>client</strong> couvre une ou plusieurs <strong>routes</strong> (lignes POL→POD), chacune avec son coût de revient et son prix annoncé.
       Une grille <strong>par défaut</strong> (sans client) sert de repli pour les demandeurs inconnus.
+      <br/>Le <strong>coût jour d'exploitation (OPEX)</strong> est celui de la flotte : il ne se choisit pas par navire.
     </div>
-    <div class="flex gap-2">
+    <div class="page-actions" style="justify-content:flex-start;">
       <button type="submit" class="btn btn-primary">{{ 'Enregistrer' if grid else 'Créer la grille' }}</button>
       <a href="{{ '/commercial/grids/' ~ grid.id if grid else '/commercial/grids' }}" class="btn btn-ghost">Annuler</a>
     </div>
