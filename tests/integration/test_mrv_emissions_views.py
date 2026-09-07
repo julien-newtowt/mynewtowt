@@ -325,6 +325,23 @@ async def test_extended_total_is_none_when_the_voyage_figure_is_missing(db):
     assert rows["1BFRBR6"].co2_with_anchoring_t == Decimal("10.000")
 
 
+async def test_the_voyage_view_ignores_legs_that_have_not_departed(db):
+    """🔴 Même famine que la vue escale, corrigée d'un seul côté au départ.
+
+    Sans borne temporelle, une séquence planifiée à l'avance remplissait les
+    40 places de voyages FUTURS — « non calculé » partout, et tous les voyages
+    porteurs de vraies émissions repoussés hors de la page. Une restitution ne
+    regarde que le passé.
+    """
+    vessel, _other, ports = await _fleet(db)
+    for i in range(45):
+        await _leg(db, vessel, ports, code=f"FUT{i:03d}", etd=T0 + timedelta(days=100 + i))
+    await _leg(db, vessel, ports, code="PARTI", etd=T0, summary={"co2_t": Decimal("9")})
+
+    rows = await emv.voyage_emissions(db, now=T0 + timedelta(days=1))
+    assert [r.leg.leg_code for r in rows] == ["PARTI"]
+
+
 async def test_the_cap_does_not_hide_arrived_legs_behind_future_ones(db):
     """🔴 Le plafond de 40 était appliqué AVANT le filtre d'escale.
 
@@ -354,7 +371,7 @@ async def test_the_cap_does_not_hide_arrived_legs_behind_future_ones(db):
         summary={"conso_escale_t": Decimal("1.2"), "co2_escale_t": Decimal("3.8")},
     )
 
-    rows = await emv.port_emissions(db)
+    rows = await emv.port_emissions(db, now=T0 + timedelta(days=1))
     assert [r.leg.leg_code for r in rows] == ["ARRIVE"]
 
 

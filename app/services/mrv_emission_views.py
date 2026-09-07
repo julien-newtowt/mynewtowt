@@ -41,6 +41,7 @@ hors MRV. Les additionner par défaut gonflerait un chiffre réglementaire.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -132,11 +133,26 @@ class LegEmissionRow:
 
 
 async def _rows(
-    db: AsyncSession, *, vessel_id: int | None, only_with_escale: bool
+    db: AsyncSession,
+    *,
+    vessel_id: int | None,
+    only_with_escale: bool,
+    now: datetime | None = None,
 ) -> list[LegEmissionRow]:
     stmt = select(Leg)
     if vessel_id is not None:
         stmt = stmt.where(Leg.vessel_id == vessel_id)
+
+    # 🔴 Une restitution ne regarde que le passé.
+    #
+    # Les legs sont triés par ETD décroissant : sans cette borne, une séquence
+    # planifiée à l'avance remplissait les 40 places avec des voyages FUTURS —
+    # « non calculé » partout, et tous les voyages porteurs de vraies émissions
+    # repoussés hors de la page. Ce défaut avait d'abord été corrigé pour la
+    # seule vue escale ; il valait aussi pour la vue voyage, qui n'a rien à
+    # restituer d'un voyage pas encore parti.
+    stmt = stmt.where(Leg.etd <= (now or datetime.now(UTC)))
+
     if only_with_escale:
         # 🔴 Le filtre doit précéder le PLAFOND, pas le suivre.
         #
@@ -193,13 +209,15 @@ async def _rows(
 
 
 async def voyage_emissions(
-    db: AsyncSession, *, vessel_id: int | None = None
+    db: AsyncSession, *, vessel_id: int | None = None, now: datetime | None = None
 ) -> list[LegEmissionRow]:
     """Émissions du trajet (Departure → Arrival) par voyage."""
-    return await _rows(db, vessel_id=vessel_id, only_with_escale=False)
+    return await _rows(db, vessel_id=vessel_id, only_with_escale=False, now=now)
 
 
-async def port_emissions(db: AsyncSession, *, vessel_id: int | None = None) -> list[LegEmissionRow]:
+async def port_emissions(
+    db: AsyncSession, *, vessel_id: int | None = None, now: datetime | None = None
+) -> list[LegEmissionRow]:
     """Séjour au port qui suit l'arrivée de chaque voyage.
 
     Consommation **et** émission d'escale, toutes deux issues du grand livre
@@ -209,7 +227,7 @@ async def port_emissions(db: AsyncSession, *, vessel_id: int | None = None) -> l
     Ne renvoie que les escales réellement closes : ``conso_escale_t`` non nul,
     ce qui suppose le voyage arrivé **et** le départ suivant finalisé (G12).
     """
-    return await _rows(db, vessel_id=vessel_id, only_with_escale=True)
+    return await _rows(db, vessel_id=vessel_id, only_with_escale=True, now=now)
 
 
 async def vessels_with_summaries(db: AsyncSession) -> list[Vessel]:

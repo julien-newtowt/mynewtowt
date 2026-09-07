@@ -339,12 +339,23 @@ async def _refresh_emission_summary(db: AsyncSession, event: NavEvent) -> None:
     try:
         from app.services.emission_ledger import legs_affected_by_event, refresh_summary
 
-        for leg_id in await legs_affected_by_event(db, event):
+        affected = await legs_affected_by_event(db, event)
+    except Exception:  # pragma: no cover — cache best-effort, jamais bloquant
+        return
+
+    # 🔴 Un `try` PAR VOYAGE, pas autour de la boucle.
+    #
+    # Le leg de l'événement est rafraîchi en premier : un échec sur celui-là
+    # aurait sauté le voyage précédent et laissé son `conso_escale_t` à `NULL`
+    # — soit exactement le défaut que cette fonction existe pour corriger, et
+    # sans aucun signal. Chaque voyage est donc isolé.
+    for leg_id in affected:
+        try:
             leg = await db.get(Leg, leg_id)
             if leg is not None:
                 await refresh_summary(db, leg)
-    except Exception:  # pragma: no cover — cache best-effort, jamais bloquant
-        pass
+        except Exception:  # pragma: no cover — cache best-effort, jamais bloquant
+            continue
 
 
 # ════════════════════════════════════════════════════════════ Préremplissage position

@@ -536,8 +536,24 @@ async def test_suspected_test_is_listed_first_because_it_needs_a_decision(db):
     assert quality.issue_counts["suspected_test"] == 1
 
 
-async def test_closed_before_issued_is_detected(db):
+async def test_closed_before_issued_is_not_a_motif_because_it_is_unreachable(db):
+    """🔴 Un motif inatteignable est pire qu'un motif absent.
+
+    ``qhse_ingestion._import_row`` **quarantaine** la ligne avant insertion
+    quand ``ClosedDate < IssuedDate`` (RQ01), et le module n'a aucune autre voie
+    d'écriture. Une tuile à 0 en permanence aurait déclaré le registre sain sur
+    un axe qu'il ne peut pas mesurer — la fausse conformité refusée ailleurs
+    (Q2, responsable non identifié).
+
+    Ces lignes vivent dans ``activity_logs`` (compte rendu d'import), pas ici.
+    """
+    from app.services.qhse_kpi import QUALITY_ISSUES
+
+    assert "closed_before_issued" not in QUALITY_ISSUES
+
     anemos, _ = await _seed_vessels(db)
+    # Même en forçant l'incohérence en base (ce que l'ingestion refuse), le
+    # calcul ne fabrique pas de motif : il n'existe plus.
     await _report(
         db,
         anemos.id,
@@ -547,8 +563,8 @@ async def test_closed_before_issued_is_detected(db):
     )
 
     quality = await build_quality_report(db)
-    assert "closed_before_issued" in quality.items[0].issues
-    assert quality.issue_counts["closed_before_issued"] == 1
+    assert "closed_before_issued" not in quality.issue_counts
+    assert all("closed_before_issued" not in it.issues for it in quality.items)
 
 
 async def test_quality_report_respects_the_vessel_filter(db):

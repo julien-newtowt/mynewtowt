@@ -530,9 +530,22 @@ _QUALITY_LIMIT = 200
 #: Anomalies qui se corrigent **signalement par signalement**, dans l'ordre
 #: d'affichage. ``suspected_test`` d'abord : c'est le seul qui demande une
 #: **décision** (garder ou écarter), les autres demandent une saisie manquante.
+#:
+#: 🔴 **Un motif inatteignable est pire qu'un motif absent.** « Clôture avant
+#: émission » a été retiré de cette liste : ``qhse_ingestion._import_row``
+#: **quarantaine** la ligne avant insertion quand ``ClosedDate < IssuedDate``
+#: (RQ01), et le module n'a aucune autre voie d'écriture — un signalement du
+#: registre ne peut donc pas porter cette incohérence. La tuile restait à 0 en
+#: permanence et déclarait le registre sain sur un axe qu'il ne peut pas
+#: mesurer : même fausse conformité que celle refusée pour Q2 et pour le
+#: responsable non identifié.
+#:
+#: Ces lignes ne sont pas perdues pour autant : elles sont tracées dans
+#: ``activity_logs`` par le compte rendu d'import (« LIGNES NON IMPORTÉES »).
+#: C'est là qu'il faut aller les chercher — pas dans un registre où elles ne
+#: sont jamais entrées.
 QUALITY_ISSUES: tuple[str, ...] = (
     "suspected_test",
-    "closed_before_issued",
     "missing_root_cause",
     "missing_corrective_description",
 )
@@ -640,8 +653,6 @@ async def build_quality_report(db: AsyncSession, *, vessel_id: int | None = None
 
         if r.report_source == "suspected_test":
             issues.append("suspected_test")
-        if r.closed_date is not None and ensure_utc(r.closed_date) < ensure_utc(r.issued_date):
-            issues.append("closed_before_issued")
         if not (evaluation and evaluation.root_cause_text):
             issues.append("missing_root_cause")
         if not (action and action.description):

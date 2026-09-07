@@ -339,20 +339,28 @@ async def _previous_arrival_event(
     rend obsolète (cf. :func:`legs_affected_by_event`).
     """
     before_naive = _naive_utc(before)
-    rows = await db.execute(
-        select(NavEvent)
-        .where(
-            NavEvent.vessel_id == vessel_id,
-            NavEvent.event_type == "arrival",
-            NavEvent.status.in_(iec.FINALIZED_STATUSES),
+    if before_naive is None:
+        return None
+    # Borne temporelle et ``LIMIT`` en SQL : ce chemin est appelé à chaque
+    # déclaration de départ depuis le bord, il ne doit pas rapatrier tout
+    # l'historique d'arrivées du navire pour n'en lire qu'une ligne.
+    return (
+        (
+            await db.execute(
+                select(NavEvent)
+                .where(
+                    NavEvent.vessel_id == vessel_id,
+                    NavEvent.event_type == "arrival",
+                    NavEvent.status.in_(iec.FINALIZED_STATUSES),
+                    NavEvent.datetime_utc < before_naive,
+                )
+                .order_by(NavEvent.datetime_utc.desc())
+                .limit(1)
+            )
         )
-        .order_by(NavEvent.datetime_utc.desc())
+        .scalars()
+        .first()
     )
-    for ev in rows.scalars().all():
-        dt = _naive_utc(ev.datetime_utc)
-        if dt is not None and before_naive is not None and dt < before_naive:
-            return ev
-    return None
 
 
 async def legs_affected_by_event(db: AsyncSession, event: NavEvent) -> list[int]:
