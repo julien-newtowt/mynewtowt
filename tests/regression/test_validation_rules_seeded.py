@@ -37,7 +37,7 @@ SEED_CONSTANTS = {"RULE_SEED", "THRESHOLD_SEED", "DASHBOARD_SEED"}
 GRANDFATHERED = {"20260709_0097_mrv_validation_socle.py"}
 
 
-CATCHUP_MIGRATION = "20260904_0142_qhse_validation_rules_seed.py"
+CATCHUP_MIGRATION = "20260907_0143_qhse_validation_rules_seed.py"
 
 
 def _frozen_constant(module_name: str, constant: str) -> list[dict]:
@@ -175,7 +175,7 @@ def test_rule_catalogue_is_pinned_so_additions_cannot_skip_a_migration() -> None
 
     Si ce test échoue, ce n'est pas lui qu'il faut corriger en premier :
     1. écrire une migration additive **idempotente** semant les règles
-       ajoutées, valeurs **en dur** (cf. ``20260904_0142``) ;
+       ajoutées, valeurs **en dur** (cf. ``20260907_0143``) ;
     2. puis seulement mettre à jour l'empreinte ci-dessous.
     """
     assert tuple(sorted(rid for (rid, *_rest) in RULE_SEED)) == PINNED_RULE_IDS

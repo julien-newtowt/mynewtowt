@@ -77,7 +77,7 @@ deux `bloquant` sont de scope `qhse`, où elles n'empêchent pas l'import) : les
 semer ne peut donc bloquer aucun workflow, seulement rétablir des contrôles
 inopérants.
 
-**Correctif.** Migration `20260904_0142` (instantané figé, idempotente) +
+**Correctif.** Migration `20260907_0143` (instantané figé, idempotente) +
 bannière/bouton d'init affichés dès que le référentiel est *incomplet* et plus
 seulement vide (`/mrv/parametres` — réparation possible sans déploiement) +
 deux sentinelles (`tests/regression/test_validation_rules_seeded.py`).
@@ -96,7 +96,7 @@ dans `activity_logs` sous `mrv_validation_seed`. Vérifications :
   fin de classeur), 4 marquées « test présumé » — première exécution réelle de
   `RQ02` sur des données de production.
 
-La migration `20260904_0142` reste nécessaire : elle rend le correctif permanent
+La migration `20260907_0143` reste nécessaire : elle rend le correctif permanent
 pour toute base reconstruite ou restaurée, et sera sans effet au déploiement
 (elle n'insère que l'absent).
 

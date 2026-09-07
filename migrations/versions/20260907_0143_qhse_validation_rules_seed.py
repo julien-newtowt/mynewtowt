@@ -51,9 +51,25 @@ Idempotente : n'insère que l'absent, sur la clé naturelle (``rule_id`` pour le
 règles, ``(rule_id, vessel_id NULL, parameter_name)`` pour les seuils).
 Rejouable sans effet sur une base déjà correcte.
 
-Revision ID: 20260904_0142
-Revises: 20260903_0141
-Create Date: 2026-09-04
+Renumérotée le 2026-09-07 (``20260904_0142`` → ``20260907_0143``)
+-----------------------------------------------------------------
+Cette migration s'appelait d'abord ``20260904_0142`` et se chaînait sur
+``20260903_0141``. Pendant les trois jours d'attente de revue, `main` a reçu la
+migration commerciale ``20260904_0141`` puis une **révision de fusion**
+``20260904_0142_merge_heads_qhse_x_commercial`` — soit **le même identifiant de
+révision** que celui pris ici, pour un contenu différent.
+
+Fusionner en l'état aurait cassé la chaîne Alembic (deux révisions distinctes
+revendiquant ``20260904_0142``). Et la CI ne pouvait pas le voir : chaque
+branche prise isolément a bien une tête unique, la collision n'existe qu'au
+moment de la fusion.
+
+D'où la renumérotation, chaînée sur la tête réelle de `main`. C'est un **commit
+vers l'avant**, pas une réécriture d'historique — aucun force push.
+
+Revision ID: 20260907_0143
+Revises: 20260904_0142
+Create Date: 2026-09-04 (renumérotée le 2026-09-07)
 """
 
 from __future__ import annotations
@@ -64,8 +80,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "20260904_0142"
-down_revision = "20260903_0141"
+revision = "20260907_0143"
+down_revision = "20260904_0142"
 branch_labels = None
 depends_on = None
 
