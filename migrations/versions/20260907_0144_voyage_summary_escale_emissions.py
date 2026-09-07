@@ -17,15 +17,24 @@ trajet ; ``co2_escale_t`` porte l'escale qui **suit** l'arrivée du voyage — e
 cette escale peut s'étendre sur la fenêtre du voyage suivant. Tout agrégat qui
 voudrait un total « trajet + escale » doit le dire explicitement.
 
-⚠️ **Reste non calculé** : la consommation au **mouillage**
-(``conso_mouillage_t``) est exclue de l'assiette du trajet et ne reçoit toujours
-aucune émission. C'est le cas symétrique de celui corrigé ici ; il n'a pas été
-tranché et reste au backlog.
+Le cas du **mouillage** est traité par la migration suivante
+(``20260907_0145``) : constat métier du 2026-09-04, il est **hors périmètre
+MRV**, et son émission est calculée pour l'analyse interne seulement.
 
-Le résumé étant un **cache recalculable** (``refresh_summary``), les colonnes
-sont laissées à ``NULL`` : elles se remplissent au prochain recalcul (hook de
-finalisation/validation d'événement, ou à la demande). Aucun backfill n'est
-tenté ici — une migration ne doit pas dépendre du code de calcul du moment.
+Le résumé étant un **cache recalculable** (``refresh_summary``), ces colonnes
+naissent à ``NULL`` : aucun backfill n'est tenté ici — une migration ne doit pas
+dépendre du code de calcul du moment. Elles se remplissent ensuite de deux
+façons, et de deux seulement :
+
+1. au prochain recalcul déclenché par le hook de finalisation/validation d'un
+   événement ;
+2. 🔴 pour les voyages **antérieurs au déploiement**, par la reprise à froid
+   ``python -m scripts.backfill_voyage_emission_summaries --missing-only --yes``.
+
+Le point 2 n'est pas optionnel : sans lui, ces voyages garderaient ``NULL``
+pour toujours (aucun événement nouveau ne les concerne) et
+``/mrv/emissions/port`` afficherait « non calculé » sur chacune de leurs
+lignes.
 
 Renumérotée le 2026-09-07 (``20260904_0143`` → ``20260907_0144``)
 -----------------------------------------------------------------

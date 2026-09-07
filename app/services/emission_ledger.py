@@ -797,8 +797,20 @@ async def refresh_summary(db: AsyncSession, leg: Leg) -> VoyageEmissionSummary:
 
     Idempotent : deux appels laissent une seule ligne, à jour. Recalculé depuis
     la source de vérité (events sinon noon legacy) — le summary reste un **cache**
-    (jamais lu comme référence de calcul). Appelé par le hook
-    ``event_capture`` (finalisation/validation) et à la demande.
+    (jamais lu comme référence de calcul).
+
+    Deux appelants, et deux seulement :
+
+    1. le hook ``event_capture`` (finalisation/validation d'un événement, via
+       ``legs_affected_by_event``) ;
+    2. le script de reprise à froid
+       ``scripts.backfill_voyage_emission_summaries``.
+
+    Le second n'est pas un confort : une colonne ajoutée par migration naît à
+    ``NULL`` sans backfill, donc sans reprise les voyages antérieurs au
+    déploiement gardent ``NULL`` **pour toujours** — aucun événement nouveau ne
+    les concerne. Le docstring d'origine annonçait un recalcul « à la demande »
+    qui n'existait pas : ce chemin-là est désormais réel et nommé.
     """
     result = await compute_for_leg(db, leg)
 

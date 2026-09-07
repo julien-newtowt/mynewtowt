@@ -342,6 +342,31 @@ async def test_the_voyage_view_ignores_legs_that_have_not_departed(db):
     assert [r.leg.leg_code for r in rows] == ["PARTI"]
 
 
+async def test_a_leg_that_sailed_early_is_not_hidden_until_its_planned_etd(db):
+    """🔴 La borne se mesure sur le départ EFFECTIF, pas sur l'ETD planifiée.
+
+    ``declare_departure`` ne réécrit pas l'ETD : un voyage parti le 02/09 avec
+    une ETD au 01/10 aurait été exclu des deux écrans jusqu'en octobre, malgré
+    des émissions réelles. C'est la convention ``planning.effective_etd`` du
+    projet — tout calcul « où en est le voyage » lui passe par là.
+    """
+    vessel, _other, ports = await _fleet(db)
+    leg = await _leg(
+        db,
+        vessel,
+        ports,
+        code="PARTI-TOT",
+        etd=T0 + timedelta(days=30),  # ETD planifiée LOIN dans le futur
+        summary={"co2_t": Decimal("7"), "conso_escale_t": Decimal("1.1")},
+    )
+    leg.atd = T0 - timedelta(days=2)  # mais il est parti il y a deux jours
+    await db.flush()
+
+    now = T0
+    assert [r.leg.leg_code for r in await emv.voyage_emissions(db, now=now)] == ["PARTI-TOT"]
+    assert [r.leg.leg_code for r in await emv.port_emissions(db, now=now)] == ["PARTI-TOT"]
+
+
 async def test_the_cap_does_not_hide_arrived_legs_behind_future_ones(db):
     """🔴 Le plafond de 40 était appliqué AVANT le filtre d'escale.
 

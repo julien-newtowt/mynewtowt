@@ -196,12 +196,47 @@ def test_no_migration_imports_a_mutable_seed_constant() -> None:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
+            # `from app.services.validation_engine import RULE_SEED`
             if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("app."):
                 imported = {alias.name for alias in node.names}
                 if imported & SEED_CONSTANTS:
                     offenders.append(f"{path.name} importe {sorted(imported & SEED_CONSTANTS)}")
+            # 🔴 `from app.services import validation_engine` puis
+            # `validation_engine.RULE_SEED` : la forme qui passait sous le
+            # radar de la première version de cette sentinelle, et qui
+            # rouvrait exactement le défaut DFT-20260904-001 qu'elle existe
+            # pour empêcher. On regarde donc aussi les ACCÈS D'ATTRIBUT.
+            elif isinstance(node, ast.Attribute) and node.attr in SEED_CONSTANTS:
+                offenders.append(f"{path.name} accède à .{node.attr}")
+            # Et une réexportation locale (`RULE_SEED = ...` copié) reste
+            # légitime : c'est une valeur figée, pas un appel au code vivant.
 
     assert not offenders, (
         "Ces migrations tirent leur contenu du code applicatif — leur effet "
         "dépendrait de la date d'exécution : " + " ; ".join(offenders)
     )
+
+
+def test_the_tripwire_catches_the_module_attribute_form_too() -> None:
+    """La sentinelle ci-dessus doit voir les DEUX formes d'accès.
+
+    Sa première version ne regardait que ``ast.ImportFrom`` : la forme
+    ``from app.services import validation_engine`` puis
+    ``validation_engine.RULE_SEED`` passait donc silencieusement, rouvrant très
+    exactement le défaut ``DFT-20260904-001`` qu'elle existe pour empêcher.
+
+    On vérifie ici sur du code synthétique, sans écrire de fausse migration
+    dans ``migrations/versions`` (qui casserait la chaîne Alembic).
+    """
+    sneaky = ast.parse(
+        "from app.services import validation_engine\n"
+        "def upgrade():\n"
+        "    for r in validation_engine.RULE_SEED:\n"
+        "        pass\n"
+    )
+    hits = [
+        node.attr
+        for node in ast.walk(sneaky)
+        if isinstance(node, ast.Attribute) and node.attr in SEED_CONSTANTS
+    ]
+    assert hits == ["RULE_SEED"], "la forme « module.CONSTANTE » doit être détectée"

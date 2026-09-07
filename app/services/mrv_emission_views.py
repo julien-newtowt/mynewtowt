@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.leg import Leg
@@ -143,15 +143,20 @@ async def _rows(
     if vessel_id is not None:
         stmt = stmt.where(Leg.vessel_id == vessel_id)
 
-    # 🔴 Une restitution ne regarde que le passé.
+    # 🔴 Une restitution ne regarde que le passé — mesuré sur le RÉEL.
     #
-    # Les legs sont triés par ETD décroissant : sans cette borne, une séquence
-    # planifiée à l'avance remplissait les 40 places avec des voyages FUTURS —
-    # « non calculé » partout, et tous les voyages porteurs de vraies émissions
-    # repoussés hors de la page. Ce défaut avait d'abord été corrigé pour la
-    # seule vue escale ; il valait aussi pour la vue voyage, qui n'a rien à
-    # restituer d'un voyage pas encore parti.
-    stmt = stmt.where(Leg.etd <= (now or datetime.now(UTC)))
+    # Sans cette borne, une séquence planifiée à l'avance remplissait les 40
+    # places avec des voyages FUTURS : « non calculé » partout, et tous les
+    # voyages porteurs de vraies émissions repoussés hors de la page.
+    #
+    # ⚠️ La borne et le tri se font sur le **départ effectif**
+    # (`coalesce(atd, etd)`), jamais sur l'ETD seule : `declare_departure` ne
+    # réécrit pas l'ETD, donc un voyage parti en avance (ATD 09-02, ETD 10-01)
+    # aurait été exclu des deux écrans jusqu'en octobre malgré des émissions
+    # réelles. C'est la convention `planning.effective_etd` du projet — tout
+    # calcul « où en est le voyage » lui passe par là.
+    effective_etd = func.coalesce(Leg.atd, Leg.etd)
+    stmt = stmt.where(effective_etd <= (now or datetime.now(UTC)))
 
     if only_with_escale:
         # 🔴 Le filtre doit précéder le PLAFOND, pas le suivre.
@@ -167,7 +172,7 @@ async def _rows(
         stmt = stmt.join(VoyageEmissionSummary, VoyageEmissionSummary.leg_id == Leg.id).where(
             VoyageEmissionSummary.conso_escale_t.is_not(None)
         )
-    stmt = stmt.order_by(Leg.etd.desc()).limit(_LIMIT)
+    stmt = stmt.order_by(effective_etd.desc()).limit(_LIMIT)
     legs = list((await db.execute(stmt)).scalars().all())
     if not legs:
         return []
