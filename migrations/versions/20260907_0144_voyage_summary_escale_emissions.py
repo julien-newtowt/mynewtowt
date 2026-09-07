@@ -27,17 +27,25 @@ sont laissées à ``NULL`` : elles se remplissent au prochain recalcul (hook de
 finalisation/validation d'événement, ou à la demande). Aucun backfill n'est
 tenté ici — une migration ne doit pas dépendre du code de calcul du moment.
 
-⚠️ **À re-chaîner avant fusion si la PR #197 passe la première.** Cette
-migration est chaînée sur ``20260903_0141``, la tête de `main` au moment où
-cette branche a démarré. La PR #197 introduit ``20260904_0142`` sur la même
-tête : si elle est fusionnée d'abord, il y aurait deux têtes Alembic. Le
-correctif attendu est alors de **re-chaîner celle-ci** sur ``20260904_0142``
-— une migration jamais publiée peut être re-chaînée sans réécrire d'historique
-(cf. `CLAUDE.md`, Git Workflow).
+Renumérotée le 2026-09-07 (``20260904_0143`` → ``20260907_0144``)
+-----------------------------------------------------------------
+Cette migration se chaînait d'abord sur ``20260903_0141``, la tête de `main` au
+démarrage de la branche. Pendant les trois jours d'attente de revue, `main` a
+reçu la migration commerciale ``20260904_0141`` puis une révision de fusion
+``20260904_0142``, et la PR #197 a été renumérotée en ``20260907_0143``.
 
-Revision ID: 20260904_0143
-Revises: 20260903_0141
-Create Date: 2026-09-04
+La chaîne est donc désormais **linéaire par construction** :
+``20260904_0142`` (fusion sur `main`) → ``20260907_0143`` (#197) →
+``20260907_0144`` (celle-ci) → ``20260907_0145`` (mouillage). Les trois lots
+étant empilés dans leur ordre de fusion, aucune nouvelle collision de tête
+n'est possible.
+
+Re-chaîner ainsi est un **commit vers l'avant**, pas une réécriture
+d'historique — aucun force push (cf. `CLAUDE.md`, Git Workflow).
+
+Revision ID: 20260907_0144
+Revises: 20260907_0143
+Create Date: 2026-09-04 (renumérotée le 2026-09-07)
 """
 
 from __future__ import annotations
@@ -46,8 +54,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "20260904_0143"
-down_revision = "20260903_0141"
+revision = "20260907_0144"
+down_revision = "20260907_0143"
 branch_labels = None
 depends_on = None
 

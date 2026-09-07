@@ -272,18 +272,15 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   relève). Les trois derniers sont datés du 2026-08-27 et **acceptés**.
   **ADR-014** (reprise d'historique TOWT, 2026-09-02) est **accepté** — sept
   décisions, la 6ᵉ (table d'archive des noon reports) ouvre le lot 2.
-<<<<<<< HEAD
-  **ADR-015** (QHSE : miroir en lecture, dérivation plutôt que colonne,
+  **ADR-015** (prix annoncé / coût calculé / marge dérivée, 2026-09-04) est
+  **accepté** — il remplace partiellement ADR-010 sur la formation du tarif.
+  **ADR-016** (QHSE : miroir en lecture, dérivation plutôt que colonne,
   2026-09-04) est **accepté** — quatre décisions : aucune colonne pour une
   donnée que le FMS possède, on encode le fait et non son interprétation,
   `indetermine` est une valeur de premier rang, et **une migration est un
   instantané, jamais un appel au code vivant** (leçon de l'incident
   `DFT-20260904-001`). La 4ᵉ laisse un arbitrage ouvert à Julien : semer le
   référentiel de validation au boot dans tous les environnements.
-=======
-  **ADR-015** (prix annoncé / coût calculé / marge dérivée, 2026-09-04) est
-  **accepté** — il remplace partiellement ADR-010 sur la formation du tarif.
->>>>>>> origin/hotfix/qhse-validation-rules-seed
 - **PLN-SEQ (2026-09-01)** : refonte de la séquence de planification —
   déclarations « départ du POL » / « arrivée au POD » (escale + SOF bord →
   `services.voyage_transitions`, chemin unique du réel), re-ancrage d'ETA sur

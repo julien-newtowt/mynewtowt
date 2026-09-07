@@ -559,7 +559,7 @@ Doc : `docs/integrations/unlocode-ports.md`.
   métier du 2026-09-04). Son exclusion de l'assiette du trajet est donc
   **correcte au regard du règlement**, ce n'est pas un défaut.
   `co2_mouillage_t`/`co2eq_mouillage_t` existent quand même (migration
-  `20260904_0144`) parce que du carburant brûlé mérite une émission connue —
+  `20260907_0145`) parce que du carburant brûlé mérite une émission connue —
   mais **pour l'analyse interne uniquement**. Trois règles qui en découlent, à
   ne jamais casser :
   1. le **périmètre MRV est le défaut** de toute restitution (trajet + escale,
@@ -578,7 +578,7 @@ Doc : `docs/integrations/unlocode-ports.md`.
 
 ### QHSE — un miroir en lecture, pas une seconde source d'écriture
 
-Règle d'or (arbitrage **D10**, détaillée dans **ADR-015**) : **le FMS est la
+Règle d'or (arbitrage **D10**, détaillée dans **ADR-016**) : **le FMS est la
 source de vérité QHSE et reste l'outil de saisie ; MyTOWT analyse, aide à la
 décision et pilote.** Tout le design du module en découle.
 
@@ -804,7 +804,7 @@ préférences de style.
 | Crew | `/crew` | ✅ bordées + compliance Schengen + calendar |
 | Stowage | `/stowage` | ✅ 18 zones + algo glouton |
 | Claims | `/claims` | ✅ workflow 6 statuts + timeline |
-| QHSE (miroir d'analyse) | `/qhse` | ✅ **miroir en lecture du FMS** (ADR-015/D10 — jamais une seconde source d'écriture) : import xlsx **réconcilié** (`source_code`, deux formats d'export reconnus), `dashboard` (grades, tendance 12 mois, **origine de l'émetteur** bord/siège/autorité externe, écart C1/C2, complétude R1), `qualite` (ce qu'il reste à corriger **dans le FMS**, motif nommé), fiche de détail. Règles RQ01-RQ03 exécutées à l'ingestion. ⛔ Aucune route d'écriture sur les signalements |
+| QHSE (miroir d'analyse) | `/qhse` | ✅ **miroir en lecture du FMS** (ADR-016/D10 — jamais une seconde source d'écriture) : import xlsx **réconcilié** (`source_code`, deux formats d'export reconnus), `dashboard` (grades, tendance 12 mois, **origine de l'émetteur** bord/siège/autorité externe, écart C1/C2, complétude R1), `qualite` (ce qu'il reste à corriger **dans le FMS**, motif nommé), fiche de détail. Règles RQ01-RQ03 exécutées à l'ingestion. ⛔ Aucune route d'écriture sur les signalements |
 | MRV (reporting événementiel v2) | `/mrv` + `/onboard/events` | ✅ **architecture événementielle déclarative** : capture d'événements `/onboard/events` (Noon/Departure/Arrival/Begin-End Anchoring ; brouillon auteur-seul → finalisé → validé, `captain:M`) ; hub `/mrv` (`mrv:C`, actions `mrv:M`, seuils/facteurs `mrv:S`) : `voyages`, `reports` (Noon/Carbon/Stopover générés), `emissions/voyages` + `emissions/port` (restitution par trajet et par escale, lecture seule), `bunkering` (BDN), `flgo` (Marad lecture seule), `qualite` (moteur R01-R26 + IR01-IR05 + resets R10), `parametres` (seuils + dashboard params), `datasets` **OVDLA/OVDBR** (remplacent le CSV DNV 18 col. ; vues dédiées `datasets/ovdla` et `datasets/ovdbr`, la vue combinée `datasets` restant la cible de redirection de la génération). **Module de navigation à part entière**, sorti du groupe « Performance » : le MRV est une obligation réglementaire, pas un indicateur de performance. Grand livre unique `emission_ledger` multi-GES. ⛔ **Archive legacy retirée** : l'écran `/mrv/archive/events`, le modèle `MRVEvent`/`MRVParameter` et les services associés sont supprimés — le legacy MRV n'a plus de rail de lecture. Les **tables** `mrv_events`/`mrv_parameters` ne sont pas supprimées mais **mises à l'écart** (migration `20260713_0106`, renommées `*_deprecated_20260903`) : le `DROP` sec attend le comptage en production (arbitrage du 2026-09-03). Aucun code ne les référence |
 | Dashboard Performance Environnementale | `/dashboard-perf` | ✅ 5 pages, exclusivement event-driven (mode `strict`, NC-04) : **vue flotte** (`kpi:C`), **suivi opérationnel** navire→voyage→événements (`kpi:C` / `mrv:C` — ROB timeline, conso vs cible, répartition ME/AE, **profil de propulsion 4 h**, carte MapLibre), **détail voyage** + exports PDF/DOCX (`mrv:C`), **qualité des données** (`mrv:C` — anomalies par règle/sévérité, resets R10, complétude), **administration** des paramètres (`mrv:S`). Remplace `dashboard-env` (LOT 11/12), décommissionné |
 | Navigation | `/performance/navigation` | ✅ multi-legs/multi-navires : carte (1 couleur/leg) points GPS + trait + route théorique, tableau comparatif (réelle/théorique/écart/durée/restant), météo le long du trajet + blocs « conditions actuelles » par navire (rose des vents, anémomètre/Beaufort, pression, visibilité, T°…) |
@@ -908,7 +908,7 @@ préférences de style.
 - Pas de route d'écriture sur `rate_offer_revisions` autre que l'insertion.
 - **Jamais de colonne QHSE pour une donnée que le FMS possède**, ni de route
   d'écriture sur un signalement : le module est un miroir en lecture (D10,
-  ADR-015). Un indicateur manquant se dérive, ou se dit absent.
+  ADR-016). Un indicateur manquant se dérive, ou se dit absent.
 - **Jamais d'import d'une constante applicative dans une migration** — une
   migration est un instantané, valeurs en dur.
 - **Ne jamais déclarer une route littérale après la route à paramètre qui la

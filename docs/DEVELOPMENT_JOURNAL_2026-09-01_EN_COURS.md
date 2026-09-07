@@ -116,7 +116,7 @@ administrateur, elle a rétabli les 7 règles et 11 seuils manquants. Vérifié 
 de la migration, et l'import passe (90 signalements, 1 ligne quarantainée,
 4 marquées « test présumé »).
 
-**Correctif permanent** : PR #197 — migration `20260904_0142` (rattrapage
+**Correctif permanent** : PR #197 — migration `20260907_0143` (rattrapage
 idempotent, valeurs en dur, contenu **généré** depuis l'écart mesuré entre le
 catalogue de l'époque `0097` et le catalogue courant), bannière d'init affichée
 dès que le référentiel est *incomplet*, `GET /qhse/import` redirigé vers le hub
@@ -134,7 +134,7 @@ corriger **dans le FMS**, motif nommé par signalement.
 fait** (bord / siège / autorité externe) plutôt que l'interprétation
 « opérationnel / audit » du cahier des charges : classer le siège en audit
 interne aurait produit ~37 %, très proche des ~33 % attendus — une coïncidence
-séduisante, pas une validation. Cf. **ADR-015**.
+séduisante, pas une validation. Cf. **ADR-016**.
 
 **Sur données réelles** : bord 49 (54,4 %), siège 25 (27,8 %), autorité externe
 13 (14,4 %), indéterminé 3 (3,3 %) — conforme au comptage brut des 9 chaînes
@@ -196,7 +196,7 @@ grand livre / renommer l'écran en « consommation d'escale »). **Décision :
 
 Implémentation : `emissions_breakdown(conso_escale, factor)` ajouté **dans**
 `emission_ledger` (seul endroit légal), matérialisé par la migration
-`20260904_0143` (`co2_escale_t`, `co2eq_escale_t`). Même facteur, même primitive
+`20260907_0144` (`co2_escale_t`, `co2eq_escale_t`). Même facteur, même primitive
 que le trajet. Le résumé étant un cache recalculable, les colonnes se remplissent
 au prochain recalcul — aucun backfill dans la migration, qui ne doit pas dépendre
 du code de calcul du moment.
@@ -217,7 +217,7 @@ trajet est **correcte au regard du règlement**. Mais elle laissait du carburant
 réellement brûlé sans émission connue, même pour l'analyse interne.
 
 Livré : `co2_mouillage_t`/`co2eq_mouillage_t` calculés dans le grand livre
-(migration `20260904_0144`), et un **sélecteur de périmètre** sur
+(migration `20260907_0145`), et un **sélecteur de périmètre** sur
 `/mrv/emissions/voyages` — « Périmètre MRV » par défaut, « + mouillage (hors
 MRV) » en opt-in, avec un bandeau d'avertissement au lieu de l'informatif.
 
@@ -236,10 +236,10 @@ donnée manquante).
 Il y a donc désormais **trois assiettes** disjointes : trajet et escale dans le
 périmètre MRV, mouillage à côté.
 
-⚠️ **Migration à re-chaîner** : `20260904_0143` est chaînée sur `20260903_0141`
-(tête de `main` au démarrage de la branche). La PR #197 introduit `0142` sur la
-même tête. Si #197 fusionne d'abord, re-chaîner `0143` sur `0142` avant fusion —
-une migration jamais publiée se re-chaîne sans réécrire d'historique.
+✅ **Migrations re-chaînées le 2026-09-07** (cf. l'entrée de ce jour) : la chaîne
+est désormais linéaire par construction — `20260904_0142` (révision de fusion sur
+`main`) → `20260907_0143` (#197) → `20260907_0144` (escale) → `20260907_0145`
+(mouillage).
 
 **Vérification** : les 11 écrans MRV rendus en HTTP authentifié contre l'app
 complète (200 partout), absence de tout lien MRV résiduel dans le groupe
@@ -274,7 +274,7 @@ verts, parité des 5 catalogues i18n.
 - **Arbitrage à rendre par Julien** : semer le référentiel de validation au boot
   dans **tous** les environnements (et plus seulement en dev) supprimerait la
   classe entière de défaut de l'incident, au prix d'une écriture en base au
-  démarrage de la production. Non tranché — cf. ADR-015, décision 4.
+  démarrage de la production. Non tranché — cf. ADR-016, décision 4.
 - **Troisième format d'export QHSE** (`Fleetview`, multi-navires avec lignes de
   section `Location: X (n)`) : identifié, non reconnu par l'ingestion.
 - **Nom du responsable perdu à l'import** : l'export complet porte

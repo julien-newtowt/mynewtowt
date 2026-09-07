@@ -28,8 +28,8 @@ Le résumé étant un **cache recalculable** (``refresh_summary``), les colonnes
 sont laissées à ``NULL`` : elles se remplissent au prochain recalcul. Aucun
 backfill ici — une migration ne doit pas dépendre du code de calcul du moment.
 
-Revision ID: 20260904_0144
-Revises: 20260904_0143
+Revision ID: 20260907_0145
+Revises: 20260907_0144
 Create Date: 2026-09-04
 """
 
@@ -39,8 +39,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "20260904_0144"
-down_revision = "20260904_0143"
+revision = "20260907_0145"
+down_revision = "20260907_0144"
 branch_labels = None
 depends_on = None
 
