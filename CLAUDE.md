@@ -977,9 +977,19 @@ Backlog MRV v2 (post-livraison, honnête) :
   (amélioration lot 10 — distance loguée réelle à intégrer).
 
 Backlog QHSE (constats du 2026-09-04, sur données réelles) :
-- **Troisième format d'export** (`Fleetview` : multi-navires, lignes de section
-  `Location: X (n)`) identifié mais **non reconnu** par l'ingestion — les lignes
-  seraient quarantainées faute de navire résolu, jamais un crash.
+- 🔴 **Troisième format d'export non reconnu, et son échec est SILENCIEUX.**
+  L'export `Fleetview` (historique de toute la flotte) porte le navire par des
+  **lignes de section** `Location: X (n)` intercalées dans les données — ni par
+  colonne (export brut 41 col.), ni par bloc de titre (export historique, où
+  figure « Fleetview », qui n'est pas un navire). Mesuré sur le fichier réel
+  (197 lignes, 188 signalements : 90 Anemos + 98 Artemis) : l'ingestion
+  **abandonne la feuille entière** (`continue` faute de navire résolu) et rend
+  `créés=0 ignorés=0 erreurs=0` — l'écran affiche donc « 0 créés » et cela se
+  lit comme « fichier vide », pas comme « format non compris ». Aucune trace
+  dans `activity_logs`, aucun motif nommé. Deux corrections à faire ensemble :
+  reconnaître les lignes de section comme un changement de navire courant, et
+  **refuser une feuille explicitement** au lieu de l'abandonner sans rien dire
+  (le reste du module quarantaine et nomme le motif — ce chemin-là y échappe).
 - **Nom du responsable perdu à l'import** : l'export complet porte
   `CorrectiveActionResponsiblePerson`, mais le modèle ne conserve que la FK
   `responsible_user_id` — un responsable réel sans compte MyTOWT disparaît. Un
