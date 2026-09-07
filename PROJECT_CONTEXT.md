@@ -307,6 +307,18 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   `towt_noon_extract` (prototype local). Doc :
   `docs/audit/2026-09-02-reprise-historique-towt.md`, **ADR-014** (accepté le 2026-09-02).
 
+- **NAV-ROUTE (2026-09-04)** : `/performance/navigation` gagne un **filtre par
+  route POL→POD** (`?route=FRFEC-BRSSO`) qui superpose tous les voyages d'une
+  même paire de ports sur une carte — un écart de trajet se repère par
+  différence entre passages, pas dans l'absolu. Transverse au **navire et à
+  l'année** (le borner supprimerait les points de comparaison), route
+  **orientée** (aller ≠ retour), routes proposées seulement si un voyage en est
+  **parti** (`atd`), archives TOWT **incluses**. La route pilote la sélection au
+  lieu de s'y ajouter ; le plafond de 10 tracés est **annoncé** (« 10 sur 23 »).
+  Une **amplitude** des distances réellement parcourues (min / médiane / max)
+  n'agrège que les voyages arrivés dont la trace ne contredit pas l'arrivée.
+  Services : `voyage_track.routes_served / legs_on_route / route_spread`.
+
 - **COM-12 / COM-13 (2026-09-04)** : reprise du module commercial sur retour
   d'usage de Julien. (1) **Inversion prix ↔ coût** — `RateGridLine.base_rate`
   devient le *prix annoncé*, `cost_rate` le *coût de revient* calculé, la marge

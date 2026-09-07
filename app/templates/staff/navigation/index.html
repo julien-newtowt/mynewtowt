@@ -6,6 +6,7 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
 <script src="{{ asset('js/navigation-map.js') }}" defer></script>
+<script src="{{ asset('js/searchable-select.js') }}" defer></script>
 <style>
   .leg-chip.selected { background: var(--teal, #0D5966); color: #fff; border-color: var(--teal, #0D5966); }
   .nav-pills { display:flex; flex-wrap:wrap; gap:8px; margin:.5rem 0 1rem; align-items:center; }
@@ -42,10 +43,85 @@
 </header>
 
 <p class="text-muted text-sm mb-3">
-  Trajets réellement réalisés : sélectionne un ou plusieurs legs (de plusieurs navires)
-  pour comparer les trajets sur une même carte. Distance réelle vs théorique, durée,
-  distance restante et météo le long de la trace.
+  Trajets réellement réalisés. Deux entrées : par <strong>route</strong> (tous les voyages
+  d'une même paire POL→POD, pour repérer les écarts d'un passage à l'autre) ou leg par leg
+  (de plusieurs navires). Distance réelle vs théorique, durée, distance restante et météo
+  le long de la trace.
 </p>
+
+{# ── Filtre par ROUTE (POL→POD) ────────────────────────────────────────
+   Compare tous les voyages d'une même paire de ports sur une seule carte.
+   Volontairement transverse au navire et à l'année : c'est en superposant des
+   passages de navires et de saisons différents qu'un détour se voit. Le
+   `<select>` natif reste le contrôle posté ; searchable-select.js n'ajoute
+   qu'un champ de filtre quand la liste s'allonge. #}
+<article class="card mb-3">
+  <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:12px;">
+    <div>
+      <h2 style="margin:0;font-size:var(--text-lg);"><i data-lucide="route"></i> Comparer une route</h2>
+      <p class="text-muted text-sm" style="margin:.25rem 0 0;">
+        Tous les voyages d'une même route POL→POD sur une carte — c'est par différence
+        entre les passages qu'un écart de trajet se repère.
+      </p>
+    </div>
+    <form method="get" action="/performance/navigation" class="flex items-end" style="gap:8px;flex-wrap:wrap;">
+      <input type="hidden" name="vessel" value="{{ leg_filter_ctx.selected_vessel or '' }}" />
+      <input type="hidden" name="year" value="{{ leg_filter_ctx.current_year }}" />
+      <div class="field" style="margin:0;min-width:min(26rem,100%);">
+        <label for="route-select">Route</label>
+        <select id="route-select" name="route" data-searchable
+                data-searchable-placeholder="Filtrer les routes (port, code)…">
+          <option value="">— Aucune (sélection leg par leg) —</option>
+          {% for r in routes %}
+          <option value="{{ r.key }}" {% if r.is_selected %}selected{% endif %}>
+            {{ r.pol_locode }} → {{ r.pod_locode }} · {{ r.pol_name }} → {{ r.pod_name }} · {{ r.leg_count }} voyage{{ 's' if r.leg_count != 1 else '' }}
+          </option>
+          {% else %}
+          <option value="" disabled>Aucune route parcourue à ce jour</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary"><i data-lucide="git-compare"></i> Comparer</button>
+      {% if route_selected %}
+      <a href="{{ clear_route_url }}" class="btn btn-ghost">Retirer le filtre</a>
+      {% endif %}
+    </form>
+  </div>
+
+  {% if route_selected %}
+  <div class="alert alert-info" style="margin:1rem 0 0;">
+    <div class="flex items-center" style="gap:8px;flex-wrap:wrap;">
+      <span class="pill pill-info">Route</span>
+      <strong class="mono">{{ route_selected.pol_country|flag }} {{ route_selected.pol_locode }} → {{ route_selected.pod_country|flag }} {{ route_selected.pod_locode }}</strong>
+      <span class="text-muted">{{ route_selected.pol_name }} → {{ route_selected.pod_name }}</span>
+      <span class="text-muted text-sm">
+        {# On dit combien de voyages sont tracés sur combien existent : afficher
+           les dix plus récents sans le dire laisserait croire que la route n'en
+           a connu que dix. #}
+        {{ route_shown }} voyage{{ 's' if route_shown != 1 else '' }} tracé{{ 's' if route_shown != 1 else '' }}
+        {%- if route_total > route_shown %} sur {{ route_total }} (les {{ route_limit }} plus récents){% endif %}.
+      </span>
+    </div>
+    {% if route_spread %}
+    <p style="margin:.5rem 0 0;">
+      Distances réellement parcourues sur les <strong>{{ route_spread.count }}</strong> voyages arrivés :
+      <span class="mono">{{ "%.0f"|format(route_spread.min_nm) }}</span> à
+      <span class="mono">{{ "%.0f"|format(route_spread.max_nm) }}</span> NM
+      (médiane <span class="mono">{{ "%.0f"|format(route_spread.median_nm) }}</span> NM,
+      amplitude <span class="mono">{{ "%.0f"|format(route_spread.spread_nm) }}</span> NM{% if route_spread.spread_pct is not none %},
+      soit <span class="mono">{{ "%.0f"|format(route_spread.spread_pct) }} %</span>{% endif %}).
+    </p>
+    {% else %}
+    <p class="text-muted text-sm" style="margin:.5rem 0 0;">
+      {# Une dispersion suppose au moins deux trajets achevés et non contredits :
+         un voyage en cours a par construction une distance partielle. #}
+      Amplitude non calculée : elle demande au moins deux voyages <strong>arrivés</strong>
+      dont la trace ne contredit pas l'arrivée déclarée.
+    </p>
+    {% endif %}
+  </div>
+  {% endif %}
+</article>
 
 {# Onglets navire / année (le filtre de référence) — sélection des legs en multi ci-dessous. #}
 {{ leg_filter(leg_filter_ctx, "/performance/navigation", show_legs=False, extra_query=extra_query) }}
@@ -83,7 +159,10 @@
 
 {% if not selected_pills %}
 <article class="card mb-4">
-  <p class="text-muted">Sélectionne un ou plusieurs legs ci-dessus pour afficher leur navigation.</p>
+  <p class="text-muted">
+    Choisis une <strong>route</strong> pour superposer tous ses voyages, ou sélectionne
+    un ou plusieurs legs ci-dessus pour comparer des trajets précis.
+  </p>
 </article>
 {% else %}
 
