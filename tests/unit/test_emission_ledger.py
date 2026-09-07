@@ -540,6 +540,30 @@ async def test_escale_consumption_rob_solved(db):
     assert r.do_consumed_t == r.conso_hors_mouillage_t
 
 
+async def test_anchoring_emission_is_computed_but_never_in_the_mrv_base(db):
+    """Le mouillage est **hors périmètre MRV** (constat du 2026-09-04).
+
+    Son émission est calculée — du carburant brûlé mérite une émission connue —
+    mais l'assiette MRV du trajet ne bouge pas d'un iota. C'est l'invariant
+    critique : un chiffre réglementaire ne doit jamais grossir parce qu'on a
+    ajouté un indicateur interne à côté.
+    """
+    vessel, leg = await _base(db)
+    await _events_chain(db, vessel, leg)
+
+    r = await emission_ledger.compute_for_leg(db, leg)
+
+    # L'assiette du trajet reste la conso HORS mouillage, inchangée.
+    assert r.do_consumed_t == r.conso_hors_mouillage_t
+    expected_voyage = emission_ledger.emissions_breakdown(r.conso_hors_mouillage_t, r.factor)
+    assert r.co2_emitted_t == Decimal(expected_voyage["co2_t"])
+
+    # L'émission de mouillage suit la MÊME primitive et le MÊME facteur.
+    expected_anchor = emission_ledger.emissions_breakdown(r.conso_mouillage_t, r.factor)
+    assert r.co2_mouillage_t == Decimal(expected_anchor["co2_t"])
+    assert r.co2eq_mouillage_t == Decimal(expected_anchor["co2eq_t"])
+
+
 async def test_escale_emission_is_none_without_escale_consumption(db):
     """Pas d'escale (voyage non arrivé, G12) ⇒ pas d'émission d'escale.
 

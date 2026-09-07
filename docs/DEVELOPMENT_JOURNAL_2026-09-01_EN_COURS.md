@@ -206,11 +206,35 @@ ne doivent jamais être additionnées en silence — l'escale d'un voyage peut
 s'étendre sur la fenêtre du voyage suivant. Verrouillé par un test du grand
 livre et un test de vue.
 
-**Reste ouvert, non tranché** : la consommation au **mouillage** est exclue de
-l'assiette du trajet et ne reçoit toujours aucune émission. Cas symétrique de
-celui corrigé ici. La vue voyage l'affiche en consommation et le dit. Le dataset
-OVDLA, lui, porte bien ces intervalles : le manque est dans l'indicateur interne
-de MyTOWT, pas dans l'artefact déposé chez le vérificateur.
+**Le cas du mouillage, tranché dans le même mouvement.** Le constat remonté
+(« la conso au mouillage ne reçoit non plus aucune émission ») a reçu une
+réponse d'une nature différente de celle de l'escale : *« co2 mouillage est
+bien en dehors du scope MRV, peut-être il vaut le coup d'ajouter un sélecteur
+pour les ajouter avec une note du scope. »*
+
+Ce n'était donc pas un défaut : l'exclusion du mouillage de l'assiette du
+trajet est **correcte au regard du règlement**. Mais elle laissait du carburant
+réellement brûlé sans émission connue, même pour l'analyse interne.
+
+Livré : `co2_mouillage_t`/`co2eq_mouillage_t` calculés dans le grand livre
+(migration `20260904_0144`), et un **sélecteur de périmètre** sur
+`/mrv/emissions/voyages` — « Périmètre MRV » par défaut, « + mouillage (hors
+MRV) » en opt-in, avec un bandeau d'avertissement au lieu de l'informatif.
+
+**L'invariant qui justifie le sélecteur** : le chiffre MRV est *identique* dans
+les deux positions ; seul le total élargi apparaît. Un chiffre réglementaire ne
+doit jamais grossir parce qu'on a ajouté un indicateur interne à côté. Vérifié
+sur le HTML produit — le total élargi est **absent** du HTML en mode MRV, pas
+seulement masqué.
+
+Deux décisions de détail : le sélecteur n'apparaît pas sur l'écran d'escale (au
+port vs en mer — le mélange n'a pas de sens, et une demande explicite y est
+ignorée) ; le total élargi vaut `None` dès que le CO₂ du trajet manque, alors
+qu'un mouillage absent vaut zéro (le navire n'a pas mouillé, ce n'est pas une
+donnée manquante).
+
+Il y a donc désormais **trois assiettes** disjointes : trajet et escale dans le
+périmètre MRV, mouillage à côté.
 
 ⚠️ **Migration à re-chaîner** : `20260904_0143` est chaînée sur `20260903_0141`
 (tête de `main` au démarrage de la branche). La PR #197 introduit `0142` sur la

@@ -239,6 +239,16 @@ LEDGER_RESULT_FIELDS = {
     # contrat qui voudrait un total « trajet + escale » doit l'annoncer.
     "co2_escale_t": "Decimal | None",
     "co2eq_escale_t": "Decimal | None",
+    # Ajout compatible (2026-09-04) : emissions au mouillage — 🔴 HORS
+    # PERIMETRE MRV. Memes conditions que ci-dessus (fin de dataclass, defaut
+    # None) donc extension, pas d'increment de version.
+    #
+    # ⚠️ Tout consommateur du contrat doit les traiter comme une TROISIEME
+    # assiette : elles n'entrent dans aucun total reglementaire. `co2_emitted_t`
+    # (trajet) + `co2_escale_t` (escale) = perimetre MRV ; celles-ci vivent a
+    # cote et ne s'ajoutent que sur demande explicite.
+    "co2_mouillage_t": "Decimal | None",
+    "co2eq_mouillage_t": "Decimal | None",
 }
 
 # Clés exactes du dict retourné par emission_ledger.emissions_breakdown() —

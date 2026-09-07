@@ -227,6 +227,24 @@ class LedgerResult:
     co2_escale_t: Decimal | None = None
     co2eq_escale_t: Decimal | None = None
 
+    # ── Émissions au mouillage — 🔴 HORS PÉRIMÈTRE MRV ───────────────────
+    #
+    # Troisième assiette, disjointe des deux autres : la consommation au
+    # mouillage/à la dérive (`conso_mouillage_t`), exclue de l'assiette du
+    # trajet par construction (`do_consumed = conso_hors`).
+    #
+    # 🔴 **Ce chiffre n'appartient pas au périmètre MRV** (constat métier du
+    # 2026-09-04). Il existe pour l'analyse interne — du carburant brûlé mérite
+    # une émission connue — et **ne doit jamais être additionné à `co2_emitted_t`
+    # ni à `co2_escale_t` pour produire un total présenté comme réglementaire**.
+    # Toute restitution qui l'inclut doit être explicitement opt-in et porter la
+    # mention du périmètre (cf. `/mrv/emissions/voyages`, sélecteur).
+    #
+    # Même facteur et même primitive que les deux autres assiettes : la règle
+    # d'or ne souffre pas d'exception, y compris pour un chiffre hors MRV.
+    co2_mouillage_t: Decimal | None = None
+    co2eq_mouillage_t: Decimal | None = None
+
 
 # ════════════════════════════════════════════════════════════ Helpers datetime
 
@@ -577,6 +595,16 @@ async def compute_for_leg(
     co2_escale_t = Decimal(em_escale["co2_t"]) if em_escale["co2_t"] is not None else None
     co2eq_escale_t = Decimal(em_escale["co2eq_t"]) if em_escale["co2eq_t"] is not None else None
 
+    # Émissions au mouillage — 🔴 HORS PÉRIMÈTRE MRV (cf. `LedgerResult`).
+    # Calculées ici quand même : c'est du carburant réellement brûlé, et la
+    # règle d'or veut que la multiplication vive dans ce module. Ne jamais les
+    # additionner aux deux autres assiettes pour un total réglementaire.
+    em_mouillage = emissions_breakdown(conso_mouillage, factor)
+    co2_mouillage_t = Decimal(em_mouillage["co2_t"]) if em_mouillage["co2_t"] is not None else None
+    co2eq_mouillage_t = (
+        Decimal(em_mouillage["co2eq_t"]) if em_mouillage["co2eq_t"] is not None else None
+    )
+
     # CO₂ évité : comparateur conventionnel ``co2.estimate`` (mêmes valeurs).
     avoided = await _avoided_co2_kg(db, distance, cargo_bl)
 
@@ -611,6 +639,8 @@ async def compute_for_leg(
         wtt_co2eq_t=wtt_co2eq_t,
         co2_escale_t=co2_escale_t,
         co2eq_escale_t=co2eq_escale_t,
+        co2_mouillage_t=co2_mouillage_t,
+        co2eq_mouillage_t=co2eq_mouillage_t,
         avoided_co2_kg=avoided,
         ef_method_a=ef_a,
         ef_method_b=ef_b,
@@ -707,6 +737,8 @@ async def refresh_summary(db: AsyncSession, leg: Leg) -> VoyageEmissionSummary:
         "wtt_co2eq_t": result.wtt_co2eq_t,
         "co2_escale_t": result.co2_escale_t,
         "co2eq_escale_t": result.co2eq_escale_t,
+        "co2_mouillage_t": result.co2_mouillage_t,
+        "co2eq_mouillage_t": result.co2eq_mouillage_t,
         "distance_nm": result.distance_nm,
         "cargo_bl_t": result.cargo_bl_t,
         "cargo_mrv_t": result.cargo_mrv_t,

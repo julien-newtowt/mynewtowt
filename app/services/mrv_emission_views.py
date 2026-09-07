@@ -24,10 +24,18 @@ consommation × facteur d'émission vive là (sentinelle
 ``tests/regression/test_factor_whitelist.py``). Ces vues **lisent**, elles ne
 calculent rien.
 
-⚠️ **Trou restant, documenté** : la consommation au **mouillage**
-(``conso_mouillage_t``) est exclue de l'assiette du trajet et ne reçoit
-toujours aucune émission — cas symétrique de celui de l'escale, non tranché.
-La vue voyage l'affiche donc en consommation, en le disant.
+🔴 **Le mouillage est une TROISIÈME assiette, hors périmètre MRV.**
+
+Constat métier du 2026-09-04 : le mouillage n'appartient pas au périmètre MRV.
+Sa consommation est donc exclue de l'assiette du trajet par construction, ce
+qui est correct au regard du règlement — mais laissait du carburant réellement
+brûlé sans émission connue. ``co2_mouillage_t`` comble ce manque **pour
+l'analyse interne uniquement**.
+
+Conséquence sur cette couche de restitution, et c'est l'invariant à ne pas
+casser : le périmètre MRV (trajet + escale) est le **défaut**, le mouillage est
+**opt-in** (``include_anchoring``), et tout total qui l'inclut est étiqueté
+hors MRV. Les additionner par défaut gonflerait un chiffre réglementaire.
 """
 
 from __future__ import annotations
@@ -86,9 +94,31 @@ class LegEmissionRow:
     def co2eq_escale_t(self) -> Decimal | None:
         return self.summary.co2eq_escale_t if self.summary else None
 
+    # ── Mouillage — 🔴 hors périmètre MRV, jamais dans un total par défaut ──
     @property
     def conso_mouillage_t(self) -> Decimal | None:
         return self.summary.conso_mouillage_t if self.summary else None
+
+    @property
+    def co2_mouillage_t(self) -> Decimal | None:
+        return self.summary.co2_mouillage_t if self.summary else None
+
+    @property
+    def co2eq_mouillage_t(self) -> Decimal | None:
+        return self.summary.co2eq_mouillage_t if self.summary else None
+
+    @property
+    def co2_with_anchoring_t(self) -> Decimal | None:
+        """Trajet + mouillage — **hors périmètre MRV**, à n'afficher qu'en opt-in.
+
+        ``None`` dès que le CO₂ du trajet manque : un total partiel qui
+        passerait pour complet serait pire que pas de total. Un mouillage
+        absent (``None``) vaut en revanche zéro — le navire n'a pas mouillé,
+        ce n'est pas une information manquante.
+        """
+        if self.co2_t is None:
+            return None
+        return self.co2_t + (self.co2_mouillage_t or Decimal("0"))
 
     @property
     def has_summary(self) -> bool:

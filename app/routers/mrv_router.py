@@ -709,6 +709,7 @@ async def _emissions_screen(
     vessel_id: int | None,
     db: AsyncSession,
     user,
+    include_anchoring: bool = False,
 ) -> HTMLResponse:
     """Écran de restitution des émissions — ``scope`` vaut ``voyage`` ou ``port``.
 
@@ -733,6 +734,9 @@ async def _emissions_screen(
             "rows": rows,
             "vessels": vessels,
             "selected_vessel_id": vessel_id,
+            # 🔴 Le périmètre MRV est le DÉFAUT. Le mouillage (hors MRV) ne
+            # s'ajoute que sur demande explicite, et l'écran l'étiquette.
+            "include_anchoring": include_anchoring and scope != "port",
         },
     )
 
@@ -741,11 +745,25 @@ async def _emissions_screen(
 async def mrv_emissions_voyages(
     request: Request,
     vessel_id: int | None = None,
+    include_anchoring: bool = False,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("mrv", "C")),
 ) -> HTMLResponse:
-    """Émissions du trajet (Departure → Arrival), par voyage."""
-    return await _emissions_screen(request, scope="voyage", vessel_id=vessel_id, db=db, user=user)
+    """Émissions du trajet (Departure → Arrival), par voyage.
+
+    ``include_anchoring`` ajoute les émissions au **mouillage**, qui sont
+    **hors périmètre MRV** (constat métier du 2026-09-04) : le défaut est donc
+    ``False``, et l'écran étiquette explicitement le total élargi. Un chiffre
+    réglementaire ne doit jamais grossir sans qu'on l'ait demandé.
+    """
+    return await _emissions_screen(
+        request,
+        scope="voyage",
+        vessel_id=vessel_id,
+        db=db,
+        user=user,
+        include_anchoring=include_anchoring,
+    )
 
 
 @router.get("/emissions/port", response_class=HTMLResponse)

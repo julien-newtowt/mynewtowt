@@ -503,13 +503,22 @@ Doc : `docs/integrations/unlocode-ports.md`.
   `emission_ledger`, au même facteur et par la même primitive
   (`emissions_breakdown`) — la règle d'or veut que l'unique multiplication
   consommation × facteur vive là (sentinelle `test_factor_whitelist`).
-- ⚠️ **Trou restant, documenté** : la consommation au **mouillage**
-  (`conso_mouillage_t`) est exclue de l'assiette du trajet et ne reçoit
-  **toujours aucune émission** — cas symétrique de celui de l'escale, non
-  tranché. La restitution l'affiche en consommation et **le dit** ; ne pas le
-  combler sans arbitrage (c'est un chiffre réglementaire, revue de Julien).
-  Le dataset OVDLA, lui, porte bien ces intervalles : le manque est dans
-  l'indicateur interne, pas dans l'artefact déposé.
+- 🔴 **Le mouillage est une TROISIÈME assiette, HORS périmètre MRV** (constat
+  métier du 2026-09-04). Son exclusion de l'assiette du trajet est donc
+  **correcte au regard du règlement**, ce n'est pas un défaut.
+  `co2_mouillage_t`/`co2eq_mouillage_t` existent quand même (migration
+  `20260904_0144`) parce que du carburant brûlé mérite une émission connue —
+  mais **pour l'analyse interne uniquement**. Trois règles qui en découlent, à
+  ne jamais casser :
+  1. le **périmètre MRV est le défaut** de toute restitution (trajet + escale,
+     comptés séparément) ;
+  2. le mouillage ne s'ajoute qu'en **opt-in explicite**
+     (`/mrv/emissions/voyages?include_anchoring=true`), et tout total qui
+     l'inclut porte la mention **hors MRV** ;
+  3. le chiffre MRV est **identique** avec et sans opt-in — un chiffre
+     réglementaire ne grossit jamais parce qu'on a ajouté un indicateur interne
+     à côté (verrouillé par un test du grand livre et un test de vue).
+  Le dataset OVDLA, lui, porte bien ces intervalles.
 - **Feature flag `mrv_v2_capture`** (`services/feature_flags.capture_v2_enabled`) :
   **défaut ON global** (flag absent ⇒ actif), **fail-open** vers ON (une panne DB ne
   rouvre jamais le legacy), cache 20 s. Opt-out **par navire** en base via
@@ -966,14 +975,6 @@ Backlog MRV v2 (post-livraison, honnête) :
   avant tout usage en communication externe.
 - **Distance OVDLA journalisée** : aujourd'hui haversine entre événements
   (amélioration lot 10 — distance loguée réelle à intégrer).
-
-Backlog MRV — **émissions au mouillage non calculées** (constat du 2026-09-04) :
-`conso_mouillage_t` est exclue de l'assiette du trajet et ne reçoit aucune
-émission dérivée. C'est le cas symétrique de l'escale, tranché le même jour
-(« Port Emissions = émissions d'escale », migration `20260904_0143`) mais laissé
-ouvert pour le mouillage. Le calculer relève du grand livre (seul endroit légal)
-et touche un chiffre réglementaire — arbitrage avant implémentation, revue de
-Julien. En attendant, la restitution l'affiche en consommation et **le dit**.
 
 Backlog QHSE (constats du 2026-09-04, sur données réelles) :
 - **Troisième format d'export** (`Fleetview` : multi-navires, lignes de section

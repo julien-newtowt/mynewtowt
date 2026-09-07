@@ -14,10 +14,28 @@
    l'escale d'un voyage peut s'étendre sur la fenêtre du voyage suivant. #}
 <div class="alert alert-info mb-4" role="status">{{ t('mrv_em_scope_notice', lang) }}</div>
 
-{# 🔴 Trou restant, DIT et non laissé à deviner : la conso au mouillage est
-   exclue de l'assiette du trajet et ne reçoit aucune émission. #}
+{# 🔴 Sélecteur de périmètre. Le défaut est le périmètre MRV : le mouillage
+   n'en fait pas partie, et un chiffre réglementaire ne doit jamais grossir
+   sans qu'on l'ait demandé. La mention du périmètre suit le choix. #}
 {% if scope != 'port' %}
-<div class="alert alert-warn mb-4" role="status">{{ t('mrv_em_anchoring_notice', lang) }}</div>
+<div class="mb-4">
+  <div class="flex items-center gap-2 mb-2" style="flex-wrap:wrap;">
+    <span class="text-muted text-sm">{{ t('mrv_em_scope_selector', lang) }}</span>
+    <div class="flex gap-1" style="flex-wrap:wrap;">
+      <a href="{{ base }}{% if selected_vessel_id %}?vessel_id={{ selected_vessel_id }}{% endif %}"
+         class="btn btn-sm {% if not include_anchoring %}btn-primary{% else %}btn-ghost{% endif %}">
+        <i data-lucide="shield-check"></i> {{ t('mrv_em_scope_mrv', lang) }}
+      </a>
+      <a href="{{ base }}?include_anchoring=true{% if selected_vessel_id %}&vessel_id={{ selected_vessel_id }}{% endif %}"
+         class="btn btn-sm {% if include_anchoring %}btn-primary{% else %}btn-ghost{% endif %}">
+        <i data-lucide="anchor"></i> {{ t('mrv_em_scope_with_anchoring', lang) }}
+      </a>
+    </div>
+  </div>
+  <div class="alert {{ 'alert-warn' if include_anchoring else 'alert-info' }}" role="status">
+    {{ t('mrv_em_scope_with_anchoring_notice' if include_anchoring else 'mrv_em_scope_mrv_notice', lang) }}
+  </div>
+</div>
 {% endif %}
 
 {# ───────────────────────────── Filtre navire ───────────────────────────── #}
@@ -58,6 +76,10 @@
           <th>{{ t('mrv_em_col_co2', lang) }}</th>
           <th>{{ t('mrv_em_col_co2eq', lang) }}</th>
           <th>{{ t('mrv_em_col_conso_mouillage', lang) }}</th>
+          {% if include_anchoring %}
+          <th>{{ t('mrv_em_col_co2_mouillage', lang) }}</th>
+          <th>{{ t('mrv_em_col_co2_total_hors_mrv', lang) }}</th>
+          {% endif %}
           {% endif %}
         </tr>
       </thead>
@@ -85,8 +107,17 @@
             {% else %}<span class="pill pill-neutral">{{ t('mrv_em_not_computed', lang) }}</span>{% endif %}
           </td>
           <td>{{ r.co2eq_t if r.co2eq_t is not none else '—' }}</td>
-          {# Conso au mouillage : exclue de l'assiette, sans émission dérivée. #}
+          {# Conso au mouillage : exclue de l'assiette MRV du trajet. #}
           <td>{{ r.conso_mouillage_t if r.conso_mouillage_t is not none else '—' }}</td>
+          {% if include_anchoring %}
+          <td>{{ r.co2_mouillage_t if r.co2_mouillage_t is not none else '—' }}</td>
+          {# Total élargi : `None` dès que le CO₂ du trajet manque — un total
+             partiel qui passerait pour complet serait pire que pas de total. #}
+          <td>
+            {% if r.co2_with_anchoring_t is not none %}<strong>{{ r.co2_with_anchoring_t }}</strong>
+            {% else %}<span class="pill pill-neutral">{{ t('mrv_em_not_computed', lang) }}</span>{% endif %}
+          </td>
+          {% endif %}
           {% endif %}
         </tr>
         {% endfor %}

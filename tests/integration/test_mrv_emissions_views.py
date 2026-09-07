@@ -243,6 +243,88 @@ async def test_screens_render_with_the_right_scope(db, staff_user):
     assert port.context["scope"] == "port"
 
 
+async def test_mrv_scope_is_the_default_and_anchoring_is_opt_in(db, staff_user):
+    """🔴 L'invariant central : le périmètre MRV ne grossit jamais tout seul.
+
+    Le mouillage est hors périmètre MRV (constat du 2026-09-04) : il ne peut
+    entrer dans un total que sur demande explicite, et l'écran l'étiquette.
+    """
+    vessel, _other, ports = await _fleet(db)
+    await _leg(
+        db,
+        vessel,
+        ports,
+        code="1AFRBR6",
+        etd=T0,
+        summary={
+            "conso_hors_mouillage_t": Decimal("4.000"),
+            "conso_mouillage_t": Decimal("1.000"),
+            "co2_t": Decimal("12.800"),
+            "co2_mouillage_t": Decimal("3.200"),
+        },
+    )
+
+    default = await mr.mrv_emissions_voyages(FakeRequest(), db=db, user=staff_user)
+    assert default.context["include_anchoring"] is False
+
+    opted_in = await mr.mrv_emissions_voyages(
+        FakeRequest(), include_anchoring=True, db=db, user=staff_user
+    )
+    assert opted_in.context["include_anchoring"] is True
+
+    # Le chiffre MRV est IDENTIQUE dans les deux cas — seul le total élargi
+    # apparaît. C'est ce qui empêche un chiffre réglementaire de dériver.
+    assert default.context["rows"][0].co2_t == Decimal("12.800")
+    assert opted_in.context["rows"][0].co2_t == Decimal("12.800")
+    assert opted_in.context["rows"][0].co2_with_anchoring_t == Decimal("16.000")
+
+
+async def test_anchoring_never_offered_on_the_port_screen(db, staff_user):
+    """L'escale est au port, le mouillage est en mer : le sélecteur n'a aucun
+    sens sur l'écran d'escale, et une demande explicite y est ignorée."""
+    vessel, _other, ports = await _fleet(db)
+    await _leg(
+        db,
+        vessel,
+        ports,
+        code="1AFRBR6",
+        etd=T0,
+        summary={"conso_escale_t": Decimal("1.2"), "co2_escale_t": Decimal("3.8")},
+    )
+
+    resp = await mr.mrv_emissions_port(FakeRequest(), db=db, user=staff_user)
+    assert resp.context["include_anchoring"] is False
+
+
+async def test_extended_total_is_none_when_the_voyage_figure_is_missing(db):
+    """Un total partiel qui passerait pour complet serait pire que pas de total.
+
+    En revanche un mouillage absent vaut zéro : le navire n'a pas mouillé, ce
+    n'est pas une information manquante.
+    """
+    vessel, _other, ports = await _fleet(db)
+    await _leg(
+        db,
+        vessel,
+        ports,
+        code="1AFRBR6",
+        etd=T0,
+        summary={"co2_mouillage_t": Decimal("3.200")},  # pas de co2_t
+    )
+    await _leg(
+        db,
+        vessel,
+        ports,
+        code="1BFRBR6",
+        etd=T0 + timedelta(days=20),
+        summary={"co2_t": Decimal("10.000")},  # pas de mouillage
+    )
+
+    rows = {r.leg.leg_code: r for r in await emv.voyage_emissions(db)}
+    assert rows["1AFRBR6"].co2_with_anchoring_t is None
+    assert rows["1BFRBR6"].co2_with_anchoring_t == Decimal("10.000")
+
+
 async def test_screens_render_empty_without_crashing(db, staff_user):
     for coro in (mr.mrv_emissions_voyages, mr.mrv_emissions_port):
         resp = await coro(FakeRequest(), db=db, user=staff_user)
