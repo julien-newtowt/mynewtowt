@@ -104,6 +104,15 @@ class QhseReport(Base):
     # champs de coût (cahier des charges §2.1.C).
     claim_id: Mapped[int | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"))
 
+    # Réconciliation des ré-imports (D10). ``source_code`` : hachage SHA-256 de
+    # la clé naturelle (vessel_id, date d'émission, sujet, description) — cf.
+    # ``qhse_ingestion._compute_source_code``. Pas UNIQUE : clé du meilleur
+    # effort en l'absence d'identifiant FMS stable dans l'export.
+    source_code: Mapped[str | None] = mapped_column(String(64))
+    import_batch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("qhse_import_batches.id", ondelete="SET NULL")
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -129,6 +138,42 @@ class QhseReport(Base):
         Index("ix_qhse_reports_leg", "leg_id"),
         Index("ix_qhse_reports_grade", "grade"),
         Index("ix_qhse_reports_issued_date", "issued_date"),
+        Index("ix_qhse_reports_source_code", "source_code"),
+    )
+
+
+class QhseImportBatch(Base):
+    """Un enregistrement par appel à ``/qhse/import`` — D10.
+
+    Compteurs interrogeables (contrairement au ``detail`` texte libre
+    d'``activity_logs``, qui reste la trace narrative de l'action, inchangée).
+    Jamais supprimé par la suppression d'un rapport qu'il a créé ou mis à
+    jour — c'est l'inverse : ``qhse_reports.import_batch_id`` se met à
+    ``NULL`` si le lot disparaît un jour (``ON DELETE SET NULL`` côté
+    ``QhseReport``), un lot n'étant pas un invariant d'intégrité du rapport.
+    """
+
+    __tablename__ = "qhse_import_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    filename: Mapped[str | None] = mapped_column(String(255))
+    imported_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    imported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    updated_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    skipped_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    flagged_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
     )
 
 
