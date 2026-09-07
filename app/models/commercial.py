@@ -154,6 +154,29 @@ DEFAULT_BRACKETS_FF: list[dict] = [
     {"key": "flat", "label": "Tarif unique", "max_qty": 850, "coeff": 1.00},
 ]
 
+# ── Unité de vente d'une route de grille (COM-12) ────────────────────────────
+#
+# Le fret se vend à l'emplacement (palette) ou au poids (tonne) selon la
+# marchandise : le café vert et le cacao se négocient couramment à la tonne.
+# L'unité est portée par la **route**, pas par la grille — un même client peut
+# acheter au poids sur une ligne et à l'emplacement sur une autre.
+RATE_UNIT_PALETTE = "palette"
+RATE_UNIT_TONNE = "tonne"
+RATE_UNITS: tuple[str, ...] = (RATE_UNIT_PALETTE, RATE_UNIT_TONNE)
+RATE_UNIT_LABELS: dict[str, str] = {
+    RATE_UNIT_PALETTE: "€/palette",
+    RATE_UNIT_TONNE: "€/tonne",
+}
+RATE_UNIT_SHORT_LABELS: dict[str, str] = {
+    RATE_UNIT_PALETTE: "palette",
+    RATE_UNIT_TONNE: "tonne",
+}
+
+# Taux de marge cible, sur prix de vente, utilisé pour **proposer** un prix à
+# partir du coût de revient. C'est une suggestion : le commercial confirme ou
+# corrige, et rien ne l'applique automatiquement à un prix déjà posé.
+DEFAULT_TARGET_MARGIN_PCT = Decimal("25")
+
 PALETTE_COEFFICIENTS: dict[str, float] = {
     "EPAL": 1.00,
     "USPAL": 1.20,
@@ -210,6 +233,10 @@ class Client(Base):
         String(20), default="none", nullable=False, server_default="none"
     )
     pipedrive_org_id: Mapped[int | None] = mapped_column(Integer)
+    # Horodatage de la dernière remontée Pipedrive sur cette fiche. La fiche
+    # client est alimentée par le CRM : l'écran doit pouvoir dire de quand date
+    # ce qu'il affiche, sinon une donnée périmée passe pour fraîche.
+    pipedrive_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # ── Commercial attitré ────────────────────────────────────────────────
     # Chaque client a un commercial référent : c'est lui qu'on notifie d'une
     # estimation, et lui qui porte la relation. Renseigné à l'import Pipedrive
@@ -340,11 +367,24 @@ class RateGrid(Base):
 
 
 class RateGridLine(Base):
-    """Une route POL→POD d'une grille (distance / OPEX jour / base_rate).
+    """Une route POL→POD d'une grille : **coût de revient** et **prix annoncé**.
 
-    ``nav_days = distance_nm / (8 nœuds × 24 h)`` et
-    ``base_rate = opex_daily × nav_days / 978``. ``is_manual`` gèle le
-    ``base_rate`` (surcharge manuelle) : le recalcul OPEX ne le réécrit pas.
+    Les deux valeurs sont distinctes et le sens de lecture va du prix vers le
+    coût, pas l'inverse (COM-12) :
+
+    - ``cost_rate`` est le **coût de revient** calculé — ``opex_daily ×
+      nav_days`` rapporté à la capacité du navire (978 emplacements, ou son
+      port en lourd quand la route est tarifée à la tonne). Il n'est jamais
+      saisi ; il vaut ``None`` quand la capacité de référence est inconnue,
+      plutôt que d'afficher un coût inventé.
+    - ``base_rate`` est le **prix annoncé** par le commercial, dans l'unité
+      ``rate_unit`` (€/palette ou €/tonne). Le logiciel le *propose* (coût +
+      marge cible) ; l'opérateur le confirme ou le corrige. ``is_manual`` dit
+      lequel des deux s'est produit — un prix confirmé à la main n'est pas
+      réécrit par un recalcul de coût.
+
+    La **marge** en découle (``margin_eur`` / ``margin_pct``) : elle est
+    dérivée, jamais stockée, et vaut ``None`` tant que le coût est inconnu.
     """
 
     __tablename__ = "rate_grid_lines"
@@ -360,7 +400,16 @@ class RateGridLine(Base):
     distance_nm: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     nav_days: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
     opex_daily: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    # Prix annoncé au client, exprimé dans ``rate_unit``.
     base_rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    # Coût de revient calculé, même unité que ``base_rate``. ``None`` = capacité
+    # de référence inconnue (port en lourd absent du référentiel flotte) : la
+    # marge n'est alors pas calculable et l'écran le dit, au lieu d'afficher 0.
+    cost_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    # Unité de vente de la route : « palette » (défaut historique) ou « tonne ».
+    rate_unit: Mapped[str] = mapped_column(
+        String(10), default=RATE_UNIT_PALETTE, nullable=False, server_default=RATE_UNIT_PALETTE
+    )
     is_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Référence tarifaire codifiée « P-MMAA-MMAA-XX-YY » (cf.
     # ``services.commercial.route_tariff_reference``). Portée par la **route** et
@@ -374,6 +423,45 @@ class RateGridLine(Base):
     )
 
     grid: Mapped[RateGrid] = relationship(back_populates="lines")
+
+    # ── Marge : dérivée, jamais stockée ──────────────────────────────────
+    @property
+    def rate_unit_label(self) -> str:
+        """« €/palette » ou « €/tonne » — l'unité s'affiche partout où un
+        montant de cette route est rendu, sinon deux grilles se comparent à
+        l'œil sans être comparables."""
+        return RATE_UNIT_LABELS.get(self.rate_unit, RATE_UNIT_LABELS[RATE_UNIT_PALETTE])
+
+    @property
+    def margin_eur(self) -> Decimal | None:
+        """Marge unitaire = prix annoncé − coût de revient. ``None`` si le coût
+        n'est pas calculable (on ne devine pas une marge)."""
+        if self.cost_rate is None or self.base_rate is None:
+            return None
+        return (Decimal(self.base_rate) - Decimal(self.cost_rate)).quantize(Decimal("0.01"))
+
+    @property
+    def margin_pct(self) -> Decimal | None:
+        """Taux de marge **sur prix de vente** (marge / prix), en points de %.
+
+        Sur le prix et non sur le coût : c'est la lecture commerciale — « ce que
+        je garde sur 100 € vendus » — et elle reste finie quand le coût tend
+        vers zéro.
+        """
+        margin = self.margin_eur
+        if margin is None:
+            return None
+        price = Decimal(self.base_rate)
+        if price <= 0:
+            return None
+        return (margin / price * Decimal("100")).quantize(Decimal("0.1"))
+
+    @property
+    def is_below_cost(self) -> bool:
+        """Vend-on à perte ? Faux quand le coût est inconnu — une incertitude
+        n'est pas une alerte."""
+        margin = self.margin_eur
+        return margin is not None and margin < 0
 
 
 class RateGridOption(Base):

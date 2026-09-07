@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +45,59 @@ _FF_ACTIVITY_PREFIX = "IFF"
 # Clé du champ personnalisé Pipedrive portant l'« activité » de l'org. Si non
 # renseignée, on repère par balayage une valeur de champ commençant par IFF.
 _ACTIVITY_FIELD_KEY = (os.getenv("PIPEDRIVE_ORG_ACTIVITY_KEY") or "").strip() or None
+
+
+# Résolution nom de pays → code ISO 2, limitée aux pays réellement présents au
+# portefeuille NEWTOWT (France, Europe de l'Ouest, Amériques, Afrique de l'Ouest,
+# Asie du Sud-Est). Deux graphies par pays : celle de l'API en anglais et celle
+# qu'un commercial saisit en français. Une entrée absente ne pose simplement
+# aucun pays — c'est le comportement d'avant cette synchronisation.
+_COUNTRY_BY_NAME: dict[str, str] = {
+    "france": "FR",
+    "belgium": "BE",
+    "belgique": "BE",
+    "switzerland": "CH",
+    "suisse": "CH",
+    "luxembourg": "LU",
+    "united kingdom": "GB",
+    "royaume-uni": "GB",
+    "portugal": "PT",
+    "spain": "ES",
+    "espagne": "ES",
+    "italy": "IT",
+    "italie": "IT",
+    "germany": "DE",
+    "allemagne": "DE",
+    "netherlands": "NL",
+    "pays-bas": "NL",
+    "united states": "US",
+    "united states of america": "US",
+    "états-unis": "US",
+    "etats-unis": "US",
+    "canada": "CA",
+    "brazil": "BR",
+    "brésil": "BR",
+    "bresil": "BR",
+    "colombia": "CO",
+    "colombie": "CO",
+    "peru": "PE",
+    "pérou": "PE",
+    "perou": "PE",
+    "dominican republic": "DO",
+    "république dominicaine": "DO",
+    "martinique": "MQ",
+    "guadeloupe": "GP",
+    "morocco": "MA",
+    "maroc": "MA",
+    "senegal": "SN",
+    "sénégal": "SN",
+    "ivory coast": "CI",
+    "côte d'ivoire": "CI",
+    "cote d'ivoire": "CI",
+    "ghana": "GH",
+    "vietnam": "VN",
+    "viet nam": "VN",
+}
 
 
 def _org_owner_id(org: dict) -> int | None:
@@ -175,6 +229,68 @@ async def push_deal_for(db: AsyncSession, entity) -> int | None:
     return None
 
 
+def _country_code(org: dict) -> str | None:
+    """Code pays ISO 3166-1 alpha-2 d'une organisation Pipedrive.
+
+    ``address_country`` est un **libellé** (« France », « Brazil »), pas un
+    code : on ne le retient que s'il fait déjà deux lettres, sinon on tente la
+    résolution par nom. Sans correspondance sûre, on ne pose rien — un mauvais
+    code pays fait afficher le mauvais drapeau et fausse les filtres.
+    """
+    raw = (org.get("address_country") or "").strip()
+    if not raw:
+        return None
+    if len(raw) == 2 and raw.isalpha():
+        return raw.upper()
+    return _COUNTRY_BY_NAME.get(raw.casefold())
+
+
+def _person_org_id(person: dict) -> int | None:
+    """``org_id`` d'une personne Pipedrive (int ou objet développé)."""
+    raw = person.get("org_id")
+    if isinstance(raw, dict):
+        raw = raw.get("value") or raw.get("id")
+    try:
+        return int(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _contacts_by_org(persons: list[dict]) -> dict[int, dict]:
+    """Contact retenu par organisation : nom, e-mail, téléphone.
+
+    Une organisation peut porter plusieurs personnes. On garde la **première
+    qui apporte au moins un moyen de contact** — un contact sans e-mail ni
+    téléphone ne remplirait la fiche que d'un nom, et masquerait un contact
+    complet arrivé plus tard dans la liste.
+    """
+    out: dict[int, dict] = {}
+    for person in persons:
+        org_id = _person_org_id(person)
+        if org_id is None:
+            continue
+        email = pipedrive.primary_value(person.get("email"))
+        phone = pipedrive.primary_value(person.get("phone"))
+        name = (person.get("name") or "").strip() or None
+        if not (email or phone):
+            continue
+        if org_id in out:
+            continue
+        out[org_id] = {"name": name, "email": email, "phone": phone}
+    return out
+
+
+def _apply_crm_field(client: Client, field: str, value: str | None) -> None:
+    """Pose une valeur venue du CRM sans jamais effacer une saisie existante.
+
+    Pipedrive est la source de la fiche client, mais une valeur **absente** du
+    CRM n'est pas une valeur vide : écraser un e-mail saisi à la main par le
+    silence de l'API serait une perte de donnée silencieuse.
+    """
+    if value:
+        setattr(client, field, value)
+
+
 async def sync_clients(db: AsyncSession) -> dict:
     """Upsert des organisations Pipedrive **ayant un deal** dans ``commercial_clients``.
 
@@ -216,6 +332,11 @@ async def sync_clients(db: AsyncSession) -> dict:
     deals = await pipedrive.list_deals()
     org_ids_with_deal: set[int] = {oid for d in deals if (oid := _deal_org_id(d)) is not None}
 
+    # Contacts du CRM, indexés par organisation : ils alimentent le bloc
+    # « Fiche client » (contact, e-mail, téléphone) qui restait vide.
+    contacts = _contacts_by_org(await pipedrive.list_persons())
+    synced_at = datetime.now(UTC)
+
     created = 0
     updated = 0
     skipped = 0
@@ -234,6 +355,10 @@ async def sync_clients(db: AsyncSession) -> dict:
                 skipped += 1
                 continue
             address = (org.get("address") or "").strip() or None
+            # Pays : code ISO 2 quand Pipedrive le donne développé, sinon rien
+            # (on ne devine pas un pays à partir d'une adresse libre).
+            country = _country_code(org)
+            contact = contacts.get(int(pd_id)) or {}
             client_type = _client_type_for(org)
             owner_id = _org_owner_id(org)
             # Commercial attitré : le propriétaire Pipedrive est rapproché d'un
@@ -248,8 +373,13 @@ async def sync_clients(db: AsyncSession) -> dict:
                         name=name[:200],
                         client_type=client_type,
                         address=address,
+                        country=country,
+                        contact_name=(contact.get("name") or None),
+                        contact_email=(contact.get("email") or None),
+                        contact_phone=(contact.get("phone") or None),
                         pipedrive_org_id=int(pd_id),
                         pipedrive_owner_id=owner_id,
+                        pipedrive_synced_at=synced_at,
                         assigned_user_id=assigned_id,
                         is_active=True,
                     )
@@ -260,9 +390,13 @@ async def sync_clients(db: AsyncSession) -> dict:
                 # Pipedrive). On préserve les coordonnées saisies manuellement.
                 existing.name = name[:200]
                 existing.client_type = client_type
-                if address:
-                    existing.address = address
+                _apply_crm_field(existing, "address", address)
+                _apply_crm_field(existing, "country", country)
+                _apply_crm_field(existing, "contact_name", contact.get("name"))
+                _apply_crm_field(existing, "contact_email", contact.get("email"))
+                _apply_crm_field(existing, "contact_phone", contact.get("phone"))
                 existing.pipedrive_owner_id = owner_id
+                existing.pipedrive_synced_at = synced_at
                 # ⚠️ L'attribution manuelle fait foi : l'import ne renseigne le
                 # commercial attitré que s'il est **vide**. Écraser un choix
                 # d'organisation interne par une donnée CRM serait une perte

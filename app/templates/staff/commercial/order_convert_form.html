@@ -1,10 +1,10 @@
 {% extends "staff/_layout.html" %}
-{% block title %}Convertir l'offre {{ offer.reference }} — {{ brand.nom_court }}{% endblock %}
+{% block title %}Confirmer l'offre {{ offer.reference }} — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
 <header class="mb-4">
-  <span class="kicker">Commercial · conversion offre → commande</span>
-  <h1 class="display">Convertir {{ offer.reference }}</h1>
+  <span class="kicker">Commercial · confirmation d'offre → commande</span>
+  <h1 class="display">Confirmer {{ offer.reference }}</h1>
   <p class="text-muted">Client <strong>{{ client.name if client else '—' }}</strong> · ajustez la route, la quantité, le format et le prix avant de créer la commande ferme.</p>
 </header>
 
@@ -52,9 +52,9 @@
       <div id="rate-lookup-result" class="mt-2"></div>
     </div>
 
-    <div class="flex gap-2 mt-3">
-      <button type="submit" class="btn btn-primary">Créer la commande</button>
-      <a href="/commercial/offers" class="btn btn-ghost">Annuler</a>
+    <div class="page-actions mt-3" style="justify-content:flex-start;">
+      <button type="submit" class="btn btn-primary"><i data-lucide="file-check"></i> Créer la commande</button>
+      <a href="/commercial/offers/{{ offer.id }}" class="btn btn-ghost">Annuler</a>
     </div>
   </form>
 </article>

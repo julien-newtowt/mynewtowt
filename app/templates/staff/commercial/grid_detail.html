@@ -21,31 +21,37 @@
       {% if grid.volume_commitment is not none %} · engagement min {{ grid.volume_commitment }} pal.{% endif %}
     </p>
   </div>
-  <div class="flex gap-2">
+  {# Barre d'actions uniforme (`.page-actions`) : états à gauche, actions à
+     droite, un seul bouton principal, aucune césure. #}
+  <div class="page-actions">
     {% if grid.is_default %}<span class="pill pill-ok">Défaut</span>{% endif %}
     <span class="badge badge-{{ grid.status }}">{{ grid.status }}</span>
+    <span class="page-actions-sep" aria-hidden="true"></span>
     {% if grid.status == 'draft' %}
-    <form method="post" action="/commercial/grids/{{ grid.id }}/activate" style="display:inline;">
+    <form method="post" action="/commercial/grids/{{ grid.id }}/activate">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-primary btn-sm">Activer</button>
+      <button type="submit" class="btn btn-primary"><i data-lucide="check"></i> Activer</button>
     </form>
     {% if grid.lines %}
-    <form method="post" action="/commercial/grids/{{ grid.id }}/recalculate" style="display:inline;">
+    <form method="post" action="/commercial/grids/{{ grid.id }}/recalculate">
       <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-secondary btn-sm" title="Recalcule le base_rate de toutes les routes non-manuelles (OPEX × jours de mer / 978)">↻ Recalculer (OPEX)</button>
+      <button type="submit" class="btn btn-secondary" title="Recalcule le coût de revient de chaque route — un prix confirmé n'est pas touché"><i data-lucide="refresh-cw"></i> Recalculer les coûts</button>
     </form>
     {% endif %}
-    {% endif %}
-    {% if grid.status == 'active' %}
-    <form method="post" action="/commercial/grids/{{ grid.id }}/draft" style="display:inline;">
-      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-      <button type="submit" class="btn btn-secondary btn-sm" title="Déverrouille l'édition (la grille n'est plus appliquée)">Repasser en brouillon</button>
-    </form>
-    <span class="btn btn-secondary btn-sm" style="opacity:.5;cursor:not-allowed;" title="Grille active verrouillée — repassez-la en brouillon">Modifier (verrouillé)</span>
+    <a href="/commercial/grids/{{ grid.id }}/edit" class="btn btn-secondary"><i data-lucide="pencil"></i> Modifier l'en-tête</a>
     {% else %}
-    <a href="/commercial/grids/{{ grid.id }}/edit" class="btn btn-secondary btn-sm">Modifier l'en-tête</a>
+    <form method="post" action="/commercial/grids/{{ grid.id }}/draft">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-secondary" title="Déverrouille l'édition (la grille n'est plus appliquée)"><i data-lucide="unlock"></i> Repasser en brouillon</button>
+    </form>
     {% endif %}
-    <a href="/commercial/grids" class="btn btn-ghost">← Retour</a>
+    {% if is_admin(user) %}
+    <form method="post" action="/commercial/grids/{{ grid.id }}/delete">
+      <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+      <button type="submit" class="btn btn-danger" data-confirm="Supprimer définitivement la grille {{ grid.reference }} ?"><i data-lucide="trash-2"></i> Supprimer</button>
+    </form>
+    {% endif %}
+    <a href="/commercial/grids" class="btn btn-ghost"><i data-lucide="arrow-left"></i> Retour</a>
   </div>
 </header>
 
@@ -55,20 +61,33 @@
 
 <article class="card">
   <h2>Routes (POL → POD)</h2>
-  <p class="text-muted text-sm">Chaque route porte sa distance, son OPEX jour et son tarif de base : <span class="mono">base_rate = OPEX/j × (distance / (vitesse × 24)) / capacité navire</span> — vitesse et capacité réelles du leg/navire quand ils sont connus. Le tarif effectif d'une estimation = base_rate × palier × index.</p>
+  <p class="text-muted text-sm">
+    Le commercial <strong>annonce un prix</strong> ; le logiciel calcule le <strong>coût de revient</strong> de la route
+    et en déduit la marge. Tant qu'un prix n'a pas été confirmé, celui affiché n'est qu'une proposition.
+  </p>
   <div class="table-scroll">
   <table class="data-table">
-    <thead><tr><th>Référence</th><th>Route</th><th>Distance (NM)</th><th>Jours de mer</th><th>OPEX/j</th><th>Tarif base</th><th>Source</th>{% if editable %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>Référence</th><th>Route</th><th>Unité</th><th>Distance (NM)</th><th>Jours de mer</th><th>OPEX/j</th><th>Coût de revient</th><th>Prix annoncé</th><th>Marge</th><th>Prix</th>{% if editable %}<th></th>{% endif %}</tr></thead>
     <tbody>
       {% for r in grid.lines %}
       <tr>
         <td class="mono">{{ r.tariff_reference or '—' }}{% if r.is_route_default %} <span class="pill pill-ok" title="Grille appliquée par défaut sur cette route">défaut</span>{% endif %}</td>
         <td class="mono">{{ r.pol_locode }} → {{ r.pod_locode }}</td>
+        <td class="text-sm">{{ r.rate_unit_label }}</td>
         <td class="mono">{{ r.distance_nm }}</td>
         <td class="mono">{{ r.nav_days }}</td>
         <td class="mono">{{ r.opex_daily|money }}</td>
-        <td class="mono">{{ r.base_rate|money }}</td>
-        <td>{% if r.is_manual %}<span class="pill pill-neutral">manuel</span>{% else %}<span class="pill pill-ok">OPEX</span>{% endif %}</td>
+        <td class="mono">
+          {%- if r.cost_rate is not none -%}{{ r.cost_rate|money }}
+          {%- else -%}<span class="margin-unknown" title="Port en lourd absent du référentiel flotte — renseignez-le dans Admin → Flotte">—</span>{%- endif -%}
+        </td>
+        <td class="mono"><strong>{{ r.base_rate|money }}</strong></td>
+        <td class="mono {{ 'margin-negative' if r.is_below_cost else '' }}">
+          {%- if r.margin_eur is not none -%}
+            {{ r.margin_eur|money }}{% if r.margin_pct is not none %} <span class="text-muted">({{ r.margin_pct }} %)</span>{% endif %}
+          {%- else -%}<span class="margin-unknown">—</span>{%- endif -%}
+        </td>
+        <td>{% if r.is_manual %}<span class="pill pill-ok" title="Prix confirmé par le commercial — un recalcul de coût ne le déplace pas">confirmé</span>{% else %}<span class="pill pill-neutral" title="Proposition du logiciel (coût + marge cible) — à confirmer">proposé</span>{% endif %}</td>
         {% if editable %}
         <td class="flex gap-2">
           <details>
@@ -80,15 +99,27 @@
                 <input name="distance_nm" type="number" min="0" step="0.01" value="{{ r.distance_nm }}" class="mono" />
               </div>
               <div class="field">
-                <label>Tarif base manuel (€) <small class="text-muted">— vide = OPEX</small></label>
-                <input name="base_rate" type="number" min="0" step="0.01" placeholder="OPEX auto" class="mono" {% if r.is_manual %}value="{{ r.base_rate }}"{% endif %} />
+                <label>Unité de vente</label>
+                <select name="rate_unit">
+                  {% for u in rate_units %}<option value="{{ u }}" {% if r.rate_unit == u %}selected{% endif %}>{{ rate_unit_labels.get(u, u) }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="field">
+                <label>Prix annoncé ({{ r.rate_unit_label }}) <small class="text-muted">— vide = proposition du logiciel</small></label>
+                <input name="base_rate" type="number" min="0" step="0.01" placeholder="proposition auto" class="mono" {% if r.is_manual %}value="{{ r.base_rate }}"{% endif %} />
               </div>
               <button type="submit" class="btn btn-primary btn-sm">Enregistrer</button>
             </form>
           </details>
+          {% if not r.is_manual %}
+          <form method="post" action="/commercial/grids/{{ grid.id }}/routes/{{ r.id }}/confirm-price" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
+            <button type="submit" class="btn btn-ghost btn-sm" title="Confirmer le prix proposé, sans le modifier">Confirmer</button>
+          </form>
+          {% endif %}
           <form method="post" action="/commercial/grids/{{ grid.id }}/routes/{{ r.id }}/recalculate" style="display:inline;">
             <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
-            <button type="submit" class="btn btn-ghost btn-sm" title="Recalcule l'OPEX (efface la surcharge manuelle)">↻</button>
+            <button type="submit" class="btn btn-ghost btn-sm" title="Recalcule le coût de revient — un prix confirmé n'est pas touché">↻</button>
           </form>
           {% if not r.is_route_default %}
           <form method="post" action="/commercial/grids/{{ grid.id }}/routes/{{ r.id }}/default" style="display:inline;">
@@ -104,7 +135,7 @@
         {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="{{ '8' if editable else '7' }}" class="text-muted text-center">Aucune route. Ajoutez une route POL→POD.</td></tr>
+      <tr><td colspan="{{ '11' if editable else '10' }}" class="text-muted text-center">Aucune route. Ajoutez une route POL→POD.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -131,8 +162,14 @@
         <input id="route-distance" name="distance_nm" type="number" min="0" step="0.01" placeholder="auto" class="mono" />
       </div>
       <div class="field">
-        <label for="route-base">Tarif base manuel (€) <small class="text-muted">— vide = formule OPEX</small></label>
-        <input id="route-base" name="base_rate" type="number" min="0" step="0.01" placeholder="OPEX auto" class="mono" />
+        <label for="route-unit">Unité de vente</label>
+        <select id="route-unit" name="rate_unit">
+          {% for u in rate_units %}<option value="{{ u }}">{{ rate_unit_labels.get(u, u) }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="route-base">Prix annoncé (€) <small class="text-muted">— vide = proposition du logiciel (coût + marge cible)</small></label>
+        <input id="route-base" name="base_rate" type="number" min="0" step="0.01" placeholder="proposition auto" class="mono" />
       </div>
     </div>
     <button type="submit" class="btn btn-primary">Ajouter la route</button>

@@ -101,7 +101,7 @@ async def mrv_parametres(
     # Scopes MRV uniquement : le moteur de validation est mutualisé (QHSE y pose
     # RQ01-RQ03), cet écran ne l'est pas — il s'administre sur `mrv:S`. Voir
     # `MRV_RULE_SCOPES` dans `validation_engine` (fail-closed).
-    from app.services.validation_engine import MRV_RULE_SCOPES
+    from app.services.validation_engine import MRV_RULE_SCOPES, RULE_SEED
 
     rules = list(
         (
@@ -123,6 +123,19 @@ async def mrv_parametres(
         .scalars()
         .all()
     )
+
+    # 🔴 Référentiel INCOMPLET ≠ référentiel VIDE.
+    #
+    # `seeded` ne regardait que les scopes MRV : une base portant les 35 règles
+    # MRV mais aucune règle QHSE était donc « semée », et le bouton d'init —
+    # pourtant idempotent et additif — restait invisible. C'est exactement l'état
+    # de la production au 2026-09-04 (`RQ01`-`RQ03` ajoutées à `RULE_SEED` après
+    # le passage de la migration 0097), et il rendait tout import QHSE
+    # impossible sans qu'aucun écran n'offre de réparation.
+    #
+    # On compare donc au catalogue codé COMPLET, tous scopes confondus.
+    present = set((await db.execute(select(ValidationRule.rule_id))).scalars().all())
+    missing_rules = sorted({rid for (rid, *_rest) in RULE_SEED} - present)
 
     rule_by_id = {r.rule_id: r for r in rules}
     vessel_by_id = {v.id: v for v in vessels}
@@ -151,6 +164,7 @@ async def mrv_parametres(
             "vessels": vessels,
             "vessel_by_id": vessel_by_id,
             "seeded": bool(rules),
+            "missing_rules": missing_rules,
             "provisional_count": sum(1 for t in thr_global if t.provisional),
         },
     )
