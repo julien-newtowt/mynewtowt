@@ -39,15 +39,19 @@
 {% endif %}
 
 {# ───────────────────────────── Filtre navire ───────────────────────────── #}
+{# Le filtre navire CONSERVE le périmètre choisi : sans ce report, sélectionner
+   un navire remettait silencieusement le sélecteur sur « périmètre MRV », donc
+   changeait le sens des chiffres affichés sans que rien ne le signale. #}
+{% set keep_scope = '&include_anchoring=true' if include_anchoring else '' %}
 <div class="flex items-center gap-2 mb-4" style="flex-wrap:wrap;">
   <span class="text-muted text-sm">{{ t('mrv_em_filter_vessel', lang) }}</span>
   <div class="flex gap-1" style="flex-wrap:wrap;">
-    <a href="{{ base }}"
+    <a href="{{ base }}{{ '?include_anchoring=true' if include_anchoring else '' }}"
        class="btn btn-sm {% if not selected_vessel_id %}btn-primary{% else %}btn-ghost{% endif %}">
       <i data-lucide="layers"></i> {{ t('mrv_em_fleet_all', lang) }}
     </a>
     {% for v in vessels %}
-    <a href="{{ base }}?vessel_id={{ v.id }}"
+    <a href="{{ base }}?vessel_id={{ v.id }}{{ keep_scope }}"
        class="btn btn-sm {% if selected_vessel_id == v.id %}btn-primary{% else %}btn-ghost{% endif %}">
       <i data-lucide="ship"></i> {{ v.name }}
     </a>

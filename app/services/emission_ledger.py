@@ -94,6 +94,31 @@ def _num(value: Decimal | int | float | None) -> str | None:
     return None if value is None else str(value)
 
 
+def _positive_or_none(conso_t: Decimal | None) -> Decimal | None:
+    """Assiette d'émission utilisable, ou ``None`` — jamais une valeur négative.
+
+    🔴 Une consommation négative est une **anomalie de donnée**, pas une
+    émission négative. ``_escale_consumption`` peut en produire une par la
+    formule de continuité ROB (``ROB_arrivée + soutages − ROB_départ``) dès
+    qu'un soutage n'est pas validé Master ou qu'un ROB a été corrigé : le
+    départ paraît alors plus rempli que l'arrivée. Idem pour un delta de
+    compteurs incohérent.
+
+    Tant que ces postes n'étaient qu'affichés en **consommation**, l'anomalie
+    restait visible et lisible comme telle. Depuis qu'on en dérive une
+    émission, la laisser passer produirait un CO₂ négatif affiché ET persisté —
+    du carbone créé de toutes pièces dans un tableau d'émissions.
+
+    On renvoie donc ``None``, que la restitution rend « non calculé » : une
+    absence assumée plutôt qu'un chiffre faux. La consommation négative, elle,
+    reste exposée telle quelle et relève du moteur de qualité (R14, écarts de
+    ROB) — c'est là qu'elle doit être signalée, pas ici.
+    """
+    if conso_t is None or conso_t < 0:
+        return None
+    return conso_t
+
+
 # ════════════════════════════════ Émissions multi-GES (déplacé de report_generation)
 
 
@@ -301,6 +326,64 @@ async def _next_departure_event(
         if _naive_utc(ev.datetime_utc) is not None and _naive_utc(ev.datetime_utc) > after_naive:
             return ev
     return None
+
+
+async def _previous_arrival_event(
+    db: AsyncSession, vessel_id: int, before: datetime
+) -> NavEvent | None:
+    """Dernier Arrival finalisé du navire avant ``before`` — symétrique de
+    :func:`_next_departure_event`.
+
+    Sert à répondre à la question « quelle escale ce Departure vient-il de
+    clore ? », indispensable pour savoir quel résumé de voyage un événement
+    rend obsolète (cf. :func:`legs_affected_by_event`).
+    """
+    before_naive = _naive_utc(before)
+    rows = await db.execute(
+        select(NavEvent)
+        .where(
+            NavEvent.vessel_id == vessel_id,
+            NavEvent.event_type == "arrival",
+            NavEvent.status.in_(iec.FINALIZED_STATUSES),
+        )
+        .order_by(NavEvent.datetime_utc.desc())
+    )
+    for ev in rows.scalars().all():
+        dt = _naive_utc(ev.datetime_utc)
+        if dt is not None and before_naive is not None and dt < before_naive:
+            return ev
+    return None
+
+
+async def legs_affected_by_event(db: AsyncSession, event: NavEvent) -> list[int]:
+    """Voyages dont le résumé d'émissions devient obsolète après cet événement.
+
+    🔴 **Ce n'est pas seulement le leg de l'événement.** La conso d'escale d'un
+    voyage (donc ses « Port Emissions ») est bornée par le **Departure
+    suivant**, qui appartient au voyage d'après (G12). Rafraîchir le seul leg de
+    l'événement laissait donc ``conso_escale_t``/``co2_escale_t`` du voyage
+    précédent définitivement à ``NULL`` — et l'écran ``/mrv/emissions/port``,
+    qui filtre les lignes sans escale, restait **vide en permanence**.
+
+    Le défaut était invisible aux tests parce que ceux-ci injectent les résumés
+    directement, sans passer par le hook de finalisation. Il ne se voit qu'en
+    exerçant la séquence réelle : arrivée du leg N, puis départ du leg N+1.
+
+    La connaissance de la fenêtre d'escale vit ici, dans le grand livre, et non
+    dans ``event_capture`` : c'est le grand livre qui définit ce qu'une escale
+    borne.
+    """
+    affected: list[int] = []
+    if event.leg_id is not None:
+        affected.append(event.leg_id)
+
+    # Un Departure clôt l'escale ouverte par l'Arrival précédent du même
+    # navire : le résumé de CE voyage-là change aussi.
+    if isinstance(event, DepartureEvent) and event.vessel_id is not None:
+        arrival = await _previous_arrival_event(db, event.vessel_id, event.datetime_utc)
+        if arrival is not None and arrival.leg_id is not None and arrival.leg_id not in affected:
+            affected.append(arrival.leg_id)
+    return affected
 
 
 async def _bunkered_t_between(
@@ -591,7 +674,7 @@ async def compute_for_leg(
     # `conso_escale_t` couvre l'escale qui SUIT l'arrivée, jamais la navigation.
     # Même facteur et même primitive — la règle d'or veut que l'unique
     # multiplication conso × facteur reste ici.
-    em_escale = emissions_breakdown(conso_escale, factor)
+    em_escale = emissions_breakdown(_positive_or_none(conso_escale), factor)
     co2_escale_t = Decimal(em_escale["co2_t"]) if em_escale["co2_t"] is not None else None
     co2eq_escale_t = Decimal(em_escale["co2eq_t"]) if em_escale["co2eq_t"] is not None else None
 
@@ -599,7 +682,7 @@ async def compute_for_leg(
     # Calculées ici quand même : c'est du carburant réellement brûlé, et la
     # règle d'or veut que la multiplication vive dans ce module. Ne jamais les
     # additionner aux deux autres assiettes pour un total réglementaire.
-    em_mouillage = emissions_breakdown(conso_mouillage, factor)
+    em_mouillage = emissions_breakdown(_positive_or_none(conso_mouillage), factor)
     co2_mouillage_t = Decimal(em_mouillage["co2_t"]) if em_mouillage["co2_t"] is not None else None
     co2eq_mouillage_t = (
         Decimal(em_mouillage["co2eq_t"]) if em_mouillage["co2eq_t"] is not None else None

@@ -134,9 +134,24 @@ class LegEmissionRow:
 async def _rows(
     db: AsyncSession, *, vessel_id: int | None, only_with_escale: bool
 ) -> list[LegEmissionRow]:
-    stmt = select(Leg).order_by(Leg.etd.desc()).limit(_LIMIT)
+    stmt = select(Leg)
     if vessel_id is not None:
         stmt = stmt.where(Leg.vessel_id == vessel_id)
+    if only_with_escale:
+        # 🔴 Le filtre doit précéder le PLAFOND, pas le suivre.
+        #
+        # Les legs sont triés par ETD décroissant : une séquence planifiée à
+        # l'avance remplit les 40 places avec des voyages FUTURS, sans escale.
+        # Filtrer après le plafond rendait alors `/mrv/emissions/port` vide
+        # alors que tous les voyages arrivés ont une escale à montrer.
+        #
+        # Une escale n'existe que si le voyage est arrivé ET que le départ
+        # suivant est finalisé (G12) : `conso_escale_t` non nul est donc le
+        # critère exact, et il est exprimable en SQL.
+        stmt = stmt.join(VoyageEmissionSummary, VoyageEmissionSummary.leg_id == Leg.id).where(
+            VoyageEmissionSummary.conso_escale_t.is_not(None)
+        )
+    stmt = stmt.order_by(Leg.etd.desc()).limit(_LIMIT)
     legs = list((await db.execute(stmt)).scalars().all())
     if not legs:
         return []
@@ -174,10 +189,6 @@ async def _rows(
         )
         for leg in legs
     ]
-    if only_with_escale:
-        # Une escale n'existe que si le voyage est arrivé : sans conso d'escale,
-        # la ligne n'aurait rien à dire (cf. G12 — `None` tant que non arrivé).
-        rows = [r for r in rows if r.conso_escale_t is not None]
     return rows
 
 
@@ -191,9 +202,12 @@ async def voyage_emissions(
 async def port_emissions(db: AsyncSession, *, vessel_id: int | None = None) -> list[LegEmissionRow]:
     """Séjour au port qui suit l'arrivée de chaque voyage.
 
-    Consommation seule — l'émission d'escale n'est pas calculée par le grand
-    livre (cf. docstring du module). Ne renvoie que les voyages effectivement
-    arrivés.
+    Consommation **et** émission d'escale, toutes deux issues du grand livre
+    (``conso_escale_t``, ``co2_escale_t`` — cf. docstring du module). Assiette
+    disjointe de celle du trajet, jamais additionnée ici.
+
+    Ne renvoie que les escales réellement closes : ``conso_escale_t`` non nul,
+    ce qui suppose le voyage arrivé **et** le départ suivant finalisé (G12).
     """
     return await _rows(db, vessel_id=vessel_id, only_with_escale=True)
 

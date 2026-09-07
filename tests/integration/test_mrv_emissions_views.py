@@ -325,11 +325,67 @@ async def test_extended_total_is_none_when_the_voyage_figure_is_missing(db):
     assert rows["1BFRBR6"].co2_with_anchoring_t == Decimal("10.000")
 
 
+async def test_the_cap_does_not_hide_arrived_legs_behind_future_ones(db):
+    """🔴 Le plafond de 40 était appliqué AVANT le filtre d'escale.
+
+    Les legs sont triés par ETD décroissant : une séquence planifiée à l'avance
+    remplit les 40 places avec des voyages futurs, sans escale. L'écran
+    `/mrv/emissions/port` se rendait alors vide alors que des escales
+    existaient.
+    """
+    vessel, _other, ports = await _fleet(db)
+    # 45 voyages FUTURS sans escale — de quoi saturer le plafond.
+    for i in range(45):
+        await _leg(
+            db,
+            vessel,
+            ports,
+            code=f"F{i:03d}",
+            etd=T0 + timedelta(days=100 + i),
+            summary={"co2_t": Decimal("1")},
+        )
+    # Un voyage ancien, arrivé, avec une escale close.
+    await _leg(
+        db,
+        vessel,
+        ports,
+        code="ARRIVE",
+        etd=T0,
+        summary={"conso_escale_t": Decimal("1.2"), "co2_escale_t": Decimal("3.8")},
+    )
+
+    rows = await emv.port_emissions(db)
+    assert [r.leg.leg_code for r in rows] == ["ARRIVE"]
+
+
 async def test_screens_render_empty_without_crashing(db, staff_user):
     for coro in (mr.mrv_emissions_voyages, mr.mrv_emissions_port):
         resp = await coro(FakeRequest(), db=db, user=staff_user)
         assert resp.status_code == 200
         assert resp.context["rows"] == []
+
+
+async def test_the_vessel_filter_keeps_the_selected_perimeter(db, staff_user):
+    """🔴 Sélectionner un navire remettait le sélecteur sur « périmètre MRV ».
+
+    Changer de navire ne doit pas changer le SENS des chiffres affichés sans le
+    dire : les liens du filtre reportent donc le périmètre choisi.
+    """
+    vessel, _other, ports = await _fleet(db)
+    await _leg(
+        db,
+        vessel,
+        ports,
+        code="1AFRBR6",
+        etd=T0,
+        summary={"co2_t": Decimal("10"), "co2_mouillage_t": Decimal("2")},
+    )
+
+    resp = await mr.mrv_emissions_voyages(
+        FakeRequest(), vessel_id=vessel.id, include_anchoring=True, db=db, user=staff_user
+    )
+    assert resp.context["include_anchoring"] is True
+    assert resp.context["selected_vessel_id"] == vessel.id
 
 
 async def test_unknown_vessel_falls_back_to_fleet(db, staff_user):

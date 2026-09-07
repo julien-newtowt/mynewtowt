@@ -787,11 +787,12 @@ async def mrv_emissions_port(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("mrv", "C")),
 ) -> HTMLResponse:
-    """Séjour au port suivant l'arrivée — **consommation** seule.
+    """Émissions du séjour au port qui suit l'arrivée d'un voyage.
 
-    L'émission correspondante n'est pas calculée par le grand livre (assiette
-    hors mouillage) : l'écran le dit au lieu de laisser une cellule vide, qui se
-    lirait comme un zéro. Cf. ``services.mrv_emission_views``.
+    Assiette **disjointe** de celle du trajet, calculée par le grand livre
+    (``co2_escale_t``) — jamais additionnée au trajet ici. Le mouillage, lui,
+    est hors périmètre MRV et n'apparaît pas sur cet écran. Cf.
+    ``services.mrv_emission_views``.
     """
     return await _emissions_screen(request, scope="port", vessel_id=vessel_id, db=db, user=user)
 

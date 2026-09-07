@@ -67,6 +67,7 @@ nombre de navires comme une variable (§3.0/§11.8), jamais câblée sur les
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -81,6 +82,7 @@ from app.models.qhse import (
     QhseReport,
     RootCauseEvaluation,
 )
+from app.models.user import User
 from app.models.vessel import Vessel
 from app.services.planning import ensure_utc
 
@@ -101,9 +103,14 @@ ISSUER_ORIGINS: tuple[str, ...] = (
 )
 
 #: Autorités externes — États du pavillon, contrôles par l'État du port,
-#: sociétés de classification. Motifs volontairement larges (familles) plutôt
-#: qu'une liste de noms propres : « Transport Canada » et
+#: capitaineries, sociétés de classification. Motifs volontairement larges
+#: (familles) plutôt qu'une liste de noms propres : « Transport Canada » et
 #: « TRANSPORT CANADA [Sync] » doivent tomber au même endroit.
+#:
+#: ⚠️ « harbour master » / « capitainerie » sont ici et NON dans les motifs de
+#: bord : un capitaine de port est une autorité portuaire, pas un membre de
+#: l'équipage. Comme les motifs externes sont testés en premier, la présence de
+#: « master » dans la chaîne ne peut plus le faire basculer côté bord.
 _EXTERNAL_PATTERNS: tuple[str, ...] = (
     "centre de securite des navires",
     "transport canada",
@@ -113,8 +120,13 @@ _EXTERNAL_PATTERNS: tuple[str, ...] = (
     "port state",
     "flag state",
     "maritime authority",
+    "harbour master",
+    "harbor master",
+    "harbourmaster",
+    "capitainerie",
     "bureau veritas",
-    "lloyd",
+    "lloyd s register",
+    "lloyds register",
     "class nk",
     "classnk",
     "dnv",
@@ -141,9 +153,43 @@ _SHORE_PATTERNS: tuple[str, ...] = ("company", "siege", "armement", "hseq", "qhs
 
 
 def _fold(text: str) -> str:
-    """Minuscules sans accents — comparaison robuste aux variantes de saisie."""
+    """Minuscules sans accents, apostrophes ramenées à un espace.
+
+    L'apostrophe est normalisée parce que « Lloyd's Register » et
+    « Lloyds Register » désignent la même société de classification, et que la
+    forme avec apostrophe existe en deux caractères (``'`` et ``’``). Les
+    motifs peuvent ainsi être écrits en mots séparés.
+    """
     stripped = unicodedata.normalize("NFKD", text)
-    return "".join(c for c in stripped if not unicodedata.combining(c)).lower()
+    without_accents = "".join(c for c in stripped if not unicodedata.combining(c)).lower()
+    return without_accents.replace("'", " ").replace("’", " ")
+
+
+def _matches(folded: str, patterns: tuple[str, ...]) -> bool:
+    """Cherche un motif sur une **frontière de mot**, jamais en sous-chaîne nue.
+
+    🔴 Le motif nu était une source de fausses attributions silencieuses, et sur
+    l'axe le plus coûteux : les motifs d'autorité externe étant testés en
+    premier, un prénom suffisait à ranger un signalement du bord chez une
+    autorité de contrôle. « Sab\\ **rina** », « Kat\\ **rina** »,
+    « Ma\\ **rina** » contiennent ``rina`` (RINA, société de classification) ;
+    « Lloyd » comme nom de famille contenait ``lloyd``.
+    (Ce dernier est en outre resserré sur « Lloyd's Register ».)
+
+    ``\\b`` ne conviendrait pas seul : ``c/o`` et ``c/e`` contiennent une barre
+    oblique, qui n'est pas un caractère de mot — la frontière y tomberait au
+    mauvais endroit. On borne donc sur « début/fin de chaîne ou caractère non
+    alphanumérique », ce qui traite les deux familles de motifs.
+    """
+    return any(
+        re.search(rf"(?:^|[^0-9a-z]){re.escape(p)}(?:$|[^0-9a-z])", folded) for p in patterns
+    )
+
+
+#: Rôles de la matrice de permissions qui désignent du personnel **embarqué**.
+#: Un compte MyTOWT ne signifie donc pas « à terre » : les marins en ont un,
+#: c'est même requis pour accéder à ``/captain``.
+_ONBOARD_ROLES: frozenset[str] = frozenset({"marins"})
 
 
 def classify_issuer_origin(
@@ -151,44 +197,49 @@ def classify_issuer_origin(
     issued_by_raw: str | None,
     has_crew_link: bool = False,
     has_user_link: bool = False,
+    user_role: str | None = None,
     vessel_names: frozenset[str] = frozenset(),
 ) -> str:
     """Origine de l'émetteur d'un signalement — bord / siège / autorité externe.
 
     Heuristique **explicite et révisable**, appliquée dans cet ordre :
 
-    1. un émetteur identifié comme membre d'équipage est du bord, et un
-       émetteur identifié comme utilisateur MyTOWT est à terre. Ces deux liens
-       sont posés par l'ingestion sur un nom réellement rapproché du
-       référentiel — c'est plus sûr que n'importe quel motif textuel.
-       ⚠️ Limite connue : un marin qui possède aussi un compte utilisateur est
-       rapproché de l'utilisateur en premier (``qhse_ingestion`` ne consulte
-       l'équipage que si aucun utilisateur ne correspond) et sera donc classé
-       « siège ». Le cas ne se présente pas sur les données actuelles.
+    1. un émetteur identifié comme membre d'équipage est du bord. Un émetteur
+       identifié comme **utilisateur MyTOWT** est classé d'après son **rôle**,
+       et non d'après le seul fait d'avoir un compte : les marins en ont un
+       (c'est requis pour ``/captain``), donc « compte ⇒ siège » rangeait le
+       bord à terre. ``qhse_ingestion`` rapproche l'utilisateur AVANT
+       l'équipage et vide alors ``issued_by_raw`` : sans le rôle, aucun repli
+       textuel ne pouvait rattraper l'erreur.
     2. autorité externe avant tout motif interne : un contrôle par l'État du
-       port cite parfois un navire, et ce n'est pas le navire qui signale.
+       port cite parfois un navire, et ce n'est pas le navire qui signale. Un
+       capitaine de port (« harbour master ») est d'ailleurs classé là, pas au
+       bord.
     3. fonction de bord, ou mention d'un nom de navire de la flotte.
     4. siège.
     5. sinon ``indetermine`` — y compris pour un ``TOWT`` seul, trop ambigu
        pour être attribué (5 lignes réelles dans ce cas).
+
+    Tous les rapprochements textuels se font sur une **frontière de mot** (cf.
+    :func:`_matches`) : une sous-chaîne nue attribuait « Sabrina » à RINA.
     """
     if has_crew_link:
         return ISSUER_ORIGIN_ONBOARD
     if has_user_link:
-        return ISSUER_ORIGIN_SHORE
+        return ISSUER_ORIGIN_ONBOARD if user_role in _ONBOARD_ROLES else ISSUER_ORIGIN_SHORE
 
     if not issued_by_raw or not issued_by_raw.strip():
         return ISSUER_ORIGIN_UNKNOWN
 
     folded = _fold(issued_by_raw)
 
-    if any(p in folded for p in _EXTERNAL_PATTERNS):
+    if _matches(folded, _EXTERNAL_PATTERNS):
         return ISSUER_ORIGIN_EXTERNAL
-    if any(p in folded for p in _ONBOARD_PATTERNS):
+    if _matches(folded, _ONBOARD_PATTERNS):
         return ISSUER_ORIGIN_ONBOARD
-    if any(name and name in folded for name in vessel_names):
+    if _matches(folded, tuple(n for n in vessel_names if n)):
         return ISSUER_ORIGIN_ONBOARD
-    if any(p in folded for p in _SHORE_PATTERNS):
+    if _matches(folded, _SHORE_PATTERNS):
         return ISSUER_ORIGIN_SHORE
     return ISSUER_ORIGIN_UNKNOWN
 
@@ -316,6 +367,16 @@ async def build_dashboard(
     vessel_names = frozenset(
         _fold(v.name) for v in (await db.execute(select(Vessel))).scalars().all() if v.name
     )
+    # Rôle de l'émetteur rapproché d'un compte MyTOWT : un marin en possède un,
+    # donc « compte ⇒ siège » rangeait le bord à terre (cf.
+    # `classify_issuer_origin`). Chargé en une requête, pas par ligne.
+    reporter_ids = {r.reporter_user_id for r in reports if r.reporter_user_id is not None}
+    roles_by_user_id: dict[int, str] = {}
+    if reporter_ids:
+        roles_by_user_id = dict(
+            (await db.execute(select(User.id, User.role).where(User.id.in_(reporter_ids)))).all()
+        )
+
     origin_tally = dict.fromkeys(ISSUER_ORIGINS, 0)
     for r in reports:
         origin_tally[
@@ -323,6 +384,7 @@ async def build_dashboard(
                 issued_by_raw=r.issued_by_raw,
                 has_crew_link=r.reporter_crew_member_id is not None,
                 has_user_link=r.reporter_user_id is not None,
+                user_role=roles_by_user_id.get(r.reporter_user_id),
                 vessel_names=vessel_names,
             )
         ] += 1
