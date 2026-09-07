@@ -458,3 +458,397 @@ def test_the_result_screen_distinguishes_loss_from_doubt():
     assert "report.flagged" in src
     assert "report.warnings" in src
     assert "qhse_import_result_loss_notice" in src
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#        Réconciliation des ré-imports (D10) — 2026-09-03
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Le FMS ré-exporte périodiquement l'intégralité du registre : sans clé de
+# rapprochement, chaque ré-export duplique tout le registre. Cf. docstring de
+# ``qhse_ingestion`` et ``migrations/versions/20260903_0141_...``.
+
+
+def test_source_code_distinguishes_real_psc_edge_case():
+    """Trois signalements PSC réels (Artemis, 2025-01-28) partagent navire,
+    jour et un ``Subject`` générique (« PSC ») — seule leur ``Description``
+    les distingue (cahier des charges §3.3). ``Subject`` seul dans la clé les
+    fusionnerait à tort ; leur ``Description`` réelle les sépare.
+    """
+    from datetime import UTC, datetime
+
+    from app.services.qhse_ingestion import _compute_source_code
+
+    day = datetime(2025, 1, 28, tzinfo=UTC)
+    codes = {
+        _compute_source_code(1, day, "PSC", "see PSC QHSE report code 1511"),
+        _compute_source_code(
+            1, day, "PSC", "Failure of implementation of ISM code considered by USCG"
+        ),
+        _compute_source_code(
+            1,
+            day,
+            "PSC",
+            "Oil record book was found with incorrect entries with discharge of "
+            "oil at sea without the position entered.",
+        ),
+    }
+    assert len(codes) == 3
+
+
+def test_source_code_is_stable_across_calls():
+    """Même entrée → même clé, condition de base de toute réconciliation."""
+    from datetime import UTC, datetime
+
+    from app.services.qhse_ingestion import _compute_source_code
+
+    day = datetime(2026, 1, 10, tzinfo=UTC)
+    assert _compute_source_code(1, day, "Subject", "desc") == _compute_source_code(
+        1, day, "Subject", "desc"
+    )
+
+
+async def _seed_vessel(db) -> None:
+    """``seed_reference_data`` ne crée aucun navire — chaque test en pose un,
+    même motif que ``test_import_qhse_xlsx_happy_path_and_quarantine``."""
+    db.add(Vessel(code="ANE", name="Anemos"))
+    await db.flush()
+
+
+async def test_reimport_updates_instead_of_duplicating(db):
+    """Importer deux fois le même fichier ne double pas le registre."""
+    await _seed_vessel(db)
+    wb = _workbook([_row("A near miss"), _row("A second report", day=11)])
+
+    first = await import_qhse_xlsx(db, wb, filename="f1.xlsx")
+    assert (first.imported, first.updated) == (2, 0)
+
+    second = await import_qhse_xlsx(db, wb, filename="f2.xlsx")
+    assert (second.imported, second.updated) == (0, 2)
+
+    rows = (await db.execute(select(QhseReport))).scalars().all()
+    assert len(rows) == 2  # pas 4
+
+
+async def test_reimport_moves_the_row_to_the_latest_batch(db):
+    """``import_batch_id`` reflète le dernier import qui a touché la ligne,
+    pas seulement le premier — traçabilité D10."""
+    from app.models.qhse import QhseImportBatch
+
+    await _seed_vessel(db)
+    wb = _workbook([_row("A near miss")])
+    await import_qhse_xlsx(db, wb, filename="f1.xlsx")
+    second = await import_qhse_xlsx(db, wb, filename="f2.xlsx")
+
+    report_row = (await db.execute(select(QhseReport))).scalars().one()
+    batches = (await db.execute(select(QhseImportBatch))).scalars().all()
+    latest_batch = max(batches, key=lambda b: b.id)
+    assert report_row.import_batch_id == latest_batch.id
+    assert latest_batch.updated_count == second.updated == 1
+
+
+async def test_import_batch_persisted_with_counts(db):
+    """Le lot est une ligne interrogeable, pas seulement une mention dans
+    ``activity_logs`` — compteurs cohérents avec le rapport renvoyé."""
+    from app.models.qhse import QhseImportBatch
+    from app.models.user import User
+
+    await _seed_vessel(db)
+    db.add(
+        User(
+            id=7,
+            username="qhse",
+            email="qhse@example.test",
+            hashed_password="x",
+            role="manager_maritime",
+        )
+    )
+    await db.flush()
+    wb = _workbook([_row("A near miss"), _row("Unknown ship", vessel="Nope")])
+    report = await import_qhse_xlsx(db, wb, filename="import.xlsx", imported_by_user_id=7)
+
+    batch = (await db.execute(select(QhseImportBatch))).scalars().one()
+    assert batch.filename == "import.xlsx"
+    assert batch.imported_by_user_id == 7
+    assert batch.created_count == report.imported == 1
+    assert batch.skipped_count == report.skipped == 1
+
+
+async def test_reimport_updates_corrective_action_without_duplicating(db):
+    """Un correctif renseigné plus tard (``CorrectiveActionFinishedDate``
+    apparaît dans un export ultérieur) met à jour la même ligne — jamais un
+    doublon (``report_id`` est UNIQUE sur ``qhse_corrective_actions``)."""
+    from app.models.qhse import CorrectiveAction
+
+    await _seed_vessel(db)
+    header = [
+        *_HEADER,
+        "CorrectiveActionDescription",
+        "CorrectiveActionLimitDate",
+        "CorrectiveActionFinishedDate",
+    ]
+
+    def _wb(finished):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(header)
+        ws.append(
+            [
+                "A near miss",
+                None,
+                "desc",
+                "Crew",
+                None,
+                None,
+                "Observation",
+                datetime(2026, 1, 10),
+                None,
+                "Anemos",
+                None,
+                None,
+                "Fix the thing",
+                datetime(2026, 2, 1),
+                finished,
+            ]
+        )
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    await import_qhse_xlsx(db, _wb(None))
+    actions = (await db.execute(select(CorrectiveAction))).scalars().all()
+    assert len(actions) == 1
+    assert actions[0].status == "open"
+
+    await import_qhse_xlsx(db, _wb(datetime(2026, 2, 15)))
+    actions = (await db.execute(select(CorrectiveAction))).scalars().all()
+    assert len(actions) == 1  # toujours une seule ligne
+    assert actions[0].status == "implemented"
+    assert actions[0].finished_date is not None
+
+
+async def test_run_rules_invoked_on_import_creates_quality_check_results(db):
+    """Chaque rapport créé/mis à jour passe désormais par le moteur générique
+    (RQ01-RQ03) — enregistré mais jamais exécuté avant ce correctif."""
+    from app.models.validation import QualityCheckResult
+
+    await _seed_vessel(db)
+    wb = _workbook([_row("A near miss")])
+    await import_qhse_xlsx(db, wb)
+
+    report_row = (await db.execute(select(QhseReport))).scalars().one()
+    results = (
+        (
+            await db.execute(
+                select(QualityCheckResult).where(
+                    QualityCheckResult.subject_type == "qhse_reports",
+                    QualityCheckResult.subject_id == report_row.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {r.rule_id for r in results} == {"RQ01", "RQ02", "RQ03"}
+    assert all(r.result == "pass" for r in results)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#   Second format d'export FMS — « historique » imprimable par navire
+#   (Anemos_QHSE Reports History.xlsx, dataset réel importé le 2026-09-04)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Même FMS, présentation différente : pas de VesselName par ligne (le navire
+# est un bloc de titre par feuille), en-têtes différents, dates JJ/MM/AAAA en
+# texte, pas de date de finalisation distincte par workflow (une seule
+# ClosedDate globale). Structure ci-dessous reproduite fidèlement depuis le
+# fichier réel (4 lignes de titre, en-tête à la 5e, ligne résiduelle isolée
+# en fin de classeur).
+
+
+def _history_workbook(rows: list[list], *, vessel_title: str = "Anemos") -> bytes:
+    header = [
+        "Issued on",
+        "Grade",
+        "Subject",
+        "Issuer",
+        "Place",
+        "Limit Date",
+        "Description",
+        "Checklist",
+        "Corrective Action Remarks",
+        "Evaluation Root Analysis Remarks",
+        "Evaluation Preventive Action Remarks",
+        "C/A Limit Date",
+        "Closed date",
+        "P/A Limit Date",
+        "Closed by",
+        "Code",
+    ]
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["", "", "", "QHSE Reports History", "", "", "", "", "", ""])
+    ws.append(["", "", "", vessel_title, "", "", "", "", "", ""])
+    ws.append(["", "", "", "NewTOWT", "", "", "", "", "", ""])
+    ws.append([])
+    ws.append(header)
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _history_row(
+    subject,
+    *,
+    issued="10/01/2026",
+    grade="Near Miss / Hazard",
+    place="At Sea[Sync]",
+    description="desc",
+    corrective="-",
+    ca_limit="-",
+    closed="-",
+    root_cause="-",
+    pa_limit="-",
+    closed_by="Guillaume BATARD",
+):
+    return [
+        issued,
+        grade,
+        subject,
+        "Crew",
+        place,
+        "-",  # Limit Date — ignorée (redondante avec P/A Limit Date)
+        description,
+        None,  # Checklist — toujours vide sur le dataset réel
+        corrective,
+        root_cause,
+        "-",
+        ca_limit,
+        closed,
+        pa_limit,
+        closed_by,  # Closed by — ignorée (Marad reste l'unique outil de saisie)
+        None,
+    ]
+
+
+async def test_history_format_resolves_vessel_from_title_block(db):
+    """Aucun ``VesselName`` par ligne : le navire vient du bloc de titre."""
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss")])
+
+    report = await import_qhse_xlsx(db, wb)
+    assert report.imported == 1
+
+    saved = (await db.execute(select(QhseReport))).scalars().one()
+    vessel = (await db.execute(select(Vessel))).scalars().one()
+    assert saved.vessel_id == vessel.id
+    assert saved.issued_place == "At Sea"  # artefact [Sync] retiré, même nettoyage
+
+
+async def test_history_format_unresolved_title_vessel_skips_whole_sheet(db):
+    """Aucun navire dans le titre, aucun ``VesselName`` par ligne : la feuille
+    n'est structurellement pas exploitable — ignorée, pas quarantainée ligne
+    par ligne (RQ03 ne peut rien résoudre pour aucune ligne de cette feuille)."""
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss")], vessel_title="Unknown Ship")
+
+    report = await import_qhse_xlsx(db, wb)
+    assert report.imported == 0
+    assert report.skipped == 0
+    assert report.errors == []
+
+
+async def test_history_format_parses_ddmmyyyy_dates(db):
+    """Dates en texte ``JJ/MM/AAAA``, pas ISO — format réel de cet export."""
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss", issued="15/01/2025", closed="20/01/2025")])
+
+    await import_qhse_xlsx(db, wb)
+    saved = (await db.execute(select(QhseReport))).scalars().one()
+    assert saved.issued_date.date().isoformat() == "2025-01-15"
+    assert saved.closed_date.date().isoformat() == "2025-01-20"
+
+
+async def test_history_format_trailing_stray_row_is_quarantined_not_crashed(db):
+    """Ligne résiduelle en fin de classeur (une seule cellule, un fragment de
+    date) — reproduction du défaut réel observé sur le fichier importé.
+    Doit être quarantainée par le garde-fou existant (Subject/IssuedDate
+    manquant), jamais planter tout l'import."""
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss"), ["01/09/2026"]])
+
+    report = await import_qhse_xlsx(db, wb)
+    assert report.imported == 1
+    assert report.skipped == 1
+    assert any("manquant" in e for e in report.errors)
+
+
+async def test_history_format_uses_closed_date_as_finished_date_proxy(db):
+    """Pas de colonne de finalisation dédiée dans ce format — décision du
+    2026-09-04 : la date de clôture du signalement en tient lieu, pour les
+    DEUX workflows, uniquement quand le texte correspondant est renseigné."""
+    from app.models.qhse import CorrectiveAction, RootCauseEvaluation
+
+    await _seed_vessel(db)
+    wb = _history_workbook(
+        [
+            _history_row(
+                "A near miss",
+                corrective="Fixed it",
+                root_cause="Bad training",
+                closed="15/02/2026",
+            )
+        ]
+    )
+    await import_qhse_xlsx(db, wb)
+
+    action = (await db.execute(select(CorrectiveAction))).scalars().one()
+    evaluation = (await db.execute(select(RootCauseEvaluation))).scalars().one()
+    assert action.finished_date.isoformat() == "2026-02-15"
+    assert action.status == "implemented"
+    assert evaluation.finished_date.isoformat() == "2026-02-15"
+    assert evaluation.status == "implemented"
+
+
+async def test_history_format_no_finished_date_proxy_without_closed_date(db):
+    """Signalement encore ouvert : pas de date de clôture, donc pas de date
+    de finalisation déduite — l'action reste "open", pas un faux "implemented"."""
+    from app.models.qhse import CorrectiveAction
+
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss", corrective="Fixed it", closed="-")])
+    await import_qhse_xlsx(db, wb)
+
+    action = (await db.execute(select(CorrectiveAction))).scalars().one()
+    assert action.finished_date is None
+    assert action.status == "open"
+
+
+async def test_history_format_ignores_limit_date_checklist_and_closed_by(db):
+    """``Limit Date``/``Checklist``/``Closed by`` n'ont aucun alias — ignorées,
+    et surtout : ne doivent atterrir dans AUCUN autre champ par accident."""
+    await _seed_vessel(db)
+    wb = _history_workbook(
+        [_history_row("A near miss", ca_limit="10/03/2026", pa_limit="20/03/2026")]
+    )
+    await import_qhse_xlsx(db, wb)
+
+    saved = (await db.execute(select(QhseReport))).scalars().one()
+    assert saved.contact is None  # "Limit Date"/"Checklist" n'ont pas dérivé ici
+
+
+async def test_history_format_reconciles_with_source_code_like_the_raw_export(db):
+    """La réconciliation D10 fonctionne identiquement sur ce second format —
+    même fonction, même clé naturelle, aucun chemin séparé."""
+    await _seed_vessel(db)
+    wb = _history_workbook([_history_row("A near miss")])
+
+    first = await import_qhse_xlsx(db, wb, filename="f1.xlsx")
+    second = await import_qhse_xlsx(db, wb, filename="f2.xlsx")
+
+    assert (first.imported, first.updated) == (1, 0)
+    assert (second.imported, second.updated) == (0, 1)
+    rows = (await db.execute(select(QhseReport))).scalars().all()
+    assert len(rows) == 1

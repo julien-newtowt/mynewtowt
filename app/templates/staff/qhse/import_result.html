@@ -7,11 +7,16 @@
   <h1 class="display">{{ t('qhse_import_result_title', lang) }}</h1>
 </header>
 
-{# Trois compteurs, pas deux : « écartée » (perdue) et « importée à confirmer »
-   n'ont pas les mêmes conséquences, et les additionner masquerait la perte. #}
+{# Quatre compteurs, pas deux : « mise à jour » (reconnue via source_code,
+   D10) ≠ « importée » (nouvelle), et « écartée » (perdue) ≠ « importée à
+   confirmer » — les additionner masquerait soit la réconciliation, soit la
+   perte. #}
 <article class="card mb-3">
   <p>
     <span class="pill pill-ok">{{ report.imported }} {{ t('qhse_import_result_imported', lang) }}</span>
+    {% if report.updated %}
+      <span class="pill pill-ok">{{ report.updated }} {{ t('qhse_import_result_updated', lang) }}</span>
+    {% endif %}
     <span class="pill pill-warn">{{ report.skipped }} {{ t('qhse_import_result_skipped', lang) }}</span>
     {% if report.flagged %}
       <span class="pill">{{ report.flagged }} {{ t('qhse_import_result_flagged', lang) }}</span>
