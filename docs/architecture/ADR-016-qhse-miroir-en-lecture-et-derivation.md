@@ -1,4 +1,4 @@
-# ADR-015 — QHSE : miroir en lecture, et dérivation plutôt que colonne
+# ADR-016 — QHSE : miroir en lecture, et dérivation plutôt que colonne
 
 - **Date** : 2026-09-04
 - **Statut** : **accepté** — décisions 1 à 3 tranchées par Yasmin Ponce le 2026-09-04 ; décision 4 constatée en incident de production le même jour

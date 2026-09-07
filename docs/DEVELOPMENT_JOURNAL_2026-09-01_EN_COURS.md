@@ -134,7 +134,7 @@ corriger **dans le FMS**, motif nommé par signalement.
 fait** (bord / siège / autorité externe) plutôt que l'interprétation
 « opérationnel / audit » du cahier des charges : classer le siège en audit
 interne aurait produit ~37 %, très proche des ~33 % attendus — une coïncidence
-séduisante, pas une validation. Cf. **ADR-015**.
+séduisante, pas une validation. Cf. **ADR-016**.
 
 **Sur données réelles** : bord 49 (54,4 %), siège 25 (27,8 %), autorité externe
 13 (14,4 %), indéterminé 3 (3,3 %) — conforme au comptage brut des 9 chaînes
@@ -170,7 +170,7 @@ verts, parité des 5 catalogues i18n.
 - **Arbitrage à rendre par Julien** : semer le référentiel de validation au boot
   dans **tous** les environnements (et plus seulement en dev) supprimerait la
   classe entière de défaut de l'incident, au prix d'une écriture en base au
-  démarrage de la production. Non tranché — cf. ADR-015, décision 4.
+  démarrage de la production. Non tranché — cf. ADR-016, décision 4.
 - **Troisième format d'export QHSE** (`Fleetview`, multi-navires avec lignes de
   section `Location: X (n)`) : identifié, non reconnu par l'ingestion.
 - **Nom du responsable perdu à l'import** : l'export complet porte
