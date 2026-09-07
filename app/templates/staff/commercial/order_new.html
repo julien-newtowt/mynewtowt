@@ -1,0 +1,89 @@
+{% extends "staff/_layout.html" %}
+{% block title %}Nouvelle commande — {{ brand.nom_court }}{% endblock %}
+{% block content %}
+
+<header class="flex justify-between items-center mb-4">
+  <div>
+    <span class="kicker">Commercial</span>
+    <h1 class="display">Nouvelle commande</h1>
+    <p class="text-muted">Une commande naît d'un engagement antérieur : on <strong>confirme une offre</strong>, ou on <strong>accepte une estimation</strong>.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/commercial/orders" class="btn btn-ghost"><i data-lucide="arrow-left"></i> Retour</a>
+  </div>
+</header>
+
+{# COM-13 — plus de saisie libre. Une commande créée hors de toute offre portait
+   un tarif qui ne se rattachait à aucune grille : ni la marge, ni la conversion
+   par grille du tableau de pilotage n'étaient alors calculables. #}
+<div class="alert alert-info mb-4">
+  <i data-lucide="info"></i>
+  Le tarif, le volume et la route d'une commande doivent être traçables jusqu'à la grille qui
+  les a produits. C'est pourquoi il n'existe plus de formulaire de commande vierge.
+</div>
+
+<article class="card">
+  <div class="section-header">
+    <h2><i data-lucide="file-check"></i> Confirmer une offre</h2>
+    <a href="/commercial/offers" class="btn btn-ghost text-sm">Toutes les offres →</a>
+  </div>
+  <p class="text-muted text-sm">Offres en cours ou validées qui n'ont pas encore donné lieu à une commande.</p>
+  <div class="table-scroll">
+  <table class="data-table">
+    <thead><tr><th>Référence</th><th>Client</th><th>Objet</th><th>Statut</th><th>Palettes</th><th>Tarif</th><th>Total</th><th>Validité</th><th></th></tr></thead>
+    <tbody>
+      {% for o in offers %}
+      <tr>
+        <td class="mono"><a href="/commercial/offers/{{ o.id }}"><strong>{{ o.reference }}</strong></a></td>
+        <td>{{ o.client.name if o.client else '—' }}</td>
+        <td>{{ o.title }}</td>
+        <td><span class="badge badge-{{ o.status }}">{{ o.status_label }}</span></td>
+        <td class="mono">{{ o.estimated_palettes or '—' }}</td>
+        <td class="mono">{{ o.proposed_rate_eur|money if o.proposed_rate_eur else '—' }}</td>
+        <td class="mono">{{ o.total_eur|money if o.total_eur else '—' }}</td>
+        <td>{{ o.valid_until|date if o.valid_until else '—' }}</td>
+        <td><a href="/commercial/offers/{{ o.id }}/convert" class="btn btn-primary btn-sm">Confirmer</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="text-muted text-center">
+        Aucune offre confirmable. <a href="/commercial/offers/new">Créer une offre</a>.
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</article>
+
+<article class="card mt-4">
+  <div class="section-header">
+    <h2><i data-lucide="calculator"></i> Accepter une estimation</h2>
+    <a href="/commercial/devis" class="btn btn-ghost text-sm">Toutes les estimations →</a>
+  </div>
+  <p class="text-muted text-sm">
+    Accepter une estimation la transforme d'abord en <strong>offre</strong> (le tarif est recalculé sur la
+    grille applicable à l'ETD du voyage retenu), que l'on confirme ensuite en commande.
+  </p>
+  <div class="table-scroll">
+  <table class="data-table">
+    <thead><tr><th>Référence</th><th>Origine</th><th>Route</th><th>Palettes</th><th>Total</th><th>Demandeur</th><th>Reçue le</th><th></th></tr></thead>
+    <tbody>
+      {% for q in quotes %}
+      <tr>
+        <td class="mono"><a href="/commercial/devis/{{ q.reference }}"><strong>{{ q.reference }}</strong></a></td>
+        <td><span class="pill pill-neutral">{{ origin_labels.get(q.origin, q.origin) }}</span></td>
+        <td class="mono">{{ q.pol_locode }} → {{ q.pod_locode }}</td>
+        <td class="mono">{{ q.palettes_total }}</td>
+        <td class="mono">{% if q.is_priced %}{{ q.total_eur|money }}{% else %}<span class="text-muted" title="Demande publique non chiffrée">—</span>{% endif %}</td>
+        <td>{{ q.contact_company or q.contact_name or '—' }}</td>
+        <td class="text-muted text-sm">{{ q.created_at|datetime("%d/%m/%Y") }}</td>
+        <td><a href="/commercial/devis/{{ q.reference }}" class="btn btn-secondary btn-sm">Accepter</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="text-muted text-center">Aucune estimation en attente.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</article>
+
+{% endblock %}

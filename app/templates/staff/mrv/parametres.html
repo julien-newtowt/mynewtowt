@@ -9,9 +9,17 @@
   <p class="text-muted">{{ t('mrv_param_intro', lang) }}</p>
 </header>
 
-{% if not seeded %}
+{% if not seeded or missing_rules %}
 <div class="alert alert-warn mb-4">
+  {% if not seeded %}
   <p>{{ t('mrv_param_empty', lang) }}</p>
+  {% else %}
+  {# Référentiel partiellement semé : l'init reste la réparation, et elle est
+     idempotente (elle n'ajoute que l'absent). Les règles manquantes sont
+     nommées — une règle absente fait échouer tout enregistrement de résultat
+     qui la référence. #}
+  <p>{{ t('mrv_param_incomplete', lang) }} <strong>{{ missing_rules | join(', ') }}</strong></p>
+  {% endif %}
   <form method="post" action="/mrv/parametres/init" class="mt-2">
     <input type="hidden" name="_csrf" value="{{ request.state.csrf_token }}" />
     <button class="btn btn-primary" type="submit">{{ t('mrv_param_init', lang) }}</button>

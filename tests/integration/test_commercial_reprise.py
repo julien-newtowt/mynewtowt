@@ -8,6 +8,7 @@ commande (COM-02) et l'écran d'affectation commande→leg avec écriture de
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -109,73 +110,81 @@ async def test_client_toggle_active(db, staff_user):
 # ─────────────────────────────── COM-02 ───────────────────────────────
 
 
+async def _offer_for_conversion(db, client, **kw):
+    """Offre confirmable — seul point d'entrée d'une commande depuis COM-13."""
+    from app.models.commercial import RateOffer
+
+    offer = RateOffer(
+        reference=kw.pop("reference", "RO-2026-0900"),
+        client_id=client.id,
+        title="Campagne",
+        status="en_cours",
+        estimated_palettes=kw.pop("estimated_palettes", 40),
+        proposed_rate_eur=kw.pop("proposed_rate_eur", Decimal("120.00")),
+        **kw,
+    )
+    db.add(offer)
+    await db.flush()
+    return offer
+
+
 @pytest.mark.asyncio
-async def test_order_create_persists_rich_fields(db, staff_user):
-    from app.routers.commercial_router import order_create
+async def test_order_confirmation_persists_rich_fields(db, staff_user):
+    """COM-13 — la confirmation d'une offre porte les garanties de saisie.
+
+    L'ancien formulaire de commande libre (retiré) normalisait le LOCODE,
+    validait la fenêtre de livraison et dérivait le total. La confirmation est
+    devenue le seul chemin de création : elle doit tenir les mêmes promesses,
+    sinon la suppression du formulaire aurait perdu des règles au passage.
+    """
+    from app.routers.commercial_router import offer_convert_to_order
 
     c = await _client(db)
-    resp = await order_create(
+    offer = await _offer_for_conversion(db, c)
+    resp = await offer_convert_to_order(
+        offer.id,
         _Req(),
-        client_id=c.id,
-        leg_id=None,
         booked_palettes=40,
-        rate_per_palette_eur=120.0,
-        cargo_description="Vin",
-        shipper_name="Cave X",
-        consignee_name="Import Y",
         palette_format="USPAL",
-        weight_per_palette_kg="650.5",
-        thc_included="on",
-        booking_fee="50",
-        documentation_fee="25",
+        rate_per_palette_eur="120.00",
+        total_eur=None,
         departure_locode="frleh",
         arrival_locode="mqfdf",
         delivery_date_start="2026-02-01",
         delivery_date_end="2026-02-20",
-        rate_grid_id=None,
-        rate_grid_line_id=None,
         db=db,
         user=staff_user,
     )
     assert resp.status_code == 303
     order = (await db.execute(Order.__table__.select())).fetchone()
+    assert order.offer_id == offer.id, "une commande est toujours adossée à une offre"
     assert order.palette_format == "USPAL"
-    assert float(order.weight_per_palette_kg) == 650.5
-    assert order.thc_included is True
     assert order.departure_locode == "FRLEH"  # normalisé majuscules
     assert order.arrival_locode == "MQFDF"
     assert order.delivery_date_end == date(2026, 2, 20)
-    assert float(order.total_eur) == 4800.0  # 120 × 40
+    assert float(order.total_eur) == 4800.0  # 120 × 40, dérivé faute de saisie
 
 
 @pytest.mark.asyncio
-async def test_order_create_rejects_bad_locode(db, staff_user):
+async def test_order_confirmation_rejects_bad_locode(db, staff_user):
     from fastapi import HTTPException
 
-    from app.routers.commercial_router import order_create
+    from app.routers.commercial_router import offer_convert_to_order
 
     c = await _client(db)
+    offer = await _offer_for_conversion(db, c)
     with pytest.raises(HTTPException) as exc:
-        await order_create(
+        await offer_convert_to_order(
+            offer.id,
             _Req(),
-            client_id=c.id,
-            leg_id=None,
             booked_palettes=10,
-            rate_per_palette_eur=None,
-            cargo_description=None,
-            shipper_name=None,
-            consignee_name=None,
             palette_format=None,
-            weight_per_palette_kg=None,
-            thc_included=None,
-            booking_fee=None,
-            documentation_fee=None,
+            rate_per_palette_eur=None,
+            total_eur=None,
             departure_locode="TOOLONG",
             arrival_locode=None,
             delivery_date_start=None,
             delivery_date_end=None,
-            rate_grid_id=None,
-            rate_grid_line_id=None,
             db=db,
             user=staff_user,
         )
@@ -183,34 +192,26 @@ async def test_order_create_rejects_bad_locode(db, staff_user):
 
 
 @pytest.mark.asyncio
-async def test_order_create_rejects_bad_delivery_date(db, staff_user):
+async def test_order_confirmation_rejects_bad_delivery_date(db, staff_user):
     """Une date de livraison non vide mais invalide lève 400 (pas de drop silencieux)."""
     from fastapi import HTTPException
 
-    from app.routers.commercial_router import order_create
+    from app.routers.commercial_router import offer_convert_to_order
 
     c = await _client(db)
+    offer = await _offer_for_conversion(db, c)
     with pytest.raises(HTTPException) as exc:
-        await order_create(
+        await offer_convert_to_order(
+            offer.id,
             _Req(),
-            client_id=c.id,
-            leg_id=None,
             booked_palettes=10,
-            rate_per_palette_eur=None,
-            cargo_description=None,
-            shipper_name=None,
-            consignee_name=None,
             palette_format=None,
-            weight_per_palette_kg=None,
-            thc_included=None,
-            booking_fee=None,
-            documentation_fee=None,
+            rate_per_palette_eur=None,
+            total_eur=None,
             departure_locode=None,
             arrival_locode=None,
             delivery_date_start=None,
             delivery_date_end="2026-13-45",
-            rate_grid_id=None,
-            rate_grid_line_id=None,
             db=db,
             user=staff_user,
         )

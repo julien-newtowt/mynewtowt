@@ -85,6 +85,53 @@ async def list_deals(*, max_items: int = 10000) -> list[dict]:
     return out[:max_items]
 
 
+async def list_persons(*, max_items: int = 20000) -> list[dict]:
+    """Liste paginée des personnes Pipedrive (contacts).
+
+    Sert à remonter le **contact** d'une organisation (nom, e-mail, téléphone)
+    dans la fiche client : sans elle, la fiche affichait un bloc « Contact »
+    vide alors que le CRM le connaît. Une seule liste globale, groupée ensuite
+    par ``org_id`` — un appel par organisation ferait des centaines de requêtes
+    pour la même information.
+    """
+    out: list[dict] = []
+    start = 0
+    page = 500
+    while len(out) < max_items:
+        data = await _request("GET", "/persons", params={"start": start, "limit": page})
+        if not data or not data.get("success"):
+            break
+        rows = data.get("data") or []
+        if not rows:
+            break
+        out.extend(rows)
+        pagination = (data.get("additional_data") or {}).get("pagination") or {}
+        if not pagination.get("more_items_in_collection"):
+            break
+        start = pagination.get("next_start") or (start + page)
+    return out[:max_items]
+
+
+def primary_value(entries: Any) -> str | None:
+    """Valeur principale d'un champ Pipedrive multi-valeurs (e-mail, téléphone).
+
+    Pipedrive renvoie ``[{"value": …, "primary": true}, …]``, parfois une chaîne
+    simple selon la version d'API. On retient l'entrée marquée principale, sinon
+    la première non vide.
+    """
+    if isinstance(entries, str):
+        return entries.strip() or None
+    if not isinstance(entries, list):
+        return None
+    values = [e for e in entries if isinstance(e, dict) and (e.get("value") or "").strip()]
+    if not values:
+        return None
+    for entry in values:
+        if entry.get("primary"):
+            return str(entry["value"]).strip()
+    return str(values[0]["value"]).strip()
+
+
 async def _request(
     method: str, path: str, *, json: dict | None = None, params: dict | None = None
 ) -> dict | None:
