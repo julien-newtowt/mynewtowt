@@ -407,6 +407,30 @@ recalcul de coût ne déplace jamais un prix confirmé.
   grilles antérieures et n'est plus exposé ; toute édition d'en-tête le remet à
   `NULL`.
 
+**Une grille client ne cote que les routes qu'elle porte.** `offer_create` ne
+retombe **jamais** sur `grid.lines[0]` quand la grille ne couvre pas le POL→POD
+du voyage : il refuse en nommant la route manquante. Ce repli faisait coter un
+Fécamp→Santos au tarif d'un Le Havre→Fort-de-France — un prix qu'aucune route ne
+justifie, et c'est lui qui part sur la booking note (même défaut que le repli de
+`resolve_grid` sur la grille par défaut, déjà proscrit). L'écran de création
+marque les grilles non couvrantes (`RateGrid.covers_leg`, dérivé et transitoire)
+et les rend non sélectionnables — **conservées et désignées**, pas masquées :
+faire disparaître la grille négociée d'un client sans dire pourquoi se lit comme
+une panne.
+
+**Un `hx-include` envoie les champs vides — jamais de `int | None` en face.**
+HTMX rassemble **tous** les champs désignés : un `<select>` sur son option vide
+part comme `leg_id=`, pas absent. FastAPI répond alors **422 avant d'entrer dans
+la route**, et `toast.js` — qui ne sait lire qu'un `detail` textuel là où un 422
+en livre une liste — affiche son repli « Action refusée — rechargez la page ».
+L'opérateur voit un refus d'autorisation pour un champ qu'il n'a pas rempli.
+Utiliser les alias de `app.utils.query` (`OptionalInt` / `OptionalFloat` /
+`OptionalBool`), qui traduisent « vide » par « non fourni » **sans** faire passer
+une saisie fautive pour une absence de saisie. Sentinelle :
+`tests/regression/test_htmx_include_blank_tolerant.py` — elle résout les routes
+réellement câblées à un `hx-include` depuis les gabarits, donc elle couvre les
+suivantes sans qu'on l'édite.
+
 **Une commande naît d'un engagement, jamais d'un formulaire vierge (COM-13).**
 Il n'existe **pas** de `POST /commercial/orders`. `GET /commercial/orders/new`
 liste les offres à **confirmer** et les estimations à **accepter** ; la création
