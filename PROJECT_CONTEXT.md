@@ -315,6 +315,34 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   `towt_noon_extract` (prototype local). Doc :
   `docs/audit/2026-09-02-reprise-historique-towt.md`, **ADR-014** (accepté le 2026-09-02).
 
+- **COM-14 (2026-09-07)** : trois défauts sur `/commercial/offers/new`, du plus
+  visible au plus grave. (1) Choisir un client affichait « Action refusée —
+  rechargez la page » : `hx-include` envoie `leg_id=` (vide), qu'un `int | None`
+  refuse → **422 avant la route**, dont le `detail` est une *liste* que
+  `toast.js` ne sait pas lire. Alias `app.utils.query.OptionalInt/Float/Bool` +
+  **sentinelle** qui résout depuis les gabarits toutes les routes câblées à un
+  `hx-include`. (2) L'écran annonçait « filtrée par client + leg » et **ignorait**
+  le leg : le filtre existe (`RateGrid.covers_leg`), les grilles non couvrantes
+  sont désignées et non sélectionnables plutôt que masquées. (3) 🔴 Une grille ne
+  couvrant pas la route du voyage faisait coter l'offre sur `grid.lines[0]` — la
+  **première route de la grille** : un Fécamp→Santos au tarif d'un Le
+  Havre→Fort-de-France, silencieusement, et c'est ce prix qui part sur la booking
+  note. `offer_create` refuse désormais en nommant la route manquante. Au passage
+  `valid_until` (500 sur date invalide) et `notes` passent par `_opt_date` /
+  `_opt_text`.
+
+- **NAV-ROUTE (2026-09-04)** : `/performance/navigation` gagne un **filtre par
+  route POL→POD** (`?route=FRFEC-BRSSO`) qui superpose tous les voyages d'une
+  même paire de ports sur une carte — un écart de trajet se repère par
+  différence entre passages, pas dans l'absolu. Transverse au **navire et à
+  l'année** (le borner supprimerait les points de comparaison), route
+  **orientée** (aller ≠ retour), routes proposées seulement si un voyage en est
+  **parti** (`atd`), archives TOWT **incluses**. La route pilote la sélection au
+  lieu de s'y ajouter ; le plafond de 10 tracés est **annoncé** (« 10 sur 23 »).
+  Une **amplitude** des distances réellement parcourues (min / médiane / max)
+  n'agrège que les voyages arrivés dont la trace ne contredit pas l'arrivée.
+  Services : `voyage_track.routes_served / legs_on_route / route_spread`.
+
 - **COM-12 / COM-13 (2026-09-04)** : reprise du module commercial sur retour
   d'usage de Julien. (1) **Inversion prix ↔ coût** — `RateGridLine.base_rate`
   devient le *prix annoncé*, `cost_rate` le *coût de revient* calculé, la marge

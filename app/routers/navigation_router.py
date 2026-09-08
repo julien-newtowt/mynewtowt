@@ -40,12 +40,18 @@ from app.services import weather_history
 from app.services.activity import record as activity_record
 from app.services.leg_filter import build_leg_filter
 from app.services.voyage_track import (
+    MAX_ROUTE_LEGS,
     MAX_TRACK_POINTS_HISTORY,
     annual_navigation_kpis,
     compute_metrics,
     downsample,
+    legs_on_route,
+    parse_route_key,
     positions_for_leg,
     positions_payload,
+    route_key,
+    route_spread,
+    routes_served,
 )
 from app.templating import templates
 
@@ -134,6 +140,7 @@ async def navigation_index(
     request: Request,
     vessel: str | None = None,
     year: int | None = None,
+    route: str | None = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("planning", "C")),
 ) -> HTMLResponse:
@@ -150,6 +157,29 @@ async def navigation_index(
 
     # Filtre de référence pour la navigation navire × année (chips multi-toggle).
     f = await build_leg_filter(db, vessel=vessel, year=year, leg_id=None, include_archive=True)
+
+    # ── Filtre par ROUTE (POL→POD) ──────────────────────────────────────
+    #
+    # Comparer plusieurs voyages d'une **même** route sur une seule carte est ce
+    # qui rend un écart visible : un détour, un contournement de dépression, une
+    # trace incomplète se voient par différence avec les autres passages, pas
+    # dans l'absolu. Le filtre est donc volontairement **transverse au navire et
+    # à l'année** : restreindre la comparaison à un navire ou à une saison
+    # supprimerait précisément les points de comparaison qu'on cherche.
+    routes = await routes_served(db)
+    route_pair = parse_route_key(route)
+    route_selected: dict | None = None
+    route_total = 0
+    if route_pair is not None:
+        pol_locode, pod_locode = route_pair
+        route_legs, route_total = await legs_on_route(db, pol_locode, pod_locode)
+        route_selected = next(
+            (r for r in routes if r["key"] == route_key(pol_locode, pod_locode)), None
+        )
+        # La route pilote la sélection : elle remplace les legs cochés à la main
+        # plutôt que de s'y ajouter. Mélanger les deux donnerait une carte dont
+        # personne ne saurait dire ce qu'elle compare.
+        selected_ids = [lg.id for lg in route_legs]
 
     # ── Legs sélectionnés : trace + métriques + météo, une couleur par leg ──
     legs_data: list[dict] = []
@@ -223,10 +253,25 @@ async def navigation_index(
     base = "/performance/navigation"
 
     def _toggle_url(lid: int) -> str:
+        # Décocher un leg depuis une sélection pilotée par la route revient à
+        # sortir du mode « route » : la sélection devient manuelle, et garder
+        # `route=` afficherait un filtre qui ne décrit plus ce qui est tracé.
         new = [x for x in selected_ids if x != lid] if lid in selected_ids else [*selected_ids, lid]
         qs = [("vessel", f["selected_vessel"] or ""), ("year", f["current_year"])]
         qs += [("leg_id", x) for x in new]
         return base + "?" + urlencode(qs)
+
+    def _route_url(key: str | None) -> str:
+        """Active (ou lève) le filtre de route. Le navire et l'année restent
+        dans l'URL pour les chips, mais ne bornent pas la comparaison."""
+        qs = [("vessel", f["selected_vessel"] or ""), ("year", f["current_year"])]
+        if key:
+            qs.append(("route", key))
+        return base + "?" + urlencode(qs)
+
+    for r in routes:
+        r["url"] = _route_url(r["key"])
+        r["is_selected"] = route_selected is not None and r["key"] == route_selected["key"]
 
     leg_chips = [
         {"leg": lg, "selected": lg.id in selected_ids, "toggle_url": _toggle_url(lg.id)}
@@ -243,7 +288,17 @@ async def navigation_index(
         for d in legs_data
     ]
     # Query-string propagée sur les onglets navire/année (préserve la sélection).
-    extra_query = urlencode([("leg_id", x) for x in selected_ids])
+    # En mode route, c'est la route qu'on propage — pas la liste de legs qu'elle
+    # a produite : changer d'onglet doit garder la comparaison, pas la figer sur
+    # les identifiants d'un instant.
+    extra_query = (
+        urlencode([("route", route_selected["key"])])
+        if route_selected
+        else urlencode([("leg_id", x) for x in selected_ids])
+    )
+
+    # Dispersion des distances réellement parcourues sur la route comparée.
+    spread = route_spread([d["metrics"] for d in legs_data]) if route_selected else None
 
     # ── Bloc « conditions actuelles par navire » (dernière obs / navire) ──
     latest = await weather_history.latest_per_vessel(db)
@@ -268,6 +323,13 @@ async def navigation_index(
             "leg_chips": leg_chips,
             "selected_pills": selected_pills,
             "extra_query": extra_query,
+            "routes": routes,
+            "route_selected": route_selected,
+            "route_total": route_total,
+            "route_shown": len(selected_ids) if route_selected else 0,
+            "route_limit": MAX_ROUTE_LEGS,
+            "route_spread": spread,
+            "clear_route_url": _route_url(None),
             "fleet_weather": fleet_weather,
             "weather_provider": weather_history.active_provider(),
         },

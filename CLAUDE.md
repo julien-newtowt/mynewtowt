@@ -348,6 +348,36 @@ Conséquences à connaître **avant** de toucher à un indicateur d'équipage :
   — donc ni Marad, ni les embarquements hors voyage. La liste PAF est de ce fait
   probablement incomplète en production.
 
+### Navigation — comparer une route, pas un voyage isolé
+
+`/performance/navigation` a deux entrées : la sélection **leg par leg**
+(historique) et le **filtre de route** POL→POD (`?route=FRFEC-BRSSO`), qui
+superpose tous les voyages d'une même paire de ports sur une seule carte. Un
+détour, un contournement de dépression ou une trace incomplète se repèrent par
+**différence entre passages**, jamais dans l'absolu — d'où les règles suivantes,
+qui décident de ce que la carte compare :
+
+- **Le filtre de route est transverse au navire et à l'année.** Le borner à un
+  navire ou à une saison supprimerait précisément les points de comparaison
+  recherchés. Les onglets navire/année restent ceux des chips manuelles.
+- **Une route est orientée** : `FRFEC→BRSSO` et `BRSSO→FRFEC` sont deux routes
+  distinctes (ni la même météo, ni les mêmes courants, ni la même durée).
+- **Seules les routes réellement parcourues sont proposées** (`Leg.atd` posé) :
+  un leg planifié n'a pas de trace, le proposer promettrait une carte vide. Les
+  archives TOWT sont **incluses** — ce sont les passages auxquels on compare.
+- **La route pilote la sélection**, elle ne s'y ajoute pas : mélanger legs
+  cochés à la main et legs de la route donnerait une carte dont personne ne
+  saurait dire ce qu'elle compare. Décocher un leg sort du mode route.
+- **Le plafond est dit, pas subi** : `MAX_ROUTE_LEGS` (10, la palette n'en porte
+  pas plus) retient les voyages les plus récents, et l'écran affiche « 10 sur
+  23 » — montrer les dix derniers en silence laisserait croire que la route n'a
+  connu que dix voyages.
+- **L'amplitude (`route_spread`) n'agrège que des voyages arrivés** dont la trace
+  ne contredit pas l'arrivée déclarée : un voyage en cours a par construction une
+  distance partielle, et l'inclure ferait passer un trajet inachevé pour un
+  trajet court. Moins de deux voyages exploitables ⇒ `None`, et l'écran dit
+  pourquoi.
+
 ### Commercial — le tarif négocié ne sort jamais sans identité établie
 
 Règle d'or du module : **une grille tarifaire négociée n'est servie qu'à un
@@ -388,6 +418,30 @@ recalcul de coût ne déplace jamais un prix confirmé.
   la flotte (sisterships TSC 80). `RateGrid.vessel_id` subsiste en base pour les
   grilles antérieures et n'est plus exposé ; toute édition d'en-tête le remet à
   `NULL`.
+
+**Une grille client ne cote que les routes qu'elle porte.** `offer_create` ne
+retombe **jamais** sur `grid.lines[0]` quand la grille ne couvre pas le POL→POD
+du voyage : il refuse en nommant la route manquante. Ce repli faisait coter un
+Fécamp→Santos au tarif d'un Le Havre→Fort-de-France — un prix qu'aucune route ne
+justifie, et c'est lui qui part sur la booking note (même défaut que le repli de
+`resolve_grid` sur la grille par défaut, déjà proscrit). L'écran de création
+marque les grilles non couvrantes (`RateGrid.covers_leg`, dérivé et transitoire)
+et les rend non sélectionnables — **conservées et désignées**, pas masquées :
+faire disparaître la grille négociée d'un client sans dire pourquoi se lit comme
+une panne.
+
+**Un `hx-include` envoie les champs vides — jamais de `int | None` en face.**
+HTMX rassemble **tous** les champs désignés : un `<select>` sur son option vide
+part comme `leg_id=`, pas absent. FastAPI répond alors **422 avant d'entrer dans
+la route**, et `toast.js` — qui ne sait lire qu'un `detail` textuel là où un 422
+en livre une liste — affiche son repli « Action refusée — rechargez la page ».
+L'opérateur voit un refus d'autorisation pour un champ qu'il n'a pas rempli.
+Utiliser les alias de `app.utils.query` (`OptionalInt` / `OptionalFloat` /
+`OptionalBool`), qui traduisent « vide » par « non fourni » **sans** faire passer
+une saisie fautive pour une absence de saisie. Sentinelle :
+`tests/regression/test_htmx_include_blank_tolerant.py` — elle résout les routes
+réellement câblées à un `hx-include` depuis les gabarits, donc elle couvre les
+suivantes sans qu'on l'édite.
 
 **Une commande naît d'un engagement, jamais d'un formulaire vierge (COM-13).**
 Il n'existe **pas** de `POST /commercial/orders`. `GET /commercial/orders/new`
@@ -807,7 +861,7 @@ préférences de style.
 | QHSE (miroir d'analyse) | `/qhse` | ✅ **miroir en lecture du FMS** (ADR-016/D10 — jamais une seconde source d'écriture) : import xlsx **réconcilié** (`source_code`, deux formats d'export reconnus), `dashboard` (grades, tendance 12 mois, **origine de l'émetteur** bord/siège/autorité externe, écart C1/C2, complétude R1), `qualite` (ce qu'il reste à corriger **dans le FMS**, motif nommé), fiche de détail. Règles RQ01-RQ03 exécutées à l'ingestion. ⛔ Aucune route d'écriture sur les signalements |
 | MRV (reporting événementiel v2) | `/mrv` + `/onboard/events` | ✅ **architecture événementielle déclarative** : capture d'événements `/onboard/events` (Noon/Departure/Arrival/Begin-End Anchoring ; brouillon auteur-seul → finalisé → validé, `captain:M`) ; hub `/mrv` (`mrv:C`, actions `mrv:M`, seuils/facteurs `mrv:S`) : `voyages`, `reports` (Noon/Carbon/Stopover générés), `emissions/voyages` + `emissions/port` (restitution par trajet et par escale, lecture seule), `bunkering` (BDN), `flgo` (Marad lecture seule), `qualite` (moteur R01-R26 + IR01-IR05 + resets R10), `parametres` (seuils + dashboard params), `datasets` **OVDLA/OVDBR** (remplacent le CSV DNV 18 col. ; vues dédiées `datasets/ovdla` et `datasets/ovdbr`, la vue combinée `datasets` restant la cible de redirection de la génération). **Module de navigation à part entière**, sorti du groupe « Performance » : le MRV est une obligation réglementaire, pas un indicateur de performance. Grand livre unique `emission_ledger` multi-GES. ⛔ **Archive legacy retirée** : l'écran `/mrv/archive/events`, le modèle `MRVEvent`/`MRVParameter` et les services associés sont supprimés — le legacy MRV n'a plus de rail de lecture. Les **tables** `mrv_events`/`mrv_parameters` ne sont pas supprimées mais **mises à l'écart** (migration `20260713_0106`, renommées `*_deprecated_20260903`) : le `DROP` sec attend le comptage en production (arbitrage du 2026-09-03). Aucun code ne les référence |
 | Dashboard Performance Environnementale | `/dashboard-perf` | ✅ 5 pages, exclusivement event-driven (mode `strict`, NC-04) : **vue flotte** (`kpi:C`), **suivi opérationnel** navire→voyage→événements (`kpi:C` / `mrv:C` — ROB timeline, conso vs cible, répartition ME/AE, **profil de propulsion 4 h**, carte MapLibre), **détail voyage** + exports PDF/DOCX (`mrv:C`), **qualité des données** (`mrv:C` — anomalies par règle/sévérité, resets R10, complétude), **administration** des paramètres (`mrv:S`). Remplace `dashboard-env` (LOT 11/12), décommissionné |
-| Navigation | `/performance/navigation` | ✅ multi-legs/multi-navires : carte (1 couleur/leg) points GPS + trait + route théorique, tableau comparatif (réelle/théorique/écart/durée/restant), météo le long du trajet + blocs « conditions actuelles » par navire (rose des vents, anémomètre/Beaufort, pression, visibilité, T°…) |
+| Navigation | `/performance/navigation` | ✅ multi-legs/multi-navires : carte (1 couleur/leg) points GPS + trait + route théorique, tableau comparatif (réelle/théorique/écart/durée/restant), météo le long du trajet + blocs « conditions actuelles » par navire (rose des vents, anémomètre/Beaufort, pression, visibilité, T°…). **Filtre par route POL→POD** (`?route=FRFEC-BRSSO`) : superpose tous les voyages d'une même paire de ports pour repérer les écarts d'un passage à l'autre |
 | Finance | `/finance` | ✅ prévisionnel/réel 5 postes + écarts + export CSV + NOx/SOx évités + section Exploitation + détail assurance + CRUD OPEX |
 | KPI | `/kpi` | ✅ vue KPI consolidée + Carbon Report par leg (intensités t·nm) ; **certificats CO₂ = label Anemos** (par booking + RSE annuel) |
 | Booking (client) | `/booking/...` | ✅ wizard 3 étapes mobile-first **en session invité** (pas de mur d'inscription) : Route → Cargaison (IMDG + FDS si dangereux) → Récap + **autocréation du compte à la validation** (email existant → bascule connexion) ; relance **J+1** sur devis non converti (`/api/quotes/followup`) ; **instrumentation du tunnel** (`analytics_events` + funnel commercial) ; grille d'annulation COM-08 (0/25/50/100 %) |
