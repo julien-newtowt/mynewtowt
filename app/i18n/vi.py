@@ -1597,6 +1597,7 @@ CATALOG: dict[str, str] = {
     "mrv_em_fleet_all": "Toàn đội tàu",
     "mrv_em_empty": "Không có chuyến nào có bản tổng hợp phát thải trong phạm vi này.",
     "mrv_em_not_computed": "chưa tính",
+    "mrv_em_truncated": "Hiển thị {shown}/{total} chuyến — {limit} chuyến gần nhất.",
     "mrv_em_col_leg": "Chuyến",
     "mrv_em_col_vessel": "Tàu",
     "mrv_em_col_port": "Cảng",

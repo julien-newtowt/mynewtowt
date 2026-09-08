@@ -56,6 +56,25 @@ from app.models.voyage_emission_summary import VoyageEmissionSummary
 #: lisent côte à côte, un plafond différent rendrait la comparaison trompeuse.
 _LIMIT = 40
 
+#: 🔴 Une restitution ne regarde que le passé — mesuré sur le RÉEL.
+#:
+#: Sans cette borne, une séquence planifiée à l'avance remplissait les 40
+#: places avec des voyages FUTURS : « non calculé » partout, et tous les
+#: voyages porteurs de vraies émissions repoussés hors de la page.
+#:
+#: ⚠️ Borne ET tri se font sur le **départ effectif** (``coalesce(atd, etd)``),
+#: jamais sur l'ETD seule : ``declare_departure`` ne réécrit pas l'ETD, donc un
+#: voyage parti en avance (ATD 09-02, ETD 10-01) aurait été exclu des deux
+#: écrans jusqu'en octobre malgré des émissions réelles. C'est la convention
+#: ``planning.effective_etd`` — tout calcul « où en est le voyage » y passe.
+#:
+#: Le filtre d'escale, lui, précède le PLAFOND (cf. ``_selection``) : appliqué
+#: après, il vidait ``/mrv/emissions/port`` dès qu'une séquence future occupait
+#: les 40 places. Une escale n'existe que si le voyage est arrivé ET que le
+#: départ suivant est finalisé (G12) : ``conso_escale_t`` non nul est le
+#: critère exact, et il s'exprime en SQL.
+_EFFECTIVE_ETD = func.coalesce(Leg.atd, Leg.etd)
+
 
 @dataclass(frozen=True)
 class LegEmissionRow:
@@ -145,6 +164,47 @@ class LegEmissionRow:
         return self.summary is not None
 
 
+def _selection(stmt, *, vessel_id: int | None, only_with_escale: bool, now: datetime | None):
+    """Critères communs au listing ET au comptage.
+
+    🔴 Factorisés à dessein : un comptage qui diverge du listing annoncerait
+    « 40 sur 12 » ou masquerait une troncature réelle. Le plafond est la SEULE
+    différence entre les deux requêtes.
+    """
+    if vessel_id is not None:
+        stmt = stmt.where(Leg.vessel_id == vessel_id)
+    effective_etd = _EFFECTIVE_ETD
+    stmt = stmt.where(effective_etd <= (now or datetime.now(UTC)))
+    if only_with_escale:
+        stmt = stmt.join(VoyageEmissionSummary, VoyageEmissionSummary.leg_id == Leg.id).where(
+            VoyageEmissionSummary.conso_escale_t.is_not(None)
+        )
+    return stmt
+
+
+async def total_count(
+    db: AsyncSession,
+    *,
+    only_with_escale: bool,
+    vessel_id: int | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Nombre de voyages que l'écran POURRAIT montrer, plafond exclu.
+
+    🔴 **Le plafond est dit, pas subi.** Sans ce comptage, ``_LIMIT`` tronquait
+    en silence : avec les archives TOWT, l'écran se lisait comme l'ensemble
+    complet. Même règle que le plafond de la carte de navigation
+    (``MAX_ROUTE_LEGS``, « 10 sur 23 ») et que l'écran qualité QHSE.
+    """
+    stmt = _selection(
+        select(func.count()).select_from(Leg),
+        vessel_id=vessel_id,
+        only_with_escale=only_with_escale,
+        now=now,
+    )
+    return int((await db.execute(stmt)).scalar_one() or 0)
+
+
 async def _rows(
     db: AsyncSession,
     *,
@@ -152,40 +212,9 @@ async def _rows(
     only_with_escale: bool,
     now: datetime | None = None,
 ) -> list[LegEmissionRow]:
-    stmt = select(Leg)
-    if vessel_id is not None:
-        stmt = stmt.where(Leg.vessel_id == vessel_id)
+    stmt = _selection(select(Leg), vessel_id=vessel_id, only_with_escale=only_with_escale, now=now)
 
-    # 🔴 Une restitution ne regarde que le passé — mesuré sur le RÉEL.
-    #
-    # Sans cette borne, une séquence planifiée à l'avance remplissait les 40
-    # places avec des voyages FUTURS : « non calculé » partout, et tous les
-    # voyages porteurs de vraies émissions repoussés hors de la page.
-    #
-    # ⚠️ La borne et le tri se font sur le **départ effectif**
-    # (`coalesce(atd, etd)`), jamais sur l'ETD seule : `declare_departure` ne
-    # réécrit pas l'ETD, donc un voyage parti en avance (ATD 09-02, ETD 10-01)
-    # aurait été exclu des deux écrans jusqu'en octobre malgré des émissions
-    # réelles. C'est la convention `planning.effective_etd` du projet — tout
-    # calcul « où en est le voyage » lui passe par là.
-    effective_etd = func.coalesce(Leg.atd, Leg.etd)
-    stmt = stmt.where(effective_etd <= (now or datetime.now(UTC)))
-
-    if only_with_escale:
-        # 🔴 Le filtre doit précéder le PLAFOND, pas le suivre.
-        #
-        # Les legs sont triés par ETD décroissant : une séquence planifiée à
-        # l'avance remplit les 40 places avec des voyages FUTURS, sans escale.
-        # Filtrer après le plafond rendait alors `/mrv/emissions/port` vide
-        # alors que tous les voyages arrivés ont une escale à montrer.
-        #
-        # Une escale n'existe que si le voyage est arrivé ET que le départ
-        # suivant est finalisé (G12) : `conso_escale_t` non nul est donc le
-        # critère exact, et il est exprimable en SQL.
-        stmt = stmt.join(VoyageEmissionSummary, VoyageEmissionSummary.leg_id == Leg.id).where(
-            VoyageEmissionSummary.conso_escale_t.is_not(None)
-        )
-    stmt = stmt.order_by(effective_etd.desc()).limit(_LIMIT)
+    stmt = stmt.order_by(_EFFECTIVE_ETD.desc()).limit(_LIMIT)
     legs = list((await db.execute(stmt)).scalars().all())
     if not legs:
         return []

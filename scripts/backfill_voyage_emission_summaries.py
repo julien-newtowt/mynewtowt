@@ -182,15 +182,32 @@ async def main() -> int:
         # d'échec. Plus de transactions, mais une reprise interrompue laisse un
         # état cohérent et reprenable — c'est ce qu'on veut d'un script à
         # froid, pas la vitesse.
+        # 🔴 Un `rollback()` EXPIRE toutes les instances de la session.
+        #
+        # Toucher `leg.leg_code` après coup déclenche donc un rechargement
+        # SYNCHRONE, interdit sous session async : `MissingGreenlet` — levée
+        # DANS le `except`, donc non rattrapée. Le premier voyage en échec
+        # arrêtait toute la reprise sur une trace, au lieu du « rapport, pas
+        # d'arrêt » promis, et tous les suivants gardaient leurs colonnes à
+        # NULL. Le même piège vaut pour les instances des voyages suivants,
+        # expirées elles aussi.
+        #
+        # On fige donc l'identité AVANT la boucle (plus aucun accès ORM après
+        # un rollback), et on recharge le voyage à chaque tour.
+        identities = [(leg.id, leg.leg_code) for leg in legs]
+
         done, failed = 0, []
-        for leg in legs:
+        for leg_id, leg_code in identities:
             try:
+                leg = await db.get(Leg, leg_id)
+                if leg is None:  # supprimé entre-temps — ni un succès, ni un échec
+                    continue
                 await refresh_summary(db, leg)
                 await db.commit()
                 done += 1
             except Exception as exc:  # rapport, pas d'arrêt
                 await db.rollback()
-                failed.append(f"{leg.leg_code} ({type(exc).__name__}: {exc})")
+                failed.append(f"{leg_code} ({type(exc).__name__}: {exc})")
 
         print(f"\n{done} résumé(s) recalculé(s).")
         if failed:

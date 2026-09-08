@@ -1597,6 +1597,7 @@ CATALOG: dict[str, str] = {
     "mrv_em_fleet_all": "Whole fleet",
     "mrv_em_empty": "No voyage with an emission summary in this scope.",
     "mrv_em_not_computed": "not computed",
+    "mrv_em_truncated": "Showing {shown} of {total} voyages — the {limit} most recent.",
     "mrv_em_col_leg": "Voyage",
     "mrv_em_col_vessel": "Vessel",
     "mrv_em_col_port": "Port",

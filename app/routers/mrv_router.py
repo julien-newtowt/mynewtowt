@@ -734,11 +734,16 @@ async def _emissions_screen(
     vessels = await _emv.vessels_with_summaries(db)
     if vessel_id is not None and vessel_id not in {v.id for v in vessels}:
         vessel_id = None  # navire sans donnée : repli silencieux sur la flotte
+    only_with_escale = scope == "port"
     rows = (
         await _emv.port_emissions(db, vessel_id=vessel_id)
-        if scope == "port"
+        if only_with_escale
         else await _emv.voyage_emissions(db, vessel_id=vessel_id)
     )
+    # 🔴 Le plafond est DIT, pas subi (même règle que « 10 sur 23 » sur la
+    # carte de navigation) : sans ce total, le listing tronqué se lisait comme
+    # l'ensemble complet — d'autant plus trompeur avec les archives TOWT.
+    total = await _emv.total_count(db, only_with_escale=only_with_escale, vessel_id=vessel_id)
     return templates.TemplateResponse(
         "staff/mrv/emissions.html",
         {
@@ -746,6 +751,8 @@ async def _emissions_screen(
             "user": user,
             "scope": scope,
             "rows": rows,
+            "total": total,
+            "limit": _emv._LIMIT,
             "vessels": vessels,
             "selected_vessel_id": vessel_id,
             # 🔴 Le périmètre MRV est le DÉFAUT. Le mouillage (hors MRV) ne

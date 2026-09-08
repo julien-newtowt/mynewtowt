@@ -63,6 +63,14 @@
 <section class="card"><p class="text-muted">{{ t('mrv_em_empty', lang) }}</p></section>
 {% else %}
 <article class="card">
+  {# Le plafond est DIT, pas subi : montrer les 40 plus récents en silence
+     laisserait croire que la flotte n'a connu que 40 voyages — d'autant plus
+     trompeur avec les archives TOWT. Même règle que la carte de navigation. #}
+  {% if total > rows|length %}
+  <p class="text-muted text-sm" style="margin:0 0 .75rem;">
+    {{ t('mrv_em_truncated', lang).format(shown=rows|length, total=total, limit=limit) }}
+  </p>
+  {% endif %}
   <div style="overflow-x:auto;">
     <table class="data-table">
       <thead>
@@ -102,7 +110,14 @@
             {% if r.co2_escale_t is not none %}{{ r.co2_escale_t }}
             {% else %}<span class="pill pill-neutral">{{ t('mrv_em_not_computed', lang) }}</span>{% endif %}
           </td>
-          <td>{{ r.co2eq_escale_t if r.co2eq_escale_t is not none else '—' }}</td>
+          {# Les deux colonnes viennent du MÊME appel : elles sont nulles
+             ENSEMBLE. Un tiret ici et « non calculé » à côté auraient donné
+             deux lectures d'un seul et même état — et le tiret se lirait
+             comme un zéro. #}
+          <td>
+            {% if r.co2eq_escale_t is not none %}{{ r.co2eq_escale_t }}
+            {% else %}<span class="pill pill-neutral">{{ t('mrv_em_not_computed', lang) }}</span>{% endif %}
+          </td>
           {% else %}
           <td>{{ r.distance_nm if r.distance_nm is not none else '—' }}</td>
           <td>{{ r.conso_voyage_t if r.conso_voyage_t is not none else '—' }}</td>
@@ -110,7 +125,10 @@
             {% if r.has_summary %}{{ r.co2_t if r.co2_t is not none else '—' }}
             {% else %}<span class="pill pill-neutral">{{ t('mrv_em_not_computed', lang) }}</span>{% endif %}
           </td>
-          <td>{{ r.co2eq_t if r.co2eq_t is not none else '—' }}</td>
+          <td>
+            {% if r.has_summary %}{{ r.co2eq_t if r.co2eq_t is not none else '—' }}
+            {% else %}<span class="pill pill-neutral">{{ t('mrv_em_not_computed', lang) }}</span>{% endif %}
+          </td>
           {# Conso au mouillage : exclue de l'assiette MRV du trajet. #}
           <td>{{ r.conso_mouillage_t if r.conso_mouillage_t is not none else '—' }}</td>
           {% if include_anchoring %}

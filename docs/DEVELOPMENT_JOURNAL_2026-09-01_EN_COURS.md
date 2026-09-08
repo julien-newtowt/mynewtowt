@@ -374,3 +374,45 @@ gouvernance, et la revue de Julien s'impose indépendamment du vert de la CI.
   d'être, et c'était précisément son seul bénéfice.
 - Supprimer les branches de la pile **après** cette fusion (avec accord), pour
   que le piège ne puisse pas se rejouer.
+
+### 8ᵉ tour de revue — 3 constats, dont un qui cassait le script obligatoire
+
+1. 🔴 **La reprise à froid s'arrêtait au premier voyage en échec.** Un
+   `rollback()` **expire toutes les instances** de la session : lire
+   `leg.leg_code` juste après déclenchait un rechargement synchrone, interdit
+   sous session async (`MissingGreenlet`) — levée **dans le `except`**, donc
+   non rattrapée. Le script promettait « rapport, pas d'arrêt » et faisait
+   l'inverse ; tous les voyages suivants gardaient leurs colonnes à `NULL`.
+   Or ce script est **obligatoire** après le déploiement des migrations `0144`
+   et `0145` (colonnes créées à `NULL`, sans backfill). L'identité des voyages
+   est désormais figée **avant** la boucle et le voyage rechargé à chaque tour :
+   plus aucun accès ORM après un rollback.
+2. **Le plafond de 40 lignes tronquait en silence.** Avec les archives TOWT,
+   l'écran se lisait comme l'ensemble complet. Il annonce maintenant
+   « 40 voyages affichés sur 137 » — même règle que « 10 sur 23 » sur la carte
+   de navigation, et que l'écran qualité QHSE. Les critères de sélection sont
+   **factorisés** (`_selection`) entre le listing et le comptage : un total
+   calculé à part aurait fini par annoncer « 40 sur 12 ».
+3. **Deux lectures d'un même état.** `co2_escale_t` affichait « non calculé »
+   quand `co2eq_escale_t`, **nul en même temps** (même appel à
+   `emissions_breakdown`), affichait un tiret — qui se lit comme un zéro. Même
+   asymétrie sur l'assiette du trajet. Les quatre colonnes disent désormais la
+   même chose du même état.
+
+**Vérifications** : 2 tests neufs sur le plafond et la cohérence du comptage,
+la chaîne de traduction rendue **pour de vrai** dans les 5 langues (le
+`.format()` d'une chaîne traduite n'est pas exercé par `resp.context` — une
+accolade fautive ne se serait vue qu'en production).
+
+### Où s'arrête cette boucle de revue
+
+Huit tours : 7 → 6 → 3 → 4 → 3 → 3 → 2 → 3 constats. Le compte ne descend pas,
+mais **la nature des constats a changé** : plus aucun ne touche le calcul des
+émissions (le grand livre, les trois assiettes, la règle d'or et les seuils ont
+tenu les huit tours). Ce qui remonte désormais est périphérique — un script de
+reprise, un plafond d'affichage, une asymétrie de rendu.
+
+**Recommandation** : arrêter la boucle ici et passer la main à la revue de
+Julien. Chaque tour supplémentaire coûte un cycle complet et produit surtout de
+la retouche de surface ; le risque résiduel est mieux traité par un œil humain
+sur la présentation d'un chiffre réglementaire que par un 9ᵉ tour.

@@ -474,3 +474,69 @@ async def test_no_summary_row_is_created_by_reading(db, staff_user):
     await mr.mrv_emissions_port(FakeRequest(), db=db, user=staff_user)
 
     assert (await db.execute(select(VoyageEmissionSummary))).scalars().all() == []
+
+
+async def test_the_cap_is_announced_never_silent(db, staff_user):
+    """🔴 Le plafond est DIT, pas subi.
+
+    ``_LIMIT`` tronquait en silence : montrer les 40 plus récents sans le dire
+    laisse lire le tableau comme l'ensemble complet — d'autant plus trompeur
+    avec les archives TOWT, où l'historique dépasse largement 40 voyages.
+    Même règle que « 10 sur 23 » sur la carte de navigation.
+    """
+    vessel, _other, ports = await _fleet(db)
+    for i in range(emv._LIMIT + 3):
+        await _leg(
+            db,
+            vessel,
+            ports,
+            code=f"CAP{i:03d}",
+            etd=T0 - timedelta(days=i),
+            summary={"co2_t": Decimal("1")},
+        )
+
+    resp = await mr.mrv_emissions_voyages(FakeRequest(), db=db, user=staff_user)
+
+    # Le listing reste plafonné…
+    assert len(resp.context["rows"]) == emv._LIMIT
+    # …mais l'écran sait combien de voyages existent réellement.
+    assert resp.context["total"] == emv._LIMIT + 3
+    assert resp.context["limit"] == emv._LIMIT
+
+
+async def test_the_total_counts_exactly_what_the_listing_would_show(db, staff_user):
+    """Le comptage et le listing partagent leurs critères (``_selection``).
+
+    Un total calculé à part dériverait du listing : il annoncerait « 40 sur 12 »
+    (total plus large que la sélection) ou masquerait une troncature réelle.
+    Deux critères sont vérifiés ici : la borne du départ effectif exclut les
+    voyages futurs, et le filtre d'escale ne retient que les escales closes.
+    """
+    vessel, _other, ports = await _fleet(db)
+    # Arrivé, escale close → compté par les deux écrans.
+    await _leg(
+        db,
+        vessel,
+        ports,
+        code="AVEC-ESC",
+        etd=T0,
+        summary={"co2_t": Decimal("1"), "conso_escale_t": Decimal("2")},
+    )
+    # Arrivé, pas d'escale close → trajet seulement.
+    await _leg(db, vessel, ports, code="SANS-ESC", etd=T0, summary={"co2_t": Decimal("1")})
+    # Voyage FUTUR → ni l'un ni l'autre.
+    await _leg(
+        db,
+        vessel,
+        ports,
+        code="FUTUR",
+        etd=T0 + timedelta(days=30),
+        summary={"co2_t": Decimal("1"), "conso_escale_t": Decimal("2")},
+    )
+
+    now = T0 + timedelta(days=1)
+    voyages = await emv.voyage_emissions(db, now=now)
+    port = await emv.port_emissions(db, now=now)
+
+    assert await emv.total_count(db, only_with_escale=False, now=now) == len(voyages) == 2
+    assert await emv.total_count(db, only_with_escale=True, now=now) == len(port) == 1
