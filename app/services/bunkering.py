@@ -476,7 +476,13 @@ async def update_draft(
     return bunker
 
 
-async def _refresh_affected_emission_summaries(db: AsyncSession, bunker: BunkerOperation) -> None:
+async def _refresh_affected_emission_summaries(
+    db: AsyncSession,
+    bunker: BunkerOperation,
+    *,
+    previous_leg_id: int | None = None,
+    previous_delivery_dt: datetime | None = None,
+) -> None:
     """Rematérialise les résumés d'émissions que ce soutage rend obsolètes.
 
     🔴 **Un soutage validé après coup change une émission d'escale.** La conso
@@ -489,24 +495,52 @@ async def _refresh_affected_emission_summaries(db: AsyncSession, bunker: BunkerO
     Depuis qu'on en dérive une émission de périmètre MRV, un chiffre
     silencieusement sous-estimé n'est plus acceptable.
 
-    Deux voyages sont concernés : celui auquel le soutage est rattaché, et
-    celui dont l'escale **contient** la livraison — c'est le voyage de la
-    dernière arrivée précédant la livraison, exactement la question à laquelle
-    ``emission_ledger`` sait répondre. Best-effort et par savepoint, comme le
-    hook d'événement : un cache ne bloque jamais un acte de bord.
-    """
-    try:
-        from app.services.emission_ledger import _previous_arrival_event, refresh_summary
+    Quatre voyages **au plus** sont concernés, et c'est le point subtil :
 
-        leg_ids: list[int] = []
-        if bunker.leg_id is not None:
-            leg_ids.append(bunker.leg_id)
-        if bunker.vessel_id is not None and bunker.delivery_datetime_utc is not None:
-            arrival = await _previous_arrival_event(
-                db, bunker.vessel_id, bunker.delivery_datetime_utc
-            )
-            if arrival is not None and arrival.leg_id is not None and arrival.leg_id not in leg_ids:
-                leg_ids.append(arrival.leg_id)
+    - celui auquel le soutage est **désormais** rattaché, et celui dont
+      l'escale contient la **nouvelle** date de livraison ;
+    - 🔴 celui auquel il était rattaché **avant**, et celui dont l'escale
+      contenait l'**ancienne** date. Une correction siège peut déplacer les
+      deux. Comme ``build_bunker_lookup`` sélectionne les soutages par
+      ``leg_id``, ne rafraîchir que le nouveau voyage laisse l'**ancien**
+      avec ce tonnage dans sa continuité ROB — donc un ``conso_escale_t`` et
+      un ``co2_escale_t`` **surestimés pour toujours** : aucun événement futur
+      ne vient jamais rafraîchir un voyage passé.
+
+    L'appelant doit donc capturer les valeurs d'**avant** sa mutation et les
+    passer ici : cette fonction ne peut plus les deviner une fois l'objet
+    modifié.
+
+    Best-effort et par savepoint, comme le hook d'événement : un cache ne
+    bloque jamais un acte de bord.
+    """
+    # 🔴 Le savepoint couvre AUSSI la recherche des voyages concernés.
+    #
+    # La version précédente ne l'ouvrait qu'autour de ``refresh_summary`` : un
+    # échec de la requête ci-dessous empoisonnait la session **malgré** le
+    # ``try``, et le ``commit()`` de ``get_db()`` annulait alors l'acte de bord
+    # lui-même — exactement le contraire de « best-effort ». Le savepoint doit
+    # englober la lecture comme l'écriture.
+    leg_ids: list[int] = []
+    try:
+        async with db.begin_nested():
+            from app.services.emission_ledger import _previous_arrival_event
+
+            candidates: list[int | None] = [bunker.leg_id, previous_leg_id]
+            for moment in (bunker.delivery_datetime_utc, previous_delivery_dt):
+                if bunker.vessel_id is None or moment is None:
+                    continue
+                arrival = await _previous_arrival_event(db, bunker.vessel_id, moment)
+                if arrival is not None:
+                    candidates.append(arrival.leg_id)
+            for candidate in candidates:
+                if candidate is not None and candidate not in leg_ids:
+                    leg_ids.append(candidate)
+    except Exception:  # pragma: no cover — cache best-effort
+        return
+
+    try:
+        from app.services.emission_ledger import refresh_summary
     except Exception:  # pragma: no cover — cache best-effort
         return
 
@@ -565,6 +599,12 @@ async def apply_review_correction(
     l'action via ``services.activity.record`` — cette fonction ne le fait
     pas elle-même (elle ne connaît pas l'identité HTTP de l'appelant).
     """
+    # Capturé AVANT toute mutation : `apply_header_form` peut déplacer la date
+    # de livraison et les branches ci-dessous le rattachement. Sans ces deux
+    # valeurs, le voyage que ce soutage quitte garderait son tonnage.
+    previous_leg_id = bunker.leg_id
+    previous_delivery_dt = bunker.delivery_datetime_utc
+
     apply_header_form(bunker, form)
     if clear_leg:
         bunker.leg_id = None
@@ -572,8 +612,14 @@ async def apply_review_correction(
         bunker.leg_id = manual_leg_id
     await db.flush()
     # Une correction siège peut changer la masse ou le rattachement :
-    # mêmes résumés à rematérialiser que pour la validation Master.
-    await _refresh_affected_emission_summaries(db, bunker)
+    # mêmes résumés à rematérialiser que pour la validation Master — plus ceux
+    # que le soutage vient de quitter.
+    await _refresh_affected_emission_summaries(
+        db,
+        bunker,
+        previous_leg_id=previous_leg_id,
+        previous_delivery_dt=previous_delivery_dt,
+    )
     return bunker
 
 

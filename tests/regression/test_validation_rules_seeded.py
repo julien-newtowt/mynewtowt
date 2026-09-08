@@ -120,8 +120,10 @@ def test_frozen_catchup_thresholds_match_the_live_catalogue() -> None:
     assert {rid for (rid, _param) in frozen} <= catalogue_rules
 
 
-# Empreinte du catalogue au 2026-09-04 : 35 règles MRV (semées en production
-# par 0097) + 3 règles QHSE (rattrapées par 0142).
+# Empreinte du catalogue au 2026-09-07 : 35 règles MRV + 3 règles QHSE = 38.
+# La production, elle, n'en avait que **31** — 0097 lui a semé le catalogue tel
+# qu'il était en juillet. Les 7 manquantes (R27-R30, RQ01-RQ03) ont été
+# rattrapées par 20260907_0143, en dur.
 PINNED_RULE_IDS: tuple[str, ...] = (
     "IR01",
     "IR02",
@@ -186,7 +188,7 @@ def test_no_migration_imports_a_mutable_seed_constant() -> None:
 
     ``0097`` importe ``RULE_SEED`` : son effet dépend donc de la date à laquelle
     elle s'exécute. Une base construite aujourd'hui reçoit 38 règles, la
-    production migrée en juillet en a reçu 35 — et la différence est
+    production migrée en juillet en a reçu 31 — et la différence est
     structurellement invisible aux tests. C'est exactement le défaut qui a mis
     l'import QHSE à terre.
     """

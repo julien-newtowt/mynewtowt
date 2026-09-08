@@ -782,3 +782,44 @@ async def test_kpi_env_provider_reads_summary_with_legkpi_fallback(db):
     assert records[leg2.id].cargo_t == Decimal("400")
     assert records[leg2.id].distance_nm == Decimal("800")
     assert records[leg2.id].has_kpi is True
+
+
+async def test_a_bunker_moved_to_another_leg_refreshes_the_leg_it_leaves(db, monkeypatch):
+    """🔴 Un soutage déplacé laissait son tonnage sur l'ancien voyage.
+
+    ``build_bunker_lookup`` sélectionne les soutages par ``leg_id``. Ne
+    rafraîchir que le **nouveau** voyage laisse l'ancien avec ce tonnage dans
+    sa continuité ROB — donc ``conso_escale_t``/``co2_escale_t`` **surestimés
+    pour toujours** : aucun événement futur ne rafraîchit un voyage passé.
+
+    D'où la capture des valeurs d'AVANT la mutation par l'appelant : une fois
+    ``bunker.leg_id`` écrasé, plus personne ne sait quel voyage purger.
+    """
+    from app.services import bunkering
+
+    vessel, leg = await _base(db)
+    leg2 = await _second_leg(db, vessel)
+    bunker = BunkerOperation(
+        vessel_id=vessel.id,
+        bdn_number="BDN-MOVE-1",
+        port_locode="BRBEL",
+        delivery_datetime_utc=T0 + timedelta(hours=50),
+        mass_t=Decimal("10.000"),
+        density_15c_t_m3=Decimal("0.845"),
+        status="valide_master",
+        leg_id=leg.id,
+    )
+    db.add(bunker)
+    await db.flush()
+
+    refreshed: list[int] = []
+
+    async def _record(_db, leg_obj):
+        refreshed.append(leg_obj.id)
+
+    monkeypatch.setattr(emission_ledger, "refresh_summary", _record)
+
+    await bunkering.apply_review_correction(db, bunker, form={}, manual_leg_id=leg2.id)
+
+    assert leg2.id in refreshed, "le voyage d'accueil doit être rafraîchi"
+    assert leg.id in refreshed, "le voyage quitté aussi — sinon le tonnage y reste"

@@ -1368,7 +1368,6 @@ CATALOG: dict[str, str] = {
     "qhse_quality_col_issued": "Phát hành ngày",
     "qhse_quality_col_issues": "Cần sửa",
     "qhse_issue_suspected_test": "Nghi là dữ liệu thử",
-    "qhse_issue_closed_before_issued": "Đóng trước ngày phát hành",
     "qhse_issue_missing_root_cause": "Thiếu nguyên nhân gốc",
     "qhse_issue_missing_corrective_description": "Chưa mô tả hành động khắc phục",
     "qhse_issue_missing_responsible": "Chưa xác định người phụ trách",

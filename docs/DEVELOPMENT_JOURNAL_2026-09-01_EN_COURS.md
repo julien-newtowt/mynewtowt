@@ -290,3 +290,87 @@ verts, parité des 5 catalogues i18n.
   obligatoires — la règle signale sans écarter). Travail QHSE ordinaire.
 - **Dette documentaire corrigée au passage** : le runbook renvoyait à
   `./scripts/migrate-prod.sh`, **qui n'existe pas** dans le dépôt.
+
+---
+
+## 2026-09-08 — La pile a été fusionnée dans elle-même, pas dans `main`
+
+**Branche** : `feature/qhse-origine-emetteur-et-qualite` (pointe de la pile,
+elle porte désormais #198 **et** #200).
+
+### Situation
+
+Julien a fusionné les trois PRs le 2026-09-08, dans l'ordre annoncé et à
+quelques minutes d'intervalle (10:12 → 10:14 → 10:16). GitHub les affiche
+toutes les trois `MERGED`. **Une seule est arrivée dans `main`.**
+
+| PR | Branche source | Base **déclarée** | Où le contenu a atterri |
+|---|---|---|---|
+| #197 | `hotfix/qhse-validation-rules-seed` | `main` | ✅ `main` |
+| #198 | `feature/qhse-origine-emetteur-et-qualite` | `hotfix/qhse-validation-rules-seed` | ❌ la branche hotfix |
+| #200 | `feature/mrv-module-navigation` | `feature/qhse-origine-emetteur-et-qualite` | ❌ la branche #198 |
+
+C'est la conséquence directe de la **pile** que j'avais montée pour garantir
+une chaîne Alembic linéaire : chaque PR déclarait la précédente comme base.
+GitHub ne re-cible une PR enfant sur `main` que si la branche de base est
+**supprimée** à la fusion. Les branches ayant été conservées, les fusions ont
+été honorées telles que déclarées — donc dans la pile.
+
+Aucun signal nulle part : la liste des PRs dit « merged », les branches disent
+« merged », et la production n'a rien reçu. Vérification qui manquait, une
+commande par PR :
+
+```bash
+git merge-base --is-ancestor \
+  "$(gh pr view 198 --json mergeCommit --jq .mergeCommit.oid)" origin/main
+```
+
+**Rien n'est perdu** : la pointe `feature/qhse-origine-emetteur-et-qualite`
+contient l'intégralité de #198 et #200. Il manque **une** fusion vers `main`.
+
+### Ce qui a été fait
+
+1. `main` intégré dans la pointe (vraie fusion, jamais de rebase sur une
+   branche publiée) : 5 commits repris (#197, #199/#202 commercial, #201
+   navigation). **Zéro conflit**, zéro marqueur dans le dépôt entier.
+2. Les **deux constats du 7ᵉ tour de revue** corrigés — ils n'avaient jamais
+   été fusionnés, donc ils sont encore devant nous plutôt que derrière :
+   - **Un soutage déplacé laissait son tonnage sur l'ancien voyage.**
+     `_refresh_affected_emission_summaries` était appelée *après* l'écrasement
+     de `bunker.leg_id` : seul le voyage d'accueil était rafraîchi. Comme
+     `build_bunker_lookup` sélectionne par `leg_id` et qu'aucun événement futur
+     ne rafraîchit un voyage passé, le voyage quitté gardait un
+     `conso_escale_t`/`co2_escale_t` **surestimés pour toujours**. L'appelant
+     capture désormais `leg_id` et date de livraison **avant** mutation.
+     Test de non-régression qui échoue sans le correctif.
+   - **Le point de reprise ne couvrait pas la lecture.** Dans le hook
+     d'événement comme dans le soutage, le `begin_nested()` n'entourait que
+     l'écriture ; un échec de la requête « quels voyages sont touchés »
+     empoisonnait la session **malgré** le `try`, et le `commit()` de
+     `get_db()` annulait alors l'acte de bord. Exactement le contrat
+     « jamais bloquant » que le 6ᵉ tour avait déjà corrigé — une occurrence de
+     plus de la même classe, la troisième.
+3. Deux détails : le chiffre de l'incident était faux dans les sentinelles
+   (35 au lieu de **31** règles reçues en production — il aurait trompé le
+   prochain qui lira l'incident), et la clé i18n
+   `qhse_issue_closed_before_issued` était devenue inatteignable (le motif a
+   été retiré de `QUALITY_ISSUES` au 4ᵉ tour) : retirée des 5 catalogues,
+   parité revérifiée.
+4. Le piège de la pile documenté dans `CLAUDE.md` (§ Git Workflow).
+
+### Risques
+
+🟡 **Modéré, et il est de présentation, pas de calcul.** Le contenu a déjà été
+revu et fusionné une fois par Julien ; ce qui s'y ajoute est l'intégration de
+`main` (sans conflit) et trois correctifs cernés. Mais les colonnes d'émission
+touchent un **chiffre réglementaire** : la fusion vers `main` reste un acte de
+gouvernance, et la revue de Julien s'impose indépendamment du vert de la CI.
+
+### Reste à faire
+
+- **Une fusion de la pointe vers `main`**, sur décision de Yasmin puis revue de
+  Julien. Recommandation : une **PR unique** vers `main` — la chaîne Alembic est
+  déjà linéaire (tête unique `20260907_0145`), la pile n'a donc plus de raison
+  d'être, et c'était précisément son seul bénéfice.
+- Supprimer les branches de la pile **après** cette fusion (avec accord), pour
+  que le piège ne puisse pas se rejouer.

@@ -336,10 +336,23 @@ async def _refresh_emission_summary(db: AsyncSession, event: NavEvent) -> None:
     bloquer la finalisation/validation d'un événement à bord (même posture
     no-op silencieuse que ``services.security_alerts`` sans SMTP).
     """
+    # 🔴 Le savepoint couvre AUSSI la question posée au grand livre.
+    #
+    # `legs_affected_by_event` est une LECTURE en base : si elle échoue, le
+    # `try` renvoie bien la main, mais la session reste **empoisonnée** et le
+    # `commit()` de `get_db()` annule ensuite la finalisation de l'événement.
+    # Le contrat « jamais bloquant » ci-dessus exige donc que la lecture soit
+    # elle aussi isolée, pas seulement les écritures qui suivent.
     try:
-        from app.services.emission_ledger import legs_affected_by_event, refresh_summary
+        async with db.begin_nested():
+            from app.services.emission_ledger import legs_affected_by_event
 
-        affected = await legs_affected_by_event(db, event)
+            affected = await legs_affected_by_event(db, event)
+    except Exception:  # pragma: no cover — cache best-effort, jamais bloquant
+        return
+
+    try:
+        from app.services.emission_ledger import refresh_summary
     except Exception:  # pragma: no cover — cache best-effort, jamais bloquant
         return
 

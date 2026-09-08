@@ -1368,7 +1368,6 @@ CATALOG: dict[str, str] = {
     "qhse_quality_col_issued": "Emitido em",
     "qhse_quality_col_issues": "A corrigir",
     "qhse_issue_suspected_test": "Teste presumido",
-    "qhse_issue_closed_before_issued": "Encerramento antes da emissão",
     "qhse_issue_missing_root_cause": "Causa raiz ausente",
     "qhse_issue_missing_corrective_description": "Ação corretiva não descrita",
     "qhse_issue_missing_responsible": "Responsável não identificado",
