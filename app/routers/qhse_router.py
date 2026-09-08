@@ -14,7 +14,7 @@ lire le corps, puis ``validate_filename``/``validate_size`` sur le contenu.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -93,6 +93,20 @@ async def qhse_dashboard(
             "trend_chart": chart,
         },
     )
+
+
+@router.get("/import")
+async def qhse_import_get() -> RedirectResponse:
+    """Renvoie vers le hub — l'import est un POST, le formulaire vit sur ``/qhse``.
+
+    Sans cette route, un GET sur ``/qhse/import`` (URL tapée, rechargement après
+    envoi, lien collé) tombe sur ``/qhse/{report_id}`` et répond un 422 JSON
+    « Input should be a valid integer » : illisible, et surtout impossible à
+    distinguer d'une panne réelle de l'import — c'est ce qui a brouillé le
+    diagnostic de l'incident du 2026-09-04. Déclarée **avant** ``/{report_id}``,
+    même règle d'ordre que le module vente à bord.
+    """
+    return RedirectResponse(url="/qhse", status_code=303)
 
 
 @router.post("/import", response_class=HTMLResponse)
