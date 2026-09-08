@@ -2303,24 +2303,27 @@ async def offer_new_form(
     )
     from app.services.leg_filter import leg_select_options
 
-    legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
-    leg_options = await leg_select_options(db)
-    # Le premier rendu doit montrer la **même** liste que le fragment HTMX, pour
-    # le client effectivement présélectionné (le `<select>` client n'a pas
+    # Le premier rendu doit montrer les **mêmes** listes que les fragments HTMX,
+    # pour le client effectivement présélectionné (le `<select>` client n'a pas
     # d'option vide et est `required` : c'est donc le premier de la liste).
     # Auparavant il listait *toutes* les grilles actives, celles des autres
     # clients comprises, et la liste changeait de nature au premier
     # rafraîchissement — sans que rien ne l'explique.
     preselected_client_id = clients[0].id if clients else None
     grids = await _grids_for(db, client_id=preselected_client_id)
+    # Aucune grille n'est présélectionnée (la première option du `<select>` est
+    # une invite) : la liste des voyages n'est donc bornée par rien, exactement
+    # comme la réponse de `offer_leg_options` sans `grid_id`.
     return templates.TemplateResponse(
         "staff/commercial/offer_form.html",
         {
             "request": request,
             "user": user,
             "clients": clients,
-            "legs": legs,
-            "leg_options": leg_options,
+            "client_type_labels": CLIENT_TYPE_LABELS,
+            "leg_options": await leg_select_options(db),
+            "grid": None,
+            "restricted": False,
             "grids": grids,
             "offer": None,
         },
@@ -2341,35 +2344,43 @@ async def _leg_route_locodes(db: AsyncSession, leg_id: int | None) -> tuple[str,
     return pol.locode, pod.locode
 
 
-def _grid_covers(grid: RateGrid, route: tuple[str, str] | None) -> bool:
-    """La grille peut-elle coter ce voyage ?
+def grid_route_pairs(grid: RateGrid | None) -> set[tuple[str, str]] | None:
+    """Routes (POL, POD) que cette grille sait coter, ou ``None`` = sans limite.
 
-    Une grille **client** ne cote que les routes qu'elle porte explicitement :
-    si elle ne couvre pas le POL→POD du leg, elle ne peut pas produire de tarif
-    pour cette offre. Une grille **par défaut** est éligible quoi qu'il arrive —
-    ``resolve_grid`` y matérialise la route à la demande (*get-or-create*), donc
-    l'absence de ligne n'y signifie pas l'absence de couverture.
+    ``None`` a deux causes, toutes deux « aucune restriction » :
+
+    * **aucune grille choisie** — il n'y a rien qui borne les voyages ;
+    * **grille par défaut** — ``resolve_grid`` y matérialise la route à la
+      demande (*get-or-create*), donc l'absence de ligne n'y signifie pas
+      l'absence de couverture, et tout voyage y est cotable.
+
+    Pour une grille **client**, l'ensemble est celui de ses lignes-routes — y
+    compris **vide** si elle n'en porte aucune. Vide et ``None`` ne se
+    confondent pas : une grille client sans route ne cote rien, et proposer
+    alors tous les voyages promettrait un prix qu'elle ne peut pas produire.
     """
-    if route is None or grid.is_default or grid.client_id is None:
-        return True
-    return _match_route(grid, route[0], route[1]) is not None
+    if grid is None or grid.is_default or grid.client_id is None:
+        return None
+    return {
+        (line.pol_locode.upper(), line.pod_locode.upper())
+        for line in grid.lines
+        if line.pol_locode and line.pod_locode
+    }
 
 
-async def _grids_for(
-    db: AsyncSession, *, client_id: int | None, leg_id: int | None = None
-) -> list[RateGrid]:
-    """Grilles actives applicables à un client, annotées par couverture du leg.
+async def _grids_for(db: AsyncSession, *, client_id: int | None) -> list[RateGrid]:
+    """Grilles actives applicables à un client (multi-routes).
 
     Retenues : statut ``active``, valides à ce jour, et soit propres au client
-    soit grilles par défaut (``client_id`` NULL). Les grilles spécifiques au
-    client sont listées avant les défauts.
+    soit grilles par défaut (``client_id`` NULL — le repli d'un client sans
+    grille négociée). Les grilles spécifiques au client sont listées avant les
+    défauts.
 
-    Quand un **leg** est fourni, chaque grille est marquée ``covers_leg`` selon
-    qu'elle porte ou non la route POL→POD de ce voyage. L'écran l'annonçait
-    (« filtrée par client + leg ») sans le faire : le ``leg_id`` était envoyé
-    par ``hx-include`` puis ignoré ici. Les grilles non couvrantes sont
-    **conservées mais désignées** plutôt que masquées — faire disparaître la
-    grille négociée d'un client sans dire pourquoi se lit comme une panne.
+    Maillon **client → grille** de la cascade : c'est la grille retenue ici qui
+    borne ensuite les voyages cotables (cf. ``grid_route_pairs`` et
+    ``offer_leg_options``). Le sens inverse — filtrer les grilles par un voyage
+    déjà choisi — a été essayé puis abandonné : l'opérateur part du client et de
+    son tarif, le voyage vient après.
     """
     today = datetime.now(UTC).date()
     query = (
@@ -2387,13 +2398,8 @@ async def _grids_for(
         query = query.where(RateGrid.client_id.is_(None))
 
     grids = list((await db.execute(query)).scalars().all())
-    route = await _leg_route_locodes(db, leg_id)
-    for grid in grids:
-        # Attribut transitoire porté jusqu'au gabarit : la couverture dépend du
-        # leg visé, elle n'a pas de sens hors de cette requête.
-        grid.covers_leg = _grid_covers(grid, route)
-    # Couvrantes d'abord, puis client avant défaut, puis référence.
-    grids.sort(key=lambda g: (not g.covers_leg, g.client_id is None, g.reference or ""))
+    # Client-specific d'abord, puis défaut ; tri secondaire par référence.
+    grids.sort(key=lambda g: (g.client_id is None, g.reference or ""))
     return grids
 
 
@@ -2401,24 +2407,75 @@ async def _grids_for(
 async def offer_grid_options(
     request: Request,
     client_id: OptionalInt = None,
-    leg_id: OptionalInt = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    """Partial HTMX : options du ``<select>`` grille, filtrées par client + leg.
+    """Partial HTMX : options du ``<select>`` grille, filtrées par le client.
+
+    Deuxième maillon de la cascade **client → grille → voyage** (le premier est
+    le choix du client lui-même).
 
     ``OptionalInt`` et non ``int | None`` : ``hx-include`` envoie **tous** les
-    champs désignés, donc ``leg_id=`` tant que le voyage n'est pas choisi. Avec
-    un ``int | None``, FastAPI répondait 422 avant d'entrer dans la route, et
-    ``toast.js`` — qui ne sait lire qu'un ``detail`` textuel, là où un 422 en
-    livre une liste — affichait « Action refusée — rechargez la page ». Chaque
-    changement de client produisait donc un refus, et la liste ne se filtrait
-    jamais (constaté le 2026-09-07).
+    champs désignés, y compris vides. Avec un ``int | None``, FastAPI répondait
+    422 avant d'entrer dans la route, et ``toast.js`` — qui ne sait lire qu'un
+    ``detail`` textuel, là où un 422 en livre une liste — affichait « Action
+    refusée — rechargez la page ». Chaque changement de client produisait donc
+    un refus, et la liste ne se filtrait jamais (constaté le 2026-09-07).
     """
-    grids = await _grids_for(db, client_id=client_id, leg_id=leg_id)
-    return templates.TemplateResponse(
+    grids = await _grids_for(db, client_id=client_id)
+    response = templates.TemplateResponse(
         "staff/commercial/_grid_options.html",
-        {"request": request, "grids": grids, "leg_id": leg_id},
+        {"request": request, "grids": grids},
+    )
+    # Chaînage vers le maillon suivant : la liste des grilles vient de changer,
+    # donc celle des voyages n'est plus à jour (la grille sélectionnée retombe
+    # sur l'invite). On déclenche son rafraîchissement plutôt que de le
+    # laisser à un second geste de l'opérateur — le `<select>` voyage écoute
+    # cet événement (`grid-options-loaded from:body`).
+    #
+    # ⚠️ `HX-Trigger-After-Swap` et **non** `HX-Trigger` : le premier déclenche
+    # l'événement *après* le remplacement des options, le second *avant*. Avant
+    # le swap, le `<select>` grille porte encore la grille du client précédent —
+    # la liste des voyages serait alors bornée par une grille qui vient de
+    # disparaître de l'écran.
+    response.headers["HX-Trigger-After-Swap"] = json.dumps({"grid-options-loaded": True})
+    return response
+
+
+@router.get("/offers/leg-options", response_class=HTMLResponse)
+async def offer_leg_options(
+    request: Request,
+    grid_id: OptionalInt = None,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_permission("commercial", "C")),
+) -> HTMLResponse:
+    """Partial HTMX : options du ``<select>`` voyage, bornées par la grille.
+
+    Dernier maillon de la cascade **client → grille → voyage**. Une grille
+    client ne cote que les routes qu'elle porte : proposer un voyage qu'elle ne
+    couvre pas mènerait au refus de ``offer_create`` — autant ne pas le
+    proposer. Sans grille, ou sur une grille par défaut, aucun voyage n'est
+    écarté (cf. ``grid_route_pairs``).
+    """
+    from app.services.leg_filter import leg_select_options
+
+    grid = None
+    if grid_id:
+        grid = (
+            await db.execute(
+                select(RateGrid).options(selectinload(RateGrid.lines)).where(RateGrid.id == grid_id)
+            )
+        ).scalar_one_or_none()
+    routes = grid_route_pairs(grid)
+    options = await leg_select_options(db, routes=routes)
+    return templates.TemplateResponse(
+        "staff/commercial/_leg_options.html",
+        {
+            "request": request,
+            "leg_options": options,
+            "grid": grid,
+            "restricted": routes is not None,
+        },
     )
 
 

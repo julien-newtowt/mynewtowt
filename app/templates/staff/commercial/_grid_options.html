@@ -1,20 +1,14 @@
-{# Options du <select> grille — filtrées par client + leg (partial HTMX).
+{# Options du <select> grille — filtrées par client (partial HTMX).
 
-   Les grilles qui ne couvrent pas la route du voyage visé sont **désignées et
-   désactivées**, pas masquées : faire disparaître la grille négociée d'un
-   client sans dire pourquoi se lit comme une panne. Le serveur refuse de toute
-   façon la création (`POST /commercial/offers`), il ne se repose pas sur ce
-   gabarit pour l'empêcher. #}
-{% set covering = grids | selectattr('covers_leg') | list %}
-{% set uncovering = grids | rejectattr('covers_leg') | list %}
-<option value="">Sans grille</option>
-{% for g in covering %}
+   Deuxième maillon de la cascade **client → grille → voyage** : c'est la grille
+   choisie ici qui borne ensuite les voyages cotables. Une grille « défaut »
+   (sans client) reste proposée : c'est le repli d'un client sans grille
+   négociée, et l'étiquette le dit.
+
+   Le `<select>` est `required` : la première option est une **invite**, pas un
+   choix valide — `offer_create` exige une grille et un voyage, et laisser
+   croire que « sans grille » passe ne produirait qu'un refus côté serveur. #}
+<option value="">— Choisir une grille —</option>
+{% for g in grids %}
 <option value="{{ g.id }}">{{ g.reference }} · {% if g.client_id %}client{% else %}défaut{% endif %} · {{ g.lines|length }} route{{ 's' if g.lines|length != 1 else '' }}</option>
 {% endfor %}
-{% if uncovering %}
-<optgroup label="Ne couvrent pas la route de ce voyage">
-  {% for g in uncovering %}
-  <option value="{{ g.id }}" disabled>{{ g.reference }} · client · {{ g.lines|length }} route{{ 's' if g.lines|length != 1 else '' }}</option>
-  {% endfor %}
-</optgroup>
-{% endif %}

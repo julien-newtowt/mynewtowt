@@ -28,6 +28,50 @@ _(vide)_
 
 ## Recently resolved (last 30 days)
 
+### DFT-20260908-001 — `/commercial/offers/new` : « Action refusée » à chaque changement de client, et cascade de filtrage inopérante
+
+| Champ | Valeur |
+|---|---|
+| Date | 2026-09-07 (signalé) → 2026-09-08 (cascade) |
+| Reporter | Julien Gonde |
+| Persona | Commercial (établissement d'une offre tarifaire) |
+| Sévérité | **majeure** en surface (écran inutilisable) — **critique** pour le défaut découvert dessous (prix faux sur la booking note) |
+| Module | commercial |
+| Reproductible | oui (toujours) |
+| Owner | dev |
+| Status | **resolved** — 422 + repli de prix : PR #202 ; sens de la cascade : branche `fix/offre-cascade-client-grille-voyage` |
+
+**Symptôme.** Chaque changement de client affichait « Action refusée —
+rechargez la page », et la liste des grilles tarifaires ne se filtrait jamais.
+
+**Cause racine (1/3).** `hx-include` envoie **tous** les champs désignés, vides
+compris : `leg_id=` partait comme chaîne vide, qu'un paramètre `int | None`
+refuse — **422 avant d'entrer dans la route**. Le `detail` d'un 422 est une
+*liste* ; `toast.js` ne sait lire qu'un `detail` textuel et affiche son repli
+générique. L'opérateur lisait un refus d'autorisation pour un champ qu'il
+n'avait pas rempli. Alias `app.utils.query.OptionalInt/Float/Bool` + sentinelle
+`tests/regression/test_htmx_include_blank_tolerant.py`.
+
+**Cause racine (2/3).** Le filtre annoncé (« filtrée par client + leg ») n'était
+appliqué nulle part — puis, une fois appliqué, il l'était **dans le mauvais
+sens** : il demandait de désigner le voyage avant le tarif. La cascade descend
+maintenant **client → grille → voyage**, l'ordre dans lequel l'opérateur
+travaille.
+
+**Cause racine (3/3), la plus grave.** `offer_create` retombait sur
+`grid.lines[0]` — la **première route de la grille** — quand la grille ne
+couvrait pas le POL→POD du voyage. Un Fécamp→Santos pouvait donc être coté au
+tarif d'un Le Havre→Fort-de-France, sans un mot, et c'est ce prix qui part sur
+la booking note. La route refuse désormais en nommant la grille et la route
+manquante ; la cascade rend le cas difficile à atteindre depuis l'écran, mais le
+refus reste la garde d'un formulaire rejoué.
+
+**Piège écarté en chemin** (jamais parti en production, consigné pour la
+prochaine cascade). Chaîner les deux fragments par `HX-Trigger` déclenche
+l'événement **avant** le remplacement des options : la liste des voyages
+aurait été bornée par la grille du client *précédent*. `HX-Trigger-After-Swap`
+lit l'état d'après le swap.
+
 ### DFT-20260904-001 — Import QHSE inopérant en production (500)
 
 | Champ | Valeur |
@@ -125,6 +169,8 @@ diagnostic.
 | Migrations non-réversibles | 0 | `alembic downgrade -1` testé en CI |
 | **Migration qui importe une constante du code applicatif** | 1 (DFT-20260904-001) | Une migration est un **instantané** : valeurs en dur. Son effet ne doit pas dépendre de sa date d'exécution — sinon les bases anciennes divergent des neuves, et aucun test ne le voit. Sentinelle : `tests/regression/test_validation_rules_seeded.py` |
 | **Catalogue codé enrichi sans migration de rattrapage** | 1 (DFT-20260904-001) | Toute nouvelle entrée d'un référentiel semé en base (règles, seuils, paramètres) exige une migration additive idempotente — le seed au boot ne couvre que le dev |
+| **`hx-include` face à un `int \| None`** | 1 (DFT-20260908-001) | `hx-include` envoie les champs vides. Utiliser les alias de `app.utils.query` — un 422 n'atteint pas la route et son `detail` en liste devient « Action refusée » à l'écran. Sentinelle : `tests/regression/test_htmx_include_blank_tolerant.py` |
+| **Fragment HTMX chaîné avec `HX-Trigger`** | 0 (écarté sur DFT-20260908-001) | `HX-Trigger` tire l'événement *avant* le swap : la requête suivante lit l'état d'avant. Pour chaîner un second fragment sur le contenu qui vient d'arriver, `HX-Trigger-After-Swap` |
 | TTL session client mal calculé | 0 | Test E2E refresh token + expiration |
 | Race condition double-booking | 0 | `SELECT FOR UPDATE` + test de concurrence k6 |
 

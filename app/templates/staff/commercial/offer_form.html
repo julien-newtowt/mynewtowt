@@ -1,5 +1,4 @@
 {% extends "staff/_layout.html" %}
-{% from "staff/_leg_filter.html" import leg_option_tags %}
 {% block title %}Nouvelle offre — {{ brand.nom_court }}{% endblock %}
 {% block content %}
 
@@ -11,15 +10,28 @@
 <article class="card">
   <form method="post" action="/commercial/offers">
     <div class="grid grid-2 gap-4">
-      {# Le client et le leg pilotent (HTMX) le rafraîchissement des grilles
-         applicables — voir GET /commercial/offers/grid-options. #}
+      {# ── Cascade client → grille → voyage ──────────────────────────────
+         Chaque maillon borne le suivant, dans le sens où l'opérateur travaille :
+         il part du client, retient son tarif, puis désigne le voyage que ce
+         tarif sait coter.
+
+         1. Client change  → `grid-options` rafraîchit les grilles, et répond
+            `HX-Trigger-After-Swap: grid-options-loaded` ;
+         2. cet événement, comme un changement de grille, rafraîchit les voyages
+            via `leg-options` (la grille venant de changer, la liste des voyages
+            n'est plus à jour).
+
+         Le chaînage passe par un en-tête de réponse et non par du JavaScript :
+         aucun handler inline, CSP stricte respectée. `…-After-Swap` importe —
+         `HX-Trigger` tire l'événement *avant* le remplacement des options, donc
+         sur la grille du client précédent. #}
       <div class="field">
         <label for="client_id">Client</label>
         <select id="client_id" name="client_id" required
                 hx-get="/commercial/offers/grid-options"
                 hx-target="#grid_id" hx-swap="innerHTML"
-                hx-include="#client_id,#leg_id" hx-trigger="change">
-          {% for c in clients %}<option value="{{ c.id }}">{{ c.name }} ({{ c.client_type }})</option>{% endfor %}
+                hx-include="#client_id" hx-trigger="change">
+          {% for c in clients %}<option value="{{ c.id }}">{{ c.name }} ({{ client_type_labels.get(c.client_type, c.client_type) if client_type_labels else c.client_type }})</option>{% endfor %}
         </select>
       </div>
       <div class="field">
@@ -27,27 +39,33 @@
         <input id="title" name="title" type="text" required />
       </div>
       <div class="field">
-        <label for="grid_id">Grille tarifaire <small class="text-muted">(filtrée par client + leg)</small></label>
+        <label for="grid_id">Grille tarifaire <small class="text-muted">(grilles du client)</small></label>
         {# Les options viennent du même gabarit que le rafraîchissement HTMX
            (`_grid_options.html`) : la liste ne change pas de nature entre le
-           premier rendu et le premier changement de client. #}
-        <select id="grid_id" name="grid_id">
+           premier rendu et le premier changement de client.
+
+           `hx-include="#grid_id"` est redondant (HTMX joint déjà la valeur de
+           l'élément déclencheur, et déduplique) mais volontaire : c'est ce que
+           lit la sentinelle `test_htmx_include_blank_tolerant` pour découvrir
+           la route, et `grid_id` part vide sur l'option d'invite. #}
+        <select id="grid_id" name="grid_id" required
+                hx-get="/commercial/offers/leg-options"
+                hx-target="#leg_id" hx-swap="innerHTML"
+                hx-include="#grid_id"
+                hx-trigger="change, grid-options-loaded from:body">
           {% include "staff/commercial/_grid_options.html" %}
         </select>
-        <small class="text-muted">
-          Une grille client ne cote que les routes qu'elle porte : celles qui ne couvrent pas
-          le POL→POD du voyage choisi sont listées à part, non sélectionnables.
-        </small>
+        <small class="text-muted">Les grilles du client, plus la grille par défaut en repli.</small>
       </div>
       <div class="field">
-        <label for="leg_id">Leg ciblé</label>
-        <select id="leg_id" name="leg_id"
-                hx-get="/commercial/offers/grid-options"
-                hx-target="#grid_id" hx-swap="innerHTML"
-                hx-include="#client_id,#leg_id" hx-trigger="change">
-          <option value="">Aucun</option>
-          {{ leg_option_tags(leg_options) }}
+        <label for="leg_id">Voyage ciblé <small class="text-muted">(routes de la grille)</small></label>
+        <select id="leg_id" name="leg_id" required>
+          {% include "staff/commercial/_leg_options.html" %}
         </select>
+        <small class="text-muted">
+          Une grille client ne cote que les routes qu'elle porte : seuls les voyages
+          sur ces routes sont proposés.
+        </small>
       </div>
       <div class="field">
         <label for="estimated_palettes">Palettes estimées</label>

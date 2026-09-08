@@ -313,15 +313,29 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   refuse → **422 avant la route**, dont le `detail` est une *liste* que
   `toast.js` ne sait pas lire. Alias `app.utils.query.OptionalInt/Float/Bool` +
   **sentinelle** qui résout depuis les gabarits toutes les routes câblées à un
-  `hx-include`. (2) L'écran annonçait « filtrée par client + leg » et **ignorait**
-  le leg : le filtre existe (`RateGrid.covers_leg`), les grilles non couvrantes
-  sont désignées et non sélectionnables plutôt que masquées. (3) 🔴 Une grille ne
+  `hx-include`. (2) La liste des grilles n'était filtrée par rien. (3) 🔴 Une grille ne
   couvrant pas la route du voyage faisait coter l'offre sur `grid.lines[0]` — la
   **première route de la grille** : un Fécamp→Santos au tarif d'un Le
   Havre→Fort-de-France, silencieusement, et c'est ce prix qui part sur la booking
   note. `offer_create` refuse désormais en nommant la route manquante. Au passage
   `valid_until` (500 sur date invalide) et `notes` passent par `_opt_date` /
   `_opt_text`.
+
+- **COM-15 (2026-09-08)** : la cascade de `/commercial/offers/new` descend
+  désormais **client → grille → voyage**, dans le sens où l'opérateur travaille.
+  Le client borne ses grilles (`_grids_for`, grille par défaut en repli), la
+  grille retenue borne les voyages qu'elle sait coter (`grid_route_pairs` →
+  `leg_select_options(routes=…)`). Le sens implémenté en COM-14 (client + voyage
+  → grilles, non couvrantes désignées via `RateGrid.covers_leg`) est **retiré** :
+  il demandait de connaître le voyage avant le tarif. Deux points de vigilance
+  consignés : `grid_route_pairs` distingue `None` (aucune restriction — pas de
+  grille, ou grille par défaut où `resolve_grid` matérialise la route à la
+  demande) de l'ensemble **vide** (grille client sans route ⇒ aucun voyage
+  cotable, et l'écran le dit) ; le chaînage des deux fragments passe par
+  **`HX-Trigger-After-Swap`** et non `HX-Trigger`, qui tirerait l'événement avant
+  le remplacement des options — les voyages seraient bornés par la grille du
+  client précédent. Le refus de `offer_create` sur une grille non couvrante (3)
+  reste la garde de dernier ressort (formulaire rejoué, appel direct).
 
 - **NAV-ROUTE (2026-09-04)** : `/performance/navigation` gagne un **filtre par
   route POL→POD** (`?route=FRFEC-BRSSO`) qui superpose tous les voyages d'une
