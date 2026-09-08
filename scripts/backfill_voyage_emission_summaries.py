@@ -26,6 +26,7 @@ Usage :
   python -m scripts.backfill_voyage_emission_summaries --yes         # applique
   python -m scripts.backfill_voyage_emission_summaries --vessel ANE --yes
   python -m scripts.backfill_voyage_emission_summaries --missing-only --yes
+  python -m scripts.backfill_voyage_emission_summaries --computed-before 2026-09-08 --yes
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from datetime import datetime
 
 from sqlalchemy import func, or_, select
 
@@ -43,12 +45,38 @@ from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.services.emission_ledger import refresh_summary
 
 
-async def _legs_to_refresh(db, *, vessel_code: str | None, missing_only: bool) -> list[Leg]:
+async def _legs_to_refresh(
+    db,
+    *,
+    vessel_code: str | None,
+    missing_only: bool,
+    computed_before: datetime | None,
+) -> list[Leg]:
     """Voyages déjà partis, du plus récent au plus ancien.
 
     Borne sur le **départ effectif** (``coalesce(atd, etd)``) : un voyage parti
     en avance n'a pas une ETD à jour, et il a pourtant des émissions à
     matérialiser. Même convention que les écrans de restitution.
+
+    🔴 **Deux sélecteurs, et aucun ne se fonde sur un ``NULL``.**
+
+    Une première version filtrait sur ``co2_escale_t IS NULL OR
+    co2_mouillage_t IS NULL``. C'était faux : ces ``NULL`` sont souvent
+    **légitimes et définitifs** — un leg de source ``legacy_noon`` (ou une
+    archive TOWT) n'a aucune granularité d'intervalle, donc jamais de conso au
+    mouillage ; une escale encore ouverte n'a pas de conso d'escale tant que le
+    départ suivant n'est pas finalisé. Le filtre resélectionnait donc
+    éternellement les mêmes voyages et ne pouvait **jamais** annoncer un cache
+    à jour.
+
+    - ``--missing-only`` : résumé **absent**, point. Critère net, sans
+      ambiguïté.
+    - ``--computed-before`` : résumés dont le ``computed_at`` précède une date
+      — c'est le vrai critère opérationnel après un déploiement qui ajoute des
+      colonnes (« recalculer tout ce qui n'a pas été recalculé depuis »).
+
+    Sans option, tout est repris : ``refresh_summary`` est idempotent, donc
+    c'est sûr, simplement plus long.
     """
     effective_etd = func.coalesce(Leg.atd, Leg.etd)
     stmt = select(Leg).where(effective_etd <= func.now())
@@ -57,13 +85,14 @@ async def _legs_to_refresh(db, *, vessel_code: str | None, missing_only: bool) -
             Leg.vessel_id.in_(select(Vessel.id).where(Vessel.code == vessel_code.upper()))
         )
     if missing_only:
-        # Résumé absent, OU présent mais sans les grandeurs des deux dernières
-        # migrations (le cas exact qui motive ce script).
+        stmt = stmt.outerjoin(VoyageEmissionSummary, VoyageEmissionSummary.leg_id == Leg.id).where(
+            VoyageEmissionSummary.id.is_(None)
+        )
+    elif computed_before is not None:
         stmt = stmt.outerjoin(VoyageEmissionSummary, VoyageEmissionSummary.leg_id == Leg.id).where(
             or_(
                 VoyageEmissionSummary.id.is_(None),
-                VoyageEmissionSummary.co2_escale_t.is_(None),
-                VoyageEmissionSummary.co2_mouillage_t.is_(None),
+                VoyageEmissionSummary.computed_at < computed_before,
             )
         )
     return list((await db.execute(stmt.order_by(effective_etd.desc()))).scalars().all())
@@ -76,12 +105,37 @@ async def main() -> int:
     parser.add_argument(
         "--missing-only",
         action="store_true",
-        help="ne rejoue que les voyages sans résumé ou sans émissions escale/mouillage",
+        help="ne rejoue que les voyages dont le résumé est ABSENT",
+    )
+    parser.add_argument(
+        "--computed-before",
+        metavar="ISO",
+        help=(
+            "ne rejoue que les résumés calculés avant cette date "
+            "(ex. 2026-09-08 — le vrai critère après un déploiement "
+            "qui ajoute des colonnes)"
+        ),
     )
     args = parser.parse_args()
 
+    computed_before: datetime | None = None
+    if args.computed_before:
+        try:
+            computed_before = datetime.fromisoformat(args.computed_before)
+        except ValueError:
+            print(f"--computed-before : date ISO invalide ({args.computed_before!r})")
+            return 2
+    if args.missing_only and computed_before is not None:
+        print("--missing-only et --computed-before s'excluent : choisir un seul critère.")
+        return 2
+
     async with SessionLocal() as db:
-        legs = await _legs_to_refresh(db, vessel_code=args.vessel, missing_only=args.missing_only)
+        legs = await _legs_to_refresh(
+            db,
+            vessel_code=args.vessel,
+            missing_only=args.missing_only,
+            computed_before=computed_before,
+        )
         if not legs:
             print("Aucun voyage à reprendre.")
             return 0
@@ -95,17 +149,27 @@ async def main() -> int:
             print("\nRelancer avec --yes pour appliquer.")
             return 0
 
-        # 🔴 Un voyage en échec n'interrompt pas la reprise, et il est NOMMÉ.
-        # Une reprise silencieusement partielle serait pire que pas de reprise :
-        # on croirait le cache à jour.
+        # 🔴 Chaque voyage est une transaction À PART ENTIÈRE.
+        #
+        # Attraper l'exception sans `rollback()` ne suffit pas : une erreur au
+        # niveau base laisse la session empoisonnée, tous les voyages suivants
+        # échouent en cascade, et le `commit()` final lève à son tour — jetant
+        # au passage TOUT ce qui avait déjà été recalculé. Le commentaire
+        # d'origine promettait exactement l'inverse de ce que le code faisait.
+        #
+        # On commite donc voyage par voyage, et on annule proprement en cas
+        # d'échec. Plus de transactions, mais une reprise interrompue laisse un
+        # état cohérent et reprenable — c'est ce qu'on veut d'un script à
+        # froid, pas la vitesse.
         done, failed = 0, []
         for leg in legs:
             try:
                 await refresh_summary(db, leg)
+                await db.commit()
                 done += 1
             except Exception as exc:  # rapport, pas d'arrêt
+                await db.rollback()
                 failed.append(f"{leg.leg_code} ({type(exc).__name__}: {exc})")
-        await db.commit()
 
         print(f"\n{done} résumé(s) recalculé(s).")
         if failed:

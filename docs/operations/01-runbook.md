@@ -421,6 +421,31 @@ docker compose exec app alembic upgrade head
 Rattraper une migration oubliée revient donc à **relancer `./scripts/deploy.sh`**
 (idempotent : si le code est déjà à jour, seul le schéma bouge).
 
+### 6.1 bis 🔴 Reprises à froid — une migration additive ne remplit pas le passé
+
+`deploy.sh` joue les migrations, **rien de plus**. Une colonne ajoutée naît à
+`NULL` sur toutes les lignes existantes, et rien ne la remplit ensuite si le
+calcul est déclenché par un événement (une nouvelle finalisation ne concerne
+pas les voyages passés). Un déploiement fait « dans les règles » laisse donc
+l'écran concerné vide pour tout l'historique.
+
+**Après tout déploiement portant une migration additive sur une table
+calculée**, vérifier si un script de reprise l'accompagne :
+
+```bash
+# Résumés d'émissions par voyage (colonnes escale/mouillage — 0144/0145)
+docker compose exec app python -m scripts.backfill_voyage_emission_summaries \
+    --computed-before "$(date -I)" --yes
+
+# Autres reprises existantes du dépôt, même principe
+docker compose exec app python -m scripts.backfill_leg_distances --yes
+docker compose exec app python -m scripts.backfill_voyage_actuals --yes
+```
+
+Toutes sont en **dry-run par défaut** : lancer sans `--yes` d'abord, lire le
+compte, puis appliquer. Elles sont idempotentes — un second passage ne fait
+rien de plus.
+
 ### 6.2 « Multiple head revisions are present » — le déploiement s'arrête
 
 Symptôme (étape 6 de `deploy.sh`, snapshot restauré automatiquement) :

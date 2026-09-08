@@ -199,7 +199,10 @@ Implémentation : `emissions_breakdown(conso_escale, factor)` ajouté **dans**
 `20260907_0144` (`co2_escale_t`, `co2eq_escale_t`). Même facteur, même primitive
 que le trajet. Le résumé étant un cache recalculable, les colonnes se remplissent
 au prochain recalcul — aucun backfill dans la migration, qui ne doit pas dépendre
-du code de calcul du moment.
+du code de calcul du moment. ⚠️ Les voyages **antérieurs au déploiement** ne
+sont donc jamais remplis par ce chemin : ils exigent la reprise à froid
+`scripts.backfill_voyage_emission_summaries` (ajoutée le 2026-09-07 après le
+3ᵉ tour de revue, et inscrite au runbook §6.1 bis).
 
 **Invariant à respecter désormais** : les deux assiettes sont **disjointes** et
 ne doivent jamais être additionnées en silence — l'escale d'un voyage peut

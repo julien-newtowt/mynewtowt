@@ -296,18 +296,24 @@ async def test_anchoring_never_offered_on_the_port_screen(db, staff_user):
     assert resp.context["include_anchoring"] is False
 
 
-async def test_extended_total_is_none_when_the_voyage_figure_is_missing(db):
-    """Un total partiel qui passerait pour complet serait pire que pas de total.
+async def test_extended_total_needs_both_terms_known(db):
+    """🔴 Un mouillage à ``None`` n'est PAS un mouillage nul.
 
-    En revanche un mouillage absent vaut zéro : le navire n'a pas mouillé, ce
-    n'est pas une information manquante.
+    La première version le sommait comme zéro et affichait un total en gras
+    « trajet + mouillage » alors que la cellule mouillage de la même ligne
+    montrait un tiret. La distinction est nette dans le grand livre : source
+    ``events`` → somme d'intervalles, donc ``0`` si le navire n'a pas mouillé ;
+    source ``legacy_noon`` (et archives TOWT) → ``None``, mouillage **inconnu**
+    faute de granularité.
+
+    Zéro reste additionné — c'est une mesure. ``None`` interdit le total.
     """
     vessel, _other, ports = await _fleet(db)
     await _leg(
         db,
         vessel,
         ports,
-        code="1AFRBR6",
+        code="SANS-TRAJET",
         etd=T0,
         summary={"co2_mouillage_t": Decimal("3.200")},  # pas de co2_t
     )
@@ -315,14 +321,25 @@ async def test_extended_total_is_none_when_the_voyage_figure_is_missing(db):
         db,
         vessel,
         ports,
-        code="1BFRBR6",
+        code="MOUILLAGE-INCONNU",
         etd=T0 + timedelta(days=20),
-        summary={"co2_t": Decimal("10.000")},  # pas de mouillage
+        summary={"co2_t": Decimal("10.000")},  # mouillage None = inconnu
+    )
+    await _leg(
+        db,
+        vessel,
+        ports,
+        code="SANS-MOUILLAGE",
+        etd=T0 + timedelta(days=40),
+        summary={"co2_t": Decimal("10.000"), "co2_mouillage_t": Decimal("0")},
     )
 
-    rows = {r.leg.leg_code: r for r in await emv.voyage_emissions(db)}
-    assert rows["1AFRBR6"].co2_with_anchoring_t is None
-    assert rows["1BFRBR6"].co2_with_anchoring_t == Decimal("10.000")
+    rows = {r.leg.leg_code: r for r in await emv.voyage_emissions(db, now=T0 + timedelta(days=60))}
+    assert rows["SANS-TRAJET"].co2_with_anchoring_t is None
+    # Inconnu ⇒ pas de total, plutôt qu'un total qui vaudrait le seul trajet.
+    assert rows["MOUILLAGE-INCONNU"].co2_with_anchoring_t is None
+    # Mesuré à zéro ⇒ total légitime.
+    assert rows["SANS-MOUILLAGE"].co2_with_anchoring_t == Decimal("10.000")
 
 
 async def test_the_voyage_view_ignores_legs_that_have_not_departed(db):

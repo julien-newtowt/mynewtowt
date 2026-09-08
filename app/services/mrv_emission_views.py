@@ -112,14 +112,27 @@ class LegEmissionRow:
     def co2_with_anchoring_t(self) -> Decimal | None:
         """Trajet + mouillage — **hors périmètre MRV**, à n'afficher qu'en opt-in.
 
-        ``None`` dès que le CO₂ du trajet manque : un total partiel qui
-        passerait pour complet serait pire que pas de total. Un mouillage
-        absent (``None``) vaut en revanche zéro — le navire n'a pas mouillé,
-        ce n'est pas une information manquante.
+        ``None`` dès qu'un des deux termes manque : un total partiel qui
+        passerait pour complet serait pire que pas de total.
+
+        🔴 **Un mouillage à ``None`` n'est pas un mouillage nul.** La première
+        version le traitait comme zéro, en affirmant « le navire n'a pas
+        mouillé ». C'était faux, et la distinction est nette dans le grand
+        livre :
+
+        - source ``events`` → ``conso_mouillage`` est une **somme
+          d'intervalles**, donc ``0`` quand le navire n'a pas mouillé ;
+        - source ``legacy_noon`` (et archives TOWT) → ``None``, faute de toute
+          granularité d'intervalle : le mouillage est **inconnu**.
+
+        Sommer un inconnu comme un zéro produisait donc un total en gras
+        présenté comme « trajet + mouillage » alors que la cellule mouillage de
+        la même ligne affichait un tiret. Zéro reste additionné — c'est une
+        mesure ; ``None`` interdit le total.
         """
-        if self.co2_t is None:
+        if self.co2_t is None or self.co2_mouillage_t is None:
             return None
-        return self.co2_t + (self.co2_mouillage_t or Decimal("0"))
+        return self.co2_t + self.co2_mouillage_t
 
     @property
     def has_summary(self) -> bool:
