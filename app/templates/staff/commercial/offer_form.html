@@ -28,10 +28,16 @@
       </div>
       <div class="field">
         <label for="grid_id">Grille tarifaire <small class="text-muted">(filtrée par client + leg)</small></label>
+        {# Les options viennent du même gabarit que le rafraîchissement HTMX
+           (`_grid_options.html`) : la liste ne change pas de nature entre le
+           premier rendu et le premier changement de client. #}
         <select id="grid_id" name="grid_id">
-          <option value="">Sans grille</option>
-          {% for g in grids %}<option value="{{ g.id }}">{{ g.reference }} · {% if g.client_id %}client{% else %}défaut{% endif %} · {{ g.lines|length }} route{{ 's' if g.lines|length != 1 else '' }}</option>{% endfor %}
+          {% include "staff/commercial/_grid_options.html" %}
         </select>
+        <small class="text-muted">
+          Une grille client ne cote que les routes qu'elle porte : celles qui ne couvrent pas
+          le POL→POD du voyage choisi sont listées à part, non sélectionnables.
+        </small>
       </div>
       <div class="field">
         <label for="leg_id">Leg ciblé</label>

@@ -107,6 +107,7 @@ from app.services.quoting import (
 )
 from app.templating import templates
 from app.utils.forms import form_str
+from app.utils.query import OptionalBool, OptionalInt
 
 router = APIRouter(prefix="/commercial", tags=["commercial"])
 
@@ -780,6 +781,18 @@ def _opt_int(value: str | None) -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _opt_text(value: object) -> str | None:
+    """Texte optionnel : vide ou non-chaîne ⇒ ``None``, sinon valeur ébarbée.
+
+    Complète ``_opt_int`` / ``_opt_decimal`` / ``_opt_date`` pour les champs
+    libres. Le motif ``(value or "").strip() or None`` répandu dans les routeurs
+    lève sur un ``Form(None)`` non résolu (appel direct de la route) et sur un
+    fichier posté sous un nom de champ texte — deux 500 pour une saisie que
+    l'intention est de traiter comme absente.
+    """
+    return value.strip() or None if isinstance(value, str) else None
 
 
 def _opt_date(value: object, field: str = "date") -> _date | None:
@@ -2292,17 +2305,14 @@ async def offer_new_form(
 
     legs = list((await db.execute(select(Leg).order_by(Leg.etd.desc()).limit(50))).scalars().all())
     leg_options = await leg_select_options(db)
-    grids = list(
-        (
-            await db.execute(
-                select(RateGrid)
-                .options(selectinload(RateGrid.lines))
-                .where(RateGrid.status == "active")
-            )
-        )
-        .scalars()
-        .all()
-    )
+    # Le premier rendu doit montrer la **même** liste que le fragment HTMX, pour
+    # le client effectivement présélectionné (le `<select>` client n'a pas
+    # d'option vide et est `required` : c'est donc le premier de la liste).
+    # Auparavant il listait *toutes* les grilles actives, celles des autres
+    # clients comprises, et la liste changeait de nature au premier
+    # rafraîchissement — sans que rien ne l'explique.
+    preselected_client_id = clients[0].id if clients else None
+    grids = await _grids_for(db, client_id=preselected_client_id)
     return templates.TemplateResponse(
         "staff/commercial/offer_form.html",
         {
@@ -2317,13 +2327,49 @@ async def offer_new_form(
     )
 
 
-async def _grids_for(db: AsyncSession, *, client_id: int | None) -> list[RateGrid]:
-    """Grilles actives applicables à un client (multi-routes).
+async def _leg_route_locodes(db: AsyncSession, leg_id: int | None) -> tuple[str, str] | None:
+    """(POL, POD) du leg visé, ou ``None`` si le leg ou ses ports sont inconnus."""
+    if not leg_id:
+        return None
+    leg = await db.get(Leg, leg_id)
+    if leg is None:
+        return None
+    pol = await db.get(Port, leg.departure_port_id)
+    pod = await db.get(Port, leg.arrival_port_id)
+    if pol is None or pod is None or not pol.locode or not pod.locode:
+        return None
+    return pol.locode, pod.locode
+
+
+def _grid_covers(grid: RateGrid, route: tuple[str, str] | None) -> bool:
+    """La grille peut-elle coter ce voyage ?
+
+    Une grille **client** ne cote que les routes qu'elle porte explicitement :
+    si elle ne couvre pas le POL→POD du leg, elle ne peut pas produire de tarif
+    pour cette offre. Une grille **par défaut** est éligible quoi qu'il arrive —
+    ``resolve_grid`` y matérialise la route à la demande (*get-or-create*), donc
+    l'absence de ligne n'y signifie pas l'absence de couverture.
+    """
+    if route is None or grid.is_default or grid.client_id is None:
+        return True
+    return _match_route(grid, route[0], route[1]) is not None
+
+
+async def _grids_for(
+    db: AsyncSession, *, client_id: int | None, leg_id: int | None = None
+) -> list[RateGrid]:
+    """Grilles actives applicables à un client, annotées par couverture du leg.
 
     Retenues : statut ``active``, valides à ce jour, et soit propres au client
-    soit grilles par défaut (``client_id`` NULL). La route est résolue à la
-    création de l'offre via la ligne-route POL/POD de la grille (cf. le leg
-    ciblé). Les grilles spécifiques au client sont listées avant les défauts.
+    soit grilles par défaut (``client_id`` NULL). Les grilles spécifiques au
+    client sont listées avant les défauts.
+
+    Quand un **leg** est fourni, chaque grille est marquée ``covers_leg`` selon
+    qu'elle porte ou non la route POL→POD de ce voyage. L'écran l'annonçait
+    (« filtrée par client + leg ») sans le faire : le ``leg_id`` était envoyé
+    par ``hx-include`` puis ignoré ici. Les grilles non couvrantes sont
+    **conservées mais désignées** plutôt que masquées — faire disparaître la
+    grille négociée d'un client sans dire pourquoi se lit comme une panne.
     """
     today = datetime.now(UTC).date()
     query = (
@@ -2341,24 +2387,38 @@ async def _grids_for(db: AsyncSession, *, client_id: int | None) -> list[RateGri
         query = query.where(RateGrid.client_id.is_(None))
 
     grids = list((await db.execute(query)).scalars().all())
-    # Client-specific d'abord, puis défaut ; tri secondaire par référence.
-    grids.sort(key=lambda g: (g.client_id is None, g.reference or ""))
+    route = await _leg_route_locodes(db, leg_id)
+    for grid in grids:
+        # Attribut transitoire porté jusqu'au gabarit : la couverture dépend du
+        # leg visé, elle n'a pas de sens hors de cette requête.
+        grid.covers_leg = _grid_covers(grid, route)
+    # Couvrantes d'abord, puis client avant défaut, puis référence.
+    grids.sort(key=lambda g: (not g.covers_leg, g.client_id is None, g.reference or ""))
     return grids
 
 
 @router.get("/offers/grid-options", response_class=HTMLResponse)
 async def offer_grid_options(
     request: Request,
-    client_id: int | None = None,
-    leg_id: int | None = None,
+    client_id: OptionalInt = None,
+    leg_id: OptionalInt = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
-    """Partial HTMX : options du <select> grille filtrées par client."""
-    grids = await _grids_for(db, client_id=client_id)
+    """Partial HTMX : options du ``<select>`` grille, filtrées par client + leg.
+
+    ``OptionalInt`` et non ``int | None`` : ``hx-include`` envoie **tous** les
+    champs désignés, donc ``leg_id=`` tant que le voyage n'est pas choisi. Avec
+    un ``int | None``, FastAPI répondait 422 avant d'entrer dans la route, et
+    ``toast.js`` — qui ne sait lire qu'un ``detail`` textuel, là où un 422 en
+    livre une liste — affichait « Action refusée — rechargez la page ». Chaque
+    changement de client produisait donc un refus, et la liste ne se filtrait
+    jamais (constaté le 2026-09-07).
+    """
+    grids = await _grids_for(db, client_id=client_id, leg_id=leg_id)
     return templates.TemplateResponse(
         "staff/commercial/_grid_options.html",
-        {"request": request, "grids": grids},
+        {"request": request, "grids": grids, "leg_id": leg_id},
     )
 
 
@@ -2697,17 +2757,34 @@ async def offer_create(
     proposed_rate = Decimal("0")
     total = Decimal("0")
     if grid is not None and estimated_palettes > 0 and grid.lines:
-        # Route ciblée : ligne POL/POD du leg, sinon première route de la grille.
-        route = None
-        if leg_id:
-            leg = await db.get(Leg, leg_id)
-            if leg is not None:
-                pol_port = await db.get(Port, leg.departure_port_id)
-                pod_port = await db.get(Port, leg.arrival_port_id)
-                if pol_port and pod_port:
-                    route = _match_route(grid, pol_port.locode, pod_port.locode)
+        # Route ciblée : la ligne POL/POD **du voyage**, et rien d'autre.
+        #
+        # Cette branche retombait sur ``grid.lines[0]`` quand la grille ne
+        # couvrait pas la route du leg. Le tarif de l'offre était alors celui
+        # d'une route arbitraire — la première de la grille : un Fécamp→Santos
+        # pouvait être coté sur un Le Havre→Fort-de-France. Un prix qu'aucune
+        # route ne justifie n'est pas un repli, c'est une erreur silencieuse,
+        # et c'est ce prix qui part sur la booking note. Même défaut que le
+        # repli de ``resolve_grid`` sur la grille par défaut, déjà proscrit.
+        route_locodes = await _leg_route_locodes(db, leg_id)
+        if route_locodes is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Voyage sans route exploitable (port sans code LOCODE) : "
+                    "corrigez les ports du voyage dans Admin → Ports."
+                ),
+            )
+        route = _match_route(grid, route_locodes[0], route_locodes[1])
         if route is None:
-            route = grid.lines[0]
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"La grille {grid.reference} ne couvre pas la route "
+                    f"{route_locodes[0]}→{route_locodes[1]} de ce voyage : "
+                    "ajoutez-lui cette route, ou choisissez une autre grille."
+                ),
+            )
         # Bracket de volume au niveau grille (coefficients dégressifs).
         picked = pick_bracket(grid.brackets, estimated_palettes)
         if picked:
@@ -2729,8 +2806,12 @@ async def offer_create(
         estimated_palettes=estimated_palettes,
         proposed_rate_eur=proposed_rate or None,
         total_eur=total or None,
-        valid_until=_date.fromisoformat(valid_until) if valid_until else None,
-        notes=notes,
+        # ``_opt_date`` et non ``fromisoformat`` brut : une date de validité mal
+        # saisie sortait en 500 (``ValueError`` non attrapé) au lieu du 400 que
+        # le reste du routeur rend, et la valeur par défaut ``Form(None)`` fuite
+        # telle quelle sur un appel direct de la route.
+        valid_until=_opt_date(valid_until, "Validité"),
+        notes=_opt_text(notes),
     )
     db.add(offer)
     await db.flush()
@@ -3255,10 +3336,13 @@ async def rate_lookup(
     request: Request,
     departure_locode: str | None = None,
     arrival_locode: str | None = None,
-    booked_palettes: int = 0,
+    # Mêmes alias tolérants : ces champs sont inclus par ``hx-include`` depuis
+    # l'écran de confirmation d'offre, et un opérateur qui vide la quantité
+    # envoyait ``booked_palettes=`` — 422, donc le même faux refus.
+    booked_palettes: OptionalInt = 0,
     palette_format: str = "EPAL",
-    hazardous: bool = False,
-    client_id: int | None = None,
+    hazardous: OptionalBool = False,
+    client_id: OptionalInt = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("commercial", "C")),
 ) -> HTMLResponse:
@@ -3279,7 +3363,7 @@ async def rate_lookup(
     error = None
     if not departure_locode or not arrival_locode:
         error = "Renseignez POL et POD pour estimer le tarif."
-    elif booked_palettes <= 0:
+    elif not booked_palettes or booked_palettes <= 0:
         error = "Indiquez un nombre de palettes (> 0)."
     else:
         try:
@@ -3293,7 +3377,7 @@ async def rate_lookup(
                 grid,
                 route,
                 items=[(palette_format or "EPAL", booked_palettes)],
-                hazardous=hazardous,
+                hazardous=bool(hazardous),
             )
         except QuotingError as exc:
             error = str(exc)

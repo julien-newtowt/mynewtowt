@@ -57,6 +57,7 @@ from app.services.signature import (
 )
 from app.services.voyage_events import ARRIVAL_SOF_TYPES, DEPARTURE_SOF_TYPES
 from app.templating import templates
+from app.utils.query import OptionalInt
 
 logger = logging.getLogger("captain")
 
@@ -1767,9 +1768,9 @@ def _client_ip(request: Request) -> str | None:
 @router.get("/bl", response_class=HTMLResponse)
 async def captain_bl_index(
     request: Request,
-    leg_id: int | None = None,
-    signed: int | None = None,
-    skipped: int | None = None,
+    leg_id: OptionalInt = None,
+    signed: OptionalInt = None,
+    skipped: OptionalInt = None,
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("captain", "C")),
 ) -> HTMLResponse:
@@ -1777,6 +1778,14 @@ async def captain_bl_index(
 
     `signed` / `skipped` sont les compteurs du compte rendu d'une signature
     groupée (redirection depuis `/captain/bl/sign-selected`).
+
+    ``OptionalInt`` par précaution, pas par nécessité constatée : le sélecteur
+    de leg est alimenté par ``hx-include="closest form"``, qui enverrait
+    ``leg_id=`` le jour où le `<select>` gagnerait une option vide ou le
+    formulaire un autre champ numérique optionnel. La route répondrait alors 422
+    et l'écran afficherait « Action refusée — rechargez la page », comme
+    `/commercial/offers/grid-options` le faisait. Verrouillé par
+    ``tests/regression/test_htmx_include_blank_tolerant.py``.
     """
     from app.services import bl_workflow
 
