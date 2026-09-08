@@ -434,8 +434,7 @@ calculée**, vérifier si un script de reprise l'accompagne :
 
 ```bash
 # Résumés d'émissions par voyage (colonnes escale/mouillage — 0144/0145)
-docker compose exec app python -m scripts.backfill_voyage_emission_summaries \
-    --computed-before "$(date -I)" --yes
+docker compose exec app python -m scripts.backfill_voyage_emission_summaries --yes
 
 # Autres reprises existantes du dépôt, même principe
 docker compose exec app python -m scripts.backfill_leg_distances --yes
@@ -445,6 +444,20 @@ docker compose exec app python -m scripts.backfill_voyage_actuals --yes
 Toutes sont en **dry-run par défaut** : lancer sans `--yes` d'abord, lire le
 compte, puis appliquer. Elles sont idempotentes — un second passage ne fait
 rien de plus.
+
+> ⚠️ **Lancer sans filtre.** Les options de la reprise d'émissions sont des
+> optimisations, et chacune a un piège qui laisse des colonnes `NULL` sans le
+> dire :
+> - `--missing-only` ne prend que les voyages **sans résumé du tout**, donc ne
+>   remplit jamais une colonne neuve sur un résumé existant — précisément le cas
+>   à réparer après une migration additive ;
+> - `--computed-before` veut l'**instant réel du déploiement**, pas une date du
+>   jour : le hook d'événement recalcule en continu, donc « minuit aujourd'hui »
+>   saute tout résumé déjà rafraîchi plus tôt. Le script affiche la borne UTC
+>   qu'il retient, à relire avant d'appliquer.
+>
+> Sur une flotte de deux navires, la forme sans filtre prend quelques secondes :
+> il n'y a aucune raison de préférer l'optimisation au chiffre juste.
 
 ### 6.2 « Multiple head revisions are present » — le déploiement s'arrête
 

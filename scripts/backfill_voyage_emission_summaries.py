@@ -21,12 +21,24 @@ dans le grand livre).
 
 Dry-run par défaut.
 
+🔴 **Après un déploiement qui ajoute des colonnes, lancer SANS filtre.** C'est
+la seule forme dont la justesse ne dépend d'aucune subtilité : ``refresh_summary``
+est idempotent, donc reprendre tout est sûr — simplement plus long. Les deux
+filtres ci-dessous sont des optimisations, et chacun a un piège :
+
+- ``--missing-only`` ne prend que les voyages **sans résumé du tout** : il ne
+  remplira donc **jamais** une colonne nouvelle sur un résumé déjà existant,
+  qui est précisément le cas à réparer après une migration additive ;
+- ``--computed-before`` exige un **instant de déploiement réel**, pas une date
+  du jour : le hook d'événement recalcule en continu, donc « minuit
+  aujourd'hui » saute tout résumé déjà rafraîchi plus tôt dans la journée.
+
 Usage :
   python -m scripts.backfill_voyage_emission_summaries               # dry-run
-  python -m scripts.backfill_voyage_emission_summaries --yes         # applique
+  python -m scripts.backfill_voyage_emission_summaries --yes         # ← APRÈS MIGRATION
   python -m scripts.backfill_voyage_emission_summaries --vessel ANE --yes
   python -m scripts.backfill_voyage_emission_summaries --missing-only --yes
-  python -m scripts.backfill_voyage_emission_summaries --computed-before 2026-09-08 --yes
+  python -m scripts.backfill_voyage_emission_summaries --computed-before 2026-09-08T14:30:00Z --yes
 """
 
 from __future__ import annotations
@@ -34,7 +46,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import func, or_, select
 
@@ -125,6 +137,15 @@ async def main() -> int:
         except ValueError:
             print(f"--computed-before : date ISO invalide ({args.computed_before!r})")
             return 2
+        # 🔴 `computed_at` est un `timestamptz`. Une date ISO sans fuseau donne
+        # un datetime NAÏF, qu'asyncpg résout dans le fuseau LOCAL DU
+        # CONTENEUR : sur un hôte non-UTC, la borne se décalait silencieusement
+        # de plusieurs heures — et une borne de reprise décalée laisse des
+        # colonnes NULL sans que rien ne le signale. On force donc UTC, et on
+        # le dit à l'écran pour qu'il n'y ait aucun doute sur l'instant retenu.
+        if computed_before.tzinfo is None:
+            computed_before = computed_before.replace(tzinfo=UTC)
+        print(f"Borne retenue : {computed_before.isoformat()} (UTC)")
     if args.missing_only and computed_before is not None:
         print("--missing-only et --computed-before s'excluent : choisir un seul critère.")
         return 2

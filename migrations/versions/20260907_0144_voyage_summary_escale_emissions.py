@@ -29,7 +29,10 @@ façons, et de deux seulement :
 1. au prochain recalcul déclenché par le hook de finalisation/validation d'un
    événement ;
 2. 🔴 pour les voyages **antérieurs au déploiement**, par la reprise à froid
-   ``python -m scripts.backfill_voyage_emission_summaries --missing-only --yes``.
+   ``python -m scripts.backfill_voyage_emission_summaries --yes`` — **sans
+   filtre**. ``--missing-only`` ne prend que les voyages *sans résumé du tout* :
+   il ne remplirait donc jamais une colonne neuve sur un résumé **existant**,
+   qui est précisément le cas à réparer ici.
 
 Le point 2 n'est pas optionnel : sans lui, ces voyages garderaient ``NULL``
 pour toujours (aucun événement nouveau ne les concerne) et

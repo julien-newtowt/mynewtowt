@@ -28,9 +28,9 @@ Le résumé étant un **cache recalculable** (``refresh_summary``), ces colonnes
 naissent à ``NULL`` : aucun backfill ici — une migration ne doit pas dépendre du
 code de calcul du moment. Elles se remplissent au prochain recalcul déclenché
 par un événement, et — pour les voyages **antérieurs au déploiement** — par la
-reprise à froid ``python -m scripts.backfill_voyage_emission_summaries
---missing-only --yes``, sans laquelle ils garderaient ``NULL`` pour toujours
-(cf. le même point dans ``20260907_0144``).
+reprise à froid ``python -m scripts.backfill_voyage_emission_summaries --yes``,
+**sans filtre**, sans laquelle ils garderaient ``NULL`` pour toujours (cf. le
+même point dans ``20260907_0144``).
 
 Revision ID: 20260907_0145
 Revises: 20260907_0144
