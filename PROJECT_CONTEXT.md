@@ -264,7 +264,8 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
 
 ## 12. Journal de développement & ADR
 
-- Journal : `docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md`.
+- Journal : `docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md` (période close) ;
+  `docs/DEVELOPMENT_JOURNAL_2026-09-01_EN_COURS.md` (période courante).
 - ADR : `docs/architecture/` — **ADR-010** (refonte commerciale, 2026-08-26),
   **ADR-011** (caisse : espèces ≠ encaissements CB), **ADR-012** (cloisonnement
   par navire), **ADR-013** (remboursement, valeur du registre de vente, gel à la
@@ -273,6 +274,13 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   décisions, la 6ᵉ (table d'archive des noon reports) ouvre le lot 2.
   **ADR-015** (prix annoncé / coût calculé / marge dérivée, 2026-09-04) est
   **accepté** — il remplace partiellement ADR-010 sur la formation du tarif.
+  **ADR-016** (QHSE : miroir en lecture, dérivation plutôt que colonne,
+  2026-09-04) est **accepté** — quatre décisions : aucune colonne pour une
+  donnée que le FMS possède, on encode le fait et non son interprétation,
+  `indetermine` est une valeur de premier rang, et **une migration est un
+  instantané, jamais un appel au code vivant** (leçon de l'incident
+  `DFT-20260904-001`). La 4ᵉ laisse un arbitrage ouvert à Julien : semer le
+  référentiel de validation au boot dans tous les environnements.
 - **PLN-SEQ (2026-09-01)** : refonte de la séquence de planification —
   déclarations « départ du POL » / « arrivée au POD » (escale + SOF bord →
   `services.voyage_transitions`, chemin unique du réel), re-ancrage d'ETA sur
