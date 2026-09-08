@@ -633,6 +633,33 @@ async def test_a_departure_refreshes_the_previous_leg_summary_too(db):
     assert await emission_ledger.legs_affected_by_event(db, arrival) == [leg.id]
 
 
+async def test_the_refresh_hook_never_blocks_a_finalisation(db, monkeypatch):
+    """🔴 Le contrat « jamais bloquant » était cassé.
+
+    Le hook attrapait l'exception sans savepoint : la session restait
+    empoisonnée, donc le ``commit()`` de ``get_db()`` échouait à son tour et
+    **annulait la finalisation de l'événement**. Une panne de cache empêchait
+    le bord de finaliser — l'inverse du contrat.
+
+    ``begin_nested()`` isole chaque voyage : la session survit, l'événement
+    reste finalisé.
+    """
+    vessel, leg = await _base(db)
+    dep, _noon = await _events_chain(db, vessel, leg)
+
+    async def _boom(*_a, **_k):
+        raise RuntimeError("panne de cache simulée")
+
+    monkeypatch.setattr(emission_ledger, "refresh_summary", _boom)
+
+    # Le hook encaisse l'échec sans propager…
+    await event_capture._refresh_emission_summary(db, dep)
+
+    # …et la session reste utilisable : c'est ce que le savepoint garantit,
+    # et ce que l'ancienne version rendait impossible.
+    assert (await db.execute(select(func.count()).select_from(Leg))).scalar_one() == 1
+
+
 async def test_escale_emission_is_none_without_escale_consumption(db):
     """Pas d'escale (voyage non arrivé, G12) ⇒ pas d'émission d'escale.
 

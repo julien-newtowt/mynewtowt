@@ -476,6 +476,50 @@ async def update_draft(
     return bunker
 
 
+async def _refresh_affected_emission_summaries(db: AsyncSession, bunker: BunkerOperation) -> None:
+    """Rematérialise les résumés d'émissions que ce soutage rend obsolètes.
+
+    🔴 **Un soutage validé après coup change une émission d'escale.** La conso
+    d'escale suit la continuité ROB (``ROB_arrivée + Σ soutages − ROB_départ``)
+    et ne compte que les soutages **validés Master**. Un BDN validé ou corrigé
+    *après* le départ qui a clos l'escale n'était donc répercuté nulle part :
+    ``co2_escale_t`` restait **sous-estimé** en base et à l'écran.
+
+    C'était tolérable tant que ce poste n'était qu'une consommation affichée.
+    Depuis qu'on en dérive une émission de périmètre MRV, un chiffre
+    silencieusement sous-estimé n'est plus acceptable.
+
+    Deux voyages sont concernés : celui auquel le soutage est rattaché, et
+    celui dont l'escale **contient** la livraison — c'est le voyage de la
+    dernière arrivée précédant la livraison, exactement la question à laquelle
+    ``emission_ledger`` sait répondre. Best-effort et par savepoint, comme le
+    hook d'événement : un cache ne bloque jamais un acte de bord.
+    """
+    try:
+        from app.services.emission_ledger import _previous_arrival_event, refresh_summary
+
+        leg_ids: list[int] = []
+        if bunker.leg_id is not None:
+            leg_ids.append(bunker.leg_id)
+        if bunker.vessel_id is not None and bunker.delivery_datetime_utc is not None:
+            arrival = await _previous_arrival_event(
+                db, bunker.vessel_id, bunker.delivery_datetime_utc
+            )
+            if arrival is not None and arrival.leg_id is not None and arrival.leg_id not in leg_ids:
+                leg_ids.append(arrival.leg_id)
+    except Exception:  # pragma: no cover — cache best-effort
+        return
+
+    for leg_id in leg_ids:
+        try:
+            async with db.begin_nested():
+                leg = await db.get(Leg, leg_id)
+                if leg is not None:
+                    await refresh_summary(db, leg)
+        except Exception:  # pragma: no cover — cache best-effort
+            continue
+
+
 async def validate_master(db: AsyncSession, bunker: BunkerOperation, validator) -> BunkerOperation:
     """Validation Master (bord) — verrouille le soutage côté bord.
 
@@ -501,6 +545,8 @@ async def validate_master(db: AsyncSession, bunker: BunkerOperation, validator) 
         await _vrc.run_bunker_rules_and_route(db, bunker)
     except Exception:
         pass
+
+    await _refresh_affected_emission_summaries(db, bunker)
     return bunker
 
 
@@ -525,6 +571,9 @@ async def apply_review_correction(
     elif manual_leg_id is not None:
         bunker.leg_id = manual_leg_id
     await db.flush()
+    # Une correction siège peut changer la masse ou le rattachement :
+    # mêmes résumés à rematérialiser que pour la validation Master.
+    await _refresh_affected_emission_summaries(db, bunker)
     return bunker
 
 

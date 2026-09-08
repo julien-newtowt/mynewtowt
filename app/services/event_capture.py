@@ -343,17 +343,29 @@ async def _refresh_emission_summary(db: AsyncSession, event: NavEvent) -> None:
     except Exception:  # pragma: no cover — cache best-effort, jamais bloquant
         return
 
-    # 🔴 Un `try` PAR VOYAGE, pas autour de la boucle.
+    # 🔴 Un SAVEPOINT par voyage, pas un simple `try`.
     #
-    # Le leg de l'événement est rafraîchi en premier : un échec sur celui-là
-    # aurait sauté le voyage précédent et laissé son `conso_escale_t` à `NULL`
-    # — soit exactement le défaut que cette fonction existe pour corriger, et
-    # sans aucun signal. Chaque voyage est donc isolé.
+    # Deux raisons, et la seconde casse un contrat :
+    #
+    # 1. Un `try` nu ne suffit pas. Une erreur au niveau base laisse la session
+    #    empoisonnée : le voyage suivant échoue en cascade — donc le voyage
+    #    précédent est sauté, soit exactement le défaut que cette fonction
+    #    existe pour corriger, et sans aucun signal.
+    # 2. Pire, la session étant cassée, le `commit()` de `get_db()` échoue à
+    #    son tour et **annule la finalisation de l'événement**. Le docstring
+    #    promet « jamais bloquant » : une panne de cache empêcherait le bord de
+    #    finaliser, ce qui est l'inverse.
+    #
+    # `begin_nested()` isole chaque voyage : l'échec annule le seul savepoint,
+    # la session reste utilisable et la transaction appelante survit. Même
+    # patron que le point de reprise par ligne de `qhse_ingestion.import_qhse_xlsx`
+    # — je l'y avais documenté sans l'appliquer ici.
     for leg_id in affected:
         try:
-            leg = await db.get(Leg, leg_id)
-            if leg is not None:
-                await refresh_summary(db, leg)
+            async with db.begin_nested():
+                leg = await db.get(Leg, leg_id)
+                if leg is not None:
+                    await refresh_summary(db, leg)
         except Exception:  # pragma: no cover — cache best-effort, jamais bloquant
             continue
 
