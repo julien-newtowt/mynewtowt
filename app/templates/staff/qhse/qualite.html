@@ -43,7 +43,10 @@
     <div class="value">{{ quality.total_flagged }}</div>
     <div class="delta text-muted">/ {{ quality.total_reports }}</div>
   </div>
-  {% for issue in ['suspected_test', 'closed_before_issued', 'missing_root_cause', 'missing_corrective_description'] %}
+  {# La liste des motifs vient du SERVICE, jamais recopiée ici : un motif
+     ajouté au calcul serait autrement compté et affiché en pastille sur la
+     ligne, mais silencieusement absent des compteurs du bandeau. #}
+  {% for issue in quality_issues %}
   <div class="kpi-card">
     <div class="label">{{ t('qhse_issue_' ~ issue, lang) }}</div>
     <div class="value">{{ quality.issue_counts.get(issue, 0) }}</div>
@@ -85,11 +88,11 @@
           <td><span class="pill pill-neutral">{{ item.vessel_code }}</span></td>
           <td>{{ item.issued_date|date }}</td>
           <td>
-            {# `pill-warn` sur les deux motifs qui demandent une DÉCISION (garder
-               ou écarter, corriger une date incohérente) ; `pill-neutral` sur
-               les manques de saisie, plus nombreux et moins urgents. #}
+            {# `pill-warn` sur le seul motif qui demande une DÉCISION (garder ou
+               écarter) ; `pill-neutral` sur les manques de saisie, plus
+               nombreux et moins urgents. #}
             {% for issue in item.issues %}
-            <span class="pill {% if issue in ('suspected_test', 'closed_before_issued') %}pill-warn{% else %}pill-neutral{% endif %}">
+            <span class="pill {% if issue == 'suspected_test' %}pill-warn{% else %}pill-neutral{% endif %}">
               {{ t('qhse_issue_' ~ issue, lang) }}
             </span>
             {% endfor %}

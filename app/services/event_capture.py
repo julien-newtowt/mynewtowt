@@ -297,7 +297,7 @@ async def finalize(db: AsyncSession, event: NavEvent, author) -> NavEvent:
     event.status = "finalise"
     event.finalized_at = datetime.now(UTC)
     await db.flush()
-    await _refresh_emission_summary(db, event.leg_id)
+    await _refresh_emission_summary(db, event)
     return event
 
 
@@ -311,12 +311,23 @@ async def validate(db: AsyncSession, event: NavEvent, validator) -> NavEvent:
     event.validated_at = datetime.now(UTC)
     event.validated_by = validator.id if validator is not None else None
     await db.flush()
-    await _refresh_emission_summary(db, event.leg_id)
+    await _refresh_emission_summary(db, event)
     return event
 
 
-async def _refresh_emission_summary(db: AsyncSession, leg_id: int | None) -> None:
-    """Hook lot 9 : rematérialise ``voyage_emission_summaries`` du voyage.
+async def _refresh_emission_summary(db: AsyncSession, event: NavEvent) -> None:
+    """Hook lot 9 : rematérialise ``voyage_emission_summaries`` des voyages touchés.
+
+    🔴 **Pas seulement le voyage de l'événement.** La conso d'escale d'un voyage
+    est bornée par le **Departure suivant**, qui appartient au voyage d'après
+    (G12) : un Departure rend donc obsolète le résumé du voyage **précédent**
+    aussi. Ne rafraîchir que ``event.leg_id`` laissait ``conso_escale_t`` et
+    ``co2_escale_t`` du voyage précédent définitivement à ``NULL``, et l'écran
+    ``/mrv/emissions/port`` vide en permanence.
+
+    La liste des voyages touchés est demandée au grand livre
+    (``emission_ledger.legs_affected_by_event``) : c'est lui qui définit ce
+    qu'une escale borne, pas ce module.
 
     Import tardif de ``services.emission_ledger`` (le ledger importe
     ``inter_event_compute`` qui partage des modèles avec ce module — l'import
@@ -325,16 +336,38 @@ async def _refresh_emission_summary(db: AsyncSession, leg_id: int | None) -> Non
     bloquer la finalisation/validation d'un événement à bord (même posture
     no-op silencieuse que ``services.security_alerts`` sans SMTP).
     """
-    if leg_id is None:
-        return
     try:
-        from app.services.emission_ledger import refresh_summary
+        from app.services.emission_ledger import legs_affected_by_event, refresh_summary
 
-        leg = await db.get(Leg, leg_id)
-        if leg is not None:
-            await refresh_summary(db, leg)
+        affected = await legs_affected_by_event(db, event)
     except Exception:  # pragma: no cover — cache best-effort, jamais bloquant
-        pass
+        return
+
+    # 🔴 Un SAVEPOINT par voyage, pas un simple `try`.
+    #
+    # Deux raisons, et la seconde casse un contrat :
+    #
+    # 1. Un `try` nu ne suffit pas. Une erreur au niveau base laisse la session
+    #    empoisonnée : le voyage suivant échoue en cascade — donc le voyage
+    #    précédent est sauté, soit exactement le défaut que cette fonction
+    #    existe pour corriger, et sans aucun signal.
+    # 2. Pire, la session étant cassée, le `commit()` de `get_db()` échoue à
+    #    son tour et **annule la finalisation de l'événement**. Le docstring
+    #    promet « jamais bloquant » : une panne de cache empêcherait le bord de
+    #    finaliser, ce qui est l'inverse.
+    #
+    # `begin_nested()` isole chaque voyage : l'échec annule le seul savepoint,
+    # la session reste utilisable et la transaction appelante survit. Même
+    # patron que le point de reprise par ligne de `qhse_ingestion.import_qhse_xlsx`
+    # — je l'y avais documenté sans l'appliquer ici.
+    for leg_id in affected:
+        try:
+            async with db.begin_nested():
+                leg = await db.get(Leg, leg_id)
+                if leg is not None:
+                    await refresh_summary(db, leg)
+        except Exception:  # pragma: no cover — cache best-effort, jamais bloquant
+            continue
 
 
 # ════════════════════════════════════════════════════════════ Préremplissage position

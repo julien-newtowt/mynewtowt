@@ -28,6 +28,7 @@ from app.permissions import require_permission
 from app.services.activity import record as activity_record
 from app.services.qhse_ingestion import QhseIngestionError, import_qhse_xlsx
 from app.services.qhse_kpi import (
+    QUALITY_ISSUES,
     build_dashboard,
     build_quality_report,
     list_vessels_with_reports,
@@ -101,7 +102,9 @@ async def qhse_dashboard(
 
 
 @router.get("/import")
-async def qhse_import_get() -> RedirectResponse:
+async def qhse_import_get(
+    user=Depends(require_permission("qhse", "C")),
+) -> RedirectResponse:
     """Renvoie vers le hub — l'import est un POST, le formulaire vit sur ``/qhse``.
 
     Sans cette route, un GET sur ``/qhse/import`` (URL tapée, rechargement après
@@ -140,6 +143,9 @@ async def qhse_qualite(
             "request": request,
             "user": user,
             "quality": quality,
+            # Liste des motifs fournie par le service : le gabarit ne la
+            # recopie pas, sinon les compteurs derivaient du calcul.
+            "quality_issues": QUALITY_ISSUES,
             "vessels": vessels,
             "selected_vessel_id": vessel_id,
         },

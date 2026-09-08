@@ -135,6 +135,45 @@ async def test_datasets_screen_renders(db, staff_user):
         FakeRequest(), vessel_id=vessel.id, year=None, db=db, user=staff_user
     )
     assert resp.status_code == 200
+    # Vue combinée conservée (cible de redirection de la génération).
+    assert resp.context["dataset_kind"] == "both"
+    assert resp.context["dataset_title_key"] == "mrv_ds_title"
+
+
+def test_dataset_views_registered_before_any_dynamic_segment():
+    """Les vues dédiées existent, et aucune route ``/datasets/{...}`` dynamique
+    ne peut les capturer — même règle d'ordre que le module vente à bord."""
+    paths = [r.path for r in mr.router.routes]
+    assert "/mrv/datasets/ovdla" in paths
+    assert "/mrv/datasets/ovdbr" in paths
+    dynamic = [p for p in paths if p.startswith("/mrv/datasets/{")]
+    assert dynamic == []
+
+
+async def test_dedicated_views_restrict_display_not_computation(db, staff_user):
+    """Le filtre ``dataset_kind`` est un filtre d'AFFICHAGE : les deux jeux
+    restent construits à l'identique, sinon scinder les vues changerait le
+    contenu au lieu de la lisibilité."""
+    vessel, _ = await _setup(db)
+
+    both = await mr.mrv_datasets(
+        FakeRequest(), vessel_id=vessel.id, year=None, db=db, user=staff_user
+    )
+    ovdla = await mr.mrv_datasets_ovdla(
+        FakeRequest(), vessel_id=vessel.id, year=None, db=db, user=staff_user
+    )
+    ovdbr = await mr.mrv_datasets_ovdbr(
+        FakeRequest(), vessel_id=vessel.id, year=None, db=db, user=staff_user
+    )
+
+    assert ovdla.context["dataset_kind"] == "ovdla"
+    assert ovdbr.context["dataset_kind"] == "ovdbr"
+    assert ovdla.context["dataset_title_key"] == "mrv_ds_ovdla_title"
+    assert ovdbr.context["dataset_title_key"] == "mrv_ds_ovdbr_title"
+    # Mêmes lignes des deux côtés, quelle que soit la vue.
+    assert ovdla.context["ovdla_counts"] == both.context["ovdla_counts"]
+    assert ovdbr.context["ovdbr_counts"] == both.context["ovdbr_counts"]
+    assert ovdla.context["ovdbr_counts"] == both.context["ovdbr_counts"]
 
 
 async def test_generate_requires_mrv_m(db):

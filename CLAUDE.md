@@ -545,6 +545,32 @@ Doc : `docs/integrations/unlocode-ports.md`.
   seul** — `DraftAuthorError`) → `finalise` (UTC autoritatif + moteur de règles scope
   `event` ; un `fail` **bloquant** refuse la finalisation) → `valide` (siège). Les
   brouillons sont **exclus** de tout calcul.
+- 🔴 **Deux assiettes d'émission disjointes, jamais additionnées en silence.**
+  `co2_t`/`co2eq_t`/`wtt_co2eq_t` portent le **trajet** (assiette : consommation
+  **hors mouillage**, `do_consumed = conso_hors`). `co2_escale_t`/`co2eq_escale_t`
+  portent l'**escale** qui suit l'arrivée (« Port Emissions = émissions
+  d'escale », décision du 2026-09-04). Elles ne se recouvrent pas, et l'escale
+  d'un voyage peut s'étendre sur la fenêtre du voyage **suivant** : tout total
+  « trajet + escale » doit l'annoncer. Les deux sont calculées dans
+  `emission_ledger`, au même facteur et par la même primitive
+  (`emissions_breakdown`) — la règle d'or veut que l'unique multiplication
+  consommation × facteur vive là (sentinelle `test_factor_whitelist`).
+- 🔴 **Le mouillage est une TROISIÈME assiette, HORS périmètre MRV** (constat
+  métier du 2026-09-04). Son exclusion de l'assiette du trajet est donc
+  **correcte au regard du règlement**, ce n'est pas un défaut.
+  `co2_mouillage_t`/`co2eq_mouillage_t` existent quand même (migration
+  `20260907_0145`) parce que du carburant brûlé mérite une émission connue —
+  mais **pour l'analyse interne uniquement**. Trois règles qui en découlent, à
+  ne jamais casser :
+  1. le **périmètre MRV est le défaut** de toute restitution (trajet + escale,
+     comptés séparément) ;
+  2. le mouillage ne s'ajoute qu'en **opt-in explicite**
+     (`/mrv/emissions/voyages?include_anchoring=true`), et tout total qui
+     l'inclut porte la mention **hors MRV** ;
+  3. le chiffre MRV est **identique** avec et sans opt-in — un chiffre
+     réglementaire ne grossit jamais parce qu'on a ajouté un indicateur interne
+     à côté (verrouillé par un test du grand livre et un test de vue).
+  Le dataset OVDLA, lui, porte bien ces intervalles.
 - **Feature flag `mrv_v2_capture`** (`services/feature_flags.capture_v2_enabled`) :
   **défaut ON global** (flag absent ⇒ actif), **fail-open** vers ON (une panne DB ne
   rouvre jamais le legacy), cache 20 s. Opt-out **par navire** en base via
@@ -779,7 +805,7 @@ préférences de style.
 | Stowage | `/stowage` | ✅ 18 zones + algo glouton |
 | Claims | `/claims` | ✅ workflow 6 statuts + timeline |
 | QHSE (miroir d'analyse) | `/qhse` | ✅ **miroir en lecture du FMS** (ADR-016/D10 — jamais une seconde source d'écriture) : import xlsx **réconcilié** (`source_code`, deux formats d'export reconnus), `dashboard` (grades, tendance 12 mois, **origine de l'émetteur** bord/siège/autorité externe, écart C1/C2, complétude R1), `qualite` (ce qu'il reste à corriger **dans le FMS**, motif nommé), fiche de détail. Règles RQ01-RQ03 exécutées à l'ingestion. ⛔ Aucune route d'écriture sur les signalements |
-| MRV (reporting événementiel v2) | `/mrv` + `/onboard/events` | ✅ **architecture événementielle déclarative** : capture d'événements `/onboard/events` (Noon/Departure/Arrival/Begin-End Anchoring ; brouillon auteur-seul → finalisé → validé, `captain:M`) ; hub `/mrv` (`mrv:C`, actions `mrv:M`, seuils/facteurs `mrv:S`) : `voyages`, `reports` (Noon/Carbon/Stopover générés), `bunkering` (BDN), `flgo` (Marad lecture seule), `qualite` (moteur R01-R26 + IR01-IR05 + resets R10), `parametres` (seuils + dashboard params), `datasets` **OVDLA/OVDBR** (remplacent le CSV DNV 18 col.). Grand livre unique `emission_ledger` multi-GES. ⛔ **Archive legacy retirée** : l'écran `/mrv/archive/events`, le modèle `MRVEvent`/`MRVParameter` et les services associés sont supprimés — le legacy MRV n'a plus de rail de lecture. Les **tables** `mrv_events`/`mrv_parameters` ne sont pas supprimées mais **mises à l'écart** (migration `20260713_0106`, renommées `*_deprecated_20260903`) : le `DROP` sec attend le comptage en production (arbitrage du 2026-09-03). Aucun code ne les référence |
+| MRV (reporting événementiel v2) | `/mrv` + `/onboard/events` | ✅ **architecture événementielle déclarative** : capture d'événements `/onboard/events` (Noon/Departure/Arrival/Begin-End Anchoring ; brouillon auteur-seul → finalisé → validé, `captain:M`) ; hub `/mrv` (`mrv:C`, actions `mrv:M`, seuils/facteurs `mrv:S`) : `voyages`, `reports` (Noon/Carbon/Stopover générés), `emissions/voyages` + `emissions/port` (restitution par trajet et par escale, lecture seule), `bunkering` (BDN), `flgo` (Marad lecture seule), `qualite` (moteur R01-R26 + IR01-IR05 + resets R10), `parametres` (seuils + dashboard params), `datasets` **OVDLA/OVDBR** (remplacent le CSV DNV 18 col. ; vues dédiées `datasets/ovdla` et `datasets/ovdbr`, la vue combinée `datasets` restant la cible de redirection de la génération). **Module de navigation à part entière**, sorti du groupe « Performance » : le MRV est une obligation réglementaire, pas un indicateur de performance. Grand livre unique `emission_ledger` multi-GES. ⛔ **Archive legacy retirée** : l'écran `/mrv/archive/events`, le modèle `MRVEvent`/`MRVParameter` et les services associés sont supprimés — le legacy MRV n'a plus de rail de lecture. Les **tables** `mrv_events`/`mrv_parameters` ne sont pas supprimées mais **mises à l'écart** (migration `20260713_0106`, renommées `*_deprecated_20260903`) : le `DROP` sec attend le comptage en production (arbitrage du 2026-09-03). Aucun code ne les référence |
 | Dashboard Performance Environnementale | `/dashboard-perf` | ✅ 5 pages, exclusivement event-driven (mode `strict`, NC-04) : **vue flotte** (`kpi:C`), **suivi opérationnel** navire→voyage→événements (`kpi:C` / `mrv:C` — ROB timeline, conso vs cible, répartition ME/AE, **profil de propulsion 4 h**, carte MapLibre), **détail voyage** + exports PDF/DOCX (`mrv:C`), **qualité des données** (`mrv:C` — anomalies par règle/sévérité, resets R10, complétude), **administration** des paramètres (`mrv:S`). Remplace `dashboard-env` (LOT 11/12), décommissionné |
 | Navigation | `/performance/navigation` | ✅ multi-legs/multi-navires : carte (1 couleur/leg) points GPS + trait + route théorique, tableau comparatif (réelle/théorique/écart/durée/restant), météo le long du trajet + blocs « conditions actuelles » par navire (rose des vents, anémomètre/Beaufort, pression, visibilité, T°…) |
 | Finance | `/finance` | ✅ prévisionnel/réel 5 postes + écarts + export CSV + NOx/SOx évités + section Exploitation + détail assurance + CRUD OPEX |
@@ -1003,9 +1029,19 @@ Backlog MRV v2 (post-livraison, honnête) :
   (amélioration lot 10 — distance loguée réelle à intégrer).
 
 Backlog QHSE (constats du 2026-09-04, sur données réelles) :
-- **Troisième format d'export** (`Fleetview` : multi-navires, lignes de section
-  `Location: X (n)`) identifié mais **non reconnu** par l'ingestion — les lignes
-  seraient quarantainées faute de navire résolu, jamais un crash.
+- 🔴 **Troisième format d'export non reconnu, et son échec est SILENCIEUX.**
+  L'export `Fleetview` (historique de toute la flotte) porte le navire par des
+  **lignes de section** `Location: X (n)` intercalées dans les données — ni par
+  colonne (export brut 41 col.), ni par bloc de titre (export historique, où
+  figure « Fleetview », qui n'est pas un navire). Mesuré sur le fichier réel
+  (197 lignes, 188 signalements : 90 Anemos + 98 Artemis) : l'ingestion
+  **abandonne la feuille entière** (`continue` faute de navire résolu) et rend
+  `créés=0 ignorés=0 erreurs=0` — l'écran affiche donc « 0 créés » et cela se
+  lit comme « fichier vide », pas comme « format non compris ». Aucune trace
+  dans `activity_logs`, aucun motif nommé. Deux corrections à faire ensemble :
+  reconnaître les lignes de section comme un changement de navire courant, et
+  **refuser une feuille explicitement** au lieu de l'abandonner sans rien dire
+  (le reste du module quarantaine et nomme le motif — ce chemin-là y échappe).
 - **Nom du responsable perdu à l'import** : l'export complet porte
   `CorrectiveActionResponsiblePerson`, mais le modèle ne conserve que la FK
   `responsible_user_id` — un responsable réel sans compte MyTOWT disparaît. Un

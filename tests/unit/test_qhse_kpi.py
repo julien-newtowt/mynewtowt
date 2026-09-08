@@ -315,6 +315,85 @@ def test_classification_of_every_real_issuer_string():
         assert classify_issuer_origin(issued_by_raw=raw, vessel_names=vessel_names) == expected, raw
 
 
+def test_a_human_name_is_never_mistaken_for_a_class_society():
+    """🔴 Le motif nu attribuait « Sabrina » à RINA.
+
+    Les motifs d'autorité externe étant testés en premier, une sous-chaîne dans
+    un prénom suffisait à ranger un signalement du bord chez une autorité de
+    contrôle — silencieusement, et sur l'axe le plus coûteux du graphe.
+    """
+    vessel_names = frozenset({"anemos", "artemis"})
+    for raw in ("Sabrina MARTIN", "Katrina DUPONT", "Marina LOPEZ"):
+        assert (
+            classify_issuer_origin(issued_by_raw=raw, vessel_names=vessel_names)
+            == ISSUER_ORIGIN_UNKNOWN
+        ), raw
+
+    # La vraie société de classification reste reconnue.
+    assert classify_issuer_origin(issued_by_raw="RINA") == ISSUER_ORIGIN_EXTERNAL
+    assert classify_issuer_origin(issued_by_raw="RINA Services S.p.A.") == ISSUER_ORIGIN_EXTERNAL
+
+
+def test_lloyd_alone_is_not_an_authority_but_lloyds_register_is():
+    """« Lloyd » patronyme ≠ « Lloyd's Register ». L'apostrophe est normalisée,
+    donc les deux graphies de la société tombent au même endroit."""
+    assert classify_issuer_origin(issued_by_raw="Lloyd BATARD") == ISSUER_ORIGIN_UNKNOWN
+    for raw in ("Lloyd's Register", "Lloyds Register", "LLOYD’S REGISTER EMEA"):
+        assert classify_issuer_origin(issued_by_raw=raw) == ISSUER_ORIGIN_EXTERNAL, raw
+
+
+def test_a_harbour_master_is_an_external_authority_not_the_crew():
+    """Un capitaine de port est une autorité portuaire. « master » ne doit pas
+    le faire basculer côté bord — les motifs externes passent d'abord."""
+    for raw in ("Harbour Master", "Harbor Master of New York", "Capitainerie de Brest"):
+        assert classify_issuer_origin(issued_by_raw=raw) == ISSUER_ORIGIN_EXTERNAL, raw
+    # Le commandant du navire, lui, reste du bord.
+    assert classify_issuer_origin(issued_by_raw="TOWT MASTER ANEMOS") == ISSUER_ORIGIN_ONBOARD
+
+
+def test_a_seafarer_with_a_mytowt_account_is_onboard_not_shore():
+    """🔴 « compte MyTOWT ⇒ siège » rangeait le bord à terre.
+
+    Les marins ont un compte — c'est requis pour accéder à `/captain`. Et
+    l'ingestion vide ``issued_by_raw`` dès qu'un utilisateur correspond : sans
+    le rôle, aucun repli textuel ne pouvait rattraper l'erreur.
+    """
+    assert (
+        classify_issuer_origin(issued_by_raw=None, has_user_link=True, user_role="marins")
+        == ISSUER_ORIGIN_ONBOARD
+    )
+    assert (
+        classify_issuer_origin(issued_by_raw=None, has_user_link=True, user_role="operation")
+        == ISSUER_ORIGIN_SHORE
+    )
+    # Rôle inconnu du référentiel embarqué : siège, comportement historique.
+    assert classify_issuer_origin(issued_by_raw=None, has_user_link=True) == ISSUER_ORIGIN_SHORE
+
+
+async def test_dashboard_reads_the_reporter_role_from_the_database(db):
+    """Le rôle est bien chargé et transmis — pas seulement supporté en théorie."""
+    anemos, _ = await _seed_vessels(db)
+    sailor = User(
+        username="marin",
+        email="marin@example.test",
+        hashed_password="x",
+        role="marins",
+        full_name="Marin Embarque",
+    )
+    db.add(sailor)
+    await db.flush()
+
+    r = await _report(db, anemos.id, subject="signale par un marin")
+    r.reporter_user_id = sailor.id
+    r.issued_by_raw = None  # comme le fait l'ingestion sur un nom rapproché
+    await db.flush()
+
+    dash = await build_dashboard(db, now=NOW)
+    tally = {o.origin: o.count for o in dash.origin_counts}
+    assert tally[ISSUER_ORIGIN_ONBOARD] == 1
+    assert tally[ISSUER_ORIGIN_SHORE] == 0
+
+
 def test_classification_is_accent_and_case_insensitive():
     """« Centre de Sécurité » et « CENTRE DE SECURITE » sont le même émetteur."""
     for raw in (
@@ -457,8 +536,24 @@ async def test_suspected_test_is_listed_first_because_it_needs_a_decision(db):
     assert quality.issue_counts["suspected_test"] == 1
 
 
-async def test_closed_before_issued_is_detected(db):
+async def test_closed_before_issued_is_not_a_motif_because_it_is_unreachable(db):
+    """🔴 Un motif inatteignable est pire qu'un motif absent.
+
+    ``qhse_ingestion._import_row`` **quarantaine** la ligne avant insertion
+    quand ``ClosedDate < IssuedDate`` (RQ01), et le module n'a aucune autre voie
+    d'écriture. Une tuile à 0 en permanence aurait déclaré le registre sain sur
+    un axe qu'il ne peut pas mesurer — la fausse conformité refusée ailleurs
+    (Q2, responsable non identifié).
+
+    Ces lignes vivent dans ``activity_logs`` (compte rendu d'import), pas ici.
+    """
+    from app.services.qhse_kpi import QUALITY_ISSUES
+
+    assert "closed_before_issued" not in QUALITY_ISSUES
+
     anemos, _ = await _seed_vessels(db)
+    # Même en forçant l'incohérence en base (ce que l'ingestion refuse), le
+    # calcul ne fabrique pas de motif : il n'existe plus.
     await _report(
         db,
         anemos.id,
@@ -468,8 +563,8 @@ async def test_closed_before_issued_is_detected(db):
     )
 
     quality = await build_quality_report(db)
-    assert "closed_before_issued" in quality.items[0].issues
-    assert quality.issue_counts["closed_before_issued"] == 1
+    assert "closed_before_issued" not in quality.issue_counts
+    assert all("closed_before_issued" not in it.issues for it in quality.items)
 
 
 async def test_quality_report_respects_the_vessel_filter(db):

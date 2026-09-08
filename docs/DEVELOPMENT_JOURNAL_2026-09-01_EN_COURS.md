@@ -116,7 +116,7 @@ administrateur, elle a rétabli les 7 règles et 11 seuils manquants. Vérifié 
 de la migration, et l'import passe (90 signalements, 1 ligne quarantainée,
 4 marquées « test présumé »).
 
-**Correctif permanent** : PR #197 — migration `20260904_0142` (rattrapage
+**Correctif permanent** : PR #197 — migration `20260907_0143` (rattrapage
 idempotent, valeurs en dur, contenu **généré** depuis l'écart mesuré entre le
 catalogue de l'époque `0097` et le catalogue courant), bannière d'init affichée
 dès que le référentiel est *incomplet*, `GET /qhse/import` redirigé vers le hub
@@ -153,6 +153,103 @@ fonctions de route et inspectent le contexte, ils n'exercent pas le rendu Jinja.
 
 ---
 
+## 2026-09-04 (suite) — MRV devient un module de navigation à part
+
+**Objectif** (demande de Yasmin) : sortir le MRV du groupe « Performance ».
+Justification métier retenue telle quelle : *« MRV étant une obligation
+réglementaire mérite un suivi particulier. Ce n'est pas juste de la
+performance. Les chiffres obtenus par MRV pourront plutôt être insérés dans le
+suivi générique de la performance de la société, mais pour moi il vaut le coup
+de lui dédier un module et de libérer un peu de place pour le reste. »*
+
+**Livrables** :
+- Groupe de navigation `MRV — réglementaire` dédié, avec trois sections
+  (Événements / Émissions port & voyages / Suivi & référentiels). Les 7 entrées
+  MRV quittent « Performance », qui retrouve 6 entrées lisibles.
+- Sous-titres de section (`.nav-subhead`) plutôt qu'un second niveau repliable :
+  `sidebar.js` n'ouvre que le groupe **le plus proche** du lien actif
+  (`closest`), donc un groupe imbriqué serait resté fermé.
+- `datasets` scindé en deux vues dédiées (`/mrv/datasets/ovdla`,
+  `/mrv/datasets/ovdbr`), chacune ne proposant que **ses** exports. La vue
+  combinée est conservée : c'est la cible de redirection de la génération.
+- Deux vues de restitution : `/mrv/emissions/voyages` (trajet Departure →
+  Arrival) et `/mrv/emissions/port` (séjour au port suivant l'arrivée).
+
+**Deux pièges traités, tous deux invisibles en test** :
+- `max-height: 720px` sur les groupes de navigation (600 avant) : le groupe MRV
+  (10 liens + 3 sous-titres) se faisait **silencieusement tronquer** par
+  `overflow: hidden`, rendant les dernières entrées inatteignables.
+- Le sous-titre est un `li` de texte nu, pas un `span` dans un `a` : les règles
+  de repli à 64 px ne l'auraient pas masqué et il aurait débordé. Trois règles
+  CSS ajoutées (desktop replié, tablette, tablette dépliée).
+
+**Constat de fond remonté en cours de route, et tranché.** L'assiette des
+émissions du grand livre était la consommation **hors mouillage**
+(`emission_ledger`, `do_consumed = conso_hors`) : la consommation d'escale était
+calculée et stockée, mais **aucune émission n'en était dérivée**. « Port
+Emissions » n'avait donc aucun chiffre de CO₂ à afficher, et la règle d'or
+interdit de le calculer ailleurs que dans le grand livre.
+
+Trois options présentées à Yasmin (laisser le trou visible / calculer dans le
+grand livre / renommer l'écran en « consommation d'escale »). **Décision :
+« port emissions = émissions d'escale »** — l'écran porte bien des émissions.
+
+Implémentation : `emissions_breakdown(conso_escale, factor)` ajouté **dans**
+`emission_ledger` (seul endroit légal), matérialisé par la migration
+`20260907_0144` (`co2_escale_t`, `co2eq_escale_t`). Même facteur, même primitive
+que le trajet. Le résumé étant un cache recalculable, les colonnes se remplissent
+au prochain recalcul — aucun backfill dans la migration, qui ne doit pas dépendre
+du code de calcul du moment. ⚠️ Les voyages **antérieurs au déploiement** ne
+sont donc jamais remplis par ce chemin : ils exigent la reprise à froid
+`scripts.backfill_voyage_emission_summaries` (ajoutée le 2026-09-07 après le
+3ᵉ tour de revue, et inscrite au runbook §6.1 bis).
+
+**Invariant à respecter désormais** : les deux assiettes sont **disjointes** et
+ne doivent jamais être additionnées en silence — l'escale d'un voyage peut
+s'étendre sur la fenêtre du voyage suivant. Verrouillé par un test du grand
+livre et un test de vue.
+
+**Le cas du mouillage, tranché dans le même mouvement.** Le constat remonté
+(« la conso au mouillage ne reçoit non plus aucune émission ») a reçu une
+réponse d'une nature différente de celle de l'escale : *« co2 mouillage est
+bien en dehors du scope MRV, peut-être il vaut le coup d'ajouter un sélecteur
+pour les ajouter avec une note du scope. »*
+
+Ce n'était donc pas un défaut : l'exclusion du mouillage de l'assiette du
+trajet est **correcte au regard du règlement**. Mais elle laissait du carburant
+réellement brûlé sans émission connue, même pour l'analyse interne.
+
+Livré : `co2_mouillage_t`/`co2eq_mouillage_t` calculés dans le grand livre
+(migration `20260907_0145`), et un **sélecteur de périmètre** sur
+`/mrv/emissions/voyages` — « Périmètre MRV » par défaut, « + mouillage (hors
+MRV) » en opt-in, avec un bandeau d'avertissement au lieu de l'informatif.
+
+**L'invariant qui justifie le sélecteur** : le chiffre MRV est *identique* dans
+les deux positions ; seul le total élargi apparaît. Un chiffre réglementaire ne
+doit jamais grossir parce qu'on a ajouté un indicateur interne à côté. Vérifié
+sur le HTML produit — le total élargi est **absent** du HTML en mode MRV, pas
+seulement masqué.
+
+Deux décisions de détail : le sélecteur n'apparaît pas sur l'écran d'escale (au
+port vs en mer — le mélange n'a pas de sens, et une demande explicite y est
+ignorée) ; le total élargi vaut `None` dès que le CO₂ du trajet manque, alors
+qu'un mouillage absent vaut zéro (le navire n'a pas mouillé, ce n'est pas une
+donnée manquante).
+
+Il y a donc désormais **trois assiettes** disjointes : trajet et escale dans le
+périmètre MRV, mouillage à côté.
+
+✅ **Migrations re-chaînées le 2026-09-07** (cf. l'entrée de ce jour) : la chaîne
+est désormais linéaire par construction — `20260904_0142` (révision de fusion sur
+`main`) → `20260907_0143` (#197) → `20260907_0144` (escale) → `20260907_0145`
+(mouillage).
+
+**Vérification** : les 11 écrans MRV rendus en HTTP authentifié contre l'app
+complète (200 partout), absence de tout lien MRV résiduel dans le groupe
+« Performance » vérifiée sur le HTML produit, 19 tests d'intégration.
+
+---
+
 ## État à date (2026-09-04)
 
 **Fusionné dans `main`** : PR #192 (assistance), #195 (QHSE lots 1-3).
@@ -160,7 +257,17 @@ fonctions de route et inspectent le contexte, ils n'exercent pas le rendu Jinja.
 **En attente de révision** : PR #197 (correctif du référentiel de validation —
 production déjà réparée à chaud, la PR rend le correctif permanent).
 
-**En cours** : branche `feature/qhse-origine-emetteur-et-qualite` (lot 4).
+**En attente de révision** : PR #198 (QHSE lot 4 — origine de l'émetteur et
+écran qualité).
+
+**En cours** : branche `feature/mrv-module-navigation` (module MRV dédié +
+émissions d'escale). Elle part du sommet de la branche #198 — l'entrée de
+journal MRV s'ajoute au fichier que cette branche crée.
+
+**Ordre de fusion** : #197 → #198 → MRV. Les deux premières se recouvrent sur
+`app/routers/qhse_router.py` et `tests/integration/test_qhse_screens.py`
+(résolution triviale : les routes et les assertions coexistent) ; la troisième
+demande de re-chaîner sa migration si #197 passe la première.
 
 **Suite** : 3354 tests verts (conteneur Linux, PDF compris), `ruff`/`black`
 verts, parité des 5 catalogues i18n.
