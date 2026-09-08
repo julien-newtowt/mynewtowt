@@ -1,0 +1,13 @@
+{# Options du <select> voyage — bornées par la grille choisie (partial HTMX).
+
+   Dernier maillon de la cascade **client → grille → voyage**. Quand la liste
+   est vide alors qu'une grille la borne, on le **dit** : un menu déroulant vide
+   sans explication se lit comme une panne, alors que c'est un fait métier — la
+   grille ne porte aucune route desservie par un voyage planifié. #}
+{% from "staff/_leg_filter.html" import leg_option_tags %}
+<option value="">— Choisir un voyage —</option>
+{% if leg_options %}
+  {{ leg_option_tags(leg_options) }}
+{% elif restricted %}
+<option value="" disabled>— Aucun voyage sur les routes de {{ grid.reference if grid else 'cette grille' }} —</option>
+{% endif %}

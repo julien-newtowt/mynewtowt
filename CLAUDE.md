@@ -412,11 +412,27 @@ retombe **jamais** sur `grid.lines[0]` quand la grille ne couvre pas le POL→PO
 du voyage : il refuse en nommant la route manquante. Ce repli faisait coter un
 Fécamp→Santos au tarif d'un Le Havre→Fort-de-France — un prix qu'aucune route ne
 justifie, et c'est lui qui part sur la booking note (même défaut que le repli de
-`resolve_grid` sur la grille par défaut, déjà proscrit). L'écran de création
-marque les grilles non couvrantes (`RateGrid.covers_leg`, dérivé et transitoire)
-et les rend non sélectionnables — **conservées et désignées**, pas masquées :
-faire disparaître la grille négociée d'un client sans dire pourquoi se lit comme
-une panne.
+`resolve_grid` sur la grille par défaut, déjà proscrit).
+
+**La cascade de `/commercial/offers/new` descend client → grille → voyage**, dans
+le sens où l'opérateur travaille : il part du client, retient son tarif, puis
+désigne le voyage que ce tarif sait coter. Le client borne ses grilles
+(`_grids_for`, plus la grille par défaut en repli) ; la grille retenue borne les
+voyages (`grid_route_pairs` → `leg_select_options(routes=…)`). Le sens inverse —
+filtrer les grilles par un voyage déjà choisi — a été essayé puis abandonné : il
+demandait de connaître le voyage avant le tarif.
+- `grid_route_pairs` renvoie `None` = **aucune restriction** (pas de grille, ou
+  grille par défaut, où `resolve_grid` matérialise la route à la demande) ; un
+  ensemble **vide** = **rien ne passe** (grille client ne portant aucune route).
+  Ne jamais les confondre : proposer tous les voyages sur une grille qui n'en
+  cote aucun promettrait un prix qu'elle ne peut pas produire.
+- Une liste de voyages vide **dit pourquoi** (`_leg_options.html` nomme la
+  grille) : un menu déroulant vide sans explication se lit comme une panne.
+- Le chaînage des deux fragments passe par un en-tête **`HX-Trigger-After-Swap`**
+  (aucun JavaScript, CSP stricte respectée). `HX-Trigger` déclencherait
+  l'événement *avant* le remplacement des options : le `<select>` grille
+  porterait encore la grille du client précédent, et les voyages seraient bornés
+  par une grille qui vient de quitter l'écran.
 
 **Un `hx-include` envoie les champs vides — jamais de `int | None` en face.**
 HTMX rassemble **tous** les champs désignés : un `<select>` sur son option vide

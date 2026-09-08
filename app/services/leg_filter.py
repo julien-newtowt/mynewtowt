@@ -163,12 +163,36 @@ def format_leg_option(leg: Leg, ports: dict) -> str:
     )
 
 
-async def leg_select_options(db: AsyncSession, *, vessel_id: int | None = None) -> list[dict]:
+def _leg_route_pair(leg: Leg, ports: dict) -> tuple[str, str] | None:
+    """(POL, POD) en LOCODE majuscules, ou ``None`` si un port manque au leg."""
+    pol = ports.get(leg.departure_port_id)
+    pod = ports.get(leg.arrival_port_id)
+    if pol is None or pod is None or not pol.locode or not pod.locode:
+        return None
+    return pol.locode.upper(), pod.locode.upper()
+
+
+async def leg_select_options(
+    db: AsyncSession,
+    *,
+    vessel_id: int | None = None,
+    routes: set[tuple[str, str]] | None = None,
+) -> list[dict]:
     """Options de leg pour un ``<select>`` « Leg lié », triées chronologiquement.
 
     Renvoie ``[{"id", "leg_code", "etd", "label"}]`` où ``label`` suit le format
     *Année · POL→POD · ETD/ATD · ETA/ATA*. Tri par ETD croissant (legs sans ETD
     en fin). Lecture seule. À rendre via la macro ``leg_option_tags``.
+
+    ``routes`` restreint aux legs dont la paire (POL, POD) figure dans
+    l'ensemble fourni — les LOCODE sont comparés en majuscules. ``None`` (défaut)
+    ne restreint rien : c'est **l'absence de critère**, à ne pas confondre avec
+    un ensemble **vide**, qui ne laisse passer aucun leg. Le distinguer importe :
+    une grille tarifaire sans aucune route ne doit pas donner la liste complète
+    des voyages.
+
+    Le filtre est exprimé en routes et non en grille : ce module est transverse
+    (escale, KPI, MRV…) et n'a pas à connaître le module commercial.
     """
     from app.models.port import Port
 
@@ -177,6 +201,9 @@ async def leg_select_options(db: AsyncSession, *, vessel_id: int | None = None) 
         stmt = stmt.where(Leg.vessel_id == vessel_id)
     legs = list((await db.execute(stmt)).scalars().all())
     ports = {p.id: p for p in (await db.execute(select(Port))).scalars().all()}
+    if routes is not None:
+        wanted = {(pol.upper(), pod.upper()) for pol, pod in routes}
+        legs = [lg for lg in legs if _leg_route_pair(lg, ports) in wanted]
     options = [
         {
             "id": lg.id,
