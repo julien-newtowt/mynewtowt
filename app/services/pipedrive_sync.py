@@ -1,10 +1,17 @@
 """Synchronisation Pipedrive → clients commerciaux.
 
-Remonte les **organisations** Pipedrive dans la table ``commercial_clients``
-(une organisation = un client). Rapprochement par ``pipedrive_org_id`` :
-- org déjà liée → mise à jour du nom / adresse (les champs saisis à la main
+Remonte les **organisations ayant au moins un deal** dans la table
+``commercial_clients`` (une organisation = un client). Rapprochement par
+``pipedrive_org_id`` :
+- org déjà liée → mise à jour du nom / du type (les champs saisis à la main
   comme le contact ne sont pas écrasés) ;
-- org inconnue → création d'un client (type par défaut ``freight_forwarder``).
+- org inconnue → création d'un client.
+
+**La liste des deals est la source de vérité**, pas le listing des
+organisations : ``sync_clients`` parcourt le listing, puis va chercher par
+identifiant toute organisation portant un deal qu'il n'a pas vue passer. Sans
+cette seconde passe, l'exhaustivité dépendait du nombre de **non-clients**
+encombrant le CRM — dépendance exactement inverse de celle qu'on veut.
 
 Déclenché par le bouton « Synchroniser Pipedrive » sur /commercial/clients.
 No-op propre si ``PIPEDRIVE_API_TOKEN`` n'est pas configuré.
@@ -291,26 +298,138 @@ def _apply_crm_field(client: Client, field: str, value: str | None) -> None:
         setattr(client, field, value)
 
 
+#: Borne du rattrapage par identifiant. Une organisation portant un deal est
+#: un client : on va la chercher une par une quand le listing ne l'a pas vue
+#: passer. Ce plafond protège d'un CRM pathologique (une requête HTTP par
+#: organisation) — il n'est **jamais muet** : dépassement journalisé et remonté
+#: dans le résultat sous ``lookup_capped``. C'est précisément une borne
+#: silencieuse qui avait fait disparaître 35 clients.
+_MAX_ORG_LOOKUPS = 2000
+
+
+def _upsert_org(
+    db: AsyncSession,
+    org: dict,
+    *,
+    by_pd: dict[int, Client],
+    contacts: dict[int, dict],
+    staff_by_email: dict[str, int],
+    synced_at: datetime,
+) -> str | None:
+    """Crée ou met à jour le client porté par cette organisation Pipedrive.
+
+    Retourne ``"created"``, ``"updated"``, ou ``None`` si l'organisation est
+    inexploitable (identifiant ou nom manquant).
+
+    Cette fonction **écrit, elle ne trie pas** : le filtre « a-t-elle un
+    deal ? » est décidé par l'appelant. Les deux passes de ``sync_clients``
+    (listing puis rattrapage par identifiant) la partagent, pour qu'une
+    organisation rattrapée soit traitée exactement comme une organisée listée.
+    """
+    raw_id = org.get("id")
+    name = (org.get("name") or "").strip()
+    if not raw_id or not name:
+        return None
+    pd_id = int(raw_id)
+    address = (org.get("address") or "").strip() or None
+    # Pays : code ISO 2 quand Pipedrive le donne développé, sinon rien
+    # (on ne devine pas un pays à partir d'une adresse libre).
+    country = _country_code(org)
+    contact = contacts.get(pd_id) or {}
+    client_type = _client_type_for(org)
+    owner_id = _org_owner_id(org)
+    # Commercial attitré : le propriétaire Pipedrive est rapproché d'un compte
+    # staff par e-mail. Le rapprochement peut échouer (owner non développé par
+    # l'API, commercial sans compte) — l'attribution reste alors à faire à la
+    # main depuis la fiche client.
+    assigned_id = staff_by_email.get(_org_owner_email(org) or "")
+    existing = by_pd.get(pd_id)
+    if existing is None:
+        client = Client(
+            name=name[:200],
+            client_type=client_type,
+            address=address,
+            country=country,
+            contact_name=(contact.get("name") or None),
+            contact_email=(contact.get("email") or None),
+            contact_phone=(contact.get("phone") or None),
+            pipedrive_org_id=pd_id,
+            pipedrive_owner_id=owner_id,
+            pipedrive_synced_at=synced_at,
+            assigned_user_id=assigned_id,
+            is_active=True,
+        )
+        db.add(client)
+        # Indexer tout de suite : sans cela, une organisation vue par les deux
+        # passes serait créée deux fois (le flush n'a pas encore eu lieu).
+        by_pd[pd_id] = client
+        return "created"
+
+    # Mise à jour douce : nom + type (dérivé de l'activité Pipedrive).
+    # On préserve les coordonnées saisies manuellement.
+    existing.name = name[:200]
+    existing.client_type = client_type
+    _apply_crm_field(existing, "address", address)
+    _apply_crm_field(existing, "country", country)
+    _apply_crm_field(existing, "contact_name", contact.get("name"))
+    _apply_crm_field(existing, "contact_email", contact.get("email"))
+    _apply_crm_field(existing, "contact_phone", contact.get("phone"))
+    existing.pipedrive_owner_id = owner_id
+    existing.pipedrive_synced_at = synced_at
+    # ⚠️ L'attribution manuelle fait foi : l'import ne renseigne le commercial
+    # attitré que s'il est **vide**. Écraser un choix d'organisation interne par
+    # une donnée CRM serait une perte silencieuse — et Pipedrive n'a pas
+    # autorité sur qui suit le client.
+    if existing.assigned_user_id is None and assigned_id is not None:
+        existing.assigned_user_id = assigned_id
+    return "updated"
+
+
 async def sync_clients(db: AsyncSession) -> dict:
     """Upsert des organisations Pipedrive **ayant un deal** dans ``commercial_clients``.
 
-    Seules les organisations avec au moins un deal (ouvert ou clos) sont
-    remontées — les autres sont ignorées (``skipped``) pour ne pas polluer la
-    liste clients.
+    Seules les organisations avec au moins un deal (ouvert ou clos, sur
+    n'importe quel pipeline) sont remontées — les autres sont ignorées
+    (``skipped``) pour ne pas polluer la liste clients.
 
-    Renvoie ``{configured, created, updated, skipped, total, errors}``.
+    **La liste des deals est la source de vérité, pas le listing des
+    organisations.** Deux passes :
+
+    1. le **listing** des organisations, filtré sur « a un deal » ;
+    2. un **rattrapage** : toute organisation portant un deal que le listing
+       n'a pas vue passer est cherchée par identifiant (``recovered``).
+
+    La seconde passe n'est pas une ceinture de sécurité, c'est ce qui rend la
+    synchronisation exhaustive. Le listing était borné à 1 000 organisations et
+    le CRM en compte davantage : les organisations au-delà n'étaient jamais
+    examinées, et leurs clients manquaient **sans qu'aucun compteur ne le dise**
+    (constaté le 2026-09-10 : 51 organisations avec deal, 16 clients en base).
+    L'identifiant d'organisation de chaque deal était déjà en mémoire — il
+    suffisait de s'en servir.
+
+    Renvoie ``{configured, created, updated, recovered, skipped, invalid,
+    suggested, with_deal, total, truncated, lookup_capped, errors}``.
     """
     if not pipedrive.enabled():
         return {
             "configured": False,
             "created": 0,
             "updated": 0,
+            "recovered": 0,
             "skipped": 0,
+            "invalid": 0,
+            "with_deal": 0,
             "total": 0,
+            "truncated": False,
+            "lookup_capped": False,
             "errors": 0,
         }
 
     orgs = await pipedrive.list_organizations()
+    # Le listing a-t-il buté sur sa borne de sécurité ? Ce n'est plus une cause
+    # de client manquant (la passe de rattrapage y pourvoit), mais ça reste un
+    # fait à remonter plutôt qu'à taire.
+    truncated = len(orgs) >= pipedrive.ORG_LIST_MAX_ITEMS
     by_pd = {
         c.pipedrive_org_id: c
         for c in (await db.execute(select(Client))).scalars().all()
@@ -331,6 +450,17 @@ async def sync_clients(db: AsyncSession) -> dict:
     # absents de la liste des organisations (cause des clients manquants).
     deals = await pipedrive.list_deals()
     org_ids_with_deal: set[int] = {oid for d in deals if (oid := _deal_org_id(d)) is not None}
+    if orgs and not org_ids_with_deal:
+        # Un CRM qui porte des organisations et aucun deal exploitable est
+        # improbable : c'est plus vraisemblablement l'appel `/deals` qui a
+        # échoué. La détection retombe alors sur les compteurs d'organisation,
+        # parfois absents — donc sur une sélection incomplète, et le rattrapage
+        # par identifiant n'a plus rien pour s'amorcer. Le dire.
+        logger.warning(
+            "pipedrive sync: aucun deal exploitable pour %d organisations — "
+            "appel /deals en échec ? la sélection retombe sur les compteurs",
+            len(orgs),
+        )
 
     # Contacts du CRM, indexés par organisation : ils alimentent le bloc
     # « Fiche client » (contact, e-mail, téléphone) qui restait vide.
@@ -340,73 +470,88 @@ async def sync_clients(db: AsyncSession) -> dict:
     created = 0
     updated = 0
     skipped = 0
+    invalid = 0
     errors = 0
+    recovered = 0
+    seen: set[int] = set()
+
+    # ── Passe 1 : le listing des organisations ────────────────────────────
     for org in orgs:
         try:
-            pd_id = org.get("id")
+            raw_id = org.get("id")
             name = (org.get("name") or "").strip()
-            if not pd_id or not name:
+            if not raw_id or not name:
+                # Entrée inexploitable, faute d'identifiant ou de nom. Comptée
+                # à part : ce n'est pas un prospect sans deal (``skipped``),
+                # et la passer sous silence, c'est perdre le fait qu'une
+                # organisation existe sans pouvoir être importée.
+                invalid += 1
+                if raw_id:
+                    seen.add(int(raw_id))
                 continue
+            seen.add(int(raw_id))
             # Règle métier : on remonte une organisation dès qu'elle a un deal
             # sur n'importe quel pipeline (liste des deals OU compteurs de
             # secours si la liste est indisponible).
-            has_deal = int(pd_id) in org_ids_with_deal or _org_has_deal(org)
-            if not has_deal:
+            if not (int(raw_id) in org_ids_with_deal or _org_has_deal(org)):
                 skipped += 1
                 continue
-            address = (org.get("address") or "").strip() or None
-            # Pays : code ISO 2 quand Pipedrive le donne développé, sinon rien
-            # (on ne devine pas un pays à partir d'une adresse libre).
-            country = _country_code(org)
-            contact = contacts.get(int(pd_id)) or {}
-            client_type = _client_type_for(org)
-            owner_id = _org_owner_id(org)
-            # Commercial attitré : le propriétaire Pipedrive est rapproché d'un
-            # compte staff par e-mail. Le rapprochement peut échouer (owner non
-            # développé par l'API, commercial sans compte) — l'attribution reste
-            # alors à faire à la main depuis la fiche client.
-            assigned_id = staff_by_email.get(_org_owner_email(org) or "")
-            existing = by_pd.get(int(pd_id))
-            if existing is None:
-                db.add(
-                    Client(
-                        name=name[:200],
-                        client_type=client_type,
-                        address=address,
-                        country=country,
-                        contact_name=(contact.get("name") or None),
-                        contact_email=(contact.get("email") or None),
-                        contact_phone=(contact.get("phone") or None),
-                        pipedrive_org_id=int(pd_id),
-                        pipedrive_owner_id=owner_id,
-                        pipedrive_synced_at=synced_at,
-                        assigned_user_id=assigned_id,
-                        is_active=True,
-                    )
-                )
+            outcome = _upsert_org(
+                db,
+                org,
+                by_pd=by_pd,
+                contacts=contacts,
+                staff_by_email=staff_by_email,
+                synced_at=synced_at,
+            )
+            if outcome == "created":
                 created += 1
-            else:
-                # Mise à jour douce : nom + adresse + type (dérivé de l'activité
-                # Pipedrive). On préserve les coordonnées saisies manuellement.
-                existing.name = name[:200]
-                existing.client_type = client_type
-                _apply_crm_field(existing, "address", address)
-                _apply_crm_field(existing, "country", country)
-                _apply_crm_field(existing, "contact_name", contact.get("name"))
-                _apply_crm_field(existing, "contact_email", contact.get("email"))
-                _apply_crm_field(existing, "contact_phone", contact.get("phone"))
-                existing.pipedrive_owner_id = owner_id
-                existing.pipedrive_synced_at = synced_at
-                # ⚠️ L'attribution manuelle fait foi : l'import ne renseigne le
-                # commercial attitré que s'il est **vide**. Écraser un choix
-                # d'organisation interne par une donnée CRM serait une perte
-                # silencieuse — et Pipedrive n'a pas autorité sur qui suit le client.
-                if existing.assigned_user_id is None and assigned_id is not None:
-                    existing.assigned_user_id = assigned_id
+            elif outcome == "updated":
                 updated += 1
         except (ValueError, TypeError) as e:  # données Pipedrive inattendues
             errors += 1
             logger.warning("pipedrive sync: org ignorée (%s): %s", org.get("id"), e)
+
+    # ── Passe 2 : rattrapage des organisations avec deal hors listing ─────
+    to_fetch = sorted(org_ids_with_deal - seen)
+    lookup_capped = len(to_fetch) > _MAX_ORG_LOOKUPS
+    if lookup_capped:
+        logger.warning(
+            "pipedrive sync: %d organisations avec deal hors listing, rattrapage borné à %d",
+            len(to_fetch),
+            _MAX_ORG_LOOKUPS,
+        )
+        to_fetch = to_fetch[:_MAX_ORG_LOOKUPS]
+    for org_id in to_fetch:
+        try:
+            org = await pipedrive.get_organization(org_id)
+            if org is None:
+                # Deal rattaché à une organisation illisible (supprimée,
+                # fusionnée, ou erreur réseau). C'est un incident, pas un cas
+                # métier : le compter plutôt que de le passer sous silence.
+                errors += 1
+                logger.warning("pipedrive sync: organisation %s introuvable", org_id)
+                continue
+            outcome = _upsert_org(
+                db,
+                org,
+                by_pd=by_pd,
+                contacts=contacts,
+                staff_by_email=staff_by_email,
+                synced_at=synced_at,
+            )
+            if outcome is None:
+                invalid += 1
+                logger.warning("pipedrive sync: organisation %s sans nom exploitable", org_id)
+                continue
+            recovered += 1
+            if outcome == "created":
+                created += 1
+            else:
+                updated += 1
+        except (ValueError, TypeError) as e:
+            errors += 1
+            logger.warning("pipedrive sync: org %s ignorée: %s", org_id, e)
 
     await db.flush()
 
@@ -425,9 +570,14 @@ async def sync_clients(db: AsyncSession) -> dict:
         "configured": True,
         "created": created,
         "updated": updated,
+        "recovered": recovered,
         "skipped": skipped,
+        "invalid": invalid,
         "suggested": suggested,
+        "with_deal": len(org_ids_with_deal),
         "total": len(orgs),
+        "truncated": truncated,
+        "lookup_capped": lookup_capped,
         "errors": errors,
     }
     logger.info("Pipedrive sync clients: %s", result)

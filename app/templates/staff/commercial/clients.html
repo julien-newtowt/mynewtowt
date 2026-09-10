@@ -26,12 +26,33 @@
 
 {% set _pd = request.query_params.get('pd') %}
 {% if _pd == 'ok' %}
+{# Le bilan dit **ce qui a été examiné**, pas seulement ce qui a été écrit.
+   Une synchronisation qui n'annonçait que « créés / mis à jour » a laissé 35
+   organisations avec deal de côté pendant des mois : le listing était borné à
+   1 000 organisations, et rien ne le disait. `with_deal` est le dénominateur
+   attendu, `recovered` ce qui a dû être rattrapé hors listing, `errors` les
+   deals dont l'organisation est illisible. #}
+{% set _recovered = request.query_params.get('recovered', 0) | int %}
+{% set _errors = request.query_params.get('errors', 0) | int %}
+{% set _invalid = request.query_params.get('invalid', 0) | int %}
 <div class="alert alert-success mb-4">
   <i data-lucide="check-circle"></i>
   Synchronisation Pipedrive terminée : {{ request.query_params.get('created', 0) }} créé(s),
-  {{ request.query_params.get('updated', 0) }} mis à jour,
+  {{ request.query_params.get('updated', 0) }} mis à jour
+  {%- if request.query_params.get('with_deal') %} sur {{ request.query_params.get('with_deal') }} organisation(s) avec deal{% endif -%},
   {{ request.query_params.get('suggested', 0) }} compte(s) plateforme à rattacher (correspondance e-mail à confirmer sur la fiche client).
   <span class="text-muted">({{ request.query_params.get('skipped', 0) }} organisation(s) sans deal ignorée(s))</span>
+  {% if _recovered %}
+  <div class="text-muted mt-1">
+    Dont {{ _recovered }} organisation(s) rattrapée(s) par identifiant : le listing du CRM ne les avait pas remontées.
+  </div>
+  {% endif %}
+  {% if _errors %}
+  <div class="mt-1"><strong>{{ _errors }} organisation(s) illisible(s)</strong> — deal rattaché à une organisation supprimée, fusionnée, ou erreur réseau. Relancer la synchronisation ; si le compte persiste, vérifier ces deals dans Pipedrive.</div>
+  {% endif %}
+  {% if _invalid %}
+  <div class="text-muted mt-1">{{ _invalid }} entrée(s) CRM inexploitable(s) (sans identifiant ou sans nom) — non importée(s).</div>
+  {% endif %}
 </div>
 {% elif _pd == 'disabled' %}
 <div class="alert alert-warn mb-4">

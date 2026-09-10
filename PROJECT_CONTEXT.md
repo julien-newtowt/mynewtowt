@@ -337,6 +337,24 @@ Overrides possibles en base (`role_permissions`, `/admin/permissions`, cache 60s
   client précédent. Le refus de `offer_create` sur une grille non couvrante (3)
   reste la garde de dernier ressort (formulaire rejoué, appel direct).
 
+- **COM-16 (2026-09-10)** : 🔴 **35 clients sur 51 manquaient en base.** La
+  synchronisation Pipedrive itérait sur le **listing des organisations**, borné
+  à 1 000, et ne consultait la liste des deals qu'à l'intérieur de cette boucle.
+  Le CRM comptant plus de 1 000 organisations, celles au-delà n'étaient jamais
+  examinées — et le bilan (`updated=16, skipped=984`, soit `total` exactement
+  égal au plafond) avait l'air normal. L'`org_id` de chaque deal était déjà en
+  mémoire ; il suffisait de s'en servir. `sync_clients` ajoute une **passe de
+  rattrapage** (`pipedrive.get_organization` par identifiant sur
+  `org_ids_with_deal − vues`), l'écriture est extraite dans `_upsert_org`
+  partagé par les deux passes, et le client créé est indexé avant le flush
+  (sinon doublon). Les bornes restantes ne sont plus muettes (`truncated`,
+  `lookup_capped`) et le bilan porte son dénominateur (`with_deal`) et ses
+  anomalies (`recovered`, `invalid`, `errors`), affichées à l'écran.
+  **Signalé et non corrigé** : `client_type` est le seul champ dérivé du CRM
+  réécrit inconditionnellement — sans `PIPEDRIVE_ORG_ACTIVITY_KEY`, une
+  correction manuelle en `freight_forwarder` retombe en `shipper` à la sync
+  suivante.
+
 - **NAV-ROUTE (2026-09-04)** : `/performance/navigation` gagne un **filtre par
   route POL→POD** (`?route=FRFEC-BRSSO`) qui superpose tous les voyages d'une
   même paire de ports sur une carte — un écart de trajet se repère par

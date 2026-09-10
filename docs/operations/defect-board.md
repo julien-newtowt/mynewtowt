@@ -28,6 +28,60 @@ _(vide)_
 
 ## Recently resolved (last 30 days)
 
+### DFT-20260910-001 — 35 clients sur 51 absents de la base (synchronisation Pipedrive tronquée en silence)
+
+| Champ | Valeur |
+|---|---|
+| Date | 2026-09-10 |
+| Reporter | Julien Gonde |
+| Persona | Commercial (portefeuille clients) |
+| Sévérité | **critique** — deux tiers du portefeuille invisibles dans l'ERP : ni grille tarifaire, ni offre, ni commande possibles pour ces clients |
+| Module | commercial |
+| Reproductible | oui (toujours, dès que le CRM dépasse 1 000 organisations) |
+| Owner | dev |
+| Status | **resolved** — branche `fix/pipedrive-sync-organisations-manquantes` |
+
+**Symptôme.** L'export des deals porte **51 organisations** ; la liste clients
+en affiche **16**. Le bilan de synchronisation affichait
+`created=0&updated=16&skipped=984` — d'apparence normale.
+
+**Ce qui a mis sur la piste.** `16 + 984 = 1000`, exactement le `max_items` de
+`pipedrive.list_organizations`. Un total rond égal à un plafond n'est pas un
+total, c'est une troncature.
+
+**Cause racine.** `sync_clients` itérait sur le **listing des organisations** et
+ne consultait `org_ids_with_deal` (issu de la liste des deals) qu'à l'intérieur
+de cette boucle. Les organisations au-delà du millième rang n'étaient donc
+jamais examinées — et comme Pipedrive pagine par ancienneté d'identifiant, les
+clients manquants étaient les plus récemment créés au CRM. L'exhaustivité
+dépendait du nombre de **non-clients** encombrant le CRM : dépendance exactement
+inverse de celle qu'on veut. L'`org_id` de chaque deal était pourtant déjà en
+mémoire, et jeté.
+
+**Correctif.** Le deal fait le client, pas le listing. Une **passe de
+rattrapage** va chercher par identifiant (`pipedrive.get_organization`) toute
+organisation portant un deal que le listing n'a pas remontée. L'écriture est
+extraite dans `_upsert_org`, partagée par les deux passes ; le client créé est
+indexé avant le flush, sans quoi une organisation atteinte deux fois produirait
+un doublon — donc une grille tarifaire dupliquée. Le coût d'appels suit
+désormais le nombre de **clients**, plus la taille du CRM.
+
+**Ce qui a laissé courir le défaut des mois.** Le bilan ne disait que ce qui
+avait été *écrit*, jamais ce qui avait été *examiné*, et aucune borne ne
+signalait qu'elle avait été atteinte. Les bornes subsistantes
+(`ORG_LIST_MAX_ITEMS`, `_MAX_ORG_LOOKUPS`) sont journalisées **et** remontées
+(`truncated`, `lookup_capped`) ; le bilan porte son dénominateur (`with_deal`)
+et ses anomalies (`recovered`, `invalid`, `errors`), affichées à l'écran.
+
+**Défaut adjacent signalé, non corrigé.** `client_type` est le seul champ dérivé
+du CRM réécrit **inconditionnellement** à chaque synchronisation, alors que tous
+les autres protègent la saisie manuelle (`_apply_crm_field`). Sans
+`PIPEDRIVE_ORG_ACTIVITY_KEY` configurée, l'heuristique `IFF` peut ne rien
+trouver : une correction manuelle en `freight_forwarder` retombe alors en
+`shipper` à la synchronisation suivante, silencieusement. Deux issues —
+renseigner la variable d'environnement, ou aligner le champ sur
+`_apply_crm_field`. **Arbitrage à rendre.**
+
 ### DFT-20260908-001 — `/commercial/offers/new` : « Action refusée » à chaque changement de client, et cascade de filtrage inopérante
 
 | Champ | Valeur |
@@ -171,6 +225,8 @@ diagnostic.
 | **Catalogue codé enrichi sans migration de rattrapage** | 1 (DFT-20260904-001) | Toute nouvelle entrée d'un référentiel semé en base (règles, seuils, paramètres) exige une migration additive idempotente — le seed au boot ne couvre que le dev |
 | **`hx-include` face à un `int \| None`** | 1 (DFT-20260908-001) | `hx-include` envoie les champs vides. Utiliser les alias de `app.utils.query` — un 422 n'atteint pas la route et son `detail` en liste devient « Action refusée » à l'écran. Sentinelle : `tests/regression/test_htmx_include_blank_tolerant.py` |
 | **Fragment HTMX chaîné avec `HX-Trigger`** | 0 (écarté sur DFT-20260908-001) | `HX-Trigger` tire l'événement *avant* le swap : la requête suivante lit l'état d'avant. Pour chaîner un second fragment sur le contenu qui vient d'arriver, `HX-Trigger-After-Swap` |
+| **Plafond de pagination pris pour un critère de sélection** | 1 (DFT-20260910-001) | Une borne de pagination est un garde-fou, pas un filtre. L'atteindre doit être **journalisé et remonté** (`truncated`), et l'exhaustivité ne doit jamais en dépendre. Signal d'alerte : un `total` de synchronisation exactement égal à un plafond codé |
+| **Bilan qui ne dit que ce qui a été écrit** | 1 (DFT-20260910-001) | Tout compte rendu d'import porte son **dénominateur** (combien d'entrées éligibles) en plus de ses écritures. « 16 créés » ne permet pas de voir qu'il en manque 35 |
 | TTL session client mal calculé | 0 | Test E2E refresh token + expiration |
 | Race condition double-booking | 0 | `SELECT FOR UPDATE` + test de concurrence k6 |
 
