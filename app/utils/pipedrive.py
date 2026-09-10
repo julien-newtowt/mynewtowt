@@ -32,15 +32,34 @@ def enabled() -> bool:
     return _enabled()
 
 
-async def list_organizations(*, max_items: int = 1000) -> list[dict]:
+#: Borne de sécurité du listing d'organisations — un garde-fou contre une
+#: pagination qui ne s'arrêterait pas, **pas** un critère de sélection.
+#:
+#: ⚠️ Elle valait 1 000, et le CRM en compte davantage : la synchronisation
+#: n'examinait donc que les 1 000 premières organisations et en ignorait le
+#: reste **sans le dire** (constaté le 2026-09-10 : 51 organisations portant un
+#: deal, 16 clients en base, `total` de sync exactement égal à 1 000).
+#: L'exhaustivité ne repose plus sur cette borne : ``sync_clients`` complète le
+#: listing en allant chercher par identifiant toute organisation portant un
+#: deal qu'il n'a pas vue passer.
+ORG_LIST_MAX_ITEMS = 50_000
+
+
+async def list_organizations(*, max_items: int = ORG_LIST_MAX_ITEMS) -> list[dict]:
     """Liste paginée des organisations Pipedrive (≤ ``max_items``).
 
     Renvoie une liste de dicts org (clés Pipedrive : id, name, address,
     address_country, owner_id…). Liste vide si non configuré ou en erreur.
+
+    Atteindre ``max_items`` est **journalisé en avertissement** : une troncature
+    muette fait disparaître des clients sans qu'aucun compteur ne bouge.
     """
     out: list[dict] = []
     start = 0
-    page = 100
+    # 500 = plafond de `limit` de l'API, déjà utilisé par `list_deals` et
+    # `list_persons`. À 100, parcourir un CRM de plusieurs milliers
+    # d'organisations coûtait cinq fois plus de requêtes pour le même résultat.
+    page = 500
     while len(out) < max_items:
         data = await _request("GET", "/organizations", params={"start": start, "limit": page})
         if not data or not data.get("success"):
@@ -53,7 +72,26 @@ async def list_organizations(*, max_items: int = 1000) -> list[dict]:
         if not pagination.get("more_items_in_collection"):
             break
         start = pagination.get("next_start") or (start + page)
+    if len(out) >= max_items:
+        logger.warning(
+            "pipedrive: listing des organisations tronqué à %d — le CRM en compte davantage",
+            max_items,
+        )
     return out[:max_items]
+
+
+async def get_organization(org_id: int) -> dict | None:
+    """Une organisation par son identifiant Pipedrive, ou ``None``.
+
+    Sert à **compléter** le listing : une organisation portant un deal doit
+    remonter en client, qu'elle soit ou non passée dans la pagination.
+    """
+    if not org_id:
+        return None
+    data = await _request("GET", f"/organizations/{int(org_id)}")
+    if not data or not data.get("success"):
+        return None
+    return data.get("data") or None
 
 
 async def list_deals(*, max_items: int = 10000) -> list[dict]:

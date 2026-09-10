@@ -481,7 +481,29 @@ l'historique chaîné — jamais en dehors.
 adresse, **pays**, et le **contact** (nom / e-mail / téléphone, via
 `pipedrive.list_persons`, un seul appel groupé par organisation). Une valeur
 **absente** du CRM n'écrase jamais une saisie faite dans l'ERP
-(`_apply_crm_field`) — le silence de l'API n'est pas une valeur vide. La
+(`_apply_crm_field`) — le silence de l'API n'est pas une valeur vide.
+
+**Le deal fait le client, pas le listing des organisations.** `sync_clients`
+parcourt le listing des organisations, **puis** va chercher par identifiant
+(`pipedrive.get_organization`) toute organisation portant un deal que le
+listing n'a pas remontée (`recovered`). Sans cette seconde passe,
+l'exhaustivité dépendait du nombre de **non-clients** encombrant le CRM —
+dépendance exactement inverse de celle qu'on veut. Le listing était borné à
+1 000 organisations et le CRM en compte davantage : 35 clients manquaient
+(2026-09-10).
+- **Aucune borne muette.** `ORG_LIST_MAX_ITEMS` et `_MAX_ORG_LOOKUPS` sont des
+  garde-fous contre une pagination folle, pas des critères de sélection : les
+  atteindre est journalisé **et** remonté (`truncated`, `lookup_capped`). C'est
+  une borne silencieuse qui a fait disparaître ces 35 clients pendant des mois,
+  derrière un bilan « 16 mis à jour, 984 ignorées » d'apparence normale.
+- **Le bilan de synchronisation porte son dénominateur** (`with_deal`) et ses
+  anomalies (`recovered`, `invalid`, `errors`). « Créés / mis à jour » seuls ne
+  permettent pas de voir qu'il manque quelqu'un.
+- `_upsert_org` **écrit, il ne trie pas** : le filtre « a un deal ? » est
+  décidé par l'appelant, et les deux passes partagent l'écriture pour qu'une
+  organisation rattrapée soit traitée à l'identique. Le client créé est indexé
+  **avant** le flush, sans quoi une organisation atteinte par les deux passes
+  produirait un doublon — donc une grille tarifaire dupliquée. La
 **création d'un client depuis l'ERP est réservée à l'administrateur** : une
 fiche créée en parallèle n'a pas de `pipedrive_org_id` et devient un doublon que
 la synchronisation ne peut plus rapprocher. `Client.is_anchor` est désormais une

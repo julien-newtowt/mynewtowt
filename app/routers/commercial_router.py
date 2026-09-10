@@ -399,6 +399,14 @@ async def clients_sync_pipedrive(
             f"/commercial/clients?pd=ok&created={result['created']}"
             f"&updated={result['updated']}&skipped={result.get('skipped', 0)}"
             f"&suggested={result.get('suggested', 0)}"
+            # `recovered` = organisations avec deal rattrapées hors listing, et
+            # `errors` = deals dont l'organisation est illisible. Les afficher
+            # plutôt que de les garder pour les journaux : c'est une
+            # synchronisation muette qui avait laissé 35 clients de côté.
+            f"&recovered={result.get('recovered', 0)}"
+            f"&with_deal={result.get('with_deal', 0)}"
+            f"&invalid={result.get('invalid', 0)}"
+            f"&errors={result.get('errors', 0)}"
         ),
         status_code=303,
     )
