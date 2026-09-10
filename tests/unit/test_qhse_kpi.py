@@ -18,8 +18,20 @@ from sqlalchemy.pool import StaticPool
 import app.models  # noqa: F401 — enregistre tous les modèles contre Base.metadata
 from app.database import Base
 from app.models.qhse import CorrectiveAction, QhseReport, RootCauseEvaluation
+from app.models.user import User
 from app.models.vessel import Vessel
-from app.services.qhse_kpi import build_dashboard, list_vessels_with_reports, trend_bars
+from app.services.qhse_kpi import (
+    ISSUER_ORIGIN_EXTERNAL,
+    ISSUER_ORIGIN_ONBOARD,
+    ISSUER_ORIGIN_SHORE,
+    ISSUER_ORIGIN_UNKNOWN,
+    ISSUER_ORIGINS,
+    build_dashboard,
+    build_quality_report,
+    classify_issuer_origin,
+    list_vessels_with_reports,
+    trend_bars,
+)
 
 NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
 
@@ -54,13 +66,25 @@ async def _seed_vessels(db) -> tuple[Vessel, Vessel]:
     return anemos, artemis
 
 
-async def _report(db, vessel_id, *, subject="R", grade="near_miss", issued=None, closed=None):
+async def _report(
+    db,
+    vessel_id,
+    *,
+    subject="R",
+    grade="near_miss",
+    issued=None,
+    closed=None,
+    issued_by_raw=None,
+    report_source="operational",
+):
     r = QhseReport(
         vessel_id=vessel_id,
         subject=subject,
         grade=grade,
         issued_date=issued or NOW,
         closed_date=closed,
+        issued_by_raw=issued_by_raw,
+        report_source=report_source,
     )
     db.add(r)
     await db.flush()
@@ -261,3 +285,304 @@ async def test_c2_denominator_is_all_reports_not_just_evaluations_created(db):
     assert dash.total_reports == 2
     assert dash.root_cause_finished_count == 1
     assert dash.root_cause_completion_pct == 50.0  # 1/2, pas 1/1
+
+
+# ═══════════════════════════════════════ Q2 — origine de l'émetteur
+
+# Chaînes d'émetteur RÉELLES, relevées sur les exports FMS du 2026-09-04
+# (188 lignes, Anemos + Artemis). Le test vaut par ces valeurs-là : une
+# heuristique qui ne les classe pas correctement ne sert à rien.
+REAL_ISSUERS = {
+    "TOWT MASTER ANEMOS": ISSUER_ORIGIN_ONBOARD,
+    "TOWT C/O ANEMOS": ISSUER_ORIGIN_ONBOARD,
+    "TOWT C/E ANEMOS": ISSUER_ORIGIN_ONBOARD,
+    "Anemos Chief Engineer": ISSUER_ORIGIN_ONBOARD,
+    "TOWT ARTEMIS C/O": ISSUER_ORIGIN_ONBOARD,
+    "TOWT ARTEMIS": ISSUER_ORIGIN_ONBOARD,  # nom de navire seul
+    "Artemis": ISSUER_ORIGIN_ONBOARD,
+    "TOWT COMPANY": ISSUER_ORIGIN_SHORE,
+    "Centre de Sécurité des Navires de Brest": ISSUER_ORIGIN_EXTERNAL,
+    "Transport Canada": ISSUER_ORIGIN_EXTERNAL,
+    "TRANSPORT CANADA [Sync]": ISSUER_ORIGIN_EXTERNAL,
+    "USCG": ISSUER_ORIGIN_EXTERNAL,
+    "TOWT": ISSUER_ORIGIN_UNKNOWN,  # trop ambigu — jamais attribué d'office
+}
+
+
+def test_classification_of_every_real_issuer_string():
+    vessel_names = frozenset({"anemos", "artemis"})
+    for raw, expected in REAL_ISSUERS.items():
+        assert classify_issuer_origin(issued_by_raw=raw, vessel_names=vessel_names) == expected, raw
+
+
+def test_a_human_name_is_never_mistaken_for_a_class_society():
+    """🔴 Le motif nu attribuait « Sabrina » à RINA.
+
+    Les motifs d'autorité externe étant testés en premier, une sous-chaîne dans
+    un prénom suffisait à ranger un signalement du bord chez une autorité de
+    contrôle — silencieusement, et sur l'axe le plus coûteux du graphe.
+    """
+    vessel_names = frozenset({"anemos", "artemis"})
+    for raw in ("Sabrina MARTIN", "Katrina DUPONT", "Marina LOPEZ"):
+        assert (
+            classify_issuer_origin(issued_by_raw=raw, vessel_names=vessel_names)
+            == ISSUER_ORIGIN_UNKNOWN
+        ), raw
+
+    # La vraie société de classification reste reconnue.
+    assert classify_issuer_origin(issued_by_raw="RINA") == ISSUER_ORIGIN_EXTERNAL
+    assert classify_issuer_origin(issued_by_raw="RINA Services S.p.A.") == ISSUER_ORIGIN_EXTERNAL
+
+
+def test_lloyd_alone_is_not_an_authority_but_lloyds_register_is():
+    """« Lloyd » patronyme ≠ « Lloyd's Register ». L'apostrophe est normalisée,
+    donc les deux graphies de la société tombent au même endroit."""
+    assert classify_issuer_origin(issued_by_raw="Lloyd BATARD") == ISSUER_ORIGIN_UNKNOWN
+    for raw in ("Lloyd's Register", "Lloyds Register", "LLOYD’S REGISTER EMEA"):
+        assert classify_issuer_origin(issued_by_raw=raw) == ISSUER_ORIGIN_EXTERNAL, raw
+
+
+def test_a_harbour_master_is_an_external_authority_not_the_crew():
+    """Un capitaine de port est une autorité portuaire. « master » ne doit pas
+    le faire basculer côté bord — les motifs externes passent d'abord."""
+    for raw in ("Harbour Master", "Harbor Master of New York", "Capitainerie de Brest"):
+        assert classify_issuer_origin(issued_by_raw=raw) == ISSUER_ORIGIN_EXTERNAL, raw
+    # Le commandant du navire, lui, reste du bord.
+    assert classify_issuer_origin(issued_by_raw="TOWT MASTER ANEMOS") == ISSUER_ORIGIN_ONBOARD
+
+
+def test_a_seafarer_with_a_mytowt_account_is_onboard_not_shore():
+    """🔴 « compte MyTOWT ⇒ siège » rangeait le bord à terre.
+
+    Les marins ont un compte — c'est requis pour accéder à `/captain`. Et
+    l'ingestion vide ``issued_by_raw`` dès qu'un utilisateur correspond : sans
+    le rôle, aucun repli textuel ne pouvait rattraper l'erreur.
+    """
+    assert (
+        classify_issuer_origin(issued_by_raw=None, has_user_link=True, user_role="marins")
+        == ISSUER_ORIGIN_ONBOARD
+    )
+    assert (
+        classify_issuer_origin(issued_by_raw=None, has_user_link=True, user_role="operation")
+        == ISSUER_ORIGIN_SHORE
+    )
+    # Rôle inconnu du référentiel embarqué : siège, comportement historique.
+    assert classify_issuer_origin(issued_by_raw=None, has_user_link=True) == ISSUER_ORIGIN_SHORE
+
+
+async def test_dashboard_reads_the_reporter_role_from_the_database(db):
+    """Le rôle est bien chargé et transmis — pas seulement supporté en théorie."""
+    anemos, _ = await _seed_vessels(db)
+    sailor = User(
+        username="marin",
+        email="marin@example.test",
+        hashed_password="x",
+        role="marins",
+        full_name="Marin Embarque",
+    )
+    db.add(sailor)
+    await db.flush()
+
+    r = await _report(db, anemos.id, subject="signale par un marin")
+    r.reporter_user_id = sailor.id
+    r.issued_by_raw = None  # comme le fait l'ingestion sur un nom rapproché
+    await db.flush()
+
+    dash = await build_dashboard(db, now=NOW)
+    tally = {o.origin: o.count for o in dash.origin_counts}
+    assert tally[ISSUER_ORIGIN_ONBOARD] == 1
+    assert tally[ISSUER_ORIGIN_SHORE] == 0
+
+
+def test_classification_is_accent_and_case_insensitive():
+    """« Centre de Sécurité » et « CENTRE DE SECURITE » sont le même émetteur."""
+    for raw in (
+        "Centre de Sécurité des Navires de Brest",
+        "CENTRE DE SECURITE DES NAVIRES DE BREST",
+        "centre de securite des navires",
+    ):
+        assert classify_issuer_origin(issued_by_raw=raw) == ISSUER_ORIGIN_EXTERNAL
+
+
+def test_empty_or_missing_issuer_is_undetermined_never_onboard():
+    for raw in (None, "", "   "):
+        assert classify_issuer_origin(issued_by_raw=raw) == ISSUER_ORIGIN_UNKNOWN
+
+
+def test_external_authority_wins_over_a_vessel_name_in_the_same_string():
+    """Un contrôle par l'État du port cite le navire ; ce n'est pas le navire
+    qui signale. L'ordre des motifs est donc porteur de sens, pas cosmétique."""
+    origin = classify_issuer_origin(
+        issued_by_raw="Transport Canada — inspection Anemos",
+        vessel_names=frozenset({"anemos"}),
+    )
+    assert origin == ISSUER_ORIGIN_EXTERNAL
+
+
+def test_identified_person_links_take_precedence_over_free_text():
+    """Un nom réellement rapproché du référentiel est plus sûr qu'un motif."""
+    assert classify_issuer_origin(issued_by_raw=None, has_crew_link=True) == ISSUER_ORIGIN_ONBOARD
+    assert classify_issuer_origin(issued_by_raw=None, has_user_link=True) == ISSUER_ORIGIN_SHORE
+
+
+async def test_origin_counts_cover_all_origins_even_at_zero(db):
+    anemos, _ = await _seed_vessels(db)
+    await _report(db, anemos.id, subject="A", issued_by_raw="TOWT MASTER ANEMOS")
+    await _report(db, anemos.id, subject="B", issued_by_raw="TOWT COMPANY")
+    await _report(db, anemos.id, subject="C", issued_by_raw="Transport Canada")
+
+    dash = await build_dashboard(db, now=NOW)
+    tally = {o.origin: o.count for o in dash.origin_counts}
+    assert set(tally) == set(ISSUER_ORIGINS)  # `indetermine` présente même à 0
+    assert tally == {
+        ISSUER_ORIGIN_ONBOARD: 1,
+        ISSUER_ORIGIN_SHORE: 1,
+        ISSUER_ORIGIN_EXTERNAL: 1,
+        ISSUER_ORIGIN_UNKNOWN: 0,
+    }
+    assert sum(tally.values()) == dash.total_reports
+
+
+async def test_empty_fleet_still_exposes_the_four_origins(db):
+    dash = await build_dashboard(db, now=NOW)
+    assert [o.origin for o in dash.origin_counts] == list(ISSUER_ORIGINS)
+    assert all(o.count == 0 for o in dash.origin_counts)
+
+
+# ═══════════════════════════════════════ Qualité — quoi corriger
+
+
+async def test_quality_report_names_each_issue(db):
+    anemos, _ = await _seed_vessels(db)
+    r = await _report(db, anemos.id, subject="incomplet")
+
+    quality = await build_quality_report(db)
+    assert quality.total_reports == 1
+    assert quality.total_flagged == 1
+    item = quality.items[0]
+    assert item.id == r.id
+    assert item.vessel_code == "ANE"
+    # Aucun workflow créé : les manques sont nommés, pas agrégés. Le
+    # responsable n'y figure PAS — constat structurel compté à part.
+    assert item.issues == ["missing_root_cause", "missing_corrective_description"]
+    assert quality.issue_counts["missing_root_cause"] == 1
+    assert quality.responsible_missing_count == 1
+
+
+async def test_missing_responsible_never_puts_a_row_in_the_list(db):
+    """Le champ manque sur 100 % des lignes de l'export « historique par
+    navire » (aucune colonne de responsable) : le lister par ligne mettait les
+    90 signalements réels dans la liste, dont 53 sans rien d'autre à corriger.
+    Compté, expliqué, jamais listé à ce titre."""
+    anemos, _ = await _seed_vessels(db)
+    complete_but_unowned = await _report(db, anemos.id, subject="sans responsable")
+    db.add(CorrectiveAction(report_id=complete_but_unowned.id, description="fait"))
+    db.add(RootCauseEvaluation(report_id=complete_but_unowned.id, root_cause_text="cause"))
+    await db.flush()
+
+    quality = await build_quality_report(db)
+    assert quality.responsible_missing_count == 1
+    assert quality.total_flagged == 0  # rien d'autre à corriger sur cette ligne
+    assert quality.items == []
+    assert "missing_responsible" not in quality.issue_counts
+
+
+async def test_quality_report_excludes_a_complete_report(db):
+    anemos, _ = await _seed_vessels(db)
+    # `responsible_user_id` porte une FK réellement appliquée sous SQLite :
+    # l'utilisateur doit exister, un id arbitraire échouerait.
+    owner = User(
+        username="qhse",
+        email="qhse@example.test",
+        hashed_password="x",
+        role="administrateur",
+        full_name="Resp QHSE",
+    )
+    db.add(owner)
+    await db.flush()
+
+    full = await _report(db, anemos.id, subject="complet")
+    db.add(CorrectiveAction(report_id=full.id, description="fait", responsible_user_id=None))
+    # Responsable posé sur l'évaluation : l'accountability existe quelque part,
+    # pas nécessairement sur les deux workflows (même règle que R1).
+    db.add(
+        RootCauseEvaluation(
+            report_id=full.id, root_cause_text="cause", responsible_user_id=owner.id
+        )
+    )
+    await db.flush()
+
+    quality = await build_quality_report(db)
+    assert quality.total_reports == 1
+    assert quality.total_flagged == 0
+    assert quality.items == []
+
+
+async def test_suspected_test_is_listed_first_because_it_needs_a_decision(db):
+    """Les autres motifs demandent une saisie ; celui-là demande un arbitrage."""
+    anemos, _ = await _seed_vessels(db)
+    await _report(db, anemos.id, subject="ancien", issued=NOW - timedelta(days=100))
+    await _report(
+        db,
+        anemos.id,
+        subject="test presume",
+        issued=NOW - timedelta(days=1),
+        report_source="suspected_test",
+    )
+
+    quality = await build_quality_report(db)
+    assert quality.items[0].subject == "test presume"
+    assert "suspected_test" in quality.items[0].issues
+    assert quality.issue_counts["suspected_test"] == 1
+
+
+async def test_closed_before_issued_is_not_a_motif_because_it_is_unreachable(db):
+    """🔴 Un motif inatteignable est pire qu'un motif absent.
+
+    ``qhse_ingestion._import_row`` **quarantaine** la ligne avant insertion
+    quand ``ClosedDate < IssuedDate`` (RQ01), et le module n'a aucune autre voie
+    d'écriture. Une tuile à 0 en permanence aurait déclaré le registre sain sur
+    un axe qu'il ne peut pas mesurer — la fausse conformité refusée ailleurs
+    (Q2, responsable non identifié).
+
+    Ces lignes vivent dans ``activity_logs`` (compte rendu d'import), pas ici.
+    """
+    from app.services.qhse_kpi import QUALITY_ISSUES
+
+    assert "closed_before_issued" not in QUALITY_ISSUES
+
+    anemos, _ = await _seed_vessels(db)
+    # Même en forçant l'incohérence en base (ce que l'ingestion refuse), le
+    # calcul ne fabrique pas de motif : il n'existe plus.
+    await _report(
+        db,
+        anemos.id,
+        subject="dates incoherentes",
+        issued=NOW,
+        closed=NOW - timedelta(days=5),
+    )
+
+    quality = await build_quality_report(db)
+    assert "closed_before_issued" not in quality.issue_counts
+    assert all("closed_before_issued" not in it.issues for it in quality.items)
+
+
+async def test_quality_report_respects_the_vessel_filter(db):
+    anemos, artemis = await _seed_vessels(db)
+    await _report(db, anemos.id, subject="A")
+    await _report(db, artemis.id, subject="B")
+
+    fleet = await build_quality_report(db)
+    only_artemis = await build_quality_report(db, vessel_id=artemis.id)
+    assert fleet.total_reports == 2
+    assert only_artemis.total_reports == 1
+    assert [it.vessel_code for it in only_artemis.items] == ["ART"]
+
+
+async def test_quality_report_on_empty_fleet_returns_zeroed_counts(db):
+    quality = await build_quality_report(db)
+    assert quality.total_reports == 0
+    assert quality.total_flagged == 0
+    assert quality.items == []
+    # Les compteurs existent quand même — un motif absent vaut 0, pas None.
+    assert quality.issue_counts["suspected_test"] == 0

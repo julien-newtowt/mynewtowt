@@ -94,6 +94,31 @@ def _num(value: Decimal | int | float | None) -> str | None:
     return None if value is None else str(value)
 
 
+def _positive_or_none(conso_t: Decimal | None) -> Decimal | None:
+    """Assiette d'émission utilisable, ou ``None`` — jamais une valeur négative.
+
+    🔴 Une consommation négative est une **anomalie de donnée**, pas une
+    émission négative. ``_escale_consumption`` peut en produire une par la
+    formule de continuité ROB (``ROB_arrivée + soutages − ROB_départ``) dès
+    qu'un soutage n'est pas validé Master ou qu'un ROB a été corrigé : le
+    départ paraît alors plus rempli que l'arrivée. Idem pour un delta de
+    compteurs incohérent.
+
+    Tant que ces postes n'étaient qu'affichés en **consommation**, l'anomalie
+    restait visible et lisible comme telle. Depuis qu'on en dérive une
+    émission, la laisser passer produirait un CO₂ négatif affiché ET persisté —
+    du carbone créé de toutes pièces dans un tableau d'émissions.
+
+    On renvoie donc ``None``, que la restitution rend « non calculé » : une
+    absence assumée plutôt qu'un chiffre faux. La consommation négative, elle,
+    reste exposée telle quelle et relève du moteur de qualité (R14, écarts de
+    ROB) — c'est là qu'elle doit être signalée, pas ici.
+    """
+    if conso_t is None or conso_t < 0:
+        return None
+    return conso_t
+
+
 # ════════════════════════════════ Émissions multi-GES (déplacé de report_generation)
 
 
@@ -207,6 +232,44 @@ class LedgerResult:
     ef_method_b: Decimal | None
     ef_method_c: Decimal | None
 
+    # ── Émissions du séjour au port (« Port Emissions ») ─────────────────
+    #
+    # Assiette DISJOINTE de `co2_emitted_t` : celle-là porte le trajet (conso
+    # hors mouillage), celles-ci l'escale qui SUIT l'arrivée (`conso_escale_t`,
+    # G12). Les deux ne se recouvrent pas et ne doivent jamais être
+    # additionnées sans le dire — l'escale d'un leg peut s'étendre sur la
+    # fenêtre du leg suivant.
+    #
+    # Même facteur, même primitive (`emissions_breakdown`) : c'est la règle
+    # d'or, l'unique multiplication conso × facteur vit dans ce module.
+    #
+    # 🔴 Placés en FIN de dataclass, avec un défaut : c'est ce qui rend l'ajout
+    # une **extension compatible** au sens de la politique du contrat
+    # Dashboard (`tests/regression/test_dashboard_contract.py`) — aucun
+    # constructeur existant n'est cassé, et pas d'incrément de
+    # `DASHBOARD_CONTRACT_VERSION`. Les insérer au milieu aurait été un
+    # changement cassant de signature.
+    co2_escale_t: Decimal | None = None
+    co2eq_escale_t: Decimal | None = None
+
+    # ── Émissions au mouillage — 🔴 HORS PÉRIMÈTRE MRV ───────────────────
+    #
+    # Troisième assiette, disjointe des deux autres : la consommation au
+    # mouillage/à la dérive (`conso_mouillage_t`), exclue de l'assiette du
+    # trajet par construction (`do_consumed = conso_hors`).
+    #
+    # 🔴 **Ce chiffre n'appartient pas au périmètre MRV** (constat métier du
+    # 2026-09-04). Il existe pour l'analyse interne — du carburant brûlé mérite
+    # une émission connue — et **ne doit jamais être additionné à `co2_emitted_t`
+    # ni à `co2_escale_t` pour produire un total présenté comme réglementaire**.
+    # Toute restitution qui l'inclut doit être explicitement opt-in et porter la
+    # mention du périmètre (cf. `/mrv/emissions/voyages`, sélecteur).
+    #
+    # Même facteur et même primitive que les deux autres assiettes : la règle
+    # d'or ne souffre pas d'exception, y compris pour un chiffre hors MRV.
+    co2_mouillage_t: Decimal | None = None
+    co2eq_mouillage_t: Decimal | None = None
+
 
 # ════════════════════════════════════════════════════════════ Helpers datetime
 
@@ -263,6 +326,79 @@ async def _next_departure_event(
         if _naive_utc(ev.datetime_utc) is not None and _naive_utc(ev.datetime_utc) > after_naive:
             return ev
     return None
+
+
+async def _previous_arrival_event(
+    db: AsyncSession, vessel_id: int, before: datetime
+) -> NavEvent | None:
+    """Dernier Arrival finalisé du navire avant ``before`` — symétrique de
+    :func:`_next_departure_event`.
+
+    Sert à répondre à la question « quelle escale ce Departure vient-il de
+    clore ? », indispensable pour savoir quel résumé de voyage un événement
+    rend obsolète (cf. :func:`legs_affected_by_event`).
+    """
+    # 🔴 La comparaison de date se fait en PYTHON, pas en SQL.
+    #
+    # Une version intermédiaire portait la borne dans le ``WHERE`` avec un
+    # ``LIMIT 1``, pour ne pas rapatrier tout l'historique. C'était plus
+    # rapide et **faux** : ``datetime_utc`` est un ``timestamptz``, et lier
+    # un datetime naïf y fait interpréter la valeur dans le fuseau LOCAL DE
+    # L'HÔTE par asyncpg. Sur un serveur non-UTC la borne se décalait donc
+    # de plusieurs heures, et une escale courte perdait définitivement son
+    # rafraîchissement — silencieusement.
+    #
+    # C'est exactement pourquoi le jumeau ``_next_departure_event`` compare
+    # en Python. On reste sur ce patron : même coût que lui, et une
+    # correction dialecte-agnostique plutôt qu'une micro-optimisation fausse.
+    before_naive = _naive_utc(before)
+    if before_naive is None:
+        return None
+    rows = await db.execute(
+        select(NavEvent)
+        .where(
+            NavEvent.vessel_id == vessel_id,
+            NavEvent.event_type == "arrival",
+            NavEvent.status.in_(iec.FINALIZED_STATUSES),
+        )
+        .order_by(NavEvent.datetime_utc.desc())
+    )
+    for ev in rows.scalars().all():
+        dt = _naive_utc(ev.datetime_utc)
+        if dt is not None and dt < before_naive:
+            return ev
+    return None
+
+
+async def legs_affected_by_event(db: AsyncSession, event: NavEvent) -> list[int]:
+    """Voyages dont le résumé d'émissions devient obsolète après cet événement.
+
+    🔴 **Ce n'est pas seulement le leg de l'événement.** La conso d'escale d'un
+    voyage (donc ses « Port Emissions ») est bornée par le **Departure
+    suivant**, qui appartient au voyage d'après (G12). Rafraîchir le seul leg de
+    l'événement laissait donc ``conso_escale_t``/``co2_escale_t`` du voyage
+    précédent définitivement à ``NULL`` — et l'écran ``/mrv/emissions/port``,
+    qui filtre les lignes sans escale, restait **vide en permanence**.
+
+    Le défaut était invisible aux tests parce que ceux-ci injectent les résumés
+    directement, sans passer par le hook de finalisation. Il ne se voit qu'en
+    exerçant la séquence réelle : arrivée du leg N, puis départ du leg N+1.
+
+    La connaissance de la fenêtre d'escale vit ici, dans le grand livre, et non
+    dans ``event_capture`` : c'est le grand livre qui définit ce qu'une escale
+    borne.
+    """
+    affected: list[int] = []
+    if event.leg_id is not None:
+        affected.append(event.leg_id)
+
+    # Un Departure clôt l'escale ouverte par l'Arrival précédent du même
+    # navire : le résumé de CE voyage-là change aussi.
+    if isinstance(event, DepartureEvent) and event.vessel_id is not None:
+        arrival = await _previous_arrival_event(db, event.vessel_id, event.datetime_utc)
+        if arrival is not None and arrival.leg_id is not None and arrival.leg_id not in affected:
+            affected.append(arrival.leg_id)
+    return affected
 
 
 async def _bunkered_t_between(
@@ -548,6 +684,25 @@ async def compute_for_leg(
     co2eq_t = Decimal(em["co2eq_t"]) if em["co2eq_t"] is not None else None
     wtt_co2eq_t = Decimal(em["wtt_co2eq_t"]) if em["wtt_co2eq_t"] is not None else None
 
+    # Émissions du séjour au port (« Port Emissions », décision du 2026-09-04 :
+    # « port emissions = émissions d'escale »). Assiette DISJOINTE du trajet :
+    # `conso_escale_t` couvre l'escale qui SUIT l'arrivée, jamais la navigation.
+    # Même facteur et même primitive — la règle d'or veut que l'unique
+    # multiplication conso × facteur reste ici.
+    em_escale = emissions_breakdown(_positive_or_none(conso_escale), factor)
+    co2_escale_t = Decimal(em_escale["co2_t"]) if em_escale["co2_t"] is not None else None
+    co2eq_escale_t = Decimal(em_escale["co2eq_t"]) if em_escale["co2eq_t"] is not None else None
+
+    # Émissions au mouillage — 🔴 HORS PÉRIMÈTRE MRV (cf. `LedgerResult`).
+    # Calculées ici quand même : c'est du carburant réellement brûlé, et la
+    # règle d'or veut que la multiplication vive dans ce module. Ne jamais les
+    # additionner aux deux autres assiettes pour un total réglementaire.
+    em_mouillage = emissions_breakdown(_positive_or_none(conso_mouillage), factor)
+    co2_mouillage_t = Decimal(em_mouillage["co2_t"]) if em_mouillage["co2_t"] is not None else None
+    co2eq_mouillage_t = (
+        Decimal(em_mouillage["co2eq_t"]) if em_mouillage["co2eq_t"] is not None else None
+    )
+
     # CO₂ évité : comparateur conventionnel ``co2.estimate`` (mêmes valeurs).
     avoided = await _avoided_co2_kg(db, distance, cargo_bl)
 
@@ -580,6 +735,10 @@ async def compute_for_leg(
         n2o_g=n2o_g,
         co2eq_t=co2eq_t,
         wtt_co2eq_t=wtt_co2eq_t,
+        co2_escale_t=co2_escale_t,
+        co2eq_escale_t=co2eq_escale_t,
+        co2_mouillage_t=co2_mouillage_t,
+        co2eq_mouillage_t=co2eq_mouillage_t,
         avoided_co2_kg=avoided,
         ef_method_a=ef_a,
         ef_method_b=ef_b,
@@ -645,8 +804,20 @@ async def refresh_summary(db: AsyncSession, leg: Leg) -> VoyageEmissionSummary:
 
     Idempotent : deux appels laissent une seule ligne, à jour. Recalculé depuis
     la source de vérité (events sinon noon legacy) — le summary reste un **cache**
-    (jamais lu comme référence de calcul). Appelé par le hook
-    ``event_capture`` (finalisation/validation) et à la demande.
+    (jamais lu comme référence de calcul).
+
+    Deux appelants, et deux seulement :
+
+    1. le hook ``event_capture`` (finalisation/validation d'un événement, via
+       ``legs_affected_by_event``) ;
+    2. le script de reprise à froid
+       ``scripts.backfill_voyage_emission_summaries``.
+
+    Le second n'est pas un confort : une colonne ajoutée par migration naît à
+    ``NULL`` sans backfill, donc sans reprise les voyages antérieurs au
+    déploiement gardent ``NULL`` **pour toujours** — aucun événement nouveau ne
+    les concerne. Le docstring d'origine annonçait un recalcul « à la demande »
+    qui n'existait pas : ce chemin-là est désormais réel et nommé.
     """
     result = await compute_for_leg(db, leg)
 
@@ -674,6 +845,10 @@ async def refresh_summary(db: AsyncSession, leg: Leg) -> VoyageEmissionSummary:
         "n2o_g": result.n2o_g,
         "co2eq_t": result.co2eq_t,
         "wtt_co2eq_t": result.wtt_co2eq_t,
+        "co2_escale_t": result.co2_escale_t,
+        "co2eq_escale_t": result.co2eq_escale_t,
+        "co2_mouillage_t": result.co2_mouillage_t,
+        "co2eq_mouillage_t": result.co2eq_mouillage_t,
         "distance_nm": result.distance_nm,
         "cargo_bl_t": result.cargo_bl_t,
         "cargo_mrv_t": result.cargo_mrv_t,

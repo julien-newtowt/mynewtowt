@@ -60,6 +60,26 @@ class VoyageEmissionSummary(Base):
     co2eq_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     wtt_co2eq_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
 
+    # ── Émissions du séjour au port (« Port Emissions ») ─────────────────
+    # Assiette DISJOINTE des colonnes ci-dessus : celles-là portent le trajet
+    # (conso hors mouillage), celles-ci l'escale qui SUIT l'arrivée du voyage
+    # (``conso_escale_t``, G12). Les deux ne se recouvrent pas et ne doivent
+    # jamais être additionnées sans le dire : l'escale d'un voyage peut
+    # s'étendre sur la fenêtre du voyage suivant.
+    co2_escale_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    co2eq_escale_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+
+    # ── Émissions au mouillage — 🔴 HORS PÉRIMÈTRE MRV ───────────────────
+    # Troisième assiette, disjointe des deux autres. Constat métier du
+    # 2026-09-04 : le mouillage **n'appartient pas au périmètre MRV**. Ces
+    # colonnes existent pour l'analyse interne (du carburant brûlé mérite une
+    # émission connue) et **ne doivent jamais être additionnées à ``co2_t`` ni
+    # à ``co2_escale_t`` pour produire un total présenté comme réglementaire**.
+    # Toute restitution qui les inclut doit être opt-in et porter la mention du
+    # périmètre.
+    co2_mouillage_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    co2eq_mouillage_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+
     # ── Distance / cargo ─────────────────────────────────────────────────
     distance_nm: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     cargo_bl_t: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))

@@ -37,7 +37,12 @@ from app.models.bunker import BunkerOperation
 from app.models.co2_variable import Co2Variable
 from app.models.finance import LegKPI
 from app.models.leg import Leg
-from app.models.nav_event import ArrivalEvent, DepartureEvent, NavEventEngineReading, NoonEvent
+from app.models.nav_event import (
+    ArrivalEvent,
+    DepartureEvent,
+    NavEventEngineReading,
+    NoonEvent,
+)
 from app.models.noon_report import NoonReport
 from app.models.port import Port
 from app.models.user import User
@@ -525,6 +530,150 @@ async def test_escale_consumption_rob_solved(db):
     # 50,000 + 10,000 − 55,000 = 5,000.
     assert r.conso_escale_t == Decimal("5.000")
 
+    # « Port emissions = émissions d'escale » (décision du 2026-09-04) : le
+    # grand livre dérive désormais l'émission de cette consommation, au MÊME
+    # facteur et par la MÊME primitive que le trajet — la règle d'or veut que
+    # l'unique multiplication conso × facteur vive dans ce module.
+    expected = emission_ledger.emissions_breakdown(r.conso_escale_t, r.factor)
+    assert r.co2_escale_t == Decimal(expected["co2_t"])
+    assert r.co2eq_escale_t == Decimal(expected["co2eq_t"])
+
+    # Assiettes DISJOINTES : l'émission du trajet porte la conso hors
+    # mouillage, celle de l'escale la conso d'escale. Les confondre ferait
+    # double-compter, l'escale pouvant s'étendre sur le voyage suivant.
+    assert r.co2_escale_t != r.co2_emitted_t
+    assert r.do_consumed_t == r.conso_hors_mouillage_t
+
+
+async def test_anchoring_emission_is_computed_but_never_in_the_mrv_base(db):
+    """Le mouillage est **hors périmètre MRV** (constat du 2026-09-04).
+
+    Son émission est calculée — du carburant brûlé mérite une émission connue —
+    mais l'assiette MRV du trajet ne bouge pas d'un iota. C'est l'invariant
+    critique : un chiffre réglementaire ne doit jamais grossir parce qu'on a
+    ajouté un indicateur interne à côté.
+    """
+    vessel, leg = await _base(db)
+    await _events_chain(db, vessel, leg)
+
+    r = await emission_ledger.compute_for_leg(db, leg)
+
+    # L'assiette du trajet reste la conso HORS mouillage, inchangée.
+    assert r.do_consumed_t == r.conso_hors_mouillage_t
+    expected_voyage = emission_ledger.emissions_breakdown(r.conso_hors_mouillage_t, r.factor)
+    assert r.co2_emitted_t == Decimal(expected_voyage["co2_t"])
+
+    # L'émission de mouillage suit la MÊME primitive et le MÊME facteur.
+    expected_anchor = emission_ledger.emissions_breakdown(r.conso_mouillage_t, r.factor)
+    assert r.co2_mouillage_t == Decimal(expected_anchor["co2_t"])
+    assert r.co2eq_mouillage_t == Decimal(expected_anchor["co2eq_t"])
+
+
+async def test_a_negative_escale_consumption_yields_no_emission(db):
+    """🔴 Une conso négative est une anomalie de donnée, pas une émission négative.
+
+    La formule de continuité ROB (``ROB_arrivée + soutages − ROB_départ``) peut
+    rendre un négatif dès qu'un soutage n'est pas validé Master : le départ
+    paraît plus rempli que l'arrivée. Tant que ce poste n'était qu'affiché en
+    consommation, l'anomalie restait lisible comme telle. En dériver une
+    émission produirait du CO₂ négatif, affiché ET persisté — du carbone créé
+    de toutes pièces dans un tableau d'émissions.
+    """
+    factor = await emission_ledger._resolve_factor(db, "MDO", None)
+
+    assert emission_ledger._positive_or_none(Decimal("-5.000")) is None
+    assert emission_ledger._positive_or_none(None) is None
+    assert emission_ledger._positive_or_none(Decimal("0")) == Decimal("0")
+    assert emission_ledger._positive_or_none(Decimal("1.5")) == Decimal("1.5")
+
+    # Conséquence sur la primitive : pas d'assiette, pas d'émission.
+    assert emission_ledger.emissions_breakdown(None, factor)["co2_t"] is None
+    # Et une assiette nulle reste un vrai zéro, distinct d'une absence.
+    assert Decimal(emission_ledger.emissions_breakdown(Decimal("0"), factor)["co2_t"]) == 0
+
+
+async def test_a_departure_refreshes_the_previous_leg_summary_too(db):
+    """🔴 Sans cela, « Port Emissions » restait vide en permanence.
+
+    La conso d'escale du voyage N est bornée par le Departure du voyage N+1
+    (G12). Le hook ne rafraîchissait que le leg de l'événement : le résumé du
+    voyage N n'était donc jamais recalculé, ``conso_escale_t`` restait ``NULL``,
+    et l'écran — qui filtre les lignes sans escale — n'affichait rien.
+
+    Le défaut échappait aux tests de vue parce que ceux-ci injectent les résumés
+    directement. Il ne se voit qu'en exerçant la séquence réelle.
+    """
+    vessel, leg = await _base(db)
+    arrival = ArrivalEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=48),
+        rob_t=Decimal("50.000"),
+    )
+    db.add(arrival)
+    await db.flush()
+
+    leg2 = await _second_leg(db, vessel)
+    departure2 = DepartureEvent(
+        leg_id=leg2.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=52),
+        rob_t=Decimal("40.000"),
+    )
+    db.add(departure2)
+    await db.flush()
+
+    affected = await emission_ledger.legs_affected_by_event(db, departure2)
+    # Le voyage du départ ET celui de l'arrivée précédente.
+    assert set(affected) == {leg2.id, leg.id}
+
+    # Un Arrival, lui, ne touche que son propre voyage.
+    assert await emission_ledger.legs_affected_by_event(db, arrival) == [leg.id]
+
+
+async def test_the_refresh_hook_never_blocks_a_finalisation(db, monkeypatch):
+    """🔴 Le contrat « jamais bloquant » était cassé.
+
+    Le hook attrapait l'exception sans savepoint : la session restait
+    empoisonnée, donc le ``commit()`` de ``get_db()`` échouait à son tour et
+    **annulait la finalisation de l'événement**. Une panne de cache empêchait
+    le bord de finaliser — l'inverse du contrat.
+
+    ``begin_nested()`` isole chaque voyage : la session survit, l'événement
+    reste finalisé.
+    """
+    vessel, leg = await _base(db)
+    dep, _noon = await _events_chain(db, vessel, leg)
+
+    async def _boom(*_a, **_k):
+        raise RuntimeError("panne de cache simulée")
+
+    monkeypatch.setattr(emission_ledger, "refresh_summary", _boom)
+
+    # Le hook encaisse l'échec sans propager…
+    await event_capture._refresh_emission_summary(db, dep)
+
+    # …et la session reste utilisable : c'est ce que le savepoint garantit,
+    # et ce que l'ancienne version rendait impossible.
+    assert (await db.execute(select(func.count()).select_from(Leg))).scalar_one() == 1
+
+
+async def test_escale_emission_is_none_without_escale_consumption(db):
+    """Pas d'escale (voyage non arrivé, G12) ⇒ pas d'émission d'escale.
+
+    ``None`` et non ``0`` : un voyage encore en mer n'a pas une escale à
+    émission nulle, il n'a pas encore d'escale.
+    """
+    vessel, leg = await _base(db)
+    await _events_chain(db, vessel, leg)
+
+    r = await emission_ledger.compute_for_leg(db, leg)
+    assert r.conso_escale_t is None
+    assert r.co2_escale_t is None
+    assert r.co2eq_escale_t is None
+
 
 async def test_escale_consumption_falls_back_to_counters_without_declared_rob(db):
     """ROB déclaré manquant à une des deux bornes → repli sur le delta de
@@ -633,3 +782,44 @@ async def test_kpi_env_provider_reads_summary_with_legkpi_fallback(db):
     assert records[leg2.id].cargo_t == Decimal("400")
     assert records[leg2.id].distance_nm == Decimal("800")
     assert records[leg2.id].has_kpi is True
+
+
+async def test_a_bunker_moved_to_another_leg_refreshes_the_leg_it_leaves(db, monkeypatch):
+    """🔴 Un soutage déplacé laissait son tonnage sur l'ancien voyage.
+
+    ``build_bunker_lookup`` sélectionne les soutages par ``leg_id``. Ne
+    rafraîchir que le **nouveau** voyage laisse l'ancien avec ce tonnage dans
+    sa continuité ROB — donc ``conso_escale_t``/``co2_escale_t`` **surestimés
+    pour toujours** : aucun événement futur ne rafraîchit un voyage passé.
+
+    D'où la capture des valeurs d'AVANT la mutation par l'appelant : une fois
+    ``bunker.leg_id`` écrasé, plus personne ne sait quel voyage purger.
+    """
+    from app.services import bunkering
+
+    vessel, leg = await _base(db)
+    leg2 = await _second_leg(db, vessel)
+    bunker = BunkerOperation(
+        vessel_id=vessel.id,
+        bdn_number="BDN-MOVE-1",
+        port_locode="BRBEL",
+        delivery_datetime_utc=T0 + timedelta(hours=50),
+        mass_t=Decimal("10.000"),
+        density_15c_t_m3=Decimal("0.845"),
+        status="valide_master",
+        leg_id=leg.id,
+    )
+    db.add(bunker)
+    await db.flush()
+
+    refreshed: list[int] = []
+
+    async def _record(_db, leg_obj):
+        refreshed.append(leg_obj.id)
+
+    monkeypatch.setattr(emission_ledger, "refresh_summary", _record)
+
+    await bunkering.apply_review_correction(db, bunker, form={}, manual_leg_id=leg2.id)
+
+    assert leg2.id in refreshed, "le voyage d'accueil doit être rafraîchi"
+    assert leg.id in refreshed, "le voyage quitté aussi — sinon le tonnage y reste"

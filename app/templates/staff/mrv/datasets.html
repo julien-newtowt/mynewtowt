@@ -1,11 +1,11 @@
 {% extends "staff/_layout.html" %}
-{% block title %}{{ t('mrv_ds_title', lang) }}{% endblock %}
+{% block title %}{{ t(dataset_title_key, lang) }}{% endblock %}
 {% block content %}
 {% set qs = '?vessel_id=' ~ vessel.id ~ ('&year=' ~ year if year else '') if vessel else '' %}
 
 <header class="mb-4">
   <span class="kicker">{{ t('mrv_ds_kicker', lang) }}</span>
-  <h1 class="display">{{ t('mrv_ds_title', lang) }}</h1>
+  <h1 class="display">{{ t(dataset_title_key, lang) }}</h1>
   <p class="text-muted">{{ t('mrv_ds_intro', lang) }}</p>
 </header>
 
@@ -41,13 +41,20 @@
     {% if year %}<input type="hidden" name="year" value="{{ year }}" />{% endif %}
     <button type="submit" class="btn btn-primary">{{ t('mrv_ds_generate', lang) }}</button>
   </form>
+  {# Chaque vue ne propose que SES exports : un bouton « OVDBR » sur l'écran
+     OVDLA invite à télécharger un jeu qu'on n'est pas en train de vérifier. #}
+  {% if dataset_kind in ('both', 'ovdla') %}
   <a class="btn btn-ghost" hx-boost="false" href="/mrv/datasets/ovdla.xlsx{{ qs }}">↓ OVDLA .xlsx</a>
   <a class="btn btn-ghost" hx-boost="false" href="/mrv/datasets/ovdla.csv{{ qs }}">↓ OVDLA .csv</a>
+  {% endif %}
+  {% if dataset_kind in ('both', 'ovdbr') %}
   <a class="btn btn-ghost" hx-boost="false" href="/mrv/datasets/ovdbr.xlsx{{ qs }}">↓ OVDBR .xlsx</a>
   <a class="btn btn-ghost" hx-boost="false" href="/mrv/datasets/ovdbr.csv{{ qs }}">↓ OVDBR .csv</a>
+  {% endif %}
 </div>
 
 <!-- OVDLA -->
+{% if dataset_kind in ('both', 'ovdla') %}
 <section class="card mb-4">
   <div class="flex justify-between items-center mb-2">
     <h2>{{ t('mrv_ds_ovdla_title', lang) }}</h2>
@@ -92,8 +99,10 @@
   </table>
   </div>
 </section>
+{% endif %}
 
 <!-- OVDBR -->
+{% if dataset_kind in ('both', 'ovdbr') %}
 <section class="card">
   <div class="flex justify-between items-center mb-2">
     <h2>{{ t('mrv_ds_ovdbr_title', lang) }}</h2>
@@ -134,6 +143,7 @@
   </table>
   </div>
 </section>
+{% endif %}
 {% else %}
 <section class="card"><p class="text-muted">{{ t('mrv_ds_no_vessel', lang) }}</p></section>
 {% endif %}

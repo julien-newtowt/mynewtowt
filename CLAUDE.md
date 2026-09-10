@@ -30,6 +30,7 @@ Before implementing any feature: (1) understand the business objective, (2) iden
 - Never delete branches without approval.
 - Minor related fixes may be grouped together; every significant feature/refactor/architectural change gets its own branch: `feature/...`, `fix/...`, `refactor/...`, `docs/...`, `hotfix/...`.
 - ⚠️ **A branch already pushed to `origin` carries shared history**: integrate `main` *into* it (a real merge commit, `chore: integrer main (N commits…)`) rather than rebasing it — a rebase could only reach `origin` through a force push. Re-chaining a migration that has never been published is not a history rewrite, and is the expected fix when `main` has moved its Alembic head.
+- 🔴 **A stack of PRs merges into its own base, not into `main` — and GitHub still labels it MERGED.** On 2026-09-08 three stacked PRs (#197 → #198 → #200) were merged in the right order; only #197 reached `main`. #198 merged into `hotfix/qhse-validation-rules-seed` and #200 into `feature/qhse-origine-emetteur-et-qualite`, because GitHub only re-targets a child PR when its base branch is **deleted** at merge time. The content was neither lost nor deployed, with **no signal anywhere** — the PR list read « merged », the branches read merged, and production had none of it. Stacking buys a linear Alembic chain and costs this; the check is one command per PR: `git merge-base --is-ancestor $(gh pr view N --json mergeCommit --jq .mergeCommit.oid) origin/main`. **Verify it after every merge of a stack**, and prefer a single PR to `main` whenever the migration chain allows it.
 
 ### Documentation Policy (Mandatory)
 
@@ -65,7 +66,7 @@ Minor modifications may be validated by Yasmin directly. **Significant architect
 
 ### Development Journal & ADR
 
-Maintain a living development journal for each work period (date, branch, objective, files modified, business/technical rationale, implementation summary, risks, tests performed, remaining work, next recommendations) — it is the handover material a reviewer reads first. The 2026-07-27 → 2026-08-17 period is recorded in `docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md`. Maintain an Architecture Decision Record under `docs/architecture/` for every important technical decision (context, considered options, chosen solution, justification, consequences, future considerations).
+Maintain a living development journal for each work period (date, branch, objective, files modified, business/technical rationale, implementation summary, risks, tests performed, remaining work, next recommendations) — it is the handover material a reviewer reads first. The 2026-07-27 → 2026-08-17 period is recorded in `docs/DEVELOPMENT_JOURNAL_2026-07-27_2026-08-17.md`; the current period in `docs/DEVELOPMENT_JOURNAL_2026-09-01_EN_COURS.md`. Maintain an Architecture Decision Record under `docs/architecture/` for every important technical decision (context, considered options, chosen solution, justification, consequences, future considerations).
 
 ### Session Continuity
 
@@ -196,6 +197,18 @@ mynewtowt/
   `await db.commit()`** dans une route (géré par la dependency).
 - Schéma init via `Base.metadata.create_all` au boot (dev) ; production
   utilise Alembic exclusivement.
+- 🔴 **Une migration est un instantané, jamais un appel au code vivant.** Ne
+  **jamais** importer une constante applicative (catalogue, seed, liste de
+  référence) dans une migration : son effet dépendrait alors de la *date* à
+  laquelle elle s'exécute. C'est le défaut qui a mis l'import QHSE à terre en
+  production (`DFT-20260904-001`) — la migration `0097` importe `RULE_SEED`,
+  donc une base neuve reçoit 38 règles quand la production, migrée en juillet,
+  n'en a reçu que 31. **Et le défaut est invisible aux tests** : le seed au boot
+  peuple tout en dev, et une base reconstruite depuis la chaîne complète est
+  correcte elle aussi. Seule une base ancienne diverge — il n'y en a qu'une, la
+  production. Corollaire : **toute nouvelle entrée d'un référentiel semé en base
+  exige une migration additive idempotente**, valeurs écrites en dur
+  (sentinelles : `tests/regression/test_validation_rules_seeded.py`).
 - **Invariants de rattachement à connaître avant d'écrire une fixture ou une
   migration** (les FK sont réellement appliquées, y compris sous SQLite en
   test) :
@@ -603,10 +616,81 @@ Doc : `docs/integrations/unlocode-ports.md`.
   seul** — `DraftAuthorError`) → `finalise` (UTC autoritatif + moteur de règles scope
   `event` ; un `fail` **bloquant** refuse la finalisation) → `valide` (siège). Les
   brouillons sont **exclus** de tout calcul.
+- 🔴 **Deux assiettes d'émission disjointes, jamais additionnées en silence.**
+  `co2_t`/`co2eq_t`/`wtt_co2eq_t` portent le **trajet** (assiette : consommation
+  **hors mouillage**, `do_consumed = conso_hors`). `co2_escale_t`/`co2eq_escale_t`
+  portent l'**escale** qui suit l'arrivée (« Port Emissions = émissions
+  d'escale », décision du 2026-09-04). Elles ne se recouvrent pas, et l'escale
+  d'un voyage peut s'étendre sur la fenêtre du voyage **suivant** : tout total
+  « trajet + escale » doit l'annoncer. Les deux sont calculées dans
+  `emission_ledger`, au même facteur et par la même primitive
+  (`emissions_breakdown`) — la règle d'or veut que l'unique multiplication
+  consommation × facteur vive là (sentinelle `test_factor_whitelist`).
+- 🔴 **Le mouillage est une TROISIÈME assiette, HORS périmètre MRV** (constat
+  métier du 2026-09-04). Son exclusion de l'assiette du trajet est donc
+  **correcte au regard du règlement**, ce n'est pas un défaut.
+  `co2_mouillage_t`/`co2eq_mouillage_t` existent quand même (migration
+  `20260907_0145`) parce que du carburant brûlé mérite une émission connue —
+  mais **pour l'analyse interne uniquement**. Trois règles qui en découlent, à
+  ne jamais casser :
+  1. le **périmètre MRV est le défaut** de toute restitution (trajet + escale,
+     comptés séparément) ;
+  2. le mouillage ne s'ajoute qu'en **opt-in explicite**
+     (`/mrv/emissions/voyages?include_anchoring=true`), et tout total qui
+     l'inclut porte la mention **hors MRV** ;
+  3. le chiffre MRV est **identique** avec et sans opt-in — un chiffre
+     réglementaire ne grossit jamais parce qu'on a ajouté un indicateur interne
+     à côté (verrouillé par un test du grand livre et un test de vue).
+  Le dataset OVDLA, lui, porte bien ces intervalles.
 - **Feature flag `mrv_v2_capture`** (`services/feature_flags.capture_v2_enabled`) :
   **défaut ON global** (flag absent ⇒ actif), **fail-open** vers ON (une panne DB ne
   rouvre jamais le legacy), cache 20 s. Opt-out **par navire** en base via
   `audience.vessels_off` (codes/ids) pour le double-run pilote.
+
+### QHSE — un miroir en lecture, pas une seconde source d'écriture
+
+Règle d'or (arbitrage **D10**, détaillée dans **ADR-016**) : **le FMS est la
+source de vérité QHSE et reste l'outil de saisie ; MyTOWT analyse, aide à la
+décision et pilote.** Tout le design du module en découle.
+
+- **Jamais de colonne pour une donnée que le FMS possède.** Un besoin d'analyse
+  se traduit en **calcul de lecture**, ou en constat documenté si la donnée
+  n'existe nulle part — jamais en migration de schéma ni en saisie parallèle.
+  Trois colonnes du second format d'export restent délibérément sans alias
+  (`Checklist`, `Limit Date`, `Closed by`), et
+  `QhseReport.reporter_organization_type` reste inutilisée : elle figerait à
+  l'import une classification qui doit rester révisable.
+- **Aucune route d'écriture sur les signalements.** La correction se fait dans
+  le FMS ; le ré-import **met la ligne à jour** au lieu de la dupliquer, grâce
+  à `source_code` (hachage SHA-256 de navire + jour d'émission + sujet +
+  description, index **non unique** — clé du meilleur effort, aucun identifiant
+  FMS stable n'existant dans l'export). `/qhse/qualite` est la liste de courses,
+  pas un formulaire.
+- **Deux formats d'export réels**, même pipeline : l'export brut 41 colonnes
+  (`VesselName` par ligne, dates ISO) et l'export « historique par navire »
+  (navire en bloc de titre, dates `JJ/MM/AAAA`, pas de date de finalisation par
+  workflow). Un troisième existe (`Fleetview`, multi-navires avec des lignes de
+  section `Location: X (n)`) — **pas encore reconnu**.
+- **On encode le fait, pas son interprétation.** L'origine d'un signalement est
+  **bord / siège / autorité externe**, dérivée de l'émetteur et vérifiable ligne
+  à ligne — jamais « opérationnel / audit », que la donnée ne porte pas. Et
+  `indetermine` est une valeur de premier rang, affichée même à zéro : sa part
+  est l'indicateur de fiabilité du graphe. Même patron que
+  `schengen_status = 'indetermine'`.
+- **Distinguer l'anomalie de la limite de format.** « Responsable non
+  identifié » vaut 100 % des lignes sur l'export historique (aucune colonne de
+  responsable) : c'est un constat **structurel**, compté et expliqué à part,
+  jamais mêlé aux anomalies corrigeables ligne par ligne — sinon la liste
+  affiche tout le registre et n'est plus un plan de travail.
+- **Les règles RQ01-RQ03 s'exécutent réellement** à l'ingestion
+  (`validation_engine.run_rules(db, "qhse", …)`). Elles vivent dans le moteur
+  **mutualisé** avec MRV : leurs lignes de catalogue doivent exister en base,
+  sinon la FK `quality_check_results.rule_id` fait échouer **tout** l'import
+  (incident `DFT-20260904-001`). Toute nouvelle règle exige une migration
+  additive idempotente aux valeurs **en dur** — cf. la règle Alembic ci-dessous.
+- **Ordre des routes** : les chemins littéraux (`/dashboard`, `/qualite`,
+  `/import`) doivent précéder `/{report_id}`, verrouillé par un test. Même
+  règle que le module vente à bord.
 
 ### Vente à bord — ce qu'il faut savoir avant d'y toucher
 
@@ -791,7 +875,8 @@ préférences de style.
 | Crew | `/crew` | ✅ bordées + compliance Schengen + calendar |
 | Stowage | `/stowage` | ✅ 18 zones + algo glouton |
 | Claims | `/claims` | ✅ workflow 6 statuts + timeline |
-| MRV (reporting événementiel v2) | `/mrv` + `/onboard/events` | ✅ **architecture événementielle déclarative** : capture d'événements `/onboard/events` (Noon/Departure/Arrival/Begin-End Anchoring ; brouillon auteur-seul → finalisé → validé, `captain:M`) ; hub `/mrv` (`mrv:C`, actions `mrv:M`, seuils/facteurs `mrv:S`) : `voyages`, `reports` (Noon/Carbon/Stopover générés), `bunkering` (BDN), `flgo` (Marad lecture seule), `qualite` (moteur R01-R26 + IR01-IR05 + resets R10), `parametres` (seuils + dashboard params), `datasets` **OVDLA/OVDBR** (remplacent le CSV DNV 18 col.). Grand livre unique `emission_ledger` multi-GES. ⛔ **Archive legacy retirée** : l'écran `/mrv/archive/events`, le modèle `MRVEvent`/`MRVParameter` et les services associés sont supprimés — le legacy MRV n'a plus de rail de lecture. Les **tables** `mrv_events`/`mrv_parameters` ne sont pas supprimées mais **mises à l'écart** (migration `20260713_0106`, renommées `*_deprecated_20260903`) : le `DROP` sec attend le comptage en production (arbitrage du 2026-09-03). Aucun code ne les référence |
+| QHSE (miroir d'analyse) | `/qhse` | ✅ **miroir en lecture du FMS** (ADR-016/D10 — jamais une seconde source d'écriture) : import xlsx **réconcilié** (`source_code`, deux formats d'export reconnus), `dashboard` (grades, tendance 12 mois, **origine de l'émetteur** bord/siège/autorité externe, écart C1/C2, complétude R1), `qualite` (ce qu'il reste à corriger **dans le FMS**, motif nommé), fiche de détail. Règles RQ01-RQ03 exécutées à l'ingestion. ⛔ Aucune route d'écriture sur les signalements |
+| MRV (reporting événementiel v2) | `/mrv` + `/onboard/events` | ✅ **architecture événementielle déclarative** : capture d'événements `/onboard/events` (Noon/Departure/Arrival/Begin-End Anchoring ; brouillon auteur-seul → finalisé → validé, `captain:M`) ; hub `/mrv` (`mrv:C`, actions `mrv:M`, seuils/facteurs `mrv:S`) : `voyages`, `reports` (Noon/Carbon/Stopover générés), `emissions/voyages` + `emissions/port` (restitution par trajet et par escale, lecture seule), `bunkering` (BDN), `flgo` (Marad lecture seule), `qualite` (moteur R01-R26 + IR01-IR05 + resets R10), `parametres` (seuils + dashboard params), `datasets` **OVDLA/OVDBR** (remplacent le CSV DNV 18 col. ; vues dédiées `datasets/ovdla` et `datasets/ovdbr`, la vue combinée `datasets` restant la cible de redirection de la génération). **Module de navigation à part entière**, sorti du groupe « Performance » : le MRV est une obligation réglementaire, pas un indicateur de performance. Grand livre unique `emission_ledger` multi-GES. ⛔ **Archive legacy retirée** : l'écran `/mrv/archive/events`, le modèle `MRVEvent`/`MRVParameter` et les services associés sont supprimés — le legacy MRV n'a plus de rail de lecture. Les **tables** `mrv_events`/`mrv_parameters` ne sont pas supprimées mais **mises à l'écart** (migration `20260713_0106`, renommées `*_deprecated_20260903`) : le `DROP` sec attend le comptage en production (arbitrage du 2026-09-03). Aucun code ne les référence |
 | Dashboard Performance Environnementale | `/dashboard-perf` | ✅ 5 pages, exclusivement event-driven (mode `strict`, NC-04) : **vue flotte** (`kpi:C`), **suivi opérationnel** navire→voyage→événements (`kpi:C` / `mrv:C` — ROB timeline, conso vs cible, répartition ME/AE, **profil de propulsion 4 h**, carte MapLibre), **détail voyage** + exports PDF/DOCX (`mrv:C`), **qualité des données** (`mrv:C` — anomalies par règle/sévérité, resets R10, complétude), **administration** des paramètres (`mrv:S`). Remplace `dashboard-env` (LOT 11/12), décommissionné |
 | Navigation | `/performance/navigation` | ✅ multi-legs/multi-navires : carte (1 couleur/leg) points GPS + trait + route théorique, tableau comparatif (réelle/théorique/écart/durée/restant), météo le long du trajet + blocs « conditions actuelles » par navire (rose des vents, anémomètre/Beaufort, pression, visibilité, T°…). **Filtre par route POL→POD** (`?route=FRFEC-BRSSO`) : superpose tous les voyages d'une même paire de ports pour repérer les écarts d'un passage à l'autre |
 | Finance | `/finance` | ✅ prévisionnel/réel 5 postes + écarts + export CSV + NOx/SOx évités + section Exploitation + détail assurance + CRUD OPEX |
@@ -892,6 +977,11 @@ préférences de style.
 - **Ne jamais chiffrer depuis un chemin public** — la vitrine dépose une
   demande, elle n'affiche pas de prix.
 - Pas de route d'écriture sur `rate_offer_revisions` autre que l'insertion.
+- **Jamais de colonne QHSE pour une donnée que le FMS possède**, ni de route
+  d'écriture sur un signalement : le module est un miroir en lecture (D10,
+  ADR-016). Un indicateur manquant se dérive, ou se dit absent.
+- **Jamais d'import d'une constante applicative dans une migration** — une
+  migration est un instantané, valeurs en dur.
 - **Ne jamais déclarer une route littérale après la route à paramètre qui la
   capture** (`/offers/new` après `/offers/{offer_id}`) : elle devient
   inatteignable et répond 422. Sentinelle :
@@ -1008,6 +1098,33 @@ Backlog MRV v2 (post-livraison, honnête) :
   avant tout usage en communication externe.
 - **Distance OVDLA journalisée** : aujourd'hui haversine entre événements
   (amélioration lot 10 — distance loguée réelle à intégrer).
+
+Backlog QHSE (constats du 2026-09-04, sur données réelles) :
+- 🔴 **Troisième format d'export non reconnu, et son échec est SILENCIEUX.**
+  L'export `Fleetview` (historique de toute la flotte) porte le navire par des
+  **lignes de section** `Location: X (n)` intercalées dans les données — ni par
+  colonne (export brut 41 col.), ni par bloc de titre (export historique, où
+  figure « Fleetview », qui n'est pas un navire). Mesuré sur le fichier réel
+  (197 lignes, 188 signalements : 90 Anemos + 98 Artemis) : l'ingestion
+  **abandonne la feuille entière** (`continue` faute de navire résolu) et rend
+  `créés=0 ignorés=0 erreurs=0` — l'écran affiche donc « 0 créés » et cela se
+  lit comme « fichier vide », pas comme « format non compris ». Aucune trace
+  dans `activity_logs`, aucun motif nommé. Deux corrections à faire ensemble :
+  reconnaître les lignes de section comme un changement de navire courant, et
+  **refuser une feuille explicitement** au lieu de l'abandonner sans rien dire
+  (le reste du module quarantaine et nomme le motif — ce chemin-là y échappe).
+- **Nom du responsable perdu à l'import** : l'export complet porte
+  `CorrectiveActionResponsiblePerson`, mais le modèle ne conserve que la FK
+  `responsible_user_id` — un responsable réel sans compte MyTOWT disparaît. Un
+  miroir en lecture qui écarte une donnée de la source mérite examen ; suppose
+  de trancher si l'on conserve le texte brut (donc une colonne, à confronter à
+  la règle « aucune colonne pour une donnée que le FMS possède » — ici il s'agit
+  de *préserver* une donnée reçue, pas d'en faire saisir une nouvelle).
+- **Indicateurs hors de portée tant que le FMS ne les porte pas** : S1/S3
+  (donnée d'exposition — jours de mer, heures embarquées), Q3 (référentiel de
+  codes de déficience). À dire à l'écran, jamais à combler par une saisie.
+- **Espaces de travail par rôle** (cahier des charges §6.2-§6.5) : un tableau de
+  bord unique aujourd'hui, pas de vue différenciée par persona.
 
 Backlog IA : RAG pgvector du Newtowt Agent sur `docs/`, streaming SSE
 (V3.1) ; le chatbot tourne aujourd'hui en prompt caching + tools.

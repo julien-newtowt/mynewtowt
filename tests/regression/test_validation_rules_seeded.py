@@ -120,8 +120,10 @@ def test_frozen_catchup_thresholds_match_the_live_catalogue() -> None:
     assert {rid for (rid, _param) in frozen} <= catalogue_rules
 
 
-# Empreinte du catalogue au 2026-09-04 : 35 règles MRV (semées en production
-# par 0097) + 3 règles QHSE (rattrapées par 0142).
+# Empreinte du catalogue au 2026-09-07 : 35 règles MRV + 3 règles QHSE = 38.
+# La production, elle, n'en avait que **31** — 0097 lui a semé le catalogue tel
+# qu'il était en juillet. Les 7 manquantes (R27-R30, RQ01-RQ03) ont été
+# rattrapées par 20260907_0143, en dur.
 PINNED_RULE_IDS: tuple[str, ...] = (
     "IR01",
     "IR02",
@@ -186,7 +188,7 @@ def test_no_migration_imports_a_mutable_seed_constant() -> None:
 
     ``0097`` importe ``RULE_SEED`` : son effet dépend donc de la date à laquelle
     elle s'exécute. Une base construite aujourd'hui reçoit 38 règles, la
-    production migrée en juillet en a reçu 35 — et la différence est
+    production migrée en juillet en a reçu 31 — et la différence est
     structurellement invisible aux tests. C'est exactement le défaut qui a mis
     l'import QHSE à terre.
     """
@@ -196,12 +198,47 @@ def test_no_migration_imports_a_mutable_seed_constant() -> None:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
+            # `from app.services.validation_engine import RULE_SEED`
             if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("app."):
                 imported = {alias.name for alias in node.names}
                 if imported & SEED_CONSTANTS:
                     offenders.append(f"{path.name} importe {sorted(imported & SEED_CONSTANTS)}")
+            # 🔴 `from app.services import validation_engine` puis
+            # `validation_engine.RULE_SEED` : la forme qui passait sous le
+            # radar de la première version de cette sentinelle, et qui
+            # rouvrait exactement le défaut DFT-20260904-001 qu'elle existe
+            # pour empêcher. On regarde donc aussi les ACCÈS D'ATTRIBUT.
+            elif isinstance(node, ast.Attribute) and node.attr in SEED_CONSTANTS:
+                offenders.append(f"{path.name} accède à .{node.attr}")
+            # Et une réexportation locale (`RULE_SEED = ...` copié) reste
+            # légitime : c'est une valeur figée, pas un appel au code vivant.
 
     assert not offenders, (
         "Ces migrations tirent leur contenu du code applicatif — leur effet "
         "dépendrait de la date d'exécution : " + " ; ".join(offenders)
     )
+
+
+def test_the_tripwire_catches_the_module_attribute_form_too() -> None:
+    """La sentinelle ci-dessus doit voir les DEUX formes d'accès.
+
+    Sa première version ne regardait que ``ast.ImportFrom`` : la forme
+    ``from app.services import validation_engine`` puis
+    ``validation_engine.RULE_SEED`` passait donc silencieusement, rouvrant très
+    exactement le défaut ``DFT-20260904-001`` qu'elle existe pour empêcher.
+
+    On vérifie ici sur du code synthétique, sans écrire de fausse migration
+    dans ``migrations/versions`` (qui casserait la chaîne Alembic).
+    """
+    sneaky = ast.parse(
+        "from app.services import validation_engine\n"
+        "def upgrade():\n"
+        "    for r in validation_engine.RULE_SEED:\n"
+        "        pass\n"
+    )
+    hits = [
+        node.attr
+        for node in ast.walk(sneaky)
+        if isinstance(node, ast.Attribute) and node.attr in SEED_CONSTANTS
+    ]
+    assert hits == ["RULE_SEED"], "la forme « module.CONSTANTE » doit être détectée"
