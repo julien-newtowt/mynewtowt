@@ -24,6 +24,9 @@
 </div>
 
 <div class="box" style="text-align:center; border-left:none; border-top:3px solid #87BD29; padding:14pt;">
+  {# 🔴 Un forfait n'est pas une mesure — cf. `/verify`. Sans CO₂ déclaré au
+     grand livre, on ne met pas un nombre estimé en tête du certificat. #}
+  {% if method == "declared" %}
   <div class="label">CO₂ émis par cette expédition</div>
   <div style="font-family:'DM Serif Display', Georgia, serif; font-size:32pt; color:#0D5966; line-height:1; margin:6pt 0;">
     {{ "%.0f"|format(co2_towt_kg|float) }} kg
@@ -31,6 +34,13 @@
   <div class="small c-gris">
     tank-to-wake, gaz CO₂ uniquement · quote-part de cette expédition
   </div>
+  {% else %}
+  <div class="label">Émissions de ce voyage</div>
+  <div class="small c-gris" style="padding:8pt 0;">
+    Non encore consolidées. Ce certificat atteste l'expédition et la route ;
+    le chiffre d'émission sera celui déclaré par le bord, pas une estimation.
+  </div>
+  {% endif %}
 </div>
 
 <h2>Bénéficiaire</h2>

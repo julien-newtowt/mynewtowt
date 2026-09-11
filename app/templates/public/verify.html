@@ -72,10 +72,30 @@
          13,7 gCO₂/t·km — base écartée par la méthodologie v3.0 (§11.1). Ce qui
          est certifié ici est ce qui a été émis, et la façon dont le navire a
          fait route. #}
+      {# 🔴 Un FORFAIT n'est pas une mesure.
+         Quand le grand livre n'a pas de CO₂ réel pour le voyage, le certificat
+         retombe sur un facteur forfaitaire (`method = 'theoretical'`). Afficher
+         ce nombre en tête, au même endroit et dans la même typographie qu'une
+         valeur déclarée, le ferait passer pour une mesure. On ne le fait pas :
+         on dit que la mesure n'est pas encore disponible. #}
+      {% if certificate.method == 'declared' %}
       <div class="vrf-hero-num">{{ "%.0f"|format(certificate.co2_emitted_kg|float) }}&thinsp;kg</div>
       <div style="color:var(--c-grey);font-size:var(--fs-14)">
         {% if lang == 'en' %}CO₂ emitted for this shipment, tank-to-wake{% else %}CO₂ émis pour cet envoi, du réservoir au sillage{% endif %}
       </div>
+      {% else %}
+      <div style="color:var(--c-grey);font-size:var(--fs-15);margin:var(--sp-4) 0">
+        {% if lang == 'en' %}
+          The measured emissions of this voyage are not yet consolidated. This
+          certificate attests to the shipment and the route; the emission figure
+          will be the ship's declared one, not an estimate.
+        {% else %}
+          Les émissions mesurées de ce voyage ne sont pas encore consolidées. Ce
+          certificat atteste l'expédition et la route ; le chiffre d'émission
+          sera celui déclaré par le bord, pas une estimation.
+        {% endif %}
+      </div>
+      {% endif %}
       {% if propulsion and propulsion.navigation_slots %}
       {% set sail = propulsion.segments | selectattr('category', 'in', ['velique_pur', 'hybride']) | sum(attribute='pct') %}
       <div style="margin-top:var(--sp-4);font-size:var(--fs-14)">
@@ -99,7 +119,10 @@
         </tr>
         <tr>
           <th>{% if lang == 'en' %}CO₂ emitted{% else %}CO₂ émis{% endif %}</th>
-          <td>{{ "%.0f"|format(certificate.co2_emitted_kg|float) }} kg</td>
+          <td>
+            {% if certificate.method == 'declared' %}{{ "%.0f"|format(certificate.co2_emitted_kg|float) }} kg
+            {% else %}{% if lang == 'en' %}pending consolidation{% else %}en attente de consolidation{% endif %}{% endif %}
+          </td>
         </tr>
         <tr>
           <th>{% if lang == 'en' %}Method{% else %}Méthode{% endif %}</th>
