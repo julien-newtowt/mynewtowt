@@ -271,8 +271,14 @@ def _rob_timeline(rob_chain, bunkers) -> dict:
 
 
 def _propulsion_bar(profile) -> dict:
-    """Barre horizontale empilée (SVG) du profil de propulsion (4 catégories)."""
-    filled = profile.filled_slots
+    """Barre horizontale empilée (SVG) des trois modes de NAVIGATION.
+
+    🔴 Le dénominateur est ``navigation_slots``, pas ``filled_slots`` : les
+    tranches à l'arrêt sont exclues (méthodologie v3.0 §7.2). La barre somme
+    donc à 100 % du temps de navigation, et le nombre de tranches à l'arrêt
+    est affiché à côté plutôt que noyé dans la barre.
+    """
+    filled = profile.navigation_slots
     if not filled:
         return {"has_data": False, "segments": [], "width": _PROP_W, "height": _PROP_H}
     segments = []

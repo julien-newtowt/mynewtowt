@@ -80,13 +80,31 @@ _CAPACITY_REF_DEFAULT = Decimal("1100")
 
 _EF_QUANT = Decimal("0.0001")  # gCO₂/t·km (méthodes A/B/C matérialisées)
 
-# GWP-100 (Annexe I, règlement EU 2015/757) — CH₄ = 25, N₂O = 298 (G13).
+# GWP-100 **AR5** — CH₄ = 28, N₂O = 265.
+#
+# 🔴 Arbitrage du 2026-09-11 : on suit la **méthodologie de performance
+# environnementale v3.0**, hypothèse **A11**, qui prend les PRG du 5ᵉ rapport
+# du GIEC tels que MEPC.391(81) §2.4 les fixe — ce sont donc des valeurs
+# **citables à l'OMI**, et non simplement défendables.
+#
+# La version précédente portait 25 / 298 (4ᵉ rapport), au motif du règlement
+# EU 2015/757. Les deux sources sont réelles et ne visent pas la même
+# obligation ; la méthodologie tranche, parce que c'est elle qui définit ce
+# que l'entreprise publie. Écart sur le CO₂eq du MDO : 3,26089 → **3,2551**
+# t CO₂e/t, soit −0,18 %.
+#
+# ⚠️ Sans effet sur les **intensités publiées**, qui sont en CO₂ seul (facteur
+# 3,206, cf. méthodologie §4.3). Ce jeu de PRG ne sert que le CO₂eq TtW — et
+# servira le **taux de décarbonation**, dont la méthodologie exige qu'il soit
+# calculé sur le périmètre le plus large disponible **des deux côtés** du
+# rapport. C'est pourquoi l'arbitrage devait précéder le Lot 3.
+#
 # Constantes réglementaires stables (pas des seuils métier à calibrer par
 # voyage pilote, contrairement à ``ValidationRuleThreshold``) — même posture
-# que ``MDO_LHV_MJ_PER_T`` ci-dessus : à réviser uniquement si le règlement
-# change son horizon GWP, pas un paramètre par carburant (``EmissionFactor``).
-GWP_CH4 = Decimal("25")
-GWP_N2O = Decimal("298")
+# que ``MDO_LHV_MJ_PER_T`` ci-dessus : à réviser uniquement si l'horizon PRG
+# retenu change, pas un paramètre par carburant (``EmissionFactor``).
+GWP_CH4 = Decimal("28")
+GWP_N2O = Decimal("265")
 
 
 def _num(value: Decimal | int | float | None) -> str | None:
@@ -133,8 +151,8 @@ def emissions_breakdown(conso_t: Decimal | None, factor: ResolvedEmissionFactor)
     - CH₄ / N₂O [g] = ``conso_t × ef × 1e6`` (tonnes de GES → grammes) ;
     - WtT (Well-to-Tank, FuelEU) = ``conso_t × PCI × wtt_gco2eq_per_mj / 1e6`` —
       **distinct du TtW, jamais sommé** au CO₂ TtW sans l'expliciter ;
-    - CO₂eq (GWP-100, tank-to-wake, G13) = ``conso_t × (ef_co2 + ef_ch4 × 25 +
-      ef_n2o × 298)`` (Annexe I, EU 2015/757) — additionne les 3 GES TtW en
+    - CO₂eq (GWP-100 AR5, tank-to-wake, G13) = ``conso_t × (ef_co2 + ef_ch4 × 28 +
+      ef_n2o × 265)`` (PRG AR5, MEPC.391(81) §2.4) — additionne les 3 GES TtW en
       équivalent CO₂ ; **distinct du WtT** (qui reste hors périmètre TtW).
     """
     wtt_intensity = factor.wtt_gco2eq_per_mj

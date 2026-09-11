@@ -66,6 +66,11 @@ LEG_LADEN = LegEmissionRecord(
     etd=datetime(2026, 1, 5, tzinfo=UTC),
     ata=datetime(2026, 1, 25, tzinfo=UTC),
     has_kpi=True,
+    # Aucun mouillage sur ce voyage : l'assiette Métier (berth-to-berth) est
+    # donc EGALE a l'assiette MRV (hors mouillage). Declare explicitement — un
+    # `co2_op_t` absent signifie « mouillage inconnu », pas « pas de mouillage »,
+    # et rendrait les methodes A et B non calculables.
+    co2_op_t=Decimal("50"),
 )
 
 # Voyage 2 — sur lest : cargo nul, 800 nm, 30 t CO2 émis (le navire consomme
@@ -80,6 +85,7 @@ LEG_BALLAST = LegEmissionRecord(
     etd=datetime(2026, 2, 1, tzinfo=UTC),
     ata=datetime(2026, 2, 18, tzinfo=UTC),
     has_kpi=True,
+    co2_op_t=Decimal("30"),  # sans mouillage : Metier = MRV (cf. LEG_LADEN)
 )
 
 
