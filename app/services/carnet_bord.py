@@ -513,8 +513,15 @@ async def get_carnet_bord_data(
             data.fuel_consumed_l = sum(fuel_values)
 
     # Facteurs par défaut
-    data.towt_factor = 1.5  # g CO2/t.km
-    data.conventional_factor = 13.7  # g CO2/t.km
+    # 🔴 Les deux facteurs sont ECARTES (decision du 2026-09-11) : 13,7 est
+    # une base de comparaison retiree par la methodologie v3.0 (§11.1), et
+    # 1,5 un modele perime — 8,5 fois plus bas que l'intensite que la
+    # methodologie publie elle-meme. Le carnet de bord est remis aux
+    # chargeurs : il ne peut pas les porter.
+    #
+    # Laisses a None : le gabarit affiche « — » plutot qu'une constante.
+    data.towt_factor = None
+    data.conventional_factor = None
 
     # =========================================================================
     # CHAPITRE 6 - Performance de navigation

@@ -115,7 +115,7 @@
   <tbody>
     <tr>
       <td>Cargo vélique {{ brand.nom_court }}</td>
-      <td class="text-right c-vert mono"><strong>{% if method == "declared" %}—{% else %}1,5{% endif %}</strong></td>
+      <td class="text-right c-vert mono"><strong>—</strong></td>
       <td class="text-right mono">{{ "%.3f"|format(co2_towt_kg|float) }}</td>
     </tr>
     {# La ligne « cargo conventionnel » et le total « émissions évitées » sont
@@ -129,7 +129,7 @@
   {% if method == "declared" %}
   Émissions {{ brand.nom_court }} calculées sur les consommations déclarées à bord (noon reports signés) — distance {{ "%.0f"|format(dist_nm|float) }} NM ({{ distance_source }}).
   {% else %}
-  Émissions {{ brand.nom_court }} estimées par facteur forfaitaire (1,5 g CO₂/t·km) — régularisation sur données déclarées à venir.
+  Émissions de ce voyage non encore consolidées — le chiffre publié sera celui déclaré par le bord.
   {% endif %}
   Émissions de référence : IMO Fourth GHG Study + IFP Energies Nouvelles.
   {% if distance_source != "noon_reports" %}

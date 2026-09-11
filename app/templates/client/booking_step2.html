@@ -2,7 +2,6 @@
 {% set wizard_step = 2 %}
 {% block wizard_title %}{{ t('bk2_title', lang) }}{% endblock %}
 {% block wizard_head %}
-  <script src="{{ asset('js/booking-co2.js') }}" defer></script>
   <script src="{{ asset('js/cargo-rows.js') }}" defer></script>
   <script src="{{ asset('js/booking-imdg.js') }}" defer></script>
   <script src="{{ asset('js/booking-fds.js') }}" defer></script>
@@ -191,27 +190,19 @@
       </div>
     </section>
 
-    {# Estimateur Anemos (CO₂) live — booking-co2.js cible les spans .co2-* #}
-    <section class="form-section" id="co2-estimator"
-             data-distance-nm="{{ distance_nm }}"
-             data-towt-ef-g-tkm="1.5" data-conv-ef-g-tkm="13.7" data-default-weight-kg="500">
-      <h2 class="form-section-title">{{ t('bk2_co2_title', lang) }}</h2>
-      <p class="form-hint" style="margin-bottom:var(--sp-5);">{{ t('bk2_co2_method', lang) }}</p>
-      <div class="info-grid">
-        <div class="info-item">
-          <div class="info-label">{{ t('bk2_co2_distance_tonnage', lang) }} ({{ pol.locode if pol else '?' }} → {{ pod.locode if pod else '?' }})</div>
-          <div class="info-value"><span class="co2-distance">—</span> · <span class="co2-tonnage">—</span></div>
-        </div>
-        <div class="info-item">
-          <div class="info-label">{{ t('bk2_co2_newtowt_pre', lang) }} <span class="co2-conv">—</span>)</div>
-          <div class="info-value" style="color:var(--c-green);"><span class="co2-towt">—</span></div>
-        </div>
-        <div class="info-item">
-          <div class="info-label">{{ t('bk2_co2_avoided', lang) }}</div>
-          <div class="info-value" style="color:var(--c-copper);"><span class="co2-avoided">—</span></div>
-        </div>
-      </div>
-    </section>
+    {# 🔴 Estimateur CO₂ RETIRÉ du tunnel de réservation.
+
+       Il chiffrait en direct un « évitement » pour le prospect, sur les deux
+       facteurs écartés : 13,7 g CO₂/t·km (base de comparaison retirée par la
+       méthodologie v3.0 §11.1) et 1,5 (modèle périmé, 8,5 fois plus bas que
+       l'intensité que l'entreprise publie elle-même).
+
+       Le script `booking-co2.js` est supprimé avec lui : il portait ces deux
+       valeurs en REPLI CODÉ, donc retirer les attributs de données n'aurait
+       rien désactivé — le calcul aurait continué, silencieusement.
+
+       Remplacement par la part de propulsion vélique : soumis à arbitrage,
+       cf. docs/audit/2026-09-11-note-julien-facteur-1-5-vers-profil-velique.md #}
 
     <div class="form-actions wizard-actions">
       <a href="/booking/new" class="btn btn-secondary btn-lg">{{ t('bk2_back', lang) }}</a>

@@ -137,8 +137,11 @@
         <tr>
           <th>{% if lang == 'en' %}Factor applied{% else %}Facteur appliqué{% endif %}</th>
           <td>
-            {% if applied_factor is not none %}{{ "%.2f"|format(applied_factor) }}{% else %}1,5{% endif %}
-            g CO₂/t·km
+            {# Plus de repli sur 1,5 : le facteur affiché est DÉRIVÉ du
+               certificat (émissions / t·km), donc reproductible. Sans base de
+               calcul, on ne le remplace pas par une constante périmée. #}
+            {% if applied_factor is not none %}{{ "%.2f"|format(applied_factor) }} g CO₂/t·km
+            {% else %}{% if lang == 'en' %}not derivable{% else %}non dérivable{% endif %}{% endif %}
           </td>
         </tr>
         <tr>

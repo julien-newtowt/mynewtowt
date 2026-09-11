@@ -4,8 +4,8 @@ Routes publiques (aucune authentification) :
 - ``/flotte``      : « Notre flotte » (classe TSC 80, capacités, cales).
 - ``/impact``      : environnement maîtrisé à bord, surveillance qualité, décarbonation.
 - ``/preuves``     : méthode, vérification (EU MRV / THETIS-MRV), registre des certificats.
-- ``/preuves/methodologie.pdf``          : méthodologie Anemos (PDF réel, facteurs courants).
-- ``/preuves/rapport-annuel-exemple.pdf``: spécimen du rapport CO₂ annuel (données fictives).
+- ``/preuves/methodologie.pdf``          : SUSPENDU (410 motivé) — méthode retirée.
+- ``/preuves/rapport-annuel-exemple.pdf``: SUSPENDU (410 motivé) — même motif.
 - ``/verify``      : vérification publique d'un certificat Anemos (sans PII, rate-limitée).
 - ``/navigation``  : courants, propulsion vélique, routes.
 - ``/contact``     : coordonnées + formulaire de demande de cotation (GET/POST).
@@ -83,16 +83,14 @@ async def preuves(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLR
     return templates.TemplateResponse("public/preuves.html", {"request": request})
 
 
-# ── Téléchargements /preuves : méthodologie + spécimen (fin des liens factices,
-# ENV-04/ECGT). PDF coûteux (WeasyPrint) → cache mémoire par clé de contenu,
-# rate-limit IP en amont.
+# ── /preuves : les deux téléchargements sont suspendus (cf. plus bas). Le
+# rate-limit IP est conservé : la route reste appelée par les liens déjà
+# diffusés, et un 410 servi sans limite reste un vecteur d'abus.
 _PREUVES_PDF_RATE_SCOPE = "preuves_pdf"
 _PREUVES_PDF_RATE_MAX = 20
 _PREUVES_PDF_RATE_WINDOW_MIN = 10
+# Cache memoire partage : sert aussi les PDF du kit presse (/presse).
 _PREUVES_PDF_CACHE: dict[tuple, bytes] = {}
-
-# Année de référence du spécimen de rapport annuel (données fictives, figées).
-_SPECIMEN_YEAR = 2025
 
 
 async def _preuves_pdf_rate_limit(request: Request, db: AsyncSession) -> None:
@@ -110,132 +108,63 @@ async def _preuves_pdf_rate_limit(request: Request, db: AsyncSession) -> None:
     await rate_limit.record(db, scope=_PREUVES_PDF_RATE_SCOPE, identifier=ip)
 
 
+# ── Les deux PDF de /preuves sont SUSPENDUS ────────────────────────────────
+#
+# 🔴 Ce n'est pas un retrait de valeur, c'est un retrait de document.
+#
+# La « méthodologie Anemos » servie ici s'intitule *émissions évitées par
+# expédition* : elle imprime les facteurs 1,5 et 13,7 gCO₂/t·km, la formule
+# `(13,7 − 1,5) × tonnage × distance ÷ 1000`, et jusqu'aux consignes de
+# communication. Le spécimen de rapport annuel en est l'application chiffrée.
+#
+# Les deux facteurs sont écartés (décision du 2026-09-11) : 13,7 est une base de
+# comparaison retirée par la méthodologie de performance environnementale v3.0
+# (§11.1), et 1,5 un modèle périmé — 8,5 fois plus bas que l'intensité que
+# l'entreprise publie elle-même. En retirer les valeurs laisserait deux
+# documents incohérents ; les servir reviendrait à publier la méthode retirée,
+# sur la page dont l'objet même est de SUBSTANTIER nos allégations.
+#
+# D'où un 410 MOTIVÉ plutôt qu'un document servi ou une disparition silencieuse.
+# Les routes sont conservées pour que les liens déjà diffusés — QR de
+# certificats, e-mails, supports imprimés — reçoivent une explication et non une
+# erreur nue.
+#
+# Remplacement soumis à arbitrage :
+# docs/audit/2026-09-11-note-julien-facteur-1-5-vers-profil-velique.md (point 5).
+# Réversible en un commit le jour de l'arbitrage.
+_PREUVES_PDF_SUSPENDED = "\n\n".join(
+    (
+        "Ce document est en cours de révision : la méthode qu'il décrit a été remplacée.",
+        "Les émissions de nos navires restent surveillées, déclarées et vérifiées par un "
+        "organisme accrédité dans le cadre du règlement EU MRV, et sont publiques dans le "
+        "registre THETIS-MRV de l'EMSA.",
+    )
+)
+
+
+def _preuves_pdf_gone() -> Response:
+    """410 motivé — un document retiré le dit, il ne disparaît pas en silence."""
+    return Response(
+        content=_PREUVES_PDF_SUSPENDED,
+        status_code=410,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.get("/preuves/methodologie.pdf")
 async def preuves_methodology_pdf(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Méthodologie Anemos — PDF public réel (fr/en), facteurs courants imprimés.
-
-    Le document imprime les facteurs **versionnés en base** au moment de la
-    génération (jamais des constantes marketing) : la clé de cache inclut les
-    valeurs et la version des facteurs, un changement dans /admin/co2 produit
-    donc un nouveau document.
-    """
+    """Méthodologie Anemos — SUSPENDUE (cf. ``_PREUVES_PDF_SUSPENDED``)."""
     await _preuves_pdf_rate_limit(request, db)
-    from app.services import co2 as co2_svc
-    from app.services import pdf_generator
-
-    lang = "en" if getattr(request.state, "lang", "fr") == "en" else "fr"
-    factors = await co2_svc.get_factors(db)
-    key = (
-        "methodologie",
-        lang,
-        str(factors.towt_ef_g_tkm),
-        str(factors.conventional_ef_g_tkm),
-        factors.source_version,
-        pdf_generator.METHODOLOGY_DOC_VERSION,
-    )
-    pdf = _PREUVES_PDF_CACHE.get(key)
-    if pdf is None:
-        doc = pdf_generator.render_methodology(factors=factors, lang=lang)
-        pdf = doc.pdf
-        _PREUVES_PDF_CACHE[key] = pdf
-    filename = f"NEWTOWT_Methodologie_Anemos_v{pdf_generator.METHODOLOGY_DOC_VERSION}_{lang}.pdf"
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'inline; filename="{filename}"',
-            "Cache-Control": "public, max-age=3600",
-        },
-    )
+    return _preuves_pdf_gone()
 
 
-def _specimen_report() -> dict:
-    """Rapport annuel fictif, déterministe et cohérent avec la formule publiée.
-
-    Les émissions sont recalculées depuis les facteurs de référence (1,5 /
-    13,7 g CO₂/t·km) pour que le spécimen soit exactement reproductible par un
-    lecteur qui applique la méthodologie.
-    """
-    from datetime import UTC, datetime
-
-    from app.services.co2 import CONV_CO2_EF_G_PER_TKM, NM_TO_KM, TOWT_CO2_EF_G_PER_TKM
-
-    base_rows = [
-        (
-            "ANEMOS-EXEMPLE-0001",
-            "BK-EXEMPLE-0001",
-            "1ABRFR5",
-            datetime(2025, 4, 18, tzinfo=UTC),
-            Decimal("18.4"),
-            Decimal("5150"),
-            "declared",
-        ),
-        (
-            "ANEMOS-EXEMPLE-0002",
-            "BK-EXEMPLE-0002",
-            "2ABRFR5",
-            datetime(2025, 7, 9, tzinfo=UTC),
-            Decimal("22.0"),
-            Decimal("5150"),
-            "declared",
-        ),
-        (
-            "ANEMOS-EXEMPLE-0003",
-            "BK-EXEMPLE-0003",
-            "3ABRFR5",
-            datetime(2025, 11, 2, tzinfo=UTC),
-            Decimal("9.6"),
-            Decimal("5150"),
-            "theoretical",
-        ),
-    ]
-    shipments = []
-    tot_tonnage = Decimal("0")
-    tot_distance = Decimal("0")
-    tot_avoided = Decimal("0")
-    tot_emitted = Decimal("0")
-    tot_conventional = Decimal("0")
-    declared = 0
-    for ref, booking_ref, leg_code, issued_at, tonnage_t, distance_nm, method in base_rows:
-        distance_km = distance_nm * NM_TO_KM
-        emitted = (TOWT_CO2_EF_G_PER_TKM * tonnage_t * distance_km / 1000).quantize(Decimal("1"))
-        conventional = (CONV_CO2_EF_G_PER_TKM * tonnage_t * distance_km / 1000).quantize(
-            Decimal("1")
-        )
-        avoided = conventional - emitted
-        if method == "declared":
-            declared += 1
-        shipments.append(
-            {
-                "reference": ref,
-                "booking_ref": booking_ref,
-                "leg_code": leg_code,
-                "issued_at": issued_at,
-                "tonnage_t": tonnage_t,
-                "distance_nm": distance_nm,
-                "co2_avoided_kg": avoided,
-                "method": method,
-            }
-        )
-        tot_tonnage += tonnage_t
-        tot_distance += distance_nm
-        tot_avoided += avoided
-        tot_emitted += emitted
-        tot_conventional += conventional
-    return {
-        "year": _SPECIMEN_YEAR,
-        "shipments": shipments,
-        "shipment_count": len(shipments),
-        "declared_count": declared,
-        "total_tonnage_t": tot_tonnage,
-        "total_distance_nm": tot_distance,
-        "total_avoided_kg": tot_avoided,
-        "total_emitted_kg": tot_emitted,
-        "total_conventional_kg": tot_conventional,
-    }
+# `_specimen_report()` est retire avec la route qu'il servait : il appliquait
+# la formule des emissions evitees a des expeditions fictives, soit la
+# demonstration chiffree de la methode retiree.
 
 
 @router.get("/preuves/rapport-annuel-exemple.pdf")
@@ -243,49 +172,9 @@ async def preuves_sample_annual_report_pdf(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Spécimen du rapport CO₂ annuel client — données fictives marquées SPÉCIMEN.
-
-    Même moteur et même template que le vrai rapport
-    (``/me/anemos/report/{year}.pdf``) : l'acheteur RSE voit exactement le
-    document qu'il recevra.
-    """
+    """Spécimen du rapport CO₂ annuel — SUSPENDU, même motif."""
     await _preuves_pdf_rate_limit(request, db)
-    key = ("rapport-exemple", _SPECIMEN_YEAR)
-    pdf = _PREUVES_PDF_CACHE.get(key)
-    if pdf is None:
-        from datetime import UTC, datetime
-        from types import SimpleNamespace
-
-        from weasyprint import HTML  # import tardif — deps natives lourdes
-
-        from app.config import settings
-        from app.templating import brand_for_lang
-
-        client_stub = SimpleNamespace(
-            company_name="Torréfaction Exemple SAS",
-            vat_number="FR00 000 000 000",
-            country="FR",
-        )
-        tpl = templates.get_template("pdf/anemos_annual_report.html")
-        html = tpl.render(
-            report=_specimen_report(),
-            client=client_stub,
-            site_url=settings.site_url,
-            issued_at=datetime.now(UTC),
-            specimen=True,
-            # Rendu hors-requête : le context processor n'injecte pas ``brand``.
-            brand=brand_for_lang("fr"),
-        )
-        pdf = HTML(string=html, base_url=settings.site_url).write_pdf()
-        _PREUVES_PDF_CACHE[key] = pdf
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": 'inline; filename="NEWTOWT_Rapport_CO2_annuel_SPECIMEN.pdf"',
-            "Cache-Control": "public, max-age=3600",
-        },
-    )
+    return _preuves_pdf_gone()
 
 
 # ── Kit presse réel (P5 — fin des placeholders de /presse) ──────────────────
