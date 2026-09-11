@@ -687,6 +687,7 @@ Doc : `docs/integrations/unlocode-ports.md`.
   l'indicateur que la méthodologie porte vers l'extérieur (§1.2 bis), parce
   qu'il ne dépend d'aucun facteur d'émission, d'aucune cargaison de référence et
   d'aucun scénario de comparaison.
+- 🔴 **Base de décarbonation : « nous-mêmes sans voiles »** (`services/decarbonation.py`, méthodologie §11.2). Le porte-conteneurs conventionnel est **écarté** — segment de capacité discrétionnaire, résultat entre 87 % et 96 %. La base retenue compare le navire **à lui-même**, moteur seul à pleine puissance, **sur la route directe** (distance ÷ 1,211 : un navire sans voiles ne cherche pas le vent). Paramètres : 858 kW × 212 g/kWh = **4,37 t/j**, et une **vitesse d'essai par navire** (`Vessel.baseline_speed_kn` — ANEMOS 11,36 / ARTEMIS 12,07 / ATLANTIS 11,86 kn), car les sisterships diffèrent de ~12 % en puissance à vitesse égale. **Aucun paramètre n'est une hypothèse interne** : tous viennent des fichiers EEDI visés par Bureau Veritas, et `baseline_speed_source` le trace. Pas de vitesse ⇒ le voyage quitte les **deux** termes, jamais un repli sur un sistership. Agrégation par somme des deux termes puis ratio — jamais une moyenne de taux. ⚠️ Le taux **n'est pas publié de notre propre initiative** (§1.2 bis) : suivi interne, communiqué sur demande en énonçant sa base.
 - **Feature flag `mrv_v2_capture`** (`services/feature_flags.capture_v2_enabled`) :
   **défaut ON global** (flag absent ⇒ actif), **fail-open** vers ON (une panne DB ne
   rouvre jamais le legacy), cache 20 s. Opt-out **par navire** en base via
