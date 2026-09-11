@@ -417,6 +417,30 @@ def _applied_factor(cert: AnemosCertificate) -> float | None:
         return None
 
 
+async def _verify_propulsion(db: AsyncSession, cert: AnemosCertificate):
+    """Profil de propulsion du voyage certifié — l'indicateur porté vers l'extérieur.
+
+    🔴 Ce profil REMPLACE le « CO₂ évité » sur cette page. La méthodologie de
+    performance environnementale v3.0 (§1.2 bis, §7.1) en fait le seul
+    indicateur que l'entreprise publie de sa propre initiative, et dit
+    pourquoi : il ne dépend **d'aucun facteur d'émission, d'aucune cargaison de
+    référence et d'aucun scénario de comparaison**. C'est une mesure de la
+    façon dont le navire a réellement fait route, pas la sortie d'un modèle.
+
+    ``None`` si le certificat ne porte pas de voyage, ou si le calcul échoue :
+    la page se rend sans, jamais en erreur. Un profil sans relevé exploitable
+    porte déjà son propre motif d'absence (``na_reason``).
+    """
+    if cert.leg_id is None:
+        return None
+    try:
+        from app.services.kpi_env import propulsion_profile
+
+        return await propulsion_profile(db, cert.leg_id)
+    except Exception:  # pragma: no cover — page publique, jamais bloquante
+        return None
+
+
 async def _lookup_certificate(db: AsyncSession, ref: str) -> AnemosCertificate | None:
     """Résout une référence saisie en certificat (tolérant casse / préfixe)."""
     candidates = [ref]
@@ -465,6 +489,7 @@ async def verify_certificate(
     if cert is not None:
         ctx["certificate"] = cert
         ctx["applied_factor"] = _applied_factor(cert)
+        ctx["propulsion"] = await _verify_propulsion(db, cert)
     # Analytics B2B2C : un scan du QR de vérification (réf = identifiant public
     # du certificat, jamais de PII). `found`/`notfound` mesure la qualité des QR.
     from app.services import analytics

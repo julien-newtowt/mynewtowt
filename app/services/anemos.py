@@ -192,9 +192,27 @@ async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertifi
         towt_kg = emission.towt_co2_kg
         method = "theoretical"
 
-    # c) Référence conventionnelle : 13,7 g/t·km sur la même distance.
-    conventional_kg = emission.conventional_co2_kg
-    avoided_kg = max(conventional_kg - towt_kg, Decimal("0")).quantize(Decimal("0.001"))
+    # c) 🔴 Plus de référence conventionnelle sur le certificat.
+    #
+    # Le certificat portait un « CO₂ évité » contre un porte-conteneurs à
+    # 13,7 gCO₂/t·km. La méthodologie v3.0 a **écarté** cette base (§11.1) :
+    # la relation entre la taille d'un navire et son facteur d'émission n'étant
+    # pas linéaire, le segment retenu déterminait le résultat entre 87 % et
+    # 96 %. Un indicateur dont la valeur dépend à ce point d'un choix
+    # discrétionnaire n'est pas défendable sous la directive (UE) 2024/825.
+    #
+    # Le certificat conserve donc ce qui est **mesuré** — tonnage, distance,
+    # CO₂ réellement émis, tiré du grand livre — et abandonne le
+    # contrefactuel. La méthodologie est explicite sur ce qui se publie de
+    # notre propre initiative : le **profil de propulsion**, qui ne dépend
+    # d'aucun facteur d'émission, d'aucune cargaison de référence et d'aucun
+    # scénario de comparaison (§1.2 bis).
+    #
+    # ⚠️ Ne pas remettre ce calcul sans décision explicite de la Responsable
+    # Environnement. La sentinelle `tests/regression/test_no_outward_co2_claim.py`
+    # échouera si un gabarit sortant réaffiche ces champs.
+    conventional_kg = None
+    avoided_kg = None
 
     cert = AnemosCertificate(
         reference=f"ANEMOS-{booking.reference}",

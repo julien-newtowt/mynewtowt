@@ -244,8 +244,11 @@ def render_anemos_certificate(
 ) -> DocumentBytes:
     """Génère un PDF Certificat Anemos.
 
-    Le PDF atteste du tonnage transporté, distance, CO₂ évité par rapport
-    au shipping conventionnel. Référence : ``ANEMOS-<booking.reference>``
+    Le PDF atteste de ce qui est **mesuré** : tonnage transporté, distance et
+    CO₂ **émis** (tank-to-wake). Il ne porte plus de « CO₂ évité » — cette
+    comparaison reposait sur un porte-conteneurs conventionnel à
+    13,7 gCO₂/t·km, base écartée par la méthodologie de performance
+    environnementale v3.0 (§11.1). Référence : ``ANEMOS-<booking.reference>``
     si pas de certificate.reference fournie. ``crew`` : liste optionnelle de
     dicts ``{full_name, role, nationality}`` de l'équipage embarqué sur le leg.
     """

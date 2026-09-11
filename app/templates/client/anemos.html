@@ -52,9 +52,11 @@
           <th>{% if lang == 'en' %}Issued{% else %}Émis le{% endif %}</th>
           <th>{% if lang == 'en' %}Tonnage (t){% else %}Tonnage (t){% endif %}</th>
           <th>{% if lang == 'en' %}Distance (NM){% else %}Distance (NM){% endif %}</th>
-          <th>{% if lang == 'en' %}Sailing CO₂ (kg){% else %}CO₂ vélique (kg){% endif %}</th>
-          <th>{% if lang == 'en' %}Conv. CO₂ (kg){% else %}CO₂ conv. (kg){% endif %}</th>
-          <th>{% if lang == 'en' %}CO₂ avoided{% else %}CO₂ évité{% endif %}</th>
+          {# Les deux colonnes de comparaison sont retirées : elles opposaient
+             nos émissions à un porte-conteneurs conventionnel à 13,7 gCO₂/t·km,
+             base écartée par la méthodologie v3.0 (§11.1). Reste ce qui est
+             mesuré. #}
+          <th>{% if lang == 'en' %}CO₂ emitted (kg){% else %}CO₂ émis (kg){% endif %}</th>
           <th></th>
         </tr>
       </thead>
@@ -66,8 +68,6 @@
             <td>{{ c.tonnage_transported_t }}</td>
             <td>{{ c.distance_nm }}</td>
             <td>{{ c.co2_emitted_kg }}</td>
-            <td>{{ c.co2_conventional_kg }}</td>
-            <td><strong class="text-accent">-{{ c.co2_avoided_kg }} kg</strong></td>
             <td>{% if c.booking_ref %}<a href="/me/bookings/{{ c.booking_ref }}/anemos.pdf" target="_blank" class="btn btn-ghost">PDF →</a>{% endif %}</td>
           </tr>
         {% endfor %}

@@ -9,23 +9,27 @@
 {% set method = certificate.method if certificate else None %}
 {% set distance_source = certificate.distance_source if certificate else None %}
 {% set co2_towt_kg = certificate.co2_emitted_kg if certificate else emission.towt_co2_kg %}
-{% set co2_conv_kg = certificate.co2_conventional_kg if certificate else emission.conventional_co2_kg %}
-{% set co2_avoided_kg = certificate.co2_avoided_kg if certificate else emission.avoided_co2_kg %}
+{# 🔴 `co2_conventional_kg` et `co2_avoided_kg` ne sont plus lus.
+   Ils portaient une comparaison à un porte-conteneurs conventionnel à
+   13,7 gCO₂/t·km — base écartée par la méthodologie de performance
+   environnementale v3.0 (§11.1). Un certificat remis à un client est une
+   allégation au sens de la directive (UE) 2024/825 : il ne peut pas reposer
+   sur une base que l'entreprise a elle-même retirée. #}
 {% set dist_nm = certificate.distance_nm if certificate else emission.distance_nm %}
 
 <div style="text-align:center; padding:20pt 0;">
   <span class="kicker">{{ brand.mention }}</span>
-  <h1 class="c-teal" style="font-size:26pt; margin:6pt 0;">Certificat d'émissions évitées</h1>
+  <h1 class="c-teal" style="font-size:26pt; margin:6pt 0;">Certificat d'émissions</h1>
   <span class="baseline">{{ brand.tagline_1 }} {{ brand.tagline_2 }}</span>
 </div>
 
 <div class="box" style="text-align:center; border-left:none; border-top:3px solid #87BD29; padding:14pt;">
-  <div class="label">CO₂ évité par cette expédition</div>
-  <div style="font-family:'DM Serif Display', Georgia, serif; font-size:32pt; color:#87BD29; line-height:1; margin:6pt 0;">
-    {{ "%.0f"|format(co2_avoided_kg|float) }} kg
+  <div class="label">CO₂ émis par cette expédition</div>
+  <div style="font-family:'DM Serif Display', Georgia, serif; font-size:32pt; color:#0D5966; line-height:1; margin:6pt 0;">
+    {{ "%.0f"|format(co2_towt_kg|float) }} kg
   </div>
   <div class="small c-gris">
-    vs cargo conventionnel équivalent (référence IMO)
+    tank-to-wake, gaz CO₂ uniquement · quote-part de cette expédition
   </div>
 </div>
 
@@ -104,17 +108,9 @@
       <td class="text-right c-vert mono"><strong>{% if method == "declared" %}—{% else %}1,5{% endif %}</strong></td>
       <td class="text-right mono">{{ "%.3f"|format(co2_towt_kg|float) }}</td>
     </tr>
-    <tr>
-      <td>Cargo conventionnel (référence IMO)</td>
-      <td class="text-right c-gris mono">13,7</td>
-      <td class="text-right mono">{{ "%.3f"|format(co2_conv_kg|float) }}</td>
-    </tr>
-    <tr class="total-row">
-      <td class="text-right" colspan="2">Émissions évitées</td>
-      <td class="text-right mono" style="font-size:12pt;">
-        <span class="badge-co2">- {{ "%.0f"|format(co2_avoided_kg|float) }} kg CO₂</span>
-      </td>
-    </tr>
+    {# La ligne « cargo conventionnel » et le total « émissions évitées » sont
+       retirés avec la base de comparaison qui les produisait. Ce tableau ne
+       porte plus que ce qui est mesuré. #}
   </tbody>
 </table>
 
@@ -143,7 +139,8 @@
     <strong class="c-teal">Vérifier ce certificat</strong><br/>
     Scannez le QR ou saisissez la référence <span class="mono">{{ cert_ref }}</span>
     sur <span class="mono">{{ verify_url }}</span>.<br/>
-    Page publique, sans donnée personnelle — tonnage, distance, CO₂ évité, méthode, date et facteur.
+    Page publique, sans donnée personnelle — tonnage, distance, CO₂ émis, part du temps de
+    navigation sous voiles, méthode et date.
   </div>
 </div>
 {% endif %}
