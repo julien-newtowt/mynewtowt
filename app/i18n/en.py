@@ -1408,7 +1408,6 @@ CATALOG: dict[str, str] = {
     "dashperf_provisional_short": "provisional",
     "dashperf_empty_period": "No event-captured voyage in this period — the indicators below will stay at 0/N-A until a captured leg is attached to it.",
     "dashperf_kpi_co2_emitted": "CO2 emitted",
-    "dashperf_kpi_avoided_container": "CO2 avoided vs container ship",
     "dashperf_kpi_avoided_airfreight": "CO2 avoided vs air cargo",
     "dashperf_kpi_distance": "Distance sailed",
     "dashperf_kpi_ef": "Average emission factor",

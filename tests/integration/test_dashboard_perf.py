@@ -583,8 +583,12 @@ async def test_parameters_page_renders_200_and_lists_parameters(db):
     assert resp.template.name == "staff/dashboard_perf/parameters.html"
     names = {p.parameter_name for p in resp.context["params"]}
     assert "occupancy_rate_pct" in names
-    assert "ef_container_ship_gco2_tkm" in names
-    assert "ef_container_ship_gco2_tkm" in resp.context["provisional_params"]
+    assert "ef_airfreight_gco2_tkm" in names
+    assert "ef_airfreight_gco2_tkm" in resp.context["provisional_params"]
+    # 🔴 Le comparateur porte-conteneurs a été retiré (méthodologie v3.0 §11.1) :
+    # il ne doit plus être proposé à l'édition, sinon un opérateur croirait
+    # régler un chiffre qui n'alimente plus rien.
+    assert "ef_container_ship_gco2_tkm" not in names
 
 
 @pytest.mark.asyncio
@@ -596,20 +600,22 @@ async def test_update_parameter_changes_value_and_records_activity(db):
     param = (
         await db.execute(
             select(DashboardParameter).where(
-                DashboardParameter.parameter_name == "ef_container_ship_gco2_tkm"
+                DashboardParameter.parameter_name == "ef_airfreight_gco2_tkm"
             )
         )
     ).scalar_one()
-    assert param.value == Decimal("16")
+    # Semé à 630 : part *Opération* seule de la Base Empreinte ADEME
+    # (méthodologie v3.0 §11.3), et non le total de 0,80 amont compris.
+    assert param.value == Decimal("630")
 
     admin = _admin_user()
     resp = await dashboard_perf_parameters_update(
-        param.id, FakeRequest(), value="20", unit="gCO2/t.km", db=db, user=admin
+        param.id, FakeRequest(), value="700", unit="gCO2/t.km", db=db, user=admin
     )
     assert resp.status_code == 303
 
     refreshed = await db.get(DashboardParameter, param.id)
-    assert refreshed.value == Decimal("20")
+    assert refreshed.value == Decimal("700")
     assert refreshed.updated_by == admin.id
 
     logs = list(
@@ -625,7 +631,9 @@ async def test_update_parameter_changes_value_and_records_activity(db):
     assert logs[0].module == "dashboard_env"
     assert logs[0].entity_type == "dashboard_parameter"
     assert logs[0].entity_id == param.id
-    assert "16" in logs[0].detail and "20" in logs[0].detail
+    # La trace porte l'ancienne ET la nouvelle valeur : c'est ce qui rend une
+    # edition de parametre auditable apres coup.
+    assert "630" in logs[0].detail and "700" in logs[0].detail
 
 
 @pytest.mark.asyncio

@@ -86,7 +86,17 @@ from app.services.validation_engine import get_threshold
 #   - Renommer/retirer/retyper un champ existant, ou changer une signature
 #     de fonction couverte = changement CASSANT : revue explicite avec le
 #     porteur du Dashboard avant fusion, et incrément de cette constante.
-DASHBOARD_CONTRACT_VERSION = 1
+# 🔴 Version 2 (2026-09-11) — CHANGEMENT CASSANT assume.
+#
+# `VesselKpiBlock.avoided_container` est RETIRE : la comparaison a un
+# porte-conteneurs conventionnel repose sur une base ecartee par la
+# methodologie de performance environnementale v3.0 (§11.1). Retirer un champ
+# est cassant au sens de la politique du contrat (cf.
+# tests/regression/test_dashboard_contract.py) : d'ou l'increment.
+#
+# Un consommateur externe du contrat qui lisait ce champ doit etre prevenu :
+# le chiffre n'est pas devenu indisponible, il a cesse d'etre defendable.
+DASHBOARD_CONTRACT_VERSION = 2
 
 EF_METHODS: tuple[str, ...] = ("A", "B", "C")
 
@@ -111,20 +121,33 @@ _PCT_QUANT = Decimal("0.1")  # %
 DASHBOARD_PARAM_DEFAULTS: dict[str, tuple[Decimal, str]] = {
     "occupancy_rate_pct": (Decimal("70"), "%"),
     "vessel_capacity_ref_t": (Decimal("1100"), "t"),
-    "ef_container_ship_gco2_tkm": (Decimal("16"), "gCO2/t.km"),
-    "ef_airfreight_gco2_tkm": (Decimal("800"), "gCO2/t.km"),
+    # 🔴 Le comparateur PORTE-CONTENEURS est retiré (méthodologie v3.0 §11.1).
+    #
+    # La relation entre la taille d'un navire et son facteur d'émission n'étant
+    # pas linéaire, le segment retenu déterminait le résultat sur une plage de
+    # 87 % à 96 % — « un indicateur dont la valeur dépend à ce point d'un choix
+    # discrétionnaire n'est pas défendable » sous la directive (UE) 2024/825.
+    # La méthodologie ajoute : **ne pas réintroduire cette base sans une
+    # nouvelle décision explicite**.
+    #
+    # ⚠️ Aérien : **630**, pas 800. La méthodologie §11.3 retient la part
+    # *Opération* seule de la Base Empreinte ADEME (0,63 kgCO₂e/t·km), là où 800
+    # correspond au total de 0,80 **amont compris**. On comparait donc un TtW à
+    # un WtW — l'erreur de périmètre que le §4.1 désigne comme « la plus facile
+    # à commettre de bonne foi » — en surestimant la référence de 27 %.
+    #
+    # Usage restreint, à respecter : la méthodologie interdit l'intermodal sur
+    # le one-pager de direction et sur les pages de simulation carburant.
+    "ef_airfreight_gco2_tkm": (Decimal("630"), "gCO2/t.km"),
 }
 
 # Paramètres non sourcés formellement (spec §7 point 1 / Q15 du plan) — le
 # bandeau « référence provisoire » s'affiche pour ceux-ci (page 1 jauge EF +
 # page 4 administration). ``occupancy_rate_pct`` et ``vessel_capacity_ref_t``
 # sont eux considérés confirmés (spec §7 points 3-4).
-PROVISIONAL_DASHBOARD_PARAMS: frozenset[str] = frozenset(
-    {"ef_container_ship_gco2_tkm", "ef_airfreight_gco2_tkm"}
-)
+PROVISIONAL_DASHBOARD_PARAMS: frozenset[str] = frozenset({"ef_airfreight_gco2_tkm"})
 
 _REFERENCE_LABELS: dict[str, str] = {
-    "ef_container_ship_gco2_tkm": "container_ship",
     "ef_airfreight_gco2_tkm": "airfreight",
 }
 
@@ -198,7 +221,7 @@ class EfResult:
 class AvoidedResult:
     """CO2 évité vs une référence sectorielle, même assiette que l'EF associé."""
 
-    reference: str  # "container_ship" | "airfreight"
+    reference: str  # "airfreight" (le porte-conteneurs est écarté, cf. défauts)
     avoided_t: Decimal | None
     avoided_pct: Decimal | None
     ef_reference_gco2_tkm: Decimal
@@ -225,7 +248,6 @@ class VesselKpiBlock:
     co2_emitted_t: Decimal
     distance_nm: Decimal
     ef: EfResult
-    avoided_container: AvoidedResult
     avoided_airfreight: AvoidedResult
     completeness: CompletenessBlock
     # NC-04 — nombre de legs écartés des totaux ci-dessus car `source` != "events"
@@ -671,7 +693,6 @@ async def fleet_summary(
     params = await get_dashboard_parameters(db)
     occupancy_pct = params["occupancy_rate_pct"].value
     capacity_ref_t = params["vessel_capacity_ref_t"].value
-    ef_container = params["ef_container_ship_gco2_tkm"].value
     ef_airfreight = params["ef_airfreight_gco2_tkm"].value
 
     vessels = list(
@@ -690,9 +711,6 @@ async def fleet_summary(
             year_records = [r for r in year_records if r.source == "events"]
         ef, denom = aggregate_ef(
             year_records, method=method, occupancy_pct=occupancy_pct, capacity_ref_t=capacity_ref_t
-        )
-        avoided_container = avoided_emissions(
-            ef, denom, ef_reference_gco2_tkm=ef_container, reference="container_ship"
         )
         avoided_airfreight = avoided_emissions(
             ef, denom, ef_reference_gco2_tkm=ef_airfreight, reference="airfreight"
@@ -716,7 +734,6 @@ async def fleet_summary(
             co2_emitted_t=co2_t.quantize(_T_QUANT),
             distance_nm=distance.quantize(_T_QUANT),
             ef=ef,
-            avoided_container=avoided_container,
             avoided_airfreight=avoided_airfreight,
             completeness=completeness,
             legs_excluded_non_event=excluded_non_event,

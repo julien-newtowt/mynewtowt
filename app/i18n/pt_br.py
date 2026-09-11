@@ -1408,7 +1408,6 @@ CATALOG: dict[str, str] = {
     "dashperf_provisional_short": "provisório",
     "dashperf_empty_period": "Nenhuma viagem capturada por eventos neste período — os indicadores abaixo permanecerão em 0/N-D até que um trecho capturado seja vinculado.",
     "dashperf_kpi_co2_emitted": "CO2 emitido",
-    "dashperf_kpi_avoided_container": "CO2 evitado vs porta-contêineres",
     "dashperf_kpi_avoided_airfreight": "CO2 evitado vs frete aéreo",
     "dashperf_kpi_distance": "Distância percorrida",
     "dashperf_kpi_ef": "Fator de emissão médio",

@@ -91,7 +91,10 @@ VESSEL_KPI_BLOCK_FIELDS = {
     "co2_emitted_t": "Decimal",
     "distance_nm": "Decimal",
     "ef": "EfResult",
-    "avoided_container": "AvoidedResult",
+    # 🔴 Retrait (2026-09-11) : `avoided_container` comparait a un
+    # porte-conteneurs conventionnel, base ecartee par la methodologie v3.0
+    # (§11.1). Retirer un champ est CASSANT :
+    # `DASHBOARD_CONTRACT_VERSION` passe de 1 a 2.
     "avoided_airfreight": "AvoidedResult",
     "completeness": "CompletenessBlock",
     "legs_excluded_non_event": "int",  # NC-04
@@ -387,4 +390,6 @@ def test_emission_ledger_contract():
 def test_contract_version_present():
     """La constante de version existe — tout changement cassant ci-dessus doit l'incrémenter."""
     assert isinstance(kpi_env.DASHBOARD_CONTRACT_VERSION, int)
-    assert kpi_env.DASHBOARD_CONTRACT_VERSION >= 1
+    # >= 2 depuis le retrait de `avoided_container` : un retour a 1 signalerait
+    # qu'un changement cassant a ete rejoue sans incrementer la version.
+    assert kpi_env.DASHBOARD_CONTRACT_VERSION >= 2

@@ -287,21 +287,26 @@ async def test_get_dashboard_parameters_coded_default_when_table_empty(db):
 
 @pytest.mark.asyncio
 async def test_get_dashboard_parameters_reads_db_override(db):
+    # Le porte-conteneurs servait d'exemple ici : il est retiré (méthodologie
+    # v3.0 §11.1). L'aérien subsiste et fait le même office.
     db.add(
         DashboardParameter(
-            parameter_name="ef_container_ship_gco2_tkm",
+            parameter_name="ef_airfreight_gco2_tkm",
             vessel_id=None,
-            value=Decimal("20"),
+            value=Decimal("700"),
             unit="gCO2/t.km",
         )
     )
     await db.flush()
 
     params = await get_dashboard_parameters(db)
-    assert params["ef_container_ship_gco2_tkm"].value == Decimal("20")
-    assert params["ef_container_ship_gco2_tkm"].source == "global"
+    assert params["ef_airfreight_gco2_tkm"].value == Decimal("700")
+    assert params["ef_airfreight_gco2_tkm"].source == "global"
     # Les autres paramètres, non présents en base, retombent sur le défaut codé.
-    assert params["ef_airfreight_gco2_tkm"].source == "coded_default"
+    assert params["occupancy_rate_pct"].source == "coded_default"
+    # 🔴 Et le paramètre retiré n'est plus résolu DU TOUT, même si une ligne
+    # subsiste en base : `get_dashboard_parameters` itère sur les défauts codés.
+    assert "ef_container_ship_gco2_tkm" not in params
 
 
 async def _seed_two_legs(db):
@@ -386,21 +391,21 @@ async def test_fleet_summary_avoided_changes_when_parameter_is_edited(db):
     now = datetime(2026, 7, 9, tzinfo=UTC)
 
     before = await fleet_summary(db, period=2026, method="A", now=now)
-    avoided_before = before.fleet.avoided_container.avoided_t
+    avoided_before = before.fleet.avoided_airfreight.avoided_t
     assert avoided_before is not None
 
     db.add(
         DashboardParameter(
-            parameter_name="ef_container_ship_gco2_tkm",
+            parameter_name="ef_airfreight_gco2_tkm",
             vessel_id=None,
-            value=Decimal("20"),
+            value=Decimal("700"),
             unit="gCO2/t.km",
         )
     )
     await db.flush()
 
     after = await fleet_summary(db, period=2026, method="A", now=now)
-    avoided_after = after.fleet.avoided_container.avoided_t
+    avoided_after = after.fleet.avoided_airfreight.avoided_t
 
     assert avoided_after is not None
     assert avoided_after != avoided_before
@@ -412,8 +417,9 @@ async def test_fleet_summary_method_c_is_na_end_to_end(db):
     summary = await fleet_summary(db, period=2026, method="C", now=datetime(2026, 7, 9, tzinfo=UTC))
     assert summary.fleet.ef.value_gco2_tkm is None
     assert summary.fleet.ef.na_reason == NA_CARGO_MRV
-    assert summary.fleet.avoided_container.avoided_t is None
     assert summary.fleet.avoided_airfreight.avoided_t is None
+    # Le bloc « évité vs porte-conteneurs » n'existe plus sur le contrat.
+    assert not hasattr(summary.fleet, "avoided_container")
 
 
 @pytest.mark.asyncio

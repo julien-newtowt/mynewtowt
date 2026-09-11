@@ -1408,7 +1408,6 @@ CATALOG: dict[str, str] = {
     "dashperf_provisional_short": "tạm thời",
     "dashperf_empty_period": "Không có hải trình được thu thập qua sự kiện trong giai đoạn này — các chỉ số dưới đây sẽ giữ ở mức 0/N-A cho đến khi có hải trình đã thu thập được gắn vào.",
     "dashperf_kpi_co2_emitted": "CO2 phát thải",
-    "dashperf_kpi_avoided_container": "CO2 tránh được so với tàu container",
     "dashperf_kpi_avoided_airfreight": "CO2 tránh được so với vận chuyển hàng không",
     "dashperf_kpi_distance": "Quãng đường đã đi",
     "dashperf_kpi_ef": "Hệ số phát thải trung bình",

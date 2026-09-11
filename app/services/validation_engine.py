@@ -657,8 +657,10 @@ THRESHOLD_SEED: tuple[tuple[str, str, str, str, bool, str], ...] = (
 DASHBOARD_SEED: tuple[tuple[str, str, str], ...] = (
     ("occupancy_rate_pct", "70", "%"),
     ("vessel_capacity_ref_t", "1100", "t"),
-    ("ef_container_ship_gco2_tkm", "16", "gCO2/t.km"),
-    ("ef_airfreight_gco2_tkm", "800", "gCO2/t.km"),
+    # Porte-conteneurs retiré, aérien ramené à la part Opération seule
+    # (méthodologie v3.0 §11.1 et §11.3) — cf. kpi_env.DASHBOARD_PARAM_DEFAULTS.
+    # Migration de rattrapage pour les bases existantes : 20260911_0147.
+    ("ef_airfreight_gco2_tkm", "630", "gCO2/t.km"),
 )
 
 # Défauts codés *fail-closed* : dernier recours quand la DB n'a aucune ligne
