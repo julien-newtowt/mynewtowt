@@ -70,6 +70,7 @@ from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.services import emission_ledger, flgo_sync
 from app.services import inter_event_compute as iec
 from app.services.co2 import NM_TO_KM
+from app.services.decarbonation import DecarbonationResult
 from app.services.validation_engine import get_threshold
 
 # ─────────────────────────────────────────────────────────── Constantes
@@ -200,6 +201,15 @@ class LegEmissionRecord:
     # ``None`` = non calculable (mouillage inconnu) ⇒ méthodes A et B en N/A
     # motivé, jamais un repli silencieux sur le numérateur MRV.
     co2_op_t: Decimal | None = None
+    # Assiette Métier en **CO₂eq** — numérateur du taux de décarbonation.
+    #
+    # 🔴 Pourquoi un champ de plus, et pas `co2_op_t`. Les intensités se
+    # publient en **CO₂ seul** (facteur 3,206) ; le taux de décarbonation se
+    # calcule en **GES** (3,2551), parce qu'une comparaison doit être établie
+    # sur le périmètre le plus complet disponible **des deux côtés** du rapport
+    # (méthodologie §4.3). Mélanger les deux relierait un taux à une intensité
+    # qui ne comptent pas les mêmes gaz.
+    co2eq_op_t: Decimal | None = None
     # NC-04 — provenance (même vocabulaire que VoyageRow.source) : "events" /
     # "legacy_noon" (VoyageEmissionSummary) ou "legacy_kpi" / "none" (repli
     # LegKPI). Défaut "events" pour ne pas casser les fixtures de tests
@@ -250,6 +260,17 @@ class VesselKpiBlock:
     ef: EfResult
     avoided_airfreight: AvoidedResult
     completeness: CompletenessBlock
+    # Taux de décarbonation « nous-mêmes sans voiles » (méthodologie §11.2).
+    #
+    # ⚠️ Suivi **interne**. La méthodologie §1.2 bis est explicite : ce taux
+    # n'est pas publié de notre propre initiative — il se communique sur
+    # demande, en énonçant à chaque fois la base qui le sous-tend, sans quoi le
+    # chiffre serait inintelligible et attaquable. Toute restitution doit donc
+    # NOMMER le scénario de référence.
+    #
+    # Champ en fin de dataclass AVEC défaut : extension compatible au sens de
+    # la politique du contrat Dashboard, pas d'incrément de version.
+    decarbonation: DecarbonationResult | None = None
     # NC-04 — nombre de legs écartés des totaux ci-dessus car `source` != "events"
     # (mode strict uniquement ; toujours 0 hors mode strict, rien n'est écarté).
     legs_excluded_non_event: int = 0
@@ -374,6 +395,7 @@ async def _emissions_provider(
             cargo_mrv_t = summary.cargo_mrv_t
             source = summary.source  # "events" | "legacy_noon"
             co2_op_t = _operational_co2_t(summary)
+            co2eq_op_t = _operational_co2eq_t(summary)
         else:
             # Repli legacy — identique à l'avant-lot-9 (aucune régression).
             k = kpi_by_leg.get(leg.id)
@@ -392,6 +414,11 @@ async def _emissions_provider(
             # Repli LegKPI : aucune granularité d'intervalle, donc le CO₂ connu
             # est un total indifférencié — c'est déjà une valeur berth-to-berth.
             co2_op_t = co2_t if has_kpi else None
+            # `LegKPI` ne porte pas de CO₂eq : le taux de décarbonation n'est
+            # donc pas calculable sur ces voyages, et ils en sortiront — plutôt
+            # que d'assimiler du CO₂ seul à du CO₂eq, ce qui sous-estimerait
+            # notre côté du rapport et gonflerait le taux.
+            co2eq_op_t = None
         distance_nm = distance_src if distance_src is not None else Decimal(0)
         records.append(
             LegEmissionRecord(
@@ -407,12 +434,29 @@ async def _emissions_provider(
                 cargo_mrv_t=cargo_mrv_t,
                 source=source,
                 co2_op_t=co2_op_t,
+                co2eq_op_t=co2eq_op_t,
             )
         )
     return records
 
 
 # ────────────────────────────────────────────────── Formules EF (spec §5.1)
+
+
+def _operational_co2eq_t(summary) -> Decimal | None:
+    """Assiette Métier en CO₂eq — jumeau de :func:`_operational_co2_t`.
+
+    Même règle de provenance : ``events`` somme trajet et mouillage,
+    ``legacy_noon`` porte déjà un total indifférencié. ``None`` si le CO₂eq
+    n'est pas calculé — le voyage quittera alors les deux termes du taux.
+    """
+    if summary.co2eq_t is None:
+        return None
+    if summary.source == "events":
+        if summary.co2eq_mouillage_t is None:
+            return None
+        return summary.co2eq_t + summary.co2eq_mouillage_t
+    return summary.co2eq_t
 
 
 def _operational_co2_t(summary) -> Decimal | None:
@@ -701,6 +745,29 @@ async def fleet_summary(
         .all()
     )
 
+    # ── Base de décarbonation « sans voiles » ────────────────────────────────
+    #
+    # 🔴 Le facteur GES est **dérivé du grand livre**, jamais redéclaré ici :
+    # `emissions_breakdown(1 t, facteur)` donne les tonnes de CO₂eq par tonne de
+    # carburant. La règle d'or veut que l'unique multiplication conso × facteur
+    # vive dans `emission_ledger` — y compris quand on n'a besoin que du
+    # facteur. Import tardif : `emission_ledger` importe ce module.
+    from app.services import decarbonation as _dc
+    from app.services.emission_ledger import emissions_breakdown as _breakdown
+    from app.services.referential_env import resolve_emission_factor as _resolve_factor
+
+    ghg_per_t: Decimal | None = None
+    try:
+        _f = await _resolve_factor(db, "MDO", None)
+        _one = _breakdown(Decimal(1), _f)["co2eq_t"]
+        ghg_per_t = Decimal(_one) if _one is not None else None
+    except Exception:  # pragma: no cover — le dashboard ne casse pas pour ça
+        ghg_per_t = None
+
+    # Vitesse d'essai par navire : jamais de repli sur un sistership (12 %
+    # d'écart de puissance à vitesse égale — cf. `services.decarbonation`).
+    speed_by_vessel = {v.id: getattr(v, "baseline_speed_kn", None) for v in vessels}
+
     def _block(
         scoped_records: list[LegEmissionRecord], *, label: str, vid: int | None, code: str | None
     ) -> VesselKpiBlock:
@@ -724,6 +791,21 @@ async def fleet_summary(
             legs_with_data=legs_with_data,
             legs_without_data=len(year_records) - legs_with_data,
         )
+        decarbonation = (
+            _dc.aggregate(
+                [
+                    _dc.VoyageInput(
+                        distance_nm=r.distance_nm,
+                        ghg_t=r.co2eq_op_t,
+                        speed_kn=speed_by_vessel.get(r.vessel_id),
+                    )
+                    for r in year_records
+                ],
+                ghg_factor_t_per_t=ghg_per_t,
+            )
+            if ghg_per_t is not None
+            else None
+        )
         return VesselKpiBlock(
             vessel_id=vid,
             vessel_code=code,
@@ -737,6 +819,7 @@ async def fleet_summary(
             avoided_airfreight=avoided_airfreight,
             completeness=completeness,
             legs_excluded_non_event=excluded_non_event,
+            decarbonation=decarbonation,
         )
 
     fleet_block = _block(all_records, label="Flotte", vid=None, code=None)

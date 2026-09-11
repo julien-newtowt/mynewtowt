@@ -91,6 +91,27 @@
      (§11.1) écarte cette base de comparaison, le segment de capacité retenu
      déterminant le résultat entre 87 % et 96 %. #}
 
+  {# Taux de décarbonation — base « nous-mêmes sans voiles » (méthodologie
+     §11.2). Elle a remplacé la comparaison au porte-conteneurs, écartée parce
+     que le segment de capacité retenu déterminait le résultat entre 87 % et
+     96 %.
+
+     🔴 La base est NOMMÉE sous le chiffre, et ce n'est pas décoratif : la
+     méthodologie §1.2 bis impose d'énoncer le scénario de référence chaque fois
+     que ce taux sort, faute de quoi il serait inintelligible et attaquable. #}
+  <div class="kpi-card">
+    <div class="label">{{ t('dashperf_kpi_decarbonation', lang) }}</div>
+    {% if sel.decarbonation and sel.decarbonation.rate_pct is not none %}
+    <div class="value text-success">{{ "%.1f"|format(sel.decarbonation.rate_pct) }} %</div>
+    <div class="delta text-muted">{{ t('dashperf_decarbonation_baseline', lang) }}</div>
+    {% else %}
+    <div class="value text-muted">{{ t('dashperf_na', lang) }}</div>
+    <div class="delta text-muted">
+      {{ sel.decarbonation.na_reason if sel.decarbonation else t('dashperf_na', lang) }}
+    </div>
+    {% endif %}
+  </div>
+
   <div class="kpi-card">
     <div class="label">
       {{ t('dashperf_kpi_avoided_airfreight', lang) }}

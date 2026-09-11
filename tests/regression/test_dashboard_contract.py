@@ -98,6 +98,16 @@ VESSEL_KPI_BLOCK_FIELDS = {
     "avoided_airfreight": "AvoidedResult",
     "completeness": "CompletenessBlock",
     "legs_excluded_non_event": "int",  # NC-04
+    # Ajout compatible (2026-09-11) : taux de decarbonation « nous-memes sans
+    # voiles » (methodologie v3.0 §11.2). Champ en FIN de dataclass AVEC
+    # defaut, donc aucun constructeur existant n'est casse — extension, pas
+    # d'increment de DASHBOARD_CONTRACT_VERSION (qui reste a 2, valeur posee
+    # par le RETRAIT de `avoided_container`).
+    #
+    # ⚠️ Suivi INTERNE : la methodologie §1.2 bis ne publie pas ce taux de
+    # notre propre initiative. Tout consommateur du contrat qui l'expose doit
+    # NOMMER la base de reference a cote du chiffre.
+    "decarbonation": "DecarbonationResult | None",
 }
 
 COMPLETENESS_BLOCK_FIELDS = {
