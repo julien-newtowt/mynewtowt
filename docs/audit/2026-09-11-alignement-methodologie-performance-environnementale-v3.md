@@ -397,3 +397,68 @@ aucun chiffre ne peut être publié avant. L'implémenter maintenant produirait 
   question ouverte, et elle conditionne l'ampleur de tout alignement.
 - **Les valeurs en production** : aucun accès. Les constats portent sur le code,
   pas sur les chiffres réellement affichés aujourd'hui.
+
+---
+
+## 9. Ce que les audits ont trouvé après coup (2026-09-11, second passage)
+
+Quatre audits indépendants ont été lancés une fois le travail réputé terminé.
+**Ils ont trouvé que le Lot 1 était très incomplet**, et la nature de l'oubli
+mérite d'être consignée plus que la liste elle-même.
+
+### La cause racine : une garantie affirmée mais jamais écrite
+
+Un commentaire de `app/services/anemos.py` annonçait qu'une sentinelle
+`tests/regression/test_no_outward_co2_claim.py` ferait échouer la suite si un
+gabarit sortant réaffichait les champs retirés. **Ce fichier n'existait pas.**
+La garantie était fausse, et c'est très probablement ce qui a fait croire le
+travail achevé. Quinze surfaces ont survécu au premier passage.
+
+La sentinelle existe désormais, et elle a été écrite **avant** de reprendre les
+retraits : c'est elle qui a fourni la liste, pas la mémoire. Elle porte quatre
+filets, chacun né d'un oubli réel :
+
+1. les **facteurs** (13,7 / 1,5) sur les surfaces sortantes ;
+2. les **variables** d'évitement rendues dans un gabarit ;
+3. les **catalogues i18n** — c'est par là que la formule
+   `(13,7 − 1,5) × tonnage × distance` survivait sur `/preuves` ;
+4. les **mots** — le kit B2B2C avait échappé aux trois premiers en nommant sa
+   variable `co2_kg`, parfaitement générique.
+
+### Les oublis les plus graves
+
+| Surface | Ce qu'elle portait encore |
+|---|---|
+| **`/preuves`** | la formule elle-même, sur la page dont l'objet est de *substantier* |
+| **Rapport RSE annuel (PDF + CSV)** | remis au client pour son Bilan Carbone scope 3, il citait 13,7 en note de méthode |
+| **Carnet de bord, ch. 5** | pire qu'avant : les certificats passés à `NULL` par la migration `0146` y imprimaient « **0 kg** » et « **0 %** » — un chiffre fabriqué là où il n'y avait plus de donnée |
+| **Cartes sociales SVG** | la surface la plus **diffusée** de toutes, faite pour être republiée |
+| Kit B2B2C, `/devis`, `/voyage/{ref}`, tableau de bord client, landing, `/impact`, récits café/cacao | idem, plus un **troisième script** JS à repli codé |
+
+### Deux erreurs commises pendant la correction, corrigées
+
+- **J'ai emporté le QR de vérification** du kit avec l'allégation — une
+  régression fonctionnelle que personne n'avait demandée. Restauré : le QR reste
+  utile, il mène désormais à une page qui montre des émissions **mesurées**.
+- **Ma propre sentinelle rapportait de faux numéros de ligne** (elle comptait
+  après suppression des commentaires). Un garde-fou qui désigne le mauvais
+  endroit fait perdre plus de temps qu'il n'en gagne.
+
+### Le trou que l'audit méthodologique a trouvé
+
+Les EF **persistés** dans `voyage_emission_summaries` gardaient le numérateur
+MRV pour les méthodes A et B. J'avais corrigé `kpi_env.leg_ef` — **fonction qui
+n'a aucun appelant applicatif**. Le test que j'avais écrit validait donc du code
+mort, pendant que la page voyage, l'export PDF et le **DOCX remis à un tiers**
+continuaient de servir la valeur non corrigée.
+
+Corrigé à la source (`emission_ledger.compute_for_leg`), là où les valeurs sont
+calculées et persistées.
+
+### Un défaut de même famille, trouvé au passage
+
+`_emissions_provider` ramène une distance inconnue (`Leg.distance_nm = None`,
+cas réel quand un port n'a pas de coordonnées) à `Decimal(0)`. Un tel voyage
+apportait son CO₂ au numérateur sans apporter la moindre tonne-kilomètre —
+**le mécanisme même que la méthodologie chiffre à +26 %**, appliqué cette fois à
+la distance et non au cargo. Il sort désormais des deux termes.

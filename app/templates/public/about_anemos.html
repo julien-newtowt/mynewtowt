@@ -8,9 +8,9 @@
 
 {% block description %}
   {% if lang == 'en' %}
-    {{ brand.nom_court }} issues the Anemos avoided-emissions certificate: a published, reproducible method backed by EU MRV-verified vessel emissions, for every sailing cargo shipment.
+    {{ brand.nom_court }} issues the Anemos certificate: measured emissions, verified under EU MRV, for every sailing cargo shipment.
   {% else %}
-    {{ brand.nom_court }} émet le certificat Anemos d'émissions évitées : une méthode publiée et reproductible, adossée aux émissions de ses navires vérifiées sous EU MRV, pour chaque expédition en cargo vélique.
+    {{ brand.nom_court }} émet le certificat Anemos : des émissions mesurées, vérifiées sous EU MRV, adossées aux émissions de ses navires vérifiées sous EU MRV, pour chaque expédition en cargo vélique.
   {% endif %}
 {% endblock %}
 
@@ -57,7 +57,7 @@
         </svg>
         <span class="an-seal-name">ANEMOS</span>
         <span class="an-seal-sub">
-          {% if lang == 'en' %}Avoided-emissions certificate{% else %}Certificat d'émissions évitées{% endif %}
+          {% if lang == 'en' %}Emissions certificate{% else %}Certificat d'émissions{% endif %}
         </span>
       </div>
     </div>
@@ -243,7 +243,7 @@
             Construite en 2024 et basée au Havre, Anemos est le voilier-cargo conçu spécifiquement
             pour {{ brand.nom_court }}. Avec 3&thinsp;000&thinsp;m² de voilure et une capacité d'environ
             1&thinsp;000 palettes, elle démontre que le cargo vélique est à la fois viable commercialement
-            à grande échelle et radicalement moins carboné que le transport conventionnel.
+            à grande échelle, propulsé par le vent.
           {% endif %}
         </p>
 
@@ -351,11 +351,13 @@
     </h2>
     <p>
       {% if lang == 'en' %}
-        Each booking generates a personalised certificate showing the exact CO₂ avoided
-        for your shipment — ready to include in your CSR report or share with your clients.
+        Each booking generates a personalised certificate for your shipment — emissions
+        measured, share of navigation time under sail, verifiable by QR code — ready to
+        include in your CSR report or share with your clients.
       {% else %}
-        Chaque réservation génère un certificat personnalisé indiquant le CO₂ exact évité
-        pour votre expédition — prêt à intégrer dans votre rapport RSE ou à partager avec
+        Chaque réservation génère un certificat personnalisé pour votre expédition —
+        émissions mesurées, part du temps de navigation sous voiles, vérifiable par QR —
+        prêt à intégrer dans votre rapport RSE ou à partager avec
         vos clients.
       {% endif %}
     </p>

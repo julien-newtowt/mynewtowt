@@ -582,6 +582,16 @@ def aggregate_ef(
     # lest a un travail de transport **connu et nul**. Lui reste au numérateur,
     # et c'est voulu — le carburant d'un voyage à vide se répartit sur la
     # cargaison réellement transportée. Inconnu ≠ nul, ici comme partout.
+    # 🔴 Une distance nulle vaut « inconnue », et sort des DEUX termes.
+    #
+    # `_emissions_provider` ramène `Leg.distance_nm = None` à `Decimal(0)` —
+    # cas réel quand un port n'a pas de coordonnées. Un tel voyage apportait
+    # jusqu'ici son CO₂ au numérateur sans apporter la moindre tonne-kilomètre
+    # (tous les dénominateurs filtrent `distance_nm > 0`), ce qui GONFLE
+    # l'intensité publiée. C'est le mécanisme que la méthodologie chiffre à
+    # +26 % (§8.2 n°2), appliqué ici à la distance et non plus au seul cargo.
+    records = [r for r in records if r.distance_nm > 0]
+
     if method == "C":
         usable = [r for r in records if r.cargo_mrv_t is not None]
         empty_reason = NA_CARGO_MRV

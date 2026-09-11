@@ -63,6 +63,12 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Rétablit les deux valeurs d'origine.
 
+    ⚠️ Il repasse aussi à 800 **toute** ligne à 630 — y compris une valeur
+    qu'un administrateur aurait volontairement saisie à 630 après coup.
+    L'``upgrade`` prend la précaution inverse (il ne touche que les lignes
+    encore à 800) ; le retour arrière ne peut pas la prendre, faute de savoir
+    distinguer les deux cas.
+
     Le porte-conteneurs est recréé **uniquement en ligne globale** : les
     éventuels overrides par navire supprimés à l'``upgrade`` ne sont pas
     reconstituables, faute d'en avoir gardé la trace. Le downgrade rend donc le

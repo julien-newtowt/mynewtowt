@@ -17,10 +17,19 @@ discrétionnaire n'est pas défendable sous la directive (UE) 2024/825.
 - le navire n'est comparé **qu'à lui-même**, sur la route réellement parcourue ;
 - les deux termes sont sur le **même périmètre** — GES tank-to-wake des deux
   côtés, facteur MEPC.391(81) des deux côtés ;
-- **aucun paramètre n'est une hypothèse interne** : puissance, consommation
-  spécifique et vitesses viennent des fichiers EEDI **visés par Bureau Veritas**
-  (REF-07 / REF-08), opposables au même titre que les références réglementaires.
-  C'est ce qui a permis de clore le risque G1 de l'audit le 10/09/2026 ;
+- **presque aucun paramètre n'est une hypothèse interne** : puissance,
+  consommation spécifique et les vitesses d'ANEMOS et d'ARTEMIS viennent des
+  fichiers EEDI **visés par Bureau Veritas** (REF-07 / REF-08), opposables au
+  même titre que les références réglementaires. C'est ce qui a permis de clore
+  le risque G1 de l'audit le 10/09/2026.
+
+  ⚠️ **Une réserve, et il faut la porter soi-même plutôt que se la faire
+  opposer** : ATLANTIS n'a pas encore son fichier. Sa vitesse (11,86 kn) vient
+  d'une **courbe de classe** ajustée sur les six points des deux navires
+  documentés — le paramètre le plus pertinent pour un membre non mesuré de la
+  série, mais une dérivation, pas une mesure. C'est la faiblesse **W3** de
+  l'audit, ouverte pour ce seul navire, et elle se ferme à réception du
+  document ;
 - elle ne dépend **pas** de ``time_b2b_h``, champ qui porte des valeurs
   impossibles sur trois voyages historiques, mais de la **distance**, mesurée au
   fond depuis la trace GPS.

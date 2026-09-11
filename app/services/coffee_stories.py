@@ -1,14 +1,14 @@
 """Récits d'origine du kit B2B2C — café vert transporté à la voile.
 
 Gabarits **pré-remplis** : l'ERP injecte région, producteur, navire et le
-CO₂ évité (``[X] kg``) depuis le booking / le certificat Anemos ; la page
+certification Anemos depuis le booking ; la page
 vitrine ``/solutions/cafe`` les rend avec des valeurs d'exemple.
 
 Fonctions **pures** (sans I/O) — testées dans ``tests/unit``. Garde-fous :
 
 * **aucun pourcentage** (les chiffres sont en kg, jamais en %) ;
 * « **certifié Anemos** » (jamais « label ») ;
-* le CO₂ évité reste **vérifiable via le QR** ``/verify``.
+* la traversée reste **vérifiable via le QR** ``/verify``.
 
 Le récit est renvoyé en **texte brut** (pas de HTML / markdown) : les
 valeurs injectées par l'ERP peuvent provenir d'une saisie client, donc on
@@ -41,8 +41,8 @@ _LONG: dict[str, dict[str, str]] = {
             "dans un conteneur surchauffé, il a voyagé à la voile à bord de "
             "{vessel}, sous la ligne de flottaison, à la température de la mer — "
             "à l'abri des à-coups thermiques qui éteignent l'acidité fine d'un "
-            "grain de haute altitude. La traversée a évité {co2}, mesuré et "
-            "certifié Anemos : scannez le code pour le vérifier. Un café qui "
+            "grain de haute altitude. La traversée est "
+            "certifiée Anemos : scannez le code pour la vérifier. Un café qui "
             "arrive comme il est parti — et qui n'a pas réchauffé la planète pour "
             "venir jusqu'à vous."
         ),
@@ -52,7 +52,7 @@ _LONG: dict[str, dict[str, str]] = {
             "an overheating container, it travelled under sail aboard {vessel}, "
             "below the waterline, at sea temperature — shielded from the thermal "
             "swings that dull the bright acidity of a high-grown bean. The "
-            "crossing avoided {co2}, measured and certified by Anemos: scan the "
+            "crossing is certified by Anemos: scan the "
             "code to check it. Coffee that arrives as it left — without warming "
             "the planet to reach you."
         ),
@@ -62,7 +62,7 @@ _LONG: dict[str, dict[str, str]] = {
             "contêiner superaquecido, viajou à vela a bordo {vessel}, abaixo da "
             "linha de flutuação, à temperatura do mar — protegido das variações "
             "térmicas que apagam a acidez fina de um grão de altitude. A "
-            "travessia evitou {co2}, medido e certificado pela Anemos: escaneie o "
+            "travessia é certificada pela Anemos: escaneie o "
             "código para conferir. Um café que chega como partiu — sem esquentar "
             "o planeta para chegar até você."
         ),
@@ -73,8 +73,8 @@ _LONG: dict[str, dict[str, str]] = {
             "cultivé par {producer}. Plutôt que de subir un conteneur qui "
             "surchauffe à l'approche de l'équateur, il a voyagé à la voile à bord "
             "de {vessel}, sous la ligne de flottaison, à la température de la mer, "
-            "à l'abri de la condensation qui ternit les arômes. La traversée a "
-            "évité {co2}, mesuré et certifié Anemos : scannez le code pour le "
+            "à l'abri de la condensation qui ternit les arômes. La traversée est "
+            "certifiée Anemos : scannez le code pour la "
             "vérifier. La richesse du volcan, préservée jusqu'à votre tasse — "
             "sans réchauffer la planète."
         ),
@@ -83,7 +83,7 @@ _LONG: dict[str, dict[str, str]] = {
             "grown by {producer}. Instead of enduring a container that overheats "
             "near the equator, it travelled under sail aboard {vessel}, below the "
             "waterline, at sea temperature, shielded from the condensation that "
-            "dulls aroma. The crossing avoided {co2}, measured and certified by "
+            "dulls aroma. The crossing is certified by "
             "Anemos: scan the code to check it. The richness of the volcano, "
             "preserved to your cup — without warming the planet."
         ),
@@ -92,8 +92,8 @@ _LONG: dict[str, dict[str, str]] = {
             "cultivado por {producer}. Em vez de enfrentar um contêiner que "
             "superaquece perto do equador, viajou à vela a bordo {vessel}, abaixo "
             "da linha de flutuação, à temperatura do mar, protegido da "
-            "condensação que apaga os aromas. A travessia evitou {co2}, medido e "
-            "certificado pela Anemos: escaneie o código para conferir. A riqueza "
+            "condensação que apaga os aromas. A travessia é "
+            "certificada pela Anemos: escaneie o código para conferir. A riqueza "
             "do vulcão, preservada até a sua xícara — sem esquentar o planeta."
         ),
     },
@@ -103,8 +103,8 @@ _LONG: dict[str, dict[str, str]] = {
             "{producer}. Plutôt que de traverser l'Atlantique dans un conteneur "
             "surchauffé, il a voyagé à la voile à bord de {vessel}, sous la ligne "
             "de flottaison, à la température de la mer — à l'abri des à-coups "
-            "thermiques qui fatiguent un grain délicat. La traversée a évité "
-            "{co2}, mesuré et certifié Anemos : scannez le code pour le vérifier. "
+            "thermiques qui fatiguent un grain délicat. La traversée est "
+            "certifiée Anemos : scannez le code pour la vérifier. "
             "La douceur d'un café d'ombre, intacte — et la planète épargnée."
         ),
         "en": (
@@ -112,7 +112,7 @@ _LONG: dict[str, dict[str, str]] = {
             "by {producer}. Instead of crossing the Atlantic in an overheating "
             "container, it travelled under sail aboard {vessel}, below the "
             "waterline, at sea temperature — shielded from the thermal swings "
-            "that tire a delicate bean. The crossing avoided {co2}, measured and "
+            "that tire a delicate bean. The crossing is "
             "certified by Anemos: scan the code to check it. The softness of a "
             "shade-grown coffee, intact — and the planet spared."
         ),
@@ -121,8 +121,8 @@ _LONG: dict[str, dict[str, str]] = {
             "{producer}. Em vez de cruzar o Atlântico num contêiner "
             "superaquecido, viajou à vela a bordo {vessel}, abaixo da linha de "
             "flutuação, à temperatura do mar — protegido das variações térmicas "
-            "que cansam um grão delicado. A travessia evitou {co2}, medido e "
-            "certificado pela Anemos: escaneie o código para conferir. A "
+            "que cansam um grão delicado. A travessia é "
+            "certificada pela Anemos: escaneie o código para conferir. A "
             "suavidade de um café de sombra, intacta — e o planeta poupado."
         ),
     },
@@ -176,7 +176,7 @@ _DEFAULT_REGION = {
 _MARKETING_EXAMPLE: dict[str, dict[str, object]] = {
     "colombie": {
         "vessel": "Anemos",
-        "co2_kg": 250,
+        "co2_kg": None,  # plus de chiffre d'évitement
         "region": {"fr": "Huila", "en": "Huila", "pt-br": "Huila"},
         "producer": {
             "fr": "une coopérative du Huila",
@@ -191,7 +191,7 @@ _MARKETING_EXAMPLE: dict[str, dict[str, object]] = {
     },
     "guatemala": {
         "vessel": "Artemis",
-        "co2_kg": 300,
+        "co2_kg": None,  # plus de chiffre d'évitement
         "region": {"fr": "Huehuetenango", "en": "Huehuetenango", "pt-br": "Huehuetenango"},
         "producer": {
             "fr": "une coopérative de Huehuetenango",
@@ -206,7 +206,7 @@ _MARKETING_EXAMPLE: dict[str, dict[str, object]] = {
     },
     "mexique": {
         "vessel": "Anemos",
-        "co2_kg": 280,
+        "co2_kg": None,  # plus de chiffre d'évitement
         "region": {"fr": "Chiapas", "en": "Chiapas", "pt-br": "Chiapas"},
         "producer": {
             "fr": "une coopérative du Chiapas",
@@ -248,35 +248,26 @@ def _fmt_int(n: int, lang: str) -> str:
     return grouped.replace(",", " ")  # espace insécable : 1 200
 
 
-def _co2_phrase(lang: str, co2_kg: int | None) -> str:
-    """Quantité de CO₂ évité pour le récit long (sans % ; sans chiffre si None)."""
-    if co2_kg is None:
-        return {
-            "fr": "le CO₂ d'un transport conventionnel équivalent",
-            "en": "the CO₂ of an equivalent conventional shipment",
-            "pt-br": "o CO₂ de um transporte convencional equivalente",
-        }[lang]
-    n = _fmt_int(int(co2_kg), lang)
-    return {
-        "fr": f"{n} kg de CO₂",
-        "en": f"{n} kg of CO₂",
-        "pt-br": f"{n} kg de CO₂",
-    }[lang]
+# `_co2_phrase()` est retiree avec la clause qu'elle remplissait : les recits
+# longs ne chiffrent plus d'emissions evitees (base ecartee, methodologie
+# v3.0 §11.1).
 
 
 def _co2_phrase_short(lang: str, co2_kg: int | None) -> str:
-    """Mention CO₂ pour le format court (étiquette / réseaux)."""
-    if co2_kg is None:
-        return {
-            "fr": "CO₂ évité certifié Anemos, vérifiable.",
-            "en": "CO₂ avoided certified by Anemos, verifiable.",
-            "pt-br": "CO₂ evitado certificado pela Anemos, verificável.",
-        }[lang]
-    n = _fmt_int(int(co2_kg), lang)
+    """Mention pour le format court (étiquette / réseaux).
+
+    🔴 Ne chiffre plus d'émissions évitées, et n'en revendique plus. La
+    comparaison à un cargo conventionnel repose sur une base écartée par la
+    méthodologie de performance environnementale v3.0 (§11.1).
+
+    ``co2_kg`` est conservé dans la signature pour ne pas casser les appelants,
+    et volontairement ignoré.
+    """
+    del co2_kg
     return {
-        "fr": f"{n} kg de CO₂ évités, vérifiables.",
-        "en": f"{n} kg of CO₂ avoided, verifiable.",
-        "pt-br": f"{n} kg de CO₂ evitados, verificáveis.",
+        "fr": "Traversée à la voile, certifiée Anemos et vérifiable.",
+        "en": "Sailed crossing, certified by Anemos and verifiable.",
+        "pt-br": "Travessia à vela, certificada pela Anemos e verificável.",
     }[lang]
 
 
@@ -325,7 +316,6 @@ def render_story(
         region=_region_clause(lng, origin, region),
         producer=producer or _DEFAULT_PRODUCER[lng],
         vessel=_vessel_clause(lng, vessel),
-        co2=_co2_phrase(lng, co2_kg),
     )
 
 

@@ -181,7 +181,7 @@
   <div class="alert alert-success">{% if lang == 'en' %}Saved.{% else %}Enregistré.{% endif %}</div>
   {% endif %}
   <p class="text-muted text-sm">
-    {% if lang == 'en' %}Publish this shipment's voyage on a public page — the destination of the QR code printed on your packaging: real route on a map, hold conditions, avoided CO₂, on-board photos. No personal data is shown; you can unpublish at any time.{% else %}Publiez la traversée de cette expédition sur une page publique — la destination du QR code imprimé sur vos emballages : trajet réel sur carte, conditions de cale, CO₂ évité, photos de bord. Aucune donnée personnelle n'est affichée ; dépubliable à tout moment.{% endif %}
+    {% if lang == 'en' %}Publish this shipment's voyage on a public page — the destination of the QR code printed on your packaging: real route on a map, hold conditions, measured emissions, on-board photos. No personal data is shown; you can unpublish at any time.{% else %}Publiez la traversée de cette expédition sur une page publique — la destination du QR code imprimé sur vos emballages : trajet réel sur carte, conditions de cale, émissions mesurées, photos de bord. Aucune donnée personnelle n'est affichée ; dépubliable à tout moment.{% endif %}
   </p>
   <form method="post" action="/me/bookings/{{ booking.reference }}/voyage-public"
         hx-post="/me/bookings/{{ booking.reference }}/voyage-public" hx-swap="none">

@@ -262,6 +262,14 @@ LEDGER_RESULT_FIELDS = {
     # cote et ne s'ajoutent que sur demande explicite.
     "co2_mouillage_t": "Decimal | None",
     "co2eq_mouillage_t": "Decimal | None",
+    # Ajout compatible (2026-09-11) : assiette de l'approche METIER (trajet +
+    # mouillage), numerateur des methodes A et B. Champ en FIN de dataclass AVEC
+    # defaut => extension, pas d'increment de DASHBOARD_CONTRACT_VERSION.
+    #
+    # 🔴 A ne pas confondre avec `co2_emitted_t`, qui reste l'assiette MRV (hors
+    # mouillage). Les faire partager un numerateur faisait dire a l'intensite
+    # Metier autre chose que ce qu'elle annonce.
+    "co2_op_t": "Decimal | None",
 }
 
 # Clés exactes du dict retourné par emission_ledger.emissions_breakdown() —

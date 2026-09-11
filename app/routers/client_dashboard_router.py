@@ -87,11 +87,11 @@ async def dashboard(
         for b in bookings
         if b.status in ("submitted", "confirmed", "loaded", "at_sea", "discharged")
     )
-    co2_avoided = await db.scalar(
-        select(func.coalesce(func.sum(AnemosCertificate.co2_avoided_kg), 0)).where(
-            AnemosCertificate.client_account_id == client.id
-        )
-    )
+    # 🔴 Plus de cumul « CO₂ évité » sur le tableau de bord client.
+    #
+    # La somme portait sur une base de comparaison écartée (méthodologie v3.0
+    # §11.1). La carte KPI correspondante est retirée du gabarit : la garder à
+    # zéro afficherait « 0 kg évité », un chiffre FAUX plutôt qu'une absence.
     notif_unread = await notifications.count_unread(db, client_id=client.id)
     # Alertes proactives affichées dès la connexion (retard / décalage ETA…).
     all_notifs = await notifications.list_for(db, client_id=client.id, limit=20)
@@ -145,7 +145,7 @@ async def dashboard(
             "client": client,
             "bookings": bookings,
             "active_count": active_count,
-            "co2_avoided_kg": float(co2_avoided or 0),
+            # Le tableau de bord ne porte plus de cumul d'evitement (cf. plus haut).
             "notif_unread": notif_unread,
             "alert_items": alert_items,
             "at_sea_crossings": at_sea_crossings,
@@ -659,7 +659,7 @@ async def anemos_annual_report_csv(
             "issued_at",
             "tonnage_t",
             "distance_nm",
-            "co2_avoided_kg",
+            "co2_emitted_kg",
             "method",
         ]
     )
@@ -672,7 +672,7 @@ async def anemos_annual_report_csv(
                 s["issued_at"].date() if s["issued_at"] else "",
                 s["tonnage_t"],
                 s["distance_nm"],
-                s["co2_avoided_kg"],
+                s["co2_emitted_kg"],
                 s["method"] or "",
             ]
         )
@@ -685,7 +685,7 @@ async def anemos_annual_report_csv(
             year,
             report["total_tonnage_t"],
             report["total_distance_nm"],
-            report["total_avoided_kg"],
+            report["total_emitted_kg"],
             "",
         ]
     )
@@ -909,7 +909,7 @@ async def mfa_disable(
 
 # ─────────────────────────── Vague 3 — kit B2B2C ───────────────────────────
 # Espace marque (co-branding) + pack par expédition assemblant le récit
-# d'origine, la dataviz CO₂ (vrai CO₂ évité + QR /verify) et le certificat.
+# d'origine, la dataviz CO₂ (émissions mesurées + QR /verify) et le certificat.
 
 _LOGO_MIME_OK = {"image/png", "image/jpeg", "image/svg+xml", "image/webp"}
 
@@ -1009,7 +1009,13 @@ async def booking_kit(
     vessel = await db.get(Vessel, leg.vessel_id) if leg else None
     lang = getattr(request.state, "lang", "fr")
 
-    co2_kg = int(cert.co2_avoided_kg) if cert and cert.co2_avoided_kg else None
+    # 🔴 Plus de « CO₂ évité » dans le kit B2B2C.
+    #
+    # Le kit est fait pour être transmis aux consommateurs finals du client :
+    # c'est la diffusion la plus large de l'allégation. Base de comparaison
+    # écartée (méthodologie v3.0 §11.1). Les gabarits gardent le bloc derrière
+    # `{% if cert and co2_kg %}` : le tarir ici suffit.
+    co2_kg = None
     verify_url = f"{settings.site_url.rstrip('/')}/verify/{cert.reference}" if cert else None
     # QR du kit : pointe vers la page publique de voyage quand elle est
     # publiée (l'histoire complète), sinon vers la vérification du certificat.
@@ -1123,7 +1129,13 @@ async def booking_kit_pdf(
     pod = await db.get(Port, leg.arrival_port_id) if leg else None
     lang = getattr(request.state, "lang", "fr")
 
-    co2_kg = int(cert.co2_avoided_kg) if cert and cert.co2_avoided_kg else None
+    # 🔴 Plus de « CO₂ évité » dans le kit B2B2C.
+    #
+    # Le kit est fait pour être transmis aux consommateurs finals du client :
+    # c'est la diffusion la plus large de l'allégation. Base de comparaison
+    # écartée (méthodologie v3.0 §11.1). Les gabarits gardent le bloc derrière
+    # `{% if cert and co2_kg %}` : le tarir ici suffit.
+    co2_kg = None
     origin = (
         booking.coffee_origin if coffee_stories.is_valid_origin(booking.coffee_origin) else None
     )
@@ -1195,7 +1207,13 @@ async def _social_render_kwargs(request: Request, booking, client, db: AsyncSess
     ).scalar_one_or_none()
     lang = getattr(request.state, "lang", "fr")
 
-    co2_kg = int(cert.co2_avoided_kg) if cert and cert.co2_avoided_kg else None
+    # 🔴 Plus de « CO₂ évité » dans le kit B2B2C.
+    #
+    # Le kit est fait pour être transmis aux consommateurs finals du client :
+    # c'est la diffusion la plus large de l'allégation. Base de comparaison
+    # écartée (méthodologie v3.0 §11.1). Les gabarits gardent le bloc derrière
+    # `{% if cert and co2_kg %}` : le tarir ici suffit.
+    co2_kg = None
     verify_url = f"{settings.site_url.rstrip('/')}/verify/{cert.reference}" if cert else None
     voyage_url = (
         f"{settings.site_url.rstrip('/')}/voyage/{booking.reference}"

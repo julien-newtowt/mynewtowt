@@ -302,6 +302,38 @@ class LedgerResult:
     co2_mouillage_t: Decimal | None = None
     co2eq_mouillage_t: Decimal | None = None
 
+    # ── Assiette de l'approche MÉTIER : trajet + mouillage ───────────────
+    #
+    # 🔴 `co2_emitted_t` porte l'assiette **hors mouillage** : c'est le
+    # numérateur de l'approche MRV, et de lui seul. L'approche Métier et la
+    # lecture B/L prennent la consommation **berth-to-berth, mouillage inclus**
+    # (méthodologie v3.0 §1.2, §9.1, §10).
+    #
+    # Exposé plutôt que recalculé chez l'appelant : c'est le numérateur des
+    # méthodes A et B ci-dessous, et `kpi_env` en dérive le sien depuis le
+    # résumé persisté. Une seule définition, deux lecteurs.
+    #
+    # ``None`` = mouillage inconnu ⇒ méthodes A et B non calculables, jamais un
+    # repli silencieux sur l'assiette MRV, qui publierait un chiffre
+    # sous-estimé sous le nom d'une autre approche.
+    co2_op_t: Decimal | None = None
+
+    # ── Assiette de l'approche MÉTIER : trajet + mouillage ───────────────
+    #
+    # 🔴 `co2_emitted_t` porte l'assiette **hors mouillage** : c'est le
+    # numérateur de l'approche MRV, et de lui seul. L'approche Métier et la
+    # lecture B/L prennent la consommation **berth-to-berth, mouillage inclus**
+    # (méthodologie v3.0 §1.2, §9.1, §10).
+    #
+    # Exposé plutôt que recalculé chez l'appelant : c'est le numérateur des
+    # méthodes A et B ci-dessous, et `kpi_env` en dérive le sien depuis le
+    # résumé persisté. Une seule définition, deux lecteurs.
+    #
+    # ``None`` = mouillage inconnu ⇒ méthodes A et B non calculables, jamais un
+    # repli silencieux sur l'assiette MRV, qui publierait un chiffre
+    # sous-estimé sous le nom d'une autre approche.
+    co2_op_t: Decimal | None = None
+
 
 # ════════════════════════════════════════════════════════════ Helpers datetime
 
@@ -735,6 +767,38 @@ async def compute_for_leg(
         Decimal(em_mouillage["co2eq_t"]) if em_mouillage["co2eq_t"] is not None else None
     )
 
+    # Assiette MÉTIER (berth-to-berth) : trajet + mouillage.
+    #
+    # Deux provenances, deux lectures — les confondre fabriquerait un chiffre :
+    # en source ``events`` le mouillage est une somme d'intervalles, donc 0
+    # quand le navire n'a pas mouillé ; en repli ``legacy_noon`` il n'est pas
+    # séparable, et ``do_consumed`` est déjà un total indifférencié, donc
+    # berth-to-berth par construction.
+    if source == "events":
+        co2_op_t = (
+            (co2_emitted_t + co2_mouillage_t)
+            if (co2_emitted_t is not None and co2_mouillage_t is not None)
+            else None
+        )
+    else:
+        co2_op_t = co2_emitted_t
+
+    # Assiette MÉTIER (berth-to-berth) : trajet + mouillage.
+    #
+    # Deux provenances, deux lectures — les confondre fabriquerait un chiffre :
+    # en source ``events`` le mouillage est une somme d'intervalles, donc 0
+    # quand le navire n'a pas mouillé ; en repli ``legacy_noon`` il n'est pas
+    # séparable, et ``do_consumed`` est déjà un total indifférencié, donc
+    # berth-to-berth par construction.
+    if source == "events":
+        co2_op_t = (
+            (co2_emitted_t + co2_mouillage_t)
+            if (co2_emitted_t is not None and co2_mouillage_t is not None)
+            else None
+        )
+    else:
+        co2_op_t = co2_emitted_t
+
     # CO₂ évité : comparateur conventionnel ``co2.estimate`` (mêmes valeurs).
     avoided = await _avoided_co2_kg(db, distance, cargo_bl)
 
@@ -742,8 +806,16 @@ async def compute_for_leg(
     distance_km = (distance * NM_TO_KM) if distance is not None else None
     occupancy = await _dashboard_param(db, "occupancy_rate_pct", _OCCUPANCY_DEFAULT)
     capacity_ref = await _dashboard_param(db, "vessel_capacity_ref_t", _CAPACITY_REF_DEFAULT)
-    ef_a = _ef_method(co2_emitted_t, cargo_bl, distance_km)
-    ef_b = _ef_method(co2_emitted_t, capacity_ref * (occupancy / Decimal("100")), distance_km)
+    # 🔴 Chaque lecture porte SON numérateur (méthodologie §1.2).
+    #
+    # A (B/L) et B (Métier) prennent l'assiette berth-to-berth ; C (MRV) prend
+    # l'assiette hors mouillage. Ces trois valeurs sont PERSISTÉES dans
+    # ``voyage_emission_summaries`` et alimentent la page voyage, l'export PDF
+    # et le DOCX remis à un tiers : les faire partager le numérateur MRV
+    # faisait dire à l'intensité Métier autre chose que ce qu'elle annonce,
+    # partout où elle sort.
+    ef_a = _ef_method(co2_op_t, cargo_bl, distance_km)
+    ef_b = _ef_method(co2_op_t, capacity_ref * (occupancy / Decimal("100")), distance_km)
     ef_c = _ef_method(co2_emitted_t, cargo_mrv, distance_km)
 
     return LedgerResult(
@@ -772,6 +844,7 @@ async def compute_for_leg(
         co2_mouillage_t=co2_mouillage_t,
         co2eq_mouillage_t=co2eq_mouillage_t,
         avoided_co2_kg=avoided,
+        co2_op_t=co2_op_t,
         ef_method_a=ef_a,
         ef_method_b=ef_b,
         ef_method_c=ef_c,

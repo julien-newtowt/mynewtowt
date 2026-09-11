@@ -251,8 +251,19 @@ méthode B et le CO₂ évité du dashboard : <!-- source: validation_engine.py:
 |---|---|---|---|
 | `occupancy_rate_pct` | 70 | % | hypothèse de remplissage |
 | `vessel_capacity_ref_t` | 1100 | t | capacité de référence |
-| `ef_container_ship_gco2_tkm` | 16 | gCO₂/t·km | **placeholder sectoriel** (Q15) |
-| `ef_airfreight_gco2_tkm` | 800 | gCO₂/t·km | **placeholder sectoriel** (Q15) |
+| `ef_airfreight_gco2_tkm` | 630 | gCO₂/t·km | part *Opération* seule de la Base Empreinte ADEME (méthodologie v3.0 §11.3) — **usage restreint** |
+
+> 🔴 **`ef_container_ship_gco2_tkm` a été SUPPRIMÉ** (2026-09-11, migration
+> `20260911_0147`). La méthodologie de performance environnementale v3.0
+> (§11.1) écarte la comparaison au porte-conteneurs : la relation entre la
+> taille d'un navire et son facteur d'émission n'étant pas linéaire, le
+> segment retenu déterminait le résultat entre 87 % et 96 %. **Ne pas
+> réintroduire sans une nouvelle décision explicite.**
+>
+> L'aérien passe de **800 à 630** : 800 était le total ADEME **amont
+> compris**, donc une référence well-to-wake comparée à une émission
+> tank-to-wake — l'erreur de périmètre que le §4.1 désigne comme « la plus
+> facile à commettre de bonne foi », qui surestimait la référence de 27 %.
 
 ### 3.4 Seuils des règles de validation
 
@@ -417,9 +428,11 @@ avoided   = conv_kg − towt_kg
 ```
 <!-- source: co2.py:190-215 ; emission_ledger.py:490-510 -->
 
-Le dashboard affiche en outre des comparateurs paramétrables
-(`ef_container_ship_gco2_tkm` = 16, `ef_airfreight_gco2_tkm` = 800 —
-**références provisoires**, Q15).
+Le dashboard affiche en outre **un** comparateur paramétrable
+(`ef_airfreight_gco2_tkm` = 630 — **référence provisoire**, Q15), à l'usage
+restreint fixé par la méthodologie §11.3 : pas d'intermodal sur le one-pager
+de direction ni sur les pages de simulation carburant. Le comparateur
+porte-conteneurs a été retiré (§11.1).
 
 ### 4.12 Profil de propulsion (tranches 4 h)
 

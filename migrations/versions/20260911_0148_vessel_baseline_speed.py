@@ -36,6 +36,19 @@ instantané, jamais un appel au code vivant.
 Idempotente : ne sème que les lignes dont la vitesse est encore ``NULL``, donc
 n'écrase jamais une valeur corrigée à la main.
 
+⚠️ **Le seed peut ne rien toucher, et il le fera en silence.** Le rattachement
+se fait par ``imo_number``, colonne ``String(20)`` **libre et nullable** :
+rien dans le dépôt ne crée les navires en production, donc le format qui y est
+réellement stocké n'est pas vérifiable d'ici. Si la production écrivait
+``IMO 9982938``, ou si ATLANTIS n'est pas encore créé, l'``UPDATE`` ne
+toucherait rien et la migration réussirait quand même — le taux de
+décarbonation retomberait alors sur une absence motivée sans qu'on sache
+pourquoi.
+
+**Contrôle post-migration obligatoire** : ``SELECT code, imo_number,
+baseline_speed_kn FROM vessels`` — les trois navires en service doivent
+porter une vitesse.
+
 Revision ID: 20260911_0148
 Revises: 20260911_0147
 """
@@ -70,5 +83,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """🔴 Détruit toute vitesse corrigée à la main, y compris celle qu'on attend.
+
+    L'``upgrade`` annonce qu'ATLANTIS **doit** être corrigé dès réception de
+    son fichier EEDI (faiblesse W3). Ce ``downgrade`` supprime les colonnes :
+    cette correction, et toute autre, sont perdues sans trace.
+
+    À relever avant de le jouer : ``SELECT code, imo_number, baseline_speed_kn,
+    baseline_speed_source FROM vessels``.
+    """
     op.drop_column("vessels", "baseline_speed_source")
     op.drop_column("vessels", "baseline_speed_kn")

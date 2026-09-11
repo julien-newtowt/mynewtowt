@@ -4,7 +4,6 @@
 {% block description %}{{ t('cacao_meta_desc', lang) }}{% endblock %}
 
 {% block head %}
-  <script src="{{ asset('js/co2-equivalences.js') }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -68,7 +67,15 @@
     <span class="section-kicker">3 · {{ t('cacao_s3_kicker', lang) }}</span>
     <h2 class="section-title">{{ t('cacao_s3_title', lang) }}</h2>
     <p class="section-lead" style="max-width:760px;margin-bottom:var(--sp-5)">{{ t('cacao_s3_lead', lang) }}</p>
-    {% include "public/_co2_equivalences_interactive.html" %}
+  {# 🔴 Équivalences CO₂ retirées (arbres, vols, camions).
+
+     Elles convertissaient un **CO₂ évité** calculé contre un porte-conteneurs
+     conventionnel à 13,7 gCO₂/t·km — base écartée par la méthodologie de
+     performance environnementale v3.0 (§11.1). Une équivalence n'étaye pas une
+     allégation : elle l'amplifie. Elles partent avec elle.
+
+     Remplacement soumis à arbitrage :
+     docs/audit/2026-09-11-note-julien-facteur-1-5-vers-profil-velique.md #}
   </div>
 </section>
 

@@ -278,9 +278,7 @@ async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) 
     rows = []
     tot_tonnage = Decimal("0")
     tot_distance = Decimal("0")
-    tot_avoided = Decimal("0")
     tot_emitted = Decimal("0")
-    tot_conventional = Decimal("0")
     declared_count = 0
     for cert, booking_ref, leg_code in res.all():
         if cert.issued_at is None or cert.issued_at.year != year:
@@ -289,9 +287,15 @@ async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) 
             declared_count += 1
         tot_tonnage += cert.tonnage_transported_t or Decimal("0")
         tot_distance += cert.distance_nm or Decimal("0")
-        tot_avoided += cert.co2_avoided_kg or Decimal("0")
+        # 🔴 `co2_avoided_kg` et `co2_conventional_kg` ne sont plus agrégés.
+        #
+        # Ce rapport est remis au client pour son Bilan Carbone scope 3 : il ne
+        # peut pas porter une comparaison à un porte-conteneurs conventionnel à
+        # 13,7 gCO₂/t·km, base écartée par la méthodologie v3.0 (§11.1).
+        #
+        # Les certificats antérieurs à la migration 20260911_0146 portent encore
+        # ces valeurs en base ; les sommer les republierait.
         tot_emitted += cert.co2_emitted_kg or Decimal("0")
-        tot_conventional += cert.co2_conventional_kg or Decimal("0")
         rows.append(
             {
                 "reference": cert.reference,
@@ -300,7 +304,7 @@ async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) 
                 "issued_at": cert.issued_at,
                 "tonnage_t": cert.tonnage_transported_t,
                 "distance_nm": cert.distance_nm,
-                "co2_avoided_kg": cert.co2_avoided_kg,
+                "co2_emitted_kg": cert.co2_emitted_kg,
                 "method": cert.method,
             }
         )
@@ -311,7 +315,5 @@ async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) 
         "declared_count": declared_count,
         "total_tonnage_t": tot_tonnage,
         "total_distance_nm": tot_distance,
-        "total_avoided_kg": tot_avoided,
         "total_emitted_kg": tot_emitted,
-        "total_conventional_kg": tot_conventional,
     }

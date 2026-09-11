@@ -52,9 +52,12 @@ def test_never_says_label(origin, lang, fmt) -> None:
 
 @pytest.mark.parametrize("origin", cs.ORIGINS)
 def test_certified_anemos_mentioned(origin: str) -> None:
-    assert "certifié Anemos" in cs.render_story(origin, "fr", "long", co2_kg=250)
+    # « certifiée » depuis que la phrase porte sur LA TRAVERSÉE et non plus sur
+    # un tonnage évité : le récit ne chiffre plus d'évitement (base écartée,
+    # méthodologie v3.0 §11.1).
+    assert "certifiée Anemos" in cs.render_story(origin, "fr", "long", co2_kg=250)
     assert "certified by Anemos" in cs.render_story(origin, "en", "long", co2_kg=250)
-    assert "certificado pela Anemos" in cs.render_story(origin, "pt-br", "long", co2_kg=250)
+    assert "certificada pela Anemos" in cs.render_story(origin, "pt-br", "long", co2_kg=250)
 
 
 # ───────────────────────── injection ERP ─────────────────────────
@@ -71,21 +74,49 @@ def test_erp_fields_are_injected() -> None:
     assert "Nariño, Colombie" in txt
     assert "la coopérative El Cóndor" in txt
     assert "l'Artemis" in txt
-    assert "1 200 kg de CO₂" in txt  # séparateur de milliers fr (espace insécable)
+    # 🔴 Le tonnage n'est plus injecte : les recits ne chiffrent plus
+    # d'evitement (base ecartee, methodologie v3.0 §11.1). Ce qui est
+    # verifie ici reste l'essentiel — region, producteur et navire viennent
+    # bien de l'ERP et atterrissent dans le texte.
+    assert "kg" not in txt
 
 
-def test_short_carries_the_kg_number() -> None:
-    assert "250 kg of CO₂ avoided" in cs.render_story("mexique", "en", "short", co2_kg=250)
+def test_short_no_longer_carries_a_kg_number() -> None:
+    """🔴 Le format court (étiquette, réseaux) ne chiffre plus d'évitement.
+
+    C'est le format le plus diffusé : il finit sur un emballage ou un post.
+    Il porte désormais le fait — la traversée à la voile, certifiée et
+    vérifiable — et non une comparaison à un cargo conventionnel dont la base
+    est écartée (méthodologie v3.0 §11.1).
+    """
+    txt = cs.render_story("mexique", "en", "short", co2_kg=250)
+    assert "250 kg" not in txt
+    assert "avoided" not in txt
+    assert "certified by Anemos" in txt
 
 
 def test_generic_render_has_no_number() -> None:
     txt = cs.render_story("guatemala", "fr", "long")  # aucun co2_kg
     assert "kg" not in txt
-    assert "certifié Anemos" in txt
+    assert "certifiée Anemos" in txt
 
 
 def test_thousands_separator_per_language() -> None:
-    assert "1,200 kg of CO₂" in cs.render_story("colombie", "en", "long", co2_kg=1200)
+    """🔴 Plus aucun tonnage dans les récits — donc plus de séparateur à tester.
+
+    Ce test vérifiait que 1 200 s'écrivait « 1,200 » en anglais et « 1 200 » en
+    français, sur un chiffre d'émissions évitées. Ce chiffre est retiré (base de
+    comparaison écartée, méthodologie v3.0 §11.1) : le test vérifie désormais
+    qu'AUCUN tonnage ne revient, quelle que soit la valeur passée.
+
+    ``co2_kg`` reste accepté par la signature — les appelants n'ont pas été
+    cassés — mais il est ignoré. Un test qui ne s'en assure pas laisserait la
+    porte ouverte.
+    """
+    for lang in ("fr", "en", "pt-br"):
+        txt = cs.render_story("colombie", lang, "long", co2_kg=1200)
+        assert "1,200" not in txt and "1 200" not in txt and "1200" not in txt
+        assert "kg" not in txt
 
 
 # ───────────────────────── exemples vitrine ─────────────────────────
