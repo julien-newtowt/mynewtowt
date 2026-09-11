@@ -250,13 +250,22 @@ class LedgerResult:
     ef_method_b: Decimal | None
     ef_method_c: Decimal | None
 
-    # ── Émissions du séjour au port (« Port Emissions ») ─────────────────
+    # ── Émissions du séjour au port — 🔴 HORS DES DEUX APPROCHES ─────────
     #
     # Assiette DISJOINTE de `co2_emitted_t` : celle-là porte le trajet (conso
     # hors mouillage), celles-ci l'escale qui SUIT l'arrivée (`conso_escale_t`,
     # G12). Les deux ne se recouvrent pas et ne doivent jamais être
     # additionnées sans le dire — l'escale d'un leg peut s'étendre sur la
     # fenêtre du leg suivant.
+    #
+    # 🔴 **L'escale n'entre dans AUCUNE des deux intensités** (méthodologie
+    # v3.0 §1.2, §4.4) : le carburant brûlé à quai ne contribue pas au
+    # transport, et le rapporter à des tonnes-kilomètres n'a pas de sens
+    # puisque le navire ne bouge pas. Ce poste sert à autre chose, et c'est
+    # précieux : il **explique l'écart** avec la déclaration officielle
+    # THETIS-MRV, qui l'inclut (§4.6). Sans lui, un lecteur comparant nos
+    # chiffres à la plateforme conclurait à une incohérence, voire à une
+    # sous-déclaration.
     #
     # Même facteur, même primitive (`emissions_breakdown`) : c'est la règle
     # d'or, l'unique multiplication conso × facteur vit dans ce module.
@@ -270,18 +279,23 @@ class LedgerResult:
     co2_escale_t: Decimal | None = None
     co2eq_escale_t: Decimal | None = None
 
-    # ── Émissions au mouillage — 🔴 HORS PÉRIMÈTRE MRV ───────────────────
+    # ── Émissions au mouillage — assiette de l'approche MÉTIER ───────────
     #
     # Troisième assiette, disjointe des deux autres : la consommation au
     # mouillage/à la dérive (`conso_mouillage_t`), exclue de l'assiette du
     # trajet par construction (`do_consumed = conso_hors`).
     #
-    # 🔴 **Ce chiffre n'appartient pas au périmètre MRV** (constat métier du
-    # 2026-09-04). Il existe pour l'analyse interne — du carburant brûlé mérite
-    # une émission connue — et **ne doit jamais être additionné à `co2_emitted_t`
-    # ni à `co2_escale_t` pour produire un total présenté comme réglementaire**.
-    # Toute restitution qui l'inclut doit être explicitement opt-in et porter la
-    # mention du périmètre (cf. `/mrv/emissions/voyages`, sélecteur).
+    # 🔴 **Hors de l'approche MRV, mais DANS l'approche Métier** (méthodologie
+    # v3.0 §1.2, §4.4). Le règlement l'exclut parce qu'il mesure l'efficacité
+    # *en transport* ; la performance du service vendu l'inclut, parce qu'« un
+    # navire au mouillage en attente de créneau brûle du carburant au titre de
+    # ce voyage, et le chargeur en supporte l'impact ».
+    #
+    # Ce n'est donc PAS un indicateur purement interne : `co2_emitted_t +
+    # co2_mouillage_t` est le numérateur d'une intensité **publiable**
+    # (`kpi_env`, méthode B). Ce qu'il ne faut jamais faire est l'additionner au
+    # chiffre MRV ou le présenter sous son nom — deux lectures nommées, jamais
+    # l'une pour l'autre.
     #
     # Même facteur et même primitive que les deux autres assiettes : la règle
     # d'or ne souffre pas d'exception, y compris pour un chiffre hors MRV.

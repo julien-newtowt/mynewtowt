@@ -90,7 +90,7 @@
           <th>{{ t('mrv_em_col_conso_mouillage', lang) }}</th>
           {% if include_anchoring %}
           <th>{{ t('mrv_em_col_co2_mouillage', lang) }}</th>
-          <th>{{ t('mrv_em_col_co2_total_hors_mrv', lang) }}</th>
+          <th>{{ t('mrv_em_col_co2_metier', lang) }}</th>
           {% endif %}
           {% endif %}
         </tr>
@@ -129,12 +129,15 @@
             {% if r.has_summary %}{{ r.co2eq_t if r.co2eq_t is not none else '—' }}
             {% else %}<span class="pill pill-neutral">{{ t('mrv_em_not_computed', lang) }}</span>{% endif %}
           </td>
-          {# Conso au mouillage : exclue de l'assiette MRV du trajet. #}
+          {# Conso au mouillage : exclue de l'assiette MRV, incluse dans
+             l'assiette Métier (méthodologie §1.2). #}
           <td>{{ r.conso_mouillage_t if r.conso_mouillage_t is not none else '—' }}</td>
           {% if include_anchoring %}
           <td>{{ r.co2_mouillage_t if r.co2_mouillage_t is not none else '—' }}</td>
-          {# Total élargi : `None` dès que le CO₂ du trajet manque — un total
-             partiel qui passerait pour complet serait pire que pas de total. #}
+          {# Assiette Métier (trajet + mouillage) : `None` dès qu'un des deux
+             termes manque — un total partiel qui passerait pour complet serait
+             pire que pas de total. Un mouillage inconnu n'est pas un mouillage
+             nul. #}
           <td>
             {% if r.co2_with_anchoring_t is not none %}<strong>{{ r.co2_with_anchoring_t }}</strong>
             {% else %}<span class="pill pill-neutral">{{ t('mrv_em_not_computed', lang) }}</span>{% endif %}
