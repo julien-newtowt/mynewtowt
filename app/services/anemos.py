@@ -192,9 +192,27 @@ async def issue_for_booking(db: AsyncSession, booking: Booking) -> AnemosCertifi
         towt_kg = emission.towt_co2_kg
         method = "theoretical"
 
-    # c) Référence conventionnelle : 13,7 g/t·km sur la même distance.
-    conventional_kg = emission.conventional_co2_kg
-    avoided_kg = max(conventional_kg - towt_kg, Decimal("0")).quantize(Decimal("0.001"))
+    # c) 🔴 Plus de référence conventionnelle sur le certificat.
+    #
+    # Le certificat portait un « CO₂ évité » contre un porte-conteneurs à
+    # 13,7 gCO₂/t·km. La méthodologie v3.0 a **écarté** cette base (§11.1) :
+    # la relation entre la taille d'un navire et son facteur d'émission n'étant
+    # pas linéaire, le segment retenu déterminait le résultat entre 87 % et
+    # 96 %. Un indicateur dont la valeur dépend à ce point d'un choix
+    # discrétionnaire n'est pas défendable sous la directive (UE) 2024/825.
+    #
+    # Le certificat conserve donc ce qui est **mesuré** — tonnage, distance,
+    # CO₂ réellement émis, tiré du grand livre — et abandonne le
+    # contrefactuel. La méthodologie est explicite sur ce qui se publie de
+    # notre propre initiative : le **profil de propulsion**, qui ne dépend
+    # d'aucun facteur d'émission, d'aucune cargaison de référence et d'aucun
+    # scénario de comparaison (§1.2 bis).
+    #
+    # ⚠️ Ne pas remettre ce calcul sans décision explicite de la Responsable
+    # Environnement. La sentinelle `tests/regression/test_no_outward_co2_claim.py`
+    # échouera si un gabarit sortant réaffiche ces champs.
+    conventional_kg = None
+    avoided_kg = None
 
     cert = AnemosCertificate(
         reference=f"ANEMOS-{booking.reference}",
@@ -260,9 +278,7 @@ async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) 
     rows = []
     tot_tonnage = Decimal("0")
     tot_distance = Decimal("0")
-    tot_avoided = Decimal("0")
     tot_emitted = Decimal("0")
-    tot_conventional = Decimal("0")
     declared_count = 0
     for cert, booking_ref, leg_code in res.all():
         if cert.issued_at is None or cert.issued_at.year != year:
@@ -271,9 +287,15 @@ async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) 
             declared_count += 1
         tot_tonnage += cert.tonnage_transported_t or Decimal("0")
         tot_distance += cert.distance_nm or Decimal("0")
-        tot_avoided += cert.co2_avoided_kg or Decimal("0")
+        # 🔴 `co2_avoided_kg` et `co2_conventional_kg` ne sont plus agrégés.
+        #
+        # Ce rapport est remis au client pour son Bilan Carbone scope 3 : il ne
+        # peut pas porter une comparaison à un porte-conteneurs conventionnel à
+        # 13,7 gCO₂/t·km, base écartée par la méthodologie v3.0 (§11.1).
+        #
+        # Les certificats antérieurs à la migration 20260911_0146 portent encore
+        # ces valeurs en base ; les sommer les republierait.
         tot_emitted += cert.co2_emitted_kg or Decimal("0")
-        tot_conventional += cert.co2_conventional_kg or Decimal("0")
         rows.append(
             {
                 "reference": cert.reference,
@@ -282,7 +304,7 @@ async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) 
                 "issued_at": cert.issued_at,
                 "tonnage_t": cert.tonnage_transported_t,
                 "distance_nm": cert.distance_nm,
-                "co2_avoided_kg": cert.co2_avoided_kg,
+                "co2_emitted_kg": cert.co2_emitted_kg,
                 "method": cert.method,
             }
         )
@@ -293,7 +315,5 @@ async def annual_report(db: AsyncSession, *, client_account_id: int, year: int) 
         "declared_count": declared_count,
         "total_tonnage_t": tot_tonnage,
         "total_distance_nm": tot_distance,
-        "total_avoided_kg": tot_avoided,
         "total_emitted_kg": tot_emitted,
-        "total_conventional_kg": tot_conventional,
     }

@@ -33,9 +33,12 @@ import app.models  # noqa: F401 — enregistre tous les modèles sur Base.metada
 from app.database import Base
 from app.models.validation import QualityCheckResult
 from app.services.kpi_env import (
-    PROPULSION_CATEGORIES,
+    NA_NO_NAVIGATION,
+    NA_NO_SLOTS,
+    NAVIGATION_CATEGORIES,
     build_propulsion_profile,
     classify_propulsion_slot,
+    combine_propulsion_profiles,
     conso_vs_target,
     propulsion_profile,
     quality_overview,
@@ -84,11 +87,16 @@ def test_classify_statique_neither():
 
 
 def test_propulsion_missing_slots_excluded_from_denominator():
-    """6 tranches théoriques, 4 renseignées ⇒ dénominateur 4 (spec stricte).
+    """6 tranches théoriques, 4 renseignées, 3 en navigation.
 
-    Les 2 tranches sans relevé ne comptent PAS comme « statique » et ne
-    gonflent pas le dénominateur — un trou de saisie ne fait pas chuter le %
-    de vélique."""
+    Deux exclusions distinctes, à ne pas confondre :
+
+    - les 2 tranches SANS relevé ne comptent pas comme « statique » et ne
+      gonflent aucun dénominateur — un trou de saisie ne fait pas chuter le %
+      de vélique (spec stricte, méthodologie §7.3) ;
+    - la tranche À L'ARRÊT est bien relevée, mais sort du dénominateur des
+      parts publiées : le navire ne fait pas route (méthodologie §7.2).
+    """
     readings = [
         _slot(j0=True),  # vélique pur
         _slot(aft_j1=True, me_ps_load_pct=Decimal("40")),  # hybride
@@ -97,31 +105,103 @@ def test_propulsion_missing_slots_excluded_from_denominator():
     ]
     profile = build_propulsion_profile(readings, theoretical_slots=6)
 
-    assert profile.filled_slots == 4  # dénominateur = tranches RENSEIGNÉES
+    assert profile.filled_slots == 4
+    assert profile.navigation_slots == 3  # ← dénominateur des parts publiées
+    assert profile.statique_slots == 1
     assert profile.theoretical_slots == 6
     assert profile.counts == {"velique_pur": 1, "hybride": 1, "mecanique": 1, "statique": 1}
-    # Chaque catégorie = 1/4 = 25,0 % (dénominateur 4, pas 6).
+    # Chaque mode = 1/3 (dénominateur 3, ni 4 ni 6) et les parts somment à 100 %.
     by_cat = {s.category: s.pct for s in profile.segments}
-    for cat in PROPULSION_CATEGORIES:
-        assert by_cat[cat] == Decimal("25.0")
-    # Complétude AFFICHÉE = 4 / 6 = 66,7 %.
+    assert set(by_cat) == set(NAVIGATION_CATEGORIES)  # « statique » n'est pas un mode
+    for cat in NAVIGATION_CATEGORIES:
+        assert by_cat[cat] == Decimal("33.3")
+    # Complétude AFFICHÉE = 4 / 6 = 66,7 % (sur les tranches renseignées).
     assert profile.completeness_pct == Decimal("66.7")
     assert profile.na_reason is None
+
+
+def test_the_stopped_slots_never_dilute_the_sail_share():
+    """🔴 Le défaut corrigé : l'arrêt diluait la part de voile.
+
+    Un voyage moitié sous voile, moitié à quai. La part de voile est de
+    100 % du **temps de navigation** — la formulation que la méthodologie
+    §7.2 impose de respecter, « faute de quoi le chiffre serait dilué par les
+    jours à quai ».
+
+    La version précédente divisait par les tranches renseignées et publiait
+    donc 50 %. Depuis que ce profil est l'indicateur de communication de tête,
+    l'écart avec le chiffre publié par l'entreprise n'était plus tenable.
+    """
+    readings = [_slot(j0=True)] * 5 + [_slot()] * 5
+    profile = build_propulsion_profile(readings, theoretical_slots=10)
+
+    by_cat = {s.category: s.pct for s in profile.segments}
+    assert by_cat["velique_pur"] == Decimal("100.0")
+    assert sum(s.pct for s in profile.segments) == Decimal("100.0")
+    # …et l'arrêt reste visible, il n'est pas escamoté.
+    assert profile.statique_slots == 5
+    assert profile.filled_slots == 10
 
 
 def test_propulsion_empty_is_na():
     profile = build_propulsion_profile([], theoretical_slots=6)
     assert profile.filled_slots == 0
-    assert profile.na_reason is not None
+    assert profile.navigation_slots == 0
+    assert profile.na_reason == NA_NO_SLOTS
     assert all(s.pct is None for s in profile.segments)
 
 
-def test_propulsion_all_static_still_counts():
-    """Un voyage 100 % statique reste calculé (statique EST une catégorie)."""
+def test_propulsion_all_static_is_na_with_its_own_reason():
+    """Un voyage 100 % à l'arrêt n'a pas de part de propulsion — et le dit.
+
+    Distinguer ce cas de « aucun relevé » : ici la donnée EXISTE et vaut
+    « le navire n'a pas fait route ». Publier 0 % de vélique laisserait croire
+    à un voyage sous moteur ; un motif distinct l'empêche.
+    """
     profile = build_propulsion_profile([_slot(), _slot(), _slot()], theoretical_slots=3)
     assert profile.filled_slots == 3
+    assert profile.navigation_slots == 0
     assert profile.counts["statique"] == 3
+    assert profile.na_reason == NA_NO_NAVIGATION
+    assert all(s.pct is None for s in profile.segments)
     assert profile.completeness_pct == Decimal("100.0")
+
+
+def test_a_scope_profile_cumulates_slots_never_averages_percentages():
+    """🔴 Agrégation de périmètre : cumul de tranches, jamais moyenne de parts.
+
+    Deux voyages très inégaux : 9 tranches toutes véliques, et 1 tranche
+    mécanique. Le cumul donne 90 % de vélique. Une moyenne des pourcentages
+    par voyage donnerait 50 % — le même poids à un voyage de neuf tranches et
+    à un voyage d'une seule.
+
+    C'est la règle §7.4 de la méthodologie, et le pendant exact de
+    ``aggregate_ef`` pour les intensités.
+    """
+    long_leg = build_propulsion_profile([_slot(j0=True)] * 9, theoretical_slots=9)
+    short_leg = build_propulsion_profile([_slot(me_ps_load_pct=Decimal("80"))], theoretical_slots=1)
+
+    scope = combine_propulsion_profiles([long_leg, short_leg])
+
+    by_cat = {s.category: s.pct for s in scope.segments}
+    assert by_cat["velique_pur"] == Decimal("90.0")
+    assert by_cat["mecanique"] == Decimal("10.0")
+    # La moyenne des parts par voyage aurait donné 50 % — ce n'est pas ça.
+    assert by_cat["velique_pur"] != Decimal("50.0")
+    assert scope.navigation_slots == 10
+    assert scope.theoretical_slots == 10
+
+
+def test_a_scope_profile_keeps_the_stopped_slots_out_of_the_denominator():
+    """Le cumul de périmètre hérite de la règle de dénominateur, sans la redire."""
+    sailing = build_propulsion_profile([_slot(j0=True)] * 3, theoretical_slots=3)
+    alongside = build_propulsion_profile([_slot()] * 7, theoretical_slots=7)
+
+    scope = combine_propulsion_profiles([sailing, alongside])
+
+    assert scope.navigation_slots == 3
+    assert scope.statique_slots == 7
+    assert {s.category: s.pct for s in scope.segments}["velique_pur"] == Decimal("100.0")
 
 
 # ═══════════════════════ conso_vs_target (jauge, seuil paramétrable)

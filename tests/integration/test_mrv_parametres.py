@@ -81,7 +81,12 @@ async def test_get_renders_after_seed(db, staff_user):
     # R12:min_releves_meteo_jour). R29 (G6) et R30 (G5) n'ont pas de seuil
     # (contrôles de présence purs).
     assert len(ctx["thr_global"]) == 31
-    assert len(ctx["dash_global"]) == 4
+    # 3 et non 4 depuis le 2026-09-11 : `ef_container_ship_gco2_tkm` est
+    # retire (methodologie de performance environnementale v3.0 §11.1 — le
+    # segment de capacite retenu determinait le resultat entre 87 % et 96 %).
+    # Restent occupancy_rate_pct, vessel_capacity_ref_t, ef_airfreight_gco2_tkm.
+    assert len(ctx["dash_global"]) == 3
+    assert "ef_container_ship_gco2_tkm" not in {p.parameter_name for p in ctx["dash_global"]}
     # 14 (lot 2) + 1 (lot 6) + 1 (lot 4) + 5 (lot 8) + 2 (G1) + 1 (G4) + 1 (G7)
     # — tous provisoires (Q8).
     assert ctx["provisional_count"] == 25

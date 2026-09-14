@@ -14,25 +14,25 @@
         </p>
     </div>
 
-    <!-- CO2 évité -->
+    <!-- Bilan CO2 -->
     <h2 class="section-title">Bilan CO₂</h2>
     
+    {# 🔴 Les deux encarts « CO₂ évité » et « Taux de décarbonation » sont
+       retirés. Ils comparaient à un porte-conteneurs conventionnel à
+       13,7 gCO₂/t·km, base écartée par la méthodologie v3.0 (§11.1).
+
+       ⚠️ Ils étaient devenus pires qu'inexacts : depuis la migration
+       20260911_0146 les certificats portent NULL, et `|float ... or "0"`
+       imprimait « 0 kg » et « 0 % » — un chiffre FABRIQUÉ là où il n'y a pas
+       de donnée. Le carnet est remis au chargeur. #}
     <div style="display: flex; gap: 30pt; margin: 20pt 0;">
-        <div class="info-box" style="flex: 1; background: linear-gradient(135deg, var(--vert-light) 0%, var(--vert) 100%);">
-            <div class="label" style="color: var(--blanc);">CO₂ évité</div>
-            <div class="value" style="color: var(--blanc); font-size: 36pt;">
-                {{ co2_avoided_kg|float|round(0) or "0" }} kg
-            </div>
-            <div style="color: var(--blanc-casse); font-size: 12pt; margin-top: 5pt;">
-                vs transport conventionnel équivalent
-            </div>
-        </div>
-        
         <div class="info-box" style="flex: 1;">
-            <div class="label">Taux de décarbonation</div>
-            <div class="value" style="color: var(--teal);">{{ decarbonation_rate or "0" }}%</div>
+            <div class="label">CO₂ émis</div>
+            <div class="value" style="color: var(--teal);">
+                {{ co2_emitted_kg|float|round(0) if co2_emitted_kg else "—" }} kg
+            </div>
             <div style="color: var(--gris); font-size: 12pt; margin-top: 5pt;">
-                Réduction par rapport au conventionnel
+                tank-to-wake, gaz CO₂ uniquement
             </div>
         </div>
     </div>
@@ -52,22 +52,12 @@
         <tbody>
             <tr>
                 <td>Cargo vélique NewTowt</td>
-                <td style="text-align: right;">{{ towt_factor or "1,5" }}</td>
+                <td style="text-align: right;">{{ towt_factor or "—" }}</td>
                 <td style="text-align: right;">{{ distance_nm|float|round(0) or "0" }}</td>
                 <td style="text-align: right;">{{ co2_emitted_kg|float|round(0) or "0" }}</td>
             </tr>
-            <tr>
-                <td>Cargo conventionnel (référence IMO)</td>
-                <td style="text-align: right;">{{ conventional_factor or "13,7" }}</td>
-                <td style="text-align: right;">{{ distance_nm|float|round(0) or "0" }}</td>
-                <td style="text-align: right;">{{ co2_conventional_kg|float|round(0) or "0" }}</td>
-            </tr>
-            <tr class="highlight-row">
-                <td colspan="3" style="text-align: right; font-weight: bold;">Émissions évitées</td>
-                <td style="text-align: right; font-weight: bold; color: var(--vert);">
-                    -{{ co2_avoided_kg|float|round(0) or "0" }} kg
-                </td>
-            </tr>
+            {# Ligne « cargo conventionnel » et total « émissions évitées »
+               retirés avec la base de comparaison qui les produisait. #}
         </tbody>
     </table>
 
@@ -100,7 +90,7 @@
             {% if method == "declared" %}
             Calculées sur les consommations déclarées à bord (noon reports signés) — distance {{ distance_source or "N/A" }}.
             {% else %}
-            Estimées par facteur forfaitaire (1,5 g CO₂/t·km) — régularisation sur données déclarées à venir.
+            Non encore consolidées — le chiffre publié sera celui déclaré par le bord.
             {% endif %}
         </p>
         <p style="margin-top: 10pt;">

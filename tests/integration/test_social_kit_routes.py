@@ -103,7 +103,9 @@ async def test_social_svg_ok_valid_and_absolute_kg(db, fmt):
     assert resp.media_type == "image/svg+xml"
     svg = _body(resp)
     ET.fromstring(svg)  # SVG bien formé
-    assert "300 kg" in svg  # CO₂ absolu, contigu
+    # 🔴 Le CO₂ évité est retiré des cartes sociales (base écartée,
+    # méthodologie v3.0 §11.1). Reste le mode de propulsion.
+    assert "300 kg" not in svg
     assert "Anemos" in svg  # certificat nommé
     assert "%" not in svg  # ECGT : jamais de pourcentage
 
@@ -134,7 +136,9 @@ async def test_social_svg_cacao_origin_renders(db):
     resp = await booking_social_svg(_Req(), booking.reference, "square", client=client, db=db)
     svg = _body(resp)
     ET.fromstring(svg)
-    assert "260 kg" in svg
+    # 🔴 Plus de tonnage sur la carte : la base de comparaison est ecartee
+    # (methodologie v3.0 §11.1). La carte porte le mode de propulsion.
+    assert "260 kg" not in svg
     assert "Anemos" in svg
     assert "CACAO" in svg  # eyebrow commodité
     assert "%" not in svg

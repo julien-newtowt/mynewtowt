@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.anemos_certificate import AnemosCertificate
 from app.models.booking import Booking
 from app.models.leg import LEG_ORIGIN_TOWT, Leg
 
@@ -100,13 +99,21 @@ async def counters(db: AsyncSession) -> SocialCounters:
                 )
             ).scalar_one()
         )
-        co2_kg = int(
-            (
-                await db.execute(
-                    select(func.coalesce(func.sum(AnemosCertificate.co2_avoided_kg), 0))
-                )
-            ).scalar_one()
-        )
+        # 🔴 Le compteur d'« émissions évitées » est retiré de la vitrine.
+        #
+        # Il sommait `AnemosCertificate.co2_avoided_kg`, calculé contre un
+        # porte-conteneurs conventionnel à 13,7 gCO₂/t·km — base écartée par la
+        # méthodologie de performance environnementale v3.0 (§11.1), avec la
+        # mention « ne pas réintroduire sans une nouvelle décision explicite ».
+        #
+        # Agréger un contrefactuel en compteur de page d'accueil en faisait la
+        # forme la plus visible de l'allégation. Les deux autres compteurs —
+        # palettes livrées, traversées — sont des FAITS, et restent.
+        #
+        # `co2_avoided_kg` reste dans `SocialCounters` à 0 : les gabarits le
+        # gardent derrière un `{% if %}`, le bloc disparaît donc de lui-même, et
+        # le champ documente ce qui a été retiré plutôt que de laisser un trou.
+        co2_kg = 0
         crossings = int(
             (
                 await db.execute(

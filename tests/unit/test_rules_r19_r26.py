@@ -211,6 +211,56 @@ async def test_r20_ballast_voyage_out_of_scope(db):
     assert await _run(db, "R20", [leg], vessel=vessel, leg=leg) == []
 
 
+# ─────────────── R20, volet 2 — cargo MRV ≤ port en lourd (arbitré 2026-09-14) ───────────────
+# Vessel.deadweight_t existait au référentiel mais n'était consommé par aucune
+# règle (audit d'alignement méthodologique, §4) : le second des deux SEULS
+# contrôles de vraisemblance possibles à terre (§8.3).
+
+
+@pytest.mark.asyncio
+async def test_r20_cargo_mrv_within_deadweight_passes(db):
+    vessel, leg = await _r20_leg(db, cargo_bl=Decimal("900"), cargo_mrv=Decimal("950"))
+    vessel.deadweight_t = Decimal("1584.9")
+    await db.flush()
+    out = await _run(db, "R20", [leg], vessel=vessel, leg=leg)
+    dwt = next(o for o in out if "port en lourd" in o.message)
+    assert dwt.result == "pass"
+
+
+@pytest.mark.asyncio
+async def test_r20_cargo_mrv_exceeds_deadweight_fails(db):
+    vessel, leg = await _r20_leg(db, cargo_bl=Decimal("900"), cargo_mrv=Decimal("2000"))
+    vessel.deadweight_t = Decimal("1584.9")
+    await db.flush()
+    out = await _run(db, "R20", [leg], vessel=vessel, leg=leg)
+    dwt = next(o for o in out if "port en lourd" in o.message)
+    assert dwt.result == "fail"
+    assert dwt.severity == "info"
+    assert dwt.details["d10_pending"] is True
+
+
+@pytest.mark.asyncio
+async def test_r20_deadweight_check_abstains_when_unset(db):
+    """`deadweight_t` non renseigné (défaut) ⇒ pas de volet fabriqué — inconnu ≠ nul."""
+    vessel, leg = await _r20_leg(db, cargo_bl=Decimal("900"), cargo_mrv=Decimal("950"))
+    out = await _run(db, "R20", [leg], vessel=vessel, leg=leg)
+    assert not any("port en lourd" in o.message for o in out)
+
+
+@pytest.mark.asyncio
+async def test_r20_both_volets_are_independent_outcomes(db):
+    """Un cargo MRV qui échoue le plancher B/L ET dépasse le port en lourd
+    produit DEUX outcomes distincts, pas un seul mélangeant les deux motifs."""
+    vessel, leg = await _r20_leg(db, cargo_bl=Decimal("2000"), cargo_mrv=Decimal("1900"))
+    vessel.deadweight_t = Decimal("1584.9")
+    await db.flush()
+    out = await _run(db, "R20", [leg], vessel=vessel, leg=leg)
+    assert len(out) == 2
+    assert {o.result for o in out} == {"fail"}
+    assert any("B/L" in o.message for o in out)
+    assert any("port en lourd" in o.message for o in out)
+
+
 # ═════════════════════════════════════════════ R21 — durée entre rapports
 
 

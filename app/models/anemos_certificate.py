@@ -36,8 +36,19 @@ class AnemosCertificate(Base):
     tonnage_transported_t: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
     distance_nm: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     co2_emitted_kg: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
-    co2_conventional_kg: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
-    co2_avoided_kg: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
+    # 🔴 Facultatives depuis le 2026-09-11 (migration 20260911_0146).
+    #
+    # Elles portaient une comparaison a un porte-conteneurs conventionnel a
+    # 13,7 gCO2/t.km — base ECARTEE par la methodologie de performance
+    # environnementale v3.0 (§11.1), avec la mention « ne pas reintroduire sans
+    # une nouvelle decision explicite ». Un certificat remis a un client est une
+    # allegation environnementale au sens de la directive (UE) 2024/825 : il ne
+    # peut pas reposer sur une base que l'entreprise a elle-meme retiree.
+    #
+    # `co2_emitted_kg` reste obligatoire : c'est une MESURE, pas un
+    # contrefactuel. La distinction est tout le sujet.
+    co2_conventional_kg: Mapped[Decimal | None] = mapped_column(Numeric(10, 3))
+    co2_avoided_kg: Mapped[Decimal | None] = mapped_column(Numeric(10, 3))
 
     # ENV-03 — traçabilité du calcul : 'declared' (consommations réelles
     # déclarées à bord) ou 'theoretical' (facteur forfaitaire 1,5 g/t·km) ;

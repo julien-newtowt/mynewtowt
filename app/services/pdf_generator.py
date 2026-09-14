@@ -244,8 +244,11 @@ def render_anemos_certificate(
 ) -> DocumentBytes:
     """Génère un PDF Certificat Anemos.
 
-    Le PDF atteste du tonnage transporté, distance, CO₂ évité par rapport
-    au shipping conventionnel. Référence : ``ANEMOS-<booking.reference>``
+    Le PDF atteste de ce qui est **mesuré** : tonnage transporté, distance et
+    CO₂ **émis** (tank-to-wake). Il ne porte plus de « CO₂ évité » — cette
+    comparaison reposait sur un porte-conteneurs conventionnel à
+    13,7 gCO₂/t·km, base écartée par la méthodologie de performance
+    environnementale v3.0 (§11.1). Référence : ``ANEMOS-<booking.reference>``
     si pas de certificate.reference fournie. ``crew`` : liste optionnelle de
     dicts ``{full_name, role, nationality}`` de l'équipage embarqué sur le leg.
     """
@@ -321,42 +324,11 @@ def render_kit(
 # Version éditoriale du document de méthodologie. À incrémenter à chaque
 # changement de fond (facteur, périmètre, hiérarchie de données) — cf. §9 du
 # document lui-même.
-METHODOLOGY_DOC_VERSION = "1.0"
-
-
-def render_methodology(*, factors, lang: str = "fr") -> DocumentBytes:
-    """Méthodologie Anemos en PDF réel (ENV-04/ECGT — fin du lien factice).
-
-    ``factors`` est un :class:`app.services.co2.Co2Factors` : le document
-    imprime les facteurs **courants** (versionnés en base) au moment de la
-    génération — jamais des constantes marketing.
-    """
-    from app.templating import brand_for_lang
-
-    lang = "en" if lang == "en" else "fr"
-
-    def _fmt(value) -> str:
-        s = str(value)
-        return s if lang == "en" else s.replace(".", ",")
-
-    ctx = {
-        "lang": lang,
-        "doc_version": METHODOLOGY_DOC_VERSION,
-        "towt_ef": _fmt(factors.towt_ef_g_tkm),
-        "conv_ef": _fmt(factors.conventional_ef_g_tkm),
-        "factor_version": factors.source_version,
-        "issued_at": datetime.now(UTC),
-        "site_url": settings.site_url,
-        # Rendu hors-requête : le context processor n'injecte pas ``brand``.
-        "brand": brand_for_lang(lang),
-    }
-    html, pdf = _render_pdf("pdf/methodologie_anemos.html", ctx)
-    suffix = "en" if lang == "en" else "fr"
-    return DocumentBytes(
-        html=html,
-        pdf=pdf,
-        filename=f"NEWTOWT_Methodologie_Anemos_v{METHODOLOGY_DOC_VERSION}_{suffix}.pdf",
-    )
+# `render_methodology()` et `METHODOLOGY_DOC_VERSION` sont retires avec le
+# gabarit `pdf/methodologie_anemos.html` : ce document EXPOSAIT la methode des
+# emissions evitees (facteurs 1,5 et 13,7, formule, consignes de
+# communication), ecartee le 2026-09-11. Cf. la note d'arbitrage dans
+# docs/audit/ avant d'en publier un remplacant.
 
 
 _TROMBI_MONTHS_FR = (

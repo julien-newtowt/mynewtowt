@@ -86,11 +86,11 @@
 </section>
 {% endif %}
 
-{# ── CO₂ évité (certificat Anemos) ── #}
-{% if co2_kg %}
+{# ── Émissions mesurées (certificat Anemos) ── #}
+{% if cert %}
 <section class="container mb-5">
   <article class="card">
-    <h2 style="margin-top:0;"><span style="color:var(--vert);">−{{ co2_kg }}</span> {{ t('vg_co2_title', lang) }}</h2>
+    <h2 style="margin-top:0;">{{ t('vg_co2_title', lang) }}</h2>
     <p class="text-muted">{{ t('vg_co2_text', lang, ref=cert.reference) }}</p>
     <a class="btn btn-secondary btn-sm" href="/verify/{{ cert.reference }}">{{ t('vg_co2_verify', lang) }}</a>
   </article>

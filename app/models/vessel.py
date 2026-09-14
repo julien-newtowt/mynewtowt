@@ -123,6 +123,29 @@ class Vessel(Base):
     deadweight_t: Mapped[Decimal | None] = mapped_column(
         Numeric(10, 3), comment="Port en lourd (deadweight) MRV en tonnes"
     )
+    # ── Base de décarbonation « nous-mêmes sans voiles » ────────────────
+    #
+    # Vitesse d'essai à 100 % MCR, mesurée en mer sous inspection Bureau
+    # Veritas (méthodologie de performance environnementale v3.0 §11.2,
+    # hypothèse A9). C'est le seul paramètre de la base qui soit PROPRE AU
+    # NAVIRE, et il le doit : ANEMOS et ARTEMIS sont sisterships sur tout ce
+    # que les fichiers EEDI enregistrent — 429 kW par moteur, 212 g/kWh, Lpp,
+    # bau, tirant d'eau, déplacement — mais leurs courbes vitesse/puissance
+    # diffèrent d'environ 12 % : ARTEMIS demande 698 kW là où ANEMOS en
+    # demande 796 à 11 nœuds. Prendre la vitesse d'ANEMOS pour toute la
+    # flotte flattait ARTEMIS de 2,6 points.
+    #
+    # 🔴 ``baseline_speed_source`` n'est pas décoratif. Toute la valeur de
+    # cette base tient à ce qu'aucun de ses paramètres ne soit une hypothèse
+    # interne : chacun vient d'un document visé par une société de
+    # classification. Une vitesse sans source ne vaut pas mieux que le
+    # chiffre qu'elle remplace.
+    baseline_speed_kn: Mapped[Decimal | None] = mapped_column(
+        Numeric(6, 3), comment="Vitesse d'essai à 100 % MCR (nœuds) — base sans voiles"
+    )
+    baseline_speed_source: Mapped[str | None] = mapped_column(
+        String(120), comment="Document visé d'où provient baseline_speed_kn"
+    )
     # Carburant par défaut du navire — résout app.models.emission_factor
     # (fuel_type) tant qu'aucun choix explicite n'est fait à la saisie.
     default_fuel_type: Mapped[str] = mapped_column(

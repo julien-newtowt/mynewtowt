@@ -70,6 +70,7 @@ from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.services import emission_ledger, flgo_sync
 from app.services import inter_event_compute as iec
 from app.services.co2 import NM_TO_KM
+from app.services.decarbonation import DecarbonationResult
 from app.services.validation_engine import get_threshold
 
 # ─────────────────────────────────────────────────────────── Constantes
@@ -86,7 +87,17 @@ from app.services.validation_engine import get_threshold
 #   - Renommer/retirer/retyper un champ existant, ou changer une signature
 #     de fonction couverte = changement CASSANT : revue explicite avec le
 #     porteur du Dashboard avant fusion, et incrément de cette constante.
-DASHBOARD_CONTRACT_VERSION = 1
+# 🔴 Version 2 (2026-09-11) — CHANGEMENT CASSANT assume.
+#
+# `VesselKpiBlock.avoided_container` est RETIRE : la comparaison a un
+# porte-conteneurs conventionnel repose sur une base ecartee par la
+# methodologie de performance environnementale v3.0 (§11.1). Retirer un champ
+# est cassant au sens de la politique du contrat (cf.
+# tests/regression/test_dashboard_contract.py) : d'ou l'increment.
+#
+# Un consommateur externe du contrat qui lisait ce champ doit etre prevenu :
+# le chiffre n'est pas devenu indisponible, il a cesse d'etre defendable.
+DASHBOARD_CONTRACT_VERSION = 2
 
 EF_METHODS: tuple[str, ...] = ("A", "B", "C")
 
@@ -94,10 +105,13 @@ EF_METHODS: tuple[str, ...] = ("A", "B", "C")
 # fabriquée »). La méthode C est réelle dès qu'un résumé événementiel fournit le
 # cargo MRV (lot 9) ; N/A sinon (voyages legacy / sans capture événementielle).
 NA_CARGO_MRV = "cargo MRV indisponible (voyage sans capture événementielle)"
-NA_BALLAST = "voyage sur lest (cargo nul) — non calculable en méthode réelle"
+# 🔴 `NA_BALLAST` retiré le 2026-09-14 (§9.2, hypothèse A8, arbitré) : un
+# voyage sur lest calcule désormais son EF sur une tonne fictive au lieu d'un
+# N/A — cf. `EfResult.is_ballast_assumed` et `emission_ledger._denom_or_ballast_reference`.
 NA_NO_LADEN_VOYAGE = "aucun voyage chargé sur la période sélectionnée"
 NA_NO_DISTANCE = "aucune distance enregistrée sur la période sélectionnée"
 NA_ZERO_DISTANCE = "distance nulle pour ce voyage"
+NA_NO_OPERATIONAL_CO2 = "consommation au mouillage inconnue — assiette Métier non calculable"
 
 _EF_QUANT = Decimal("0.01")  # gCO2/t.km
 _T_QUANT = Decimal("0.01")  # tonnes / nm
@@ -110,20 +124,33 @@ _PCT_QUANT = Decimal("0.1")  # %
 DASHBOARD_PARAM_DEFAULTS: dict[str, tuple[Decimal, str]] = {
     "occupancy_rate_pct": (Decimal("70"), "%"),
     "vessel_capacity_ref_t": (Decimal("1100"), "t"),
-    "ef_container_ship_gco2_tkm": (Decimal("16"), "gCO2/t.km"),
-    "ef_airfreight_gco2_tkm": (Decimal("800"), "gCO2/t.km"),
+    # 🔴 Le comparateur PORTE-CONTENEURS est retiré (méthodologie v3.0 §11.1).
+    #
+    # La relation entre la taille d'un navire et son facteur d'émission n'étant
+    # pas linéaire, le segment retenu déterminait le résultat sur une plage de
+    # 87 % à 96 % — « un indicateur dont la valeur dépend à ce point d'un choix
+    # discrétionnaire n'est pas défendable » sous la directive (UE) 2024/825.
+    # La méthodologie ajoute : **ne pas réintroduire cette base sans une
+    # nouvelle décision explicite**.
+    #
+    # ⚠️ Aérien : **630**, pas 800. La méthodologie §11.3 retient la part
+    # *Opération* seule de la Base Empreinte ADEME (0,63 kgCO₂e/t·km), là où 800
+    # correspond au total de 0,80 **amont compris**. On comparait donc un TtW à
+    # un WtW — l'erreur de périmètre que le §4.1 désigne comme « la plus facile
+    # à commettre de bonne foi » — en surestimant la référence de 27 %.
+    #
+    # Usage restreint, à respecter : la méthodologie interdit l'intermodal sur
+    # le one-pager de direction et sur les pages de simulation carburant.
+    "ef_airfreight_gco2_tkm": (Decimal("630"), "gCO2/t.km"),
 }
 
 # Paramètres non sourcés formellement (spec §7 point 1 / Q15 du plan) — le
 # bandeau « référence provisoire » s'affiche pour ceux-ci (page 1 jauge EF +
 # page 4 administration). ``occupancy_rate_pct`` et ``vessel_capacity_ref_t``
 # sont eux considérés confirmés (spec §7 points 3-4).
-PROVISIONAL_DASHBOARD_PARAMS: frozenset[str] = frozenset(
-    {"ef_container_ship_gco2_tkm", "ef_airfreight_gco2_tkm"}
-)
+PROVISIONAL_DASHBOARD_PARAMS: frozenset[str] = frozenset({"ef_airfreight_gco2_tkm"})
 
 _REFERENCE_LABELS: dict[str, str] = {
-    "ef_container_ship_gco2_tkm": "container_ship",
     "ef_airfreight_gco2_tkm": "airfreight",
 }
 
@@ -157,12 +184,50 @@ class LegEmissionRecord:
     ata: datetime | None
     has_kpi: bool  # émission connue (résumé grand livre ou LegKPI co2 renseigné)
     cargo_mrv_t: Decimal | None = None  # cargo MRV (méthode C) — None si indispo
+    # 🔴 Numérateur de l'approche MÉTIER (méthodes A et B) — mouillage INCLUS.
+    #
+    # ``co2_emitted_t`` porte l'assiette **hors mouillage** : c'est le
+    # numérateur de l'approche MRV (méthode C), et lui seul. La méthodologie de
+    # performance environnementale v3.0 (§1.2, §9.1, §10) prend pour l'approche
+    # Métier et pour la lecture B/L la consommation **berth-to-berth, mouillage
+    # et dérive inclus** — « du point de vue du service vendu, un navire au
+    # mouillage en attente de créneau brûle du carburant AU TITRE de ce voyage,
+    # et le chargeur en supporte l'impact ».
+    #
+    # Les trois méthodes partageaient jusqu'ici le seul numérateur MRV :
+    # l'intensité Métier ne mesurait donc pas ce qu'elle annonçait. Écart
+    # mesuré sur la période : 0,1 % (un seul voyage a mouillé) — la
+    # méthodologie demande précisément de trancher la distinction **avant**
+    # qu'elle ne devienne significative.
+    #
+    # ``None`` = non calculable (mouillage inconnu) ⇒ méthodes A et B en N/A
+    # motivé, jamais un repli silencieux sur le numérateur MRV.
+    co2_op_t: Decimal | None = None
+    # Assiette Métier en **CO₂eq** — numérateur du taux de décarbonation.
+    #
+    # 🔴 Pourquoi un champ de plus, et pas `co2_op_t`. Les intensités se
+    # publient en **CO₂ seul** (facteur 3,206) ; le taux de décarbonation se
+    # calcule en **GES** (3,2551), parce qu'une comparaison doit être établie
+    # sur le périmètre le plus complet disponible **des deux côtés** du rapport
+    # (méthodologie §4.3). Mélanger les deux relierait un taux à une intensité
+    # qui ne comptent pas les mêmes gaz.
+    co2eq_op_t: Decimal | None = None
     # NC-04 — provenance (même vocabulaire que VoyageRow.source) : "events" /
     # "legacy_noon" (VoyageEmissionSummary) ou "legacy_kpi" / "none" (repli
     # LegKPI). Défaut "events" pour ne pas casser les fixtures de tests
     # existantes qui construisent des LegEmissionRecord "de fait" sans jamais
     # préciser la provenance (formules pures, non concernées par le mode strict).
     source: str = "events"
+    # 🔴 Distance §5.3, niveau 2 (arbitré le 2026-09-14). `distance_nm` peut
+    # venir de deux sources de nature différente : MESURÉE (somme des
+    # haversines entre événements, ``VoyageEmissionSummary.distance_nm``,
+    # niveau 1 ISO 14083) ou THÉORIQUE (``Leg.distance_nm`` = orthodromie ×
+    # élongation, un repli). Avant ce champ, les deux étaient
+    # INDISCERNABLES une fois posées dans ``distance_nm`` — une intensité
+    # calculée sur la théorique se lisait comme une intensité mesurée.
+    # ``True`` = repli théorique appliqué (mesurée indisponible) ; ``False``
+    # (défaut) = mesurée, compatible avec les fixtures de tests existantes.
+    distance_is_theoretical: bool = False
 
 
 @dataclass(frozen=True)
@@ -172,13 +237,19 @@ class EfResult:
     method: str
     value_gco2_tkm: Decimal | None
     na_reason: str | None
+    # 🔴 Voyage sur lest (§9.2, A8) : `value_gco2_tkm` a été calculé pour une
+    # tonne FICTIVE (1 t), pas une mesure — cf. `emission_ledger._BALLAST_REFERENCE_T`.
+    # Toute surface qui affiche `value_gco2_tkm` doit afficher CE drapeau à côté,
+    # jamais l'un sans l'autre. Défaut `False` : compatible avec les appelants
+    # existants qui ne le lisent pas encore.
+    is_ballast_assumed: bool = False
 
 
 @dataclass(frozen=True)
 class AvoidedResult:
     """CO2 évité vs une référence sectorielle, même assiette que l'EF associé."""
 
-    reference: str  # "container_ship" | "airfreight"
+    reference: str  # "airfreight" (le porte-conteneurs est écarté, cf. défauts)
     avoided_t: Decimal | None
     avoided_pct: Decimal | None
     ef_reference_gco2_tkm: Decimal
@@ -205,9 +276,26 @@ class VesselKpiBlock:
     co2_emitted_t: Decimal
     distance_nm: Decimal
     ef: EfResult
-    avoided_container: AvoidedResult
     avoided_airfreight: AvoidedResult
     completeness: CompletenessBlock
+    # Taux de décarbonation « nous-mêmes sans voiles » (méthodologie §11.2).
+    #
+    # ⚠️ Suivi **interne**. La méthodologie §1.2 bis est explicite : ce taux
+    # n'est pas publié de notre propre initiative — il se communique sur
+    # demande, en énonçant à chaque fois la base qui le sous-tend, sans quoi le
+    # chiffre serait inintelligible et attaquable. Toute restitution doit donc
+    # NOMMER le scénario de référence.
+    #
+    # Champ en fin de dataclass AVEC défaut : extension compatible au sens de
+    # la politique du contrat Dashboard, pas d'incrément de version.
+    decarbonation: DecarbonationResult | None = None
+    # Profil de propulsion du PÉRIMÈTRE (flotte ou navire), par cumul de
+    # tranches. C'est l'indicateur que la méthodologie porte vers l'extérieur
+    # (§1.2 bis) : il doit exister à l'échelle où il est communiqué, pas
+    # seulement au voyage.
+    #
+    # Champ en fin de dataclass AVEC défaut : extension compatible.
+    propulsion: PropulsionProfile | None = None
     # NC-04 — nombre de legs écartés des totaux ci-dessus car `source` != "events"
     # (mode strict uniquement ; toujours 0 hors mode strict, rien n'est écarté).
     legs_excluded_non_event: int = 0
@@ -326,11 +414,14 @@ async def _emissions_provider(
             has_kpi = summary.co2_t is not None
             co2_t = summary.co2_t if summary.co2_t is not None else Decimal(0)
             cargo_t = summary.cargo_bl_t if summary.cargo_bl_t is not None else Decimal(0)
+            distance_is_theoretical = summary.distance_nm is None
             distance_src = (
                 summary.distance_nm if summary.distance_nm is not None else leg.distance_nm
             )
             cargo_mrv_t = summary.cargo_mrv_t
             source = summary.source  # "events" | "legacy_noon"
+            co2_op_t = _operational_co2_t(summary)
+            co2eq_op_t = _operational_co2eq_t(summary)
         else:
             # Repli legacy — identique à l'avant-lot-9 (aucune régression).
             k = kpi_by_leg.get(leg.id)
@@ -343,9 +434,18 @@ async def _emissions_provider(
             cargo_t = (
                 (k.tonnage_kg / Decimal(1000)) if (k and k.tonnage_kg is not None) else Decimal(0)
             )
+            distance_is_theoretical = True
             distance_src = leg.distance_nm
             cargo_mrv_t = None
             source = "legacy_kpi" if k is not None else "none"
+            # Repli LegKPI : aucune granularité d'intervalle, donc le CO₂ connu
+            # est un total indifférencié — c'est déjà une valeur berth-to-berth.
+            co2_op_t = co2_t if has_kpi else None
+            # `LegKPI` ne porte pas de CO₂eq : le taux de décarbonation n'est
+            # donc pas calculable sur ces voyages, et ils en sortiront — plutôt
+            # que d'assimiler du CO₂ seul à du CO₂eq, ce qui sous-estimerait
+            # notre côté du rapport et gonflerait le taux.
+            co2eq_op_t = None
         distance_nm = distance_src if distance_src is not None else Decimal(0)
         records.append(
             LegEmissionRecord(
@@ -360,12 +460,61 @@ async def _emissions_provider(
                 has_kpi=has_kpi,
                 cargo_mrv_t=cargo_mrv_t,
                 source=source,
+                co2_op_t=co2_op_t,
+                co2eq_op_t=co2eq_op_t,
+                distance_is_theoretical=distance_is_theoretical,
             )
         )
     return records
 
 
 # ────────────────────────────────────────────────── Formules EF (spec §5.1)
+
+
+def _operational_co2eq_t(summary) -> Decimal | None:
+    """Assiette Métier en CO₂eq — jumeau de :func:`_operational_co2_t`.
+
+    Même règle de provenance : ``events`` somme trajet et mouillage,
+    ``legacy_noon`` porte déjà un total indifférencié. ``None`` si le CO₂eq
+    n'est pas calculé — le voyage quittera alors les deux termes du taux.
+    """
+    if summary.co2eq_t is None:
+        return None
+    if summary.source == "events":
+        if summary.co2eq_mouillage_t is None:
+            return None
+        return summary.co2eq_t + summary.co2eq_mouillage_t
+    return summary.co2eq_t
+
+
+def _operational_co2_t(summary) -> Decimal | None:
+    """Numérateur de l'approche Métier : trajet + mouillage (méthodologie §9.1).
+
+    Deux provenances, deux lectures — et les confondre fabriquerait un chiffre :
+
+    - source ``events`` : ``co2_mouillage_t`` est une **somme d'intervalles**,
+      donc ``0`` quand le navire n'a pas mouillé. Le total est exact ;
+    - source ``legacy_noon`` (et archives TOWT) : aucune granularité
+      d'intervalle. ``co2_t`` y est le total **indifférencié** des noons, donc
+      déjà une valeur berth-to-berth : c'est le numérateur Métier tel quel.
+
+    ⚠️ Le corollaire vaut la peine d'être dit : sur ces voyages-là, c'est
+    l'intensité **MRV** qui est approchée, le mouillage n'en étant pas
+    séparable. L'approximation préexiste à ce correctif et n'est pas traitée
+    ici — mais elle ne doit pas être oubliée en lisant une intensité legacy.
+
+    ``None`` (résumé sans CO₂) ⇒ méthodes A et B en N/A motivé.
+    """
+    if summary.co2_t is None:
+        return None
+    if summary.source == "events":
+        if summary.co2_mouillage_t is None:
+            # Résumé événementiel antérieur à la migration 0145, pas encore
+            # repris : le mouillage est INCONNU, pas nul. On refuse le total
+            # plutôt que de le sous-estimer en silence.
+            return None
+        return summary.co2_t + summary.co2_mouillage_t
+    return summary.co2_t
 
 
 def leg_ef(
@@ -375,35 +524,58 @@ def leg_ef(
     occupancy_pct: Decimal,
     capacity_ref_t: Decimal,
 ) -> EfResult:
-    """EF (gCO2/t.km) d'UN voyage — méthode A/B/C, jamais mélangées (spec §5.1).
+    """EF (gCO₂/t·km) d'UN voyage — méthode A/B/C, jamais mélangées (spec §5.1).
+
+    🔴 **Adaptateur, plus une seconde implémentation.** Le choix du numérateur
+    est délégué à ``emission_ledger.numerator_for_method`` : la règle n'est
+    écrite qu'une fois, et c'est celle que la production exécute.
+
+    Elle l'était auparavant deux fois — ici et dans
+    ``emission_ledger.compute_for_leg`` — et cette fonction-ci n'avait **aucun
+    appelant applicatif**. Le test qui l'épinglait validait donc du code mort,
+    ce qui a masqué le fait que les EF **persistés** gardaient le mauvais
+    numérateur (constat d'audit du 2026-09-11). Deux implémentations d'une même
+    règle finissent toujours par diverger ; celle-ci ne peut plus.
 
     Renvoie ``value_gco2_tkm=None`` + ``na_reason`` quand non calculable :
-    méthode C sans ``cargo_mrv_t`` (voyage legacy/sans capture événementielle
-    — **réelle** sinon, depuis le grand livre, lot 9), méthode A ou C sur un
-    voyage sur lest (cargo nul — pas de valeur fabriquée), ou distance nulle.
+    méthode C sans ``cargo_mrv_t`` (voyage legacy), assiette Métier inconnue,
+    ou distance nulle. Méthode A ou C sur un voyage sur lest (cargo CONNU et
+    nul) renvoie une valeur calculée sur 1 tonne fictive plutôt qu'un N/A
+    (§9.2, hypothèse A8 — arbitré le 2026-09-14 : rendre le voyage visible
+    plutôt que de le cacher derrière un tiret) — ``is_ballast_assumed=True``
+    le signale, à afficher partout où ``value_gco2_tkm`` l'est.
     """
+    from app.services.emission_ledger import _denom_or_ballast_reference, numerator_for_method
+
     _check_method(method)
     if method == "C" and record.cargo_mrv_t is None:
         return EfResult(method="C", value_gco2_tkm=None, na_reason=NA_CARGO_MRV)
     if record.distance_nm <= 0:
         return EfResult(method=method, value_gco2_tkm=None, na_reason=NA_ZERO_DISTANCE)
 
+    numerator = numerator_for_method(
+        method, co2_mrv_t=record.co2_emitted_t, co2_op_t=record.co2_op_t
+    )
+    if numerator is None:
+        return EfResult(method=method, value_gco2_tkm=None, na_reason=NA_NO_OPERATIONAL_CO2)
+
     distance_km = record.distance_nm * NM_TO_KM
+    is_ballast_assumed = False
     if method == "A":
-        if record.cargo_t <= 0:
-            return EfResult(method="A", value_gco2_tkm=None, na_reason=NA_BALLAST)
-        denom = record.cargo_t * distance_km
+        is_ballast_assumed = record.cargo_t <= 0
+        denom = _denom_or_ballast_reference(record.cargo_t) * distance_km
     elif method == "C":  # cargo MRV réglementaire (grand livre — lot 9)
-        if record.cargo_mrv_t <= 0:
-            return EfResult(method="C", value_gco2_tkm=None, na_reason=NA_BALLAST)
-        denom = record.cargo_mrv_t * distance_km
+        is_ballast_assumed = record.cargo_mrv_t <= 0
+        denom = _denom_or_ballast_reference(record.cargo_mrv_t) * distance_km
     else:  # "B" — standardisé, ballast inclus (hypothèse de remplissage fixe)
         denom = capacity_ref_t * (occupancy_pct / Decimal(100)) * distance_km
 
     if denom <= 0:
         return EfResult(method=method, value_gco2_tkm=None, na_reason=NA_ZERO_DISTANCE)
-    value = (record.co2_emitted_t * Decimal(1_000_000) / denom).quantize(_EF_QUANT)
-    return EfResult(method=method, value_gco2_tkm=value, na_reason=None)
+    value = (numerator * Decimal(1_000_000) / denom).quantize(_EF_QUANT)
+    return EfResult(
+        method=method, value_gco2_tkm=value, na_reason=None, is_ballast_assumed=is_ballast_assumed
+    )
 
 
 def aggregate_ef(
@@ -431,18 +603,65 @@ def aggregate_ef(
       N/A motivé si aucun voyage de la période ne porte de cargo MRV
       (legacy/sans capture événementielle) ; les voyages sur lest
       (cargo MRV = 0) restent au numérateur, exclus du dénominateur.
+
+    Numérateur = **CO₂ de la lecture** : hors mouillage pour C (MRV),
+    berth-to-berth pour A et B (méthodologie §1.2). Et un voyage dont la
+    lecture n'est pas calculable quitte les **deux** termes (règle §8.2 n°2,
+    détaillée dans le corps).
     """
     _check_method(method)
-    total_co2_t = sum((r.co2_emitted_t for r in records), Decimal(0))
 
-    if method == "C" and not any(r.cargo_mrv_t is not None for r in records):
-        return EfResult(method="C", value_gco2_tkm=None, na_reason=NA_CARGO_MRV), Decimal(0)
+    # 🔴 Règle §8.2 n°2 : un voyage quitte les DEUX termes, ou aucun.
+    #
+    # « Chaque lecture porte son propre numérateur, apparié à son
+    # dénominateur. Un voyage dont le travail de transport n'est pas calculable
+    # pour une lecture donnée doit quitter les DEUX termes, pas le seul
+    # dénominateur. » La méthodologie a mesuré ce défaut à **+26 %** sur
+    # l'intensité MRV, un voyage en attente de son cargo ayant apporté son CO₂
+    # sans ses tonnes-kilomètres.
+    #
+    # ⚠️ À ne pas confondre avec la règle n°3, juste en dessous : un voyage sur
+    # lest a un travail de transport **connu et nul**. Lui reste au numérateur,
+    # et c'est voulu — le carburant d'un voyage à vide se répartit sur la
+    # cargaison réellement transportée. Inconnu ≠ nul, ici comme partout.
+    # 🔴 Une distance nulle vaut « inconnue », et sort des DEUX termes.
+    #
+    # `_emissions_provider` ramène `Leg.distance_nm = None` à `Decimal(0)` —
+    # cas réel quand un port n'a pas de coordonnées. Un tel voyage apportait
+    # jusqu'ici son CO₂ au numérateur sans apporter la moindre tonne-kilomètre
+    # (tous les dénominateurs filtrent `distance_nm > 0`), ce qui GONFLE
+    # l'intensité publiée. C'est le mécanisme que la méthodologie chiffre à
+    # +26 % (§8.2 n°2), appliqué ici à la distance et non plus au seul cargo.
+    records = [r for r in records if r.distance_nm > 0]
+
+    if method == "C":
+        # 🔴 `cargo_mrv_t` connu ne suffit pas : la règle du n°2 (ci-dessus)
+        # exige que le NUMÉRATEUR soit lui aussi connu. `_emissions_provider`
+        # ramène un CO₂ MRV inconnu à `Decimal(0)` (pour ne jamais planter un
+        # `sum()`) et documente précisément ce cas avec `has_kpi` — un voyage
+        # à cargo MRV saisi mais CO₂ pas encore calculé apportait ses
+        # tonnes-kilomètres au dénominateur sans son CO₂ au numérateur,
+        # DIVISANT l'EF agrégé par un facteur proche de 2 sur les périodes où
+        # ce cas se présente (audit du calcul, 2026-09-11).
+        usable = [r for r in records if r.cargo_mrv_t is not None and r.has_kpi]
+        empty_reason = NA_CARGO_MRV
+    else:
+        usable = [r for r in records if r.co2_op_t is not None]
+        empty_reason = NA_NO_OPERATIONAL_CO2
+    if not usable:
+        return EfResult(method=method, value_gco2_tkm=None, na_reason=empty_reason), Decimal(0)
+
+    # Numérateur propre à la lecture (méthodologie §1.2) : MRV hors mouillage,
+    # Métier et B/L berth-to-berth.
+    total_co2_t = sum(
+        ((r.co2_emitted_t if method == "C" else r.co2_op_t) for r in usable), Decimal(0)
+    )
 
     if method == "A":
         denom = sum(
             (
                 r.cargo_t * r.distance_nm * NM_TO_KM
-                for r in records
+                for r in usable
                 if r.cargo_t > 0 and r.distance_nm > 0
             ),
             Decimal(0),
@@ -452,8 +671,8 @@ def aggregate_ef(
         denom = sum(
             (
                 r.cargo_mrv_t * r.distance_nm * NM_TO_KM
-                for r in records
-                if r.cargo_mrv_t is not None and r.cargo_mrv_t > 0 and r.distance_nm > 0
+                for r in usable
+                if r.cargo_mrv_t > 0 and r.distance_nm > 0
             ),
             Decimal(0),
         )
@@ -461,7 +680,7 @@ def aggregate_ef(
     else:  # "B"
         occ = occupancy_pct / Decimal(100)
         denom = sum(
-            (capacity_ref_t * occ * r.distance_nm * NM_TO_KM for r in records if r.distance_nm > 0),
+            (capacity_ref_t * occ * r.distance_nm * NM_TO_KM for r in usable if r.distance_nm > 0),
             Decimal(0),
         )
         na_reason = NA_NO_DISTANCE
@@ -578,7 +797,6 @@ async def fleet_summary(
     params = await get_dashboard_parameters(db)
     occupancy_pct = params["occupancy_rate_pct"].value
     capacity_ref_t = params["vessel_capacity_ref_t"].value
-    ef_container = params["ef_container_ship_gco2_tkm"].value
     ef_airfreight = params["ef_airfreight_gco2_tkm"].value
 
     vessels = list(
@@ -586,6 +804,45 @@ async def fleet_summary(
         .scalars()
         .all()
     )
+
+    # ── Base de décarbonation « sans voiles » ────────────────────────────────
+    #
+    # 🔴 Le facteur GES est **dérivé du grand livre**, jamais redéclaré ici :
+    # `emissions_breakdown(1 t, facteur)` donne les tonnes de CO₂eq par tonne de
+    # carburant. La règle d'or veut que l'unique multiplication conso × facteur
+    # vive dans `emission_ledger` — y compris quand on n'a besoin que du
+    # facteur. Import tardif : `emission_ledger` importe ce module.
+    from app.services import decarbonation as _dc
+    from app.services.emission_ledger import emissions_breakdown as _breakdown
+    from app.services.referential_env import resolve_emission_factor as _resolve_factor
+
+    ghg_per_t: Decimal | None = None
+    try:
+        _f = await _resolve_factor(db, "MDO", None)
+        _one = _breakdown(Decimal(1), _f)["co2eq_t"]
+        ghg_per_t = Decimal(_one) if _one is not None else None
+    except Exception:  # pragma: no cover — le dashboard ne casse pas pour ça
+        ghg_per_t = None
+
+    # Vitesse d'essai par navire : jamais de repli sur un sistership (12 %
+    # d'écart de puissance à vitesse égale — cf. `services.decarbonation`).
+    speed_by_vessel = {v.id: getattr(v, "baseline_speed_kn", None) for v in vessels}
+
+    # Profils de propulsion du périmètre : un appel pour la flotte, un par
+    # navire actif — chacun interroge `scope_propulsion_profile`, qui lui-même
+    # ne fait qu'UNE requête (sur tout son sous-ensemble de legs), jamais une
+    # par voyage. Pour la taille de flotte réelle (3-4 navires), N+1 appels
+    # coûte peu ; à revoir si le nombre de navires devait croître.
+    _period_leg_ids = [r.leg_id for r in all_records if r.etd is not None and r.etd.year == period]
+    _profile_fleet = await scope_propulsion_profile(db, _period_leg_ids)
+    _profiles_by_vessel: dict[int, PropulsionProfile] = {}
+    for v in vessels:
+        _ids = [
+            r.leg_id
+            for r in all_records
+            if r.vessel_id == v.id and r.etd is not None and r.etd.year == period
+        ]
+        _profiles_by_vessel[v.id] = await scope_propulsion_profile(db, _ids)
 
     def _block(
         scoped_records: list[LegEmissionRecord], *, label: str, vid: int | None, code: str | None
@@ -597,9 +854,6 @@ async def fleet_summary(
             year_records = [r for r in year_records if r.source == "events"]
         ef, denom = aggregate_ef(
             year_records, method=method, occupancy_pct=occupancy_pct, capacity_ref_t=capacity_ref_t
-        )
-        avoided_container = avoided_emissions(
-            ef, denom, ef_reference_gco2_tkm=ef_container, reference="container_ship"
         )
         avoided_airfreight = avoided_emissions(
             ef, denom, ef_reference_gco2_tkm=ef_airfreight, reference="airfreight"
@@ -613,6 +867,21 @@ async def fleet_summary(
             legs_with_data=legs_with_data,
             legs_without_data=len(year_records) - legs_with_data,
         )
+        decarbonation = (
+            _dc.aggregate(
+                [
+                    _dc.VoyageInput(
+                        distance_nm=r.distance_nm,
+                        ghg_t=r.co2eq_op_t,
+                        speed_kn=speed_by_vessel.get(r.vessel_id),
+                    )
+                    for r in year_records
+                ],
+                ghg_factor_t_per_t=ghg_per_t,
+            )
+            if ghg_per_t is not None
+            else None
+        )
         return VesselKpiBlock(
             vessel_id=vid,
             vessel_code=code,
@@ -623,10 +892,11 @@ async def fleet_summary(
             co2_emitted_t=co2_t.quantize(_T_QUANT),
             distance_nm=distance.quantize(_T_QUANT),
             ef=ef,
-            avoided_container=avoided_container,
             avoided_airfreight=avoided_airfreight,
             completeness=completeness,
             legs_excluded_non_event=excluded_non_event,
+            decarbonation=decarbonation,
+            propulsion=(_profile_fleet if vid is None else _profiles_by_vessel.get(vid)),
         )
 
     fleet_block = _block(all_records, label="Flotte", vid=None, code=None)
@@ -674,6 +944,23 @@ async def fleet_summary(
 # Catégories de propulsion (spec §5.4) — ordre d'affichage fixe.
 PROPULSION_CATEGORIES: tuple[str, ...] = ("velique_pur", "hybride", "mecanique", "statique")
 
+# 🔴 Les trois modes qui FONT ROUTE — dénominateur des pourcentages publiés.
+#
+# ``statique`` n'est pas un quatrième mode de propulsion : c'est l'ABSENCE de
+# navigation. La méthodologie de performance environnementale v3.0 l'exclut
+# nommément du dénominateur (§7.2, §7.4), et dit pourquoi : « les pourcentages
+# publiés se rapportent au **temps de navigation**, et non au temps calendaire
+# — formulation à respecter, faute de quoi le chiffre serait **dilué par les
+# jours à quai** ».
+#
+# C'est exactement ce que faisait la version précédente, qui divisait par
+# ``filled_slots``, tranches à l'arrêt comprises : la part de voile en
+# ressortait mécaniquement sous-estimée, et ne pouvait pas coïncider avec les
+# chiffres publiés par l'entreprise. Depuis que le profil est l'indicateur de
+# communication de tête (méthodologie §1.2 bis), deux chiffres internes pour
+# le même indicateur n'étaient plus tenables.
+NAVIGATION_CATEGORIES: tuple[str, ...] = ("velique_pur", "hybride", "mecanique")
+
 # Couleurs charte « Nouvelle Étoile » par catégorie (vert = vélique / cuivre =
 # hybride transition / teal = mécanique / gris = statique isolé).
 PROPULSION_COLORS: dict[str, str] = {
@@ -702,6 +989,7 @@ _L_QUANT = Decimal("1")  # L/j — entier (cohérent avec l'affichage maquette)
 
 NA_NO_CONSO = "consommation indisponible (voyage sans capture ni durée exploitable)"
 NA_NO_SLOTS = "aucun relevé de voilure exploitable sur ce voyage"
+NA_NO_NAVIGATION = "aucune tranche en navigation (relevés présents, navire à l'arrêt)"
 
 
 # ─────────────────────────────────────────── Profil de propulsion (spec §5.4)
@@ -738,7 +1026,7 @@ def classify_propulsion_slot(reading) -> str:
 
 @dataclass(frozen=True)
 class PropulsionSegment:
-    """Une catégorie du profil : compteur + % (sur les tranches exploitables)."""
+    """Un mode de navigation : compteur + % (sur les tranches EN NAVIGATION)."""
 
     category: str
     label_key: str
@@ -749,16 +1037,28 @@ class PropulsionSegment:
 
 @dataclass(frozen=True)
 class PropulsionProfile:
-    """Profil de propulsion d'un voyage (spec §5.4).
+    """Profil de propulsion d'un voyage (spec §5.4, méthodologie v3.0 §7).
 
-    ``filled_slots`` = tranches AVEC relevé exploitable (dénominateur des %) ;
-    ``theoretical_slots`` = tranches théoriques du voyage (noons × 6 créneaux) ;
+    Trois dénominateurs cohabitent, et les confondre est l'erreur à éviter :
+
+    - ``navigation_slots`` = tranches où le navire FAIT ROUTE — **dénominateur
+      des pourcentages publiés** (méthodologie §7.4) ;
+    - ``filled_slots`` = tranches avec relevé exploitable, arrêt compris ;
+    - ``theoretical_slots`` = tranches théoriques du voyage (noons × 6).
+
+    ``statique_slots`` est publié à part : ce n'est pas un mode de propulsion,
+    c'est l'absence de navigation. Il reste visible, parce qu'un dénominateur
+    réduit sans le dire serait aussi trompeur que la dilution qu'on corrige.
+
     ``completeness_pct`` = ``filled / theoretical`` (affiché en filigrane). Les
-    tranches sans relevé sont EXCLUES du dénominateur — jamais classées
-    « statique » par défaut (spec stricte).
+    tranches sans relevé sont exclues de tous les dénominateurs — jamais
+    classées « statique » par défaut (spec stricte ; méthodologie §7.3 : « un
+    créneau dépourvu des deux informations est ignoré »).
     """
 
     counts: dict[str, int]
+    navigation_slots: int
+    statique_slots: int
     filled_slots: int
     theoretical_slots: int
     completeness_pct: Decimal | None
@@ -770,21 +1070,24 @@ def build_propulsion_profile(readings, *, theoretical_slots: int) -> PropulsionP
     """Agrège une liste de relevés de voilure (tranches 4 h) en profil.
 
     Pur (aucun accès DB) : ``readings`` est un itérable de relevés duck-typés,
-    ``theoretical_slots`` le nombre de tranches théoriques du voyage. Le
-    dénominateur des pourcentages est le nombre de tranches RENSEIGNÉES
-    (``filled_slots``), pas le théorique — un trou de saisie n'écrase donc
-    jamais le % de vélique (spec §5.4).
+    ``theoretical_slots`` le nombre de tranches théoriques du voyage.
+
+    🔴 Le dénominateur est le nombre de tranches **en navigation**, pas le
+    nombre de tranches renseignées (cf. ``NAVIGATION_CATEGORIES``). Les trois
+    parts publiées somment donc à 100 % du **temps de navigation** — ce que la
+    méthodologie demande d'annoncer mot pour mot.
     """
     counts = dict.fromkeys(PROPULSION_CATEGORIES, 0)
     for r in readings:
         counts[classify_propulsion_slot(r)] += 1
     filled = sum(counts.values())
+    navigation = sum(counts[c] for c in NAVIGATION_CATEGORIES)
 
     segments: list[PropulsionSegment] = []
-    for cat in PROPULSION_CATEGORIES:
+    for cat in NAVIGATION_CATEGORIES:
         pct = (
-            (Decimal(counts[cat]) * Decimal(100) / Decimal(filled)).quantize(_PCT_QUANT)
-            if filled
+            (Decimal(counts[cat]) * Decimal(100) / Decimal(navigation)).quantize(_PCT_QUANT)
+            if navigation
             else None
         )
         segments.append(
@@ -801,14 +1104,75 @@ def build_propulsion_profile(readings, *, theoretical_slots: int) -> PropulsionP
         if theoretical_slots
         else None
     )
+    if not filled:
+        na_reason = NA_NO_SLOTS
+    elif not navigation:
+        na_reason = NA_NO_NAVIGATION
+    else:
+        na_reason = None
     return PropulsionProfile(
         counts=counts,
+        navigation_slots=navigation,
+        statique_slots=counts["statique"],
         filled_slots=filled,
         theoretical_slots=theoretical_slots,
         completeness_pct=completeness,
         segments=segments,
-        na_reason=None if filled else NA_NO_SLOTS,
+        na_reason=na_reason,
     )
+
+
+def combine_propulsion_profiles(profiles) -> PropulsionProfile:
+    """Profil d'un PÉRIMÈTRE (flotte, navire, période) — par CUMUL DE TRANCHES.
+
+    🔴 **Jamais une moyenne des pourcentages de voyage.** La méthodologie §7.4
+    est explicite : toutes les tranches pèsent 4 heures, donc compter les
+    tranches EST une pondération par la durée ; « on agrège les tranches,
+    jamais les pourcentages par voyage ». Moyenner les parts donnerait le même
+    poids à un voyage de dix jours et à un voyage de deux.
+
+    C'est le pendant exact de la règle d'agrégation des intensités
+    (``aggregate_ef`` : sommer les absolus, PUIS faire le ratio).
+
+    Ce manque interdisait de produire l'indicateur à l'échelle où il est
+    communiqué : la méthodologie publie des chiffres de flotte (4 097 tranches)
+    et de période (617 sur les 5 voyages 2026), l'application ne savait le
+    calculer qu'au voyage.
+    """
+    counts = dict.fromkeys(PROPULSION_CATEGORIES, 0)
+    theoretical = 0
+    for prof in profiles:
+        for cat in PROPULSION_CATEGORIES:
+            counts[cat] += prof.counts.get(cat, 0)
+        theoretical += prof.theoretical_slots
+    return _profile_from_counts(counts, theoretical_slots=theoretical)
+
+
+def _profile_from_counts(counts: dict[str, int], *, theoretical_slots: int) -> PropulsionProfile:
+    """Reconstruit un profil depuis des compteurs déjà classés.
+
+    Passe par des relevés synthétiques pour que ``build_propulsion_profile``
+    reste l'**unique** implémentation des pourcentages et des motifs N/A : un
+    profil de périmètre ne peut donc pas dériver d'un profil de voyage.
+    """
+
+    class _Slot:
+        """Relevé synthétique — duck-typé comme ``NavEventSailReading``."""
+
+        def __init__(self, voile: bool, moteur: bool) -> None:
+            self.j0 = voile
+            self.fwd_j1 = self.fwd_ms = self.aft_j1 = self.aft_ms = False
+            self.me_ps_load_pct = Decimal(1) if moteur else Decimal(0)
+            self.me_sb_load_pct = Decimal(0)
+
+    shape = {
+        "velique_pur": (True, False),
+        "hybride": (True, True),
+        "mecanique": (False, True),
+        "statique": (False, False),
+    }
+    readings = [_Slot(*shape[cat]) for cat in PROPULSION_CATEGORIES for _ in range(counts[cat])]
+    return build_propulsion_profile(readings, theoretical_slots=theoretical_slots)
 
 
 def _dominant_category(readings) -> str | None:
@@ -832,6 +1196,43 @@ async def _finalized_noons(db: AsyncSession, leg_id: int) -> list[NoonEvent]:
         )
     )
     return list(rows.scalars().all())
+
+
+async def scope_propulsion_profile(db: AsyncSession, leg_ids: list[int]) -> PropulsionProfile:
+    """Profil d'un PÉRIMÈTRE (flotte, navire, période) — une seule requête.
+
+    🔴 C'est l'échelle à laquelle l'indicateur est COMMUNIQUÉ. La méthodologie
+    de performance environnementale v3.0 publie des chiffres de périmètre — 4 097
+    tranches pour la flotte, 617 pour les 5 voyages 2026 — et en fait le seul
+    indicateur porté vers l'extérieur de notre propre initiative (§1.2 bis).
+    Tant que seul le profil par voyage existait, ce chiffre n'était pas
+    produisible par l'application.
+
+    L'agrégation passe par ``combine_propulsion_profiles`` : cumul de tranches,
+    jamais moyenne des pourcentages de voyage (§7.4).
+
+    Une requête pour tout le périmètre, pas une par voyage : une vue flotte sur
+    une année en compte plusieurs dizaines.
+    """
+    if not leg_ids:
+        return build_propulsion_profile([], theoretical_slots=0)
+    rows = await db.execute(
+        select(NoonEvent).where(
+            NoonEvent.leg_id.in_(leg_ids),
+            NoonEvent.status.in_(iec.FINALIZED_STATUSES),
+        )
+    )
+    noons = list(rows.scalars().all())
+    by_leg: dict[int, list[NoonEvent]] = {}
+    for noon in noons:
+        by_leg.setdefault(noon.leg_id, []).append(noon)
+    return combine_propulsion_profiles(
+        build_propulsion_profile(
+            [r for n in leg_noons for r in n.sail_readings],
+            theoretical_slots=len(leg_noons) * len(NAV_TIME_SLOTS),
+        )
+        for leg_noons in by_leg.values()
+    )
 
 
 async def propulsion_profile(db: AsyncSession, leg_id: int) -> PropulsionProfile:
@@ -1159,6 +1560,10 @@ class VoyageRow:
     ef_gco2_tkm: Decimal | None  # méthode sélectionnée
     is_ballast: bool
     source: str  # events | legacy_noon | legacy_kpi | none
+    # 🔴 §5.3, niveau 2 (arbitré 2026-09-14) : True si `distance_nm` est un
+    # repli théorique (orthodromie × élongation), pas la mesure haversine —
+    # cf. LegEmissionRecord.distance_is_theoretical.
+    distance_is_theoretical: bool = False
 
 
 @dataclass(frozen=True)
@@ -1270,6 +1675,7 @@ async def vessel_operational(
                     ef_gco2_tkm=_summary_ef_for_method(summary, method),
                     is_ballast=cargo_bl <= 0,
                     source=summary.source,
+                    distance_is_theoretical=summary.distance_nm is None,
                 )
             )
         else:
@@ -1301,6 +1707,7 @@ async def vessel_operational(
                     ef_gco2_tkm=None,
                     is_ballast=cargo_bl <= 0,
                     source=("legacy_kpi" if k is not None else "none"),
+                    distance_is_theoretical=True,
                 )
             )
 

@@ -17,7 +17,7 @@ Couvre ``app.services.emission_ledger`` :
   (ROB déclarés + soutages), repli compteurs (G2) si un ROB manque, ``None``
   tant que le Departure suivant n'est pas finalisé ;
 - **CO2eq GWP-100 (G13)** : ``emissions_breakdown`` calcule désormais le TtW
-  en équivalent CO₂ (Annexe I EU 2015/757), distinct du WtT ;
+  en équivalent CO₂ (PRG AR5, MEPC.391(81) §2.4), distinct du WtT ;
 - **provider kpi_env** : lit le summary quand il existe, repli ``LegKPI`` sinon.
 """
 
@@ -51,8 +51,8 @@ from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.services import emission_ledger, event_capture, referential_env
 from app.services.co2 import invalidate_factors_cache
 from app.services.kpi_env import (
-    NA_BALLAST,
     NA_CARGO_MRV,
+    NA_NO_OPERATIONAL_CO2,
     LegEmissionRecord,
     aggregate_ef,
     leg_ef,
@@ -207,9 +207,9 @@ async def test_legacy_fallback_matches_pre_lot9_figures(db):
     assert r.ch4_g == Decimal("2.0") * Decimal("0.00005") * Decimal("1000000")
     assert r.n2o_g == Decimal("2.0") * Decimal("0.00018") * Decimal("1000000")
     assert r.wtt_co2eq_t == Decimal("2.0") * Decimal("42700") * Decimal("17.7") / Decimal("1000000")
-    # G13 — CO2eq GWP-100 (Annexe I EU 2015/757 : CH4=25, N2O=298), distinct du WtT.
+    # G13 — CO2eq GWP-100 AR5 (MEPC.391(81) §2.4 : CH4=28, N2O=265), distinct du WtT.
     assert r.co2eq_t == Decimal("2.0") * (
-        Decimal("3.206") + Decimal("0.00005") * Decimal("25") + Decimal("0.00018") * Decimal("298")
+        Decimal("3.206") + Decimal("0.00005") * Decimal("28") + Decimal("0.00018") * Decimal("265")
     )
     assert r.co2eq_t != r.wtt_co2eq_t
     # Distance canonique = leg.distance_nm ; cargo B/L = bookings (aucun → 0).
@@ -254,13 +254,27 @@ _MDO_FACTOR = ResolvedEmissionFactor(
 
 
 def test_emissions_breakdown_computes_co2eq_gwp100():
-    """G13 — CO2eq GWP-100 tank-to-wake (Annexe I EU 2015/757 : CH4=25, N2O=298)
-    ≈ 3,261 kgCO2eq/kgFuel pour le MDO (architecture §2.1), distinct du WtT."""
+    """Le CO₂eq TtW du MDO vaut EXACTEMENT le 3,2551 publié par la méthodologie.
+
+    🔴 Sentinelle d'alignement, pas un simple test de formule. La méthodologie
+    de performance environnementale v3.0 (§4.2) publie ``F_GHG = 3,2551 t
+    CO₂e/t`` de MDO, et décompose l'écart au facteur CO₂ seul : ``+0,0491 t``,
+    soit les deux autres gaz. Ce test vérifie que nos trois facteurs et nos
+    deux PRG **reconstituent ce chiffre au centième de gramme près**.
+
+    Il échoue si quelqu'un revient aux PRG du 4ᵉ rapport (25 / 298, qui
+    donnaient 3,26089) ou touche à un facteur : la valeur publiée par
+    l'entreprise et celle calculée par l'application ne peuvent pas diverger
+    sans que ce test le dise.
+    """
     em = emission_ledger.emissions_breakdown(Decimal("10"), _MDO_FACTOR)
     expected_per_kg = (
-        Decimal("3.206") + Decimal("0.00005") * Decimal("25") + Decimal("0.00018") * Decimal("298")
+        Decimal("3.206") + Decimal("0.00005") * Decimal("28") + Decimal("0.00018") * Decimal("265")
     )
-    assert expected_per_kg.quantize(Decimal("0.001")) == Decimal("3.261")
+    # Valeur publiée au §4.2 de la méthodologie, à la décimale près.
+    assert expected_per_kg == Decimal("3.25510")
+    # …et l'écart au CO₂ seul est bien les 0,0491 t annoncés.
+    assert (expected_per_kg - Decimal("3.206")).quantize(Decimal("0.0001")) == Decimal("0.0491")
     assert Decimal(em["co2eq_t"]) == Decimal("10") * expected_per_kg
     assert em["co2eq_t"] != em["wtt_co2eq_t"]
 
@@ -298,9 +312,9 @@ async def test_refresh_summary_idempotent_upsert(db):
     assert s2.conso_total_t == Decimal("2.0")
     assert s2.distance_nm == Decimal("200")
     assert s2.factors_ref is None  # repli codé → aucune ligne emission_factors
-    # G13 — CO2eq GWP-100 (Annexe I EU 2015/757), persisté et distinct du WtT.
+    # G13 — CO2eq GWP-100 AR5 (MEPC.391(81) §2.4), persisté et distinct du WtT.
     assert s2.co2eq_t == Decimal("2.0") * (
-        Decimal("3.206") + Decimal("0.00005") * Decimal("25") + Decimal("0.00018") * Decimal("298")
+        Decimal("3.206") + Decimal("0.00005") * Decimal("28") + Decimal("0.00018") * Decimal("265")
     )
     assert s2.co2eq_t != s2.wtt_co2eq_t
 
@@ -385,7 +399,8 @@ def test_leg_ef_method_c_real_when_cargo_mrv_present():
     assert result.value_gco2_tkm == Decimal("28.42")
 
 
-def test_leg_ef_method_c_ballast_mrv_is_na():
+def test_leg_ef_method_c_ballast_mrv_uses_1t_reference():
+    """🔴 Voyage sur lest (§9.2, A8) : 1 tonne fictive, jamais un tiret (arbitré 2026-09-14)."""
     record = LegEmissionRecord(
         leg_id=2,
         leg_code="1BBRFR6",
@@ -399,13 +414,29 @@ def test_leg_ef_method_c_ballast_mrv_is_na():
         cargo_mrv_t=Decimal("0"),  # ballast ⇒ cargo MRV = 0
     )
     result = leg_ef(record, method="C", occupancy_pct=OCC, capacity_ref_t=CAP)
-    assert result.value_gco2_tkm is None
-    assert result.na_reason == NA_BALLAST
+    assert result.na_reason is None
+    assert result.is_ballast_assumed is True
+    # 30 t CO2 × 1e6 / (1 t fictive × (800 nm × 1,852)) = 20 248,38 gCO2/t.km.
+    assert result.value_gco2_tkm == Decimal("20248.38")
 
 
 def test_aggregate_ef_method_c_mixed_records():
-    """Voyage avec cargo MRV + voyage legacy (None) : dénominateur = MRV seul,
-    numérateur = tout le CO₂ (le legacy émet aussi)."""
+    """🔴 Un voyage au cargo MRV INCONNU quitte les DEUX termes.
+
+    Règle §8.2 n°2 de la méthodologie : « chaque lecture porte son propre
+    numérateur, apparié à son dénominateur. Un voyage dont le travail de
+    transport n'est pas calculable pour une lecture donnée doit quitter les
+    DEUX termes, pas le seul dénominateur. » La méthodologie a **mesuré** ce
+    défaut à +26 % sur l'intensité MRV.
+
+    La version précédente de ce test épinglait exactement le défaut : le voyage
+    legacy apportait ses 30 t de CO₂ au numérateur sans apporter la moindre
+    tonne-kilomètre, ce qui donnait 45,47 au lieu de 28,42.
+
+    ⚠️ À ne pas confondre avec le voyage **sur lest**, dont le travail de
+    transport est connu et nul : celui-là reste au numérateur (règle n°3,
+    vérifiée par le test suivant). Inconnu n'est pas nul.
+    """
     with_mrv = LegEmissionRecord(
         leg_id=1,
         leg_code="1AFRBR6",
@@ -433,8 +464,9 @@ def test_aggregate_ef_method_c_mixed_records():
     assert ef.na_reason is None
     # Dénominateur : 950 × 1852 = 1 759 400 t·km (le legacy est exclu).
     assert denom == Decimal("1759400.000")
-    # Numérateur : 80 t → 80e6/1 759 400 = 45,47.
-    assert ef.value_gco2_tkm == Decimal("45.47")
+    # Numérateur : 50 t SEULEMENT — le legacy a quitté les deux termes.
+    # 50e6 / 1 759 400 = 28,42.
+    assert ef.value_gco2_tkm == Decimal("28.42")
 
     # Aucun voyage avec cargo MRV → N/A motivé (comportement legacy conservé).
     ef_na, denom_na = aggregate_ef([legacy], method="C", occupancy_pct=OCC, capacity_ref_t=CAP)
@@ -457,6 +489,62 @@ async def test_ledger_ef_method_c_from_events(db):
     assert r.ef_method_c == expected.quantize(Decimal("0.0001"))
     # A (cargo B/L 900) et B (1100 × 70 %) également posés.
     assert r.ef_method_a is not None
+    assert r.ef_method_b is not None
+
+
+async def test_ledger_ef_ballast_voyage_uses_1t_reference_never_none(db):
+    """🔴 §9.2 (A8), arbitré le 2026-09-14 : chemin de PRODUCTION.
+
+    Un voyage sur lest réel (cargo B/L ET MRV connus et nuls) ne persiste plus
+    ``ef_method_a``/``ef_method_c`` à ``None`` : le grand livre calcule sur une
+    tonne fictive, exactement comme au niveau formule (``kpi_env.leg_ef``) —
+    c'est CE chemin qui alimente la page voyage, l'export PDF et le DOCX.
+    """
+    vessel, leg = await _base(db)
+    await ensure_vessel_env_defaults(db, vessel)
+    engines = {e.engine_role: e for e in await get_vessel_engines(db, vessel.id)}
+    dep = DepartureEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        lat_decimal=Decimal("50.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("100.000"),
+        vessel_condition="ballast",
+        cargo_bl_t=Decimal("0.000"),
+        cargo_mrv_t=Decimal("0.000"),
+    )
+    dep.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("10000"))
+    ]
+    noon = NoonEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=24),
+        lat_decimal=Decimal("47.0"),
+        lon_decimal=Decimal("-5.0"),
+    )
+    noon.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("11000"))
+    ]
+    db.add_all([dep, noon])
+    await db.flush()
+
+    r = await emission_ledger.compute_for_leg(db, leg)
+    assert r.cargo_bl_t == Decimal("0.000")
+    assert r.cargo_mrv_t == Decimal("0.000")
+    # Ni A ni C ne renvoient plus None pour ce voyage — 1 tonne fictive.
+    assert r.ef_method_a is not None
+    assert r.ef_method_c is not None
+    distance_km = r.distance_nm * Decimal("1.852")
+    expected = (r.co2_emitted_t * Decimal("1000000") / (Decimal("1") * distance_km)).quantize(
+        Decimal("0.0001")
+    )
+    assert r.ef_method_a == expected
+    assert r.ef_method_c == expected
+    # B est standardisée (capacité×occupancy) : jamais concernée par le lest.
     assert r.ef_method_b is not None
 
 
@@ -823,3 +911,179 @@ async def test_a_bunker_moved_to_another_leg_refreshes_the_leg_it_leaves(db, mon
 
     assert leg2.id in refreshed, "le voyage d'accueil doit être rafraîchi"
     assert leg.id in refreshed, "le voyage quitté aussi — sinon le tonnage y reste"
+
+
+def test_a_ballast_voyage_keeps_its_co2_in_the_aggregate():
+    """Règle §8.2 n°3 — le zéro VRAI est conservé dans les agrégats.
+
+    Un voyage sur lest a un travail de transport connu et **nul** : il apporte
+    ses émissions au numérateur sans apporter de tonnes-kilomètres. C'est le
+    comportement voulu — « le carburant d'un voyage à vide se répartit sur la
+    cargaison réellement transportée » — et c'est ce qui fait que l'intensité
+    MRV de la période de reprise est élevée, ce que la méthodologie assume
+    comme étant le sujet même.
+
+    Le contraste avec le test précédent est l'essentiel : cargo MRV **nul**
+    reste au numérateur, cargo MRV **inconnu** en sort.
+    """
+    laden = LegEmissionRecord(
+        leg_id=1,
+        leg_code="1AFRBR6",
+        vessel_id=1,
+        co2_emitted_t=Decimal("50"),
+        cargo_t=Decimal("500"),
+        distance_nm=Decimal("1000"),
+        etd=None,
+        ata=None,
+        has_kpi=True,
+        cargo_mrv_t=Decimal("950"),
+    )
+    ballast = LegEmissionRecord(
+        leg_id=2,
+        leg_code="1BBRFR6",
+        vessel_id=1,
+        co2_emitted_t=Decimal("30"),
+        cargo_t=Decimal("0"),
+        distance_nm=Decimal("800"),
+        etd=None,
+        ata=None,
+        has_kpi=True,
+        cargo_mrv_t=Decimal("0"),  # sur lest : connu, et nul
+    )
+    ef, denom = aggregate_ef([laden, ballast], method="C", occupancy_pct=OCC, capacity_ref_t=CAP)
+
+    # Dénominateur : le seul voyage chargé.
+    assert denom == Decimal("1759400.000")
+    # Numérateur : 80 t — le sur-lest apporte bien son CO₂.
+    assert ef.value_gco2_tkm == Decimal("45.47")
+
+
+def test_the_operational_reading_counts_the_anchorage_the_mrv_one_does_not():
+    """🔴 Chaque approche porte SON numérateur (méthodologie §1.2).
+
+    Même voyage : 100 t de CO₂ en route, 10 t au mouillage.
+
+    - approche **MRV** (méthode C) : mouillage EXCLU — le règlement mesure
+      l'efficacité *en transport*, pas le comportement à l'arrêt ;
+    - approche **Métier** (méthode B) : mouillage INCLUS — « du point de vue du
+      service vendu, un navire au mouillage en attente de créneau brûle du
+      carburant au titre de ce voyage, et le chargeur en supporte l'impact ».
+
+    Les trois méthodes partageaient auparavant le numérateur MRV : l'intensité
+    Métier ne mesurait pas ce qu'elle annonçait.
+    """
+    record = LegEmissionRecord(
+        leg_id=1,
+        leg_code="1AFRBR6",
+        vessel_id=1,
+        co2_emitted_t=Decimal("100"),  # trajet, hors mouillage
+        cargo_t=Decimal("500"),
+        distance_nm=Decimal("1000"),
+        etd=None,
+        ata=None,
+        has_kpi=True,
+        cargo_mrv_t=Decimal("1000"),
+        co2_op_t=Decimal("110"),  # trajet + mouillage
+    )
+    distance_km = Decimal("1000") * Decimal("1.852")
+
+    mrv = leg_ef(record, method="C", occupancy_pct=OCC, capacity_ref_t=CAP)
+    metier = leg_ef(record, method="B", occupancy_pct=OCC, capacity_ref_t=CAP)
+
+    assert mrv.value_gco2_tkm == (
+        Decimal("100") * Decimal(1_000_000) / (Decimal("1000") * distance_km)
+    ).quantize(Decimal("0.01"))
+    assert metier.value_gco2_tkm == (
+        Decimal("110") * Decimal(1_000_000) / (CAP * OCC / Decimal(100) * distance_km)
+    ).quantize(Decimal("0.01"))
+
+
+def test_an_unknown_anchorage_blocks_the_operational_reading_not_the_mrv_one():
+    """Mouillage inconnu ⇒ Métier en N/A motivé, MRV inchangée.
+
+    Un résumé événementiel antérieur à la migration 0145 n'a pas de colonne
+    mouillage : la valeur est **inconnue**, pas nulle. Replier silencieusement
+    l'assiette Métier sur l'assiette MRV publierait un chiffre sous-estimé sous
+    le nom d'une autre approche.
+    """
+    record = LegEmissionRecord(
+        leg_id=1,
+        leg_code="1AFRBR6",
+        vessel_id=1,
+        co2_emitted_t=Decimal("100"),
+        cargo_t=Decimal("500"),
+        distance_nm=Decimal("1000"),
+        etd=None,
+        ata=None,
+        has_kpi=True,
+        cargo_mrv_t=Decimal("1000"),
+        co2_op_t=None,  # mouillage inconnu
+    )
+    assert leg_ef(record, method="C", occupancy_pct=OCC, capacity_ref_t=CAP).value_gco2_tkm
+    for method in ("A", "B"):
+        res = leg_ef(record, method=method, occupancy_pct=OCC, capacity_ref_t=CAP)
+        assert res.value_gco2_tkm is None
+        assert res.na_reason == NA_NO_OPERATIONAL_CO2
+
+
+def test_the_two_ef_paths_cannot_drift_apart():
+    """🔴 Une seule règle des numérateurs, exercée par les deux chemins.
+
+    Elle était écrite DEUX fois : ici, dans le grand livre, qui calcule et
+    persiste les EF par voyage, et dans ``kpi_env.leg_ef``. Seule la première
+    est appelée par l'application — si bien qu'en corrigeant la seconde on
+    obtenait un test vert sur du code mort, pendant que la page voyage, l'export
+    PDF et le DOCX remis à un tiers servaient le mauvais numérateur.
+
+    ``numerator_for_method`` porte désormais la règle, et ``leg_ef`` la délègue.
+    Ce test vérifie que les deux chemins produisent la MÊME valeur : ils ne
+    peuvent plus diverger sans qu'on le voie.
+    """
+    from app.services.kpi_env import leg_ef
+
+    record = LegEmissionRecord(
+        leg_id=1,
+        leg_code="1AFRBR6",
+        vessel_id=1,
+        co2_emitted_t=Decimal("100"),  # assiette MRV, hors mouillage
+        cargo_t=Decimal("500"),
+        distance_nm=Decimal("1000"),
+        etd=None,
+        ata=None,
+        has_kpi=True,
+        cargo_mrv_t=Decimal("900"),
+        co2_op_t=Decimal("110"),  # assiette Métier, mouillage inclus
+    )
+    distance_km = record.distance_nm * Decimal("1.852")
+    # 🔴 Les dénominateurs sont des MASSES (t), jamais déjà multipliées par la
+    # distance : `_ef_method` fait ce produit lui-même (`denom_t × distance_km`).
+    # Une première version de ce test pré-multipliait ici ET dans
+    # `_ef_method`, comptant la distance deux fois — c'était un bug du test,
+    # pas du code de production.
+    denoms = {
+        "A": record.cargo_t,
+        "B": CAP * (OCC / Decimal(100)),
+        "C": record.cargo_mrv_t,
+    }
+    for method in ("A", "B", "C"):
+        via_ledger = emission_ledger._ef_method(
+            emission_ledger.numerator_for_method(
+                method, co2_mrv_t=record.co2_emitted_t, co2_op_t=record.co2_op_t
+            ),
+            denoms[method],
+            distance_km,
+        )
+        via_kpi = leg_ef(record, method=method, occupancy_pct=OCC, capacity_ref_t=CAP)
+        # Les deux quantifient différemment (persisté : 4 décimales ;
+        # affichage : 2), par construction — pas une divergence de règle. On
+        # compare donc à la précision la plus grossière des deux.
+        assert via_kpi.value_gco2_tkm == via_ledger.quantize(Decimal("0.01")), method
+
+    # …et la règle elle-même : C prend l'assiette MRV, A et B l'assiette Métier.
+    assert emission_ledger.numerator_for_method(
+        "C", co2_mrv_t=Decimal("100"), co2_op_t=Decimal("110")
+    ) == Decimal("100")
+    for method in ("A", "B"):
+        assert emission_ledger.numerator_for_method(
+            method, co2_mrv_t=Decimal("100"), co2_op_t=Decimal("110")
+        ) == Decimal("110")

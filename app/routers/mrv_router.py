@@ -772,10 +772,15 @@ async def mrv_emissions_voyages(
 ) -> HTMLResponse:
     """Émissions du trajet (Departure → Arrival), par voyage.
 
-    ``include_anchoring`` ajoute les émissions au **mouillage**, qui sont
-    **hors périmètre MRV** (constat métier du 2026-09-04) : le défaut est donc
-    ``False``, et l'écran étiquette explicitement le total élargi. Un chiffre
-    réglementaire ne doit jamais grossir sans qu'on l'ait demandé.
+    ``include_anchoring`` bascule de l'**approche MRV** (mouillage exclu, ce
+    que le règlement demande de déclarer) à l'**approche Métier** (mouillage
+    inclus, la performance du service vendu) — les deux lectures nommées de la
+    méthodologie v3.0 §1.2.
+
+    Le défaut reste l'approche MRV : un chiffre réglementaire ne doit jamais
+    grossir sans qu'on l'ait demandé. Et l'écran nomme l'approche retenue,
+    parce que les deux chiffres sont également légitimes et qu'aucun ne vaut
+    pour l'autre.
     """
     return await _emissions_screen(
         request,
@@ -795,6 +800,11 @@ async def mrv_emissions_port(
     user=Depends(require_permission("mrv", "C")),
 ) -> HTMLResponse:
     """Émissions du séjour au port qui suit l'arrivée d'un voyage.
+
+    🔴 Ce poste n'entre dans **aucune** des deux intensités (méthodologie
+    §1.2, §4.4) : le carburant brûlé à quai ne contribue pas au transport. Il
+    est calculé et montré parce qu'il **explique l'écart** avec la déclaration
+    officielle THETIS-MRV, qui l'inclut (§4.6).
 
     Assiette **disjointe** de celle du trajet, calculée par le grand livre
     (``co2_escale_t``) — jamais additionnée au trajet ici. Le mouillage, lui,

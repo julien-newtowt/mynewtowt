@@ -178,7 +178,13 @@ async def voyage_page(
             select(AnemosCertificate).where(AnemosCertificate.booking_id == booking.id)
         )
     ).scalar_one_or_none()
-    co2_kg = int(cert.co2_avoided_kg) if cert and cert.co2_avoided_kg else None
+    # 🔴 Plus de « CO₂ évité » sur la traçabilité consommateur.
+    #
+    # Base de comparaison écartée (méthodologie v3.0 §11.1) ; les certificats
+    # antérieurs à la migration 20260911_0146 portent encore une valeur en base,
+    # mais elle ne se publie plus. Le gabarit garde le bloc derrière
+    # `{% if co2_kg %}` : le tarir ici suffit à le faire disparaître.
+    co2_kg = None
 
     lang = getattr(request.state, "lang", "fr")
     origin = (

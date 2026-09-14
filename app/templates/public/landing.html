@@ -231,18 +231,8 @@
             <span>ETA <span class="mono">{{ leg.eta|date }}</span></span>
           </div>
 
-          {% if leg.co2_per_pallet_kg %}
-          <div class="co2-badge" role="img"
-               aria-label="−{{ leg.co2_per_pallet_kg }} kg {{ t('home_sched_co2_badge', lang) }}">
-            <svg class="co2-badge-rose" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" stroke-width="0.8"/>
-              <polygon points="12,1 14,12 12,23 10,12" fill="currentColor" opacity="0.55"/>
-              <polygon points="1,12 12,10 23,12 12,14" fill="currentColor" opacity="0.55"/>
-            </svg>
-            <span class="co2-badge-val">−{{ leg.co2_per_pallet_kg }}&nbsp;kg</span>
-            <span class="co2-badge-label">{{ t('home_sched_co2_badge', lang) }}</span>
-          </div>
-          {% endif %}
+          {# Badge « CO₂ évité / palette » retiré : base de comparaison
+             écartée (méthodologie v3.0 §11.1). #}
 
           <a href="/routes/{{ leg.leg_code }}" class="btn btn-primary btn-block">{{ t('home_sched_card_cta', lang) }}</a>
         </article>

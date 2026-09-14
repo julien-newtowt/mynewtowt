@@ -638,32 +638,81 @@ Doc : `docs/integrations/unlocode-ports.md`.
   seul** — `DraftAuthorError`) → `finalise` (UTC autoritatif + moteur de règles scope
   `event` ; un `fail` **bloquant** refuse la finalisation) → `valide` (siège). Les
   brouillons sont **exclus** de tout calcul.
-- 🔴 **Deux assiettes d'émission disjointes, jamais additionnées en silence.**
-  `co2_t`/`co2eq_t`/`wtt_co2eq_t` portent le **trajet** (assiette : consommation
-  **hors mouillage**, `do_consumed = conso_hors`). `co2_escale_t`/`co2eq_escale_t`
-  portent l'**escale** qui suit l'arrivée (« Port Emissions = émissions
-  d'escale », décision du 2026-09-04). Elles ne se recouvrent pas, et l'escale
-  d'un voyage peut s'étendre sur la fenêtre du voyage **suivant** : tout total
-  « trajet + escale » doit l'annoncer. Les deux sont calculées dans
-  `emission_ledger`, au même facteur et par la même primitive
-  (`emissions_breakdown`) — la règle d'or veut que l'unique multiplication
-  consommation × facteur vive là (sentinelle `test_factor_whitelist`).
-- 🔴 **Le mouillage est une TROISIÈME assiette, HORS périmètre MRV** (constat
-  métier du 2026-09-04). Son exclusion de l'assiette du trajet est donc
-  **correcte au regard du règlement**, ce n'est pas un défaut.
-  `co2_mouillage_t`/`co2eq_mouillage_t` existent quand même (migration
-  `20260907_0145`) parce que du carburant brûlé mérite une émission connue —
-  mais **pour l'analyse interne uniquement**. Trois règles qui en découlent, à
-  ne jamais casser :
-  1. le **périmètre MRV est le défaut** de toute restitution (trajet + escale,
-     comptés séparément) ;
-  2. le mouillage ne s'ajoute qu'en **opt-in explicite**
-     (`/mrv/emissions/voyages?include_anchoring=true`), et tout total qui
-     l'inclut porte la mention **hors MRV** ;
-  3. le chiffre MRV est **identique** avec et sans opt-in — un chiffre
-     réglementaire ne grossit jamais parce qu'on a ajouté un indicateur interne
-     à côté (verrouillé par un test du grand livre et un test de vue).
-  Le dataset OVDLA, lui, porte bien ces intervalles.
+- 🔴 **Trois assiettes disjointes, DEUX approches nommées, et l'escale dans
+  aucune des deux.** Référence : *Environmental Performance Methodology — MRV
+  and Operational approaches v3.0* (10/09/2026), §1.2 et §4.4. Audit
+  d'alignement : `docs/audit/2026-09-11-alignement-methodologie-performance-environnementale-v3.md`.
+
+  | Assiette | Colonne | Approche **MRV** | Approche **Métier** |
+  |---|---|---|---|
+  | Trajet (hors mouillage) | `co2_t` | ✅ | ✅ |
+  | Mouillage / dérive | `co2_mouillage_t` | ❌ | ✅ |
+  | **Escale** (séjour au port) | `co2_escale_t` | ❌ | ❌ |
+
+  - **Approche MRV** = ce que le règlement demande de déclarer. Assiette :
+    trajet seul. Numérateur de la **méthode C** (`cargo_mrv`).
+  - **Approche Métier** = la performance du service vendu. Assiette :
+    berth-to-berth, **mouillage inclus** — « un navire au mouillage en attente
+    de créneau brûle du carburant au titre de ce voyage, et le chargeur en
+    supporte l'impact ». Numérateur des **méthodes A et B**. C'est un chiffre
+    **publiable**, pas un indicateur interne.
+  - ⚠️ **Chaque lecture porte SON numérateur** (`kpi_env._operational_co2_t`).
+    Les faire partager le numérateur MRV faisait mesurer à l'intensité Métier
+    autre chose que ce qu'elle annonce. Un mouillage **inconnu** rend l'assiette
+    Métier non calculable — jamais un repli silencieux sur l'assiette MRV.
+  - 🔴 **L'escale n'entre dans aucune intensité** : le carburant brûlé à quai
+    ne contribue pas au transport. Elle est calculée parce qu'elle **explique
+    l'écart** avec la déclaration officielle THETIS-MRV, qui l'inclut (§4.6) —
+    sans elle, un lecteur comparant les deux conclurait à une sous-déclaration.
+  - Les trois assiettes sont calculées dans `emission_ledger`, au même facteur
+    et par la même primitive (`emissions_breakdown`) — la règle d'or veut que
+    l'unique multiplication consommation × facteur vive là (sentinelle
+    `test_factor_whitelist`). Le dataset OVDLA porte bien ces intervalles.
+  - L'écran nomme l'approche retenue et ne bascule que sur demande
+    (`/mrv/emissions/voyages?include_anchoring=true`) : le défaut reste MRV, car
+    un chiffre réglementaire ne grossit jamais sans qu'on l'ait demandé, et
+    **aucune des deux ne vaut pour l'autre**.
+- 🔴 **PRG : AR5 (CH₄ = 28, N₂O = 265)**, hypothèse A11 de la méthodologie, tels
+  que MEPC.391(81) §2.4 les fixe — donc **citables à l'OMI**. Le CO₂eq du MDO
+  vaut alors exactement les **3,2551 t CO₂e/t** publiés au §4.2, ce qu'une
+  sentinelle épingle (`test_emissions_breakdown_computes_co2eq_gwp100`). Sans
+  effet sur les intensités, qui sont en CO₂ seul (3,206) ; décisif pour le taux
+  de décarbonation, qui se calcule sur ce facteur **des deux côtés** du rapport.
+- 🔴 **Le profil de propulsion se rapporte au TEMPS DE NAVIGATION**, jamais au
+  temps calendaire (méthodologie §7.2/§7.4) : les tranches à l'arrêt sont
+  **exclues du dénominateur**, faute de quoi la part de voile est diluée par les
+  jours à quai. L'agrégation d'un périmètre se fait **par cumul de tranches**
+  (`combine_propulsion_profiles`), jamais par moyenne des pourcentages de
+  voyage — pendant exact de `aggregate_ef` pour les intensités. C'est
+  l'indicateur que la méthodologie porte vers l'extérieur (§1.2 bis), parce
+  qu'il ne dépend d'aucun facteur d'émission, d'aucune cargaison de référence et
+  d'aucun scénario de comparaison.
+- 🔴 **Base de décarbonation : « nous-mêmes sans voiles »** (`services/decarbonation.py`, méthodologie §11.2). Le porte-conteneurs conventionnel est **écarté** — segment de capacité discrétionnaire, résultat entre 87 % et 96 %. La base retenue compare le navire **à lui-même**, moteur seul à pleine puissance, **sur la route directe** (distance ÷ 1,211 : un navire sans voiles ne cherche pas le vent). Paramètres : 858 kW × 212 g/kWh = **4,37 t/j**, et une **vitesse d'essai par navire** (`Vessel.baseline_speed_kn` — ANEMOS 11,36 / ARTEMIS 12,07 / ATLANTIS 11,86 kn), car les sisterships diffèrent de ~12 % en puissance à vitesse égale. **Aucun paramètre n'est une hypothèse interne** : tous viennent des fichiers EEDI visés par Bureau Veritas, et `baseline_speed_source` le trace. Pas de vitesse ⇒ le voyage quitte les **deux** termes, jamais un repli sur un sistership. Agrégation par somme des deux termes puis ratio — jamais une moyenne de taux. ⚠️ Le taux **n'est pas publié de notre propre initiative** (§1.2 bis) : suivi interne, communiqué sur demande en énonçant sa base.
+- 🔴 **Voyage sur lest, au niveau du VOYAGE : 1 tonne fictive, jamais un
+  tiret** (méthodologie §9.2, hypothèse A8 — arbitré le 2026-09-14). Un cargo
+  **connu et nul** (méthodes A/C) calcule son EF comme s'il avait porté 1 t
+  (`emission_ledger._denom_or_ballast_reference`) pour rendre le voyage
+  **visible** plutôt que de le cacher derrière un N/A — `EfResult.is_ballast_assumed`
+  porte l'avertissement, affiché partout où la valeur l'est (dashboard, PDF,
+  DOCX). Un cargo **inconnu** (`None`) n'est pas nul : il reste N/A, sans
+  substitution. ⚠️ Aux **agrégats** (`aggregate_ef`, `kpi_env.aggregate_ef`),
+  la règle ne change pas : un voyage sur lest reste au numérateur avec son
+  **vrai zéro**, exclu du dénominateur — la tonne fictive ne vit qu'au calcul
+  PAR VOYAGE, jamais dans une somme multi-voyages.
+- **Cargo MRV — les deux seuls contrôles de vraisemblance possibles à terre**
+  (méthodologie §8.3, `validation_rules_catalog._r20_cargo_mrv`, R20, sévérité
+  Info tant que l'arbitrage D10 n'est pas rendu) : cargo MRV ≥ cargaison B/L
+  moins tolérance (`seuil_cargo_mrv_ecart_t`), et cargo MRV ≤ port en lourd du
+  navire (`Vessel.deadweight_t`, câblé le 2026-09-14 — jusque-là présent au
+  référentiel mais consommé par aucune règle). Les deux volets sont
+  indépendants (deux `CheckOutcome` distincts) et s'abstiennent chacun tant
+  que sa donnée de référence n'est pas connue.
+- **Travail de transport (t·km), exposé** (annexe E, §8.1/§9.1) :
+  `LedgerResult.transport_work_mrv_t_km` (méthode C, assiette réelle) et
+  `.transport_work_simulated_t_km` (méthode B, capacité×occupancy) — jusqu'ici
+  calculés en interne comme seul dénominateur des EF, jamais restitués comme
+  grandeur à part. Champs calculés, **non persistés** (même statut que
+  `avoided_co2_kg`) ; affichés page voyage + export PDF/DOCX.
 - **Feature flag `mrv_v2_capture`** (`services/feature_flags.capture_v2_enabled`) :
   **défaut ON global** (flag absent ⇒ actif), **fail-open** vers ON (une panne DB ne
   rouvre jamais le legacy), cache 20 s. Opt-out **par navire** en base via

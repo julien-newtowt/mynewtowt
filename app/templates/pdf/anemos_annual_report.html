@@ -42,7 +42,7 @@
   </tr>
 </table>
 
-<h3>Émissions évitées — synthèse {{ report.year }}</h3>
+<h3>Émissions — synthèse {{ report.year }}</h3>
 <table style="width:100%;border-collapse:collapse;margin-bottom:8mm;">
   <tbody>
     <tr style="border-bottom:0.5pt solid #EFE6D6;">
@@ -57,16 +57,11 @@
       <td style="padding:2mm 1mm;">Émissions NEWTOWT (vélique)</td>
       <td style="padding:2mm 1mm;text-align:right;">{{ "%.0f"|format(report.total_emitted_kg|float) }} kg CO₂</td>
     </tr>
-    <tr style="border-bottom:0.5pt solid #EFE6D6;">
-      <td style="padding:2mm 1mm;">Référence cargo conventionnel</td>
-      <td style="padding:2mm 1mm;text-align:right;">{{ "%.0f"|format(report.total_conventional_kg|float) }} kg CO₂</td>
-    </tr>
-    <tr style="border-top:1.5pt solid #0D5966;">
-      <td style="padding:3mm 1mm;font-weight:bold;font-size:12pt;">CO₂ évité</td>
-      <td style="padding:3mm 1mm;text-align:right;font-weight:bold;font-size:14pt;color:#0D5966;">
-        {{ "%.0f"|format(report.total_avoided_kg|float) }} kg
-      </td>
-    </tr>
+    {# 🔴 Ligne « référence cargo conventionnel » et total « CO₂ évité »
+       retirés. Ce rapport est remis au client pour son Bilan Carbone scope 3 :
+       il ne peut pas porter une comparaison à un porte-conteneurs à
+       13,7 gCO₂/t·km, base écartée par la méthodologie v3.0 (§11.1). Reste ce
+       qui est mesuré et vérifié sous EU MRV. #}
   </tbody>
 </table>
 
@@ -79,7 +74,7 @@
       <th style="padding:2mm 1mm;">Date</th>
       <th style="padding:2mm 1mm;text-align:right;">Tonnage</th>
       <th style="padding:2mm 1mm;text-align:right;">Distance</th>
-      <th style="padding:2mm 1mm;text-align:right;">CO₂ évité</th>
+      <th style="padding:2mm 1mm;text-align:right;">CO₂ émis</th>
       <th style="padding:2mm 1mm;">Méthode</th>
     </tr>
   </thead>
@@ -91,7 +86,7 @@
       <td style="padding:1.5mm 1mm;">{{ s.issued_at|date }}</td>
       <td style="padding:1.5mm 1mm;text-align:right;">{{ "%.1f"|format(s.tonnage_t|float) }} t</td>
       <td style="padding:1.5mm 1mm;text-align:right;">{{ "%.0f"|format(s.distance_nm|float) }} NM</td>
-      <td style="padding:1.5mm 1mm;text-align:right;">{{ "%.0f"|format(s.co2_avoided_kg|float) }} kg</td>
+      <td style="padding:1.5mm 1mm;text-align:right;">{{ "%.0f"|format(s.co2_emitted_kg|float) if s.co2_emitted_kg else "—" }} kg</td>
       <td style="padding:1.5mm 1mm;">{% if s.method == "declared" %}réel déclaré{% else %}forfait{% endif %}</td>
     </tr>
     {% endfor %}
@@ -99,10 +94,11 @@
 </table>
 
 <p style="margin-top:8mm;font-size:8.5pt;color:#555;">
-  <strong>Méthodologie</strong> — Émissions évitées calculées par différence entre un
-  cargo conventionnel (référence IMO Fourth GHG Study, 13,7 g CO₂/t·km) et le transport
-  vélique NEWTOWT, alignée EU MRV (UE 2015/757) et compatible GHG Protocol Scope 3 catégorie 4
-  (transport amont). <strong>Périmètre tank-to-wake, gaz CO₂ uniquement (hors CH₄/N₂O — pas du
+  <strong>Méthodologie</strong> — Émissions mesurées du transport vélique NEWTOWT, alignées
+  EU MRV (UE 2015/757) et compatibles GHG Protocol Scope 3 catégorie 4 (transport amont).
+  Les émissions de nos navires sont vérifiées par un organisme accrédité et publiques dans le
+  registre THETIS-MRV de l'EMSA. Toute comparaison à un autre mode de transport est en
+  cours de révision et ne figure plus dans ce rapport. <strong>Périmètre tank-to-wake, gaz CO₂ uniquement (hors CH₄/N₂O — pas du
   CO₂e).</strong> {{ report.declared_count }} des {{ report.shipment_count }} expédition(s)
   reposent sur les consommations réelles déclarées à bord (noon reports signés) ; les
   autres sur le facteur certifié. Document valorisable dans votre Bilan Carbone® scope 3

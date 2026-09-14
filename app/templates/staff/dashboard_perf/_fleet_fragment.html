@@ -87,17 +87,28 @@
     <div class="delta text-muted">{{ sel.leg_count }} {{ t('dashperf_legs_suffix', lang) }}</div>
   </div>
 
+  {# Carte « CO₂ évité vs porte-conteneurs » retirée : la méthodologie v3.0
+     (§11.1) écarte cette base de comparaison, le segment de capacité retenu
+     déterminant le résultat entre 87 % et 96 %. #}
+
+  {# Taux de décarbonation — base « nous-mêmes sans voiles » (méthodologie
+     §11.2). Elle a remplacé la comparaison au porte-conteneurs, écartée parce
+     que le segment de capacité retenu déterminait le résultat entre 87 % et
+     96 %.
+
+     🔴 La base est NOMMÉE sous le chiffre, et ce n'est pas décoratif : la
+     méthodologie §1.2 bis impose d'énoncer le scénario de référence chaque fois
+     que ce taux sort, faute de quoi il serait inintelligible et attaquable. #}
   <div class="kpi-card">
-    <div class="label">
-      {{ t('dashperf_kpi_avoided_container', lang) }}
-      {% if 'ef_container_ship_gco2_tkm' in provisional_params %}<span class="badge badge-draft">{{ t('dashperf_provisional_short', lang) }}</span>{% endif %}
-    </div>
-    {% if sel.avoided_container.avoided_t is not none %}
-    <div class="value text-success">{{ "%.1f"|format(sel.avoided_container.avoided_t) }} t</div>
-    <div class="delta up">{{ "%.1f"|format(sel.avoided_container.avoided_pct) }} %</div>
+    <div class="label">{{ t('dashperf_kpi_decarbonation', lang) }}</div>
+    {% if sel.decarbonation and sel.decarbonation.rate_pct is not none %}
+    <div class="value text-success">{{ "%.1f"|format(sel.decarbonation.rate_pct) }} %</div>
+    <div class="delta text-muted">{{ t('dashperf_decarbonation_baseline', lang) }}</div>
     {% else %}
     <div class="value text-muted">{{ t('dashperf_na', lang) }}</div>
-    <div class="delta text-muted">{{ sel.avoided_container.na_reason }}</div>
+    <div class="delta text-muted">
+      {{ sel.decarbonation.na_reason if sel.decarbonation else t('dashperf_na', lang) }}
+    </div>
     {% endif %}
   </div>
 

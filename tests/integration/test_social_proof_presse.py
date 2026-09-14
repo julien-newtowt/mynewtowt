@@ -134,9 +134,12 @@ async def test_counters_computed_from_operations(db):
     counters = await social_proof.counters(db)
     assert counters.pallets == 1200  # delivered + at_sea, jamais les brouillons
     assert counters.crossings == 1  # seule la traversée avec ATA compte
-    assert counters.co2_avoided_kg == 69500
+    # 🔴 Plus de compteur d'emissions evitees (cf. `social_proof.counters`) :
+    # la base de comparaison qui le produisait a ete ecartee (methodologie
+    # v3.0 §11.1). Les compteurs de FAITS — palettes livrees, traversees —
+    # suffisent a porter la preuve, et eux restent servis.
+    assert counters.co2_avoided_kg == 0
     assert counters.pallets_str == "1 200"  # milliers à l'espace fine insécable
-    assert counters.co2_str == "70 t"  # ≥ 1 000 kg → tonnes arrondies
     assert counters.has_content is True
 
 
@@ -192,7 +195,10 @@ async def test_landing_shows_counters_with_data(db):
     body = resp.body.decode()
     assert t("sp_counters_title", "fr") in body
     assert "1 200" in body
-    assert "70 t" in body
+    # 🔴 Plus de compteur « CO2 evite » sur la landing : la base de
+    # comparaison a ete ecartee (methodologie v3.0 §11.1). Les palettes
+    # et les traversees, elles, restent — ce sont des faits.
+    assert "70 t" not in body
     social_proof.invalidate_counters_cache()  # ne pas polluer les tests suivants
 
 

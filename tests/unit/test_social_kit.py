@@ -27,7 +27,7 @@ def test_render_svg_is_valid_and_carries_absolute_kg(fmt):
         lang="fr",
         origin="colombie",
         origin_label="Colombie",
-        story_short="Café des Andes, traversé à la voile. 300 kg de CO₂ évités, vérifiables.",
+        story_short="Café des Andes, traversé à la voile. Traversée à la voile, certifiée Anemos et vérifiable.",
         co2_kg=300,
         cert_ref="ANEMOS-TEST-1",
         qr_data_uri="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
@@ -39,7 +39,11 @@ def test_render_svg_is_valid_and_carries_absolute_kg(fmt):
     w, h = social_kit.FORMATS[fmt]
     assert root.attrib["width"] == str(w) and root.attrib["height"] == str(h)
     # CO₂ en kg absolus, contigu, et certificat nommé.
-    assert "300 kg" in svg
+    # 🔴 Plus de grand chiffre : la carte porte le MODE DE PROPULSION.
+    # Les cartes sociales sont la surface la plus diffusée — elles sont
+    # faites pour être republiées par le client et ses propres clients.
+    assert "300 kg" not in svg
+    assert "voile" in svg or "Sailed" in svg or "vela" in svg
     assert "Anemos" in svg
     # ECGT : jamais de pourcentage nulle part dans le visuel.
     assert "%" not in svg
@@ -68,7 +72,7 @@ def test_render_svg_embeds_qr_and_client_logo():
         lang="en",
         origin="colombie",
         origin_label="Colombia",
-        story_short="Andean coffee, sailed across. 300 kg of CO₂ avoided, verifiable.",
+        story_short="Andean coffee, sailed across. Sailed crossing, certified by Anemos and verifiable.",
         co2_kg=1200,
         cert_ref="ANEMOS-2",
         qr_data_uri="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
@@ -80,7 +84,7 @@ def test_render_svg_embeds_qr_and_client_logo():
     _parse(svg)
     assert "<image" in svg  # QR + logo embarqués
     assert "ACME Coffee" not in svg or "ACME" in svg  # co-brand affiché si logo absent
-    assert "1,200 kg" in svg  # séparateur anglais
+    assert "1,200 kg" not in svg  # plus aucun tonnage sur la carte
     assert "Anemos" in svg
     assert "%" not in svg
 

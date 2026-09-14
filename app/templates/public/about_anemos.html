@@ -8,9 +8,9 @@
 
 {% block description %}
   {% if lang == 'en' %}
-    {{ brand.nom_court }} issues the Anemos avoided-emissions certificate: a published, reproducible method backed by EU MRV-verified vessel emissions, for every sailing cargo shipment.
+    {{ brand.nom_court }} issues the Anemos certificate: measured emissions, verified under EU MRV, for every sailing cargo shipment.
   {% else %}
-    {{ brand.nom_court }} émet le certificat Anemos d'émissions évitées : une méthode publiée et reproductible, adossée aux émissions de ses navires vérifiées sous EU MRV, pour chaque expédition en cargo vélique.
+    {{ brand.nom_court }} émet le certificat Anemos : des émissions mesurées, vérifiées sous EU MRV, adossées aux émissions de ses navires vérifiées sous EU MRV, pour chaque expédition en cargo vélique.
   {% endif %}
 {% endblock %}
 
@@ -57,7 +57,7 @@
         </svg>
         <span class="an-seal-name">ANEMOS</span>
         <span class="an-seal-sub">
-          {% if lang == 'en' %}Avoided-emissions certificate{% else %}Certificat d'émissions évitées{% endif %}
+          {% if lang == 'en' %}Emissions certificate{% else %}Certificat d'émissions{% endif %}
         </span>
       </div>
     </div>
@@ -145,27 +145,15 @@
       {% if lang == 'en' %}Energy performance{% else %}Performance énergétique{% endif %}
     </h2>
 
-    <div class="an-stats-row">
+    {# 🔴 Le chiffre « 1,5 g CO₂/t·km » est ÉCARTÉ (décision du 2026-09-11).
+       Il provient d'un modèle périmé : la méthodologie de performance
+       environnementale v3.0 publie 12,7 g CO₂/t·km (approche Métier) et
+       17,1 (approche MRV) — un rapport de 8,5. Le publier comme « facteur
+       certifié » expose à une allégation trompeuse.
 
-      {# g/t·km metric #}
-      <div class="an-stat">
-        <span class="an-km-badge">1&middot;km</span>
-        <div>
-          <span class="an-km-num">1,5</span>
-          <span class="an-km-unit">&thinsp;g CO₂ / t·km</span>
-        </div>
-        <span class="an-stat-label">
-          {% if lang == 'en' %}
-            our certified emission factor<br>
-            <em>vs 13.7&thinsp;g CO₂/t·km for a container ship</em>
-          {% else %}
-            notre facteur d'émission certifié<br>
-            <em>vs 13,7&thinsp;g CO₂/t·km pour un porte-conteneurs</em>
-          {% endif %}
-        </span>
-      </div>
-
-    </div>
+       Son remplacement par le KPI « part de propulsion vélique » est soumis à
+       arbitrage : docs/audit/2026-09-11-note-julien-facteur-1-5-vers-profil-velique.md
+       Rien n'est mis à la place ici — ce serait trancher cet arbitrage. #}
   </div>
 </section>
 
@@ -200,59 +188,23 @@
       {% endif %}
     </p>
 
-    <table class="an-table">
-      <thead>
-        <tr>
-          <th>{% if lang == 'en' %}Transport mode{% else %}Mode de transport{% endif %}</th>
-          <th>g CO₂ / t·km</th>
-          <th>{% if lang == 'en' %}Source{% else %}Source{% endif %}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>{% if lang == 'en' %}{{ brand.nom_court }} sailing cargo{% else %}Cargo vélique {{ brand.nom_court }}{% endif %}</td>
-          <td><strong class="an-highlight">{% if lang == 'en' %}1.5{% else %}1,5{% endif %}</strong></td>
-          <td>{% if lang == 'en' %}On-board measurements + accredited third-party audit{% else %}Mesures embarquées + audit vérificateur tiers accrédité{% endif %}</td>
-        </tr>
-        <tr>
-          <td>{% if lang == 'en' %}Conventional container ship{% else %}Porte-conteneurs conventionnel{% endif %}</td>
-          <td>{% if lang == 'en' %}13.7{% else %}13,7{% endif %}</td>
-          <td>IFP Energies nouvelles / IMO Fourth GHG Study</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h3 style="font-size:var(--fs-18);font-weight:var(--fw-bold);color:var(--c-teal);margin:var(--sp-7) 0 var(--sp-4)">
-      {% if lang == 'en' %}Formula applied{% else %}Formule appliquée{% endif %}
-    </h3>
-    <div class="an-formula">
+    {# Tableau comparatif retiré : la ligne « porte-conteneurs conventionnel »
+       reposait sur une base écartée par la méthodologie v3.0 (§11.1), et la
+       ligne NEWTOWT sur le facteur périmé de 1,5. #}
+    <p style="font-size:var(--fs-15);line-height:var(--lh-normal);color:var(--c-grey)">
       {% if lang == 'en' %}
-        <p><code>CO₂ avoided (kg) = (13.7 − 1.5) × tonnage (t) × distance (km) ÷ 1&thinsp;000</code></p>
-        <p><code>distance (km) = distance (NM) × 1.852</code></p>
+        Our ships' emissions are monitored, reported and <strong>verified by an accredited
+        body</strong> under EU&nbsp;MRV, and are public in EMSA's THETIS-MRV registry.
       {% else %}
-        <p><code>CO₂ évité (kg) = (13,7 − 1,5) × tonnage (t) × distance (km) ÷ 1&thinsp;000</code></p>
-        <p><code>distance (km) = distance (NM) × 1,852</code></p>
+        Les émissions de nos navires sont surveillées, déclarées et <strong>vérifiées par un
+        organisme accrédité</strong> dans le cadre d'EU&nbsp;MRV, et sont publiques dans le
+        registre THETIS-MRV de l'EMSA.
       {% endif %}
-    </div>
+    </p>
 
-    <h3 style="font-size:var(--fs-18);font-weight:var(--fw-bold);color:var(--c-teal);margin:var(--sp-7) 0 var(--sp-4)">
-      {% if lang == 'en' %}Concrete example{% else %}Exemple concret{% endif %}
-    </h3>
-    <div class="an-example">
-      <p>
-        {% if lang == 'en' %}
-          12 pallets of wine (1.2&thinsp;t) on the Le Havre → New York route
-          (3&thinsp;200&thinsp;NM ≈ 5&thinsp;926&thinsp;km):
-        {% else %}
-          12 palettes de vin (1,2&thinsp;t) sur la route Le Havre → New York
-          (3&thinsp;200&thinsp;NM ≈ 5&thinsp;926&thinsp;km) :
-        {% endif %}
-      </p>
-      <span class="an-result">
-        (13,7 − 1,5) × 1,2 × 5&thinsp;926 ÷ 1&thinsp;000 = <strong>86,7&thinsp;kg CO₂</strong>
-        {% if lang == 'en' %}avoided vs container ship{% else %}évités vs porte-conteneur{% endif %}
-      </span>
-    </div>
+    {# Formule et exemple chiffré retirés avec les deux facteurs qui les
+       composaient. L'exemple donnait 86,7 kg évités pour 1,2 t sur 3 200 NM ;
+       il reposait entièrement sur (13,7 − 1,5). #}
   </div>
 </section>
 
@@ -291,7 +243,7 @@
             Construite en 2024 et basée au Havre, Anemos est le voilier-cargo conçu spécifiquement
             pour {{ brand.nom_court }}. Avec 3&thinsp;000&thinsp;m² de voilure et une capacité d'environ
             1&thinsp;000 palettes, elle démontre que le cargo vélique est à la fois viable commercialement
-            à grande échelle et radicalement moins carboné que le transport conventionnel.
+            à grande échelle, propulsé par le vent.
           {% endif %}
         </p>
 
@@ -399,11 +351,13 @@
     </h2>
     <p>
       {% if lang == 'en' %}
-        Each booking generates a personalised certificate showing the exact CO₂ avoided
-        for your shipment — ready to include in your CSR report or share with your clients.
+        Each booking generates a personalised certificate for your shipment — emissions
+        measured, share of navigation time under sail, verifiable by QR code — ready to
+        include in your CSR report or share with your clients.
       {% else %}
-        Chaque réservation génère un certificat personnalisé indiquant le CO₂ exact évité
-        pour votre expédition — prêt à intégrer dans votre rapport RSE ou à partager avec
+        Chaque réservation génère un certificat personnalisé pour votre expédition —
+        émissions mesurées, part du temps de navigation sous voiles, vérifiable par QR —
+        prêt à intégrer dans votre rapport RSE ou à partager avec
         vos clients.
       {% endif %}
     </p>

@@ -61,7 +61,11 @@ async def test_preuves_served_in_ptbr_without_notice():
     resp = await preuves(_req("pt-br", "/preuves"))
     body = resp.body.decode()
     assert "A prova, não apenas a promessa." in body
-    assert "Baixar a metodologia (PDF)" in body
+    # 🔴 Le bouton de telechargement de la methodologie a ete RETIRE : le
+    # document decrivait la methode des emissions evitees, ecartee le
+    # 2026-09-11. La page reste servie et traduite — c'est ce que ce test
+    # verifie — mais elle ne propose plus ce qu'elle ne sert plus.
+    assert "Baixar a metodologia (PDF)" not in body
     assert "Tradução em andamento" not in body
 
 
@@ -83,7 +87,11 @@ async def test_preuves_french_copy_unchanged():
     resp = await preuves(_req("fr", "/preuves"))
     body = resp.body.decode()
     assert "La preuve, pas seulement la promesse." in body
-    assert "Télécharger la méthodologie (PDF)" in body
+    # 🔴 Le bouton de telechargement de la methodologie a ete RETIRE : le
+    # document decrivait la methode des emissions evitees, ecartee le
+    # 2026-09-11. La page reste servie et traduite — c'est ce que ce test
+    # verifie — mais elle ne propose plus ce qu'elle ne sert plus.
+    assert "Télécharger la méthodologie (PDF)" not in body
     assert "la vérification tierce porte sur" in body
 
 

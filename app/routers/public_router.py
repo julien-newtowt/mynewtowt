@@ -357,16 +357,17 @@ async def solutions_cacao(request: Request, db: AsyncSession = Depends(get_db)) 
 
 
 async def _next_bookable_legs(db: AsyncSession, *, limit: int = 6) -> list[dict[str, Any]]:
-    from decimal import Decimal
-
-    from app.services import co2 as co2_service
-    from app.services.ports import haversine_nm
-
-    # Poids de référence d'une palette pour la vignette « CO₂ évité / palette »
-    # affichée sur les cartes de leg (storytelling landing — pas un devis).
-    PALLET_WEIGHT_T = Decimal("0.8")
-
-    factors = await co2_service.get_factors(db)
+    # 🔴 Le badge « CO₂ évité par palette » est RETIRÉ des cartes de leg.
+    #
+    # Il chiffrait un évitement contre un porte-conteneurs conventionnel à
+    # 13,7 gCO₂/t·km — base écartée par la méthodologie de performance
+    # environnementale v3.0 (§11.1), avec la mention « ne pas réintroduire sans
+    # une nouvelle décision explicite ».
+    #
+    # Tout ce qui ne servait qu'à lui part avec : le poids de palette de
+    # référence, la résolution des facteurs, et le calcul de distance
+    # orthodromique. Laisser le calcul en place « au cas où » aurait invité à
+    # rebrancher l'affichage sans repasser par l'arbitrage.
     now = datetime.now(UTC)
     stmt = (
         select(Leg, Vessel)
@@ -381,22 +382,6 @@ async def _next_bookable_legs(db: AsyncSession, *, limit: int = 6) -> list[dict[
     for leg, vessel in rows:
         pol = await db.get(Port, leg.departure_port_id)
         pod = await db.get(Port, leg.arrival_port_id)
-        co2_per_pallet_kg: int | None = None
-        if (
-            pol is not None
-            and pod is not None
-            and pol.latitude is not None
-            and pol.longitude is not None
-            and pod.latitude is not None
-            and pod.longitude is not None
-        ):
-            distance_nm = Decimal(
-                str(haversine_nm(pol.latitude, pol.longitude, pod.latitude, pod.longitude))
-            )
-            estimate = co2_service.estimate(
-                distance_nm=distance_nm, tonnage_t=PALLET_WEIGHT_T, factors=factors
-            )
-            co2_per_pallet_kg = int(estimate.avoided_co2_kg.to_integral_value())
         out.append(
             {
                 "leg_id": leg.id,
@@ -406,7 +391,6 @@ async def _next_bookable_legs(db: AsyncSession, *, limit: int = 6) -> list[dict[
                 "pod": pod,
                 "etd": leg.etd,
                 "eta": leg.eta,
-                "co2_per_pallet_kg": co2_per_pallet_kg,
             }
         )
     return out

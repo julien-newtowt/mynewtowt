@@ -24,22 +24,20 @@
   {{ 'Preserved quality · proven decarbonization · a story that sells' if _en
      else 'Qualité préservée · décarbonation prouvée · un récit qui se vend' }}
 </p>
+{# 🔴 Le chiffre « CO₂ évité » et ses équivalences sont retirés : ils
+   comparaient à un cargo conventionnel à 13,7 gCO₂/t·km, base écartée par la
+   méthodologie v3.0 (§11.1).
 
-{# CO₂ évité (figé) + équivalences + QR #}
-{% if cert and co2_kg %}
-<h2>{{ 'Avoided CO₂' if _en else 'CO₂ évité' }}</h2>
+   Le QR et la référence du certificat RESTENT — ils mènent à une page qui
+   montre des émissions mesurées et la part sous voiles. #}
+{% if cert %}
+<h2>{{ 'Verify this shipment' if _en else 'Vérifier cette expédition' }}</h2>
 <div class="grid-2">
   <div>
-    <p><span class="badge-co2">{{ co2_kg }} kg {{ 'CO₂ avoided' if _en else 'de CO₂ évité' }}</span></p>
     <p class="small">
-      {{ 'On this shipment, vs an equivalent conventional cargo ship — tank-to-wake, certified Anemos.'
-         if _en else "Sur cette expédition, vs un cargo conventionnel équivalent — tank-to-wake, certifié Anemos." }}
+      {{ 'Measured emissions and share of navigation time under sail, verifiable by anyone.'
+         if _en else "Émissions mesurées et part du temps de navigation sous voiles, vérifiables par quiconque." }}
     </p>
-    <div class="grid-3" style="margin-top:8pt;">
-      <div class="box"><div class="value"><strong>{{ (co2_kg / 25) | round(0, 'floor') | int }}</strong></div><div class="label">{{ t('rd_eco_eq_trees', lang) }}</div></div>
-      <div class="box"><div class="value"><strong>{{ (co2_kg / 1000) | round(1) }}</strong></div><div class="label">{{ t('rd_eco_eq_flights', lang) }}</div></div>
-      <div class="box"><div class="value"><strong>{{ (co2_kg / 0.9) | round(0, 'floor') | int }}</strong></div><div class="label">{{ t('rd_eco_eq_truck', lang) }}</div></div>
-    </div>
   </div>
   <div class="text-center">
     {% if verify_qr %}<img src="{{ verify_qr }}" alt="QR" style="width:96pt;height:96pt;" />{% endif %}
@@ -51,6 +49,7 @@
   </div>
 </div>
 {% endif %}
+
 
 {# Récit d'origine #}
 {% if story_long %}
@@ -65,7 +64,7 @@
   {{ 'Voyage of this shipment:' if _en else 'La traversée de cette expédition :' }} {{ share_url }} ·
   {% endif %}
   {{ 'Avoided CO₂ (tank-to-wake), certified Anemos — verifiable at'
-     if _en else 'CO₂ évité (tank-to-wake), certifié Anemos — vérifiable sur' }}
+     if _en else 'Émissions mesurées (tank-to-wake), certifiées Anemos — vérifiables sur' }}
   {{ verify_url or (site_url ~ '/verify') }}
 </div>
 

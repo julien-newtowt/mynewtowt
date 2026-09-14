@@ -202,7 +202,11 @@ async def test_voyage_page_renders_published_booking(db):
     assert resp.template.name == "public/voyage.html"
     ctx = resp.context
     assert ctx["found"] is True
-    assert ctx["co2_kg"] == 400
+    # 🔴 Plus de « CO₂ évité » sur la tracabilite consommateur : la base de
+    # comparaison est ecartee (methodologie v3.0 §11.1). Le certificat reste,
+    # et avec lui le lien de verification — c'est lui qui porte la preuve.
+    assert ctx["co2_kg"] is None
+    assert ctx["cert"] is not None
     assert ctx["vessel"].name == "Anemos"
     assert len(ctx["track"]) == 3
     assert ctx["conditions"] is not None

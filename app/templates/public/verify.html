@@ -8,9 +8,9 @@
 
 {% block description %}
   {% if lang == 'en' %}
-    Public verification of an Anemos avoided-emissions certificate: tonnage, distance, avoided CO₂, method, date and factor — no personal data.
+    Public verification of an Anemos certificate: tonnage, distance, CO₂ emitted, share of navigation time under sail, method and date — no personal data.
   {% else %}
-    Vérification publique d'un certificat Anemos d'émissions évitées : tonnage, distance, CO₂ évité, méthode, date et facteur — sans donnée personnelle.
+    Vérification publique d'un certificat Anemos : tonnage, distance, CO₂ émis, part du temps de navigation sous voiles, méthode et date — sans donnée personnelle.
   {% endif %}
 {% endblock %}
 
@@ -67,10 +67,46 @@
     <div class="vrf-card">
       <span class="section-kicker">{% if lang == 'en' %}Verified certificate{% else %}Certificat vérifié{% endif %}</span>
       <div class="label" style="color:var(--c-grey);font-size:var(--fs-13)">{{ certificate.reference }}</div>
-      <div class="vrf-hero-num">{{ "%.0f"|format(certificate.co2_avoided_kg|float) }}&thinsp;kg</div>
+      {# 🔴 Le héros est une MESURE, plus un contrefactuel.
+         La page affichait le « CO₂ évité » contre un porte-conteneurs à
+         13,7 gCO₂/t·km — base écartée par la méthodologie v3.0 (§11.1). Ce qui
+         est certifié ici est ce qui a été émis, et la façon dont le navire a
+         fait route. #}
+      {# 🔴 Un FORFAIT n'est pas une mesure.
+         Quand le grand livre n'a pas de CO₂ réel pour le voyage, le certificat
+         retombe sur un facteur forfaitaire (`method = 'theoretical'`). Afficher
+         ce nombre en tête, au même endroit et dans la même typographie qu'une
+         valeur déclarée, le ferait passer pour une mesure. On ne le fait pas :
+         on dit que la mesure n'est pas encore disponible. #}
+      {% if certificate.method == 'declared' %}
+      <div class="vrf-hero-num">{{ "%.0f"|format(certificate.co2_emitted_kg|float) }}&thinsp;kg</div>
       <div style="color:var(--c-grey);font-size:var(--fs-14)">
-        {% if lang == 'en' %}CO₂ avoided vs an equivalent conventional cargo{% else %}CO₂ évité vs un cargo conventionnel équivalent{% endif %}
+        {% if lang == 'en' %}CO₂ emitted for this shipment, tank-to-wake{% else %}CO₂ émis pour cet envoi, du réservoir au sillage{% endif %}
       </div>
+      {% else %}
+      <div style="color:var(--c-grey);font-size:var(--fs-15);margin:var(--sp-4) 0">
+        {% if lang == 'en' %}
+          The measured emissions of this voyage are not yet consolidated. This
+          certificate attests to the shipment and the route; the emission figure
+          will be the ship's declared one, not an estimate.
+        {% else %}
+          Les émissions mesurées de ce voyage ne sont pas encore consolidées. Ce
+          certificat atteste l'expédition et la route ; le chiffre d'émission
+          sera celui déclaré par le bord, pas une estimation.
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if propulsion and propulsion.navigation_slots %}
+      {% set sail = propulsion.segments | selectattr('category', 'in', ['velique_pur', 'hybride']) | sum(attribute='pct') %}
+      <div style="margin-top:var(--sp-4);font-size:var(--fs-14)">
+        <strong class="text-accent">{{ "%.1f"|format(sail|float) }}&thinsp;%</strong>
+        {% if lang == 'en' %}of navigation time with sails set{% else %}du temps de navigation sous voiles{% endif %}
+        <span style="color:var(--c-grey)">
+          ({{ propulsion.navigation_slots }}
+          {% if lang == 'en' %}four-hour slots{% else %}tranches de 4&nbsp;h{% endif %})
+        </span>
+      </div>
+      {% endif %}
 
       <table class="vrf-table">
         <tr>
@@ -82,8 +118,11 @@
           <td>{{ "%.0f"|format(certificate.distance_nm|float) }} NM ({{ "%.0f"|format(certificate.distance_nm|float * 1.852) }} km)</td>
         </tr>
         <tr>
-          <th>{% if lang == 'en' %}Avoided CO₂{% else %}CO₂ évité{% endif %}</th>
-          <td>{{ "%.0f"|format(certificate.co2_avoided_kg|float) }} kg</td>
+          <th>{% if lang == 'en' %}CO₂ emitted{% else %}CO₂ émis{% endif %}</th>
+          <td>
+            {% if certificate.method == 'declared' %}{{ "%.0f"|format(certificate.co2_emitted_kg|float) }} kg
+            {% else %}{% if lang == 'en' %}pending consolidation{% else %}en attente de consolidation{% endif %}{% endif %}
+          </td>
         </tr>
         <tr>
           <th>{% if lang == 'en' %}Method{% else %}Méthode{% endif %}</th>
@@ -98,9 +137,11 @@
         <tr>
           <th>{% if lang == 'en' %}Factor applied{% else %}Facteur appliqué{% endif %}</th>
           <td>
-            {% if applied_factor is not none %}{{ "%.2f"|format(applied_factor) }}{% else %}1,5{% endif %}
-            g CO₂/t·km
-            <span style="color:var(--c-grey)">· {% if lang == 'en' %}ref. 13.7{% else %}réf. 13,7{% endif %}</span>
+            {# Plus de repli sur 1,5 : le facteur affiché est DÉRIVÉ du
+               certificat (émissions / t·km), donc reproductible. Sans base de
+               calcul, on ne le remplace pas par une constante périmée. #}
+            {% if applied_factor is not none %}{{ "%.2f"|format(applied_factor) }} g CO₂/t·km
+            {% else %}{% if lang == 'en' %}not derivable{% else %}non dérivable{% endif %}{% endif %}
           </td>
         </tr>
         <tr>
@@ -110,18 +151,22 @@
       </table>
     </div>
 
-    {% set co2_kg = certificate.co2_avoided_kg|float %}
-    {% include "public/_co2_equivalences.html" with context %}
+    {# Les équivalences (km en voiture, etc.) convertissaient le CO₂ ÉVITÉ :
+       elles amplifiaient une allégation dont la base est écartée. Retirées avec
+       elle — on ne transforme pas une mesure d'émission en argument. #}
 
     <p style="margin-top:var(--sp-6);font-size:var(--fs-13);color:var(--c-grey)">
       {% if lang == 'en' %}
-        Scope: tank-to-wake, gas CO₂ only (not CO₂e). Vessel emissions verified under EU&nbsp;MRV and
-        public in the THETIS-MRV registry; the avoided-emissions calculation is our published method.
+        Scope: tank-to-wake, gas CO₂ only (not CO₂e). Vessel emissions are verified under EU&nbsp;MRV
+        and public in the THETIS-MRV registry. The share under sail is read from the ship's noon
+        reports, four-hour slot by four-hour slot, and depends on no emission factor.
         <a href="/preuves">See our evidence &amp; method →</a>
       {% else %}
-        Périmètre : tank-to-wake, gaz CO₂ uniquement (pas du CO₂e). Émissions des navires vérifiées sous
-        EU&nbsp;MRV et publiques dans le registre THETIS-MRV ; le calcul des émissions évitées est notre
-        méthode publiée. <a href="/preuves">Voir nos preuves &amp; notre méthode →</a>
+        Périmètre : tank-to-wake, gaz CO₂ uniquement (pas du CO₂e). Les émissions des navires sont
+        vérifiées sous EU&nbsp;MRV et publiques dans le registre THETIS-MRV. La part sous voiles est
+        lue dans les noon reports du bord, tranche de 4&nbsp;h par tranche de 4&nbsp;h, et ne dépend
+        d'aucun facteur d'émission.
+        <a href="/preuves">Voir nos preuves &amp; notre méthode →</a>
       {% endif %}
     </p>
     {% endif %}
