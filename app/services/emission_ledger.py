@@ -318,6 +318,26 @@ class LedgerResult:
     # sous-estimé sous le nom d'une autre approche.
     co2_op_t: Decimal | None = None
 
+    # 🔴 Travail de transport (t·km), arbitré et exposé le 2026-09-14.
+    #
+    # Jusqu'ici calculé en interne comme SEUL dénominateur des méthodes A/B/C
+    # (cf. ``_ef_method``), jamais restitué comme grandeur à part — alors que
+    # l'annexe E de la méthodologie de performance environnementale v3.0 le
+    # liste parmi les champs publiés (§8.1, §9.1) :
+    #
+    # - ``transport_work_mrv_t_km`` — assiette RÉELLE, méthode C (cargo MRV,
+    #   1 tonne fictive sur un voyage sur lest — cf. `_denom_or_ballast_reference`,
+    #   ``None`` si le cargo MRV n'est pas disponible) ;
+    # - ``transport_work_simulated_t_km`` — assiette STANDARDISÉE, méthode B
+    #   (capacité de référence × taux d'occupation), calculable même sur un
+    #   voyage sur lest puisqu'elle ne dépend jamais du chargement réel.
+    #
+    # Champs en FIN de dataclass AVEC défaut ``None`` — extension compatible,
+    # pas d'incrément de ``DASHBOARD_CONTRACT_VERSION`` (même statut que
+    # `avoided_co2_kg` : calculés, jamais persistés).
+    transport_work_mrv_t_km: Decimal | None = None
+    transport_work_simulated_t_km: Decimal | None = None
+
 
 # ════════════════════════════════════════════════════════════ Helpers datetime
 
@@ -608,6 +628,39 @@ async def _dashboard_param(db: AsyncSession, name: str, default: Decimal) -> Dec
 
 # ════════════════════════════════════════════════════════════ Intensités / EF
 
+# 🔴 Voyage sur lest, méthodologie v3.0 §9.2 (hypothèse A8) — arbitré le
+# 2026-09-14 : au niveau du VOYAGE (jamais des agrégats), un cargo CONNU et
+# nul calcule son EF comme s'il avait porté 1 tonne fictive plutôt que de
+# renvoyer un N/A. Objectif : rendre le voyage sur lest VISIBLE plutôt que de
+# le cacher derrière un tiret — la valeur reste une fiction de calcul, jamais
+# une mesure, d'où l'obligation d'un avertissement partout où elle s'affiche
+# (``VoyageRow.is_ballast`` porte déjà ce signal, sans colonne supplémentaire :
+# un cargo exactement nul ET un EF non-``None`` suffisent à le reconnaître).
+#
+# Un cargo INCONNU (``None``) n'est PAS un cargo nul : lui substituer 1 tonne
+# fabriquerait une valeur là où la donnée manque, exactement l'anti-motif que
+# cette règle est censée éviter ailleurs (« inconnu ≠ nul », cf. §8.2). Un
+# voyage à cargo inconnu reste donc N/A, comme avant.
+#
+# Cette fiction ne doit JAMAIS entrer dans un agrégat multi-voyages : la
+# méthodologie le dit explicitement, et ``aggregate_ef`` (kpi_env.py) exclut
+# déjà les voyages sur lest de son dénominateur — ce module n'y touche pas,
+# la substitution ne vit qu'ici, au calcul du facteur PAR VOYAGE.
+_BALLAST_REFERENCE_T = Decimal(1)
+
+
+def _denom_or_ballast_reference(denom_t: Decimal | None) -> Decimal | None:
+    """Substitue 1 tonne fictive à un cargo CONNU et nul (voyage sur lest).
+
+    ``None`` (cargo inconnu) traverse inchangé — seule une vraie mesure à zéro
+    déclenche la fiction de calcul.
+    """
+    if denom_t is None:
+        return None
+    if denom_t <= 0:
+        return _BALLAST_REFERENCE_T
+    return denom_t
+
 
 def _ef_method(
     co2_t: Decimal | None, denom_t: Decimal | None, distance_km: Decimal | None
@@ -815,9 +868,28 @@ async def compute_for_leg(
     _num = {
         m: numerator_for_method(m, co2_mrv_t=co2_emitted_t, co2_op_t=co2_op_t) for m in EF_METHODS
     }
-    ef_a = _ef_method(_num["A"], cargo_bl, distance_km)
-    ef_b = _ef_method(_num["B"], capacity_ref * (occupancy / Decimal("100")), distance_km)
-    ef_c = _ef_method(_num["C"], cargo_mrv, distance_km)
+    # Voyage sur lest (§9.2, A8) : 1 tonne fictive au lieu d'un N/A — cf.
+    # ``_denom_or_ballast_reference`` ci-dessus. B ne dépend jamais du cargo
+    # réel (dénominateur standardisé), donc jamais concernée.
+    cargo_mrv_denom = _denom_or_ballast_reference(cargo_mrv)
+    simulated_denom = capacity_ref * (occupancy / Decimal("100"))
+    ef_a = _ef_method(_num["A"], _denom_or_ballast_reference(cargo_bl), distance_km)
+    ef_b = _ef_method(_num["B"], simulated_denom, distance_km)
+    ef_c = _ef_method(_num["C"], cargo_mrv_denom, distance_km)
+
+    # Travail de transport (t·km) — annexe E, exposé le 2026-09-14 (cf. le
+    # champ sur `LedgerResult`). Même garde que `_ef_method` : pas de valeur
+    # sans distance connue.
+    transport_work_mrv_t_km = (
+        (cargo_mrv_denom * distance_km).quantize(_EF_QUANT)
+        if cargo_mrv_denom is not None and distance_km is not None and distance_km > 0
+        else None
+    )
+    transport_work_simulated_t_km = (
+        (simulated_denom * distance_km).quantize(_EF_QUANT)
+        if distance_km is not None and distance_km > 0
+        else None
+    )
 
     return LedgerResult(
         leg_id=leg.id,
@@ -849,6 +921,8 @@ async def compute_for_leg(
         ef_method_a=ef_a,
         ef_method_b=ef_b,
         ef_method_c=ef_c,
+        transport_work_mrv_t_km=transport_work_mrv_t_km,
+        transport_work_simulated_t_km=transport_work_simulated_t_km,
     )
 
 

@@ -33,11 +33,19 @@
     <tr><td>Distance</td><td class="text-right mono">{% if L.distance_nm is not none %}{{ "%.0f"|format(L.distance_nm) }} NM{% else %}—{% endif %}</td></tr>
     <tr><td>Cargo B/L</td><td class="text-right mono">{% if L.cargo_bl_t is not none %}{{ "%.1f"|format(L.cargo_bl_t) }} t{% else %}—{% endif %}</td></tr>
     <tr><td>Cargo MRV</td><td class="text-right mono">{% if L.cargo_mrv_t is not none %}{{ "%.1f"|format(L.cargo_mrv_t) }} t{% else %}N/A{% endif %}</td></tr>
-    <tr><td>EF méthode A (réel)</td><td class="text-right mono">{% if L.ef_method_a is not none %}{{ "%.2f"|format(L.ef_method_a) }} gCO₂/t·km{% else %}N/A{% endif %}</td></tr>
+    <tr><td>EF méthode A (réel)</td><td class="text-right mono">{% if L.ef_method_a is not none %}{{ "%.2f"|format(L.ef_method_a) }} gCO₂/t·km{% if L.cargo_bl_t is not none and L.cargo_bl_t <= 0 %} ⚠{% endif %}{% else %}N/A{% endif %}</td></tr>
     <tr><td>EF méthode B (standardisé)</td><td class="text-right mono">{% if L.ef_method_b is not none %}{{ "%.2f"|format(L.ef_method_b) }} gCO₂/t·km{% else %}N/A{% endif %}</td></tr>
-    <tr><td>EF méthode C (cargo MRV)</td><td class="text-right mono">{% if L.ef_method_c is not none %}{{ "%.2f"|format(L.ef_method_c) }} gCO₂/t·km{% else %}N/A{% endif %}</td></tr>
+    <tr><td>EF méthode C (cargo MRV)</td><td class="text-right mono">{% if L.ef_method_c is not none %}{{ "%.2f"|format(L.ef_method_c) }} gCO₂/t·km{% if L.cargo_mrv_t is not none and L.cargo_mrv_t <= 0 %} ⚠{% endif %}{% else %}N/A{% endif %}</td></tr>
+    <tr><td>Travail de transport MRV (C)</td><td class="text-right mono">{% if L.transport_work_mrv_t_km is not none %}{{ "%.0f"|format(L.transport_work_mrv_t_km) }} t·km{% else %}N/A{% endif %}</td></tr>
+    <tr><td>Travail de transport simulé (B)</td><td class="text-right mono">{% if L.transport_work_simulated_t_km is not none %}{{ "%.0f"|format(L.transport_work_simulated_t_km) }} t·km{% else %}N/A{% endif %}</td></tr>
   </tbody>
 </table>
+
+{% if (L.cargo_bl_t is not none and L.cargo_bl_t <= 0) or (L.cargo_mrv_t is not none and L.cargo_mrv_t <= 0) %}
+<p class="text-sm text-muted" style="margin-top:4px;">
+  ⚠ Voyage sur lest : les valeurs marquées sont calculées pour une tonne fictive (1 t), pas une mesure — méthodologie de performance environnementale v3.0, §9.2. Ne pas agréger sur plusieurs voyages.
+</p>
+{% endif %}
 
 <h2>Consommation vs cible</h2>
 <p>

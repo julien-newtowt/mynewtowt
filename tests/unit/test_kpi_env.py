@@ -35,7 +35,6 @@ from app.models.vessel import Vessel
 from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.services.kpi_env import (
     DASHBOARD_PARAM_DEFAULTS,
-    NA_BALLAST,
     NA_CARGO_MRV,
     NA_NO_LADEN_VOYAGE,
     AvoidedResult,
@@ -132,18 +131,32 @@ def test_leg_ef_method_a_laden_voyage_is_computed():
     assert result.value_gco2_tkm == Decimal("54.00")
 
 
-def test_leg_ef_method_a_ballast_voyage_is_na():
-    """A « réel » : cargo nul ⇒ exclu (division par zéro évitée), marqué N/A."""
+def test_leg_ef_method_a_ballast_voyage_uses_1t_reference():
+    """🔴 Voyage sur lest (§9.2, A8) : 1 tonne fictive, jamais un tiret.
+
+    Arbitré le 2026-09-14 : au voyage, un cargo CONNU et nul calcule son EF
+    comme s'il avait porté 1 tonne — rend le voyage visible plutôt que de le
+    cacher derrière un N/A. `is_ballast_assumed` porte l'avertissement :
+    toute surface qui affiche `value_gco2_tkm` doit afficher ce drapeau.
+    """
     result = leg_ef(LEG_BALLAST, method="A", occupancy_pct=OCC, capacity_ref_t=CAP)
-    assert result.value_gco2_tkm is None
-    assert result.na_reason == NA_BALLAST
+    assert result.na_reason is None
+    assert result.is_ballast_assumed is True
+    # 30 t CO2 × 1e6 / (1 t fictive × (800 nm × 1,852)) = 20 248,38 gCO2/t.km.
+    assert result.value_gco2_tkm == Decimal("20248.38")
+
+
+def test_leg_ef_method_a_laden_voyage_is_not_ballast_assumed():
+    result = leg_ef(LEG_LADEN, method="A", occupancy_pct=OCC, capacity_ref_t=CAP)
+    assert result.is_ballast_assumed is False
 
 
 def test_leg_ef_method_b_includes_ballast_voyage():
     """B « standardisé » : capacité×occupancy ne dépend pas du cargo réel —
-    calculable même sur un voyage sur lest."""
+    calculable même sur un voyage sur lest, sans recours à la tonne fictive."""
     result = leg_ef(LEG_BALLAST, method="B", occupancy_pct=OCC, capacity_ref_t=CAP)
     assert result.na_reason is None
+    assert result.is_ballast_assumed is False
     # 30 t CO2 × 1e6 / (1100 × 0,70 × (800 × 1,852)) = 26,30 gCO2/t.km
     assert result.value_gco2_tkm == Decimal("26.30")
 

@@ -128,6 +128,11 @@ EF_RESULT_FIELDS = {
     "method": "str",
     "value_gco2_tkm": "Decimal | None",
     "na_reason": "str | None",
+    # Ajout compatible (2026-09-14) : voyage sur lest (§9.2, A8, arbitre) —
+    # `value_gco2_tkm` calcule sur 1 tonne fictive plutot qu'un N/A. Champ en
+    # FIN de dataclass AVEC defaut => extension, pas d'increment de
+    # DASHBOARD_CONTRACT_VERSION.
+    "is_ballast_assumed": "bool",
 }
 
 AVOIDED_RESULT_FIELDS = {
@@ -182,6 +187,10 @@ VOYAGE_ROW_FIELDS = {
     "ef_gco2_tkm": "Decimal | None",
     "is_ballast": "bool",
     "source": "str",  # events | legacy_noon | legacy_kpi | none
+    # Ajout compatible (2026-09-14) : repli de distance signale (§5.3, niveau
+    # 2 — Lot 4). Champ en FIN de dataclass AVEC defaut => extension, pas
+    # d'increment de DASHBOARD_CONTRACT_VERSION.
+    "distance_is_theoretical": "bool",
 }
 
 VOYAGE_DETAIL_FIELDS = {
@@ -278,6 +287,13 @@ LEDGER_RESULT_FIELDS = {
     # mouillage). Les faire partager un numerateur faisait dire a l'intensite
     # Metier autre chose que ce qu'elle annonce.
     "co2_op_t": "Decimal | None",
+    # Ajout compatible (2026-09-14) : travail de transport (t.km, annexe E),
+    # jusqu'ici calcule en interne comme seul denominateur des EF, jamais
+    # restitue comme grandeur a part. Champs en FIN de dataclass AVEC defaut
+    # (meme statut que `avoided_co2_kg` : calcules, jamais persistes) =>
+    # extension, pas d'increment de DASHBOARD_CONTRACT_VERSION.
+    "transport_work_mrv_t_km": "Decimal | None",
+    "transport_work_simulated_t_km": "Decimal | None",
 }
 
 # Clés exactes du dict retourné par emission_ledger.emissions_breakdown() —

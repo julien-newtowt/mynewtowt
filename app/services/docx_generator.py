@@ -270,11 +270,37 @@ def build_dashboard_voyage_docx(*, detail) -> DocxBytes:
             ("Distance (NM)", _fmt_num(ledger.distance_nm, 0)),
             ("Cargo B/L (t)", _fmt_num(ledger.cargo_bl_t, 1)),
             ("Cargo MRV (t)", _fmt_num(ledger.cargo_mrv_t, 1)),
-            ("EF méthode A (gCO₂/t·km)", _fmt_num(ledger.ef_method_a, 2)),
+            (
+                "EF méthode A (gCO₂/t·km)",
+                _fmt_num(ledger.ef_method_a, 2)
+                + (" ⚠" if ledger.cargo_bl_t is not None and ledger.cargo_bl_t <= 0 else ""),
+            ),
             ("EF méthode B (gCO₂/t·km)", _fmt_num(ledger.ef_method_b, 2)),
-            ("EF méthode C (gCO₂/t·km)", _fmt_num(ledger.ef_method_c, 2)),
+            (
+                "EF méthode C (gCO₂/t·km)",
+                _fmt_num(ledger.ef_method_c, 2)
+                + (" ⚠" if ledger.cargo_mrv_t is not None and ledger.cargo_mrv_t <= 0 else ""),
+            ),
+            (
+                "Travail de transport MRV, méthode C (t·km)",
+                _fmt_num(ledger.transport_work_mrv_t_km, 0),
+            ),
+            (
+                "Travail de transport simulé, méthode B (t·km)",
+                _fmt_num(ledger.transport_work_simulated_t_km, 0),
+            ),
         ],
     )
+    # 🔴 Voyage sur lest (§9.2, A8) : les EF ⚠ ci-dessus sont calculés pour une
+    # tonne fictive (1 t), pas une mesure — jamais à agréger sur plusieurs voyages.
+    if (ledger.cargo_bl_t is not None and ledger.cargo_bl_t <= 0) or (
+        ledger.cargo_mrv_t is not None and ledger.cargo_mrv_t <= 0
+    ):
+        doc.add_paragraph(
+            "⚠ Voyage sur lest : les valeurs marquées sont calculées pour une "
+            "tonne fictive (1 t), pas une mesure — méthodologie de performance "
+            "environnementale v3.0, §9.2. Ne pas agréger sur plusieurs voyages."
+        )
     doc.add_paragraph()
 
     _section(doc, "Consommation vs cible")

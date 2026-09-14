@@ -105,7 +105,9 @@ EF_METHODS: tuple[str, ...] = ("A", "B", "C")
 # fabriquée »). La méthode C est réelle dès qu'un résumé événementiel fournit le
 # cargo MRV (lot 9) ; N/A sinon (voyages legacy / sans capture événementielle).
 NA_CARGO_MRV = "cargo MRV indisponible (voyage sans capture événementielle)"
-NA_BALLAST = "voyage sur lest (cargo nul) — non calculable en méthode réelle"
+# 🔴 `NA_BALLAST` retiré le 2026-09-14 (§9.2, hypothèse A8, arbitré) : un
+# voyage sur lest calcule désormais son EF sur une tonne fictive au lieu d'un
+# N/A — cf. `EfResult.is_ballast_assumed` et `emission_ledger._denom_or_ballast_reference`.
 NA_NO_LADEN_VOYAGE = "aucun voyage chargé sur la période sélectionnée"
 NA_NO_DISTANCE = "aucune distance enregistrée sur la période sélectionnée"
 NA_ZERO_DISTANCE = "distance nulle pour ce voyage"
@@ -216,6 +218,16 @@ class LegEmissionRecord:
     # existantes qui construisent des LegEmissionRecord "de fait" sans jamais
     # préciser la provenance (formules pures, non concernées par le mode strict).
     source: str = "events"
+    # 🔴 Distance §5.3, niveau 2 (arbitré le 2026-09-14). `distance_nm` peut
+    # venir de deux sources de nature différente : MESURÉE (somme des
+    # haversines entre événements, ``VoyageEmissionSummary.distance_nm``,
+    # niveau 1 ISO 14083) ou THÉORIQUE (``Leg.distance_nm`` = orthodromie ×
+    # élongation, un repli). Avant ce champ, les deux étaient
+    # INDISCERNABLES une fois posées dans ``distance_nm`` — une intensité
+    # calculée sur la théorique se lisait comme une intensité mesurée.
+    # ``True`` = repli théorique appliqué (mesurée indisponible) ; ``False``
+    # (défaut) = mesurée, compatible avec les fixtures de tests existantes.
+    distance_is_theoretical: bool = False
 
 
 @dataclass(frozen=True)
@@ -225,6 +237,12 @@ class EfResult:
     method: str
     value_gco2_tkm: Decimal | None
     na_reason: str | None
+    # 🔴 Voyage sur lest (§9.2, A8) : `value_gco2_tkm` a été calculé pour une
+    # tonne FICTIVE (1 t), pas une mesure — cf. `emission_ledger._BALLAST_REFERENCE_T`.
+    # Toute surface qui affiche `value_gco2_tkm` doit afficher CE drapeau à côté,
+    # jamais l'un sans l'autre. Défaut `False` : compatible avec les appelants
+    # existants qui ne le lisent pas encore.
+    is_ballast_assumed: bool = False
 
 
 @dataclass(frozen=True)
@@ -396,6 +414,7 @@ async def _emissions_provider(
             has_kpi = summary.co2_t is not None
             co2_t = summary.co2_t if summary.co2_t is not None else Decimal(0)
             cargo_t = summary.cargo_bl_t if summary.cargo_bl_t is not None else Decimal(0)
+            distance_is_theoretical = summary.distance_nm is None
             distance_src = (
                 summary.distance_nm if summary.distance_nm is not None else leg.distance_nm
             )
@@ -415,6 +434,7 @@ async def _emissions_provider(
             cargo_t = (
                 (k.tonnage_kg / Decimal(1000)) if (k and k.tonnage_kg is not None) else Decimal(0)
             )
+            distance_is_theoretical = True
             distance_src = leg.distance_nm
             cargo_mrv_t = None
             source = "legacy_kpi" if k is not None else "none"
@@ -442,6 +462,7 @@ async def _emissions_provider(
                 source=source,
                 co2_op_t=co2_op_t,
                 co2eq_op_t=co2eq_op_t,
+                distance_is_theoretical=distance_is_theoretical,
             )
         )
     return records
@@ -517,11 +538,14 @@ def leg_ef(
     règle finissent toujours par diverger ; celle-ci ne peut plus.
 
     Renvoie ``value_gco2_tkm=None`` + ``na_reason`` quand non calculable :
-    méthode C sans ``cargo_mrv_t`` (voyage legacy), méthode A ou C sur un voyage
-    sur lest (cargo nul — pas de valeur fabriquée), assiette Métier inconnue, ou
-    distance nulle.
+    méthode C sans ``cargo_mrv_t`` (voyage legacy), assiette Métier inconnue,
+    ou distance nulle. Méthode A ou C sur un voyage sur lest (cargo CONNU et
+    nul) renvoie une valeur calculée sur 1 tonne fictive plutôt qu'un N/A
+    (§9.2, hypothèse A8 — arbitré le 2026-09-14 : rendre le voyage visible
+    plutôt que de le cacher derrière un tiret) — ``is_ballast_assumed=True``
+    le signale, à afficher partout où ``value_gco2_tkm`` l'est.
     """
-    from app.services.emission_ledger import numerator_for_method
+    from app.services.emission_ledger import _denom_or_ballast_reference, numerator_for_method
 
     _check_method(method)
     if method == "C" and record.cargo_mrv_t is None:
@@ -536,21 +560,22 @@ def leg_ef(
         return EfResult(method=method, value_gco2_tkm=None, na_reason=NA_NO_OPERATIONAL_CO2)
 
     distance_km = record.distance_nm * NM_TO_KM
+    is_ballast_assumed = False
     if method == "A":
-        if record.cargo_t <= 0:
-            return EfResult(method="A", value_gco2_tkm=None, na_reason=NA_BALLAST)
-        denom = record.cargo_t * distance_km
+        is_ballast_assumed = record.cargo_t <= 0
+        denom = _denom_or_ballast_reference(record.cargo_t) * distance_km
     elif method == "C":  # cargo MRV réglementaire (grand livre — lot 9)
-        if record.cargo_mrv_t <= 0:
-            return EfResult(method="C", value_gco2_tkm=None, na_reason=NA_BALLAST)
-        denom = record.cargo_mrv_t * distance_km
+        is_ballast_assumed = record.cargo_mrv_t <= 0
+        denom = _denom_or_ballast_reference(record.cargo_mrv_t) * distance_km
     else:  # "B" — standardisé, ballast inclus (hypothèse de remplissage fixe)
         denom = capacity_ref_t * (occupancy_pct / Decimal(100)) * distance_km
 
     if denom <= 0:
         return EfResult(method=method, value_gco2_tkm=None, na_reason=NA_ZERO_DISTANCE)
     value = (numerator * Decimal(1_000_000) / denom).quantize(_EF_QUANT)
-    return EfResult(method=method, value_gco2_tkm=value, na_reason=None)
+    return EfResult(
+        method=method, value_gco2_tkm=value, na_reason=None, is_ballast_assumed=is_ballast_assumed
+    )
 
 
 def aggregate_ef(
@@ -1535,6 +1560,10 @@ class VoyageRow:
     ef_gco2_tkm: Decimal | None  # méthode sélectionnée
     is_ballast: bool
     source: str  # events | legacy_noon | legacy_kpi | none
+    # 🔴 §5.3, niveau 2 (arbitré 2026-09-14) : True si `distance_nm` est un
+    # repli théorique (orthodromie × élongation), pas la mesure haversine —
+    # cf. LegEmissionRecord.distance_is_theoretical.
+    distance_is_theoretical: bool = False
 
 
 @dataclass(frozen=True)
@@ -1646,6 +1675,7 @@ async def vessel_operational(
                     ef_gco2_tkm=_summary_ef_for_method(summary, method),
                     is_ballast=cargo_bl <= 0,
                     source=summary.source,
+                    distance_is_theoretical=summary.distance_nm is None,
                 )
             )
         else:
@@ -1677,6 +1707,7 @@ async def vessel_operational(
                     ef_gco2_tkm=None,
                     is_ballast=cargo_bl <= 0,
                     source=("legacy_kpi" if k is not None else "none"),
+                    distance_is_theoretical=True,
                 )
             )
 

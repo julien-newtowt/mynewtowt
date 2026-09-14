@@ -51,7 +51,6 @@ from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.services import emission_ledger, event_capture, referential_env
 from app.services.co2 import invalidate_factors_cache
 from app.services.kpi_env import (
-    NA_BALLAST,
     NA_CARGO_MRV,
     NA_NO_OPERATIONAL_CO2,
     LegEmissionRecord,
@@ -400,7 +399,8 @@ def test_leg_ef_method_c_real_when_cargo_mrv_present():
     assert result.value_gco2_tkm == Decimal("28.42")
 
 
-def test_leg_ef_method_c_ballast_mrv_is_na():
+def test_leg_ef_method_c_ballast_mrv_uses_1t_reference():
+    """🔴 Voyage sur lest (§9.2, A8) : 1 tonne fictive, jamais un tiret (arbitré 2026-09-14)."""
     record = LegEmissionRecord(
         leg_id=2,
         leg_code="1BBRFR6",
@@ -414,8 +414,10 @@ def test_leg_ef_method_c_ballast_mrv_is_na():
         cargo_mrv_t=Decimal("0"),  # ballast ⇒ cargo MRV = 0
     )
     result = leg_ef(record, method="C", occupancy_pct=OCC, capacity_ref_t=CAP)
-    assert result.value_gco2_tkm is None
-    assert result.na_reason == NA_BALLAST
+    assert result.na_reason is None
+    assert result.is_ballast_assumed is True
+    # 30 t CO2 × 1e6 / (1 t fictive × (800 nm × 1,852)) = 20 248,38 gCO2/t.km.
+    assert result.value_gco2_tkm == Decimal("20248.38")
 
 
 def test_aggregate_ef_method_c_mixed_records():
@@ -487,6 +489,62 @@ async def test_ledger_ef_method_c_from_events(db):
     assert r.ef_method_c == expected.quantize(Decimal("0.0001"))
     # A (cargo B/L 900) et B (1100 × 70 %) également posés.
     assert r.ef_method_a is not None
+    assert r.ef_method_b is not None
+
+
+async def test_ledger_ef_ballast_voyage_uses_1t_reference_never_none(db):
+    """🔴 §9.2 (A8), arbitré le 2026-09-14 : chemin de PRODUCTION.
+
+    Un voyage sur lest réel (cargo B/L ET MRV connus et nuls) ne persiste plus
+    ``ef_method_a``/``ef_method_c`` à ``None`` : le grand livre calcule sur une
+    tonne fictive, exactement comme au niveau formule (``kpi_env.leg_ef``) —
+    c'est CE chemin qui alimente la page voyage, l'export PDF et le DOCX.
+    """
+    vessel, leg = await _base(db)
+    await ensure_vessel_env_defaults(db, vessel)
+    engines = {e.engine_role: e for e in await get_vessel_engines(db, vessel.id)}
+    dep = DepartureEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0,
+        lat_decimal=Decimal("50.0"),
+        lon_decimal=Decimal("-5.0"),
+        rob_t=Decimal("100.000"),
+        vessel_condition="ballast",
+        cargo_bl_t=Decimal("0.000"),
+        cargo_mrv_t=Decimal("0.000"),
+    )
+    dep.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("10000"))
+    ]
+    noon = NoonEvent(
+        leg_id=leg.id,
+        vessel_id=vessel.id,
+        status="finalise",
+        datetime_utc=T0 + timedelta(hours=24),
+        lat_decimal=Decimal("47.0"),
+        lon_decimal=Decimal("-5.0"),
+    )
+    noon.engine_readings = [
+        NavEventEngineReading(engine_id=engines["PME"].id, fuel_counter_l=Decimal("11000"))
+    ]
+    db.add_all([dep, noon])
+    await db.flush()
+
+    r = await emission_ledger.compute_for_leg(db, leg)
+    assert r.cargo_bl_t == Decimal("0.000")
+    assert r.cargo_mrv_t == Decimal("0.000")
+    # Ni A ni C ne renvoient plus None pour ce voyage — 1 tonne fictive.
+    assert r.ef_method_a is not None
+    assert r.ef_method_c is not None
+    distance_km = r.distance_nm * Decimal("1.852")
+    expected = (r.co2_emitted_t * Decimal("1000000") / (Decimal("1") * distance_km)).quantize(
+        Decimal("0.0001")
+    )
+    assert r.ef_method_a == expected
+    assert r.ef_method_c == expected
+    # B est standardisée (capacité×occupancy) : jamais concernée par le lest.
     assert r.ef_method_b is not None
 
 
