@@ -546,3 +546,58 @@ carte KPI dédiée demanderait de nouvelles clés i18n × 5 langues et un choix 
 présentation (barre de segments colorée, cf. `voyage.html` pour le patron
 existant au niveau d'un seul voyage) — une décision produit, pas une
 correction de conformité, donc non prise silencieusement ici.
+
+## 10. E6 tranché, et Lot 4 livré (2026-09-14)
+
+### E6 — Voyage sur lest : la méthodologie l'emporte
+
+Arbitrage rendu : **1 tonne fictive au niveau du voyage** (méthodologie §9.2,
+A8), avec un avertissement obligatoire partout où la valeur sort — pas le
+tiret motivé que MyTOWT pratiquait jusqu'ici. Au niveau des **agrégats**
+(flotte/période), la règle MyTOWT est confirmée et reste inchangée : un
+voyage sur lest garde son vrai zéro au numérateur, exclu du dénominateur
+(§8.2 n°3) — la tonne fictive ne doit **jamais** entrer dans une somme
+multi-voyages.
+
+Implémenté dans `emission_ledger._denom_or_ballast_reference` (chemin de
+production : `compute_for_leg`, persisté dans `ef_method_a`/`ef_method_c`) et
+répliqué dans `kpi_env.leg_ef` pour qu'une seule règle ne se réécrive pas en
+deux endroits divergents (le défaut déjà rencontré une fois ce mois-ci sur le
+numérateur). L'avertissement (`EfResult.is_ballast_assumed` / le couple
+`cargo_bl_t`/`cargo_mrv_t` ≤ 0 côté lecture persistée) est affiché à
+**chaque** surface qui montre un EF par voyage : `_vessel_fragment.html`
+(icône + infobulle), `voyage.html` (icône + infobulle), l'export PDF (⚠ en
+texte + note de bas de page) et le DOCX (⚠ + paragraphe).
+
+### Lot 4 — construit
+
+Les trois garde-fous « coût faible » de la section 6 sont livrés :
+
+1. **Vraisemblance du cargo MRV (§8.3).** Le premier volet (cargo MRV ≥ B/L)
+   existait déjà — implémenté dans `validation_rules_catalog._r20_cargo_mrv`
+   (R20), pas dans `validation_engine.py` où le premier passage de cet audit
+   l'avait cherché à tort (module distinct, "lot 8"). Le second volet (cargo
+   MRV ≤ port en lourd, `Vessel.deadweight_t`) manquait réellement : ajouté au
+   même rule id, comme un second `CheckOutcome` indépendant — `deadweight_t`
+   existait au référentiel (champ éditable, `Admin → Flotte`) mais n'était
+   consommé par aucune règle. Sévérité Info aux deux volets, cohérente avec
+   l'arbitrage D10 déjà acté pour le premier.
+2. **Repli de distance signalé (§5.3, niveau 2).** `LegEmissionRecord` et
+   `VoyageRow` portent désormais `distance_is_theoretical` : `True` quand
+   `_emissions_provider`/`vessel_operational` sont retombés sur
+   `Leg.distance_nm` (orthodromie × élongation) faute de
+   `VoyageEmissionSummary.distance_nm` (mesure haversine entre événements).
+   Affiché dans `_vessel_fragment.html` (icône dédiée, à côté de l'EF qui en
+   dépend). La seconde partie de l'écart E5 — la mesure elle-même n'est
+   qu'une haversine entre événements, pas une intégration de trace GPS — reste
+   une dette distincte, non traitée ici (déjà connue de `CLAUDE.md`).
+3. **Travail de transport exposé (annexe E).** `LedgerResult` porte
+   `transport_work_mrv_t_km` (méthode C) et `transport_work_simulated_t_km`
+   (méthode B), calculés depuis les mêmes dénominateurs que les EF — jamais
+   recalculés séparément. Champs non persistés (même statut que
+   `avoided_co2_kg`) ; affichés page voyage, PDF et DOCX.
+
+**Non construit, par décision explicite (section 6, « non recommandé »)** :
+la simulation HVO (§12) reste bloquée en amont sur une réserve fournisseur
+non levée — l'implémenter produirait un écran dont la seule mention honnête
+serait « ne pas utiliser ».

@@ -688,6 +688,31 @@ Doc : `docs/integrations/unlocode-ports.md`.
   qu'il ne dépend d'aucun facteur d'émission, d'aucune cargaison de référence et
   d'aucun scénario de comparaison.
 - 🔴 **Base de décarbonation : « nous-mêmes sans voiles »** (`services/decarbonation.py`, méthodologie §11.2). Le porte-conteneurs conventionnel est **écarté** — segment de capacité discrétionnaire, résultat entre 87 % et 96 %. La base retenue compare le navire **à lui-même**, moteur seul à pleine puissance, **sur la route directe** (distance ÷ 1,211 : un navire sans voiles ne cherche pas le vent). Paramètres : 858 kW × 212 g/kWh = **4,37 t/j**, et une **vitesse d'essai par navire** (`Vessel.baseline_speed_kn` — ANEMOS 11,36 / ARTEMIS 12,07 / ATLANTIS 11,86 kn), car les sisterships diffèrent de ~12 % en puissance à vitesse égale. **Aucun paramètre n'est une hypothèse interne** : tous viennent des fichiers EEDI visés par Bureau Veritas, et `baseline_speed_source` le trace. Pas de vitesse ⇒ le voyage quitte les **deux** termes, jamais un repli sur un sistership. Agrégation par somme des deux termes puis ratio — jamais une moyenne de taux. ⚠️ Le taux **n'est pas publié de notre propre initiative** (§1.2 bis) : suivi interne, communiqué sur demande en énonçant sa base.
+- 🔴 **Voyage sur lest, au niveau du VOYAGE : 1 tonne fictive, jamais un
+  tiret** (méthodologie §9.2, hypothèse A8 — arbitré le 2026-09-14). Un cargo
+  **connu et nul** (méthodes A/C) calcule son EF comme s'il avait porté 1 t
+  (`emission_ledger._denom_or_ballast_reference`) pour rendre le voyage
+  **visible** plutôt que de le cacher derrière un N/A — `EfResult.is_ballast_assumed`
+  porte l'avertissement, affiché partout où la valeur l'est (dashboard, PDF,
+  DOCX). Un cargo **inconnu** (`None`) n'est pas nul : il reste N/A, sans
+  substitution. ⚠️ Aux **agrégats** (`aggregate_ef`, `kpi_env.aggregate_ef`),
+  la règle ne change pas : un voyage sur lest reste au numérateur avec son
+  **vrai zéro**, exclu du dénominateur — la tonne fictive ne vit qu'au calcul
+  PAR VOYAGE, jamais dans une somme multi-voyages.
+- **Cargo MRV — les deux seuls contrôles de vraisemblance possibles à terre**
+  (méthodologie §8.3, `validation_rules_catalog._r20_cargo_mrv`, R20, sévérité
+  Info tant que l'arbitrage D10 n'est pas rendu) : cargo MRV ≥ cargaison B/L
+  moins tolérance (`seuil_cargo_mrv_ecart_t`), et cargo MRV ≤ port en lourd du
+  navire (`Vessel.deadweight_t`, câblé le 2026-09-14 — jusque-là présent au
+  référentiel mais consommé par aucune règle). Les deux volets sont
+  indépendants (deux `CheckOutcome` distincts) et s'abstiennent chacun tant
+  que sa donnée de référence n'est pas connue.
+- **Travail de transport (t·km), exposé** (annexe E, §8.1/§9.1) :
+  `LedgerResult.transport_work_mrv_t_km` (méthode C, assiette réelle) et
+  `.transport_work_simulated_t_km` (méthode B, capacité×occupancy) — jusqu'ici
+  calculés en interne comme seul dénominateur des EF, jamais restitués comme
+  grandeur à part. Champs calculés, **non persistés** (même statut que
+  `avoided_co2_kg`) ; affichés page voyage + export PDF/DOCX.
 - **Feature flag `mrv_v2_capture`** (`services/feature_flags.capture_v2_enabled`) :
   **défaut ON global** (flag absent ⇒ actif), **fail-open** vers ON (une panne DB ne
   rouvre jamais le legacy), cache 20 s. Opt-out **par navire** en base via
