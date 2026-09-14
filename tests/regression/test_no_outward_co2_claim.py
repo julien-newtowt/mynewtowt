@@ -30,6 +30,25 @@ déjà échoué une fois. Les valeurs se disséminent par des chemins qu'on
 n'inspecte pas : un repli codé dans un script (deux l'ont fait), une clé i18n
 laissée vivante, un nombre figé en dur dans un gabarit, une somme SQL dans un
 routeur. Ici, la liste des surfaces est explicite et le test lit les fichiers.
+
+**Contre-audit du 2026-09-14 : deux angles morts comblés.** Le test de prose
+(``test_no_outward_surface_claims_an_avoided_comparison_in_prose``) ne
+scannait ni les catalogues i18n (22 clés × 5 langues ont survécu à la vague
+précédente : la formule anglaise/espagnole/portugaise/vietnamienne était
+absente de la liste), ni les services Python qui composent du texte sortant
+sans gabarit Jinja (``_social_readme`` du kit ZIP portait encore l'allégation
+en toutes lettres). Les deux surfaces sont désormais couvertes
+(``_i18n_sources()``, ``OUTWARD_PY_FILES``).
+
+**Décision délibérée : ne pas bannir l'identifiant ``co2_kg``.** C'est le nom
+de variable qui a fait échapper le kit B2B2C au premier passage — mais il sert
+aussi, légitimement, à porter des émissions RÉELLEMENT MESURÉES ailleurs dans
+l'application (grand livre, KPI, PDF interne). Le bannir comme nom de
+variable produirait des faux positifs sans rien défendre de plus que la garde
+structurelle déjà en place : ``social_kit._co2_block``/``_co2_summary`` et
+``coffee_stories._co2_phrase_short`` reçoivent ``co2_kg`` puis l'ignorent
+explicitement (``del co2_kg``), documenté comme tel. Le filet qui protège
+cette variable est donc le test de prose ci-dessus, pas un filtre de nom.
 """
 
 from __future__ import annotations
@@ -59,6 +78,51 @@ OUTWARD_FILES: tuple[str, ...] = (
     "app/templates/pdf/kit.html",
 )
 
+# Services/routeurs Python qui GÉNÈRENT du texte sortant sans passer par un
+# gabarit Jinja (SVG assemblé par f-string, notice ZIP, récits d'origine). Le
+# kit social a échappé au premier retrait précisément parce que ces fichiers
+# n'étaient pas lus par cette sentinelle : ni gabarit (`{{ }}`), ni chiffre en
+# dur détectable par le test de facteur seul.
+OUTWARD_PY_FILES: tuple[str, ...] = (
+    "app/routers/client_dashboard_router.py",
+    "app/services/social_kit.py",
+    "app/services/coffee_stories.py",
+    "app/services/cacao_stories.py",
+)
+
+# Un même catalogue i18n sert à la fois les gabarits `staff/` (internes) et
+# les gabarits `public/`/`client/`/`portal/` (sortants) : contrairement à
+# OUTWARD_DIRS, il n'y a pas de dossier qui sépare les deux. Deux exceptions
+# documentées, vérifiées ligne à ligne, plutôt qu'un filtre qui devine :
+#
+# 1. Clés dont le rendu est vérifié comme exclusivement interne (aucun
+#    gabarit hors `app/templates/staff/` ne les référence) — la méthodologie
+#    §1.2 bis réserve précisément aux surfaces internes le droit de porter un
+#    chiffre d'émissions évitées.
+INTERNAL_ONLY_I18N_KEYS: frozenset[str] = frozenset(
+    {
+        "kpi_co2_avoided",
+        "kpi_vs_conv",
+        "kpi_co2_avoided_short",
+        "kpi_co2_avoided_kg",
+        "dashperf_filter_method",
+        "dashperf_kpi_avoided_airfreight",
+        "dashperf_admin_table_subtitle",
+    }
+)
+
+# 2. Clés où « conteneur/cargo conventionnel » qualifie la PROTECTION DE LA
+#    CARGAISON (chaleur, humidité) — jamais une comparaison d'émissions. Lu en
+#    entier avant d'exempter : aucune des deux ne cite CO₂, évité ni Anemos.
+QUALITY_NOT_EMISSIONS_I18N_KEYS: frozenset[str] = frozenset(
+    {
+        "cafe_s1_lead",
+        "cacao_s1_lead",
+    }
+)
+
+_I18N_KEY_RE = re.compile(r'^\s*"([A-Za-z0-9_]+)"\s*:')
+
 # Les deux facteurs écartés, sous les formes qu'ils prennent réellement dans le
 # dépôt (séparateur décimal français ET anglais, avec ou sans unité collée).
 BANNED_FACTORS: tuple[str, ...] = (
@@ -80,7 +144,9 @@ _COMMENTS = re.compile(
     r"\{#.*?#\}"  # commentaire Jinja
     r"|/\*.*?\*/"  # bloc JS/CSS
     r"|^[ \t]*//.*?$"  # ligne JS
-    r"|^[ \t]*#(?!\s*\{).*?$",  # ligne Python (hors f-string)
+    r"|^[ \t]*#(?!\s*\{).*?$"  # ligne Python (hors f-string)
+    r'|"""[\s\S]*?"""'  # docstring Python (triple guillemets doubles)
+    r"|'''[\s\S]*?'''",  # docstring Python (triple guillemets simples)
     re.DOTALL | re.MULTILINE,
 )
 
@@ -113,10 +179,22 @@ def _outward_sources() -> list[pathlib.Path]:
     return paths
 
 
+def _outward_py_sources() -> list[pathlib.Path]:
+    return [pathlib.Path(f) for f in OUTWARD_PY_FILES if pathlib.Path(f).exists()]
+
+
+def _i18n_sources() -> list[pathlib.Path]:
+    return [
+        p
+        for p in sorted(pathlib.Path().glob(I18N_GLOB))
+        if p.stem in ("fr", "en", "es", "pt_br", "vi")
+    ]
+
+
 def test_no_outward_surface_carries_a_withdrawn_factor():
     """Ni 13,7 ni 1,5 gCO₂/t·km sur une surface sortante, hors commentaire."""
     offenders: list[str] = []
-    for path in _outward_sources():
+    for path in [*_outward_sources(), *_outward_py_sources()]:
         code = _strip_comments(path.read_text(encoding="utf-8"))
         for num, line in enumerate(code.splitlines(), start=1):
             if any(f in line for f in BANNED_FACTORS):
@@ -155,9 +233,7 @@ def test_no_i18n_catalogue_still_carries_the_formula():
     sur la page dont l'objet est précisément de SUBSTANTIER nos allégations.
     """
     offenders: list[str] = []
-    for path in sorted(pathlib.Path().glob(I18N_GLOB)):
-        if path.stem not in ("fr", "en", "es", "pt_br", "vi"):
-            continue
+    for path in _i18n_sources():
         for num, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             stripped = line.strip()
             if stripped.startswith("#"):
@@ -187,18 +263,29 @@ def test_no_outward_surface_claims_an_avoided_comparison_in_prose():
         "avoided CO₂",
         "CO₂ evitado",
         "émissions évitées",
+        "emisiones evitadas",
+        "emissões evitadas",
         "avoided-CO₂",
         "avoided emissions",
+        "CO₂ tránh được",
+        "đã tránh",
         "cargo conventionnel",
         "conventional cargo",
         "porte-conteneurs conventionnel",
         "conventional container",
         "transport conventionnel",
+        "cargueiro convencional",
+        "carguero convencional",
+        "tàu chở hàng thông thường",
     )
+    exempt_keys = INTERNAL_ONLY_I18N_KEYS | QUALITY_NOT_EMISSIONS_I18N_KEYS
     offenders: list[str] = []
-    for path in _outward_sources():
+    for path in [*_outward_sources(), *_outward_py_sources(), *_i18n_sources()]:
         code = _strip_comments(path.read_text(encoding="utf-8"))
         for num, line in enumerate(code.splitlines(), start=1):
+            key_match = _I18N_KEY_RE.match(line)
+            if key_match and key_match.group(1) in exempt_keys:
+                continue
             if any(c in line for c in claims):
                 offenders.append(f"{path}:{num}: {line.strip()[:80]}")
     assert not offenders, (

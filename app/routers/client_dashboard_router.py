@@ -1185,10 +1185,11 @@ async def booking_kit_pdf(
 
 # ─────────── P12 — volet social du kit (visuels prêts à poster) ────────────
 # Trois visuels SVG par expédition, co-brandés NEWTOWT × marque du client,
-# portant le CO₂ évité en **kg absolus**, « certifié Anemos » et le QR de
-# voyage/vérification. ECGT : jamais de %, jamais de chiffre inventé (phrase
-# qualitative sans certificat). Le récit d'origine suit la verticale de
-# l'origine (café OU cacao) — cf. social_kit.resolve_origin.
+# nommant le certificat (« certifié Anemos », émissions vérifiées EU MRV) et
+# le QR de voyage/vérification. ECGT : plus de chiffre de CO₂ évité (base de
+# comparaison écartée, méthodologie v3.0 §11.1) — phrase qualitative sans
+# certificat. Le récit d'origine suit la verticale de l'origine (café OU
+# cacao) — cf. social_kit.resolve_origin.
 
 
 async def _social_render_kwargs(request: Request, booking, client, db: AsyncSession) -> dict:
@@ -1286,10 +1287,9 @@ def _social_readme(reference: str, lang: str) -> str:
             "- square  1080x1080 (LinkedIn / Instagram)\n"
             "- story   1080x1350 (portrait / stories)\n"
             "- landscape 1200x628 (banner / link preview)\n\n"
-            "Each visual carries the CO2 avoided in ABSOLUTE KILOGRAMS (never a\n"
-            "percentage, never 'carbon neutral'), names the certificate ('certified\n"
-            "Anemos') and keeps the figure verifiable via the QR code. Please do not\n"
-            "alter the CO2 figure or remove the QR / Anemos mention.\n"
+            "Each visual names the certificate ('certified Anemos', EU MRV-verified\n"
+            "emissions) and keeps it verifiable via the QR code. Please do not remove\n"
+            "the QR / Anemos mention.\n"
         )
     return (
         f"NEWTOWT — visuels réseaux prêts à poster · expédition {reference}\n"
@@ -1298,10 +1298,9 @@ def _social_readme(reference: str, lang: str) -> str:
         "- carré     1080x1080 (LinkedIn / Instagram)\n"
         "- portrait  1080x1350 (story)\n"
         "- paysage   1200x628 (bannière / aperçu de lien)\n\n"
-        "Chaque visuel porte le CO2 évité en KILOGRAMMES ABSOLUS (jamais un\n"
-        "pourcentage, jamais « neutre en carbone »), nomme le certificat\n"
-        "(« certifié Anemos ») et garde le chiffre vérifiable via le QR. Merci de\n"
-        "ne pas altérer le chiffre de CO2 ni retirer le QR / la mention Anemos.\n"
+        "Chaque visuel nomme le certificat (« certifié Anemos », émissions\n"
+        "vérifiées EU MRV) et le garde vérifiable via le QR. Merci de ne pas\n"
+        "retirer le QR / la mention Anemos.\n"
     )
 
 
