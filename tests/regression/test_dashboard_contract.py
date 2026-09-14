@@ -108,6 +108,14 @@ VESSEL_KPI_BLOCK_FIELDS = {
     # notre propre initiative. Tout consommateur du contrat qui l'expose doit
     # NOMMER la base de reference a cote du chiffre.
     "decarbonation": "DecarbonationResult | None",
+    # Ajout compatible (2026-09-11) : profil de propulsion du PERIMETRE
+    # (flotte ou navire), par cumul de tranches. C'est l'indicateur que la
+    # methodologie porte vers l'exterieur (§1.2 bis) : il doit exister a
+    # l'echelle ou il est communique, pas seulement au voyage.
+    #
+    # Champ en FIN de dataclass AVEC defaut => extension, pas d'increment de
+    # DASHBOARD_CONTRACT_VERSION.
+    "propulsion": "PropulsionProfile | None",
 }
 
 COMPLETENESS_BLOCK_FIELDS = {

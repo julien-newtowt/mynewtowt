@@ -634,6 +634,36 @@ def _ef_method(
     return (co2_t * _MILLION / (denom_t * distance_km)).quantize(_EF_QUANT)
 
 
+def numerator_for_method(
+    method: str, *, co2_mrv_t: Decimal | None, co2_op_t: Decimal | None
+) -> Decimal | None:
+    """Le numérateur de CHAQUE lecture — unique définition de la règle.
+
+    🔴 Méthodologie de performance environnementale v3.0, §1.2, §9.1 et §10 :
+
+    - **C — approche MRV** : assiette **hors mouillage**. C'est ce que le
+      règlement demande de déclarer, et il mesure l'efficacité *en transport*,
+      pas le comportement à l'arrêt ;
+    - **B — approche Métier** et **A — lecture B/L** : assiette
+      **berth-to-berth, mouillage inclus**. « Du point de vue du service vendu,
+      un navire au mouillage en attente de créneau brûle du carburant au titre
+      de ce voyage, et le chargeur en supporte l'impact. »
+
+    ⚠️ **Cette fonction existe pour qu'il n'y ait QU'UNE définition.** La règle
+    était auparavant écrite deux fois — ici et dans ``kpi_env.leg_ef`` — et
+    seule celle-ci était exécutée. Corriger l'autre donnait donc un test vert
+    sur du code mort, ce qui a masqué le fait que les EF **persistés**
+    gardaient le mauvais numérateur (constat d'audit du 2026-09-11).
+
+    ``None`` = non calculable (mouillage inconnu) : jamais un repli silencieux
+    sur l'assiette MRV, qui publierait un chiffre sous-estimé sous le nom d'une
+    autre approche.
+    """
+    if method not in EF_METHODS:
+        raise ValueError(f"méthode EF inconnue : {method!r} (attendu {EF_METHODS})")
+    return co2_mrv_t if method == "C" else co2_op_t
+
+
 # ════════════════════════════════════════════════════════════ Facteur
 
 
@@ -814,9 +844,12 @@ async def compute_for_leg(
     # et le DOCX remis à un tiers : les faire partager le numérateur MRV
     # faisait dire à l'intensité Métier autre chose que ce qu'elle annonce,
     # partout où elle sort.
-    ef_a = _ef_method(co2_op_t, cargo_bl, distance_km)
-    ef_b = _ef_method(co2_op_t, capacity_ref * (occupancy / Decimal("100")), distance_km)
-    ef_c = _ef_method(co2_emitted_t, cargo_mrv, distance_km)
+    _num = {
+        m: numerator_for_method(m, co2_mrv_t=co2_emitted_t, co2_op_t=co2_op_t) for m in EF_METHODS
+    }
+    ef_a = _ef_method(_num["A"], cargo_bl, distance_km)
+    ef_b = _ef_method(_num["B"], capacity_ref * (occupancy / Decimal("100")), distance_km)
+    ef_c = _ef_method(_num["C"], cargo_mrv, distance_km)
 
     return LedgerResult(
         leg_id=leg.id,

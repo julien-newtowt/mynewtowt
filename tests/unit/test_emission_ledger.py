@@ -966,3 +966,66 @@ def test_an_unknown_anchorage_blocks_the_operational_reading_not_the_mrv_one():
         res = leg_ef(record, method=method, occupancy_pct=OCC, capacity_ref_t=CAP)
         assert res.value_gco2_tkm is None
         assert res.na_reason == NA_NO_OPERATIONAL_CO2
+
+
+def test_the_two_ef_paths_cannot_drift_apart():
+    """🔴 Une seule règle des numérateurs, exercée par les deux chemins.
+
+    Elle était écrite DEUX fois : ici, dans le grand livre, qui calcule et
+    persiste les EF par voyage, et dans ``kpi_env.leg_ef``. Seule la première
+    est appelée par l'application — si bien qu'en corrigeant la seconde on
+    obtenait un test vert sur du code mort, pendant que la page voyage, l'export
+    PDF et le DOCX remis à un tiers servaient le mauvais numérateur.
+
+    ``numerator_for_method`` porte désormais la règle, et ``leg_ef`` la délègue.
+    Ce test vérifie que les deux chemins produisent la MÊME valeur : ils ne
+    peuvent plus diverger sans qu'on le voie.
+    """
+    from app.services.kpi_env import leg_ef
+
+    record = LegEmissionRecord(
+        leg_id=1,
+        leg_code="1AFRBR6",
+        vessel_id=1,
+        co2_emitted_t=Decimal("100"),  # assiette MRV, hors mouillage
+        cargo_t=Decimal("500"),
+        distance_nm=Decimal("1000"),
+        etd=None,
+        ata=None,
+        has_kpi=True,
+        cargo_mrv_t=Decimal("900"),
+        co2_op_t=Decimal("110"),  # assiette Métier, mouillage inclus
+    )
+    distance_km = record.distance_nm * Decimal("1.852")
+    # 🔴 Les dénominateurs sont des MASSES (t), jamais déjà multipliées par la
+    # distance : `_ef_method` fait ce produit lui-même (`denom_t × distance_km`).
+    # Une première version de ce test pré-multipliait ici ET dans
+    # `_ef_method`, comptant la distance deux fois — c'était un bug du test,
+    # pas du code de production.
+    denoms = {
+        "A": record.cargo_t,
+        "B": CAP * (OCC / Decimal(100)),
+        "C": record.cargo_mrv_t,
+    }
+    for method in ("A", "B", "C"):
+        via_ledger = emission_ledger._ef_method(
+            emission_ledger.numerator_for_method(
+                method, co2_mrv_t=record.co2_emitted_t, co2_op_t=record.co2_op_t
+            ),
+            denoms[method],
+            distance_km,
+        )
+        via_kpi = leg_ef(record, method=method, occupancy_pct=OCC, capacity_ref_t=CAP)
+        # Les deux quantifient différemment (persisté : 4 décimales ;
+        # affichage : 2), par construction — pas une divergence de règle. On
+        # compare donc à la précision la plus grossière des deux.
+        assert via_kpi.value_gco2_tkm == via_ledger.quantize(Decimal("0.01")), method
+
+    # …et la règle elle-même : C prend l'assiette MRV, A et B l'assiette Métier.
+    assert emission_ledger.numerator_for_method(
+        "C", co2_mrv_t=Decimal("100"), co2_op_t=Decimal("110")
+    ) == Decimal("100")
+    for method in ("A", "B"):
+        assert emission_ledger.numerator_for_method(
+            method, co2_mrv_t=Decimal("100"), co2_op_t=Decimal("110")
+        ) == Decimal("110")

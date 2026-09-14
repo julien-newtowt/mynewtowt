@@ -271,6 +271,13 @@ class VesselKpiBlock:
     # Champ en fin de dataclass AVEC défaut : extension compatible au sens de
     # la politique du contrat Dashboard, pas d'incrément de version.
     decarbonation: DecarbonationResult | None = None
+    # Profil de propulsion du PÉRIMÈTRE (flotte ou navire), par cumul de
+    # tranches. C'est l'indicateur que la méthodologie porte vers l'extérieur
+    # (§1.2 bis) : il doit exister à l'échelle où il est communiqué, pas
+    # seulement au voyage.
+    #
+    # Champ en fin de dataclass AVEC défaut : extension compatible.
+    propulsion: PropulsionProfile | None = None
     # NC-04 — nombre de legs écartés des totaux ci-dessus car `source` != "events"
     # (mode strict uniquement ; toujours 0 hors mode strict, rien n'est écarté).
     legs_excluded_non_event: int = 0
@@ -496,25 +503,35 @@ def leg_ef(
     occupancy_pct: Decimal,
     capacity_ref_t: Decimal,
 ) -> EfResult:
-    """EF (gCO2/t.km) d'UN voyage — méthode A/B/C, jamais mélangées (spec §5.1).
+    """EF (gCO₂/t·km) d'UN voyage — méthode A/B/C, jamais mélangées (spec §5.1).
+
+    🔴 **Adaptateur, plus une seconde implémentation.** Le choix du numérateur
+    est délégué à ``emission_ledger.numerator_for_method`` : la règle n'est
+    écrite qu'une fois, et c'est celle que la production exécute.
+
+    Elle l'était auparavant deux fois — ici et dans
+    ``emission_ledger.compute_for_leg`` — et cette fonction-ci n'avait **aucun
+    appelant applicatif**. Le test qui l'épinglait validait donc du code mort,
+    ce qui a masqué le fait que les EF **persistés** gardaient le mauvais
+    numérateur (constat d'audit du 2026-09-11). Deux implémentations d'une même
+    règle finissent toujours par diverger ; celle-ci ne peut plus.
 
     Renvoie ``value_gco2_tkm=None`` + ``na_reason`` quand non calculable :
-    méthode C sans ``cargo_mrv_t`` (voyage legacy/sans capture événementielle
-    — **réelle** sinon, depuis le grand livre, lot 9), méthode A ou C sur un
-    voyage sur lest (cargo nul — pas de valeur fabriquée), ou distance nulle.
+    méthode C sans ``cargo_mrv_t`` (voyage legacy), méthode A ou C sur un voyage
+    sur lest (cargo nul — pas de valeur fabriquée), assiette Métier inconnue, ou
+    distance nulle.
     """
+    from app.services.emission_ledger import numerator_for_method
+
     _check_method(method)
     if method == "C" and record.cargo_mrv_t is None:
         return EfResult(method="C", value_gco2_tkm=None, na_reason=NA_CARGO_MRV)
     if record.distance_nm <= 0:
         return EfResult(method=method, value_gco2_tkm=None, na_reason=NA_ZERO_DISTANCE)
 
-    # 🔴 Chaque lecture porte SON numérateur (méthodologie §1.2).
-    #
-    # C (MRV) prend l'assiette hors mouillage ; A (B/L) et B (Métier) prennent
-    # l'assiette berth-to-berth, mouillage inclus. Les trois partageaient le
-    # numérateur MRV : l'intensité Métier ne mesurait pas ce qu'elle annonçait.
-    numerator = record.co2_emitted_t if method == "C" else record.co2_op_t
+    numerator = numerator_for_method(
+        method, co2_mrv_t=record.co2_emitted_t, co2_op_t=record.co2_op_t
+    )
     if numerator is None:
         return EfResult(method=method, value_gco2_tkm=None, na_reason=NA_NO_OPERATIONAL_CO2)
 
@@ -778,6 +795,22 @@ async def fleet_summary(
     # d'écart de puissance à vitesse égale — cf. `services.decarbonation`).
     speed_by_vessel = {v.id: getattr(v, "baseline_speed_kn", None) for v in vessels}
 
+    # Profils de propulsion du périmètre : un appel pour la flotte, un par
+    # navire actif — chacun interroge `scope_propulsion_profile`, qui lui-même
+    # ne fait qu'UNE requête (sur tout son sous-ensemble de legs), jamais une
+    # par voyage. Pour la taille de flotte réelle (3-4 navires), N+1 appels
+    # coûte peu ; à revoir si le nombre de navires devait croître.
+    _period_leg_ids = [r.leg_id for r in all_records if r.etd is not None and r.etd.year == period]
+    _profile_fleet = await scope_propulsion_profile(db, _period_leg_ids)
+    _profiles_by_vessel: dict[int, PropulsionProfile] = {}
+    for v in vessels:
+        _ids = [
+            r.leg_id
+            for r in all_records
+            if r.vessel_id == v.id and r.etd is not None and r.etd.year == period
+        ]
+        _profiles_by_vessel[v.id] = await scope_propulsion_profile(db, _ids)
+
     def _block(
         scoped_records: list[LegEmissionRecord], *, label: str, vid: int | None, code: str | None
     ) -> VesselKpiBlock:
@@ -830,6 +863,7 @@ async def fleet_summary(
             completeness=completeness,
             legs_excluded_non_event=excluded_non_event,
             decarbonation=decarbonation,
+            propulsion=(_profile_fleet if vid is None else _profiles_by_vessel.get(vid)),
         )
 
     fleet_block = _block(all_records, label="Flotte", vid=None, code=None)
@@ -1129,6 +1163,43 @@ async def _finalized_noons(db: AsyncSession, leg_id: int) -> list[NoonEvent]:
         )
     )
     return list(rows.scalars().all())
+
+
+async def scope_propulsion_profile(db: AsyncSession, leg_ids: list[int]) -> PropulsionProfile:
+    """Profil d'un PÉRIMÈTRE (flotte, navire, période) — une seule requête.
+
+    🔴 C'est l'échelle à laquelle l'indicateur est COMMUNIQUÉ. La méthodologie
+    de performance environnementale v3.0 publie des chiffres de périmètre — 4 097
+    tranches pour la flotte, 617 pour les 5 voyages 2026 — et en fait le seul
+    indicateur porté vers l'extérieur de notre propre initiative (§1.2 bis).
+    Tant que seul le profil par voyage existait, ce chiffre n'était pas
+    produisible par l'application.
+
+    L'agrégation passe par ``combine_propulsion_profiles`` : cumul de tranches,
+    jamais moyenne des pourcentages de voyage (§7.4).
+
+    Une requête pour tout le périmètre, pas une par voyage : une vue flotte sur
+    une année en compte plusieurs dizaines.
+    """
+    if not leg_ids:
+        return build_propulsion_profile([], theoretical_slots=0)
+    rows = await db.execute(
+        select(NoonEvent).where(
+            NoonEvent.leg_id.in_(leg_ids),
+            NoonEvent.status.in_(iec.FINALIZED_STATUSES),
+        )
+    )
+    noons = list(rows.scalars().all())
+    by_leg: dict[int, list[NoonEvent]] = {}
+    for noon in noons:
+        by_leg.setdefault(noon.leg_id, []).append(noon)
+    return combine_propulsion_profiles(
+        build_propulsion_profile(
+            [r for n in leg_noons for r in n.sail_readings],
+            theoretical_slots=len(leg_noons) * len(NAV_TIME_SLOTS),
+        )
+        for leg_noons in by_leg.values()
+    )
 
 
 async def propulsion_profile(db: AsyncSession, leg_id: int) -> PropulsionProfile:
