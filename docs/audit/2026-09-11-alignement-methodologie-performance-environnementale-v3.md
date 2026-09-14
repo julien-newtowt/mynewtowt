@@ -6,7 +6,7 @@
 | **Objet** | Compatibilité du module MRV / environnement de MyTOWT avec `Environmental Performance Methodology - MRV and Operational approaches - v3.0 EN` (10/09/2026) |
 | **État de l'application auditée** | `main` à `bd124505` — module MRV dédié (PR #204) et pipeline commercial (PR #205) fusionnés |
 | **Nature** | Audit de conformité **en lecture seule**. Aucune ligne de code modifiée. |
-| **Statut de la méthodologie** | **Proposition en attente d'approbation** du Responsable Environnement. Les écarts ci-dessous sont donc à lire comme « l'application ne suit pas encore une référence qui n'est pas encore approuvée », pas comme des défauts avérés. |
+| **Statut de la méthodologie** | ✅ **Validée de facto (2026-09-14)** — il n'existe pas de Responsable Environnement distinct : Yasmin Ponce est seule à suivre la performance environnementale et porte cette casquette. L'enregistrement formel au module QHSE de MARAD™ (§14.2) reste une démarche administrative ouverte, mais ne conditionne plus l'alignement technique. |
 
 > **Périmètre.** L'audit porte sur les grandeurs *calculées et affichées* par
 > MyTOWT. Il ne porte pas sur les procédures de production de la donnée (Noon /
@@ -369,21 +369,27 @@ aucun chiffre ne peut être publié avant. L'implémenter maintenant produirait 
 
 ---
 
-## 7. Points à arbitrer — hors compétence de l'informatique
+## 7. Points à arbitrer — hors compétence de l'informatique (TOUS TRANCHÉS)
 
 1. **E4 — GWP** : AR4 (25/298, EU 2015/757) ou AR5 (28/265, MEPC.391(81)) ?
-   Les deux sources sont réelles et ne visent pas la même obligation.
+   ✅ **Tranché (2026-09-11) : AR5**, strictement conforme à la méthodologie.
 2. **E6 — voyage sur lest** : tonne de référence (méthodologie, rend visible) ou
-   tiret motivé (MyTOWT, ne fabrique rien) ? Une seule posture doit survivre.
+   tiret motivé (MyTOWT, ne fabrique rien) ? ✅ **Tranché (2026-09-14) : la
+   méthodologie l'emporte** — tonne fictive au voyage, avec avertissement
+   obligatoire ; le vrai zéro reste la règle aux agrégats (§8.2 n°3, inchangé).
 3. **Périmètre de l'escale** : confirmer qu'elle sort des deux approches et ne
-   sert qu'à la réconciliation THETIS-MRV. La décision maison du 2026-09-04
-   (« port emissions = émissions d'escale », périmètre MRV) est **antérieure** à
-   la méthodologie v3.0 et la contredit.
+   sert qu'à la réconciliation THETIS-MRV. ✅ **Tranché (2026-09-11) : oui** —
+   la décision maison du 2026-09-04, antérieure à la méthodologie v3.0 et qui
+   la contredisait, est remplacée.
 4. **Statut de la méthodologie** : tant qu'elle n'est pas approuvée par le
    Responsable Environnement ni enregistrée au module QHSE de MARAD™ (§14.2),
-   aligner MyTOWT dessus revient à suivre une cible mobile. L'ordre naturel est
-   approbation d'abord, alignement ensuite — **sauf pour le Lot 1**, dont
-   l'échéance ne dépend pas de cette approbation.
+   aligner MyTOWT dessus revient à suivre une cible mobile. ✅ **Tranché
+   (2026-09-14) : validée de facto.** Il n'existe pas de Responsable
+   Environnement distinct — Yasmin Ponce est seule à suivre la performance
+   environnementale, et porte cette casquette. L'enregistrement formel au
+   module QHSE de MARAD™ reste ouvert en tant que démarche administrative,
+   mais ne bloque plus l'alignement technique : la cible n'est plus mobile,
+   elle est actée par la seule personne qui la fait vivre.
 
 ---
 
@@ -391,10 +397,12 @@ aucun chiffre ne peut être publié avant. L'implémenter maintenant produirait 
 
 - **La justesse des données sources** (Noon / Carbon Reports, ROB, BDN) : hors
   dépôt, et régie par le SMS.
-- **L'outil « Reporting provisoire traversées »**, qui produit aujourd'hui les
-  chiffres de la méthodologie. Le recouvrement fonctionnel avec le module MRV de
-  MyTOWT est réel et n'a pas été instruit : **lequel des deux fait foi** est une
-  question ouverte, et elle conditionne l'ampleur de tout alignement.
+- ~~L'outil « Reporting provisoire traversées »~~ — ✅ **Clarifié (2026-09-14)** :
+  c'est un tableau de bord **provisoire**, utilisé pendant le développement de
+  MyTOWT, pas un second système concurrent à faire cohabiter. Le module MRV de
+  MyTOWT est l'outil de reporting **cible** ; aucun arbitrage d'autorité entre
+  les deux n'est nécessaire, seulement la bascule (déjà en cours) de l'un vers
+  l'autre.
 - **Les valeurs en production** : aucun accès. Les constats portent sur le code,
   pas sur les chiffres réellement affichés aujourd'hui.
 
