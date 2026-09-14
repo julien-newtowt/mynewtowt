@@ -610,7 +610,15 @@ def aggregate_ef(
     records = [r for r in records if r.distance_nm > 0]
 
     if method == "C":
-        usable = [r for r in records if r.cargo_mrv_t is not None]
+        # 🔴 `cargo_mrv_t` connu ne suffit pas : la règle du n°2 (ci-dessus)
+        # exige que le NUMÉRATEUR soit lui aussi connu. `_emissions_provider`
+        # ramène un CO₂ MRV inconnu à `Decimal(0)` (pour ne jamais planter un
+        # `sum()`) et documente précisément ce cas avec `has_kpi` — un voyage
+        # à cargo MRV saisi mais CO₂ pas encore calculé apportait ses
+        # tonnes-kilomètres au dénominateur sans son CO₂ au numérateur,
+        # DIVISANT l'EF agrégé par un facteur proche de 2 sur les périodes où
+        # ce cas se présente (audit du calcul, 2026-09-11).
+        usable = [r for r in records if r.cargo_mrv_t is not None and r.has_kpi]
         empty_reason = NA_CARGO_MRV
     else:
         usable = [r for r in records if r.co2_op_t is not None]

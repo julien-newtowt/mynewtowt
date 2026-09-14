@@ -88,6 +88,38 @@ LEG_BALLAST = LegEmissionRecord(
     co2_op_t=Decimal("30"),  # sans mouillage : Metier = MRV (cf. LEG_LADEN)
 )
 
+# Voyage 3 — cargo MRV saisi (500 t), CO2 MRV PAS ENCORE calculé : exactement
+# la forme que produit `_emissions_provider` quand `summary.co2_t is None`
+# (`has_kpi=False`, `co2_emitted_t` ramené à 0 pour ne jamais faire échouer un
+# `sum()`). Sert à `test_aggregate_ef_method_c_excludes_unknown_co2_from_denominator`.
+LEG_C_KNOWN = LegEmissionRecord(
+    leg_id=3,
+    leg_code="1CFRBR6",
+    vessel_id=1,
+    co2_emitted_t=Decimal("50"),
+    cargo_t=Decimal("500"),
+    distance_nm=Decimal("1000"),
+    etd=datetime(2026, 3, 1, tzinfo=UTC),
+    ata=datetime(2026, 3, 20, tzinfo=UTC),
+    has_kpi=True,
+    cargo_mrv_t=Decimal("500"),
+    co2_op_t=Decimal("50"),
+)
+
+LEG_C_CARGO_KNOWN_CO2_UNKNOWN = LegEmissionRecord(
+    leg_id=4,
+    leg_code="1DBRFR6",
+    vessel_id=1,
+    co2_emitted_t=Decimal(0),  # coercion `_emissions_provider` — pas un vrai zéro
+    cargo_t=Decimal("500"),
+    distance_nm=Decimal("1000"),
+    etd=datetime(2026, 4, 1, tzinfo=UTC),
+    ata=datetime(2026, 4, 20, tzinfo=UTC),
+    has_kpi=False,  # CO2 MRV pas encore calculé pour ce voyage
+    cargo_mrv_t=Decimal("500"),
+    co2_op_t=None,
+)
+
 
 # ══════════════════════════════════════════════════ leg_ef (par voyage)
 
@@ -160,6 +192,36 @@ def test_aggregate_ef_method_c_is_na_with_reason():
     assert ef.value_gco2_tkm is None
     assert ef.na_reason == NA_CARGO_MRV
     assert denom == Decimal(0)
+
+
+def test_aggregate_ef_method_c_excludes_unknown_co2_from_denominator():
+    """🔴 Règle §8.2 n°2 : `cargo_mrv_t` connu ne suffit pas, il faut aussi le CO2.
+
+    Avant correction, ``usable`` ne filtrait que sur ``cargo_mrv_t is not
+    None`` : un voyage à cargo MRV saisi mais CO2 pas encore calculé
+    (``has_kpi=False``, ``co2_emitted_t`` ramené à 0 par
+    ``_emissions_provider``) apportait ses tonnes-kilomètres au dénominateur
+    SANS apporter son CO2 au numérateur — l'EF agrégé en ressortait divisé par
+    un facteur proche de 2 (audit du calcul, 2026-09-11).
+    """
+    from app.services.co2 import NM_TO_KM
+
+    ef_known_only, denom_known_only = aggregate_ef(
+        [LEG_C_KNOWN], method="C", occupancy_pct=OCC, capacity_ref_t=CAP
+    )
+    ef_with_unknown, denom_with_unknown = aggregate_ef(
+        [LEG_C_KNOWN, LEG_C_CARGO_KNOWN_CO2_UNKNOWN],
+        method="C",
+        occupancy_pct=OCC,
+        capacity_ref_t=CAP,
+    )
+
+    # Le voyage à CO2 inconnu ne doit apporter NI numérateur NI dénominateur :
+    # le résultat agrégé est identique, qu'il soit présent ou non.
+    assert denom_with_unknown == denom_known_only
+    assert denom_known_only == LEG_C_KNOWN.cargo_mrv_t * LEG_C_KNOWN.distance_nm * NM_TO_KM
+    assert ef_with_unknown.value_gco2_tkm == ef_known_only.value_gco2_tkm
+    assert ef_with_unknown.na_reason is None
 
 
 def test_aggregate_ef_method_a_no_laden_voyage_is_na():
